@@ -13,9 +13,11 @@
    - 在 `src/agent/tools/registry.ts` 的 `toolSummaries` 加摘要、`toolSchemas` 加 JSON Schema；
    - 在 `src/agent/runtime/loop.ts` 的 `runRuntimeTool()` 增加真实执行分支，返回 `string`（JSON）；
    - 不在 loop 主流程、组件或别处硬编码工具调用；不破坏"先发 manifest、按需加载 schema"的机制。
-3. **失败降级不抛**：工具执行失败一律返回 `formatRuntimeToolError(...)` 的 JSON，绝不 `throw`（`AbortError` 除外，需继续向上抛以支持中断）。沿用现有 fallback 契约。
+3. **失败降级不抛 + AbortError 区分**：工具执行失败一律返回 `formatRuntimeToolError(...)` 的 JSON，绝不 `throw`。**只有当 `signal.aborted`（用户真实中断本 run）时才向上抛 `AbortError`**；浏览器 API 自身抛的 `AbortError`（如用户取消 `showOpenFilePicker`）必须捕获并转成 `{ error, code: 'user_cancelled' }` 的 result JSON，**不得**中断整轮 run。沿用现有 fallback 契约。
 4. **状态只用 `@einfach/core` atoms**：复用现有 `state/atoms.ts` 的 helper 模式（`appendMessage` / `patchRunState` 风格），禁止引入 zustand/redux/context 自管状态。
-5. **不改协议、不重构核心**：不得修改 `ModelAdapter` 协议、`AgentTurnResult` 类型、architect/worker 编排、多轮 loop 结构。本次只做"加法"。
+5. **不改协议、不重构核心（但允许受控加法）**：禁止修改 **model/runtime 协议**——`ModelAdapter` 接口、`AgentTurnResult` 类型、architect/worker 编排、多轮 loop 结构。**允许**对 UI 层与 state 数据模型做*受控加法*（如给 `ChatMessage` 加可选字段、新增 session helper / atom），但必须在本计划对应阶段声明清楚。
+11. **复用优先，禁止双渲染路径**：`@ai-components/markdown` 已内置 ` ```echarts ` 图表块（`EChartsCodeBlock`），`@ai-components/code` 已自带语法高亮且已依赖 echarts/prismjs/g2。**禁止**在 app 层重复造 ChartCard、引入 prismjs、或建第二套 echarts 渲染路径。一切可视化与高亮都走现有 Markdown 渲染。
+12. **工具结果契约**：runtime 工具只产出 result JSON（回灌给模型）并更新 timeline `tool` 事件；**不得**由工具直接 `appendMessage` 写 assistant 消息——用户可见的最终消息必须由下一轮模型输出（保持"工具结果先回模型、模型再回复"的闭环）。
 6. **现有 42 个测试必须全绿**；`vite.config.ts` 的 `fileParallelism: false` 不动；`tsc -b` 必须 0 error。
 7. **测试先行（TDD）**：每个原子任务先写 vitest（红）→ 再写实现（绿）。浏览器专有 API 在 jsdom 中通过注入/mock 测试，不依赖真实浏览器。
 8. **依赖零新增重型库**：`echarts` / `@antv/g2` / `prismjs` 已在 `package.json`，直接用。IndexedDB / File System Access 用原生 API。仅允许新增**测试用**轻量 devDep（且需架构师在 §8 批准）。
@@ -61,24 +63,29 @@
 
 ### P1 · IndexedDB 持久化 + 多会话（Top 3）—— 地基
 
-- **P1.1 StorageDriver 抽象**：定义 `StorageDriver` 接口（`load()/save(snapshot)`）。生产实现 `IndexedDbDriver`；测试实现 `MemoryDriver`。放 `src/agent/state/persistence.ts`。
-- **P1.2 旁路持久化**：订阅 sessions/messages/timeline/runs atom 变化 → debounce 写库；应用启动时 `hydrate()` 回填 atom。**不改 atom 对外 API**，只做旁路 + 启动注水。
-- **P1.3 多会话 UI**：会话列表 + 新建 + 切换 + 删除（复用 `activeSessionIdAtom` / `sessionsAtom`）。
-- **测试先行**：driver round-trip（用 MemoryDriver）；hydrate 后 atom 状态正确；切换 session 后消息隔离；新建/删除会话。
+- **P1.1 StorageDriver 抽象**：`StorageDriver` 接口（`load()/save(snapshot)`）。生产 `IndexedDbDriver`；测试 `MemoryDriver`（跑得快）。放 `src/agent/state/persistence.ts`。
+- **P1.2 旁路持久化 + hydrate gate**：应用启动**先** `load()`/`hydrate()` 回填 atom，**之后**才打开写订阅（`hydrated` 闸门），避免初始默认 session 抢先 debounce 写库覆盖旧数据。订阅 sessions/messages/timeline/runs 变化 → debounce 整快照写库。**不改 atom 对外 API**。
+- **P1.3 状态归一**：hydrate 时把恢复出来的 `running` run 归一为 `stopped`（`activeControllers` 是内存 Map，刷新后无真实 run 可继续）；**仅** `waiting_user` + 带 `pendingQuestion` 的 run 可恢复为可继续态。
+- **P1.4 多会话 helper + UI**：新增 `createSession` / `selectSession` / `deleteSession` helper；删除 active / running / 最后一个会话都要有兜底（删 active 后自动切到下一个，删空则重建默认 session），防止 `activeSessionAtom` 取空导致 `ChatShell` 崩。UI：会话列表 + 新建 + 切换 + 删除。
+- **P1.5 snapshot 健壮性**：快照结构 `{ version, sessions, messages, timeline, runs }`；坏数据 / 版本不符 / 库不可用 → 回退默认状态且不崩；加 `pagehide`/`visibilitychange` flush 防关闭页面丢最后内容。
+- **测试先行**：① `MemoryDriver` round-trip；② **`fake-indexeddb`（新 devDep，架构师已批准 D7）** 覆盖 `IndexedDbDriver` 的 open/upgrade/round-trip/corrupt/unavailable；③ hydrate gate（hydrate 完成前不写库）；④ running→stopped 归一、waiting_user 可恢复；⑤ 删除 active/running/最后一个会话的兜底；⑥ debounce 合并 + pagehide flush。
 
 ### P2 · File System Access 文件工具（Top 4）
 
-- **P2.1 注册工具**：`open_file`（读取用户选定文本文件）、`save_file`（写文本到用户选定位置），runtime 标 `browser`，加 schema。
-- **P2.2 执行分支**：在 `runRuntimeTool()` 实现；`feature-detect`（`'showOpenFilePicker' in window`），缺失返回 error JSON；文件内容大时截断预览。
-- **P2.3 呈现**：读到的文件名/大小/摘要走现有 timeline `tool` 事件 + 消息呈现。
-- **测试先行**：mock `window.showOpenFilePicker` / `showSaveFilePicker` → 工具被调用 → 真实 API 被调 → 结果/错误 JSON 格式正确；feature 缺失时返回降级 error。
+- **P2.1 注册工具**：`open_file` / `save_file`，runtime 标 `browser`，加 schema。`open_file` schema 含 `accept`(MIME)/`maxBytes`；二进制拒绝；大文件返回截断预览 + 原始字节数。
+- **P2.2 执行分支**：在 `runRuntimeTool()` 实现；`feature-detect`（`'showOpenFilePicker' in window`）缺失返回降级 error JSON；**picker 取消的 `AbortError` → `{ error, code:'user_cancelled' }`，不中断 run**（见 §1.3）；`save_file` 覆盖 `createWritable/write/close` 任一步失败 / 权限拒绝，都返回 error JSON 且正确关闭资源。
+- **P2.3 交互方式**：受 **user-activation 手势限制**（D4，待用户拍板）。默认倾向方案 (b)：composer 旁按钮在用户手势内 `showOpenFilePicker` 选文件 → 文件内容/句柄喂给 agent；`save_file` 同理由用户手势触发。
+- **P2.4 呈现**：文件名/大小/摘要走 timeline `tool` 事件 + result JSON 回灌模型（**不**由工具直接写 assistant 消息，见 §1.12）。
+- **测试先行**：必须**走 lazy-tool 两阶段协议**——用 mock adapter 先 `request_tool_schema` 再提交 payload，经 registry + loop 真实路径，而非只 mock window 直接调私有 `runRuntimeTool`；覆盖：成功读/写、feature 缺失降级、picker 取消→user_cancelled、write 各步失败、二进制/超限截断。
 
-### P3 · 可视化 echarts + 代码高亮 prismjs（Top 2）
+### P3 · 可视化 + 代码高亮（Top 2）—— **复用，不造轮子**
 
-- **P3.1 `render_chart` 工具**：agent 产出 echarts `option`（JSON）→ 存入新 `chartsBySessionAtom` → 由 `ChartCard` 组件渲染。**只用 echarts**（D3）。
-- **P3.2 ChartCard 组件**：`echarts.init` → `setOption` → `resize` → `dispose` 生命周期完整（防泄漏）。
-- **P3.3 prismjs 代码高亮**：增强 Markdown 代码块渲染（渲染层增强，非 agent 工具）。
-- **测试先行**：`render_chart` 产物入 atom；ChartCard：mount→`init` 调用 / option 变→`setOption` / unmount→`dispose`（遵循 skill 渲染组件用例最小集）/ 错误 option 不抛未捕获错误；prismjs 高亮 class 注入。
+> codex 核实：渲染能力**已内置**于 `@ai-components/markdown`(```echarts 块) 与 `@ai-components/code`(自带高亮)。P3 由"造工具+组件"缩减为"引导 + 验证 + 清理冗余依赖"。
+
+- **P3.1 引导 skill**：新增一个 skill md，教模型"需要图表时在 assistant 消息里输出 ` ```echarts {合法 option JSON} ` 代码块"，由现有 Markdown 自动渲染。**无新工具、无新组件**（D5 默认：纯 skill 引导）。
+- **P3.2 characterization 测试**：补测固化现有 Markdown 渲染契约——` ```echarts ` 块 → `EChartsCodeBlock` 渲染（mock `echarts.init`，验 init/setOption/resize/dispose 生命周期、错误 option 不抛未捕获错误、StrictMode 双执行下"最终无泄漏/每实例被 dispose"而非绑定单次调用）；代码块高亮 token DOM（如 `.token.keyword`）注入 + 未知语言 fallback。
+- **P3.3 清理冗余依赖（D6，待确认）**：app `package.json` 的 `echarts`/`@antv/g2`/`prismjs` 为未用直接依赖（渲染由 ai-components 内部依赖提供）→ 建议移除，避免双版本与 bundle 膨胀。
+- **测试先行**：P3.2 的 characterization 用例即为红/绿依据（先固化期望行为，再做任何引导/清理改动）。
 
 ---
 
@@ -86,9 +93,9 @@
 
 | 阶段 | 必有 vitest 最小集 |
 |---|---|
-| P1 | driver round-trip · hydrate 正确 · 会话切换隔离 · 新建/删除 |
-| P2 | 工具调真实 API（mock）· 结果 JSON 格式 · feature 缺失降级 · 大文件截断 |
-| P3 | 工具产物入 atom · ChartCard init/setOption/dispose · 错误 option 不崩 · prism 高亮 class |
+| P1 | MemoryDriver round-trip · IndexedDbDriver(fake-indexeddb) open/upgrade/corrupt/unavailable · hydrate gate · running→stopped 归一 + waiting_user 恢复 · 删除 active/running/最后会话兜底 · debounce+pagehide flush |
+| P2 | **经 lazy-tool 两阶段协议**（request schema → payload）· 成功读/写 · feature 缺失降级 · picker 取消→user_cancelled 不中断 run · write 各步失败 · 二进制/超限截断 |
+| P3 | ` ```echarts `→EChartsCodeBlock(mock init/setOption/resize/dispose) · 错误 option 不抛 · StrictMode 下每实例被 dispose（无泄漏）· 高亮 token DOM 注入 · 未知语言 fallback |
 
 跳过"红→绿"过程、直接交实现 + 测试 → **返工**（无法证明测试覆盖实现）。
 
@@ -107,12 +114,15 @@
 
 | ID | 风险 | 对策 |
 |---|---|---|
-| R1 | IndexedDB 在 jsdom 无原生支持 | StorageDriver 抽象 + 测试注入 `MemoryDriver`，不依赖真实 IndexedDB |
-| R2 | File System Access 需"用户手势"（user activation），agent 自动调用 picker 可能被浏览器拒绝 | **D4 待用户拍板**交互方式（见 §8） |
-| R3 | echarts 体积大，现 bundle 已 >2.7MB | 接受现状；如需，后续 `dynamic import` 懒加载（不在本次范围） |
+| R1 | IndexedDB 在 jsdom 无原生支持 | `MemoryDriver` 跑单测 + `fake-indexeddb` 验证真实 `IndexedDbDriver`（D7） |
+| R2 | File System Access 需 user-activation 手势，agent 自调 picker 会被拒；且取消会抛 `AbortError` 误当中断 | D4 拍板交互；取消→`user_cancelled` error，仅 `signal.aborted` 才上抛（§1.3） |
+| R3 | echarts 体积大，bundle 已 >2.7MB | 渲染走 ai-components；P3.3 移除 app 冗余依赖；验收记录 bundle delta |
 | R4 | FS Access / `showSaveFilePicker` 仅 Chromium | feature-detect + 降级 error JSON |
-| R5 | 持久化旁路订阅可能与 run 写入频繁交互 → 写库抖动 | debounce + 快照整存；只在 atom 变化后异步写 |
-| R6 | 图表产物在 chat 中的呈现位置（消息流 vs 独立面板）影响 UX | 默认绑消息流下方 ChartCard；如有异议 §8 调整 |
+| R5 | hydrate 前写订阅抢跑 → 覆盖旧数据 | `hydrated` 闸门：先 load 再开订阅（P1.2） |
+| R6 | 恢复 `running` run 但无 controller → 卡死/误显示 | hydrate 归一 running→stopped，仅 waiting_user 可恢复（P1.3） |
+| R7 | 删除 active/最后会话 → `activeSessionAtom` 取空崩溃 | session helper 兜底 + 测试覆盖（P1.4） |
+| R8 | 自造 ChartCard/prismjs → 两套渲染路径偏离主线 | §1.11 禁止；P3 复用 ai-components，先写 characterization 固化行为 |
+| R9 | 工具直接 append assistant 消息 → 破坏"结果先回模型"闭环 | §1.12：工具只更新 timeline + result JSON |
 
 ---
 
@@ -120,8 +130,9 @@
 
 | 阶段 | 状态 |
 |---|---|
-| 计划 | **codex 评审中 → 待用户确认** |
-| P1 持久化 + 多会话 | 未开始 |
+| baseline | ✅ 已提交 `ddd6a6b` |
+| 计划 | ✅ 定稿（codex 10 阻断项已消化 + D3/D4/D5/D6 已拍板） |
+| P1 持久化 + 多会话 | 🚧 派活中 |
 | P2 文件工具 | 未开始 |
 | P3 可视化 + 高亮 | 未开始 |
 
@@ -131,10 +142,14 @@
 
 | ID | 决策 | 状态 |
 |---|---|---|
-| D1 | 实施顺序 3→4→2（持久化地基先行） | 架构师已定 |
-| D2 | 开工前 `git init` + 把现有代码做一次 baseline commit，以支撑 `codex review --uncommitted` 与 diff 验收 | **待用户确认** |
-| D3 | 可视化只用 **echarts**，`@antv/g2` 本次不接（避免双库 scope creep，g2 依赖暂留） | **待用户确认** |
-| D4 | 文件工具交互方式：(a) agent 直接弹 picker（受 user-activation 限制，可能失败）/ (b) 由 composer 旁按钮在用户手势内选文件喂给 agent + save 同理（更稳） | **待用户确认** |
+| D1 | 实施顺序 P1(Top3)→P2(Top4)→P3(Top2)，持久化地基先行 | 架构师已定 |
+| D2 | `git init` + baseline commit 支撑 codex review / diff 验收 | ✅ 已确认并完成（`ddd6a6b`） |
+| D3 | 可视化复用 ai-components 的 ` ```echarts `（基于 echarts），app 层不接 g2 | ✅ 已确认 |
+| D4 | 文件工具交互 = **方案 (b)**：composer 旁按钮在用户手势内选/存文件，再喂给 agent | ✅ 已确认 |
+| D5 | P3 = **纯 skill 引导**模型输出 ` ```echarts ` 块，无 `render_chart` 工具 | ✅ 已确认 |
+| D6 | **移除** app `package.json` 冗余依赖 `echarts`/`@antv/g2`/`prismjs` | ✅ 已确认 |
+| D7 | 新增测试用 devDep `fake-indexeddb` 验证真实 IndexedDbDriver | 架构师已批准（§1.8 测试用） |
+| D8 | §1.5 细化：禁止改 model/runtime 协议，允许 UI/state 受控加法 | 架构师已定（消化自 codex 评审） |
 
 ---
 
