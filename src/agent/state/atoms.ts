@@ -56,7 +56,18 @@ export const timelineBySessionAtom = atom<Record<string, TimelineEvent[]>>({
 
 export const composerDraftAtom = atom<string>('')
 
-export const pendingQuestionAnswersAtom = atom<Record<string, AskUserAnswerValue>>({})
+// RF5: AskUser answers are scoped per session so concurrent waiting_user runs
+// never cross-contaminate. The backing atom keeps a map keyed by sessionId; the
+// public `pendingQuestionAnswersAtom` is a derived read-only view of the active
+// session's answers (flat Record<questionId, value>) for backward compatibility.
+export const pendingQuestionAnswersBySessionAtom = atom<
+  Record<string, Record<string, AskUserAnswerValue>>
+>({})
+
+export const pendingQuestionAnswersAtom = atom<Record<string, AskUserAnswerValue>>((get) => {
+  const bySession = get(pendingQuestionAnswersBySessionAtom)
+  return bySession[get(activeSessionIdAtom)] ?? {}
+})
 
 export const activeSessionAtom = atom((get) => {
   const sessions = get(sessionsAtom)
@@ -85,7 +96,18 @@ export const isBusyAtom = atom((get) => {
 
 export const canStopAtom = atom((get) => get(activeRunAtom)?.status === 'running')
 
+// RF8: every write-back helper is a no-op when the target session no longer
+// exists. This is defense-in-depth against late writes from an in-flight run
+// whose session was deleted (which would otherwise resurrect it — especially
+// touchSession/setSessionStatus, whose `{...prev[id]}` would create a ghost
+// session with missing fields). createSession seeds the session *before*
+// writing, so the normal flow is unaffected.
+function sessionMissing(store: Store, sessionId: string) {
+  return !store.getter(sessionsAtom)[sessionId]
+}
+
 export function appendMessage(store: Store, sessionId: string, message: ChatMessage) {
+  if (sessionMissing(store, sessionId)) return
   store.setter(messagesBySessionAtom, (prev) => ({
     ...prev,
     [sessionId]: [...(prev[sessionId] ?? []), message],
@@ -94,6 +116,7 @@ export function appendMessage(store: Store, sessionId: string, message: ChatMess
 }
 
 export function updateMessage(store: Store, sessionId: string, messageId: string, patch: Partial<ChatMessage>) {
+  if (sessionMissing(store, sessionId)) return
   store.setter(messagesBySessionAtom, (prev) => ({
     ...prev,
     [sessionId]: (prev[sessionId] ?? []).map((message) =>
@@ -104,6 +127,7 @@ export function updateMessage(store: Store, sessionId: string, messageId: string
 }
 
 export function appendTimelineEvent(store: Store, sessionId: string, event: TimelineEvent) {
+  if (sessionMissing(store, sessionId)) return
   store.setter(timelineBySessionAtom, (prev) => ({
     ...prev,
     [sessionId]: [...(prev[sessionId] ?? []), event],
@@ -116,6 +140,7 @@ export function updateTimelineEvent(
   eventId: string,
   patch: Partial<TimelineEvent>,
 ) {
+  if (sessionMissing(store, sessionId)) return
   store.setter(timelineBySessionAtom, (prev) => ({
     ...prev,
     [sessionId]: (prev[sessionId] ?? []).map((event) =>
@@ -125,6 +150,7 @@ export function updateTimelineEvent(
 }
 
 export function setRunState(store: Store, sessionId: string, run: AgentRunState | undefined) {
+  if (sessionMissing(store, sessionId)) return
   store.setter(runsBySessionAtom, (prev) => ({
     ...prev,
     [sessionId]: run,
@@ -133,6 +159,7 @@ export function setRunState(store: Store, sessionId: string, run: AgentRunState 
 }
 
 export function patchRunState(store: Store, sessionId: string, patch: Partial<AgentRunState>) {
+  if (sessionMissing(store, sessionId)) return
   const current = store.getter(runsBySessionAtom)[sessionId]
   if (!current) return
 
@@ -148,6 +175,7 @@ export function patchRunState(store: Store, sessionId: string, patch: Partial<Ag
 }
 
 export function setSessionStatus(store: Store, sessionId: string, status: RunStatus) {
+  if (sessionMissing(store, sessionId)) return
   store.setter(sessionsAtom, (prev) => ({
     ...prev,
     [sessionId]: {
@@ -158,22 +186,118 @@ export function setSessionStatus(store: Store, sessionId: string, status: RunSta
   }))
 }
 
-export function setPendingQuestionAnswer(store: Store, questionId: string, value: AskUserAnswerValue) {
-  store.setter(pendingQuestionAnswersAtom, (prev) => ({
+export function setPendingQuestionAnswer(
+  store: Store,
+  questionId: string,
+  value: AskUserAnswerValue,
+  sessionId: string = store.getter(activeSessionIdAtom),
+) {
+  store.setter(pendingQuestionAnswersBySessionAtom, (prev) => ({
     ...prev,
-    [questionId]: value,
+    [sessionId]: {
+      ...(prev[sessionId] ?? {}),
+      [questionId]: value,
+    },
   }))
 }
 
-export function clearPendingQuestionAnswers(store: Store) {
-  store.setter(pendingQuestionAnswersAtom, {})
+export function clearPendingQuestionAnswers(
+  store: Store,
+  sessionId: string = store.getter(activeSessionIdAtom),
+) {
+  store.setter(pendingQuestionAnswersBySessionAtom, (prev) => {
+    if (!(sessionId in prev)) return prev
+    const next = { ...prev }
+    delete next[sessionId]
+    return next
+  })
 }
 
-export function getPendingQuestionAnswers(store: Store): AskUserAnswers {
-  return store.getter(pendingQuestionAnswersAtom)
+export function getPendingQuestionAnswers(
+  store: Store,
+  sessionId: string = store.getter(activeSessionIdAtom),
+): AskUserAnswers {
+  return store.getter(pendingQuestionAnswersBySessionAtom)[sessionId] ?? {}
+}
+
+export function createSession(store: Store, title = '新会话'): string {
+  const id = createId('session')
+  const timestamp = now()
+  const session: AgentSession = {
+    id,
+    title,
+    status: 'idle',
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  }
+
+  store.setter(sessionsAtom, (prev) => ({ ...prev, [id]: session }))
+  store.setter(messagesBySessionAtom, (prev) => ({ ...prev, [id]: [] }))
+  store.setter(timelineBySessionAtom, (prev) => ({ ...prev, [id]: [] }))
+  store.setter(activeSessionIdAtom, id)
+
+  return id
+}
+
+export function selectSession(store: Store, sessionId: string) {
+  if (!store.getter(sessionsAtom)[sessionId]) return
+  store.setter(activeSessionIdAtom, sessionId)
+}
+
+export function deleteSession(store: Store, sessionId: string) {
+  const sessions = store.getter(sessionsAtom)
+  if (!sessions[sessionId]) return
+
+  const remainingIds = Object.keys(sessions).filter((id) => id !== sessionId)
+  const isActive = store.getter(activeSessionIdAtom) === sessionId
+
+  // RF1: move the active pointer to a valid fallback BEFORE removing the
+  // session, so `activeSessionAtom` never resolves to `undefined` in the
+  // intermediate publish (einfach publishes after every setter). `createSession`
+  // (used when deleting the last session) seeds its own collections and selects
+  // itself first, so the active session always exists at render time.
+  if (isActive) {
+    if (remainingIds.length === 0) {
+      createSession(store, 'Web Agent')
+    } else {
+      store.setter(activeSessionIdAtom, remainingIds[0])
+    }
+  } else if (remainingIds.length === 0) {
+    // Defensive: deleting the only (non-active) session — rebuild a default.
+    createSession(store, 'Web Agent')
+  }
+
+  // Now drop the target session and all of its associated collections.
+  store.setter(sessionsAtom, (prev) => {
+    const next = { ...prev }
+    delete next[sessionId]
+    return next
+  })
+  store.setter(messagesBySessionAtom, (prev) => {
+    const next = { ...prev }
+    delete next[sessionId]
+    return next
+  })
+  store.setter(timelineBySessionAtom, (prev) => {
+    const next = { ...prev }
+    delete next[sessionId]
+    return next
+  })
+  store.setter(runsBySessionAtom, (prev) => {
+    const next = { ...prev }
+    delete next[sessionId]
+    return next
+  })
+  store.setter(pendingQuestionAnswersBySessionAtom, (prev) => {
+    if (!(sessionId in prev)) return prev
+    const next = { ...prev }
+    delete next[sessionId]
+    return next
+  })
 }
 
 function touchSession(store: Store, sessionId: string) {
+  if (sessionMissing(store, sessionId)) return
   store.setter(sessionsAtom, (prev) => ({
     ...prev,
     [sessionId]: {

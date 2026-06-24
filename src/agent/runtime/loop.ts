@@ -15,6 +15,7 @@ import {
   getPendingQuestionAnswers,
   patchRunState,
   runsBySessionAtom,
+  sessionsAtom,
   setRunState,
   updateMessage,
   updateTimelineEvent,
@@ -119,6 +120,20 @@ export function stopActiveRun(store: Store) {
   abortSessionRun(sessionId)
   patchRunState(store, sessionId, { status: 'stopped' })
   addTimeline(store, sessionId, run.id, 'system', 'Run stopped', 'User stopped the active run.', 'stopped')
+}
+
+/**
+ * RF2: cancel any in-flight run for a session before it is deleted. Aborts the
+ * controller (so pending awaits reject with AbortError and the executor bails)
+ * and marks the run stopped. Safe to call even if no run is active. Callers
+ * (e.g. `deleteSession` via the UI) invoke this *before* removing the session.
+ */
+export function cancelSessionRun(store: Store, sessionId: string) {
+  abortSessionRun(sessionId)
+  const run = store.getter(runsBySessionAtom)[sessionId]
+  if (run && (run.status === 'running' || run.status === 'waiting_user')) {
+    patchRunState(store, sessionId, { status: 'stopped' })
+  }
 }
 
 async function executeRun(
@@ -239,6 +254,10 @@ async function executeRun(
     })
     loadedTools = agentTurn.loadedTools
 
+    // RF2: the session may have been deleted while the model turn ran. Bail out
+    // before any write-back so we never resurrect a removed session.
+    if (!sessionExists(store, sessionId)) return
+
     if (agentTurn.question) {
       addTimeline(
         store,
@@ -268,6 +287,9 @@ async function executeRun(
     await streamAssistantAnswer(store, sessionId, agentTurn.answer, signal)
     patchRunState(store, sessionId, { status: 'done' })
   } catch (error) {
+    // RF2: never write back to a session that was deleted mid-run.
+    if (!sessionExists(store, sessionId)) return
+
     if (isAbortError(error)) {
       patchRunState(store, sessionId, { status: 'stopped' })
       return
@@ -962,6 +984,8 @@ async function streamAssistantAnswer(store: Store, sessionId: string, answer: st
   for (let index = 0; index < answer.length; index += 8) {
     const chunk = answer.slice(index, index + 8)
     await wait(18, signal)
+    // RF2: stop streaming into a session that was deleted mid-run.
+    if (!sessionExists(store, sessionId)) return
     content += chunk
     updateMessage(store, sessionId, message.id, { content })
   }
@@ -999,6 +1023,14 @@ function addTimeline(
 function abortSessionRun(sessionId: string) {
   activeControllers.get(sessionId)?.abort()
   activeControllers.delete(sessionId)
+}
+
+/**
+ * RF2: a deleted session must never be resurrected by a late write-back from an
+ * in-flight run. If the session no longer exists, callers bail out silently.
+ */
+function sessionExists(store: Store, sessionId: string) {
+  return Boolean(store.getter(sessionsAtom)[sessionId])
 }
 
 function isAbortError(error: unknown) {

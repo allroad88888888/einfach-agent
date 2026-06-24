@@ -5,6 +5,7 @@ import { AskUserQuestionCard } from './AskUserQuestionCard'
 import { Composer } from './Composer'
 import { MessageList } from './MessageList'
 import { RunActivity } from './RunActivity'
+import { SessionList } from './SessionList'
 import { ToolTimeline } from './ToolTimeline'
 
 const statusLabels: Record<RunStatus, string> = {
@@ -23,6 +24,7 @@ export function ChatShell() {
 
   return (
     <div className={`agent-shell agent-console agent-console--${status}`}>
+      <SessionList />
       <main className="chat-pane agent-console-main" aria-label="Agent 对话控制台">
         <header className={`chat-header agent-console-header agent-console-header--${status}`}>
           <div className="chat-header-main agent-console-header-main">

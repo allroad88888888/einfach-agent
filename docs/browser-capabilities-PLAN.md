@@ -70,6 +70,26 @@
 - **P1.5 snapshot 健壮性**：快照结构 `{ version, sessions, messages, timeline, runs }`；坏数据 / 版本不符 / 库不可用 → 回退默认状态且不崩；加 `pagehide`/`visibilitychange` flush 防关闭页面丢最后内容。
 - **测试先行**：① `MemoryDriver` round-trip；② **`fake-indexeddb`（新 devDep，架构师已批准 D7）** 覆盖 `IndexedDbDriver` 的 open/upgrade/round-trip/corrupt/unavailable；③ hydrate gate（hydrate 完成前不写库）；④ running→stopped 归一、waiting_user 可恢复；⑤ 删除 active/running/最后一个会话的兜底；⑥ debounce 合并 + pagehide flush。
 
+**P1 返工清单（codex 第 2 轮对抗评审后 · 必修）**：
+- RF1 `deleteSession` **先切 active 到 fallback 再删**，消除 `activeSessionAtom` 瞬时 `undefined`（ChatShell 渲染中间态崩）。
+- RF2 删除会话前取消其 run：loop.ts **受控导出** `cancelSessionRun(sessionId)`（封装现有 abort+patch），SessionList 删除前调用；executor 写回前校验 session 仍存在，防复活残缺会话 / controller 泄漏。
+- RF3 hydrate 归一时**同步回写 `session.status`**，与 run 归一后一致。
+- RF4 `parseSnapshot` **逐项校验** session/message/timeline/run shape + active 引用，坏数据丢弃或补默认（防 `sessions:{id:null}` 崩）。
+- RF5 AskUser 答案**按 sessionId 作用域化**：`pendingQuestionAnswersAtom` 改为按会话存，set/get/clear/`continueAgentRunWithAnswers` 全带作用域（多会话不串答案）。
+- RF6 持久化 save **串行化**（latest-snapshot + revision/queue，防异步乱序覆盖）+ dirty flag（无变更不重复 flush）。
+- 测试补强：teardown 在 afterEach 调用并断言解绑后不再 save；删除 running 用真实 run + fake timers 断言 abort 且无 ghost；归一断言 `session.status`；save 乱序串行化测试；parseSnapshot 逐项 corrupt 测试。
+
+**P1 收尾返工（codex 第 3 轮评审后 · 收口）**：
+- RF7（=会崩）`parseSnapshot` **深校验** `pendingQuestion`（AskUserQuestionPayload/questions/options shape）+ timeline `kind/status` union + run 可选字段；非法项 → 丢弃整快照走默认。补 `waiting_user+pendingQuestion:{}` 等 corrupt 用例。
+- RF8（RF2 根治）在 state 写回 helper（`touchSession`/`setSessionStatus`/`appendMessage`/`updateMessage`/`appendTimelineEvent`/`updateTimelineEvent`/`patchRunState`）层做"**session 不存在则 no-op**"纵深防御，根除 ghost 复活；须保证全量测试不回归。
+- RF9（RF3 补全）hydrate 按 **sessions 全量归一**：缺 run 的 session.status→`idle`；只保留 key/`run.sessionId`/session 三者一致的 run；session.status 从归一后 run 唯一推导。
+- RF10（RF6 🟨）teardown 先 flush 未决 dirty 并 drain in-flight 队列再解绑（async teardown）。
+- 测试增强：fake timers + 非 abort adapter 覆盖 model 轮前/中删除 session 无 ghost。
+
+**P1 最终收口（codex 第 4 轮：无阻断、可收口）**：
+- RF11（用户可见 bug · commit 前修）归一**保留终态**：只把 `running` 与「无有效 pendingQuestion 的 `waiting_user`」改 `stopped`；`done/error/idle` 及「waiting_user+合法 pendingQuestion」原样保留（否则已完成会话重载显示"已停止"）。+ `parseSnapshot` 要求 `key === session.id`，否则丢弃该 session。
+- **遗留 🟨（记录，不阻塞收口，可并入 P2 收尾或后续）**：parseSnapshot 对 `loadedSkills/loadedTools` 深校验 `string[]`、`message.role` 校验 `ChatRole` union；persistence 测试 teardown 收集改 `Array<()=>Promise<void>>` 并在 afterEach 逐个 await。
+
 ### P2 · File System Access 文件工具（Top 4）
 
 - **P2.1 注册工具**：`open_file` / `save_file`，runtime 标 `browser`，加 schema。`open_file` schema 含 `accept`(MIME)/`maxBytes`；二进制拒绝；大文件返回截断预览 + 原始字节数。
@@ -132,7 +152,7 @@
 |---|---|
 | baseline | ✅ 已提交 `ddd6a6b` |
 | 计划 | ✅ 定稿（codex 10 阻断项已消化 + D3/D4/D5/D6 已拍板） |
-| P1 持久化 + 多会话 | 🚧 派活中 |
+| P1 持久化 + 多会话 | 🔧 4 轮 codex 评审无阻断(120 绿) → **收口 RF11 → 即 commit** |
 | P2 文件工具 | 未开始 |
 | P3 可视化 + 高亮 | 未开始 |
 
@@ -150,6 +170,7 @@
 | D6 | **移除** app `package.json` 冗余依赖 `echarts`/`@antv/g2`/`prismjs` | ✅ 已确认 |
 | D7 | 新增测试用 devDep `fake-indexeddb` 验证真实 IndexedDbDriver | 架构师已批准（§1.8 测试用） |
 | D8 | §1.5 细化：禁止改 model/runtime 协议，允许 UI/state 受控加法 | 架构师已定（消化自 codex 评审） |
+| D9 | 为多会话正确性，允许在 `loop.ts` **受控导出** `cancelSessionRun(sessionId)` 并将 AskUser 答案作用域化（改 `continueAgentRunWithAnswers` 内部）；仍禁止改 ModelAdapter/AgentTurnResult/多轮 loop 结构/architect-worker 编排 | 架构师已定 |
 
 ---
 
