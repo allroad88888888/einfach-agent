@@ -265,6 +265,7 @@ describe('DeepSeekModelAdapter', () => {
       'skill_read',
       'delegate_agent',
       'browser_action',
+      'save_file',
     ])
     expect(body.messages[1].content).toContain('工具清单（仅摘要，schema 未加载）：')
     expect(body.messages[1].content).toContain('"name":"ask_user_question"')

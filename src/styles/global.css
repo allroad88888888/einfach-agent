@@ -1450,3 +1450,104 @@ input:focus-visible {
     width: 100%;
   }
 }
+
+/* P2 · File System Access — save artifacts + composer attachment */
+.save-artifact {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  background: var(--panel-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-subtle);
+}
+
+.save-artifact-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 8px;
+  letter-spacing: 0.02em;
+}
+
+.save-artifact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.save-artifact-row + .save-artifact-row {
+  margin-top: 8px;
+}
+
+.save-artifact-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.save-artifact-name {
+  font-weight: 600;
+  color: var(--text);
+  word-break: break-all;
+}
+
+.save-artifact-meta {
+  font-size: 12px;
+  color: var(--faint);
+}
+
+.save-artifact-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.save-artifact-error {
+  font-size: 12px;
+  color: var(--danger);
+}
+
+.save-artifact-button {
+  flex-shrink: 0;
+}
+
+.composer-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  margin-bottom: 8px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.composer-attachment-name {
+  word-break: break-all;
+}
+
+.composer-attachment-remove {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+}
+
+.composer-attachment-remove:hover {
+  color: var(--danger);
+}
+
+.composer-attachment-error {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--danger);
+}

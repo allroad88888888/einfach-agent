@@ -26,6 +26,11 @@ const toolSummaries: ToolSummary[] = [
     description: '请求浏览器侧动作，例如渲染问题卡片。',
     runtime: 'browser',
   },
+  {
+    name: 'save_file',
+    description: '准备一份文件内容供用户在浏览器内手势保存到本地（File System Access）。',
+    runtime: 'browser',
+  },
 ]
 
 const toolSchemas: Record<string, Record<string, unknown>> = {
@@ -80,6 +85,15 @@ const toolSchemas: Record<string, Record<string, unknown>> = {
       payload: { type: 'object' },
     },
     required: ['action'],
+  },
+  save_file: {
+    type: 'object',
+    properties: {
+      filename: { type: 'string' },
+      content: { type: 'string' },
+      mimeType: { type: 'string' },
+    },
+    required: ['filename', 'content'],
   },
 }
 

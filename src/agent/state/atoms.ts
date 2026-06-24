@@ -56,6 +56,42 @@ export const timelineBySessionAtom = atom<Record<string, TimelineEvent[]>>({
 
 export const composerDraftAtom = atom<string>('')
 
+// P2.1: artifacts produced by the `save_file` agent tool, staged per session and
+// awaiting a user gesture to land on disk. Deliberately NOT persisted (it does
+// not flow through the persistence snapshot / parseSnapshot — see P1 contract):
+// pending artifacts are transient UI state, not durable session content.
+export interface PendingArtifact {
+  id: string
+  filename: string
+  content: string
+  mimeType?: string
+}
+
+export const pendingArtifactsBySessionAtom = atom<Record<string, PendingArtifact[]>>({})
+
+export const activePendingArtifactsAtom = atom((get) => {
+  const bySession = get(pendingArtifactsBySessionAtom)
+  return bySession[get(activeSessionIdAtom)] ?? []
+})
+
+// PF3: composer file attachments are scoped per session so switching sessions
+// never carries one session's attached file into another's outgoing message.
+// Transient UI state — NOT persisted (same rationale as pendingArtifacts).
+export interface ComposerAttachment {
+  name: string
+  body: string
+  // PF7a: a per-attachment random token used to build an unforgeable boundary
+  // around the file body when it is folded into the outgoing message.
+  nonce: string
+}
+
+export const attachmentsBySessionAtom = atom<Record<string, ComposerAttachment>>({})
+
+export const activeAttachmentAtom = atom((get) => {
+  const bySession = get(attachmentsBySessionAtom)
+  return bySession[get(activeSessionIdAtom)]
+})
+
 // RF5: AskUser answers are scoped per session so concurrent waiting_user runs
 // never cross-contaminate. The backing atom keeps a map keyed by sessionId; the
 // public `pendingQuestionAnswersAtom` is a derived read-only view of the active
@@ -220,6 +256,64 @@ export function getPendingQuestionAnswers(
   return store.getter(pendingQuestionAnswersBySessionAtom)[sessionId] ?? {}
 }
 
+// P2.1: stage a save_file artifact for a session. Returns the generated id.
+// Like the other write-back helpers it no-ops when the session is gone (RF8
+// defense-in-depth), so a late save_file from an in-flight, deleted session
+// never resurrects it.
+export function addPendingArtifact(
+  store: Store,
+  sessionId: string | undefined,
+  artifact: Omit<PendingArtifact, 'id'>,
+): string {
+  const targetSessionId = sessionId ?? store.getter(activeSessionIdAtom)
+  const id = createId('artifact')
+  if (sessionMissing(store, targetSessionId)) return id
+  store.setter(pendingArtifactsBySessionAtom, (prev) => ({
+    ...prev,
+    [targetSessionId]: [...(prev[targetSessionId] ?? []), { ...artifact, id }],
+  }))
+  return id
+}
+
+export function removePendingArtifact(
+  store: Store,
+  artifactId: string,
+  sessionId: string = store.getter(activeSessionIdAtom),
+) {
+  store.setter(pendingArtifactsBySessionAtom, (prev) => {
+    const current = prev[sessionId]
+    if (!current) return prev
+    const next = current.filter((artifact) => artifact.id !== artifactId)
+    if (next.length === current.length) return prev
+    // PF5: drop the empty bucket entirely instead of leaving an empty array.
+    if (next.length === 0) {
+      const without = { ...prev }
+      delete without[sessionId]
+      return without
+    }
+    return { ...prev, [sessionId]: next }
+  })
+}
+
+// PF3: set or clear the per-session composer attachment. Passing `undefined`
+// clears it. No-op when the session is gone (defense-in-depth, RF8 style).
+export function setSessionAttachment(
+  store: Store,
+  sessionId: string,
+  attachment: ComposerAttachment | undefined,
+) {
+  if (sessionMissing(store, sessionId)) return
+  store.setter(attachmentsBySessionAtom, (prev) => {
+    if (!attachment) {
+      if (!(sessionId in prev)) return prev
+      const next = { ...prev }
+      delete next[sessionId]
+      return next
+    }
+    return { ...prev, [sessionId]: attachment }
+  })
+}
+
 export function createSession(store: Store, title = '新会话'): string {
   const id = createId('session')
   const timestamp = now()
@@ -289,6 +383,18 @@ export function deleteSession(store: Store, sessionId: string) {
     return next
   })
   store.setter(pendingQuestionAnswersBySessionAtom, (prev) => {
+    if (!(sessionId in prev)) return prev
+    const next = { ...prev }
+    delete next[sessionId]
+    return next
+  })
+  store.setter(pendingArtifactsBySessionAtom, (prev) => {
+    if (!(sessionId in prev)) return prev
+    const next = { ...prev }
+    delete next[sessionId]
+    return next
+  })
+  store.setter(attachmentsBySessionAtom, (prev) => {
     if (!(sessionId in prev)) return prev
     const next = { ...prev }
     delete next[sessionId]

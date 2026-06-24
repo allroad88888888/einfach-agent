@@ -11,6 +11,7 @@ describe('tool registry', () => {
       'skill_read',
       'delegate_agent',
       'browser_action',
+      'save_file',
     ])
     expect(tools[0]).not.toHaveProperty('inputSchema')
   })
@@ -22,6 +23,16 @@ describe('tool registry', () => {
     expect(tool?.inputSchema).toMatchObject({
       type: 'object',
       required: ['id', 'questions'],
+    })
+  })
+
+  it('registers save_file as a browser runtime tool with a content schema', () => {
+    const tool = loadTool('save_file')
+
+    expect(tool?.runtime).toBe('browser')
+    expect(tool?.inputSchema).toMatchObject({
+      type: 'object',
+      required: ['filename', 'content'],
     })
   })
 

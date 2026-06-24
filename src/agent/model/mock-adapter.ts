@@ -32,6 +32,10 @@ export class MockModelAdapter implements ModelAdapter {
       }
     }
 
+    if (shouldExerciseSaveFileLoop(input.userInput)) {
+      return runSaveFileLoop(input)
+    }
+
     if (shouldExerciseToolLoop(input.userInput)) {
       return runMultiToolLoop(input)
     }
@@ -181,6 +185,40 @@ function runDelayedAskUserLoop(input: AgentTurnInput): AgentTurnResult {
   }
 }
 
+// P2.1 test fixture: exercise the `save_file` agent tool through the real
+// two-stage lazy-tool protocol (request schema -> submit payload). Not a
+// protocol change — only a new behavioural branch keyed off `userInput`.
+function runSaveFileLoop(input: AgentTurnInput): AgentTurnResult {
+  const saveToolLoaded = input.loadedTools.some((tool) => tool.name === 'save_file')
+  const result = input.toolResult
+
+  if (!saveToolLoaded) {
+    return {
+      type: 'tool_request',
+      toolName: 'save_file',
+      reason: 'Need save_file schema before staging the file.',
+    }
+  }
+
+  if (!result || isLoadedSchemaResult(result, 'save_file')) {
+    // PF5: an empty file is a legitimate payload — exercise content === ''.
+    const empty = /save empty|空文件/.test(input.userInput)
+    return {
+      type: 'tool_payload',
+      toolName: 'save_file',
+      payload: empty
+        ? { filename: 'empty.txt', content: '' }
+        : { filename: 'plan.md', content: '# Plan\n\nstep 1', mimeType: 'text/markdown' },
+    }
+  }
+
+  return {
+    type: 'assistant_message',
+    source: 'mock',
+    content: `${input.deterministicAnswer}\n\n已为你准备好 plan.md，请在界面点击保存。`,
+  }
+}
+
 function runMultiToolLoop(input: AgentTurnInput): AgentTurnResult {
   const searchToolLoaded = input.loadedTools.some((tool) => tool.name === 'skill_search')
   const readToolLoaded = input.loadedTools.some((tool) => tool.name === 'skill_read')
@@ -251,6 +289,10 @@ function runMultiToolLoop(input: AgentTurnInput): AgentTurnResult {
 
 function shouldExerciseToolLoop(input: string) {
   return /loop tools|多轮工具|连续工具/.test(input)
+}
+
+function shouldExerciseSaveFileLoop(input: string) {
+  return /save file|save empty|保存文件|保存结果|保存空文件|空文件/.test(input)
 }
 
 function shouldExerciseBatchSchemaLoop(input: string) {

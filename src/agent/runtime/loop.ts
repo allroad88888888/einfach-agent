@@ -7,6 +7,7 @@ import { pickSkillsForInput, readSkill, searchSkills } from '../skills/registry'
 import { listToolSummaries, loadTool } from '../tools/registry'
 import {
   activeSessionIdAtom,
+  addPendingArtifact,
   appendMessage,
   appendTimelineEvent,
   clearPendingQuestionAnswers,
@@ -690,7 +691,7 @@ async function executeRuntimeToolCall({
   const eventId = addTimeline(store, sessionId, runId, 'tool', `call ${toolName}`, formatToolPayloadPreview(payload), 'running')
 
   try {
-    const content = await runRuntimeTool(toolName, payload, context, signal)
+    const content = await runRuntimeTool(store, toolName, payload, context, signal)
     updateTimelineEvent(store, sessionId, eventId, {
       detail: formatToolResultPreview(content),
       status: 'done',
@@ -709,6 +710,7 @@ async function executeRuntimeToolCall({
 }
 
 async function runRuntimeTool(
+  store: Store,
   toolName: string,
   payload: unknown,
   context: AgentContext,
@@ -757,6 +759,31 @@ async function runRuntimeTool(
       signal,
     )
     return JSON.stringify({ artifact })
+  }
+
+  if (toolName === 'save_file') {
+    // P2.1 / §1.5: the tool runs synchronously, never opens a picker, and never
+    // pauses the loop. It only stages the artifact (per-session) so the save UI
+    // can land it on disk inside a real user gesture, then returns a readiness
+    // result JSON that is fed back to the model (§1.12 — no assistant message).
+    // PF5: an empty file (content === '') is legitimate. Require only a
+    // non-empty filename and that content is a string.
+    const filename = typeof args.filename === 'string' ? args.filename.trim() : ''
+    const hasStringContent = typeof args.content === 'string'
+    const content = hasStringContent ? (args.content as string) : ''
+    const mimeType = typeof args.mimeType === 'string' && args.mimeType.trim() ? args.mimeType.trim() : undefined
+    if (!filename || !hasStringContent) {
+      return formatRuntimeToolError('Invalid save_file payload: filename (non-empty) and string content are required.')
+    }
+
+    const artifactId = addPendingArtifact(store, context.sessionId, { filename, content, mimeType })
+    return JSON.stringify({
+      accepted: true,
+      message: '内容已就绪，已在界面提供保存按钮，待用户手势确认后写入本地文件。',
+      filename,
+      bytes: byteLength(content),
+      artifactId,
+    })
   }
 
   if (toolName === 'browser_action') {
@@ -818,6 +845,11 @@ function isQuestionType(value: string): value is AskUserQuestionItem['type'] {
 
 function formatRuntimeToolError(message: string) {
   return JSON.stringify({ error: message })
+}
+
+function byteLength(value: string) {
+  if (typeof TextEncoder !== 'undefined') return new TextEncoder().encode(value).length
+  return value.length
 }
 
 function formatToolPayloadPreview(payload: unknown) {

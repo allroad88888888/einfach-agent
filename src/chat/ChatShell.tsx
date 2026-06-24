@@ -5,6 +5,7 @@ import { AskUserQuestionCard } from './AskUserQuestionCard'
 import { Composer } from './Composer'
 import { MessageList } from './MessageList'
 import { RunActivity } from './RunActivity'
+import { SaveArtifact } from './SaveArtifact'
 import { SessionList } from './SessionList'
 import { ToolTimeline } from './ToolTimeline'
 
@@ -39,6 +40,7 @@ export function ChatShell() {
         </header>
         <MessageList />
         <RunActivity />
+        <SaveArtifact />
         <AskUserQuestionCard />
         <Composer />
       </main>
