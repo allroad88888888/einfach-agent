@@ -44,6 +44,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 const RUN_STATUSES = new Set(['idle', 'running', 'waiting_user', 'done', 'stopped', 'error'])
 const CHAT_ROLES = new Set(['user', 'assistant', 'system'])
+const CHAT_SCAFFOLD_KINDS = new Set(['ask-placeholder', 'answer-echo'])
 const TIMELINE_KINDS = new Set(['agent', 'skill', 'tool', 'question', 'model', 'system'])
 const TIMELINE_STATUSES = new Set(['pending', 'running', 'done', 'error', 'stopped'])
 const QUESTION_TYPES = new Set(['text', 'single-choice', 'multi-choice', 'confirm'])
@@ -98,14 +99,22 @@ function isStringArray(value: unknown): value is string[] {
 
 function isValidMessage(value: unknown): value is ChatMessage {
   if (!isRecord(value)) return false
-  return (
-    typeof value.id === 'string' &&
+  if (
+    typeof value.id !== 'string' ||
     // role must belong to the ChatRole union, not merely be a string.
-    typeof value.role === 'string' &&
-    CHAT_ROLES.has(value.role) &&
-    typeof value.content === 'string' &&
-    typeof value.createdAt === 'number'
-  )
+    typeof value.role !== 'string' ||
+    !CHAT_ROLES.has(value.role) ||
+    typeof value.content !== 'string' ||
+    typeof value.createdAt !== 'number'
+  ) {
+    return false
+  }
+  // MF7: scaffold is optional (absent on every real/old message — back-compat).
+  // When present it must be one of the known kinds, else the message is corrupt.
+  if (value.scaffold !== undefined && !CHAT_SCAFFOLD_KINDS.has(value.scaffold as string)) {
+    return false
+  }
+  return true
 }
 
 function isValidTimelineEvent(value: unknown): value is TimelineEvent {
@@ -145,6 +154,17 @@ function isValidRun(value: unknown): value is AgentRunState {
     return false
   }
   if (value.error !== undefined && typeof value.error !== 'string') return false
+  // MF5: historyEndIndex is optional but, when present, must be a non-negative
+  // integer (the messages-length boundary). A bad value would mis-slice history,
+  // so reject the run (degrades to default per RF4) rather than trust it.
+  if (
+    value.historyEndIndex !== undefined &&
+    (typeof value.historyEndIndex !== 'number' ||
+      !Number.isInteger(value.historyEndIndex) ||
+      value.historyEndIndex < 0)
+  ) {
+    return false
+  }
   return true
 }
 

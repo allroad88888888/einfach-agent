@@ -200,6 +200,31 @@ describe('parseSnapshot (RF4 deep validation)', () => {
     expect(parseSnapshot(good)).not.toBeNull()
   })
 
+  it('MF7: accepts an old message that omits scaffold (back-compat)', () => {
+    const good = makeSnapshot()
+    good.messages['session-a'] = [{ id: 'm1', role: 'user', content: 'hi', createdAt: 1 }]
+    expect(parseSnapshot(good)).not.toBeNull()
+  })
+
+  it('MF7: accepts valid scaffold markers (ask-placeholder / answer-echo)', () => {
+    const good = makeSnapshot()
+    good.messages['session-a'] = [
+      { id: 'm1', role: 'assistant', content: '占位', createdAt: 1, scaffold: 'ask-placeholder' },
+      { id: 'm2', role: 'user', content: '回显', createdAt: 2, scaffold: 'answer-echo' },
+    ]
+    const parsed = parseSnapshot(good)
+    expect(parsed).not.toBeNull()
+    expect(parsed?.messages['session-a'][0].scaffold).toBe('ask-placeholder')
+  })
+
+  it('MF7: rejects a message whose scaffold is not one of the allowed kinds', () => {
+    const bad = makeSnapshot()
+    bad.messages['session-a'] = [
+      { id: 'm1', role: 'user', content: 'x', createdAt: 1, scaffold: 'bogus' as never },
+    ]
+    expect(parseSnapshot(bad)).toBeNull()
+  })
+
   it('rejects a run whose loadedSkills contains a non-string element', () => {
     const bad = makeSnapshot({
       runs: { 'session-a': runWith({ loadedSkills: ['ok', 42] as never }) },
@@ -897,5 +922,81 @@ describe('parseSnapshot rejects sessions whose map key != session.id (RF11b)', (
 
   it('accepts when every session key === its id', () => {
     expect(parseSnapshot(makeSnapshot())).not.toBeNull()
+  })
+})
+
+describe('MF5 historyEndIndex validation + back-compat', () => {
+  it('accepts a run that omits historyEndIndex (old snapshot still restores)', () => {
+    const snapshot = makeSnapshot({ runs: { 'session-a': runWith({ status: 'done' }) } })
+    const parsed = parseSnapshot(snapshot)
+    expect(parsed).not.toBeNull()
+    expect(parsed?.runs['session-a']?.historyEndIndex).toBeUndefined()
+  })
+
+  it('accepts a run with a valid non-negative integer historyEndIndex', () => {
+    const snapshot = makeSnapshot({
+      runs: { 'session-a': runWith({ status: 'done', historyEndIndex: 3 }) },
+    })
+    const parsed = parseSnapshot(snapshot)
+    expect(parsed).not.toBeNull()
+    expect(parsed?.runs['session-a']?.historyEndIndex).toBe(3)
+  })
+
+  it('accepts historyEndIndex === 0', () => {
+    const snapshot = makeSnapshot({
+      runs: { 'session-a': runWith({ status: 'done', historyEndIndex: 0 }) },
+    })
+    expect(parseSnapshot(snapshot)).not.toBeNull()
+  })
+
+  it('rejects a run whose historyEndIndex is negative', () => {
+    const bad = makeSnapshot({
+      runs: { 'session-a': runWith({ historyEndIndex: -1 }) },
+    })
+    expect(parseSnapshot(bad)).toBeNull()
+  })
+
+  it('rejects a run whose historyEndIndex is a non-integer', () => {
+    const bad = makeSnapshot({
+      runs: { 'session-a': runWith({ historyEndIndex: 2.5 }) },
+    })
+    expect(parseSnapshot(bad)).toBeNull()
+  })
+
+  it('rejects a run whose historyEndIndex is not a number', () => {
+    const bad = makeSnapshot({
+      runs: { 'session-a': runWith({ historyEndIndex: 'x' as never }) },
+    })
+    expect(parseSnapshot(bad)).toBeNull()
+  })
+
+  it('restores a waiting_user run carrying historyEndIndex (resume keeps the boundary)', async () => {
+    const store = createStore()
+    const driver = new MemoryDriver()
+    const waitingRun: AgentRunState = {
+      id: 'run-3',
+      sessionId: 'session-a',
+      status: 'waiting_user',
+      input: 'x',
+      loadedSkills: [],
+      loadedTools: [],
+      historyEndIndex: 4,
+      pendingQuestion: {
+        id: 'q1',
+        questions: [{ id: 'q1', text: '继续吗?', type: 'confirm' }],
+      },
+    }
+    await driver.save(
+      makeSnapshot({
+        runs: { 'session-a': waitingRun },
+        sessions: {
+          'session-a': { id: 'session-a', title: '会话 A', status: 'waiting_user', createdAt: 1, updatedAt: 2 },
+        },
+      }),
+    )
+
+    await hydrate(store, driver, { debounceMs: 0 })
+    expect(store.getter(runsBySessionAtom)['session-a']?.status).toBe('waiting_user')
+    expect(store.getter(runsBySessionAtom)['session-a']?.historyEndIndex).toBe(4)
   })
 })

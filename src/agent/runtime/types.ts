@@ -1,3 +1,11 @@
+// Visible-text prefixes the loop uses to COMPOSE the two runtime-scaffolding
+// messages (the AskUser "我需要先确认…" placeholder and the "已补充:" answer echo).
+// MF7: these are for text composition only — scaffolding is now detected via the
+// structural `scaffold` marker, never by matching these prefixes (a real message
+// may legitimately start with the same text).
+export const ASK_USER_PLACEHOLDER_PREFIX = '我需要先确认'
+export const USER_ANSWERS_ECHO_PREFIX = '已补充：'
+
 export type RunStatus = 'idle' | 'running' | 'waiting_user' | 'done' | 'stopped' | 'error'
 
 export type ChatRole = 'user' | 'assistant' | 'system'
@@ -10,12 +18,19 @@ export type ToolRuntime = 'internal' | 'browser' | 'server'
 
 export type QuestionType = 'text' | 'single-choice' | 'multi-choice' | 'confirm'
 
+// MF7: runtime-generated scaffolding messages carry a structural marker so the
+// conversation-context builder can exclude them deterministically — never by
+// sniffing content prefixes (a real user/assistant message may legitimately
+// start with "已补充：" or "我需要先确认"). Absent on all real messages.
+export type ChatScaffoldKind = 'ask-placeholder' | 'answer-echo'
+
 export interface ChatMessage {
   id: string
   role: ChatRole
   content: string
   createdAt: number
   streaming?: boolean
+  scaffold?: ChatScaffoldKind
 }
 
 export interface AgentSession {
@@ -101,6 +116,11 @@ export interface AgentRunState {
   loadedTools: string[]
   pendingQuestion?: AskUserQuestionPayload
   error?: string
+  // M1.3: the messages length captured at run start (before the current-run
+  // user was appended) = the history cutoff for conversation-memory injection.
+  // AskUser resume reuses the same boundary so the whole run stays out of
+  // history. Optional/back-compatible; persistence wiring lands in M3.
+  historyEndIndex?: number
 }
 
 export interface AgentContext {

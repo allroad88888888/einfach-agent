@@ -1,6 +1,7 @@
 import type {
   AgentTurnInput,
   AgentTurnResult,
+  ConversationContext,
   GenerateFinalAnswerInput,
   ModelAdapter,
   ModelAnswer,
@@ -9,7 +10,18 @@ import type {
 export class MockModelAdapter implements ModelAdapter {
   readonly kind = 'mock'
 
+  // M1.5: record the conversationContext seen on each runAgentTurn call so tests
+  // can assert prior-turn history is injected on the first turn and NOT
+  // re-injected on continuation turns (Rm9).
+  readonly conversationContexts: Array<ConversationContext | undefined> = []
+
+  get lastConversationContext(): ConversationContext | undefined {
+    return this.conversationContexts.at(-1)
+  }
+
   async runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResult> {
+    this.conversationContexts.push(input.conversationContext)
+
     if (shouldExerciseDelayedAskUserLoop(input.userInput)) {
       return runDelayedAskUserLoop(input)
     }

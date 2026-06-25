@@ -60,6 +60,18 @@
 - **M1.5** mock-adapter 读取并暴露 `conversationContext`（测试可断言历史注入 + continuation 第二轮不重复注入，codex🟨6）。
 - 测试：边界捕获正确（当前 run 消息不入历史）；eligible 过滤（welcome/system/streaming/空 排除）；buildAgentTurnMessages 首轮含历史、**continuation 第二轮只含 state.messages+tool 不重复追加**；空 context byte 等价现状；ghost 守卫 + deleteSession 清理。
 
+**M1 返工（codex 第 1 轮评审后 · 必修）**：
+- MF1（🟥）eligible welcome 误判：`index===0` 无条件排除会误杀**新建 session 的首条 user**（createSession 初始 messages 空）。改 `index===0 && role==='assistant'` 才排除。补 createSession 后连续两轮回归测试。
+- MF2（🟥 Rm9）continuation 不重复注入有漏洞：`continuation ? undefined` 只挡带 continuation 的轮,但多轮里 tool_request/tool_payload **不一定带 continuation**(mock/JSON fallback 路径)→ 仍重复注入。改用 `turnIndex===0`/`contextConsumed` flag,**只第一个 model turn 传 context**。补多轮断言 `[ctx, undefined, …]`。
+- MF3（🟥）resume 缺 boundary：`run.historyEndIndex` 缺失时 fallback 到当前 messages.length → 把"已补充"/本 run 消息塞进历史。改为**缺 boundary 时保守禁用 memory(不注入历史)**,绝不用当前 length。
+- MF4（🟥）完成轮语义：当前只做 message 级过滤,stopped/error/waiting_user 遗留的 user/AskUser placeholder 会进下一 run 历史。改为**按完成轮 `[user, assistant streaming:false]` 配对构造候选**,排除未完成 run 残留(§0 completed turn)。
+- MF5（🟨）`isValidRun` 校验 `historyEndIndex`（`undefined` 或非负整数）防坏快照;补旧快照缺/坏字段 + waiting_user resume 测试。
+- MF6（🟨,评估纳入）异步写回前加 `currentRun?.id === runId` guard(start-while-running/stop-then-resend);若改动可控则做,否则单列说明。
+
+**M1 返工2（codex 第 2 轮 · MF1–MF6 验证修对,剩 2🟥,架构师分判）**：
+- MF7（🟥 必修）`isRuntimeScaffolding` 的 content 前缀匹配会误删真实用户/assistant 消息(以"已补充："或"我需要先确认"开头)→ 记错历史。改为**结构化标记**:`ChatMessage` 加 `scaffold?: 'ask-placeholder' | 'answer-echo'`;loop 生成占位/回显消息时打标记;`isRuntimeScaffolding` 按标记判定(删 content 前缀依赖);persistence `isValidMessage` 接受可选 scaffold(坏值处理)。补真实前缀内容不丢失 + 历史轮保留测试。
+- MF6 升级版（codex🟥:守卫下沉到所有 write-back helper + wait 对 aborted 立即 reject）→ **架构师评估记 backlog(D-mem-7),不在 M1 做**:既有并发问题(非 M1 引入),且不影响记忆正确性(streaming 半条已被 eligible 排除不进历史;late return 已被终态守卫实证挡住)。
+
 ### M2 · 摘要压缩（把滚出窗口的旧消息压成摘要）
 
 - **M2.1** `ModelAdapter.summarize(input: { previousSummary?: string; messages: {role,content}[]; signal? }): Promise<{ summary: string; source }>`；DeepSeek 实现（结构化 prompt）+ Mock 实现（确定性输出 + **可控失败/延迟**用于测 Rm3，codex🟨2）。
@@ -120,7 +132,7 @@ LLM 一律 mock；跳过红→绿直接交实现 → 返工。
 | 阶段 | 状态 |
 |---|---|
 | 计划 | ✅ 定稿（codex 8🟥+7🟨 消化 + D-mem-2/3/4 拍板）|
-| M1 记忆注入 | 🚧 派活中 |
+| M1 记忆注入 | ✅ 完成 — 3 轮 codex review 收口无阻断(201 绿/build 通过);scaffold 结构化标记;MF6 升级版 + role/kind 校验记 backlog |
 | M2 摘要压缩 | 未开始 |
 | M3 持久化+ask 引导 | 未开始 |
 
@@ -136,6 +148,8 @@ LLM 一律 mock；跳过红→绿直接交实现 → 返工。
 | D-mem-4 | 放宽 model 协议：加 `conversationContext` + `summarize`（限定最小范围，不碰多轮 loop/编排）| ✅ 已确认（feature 必要前提）|
 | D-mem-5 | 防 silent 失真 = 结构化摘要 + 有记忆时 ask 引导（不造探测器），承认不保证语义 | 已定 |
 | D-mem-6 | 阶段顺序 M1(滑窗注入)→M2(压缩)→M3(持久化+引导)；M1 先不压缩，渐进可测 | 架构师已定 |
+| D-mem-7 | **backlog**：run supersede 时把 `isCurrentRun`/`signal.aborted` 守卫下沉到所有 write-back helper(ensureToolLoaded/streamAssistantAnswer/timeline) + `wait` 对已 aborted 立即 reject。既有并发问题、不影响记忆正确性,独立处理 | 架构师评估,记 backlog |
+| D-mem-8 | **遗留🟨**：`isValidMessage` 增加 scaffold↔role 配对校验(`ask-placeholder` 仅 assistant、`answer-echo` 仅 user);仅坏快照角色错配的极边缘场景,codex 判不影响收口 | 记 backlog |
 
 ---
 

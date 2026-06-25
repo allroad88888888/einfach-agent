@@ -50,6 +50,20 @@ export const messagesBySessionAtom = atom<Record<string, ChatMessage[]>>({
 
 export const runsBySessionAtom = atom<Record<string, AgentRunState | undefined>>({})
 
+// Cross-turn conversation memory (summary-buffer). `summarizedUpTo` is the
+// cursor into a session's messages array up to which the raw history has been
+// folded into `summary`. In M1 the cursor stays 0 and summary stays empty
+// (sliding-window injection only; compression lands in M2). NOT persisted in M1
+// — the persistence snapshot wires it up in M3.
+export interface ConversationMemory {
+  summary: string
+  summarizedUpTo: number
+}
+
+const EMPTY_CONVERSATION_MEMORY: ConversationMemory = { summary: '', summarizedUpTo: 0 }
+
+export const conversationMemoryBySessionAtom = atom<Record<string, ConversationMemory>>({})
+
 export const timelineBySessionAtom = atom<Record<string, TimelineEvent[]>>({
   [initialSessionId]: [],
 })
@@ -314,6 +328,27 @@ export function setSessionAttachment(
   })
 }
 
+// M1.1: read a session's conversation memory, defaulting to an empty buffer
+// (summary '', cursor 0) when the session has no entry yet.
+export function getConversationMemory(store: Store, sessionId: string): ConversationMemory {
+  return store.getter(conversationMemoryBySessionAtom)[sessionId] ?? { ...EMPTY_CONVERSATION_MEMORY }
+}
+
+// M1.1: write a session's conversation memory. Ghost guard (RF8 style): no-op
+// when the session no longer exists, so a late summarize write-back never
+// resurrects a deleted session.
+export function setConversationMemory(
+  store: Store,
+  sessionId: string,
+  memory: ConversationMemory,
+) {
+  if (sessionMissing(store, sessionId)) return
+  store.setter(conversationMemoryBySessionAtom, (prev) => ({
+    ...prev,
+    [sessionId]: memory,
+  }))
+}
+
 export function createSession(store: Store, title = '新会话'): string {
   const id = createId('session')
   const timestamp = now()
@@ -395,6 +430,12 @@ export function deleteSession(store: Store, sessionId: string) {
     return next
   })
   store.setter(attachmentsBySessionAtom, (prev) => {
+    if (!(sessionId in prev)) return prev
+    const next = { ...prev }
+    delete next[sessionId]
+    return next
+  })
+  store.setter(conversationMemoryBySessionAtom, (prev) => {
     if (!(sessionId in prev)) return prev
     const next = { ...prev }
     delete next[sessionId]

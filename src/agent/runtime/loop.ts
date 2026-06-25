@@ -13,7 +13,9 @@ import {
   clearPendingQuestionAnswers,
   composerDraftAtom,
   createId,
+  getConversationMemory,
   getPendingQuestionAnswers,
+  messagesBySessionAtom,
   patchRunState,
   runsBySessionAtom,
   sessionsAtom,
@@ -21,6 +23,8 @@ import {
   updateMessage,
   updateTimelineEvent,
 } from '../state/atoms'
+import { buildConversationContext } from './conversation-context'
+import { ASK_USER_PLACEHOLDER_PREFIX, USER_ANSWERS_ECHO_PREFIX } from './types'
 import type {
   AgentContext,
   AgentArtifact,
@@ -39,6 +43,7 @@ import type {
   AgentTurnContinuation,
   AgentTurnResult,
   AgentTurnToolResult,
+  ConversationContext,
   ModelAdapter,
   ModelStreamEvent,
 } from '../model'
@@ -70,6 +75,10 @@ export function startAgentRun(store: Store, input: string) {
   store.setter(composerDraftAtom, '')
   clearPendingQuestionAnswers(store)
 
+  // §0 run boundary: capture the history cutoff BEFORE appending the current-run
+  // user message, so this run's own messages never enter conversation memory.
+  const historyEndIndex = (store.getter(messagesBySessionAtom)[sessionId] ?? []).length
+
   appendMessage(store, sessionId, {
     id: createId('msg'),
     role: 'user',
@@ -84,10 +93,11 @@ export function startAgentRun(store: Store, input: string) {
     input: trimmedInput,
     loadedSkills: [],
     loadedTools: [],
+    historyEndIndex,
   }
 
   setRunState(store, sessionId, run)
-  void executeRun(store, sessionId, runId, trimmedInput)
+  void executeRun(store, sessionId, runId, trimmedInput, undefined, historyEndIndex)
 }
 
 export function continueAgentRunWithAnswers(store: Store) {
@@ -103,6 +113,9 @@ export function continueAgentRunWithAnswers(store: Store) {
     role: 'user',
     content: formatUserAnswers(answers),
     createdAt: Date.now(),
+    // MF7: structural marker so this "已补充:" echo is excluded from history by
+    // marker, never by its content prefix.
+    scaffold: 'answer-echo',
   })
 
   patchRunState(store, sessionId, {
@@ -110,7 +123,9 @@ export function continueAgentRunWithAnswers(store: Store) {
     pendingQuestion: undefined,
   })
 
-  void executeRun(store, sessionId, run.id, run.input, answers)
+  // §0: AskUser resume reuses the SAME run boundary captured at run start, so
+  // the placeholder/"已补充:" messages stay out of conversation memory.
+  void executeRun(store, sessionId, run.id, run.input, answers, run.historyEndIndex)
 }
 
 export function stopActiveRun(store: Store) {
@@ -143,6 +158,7 @@ async function executeRun(
   runId: string,
   input: string,
   answerContext?: AskUserAnswers,
+  historyEndIndex?: number,
 ) {
   const controller = new AbortController()
   activeControllers.set(sessionId, controller)
@@ -240,6 +256,15 @@ async function executeRun(
     })
 
     const modelAdapter = createModelAdapter()
+    // M1.3: construct the conversation context once, before the multi-turn loop.
+    // MF3: pass the boundary straight through — when it is undefined the builder
+    // conservatively injects nothing (never falls back to the current messages
+    // length, which would塞 current-run / "已补充" messages into history).
+    const conversationContext = buildConversationContext(
+      store.getter(messagesBySessionAtom)[sessionId] ?? [],
+      getConversationMemory(store, sessionId),
+      historyEndIndex,
+    )
     const agentTurn = await resolveAgentTurn({
       store,
       sessionId,
@@ -251,6 +276,7 @@ async function executeRun(
       loadedSkills,
       modelAdapter,
       deterministicAnswer: merged.answer,
+      conversationContext,
       signal,
     })
     loadedTools = agentTurn.loadedTools
@@ -258,6 +284,9 @@ async function executeRun(
     // RF2: the session may have been deleted while the model turn ran. Bail out
     // before any write-back so we never resurrect a removed session.
     if (!sessionExists(store, sessionId)) return
+    // MF6: a newer run may have superseded this one while the model turn ran —
+    // never write its result over the new run's state.
+    if (!isCurrentRun(store, sessionId, runId)) return
 
     if (agentTurn.question) {
       addTimeline(
@@ -275,6 +304,9 @@ async function executeRun(
         role: 'assistant',
         content: formatAskUserAssistantMessage(agentTurn.question),
         createdAt: Date.now(),
+        // MF7: structural marker so this AskUser placeholder is excluded from
+        // history by marker, never by its content prefix.
+        scaffold: 'ask-placeholder',
       })
 
       patchRunState(store, sessionId, {
@@ -286,10 +318,15 @@ async function executeRun(
     }
 
     await streamAssistantAnswer(store, sessionId, agentTurn.answer, signal)
+    if (!isCurrentRun(store, sessionId, runId)) return
     patchRunState(store, sessionId, { status: 'done' })
   } catch (error) {
     // RF2: never write back to a session that was deleted mid-run.
     if (!sessionExists(store, sessionId)) return
+    // MF6: a superseded run must not stomp the new run's state. In particular the
+    // AbortError path below (start-while-running / stop-then-resend aborts the
+    // old controller) would otherwise patch the *current* run to 'stopped'.
+    if (!isCurrentRun(store, sessionId, runId)) return
 
     if (isAbortError(error)) {
       patchRunState(store, sessionId, { status: 'stopped' })
@@ -325,6 +362,7 @@ async function resolveAgentTurn({
   loadedSkills,
   modelAdapter,
   deterministicAnswer,
+  conversationContext,
   signal,
 }: {
   store: Store
@@ -337,6 +375,7 @@ async function resolveAgentTurn({
   loadedSkills: LoadedSkill[]
   modelAdapter: ModelAdapter
   deterministicAnswer: string
+  conversationContext?: ConversationContext
   signal: AbortSignal
 }): Promise<{ loadedTools: LoadedTool[]; question?: AskUserQuestionPayload; answer: string }> {
   let runtimeLoadedTools = loadedTools
@@ -365,6 +404,13 @@ async function resolveAgentTurn({
         continuation,
         toolResult,
         toolResults,
+        // MF2 (§0 / Rm9): inject conversation history ONLY into the very first
+        // model turn. Later turns must not re-inject — and `continuation` is an
+        // unreliable signal because some turns (mock paths / DeepSeek JSON
+        // fallback) carry no continuation yet still re-enter the loop. Keying on
+        // turnIndex===0 closes that hole; on the first turn the history enters
+        // state.messages and continuation turns reuse it from there.
+        conversationContext: turnIndex === 0 ? conversationContext : undefined,
         signal,
       },
     )
@@ -648,7 +694,7 @@ function formatLoadedToolResult(tool: LoadedTool) {
 
 function formatAskUserAssistantMessage(question: AskUserQuestionPayload) {
   const title = question.title ? `：${question.title}` : ''
-  return `我需要先确认${title}（${question.questions.length} 个问题）。`
+  return `${ASK_USER_PLACEHOLDER_PREFIX}${title}（${question.questions.length} 个问题）。`
 }
 
 function hasAnswerContext(answerContext: AskUserAnswers | undefined) {
@@ -1065,6 +1111,18 @@ function sessionExists(store: Store, sessionId: string) {
   return Boolean(store.getter(sessionsAtom)[sessionId])
 }
 
+/**
+ * MF6: a session can only host one run at a time. When a new run is started
+ * (start-while-running) or a stopped run is resent, the old run keeps executing
+ * (or its aborted awaits reject) and may try to write back — e.g. the abort
+ * catch does `patchRunState(status:'stopped')`, which is keyed only by
+ * sessionId and would stomp the *new* run. Gate every terminal write-back on the
+ * current run still being this run.
+ */
+function isCurrentRun(store: Store, sessionId: string, runId: string) {
+  return store.getter(runsBySessionAtom)[sessionId]?.id === runId
+}
+
 function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === 'AbortError'
 }
@@ -1075,5 +1133,5 @@ function formatUserAnswers(answers: AskUserAnswers) {
     return `- ${key}: ${String(value)}`
   })
 
-  return ['已补充：', ...lines].join('\n')
+  return [USER_ANSWERS_ECHO_PREFIX, ...lines].join('\n')
 }

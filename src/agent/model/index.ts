@@ -5,6 +5,7 @@ export type {
   AgentTurnContinuation,
   AgentTurnToolPayload,
   AgentTurnToolRequest,
+  ConversationContext,
   GenerateFinalAnswerInput,
   AgentTurnInput,
   AgentTurnResult,

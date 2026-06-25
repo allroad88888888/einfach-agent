@@ -2,9 +2,19 @@ import type {
   AgentArtifact,
   AskUserAnswers,
   AskUserQuestionPayload,
+  ChatRole,
   LoadedTool,
   ToolSummary,
 } from '../runtime/types'
+
+// Cross-turn conversation memory injected into the model's first (non-continuation)
+// turn: an optional summary of compressed older turns plus the raw recent
+// messages. `recentMessages` is the eligible prior-run history (welcome / system
+// / streaming / empty already filtered out). In M1 `summary` is always empty.
+export interface ConversationContext {
+  summary?: string
+  recentMessages: { role: ChatRole; content: string }[]
+}
 
 export type ModelProvider = 'mock' | 'deepseek'
 
@@ -115,6 +125,7 @@ export interface AgentTurnInput {
   continuation?: AgentTurnContinuation
   toolResult?: AgentTurnToolResult
   toolResults?: AgentTurnToolResult[]
+  conversationContext?: ConversationContext
   signal?: AbortSignal
   onStreamEvent?: (event: ModelStreamEvent) => void
 }

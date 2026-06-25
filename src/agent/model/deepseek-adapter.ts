@@ -341,26 +341,45 @@ function buildAgentTurnMessages(input: AgentTurnInput): DeepSeekMessage[] {
   const loadedToolSchemaNames = input.loadedTools.map((tool) => ({
     name: tool.name,
   }))
+
+  const baseSystem = [
+    '你是 Web Agent Runtime 的当前 agent turn。',
+    '你运行在支持 lazy tools 的 Web Agent Runtime 中。',
+    '你可以像普通 assistant 一样直接回复用户。',
+    '“工具清单”只是可用能力名称，不代表这些名称已经是本轮可调用 function。',
+    '只有 API tools 字段中暴露的 function 可以直接调用；未加载 schema 的工具只能通过 request_tool_schema 请求加载。',
+    '如果当前任务需要某个工具能力，而该工具 schema 尚未加载，调用 request_tool_schema 选择工具名并说明原因。',
+    '如果任务需要 runtime 状态变化、暂停等待用户、结构化收集输入、浏览器侧动作或委托执行，选择工具清单中匹配的能力；普通文本只用于不需要工具的回复。',
+    '当用户要求你提问、确认、收集答案、等待选择，或任务本身需要暂停 runtime 等待用户输入时，这属于工具能力选择问题；如果清单里有匹配能力，先按 lazy schema 协议加载并调用它。',
+    '如果用户已经补充答案，本轮必须优先基于这些答案继续执行；不要因为原始用户输入里包含“问我”或“确认”而再次暂停。',
+    '只有出现用户补充答案中完全没有覆盖、且会阻塞继续执行的新信息缺口时，才可以再次选择结构化提问能力。',
+    '普通 assistant 文本不会改变 runtime 状态，也不会暂停运行或执行浏览器动作。',
+    '如果相关工具 schema 已经加载，可以调用对应 function；也可以不调用工具，直接给用户回复。',
+    '不要在普通文本里模拟工具调用、工具参数或工具结果。',
+    '工具名必须来自工具清单。',
+  ].join('\n')
+
+  // M1.4 / §1.8: only append the summary when it is non-empty — when there is no
+  // memory the system text stays byte-identical to the pre-feature baseline.
+  const summary = input.conversationContext?.summary?.trim()
+  const systemContent = summary ? `${baseSystem}\n先前对话摘要：${summary}` : baseSystem
+
+  // M1.4: expand the eligible prior-run history between the system instruction
+  // and the current-run user message. Empty → no extra messages (byte-equivalent).
+  const historyMessages: DeepSeekMessage[] = (input.conversationContext?.recentMessages ?? [])
+    .filter((message) => message.role === 'user' || message.role === 'assistant')
+    .map((message) =>
+      message.role === 'assistant'
+        ? { role: 'assistant', content: message.content }
+        : { role: 'user', content: message.content },
+    )
+
   return [
     {
       role: 'system',
-      content: [
-        '你是 Web Agent Runtime 的当前 agent turn。',
-        '你运行在支持 lazy tools 的 Web Agent Runtime 中。',
-        '你可以像普通 assistant 一样直接回复用户。',
-        '“工具清单”只是可用能力名称，不代表这些名称已经是本轮可调用 function。',
-        '只有 API tools 字段中暴露的 function 可以直接调用；未加载 schema 的工具只能通过 request_tool_schema 请求加载。',
-        '如果当前任务需要某个工具能力，而该工具 schema 尚未加载，调用 request_tool_schema 选择工具名并说明原因。',
-        '如果任务需要 runtime 状态变化、暂停等待用户、结构化收集输入、浏览器侧动作或委托执行，选择工具清单中匹配的能力；普通文本只用于不需要工具的回复。',
-        '当用户要求你提问、确认、收集答案、等待选择，或任务本身需要暂停 runtime 等待用户输入时，这属于工具能力选择问题；如果清单里有匹配能力，先按 lazy schema 协议加载并调用它。',
-        '如果用户已经补充答案，本轮必须优先基于这些答案继续执行；不要因为原始用户输入里包含“问我”或“确认”而再次暂停。',
-        '只有出现用户补充答案中完全没有覆盖、且会阻塞继续执行的新信息缺口时，才可以再次选择结构化提问能力。',
-        '普通 assistant 文本不会改变 runtime 状态，也不会暂停运行或执行浏览器动作。',
-        '如果相关工具 schema 已经加载，可以调用对应 function；也可以不调用工具，直接给用户回复。',
-        '不要在普通文本里模拟工具调用、工具参数或工具结果。',
-        '工具名必须来自工具清单。',
-      ].join('\n'),
+      content: systemContent,
     },
+    ...historyMessages,
     {
       role: 'user',
       content: [
