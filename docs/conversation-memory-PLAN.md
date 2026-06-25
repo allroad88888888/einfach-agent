@@ -33,7 +33,7 @@
 6. **测试先行（TDD）**；LLM 一律 mock 驱动。
 7. **不碰** P1/P2/P3 功能行为（snapshot 仅**可选**扩展一个字段，见 §1.9）。
 8. **空 context 等价现状（回归红线，codex🟥6）**：当 `conversationContext` 无 summary 且无 eligible recentMessages 时，DeepSeek request body 必须与现状 **byte-level 等价**（含 system 文本）——"不确定就 ask"引导**只在有记忆时**注入。必须有对应回归测试。
-9. **snapshot 向后兼容（codex🟥7）**：`conversationMemory` 在 Snapshot 中为**可选字段，缺失默认 `{}`**；旧 v1 快照（无该字段）**不得**被 `parseSnapshot` 丢弃，必须仍能恢复 sessions/messages。
+9. **snapshot 向后兼容（codex🟥7 + M3 codex🟥）**：`conversationMemory` 在 Snapshot 中为**可选字段，缺失默认 `{}`**；旧 v1 快照（无该字段）**不得**被 `parseSnapshot` 丢弃，必须仍能恢复 sessions/messages。**memory 的任何腐化（缺失 / 顶层非 record / 坏项）一律降级到 `{}`（坏项丢弃），绝不因 memory 字段丢整快照**——它是可选增强,优先级低于 sessions/messages。
 
 ---
 
@@ -93,6 +93,12 @@
 - **M3.2 ask 引导（条件注入，§1.8）**：**仅当** conversationContext 有 summary 或 recentMessages 时，system 追加"记忆模糊且影响答案则优先 ask_user_question、勿硬答"。无记忆时不注入。
 - 测试：snapshot round-trip 带 memory；**旧 v1 快照(无 memory)仍恢复 sessions/messages**；corrupt memory 回默认不丢快照；引导 prompt 仅在有记忆时出现、无记忆时 system 等价现状。
 
+**M3 返工（codex 评审后）**：
+- MT1（🟥 契约矛盾）`parseSnapshot` 对 `conversationMemory` 顶层非 record(数组/null)**不得拒整快照**——删掉顶层预拒绝,统一交 `parseConversationMemory`(非 record → `{}` 降级),与 §1.9 一致。改对应测试:数组 memory → 仍恢复 sessions/messages、memory=`{}`。
+- MT2（🟨）`hasMemory` 改用**过滤后 `historyMessages.length > 0`**(非原始 recentMessages.length),防 direct adapter 传 system/空内容时误注入 ask 引导;补 direct adapter 边角测试。
+- MT3（🟨）补**订阅触发保存**测试:hydrate 后 mutate `conversationMemoryBySessionAtom`/`setConversationMemory` → 推 debounce → 断言 `driver.save` 最新 snapshot 含 memory。
+- MT4（🟩 顺手）ask 引导措辞:澄清"若 schema 未加载先按 lazy schema 协议请求加载"。
+
 > **范围红线**：本次**不做**结构化 KV 长期记忆（关键事实单独存库绕开摘要）——留后续（D-mem-3）。本次只在摘要文本里保结构化要点。
 
 ---
@@ -140,7 +146,7 @@ LLM 一律 mock；跳过红→绿直接交实现 → 返工。
 | 计划 | ✅ 定稿（codex 8🟥+7🟨 消化 + D-mem-2/3/4 拍板）|
 | M1 记忆注入 | ✅ 完成 — 3 轮 codex review 收口无阻断(201 绿/build 通过);scaffold 结构化标记;MF6 升级版 + role/kind 校验记 backlog |
 | M2 摘要压缩 | 🔧 实现完成(218 绿,codex 逻辑无阻断) → **收尾 MS1–MS4 健壮性** |
-| M3 持久化+ask 引导 | 未开始 |
+| M3 持久化+ask 引导 | ✅ 完成 — 2 轮 codex review 无阻断(235 绿/build 通过);§1.8/§1.9 双红线守住 |
 
 ---
 
@@ -156,6 +162,7 @@ LLM 一律 mock；跳过红→绿直接交实现 → 返工。
 | D-mem-6 | 阶段顺序 M1(滑窗注入)→M2(压缩)→M3(持久化+引导)；M1 先不压缩，渐进可测 | 架构师已定 |
 | D-mem-7 | **backlog**：run supersede 时把 `isCurrentRun`/`signal.aborted` 守卫下沉到所有 write-back helper(ensureToolLoaded/streamAssistantAnswer/timeline) + `wait` 对已 aborted 立即 reject。既有并发问题、不影响记忆正确性,独立处理 | 架构师评估,记 backlog |
 | D-mem-8 | **遗留🟨**：`isValidMessage` 增加 scaffold↔role 配对校验(`ask-placeholder` 仅 assistant、`answer-echo` 仅 user);仅坏快照角色错配的极边缘场景,codex 判不影响收口 | 记 backlog |
+| D-mem-9 | **遗留🟨**：MT2 边角测试只断言 system/roles,可补整 request body `JSON.stringify` 等价断言(实现已等价,仅测试表达加强) | 记 backlog |
 
 ---
 

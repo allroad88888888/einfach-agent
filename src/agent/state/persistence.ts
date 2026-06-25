@@ -1,10 +1,12 @@
 import type { Store } from '@einfach/core'
 import {
   activeSessionIdAtom,
+  conversationMemoryBySessionAtom,
   messagesBySessionAtom,
   runsBySessionAtom,
   sessionsAtom,
   timelineBySessionAtom,
+  type ConversationMemory,
 } from './atoms'
 import type {
   AgentRunState,
@@ -22,6 +24,9 @@ export interface Snapshot {
   messages: Record<string, ChatMessage[]>
   timeline: Record<string, TimelineEvent[]>
   runs: Record<string, AgentRunState | undefined>
+  // M3.1 (§1.9): conversation memory is an OPTIONAL field. A pre-M3 (v1) snapshot
+  // omits it entirely and MUST still restore — parseSnapshot defaults it to {}.
+  conversationMemory?: Record<string, ConversationMemory>
 }
 
 export interface StorageDriver {
@@ -168,6 +173,38 @@ function isValidRun(value: unknown): value is AgentRunState {
   return true
 }
 
+// M3.1: a conversation-memory entry must be { summary:string, summarizedUpTo:
+// non-negative integer }. A bad entry is dropped (not fatal), so the snapshot is
+// kept even when one session's memory is corrupt.
+function isValidConversationMemory(value: unknown): value is ConversationMemory {
+  if (!isRecord(value)) return false
+  if (typeof value.summary !== 'string') return false
+  if (
+    typeof value.summarizedUpTo !== 'number' ||
+    !Number.isInteger(value.summarizedUpTo) ||
+    value.summarizedUpTo < 0
+  ) {
+    return false
+  }
+  return true
+}
+
+/**
+ * M3.1 (§1.9): parse the optional conversationMemory map. Missing → {} (a v1
+ * snapshot has no such field and must still restore). A present non-record (e.g.
+ * an array) also degrades to {} (MT1: a corrupt optional field never drops the
+ * snapshot). Each entry is deep-validated; bad entries are dropped, never fatal.
+ */
+function parseConversationMemory(value: unknown): Record<string, ConversationMemory> {
+  if (value === undefined) return {}
+  if (!isRecord(value)) return {}
+  const out: Record<string, ConversationMemory> = {}
+  for (const [sessionId, memory] of Object.entries(value)) {
+    if (isValidConversationMemory(memory)) out[sessionId] = memory
+  }
+  return out
+}
+
 function everyEntry(map: Record<string, unknown>, predicate: (value: unknown) => boolean): boolean {
   return Object.values(map).every(predicate)
 }
@@ -221,6 +258,11 @@ export function parseSnapshot(value: unknown): Snapshot | null {
     return null
   }
 
+  // M3.1 (§1.9, MT1): conversationMemory is OPTIONAL and NON-FATAL. Missing, a
+  // top-level non-record (array/null), or corrupt entries ALL degrade to {} via
+  // parseConversationMemory — they must NEVER drop the whole snapshot (a corrupt
+  // optional memory field must not cost the user their sessions/messages).
+
   return {
     version: SNAPSHOT_VERSION,
     activeSessionId: value.activeSessionId,
@@ -228,6 +270,7 @@ export function parseSnapshot(value: unknown): Snapshot | null {
     messages: value.messages as Record<string, ChatMessage[]>,
     timeline: value.timeline as Record<string, TimelineEvent[]>,
     runs: value.runs as Record<string, AgentRunState | undefined>,
+    conversationMemory: parseConversationMemory(value.conversationMemory),
   }
 }
 
@@ -326,6 +369,8 @@ export function captureSnapshot(store: Store): Snapshot {
     messages: store.getter(messagesBySessionAtom),
     timeline: store.getter(timelineBySessionAtom),
     runs: store.getter(runsBySessionAtom),
+    // M3.1: conversation memory is part of the durable snapshot.
+    conversationMemory: store.getter(conversationMemoryBySessionAtom),
   }
 }
 
@@ -390,6 +435,8 @@ function applySnapshot(store: Store, snapshot: Snapshot) {
   store.setter(messagesBySessionAtom, snapshot.messages)
   store.setter(timelineBySessionAtom, snapshot.timeline)
   store.setter(runsBySessionAtom, runs)
+  // M3.1 (§1.9): restore conversation memory; absent in a v1 snapshot → {}.
+  store.setter(conversationMemoryBySessionAtom, snapshot.conversationMemory ?? {})
 
   // Guard: never point activeSessionId at a session that doesn't exist.
   const activeId = snapshot.activeSessionId
@@ -499,6 +546,8 @@ export async function hydrateFromStorage(
     store.sub(timelineBySessionAtom, scheduleSave),
     store.sub(runsBySessionAtom, scheduleSave),
     store.sub(activeSessionIdAtom, scheduleSave),
+    // M3.1: persist conversation-memory updates (summary compression write-backs).
+    store.sub(conversationMemoryBySessionAtom, scheduleSave),
   ]
 
   const onHide = () => flush()

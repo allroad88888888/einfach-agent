@@ -14,6 +14,8 @@ import {
 } from './persistence'
 import {
   activeSessionIdAtom,
+  conversationMemoryBySessionAtom,
+  getConversationMemory,
   messagesBySessionAtom,
   runsBySessionAtom,
   sessionsAtom,
@@ -58,6 +60,10 @@ function makeSnapshot(overrides: Partial<Snapshot> = {}): Snapshot {
     messages: { 'session-a': [message] },
     timeline: { 'session-a': [] },
     runs: {},
+    // M3.1: the canonical post-M3 snapshot carries conversationMemory ({} when
+    // empty), matching what captureSnapshot now emits. A pre-M3 (v1) snapshot is
+    // built by explicitly deleting this field (see the §1.9 back-compat test).
+    conversationMemory: {},
     ...overrides,
   }
 }
@@ -998,5 +1004,121 @@ describe('MF5 historyEndIndex validation + back-compat', () => {
     await hydrate(store, driver, { debounceMs: 0 })
     expect(store.getter(runsBySessionAtom)['session-a']?.status).toBe('waiting_user')
     expect(store.getter(runsBySessionAtom)['session-a']?.historyEndIndex).toBe(4)
+  })
+})
+
+describe('M3.1 conversationMemory persistence (§1.9 back-compat)', () => {
+  it('round-trips conversationMemory through parseSnapshot', () => {
+    const snap = makeSnapshot({
+      conversationMemory: { 'session-a': { summary: '历史摘要', summarizedUpTo: 4 } },
+    } as Partial<Snapshot>)
+    const parsed = parseSnapshot(snap)
+    expect(parsed).not.toBeNull()
+    expect(parsed?.conversationMemory).toEqual({
+      'session-a': { summary: '历史摘要', summarizedUpTo: 4 },
+    })
+  })
+
+  it('§1.9 RED LINE: an OLD v1 snapshot WITHOUT conversationMemory still restores sessions/messages', () => {
+    // A pre-M3 v1 snapshot has NO conversationMemory field at all. It must parse
+    // and default the field to {} — never be dropped.
+    const old = makeSnapshot()
+    delete old.conversationMemory
+    expect('conversationMemory' in old).toBe(false)
+    const parsed = parseSnapshot(old)
+    expect(parsed).not.toBeNull()
+    expect(parsed?.sessions['session-a']).toBeDefined()
+    expect(parsed?.messages['session-a']).toHaveLength(1)
+    expect(parsed?.conversationMemory).toEqual({})
+  })
+
+  it('drops a corrupt memory ENTRY (bad summary / negative cursor / non-object) but keeps the snapshot', () => {
+    const badSummary = makeSnapshot({
+      conversationMemory: {
+        'session-a': { summary: '好', summarizedUpTo: 1 },
+        bad1: { summary: 42 as never, summarizedUpTo: 0 },
+      },
+    } as Partial<Snapshot>)
+    const p1 = parseSnapshot(badSummary)
+    expect(p1).not.toBeNull()
+    expect(p1?.conversationMemory?.['session-a']).toEqual({ summary: '好', summarizedUpTo: 1 })
+    expect(p1?.conversationMemory?.bad1).toBeUndefined()
+
+    const negCursor = makeSnapshot({
+      conversationMemory: { bad: { summary: 'x', summarizedUpTo: -3 } },
+    } as Partial<Snapshot>)
+    expect(parseSnapshot(negCursor)?.conversationMemory).toEqual({})
+
+    const nonInt = makeSnapshot({
+      conversationMemory: { bad: { summary: 'x', summarizedUpTo: 1.5 } },
+    } as Partial<Snapshot>)
+    expect(parseSnapshot(nonInt)?.conversationMemory).toEqual({})
+
+    const nonObject = makeSnapshot({
+      conversationMemory: { bad: 'not-an-object' as never },
+    } as Partial<Snapshot>)
+    expect(parseSnapshot(nonObject)?.conversationMemory).toEqual({})
+  })
+
+  it('MT1 §1.9: a top-level non-record conversationMemory (array/null) degrades to {} — NEVER drops the snapshot', () => {
+    const asArray = makeSnapshot({ conversationMemory: [] as never } as Partial<Snapshot>)
+    const p1 = parseSnapshot(asArray)
+    expect(p1).not.toBeNull()
+    // sessions / messages still recovered; memory degraded to {}.
+    expect(p1?.sessions['session-a']).toBeDefined()
+    expect(p1?.messages['session-a']).toHaveLength(1)
+    expect(p1?.conversationMemory).toEqual({})
+
+    const asNull = makeSnapshot({ conversationMemory: null as never } as Partial<Snapshot>)
+    const p2 = parseSnapshot(asNull)
+    expect(p2).not.toBeNull()
+    expect(p2?.sessions['session-a']).toBeDefined()
+    expect(p2?.conversationMemory).toEqual({})
+  })
+
+  it('captureSnapshot includes conversationMemory and applySnapshot restores it (round-trip via hydrate)', async () => {
+    const store = createStore()
+    const driver = new MemoryDriver()
+    const activeId = store.getter(activeSessionIdAtom)
+
+    store.setter(conversationMemoryBySessionAtom, {
+      [activeId]: { summary: '会话摘要', summarizedUpTo: 2 },
+    })
+    const captured = captureSnapshot(store)
+    expect(captured.conversationMemory?.[activeId]).toEqual({ summary: '会话摘要', summarizedUpTo: 2 })
+
+    await driver.save(captured)
+    // Wipe the live atom, then hydrate from the saved snapshot.
+    store.setter(conversationMemoryBySessionAtom, {})
+    await hydrate(store, driver, { debounceMs: 0 })
+
+    expect(getConversationMemory(store, activeId)).toEqual({ summary: '会话摘要', summarizedUpTo: 2 })
+  })
+
+  it('MT3: a conversationMemory update after hydration debounce-triggers a save carrying it', async () => {
+    vi.useFakeTimers()
+    try {
+      const store = createStore()
+      const driver = new MemoryDriver()
+      const saveSpy = vi.spyOn(driver, 'save')
+
+      await hydrate(store, driver, { debounceMs: 50 })
+      saveSpy.mockClear()
+
+      const sessionId = store.getter(activeSessionIdAtom)
+      store.setter(conversationMemoryBySessionAtom, (prev) => ({
+        ...prev,
+        [sessionId]: { summary: '订阅写入的摘要', summarizedUpTo: 6 },
+      }))
+
+      expect(saveSpy).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(60)
+      expect(saveSpy).toHaveBeenCalledTimes(1)
+
+      const saved = saveSpy.mock.calls[0][0] as Snapshot
+      expect(saved.conversationMemory?.[sessionId]).toEqual({ summary: '订阅写入的摘要', summarizedUpTo: 6 })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

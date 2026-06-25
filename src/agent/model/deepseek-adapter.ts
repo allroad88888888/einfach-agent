@@ -405,20 +405,38 @@ function buildAgentTurnMessages(input: AgentTurnInput): DeepSeekMessage[] {
     '工具名必须来自工具清单。',
   ].join('\n')
 
-  // M1.4 / §1.8: only append the summary when it is non-empty — when there is no
-  // memory the system text stays byte-identical to the pre-feature baseline.
   const summary = input.conversationContext?.summary?.trim()
-  const systemContent = summary ? `${baseSystem}\n先前对话摘要：${summary}` : baseSystem
 
   // M1.4: expand the eligible prior-run history between the system instruction
-  // and the current-run user message. Empty → no extra messages (byte-equivalent).
+  // and the current-run user message. MT2: filter to non-empty user/assistant
+  // messages FIRST so `hasMemory` reflects what actually gets injected — a direct
+  // adapter passing only system/empty entries yields no history (and no guidance).
   const historyMessages: DeepSeekMessage[] = (input.conversationContext?.recentMessages ?? [])
-    .filter((message) => message.role === 'user' || message.role === 'assistant')
+    .filter(
+      (message) =>
+        (message.role === 'user' || message.role === 'assistant') && Boolean(message.content.trim()),
+    )
     .map((message) =>
       message.role === 'assistant'
         ? { role: 'assistant', content: message.content }
         : { role: 'user', content: message.content },
     )
+
+  // M1.4 / §1.8: only append the summary when it is non-empty — when there is no
+  // memory the system text stays byte-identical to the pre-feature baseline.
+  // M3.2 (§1.8): the "不确定就 ask" guidance is injected ONLY when there is memory
+  // (a non-empty summary OR actual injected history). MT2: use the FILTERED
+  // history length so noise-only recentMessages do not falsely trigger it.
+  const hasMemory = Boolean(summary) || historyMessages.length > 0
+  const systemContent = [
+    baseSystem,
+    summary ? `先前对话摘要：${summary}` : undefined,
+    hasMemory
+      ? '当你依赖的历史或摘要信息模糊、缺失，且这会改变你的答案时，优先调用 ask_user_question 向用户澄清，不要基于残缺记忆硬答；若该工具 schema 尚未加载，先按 lazy schema 协议（request_tool_schema）请求加载。'
+      : undefined,
+  ]
+    .filter((line): line is string => Boolean(line))
+    .join('\n')
 
   return [
     {

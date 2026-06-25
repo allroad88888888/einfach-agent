@@ -133,6 +133,92 @@ describe('M1.4 buildAgentTurnMessages injects history first turn', () => {
   })
 })
 
+describe('M3.2 "不确定就 ask" guidance — conditional injection (§1.8 preserved)', () => {
+  const ASK_GUIDANCE_MARKER = 'ask_user_question'
+  const ASK_GUIDANCE_PHRASE = '模糊'
+
+  it('does NOT inject the guidance when there is no memory (byte-equivalent system)', async () => {
+    const baseline = await captureBody(createTurnInput({ userInput: '随便优化一下' }))
+    const withEmpty = await captureBody(
+      createTurnInput({
+        userInput: '随便优化一下',
+        conversationContext: { summary: '', recentMessages: [] },
+      }),
+    )
+    // system byte-identical — no guidance, no summary.
+    expect(withEmpty.messages[0].content).toBe(baseline.messages[0].content)
+    expect(withEmpty.messages[0].content).not.toContain(ASK_GUIDANCE_PHRASE)
+  })
+
+  it('injects the guidance when there is a summary', async () => {
+    const baseline = await captureBody(createTurnInput({ userInput: '随便优化一下' }))
+    const body = await captureBody(
+      createTurnInput({
+        userInput: '随便优化一下',
+        conversationContext: { summary: '用户偏好简洁。', recentMessages: [] },
+      }),
+    )
+    expect(body.messages[0].content).toContain(ASK_GUIDANCE_PHRASE)
+    expect(body.messages[0].content).toContain(ASK_GUIDANCE_MARKER)
+    // original instructions remain the prefix.
+    expect(body.messages[0].content.startsWith(baseline.messages[0].content)).toBe(true)
+  })
+
+  it('injects the guidance when there are recentMessages but no summary', async () => {
+    const body = await captureBody(
+      createTurnInput({
+        userInput: '随便优化一下',
+        conversationContext: {
+          summary: '',
+          recentMessages: [
+            { role: 'user', content: '历史问' },
+            { role: 'assistant', content: '历史答' },
+          ],
+        },
+      }),
+    )
+    expect(body.messages[0].content).toContain(ASK_GUIDANCE_PHRASE)
+    // no summary block, but guidance is present.
+    expect(body.messages[0].content).not.toContain('先前对话摘要')
+  })
+
+  it('MT2: recentMessages with only system/empty entries → NO guidance, byte-equivalent system', async () => {
+    const baseline = await captureBody(createTurnInput({ userInput: '随便优化一下' }))
+    const body = await captureBody(
+      createTurnInput({
+        userInput: '随便优化一下',
+        conversationContext: {
+          summary: '',
+          // none of these survive the user/assistant filter → effectively no history.
+          recentMessages: [
+            { role: 'system', content: '系统行' },
+            { role: 'user', content: '   ' },
+          ],
+        },
+      }),
+    )
+    // hasMemory must be computed AFTER filtering → false → no guidance, no extra
+    // history messages, system byte-identical to the no-memory baseline.
+    expect(body.messages[0].content).toBe(baseline.messages[0].content)
+    expect(body.messages[0].content).not.toContain(ASK_GUIDANCE_PHRASE)
+    expect(body.messages.map((m: { role: string }) => m.role)).toEqual(['system', 'user'])
+  })
+
+  it('MT4: the guidance sentence itself carries the lazy-schema (request_tool_schema) clause', async () => {
+    const body = await captureBody(
+      createTurnInput({
+        userInput: '随便优化一下',
+        conversationContext: { summary: '用户偏好简洁。', recentMessages: [] },
+      }),
+    )
+    const guidanceLine = (body.messages[0].content as string)
+      .split('\n')
+      .find((line) => line.includes(ASK_GUIDANCE_PHRASE))
+    expect(guidanceLine).toBeDefined()
+    expect(guidanceLine).toContain('request_tool_schema')
+  })
+})
+
 describe('Rm9 continuation second turn does not re-inject history', () => {
   it('continuation branch ignores conversationContext (history already in state.messages)', async () => {
     const askUserTool = loadTool('ask_user_question')
