@@ -43,6 +43,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 const RUN_STATUSES = new Set(['idle', 'running', 'waiting_user', 'done', 'stopped', 'error'])
+const CHAT_ROLES = new Set(['user', 'assistant', 'system'])
 const TIMELINE_KINDS = new Set(['agent', 'skill', 'tool', 'question', 'model', 'system'])
 const TIMELINE_STATUSES = new Set(['pending', 'running', 'done', 'error', 'stopped'])
 const QUESTION_TYPES = new Set(['text', 'single-choice', 'multi-choice', 'confirm'])
@@ -86,11 +87,22 @@ function isValidSession(value: unknown): value is AgentSession {
   )
 }
 
+function isStringArray(value: unknown): value is string[] {
+  if (!Array.isArray(value)) return false
+  // Index access (not .every) so sparse-array holes read as undefined and fail.
+  for (let i = 0; i < value.length; i += 1) {
+    if (typeof value[i] !== 'string') return false
+  }
+  return true
+}
+
 function isValidMessage(value: unknown): value is ChatMessage {
   if (!isRecord(value)) return false
   return (
     typeof value.id === 'string' &&
+    // role must belong to the ChatRole union, not merely be a string.
     typeof value.role === 'string' &&
+    CHAT_ROLES.has(value.role) &&
     typeof value.content === 'string' &&
     typeof value.createdAt === 'number'
   )
@@ -120,8 +132,10 @@ function isValidRun(value: unknown): value is AgentRunState {
     typeof value.status !== 'string' ||
     !RUN_STATUSES.has(value.status) ||
     typeof value.input !== 'string' ||
-    !Array.isArray(value.loadedSkills) ||
-    !Array.isArray(value.loadedTools)
+    // loadedSkills/loadedTools must be string[] (each element a string), not
+    // merely arrays — a non-string element would break downstream consumers.
+    !isStringArray(value.loadedSkills) ||
+    !isStringArray(value.loadedTools)
   ) {
     return false
   }

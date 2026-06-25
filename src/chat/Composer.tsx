@@ -30,9 +30,44 @@ function isTextLikeMime(file: File) {
   return type.startsWith('text/') || /(json|xml|javascript|csv|markdown|yaml|x-yaml|x-sh)/.test(type)
 }
 
-// PF1: detect NUL via an escape, never a raw 0x00 in source.
+// L3: binary heuristic. A NUL byte is a hard reject (PF1: matched via an escape,
+// never a raw 0x00 in source). Beyond that, non-text content may carry no NUL, so
+// we also reject when the share of non-printable control chars OR of UTF-8
+// replacement chars (U+FFFD, from undecodable bytes) crosses a threshold. The
+// thresholds are deliberately high so common normal UTF-8 text — Chinese, emoji,
+// punctuation/symbols — passes (those are printable, not control/U+FFFD).
+const CONTROL_RATIO_LIMIT = 0.3
+const REPLACEMENT_RATIO_LIMIT = 0.1
+// Require a minimum absolute count so a single stray control/U+FFFD char in a
+// very short snippet isn't flagged purely by ratio.
+const MIN_SUSPECT_COUNT = 4
+
 function looksBinary(text: string) {
-  return text.includes('\0')
+  if (text.includes('\0')) return true
+  if (text.length === 0) return false
+
+  let control = 0
+  let replacement = 0
+  let total = 0
+  for (const ch of text) {
+    total += 1
+    const code = ch.codePointAt(0) ?? 0
+    if (code === 0xfffd) {
+      replacement += 1
+      // U+FFFD is also non-printable, but count it only in its own bucket.
+      continue
+    }
+    // C0 controls (except common whitespace \t \n \r) and DEL/C1 controls.
+    const isWhitespace = code === 0x09 || code === 0x0a || code === 0x0d
+    if ((code < 0x20 && !isWhitespace) || (code >= 0x7f && code <= 0x9f)) {
+      control += 1
+    }
+  }
+
+  // Ratio over code-point total, gated by a minimum absolute count (short-text guard).
+  const controlBinary = control >= MIN_SUSPECT_COUNT && control / total > CONTROL_RATIO_LIMIT
+  const replacementBinary = replacement >= MIN_SUSPECT_COUNT && replacement / total > REPLACEMENT_RATIO_LIMIT
+  return controlBinary || replacementBinary
 }
 
 // PF2: read at most MAX_ATTACH_BYTES BYTES (not characters). We slice the file by

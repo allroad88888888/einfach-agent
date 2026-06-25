@@ -89,6 +89,59 @@ describe('Composer 附加文件 (open_file UI)', () => {
     expect(screen.queryByText(/weird\.txt/)).not.toBeInTheDocument()
   })
 
+  it('accepts normal UTF-8 text (Chinese + emoji + symbols) — never false-positives as binary', async () => {
+    const user = userEvent.setup()
+    const store = createStore()
+    const body = '你好世界 😀🎉 — “引号” café ½ × ÷ 测试 normal text 123'
+    mockOpenPicker(bytesFile('utf8.txt', utf8(body)))
+
+    renderWithStore(<Composer />, { store })
+
+    await user.click(screen.getByRole('button', { name: /附加文件/ }))
+    // Attached chip shows (not rejected as binary).
+    await waitFor(() => expect(screen.getByText(/utf8\.txt/)).toBeInTheDocument())
+    expect(screen.queryByText(/二进制/)).not.toBeInTheDocument()
+
+    await user.type(screen.getByPlaceholderText('输入任务'), '总结')
+    await user.click(screen.getByRole('button', { name: '发送' }))
+
+    await waitFor(() => expect(store.getter(activeRunAtom)).toBeTruthy())
+    const userMessage = store.getter(activeMessagesAtom).find((m) => m.role === 'user')
+    expect(userMessage?.content).toContain('你好世界')
+    expect(userMessage?.content).toContain('😀')
+  })
+
+  it('rejects content dominated by non-printable control chars even without a NUL byte', async () => {
+    const user = userEvent.setup()
+    const store = createStore()
+    // text/plain so MIME does not pre-reject; mostly control bytes (0x01..0x08),
+    // no NUL — must still be flagged binary by the control-char ratio.
+    const ctrl = Array.from({ length: 200 }, (_, i) => 0x01 + (i % 7))
+    mockOpenPicker(bytesFile('ctrl.txt', [...utf8('hi'), ...ctrl]))
+
+    renderWithStore(<Composer />, { store })
+
+    await user.click(screen.getByRole('button', { name: /附加文件/ }))
+
+    await waitFor(() => expect(screen.getByText(/二进制/)).toBeInTheDocument())
+    expect(screen.queryByText(/ctrl\.txt/)).not.toBeInTheDocument()
+  })
+
+  it('rejects content with a high ratio of UTF-8 replacement chars (decoded garbage)', async () => {
+    const user = userEvent.setup()
+    const store = createStore()
+    // Many lone 0xFF bytes — invalid UTF-8 → each decodes to U+FFFD. No NUL byte.
+    const garbage = Array.from({ length: 200 }, () => 0xff)
+    mockOpenPicker(bytesFile('garbage.txt', [...utf8('ok'), ...garbage]))
+
+    renderWithStore(<Composer />, { store })
+
+    await user.click(screen.getByRole('button', { name: /附加文件/ }))
+
+    await waitFor(() => expect(screen.getByText(/二进制/)).toBeInTheDocument())
+    expect(screen.queryByText(/garbage\.txt/)).not.toBeInTheDocument()
+  })
+
   it('truncates by BYTE budget (not string length) and annotates the original byte size', async () => {
     const user = userEvent.setup()
     const store = createStore()

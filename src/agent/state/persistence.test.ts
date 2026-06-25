@@ -22,15 +22,19 @@ import {
 } from './atoms'
 import type { AgentRunState, AgentSession, ChatMessage } from '../runtime/types'
 
-// Collect teardown fns from hydrateFromStorage so listeners never leak across tests.
-const teardowns: Array<() => void> = []
+// Collect teardown fns from hydrateFromStorage so listeners never leak across
+// tests. teardown is async (returns a Promise that resolves only after the save
+// queue drains, RF10) — await each one so a slow in-flight save fully unbinds.
+const teardowns: Array<() => Promise<void>> = []
 async function hydrate(store: Parameters<typeof hydrateFromStorage>[0], driver: StorageDriver, options?: Parameters<typeof hydrateFromStorage>[2]) {
   const teardown = await hydrateFromStorage(store, driver, options)
   teardowns.push(teardown)
   return teardown
 }
-afterEach(() => {
-  while (teardowns.length) teardowns.pop()?.()
+afterEach(async () => {
+  while (teardowns.length) {
+    await teardowns.pop()?.()
+  }
 })
 
 function makeSnapshot(overrides: Partial<Snapshot> = {}): Snapshot {
@@ -177,6 +181,36 @@ describe('parseSnapshot (RF4 deep validation)', () => {
     const bad = makeSnapshot()
     // @ts-expect-error corrupt entry
     bad.runs['session-a'] = { id: 'r' }
+    expect(parseSnapshot(bad)).toBeNull()
+  })
+
+  it('rejects a message whose role is not a valid ChatRole', () => {
+    const bad = makeSnapshot()
+    // @ts-expect-error corrupt entry: role outside the 'user'|'assistant'|'system' union
+    bad.messages['session-a'] = [{ id: 'm', role: 'robot', content: 'x', createdAt: 1 }]
+    expect(parseSnapshot(bad)).toBeNull()
+  })
+
+  it('accepts assistant / system roles', () => {
+    const good = makeSnapshot()
+    good.messages['session-a'] = [
+      { id: 'm1', role: 'assistant', content: 'x', createdAt: 1 },
+      { id: 'm2', role: 'system', content: 'y', createdAt: 2 },
+    ]
+    expect(parseSnapshot(good)).not.toBeNull()
+  })
+
+  it('rejects a run whose loadedSkills contains a non-string element', () => {
+    const bad = makeSnapshot({
+      runs: { 'session-a': runWith({ loadedSkills: ['ok', 42] as never }) },
+    })
+    expect(parseSnapshot(bad)).toBeNull()
+  })
+
+  it('rejects a run whose loadedTools contains a non-string element', () => {
+    const bad = makeSnapshot({
+      runs: { 'session-a': runWith({ loadedTools: [{} as never] as never }) },
+    })
     expect(parseSnapshot(bad)).toBeNull()
   })
 
@@ -334,7 +368,7 @@ describe('hydrateFromStorage', () => {
 
       const teardown = await hydrateFromStorage(store, driver, { debounceMs: 50 })
       saveSpy.mockClear()
-      teardown()
+      await teardown()
 
       const sessionId = store.getter(activeSessionIdAtom)
       store.setter(messagesBySessionAtom, (prev) => ({
