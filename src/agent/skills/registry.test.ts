@@ -9,6 +9,7 @@ describe('skill registry', () => {
       'ask-user-question',
       'tool-loading',
       'web-chat-agent',
+      'data-visualization',
     ])
     expect(skills[0]).not.toHaveProperty('content')
   })
@@ -17,6 +18,8 @@ describe('skill registry', () => {
     expect(searchSkills('提问').map((skill) => skill.name)).toContain('ask-user-question')
     expect(searchSkills('延迟加载').map((skill) => skill.name)).toContain('tool-loading')
     expect(searchSkills('前端').map((skill) => skill.name)).toContain('web-chat-agent')
+    expect(searchSkills('图表').map((skill) => skill.name)).toContain('data-visualization')
+    expect(searchSkills('echarts').map((skill) => skill.name)).toContain('data-visualization')
   })
 
   it('reads full repository skill content only after selection', () => {

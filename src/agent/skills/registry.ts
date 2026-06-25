@@ -1,5 +1,6 @@
 import type { LoadedSkill, SkillSummary } from '../runtime/types'
 import askUserQuestion from './ask-user-question.md?raw'
+import dataVisualization from './data-visualization.md?raw'
 import toolLoading from './tool-loading.md?raw'
 import webChatAgent from './web-chat-agent.md?raw'
 
@@ -28,6 +29,12 @@ const skillSources: SkillSource[] = [
     description: 'Web 端 chat agent 的最小运行时边界。',
     triggers: ['web agent', 'chat', '前端', 'runtime'],
     content: webChatAgent,
+  },
+  {
+    name: 'data-visualization',
+    description: '需要图表或高亮代码时，在 assistant 回复里用代码围栏让前端 Markdown 自动渲染。',
+    triggers: ['图表', '可视化', 'chart', 'echarts', '绘图', '代码高亮'],
+    content: dataVisualization,
   },
 ]
 

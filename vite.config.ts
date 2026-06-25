@@ -41,5 +41,12 @@ export default defineConfig({
     css: true,
     restoreMocks: true,
     fileParallelism: false,
+    // Test-only: collapse the bare `echarts` specifier (resolved by aliased
+    // ai-components against its own pnpm copy) onto the app's single echarts
+    // module so `vi.mock('echarts')` reliably intercepts it in jsdom (no canvas).
+    // Affects vitest only — `vite build`/dev resolution is untouched.
+    alias: {
+      echarts: `${appNodeModules}/echarts`,
+    },
   },
 })

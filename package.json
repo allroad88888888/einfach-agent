@@ -11,7 +11,7 @@
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
-    "@antv/g2": "^5.4.0",
+    "@antv/g2": "^5.4.8",
     "@einfach/core": "^0.2.18",
     "@einfach/react": "^0.3.25",
     "@vitejs/plugin-react": "^5.1.1",

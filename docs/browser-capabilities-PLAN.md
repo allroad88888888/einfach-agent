@@ -168,8 +168,8 @@
 | baseline | ✅ 已提交 `ddd6a6b` |
 | 计划 | ✅ 定稿（codex 10 阻断项已消化 + D3/D4/D5/D6 已拍板） |
 | P1 持久化 + 多会话 | 🔧 4 轮 codex 评审无阻断(120 绿) → **收口 RF11 → 即 commit** |
-| P2 文件工具 | 🔧 PF1–PF6 已修(146 绿, 2 审无阻断) → **收口 PF7 → commit** |
-| P3 可视化 + 高亮 | 未开始 |
+| P2 文件工具 | ✅ commit `06050a5`（2 轮 codex review, 4→0 阻断）|
+| P3 可视化 + 高亮 | ✅ 完成 — codex review 无阻断；155 绿/build 通过；stalled 残局整顿(恢复 prismjs+g2)，纯 skill 引导无双渲染 |
 
 ---
 
@@ -182,7 +182,7 @@
 | D3 | 可视化复用 ai-components 的 ` ```echarts `（基于 echarts），app 层不接 g2 | ✅ 已确认 |
 | D4 | 文件工具交互 = **方案 (b)**：composer 旁按钮在用户手势内选/存文件，再喂给 agent | ✅ 已确认 |
 | D5 | P3 = **纯 skill 引导**模型输出 ` ```echarts ` 块，无 `render_chart` 工具 | ✅ 已确认 |
-| D6 | **移除** app `package.json` 冗余依赖 `echarts`/`@antv/g2`/`prismjs` | ✅ 已确认 |
+| D6 | ~~移除冗余依赖~~ → **实证撤销（codex 复审后）**：ai-components 的 code index 无条件 import echarts+prism+**G2** 三者，均经 vite alias 进 app 编译图。删 g2 仅因外部 node_modules 偶然存在才 build 绿（脆弱假设）。结论：**三者全部保留**，让 app manifest 完整覆盖 aliased import graph | ✅ 实证定案 |
 | D7 | 新增测试用 devDep `fake-indexeddb` 验证真实 IndexedDbDriver | 架构师已批准（§1.8 测试用） |
 | D8 | §1.5 细化：禁止改 model/runtime 协议，允许 UI/state 受控加法 | 架构师已定（消化自 codex 评审） |
 | D9 | 为多会话正确性，允许在 `loop.ts` **受控导出** `cancelSessionRun(sessionId)` 并将 AskUser 答案作用域化（改 `continueAgentRunWithAnswers` 内部）；仍禁止改 ModelAdapter/AgentTurnResult/多轮 loop 结构/architect-worker 编排 | 架构师已定 |
