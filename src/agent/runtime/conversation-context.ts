@@ -1,6 +1,6 @@
 import type { ConversationContext } from '../model'
 import type { ConversationMemory } from '../state/atoms'
-import type { ChatMessage, ChatRole } from './types'
+import type { ChatMessage } from './types'
 
 /**
  * M1.3: assemble the conversation context injected into the model's first turn.
@@ -42,27 +42,68 @@ export function buildConversationContext(
 
   const start = Math.max(0, memory.summarizedUpTo)
   const end = Math.min(historyEndIndex, messages.length)
+  const turns = collectCompletedTurns(messages, start, end)
 
-  const eligible = messages
-    .slice(start, Math.max(start, end))
-    .filter((message, offset) => {
-      const absoluteIndex = start + offset
-      // MF1: the initial welcome is ONLY an assistant at absolute index 0.
-      if (absoluteIndex === 0 && message.role === 'assistant') return false
-      if (message.role === 'system') return false
-      if (message.streaming) return false
-      if (!message.content.trim()) return false
-      // MF4: runtime scaffolding is never real turn content.
-      if (isRuntimeScaffolding(message)) return false
-      return true
-    })
-
-  const recentMessages = pairCompletedTurns(eligible)
+  const recentMessages = turns.flatMap((turn) => [
+    { role: 'user' as const, content: turn.user.content },
+    { role: 'assistant' as const, content: turn.assistant.content },
+  ])
 
   return {
     summary: memory.summary,
     recentMessages,
   }
+}
+
+/**
+ * A completed `[user, assistant]` turn carrying the original message indices so
+ * the M2 compressor can map turns back to a message-index cursor.
+ */
+export interface CompletedTurn {
+  user: { index: number; content: string }
+  assistant: { index: number; content: string }
+}
+
+/**
+ * Shared eligible-filter (§0/MF1/MF4/MF7) + completed-turn pairing (§0/MF4) over
+ * `messages[start, end)`. Drops the welcome (assistant@index 0 only), system,
+ * streaming, empty and scaffold-marked messages, then greedily pairs
+ * `[user, assistant]`. Lone leftover users / orphan assistants are dropped.
+ * Returns turns with their absolute message indices.
+ */
+export function collectCompletedTurns(
+  messages: ChatMessage[],
+  start: number,
+  end: number,
+): CompletedTurn[] {
+  const turns: CompletedTurn[] = []
+  let pending: { index: number; content: string } | undefined
+  const clampedStart = Math.max(0, start)
+  const clampedEnd = Math.min(end, messages.length)
+
+  for (let index = clampedStart; index < clampedEnd; index += 1) {
+    const message = messages[index]
+    // MF1: the initial welcome is ONLY an assistant at absolute index 0.
+    if (index === 0 && message.role === 'assistant') continue
+    if (message.role === 'system') continue
+    if (message.streaming) continue
+    if (!message.content.trim()) continue
+    // MF4/MF7: runtime scaffolding is never real turn content.
+    if (isRuntimeScaffolding(message)) continue
+
+    if (message.role === 'user') {
+      // A previous pending user without an assistant is an incomplete leftover.
+      pending = { index, content: message.content }
+      continue
+    }
+    if (message.role === 'assistant' && pending) {
+      turns.push({ user: pending, assistant: { index, content: message.content } })
+      pending = undefined
+    }
+    // assistant with no pending user → orphan, dropped.
+  }
+
+  return turns
 }
 
 // MF7: runtime scaffolding (AskUser placeholder / "已补充:" echo) is identified
@@ -71,33 +112,4 @@ export function buildConversationContext(
 // "我需要先确认" carries no marker and must survive as genuine history.
 function isRuntimeScaffolding(message: ChatMessage): boolean {
   return message.scaffold !== undefined
-}
-
-/**
- * MF4: greedily pair `[user, assistant]` into completed turns. A pending user is
- * closed by the next assistant; a second consecutive user means the first was an
- * unpaired leftover (stopped run) and is dropped; an assistant with no pending
- * user is an orphan and dropped; a trailing unpaired user is dropped.
- */
-function pairCompletedTurns(
-  eligible: ChatMessage[],
-): { role: ChatRole; content: string }[] {
-  const turns: { role: ChatRole; content: string }[] = []
-  let pendingUser: ChatMessage | undefined
-
-  for (const message of eligible) {
-    if (message.role === 'user') {
-      // A previous pending user without an assistant is an incomplete leftover.
-      pendingUser = message
-      continue
-    }
-    if (message.role === 'assistant' && pendingUser) {
-      turns.push({ role: 'user', content: pendingUser.content })
-      turns.push({ role: 'assistant', content: message.content })
-      pendingUser = undefined
-    }
-    // assistant with no pending user → orphan, dropped.
-  }
-
-  return turns
 }

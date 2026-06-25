@@ -25,6 +25,21 @@ export interface ModelConfig {
   baseUrl: string
 }
 
+// M2.1: summary-buffer compression. The application folds older completed turns
+// into an incremental structured summary (M2.3). `messages` is the compression
+// window (the turns being folded in); `previousSummary` is the running summary
+// to extend. Returns the new summary text + its source.
+export interface SummarizeInput {
+  previousSummary?: string
+  messages: { role: ChatRole; content: string }[]
+  signal?: AbortSignal
+}
+
+export interface SummarizeResult {
+  source: ModelProvider
+  summary: string
+}
+
 export interface GenerateFinalAnswerInput {
   userInput: string
   answerContext?: AskUserAnswers
@@ -134,4 +149,8 @@ export interface ModelAdapter {
   kind: ModelProvider
   runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResult>
   generateFinalAnswer(input: GenerateFinalAnswerInput): Promise<ModelAnswer>
+  // M2.1: fold older completed turns into an incremental structured summary.
+  // Rejects on failure (except AbortError, which propagates) so the caller can
+  // degrade — it must NOT advance the cursor or write a summary on failure.
+  summarize(input: SummarizeInput): Promise<SummarizeResult>
 }

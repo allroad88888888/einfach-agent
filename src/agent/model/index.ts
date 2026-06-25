@@ -15,6 +15,8 @@ export type {
   ModelConfig,
   ModelProvider,
   ModelStreamEvent,
+  SummarizeInput,
+  SummarizeResult,
 } from './types'
 
 import { getModelConfig } from './config'

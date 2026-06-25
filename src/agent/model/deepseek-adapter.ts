@@ -9,6 +9,8 @@ import type {
   ModelAnswer,
   ModelConfig,
   ModelStreamEvent,
+  SummarizeInput,
+  SummarizeResult,
 } from './types'
 import type { AgentArtifact, AskUserQuestionPayload } from '../runtime/types'
 
@@ -214,6 +216,50 @@ export class DeepSeekModelAdapter implements ModelAdapter {
       const message = error instanceof Error ? error.message : String(error)
       return fallback(input, `DeepSeek API request failed: ${message}.`)
     }
+  }
+
+  // M2.1/M2.3: incremental structured summarization. Unlike the agent-turn /
+  // final-answer paths, this REJECTS on failure (missing key, non-OK, empty,
+  // network) so the caller (runSummaryCompression) degrades by NOT advancing the
+  // cursor. AbortError still propagates unchanged.
+  async summarize(input: SummarizeInput): Promise<SummarizeResult> {
+    if (!this.config.apiKey) {
+      throw new Error('DeepSeek summarize unavailable: missing VITE_DEEPSEEK_API_KEY.')
+    }
+
+    const response = await this.fetchImpl(`${this.config.baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: this.config.model,
+        messages: buildSummarizeMessages(input),
+        thinking: { type: 'enabled' },
+        reasoning_effort: 'high',
+        temperature: 0,
+        stream: true,
+      }),
+      signal: input.signal,
+    }).catch((error) => {
+      if (error instanceof DOMException && error.name === 'AbortError') throw error
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`DeepSeek summarize request failed: ${message}.`)
+    })
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '')
+      throw new Error(`DeepSeek summarize returned ${response.status}${detail ? `: ${detail}` : ''}.`)
+    }
+
+    const message = await readDeepSeekMessage(response)
+    const summary = message?.content?.trim()
+    if (!summary) {
+      throw new Error('DeepSeek summarize returned an empty summary.')
+    }
+
+    return { source: 'deepseek', summary }
   }
 }
 
@@ -725,4 +771,40 @@ function fallback(input: GenerateFinalAnswerInput, error: string): ModelAnswer {
     content: input.deterministicAnswer,
     error,
   }
+}
+
+// M2.3: structured incremental summarization prompt. Forces the four blocks
+// (用户偏好 / 已确认决策 / 关键事实·约束 / 未决事项), drops小寒暄, Chinese, and
+// produces 新摘要 = summarize(previousSummary + 压缩区间).
+function buildSummarizeMessages(input: SummarizeInput) {
+  return [
+    {
+      role: 'system',
+      content: [
+        '你是 Web Agent Runtime 的对话记忆压缩器。',
+        '把“先前摘要”与“新增对话”增量合并成一份结构化中文摘要，供后续 turn 注入。',
+        '必须严格分为以下四个块，按此顺序、用这些标题输出（无内容写“无”）：',
+        '【用户偏好】',
+        '【已确认决策】',
+        '【关键事实·约束】',
+        '【未决事项】',
+        '只保留对后续对话有用的信息：用户偏好、已确认的决策、关键事实与约束、尚未解决的问题。',
+        '丢弃寒暄、客套、重复与无信息量的过程性语句。',
+        '不要编造未出现的信息；不要输出四个块以外的任何内容。',
+      ].join('\n'),
+    },
+    {
+      role: 'user',
+      content: [
+        `先前摘要：\n${input.previousSummary?.trim() ? input.previousSummary.trim() : '（无）'}`,
+        '',
+        '新增对话（需要并入摘要的压缩区间）：',
+        input.messages.length
+          ? input.messages.map((m) => `${m.role === 'user' ? '用户' : '助手'}：${m.content}`).join('\n')
+          : '（无）',
+        '',
+        '请输出合并后的结构化摘要。',
+      ].join('\n'),
+    },
+  ]
 }

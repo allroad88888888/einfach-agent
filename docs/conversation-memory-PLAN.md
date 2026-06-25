@@ -81,6 +81,12 @@
 - **M2.5 降级（措辞修正，codex🟨4）**：`summarize` 失败 → 不推进 cursor、不写 summary；下一次 run 读旧 cursor 后自然把未压原文全部注入。不抛、不阻塞主流程。
 - 测试：满阈值触发 + 压缩后**最近 RAW_WINDOW_TURNS 轮仍以原文注入**；增量摘要入参含 previousSummary；未满阈值不压；非 done 状态不触发；CAS——并发/快连发下 stale 任务被丢弃不覆盖新游标；**delayed summarize + deleteSession** 不复活已删 session（ghost，codex🟨7）；summarize 失败降级 run 仍正常。
 
+**M2 收尾（codex 评审：逻辑无阻断,顺手补健壮性🟨）**：
+- MS1 CAS 同时校验 `current.summary === plan.baseSummary`（baseSummary 已快照,让它真正参与 CAS,挡未来"summary 变 cursor 没变"的覆盖）。
+- MS2 `inFlight` 改 `WeakMap<Store, Set<sessionId>>`（隔离到 store+session,防多 store 测试同名 session 互挡）。
+- MS3 测试补：7/12 轮 + welcome/scaffold/streaming 交错的 cursor 表驱动；summarize 失败后 `buildConversationContext` 仍重注入未压原文。
+- MS4 注释措辞修正（AbortError 静默返回,非 unwind）。
+
 ### M3 · 持久化 + "不确定就 ask" 引导
 
 - **M3.1 snapshot 兼容（§1.9）**：`conversationMemory` 作为 **可选** 字段进 capture/parse/apply/订阅；`parseSnapshot` 缺失 → 默认 `{}`，**旧快照仍恢复**。深校验 memory 结构（坏则该字段回默认，不丢整快照）。
@@ -133,7 +139,7 @@ LLM 一律 mock；跳过红→绿直接交实现 → 返工。
 |---|---|
 | 计划 | ✅ 定稿（codex 8🟥+7🟨 消化 + D-mem-2/3/4 拍板）|
 | M1 记忆注入 | ✅ 完成 — 3 轮 codex review 收口无阻断(201 绿/build 通过);scaffold 结构化标记;MF6 升级版 + role/kind 校验记 backlog |
-| M2 摘要压缩 | 未开始 |
+| M2 摘要压缩 | 🔧 实现完成(218 绿,codex 逻辑无阻断) → **收尾 MS1–MS4 健壮性** |
 | M3 持久化+ask 引导 | 未开始 |
 
 ---

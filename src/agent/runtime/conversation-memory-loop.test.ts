@@ -2,9 +2,18 @@ import { createStore } from '@einfach/core'
 import { waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MockModelAdapter } from '../model/mock-adapter'
-import { activeMessagesAtom, activeRunAtom } from '../state/atoms'
+import {
+  activeMessagesAtom,
+  activeRunAtom,
+  activeSessionIdAtom,
+  conversationMemoryBySessionAtom,
+  getConversationMemory,
+  messagesBySessionAtom,
+} from '../state/atoms'
 import { startAgentRun } from './loop'
+import { RAW_WINDOW_TURNS, SUMMARY_TRIGGER_TURNS } from './summary-trigger'
 import type { AgentTurnInput } from '../model'
+import type { ChatMessage } from './types'
 
 // Capture every conversationContext the loop hands to the model so we can assert
 // the run boundary + eligible filtering end-to-end.
@@ -120,5 +129,72 @@ describe('M1.3 loop injects prior-turn history but never the current run message
     expect(run?.status).toBe('done')
     expect(secondRunStatuses).not.toContain('stopped')
     expect(secondRunStatuses).not.toContain('error')
+  })
+})
+
+describe('M2 summarize fires after a run reaches done', () => {
+  let idSeq = 0
+  const m = (role: ChatMessage['role'], content: string): ChatMessage => ({
+    id: `seed-${idSeq++}`,
+    role,
+    content,
+    createdAt: idSeq,
+  })
+
+  it('compresses old turns and the next run injects summary + the raw RAW_WINDOW', async () => {
+    const store = createStore()
+    const sessionId = store.getter(activeSessionIdAtom)
+
+    // Pre-seed welcome + SUMMARY_TRIGGER_TURNS completed turns so the trigger
+    // fires on the next done.
+    const seeded: ChatMessage[] = [m('assistant', 'Web Agent 已就绪。')]
+    for (let i = 0; i < SUMMARY_TRIGGER_TURNS; i += 1) {
+      seeded.push(m('user', `历史提问 ${i}`))
+      seeded.push(m('assistant', `历史回答 ${i}`))
+    }
+    store.setter(messagesBySessionAtom, (prev) => ({ ...prev, [sessionId]: seeded }))
+
+    seenContexts.length = 0
+    startAgentRun(store, 'hi')
+    await waitFor(() => expect(store.getter(activeRunAtom)?.status).toBe('done'), { timeout: 5000 })
+
+    // The async summarize is fire-and-forget — wait for the memory to update.
+    await waitFor(() => expect(getConversationMemory(store, sessionId).summary).not.toBe(''), {
+      timeout: 5000,
+    })
+
+    const mem = getConversationMemory(store, sessionId)
+    expect(mem.summarizedUpTo).toBeGreaterThan(0)
+
+    // A subsequent run injects the summary + the preserved raw window.
+    seenContexts.length = 0
+    startAgentRun(store, '下一句')
+    await waitFor(() => expect(store.getter(activeRunAtom)?.status).toBe('done'), { timeout: 5000 })
+
+    const ctx = seenContexts[0]
+    expect(ctx?.summary).toBe(mem.summary)
+    // exactly the last RAW_WINDOW_TURNS turns survive as raw recentMessages.
+    expect(ctx?.recentMessages.length).toBe(RAW_WINDOW_TURNS * 2)
+    const serialized = JSON.stringify(ctx?.recentMessages ?? [])
+    expect(serialized).toContain(`历史提问 ${SUMMARY_TRIGGER_TURNS - 1}`)
+    expect(serialized).not.toContain('历史提问 0') // old turn now lives only in the summary
+  })
+
+  it('does not summarize for a non-done outcome (waiting_user)', async () => {
+    const store = createStore()
+    const sessionId = store.getter(activeSessionIdAtom)
+    const seeded: ChatMessage[] = [m('assistant', 'Web Agent 已就绪。')]
+    for (let i = 0; i < SUMMARY_TRIGGER_TURNS; i += 1) {
+      seeded.push(m('user', `历史提问 ${i}`))
+      seeded.push(m('assistant', `历史回答 ${i}`))
+    }
+    store.setter(messagesBySessionAtom, (prev) => ({ ...prev, [sessionId]: seeded }))
+
+    // '随便优化一下' pauses on AskUserQuestion (waiting_user), never done.
+    startAgentRun(store, '随便优化一下')
+    await waitFor(() => expect(store.getter(activeRunAtom)?.status).toBe('waiting_user'), { timeout: 5000 })
+    await new Promise((resolve) => setTimeout(resolve, 100))
+
+    expect(store.getter(conversationMemoryBySessionAtom)[sessionId]?.summary ?? '').toBe('')
   })
 })

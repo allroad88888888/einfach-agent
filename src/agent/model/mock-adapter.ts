@@ -5,6 +5,8 @@ import type {
   GenerateFinalAnswerInput,
   ModelAdapter,
   ModelAnswer,
+  SummarizeInput,
+  SummarizeResult,
 } from './types'
 
 export class MockModelAdapter implements ModelAdapter {
@@ -15,8 +17,27 @@ export class MockModelAdapter implements ModelAdapter {
   // re-injected on continuation turns (Rm9).
   readonly conversationContexts: Array<ConversationContext | undefined> = []
 
+  // M2.1: controllable summarize behaviour for CAS / single-flight / degradation
+  // tests. `summarizeShouldFail` makes summarize reject; `summarizeDelay` injects
+  // an awaitable delay so a concurrent cursor move can race the in-flight task.
+  summarizeShouldFail = false
+  summarizeDelay?: () => Promise<void>
+
   get lastConversationContext(): ConversationContext | undefined {
     return this.conversationContexts.at(-1)
+  }
+
+  // M2.1: deterministic summary — the same input always yields the same output.
+  async summarize(input: SummarizeInput): Promise<SummarizeResult> {
+    if (this.summarizeDelay) await this.summarizeDelay()
+    if (this.summarizeShouldFail) {
+      throw new Error('Mock summarize failure (configured).')
+    }
+    const prev = input.previousSummary?.trim() ? `${input.previousSummary.trim()}\n` : ''
+    const turns = Math.floor(input.messages.length / 2)
+    const lines = input.messages.map((m) => `${m.role}:${m.content}`).join(' | ')
+    const summary = `${prev}【摘要】合并 ${turns} 轮（${input.messages.length} 条）：${lines}`
+    return { source: 'mock', summary }
   }
 
   async runAgentTurn(input: AgentTurnInput): Promise<AgentTurnResult> {

@@ -24,6 +24,7 @@ import {
   updateTimelineEvent,
 } from '../state/atoms'
 import { buildConversationContext } from './conversation-context'
+import { runSummaryCompression } from './summary-trigger'
 import { ASK_USER_PLACEHOLDER_PREFIX, USER_ANSWERS_ECHO_PREFIX } from './types'
 import type {
   AgentContext,
@@ -320,6 +321,13 @@ async function executeRun(
     await streamAssistantAnswer(store, sessionId, agentTurn.answer, signal)
     if (!isCurrentRun(store, sessionId, runId)) return
     patchRunState(store, sessionId, { status: 'done' })
+
+    // M2.2: a run that fully reached `done` (final assistant streaming:false) is
+    // the ONLY trigger for memory compression. Fire-and-forget — never awaited,
+    // never blocks the answer; failures degrade silently inside the trigger.
+    // waiting_user / stopped / error / abort paths never reach here, so they
+    // never trigger.
+    void runSummaryCompression(store, sessionId, modelAdapter)
   } catch (error) {
     // RF2: never write back to a session that was deleted mid-run.
     if (!sessionExists(store, sessionId)) return
