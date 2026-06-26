@@ -9,6 +9,14 @@ import type {
   SummarizeResult,
 } from './types'
 
+// BF1 test seam: a module-level gate the render_card stale-run test uses to hold
+// the mock at the exact moment it is about to submit the render_card payload, so
+// a second run can supersede the first BEFORE the tool writes the card — driving
+// the OLD run straight into the stale guard inside runRuntimeTool. Default: no
+// gate (resolved immediately). Tests set `renderCardPayloadGate` to a pending
+// promise and resolve it after starting the superseding run.
+export const mockRenderCardControl: { renderCardPayloadGate?: Promise<void> } = {}
+
 export class MockModelAdapter implements ModelAdapter {
   readonly kind = 'mock'
 
@@ -67,6 +75,10 @@ export class MockModelAdapter implements ModelAdapter {
 
     if (shouldExerciseSaveFileLoop(input.userInput)) {
       return runSaveFileLoop(input)
+    }
+
+    if (shouldExerciseRenderCardLoop(input.userInput)) {
+      return await runRenderCardLoop(input)
     }
 
     if (shouldExerciseToolLoop(input.userInput)) {
@@ -252,6 +264,103 @@ function runSaveFileLoop(input: AgentTurnInput): AgentTurnResult {
   }
 }
 
+// browser_action test fixture: exercise the render_card tool through the real
+// two-stage lazy-tool protocol (request schema -> submit render_card payload).
+// `notitle` variant submits an unnormalizable payload (missing title) to assert
+// the loop rejects it as error JSON without writing to the atom.
+async function runRenderCardLoop(input: AgentTurnInput): Promise<AgentTurnResult> {
+  const cardToolLoaded = input.loadedTools.some((tool) => tool.name === 'browser_action')
+  const result = input.toolResult
+
+  if (!cardToolLoaded) {
+    return {
+      type: 'tool_request',
+      toolName: 'browser_action',
+      reason: 'Need browser_action schema before rendering the card.',
+    }
+  }
+
+  if (!result || isLoadedSchemaResult(result, 'browser_action')) {
+    const missingTitle = /notitle|无标题|缺标题/.test(input.userInput)
+    const unknownAction = /unknown action|未知动作|非法动作/.test(input.userInput)
+    // BF1: for the stale-run test, hold here (payload ready, not yet submitted)
+    // so the test can start a superseding run before the tool writes the card.
+    if (mockRenderCardControl.renderCardPayloadGate) {
+      await mockRenderCardControl.renderCardPayloadGate
+    }
+    // BG2: exercise an action the tool does not support -> the loop returns error
+    // JSON, no card is written, nothing throws.
+    if (unknownAction) {
+      return {
+        type: 'tool_payload',
+        toolName: 'browser_action',
+        payload: { action: 'open_devtools', payload: { title: '不该被渲染' } },
+      }
+    }
+    return {
+      type: 'tool_payload',
+      toolName: 'browser_action',
+      payload: {
+        action: 'render_card',
+        payload: missingTitle
+          ? { body: '没有标题' }
+          : {
+              title: '部署方案对比',
+              body: '**重点**：稳定性优先',
+              items: ['方案 A', '方案 B'],
+              options: ['选 A', '选 B'],
+            },
+      },
+    }
+  }
+
+  // BG1 (no-API-key path uses this mock!): the final reply MUST reflect the tool
+  // result. Only claim success on accepted:true; on an error result emit a
+  // degraded "未渲染" message — never a false "已渲染卡片". BF2: on success
+  // summarize the card (title + items) for durability after the card is lost.
+  const outcome = parseRenderCardResult(result.content)
+  if (outcome.accepted) {
+    const itemsSummary = outcome.items?.length ? `，要点：${outcome.items.join('、')}` : ''
+    return {
+      type: 'assistant_message',
+      source: 'mock',
+      content: `${input.deterministicAnswer}\n\n已渲染卡片「${outcome.title ?? ''}」${itemsSummary}。`,
+    }
+  }
+  return {
+    type: 'assistant_message',
+    source: 'mock',
+    content: `${input.deterministicAnswer}\n\n抱歉，卡片未能渲染（${outcome.error ?? '未知原因'}），未在界面生成卡片。`,
+  }
+}
+
+// BG1: parse the browser_action result JSON the runtime feeds back. Tolerant —
+// any parse failure or missing accepted flag is treated as "not accepted".
+function parseRenderCardResult(content: string): {
+  accepted: boolean
+  title?: string
+  items?: string[]
+  error?: string
+} {
+  try {
+    const parsed = JSON.parse(content) as {
+      accepted?: unknown
+      error?: unknown
+      card?: { title?: unknown; items?: unknown }
+    }
+    if (parsed.accepted === true) {
+      const title = typeof parsed.card?.title === 'string' ? parsed.card.title : undefined
+      const items = Array.isArray(parsed.card?.items)
+        ? parsed.card.items.filter((entry): entry is string => typeof entry === 'string')
+        : undefined
+      return { accepted: true, title, items }
+    }
+    return { accepted: false, error: typeof parsed.error === 'string' ? parsed.error : undefined }
+  } catch {
+    return { accepted: false }
+  }
+}
+
 function runMultiToolLoop(input: AgentTurnInput): AgentTurnResult {
   const searchToolLoaded = input.loadedTools.some((tool) => tool.name === 'skill_search')
   const readToolLoaded = input.loadedTools.some((tool) => tool.name === 'skill_read')
@@ -326,6 +435,10 @@ function shouldExerciseToolLoop(input: string) {
 
 function shouldExerciseSaveFileLoop(input: string) {
   return /save file|save empty|保存文件|保存结果|保存空文件|空文件/.test(input)
+}
+
+function shouldExerciseRenderCardLoop(input: string) {
+  return /render card|渲染卡片|展示卡片/.test(input)
 }
 
 function shouldExerciseBatchSchemaLoop(input: string) {

@@ -13,6 +13,13 @@ const initialSessionId = 'session-default'
 
 const now = () => Date.now()
 
+// BF5: a single process-wide monotonic counter shared by messages and browser
+// cards. Used purely as a stable tiebreaker for transcript ordering when two
+// items share the same createdAt (Date.now() collisions are common in fast turns
+// and tests). Insertion order across both sources is exactly what we want.
+let insertionSeq = 0
+const nextSeq = () => (insertionSeq += 1)
+
 export const createId = (prefix: string) => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return `${prefix}-${crypto.randomUUID()}`
@@ -88,6 +95,47 @@ export const activePendingArtifactsAtom = atom((get) => {
   return bySession[get(activeSessionIdAtom)] ?? []
 })
 
+// browser_action render_card: cards produced by the `browser_action` agent tool,
+// rendered inline in the conversation transcript (merged with messages by
+// createdAt). Deliberately NOT persisted — a transient UI产物 like
+// pendingArtifacts (D2). Ghost-guarded on write; cleared on deleteSession.
+export interface BrowserCard {
+  id: string
+  createdAt: number
+  title: string
+  body?: string
+  items?: string[]
+  options?: string[]
+  // BF5: monotonic insertion sequence, stamped in addBrowserCard — stable
+  // tiebreaker against messages when createdAt collides.
+  seq?: number
+}
+
+export const browserCardsBySessionAtom = atom<Record<string, BrowserCard[]>>({})
+
+export const activeBrowserCardsAtom = atom((get) => {
+  const bySession = get(browserCardsBySessionAtom)
+  return bySession[get(activeSessionIdAtom)] ?? []
+})
+
+// §1.2 accepted-strict: only return ok (=> the tool may report accepted:true)
+// when the card is REALLY inserted into the atom. Ghost guard (RF8 style): when
+// the session no longer exists, write nothing and return {ok:false}, so a stale
+// / deleted-session run never produces a false success.
+export function addBrowserCard(
+  store: Store,
+  sessionId: string,
+  card: BrowserCard,
+): { ok: false } | { ok: true; cardId: string } {
+  if (sessionMissing(store, sessionId)) return { ok: false }
+  const stamped: BrowserCard = { ...card, seq: nextSeq() }
+  store.setter(browserCardsBySessionAtom, (prev) => ({
+    ...prev,
+    [sessionId]: [...(prev[sessionId] ?? []), stamped],
+  }))
+  return { ok: true, cardId: stamped.id }
+}
+
 // PF3: composer file attachments are scoped per session so switching sessions
 // never carries one session's attached file into another's outgoing message.
 // Transient UI state — NOT persisted (same rationale as pendingArtifacts).
@@ -158,9 +206,12 @@ function sessionMissing(store: Store, sessionId: string) {
 
 export function appendMessage(store: Store, sessionId: string, message: ChatMessage) {
   if (sessionMissing(store, sessionId)) return
+  // BF5: stamp a monotonic insertion sequence (unless the caller already set one)
+  // so transcript ordering is stable on createdAt ties.
+  const stamped: ChatMessage = message.seq === undefined ? { ...message, seq: nextSeq() } : message
   store.setter(messagesBySessionAtom, (prev) => ({
     ...prev,
-    [sessionId]: [...(prev[sessionId] ?? []), message],
+    [sessionId]: [...(prev[sessionId] ?? []), stamped],
   }))
   touchSession(store, sessionId)
 }
@@ -436,6 +487,12 @@ export function deleteSession(store: Store, sessionId: string) {
     return next
   })
   store.setter(conversationMemoryBySessionAtom, (prev) => {
+    if (!(sessionId in prev)) return prev
+    const next = { ...prev }
+    delete next[sessionId]
+    return next
+  })
+  store.setter(browserCardsBySessionAtom, (prev) => {
     if (!(sessionId in prev)) return prev
     const next = { ...prev }
     delete next[sessionId]

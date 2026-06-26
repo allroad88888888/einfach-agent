@@ -7,6 +7,7 @@ import { pickSkillsForInput, readSkill, searchSkills } from '../skills/registry'
 import { listToolSummaries, loadTool } from '../tools/registry'
 import {
   activeSessionIdAtom,
+  addBrowserCard,
   addPendingArtifact,
   appendMessage,
   appendTimelineEvent,
@@ -22,6 +23,7 @@ import {
   setRunState,
   updateMessage,
   updateTimelineEvent,
+  type BrowserCard,
 } from '../state/atoms'
 import { buildConversationContext } from './conversation-context'
 import { runSummaryCompression } from './summary-trigger'
@@ -546,7 +548,9 @@ async function resolveAgentTurn({
 
           const question = normalizeAskUserQuestionPayload(call.payload)
           if (question) {
-            runtimeLoadedTools = await ensureToolLoaded(store, sessionId, runId, runtimeLoadedTools, 'browser_action', signal)
+            // BF3: AskUserQuestion no longer pre-loads browser_action. That was a
+            // remnant of the old "render question card" link; browser_action now
+            // only does render_card and is unrelated to the AskUser pause.
             return {
               loadedTools: runtimeLoadedTools,
               question,
@@ -650,7 +654,7 @@ async function resolveAgentTurn({
         continue
       }
 
-      runtimeLoadedTools = await ensureToolLoaded(store, sessionId, runId, runtimeLoadedTools, 'browser_action', signal)
+      // BF3: see above — no browser_action pre-load on the AskUser pause path.
       return {
         loadedTools: runtimeLoadedTools,
         question,
@@ -841,15 +845,57 @@ async function runRuntimeTool(
   }
 
   if (toolName === 'browser_action') {
+    // §1.4 normalize → §1.3 stale guard → §1.2 accepted-strict. The ONLY action
+    // is render_card; anything else is rejected. We never appendMessage here
+    // (§1.5) — the model's next turn produces the final text.
     const action = typeof args.action === 'string' ? args.action : undefined
-    return JSON.stringify({
-      accepted: Boolean(action),
-      action,
-      payload: args.payload ?? null,
-    })
+    if (action !== 'render_card') {
+      return formatRuntimeToolError(`Unsupported browser_action: ${action ?? '(missing)'}`)
+    }
+
+    const card = normalizeBrowserCardPayload(args.payload)
+    if (!card) {
+      return formatRuntimeToolError('Invalid browser_action payload: title (non-empty string) is required.')
+    }
+
+    // §1.3 stale-run guard: refuse to write the card for a superseded / aborted /
+    // deleted run, so a stale run never produces a false accepted:true.
+    if (
+      signal.aborted ||
+      !sessionExists(store, context.sessionId) ||
+      !isCurrentRun(store, context.sessionId, context.runId)
+    ) {
+      return formatRuntimeToolError('browser_action skipped: run is no longer current.')
+    }
+
+    const result = addBrowserCard(store, context.sessionId, card)
+    if (!result.ok) {
+      return formatRuntimeToolError('browser_action skipped: card was not accepted.')
+    }
+    return formatRenderCardResult(result.cardId, card)
   }
 
   return formatRuntimeToolError(`Unsupported runtime tool: ${toolName}`)
+}
+
+// BF2/BG3: echo the rendered card content back to the model (title/body/items/
+// options) and instruct it to summarize the card in its final reply — the card
+// is not persisted (D2), so the final assistant text is the only durable record.
+// Exported so a unit test can assert the full echo directly (not via the 120-char
+// timeline preview).
+export function formatRenderCardResult(cardId: string, card: BrowserCard): string {
+  return JSON.stringify({
+    accepted: true,
+    action: 'render_card',
+    cardId,
+    card: {
+      title: card.title,
+      body: card.body,
+      items: card.items,
+      options: card.options,
+    },
+    note: '卡片已渲染到对话流；请在最终回复中用文字概括卡片要点（标题/条目/选项），以便卡片丢失后仍可追溯。',
+  })
 }
 
 function normalizeAskUserQuestionPayload(payload: unknown): AskUserQuestionPayload | undefined {
@@ -883,6 +929,38 @@ function normalizeAskUserQuestionPayload(payload: unknown): AskUserQuestionPaylo
     title: typeof value.title === 'string' ? value.title : undefined,
     questions,
   }
+}
+
+// §1.4 strict normalize: title must be a non-empty string; body optional string;
+// items/options keep only non-empty strings and the field is dropped when empty.
+// Returns undefined (=> error JSON, no atom write) when it cannot be normalized.
+export function normalizeBrowserCardPayload(payload: unknown): BrowserCard | undefined {
+  const value = asRecord(payload)
+  const title = typeof value.title === 'string' ? value.title.trim() : ''
+  if (!title) return undefined
+
+  const card: BrowserCard = {
+    id: createId('card'),
+    createdAt: Date.now(),
+    title,
+  }
+
+  if (typeof value.body === 'string' && value.body.trim()) {
+    card.body = value.body
+  }
+
+  const items = normalizeStringList(value.items)
+  if (items.length) card.items = items
+
+  const options = normalizeStringList(value.options)
+  if (options.length) card.options = options
+
+  return card
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0)
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

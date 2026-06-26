@@ -15,7 +15,7 @@ triggers:
 工具分三类：
 
 - internal：runtime 内建动作，例如 AskUserQuestion。
-- browser：由前端执行，例如展示问题卡片或停止 run。
+- browser：由前端执行，例如把信息卡片渲染到对话流（browser_action 的 render_card）。
 - server：后端工具，MVP 暂不启用。
 
 本项目第一版不接真实外部工具。

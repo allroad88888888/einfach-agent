@@ -54,7 +54,9 @@ function createQuestionStore() {
     status: 'waiting_user',
     input: '随便优化一下',
     loadedSkills: ['web-chat-agent'],
-    loadedTools: ['delegate_agent', 'skill_search', 'skill_read', 'ask_user_question', 'browser_action'],
+    // BG4: AskUserQuestion no longer pre-loads browser_action (BF3 removed that
+    // old render-question remnant), so the fixture must not seed it either.
+    loadedTools: ['delegate_agent', 'skill_search', 'skill_read', 'ask_user_question'],
     pendingQuestion: question,
   })
   return store

@@ -1551,3 +1551,47 @@ input:focus-visible {
   font-size: 12px;
   color: var(--danger);
 }
+
+/* browser_action render_card: inline transcript card */
+.browser-card {
+  align-self: flex-start;
+  max-width: 80%;
+  margin: 4px 0;
+  padding: 14px 16px;
+  background: var(--panel-soft);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-subtle);
+}
+
+.browser-card-title {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.browser-card-body {
+  color: var(--text-soft);
+  font-size: 14px;
+}
+
+.browser-card-items {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  color: var(--text-soft);
+}
+
+.browser-card-item {
+  margin: 2px 0;
+}
+
+.browser-card-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.browser-card-option {
+  flex-shrink: 0;
+}

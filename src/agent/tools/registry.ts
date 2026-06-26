@@ -23,7 +23,7 @@ const toolSummaries: ToolSummary[] = [
   },
   {
     name: 'browser_action',
-    description: '请求浏览器侧动作，例如渲染问题卡片。',
+    description: '渲染信息卡片到对话流（render_card）。',
     runtime: 'browser',
   },
   {
@@ -81,10 +81,19 @@ const toolSchemas: Record<string, Record<string, unknown>> = {
   browser_action: {
     type: 'object',
     properties: {
-      action: { enum: ['render_question', 'show_timeline', 'stop_run'] },
-      payload: { type: 'object' },
+      action: { enum: ['render_card'] },
+      payload: {
+        type: 'object',
+        properties: {
+          title: { type: 'string' },
+          body: { type: 'string' },
+          items: { type: 'array', items: { type: 'string' } },
+          options: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['title'],
+      },
     },
-    required: ['action'],
+    required: ['action', 'payload'],
   },
   save_file: {
     type: 'object',

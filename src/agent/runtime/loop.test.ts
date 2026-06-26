@@ -128,12 +128,13 @@ describe('agent runtime loop', () => {
 
     expect(run?.pendingQuestion?.title).toBe('延迟确认')
     expect(run?.pendingQuestion?.questions.map((question) => question.id)).toEqual(['target_domain', 'planning_depth'])
+    // BF3: AskUserQuestion no longer pre-loads browser_action (old render-question
+    // remnant removed), so the loaded set ends at ask_user_question.
     expect(run?.loadedTools).toEqual([
       'delegate_agent',
       'skill_search',
       'skill_read',
       'ask_user_question',
-      'browser_action',
     ])
     expect(timeline.filter((event) => event.title === 'ModelAgentTurn').map((event) => event.detail)).toEqual([
       'request skill_search: Need skill_search schema before gathering context.',
@@ -144,8 +145,10 @@ describe('agent runtime loop', () => {
       'payload ask_user_question: 2 question(s)',
     ])
     expect(timeline.map((event) => event.title)).toEqual(
-      expect.arrayContaining(['call skill_search', 'call skill_read', 'load ask_user_question', 'load browser_action']),
+      expect.arrayContaining(['call skill_search', 'call skill_read', 'load ask_user_question']),
     )
+    // BF3: browser_action is no longer loaded on the AskUser path.
+    expect(timeline.some((event) => event.title === 'load browser_action')).toBe(false)
 
     setPendingQuestionAnswer(store, 'target_domain', 'TypeScript 类型系统')
     setPendingQuestionAnswer(store, 'planning_depth', '包含接口/数据库映射')
@@ -178,12 +181,12 @@ describe('agent runtime loop', () => {
       'focus_modules',
       'allow_assumptions',
     ])
+    // BF3: AskUserQuestion no longer pre-loads browser_action.
     expect(store.getter(activeRunAtom)?.loadedTools).toEqual([
       'delegate_agent',
       'skill_search',
       'skill_read',
       'ask_user_question',
-      'browser_action',
     ])
     expect(store.getter(activeTimelineAtom).filter((event) => event.title === 'ModelAgentTurn').map((event) => event.detail)).toEqual([
       'request ask_user_question: The request is ambiguous and needs user decisions.',

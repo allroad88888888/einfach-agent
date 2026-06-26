@@ -31,6 +31,12 @@ export interface ChatMessage {
   createdAt: number
   streaming?: boolean
   scaffold?: ChatScaffoldKind
+  // BF5: monotonic insertion sequence (stamped at append time) used as a stable
+  // tiebreaker when merging messages + browser cards by createdAt in the
+  // transcript, so a card lands at its real insertion position on Date.now()
+  // collisions. Optional/back-compatible — a legacy item without `seq` falls back
+  // to its array index in MessageList (BG6).
+  seq?: number
 }
 
 export interface AgentSession {

@@ -116,8 +116,7 @@ flowchart TD
   Q --> S[Runtime loads ask_user_question schema]
   S --> M2[Model receives schema]
   M2 --> AQ[ask_user_question payload]
-  AQ --> B[Runtime loads browser_action]
-  B --> W[waiting_user]
+  AQ --> W[waiting_user]
   W --> UI[AskUserQuestionCard]
 ```
 
