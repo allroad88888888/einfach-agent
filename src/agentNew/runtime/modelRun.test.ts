@@ -9,7 +9,7 @@ import { rootStore, sessionsAtom, resetRootStore } from '../state/rootStore'
 import { getSessionStore, resetSessionStores } from '../state/sessionStore'
 import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
 import { setRun } from '../state/sessionWriters'
-import { toolActivityAtom } from '../state/transientAtoms'
+import { toolActivityAtom, alwaysAllowedToolsAtom } from '../state/transientAtoms'
 import { toolRegistry } from '../tools/registry'
 import type { ModelSettings } from '../state/core.type'
 import { runSession, runToolLoop } from './modelRun'
@@ -442,6 +442,130 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     // 迟到的最终 assistant 未写回。
     expect(items.some((it) => it.item.role === 'assistant' && 'content' in it.item && it.item.content === '迟到的答案')).toBe(false)
     expect(getSessionStore('t5').store.getter(checkpointsAtom)).toHaveLength(0)
+  })
+})
+
+describe('危险工具确认门（S4-B）', () => {
+  it('危险工具（write_file）：暂停 waiting_confirmation + pendingToolConfirmation，循环停止、不执行、不回填', async () => {
+    seedSession('d1', { vendor: 'deepseek', model: 'x' })
+    const args = { path: 'a.txt', content: 'hi' }
+    const { fetchImpl, count } = seqFetch([
+      () => toolCallsResponse([{ name: 'write_file', args, id: 'w1' }]),
+      () => jsonResponse('不该到这'),
+    ])
+
+    await runSession('d1', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
+
+    const store = getSessionStore('d1').store
+    const run = store.getter(runAtom)
+    expect(run?.status).toBe('waiting_confirmation')
+    expect(run?.pendingToolConfirmation).toEqual({ callId: 'w1', toolName: 'write_file', args })
+    // 循环停止：只发起一次 model 请求（没续跑到第二个响应）。
+    expect(count()).toBe(1)
+    // assistant(tool_calls) 已 append；危险工具的 ToolItem 未回填（留给 confirmTool）。
+    const items = store.getter(itemsAtom)
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
+    expect(items.some((it) => it.item.role === 'tool')).toBe(false)
+    // 暂停不算收尾：不 commit checkpoint。
+    expect(store.getter(checkpointsAtom)).toHaveLength(0)
+  })
+
+  it('只读 server 工具（read_file）：不触发确认，正常执行并续跑到 done', async () => {
+    seedSession('d2', { vendor: 'deepseek', model: 'x' })
+    const { fetchImpl, count } = seqFetch([
+      () => toolCallsResponse([{ name: 'read_file', args: { path: 'a.txt' }, id: 'r1' }]),
+      () => jsonResponse('读完了'),
+    ])
+
+    await runSession('d2', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
+
+    const store = getSessionStore('d2').store
+    // 没有停在 waiting_confirmation，一路跑到 done。
+    expect(store.getter(runAtom)?.status).toBe('done')
+    expect(count()).toBe(2)
+    // read_file 已执行并回填了 ToolItem（tool_call_id=r1）。
+    const items = store.getter(itemsAtom)
+    expect(items.some((it) => it.item.role === 'tool' && it.item.tool_call_id === 'r1')).toBe(true)
+  })
+
+  it('「本 session 一律允许」命中：危险工具不再确认，直接执行续跑', async () => {
+    seedSession('d3', { vendor: 'deepseek', model: 'x' })
+    // 预置：本 session 已一律允许 write_file。
+    getSessionStore('d3').store.setter(alwaysAllowedToolsAtom, ['write_file'])
+    const { fetchImpl, count } = seqFetch([
+      () => toolCallsResponse([{ name: 'write_file', args: { path: 'a.txt', content: 'x' }, id: 'w1' }]),
+      () => jsonResponse('写完了'),
+    ])
+
+    await runSession('d3', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
+
+    const store = getSessionStore('d3').store
+    expect(store.getter(runAtom)?.status).toBe('done')
+    expect(count()).toBe(2)
+    // write_file 已执行并回填了 ToolItem（未暂停确认）。
+    const items = store.getter(itemsAtom)
+    expect(items.some((it) => it.item.role === 'tool' && it.item.tool_call_id === 'w1')).toBe(true)
+  })
+
+  it('危险工具与其它 tool_call 并列：先补齐其它工具 result 再暂停确认（不 orphan）', async () => {
+    seedSession('d4', { vendor: 'deepseek', model: 'x' })
+    const { fetchImpl, count } = seqFetch([
+      () =>
+        toolCallsResponse([
+          { name: 'request_tool_schema', args: { toolName: 'skill_search' }, id: 'ts1' },
+          { name: 'write_file', args: { path: 'a.txt', content: 'x' }, id: 'w1' },
+        ]),
+      () => jsonResponse('不该到这'),
+    ])
+
+    await runSession('d4', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
+
+    const store = getSessionStore('d4').store
+    expect(store.getter(runAtom)?.status).toBe('waiting_confirmation')
+    expect(count()).toBe(1)
+    const items = store.getter(itemsAtom)
+    // user → assistant(tool_calls) → tool(request_tool_schema 的 result)。write_file 的 result 留给确认恢复。
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool'])
+    const toolItem = items[2].item
+    if (toolItem.role !== 'tool') throw new Error('意外的条目形状')
+    expect(toolItem.tool_call_id).toBe('ts1')
+    expect(items.some((it) => it.item.role === 'tool' && it.item.tool_call_id === 'w1')).toBe(false)
+  })
+
+  it('resumeToolCall：确认恢复入口先执行被确认工具、回填 result，再续跑到 done', async () => {
+    seedSession('d5', { vendor: 'deepseek', model: 'x' })
+    const store = getSessionStore('d5').store
+    // 预置暂停前状态：user + assistant(tool_calls:[write_file w1])（w1 result 特意留空）+ pending run。
+    store.setter(itemsAtom, [
+      { id: 'u1', createdAt: 1, item: { role: 'user', content: 'hi' } },
+      {
+        id: 'a1',
+        createdAt: 2,
+        item: {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{ id: 'w1', type: 'function', function: { name: 'write_file', arguments: '{}' } }],
+        },
+      },
+    ])
+    setRun('d5', { runId: 'R1', status: 'running' })
+    const fetchImpl: typeof fetch = async () => jsonResponse('最终答案')
+
+    await runToolLoop('d5', 'R1', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+      resumeToolCall: { callId: 'w1', toolName: 'write_file', args: { path: 'a.txt', content: 'x' } },
+    })
+
+    const items = store.getter(itemsAtom)
+    // user → assistant(tool_calls) → tool(w1 的 result，恢复入口执行后回填) → assistant(final)。
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
+    const toolItem = items[2].item
+    if (toolItem.role !== 'tool') throw new Error('意外的条目形状')
+    expect(toolItem.tool_call_id).toBe('w1')
+    expect(store.getter(runAtom)?.status).toBe('done')
+    expect(store.getter(checkpointsAtom)).toHaveLength(1)
   })
 })
 

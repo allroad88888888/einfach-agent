@@ -7,6 +7,7 @@ import {
   pendingArtifactsAtom,
   browserCardsAtom,
   pendingQuestionAnswersAtom,
+  alwaysAllowedToolsAtom,
   addPendingArtifact,
   removePendingArtifact,
   addBrowserCard,
@@ -14,6 +15,8 @@ import {
   setPendingQuestionAnswer,
   getPendingQuestionAnswers,
   clearPendingQuestionAnswers,
+  addAlwaysAllowedTool,
+  isToolAlwaysAllowed,
   type PendingArtifact,
   type BrowserCard,
 } from './transientAtoms'
@@ -245,5 +248,26 @@ describe('pendingQuestionAnswers —— add → get → clear round-trip', () =>
     setPendingQuestionAnswer('s2', 'q1', 'two')
     expect(getPendingQuestionAnswers('s1')).toEqual({ q1: 'one' })
     expect(getPendingQuestionAnswers('s2')).toEqual({ q1: 'two' })
+  })
+})
+
+describe('alwaysAllowedTools（S4-B 本 session 一律允许的危险工具）', () => {
+  it('addAlwaysAllowedTool：写入 + 去重；isToolAlwaysAllowed 命中', () => {
+    seedSession('s1')
+    expect(isToolAlwaysAllowed('s1', 'write_file')).toBe(false)
+
+    addAlwaysAllowedTool('s1', 'write_file')
+    addAlwaysAllowedTool('s1', 'write_file') // 去重
+    addAlwaysAllowedTool('s1', 'shell_macos')
+
+    expect(getSessionStore('s1').store.getter(alwaysAllowedToolsAtom)).toEqual(['write_file', 'shell_macos'])
+    expect(isToolAlwaysAllowed('s1', 'write_file')).toBe(true)
+    expect(isToolAlwaysAllowed('s1', 'apply_patch')).toBe(false)
+  })
+
+  it('未登记会话 → addAlwaysAllowedTool no-op（ghost guard）；isToolAlwaysAllowed 取 [] → false', () => {
+    addAlwaysAllowedTool('sX', 'write_file')
+    expect(getSessionStore('sX').store.getter(alwaysAllowedToolsAtom)).toEqual([])
+    expect(isToolAlwaysAllowed('sX', 'write_file')).toBe(false)
   })
 })

@@ -20,6 +20,7 @@ import {
   setPendingQuestionAnswer,
   removePendingArtifact,
   pruneBrowserCardsAfter,
+  addAlwaysAllowedTool,
 } from '../state/transientAtoms'
 import type { AskUserAnswerValue } from '../state/transientAtoms'
 import { jumpToCheckpoint } from '../state/checkpointWriters'
@@ -98,6 +99,26 @@ export function removeSession(id: string): void {
   persistDeleteSession(id)
 }
 
+// 简介：给当前 active 会话绑定 workspace 根目录（S4-A）—— 不可变改 SessionMeta.workspaceRoot + 落盘。
+// 详情：无 active / 会话未登记 → no-op（U2 自取 active）。trim 后空串视为「清空」（存 undefined →
+//   toolContext 不透传 → Rust 走 git root 兜底）。updatedAt 前进（R2 一致性），随会话列表覆盖式落盘。
+export function setWorkspaceRoot(root: string): void {
+  const id = rootStore.getter(activeSessionIdAtom)
+  if (!id) return
+  const trimmed = root.trim()
+  let changed = false
+  rootStore.setter(sessionsAtom, (prev) => {
+    const meta = prev[id]
+    if (!meta) return prev // ghost guard：会话未登记 → no-op
+    changed = true
+    return {
+      ...prev,
+      [id]: { ...meta, workspaceRoot: trimmed ? trimmed : undefined, updatedAt: Date.now() },
+    }
+  })
+  if (changed) persistSessions() // D-4：会话元信息变更 → 覆盖式落盘（fire-and-forget）。
+}
+
 // ===========================================================================
 // 运行命令
 // ===========================================================================
@@ -117,7 +138,13 @@ export function sendMessage(input: string): void {
   //   对应 tool result，重发会构成非法 tool-call 序列被接口拒。UI（Composer）也会锁输入，这里是
   //   命令层兜底（防任何编程路径）。
   const status = getSessionStore(id).store.getter(runAtom)?.status
-  if (status === 'running' || status === 'awaiting_tool' || status === 'waiting_user') return
+  if (
+    status === 'running' ||
+    status === 'awaiting_tool' ||
+    status === 'waiting_user' ||
+    status === 'waiting_confirmation'
+  )
+    return
 
   const apiKey = meta.settings.vendor === 'glm' ? runtimeConfig.glmApiKey : runtimeConfig.deepseekApiKey
   const signal = beginRun(id)
@@ -185,6 +212,55 @@ export function resumeWithAnswers(): void {
   void runToolLoop(id, run.runId, { signal, apiKey, fetchImpl: runtimeConfig.fetchImpl }).finally(() =>
     endRun(id, signal),
   )
+}
+
+// 简介：危险工具确认恢复（S4-B）—— 用户在确认卡片点「允许」/「拒绝」后续跑 pending run。镜像 resumeWithAnswers。
+// 详情：仅当当前 active 会话 run 处于 waiting_confirmation 时生效。取 pendingToolConfirmation；缺失则容错清空 +
+//   落回 running 后返回（不续跑）。approved=true → 复用 pending run 的 runId，把该危险工具作为 resumeToolCall
+//   传进 runToolLoop（循环开头执行它、回填结果，再进正常多轮）；always=true 则先把该工具记进本 session
+//   「一律允许」集合（后续不再确认）。approved=false → 给该 tool_call 回填 {error} result 后重入循环，
+//   让 model 据此改道。apiKey 按会话 vendor 取（与 sendMessage 同逻辑）；finally endRun 清理。
+export function confirmTool(approved: boolean, always?: boolean): void {
+  const id = rootStore.getter(activeSessionIdAtom)
+  if (!id) return
+  const run = getSessionStore(id).store.getter(runAtom)
+  if (run?.status !== 'waiting_confirmation') return
+
+  const pending = run.pendingToolConfirmation
+  // 容错：无 pending（异常/被回退过）→ 清 pendingToolConfirmation + 落回 running，不续跑。
+  if (!pending) {
+    patchRun(id, { status: 'running', pendingToolConfirmation: undefined })
+    return
+  }
+
+  const meta = rootStore.getter(sessionsAtom)[id]
+  const apiKey = meta?.settings.vendor === 'glm' ? runtimeConfig.glmApiKey : runtimeConfig.deepseekApiKey
+
+  if (!approved) {
+    // 拒绝：给该 tool_call 回填 error result（序列合法），落回 running，重入循环让 model 改道。
+    appendItem(id, {
+      id: newId(),
+      createdAt: Date.now(),
+      item: { role: 'tool', tool_call_id: pending.callId, content: JSON.stringify({ error: '用户拒绝执行该工具' }) },
+    })
+    patchRun(id, { status: 'running', pendingToolConfirmation: undefined })
+    const signal = beginRun(id)
+    void runToolLoop(id, run.runId, { signal, apiKey, fetchImpl: runtimeConfig.fetchImpl }).finally(() =>
+      endRun(id, signal),
+    )
+    return
+  }
+
+  // 允许：可选「本 session 一律允许该工具」→ 记瞬态集合；落回 running，重入循环并让其先执行被确认工具。
+  if (always) addAlwaysAllowedTool(id, pending.toolName)
+  patchRun(id, { status: 'running', pendingToolConfirmation: undefined })
+  const signal = beginRun(id)
+  void runToolLoop(id, run.runId, {
+    signal,
+    apiKey,
+    fetchImpl: runtimeConfig.fetchImpl,
+    resumeToolCall: { callId: pending.callId, toolName: pending.toolName, args: pending.args },
+  }).finally(() => endRun(id, signal))
 }
 
 // ===========================================================================

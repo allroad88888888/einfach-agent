@@ -19,7 +19,9 @@ import { getSessionStore } from '../state/sessionStore'
 import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
 import { appendItem, setRun, patchRun } from '../state/sessionWriters'
 import { commitCheckpoint } from '../state/checkpointWriters'
-import { removeToolActivity } from '../state/transientAtoms'
+import { removeToolActivity, isToolAlwaysAllowed } from '../state/transientAtoms'
+import { isDangerousTool } from './dangerousTools'
+import type { PendingToolConfirmation } from '../state/core.type'
 import { persistCheckpoint, persistSessions } from './persistenceBridge'
 import { callDeepSeek } from '../api/deepseek'
 import { callGlm } from '../api/glm'
@@ -39,6 +41,27 @@ const MAX_AGENT_TURNS = 12
 function isCurrentRun(id: string, runId: string): boolean {
   if (!rootStore.getter(sessionsAtom)[id]) return false
   return getSessionStore(id).store.getter(runAtom)?.runId === runId
+}
+
+// 给某个 tool_call 回填一条 ToolItem（tool result）。循环里逐个工具、以及确认恢复时执行完危险工具都用它。
+function appendToolResult(id: string, toolCallId: string, content: string): void {
+  appendItem(id, {
+    id: newId(),
+    createdAt: Date.now(),
+    item: { role: 'tool', tool_call_id: toolCallId, content },
+  })
+}
+
+// 把一个 ToolResult 映射成回给 model 的 tool-result JSON 并回填（pause 不走这里，另行处理）。
+function appendMappedToolResult(id: string, toolCallId: string, result: ToolResult): void {
+  if ('pause' in result) {
+    // 防御：正常路径不会到这（pause 另行拦截）。万一发生，回个 error 别 orphan。
+    appendToolResult(id, toolCallId, JSON.stringify({ error: 'unexpected pause' }))
+  } else if (result.ok) {
+    appendToolResult(id, toolCallId, JSON.stringify(result.data ?? { ok: true }))
+  } else {
+    appendToolResult(id, toolCallId, JSON.stringify({ error: result.error }))
+  }
 }
 
 // 取「本轮」——itemsAtom 里最后一条 user 之后的 items（含那条 user）。
@@ -104,11 +127,19 @@ export async function runSession(
 //   有 → append assistant(tool_calls) + 逐个执行工具 append ToolItem → 续轮；
 //   无 → 空回复守卫 → append 最终 assistant → commitCheckpoint → done。
 //   ask_user_question 内联暂停（waiting_user + pendingQuestion）并 return；已答过则续跑（TK7）；
+//   危险工具执行前内联暂停（waiting_confirmation + pendingToolConfirmation）并 return（S4-B）；
 //   超上限 → error。失败降级（U7）：AbortError→'stopped'；其它→'error'。绝不抛出。
+//   opts.resumeToolCall（S4-B）：确认「允许」后续跑时带上被确认的危险工具 —— 循环开头先执行它、
+//   回填结果，再进正常多轮（复用同一 runId；镜像 resumeWithAnswers 先回填 ask_user 答案的语义）。
 export async function runToolLoop(
   id: string,
   runId: string,
-  opts: { signal: AbortSignal; apiKey: string; fetchImpl?: typeof fetch },
+  opts: {
+    signal: AbortSignal
+    apiKey: string
+    fetchImpl?: typeof fetch
+    resumeToolCall?: PendingToolConfirmation
+  },
 ): Promise<void> {
   // ghost guard：会话未登记 → 直接返回（不发请求、不写入）。同时收窄 meta 供后续取 settings。
   const meta = rootStore.getter(sessionsAtom)[id]
@@ -132,6 +163,27 @@ export async function runToolLoop(
   let visible: LoadedTool[] = []
 
   try {
+    // S4-B 确认「允许」恢复：先把被确认的危险工具执行、回填结果，再进正常多轮循环。
+    //   暂停时该 tool_call 的 result 被特意留空（同批其它 tool_call 已补齐），这里补上它，序列才合法。
+    if (opts.resumeToolCall) {
+      const { callId, toolName, args } = opts.resumeToolCall
+      const ctx = buildToolContext({ sessionId: id, runId, signal: opts.signal, callId, toolName })
+      let result: ToolResult
+      try {
+        result = await toolRegistry.run(toolName, args, ctx)
+      } finally {
+        removeToolActivity(id, callId)
+      }
+      // TK8 每步守卫：await 后写回前查会话还在、且仍是本次 run；esc 中断则收成 stopped。
+      if (!isCurrentRun(id, runId)) return
+      if (opts.signal.aborted) {
+        if (isCurrentRun(id, runId)) patchRun(id, { status: 'stopped' })
+        return
+      }
+      // 危险工具不该返回 pause；即便返回也按 error 回填（appendMappedToolResult 内已防御）。
+      appendMappedToolResult(id, callId, result)
+    }
+
     for (let turn = 0; turn < MAX_AGENT_TURNS; turn += 1) {
       // 每轮重新 map itemsAtom（含上一轮 append 的 assistant/tool items），TK1。
       const items = getSessionStore(id).store.getter(itemsAtom)
@@ -196,17 +248,13 @@ export async function runToolLoop(
           item: { role: 'assistant', content: msg?.content ?? null, tool_calls: toolCalls },
         })
 
-        const appendToolResult = (toolCallId: string, content: string) =>
-          appendItem(id, {
-            id: newId(),
-            createdAt: Date.now(),
-            item: { role: 'tool', tool_call_id: toolCallId, content },
-          })
-
-        // 暂停请求（工具返回 {pause}，目前只有 ask_user）——先记着，等同条消息里其它 tool_call 都补齐
-        // result 再统一处理。否则提前 return 进 waiting_user 会漏掉其余 tool_call 的 tool 消息，resume
-        // 重发被 OpenAI 兼容接口拒（codex P2）。
-        let pauseCall: { callId: string; payload: unknown } | undefined
+        // 本批至多允许「一个」中断（ask_user 暂停 或 危险工具确认）——先记着，等同条消息里其它
+        // tool_call 都补齐 result 再统一处理。否则提前 return 会漏掉其余 tool_call 的 tool 消息，
+        // resume 重发被 OpenAI 兼容接口拒（每个 tool_call 必须有匹配 result，codex P2）。
+        let pauseCall: { callId: string; payload: unknown } | undefined // ask_user 暂停
+        let confirmCall: PendingToolConfirmation | undefined // S4-B 危险工具确认
+        // 已有任一中断挂起 → 后来的中断只能退化成「已在等待」的占位 error result，避免 orphan。
+        const interruptPending = () => pauseCall !== undefined || confirmCall !== undefined
 
         for (const toolCall of toolCalls) {
           const name = toolCall.function.name
@@ -216,7 +264,19 @@ export async function runToolLoop(
           if (name === 'request_tool_schema') {
             const toolName = typeof args.toolName === 'string' ? args.toolName : ''
             visible = ensureToolLoaded(id, visible, toolName)
-            appendToolResult(toolCall.id, JSON.stringify(toolRegistry.loadSchema(toolName) ?? { error: 'unknown' }))
+            appendToolResult(id, toolCall.id, JSON.stringify(toolRegistry.loadSchema(toolName) ?? { error: 'unknown' }))
+            continue
+          }
+
+          // S4-B 危险工具确认门：变更类 server 工具执行前须用户确认（除非本 session 已一律允许）。
+          //   命中即延后为 confirmCall（不建 ctx、不执行、不回填 result，留给 confirmTool 恢复时处理）。
+          if (isDangerousTool(name) && !isToolAlwaysAllowed(id, name)) {
+            if (interruptPending()) {
+              // 同批已有一个待确认/待暂停 → 该危险工具先回占位 error（resume 只处理一个中断）。
+              appendToolResult(id, toolCall.id, JSON.stringify({ error: '已有待确认的工具调用，请先处理' }))
+            } else {
+              confirmCall = { callId: toolCall.id, toolName: name, args }
+            }
             continue
           }
 
@@ -240,25 +300,30 @@ export async function runToolLoop(
 
           // 结果映射（§4）：pause 延后处理；ok → data JSON；error → {error} JSON（TK6，不打断）。
           if ('pause' in result) {
-            if (pauseCall) {
-              // 已有暂停请求 → 这个多余的 pause 补个 result，别让它 orphan。
-              appendToolResult(toolCall.id, JSON.stringify({ error: 'already pausing' }))
+            if (interruptPending()) {
+              // 已有中断（ask_user/危险工具）→ 这个多余的 pause 补个 result，别让它 orphan。
+              appendToolResult(id, toolCall.id, JSON.stringify({ error: 'already pausing' }))
             } else {
               pauseCall = { callId: toolCall.id, payload: result.pause } // 不 append，留给 resume 回填
             }
-          } else if (result.ok) {
-            appendToolResult(toolCall.id, JSON.stringify(result.data ?? { ok: true }))
           } else {
-            appendToolResult(toolCall.id, JSON.stringify({ error: result.error }))
+            appendMappedToolResult(id, toolCall.id, result)
           }
         }
 
-        // 其它工具已补齐，最后处理暂停：TK7「已回答」守卫 —— resume 后本轮已回填过 ask_user 的 result
+        // 其它工具已补齐，最后处理中断。S4-B 先处理危险工具确认：暂停 run（waiting_confirmation +
+        //   pendingToolConfirmation），该 tool 的 result 留给 confirmTool 恢复时执行/回填。
+        if (confirmCall) {
+          patchRun(id, { status: 'waiting_confirmation', pendingToolConfirmation: confirmCall })
+          return
+        }
+
+        // 再处理 ask_user 暂停：TK7「已回答」守卫 —— resume 后本轮已回填过 ask_user 的 result
         //   → 不再暂停，回 {error:'user_answers_already_provided'} 让 model 用已给答案续跑，防死循环；
         //   否则暂停 run（waiting_user + pendingQuestion），该 tool 的 result 留给 resume 回填。
         if (pauseCall) {
           if (askAlreadyAnswered(id)) {
-            appendToolResult(pauseCall.callId, JSON.stringify({ error: 'user_answers_already_provided' }))
+            appendToolResult(id, pauseCall.callId, JSON.stringify({ error: 'user_answers_already_provided' }))
           } else {
             patchRun(id, { status: 'waiting_user', pendingQuestion: pauseCall.payload })
             return

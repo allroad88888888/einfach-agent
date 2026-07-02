@@ -75,6 +75,19 @@ describe('Composer', () => {
     expect(sendMessage).not.toHaveBeenCalled()
   })
 
+  it('waiting_confirmation 态：输入框 disabled、发送按钮 disabled、不出现停止按钮（S4-B）', () => {
+    // 等危险工具确认时不能发新消息顶掉暂停中的 run（应走确认卡片的「允许/拒绝」）。
+    const store = createStore()
+    store.setter(runAtom, { runId: 'r', status: 'waiting_confirmation' })
+    renderWithStore(<Composer />, { store })
+
+    expect(screen.getByRole('textbox')).toBeDisabled()
+    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '停止' })).toBeNull()
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
   it('全局 Esc → stopRun（U7 中断）', () => {
     renderWithStore(<Composer />, { store: createStore() })
 

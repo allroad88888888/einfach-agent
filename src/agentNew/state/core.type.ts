@@ -71,14 +71,26 @@ export interface ConversationItem {
 // 简介：一次 run 的状态。
 // 详情：直接由响应驱动 —— finish_reason==='tool_calls' → 'awaiting_tool'（要执行工具再续）；
 // ==='stop' → 'done'；'length'/异常 → 'error'；中途等用户补充 → 'waiting_user'；被打断 → 'stopped'。
+// 另有 'waiting_confirmation'：模型要调用「变更类危险工具」，执行前暂停等用户确认（S4-B，镜像 ask_user）。
 export type RunStatus =
   | 'idle'
   | 'running'
   | 'awaiting_tool'
   | 'waiting_user'
+  | 'waiting_confirmation'
   | 'done'
   | 'stopped'
   | 'error'
+
+// 简介：等待用户确认的危险工具调用（S4-B）。
+// 详情：与 pendingQuestion 平行 —— tool 循环遇到危险工具时，先把同批其它 tool_call 的 result 补齐，
+// 再置 waiting_confirmation + 本字段并暂停本 run（该 tool_call 的 result 留给 confirmTool 恢复时回填/执行）。
+// args 是模型给的原样参数（unknown），resume 允许时直接拿去执行。与 run 同为瞬态，不持久化。
+export interface PendingToolConfirmation {
+  callId: string
+  toolName: string
+  args: unknown
+}
 
 // 简介：当前 run 的运行事实。
 // 详情：finishReason 是上一轮响应的停止原因；pendingToolCalls 是 finish_reason==='tool_calls'
@@ -94,6 +106,9 @@ export interface RunState {
   // status==='waiting_user' 时挂着的 ask_user_question payload（args 原样，含 questions 数组）；
   // tool 循环内联暂停时写入，供 UI 渲染问题卡片、resume 时回填答案（形状校验留给 T-7/T-8）。
   pendingQuestion?: unknown
+  // status==='waiting_confirmation' 时挂着的危险工具调用（S4-B）；供 UI 渲染确认卡片、
+  // confirmTool 允许/拒绝时消费。与 pendingQuestion 平行，同样不持久化。
+  pendingToolConfirmation?: PendingToolConfirmation
 }
 
 // ===========================================================================
@@ -108,4 +123,9 @@ export interface SessionMeta {
   settings: ModelSettings
   createdAt: number
   updatedAt: number
+  // 简介：该会话绑定的 workspace 根目录（绝对路径，S4-A）。
+  // 详情：server 工具（读/写/patch/git）执行时经 toolContext 透传给 Tauri 桥；未设置则不传 →
+  //   Rust 侧走 git root 兜底（保持现状）。随 SessionMeta 一起持久化（sessionsPersistence）。
+  //   放 SessionMeta 而非 ModelSettings —— 它不是模型请求参数，与 vendor/model 那套请求体字段无关。
+  workspaceRoot?: string
 }

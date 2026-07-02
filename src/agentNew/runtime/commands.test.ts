@@ -36,6 +36,7 @@ import {
   pendingArtifactsAtom,
   addBrowserCard,
   browserCardsAtom,
+  alwaysAllowedToolsAtom,
 } from '../state/transientAtoms'
 import type { ConversationItem, RunState } from '../state/core.type'
 import { runSession, runToolLoop } from './modelRun'
@@ -53,6 +54,8 @@ import {
   resumeWithAnswers,
   answerQuestion,
   discardArtifact,
+  setWorkspaceRoot,
+  confirmTool,
 } from './commands'
 
 afterEach(() => {
@@ -172,11 +175,11 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(runSession).not.toHaveBeenCalled()
   })
 
-  it('sendMessage：当前 run 忙碌（running/awaiting_tool/waiting_user）→ no-op（codex P2）', () => {
-    // 忙碌时发新消息会顶掉未完成的 run；waiting_user 时更会造成非法 tool-call 序列。命令层兜底。
+  it('sendMessage：当前 run 忙碌（running/awaiting_tool/waiting_user/waiting_confirmation）→ no-op（codex P2）', () => {
+    // 忙碌时发新消息会顶掉未完成的 run；waiting_user/waiting_confirmation 时更会造成非法 tool-call 序列。命令层兜底。
     configureCommands({ deepseekApiKey: 'k' })
     const id = newSession()
-    for (const status of ['running', 'awaiting_tool', 'waiting_user'] as const) {
+    for (const status of ['running', 'awaiting_tool', 'waiting_user', 'waiting_confirmation'] as const) {
       getSessionStore(id).store.setter(runAtom, { runId: 'r', status })
       sendMessage('hi')
       expect(runSession).not.toHaveBeenCalled()
@@ -389,5 +392,147 @@ describe('answerQuestion / discardArtifact（P8-c 卡片交互命令）', () => 
 
     const artifactsA = getSessionStore(a).store.getter(pendingArtifactsAtom)
     expect(artifactsA.map((x) => x.id)).toEqual(['art2'])
+  })
+})
+
+describe('setWorkspaceRoot（S4-A workspace 绑定）', () => {
+  it('写进当前 active 会话的 SessionMeta.workspaceRoot（trim）+ 落盘', () => {
+    const id = newSession() // 已 active
+    vi.mocked(persistSessions).mockClear()
+
+    setWorkspaceRoot('  /Users/me/proj  ')
+
+    const meta = rootStore.getter(sessionsAtom)[id]
+    expect(meta.workspaceRoot).toBe('/Users/me/proj')
+    expect(persistSessions).toHaveBeenCalled()
+  })
+
+  it('空/纯空白 → 清成 undefined（桥不传 → Rust 走 git root 兜底）', () => {
+    const id = newSession()
+    setWorkspaceRoot('/tmp/x')
+    expect(rootStore.getter(sessionsAtom)[id].workspaceRoot).toBe('/tmp/x')
+
+    setWorkspaceRoot('   ')
+    expect(rootStore.getter(sessionsAtom)[id].workspaceRoot).toBeUndefined()
+  })
+
+  it('无 active → no-op、不落盘', () => {
+    rootStore.setter(activeSessionIdAtom, '')
+    vi.mocked(persistSessions).mockClear()
+    expect(() => setWorkspaceRoot('/x')).not.toThrow()
+    expect(persistSessions).not.toHaveBeenCalled()
+  })
+})
+
+describe('confirmTool（S4-B 危险工具确认恢复）', () => {
+  // 造一条 assistant(tool_calls:[write_file{id}]) 条目（危险工具，暂停时 result 特意留空）。
+  function dangerousAssistant(tcId: string): ConversationItem {
+    return {
+      id: 'a1',
+      createdAt: 2,
+      item: {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{ id: tcId, type: 'function', function: { name: 'write_file', arguments: '{}' } }],
+      },
+    }
+  }
+
+  // 种一个 waiting_confirmation 会话：user + assistant(write_file tc)、run waiting_confirmation +
+  //   pendingToolConfirmation。返回 id（newSession 已设为 active）。
+  function seedConfirming(tcId = 'w1'): string {
+    configureCommands({ deepseekApiKey: 'k' })
+    const id = newSession()
+    const store = getSessionStore(id).store
+    store.setter(itemsAtom, [
+      { id: 'u1', createdAt: 1, item: { role: 'user', content: 'hi' } },
+      dangerousAssistant(tcId),
+    ])
+    const run: RunState = {
+      runId: 'R1',
+      status: 'waiting_confirmation',
+      pendingToolConfirmation: { callId: tcId, toolName: 'write_file', args: { path: 'a.txt', content: 'x' } },
+    }
+    store.setter(runAtom, run)
+    vi.clearAllMocks() // 清掉 seed 期间 newSession 触发的 mock 调用记录
+    return id
+  }
+
+  it('允许：落回 running + 清 pendingToolConfirmation + runToolLoop 带 resumeToolCall 续跑', async () => {
+    const id = seedConfirming('w1')
+    const store = getSessionStore(id).store
+
+    confirmTool(true)
+
+    const run = store.getter(runAtom)
+    expect(run?.status).toBe('running')
+    expect(run?.pendingToolConfirmation).toBeUndefined()
+
+    expect(beginRun).toHaveBeenCalledWith(id)
+    expect(runToolLoop).toHaveBeenCalledTimes(1)
+    const call = vi.mocked(runToolLoop).mock.calls[0]
+    expect(call[0]).toBe(id)
+    expect(call[1]).toBe('R1')
+    expect(call[2].resumeToolCall).toEqual({
+      callId: 'w1',
+      toolName: 'write_file',
+      args: { path: 'a.txt', content: 'x' },
+    })
+
+    await flush()
+    expect(endRun).toHaveBeenCalledWith(id, expect.anything())
+  })
+
+  it('允许 + always：把该工具记进本 session「一律允许」集合', () => {
+    const id = seedConfirming('w1')
+    confirmTool(true, true)
+    expect(getSessionStore(id).store.getter(alwaysAllowedToolsAtom)).toContain('write_file')
+  })
+
+  it('拒绝：回填该 tool_call 的 error result + 落回 running + runToolLoop 续跑（不带 resumeToolCall）', () => {
+    const id = seedConfirming('w1')
+    const store = getSessionStore(id).store
+
+    confirmTool(false)
+
+    // 回填了 tool_call_id==='w1' 的 error ToolItem。
+    const last = store.getter(itemsAtom).at(-1)!.item
+    expect(last.role).toBe('tool')
+    if (last.role !== 'tool') throw new Error('意外的条目形状')
+    expect(last.tool_call_id).toBe('w1')
+    expect(JSON.parse(last.content)).toEqual({ error: '用户拒绝执行该工具' })
+
+    expect(store.getter(runAtom)?.status).toBe('running')
+    expect(runToolLoop).toHaveBeenCalledTimes(1)
+    // 拒绝不执行工具 → 不带 resumeToolCall。
+    expect(vi.mocked(runToolLoop).mock.calls[0][2].resumeToolCall).toBeUndefined()
+  })
+
+  it('非 waiting_confirmation（running）→ no-op（不回填、不续跑）', () => {
+    const id = seedConfirming('w1')
+    const store = getSessionStore(id).store
+    store.setter(runAtom, { runId: 'R1', status: 'running' })
+    const before = store.getter(itemsAtom).length
+
+    confirmTool(true)
+
+    expect(store.getter(itemsAtom)).toHaveLength(before)
+    expect(runToolLoop).not.toHaveBeenCalled()
+  })
+
+  it('缺 pendingToolConfirmation → 容错落回 running、不续跑', () => {
+    const id = seedConfirming('w1')
+    const store = getSessionStore(id).store
+    store.setter(runAtom, { runId: 'R1', status: 'waiting_confirmation' })
+
+    confirmTool(true)
+
+    expect(store.getter(runAtom)?.status).toBe('running')
+    expect(runToolLoop).not.toHaveBeenCalled()
+  })
+
+  it('无 active → no-op', () => {
+    confirmTool(true)
+    expect(runToolLoop).not.toHaveBeenCalled()
   })
 })

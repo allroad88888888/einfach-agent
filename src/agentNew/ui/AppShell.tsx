@@ -7,11 +7,13 @@
 
 import { ActiveSessionProvider } from './ActiveSessionProvider'
 import { SessionList } from './SessionList'
+import { WorkspaceRootField } from './WorkspaceRootField'
 import { MessageList } from './MessageList'
 import { ToolActivity } from './ToolActivity'
 import { SaveArtifact } from './SaveArtifact'
 import { CheckpointBar } from './CheckpointBar'
 import { AskUserQuestionCard } from './AskUserQuestionCard'
+import { ToolConfirmCard } from './ToolConfirmCard'
 import { Composer } from './Composer'
 
 export function AppShell() {
@@ -19,6 +21,8 @@ export function AppShell() {
     <div className="agentnew-shell">
       <aside className="agentnew-sidebar" aria-label="对话列表">
         <SessionList />
+        {/* S4-A：当前会话的 workspace 根目录绑定（读 rootStore 会话元信息，故在侧边栏根 Provider 下）。 */}
+        <WorkspaceRootField />
       </aside>
       <main className="agentnew-main" aria-label="当前对话">
         <ActiveSessionProvider>
@@ -28,8 +32,9 @@ export function AppShell() {
           <ToolActivity />
           <SaveArtifact />
           <CheckpointBar />
-          {/* AskUserQuestionCard 是暂停提问卡片，紧贴输入区上方（最显眼），排在 Composer 之前。 */}
+          {/* 暂停卡片紧贴输入区上方（最显眼），排在 Composer 之前：ask_user 提问卡 + S4-B 危险工具确认卡。 */}
           <AskUserQuestionCard />
+          <ToolConfirmCard />
           <Composer />
         </ActiveSessionProvider>
       </main>

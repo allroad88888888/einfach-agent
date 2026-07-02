@@ -33,6 +33,12 @@ function isCurrentRun(sessionId: string, runId: string): boolean {
   return getSessionStore(sessionId).store.getter(runAtom)?.runId === runId
 }
 
+// S4-A：取该会话绑定的 workspace 根目录（去空白；未设置/空串 → undefined，桥不传 → Rust 走 git root 兜底）。
+function resolveWorkspaceRoot(sessionId: string): string | undefined {
+  const root = rootStore.getter(sessionsAtom)[sessionId]?.workspaceRoot
+  return typeof root === 'string' && root.trim().length > 0 ? root.trim() : undefined
+}
+
 function shellProgressText(command: string): string {
   const preview = command.replace(/\s+/g, ' ').trim()
   return `执行 shell: ${preview ? preview.slice(0, 120) : '(empty command)'}`
@@ -57,6 +63,23 @@ export function buildToolContext(opts: {
 }): ToolContext {
   const { sessionId, runId, signal, callId } = opts
   const stack = opts.stack ?? []
+
+  // S4-A：本会话 workspace root（ctx 构造期解析一次；一次 run 内稳定）。
+  const workspaceRoot = resolveWorkspaceRoot(sessionId)
+
+  // S4-A：把会话 workspaceRoot 注入桥入参 —— session 未绑定则原样（Rust 走 git root 兜底，保持现状）；
+  //   调用方（工具）已显式带 workspaceRoot 则尊重调用方、不覆盖；桥不带 input（getWorkspaceDiff）时合成一个。
+  function withWorkspaceRoot<T>(input: T): T {
+    if (!workspaceRoot) return input
+    if (input === null || typeof input !== 'object' || Array.isArray(input)) {
+      return { workspaceRoot } as unknown as T
+    }
+    const record = input as Record<string, unknown>
+    if (typeof record.workspaceRoot === 'string' && record.workspaceRoot.trim().length > 0) {
+      return input
+    }
+    return { ...record, workspaceRoot } as T
+  }
 
   function assertFresh(): void {
     if (signal.aborted || !isCurrentRun(sessionId, runId)) throw new Error('stale')
@@ -84,7 +107,7 @@ export function buildToolContext(opts: {
     async readWorkspaceFile(input) {
       assertFresh()
       progress(pathProgressText('读取文件', input.path))
-      const result = await readWorkspaceFile(input)
+      const result = await readWorkspaceFile(withWorkspaceRoot(input))
       assertFresh()
       return result
     },
@@ -92,7 +115,7 @@ export function buildToolContext(opts: {
     async listWorkspaceFiles(input) {
       assertFresh()
       progress(pathProgressText('列出文件', input.path))
-      const result = await listWorkspaceFiles(input)
+      const result = await listWorkspaceFiles(withWorkspaceRoot(input))
       assertFresh()
       return result
     },
@@ -100,7 +123,7 @@ export function buildToolContext(opts: {
     async searchWorkspaceFiles(input) {
       assertFresh()
       progress(pathProgressText('搜索文件', input.path))
-      const result = await searchWorkspaceFiles(input)
+      const result = await searchWorkspaceFiles(withWorkspaceRoot(input))
       assertFresh()
       return result
     },
@@ -108,7 +131,9 @@ export function buildToolContext(opts: {
     async applyWorkspacePatch(input) {
       assertFresh()
       progress('应用文件 patch')
-      const result = await applyWorkspacePatch(input as Parameters<typeof applyWorkspacePatch>[0])
+      const result = await applyWorkspacePatch(
+        withWorkspaceRoot(input as Parameters<typeof applyWorkspacePatch>[0]),
+      )
       assertFresh()
       return result
     },
@@ -117,7 +142,9 @@ export function buildToolContext(opts: {
       assertFresh()
       const path = typeof input === 'object' && input && 'path' in input ? (input as { path?: unknown }).path : undefined
       progress(pathProgressText('写入文件', path))
-      const result = await writeWorkspaceFile(input as Parameters<typeof writeWorkspaceFile>[0])
+      const result = await writeWorkspaceFile(
+        withWorkspaceRoot(input as Parameters<typeof writeWorkspaceFile>[0]),
+      )
       assertFresh()
       return result
     },
@@ -125,7 +152,9 @@ export function buildToolContext(opts: {
     async getWorkspaceDiff(input) {
       assertFresh()
       progress('读取 Git diff')
-      const result = await getWorkspaceDiff(input as Parameters<typeof getWorkspaceDiff>[0])
+      const result = await getWorkspaceDiff(
+        withWorkspaceRoot(input as Parameters<typeof getWorkspaceDiff>[0]),
+      )
       assertFresh()
       return result
     },

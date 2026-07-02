@@ -559,3 +559,138 @@
   cursor: not-allowed;
   opacity: 0.5;
 }
+
+/* S4-A WorkspaceRootField（侧边栏底部的工作目录绑定） */
+.agentnew-workspace-root {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #e6eaf2;
+}
+
+.agentnew-workspace-root-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b7689;
+}
+
+.agentnew-workspace-root-input {
+  padding: 7px 10px;
+  border: 1px solid #d4dbe8;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1b2333;
+  font: inherit;
+  font-size: 13px;
+}
+
+.agentnew-workspace-root-input:focus {
+  outline: none;
+  border-color: #a5a8f4;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16);
+}
+
+/* S4-B ToolConfirmCard（危险工具执行前的确认卡片） */
+.agentnew-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 20px 12px;
+  padding: 16px;
+  border: 1px solid #f0cba8;
+  border-radius: 12px;
+  background: #fff8f0;
+}
+
+.agentnew-confirm-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agentnew-confirm-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #c2731a;
+}
+
+.agentnew-confirm-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1b2333;
+}
+
+.agentnew-confirm-tool {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: #f4e2cd;
+  color: #92500c;
+  font-size: 13px;
+}
+
+.agentnew-confirm-preview {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid #ecd9bf;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #3a4458;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agentnew-confirm-always {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #3a4458;
+}
+
+.agentnew-confirm-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.agentnew-confirm-reject,
+.agentnew-confirm-approve {
+  padding: 8px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agentnew-confirm-reject {
+  border: 1px solid #d4dbe8;
+  background: #ffffff;
+  color: #3a4458;
+}
+
+.agentnew-confirm-reject:hover {
+  border-color: #c0c7d6;
+  background: #f4f6fa;
+}
+
+.agentnew-confirm-approve {
+  border: 0;
+  background: #d97917;
+  color: #ffffff;
+}
+
+.agentnew-confirm-approve:hover {
+  background: #bd6510;
+}

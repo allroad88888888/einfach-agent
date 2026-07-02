@@ -24,6 +24,9 @@ vi.mock('../runtime/commands', () => ({
   answerQuestion: vi.fn(),
   resumeWithAnswers: vi.fn(),
   discardArtifact: vi.fn(),
+  // S4：WorkspaceRootField / ToolConfirmCard 也挂在 AppShell 内，补齐它们依赖的命令形状。
+  setWorkspaceRoot: vi.fn(),
+  confirmTool: vi.fn(),
 }))
 
 // 造一个登记在 rootStore 的活跃会话（P8-h 两个新挂载点都要求会话在 Provider 下）。
@@ -68,12 +71,15 @@ describe('AppShell', () => {
     })
     rootStore.setter(activeSessionIdAtom, 's1')
 
-    renderWithStore(<AppShell />, { store: rootStore })
+    const { container } = renderWithStore(<AppShell />, { store: rootStore })
 
     // 左栏 SessionList 仍在。
     expect(screen.getByRole('button', { name: /新建对话/ })).toBeInTheDocument()
-    // 右栏切到 s1 的会话 store：Composer 输入框在。
-    expect(screen.getByRole('textbox')).toBeInTheDocument()
+    // 右栏切到 s1 的会话 store：Composer 输入框在（有 active 后左栏还会多出 WorkspaceRootField 的输入，
+    //   故不用 getByRole('textbox') 泛查，直接定位 Composer 的输入元素）。
+    expect(container.querySelector('.agentnew-composer-input')).not.toBeNull()
+    // S4-A：左栏 WorkspaceRootField 随 active 会话出现（工作目录绑定入口）。
+    expect(screen.getByLabelText('工作目录')).toBeInTheDocument()
     // 该会话 items 为空 → MessageList 空占位。
     expect(screen.getByText(/开始对话吧/)).toBeInTheDocument()
     // 已有 active → 不再是「还没有会话」空占位。
