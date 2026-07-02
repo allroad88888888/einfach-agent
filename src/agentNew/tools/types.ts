@@ -38,6 +38,30 @@ export type ToolResult =
   | { ok: false; error: string }
   | { pause: unknown }
 
+export type ShellPlatform = 'macos' | 'linux' | 'windows'
+
+export interface ShellCommandInput {
+  platform: ShellPlatform
+  command: string
+  cwd?: string
+  timeoutMs?: number
+  maxOutputChars?: number
+  env?: Record<string, string>
+}
+
+export interface ShellCommandResult {
+  platform: ShellPlatform
+  shell: string
+  command: string
+  cwd: string
+  exitCode: number
+  stdout: string
+  stderr: string
+  durationMs: number
+  timedOut: boolean
+  truncated: boolean
+}
+
 /**
  * 工具拿到的唯一副作用面（白名单）。工具不 import 任何 atom/store —— 一切副作用都在这里，
  * 由 harness 实现 + 集中施加 ghost/stale 守卫。
@@ -49,6 +73,8 @@ export interface ToolContext {
   progress(text: string): void
   /** 工具互调：经工厂转发，harness 加防环/限深/signal 透传（见 §8）。 */
   callTool(name: string, args: unknown): Promise<ToolResult>
+  /** 执行桌面 shell command。工具只经 ctx 调用，Tauri invoke 细节集中在 runtime 桥接层。 */
+  runShell(input: ShellCommandInput): Promise<ShellCommandResult>
   /** 渲染信息卡片（browser_action 用）。harness → addBrowserCard + stale 守卫。 */
   renderCard(card: { title: string; body?: string }): { cardId: string } | { error: string }
   /** 暂存待保存文件产物（save_file 用）。harness → addPendingArtifact + stale 守卫。 */

@@ -40,6 +40,29 @@ export type ToolResult =
   | { ok: false; error: string }          // 失败；序列化成 {"error": "..."}（TK6，不打断循环）
   | { pause: unknown }                     // 暂停 run（ask_user）；harness 置 waiting_user，不回填该 tool（§7）
 
+// 受控本机 shell 结果。ctx.runShell 应 resolve 结构化结果；除 AbortError/stale 外不把命令失败抛给工具。
+export type ShellPlatform = 'macos' | 'linux' | 'windows'
+export interface ShellCommandInput {
+  platform: ShellPlatform
+  command: string
+  cwd?: string
+  timeoutMs?: number
+  maxOutputChars?: number
+  env?: Record<string, string>
+}
+export interface ShellCommandResult {
+  platform: ShellPlatform
+  shell: string
+  command: string
+  cwd: string
+  exitCode: number
+  stdout: string
+  stderr: string
+  durationMs: number
+  timedOut: boolean
+  truncated: boolean
+}
+
 // 工具拿到的唯一副作用面（白名单）。工具不 import 任何 atom/store —— 一切副作用都在这里。
 export interface ToolContext {
   readonly sessionId: string
@@ -49,6 +72,7 @@ export interface ToolContext {
   // —— 受控副作用（harness 实现 + 集中 stale/ghost 守卫，工具不再各写）——
   renderCard(card: { title: string; body?: string }): { cardId: string } | { error: string }
   saveArtifact(file: { filename: string; content: string; mimeType?: string }): { artifactId: string } | { error: string }
+  runShell(input: ShellCommandInput): Promise<ShellCommandResult> // 唯一允许调用本机 shell 的前端入口（§14）
 }
 
 // 统一抽象：一个工具要具备的全部。
@@ -109,6 +133,7 @@ export interface ToolRegistry {
 | 互调 | `ctx.callTool(name,args)` | 调另一个工具，见 §8。 |
 | 渲卡片 | `ctx.renderCard({title,body?})` | browser_action 用。harness → `addBrowserCard` + 集中 stale 守卫，回 `{cardId}`/`{error:'stale'}`。工具不再 import transientAtoms。 |
 | 存文件 | `ctx.saveArtifact({filename,content,mimeType?})` | save_file 用。harness → `addPendingArtifact` + 集中 stale 守卫，回 `{artifactId}`/`{error}`。 |
+| 本机 shell | `ctx.runShell(input)` | shell tools 用。**这是前端唯一允许调用本机 shell 的入口**；harness/Tauri command 负责平台、timeout、输出截断和结构化 `ShellCommandResult`。 |
 
 > 所有工具都拿到完整 ctx（不做按需注入的 capabilities 声明——那是被否掉的复杂度）；按约定各用所需。ctx 就是「工具能做的事」的**固定小白名单**，harness 是唯一实现方 + 守卫方。将来若某效果只该给某类 runtime，再在 harness 侧按 runtime 收窄即可。
 
@@ -150,6 +175,9 @@ tools/
   ask-user-question/     { … }
   browser-action/        { … }
   save-file/             { … }
+  shell-macos/           { shell-macos.ts / .md / .test.ts }       // tool.name = shell_macos
+  shell-linux/           { shell-linux.ts / .md / .test.ts }       // tool.name = shell_linux
+  shell-powershell/      { shell-powershell.ts / .md / .test.ts }  // tool.name = shell_powershell
 ```
 
 - **skill 正文放同目录的 `<name>.md`**（`?raw` 导入，`vite-env.d.ts` 已声明 `*.md?raw`），工具 `.ts` 里 `content: <name>Md`。
@@ -186,13 +214,14 @@ export const <name>Tool: Tool = {
 
 **硬规则（批量生成必须遵守，review 照此查）**：
 - ❌ 不 import 任何 `state/`（atom/writer/store）、不 import 别的工具模块、不碰 `rootStore`。副作用只经 `ctx`。
+- ❌ 不绕过 `ctx` 做本机副作用：shell tools 不直接 `invoke` Tauri command、不直接碰进程 API；只能调 `ctx.runShell`。
 - ❌ 不自己判 ghost/stale（harness 管）；`execute` 只写纯逻辑 + 防御式取参。
 - ✅ 失败 `return { ok:false, error }`，绝不 `throw`（除非要透传 AbortError）。
 - ✅ colocated 测试 `<name>.test.ts`：mock 一个 `ctx`（`progress`/`callTool` 用 vi.fn），断言正常/非法参数/进度/互调各路径。
 
 ## §11 测试约定
 
-- 工具单测：构造 fake `ctx`（`{ sessionId:'s', signal, progress: vi.fn(), callTool: vi.fn() }`），直接调 `tool.execute(args, ctx)` 断言返回的 `ToolResult` + `progress/callTool` 调用。**不需要 store**（这正是隔离的红利）。
+- 工具单测：构造 fake `ctx`（`sessionId`/`signal` + `progress`/`callTool`/`renderCard`/`saveArtifact`/`runShell` 的 vi.fn 或 noop），直接调 `tool.execute(args, ctx)` 断言返回的 `ToolResult` + 对应 ctx 方法调用。**不需要 store**（这正是隔离的红利）。
 - 工厂单测：register/list（无 schema）/loadSchema（有 schema）/run（未知名/错误封装/AbortError 透传）。
 - 循环集成：modelRun 侧断言 `{ok}`/`{error}`/`{pause}` 三种映射 + 写回守卫（沿用现有 modelRun.test 范式）。
 
@@ -211,3 +240,38 @@ export const <name>Tool: Tool = {
 - **不引 MCP / WASM 沙箱 / 能力域注入 ceremony**。当前工具是仓内可信 TS，用不上进程/沙箱隔离；`ctx` 白名单已够。
 - `runtime:'server'` **只留标记**，不落远程传输（HTTP/invoke）实现。将来真要远程工具，再定「server 工具经某传输执行」的一层，不影响本抽象。
 - `progress` 只做纯文本；结构化/百分比是后续加法。
+
+## §14 shell tools（Tauri 本机 shell）
+
+shell tools 只是本规范下的普通 lazy tools，不开新通道：
+
+- **manifest-only 不变**：`registry.list()` 只暴露 `shell_macos` / `shell_linux` / `shell_powershell` 的 name/description/runtime；完整 `inputSchema` 和 guide 只能由 `request_tool_schema` → `registry.loadSchema(name)` 懒加载。不得因为 shell 高风险而预加载 schema，也不得把命令参数说明塞进 manifest。
+- **副作用只经 `ctx`**：三个工具的 `execute` 只做参数校验、平台声明、进度文本和结果包装；真正调用本机 shell 只能 `await ctx.runShell(...)`。前端 TS 里不允许工具、runtime、UI 直接调用 Tauri `invoke` 跑 shell；`ctx.runShell` 是唯一前端入口。
+- **Tauri command 是唯一 native spawn 点**：`runtime/toolContext.ts` 负责把 `ctx.runShell` 接到 `run_shell_command`；Rust 后端 command 负责创建非交互进程、kill timeout 进程、截断输出并返回 `ShellCommandResult`。浏览器环境没有 Tauri 时也归一成结构化 `ShellCommandResult`，不降级到 Web API。
+
+内置三个工具：
+
+| 工具名 | 目标平台 | 说明 |
+|---|---|---|
+| `shell_macos` | macOS / Darwin | 执行 macOS 非交互 shell 命令。平台不匹配时返回结构化失败结果。 |
+| `shell_linux` | Linux | 执行 Linux 非交互 shell 命令。平台不匹配时返回结构化失败结果。 |
+| `shell_powershell` | Windows / PowerShell | 以 `platform:'windows'` 执行 PowerShell 非交互命令。平台不匹配或 PowerShell 不可用时返回结构化结果。 |
+
+安全约束（实现和 review 都按这个查）：
+
+- **非交互**：不分配 PTY，不支持交互式 stdin，不允许等待用户输入；命令必须一次性提交并在完成、超时或 abort 后结束。
+- **timeout 必须有上限**：schema 可暴露 `timeoutMs`，但 Tauri command 必须有默认值和硬上限；超时要终止进程并返回 `ShellCommandResult`，其中 `timedOut:true`。
+- **输出截断**：stdout/stderr 必须按字节或字符上限截断，返回 `truncated:true`，并保留 stdout/stderr 的结构化字段；不得把无限输出塞进 tool result。
+- **平台匹配**：工具名声明的平台必须和后端检测结果匹配；不匹配不尝试执行，返回结构化失败结果（固定字段里至少有 `platform/shell/command/cwd/exitCode/stdout/stderr/durationMs/timedOut/truncated`，`stderr` 说明 platform mismatch）。
+- **cwd 不硬编码本机路径**：工具实现、guide、测试和示例不得写死 `/Users/...`、`/Volumes/...`、`C:\Users\...` 等开发机路径。`cwd` 只能来自 schema 参数、会话/工作区上下文或后端默认工作目录；无效目录返回结构化失败结果，`stderr` 说明 cwd 无效原因。
+- **错误结构化返回**：参数非法仍用工具层 `{ ok:false, error:'...' }`；命令执行失败（非零退出、timeout、spawn 失败、平台不匹配、cwd 无效）经 `ShellCommandResult` 的固定字段返回 `exitCode/stdout/stderr/durationMs/timedOut/truncated`，不抛裸异常、不只回自由文本。
+
+最终验收清单：
+
+- [ ] `shell_macos` / `shell_linux` / `shell_powershell` 都按 §9 目录结构落地：`.ts` + `.md` + `.test.ts`，并在 `register.ts` 显式注册。
+- [ ] registry 单测覆盖 manifest-only：`list()` 里三个 shell tools 只有 name/description/runtime；`loadSchema()` 才出现 schema + guide。
+- [ ] 工具单测覆盖：合法参数调用 `ctx.runShell`；非法参数返回工具层 error；平台不匹配/timeout/输出截断/非零退出/cwd 无效都映射为结构化 `ShellCommandResult`。
+- [ ] `ctx.runShell` / Tauri command 桥接单测或编译检查覆盖：前端没有绕过 ctx 的 shell 调用；Rust command 能编译，返回类型能被 TS 侧消费。
+- [ ] `npm test`
+- [ ] `npm run build`
+- [ ] `cd src-tauri && cargo check`

@@ -6,7 +6,19 @@ import { skillReadTool } from './skill-read/skill-read'
 import { askUserQuestionTool } from './ask-user-question/ask-user-question'
 import { browserActionTool } from './browser-action/browser-action'
 import { saveFileTool } from './save-file/save-file'
+import { shellMacosTool } from './shell-macos/shell-macos'
+import { shellLinuxTool } from './shell-linux/shell-linux'
+import { shellPowershellTool } from './shell-powershell/shell-powershell'
 
-for (const tool of [skillSearchTool, skillReadTool, askUserQuestionTool, browserActionTool, saveFileTool]) {
+for (const tool of [
+  skillSearchTool,
+  skillReadTool,
+  askUserQuestionTool,
+  browserActionTool,
+  saveFileTool,
+  shellMacosTool,
+  shellLinuxTool,
+  shellPowershellTool,
+]) {
   toolRegistry.register(tool)
 }

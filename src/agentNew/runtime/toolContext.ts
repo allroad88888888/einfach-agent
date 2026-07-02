@@ -15,6 +15,7 @@ import { getSessionStore } from '../state/sessionStore'
 import { runAtom } from '../state/sessionAtoms'
 import { addBrowserCard, addPendingArtifact, upsertToolActivity } from '../state/transientAtoms'
 import { newId } from './newId'
+import { runShellCommand } from './shellCommand'
 
 const MAX_TOOL_DEPTH = 4
 
@@ -22,6 +23,11 @@ const MAX_TOOL_DEPTH = 4
 function isCurrentRun(sessionId: string, runId: string): boolean {
   if (!rootStore.getter(sessionsAtom)[sessionId]) return false
   return getSessionStore(sessionId).store.getter(runAtom)?.runId === runId
+}
+
+function shellProgressText(command: string): string {
+  const preview = command.replace(/\s+/g, ' ').trim()
+  return `执行 shell: ${preview ? preview.slice(0, 120) : '(empty command)'}`
 }
 
 /**
@@ -39,14 +45,27 @@ export function buildToolContext(opts: {
   const { sessionId, runId, signal, callId } = opts
   const stack = opts.stack ?? []
 
+  function assertFresh(): void {
+    if (signal.aborted || !isCurrentRun(sessionId, runId)) throw new Error('stale')
+  }
+
+  const progress: ToolContext['progress'] = (text) => {
+    // 迟到/被顶掉的 run 不写进度；esc 已断也不写。
+    if (signal.aborted || !isCurrentRun(sessionId, runId)) return
+    upsertToolActivity(sessionId, { callId, toolName: opts.toolName, text })
+  }
+
   return {
     sessionId,
     signal,
+    progress,
 
-    progress(text) {
-      // 迟到/被顶掉的 run 不写进度；esc 已断也不写。
-      if (signal.aborted || !isCurrentRun(sessionId, runId)) return
-      upsertToolActivity(sessionId, { callId, toolName: opts.toolName, text })
+    async runShell(input) {
+      assertFresh()
+      progress(shellProgressText(input.command))
+      const result = await runShellCommand(input)
+      assertFresh()
+      return result
     },
 
     renderCard(card) {

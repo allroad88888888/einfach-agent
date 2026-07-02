@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { createToolRegistry, toolRegistry, type ToolRegistry } from './registry'
 import type { Tool, ToolContext } from './types'
+import './register'
 
 // 最小 fake ctx：registry.run 只把它原样透传给 tool.execute，本文件不校验副作用面。
 const ctx: ToolContext = {
@@ -8,6 +9,18 @@ const ctx: ToolContext = {
   signal: new AbortController().signal,
   progress() {},
   callTool: async () => ({ ok: true }),
+  runShell: async (input) => ({
+    platform: input.platform,
+    shell: 'test',
+    command: input.command,
+    cwd: input.cwd ?? '',
+    exitCode: 0,
+    stdout: '',
+    stderr: '',
+    durationMs: 0,
+    timedOut: false,
+    truncated: false,
+  }),
   renderCard: () => ({ cardId: 'x' }),
   saveArtifact: () => ({ artifactId: 'y' }),
 }
@@ -81,6 +94,21 @@ describe('tools/registry —— 抽象工厂 ToolRegistry（§3/§4）', () => {
   it('loadSchema 未知名 → undefined', () => {
     const reg = createToolRegistry()
     expect(reg.loadSchema('nope')).toBeUndefined()
+  })
+
+  it('内置 shell tools 已注册，manifest-only；loadSchema 才暴露 schema + guide', () => {
+    const shellNames = ['shell_macos', 'shell_linux', 'shell_powershell']
+    const list = toolRegistry.list().filter((tool) => shellNames.includes(tool.name))
+
+    expect(list.map((tool) => tool.name).sort()).toEqual([...shellNames].sort())
+    for (const item of list) {
+      expect(Object.keys(item).sort()).toEqual(['description', 'name', 'runtime'])
+      expect(item.runtime).toBe('internal')
+    }
+
+    const loaded = toolRegistry.loadSchema('shell_macos')
+    expect(loaded?.inputSchema).toMatchObject({ required: ['command'] })
+    expect(loaded?.guide.length).toBeGreaterThan(0)
   })
 
   it('run 未知名 → { ok:false, error 含 "unknown tool" }（不抛）', async () => {

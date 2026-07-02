@@ -11,6 +11,18 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
     signal: new AbortController().signal,
     progress: vi.fn(),
     callTool: vi.fn(),
+    runShell: vi.fn(async (input) => ({
+      platform: input.platform,
+      shell: 'test',
+      command: input.command,
+      cwd: input.cwd ?? '',
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      durationMs: 0,
+      timedOut: false,
+      truncated: false,
+    })),
     // 默认成功返回一个 cardId；具体测试可覆盖。
     renderCard: vi.fn(() => ({ cardId: 'card-1' })),
     saveArtifact: vi.fn(() => ({ artifactId: 'art-1' })),

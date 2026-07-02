@@ -8,6 +8,18 @@ function makeCtx(): ToolContext {
     signal: new AbortController().signal,
     progress: vi.fn(),
     callTool: vi.fn(),
+    runShell: vi.fn(async (input) => ({
+      platform: input.platform,
+      shell: 'test',
+      command: input.command,
+      cwd: input.cwd ?? '',
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      durationMs: 0,
+      timedOut: false,
+      truncated: false,
+    })),
     renderCard: vi.fn(),
     saveArtifact: vi.fn(),
   }

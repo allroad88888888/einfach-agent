@@ -114,3 +114,49 @@ describe('ctx 副作用 + stale 守卫', () => {
     expect(ctx.saveArtifact({ filename: 'a.txt', content: 'x' })).toEqual({ error: 'stale' })
   })
 })
+
+describe('ctx.runShell 桥接', () => {
+  it('live run：写 shell 进度；Vitest/浏览器无 Tauri 时返回可读错误 result', async () => {
+    seedRunningSession('s1', 'r')
+    const ctx = ctxFor('shell_exec', 's1', 'r')
+
+    const result = await ctx.runShell({ platform: 'macos', command: 'pwd', cwd: '/tmp' })
+
+    expect(getSessionStore('s1').store.getter(toolActivityAtom)).toEqual([
+      { callId: 'call1', toolName: 'shell_exec', text: '执行 shell: pwd' },
+    ])
+    expect(result).toMatchObject({
+      platform: 'macos',
+      shell: 'unavailable',
+      command: 'pwd',
+      cwd: '/tmp',
+      exitCode: 1,
+      stdout: '',
+      timedOut: false,
+      truncated: false,
+    })
+    expect(result.stderr).toContain('Tauri desktop runtime')
+    expect(result.durationMs).toBeGreaterThanOrEqual(0)
+  })
+
+  it('stale / aborted runShell 直接抛 stale，不调用桥接副作用', async () => {
+    seedRunningSession('s1', 'r')
+
+    await expect(ctxFor('shell_exec', 's1', 'OLD').runShell({ platform: 'macos', command: 'pwd' })).rejects.toThrow(
+      'stale',
+    )
+
+    const controller = new AbortController()
+    controller.abort()
+    const aborted = buildToolContext({
+      sessionId: 's1',
+      runId: 'r',
+      signal: controller.signal,
+      callId: 'call2',
+      toolName: 'shell_exec',
+    })
+
+    await expect(aborted.runShell({ platform: 'macos', command: 'pwd' })).rejects.toThrow('stale')
+    expect(getSessionStore('s1').store.getter(toolActivityAtom)).toEqual([])
+  })
+})
