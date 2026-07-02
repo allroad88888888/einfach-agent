@@ -132,34 +132,38 @@ export interface ToolRegistry {
   - **防环 + 限深**：ctx 内部携带一个「调用栈」`Set<string>` 与 `depth`；`callTool` 时若 `name` 已在栈中 → `{ok:false,error:'tool cycle: <name>'}`；`depth > MAX_TOOL_DEPTH(=4)` → `{ok:false,error:'tool depth exceeded'}`。子调用的 `progress` 归属父 callId（或各自 callId，实现时定，不阻塞）。
   - `pause` **不允许经 callTool 冒泡**：被调工具返回 `{pause}` 时，`callTool` 折成 `{ok:false,error:'cannot pause inside callTool'}`（暂停只能是顶层 model 触发，避免嵌套暂停语义混乱）。
 
-## §9 目录与注册（一文件一工具，全部集中在 defs/ 一个文件夹）
+## §9 目录与注册（每个工具一个独立文件夹）
 
-**所有工具集中在 `tools/defs/` 一个文件夹，不分散到别处。** 一个工具 = 一个 `.ts`（自带 skill，见下），互不 import。
+**每个工具一个独立文件夹**，文件夹内放三件一起：Tool 实现 `.ts` + skill 正文 `.md`（同目录）+ colocated 测试。工具之间互不 import。
 
 ```
 tools/
   TOOLS-SPEC.md          // 本文
   types.ts               // Tool / ToolSkill / ToolContext / ToolResult / ToolSummary / LoadedTool
-  registry.ts            // createToolRegistry() + 单例 toolRegistry（抽象工厂，替掉旧 registry.ts）
-  defs/                  // ← 所有工具都在这一个文件夹
-    index.ts             // 显式 import 每个工具 + registry.register(...)（批量生成加一行）
-    ask-user-question.ts // 各工具一个文件，export 一个 Tool（含其 skill）
-    skill-search.ts
-    skill-read.ts
-    browser-action.ts
-    save-file.ts
+  registry.ts            // createToolRegistry() + 单例 toolRegistry
+  register.ts            // 显式 import 每个工具 + toolRegistry.register(...)（批量生成加一行）
+  skill-search/          // ← 每个工具一个独立文件夹
+    skill-search.ts      //   Tool 实现（import ./skill-search.md?raw 作 skill.content）
+    skill-search.md      //   skill 正文（?raw，同目录，§2 的 ToolSkill.content）
+    skill-search.test.ts //   colocated 测试
+  skill-read/            { skill-read.ts / .md / .test.ts }
+  ask-user-question/     { … }
+  browser-action/        { … }
+  save-file/             { … }
 ```
 
-- **skill 内容默认内联在工具 `.ts` 里**（`skill.content` 用模板字符串）——保持「一文件一工具」，批量生成产一个 `.ts` 即可。指南很长时才拆出同目录 `defs/<name>.md?raw`（仍在同一文件夹）。
-- `defs/index.ts` 显式注册（确定性 + 可 tree-shake），不用 `import.meta.glob`。批量生成 = 新增 `defs/<name>.ts` + index 里加一行 import/register。
+- **skill 正文放同目录的 `<name>.md`**（`?raw` 导入，`vite-env.d.ts` 已声明 `*.md?raw`），工具 `.ts` 里 `content: <name>Md`。
+- `register.ts` 显式注册（确定性 + 可 tree-shake），不用 `import.meta.glob`。运行时经 `import '../tools/register'`（modelRun 已引）触发注册。
+- **批量生成 = 新建 `tools/<name>/` 一个文件夹（`.ts` + `.md` + `.test.ts`）+ register.ts 加一行 import/register**。
 
 ## §10 批量生成模板
 
 每个工具照此模板产出（生成器/LLM 只填 4 处：name/description/schema/execute 逻辑）：
 
 ```ts
-// tools/defs/<name>.ts
+// tools/<name>/<name>.ts
 import type { Tool } from '../types'
+import guide from './<name>.md?raw' // skill 正文（同目录 .md）
 
 const inputSchema = { type: 'object', properties: { /* ... */ }, required: [/* ... */] }
 
@@ -169,7 +173,7 @@ export const <name>Tool: Tool = {
   skill: {
     description: '<一句话，给 model 看，进 manifest>',
     triggers: ['<可选触发词>'],
-    content: `<完整使用指南（markdown）：何时用、参数含义、示例、注意事项。载工具时随 schema 给 model>`,
+    content: guide, // 完整指南在同目录 <name>.md，载工具时随 schema 给 model
   },
   inputSchema,
   async execute(args, ctx) {

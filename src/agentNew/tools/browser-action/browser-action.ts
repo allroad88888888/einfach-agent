@@ -1,8 +1,9 @@
-// tools/defs/browser-action.ts —— 副作用工具「browser_action」（TOOLS-SPEC §9/§10/§12）。
+// tools/browser-action/browser-action.ts —— 副作用工具「browser_action」（TOOLS-SPEC §9/§10/§12）。
 // 关键差异：不再直接 addBrowserCard / 写 stale 守卫；卡片渲染统一经 ctx.renderCard，
 // harness 负责写 atom + 集中 stale/ghost 守卫，回 {cardId} 或 {error}。
 // 本文件零依赖：只 import 类型；绝不 import state/atom/store；副作用只经 ctx。
 import type { Tool } from '../types'
+import guide from './browser-action.md?raw' // skill 正文（同目录 .md）
 
 // lazy schema（照旧 registry）：唯一 action 是 render_card；payload 只承载 title/body。
 const inputSchema = {
@@ -49,18 +50,7 @@ export const browserActionTool: Tool = {
   skill: {
     description: '渲染信息卡片到对话流（render_card）。',
     triggers: ['卡片', 'card', 'render', '展示'],
-    content: `# browser_action
-
-在对话流里渲染一张**信息卡片**。当前唯一 action 是 \`render_card\`。
-
-## 参数
-- \`action\`：固定 \`'render_card'\`。
-- \`payload.title\`（必填）：卡片标题，非空字符串。
-- \`payload.body\`（可选）：卡片正文文本。
-
-## 注意
-- **卡片不持久化**：它只是即时的可视化，不会进对话历史。请务必在**最终回复里用文字概括卡片内容**，否则用户刷新后就丢了。
-- title 为空 / action 不是 render_card 会直接失败，不产生卡片。`,
+    content: guide,
   },
   inputSchema,
   execute(args, ctx) {

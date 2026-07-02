@@ -13,7 +13,7 @@ function makeCtx(): ToolContext {
   }
 }
 
-describe('tools/defs/ask-user-question', () => {
+describe('tools/ask-user-question/ask-user-question', () => {
   it('身份/runtime/skill 元数据齐备（含 content），required 含 id+questions', () => {
     expect(askUserQuestionTool.name).toBe('ask_user_question')
     expect(askUserQuestionTool.runtime).toBe('internal')

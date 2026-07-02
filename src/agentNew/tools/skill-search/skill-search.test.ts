@@ -14,7 +14,7 @@ function makeCtx(): ToolContext {
   }
 }
 
-describe('tools/defs/skill-search', () => {
+describe('tools/skill-search/skill-search', () => {
   it('身份/runtime/skill 元数据齐备（含 content）', () => {
     expect(skillSearchTool.name).toBe('skill_search')
     expect(skillSearchTool.runtime).toBe('internal')

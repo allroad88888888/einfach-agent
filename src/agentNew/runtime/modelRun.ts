@@ -25,7 +25,7 @@ import { callGlm } from '../api/glm'
 import type { ModelChatResponse } from '../api/modelApi'
 import { toolRegistry } from '../tools/registry'
 import type { LoadedTool, ToolResult } from '../tools/types'
-import '../tools/defs' // 副作用：把内置工具注册进 toolRegistry（运行时任何用工具的路径都经 modelRun）。
+import '../tools/register' // 副作用：把内置工具注册进 toolRegistry（运行时任何用工具的路径都经 modelRun）。
 import { ensureToolLoaded } from './toolLoading'
 import { buildToolContext } from './toolContext'
 import { buildSystemItem, buildTurnTools, narrowToolCalls, safeParseArgs } from './modelTurn'

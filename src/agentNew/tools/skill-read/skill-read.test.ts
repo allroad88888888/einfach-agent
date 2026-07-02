@@ -13,7 +13,7 @@ function makeCtx(): ToolContext {
   }
 }
 
-describe('tools/defs/skill-read', () => {
+describe('tools/skill-read/skill-read', () => {
   it('身份/runtime/skill 元数据齐备（含 content）', () => {
     expect(skillReadTool.name).toBe('skill_read')
     expect(skillReadTool.runtime).toBe('internal')

@@ -14,7 +14,7 @@ import { runAtom } from '../state/sessionAtoms'
 import { setRun } from '../state/sessionWriters'
 import { toolRegistry } from '../tools/registry'
 import type { LoadedTool } from '../tools/types'
-import '../tools/defs' // 注册内置工具，loadSchema('save_file') 才有值
+import '../tools/register' // 注册内置工具，loadSchema('save_file') 才有值
 import { appendVisibleTool, ensureToolLoaded } from './toolLoading'
 
 afterEach(() => {
