@@ -103,11 +103,14 @@ T 与 D 相互独立，可并行推进；Ta 依赖 D；C 依赖 T（移植完才
 | D | D-4 接线 | ✅ 已验收（codex 收口：修 revert 越界 turnIndex 仍 persistTruncate 误删全部盘 checkpoint 的 P2；176 全绿） |
 | Ta | Ta-1 tauri init | 待开工 |
 | Ta | Ta-2 sqlite driver | 待开工 |
-| C | C-1/2/3 清理+验证 | 待开工 |
+| C | C-1 删 src/agent + src/chat | ✅ 已验收（整树删除，无残留引用） |
+| C | C-2 清 @ai-components alias + 依赖 + global.css | ✅ 已验收（vite/tsconfig/vite-env 清 alias；删 6 死依赖 -109 包；global.css 1597→44 行） |
+| C | C-3 build + test 验证独立 | ✅ 已验收（build 干净；npm test 31 文件/212 全绿；agentNew 完全自立） |
 
 ## §9 决策日志
 - 2026-07-01：四块补全立项（T tool/skill · D 持久化 · Ta Tauri · C 清理）。
 - 2026-07-01：调研旧 src/agent tool/skill 机制（Explore）；确认 agentNew 用 itemsAtom 直存取代 continuation blob（TK1），不建 delegate_agent（TK2），瞬态 atom 入会话 store 不分桶（TK5）。
+- 2026-07-02：**块 C 完成**（清旧树）。删 `src/agent` + `src/chat` 整树；清 `@ai-components` 的 vite alias / tsconfig paths / vite-env 声明 / server.fs.allow / echarts 测试 alias；删旧树专用死依赖 `@antv/g2`/`clsx`/`echarts`/`prismjs`/`remark-gfm` + `@types/prismjs`（npm install -109 包）；`global.css` 从 1597 行精简到 44 行基础规则（旧 UI 组件样式随旧树删）。build 干净 + `npm test` 31 文件/212 全绿，app 完全 agentNew 独立。⚠️ 遗留：CLAUDE.md 的「External path dependencies」「Architecture(src/agent)」段已过时，待更新。
 - 2026-07-02：**T-8 完成**（8 阶段多 agent 派活 + 三卡片 CSS）。codex 收口 2 个 P2（无 P1）：waiting_user 时 Composer/sendMessage 未锁忙碌（顶掉暂停 run→非法 tool-call 序列）；revert 未剪 browserCards（丢弃轮卡片仍渲染）。均已修 + 回归测试。顺带 T-7 遗留的 codex P3（空 assistant 气泡）在 P8-g 一并解决。至此**块 T 全部完成**。
 - 2026-07-01：首批 T-1/T-2/T-3/D-1 codex 零 finding。codex 顺带 4 个非首批项归后续：[P1] main.tsx seed 前应先 hydrate（→ D-4）；[P2] modelRun finish_reason（→ RUI5）；[P2] main.tsx 未传完整 model config baseUrl/model（→ 后续完善）；[P2] modelRun error 未在 UI 显示（→ T-8 UI 加 run.error 提示）。
 - 2026-07-01：**T-7 + D-4 收口**（`codex review --uncommitted`，5 findings，无 🟥/P1）：

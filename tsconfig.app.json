@@ -20,17 +20,7 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
-      "@ai-components/markdown": ["/Volumes/work/web/ai-components/packages/markdown/src/index.ts"],
-      "@ai-components/title": ["/Volumes/work/web/ai-components/packages/title/src/index.ts"],
-      "@ai-components/table": ["/Volumes/work/web/ai-components/packages/table/src/index.ts"],
-      "@ai-components/code": ["/Volumes/work/web/ai-components/packages/code/src/index.ts"],
-      "@ai-components/blockquote": ["/Volumes/work/web/ai-components/packages/blockquote/src/index.ts"],
-      "@ai-components/list": ["/Volumes/work/web/ai-components/packages/list/src/index.ts"],
-      "@ai-components/paragraph": ["/Volumes/work/web/ai-components/packages/paragraph/src/index.ts"],
-      "@ai-components/link": ["/Volumes/work/web/ai-components/packages/link/src/index.ts"],
-      "@ai-components/layout": ["/Volumes/work/web/ai-components/packages/layout/src/index.ts"],
-      "@ai-components/textarea-base": ["/Volumes/work/web/ai-components/packages/textarea/src/textarea.tsx"]
+      "@/*": ["src/*"]
     }
   },
   "include": ["src"]

@@ -3,50 +3,25 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-const aiComponentsRoot = '/Volumes/work/web/ai-components/packages'
 const appNodeModules = '/Volumes/work/ai/web-agent/node_modules'
-
-const aiComponentAliases = {
-  '@ai-components/markdown': `${aiComponentsRoot}/markdown/src/index.ts`,
-  '@ai-components/title': `${aiComponentsRoot}/title/src/index.ts`,
-  '@ai-components/table': `${aiComponentsRoot}/table/src/index.ts`,
-  '@ai-components/code': `${aiComponentsRoot}/code/src/index.ts`,
-  '@ai-components/blockquote': `${aiComponentsRoot}/blockquote/src/index.ts`,
-  '@ai-components/list': `${aiComponentsRoot}/list/src/index.ts`,
-  '@ai-components/paragraph': `${aiComponentsRoot}/paragraph/src/index.ts`,
-  '@ai-components/link': `${aiComponentsRoot}/link/src/index.ts`,
-  '@ai-components/layout': `${aiComponentsRoot}/layout/src/index.ts`,
-  '@ai-components/textarea-base': `${aiComponentsRoot}/textarea/src/textarea.tsx`,
-}
 
 export default defineConfig({
   plugins: [react()],
   resolve: {
+    // react/react-dom 强制解析到本 app 的 node_modules 并去重，避免多副本 React。
     alias: {
       react: `${appNodeModules}/react`,
       'react-dom': `${appNodeModules}/react-dom`,
       '@': '/Volumes/work/ai/web-agent/src',
-      ...aiComponentAliases,
     },
     dedupe: ['react', 'react-dom'],
-  },
-  server: {
-    fs: {
-      allow: ['/Volumes/work/ai/web-agent', '/Volumes/work/web/ai-components'],
-    },
   },
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
     css: true,
     restoreMocks: true,
+    // 运行时用模块级单例（如 abortRegistry / 每会话 store 缓存），测试串行避免共享态串扰。
     fileParallelism: false,
-    // Test-only: collapse the bare `echarts` specifier (resolved by aliased
-    // ai-components against its own pnpm copy) onto the app's single echarts
-    // module so `vi.mock('echarts')` reliably intercepts it in jsdom (no canvas).
-    // Affects vitest only — `vite build`/dev resolution is untouched.
-    alias: {
-      echarts: `${appNodeModules}/echarts`,
-    },
   },
 })
