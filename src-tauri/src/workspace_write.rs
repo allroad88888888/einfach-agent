@@ -313,3 +313,101 @@ fn error_result(path: &str, error: impl Into<String>) -> WorkspaceWriteResult {
 fn to_io_error(err: std::io::Error) -> String {
     err.to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    // 真写磁盘的集成测试：create 模式真在磁盘落文件（含 create_dirs 建父目录），
+    // 且 confine 拒 ../ 与 workspace 外绝对路径，越界时磁盘上不留任何文件。
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // (base, workspace)：base 唯一且 canonicalize；workspace = base/ws 也 canonicalize。
+    fn unique_workspace() -> (PathBuf, PathBuf) {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let mut base = std::env::temp_dir();
+        base.push(format!("ws_write_it_{}_{}", std::process::id(), seq));
+        fs::create_dir_all(&base).expect("create base");
+        let base = fs::canonicalize(&base).expect("canonicalize base");
+        let ws = base.join("ws");
+        fs::create_dir_all(&ws).expect("create ws");
+        let ws = fs::canonicalize(&ws).expect("canonicalize ws");
+        (base, ws)
+    }
+
+    fn root_arg(ws: &Path) -> Option<String> {
+        Some(ws.to_string_lossy().into_owned())
+    }
+
+    #[test]
+    fn create_writes_file_to_disk() {
+        // create 模式：磁盘上真出现文件且内容正确，path 为 workspace 相对，created=true。
+        let (base, ws) = unique_workspace();
+        let result = write_workspace_file_blocking(
+            "out/hello.txt".to_string(),
+            "written content".to_string(),
+            Some("create".to_string()),
+            None,
+            Some(true), // create_dirs：out/ 不存在，需自动建
+            None,
+            root_arg(&ws),
+        )
+        .expect("worker 层不应报错");
+        assert!(result.ok, "create 应成功，错误: {:?}", result.error);
+        assert!(result.created, "应标记为新建");
+        assert_eq!(result.path, "out/hello.txt", "path 应为 workspace 相对路径");
+
+        let on_disk = fs::read_to_string(ws.join("out/hello.txt")).expect("文件应真出现在磁盘");
+        assert_eq!(on_disk, "written content", "磁盘内容应与写入一致");
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn rejects_parent_escape() {
+        // ../ 越界写：结构化失败(ok=false，error 含 ..)，磁盘上不留文件。
+        let (base, ws) = unique_workspace();
+        let result = write_workspace_file_blocking(
+            "../evil.txt".to_string(),
+            "nope".to_string(),
+            Some("create".to_string()),
+            None,
+            None,
+            None,
+            root_arg(&ws),
+        )
+        .expect("worker 层不应报错");
+        assert!(!result.ok, "../ 越界写必须失败");
+        let err = result.error.unwrap_or_default();
+        assert!(err.contains(".."), "应因 .. 被拒，实际: {err}");
+        assert!(!base.join("evil.txt").exists(), "越界文件不应被创建");
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn rejects_absolute_outside_path() {
+        // workspace 外绝对路径写：ok=false，磁盘上不留文件。
+        let (base, ws) = unique_workspace();
+        let outside = base.join("evil.txt");
+        let result = write_workspace_file_blocking(
+            outside.to_string_lossy().into_owned(),
+            "nope".to_string(),
+            Some("create".to_string()),
+            None,
+            None,
+            None,
+            root_arg(&ws),
+        )
+        .expect("worker 层不应报错");
+        assert!(!result.ok, "workspace 外绝对路径写必须失败");
+        let err = result.error.unwrap_or_default();
+        assert!(
+            err.contains("within the workspace root"),
+            "应因越界被拒，实际: {err}"
+        );
+        assert!(!outside.exists(), "越界文件不应被创建");
+
+        let _ = fs::remove_dir_all(&base);
+    }
+}

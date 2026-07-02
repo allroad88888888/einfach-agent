@@ -618,3 +618,148 @@ fn path_to_slash_string(path: &Path) -> String {
         text.replace(MAIN_SEPARATOR, "/")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    // 真读磁盘的集成测试：用 fs::write 造真文件，显式把该目录作为 workspace_root 传入 *_blocking，
+    // 验证 read/list/search 真读到内容，以及 confine（../、workspace 外绝对路径、文件系统根 `/`）在真实路径下被拒。
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // 返回 (base, workspace)：base 唯一且 canonicalize；workspace = base/ws 也 canonicalize
+    //（满足 resolve_workspace_path 的 starts_with(root) 校验）。base 用于放 workspace 外的"越界目标"文件。
+    fn unique_workspace() -> (PathBuf, PathBuf) {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let mut base = std::env::temp_dir();
+        base.push(format!("ws_read_it_{}_{}", std::process::id(), seq));
+        fs::create_dir_all(&base).expect("create base");
+        let base = fs::canonicalize(&base).expect("canonicalize base");
+        let ws = base.join("ws");
+        fs::create_dir_all(&ws).expect("create ws");
+        let ws = fs::canonicalize(&ws).expect("canonicalize ws");
+        (base, ws)
+    }
+
+    fn root_arg(ws: &Path) -> Option<String> {
+        Some(ws.to_string_lossy().into_owned())
+    }
+
+    #[test]
+    fn read_file_returns_content() {
+        // read_file 读回磁盘上真实文件的完整内容，path 为 workspace 相对。
+        let (base, ws) = unique_workspace();
+        fs::write(ws.join("notes.txt"), "hello read world").expect("seed file");
+
+        let result = read_workspace_file_blocking("notes.txt".to_string(), None, root_arg(&ws))
+            .expect("read should succeed");
+        assert_eq!(result.content, "hello read world");
+        assert!(!result.truncated);
+        assert_eq!(result.path, "notes.txt", "path 应为 workspace 相对路径");
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn list_files_includes_nested_entry() {
+        // list_files 递归列出真实存在的嵌套文件。
+        let (base, ws) = unique_workspace();
+        fs::create_dir_all(ws.join("src")).expect("mkdir src");
+        fs::write(ws.join("src/app.ts"), "export const x = 1;\n").expect("seed nested file");
+
+        let result =
+            list_workspace_files_blocking(Some(".".to_string()), Some(true), None, None, root_arg(&ws))
+                .expect("list should succeed");
+        assert!(
+            result
+                .entries
+                .iter()
+                .any(|e| e.path == "src/app.ts" && e.entry_type == "file"),
+            "应列出 src/app.ts(file)，实际: {:?}",
+            result.entries.iter().map(|e| &e.path).collect::<Vec<_>>()
+        );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn search_files_finds_keyword() {
+        // search_files 在真实文件里搜到关键字，返回相对路径 + 行号 + 命中行。
+        let (base, ws) = unique_workspace();
+        fs::create_dir_all(ws.join("src")).expect("mkdir src");
+        fs::write(
+            ws.join("src/app.ts"),
+            "line one\nfind NEEDLE_TOKEN here\nline three\n",
+        )
+        .expect("seed file");
+
+        let result = search_workspace_files_blocking(
+            "NEEDLE_TOKEN".to_string(),
+            None,
+            None,
+            None,
+            root_arg(&ws),
+        )
+        .expect("search should succeed");
+        assert_eq!(result.matches.len(), 1, "应命中 1 处");
+        let m = &result.matches[0];
+        assert_eq!(m.path, "src/app.ts");
+        assert_eq!(m.line_number, 2, "命中在第 2 行");
+        assert!(m.line.contains("NEEDLE_TOKEN"));
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn read_rejects_parent_escape() {
+        // 真实越界：在 workspace 外(base)放 secret.txt，用 ../secret.txt 读 → 被 confine 拒。
+        let (base, ws) = unique_workspace();
+        fs::write(base.join("secret.txt"), "top secret").expect("seed outside file");
+
+        // ReadWorkspaceFileResult 无 Debug，避免 expect_err，直接 match 取 Err。
+        let err = match read_workspace_file_blocking("../secret.txt".to_string(), None, root_arg(&ws))
+        {
+            Err(err) => err,
+            Ok(_) => panic!("workspace 外文件必须被拒"),
+        };
+        assert!(
+            err.contains("escapes workspace root") || err.contains("not accessible"),
+            "应因越界被拒，实际: {err}"
+        );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn read_rejects_absolute_outside_path() {
+        // workspace 外的绝对路径 → canonicalize 后 starts_with(root) 失败被拒。
+        let (base, ws) = unique_workspace();
+        let outside = base.join("secret.txt");
+        fs::write(&outside, "top secret").expect("seed outside file");
+
+        let err = match read_workspace_file_blocking(
+            outside.to_string_lossy().into_owned(),
+            None,
+            root_arg(&ws),
+        ) {
+            Err(err) => err,
+            Ok(_) => panic!("workspace 外绝对路径必须被拒"),
+        };
+        assert!(
+            err.contains("escapes workspace root"),
+            "应因越界被拒，实际: {err}"
+        );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn resolve_workspace_root_rejects_filesystem_root() {
+        // resolve_workspace_root(Some("/")) → 拒（文件系统根，否则整块磁盘都成 workspace，confine 形同虚设）。
+        let err = resolve_workspace_root(Some("/")).expect_err("文件系统根必须被拒");
+        assert!(
+            err.contains("filesystem root"),
+            "应因文件系统根被拒，实际: {err}"
+        );
+    }
+}

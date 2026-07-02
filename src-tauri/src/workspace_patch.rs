@@ -563,6 +563,19 @@ mod tests {
         }
     }
 
+    fn replace(path: &str, old: &str, new: &str) -> PatchOperation {
+        PatchOperation::Replace {
+            path: path.to_string(),
+            old_text: old.to_string(),
+            new_text: new.to_string(),
+            expected_replacements: None,
+        }
+    }
+
+    fn root_arg(root: &Path) -> Option<String> {
+        Some(root.to_string_lossy().into_owned())
+    }
+
     #[test]
     fn delete_then_add_existing_file_is_rejected() {
         let root = unique_root();
@@ -595,6 +608,64 @@ mod tests {
             .get(&root.join("fresh.txt"))
             .expect("fresh.txt should be staged");
         assert_eq!(state.current.as_deref(), Some("second"));
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn replace_edits_file_on_disk() {
+        // 真在磁盘上跑 replace（非 dry_run）：apply 后磁盘内容真被改，changed_files 合理。
+        let root = unique_root();
+        fs::write(root.join("code.txt"), "const answer = 41;\n").expect("seed file");
+
+        let result = apply_workspace_patch_blocking(
+            vec![replace("code.txt", "41", "42")],
+            false,
+            root_arg(&root),
+        )
+        .expect("patch worker should not error");
+        assert!(result.ok, "replace 应成功，rejected: {:?}", result.rejected);
+        assert_eq!(result.changed_files, vec!["code.txt".to_string()]);
+
+        let on_disk = fs::read_to_string(root.join("code.txt")).expect("read back");
+        assert_eq!(on_disk, "const answer = 42;\n", "磁盘内容应被真替换");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dry_run_does_not_touch_disk() {
+        // dry_run：would_change 为真但磁盘不变。
+        let root = unique_root();
+        fs::write(root.join("code.txt"), "value = 1\n").expect("seed file");
+
+        let result = apply_workspace_patch_blocking(
+            vec![replace("code.txt", "1", "2")],
+            true,
+            root_arg(&root),
+        )
+        .expect("patch worker should not error");
+        assert!(result.ok);
+        assert!(result.would_change, "dry_run 应报告 would_change");
+
+        let on_disk = fs::read_to_string(root.join("code.txt")).expect("read back");
+        assert_eq!(on_disk, "value = 1\n", "dry_run 不应改磁盘");
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn replace_outside_workspace_is_rejected() {
+        // confine：replace 一个 ../ 越界路径 → 被拒(rejected 非空、ok=false)。
+        let root = unique_root();
+        let result = apply_workspace_patch_blocking(
+            vec![replace("../evil.txt", "a", "b")],
+            false,
+            root_arg(&root),
+        )
+        .expect("patch worker should not error");
+        assert!(!result.ok, "越界 replace 必须失败");
+        assert!(!result.rejected.is_empty(), "应有 rejected 记录");
 
         let _ = fs::remove_dir_all(&root);
     }

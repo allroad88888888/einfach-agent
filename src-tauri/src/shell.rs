@@ -447,3 +447,106 @@ fn kill_process_group(pid: u32) -> io::Result<()> {
         Err(io::Error::last_os_error())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    // 真 spawn 子进程的集成测试：不 mock，真的起 shell 跑 echo/pwd/sleep，
+    // 验证 stdout 捕获、退出码、cwd 生效、以及超时真的杀掉进程（用例整体 ~1s 内返回，不真等 5s）。
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    // 每个用例独立的临时目录：进程 pid + 原子计数器拼唯一子目录，避免并发撞目录；
+    // canonicalize 后与子进程 `pwd` 打印的物理路径一致（macOS 上 /var -> /private/var）。
+    fn unique_dir() -> PathBuf {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let mut dir = env::temp_dir();
+        dir.push(format!("shell_it_{}_{}", std::process::id(), seq));
+        fs::create_dir_all(&dir).expect("create temp dir");
+        fs::canonicalize(&dir).expect("canonicalize temp dir")
+    }
+
+    // 当前宿主平台字符串——run_shell_command_blocking 要求 requested==current，
+    // 否则直接返回 platform mismatch 的 failed_result（跑不到真实 spawn）。
+    fn host_platform() -> String {
+        current_platform().to_string()
+    }
+
+    #[test]
+    fn echo_captures_stdout_and_exit_code() {
+        // 真跑 `echo hello`（zsh / PowerShell 都识别）：stdout 含 hello、退出码 0、未超时。
+        let result = run_shell_command_blocking(
+            host_platform(),
+            "echo hello".to_string(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("worker 层不应报错");
+        assert!(
+            result.stdout.contains("hello"),
+            "stdout 应含 hello，实际: {:?}",
+            result.stdout
+        );
+        assert_eq!(result.exit_code, Some(0), "echo 应以 0 退出");
+        assert!(!result.timed_out, "echo 不应超时");
+    }
+
+    #[test]
+    fn pwd_reflects_requested_cwd() {
+        // 真跑 pwd（win: Get-Location）在指定 cwd 下 → stdout 含该目录的物理路径，且结果 cwd 字段回显它。
+        let dir = unique_dir();
+        let command = if cfg!(target_os = "windows") {
+            "Get-Location | ForEach-Object { $_.Path }".to_string()
+        } else {
+            "pwd".to_string()
+        };
+        let result = run_shell_command_blocking(
+            host_platform(),
+            command,
+            Some(dir.to_string_lossy().into_owned()),
+            None,
+            None,
+            None,
+        )
+        .expect("worker 层不应报错");
+        assert_eq!(result.exit_code, Some(0), "pwd 应以 0 退出");
+        let expected = dir.to_string_lossy();
+        assert!(
+            result.stdout.contains(expected.as_ref()),
+            "stdout 应含 cwd `{expected}`，实际: {:?}",
+            result.stdout
+        );
+        assert_eq!(result.cwd.as_str(), expected.as_ref(), "结果 cwd 应为解析后的目录");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sleep_beyond_timeout_is_killed() {
+        // 真跑 sleep 5（win: Start-Sleep 5）配 timeout_ms=200：
+        // 断言 timed_out==true，且用例整体远早于 5s 返回（证明进程被杀、没有真等满）。
+        let command = if cfg!(target_os = "windows") {
+            "Start-Sleep -Seconds 5".to_string()
+        } else {
+            "sleep 5".to_string()
+        };
+        let started = Instant::now();
+        let result = run_shell_command_blocking(
+            host_platform(),
+            command,
+            None,
+            Some(200),
+            None,
+            None,
+        )
+        .expect("worker 层不应报错");
+        let elapsed = started.elapsed();
+        assert!(result.timed_out, "sleep 应被判定超时");
+        assert!(
+            elapsed < Duration::from_secs(3),
+            "超时应快速返回(杀掉进程)，实际耗时 {:?}",
+            elapsed
+        );
+    }
+}
