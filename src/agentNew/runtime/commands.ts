@@ -1,0 +1,194 @@
+// P-R3：runtime 命令 API —— UI ↔ runtime 的唯一边界。
+// ---------------------------------------------------------------------------
+// 契约（RUNTIME-UI-PLAN §1）：
+//   · U1 runtime/UI 隔离：UI 只做两件事 —— 读 atom + 调这里导出的命令。UI 绝不直接
+//     setter atom / import writers / 碰 store 实例；这些命令是唯一入口边界。
+//   · U2 命令不收 store：每个命令都不接 `store` 参数，内部自取 rootStore /
+//     getSessionStore(activeId)。UI 拿不到、也不需要 store 引用。
+//   · U7 signal 全穿透 + 失败降级：sendMessage 起 run 时把 abort signal 穿到 model；
+//     model 失败由 runSession 内部降级（不抛崩 UI）。
+// 本文只编排 rootStore / sessionStore / abortRegistry / modelRun / checkpointWriters，
+// 不 import 任何 UI（U1）。
+
+import { rootStore, sessionsAtom, activeSessionIdAtom } from '../state/rootStore'
+import { createSessionStore, getSessionStore, dropSessionStore } from '../state/sessionStore'
+import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
+import { appendItem, patchRun } from '../state/sessionWriters'
+import { getPendingQuestionAnswers, clearPendingQuestionAnswers } from '../state/transientAtoms'
+import { jumpToCheckpoint } from '../state/checkpointWriters'
+import { beginRun, abortRun, endRun } from './abortRegistry'
+import { runSession, runToolLoop } from './modelRun'
+import { persistSessions, persistDeleteSession, persistTruncate } from './persistenceBridge'
+import { newId } from './newId'
+import type { ModelSettings, SessionMeta, ConversationItem } from '../state/core.type'
+import { DEFAULT_DEEPSEEK_MODEL } from '../api/deepseek'
+
+// ===========================================================================
+// 模块级配置注入 —— apiKey 来源（兼顾可测）
+// ===========================================================================
+// main.tsx 启动时用 env 注入真 key（configureCommands）；测试注入 fake key / fetchImpl。
+// 命令不收 store（U2），apiKey 也不该由 UI 逐次传入 —— 集中在此模块级配置。
+let runtimeConfig: { deepseekApiKey: string; glmApiKey: string; fetchImpl?: typeof fetch } = {
+  deepseekApiKey: '',
+  glmApiKey: '',
+}
+
+// 简介：注入/更新运行时配置（apiKey / 可选 fetchImpl）。
+// 详情：浅合并，只覆盖传入的字段；未传的保持原值。
+export function configureCommands(cfg: Partial<typeof runtimeConfig>): void {
+  runtimeConfig = { ...runtimeConfig, ...cfg }
+}
+
+// ===========================================================================
+// 会话命令
+// ===========================================================================
+
+// 简介：新建会话 → 登记 rootStore.sessionsAtom → 建每会话 store → 设为 active，返回 id。
+// 详情：默认 settings 为 deepseek + 默认模型；opts.settings / opts.title 可覆盖。
+export function newSession(opts?: { title?: string; settings?: ModelSettings }): string {
+  const id = newId()
+  const settings: ModelSettings = opts?.settings ?? {
+    vendor: 'deepseek',
+    model: DEFAULT_DEEPSEEK_MODEL,
+  }
+  const now = Date.now()
+  const meta: SessionMeta = {
+    id,
+    title: opts?.title ?? '新对话',
+    settings,
+    createdAt: now,
+    updatedAt: now,
+  }
+  rootStore.setter(sessionsAtom, (prev) => ({ ...prev, [id]: meta }))
+  createSessionStore(id)
+  rootStore.setter(activeSessionIdAtom, id)
+  persistSessions() // D-4：会话列表变更 → 覆盖式落盘（fire-and-forget）。
+  return id
+}
+
+// 简介：切换当前激活会话。
+export function selectSession(id: string): void {
+  rootStore.setter(activeSessionIdAtom, id)
+}
+
+// 简介：删除会话 —— 不可变从 sessionsAtom 删 id + 丢弃其 store。
+// 详情：若删的是当前 active，active 落到剩余任一 id（Object.keys 第一个）或空串。
+export function removeSession(id: string): void {
+  // 先中断该会话可能在跑的 run（否则 abortRegistry 的 controller 泄漏、model 请求白跑）。
+  abortRun(id)
+  rootStore.setter(sessionsAtom, (prev) => {
+    const next = { ...prev }
+    delete next[id]
+    return next
+  })
+  dropSessionStore(id)
+  if (rootStore.getter(activeSessionIdAtom) === id) {
+    const remaining = Object.keys(rootStore.getter(sessionsAtom))
+    rootStore.setter(activeSessionIdAtom, remaining[0] ?? '')
+  }
+  // D-4：会话列表变更 → 覆盖式落盘；被删会话的历史 checkpoint 单独清盘（均 fire-and-forget）。
+  persistSessions()
+  persistDeleteSession(id)
+}
+
+// ===========================================================================
+// 运行命令
+// ===========================================================================
+
+// 简介：对当前 active 会话起一轮 run（U5 单轮切片）。
+// 详情：无 active / 空输入 / 会话未登记 → no-op。apiKey 按会话 vendor 取（glm→glmApiKey，
+//   否则 deepseekApiKey）。beginRun 拿 signal（U7 穿透）；runSession 失败内部降级；
+//   finally 里 endRun 清理（只删自己那个 controller）。
+export function sendMessage(input: string): void {
+  const id = rootStore.getter(activeSessionIdAtom)
+  if (!id || !input.trim()) return
+  const meta = rootStore.getter(sessionsAtom)[id]
+  if (!meta) return
+
+  const apiKey = meta.settings.vendor === 'glm' ? runtimeConfig.glmApiKey : runtimeConfig.deepseekApiKey
+  const signal = beginRun(id)
+  void runSession(id, input, { signal, apiKey, fetchImpl: runtimeConfig.fetchImpl }).finally(() =>
+    endRun(id, signal),
+  )
+}
+
+// 简介：esc —— 中断当前 active 会话正在跑的 run。
+export function stopRun(): void {
+  const id = rootStore.getter(activeSessionIdAtom)
+  if (id) abortRun(id)
+}
+
+// 从对话历史里取「最后一条 assistant」的 ask_user_question tool_call id（找不到返回 undefined）。
+// 该 id 即暂停时未回填的 ask_user ToolItem 的 tool_call_id，resume 用它把答案回填给 model。
+function findAskUserToolCallId(items: ConversationItem[]): string | undefined {
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const item = items[i].item
+    if (item.role === 'assistant') {
+      return item.tool_calls?.find((toolCall) => toolCall.function.name === 'ask_user_question')?.id
+    }
+  }
+  return undefined
+}
+
+// 简介：ask_user 恢复（T-7/TK7）—— 用户填完答案后续跑 pending run。
+// 详情：仅当当前 active 会话 run 处于 waiting_user 时生效。从 itemsAtom 找最后一条 assistant 的
+//   ask_user_question tool_call（取其 id=tool_call_id）；找不到则容错清 pendingQuestion + 落回
+//   running 后返回（不续跑）。否则读并清 pendingQuestionAnswers → 回填 ask_user 的 ToolItem（把
+//   {answers} 当 tool result）→ 落回 running + 清 pendingQuestion → 复用 pending run 的 runId、
+//   beginRun 拿新 signal，走 runToolLoop 续跑（apiKey 按会话 vendor 取，与 sendMessage 同逻辑；
+//   finally endRun 清理）。
+export function resumeWithAnswers(): void {
+  const id = rootStore.getter(activeSessionIdAtom)
+  if (!id) return
+  const run = getSessionStore(id).store.getter(runAtom)
+  if (run?.status !== 'waiting_user') return
+
+  // 找待回填的 ask_user tool_call id。
+  const toolCallId = findAskUserToolCallId(getSessionStore(id).store.getter(itemsAtom))
+  // 容错：找不到 ask_user 调用（异常/被回退过）→ 清 pendingQuestion + 落回 running，不续跑。
+  if (!toolCallId) {
+    patchRun(id, { status: 'running', pendingQuestion: undefined })
+    return
+  }
+
+  // 读答案 + 清答案（避免旧答案污染下一次等待用户输入）。
+  const answers = getPendingQuestionAnswers(id)
+  clearPendingQuestionAnswers(id)
+
+  // 回填 ask_user 的 ToolItem：把 {answers} 作为 tool result 回给 model。
+  appendItem(id, {
+    id: newId(),
+    createdAt: Date.now(),
+    item: { role: 'tool', tool_call_id: toolCallId, content: JSON.stringify({ answers }) },
+  })
+
+  // 落回 running + 清 pendingQuestion，复用 pending run 的 runId 续跑同一条 run。
+  patchRun(id, { status: 'running', pendingQuestion: undefined })
+
+  const meta = rootStore.getter(sessionsAtom)[id]
+  const apiKey = meta?.settings.vendor === 'glm' ? runtimeConfig.glmApiKey : runtimeConfig.deepseekApiKey
+  const signal = beginRun(id)
+  void runToolLoop(id, run.runId, { signal, apiKey, fetchImpl: runtimeConfig.fetchImpl }).finally(() =>
+    endRun(id, signal),
+  )
+}
+
+// ===========================================================================
+// 回退命令
+// ===========================================================================
+
+// 简介：对当前 active 会话回退到第 turnIndex 轮（截断式回退）。
+export function revertToTurn(turnIndex: number): void {
+  const id = rootStore.getter(activeSessionIdAtom)
+  if (!id) return
+  // 先校验 turnIndex 合法（越界/负数 → 整体 no-op）。否则 jumpToCheckpoint 内存里 no-op、但
+  // persistTruncate(id, -1) 会走 truncateAfter(id, -1) 把盘上「全部」checkpoint 删光，刷新丢历史
+  // （codex P2）。校验读该会话 store 的 checkpointsAtom；幽灵会话取到 [] → 任何 index 都越界 → no-op。
+  const checkpoints = getSessionStore(id).store.getter(checkpointsAtom)
+  if (turnIndex < 0 || turnIndex >= checkpoints.length) return
+  // 回退前先停当前 run —— 否则回退改了 items/checkpoints，正在跑的 run 完成时又
+  // appendItem/commitCheckpoint 会污染回退后的状态（与 removeSession 的破坏性命令前先 abort 一致）。
+  abortRun(id)
+  jumpToCheckpoint(id, turnIndex)
+  persistTruncate(id, turnIndex) // D-4：截断式回退 → 同步截断持久化 checkpoint（fire-and-forget）。
+}

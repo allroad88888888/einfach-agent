@@ -1,0 +1,137 @@
+// D-4 · 持久化接线桥的单测（测试先行：红 → 绿）。
+// ---------------------------------------------------------------------------
+// 覆盖两条：
+//   · 已配置（注入 mock history / sessions）→ 各 persist* 转成对应 driver 调用，且不抛；
+//     driver 内部 reject 时 `.catch` 吞掉、仍不抛（DK2 fire-and-forget）。
+//   · 未配置（undefined）→ 各 persist* 全部 no-op、不抛。
+// 用 vi.fn 的假 driver，不引真实 IndexedDB。
+
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { rootStore, sessionsAtom, resetRootStore } from '../state/rootStore'
+import type { SessionMeta } from '../state/core.type'
+import type { Checkpoint } from '../state/checkpoint.type'
+import type { HistoryDriver } from '../state/persistence/historyDriver'
+import {
+  configurePersistence,
+  resetPersistence,
+  persistSessions,
+  persistCheckpoint,
+  persistTruncate,
+  persistDeleteSession,
+} from './persistenceBridge'
+
+afterEach(() => {
+  resetPersistence()
+  resetRootStore()
+  vi.clearAllMocks()
+})
+
+// 全 vi.fn 的假 HistoryDriver（默认 resolve）；可选 overrides 注入 reject 分支。
+function mockHistory(overrides?: Partial<HistoryDriver>): HistoryDriver {
+  return {
+    listCheckpoints: vi.fn(async () => []),
+    loadCheckpoint: vi.fn(async () => undefined),
+    saveCheckpoint: vi.fn(async () => {}),
+    truncateAfter: vi.fn(async () => {}),
+    deleteSession: vi.fn(async () => {}),
+    ...overrides,
+  }
+}
+
+// 假会话列表存储（默认 resolve）。
+function mockSessions(overrides?: Partial<{
+  saveSessions: (sessions: SessionMeta[]) => Promise<void>
+  loadSessions: () => Promise<SessionMeta[]>
+}>) {
+  return {
+    saveSessions: vi.fn(async (_: SessionMeta[]) => {}),
+    loadSessions: vi.fn(async () => [] as SessionMeta[]),
+    ...overrides,
+  }
+}
+
+const meta: SessionMeta = {
+  id: 's1',
+  title: 't',
+  settings: { vendor: 'deepseek', model: 'x' },
+  createdAt: 0,
+  updatedAt: 0,
+}
+
+const cp: Checkpoint = {
+  turnIndex: 0,
+  label: 'l',
+  createdAt: 0,
+  items: [{ id: 'i', createdAt: 0, item: { role: 'user', content: 'hi' } }],
+}
+
+describe('persistenceBridge（D-4 fire-and-forget 接线）', () => {
+  it('persistSessions：把 rootStore.sessionsAtom 全部 SessionMeta 交给 saveSessions', () => {
+    const sessions = mockSessions()
+    configurePersistence({ sessions })
+    rootStore.setter(sessionsAtom, { s1: meta })
+
+    expect(() => persistSessions()).not.toThrow()
+    expect(sessions.saveSessions).toHaveBeenCalledWith([meta])
+  })
+
+  it('persistCheckpoint：转成 history.saveCheckpoint(id, cp)', () => {
+    const history = mockHistory()
+    configurePersistence({ history })
+
+    expect(() => persistCheckpoint('s1', cp)).not.toThrow()
+    expect(history.saveCheckpoint).toHaveBeenCalledWith('s1', cp)
+  })
+
+  it('persistTruncate：转成 history.truncateAfter(id, turnIndex)', () => {
+    const history = mockHistory()
+    configurePersistence({ history })
+
+    expect(() => persistTruncate('s1', 2)).not.toThrow()
+    expect(history.truncateAfter).toHaveBeenCalledWith('s1', 2)
+  })
+
+  it('persistDeleteSession：转成 history.deleteSession(id)', () => {
+    const history = mockHistory()
+    configurePersistence({ history })
+
+    expect(() => persistDeleteSession('s1')).not.toThrow()
+    expect(history.deleteSession).toHaveBeenCalledWith('s1')
+  })
+
+  it('configurePersistence：浅合并，只覆盖传入字段（分两次注入 history / sessions）', () => {
+    const history = mockHistory()
+    const sessions = mockSessions()
+    configurePersistence({ history })
+    configurePersistence({ sessions }) // 不应清掉上一次注入的 history
+    rootStore.setter(sessionsAtom, { s1: meta })
+
+    persistCheckpoint('s1', cp)
+    persistSessions()
+    expect(history.saveCheckpoint).toHaveBeenCalledWith('s1', cp)
+    expect(sessions.saveSessions).toHaveBeenCalledWith([meta])
+  })
+
+  it('driver reject → .catch 吞掉，persist* 不抛（DK2）', async () => {
+    const history = mockHistory({ saveCheckpoint: vi.fn(async () => { throw new Error('boom') }) })
+    const sessions = mockSessions({ saveSessions: vi.fn(async () => { throw new Error('boom') }) })
+    configurePersistence({ history, sessions })
+    rootStore.setter(sessionsAtom, { s1: meta })
+
+    expect(() => persistCheckpoint('s1', cp)).not.toThrow()
+    expect(() => persistSessions()).not.toThrow()
+    // 让被 .catch 挂住的微任务跑完，确认没有 unhandled rejection 逃逸。
+    await Promise.resolve()
+    await Promise.resolve()
+  })
+
+  it('未配置（undefined）→ 各 persist* 全部 no-op、不抛', () => {
+    // afterEach 已 resetPersistence，本用例进入时 history/sessions 均为 undefined。
+    rootStore.setter(sessionsAtom, { s1: meta })
+    expect(() => persistSessions()).not.toThrow()
+    expect(() => persistCheckpoint('s1', cp)).not.toThrow()
+    expect(() => persistTruncate('s1', 1)).not.toThrow()
+    expect(() => persistDeleteSession('s1')).not.toThrow()
+  })
+})

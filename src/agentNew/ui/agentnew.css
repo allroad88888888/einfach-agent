@@ -1,0 +1,271 @@
+/* agentNew 两栏布局 + 基础可用样式（类 codex app · P-U6a）。
+ * ---------------------------------------------------------------------------
+ * 只求「两栏清晰、能用」，不追求精美。由 main.tsx 统一 import（本文件不被其它模块 import）。
+ * 类名与 ui/ 各组件一一对应：
+ *   AppShell         → .agentnew-shell / .agentnew-sidebar / .agentnew-main
+ *   SessionList      → .agentnew-session-list / -new-session / -session-item(.active) / -session-title / -session-remove
+ *   ActiveSessionProvider → .agentnew-empty
+ *   MessageList      → .agentnew-message-list / .agentnew-msg(.--user/.--assistant) / .agentnew-message-empty
+ *   CheckpointBar    → .agentnew-checkpoint-bar / .agentnew-checkpoint-item(.active)
+ *   Composer         → .agentnew-composer / -composer-input / -composer-send
+ */
+
+/* ── 两栏骨架 ─────────────────────────────── */
+.agentnew-shell {
+  display: flex;
+  height: 100vh;
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  color: #1b2333;
+  background: #ffffff;
+}
+
+/* ── 左栏：会话列表 ───────────────────────── */
+.agentnew-sidebar {
+  flex: 0 0 260px;
+  width: 260px;
+  border-right: 1px solid #e6eaf2;
+  overflow-y: auto;
+  padding: 12px;
+  background: #f7f9fc;
+}
+
+.agentnew-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agentnew-new-session {
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 9px 12px;
+  border: 1px solid #d4dbe8;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1b2333;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.agentnew-new-session:hover {
+  border-color: #a5a8f4;
+  background: #eef0fe;
+}
+
+.agentnew-session-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+}
+
+.agentnew-session-item.active {
+  background: #eef0fe;
+}
+
+.agentnew-session-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #3a4458;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.agentnew-session-title:hover {
+  background: rgba(91, 91, 214, 0.06);
+}
+
+.agentnew-session-item.active .agentnew-session-title {
+  color: #4444bd;
+  font-weight: 600;
+}
+
+.agentnew-session-remove {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #6b7689;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.agentnew-session-remove:hover {
+  background: rgba(220, 70, 54, 0.12);
+  color: #dc4636;
+}
+
+/* ── 右栏：当前对话 ───────────────────────── */
+.agentnew-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* 无激活会话时的空占位（ActiveSessionProvider） */
+.agentnew-empty {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: #6b7689;
+  font-size: 14px;
+  text-align: center;
+}
+
+/* ── 消息列表 ─────────────────────────────── */
+.agentnew-message-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.agentnew-message-empty {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: #9aa3b5;
+  font-size: 14px;
+}
+
+.agentnew-msg {
+  max-width: 72%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.agentnew-msg--user {
+  align-self: flex-end;
+  background: #eef0fe;
+  color: #1b2333;
+  border-bottom-right-radius: 4px;
+}
+
+.agentnew-msg--assistant {
+  align-self: flex-start;
+  background: #f2f4f8;
+  color: #1b2333;
+  border-bottom-left-radius: 4px;
+}
+
+.agentnew-msg--assistant > :first-child {
+  margin-top: 0;
+}
+
+.agentnew-msg--assistant > :last-child {
+  margin-bottom: 0;
+}
+
+/* ── checkpoint 回退轮列表 ────────────────── */
+.agentnew-checkpoint-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 20px;
+  border-top: 1px solid #e6eaf2;
+}
+
+.agentnew-checkpoint-item {
+  padding: 4px 10px;
+  border: 1px solid #d4dbe8;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #3a4458;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.agentnew-checkpoint-item:hover {
+  border-color: #a5a8f4;
+  background: #eef0fe;
+}
+
+.agentnew-checkpoint-item.active {
+  border-color: transparent;
+  background: #5b5bd6;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+/* ── 底部输入区 ───────────────────────────── */
+.agentnew-composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 12px 20px 16px;
+  border-top: 1px solid #e6eaf2;
+  background: #f7f9fc;
+}
+
+.agentnew-composer-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  max-height: 160px;
+  padding: 11px 12px;
+  border: 1px solid #d4dbe8;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #1b2333;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: none;
+}
+
+.agentnew-composer-input:focus {
+  outline: none;
+  border-color: #a5a8f4;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16);
+}
+
+.agentnew-composer-input:disabled {
+  background: #f2f4f8;
+  color: #6b7689;
+}
+
+.agentnew-composer-send {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  background: #5b5bd6;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agentnew-composer-send:hover:not(:disabled) {
+  background: #4444bd;
+}
+
+.agentnew-composer-send:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
