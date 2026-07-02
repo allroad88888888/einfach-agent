@@ -8,45 +8,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm run build` — type-check (`tsc -b`) then `vite build`. Use this to verify types; there is no separate lint step.
 - `npm test` — Vitest single run.
 - `npm run test:watch` — Vitest watch mode.
-- Run one test file: `npx vitest run src/agent/runtime/loop.test.ts`
-- Filter by name: `npx vitest run -t "ask user question"`
+- Run one test file: `npx vitest run src/agentNew/runtime/modelRun.test.ts`
+- Filter by name: `npx vitest run -t "ask_user"`
 
-Tests run in `jsdom` with `./src/test/setup.ts` as setup. Note `fileParallelism: false` in `vite.config.ts` — test files run serially (the agent runtime uses module-level singletons like `activeControllers`), so don't reintroduce parallelism without removing that shared state. Use `renderWithStore` from `src/test/renderWithStore.tsx` to render components against a fresh `@einfach/core` store.
+Tests run in `jsdom` with `./src/test/setup.ts` as setup. Note `fileParallelism: false` in `vite.config.ts` — test files run serially because the runtime uses module-level singletons (`abortRegistry`'s controller map, the per-session store cache in `sessionStore.ts`), so don't reintroduce parallelism without removing that shared state. Use `renderWithStore` from `src/test/renderWithStore.tsx` to render components against a fresh `@einfach/core` store. IndexedDB tests use `fake-indexeddb`.
 
 ## Environment / model config
 
-The agent talks to DeepSeek's OpenAI-compatible API directly from the browser. Copy `.env.example` → `.env.local` and set `VITE_DEEPSEEK_API_KEY`. Provider selection (`src/agent/model/config.ts`): explicit `VITE_AGENT_MODEL_PROVIDER`, else `deepseek` when a key is present, else `mock`. With no key the runtime silently falls back to `MockModelAdapter` and deterministic answers — so the UI works offline but won't hit the model.
+The agent talks to DeepSeek's and GLM's OpenAI-compatible APIs directly from the browser (`src/agentNew/api/{deepseek,glm,modelApi}.ts`). Copy `.env.example` → `.env.local` and set `VITE_DEEPSEEK_API_KEY` (and `VITE_GLM_API_KEY` for GLM sessions). `main.tsx` injects the keys via `configureCommands`. A session's `settings.vendor` (`'deepseek' | 'glm'`) selects the API and key. With no key, model calls fail and the run degrades to `status: 'error'` (the adapters never throw except on `AbortError`).
 
-## External path dependencies (important)
+## Project layout
 
-`vite.config.ts` and `tsconfig.app.json` alias `@ai-components/*` to **source files outside this repo** at `/Volumes/work/web/ai-components/packages/*`, and `server.fs.allow` whitelists that directory. The app will not build or type-check if that sibling checkout is missing. `@` → `src`. React/react-dom are force-resolved and deduped to this app's `node_modules` to avoid duplicate-React issues when pulling in the external component sources.
+Everything lives under `src/agentNew/` (the app is a single, self-contained rewrite — there is **no** external path dependency and no `@ai-components` alias). `@` → `src`. `react`/`react-dom` are force-resolved+deduped to this app's `node_modules` in `vite.config.ts`. Design/decision docs live alongside the code: `CHECKPOINT-STATE-PLAN.md` (state layer), `RUNTIME-UI-PLAN.md` (runtime + UI), `FEATURES-PLAN.md` (tool/skill + persistence + Tauri + cleanup), `T8-UI-PLAN.md` (tool cards). Read these for the "why" behind the architecture and the contract IDs (U1/U2, TK*, PF4, etc.) referenced in code comments.
 
 ## Architecture
 
-A browser-only multi-agent chat runtime. There is no backend and no real filesystem/terminal/MCP access — "skills" and "tools" are in-repo simulations. The deliberate runtime boundary is documented in `src/agent/skills/web-chat-agent.md`.
+A browser-only chat runtime. No backend, no real filesystem/terminal/MCP — "skills" and "tools" are in-repo simulations (the boundary is documented in `src/agentNew/skills/web-chat-agent.md`). The planned desktop shell (Tauri + SQLite via `tauri-plugin-sql`) is the only remaining unbuilt block (`Ta` in FEATURES-PLAN).
 
-**State (`@einfach/react` + `@einfach/core`), not Redux/Zustand.** All product state lives in atoms in `src/agent/state/atoms.ts`. The single `agentStore` is provided at the root (`src/main.tsx`). React components are render-only and read via `useAtomValue`; the agent runtime imports the store and writes through exported helpers (`appendMessage`, `appendTimelineEvent`, `patchRunState`, …). State is keyed by `sessionId` throughout (messages/runs/timeline are all `Record<sessionId, …>`), with derived `active*Atom` selectors resolving the active session.
+**State: one store per session + a top-level rootStore (`@einfach/react` + `@einfach/core`, not Redux/Zustand).**
+- `state/rootStore.ts` — the single global `rootStore` holds only cross-session state: `sessionsAtom` (`Record<id, SessionMeta>`) + `activeSessionIdAtom`.
+- `state/sessionStore.ts` — `createSessionStore(id)` / `getSessionStore(id)` build and cache **one einfach `createStore()` per session** in a `Map`. Session-scoped atoms (`state/sessionAtoms.ts`: `itemsAtom`/`runAtom`/`checkpointsAtom`; `state/transientAtoms.ts`: `browserCardsAtom`/`pendingArtifactsAtom`/`pendingQuestionAnswersAtom`) are **shared atom keys whose values live in each session's own store** — value isolation comes from the store, so there is **no `Record<sessionId, T>` bucketing**.
+- Writers (`state/sessionWriters.ts`, `state/checkpointWriters.ts`, `state/transientAtoms.ts`) take an explicit `id`, write into that session's store, and **ghost-guard** (no-op if the session isn't registered in `rootStore.sessionsAtom`). All updates are immutable (checkpoint snapshots depend on it).
 
-**Run lifecycle — `src/agent/runtime/loop.ts` is the orchestrator.** `startAgentRun` → `executeRun` drives a fixed multi-agent pipeline:
-1. `createMainArchitectPlan` (`agents/main-architect.ts`) produces a static set of `WorkerTask`s (skill-scan, tool-scan, clarifier, answer).
-2. `pickSkillsForInput` selects skills by trigger-word match (always includes `web-chat-agent`).
-3. Tools are **lazy-loaded**: `listToolSummaries` exposes only name/description/runtime; `ensureToolLoaded` → `loadTool` attaches the JSON schema only when needed. This lazy manifest is core to the design — see `tool-loading.md`.
-4. Workers run in parallel (`Promise.all`) via `runWorkerTask` (`agents/workers.ts`), each returning an `AgentArtifact` with a `confidence`.
-5. `mergeArtifacts` (`agents/deputy-architect.ts`) picks the answer draft (the deterministic fallback).
-6. `resolveAgentTurn` runs the model turn(s) and decides: stream a final answer, or emit an `ask_user_question` payload and pause.
+**UI ↔ runtime boundary (contracts U1/U2/U3).** React components only **read atoms** (`useAtomValue`) and **call commands** (`runtime/commands.ts`) — they never call writers, never `setter` an atom, never touch a store instance. Commands don't take a `store` (they self-resolve `rootStore` / `getSessionStore(activeId)`). Provider layering: root `<Provider store={rootStore}>` drives the sidebar; `ui/ActiveSessionProvider.tsx` swaps in the active session's store with `key={activeId}` so switching sessions remounts the right pane.
 
-Every step appends/updates a `TimelineEvent` (rendered by `ToolTimeline`/`RunActivity`), so the UI shows live agent/skill/tool/model activity. Each run uses an `AbortController` stored in the module-level `activeControllers` map keyed by session; starting or stopping a run aborts the prior one. `wait()`/`delay()` helpers reject on abort — propagate the `signal` through any new async work.
+**Run lifecycle — `runtime/commands.ts` + `runtime/modelRun.ts`.** `sendMessage` → `runSession` appends the user item, sets the run, and calls `runToolLoop`, a multi-turn lazy-tool loop: send `[system, ...items]` + the visible tool manifest → if the model returns `tool_calls`, append the assistant item then execute each tool (`runtime/toolExecution.ts`, dispatching `skill_search`/`skill_read`/`save_file`/`browser_action`) and append a tool-result item, then loop; on a plain `stop` append the final assistant item and `commitCheckpoint`. Items are stored directly in `itemsAtom` and re-sent each turn (no continuation blob). Tools are **lazy-loaded**: the model sees only `listToolSummaries` + a `request_tool_schema` function; `ensureToolLoaded` attaches a schema only when requested (`runtime/toolLoading.ts`). Every write-back after an `await` re-checks `isCurrentRun(id, runId)` (session still exists **and** run not superseded) **and** `signal.aborted` — a superseded/aborted run must not pollute a new one. Aborts go through `runtime/abortRegistry.ts` (a module-singleton `Map<id, AbortController>`; `beginRun` aborts any prior controller, `endRun` only clears its own).
 
-**Model adapters (`src/agent/model/`).** `ModelAdapter` (`types.ts`) has two entry points: `runAgentTurn` (tool-aware, streaming, may return `tool_request`/`tool_payload`/`assistant_message`) and `generateFinalAnswer`. `createModelAdapter` (`index.ts`) picks `DeepSeekModelAdapter` or `MockModelAdapter`. The DeepSeek adapter:
-- Sends only the lazy tool manifest plus a `request_tool_schema` function; when the model requests a tool, the runtime loads the schema and continues the conversation via an opaque `AgentTurnContinuation` (`buildContinuationMessages`) that replays prior messages + the tool result.
-- Parses SSE streaming (`readDeepSeekStream`/`applySseFrame`), accumulating `content`, `reasoning_content`, and incremental `tool_calls`, emitting `ModelStreamEvent`s consumed by `createModelStreamProgress` for live timeline detail.
-- **Never throws on API failure except `AbortError`** — every error path falls back to `deterministicAnswer` with an `error` field. Preserve this contract.
+**AskUserQuestion flow.** When the model calls `ask_user_question`, the loop first backfills tool results for any sibling tool_calls, then sets `status: 'waiting_user'` + `pendingQuestion` and returns (leaving the ask_user tool_call un-backfilled). `ui/AskUserQuestionCard.tsx` renders the (defensively normalized) questions, collects answers via the `answerQuestion` command into `pendingQuestionAnswersAtom`, and `resumeWithAnswers` backfills the ask_user tool result and re-enters `runToolLoop` reusing the paused run's `runId`. While `waiting_user`, the Composer is locked and `sendMessage` no-ops (else a new run would orphan the ask_user tool_call and produce an invalid tool-call sequence).
 
-**AskUserQuestion flow.** When a run needs input, status becomes `waiting_user` and `pendingQuestion` is set on the run. `AskUserQuestionCard` collects answers into `pendingQuestionAnswersAtom`; `continueAgentRunWithAnswers` re-enters `executeRun` with `answerContext`, which threads through workers and the model prompt.
+**Persistence (`state/persistence/*` + `runtime/persistenceBridge.ts`).** `HistoryDriver` (IndexedDB impl) stores per-session checkpoints; a sessions store persists `SessionMeta`. `main.tsx` `hydrate`s before seeding (restores sessions + latest checkpoint items). Writes are fire-and-forget via `persistenceBridge` (no-op until `configurePersistence` injects the drivers; errors swallowed). `runAtom` (status/pendingQuestion) is **not** persisted — a refresh mid-`waiting_user` is lost by design.
+
+**Checkpoints / revert.** One user turn = one checkpoint (an items snapshot committed at turn end). `ui/CheckpointBar.tsx` + the `revertToTurn` command do a truncating revert (`jumpToCheckpoint` restores items + truncates the checkpoint list; the command also prunes browser cards newer than the revert point and truncates persisted checkpoints).
 
 ## Conventions
 
-- TypeScript `strict` is on; `tsc -b` is the gate (run `npm run build`). The model adapter's "return-a-fallback, don't throw" pattern is intentional, not a smell.
-- Components live in `src/chat/`, runtime/agents/model/state/skills/tools under `src/agent/`. Tests are colocated `*.test.ts(x)`.
-- Skills are Markdown files imported with Vite's `?raw` and registered in `src/agent/skills/registry.ts`; tools are registered with name/runtime/schema in `src/agent/tools/registry.ts`. Add new ones to those registries.
-- User-facing assistant strings are Chinese; keep that voice for output text.
+- TypeScript `strict` is on; `tsc -b` is the gate (run `npm run build`). The model adapters' "return-a-fallback, don't throw (except AbortError)" pattern is intentional, not a smell.
+- Everything is under `src/agentNew/`: UI in `ui/`, orchestration in `runtime/`, state in `state/`, model APIs in `api/`, skills/tools in `skills/` + `tools/`. Tests are colocated `*.test.ts(x)`.
+- Skills are Markdown imported with Vite's `?raw` and registered in `skills/registry.ts`; tools are registered with name/runtime/schema in `tools/registry.ts`. Add new ones to those registries.
+- Follow the plan docs' contract IDs when touching runtime/state (ghost guard, stale-run guard, immutable updates, UI-reads-atoms-calls-commands). Each stage is closed with a `codex review --uncommitted` pass.
+- User-facing assistant strings are Chinese; keep that voice for output text (and for code comments/plan docs, matching the existing style).
