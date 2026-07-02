@@ -1,10 +1,23 @@
 mod shell;
+mod workspace_common;
+mod workspace_git;
+mod workspace_patch;
+mod workspace_read;
+mod workspace_write;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_sql::Builder::default().build())
-    .invoke_handler(tauri::generate_handler![shell::run_shell_command])
+    .invoke_handler(tauri::generate_handler![
+      shell::run_shell_command,
+      workspace_read::read_workspace_file,
+      workspace_read::list_workspace_files,
+      workspace_read::search_workspace_files,
+      workspace_patch::apply_workspace_patch,
+      workspace_write::write_workspace_file,
+      workspace_git::get_workspace_diff,
+    ])
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

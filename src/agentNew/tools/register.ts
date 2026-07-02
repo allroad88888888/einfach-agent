@@ -9,6 +9,12 @@ import { saveFileTool } from './save-file/save-file'
 import { shellMacosTool } from './shell-macos/shell-macos'
 import { shellLinuxTool } from './shell-linux/shell-linux'
 import { shellPowershellTool } from './shell-powershell/shell-powershell'
+import { readFileTool } from './read-file/read-file'
+import { listFilesTool } from './list-files/list-files'
+import { searchFilesTool } from './search-files/search-files'
+import { applyPatchTool } from './apply-patch/apply-patch'
+import { writeFileTool } from './write-file/write-file'
+import { gitDiffReviewTool } from './git-diff-review/git-diff-review'
 
 for (const tool of [
   skillSearchTool,
@@ -19,6 +25,12 @@ for (const tool of [
   shellMacosTool,
   shellLinuxTool,
   shellPowershellTool,
+  readFileTool,
+  listFilesTool,
+  searchFilesTool,
+  applyPatchTool,
+  writeFileTool,
+  gitDiffReviewTool,
 ]) {
   toolRegistry.register(tool)
 }

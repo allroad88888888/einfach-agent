@@ -13,6 +13,7 @@
 //   · U7 signal 全穿透 + 失败降级：AbortError→'stopped'；其它→'error'；绝不抛崩。
 // 本文只编排 writers + api + 纯 helper（modelTurn），不持有/接收 store（U2），不 import UI（U1）。
 
+import { isTauri } from '@tauri-apps/api/core'
 import { rootStore, sessionsAtom } from '../state/rootStore'
 import { getSessionStore } from '../state/sessionStore'
 import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
@@ -135,7 +136,8 @@ export async function runToolLoop(
       // 每轮重新 map itemsAtom（含上一轮 append 的 assistant/tool items），TK1。
       const items = getSessionStore(id).store.getter(itemsAtom)
       const messages = [system, ...items.map((it) => it.item)]
-      const tools = buildTurnTools(visible)
+      // TP3：注入运行环境 —— web 下 isTauri() 为假，server 工具不进本轮 manifest。
+      const tools = buildTurnTools(visible, isTauri())
 
       // 按 vendor 收窄 settings 后调 model（透传参数 + tools + tool_choice + signal + fetchImpl）。
       let res: ModelChatResponse

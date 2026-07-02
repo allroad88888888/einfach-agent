@@ -8,7 +8,7 @@
 
 import { pickSkillsForInput } from '../skills/registry'
 import { toolRegistry } from '../tools/registry'
-import type { LoadedTool } from '../tools/types'
+import type { LoadedTool, ToolRuntime } from '../tools/types'
 import type {
   ModelFunctionTool,
   ModelResponseToolCall,
@@ -36,25 +36,35 @@ export function buildSystemItem(input: string): SystemItem {
   return { role: 'system', content }
 }
 
-// 简介：组本轮暴露给 model 的 function 列表（TK3）。
-// 详情：request_tool_schema 恒在场（enum 为全部工具名，供 model 请求懒加载）；其后跟上本轮
-// 已加载 schema 的 visible tools（各自展开 name/description/inputSchema）。未加载的工具不进。
-export function buildTurnTools(visible: LoadedTool[]): ModelFunctionTool[] {
+// TP3 判据：server 工具依赖 Tauri 本机能力（shell/文件系统），web 下不可用 → 不暴露给 model。
+// enum 与 visible 展开共用此谓词，保证「能请求的」与「能看见的」判据一致。
+function isToolVisible(runtime: ToolRuntime, isTauri: boolean): boolean {
+  return runtime !== 'server' || isTauri
+}
+
+// 简介：组本轮暴露给 model 的 function 列表（TK3 + TP3）。
+// 详情：request_tool_schema 恒在场（enum 为当前环境可用的工具名，供 model 请求懒加载）；其后跟上
+// 本轮已加载 schema 的 visible tools（各自展开 name/description/inputSchema）。未加载的工具不进；
+// server 工具在 web 下（isTauri=false）既不入 enum 也不入 visible（TP3，防御 web 混入的 server 工具）。
+export function buildTurnTools(visible: LoadedTool[], isTauri: boolean): ModelFunctionTool[] {
   return [
-    requestSchemaTool(),
-    ...visible.map((tool) => ({
-      type: 'function' as const,
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.inputSchema,
-      },
-    })),
+    requestSchemaTool(isTauri),
+    ...visible
+      .filter((tool) => isToolVisible(tool.runtime, isTauri))
+      .map((tool) => ({
+        type: 'function' as const,
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.inputSchema,
+        },
+      })),
   ]
 }
 
 // request_tool_schema 元工具：让 model 请求 runtime 懒加载某个工具的完整 JSON Schema。
-function requestSchemaTool(): ModelFunctionTool {
+// enum 按环境过滤掉 server 工具（TP3）——web 下 model 根本请求不到必然失败的 Tauri 工具。
+function requestSchemaTool(isTauri: boolean): ModelFunctionTool {
   return {
     type: 'function',
     function: {
@@ -63,7 +73,13 @@ function requestSchemaTool(): ModelFunctionTool {
       parameters: {
         type: 'object',
         properties: {
-          toolName: { type: 'string', enum: toolRegistry.list().map((tool) => tool.name) },
+          toolName: {
+            type: 'string',
+            enum: toolRegistry
+              .list()
+              .filter((tool) => isToolVisible(tool.runtime, isTauri))
+              .map((tool) => tool.name),
+          },
           reason: { type: 'string' },
         },
         required: ['toolName', 'reason'],

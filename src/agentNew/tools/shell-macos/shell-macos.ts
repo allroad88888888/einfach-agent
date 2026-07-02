@@ -62,7 +62,7 @@ function toErrorMessage(error: unknown): string {
 
 export const shellMacosTool: Tool = {
   name: 'shell_macos',
-  runtime: 'internal',
+  runtime: 'server', // 依赖 Tauri 本机 shell（ctx.runShell），web 下不进 manifest（TP3）。
   skill: {
     description: '在本机 macOS shell 中执行非交互命令。',
     triggers: ['shell', 'macos', 'terminal', '命令行', '终端'],

@@ -103,11 +103,33 @@ describe('tools/registry —— 抽象工厂 ToolRegistry（§3/§4）', () => {
     expect(list.map((tool) => tool.name).sort()).toEqual([...shellNames].sort())
     for (const item of list) {
       expect(Object.keys(item).sort()).toEqual(['description', 'name', 'runtime'])
-      expect(item.runtime).toBe('internal')
+      expect(item.runtime).toBe('server') // 依赖 Tauri 本机 shell（TP3）。
     }
 
     const loaded = toolRegistry.loadSchema('shell_macos')
     expect(loaded?.inputSchema).toMatchObject({ required: ['command'] })
+    expect(loaded?.guide.length).toBeGreaterThan(0)
+  })
+
+  it('内置 workspace file tools 已注册，manifest-only；loadSchema 才暴露 schema + guide', () => {
+    const fileToolNames = [
+      'read_file',
+      'list_files',
+      'search_files',
+      'apply_patch',
+      'write_file',
+      'git_diff_review',
+    ]
+    const list = toolRegistry.list().filter((tool) => fileToolNames.includes(tool.name))
+
+    expect(list.map((tool) => tool.name).sort()).toEqual([...fileToolNames].sort())
+    for (const item of list) {
+      expect(Object.keys(item).sort()).toEqual(['description', 'name', 'runtime'])
+      expect(item.runtime).toBe('server') // 依赖 Tauri 文件系统/git（TP3）。
+    }
+
+    const loaded = toolRegistry.loadSchema('apply_patch')
+    expect(loaded?.inputSchema).toMatchObject({ required: ['operations'] })
     expect(loaded?.guide.length).toBeGreaterThan(0)
   })
 

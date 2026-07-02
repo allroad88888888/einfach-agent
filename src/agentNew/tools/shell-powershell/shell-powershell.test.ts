@@ -118,7 +118,7 @@ describe('shell_powershell tool', () => {
 
   it('身份/runtime/schema/skill 元数据齐备', () => {
     expect(shellPowershellTool.name).toBe('shell_powershell')
-    expect(shellPowershellTool.runtime).toBe('internal')
+    expect(shellPowershellTool.runtime).toBe('server') // 依赖 Tauri 本机 shell（TP3）。
     expect(shellPowershellTool.inputSchema).toMatchObject({ required: ['command'] })
     expect(shellPowershellTool.skill.content.length).toBeGreaterThan(0)
   })

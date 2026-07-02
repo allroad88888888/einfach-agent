@@ -16,6 +16,14 @@ import { runAtom } from '../state/sessionAtoms'
 import { addBrowserCard, addPendingArtifact, upsertToolActivity } from '../state/transientAtoms'
 import { newId } from './newId'
 import { runShellCommand } from './shellCommand'
+import {
+  listWorkspaceFiles,
+  readWorkspaceFile,
+  searchWorkspaceFiles,
+} from './workspaceRead'
+import { applyWorkspacePatch } from './workspacePatch'
+import { writeWorkspaceFile } from './workspaceWrite'
+import { getWorkspaceDiff } from './workspaceGit'
 
 const MAX_TOOL_DEPTH = 4
 
@@ -28,6 +36,11 @@ function isCurrentRun(sessionId: string, runId: string): boolean {
 function shellProgressText(command: string): string {
   const preview = command.replace(/\s+/g, ' ').trim()
   return `执行 shell: ${preview ? preview.slice(0, 120) : '(empty command)'}`
+}
+
+function pathProgressText(action: string, path: unknown): string {
+  const value = typeof path === 'string' && path.trim() ? path.trim() : '.'
+  return `${action}: ${value.slice(0, 160)}`
 }
 
 /**
@@ -64,6 +77,55 @@ export function buildToolContext(opts: {
       assertFresh()
       progress(shellProgressText(input.command))
       const result = await runShellCommand(input)
+      assertFresh()
+      return result
+    },
+
+    async readWorkspaceFile(input) {
+      assertFresh()
+      progress(pathProgressText('读取文件', input.path))
+      const result = await readWorkspaceFile(input)
+      assertFresh()
+      return result
+    },
+
+    async listWorkspaceFiles(input) {
+      assertFresh()
+      progress(pathProgressText('列出文件', input.path))
+      const result = await listWorkspaceFiles(input)
+      assertFresh()
+      return result
+    },
+
+    async searchWorkspaceFiles(input) {
+      assertFresh()
+      progress(pathProgressText('搜索文件', input.path))
+      const result = await searchWorkspaceFiles(input)
+      assertFresh()
+      return result
+    },
+
+    async applyWorkspacePatch(input) {
+      assertFresh()
+      progress('应用文件 patch')
+      const result = await applyWorkspacePatch(input as Parameters<typeof applyWorkspacePatch>[0])
+      assertFresh()
+      return result
+    },
+
+    async writeWorkspaceFile(input) {
+      assertFresh()
+      const path = typeof input === 'object' && input && 'path' in input ? (input as { path?: unknown }).path : undefined
+      progress(pathProgressText('写入文件', path))
+      const result = await writeWorkspaceFile(input as Parameters<typeof writeWorkspaceFile>[0])
+      assertFresh()
+      return result
+    },
+
+    async getWorkspaceDiff(input) {
+      assertFresh()
+      progress('读取 Git diff')
+      const result = await getWorkspaceDiff(input as Parameters<typeof getWorkspaceDiff>[0])
       assertFresh()
       return result
     },
