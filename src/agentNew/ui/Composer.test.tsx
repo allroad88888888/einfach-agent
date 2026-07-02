@@ -61,6 +61,20 @@ describe('Composer', () => {
     expect(screen.getByRole('textbox')).toBeDisabled()
   })
 
+  it('waiting_user 态：输入框 disabled、发送按钮 disabled、不出现停止按钮（codex P2）', () => {
+    // 等 ask_user 回答时不能发新消息顶掉暂停中的 run（应走问题卡片的「继续」）。
+    const store = createStore()
+    store.setter(runAtom, { runId: 'r', status: 'waiting_user' })
+    renderWithStore(<Composer />, { store })
+
+    expect(screen.getByRole('textbox')).toBeDisabled()
+    expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: '停止' })).toBeNull()
+    // 即便试图回车发送也不触发 sendMessage。
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Enter' })
+    expect(sendMessage).not.toHaveBeenCalled()
+  })
+
   it('全局 Esc → stopRun（U7 中断）', () => {
     renderWithStore(<Composer />, { store: createStore() })
 

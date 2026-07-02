@@ -14,10 +14,14 @@ import { sendMessage, stopRun } from '../runtime/commands'
 export function Composer() {
   const [draft, setDraft] = useState('')
   const run = useAtomValue(runAtom)
-  const busy = run?.status === 'running'
+  const running = run?.status === 'running'
+  // waiting_user（等 ask_user 回答）也锁输入：此时应走问题卡片的「继续」，不能发新消息顶掉暂停中的
+  //   run —— 否则暂停中的 ask_user tool_call 无 tool result，重发构成非法 tool-call 序列（codex P2）。
+  const paused = run?.status === 'waiting_user'
+  const locked = running || paused
 
   const send = () => {
-    if (!draft.trim() || busy) return
+    if (!draft.trim() || locked) return
     sendMessage(draft.trim())
     setDraft('')
   }
@@ -36,7 +40,7 @@ export function Composer() {
       <textarea
         className="agentnew-composer-input"
         value={draft}
-        disabled={busy}
+        disabled={locked}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === 'Enter' && !event.shiftKey) {
@@ -45,7 +49,7 @@ export function Composer() {
           }
         }}
       />
-      {busy ? (
+      {running ? (
         <button type="button" className="agentnew-composer-send" onClick={stopRun}>
           停止
         </button>
@@ -54,7 +58,7 @@ export function Composer() {
           type="button"
           className="agentnew-composer-send"
           onClick={send}
-          disabled={!draft.trim()}
+          disabled={!draft.trim() || paused}
         >
           发送
         </button>

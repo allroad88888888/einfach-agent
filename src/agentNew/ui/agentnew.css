@@ -269,3 +269,259 @@
   cursor: not-allowed;
   opacity: 0.5;
 }
+
+/* ── T-8 工具卡片：browser_action 信息卡片（内联在消息列表里） ─── */
+.agentnew-browser-card {
+  align-self: flex-start;
+  max-width: 72%;
+  padding: 12px 14px;
+  border: 1px solid #dbe0ec;
+  border-left: 3px solid #5b5bd6;
+  border-radius: 10px;
+  background: #fbfcff;
+}
+
+.agentnew-browser-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #3a3aa8;
+}
+
+.agentnew-browser-card-body {
+  margin-top: 6px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #1b2333;
+  overflow-wrap: anywhere;
+}
+
+.agentnew-browser-card-body > :first-child {
+  margin-top: 0;
+}
+
+.agentnew-browser-card-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* ── T-8 待保存文件（save_file 产物） ───────── */
+.agentnew-save-artifact {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 20px 12px;
+  padding: 12px 14px;
+  border: 1px solid #e6eaf2;
+  border-radius: 10px;
+  background: #f7f9fc;
+}
+
+.agentnew-save-artifact-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7689;
+}
+
+.agentnew-save-artifact-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.agentnew-save-artifact-info {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agentnew-save-artifact-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1b2333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agentnew-save-artifact-meta {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: #9aa3b5;
+}
+
+.agentnew-save-artifact-hint {
+  font-size: 12px;
+  color: #6b7689;
+}
+
+.agentnew-save-artifact-error {
+  font-size: 12px;
+  color: #dc4636;
+}
+
+.agentnew-save-artifact-button {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  border: 1px solid #d4dbe8;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #3a4458;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agentnew-save-artifact-button:hover:not(:disabled) {
+  border-color: #a5a8f4;
+  background: #eef0fe;
+}
+
+.agentnew-save-artifact-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ── T-8 ask_user_question 暂停确认卡片 ─────── */
+.agentnew-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 20px 12px;
+  padding: 16px;
+  border: 1px solid #cdd2f5;
+  border-radius: 12px;
+  background: #f5f6ff;
+}
+
+.agentnew-ask-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agentnew-ask-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b6be0;
+}
+
+.agentnew-ask-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1b2333;
+}
+
+.agentnew-ask-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.agentnew-ask-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agentnew-ask-label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 14px;
+  color: #1b2333;
+}
+
+.agentnew-ask-index {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9aa3b5;
+}
+
+.agentnew-ask-required {
+  color: #dc4636;
+}
+
+.agentnew-ask-textarea {
+  min-height: 40px;
+  max-height: 140px;
+  padding: 9px 11px;
+  border: 1px solid #d4dbe8;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1b2333;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.agentnew-ask-textarea:focus {
+  outline: none;
+  border-color: #a5a8f4;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16);
+}
+
+.agentnew-ask-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agentnew-ask-option {
+  padding: 6px 14px;
+  border: 1px solid #d4dbe8;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #3a4458;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.agentnew-ask-option:hover {
+  border-color: #a5a8f4;
+  background: #eef0fe;
+}
+
+.agentnew-ask-option--selected {
+  border-color: transparent;
+  background: #5b5bd6;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.agentnew-ask-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agentnew-ask-hint {
+  font-size: 12px;
+  color: #6b7689;
+}
+
+.agentnew-ask-submit {
+  flex: 0 0 auto;
+  padding: 8px 18px;
+  border: 0;
+  border-radius: 10px;
+  background: #5b5bd6;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agentnew-ask-submit:hover:not(:disabled) {
+  background: #4444bd;
+}
+
+.agentnew-ask-submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}

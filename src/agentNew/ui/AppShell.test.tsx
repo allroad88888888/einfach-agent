@@ -2,12 +2,17 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import { renderWithStore } from '../../test/renderWithStore'
 import { rootStore, sessionsAtom, activeSessionIdAtom, resetRootStore } from '../state/rootStore'
-import { resetSessionStores } from '../state/sessionStore'
+import { getSessionStore, resetSessionStores } from '../state/sessionStore'
+import { runAtom } from '../state/sessionAtoms'
+import { pendingArtifactsAtom } from '../state/transientAtoms'
+import type { SessionMeta } from '../state/core.type'
 import { AppShell } from './AppShell'
 
 // P-U6a 两栏组装：AppShell 把真组件（SessionList / ActiveSessionProvider / MessageList /
 // CheckpointBar / Composer）装进「左栏 aside + 右栏 main」。这里断言组装后的真组件产物，
 // 而非占位。命令一律 mock —— 渲染只读 atom，绝不触发真实副作用（起 run / 改会话）。
+// P8-h 追加：AskUserQuestionCard / SaveArtifact 也挂在右栏 ActiveSessionProvider 内，
+// 故把它们依赖的命令一并 mock（渲染不触发，仅补齐模块形状）。
 
 vi.mock('../runtime/commands', () => ({
   newSession: vi.fn(),
@@ -16,7 +21,23 @@ vi.mock('../runtime/commands', () => ({
   sendMessage: vi.fn(),
   stopRun: vi.fn(),
   revertToTurn: vi.fn(),
+  answerQuestion: vi.fn(),
+  resumeWithAnswers: vi.fn(),
+  discardArtifact: vi.fn(),
 }))
+
+// 造一个登记在 rootStore 的活跃会话（P8-h 两个新挂载点都要求会话在 Provider 下）。
+function seedActiveSession(id = 's1'): void {
+  const meta: SessionMeta = {
+    id,
+    title: '会话',
+    settings: { vendor: 'deepseek', model: 'x' },
+    createdAt: 0,
+    updatedAt: 0,
+  }
+  rootStore.setter(sessionsAtom, { [id]: meta })
+  rootStore.setter(activeSessionIdAtom, id)
+}
 
 describe('AppShell', () => {
   afterEach(() => {
@@ -57,5 +78,48 @@ describe('AppShell', () => {
     expect(screen.getByText(/开始对话吧/)).toBeInTheDocument()
     // 已有 active → 不再是「还没有会话」空占位。
     expect(screen.queryByText(/还没有会话/)).toBeNull()
+  })
+
+  it('run 停在 waiting_user：右栏 ActiveSessionProvider 内挂出 AskUserQuestionCard（紧贴 Composer 上方）', () => {
+    seedActiveSession('s1')
+    // 在该会话 store 上 seed 一个「暂停等待补充」的 run，让默认渲染 null 的
+    // AskUserQuestionCard 显形——从而证明它确实被挂在右栏 Provider 内。
+    // 用 confirm 题以免多出一个 textbox 干扰对 Composer textbox 的断言。
+    getSessionStore('s1').store.setter(runAtom, {
+      runId: 'r1',
+      status: 'waiting_user',
+      pendingQuestion: {
+        title: '需要你确认',
+        questions: [{ id: 'q1', text: '继续执行吗？', type: 'confirm' }],
+      },
+    })
+
+    const { container } = renderWithStore(<AppShell />, { store: rootStore })
+
+    // AskUserQuestionCard 显形 = 挂载点存在于右栏 Provider 下。
+    const ask = container.querySelector('.agentnew-ask')
+    expect(ask).not.toBeNull()
+    expect(screen.getByText('需要你确认')).toBeInTheDocument()
+    expect(screen.getByText('继续执行吗？')).toBeInTheDocument()
+
+    // 位置：紧贴输入区上方 —— 卡片在 DOM 中排在 Composer 之前。
+    const composer = container.querySelector('.agentnew-composer')
+    expect(composer).not.toBeNull()
+    expect(ask!.compareDocumentPosition(composer!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('会话有待保存产物：右栏 ActiveSessionProvider 内挂出 SaveArtifact（在 CheckpointBar 之前）', () => {
+    seedActiveSession('s1')
+    // 在该会话 store 上 seed 一个待保存产物，让默认渲染 null 的 SaveArtifact 显形。
+    getSessionStore('s1').store.setter(pendingArtifactsAtom, [
+      { id: 'a1', filename: 'plan.md', content: '# Plan', mimeType: 'text/markdown' },
+    ])
+
+    const { container } = renderWithStore(<AppShell />, { store: rootStore })
+
+    // SaveArtifact 显形 = 挂载点存在于右栏 Provider 下。
+    expect(container.querySelector('[aria-label="待保存文件"]')).not.toBeNull()
+    expect(screen.getByText('plan.md')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /保存/ })).toBeInTheDocument()
   })
 })

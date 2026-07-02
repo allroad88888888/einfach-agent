@@ -8,7 +8,9 @@
 import { ActiveSessionProvider } from './ActiveSessionProvider'
 import { SessionList } from './SessionList'
 import { MessageList } from './MessageList'
+import { SaveArtifact } from './SaveArtifact'
 import { CheckpointBar } from './CheckpointBar'
+import { AskUserQuestionCard } from './AskUserQuestionCard'
 import { Composer } from './Composer'
 
 export function AppShell() {
@@ -19,8 +21,12 @@ export function AppShell() {
       </aside>
       <main className="agentnew-main" aria-label="当前对话">
         <ActiveSessionProvider>
+          {/* SaveArtifact 属于「当前对话内容」的一部分，排在 MessageList 之后、CheckpointBar 之前。 */}
           <MessageList />
+          <SaveArtifact />
           <CheckpointBar />
+          {/* AskUserQuestionCard 是暂停提问卡片，紧贴输入区上方（最显眼），排在 Composer 之前。 */}
+          <AskUserQuestionCard />
           <Composer />
         </ActiveSessionProvider>
       </main>

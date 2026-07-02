@@ -14,7 +14,14 @@ import { rootStore, sessionsAtom, activeSessionIdAtom } from '../state/rootStore
 import { createSessionStore, getSessionStore, dropSessionStore } from '../state/sessionStore'
 import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
 import { appendItem, patchRun } from '../state/sessionWriters'
-import { getPendingQuestionAnswers, clearPendingQuestionAnswers } from '../state/transientAtoms'
+import {
+  getPendingQuestionAnswers,
+  clearPendingQuestionAnswers,
+  setPendingQuestionAnswer,
+  removePendingArtifact,
+  pruneBrowserCardsAfter,
+} from '../state/transientAtoms'
+import type { AskUserAnswerValue } from '../state/transientAtoms'
 import { jumpToCheckpoint } from '../state/checkpointWriters'
 import { beginRun, abortRun, endRun } from './abortRegistry'
 import { runSession, runToolLoop } from './modelRun'
@@ -105,6 +112,13 @@ export function sendMessage(input: string): void {
   const meta = rootStore.getter(sessionsAtom)[id]
   if (!meta) return
 
+  // 忙碌守卫（codex P2）：当前会话 run 正在跑 / 等工具 / 等用户回答时，不接受新输入。否则新 run
+  //   会顶掉未完成的旧 run；尤其 waiting_user 时，上一条 assistant 的 ask_user tool_call 尚无
+  //   对应 tool result，重发会构成非法 tool-call 序列被接口拒。UI（Composer）也会锁输入，这里是
+  //   命令层兜底（防任何编程路径）。
+  const status = getSessionStore(id).store.getter(runAtom)?.status
+  if (status === 'running' || status === 'awaiting_tool' || status === 'waiting_user') return
+
   const apiKey = meta.settings.vendor === 'glm' ? runtimeConfig.glmApiKey : runtimeConfig.deepseekApiKey
   const signal = beginRun(id)
   void runSession(id, input, { signal, apiKey, fetchImpl: runtimeConfig.fetchImpl }).finally(() =>
@@ -174,6 +188,25 @@ export function resumeWithAnswers(): void {
 }
 
 // ===========================================================================
+// 卡片交互命令（P8-c）—— UI 卡片的答案回填 / 产物丢弃
+// ===========================================================================
+
+// 简介：记录当前 active 会话某个 question 的答案（AskUserQuestionCard onChange 调用）。
+// 详情：取 activeId，无 active → no-op。写入走 transientAtoms 的 setter（内部已带 ghost guard）。
+export function answerQuestion(questionId: string, value: AskUserAnswerValue): void {
+  const id = rootStore.getter(activeSessionIdAtom)
+  if (!id) return
+  setPendingQuestionAnswer(id, questionId, value)
+}
+
+// 简介：从指定会话丢弃一个 save_file 待保存产物（SaveArtifact 保存成功后调用）。
+// 详情：收显式 sessionId（PF4）—— 卡片点击时捕获归属会话，异步保存期间 active 可能被切走，
+//   故不取 active，只删传入 sessionId 的产物（removePendingArtifact 内部带 ghost guard）。
+export function discardArtifact(sessionId: string, artifactId: string): void {
+  removePendingArtifact(sessionId, artifactId)
+}
+
+// ===========================================================================
 // 回退命令
 // ===========================================================================
 
@@ -190,5 +223,9 @@ export function revertToTurn(turnIndex: number): void {
   // appendItem/commitCheckpoint 会污染回退后的状态（与 removeSession 的破坏性命令前先 abort 一致）。
   abortRun(id)
   jumpToCheckpoint(id, turnIndex)
+  // 剪掉「被丢弃轮次」产生的 browser 卡片（codex P2）：browserCards 不进 checkpoint 快照，
+  //   jumpToCheckpoint 只截断 items，需按回退点 checkpoint 的 createdAt 把之后的卡片一并剪掉，
+  //   否则回退后仍渲染已废弃轮的卡片。
+  pruneBrowserCardsAfter(id, checkpoints[turnIndex].createdAt)
   persistTruncate(id, turnIndex) // D-4：截断式回退 → 同步截断持久化 checkpoint（fire-and-forget）。
 }

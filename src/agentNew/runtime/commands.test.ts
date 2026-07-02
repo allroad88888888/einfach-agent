@@ -32,6 +32,10 @@ import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
 import {
   getPendingQuestionAnswers,
   setPendingQuestionAnswer,
+  addPendingArtifact,
+  pendingArtifactsAtom,
+  addBrowserCard,
+  browserCardsAtom,
 } from '../state/transientAtoms'
 import type { ConversationItem, RunState } from '../state/core.type'
 import { runSession, runToolLoop } from './modelRun'
@@ -47,6 +51,8 @@ import {
   stopRun,
   revertToTurn,
   resumeWithAnswers,
+  answerQuestion,
+  discardArtifact,
 } from './commands'
 
 afterEach(() => {
@@ -166,6 +172,18 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(runSession).not.toHaveBeenCalled()
   })
 
+  it('sendMessage：当前 run 忙碌（running/awaiting_tool/waiting_user）→ no-op（codex P2）', () => {
+    // 忙碌时发新消息会顶掉未完成的 run；waiting_user 时更会造成非法 tool-call 序列。命令层兜底。
+    configureCommands({ deepseekApiKey: 'k' })
+    const id = newSession()
+    for (const status of ['running', 'awaiting_tool', 'waiting_user'] as const) {
+      getSessionStore(id).store.setter(runAtom, { runId: 'r', status })
+      sendMessage('hi')
+      expect(runSession).not.toHaveBeenCalled()
+      expect(beginRun).not.toHaveBeenCalled()
+    }
+  })
+
   it('stopRun：中断当前 active 会话的 run', () => {
     const id = newSession()
     stopRun()
@@ -204,6 +222,19 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     seedCheckpoints(id, 3)
     revertToTurn(2)
     expect(persistTruncate).toHaveBeenCalledWith(id, 2)
+  })
+
+  it('revertToTurn：剪掉被丢弃轮次的 browser 卡片（codex P2）', () => {
+    const id = newSession()
+    seedCheckpoints(id, 3) // checkpoint[k].createdAt === k
+    const store = getSessionStore(id).store
+    // 三张卡片，createdAt 分别落在回退点前后。
+    store.setter(browserCardsAtom, [])
+    addBrowserCard(id, { id: 'c0', createdAt: 0, title: '轮0' })
+    addBrowserCard(id, { id: 'c1', createdAt: 1, title: '轮1' })
+    addBrowserCard(id, { id: 'c2', createdAt: 2, title: '轮2（将被丢弃）' })
+    revertToTurn(1) // 回退到 checkpoint[1]（createdAt=1）
+    expect(store.getter(browserCardsAtom).map((c) => c.id)).toEqual(['c0', 'c1']) // createdAt>1 的 c2 被剪
   })
 
   it('revertToTurn：越界/负数 turnIndex → 整体 no-op（不 abort、不 jump、不 persistTruncate）', () => {
@@ -328,5 +359,35 @@ describe('resumeWithAnswers（T-7 ask_user 暂停恢复）', () => {
   it('无 active → no-op', () => {
     resumeWithAnswers()
     expect(runToolLoop).not.toHaveBeenCalled()
+  })
+})
+
+describe('answerQuestion / discardArtifact（P8-c 卡片交互命令）', () => {
+  it('answerQuestion：写进当前 active 会话的 pendingQuestionAnswers', () => {
+    const id = newSession() // newSession 已设为 active
+    answerQuestion('q', 'v')
+    expect(getPendingQuestionAnswers(id)).toEqual({ q: 'v' })
+  })
+
+  it('answerQuestion：无 active → no-op、不崩', () => {
+    // afterEach 复位后 activeSessionIdAtom 为初始空串 —— 无 active。
+    rootStore.setter(activeSessionIdAtom, '')
+    expect(() => answerQuestion('q', 'v')).not.toThrow()
+  })
+
+  it('discardArtifact：删的是传入的 sessionId（不受 active 影响，PF4）', () => {
+    const a = newSession() // a 现在是 active
+    addPendingArtifact(a, { id: 'art1', filename: 'f1.txt', content: 'x' })
+    addPendingArtifact(a, { id: 'art2', filename: 'f2.txt', content: 'y' })
+
+    // 切走 active 到另一会话 b —— 模拟异步保存期间 active 被切走（PF4 场景）。
+    const b = newSession()
+    expect(rootStore.getter(activeSessionIdAtom)).toBe(b)
+
+    // 显式传入归属会话 a，删 art1 —— 应删 a 里的、与当前 active(b) 无关。
+    discardArtifact(a, 'art1')
+
+    const artifactsA = getSessionStore(a).store.getter(pendingArtifactsAtom)
+    expect(artifactsA.map((x) => x.id)).toEqual(['art2'])
   })
 })

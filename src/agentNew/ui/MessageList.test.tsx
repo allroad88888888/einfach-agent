@@ -3,11 +3,13 @@ import { screen } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
 import { itemsAtom } from '../state/sessionAtoms'
+import { browserCardsAtom, type BrowserCard } from '../state/transientAtoms'
 import type { ConversationItem } from '../state/core.type'
 import { MessageList } from './MessageList'
 
-// P-U3 MessageList：读会话 store 的 itemsAtom，只渲染 user/assistant；
-// assistant 走 react-markdown；system/tool 是内部消息不渲染；空列表给占位。
+// P-U3 / P8-g MessageList：读会话 store 的 itemsAtom + browserCardsAtom，
+// 只渲染 user/有实质文本的 assistant（P3：null/纯空白 assistant 跳过空气泡）；
+// system/tool 内部消息不渲染；browser 卡片与 items 按 createdAt 合并排序；空列表给占位。
 
 describe('MessageList', () => {
   it('渲染 user 纯文本 + assistant markdown，跳过 system/tool', () => {
@@ -41,5 +43,61 @@ describe('MessageList', () => {
 
     expect(container.querySelector('.agentnew-message-empty')).not.toBeNull()
     expect(screen.getByText('开始对话吧')).toBeInTheDocument()
+  })
+
+  it('P3：content 为 null / 纯空白的 assistant 不渲染空气泡，有实质文本才渲染', () => {
+    const store = createStore()
+    const items: ConversationItem[] = [
+      // 纯工具调用轮：content=null，不该冒空气泡
+      { id: 'a-null', createdAt: 0, item: { role: 'assistant', content: null } },
+      // 全空白也视为空，不渲染
+      { id: 'a-blank', createdAt: 1, item: { role: 'assistant', content: '   \n ' } },
+      // 有实质文本，正常渲染
+      { id: 'a-text', createdAt: 2, item: { role: 'assistant', content: '有内容' } },
+    ]
+    store.setter(itemsAtom, items)
+
+    const { container } = renderWithStore(<MessageList />, { store })
+
+    // 只剩一个 assistant 气泡（有文本那个）
+    expect(container.querySelectorAll('.agentnew-msg--assistant')).toHaveLength(1)
+    expect(screen.getByText('有内容')).toBeInTheDocument()
+  })
+
+  it('browser 卡片与 items 按 createdAt 合并排序渲染', () => {
+    const store = createStore()
+    store.setter(itemsAtom, [
+      { id: 'u1', createdAt: 1, item: { role: 'user', content: '问' } },
+      { id: 'a1', createdAt: 3, item: { role: 'assistant', content: '答' } },
+    ])
+    const cards: BrowserCard[] = [{ id: 'c1', createdAt: 2, title: '卡A' }]
+    store.setter(browserCardsAtom, cards)
+
+    renderWithStore(<MessageList />, { store })
+
+    const user = screen.getByText('问')
+    const card = screen.getByText('卡A')
+    const assistant = screen.getByText('答')
+
+    // DOM 顺序：user(1) → 卡A(2) → assistant(3)
+    // compareDocumentPosition(x) 含 FOLLOWING 位 ⇒ x 在参考节点之后
+    expect(user.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(card.compareDocumentPosition(assistant) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('createdAt 相同用 id 字符串兜底稳定排序（R2）', () => {
+    const store = createStore()
+    store.setter(itemsAtom, [
+      { id: 'b-item', createdAt: 5, item: { role: 'user', content: '条目B' } },
+    ])
+    const cards: BrowserCard[] = [{ id: 'a-card', createdAt: 5, title: '卡片A' }]
+    store.setter(browserCardsAtom, cards)
+
+    renderWithStore(<MessageList />, { store })
+
+    const item = screen.getByText('条目B')
+    const card = screen.getByText('卡片A')
+    // 'a-card' < 'b-item' ⇒ 卡片在前、条目在后（确定顺序）
+    expect(card.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

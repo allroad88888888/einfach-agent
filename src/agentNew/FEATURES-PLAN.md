@@ -96,7 +96,7 @@ T 与 D 相互独立，可并行推进；Ta 依赖 D；C 依赖 T（移植完才
 | T | T-5 lazy 闸门 | ✅ 已验收（codex 零 finding） |
 | T | T-6 tool 循环（改 modelRun） | ✅ 已验收（160 全绿，codex 零 finding） |
 | T | T-7 ask_user 恢复 | ✅ 已验收（codex 收口：修 ask_user 与并列 tool_call 缺 result 的 P2；176 全绿） |
-| T | T-8 UI（AskUser/Browser/Save 卡片） | 待开工（带入 codex P3：纯 tool_call 的 assistant(content:null) 别渲染成空气泡） |
+| T | T-8 UI（AskUser/Browser/Save 卡片） | ✅ 已验收（8 阶段多 agent + CSS；codex 收口修 2 个 P2；212 全绿。详见 T8-UI-PLAN） |
 | D | D-1 IndexedDB driver | ✅ 已验收（codex 零 finding） |
 | D | D-2 会话列表持久化 | ✅ 已验收（codex 零 finding） |
 | D | D-3 hydrate | ✅ 已验收（codex 零 finding） |
@@ -108,6 +108,7 @@ T 与 D 相互独立，可并行推进；Ta 依赖 D；C 依赖 T（移植完才
 ## §9 决策日志
 - 2026-07-01：四块补全立项（T tool/skill · D 持久化 · Ta Tauri · C 清理）。
 - 2026-07-01：调研旧 src/agent tool/skill 机制（Explore）；确认 agentNew 用 itemsAtom 直存取代 continuation blob（TK1），不建 delegate_agent（TK2），瞬态 atom 入会话 store 不分桶（TK5）。
+- 2026-07-02：**T-8 完成**（8 阶段多 agent 派活 + 三卡片 CSS）。codex 收口 2 个 P2（无 P1）：waiting_user 时 Composer/sendMessage 未锁忙碌（顶掉暂停 run→非法 tool-call 序列）；revert 未剪 browserCards（丢弃轮卡片仍渲染）。均已修 + 回归测试。顺带 T-7 遗留的 codex P3（空 assistant 气泡）在 P8-g 一并解决。至此**块 T 全部完成**。
 - 2026-07-01：首批 T-1/T-2/T-3/D-1 codex 零 finding。codex 顺带 4 个非首批项归后续：[P1] main.tsx seed 前应先 hydrate（→ D-4）；[P2] modelRun finish_reason（→ RUI5）；[P2] main.tsx 未传完整 model config baseUrl/model（→ 后续完善）；[P2] modelRun error 未在 UI 显示（→ T-8 UI 加 run.error 提示）。
 - 2026-07-01：**T-7 + D-4 收口**（`codex review --uncommitted`，5 findings，无 🟥/P1）：
   - [P2] **modelRun ask_user 暂停前未补齐同条 assistant 里其它 tool_call 的 result** → model 并行发多 tool_call 且 ask_user 非最后一个时，resume 重发被 OpenAI 兼容接口拒（缺 tool result）。**已修**：重构为「先执行其它工具补齐 result，最后处理合法 ask_user 的暂停/已答」，+回归测试。

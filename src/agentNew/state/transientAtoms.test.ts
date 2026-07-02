@@ -8,7 +8,9 @@ import {
   browserCardsAtom,
   pendingQuestionAnswersAtom,
   addPendingArtifact,
+  removePendingArtifact,
   addBrowserCard,
+  pruneBrowserCardsAfter,
   setPendingQuestionAnswer,
   getPendingQuestionAnswers,
   clearPendingQuestionAnswers,
@@ -115,6 +117,40 @@ describe('addPendingArtifact', () => {
   })
 })
 
+describe('removePendingArtifact', () => {
+  const otherArtifact: PendingArtifact = {
+    id: 'a2',
+    filename: 'other.txt',
+    content: 'world',
+    mimeType: 'text/plain',
+  }
+
+  it('删掉指定 artifactId 后剩下另一个（新数组引用，不可变 C4）', () => {
+    seedSession()
+    addPendingArtifact('s1', sampleArtifact)
+    addPendingArtifact('s1', otherArtifact)
+    const before = getSessionStore('s1').store.getter(pendingArtifactsAtom)
+    removePendingArtifact('s1', sampleArtifact.id)
+    const after = getSessionStore('s1').store.getter(pendingArtifactsAtom)
+    expect(after).not.toBe(before)
+    expect(after).toHaveLength(1)
+    expect(after).toEqual([otherArtifact])
+  })
+
+  it('删不存在的 artifactId → 不崩，内容不变', () => {
+    seedSession()
+    addPendingArtifact('s1', sampleArtifact)
+    removePendingArtifact('s1', 'nope')
+    expect(getSessionStore('s1').store.getter(pendingArtifactsAtom)).toEqual([sampleArtifact])
+  })
+
+  it('未登记会话 → ghost guard no-op（不崩、不复活幽灵会话，C7）', () => {
+    removePendingArtifact('sX', 'a1')
+    expect(getSessionStore('sX').store.getter(pendingArtifactsAtom)).toEqual([])
+    expect(rootStore.getter(sessionsAtom).sX).toBeUndefined()
+  })
+})
+
 describe('addBrowserCard', () => {
   it('把 card 追加到该会话 store 的 browserCardsAtom', () => {
     seedSession()
@@ -134,6 +170,37 @@ describe('addBrowserCard', () => {
   it('未登记会话 → ghost guard no-op（C7）', () => {
     addBrowserCard('sX', sampleCard)
     expect(getSessionStore('sX').store.getter(browserCardsAtom)).toEqual([])
+  })
+})
+
+describe('pruneBrowserCardsAfter', () => {
+  it('剪掉 createdAt 晚于回退点的卡片，保留 <= 的（含相等）', () => {
+    seedSession()
+    const store = getSessionStore('s1').store
+    store.setter(browserCardsAtom, [
+      { id: 'c1', createdAt: 10, title: 't1' },
+      { id: 'c2', createdAt: 20, title: 't2' },
+      { id: 'c3', createdAt: 30, title: 't3' },
+    ])
+    pruneBrowserCardsAfter('s1', 20)
+    const kept = store.getter(browserCardsAtom)
+    expect(kept.map((c) => c.id)).toEqual(['c1', 'c2']) // 20 保留（<=），30 剪掉
+  })
+
+  it('不可变：产生新数组引用', () => {
+    seedSession()
+    const store = getSessionStore('s1').store
+    store.setter(browserCardsAtom, [{ id: 'c1', createdAt: 30, title: 't' }])
+    const before = store.getter(browserCardsAtom)
+    pruneBrowserCardsAfter('s1', 5) // 全剪
+    const after = store.getter(browserCardsAtom)
+    expect(after).toEqual([])
+    expect(after).not.toBe(before)
+  })
+
+  it('未登记会话 → no-op（ghost guard，不复活幽灵会话）', () => {
+    pruneBrowserCardsAfter('ghost', 0)
+    expect(getSessionStore('ghost').store.getter(browserCardsAtom)).toEqual([])
   })
 })
 

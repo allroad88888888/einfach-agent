@@ -61,6 +61,19 @@ export function addPendingArtifact(id: string, artifact: PendingArtifact): void 
 }
 
 /**
+ * 从该会话移除指定 artifactId 的 save_file 文件产物（不可变，产生新数组）。
+ * 会话未登记则 no-op（ghost guard）；artifactId 不存在时数组内容不变、不崩。
+ */
+export function removePendingArtifact(id: string, artifactId: string): void {
+  if (sessionMissing(id)) {
+    return
+  }
+  getSessionStore(id).store.setter(pendingArtifactsAtom, (prev) =>
+    prev.filter((a) => a.id !== artifactId),
+  )
+}
+
+/**
  * 往该会话追加一张浏览器卡片（不可变，产生新数组）。
  * 会话未登记则 no-op（ghost guard）。
  */
@@ -69,6 +82,22 @@ export function addBrowserCard(id: string, card: BrowserCard): void {
     return
   }
   getSessionStore(id).store.setter(browserCardsAtom, (prev) => [...prev, card])
+}
+
+/**
+ * 丢弃该会话中 createdAt 晚于 `createdAt` 的浏览器卡片（不可变，产生新数组）。
+ * 会话未登记则 no-op（ghost guard）。
+ * 用途：截断式回退时，browserCards 不进 checkpoint 快照，需按回退点时间戳把「被丢弃轮次」
+ *   产生的卡片一并剪掉，否则回退后仍会渲染已废弃轮的卡片（codex P2）。保留 `<=` 即回退到的
+ *   那一轮（及更早）的卡片留下，之后的剪掉。
+ */
+export function pruneBrowserCardsAfter(id: string, createdAt: number): void {
+  if (sessionMissing(id)) {
+    return
+  }
+  getSessionStore(id).store.setter(browserCardsAtom, (prev) =>
+    prev.filter((card) => card.createdAt <= createdAt),
+  )
 }
 
 /**
