@@ -7,6 +7,7 @@ import { configurePersistence } from './agentNew/runtime/persistenceBridge'
 import { hydrate } from './agentNew/state/persistence/hydrate'
 import { createIndexedDbHistoryDriver } from './agentNew/state/persistence/indexedDbDriver'
 import { createSessionsPersistence } from './agentNew/state/persistence/sessionsPersistence'
+import { isTauri } from '@tauri-apps/api/core'
 import { AppShell } from './agentNew/ui/AppShell'
 import './styles/global.css'
 import './agentNew/ui/agentnew.css'
@@ -17,10 +18,19 @@ configureCommands({
   glmApiKey: import.meta.env.VITE_GLM_API_KEY ?? '',
 })
 
-// 持久化 driver：hydrate（读回）与 configurePersistence（写盘钩子）必须用同一对实例。
-const history = createIndexedDbHistoryDriver()
-const sessions = createSessionsPersistence()
-configurePersistence({ history, sessions })
+// 持久化 driver：桌面壳（Tauri）用 SQLite，浏览器用 IndexedDB（TaK1，上层逻辑不变）。
+// hydrate（读回）与 configurePersistence（写盘钩子）必须用同一对实例。sqlite 实现**动态 import**
+// —— 只在 Tauri 下加载，浏览器 bundle 不含它（代码分割 + 避免非 Tauri 环境引 plugin-sql）。
+async function resolvePersistence() {
+  if (isTauri()) {
+    const { createSqlitePersistence } = await import('./agentNew/state/persistence/sqliteDriver')
+    return createSqlitePersistence()
+  }
+  return {
+    history: createIndexedDbHistoryDriver(),
+    sessions: createSessionsPersistence(),
+  }
+}
 
 function renderApp(): void {
   createRoot(document.getElementById('root')!).render(
@@ -33,9 +43,16 @@ function renderApp(): void {
 }
 
 // hydrate 先于种子/渲染（RF3 / codex P1）：盘上有会话就恢复，没有才种子一个空会话，避免首次空屏。
-// 容错（DK2）：hydrate 内部吞掉一切异常、绝不 reject —— finally 保证无论成败都会渲染。
-hydrate({ history, sessions })
+// 容错（DK2）：hydrate 绝不 reject；driver 解析/动态 import 失败也兜底种一个会话，别空屏。finally 必渲染。
+resolvePersistence()
+  .then(({ history, sessions }) => {
+    configurePersistence({ history, sessions })
+    return hydrate({ history, sessions })
+  })
   .then((restored) => {
     if (!restored) newSession()
+  })
+  .catch(() => {
+    newSession()
   })
   .finally(renderApp)
