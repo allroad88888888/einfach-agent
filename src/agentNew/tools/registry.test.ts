@@ -1,74 +1,125 @@
 import { describe, it, expect } from 'vitest'
-import { listToolSummaries, searchTools, loadTool } from './registry'
+import { createToolRegistry, toolRegistry, type ToolRegistry } from './registry'
+import type { Tool, ToolContext } from './types'
 
-describe('tools/registry（agentNew · 移植裁剪版）', () => {
-  it('listToolSummaries 返回 5 项，且每项都是 manifest-only（无 inputSchema 键）', () => {
-    const summaries = listToolSummaries()
+// 最小 fake ctx：registry.run 只把它原样透传给 tool.execute，本文件不校验副作用面。
+const ctx: ToolContext = {
+  sessionId: 's',
+  signal: new AbortController().signal,
+  progress() {},
+  callTool: async () => ({ ok: true }),
+  renderCard: () => ({ cardId: 'x' }),
+  saveArtifact: () => ({ artifactId: 'y' }),
+}
 
-    expect(summaries).toHaveLength(5)
-    for (const summary of summaries) {
-      // manifest-only（TK3）：摘要里只有 name/description/runtime，绝不带 schema。
-      expect(summary).not.toHaveProperty('inputSchema')
-    }
+// inline fake Tool 构造器：默认一个 internal 工具，execute 回 { ok:true, data }。
+// 各用例用 overrides 定制 name/skill/inputSchema/execute。
+function makeTool(overrides: Partial<Tool> = {}): Tool {
+  return {
+    name: 'demo',
+    runtime: 'internal',
+    skill: { description: 'demo 一句话摘要', triggers: ['demo'], content: '# demo 指南正文' },
+    inputSchema: { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] },
+    execute: async () => ({ ok: true, data: { echoed: true } }),
+    ...overrides,
+  }
+}
+
+describe('tools/registry —— 抽象工厂 ToolRegistry（§3/§4）', () => {
+  it('模块级单例 toolRegistry 就是一个可用的 ToolRegistry', () => {
+    const reg: ToolRegistry = toolRegistry
+    expect(typeof reg.register).toBe('function')
+    expect(typeof reg.has).toBe('function')
+    expect(typeof reg.list).toBe('function')
+    expect(typeof reg.loadSchema).toBe('function')
+    expect(typeof reg.run).toBe('function')
   })
 
-  it('裁剪掉 delegate_agent：摘要里不含它（TK2）', () => {
-    const names = listToolSummaries().map((tool) => tool.name)
+  it('register 后 has/list 反映；list 项只有 name/description(=skill.description)/runtime', () => {
+    const reg = createToolRegistry()
+    expect(reg.has('demo')).toBe(false)
 
-    expect(names).not.toContain('delegate_agent')
-    expect(names).toEqual(
-      expect.arrayContaining([
-        'skill_search',
-        'skill_read',
-        'ask_user_question',
-        'browser_action',
-        'save_file',
-      ]),
+    reg.register(makeTool())
+
+    expect(reg.has('demo')).toBe(true)
+    const list = reg.list()
+    expect(list).toHaveLength(1)
+    const [item] = list
+    // description 取自 skill.description（terse）。
+    expect(item).toEqual({ name: 'demo', description: 'demo 一句话摘要', runtime: 'internal' })
+    // manifest-only（TK3）：绝不含 inputSchema / guide / content / skill。
+    expect(item).not.toHaveProperty('inputSchema')
+    expect(item).not.toHaveProperty('guide')
+    expect(item).not.toHaveProperty('content')
+    expect(item).not.toHaveProperty('skill')
+  })
+
+  it('同名 register 覆盖（幂等，后注册胜）', () => {
+    const reg = createToolRegistry()
+    reg.register(makeTool({ skill: { description: '旧', content: '旧正文' } }))
+    reg.register(makeTool({ skill: { description: '新', content: '新正文' } }))
+
+    expect(reg.list()).toHaveLength(1)
+    expect(reg.list()[0].description).toBe('新')
+    expect(reg.loadSchema('demo')?.guide).toBe('新正文')
+  })
+
+  it('loadSchema：在 summary 之上补 inputSchema + guide(=skill.content)', () => {
+    const reg = createToolRegistry()
+    reg.register(makeTool())
+
+    const loaded = reg.loadSchema('demo')
+    expect(loaded).toEqual({
+      name: 'demo',
+      description: 'demo 一句话摘要',
+      runtime: 'internal',
+      inputSchema: { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] },
+      guide: '# demo 指南正文',
+    })
+  })
+
+  it('loadSchema 未知名 → undefined', () => {
+    const reg = createToolRegistry()
+    expect(reg.loadSchema('nope')).toBeUndefined()
+  })
+
+  it('run 未知名 → { ok:false, error 含 "unknown tool" }（不抛）', async () => {
+    const reg = createToolRegistry()
+    const res = await reg.run('nope', {}, ctx)
+    expect(res).toEqual({ ok: false, error: 'unknown tool: nope' })
+  })
+
+  it('run 正常工具 → 透传其 ToolResult', async () => {
+    const reg = createToolRegistry()
+    reg.register(makeTool({ execute: async () => ({ ok: true, data: { n: 42 } }) }))
+    const res = await reg.run('demo', { q: 'x' }, ctx)
+    expect(res).toEqual({ ok: true, data: { n: 42 } })
+  })
+
+  it('run 工具 execute 抛普通 Error → { ok:false, error:消息 }（不抛，TK6）', async () => {
+    const reg = createToolRegistry()
+    reg.register(
+      makeTool({
+        execute: () => {
+          throw new Error('boom')
+        },
+      }),
     )
+    const res = await reg.run('demo', {}, ctx)
+    expect(res).toEqual({ ok: false, error: 'boom' })
   })
 
-  it('loadTool 懒加载：save_file 合成出含 inputSchema 的完整 LoadedTool（TK3）', () => {
-    const tool = loadTool('save_file')
-
-    expect(tool).toBeDefined()
-    expect(tool?.name).toBe('save_file')
-    expect(tool?.runtime).toBe('browser')
-    expect(tool?.inputSchema).toBeDefined()
-    expect(tool?.inputSchema).toMatchObject({ type: 'object' })
-  })
-
-  it('loadTool 未知名字返回 undefined', () => {
-    expect(loadTool('nope')).toBeUndefined()
-    // 已裁剪的 tool 也不可加载。
-    expect(loadTool('delegate_agent')).toBeUndefined()
-  })
-
-  it('browser_action schema：payload.properties 只有 title/body，不含 items/options（契约一致性）', () => {
-    const tool = loadTool('browser_action')
-    const schema = tool?.inputSchema as {
-      properties?: { payload?: { properties?: Record<string, unknown>; required?: string[] } }
-    }
-    const payloadProps = schema.properties?.payload?.properties ?? {}
-
-    // schema 广告的字段必须与执行侧（BrowserCard 只存 title/body）一致——去掉 items/options。
-    expect(payloadProps).not.toHaveProperty('items')
-    expect(payloadProps).not.toHaveProperty('options')
-    expect(payloadProps).toHaveProperty('title')
-    expect(payloadProps).toHaveProperty('body')
-    expect(schema.properties?.payload?.required).toEqual(['title'])
-  })
-
-  it('searchTools 子串匹配命中 skill_search + skill_read', () => {
-    const hits = searchTools('skill').map((tool) => tool.name)
-
-    expect(hits).toContain('skill_search')
-    expect(hits).toContain('skill_read')
-  })
-
-  it('searchTools 也可按 runtime 匹配（browser 命中 browser_action + save_file）', () => {
-    const hits = searchTools('browser').map((tool) => tool.name)
-
-    expect(hits).toContain('browser_action')
-    expect(hits).toContain('save_file')
+  it('run 工具 execute 抛 AbortError → rethrow 透传（不封装）', async () => {
+    const reg = createToolRegistry()
+    const abortErr = new Error('aborted')
+    abortErr.name = 'AbortError'
+    reg.register(
+      makeTool({
+        execute: () => {
+          throw abortErr
+        },
+      }),
+    )
+    await expect(reg.run('demo', {}, ctx)).rejects.toBe(abortErr)
   })
 })

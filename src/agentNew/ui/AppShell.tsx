@@ -8,6 +8,7 @@
 import { ActiveSessionProvider } from './ActiveSessionProvider'
 import { SessionList } from './SessionList'
 import { MessageList } from './MessageList'
+import { ToolActivity } from './ToolActivity'
 import { SaveArtifact } from './SaveArtifact'
 import { CheckpointBar } from './CheckpointBar'
 import { AskUserQuestionCard } from './AskUserQuestionCard'
@@ -23,6 +24,8 @@ export function AppShell() {
         <ActiveSessionProvider>
           {/* SaveArtifact 属于「当前对话内容」的一部分，排在 MessageList 之后、CheckpointBar 之前。 */}
           <MessageList />
+          {/* 工具进度条：显示「工具正在干啥」，紧跟消息列表。 */}
+          <ToolActivity />
           <SaveArtifact />
           <CheckpointBar />
           {/* AskUserQuestionCard 是暂停提问卡片，紧贴输入区上方（最显眼），排在 Composer 之前。 */}

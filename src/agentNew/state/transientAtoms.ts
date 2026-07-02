@@ -32,6 +32,14 @@ export interface BrowserCard {
 // AskUserQuestion 单个答案值（照抄旧 types 语义）。
 export type AskUserAnswerValue = string | string[] | boolean
 
+// 工具进度条目（临时 UI 态，不持久化）：显示「某个工具调用正在干啥」。
+// callId = 该 tool_call 的 id（唯一），toolName 便于 UI 标注，text 是工具经 ctx.progress 给的文案。
+export interface ToolActivity {
+  callId: string
+  toolName: string
+  text: string
+}
+
 // 简介：当前会话的待保存文件产物。
 // 详情：值随 store 隔离——每个 session store 各持一份 PendingArtifact[]，非分桶。
 export const pendingArtifactsAtom = atom<PendingArtifact[]>([])
@@ -43,6 +51,10 @@ export const browserCardsAtom = atom<BrowserCard[]>([])
 // 简介：当前会话的 AskUserQuestion 待提交答案（questionId → value）。
 // 详情：值随 store 隔离——每个 session store 各持一份 Record，非分桶。
 export const pendingQuestionAnswersAtom = atom<Record<string, AskUserAnswerValue>>({})
+
+// 简介：当前会话正在跑的工具进度（按 callId）。
+// 详情：值随 store 隔离；harness 经 ctx.progress 上写、工具跑完清掉。UI 读它渲染「工具正在干啥」。
+export const toolActivityAtom = atom<ToolActivity[]>([])
 
 // ghost guard：会话未在 rootStore 登记 → 后续写入应 no-op（C7）。
 function sessionMissing(id: string): boolean {
@@ -123,6 +135,32 @@ export function setPendingQuestionAnswer(
  */
 export function getPendingQuestionAnswers(id: string): Record<string, AskUserAnswerValue> {
   return getSessionStore(id).store.getter(pendingQuestionAnswersAtom)
+}
+
+/**
+ * 写入/更新某工具调用的进度条目（按 callId upsert，不可变）。会话未登记则 no-op（ghost guard）。
+ */
+export function upsertToolActivity(id: string, activity: ToolActivity): void {
+  if (sessionMissing(id)) {
+    return
+  }
+  getSessionStore(id).store.setter(toolActivityAtom, (prev) => {
+    const index = prev.findIndex((entry) => entry.callId === activity.callId)
+    if (index < 0) return [...prev, activity]
+    const next = [...prev]
+    next[index] = activity
+    return next
+  })
+}
+
+/**
+ * 清掉某工具调用的进度条目（该工具跑完时）。会话未登记则 no-op（ghost guard）。
+ */
+export function removeToolActivity(id: string, callId: string): void {
+  if (sessionMissing(id)) {
+    return
+  }
+  getSessionStore(id).store.setter(toolActivityAtom, (prev) => prev.filter((entry) => entry.callId !== callId))
 }
 
 /**

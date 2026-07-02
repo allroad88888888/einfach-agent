@@ -9,6 +9,8 @@ import { rootStore, sessionsAtom, resetRootStore } from '../state/rootStore'
 import { getSessionStore, resetSessionStores } from '../state/sessionStore'
 import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
 import { setRun } from '../state/sessionWriters'
+import { toolActivityAtom } from '../state/transientAtoms'
+import { toolRegistry } from '../tools/registry'
 import type { ModelSettings } from '../state/core.type'
 import { runSession, runToolLoop } from './modelRun'
 
@@ -381,6 +383,29 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(toolItem.tool_call_id).toBe('ts1')
     // ask_user（ask1）的 result 未回填（留给 resumeWithAnswers）。
     expect(items.some((it) => it.item.role === 'tool' && it.item.tool_call_id === 'ask1')).toBe(false)
+  })
+
+  it('工具 progress 后抛错 → 进度条目被 finally 清掉（不残留卡住的进度行，codex P2）', async () => {
+    toolRegistry.register({
+      name: '__throw_after_progress__',
+      runtime: 'internal',
+      skill: { description: 'x', content: 'x' },
+      inputSchema: {},
+      execute(_args, ctx) {
+        ctx.progress('working') // 先写进度
+        const err = new DOMException('aborted', 'AbortError')
+        throw err // 再抛错
+      },
+    })
+    seedSession('tp', { vendor: 'deepseek', model: 'x' })
+    const { fetchImpl } = seqFetch([
+      () => toolCallsResponse([{ name: '__throw_after_progress__', args: {}, id: 'p1' }]),
+    ])
+
+    await runSession('tp', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
+
+    // 无论最终 stopped/error，进度条目都必须被清（finally）。
+    expect(getSessionStore('tp').store.getter(toolActivityAtom)).toEqual([])
   })
 
   it('MAX_AGENT_TURNS：模型不停请求 schema → 到上限后 error', async () => {

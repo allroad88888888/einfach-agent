@@ -303,6 +303,40 @@
   margin-bottom: 0;
 }
 
+/* ── 工具进度条（显示工具正在干啥） ───────── */
+.agentnew-tool-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 20px 8px;
+}
+
+.agentnew-tool-activity-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px dashed #cdd2f5;
+  border-radius: 8px;
+  background: #f7f8ff;
+  font-size: 12px;
+  color: #3a4458;
+}
+
+.agentnew-tool-activity-spinner {
+  color: #5b5bd6;
+}
+
+.agentnew-tool-activity-name {
+  font-weight: 600;
+  color: #3a3aa8;
+}
+
+.agentnew-tool-activity-text {
+  color: #6b7689;
+  overflow-wrap: anywhere;
+}
+
 /* ── T-8 待保存文件（save_file 产物） ───────── */
 .agentnew-save-artifact {
   display: flex;

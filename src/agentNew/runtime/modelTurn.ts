@@ -7,7 +7,8 @@
 //   · narrowToolCalls / safeParseArgs —— 把宽松响应收窄成请求侧必填形状、安全解析参数。
 
 import { pickSkillsForInput } from '../skills/registry'
-import { listToolSummaries, type LoadedTool } from '../tools/registry'
+import { toolRegistry } from '../tools/registry'
+import type { LoadedTool } from '../tools/types'
 import type {
   ModelFunctionTool,
   ModelResponseToolCall,
@@ -62,7 +63,7 @@ function requestSchemaTool(): ModelFunctionTool {
       parameters: {
         type: 'object',
         properties: {
-          toolName: { type: 'string', enum: listToolSummaries().map((tool) => tool.name) },
+          toolName: { type: 'string', enum: toolRegistry.list().map((tool) => tool.name) },
           reason: { type: 'string' },
         },
         required: ['toolName', 'reason'],

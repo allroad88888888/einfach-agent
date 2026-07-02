@@ -5,7 +5,8 @@
 //     才 loadTool() 合成完整 schema，加入本轮可见工具列表。禁止预加载。
 // agentNew 无 timeline：去掉旧版 timeline 写入 / wait 延时，只保留纯逻辑。
 
-import { loadTool, type LoadedTool } from '../tools/registry'
+import { toolRegistry } from '../tools/registry'
+import type { LoadedTool } from '../tools/types'
 import { patchRun } from '../state/sessionWriters'
 
 // 简介：把工具加入本轮可见工具列表。
@@ -25,7 +26,7 @@ export function ensureToolLoaded(
 ): LoadedTool[] {
   if (currentTools.some((tool) => tool.name === toolName)) return currentTools
 
-  const tool = loadTool(toolName)
+  const tool = toolRegistry.loadSchema(toolName)
   if (!tool) return currentTools
 
   const nextTools = appendVisibleTool(currentTools, tool)

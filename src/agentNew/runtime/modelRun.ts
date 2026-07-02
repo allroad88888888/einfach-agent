@@ -18,13 +18,16 @@ import { getSessionStore } from '../state/sessionStore'
 import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
 import { appendItem, setRun, patchRun } from '../state/sessionWriters'
 import { commitCheckpoint } from '../state/checkpointWriters'
+import { removeToolActivity } from '../state/transientAtoms'
 import { persistCheckpoint, persistSessions } from './persistenceBridge'
 import { callDeepSeek } from '../api/deepseek'
 import { callGlm } from '../api/glm'
 import type { ModelChatResponse } from '../api/modelApi'
-import { loadTool, type LoadedTool } from '../tools/registry'
+import { toolRegistry } from '../tools/registry'
+import type { LoadedTool, ToolResult } from '../tools/types'
+import '../tools/defs' // 副作用：把内置工具注册进 toolRegistry（运行时任何用工具的路径都经 modelRun）。
 import { ensureToolLoaded } from './toolLoading'
-import { runRuntimeTool } from './toolExecution'
+import { buildToolContext } from './toolContext'
 import { buildSystemItem, buildTurnTools, narrowToolCalls, safeParseArgs } from './modelTurn'
 import { newId } from './newId'
 
@@ -198,56 +201,64 @@ export async function runToolLoop(
             item: { role: 'tool', tool_call_id: toolCallId, content },
           })
 
-        // 要暂停的那个合法 ask_user（有非空 questions 数组）——留到其它工具执行完再处理。
-        // 非法 ask_user（无 questions）不算，走下方普通分发由 runRuntimeTool 回 {error} 续跑（TK6）。
-        const askIndex = toolCalls.findIndex((tc) => {
-          if (tc.function.name !== 'ask_user_question') return false
-          const a = safeParseArgs(tc.function.arguments)
-          return Array.isArray(a.questions) && a.questions.length > 0
-        })
+        // 暂停请求（工具返回 {pause}，目前只有 ask_user）——先记着，等同条消息里其它 tool_call 都补齐
+        // result 再统一处理。否则提前 return 进 waiting_user 会漏掉其余 tool_call 的 tool 消息，resume
+        // 重发被 OpenAI 兼容接口拒（codex P2）。
+        let pauseCall: { callId: string; payload: unknown } | undefined
 
-        for (let ti = 0; ti < toolCalls.length; ti += 1) {
-          if (ti === askIndex) continue // 合法 ask_user 留到循环后统一处理（暂停/已答守卫）。
-          const toolCall = toolCalls[ti]
+        for (const toolCall of toolCalls) {
           const name = toolCall.function.name
           const args = safeParseArgs(toolCall.function.arguments)
 
-          // request_tool_schema：懒加载该工具 schema 进 visible（累计已载写回 run），回 schema JSON。
-          // 其它：交给 runRuntimeTool 执行，得到 tool result JSON 字符串（失败已在内部封 {error}）。
-          let content: string
+          // request_tool_schema：懒加载 schema+guide 进 visible（累计已载写回 run），回 loadSchema JSON。同步，无需守卫。
           if (name === 'request_tool_schema') {
             const toolName = typeof args.toolName === 'string' ? args.toolName : ''
             visible = ensureToolLoaded(id, visible, toolName)
-            content = JSON.stringify(loadTool(toolName) ?? { error: 'unknown' })
-          } else {
-            content = await runRuntimeTool(id, name, args, { runId, signal: opts.signal })
+            appendToolResult(toolCall.id, JSON.stringify(toolRegistry.loadSchema(toolName) ?? { error: 'unknown' }))
+            continue
           }
 
-          // TK8「每步不漏」：runRuntimeTool 是 async 且 signal 穿透其中，await 后写回前再查一次
-          // ——被顶掉的旧 run 不得把迟到 tool result 写进新 run 的 items；esc 中断则收成 stopped。
-          // （当前 runtime 工具体全同步、此窗口不可达，但守住不变量以防将来某工具转真异步。）
+          // 其它工具：建 ctx（副作用白名单）→ 经工厂统一分发 → 拿 ToolResult。
+          const ctx = buildToolContext({ sessionId: id, runId, signal: opts.signal, callId: toolCall.id, toolName: name })
+          let result: ToolResult
+          try {
+            result = await toolRegistry.run(name, args, ctx)
+          } finally {
+            // 无论正常返回还是 AbortError 抛出，都清掉该 tool 的进度条目 —— 否则 stop 后 UI 残留卡住的进度行（codex P2）。
+            removeToolActivity(id, toolCall.id)
+          }
+
+          // TK8「每步不漏」：execute 可能异步且 signal 穿透其中，await 后写回前再查会话还在、且仍是本次 run；
+          // 被顶掉的旧 run 不得把迟到 result 写进新 run；esc 中断则收成 stopped。
           if (!isCurrentRun(id, runId)) return
           if (opts.signal.aborted) {
             if (isCurrentRun(id, runId)) patchRun(id, { status: 'stopped' })
             return
           }
 
-          appendToolResult(toolCall.id, content)
+          // 结果映射（§4）：pause 延后处理；ok → data JSON；error → {error} JSON（TK6，不打断）。
+          if ('pause' in result) {
+            if (pauseCall) {
+              // 已有暂停请求 → 这个多余的 pause 补个 result，别让它 orphan。
+              appendToolResult(toolCall.id, JSON.stringify({ error: 'already pausing' }))
+            } else {
+              pauseCall = { callId: toolCall.id, payload: result.pause } // 不 append，留给 resume 回填
+            }
+          } else if (result.ok) {
+            appendToolResult(toolCall.id, JSON.stringify(result.data ?? { ok: true }))
+          } else {
+            appendToolResult(toolCall.id, JSON.stringify({ error: result.error }))
+          }
         }
 
-        // 其它工具已补齐 result，最后处理合法 ask_user：
-        //   · TK7「已回答」守卫：本轮已有 ask_user 的 ToolItem 回填（用户已答过、resume 已续跑）
-        //     → 不再暂停，回 {error:'user_answers_already_provided'} 让 model 用已给答案续跑，防死循环。
-        //   · 否则暂停 run（waiting_user + pendingQuestion），该 ask_user 的 ToolItem 留给 resume 回填。
-        if (askIndex >= 0) {
-          const askCall = toolCalls[askIndex]
+        // 其它工具已补齐，最后处理暂停：TK7「已回答」守卫 —— resume 后本轮已回填过 ask_user 的 result
+        //   → 不再暂停，回 {error:'user_answers_already_provided'} 让 model 用已给答案续跑，防死循环；
+        //   否则暂停 run（waiting_user + pendingQuestion），该 tool 的 result 留给 resume 回填。
+        if (pauseCall) {
           if (askAlreadyAnswered(id)) {
-            appendToolResult(askCall.id, JSON.stringify({ error: 'user_answers_already_provided' }))
+            appendToolResult(pauseCall.callId, JSON.stringify({ error: 'user_answers_already_provided' }))
           } else {
-            patchRun(id, {
-              status: 'waiting_user',
-              pendingQuestion: safeParseArgs(askCall.function.arguments),
-            })
+            patchRun(id, { status: 'waiting_user', pendingQuestion: pauseCall.payload })
             return
           }
         }
