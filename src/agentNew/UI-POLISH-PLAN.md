@@ -27,3 +27,19 @@
 ### 非目标（本轮不做）
 - 不做「模型总结生成标题」（LLM 起名）——首条消息截断已够用，成本为零；将来要再议。
 - 不做右键菜单/更多会话操作（置顶、归档等）。
+
+> 轮次 1 ✅ 完成（`ad2a96b`）：TT1–4 落地 + codex 修 IME isComposing。npm test 340。
+
+---
+
+## 轮次 2：列表按活跃排序 + 删除确认
+
+**现状**：SessionList 按 `createdAt` 倒序——老会话来新消息不上浮；点 × 直接删（连带持久化），误触即丢。
+**事实核查**：`appendItem`/`patchItem` 已收尾 `touchSession` 推 `updatedAt`（R2），`renameSession`/`setWorkspaceRoot` 也推——排序数据现成。
+
+| # | 契约 |
+|---|------|
+| TU1 | **排序改 `updatedAt` 倒序**（并列时 `createdAt` 倒序兜底，再并列按 id 稳定）。纯 SessionList 改动，与 hydrate 选默认会话的依据（updatedAt 最新）天然一致。 |
+| TU2 | **删除两步确认（行内，不用 window.confirm）**：首击 × → 该按钮进入「确认删除」态（变文案/变色，aria-label 同步）；**再击才真删**；失焦 / 鼠标移出该行 / 3s 超时 → 复位。同一时刻至多一行处于确认态（本地 useState：`confirmingId`）。删除仍走既有 `removeSession` 命令，U1 边界不变。 |
+
+阶段：SessionList + CSS + 组件测试（排序断言 / 首击不删且入确认态 / 再击真删 / 移出复位 / 超时复位用 fake timers）→ build/test → codex review → 提交。

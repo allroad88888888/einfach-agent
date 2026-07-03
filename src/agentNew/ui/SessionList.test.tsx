@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { fireEvent, screen, within } from '@testing-library/react'
+import { act, fireEvent, screen, within } from '@testing-library/react'
 import { renderWithStore } from '../../test/renderWithStore'
 import { rootStore, sessionsAtom, activeSessionIdAtom, resetRootStore } from '../state/rootStore'
 import { newSession, selectSession, removeSession, renameSession } from '../runtime/commands'
@@ -54,12 +54,13 @@ describe('SessionList (P-U2)', () => {
     expect(selectSession).toHaveBeenCalledWith('s2')
   })
 
-  it('点删除按钮 → 以其 id 调 removeSession', () => {
+  it('删除按钮两步确认后 → 以其 id 调 removeSession（TU2 起单击不再直删）', () => {
     seed()
     renderWithStore(<SessionList />, { store: rootStore })
 
     const item = screen.getByText('会话二').closest('.agentnew-session-item') as HTMLElement
     fireEvent.click(within(item).getByLabelText('删除'))
+    fireEvent.click(within(item).getByLabelText('确认删除'))
     expect(removeSession).toHaveBeenCalledWith('s2')
   })
 
@@ -150,5 +151,162 @@ describe('SessionList (P-U2)', () => {
     // 组合结束后的真 Enter 才提交。
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(renameSession).toHaveBeenCalledWith('s1', '拼音中')
+  })
+
+  // —— TU1：列表按活跃（updatedAt）倒序 ————————————————————————————————
+  /** 三个会话：createdAt A<B<C，updatedAt C<A<B —— 排序只该看 updatedAt。 */
+  function seedForOrdering() {
+    rootStore.setter(sessionsAtom, {
+      sa: { id: 'sa', title: '会话A', settings: { vendor: 'deepseek', model: 'x' }, createdAt: 1, updatedAt: 50 },
+      sb: { id: 'sb', title: '会话B', settings: { vendor: 'deepseek', model: 'x' }, createdAt: 2, updatedAt: 90 },
+      sc: { id: 'sc', title: '会话C', settings: { vendor: 'deepseek', model: 'x' }, createdAt: 3, updatedAt: 20 },
+    })
+    rootStore.setter(activeSessionIdAtom, 'sa')
+  }
+
+  /** 读列表当前渲染顺序（标题文本序列）。 */
+  function titlesInOrder(container: HTMLElement) {
+    return Array.from(container.querySelectorAll('.agentnew-session-title')).map(
+      (el) => el.textContent,
+    )
+  }
+
+  it('按 updatedAt 倒序渲染（createdAt 顺序不作数）', () => {
+    seedForOrdering()
+    const { container } = renderWithStore(<SessionList />, { store: rootStore })
+
+    expect(titlesInOrder(container)).toEqual(['会话B', '会话A', '会话C'])
+  })
+
+  it('updatedAt 并列时退 createdAt 倒序', () => {
+    rootStore.setter(sessionsAtom, {
+      sa: { id: 'sa', title: '会话A', settings: { vendor: 'deepseek', model: 'x' }, createdAt: 1, updatedAt: 50 },
+      sb: { id: 'sb', title: '会话B', settings: { vendor: 'deepseek', model: 'x' }, createdAt: 2, updatedAt: 50 },
+    })
+    rootStore.setter(activeSessionIdAtom, 'sa')
+    const { container } = renderWithStore(<SessionList />, { store: rootStore })
+
+    expect(titlesInOrder(container)).toEqual(['会话B', '会话A'])
+  })
+
+  // —— TU2：删除两步确认 ————————————————————————————————————————————————
+  /** 取某标题所在行的行容器。 */
+  function rowOf(title: string) {
+    return screen.getByText(title).closest('.agentnew-session-item') as HTMLElement
+  }
+
+  it('首击 × → 不删，按钮进入确认态（aria-label「确认删除」+ .confirming）', () => {
+    seed()
+    renderWithStore(<SessionList />, { store: rootStore })
+
+    const item = rowOf('会话二')
+    fireEvent.click(within(item).getByLabelText('删除'))
+
+    expect(removeSession).not.toHaveBeenCalled()
+    const confirming = within(item).getByLabelText('确认删除')
+    expect(confirming).toHaveClass('confirming')
+  })
+
+  it('确认态再击 → 以其 id 调 removeSession 一次', () => {
+    seed()
+    renderWithStore(<SessionList />, { store: rootStore })
+
+    const item = rowOf('会话二')
+    fireEvent.click(within(item).getByLabelText('删除'))
+    fireEvent.click(within(item).getByLabelText('确认删除'))
+
+    expect(removeSession).toHaveBeenCalledTimes(1)
+    expect(removeSession).toHaveBeenCalledWith('s2')
+  })
+
+  it('确认态下鼠标移出该行 → 复位；此后再点只是重新进入确认态、不删', () => {
+    seed()
+    renderWithStore(<SessionList />, { store: rootStore })
+
+    const item = rowOf('会话二')
+    fireEvent.click(within(item).getByLabelText('删除'))
+    fireEvent.mouseLeave(item)
+
+    // 复位：aria-label 回「删除」。
+    expect(within(item).getByLabelText('删除')).toBeInTheDocument()
+    expect(within(item).queryByLabelText('确认删除')).toBeNull()
+
+    // 复位后再点：只是重新进入确认态，仍不删。
+    fireEvent.click(within(item).getByLabelText('删除'))
+    expect(removeSession).not.toHaveBeenCalled()
+    expect(within(item).getByLabelText('确认删除')).toBeInTheDocument()
+  })
+
+  it('确认态 3s 超时 → 自动复位、不删', () => {
+    vi.useFakeTimers()
+    try {
+      seed()
+      renderWithStore(<SessionList />, { store: rootStore })
+
+      const item = rowOf('会话二')
+      fireEvent.click(within(item).getByLabelText('删除'))
+      expect(within(item).getByLabelText('确认删除')).toBeInTheDocument()
+
+      // 定时器回调里 setState —— 包 act 走 React 更新。
+      act(() => {
+        vi.advanceTimersByTime(3000)
+      })
+
+      expect(within(item).getByLabelText('删除')).toBeInTheDocument()
+      expect(within(item).queryByLabelText('确认删除')).toBeNull()
+      expect(removeSession).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('切到另一行确认态 → 旧行复位且旧定时器被清（不误复位新行）', () => {
+    vi.useFakeTimers()
+    try {
+      seed()
+      renderWithStore(<SessionList />, { store: rootStore })
+
+      const item1 = rowOf('会话一')
+      const item2 = rowOf('会话二')
+
+      // t=0：行一进入确认态；t=1500：切到行二。
+      fireEvent.click(within(item1).getByLabelText('删除'))
+      act(() => {
+        vi.advanceTimersByTime(1500)
+      })
+      fireEvent.click(within(item2).getByLabelText('删除'))
+
+      // 同一时刻至多一行确认态：行一复位、行二确认中。
+      expect(within(item1).getByLabelText('删除')).toBeInTheDocument()
+      expect(within(item2).getByLabelText('确认删除')).toBeInTheDocument()
+
+      // 再走 1600ms（越过行一旧定时器的 3000ms 时刻）：行二不得被旧定时器误复位。
+      act(() => {
+        vi.advanceTimersByTime(1600)
+      })
+      expect(within(item2).getByLabelText('确认删除')).toBeInTheDocument()
+
+      // 行二自己的 3s 到点（t=1500+3000）才复位。
+      act(() => {
+        vi.advanceTimersByTime(1400)
+      })
+      expect(within(item2).queryByLabelText('确认删除')).toBeNull()
+      expect(removeSession).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('确认态的行开始改名编辑 → 确认态复位（避免视觉打架）', () => {
+    seed()
+    renderWithStore(<SessionList />, { store: rootStore })
+
+    const item = rowOf('会话一')
+    fireEvent.click(within(item).getByLabelText('删除'))
+    expect(within(item).getByLabelText('确认删除')).toBeInTheDocument()
+
+    fireEvent.doubleClick(screen.getByText('会话一'))
+    expect(within(item).getByLabelText('删除')).toBeInTheDocument()
+    expect(within(item).queryByLabelText('确认删除')).toBeNull()
   })
 })

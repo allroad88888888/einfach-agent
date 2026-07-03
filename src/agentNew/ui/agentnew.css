@@ -3,7 +3,7 @@
  * 只求「两栏清晰、能用」，不追求精美。由 main.tsx 统一 import（本文件不被其它模块 import）。
  * 类名与 ui/ 各组件一一对应：
  *   AppShell         → .agentnew-shell / .agentnew-sidebar / .agentnew-main
- *   SessionList      → .agentnew-session-list / -new-session / -session-item(.active) / -session-title / -session-rename-input / -session-remove
+ *   SessionList      → .agentnew-session-list / -new-session / -session-item(.active) / -session-title / -session-rename-input / -session-remove(.confirming)
  *   ActiveSessionProvider → .agentnew-empty
  *   MessageList      → .agentnew-message-list / .agentnew-msg(.--user/.--assistant) / .agentnew-message-empty
  *   CheckpointBar    → .agentnew-checkpoint-bar / .agentnew-checkpoint-item(.active)
@@ -124,6 +124,17 @@
 .agentnew-session-remove:hover {
   background: rgba(220, 70, 54, 0.12);
   color: #dc4636;
+}
+
+/* 删除两步确认（TU2）：确认态红底白字，提示「再击才真删」。 */
+.agentnew-session-remove.confirming {
+  background: #dc4636;
+  color: #ffffff;
+}
+
+.agentnew-session-remove.confirming:hover {
+  background: #c23b2c;
+  color: #ffffff;
 }
 
 /* ── 右栏：当前对话 ───────────────────────── */
