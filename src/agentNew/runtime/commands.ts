@@ -51,6 +51,38 @@ export function configureCommands(cfg: Partial<typeof runtimeConfig>): void {
 // 会话命令
 // ===========================================================================
 
+// 会话默认标题 —— newSession 的兜底名，也是自动标题（TT1）判断「用户尚未取名」的哨兵值。
+export const DEFAULT_SESSION_TITLE = '新对话'
+
+// 简介：从用户输入派生会话标题（TT2，纯函数）。
+// 详情：压缩空白（连串空白折成单空格 + 去首尾）→ Array.from 按 code point 截前 12 字
+//   （防 emoji/增补平面字符被从代理对中间截断成乱码）→ 截断则加 …。
+//   派生为空（纯空白输入）返回空串，由调用方决定保留默认名。
+export function deriveSessionTitle(input: string): string {
+  const compact = input.replace(/\s+/g, ' ').trim()
+  if (!compact) return ''
+  const chars = Array.from(compact)
+  if (chars.length <= 12) return compact
+  return `${chars.slice(0, 12).join('')}…`
+}
+
+// 简介：给指定会话改名（TT3）—— ghost guard + 不可变更新 + updatedAt 前进 + 落盘。
+// 详情：照 setWorkspaceRoot 范式。trim 后空串 → no-op（编辑框取消语义，保留原名）；
+//   超长入参按 code point 截 48 字防爆列表。自动标题（sendMessage/TT1）内部复用本命令。
+export function renameSession(id: string, title: string): void {
+  const trimmed = title.trim()
+  if (!trimmed) return
+  const next = Array.from(trimmed).slice(0, 48).join('')
+  let changed = false
+  rootStore.setter(sessionsAtom, (prev) => {
+    const meta = prev[id]
+    if (!meta) return prev // ghost guard：会话未登记 → no-op
+    changed = true
+    return { ...prev, [id]: { ...meta, title: next, updatedAt: Date.now() } }
+  })
+  if (changed) persistSessions() // D-4：会话元信息变更 → 覆盖式落盘（fire-and-forget）。
+}
+
 // 简介：新建会话 → 登记 rootStore.sessionsAtom → 建每会话 store → 设为 active，返回 id。
 // 详情：默认 settings 为 deepseek + 默认模型；opts.settings / opts.title 可覆盖。
 export function newSession(opts?: { title?: string; settings?: ModelSettings }): string {
@@ -62,7 +94,7 @@ export function newSession(opts?: { title?: string; settings?: ModelSettings }):
   const now = Date.now()
   const meta: SessionMeta = {
     id,
-    title: opts?.title ?? '新对话',
+    title: opts?.title ?? DEFAULT_SESSION_TITLE,
     settings,
     createdAt: now,
     updatedAt: now,
@@ -145,6 +177,14 @@ export function sendMessage(input: string): void {
     status === 'waiting_confirmation'
   )
     return
+
+  // 自动标题（TT1）：标题仍为默认值时，用本条输入派生一次标题（复用 renameSession 走
+  //   ghost guard/updatedAt/落盘）。用户改过名（≠默认）绝不覆盖；同会话第二条消息时标题
+  //   已非默认，天然不再触发。派生为空（理论上上面已挡空输入）→ 保留默认名。
+  if (meta.title === DEFAULT_SESSION_TITLE) {
+    const derived = deriveSessionTitle(input)
+    if (derived) renameSession(id, derived)
+  }
 
   const apiKey = meta.settings.vendor === 'glm' ? runtimeConfig.glmApiKey : runtimeConfig.deepseekApiKey
   const signal = beginRun(id)

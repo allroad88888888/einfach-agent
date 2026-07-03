@@ -56,6 +56,9 @@ import {
   discardArtifact,
   setWorkspaceRoot,
   confirmTool,
+  DEFAULT_SESSION_TITLE,
+  deriveSessionTitle,
+  renameSession,
 } from './commands'
 
 afterEach(() => {
@@ -534,5 +537,99 @@ describe('confirmTool（S4-B 危险工具确认恢复）', () => {
   it('无 active → no-op', () => {
     confirmTool(true)
     expect(runToolLoop).not.toHaveBeenCalled()
+  })
+})
+
+describe('deriveSessionTitle（TT2 标题派生纯函数）', () => {
+  it('压缩空白：连串空白（含换行/tab）折成单空格并去首尾', () => {
+    expect(deriveSessionTitle('  帮我  查一下\n\t天气  ')).toBe('帮我 查一下 天气')
+  })
+
+  it('超过 12 字：按 code point 截前 12 字 + …', () => {
+    expect(deriveSessionTitle('一二三四五六七八九十一二三')).toBe('一二三四五六七八九十一二…')
+  })
+
+  it('恰好 12 字：不截断、不加 …', () => {
+    expect(deriveSessionTitle('一二三四五六七八九十一二')).toBe('一二三四五六七八九十一二')
+  })
+
+  it('emoji 按 code point 计数，截断不断裂（无残缺代理对）', () => {
+    expect(deriveSessionTitle('🍎'.repeat(13))).toBe('🍎'.repeat(12) + '…')
+  })
+
+  it('全空白 → 空串（由调用方决定保留默认名）', () => {
+    expect(deriveSessionTitle('   \n\t  ')).toBe('')
+  })
+})
+
+describe('renameSession（TT3 会话改名命令）', () => {
+  it('正常改名：trim + 不可变更新 + updatedAt 前进 + 落盘', () => {
+    const id = newSession()
+    // 把 updatedAt 拨回过去，验证 renameSession 会让它前进（同毫秒内 Date.now() 无法区分）。
+    rootStore.setter(sessionsAtom, (prev) => ({ ...prev, [id]: { ...prev[id], updatedAt: 1 } }))
+    vi.mocked(persistSessions).mockClear()
+
+    renameSession(id, '  新名字  ')
+
+    const meta = rootStore.getter(sessionsAtom)[id]
+    expect(meta.title).toBe('新名字')
+    expect(meta.updatedAt).toBeGreaterThan(1)
+    expect(persistSessions).toHaveBeenCalled()
+  })
+
+  it('trim 后空 → no-op（保留原名、不落盘，编辑框取消语义）', () => {
+    const id = newSession({ title: '原名' })
+    vi.mocked(persistSessions).mockClear()
+
+    renameSession(id, '   ')
+
+    expect(rootStore.getter(sessionsAtom)[id].title).toBe('原名')
+    expect(persistSessions).not.toHaveBeenCalled()
+  })
+
+  it('ghost 会话（未登记）→ no-op、不落盘', () => {
+    vi.mocked(persistSessions).mockClear()
+    expect(() => renameSession('ghost', '新名')).not.toThrow()
+    expect(rootStore.getter(sessionsAtom)['ghost']).toBeUndefined()
+    expect(persistSessions).not.toHaveBeenCalled()
+  })
+
+  it('超长标题按 code point 截 48 字（emoji 不断裂）', () => {
+    const id = newSession()
+    renameSession(id, '🍎'.repeat(50))
+    expect(rootStore.getter(sessionsAtom)[id].title).toBe('🍎'.repeat(48))
+  })
+})
+
+describe('sendMessage 自动标题（TT1）', () => {
+  it('标题仍为默认值 → 用本条输入派生标题（run 照常启动）', () => {
+    configureCommands({ deepseekApiKey: 'k' })
+    const id = newSession()
+    expect(rootStore.getter(sessionsAtom)[id].title).toBe(DEFAULT_SESSION_TITLE)
+
+    sendMessage('  帮我   查天气  ')
+
+    expect(rootStore.getter(sessionsAtom)[id].title).toBe('帮我 查天气')
+    expect(runSession).toHaveBeenCalledTimes(1)
+  })
+
+  it('用户已改名（≠默认）→ 绝不覆盖', () => {
+    configureCommands({ deepseekApiKey: 'k' })
+    const id = newSession({ title: '我的会话' })
+
+    sendMessage('hello world')
+
+    expect(rootStore.getter(sessionsAtom)[id].title).toBe('我的会话')
+  })
+
+  it('第二条消息不再改（首条已把标题改成非默认）', () => {
+    configureCommands({ deepseekApiKey: 'k' })
+    const id = newSession()
+
+    sendMessage('第一条消息')
+    expect(rootStore.getter(sessionsAtom)[id].title).toBe('第一条消息')
+
+    sendMessage('第二条完全不同的消息')
+    expect(rootStore.getter(sessionsAtom)[id].title).toBe('第一条消息')
   })
 })

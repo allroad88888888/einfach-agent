@@ -3,7 +3,7 @@
  * 只求「两栏清晰、能用」，不追求精美。由 main.tsx 统一 import（本文件不被其它模块 import）。
  * 类名与 ui/ 各组件一一对应：
  *   AppShell         → .agentnew-shell / .agentnew-sidebar / .agentnew-main
- *   SessionList      → .agentnew-session-list / -new-session / -session-item(.active) / -session-title / -session-remove
+ *   SessionList      → .agentnew-session-list / -new-session / -session-item(.active) / -session-title / -session-rename-input / -session-remove
  *   ActiveSessionProvider → .agentnew-empty
  *   MessageList      → .agentnew-message-list / .agentnew-msg(.--user/.--assistant) / .agentnew-message-empty
  *   CheckpointBar    → .agentnew-checkpoint-bar / .agentnew-checkpoint-item(.active)
@@ -90,6 +90,22 @@
 .agentnew-session-item.active .agentnew-session-title {
   color: #4444bd;
   font-weight: 600;
+}
+
+/* 行内改名输入框（TT4）：对齐 .agentnew-session-title 的行高/字号 ——
+ * padding 各减 1px 抵掉 1px 边框，整行高度不跳。 */
+.agentnew-session-rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid #a5a8f4;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #3a4458;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: inherit;
+  outline: none;
 }
 
 .agentnew-session-remove {
