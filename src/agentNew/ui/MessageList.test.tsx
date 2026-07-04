@@ -100,4 +100,69 @@ describe('MessageList', () => {
     // 'a-card' < 'b-item' ⇒ 卡片在前、条目在后（确定顺序）
     expect(card.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
+
+  // 轮次 3 · TM1-4：GFM 表格 / 链接 target=_blank / raw HTML 转义安全回归。
+  it('TM3：assistant 内容含 GFM 表格语法 → 渲染出 <table>（外包 .agentnew-md-table-wrap）', () => {
+    const store = createStore()
+    const items: ConversationItem[] = [
+      {
+        id: 'a-table',
+        createdAt: 0,
+        item: { role: 'assistant', content: '| a | b |\n| - | - |\n| 1 | 2 |' },
+      },
+    ]
+    store.setter(itemsAtom, items)
+
+    const { container } = renderWithStore(<MessageList />, { store })
+
+    const table = screen.getByRole('table')
+    expect(table).toBeInTheDocument()
+    // 表格被包在 .agentnew-md-table-wrap 里（overflow-x:auto 防撑破气泡）
+    expect(container.querySelector('.agentnew-md-table-wrap table')).toBe(table)
+    expect(screen.getByText('a')).toBeInTheDocument()
+    expect(screen.getByText('1')).toBeInTheDocument()
+  })
+
+  it('TM3：assistant 内容含链接 → <a> 带 target=_blank 且 rel 含 noopener', () => {
+    const store = createStore()
+    const items: ConversationItem[] = [
+      {
+        id: 'a-link',
+        createdAt: 0,
+        item: { role: 'assistant', content: '[点击](https://example.com)' },
+      },
+    ]
+    store.setter(itemsAtom, items)
+
+    renderWithStore(<MessageList />, { store })
+
+    const link = screen.getByRole('link', { name: '点击' })
+    expect(link).toHaveAttribute('href', 'https://example.com')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link.getAttribute('rel')).toContain('noopener')
+  })
+
+  it('安全回归：assistant 内容含 <script>/<img onerror> → 不渲染为真实元素，以转义文本呈现', () => {
+    const store = createStore()
+    const items: ConversationItem[] = [
+      {
+        id: 'a-xss',
+        createdAt: 0,
+        item: {
+          role: 'assistant',
+          content: '注入测试：<script>alert(1)</script> 与 <img src=x onerror=alert(1)>',
+        },
+      },
+    ]
+    store.setter(itemsAtom, items)
+
+    const { container } = renderWithStore(<MessageList />, { store })
+
+    // 不存在真实的 script / img 元素
+    expect(container.querySelector('script')).toBeNull()
+    expect(container.querySelector('img')).toBeNull()
+    // 原始标签以转义文本形式可见
+    expect(container.textContent).toContain('<script>alert(1)</script>')
+    expect(container.textContent).toContain('<img src=x onerror=alert(1)>')
+  })
 })

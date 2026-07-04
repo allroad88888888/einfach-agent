@@ -5,18 +5,18 @@
 // 可见性规则：
 //   · user：纯文本气泡，恒渲染；
 //   · assistant：仅当 content 有实质文本才渲染；content 为 null 或 trim 为空（纯工具调用轮，
-//     如 request_tool_schema）跳过，不冒空气泡（codex P3）；走 react-markdown。
+//     如 request_tool_schema）跳过，不冒空气泡（codex P3）；走 MessageMarkdown（react-markdown + GFM）。
 //   · system / tool：发给/来自模型的内部条目，对用户不可见，跳过。
 // browser 卡片（browserCardsAtom）与可见 items 按 createdAt 升序稳定合并；createdAt 相同时
 //   用各自 id 字符串兜底，保证顺序确定、可测（R2）。
 // 空状态：items 与 cards 都空时给「开始对话吧」占位。
 
 import { useAtomValue } from '@einfach/react'
-import ReactMarkdown from 'react-markdown'
 import { itemsAtom } from '../state/sessionAtoms'
 import { browserCardsAtom, type BrowserCard } from '../state/transientAtoms'
 import type { ConversationItem } from '../state/core.type'
 import { BrowserActionCard } from './BrowserActionCard'
+import { MessageMarkdown } from './MessageMarkdown'
 
 // 合并渲染的条目：一条对话消息 或 一张浏览器卡片；统一带 createdAt + 稳定次级键 sortKey。
 type MergedEntry =
@@ -78,7 +78,7 @@ export function MessageList() {
         // 走到这里必是「有实质文本的 assistant」（isVisibleItem 已过滤 null/空白与 system/tool）。
         return (
           <div key={ci.id} className="agentnew-msg agentnew-msg--assistant">
-            <ReactMarkdown>{item.content ?? ''}</ReactMarkdown>
+            <MessageMarkdown>{item.content ?? ''}</MessageMarkdown>
           </div>
         )
       })}

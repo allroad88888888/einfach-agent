@@ -198,6 +198,8 @@
   background: #f2f4f8;
   color: #1b2333;
   border-bottom-left-radius: 4px;
+  /* 断词兜底：长 URL / 无空格长串不破版 */
+  word-break: break-word;
 }
 
 .agentnew-msg--assistant > :first-child {
@@ -206,6 +208,102 @@
 
 .agentnew-msg--assistant > :last-child {
   margin-bottom: 0;
+}
+
+/* ── assistant 气泡内 markdown 样式（轮次 3 · TM4） ─────────────── */
+/* 标题：气泡里不该巨大，逐级收敛 */
+.agentnew-msg--assistant h1 {
+  margin: 0.6em 0 0.4em;
+  font-size: 1.25em;
+  line-height: 1.4;
+}
+
+.agentnew-msg--assistant h2 {
+  margin: 0.6em 0 0.4em;
+  font-size: 1.15em;
+  line-height: 1.4;
+}
+
+.agentnew-msg--assistant h3 {
+  margin: 0.6em 0 0.4em;
+  font-size: 1.05em;
+  line-height: 1.4;
+}
+
+.agentnew-msg--assistant p {
+  margin: 0.5em 0;
+}
+
+.agentnew-msg--assistant ul,
+.agentnew-msg--assistant ol {
+  margin: 0.5em 0;
+  padding-left: 1.4em;
+}
+
+.agentnew-msg--assistant li {
+  margin: 0.2em 0;
+}
+
+.agentnew-msg--assistant li + li {
+  margin-top: 0.3em;
+}
+
+/* 代码块：比气泡底色深一档、等宽字体、横向滚动兜底宽内容 */
+.agentnew-msg--assistant pre {
+  margin: 0.6em 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #e3e7f0;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.agentnew-msg--assistant pre code {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: inherit;
+}
+
+/* 行内 code（非 pre 内）：浅底色小圆角 */
+.agentnew-msg--assistant code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #e3e7f0;
+  font-family:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Courier New", monospace;
+  font-size: 0.9em;
+}
+
+.agentnew-msg--assistant blockquote {
+  margin: 0.6em 0;
+  padding: 2px 12px;
+  border-left: 3px solid #cdd2f5;
+  color: #6b7689;
+}
+
+/* 表格：外层滚动容器防止撑破气泡，内层表格边框合并 */
+.agentnew-msg--assistant .agentnew-md-table-wrap {
+  margin: 0.6em 0;
+  overflow-x: auto;
+}
+
+.agentnew-msg--assistant table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.agentnew-msg--assistant th,
+.agentnew-msg--assistant td {
+  padding: 6px 10px;
+  border: 1px solid #d4dbe8;
+}
+
+.agentnew-msg--assistant th {
+  background: #e6eaf2;
+  font-weight: 600;
+  text-align: left;
 }
 
 /* ── checkpoint 回退轮列表 ────────────────── */

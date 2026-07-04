@@ -43,3 +43,23 @@
 | TU2 | **删除两步确认（行内，不用 window.confirm）**：首击 × → 该按钮进入「确认删除」态（变文案/变色，aria-label 同步）；**再击才真删**；失焦 / 鼠标移出该行 / 3s 超时 → 复位。同一时刻至多一行处于确认态（本地 useState：`confirmingId`）。删除仍走既有 `removeSession` 命令，U1 边界不变。 |
 
 阶段：SessionList + CSS + 组件测试（排序断言 / 首击不删且入确认态 / 再击真删 / 移出复位 / 超时复位用 fake timers）→ build/test → codex review → 提交。
+
+> 轮次 2 ✅ 完成（`3dbbfb9`）：TU1/TU2 落地，codex 零 finding。npm test 348。
+
+---
+
+## 轮次 3：Markdown 渲染收尾（GFM + 组件映射 + 样式）
+
+**现状**：`react-markdown@^10.1` 已装，MessageList 的 assistant 消息已裸走 `<ReactMarkdown>`（无插件/无组件映射/无内部样式）。
+**参照**：`/Volumes/work/web/ai-components/packages/markdown/src/markdown.tsx`——业内同款验证栈 `react-markdown + remark-gfm@^4`，不开 raw HTML（react-markdown 默认转义，安全保持）。agentNew 保持自包含：**只引 remark-gfm 依赖，不回接 @ai-components 路径**（重写既定决策）。
+
+| # | 契约 |
+|---|------|
+| TM1 | **加 `remark-gfm@^4`**（对齐 ai-components 用的 major）——表格/删除线/任务列表/自动链接可渲染。这是本项目第二个 UI 运行时依赖（第一个 react-markdown 已在）。 |
+| TM2 | **抽 `ui/MessageMarkdown.tsx` 包装**（镜像 ai-components 23 行模式）：`ReactMarkdown + remarkPlugins=[remarkGfm] + components` 映射。MessageList 换用它。**绝不开 raw HTML**（不引 rehype-raw；HTML 保持转义）。 |
+| TM3 | **组件映射最小集**：`a` → `target="_blank" rel="noopener noreferrer"`（Tauri webview 里点链接不得把 app 导航走）；`table` → 包一层 `.agentnew-md-table-wrap`（overflow-x:auto，防撑破气泡）；`pre`/`code` 保持默认标签但由 CSS 管溢出。 |
+| TM4 | **气泡内 markdown 样式**（agentnew.css，作用域 `.agentnew-msg--assistant`）：代码块底色+等宽+`overflow-x:auto`+圆角内边距；行内 code 底色；表格边框/表头底色；blockquote 左边线；列表缩进；标题字号收敛（气泡里 h1 不该巨大）；一切横向溢出滚动、不破版。 |
+
+测试（MessageList.test 或新 MessageMarkdown.test）：GFM 表格渲染出 `<table>`；链接带 target=_blank+rel；**raw HTML 注入保持转义**（`<script>`/`<img onerror>` 以文本呈现，安全回归）；既有 strong 断言不动。
+阶段：依赖 + 包装 + CSS + 测试 → build/test → codex review → 提交。
+非目标：代码高亮（shiki/highlight 体量大，后续轮次）、KaTeX、mermaid、流式渲染优化。
