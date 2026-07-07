@@ -160,3 +160,27 @@ describe('ctx.runShell 桥接', () => {
     expect(getSessionStore('s1').store.getter(toolActivityAtom)).toEqual([])
   })
 })
+
+describe('ctx.runWorkspaceTask 桥接', () => {
+  it('live run：写 task 进度；Vitest/浏览器无 Tauri 时返回可读错误 result', async () => {
+    seedRunningSession('s1', 'r')
+    const ctx = ctxFor('run_task', 's1', 'r')
+
+    const result = await ctx.runWorkspaceTask!({ kind: 'test' })
+
+    expect(getSessionStore('s1').store.getter(toolActivityAtom)).toEqual([
+      { callId: 'call1', toolName: 'run_task', text: '运行任务: test' },
+    ])
+    expect(result).toMatchObject({
+      ok: false,
+      exitCode: 1,
+      stdout: '',
+      timedOut: false,
+      truncated: false,
+      command: [],
+      kind: 'test',
+    })
+    expect(result.stderr).toContain('Tauri desktop runtime')
+    expect(result.durationMs).toBeGreaterThanOrEqual(0)
+  })
+})

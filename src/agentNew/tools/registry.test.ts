@@ -111,12 +111,13 @@ describe('tools/registry —— 抽象工厂 ToolRegistry（§3/§4）', () => {
     expect(loaded?.guide.length).toBeGreaterThan(0)
   })
 
-  it('内置 workspace file tools 已注册，manifest-only；loadSchema 才暴露 schema + guide', () => {
+  it('内置 workspace server tools 已注册，manifest-only；loadSchema 才暴露 schema + guide', () => {
     const fileToolNames = [
       'read_file',
       'list_files',
       'search_files',
       'rg_search',
+      'run_task',
       'apply_patch',
       'write_file',
       'git_diff_review',

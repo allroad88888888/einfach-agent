@@ -25,6 +25,7 @@ import { rgSearchWorkspace } from './workspaceRg'
 import { applyWorkspacePatch } from './workspacePatch'
 import { writeWorkspaceFile } from './workspaceWrite'
 import { getWorkspaceDiff } from './workspaceGit'
+import { runWorkspaceTask } from './workspaceTask'
 
 const MAX_TOOL_DEPTH = 4
 
@@ -48,6 +49,11 @@ function shellProgressText(command: string): string {
 function pathProgressText(action: string, path: unknown): string {
   const value = typeof path === 'string' && path.trim() ? path.trim() : '.'
   return `${action}: ${value.slice(0, 160)}`
+}
+
+function taskProgressText(kind: unknown): string {
+  const value = typeof kind === 'string' && kind.trim() ? kind.trim() : 'task'
+  return `运行任务: ${value.slice(0, 80)}`
 }
 
 /**
@@ -164,6 +170,14 @@ export function buildToolContext(opts: {
       const result = await getWorkspaceDiff(
         withWorkspaceRoot(input as Parameters<typeof getWorkspaceDiff>[0]),
       )
+      assertFresh()
+      return result
+    },
+
+    async runWorkspaceTask(input) {
+      assertFresh()
+      progress(taskProgressText(input.kind))
+      const result = await runWorkspaceTask(withWorkspaceRoot(input))
       assertFresh()
       return result
     },

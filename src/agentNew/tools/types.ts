@@ -67,6 +67,28 @@ export interface ShellCommandResult {
   truncated: boolean
 }
 
+export type WorkspaceTaskKind = 'test' | 'build' | 'lint' | 'typecheck' | 'cargo_check'
+
+export interface WorkspaceTaskInput {
+  kind: WorkspaceTaskKind
+  timeoutMs?: number
+  maxOutputChars?: number
+  workspaceRoot?: string
+}
+
+export interface WorkspaceTaskResult {
+  ok: boolean
+  exitCode: number
+  stdout: string
+  stderr: string
+  durationMs: number
+  timedOut: boolean
+  truncated: boolean
+  command: string[]
+  cwd: string
+  kind: WorkspaceTaskKind | string
+}
+
 /**
  * 工具拿到的唯一副作用面（白名单）。工具不 import 任何 atom/store —— 一切副作用都在这里，
  * 由 harness 实现 + 集中施加 ghost/stale 守卫。
@@ -115,6 +137,8 @@ export interface ToolContext {
   writeWorkspaceFile?(input: unknown): Promise<unknown>
   /** 读取 git status/diff。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
   getWorkspaceDiff?(input?: unknown): Promise<unknown>
+  /** 运行预定义 workspace 验证任务。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
+  runWorkspaceTask?(input: WorkspaceTaskInput): Promise<WorkspaceTaskResult>
   /** 渲染信息卡片（browser_action 用）。harness → addBrowserCard + stale 守卫。 */
   renderCard(card: { title: string; body?: string }): { cardId: string } | { error: string }
   /** 暂存待保存文件产物（save_file 用）。harness → addPendingArtifact + stale 守卫。 */

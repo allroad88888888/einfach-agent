@@ -1,6 +1,6 @@
 // S4-A toolContext 透传 workspaceRoot 的单测。
 // ---------------------------------------------------------------------------
-// 把六个 workspace 桥整模块 mock 成「回显入参」的 spy，断言 ctx 的对应方法调用桥时，
+// 把 workspace 桥整模块 mock 成「回显入参」的 spy，断言 ctx 的对应方法调用桥时，
 // 把该会话 SessionMeta.workspaceRoot 作为入参带上；未绑定则不带（Rust 走 git root 兜底）；
 // 调用方已显式带 root 则尊重调用方。独立文件 mock 桥，不影响 toolContext.test.ts（那边跑真桥）。
 
@@ -14,6 +14,7 @@ vi.mock('./workspaceRead', () => ({
 vi.mock('./workspacePatch', () => ({ applyWorkspacePatch: vi.fn(async (input: unknown) => input) }))
 vi.mock('./workspaceWrite', () => ({ writeWorkspaceFile: vi.fn(async (input: unknown) => input) }))
 vi.mock('./workspaceGit', () => ({ getWorkspaceDiff: vi.fn(async (input: unknown) => input) }))
+vi.mock('./workspaceTask', () => ({ runWorkspaceTask: vi.fn(async (input: unknown) => input) }))
 
 import { rootStore, sessionsAtom, resetRootStore } from '../state/rootStore'
 import { resetSessionStores } from '../state/sessionStore'
@@ -23,6 +24,7 @@ import { readWorkspaceFile, listWorkspaceFiles, searchWorkspaceFiles } from './w
 import { applyWorkspacePatch } from './workspacePatch'
 import { writeWorkspaceFile } from './workspaceWrite'
 import { getWorkspaceDiff } from './workspaceGit'
+import { runWorkspaceTask } from './workspaceTask'
 
 afterEach(() => {
   resetRootStore()
@@ -44,7 +46,7 @@ function ctxFor(id: string) {
 }
 
 describe('toolContext workspaceRoot 透传（S4-A）', () => {
-  it('会话已绑定 workspaceRoot：读/列/搜/patch/写/git 各桥入参都带上它', async () => {
+  it('会话已绑定 workspaceRoot：读/列/搜/patch/写/git/task 各桥入参都带上它', async () => {
     seedSession('s1', '/ws/root')
     const ctx = ctxFor('s1')
 
@@ -54,6 +56,7 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     await ctx.applyWorkspacePatch!({ operations: [] })
     await ctx.writeWorkspaceFile!({ path: 'a.txt', content: 'y' })
     await ctx.getWorkspaceDiff!({})
+    await ctx.runWorkspaceTask!({ kind: 'test' })
 
     expect(vi.mocked(readWorkspaceFile).mock.calls[0][0]).toMatchObject({ path: 'a.txt', workspaceRoot: '/ws/root' })
     expect(vi.mocked(listWorkspaceFiles).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/ws/root' })
@@ -61,6 +64,7 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     expect(vi.mocked(applyWorkspacePatch).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/ws/root' })
     expect(vi.mocked(writeWorkspaceFile).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/ws/root' })
     expect(vi.mocked(getWorkspaceDiff).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/ws/root' })
+    expect(vi.mocked(runWorkspaceTask).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/ws/root' })
   })
 
   it('getWorkspaceDiff 不带 input：合成只含 root 的入参', async () => {

@@ -63,6 +63,26 @@ export interface ShellCommandResult {
   truncated: boolean
 }
 
+export type WorkspaceTaskKind = 'test' | 'build' | 'lint' | 'typecheck' | 'cargo_check'
+export interface WorkspaceTaskInput {
+  kind: WorkspaceTaskKind
+  timeoutMs?: number
+  maxOutputChars?: number
+  workspaceRoot?: string
+}
+export interface WorkspaceTaskResult {
+  ok: boolean
+  exitCode: number
+  stdout: string
+  stderr: string
+  durationMs: number
+  timedOut: boolean
+  truncated: boolean
+  command: string[]
+  cwd: string
+  kind: WorkspaceTaskKind | string
+}
+
 // 工具拿到的唯一副作用面（白名单）。工具不 import 任何 atom/store —— 一切副作用都在这里。
 export interface ToolContext {
   readonly sessionId: string
@@ -73,6 +93,7 @@ export interface ToolContext {
   renderCard(card: { title: string; body?: string }): { cardId: string } | { error: string }
   saveArtifact(file: { filename: string; content: string; mimeType?: string }): { artifactId: string } | { error: string }
   runShell(input: ShellCommandInput): Promise<ShellCommandResult> // 唯一允许调用本机 shell 的前端入口（§14）
+  runWorkspaceTask(input: WorkspaceTaskInput): Promise<WorkspaceTaskResult> // 预定义 workspace 验证任务入口（§15）
 }
 
 // 统一抽象：一个工具要具备的全部。
@@ -134,6 +155,7 @@ export interface ToolRegistry {
 | 渲卡片 | `ctx.renderCard({title,body?})` | browser_action 用。harness → `addBrowserCard` + 集中 stale 守卫，回 `{cardId}`/`{error:'stale'}`。工具不再 import transientAtoms。 |
 | 存文件 | `ctx.saveArtifact({filename,content,mimeType?})` | save_file 用。harness → `addPendingArtifact` + 集中 stale 守卫，回 `{artifactId}`/`{error}`。 |
 | 本机 shell | `ctx.runShell(input)` | shell tools 用。**这是前端唯一允许调用本机 shell 的入口**；harness/Tauri command 负责平台、timeout、输出截断和结构化 `ShellCommandResult`。 |
+| workspace task | `ctx.runWorkspaceTask(input)` | run_task 用。只运行预定义验证任务；harness/Tauri command 负责 workspace root、timeout、输出截断和结构化 `WorkspaceTaskResult`。 |
 
 > 所有工具都拿到完整 ctx（不做按需注入的 capabilities 声明——那是被否掉的复杂度）；按约定各用所需。ctx 就是「工具能做的事」的**固定小白名单**，harness 是唯一实现方 + 守卫方。将来若某效果只该给某类 runtime，再在 harness 侧按 runtime 收窄即可。
 
@@ -178,6 +200,7 @@ tools/
   shell-macos/           { shell-macos.ts / .md / .test.ts }       // tool.name = shell_macos
   shell-linux/           { shell-linux.ts / .md / .test.ts }       // tool.name = shell_linux
   shell-powershell/      { shell-powershell.ts / .md / .test.ts }  // tool.name = shell_powershell
+  run-task/              { run-task.ts / .md / .test.ts }          // tool.name = run_task
 ```
 
 - **skill 正文放同目录的 `<name>.md`**（`?raw` 导入，`vite-env.d.ts` 已声明 `*.md?raw`），工具 `.ts` 里 `content: <name>Md`。
@@ -214,14 +237,14 @@ export const <name>Tool: Tool = {
 
 **硬规则（批量生成必须遵守，review 照此查）**：
 - ❌ 不 import 任何 `state/`（atom/writer/store）、不 import 别的工具模块、不碰 `rootStore`。副作用只经 `ctx`。
-- ❌ 不绕过 `ctx` 做本机副作用：shell tools 不直接 `invoke` Tauri command、不直接碰进程 API；只能调 `ctx.runShell`。
+- ❌ 不绕过 `ctx` 做本机副作用：shell/task tools 不直接 `invoke` Tauri command、不直接碰进程 API；只能调 `ctx.runShell` / `ctx.runWorkspaceTask`。
 - ❌ 不自己判 ghost/stale（harness 管）；`execute` 只写纯逻辑 + 防御式取参。
 - ✅ 失败 `return { ok:false, error }`，绝不 `throw`（除非要透传 AbortError）。
 - ✅ colocated 测试 `<name>.test.ts`：mock 一个 `ctx`（`progress`/`callTool` 用 vi.fn），断言正常/非法参数/进度/互调各路径。
 
 ## §11 测试约定
 
-- 工具单测：构造 fake `ctx`（`sessionId`/`signal` + `progress`/`callTool`/`renderCard`/`saveArtifact`/`runShell` 的 vi.fn 或 noop），直接调 `tool.execute(args, ctx)` 断言返回的 `ToolResult` + 对应 ctx 方法调用。**不需要 store**（这正是隔离的红利）。
+- 工具单测：构造 fake `ctx`（`sessionId`/`signal` + `progress`/`callTool`/`renderCard`/`saveArtifact`/`runShell`/`runWorkspaceTask` 的 vi.fn 或 noop），直接调 `tool.execute(args, ctx)` 断言返回的 `ToolResult` + 对应 ctx 方法调用。**不需要 store**（这正是隔离的红利）。
 - 工厂单测：register/list（无 schema）/loadSchema（有 schema）/run（未知名/错误封装/AbortError 透传）。
 - 循环集成：modelRun 侧断言 `{ok}`/`{error}`/`{pause}` 三种映射 + 写回守卫（沿用现有 modelRun.test 范式）。
 
@@ -276,29 +299,30 @@ shell tools 只是本规范下的普通 lazy tools，不开新通道：
 - [ ] `npm run build`
 - [ ] `cd src-tauri && cargo check`
 
-## §15 workspace file tools（读写/patch/diff）
+## §15 workspace tools（读写/patch/diff/task）
 
-文件工具也只是普通 lazy tools，不绕过 `ToolContext`：
+workspace 工具也只是普通 lazy tools，不绕过 `ToolContext`：
 
 - **读工具**：`read_file` / `list_files` / `search_files` 只读 workspace 内文本内容，路径由 Tauri 后端做 canonical 校验，拒绝逃逸路径、binary/超大输出，并返回截断标记。
 - **代码搜索主力**：`rg_search` 是 grep 类能力的专业实现，底层调用 ripgrep (`rg --json`)；默认普通字符串搜索，显式 `regex:true` 才启用正则，支持 glob、大小写、上下文行和总匹配上限。
+- **验证任务入口**：`run_task` 只运行预定义 `test` / `build` / `lint` / `typecheck` / `cargo_check`，不接受任意命令、args、env 或 cwd；后端按 workspace 自动选择 package script 或 Cargo check。
 - **主力修改工具**：`apply_patch`。模型应优先用结构化 patch 修改已有源码；patch operation 必须带上下文或期望旧内容，后端按原子语义处理，存在 rejected operation 时不做部分写入。
 - **补充写入工具**：`write_file`。只用于新文件、小文件、生成物或明确的 append/overwrite；修改已有源码时应优先 `apply_patch`。
 - **review 工具**：`git_diff_review` 只读 Git status/diff/stat，不修改文件，适合提交前检查和模型自审。
-- **副作用只经 `ctx`**：工具不得直接 import Tauri API 或 Node/Rust FS 能力；前端唯一入口是 `ctx.readWorkspaceFile` / `ctx.listWorkspaceFiles` / `ctx.searchWorkspaceFiles` / `ctx.rgSearchWorkspace` / `ctx.applyWorkspacePatch` / `ctx.writeWorkspaceFile` / `ctx.getWorkspaceDiff`。
+- **副作用只经 `ctx`**：工具不得直接 import Tauri API 或 Node/Rust FS 能力；前端唯一入口是 `ctx.readWorkspaceFile` / `ctx.listWorkspaceFiles` / `ctx.searchWorkspaceFiles` / `ctx.rgSearchWorkspace` / `ctx.applyWorkspacePatch` / `ctx.writeWorkspaceFile` / `ctx.getWorkspaceDiff` / `ctx.runWorkspaceTask`。
 
 安全约束：
 
 - **workspace root 必须可信**：前端显式传入优先，否则 Rust 侧 `git rev-parse --show-toplevel` 派生 git 根，都拿不到则报错——绝不回退到不可控的 process cwd；解析出的 root 若是文件系统根（`/`）一律拒绝。所有 path 必须 canonicalize 后 `starts_with(root)`（含符号链接 / `..` 解析），绝对路径也照此限制。
-- 文件读取、搜索、rg、diff、写入都必须有大小/条数上限，并返回 `truncated` 或结构化错误。`rg_search` 不走 shell，argv 调 `rg`；达到 `maxMatches` 后停止读取并 kill 子进程，防大仓库无限输出。
+- 文件读取、搜索、rg、diff、写入、task 输出都必须有大小/条数上限，并返回 `truncated` 或结构化错误。`rg_search` 不走 shell，argv 调 `rg`；达到 `maxMatches` 后停止读取并 kill 子进程，防大仓库无限输出。`run_task` 不走 shell，固定 argv 调 package manager / cargo，并有 timeout 和输出上限。
 - 写入类工具不得静默覆盖：`apply_patch` 依赖 `oldText` / `oldContent` / `expectedReplacements`；`write_file` 的 overwrite 可用 `expectedOldContent` 防竞态。同一批 operations 里先 `delete_file` 再 `add_file` 同路径**不得**绕过 overwrite 守卫（本批开始时磁盘上已存在的文件即视为「已存在」）。`write_file` 结果 `path` 返回 workspace 相对路径，不泄漏本机绝对路径。
 - `git_diff_review` 调 git 时不得走 shell；用 argv 传参，path 转 workspace 相对路径。**只读保证要硬**：所有 git 子进程统一经加固入口——`--no-ext-diff --no-textconv` + `-c diff.external=` + env `GIT_EXTERNAL_DIFF=""`（禁外部 diff/textconv 执行）、`GIT_LITERAL_PATHSPECS=1`（pathspec 字面化，`:(top)`/`*.ts` 不被展开）、`GIT_OPTIONAL_LOCKS=0`（禁 `status` 刷 `.git/index`，真只读）。大 diff 用流式 capped read + 达上限 kill，不整块缓冲。
 
 ## §16 server runtime · Tauri-primary（TP1–6）
 
-决策（2026-07）：**Tauri = 唯一产品目标 + 能力基准；web 降级为 dev 预览**。`runtime:'server'` 的工具（shell×3 + `read_file`/`write_file`/`list_files`/`search_files`/`rg_search`/`apply_patch`/`git_diff_review`）依赖 Tauri 原生 command，只在桌面可用。完整契约与阶段见 `../TAURI-PIVOT-PLAN.md`；要点：
+决策（2026-07）：**Tauri = 唯一产品目标 + 能力基准；web 降级为 dev 预览**。`runtime:'server'` 的工具（shell×3 + `read_file`/`write_file`/`list_files`/`search_files`/`rg_search`/`run_task`/`apply_patch`/`git_diff_review`）依赖 Tauri 原生 command，只在桌面可用。完整契约与阶段见 `../TAURI-PIVOT-PLAN.md`；要点：
 
 - **TP2 副作用单入口**：工具只经 `ctx`（`runShell`/`readWorkspaceFile`/…）碰原生能力，**禁止**直接 `import '@tauri-apps/api'`；invoke 细节封在 `runtime/*.ts` 桥接层。web 无 Tauri 时桥接层归一成结构化失败（`unavailable`），绝不崩、绝不降级到 Web API。
 - **TP3 manifest 环境降级**：`runtime:'server'` 工具在 **web 下不进 manifest**——`modelTurn.ts` 的 `buildTurnTools(visible, isTauri)` 用 `runtime !== 'server' || isTauri` 同时过滤 `request_tool_schema` 的 enum 与 visible 展开，`modelRun` 注入 `isTauri()`。model 在 web 下根本看不到 server 工具，不会白白调用。三层防御：manifest 过滤 → visible 过滤 → 桥接层 `isTauri()` 兜底。
-- **TP4 安全边界**：见 §14/§15 —— shell 非交互 + timeout/输出上限；文件工具可信 root（显式优先→git root→拒 `/`）+ canonical confine；git 只读加固。用户确认 UI 尚未做（后续 S4）。
+- **TP4 安全边界**：见 §14/§15 —— shell 非交互 + timeout/输出上限；workspace 工具可信 root（显式优先→git root→拒 `/`）+ canonical confine；task 固定 kind/argv + timeout/输出上限；git 只读加固。用户确认 UI 尚未做（后续 S4）。
 - **TP6 command 对齐**：`ctx.*` → Rust `#[tauri::command]` 参数逐字对齐（snake_case，如 `run_shell_command` / `workspace_root`）。
