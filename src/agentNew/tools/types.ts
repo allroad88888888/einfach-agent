@@ -98,6 +98,17 @@ export interface ToolContext {
     maxMatches?: number
     workspaceRoot?: string
   }): Promise<unknown>
+  /** 用 ripgrep 搜索 workspace。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
+  rgSearchWorkspace?(input: {
+    query: string
+    path?: string
+    regex?: boolean
+    caseSensitive?: boolean
+    globs?: string[]
+    contextLines?: number
+    maxMatches?: number
+    workspaceRoot?: string
+  }): Promise<unknown>
   /** 应用结构化 workspace patch。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
   applyWorkspacePatch?(input: unknown): Promise<unknown>
   /** 写入 workspace 文本文件。具体 Tauri invoke 细节集中在 runtime 桥接层。 */

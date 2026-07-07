@@ -281,21 +281,22 @@ shell tools 只是本规范下的普通 lazy tools，不开新通道：
 文件工具也只是普通 lazy tools，不绕过 `ToolContext`：
 
 - **读工具**：`read_file` / `list_files` / `search_files` 只读 workspace 内文本内容，路径由 Tauri 后端做 canonical 校验，拒绝逃逸路径、binary/超大输出，并返回截断标记。
+- **代码搜索主力**：`rg_search` 是 grep 类能力的专业实现，底层调用 ripgrep (`rg --json`)；默认普通字符串搜索，显式 `regex:true` 才启用正则，支持 glob、大小写、上下文行和总匹配上限。
 - **主力修改工具**：`apply_patch`。模型应优先用结构化 patch 修改已有源码；patch operation 必须带上下文或期望旧内容，后端按原子语义处理，存在 rejected operation 时不做部分写入。
 - **补充写入工具**：`write_file`。只用于新文件、小文件、生成物或明确的 append/overwrite；修改已有源码时应优先 `apply_patch`。
 - **review 工具**：`git_diff_review` 只读 Git status/diff/stat，不修改文件，适合提交前检查和模型自审。
-- **副作用只经 `ctx`**：工具不得直接 import Tauri API 或 Node/Rust FS 能力；前端唯一入口是 `ctx.readWorkspaceFile` / `ctx.listWorkspaceFiles` / `ctx.searchWorkspaceFiles` / `ctx.applyWorkspacePatch` / `ctx.writeWorkspaceFile` / `ctx.getWorkspaceDiff`。
+- **副作用只经 `ctx`**：工具不得直接 import Tauri API 或 Node/Rust FS 能力；前端唯一入口是 `ctx.readWorkspaceFile` / `ctx.listWorkspaceFiles` / `ctx.searchWorkspaceFiles` / `ctx.rgSearchWorkspace` / `ctx.applyWorkspacePatch` / `ctx.writeWorkspaceFile` / `ctx.getWorkspaceDiff`。
 
 安全约束：
 
 - **workspace root 必须可信**：前端显式传入优先，否则 Rust 侧 `git rev-parse --show-toplevel` 派生 git 根，都拿不到则报错——绝不回退到不可控的 process cwd；解析出的 root 若是文件系统根（`/`）一律拒绝。所有 path 必须 canonicalize 后 `starts_with(root)`（含符号链接 / `..` 解析），绝对路径也照此限制。
-- 文件读取、搜索、diff、写入都必须有大小/条数上限，并返回 `truncated` 或结构化错误。
+- 文件读取、搜索、rg、diff、写入都必须有大小/条数上限，并返回 `truncated` 或结构化错误。`rg_search` 不走 shell，argv 调 `rg`；达到 `maxMatches` 后停止读取并 kill 子进程，防大仓库无限输出。
 - 写入类工具不得静默覆盖：`apply_patch` 依赖 `oldText` / `oldContent` / `expectedReplacements`；`write_file` 的 overwrite 可用 `expectedOldContent` 防竞态。同一批 operations 里先 `delete_file` 再 `add_file` 同路径**不得**绕过 overwrite 守卫（本批开始时磁盘上已存在的文件即视为「已存在」）。`write_file` 结果 `path` 返回 workspace 相对路径，不泄漏本机绝对路径。
 - `git_diff_review` 调 git 时不得走 shell；用 argv 传参，path 转 workspace 相对路径。**只读保证要硬**：所有 git 子进程统一经加固入口——`--no-ext-diff --no-textconv` + `-c diff.external=` + env `GIT_EXTERNAL_DIFF=""`（禁外部 diff/textconv 执行）、`GIT_LITERAL_PATHSPECS=1`（pathspec 字面化，`:(top)`/`*.ts` 不被展开）、`GIT_OPTIONAL_LOCKS=0`（禁 `status` 刷 `.git/index`，真只读）。大 diff 用流式 capped read + 达上限 kill，不整块缓冲。
 
 ## §16 server runtime · Tauri-primary（TP1–6）
 
-决策（2026-07）：**Tauri = 唯一产品目标 + 能力基准；web 降级为 dev 预览**。`runtime:'server'` 的工具（shell×3 + `read_file`/`write_file`/`list_files`/`search_files`/`apply_patch`/`git_diff_review`）依赖 Tauri 原生 command，只在桌面可用。完整契约与阶段见 `../TAURI-PIVOT-PLAN.md`；要点：
+决策（2026-07）：**Tauri = 唯一产品目标 + 能力基准；web 降级为 dev 预览**。`runtime:'server'` 的工具（shell×3 + `read_file`/`write_file`/`list_files`/`search_files`/`rg_search`/`apply_patch`/`git_diff_review`）依赖 Tauri 原生 command，只在桌面可用。完整契约与阶段见 `../TAURI-PIVOT-PLAN.md`；要点：
 
 - **TP2 副作用单入口**：工具只经 `ctx`（`runShell`/`readWorkspaceFile`/…）碰原生能力，**禁止**直接 `import '@tauri-apps/api'`；invoke 细节封在 `runtime/*.ts` 桥接层。web 无 Tauri 时桥接层归一成结构化失败（`unavailable`），绝不崩、绝不降级到 Web API。
 - **TP3 manifest 环境降级**：`runtime:'server'` 工具在 **web 下不进 manifest**——`modelTurn.ts` 的 `buildTurnTools(visible, isTauri)` 用 `runtime !== 'server' || isTauri` 同时过滤 `request_tool_schema` 的 enum 与 visible 展开，`modelRun` 注入 `isTauri()`。model 在 web 下根本看不到 server 工具，不会白白调用。三层防御：manifest 过滤 → visible 过滤 → 桥接层 `isTauri()` 兜底。

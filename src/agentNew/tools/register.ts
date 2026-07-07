@@ -12,6 +12,7 @@ import { shellPowershellTool } from './shell-powershell/shell-powershell'
 import { readFileTool } from './read-file/read-file'
 import { listFilesTool } from './list-files/list-files'
 import { searchFilesTool } from './search-files/search-files'
+import { rgSearchTool } from './rg-search/rg-search'
 import { applyPatchTool } from './apply-patch/apply-patch'
 import { writeFileTool } from './write-file/write-file'
 import { gitDiffReviewTool } from './git-diff-review/git-diff-review'
@@ -28,6 +29,7 @@ for (const tool of [
   readFileTool,
   listFilesTool,
   searchFilesTool,
+  rgSearchTool,
   applyPatchTool,
   writeFileTool,
   gitDiffReviewTool,

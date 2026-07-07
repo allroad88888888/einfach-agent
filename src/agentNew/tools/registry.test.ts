@@ -116,6 +116,7 @@ describe('tools/registry —— 抽象工厂 ToolRegistry（§3/§4）', () => {
       'read_file',
       'list_files',
       'search_files',
+      'rg_search',
       'apply_patch',
       'write_file',
       'git_diff_review',

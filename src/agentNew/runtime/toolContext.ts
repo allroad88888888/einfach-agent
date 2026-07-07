@@ -21,6 +21,7 @@ import {
   readWorkspaceFile,
   searchWorkspaceFiles,
 } from './workspaceRead'
+import { rgSearchWorkspace } from './workspaceRg'
 import { applyWorkspacePatch } from './workspacePatch'
 import { writeWorkspaceFile } from './workspaceWrite'
 import { getWorkspaceDiff } from './workspaceGit'
@@ -124,6 +125,14 @@ export function buildToolContext(opts: {
       assertFresh()
       progress(pathProgressText('搜索文件', input.path))
       const result = await searchWorkspaceFiles(withWorkspaceRoot(input))
+      assertFresh()
+      return result
+    },
+
+    async rgSearchWorkspace(input) {
+      assertFresh()
+      progress(pathProgressText('rg 搜索', input.path))
+      const result = await rgSearchWorkspace(withWorkspaceRoot(input))
       assertFresh()
       return result
     },
