@@ -67,6 +67,18 @@ export function updateItem(
 }
 
 /**
+ * 直接替换该会话的对话历史（不可变，调用方负责传入新数组），收尾 touchSession。
+ * 会话未登记则 no-op。用于截断当前未完成轮这类命令层操作。
+ */
+export function setItems(id: string, items: ConversationItem[]): void {
+  if (sessionMissing(id)) {
+    return
+  }
+  getSessionStore(id).store.setter(itemsAtom, items)
+  touchSession(id)
+}
+
+/**
  * 直接设置该会话的 run 状态（传 undefined 清空）。会话未登记则 no-op。
  */
 export function setRun(id: string, run: RunState | undefined): void {

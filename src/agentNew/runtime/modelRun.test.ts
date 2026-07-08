@@ -9,12 +9,15 @@ import { rootStore, sessionsAtom, resetRootStore } from '../state/rootStore'
 import { getSessionStore, resetSessionStores } from '../state/sessionStore'
 import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
 import { setRun } from '../state/sessionWriters'
-import { toolActivityAtom, alwaysAllowedToolsAtom } from '../state/transientAtoms'
+import { toolActivityAtom, alwaysAllowedToolsAtom, runtimeTranscriptEventsAtom } from '../state/transientAtoms'
 import { toolRegistry } from '../tools/registry'
 import type { ModelSettings } from '../state/core.type'
 import { runSession, runToolLoop } from './modelRun'
+import { configureObservability, flushObservability, resetObservability } from '../observability/trace'
+import type { TraceDriver, TraceEvent, TraceSpan } from '../observability/types'
 
 afterEach(() => {
+  resetObservability()
   resetRootStore()
   resetSessionStores()
 })
@@ -67,6 +70,53 @@ function seqFetch(makers: Array<() => Response>): { fetchImpl: typeof fetch; cou
     return maker()
   }
   return { fetchImpl, count: () => i }
+}
+
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function captureTrace(): { spans: TraceSpan[]; events: TraceEvent[]; driver: TraceDriver } {
+  const spans: TraceSpan[] = []
+  const events: TraceEvent[] = []
+  return {
+    spans,
+    events,
+    driver: {
+      async writeSpan(span) {
+        spans.push(clone(span))
+      },
+      async writeEvent(event) {
+        events.push(clone(event))
+      },
+    },
+  }
+}
+
+function sseBlock(data: unknown): string {
+  return `data: ${JSON.stringify(data)}\n\n`
+}
+
+function sseResponse(chunks: unknown[]): Response {
+  const encoder = new TextEncoder()
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const chunk of chunks) controller.enqueue(encoder.encode(sseBlock(chunk)))
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+        controller.close()
+      },
+    }),
+    { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+  )
+}
+
+async function waitUntil(predicate: () => boolean, label: string): Promise<void> {
+  for (let i = 0; i < 50; i += 1) {
+    if (predicate()) return
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  }
+  throw new Error(`timed out waiting for ${label}`)
 }
 
 describe('runSession（P-R2 最小单轮 run）', () => {
@@ -190,6 +240,38 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(captured.reasoning_effort).toBe('high')
   })
 
+  it('system/tools 注入写入 UI transcript，但不进入 itemsAtom 历史', async () => {
+    seedSession('inject1', { vendor: 'deepseek', model: 'm' })
+    let captured: Record<string, unknown> = {}
+    const fetchImpl: typeof fetch = (_url, init) => {
+      captured = JSON.parse(init!.body as string)
+      return Promise.resolve(jsonResponse('ok'))
+    }
+
+    await runSession('inject1', 'hi', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+
+    const store = getSessionStore('inject1').store
+    const items = store.getter(itemsAtom)
+    expect(items.some((it) => it.item.role === 'system')).toBe(false)
+
+    const messages = captured.messages as Array<{ role: string; content?: string }>
+    expect(messages[0].role).toBe('system')
+    expect(messages[0].content).toContain('已加载 skills：')
+    expect(messages.slice(1).map((item) => item.role)).toEqual(['user'])
+
+    const events = store.getter(runtimeTranscriptEventsAtom)
+    expect(events.some((event) => event.kind === 'system_injection' && event.detail?.includes('已加载 skills：'))).toBe(
+      true,
+    )
+    expect(events.some((event) => event.kind === 'tool_manifest' && event.detail?.includes('request_tool_schema'))).toBe(
+      true,
+    )
+  })
+
   it('空回复：model 返回空 content → error，不写空 assistant、不 commit checkpoint', async () => {
     seedSession('s6', { vendor: 'deepseek', model: 'x' })
     const fetchImpl: typeof fetch = async () =>
@@ -278,6 +360,108 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(store.getter(checkpointsAtom)).toHaveLength(1)
   })
 
+  it('流式文本：收到 delta 先写 pending assistant，结束后同一条消息变完整并 done', async () => {
+    seedSession('stream-text', { vendor: 'deepseek', model: 'x' })
+    const encoder = new TextEncoder()
+    let controller: ReadableStreamDefaultController<Uint8Array> | undefined
+    const fetchImpl: typeof fetch = async () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(streamController) {
+            controller = streamController
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+      )
+
+    const runPromise = runSession('stream-text', 'hi', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+
+    await waitUntil(() => controller !== undefined, 'stream controller')
+    controller!.enqueue(encoder.encode(sseBlock({ choices: [{ delta: { content: '你' } }] })))
+
+    await waitUntil(
+      () => getSessionStore('stream-text').store.getter(itemsAtom).some((it) => it.item.role === 'assistant'),
+      'streamed assistant item',
+    )
+    const during = getSessionStore('stream-text').store.getter(itemsAtom)
+    const assistantId = during.find((it) => it.item.role === 'assistant')?.id
+    expect(during.map((it) => it.item.role)).toEqual(['user', 'assistant'])
+    expect(during[1]).toMatchObject({ id: assistantId, pending: true, item: { role: 'assistant', content: '你' } })
+
+    controller!.enqueue(encoder.encode(sseBlock({ choices: [{ delta: { content: '好' }, finish_reason: 'stop' }] })))
+    controller!.enqueue(encoder.encode('data: [DONE]\n\n'))
+    controller!.close()
+    await runPromise
+
+    const done = getSessionStore('stream-text').store.getter(itemsAtom)
+    expect(done).toHaveLength(2)
+    expect(done[1]).toMatchObject({ id: assistantId, pending: false, item: { role: 'assistant', content: '你好' } })
+    expect(getSessionStore('stream-text').store.getter(runAtom)?.status).toBe('done')
+    expect(getSessionStore('stream-text').store.getter(checkpointsAtom)).toHaveLength(1)
+  })
+
+  it('流式 tool_calls：分片 arguments 拼完整后，复用现有工具循环', async () => {
+    seedSession('stream-tools', { vendor: 'deepseek', model: 'x' })
+    const { fetchImpl } = seqFetch([
+      () =>
+        sseResponse([
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    {
+                      index: 0,
+                      id: 'tc1',
+                      type: 'function',
+                      function: { name: 'request_tool_schema', arguments: '' },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [{ index: 0, function: { arguments: '{"toolName":"skill_' } }],
+                },
+              },
+            ],
+          },
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [{ index: 0, function: { arguments: 'search","reason":"x"}' } }],
+                },
+                finish_reason: 'tool_calls',
+              },
+            ],
+          },
+        ]),
+      () => jsonResponse('最终答案'),
+    ])
+
+    await runSession('stream-tools', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
+
+    const store = getSessionStore('stream-tools').store
+    const items = store.getter(itemsAtom)
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
+    const asstTc = items[1].item
+    const toolItem = items[2].item
+    if (asstTc.role !== 'assistant' || toolItem.role !== 'tool') throw new Error('意外的条目形状')
+    expect(asstTc.tool_calls?.[0].function.arguments).toBe('{"toolName":"skill_search","reason":"x"}')
+    expect(toolItem.tool_call_id).toBe('tc1')
+    expect(toolItem.content.includes('skill_search')).toBe(true)
+    expect(store.getter(runAtom)?.status).toBe('done')
+  })
+
   it('request_tool_schema：先请求 schema（懒加载）再给最终答案', async () => {
     seedSession('t1', { vendor: 'deepseek', model: 'x' })
     const { fetchImpl } = seqFetch([
@@ -331,6 +515,65 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     if (searchResult.role !== 'tool') throw new Error('意外的条目形状')
     expect(searchResult.content.includes('results')).toBe(true)
     expect(getSessionStore('t2').store.getter(runAtom)?.status).toBe('done')
+  })
+
+  it('observability：成功工具轮记录脱敏 payload shape 和可读 preview', async () => {
+    const trace = captureTrace()
+    configureObservability({ driver: trace.driver })
+    seedSession('obs1', { vendor: 'deepseek', model: 'x' })
+    const { fetchImpl } = seqFetch([
+      () => toolCallsResponse([{ name: 'request_tool_schema', args: { toolName: 'skill_search', reason: '需要搜索' } }]),
+      () => toolCallsResponse([{ name: 'skill_search', args: { query: 'chart' }, id: 'search1' }]),
+      () => jsonResponse('搜索完成'),
+    ])
+
+    await runSession('obs1', 'hi apiKey=plain-secret', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
+    await flushObservability()
+
+    expect(trace.spans.some((span) => span.name === 'agent.turn' && span.status === 'ok')).toBe(true)
+    const llmSpans = trace.spans.filter((span) => span.name === 'llm.chat' && span.status === 'ok')
+    expect(llmSpans).toHaveLength(3)
+    const firstRequestPreview = String(llmSpans[0]?.attrs?.requestPreview)
+    const finalResponsePreview = String(llmSpans[2]?.attrs?.responsePreview)
+    expect(firstRequestPreview).toContain('"model":"x"')
+    expect(firstRequestPreview).toContain('"messages"')
+    expect(firstRequestPreview).toContain('"role":"user"')
+    expect(firstRequestPreview).toContain('hi apiKey=[REDACTED]')
+    expect(firstRequestPreview).toContain('"tools"')
+    expect(firstRequestPreview).toContain('"tool_choice":"auto"')
+    expect(firstRequestPreview).toContain('"stream":true')
+    expect(firstRequestPreview).not.toContain('plain-secret')
+    expect(finalResponsePreview).toContain('"choices"')
+    expect(finalResponsePreview).toContain('搜索完成')
+    const toolSpan = trace.spans.find(
+      (span) =>
+        span.name === 'tool.call' &&
+        span.status === 'ok' &&
+        span.attrs?.toolName === 'skill_search' &&
+        span.attrs?.callId === 'search1',
+    )
+    expect(toolSpan?.attrs).toMatchObject({
+      result_kind: 'object',
+      args: { redacted: true, kind: 'object', keys: 1 },
+      result: { redacted: true, kind: 'object', keys: 2 },
+    })
+    expect(toolSpan?.attrs?.argsPreview).toContain('"query":"chart"')
+    expect(toolSpan?.attrs?.resultPreview).toContain('"results"')
+
+    const schemaEvent = trace.events.find(
+      (event) =>
+        event.name === 'tool.schema_requested' &&
+        event.attrs?.toolName === 'skill_search' &&
+        event.attrs?.found === true,
+    )
+    expect(schemaEvent?.attrs).toMatchObject({
+      args: { redacted: true, kind: 'object', keys: 2 },
+      result: { redacted: true, kind: 'object', keys: 5 },
+    })
+    expect(schemaEvent?.attrs?.argsPreview).toContain('需要搜索')
+    expect(schemaEvent?.attrs?.resultPreview).toContain('skill_search')
+    expect(trace.events.some((event) => event.name === 'checkpoint.commit')).toBe(true)
+    expect(JSON.stringify(toolSpan?.attrs?.args)).not.toContain('chart')
   })
 
   it('ask_user_question：暂停 run（waiting_user + pendingQuestion），循环停止', async () => {
@@ -410,9 +653,13 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
 
   it('MAX_AGENT_TURNS：模型不停请求 schema → 到上限后 error', async () => {
     seedSession('t4', { vendor: 'deepseek', model: 'x' })
-    const { fetchImpl, count } = seqFetch([
-      () => toolCallsResponse([{ name: 'request_tool_schema', args: { toolName: 'skill_search', reason: 'loop' } }]),
-    ])
+    let count = 0
+    const fetchImpl: typeof fetch = async () => {
+      count += 1
+      return toolCallsResponse([
+        { name: 'request_tool_schema', args: { toolName: 'skill_search', reason: `loop-${count}` } },
+      ])
+    }
 
     await runSession('t4', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
 
@@ -420,7 +667,46 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(run?.status).toBe('error')
     expect(run?.error).toBe('超过最大工具轮数')
     // 恰好跑满上限轮数（MAX_AGENT_TURNS=12）。
-    expect(count()).toBe(12)
+    expect(count).toBe(12)
+  })
+
+  it('重复 tool-only 调用：第 3 次相同工具签名提前 loop_detected', async () => {
+    const trace = captureTrace()
+    configureObservability({ driver: trace.driver })
+    seedSession('loop1', { vendor: 'deepseek', model: 'x' })
+    const { fetchImpl, count } = seqFetch([
+      () => toolCallsResponse([{ name: 'request_tool_schema', args: { toolName: 'skill_search', reason: 'loop' } }]),
+    ])
+
+    await runSession('loop1', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
+    await flushObservability()
+
+    const store = getSessionStore('loop1').store
+    const run = store.getter(runAtom)
+    expect(run?.status).toBe('error')
+    expect(run?.error).toBe('检测到重复工具调用循环')
+    expect(count()).toBe(3)
+    expect(store.getter(itemsAtom).map((it) => it.item.role)).toEqual([
+      'user',
+      'assistant',
+      'tool',
+      'assistant',
+      'tool',
+    ])
+    expect(
+      trace.events.some(
+        (event) =>
+          event.name === 'agent.loop_detected' &&
+          event.attrs?.toolName === 'request_tool_schema' &&
+          event.attrs?.repeated_count === 3 &&
+          event.attrs?.threshold === 3,
+      ),
+    ).toBe(true)
+    expect(
+      trace.spans.some(
+        (span) => span.name === 'agent.turn' && span.status === 'error' && span.attrs?.loop_detected === true,
+      ),
+    ).toBe(true)
   })
 
   it('多轮里 esc：中途 abort（signal 已断）→ 下一轮写回前守卫成 stopped', async () => {
@@ -446,6 +732,59 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
 })
 
 describe('危险工具确认门（S4-B）', () => {
+  it('危险 shell 参数缺 command：先 validation_failed 回填 tool error，不进入 waiting_confirmation', async () => {
+    const trace = captureTrace()
+    configureObservability({ driver: trace.driver })
+    seedSession('d-shell-invalid', { vendor: 'deepseek', model: 'x' })
+    const expectedError = 'invalid shell_macos: command (non-empty string) is required'
+    const { fetchImpl, count } = seqFetch([
+      () => toolCallsResponse([{ name: 'shell_macos', args: {}, id: 'sh1' }]),
+      () => jsonResponse('已处理工具参数错误'),
+    ])
+
+    await runSession('d-shell-invalid', 'hi', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+    await flushObservability()
+
+    const store = getSessionStore('d-shell-invalid').store
+    const run = store.getter(runAtom)
+    expect(run?.status).toBe('done')
+    expect(run?.pendingToolConfirmation).toBeUndefined()
+    expect(count()).toBe(2)
+
+    const items = store.getter(itemsAtom)
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
+    const toolItem = items[2].item
+    if (toolItem.role !== 'tool') throw new Error('意外的条目形状')
+    expect(toolItem.tool_call_id).toBe('sh1')
+    expect(toolItem.content).toBe(JSON.stringify({ error: expectedError }))
+    expect(
+      trace.events.some(
+        (event) =>
+          event.name === 'tool.validation_failed' &&
+          event.attrs?.toolName === 'shell_macos' &&
+          event.attrs?.callId === 'sh1' &&
+          event.attrs?.validation_failed === true &&
+          event.attrs?.validationError === expectedError,
+      ),
+    ).toBe(true)
+    expect(
+      trace.spans.some(
+        (span) =>
+          span.name === 'tool.call' &&
+          span.status === 'error' &&
+          span.attrs?.toolName === 'shell_macos' &&
+          span.attrs?.callId === 'sh1' &&
+          span.attrs?.validation_failed === true &&
+          span.attrs?.validationError === expectedError,
+      ),
+    ).toBe(true)
+    expect(trace.events.some((event) => event.name === 'agent.waiting_confirmation')).toBe(false)
+  })
+
   it('危险工具（write_file）：暂停 waiting_confirmation + pendingToolConfirmation，循环停止、不执行、不回填', async () => {
     seedSession('d1', { vendor: 'deepseek', model: 'x' })
     const args = { path: 'a.txt', content: 'hi' }

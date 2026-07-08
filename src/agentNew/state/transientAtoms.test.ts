@@ -8,6 +8,8 @@ import {
   browserCardsAtom,
   pendingQuestionAnswersAtom,
   alwaysAllowedToolsAtom,
+  composerDraftAtom,
+  withdrawnTurnNoticeAtom,
   addPendingArtifact,
   removePendingArtifact,
   addBrowserCard,
@@ -17,11 +19,13 @@ import {
   clearPendingQuestionAnswers,
   addAlwaysAllowedTool,
   isToolAlwaysAllowed,
+  setComposerDraft,
+  setWithdrawnTurnNotice,
   type PendingArtifact,
   type BrowserCard,
 } from './transientAtoms'
 
-// TK5 瞬态 atom —— 单测先行（C6）。三个 atom 是「会话 store 内共享单例 key」，
+// TK5 瞬态 atom —— 单测先行（C6）。这些 atom 是「会话 store 内共享单例 key」，
 // 值随 store 隔离（不分桶）；写入器 ghost guard 查 rootStore.sessionsAtom 登记表。
 
 afterEach(() => {
@@ -93,6 +97,8 @@ describe('transientAtoms —— 共享单例 key 值随 store 隔离（不分桶
     expect(b.getter(pendingArtifactsAtom)).toEqual([])
     expect(b.getter(browserCardsAtom)).toEqual([])
     expect(b.getter(pendingQuestionAnswersAtom)).toEqual({})
+    expect(b.getter(composerDraftAtom)).toBe('')
+    expect(b.getter(withdrawnTurnNoticeAtom)).toBeUndefined()
   })
 })
 
@@ -269,5 +275,38 @@ describe('alwaysAllowedTools（S4-B 本 session 一律允许的危险工具）',
     addAlwaysAllowedTool('sX', 'write_file')
     expect(getSessionStore('sX').store.getter(alwaysAllowedToolsAtom)).toEqual([])
     expect(isToolAlwaysAllowed('sX', 'write_file')).toBe(false)
+  })
+})
+
+describe('composerDraft / withdrawnTurnNotice', () => {
+  it('setComposerDraft 写入当前会话草稿，值随 store 隔离', () => {
+    rootStore.setter(sessionsAtom, {
+      s1: { id: 's1', title: 't', settings: { vendor: 'deepseek', model: 'x' }, createdAt: 0, updatedAt: 0 },
+      s2: { id: 's2', title: 't', settings: { vendor: 'deepseek', model: 'x' }, createdAt: 0, updatedAt: 0 },
+    })
+
+    setComposerDraft('s1', 'hello')
+
+    expect(getSessionStore('s1').store.getter(composerDraftAtom)).toBe('hello')
+    expect(getSessionStore('s2').store.getter(composerDraftAtom)).toBe('')
+  })
+
+  it('setWithdrawnTurnNotice 写入/清除撤回提示', () => {
+    seedSession()
+    const notice = { id: 'n1', createdAt: 1, text: '已撤回', sideEffects: true }
+
+    setWithdrawnTurnNotice('s1', notice)
+    expect(getSessionStore('s1').store.getter(withdrawnTurnNoticeAtom)).toEqual(notice)
+
+    setWithdrawnTurnNotice('s1', undefined)
+    expect(getSessionStore('s1').store.getter(withdrawnTurnNoticeAtom)).toBeUndefined()
+  })
+
+  it('未登记会话 → draft/notice writer no-op', () => {
+    setComposerDraft('sX', 'ghost')
+    setWithdrawnTurnNotice('sX', { id: 'n', createdAt: 1, text: 'x', sideEffects: false })
+
+    expect(getSessionStore('sX').store.getter(composerDraftAtom)).toBe('')
+    expect(getSessionStore('sX').store.getter(withdrawnTurnNoticeAtom)).toBeUndefined()
   })
 })

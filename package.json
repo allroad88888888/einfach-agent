@@ -15,6 +15,7 @@
     "@einfach/core": "^0.2.18",
     "@einfach/react": "^0.3.25",
     "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-sql": "^2.4.0",
     "@vitejs/plugin-react": "^5.1.1",
     "react": "^18.3.1",

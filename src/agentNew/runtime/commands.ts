@@ -13,14 +13,17 @@
 import { rootStore, sessionsAtom, activeSessionIdAtom } from '../state/rootStore'
 import { createSessionStore, getSessionStore, dropSessionStore } from '../state/sessionStore'
 import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
-import { appendItem, patchRun } from '../state/sessionWriters'
+import { appendItem, patchRun, setItems, setRun } from '../state/sessionWriters'
 import {
   getPendingQuestionAnswers,
   clearPendingQuestionAnswers,
   setPendingQuestionAnswer,
   removePendingArtifact,
   pruneBrowserCardsAfter,
+  pruneRuntimeTranscriptEventsAfter,
   addAlwaysAllowedTool,
+  setComposerDraft,
+  setWithdrawnTurnNotice,
 } from '../state/transientAtoms'
 import type { AskUserAnswerValue } from '../state/transientAtoms'
 import { jumpToCheckpoint } from '../state/checkpointWriters'
@@ -30,6 +33,8 @@ import { persistSessions, persistDeleteSession, persistTruncate } from './persis
 import { newId } from './newId'
 import type { ModelSettings, SessionMeta, ConversationItem } from '../state/core.type'
 import { DEFAULT_DEEPSEEK_MODEL } from '../api/deepseek'
+import { addEvent, getActiveSpan, runTraceKey } from '../observability/trace'
+import { isDangerousTool } from './dangerousTools'
 
 // ===========================================================================
 // 模块级配置注入 —— apiKey 来源（兼顾可测）
@@ -199,6 +204,61 @@ export function stopRun(): void {
   if (id) abortRun(id)
 }
 
+const SIDE_EFFECT_TOOL_NAMES = new Set(['run_task'])
+
+function currentTurnStartIndex(items: ConversationItem[]): number {
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    if (items[i].item.role === 'user') return i
+  }
+  return -1
+}
+
+function currentTurnHasSideEffects(items: ConversationItem[]): boolean {
+  for (const { item } of items) {
+    if (item.role !== 'assistant') continue
+    for (const toolCall of item.tool_calls ?? []) {
+      const name = toolCall.function.name
+      if (isDangerousTool(name) || SIDE_EFFECT_TOOL_NAMES.has(name)) return true
+    }
+  }
+  return false
+}
+
+// 简介：撤回当前未完成轮并把该轮用户输入放回 Composer 草稿。
+// 详情：仅处理 run.status==='stopped' 的当前 active 会话；成功完成的轮次走 checkpoint 回退，不走这里。
+//   该操作只撤回对话 transcript，不承诺撤销已执行的外部副作用；若本轮出现过危险/执行类工具，会写入提示。
+export function withdrawCurrentTurnToDraft(): void {
+  const id = rootStore.getter(activeSessionIdAtom)
+  if (!id) return
+  const store = getSessionStore(id).store
+  const run = store.getter(runAtom)
+  if (run?.status !== 'stopped') return
+
+  const items = store.getter(itemsAtom)
+  const start = currentTurnStartIndex(items)
+  if (start < 0) return
+  const user = items[start].item
+  if (user.role !== 'user') return
+
+  abortRun(id)
+  const turnItems = items.slice(start)
+  const sideEffects = currentTurnHasSideEffects(turnItems)
+  const cutoffCreatedAt = items[start].createdAt
+  setItems(id, items.slice(0, start))
+  setRun(id, undefined)
+  setComposerDraft(id, user.content)
+  pruneBrowserCardsAfter(id, cutoffCreatedAt - 1)
+  pruneRuntimeTranscriptEventsAfter(id, cutoffCreatedAt - 1)
+  setWithdrawnTurnNotice(id, {
+    id: newId(),
+    createdAt: Date.now(),
+    text: sideEffects
+      ? '已撤回本轮对话并放回输入框；本轮已触发过工具，外部副作用不会被自动撤销。'
+      : '已撤回本轮对话并放回输入框。',
+    sideEffects,
+  })
+}
+
 // 从对话历史里取「最后一条 assistant」的 ask_user_question tool_call id（找不到返回 undefined）。
 // 该 id 即暂停时未回填的 ask_user ToolItem 的 tool_call_id，resume 用它把答案回填给 model。
 function findAskUserToolCallId(items: ConversationItem[]): string | undefined {
@@ -235,6 +295,10 @@ export function resumeWithAnswers(): void {
   // 读答案 + 清答案（避免旧答案污染下一次等待用户输入）。
   const answers = getPendingQuestionAnswers(id)
   clearPendingQuestionAnswers(id)
+  addEvent('agent.resume.answers', {
+    span: getActiveSpan(runTraceKey(id, run.runId)),
+    attrs: { sessionId: id, runId: run.runId, callId: toolCallId, answers_count: Object.keys(answers).length },
+  })
 
   // 回填 ask_user 的 ToolItem：把 {answers} 作为 tool result 回给 model。
   appendItem(id, {
@@ -269,9 +333,24 @@ export function confirmTool(approved: boolean, always?: boolean): void {
   const pending = run.pendingToolConfirmation
   // 容错：无 pending（异常/被回退过）→ 清 pendingToolConfirmation + 落回 running，不续跑。
   if (!pending) {
+    addEvent('agent.confirmation.missing_pending', {
+      span: getActiveSpan(runTraceKey(id, run.runId)),
+      attrs: { sessionId: id, runId: run.runId },
+    })
     patchRun(id, { status: 'running', pendingToolConfirmation: undefined })
     return
   }
+  addEvent('agent.confirmation.decision', {
+    span: getActiveSpan(runTraceKey(id, run.runId)),
+    attrs: {
+      sessionId: id,
+      runId: run.runId,
+      toolName: pending.toolName,
+      callId: pending.callId,
+      approved,
+      always: Boolean(always),
+    },
+  })
 
   const meta = rootStore.getter(sessionsAtom)[id]
   const apiKey = meta?.settings.vendor === 'glm' ? runtimeConfig.glmApiKey : runtimeConfig.deepseekApiKey
@@ -343,5 +422,6 @@ export function revertToTurn(turnIndex: number): void {
   //   jumpToCheckpoint 只截断 items，需按回退点 checkpoint 的 createdAt 把之后的卡片一并剪掉，
   //   否则回退后仍渲染已废弃轮的卡片。
   pruneBrowserCardsAfter(id, checkpoints[turnIndex].createdAt)
+  pruneRuntimeTranscriptEventsAfter(id, checkpoints[turnIndex].createdAt)
   persistTruncate(id, turnIndex) // D-4：截断式回退 → 同步截断持久化 checkpoint（fire-and-forget）。
 }

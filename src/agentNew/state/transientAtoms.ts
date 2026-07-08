@@ -2,7 +2,7 @@
 // ---------------------------------------------------------------------------
 // 对齐旧 src/agent/state 的 pendingArtifacts / browserCards / pendingQuestionAnswers，
 // 但按 agentNew 既定架构（sessionAtoms 范式，C3）落到「每会话一个 store」：
-//   · 三个 atom 只是共享 key，值真正存在各自 session store 里 —— 天然隔离，
+//   · 这些 atom 只是共享 key，值真正存在各自 session store 里 —— 天然隔离，
 //     无需也禁止把它们做成 `Record<sessionId, T>` 分桶。
 //   · 都是「临时 UI 产物」，不进持久化快照（对齐旧 D2 语义）。
 // 写入器沿用 sessionWriters 范式（C7）：内部取 getSessionStore(id).store；
@@ -40,6 +40,26 @@ export interface ToolActivity {
   text: string
 }
 
+// runtime transcript 调试事件（临时 UI 态，不持久化）：展示不适合进入 ModelItem 历史、
+// 但自用调试时必须可见的步骤，例如 system 注入、tools manifest 注入。
+export type RuntimeTranscriptEventKind = 'system_injection' | 'tool_manifest'
+
+export interface RuntimeTranscriptEvent {
+  id: string
+  createdAt: number
+  kind: RuntimeTranscriptEventKind
+  title: string
+  summary?: string
+  detail?: string
+}
+
+export interface WithdrawnTurnNotice {
+  id: string
+  createdAt: number
+  text: string
+  sideEffects: boolean
+}
+
 // 简介：当前会话的待保存文件产物。
 // 详情：值随 store 隔离——每个 session store 各持一份 PendingArtifact[]，非分桶。
 export const pendingArtifactsAtom = atom<PendingArtifact[]>([])
@@ -55,6 +75,18 @@ export const pendingQuestionAnswersAtom = atom<Record<string, AskUserAnswerValue
 // 简介：当前会话正在跑的工具进度（按 callId）。
 // 详情：值随 store 隔离；harness 经 ctx.progress 上写、工具跑完清掉。UI 读它渲染「工具正在干啥」。
 export const toolActivityAtom = atom<ToolActivity[]>([])
+
+// 简介：当前会话的 runtime transcript 调试事件。
+// 详情：值随 store 隔离；只服务 UI 展示，不进 checkpoint、不参与 model messages。
+export const runtimeTranscriptEventsAtom = atom<RuntimeTranscriptEvent[]>([])
+
+// 简介：当前会话 Composer 草稿。
+// 详情：值随 store 隔离；用于撤回未完成轮后把上一条用户输入放回输入框。
+export const composerDraftAtom = atom<string>('')
+
+// 简介：撤回当前未完成轮后的提示。
+// 详情：值随 store 隔离；sideEffects=true 表示只撤回对话记录，不承诺撤销已执行的外部副作用。
+export const withdrawnTurnNoticeAtom = atom<WithdrawnTurnNotice | undefined>(undefined)
 
 // 简介：本 session「一律允许」的危险工具名集合（S4-B）。
 // 详情：用户在确认卡片勾选「本 session 一律允许该工具」后写入；tool 循环命中即跳过后续确认。
@@ -166,6 +198,50 @@ export function removeToolActivity(id: string, callId: string): void {
     return
   }
   getSessionStore(id).store.setter(toolActivityAtom, (prev) => prev.filter((entry) => entry.callId !== callId))
+}
+
+/**
+ * 往该会话追加一条 runtime transcript 调试事件（不可变，产生新数组）。
+ * 会话未登记则 no-op（ghost guard）。
+ */
+export function addRuntimeTranscriptEvent(id: string, event: RuntimeTranscriptEvent): void {
+  if (sessionMissing(id)) {
+    return
+  }
+  getSessionStore(id).store.setter(runtimeTranscriptEventsAtom, (prev) => [...prev, event])
+}
+
+/**
+ * 丢弃该会话中 createdAt 晚于 `createdAt` 的 runtime transcript 调试事件。
+ * 用途同 pruneBrowserCardsAfter：截断回退后不展示被丢弃轮次的旁路调试记录。
+ */
+export function pruneRuntimeTranscriptEventsAfter(id: string, createdAt: number): void {
+  if (sessionMissing(id)) {
+    return
+  }
+  getSessionStore(id).store.setter(runtimeTranscriptEventsAtom, (prev) =>
+    prev.filter((event) => event.createdAt <= createdAt),
+  )
+}
+
+/**
+ * 设置该会话 Composer 草稿。会话未登记则 no-op（ghost guard）。
+ */
+export function setComposerDraft(id: string, draft: string): void {
+  if (sessionMissing(id)) {
+    return
+  }
+  getSessionStore(id).store.setter(composerDraftAtom, draft)
+}
+
+/**
+ * 设置或清除该会话撤回提示。会话未登记则 no-op（ghost guard）。
+ */
+export function setWithdrawnTurnNotice(id: string, notice: WithdrawnTurnNotice | undefined): void {
+  if (sessionMissing(id)) {
+    return
+  }
+  getSessionStore(id).store.setter(withdrawnTurnNoticeAtom, notice)
 }
 
 /**

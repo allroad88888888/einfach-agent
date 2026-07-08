@@ -26,7 +26,7 @@ export function buildSystemItem(input: string): SystemItem {
     .join('、')
 
   const content = [
-    '你运行在支持 lazy tools 的 Web Agent Runtime 中，可以像普通 assistant 一样直接回复用户，也可以调用工具。',
+    '你运行在支持 lazy tools 的本地桌面 Agent Runtime 中，可以像普通 assistant 一样直接回复用户，也可以调用本机与工作区工具。',
     '“工具清单”只是可用能力名称，未加载 schema 的工具不能直接调用；需要某个能力时，先调用 request_tool_schema 选择工具名并说明原因，加载后再调用。',
     '不要在普通文本里模拟工具调用或工具结果；工具名必须来自工具清单。',
     `已加载 skills：${skillNames}`,

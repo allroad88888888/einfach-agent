@@ -1,11 +1,13 @@
-// DeepSeek 的接口调用（非流式）。
+// DeepSeek 的接口调用。
 // ---------------------------------------------------------------------------
 // 共享线协议类型与底层 postChatCompletion 在 ./modelApi；这里只放 DeepSeek 的请求
 // 特化与调用入口。
 
 import {
   postChatCompletion,
+  postChatCompletionStream,
   type ChatCallOptions,
+  type ChatStreamHandlers,
   type ChatRequestBase,
   type ModelChatResponse,
 } from './modelApi'
@@ -24,11 +26,21 @@ export interface DeepSeekChatRequest extends ChatRequestBase {
   reasoning_effort?: DeepSeekReasoningEffort
 }
 
-// 简介：调用 DeepSeek 的 chat/completions（非流式）。
+// 简介：调用 DeepSeek 的 chat/completions（一次性完整响应）。
 // 详情：默认接入 DEEPSEEK_BASE_URL，可由 options.baseUrl 覆盖。
 export function callDeepSeek(
   body: DeepSeekChatRequest,
   options: ChatCallOptions,
 ): Promise<ModelChatResponse> {
   return postChatCompletion(options.baseUrl ?? DEEPSEEK_BASE_URL, body, options)
+}
+
+// 简介：调用 DeepSeek 的 chat/completions（流式）。
+// 详情：delta 通过 handlers.onDelta 增量回调，最终仍 resolve 为完整 ModelChatResponse。
+export function streamDeepSeek(
+  body: DeepSeekChatRequest,
+  options: ChatCallOptions,
+  handlers?: ChatStreamHandlers,
+): Promise<ModelChatResponse> {
+  return postChatCompletionStream(options.baseUrl ?? DEEPSEEK_BASE_URL, body, options, handlers)
 }

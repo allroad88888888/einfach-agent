@@ -1,4 +1,4 @@
-// GLM（智谱）的接口调用（非流式）。
+// GLM（智谱）的接口调用。
 // ---------------------------------------------------------------------------
 // 共享线协议类型与底层 postChatCompletion 在 ./modelApi；这里只放 GLM 的请求特化
 // 与调用入口。GLM-5.2 是 OpenAI 兼容接口，支持 thinking / reasoning_effort /
@@ -6,7 +6,9 @@
 
 import {
   postChatCompletion,
+  postChatCompletionStream,
   type ChatCallOptions,
+  type ChatStreamHandlers,
   type ChatRequestBase,
   type ModelChatResponse,
 } from './modelApi'
@@ -25,11 +27,21 @@ export interface GlmChatRequest extends ChatRequestBase {
   reasoning_effort?: GlmReasoningEffort
 }
 
-// 简介：调用 GLM 的 chat/completions（非流式）。
+// 简介：调用 GLM 的 chat/completions（一次性完整响应）。
 // 详情：默认接入 GLM_BASE_URL，可由 options.baseUrl 覆盖。
 export function callGlm(
   body: GlmChatRequest,
   options: ChatCallOptions,
 ): Promise<ModelChatResponse> {
   return postChatCompletion(options.baseUrl ?? GLM_BASE_URL, body, options)
+}
+
+// 简介：调用 GLM 的 chat/completions（流式）。
+// 详情：delta 通过 handlers.onDelta 增量回调，最终仍 resolve 为完整 ModelChatResponse。
+export function streamGlm(
+  body: GlmChatRequest,
+  options: ChatCallOptions,
+  handlers?: ChatStreamHandlers,
+): Promise<ModelChatResponse> {
+  return postChatCompletionStream(options.baseUrl ?? GLM_BASE_URL, body, options, handlers)
 }

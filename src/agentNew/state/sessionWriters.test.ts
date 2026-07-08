@@ -6,6 +6,7 @@ import { itemsAtom, runAtom } from './sessionAtoms'
 import {
   appendItem,
   patchRun,
+  setItems,
   setRun,
   setRunStatus,
   touchSession,
@@ -92,6 +93,26 @@ describe('updateItem', () => {
 
   it('未登记会话 → no-op', () => {
     updateItem('sX', 'i1', { pending: true })
+    expect(getSessionStore('sX').store.getter(itemsAtom)).toEqual([])
+  })
+})
+
+describe('setItems', () => {
+  it('整体替换该会话 store 的 itemsAtom，并 touchSession', () => {
+    seedSession()
+    let now = 200
+    vi.spyOn(Date, 'now').mockImplementation(() => ++now)
+    appendItem('s1', sampleItem)
+    const next: ConversationItem[] = [{ id: 'i2', createdAt: 2, item: { role: 'assistant', content: 'ok' } }]
+
+    setItems('s1', next)
+
+    expect(getSessionStore('s1').store.getter(itemsAtom)).toBe(next)
+    expect(rootStore.getter(sessionsAtom).s1.updatedAt).toBeGreaterThan(0)
+  })
+
+  it('未登记会话 → no-op', () => {
+    setItems('sX', [sampleItem])
     expect(getSessionStore('sX').store.getter(itemsAtom)).toEqual([])
   })
 })

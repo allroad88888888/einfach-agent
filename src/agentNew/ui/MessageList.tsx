@@ -1,71 +1,305 @@
 // 右栏消息列表（P-U3 / P8-g）——在「当前会话 store」的 Provider 下，
-// 读 itemsAtom + browserCardsAtom，把「可见消息」与「浏览器卡片」按时间合并渲染。
+// 读 itemsAtom + browserCardsAtom + runtimeTranscriptEventsAtom，把用户消息、助手回复、
+// 工具调用/结果、运行时注入事件与浏览器卡片按时间合并渲染。
 // ---------------------------------------------------------------------------
-// 契约（U1）：UI 只读 atom + 调命令，本组件只 useAtomValue 两个 atom（不 setter、不碰 store、不 import 命令）。
+// 契约（U1）：UI 只读 atom + 调命令，本组件只 useAtomValue，不 setter、不碰 store、不 import 命令。
 // 可见性规则：
 //   · user：纯文本气泡，恒渲染；
-//   · assistant：仅当 content 有实质文本才渲染；content 为 null 或 trim 为空（纯工具调用轮，
-//     如 request_tool_schema）跳过，不冒空气泡（codex P3）；走 MessageMarkdown（react-markdown + GFM）。
-//   · system / tool：发给/来自模型的内部条目，对用户不可见，跳过。
-// browser 卡片（browserCardsAtom）与可见 items 按 createdAt 升序稳定合并；createdAt 相同时
-//   用各自 id 字符串兜底，保证顺序确定、可测（R2）。
-// 空状态：items 与 cards 都空时给「开始对话吧」占位。
+//   · assistant：content 有实质文本时渲染文本气泡；tool_calls 始终渲染为调试行；
+//   · tool：作为工具结果调试行渲染；
+//   · runtime transcript event：展示 system/tools 等不该入 ModelItem 历史的注入；
+//   · system ConversationItem：仍然不渲染，避免把异常入库的 system 当成正常 transcript。
 
 import { useAtomValue } from '@einfach/react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { itemsAtom } from '../state/sessionAtoms'
-import { browserCardsAtom, type BrowserCard } from '../state/transientAtoms'
+import {
+  browserCardsAtom,
+  runtimeTranscriptEventsAtom,
+  type BrowserCard,
+  type RuntimeTranscriptEvent,
+} from '../state/transientAtoms'
 import type { ConversationItem } from '../state/core.type'
+import type { ModelToolCall, ToolItem } from '../api/modelApi'
 import { BrowserActionCard } from './BrowserActionCard'
 import { MessageMarkdown } from './MessageMarkdown'
 
-// 合并渲染的条目：一条对话消息 或 一张浏览器卡片；统一带 createdAt + 稳定次级键 sortKey。
+const BOTTOM_STICKY_THRESHOLD = 48
+const DETAIL_MAX_CHARS = 20_000
+
+// 合并渲染的条目：对话消息、工具调试行、runtime 注入事件或浏览器卡片。
 type MergedEntry =
-  | { kind: 'item'; createdAt: number; sortKey: string; ci: ConversationItem }
+  | { kind: 'message'; createdAt: number; sortKey: string; ci: ConversationItem }
+  | { kind: 'tool-call'; createdAt: number; sortKey: string; call: ModelToolCall }
+  | {
+      kind: 'tool-result'
+      createdAt: number
+      sortKey: string
+      item: ToolItem
+      toolName?: string
+    }
+  | { kind: 'runtime-event'; createdAt: number; sortKey: string; event: RuntimeTranscriptEvent }
   | { kind: 'card'; createdAt: number; sortKey: string; card: BrowserCard }
 
-// 该对话条目是否对用户可见（见文件头可见性规则）。
-function isVisibleItem(item: ConversationItem['item']): boolean {
-  if (item.role === 'user') return true
-  if (item.role === 'assistant') {
-    return typeof item.content === 'string' && item.content.trim() !== ''
+function compactText(value: string, limit = 160): string {
+  const compact = value.replace(/\s+/g, ' ').trim()
+  return compact.length > limit ? `${compact.slice(0, limit)}...` : compact
+}
+
+function limitedDetail(value: string): string {
+  if (value.length <= DETAIL_MAX_CHARS) return value
+  return `${value.slice(0, DETAIL_MAX_CHARS)}\n... 已截断 ${value.length - DETAIL_MAX_CHARS} 个字符`
+}
+
+function parseJson(raw: string): unknown {
+  try {
+    return JSON.parse(raw)
+  } catch {
+    return undefined
   }
-  // system / tool：内部条目，不可见。
-  return false
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function jsonDetail(raw: string): string {
+  const parsed = parseJson(raw)
+  if (parsed === undefined) return raw || '{}'
+  return JSON.stringify(parsed, null, 2)
+}
+
+function argValueSummary(value: unknown): string | undefined {
+  if (typeof value === 'string' && value.trim()) return value.trim()
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return undefined
+}
+
+function toolCallSummary(call: ModelToolCall): string {
+  const parsed = parseJson(call.function.arguments)
+  if (isRecord(parsed)) {
+    for (const key of ['toolName', 'name', 'query', 'path', 'command', 'reason']) {
+      const value = argValueSummary(parsed[key])
+      if (value) return compactText(`${key}=${value}`, 180)
+    }
+  }
+  return compactText(jsonDetail(call.function.arguments), 180)
+}
+
+function toolResultSummary(content: string): string {
+  const parsed = parseJson(content)
+  if (isRecord(parsed)) {
+    const error = argValueSummary(parsed.error)
+    if (error) return compactText(`error=${error}`, 180)
+    const ok = argValueSummary(parsed.ok)
+    if (ok) return compactText(`ok=${ok}`, 180)
+  }
+  return compactText(content, 180)
+}
+
+function buildToolNameByCallId(items: ConversationItem[]): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const { item } of items) {
+    if (item.role !== 'assistant') continue
+    for (const call of item.tool_calls ?? []) {
+      map.set(call.id, call.function.name)
+    }
+  }
+  return map
+}
+
+function itemEntries(
+  ci: ConversationItem,
+  itemIndex: number,
+  toolNameByCallId: Map<string, string>,
+): MergedEntry[] {
+  const baseKey = `item:${String(itemIndex).padStart(6, '0')}:${ci.id}`
+  const item = ci.item
+  if (item.role === 'user') {
+    return [{ kind: 'message', createdAt: ci.createdAt, sortKey: `${baseKey}:message`, ci }]
+  }
+
+  if (item.role === 'assistant') {
+    const entries: MergedEntry[] = []
+    if (typeof item.content === 'string' && item.content.trim() !== '') {
+      entries.push({ kind: 'message', createdAt: ci.createdAt, sortKey: `${baseKey}:message`, ci })
+    }
+    item.tool_calls?.forEach((call, callIndex) => {
+      entries.push({
+        kind: 'tool-call',
+        createdAt: ci.createdAt,
+        sortKey: `${baseKey}:tool-call:${String(callIndex).padStart(3, '0')}`,
+        call,
+      })
+    })
+    return entries
+  }
+
+  if (item.role === 'tool') {
+    return [
+      {
+        kind: 'tool-result',
+        createdAt: ci.createdAt,
+        sortKey: `${baseKey}:tool-result`,
+        item,
+        toolName: toolNameByCallId.get(item.tool_call_id),
+      },
+    ]
+  }
+
+  // system ConversationItem 不展示；正常 system 注入通过 runtime transcript event 展示。
+  return []
+}
+
+function DebugEntry({
+  variant,
+  label,
+  title,
+  summary,
+  detail,
+}: {
+  variant: 'tool-call' | 'tool-result' | 'injection'
+  label: string
+  title: string
+  summary?: string
+  detail?: string
+}) {
+  const className = `agentnew-debug-entry agentnew-debug-entry--${variant}`
+  return (
+    <div className={className}>
+      <div className="agentnew-debug-head">
+        <span className="agentnew-debug-label">{label}</span>
+        <span className="agentnew-debug-title">{title}</span>
+      </div>
+      {summary ? <div className="agentnew-debug-summary">{summary}</div> : null}
+      {detail ? (
+        <details className="agentnew-debug-details">
+          <summary>详情</summary>
+          <pre>{limitedDetail(detail)}</pre>
+        </details>
+      ) : null}
+    </div>
+  )
 }
 
 export function MessageList() {
   const items = useAtomValue(itemsAtom)
   const cards = useAtomValue(browserCardsAtom)
+  const runtimeEvents = useAtomValue(runtimeTranscriptEventsAtom)
+  const listRef = useRef<HTMLDivElement | null>(null)
+  const shouldStickToBottomRef = useRef(true)
 
-  // 空状态：items 与 cards 都空 → 占位（与既有行为一致）。
-  if (items.length === 0 && cards.length === 0) {
+  const entries = useMemo<MergedEntry[]>(() => {
+    const toolNameByCallId = buildToolNameByCallId(items)
+    return [
+      ...items.flatMap((ci, index) => itemEntries(ci, index, toolNameByCallId)),
+      ...runtimeEvents.map<MergedEntry>((event, index) => ({
+        kind: 'runtime-event',
+        createdAt: event.createdAt,
+        sortKey: `runtime:${String(index).padStart(6, '0')}:${event.id}`,
+        event,
+      })),
+      ...cards.map<MergedEntry>((card) => ({
+        kind: 'card',
+        createdAt: card.createdAt,
+        sortKey: `card:${card.id}`,
+        card,
+      })),
+    ].sort((a, b) => {
+      if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt
+      if (a.sortKey < b.sortKey) return -1
+      if (a.sortKey > b.sortKey) return 1
+      return 0
+    })
+  }, [cards, items, runtimeEvents])
+
+  const scrollSignature = entries
+    .map((entry) => {
+      if (entry.kind === 'card') return `card:${entry.card.id}:${entry.card.title}:${entry.card.body ?? ''}`
+      if (entry.kind === 'runtime-event') {
+        return `runtime:${entry.event.id}:${entry.event.summary ?? ''}:${entry.event.detail ?? ''}`
+      }
+      if (entry.kind === 'tool-call') {
+        return `tool-call:${entry.call.id}:${entry.call.function.name}:${entry.call.function.arguments}`
+      }
+      if (entry.kind === 'tool-result') {
+        return `tool-result:${entry.item.tool_call_id}:${entry.toolName ?? ''}:${entry.item.content}`
+      }
+      const { ci } = entry
+      const content = ci.item.role === 'assistant' || ci.item.role === 'user' ? ci.item.content : ''
+      return `item:${ci.id}:${ci.pending ? 'pending' : 'done'}:${content ?? ''}`
+    })
+    .join('|')
+
+  useEffect(() => {
+    const node = listRef.current
+    if (!node) return
+
+    const updateStickiness = () => {
+      const distanceToBottom = node.scrollHeight - node.scrollTop - node.clientHeight
+      shouldStickToBottomRef.current = distanceToBottom <= BOTTOM_STICKY_THRESHOLD
+    }
+
+    updateStickiness()
+    node.addEventListener('scroll', updateStickiness, { passive: true })
+    return () => node.removeEventListener('scroll', updateStickiness)
+  }, [entries.length])
+
+  useLayoutEffect(() => {
+    const node = listRef.current
+    if (!node || !shouldStickToBottomRef.current) return
+    node.scrollTop = node.scrollHeight
+  }, [scrollSignature])
+
+  if (entries.length === 0) {
     return <div className="agentnew-message-empty">开始对话吧</div>
   }
 
-  // 可见 items 与 cards 合并，按 createdAt 升序；createdAt 相同用 id 字符串兜底稳定（R2）。
-  const entries: MergedEntry[] = [
-    ...items
-      .filter((ci) => isVisibleItem(ci.item))
-      .map<MergedEntry>((ci) => ({ kind: 'item', createdAt: ci.createdAt, sortKey: ci.id, ci })),
-    ...cards.map<MergedEntry>((card) => ({
-      kind: 'card',
-      createdAt: card.createdAt,
-      sortKey: card.id,
-      card,
-    })),
-  ].sort((a, b) => {
-    if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt
-    if (a.sortKey < b.sortKey) return -1
-    if (a.sortKey > b.sortKey) return 1
-    return 0
-  })
-
   return (
-    <div className="agentnew-message-list">
+    <div ref={listRef} className="agentnew-message-list">
       {entries.map((entry) => {
         if (entry.kind === 'card') {
           return <BrowserActionCard key={`card:${entry.card.id}`} card={entry.card} />
         }
+        if (entry.kind === 'runtime-event') {
+          return (
+            <DebugEntry
+              key={`runtime:${entry.event.id}`}
+              variant="injection"
+              label="注入"
+              title={entry.event.title}
+              summary={entry.event.summary}
+              detail={entry.event.detail}
+            />
+          )
+        }
+        if (entry.kind === 'tool-call') {
+          const title = `调用工具 ${entry.call.function.name}`
+          return (
+            <DebugEntry
+              key={`tool-call:${entry.call.id}`}
+              variant="tool-call"
+              label="调用"
+              title={title}
+              summary={toolCallSummary(entry.call)}
+              detail={jsonDetail(entry.call.function.arguments)}
+            />
+          )
+        }
+        if (entry.kind === 'tool-result') {
+          const title = `工具结果 ${entry.toolName ?? entry.item.tool_call_id}`
+          return (
+            <DebugEntry
+              key={`tool-result:${entry.item.tool_call_id}:${entry.sortKey}`}
+              variant="tool-result"
+              label="结果"
+              title={title}
+              summary={toolResultSummary(entry.item.content)}
+              detail={jsonDetail(entry.item.content)}
+            />
+          )
+        }
+
         const { ci } = entry
         const { item } = ci
         if (item.role === 'user') {
@@ -75,10 +309,15 @@ export function MessageList() {
             </div>
           )
         }
-        // 走到这里必是「有实质文本的 assistant」（isVisibleItem 已过滤 null/空白与 system/tool）。
+
+        const isStreaming = ci.pending === true
+        const className = isStreaming
+          ? 'agentnew-msg agentnew-msg--assistant agentnew-msg--streaming'
+          : 'agentnew-msg agentnew-msg--assistant'
         return (
-          <div key={ci.id} className="agentnew-msg agentnew-msg--assistant">
-            <MessageMarkdown>{item.content ?? ''}</MessageMarkdown>
+          <div key={ci.id} className={className}>
+            <MessageMarkdown>{item.role === 'assistant' ? item.content ?? '' : ''}</MessageMarkdown>
+            {isStreaming ? <span className="agentnew-stream-caret" aria-label="正在生成" /> : null}
           </div>
         )
       })}

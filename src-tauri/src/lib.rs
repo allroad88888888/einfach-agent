@@ -11,6 +11,7 @@ mod workspace_write;
 pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_sql::Builder::default().build())
+    .plugin(tauri_plugin_dialog::init())
     .invoke_handler(tauri::generate_handler![
       shell::run_shell_command,
       workspace_read::read_workspace_file,

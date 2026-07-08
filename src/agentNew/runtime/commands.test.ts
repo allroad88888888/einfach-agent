@@ -36,7 +36,11 @@ import {
   pendingArtifactsAtom,
   addBrowserCard,
   browserCardsAtom,
+  addRuntimeTranscriptEvent,
+  runtimeTranscriptEventsAtom,
   alwaysAllowedToolsAtom,
+  composerDraftAtom,
+  withdrawnTurnNoticeAtom,
 } from '../state/transientAtoms'
 import type { ConversationItem, RunState } from '../state/core.type'
 import { runSession, runToolLoop } from './modelRun'
@@ -50,6 +54,7 @@ import {
   removeSession,
   sendMessage,
   stopRun,
+  withdrawCurrentTurnToDraft,
   revertToTurn,
   resumeWithAnswers,
   answerQuestion,
@@ -201,6 +206,81 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(abortRun).not.toHaveBeenCalled()
   })
 
+  it('withdrawCurrentTurnToDraft：stopped 后撤回当前未完成轮，用户输入回填草稿并剪掉本轮临时 UI', () => {
+    const id = newSession()
+    const store = getSessionStore(id).store
+    store.setter(itemsAtom, [
+      { id: 'u0', createdAt: 1, item: { role: 'user', content: '上一轮' } },
+      { id: 'a0', createdAt: 2, item: { role: 'assistant', content: '上一轮回答' } },
+      { id: 'u1', createdAt: 10, item: { role: 'user', content: '当前输入' } },
+      { id: 'a1', createdAt: 11, item: { role: 'assistant', content: '半截回答' } },
+    ])
+    store.setter(runAtom, { runId: 'r', status: 'stopped' })
+    store.setter(browserCardsAtom, [
+      { id: 'old-card', createdAt: 3, title: '旧卡' },
+      { id: 'new-card', createdAt: 11, title: '新卡' },
+    ])
+    store.setter(runtimeTranscriptEventsAtom, [
+      { id: 'old-event', createdAt: 3, kind: 'system_injection', title: '旧注入' },
+      { id: 'new-event', createdAt: 10, kind: 'tool_manifest', title: '新注入' },
+    ])
+
+    withdrawCurrentTurnToDraft()
+
+    expect(abortRun).toHaveBeenCalledWith(id)
+    expect(store.getter(itemsAtom).map((it) => it.id)).toEqual(['u0', 'a0'])
+    expect(store.getter(runAtom)).toBeUndefined()
+    expect(store.getter(composerDraftAtom)).toBe('当前输入')
+    expect(store.getter(browserCardsAtom).map((card) => card.id)).toEqual(['old-card'])
+    expect(store.getter(runtimeTranscriptEventsAtom).map((event) => event.id)).toEqual(['old-event'])
+    expect(store.getter(withdrawnTurnNoticeAtom)).toMatchObject({
+      text: '已撤回本轮对话并放回输入框。',
+      sideEffects: false,
+    })
+  })
+
+  it('withdrawCurrentTurnToDraft：本轮出现执行类工具时提示外部副作用不会自动撤销', () => {
+    const id = newSession()
+    const store = getSessionStore(id).store
+    store.setter(itemsAtom, [
+      { id: 'u1', createdAt: 10, item: { role: 'user', content: '跑一下 pwd' } },
+      {
+        id: 'a1',
+        createdAt: 11,
+        item: {
+          role: 'assistant',
+          content: null,
+          tool_calls: [
+            { id: 'tc1', type: 'function', function: { name: 'shell_macos', arguments: '{"command":"pwd"}' } },
+          ],
+        },
+      },
+      { id: 't1', createdAt: 12, item: { role: 'tool', tool_call_id: 'tc1', content: '{"stdout":"/tmp"}' } },
+    ])
+    store.setter(runAtom, { runId: 'r', status: 'stopped' })
+
+    withdrawCurrentTurnToDraft()
+
+    expect(store.getter(itemsAtom)).toEqual([])
+    expect(store.getter(composerDraftAtom)).toBe('跑一下 pwd')
+    expect(store.getter(withdrawnTurnNoticeAtom)).toMatchObject({ sideEffects: true })
+    expect(store.getter(withdrawnTurnNoticeAtom)?.text).toContain('外部副作用')
+  })
+
+  it('withdrawCurrentTurnToDraft：非 stopped 状态 no-op', () => {
+    const id = newSession()
+    const store = getSessionStore(id).store
+    const items: ConversationItem[] = [{ id: 'u1', createdAt: 1, item: { role: 'user', content: 'hi' } }]
+    store.setter(itemsAtom, items)
+    store.setter(runAtom, { runId: 'r', status: 'running' })
+
+    withdrawCurrentTurnToDraft()
+
+    expect(store.getter(itemsAtom)).toBe(items)
+    expect(store.getter(composerDraftAtom)).toBe('')
+    expect(abortRun).not.toHaveBeenCalledWith(id)
+  })
+
   // 种 n 个 checkpoint 到当前会话 store，让 turnIndex 落在合法区间（否则 revertToTurn 整体 no-op）。
   function seedCheckpoints(id: string, n: number): void {
     getSessionStore(id).store.setter(
@@ -230,17 +310,22 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(persistTruncate).toHaveBeenCalledWith(id, 2)
   })
 
-  it('revertToTurn：剪掉被丢弃轮次的 browser 卡片（codex P2）', () => {
+  it('revertToTurn：剪掉被丢弃轮次的 browser 卡片和 runtime transcript 事件（codex P2）', () => {
     const id = newSession()
     seedCheckpoints(id, 3) // checkpoint[k].createdAt === k
     const store = getSessionStore(id).store
-    // 三张卡片，createdAt 分别落在回退点前后。
+    // 卡片和 transcript event 的 createdAt 分别落在回退点前后。
     store.setter(browserCardsAtom, [])
+    store.setter(runtimeTranscriptEventsAtom, [])
     addBrowserCard(id, { id: 'c0', createdAt: 0, title: '轮0' })
     addBrowserCard(id, { id: 'c1', createdAt: 1, title: '轮1' })
     addBrowserCard(id, { id: 'c2', createdAt: 2, title: '轮2（将被丢弃）' })
+    addRuntimeTranscriptEvent(id, { id: 'e0', createdAt: 0, kind: 'system_injection', title: '轮0' })
+    addRuntimeTranscriptEvent(id, { id: 'e1', createdAt: 1, kind: 'tool_manifest', title: '轮1' })
+    addRuntimeTranscriptEvent(id, { id: 'e2', createdAt: 2, kind: 'tool_manifest', title: '轮2（将被丢弃）' })
     revertToTurn(1) // 回退到 checkpoint[1]（createdAt=1）
     expect(store.getter(browserCardsAtom).map((c) => c.id)).toEqual(['c0', 'c1']) // createdAt>1 的 c2 被剪
+    expect(store.getter(runtimeTranscriptEventsAtom).map((e) => e.id)).toEqual(['e0', 'e1'])
   })
 
   it('revertToTurn：越界/负数 turnIndex → 整体 no-op（不 abort、不 jump、不 persistTruncate）', () => {

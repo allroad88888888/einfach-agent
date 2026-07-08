@@ -15,6 +15,20 @@ vi.mock('./workspacePatch', () => ({ applyWorkspacePatch: vi.fn(async (input: un
 vi.mock('./workspaceWrite', () => ({ writeWorkspaceFile: vi.fn(async (input: unknown) => input) }))
 vi.mock('./workspaceGit', () => ({ getWorkspaceDiff: vi.fn(async (input: unknown) => input) }))
 vi.mock('./workspaceTask', () => ({ runWorkspaceTask: vi.fn(async (input: unknown) => input) }))
+vi.mock('./shellCommand', () => ({
+  runShellCommand: vi.fn(async (input: { platform: string; command: string; cwd?: string }) => ({
+    platform: input.platform,
+    shell: 'test',
+    command: input.command,
+    cwd: input.cwd ?? '',
+    exitCode: 0,
+    stdout: '',
+    stderr: '',
+    durationMs: 0,
+    timedOut: false,
+    truncated: false,
+  })),
+}))
 
 import { rootStore, sessionsAtom, resetRootStore } from '../state/rootStore'
 import { resetSessionStores } from '../state/sessionStore'
@@ -25,6 +39,7 @@ import { applyWorkspacePatch } from './workspacePatch'
 import { writeWorkspaceFile } from './workspaceWrite'
 import { getWorkspaceDiff } from './workspaceGit'
 import { runWorkspaceTask } from './workspaceTask'
+import { runShellCommand } from './shellCommand'
 
 afterEach(() => {
   resetRootStore()
@@ -57,6 +72,7 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     await ctx.writeWorkspaceFile!({ path: 'a.txt', content: 'y' })
     await ctx.getWorkspaceDiff!({})
     await ctx.runWorkspaceTask!({ kind: 'test' })
+    await ctx.runShell({ platform: 'macos', command: 'pwd' })
 
     expect(vi.mocked(readWorkspaceFile).mock.calls[0][0]).toMatchObject({ path: 'a.txt', workspaceRoot: '/ws/root' })
     expect(vi.mocked(listWorkspaceFiles).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/ws/root' })
@@ -65,6 +81,7 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     expect(vi.mocked(writeWorkspaceFile).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/ws/root' })
     expect(vi.mocked(getWorkspaceDiff).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/ws/root' })
     expect(vi.mocked(runWorkspaceTask).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/ws/root' })
+    expect(vi.mocked(runShellCommand).mock.calls[0][0]).toMatchObject({ cwd: '/ws/root' })
   })
 
   it('getWorkspaceDiff 不带 input：合成只含 root 的入参', async () => {
@@ -77,6 +94,8 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     seedSession('s2b', '  /ws/root  ')
     await ctxFor('s2b').readWorkspaceFile!({ path: 'a.txt' })
     expect(vi.mocked(readWorkspaceFile).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/ws/root' })
+    await ctxFor('s2b').runShell({ platform: 'macos', command: 'pwd' })
+    expect(vi.mocked(runShellCommand).mock.calls[0][0]).toMatchObject({ cwd: '/ws/root' })
   })
 
   it('会话未绑定 workspaceRoot：桥入参不带该字段（Rust 走 git root 兜底）', async () => {
@@ -86,11 +105,22 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     // 无 root → 原样透传，不新增 workspaceRoot 字段。
     expect(input).toEqual({ path: 'a.txt' })
     expect(input.workspaceRoot).toBeUndefined()
+    await ctxFor('s3').runShell({ platform: 'macos', command: 'pwd' })
+    expect(vi.mocked(runShellCommand).mock.calls[0][0]).toEqual(
+      expect.objectContaining({ platform: 'macos', command: 'pwd' }),
+    )
+    expect(vi.mocked(runShellCommand).mock.calls[0][0].cwd).toBeUndefined()
   })
 
   it('调用方已显式带 workspaceRoot：尊重调用方、不被会话 root 覆盖', async () => {
     seedSession('s4', '/session/root')
     await ctxFor('s4').readWorkspaceFile!({ path: 'a.txt', workspaceRoot: '/caller/root' })
     expect(vi.mocked(readWorkspaceFile).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/caller/root' })
+  })
+
+  it('shell 调用方已显式带 cwd：尊重调用方 cwd，不被会话 root 覆盖', async () => {
+    seedSession('s5', '/session/root')
+    await ctxFor('s5').runShell({ platform: 'macos', command: 'pwd', cwd: '  /caller/root  ' })
+    expect(vi.mocked(runShellCommand).mock.calls[0][0]).toMatchObject({ cwd: '/caller/root' })
   })
 })

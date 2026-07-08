@@ -8,7 +8,7 @@
 // 工具本身绝不 import atom/store —— 一切副作用都经这里。stale 守卫（ghost + 迟到 run）集中在此，
 // 不再由每个工具各写一遍。
 
-import type { ToolContext, ToolResult } from '../tools/types'
+import type { ShellCommandInput, ToolContext, ToolResult } from '../tools/types'
 import { toolRegistry } from '../tools/registry'
 import { rootStore, sessionsAtom } from '../state/rootStore'
 import { getSessionStore } from '../state/sessionStore'
@@ -88,6 +88,13 @@ export function buildToolContext(opts: {
     return { ...record, workspaceRoot } as T
   }
 
+  function withShellCwd(input: ShellCommandInput): ShellCommandInput {
+    if (!workspaceRoot) return input
+    const cwd = typeof input.cwd === 'string' && input.cwd.trim().length > 0 ? input.cwd.trim() : undefined
+    if (cwd) return { ...input, cwd }
+    return { ...input, cwd: workspaceRoot }
+  }
+
   function assertFresh(): void {
     if (signal.aborted || !isCurrentRun(sessionId, runId)) throw new Error('stale')
   }
@@ -106,7 +113,7 @@ export function buildToolContext(opts: {
     async runShell(input) {
       assertFresh()
       progress(shellProgressText(input.command))
-      const result = await runShellCommand(input)
+      const result = await runShellCommand(withShellCwd(input))
       assertFresh()
       return result
     },
