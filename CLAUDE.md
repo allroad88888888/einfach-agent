@@ -4,12 +4,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-- `npm run dev` — Vite dev server (`--host 0.0.0.0`).
-- `npm run build` — type-check (`tsc -b`) then `vite build`. Use this to verify types; there is no separate lint step.
-- `npm test` — Vitest single run.
-- `npm run test:watch` — Vitest watch mode.
-- Run one test file: `npx vitest run src/agentNew/runtime/modelRun.test.ts`
-- Filter by name: `npx vitest run -t "ask_user"`
+This is a **pnpm workspace** (packages under `packages/*` use the `workspace:*` protocol, which npm does not support). Use pnpm, not npm.
+
+- `pnpm install` — install deps + link workspace packages (run once on a fresh checkout).
+- `pnpm dev` — Vite dev server (`--host 0.0.0.0`).
+- `pnpm build` — type-check (`tsc -b`) then `vite build`. Use this to verify types; there is no separate lint step.
+- `pnpm test` — Vitest single run.
+- `pnpm test:watch` — Vitest watch mode.
+- Run one test file: `pnpm exec vitest run packages/agent-core/src/runtime/modelRun.test.ts`
+- Filter by name: `pnpm exec vitest run -t "ask_user"`
 
 Tests run in `jsdom` with `./src/test/setup.ts` as setup. Note `fileParallelism: false` in `vite.config.ts` — test files run serially because the runtime uses module-level singletons (`abortRegistry`'s controller map, the per-session store cache in `sessionStore.ts`), so don't reintroduce parallelism without removing that shared state. Use `renderWithStore` from `src/test/renderWithStore.tsx` to render components against a fresh `@einfach/core` store. IndexedDB tests use `fake-indexeddb`.
 
@@ -42,7 +45,7 @@ A browser-only chat runtime. No backend, no real filesystem/terminal/MCP — "sk
 
 ## Conventions
 
-- TypeScript `strict` is on; `tsc -b` is the gate (run `npm run build`). The model adapters' "return-a-fallback, don't throw (except AbortError)" pattern is intentional, not a smell.
+- TypeScript `strict` is on; `tsc -b` is the gate (run `pnpm build`). The model adapters' "return-a-fallback, don't throw (except AbortError)" pattern is intentional, not a smell.
 - Everything is under `src/agentNew/`: UI in `ui/`, orchestration in `runtime/`, state in `state/`, model APIs in `api/`, skills/tools in `skills/` + `tools/`. Tests are colocated `*.test.ts(x)`.
 - Skills are Markdown imported with Vite's `?raw` and registered in `skills/registry.ts`; tools are registered with name/runtime/schema in `tools/registry.ts`. Add new ones to those registries.
 - Follow the plan docs' contract IDs when touching runtime/state (ghost guard, stale-run guard, immutable updates, UI-reads-atoms-calls-commands). Each stage is closed with a `codex review --uncommitted` pass.
