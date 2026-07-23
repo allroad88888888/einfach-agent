@@ -22,7 +22,7 @@
 
 - 旧卡片在 `src/chat/{AskUserQuestionCard,BrowserActionCard,SaveArtifact}.tsx`，用**旧单 store + `store` 参数 + `activeXxxAtom`**。移植到 agentNew 要改成 §1 的 U1/U2/U3 范式。
 - **BrowserCard 变简单**：新 `BrowserCard = {id, createdAt, title, body?}`（无 items/options）。⇒ 新 BrowserActionCard 只渲染 title + body(markdown)，**无选项按钮、不起新 run**（旧版 buildOptionPrompt/startAgentRun 整段删）。
-- **pendingQuestion 是 `unknown`**（RunState.pendingQuestion）：modelRun 存的是 `safeParseArgs(askCall.arguments)` 原样 args。⇒ AskUserQuestionCard 前必须**防御式 normalize** 成 `{title?, questions: AskUserQuestionItem[]}`。
+- **pendingQuestion 是 `unknown`**（RunState.pendingQuestion）：modelRun 存的是 `parseToolCallArgs(askCall.arguments)` 解析出的原样 args。⇒ AskUserQuestionCard 前必须**防御式 normalize** 成 `{title?, questions: AskUserQuestionItem[]}`。
 - **markdown 组件**：agentNew 现用 `react-markdown`（见 MessageList），**不用** `@ai-components/markdown`（旧依赖，块 C 要清）。BrowserActionCard body 用 `react-markdown`。
 - **textarea**：agentNew Composer 用原生 `<textarea>`（见 `ui/Composer.tsx`），**不用** `@ai-components/textarea-base`。AskUser 的 text 输入也用原生 textarea。
 

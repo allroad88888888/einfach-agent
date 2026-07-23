@@ -15,6 +15,7 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       shell::run_shell_command,
       workspace_read::read_workspace_file,
+      workspace_read::read_workspace_run_index_page,
       workspace_read::list_workspace_files,
       workspace_read::search_workspace_files,
       workspace_rg::rg_search_workspace,

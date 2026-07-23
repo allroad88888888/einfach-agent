@@ -5,9 +5,9 @@
 //   下），故能读到 rootStore 的会话元信息。无 active 会话时不渲染。
 import { useMemo, useState } from 'react'
 import { useAtomValue } from '@einfach/react'
-import { activeSessionMetaAtom } from '../state/rootStore'
-import { setWorkspaceRoot } from '../runtime/commands'
-import { canPickWorkspaceDirectory, pickWorkspaceDirectory } from '../runtime/workspaceDialog'
+import { activeSessionMetaAtom } from '@web-agent/core/state/rootStore'
+import { setWorkspaceRoot } from '@web-agent/core/runtime/commands'
+import { canPickWorkspaceDirectory, pickWorkspaceDirectory } from '@web-agent/core/runtime/workspaceDialog'
 
 export function WorkspaceRootField() {
   const meta = useAtomValue(activeSessionMetaAtom)

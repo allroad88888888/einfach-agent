@@ -5,8 +5,8 @@
 // 没有 checkpoint 就整体不显示（return null）。
 
 import { useAtomValue } from '@einfach/react'
-import { checkpointsAtom, currentTurnIndexAtom } from '../state/sessionAtoms'
-import { revertToTurn } from '../runtime/commands'
+import { checkpointsAtom, currentTurnIndexAtom } from '@web-agent/core/state/sessionAtoms'
+import { revertToTurn } from '@web-agent/core/runtime/commands'
 
 export function CheckpointBar() {
   const checkpoints = useAtomValue(checkpointsAtom)

@@ -1,10 +1,10 @@
 // 右栏消息列表（P-U3 / P8-g）——在「当前会话 store」的 Provider 下，
-// 读 itemsAtom + browserCardsAtom + runtimeTranscriptEventsAtom，把用户消息、助手回复、
-// 工具调用/结果、运行时注入事件与浏览器卡片按时间合并渲染。
+// 读 itemsAtom + browserCardsAtom + runtimeTranscriptEventsAtom，把助手回复、工具调用/结果、
+// 运行时注入事件与浏览器卡片按时间合并渲染。
 // ---------------------------------------------------------------------------
 // 契约（U1）：UI 只读 atom + 调命令，本组件只 useAtomValue，不 setter、不碰 store、不 import 命令。
 // 可见性规则：
-//   · user：纯文本气泡，恒渲染；
+//   · user：不渲染，避免把输入内容在 transcript 里重复列一遍；它仍保留在 itemsAtom 供模型上下文使用；
 //   · assistant：content 有实质文本时渲染文本气泡；tool_calls 始终渲染为调试行；
 //   · tool：作为工具结果调试行渲染；
 //   · runtime transcript event：展示 system/tools 等不该入 ModelItem 历史的注入；
@@ -12,15 +12,15 @@
 
 import { useAtomValue } from '@einfach/react'
 import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
-import { itemsAtom } from '../state/sessionAtoms'
+import { itemsAtom } from '@web-agent/core/state/sessionAtoms'
 import {
   browserCardsAtom,
   runtimeTranscriptEventsAtom,
   type BrowserCard,
   type RuntimeTranscriptEvent,
-} from '../state/transientAtoms'
-import type { ConversationItem } from '../state/core.type'
-import type { ModelToolCall, ToolItem } from '../api/modelApi'
+} from '@web-agent/core/state/transientAtoms'
+import type { ConversationItem } from '@web-agent/core/state/core.type'
+import type { ModelToolCall, ToolItem } from '@web-agent/ai'
 import { BrowserActionCard } from './BrowserActionCard'
 import { MessageMarkdown } from './MessageMarkdown'
 
@@ -116,7 +116,7 @@ function itemEntries(
   const baseKey = `item:${String(itemIndex).padStart(6, '0')}:${ci.id}`
   const item = ci.item
   if (item.role === 'user') {
-    return [{ kind: 'message', createdAt: ci.createdAt, sortKey: `${baseKey}:message`, ci }]
+    return []
   }
 
   if (item.role === 'assistant') {
@@ -226,7 +226,7 @@ export function MessageList() {
         return `tool-result:${entry.item.tool_call_id}:${entry.toolName ?? ''}:${entry.item.content}`
       }
       const { ci } = entry
-      const content = ci.item.role === 'assistant' || ci.item.role === 'user' ? ci.item.content : ''
+      const content = ci.item.role === 'assistant' ? ci.item.content : ''
       return `item:${ci.id}:${ci.pending ? 'pending' : 'done'}:${content ?? ''}`
     })
     .join('|')
@@ -302,14 +302,6 @@ export function MessageList() {
 
         const { ci } = entry
         const { item } = ci
-        if (item.role === 'user') {
-          return (
-            <div key={ci.id} className="agentnew-msg agentnew-msg--user">
-              {item.content}
-            </div>
-          )
-        }
-
         const isStreaming = ci.pending === true
         const className = isStreaming
           ? 'agentnew-msg agentnew-msg--assistant agentnew-msg--streaming'

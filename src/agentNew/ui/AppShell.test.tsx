@@ -1,11 +1,11 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import { renderWithStore } from '../../test/renderWithStore'
-import { rootStore, sessionsAtom, activeSessionIdAtom, resetRootStore } from '../state/rootStore'
-import { getSessionStore, resetSessionStores } from '../state/sessionStore'
-import { runAtom } from '../state/sessionAtoms'
-import { pendingArtifactsAtom } from '../state/transientAtoms'
-import type { SessionMeta } from '../state/core.type'
+import { rootStore, sessionsAtom, activeSessionIdAtom, resetRootStore } from '@web-agent/core/state/rootStore'
+import { getSessionStore, resetSessionStores } from '@web-agent/core/state/sessionStore'
+import { runAtom } from '@web-agent/core/state/sessionAtoms'
+import { contextStatsAtom, pendingArtifactsAtom } from '@web-agent/core/state/transientAtoms'
+import type { SessionMeta } from '@web-agent/core/state/core.type'
 import { AppShell } from './AppShell'
 
 // P-U6a 两栏组装：AppShell 把真组件（SessionList / ActiveSessionProvider / MessageList /
@@ -14,7 +14,7 @@ import { AppShell } from './AppShell'
 // P8-h 追加：AskUserQuestionCard / SaveArtifact 也挂在右栏 ActiveSessionProvider 内，
 // 故把它们依赖的命令一并 mock（渲染不触发，仅补齐模块形状）。
 
-vi.mock('../runtime/commands', () => ({
+vi.mock('@web-agent/core/runtime/commands', () => ({
   newSession: vi.fn(),
   selectSession: vi.fn(),
   removeSession: vi.fn(),
@@ -27,6 +27,7 @@ vi.mock('../runtime/commands', () => ({
   // S4：WorkspaceRootField / ToolConfirmCard 也挂在 AppShell 内，补齐它们依赖的命令形状。
   setWorkspaceRoot: vi.fn(),
   confirmTool: vi.fn(),
+  approvePlan: vi.fn(),
 }))
 
 // 造一个登记在 rootStore 的活跃会话（P8-h 两个新挂载点都要求会话在 Provider 下）。
@@ -127,5 +128,41 @@ describe('AppShell', () => {
     expect(container.querySelector('[aria-label="待保存文件"]')).not.toBeNull()
     expect(screen.getByText('plan.md')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /保存/ })).toBeInTheDocument()
+  })
+
+  it('会话有 context stats：右栏输入区上方挂出上下文统计', () => {
+    seedActiveSession('s1')
+    getSessionStore('s1').store.setter(contextStatsAtom, {
+      id: 'ctx1',
+      createdAt: 1,
+      vendor: 'deepseek',
+      model: 'x',
+      runId: 'r1',
+      turnId: 'u1',
+      llmTurn: 1,
+      messagesCount: 2,
+      toolsCount: 1,
+      systemChars: 10,
+      messagesChars: 20,
+      toolsChars: 30,
+      totalChars: 50,
+      estimatedTokens: 13,
+      roles: {
+        system: { count: 1, chars: 10, estimatedTokens: 3 },
+        user: { count: 1, chars: 10, estimatedTokens: 3 },
+        assistant: { count: 0, chars: 0, estimatedTokens: 0 },
+        tool: { count: 0, chars: 0, estimatedTokens: 0 },
+      },
+      toolNames: ['request_tool_schema'],
+    })
+
+    const { container } = renderWithStore(<AppShell />, { store: rootStore })
+
+    const stats = container.querySelector('.agentnew-context-stats')
+    const composer = container.querySelector('.agentnew-composer')
+    expect(stats).not.toBeNull()
+    expect(composer).not.toBeNull()
+    expect(screen.getByText(/上下文估算 13 tokens/)).toBeInTheDocument()
+    expect(stats!.compareDocumentPosition(composer!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 })

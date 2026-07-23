@@ -1,0 +1,408 @@
+// TK5 瞬态 atom —— 会话 store 内共享单例 key（值随 store 隔离，绝不分桶）。
+// ---------------------------------------------------------------------------
+// 对齐旧 src/agent/state 的 pendingArtifacts / browserCards / pendingQuestionAnswers，
+// 但按 agentNew 既定架构（sessionAtoms 范式，C3）落到「每会话一个 store」：
+//   · 这些 atom 只是共享 key，值真正存在各自 session store 里 —— 天然隔离，
+//     无需也禁止把它们做成 `Record<sessionId, T>` 分桶。
+//   · 都是「临时 UI 产物」，不进持久化快照（对齐旧 D2 语义）。
+// 写入器沿用 sessionWriters 范式（C7）：内部取 getSessionStore(id).store；
+// 先做 ghost guard（会话未在 rootStore 登记 → no-op，防给幽灵会话写内容）；
+// 所有更新不可变（替换数组/对象，C4）。
+//
+// 【实例化 · 第 2 期穿线】本文件所有导出的写入函数（add/remove/prune/set/upsert/clear 一类）都在
+//   既有参数之后加了默认参数 core（CoreInstance，默认 defaultCore）：函数体内一律经
+//   core.rootStore / core.getSessionStore(id) 读写，不再摸模块全局 rootStore / getSessionStore。
+//   默认值就是 defaultCore——而 defaultCore.rootStore 正是 rootStore.ts 导出的那个 Store 引用、
+//   defaultCore.getSessionStore 也是 sessionStore.ts 导出函数背后委托的同一实现，所以不传 core
+//   的调用点（现状全部调用点）行为逐字不变。传入独立 core（如 createCoreInstance() 造的实例）时，
+//   读写只落在那个实例自己的 store，与 defaultCore 互不污染（第 3 期隔离雏形）。
+//   两个纯读函数 getPendingQuestionAnswers / isToolAlwaysAllowed 第 2 期未穿（任务只要求
+//   「写入函数」穿线），仍走模块级 getSessionStore（= defaultCore 视图）。
+//
+// 【实例化 · 第 3 期穿线】补上面留的两个读函数缺口：getPendingQuestionAnswers / isToolAlwaysAllowed
+//   也加了尾参 core（CoreInstance，默认 defaultCore），内部 getSessionStore(id) → core.getSessionStore(id)。
+//   默认值仍是 defaultCore，不传 core 的调用点（commands.ts / modelRun.ts / toolContext.ts 现有全部
+//   调用）行为逐字不变；传入独立 core 时只读该 core 自己的 session store，与 defaultCore 互不污染。
+//   本文件的写入函数第 2 期已穿好 core，本期未动。
+
+import { atom } from '@einfach/core'
+import { sessionsAtom } from './rootStore'
+import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
+
+// save_file 工具暂存、等用户手势落盘的文件产物（临时 UI 态，不持久化）。
+export interface PendingArtifact {
+  id: string
+  filename: string
+  content: string
+  mimeType?: string
+}
+
+// browser_action render_card 渲染进 transcript 的卡片（临时 UI 态，不持久化）。
+export interface BrowserCard {
+  id: string
+  createdAt: number
+  title: string
+  body?: string
+}
+
+// AskUserQuestion 单个答案值（照抄旧 types 语义）。
+export type AskUserAnswerValue = string | string[] | boolean
+
+// 工具进度条目（临时 UI 态，不持久化）：显示「某个工具调用正在干啥」。
+// callId = 该 tool_call 的 id（唯一），toolName 便于 UI 标注，text 是工具经 ctx.progress 给的文案。
+export interface ToolActivity {
+  callId: string
+  toolName: string
+  text: string
+}
+
+// runtime transcript 调试事件（临时 UI 态，不持久化）：展示不适合进入 ModelItem 历史、
+// 但自用调试时必须可见的步骤，例如 system 注入、tools manifest 注入。
+export type RuntimeTranscriptEventKind = 'system_injection' | 'tool_manifest'
+
+export interface RuntimeTranscriptEvent {
+  id: string
+  createdAt: number
+  kind: RuntimeTranscriptEventKind
+  title: string
+  summary?: string
+  detail?: string
+}
+
+export interface WithdrawnTurnNotice {
+  id: string
+  createdAt: number
+  text: string
+  sideEffects: boolean
+}
+
+export interface ContextRoleStats {
+  count: number
+  chars: number
+  estimatedTokens: number
+}
+
+export interface ContextUsageStats {
+  promptTokens?: number
+  completionTokens?: number
+  totalTokens?: number
+}
+
+export interface ContextStatsSnapshot {
+  id: string
+  createdAt: number
+  vendor: string
+  model: string
+  runId: string
+  turnId: string
+  llmTurn: number
+  messagesCount: number
+  toolsCount: number
+  systemChars: number
+  messagesChars: number
+  toolsChars: number
+  totalChars: number
+  estimatedTokens: number
+  roles: {
+    system: ContextRoleStats
+    user: ContextRoleStats
+    assistant: ContextRoleStats
+    tool: ContextRoleStats
+  }
+  toolNames: string[]
+  usage?: ContextUsageStats
+  finishReason?: string | null
+  responseModel?: string
+}
+
+// 简介：当前会话的待保存文件产物。
+// 详情：值随 store 隔离——每个 session store 各持一份 PendingArtifact[]，非分桶。
+export const pendingArtifactsAtom = atom<PendingArtifact[]>([])
+
+// 简介：当前会话的浏览器卡片。
+// 详情：值随 store 隔离——每个 session store 各持一份 BrowserCard[]，非分桶。
+export const browserCardsAtom = atom<BrowserCard[]>([])
+
+// 简介：当前会话的 AskUserQuestion 待提交答案（questionId → value）。
+// 详情：值随 store 隔离——每个 session store 各持一份 Record，非分桶。
+export const pendingQuestionAnswersAtom = atom<Record<string, AskUserAnswerValue>>({})
+
+// 简介：当前会话正在跑的工具进度（按 callId）。
+// 详情：值随 store 隔离；harness 经 ctx.progress 上写、工具跑完清掉。UI 读它渲染「工具正在干啥」。
+export const toolActivityAtom = atom<ToolActivity[]>([])
+
+// 简介：当前会话的 runtime transcript 调试事件。
+// 详情：值随 store 隔离；只服务 UI 展示，不进 checkpoint、不参与 model messages。
+export const runtimeTranscriptEventsAtom = atom<RuntimeTranscriptEvent[]>([])
+
+// 简介：当前会话最近一次 LLM 调用的上下文统计。
+// 详情：只记录 system/messages/tools 的轻量统计和 provider usage；不进 messages、不持久化、不回发给 model。
+export const contextStatsAtom = atom<ContextStatsSnapshot | undefined>(undefined)
+
+// 简介：当前会话 Composer 草稿。
+// 详情：值随 store 隔离；用于撤回未完成轮后把上一条用户输入放回输入框。
+export const composerDraftAtom = atom<string>('')
+
+// 简介：撤回当前未完成轮后的提示。
+// 详情：值随 store 隔离；sideEffects=true 表示只撤回对话记录，不承诺撤销已执行的外部副作用。
+export const withdrawnTurnNoticeAtom = atom<WithdrawnTurnNotice | undefined>(undefined)
+
+// 简介：本 session「一律允许」的危险工具名集合（S4-B）。
+// 详情：用户在确认卡片勾选「本 session 一律允许该工具」后写入；tool 循环命中即跳过后续确认。
+//   值随 store 隔离；临时 UI 态，不持久化（刷新即恢复「每次都确认」的安全默认）。
+export const alwaysAllowedToolsAtom = atom<string[]>([])
+
+// ghost guard：会话未在 core.rootStore 登记 → 后续写入应 no-op（C7）。
+function sessionMissing(id: string, core: CoreInstance): boolean {
+  return !core.rootStore.getter(sessionsAtom)[id]
+}
+
+/**
+ * 往该会话暂存一个 save_file 文件产物（不可变，产生新数组）。
+ * 会话未登记则 no-op（ghost guard）。core 默认 defaultCore，语义见文件头。
+ */
+export function addPendingArtifact(
+  id: string,
+  artifact: PendingArtifact,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(pendingArtifactsAtom, (prev) => [...prev, artifact])
+}
+
+/**
+ * 从该会话移除指定 artifactId 的 save_file 文件产物（不可变，产生新数组）。
+ * 会话未登记则 no-op（ghost guard）；artifactId 不存在时数组内容不变、不崩。
+ * core 默认 defaultCore，语义见文件头。
+ */
+export function removePendingArtifact(
+  id: string,
+  artifactId: string,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(pendingArtifactsAtom, (prev) =>
+    prev.filter((a) => a.id !== artifactId),
+  )
+}
+
+/**
+ * 往该会话追加一张浏览器卡片（不可变，产生新数组）。
+ * 会话未登记则 no-op（ghost guard）。core 默认 defaultCore，语义见文件头。
+ */
+export function addBrowserCard(
+  id: string,
+  card: BrowserCard,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(browserCardsAtom, (prev) => [...prev, card])
+}
+
+/**
+ * 丢弃该会话中 createdAt 晚于 `createdAt` 的浏览器卡片（不可变，产生新数组）。
+ * 会话未登记则 no-op（ghost guard）。
+ * 用途：截断式回退时，browserCards 不进 checkpoint 快照，需按回退点时间戳把「被丢弃轮次」
+ *   产生的卡片一并剪掉，否则回退后仍会渲染已废弃轮的卡片（codex P2）。保留 `<=` 即回退到的
+ *   那一轮（及更早）的卡片留下，之后的剪掉。core 默认 defaultCore，语义见文件头。
+ */
+export function pruneBrowserCardsAfter(
+  id: string,
+  createdAt: number,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(browserCardsAtom, (prev) =>
+    prev.filter((card) => card.createdAt <= createdAt),
+  )
+}
+
+/**
+ * 记录该会话某个 questionId 的答案（不可变，替换成新对象）。
+ * 会话未登记则 no-op（ghost guard）。core 默认 defaultCore，语义见文件头。
+ */
+export function setPendingQuestionAnswer(
+  id: string,
+  questionId: string,
+  value: AskUserAnswerValue,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(pendingQuestionAnswersAtom, (prev) => ({
+    ...prev,
+    [questionId]: value,
+  }))
+}
+
+/**
+ * 读取该会话已收集的 AskUserQuestion 答案（无答案时为空对象）。
+ * core 默认 defaultCore：不传时读模块全局那份（行为逐字不变）；传入独立 core 只读该 core 自己的 session store。
+ */
+export function getPendingQuestionAnswers(
+  id: string,
+  core: CoreInstance = defaultCore,
+): Record<string, AskUserAnswerValue> {
+  return core.getSessionStore(id).store.getter(pendingQuestionAnswersAtom)
+}
+
+/**
+ * 写入/更新某工具调用的进度条目（按 callId upsert，不可变）。会话未登记则 no-op（ghost guard）。
+ * core 默认 defaultCore，语义见文件头。
+ */
+export function upsertToolActivity(
+  id: string,
+  activity: ToolActivity,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(toolActivityAtom, (prev) => {
+    const index = prev.findIndex((entry) => entry.callId === activity.callId)
+    if (index < 0) return [...prev, activity]
+    const next = [...prev]
+    next[index] = activity
+    return next
+  })
+}
+
+/**
+ * 清掉某工具调用的进度条目（该工具跑完时）。会话未登记则 no-op（ghost guard）。
+ * core 默认 defaultCore，语义见文件头。
+ */
+export function removeToolActivity(
+  id: string,
+  callId: string,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(toolActivityAtom, (prev) => prev.filter((entry) => entry.callId !== callId))
+}
+
+/**
+ * 往该会话追加一条 runtime transcript 调试事件（不可变，产生新数组）。
+ * 会话未登记则 no-op（ghost guard）。core 默认 defaultCore，语义见文件头。
+ */
+export function addRuntimeTranscriptEvent(
+  id: string,
+  event: RuntimeTranscriptEvent,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(runtimeTranscriptEventsAtom, (prev) => [...prev, event])
+}
+
+/**
+ * 丢弃该会话中 createdAt 晚于 `createdAt` 的 runtime transcript 调试事件。
+ * 用途同 pruneBrowserCardsAfter：截断回退后不展示被丢弃轮次的旁路调试记录。
+ * core 默认 defaultCore，语义见文件头。
+ */
+export function pruneRuntimeTranscriptEventsAfter(
+  id: string,
+  createdAt: number,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(runtimeTranscriptEventsAtom, (prev) =>
+    prev.filter((event) => event.createdAt <= createdAt),
+  )
+}
+
+/**
+ * 设置或清除该会话最近一次 LLM 上下文统计。会话未登记则 no-op（ghost guard）。
+ * core 默认 defaultCore，语义见文件头。
+ */
+export function setContextStats(
+  id: string,
+  stats: ContextStatsSnapshot | undefined,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(contextStatsAtom, stats)
+}
+
+/**
+ * 设置该会话 Composer 草稿。会话未登记则 no-op（ghost guard）。core 默认 defaultCore，语义见文件头。
+ */
+export function setComposerDraft(
+  id: string,
+  draft: string,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(composerDraftAtom, draft)
+}
+
+/**
+ * 设置或清除该会话撤回提示。会话未登记则 no-op（ghost guard）。core 默认 defaultCore，语义见文件头。
+ */
+export function setWithdrawnTurnNotice(
+  id: string,
+  notice: WithdrawnTurnNotice | undefined,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(withdrawnTurnNoticeAtom, notice)
+}
+
+/**
+ * 清空该会话的 AskUserQuestion 答案（不可变，置为空对象）。
+ * 会话未登记则 no-op（ghost guard）。core 默认 defaultCore，语义见文件头。
+ */
+export function clearPendingQuestionAnswers(id: string, core: CoreInstance = defaultCore): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(pendingQuestionAnswersAtom, {})
+}
+
+/**
+ * 把某危险工具加进该会话的「一律允许」集合（S4-B，去重，不可变）。会话未登记则 no-op（ghost guard）。
+ * core 默认 defaultCore，语义见文件头。
+ */
+export function addAlwaysAllowedTool(
+  id: string,
+  toolName: string,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(alwaysAllowedToolsAtom, (prev) =>
+    prev.includes(toolName) ? prev : [...prev, toolName],
+  )
+}
+
+/**
+ * 该会话是否已「一律允许」某危险工具（S4-B）。会话未登记 → 取到 [] → false。
+ * core 默认 defaultCore：不传时读模块全局那份（行为逐字不变）；传入独立 core 只读该 core 自己的 session store。
+ */
+export function isToolAlwaysAllowed(
+  id: string,
+  toolName: string,
+  core: CoreInstance = defaultCore,
+): boolean {
+  return core.getSessionStore(id).store.getter(alwaysAllowedToolsAtom).includes(toolName)
+}

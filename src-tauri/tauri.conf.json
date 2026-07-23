@@ -5,7 +5,7 @@
   "identifier": "com.webagent.app",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:1420/?tauriDev=1",
     "beforeDevCommand": "npm run dev -- --port 1420 --strictPort",
     "beforeBuildCommand": "npm run build"
   },

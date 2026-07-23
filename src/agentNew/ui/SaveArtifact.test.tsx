@@ -2,17 +2,17 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createStore } from '@einfach/core'
-import { pendingArtifactsAtom, type PendingArtifact } from '../state/transientAtoms'
-import { rootStore, activeSessionIdAtom, resetRootStore } from '../state/rootStore'
+import { pendingArtifactsAtom, type PendingArtifact } from '@web-agent/core/state/transientAtoms'
+import { rootStore, activeSessionIdAtom, resetRootStore } from '@web-agent/core/state/rootStore'
 import { renderWithStore } from '../../test/renderWithStore'
-import { discardArtifact } from '../runtime/commands'
+import { discardArtifact } from '@web-agent/core/runtime/commands'
 import { SaveArtifact } from './SaveArtifact'
 
 // P8-f SaveArtifact：读 pendingArtifactsAtom（会话 store Provider 下）+ 保存产物。
 // 契约 U1 —— UI 只读 atom + 调命令（discardArtifact），不 import writer removePendingArtifact。
 // 这里把命令整模块 mock，断言「保存成功后按 (归属会话id, artifactId) 调 discardArtifact」，
 // 不触碰真正的 transient writer。PF4：ownerSessionId 必须在点击那一刻从 rootStore 捕获。
-vi.mock('../runtime/commands', () => ({
+vi.mock('@web-agent/core/runtime/commands', () => ({
   discardArtifact: vi.fn(),
 }))
 

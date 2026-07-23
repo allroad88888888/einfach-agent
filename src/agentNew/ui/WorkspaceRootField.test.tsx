@@ -2,17 +2,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithStore } from '../../test/renderWithStore'
-import { activeSessionIdAtom, resetRootStore, rootStore, sessionsAtom } from '../state/rootStore'
-import { resetSessionStores } from '../state/sessionStore'
-import { setWorkspaceRoot } from '../runtime/commands'
-import { pickWorkspaceDirectory } from '../runtime/workspaceDialog'
+import { activeSessionIdAtom, resetRootStore, rootStore, sessionsAtom } from '@web-agent/core/state/rootStore'
+import { resetSessionStores } from '@web-agent/core/state/sessionStore'
+import { setWorkspaceRoot } from '@web-agent/core/runtime/commands'
+import { pickWorkspaceDirectory } from '@web-agent/core/runtime/workspaceDialog'
 import { WorkspaceRootField } from './WorkspaceRootField'
 
-vi.mock('../runtime/commands', () => ({
+vi.mock('@web-agent/core/runtime/commands', () => ({
   setWorkspaceRoot: vi.fn(),
 }))
 
-vi.mock('../runtime/workspaceDialog', () => ({
+vi.mock('@web-agent/core/runtime/workspaceDialog', () => ({
   canPickWorkspaceDirectory: vi.fn(() => true),
   pickWorkspaceDirectory: vi.fn(async () => ({ ok: true, path: '/picked/workspace' })),
 }))

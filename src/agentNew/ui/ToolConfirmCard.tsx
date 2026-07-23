@@ -7,8 +7,8 @@
 
 import { useState } from 'react'
 import { useAtomValue } from '@einfach/react'
-import { runAtom } from '../state/sessionAtoms'
-import { confirmTool } from '../runtime/commands'
+import { runAtom } from '@web-agent/core/state/sessionAtoms'
+import { confirmTool } from '@web-agent/core/runtime/commands'
 
 const PREVIEW_MAX = 240
 

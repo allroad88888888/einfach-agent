@@ -10,11 +10,14 @@ import { SessionList } from './SessionList'
 import { WorkspaceRootField } from './WorkspaceRootField'
 import { MessageList } from './MessageList'
 import { ToolActivity } from './ToolActivity'
+import { SubagentTreePanel } from './SubagentTreePanel'
 import { SaveArtifact } from './SaveArtifact'
 import { CheckpointBar } from './CheckpointBar'
 import { AskUserQuestionCard } from './AskUserQuestionCard'
 import { ToolConfirmCard } from './ToolConfirmCard'
+import { ContextStats } from './ContextStats'
 import { Composer } from './Composer'
+import { PlanPanel } from './PlanPanel'
 
 export function AppShell() {
   return (
@@ -25,9 +28,12 @@ export function AppShell() {
         <WorkspaceRootField />
       </aside>
       <main className="agentnew-main" aria-label="当前对话">
-        <ActiveSessionProvider>
+        <ActiveSessionProvider>{(session) => (
+          <>
           {/* SaveArtifact 属于「当前对话内容」的一部分，排在 MessageList 之后、CheckpointBar 之前。 */}
           <MessageList />
+          <PlanPanel />
+          <SubagentTreePanel workspaceRoot={session.workspaceRoot} />
           {/* 工具进度条：显示「工具正在干啥」，紧跟消息列表。 */}
           <ToolActivity />
           <SaveArtifact />
@@ -35,8 +41,10 @@ export function AppShell() {
           {/* 暂停卡片紧贴输入区上方（最显眼），排在 Composer 之前：ask_user 提问卡 + S4-B 危险工具确认卡。 */}
           <AskUserQuestionCard />
           <ToolConfirmCard />
+          <ContextStats />
           <Composer />
-        </ActiveSessionProvider>
+          </>
+        )}</ActiveSessionProvider>
       </main>
     </div>
   )

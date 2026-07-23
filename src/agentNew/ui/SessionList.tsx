@@ -11,8 +11,8 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useAtomValue } from '@einfach/react'
-import { sessionsAtom, activeSessionIdAtom } from '../state/rootStore'
-import { newSession, selectSession, removeSession, renameSession } from '../runtime/commands'
+import { sessionsAtom, activeSessionIdAtom } from '@web-agent/core/state/rootStore'
+import { newSession, selectSession, removeSession, renameSession } from '@web-agent/core/runtime/commands'
 
 // TU2：删除确认态的自动复位时限。
 const CONFIRM_TIMEOUT_MS = 3000

@@ -2,21 +2,21 @@ import { describe, it, expect } from 'vitest'
 import { screen } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
-import { itemsAtom } from '../state/sessionAtoms'
+import { itemsAtom } from '@web-agent/core/state/sessionAtoms'
 import {
   browserCardsAtom,
   runtimeTranscriptEventsAtom,
   type BrowserCard,
-} from '../state/transientAtoms'
-import type { ConversationItem } from '../state/core.type'
+} from '@web-agent/core/state/transientAtoms'
+import type { ConversationItem } from '@web-agent/core/state/core.type'
 import { MessageList } from './MessageList'
 
 // P-U3 / P8-g MessageList：读会话 store 的 itemsAtom + browserCardsAtom，
-// 渲染 user/assistant 文本、assistant.tool_calls、tool result、runtime 注入事件；
+// 渲染 assistant 文本、assistant.tool_calls、tool result、runtime 注入事件；
 // system ConversationItem 不渲染；browser 卡片与 items 按 createdAt 合并排序；空列表给占位。
 
 describe('MessageList', () => {
-  it('渲染 user 纯文本 + assistant markdown + tool result，跳过 system ConversationItem', () => {
+  it('渲染 assistant markdown + tool result，跳过 user/system ConversationItem', () => {
     const store = createStore()
     const items: ConversationItem[] = [
       { id: 'u1', createdAt: 0, item: { role: 'user', content: '你好' } },
@@ -28,8 +28,8 @@ describe('MessageList', () => {
 
     renderWithStore(<MessageList />, { store })
 
-    // user 纯文本在
-    expect(screen.getByText('你好')).toBeInTheDocument()
+    // user 输入不在 transcript 里重复展示。
+    expect(screen.queryByText('你好')).toBeNull()
     // assistant 的 markdown 被渲染：**回复** → <strong>回复</strong>
     const strong = screen.getByText('回复')
     expect(strong).toBeInTheDocument()
@@ -162,7 +162,7 @@ describe('MessageList', () => {
     expect(bubbles[1].querySelector('.agentnew-stream-caret')).toBeNull()
   })
 
-  it('browser 卡片与 items 按 createdAt 合并排序渲染', () => {
+  it('browser 卡片与可见 items 按 createdAt 合并排序渲染，user item 不显示', () => {
     const store = createStore()
     store.setter(itemsAtom, [
       { id: 'u1', createdAt: 1, item: { role: 'user', content: '问' } },
@@ -173,30 +173,25 @@ describe('MessageList', () => {
 
     renderWithStore(<MessageList />, { store })
 
-    const user = screen.getByText('问')
+    expect(screen.queryByText('问')).toBeNull()
     const card = screen.getByText('卡A')
     const assistant = screen.getByText('答')
 
-    // DOM 顺序：user(1) → 卡A(2) → assistant(3)
+    // DOM 顺序：卡A(2) → assistant(3)。user item 留在状态里但不渲染。
     // compareDocumentPosition(x) 含 FOLLOWING 位 ⇒ x 在参考节点之后
-    expect(user.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(card.compareDocumentPosition(assistant) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('createdAt 相同用 id 字符串兜底稳定排序（R2）', () => {
+  it('只有 user item 时视为无可见 transcript，渲染占位', () => {
     const store = createStore()
     store.setter(itemsAtom, [
       { id: 'b-item', createdAt: 5, item: { role: 'user', content: '条目B' } },
     ])
-    const cards: BrowserCard[] = [{ id: 'a-card', createdAt: 5, title: '卡片A' }]
-    store.setter(browserCardsAtom, cards)
 
-    renderWithStore(<MessageList />, { store })
+    const { container } = renderWithStore(<MessageList />, { store })
 
-    const item = screen.getByText('条目B')
-    const card = screen.getByText('卡片A')
-    // 'a-card' < 'b-item' ⇒ 卡片在前、条目在后（确定顺序）
-    expect(card.compareDocumentPosition(item) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(container.querySelector('.agentnew-message-empty')).not.toBeNull()
+    expect(screen.getByText('开始对话吧')).toBeInTheDocument()
   })
 
   // 轮次 3 · TM1-4：GFM 表格 / 链接 target=_blank / raw HTML 转义安全回归。

@@ -8,9 +8,9 @@
 
 import { useEffect, useRef } from 'react'
 import { useAtomValue, useSetAtom } from '@einfach/react'
-import { runAtom } from '../state/sessionAtoms'
-import { composerDraftAtom, withdrawnTurnNoticeAtom } from '../state/transientAtoms'
-import { sendMessage, stopRun, withdrawCurrentTurnToDraft } from '../runtime/commands'
+import { runAtom } from '@web-agent/core/state/sessionAtoms'
+import { composerDraftAtom, withdrawnTurnNoticeAtom } from '@web-agent/core/state/transientAtoms'
+import { sendMessage, stopRun, withdrawCurrentTurnToDraft } from '@web-agent/core/runtime/commands'
 
 export function Composer() {
   const composingRef = useRef(false)
@@ -24,7 +24,9 @@ export function Composer() {
   // waiting_user（等 ask_user 回答）/ waiting_confirmation（等危险工具确认，S4-B）也锁输入：此时应走
   //   卡片的「继续/允许/拒绝」，不能发新消息顶掉暂停中的 run —— 否则暂停中的 tool_call 无 tool result，
   //   重发构成非法 tool-call 序列（codex P2）。
-  const paused = run?.status === 'waiting_user' || run?.status === 'waiting_confirmation'
+  const paused = run?.status === 'waiting_user'
+    || run?.status === 'waiting_confirmation'
+    || run?.status === 'waiting_plan_approval'
   const locked = running || paused
 
   const send = () => {

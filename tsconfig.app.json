@@ -20,8 +20,17 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@web-agent/ai": ["packages/agent-ai/src/index.ts"],
+      "@web-agent/core/*": ["packages/agent-core/src/*"],
+      "@web-agent/tools": ["packages/tools/src/index.ts"],
+      "@web-agent/tools-shell": ["packages/tools-shell/src/index.ts"],
+      "@web-agent/tools-interaction": ["packages/tools-interaction/src/index.ts"],
+      "@web-agent/tools-fs": ["packages/tools-fs/src/index.ts"],
+      "@web-agent/tools-planning": ["packages/tools-planning/src/index.ts"],
+      "@web-agent/tools-skills": ["packages/tools-skills/src/index.ts"],
+      "@web-agent/tools-agents": ["packages/tools-agents/src/index.ts"]
     }
   },
-  "include": ["src"]
+  "include": ["src", "packages/*/src"]
 }

@@ -8,10 +8,16 @@
     "build": "tsc -b && vite build",
     "test": "vitest run",
     "test:watch": "vitest",
+    "subagent:replay": "node scripts/subagent-replay-report.js",
+    "subagent:index:compact": "node scripts/subagent-index-compact.js",
+    "subagent:skills": "node scripts/subagent-skill-governance.js",
     "preview": "vite preview --host 0.0.0.0",
     "tauri": "tauri"
   },
   "dependencies": {
+    "@web-agent/ai": "workspace:*",
+    "@web-agent/core": "workspace:*",
+    "@web-agent/tools": "workspace:*",
     "@einfach/core": "^0.2.18",
     "@einfach/react": "^0.3.25",
     "@tauri-apps/api": "^2.11.1",

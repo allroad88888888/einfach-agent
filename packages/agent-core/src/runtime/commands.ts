@@ -1,0 +1,540 @@
+// P-R3：runtime 命令 API —— UI ↔ runtime 的唯一边界。
+// ---------------------------------------------------------------------------
+// 契约（RUNTIME-UI-PLAN §1）：
+//   · U1 runtime/UI 隔离：UI 只做两件事 —— 读 atom + 调这里导出的命令。UI 绝不直接
+//     setter atom / import writers / 碰 store 实例；这些命令是唯一入口边界。
+//   · U2 命令不收 store：每个命令都不接 `store` 参数，内部自取 rootStore /
+//     getSessionStore(activeId)。UI 拿不到、也不需要 store 引用。
+//   · U7 signal 全穿透 + 失败降级：sendMessage 起 run 时把 abort signal 穿到 model；
+//     model 失败由 runSession 内部降级（不抛崩 UI）。
+// 本文只编排 rootStore / sessionStore / abortRegistry / modelRun / checkpointWriters，
+// 不 import 任何 UI（U1）。
+//
+// 【实例化 · 第 3 期 · createCommands 工厂】命令不再写死 defaultCore，而是收进一个
+//   createCommands(core = defaultCore) 工厂：每条命令闭包捕获传入的 core，把所有 store/registry/
+//   abort/config 访问一律经这个 core（内部命令互调也走同工厂的成员，保证同 core）。模块级导出
+//   （UI/测试 import 的那些同名命令）= createCommands() 的成员（默认 core=defaultCore），故现有
+//   import 一行不用改、默认路径行为逐字不变。第 3 期 createCore（runtime/core/createCore.ts）就靠
+//   createCommands(隔离实例) 造出「只在自己那套 store/registry/abort/config 上跑」的命令集 —— 与
+//   defaultCore 完全隔离，这是「能嵌两次」的收口证明（见 createCore.test.ts）。
+
+import { sessionsAtom, activeSessionIdAtom } from '../state/rootStore'
+import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
+import { getPlan, setPlan } from '../state/planWriters'
+import { PlanRuntime } from '../planning/runtime'
+import { EvaluationRuntime } from '../evaluation/runtime'
+import { appendItem, patchRun, setItems, setRun } from '../state/sessionWriters'
+import {
+  getPendingQuestionAnswers,
+  clearPendingQuestionAnswers,
+  setPendingQuestionAnswer,
+  removePendingArtifact,
+  pruneBrowserCardsAfter,
+  pruneRuntimeTranscriptEventsAfter,
+  addAlwaysAllowedTool,
+  setComposerDraft,
+  setWithdrawnTurnNotice,
+} from '../state/transientAtoms'
+import type { AskUserAnswerValue } from '../state/transientAtoms'
+import { jumpToCheckpoint } from '../state/checkpointWriters'
+import { runSession, runToolLoop } from './modelRun'
+// 【实例化 · 第 2/3 期穿线】命令绑定 core（默认 defaultCore）：函数体内用工厂参数 core 显式替换旧的
+//   模块全局（rootStore / getSessionStore / beginRun/abortRun/endRun），并把 core 传进
+//   runSession/runToolLoop/writers 的 core 参数。abort 经 core.abort.*，配置经 core.config。默认
+//   core=defaultCore 时行为逐字不变（defaultCore 就是穿线前的模块全局单例）；createCore 可绑定隔离 core。
+//   configureCommands 仍写 defaultCore.config（注入 env key 到全局默认实例）；隔离实例的 config 由
+//   createCore({ config }) 在构造时预置，其命令读自己的 core.config。
+import { defaultCore, type RuntimeConfig, type CoreInstance } from './core/coreInstance'
+import { persistSessions, persistDeleteSession, persistTruncate } from './persistenceBridge'
+import { newId } from './newId'
+import type { ModelSettings, SessionMeta, ConversationItem } from '../state/core.type'
+import { DEFAULT_DEEPSEEK_MODEL } from '@web-agent/ai'
+import { addEvent, getActiveSpan, runTraceKey } from '../observability/trace'
+import { isDangerousTool } from './dangerousTools'
+
+// ===========================================================================
+// 运行时配置注入 —— apiKey 来源（config 通电：defaultCore.config 是 CoreInstance 第五个视图）
+// ===========================================================================
+// 【实例化 · 第 2 期 · config 通电】运行时配置不再是本模块私有的 runtimeConfig，而是 defaultCore.config
+//   （CoreInstance 的第五个字段）。configureCommands 用 Object.assign 就地改写 defaultCore.config 的字段
+//   —— config 引用只读、字段可变，绝不替换引用（否则与别处持有的同一引用漂移成两份）。main.tsx 照旧调
+//   configureCommands 注入 env key，行为逐字不变，只是背后写进 defaultCore.config。
+//   【第 3 期】configureCommands 专注注入【全局默认实例】的 config，故仍写死 defaultCore.config，不进
+//   createCommands 工厂（工厂命令读 core.config；隔离实例的 config 走 createCore({ config }) 构造预置）。
+
+// 简介：注入/更新【默认实例】运行时配置（apiKey / 可选 fetchImpl）→ 就地写进 defaultCore.config。
+// 详情：Object.assign 浅合并，只覆盖传入字段；未传的保持原值。就地改字段、不替换 config 引用。
+export function configureCommands(cfg: Partial<RuntimeConfig>): void {
+  Object.assign(defaultCore.config, cfg)
+}
+
+// ===========================================================================
+// 模块级常量 & 纯函数 —— 不依赖 core，供工厂内命令与外部（UI/测试）共用
+// ===========================================================================
+
+// 会话默认标题 —— newSession 的兜底名，也是自动标题（TT1）判断「用户尚未取名」的哨兵值。
+export const DEFAULT_SESSION_TITLE = '新对话'
+
+// 简介：从用户输入派生会话标题（TT2，纯函数）。
+// 详情：压缩空白（连串空白折成单空格 + 去首尾）→ Array.from 按 code point 截前 12 字
+//   （防 emoji/增补平面字符被从代理对中间截断成乱码）→ 截断则加 …。
+//   派生为空（纯空白输入）返回空串，由调用方决定保留默认名。
+export function deriveSessionTitle(input: string): string {
+  const compact = input.replace(/\s+/g, ' ').trim()
+  if (!compact) return ''
+  const chars = Array.from(compact)
+  if (chars.length <= 12) return compact
+  return `${chars.slice(0, 12).join('')}…`
+}
+
+const SIDE_EFFECT_TOOL_NAMES = new Set(['run_task'])
+
+function currentTurnStartIndex(items: ConversationItem[]): number {
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    if (items[i].item.role === 'user') return i
+  }
+  return -1
+}
+
+function currentTurnHasSideEffects(items: ConversationItem[]): boolean {
+  for (const { item } of items) {
+    if (item.role !== 'assistant') continue
+    for (const toolCall of item.tool_calls ?? []) {
+      const name = toolCall.function.name
+      if (isDangerousTool(name) || SIDE_EFFECT_TOOL_NAMES.has(name)) return true
+    }
+  }
+  return false
+}
+
+// 从对话历史里取「最后一条 assistant」的 ask_user_question tool_call id（找不到返回 undefined）。
+// 该 id 即暂停时未回填的 ask_user ToolItem 的 tool_call_id，resume 用它把答案回填给 model。
+function findAskUserToolCallId(items: ConversationItem[]): string | undefined {
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const item = items[i].item
+    if (item.role === 'assistant') {
+      return item.tool_calls?.find((toolCall) => toolCall.function.name === 'ask_user_question')?.id
+    }
+  }
+  return undefined
+}
+
+// ===========================================================================
+// createCommands 工厂 —— 把全部命令绑定到传入的 core（默认 defaultCore）
+// ===========================================================================
+
+// 简介：造一组绑定到 `core` 的命令。默认 core=defaultCore → 模块级导出即绑默认实例（行为零变化）；
+//   createCore 传隔离实例 → 命令只在那套 store/registry/abort/config 上跑（互不串台）。
+// 详情：命令间互调（sendMessage→renameSession）走同一工厂闭包内的成员，保证同 core。
+export function createCommands(core: CoreInstance = defaultCore) {
+  // =========================================================================
+  // 会话命令
+  // =========================================================================
+
+  // 简介：给指定会话改名（TT3）—— ghost guard + 不可变更新 + updatedAt 前进 + 落盘。
+  // 详情：照 setWorkspaceRoot 范式。trim 后空串 → no-op（编辑框取消语义，保留原名）；
+  //   超长入参按 code point 截 48 字防爆列表。自动标题（sendMessage/TT1）内部复用本命令。
+  function renameSession(id: string, title: string): void {
+    const trimmed = title.trim()
+    if (!trimmed) return
+    const next = Array.from(trimmed).slice(0, 48).join('')
+    let changed = false
+    core.rootStore.setter(sessionsAtom, (prev) => {
+      const meta = prev[id]
+      if (!meta) return prev // ghost guard：会话未登记 → no-op
+      changed = true
+      return { ...prev, [id]: { ...meta, title: next, updatedAt: Date.now() } }
+    })
+    if (changed) persistSessions() // D-4：会话元信息变更 → 覆盖式落盘（fire-and-forget）。
+  }
+
+  // 简介：新建会话 → 登记 rootStore.sessionsAtom → 建每会话 store → 设为 active，返回 id。
+  // 详情：默认 settings 为 deepseek + 默认模型；opts.settings / opts.title 可覆盖。
+  function newSession(opts?: { title?: string; settings?: ModelSettings }): string {
+    const id = newId()
+    const settings: ModelSettings = opts?.settings ?? {
+      vendor: 'deepseek',
+      model: DEFAULT_DEEPSEEK_MODEL,
+    }
+    const now = Date.now()
+    const meta: SessionMeta = {
+      id,
+      title: opts?.title ?? DEFAULT_SESSION_TITLE,
+      settings,
+      createdAt: now,
+      updatedAt: now,
+    }
+    core.rootStore.setter(sessionsAtom, (prev) => ({ ...prev, [id]: meta }))
+    core.createSessionStore(id)
+    core.rootStore.setter(activeSessionIdAtom, id)
+    persistSessions() // D-4：会话列表变更 → 覆盖式落盘（fire-and-forget）。
+    return id
+  }
+
+  // 简介：切换当前激活会话。
+  function selectSession(id: string): void {
+    core.rootStore.setter(activeSessionIdAtom, id)
+  }
+
+  // 简介：删除会话 —— 不可变从 sessionsAtom 删 id + 丢弃其 store。
+  // 详情：若删的是当前 active，active 落到剩余任一 id（Object.keys 第一个）或空串。
+  function removeSession(id: string): void {
+    // 先中断该会话可能在跑的 run（否则 abortRegistry 的 controller 泄漏、model 请求白跑）。
+    core.abort.abortRun(id)
+    core.rootStore.setter(sessionsAtom, (prev) => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    core.dropSessionStore(id)
+    if (core.rootStore.getter(activeSessionIdAtom) === id) {
+      const remaining = Object.keys(core.rootStore.getter(sessionsAtom))
+      core.rootStore.setter(activeSessionIdAtom, remaining[0] ?? '')
+    }
+    // D-4：会话列表变更 → 覆盖式落盘；被删会话的历史 checkpoint 单独清盘（均 fire-and-forget）。
+    persistSessions()
+    persistDeleteSession(id)
+  }
+
+  // 简介：给当前 active 会话绑定 workspace 根目录（S4-A）—— 不可变改 SessionMeta.workspaceRoot + 落盘。
+  // 详情：无 active / 会话未登记 → no-op（U2 自取 active）。trim 后空串视为「清空」（存 undefined →
+  //   toolContext 不透传 → Rust 走 git root 兜底）。updatedAt 前进（R2 一致性），随会话列表覆盖式落盘。
+  function setWorkspaceRoot(root: string): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+    const trimmed = root.trim()
+    let changed = false
+    core.rootStore.setter(sessionsAtom, (prev) => {
+      const meta = prev[id]
+      if (!meta) return prev // ghost guard：会话未登记 → no-op
+      changed = true
+      return {
+        ...prev,
+        [id]: { ...meta, workspaceRoot: trimmed ? trimmed : undefined, updatedAt: Date.now() },
+      }
+    })
+    if (changed) persistSessions() // D-4：会话元信息变更 → 覆盖式落盘（fire-and-forget）。
+  }
+
+  // =========================================================================
+  // 运行命令
+  // =========================================================================
+
+  // 简介：对当前 active 会话起一轮 run（U5 单轮切片）。
+  // 详情：无 active / 空输入 / 会话未登记 → no-op。apiKey 按会话 vendor 取（glm→glmApiKey，
+  //   否则 deepseekApiKey）。beginRun 拿 signal（U7 穿透）；runSession 失败内部降级；
+  //   finally 里 endRun 清理（只删自己那个 controller）。
+  function sendMessage(input: string): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id || !input.trim()) return
+    const meta = core.rootStore.getter(sessionsAtom)[id]
+    if (!meta) return
+
+    // 忙碌守卫（codex P2）：当前会话 run 正在跑 / 等工具 / 等用户回答时，不接受新输入。否则新 run
+    //   会顶掉未完成的旧 run；尤其 waiting_user 时，上一条 assistant 的 ask_user tool_call 尚无
+    //   对应 tool result，重发会构成非法 tool-call 序列被接口拒。UI（Composer）也会锁输入，这里是
+    //   命令层兜底（防任何编程路径）。
+    const status = core.getSessionStore(id).store.getter(runAtom)?.status
+    if (
+      status === 'running' ||
+      status === 'awaiting_tool' ||
+      status === 'waiting_user' ||
+      status === 'waiting_confirmation'
+      || status === 'waiting_plan_approval'
+    )
+      return
+
+    // 自动标题（TT1）：标题仍为默认值时，用本条输入派生一次标题（复用 renameSession 走
+    //   ghost guard/updatedAt/落盘）。用户改过名（≠默认）绝不覆盖；同会话第二条消息时标题
+    //   已非默认，天然不再触发。派生为空（理论上上面已挡空输入）→ 保留默认名。
+    if (meta.title === DEFAULT_SESSION_TITLE) {
+      const derived = deriveSessionTitle(input)
+      if (derived) renameSession(id, derived)
+    }
+
+    const apiKey = meta.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
+    const signal = core.abort.beginRun(id)
+    void runSession(id, input, { signal, apiKey, fetchImpl: core.config.fetchImpl, core }).finally(() =>
+      core.abort.endRun(id, signal),
+    )
+  }
+
+  // 简介：esc —— 中断当前 active 会话正在跑的 run。
+  function stopRun(): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (id) core.abort.abortRun(id)
+  }
+
+  // 简介：撤回当前未完成轮并把该轮用户输入放回 Composer 草稿。
+  // 详情：仅处理 run.status==='stopped' 的当前 active 会话；成功完成的轮次走 checkpoint 回退，不走这里。
+  //   该操作只撤回对话 transcript，不承诺撤销已执行的外部副作用；若本轮出现过危险/执行类工具，会写入提示。
+  function withdrawCurrentTurnToDraft(): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+    const store = core.getSessionStore(id).store
+    const run = store.getter(runAtom)
+    if (run?.status !== 'stopped') return
+
+    const items = store.getter(itemsAtom)
+    const start = currentTurnStartIndex(items)
+    if (start < 0) return
+    const user = items[start].item
+    if (user.role !== 'user') return
+
+    core.abort.abortRun(id)
+    const turnItems = items.slice(start)
+    const sideEffects = currentTurnHasSideEffects(turnItems)
+    const cutoffCreatedAt = items[start].createdAt
+    setItems(id, items.slice(0, start), core)
+    setRun(id, undefined, core)
+    setComposerDraft(id, user.content, core)
+    pruneBrowserCardsAfter(id, cutoffCreatedAt - 1, core)
+    pruneRuntimeTranscriptEventsAfter(id, cutoffCreatedAt - 1, core)
+    setWithdrawnTurnNotice(id, {
+      id: newId(),
+      createdAt: Date.now(),
+      text: sideEffects
+        ? '已撤回本轮对话并放回输入框；本轮已触发过工具，外部副作用不会被自动撤销。'
+        : '已撤回本轮对话并放回输入框。',
+      sideEffects,
+    }, core)
+  }
+
+  // 简介：ask_user 恢复（T-7/TK7）—— 用户填完答案后续跑 pending run。
+  // 详情：仅当当前 active 会话 run 处于 waiting_user 时生效。从 itemsAtom 找最后一条 assistant 的
+  //   ask_user_question tool_call（取其 id=tool_call_id）；找不到则容错清 pendingQuestion + 落回
+  //   running 后返回（不续跑）。否则读并清 pendingQuestionAnswers → 回填 ask_user 的 ToolItem（把
+  //   {answers} 当 tool result）→ 落回 running + 清 pendingQuestion → 复用 pending run 的 runId、
+  //   beginRun 拿新 signal，走 runToolLoop 续跑（apiKey 按会话 vendor 取，与 sendMessage 同逻辑；
+  //   finally endRun 清理）。
+  function resumeWithAnswers(): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+    const run = core.getSessionStore(id).store.getter(runAtom)
+    if (run?.status !== 'waiting_user') return
+
+    // 找待回填的 ask_user tool_call id。
+    const toolCallId = findAskUserToolCallId(core.getSessionStore(id).store.getter(itemsAtom))
+    // 容错：找不到 ask_user 调用（异常/被回退过）→ 清 pendingQuestion + 落回 running，不续跑。
+    if (!toolCallId) {
+      patchRun(id, { status: 'running', pendingQuestion: undefined }, core)
+      return
+    }
+
+    // 读答案 + 清答案（避免旧答案污染下一次等待用户输入）。
+    const answers = getPendingQuestionAnswers(id, core)
+    clearPendingQuestionAnswers(id, core)
+    addEvent('agent.resume.answers', {
+      span: getActiveSpan(runTraceKey(id, run.runId)),
+      attrs: { sessionId: id, runId: run.runId, callId: toolCallId, answers_count: Object.keys(answers).length },
+    })
+
+    // 回填 ask_user 的 ToolItem：把 {answers} 作为 tool result 回给 model。
+    appendItem(id, {
+      id: newId(),
+      createdAt: Date.now(),
+      item: { role: 'tool', tool_call_id: toolCallId, content: JSON.stringify({ answers }) },
+    }, core)
+
+    // 落回 running + 清 pendingQuestion，复用 pending run 的 runId 续跑同一条 run。
+    patchRun(id, { status: 'running', pendingQuestion: undefined }, core)
+
+    const meta = core.rootStore.getter(sessionsAtom)[id]
+    const apiKey = meta?.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
+    const signal = core.abort.beginRun(id)
+    void runToolLoop(id, run.runId, { signal, apiKey, fetchImpl: core.config.fetchImpl, core }).finally(() =>
+      core.abort.endRun(id, signal),
+    )
+  }
+
+  // 简介：危险工具确认恢复（S4-B）—— 用户在确认卡片点「允许」/「拒绝」后续跑 pending run。镜像 resumeWithAnswers。
+  // 详情：仅当当前 active 会话 run 处于 waiting_confirmation 时生效。取 pendingToolConfirmation；缺失则容错清空 +
+  //   落回 running 后返回（不续跑）。approved=true → 复用 pending run 的 runId，把该危险工具作为 resumeToolCall
+  //   传进 runToolLoop（循环开头执行它、回填结果，再进正常多轮）；always=true 则先把该工具记进本 session
+  //   「一律允许」集合（后续不再确认）。approved=false → 给该 tool_call 回填 {error} result 后重入循环，
+  //   让 model 据此改道。apiKey 按会话 vendor 取（与 sendMessage 同逻辑）；finally endRun 清理。
+  function confirmTool(approved: boolean, always?: boolean): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+    const run = core.getSessionStore(id).store.getter(runAtom)
+    if (run?.status !== 'waiting_confirmation') return
+
+    const pending = run.pendingToolConfirmation
+    // 容错：无 pending（异常/被回退过）→ 清 pendingToolConfirmation + 落回 running，不续跑。
+    if (!pending) {
+      addEvent('agent.confirmation.missing_pending', {
+        span: getActiveSpan(runTraceKey(id, run.runId)),
+        attrs: { sessionId: id, runId: run.runId },
+      })
+      patchRun(id, { status: 'running', pendingToolConfirmation: undefined }, core)
+      return
+    }
+    addEvent('agent.confirmation.decision', {
+      span: getActiveSpan(runTraceKey(id, run.runId)),
+      attrs: {
+        sessionId: id,
+        runId: run.runId,
+        toolName: pending.toolName,
+        callId: pending.callId,
+        approved,
+        always: Boolean(always),
+      },
+    })
+
+    const meta = core.rootStore.getter(sessionsAtom)[id]
+    const apiKey = meta?.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
+
+    if (!approved) {
+      // 拒绝：给该 tool_call 回填 error result（序列合法），落回 running，重入循环让 model 改道。
+      appendItem(id, {
+        id: newId(),
+        createdAt: Date.now(),
+        item: { role: 'tool', tool_call_id: pending.callId, content: JSON.stringify({ error: '用户拒绝执行该工具' }) },
+      }, core)
+      patchRun(id, { status: 'running', pendingToolConfirmation: undefined }, core)
+      const signal = core.abort.beginRun(id)
+      void runToolLoop(id, run.runId, { signal, apiKey, fetchImpl: core.config.fetchImpl, core }).finally(() =>
+        core.abort.endRun(id, signal),
+      )
+      return
+    }
+
+    // 允许：可选「本 session 一律允许该工具」→ 记瞬态集合；落回 running，重入循环并让其先执行被确认工具。
+    if (always) addAlwaysAllowedTool(id, pending.toolName, core)
+    patchRun(id, { status: 'running', pendingToolConfirmation: undefined }, core)
+    const signal = core.abort.beginRun(id)
+    void runToolLoop(id, run.runId, {
+      signal,
+      apiKey,
+      fetchImpl: core.config.fetchImpl,
+      resumeToolCall: { callId: pending.callId, toolName: pending.toolName, args: pending.args },
+      core,
+    }).finally(() => core.abort.endRun(id, signal))
+  }
+
+  // 计划审批是宿主专用命令：模型没有对应 approve tool，因而不能自批。
+  // 注：getPlan/setPlan 尚未收 core（planning 本期不穿线），故计划读写仍落 defaultCore —— 隔离实例上
+  //   approvePlan 的计划态会漂到 defaultCore，属已知缺口（本期不碰 planning/evaluation）；默认实例无影响。
+  function approvePlan(approved: boolean): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+    const run = core.getSessionStore(id).store.getter(runAtom)
+    const pending = run?.pendingPlanApproval
+    if (run?.status !== 'waiting_plan_approval' || !pending) return
+
+    const runtime = new PlanRuntime({ get: () => getPlan(id), set: (plan) => setPlan(id, plan) }, Date.now, newId)
+    const decision = runtime.approve(pending.planId, pending.revision, approved)
+    const content = decision.ok
+      ? JSON.stringify(approved ? { approved: true, plan: decision.plan } : { error: '用户拒绝了计划', plan: decision.plan })
+      : JSON.stringify({ error: decision.error })
+    appendItem(id, {
+      id: newId(),
+      createdAt: Date.now(),
+      item: { role: 'tool', tool_call_id: pending.callId, content },
+    }, core)
+    patchRun(id, { status: 'running', pendingPlanApproval: undefined }, core)
+
+    const meta = core.rootStore.getter(sessionsAtom)[id]
+    const apiKey = meta?.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
+    const signal = core.abort.beginRun(id)
+    void runToolLoop(id, run.runId, { signal, apiKey, fetchImpl: core.config.fetchImpl, core }).finally(() => core.abort.endRun(id, signal))
+  }
+
+  // 最终结果验收同样是宿主专用命令；显式 planId/revision 让切会话和双击都 fail-closed。
+  // 注：同 approvePlan，getPlan/setPlan 未收 core → 计划态落 defaultCore（planning 本期不穿线）。
+  function acceptPlanResult(planId: string, revision: number, accepted: boolean): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+    const runtime = new EvaluationRuntime({ get: () => getPlan(id), set: (plan) => setPlan(id, plan) }, Date.now)
+    runtime.acceptPlan(planId, revision, accepted)
+  }
+
+  // =========================================================================
+  // 卡片交互命令（P8-c）—— UI 卡片的答案回填 / 产物丢弃
+  // =========================================================================
+
+  // 简介：记录当前 active 会话某个 question 的答案（AskUserQuestionCard onChange 调用）。
+  // 详情：取 activeId，无 active → no-op。写入走 transientAtoms 的 setter（内部已带 ghost guard）。
+  function answerQuestion(questionId: string, value: AskUserAnswerValue): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+    setPendingQuestionAnswer(id, questionId, value, core)
+  }
+
+  // 简介：从指定会话丢弃一个 save_file 待保存产物（SaveArtifact 保存成功后调用）。
+  // 详情：收显式 sessionId（PF4）—— 卡片点击时捕获归属会话，异步保存期间 active 可能被切走，
+  //   故不取 active，只删传入 sessionId 的产物（removePendingArtifact 内部带 ghost guard）。
+  function discardArtifact(sessionId: string, artifactId: string): void {
+    removePendingArtifact(sessionId, artifactId, core)
+  }
+
+  // =========================================================================
+  // 回退命令
+  // =========================================================================
+
+  // 简介：对当前 active 会话回退到第 turnIndex 轮（截断式回退）。
+  function revertToTurn(turnIndex: number): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+    // 先校验 turnIndex 合法（越界/负数 → 整体 no-op）。否则 jumpToCheckpoint 内存里 no-op、但
+    // persistTruncate(id, -1) 会走 truncateAfter(id, -1) 把盘上「全部」checkpoint 删光，刷新丢历史
+    // （codex P2）。校验读该会话 store 的 checkpointsAtom；幽灵会话取到 [] → 任何 index 都越界 → no-op。
+    const checkpoints = core.getSessionStore(id).store.getter(checkpointsAtom)
+    if (turnIndex < 0 || turnIndex >= checkpoints.length) return
+    // 回退前先停当前 run —— 否则回退改了 items/checkpoints，正在跑的 run 完成时又
+    // appendItem/commitCheckpoint 会污染回退后的状态（与 removeSession 的破坏性命令前先 abort 一致）。
+    core.abort.abortRun(id)
+    jumpToCheckpoint(id, turnIndex, core)
+    // 剪掉「被丢弃轮次」产生的 browser 卡片（codex P2）：browserCards 不进 checkpoint 快照，
+    //   jumpToCheckpoint 只截断 items，需按回退点 checkpoint 的 createdAt 把之后的卡片一并剪掉，
+    //   否则回退后仍渲染已废弃轮的卡片。
+    pruneBrowserCardsAfter(id, checkpoints[turnIndex].createdAt, core)
+    pruneRuntimeTranscriptEventsAfter(id, checkpoints[turnIndex].createdAt, core)
+    persistTruncate(id, turnIndex) // D-4：截断式回退 → 同步截断持久化 checkpoint（fire-and-forget）。
+  }
+
+  return {
+    renameSession,
+    newSession,
+    selectSession,
+    removeSession,
+    setWorkspaceRoot,
+    sendMessage,
+    stopRun,
+    withdrawCurrentTurnToDraft,
+    resumeWithAnswers,
+    confirmTool,
+    approvePlan,
+    acceptPlanResult,
+    answerQuestion,
+    discardArtifact,
+    revertToTurn,
+  }
+}
+
+// createCommands 的返回形状 —— UI ↔ runtime 的命令面（configureCommands 除外，见其说明）。
+// 用 ReturnType 从工厂返回值推导，零漂移（新增/改命令自动同步到类型）。
+export type CommandApi = ReturnType<typeof createCommands>
+
+// ===========================================================================
+// 模块级命令导出 —— 绑定 defaultCore（行为逐字不变，现有 UI/测试 import 一行不用改）
+// ===========================================================================
+// createCommands() 无参 → core=defaultCore，成员即穿线前的模块级命令。UI/测试照旧
+//   `import { sendMessage, ... } from './commands'` 拿到的就是绑定默认实例的那一组。
+export const {
+  renameSession,
+  newSession,
+  selectSession,
+  removeSession,
+  setWorkspaceRoot,
+  sendMessage,
+  stopRun,
+  withdrawCurrentTurnToDraft,
+  resumeWithAnswers,
+  confirmTool,
+  approvePlan,
+  acceptPlanResult,
+  answerQuestion,
+  discardArtifact,
+  revertToTurn,
+} = createCommands()

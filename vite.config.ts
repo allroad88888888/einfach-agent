@@ -219,6 +219,16 @@ export default defineConfig({
     alias: {
       react: fromRoot('./node_modules/react'),
       'react-dom': fromRoot('./node_modules/react-dom'),
+      '@web-agent/ai': fromRoot('./packages/agent-ai/src/index.ts'),
+      '@web-agent/core': fromRoot('./packages/agent-core/src'),
+      // 工具域包 + meta（TSPLIT）：各解析到自己的 barrel。tools-* 更具体，排在 tools 之前。
+      '@web-agent/tools-shell': fromRoot('./packages/tools-shell/src/index.ts'),
+      '@web-agent/tools-interaction': fromRoot('./packages/tools-interaction/src/index.ts'),
+      '@web-agent/tools-fs': fromRoot('./packages/tools-fs/src/index.ts'),
+      '@web-agent/tools-planning': fromRoot('./packages/tools-planning/src/index.ts'),
+      '@web-agent/tools-skills': fromRoot('./packages/tools-skills/src/index.ts'),
+      '@web-agent/tools-agents': fromRoot('./packages/tools-agents/src/index.ts'),
+      '@web-agent/tools': fromRoot('./packages/tools/src/index.ts'),
       '@': fromRoot('./src'),
     },
     dedupe: ['react', 'react-dom'],

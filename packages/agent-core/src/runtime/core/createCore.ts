@@ -1,0 +1,40 @@
+// runtime/core/createCore.ts —— 「实例化」第 3 期收口：组装「隔离实例 + 绑定它的命令集」。
+// ---------------------------------------------------------------------------
+// createCore(opts?) = createCoreInstance(opts) 造一套隔离的 store/registry/abort/config，再
+//   createCommands(instance) 造一组【只在这套实例上跑】的命令，合体返回 CoreInstance & CommandApi。
+//   于是 createCore().sendMessage(...) 就在它自己的 store/registry/abort/config 上跑，与 defaultCore
+//   完全隔离 —— 这是「能嵌两次」的收口证明（见 createCore.test.ts）。opts.config 预置 apiKey 等，
+//   隔离实例的命令读自己的 core.config（不经 configureCommands，那个专写 defaultCore.config）。
+//
+// 【为何单独成文件、不放进 coreInstance.ts】coreInstance.ts 的架构不变量是「叶子模块」：只 import
+//   createStore / createToolRegistry / registerStandardTools，【绝不】import 任何视图/上层模块，构成
+//   单向依赖「视图 → coreInstance」无环（见 coreInstance.ts 顶部注释）。而 createCore 要 import
+//   commands.ts（上层：commands.ts 又 import modelRun/coreInstance 等），若塞进 coreInstance.ts 就成了
+//   coreInstance → commands → coreInstance 的反向边，破坏该不变量、且有 init 期环风险。故 createCore
+//   独立成【顶层组合模块】：createCore.ts → coreInstance.ts + commands.ts；两者都不 import 本文件，
+//   本文件是叶子消费方，无环。
+//
+// 【已知缺口 · 非本期】modelRun.ts 内的 ensureToolLoaded / isToolAlwaysAllowed 尚未接下本地 core 变量
+//   （另做，见 modelRun 待办），planning 的 getPlan/setPlan 也未收 core。故 createCore 出的隔离实例在
+//   「工具懒加载 / 计划态」这两处仍会落到 defaultCore；store/registry/abort/config + 写路径已 100% 隔离。
+
+import { createCoreInstance, type CoreInstance, type RuntimeConfig } from './coreInstance'
+import type { ToolRegistry } from '../../tools/toolRegistry'
+import { createCommands, type CommandApi } from '../commands'
+
+// 简介：造一套隔离的 CoreInstance 并把绑定它的命令挂上去，合体返回。
+// 详情：命令用 createCommands(instance) 绑到 instance 本体，再 Object.assign 把这些命令方法挂回
+//   instance ——【故返回对象 === 命令闭包里那个 core】，命令派给 runSession/runToolLoop 的 core 就是
+//   这个返回对象本身（不是它的浅拷贝），身份自洽。instance 与 commands 无字段名冲突（CoreInstance:
+//   rootStore/getSessionStore/tools/abort/config…；CommandApi: sendMessage/newSession/…），故 assign
+//   不会覆盖任何实例字段。想分开引用两半时解构返回值即可。
+export function createCore(opts?: {
+  config?: Partial<RuntimeConfig>
+  // 登记反转（TS1）：把工具装进这个隔离实例的私有 registry；透传给 createCoreInstance。
+  // 不传则该实例【无工具】——嵌入方按需 registerStandardTools(core.tools) 或装自定义工具集。
+  registerTools?: (registry: ToolRegistry) => void
+}): CoreInstance & CommandApi {
+  const instance = createCoreInstance(opts)
+  const commands = createCommands(instance)
+  return Object.assign(instance, commands)
+}

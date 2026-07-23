@@ -2,15 +2,15 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import { fireEvent, screen, act } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
-import { runAtom } from '../state/sessionAtoms'
-import { pendingQuestionAnswersAtom } from '../state/transientAtoms'
+import { runAtom } from '@web-agent/core/state/sessionAtoms'
+import { pendingQuestionAnswersAtom } from '@web-agent/core/state/transientAtoms'
 import { AskUserQuestionCard } from './AskUserQuestionCard'
-import { answerQuestion, resumeWithAnswers } from '../runtime/commands'
+import { answerQuestion, resumeWithAnswers } from '@web-agent/core/runtime/commands'
 
 // P8-d AskUserQuestionCard：暂停确认卡片。契约 U1 —— UI 只读 atom（runAtom /
 // pendingQuestionAnswersAtom）+ 调命令（answerQuestion / resumeWithAnswers）。
 // 这里把命令整模块 mock，断言「改了什么就调了什么」，不触碰真正的 runtime / store writer。
-vi.mock('../runtime/commands', () => ({
+vi.mock('@web-agent/core/runtime/commands', () => ({
   answerQuestion: vi.fn(),
   resumeWithAnswers: vi.fn(),
 }))

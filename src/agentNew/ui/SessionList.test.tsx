@@ -1,15 +1,15 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import { renderWithStore } from '../../test/renderWithStore'
-import { rootStore, sessionsAtom, activeSessionIdAtom, resetRootStore } from '../state/rootStore'
-import { newSession, selectSession, removeSession, renameSession } from '../runtime/commands'
+import { rootStore, sessionsAtom, activeSessionIdAtom, resetRootStore } from '@web-agent/core/state/rootStore'
+import { newSession, selectSession, removeSession, renameSession } from '@web-agent/core/runtime/commands'
 import { SessionList } from './SessionList'
 
 // P-U2 SessionList：左栏会话列表。契约 U1 —— UI 只读 atom（sessionsAtom /
 // activeSessionIdAtom）+ 调命令（newSession / selectSession / removeSession /
 // renameSession），绝不碰 store setter / writers。故 commands 整个 mock 掉，
 // 只断言「点了什么 → 调了哪个命令」。
-vi.mock('../runtime/commands', () => ({
+vi.mock('@web-agent/core/runtime/commands', () => ({
   newSession: vi.fn(),
   selectSession: vi.fn(),
   removeSession: vi.fn(),

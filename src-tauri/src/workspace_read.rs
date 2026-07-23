@@ -1,14 +1,20 @@
 use crate::workspace_common::resolve_workspace_root;
 use serde::Serialize;
 use std::{
+    collections::hash_map::DefaultHasher,
     fs,
     fs::File,
+    hash::{Hash, Hasher},
     io::Read,
     path::{Path, PathBuf, MAIN_SEPARATOR},
 };
 
 const DEFAULT_READ_MAX_BYTES: usize = 20_000;
 const MAX_READ_BYTES: usize = 200_000;
+const DEFAULT_RUN_INDEX_PAGE_RECORDS: usize = 50;
+const MAX_RUN_INDEX_PAGE_RECORDS: usize = 500;
+const MAX_RUN_INDEX_BYTES: usize = 16 * 1024 * 1024;
+const RUNS_INDEX_PATH: &str = ".agent-archive/index/runs.jsonl";
 const DEFAULT_LIST_MAX_ENTRIES: usize = 200;
 const MAX_LIST_ENTRIES: usize = 2_000;
 const DEFAULT_SEARCH_MAX_MATCHES: usize = 100;
@@ -41,6 +47,24 @@ pub struct ReadWorkspaceFileResult {
     content: String,
     truncated: bool,
     bytes: usize,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceJsonlLine {
+    line_number: usize,
+    content: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReadWorkspaceRunIndexPageResult {
+    path: String,
+    lines: Vec<WorkspaceJsonlLine>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cursor: Option<String>,
+    has_more: bool,
+    snapshot: String,
 }
 
 #[derive(Serialize)]
@@ -86,6 +110,21 @@ pub async fn read_workspace_file(
     })
     .await
     .map_err(|err| format!("read_workspace_file worker failed: {err}"))?
+}
+
+/// 从 runs.jsonl 文件尾向前稳定分页。cursor 绑定完整文件内容 fingerprint；append、压缩或
+/// 替换发生后旧 cursor 会显式失效，前端不能把两个索引版本静默拼接。
+#[tauri::command(rename_all = "snake_case")]
+pub async fn read_workspace_run_index_page(
+    cursor: Option<String>,
+    max_records: Option<usize>,
+    workspace_root: Option<String>,
+) -> Result<ReadWorkspaceRunIndexPageResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        read_workspace_run_index_page_blocking(cursor, max_records, workspace_root)
+    })
+    .await
+    .map_err(|err| format!("read_workspace_run_index_page worker failed: {err}"))?
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -162,6 +201,114 @@ fn read_workspace_file_blocking(
         content,
         truncated,
         bytes,
+    })
+}
+
+fn run_index_snapshot(bytes: &[u8]) -> String {
+    let mut hasher = DefaultHasher::new();
+    bytes.hash(&mut hasher);
+    format!("v1-{}-{:016x}", bytes.len(), hasher.finish())
+}
+
+fn parse_run_index_cursor(cursor: &str) -> Result<(&str, usize), String> {
+    let (snapshot, before) = cursor
+        .rsplit_once(':')
+        .ok_or_else(|| "run index cursor is invalid; refresh history".to_string())?;
+    if !snapshot.starts_with("v1-") {
+        return Err("run index cursor version is unsupported; refresh history".to_string());
+    }
+    let before = before
+        .parse::<usize>()
+        .map_err(|_| "run index cursor is invalid; refresh history".to_string())?;
+    Ok((snapshot, before))
+}
+
+fn read_workspace_run_index_page_blocking(
+    cursor: Option<String>,
+    max_records: Option<usize>,
+    workspace_root: Option<String>,
+) -> Result<ReadWorkspaceRunIndexPageResult, String> {
+    let root = resolve_workspace_root(workspace_root.as_deref())?;
+    let file_path = resolve_workspace_path(&root, RUNS_INDEX_PATH)?;
+    let metadata = fs::metadata(&file_path).map_err(|err| {
+        format!(
+            "file `{}` is not accessible: {err}",
+            display_path(&file_path)
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(format!("path `{}` is not a file", display_path(&file_path)));
+    }
+    if metadata.len() > MAX_RUN_INDEX_BYTES as u64 {
+        return Err(format!(
+            "run index exceeds the {} byte safety limit; compact the index first",
+            MAX_RUN_INDEX_BYTES
+        ));
+    }
+
+    let mut file = File::open(&file_path)
+        .map_err(|err| format!("failed to open `{}`: {err}", display_path(&file_path)))?;
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.read_to_end(&mut bytes)
+        .map_err(|err| format!("failed to read `{}`: {err}", display_path(&file_path)))?;
+    if bytes.len() > MAX_RUN_INDEX_BYTES {
+        return Err(format!(
+            "run index exceeds the {} byte safety limit; compact the index first",
+            MAX_RUN_INDEX_BYTES
+        ));
+    }
+    reject_binary_bytes(&bytes, &file_path)?;
+    let content = std::str::from_utf8(&bytes).map_err(|_| {
+        format!(
+            "refusing to read non-UTF-8 file `{}`",
+            display_path(&file_path)
+        )
+    })?;
+    let snapshot = run_index_snapshot(&bytes);
+    let all_lines: Vec<&str> = content.lines().collect();
+    let before = if let Some(cursor) = cursor.as_deref() {
+        let (expected_snapshot, before) = parse_run_index_cursor(cursor)?;
+        if expected_snapshot != snapshot {
+            return Err("run index changed while paging; refresh history".to_string());
+        }
+        if before > all_lines.len() {
+            return Err("run index cursor is out of range; refresh history".to_string());
+        }
+        before
+    } else {
+        all_lines.len()
+    };
+    let max_records = normalize_positive(
+        max_records,
+        DEFAULT_RUN_INDEX_PAGE_RECORDS,
+        MAX_RUN_INDEX_PAGE_RECORDS,
+    );
+    let mut lines = Vec::with_capacity(max_records);
+    let mut next_before = before;
+    for index in (0..before).rev() {
+        next_before = index;
+        if all_lines[index].trim().is_empty() {
+            continue;
+        }
+        lines.push(WorkspaceJsonlLine {
+            line_number: index + 1,
+            content: all_lines[index].to_string(),
+        });
+        if lines.len() == max_records {
+            break;
+        }
+    }
+    let has_more = all_lines[..next_before]
+        .iter()
+        .any(|line| !line.trim().is_empty());
+    let cursor = has_more.then(|| format!("{snapshot}:{next_before}"));
+
+    Ok(ReadWorkspaceRunIndexPageResult {
+        path: RUNS_INDEX_PATH.to_string(),
+        lines,
+        cursor,
+        has_more,
+        snapshot,
     })
 }
 
@@ -406,7 +553,14 @@ fn collect_search_matches(
                 continue;
             }
             collect_search_matches(
-                root, &path, query, glob, max_matches, scanned, matches, truncated,
+                root,
+                &path,
+                query,
+                glob,
+                max_matches,
+                scanned,
+                matches,
+                truncated,
             )?;
         } else if metadata.is_file() {
             maybe_search_file(root, &path, query, glob, max_matches, matches, truncated)?;
@@ -624,6 +778,7 @@ mod tests {
     // 真读磁盘的集成测试：用 fs::write 造真文件，显式把该目录作为 workspace_root 传入 *_blocking，
     // 验证 read/list/search 真读到内容，以及 confine（../、workspace 外绝对路径、文件系统根 `/`）在真实路径下被拒。
     use super::*;
+    use std::io::Write;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     // 返回 (base, workspace)：base 唯一且 canonicalize；workspace = base/ws 也 canonicalize
@@ -661,15 +816,104 @@ mod tests {
     }
 
     #[test]
+    fn run_index_pages_from_newest_without_truncating_large_unique_history() {
+        let (base, ws) = unique_workspace();
+        let index_dir = ws.join(".agent-archive/index");
+        fs::create_dir_all(&index_dir).expect("mkdir index");
+        let content = (0..4_000)
+            .map(|index| {
+                format!(
+                    r#"{{"conversationId":"c-{index}","runId":"r-{index}","padding":"{}"}}"#,
+                    "x".repeat(32)
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            content.len() > MAX_READ_BYTES,
+            "fixture must exceed generic read cap"
+        );
+        fs::write(index_dir.join("runs.jsonl"), format!("{content}\n")).expect("seed runs index");
+
+        let first = read_workspace_run_index_page_blocking(None, Some(2), root_arg(&ws))
+            .expect("first page");
+        assert_eq!(first.lines.len(), 2);
+        assert_eq!(first.lines[0].line_number, 4_000);
+        assert!(first.lines[0].content.contains(r#""runId":"r-3999""#));
+        assert!(first.has_more);
+
+        let second =
+            read_workspace_run_index_page_blocking(first.cursor.clone(), Some(2), root_arg(&ws))
+                .expect("second page");
+        assert_eq!(second.lines[0].line_number, 3_998);
+        assert!(second.lines[0].content.contains(r#""runId":"r-3997""#));
+        assert_eq!(second.snapshot, first.snapshot);
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn run_index_cursor_fails_closed_after_append() {
+        let (base, ws) = unique_workspace();
+        let index_dir = ws.join(".agent-archive/index");
+        fs::create_dir_all(&index_dir).expect("mkdir index");
+        let index_path = index_dir.join("runs.jsonl");
+        fs::write(&index_path, "{\"runId\":\"r1\"}\n{\"runId\":\"r2\"}\n")
+            .expect("seed runs index");
+        let first = read_workspace_run_index_page_blocking(None, Some(1), root_arg(&ws))
+            .expect("first page");
+        fs::OpenOptions::new()
+            .append(true)
+            .open(&index_path)
+            .expect("open append")
+            .write_all(b"{\"runId\":\"r3\"}\n")
+            .expect("append run");
+
+        let error = read_workspace_run_index_page_blocking(first.cursor, Some(1), root_arg(&ws))
+            .err()
+            .expect("stale cursor must fail");
+        assert!(error.contains("changed while paging"), "actual: {error}");
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn run_index_cursor_fails_closed_after_compaction_replacement() {
+        let (base, ws) = unique_workspace();
+        let index_dir = ws.join(".agent-archive/index");
+        fs::create_dir_all(&index_dir).expect("mkdir index");
+        let index_path = index_dir.join("runs.jsonl");
+        fs::write(&index_path, "{\"runId\":\"old\"}\n{\"runId\":\"latest\"}\n")
+            .expect("seed runs index");
+        let first = read_workspace_run_index_page_blocking(None, Some(1), root_arg(&ws))
+            .expect("first page");
+        let replacement = index_dir.join("runs.jsonl.compact.tmp");
+        fs::write(&replacement, "{\"runId\":\"latest\"}\n").expect("write compacted index");
+        fs::rename(&replacement, &index_path).expect("replace with compacted index");
+
+        let error = read_workspace_run_index_page_blocking(first.cursor, Some(1), root_arg(&ws))
+            .err()
+            .expect("cursor from pre-compaction snapshot must fail");
+        assert!(error.contains("changed while paging"), "actual: {error}");
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
     fn list_files_includes_nested_entry() {
         // list_files 递归列出真实存在的嵌套文件。
         let (base, ws) = unique_workspace();
         fs::create_dir_all(ws.join("src")).expect("mkdir src");
         fs::write(ws.join("src/app.ts"), "export const x = 1;\n").expect("seed nested file");
 
-        let result =
-            list_workspace_files_blocking(Some(".".to_string()), Some(true), None, None, root_arg(&ws))
-                .expect("list should succeed");
+        let result = list_workspace_files_blocking(
+            Some(".".to_string()),
+            Some(true),
+            None,
+            None,
+            root_arg(&ws),
+        )
+        .expect("list should succeed");
         assert!(
             result
                 .entries
@@ -717,11 +961,11 @@ mod tests {
         fs::write(base.join("secret.txt"), "top secret").expect("seed outside file");
 
         // ReadWorkspaceFileResult 无 Debug，避免 expect_err，直接 match 取 Err。
-        let err = match read_workspace_file_blocking("../secret.txt".to_string(), None, root_arg(&ws))
-        {
-            Err(err) => err,
-            Ok(_) => panic!("workspace 外文件必须被拒"),
-        };
+        let err =
+            match read_workspace_file_blocking("../secret.txt".to_string(), None, root_arg(&ws)) {
+                Err(err) => err,
+                Ok(_) => panic!("workspace 外文件必须被拒"),
+            };
         assert!(
             err.contains("escapes workspace root") || err.contains("not accessible"),
             "应因越界被拒，实际: {err}"

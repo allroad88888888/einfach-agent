@@ -1,19 +1,25 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { Provider } from '@einfach/react'
-import { rootStore } from './agentNew/state/rootStore'
-import { configureCommands, newSession } from './agentNew/runtime/commands'
-import { configurePersistence } from './agentNew/runtime/persistenceBridge'
-import { configureObservability } from './agentNew/observability/trace'
-import { hydrate } from './agentNew/state/persistence/hydrate'
-import { createIndexedDbHistoryDriver } from './agentNew/state/persistence/indexedDbDriver'
-import { createIndexedDbLogDriver } from './agentNew/observability/indexedDbLogDriver'
-import { createSessionsPersistence } from './agentNew/state/persistence/sessionsPersistence'
+import { rootStore } from '@web-agent/core/state/rootStore'
+import { toolRegistry } from '@web-agent/core/tools/registry'
+import { registerStandardTools } from '@web-agent/tools'
+import { configureCommands, newSession } from '@web-agent/core/runtime/commands'
+import { configurePersistence } from '@web-agent/core/runtime/persistenceBridge'
+import { configureObservability } from '@web-agent/core/observability/trace'
+import { hydrate } from '@web-agent/core/state/persistence/hydrate'
+import { createIndexedDbHistoryDriver } from '@web-agent/core/state/persistence/indexedDbDriver'
+import { createIndexedDbLogDriver } from '@web-agent/core/observability/indexedDbLogDriver'
+import { createSessionsPersistence } from '@web-agent/core/state/persistence/sessionsPersistence'
 import { isTauri } from '@tauri-apps/api/core'
 import { AppShell } from './agentNew/ui/AppShell'
-import { TraceViewer } from './agentNew/observability/TraceViewer'
+import { TraceViewer } from '@web-agent/core/observability/TraceViewer'
 import './styles/global.css'
 import './agentNew/ui/agentnew.css'
+
+// 【登记反转 · TS1】defaultCore 造出来是无工具的——app 在此把标准工具装进它的 registry
+// （= toolRegistry = defaultCore.tools）。core 不再硬编码工具，装什么由消费方（这里是 app）决定。
+registerStandardTools(toolRegistry)
 
 // 注入 model apiKey（命令层按会话 vendor 取对应 key）。没有 key 时 model 调用会降级为 error。
 configureCommands({
@@ -26,7 +32,7 @@ configureCommands({
 // —— 只在 Tauri 下加载，浏览器 bundle 不含它（代码分割 + 避免非 Tauri 环境引 plugin-sql）。
 async function resolvePersistence() {
   if (isTauri()) {
-    const { createSqlitePersistence } = await import('./agentNew/state/persistence/sqliteDriver')
+    const { createSqlitePersistence } = await import('@web-agent/core/state/persistence/sqliteDriver')
     return createSqlitePersistence()
   }
   return {
@@ -37,7 +43,7 @@ async function resolvePersistence() {
 
 function configureObservabilityDriver(): void {
   if (isTauri()) {
-    void import('./agentNew/observability/sqliteLogDriver')
+    void import('@web-agent/core/observability/sqliteLogDriver')
       .then(({ createSqliteLogDriver }) => configureObservability({ driver: createSqliteLogDriver() }))
       .catch(() => {})
     return

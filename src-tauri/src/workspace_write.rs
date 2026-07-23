@@ -2,12 +2,20 @@ use crate::workspace_common::resolve_workspace_root;
 use serde::Serialize;
 use std::{
     fs,
-    io::Write,
-    path::{Component, MAIN_SEPARATOR, Path, PathBuf},
+    io::{Seek, SeekFrom, Write},
+    path::{Component, Path, PathBuf, MAIN_SEPARATOR},
+    thread,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 const DEFAULT_MAX_BYTES: usize = 200 * 1024;
 const MAX_BYTES: usize = 1024 * 1024;
+const ARCHIVE_LOCK_WAIT: Duration = Duration::from_secs(10);
+const ARCHIVE_LOCK_STALE: Duration = Duration::from_secs(30);
+const ARCHIVE_LOCK_POLL: Duration = Duration::from_millis(20);
+const INDEX_COMPACT_MIN_BYTES: u64 = 128 * 1024;
+const INDEX_COMPACT_THROTTLE: Duration = Duration::from_secs(5 * 60);
+const INDEX_COMPACT_MAX_BYTES: u64 = 16 * 1024 * 1024;
 
 #[derive(Serialize)]
 pub struct WorkspaceWriteResult {
@@ -35,6 +43,7 @@ pub async fn write_workspace_file(
     expected_old_content: Option<String>,
     create_dirs: Option<bool>,
     max_bytes: Option<usize>,
+    exclusive_path_lock: Option<bool>,
     workspace_root: Option<String>,
 ) -> Result<WorkspaceWriteResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -45,6 +54,7 @@ pub async fn write_workspace_file(
             expected_old_content,
             create_dirs,
             max_bytes,
+            exclusive_path_lock,
             workspace_root,
         )
     })
@@ -59,6 +69,7 @@ fn write_workspace_file_blocking(
     expected_old_content: Option<String>,
     create_dirs: Option<bool>,
     max_bytes: Option<usize>,
+    exclusive_path_lock: Option<bool>,
     workspace_root_arg: Option<String>,
 ) -> Result<WorkspaceWriteResult, String> {
     let mode = match parse_mode(mode.as_deref()) {
@@ -108,6 +119,21 @@ fn write_workspace_file_blocking(
         }
     }
 
+    let _path_lock = if exclusive_path_lock.unwrap_or(false) {
+        match ArchivePathLock::acquire(&target_path) {
+            Ok(lock) => Some(lock),
+            Err(err) => return Ok(error_result(&display_path, err)),
+        }
+    } else {
+        None
+    };
+
+    if mode == WriteMode::Append && exclusive_path_lock.unwrap_or(false) {
+        if let Err(err) = maybe_compact_subagent_index(&target_path) {
+            return Ok(error_result(&display_path, err));
+        }
+    }
+
     let existed = target_path.exists();
     let write_result = match mode {
         WriteMode::Create => write_create(&target_path, content.as_bytes()),
@@ -134,6 +160,258 @@ fn write_workspace_file_blocking(
         }),
         Err(err) => Ok(error_result(&display_path, err)),
     }
+}
+
+struct ArchivePathLock {
+    path: PathBuf,
+    token: String,
+    heartbeat_stop: std::sync::mpsc::Sender<()>,
+    heartbeat: Option<std::thread::JoinHandle<()>>,
+}
+
+impl ArchivePathLock {
+    fn acquire(target: &Path) -> Result<Self, String> {
+        Self::acquire_with(target, ARCHIVE_LOCK_WAIT, ARCHIVE_LOCK_STALE)
+    }
+
+    fn acquire_with(target: &Path, wait: Duration, stale: Duration) -> Result<Self, String> {
+        let lock_path = archive_lock_path(target)?;
+        let started = SystemTime::now();
+        let token = format!(
+            "{}-{}",
+            std::process::id(),
+            started
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        );
+        loop {
+            match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&lock_path)
+            {
+                Ok(mut file) => {
+                    file.write_all(token.as_bytes()).map_err(|err| {
+                        let _ = fs::remove_file(&lock_path);
+                        format!("failed to initialize archive path lock: {err}")
+                    })?;
+                    let mut heartbeat_file = file.try_clone().map_err(|err| {
+                        let _ = fs::remove_file(&lock_path);
+                        format!("failed to initialize archive lock heartbeat: {err}")
+                    })?;
+                    let heartbeat_token = token.clone();
+                    let (heartbeat_stop, heartbeat_receiver) = std::sync::mpsc::channel();
+                    let heartbeat = thread::spawn(move || loop {
+                        match heartbeat_receiver.recv_timeout(Duration::from_secs(5)) {
+                            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                                if heartbeat_file.seek(SeekFrom::Start(0)).is_err()
+                                    || heartbeat_file
+                                        .write_all(heartbeat_token.as_bytes())
+                                        .is_err()
+                                    || heartbeat_file.flush().is_err()
+                                {
+                                    break;
+                                }
+                            }
+                            Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                        }
+                    });
+                    return Ok(Self {
+                        path: lock_path,
+                        token,
+                        heartbeat_stop,
+                        heartbeat: Some(heartbeat),
+                    });
+                }
+                Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                    if archive_lock_is_stale(&lock_path, stale) {
+                        let stale_path = lock_path.with_extension(format!("stale-{token}"));
+                        if fs::rename(&lock_path, &stale_path).is_ok() {
+                            let _ = fs::remove_file(stale_path);
+                            continue;
+                        }
+                    }
+                    if started.elapsed().unwrap_or_default() >= wait {
+                        return Err(format!(
+                            "timed out waiting for archive path lock `{}`",
+                            lock_path.to_string_lossy()
+                        ));
+                    }
+                    thread::sleep(ARCHIVE_LOCK_POLL);
+                }
+                Err(err) => return Err(format!("failed to acquire archive path lock: {err}")),
+            }
+        }
+    }
+}
+
+impl Drop for ArchivePathLock {
+    fn drop(&mut self) {
+        let _ = self.heartbeat_stop.send(());
+        if let Some(heartbeat) = self.heartbeat.take() {
+            let _ = heartbeat.join();
+        }
+        if fs::read_to_string(&self.path).ok().as_deref() == Some(self.token.as_str()) {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
+
+fn archive_lock_path(target: &Path) -> Result<PathBuf, String> {
+    let name = target
+        .file_name()
+        .ok_or_else(|| "archive path lock requires a file target".to_string())?
+        .to_string_lossy();
+    Ok(target.with_file_name(format!("{name}.archive-write.lock")))
+}
+
+fn archive_lock_is_stale(path: &Path, stale: Duration) -> bool {
+    fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|modified| modified.elapsed().ok())
+        .is_some_and(|age| age >= stale)
+}
+
+fn maybe_compact_subagent_index(path: &Path) -> Result<(), String> {
+    let Some(name) = subagent_index_name(path) else {
+        return Ok(());
+    };
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(err) => {
+            return Err(format!(
+                "failed to inspect {name} index for compaction: {err}"
+            ))
+        }
+    };
+    if metadata.len() < INDEX_COMPACT_MIN_BYTES {
+        return Ok(());
+    }
+    if metadata.len() > INDEX_COMPACT_MAX_BYTES {
+        return Err(format!(
+            "{name} index exceeds automatic compaction limit of {INDEX_COMPACT_MAX_BYTES} bytes"
+        ));
+    }
+
+    let marker = path.with_file_name(format!(".{name}.compact-at"));
+    if fs::metadata(&marker)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|modified| modified.elapsed().ok())
+        .is_some_and(|age| age < INDEX_COMPACT_THROTTLE)
+    {
+        return Ok(());
+    }
+
+    let text = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read {name} index for compaction: {err}"))?;
+    let compacted = compact_subagent_index(name, &text)?;
+    atomic_replace(path, compacted.as_bytes(), "compact")?;
+    fs::write(&marker, now_millis().to_string())
+        .map_err(|err| format!("failed to update {name} compaction marker: {err}"))?;
+    Ok(())
+}
+
+fn subagent_index_name(path: &Path) -> Option<&'static str> {
+    let filename = path.file_name()?.to_str()?;
+    let name = match filename {
+        "runs.jsonl" => "runs",
+        "skills.jsonl" => "skills",
+        "agents.jsonl" => "agents",
+        _ => return None,
+    };
+    let parent = path.parent()?;
+    if parent.file_name()?.to_str()? != "index"
+        || parent.parent()?.file_name()?.to_str()? != ".agent-archive"
+    {
+        return None;
+    }
+    Some(name)
+}
+
+fn compact_subagent_index(name: &str, text: &str) -> Result<String, String> {
+    use std::collections::HashMap;
+    let mut latest: HashMap<String, (usize, serde_json::Value)> = HashMap::new();
+    for (index, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let record: serde_json::Value = serde_json::from_str(line)
+            .map_err(|err| format!("{name} index line {}: invalid JSON ({err})", index + 1))?;
+        let object = record
+            .as_object()
+            .ok_or_else(|| format!("{name} index line {}: record must be an object", index + 1))?;
+        let field = |key: &str| {
+            object
+                .get(key)
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        };
+        let key = if name == "skills" {
+            field("skillId")
+                .ok_or_else(|| format!("skills index line {}: record requires skillId", index + 1))?
+                .to_string()
+        } else {
+            let conversation = field("conversationId").ok_or_else(|| {
+                format!(
+                    "{name} index line {}: record requires conversationId and runId",
+                    index + 1
+                )
+            })?;
+            let run = field("runId").ok_or_else(|| {
+                format!(
+                    "{name} index line {}: record requires conversationId and runId",
+                    index + 1
+                )
+            })?;
+            if name == "runs" {
+                format!("{conversation}\0{run}")
+            } else {
+                let agent_path = field("path").ok_or_else(|| {
+                    format!("agents index line {}: record requires path", index + 1)
+                })?;
+                format!("{conversation}\0{run}\0{agent_path}")
+            }
+        };
+        latest.insert(key, (index, record));
+    }
+    let mut records: Vec<_> = latest.into_values().collect();
+    records.sort_by_key(|(index, _)| *index);
+    let mut output = String::new();
+    for (_, record) in records {
+        output.push_str(
+            &serde_json::to_string(&record)
+                .map_err(|err| format!("failed to serialize compacted {name} index: {err}"))?,
+        );
+        output.push('\n');
+    }
+    Ok(output)
+}
+
+fn atomic_replace(path: &Path, content: &[u8], suffix: &str) -> Result<(), String> {
+    let temporary = path.with_extension(format!(
+        "{suffix}-{}-{}.tmp",
+        std::process::id(),
+        now_millis()
+    ));
+    fs::write(&temporary, content)
+        .map_err(|err| format!("failed to write temporary index: {err}"))?;
+    let result = fs::rename(&temporary, path)
+        .map_err(|err| format!("failed to replace compacted index: {err}"));
+    let _ = fs::remove_file(temporary);
+    result
+}
+
+fn now_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
 }
 
 // P2：把绝对路径转成相对 workspace root 的斜杠路径（与 workspace_read 同语义）——
@@ -320,6 +598,7 @@ mod tests {
     // 且 confine 拒 ../ 与 workspace 外绝对路径，越界时磁盘上不留任何文件。
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::mpsc;
 
     // (base, workspace)：base 唯一且 canonicalize；workspace = base/ws 也 canonicalize。
     fn unique_workspace() -> (PathBuf, PathBuf) {
@@ -350,6 +629,7 @@ mod tests {
             None,
             Some(true), // create_dirs：out/ 不存在，需自动建
             None,
+            None,
             root_arg(&ws),
         )
         .expect("worker 层不应报错");
@@ -371,6 +651,7 @@ mod tests {
             "../evil.txt".to_string(),
             "nope".to_string(),
             Some("create".to_string()),
+            None,
             None,
             None,
             None,
@@ -397,6 +678,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             root_arg(&ws),
         )
         .expect("worker 层不应报错");
@@ -408,6 +690,149 @@ mod tests {
         );
         assert!(!outside.exists(), "越界文件不应被创建");
 
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn archive_path_lock_serializes_owners() {
+        let (base, ws) = unique_workspace();
+        let target = ws.join("shared.jsonl");
+        fs::write(&target, "").expect("create target");
+        let first = ArchivePathLock::acquire(&target).expect("acquire first lock");
+        let target_for_thread = target.clone();
+        let (sender, receiver) = mpsc::channel();
+        let thread = std::thread::spawn(move || {
+            let lock = ArchivePathLock::acquire_with(
+                &target_for_thread,
+                Duration::from_secs(1),
+                Duration::from_secs(30),
+            )
+            .expect("acquire second lock");
+            sender.send(()).expect("report acquired");
+            lock
+        });
+
+        assert!(receiver.recv_timeout(Duration::from_millis(60)).is_err());
+        drop(first);
+        receiver
+            .recv_timeout(Duration::from_secs(1))
+            .expect("second owner should acquire after release");
+        drop(thread.join().expect("join lock owner"));
+        assert!(!archive_lock_path(&target).expect("lock path").exists());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn stale_archive_lock_recovery_does_not_remove_replacement() {
+        let (base, ws) = unique_workspace();
+        let target = ws.join("shared.jsonl");
+        fs::write(&target, "").expect("create target");
+        let first = ArchivePathLock::acquire(&target).expect("acquire first lock");
+        let replacement =
+            ArchivePathLock::acquire_with(&target, Duration::from_millis(100), Duration::ZERO)
+                .expect("recover stale lock");
+        drop(first);
+        assert!(archive_lock_path(&target).expect("lock path").exists());
+        drop(replacement);
+        assert!(!archive_lock_path(&target).expect("lock path").exists());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn automatic_index_compaction_keeps_latest_records_only() {
+        let (base, ws) = unique_workspace();
+        let index_root = ws.join(".agent-archive/index");
+        fs::create_dir_all(&index_root).expect("create index root");
+        let target = index_root.join("runs.jsonl");
+        let filler = "x".repeat(700);
+        let mut text = String::new();
+        for status in 0..220 {
+            text.push_str(
+                &serde_json::json!({
+                    "conversationId": "conversation",
+                    "runId": "run",
+                    "status": status,
+                    "summary": filler,
+                })
+                .to_string(),
+            );
+            text.push('\n');
+        }
+        assert!(text.len() as u64 > INDEX_COMPACT_MIN_BYTES);
+        fs::write(&target, text).expect("write oversized index");
+
+        maybe_compact_subagent_index(&target).expect("compact index");
+        let records: Vec<serde_json::Value> = fs::read_to_string(&target)
+            .expect("read compacted index")
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("valid record"))
+            .collect();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0]["status"], 219);
+        assert!(index_root.join(".runs.compact-at").exists());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn index_compaction_uses_the_documented_keys() {
+        let agents = [
+            serde_json::json!({"conversationId": "c", "runId": "r", "path": "root-01", "status": "running"}),
+            serde_json::json!({"conversationId": "c", "runId": "r", "path": "root-02", "status": "running"}),
+            serde_json::json!({"conversationId": "c", "runId": "r", "path": "root-01", "status": "completed"}),
+        ]
+        .into_iter()
+        .map(|record| record.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+        let compacted_agents = compact_subagent_index("agents", &agents).expect("agents compact");
+        let agent_records: Vec<serde_json::Value> = compacted_agents
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("valid agent record"))
+            .collect();
+        assert_eq!(agent_records.len(), 2);
+        assert_eq!(agent_records[1]["path"], "root-01");
+        assert_eq!(agent_records[1]["status"], "completed");
+
+        let skills = [
+            serde_json::json!({"skillId": "s1", "summary": "old"}),
+            serde_json::json!({"skillId": "s2", "summary": "other"}),
+            serde_json::json!({"skillId": "s1", "summary": "new"}),
+        ]
+        .into_iter()
+        .map(|record| record.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+        let compacted_skills = compact_subagent_index("skills", &skills).expect("skills compact");
+        let skill_records: Vec<serde_json::Value> = compacted_skills
+            .lines()
+            .map(|line| serde_json::from_str(line).expect("valid skill record"))
+            .collect();
+        assert_eq!(skill_records.len(), 2);
+        assert_eq!(skill_records[1]["skillId"], "s1");
+        assert_eq!(skill_records[1]["summary"], "new");
+    }
+
+    #[test]
+    fn compaction_failure_preserves_index_and_events_are_never_compacted() {
+        let (base, ws) = unique_workspace();
+        let index_root = ws.join(".agent-archive/index");
+        fs::create_dir_all(&index_root).expect("create index root");
+        let index = index_root.join("skills.jsonl");
+        let malformed = format!("{{bad}}\n{}", " ".repeat(INDEX_COMPACT_MIN_BYTES as usize));
+        fs::write(&index, &malformed).expect("write malformed index");
+        let error = maybe_compact_subagent_index(&index).expect_err("malformed index must fail");
+        assert!(error.contains("invalid JSON"));
+        assert_eq!(
+            fs::read_to_string(&index).expect("read preserved index"),
+            malformed
+        );
+
+        let events = ws.join(".agent-archive/conversations/c/runs/r/events.jsonl");
+        fs::create_dir_all(events.parent().expect("events parent")).expect("create events root");
+        let event_text = format!("event\n{}", "x".repeat(INDEX_COMPACT_MIN_BYTES as usize));
+        fs::write(&events, &event_text).expect("write events");
+        maybe_compact_subagent_index(&events).expect("events bypass compaction");
+        assert_eq!(fs::read_to_string(events).expect("read events"), event_text);
         let _ = fs::remove_dir_all(&base);
     }
 }

@@ -10,14 +10,14 @@
 // @ai-components 控件（text 用原生 textarea）与 store 参数（改调命令）。
 
 import { useAtomValue } from '@einfach/react'
-import { runAtom } from '../state/sessionAtoms'
-import { pendingQuestionAnswersAtom } from '../state/transientAtoms'
-import type { AskUserAnswerValue } from '../state/transientAtoms'
+import { runAtom } from '@web-agent/core/state/sessionAtoms'
+import { pendingQuestionAnswersAtom } from '@web-agent/core/state/transientAtoms'
+import type { AskUserAnswerValue } from '@web-agent/core/state/transientAtoms'
 import {
   normalizeAskUserQuestionPayload,
   type AskUserQuestionItem,
-} from '../runtime/askUserQuestion'
-import { answerQuestion, resumeWithAnswers } from '../runtime/commands'
+} from '@web-agent/core/runtime/askUserQuestion'
+import { answerQuestion, resumeWithAnswers } from '@web-agent/core/runtime/commands'
 
 export function AskUserQuestionCard() {
   const run = useAtomValue(runAtom)

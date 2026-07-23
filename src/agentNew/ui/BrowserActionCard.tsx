@@ -6,7 +6,7 @@
 //   · 有 body 时用 react-markdown 渲染正文（与 MessageList 一致），无 body 不渲染正文区。
 
 import ReactMarkdown from 'react-markdown'
-import type { BrowserCard } from '../state/transientAtoms'
+import type { BrowserCard } from '@web-agent/core/state/transientAtoms'
 
 export function BrowserActionCard({ card }: { card: BrowserCard }) {
   return (

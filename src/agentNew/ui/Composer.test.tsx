@@ -2,15 +2,15 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
-import { runAtom } from '../state/sessionAtoms'
-import { composerDraftAtom, withdrawnTurnNoticeAtom } from '../state/transientAtoms'
+import { runAtom } from '@web-agent/core/state/sessionAtoms'
+import { composerDraftAtom, withdrawnTurnNoticeAtom } from '@web-agent/core/state/transientAtoms'
 import { Composer } from './Composer'
-import { sendMessage, stopRun, withdrawCurrentTurnToDraft } from '../runtime/commands'
+import { sendMessage, stopRun, withdrawCurrentTurnToDraft } from '@web-agent/core/runtime/commands'
 
 // P-U4 Composer：右栏输入框。契约 U1 —— UI 只读 atom（runAtom）+ 调命令
 // （sendMessage / stopRun）。这里把命令整模块 mock，断言「按了什么就调了什么」，
 // 不触碰真正的 runtime / store setter。
-vi.mock('../runtime/commands', () => ({
+vi.mock('@web-agent/core/runtime/commands', () => ({
   sendMessage: vi.fn(),
   stopRun: vi.fn(),
   withdrawCurrentTurnToDraft: vi.fn(),

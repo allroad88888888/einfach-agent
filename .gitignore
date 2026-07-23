@@ -8,3 +8,5 @@ node_modules/.tmp
 # 本地验证产物（浏览器截图 / playwright-mcp 输出），不入库
 .playwright-mcp/
 agentnew-*.png
+.agent-cache/
+.agent-archive/
