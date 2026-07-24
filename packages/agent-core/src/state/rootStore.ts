@@ -13,18 +13,45 @@
 
 import type { Store } from '@einfach/core'
 import { defaultCore } from '../runtime/core/coreInstance'
-import { sessionsAtom, activeSessionIdAtom, activeSessionMetaAtom } from './rootAtoms'
+import {
+  workspacesAtom,
+  activeWorkspaceIdAtom,
+  expandedWorkspaceIdsAtom,
+  workspaceSettingsOpenIdsAtom,
+  workspaceRenameStateAtom,
+  activeWorkspaceMetaAtom,
+  activeWorkspaceRootAtom,
+  sessionsAtom,
+  activeSessionIdAtom,
+  activeSessionMetaAtom,
+} from './rootAtoms'
 
 // 简介：全局唯一顶层 store（= 默认实例的根 store）。
 // 详情：只承载「跨会话」的状态（会话列表 + 当前会话 id）。会话内容各归各的会话 store。
 export const rootStore: Store = defaultCore.rootStore
 
 // 会话列表 atom 现由 rootAtoms.ts 定义，这里 re-export 保持既有 import 路径不变。
-export { sessionsAtom, activeSessionIdAtom, activeSessionMetaAtom }
+export {
+  workspacesAtom,
+  activeWorkspaceIdAtom,
+  expandedWorkspaceIdsAtom,
+  workspaceSettingsOpenIdsAtom,
+  workspaceRenameStateAtom,
+  activeWorkspaceMetaAtom,
+  activeWorkspaceRootAtom,
+  sessionsAtom,
+  activeSessionIdAtom,
+  activeSessionMetaAtom,
+}
 
 // 简介：复位顶层 store（仅测试用）。
 // 详情：把会话列表清空、当前会话 id 置空串，让默认实例的 rootStore 在用例间互不污染。
 export function resetRootStore(): void {
+  rootStore.setter(workspacesAtom, {})
+  rootStore.setter(activeWorkspaceIdAtom, '')
+  rootStore.setter(expandedWorkspaceIdsAtom, {})
+  rootStore.setter(workspaceSettingsOpenIdsAtom, {})
+  rootStore.setter(workspaceRenameStateAtom, null)
   rootStore.setter(sessionsAtom, {})
   rootStore.setter(activeSessionIdAtom, '')
 }

@@ -9,6 +9,15 @@ handle immediately; it does not wait for the child tree.
 - `children[].objective` (required): the concrete task for that child agent.
 - `children[].mode` (optional): short working style, such as `explore`, `review`, `design`, or `verify`.
 - `children[].expectedOutput` (optional): the shape of result the parent needs.
+- `children[].modelTier` (optional): parent preference. `pro` is always honored; `flash` is only
+  honored when the structured routing features below prove the task eligible.
+- `children[].taskCategory` (optional): one of `retrieval`, `extraction`, `analysis`,
+  `implementation`, `verification`, or `final_acceptance`.
+- `children[].riskLevel` (optional): `low`, `medium`, or `high`.
+- `children[].crossModule` (optional): whether the task spans multiple modules.
+- `children[].finalAcceptance` (optional): whether the child owns the final acceptance decision.
+- `children[].priorFailureCount` (optional): observable failures for the same task in the current
+  history. Any positive value routes to Pro.
 - `children[].maxTurns` (optional): per-child LLM turn budget.
 - `children[].toolProfile` (optional): narrows that child to `delegate_only` or `workspace_read`; it cannot widen the batch profile.
 - `children[].confirmedTools` (optional): narrows the batch's host-confirmed dangerous-tool capability for that child.
@@ -31,6 +40,21 @@ Budget exhaustion is explicit: the current delegation/model turn fails with a `s
 - Continue independent parent work after spawning. Use `observe_agent` to inspect progress and
   `join_agent` only when the child result is a dependency.
 - Give each child one focused objective and an explicit expected output.
+- When the configured provider uses an official DeepSeek V4 model, the main agent runs on Pro and
+  Flash is reserved for eligible child tasks. Other providers and custom DeepSeek model names keep
+  their configured parent model.
+- A direct root child is routed to Flash only when `taskCategory` is `retrieval` or `extraction`,
+  `riskLevel` is `low`, and no Pro-forcing feature applies. This can happen with or without an
+  explicit `modelTier: "flash"` preference.
+- Nested delegation, prior failures, final acceptance, evaluator mode, cross-module work, high
+  risk, and any confirmed dangerous capability always route to Pro.
+- Every initial decision is archived as `route_reason`. A Flash provider failure or
+  `insufficient_system_resource` may upgrade once to Pro and records `fallback_count: 1`.
+- Automatic Flash → Pro upgrade is allowed only before any tool execution and only when the
+  response has no assistant content or raw tool calls. After any tool execution it fails closed,
+  because a same-name replacement or a tool that mutates before throwing cannot be proven
+  side-effect free. Deterministic 400/401/402/422 failures never upgrade, and there is no recursive
+  retry loop.
 - Child agents inherit a distilled parent skill plus their task brief.
 - A child agent may call `delegate_agent` again when the task naturally splits further and depth budget remains.
 - Root depth/children/concurrency budgets are immutable upper bounds; descendants may narrow but never expand them.

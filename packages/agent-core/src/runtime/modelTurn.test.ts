@@ -1,20 +1,26 @@
 // modelTurn.test.ts —— buildTurnTools 的环境过滤（TP3）单测。
 // ---------------------------------------------------------------------------
 // 契约（TP3）：runtime:'server' 工具依赖 Tauri 本机能力，web 下不进 manifest。
-//   · request_tool_schema 的 toolName enum：web(false) 不含 server 工具名、含 internal 工具名；
-//     Tauri(true) 含 server 工具名。
+//   · request_tool_schema 不内嵌无界 enum，目录改由有界的搜索/游标页返回；
 //   · visible 展开也按同一判据过滤：web 下即便某 server 工具混进 visible 也不发给 model。
 //   · request_tool_schema 元工具本身恒在场（两种 isTauri 都在返回列表首位）。
 // 此环境 isTauri() 天然为 false，但这里直接传布尔参数，不依赖真实环境。
 
 import { describe, it, expect } from 'vitest'
 import {
+  buildCustomInstructionsItem,
   buildSkillContextItem,
   buildSystemItem,
   buildTurnTools,
   canonicalizeJsonSchema,
+  DEFAULT_TOOL_MANIFEST_PAGE_SIZE,
   loadedToolNamesFromHistory,
+  MAX_TOOL_MANIFEST_PAGE_SIZE,
+  MAX_TURN_TOOLS,
   parseToolCallArgs,
+  searchToolManifestPage,
+  selectTurnLoadedTools,
+  touchRecentToolName,
   toolSetSchemaFingerprint,
 } from './modelTurn'
 import { toolRegistry } from '../tools/registry'
@@ -22,18 +28,47 @@ import { createToolRegistry } from '../tools/toolRegistry'
 import type { LoadedTool } from '../tools/types'
 import type { ModelFunctionTool, ModelItem } from '@web-agent/ai'
 
-// 从 request_tool_schema 元工具里取 toolName enum（真实 registry 名字）。parameters 类型为 unknown，就地收窄。
-function schemaEnum(tools: ModelFunctionTool[]): string[] {
-  const params = tools[0].function.parameters as {
-    properties: { toolName: { enum?: string[] } }
+// 读取 request_tool_schema 的输入契约。parameters 类型为 unknown，就地收窄。
+function loaderParameters(tools: ModelFunctionTool[]) {
+  return tools[0].function.parameters as {
+    properties: {
+      toolName: { enum?: string[]; type: string }
+      query: { maxLength: number; type: string }
+      cursor: { type: string }
+      limit: { default: number; maximum: number; minimum: number; type: string }
+    }
+    required: string[]
   }
-  return params.properties.toolName.enum ?? []
 }
 
 // 真实 registry 里的一个 server 工具名与一个 internal 工具名（改动前先看实际 name）。
 const SERVER_TOOL = 'shell_macos'
 const SERVER_TOOL_2 = 'read_file'
 const INTERNAL_TOOL = 'skill_search'
+
+function fakeLoadedTool(name: string): LoadedTool {
+  return {
+    name,
+    description: `description ${name}`,
+    runtime: 'internal',
+    inputSchema: { type: 'object', properties: { value: { type: 'string' } } },
+    guide: '',
+  }
+}
+
+function registryWithTools(names: readonly string[]) {
+  const registry = createToolRegistry()
+  for (const name of names) {
+    registry.register({
+      name,
+      runtime: 'internal',
+      skill: { description: `description ${name}`, content: `# ${name}` },
+      inputSchema: { type: 'object' },
+      execute: async () => ({ ok: true }),
+    })
+  }
+  return registry
+}
 
 describe('system 前缀缓存边界', () => {
   it('固定 system 不依赖本轮输入，动态 skill 名单单独生成', () => {
@@ -46,6 +81,14 @@ describe('system 前缀缓存边界', () => {
     expect(chart.content).toContain('data-visualization')
     expect(buildSystemItem()).toEqual(fixed)
   })
+
+  it('自定义指令为空时不注入，非空时作为独立 system 消息并清理首尾空白', () => {
+    expect(buildCustomInstructionsItem(' \n ')).toBeUndefined()
+    expect(buildCustomInstructionsItem('  请始终使用中文回复。\n')).toEqual({
+      role: 'system',
+      content: '用户在设置中保存了以下长期自定义指令，请在本次任务中遵循：\n请始终使用中文回复。',
+    })
+  })
 })
 
 describe('buildTurnTools —— TP3 server 工具按环境过滤', () => {
@@ -56,12 +99,29 @@ describe('buildTurnTools —— TP3 server 工具按环境过滤', () => {
     }
   })
 
-  it('web(false)：enum 不含任何 server 工具名，含 internal 工具名', () => {
-    const names = schemaEnum(buildTurnTools([], false))
+  it('request_tool_schema 不内嵌 registry enum，改为有界搜索/游标输入', () => {
+    const parameters = loaderParameters(buildTurnTools([], false))
+    expect(parameters.properties.toolName.enum).toBeUndefined()
+    expect(parameters.required).toEqual(['reason'])
+    expect(parameters.properties.query.type).toBe('string')
+    expect(parameters.properties.cursor.type).toBe('string')
+    expect(parameters.properties.limit).toMatchObject({
+      type: 'integer',
+      minimum: 1,
+      maximum: MAX_TOOL_MANIFEST_PAGE_SIZE,
+      default: DEFAULT_TOOL_MANIFEST_PAGE_SIZE,
+    })
+  })
+
+  it('web(false)：manifest 页不含任何 server 工具名，含 internal 工具名', () => {
+    const page = searchToolManifestPage({ limit: MAX_TOOL_MANIFEST_PAGE_SIZE }, false)
+    expect(page.kind).toBe('tool_manifest_page')
+    if (page.kind !== 'tool_manifest_page') throw new Error(page.error)
+    const names = page.items.map((tool) => tool.name)
     expect(names).not.toContain(SERVER_TOOL)
     expect(names).not.toContain(SERVER_TOOL_2)
     expect(names).toContain(INTERNAL_TOOL)
-    // 更强：registry 里所有 server 工具都不在 enum 里。
+    // 更强：registry 里所有 server 工具都不在目录页里。
     const serverNames = toolRegistry
       .list()
       .filter((t) => t.runtime === 'server')
@@ -72,11 +132,15 @@ describe('buildTurnTools —— TP3 server 工具按环境过滤', () => {
     }
   })
 
-  it('Tauri(true)：enum 含 server 工具名', () => {
-    const names = schemaEnum(buildTurnTools([], true))
+  it('Tauri(true)：manifest 页含 server 工具名', () => {
+    const page = searchToolManifestPage({ limit: MAX_TOOL_MANIFEST_PAGE_SIZE }, true)
+    expect(page.kind).toBe('tool_manifest_page')
+    if (page.kind !== 'tool_manifest_page') throw new Error(page.error)
+    const names = page.items.map((tool) => tool.name)
     expect(names).toContain(SERVER_TOOL)
     expect(names).toContain(INTERNAL_TOOL)
-    // 更强：registry 里所有工具（含 server）都在 enum 里。
+    // 当前内置 registry 小于单页上限，所有工具（含 server）都在第一页。
+    expect(page.total).toBeLessThanOrEqual(MAX_TOOL_MANIFEST_PAGE_SIZE)
     for (const tool of toolRegistry.list()) {
       expect(names).toContain(tool.name)
     }
@@ -98,7 +162,7 @@ describe('buildTurnTools —— TP3 server 工具按环境过滤', () => {
     expect(tauri.map((t) => t.function.name)).toContain('shell_macos')
   })
 
-  it('allowedToolNames 同时收窄 request enum 和 visible functions', () => {
+  it('allowedToolNames 同时收窄 manifest 搜索和 visible functions', () => {
     const visible: LoadedTool[] = [
       {
         name: 'delegate_agent',
@@ -117,11 +181,14 @@ describe('buildTurnTools —— TP3 server 工具按环境过滤', () => {
     ]
 
     const tools = buildTurnTools(visible, true, { allowedToolNames: ['delegate_agent'] })
-    expect(schemaEnum(tools)).toEqual(['delegate_agent'])
+    const page = searchToolManifestPage({}, true, { allowedToolNames: ['delegate_agent'] })
+    expect(page.kind).toBe('tool_manifest_page')
+    if (page.kind !== 'tool_manifest_page') throw new Error(page.error)
+    expect(page.items.map((tool) => tool.name)).toEqual(['delegate_agent'])
     expect(tools.map((tool) => tool.function.name)).toEqual(['request_tool_schema', 'delegate_agent'])
   })
 
-  it('registry 选项：enum 枚举【传入的 registry】而非模块级 defaultCore.tools（TS1 隔离实例正确性 · codex [P1]）', () => {
+  it('registry 选项：manifest 搜索【传入的 registry】而非模块级 defaultCore.tools（TS1 隔离实例正确性 · codex [P1]）', () => {
     // 造一个只含自定义工具的独立 registry —— 模拟 createCore({ registerTools }) 装了自定义工具集的隔离实例。
     const custom = createToolRegistry()
     custom.register({
@@ -132,8 +199,11 @@ describe('buildTurnTools —— TP3 server 工具按环境过滤', () => {
       execute: async () => ({ ok: true }),
     })
 
-    // 传 registry:custom → enum 只反映这份 registry。
-    const names = schemaEnum(buildTurnTools([], true, { registry: custom }))
+    // 传 registry:custom → manifest 只反映这份 registry。
+    const page = searchToolManifestPage({}, true, { registry: custom })
+    expect(page.kind).toBe('tool_manifest_page')
+    if (page.kind !== 'tool_manifest_page') throw new Error(page.error)
+    const names = page.items.map((tool) => tool.name)
     expect(names).toContain('custom_only_tool')
     // 关键：不含模块级 defaultCore.tools 的标准工具（漏穿 core 时这两个会误入，本用例即会红）。
     expect(names).not.toContain('skill_search')
@@ -141,8 +211,142 @@ describe('buildTurnTools —— TP3 server 工具按环境过滤', () => {
   })
 })
 
+describe('buildTurnTools —— DeepSeek 128 工具硬预算', () => {
+  const names = Array.from({ length: 140 }, (_, index) => `tool_${String(index).padStart(3, '0')}`)
+  const visible = names.map(fakeLoadedTool)
+
+  it('loader 固定占 1 个，总数不超过 128，并优先保留后加载工具', () => {
+    const tools = buildTurnTools(visible, true)
+    const selectedNames = tools.map((tool) => tool.function.name)
+
+    expect(tools).toHaveLength(MAX_TURN_TOOLS)
+    expect(selectedNames[0]).toBe('request_tool_schema')
+    expect(selectedNames).not.toContain('tool_012')
+    expect(selectedNames).toContain('tool_013')
+    expect(selectedNames).toContain('tool_139')
+    expect(selectedNames.slice(1)).toEqual([...selectedNames.slice(1)].sort())
+  })
+
+  it('maxTools 只能下调不能突破硬上限，最小预算仍保留 loader', () => {
+    expect(buildTurnTools(visible, true, { maxTools: 999 })).toHaveLength(MAX_TURN_TOOLS)
+    expect(buildTurnTools(visible, true, { maxTools: 1 }).map((tool) => tool.function.name))
+      .toEqual(['request_tool_schema'])
+  })
+
+  it('recentToolNames 让已淘汰旧工具回到工作集，输出顺序仍保持稳定', () => {
+    const tools = buildTurnTools(visible, true, {
+      maxTools: 3,
+      recentToolNames: ['tool_000'],
+    })
+
+    expect(tools.map((tool) => tool.function.name)).toEqual([
+      'request_tool_schema',
+      'tool_000',
+      'tool_139',
+    ])
+    expect(selectTurnLoadedTools(visible, true, {
+      maxTools: 3,
+      recentToolNames: ['tool_000'],
+    }).map((tool) => tool.name)).toEqual(['tool_000', 'tool_139'])
+  })
+
+  it('touchRecentToolName 去重、前移并限制 LRU 长度', () => {
+    expect(touchRecentToolName(['tool_b', 'tool_a', 'tool_c'], 'tool_a', 3))
+      .toEqual(['tool_a', 'tool_b', 'tool_c'])
+    expect(touchRecentToolName(['tool_b', 'tool_a', 'tool_c'], 'tool_d', 2))
+      .toEqual(['tool_d', 'tool_b'])
+  })
+})
+
+describe('request_tool_schema —— 有界 manifest 搜索与游标', () => {
+  const names = Array.from({ length: 73 }, (_, index) => `tool_${String(index).padStart(3, '0')}`)
+
+  it('保留的 loader 名称不会被第三方注册项放进 manifest', () => {
+    const registry = registryWithTools(['request_tool_schema', 'real_tool'])
+    const result = searchToolManifestPage({}, true, { registry })
+
+    expect(result.kind).toBe('tool_manifest_page')
+    if (result.kind !== 'tool_manifest_page') throw new Error(result.error)
+    expect(result.items.map((tool) => tool.name)).toEqual(['real_tool'])
+  })
+
+  it('逐页可遍历全部工具，每页严格有界且无重复/永久隐藏', () => {
+    const registry = registryWithTools(names)
+    const collected: string[] = []
+    let cursor: string | undefined
+
+    do {
+      const result = searchToolManifestPage({ cursor, limit: 7 }, true, { registry })
+      expect(result.kind).toBe('tool_manifest_page')
+      if (result.kind !== 'tool_manifest_page') throw new Error(result.error)
+      expect(result.items.length).toBeLessThanOrEqual(7)
+      expect(result.total).toBe(names.length)
+      collected.push(...result.items.map((tool) => tool.name))
+      cursor = result.nextCursor
+    } while (cursor)
+
+    expect(collected).toEqual(names)
+    expect(new Set(collected).size).toBe(names.length)
+  })
+
+  it('query 对 name/description 做大小写无关 AND 搜索，limit 被硬钳到页上限', () => {
+    const registry = createToolRegistry()
+    registry.register({
+      name: 'alpha_reader',
+      runtime: 'internal',
+      skill: { description: 'Read Alpha Documents', content: '# alpha' },
+      inputSchema: { type: 'object' },
+      execute: async () => ({ ok: true }),
+    })
+    registry.register({
+      name: 'alpha_writer',
+      runtime: 'internal',
+      skill: { description: 'Write Alpha Documents', content: '# alpha writer' },
+      inputSchema: { type: 'object' },
+      execute: async () => ({ ok: true }),
+    })
+
+    const result = searchToolManifestPage(
+      { query: 'ALPHA read', limit: Number.MAX_SAFE_INTEGER },
+      true,
+      { registry },
+    )
+    expect(result.kind).toBe('tool_manifest_page')
+    if (result.kind !== 'tool_manifest_page') throw new Error(result.error)
+    expect(result.limit).toBe(MAX_TOOL_MANIFEST_PAGE_SIZE)
+    expect(result.items.map((tool) => tool.name)).toEqual(['alpha_reader'])
+  })
+
+  it('目录变化或游标损坏会显式报错并给出重启参数，不会静默跳项', () => {
+    const registry = registryWithTools(['a', 'b', 'c'])
+    const first = searchToolManifestPage({ limit: 1 }, true, { registry })
+    expect(first.kind).toBe('tool_manifest_page')
+    if (first.kind !== 'tool_manifest_page') throw new Error(first.error)
+    expect(first.nextCursor).toBeDefined()
+
+    registry.register({
+      name: 'd',
+      runtime: 'internal',
+      skill: { description: 'd', content: '# d' },
+      inputSchema: { type: 'object' },
+      execute: async () => ({ ok: true }),
+    })
+    expect(searchToolManifestPage({ cursor: first.nextCursor, limit: 1 }, true, { registry }))
+      .toMatchObject({
+        kind: 'tool_manifest_error',
+        code: 'stale_cursor',
+        restart: { query: '', limit: 1 },
+      })
+    expect(searchToolManifestPage({ cursor: 'not-a-cursor' }, true, { registry }))
+      .toMatchObject({
+        kind: 'tool_manifest_error',
+        code: 'invalid_cursor',
+      })
+  })
+})
+
 describe('buildTurnTools —— 可缓存请求前缀保持确定性', () => {
-  it('registry enum 与已加载 tools 均按稳定名称排序，且元工具始终第一', () => {
+  it('manifest 页与已加载 tools 均按稳定名称排序，且元工具始终第一', () => {
     const registry = createToolRegistry()
     for (const name of ['z_tool', 'a_tool', 'm_tool']) {
       registry.register({
@@ -162,8 +366,11 @@ describe('buildTurnTools —— 可缓存请求前缀保持确定性', () => {
       guide: '',
     }))
     const tools = buildTurnTools(visible, true, { registry })
+    const page = searchToolManifestPage({}, true, { registry })
+    expect(page.kind).toBe('tool_manifest_page')
+    if (page.kind !== 'tool_manifest_page') throw new Error(page.error)
 
-    expect(schemaEnum(tools)).toEqual(['a_tool', 'm_tool', 'z_tool'])
+    expect(page.items.map((tool) => tool.name)).toEqual(['a_tool', 'm_tool', 'z_tool'])
     expect(tools.map((tool) => tool.function.name)).toEqual([
       'request_tool_schema',
       'a_tool',
@@ -212,7 +419,12 @@ describe('buildTurnTools —— 可缓存请求前缀保持确定性', () => {
     expect(Object.keys(inputSchema.zeta.properties)).toEqual(originalNestedKeys)
 
     const metaParameters = metaTool.function.parameters as Record<string, unknown>
-    expect(Object.keys(metaParameters)).toEqual(['properties', 'required', 'type'])
+    expect(Object.keys(metaParameters)).toEqual([
+      'additionalProperties',
+      'properties',
+      'required',
+      'type',
+    ])
   })
 
   it('规范化 helper 返回新对象并递归稳定键序', () => {
@@ -307,6 +519,30 @@ describe('buildTurnTools —— 可缓存请求前缀保持确定性', () => {
 })
 
 describe('loadedToolNamesFromHistory —— 从历史恢复顶层 schema', () => {
+  it('按实时 loader 语义 trim 工具名后恢复', () => {
+    const messages: ModelItem[] = [
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'trimmed-schema',
+          type: 'function',
+          function: {
+            name: 'request_tool_schema',
+            arguments: '{"toolName":"  skill_search  ","reason":"搜索"}',
+          },
+        }],
+      },
+      {
+        role: 'tool',
+        tool_call_id: 'trimmed-schema',
+        content: '{"loaded":true,"toolName":"skill_search"}',
+      },
+    ]
+
+    expect(loadedToolNamesFromHistory(messages)).toEqual(['skill_search'])
+  })
+
   it('识别新旧两种成功结果并返回去重后的工具名，不改写历史消息', () => {
     const messages: ModelItem[] = [
       { role: 'user', content: '继续' },

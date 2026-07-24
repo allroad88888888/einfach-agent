@@ -235,6 +235,7 @@ export default defineConfig({
       '@web-agent/tools-planning': fromRoot('./tools/planning/src/index.ts'),
       '@web-agent/tools-skills': fromRoot('./tools/skills/src/index.ts'),
       '@web-agent/tools-agents': fromRoot('./tools/agents/src/index.ts'),
+      '@web-agent/tools-mcp': fromRoot('./tools/mcp/src/index.ts'),
       '@web-agent/tools': fromRoot('./tools/standard/src/index.ts'),
       '@': fromRoot('./apps/web/src'),
     },

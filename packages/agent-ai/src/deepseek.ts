@@ -14,16 +14,58 @@ import {
 
 // 简介：DeepSeek 接入点与默认模型。
 export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
-export const DEFAULT_DEEPSEEK_MODEL = 'deepseek-v4-pro'
+export const DEEPSEEK_PRO_MODEL = 'deepseek-v4-pro'
+export const DEEPSEEK_FLASH_MODEL = 'deepseek-v4-flash'
+export const DEFAULT_DEEPSEEK_MODEL = DEEPSEEK_PRO_MODEL
+export const MAX_DEEPSEEK_USER_ID_LENGTH = 512
 
-// 简介：DeepSeek 的推理投入档位。
-// 详情：到 'high' 为止 —— 这是和 GLM 的“参数不一样”之一（GLM-5.2 还支持 'max'）。
-export type DeepSeekReasoningEffort = 'low' | 'medium' | 'high'
+// 简介：校验 DeepSeek 官方 user_id 线协议约束。
+// 详情：不 trim、不截断——任何超长或带其它字符的值都整体拒绝，避免把邮箱、文件路径等
+// 隐私数据“修剪”成另一个仍会被发送的标识。调用方应只传本地生成的不透明随机 ID。
+export function normalizeDeepSeekUserId(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  if (value.length === 0 || value.length > MAX_DEEPSEEK_USER_ID_LENGTH) return undefined
+  return /^[A-Za-z0-9_-]+$/.test(value) ? value : undefined
+}
+
+// 简介：DeepSeek V4 的推理投入档位。
+// 详情：V4 只接受 high / max；旧的 low / medium 最终也只会被服务端映射成 high。
+export type DeepSeekReasoningEffort = 'high' | 'max'
 
 // 简介：发给 DeepSeek 的请求体。
 // 详情：公共字段来自 ChatRequestBase，仅 reasoning_effort 取值域为 DeepSeek 特化。
 export interface DeepSeekChatRequest extends ChatRequestBase {
   reasoning_effort?: DeepSeekReasoningEffort
+  user_id?: string
+  top_p?: number
+  presence_penalty?: number
+  frequency_penalty?: number
+}
+
+// 简介：按 DeepSeek V4 thinking 协议净化请求。
+// 详情：thinking 开启时，DeepSeek 不支持四个采样参数。调用方的会话设置仍需保留，
+// 因此这里只创建一个不带这些字段的新对象，不修改传入 body。
+function prepareDeepSeekRequest(body: DeepSeekChatRequest): DeepSeekChatRequest {
+  const {
+    user_id: rawUserId,
+    temperature: _temperature,
+    top_p: _topP,
+    presence_penalty: _presencePenalty,
+    frequency_penalty: _frequencyPenalty,
+    ...baseRequest
+  } = body
+  const userId = normalizeDeepSeekUserId(rawUserId)
+  const request = userId === undefined ? baseRequest : { ...baseRequest, user_id: userId }
+
+  if (body.thinking?.type === 'enabled') return request
+
+  return {
+    ...request,
+    temperature: body.temperature,
+    top_p: body.top_p,
+    presence_penalty: body.presence_penalty,
+    frequency_penalty: body.frequency_penalty,
+  }
 }
 
 function withStreamUsage(body: DeepSeekChatRequest): DeepSeekChatRequest {
@@ -44,7 +86,11 @@ export function callDeepSeek(
   body: DeepSeekChatRequest,
   options: ChatCallOptions,
 ): Promise<ModelChatResponse> {
-  return postChatCompletion(options.baseUrl ?? DEEPSEEK_BASE_URL, body, options)
+  return postChatCompletion(
+    options.baseUrl ?? DEEPSEEK_BASE_URL,
+    prepareDeepSeekRequest(body),
+    options,
+  )
 }
 
 // 简介：调用 DeepSeek 的 chat/completions（流式）。
@@ -56,7 +102,7 @@ export function streamDeepSeek(
 ): Promise<ModelChatResponse> {
   return postChatCompletionStream(
     options.baseUrl ?? DEEPSEEK_BASE_URL,
-    withStreamUsage(body),
+    withStreamUsage(prepareDeepSeekRequest(body)),
     options,
     handlers,
   )

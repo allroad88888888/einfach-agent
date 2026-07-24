@@ -12,7 +12,7 @@
 import { pickSkillsForInput } from '../skills/registry'
 import { toolRegistry } from '../tools/registry'
 import type { ToolRegistry } from '../tools/toolRegistry'
-import type { LoadedTool, ToolRuntime } from '../tools/types'
+import type { LoadedTool, ToolRuntime, ToolSummary } from '../tools/types'
 import type {
   ModelFunctionTool,
   ModelItem,
@@ -27,7 +27,7 @@ import { newId } from './newId'
 export function buildSystemItem(): SystemItem {
   const content = [
     '你运行在支持 lazy tools 的本地桌面 Agent Runtime 中，可以像普通 assistant 一样直接回复用户，也可以调用本机与工作区工具。',
-    '“工具清单”只是可发现的能力名称，不代表其参数 schema 已加载。除 request_tool_schema 外，只能调用当前请求中实际提供了完整 schema 的工具；需要其它能力时，必须先调用 request_tool_schema，读取返回的参数名与约束后再调用，禁止凭工具名猜参数。',
+    '“工具清单”只是可发现的能力名称，不代表其参数 schema 已加载。除 request_tool_schema 外，只能调用当前请求中实际提供了完整 schema 的工具；需要其它能力时，若已知精确名称就传 toolName 加载，未知名称则省略 toolName 并用 query/cursor/limit 分页发现，再调用 request_tool_schema 读取参数名与约束，禁止凭工具名猜参数。',
     '不要在普通文本里模拟工具调用或工具结果；工具名必须来自工具清单。',
     'skill 正文不在此展示；需要其内容时，先用 request_tool_schema 加载 skill_read，再严格按返回 schema 调用 skill_read。',
     '复杂、分阶段或执行中升级为多阶段的任务，应先按 lazy-tool 协议读取 planning skill，再按其中说明加载并使用 create_plan → execute_plan → submit_stage_result；submit_stage_result 会触发独立 evaluator，update_plan 只处理阻塞或跳过，不要自行判定完成。',
@@ -35,6 +35,18 @@ export function buildSystemItem(): SystemItem {
   ].join('\n')
 
   return { role: 'system', content }
+}
+
+// 简介：把宿主保存的长期自定义指令组成本轮动态 system 消息。
+// 详情：它与固定运行时协议分开，并由调用方放在 append-only 历史之后；这样只有自定义指令变化时
+// 才会影响后缀缓存，不会把稳定的运行时协议和既有对话一起变成动态前缀。
+export function buildCustomInstructionsItem(instructions: string): SystemItem | undefined {
+  const normalized = instructions.trim()
+  if (!normalized) return undefined
+  return {
+    role: 'system',
+    content: `用户在设置中保存了以下长期自定义指令，请在本次任务中遵循：\n${normalized}`,
+  }
 }
 
 // 简介：组本轮动态 skill 提示。
@@ -52,16 +64,56 @@ export function buildSkillContextItem(input: string): SystemItem {
   }
 }
 
+// DeepSeek chat/completions 最多接受 128 个 function tools。request_tool_schema 固定占 1 个，
+// 所以已加载工具的默认/绝对上限都是 127；其它 provider 如需更小预算可通过 maxTools 下调。
+export const MAX_TURN_TOOLS = 128
+export const DEFAULT_TOOL_MANIFEST_PAGE_SIZE = 16
+export const MAX_TOOL_MANIFEST_PAGE_SIZE = 32
+export const MAX_TOOL_MANIFEST_QUERY_LENGTH = 128
+
 // TP3 判据：server 工具依赖 Tauri 本机能力（shell/文件系统），web 下不可用 → 不暴露给 model。
-// enum 与 visible 展开共用此谓词，保证「能请求的」与「能看见的」判据一致。
-interface BuildTurnToolsOptions {
+// manifest 分页与 visible 展开共用此谓词，保证「能发现的」与「能看见的」判据一致。
+export interface BuildTurnToolsOptions {
   allowedToolNames?: readonly string[]
-  // 【登记反转 · TS1 收口】request_tool_schema 的 enum 枚举「本实例可懒加载的全部工具」，必须读【绑定 core
-  //   的 registry】而非模块级 toolRegistry（＝ defaultCore.tools）。否则 createCore({registerTools}) 造的
-  //   隔离实例装了自定义工具集时，manifest 会广播 defaultCore 的工具、漏掉本实例的工具 —— 模型看得见错的、
-  //   看不见对的。缺省回落 toolRegistry（defaultCore 路径行为零变化）。见 codex review [P1]。
+  // 【登记反转 · TS1 收口】manifest 搜索必须读绑定 core 的 registry，而非模块级
+  // toolRegistry（＝ defaultCore.tools）。缺省回落仅用于 defaultCore 路径。
   registry?: ToolRegistry
+  /** 请求顶层 tools 的总数预算；只能下调，任何大于 128 的值都会钳到 128。 */
+  maxTools?: number
+  /**
+   * 最近请求过 schema 的工具名，新 → 旧。
+   * 它让一个已加载但被预算淘汰的旧工具在再次请求后立即回到工作集；最终线上顺序仍按名称排序。
+   */
+  recentToolNames?: readonly string[]
 }
+
+export interface ToolManifestSearchInput {
+  query?: string
+  cursor?: string
+  limit?: number
+}
+
+export interface ToolManifestPage {
+  kind: 'tool_manifest_page'
+  query: string
+  items: ToolSummary[]
+  total: number
+  limit: number
+  hasMore: boolean
+  nextCursor?: string
+}
+
+export interface ToolManifestError {
+  kind: 'tool_manifest_error'
+  code: 'invalid_cursor' | 'stale_cursor' | 'query_too_long'
+  error: string
+  restart: {
+    query: string
+    limit: number
+  }
+}
+
+export type ToolManifestResult = ToolManifestPage | ToolManifestError
 
 function isToolAllowed(name: string, options?: BuildTurnToolsOptions): boolean {
   return !options?.allowedToolNames || options.allowedToolNames.includes(name)
@@ -136,6 +188,196 @@ function fnv1a32(value: string): string {
   return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
+function normalizedMaxTurnTools(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return MAX_TURN_TOOLS
+  return Math.max(1, Math.min(MAX_TURN_TOOLS, Math.floor(value)))
+}
+
+function normalizedManifestLimit(value: number | undefined): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return DEFAULT_TOOL_MANIFEST_PAGE_SIZE
+  }
+  return Math.max(1, Math.min(MAX_TOOL_MANIFEST_PAGE_SIZE, Math.floor(value)))
+}
+
+function availableToolSummaries(
+  isTauri: boolean,
+  options?: BuildTurnToolsOptions,
+): ToolSummary[] {
+  return (options?.registry ?? toolRegistry)
+    .list()
+    .filter((tool) =>
+      tool.name !== 'request_tool_schema'
+      && isToolVisible(tool.runtime, isTauri)
+      && isToolAllowed(tool.name, options))
+    .sort((left, right) =>
+      compareStableText(left.name, right.name)
+      || compareStableText(left.description, right.description)
+      || compareStableText(left.runtime, right.runtime))
+}
+
+const TOOL_MANIFEST_CURSOR_PREFIX = 'tool-manifest-v1'
+
+function manifestCatalogFingerprint(query: string, tools: readonly ToolSummary[]): string {
+  return fnv1a32(JSON.stringify({
+    query,
+    tools: tools.map((tool) => [tool.name, tool.description, tool.runtime]),
+  }))
+}
+
+function manifestCursor(fingerprint: string, offset: number): string {
+  return `${TOOL_MANIFEST_CURSOR_PREFIX}:${fingerprint}:${offset}`
+}
+
+function parseManifestCursor(cursor: string): { fingerprint: string; offset: number } | undefined {
+  const match = /^tool-manifest-v1:([0-9a-f]{8}):([0-9]+)$/.exec(cursor)
+  if (!match) return undefined
+  const offset = Number(match[2])
+  if (!Number.isSafeInteger(offset)) return undefined
+  return { fingerprint: match[1], offset }
+}
+
+function manifestError(
+  code: ToolManifestError['code'],
+  error: string,
+  query: string,
+  limit: number,
+): ToolManifestError {
+  return {
+    kind: 'tool_manifest_error',
+    code,
+    error,
+    restart: { query, limit },
+  }
+}
+
+/**
+ * 返回经过环境/权限过滤的有界工具目录页，不包含 inputSchema 或 guide。
+ *
+ * query 以空白分词，对 name/description/runtime 做大小写无关的 AND 匹配；结果固定按名称排序。
+ * cursor 同时绑定 query 与完整匹配目录的指纹。翻页期间 registry 变化时返回 stale_cursor，
+ * 让调用方从第一页重启，避免 offset 漂移导致工具被静默跳过。
+ */
+export function searchToolManifestPage(
+  input: ToolManifestSearchInput,
+  isTauri: boolean,
+  options?: BuildTurnToolsOptions,
+): ToolManifestResult {
+  const query = input.query?.trim() ?? ''
+  const limit = normalizedManifestLimit(input.limit)
+  if (query.length > MAX_TOOL_MANIFEST_QUERY_LENGTH) {
+    return manifestError(
+      'query_too_long',
+      `query 最多 ${MAX_TOOL_MANIFEST_QUERY_LENGTH} 个字符`,
+      query.slice(0, MAX_TOOL_MANIFEST_QUERY_LENGTH),
+      limit,
+    )
+  }
+
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
+  const matched = availableToolSummaries(isTauri, options).filter((tool) => {
+    if (terms.length === 0) return true
+    const searchable = `${tool.name}\n${tool.description}\n${tool.runtime}`.toLowerCase()
+    return terms.every((term) => searchable.includes(term))
+  })
+  const fingerprint = manifestCatalogFingerprint(query, matched)
+
+  let offset = 0
+  if (input.cursor) {
+    const parsed = parseManifestCursor(input.cursor)
+    if (!parsed) {
+      return manifestError('invalid_cursor', 'cursor 格式无效，请从第一页重新查询', query, limit)
+    }
+    if (parsed.fingerprint !== fingerprint) {
+      return manifestError(
+        'stale_cursor',
+        '工具目录或 query 已变化，请从第一页重新查询',
+        query,
+        limit,
+      )
+    }
+    if (parsed.offset >= matched.length && parsed.offset !== 0) {
+      return manifestError('invalid_cursor', 'cursor 已超出结果范围，请从第一页重新查询', query, limit)
+    }
+    offset = parsed.offset
+  }
+
+  const items = matched.slice(offset, offset + limit)
+  const nextOffset = offset + items.length
+  const hasMore = nextOffset < matched.length
+  return {
+    kind: 'tool_manifest_page',
+    query,
+    items,
+    total: matched.length,
+    limit,
+    hasMore,
+    ...(hasMore ? { nextCursor: manifestCursor(fingerprint, nextOffset) } : {}),
+  }
+}
+
+/**
+ * 维护有界的 schema 请求 LRU（新 → 旧）。执行层每处理一次带 toolName 的
+ * request_tool_schema 后调用它，再把结果作为 recentToolNames 传给 buildTurnTools。
+ */
+export function touchRecentToolName(
+  current: readonly string[],
+  toolName: string,
+  maxEntries = MAX_TURN_TOOLS - 1,
+): string[] {
+  const capacity = Number.isFinite(maxEntries)
+    ? Math.max(0, Math.min(MAX_TURN_TOOLS - 1, Math.floor(maxEntries)))
+    : MAX_TURN_TOOLS - 1
+  if (capacity === 0) return []
+  const next = toolName
+    ? [toolName, ...current.filter((name) => name !== toolName)]
+    : [...current]
+  return next.slice(0, capacity)
+}
+
+/**
+ * 从所有已加载工具中选本轮工作集：显式 LRU 优先，其余按 visible 的后加载优先；
+ * 选中后重新按名称排序，兼顾“最近请求可回归”和线上请求字节稳定。
+ */
+export function selectTurnLoadedTools(
+  visible: readonly LoadedTool[],
+  isTauri: boolean,
+  options?: BuildTurnToolsOptions,
+): LoadedTool[] {
+  const capacity = normalizedMaxTurnTools(options?.maxTools) - 1
+  if (capacity <= 0) return []
+
+  const byName = new Map<string, LoadedTool>()
+  for (const tool of visible) {
+    if (
+      tool.name !== 'request_tool_schema'
+      && isToolVisible(tool.runtime, isTauri)
+      && isToolAllowed(tool.name, options)
+    ) {
+      // 同名重复时采用最后一个快照；registry 重注册后的新 schema 通常位于列表尾部。
+      byName.set(tool.name, tool)
+    }
+  }
+
+  const priorityNames: string[] = []
+  const seen = new Set<string>()
+  const addPriority = (name: string) => {
+    if (!seen.has(name) && byName.has(name)) {
+      seen.add(name)
+      priorityNames.push(name)
+    }
+  }
+  for (const name of options?.recentToolNames ?? []) addPriority(name)
+  for (let index = visible.length - 1; index >= 0; index -= 1) {
+    addPriority(visible[index].name)
+  }
+
+  return priorityNames
+    .slice(0, capacity)
+    .map((name) => byName.get(name)!)
+    .sort((left, right) => compareStableText(left.name, right.name))
+}
+
 /**
  * 为完整 tool-set（名称、描述和 schema）生成与输入排列无关的稳定 fingerprint。
  * request_tool_schema 与 buildTurnTools 一样固定排在第一，其余按名称排序。
@@ -156,19 +398,17 @@ export function toolSetSchemaFingerprint(tools: readonly ModelFunctionTool[]): s
 }
 
 // 简介：组本轮暴露给 model 的 function 列表（TK3 + TP3）。
-// 详情：request_tool_schema 恒在场（enum 为当前环境可用的工具名，供 model 请求懒加载）；其后跟上
-// 本轮已加载 schema 的 visible tools（各自展开 name/description/inputSchema）。未加载的工具不进；
-// server 工具在 web 下（isTauri=false）既不入 enum 也不入 visible（TP3，防御 web 混入的 server 工具）。
+// 详情：request_tool_schema 恒在场；其后最多 127 个已加载 schema 的 visible tools。
+// 超预算时优先最近请求/后加载的工具，再按名称稳定输出。未加载的工具不进；server 工具在 web
+// 下（isTauri=false）既不能经 manifest 发现，也不进 visible（TP3，防御 web 混入的 server 工具）。
 export function buildTurnTools(
   visible: LoadedTool[],
   isTauri: boolean,
   options?: BuildTurnToolsOptions,
 ): ModelFunctionTool[] {
   return [
-    requestSchemaTool(isTauri, options),
-    ...visible
-      .filter((tool) => isToolVisible(tool.runtime, isTauri) && isToolAllowed(tool.name, options))
-      .sort((left, right) => compareStableText(left.name, right.name))
+    requestSchemaTool(),
+    ...selectTurnLoadedTools(visible, isTauri, options)
       .map((tool) => ({
         type: 'function' as const,
         function: {
@@ -181,30 +421,44 @@ export function buildTurnTools(
 }
 
 // request_tool_schema 元工具：让 model 请求 runtime 懒加载某个工具的完整 JSON Schema。
-// enum 按环境过滤掉 server 工具（TP3）——web 下 model 根本请求不到必然失败的 Tauri 工具。
-function requestSchemaTool(isTauri: boolean, options?: BuildTurnToolsOptions): ModelFunctionTool {
-  const toolNames = (options?.registry ?? toolRegistry)
-    .list()
-    .filter((tool) => isToolVisible(tool.runtime, isTauri) && isToolAllowed(tool.name, options))
-    .map((tool) => tool.name)
-    .sort(compareStableText)
-
+// 不再把全 registry 塞进 toolName.enum：省略 toolName 时由执行层调用 searchToolManifestPage，
+// 返回有界、可搜索、可继续翻页的 manifest；给出精确 toolName 时保持原有加载行为。
+function requestSchemaTool(): ModelFunctionTool {
   return {
     type: 'function',
     function: {
       name: 'request_tool_schema',
-      description: 'Lazy-load the JSON schema for one available tool so it becomes callable this run.',
+      description: [
+        'Lazy-load one exact tool schema so it becomes callable this run.',
+        'If the exact name is unknown, omit toolName and use query/cursor/limit to browse a bounded manifest page.',
+      ].join(' '),
       parameters: canonicalizeJsonSchema({
         type: 'object',
+        additionalProperties: false,
         properties: {
           toolName: {
             type: 'string',
-            // 读绑定 core 的 registry（缺省回落模块级 toolRegistry＝defaultCore.tools）——见 [P1] 注释。
-            enum: toolNames,
+            minLength: 1,
+            description: 'Exact tool name returned by a manifest page. Omit this field to discover tools.',
           },
-          reason: { type: 'string' },
+          query: {
+            type: 'string',
+            maxLength: MAX_TOOL_MANIFEST_QUERY_LENGTH,
+            description: 'Optional case-insensitive search text used when toolName is omitted.',
+          },
+          cursor: {
+            type: 'string',
+            description: 'Opaque nextCursor from the preceding manifest page.',
+          },
+          limit: {
+            type: 'integer',
+            minimum: 1,
+            maximum: MAX_TOOL_MANIFEST_PAGE_SIZE,
+            default: DEFAULT_TOOL_MANIFEST_PAGE_SIZE,
+          },
+          reason: { type: 'string', minLength: 1 },
         },
-        required: ['toolName', 'reason'],
+        required: ['reason'],
       }),
     },
   }
@@ -246,13 +500,15 @@ export function loadedToolNamesFromHistory(messages: readonly ModelItem[]): stri
         if (toolCall.function.name !== 'request_tool_schema') continue
         const parsed = parseToolCallArgs(toolCall.function.arguments)
         const toolName = parsed.ok && typeof parsed.args.toolName === 'string'
-          ? parsed.args.toolName
+          ? parsed.args.toolName.trim()
           : undefined
         if (toolName) requestedByCallId.set(toolCall.id, toolName)
       }
     }
   }
 
+  // Set 的 delete + add 会把重复项移到迭代尾部，因此返回顺序是最旧 → 最新，
+  // 可直接作为恢复期 LRU。只用首次出现顺序会让后来重新请求过的工具在恢复时被误淘汰。
   const loadedToolNames = new Set<string>()
   for (const message of messages) {
     if (message.role !== 'tool') continue
@@ -260,6 +516,7 @@ export function loadedToolNamesFromHistory(messages: readonly ModelItem[]): stri
     if (!requestedToolName) continue
     const loaded = loadedToolName(message.content, requestedToolName)
     if (!loaded) continue
+    loadedToolNames.delete(loaded)
     loadedToolNames.add(loaded)
   }
   return [...loadedToolNames]

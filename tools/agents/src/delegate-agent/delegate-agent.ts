@@ -15,6 +15,29 @@ const inputSchema = {
           objective: { type: 'string' },
           mode: { type: 'string' },
           expectedOutput: { type: 'string' },
+          modelTier: {
+            type: 'string',
+            enum: ['pro', 'flash'],
+            description: 'Parent model preference. The runtime may conservatively override flash; explicit pro is always honored.',
+          },
+          taskCategory: {
+            type: 'string',
+            enum: ['retrieval', 'extraction', 'analysis', 'implementation', 'verification', 'final_acceptance'],
+            description: 'Observable task category used by model routing. Only low-risk retrieval/extraction is Flash-eligible.',
+          },
+          riskLevel: {
+            type: 'string',
+            enum: ['low', 'medium', 'high'],
+            description: 'Risk derived from the bounded task scope and requested capabilities. Omission is treated conservatively.',
+          },
+          crossModule: { type: 'boolean', description: 'Whether the task spans multiple modules; true forces Pro.' },
+          finalAcceptance: { type: 'boolean', description: 'Whether this child makes the final acceptance decision; true forces Pro.' },
+          priorFailureCount: {
+            type: 'integer',
+            minimum: 0,
+            maximum: 100,
+            description: 'Observable failures for this task in the current run history; any positive value forces Pro.',
+          },
           maxDepth: { type: 'integer', minimum: 1 },
           maxChildren: { type: 'integer', minimum: 1 },
           maxTurns: { type: 'integer', minimum: 1 },
@@ -99,7 +122,7 @@ export const delegateAgentTool: Tool = {
   name: 'delegate_agent',
   runtime: 'internal',
   skill: {
-    description: '并发启动一批树形 headless 子 agent，并把结构化结果回填给父 agent。',
+    description: '并发启动一批树形 headless 子 agent；运行时依据可观测任务特征解释性路由 Pro/Flash，并接收结构化结果。',
     triggers: ['delegate', 'subagent', '子agent', '并发分析', '派活'],
     content: guide,
   },

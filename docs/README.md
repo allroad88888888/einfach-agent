@@ -11,6 +11,7 @@
 | [Planning Runtime](planning-runtime.md) | 结构化计划、阶段执行、独立评估和用户验收 |
 | [树形子 Agent Runtime](tree-subagent-runtime.md) | delegation、权限、预算、archive、后台执行与治理脚本 |
 | [Context Caching](context-caching.md) | provider 自动缓存契约、profile/epoch、usage 归一化与观测 |
+| [MCP 集成](mcp-integration.md) | MCP 传输、配置与会话生命周期、动态工具对账和安全边界 |
 | [工具规范](../packages/agent-core/src/tools/TOOLS-SPEC.md) | Tool、Registry、ToolContext、安全边界与新增工具约定 |
 
 这些文档必须与当前 pnpm workspace、代码接口和测试同步更新。

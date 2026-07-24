@@ -14,14 +14,86 @@
 //   返回值 = 「是否恢复了会话」，供 main.tsx 决定要不要种子一个空会话（RF3：有数据就别再种子）。
 
 import type { Checkpoint } from '../checkpoint.type'
-import type { SessionMeta } from '../core.type'
-import { rootStore, sessionsAtom, activeSessionIdAtom } from '../rootStore'
+import type { SessionMeta, WorkspaceMeta } from '../core.type'
+import {
+  rootStore,
+  workspacesAtom,
+  activeWorkspaceIdAtom,
+  expandedWorkspaceIdsAtom,
+  sessionsAtom,
+  activeSessionIdAtom,
+} from '../rootStore'
 import { getSessionStore } from '../sessionStore'
 import { checkpointsAtom, currentTurnIndexAtom, itemsAtom, planAtom } from '../sessionAtoms'
 import type { HistoryDriver } from './historyDriver'
 import { migrateSessionMeta } from './modelMigration'
 import { migratePlanSnapshot } from '../../planning/migrate'
 import { executionGraphAtom, reduceExecutionGraph } from '../../execution/graph'
+import {
+  DEFAULT_WORKSPACE_NAME,
+  deriveWorkspaceName,
+  normalizeWorkspaceRoot,
+} from '../workspaceState'
+
+function stableWorkspaceId(seed: string): string {
+  let hash = 2166136261
+  for (let index = 0; index < seed.length; index += 1) {
+    hash ^= seed.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  return `workspace-${(hash >>> 0).toString(36)}`
+}
+
+function attachSessionsToWorkspaces(
+  sessions: SessionMeta[],
+  persistedWorkspaces: WorkspaceMeta[],
+): { sessions: SessionMeta[]; workspaces: WorkspaceMeta[] } {
+  const byId: Record<string, WorkspaceMeta> = Object.fromEntries(
+    persistedWorkspaces.map((workspace) => [
+      workspace.id,
+      { ...workspace, rootPath: normalizeWorkspaceRoot(workspace.rootPath) },
+    ]),
+  )
+
+  const findByRoot = (rootPath?: string) =>
+    Object.values(byId).find((workspace) => workspace.rootPath === rootPath)
+
+  const migratedSessions = sessions.map((session) => {
+    const legacyRoot = normalizeWorkspaceRoot(session.workspaceRoot)
+    let workspace = session.workspaceId ? byId[session.workspaceId] : undefined
+    workspace ??= findByRoot(legacyRoot)
+
+    if (!workspace) {
+      const preferredId = session.workspaceId
+        ?? stableWorkspaceId(legacyRoot ? `root:${legacyRoot}` : 'default')
+      let id = preferredId
+      let suffix = 1
+      while (byId[id]) {
+        id = `${preferredId}-${suffix}`
+        suffix += 1
+      }
+      workspace = {
+        id,
+        name: legacyRoot ? deriveWorkspaceName(legacyRoot) : DEFAULT_WORKSPACE_NAME,
+        rootPath: legacyRoot,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+      }
+      byId[id] = workspace
+    } else if (!persistedWorkspaces.some((item) => item.id === workspace!.id)) {
+      byId[workspace.id] = {
+        ...workspace,
+        createdAt: Math.min(workspace.createdAt, session.createdAt),
+        updatedAt: Math.max(workspace.updatedAt, session.updatedAt),
+      }
+    }
+
+    const { workspaceRoot: _legacyWorkspaceRoot, ...rest } = session
+    return { ...rest, workspaceId: workspace.id }
+  })
+
+  return { sessions: migratedSessions, workspaces: Object.values(byId) }
+}
 
 // 简介：从持久化恢复会话列表与每会话历史，回填内存 store；返回是否恢复了任何会话。
 // 详情：deps 注入 sessions（会话列表持久化，只读 loadSessions）+ history（HistoryDriver），
@@ -30,19 +102,27 @@ import { executionGraphAtom, reduceExecutionGraph } from '../../execution/graph'
 export async function hydrate(deps: {
   sessions: {
     loadSessions(): Promise<SessionMeta[]>
+    loadWorkspaces?(): Promise<WorkspaceMeta[]>
   }
   history: HistoryDriver
 }): Promise<boolean> {
   // 第一步：取会话列表。加载失败 → 放弃恢复、让 main.tsx 种子（容错，DK2）。
   let sessions: SessionMeta[]
+  let workspaces: WorkspaceMeta[] = []
   try {
     sessions = await deps.sessions.loadSessions()
   } catch {
     return false
   }
+  try {
+    workspaces = await deps.sessions.loadWorkspaces?.() ?? []
+  } catch {
+    // 老版本或部分损坏的工作区存储不应拖垮仍然可恢复的会话；下面会从会话兼容字段重建。
+    workspaces = []
+  }
 
-  // 无持久化会话 → 返回 false，由 main.tsx 种子一个空会话。
-  if (sessions.length === 0) {
+  // 工作区本身也是可持久化实体；只有两者都为空才需要启动种子。
+  if (sessions.length === 0 && workspaces.length === 0) {
     return false
   }
 
@@ -62,7 +142,7 @@ export async function hydrate(deps: {
     //     而 saveSessions 是覆盖式落盘，与 persistenceBridge.persistSessions() 之间无顺序保证。
     //     若回写晚于「用户新建会话」落地，就会用不含新会话的旧列表整体覆盖掉它。
     const hydratedAt = Date.now()
-    const migrated = sessions.map((session) => {
+    const modelMigratedSessions = sessions.map((session) => {
       const modelMigrated = migrateSessionMeta(session)
       if (!modelMigrated.executionGraph) return modelMigrated
       return {
@@ -73,17 +153,30 @@ export async function hydrate(deps: {
         ),
       }
     })
-
-    // 会话列表登记表：id → SessionMeta。
-    rootStore.setter(sessionsAtom, Object.fromEntries(migrated.map((s) => [s.id, s])))
-    // active = updatedAt 最新（降序取头个）；不原地改入参，故先 [...] 拷贝再排序。
-    rootStore.setter(
-      activeSessionIdAtom,
-      [...migrated].sort((a, b) => b.updatedAt - a.updatedAt)[0].id,
+    const migrated = attachSessionsToWorkspaces(modelMigratedSessions, workspaces)
+    const workspaceRecord = Object.fromEntries(
+      migrated.workspaces.map((workspace) => [workspace.id, workspace]),
     )
+    const latestSession = [...migrated.sessions].sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    const latestWorkspace = [...migrated.workspaces].sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    const activeWorkspaceId = latestSession?.workspaceId ?? latestWorkspace?.id ?? ''
+
+    rootStore.setter(workspacesAtom, workspaceRecord)
+    rootStore.setter(activeWorkspaceIdAtom, activeWorkspaceId)
+    rootStore.setter(
+      expandedWorkspaceIdsAtom,
+      activeWorkspaceId ? { [activeWorkspaceId]: true } : {},
+    )
+    // 会话列表登记表：id → SessionMeta。
+    rootStore.setter(
+      sessionsAtom,
+      Object.fromEntries(migrated.sessions.map((session) => [session.id, session])),
+    )
+    // active = updatedAt 最新（降序取头个）；不原地改入参，故先 [...] 拷贝再排序。
+    rootStore.setter(activeSessionIdAtom, latestSession?.id ?? '')
 
     // 逐会话回填其完整 checkpoint 序列 + 最新一轮 items/游标。
-    for (const session of migrated) {
+    for (const session of migrated.sessions) {
       if (session.plan) getSessionStore(session.id).store.setter(planAtom, migratePlanSnapshot(session.plan))
       if (session.executionGraph) {
         getSessionStore(session.id).store.setter(executionGraphAtom, session.executionGraph)

@@ -3,7 +3,11 @@ import { fireEvent, screen } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
 import { runAtom } from '@web-agent/core/state/sessionAtoms'
-import { composerDraftAtom, withdrawnTurnNoticeAtom } from '@web-agent/core/state/transientAtoms'
+import {
+  composerDraftAtom,
+  queuedUserMessagesAtom,
+  withdrawnTurnNoticeAtom,
+} from '@web-agent/core/state/transientAtoms'
 import { Composer } from './Composer'
 import {
   sendMessage,
@@ -109,19 +113,24 @@ describe('Composer', () => {
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
   })
 
-  it('busy 态：按钮变「停止」，点击调 stopRun，输入框 disabled', () => {
+  it('busy 态：仍可输入并加入队列，同时可单独停止', () => {
     const store = createStore()
     store.setter(runAtom, { runId: 'r', status: 'running' })
     renderWithStore(<Composer />, { store })
+
+    const textarea = screen.getByRole('textbox')
+    expect(textarea).not.toBeDisabled()
+    fireEvent.change(textarea, { target: { value: '补充一下' } })
+    fireEvent.click(screen.getByRole('button', { name: '加入队列' }))
+    expect(sendMessage).toHaveBeenCalledWith('补充一下')
 
     const stopBtn = screen.getByRole('button', { name: '停止' })
     fireEvent.click(stopBtn)
 
     expect(stopRun).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('textbox')).toBeDisabled()
   })
 
-  it('awaiting_tool 态：后台执行仍可点击停止', () => {
+  it('awaiting_tool 态：后台执行期间仍可加入队列和停止', () => {
     const store = createStore()
     store.setter(runAtom, {
       runId: 'r',
@@ -130,10 +139,23 @@ describe('Composer', () => {
     })
     renderWithStore(<Composer />, { store })
 
+    expect(screen.getByRole('textbox')).not.toBeDisabled()
+    expect(screen.getByRole('button', { name: '加入队列' })).toBeDisabled()
     fireEvent.click(screen.getByRole('button', { name: '停止' }))
 
     expect(stopRun).toHaveBeenCalledTimes(1)
-    expect(screen.getByRole('textbox')).toBeDisabled()
+  })
+
+  it('显示当前会话的排队消息数量', () => {
+    const store = createStore()
+    store.setter(runAtom, { runId: 'r', status: 'running' })
+    store.setter(queuedUserMessagesAtom, [
+      { id: 'q1', createdAt: 1, content: '第一条', targetRunId: 'r' },
+      { id: 'q2', createdAt: 2, content: '第二条', targetRunId: 'r' },
+    ])
+    renderWithStore(<Composer />, { store })
+
+    expect(screen.getByRole('status')).toHaveTextContent('已排队 2 条')
   })
 
   it('error 态：在输入区显示模型请求错误，并把 401 鉴权错误转换成可操作提示', () => {

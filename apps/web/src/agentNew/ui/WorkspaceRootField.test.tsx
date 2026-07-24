@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithStore } from '../../test/renderWithStore'
-import { activeSessionIdAtom, resetRootStore, rootStore, sessionsAtom } from '@web-agent/core/state/rootStore'
+import {
+  activeWorkspaceIdAtom,
+  resetRootStore,
+  rootStore,
+  workspacesAtom,
+} from '@web-agent/core/state/rootStore'
 import { resetSessionStores } from '@web-agent/core/state/sessionStore'
 import { setWorkspaceRoot } from '@web-agent/core/runtime/commands'
 import { pickWorkspaceDirectory } from '@web-agent/core/runtime/workspaceDialog'
@@ -18,17 +23,16 @@ vi.mock('@web-agent/core/runtime/workspaceDialog', () => ({
 }))
 
 function seedActiveSession(): void {
-  rootStore.setter(sessionsAtom, {
-    s1: {
-      id: 's1',
-      title: '会话',
-      settings: { vendor: 'deepseek', model: 'x' },
+  rootStore.setter(workspacesAtom, {
+    w1: {
+      id: 'w1',
+      name: 'workspace',
+      rootPath: '/current/workspace',
       createdAt: 0,
       updatedAt: 0,
-      workspaceRoot: '/current/workspace',
     },
   })
-  rootStore.setter(activeSessionIdAtom, 's1')
+  rootStore.setter(activeWorkspaceIdAtom, 'w1')
 }
 
 describe('WorkspaceRootField', () => {
@@ -38,10 +42,11 @@ describe('WorkspaceRootField', () => {
     vi.clearAllMocks()
   })
 
-  it('选择目录后写入当前会话 workspaceRoot', async () => {
+  it('选择目录后写入当前一级工作区', async () => {
     seedActiveSession()
     renderWithStore(<WorkspaceRootField />, { store: rootStore })
 
+    expect(screen.getByLabelText('工作区目录')).toHaveValue('/current/workspace')
     await userEvent.click(screen.getByRole('button', { name: '选择' }))
 
     await waitFor(() => {

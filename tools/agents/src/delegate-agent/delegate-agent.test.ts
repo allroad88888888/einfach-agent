@@ -34,6 +34,17 @@ describe('delegate_agent tool', () => {
     expect(delegateAgentTool.inputSchema).toMatchObject({
       required: ['children'],
       properties: {
+        children: {
+          items: {
+            properties: {
+              modelTier: { enum: ['pro', 'flash'] },
+              taskCategory: { enum: ['retrieval', 'extraction', 'analysis', 'implementation', 'verification', 'final_acceptance'] },
+              riskLevel: { enum: ['low', 'medium', 'high'] },
+              finalAcceptance: { type: 'boolean' },
+              priorFailureCount: { minimum: 0 },
+            },
+          },
+        },
         toolProfile: { enum: ['delegate_only', 'workspace_read'] },
         confirmedTools: { type: 'array' },
       },
@@ -75,7 +86,13 @@ describe('delegate_agent tool', () => {
     const progress = vi.fn()
     const result = await delegateAgentTool.execute(
       {
-        children: [{ objective: ' inspect runtime ', mode: ' explore ' }],
+        children: [{
+          objective: ' inspect runtime ',
+          mode: ' explore ',
+          modelTier: 'flash',
+          taskCategory: 'retrieval',
+          riskLevel: 'low',
+        }],
         maxConcurrent: 2,
         confirmedTools: ['write_file'],
       },
@@ -83,7 +100,13 @@ describe('delegate_agent tool', () => {
     )
 
     expect(delegateAgents).toHaveBeenCalledWith({
-      children: [{ objective: 'inspect runtime', mode: 'explore' }],
+      children: [{
+        objective: 'inspect runtime',
+        mode: 'explore',
+        modelTier: 'flash',
+        taskCategory: 'retrieval',
+        riskLevel: 'low',
+      }],
       maxConcurrent: 2,
       confirmedTools: ['write_file'],
     })

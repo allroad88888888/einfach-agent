@@ -50,6 +50,7 @@ describe('tools/registry —— 抽象工厂 ToolRegistry（§3/§4）', () => {
     const reg: ToolRegistry = toolRegistry
     expect(typeof reg.register).toBe('function')
     expect(typeof reg.has).toBe('function')
+    expect(typeof reg.registrationVersion).toBe('function')
     expect(typeof reg.list).toBe('function')
     expect(typeof reg.loadSchema).toBe('function')
     expect(typeof reg.run).toBe('function')
@@ -77,11 +78,14 @@ describe('tools/registry —— 抽象工厂 ToolRegistry（§3/§4）', () => {
   it('同名 register 覆盖（幂等，后注册胜）', () => {
     const reg = createToolRegistry()
     reg.register(makeTool({ skill: { description: '旧', content: '旧正文' } }))
+    const oldVersion = reg.registrationVersion('demo')
     reg.register(makeTool({ skill: { description: '新', content: '新正文' } }))
 
     expect(reg.list()).toHaveLength(1)
     expect(reg.list()[0].description).toBe('新')
     expect(reg.loadSchema('demo')?.guide).toBe('新正文')
+    expect(reg.registrationVersion('demo')).toBeGreaterThan(oldVersion!)
+    expect(reg.loadSchema('demo')?.registrationVersion).toBe(reg.registrationVersion('demo'))
   })
 
   it('loadSchema：在 summary 之上补 inputSchema + guide(=skill.content)', () => {
@@ -93,6 +97,7 @@ describe('tools/registry —— 抽象工厂 ToolRegistry（§3/§4）', () => {
       name: 'demo',
       description: 'demo 一句话摘要',
       runtime: 'internal',
+      registrationVersion: 1,
       inputSchema: { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] },
       guide: '# demo 指南正文',
     })

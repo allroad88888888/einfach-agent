@@ -47,7 +47,9 @@ export interface AbortRegistryLike {
 //   （Object.assign，不替换引用），命令读 apiKey/fetchImpl 也走 core.config —— 不再只是占位形状。
 export interface RuntimeConfig {
   deepseekApiKey: string
+  deepseekUserId?: string
   glmApiKey: string
+  customInstructions: string
   fetchImpl?: typeof fetch
 }
 
@@ -160,6 +162,7 @@ export function createCoreInstance(opts?: {
   const config: RuntimeConfig = {
     deepseekApiKey: '',
     glmApiKey: '',
+    customInstructions: '',
     ...opts?.config,
   }
 

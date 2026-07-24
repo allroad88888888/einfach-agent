@@ -33,8 +33,20 @@ export interface ToolSummary {
 
 /** 懒加载后补出 schema + 指南正文；schema 进下一轮 tools，guide 进一次性工具结果。 */
 export interface LoadedTool extends ToolSummary {
+  /**
+   * 当前注册实例的单调递增版本。
+   *
+   * ToolRegistry.loadSchema 返回的快照始终包含该值；保留可选是为了兼容手工构造的
+   * LoadedTool（例如宿主预置的临时可见工具）。
+   */
+  registrationVersion?: number
   inputSchema: Record<string, unknown>
   guide: string
+}
+
+/** ToolRegistry.loadSchema 返回的、可用于识别当前注册实例的完整快照。 */
+export interface RegisteredToolSnapshot extends LoadedTool {
+  registrationVersion: number
 }
 
 /**

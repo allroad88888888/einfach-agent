@@ -1,31 +1,35 @@
-// S4-A WorkspaceRootField：给当前会话绑定 workspace 根目录（左栏，根 rootStore Provider 下）。
+// S4-A WorkspaceRootField：在当前工作区的设置弹层中编辑根目录。
 // ---------------------------------------------------------------------------
 // 契约 U1 —— 只读 atom（rootStore 的 activeSessionMetaAtom）+ 调命令（setWorkspaceRoot）；
 //   绝不直接 setter atom / import writers / 碰 store 实例。挂在侧边栏（与 SessionList 同在根 Provider
-//   下），故能读到 rootStore 的会话元信息。无 active 会话时不渲染。
-import { useMemo, useState } from 'react'
-import { useAtomValue } from '@einfach/react'
-import { activeSessionMetaAtom } from '@web-agent/core/state/rootStore'
+//   下），故能读到 rootStore 的工作区元信息。无 active 工作区时不渲染。
+import { useMemo } from 'react'
+import { atom } from '@einfach/core'
+import { useAtom, useAtomValue } from '@einfach/react'
+import { activeWorkspaceMetaAtom } from '@web-agent/core/state/rootStore'
 import { setWorkspaceRoot } from '@web-agent/core/runtime/commands'
 import { canPickWorkspaceDirectory, pickWorkspaceDirectory } from '@web-agent/core/runtime/workspaceDialog'
 
+const workspacePickerStateAtom = atom<{ isPicking: boolean; error: string | null }>({
+  isPicking: false,
+  error: null,
+})
+
 export function WorkspaceRootField() {
-  const meta = useAtomValue(activeSessionMetaAtom)
-  const [isPicking, setIsPicking] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const workspace = useAtomValue(activeWorkspaceMetaAtom)
+  const [pickerState, setPickerState] = useAtom(workspacePickerStateAtom)
   const canPick = useMemo(() => canPickWorkspaceDirectory(), [])
-  if (!meta) return null
+  if (!workspace) return null
 
   async function handlePickDirectory(): Promise<void> {
-    if (isPicking) return
-    setIsPicking(true)
-    setError(null)
-    const result = await pickWorkspaceDirectory(meta?.workspaceRoot)
-    setIsPicking(false)
+    if (pickerState.isPicking) return
+    setPickerState({ isPicking: true, error: null })
+    const result = await pickWorkspaceDirectory(workspace?.rootPath)
     if (!result.ok) {
-      setError(result.error)
+      setPickerState({ isPicking: false, error: result.error })
       return
     }
+    setPickerState({ isPicking: false, error: null })
     if (result.path) {
       setWorkspaceRoot(result.path)
     }
@@ -34,33 +38,35 @@ export function WorkspaceRootField() {
   return (
     <div className="agentnew-workspace-root">
       <label className="agentnew-workspace-root-label" htmlFor="agentnew-workspace-root-input">
-        工作目录
+        工作区目录
       </label>
       <div className="agentnew-workspace-root-row">
         <input
           id="agentnew-workspace-root-input"
           className="agentnew-workspace-root-input"
           type="text"
-          placeholder="workspace 绝对路径（留空则用 git 根目录）"
-          value={meta.workspaceRoot ?? ''}
+          placeholder="工作区绝对路径（留空则用 Git 根目录）"
+          value={workspace.rootPath ?? ''}
           onChange={(event) => {
-            setError(null)
+            setPickerState({ isPicking: false, error: null })
             setWorkspaceRoot(event.target.value)
           }}
         />
         <button
           className="agentnew-workspace-root-button"
           type="button"
-          disabled={!canPick || isPicking}
-          title={canPick ? '选择工作目录' : '仅 Tauri 桌面可用'}
+          disabled={!canPick || pickerState.isPicking}
+          title={canPick ? '选择工作区' : '仅 Tauri 桌面可用'}
           onClick={() => {
             void handlePickDirectory()
           }}
         >
-          {isPicking ? '选择中' : '选择'}
+          {pickerState.isPicking ? '选择中' : '选择'}
         </button>
       </div>
-      {error ? <div className="agentnew-workspace-root-error">{error}</div> : null}
+      {pickerState.error
+        ? <div className="agentnew-workspace-root-error">{pickerState.error}</div>
+        : null}
     </div>
   )
 }

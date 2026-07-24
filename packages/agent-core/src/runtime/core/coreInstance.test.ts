@@ -117,16 +117,27 @@ describe('coreInstance —— CoreInstance 抽象与 defaultCore', () => {
   describe('config', () => {
     it('默认 config 是空 key', () => {
       const core = createCoreInstance()
-      expect(core.config).toEqual({ deepseekApiKey: '', glmApiKey: '' })
+      expect(core.config).toEqual({
+        deepseekApiKey: '',
+        glmApiKey: '',
+        customInstructions: '',
+      })
     })
 
     it('opts.config 浅合并覆盖默认值，且实例间不共享', () => {
-      const a = createCoreInstance({ config: { deepseekApiKey: 'ka' } })
+      const a = createCoreInstance({
+        config: {
+          deepseekApiKey: 'ka',
+          deepseekUserId: 'wa_instance_a',
+        },
+      })
       const b = createCoreInstance({ config: { glmApiKey: 'kb' } })
 
       expect(a.config.deepseekApiKey).toBe('ka')
+      expect(a.config.deepseekUserId).toBe('wa_instance_a')
       expect(a.config.glmApiKey).toBe('')
       expect(b.config.deepseekApiKey).toBe('')
+      expect(b.config.deepseekUserId).toBeUndefined()
       expect(b.config.glmApiKey).toBe('kb')
     })
   })

@@ -10,8 +10,15 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
 import type { Checkpoint } from '../checkpoint.type'
-import type { SessionMeta } from '../core.type'
-import { rootStore, sessionsAtom, activeSessionIdAtom, resetRootStore } from '../rootStore'
+import type { ModelSettings, SessionMeta } from '../core.type'
+import {
+  rootStore,
+  workspacesAtom,
+  activeWorkspaceIdAtom,
+  sessionsAtom,
+  activeSessionIdAtom,
+  resetRootStore,
+} from '../rootStore'
 import { getSessionStore, resetSessionStores } from '../sessionStore'
 import { checkpointsAtom, currentTurnIndexAtom, itemsAtom, planAtom } from '../sessionAtoms'
 import { createMemoryHistoryDriver } from './memoryHistoryDriver'
@@ -62,8 +69,13 @@ describe('hydrate', () => {
     const result = await hydrate({ sessions, history })
 
     expect(result).toBe(true)
-    // 会话列表登记表：两个会话齐全。
-    expect(rootStore.getter(sessionsAtom)).toEqual({ s1, s2 })
+    // 旧会话会被挂到迁移生成的默认工作区，不再重复携带目录字段。
+    const restoredSessions = rootStore.getter(sessionsAtom)
+    expect(restoredSessions.s1).toMatchObject(s1)
+    expect(restoredSessions.s2).toMatchObject(s2)
+    expect(restoredSessions.s1.workspaceId).toBe(restoredSessions.s2.workspaceId)
+    expect(rootStore.getter(workspacesAtom)[restoredSessions.s1.workspaceId!].name).toBe('默认工作区')
+    expect(rootStore.getter(activeWorkspaceIdAtom)).toBe(restoredSessions.s2.workspaceId)
     // active = updatedAt 最新（s2, 200 > 100）。
     expect(rootStore.getter(activeSessionIdAtom)).toBe('s2')
 
@@ -165,7 +177,7 @@ describe('hydrate', () => {
 // ---------------------------------------------------------------------------
 // settings.model 是持久化字段：老会话恢复出来时仍是当初存下的模型名。DeepSeek 官方公告
 // deepseek-chat / deepseek-reasoner 于 2026/07/24 15:59 UTC 下线，存量会话届时一发请求就是 400，
-// 故 hydrate 在写进 sessionsAtom 之前必须把旧名换成继任者。
+// 故 hydrate 在写进 sessionsAtom 之前必须先兼容旧名，再把主 Agent 标准模型收口到 Pro。
 // ===========================================================================
 
 // 造一个只指定模型名（及可选 thinking）的存量会话。
@@ -179,26 +191,37 @@ function legacySession(id: string, model: string, thinking?: boolean): SessionMe
   }
 }
 
-describe('hydrate · 下线模型名迁移', () => {
-  it('存量 deepseek-chat 会话 → 恢复后是继任者 + 非思考模式', async () => {
+function legacyReasoningSession(id: string, reasoningEffort: unknown): SessionMeta {
+  return {
+    ...legacySession(id, 'deepseek-v4-pro'),
+    settings: {
+      vendor: 'deepseek',
+      model: 'deepseek-v4-pro',
+      reasoning_effort: reasoningEffort,
+    } as unknown as ModelSettings,
+  }
+}
+
+describe('hydrate · 主 Agent 模型归一化', () => {
+  it('存量 deepseek-chat 会话 → 恢复后是 Pro + 非思考模式', async () => {
     const history = createMemoryHistoryDriver()
     const sessions = { loadSessions: async () => [legacySession('old', 'deepseek-chat')] }
 
     await hydrate({ sessions, history })
 
     const restored = rootStore.getter(sessionsAtom).old
-    expect(restored.settings.model).toBe('deepseek-v4-flash')
+    expect(restored.settings.model).toBe('deepseek-v4-pro')
     expect(restored.settings.thinking).toBe(false)
   })
 
-  it('存量 deepseek-reasoner 会话 → 恢复后是继任者 + 思考模式', async () => {
+  it('存量 deepseek-reasoner 会话 → 恢复后是 Pro + 思考模式', async () => {
     const history = createMemoryHistoryDriver()
     const sessions = { loadSessions: async () => [legacySession('old', 'deepseek-reasoner')] }
 
     await hydrate({ sessions, history })
 
     const restored = rootStore.getter(sessionsAtom).old
-    expect(restored.settings.model).toBe('deepseek-v4-flash')
+    expect(restored.settings.model).toBe('deepseek-v4-pro')
     expect(restored.settings.thinking).toBe(true)
   })
 
@@ -210,7 +233,7 @@ describe('hydrate · 下线模型名迁移', () => {
     await hydrate({ sessions, history })
 
     const restored = rootStore.getter(sessionsAtom).old
-    expect(restored.settings.model).toBe('deepseek-v4-flash')
+    expect(restored.settings.model).toBe('deepseek-v4-pro')
     expect(restored.settings.thinking).toBe(false)
   })
 
@@ -223,8 +246,55 @@ describe('hydrate · 下线模型名迁移', () => {
     await hydrate({ sessions, history })
 
     const restored = rootStore.getter(sessionsAtom)
-    expect(restored.fresh).toEqual(fresh)
-    expect(restored.custom).toEqual(custom)
+    expect(restored.fresh).toMatchObject(fresh)
+    expect(restored.custom).toMatchObject(custom)
+    expect(restored.fresh.workspaceId).toBe(restored.custom.workspaceId)
+  })
+
+  it('历史 Flash 主会话恢复后收口到 Pro', async () => {
+    const history = createMemoryHistoryDriver()
+    const sessions = { loadSessions: async () => [legacySession('flash', 'deepseek-v4-flash')] }
+
+    await hydrate({ sessions, history })
+
+    expect(rootStore.getter(sessionsAtom).flash.settings.model).toBe('deepseek-v4-pro')
+  })
+
+  it.each([
+    ['low', 'high'],
+    ['medium', 'high'],
+    ['xhigh', 'max'],
+  ])('历史 DeepSeek reasoning_effort=%s → 恢复后为 %s', async (before, after) => {
+    const history = createMemoryHistoryDriver()
+    const sessions = {
+      loadSessions: async () => [legacyReasoningSession('legacy-effort', before)],
+    }
+
+    await hydrate({ sessions, history })
+
+    expect(
+      rootStore.getter(sessionsAtom)['legacy-effort'].settings.reasoning_effort,
+    ).toBe(after)
+  })
+
+  it('未知持久化 reasoning_effort 不透传：DeepSeek 删除非法值，GLM 合法 low 保留', async () => {
+    const history = createMemoryHistoryDriver()
+    const invalidDeepSeek = legacyReasoningSession('invalid-effort', { unexpected: true })
+    const glm: SessionMeta = {
+      ...legacySession('glm-effort', 'glm-5'),
+      settings: {
+        vendor: 'glm',
+        model: 'glm-5',
+        reasoning_effort: 'low',
+      },
+    }
+    const sessions = { loadSessions: async () => [invalidDeepSeek, glm] }
+
+    await hydrate({ sessions, history })
+
+    const restored = rootStore.getter(sessionsAtom)
+    expect(restored['invalid-effort'].settings).not.toHaveProperty('reasoning_effort')
+    expect(restored['glm-effort'].settings.reasoning_effort).toBe('low')
   })
 
   it('迁移幂等：把迁移后的结果再 hydrate 一次，结果不变', async () => {
@@ -280,8 +350,8 @@ describe('hydrate · 下线模型名迁移', () => {
     // 让出微任务：即便有人用 fire-and-forget 偷写，也能在这之后暴露出来。
     await Promise.resolve()
 
-    // 内存里已是继任者，行为不受影响。
-    expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-v4-flash')
+    // 内存里已归一化为主 Agent Pro，行为不受影响。
+    expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-v4-pro')
     // 后续 checkpoint 回填照常。
     expect(getSessionStore('old').store.getter(itemsAtom)).toEqual(cp(0, 'hello').items)
   })
@@ -291,7 +361,7 @@ describe('hydrate · 下线模型名迁移', () => {
     const sessions = { loadSessions: async () => [legacySession('old', 'deepseek-chat')] }
 
     await expect(hydrate({ sessions, history })).resolves.toBe(true)
-    expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-v4-flash')
+    expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-v4-pro')
   })
 
   it('重启幂等：盘上仍是旧名，第二次启动照样迁得对（这正是不回写的前提）', async () => {
@@ -300,10 +370,10 @@ describe('hydrate · 下线模型名迁移', () => {
     const sessions = { loadSessions: async () => [legacySession('old', 'deepseek-chat')] }
 
     await hydrate({ sessions, history })
-    expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-v4-flash')
+    expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-v4-pro')
 
     await hydrate({ sessions, history })
-    expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-v4-flash')
+    expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-v4-pro')
     expect(rootStore.getter(sessionsAtom).old.settings.thinking).toBe(false)
   })
 })

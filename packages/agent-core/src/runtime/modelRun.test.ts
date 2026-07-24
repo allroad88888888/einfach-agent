@@ -16,6 +16,8 @@ import {
   alwaysAllowedToolsAtom,
   runtimeTranscriptEventsAtom,
   contextStatsAtom,
+  queuedUserMessagesAtom,
+  enqueueUserMessage,
 } from '../state/transientAtoms'
 import { toolRegistry } from '../tools/registry'
 import type { ModelSettings } from '../state/core.type'
@@ -26,6 +28,7 @@ import type { Checkpoint } from '../state/checkpoint.type'
 import { configureObservability, flushObservability, resetObservability } from '../observability/trace'
 import type { TraceDriver, TraceEvent, TraceSpan } from '../observability/types'
 import { createCoreInstance } from './core/coreInstance'
+import { createCore } from './core/createCore'
 
 // delegateRuntime.dispose 的失败注入闸门。★ 只在 disposeControl.error 被显式设过时才把 dispose
 // 换成抛错版本 ★ —— 其余用例拿到的仍是货真价实的 delegate runtime，本文件其它测试完全不受影响。
@@ -222,6 +225,36 @@ async function waitUntil(predicate: () => boolean, label: string): Promise<void>
 }
 
 describe('runSession（P-R2 最小单轮 run）', () => {
+  it('passes only the current CoreInstance DeepSeek user id into the request body', async () => {
+    const core = createCoreInstance({
+      config: { deepseekUserId: 'wa_isolated_core_0123' },
+    })
+    const id = 'instance-deepseek-user-id'
+    core.rootStore.setter(sessionsAtom, {
+      [id]: {
+        id,
+        title: 't',
+        settings: { vendor: 'deepseek', model: 'x' },
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    })
+    let body: Record<string, unknown> | undefined
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      return jsonResponse('ok')
+    }
+
+    await runSession(id, 'hi', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+      core,
+    })
+
+    expect(body?.user_id).toBe('wa_isolated_core_0123')
+  })
+
   it('跑通一轮：append user → 调 model → append assistant → commit checkpoint → done', async () => {
     seedSession('s1', { vendor: 'deepseek', model: 'x' })
     const fetchImpl: typeof fetch = async () => jsonResponse('你好')
@@ -239,6 +272,117 @@ describe('runSession（P-R2 最小单轮 run）', () => {
 
     expect(getSessionStore('s1').store.getter(runAtom)?.status).toBe('done')
     expect(getSessionStore('s1').store.getter(checkpointsAtom)).toHaveLength(1)
+  })
+
+  it('模型请求期间追加输入：当前回复落库后按 FIFO 注入同一 run 的下一轮', async () => {
+    seedSession('queued-final', { vendor: 'deepseek', model: 'x' })
+    const store = getSessionStore('queued-final').store
+    const bodies: Array<{ messages: Array<{ role: string; content?: string }> }> = []
+    let requestCount = 0
+    let resolveFirst!: (response: Response) => void
+    const firstResponse = new Promise<Response>((resolve) => {
+      resolveFirst = resolve
+    })
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      bodies.push(JSON.parse(init!.body as string))
+      requestCount += 1
+      return requestCount === 1 ? firstResponse : jsonResponse('收到补充')
+    }
+
+    const running = runSession('queued-final', '先做第一件事', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+    await waitUntil(() => requestCount === 1, 'first queued request')
+    const runId = store.getter(runAtom)?.runId
+    expect(runId).toBeTruthy()
+    const queuedAt = Date.now()
+    enqueueUserMessage('queued-final', {
+      id: 'queued-user-1',
+      createdAt: queuedAt,
+      content: '再补充第二件事',
+      targetRunId: runId!,
+    })
+
+    resolveFirst(jsonResponse('第一件事完成'))
+    await running
+
+    expect(requestCount).toBe(2)
+    expect(store.getter(runAtom)).toMatchObject({ runId, status: 'done' })
+    expect(store.getter(itemsAtom).map(({ item }) => item.role)).toEqual([
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+    ])
+    expect(store.getter(itemsAtom)[2]).toMatchObject({
+      id: 'queued-user-1',
+      createdAt: queuedAt,
+      item: { role: 'user', content: '再补充第二件事' },
+    })
+    expect(bodies[1].messages.filter(({ role }) => role !== 'system').map(({ role }) => role)).toEqual([
+      'user',
+      'assistant',
+      'user',
+    ])
+    expect(store.getter(queuedUserMessagesAtom)).toEqual([])
+    expect(store.getter(checkpointsAtom)).toHaveLength(1)
+  })
+
+  it('工具调用期间追加输入：等待完整 tool result 后再注入，协议顺序不被打断', async () => {
+    seedSession('queued-tool', { vendor: 'deepseek', model: 'x' })
+    const store = getSessionStore('queued-tool').store
+    const bodies: Array<{ messages: Array<{ role: string }> }> = []
+    let requestCount = 0
+    let resolveFirst!: (response: Response) => void
+    const firstResponse = new Promise<Response>((resolve) => {
+      resolveFirst = resolve
+    })
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      bodies.push(JSON.parse(init!.body as string))
+      requestCount += 1
+      return requestCount === 1 ? firstResponse : jsonResponse('工具和补充都处理完了')
+    }
+
+    const running = runSession('queued-tool', '先查工具', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+    await waitUntil(() => requestCount === 1, 'first tool request')
+    const runId = store.getter(runAtom)?.runId
+    enqueueUserMessage('queued-tool', {
+      id: 'queued-user-tool',
+      createdAt: Date.now(),
+      content: '工具完成后再考虑这个补充',
+      targetRunId: runId!,
+    })
+
+    resolveFirst(toolCallsResponse([
+      {
+        id: 'tool-call-1',
+        name: 'request_tool_schema',
+        args: { toolName: 'skill_search', reason: '查看工具' },
+      },
+    ]))
+    await running
+
+    expect(requestCount).toBe(2)
+    expect(store.getter(itemsAtom).map(({ item }) => item.role)).toEqual([
+      'user',
+      'assistant',
+      'tool',
+      'user',
+      'assistant',
+    ])
+    expect(bodies[1].messages.filter(({ role }) => role !== 'system').map(({ role }) => role)).toEqual([
+      'user',
+      'assistant',
+      'tool',
+      'user',
+    ])
+    expect(store.getter(queuedUserMessagesAtom)).toEqual([])
   })
 
   it('abort：fetchImpl 抛 AbortError → run.status=stopped，不抛崩', async () => {
@@ -347,7 +491,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(getSessionStore('s4').store.getter(runAtom)?.status).toBe('done')
   })
 
-  it('settings 转发：会话可调参数（temperature/thinking/reasoning_effort）进入 model 请求体', async () => {
+  it('DeepSeek thinking 请求保留会话设置，但只转发兼容的 thinking/reasoning_effort', async () => {
     seedSession('s5', {
       vendor: 'deepseek',
       model: 'm',
@@ -368,9 +512,10 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     })
 
     expect(captured.model).toBe('m')
-    expect(captured.temperature).toBe(0.5)
+    expect(captured).not.toHaveProperty('temperature')
     expect(captured.thinking).toEqual({ type: 'enabled' })
     expect(captured.reasoning_effort).toBe('high')
+    expect(rootStore.getter(sessionsAtom).s5.settings.temperature).toBe(0.5)
   })
 
   it('system/tools 注入写入 UI transcript，但不进入 itemsAtom 历史', async () => {
@@ -1201,6 +1346,16 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     })
     seedSession('parallel-tools', { vendor: 'deepseek', model: 'x' })
     const { fetchImpl } = seqFetch([
+      () => toolCallsResponse([{
+        name: 'request_tool_schema',
+        args: { toolName: '__parallel_read_a__', reason: '加载只读工具 A' },
+        id: 'load-read-a',
+      }]),
+      () => toolCallsResponse([{
+        name: 'request_tool_schema',
+        args: { toolName: '__parallel_read_b__', reason: '加载只读工具 B' },
+        id: 'load-read-b',
+      }]),
       () => toolCallsResponse([
         { name: '__parallel_read_a__', args: {}, id: 'read-a' },
         { name: '__parallel_read_b__', args: {}, id: 'read-b' },
@@ -1230,7 +1385,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(graph.nodes['read-b']).toMatchObject({ type: 'tool', status: 'succeeded' })
     expect(store.getter(itemsAtom).flatMap(({ item }) =>
       item.role === 'tool' ? [item.tool_call_id] : [],
-    )).toEqual(['read-a', 'read-b'])
+    ).filter((callId) => callId === 'read-a' || callId === 'read-b')).toEqual(['read-a', 'read-b'])
   })
 
   it('普通运行：模型不停请求 schema → 32 轮后 error，但整轮仍落 checkpoint', async () => {
@@ -1961,6 +2116,92 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(items.some((it) => it.item.role === 'assistant' && 'content' in it.item && it.item.content === '迟到的答案')).toBe(false)
     expect(getSessionStore('t5').store.getter(checkpointsAtom)).toHaveLength(0)
   })
+
+  it('模型收到旧 schema 后同名工具被重注册：旧响应不得执行新实例', async () => {
+    const core = createCoreInstance()
+    const id = 'tool-registration-changed'
+    const toolName = 'dynamic_registration_guard'
+    core.rootStore.setter(sessionsAtom, {
+      [id]: {
+        id,
+        title: 't',
+        settings: { vendor: 'deepseek', model: 'x' },
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    })
+
+    const oldExecute = vi.fn(() => ({ ok: true as const, data: { implementation: 'old' } }))
+    const newExecute = vi.fn(() => ({ ok: true as const, data: { implementation: 'new' } }))
+    const inputSchema = {
+      type: 'object',
+      properties: { value: { type: 'string' } },
+      required: ['value'],
+      additionalProperties: false,
+    }
+    core.tools.register({
+      name: toolName,
+      runtime: 'internal',
+      skill: { description: '旧版动态工具', content: '旧版指南：按旧契约调用' },
+      inputSchema,
+      execute: oldExecute,
+    })
+    const oldRegistrationVersion = core.tools.registrationVersion(toolName)
+
+    const requestBodies: Array<{ tools?: ModelFunctionTool[] }> = []
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      requestBodies.push(JSON.parse(String(init?.body)) as { tools?: ModelFunctionTool[] })
+      if (requestBodies.length === 1) {
+        return toolCallsResponse([{
+          name: 'request_tool_schema',
+          args: { toolName, reason: '读取动态工具参数' },
+          id: 'load-dynamic',
+        }])
+      }
+      if (requestBodies.length === 2) {
+        // 请求体已经把旧 schema 发给模型；在旧响应到达前模拟 MCP tools_changed/重连覆盖同名实例。
+        core.tools.register({
+          name: toolName,
+          runtime: 'internal',
+          skill: { description: '新版动态工具', content: '新版指南：实现已替换' },
+          inputSchema,
+          execute: newExecute,
+        })
+        return toolCallsResponse([{
+          name: toolName,
+          args: { value: '由旧 schema 生成' },
+          id: 'stale-dynamic-call',
+        }])
+      }
+      return jsonResponse('已重新加载工具')
+    }
+
+    await runSession(id, '调用动态工具', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+      core,
+    })
+
+    const exposedTool = requestBodies[1]?.tools?.find((tool) => tool.function.name === toolName)
+    expect(exposedTool?.function.description).toContain('旧版指南')
+    expect(exposedTool?.function.description).not.toContain('新版指南')
+    expect(core.tools.registrationVersion(toolName)).toBeGreaterThan(oldRegistrationVersion!)
+    expect(oldExecute).not.toHaveBeenCalled()
+    expect(newExecute).not.toHaveBeenCalled()
+
+    const staleResult = core.getSessionStore(id).store.getter(itemsAtom).find(
+      ({ item }) => item.role === 'tool' && item.tool_call_id === 'stale-dynamic-call',
+    )?.item
+    if (!staleResult || staleResult.role !== 'tool') throw new Error('缺少旧注册调用的拒绝结果')
+    expect(JSON.parse(staleResult.content)).toMatchObject({
+      code: 'tool_registration_changed',
+      expectedRegistrationVersion: oldRegistrationVersion,
+      currentRegistrationVersion: core.tools.registrationVersion(toolName),
+    })
+    expect(requestBodies).toHaveLength(3)
+    expect(core.getSessionStore(id).store.getter(runAtom)?.status).toBe('done')
+  })
 })
 
 describe('危险工具确认门（S4-B）', () => {
@@ -2047,7 +2288,12 @@ describe('危险工具确认门（S4-B）', () => {
     const store = getSessionStore('d1').store
     const run = store.getter(runAtom)
     expect(run?.status).toBe('waiting_confirmation')
-    expect(run?.pendingToolConfirmation).toEqual({ callId: 'w1', toolName: 'write_file', args })
+    expect(run?.pendingToolConfirmation).toEqual({
+      callId: 'w1',
+      toolName: 'write_file',
+      args,
+      registrationVersion: toolRegistry.registrationVersion('write_file'),
+    })
     // schema 加载后暂停，没有续跑到最终文本。
     expect(count()).toBe(2)
     // schema call 已回填；危险工具的 ToolItem 未回填（留给 confirmTool）。
@@ -2258,6 +2504,94 @@ describe('危险工具确认门（S4-B）', () => {
     expect(store.getter(runAtom)?.status).toBe('done')
     expect(store.getter(checkpointsAtom)).toHaveLength(1)
   })
+
+  it('MCP 工具等待确认后同名重注册：用户批准也不得执行新实例', async () => {
+    const toolName = 'mcp__test__mutable_action'
+    const oldExecute = vi.fn(() => ({ ok: true as const, data: { implementation: 'old' } }))
+    const newExecute = vi.fn(() => ({ ok: true as const, data: { implementation: 'new' } }))
+    let requestCount = 0
+    const fetchImpl: typeof fetch = async () => {
+      requestCount += 1
+      if (requestCount === 1) {
+        return toolCallsResponse([{
+          name: 'request_tool_schema',
+          args: { toolName, reason: '读取 MCP 参数' },
+          id: 'load-mcp',
+        }])
+      }
+      if (requestCount === 2) {
+        return toolCallsResponse([{
+          name: toolName,
+          args: { value: 'approved value' },
+          id: 'pending-mcp-call',
+        }])
+      }
+      return jsonResponse('已处理注册变化')
+    }
+    const core = createCore({
+      config: { deepseekApiKey: 'k', fetchImpl },
+    })
+    const inputSchema = {
+      type: 'object',
+      properties: { value: { type: 'string' } },
+      required: ['value'],
+      additionalProperties: false,
+    }
+    core.tools.register({
+      name: toolName,
+      runtime: 'internal',
+      skill: { description: '旧 MCP 工具', content: '执行外部变更' },
+      inputSchema,
+      execute: oldExecute,
+    })
+    const oldRegistrationVersion = core.tools.registrationVersion(toolName)
+    const id = core.newSession({ settings: { vendor: 'deepseek', model: 'x' } })
+
+    core.sendMessage('执行 MCP 操作')
+    await waitUntil(
+      () => core.getSessionStore(id).store.getter(runAtom)?.status === 'waiting_confirmation'
+        && !core.abort.isRunning(id),
+      'MCP confirmation',
+    )
+
+    const pending = core.getSessionStore(id).store.getter(runAtom)?.pendingToolConfirmation
+    expect(pending).toMatchObject({
+      callId: 'pending-mcp-call',
+      toolName,
+      args: { value: 'approved value' },
+      registrationVersion: oldRegistrationVersion,
+    })
+    expect(oldExecute).not.toHaveBeenCalled()
+
+    core.tools.register({
+      name: toolName,
+      runtime: 'internal',
+      skill: { description: '新 MCP 工具', content: '重连后的另一实现' },
+      inputSchema,
+      execute: newExecute,
+    })
+    const newRegistrationVersion = core.tools.registrationVersion(toolName)
+    expect(newRegistrationVersion).toBeGreaterThan(oldRegistrationVersion!)
+
+    // 直接走用户“允许”命令，覆盖 pending 版本从 commands 到 resumeToolCall 的完整传递。
+    core.confirmTool(true)
+    await waitUntil(
+      () => core.getSessionStore(id).store.getter(runAtom)?.status === 'done',
+      'MCP confirmation resume',
+    )
+
+    expect(oldExecute).not.toHaveBeenCalled()
+    expect(newExecute).not.toHaveBeenCalled()
+    const result = core.getSessionStore(id).store.getter(itemsAtom).find(
+      ({ item }) => item.role === 'tool' && item.tool_call_id === 'pending-mcp-call',
+    )?.item
+    if (!result || result.role !== 'tool') throw new Error('缺少确认恢复后的工具结果')
+    const resultPayload = JSON.parse(result.content) as { error?: string }
+    expect(resultPayload.error).toContain('tool registration version mismatch')
+    expect(resultPayload.error).toContain(`expected ${oldRegistrationVersion}`)
+    expect(resultPayload.error).toContain(`current ${newRegistrationVersion}`)
+    expect(requestCount).toBe(3)
+  })
 })
 
 describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
@@ -2389,14 +2723,56 @@ describe('finish_reason 异常分流', () => {
     expect(assistantItem.content).not.toContain('以上回复')
   })
 
-  it('insufficient_system_resource：status=error 且提示稍后重试，content 为空仍补「仅含标注」的 assistant 条目', async () => {
+  it('DeepSeek insufficient_system_resource：无流式写回时原请求重试一次并恢复', async () => {
+    const trace = captureTrace()
+    configureObservability({ driver: trace.driver })
+    seedSession('fr-resource-recovered', { vendor: 'deepseek', model: 'x' })
+    const { fetchImpl, count } = seqFetch([
+      () => finishReasonResponse('insufficient_system_resource', null),
+      () => jsonResponse('容量恢复'),
+    ])
+
+    await runSession('fr-resource-recovered', 'hi', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+    await flushObservability()
+
+    const store = getSessionStore('fr-resource-recovered').store
+    expect(count()).toBe(2)
+    expect(store.getter(runAtom)?.status).toBe('done')
+    expect(store.getter(itemsAtom).map(({ item }) => item)).toEqual([
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: '容量恢复' },
+    ])
+    expect(trace.events.filter(
+      (event) => event.name === 'llm.insufficient_system_resource_retry',
+    )).toHaveLength(1)
+    expect(trace.events.find(
+      (event) => event.name === 'llm.insufficient_system_resource_recovered',
+    )?.attrs).toMatchObject({
+      retries_used: 1,
+    })
+    expect(trace.events.some(
+      (event) => event.name === 'llm.insufficient_system_resource_exhausted',
+    )).toBe(false)
+  })
+
+  it('DeepSeek insufficient_system_resource：最多重试一次，耗尽后仍走原异常收尾', async () => {
+    const trace = captureTrace()
+    configureObservability({ driver: trace.driver })
     seedSession('fr4', { vendor: 'deepseek', model: 'x' })
-    const fetchImpl: typeof fetch = async () => finishReasonResponse('insufficient_system_resource', null)
+    const { fetchImpl, count } = seqFetch([
+      () => finishReasonResponse('insufficient_system_resource', null),
+    ])
 
     await runSession('fr4', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
+    await flushObservability()
 
     const store = getSessionStore('fr4').store
     const run = store.getter(runAtom)
+    expect(count()).toBe(2)
     expect(run?.status).toBe('error')
     expect(run?.error).toContain('insufficient_system_resource')
     expect(run?.error).toContain('稍后重试')
@@ -2405,6 +2781,281 @@ describe('finish_reason 异常分流', () => {
     const assistantItem = items[1].item
     if (assistantItem.role !== 'assistant') throw new Error('意外的条目形状')
     expect(assistantItem.content).toContain('insufficient_system_resource')
+    expect(trace.events.filter(
+      (event) => event.name === 'llm.insufficient_system_resource_retry',
+    )).toHaveLength(1)
+    expect(trace.events.find(
+      (event) => event.name === 'llm.insufficient_system_resource_exhausted',
+    )?.attrs).toMatchObject({
+      retries_used: 1,
+      reason: 'retry_limit_reached',
+    })
+  })
+
+  it('DeepSeek insufficient_system_resource：协议重试请求失败时闭合 exhausted 事件', async () => {
+    const trace = captureTrace()
+    configureObservability({ driver: trace.driver })
+    seedSession('fr-resource-retry-failed', { vendor: 'deepseek', model: 'x' })
+    const { fetchImpl, count } = seqFetch([
+      () => finishReasonResponse('insufficient_system_resource', null),
+      () => new Response('unauthorized', { status: 401 }),
+    ])
+
+    await runSession('fr-resource-retry-failed', 'hi', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+    await flushObservability()
+
+    expect(count()).toBe(2)
+    expect(getSessionStore('fr-resource-retry-failed').store.getter(runAtom)?.status).toBe('error')
+    expect(trace.events.filter(
+      (event) => event.name === 'llm.insufficient_system_resource_retry',
+    )).toHaveLength(1)
+    expect(trace.events.find(
+      (event) => event.name === 'llm.insufficient_system_resource_exhausted',
+    )?.attrs).toMatchObject({
+      retries_used: 1,
+      reason: 'retry_request_failed',
+    })
+  })
+
+  it('DeepSeek insufficient_system_resource：已有流式 delta 时禁止重试，保留原文并异常收尾', async () => {
+    const trace = captureTrace()
+    configureObservability({ driver: trace.driver })
+    seedSession('fr-resource-streamed', { vendor: 'deepseek', model: 'x' })
+    let calls = 0
+    const fetchImpl: typeof fetch = async () => {
+      calls += 1
+      return sseResponse([
+        {
+          choices: [{
+            delta: { content: '已经写出的半截内容' },
+            finish_reason: 'insufficient_system_resource',
+          }],
+        },
+      ])
+    }
+
+    await runSession('fr-resource-streamed', 'hi', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+    await flushObservability()
+
+    const store = getSessionStore('fr-resource-streamed').store
+    expect(calls).toBe(1)
+    expect(store.getter(runAtom)?.status).toBe('error')
+    const assistant = store.getter(itemsAtom)[1]?.item
+    if (!assistant || assistant.role !== 'assistant') throw new Error('缺少流式 assistant 条目')
+    expect(assistant.content).toContain('已经写出的半截内容')
+    expect(assistant.content).toContain('insufficient_system_resource')
+    expect(trace.events.some(
+      (event) => event.name === 'llm.insufficient_system_resource_retry',
+    )).toBe(false)
+    expect(trace.events.find(
+      (event) => event.name === 'llm.insufficient_system_resource_exhausted',
+    )?.attrs).toMatchObject({
+      retries_used: 0,
+      reason: 'streamed_output_already_written',
+    })
+  })
+
+  it('DeepSeek insufficient_system_resource：非流式响应已有正文时禁止重试', async () => {
+    const trace = captureTrace()
+    configureObservability({ driver: trace.driver })
+    seedSession('fr-resource-json-content', { vendor: 'deepseek', model: 'x' })
+    let calls = 0
+    const fetchImpl: typeof fetch = async () => {
+      calls += 1
+      return finishReasonResponse(
+        'insufficient_system_resource',
+        '非流式响应里已经返回的正文',
+      )
+    }
+
+    await runSession('fr-resource-json-content', 'hi', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+    await flushObservability()
+
+    expect(calls).toBe(1)
+    const store = getSessionStore('fr-resource-json-content').store
+    expect(store.getter(runAtom)?.status).toBe('error')
+    expect(trace.events.some(
+      (event) => event.name === 'llm.insufficient_system_resource_retry',
+    )).toBe(false)
+    expect(trace.events.find(
+      (event) => event.name === 'llm.insufficient_system_resource_exhausted',
+    )?.attrs).toMatchObject({
+      retries_used: 0,
+      // JSON 兼容路径也会经统一 onDelta 写入流式条目，因此这里优先记录“已经写回”。
+      reason: 'streamed_output_already_written',
+      has_response_text: true,
+    })
+  })
+
+  it('DeepSeek insufficient_system_resource：响应含 tool_calls 时禁止重试和执行', async () => {
+    const trace = captureTrace()
+    configureObservability({ driver: trace.driver })
+    seedSession('fr-resource-tools', { vendor: 'deepseek', model: 'x' })
+    let calls = 0
+    const fetchImpl: typeof fetch = async () => {
+      calls += 1
+      return rawToolCallsResponse('insufficient_system_resource', [{
+        name: 'request_tool_schema',
+        args: '{"toolName":"skill_search","reason":"容量不足前生成"}',
+        id: 'resource-tool-call',
+      }])
+    }
+
+    await runSession('fr-resource-tools', 'hi', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+    await flushObservability()
+
+    const store = getSessionStore('fr-resource-tools').store
+    expect(calls).toBe(1)
+    expect(store.getter(runAtom)?.status).toBe('error')
+    expect(store.getter(itemsAtom).some(
+      ({ item }) => item.role === 'tool' && item.tool_call_id === 'resource-tool-call',
+    )).toBe(false)
+    expect(trace.events.find(
+      (event) => event.name === 'llm.insufficient_system_resource_exhausted',
+    )?.attrs).toMatchObject({
+      retries_used: 0,
+      reason: 'tool_calls_returned',
+      tool_calls_count: 1,
+    })
+  })
+
+  it('DeepSeek insufficient_system_resource：畸形原始 tool_calls 也禁止重试', async () => {
+    const trace = captureTrace()
+    configureObservability({ driver: trace.driver })
+    seedSession('fr-resource-malformed-tools', { vendor: 'deepseek', model: 'x' })
+    let calls = 0
+    const fetchImpl: typeof fetch = async () => {
+      calls += 1
+      return new Response(JSON.stringify({
+        choices: [{
+          finish_reason: 'insufficient_system_resource',
+          message: {
+            role: 'assistant',
+            content: null,
+            tool_calls: [{
+              id: 'malformed-call',
+              type: 'function',
+              function: { arguments: '{}' },
+            }],
+          },
+        }],
+      }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    await runSession('fr-resource-malformed-tools', 'hi', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+    await flushObservability()
+
+    expect(calls).toBe(1)
+    expect(trace.events.some(
+      (event) => event.name === 'llm.insufficient_system_resource_retry',
+    )).toBe(false)
+    expect(trace.events.find(
+      (event) => event.name === 'llm.insufficient_system_resource_exhausted',
+    )?.attrs).toMatchObject({
+      reason: 'tool_calls_returned',
+      tool_calls_count: 0,
+      raw_tool_calls_count: 1,
+    })
+  })
+
+  it('GLM 不应用 DeepSeek insufficient_system_resource 协议重试', async () => {
+    const trace = captureTrace()
+    configureObservability({ driver: trace.driver })
+    seedSession('fr-resource-glm', { vendor: 'glm', model: 'glm-test' })
+    let calls = 0
+    const fetchImpl: typeof fetch = async () => {
+      calls += 1
+      return finishReasonResponse('insufficient_system_resource', null)
+    }
+
+    await runSession('fr-resource-glm', 'hi', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+    await flushObservability()
+
+    expect(calls).toBe(1)
+    expect(trace.events.some(
+      (event) => event.name.startsWith('llm.insufficient_system_resource_'),
+    )).toBe(false)
+  })
+
+  it('DeepSeek 容量重试遵守 AbortSignal：响应到达前 abort 后不再发请求', async () => {
+    const trace = captureTrace()
+    configureObservability({ driver: trace.driver })
+    seedSession('fr-resource-abort', { vendor: 'deepseek', model: 'x' })
+    const controller = new AbortController()
+    let calls = 0
+    const fetchImpl: typeof fetch = async () => {
+      calls += 1
+      controller.abort()
+      return finishReasonResponse('insufficient_system_resource', null)
+    }
+
+    await runSession('fr-resource-abort', 'hi', {
+      signal: controller.signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+    await flushObservability()
+
+    expect(calls).toBe(1)
+    expect(getSessionStore('fr-resource-abort').store.getter(runAtom)?.status).toBe('stopped')
+    expect(trace.events.some(
+      (event) => event.name === 'llm.insufficient_system_resource_retry',
+    )).toBe(false)
+  })
+
+  it('DeepSeek 容量重试遵守 stale-run：旧响应到达后不得为新 run 再发请求', async () => {
+    const trace = captureTrace()
+    configureObservability({ driver: trace.driver })
+    seedSession('fr-resource-stale', { vendor: 'deepseek', model: 'x' })
+    let calls = 0
+    const fetchImpl: typeof fetch = async () => {
+      calls += 1
+      setRun('fr-resource-stale', { runId: 'NEW-RUN', status: 'running' })
+      return finishReasonResponse('insufficient_system_resource', null)
+    }
+
+    await runSession('fr-resource-stale', 'hi', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+    await flushObservability()
+
+    expect(calls).toBe(1)
+    expect(getSessionStore('fr-resource-stale').store.getter(runAtom)).toMatchObject({
+      runId: 'NEW-RUN',
+      status: 'running',
+    })
+    expect(trace.events.some(
+      (event) => event.name === 'llm.insufficient_system_resource_retry',
+    )).toBe(false)
   })
 
   it('content_filter 补条目：刷新（落盘）和下一轮重发给模型都看得见「这里被拦截过」', async () => {
@@ -2860,9 +3511,9 @@ describe('上下文压缩接入', () => {
     )
   })
   // 请求路径兜底：seedSession 直接写 sessionsAtom、【不经 hydrate】—— 正是「绕过 hydrate 迁移」
-  // 的场景。会话带着已下线的 deepseek-chat / deepseek-reasoner，发出去的请求体必须是继任者，
-  // 且 deepseek-reasoner 要连带把 thinking 补成 enabled（旧名隐含思考模式，只改 model 会丢）。
-  describe('下线模型名在发请求前被兜底迁移（hydrate 之外的最后一道防线）', () => {
+  // 的场景。会话带着已下线的 deepseek-chat / deepseek-reasoner，发出去的主 Agent 请求必须
+  // 收口到 Pro，且 deepseek-reasoner 要连带把 thinking 补成 enabled（旧名隐含思考模式）。
+  describe('主 Agent 模型在发请求前归一化（hydrate 之外的最后一道防线）', () => {
     async function capturedRequestFor(settings: ModelSettings): Promise<Record<string, unknown>> {
       seedSession('mig1', settings)
       let captured: Record<string, unknown> = {}
@@ -2874,17 +3525,16 @@ describe('上下文压缩接入', () => {
       return captured
     }
 
-    it('deepseek-chat → v4-flash 且 thinking 显式 disabled（关键：v4-flash 默认思考，必须显式关才等价旧非思考行为）', async () => {
+    it('deepseek-chat → v4-pro 且 thinking 显式 disabled（保留旧非思考行为）', async () => {
       const body = await capturedRequestFor({ vendor: 'deepseek', model: 'deepseek-chat' })
-      expect(body.model).toBe('deepseek-v4-flash')
-      // 旧 deepseek-chat = 非思考模式；而 v4-flash 官方默认是思考模式。若迁移只改 model 不碰
-      // thinking，v4-flash 会默认开启思考 —— 静默改变行为。impliedThinking:false 显式关掉才等价。
+      expect(body.model).toBe('deepseek-v4-pro')
+      // 旧 deepseek-chat = 非思考模式；模型收口到 Pro 时仍保留旧名隐含的模式语义。
       expect(body.thinking).toEqual({ type: 'disabled' })
     })
 
-    it('deepseek-reasoner → v4-flash 且 thinking 补成 enabled（旧名隐含思考模式）', async () => {
+    it('deepseek-reasoner → v4-pro 且 thinking 补成 enabled（旧名隐含思考模式）', async () => {
       const body = await capturedRequestFor({ vendor: 'deepseek', model: 'deepseek-reasoner' })
-      expect(body.model).toBe('deepseek-v4-flash')
+      expect(body.model).toBe('deepseek-v4-pro')
       expect(body.thinking).toEqual({ type: 'enabled' })
     })
 
@@ -2894,7 +3544,7 @@ describe('上下文压缩接入', () => {
         model: 'deepseek-reasoner',
         thinking: false,
       })
-      expect(body.model).toBe('deepseek-v4-flash')
+      expect(body.model).toBe('deepseek-v4-pro')
       expect(body.thinking).toEqual({ type: 'disabled' })
     })
 

@@ -1,5 +1,7 @@
 import {
   callDeepSeek,
+  DEEPSEEK_FLASH_MODEL,
+  DEEPSEEK_PRO_MODEL,
   normalizeCacheUsage,
   type DeepSeekChatRequest,
 } from '@web-agent/ai'
@@ -11,16 +13,29 @@ import type {
   ThinkingConfig,
 } from '@web-agent/ai'
 import type { ModelSettings } from '../state/core.type'
-import { migrateModelSettings } from '../state/persistence/modelMigration'
+import { normalizePrimaryAgentSettings } from '../state/persistence/modelMigration'
 import { toolRegistry } from '../tools/registry'
+import type { ToolRegistry } from '../tools/toolRegistry'
 import type { LoadedTool } from '../tools/types'
-import { buildTurnTools, narrowToolCalls, parseToolCallArgs } from '../runtime/modelTurn'
+import {
+  buildCustomInstructionsItem,
+  buildTurnTools,
+  MAX_TURN_TOOLS,
+  narrowToolCalls,
+  parseToolCallArgs,
+  searchToolManifestPage,
+  touchRecentToolName,
+} from '../runtime/modelTurn'
 import { compactContext, estimateTokensFromText } from '../runtime/contextCompaction'
 import {
   createContextCacheTracker,
   type ContextCacheLane,
 } from '../runtime/contextCache'
 import { normalizeDelegateAgentInput } from './input'
+import {
+  routeSubagentModel,
+  type SubagentRouteDecision,
+} from './routing'
 import { SubagentArchiveWriter } from './archiveWriter'
 import { ROOT_AGENT_PATH, agentPathDepth } from './path'
 import { subagentScheduler } from './scheduler'
@@ -62,13 +77,15 @@ import type {
   DelegateAgentRuntime,
   SubagentArchiveEvent,
   SubagentArchiveEventType,
+  SubagentModelTier,
   SubagentNodeRecord,
   SubagentSkillFile,
   SubagentArchiveWriteMode,
   SubagentToolProfile,
 } from './types'
-import { isDangerousTool } from '../runtime/dangerousTools'
+import { isDelegatableDangerousTool } from '../runtime/dangerousTools'
 import { toolSchemaLoadedResult } from '../tools/schemaResult'
+import { toolRegistrationChangedResult } from '../runtime/toolLoading'
 
 const DELEGATE_TOOL_NAME = 'delegate_agent'
 const DEFAULT_CHILD_MAX_TURNS = 4
@@ -256,6 +273,11 @@ interface CreateDelegateAgentRuntimeOptions {
   sessionId: string
   runId: string
   settings: ModelSettings
+  /** Registry owned by the current CoreInstance. Defaults to the legacy singleton for direct callers. */
+  registry?: ToolRegistry
+  customInstructions?: string
+  /** Stable, opaque installation identifier sent only to DeepSeek request bodies. */
+  deepseekUserId?: string
   apiKey: string
   signal: AbortSignal
   fetchImpl?: typeof fetch
@@ -276,6 +298,24 @@ function toErrorMessage(error: unknown): string {
 
 function isAbortError(error: unknown, signal: AbortSignal): boolean {
   return signal.aborted || (error instanceof Error && error.name === 'AbortError')
+}
+
+function isDeterministicModelRequestError(error: unknown): boolean {
+  const match = /^Chat completion returned (\d{3})(?:\b|:)/.exec(toErrorMessage(error))
+  if (!match) return false
+  const status = Number(match[1])
+  return status === 400 || status === 401 || status === 402 || status === 422
+}
+
+function hasAssistantPayload(response: ModelChatResponse): boolean {
+  const message = response.choices?.[0]?.message
+  return (
+    (typeof message?.content === 'string' && message.content.length > 0)
+    || (typeof message?.reasoning_content === 'string' && message.reasoning_content.length > 0)
+    // Raw presence matters here: malformed calls are still attempted output and must never be
+    // replayed merely because narrowToolCalls cannot dispatch them.
+    || (Array.isArray(message?.tool_calls) && message.tool_calls.length > 0)
+  )
 }
 
 function hasOwn(value: object, key: string): boolean {
@@ -302,10 +342,33 @@ function firstAssistantText(response: ModelChatResponse): string {
   return typeof content === 'string' ? content.trim() : ''
 }
 
-function appendVisibleTool(current: LoadedTool[], name: string): LoadedTool[] {
-  if (current.some((tool) => tool.name === name)) return current
-  const tool = toolRegistry.loadSchema(name)
-  return tool ? [...current, tool] : current
+function appendVisibleTool(
+  current: LoadedTool[],
+  name: string,
+  registry: ToolRegistry,
+): LoadedTool[] {
+  const tool = registry.loadSchema(name)
+  if (!tool) return current.filter((loaded) => loaded.name !== name)
+  const existing = current.find((loaded) => loaded.name === name)
+  const snapshot = existing?.registrationVersion === tool.registrationVersion ? existing : tool
+  return [
+    ...current.filter((loaded) => loaded.name !== name),
+    snapshot,
+  ].slice(-(MAX_TURN_TOOLS - 1))
+}
+
+function refreshChildVisibleTools(
+  current: LoadedTool[],
+  registry: ToolRegistry,
+): LoadedTool[] {
+  return current.reduce<LoadedTool[]>((refreshed, snapshot) => {
+    const latest = registry.loadSchema(snapshot.name)
+    if (!latest) return refreshed
+    return [
+      ...refreshed,
+      latest.registrationVersion === snapshot.registrationVersion ? snapshot : latest,
+    ]
+  }, []).slice(-(MAX_TURN_TOOLS - 1))
 }
 
 function renderSkillsForPrompt(skills: SubagentSkillFile[]): string {
@@ -367,8 +430,10 @@ function childSystemPrompt(args: {
   localSkill: SubagentSkillFile
   toolProfile: SubagentToolProfile
   confirmedTools: readonly string[]
+  customInstructions?: string
 }): string {
   const skills = renderSkillsForPrompt([...args.inheritedSkills, args.localSkill])
+  const customInstructions = buildCustomInstructionsItem(args.customInstructions ?? '')
   return [
     `你是树形子 agent ${args.node.path}。`,
     `父 agent: ${args.node.parentPath ?? ROOT_AGENT_PATH}`,
@@ -382,6 +447,7 @@ function childSystemPrompt(args: {
     args.spec.mode === 'evaluator'
       ? '你是验收评估器。最终输出必须严格遵循任务中的期望输出；要求 JSON 时只能输出 JSON，不要 Markdown、代码围栏或额外说明。'
       : '最终输出必须是可回填给父 agent 的简洁 Markdown：结论、发现、风险、建议下一步。',
+    ...(customInstructions ? ['', customInstructions.content] : []),
     '',
     '继承的临时 skills:',
     skills,
@@ -423,6 +489,45 @@ function childUserPrompt(spec: DelegateAgentChildSpec): string {
     .join('\n')
 }
 
+function childModelRoute(
+  primarySettings: ModelSettings,
+  parentPath: string | undefined,
+  spec: DelegateAgentChildSpec,
+  confirmedTools: readonly string[],
+): SubagentRouteDecision {
+  return routeSubagentModel({
+    vendor: primarySettings.vendor,
+    supportsDeepSeekTierRouting:
+      primarySettings.vendor === 'deepseek'
+      && (primarySettings.model === DEEPSEEK_PRO_MODEL || primarySettings.model === DEEPSEEK_FLASH_MODEL),
+    parentPath,
+    requestedTier: spec.modelTier,
+    taskCategory: spec.taskCategory,
+    riskLevel: spec.riskLevel,
+    crossModule: spec.crossModule,
+    finalAcceptance: spec.finalAcceptance,
+    priorFailureCount: spec.priorFailureCount,
+    mode: spec.mode,
+    confirmedToolCount: confirmedTools.length,
+  })
+}
+
+function childModelSettings(
+  primarySettings: ModelSettings,
+  tier: SubagentModelTier,
+): ModelSettings {
+  if (
+    primarySettings.vendor !== 'deepseek'
+    || (primarySettings.model !== DEEPSEEK_PRO_MODEL && primarySettings.model !== DEEPSEEK_FLASH_MODEL)
+  ) {
+    return primarySettings
+  }
+  return {
+    ...primarySettings,
+    model: tier === 'flash' ? DEEPSEEK_FLASH_MODEL : DEEPSEEK_PRO_MODEL,
+  }
+}
+
 async function runWithConcurrency<T>(
   tasks: Array<() => Promise<T>>,
   maxConcurrent: number,
@@ -447,15 +552,15 @@ async function runWithConcurrency<T>(
 export function createDelegateAgentRuntime(
   rawOpts: CreateDelegateAgentRuntimeOptions,
 ): DelegateAgentRuntime {
+  const registry = rawOpts.registry ?? toolRegistry
   const ownerSignal = rawOpts.signal
   const runtimeController = new AbortController()
   const abortFromOwner = () => runtimeController.abort(ownerSignal.reason)
   ownerSignal.addEventListener('abort', abortFromOwner, { once: true })
   if (ownerSignal.aborted) abortFromOwner()
-  // 请求路径兜底（同 modelRun）：子 agent 用父会话的 settings 发请求，父会话若带着下线模型名，
-  // 扇出的【每个】子 agent 都会撞 400。在这里整体迁移一次（连带 thinking），下游 opts.settings.*
-  // 全部读到迁移后的值。无需迁移时返回同一引用，opts === rawOpts，零额外开销。
-  const migratedSettings = migrateModelSettings(rawOpts.settings)
+  // 请求路径兜底（同 modelRun）：迁移下线模型名，并确保主 Agent/蒸馏调用使用 Pro。
+  // Flash 只在 runChildAgent 根据主 Agent 的显式 modelTier 选择后临时覆盖。
+  const migratedSettings = normalizePrimaryAgentSettings(rawOpts.settings)
   const opts: CreateDelegateAgentRuntimeOptions = {
     ...rawOpts,
     settings: migratedSettings,
@@ -540,10 +645,12 @@ export function createDelegateAgentRuntime(
     messages: ModelItem[]
     tools?: ModelFunctionTool[]
     toolChoice?: 'auto' | 'none'
+    settings?: ModelSettings
     // 可观测性上下文。不传 = 本次调用不记压缩事件（见下方 distillChat 的说明）。
     observe?: CallModelObservation
   }, maxModelCalls?: number): Promise<ModelChatResponse> {
     const modelCallLimit = maxModelCalls ?? rootBudget?.maxModelCalls ?? 128
+    const settings = args.settings ?? opts.settings
 
     // ── CC 接入（子 agent 循环）。
     // ★ 压缩【只发生在这里、结果只进请求体】★ —— runChildAgent 里那个 messages 数组是子 agent
@@ -558,7 +665,7 @@ export function createDelegateAgentRuntime(
     // tools manifest 的 JSON 同样吃额度，先从预算里扣掉。
     const reservedTokens =
       estimateTokensFromText(JSON.stringify(args.tools ?? [])) +
-      (opts.settings.max_tokens ?? SUBAGENT_RESERVED_OUTPUT_TOKENS) +
+      (settings.max_tokens ?? SUBAGENT_RESERVED_OUTPUT_TOKENS) +
       Math.ceil(SUBAGENT_CONTEXT_BUDGET_TOKENS * SUBAGENT_CONTEXT_SAFETY_MARGIN_RATIO)
     const compaction = compactContext(args.messages, {
       maxTokens: SUBAGENT_CONTEXT_BUDGET_TOKENS,
@@ -620,11 +727,11 @@ export function createDelegateAgentRuntime(
     }
 
     const requestBase = {
-      model: opts.settings.model,
+      model: settings.model,
       messages: compaction.items,
-      temperature: opts.settings.temperature,
-      max_tokens: opts.settings.max_tokens,
-      thinking: thinkingConfig(opts.settings),
+      temperature: settings.temperature,
+      max_tokens: settings.max_tokens,
+      thinking: thinkingConfig(settings),
       tools: args.tools,
       tool_choice: args.toolChoice ?? 'auto',
       stream: false,
@@ -641,31 +748,32 @@ export function createDelegateAgentRuntime(
     const cacheProfile = contextCacheTracker.observe({
       lane: cacheLane,
       scope: `${opts.sessionId}:${opts.runId}:${args.observe?.agentPath ?? 'unobserved'}:${cacheLane}`,
-      vendor: opts.settings.vendor,
-      model: opts.settings.model,
+      vendor: settings.vendor,
+      model: settings.model,
       messages: compaction.items,
       systemContent,
       tools: args.tools ?? [],
       toolChoice: args.toolChoice ?? 'auto',
-      thinking: thinkingConfig(opts.settings)?.type,
-      reasoningEffort: opts.settings.reasoning_effort,
+      thinking: thinkingConfig(settings)?.type,
+      reasoningEffort: settings.reasoning_effort,
       compacted: compaction.compacted,
       requestMode,
     })
 
     const invoke = () => {
       reserveModelCall(modelCallLimit)
-      if (opts.settings.vendor === 'glm') {
+      if (settings.vendor === 'glm') {
         const body: GlmChatRequest = {
           ...requestBase,
-          reasoning_effort: opts.settings.reasoning_effort,
+          reasoning_effort: settings.reasoning_effort,
         }
         return callGlm(body, callOptions)
       }
 
       const body: DeepSeekChatRequest = {
         ...requestBase,
-        reasoning_effort: opts.settings.reasoning_effort,
+        reasoning_effort: settings.reasoning_effort,
+        user_id: opts.deepseekUserId,
       }
       return callDeepSeek(body, callOptions)
     }
@@ -684,8 +792,8 @@ export function createDelegateAgentRuntime(
           {
             turn: args.observe.turn,
             phase: args.observe.phase,
-            vendor: opts.settings.vendor,
-            model: opts.settings.model,
+            vendor: settings.vendor,
+            model: settings.model,
             cacheMetricsStatus: isAbortError(error, opts.signal) ? 'cancelled' : 'request_failed',
             cacheLane: cacheProfile.lane,
             cacheProfile: cacheProfile.profileId,
@@ -721,8 +829,8 @@ export function createDelegateAgentRuntime(
         {
           turn: args.observe.turn,
           phase: args.observe.phase,
-          vendor: opts.settings.vendor,
-          model: opts.settings.model,
+          vendor: settings.vendor,
+          model: settings.model,
           ...(typeof promptTk === 'number' ? { promptTk } : {}),
           ...(typeof completionTk === 'number' ? { completionTk } : {}),
           ...(typeof response.usage?.total_tokens === 'number'
@@ -1043,10 +1151,14 @@ export function createDelegateAgentRuntime(
     confirmedTools: readonly string[]
   }): Promise<ChildAgentResult> {
     const { node, spec, context, archiveBasePath, inheritedSkills, localSkill, budget, toolProfile, confirmedTools } = args
+    let routeDecision = childModelRoute(opts.settings, node.parentPath, spec, confirmedTools)
+    let modelSettings = childModelSettings(opts.settings, routeDecision.tier)
+    let fallbackCount = 0
     const allowedToolNames = [...subagentAllowedTools(toolProfile), ...confirmedTools]
     const skillFiles = [...node.inheritedSkillFiles, localSkill.path]
     const skillIds = [...node.inheritedSkillIds, localSkill.skillId]
     const changeSets: ChildChangeSet[] = []
+    const executedToolNames: string[] = []
     subagentScheduler.markNode(opts.runId, node.path, 'running', {
       localSkillFiles: [localSkill.path],
       localSkillIds: [localSkill.skillId],
@@ -1056,6 +1168,10 @@ export function createDelegateAgentRuntime(
     await recordEvent(context, archiveBasePath, 'child_started', node.path, {
       objective: spec.objective,
       mode: spec.mode,
+      modelTier: routeDecision.tier,
+      model: modelSettings.model,
+      route_reason: routeDecision.reason,
+      fallback_count: fallbackCount,
       toolProfile,
       confirmedTools,
       skillId: localSkill.skillId,
@@ -1065,7 +1181,15 @@ export function createDelegateAgentRuntime(
     const messages: ModelItem[] = [
       {
         role: 'system',
-        content: childSystemPrompt({ node, spec, inheritedSkills, localSkill, toolProfile, confirmedTools }),
+        content: childSystemPrompt({
+          node,
+          spec,
+          inheritedSkills,
+          localSkill,
+          toolProfile,
+          confirmedTools,
+          customInstructions: opts.customInstructions,
+        }),
       },
       { role: 'user', content: childUserPrompt(spec) },
     ]
@@ -1073,11 +1197,105 @@ export function createDelegateAgentRuntime(
     // 第二轮才 request_tool_schema，把很小的 maxTurns 白白消耗在能力发现上。
     let visible: LoadedTool[] = spec.mode === 'evaluator' && toolProfile === 'workspace_read'
       ? SUBAGENT_WORKSPACE_READ_TOOLS.reduce<LoadedTool[]>(
-          (tools, name) => appendVisibleTool(tools, name),
+          (tools, name) => appendVisibleTool(tools, name, registry),
           [],
         )
       : []
+    let recentToolNames = visible.map((tool) => tool.name).reverse()
     const maxTurns = spec.maxTurns ?? DEFAULT_CHILD_MAX_TURNS
+
+    const canEscalateFlash = (): boolean => {
+      if (confirmedTools.length > 0 || changeSets.length > 0) return false
+      // Tool names and returned change sets cannot prove an execution was side-effect free:
+      // embedders may replace a same-name tool, and a tool may mutate before throwing. Until the
+      // registry exposes immutable capability metadata, fail closed after every tool execution.
+      return executedToolNames.length === 0
+    }
+
+    const callRoutedChildModel = async (input: {
+      messages: ModelItem[]
+      tools: ModelFunctionTool[]
+      toolChoice: 'auto' | 'none'
+      turn: number
+    }): Promise<ModelChatResponse> => {
+      const invoke = () => callModel(
+        {
+          messages: input.messages,
+          tools: input.tools,
+          toolChoice: input.toolChoice,
+          settings: modelSettings,
+          observe: {
+            context,
+            archiveBasePath,
+            agentPath: node.path,
+            turn: input.turn,
+            phase: spec.mode === 'evaluator' ? 'evaluator' : 'subagent',
+          },
+        },
+        budget.maxModelCalls,
+      )
+
+      const escalateOnce = async (trigger: string, error?: unknown): Promise<ModelChatResponse> => {
+        const previousRoute = routeDecision
+        const previousModel = modelSettings.model
+        fallbackCount = 1
+        routeDecision = routeSubagentModel({
+          vendor: opts.settings.vendor,
+          supportsDeepSeekTierRouting:
+            opts.settings.vendor === 'deepseek'
+            && (opts.settings.model === DEEPSEEK_PRO_MODEL || opts.settings.model === DEEPSEEK_FLASH_MODEL),
+          parentPath: node.parentPath,
+          requestedTier: spec.modelTier,
+          taskCategory: spec.taskCategory,
+          riskLevel: spec.riskLevel,
+          crossModule: spec.crossModule,
+          finalAcceptance: spec.finalAcceptance,
+          priorFailureCount: Math.max(1, (spec.priorFailureCount ?? 0) + 1),
+          mode: spec.mode,
+          confirmedToolCount: confirmedTools.length,
+        })
+        modelSettings = childModelSettings(opts.settings, routeDecision.tier)
+        await bestEffortRecordEvent(context, archiveBasePath, 'child_model_escalated', node.path, {
+          fromModelTier: previousRoute.tier,
+          toModelTier: routeDecision.tier,
+          fromModel: previousModel,
+          toModel: modelSettings.model,
+          route_reason: routeDecision.reason,
+          fallback_count: fallbackCount,
+          trigger,
+          ...(error === undefined ? {} : { error: toErrorMessage(error) }),
+        })
+        // Only one fallback is possible: routeDecision is now Pro, and this call is deliberately
+        // made directly instead of recursively entering the escalation wrapper.
+        return invoke()
+      }
+
+      try {
+        const response = await invoke()
+        const finishReason = response.choices?.[0]?.finish_reason
+        if (
+          routeDecision.tier === 'flash'
+          && fallbackCount === 0
+          && finishReason === 'insufficient_system_resource'
+          && !hasAssistantPayload(response)
+          && canEscalateFlash()
+        ) {
+          return escalateOnce('insufficient_system_resource')
+        }
+        return response
+      } catch (error) {
+        if (
+          routeDecision.tier !== 'flash'
+          || fallbackCount > 0
+          || isAbortError(error, opts.signal)
+          || isDeterministicModelRequestError(error)
+          || !canEscalateFlash()
+        ) {
+          throw error
+        }
+        return escalateOnce('request_failed', error)
+      }
+    }
 
     try {
       for (let turn = 0; turn < maxTurns; turn += 1) {
@@ -1095,24 +1313,30 @@ export function createDelegateAgentRuntime(
               },
             ]
           : messages
+        visible = refreshChildVisibleTools(visible, registry)
         const tools = isSynthesisTurn
           ? []
-          : buildTurnTools(visible, true, { allowedToolNames })
-        const response = await callModel(
-          {
-            messages: turnMessages,
-            tools,
-            toolChoice: isSynthesisTurn ? 'none' : 'auto',
-            observe: {
-              context,
-              archiveBasePath,
-              agentPath: node.path,
-              turn: turn + 1,
-              phase: spec.mode === 'evaluator' ? 'evaluator' : 'subagent',
-            },
-          },
-          budget.maxModelCalls,
+          : buildTurnTools(visible, true, {
+              allowedToolNames,
+              registry,
+              maxTools: MAX_TURN_TOOLS,
+              recentToolNames,
+            })
+        // 子 agent 的既有宿主契约允许 provider/test double 直接返回“已授权但尚未显式加载”
+        // 的工具调用。仍在发请求时冻结所有授权工具的注册版本，从而在不改变该契约的前提下
+        // 拒绝 MCP 重连后落到同名新实例。
+        const requestedRegistrationVersions = new Map(
+          allowedToolNames.map((name) => [
+            name,
+            registry.registrationVersion(name),
+          ] as const),
         )
+        const response = await callRoutedChildModel({
+          messages: turnMessages,
+          tools,
+          toolChoice: isSynthesisTurn ? 'none' : 'auto',
+          turn: turn + 1,
+        })
         const msg = response.choices?.[0]?.message
         const toolCalls = narrowToolCalls(msg?.tool_calls)
         await bestEffortRecordTraceItem(context, archiveBasePath, node.path, turn + 1, {
@@ -1196,6 +1420,9 @@ export function createDelegateAgentRuntime(
             resultFile: resultPath,
             skillFiles,
             skillIds,
+            modelTier: routeDecision.tier,
+            route_reason: routeDecision.reason,
+            fallback_count: fallbackCount,
           })
           return {
             path: node.path,
@@ -1206,6 +1433,9 @@ export function createDelegateAgentRuntime(
             skillFiles,
             skillIds,
             changeSets,
+            modelTier: routeDecision.tier,
+            routeReason: routeDecision.reason,
+            fallbackCount,
           }
         }
 
@@ -1251,24 +1481,60 @@ export function createDelegateAgentRuntime(
           const callArgs = parsedArgs.args
 
           if (name === 'request_tool_schema') {
-            const toolName = typeof callArgs.toolName === 'string' ? callArgs.toolName : ''
+            const toolName = typeof callArgs.toolName === 'string' ? callArgs.toolName.trim() : ''
             await recordEvent(context, archiveBasePath, 'child_tool_schema_requested', node.path, {
-              toolName,
+              toolName: toolName || undefined,
+              discovery: !toolName,
             })
-            if (!allowedToolNames.includes(toolName)) {
+            if (toolName && !allowedToolNames.includes(toolName)) {
               await pushToolResult(
                 toolCall.id,
                 JSON.stringify({ error: `tool not allowed for child agent: ${toolName}` }),
               )
               continue
             }
-            const loadedTool = toolRegistry.loadSchema(toolName)
-            visible = loadedTool ? appendVisibleTool(visible, toolName) : visible
+            if (toolName) {
+              const loadedTool = registry.loadSchema(toolName)
+              visible = loadedTool ? appendVisibleTool(visible, toolName, registry) : visible
+              if (loadedTool) recentToolNames = touchRecentToolName(recentToolNames, toolName)
+              await pushToolResult(
+                toolCall.id,
+                JSON.stringify(loadedTool ? toolSchemaLoadedResult(loadedTool) : { error: 'unknown' }),
+              )
+              continue
+            }
             await pushToolResult(
               toolCall.id,
-              JSON.stringify(loadedTool ? toolSchemaLoadedResult(loadedTool) : { error: 'unknown' }),
+              JSON.stringify(searchToolManifestPage(
+                {
+                  query: typeof callArgs.query === 'string' ? callArgs.query : undefined,
+                  cursor: typeof callArgs.cursor === 'string' ? callArgs.cursor : undefined,
+                  limit: typeof callArgs.limit === 'number' ? callArgs.limit : undefined,
+                },
+                true,
+                { registry, allowedToolNames },
+              )),
             )
             continue
+          }
+
+          const expectedRegistrationVersion = requestedRegistrationVersions.get(name)
+          if (allowedToolNames.includes(name)) {
+            const currentRegistrationVersion = registry.registrationVersion(name)
+            if (
+              expectedRegistrationVersion === undefined
+              || expectedRegistrationVersion !== currentRegistrationVersion
+            ) {
+              await pushToolResult(
+                toolCall.id,
+                JSON.stringify(toolRegistrationChangedResult(
+                  name,
+                  expectedRegistrationVersion,
+                  currentRegistrationVersion,
+                )),
+              )
+              continue
+            }
           }
 
           if (name === DELEGATE_TOOL_NAME) {
@@ -1291,6 +1557,9 @@ export function createDelegateAgentRuntime(
               maxDepth: budget.maxDepth,
               maxChildren: budget.maxChildren,
             })
+            // Nested delegation consumes model/tree budget and may itself perform work. Even when
+            // no workspace change is reported, do not automatically replay the parent child on Pro.
+            executedToolNames.push(name)
             let nested: DelegateAgentBatchResult | { error: string }
             try {
               const parentConfirmedTools = confirmedToolsByPath.get(node.path) ?? []
@@ -1321,7 +1590,10 @@ export function createDelegateAgentRuntime(
             continue
           }
 
-          if ((isSubagentWorkspaceReadTool(name) || isDangerousTool(name)) && allowedToolNames.includes(name)) {
+          if (
+            (isSubagentWorkspaceReadTool(name) || isDelegatableDangerousTool(name))
+            && allowedToolNames.includes(name)
+          ) {
             if (!context.runChildTool) {
               await pushToolResult(
                 toolCall.id,
@@ -1334,11 +1606,16 @@ export function createDelegateAgentRuntime(
               | { ok: true; data?: unknown; warnings?: string[] }
               | { ok: false; error: string }
             try {
-              toolResult = await context.runChildTool(name, callArgs)
+              toolResult = await context.runChildTool(
+                name,
+                callArgs,
+                expectedRegistrationVersion,
+              )
             } catch (error) {
               if (isAbortError(error, opts.signal)) throw error
               toolResult = { ok: false, error: toErrorMessage(error) }
             }
+            executedToolNames.push(name)
             if (toolResult.ok) observeChangeSets(toolResult.data, changeSets)
             await bestEffortRecordEvent(context, archiveBasePath, 'child_tool_finished', node.path, {
               toolName: name,
@@ -1383,6 +1660,9 @@ export function createDelegateAgentRuntime(
         error: message,
         skillFiles,
         skillIds,
+        modelTier: routeDecision.tier,
+        route_reason: routeDecision.reason,
+        fallback_count: fallbackCount,
       })
       return {
         path: node.path,
@@ -1392,6 +1672,9 @@ export function createDelegateAgentRuntime(
         skillFiles,
         skillIds,
         changeSets,
+        modelTier: routeDecision.tier,
+        routeReason: routeDecision.reason,
+        fallbackCount,
         error: message,
       }
     }
@@ -1465,7 +1748,7 @@ export function createDelegateAgentRuntime(
       && capability.parentPath === parentPath
       && typeof context.delegationCallId === 'string'
       && capability.delegationCallId === context.delegationCallId
-      && capability.toolNames.every(isDangerousTool)
+      && capability.toolNames.every(isDelegatableDangerousTool)
       && (parentPath === ROOT_AGENT_PATH || isSubset(capability.toolNames, pathConfirmedTools))
     const inheritedConfirmedTools = capabilityIsScoped ? Array.from(new Set(capability.toolNames)) : []
     if (parentPath === ROOT_AGENT_PATH) {
@@ -1497,13 +1780,19 @@ export function createDelegateAgentRuntime(
     await ensureArchiveInitialized(context, archiveBasePath)
     subagentScheduler.markNode(opts.runId, parentPath, 'running')
     await recordEvent(context, archiveBasePath, 'delegate_requested', parentPath, {
-      children: input.children.map((child) => ({
-        objective: child.objective,
-        mode: child.mode,
-        expectedOutput: child.expectedOutput,
-        toolProfile: child.toolProfile ?? requestedToolProfile,
-        confirmedTools: child.confirmedTools ?? requestedConfirmedTools,
-      })),
+      children: input.children.map((child) => {
+        const childConfirmedTools = child.confirmedTools ?? requestedConfirmedTools
+        const route = childModelRoute(opts.settings, parentPath, child, childConfirmedTools)
+        return {
+          objective: child.objective,
+          mode: child.mode,
+          expectedOutput: child.expectedOutput,
+          modelTier: route.tier,
+          route_reason: route.reason,
+          toolProfile: child.toolProfile ?? requestedToolProfile,
+          confirmedTools: childConfirmedTools,
+        }
+      }),
       strategy: input.strategy ?? 'parallel_wait_all',
       maxDepth: budget.maxDepth,
       maxChildren: budget.maxChildren,

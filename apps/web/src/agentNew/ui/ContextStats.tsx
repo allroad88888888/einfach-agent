@@ -99,9 +99,9 @@ export function ContextStats() {
           </strong>
           <span>缓存命中</span>
           <strong>{cacheUsage(stats)}</strong>
-          <span>当前档案累计</span>
+          <span>本次运行请求投影累计（本地诊断）</span>
           <strong>{cacheTotals(stats)}</strong>
-          <span>缓存档案</span>
+          <span>请求投影档案（本地）</span>
           <strong title={stats.cache?.profileId}>
             {stats.cache
               ? `${stats.cache.lane} / epoch ${stats.cache.epoch} (${stats.cache.epochReason}) / ${
@@ -109,6 +109,8 @@ export function ContextStats() {
                 }`
               : '暂无'}
           </strong>
+          <span>缓存口径</span>
+          <strong>DeepSeek 无显式 cache_id；命中以本轮 Provider usage 为准</strong>
           <span>chars</span>
           <strong>
             total {fmt(stats.totalChars)} / messages {fmt(stats.messagesChars)} / tools {fmt(stats.toolsChars)}

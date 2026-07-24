@@ -37,6 +37,70 @@ describe('normalizeDelegateAgentInput', () => {
     })
   })
 
+  it('accepts only explicit Pro/Flash child model tiers', () => {
+    expect(normalizeDelegateAgentInput({
+      children: [
+        { objective: 'simple lookup', modelTier: 'flash' },
+        { objective: 'architecture review', modelTier: 'pro' },
+        { objective: 'conservative default' },
+      ],
+    })).toMatchObject({
+      ok: true,
+      input: {
+        children: [
+          { objective: 'simple lookup', modelTier: 'flash' },
+          { objective: 'architecture review', modelTier: 'pro' },
+          { objective: 'conservative default' },
+        ],
+      },
+    })
+
+    expect(normalizeDelegateAgentInput({
+      children: [{ objective: 'unknown tier', modelTier: 'auto' }],
+    })).toEqual({
+      ok: false,
+      error: 'invalid delegate_agent: child modelTier must be pro or flash',
+    })
+  })
+
+  it('normalizes observable routing features and rejects malformed values', () => {
+    expect(normalizeDelegateAgentInput({
+      children: [{
+        objective: 'extract facts',
+        taskCategory: 'extraction',
+        riskLevel: 'low',
+        crossModule: false,
+        finalAcceptance: false,
+        priorFailureCount: 2,
+      }],
+    })).toMatchObject({
+      ok: true,
+      input: {
+        children: [{
+          objective: 'extract facts',
+          taskCategory: 'extraction',
+          riskLevel: 'low',
+          crossModule: false,
+          finalAcceptance: false,
+          priorFailureCount: 2,
+        }],
+      },
+    })
+
+    expect(normalizeDelegateAgentInput({
+      children: [{ objective: 'x', taskCategory: 'guessing' }],
+    })).toMatchObject({ ok: false })
+    expect(normalizeDelegateAgentInput({
+      children: [{ objective: 'x', riskLevel: 'critical' }],
+    })).toMatchObject({ ok: false })
+    expect(normalizeDelegateAgentInput({
+      children: [{ objective: 'x', finalAcceptance: 'yes' }],
+    })).toMatchObject({ ok: false })
+    expect(normalizeDelegateAgentInput({
+      children: [{ objective: 'x', priorFailureCount: -1 }],
+    })).toMatchObject({ ok: false })
+  })
+
   it('validates root and child tool profiles', () => {
     expect(normalizeDelegateAgentInput({
       toolProfile: 'workspace_read',
@@ -69,6 +133,22 @@ describe('normalizeDelegateAgentInput', () => {
       .toEqual({ ok: false, error: 'invalid delegate_agent: confirmedTools must contain only dangerous tool names' })
     expect(normalizeDelegateAgentInput({ children: [{ objective: 'x', confirmedTools: ['unknown'] }] }))
       .toEqual({ ok: false, error: 'invalid delegate_agent: child confirmedTools must contain only dangerous tool names' })
+    expect(normalizeDelegateAgentInput({
+      confirmedTools: ['mcp__playwright__browser_navigate'],
+      children: [{ objective: 'browse' }],
+    })).toEqual({
+      ok: false,
+      error: 'invalid delegate_agent: confirmedTools must contain only dangerous tool names',
+    })
+    expect(normalizeDelegateAgentInput({
+      children: [{
+        objective: 'browse',
+        confirmedTools: ['mcp__playwright__browser_navigate'],
+      }],
+    })).toEqual({
+      ok: false,
+      error: 'invalid delegate_agent: child confirmedTools must contain only dangerous tool names',
+    })
   })
 
   it('clamps numeric budgets and respects maxChildren before scheduling', () => {

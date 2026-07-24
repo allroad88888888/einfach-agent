@@ -1,3 +1,4 @@
+mod mcp;
 mod shell;
 mod workspace_change_journal;
 mod workspace_common;
@@ -13,9 +14,14 @@ mod workspace_write;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(mcp::McpManager::default())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            mcp::mcp_connect,
+            mcp::mcp_list_tools,
+            mcp::mcp_call_tool,
+            mcp::mcp_disconnect,
             shell::run_shell_command,
             workspace_read::read_workspace_file,
             workspace_read::read_workspace_run_index_page,

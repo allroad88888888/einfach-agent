@@ -27,7 +27,8 @@
 //     · persistSessions（persistenceBridge 内部自取 defaultCore.rootStore）。
 
 import { isTauri } from '@tauri-apps/api/core'
-import { sessionsAtom } from '../state/rootStore'
+import { sessionsAtom, workspacesAtom } from '../state/rootStore'
+import { resolveSessionWorkspaceRoot } from '../state/workspaceState'
 import { itemsAtom, runAtom, checkpointsAtom, planAtom } from '../state/sessionAtoms'
 import { executionGraphAtom } from '../execution/graph'
 import { appendItem, setRun, patchRun, updateItem } from '../state/sessionWriters'
@@ -38,6 +39,7 @@ import {
   addRuntimeTranscriptEvent,
   contextStatsAtom,
   setContextStats,
+  takeQueuedUserMessages,
   type ContextCacheTotals,
   type ContextStatsSnapshot,
   type ContextUsageStats,
@@ -59,7 +61,12 @@ import type {
   ModelStreamDelta,
 } from '@web-agent/ai'
 import type { LoadedTool, ToolResult } from '../tools/types'
-import { ensureToolLoaded, toolSchemaNotLoadedResult } from './toolLoading'
+import {
+  ensureToolLoaded,
+  refreshVisibleTools,
+  toolRegistrationChangedResult,
+  toolSchemaNotLoadedResult,
+} from './toolLoading'
 import { toolSchemaLoadedResult } from '../tools/schemaResult'
 import { buildToolContext } from './toolContext'
 // 【实例化 · 第 2 期穿线】core（CoreInstance，默认 defaultCore）决定本 run 用谁的 store/registry/abort。
@@ -67,12 +74,16 @@ import { defaultCore, type CoreInstance } from './core/coreInstance'
 // parseToolCallArgs 住在 modelTurn（纯 helper 层）—— 主循环与 subagents 的第二条工具循环
 // 必须共用同一份「坏 JSON 不执行工具」的判据，各抄一份迟早会漂移。
 import {
+  buildCustomInstructionsItem,
   buildSystemItem,
   buildSkillContextItem,
   buildTurnTools,
   loadedToolNamesFromHistory,
+  MAX_TURN_TOOLS,
   narrowToolCalls,
   parseToolCallArgs,
+  searchToolManifestPage,
+  touchRecentToolName,
 } from './modelTurn'
 // estimateTokensFromText 仍留着（buildContextStatsSnapshot 的 role 统计在用，与压缩无关）；
 // 压缩本体（compactContext / DEFAULT_KEEP_RECENT_TURNS + 窗口预算常量）已内化进 compactionPlugin。
@@ -129,6 +140,10 @@ const DEFAULT_MAX_AGENT_TURNS = 32
 const MIN_PLAN_AGENT_TURNS = 64
 const PLAN_AGENT_TURNS_PER_STAGE = 24
 const MAX_PLAN_AGENT_TURNS = 256
+// DeepSeek 会用 HTTP 200 + finish_reason=insufficient_system_resource 表达瞬时容量不足，
+// 它不会进入 modelApi 对 429/5xx/网络错误的 HTTP 退避。这里只补一层很窄的协议级恢复：
+// 同一模型轮最多额外请求一次，且一旦流式 writer 已经把内容写进会话就绝不重放。
+const MAX_DEEPSEEK_INSUFFICIENT_RESOURCE_RETRIES = 1
 const EXECUTING_PLAN_STATUSES = new Set(['approved', 'active', 'evaluating'])
 // LOOP_DETECTION_THRESHOLD / LOOP_DETECTED_ERROR 已随循环检测搬进 loopGuardPlugin（Core 抽离 Stage 2a）。
 const STREAM_UPDATE_INTERVAL_MS = 50
@@ -495,6 +510,8 @@ function continueAfterPlanEvaluation(input: {
         apiKey,
         fetchImpl,
         core,
+        runId,
+        turnId: run.turnId,
       }).finally(() => core.abort.endRun(sessionId, signal))
     }, 0)
   }
@@ -786,7 +803,13 @@ function createAssistantStreamWriter(
 // 一轮以 user 起头；resume 回填的是 ToolItem、不 append user echo，故 resume 续跑的 items
 // 仍归上一条 user 那一轮 —— 天然把守卫/输入推断限定在当前这轮，不误伤历史轮。
 function currentTurnItems(id: string, core: CoreInstance) {
-  const items = core.getSessionStore(id).store.getter(itemsAtom)
+  const store = core.getSessionStore(id).store
+  const items = store.getter(itemsAtom)
+  const turnId = store.getter(runAtom)?.turnId
+  if (turnId) {
+    const anchoredStart = items.findIndex((entry) => entry.id === turnId)
+    if (anchoredStart >= 0) return items.slice(anchoredStart)
+  }
   let start = 0
   for (let i = items.length - 1; i >= 0; i -= 1) {
     if (items[i].item.role === 'user') {
@@ -833,7 +856,7 @@ export async function runSession(
 
   // 追加用户输入 + 起 run（会话未登记时二者均 no-op，见 sessionWriters ghost guard）。
   appendItem(id, { id: userItemId, createdAt: Date.now(), item: { role: 'user', content: input } }, core)
-  setRun(id, { runId, status: 'running' }, core)
+  setRun(id, { runId, status: 'running', turnId: userItemId }, core)
 
   // 与 resume 复用同一循环入口（此时最后一条 user 就是刚 append 的 input，行为与旧版等价）。
   // core 已随 opts 透传（{ ...opts } 含 opts.core），runToolLoop 内部会 opts.core ?? defaultCore 解析同一实例。
@@ -846,12 +869,32 @@ export async function runSession(
 //   不进入聊天记录，也不会触发自动标题。
 export async function resumePlanSession(
   id: string,
-  opts: { signal: AbortSignal; apiKey: string; fetchImpl?: typeof fetch; core?: CoreInstance },
+  opts: {
+    signal: AbortSignal
+    apiKey: string
+    fetchImpl?: typeof fetch
+    core?: CoreInstance
+    runId?: string
+    turnId?: string
+  },
 ): Promise<void> {
   const core = opts.core ?? defaultCore
-  const runId = newId()
-  setRun(id, { runId, status: 'running' }, core)
-  await runToolLoop(id, runId, { ...opts, resumePlan: true })
+  const previousRun = core.getSessionStore(id).store.getter(runAtom)
+  const runId = opts.runId ?? newId()
+  const resumedRun =
+    opts.runId !== undefined && opts.runId === previousRun?.runId
+      ? previousRun
+      : undefined
+  const turnId = opts.turnId
+    ?? resumedRun?.turnId
+    ?? currentTurnItems(id, core)[0]?.id
+  setRun(id, {
+    runId,
+    status: 'running',
+    turnId,
+    loadedTools: resumedRun?.loadedTools,
+  }, core)
+  await runToolLoop(id, runId, { ...opts, resumePlan: true, turnId })
 }
 
 // 简介：多轮 lazy-tool 循环入口（T-6/T-7 复用）—— 不 append user、不 setRun，
@@ -923,7 +966,9 @@ export async function runToolLoop(
   // 判定是否真迁过（发 model_migrated_at_request trace）。
   const meta = core.rootStore.getter(sessionsAtom)[id]
 
-  const turnId = opts.turnId ?? currentTurnItems(id, core)[0]?.id ?? newId()
+  const storedRun = core.getSessionStore(id).store.getter(runAtom)
+  const turnId = opts.turnId ?? storedRun?.turnId ?? currentTurnItems(id, core)[0]?.id ?? newId()
+  if (storedRun && !storedRun.turnId) patchRun(id, { turnId }, core)
   const traceSpan =
     opts.traceSpan ??
     getActiveSpan(traceKey) ??
@@ -943,6 +988,20 @@ export async function runToolLoop(
   const baseTraceAttrs: TraceAttributes = { sessionId: id, runId, turnId }
   const traceEvent = (name: string, attrs?: TraceAttributes): void => {
     addEvent(name, { span: traceSpan, attrs: { ...baseTraceAttrs, ...(attrs ?? {}) } })
+  }
+  const promoteQueuedInputs = (): number => {
+    const queued = takeQueuedUserMessages(id, runId, core)
+    for (const message of queued) {
+      appendItem(id, {
+        id: message.id,
+        createdAt: message.createdAt,
+        item: { role: 'user', content: message.content },
+      }, core)
+    }
+    if (queued.length > 0) {
+      traceEvent('agent.queued_user_messages_promoted', { count: queued.length })
+    }
+    return queued.length
   }
   // 兜底真的触发了 = 有一条会话绕过了 hydrate 迁移把下线模型名带到了发请求路径。正常情况下
   // 这里恒不触发（hydrate 已在恢复时迁完），一旦触发就是「存在 hydrate 之外的入口」的信号，留痕待查。
@@ -1028,8 +1087,19 @@ export async function runToolLoop(
 
   // system 只用于请求、不入库（TK4）：按输入选 skill，system 只列已加载 skill 名。
   const system = buildSystemItem()
+  const customInstructions = buildCustomInstructionsItem(core.config.customInstructions)
   const skillContext = buildSkillContextItem(input)
   addTranscriptEvent(id, 'system_injection', '注入 system', systemInjectionSummary(system.content), system.content, core)
+  if (customInstructions) {
+    addTranscriptEvent(
+      id,
+      'system_injection',
+      '注入自定义指令',
+      systemInjectionSummary(customInstructions.content),
+      customInstructions.content,
+      core,
+    )
+  }
   addTranscriptEvent(
     id,
     'system_injection',
@@ -1052,6 +1122,9 @@ export async function runToolLoop(
     sessionId: id,
     runId,
     settings: meta.settings,
+    registry: core.tools,
+    customInstructions: core.config.customInstructions,
+    deepseekUserId: core.config.deepseekUserId,
     apiKey: opts.apiKey,
     signal: opts.signal,
     fetchImpl: opts.fetchImpl,
@@ -1068,6 +1141,7 @@ export async function runToolLoop(
   const rootTranscript = () => formatSubagentTranscript([
     system,
     ...currentTurnItems(id, core).map((it) => it.item),
+    ...(customInstructions ? [customInstructions] : []),
     skillContext,
   ])
 
@@ -1077,9 +1151,16 @@ export async function runToolLoop(
   const persistedItems = core.getSessionStore(id).store.getter(itemsAtom).map((item) => item.item)
   const historicalTools = loadedToolNamesFromHistory(persistedItems)
   const runTools = core.getSessionStore(id).store.getter(runAtom)?.loadedTools ?? []
-  for (const toolName of [...new Set([...runTools, ...historicalTools])]) {
-    visible = ensureToolLoaded(id, visible, toolName, core)
+  const restoredToolNames: string[] = []
+  for (const toolName of [...historicalTools, ...runTools]) {
+    const previousIndex = restoredToolNames.indexOf(toolName)
+    if (previousIndex >= 0) restoredToolNames.splice(previousIndex, 1)
+    restoredToolNames.push(toolName)
   }
+  for (const toolName of restoredToolNames) {
+    visible = ensureToolLoaded(id, visible, toolName, core, MAX_TURN_TOOLS - 1)
+  }
+  let recentToolNames = visible.map((tool) => tool.name).reverse()
   // 循环检测的跨轮累计状态（原 consecutiveToolOnlyTurns / repeatedToolSignatures）已随 loopGuardPlugin
   //   搬进插件的 per-run 闭包（每次 assemblePlugins 一份全新计数，天然按 run 隔离，无需在此手持）。
 
@@ -1103,7 +1184,7 @@ export async function runToolLoop(
     // S4-B 确认「允许」恢复：先把被确认的危险工具执行、回填结果，再进正常多轮循环。
     //   暂停时该 tool_call 的 result 被特意留空（同批其它 tool_call 已补齐），这里补上它，序列才合法。
     if (opts.resumeToolCall) {
-      const { callId, toolName, args } = opts.resumeToolCall
+      const { callId, toolName, args, registrationVersion } = opts.resumeToolCall
       const ctx = buildToolContext({
         sessionId: id,
         runId,
@@ -1119,11 +1200,20 @@ export async function runToolLoop(
       const toolSpan = startSpan('tool.call', {
         kind: 'tool',
         parent: traceSpan,
-        attrs: { sessionId: id, runId, turnId, toolName, callId, resumed: true, args },
+        attrs: {
+          sessionId: id,
+          runId,
+          turnId,
+          toolName,
+          callId,
+          resumed: true,
+          registrationVersion,
+          args,
+        },
       })
       let result: ToolResult
       try {
-        result = await core.tools.run(toolName, args, ctx)
+        result = await core.tools.run(toolName, args, ctx, registrationVersion)
         const traced = toolResultTrace(result, args)
         endSpan(toolSpan, traced.status, traced.attrs, traced.err)
       } catch (err) {
@@ -1175,6 +1265,12 @@ export async function runToolLoop(
         finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
         return
       }
+      // 上一轮模型响应及其整批工具结果已经闭合，此刻才可把排队输入加入 transcript。
+      // 每批排队输入至少扩一轮预算，确保它不会刚好在原上限边缘被吞掉。
+      const promotedAtBoundary = promoteQueuedInputs()
+      if (promotedAtBoundary > 0) {
+        agentTurnLimit += Math.max(1, promotedAtBoundary)
+      }
       agentTurnLimit = Math.max(agentTurnLimit, maxAgentTurns(id, core))
       // 固定本轮归属：工具（尤其 submit_stage_result）可能在执行中推进计划状态，
       // 但本轮的调用与结果仍应归到发起它的步骤，不能被误记到刚激活的下一步。
@@ -1216,6 +1312,7 @@ export async function runToolLoop(
       planContinuationNotice = undefined
       const planContext = currentPlanContext(id, core)
       const dynamicControls: ModelItem[] = [
+        ...(customInstructions ? [customInstructions] : []),
         skillContext,
         ...(planContext ? [{ role: 'system' as const, content: planContext }] : []),
         ...(continuationNotice ? [{ role: 'system' as const, content: continuationNotice }] : []),
@@ -1227,10 +1324,25 @@ export async function runToolLoop(
       ]
       // TP3：注入运行环境 —— web 下 isTauri() 为假，server 工具不进本轮 manifest。
       // 必须先算 tools：它的 JSON 也吃上下文额度，要从压缩预算里先扣掉。
-      // 传本实例的 registry：request_tool_schema 的 enum 才会枚举【本 core】可懒加载的工具，
+      // MCP tools_changed / reconnect 可在任意两轮之间替换同名 adapter。每轮从 registry
+      // 刷新快照，确保下一次请求使用当前 schema，并移除已经注销的工具。
+      visible = refreshVisibleTools(id, visible, core, MAX_TURN_TOOLS - 1)
+      // 传本实例的 registry：request_tool_schema 的分页目录只检索【本 core】可懒加载的工具，
       // 而非模块级 defaultCore.tools（隔离实例装自定义工具集时的正确性，codex review [P1]）。
-      const tools = buildTurnTools(visible, isTauri(), { registry: core.tools })
+      const tools = buildTurnTools(visible, isTauri(), {
+        registry: core.tools,
+        maxTools: MAX_TURN_TOOLS,
+        recentToolNames,
+      })
       const names = toolNames(tools)
+      const exposedRegistrationVersions = new Map(
+        visible
+          .filter((tool) => tools.some((candidate) => candidate.function.name === tool.name))
+          .map((tool) => [
+            tool.name,
+            tool.registrationVersion ?? core.tools.registrationVersion(tool.name),
+          ] as const),
+      )
 
       // ── CC 接入：组请求体前经 transformContext hook 压一次上下文（compactionPlugin，PX3）。
       // ★ 压缩结果【只进请求体】—— 绝不写回 itemsAtom、不进 commitCheckpoint、不持久化。
@@ -1318,8 +1430,9 @@ export async function runToolLoop(
       // 否则每次压缩都会双发同名事件。两个事件独立、不互斥（压过必发前者；压完仍超再发后者）。
 
       // 按 vendor 收窄 settings 后调 model（流式；最终仍归一成完整 ModelChatResponse）。
-      const streamWriter = createAssistantStreamWriter(id, runId, opts.signal, core, planStageId)
-      let res: ModelChatResponse
+      // DeepSeek 的 insufficient_system_resource 是 200 响应里的协议级容量信号，不会触发
+      // modelApi 已有的 429/5xx/网络错误退避。这里在【尚无流式条目写回】时有限重放同一请求；
+      // 其它 HTTP 错误仍直接由 adapter 处理，主 runtime 不额外 catch/重试，避免双重 retry。
       const requestBase = {
         model: meta.settings.model,
         messages,
@@ -1334,93 +1447,178 @@ export async function runToolLoop(
         ...requestBase,
         reasoning_effort: meta.settings.reasoning_effort,
       }
-      const llmSpan = startSpan('llm.chat', {
-        kind: 'llm',
-        parent: traceSpan,
-        attrs: {
-          sessionId: id,
-          runId,
-          turnId,
-          vendor: meta.settings.vendor,
-          model: meta.settings.model,
-          messages_count: messages.length,
-          tools_count: tools.length,
-          estimated_context_tokens: contextStats.estimatedTokens,
-          context_chars: contextStats.totalChars,
-          tools_chars: contextStats.toolsChars,
-          context_compacted: compaction.compacted,
-          context_within_budget: compaction.withinBudget,
-          cache_profile: cacheProfile.profileId,
-          cache_epoch: cacheProfile.epoch,
-          cache_lane: cacheProfile.lane,
-          cache_epoch_reason: cacheProfile.epochReason,
-          cache_lane_scope_fingerprint: cacheProfile.laneScopeFingerprint,
-          cache_system_fingerprint: cacheProfile.systemFingerprint,
-          cache_request_projection_fingerprint: cacheProfile.requestProjectionFingerprint,
-          tool_set_fingerprint: cacheProfile.toolSetFingerprint,
-          requestPreview: llmTracePreview(requestPreviewBody),
-        },
-      })
-      try {
-        if (meta.settings.vendor === 'glm') {
-          const s = meta.settings
-          const requestBody: GlmChatRequest = { ...requestBase, reasoning_effort: s.reasoning_effort }
-          res = await streamGlm(requestBody, callOptions, { onDelta: streamWriter.onDelta })
-        } else {
-          const s = meta.settings
-          const requestBody: DeepSeekChatRequest = { ...requestBase, reasoning_effort: s.reasoning_effort }
-          res = await streamDeepSeek(requestBody, callOptions, { onDelta: streamWriter.onDelta })
+      let insufficientResourceRetries = 0
+      let completedResponse: {
+        res: ModelChatResponse
+        streamWriter: ReturnType<typeof createAssistantStreamWriter>
+      } | undefined
+
+      while (!completedResponse) {
+        const streamWriter = createAssistantStreamWriter(id, runId, opts.signal, core, planStageId)
+        let res: ModelChatResponse
+        const llmSpan = startSpan('llm.chat', {
+          kind: 'llm',
+          parent: traceSpan,
+          attrs: {
+            sessionId: id,
+            runId,
+            turnId,
+            vendor: meta.settings.vendor,
+            model: meta.settings.model,
+            messages_count: messages.length,
+            tools_count: tools.length,
+            insufficient_resource_retry_attempt: insufficientResourceRetries,
+            estimated_context_tokens: contextStats.estimatedTokens,
+            context_chars: contextStats.totalChars,
+            tools_chars: contextStats.toolsChars,
+            context_compacted: compaction.compacted,
+            context_within_budget: compaction.withinBudget,
+            cache_profile: cacheProfile.profileId,
+            cache_epoch: cacheProfile.epoch,
+            cache_lane: cacheProfile.lane,
+            cache_epoch_reason: cacheProfile.epochReason,
+            cache_lane_scope_fingerprint: cacheProfile.laneScopeFingerprint,
+            cache_system_fingerprint: cacheProfile.systemFingerprint,
+            cache_request_projection_fingerprint: cacheProfile.requestProjectionFingerprint,
+            tool_set_fingerprint: cacheProfile.toolSetFingerprint,
+            requestPreview: llmTracePreview(requestPreviewBody),
+          },
+        })
+        try {
+          if (meta.settings.vendor === 'glm') {
+            const s = meta.settings
+            const requestBody: GlmChatRequest = { ...requestBase, reasoning_effort: s.reasoning_effort }
+            res = await streamGlm(requestBody, callOptions, { onDelta: streamWriter.onDelta })
+          } else {
+            const s = meta.settings
+            const requestBody: DeepSeekChatRequest = {
+              ...requestBase,
+              reasoning_effort: s.reasoning_effort,
+              user_id: core.config.deepseekUserId,
+            }
+            res = await streamDeepSeek(requestBody, callOptions, { onDelta: streamWriter.onDelta })
+          }
+        } catch (err) {
+          const status = abortStatus(opts.signal, err)
+          endSpan(llmSpan, status, {
+            error: safeErrorMessage(err),
+            cache_metrics_status: status === 'cancelled' ? 'cancelled' : 'request_failed',
+          }, err)
+          if (insufficientResourceRetries > 0) {
+            traceEvent('llm.insufficient_system_resource_exhausted', {
+              retries_used: insufficientResourceRetries,
+              max_retries: MAX_DEEPSEEK_INSUFFICIENT_RESOURCE_RETRIES,
+              reason: status === 'cancelled'
+                ? 'retry_request_cancelled'
+                : 'retry_request_failed',
+              error: safeErrorMessage(err),
+            })
+          }
+          if (isCurrentRun(id, runId, core)) {
+            setContextStats(id, {
+              ...contextStats,
+              cache: {
+                ...contextStats.cache!,
+                metricsStatus: status === 'cancelled' ? 'cancelled' : 'request_failed',
+              },
+            }, core)
+          }
+          throw err
         }
-      } catch (err) {
-        const status = abortStatus(opts.signal, err)
-        endSpan(llmSpan, status, {
-          error: safeErrorMessage(err),
-          cache_metrics_status: status === 'cancelled' ? 'cancelled' : 'request_failed',
-        }, err)
-        if (isCurrentRun(id, runId, core)) {
-          setContextStats(id, {
-            ...contextStats,
-            cache: {
-              ...contextStats.cache!,
-              metricsStatus: status === 'cancelled' ? 'cancelled' : 'request_failed',
-            },
-          }, core)
+        const choice = res.choices?.[0]
+        const msg = choice?.message
+        const toolCalls = narrowToolCalls(msg?.tool_calls)
+        const rawToolCallsCount = Array.isArray(msg?.tool_calls) ? msg.tool_calls.length : 0
+        const responseCacheUsage = normalizeCacheUsage(res.usage)
+        endSpan(llmSpan, 'ok', {
+          finish_reason: choice?.finish_reason ?? null,
+          tool_calls_count: toolCalls.length,
+          content_chars: responseChars(msg?.content),
+          reasoning_chars: responseChars(msg?.reasoning_content),
+          response_id: res.id,
+          response_model: res.model,
+          insufficient_resource_retry_attempt: insufficientResourceRetries,
+          cache_metrics_status: responseCacheUsage ? 'available' : 'unavailable',
+          responsePreview: llmTracePreview(res),
+          ...usageTraceAttrs(res.usage),
+        })
+
+        // TK8 每步守卫必须先于协议级 retry：迟到的旧 run 和已 abort 的 run 连请求都不能再发一次。
+        if (!isCurrentRun(id, runId, core)) {
+          finishTrace('cancelled', 'agent.stale_run', { reason: 'stale_run' })
+          return
         }
-        throw err
+        if (!isRunningRun(id, runId, core)) {
+          streamWriter.finishPending()
+          finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
+          return
+        }
+        // esc race：fetch 在 abort 前已返回但 signal 已中断 → stopped，不写回，也不容量重试。
+        if (opts.signal.aborted) {
+          streamWriter.finishPending()
+          if (isCurrentRun(id, runId, core)) patchRun(id, { status: 'stopped' }, core)
+          finishTrace('cancelled', 'agent.stopped', { reason: 'aborted' })
+          return
+        }
+
+        if (
+          meta.settings.vendor === 'deepseek'
+          && choice?.finish_reason === 'insufficient_system_resource'
+        ) {
+          const hasStreamedItem = streamWriter.hasItem()
+          const hasResponseText = responseChars(msg?.content) > 0
+            || responseChars(msg?.reasoning_content) > 0
+          if (
+            !hasStreamedItem
+            && !hasResponseText
+            && rawToolCallsCount === 0
+            && insufficientResourceRetries < MAX_DEEPSEEK_INSUFFICIENT_RESOURCE_RETRIES
+          ) {
+            insufficientResourceRetries += 1
+            traceEvent('llm.insufficient_system_resource_retry', {
+              retry_attempt: insufficientResourceRetries,
+              max_retries: MAX_DEEPSEEK_INSUFFICIENT_RESOURCE_RETRIES,
+              response_id: res.id,
+              response_model: res.model,
+              has_streamed_item: false,
+              has_response_text: false,
+            })
+            continue
+          }
+          traceEvent('llm.insufficient_system_resource_exhausted', {
+            retries_used: insufficientResourceRetries,
+            max_retries: MAX_DEEPSEEK_INSUFFICIENT_RESOURCE_RETRIES,
+            reason: hasStreamedItem
+              ? 'streamed_output_already_written'
+              : hasResponseText
+                ? 'response_text_returned'
+                : rawToolCallsCount > 0
+                  ? 'tool_calls_returned'
+                  : 'retry_limit_reached',
+            response_id: res.id,
+            response_model: res.model,
+            has_streamed_item: hasStreamedItem,
+            has_response_text: hasResponseText,
+            tool_calls_count: toolCalls.length,
+            raw_tool_calls_count: rawToolCallsCount,
+          })
+        } else if (insufficientResourceRetries > 0) {
+          traceEvent('llm.insufficient_system_resource_recovered', {
+            retries_used: insufficientResourceRetries,
+            final_finish_reason: choice?.finish_reason ?? null,
+            response_id: res.id,
+            response_model: res.model,
+          })
+        }
+
+        completedResponse = { res, streamWriter }
       }
+
+      const { res, streamWriter } = completedResponse
       const choice = res.choices?.[0]
       const msg = choice?.message
       const toolCalls = narrowToolCalls(msg?.tool_calls)
       const responseCacheUsage = normalizeCacheUsage(res.usage)
-      endSpan(llmSpan, 'ok', {
-        finish_reason: choice?.finish_reason ?? null,
-        tool_calls_count: toolCalls.length,
-        content_chars: responseChars(msg?.content),
-        reasoning_chars: responseChars(msg?.reasoning_content),
-        response_id: res.id,
-        response_model: res.model,
-        cache_metrics_status: responseCacheUsage ? 'available' : 'unavailable',
-        responsePreview: llmTracePreview(res),
-        ...usageTraceAttrs(res.usage),
-      })
-
-      // TK8 每步守卫：写回前再查会话还在、且仍是本次 run（异步期间可能被删/被顶掉）。
-      if (!isCurrentRun(id, runId, core)) {
-        finishTrace('cancelled', 'agent.stale_run', { reason: 'stale_run' })
-        return
-      }
-      if (!isRunningRun(id, runId, core)) {
-        streamWriter.finishPending()
-        finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
-        return
-      }
-      // esc race：fetch 在 abort 前已返回但 signal 已中断 → stopped，不写回。
-      if (opts.signal.aborted) {
-        streamWriter.finishPending()
-        if (isCurrentRun(id, runId, core)) patchRun(id, { status: 'stopped' }, core)
-        finishTrace('cancelled', 'agent.stopped', { reason: 'aborted' })
-        return
-      }
 
       setContextStats(id, {
         ...contextStats,
@@ -1542,6 +1740,7 @@ export async function runToolLoop(
           callId: string,
           name: string,
           args: Record<string, unknown>,
+          expectedRegistrationVersion: number,
         ): Promise<ToolResult> => {
           const policy = core.tools.execution(name)
           const toolSpan = startSpan('tool.call', {
@@ -1572,7 +1771,7 @@ export async function runToolLoop(
                   delegateRuntime,
                   core,
                 })
-                return core.tools.run(name, args, ctx)
+                return core.tools.run(name, args, ctx, expectedRegistrationVersion)
               },
             })
             const traced = toolResultTrace(result, args)
@@ -1595,15 +1794,31 @@ export async function runToolLoop(
           if (!parsed.ok) return []
           const name = toolCall.function.name
           if (toolCallValidationError(name, parsed.args)) return []
+          const expectedRegistrationVersion = exposedRegistrationVersions.get(name)
+          if (
+            expectedRegistrationVersion === undefined
+            || core.tools.registrationVersion(name) !== expectedRegistrationVersion
+          ) {
+            return []
+          }
           if (core.tools.execution(name)?.mode !== 'parallel') return []
           const meta = core.rootStore.getter(sessionsAtom)[id]
-          const risk = classifyToolRisk(name, parsed.args, { workspaceRoot: meta?.workspaceRoot })
+          const workspaceRoot = resolveSessionWorkspaceRoot(
+            meta,
+            core.rootStore.getter(workspacesAtom),
+          )
+          const risk = classifyToolRisk(name, parsed.args, { workspaceRoot })
           if (risk.requiresConfirmation || risk.level === 'critical' || risk.level === 'dangerous') return []
-          return [{ callId: toolCall.id, name, args: parsed.args }]
+          return [{ callId: toolCall.id, name, args: parsed.args, expectedRegistrationVersion }]
         })
         if (parallelCalls.length === toolCalls.length && parallelCalls.length > 1) {
           const results = await Promise.all(
-            parallelCalls.map((call) => executeToolCall(call.callId, call.name, call.args)),
+            parallelCalls.map((call) => executeToolCall(
+              call.callId,
+              call.name,
+              call.args,
+              call.expectedRegistrationVersion,
+            )),
           )
           if (!isCurrentRun(id, runId, core)) {
             finishTrace('cancelled', 'agent.stale_run', { reason: 'stale_run' })
@@ -1709,6 +1924,44 @@ export async function runToolLoop(
             continue
           }
 
+          const expectedRegistrationVersion = exposedRegistrationVersions.get(name)
+          const currentRegistrationVersion = core.tools.registrationVersion(name)
+          if (
+            name !== 'request_tool_schema'
+            && (
+              expectedRegistrationVersion === undefined
+              || currentRegistrationVersion !== expectedRegistrationVersion
+            )
+          ) {
+            const resultPayload = toolRegistrationChangedResult(
+              name,
+              expectedRegistrationVersion,
+              currentRegistrationVersion,
+            )
+            const error = String(resultPayload.error)
+            const attrs: TraceAttributes = {
+              toolName: name,
+              callId: toolCall.id,
+              registration_changed: true,
+              expectedRegistrationVersion,
+              currentRegistrationVersion,
+              argsPreview: tracePreview(args),
+              resultPreview: tracePreview(resultPayload),
+              errorPreview: error,
+              error,
+            }
+            traceEvent('tool.registration_changed', attrs)
+            const changedSpan = startSpan('tool.call', {
+              kind: 'tool',
+              parent: traceSpan,
+              attrs: { sessionId: id, runId, turnId, ...attrs },
+            })
+            endSpan(changedSpan, 'error', attrs, error)
+            if (name === 'submit_stage_result') lastStageSubmitRejection = error
+            appendToolResult(id, toolCall.id, JSON.stringify(resultPayload), core, planStageId)
+            continue
+          }
+
           const validationError = toolCallValidationError(name, args)
           if (validationError) {
             const resultPayload = { error: validationError }
@@ -1736,29 +1989,70 @@ export async function runToolLoop(
 
           // request_tool_schema：完整 schema 只进入下一轮请求的顶层 tools；历史结果仅保留加载确认和 guide。
           if (name === 'request_tool_schema') {
-            const toolName = typeof args.toolName === 'string' ? args.toolName : ''
+            const toolName = typeof args.toolName === 'string' ? args.toolName.trim() : ''
             const schemaSpan = startSpan('request_tool_schema', {
               kind: 'internal',
               parent: traceSpan,
               attrs: { sessionId: id, runId, turnId, toolName, callId: toolCall.id, args },
             })
-            // ensureToolLoaded 已穿 core（toolLoading.ts）：读 core.tools + patchRun(..., core)，
-            //   与紧邻的 core.tools.loadSchema 同源。默认 core=defaultCore 时行为零变化，隔离实例走本核。
-            visible = ensureToolLoaded(id, visible, toolName, core)
-            const schema = core.tools.loadSchema(toolName)
-            const found = schema !== undefined
-            const resultPayload = schema ? toolSchemaLoadedResult(schema) : { error: 'unknown' }
-            traceEvent('tool.schema_requested', { toolName, callId: toolCall.id, found, args, result: resultPayload })
-            endSpan(schemaSpan, found ? 'ok' : 'error', { found, result: resultPayload })
+            let found: boolean
+            let resultPayload: Record<string, unknown>
+            if (toolName) {
+              // ensureToolLoaded 已穿 core（toolLoading.ts）：读 core.tools + patchRun(..., core)，
+              // 与紧邻的 core.tools.loadSchema 同源。默认 core=defaultCore 时行为零变化，隔离实例走本核。
+              visible = ensureToolLoaded(
+                id,
+                visible,
+                toolName,
+                core,
+                MAX_TURN_TOOLS - 1,
+              )
+              const schema = core.tools.loadSchema(toolName)
+              found = schema !== undefined
+              if (schema) recentToolNames = touchRecentToolName(recentToolNames, toolName)
+              resultPayload = schema ? toolSchemaLoadedResult(schema) : { error: 'unknown' }
+            } else {
+              const manifest = searchToolManifestPage(
+                {
+                  query: typeof args.query === 'string' ? args.query : undefined,
+                  cursor: typeof args.cursor === 'string' ? args.cursor : undefined,
+                  limit: typeof args.limit === 'number' ? args.limit : undefined,
+                },
+                isTauri(),
+                { registry: core.tools },
+              )
+              found = manifest.kind === 'tool_manifest_page'
+              resultPayload = manifest as unknown as Record<string, unknown>
+            }
+            traceEvent('tool.schema_requested', {
+              toolName: toolName || undefined,
+              discovery: !toolName,
+              callId: toolCall.id,
+              found,
+              args,
+              result: resultPayload,
+            })
+            endSpan(schemaSpan, found ? 'ok' : 'error', {
+              found,
+              discovery: !toolName,
+              result: resultPayload,
+            })
             appendToolResult(id, toolCall.id, JSON.stringify(resultPayload), core, planStageId)
             continue
           }
+
+          // request_tool_schema 已在上面 continue；其它可见工具通过注册版本守卫后必有版本。
+          const registrationVersion = expectedRegistrationVersion!
 
           // S4-B 工具确认门：confirm 模式沿用变更类工具逐次确认；auto 仅确认 critical。
           // critical 的优先级高于「本 session 一律允许」，不能被工具名级白名单绕过。
           // 命中即延后为 confirmCall（不建 ctx、不执行、不回填 result，留给 confirmTool 恢复时处理）。
           const meta = core.rootStore.getter(sessionsAtom)[id]
-          const risk = classifyToolRisk(name, args, { workspaceRoot: meta?.workspaceRoot })
+          const workspaceRoot = resolveSessionWorkspaceRoot(
+            meta,
+            core.rootStore.getter(workspacesAtom),
+          )
+          const risk = classifyToolRisk(name, args, { workspaceRoot })
           const approvalMode = meta?.toolApprovalMode ?? 'confirm'
           const needsConfirmation = risk.requiresConfirmation === true
             || risk.level === 'critical'
@@ -1775,17 +2069,18 @@ export async function runToolLoop(
                     callId: toolCall.id,
                     toolName: name,
                     args,
+                    registrationVersion,
                     ...(risk.level === 'critical' ? { risk: 'critical' as const } : { risk: 'dangerous' as const }),
                     reason: risk.reason,
                     irreversible: risk.irreversible,
                   }
-                : { callId: toolCall.id, toolName: name, args }
+                : { callId: toolCall.id, toolName: name, args, registrationVersion }
             }
             continue
           }
 
           // 其它工具：由执行图记录其生命周期；串行/并发只由本批调度器决定。
-          const result = await executeToolCall(toolCall.id, name, args)
+          const result = await executeToolCall(toolCall.id, name, args, registrationVersion)
 
           // TK8「每步不漏」：execute 可能异步且 signal 穿透其中，await 后写回前再查会话还在、且仍是本次 run；
           // 被顶掉的旧 run 不得把迟到 result 写进新 run；esc 中断则收成 stopped。
@@ -1951,6 +2246,15 @@ export async function runToolLoop(
           stageId: currentStage?.id,
           submit_rejected: lastStageSubmitRejection !== undefined,
         })
+        persistWorkingTurn()
+        continue
+      }
+
+      // 当前 assistant 最终回复已落库；若请求飞行期间来了新输入，把它提升成普通 user 消息，
+      // 同一 runId 直接进入下一轮。取队列与 done 写入之间没有 await，避免结束竞态。
+      const promotedAfterReply = promoteQueuedInputs()
+      if (promotedAfterReply > 0) {
+        agentTurnLimit += Math.max(1, promotedAfterReply)
         persistWorkingTurn()
         continue
       }

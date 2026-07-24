@@ -10,6 +10,7 @@ import {
   pendingQuestionAnswersAtom,
   alwaysAllowedToolsAtom,
   composerDraftAtom,
+  queuedUserMessagesAtom,
   withdrawnTurnNoticeAtom,
   contextStatsAtom,
   addPendingArtifact,
@@ -22,6 +23,8 @@ import {
   addAlwaysAllowedTool,
   isToolAlwaysAllowed,
   setComposerDraft,
+  enqueueUserMessage,
+  takeQueuedUserMessages,
   setWithdrawnTurnNotice,
   setContextStats,
   type PendingArtifact,
@@ -102,8 +105,31 @@ describe('transientAtoms —— 共享单例 key 值随 store 隔离（不分桶
     expect(b.getter(browserCardsAtom)).toEqual([])
     expect(b.getter(pendingQuestionAnswersAtom)).toEqual({})
     expect(b.getter(composerDraftAtom)).toBe('')
+    expect(b.getter(queuedUserMessagesAtom)).toEqual([])
     expect(b.getter(withdrawnTurnNoticeAtom)).toBeUndefined()
     expect(b.getter(contextStatsAtom)).toBeUndefined()
+  })
+})
+
+describe('queuedUserMessagesAtom', () => {
+  it('按 FIFO 追加，并只取走指定 run 的消息', () => {
+    seedSession()
+    enqueueUserMessage('s1', { id: 'q1', createdAt: 1, content: '一', targetRunId: 'r1' })
+    enqueueUserMessage('s1', { id: 'q2', createdAt: 2, content: '二', targetRunId: 'r2' })
+    enqueueUserMessage('s1', { id: 'q3', createdAt: 3, content: '三', targetRunId: 'r1' })
+
+    expect(takeQueuedUserMessages('s1', 'r1')).toEqual([
+      { id: 'q1', createdAt: 1, content: '一', targetRunId: 'r1' },
+      { id: 'q3', createdAt: 3, content: '三', targetRunId: 'r1' },
+    ])
+    expect(getSessionStore('s1').store.getter(queuedUserMessagesAtom)).toEqual([
+      { id: 'q2', createdAt: 2, content: '二', targetRunId: 'r2' },
+    ])
+  })
+
+  it('未登记会话不会生成 ghost queue', () => {
+    enqueueUserMessage('ghost', { id: 'q1', createdAt: 1, content: '一', targetRunId: 'r1' })
+    expect(takeQueuedUserMessages('ghost', 'r1')).toEqual([])
   })
 })
 
@@ -280,6 +306,19 @@ describe('alwaysAllowedTools（S4-B 本 session 一律允许的危险工具）',
     addAlwaysAllowedTool('sX', 'write_file')
     expect(getSessionStore('sX').store.getter(alwaysAllowedToolsAtom)).toEqual([])
     expect(isToolAlwaysAllowed('sX', 'write_file')).toBe(false)
+  })
+
+  it('MCP 工具拒绝写入；即使 atom 被直接污染也永远不视为 session 已授权', () => {
+    seedSession('mcp-session')
+    const store = getSessionStore('mcp-session').store
+    const mcpTool = 'mcp__playwright__browser_navigate'
+
+    addAlwaysAllowedTool('mcp-session', mcpTool)
+    expect(store.getter(alwaysAllowedToolsAtom)).toEqual([])
+
+    store.setter(alwaysAllowedToolsAtom, [mcpTool, 'write_file'])
+    expect(isToolAlwaysAllowed('mcp-session', mcpTool)).toBe(false)
+    expect(isToolAlwaysAllowed('mcp-session', 'write_file')).toBe(true)
   })
 })
 

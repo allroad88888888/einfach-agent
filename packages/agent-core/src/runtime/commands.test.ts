@@ -21,11 +21,21 @@ vi.mock('../state/checkpointWriters', () => ({
 // D-4：持久化桥全 mock —— 只验证 commands 按约定调用了落盘钩子（不跑真实 IndexedDB）。
 vi.mock('./persistenceBridge', () => ({
   persistSessions: vi.fn(),
+  persistWorkspaces: vi.fn(),
   persistDeleteSession: vi.fn(),
   persistTruncate: vi.fn(),
 }))
 
-import { rootStore, sessionsAtom, activeSessionIdAtom, resetRootStore } from '../state/rootStore'
+import {
+  rootStore,
+  workspacesAtom,
+  activeWorkspaceIdAtom,
+  expandedWorkspaceIdsAtom,
+  workspaceSettingsOpenIdsAtom,
+  sessionsAtom,
+  activeSessionIdAtom,
+  resetRootStore,
+} from '../state/rootStore'
 import { getSessionStore, resetSessionStores } from '../state/sessionStore'
 import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
 import {
@@ -39,6 +49,7 @@ import {
   runtimeTranscriptEventsAtom,
   alwaysAllowedToolsAtom,
   composerDraftAtom,
+  queuedUserMessagesAtom,
   withdrawnTurnNoticeAtom,
 } from '../state/transientAtoms'
 import type { ConversationItem, RunState, SessionMeta } from '../state/core.type'
@@ -50,10 +61,20 @@ import { defaultCore, createCoreInstance } from './core/coreInstance'
 import { getExecutionRuntime } from '../execution/runtime'
 import { executionGraphAtom } from '../execution/graph'
 import { jumpToCheckpoint, rewindBeforeCheckpoint } from '../state/checkpointWriters'
-import { persistSessions, persistDeleteSession, persistTruncate } from './persistenceBridge'
+import {
+  persistSessions,
+  persistWorkspaces,
+  persistDeleteSession,
+  persistTruncate,
+} from './persistenceBridge'
 import {
   configureCommands,
   createCommands,
+  newWorkspace,
+  renameWorkspace,
+  selectWorkspace,
+  toggleWorkspaceExpanded,
+  toggleWorkspaceSettings,
   newSession,
   selectSession,
   removeSession,
@@ -131,6 +152,56 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(rootStore.getter(activeSessionIdAtom)).toBe('x')
   })
 
+  it('工作区：新建后激活并展开；工作区内可新建多个对话', () => {
+    const workspaceId = newWorkspace({ rootPath: ' /Users/me/project ' })
+    const first = newSession({ workspaceId })
+    const second = newSession({ workspaceId })
+
+    expect(rootStore.getter(workspacesAtom)[workspaceId]).toMatchObject({
+      name: 'project',
+      rootPath: '/Users/me/project',
+    })
+    expect(rootStore.getter(activeWorkspaceIdAtom)).toBe(workspaceId)
+    expect(rootStore.getter(expandedWorkspaceIdsAtom)[workspaceId]).toBe(true)
+    expect(rootStore.getter(sessionsAtom)[first].workspaceId).toBe(workspaceId)
+    expect(rootStore.getter(sessionsAtom)[second].workspaceId).toBe(workspaceId)
+    expect(persistWorkspaces).toHaveBeenCalled()
+  })
+
+  it('工作区：可折叠，重新选择时展开并切到该工作区最近的对话', () => {
+    const firstWorkspace = newWorkspace({ name: '一号' })
+    newSession({ workspaceId: firstWorkspace, title: '旧对话' })
+    const secondWorkspace = newWorkspace({ name: '二号' })
+    const secondSession = newSession({ workspaceId: secondWorkspace, title: '新对话' })
+
+    toggleWorkspaceExpanded(secondWorkspace)
+    expect(rootStore.getter(expandedWorkspaceIdsAtom)[secondWorkspace]).toBe(false)
+
+    selectWorkspace(firstWorkspace)
+    selectWorkspace(secondWorkspace)
+    expect(rootStore.getter(expandedWorkspaceIdsAtom)[secondWorkspace]).toBe(true)
+    expect(rootStore.getter(activeSessionIdAtom)).toBe(secondSession)
+  })
+
+  it('工作区：设置按钮激活并展开目标工作区，标题可重命名并持久化', () => {
+    const workspaceId = newWorkspace({ name: '旧标题' })
+    toggleWorkspaceExpanded(workspaceId)
+    expect(rootStore.getter(expandedWorkspaceIdsAtom)[workspaceId]).toBe(false)
+
+    toggleWorkspaceSettings(workspaceId)
+    expect(rootStore.getter(activeWorkspaceIdAtom)).toBe(workspaceId)
+    expect(rootStore.getter(expandedWorkspaceIdsAtom)[workspaceId]).toBe(true)
+    expect(rootStore.getter(workspaceSettingsOpenIdsAtom)[workspaceId]).toBe(true)
+
+    toggleWorkspaceSettings(workspaceId)
+    expect(rootStore.getter(workspaceSettingsOpenIdsAtom)).toEqual({})
+
+    vi.mocked(persistWorkspaces).mockClear()
+    renameWorkspace(workspaceId, '  新标题  ')
+    expect(rootStore.getter(workspacesAtom)[workspaceId].name).toBe('新标题')
+    expect(persistWorkspaces).toHaveBeenCalled()
+  })
+
   it('removeSession：从 sessionsAtom 删除该 id', () => {
     const a = newSession()
     const b = newSession()
@@ -206,16 +277,35 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(runSession).not.toHaveBeenCalled()
   })
 
-  it('sendMessage：当前 run 忙碌（running/awaiting_tool/waiting_user/waiting_confirmation）→ no-op（codex P2）', () => {
-    // 忙碌时发新消息会顶掉未完成的 run；waiting_user/waiting_confirmation 时更会造成非法 tool-call 序列。命令层兜底。
+  it('sendMessage：running/awaiting_tool 时绑定当前 run 进入 FIFO 队列，不另起 run', () => {
     configureCommands({ deepseekApiKey: 'k' })
     const id = newSession()
-    for (const status of ['running', 'awaiting_tool', 'waiting_user', 'waiting_confirmation'] as const) {
-      getSessionStore(id).store.setter(runAtom, { runId: 'r', status })
+    const store = getSessionStore(id).store
+    store.setter(runAtom, { runId: 'r', status: 'running' })
+
+    sendMessage(' 第一条 ')
+    store.setter(runAtom, { runId: 'r', status: 'awaiting_tool' })
+    sendMessage('第二条')
+
+    expect(store.getter(queuedUserMessagesAtom)).toEqual([
+      expect.objectContaining({ content: '第一条', targetRunId: 'r' }),
+      expect.objectContaining({ content: '第二条', targetRunId: 'r' }),
+    ])
+    expect(runSession).not.toHaveBeenCalled()
+    expect(beginRun).not.toHaveBeenCalled()
+  })
+
+  it('sendMessage：结构化决策暂停时仍 no-op，不能绕过未回填的 tool call', () => {
+    const id = newSession()
+    const store = getSessionStore(id).store
+    for (const status of ['waiting_user', 'waiting_confirmation', 'waiting_plan_approval'] as const) {
+      store.setter(runAtom, { runId: 'r', status })
       sendMessage('hi')
-      expect(runSession).not.toHaveBeenCalled()
-      expect(beginRun).not.toHaveBeenCalled()
     }
+
+    expect(store.getter(queuedUserMessagesAtom)).toEqual([])
+    expect(runSession).not.toHaveBeenCalled()
+    expect(beginRun).not.toHaveBeenCalled()
   })
 
   it('continuePlan：对没有运行中 run 的持久化计划直接续跑，不追加新的用户消息', async () => {
@@ -730,31 +820,34 @@ describe('answerQuestion / discardArtifact（P8-c 卡片交互命令）', () => 
 })
 
 describe('setWorkspaceRoot（S4-A workspace 绑定）', () => {
-  it('写进当前 active 会话的 SessionMeta.workspaceRoot（trim）+ 落盘', () => {
-    const id = newSession() // 已 active
-    vi.mocked(persistSessions).mockClear()
+  it('写进当前一级工作区（trim）+ 落盘，同工作区会话共享', () => {
+    const id = newSession() // 自动创建并激活默认工作区
+    const workspaceId = rootStore.getter(sessionsAtom)[id].workspaceId!
+    vi.mocked(persistWorkspaces).mockClear()
 
     setWorkspaceRoot('  /Users/me/proj  ')
 
-    const meta = rootStore.getter(sessionsAtom)[id]
-    expect(meta.workspaceRoot).toBe('/Users/me/proj')
-    expect(persistSessions).toHaveBeenCalled()
+    const workspace = rootStore.getter(workspacesAtom)[workspaceId]
+    expect(workspace.rootPath).toBe('/Users/me/proj')
+    expect(workspace.name).toBe('proj')
+    expect(persistWorkspaces).toHaveBeenCalled()
   })
 
   it('空/纯空白 → 清成 undefined（桥不传 → Rust 走 git root 兜底）', () => {
     const id = newSession()
+    const workspaceId = rootStore.getter(sessionsAtom)[id].workspaceId!
     setWorkspaceRoot('/tmp/x')
-    expect(rootStore.getter(sessionsAtom)[id].workspaceRoot).toBe('/tmp/x')
+    expect(rootStore.getter(workspacesAtom)[workspaceId].rootPath).toBe('/tmp/x')
 
     setWorkspaceRoot('   ')
-    expect(rootStore.getter(sessionsAtom)[id].workspaceRoot).toBeUndefined()
+    expect(rootStore.getter(workspacesAtom)[workspaceId].rootPath).toBeUndefined()
   })
 
-  it('无 active → no-op、不落盘', () => {
-    rootStore.setter(activeSessionIdAtom, '')
-    vi.mocked(persistSessions).mockClear()
+  it('无 active 工作区 → no-op、不落盘', () => {
+    rootStore.setter(activeWorkspaceIdAtom, '')
+    vi.mocked(persistWorkspaces).mockClear()
     expect(() => setWorkspaceRoot('/x')).not.toThrow()
-    expect(persistSessions).not.toHaveBeenCalled()
+    expect(persistWorkspaces).not.toHaveBeenCalled()
   })
 })
 
@@ -842,6 +935,36 @@ describe('confirmTool（S4-B 危险工具确认恢复）', () => {
     const id = seedConfirming('w1')
     confirmTool(true, true)
     expect(getSessionStore(id).store.getter(alwaysAllowedToolsAtom)).toContain('write_file')
+  })
+
+  it('MCP 工具即使直接调用 confirmTool(true,true) 也不写入 session「一律允许」集合', () => {
+    const id = seedConfirming('mcp-1')
+    const store = getSessionStore(id).store
+    const run = store.getter(runAtom)
+    if (!run?.pendingToolConfirmation) throw new Error('缺少 pendingToolConfirmation')
+    store.setter(runAtom, {
+      ...run,
+      pendingToolConfirmation: {
+        ...run.pendingToolConfirmation,
+        toolName: 'mcp__playwright__browser_navigate',
+        args: { url: 'https://example.com' },
+      },
+    })
+
+    confirmTool(true, true)
+
+    expect(store.getter(alwaysAllowedToolsAtom)).not.toContain('mcp__playwright__browser_navigate')
+    expect(runToolLoop).toHaveBeenCalledWith(
+      id,
+      'R1',
+      expect.objectContaining({
+        resumeToolCall: {
+          callId: 'mcp-1',
+          toolName: 'mcp__playwright__browser_navigate',
+          args: { url: 'https://example.com' },
+        },
+      }),
+    )
   })
 
   it('不可撤回命令即使传入 always 也不加入「一律允许」集合', () => {

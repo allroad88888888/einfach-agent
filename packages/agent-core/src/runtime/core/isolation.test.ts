@@ -105,7 +105,12 @@ afterEach(() => {
   resetRootStore()
   resetSessionStores()
   defaultCore.abort.reset()
-  Object.assign(defaultCore.config, { deepseekApiKey: '', glmApiKey: '', fetchImpl: undefined })
+  Object.assign(defaultCore.config, {
+    deepseekApiKey: '',
+    glmApiKey: '',
+    customInstructions: '',
+    fetchImpl: undefined,
+  })
   resetPersistence()
   resetObservability()
 })

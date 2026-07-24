@@ -18,7 +18,14 @@
 //   createCommands(隔离实例) 造出「只在自己那套 store/registry/abort/config 上跑」的命令集 —— 与
 //   defaultCore 完全隔离，这是「能嵌两次」的收口证明（见 createCore.test.ts）。
 
-import { sessionsAtom, activeSessionIdAtom } from '../state/rootStore'
+import {
+  workspacesAtom,
+  activeWorkspaceIdAtom,
+  expandedWorkspaceIdsAtom,
+  workspaceSettingsOpenIdsAtom,
+  sessionsAtom,
+  activeSessionIdAtom,
+} from '../state/rootStore'
 import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
 import { getPlan, setPlan } from '../state/planWriters'
 import { PlanRuntime } from '../planning/runtime'
@@ -32,6 +39,7 @@ import {
   pruneBrowserCardsAfter,
   pruneRuntimeTranscriptEventsAfter,
   addAlwaysAllowedTool,
+  enqueueUserMessage,
   setComposerDraft,
   setWithdrawnTurnNotice,
 } from '../state/transientAtoms'
@@ -45,14 +53,29 @@ import { resumePlanSession, runSession, runToolLoop } from './modelRun'
 //   configureCommands 仍写 defaultCore.config（注入 env key 到全局默认实例）；隔离实例的 config 由
 //   createCore({ config }) 在构造时预置，其命令读自己的 core.config。
 import { defaultCore, type RuntimeConfig, type CoreInstance } from './core/coreInstance'
-import { persistSessions, persistDeleteSession, persistTruncate } from './persistenceBridge'
+import {
+  persistSessions,
+  persistWorkspaces,
+  persistDeleteSession,
+  persistTruncate,
+} from './persistenceBridge'
 import { newId } from './newId'
-import type { ModelSettings, SessionMeta, ConversationItem } from '../state/core.type'
+import type {
+  ModelSettings,
+  SessionMeta,
+  ConversationItem,
+  WorkspaceMeta,
+} from '../state/core.type'
 import { DEFAULT_DEEPSEEK_MODEL } from '@web-agent/ai'
 import { addEvent, getActiveSpan, runTraceKey } from '../observability/trace'
-import { isDangerousTool } from './dangerousTools'
+import { isDangerousTool, isMcpTool } from './dangerousTools'
 import { getExecutionRuntime } from '../execution/runtime'
 import { activeExecutionNodeIdsAtom, executionGraphAtom } from '../execution/graph'
+import {
+  DEFAULT_WORKSPACE_NAME,
+  deriveWorkspaceName,
+  normalizeWorkspaceRoot,
+} from '../state/workspaceState'
 
 // ===========================================================================
 // 运行时配置注入 —— apiKey 来源（config 通电：defaultCore.config 是 CoreInstance 第五个视图）
@@ -130,8 +153,98 @@ function findAskUserToolCallId(items: ConversationItem[]): string | undefined {
 // 详情：命令间互调（sendMessage→renameSession）走同一工厂闭包内的成员，保证同 core。
 export function createCommands(core: CoreInstance = defaultCore) {
   // =========================================================================
-  // 会话命令
+  // 工作区与会话命令
   // =========================================================================
+
+  function createWorkspaceMeta(opts?: { name?: string; rootPath?: string }): WorkspaceMeta {
+    const id = newId()
+    const now = Date.now()
+    const rootPath = normalizeWorkspaceRoot(opts?.rootPath)
+    return {
+      id,
+      name: opts?.name?.trim() || deriveWorkspaceName(rootPath) || DEFAULT_WORKSPACE_NAME,
+      rootPath,
+      createdAt: now,
+      updatedAt: now,
+    }
+  }
+
+  function activateWorkspace(id: string): void {
+    const workspace = core.rootStore.getter(workspacesAtom)[id]
+    if (!workspace) return
+    core.rootStore.setter(activeWorkspaceIdAtom, id)
+    core.rootStore.setter(expandedWorkspaceIdsAtom, (prev) => ({ ...prev, [id]: true }))
+    const currentSessionId = core.rootStore.getter(activeSessionIdAtom)
+    const sessions = core.rootStore.getter(sessionsAtom)
+    if (sessions[currentSessionId]?.workspaceId === id) return
+    const latest = Object.values(sessions)
+      .filter((session) => session.workspaceId === id)
+      .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    core.rootStore.setter(activeSessionIdAtom, latest?.id ?? '')
+  }
+
+  // 新建一级工作区。相同非空目录只激活已有工作区，避免侧栏重复。
+  function newWorkspace(opts?: { name?: string; rootPath?: string }): string {
+    const rootPath = normalizeWorkspaceRoot(opts?.rootPath)
+    if (rootPath) {
+      const existing = Object.values(core.rootStore.getter(workspacesAtom))
+        .find((workspace) => normalizeWorkspaceRoot(workspace.rootPath) === rootPath)
+      if (existing) {
+        activateWorkspace(existing.id)
+        return existing.id
+      }
+    }
+    const workspace = createWorkspaceMeta({ ...opts, rootPath })
+    core.rootStore.setter(workspacesAtom, (prev) => ({ ...prev, [workspace.id]: workspace }))
+    core.rootStore.setter(activeWorkspaceIdAtom, workspace.id)
+    core.rootStore.setter(
+      expandedWorkspaceIdsAtom,
+      (prev) => ({ ...prev, [workspace.id]: true }),
+    )
+    core.rootStore.setter(activeSessionIdAtom, '')
+    persistWorkspaces()
+    return workspace.id
+  }
+
+  function selectWorkspace(id: string): void {
+    activateWorkspace(id)
+  }
+
+  function toggleWorkspaceExpanded(id: string): void {
+    if (!core.rootStore.getter(workspacesAtom)[id]) return
+    core.rootStore.setter(expandedWorkspaceIdsAtom, (prev) => ({
+      ...prev,
+      [id]: !(prev[id] ?? false),
+    }))
+  }
+
+  function toggleWorkspaceSettings(id: string): void {
+    if (!core.rootStore.getter(workspacesAtom)[id]) return
+    activateWorkspace(id)
+    core.rootStore.setter(workspaceSettingsOpenIdsAtom, (prev) => (
+      prev[id] ? {} : { [id]: true }
+    ))
+  }
+
+  function renameWorkspace(id: string, name: string): void {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    const chars = Array.from(trimmed)
+    const nextName = chars.length > 48
+      ? `${chars.slice(0, 47).join('')}…`
+      : trimmed
+    let changed = false
+    core.rootStore.setter(workspacesAtom, (prev) => {
+      const workspace = prev[id]
+      if (!workspace || workspace.name === nextName) return prev
+      changed = true
+      return {
+        ...prev,
+        [id]: { ...workspace, name: nextName, updatedAt: Date.now() },
+      }
+    })
+    if (changed) persistWorkspaces()
+  }
 
   // 简介：给指定会话改名（TT3）—— ghost guard + 不可变更新 + updatedAt 前进 + 落盘。
   // 详情：照 setWorkspaceRoot 范式。trim 后空串 → no-op（编辑框取消语义，保留原名）；
@@ -152,7 +265,22 @@ export function createCommands(core: CoreInstance = defaultCore) {
 
   // 简介：新建会话 → 登记 rootStore.sessionsAtom → 建每会话 store → 设为 active，返回 id。
   // 详情：默认 settings 为 deepseek + 默认模型；opts.settings / opts.title 可覆盖。
-  function newSession(opts?: { title?: string; settings?: ModelSettings }): string {
+  function newSession(opts?: {
+    title?: string
+    settings?: ModelSettings
+    workspaceId?: string
+  }): string {
+    let workspaceId = opts?.workspaceId
+    const workspaces = core.rootStore.getter(workspacesAtom)
+    if (!workspaceId || !workspaces[workspaceId]) {
+      const activeWorkspaceId = core.rootStore.getter(activeWorkspaceIdAtom)
+      workspaceId = workspaces[activeWorkspaceId] ? activeWorkspaceId : undefined
+    }
+    if (!workspaceId) {
+      const workspace = createWorkspaceMeta()
+      workspaceId = workspace.id
+      core.rootStore.setter(workspacesAtom, (prev) => ({ ...prev, [workspace.id]: workspace }))
+    }
     const id = newId()
     const settings: ModelSettings = opts?.settings ?? {
       vendor: 'deepseek',
@@ -165,16 +293,36 @@ export function createCommands(core: CoreInstance = defaultCore) {
       settings,
       createdAt: now,
       updatedAt: now,
+      workspaceId,
     }
     core.rootStore.setter(sessionsAtom, (prev) => ({ ...prev, [id]: meta }))
+    core.rootStore.setter(workspacesAtom, (prev) => {
+      const workspace = prev[workspaceId]
+      if (!workspace) return prev
+      return { ...prev, [workspaceId]: { ...workspace, updatedAt: now } }
+    })
     core.createSessionStore(id)
+    core.rootStore.setter(activeWorkspaceIdAtom, workspaceId)
+    core.rootStore.setter(
+      expandedWorkspaceIdsAtom,
+      (prev) => ({ ...prev, [workspaceId]: true }),
+    )
     core.rootStore.setter(activeSessionIdAtom, id)
+    persistWorkspaces()
     persistSessions() // D-4：会话列表变更 → 覆盖式落盘（fire-and-forget）。
     return id
   }
 
   // 简介：切换当前激活会话。
   function selectSession(id: string): void {
+    const session = core.rootStore.getter(sessionsAtom)[id]
+    if (session?.workspaceId && core.rootStore.getter(workspacesAtom)[session.workspaceId]) {
+      core.rootStore.setter(activeWorkspaceIdAtom, session.workspaceId)
+      core.rootStore.setter(expandedWorkspaceIdsAtom, (prev) => ({
+        ...prev,
+        [session.workspaceId!]: true,
+      }))
+    }
     core.rootStore.setter(activeSessionIdAtom, id)
   }
 
@@ -190,32 +338,40 @@ export function createCommands(core: CoreInstance = defaultCore) {
     })
     core.dropSessionStore(id)
     if (core.rootStore.getter(activeSessionIdAtom) === id) {
-      const remaining = Object.keys(core.rootStore.getter(sessionsAtom))
-      core.rootStore.setter(activeSessionIdAtom, remaining[0] ?? '')
+      const activeWorkspaceId = core.rootStore.getter(activeWorkspaceIdAtom)
+      const remaining = Object.values(core.rootStore.getter(sessionsAtom))
+        .filter((session) => session.workspaceId === activeWorkspaceId)
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+      core.rootStore.setter(activeSessionIdAtom, remaining[0]?.id ?? '')
     }
     // D-4：会话列表变更 → 覆盖式落盘；被删会话的历史 checkpoint 单独清盘（均 fire-and-forget）。
     persistSessions()
     persistDeleteSession(id)
   }
 
-  // 简介：给当前 active 会话绑定 workspace 根目录（S4-A）—— 不可变改 SessionMeta.workspaceRoot + 落盘。
-  // 详情：无 active / 会话未登记 → no-op（U2 自取 active）。trim 后空串视为「清空」（存 undefined →
-  //   toolContext 不透传 → Rust 走 git root 兜底）。updatedAt 前进（R2 一致性），随会话列表覆盖式落盘。
+  // 简介：修改当前一级工作区根目录；同一工作区中的所有会话立即共享。
   function setWorkspaceRoot(root: string): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
+    const id = core.rootStore.getter(activeWorkspaceIdAtom)
     if (!id) return
-    const trimmed = root.trim()
+    const rootPath = normalizeWorkspaceRoot(root)
     let changed = false
-    core.rootStore.setter(sessionsAtom, (prev) => {
-      const meta = prev[id]
-      if (!meta) return prev // ghost guard：会话未登记 → no-op
+    core.rootStore.setter(workspacesAtom, (prev) => {
+      const workspace = prev[id]
+      if (!workspace || workspace.rootPath === rootPath) return prev
       changed = true
       return {
         ...prev,
-        [id]: { ...meta, workspaceRoot: trimmed ? trimmed : undefined, updatedAt: Date.now() },
+        [id]: {
+          ...workspace,
+          name: workspace.name === DEFAULT_WORKSPACE_NAME && rootPath
+            ? deriveWorkspaceName(rootPath)
+            : workspace.name,
+          rootPath,
+          updatedAt: Date.now(),
+        },
       }
     })
-    if (changed) persistSessions() // D-4：会话元信息变更 → 覆盖式落盘（fire-and-forget）。
+    if (changed) persistWorkspaces()
   }
 
   // 简介：切换当前会话的工具授权模式，并随 SessionMeta 持久化。
@@ -242,18 +398,27 @@ export function createCommands(core: CoreInstance = defaultCore) {
   //   finally 里 endRun 清理（只删自己那个 controller）。
   function sendMessage(input: string): void {
     const id = core.rootStore.getter(activeSessionIdAtom)
-    if (!id || !input.trim()) return
+    const content = input.trim()
+    if (!id || !content) return
     const meta = core.rootStore.getter(sessionsAtom)[id]
     if (!meta) return
 
-    // 忙碌守卫（codex P2）：当前会话 run 正在跑 / 等工具 / 等用户回答时，不接受新输入。否则新 run
-    //   会顶掉未完成的旧 run；尤其 waiting_user 时，上一条 assistant 的 ask_user tool_call 尚无
-    //   对应 tool result，重发会构成非法 tool-call 序列被接口拒。UI（Composer）也会锁输入，这里是
-    //   命令层兜底（防任何编程路径）。
-    const status = core.getSessionStore(id).store.getter(runAtom)?.status
+    const run = core.getSessionStore(id).store.getter(runAtom)
+    const status = run?.status
+    // 模型请求或工具批次仍在运行时，不另起 run；把输入绑定到当前 run，交给 modelRun 在
+    // tool-call/result 闭合后的安全边界提升为普通 user 消息。
+    if ((status === 'running' || status === 'awaiting_tool') && run) {
+      enqueueUserMessage(id, {
+        id: newId(),
+        createdAt: Date.now(),
+        content,
+        targetRunId: run.runId,
+      }, core)
+      return
+    }
+
+    // 结构化决策暂停仍必须走对应卡片，不能用普通消息绕过未回填的 tool call。
     if (
-      status === 'running' ||
-      status === 'awaiting_tool' ||
       status === 'waiting_user' ||
       status === 'waiting_confirmation'
       || status === 'waiting_plan_approval'
@@ -264,13 +429,13 @@ export function createCommands(core: CoreInstance = defaultCore) {
     //   ghost guard/updatedAt/落盘）。用户改过名（≠默认）绝不覆盖；同会话第二条消息时标题
     //   已非默认，天然不再触发。派生为空（理论上上面已挡空输入）→ 保留默认名。
     if (meta.title === DEFAULT_SESSION_TITLE) {
-      const derived = deriveSessionTitle(input)
+      const derived = deriveSessionTitle(content)
       if (derived) renameSession(id, derived)
     }
 
     const apiKey = meta.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
     const signal = core.abort.beginRun(id)
-    void runSession(id, input, { signal, apiKey, fetchImpl: core.config.fetchImpl, core }).finally(() =>
+    void runSession(id, content, { signal, apiKey, fetchImpl: core.config.fetchImpl, core }).finally(() =>
       core.abort.endRun(id, signal),
     )
   }
@@ -472,6 +637,15 @@ export function createCommands(core: CoreInstance = defaultCore) {
       patchRun(id, { status: 'running', pendingToolConfirmation: undefined }, core)
       return
     }
+    // MCP 工具必须逐次确认；即便绕过 UI 直接传 always=true，也不能写入 session 授权。
+    const registrationStillCurrent = pending.registrationVersion === undefined
+      || core.tools.registrationVersion(pending.toolName) === pending.registrationVersion
+    const rememberApproval = approved
+      && Boolean(always)
+      && registrationStillCurrent
+      && pending.risk !== 'critical'
+      && !pending.irreversible
+      && !isMcpTool(pending.toolName)
     addEvent('agent.confirmation.decision', {
       span: getActiveSpan(runTraceKey(id, run.runId)),
       attrs: {
@@ -480,7 +654,9 @@ export function createCommands(core: CoreInstance = defaultCore) {
         toolName: pending.toolName,
         callId: pending.callId,
         approved,
-        always: Boolean(always),
+        always: rememberApproval,
+        registrationVersion: pending.registrationVersion,
+        registrationStillCurrent,
       },
     })
 
@@ -503,7 +679,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
     }
 
     // 允许：可选「本 session 一律允许该工具」→ 记瞬态集合；落回 running，重入循环并让其先执行被确认工具。
-    if (always && pending.risk !== 'critical' && !pending.irreversible) {
+    if (rememberApproval) {
       addAlwaysAllowedTool(id, pending.toolName, core)
     }
     patchRun(id, { status: 'running', pendingToolConfirmation: undefined }, core)
@@ -512,7 +688,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
       signal,
       apiKey,
       fetchImpl: core.config.fetchImpl,
-      resumeToolCall: { callId: pending.callId, toolName: pending.toolName, args: pending.args },
+      resumeToolCall: pending,
       core,
     }).finally(() => core.abort.endRun(id, signal))
   }
@@ -642,6 +818,11 @@ export function createCommands(core: CoreInstance = defaultCore) {
   }
 
   return {
+    newWorkspace,
+    selectWorkspace,
+    toggleWorkspaceExpanded,
+    toggleWorkspaceSettings,
+    renameWorkspace,
     renameSession,
     newSession,
     selectSession,
@@ -673,6 +854,11 @@ export type CommandApi = ReturnType<typeof createCommands>
 // createCommands() 无参 → core=defaultCore，成员即穿线前的模块级命令。UI/测试照旧
 //   `import { sendMessage, ... } from './commands'` 拿到的就是绑定默认实例的那一组。
 export const {
+  newWorkspace,
+  selectWorkspace,
+  toggleWorkspaceExpanded,
+  toggleWorkspaceSettings,
+  renameWorkspace,
   renameSession,
   newSession,
   selectSession,

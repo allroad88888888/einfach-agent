@@ -2,10 +2,13 @@ import type {
   DelegateAgentChildSpec,
   DelegateAgentInput,
   DelegateAgentStrategy,
+  SubagentModelTier,
+  SubagentRiskLevel,
+  SubagentTaskCategory,
   SubagentToolProfile,
 } from './types'
 import { DEFAULT_SUBAGENT_TOOL_PROFILE, SUBAGENT_TOOL_PROFILES } from './toolProfile'
-import { isDangerousTool } from '../runtime/dangerousTools'
+import { isDelegatableDangerousTool } from '../runtime/dangerousTools'
 
 const DEFAULT_MAX_CHILDREN = 6
 const HARD_MAX_CHILDREN = 12
@@ -48,11 +51,36 @@ function normalizeToolProfile(value: unknown): SubagentToolProfile | undefined {
     : undefined
 }
 
+function normalizeModelTier(value: unknown): SubagentModelTier | undefined {
+  return value === 'pro' || value === 'flash' ? value : undefined
+}
+
+function normalizeTaskCategory(value: unknown): SubagentTaskCategory | undefined {
+  return value === 'retrieval'
+    || value === 'extraction'
+    || value === 'analysis'
+    || value === 'implementation'
+    || value === 'verification'
+    || value === 'final_acceptance'
+    ? value
+    : undefined
+}
+
+function normalizeRiskLevel(value: unknown): SubagentRiskLevel | undefined {
+  return value === 'low' || value === 'medium' || value === 'high' ? value : undefined
+}
+
+function optionalNonNegativeInt(value: unknown, max: number): number | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) return undefined
+  return Math.min(value, max)
+}
+
 function normalizeConfirmedTools(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined
   const names: string[] = []
   for (const item of value) {
-    if (typeof item !== 'string' || !isDangerousTool(item)) return undefined
+    if (typeof item !== 'string' || !isDelegatableDangerousTool(item)) return undefined
     if (!names.includes(item)) names.push(item)
   }
   return names
@@ -86,6 +114,55 @@ export function normalizeDelegateAgentInput(value: unknown):
     if (typeof child.mode === 'string' && child.mode.trim()) spec.mode = child.mode.trim()
     if (typeof child.expectedOutput === 'string' && child.expectedOutput.trim()) {
       spec.expectedOutput = child.expectedOutput.trim()
+    }
+    if (child.modelTier !== undefined) {
+      const modelTier = normalizeModelTier(child.modelTier)
+      if (!modelTier) {
+        return { ok: false, error: 'invalid delegate_agent: child modelTier must be pro or flash' }
+      }
+      spec.modelTier = modelTier
+    }
+    if (child.taskCategory !== undefined) {
+      const taskCategory = normalizeTaskCategory(child.taskCategory)
+      if (!taskCategory) {
+        return {
+          ok: false,
+          error: 'invalid delegate_agent: child taskCategory must be retrieval, extraction, analysis, implementation, verification, or final_acceptance',
+        }
+      }
+      spec.taskCategory = taskCategory
+    }
+    if (child.riskLevel !== undefined) {
+      const riskLevel = normalizeRiskLevel(child.riskLevel)
+      if (!riskLevel) {
+        return {
+          ok: false,
+          error: 'invalid delegate_agent: child riskLevel must be low, medium, or high',
+        }
+      }
+      spec.riskLevel = riskLevel
+    }
+    if (child.crossModule !== undefined) {
+      if (typeof child.crossModule !== 'boolean') {
+        return { ok: false, error: 'invalid delegate_agent: child crossModule must be boolean' }
+      }
+      spec.crossModule = child.crossModule
+    }
+    if (child.finalAcceptance !== undefined) {
+      if (typeof child.finalAcceptance !== 'boolean') {
+        return { ok: false, error: 'invalid delegate_agent: child finalAcceptance must be boolean' }
+      }
+      spec.finalAcceptance = child.finalAcceptance
+    }
+    if (child.priorFailureCount !== undefined) {
+      const priorFailureCount = optionalNonNegativeInt(child.priorFailureCount, 100)
+      if (priorFailureCount === undefined) {
+        return {
+          ok: false,
+          error: 'invalid delegate_agent: child priorFailureCount must be a non-negative integer',
+        }
+      }
+      spec.priorFailureCount = priorFailureCount
     }
     const childMaxDepth = optionalPositiveInt(child.maxDepth, HARD_MAX_DEPTH)
     if (childMaxDepth !== undefined) spec.maxDepth = childMaxDepth

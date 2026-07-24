@@ -9,7 +9,11 @@
 import { useEffect, useRef } from 'react'
 import { useAtomValue, useSetAtom } from '@einfach/react'
 import { runAtom } from '@web-agent/core/state/sessionAtoms'
-import { composerDraftAtom, withdrawnTurnNoticeAtom } from '@web-agent/core/state/transientAtoms'
+import {
+  composerDraftAtom,
+  queuedUserMessagesAtom,
+  withdrawnTurnNoticeAtom,
+} from '@web-agent/core/state/transientAtoms'
 import {
   sendMessage,
   setApprovalMode,
@@ -29,6 +33,7 @@ export function Composer({ approvalMode = 'confirm' }: { approvalMode?: 'confirm
   const modeShortcutLatchedRef = useRef(false)
   const run = useAtomValue(runAtom)
   const draft = useAtomValue(composerDraftAtom)
+  const queuedMessages = useAtomValue(queuedUserMessagesAtom)
   const notice = useAtomValue(withdrawnTurnNoticeAtom)
   const setDraft = useSetAtom(composerDraftAtom)
   const setNotice = useSetAtom(withdrawnTurnNoticeAtom)
@@ -41,7 +46,7 @@ export function Composer({ approvalMode = 'confirm' }: { approvalMode?: 'confirm
   const paused = run?.status === 'waiting_user'
     || run?.status === 'waiting_confirmation'
     || run?.status === 'waiting_plan_approval'
-  const locked = running || paused
+  const locked = paused
 
   const send = () => {
     if (!draft.trim() || locked) return
@@ -134,8 +139,16 @@ export function Composer({ approvalMode = 'confirm' }: { approvalMode?: 'confirm
             授权：{approvalMode === 'auto' ? 'Auto' : '确认'}
             <span aria-hidden="true"> · ⇧⌘ 切换</span>
           </button>
+          {queuedMessages.length > 0 ? (
+            <span className="agentnew-composer-queue-status" role="status">
+              已排队 {queuedMessages.length} 条
+            </span>
+          ) : null}
         </div>
         <textarea
+          id="agentnew-composer-input"
+          name="message"
+          aria-label="消息"
           className="agentnew-composer-input"
           value={draft}
           disabled={locked}
@@ -165,20 +178,25 @@ export function Composer({ approvalMode = 'confirm' }: { approvalMode?: 'confirm
           }}
         />
       </div>
-      {running ? (
-        <button type="button" className="agentnew-composer-send" onClick={stopRun}>
-          停止
-        </button>
-      ) : (
+      <div className="agentnew-composer-actions">
         <button
           type="button"
           className="agentnew-composer-send"
           onClick={send}
           disabled={!draft.trim() || paused}
         >
-          发送
+          {running ? '加入队列' : '发送'}
         </button>
-      )}
+        {running ? (
+          <button
+            type="button"
+            className="agentnew-composer-send agentnew-composer-stop"
+            onClick={stopRun}
+          >
+            停止
+          </button>
+        ) : null}
+      </div>
     </div>
   )
 }

@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest'
 import { redactAttributes, redactAttributesWithPreviews, safePayloadPreview, truncatePayload } from './redact'
 
 describe('observability/redact', () => {
+  it('redacts provider user identifiers defensively', () => {
+    expect(redactAttributes({
+      user_id: `wa_${'a'.repeat(48)}`,
+      nested: { userId: 'opaque-business-id' },
+    })).toEqual({
+      user_id: '[REDACTED]',
+      nested: { userId: '[REDACTED]' },
+    })
+  })
+
   it('屏蔽敏感字段，保留普通 metadata', () => {
     const redacted = redactAttributes({
       apiKey: 'k',

@@ -20,8 +20,18 @@ export const DANGEROUS_TOOLS: ReadonlySet<string> = new Set([
   'revert_workspace_change',
 ])
 
+// 简介：MCP 工具由外部服务动态提供，第一期统一按逐次确认处理。
+export function isMcpTool(name: string): boolean {
+  return name.startsWith('mcp__')
+}
+
 // 简介：某工具名是否属于「执行前需用户确认」的危险工具集。
 export function isDangerousTool(name: string): boolean {
+  return DANGEROUS_TOOLS.has(name) || isMcpTool(name)
+}
+
+// 简介：只有内建危险工具可被显式授权给子 agent；MCP 工具必须留在父级逐次确认边界。
+export function isDelegatableDangerousTool(name: string): boolean {
   return DANGEROUS_TOOLS.has(name)
 }
 
@@ -118,6 +128,16 @@ export function classifyToolRisk(
   context?: { workspaceRoot?: string },
 ): ToolRiskAssessment {
   if (!isDangerousTool(name)) return { level: 'safe' }
+  // MCP 工具来自应用之外，服务端声明与实现也可能在重连后发生变化。
+  // 在 registry 能提供可审计的来源/只读元数据前，第一期统一要求逐次确认，
+  // 包括 Auto 模式，避免把第三方 tool description 当作安全边界。
+  if (isMcpTool(name)) {
+    return {
+      level: 'dangerous',
+      reason: '该操作由外部 MCP 服务执行，调用前需要确认将发送的参数',
+      requiresConfirmation: true,
+    }
+  }
   if (!name.startsWith('shell_')) return { level: 'dangerous' }
 
   const command = commandFromArgs(args)

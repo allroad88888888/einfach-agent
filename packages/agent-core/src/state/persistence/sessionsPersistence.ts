@@ -11,10 +11,11 @@
 //   （对齐 indexedDbDriver 的降级契约）。不引任何未安装依赖 —— 纯原生 IndexedDB API
 //   （jsdom 单测下由 fake-indexeddb 提供全局实现）。
 
-import type { SessionMeta } from '../core.type'
+import type { SessionMeta, WorkspaceMeta } from '../core.type'
 
 const DEFAULT_DB_NAME = 'web-agent-sessions'
-const STORE_NAME = 'sessions'
+const SESSION_STORE_NAME = 'sessions'
+const WORKSPACE_STORE_NAME = 'workspaces'
 
 // 打开（必要时建库/建 store），失败/环境不支持则 reject —— 由各方法各自捕获降级。
 function openDb(dbName: string): Promise<IDBDatabase> {
@@ -23,11 +24,14 @@ function openDb(dbName: string): Promise<IDBDatabase> {
       reject(new Error('IndexedDB unavailable'))
       return
     }
-    const request = indexedDB.open(dbName, 1)
+    const request = indexedDB.open(dbName, 2)
     request.onupgradeneeded = () => {
       const db = request.result
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' })
+      if (!db.objectStoreNames.contains(SESSION_STORE_NAME)) {
+        db.createObjectStore(SESSION_STORE_NAME, { keyPath: 'id' })
+      }
+      if (!db.objectStoreNames.contains(WORKSPACE_STORE_NAME)) {
+        db.createObjectStore(WORKSPACE_STORE_NAME, { keyPath: 'id' })
       }
     }
     request.onsuccess = () => resolve(request.result)
@@ -42,6 +46,8 @@ function openDb(dbName: string): Promise<IDBDatabase> {
 export function createSessionsPersistence(dbName: string = DEFAULT_DB_NAME): {
   saveSessions(sessions: SessionMeta[]): Promise<void>
   loadSessions(): Promise<SessionMeta[]>
+  saveWorkspaces(workspaces: WorkspaceMeta[]): Promise<void>
+  loadWorkspaces(): Promise<WorkspaceMeta[]>
 } {
   return {
     // 覆盖式落盘：一个 readwrite 事务里先 clear 再逐个 put，落盘结果与传入列表完全一致；出错静默返回。
@@ -54,8 +60,8 @@ export function createSessionsPersistence(dbName: string = DEFAULT_DB_NAME): {
       }
       try {
         await new Promise<void>((resolve, reject) => {
-          const tx = db.transaction(STORE_NAME, 'readwrite')
-          const store = tx.objectStore(STORE_NAME)
+          const tx = db.transaction(SESSION_STORE_NAME, 'readwrite')
+          const store = tx.objectStore(SESSION_STORE_NAME)
           store.clear()
           for (const session of sessions) {
             store.put(session)
@@ -81,9 +87,56 @@ export function createSessionsPersistence(dbName: string = DEFAULT_DB_NAME): {
       }
       try {
         return await new Promise<SessionMeta[]>((resolve, reject) => {
-          const tx = db.transaction(STORE_NAME, 'readonly')
-          const req = tx.objectStore(STORE_NAME).getAll()
+          const tx = db.transaction(SESSION_STORE_NAME, 'readonly')
+          const req = tx.objectStore(SESSION_STORE_NAME).getAll()
           req.onsuccess = () => resolve((req.result ?? []) as SessionMeta[])
+          req.onerror = () => reject(req.error)
+          tx.onerror = () => reject(tx.error)
+        })
+      } catch {
+        return []
+      } finally {
+        db.close()
+      }
+    },
+
+    // 工作区与会话分开覆盖式落盘，避免目录/折叠层级继续冗余到每一个会话。
+    async saveWorkspaces(workspaces: WorkspaceMeta[]): Promise<void> {
+      let db: IDBDatabase
+      try {
+        db = await openDb(dbName)
+      } catch {
+        return
+      }
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const tx = db.transaction(WORKSPACE_STORE_NAME, 'readwrite')
+          const store = tx.objectStore(WORKSPACE_STORE_NAME)
+          store.clear()
+          for (const workspace of workspaces) store.put(workspace)
+          tx.oncomplete = () => resolve()
+          tx.onerror = () => reject(tx.error)
+          tx.onabort = () => reject(tx.error)
+        })
+      } catch {
+        // best-effort。
+      } finally {
+        db.close()
+      }
+    },
+
+    async loadWorkspaces(): Promise<WorkspaceMeta[]> {
+      let db: IDBDatabase
+      try {
+        db = await openDb(dbName)
+      } catch {
+        return []
+      }
+      try {
+        return await new Promise<WorkspaceMeta[]>((resolve, reject) => {
+          const tx = db.transaction(WORKSPACE_STORE_NAME, 'readonly')
+          const req = tx.objectStore(WORKSPACE_STORE_NAME).getAll()
+          req.onsuccess = () => resolve((req.result ?? []) as WorkspaceMeta[])
           req.onerror = () => reject(req.error)
           tx.onerror = () => reject(tx.error)
         })

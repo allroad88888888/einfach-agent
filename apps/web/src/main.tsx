@@ -4,6 +4,11 @@ import { Provider } from '@einfach/react'
 import { rootStore } from '@web-agent/core/state/rootStore'
 import { toolRegistry } from '@web-agent/core/tools/registry'
 import { registerStandardTools } from '@web-agent/tools'
+import {
+  createMcpClientManager,
+  createMcpConnectorRouter,
+  createStreamableHttpMcpConnector,
+} from '@web-agent/tools-mcp'
 import { configureCommands, newSession } from '@web-agent/core/runtime/commands'
 import { configurePersistence } from '@web-agent/core/runtime/persistenceBridge'
 import { configureObservability } from '@web-agent/core/observability/trace'
@@ -15,6 +20,12 @@ import { isTauri } from '@tauri-apps/api/core'
 import { AppShell } from './agentNew/ui/AppShell'
 import { TraceViewer } from '@web-agent/core/observability/TraceViewer'
 import { WindowScrollDemo } from './demos/WindowScrollDemo'
+import { configureMcpSettings } from './mcp/commands'
+import { createTauriStdioMcpConnector } from './mcp/tauriStdioConnector'
+import {
+  configureAppSettingsEnvironment,
+  hydrateAppSettings,
+} from './settings/commands'
 import './styles/global.css'
 import './agentNew/ui/agentnew.css'
 
@@ -22,17 +33,37 @@ import './agentNew/ui/agentnew.css'
 // （= toolRegistry = defaultCore.tools）。core 不再硬编码工具，装什么由消费方（这里是 app）决定。
 registerStandardTools(toolRegistry)
 
-// 注入 model apiKey（命令层按会话 vendor 取对应 key）。没有 key 时 model 调用会降级为 error。
+// MCP 连接由应用层装配：浏览器与桌面共用官方 Streamable HTTP，
+// 只有 Tauri 宿主开放 stdio 子进程桥接。连接管理器负责动态注册/卸载远端工具。
+const tauriHost = isTauri()
+const mcpConnector = createMcpConnectorRouter({
+  'streamable-http': createStreamableHttpMcpConnector(),
+  ...(tauriHost ? { stdio: createTauriStdioMcpConnector() } : {}),
+})
+const mcpManager = createMcpClientManager({
+  registry: toolRegistry,
+  connector: mcpConnector,
+})
+configureMcpSettings({
+  manager: mcpManager,
+  capabilities: { stdio: tauriHost },
+})
+
+// 环境变量是模型密钥的兜底；设备设置中的 DeepSeek key 会在 hydrate 时覆盖它。
+const environmentDeepSeekApiKey = import.meta.env.VITE_DEEPSEEK_API_KEY ?? ''
 configureCommands({
-  deepseekApiKey: import.meta.env.VITE_DEEPSEEK_API_KEY ?? '',
+  deepseekApiKey: environmentDeepSeekApiKey,
   glmApiKey: import.meta.env.VITE_GLM_API_KEY ?? '',
 })
+configureAppSettingsEnvironment({ deepseekApiKey: environmentDeepSeekApiKey })
+// 在首次渲染/新会话之前同步恢复全局设置，避免首个请求读到过期的运行时配置。
+hydrateAppSettings()
 
 // 持久化 driver：桌面壳（Tauri）用 SQLite，浏览器用 IndexedDB（TaK1，上层逻辑不变）。
 // hydrate（读回）与 configurePersistence（写盘钩子）必须用同一对实例。sqlite 实现**动态 import**
 // —— 只在 Tauri 下加载，浏览器 bundle 不含它（代码分割 + 避免非 Tauri 环境引 plugin-sql）。
 async function resolvePersistence() {
-  if (isTauri()) {
+  if (tauriHost) {
     const { createSqlitePersistence } = await import('@web-agent/core/state/persistence/sqliteDriver')
     return createSqlitePersistence()
   }
@@ -43,7 +74,7 @@ async function resolvePersistence() {
 }
 
 function configureObservabilityDriver(): void {
-  if (isTauri()) {
+  if (tauriHost) {
     void import('@web-agent/core/observability/sqliteLogDriver')
       .then(({ createSqliteLogDriver }) => configureObservability({ driver: createSqliteLogDriver() }))
       .catch(() => {})

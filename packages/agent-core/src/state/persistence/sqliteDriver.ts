@@ -22,12 +22,13 @@
 
 import Database from '@tauri-apps/plugin-sql'
 import type { Checkpoint, CheckpointMeta } from '../checkpoint.type'
-import type { SessionMeta } from '../core.type'
+import type { SessionMeta, WorkspaceMeta } from '../core.type'
 
 const DB_URL = 'sqlite:web-agent.db'
 
 // 会话列表单行 blob 的固定主键：整个 SessionMeta[] 序列化后存这一行的 meta 列。
 const SESSIONS_BLOB_ID = '__all__'
+const WORKSPACES_BLOB_ID = '__workspaces__'
 
 // checkpoints 表里一行的形状（select 回来的原始行）。
 interface CheckpointRow {
@@ -117,6 +118,8 @@ interface HistoryDriver {
 interface SessionsPersistence {
   saveSessions(sessions: SessionMeta[]): Promise<void>
   loadSessions(): Promise<SessionMeta[]>
+  saveWorkspaces(workspaces: WorkspaceMeta[]): Promise<void>
+  loadWorkspaces(): Promise<WorkspaceMeta[]>
 }
 
 const sqliteHistoryDriver: HistoryDriver = {
@@ -219,7 +222,9 @@ const sqliteSessions: SessionsPersistence = {
         JSON.stringify(sessions),
       ])
       if (legacyRowsPendingCleanup) {
-        await db.execute(`DELETE FROM sessions WHERE id != '${SESSIONS_BLOB_ID}'`)
+        await db.execute(
+          `DELETE FROM sessions WHERE id NOT IN ('${SESSIONS_BLOB_ID}', '${WORKSPACES_BLOB_ID}')`,
+        )
         legacyRowsPendingCleanup = false
       }
     } catch {
@@ -235,14 +240,43 @@ const sqliteSessions: SessionsPersistence = {
     try {
       const db = await getDb()
       const rows = await db.select<{ id: string; meta: string }[]>('SELECT id, meta FROM sessions')
-      if (rows.some((r) => r.id !== SESSIONS_BLOB_ID)) legacyRowsPendingCleanup = true
+      if (rows.some((r) => r.id !== SESSIONS_BLOB_ID && r.id !== WORKSPACES_BLOB_ID)) {
+        legacyRowsPendingCleanup = true
+      }
       const blobRow = rows.find((r) => r.id === SESSIONS_BLOB_ID)
       if (blobRow) {
         const parsed = JSON.parse(blobRow.meta) as unknown
         return Array.isArray(parsed) ? (parsed as SessionMeta[]) : []
       }
       // 无 '__all__' → 纯旧格式（或空库）：逐行 parse。
-      return rows.map((r) => JSON.parse(r.meta) as SessionMeta)
+      return rows
+        .filter((r) => r.id !== WORKSPACES_BLOB_ID)
+        .map((r) => JSON.parse(r.meta) as SessionMeta)
+    } catch {
+      return []
+    }
+  },
+
+  async saveWorkspaces(workspaces) {
+    try {
+      const db = await getDb()
+      await db.execute(
+        `INSERT OR REPLACE INTO sessions (id, meta) VALUES ('${WORKSPACES_BLOB_ID}', $1)`,
+        [JSON.stringify(workspaces)],
+      )
+    } catch {
+      // best-effort。
+    }
+  },
+
+  async loadWorkspaces() {
+    try {
+      const db = await getDb()
+      const rows = await db.select<{ id: string; meta: string }[]>(
+        `SELECT id, meta FROM sessions WHERE id = '${WORKSPACES_BLOB_ID}'`,
+      )
+      const parsed = rows[0] ? JSON.parse(rows[0].meta) as unknown : []
+      return Array.isArray(parsed) ? parsed as WorkspaceMeta[] : []
     } catch {
       return []
     }

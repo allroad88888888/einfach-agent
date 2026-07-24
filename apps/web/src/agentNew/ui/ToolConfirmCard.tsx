@@ -9,6 +9,7 @@ import { useState } from 'react'
 import { useAtomValue } from '@einfach/react'
 import { runAtom } from '@web-agent/core/state/sessionAtoms'
 import { confirmTool } from '@web-agent/core/runtime/commands'
+import { isMcpTool } from '@web-agent/core/runtime/dangerousTools'
 
 const PREVIEW_MAX = 240
 
@@ -86,6 +87,7 @@ function ConfirmCardBody({
   // 「本 session 一律允许该工具」勾选（纯本地 UI 态；确认「允许」时经命令写入瞬态集合）。
   const [always, setAlways] = useState(false)
   const preview = describeArgs(args)
+  const canRememberApproval = risk !== 'critical' && !irreversible && !isMcpTool(toolName)
 
   return (
     <section className="agentnew-confirm" aria-labelledby="agentnew-confirm-title">
@@ -104,7 +106,7 @@ function ConfirmCardBody({
 
       {reason ? <p className="agentnew-confirm-reason">{reason}</p> : null}
 
-      {risk !== 'critical' && !irreversible ? <label className="agentnew-confirm-always">
+      {canRememberApproval ? <label className="agentnew-confirm-always">
         <input
           type="checkbox"
           checked={always}
@@ -124,7 +126,7 @@ function ConfirmCardBody({
         <button
           type="button"
           className="agentnew-confirm-approve"
-          onClick={() => confirmTool(true, risk === 'critical' || irreversible ? false : always)}
+          onClick={() => confirmTool(true, canRememberApproval ? always : false)}
         >
           允许
         </button>

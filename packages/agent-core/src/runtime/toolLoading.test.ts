@@ -13,11 +13,11 @@ import { getSessionStore, resetSessionStores } from '../state/sessionStore'
 import { runAtom } from '../state/sessionAtoms'
 import { setRun } from '../state/sessionWriters'
 import { toolRegistry } from '../tools/registry'
-import type { LoadedTool } from '../tools/types'
-import { createCoreInstance } from './core/coreInstance'
+import type { LoadedTool, Tool } from '../tools/types'
+import { createCoreInstance, type CoreInstance } from './core/coreInstance'
 // 集成性质：本文件测的是「懒加载真实 save_file 工具」，故从 meta 包取标准工具装进独立 core（TS2）。
 import { registerStandardTools } from '@web-agent/tools'
-import { appendVisibleTool, ensureToolLoaded } from './toolLoading'
+import { appendVisibleTool, ensureToolLoaded, refreshVisibleTools } from './toolLoading'
 
 afterEach(() => {
   resetRootStore()
@@ -37,6 +37,37 @@ function seedRunningSession(id = 's1'): void {
     },
   }))
   setRun(id, { runId: 'r', status: 'running' })
+}
+
+function seedIndependentRunningSession(core: CoreInstance, id = 's1'): void {
+  core.rootStore.setter(sessionsAtom, {
+    [id]: {
+      id,
+      title: 't',
+      settings: { vendor: 'deepseek', model: 'x' },
+      createdAt: 0,
+      updatedAt: 0,
+    },
+  })
+  core.getSessionStore(id).store.setter(runAtom, { runId: 'r', status: 'running' })
+}
+
+function makeVersionedTestTool(name: string, revision: string): Tool {
+  return {
+    name,
+    runtime: 'internal',
+    skill: {
+      description: `${name} ${revision}`,
+      content: `${name} guide ${revision}`,
+    },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        revision: { type: 'string', const: revision },
+      },
+    },
+    execute: () => ({ ok: true }),
+  }
 }
 
 describe('appendVisibleTool', () => {
@@ -127,5 +158,87 @@ describe('ensureToolLoaded —— core 参数隔离（第 3 期）', () => {
     // schema 懒加载本身不依赖会话登记，仍正常返回（只有 loadedTools 回写受 ghost guard 约束）。
     expect(next.map((t) => t.name)).toContain('save_file')
     expect(core.getSessionStore('ghost').store.getter(runAtom)).toBeUndefined()
+  })
+})
+
+describe('dynamic tool snapshots and visible-tool LRU', () => {
+  it('refreshVisibleTools replaces a same-name re-registration and drops it after unregister', () => {
+    const core = createCoreInstance()
+    const id = 'refresh'
+    seedIndependentRunningSession(core, id)
+    const firstRegistration = makeVersionedTestTool('remote_search', 'v1')
+    core.tools.register(firstRegistration)
+
+    const before = ensureToolLoaded(id, [], firstRegistration.name, core)
+    const staleSnapshot = before[0]
+    expect(staleSnapshot).toMatchObject({
+      description: 'remote_search v1',
+      guide: 'remote_search guide v1',
+      registrationVersion: 1,
+    })
+
+    const replacement = makeVersionedTestTool('remote_search', 'v2')
+    core.tools.register(replacement)
+    const refreshed = refreshVisibleTools(id, before, core)
+
+    expect(refreshed).not.toBe(before)
+    expect(refreshed).toHaveLength(1)
+    expect(refreshed[0]).not.toBe(staleSnapshot)
+    expect(refreshed[0]).toMatchObject({
+      description: 'remote_search v2',
+      guide: 'remote_search guide v2',
+      registrationVersion: 2,
+      inputSchema: {
+        properties: {
+          revision: { const: 'v2' },
+        },
+      },
+    })
+
+    expect(core.tools.unregister(replacement.name, replacement)).toBe(true)
+    const removed = refreshVisibleTools(id, refreshed, core)
+
+    expect(removed).toEqual([])
+    expect(core.getSessionStore(id).store.getter(runAtom)?.loadedTools).toEqual([])
+  })
+
+  it('re-requesting a loaded tool promotes it to the LRU tail and evicts the oldest over budget', () => {
+    const core = createCoreInstance()
+    const id = 'lru'
+    seedIndependentRunningSession(core, id)
+    for (const name of ['alpha', 'beta', 'gamma']) {
+      core.tools.register(makeVersionedTestTool(name, 'v1'))
+    }
+
+    let visible: LoadedTool[] = []
+    for (const name of ['alpha', 'beta', 'gamma']) {
+      visible = ensureToolLoaded(id, visible, name, core)
+    }
+    const betaSnapshot = visible[1]
+
+    const promoted = ensureToolLoaded(id, visible, 'beta', core, 2)
+
+    expect(promoted.map((tool) => tool.name)).toEqual(['gamma', 'beta'])
+    expect(promoted[1]).toBe(betaSnapshot)
+    expect(core.getSessionStore(id).store.getter(runAtom)?.loadedTools).toEqual([
+      'gamma',
+      'beta',
+    ])
+  })
+
+  it('keeps the array reference when the same registration is already at the LRU tail', () => {
+    const core = createCoreInstance()
+    const id = 'stable'
+    seedIndependentRunningSession(core, id)
+    core.tools.register(makeVersionedTestTool('alpha', 'v1'))
+    core.tools.register(makeVersionedTestTool('beta', 'v1'))
+
+    const first = ensureToolLoaded(id, [], 'alpha', core, 2)
+    const atTail = ensureToolLoaded(id, first, 'beta', core, 2)
+    const stable = ensureToolLoaded(id, atTail, 'beta', core, 2)
+
+    expect(stable).toBe(atTail)
+    expect(stable[1]).toBe(atTail[1])
+    expect(stable.map((tool) => tool.name)).toEqual(['alpha', 'beta'])
   })
 })

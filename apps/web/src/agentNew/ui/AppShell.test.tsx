@@ -1,11 +1,20 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { screen } from '@testing-library/react'
 import { renderWithStore } from '../../test/renderWithStore'
-import { rootStore, sessionsAtom, activeSessionIdAtom, resetRootStore } from '@web-agent/core/state/rootStore'
+import {
+  rootStore,
+  workspacesAtom,
+  activeWorkspaceIdAtom,
+  expandedWorkspaceIdsAtom,
+  sessionsAtom,
+  activeSessionIdAtom,
+  resetRootStore,
+} from '@web-agent/core/state/rootStore'
 import { getSessionStore, resetSessionStores } from '@web-agent/core/state/sessionStore'
 import { checkpointsAtom, planAtom, runAtom } from '@web-agent/core/state/sessionAtoms'
 import { contextStatsAtom, pendingArtifactsAtom } from '@web-agent/core/state/transientAtoms'
 import type { SessionMeta } from '@web-agent/core/state/core.type'
+import { resetMcpSettingsState } from '../../mcp/state'
 import { AppShell } from './AppShell'
 
 // P-U6a 两栏组装：AppShell 把真组件（SessionList / ActiveSessionProvider / MessageList /
@@ -15,6 +24,12 @@ import { AppShell } from './AppShell'
 // 故把它们依赖的命令一并 mock（渲染不触发，仅补齐模块形状）。
 
 vi.mock('@web-agent/core/runtime/commands', () => ({
+  configureCommands: vi.fn(),
+  newWorkspace: vi.fn(),
+  renameWorkspace: vi.fn(),
+  selectWorkspace: vi.fn(),
+  toggleWorkspaceExpanded: vi.fn(),
+  toggleWorkspaceSettings: vi.fn(),
   newSession: vi.fn(),
   selectSession: vi.fn(),
   removeSession: vi.fn(),
@@ -37,12 +52,24 @@ vi.mock('@web-agent/core/runtime/commands', () => ({
 
 // 造一个登记在 rootStore 的活跃会话（P8-h 两个新挂载点都要求会话在 Provider 下）。
 function seedActiveSession(id = 's1'): void {
+  rootStore.setter(workspacesAtom, {
+    w1: {
+      id: 'w1',
+      name: '示例项目',
+      rootPath: '/workspace/example',
+      createdAt: 0,
+      updatedAt: 0,
+    },
+  })
+  rootStore.setter(activeWorkspaceIdAtom, 'w1')
+  rootStore.setter(expandedWorkspaceIdsAtom, { w1: true })
   const meta: SessionMeta = {
     id,
     title: '会话',
     settings: { vendor: 'deepseek', model: 'x' },
     createdAt: 0,
     updatedAt: 0,
+    workspaceId: 'w1',
   }
   rootStore.setter(sessionsAtom, { [id]: meta })
   rootStore.setter(activeSessionIdAtom, id)
@@ -52,13 +79,17 @@ describe('AppShell', () => {
   afterEach(() => {
     resetRootStore()
     resetSessionStores()
+    resetMcpSettingsState(rootStore)
   })
 
-  it('无激活会话：左栏 SessionList「+ 新建对话」在 + 右栏 empty 占位「还没有会话」在', () => {
+  it('无工作区：左栏提供「新建工作区」，右栏保持空会话占位', () => {
     renderWithStore(<AppShell />, { store: rootStore })
 
-    // 左栏：SessionList 的新建按钮常驻。
-    expect(screen.getByRole('button', { name: /新建对话/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '新建工作区' })).toBeInTheDocument()
+    expect(screen.getByText('新建工作区后即可创建对话')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /新建对话/ })).toBeNull()
+    // 左栏底部：设置中心入口常驻。
+    expect(screen.getByRole('button', { name: '打开设置' })).toBeInTheDocument()
     // 右栏：activeSessionId 为空 → ActiveSessionProvider 渲染空占位。
     expect(screen.getByText(/还没有会话/)).toBeInTheDocument()
     // 右栏未切到任何会话 store → 不该有 Composer 的输入框。
@@ -66,26 +97,17 @@ describe('AppShell', () => {
   })
 
   it('有激活会话：右栏切到会话 store → Composer 输入框在 + MessageList 空占位「开始对话吧」在', () => {
-    rootStore.setter(sessionsAtom, {
-      s1: {
-        id: 's1',
-        title: '会话',
-        settings: { vendor: 'deepseek', model: 'x' },
-        createdAt: 0,
-        updatedAt: 0,
-      },
-    })
-    rootStore.setter(activeSessionIdAtom, 's1')
+    seedActiveSession('s1')
 
     const { container } = renderWithStore(<AppShell />, { store: rootStore })
 
     // 左栏 SessionList 仍在。
     expect(screen.getByRole('button', { name: /新建对话/ })).toBeInTheDocument()
-    // 右栏切到 s1 的会话 store：Composer 输入框在（有 active 后左栏还会多出 WorkspaceRootField 的输入，
-    //   故不用 getByRole('textbox') 泛查，直接定位 Composer 的输入元素）。
+    // 右栏切到 s1 的会话 store：Composer 输入框在。
     expect(container.querySelector('.agentnew-composer-input')).not.toBeNull()
-    // S4-A：左栏 WorkspaceRootField 随 active 会话出现（工作目录绑定入口）。
-    expect(screen.getByLabelText('工作目录')).toBeInTheDocument()
+    // 工作区目录已移进标题右侧的设置面板，默认不占据对话列表空间。
+    expect(screen.getByRole('button', { name: '设置 示例项目' })).toBeInTheDocument()
+    expect(screen.queryByLabelText('工作区目录')).toBeNull()
     // 该会话 items 为空 → MessageList 空占位。
     expect(screen.getByText(/开始对话吧/)).toBeInTheDocument()
     // 已有 active → 不再是「还没有会话」空占位。

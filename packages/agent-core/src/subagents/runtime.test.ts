@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createDelegateAgentRuntime } from './runtime'
 import type { DelegateAgentCallContext, SubagentNodeRecord } from './types'
+import { createToolRegistry } from '../tools/toolRegistry'
 
 function response(
   message: Record<string, unknown>,
@@ -120,11 +121,16 @@ function context(writes: Map<string, string>): DelegateAgentCallContext {
   }
 }
 
-function runtime(fetchImpl: typeof fetch, signal = new AbortController().signal) {
+function runtime(
+  fetchImpl: typeof fetch,
+  signal = new AbortController().signal,
+  deepseekUserId?: string,
+) {
   return createDelegateAgentRuntime({
     sessionId: 'session',
     runId: `run-${Math.random()}`,
-    settings: { vendor: 'deepseek', model: 'test-model' },
+    settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' },
+    deepseekUserId,
     apiKey: 'test-key',
     signal,
     fetchImpl,
@@ -132,6 +138,29 @@ function runtime(fetchImpl: typeof fetch, signal = new AbortController().signal)
 }
 
 describe('createDelegateAgentRuntime', () => {
+  it('passes the instance-scoped opaque user id to every DeepSeek child request', async () => {
+    const bodies: Record<string, unknown>[] = []
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      bodies.push(requestBody(init))
+      return response({ role: 'assistant', content: 'done' })
+    }
+    const writes = new Map<string, string>()
+    const delegateRuntime = runtime(
+      fetchImpl,
+      new AbortController().signal,
+      'wa_subagent_0123',
+    )
+
+    await delegateRuntime.delegateAgents({
+      children: [{ objective: 'inspect one bounded item' }],
+    }, context(writes))
+
+    expect(bodies.length).toBeGreaterThan(0)
+    expect(bodies.every((body) => body.user_id === 'wa_subagent_0123')).toBe(true)
+
+    await delegateRuntime.dispose?.()
+  })
+
   it('archives provider cache usage for child, evaluator, and distill calls', async () => {
     const usage = {
       prompt_tokens: 100,
@@ -198,6 +227,337 @@ describe('createDelegateAgentRuntime', () => {
     expect(coreDistill?.agentPath).toBe('root')
     expect(childBriefs.map((event) => event.agentPath).sort()).toEqual(['root-01', 'root-02'])
 
+    await delegateRuntime.dispose?.()
+  })
+
+  it('uses Flash only for a structured low-risk direct child selected by the main agent', async () => {
+    const childBodies: Record<string, unknown>[] = []
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      const path = childPath(body)
+      if (!path) return response({ role: 'assistant', content: '# distilled skill' })
+      childBodies.push(body)
+      if (path === 'root-01' && !messagesOf(body).some((message) => message.role === 'tool')) {
+        return toolCall('nested', {
+          children: [{ objective: 'nested check', modelTier: 'flash' }],
+        })
+      }
+      return response({ role: 'assistant', content: 'done' })
+    }
+    const writes = new Map<string, string>()
+    const delegateRuntime = runtime(fetchImpl)
+
+    const result = await delegateRuntime.delegateAgents({
+      children: [{
+        objective: 'bounded direct task',
+        modelTier: 'flash',
+        taskCategory: 'retrieval',
+        riskLevel: 'low',
+        maxTurns: 3,
+      }],
+      maxDepth: 3,
+    }, context(writes))
+
+    expect(result.children[0].status).toBe('done')
+    const modelsByPath = childBodies.reduce<Record<string, string[]>>((models, body) => {
+      const path = childPath(body)!
+      models[path] = [...(models[path] ?? []), String(body.model)]
+      return models
+    }, {})
+    expect(modelsByPath['root-01']).toEqual([
+      'deepseek-v4-flash',
+      'deepseek-v4-flash',
+    ])
+    // 子 Agent 不能继续把 Flash 选择权下放；嵌套子任务保守使用 Pro。
+    expect(modelsByPath['root-01-01']).toEqual(['deepseek-v4-pro'])
+
+    const started = eventsTyped(writes, 'child_started')
+    expect(started.find((event) => event.agentPath === 'root-01')?.data).toMatchObject({
+      modelTier: 'flash',
+      model: 'deepseek-v4-flash',
+      route_reason: 'low_risk_retrieval_uses_flash',
+      fallback_count: 0,
+    })
+    expect(started.find((event) => event.agentPath === 'root-01-01')?.data).toMatchObject({
+      modelTier: 'pro',
+      model: 'deepseek-v4-pro',
+      route_reason: 'nested_subagent_requires_pro',
+    })
+
+    await delegateRuntime.dispose?.()
+  })
+
+  it('upgrades an eligible Flash child to Pro once and archives the route reason', async () => {
+    const childModels: string[] = []
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (!childPath(body)) return response({ role: 'assistant', content: '# distilled skill' })
+      childModels.push(String(body.model))
+      return childModels.length === 1
+        ? finishedResponse(
+            { role: 'assistant', content: null },
+            'insufficient_system_resource',
+          )
+        : response({ role: 'assistant', content: 'recovered by pro' })
+    }
+    const writes = new Map<string, string>()
+    const delegateRuntime = runtime(fetchImpl)
+
+    const result = await delegateRuntime.delegateAgents({
+      children: [{
+        objective: 'extract a bounded fact',
+        taskCategory: 'extraction',
+        riskLevel: 'low',
+      }],
+    }, context(writes))
+
+    expect(childModels).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro'])
+    expect(result.children[0]).toMatchObject({
+      status: 'done',
+      summary: 'recovered by pro',
+      modelTier: 'pro',
+      routeReason: 'prior_failure_requires_pro',
+      fallbackCount: 1,
+    })
+    expect(eventsTyped(writes, 'child_model_escalated')).toHaveLength(1)
+    expect(eventsTyped(writes, 'child_model_escalated')[0]?.data).toMatchObject({
+      fromModelTier: 'flash',
+      toModelTier: 'pro',
+      route_reason: 'prior_failure_requires_pro',
+      fallback_count: 1,
+      trigger: 'insufficient_system_resource',
+    })
+    expect(eventsTyped(writes, 'child_finished')[0]?.data).toMatchObject({
+      modelTier: 'pro',
+      route_reason: 'prior_failure_requires_pro',
+      fallback_count: 1,
+    })
+
+    await delegateRuntime.dispose?.()
+  })
+
+  it('does not replay a capacity response that already contains assistant output', async () => {
+    const childModels: string[] = []
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (!childPath(body)) return response({ role: 'assistant', content: '# distilled skill' })
+      childModels.push(String(body.model))
+      return finishedResponse(
+        { role: 'assistant', content: 'provider returned a partial response' },
+        'insufficient_system_resource',
+      )
+    }
+    const writes = new Map<string, string>()
+    const delegateRuntime = runtime(fetchImpl)
+
+    const result = await delegateRuntime.delegateAgents({
+      children: [{
+        objective: 'extract a bounded fact',
+        taskCategory: 'extraction',
+        riskLevel: 'low',
+      }],
+    }, context(writes))
+
+    expect(childModels).toEqual(['deepseek-v4-flash'])
+    expect(result.children[0]).toMatchObject({
+      status: 'failed',
+      modelTier: 'flash',
+      fallbackCount: 0,
+    })
+    expect(eventsTyped(writes, 'child_model_escalated')).toHaveLength(0)
+
+    await delegateRuntime.dispose?.()
+  })
+
+  it('does not replay malformed tool-call output that cannot be dispatched', async () => {
+    const childModels: string[] = []
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (!childPath(body)) return response({ role: 'assistant', content: '# distilled skill' })
+      childModels.push(String(body.model))
+      return finishedResponse({
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'malformed-call',
+          type: 'function',
+          function: { arguments: '{}' },
+        }],
+      }, 'insufficient_system_resource')
+    }
+    const writes = new Map<string, string>()
+    const delegateRuntime = runtime(fetchImpl)
+
+    const result = await delegateRuntime.delegateAgents({
+      children: [{
+        objective: 'extract a bounded fact',
+        taskCategory: 'extraction',
+        riskLevel: 'low',
+      }],
+    }, context(writes))
+
+    expect(childModels).toEqual(['deepseek-v4-flash'])
+    expect(result.children[0]).toMatchObject({
+      status: 'failed',
+      fallbackCount: 0,
+    })
+    expect(eventsTyped(writes, 'child_model_escalated')).toHaveLength(0)
+
+    await delegateRuntime.dispose?.()
+  })
+
+  it.each([400, 401, 402, 422])(
+    'does not upgrade deterministic HTTP %s failures from Flash to Pro',
+    async (status) => {
+      const childModels: string[] = []
+      const fetchImpl: typeof fetch = async (_url, init) => {
+        const body = requestBody(init)
+        if (!childPath(body)) return response({ role: 'assistant', content: '# distilled skill' })
+        childModels.push(String(body.model))
+        return new Response('deterministic request failure', { status })
+      }
+      const writes = new Map<string, string>()
+      const delegateRuntime = runtime(fetchImpl)
+
+      const result = await delegateRuntime.delegateAgents({
+        children: [{
+          objective: 'extract a bounded fact',
+          taskCategory: 'extraction',
+          riskLevel: 'low',
+        }],
+      }, context(writes))
+
+      expect(childModels).toEqual(['deepseek-v4-flash'])
+      expect(result.children[0]).toMatchObject({
+        status: 'failed',
+        modelTier: 'flash',
+        fallbackCount: 0,
+      })
+      expect(eventsTyped(writes, 'child_model_escalated')).toHaveLength(0)
+
+      await delegateRuntime.dispose?.()
+    },
+  )
+
+  it.each([
+    ['returns without a change set', false],
+    ['throws after a possible side effect', true],
+  ] as const)('does not auto-upgrade after a same-name read tool %s', async (_case, throwsAfterSideEffect) => {
+    const childModels: string[] = []
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (!childPath(body)) return response({ role: 'assistant', content: '# distilled skill' })
+      childModels.push(String(body.model))
+      return childModels.length === 1
+        ? namedToolCall('read-once', 'read_file', { path: 'README.md' })
+        : finishedResponse(
+            { role: 'assistant', content: null },
+            'insufficient_system_resource',
+          )
+    }
+    const writes = new Map<string, string>()
+    const callContext = context(writes)
+    callContext.runChildTool = async () => {
+      if (throwsAfterSideEffect) {
+        throw new Error('tool failed after an unobservable side effect')
+      }
+      return {
+        ok: true,
+        data: {
+          content: 'read result',
+        },
+      }
+    }
+    const delegateRuntime = runtime(fetchImpl)
+
+    const result = await delegateRuntime.delegateAgents({
+      children: [{
+        objective: 'read one file',
+        taskCategory: 'retrieval',
+        riskLevel: 'low',
+        maxTurns: 3,
+      }],
+      toolProfile: 'workspace_read',
+    }, callContext)
+
+    expect(childModels).toEqual(['deepseek-v4-flash', 'deepseek-v4-flash'])
+    expect(result.children[0]).toMatchObject({
+      status: 'failed',
+      modelTier: 'flash',
+      fallbackCount: 0,
+      changeSets: [],
+    })
+    expect(eventsTyped(writes, 'child_model_escalated')).toHaveLength(0)
+
+    await delegateRuntime.dispose?.()
+  })
+
+  it('defaults an omitted direct-child model tier to Pro', async () => {
+    let childModel = ''
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (!childPath(body)) return response({ role: 'assistant', content: '# distilled skill' })
+      childModel = String(body.model)
+      return response({ role: 'assistant', content: 'done' })
+    }
+    const delegateRuntime = runtime(fetchImpl)
+
+    const result = await delegateRuntime.delegateAgents(
+      { children: [{ objective: 'unspecified complexity' }] },
+      context(new Map()),
+    )
+
+    expect(result.children[0].status).toBe('done')
+    expect(childModel).toBe('deepseek-v4-pro')
+    await delegateRuntime.dispose?.()
+  })
+
+  it('preserves a custom DeepSeek model for child calls instead of substituting Pro or Flash', async () => {
+    const childModels: string[] = []
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (!childPath(body)) return response({ role: 'assistant', content: '# distilled skill' })
+      childModels.push(String(body.model))
+      return response({ role: 'assistant', content: 'done' })
+    }
+    const delegateRuntime = createDelegateAgentRuntime({
+      sessionId: 'session',
+      runId: `run-custom-${Math.random()}`,
+      settings: { vendor: 'deepseek', model: 'private-deepseek-gateway-model' },
+      apiKey: 'test-key',
+      signal: new AbortController().signal,
+      fetchImpl,
+    })
+    const writes = new Map<string, string>()
+
+    const result = await delegateRuntime.delegateAgents({
+      children: [{
+        objective: 'extract one bounded fact',
+        taskCategory: 'extraction',
+        riskLevel: 'low',
+      }],
+    }, context(writes))
+
+    expect(childModels).toEqual(['private-deepseek-gateway-model'])
+    expect(result.children[0]).toMatchObject({
+      status: 'done',
+      modelTier: 'pro',
+      routeReason: 'custom_deepseek_model_uses_parent_model',
+      fallbackCount: 0,
+    })
+    expect(eventsTyped(writes, 'child_started')[0]?.data).toMatchObject({
+      model: 'private-deepseek-gateway-model',
+      modelTier: 'pro',
+      route_reason: 'custom_deepseek_model_uses_parent_model',
+    })
+    expect(
+      eventsTyped(writes, 'child_model_usage')
+        .find((event) => event.data?.phase === 'subagent')
+        ?.data,
+    ).toMatchObject({
+      vendor: 'deepseek',
+      model: 'private-deepseek-gateway-model',
+    })
     await delegateRuntime.dispose?.()
   })
 
@@ -782,11 +1142,115 @@ describe('createDelegateAgentRuntime', () => {
     )
 
     expect(result.children[0]).toMatchObject({ status: 'done', summary: 'read complete' })
-    expect(runChildTool).toHaveBeenCalledWith('read_file', { path: 'src/a.ts' })
+    expect(runChildTool).toHaveBeenCalledWith(
+      'read_file',
+      { path: 'src/a.ts' },
+      expect.any(Number),
+    )
     const eventsText = [...writes.entries()].find(([path]) => path.endsWith('/events.jsonl'))?.[1] ?? ''
     expect(eventsText).toContain('child_tool_finished')
     expect(eventsText).toContain('workspace_read')
     expect(eventsText).not.toContain('private-file-body')
+    delegateRuntime.dispose?.()
+  })
+
+  it('uses one injected registry for child manifest, schema loading, version snapshot, and execution', async () => {
+    const isolatedRegistry = createToolRegistry()
+    isolatedRegistry.register({
+      name: 'read_file',
+      runtime: 'server',
+      skill: {
+        description: 'isolated registry reader',
+        content: 'ISOLATED_REGISTRY_GUIDE',
+      },
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          isolatedPath: { type: 'string' },
+        },
+        required: ['isolatedPath'],
+      },
+      execute: async () => ({ ok: true, data: { source: 'isolated registry' } }),
+    })
+    const expectedRegistrationVersion = isolatedRegistry.registrationVersion('read_file')
+    const runChildTool = vi.fn(async () => ({
+      ok: true as const,
+      data: { source: 'host execution' },
+    }))
+    let manifestResultBody: Record<string, unknown> | undefined
+    let loadedRequestBody: Record<string, unknown> | undefined
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (!childPath(body)) return response({ content: '# isolated skill' })
+      if (!toolResultFor(body, 'isolated-manifest')) {
+        return namedToolCall('isolated-manifest', 'request_tool_schema', {
+          query: 'isolated',
+          reason: 'discover the isolated reader',
+        })
+      }
+      if (!toolResultFor(body, 'isolated-load')) {
+        manifestResultBody = body
+        return namedToolCall('isolated-load', 'request_tool_schema', {
+          toolName: 'read_file',
+          reason: 'load the isolated reader',
+        })
+      }
+      if (!toolResultFor(body, 'isolated-read')) {
+        loadedRequestBody = body
+        return namedToolCall('isolated-read', 'read_file', {
+          isolatedPath: 'src/isolated.ts',
+        })
+      }
+      return response({ content: 'isolated read complete' })
+    }
+    const callContext = context(new Map())
+    callContext.runChildTool = runChildTool
+    const delegateRuntime = createDelegateAgentRuntime({
+      sessionId: 'session',
+      runId: 'run-isolated-registry',
+      settings: { vendor: 'deepseek', model: 'test-model' },
+      registry: isolatedRegistry,
+      apiKey: 'test-key',
+      signal: new AbortController().signal,
+      fetchImpl,
+    })
+
+    const result = await delegateRuntime.delegateAgents({
+      children: [{ objective: 'inspect isolated registry', maxTurns: 6 }],
+      toolProfile: 'workspace_read',
+    }, callContext)
+
+    expect(result.children[0]).toMatchObject({
+      status: 'done',
+      summary: 'isolated read complete',
+    })
+    const manifest = JSON.parse(
+      toolResultFor(manifestResultBody!, 'isolated-manifest'),
+    ) as { items: unknown[] }
+    expect(manifest.items).toEqual([{
+      name: 'read_file',
+      description: 'isolated registry reader',
+      runtime: 'server',
+    }])
+    const exposedTools = loadedRequestBody?.tools as Array<{
+      function: {
+        name: string
+        description: string
+        parameters: Record<string, unknown>
+      }
+    }>
+    const exposedReadFile = exposedTools.find((tool) => tool.function.name === 'read_file')
+    expect(exposedReadFile?.function.description).toContain('ISOLATED_REGISTRY_GUIDE')
+    expect(exposedReadFile?.function.parameters).toMatchObject({
+      required: ['isolatedPath'],
+      properties: { isolatedPath: { type: 'string' } },
+    })
+    expect(runChildTool).toHaveBeenCalledWith(
+      'read_file',
+      { isolatedPath: 'src/isolated.ts' },
+      expectedRegistrationVersion,
+    )
     delegateRuntime.dispose?.()
   })
 
@@ -859,7 +1323,11 @@ describe('createDelegateAgentRuntime', () => {
     }, callContext)
 
     expect(result.status).toBe('done')
-    expect(runChildTool).toHaveBeenCalledWith('write_file', { path: 'a.txt', content: 'ok' })
+    expect(runChildTool).toHaveBeenCalledWith(
+      'write_file',
+      { path: 'a.txt', content: 'ok' },
+      expect.any(Number),
+    )
     const eventsText = [...writes.entries()].find(([path]) => path.endsWith('/events.jsonl'))?.[1] ?? ''
     expect(eventsText).toContain('"confirmedTools":["write_file"]')
     expect(eventsText).not.toContain('apply_patch')
@@ -1044,7 +1512,11 @@ describe('createDelegateAgentRuntime', () => {
       callContext,
     )
     expect(result.children[0].status).toBe('done')
-    expect(readCalls).toHaveBeenCalledWith('read_file', { path: 'src/a.ts' })
+    expect(readCalls).toHaveBeenCalledWith(
+      'read_file',
+      { path: 'src/a.ts' },
+      expect.any(Number),
+    )
     delegateRuntime.dispose?.()
   })
 
@@ -1180,7 +1652,11 @@ describe('createDelegateAgentRuntime', () => {
 
     // 坏的那条被拒，好的那条照常执行 —— 坏参数不能连累兄弟调用。
     expect(runChildTool).toHaveBeenCalledTimes(1)
-    expect(runChildTool).toHaveBeenCalledWith('read_file', { path: 'src/b.ts' })
+    expect(runChildTool).toHaveBeenCalledWith(
+      'read_file',
+      { path: 'src/b.ts' },
+      expect.any(Number),
+    )
     expect(secondTurnBody).toBeDefined()
     expect(orphanToolCallIds(secondTurnBody!)).toEqual([])
     expect(toolResultFor(secondTurnBody!, 'sib-bad')).toContain('不是合法 JSON')
@@ -1211,7 +1687,7 @@ describe('createDelegateAgentRuntime', () => {
       callContext,
     )
 
-    expect(runChildTool).toHaveBeenCalledWith('read_file', {})
+    expect(runChildTool).toHaveBeenCalledWith('read_file', {}, expect.any(Number))
     expect(secondTurnBody).toBeDefined()
     expect(toolResultFor(secondTurnBody!, 'empty-args')).not.toContain('不是合法 JSON')
     expect(result.children[0]).toMatchObject({ status: 'done', summary: 'no-arg call executed' })
@@ -1285,7 +1761,11 @@ describe('createDelegateAgentRuntime', () => {
     expect(truncatedTurnBody).toBeDefined()
     expect(orphanToolCallIds(truncatedTurnBody!)).toEqual([])
     expect(toolResultFor(truncatedTurnBody!, 'read-ok')).toContain('file-body')
-    expect(runChildTool).toHaveBeenCalledWith('read_file', { path: 'src/a.ts' })
+    expect(runChildTool).toHaveBeenCalledWith(
+      'read_file',
+      { path: 'src/a.ts' },
+      expect.any(Number),
+    )
     delegateRuntime.dispose?.()
   })
 
@@ -1397,7 +1877,11 @@ describe('createDelegateAgentRuntime', () => {
 
     // 半截 arguments 没被执行，但循环没被 finish_reason 分流掐死 —— 子 agent 重发后恢复。
     expect(runChildTool).toHaveBeenCalledTimes(1)
-    expect(runChildTool).toHaveBeenCalledWith('read_file', { path: 'src/a.ts' })
+    expect(runChildTool).toHaveBeenCalledWith(
+      'read_file',
+      { path: 'src/a.ts' },
+      expect.any(Number),
+    )
     expect(thirdTurnBody).toBeDefined()
     expect(orphanToolCallIds(thirdTurnBody!)).toEqual([])
     expect(toolResultFor(thirdTurnBody!, 'cut-args')).toContain('不是合法 JSON')
@@ -1719,10 +2203,10 @@ describe('createDelegateAgentRuntime', () => {
   })
 })
 
-describe('createDelegateAgentRuntime · 下线模型名兜底迁移（发请求前）', () => {
-  it('父会话带 deepseek-reasoner → 子 agent 请求体用 v4-flash 且 thinking enabled', async () => {
+describe('createDelegateAgentRuntime · 主 Agent 模型归一化（发请求前）', () => {
+  it('父会话带 deepseek-reasoner → 默认子 agent 请求体用 v4-pro 且 thinking enabled', async () => {
     // 子 agent 复用父会话 settings。父会话若带着已下线的模型名，扇出的每个子 agent 都会撞 400。
-    // createDelegateAgentRuntime 在入口整体迁移一次，请求体里发出去的必须是继任者（连带思考模式）。
+    // createDelegateAgentRuntime 在入口整体迁移并收口主模型；未显式选择 Flash 的子任务默认使用 Pro。
     let childBody: Record<string, unknown> = {}
     const fetchImpl: typeof fetch = async (_url, init) => {
       const body = requestBody(init)
@@ -1744,7 +2228,7 @@ describe('createDelegateAgentRuntime · 下线模型名兜底迁移（发请求�
       context(new Map()),
     )
     expect(result.children[0].status).toBe('done')
-    expect(childBody.model).toBe('deepseek-v4-flash')
+    expect(childBody.model).toBe('deepseek-v4-pro')
     expect(childBody.thinking).toEqual({ type: 'enabled' })
     delegateRuntime.dispose?.()
   })

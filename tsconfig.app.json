@@ -29,7 +29,8 @@
       "@web-agent/tools-fs": ["tools/fs/src/index.ts"],
       "@web-agent/tools-planning": ["tools/planning/src/index.ts"],
       "@web-agent/tools-skills": ["tools/skills/src/index.ts"],
-      "@web-agent/tools-agents": ["tools/agents/src/index.ts"]
+      "@web-agent/tools-agents": ["tools/agents/src/index.ts"],
+      "@web-agent/tools-mcp": ["tools/mcp/src/index.ts"]
     }
   },
   "include": ["apps/web/src", "packages/*/src", "tools/*/src"]

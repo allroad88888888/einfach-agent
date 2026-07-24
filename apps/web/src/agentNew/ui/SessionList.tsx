@@ -17,14 +17,16 @@ import { newSession, selectSession, removeSession, renameSession } from '@web-ag
 // TU2：删除确认态的自动复位时限。
 const CONFIRM_TIMEOUT_MS = 3000
 
-export function SessionList() {
+export function SessionList({ workspaceId }: { workspaceId?: string }) {
   const sessions = useAtomValue(sessionsAtom)
   const activeId = useAtomValue(activeSessionIdAtom)
   // TU1：updatedAt 倒序 → 并列退 createdAt 倒序 → 再并列按 id 稳定（防同刻抖动）。
-  const ordered = Object.values(sessions).sort(
-    (a, b) =>
-      b.updatedAt - a.updatedAt || b.createdAt - a.createdAt || a.id.localeCompare(b.id),
-  )
+  const ordered = Object.values(sessions)
+    .filter((session) => !workspaceId || session.workspaceId === workspaceId)
+    .sort(
+      (a, b) =>
+        b.updatedAt - a.updatedAt || b.createdAt - a.createdAt || a.id.localeCompare(b.id),
+    )
 
   // 编辑态：正在改名的会话 id + 输入框草稿。
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -94,7 +96,7 @@ export function SessionList() {
       <button
         type="button"
         className="agentnew-new-session"
-        onClick={() => newSession()}
+        onClick={() => newSession(workspaceId ? { workspaceId } : undefined)}
       >
         + 新建对话
       </button>

@@ -31,7 +31,7 @@ vi.mock('./shellCommand', () => ({
 }))
 
 import { rootStore, sessionsAtom, resetRootStore } from '../state/rootStore'
-import { resetSessionStores } from '../state/sessionStore'
+import { getSessionStore, resetSessionStores } from '../state/sessionStore'
 import { setRun } from '../state/sessionWriters'
 import { buildToolContext } from './toolContext'
 import { readWorkspaceFile, listWorkspaceFiles, searchWorkspaceFiles } from './workspaceRead'
@@ -41,7 +41,8 @@ import { getWorkspaceDiff } from './workspaceGit'
 import { runWorkspaceTask } from './workspaceTask'
 import { runShellCommand } from './shellCommand'
 import type { DelegateAgentRuntime } from '../subagents/types'
-import { addAlwaysAllowedTool } from '../state/transientAtoms'
+import { addAlwaysAllowedTool, alwaysAllowedToolsAtom } from '../state/transientAtoms'
+import { createCoreInstance } from './core/coreInstance'
 
 afterEach(() => {
   resetRootStore()
@@ -107,6 +108,82 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     expect(vi.mocked(writeWorkspaceFile)).not.toHaveBeenCalled()
   })
 
+  it('子 agent 最终分发在当前 Core registry 内原子拒绝过期注册版本', async () => {
+    const core = createCoreInstance()
+    const sessionId = 'child-registration-version'
+    core.rootStore.setter(sessionsAtom, {
+      [sessionId]: {
+        id: sessionId,
+        title: 't',
+        settings: { vendor: 'deepseek', model: 'x' },
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    })
+    setRun(sessionId, { runId: 'r', status: 'running' }, core)
+    const oldExecute = vi.fn(async () => ({ ok: true as const, data: { version: 'old' } }))
+    const newExecute = vi.fn(async () => ({ ok: true as const, data: { version: 'new' } }))
+    const tool = (execute: typeof oldExecute) => ({
+      name: 'read_file',
+      runtime: 'server' as const,
+      skill: { description: 'isolated read', content: 'isolated read guide' },
+      inputSchema: {
+        type: 'object',
+        properties: { path: { type: 'string' } },
+        required: ['path'],
+      },
+      execute,
+    })
+    core.tools.register(tool(oldExecute))
+    const expectedRegistrationVersion = core.tools.registrationVersion('read_file')
+    let childResult: unknown
+    const delegateRuntime: DelegateAgentRuntime = {
+      async delegateAgents(_input, callContext) {
+        core.tools.register(tool(newExecute))
+        childResult = await callContext.runChildTool?.(
+          'read_file',
+          { path: 'a.txt' },
+          expectedRegistrationVersion,
+        )
+        return {
+          treeId: 'r',
+          conversationId: sessionId,
+          runId: 'r',
+          parentPath: 'root',
+          strategy: 'parallel_wait_all',
+          status: 'done',
+          summary: { total: 0, done: 0, failed: 0, cancelled: 0 },
+          cacheBasePath: '.agent-archive/test',
+          archiveBasePath: '.agent-archive/test',
+          eventLog: '.agent-archive/test/events.jsonl',
+          skillFiles: [],
+          skillIds: [],
+          children: [],
+        }
+      },
+    }
+    const ctx = buildToolContext({
+      sessionId,
+      runId: 'r',
+      signal: new AbortController().signal,
+      callId: 'delegate-version',
+      toolName: 'delegate_agent',
+      delegateRuntime,
+      core,
+    })
+
+    await ctx.delegateAgents!({ children: [{ objective: 'inspect' }] })
+
+    expect(childResult).toEqual({
+      ok: false,
+      error:
+        'tool registration version mismatch: read_file ' +
+        `(expected ${expectedRegistrationVersion}, current ${core.tools.registrationVersion('read_file')})`,
+    })
+    expect(oldExecute).not.toHaveBeenCalled()
+    expect(newExecute).not.toHaveBeenCalled()
+  })
+
   it('只为本次显式请求且 session 已确认的危险工具签发范围化 capability', async () => {
     seedSession('child-confirmed', '/ws/root')
     addAlwaysAllowedTool('child-confirmed', 'write_file')
@@ -145,6 +222,44 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     expect(patchResult).toEqual({ ok: false, error: 'tool not allowed for child agent: apply_patch' })
     expect(vi.mocked(writeWorkspaceFile)).toHaveBeenCalled()
     expect(vi.mocked(applyWorkspacePatch)).not.toHaveBeenCalled()
+  })
+
+  it('即使 session 授权状态被污染，也不为 MCP confirmedTools 签发 capability 或执行子调用', async () => {
+    const mcpTool = 'mcp__playwright__browser_navigate'
+    seedSession('child-mcp', '/ws/root')
+    getSessionStore('child-mcp').store.setter(alwaysAllowedToolsAtom, [mcpTool])
+    let capability: unknown
+    let mcpResult: unknown
+    const delegateRuntime: DelegateAgentRuntime = {
+      async delegateAgents(_input, callContext) {
+        capability = callContext.dangerousToolCapability
+        mcpResult = await callContext.runChildTool?.(mcpTool, { url: 'https://example.com' })
+        return {
+          treeId: 'r', conversationId: 'child-mcp', runId: 'r', parentPath: 'root',
+          strategy: 'parallel_wait_all', status: 'done',
+          summary: { total: 0, done: 0, failed: 0, cancelled: 0 },
+          cacheBasePath: '.agent-archive/test', archiveBasePath: '.agent-archive/test',
+          eventLog: '.agent-archive/test/events.jsonl', skillFiles: [], skillIds: [], children: [],
+        }
+      },
+    }
+    const ctx = buildToolContext({
+      sessionId: 'child-mcp', runId: 'r', signal: new AbortController().signal,
+      callId: 'delegate-mcp', toolName: 'delegate_agent',
+      toolArgs: { children: [{ objective: 'browse' }], confirmedTools: [mcpTool] },
+      agentPath: 'root', delegateRuntime,
+    })
+
+    await ctx.delegateAgents!({
+      children: [{ objective: 'browse' }],
+      confirmedTools: [mcpTool],
+    })
+
+    expect(capability).toBeUndefined()
+    expect(mcpResult).toEqual({
+      ok: false,
+      error: `tool not allowed for child agent: ${mcpTool}`,
+    })
   })
 
   it('会话已绑定 workspaceRoot：读/列/搜/patch/写/git/task 各桥入参都带上它', async () => {

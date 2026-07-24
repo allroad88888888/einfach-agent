@@ -8,8 +8,8 @@
 //     未配置（undefined）时全部 no-op、不抛 —— 因此 commands/modelRun 的既有单测无需配置即保持绿。
 //   本文不 import UI，也不持有 store 引用（persistSessions 内部自取 rootStore，对齐 U2）。
 
-import { rootStore, sessionsAtom } from '../state/rootStore'
-import type { SessionMeta } from '../state/core.type'
+import { rootStore, sessionsAtom, workspacesAtom } from '../state/rootStore'
+import type { SessionMeta, WorkspaceMeta } from '../state/core.type'
 import type { Checkpoint } from '../state/checkpoint.type'
 import type { HistoryDriver } from '../state/persistence/historyDriver'
 
@@ -17,6 +17,8 @@ import type { HistoryDriver } from '../state/persistence/historyDriver'
 interface SessionsPersistence {
   saveSessions(sessions: SessionMeta[]): Promise<void>
   loadSessions(): Promise<SessionMeta[]>
+  saveWorkspaces?(workspaces: WorkspaceMeta[]): Promise<void>
+  loadWorkspaces?(): Promise<WorkspaceMeta[]>
 }
 
 // ===========================================================================
@@ -27,6 +29,7 @@ let history: HistoryDriver | undefined
 let sessions: SessionsPersistence | undefined
 const checkpointWriteTails = new Map<string, Promise<void>>()
 let sessionsWriteTail: Promise<void> | undefined
+let workspacesWriteTail: Promise<void> | undefined
 
 // 简介：注入/更新持久化 driver（HistoryDriver + 会话列表存储）。
 // 详情：浅合并，只覆盖传入的字段；未传的保持原值。main.tsx 用与 hydrate 相同的一对实例注入。
@@ -44,6 +47,7 @@ export function resetPersistence(): void {
   sessions = undefined
   checkpointWriteTails.clear()
   sessionsWriteTail = undefined
+  workspacesWriteTail = undefined
 }
 
 // ===========================================================================
@@ -67,6 +71,21 @@ export function persistSessions(): void {
   sessionsWriteTail = settled
   void settled.finally(() => {
     if (sessionsWriteTail === settled) sessionsWriteTail = undefined
+  })
+}
+
+// 简介：把一级工作区登记表覆盖式落盘；旧 driver 未实现该方法时安全降级为 no-op。
+export function persistWorkspaces(): void {
+  const driver = sessions
+  if (!driver?.saveWorkspaces) return
+  const snapshot = Object.values(rootStore.getter(workspacesAtom))
+  const write = workspacesWriteTail
+    ? workspacesWriteTail.then(() => driver.saveWorkspaces!(snapshot))
+    : driver.saveWorkspaces(snapshot)
+  const settled = write.catch(() => {})
+  workspacesWriteTail = settled
+  void settled.finally(() => {
+    if (workspacesWriteTail === settled) workspacesWriteTail = undefined
   })
 }
 

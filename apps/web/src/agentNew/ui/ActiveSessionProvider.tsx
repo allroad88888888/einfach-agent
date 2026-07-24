@@ -7,7 +7,11 @@
 
 import type { ReactNode } from 'react'
 import { Provider, useAtomValue } from '@einfach/react'
-import { activeSessionIdAtom, activeSessionMetaAtom } from '@web-agent/core/state/rootStore'
+import {
+  activeSessionIdAtom,
+  activeSessionMetaAtom,
+  activeWorkspaceRootAtom,
+} from '@web-agent/core/state/rootStore'
 import { getSessionStore } from '@web-agent/core/state/sessionStore'
 
 export interface ActiveSessionConfig {
@@ -23,6 +27,7 @@ export function ActiveSessionProvider({
 }) {
   const id = useAtomValue(activeSessionIdAtom) // 从根 rootStore 读当前会话 id
   const meta = useAtomValue(activeSessionMetaAtom)
+  const workspaceRoot = useAtomValue(activeWorkspaceRootAtom)
   if (!id) {
     return <div className="agentnew-empty">还没有会话，点“新建对话”开始</div>
   }
@@ -32,7 +37,7 @@ export function ActiveSessionProvider({
       {typeof children === 'function'
         ? children({
             id,
-            workspaceRoot: meta?.workspaceRoot,
+            workspaceRoot,
             approvalMode: meta?.toolApprovalMode ?? 'confirm',
           })
         : children}

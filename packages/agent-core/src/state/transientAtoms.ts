@@ -76,6 +76,15 @@ export interface WithdrawnTurnNotice {
   sideEffects: boolean
 }
 
+// AI 正在运行时由用户追加的输入。消息先留在会话级瞬态队列，等 runtime 到达安全边界后
+// 再转成普通 user ConversationItem，避免插进尚未闭合的 assistant tool_call / tool result 中间。
+export interface QueuedUserMessage {
+  id: string
+  createdAt: number
+  content: string
+  targetRunId: string
+}
+
 export interface ContextRoleStats {
   count: number
   chars: number
@@ -186,6 +195,10 @@ export const contextStatsAtom = atom<ContextStatsSnapshot | undefined>(undefined
 // 简介：当前会话 Composer 草稿。
 // 详情：值随 store 隔离；用于撤回未完成轮后把上一条用户输入放回输入框。
 export const composerDraftAtom = atom<string>('')
+
+// 简介：当前会话等待注入正在运行 run 的用户输入（FIFO）。
+// 详情：每个 session 自有 Store，因此这里只需要一个数组 atom，不按 sessionId 做大对象分桶。
+export const queuedUserMessagesAtom = atom<QueuedUserMessage[]>([])
 
 // 简介：撤回当前未完成轮后的提示。
 // 详情：值随 store 隔离；sideEffects=true 表示只撤回对话记录，不承诺撤销已执行的外部副作用。
@@ -398,6 +411,44 @@ export function setComposerDraft(
 }
 
 /**
+ * 把一条用户输入排进当前会话的运行中队列。会话未登记则 no-op。
+ */
+export function enqueueUserMessage(
+  id: string,
+  message: QueuedUserMessage,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(queuedUserMessagesAtom, (prev) => [...prev, message])
+}
+
+/**
+ * 原子取走属于指定 run 的排队输入，供 runtime 在安全边界按 FIFO 提升为普通 user item。
+ * 其它 run 的输入原样保留，避免旧异步回调误消费新 run 的消息。
+ */
+export function takeQueuedUserMessages(
+  id: string,
+  runId: string,
+  core: CoreInstance = defaultCore,
+): QueuedUserMessage[] {
+  if (sessionMissing(id, core)) {
+    return []
+  }
+  const store = core.getSessionStore(id).store
+  const queued = store.getter(queuedUserMessagesAtom)
+  const taken = queued.filter((message) => message.targetRunId === runId)
+  if (taken.length > 0) {
+    store.setter(
+      queuedUserMessagesAtom,
+      queued.filter((message) => message.targetRunId !== runId),
+    )
+  }
+  return taken
+}
+
+/**
  * 设置或清除该会话撤回提示。会话未登记则 no-op（ghost guard）。core 默认 defaultCore，语义见文件头。
  */
 export function setWithdrawnTurnNotice(
@@ -431,7 +482,8 @@ export function addAlwaysAllowedTool(
   toolName: string,
   core: CoreInstance = defaultCore,
 ): void {
-  if (sessionMissing(id, core)) {
+  // MCP 授权只对单次调用有效；状态写入器也拒绝直接调用，避免绕过命令层。
+  if (toolName.startsWith('mcp__') || sessionMissing(id, core)) {
     return
   }
   core.getSessionStore(id).store.setter(alwaysAllowedToolsAtom, (prev) =>
@@ -448,5 +500,7 @@ export function isToolAlwaysAllowed(
   toolName: string,
   core: CoreInstance = defaultCore,
 ): boolean {
+  // 即使旧状态或测试代码直接污染了 atom，消费端也不能把 MCP 当作 session 授权。
+  if (toolName.startsWith('mcp__')) return false
   return core.getSessionStore(id).store.getter(alwaysAllowedToolsAtom).includes(toolName)
 }

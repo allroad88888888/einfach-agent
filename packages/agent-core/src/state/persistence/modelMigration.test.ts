@@ -10,7 +10,44 @@ import {
   DEPRECATED_MODEL_MIGRATIONS,
   migrateModelSettings,
   migrateSessionMeta,
+  normalizeDeepSeekReasoningEffort,
+  normalizePrimaryAgentSettings,
 } from './modelMigration'
+
+// 编译期回归：两家 Provider 的取值域必须继续按 vendor 独立收窄。
+const deepSeekMaxSettings: ModelSettings = {
+  vendor: 'deepseek',
+  model: 'deepseek-v4-pro',
+  reasoning_effort: 'max',
+}
+const glmLowSettings: ModelSettings = {
+  vendor: 'glm',
+  model: 'glm-5',
+  reasoning_effort: 'low',
+}
+// @ts-expect-error DeepSeek V4 不再接受旧 low 档；只允许在持久化迁移边界归一化。
+const invalidDeepSeekLowSettings: ModelSettings = {
+  vendor: 'deepseek',
+  model: 'deepseek-v4-pro',
+  reasoning_effort: 'low',
+}
+void [deepSeekMaxSettings, glmLowSettings, invalidDeepSeekLowSettings]
+
+describe('normalizeDeepSeekReasoningEffort', () => {
+  it.each([
+    ['high', 'high'],
+    ['max', 'max'],
+    ['low', 'high'],
+    ['medium', 'high'],
+    ['xhigh', 'max'],
+  ])('%s → %s', (before, after) => {
+    expect(normalizeDeepSeekReasoningEffort(before)).toBe(after)
+  })
+
+  it.each([undefined, null, '', 'turbo', 1, {}, []])('非法历史值 %j → undefined', (value) => {
+    expect(normalizeDeepSeekReasoningEffort(value)).toBeUndefined()
+  })
+})
 
 describe('migrateModelSettings', () => {
   it('deepseek-chat → deepseek-v4-flash 且补上非思考模式', () => {
@@ -90,6 +127,45 @@ describe('migrateModelSettings', () => {
     expect(migrateModelSettings(glm)).toBe(glm)
   })
 
+  it('DeepSeek 历史 reasoning_effort 在模型名迁移前安全归一化', () => {
+    const legacy = (reasoning_effort: unknown): ModelSettings => ({
+      vendor: 'deepseek',
+      model: 'deepseek-chat',
+      reasoning_effort,
+    } as unknown as ModelSettings)
+
+    expect(migrateModelSettings(legacy('low'))).toMatchObject({
+      model: 'deepseek-v4-flash',
+      reasoning_effort: 'high',
+    })
+    expect(migrateModelSettings(legacy('medium'))).toMatchObject({
+      model: 'deepseek-v4-flash',
+      reasoning_effort: 'high',
+    })
+    expect(migrateModelSettings(legacy('xhigh'))).toMatchObject({
+      model: 'deepseek-v4-flash',
+      reasoning_effort: 'max',
+    })
+  })
+
+  it('DeepSeek 任意非法历史值会被移除，GLM 合法旧档保持原样', () => {
+    const invalidDeepSeek = {
+      vendor: 'deepseek',
+      model: 'deepseek-v4-pro',
+      reasoning_effort: 'turbo',
+    } as unknown as ModelSettings
+    const glm: ModelSettings = {
+      vendor: 'glm',
+      model: 'glm-5',
+      reasoning_effort: 'low',
+    }
+
+    const safeDeepSeek = migrateModelSettings(invalidDeepSeek)
+    expect(safeDeepSeek).not.toHaveProperty('reasoning_effort')
+    expect(safeDeepSeek).not.toBe(invalidDeepSeek)
+    expect(migrateModelSettings(glm)).toBe(glm)
+  })
+
   it('不给未声明 impliedThinking 的规则乱补 thinking', () => {
     // 表里当前两行都声明了 impliedThinking；这里断言的是函数行为而非表内容：
     // 用一条临时规则形状验证「impliedThinking 为 undefined 时不碰 thinking」。
@@ -104,6 +180,45 @@ describe('migrateModelSettings', () => {
       model: ruleWithoutMode.from,
     })
     expect(after.thinking).toBeUndefined()
+  })
+})
+
+describe('normalizePrimaryAgentSettings', () => {
+  it('下线旧名先兼容迁移，再把主 Agent 收口到 Pro', () => {
+    expect(normalizePrimaryAgentSettings({ vendor: 'deepseek', model: 'deepseek-chat' })).toEqual({
+      vendor: 'deepseek',
+      model: 'deepseek-v4-pro',
+      thinking: false,
+    })
+    expect(normalizePrimaryAgentSettings({ vendor: 'deepseek', model: 'deepseek-reasoner' })).toEqual({
+      vendor: 'deepseek',
+      model: 'deepseek-v4-pro',
+      thinking: true,
+    })
+  })
+
+  it('Flash 主会话收口到 Pro，并保留其它设置', () => {
+    expect(
+      normalizePrimaryAgentSettings({
+        vendor: 'deepseek',
+        model: 'deepseek-v4-flash',
+        thinking: false,
+        temperature: 0.2,
+      }),
+    ).toEqual({
+      vendor: 'deepseek',
+      model: 'deepseek-v4-pro',
+      thinking: false,
+      temperature: 0.2,
+    })
+  })
+
+  it('已是 Pro 或自定义模型时不改写并保持同一引用', () => {
+    const pro: ModelSettings = { vendor: 'deepseek', model: 'deepseek-v4-pro' }
+    const custom: ModelSettings = { vendor: 'deepseek', model: 'my-private-finetune' }
+
+    expect(normalizePrimaryAgentSettings(pro)).toBe(pro)
+    expect(normalizePrimaryAgentSettings(custom)).toBe(custom)
   })
 })
 
@@ -131,12 +246,12 @@ describe('DEPRECATED_MODEL_MIGRATIONS 表自洽性', () => {
 describe('migrateSessionMeta', () => {
   const base = { id: 's1', title: 'A', createdAt: 0, updatedAt: 100 }
 
-  it('迁移 settings 但不改 updatedAt 等其它字段（兼容迁移不是「用户改了会话」）', () => {
+  it('迁移并归一化主 Agent settings，但不改 updatedAt 等其它字段', () => {
     const session = { ...base, settings: { vendor: 'deepseek', model: 'deepseek-chat' } as ModelSettings }
 
     const after = migrateSessionMeta(session)
 
-    expect(after.settings.model).toBe('deepseek-v4-flash')
+    expect(after.settings.model).toBe('deepseek-v4-pro')
     expect(after.updatedAt).toBe(100)
     expect(after.createdAt).toBe(0)
     expect(after.id).toBe('s1')

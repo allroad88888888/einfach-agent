@@ -33,7 +33,8 @@ interface SessionParamsBase {
   thinking?: boolean
 }
 
-// 简介：DeepSeek 会话设置。reasoning_effort 到 'high'。
+// 简介：DeepSeek V4 会话设置。reasoning_effort 仅支持 'high' | 'max'；
+// 省略时交给 Provider 使用默认档位及复杂 Agent 请求的自动升级策略。
 export interface DeepSeekSettings extends SessionParamsBase {
   vendor: 'deepseek'
   reasoning_effort?: DeepSeekReasoningEffort
@@ -47,7 +48,7 @@ export interface GlmSettings extends SessionParamsBase {
 
 // 简介：一个会话当前的模型设置（按 vendor 判别）。
 // 详情：把 API 层“参数不一样”延续到状态层 —— 按 settings.vendor 收窄后，reasoning_effort
-// 的合法取值自动随之收窄（给 deepseek 设 'max' 会被 TS 拦下）。
+// 的合法取值自动随之收窄（DeepSeek 为 high|max；GLM 仍为 low|medium|high|max）。
 export type ModelSettings = DeepSeekSettings | GlmSettings
 
 // ===========================================================================
@@ -93,6 +94,8 @@ export interface PendingToolConfirmation {
   callId: string
   toolName: string
   args: unknown
+  /** 注册快照版本；确认只能执行用户实际看到并批准的那一版工具。 */
+  registrationVersion?: number
   risk?: 'dangerous' | 'critical'
   reason?: string
   irreversible?: boolean
@@ -125,6 +128,9 @@ export interface PendingUserDecision {
 export interface RunState {
   runId: string
   status: RunStatus
+  // 本次连续运行最初的 user item。运行中追加的排队输入不会改变该锚点，
+  // 因而 checkpoint、skill 与恢复路径仍能看到本次 run 的完整 transcript。
+  turnId?: string
   // status==='awaiting_tool' 时正在后台执行、且必须跟随“停止”一起取消的 execution。
   pendingExecutionId?: string
   finishReason?: FinishReason
@@ -145,8 +151,18 @@ export interface RunState {
 }
 
 // ===========================================================================
-// 五、会话元信息 —— 会话本体（items / run 按会话分桶另存在 atom 里）
+// 五、工作区与会话元信息
 // ===========================================================================
+
+// 简介：工作区是会话之上的一级实体；一个工作区可以包含多个会话。
+// 详情：rootPath 是工具执行的目录边界，留空时仍沿用 Rust 的 git root 兜底。
+export interface WorkspaceMeta {
+  id: string
+  name: string
+  rootPath?: string
+  createdAt: number
+  updatedAt: number
+}
 
 // 简介：一个会话的元信息（会话是否存在的权威事实）。
 // 详情：settings 决定怎么发请求；运行状态不冗存在这里，由 runBySession 的 run 决定。
@@ -156,10 +172,10 @@ export interface SessionMeta {
   settings: ModelSettings
   createdAt: number
   updatedAt: number
-  // 简介：该会话绑定的 workspace 根目录（绝对路径，S4-A）。
-  // 详情：server 工具（读/写/patch/git）执行时经 toolContext 透传给 Tauri 桥；未设置则不传 →
-  //   Rust 侧走 git root 兜底（保持现状）。随 SessionMeta 一起持久化（sessionsPersistence）。
-  //   放 SessionMeta 而非 ModelSettings —— 它不是模型请求参数，与 vendor/model 那套请求体字段无关。
+  // 会话归属的一级工作区。可选只为兼容尚未经过 hydrate 的旧数据。
+  workspaceId?: string
+  // 旧版把目录直接挂在会话上；新写入不再使用，仅供 hydrate/runtime 兼容读取。
+  /** @deprecated 使用 WorkspaceMeta.rootPath。 */
   workspaceRoot?: string
   // 工具授权模式：confirm 保持逐次确认；auto 仅为极高风险调用暂停。
   // 可选以兼容旧持久化数据，读取时缺省按 confirm 处理。

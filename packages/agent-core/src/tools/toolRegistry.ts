@@ -16,44 +16,88 @@
 //   · 唯一副作用面是各工具拿到的 ctx，registry 只负责把 ctx 原样透传给 execute。
 // 类型全部来自 ./types，本文件不再就地定义（与旧移植版的关键差异）。
 
-import type { Tool, ToolContext, ToolResult, ToolSummary, LoadedTool } from './types'
+import type {
+  Tool,
+  ToolContext,
+  ToolResult,
+  ToolSummary,
+  RegisteredToolSnapshot,
+} from './types'
 import { validateAgainstSchema } from './schemaValidate'
 
 /** 抽象工厂接口：注册 + 懒加载 + 统一分发。运行时依赖它，不依赖具体 Tool（§3）。 */
 export interface ToolRegistry {
   register(tool: Tool): void
-  has(name: string): boolean
+  /**
+   * Remove a registered tool.
+   *
+   * Dynamic providers should pass the exact Tool instance they registered. This
+   * prevents an old connection from deleting a newer same-name replacement.
+   */
+  unregister(name: string, expected?: Tool): boolean
+  /** With expected, tests whether this exact dynamic registration is current. */
+  has(name: string, expected?: Tool): boolean
+  /** 当前注册实例的版本；未注册（包括已删除）时返回 undefined。 */
+  registrationVersion(name: string): number | undefined
   list(): ToolSummary[]
-  loadSchema(name: string): LoadedTool | undefined
+  loadSchema(name: string): RegisteredToolSnapshot | undefined
   execution(name: string): Tool['execution'] | undefined
-  run(name: string, args: unknown, ctx: ToolContext): Promise<ToolResult>
+  run(
+    name: string,
+    args: unknown,
+    ctx: ToolContext,
+    expectedRegistrationVersion?: number,
+  ): Promise<ToolResult>
 }
 
 /**
- * 建一个 ToolRegistry。内部一张 Map<name, Tool>：
- *   · register 幂等——同名后注册直接覆盖，不报错；
+ * 建一个 ToolRegistry。内部保存 Map<name, { tool, registrationVersion }>：
+ *   · register 幂等——同名后注册直接覆盖，不报错；每次注册都会签发更高版本；
+ *   · 删除不会遗忘该名称最后签发的版本，之后同名重注册不会复用旧版本；
  *   · list() 只摘 name/description(=skill.description)/runtime，绝不含 inputSchema/guide（manifest-only）；
  *   · loadSchema(name) 在 summary 之上补 inputSchema + guide(=skill.content)，未知名 → undefined；
  *   · run(name,args,ctx) 走 §4 生命周期（见方法内注释）。
  */
 export function createToolRegistry(): ToolRegistry {
-  // 注册表：以 tool.name 为键。Map.set 天然「后写覆盖」→ register 幂等。
-  const tools = new Map<string, Tool>()
+  interface Registration {
+    tool: Tool
+    registrationVersion: number
+  }
+
+  // 当前注册与每个名称最后签发的版本分开保存：删除当前注册后，重注册仍能继续递增。
+  const registrations = new Map<string, Registration>()
+  const lastRegistrationVersions = new Map<string, number>()
 
   return {
     register(tool) {
-      // 幂等：同名后注册胜，直接覆盖。
-      tools.set(tool.name, tool)
+      // 幂等：同名后注册胜；即使复用同一 Tool 实例，也会签发新的注册版本。
+      const registrationVersion = (lastRegistrationVersions.get(tool.name) ?? 0) + 1
+      lastRegistrationVersions.set(tool.name, registrationVersion)
+      registrations.set(tool.name, { tool, registrationVersion })
     },
 
-    has(name) {
-      return tools.has(name)
+    unregister(name, expected) {
+      const current = registrations.get(name)
+      if (!current || (expected !== undefined && current.tool !== expected)) {
+        return false
+      }
+      return registrations.delete(name)
+    },
+
+    has(name, expected) {
+      const current = registrations.get(name)
+      return current !== undefined && (expected === undefined || current.tool === expected)
+    },
+
+    registrationVersion(name) {
+      // 只读当前注册，不能从 lastRegistrationVersions 返回 tombstone，避免删除后旧快照被误认。
+      return registrations.get(name)?.registrationVersion
     },
 
     list() {
       // manifest-only（TK3）：只暴露 name/description/runtime，绝不含 inputSchema/guide。
       // description 取自 tool.skill.description（一句话，terse）。
-      return Array.from(tools.values(), (tool) => ({
+      return Array.from(registrations.values(), ({ tool }) => ({
         name: tool.name,
         description: tool.skill.description,
         runtime: tool.runtime,
@@ -63,28 +107,44 @@ export function createToolRegistry(): ToolRegistry {
     loadSchema(name) {
       // 懒加载：未知名 → undefined；否则在 summary 之上补 inputSchema + guide(=skill.content)。
       // guide 与 schema 一起随 request_tool_schema 给 model，不进 manifest（§6）。
-      const tool = tools.get(name)
-      if (!tool) return undefined
+      const registration = registrations.get(name)
+      if (!registration) return undefined
+      const { tool, registrationVersion } = registration
       return {
         name: tool.name,
         description: tool.skill.description,
         runtime: tool.runtime,
+        registrationVersion,
         inputSchema: tool.inputSchema,
         guide: tool.skill.content,
       }
     },
 
     execution(name) {
-      return tools.get(name)?.execution
+      return registrations.get(name)?.tool.execution
     },
 
-    async run(name, args, ctx) {
+    async run(name, args, ctx, expectedRegistrationVersion) {
       // §4 执行生命周期（守卫/错误封装集中在这里，execute 只写纯逻辑）：
       // 1) has(name) 为假 → { ok:false, error:'unknown tool: <name>' }，不抛。
-      const tool = tools.get(name)
-      if (!tool) {
+      const registration = registrations.get(name)
+      if (!registration) {
         return { ok: false, error: `unknown tool: ${name}` }
       }
+      // 1.1) 调用方若携带 loadSchema 快照版本，必须与当前注册原子匹配。
+      // 同名工具在 schema 加载后被覆盖/重连时 fail-closed，绝不能把旧参数执行到新实例上。
+      if (
+        expectedRegistrationVersion !== undefined &&
+        expectedRegistrationVersion !== registration.registrationVersion
+      ) {
+        return {
+          ok: false,
+          error:
+            `tool registration version mismatch: ${name} ` +
+            `(expected ${expectedRegistrationVersion}, current ${registration.registrationVersion})`,
+        }
+      }
+      const { tool } = registration
       // 2) 校验 + execute 一起包在 try/catch 里。
       // 【校验必须在 try 内】：validateAgainstSchema 是递归实现，病态入参（深嵌套 args → RangeError
       // 爆栈、cloneValue 的 JSON.stringify 撞上循环引用/BigInt）会抛。若放在 try 外，异常会穿透

@@ -10,7 +10,7 @@ import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import type { SessionMeta } from '../core.type'
+import type { SessionMeta, WorkspaceMeta } from '../core.type'
 import { createSessionsPersistence } from './sessionsPersistence'
 
 // SessionMeta 样例：两个会话，settings 用最简 deepseek 形状。
@@ -27,6 +27,13 @@ const b: SessionMeta = {
   settings: { vendor: 'deepseek', model: 'x' },
   createdAt: 0,
   updatedAt: 0,
+}
+const workspace: WorkspaceMeta = {
+  id: 'w1',
+  name: 'project',
+  rootPath: '/workspace/project',
+  createdAt: 0,
+  updatedAt: 1,
 }
 
 describe('createSessionsPersistence', () => {
@@ -58,5 +65,14 @@ describe('createSessionsPersistence', () => {
   it('空库 loadSessions() → []', async () => {
     const p = createSessionsPersistence()
     expect(await p.loadSessions()).toEqual([])
+  })
+
+  it('工作区可独立覆盖式持久化，不与会话记录混在一起', async () => {
+    const p = createSessionsPersistence()
+    await p.saveWorkspaces([workspace])
+    expect(await p.loadWorkspaces()).toEqual([workspace])
+
+    await p.saveWorkspaces([])
+    expect(await p.loadWorkspaces()).toEqual([])
   })
 })

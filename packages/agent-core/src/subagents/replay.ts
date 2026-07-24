@@ -19,6 +19,7 @@ const SUBAGENT_EVENT_TYPES: SubagentArchiveEventType[] = [
   'tree_snapshot_written',
   'delegate_finished',
   'child_model_usage',
+  'child_model_escalated',
   // 与 types.ts 的 SubagentArchiveEventType 联合一一对应 —— 漏一个，该类事件就会被
   // isSubagentArchiveEvent 判为结构非法而落进 parseErrors，eventCounts 也不再统计它。
   'child_context_compacted',
@@ -318,6 +319,7 @@ export function replaySubagentArchive(input: {
     tree_snapshot_written: 0,
     delegate_finished: 0,
     child_model_usage: 0,
+    child_model_escalated: 0,
     child_context_compacted: 0,
     child_context_over_budget: 0,
   }
@@ -408,6 +410,11 @@ export function replaySubagentArchive(input: {
         resultFile: node.resultFile,
         skillFiles: [...node.localSkillFiles],
         skillIds: [...node.localSkillIds],
+        modelTier: data.modelTier === 'flash' ? 'flash' : data.modelTier === 'pro' ? 'pro' : undefined,
+        routeReason: asStringOrUndefined(data.route_reason),
+        fallbackCount: typeof data.fallback_count === 'number' && Number.isFinite(data.fallback_count)
+          ? Math.max(0, Math.floor(data.fallback_count))
+          : undefined,
         error: node.error,
       })
       continue

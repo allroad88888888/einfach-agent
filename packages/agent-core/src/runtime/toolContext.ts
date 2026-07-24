@@ -13,8 +13,8 @@
 //   core.rootStore，进度/卡片/产物写 core.getSessionStore(id).store（经 writers 的新 core 尾参），
 //   callTool 经 core.tools.run 且把 core 递归传给子 ctx。默认 defaultCore＝穿线前的模块全局单例，
 //   故不传 core 的调用点（含全部现有测试）行为逐字不变。
-//   ★ 剩余隔离缺口★：子 agent 委派路径（delegateAgents/runChildTool）仍走 defaultCore.tools，
-//   且危险工具授权调用点尚未传入当前 core。subagents/runtime.ts 完成实例化前，这条路径不能视为隔离。
+//   子 agent 委派路径也沿用当前 core：manifest/schema 由 delegate runtime 的同一 registry 生成，
+//   runChildTool 再通过 core.tools 原子校验 schema 快照版本并执行。
 
 import type { ShellCommandInput, ToolContext, ToolResult } from '../tools/types'
 import type {
@@ -26,9 +26,9 @@ import type {
 import { getExecutionRuntime } from '../execution/runtime'
 import { ROOT_AGENT_PATH } from '../subagents/path'
 import { isSubagentWorkspaceReadTool } from '../subagents/toolProfile'
-import { commandUsesPermanentDelete, isDangerousTool } from './dangerousTools'
-import { toolRegistry } from '../tools/registry'
-import { sessionsAtom } from '../state/rootStore'
+import { commandUsesPermanentDelete, isDelegatableDangerousTool } from './dangerousTools'
+import { sessionsAtom, workspacesAtom } from '../state/rootStore'
+import { resolveSessionWorkspaceRoot } from '../state/workspaceState'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
 import { runAtom } from '../state/sessionAtoms'
 import { getPlan, setPlan } from '../state/planWriters'
@@ -68,8 +68,10 @@ function isCurrentRun(sessionId: string, runId: string, core: CoreInstance): boo
 // S4-A：取该会话绑定的 workspace 根目录（去空白；未设置/空串 → undefined，桥不传 → Rust 走 git root 兜底）。
 // 【实例化第 2 期】读会话登记表走 core.rootStore（core 无默认值，由 buildToolContext 传入）。
 function resolveWorkspaceRoot(sessionId: string, core: CoreInstance): string | undefined {
-  const root = core.rootStore.getter(sessionsAtom)[sessionId]?.workspaceRoot
-  return typeof root === 'string' && root.trim().length > 0 ? root.trim() : undefined
+  return resolveSessionWorkspaceRoot(
+    core.rootStore.getter(sessionsAtom)[sessionId],
+    core.rootStore.getter(workspacesAtom),
+  )
 }
 
 function shellProgressText(command: string): string {
@@ -453,17 +455,15 @@ export function buildToolContext(opts: {
   }
 
   if (opts.delegateRuntime) {
-    // 多实例缺口：runChildTool 仍走模块级 toolRegistry（defaultCore.tools），下面的危险工具授权
-    // 调用也没有传入当前 core。默认应用不受影响，独立 Core 的 delegation 暂不保证隔离。
     const buildDelegateCallContext = (input: DelegateAgentInput): DelegateAgentCallContext => {
       const requestedConfirmedTools = opts.toolName === 'delegate_agent'
         && opts.toolArgs && typeof opts.toolArgs === 'object' && !Array.isArray(opts.toolArgs)
         && Array.isArray((opts.toolArgs as Record<string, unknown>).confirmedTools)
         ? Array.from(new Set(
             ((opts.toolArgs as Record<string, unknown>).confirmedTools as unknown[])
-              .filter((name): name is string => typeof name === 'string' && isDangerousTool(name))
-              // 多实例缺口：此调用点尚未传入当前 core。
-              .filter((name) => isToolAlwaysAllowed(sessionId, name)),
+              .filter((name): name is string =>
+                typeof name === 'string' && isDelegatableDangerousTool(name))
+              .filter((name) => isToolAlwaysAllowed(sessionId, name, core)),
           ))
         : []
       const dangerousToolCapability = requestedConfirmedTools.length > 0
@@ -487,14 +487,18 @@ export function buildToolContext(opts: {
         writeTextFile: opts.toolName === 'submit_stage_result'
           ? writeEvaluatorArchiveBestEffort
           : writeSubagentTextFile,
-        async runChildTool(name, args) {
+        async runChildTool(name, args, expectedRegistrationVersion) {
           assertFresh()
           const confirmedDangerousTool = dangerousToolCapability?.toolNames.includes(name) === true
           if (!isSubagentWorkspaceReadTool(name) && !confirmedDangerousTool) {
             return { ok: false, error: `tool not allowed for child agent: ${name}` }
           }
-          // 隔离缺口 · Phase 2.5：子 agent 工具仍走 defaultCore.tools（见上方 delegateAgents 注释）。
-          const result = await toolRegistry.run(name, args, ctx)
+          const result = await core.tools.run(
+            name,
+            args,
+            ctx,
+            expectedRegistrationVersion,
+          )
           assertFresh()
           if ('pause' in result) return { ok: false, error: 'child tools cannot pause' }
           return result

@@ -68,6 +68,27 @@ describe('ToolConfirmCard', () => {
     expect(confirmTool).toHaveBeenLastCalledWith(true, true)
   })
 
+  it('MCP 工具不提供 session 一律允许，单次允许固定调用 confirmTool(true,false)', () => {
+    const store = createStore()
+    store.setter(runAtom, {
+      runId: 'r',
+      status: 'waiting_confirmation',
+      pendingToolConfirmation: {
+        callId: 'mcp-1',
+        toolName: 'mcp__playwright__browser_navigate',
+        args: { url: 'https://example.com' },
+        risk: 'dangerous',
+      },
+    })
+
+    renderWithStore(<ToolConfirmCard />, { store })
+
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+    expect(screen.queryByText('本 session 一律允许该工具')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '允许' }))
+    expect(confirmTool).toHaveBeenLastCalledWith(true, false)
+  })
+
   it('极高风险确认不提供一律允许，并显示拦截原因', () => {
     const store = createStore()
     store.setter(runAtom, {

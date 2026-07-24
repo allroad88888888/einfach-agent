@@ -19,6 +19,7 @@ vi.mock('../modelRun', () => ({
 // 持久化桥全 mock（fire-and-forget；本测不验证落盘）。
 vi.mock('../persistenceBridge', () => ({
   persistSessions: vi.fn(),
+  persistWorkspaces: vi.fn(),
   persistDeleteSession: vi.fn(),
   persistTruncate: vi.fn(),
 }))
@@ -44,7 +45,12 @@ afterEach(() => {
   resetRootStore()
   resetSessionStores()
   defaultCore.abort.reset()
-  Object.assign(defaultCore.config, { deepseekApiKey: '', glmApiKey: '', fetchImpl: undefined })
+  Object.assign(defaultCore.config, {
+    deepseekApiKey: '',
+    glmApiKey: '',
+    customInstructions: '',
+    fetchImpl: undefined,
+  })
   vi.clearAllMocks()
 })
 
@@ -75,11 +81,20 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
     expect(typeof core.dropSessionStore).toBe('function')
     expect(core.tools.has('probe')).toBe(true)
     expect(typeof core.abort.beginRun).toBe('function')
-    expect(core.config).toEqual({ deepseekApiKey: '', glmApiKey: '' })
+    expect(core.config).toEqual({
+      deepseekApiKey: '',
+      glmApiKey: '',
+      customInstructions: '',
+    })
 
     // CommandApi 那一半（configureCommands 不在其中——它专写 defaultCore）。
     const commandNames = [
       'sendMessage',
+      'newWorkspace',
+      'selectWorkspace',
+      'toggleWorkspaceExpanded',
+      'toggleWorkspaceSettings',
+      'renameWorkspace',
       'newSession',
       'selectSession',
       'removeSession',

@@ -49,6 +49,14 @@ describe('classifyToolRisk', () => {
     })
   })
 
+  it('外部 MCP 工具即使在 Auto 模式也必须逐次确认', () => {
+    expect(classifyToolRisk('mcp__github__create_issue', { title: 'test' })).toEqual({
+      level: 'dangerous',
+      reason: '该操作由外部 MCP 服务执行，调用前需要确认将发送的参数',
+      requiresConfirmation: true,
+    })
+  })
+
   it('直接覆写设备判为 critical，非变更工具为 safe', () => {
     expect(classifyToolRisk('shell_linux', { command: 'dd if=/dev/zero of=/dev/sda' }).level).toBe('critical')
     expect(classifyToolRisk('read_file', { path: '/tmp/a' }).level).toBe('safe')

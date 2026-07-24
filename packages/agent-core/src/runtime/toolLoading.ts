@@ -36,6 +36,20 @@ export function toolSchemaNotLoadedResult(toolName: string): Record<string, unkn
   }
 }
 
+export function toolRegistrationChangedResult(
+  toolName: string,
+  expectedRegistrationVersion: number | undefined,
+  currentRegistrationVersion: number | undefined,
+): Record<string, unknown> {
+  return {
+    error: `工具 ${toolName} 的注册已变化，已拒绝执行旧调用`,
+    code: 'tool_registration_changed',
+    expectedRegistrationVersion,
+    currentRegistrationVersion,
+    hint: '请重新调用 request_tool_schema 读取当前 schema，再重新发起工具调用',
+  }
+}
+
 // 简介：把工具加入本轮可见工具列表。
 // 详情：按 name 去重后返回新数组；已含则原样返回（同引用），只有出现在列表里的 schema 才会暴露给下一轮 model。
 export function appendVisibleTool(current: LoadedTool[], next: LoadedTool): LoadedTool[] {
@@ -43,23 +57,121 @@ export function appendVisibleTool(current: LoadedTool[], next: LoadedTool): Load
   return [...current, next]
 }
 
+function visibleToolLimit(maxVisibleTools: number | undefined): number | undefined {
+  if (maxVisibleTools === undefined || !Number.isFinite(maxVisibleTools)) return undefined
+  return Math.max(0, Math.floor(maxVisibleTools))
+}
+
+function trimVisibleTools(tools: LoadedTool[], maxVisibleTools: number | undefined): LoadedTool[] {
+  const limit = visibleToolLimit(maxVisibleTools)
+  if (limit === undefined || tools.length <= limit) return tools
+  if (limit === 0) return []
+  return tools.slice(-limit)
+}
+
+function sameRegistration(left: LoadedTool, right: LoadedTool): boolean {
+  return left.registrationVersion !== undefined
+    && right.registrationVersion !== undefined
+    && left.registrationVersion === right.registrationVersion
+}
+
+function persistVisibleToolNames(
+  id: string,
+  before: readonly LoadedTool[],
+  after: readonly LoadedTool[],
+  core: CoreInstance,
+): void {
+  if (
+    before.length === after.length
+    && before.every((tool, index) => tool.name === after[index]?.name)
+  ) {
+    return
+  }
+  patchRun(id, { loadedTools: after.map((tool) => tool.name) }, core)
+}
+
+/**
+ * Refresh the current visible-tool snapshots from the live registry.
+ *
+ * Same-name registrations are versioned, so a reconnect/tools_changed event can
+ * replace an MCP adapter without leaving its old schema active. Removed tools are
+ * dropped. Unchanged registrations retain their object identity, keeping the
+ * request tool-set stable when a reconnect does not actually change a schema.
+ */
+export function refreshVisibleTools(
+  id: string,
+  currentTools: LoadedTool[],
+  core: CoreInstance = defaultCore,
+  maxVisibleTools?: number,
+): LoadedTool[] {
+  const refreshed: LoadedTool[] = []
+  const seen = new Set<string>()
+  let changed = false
+
+  // Walk newest-to-oldest so a defensive duplicate keeps the most recent entry.
+  for (let index = currentTools.length - 1; index >= 0; index -= 1) {
+    const current = currentTools[index]
+    if (seen.has(current.name)) {
+      changed = true
+      continue
+    }
+    seen.add(current.name)
+
+    const latest = core.tools.loadSchema(current.name)
+    if (!latest) {
+      changed = true
+      continue
+    }
+    if (!sameRegistration(current, latest)) changed = true
+    refreshed.push(sameRegistration(current, latest) ? current : latest)
+  }
+  refreshed.reverse()
+
+  const trimmed = trimVisibleTools(refreshed, maxVisibleTools)
+  if (trimmed !== refreshed) changed = true
+  const nextTools = changed ? trimmed : currentTools
+  persistVisibleToolNames(id, currentTools, nextTools, core)
+  return nextTools
+}
+
 // 简介：确保某个工具的 schema 已加载到本轮可见列表，并把累计已载写回 run。
-// 详情：列表已含该 name → 原样返回；否则 core.tools.loadSchema(toolName)（未知 tool → undefined →
-// 原样返回）→ appendVisibleTool 加入 → patchRun(id, { loadedTools }, core) 累计已载 → 返回新数组。
+// 详情：每次都从 registry 读取当前注册快照；同名重注册会替换旧 schema，并把本次请求的工具移到
+// LRU 尾部。unknown 会清掉同名旧快照。maxVisibleTools 用于 provider 的硬 tool 数量预算。
 // core 默认 defaultCore，语义见文件头。
 export function ensureToolLoaded(
   id: string,
   currentTools: LoadedTool[],
   toolName: string,
   core: CoreInstance = defaultCore,
+  maxVisibleTools?: number,
 ): LoadedTool[] {
-  if (currentTools.some((tool) => tool.name === toolName)) return currentTools
-
   const tool = core.tools.loadSchema(toolName)
-  if (!tool) return currentTools
+  const currentIndex = currentTools.findIndex((loadedTool) => loadedTool.name === toolName)
+  if (!tool) {
+    if (currentIndex < 0) return currentTools
+    const withoutRemoved = currentTools.filter((loadedTool) => loadedTool.name !== toolName)
+    const nextTools = trimVisibleTools(withoutRemoved, maxVisibleTools)
+    persistVisibleToolNames(id, currentTools, nextTools, core)
+    return nextTools
+  }
 
-  const nextTools = appendVisibleTool(currentTools, tool)
-  patchRun(id, { loadedTools: nextTools.map((loadedTool) => loadedTool.name) }, core)
-
+  // Requesting a schema is also an LRU touch. Keeping the most recently requested
+  // tools at the tail lets a capped provider rotate an older tool back into view.
+  const existing = currentIndex >= 0 ? currentTools[currentIndex] : undefined
+  const limit = visibleToolLimit(maxVisibleTools)
+  if (
+    existing
+    && sameRegistration(existing, tool)
+    && currentIndex === currentTools.length - 1
+    && (limit === undefined || currentTools.length <= limit)
+  ) {
+    return currentTools
+  }
+  const promoted = [
+    ...currentTools.filter((loadedTool) => loadedTool.name !== toolName),
+    existing && sameRegistration(existing, tool) ? existing : tool,
+  ]
+  const nextTools = trimVisibleTools(promoted, maxVisibleTools)
+  persistVisibleToolNames(id, currentTools, nextTools, core)
   return nextTools
 }

@@ -11,7 +11,31 @@
 //   严禁出现任何 Record<sessionId, 会话内容> 分桶（那是各会话自己 store 的事）。
 
 import { atom } from '@einfach/core'
-import type { SessionMeta } from './core.type'
+import type { SessionMeta, WorkspaceMeta } from './core.type'
+
+// 一级工作区登记表。数量通常很小，适合一个浅层 Record atom；会话内容仍按会话独立 store 分桶。
+export const workspacesAtom = atom<Record<string, WorkspaceMeta>>({})
+
+// 当前工作区；空串表示尚未创建工作区。
+export const activeWorkspaceIdAtom = atom<string>('')
+
+// 展开状态按工作区 id 独立记录，避免把纯 UI 状态混进持久化的 WorkspaceMeta。
+export const expandedWorkspaceIdsAtom = atom<Record<string, boolean>>({})
+
+// 每个工作区的设置面板开关；属于瞬态 UI 状态，不随 WorkspaceMeta 持久化。
+export const workspaceSettingsOpenIdsAtom = atom<Record<string, boolean>>({})
+
+// 工作区标题行内编辑草稿。目标 id 与草稿必须同步切换，作为一个紧耦合编辑事务保存。
+export const workspaceRenameStateAtom = atom<{ id: string; draft: string } | null>(null)
+
+// 当前工作区元信息与工具执行根目录均为纯派生值，不重复存状态。
+export const activeWorkspaceMetaAtom = atom(
+  (get): WorkspaceMeta | undefined => get(workspacesAtom)[get(activeWorkspaceIdAtom)],
+)
+
+export const activeWorkspaceRootAtom = atom(
+  (get): string | undefined => get(activeWorkspaceMetaAtom)?.rootPath,
+)
 
 // 简介：会话列表元信息（id → SessionMeta）。
 // 详情：会话是否存在的权威事实。写入器的 ghost guard 就是查这里有没有登记（见 P5 C7）。

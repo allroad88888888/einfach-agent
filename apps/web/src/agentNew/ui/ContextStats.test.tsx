@@ -105,6 +105,13 @@ describe('ContextStats', () => {
     expect(screen.getByText('hit 80 / miss 40 (unknown) / rate 67%')).toBeInTheDocument()
     expect(screen.getByText('2 requests / hit 100 / miss 50 / rate 67%')).toBeInTheDocument()
     expect(screen.getByText('main / epoch 1 (initial) / full-history')).toBeInTheDocument()
+    expect(
+      screen.getByText('本次运行请求投影累计（本地诊断）'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('请求投影档案（本地）')).toBeInTheDocument()
+    expect(
+      screen.getByText('DeepSeek 无显式 cache_id；命中以本轮 Provider usage 为准'),
+    ).toBeInTheDocument()
   })
 
   it('provider 未返回缓存字段时明确标记不可用', () => {

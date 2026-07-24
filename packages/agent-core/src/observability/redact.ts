@@ -8,7 +8,8 @@ const DEFAULT_PREVIEW_ITEMS = 20
 const DEFAULT_PREVIEW_KEYS = 40
 const EXPLICIT_PREVIEW_STRING_LIMIT = 100_000
 
-const SENSITIVE_KEY = /(api[_-]?key|authorization|bearer|token|secret|password|passwd)/i
+const SENSITIVE_KEY =
+  /(api[_-]?key|authorization|bearer|token|secret|password|passwd|^user[_-]?id$)/i
 // token 用量指标豁免 —— SENSITIVE_KEY 是【子串】匹配，含 "token" 的 key 一律被抹成 '[REDACTED]'，
 // 于是 estimated_tokens / max_tokens / prompt_tokens / completion_tokens / total_tokens /
 // estimated_context_tokens 这些【用量数字】全都看不见：想排查「这轮烧了多少 token、上下文涨到
