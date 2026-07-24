@@ -10,7 +10,7 @@
 // 表结构（items/meta 存 JSON 文本）：
 //   sessions(id TEXT PRIMARY KEY, meta TEXT)  —— 会话列表存**单行 blob**：固定 id='__all__'，
 //       meta 为整个 SessionMeta[] 的 JSON。单语句 upsert 天然原子，无需跨语句事务（见 sqliteSessions）。
-//   checkpoints(session_id TEXT, turn_index INTEGER, label TEXT, created_at INTEGER, items TEXT,
+//   checkpoints(session_id TEXT, turn_index INTEGER, label TEXT, created_at INTEGER, items TEXT, plan TEXT,
 //               PRIMARY KEY(session_id, turn_index))
 //
 // 连接调优（PRAGMA，见 getDb）：journal_mode=WAL + busy_timeout=5000 + synchronous=NORMAL。
@@ -35,6 +35,7 @@ interface CheckpointRow {
   label: string
   created_at: number
   items: string
+  plan?: string | null
 }
 
 // 惰性 + memoized 打开 db 并建表：整个进程只 load 一次、建表一次。失败则抛（由各方法各自 catch 降级）。
@@ -69,9 +70,16 @@ async function getDb(): Promise<Database> {
            label TEXT NOT NULL,
            created_at INTEGER NOT NULL,
            items TEXT NOT NULL,
+           plan TEXT,
            PRIMARY KEY (session_id, turn_index)
          )`,
       )
+      // 兼容旧桌面数据库：CREATE TABLE IF NOT EXISTS 不会给既有表补列。
+      try {
+        await db.execute('ALTER TABLE checkpoints ADD COLUMN plan TEXT')
+      } catch {
+        // 新库已经包含 plan，或旧库迁移已完成；两种情况都可继续。
+      }
       return db
     })()
     // 建表失败时清掉 memo，允许下次重试（并把错误透传给当前调用方去降级）。
@@ -129,7 +137,7 @@ const sqliteHistoryDriver: HistoryDriver = {
     try {
       const db = await getDb()
       const rows = await db.select<CheckpointRow[]>(
-        'SELECT turn_index, label, created_at, items FROM checkpoints WHERE session_id = $1 AND turn_index = $2',
+        'SELECT turn_index, label, created_at, items, plan FROM checkpoints WHERE session_id = $1 AND turn_index = $2',
         [sessionId, turnIndex],
       )
       const row = rows[0]
@@ -139,6 +147,7 @@ const sqliteHistoryDriver: HistoryDriver = {
         label: row.label,
         createdAt: row.created_at,
         items: JSON.parse(row.items),
+        plan: row.plan ? JSON.parse(row.plan) : undefined,
       }
     } catch {
       return undefined
@@ -149,14 +158,15 @@ const sqliteHistoryDriver: HistoryDriver = {
     try {
       const db = await getDb()
       await db.execute(
-        `INSERT OR REPLACE INTO checkpoints (session_id, turn_index, label, created_at, items)
-         VALUES ($1, $2, $3, $4, $5)`,
+        `INSERT OR REPLACE INTO checkpoints (session_id, turn_index, label, created_at, items, plan)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
         [
           sessionId,
           checkpoint.turnIndex,
           checkpoint.label,
           checkpoint.createdAt,
           JSON.stringify(checkpoint.items),
+          checkpoint.plan === undefined ? null : JSON.stringify(checkpoint.plan),
         ],
       )
     } catch {

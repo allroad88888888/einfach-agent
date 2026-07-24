@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { rootStore, sessionsAtom, resetRootStore } from '../state/rootStore'
 import { getSessionStore, resetSessionStores } from '../state/sessionStore'
 import { setRun } from '../state/sessionWriters'
+import { getPlan, setPlan } from '../state/planWriters'
 import { browserCardsAtom, toolActivityAtom } from '../state/transientAtoms'
 import { toolRegistry } from '../tools/registry'
 import type { Tool } from '../tools/types'
@@ -113,6 +114,54 @@ describe('ctx 副作用 + stale 守卫', () => {
     expect(getSessionStore('s1').store.getter(toolActivityAtom)).toEqual([])
     expect(ctx.saveArtifact({ filename: 'a.txt', content: 'x' })).toEqual({ error: 'stale' })
   })
+
+  it('stale run 仍可回滚自己留下的 evaluating；revision 防止覆盖新状态', () => {
+    seedRunningSession('s1', 'new-run')
+    setPlan('s1', {
+      id: 'plan-1',
+      title: '计划',
+      objective: '完成实现',
+      status: 'active',
+      revision: 3,
+      requiresApproval: false,
+      createdAt: 1,
+      updatedAt: 2,
+      stages: [{
+        id: 'build',
+        title: '实现',
+        objective: '写代码',
+        deliverables: [],
+        acceptanceCriteria: ['测试通过'],
+        dependencies: [],
+        status: 'evaluating',
+        evidence: ['tests'],
+        evaluations: [{
+          attempt: 1,
+          status: 'evaluating',
+          summary: '已实现',
+          submittedEvidence: ['tests'],
+          criteria: [],
+          submittedAt: 2,
+        }],
+      }],
+    })
+    const stale = ctxFor('submit_stage_result', 's1', 'old-run')
+
+    const recovered = stale.abortStageEvaluation?.('plan-1', 3, 'build', 'Load failed')
+
+    expect(recovered).toMatchObject({ ok: true })
+    expect(getPlan('s1')?.stages[0]).toMatchObject({
+      status: 'in_progress',
+      evaluations: [{
+        status: 'unknown',
+        criteria: [{ criterion: '测试通过', status: 'unknown', reason: 'Load failed' }],
+      }],
+    })
+    expect(stale.abortStageEvaluation?.('plan-1', 3, 'build', 'late cleanup')).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('revision conflict'),
+    })
+  })
 })
 
 describe('ctx.runShell 桥接', () => {
@@ -137,6 +186,15 @@ describe('ctx.runShell 桥接', () => {
     })
     expect(result.stderr).toContain('Tauri desktop runtime')
     expect(result.durationMs).toBeGreaterThanOrEqual(0)
+  })
+
+  it('命令行 rm 明确标记为不可撤回', async () => {
+    seedRunningSession('s1', 'r')
+    const ctx = ctxFor('shell_macos', 's1', 'r')
+
+    const result = await ctx.runShell({ platform: 'macos', command: 'rm note.txt', cwd: '/tmp' })
+
+    expect(result.reversible).toBe(false)
   })
 
   it('stale / aborted runShell 直接抛 stale，不调用桥接副作用', async () => {

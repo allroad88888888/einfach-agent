@@ -77,6 +77,10 @@ export function subagentResultPath(basePath: string, agentPath: string): string 
   return `${basePath}/results/${safeSegment(agentPath)}.result.md`
 }
 
+export function subagentTracePath(basePath: string, agentPath: string): string {
+  return `${basePath}/traces/${safeSegment(agentPath)}.trace.jsonl`
+}
+
 export function subagentTreePath(basePath: string): string {
   return `${basePath}/tree.json`
 }

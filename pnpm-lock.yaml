@@ -34,7 +34,7 @@ importers:
         version: link:packages/agent-core
       '@web-agent/tools':
         specifier: workspace:*
-        version: link:packages/tools
+        version: link:tools/standard
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -114,62 +114,62 @@ importers:
         specifier: ^18.3.1
         version: 18.3.1
 
-  packages/tools:
+  tools/agents:
+    dependencies:
+      '@web-agent/core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
+
+  tools/fs:
+    dependencies:
+      '@web-agent/core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
+
+  tools/interaction:
+    dependencies:
+      '@web-agent/core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
+
+  tools/planning:
+    dependencies:
+      '@web-agent/core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
+
+  tools/shell:
+    dependencies:
+      '@web-agent/core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
+
+  tools/skills:
+    dependencies:
+      '@web-agent/core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
+
+  tools/standard:
     dependencies:
       '@web-agent/tools-agents':
         specifier: workspace:*
-        version: link:../tools-agents
+        version: link:../agents
       '@web-agent/tools-fs':
         specifier: workspace:*
-        version: link:../tools-fs
+        version: link:../fs
       '@web-agent/tools-interaction':
         specifier: workspace:*
-        version: link:../tools-interaction
+        version: link:../interaction
       '@web-agent/tools-planning':
         specifier: workspace:*
-        version: link:../tools-planning
+        version: link:../planning
       '@web-agent/tools-shell':
         specifier: workspace:*
-        version: link:../tools-shell
+        version: link:../shell
       '@web-agent/tools-skills':
         specifier: workspace:*
-        version: link:../tools-skills
-
-  packages/tools-agents:
-    dependencies:
-      '@web-agent/core':
-        specifier: workspace:*
-        version: link:../agent-core
-
-  packages/tools-fs:
-    dependencies:
-      '@web-agent/core':
-        specifier: workspace:*
-        version: link:../agent-core
-
-  packages/tools-interaction:
-    dependencies:
-      '@web-agent/core':
-        specifier: workspace:*
-        version: link:../agent-core
-
-  packages/tools-planning:
-    dependencies:
-      '@web-agent/core':
-        specifier: workspace:*
-        version: link:../agent-core
-
-  packages/tools-shell:
-    dependencies:
-      '@web-agent/core':
-        specifier: workspace:*
-        version: link:../agent-core
-
-  packages/tools-skills:
-    dependencies:
-      '@web-agent/core':
-        specifier: workspace:*
-        version: link:../agent-core
+        version: link:../skills
 
 packages:
 

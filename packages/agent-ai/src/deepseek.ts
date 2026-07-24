@@ -26,6 +26,18 @@ export interface DeepSeekChatRequest extends ChatRequestBase {
   reasoning_effort?: DeepSeekReasoningEffort
 }
 
+function withStreamUsage(body: DeepSeekChatRequest): DeepSeekChatRequest {
+  return {
+    ...body,
+    stream_options: {
+      ...body.stream_options,
+      // DeepSeek 只有 include_usage=true 才在 [DONE] 前补发最终 usage chunk。
+      // 尊重调用方显式关闭；未指定时默认打开，保证缓存命中统计可见。
+      include_usage: body.stream_options?.include_usage ?? true,
+    },
+  }
+}
+
 // 简介：调用 DeepSeek 的 chat/completions（一次性完整响应）。
 // 详情：默认接入 DEEPSEEK_BASE_URL，可由 options.baseUrl 覆盖。
 export function callDeepSeek(
@@ -42,5 +54,10 @@ export function streamDeepSeek(
   options: ChatCallOptions,
   handlers?: ChatStreamHandlers,
 ): Promise<ModelChatResponse> {
-  return postChatCompletionStream(options.baseUrl ?? DEEPSEEK_BASE_URL, body, options, handlers)
+  return postChatCompletionStream(
+    options.baseUrl ?? DEEPSEEK_BASE_URL,
+    withStreamUsage(body),
+    options,
+    handlers,
+  )
 }

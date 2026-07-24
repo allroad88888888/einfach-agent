@@ -1,6 +1,6 @@
 # 树形子 Agent Runtime
 
-本文记录 `agentNew` 树形子 agent 核心实现，以及长期复盘 archive 的约定。
+本文记录 `@web-agent/core` 树形子 agent 核心实现，以及长期复盘 archive 的约定。
 
 ## 目标
 
@@ -27,8 +27,8 @@
 
 实现入口：
 
-- [path.ts](/Volumes/work/ai/web-agent/src/agentNew/subagents/path.ts)
-- [scheduler.ts](/Volumes/work/ai/web-agent/src/agentNew/subagents/scheduler.ts)
+- [path.ts](../packages/agent-core/src/subagents/path.ts)
+- [scheduler.ts](../packages/agent-core/src/subagents/scheduler.ts)
 
 ## 长期 Archive
 
@@ -69,13 +69,13 @@
 - 进程内 archive writer 按目标路径串行化写入，避免同一路径并发 overwrite/append 乱序；高频 `index/*.jsonl` append 在同一 microtask 内合并后 flush。跨进程写入还会获取目标文件旁的 `.archive-write.lock`：等待上限 10 秒、每 5 秒续租、30 秒无续租可回收；超时或锁异常会显式返回写入失败。CLI 索引压缩和 skill 治理写入共用同一锁协议。
 - 三个状态索引 `runs.jsonl`、`agents.jsonl`、`skills.jsonl` 达到 128 KiB 后会在持锁期间自动去重压缩，压缩频率最多每 5 分钟一次，单文件安全上限为 16 MiB。坏行或替换失败会在本次 append 前显式失败并保留原索引；`events.jsonl` 永远不参与自动压缩或合批，继续保持逐事件 append-only。
 - runtime 正常、失败和取消收尾都会等待 archive 写入；`dispose()` 会执行最终 flush/drain。取消信号不阻止最终审计落盘，但 stale run（已被新 run 顶替）仍由宿主写入守卫拒绝，flush 失败会显式传播。
-- 索引可用 `npm run subagent:index:compact` 预览去重，再用 `npm run subagent:index:compact -- --write` 原子压缩。逻辑 key 分别为 run=`conversationId+runId`、agent=`conversationId+runId+path`、skill=`skillId`；坏行会中止全部写入。压缩只处理 `index/*.jsonl`，不会读取或改写 append-only 的 `conversations/**/events.jsonl`。
+- 索引可用 `pnpm subagent:index:compact` 预览去重，再用 `pnpm subagent:index:compact -- --write` 原子压缩。逻辑 key 分别为 run=`conversationId+runId`、agent=`conversationId+runId+path`、skill=`skillId`；坏行会中止全部写入。压缩只处理 `index/*.jsonl`，不会读取或改写 append-only 的 `conversations/**/events.jsonl`。
 - `.agent-archive/` 和旧 `.agent-cache/` 都已加入 `.gitignore`。
 
 实现入口：
 
-- [skillCache.ts](/Volumes/work/ai/web-agent/src/agentNew/subagents/skillCache.ts)
-- [distill.ts](/Volumes/work/ai/web-agent/src/agentNew/subagents/distill.ts)
+- [skillCache.ts](../packages/agent-core/src/subagents/skillCache.ts)
+- [distill.ts](../packages/agent-core/src/subagents/distill.ts)
 
 ## Skill Frontmatter
 
@@ -108,12 +108,12 @@ promotion: "candidate"
 
 ```bash
 # 默认只读：列出当前 candidate；加 --json 可供脚本读取
-npm run subagent:skills
-npm run subagent:skills -- --json
+pnpm subagent:skills
+pnpm subagent:skills -- --json
 
 # 变更必须同时给出唯一 skillId 和 --write
-npm run subagent:skills -- --promote sk_xxx --write
-npm run subagent:skills -- --archive sk_xxx --write
+pnpm subagent:skills -- --promote sk_xxx --write
+pnpm subagent:skills -- --archive sk_xxx --write
 ```
 
 UI 中的 Promote/Archive 确认只生成上述审计 CLI，并明确标记“操作已生成，尚未执行”。UI 不直接写 archive，也不假设打包环境存在 Node；实际变更仍由操作者在目标 workspace 终端执行，事务锁、journal 和 audit 的唯一所有权留在治理脚本。
@@ -142,10 +142,10 @@ UI 中的 Promote/Archive 确认只生成上述审计 CLI，并明确标记“�
 
 核心入口：
 
-- [delegate-agent.ts](/Volumes/work/ai/web-agent/src/agentNew/tools/delegate-agent/delegate-agent.ts)
-- [runtime.ts](/Volumes/work/ai/web-agent/src/agentNew/subagents/runtime.ts)
-- [toolContext.ts](/Volumes/work/ai/web-agent/src/agentNew/runtime/toolContext.ts)
-- [modelRun.ts](/Volumes/work/ai/web-agent/src/agentNew/runtime/modelRun.ts)
+- [delegate-agent.ts](../tools/agents/src/delegate-agent/delegate-agent.ts)
+- [runtime.ts](../packages/agent-core/src/subagents/runtime.ts)
+- [toolContext.ts](../packages/agent-core/src/runtime/toolContext.ts)
+- [modelRun.ts](../packages/agent-core/src/runtime/modelRun.ts)
 
 ## `delegate_agent` 输入
 
@@ -187,7 +187,7 @@ interface DelegateAgentInput {
 
 实现入口：
 
-- [input.ts](/Volumes/work/ai/web-agent/src/agentNew/subagents/input.ts)
+- [input.ts](../packages/agent-core/src/subagents/input.ts)
 
 ## 权限模型
 
@@ -304,7 +304,7 @@ node scripts/subagent-replay-report.js --conversation <conversationId> --run <ru
 - 汇总：`summary` 提供 `running/distilling/queued/done/failed/cancelled`，`childResults` 直接给出已结束的节点产出。
 
 入口与导出位于：
-- [replay.ts](/Volumes/work/ai/web-agent/src/agentNew/subagents/replay.ts)
+- [replay.ts](../packages/agent-core/src/subagents/replay.ts)
 - `parseSubagentEvents`
 - `parseSubagentTreeSnapshot`
 - `replaySubagentArchive`

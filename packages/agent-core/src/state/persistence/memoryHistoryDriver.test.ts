@@ -43,6 +43,18 @@ describe('createMemoryHistoryDriver', () => {
     expect(await d.listCheckpoints('nope')).toEqual([])
   })
 
+  it('相同 turnIndex 再次保存时覆盖工作快照', async () => {
+    const d = createMemoryHistoryDriver()
+    await d.saveCheckpoint('s1', cp0)
+    const updated = { ...cp0, label: 'done', items: cp1.items }
+    await d.saveCheckpoint('s1', updated)
+
+    expect(await d.listCheckpoints('s1')).toEqual([
+      { turnIndex: 0, label: 'done', createdAt: cp0.createdAt },
+    ])
+    expect(await d.loadCheckpoint('s1', 0)).toEqual(updated)
+  })
+
   it('loadCheckpoint 命中返回含 items 的完整 cp；越界返回 undefined', async () => {
     const d = createMemoryHistoryDriver()
     await d.saveCheckpoint('s1', cp0)

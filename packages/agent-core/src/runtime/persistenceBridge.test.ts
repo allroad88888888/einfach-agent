@@ -84,6 +84,32 @@ describe('persistenceBridge（D-4 fire-and-forget 接线）', () => {
     expect(history.saveCheckpoint).toHaveBeenCalledWith('s1', cp)
   })
 
+  it('persistCheckpoint：同一会话的工作快照与最终快照严格按调用顺序写入', async () => {
+    let releaseFirst: (() => void) | undefined
+    const firstWrite = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    const saveCheckpoint = vi.fn()
+      .mockImplementationOnce(() => firstWrite)
+      .mockResolvedValue(undefined)
+    const history = mockHistory({ saveCheckpoint })
+    configurePersistence({ history })
+    const finalCheckpoint = { ...cp, label: 'done' }
+
+    persistCheckpoint('s1', cp)
+    persistCheckpoint('s1', finalCheckpoint)
+
+    expect(saveCheckpoint).toHaveBeenCalledTimes(1)
+    expect(saveCheckpoint).toHaveBeenNthCalledWith(1, 's1', cp)
+
+    releaseFirst?.()
+    await firstWrite
+    await Promise.resolve()
+
+    expect(saveCheckpoint).toHaveBeenCalledTimes(2)
+    expect(saveCheckpoint).toHaveBeenNthCalledWith(2, 's1', finalCheckpoint)
+  })
+
   it('persistTruncate：转成 history.truncateAfter(id, turnIndex)', () => {
     const history = mockHistory()
     configurePersistence({ history })

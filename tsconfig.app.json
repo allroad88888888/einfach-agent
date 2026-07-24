@@ -20,17 +20,17 @@
     "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"],
+      "@/*": ["apps/web/src/*"],
       "@web-agent/ai": ["packages/agent-ai/src/index.ts"],
       "@web-agent/core/*": ["packages/agent-core/src/*"],
-      "@web-agent/tools": ["packages/tools/src/index.ts"],
-      "@web-agent/tools-shell": ["packages/tools-shell/src/index.ts"],
-      "@web-agent/tools-interaction": ["packages/tools-interaction/src/index.ts"],
-      "@web-agent/tools-fs": ["packages/tools-fs/src/index.ts"],
-      "@web-agent/tools-planning": ["packages/tools-planning/src/index.ts"],
-      "@web-agent/tools-skills": ["packages/tools-skills/src/index.ts"],
-      "@web-agent/tools-agents": ["packages/tools-agents/src/index.ts"]
+      "@web-agent/tools": ["tools/standard/src/index.ts"],
+      "@web-agent/tools-shell": ["tools/shell/src/index.ts"],
+      "@web-agent/tools-interaction": ["tools/interaction/src/index.ts"],
+      "@web-agent/tools-fs": ["tools/fs/src/index.ts"],
+      "@web-agent/tools-planning": ["tools/planning/src/index.ts"],
+      "@web-agent/tools-skills": ["tools/skills/src/index.ts"],
+      "@web-agent/tools-agents": ["tools/agents/src/index.ts"]
     }
   },
-  "include": ["src", "packages/*/src"]
+  "include": ["apps/web/src", "packages/*/src", "tools/*/src"]
 }

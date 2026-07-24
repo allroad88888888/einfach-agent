@@ -322,7 +322,7 @@ describe('tools/registry —— 抽象工厂 ToolRegistry（§3/§4）', () => {
   // （top-level required 含 id、question 级 required id/text/type、type 带 enum），
   // 模型只要把 type 写歪一个字或漏一个 question 级 id，整次调用就在 registry 层被打回 { ok:false }：
   // runToolLoop 走 appendMappedToolResult 而不进 waiting_user —— 提问卡片彻底不渲染。
-  // 契约（T8-UI-PLAN P8-a / CLAUDE.md「defensively normalized」）：
+  // 契约：ask_user_question payload 由 runtime 层防御式归一化：
   // normalizeAskUserQuestionPayload 才是唯一真相，schema 不得抢在它前面拦。
   describe('ask_user_question 的 schema 不得抢在归一化层前面拦（提问卡片必须能渲染）', () => {
     it('type 写歪 + 缺 top-level id → { pause }（而不是 { ok:false }），归一化后 type 收敛为 text', async () => {

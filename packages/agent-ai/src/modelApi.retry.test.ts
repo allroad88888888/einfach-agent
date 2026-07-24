@@ -105,6 +105,28 @@ function sseResponse(chunks: unknown[]): Response {
   })
 }
 
+// 服务端干净关闭连接但没有发送 [DONE]，用于覆盖协议截断边界。
+function sseResponseWithoutDone(chunks: unknown[]): Response {
+  const encoder = new TextEncoder()
+  return eventStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(encoder.encode(sseBlock(chunk)))
+      controller.close()
+    },
+  })
+}
+
+// 原样发送一个 SSE data block，便于分别构造“完整坏 JSON”和“JSON 在 EOF 截断”。
+function rawSseResponse(data: string): Response {
+  const encoder = new TextEncoder()
+  return eventStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(`data: ${data}\n\n`))
+      controller.close()
+    },
+  })
+}
+
 // 先真正吐完 chunks、再让 body 报错的流（模拟「说到一半连接断了」）。
 // 注意必须用 pull 逐块投递：若在 start() 里 enqueue 完再 controller.error()，
 // 排队中的 chunk 会被直接丢弃，读端一个 delta 都收不到 —— 那样测的就不是 R3 了。
@@ -176,6 +198,43 @@ describe('postChatCompletion 重试（R2：429 / 5xx / 网络错误）', () => {
     )
 
     expect(result.choices?.[0]?.message?.content).toBe('网络恢复')
+  })
+
+  it('HTTP 200 空 JSON 响应会重试', async () => {
+    const { sleepImpl } = recordingSleep()
+    const { fetchImpl, calls } = seqFetch([
+      () => new Response('', { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      () => okResponse('响应恢复'),
+    ])
+
+    const result = await postChatCompletion(
+      BASE_URL,
+      BODY,
+      callOptions(fetchImpl, { sleepImpl, baseDelayMs: 1 }),
+    )
+
+    expect(calls()).toBe(2)
+    expect(result.choices?.[0]?.message?.content).toBe('响应恢复')
+  })
+
+  it('HTTP 200 截断 JSON 响应会重试', async () => {
+    const { sleepImpl } = recordingSleep()
+    const { fetchImpl, calls } = seqFetch([
+      () => new Response('{"choices":[', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+      () => okResponse('截断后恢复'),
+    ])
+
+    const result = await postChatCompletion(
+      BASE_URL,
+      BODY,
+      callOptions(fetchImpl, { sleepImpl, baseDelayMs: 1 }),
+    )
+
+    expect(calls()).toBe(2)
+    expect(result.choices?.[0]?.message?.content).toBe('截断后恢复')
   })
 
   it('网络错误重试耗尽：抛出的是 fetch 原始错误（不被包装掉）', async () => {
@@ -611,6 +670,105 @@ describe('postChatCompletionStream 重试（R3：只在 emit 任何 delta 之前
     expect(result.choices?.[0]?.message?.content).toBe('重来一次')
   })
 
+  it('clean EOF 且没有 [DONE]：尚未 emit 时按截断重试', async () => {
+    const { sleepImpl } = recordingSleep()
+    const { fetchImpl, calls } = seqFetch([
+      () => sseResponseWithoutDone([]),
+      () => sseResponse([deltaChunk('完整响应')]),
+    ])
+
+    const result = await postChatCompletionStream(
+      BASE_URL,
+      BODY,
+      callOptions(fetchImpl, { sleepImpl, baseDelayMs: 1 }),
+    )
+
+    expect(calls()).toBe(2)
+    expect(result.choices?.[0]?.message?.content).toBe('完整响应')
+  })
+
+  it('clean EOF 且没有 [DONE]：已经 emit 后直接失败，不重试', async () => {
+    const { sleepImpl } = recordingSleep()
+    const { texts, onDelta } = collectDeltas()
+    const { fetchImpl, calls } = seqFetch([
+      () => sseResponseWithoutDone([deltaChunk('已显示')]),
+      () => sseResponse([deltaChunk('不该被调用')]),
+    ])
+
+    await expect(
+      postChatCompletionStream(
+        BASE_URL,
+        BODY,
+        callOptions(fetchImpl, { sleepImpl, baseDelayMs: 1 }),
+        { onDelta },
+      ),
+    ).rejects.toThrow(/before \[DONE\]/)
+
+    expect(calls()).toBe(1)
+    expect(texts).toEqual(['已显示'])
+  })
+
+  it('finish chunk 后、最终 usage 与 [DONE] 前 clean EOF：尚未 emit 时可重试', async () => {
+    const { sleepImpl } = recordingSleep()
+    const usage = {
+      prompt_tokens: 10,
+      prompt_cache_hit_tokens: 8,
+      prompt_cache_miss_tokens: 2,
+    }
+    const { fetchImpl, calls } = seqFetch([
+      () => sseResponseWithoutDone([{ choices: [{ delta: {}, finish_reason: 'stop' }] }]),
+      () =>
+        sseResponse([
+          { choices: [{ delta: {}, finish_reason: 'stop' }] },
+          { choices: [], usage },
+        ]),
+    ])
+
+    const result = await postChatCompletionStream(
+      BASE_URL,
+      BODY,
+      callOptions(fetchImpl, { sleepImpl, baseDelayMs: 1 }),
+    )
+
+    expect(calls()).toBe(2)
+    expect(result.usage).toEqual(usage)
+  })
+
+  it('完整但非法的 SSE JSON 是确定性错误，不重试', async () => {
+    const { sleepImpl } = recordingSleep()
+    const { fetchImpl, calls } = seqFetch([
+      () => rawSseResponse('{"choices": invalid}'),
+      () => sseResponse([deltaChunk('不该被调用')]),
+    ])
+
+    await expect(
+      postChatCompletionStream(
+        BASE_URL,
+        BODY,
+        callOptions(fetchImpl, { sleepImpl, baseDelayMs: 1 }),
+      ),
+    ).rejects.toThrow(SyntaxError)
+
+    expect(calls()).toBe(1)
+  })
+
+  it('SSE JSON 在 EOF 截断且尚未 emit 时可重试', async () => {
+    const { sleepImpl } = recordingSleep()
+    const { fetchImpl, calls } = seqFetch([
+      () => rawSseResponse('{"choices":['),
+      () => sseResponse([deltaChunk('截断后恢复')]),
+    ])
+
+    const result = await postChatCompletionStream(
+      BASE_URL,
+      BODY,
+      callOptions(fetchImpl, { sleepImpl, baseDelayMs: 1 }),
+    )
+
+    expect(calls()).toBe(2)
+    expect(result.choices?.[0]?.message?.content).toBe('截断后恢复')
+  })
+
   it('首包是恒定的空 delta（{content:""}）不算「已吐字」，之后断流仍可重试（回归：曾经 if(delta) 一律置 emitted=true）', async () => {
     const { sleepImpl } = recordingSleep()
     const { texts, onDelta } = collectDeltas()
@@ -689,7 +847,7 @@ describe('postChatCompletionStream 重试（R3：只在 emit 任何 delta 之前
     expect(result.choices?.[0]?.message?.content).toBe('整包')
   })
 
-  it('非 SSE 回退分支 JSON 解析失败：不重试，直接抛出解析错误（对齐 postChatCompletion 的策略）', async () => {
+  it('非 SSE 回退分支的普通坏 JSON 不重试', async () => {
     const { sleepImpl } = recordingSleep()
     // Content-Type 不是 text/event-stream，走整包回退分支；body 是坏 JSON（网关错误页常见）。
     const { fetchImpl, calls } = seqFetch([
@@ -708,6 +866,26 @@ describe('postChatCompletionStream 重试（R3：只在 emit 任何 delta 之前
     // 回归点：修复前 json() 解析错误会被包成 RetriableError，在默认 maxRetries=3 下
     // 白白多发 3 次必然还是失败的请求；修复后应该 1 次就终结。
     expect(calls()).toBe(1)
+  })
+
+  it('非 SSE 回退分支的空 JSON 响应会在 emit 前安全重试', async () => {
+    const { sleepImpl } = recordingSleep()
+    const { texts, onDelta } = collectDeltas()
+    const { fetchImpl, calls } = seqFetch([
+      () => new Response('', { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      () => okResponse('回退恢复'),
+    ])
+
+    const result = await postChatCompletionStream(
+      BASE_URL,
+      BODY,
+      callOptions(fetchImpl, { sleepImpl, baseDelayMs: 1 }),
+      { onDelta },
+    )
+
+    expect(calls()).toBe(2)
+    expect(texts).toEqual(['回退恢复'])
+    expect(result.choices?.[0]?.message?.content).toBe('回退恢复')
   })
 
   it('请求体强制带 stream:true（重试后依然如此）', async () => {

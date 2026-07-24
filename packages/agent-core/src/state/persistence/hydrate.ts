@@ -21,6 +21,7 @@ import { checkpointsAtom, currentTurnIndexAtom, itemsAtom, planAtom } from '../s
 import type { HistoryDriver } from './historyDriver'
 import { migrateSessionMeta } from './modelMigration'
 import { migratePlanSnapshot } from '../../planning/migrate'
+import { executionGraphAtom, reduceExecutionGraph } from '../../execution/graph'
 
 // 简介：从持久化恢复会话列表与每会话历史，回填内存 store；返回是否恢复了任何会话。
 // 详情：deps 注入 sessions（会话列表持久化，只读 loadSessions）+ history（HistoryDriver），
@@ -60,7 +61,18 @@ export async function hydrate(deps: {
     //   · 顺带消掉一类竞态：回写只能是 fire-and-forget（hydrate 的容错契约是「失败不阻塞启动」），
     //     而 saveSessions 是覆盖式落盘，与 persistenceBridge.persistSessions() 之间无顺序保证。
     //     若回写晚于「用户新建会话」落地，就会用不含新会话的旧列表整体覆盖掉它。
-    const migrated = sessions.map(migrateSessionMeta)
+    const hydratedAt = Date.now()
+    const migrated = sessions.map((session) => {
+      const modelMigrated = migrateSessionMeta(session)
+      if (!modelMigrated.executionGraph) return modelMigrated
+      return {
+        ...modelMigrated,
+        executionGraph: reduceExecutionGraph(
+          modelMigrated.executionGraph,
+          { type: 'graph.hydrated', at: hydratedAt },
+        ),
+      }
+    })
 
     // 会话列表登记表：id → SessionMeta。
     rootStore.setter(sessionsAtom, Object.fromEntries(migrated.map((s) => [s.id, s])))
@@ -73,6 +85,9 @@ export async function hydrate(deps: {
     // 逐会话回填其完整 checkpoint 序列 + 最新一轮 items/游标。
     for (const session of migrated) {
       if (session.plan) getSessionStore(session.id).store.setter(planAtom, migratePlanSnapshot(session.plan))
+      if (session.executionGraph) {
+        getSessionStore(session.id).store.setter(executionGraphAtom, session.executionGraph)
+      }
       const metas = await deps.history.listCheckpoints(session.id)
       if (metas.length === 0) {
         continue

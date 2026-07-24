@@ -1,0 +1,143 @@
+import { atom } from '@einfach/core'
+import type {
+  ExecutionEvent,
+  ExecutionGraphSnapshot,
+  ExecutionNode,
+  ExecutionNodeStatus,
+} from './types'
+
+export const EMPTY_EXECUTION_GRAPH: ExecutionGraphSnapshot = {
+  version: 1,
+  nodes: {},
+  order: [],
+}
+
+export const executionGraphAtom = atom<ExecutionGraphSnapshot>(EMPTY_EXECUTION_GRAPH)
+export const executionEventsAtom = atom<ExecutionEvent[]>([])
+
+const READY_DEPENDENCY_STATUSES = new Set<ExecutionNodeStatus>(['succeeded'])
+const ACTIVE_STATUSES = new Set<ExecutionNodeStatus>([
+  'queued',
+  'ready',
+  'running',
+  'waiting-children',
+  'waiting-user',
+])
+
+export const readyExecutionNodeIdsAtom = atom((get) => {
+  const graph = get(executionGraphAtom)
+  return graph.order.filter((id) => {
+    const node = graph.nodes[id]
+    return node?.status === 'ready'
+      && node.dependsOn.every((dependencyId) =>
+        READY_DEPENDENCY_STATUSES.has(graph.nodes[dependencyId]?.status),
+      )
+  })
+})
+
+export const activeExecutionNodeIdsAtom = atom((get) => {
+  const graph = get(executionGraphAtom)
+  return graph.order.filter((id) => ACTIVE_STATUSES.has(graph.nodes[id]?.status))
+})
+
+export function reduceExecutionGraph(
+  graph: ExecutionGraphSnapshot,
+  event: ExecutionEvent,
+): ExecutionGraphSnapshot {
+  if (event.type === 'graph.hydrated') {
+    let changed = false
+    const nodes = { ...graph.nodes }
+    for (const id of graph.order) {
+      const node = nodes[id]
+      if (!node || !ACTIVE_STATUSES.has(node.status)) continue
+      changed = true
+      nodes[id] = {
+        ...node,
+        status: 'interrupted',
+        updatedAt: event.at,
+        finishedAt: undefined,
+        error: undefined,
+      }
+    }
+    return changed ? { ...graph, nodes } : graph
+  }
+
+  if (event.type === 'node.added') {
+    if (graph.nodes[event.node.id]) return graph
+    return {
+      ...graph,
+      nodes: { ...graph.nodes, [event.node.id]: event.node },
+      order: [...graph.order, event.node.id],
+    }
+  }
+
+  const current = graph.nodes[event.nodeId]
+  if (!current) return graph
+  if (event.type === 'node.trace') {
+    return {
+      ...graph,
+      nodes: {
+        ...graph.nodes,
+        [current.id]: {
+          ...current,
+          updatedAt: Date.parse(event.record.timestamp) || current.updatedAt,
+          trace: [...(current.trace ?? []), event.record],
+        },
+      },
+    }
+  }
+  if (current.attempt !== event.attempt || current.generation !== event.generation) {
+    return graph
+  }
+
+  const terminal = ['succeeded', 'failed', 'cancelled'].includes(event.status)
+  const startedAt = event.status === 'running'
+    ? current.startedAt ?? event.at
+    : current.startedAt
+  return {
+    ...graph,
+    nodes: {
+      ...graph.nodes,
+      [current.id]: {
+        ...current,
+        status: event.status,
+        updatedAt: event.at,
+        startedAt,
+        finishedAt: terminal ? event.at : undefined,
+        result: event.result,
+        error: event.error,
+      },
+    },
+  }
+}
+
+export function createExecutionNode(input: {
+  id: string
+  graphId: string
+  sessionId: string
+  runId: string
+  type: ExecutionNode['type']
+  label: string
+  parentId?: string
+  dependsOn?: string[]
+  effectKeys?: string[]
+  now?: number
+}): ExecutionNode {
+  const now = input.now ?? Date.now()
+  return {
+    id: input.id,
+    graphId: input.graphId,
+    sessionId: input.sessionId,
+    runId: input.runId,
+    parentId: input.parentId,
+    dependsOn: input.dependsOn ?? [],
+    type: input.type,
+    status: 'queued',
+    label: input.label,
+    attempt: 1,
+    generation: 1,
+    effectKeys: input.effectKeys ?? [],
+    createdAt: now,
+    updatedAt: now,
+  }
+}

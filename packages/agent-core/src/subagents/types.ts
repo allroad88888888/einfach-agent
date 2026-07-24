@@ -20,6 +20,9 @@ export type SubagentArchiveEventType =
   | 'child_finished'
   | 'tree_snapshot_written'
   | 'delegate_finished'
+  // 每次 child / evaluator / distill 模型请求的 provider usage 与缓存 profile。
+  // usage 没有缓存字段时仍保留事件，并明确标为 unavailable，不能伪装成 0% 命中。
+  | 'child_model_usage'
   // 子 agent 上下文压缩的可观测性（对齐主循环 modelRun 的 llm.context_compacted /
   // llm.context_over_budget）。前者：本轮请求体里的历史工具正文被摘要过；
   // 后者：四级降级跑完仍超预算（请求照发、大概率换来硬 400）—— 它与前者【相互独立】，
@@ -77,6 +80,8 @@ export interface SubagentNodeRecord {
   sessionId: string
   path: SubagentPath
   parentPath?: SubagentPath
+  /** The concrete delegate_agent tool call which created this node. */
+  delegationCallId?: string
   status: SubagentNodeStatus
   objective: string
   mode?: string
@@ -127,6 +132,8 @@ export interface ChildAgentResult {
   resultFile?: string
   skillFiles: string[]
   skillIds: string[]
+  /** Workspace mutations performed by this child, in execution order. */
+  changeSets?: Array<{ id: string; reversible: boolean }>
   error?: string
 }
 
@@ -152,6 +159,9 @@ export interface DelegateAgentBatchResult {
     totalNodes: { used: number; limit: number }
     modelCalls: { used: number; limit: number }
   }
+  /** De-duplicated workspace mutations from all descendants, in execution order. */
+  changeSets?: Array<{ id: string; reversible: boolean }>
+  reversible?: boolean
   children: ChildAgentResult[]
 }
 
@@ -188,6 +198,9 @@ export interface DelegateAgentCallContext {
 
 export interface DelegateAgentRuntime {
   delegateAgents(input: DelegateAgentInput, context: DelegateAgentCallContext): Promise<DelegateAgentBatchResult>
+  retain?(): void
+  release?(): void
+  cancel?(): void
   dispose?(): void | Promise<void>
 }
 

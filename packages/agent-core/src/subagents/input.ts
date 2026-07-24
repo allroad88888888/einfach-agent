@@ -13,7 +13,9 @@ const DEFAULT_MAX_CONCURRENT = 4
 const HARD_MAX_CONCURRENT = 8
 const DEFAULT_MAX_DEPTH = 2
 const HARD_MAX_DEPTH = 6
-const HARD_MAX_TURNS = 8
+// maxTurns 包含最后一次“只输出结论”的收尾调用。复杂评估需要多轮只读检索，
+// 8 轮会让 schema 探索/大仓库核验很容易撞顶；仍保留硬上限，避免无界循环。
+const HARD_MAX_TURNS = 16
 const DEFAULT_MAX_TOTAL_NODES = 64
 const HARD_MAX_TOTAL_NODES = 256
 const DEFAULT_MAX_MODEL_CALLS = 128

@@ -86,6 +86,40 @@ export interface ContextUsageStats {
   promptTokens?: number
   completionTokens?: number
   totalTokens?: number
+  cacheHitTokens?: number
+  cacheMissTokens?: number
+  cacheMissSource?: 'provider' | 'derived' | 'unknown'
+  cacheWriteTokens?: number
+  cacheHitRate?: number
+}
+
+export interface ContextCacheStats {
+  lane: 'main' | 'subagent' | 'evaluator' | 'distill:core' | 'distill:child_brief'
+  profileId: string
+  epoch: number
+  epochReason:
+    | 'initial'
+    | 'profile_changed'
+    | 'dynamic_control_changed'
+    | 'history_inserted_before_dynamic_tail'
+    | 'compaction_projection_changed'
+    | 'request_projection_changed'
+  protocolVersion: string
+  toolSetFingerprint: string
+  laneScopeFingerprint: string
+  systemFingerprint: string
+  requestProjectionFingerprint: string
+  compactionBoundary: 'full-history' | 'compacted-history'
+  metricsStatus: 'pending' | 'available' | 'unavailable' | 'request_failed' | 'cancelled'
+}
+
+export interface ContextCacheTotals {
+  profileId: string
+  epoch: number
+  measuredRequests: number
+  hitTokens: number
+  missTokens: number
+  hitRate?: number
 }
 
 export interface ContextStatsSnapshot {
@@ -111,6 +145,8 @@ export interface ContextStatsSnapshot {
   }
   toolNames: string[]
   usage?: ContextUsageStats
+  cache?: ContextCacheStats
+  cacheTotals?: ContextCacheTotals
   finishReason?: string | null
   responseModel?: string
 }
@@ -134,6 +170,14 @@ export const toolActivityAtom = atom<ToolActivity[]>([])
 // 简介：当前会话的 runtime transcript 调试事件。
 // 详情：值随 store 隔离；只服务 UI 展示，不进 checkpoint、不参与 model messages。
 export const runtimeTranscriptEventsAtom = atom<RuntimeTranscriptEvent[]>([])
+
+// 简介：当前会话已展开的「思考过程」分组（group key → 是否展开）。
+// 详情：只保存用户的展开选择；虚拟列表的高度、可视范围等 DOM 测量状态不进入 atom。
+export const expandedTranscriptGroupsAtom = atom<Record<string, boolean>>({})
+
+// 简介：当前会话对计划阶段详情的显式展开选择（stage id → 是否展开）。
+// 详情：未出现的 id 仍由阶段状态决定默认值，例如执行中阶段默认展开。
+export const expandedPlanStagesAtom = atom<Record<string, boolean>>({})
 
 // 简介：当前会话最近一次 LLM 调用的上下文统计。
 // 详情：只记录 system/messages/tools 的轻量统计和 provider usage；不进 messages、不持久化、不回发给 model。

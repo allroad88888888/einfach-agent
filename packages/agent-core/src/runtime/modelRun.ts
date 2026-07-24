@@ -1,13 +1,13 @@
 // 多轮 lazy-tool 对话 run —— 把用户输入送模型，按 model 决策循环调工具，直到最终答案。
 // ---------------------------------------------------------------------------
-// 契约（FEATURES-PLAN §1 T-6/T-7）：单轮 → 多轮 tool 循环 + ask_user 暂停/恢复。
+// 主循环契约：多轮 lazy-tool 循环 + ask_user 暂停/恢复。
 //   · TK1 itemsAtom 直存：assistant(tool_calls) 与 tool result 直接 appendItem 进 itemsAtom，
 //     每轮重新 `items.map(it=>it.item)` 重发；不用 continuation blob。
 //   · TK3 manifest-only + lazy schema：model 只看 request_tool_schema + 本轮已加载 visible tools；
 //     完整 schema 经 ensureToolLoaded 懒加载，禁止预加载。
-//   · TK4 skill 走 tool：system 只放已加载 skill 名（buildSystemItem），内容不进 prompt。
+//   · TK4 skill 走 tool：system 只放已匹配 skill 名（buildSystemItem），内容不进 prompt。
 //   · TK6 tool 错误不打断：runRuntimeTool 内部把失败封 {error} JSON 回给 model，loop 继续。
-//   · TK7 ask_user「已回答」守卫：resume 后 model 再要求提问不再暂停（回 user_answers_already_provided）。
+//   · TK7 ask_user 可多次中断：每个新 tool call 都可暂停，答案按当前 callId 精确回填。
 //   · TK8 每步守卫：每次 model 调用后写回前 isCurrentRun + ghost guard；MAX_AGENT_TURNS 上限。
 //   · TK9 一轮 = 一个 checkpoint：中间 tool items 属同一轮，最终 assistant 后 commit 一次。
 //   · U7 signal 全穿透 + 失败降级：AbortError→'stopped'；其它→'error'；绝不抛崩。
@@ -21,31 +21,35 @@
 //   调用点显式传，堵住「漏穿一处、默认路径无症状、只有双实例才串台」的隐患。默认 core=defaultCore＝穿线
 //   前的模块全局单例（rootStore.ts / sessionStore.ts / tools/registry.ts 都已是 defaultCore 视图），故不传
 //   core 的调用点（commands.ts 现有全部调用 + 所有现有测试）行为逐字不变。
-//   ★ 本期未穿的隔离缺口（默认路径无影响，双实例时仍落 defaultCore，留待后续补）★：
-//     · ensureToolLoaded（toolLoading.ts，非本文件）内部仍读 defaultCore.tools + 未穿 core 的 patchRun；
-//     · isToolAlwaysAllowed（transientAtoms 纯读，writer 3 未给它加 core）仍读 defaultCore 视图；
-//     · createDelegateAgentRuntime + 子 agent 委派路径（第二循环 / Phase 2.5 再穿）；
-//     · persistSessions（persistenceBridge，非本文件）内部自取 defaultCore.rootStore。
+//   ★ 剩余隔离缺口（默认路径无影响，双实例时仍可能落 defaultCore）★：
+//     · createDelegateAgentRuntime + 子 agent 委派路径；
+//     · Planning getter/writer；
+//     · persistSessions（persistenceBridge 内部自取 defaultCore.rootStore）。
 
 import { isTauri } from '@tauri-apps/api/core'
 import { sessionsAtom } from '../state/rootStore'
-import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
+import { itemsAtom, runAtom, checkpointsAtom, planAtom } from '../state/sessionAtoms'
+import { executionGraphAtom } from '../execution/graph'
 import { appendItem, setRun, patchRun, updateItem } from '../state/sessionWriters'
-import { commitCheckpoint } from '../state/checkpointWriters'
+import { commitCheckpoint, updateCheckpoint } from '../state/checkpointWriters'
 import {
   removeToolActivity,
   isToolAlwaysAllowed,
   addRuntimeTranscriptEvent,
+  contextStatsAtom,
   setContextStats,
+  type ContextCacheTotals,
   type ContextStatsSnapshot,
   type ContextUsageStats,
 } from '../state/transientAtoms'
-import { isDangerousTool } from './dangerousTools'
-import type { PendingToolConfirmation } from '../state/core.type'
+import { classifyToolRisk } from './dangerousTools'
+import type { ConversationItem, PendingToolConfirmation, PendingUserDecisionOrigin } from '../state/core.type'
+import { normalizeAskUserQuestionPayload } from './askUserQuestion'
 import { persistCheckpoint, persistSessions } from './persistenceBridge'
 import { streamDeepSeek, type DeepSeekChatRequest } from '@web-agent/ai'
 import { streamGlm, type GlmChatRequest } from '@web-agent/ai'
 import { isAbortError } from '@web-agent/ai'
+import { normalizeCacheUsage } from '@web-agent/ai'
 import type {
   AssistantItem,
   ModelChatResponse,
@@ -55,13 +59,21 @@ import type {
   ModelStreamDelta,
 } from '@web-agent/ai'
 import type { LoadedTool, ToolResult } from '../tools/types'
-import { ensureToolLoaded } from './toolLoading'
+import { ensureToolLoaded, toolSchemaNotLoadedResult } from './toolLoading'
+import { toolSchemaLoadedResult } from '../tools/schemaResult'
 import { buildToolContext } from './toolContext'
 // 【实例化 · 第 2 期穿线】core（CoreInstance，默认 defaultCore）决定本 run 用谁的 store/registry/abort。
 import { defaultCore, type CoreInstance } from './core/coreInstance'
 // parseToolCallArgs 住在 modelTurn（纯 helper 层）—— 主循环与 subagents 的第二条工具循环
 // 必须共用同一份「坏 JSON 不执行工具」的判据，各抄一份迟早会漂移。
-import { buildSystemItem, buildTurnTools, narrowToolCalls, parseToolCallArgs } from './modelTurn'
+import {
+  buildSystemItem,
+  buildSkillContextItem,
+  buildTurnTools,
+  loadedToolNamesFromHistory,
+  narrowToolCalls,
+  parseToolCallArgs,
+} from './modelTurn'
 // estimateTokensFromText 仍留着（buildContextStatsSnapshot 的 role 统计在用，与压缩无关）；
 // 压缩本体（compactContext / DEFAULT_KEEP_RECENT_TURNS + 窗口预算常量）已内化进 compactionPlugin。
 import { estimateTokensFromText } from './contextCompaction'
@@ -92,6 +104,7 @@ import {
 import { formatSubagentTranscript } from '../subagents/distill'
 import { ROOT_AGENT_PATH } from '../subagents/path'
 import { createDelegateAgentRuntime } from '../subagents/runtime'
+import { getExecutionRuntime } from '../execution/runtime'
 import { newId } from './newId'
 import {
   addEvent,
@@ -104,9 +117,19 @@ import {
 } from '../observability/trace'
 import type { TraceAttributes, TraceSpan, TraceStatus } from '../observability/types'
 import { truncatePayload } from '../observability/redact'
+import {
+  createContextCacheTracker,
+  type ContextCacheProfile,
+} from './contextCache'
 
-// 循环上限保护（TK8）：防止 model 无限请求工具 / 死循环，超限降级为 error。
-const MAX_AGENT_TURNS = 12
+// 主 Agent 模型轮次上限（不包含 delegate_agent 内部的子 Agent 轮次）。
+// 普通对话保持较紧的熔断；执行结构化计划时按阶段数放大预算。轮次只是最后一道保险，
+// 重复工具死循环另有 loopGuardPlugin 在连续 3 次时提前拦截。
+const DEFAULT_MAX_AGENT_TURNS = 32
+const MIN_PLAN_AGENT_TURNS = 64
+const PLAN_AGENT_TURNS_PER_STAGE = 24
+const MAX_PLAN_AGENT_TURNS = 256
+const EXECUTING_PLAN_STATUSES = new Set(['approved', 'active', 'evaluating'])
 // LOOP_DETECTION_THRESHOLD / LOOP_DETECTED_ERROR 已随循环检测搬进 loopGuardPlugin（Core 抽离 Stage 2a）。
 const STREAM_UPDATE_INTERVAL_MS = 50
 const SHELL_TOOLS_REQUIRING_COMMAND = new Set(['shell_macos', 'shell_linux', 'shell_powershell'])
@@ -155,6 +178,13 @@ function usageTraceAttrs(usage: ModelChatResponse['usage']): TraceAttributes {
   if (typeof usage?.prompt_tokens === 'number') attrs.prompt_tokens = usage.prompt_tokens
   if (typeof usage?.completion_tokens === 'number') attrs.completion_tokens = usage.completion_tokens
   if (typeof usage?.total_tokens === 'number') attrs.total_tokens = usage.total_tokens
+  const cache = normalizeCacheUsage(usage)
+  if (typeof cache?.hitTokens === 'number') attrs.cache_hit_tk = cache.hitTokens
+  if (typeof cache?.missTokens === 'number') attrs.cache_miss_tk = cache.missTokens
+  if (typeof cache?.writeTokens === 'number') attrs.cache_write_tk = cache.writeTokens
+  if (cache?.missSource) attrs.cache_miss_source = cache.missSource
+  const rate = cacheHitRate(cache?.hitTokens, cache?.missTokens)
+  if (typeof rate === 'number') attrs.cache_hit_rate = rate
   return attrs
 }
 
@@ -222,7 +252,9 @@ function transcriptDetail(value: unknown): string {
 }
 
 function systemInjectionSummary(content: string): string {
-  const skillLine = content.split('\n').find((line) => line.startsWith('已加载 skills：'))
+  const skillLine = content
+    .split('\n')
+    .find((line) => line.startsWith('已匹配、但正文尚未读取的 skills：'))
   return skillLine ?? compactTranscriptText(content)
 }
 
@@ -244,7 +276,46 @@ function usageStats(usage: ModelChatResponse['usage']): ContextUsageStats | unde
   if (typeof usage?.prompt_tokens === 'number') stats.promptTokens = usage.prompt_tokens
   if (typeof usage?.completion_tokens === 'number') stats.completionTokens = usage.completion_tokens
   if (typeof usage?.total_tokens === 'number') stats.totalTokens = usage.total_tokens
+  const cache = normalizeCacheUsage(usage)
+  if (typeof cache?.hitTokens === 'number') stats.cacheHitTokens = cache.hitTokens
+  if (typeof cache?.missTokens === 'number') stats.cacheMissTokens = cache.missTokens
+  if (typeof cache?.writeTokens === 'number') stats.cacheWriteTokens = cache.writeTokens
+  if (cache?.missSource) stats.cacheMissSource = cache.missSource
+  const rate = cacheHitRate(cache?.hitTokens, cache?.missTokens)
+  if (typeof rate === 'number') stats.cacheHitRate = rate
   return Object.keys(stats).length > 0 ? stats : undefined
+}
+
+function cacheHitRate(hitTokens?: number, missTokens?: number): number | undefined {
+  if (typeof hitTokens !== 'number' || typeof missTokens !== 'number') return undefined
+  const total = hitTokens + missTokens
+  return total > 0 ? hitTokens / total : undefined
+}
+
+function accumulateCacheTotals(
+  previous: ContextCacheTotals | undefined,
+  usage: ModelChatResponse['usage'],
+  profile: ContextCacheProfile,
+): ContextCacheTotals | undefined {
+  const scopedPrevious =
+    previous?.profileId === profile.profileId && previous.epoch === profile.epoch
+      ? previous
+      : undefined
+  const cache = normalizeCacheUsage(usage)
+  if (typeof cache?.hitTokens !== 'number' || typeof cache.missTokens !== 'number') {
+    return scopedPrevious
+  }
+
+  const hitTokens = (scopedPrevious?.hitTokens ?? 0) + cache.hitTokens
+  const missTokens = (scopedPrevious?.missTokens ?? 0) + cache.missTokens
+  return {
+    profileId: profile.profileId,
+    epoch: profile.epoch,
+    measuredRequests: (scopedPrevious?.measuredRequests ?? 0) + 1,
+    hitTokens,
+    missTokens,
+    hitRate: cacheHitRate(hitTokens, missTokens),
+  }
 }
 
 function buildContextStatsSnapshot(args: {
@@ -255,6 +326,8 @@ function buildContextStatsSnapshot(args: {
   model: string
   messages: ModelItem[]
   tools: ModelFunctionTool[]
+  cacheProfile: ContextCacheProfile
+  cacheTotals?: ContextCacheTotals
 }): ContextStatsSnapshot {
   const roles: ContextStatsSnapshot['roles'] = {
     system: emptyRoleStats(),
@@ -297,6 +370,11 @@ function buildContextStatsSnapshot(args: {
       estimateTokensFromText(toolsText),
     roles,
     toolNames: toolNames(args.tools),
+    cache: {
+      ...args.cacheProfile,
+      metricsStatus: 'pending',
+    },
+    cacheTotals: args.cacheTotals,
   }
 }
 
@@ -351,20 +429,246 @@ function isCurrentRun(id: string, runId: string, core: CoreInstance): boolean {
   return core.getSessionStore(id).store.getter(runAtom)?.runId === runId
 }
 
+// runId 只回答“是不是同一次运行”，不能回答“这次运行是否还允许继续”。
+// 用户停止时会保留 runId、仅把 status 改为 stopped；异步请求若无视 AbortSignal 后返回，
+// 只检查 isCurrentRun 会把这个已停止的 run 重新带进下一轮。
+function isRunningRun(id: string, runId: string, core: CoreInstance): boolean {
+  if (!isCurrentRun(id, runId, core)) return false
+  return core.getSessionStore(id).store.getter(runAtom)?.status === 'running'
+}
+
+function planEvaluationExecutionId(toolName: string, result: ToolResult): string | undefined {
+  if (toolName !== 'submit_stage_result' || !('ok' in result) || !result.ok) return undefined
+  const data = result.data
+  if (!data || typeof data !== 'object' || !('evaluation' in data)) return undefined
+  const evaluation = data.evaluation
+  if (!evaluation || typeof evaluation !== 'object' || !('executionId' in evaluation)) return undefined
+  return typeof evaluation.executionId === 'string' && evaluation.executionId
+    ? evaluation.executionId
+    : undefined
+}
+
+function continueAfterPlanEvaluation(input: {
+  sessionId: string
+  runId: string
+  executionId: string
+  apiKey: string
+  fetchImpl?: typeof fetch
+  core: CoreInstance
+}): void {
+  const { sessionId, runId, executionId, apiKey, fetchImpl, core } = input
+  const store = core.getSessionStore(sessionId).store
+  let settled = false
+  let unsubscribe = (): void => {}
+
+  const observe = (): void => {
+    if (settled) return
+    const node = store.getter(executionGraphAtom).nodes[executionId]
+    if (!node || !['succeeded', 'failed', 'cancelled', 'interrupted'].includes(node.status)) return
+    settled = true
+    unsubscribe()
+
+    // execution atom 的写入发生在后台 promise 收尾中。延后一拍再起新 run，确保当前
+    // runToolLoop 已 return、commands 的 finally 已释放旧 AbortController。
+    setTimeout(() => {
+      if (!isCurrentRun(sessionId, runId, core)) return
+      const run = store.getter(runAtom)
+      if (run?.status !== 'awaiting_tool') return
+
+      if (node.status !== 'succeeded') {
+        patchRun(sessionId, {
+          status: node.status === 'cancelled' || node.status === 'interrupted' ? 'stopped' : 'error',
+          pendingExecutionId: undefined,
+          error: node.error || '自动阶段评估未完成',
+        }, core)
+        return
+      }
+
+      if (!store.getter(planAtom)) {
+        patchRun(sessionId, { status: 'error', error: '阶段评估完成，但计划状态已丢失' }, core)
+        return
+      }
+
+      const signal = core.abort.beginRun(sessionId)
+      void resumePlanSession(sessionId, {
+        signal,
+        apiKey,
+        fetchImpl,
+        core,
+      }).finally(() => core.abort.endRun(sessionId, signal))
+    }, 0)
+  }
+
+  unsubscribe = store.sub(executionGraphAtom, observe)
+  // 防止节点在订阅建立前已经完成。
+  observe()
+  if (settled) unsubscribe()
+}
+
+function currentPlanStageId(id: string, core: CoreInstance): string | undefined {
+  const plan = core.getSessionStore(id).store.getter(planAtom)
+  return plan?.stages.find((stage) => stage.status === 'in_progress' || stage.status === 'evaluating')?.id
+}
+
+function pendingDecisionOrigin(
+  id: string,
+  payload: unknown,
+  planStageId: string | undefined,
+  core: CoreInstance,
+): PendingUserDecisionOrigin {
+  const plan = core.getSessionStore(id).store.getter(planAtom)
+  if (plan) {
+    const phase = plan.status === 'draft' ? 'drafting'
+      : plan.status === 'awaiting_approval' ? 'approval'
+        : plan.status === 'evaluating' ? 'evaluating'
+          : plan.status === 'awaiting_user_acceptance' ? 'acceptance'
+            : 'executing'
+    return {
+      surface: 'plan',
+      phase,
+      planId: plan.id,
+      planRevision: plan.revision,
+      stageId: planStageId,
+    }
+  }
+
+  const declaredContext = normalizeAskUserQuestionPayload(payload).context
+  return declaredContext?.surface === 'plan'
+    ? { surface: 'plan', phase: declaredContext.phase ?? 'drafting' }
+    : { surface: 'conversation' }
+}
+
+// 计划是独立于聊天 items 持久化的状态；刷新或从旧 checkpoint 恢复后，历史消息里不一定还留着
+// create_plan / execute_plan 的结果。每轮把推进协议所需的最小权威快照临时投影给模型，避免它只知道
+// “当前阶段进行中”，却拿不到 submit_stage_result 必填的 planId / revision / stageId。
+// 快照只进本轮请求，不写回 itemsAtom；阶段产出与验收变化会在下一轮自动取到最新 revision。
+function currentPlanContext(id: string, core: CoreInstance): string | undefined {
+  const plan = core.getSessionStore(id).store.getter(planAtom)
+  if (!plan || !EXECUTING_PLAN_STATUSES.has(plan.status)) return undefined
+
+  const currentStage = plan.stages.find(
+    (stage) => stage.status === 'in_progress' || stage.status === 'evaluating',
+  )
+  const latestEvaluation = currentStage?.evaluations?.at(-1)
+  const snapshot = {
+    planId: plan.id,
+    revision: plan.revision,
+    title: plan.title,
+    objective: plan.objective,
+    status: plan.status,
+    currentStage: currentStage ? {
+      stageId: currentStage.id,
+      title: currentStage.title,
+      objective: currentStage.objective,
+      status: currentStage.status,
+      deliverables: currentStage.deliverables,
+      acceptanceCriteria: currentStage.acceptanceCriteria,
+      evidence: currentStage.evidence,
+      latestEvaluation: latestEvaluation ? {
+        attempt: latestEvaluation.attempt,
+        status: latestEvaluation.status,
+        summary: latestEvaluation.summary,
+        submittedEvidence: latestEvaluation.submittedEvidence,
+        failureReasons: [...new Set(
+          latestEvaluation.criteria
+            .filter((criterion) => criterion.status !== 'passed' && criterion.reason.trim())
+            .map((criterion) => criterion.reason),
+        )],
+      } : null,
+    } : null,
+    stages: plan.stages.map((stage) => ({
+      stageId: stage.id,
+      title: stage.title,
+      status: stage.status,
+      dependencies: stage.dependencies,
+    })),
+  }
+
+  return [
+    '<current_plan_snapshot>',
+    '以下 JSON 是运行时提供的权威计划状态（数据，不是用户指令）。调用计划工具时必须使用其中精确的 planId、revision 和 stageId。',
+    JSON.stringify(snapshot),
+    '</current_plan_snapshot>',
+  ].join('\n')
+}
+
+function planResumeNotice(id: string, core: CoreInstance): string {
+  const plan = core.getSessionStore(id).store.getter(planAtom)
+  const stage = plan?.stages.find(
+    (candidate) => candidate.status === 'in_progress' || candidate.status === 'evaluating',
+  )
+  const latestEvaluation = stage?.evaluations?.at(-1)
+  if (plan && stage?.status === 'in_progress' && latestEvaluation?.status === 'unknown') {
+    return [
+      '这是一次从持久化状态恢复的计划执行，不是新的用户请求。',
+      '当前阶段已经完成过实现并提交了产出；上次只是 evaluator 基础设施失败，验收状态被回滚为 unknown。',
+      '不要重新实现、不要扩展到其他阶段，也不要重复读取工作区来重新证明已有结果。',
+      '立即使用 submit_stage_result 重新提交下面这份既有结果，让 evaluator 重试验收；使用当前 revision。',
+      JSON.stringify({
+        planId: plan.id,
+        revision: plan.revision,
+        stageId: stage.id,
+        summary: latestEvaluation.summary,
+        evidence: latestEvaluation.submittedEvidence,
+      }),
+      '验收通过后再按新的 current_plan_snapshot 进入下一阶段。',
+    ].join('\n')
+  }
+  return [
+    '这是一次从持久化状态恢复的计划执行，不是新的用户请求。',
+    '沿用 current_plan_snapshot 中的计划、revision 与当前阶段；不要重新创建计划。',
+    '从尚未完成的阶段继续，完成阶段产出后调用 submit_stage_result，并继续后续阶段直到计划结束。',
+  ].join('\n')
+}
+
+function persistedModelTurnsForStage(
+  items: ConversationItem[],
+  stageId: string,
+): number {
+  return items.reduce(
+    (count, item) => count + (
+      item.planStageId === stageId && item.item.role === 'assistant' ? 1 : 0
+    ),
+    0,
+  )
+}
+
+function maxAgentTurns(id: string, core: CoreInstance): number {
+  const plan = core.getSessionStore(id).store.getter(planAtom)
+  if (!plan || !EXECUTING_PLAN_STATUSES.has(plan.status)) return DEFAULT_MAX_AGENT_TURNS
+  return Math.min(
+    MAX_PLAN_AGENT_TURNS,
+    Math.max(MIN_PLAN_AGENT_TURNS, DEFAULT_MAX_AGENT_TURNS + plan.stages.length * PLAN_AGENT_TURNS_PER_STAGE),
+  )
+}
+
 // 给某个 tool_call 回填一条 ToolItem（tool result）。循环里逐个工具、以及确认恢复时执行完危险工具都用它。
-function appendToolResult(id: string, toolCallId: string, content: string, core: CoreInstance): void {
+function appendToolResult(
+  id: string,
+  toolCallId: string,
+  content: string,
+  core: CoreInstance,
+  planStageId?: string,
+): void {
   appendItem(id, {
     id: newId(),
     createdAt: Date.now(),
+    planStageId,
     item: { role: 'tool', tool_call_id: toolCallId, content },
   }, core)
 }
 
 // 把一个 ToolResult 映射成回给 model 的 tool-result JSON 并回填（pause 不走这里，另行处理）。
-function appendMappedToolResult(id: string, toolCallId: string, result: ToolResult, core: CoreInstance): void {
+function appendMappedToolResult(
+  id: string,
+  toolCallId: string,
+  result: ToolResult,
+  core: CoreInstance,
+  planStageId?: string,
+): void {
   if ('pause' in result) {
     // 防御：正常路径不会到这（pause 另行拦截）。万一发生，回个 error 别 orphan。
-    appendToolResult(id, toolCallId, JSON.stringify({ error: 'unexpected pause' }), core)
+    appendToolResult(id, toolCallId, JSON.stringify({ error: 'unexpected pause' }), core, planStageId)
   } else if (result.ok) {
     const data = result.data ?? { ok: true }
     // 有 warning（参数被 schema 钳位过）时包一层带给 model；无 warning 时形状与既有完全一致。
@@ -373,9 +677,10 @@ function appendMappedToolResult(id: string, toolCallId: string, result: ToolResu
       toolCallId,
       JSON.stringify(result.warnings?.length ? { data, warnings: result.warnings } : data),
       core,
+      planStageId,
     )
   } else {
-    appendToolResult(id, toolCallId, JSON.stringify({ error: result.error }), core)
+    appendToolResult(id, toolCallId, JSON.stringify({ error: result.error }), core, planStageId)
   }
 }
 
@@ -394,14 +699,20 @@ function assistantItemFromMessage(
   return item
 }
 
-function createAssistantStreamWriter(id: string, runId: string, signal: AbortSignal, core: CoreInstance) {
+function createAssistantStreamWriter(
+  id: string,
+  runId: string,
+  signal: AbortSignal,
+  core: CoreInstance,
+  planStageId?: string,
+) {
   let assistantItemId: string | undefined
   let content = ''
   let reasoningContent = ''
   let lastFlushAt = 0
 
   function canWrite(ignoreAbort = false): boolean {
-    return (ignoreAbort || !signal.aborted) && isCurrentRun(id, runId, core)
+    return (ignoreAbort || !signal.aborted) && isRunningRun(id, runId, core)
   }
 
   function currentMessage(): ModelResponseMessage {
@@ -413,13 +724,15 @@ function createAssistantStreamWriter(id: string, runId: string, signal: AbortSig
   }
 
   function flush(force = false): void {
-    if (!content.trim() || !canWrite()) return
+    // reasoning 往往先于正文持续数秒返回。只等 content 会让界面在整段思考期间完全空白，
+    // 也会导致纯 reasoning + tool_calls 的轮次直到收尾才出现。两者任一有内容就建立/更新条目。
+    if ((!content.trim() && !reasoningContent.trim()) || !canWrite()) return
     const now = Date.now()
     const item = assistantItemFromMessage(currentMessage(), content)
 
     if (!assistantItemId) {
       assistantItemId = newId()
-      appendItem(id, { id: assistantItemId, createdAt: now, pending: true, item }, core)
+      appendItem(id, { id: assistantItemId, createdAt: now, pending: true, planStageId, item }, core)
       lastFlushAt = now
       return
     }
@@ -491,23 +804,6 @@ function latestUserInput(id: string, core: CoreInstance): string {
   return first?.role === 'user' ? first.content : ''
 }
 
-// TK7「已回答」守卫判定：本轮 items 里是否已有「ask_user 的 ToolItem 回填」——
-// 即某条 assistant.tool_calls 里 name==='ask_user_question' 的 id，已被某条 role:'tool' 回填。
-// 命中说明用户答案已提供过（resume 已续跑），此时 model 再要求提问不应再暂停（防死循环）。
-function askAlreadyAnswered(id: string, core: CoreInstance): boolean {
-  const turn = currentTurnItems(id, core)
-  const askIds = new Set<string>()
-  for (const { item } of turn) {
-    if (item.role === 'assistant' && item.tool_calls) {
-      for (const toolCall of item.tool_calls) {
-        if (toolCall.function.name === 'ask_user_question') askIds.add(toolCall.id)
-      }
-    }
-  }
-  if (askIds.size === 0) return false
-  return turn.some((it) => it.item.role === 'tool' && askIds.has(it.item.tool_call_id))
-}
-
 // 简介：跑一轮多轮 lazy-tool 对话 run（T-6）。
 // 详情：append user → setRun('running') → 交给 runToolLoop 驱动多轮循环（与 resume 同一入口）。
 export async function runSession(
@@ -544,6 +840,20 @@ export async function runSession(
   await runToolLoop(id, runId, { ...opts, traceSpan: rootSpan, turnId: userItemId })
 }
 
+// 简介：从持久化的计划游标恢复执行，不追加新的 user item。
+// 详情：应用重启后旧的网络请求/runId 无法复活，但 items/checkpoint 与 plan 均已恢复。这里仅建立
+//   一个新的瞬态 runId，并让同一模型循环沿最后一个用户轮次继续；恢复指令只投影进请求上下文，
+//   不进入聊天记录，也不会触发自动标题。
+export async function resumePlanSession(
+  id: string,
+  opts: { signal: AbortSignal; apiKey: string; fetchImpl?: typeof fetch; core?: CoreInstance },
+): Promise<void> {
+  const core = opts.core ?? defaultCore
+  const runId = newId()
+  setRun(id, { runId, status: 'running' }, core)
+  await runToolLoop(id, runId, { ...opts, resumePlan: true })
+}
+
 // 简介：多轮 lazy-tool 循环入口（T-6/T-7 复用）—— 不 append user、不 setRun，
 //   假定调用方（runSession 起新 run / resumeWithAnswers 续 pending run）已备好 items 与 run。
 // 详情：组 system（不入库，按本轮起头 user 选 skill）→ 多轮循环：每轮重发
@@ -563,6 +873,7 @@ export async function runToolLoop(
     apiKey: string
     fetchImpl?: typeof fetch
     resumeToolCall?: PendingToolConfirmation
+    resumePlan?: boolean
     traceSpan?: TraceSpan
     turnId?: string
     core?: CoreInstance
@@ -655,9 +966,42 @@ export async function runToolLoop(
   // 本轮驱动输入取自 itemsAtom（不由参数传入）：fresh run = 刚 append 的 user；resume = 原始提问。
   const input = latestUserInput(id, core)
 
+  const WORKING_CHECKPOINT_PREFIX = '[执行中] '
+  const initialCheckpoints = core.getSessionStore(id).store.getter(checkpointsAtom)
+  const resumableWorkingCheckpoint = opts.resumePlan
+    ? initialCheckpoints[initialCheckpoints.length - 1]
+    : undefined
+  let workingTurnIndex = resumableWorkingCheckpoint?.label.startsWith(WORKING_CHECKPOINT_PREFIX)
+    ? resumableWorkingCheckpoint.turnIndex
+    : undefined
+
+  // 把当前 items 写进本轮 checkpoint。第一次追加，此后覆盖同一个 turnIndex，避免长计划的
+  // 每个工具批次都被误算成一轮；同一会话的异步写盘由 persistenceBridge 保序。
+  const persistTurnSnapshot = (label: string): void => {
+    if (!isCurrentRun(id, runId, core)) return
+    if (workingTurnIndex === undefined) {
+      commitCheckpoint(id, label, core)
+      const checkpoints = core.getSessionStore(id).store.getter(checkpointsAtom)
+      workingTurnIndex = checkpoints[checkpoints.length - 1]?.turnIndex
+    } else {
+      updateCheckpoint(id, workingTurnIndex, label, core)
+    }
+    const checkpoint = workingTurnIndex === undefined
+      ? undefined
+      : core.getSessionStore(id).store.getter(checkpointsAtom)[workingTurnIndex]
+    if (checkpoint) {
+      traceEvent('checkpoint.persist', {
+        turnIndex: checkpoint.turnIndex,
+        items_count: checkpoint.items.length,
+        working: label.startsWith(WORKING_CHECKPOINT_PREFIX),
+      })
+      persistCheckpoint(id, checkpoint)
+    }
+  }
+
   // 简介：把本轮收进一个 checkpoint 并落盘（TK9 + D-4 持久化接线，fire-and-forget/DK2）。
-  // 详情：★ 这是整个 run 唯一的持久化入口 ★ —— itemsAtom 本身不持久化，刷新后全靠 checkpoint
-  //   恢复。所以任何「已经往 itemsAtom 写过东西、且不会再续跑」的终止路径都必须调它一次，
+  // 详情：itemsAtom 本身不持久化，刷新后全靠 checkpoint 恢复。所以任何「已经往 itemsAtom
+  //   写过东西、且不会再续跑」的终止路径都必须调它一次，
   //   否则丢的不只是模型那半截回复，连用户自己发出去的那条 user 消息都会一起蒸发。
   //   触顶截断/循环/超轮数这几种异常收尾的文本通常仍然有用，落盘后 run 状态另置 error 即可。
   //   刻意【不】给 stopped（用户主动停）与 waiting_* （暂停中、续跑时才收尾）路径调用。
@@ -666,19 +1010,34 @@ export async function runToolLoop(
   const commitTurn = (labelTag = ''): void => {
     // stale-run 守卫：被新 run 顶掉后不得再往（已属于新 run 的）会话里塞旧 checkpoint。
     if (!isCurrentRun(id, runId, core)) return
-    commitCheckpoint(id, `${labelTag}${input.slice(0, 20)}`, core)
-    const checkpoints = core.getSessionStore(id).store.getter(checkpointsAtom)
-    const committed = checkpoints[checkpoints.length - 1]
+    persistTurnSnapshot(`${labelTag}${input.slice(0, 20)}`)
+    const committed = workingTurnIndex === undefined
+      ? undefined
+      : core.getSessionStore(id).store.getter(checkpointsAtom)[workingTurnIndex]
     if (committed) {
       traceEvent('checkpoint.commit', { turnIndex: committed.turnIndex, items_count: committed.items.length })
-      persistCheckpoint(id, committed)
     }
     persistSessions()
   }
 
+  const persistWorkingTurn = (): void => {
+    const plan = core.getSessionStore(id).store.getter(planAtom)
+    if (!plan || !EXECUTING_PLAN_STATUSES.has(plan.status)) return
+    persistTurnSnapshot(`${WORKING_CHECKPOINT_PREFIX}${input.slice(0, 20)}`)
+  }
+
   // system 只用于请求、不入库（TK4）：按输入选 skill，system 只列已加载 skill 名。
-  const system = buildSystemItem(input)
+  const system = buildSystemItem()
+  const skillContext = buildSkillContextItem(input)
   addTranscriptEvent(id, 'system_injection', '注入 system', systemInjectionSummary(system.content), system.content, core)
+  addTranscriptEvent(
+    id,
+    'system_injection',
+    '注入 skill context',
+    systemInjectionSummary(skillContext.content),
+    skillContext.content,
+    core,
+  )
   traceEvent('llm.system_injected', { system_chars: system.content.length })
   // thinking：状态层 boolean → 线协议 { type:'enabled'|'disabled' }。区分三态（codex P2）：
   //   undefined → 不传（用服务端默认）；true → enabled；false → disabled（显式关思考，
@@ -688,6 +1047,7 @@ export async function runToolLoop(
       ? undefined
       : ({ type: meta.settings.thinking ? 'enabled' : 'disabled' } as const)
   const callOptions = { apiKey: opts.apiKey, signal: opts.signal, fetchImpl: opts.fetchImpl }
+  const contextCacheTracker = createContextCacheTracker()
   const delegateRuntime = createDelegateAgentRuntime({
     sessionId: id,
     runId,
@@ -695,11 +1055,31 @@ export async function runToolLoop(
     apiKey: opts.apiKey,
     signal: opts.signal,
     fetchImpl: opts.fetchImpl,
+    onNodeChange: (node) => getExecutionRuntime(core).syncAgentNode(node),
+    onTraceItem: ({ agentPath, timestamp, turn, item }) => {
+      getExecutionRuntime(core).appendAgentTrace({
+        sessionId: id,
+        treeId: runId,
+        agentPath,
+        record: { timestamp, turn, item },
+      })
+    },
   })
-  const rootTranscript = () => formatSubagentTranscript([system, ...currentTurnItems(id, core).map((it) => it.item)])
+  const rootTranscript = () => formatSubagentTranscript([
+    system,
+    ...currentTurnItems(id, core).map((it) => it.item),
+    skillContext,
+  ])
 
-  // 本轮可见工具（懒加载累积）：只有出现在此的 schema 才暴露给下一轮 model（TK3）。
+  // 本轮可见工具（懒加载累积）：恢复运行时从 run 快照与持久历史重建，避免新 runId 让模型
+  // 对同一工具再次 request_tool_schema。schema 始终从当前 registry 获取，不信任历史里的旧 JSON。
   let visible: LoadedTool[] = []
+  const persistedItems = core.getSessionStore(id).store.getter(itemsAtom).map((item) => item.item)
+  const historicalTools = loadedToolNamesFromHistory(persistedItems)
+  const runTools = core.getSessionStore(id).store.getter(runAtom)?.loadedTools ?? []
+  for (const toolName of [...new Set([...runTools, ...historicalTools])]) {
+    visible = ensureToolLoaded(id, visible, toolName, core)
+  }
   // 循环检测的跨轮累计状态（原 consecutiveToolOnlyTurns / repeatedToolSignatures）已随 loopGuardPlugin
   //   搬进插件的 per-run 闭包（每次 assemblePlugins 一份全新计数，天然按 run 隔离，无需在此手持）。
 
@@ -757,6 +1137,10 @@ export async function runToolLoop(
         finishTrace('cancelled', 'agent.stale_run', { reason: 'stale_run' })
         return
       }
+      if (!isRunningRun(id, runId, core)) {
+        finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
+        return
+      }
       if (opts.signal.aborted) {
         if (isCurrentRun(id, runId, core)) {
           patchRun(id, { status: 'stopped' }, core)
@@ -765,13 +1149,82 @@ export async function runToolLoop(
         return
       }
       // 危险工具不该返回 pause；即便返回也按 error 回填（appendMappedToolResult 内已防御）。
-      appendMappedToolResult(id, callId, result, core)
+      appendMappedToolResult(id, callId, result, core, currentPlanStageId(id, core))
     }
 
-    for (let turn = 0; turn < MAX_AGENT_TURNS; turn += 1) {
+    // auto-approval 的计划可能在本次循环中途创建；预算只升不降，避免计划刚完成便骤降回普通上限。
+    let agentTurnLimit = maxAgentTurns(id, core)
+    // 模型偶尔会在计划仍执行中时先给一段阶段性总结。它不是最终答案：下一轮临时注入提醒，
+    // 继续要求模型走 execute_plan / submit_stage_result 协议；提醒只进请求投影，不污染持久历史。
+    let planContinuationNotice = opts.resumePlan ? planResumeNotice(id, core) : undefined
+    const MAX_CONSECUTIVE_PLAN_TEXT_TURNS = 2
+    let consecutivePlanTextTurns = 0
+    // 阶段进度 guard：同一阶段在本次运行内连续占用过多轮次却始终不推进（tool-churn 或 submit 反复被拒），
+    // 在全局 max_turns 兜底之前先硬暂停交还用户。阈值取 MIN_PLAN_AGENT_TURNS：单阶段计划的总预算恰好等于它，
+    // 因此 1 阶段计划仍由 max_turns 兜底、本 guard 不介入；多阶段计划里则防止某个阶段吃光被放大后的总预算。
+    const MAX_TURNS_PER_STAGE = MIN_PLAN_AGENT_TURNS
+    let guardStageId: string | undefined
+    let stageTurnsOnGuard = 0
+    // 记录上一次 submit_stage_result 的失败原因（schema 未加载 / 参数校验 / 执行返回 error），
+    // 供计划续跑提醒引用；提交成功排期 evaluator 后清空。
+    let lastStageSubmitRejection: string | undefined
+    for (let turn = 0; turn < agentTurnLimit; turn += 1) {
+      // AbortSignal 是取消请求的优化手段，run atom 才是是否继续执行的权威状态。
+      // 某些 provider/fetch 实现不会及时响应 abort，因此每轮都必须独立检查 status。
+      if (!isRunningRun(id, runId, core)) {
+        finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
+        return
+      }
+      agentTurnLimit = Math.max(agentTurnLimit, maxAgentTurns(id, core))
+      // 固定本轮归属：工具（尤其 submit_stage_result）可能在执行中推进计划状态，
+      // 但本轮的调用与结果仍应归到发起它的步骤，不能被误记到刚激活的下一步。
+      const planStageId = currentPlanStageId(id, core)
+      // 阶段进度 guard：同一阶段在本次运行内连续占用超过 MAX_TURNS_PER_STAGE 轮仍未推进到下一阶段，
+      // 多半是阶段拆得过大或 submit_stage_result 反复被拒；硬暂停交还用户，别让它滚成失控长跑。
+      // 阶段推进后 planStageId 变化会自动重置计数；resume 是新一次调用，计数从零开始（与 stall guard 一致）。
+      if (planStageId) {
+        if (planStageId === guardStageId) stageTurnsOnGuard += 1
+        else {
+          guardStageId = planStageId
+          // items/checkpoint 是持久化真相源。恢复应用或手动“继续”不能给同一个阶段重新发一份
+          // 64 轮预算，否则每次重启都会清零 guard，使同一阶段可以永久循环。
+          stageTurnsOnGuard = persistedModelTurnsForStage(
+            core.getSessionStore(id).store.getter(itemsAtom),
+            planStageId,
+          ) + 1
+        }
+        if (stageTurnsOnGuard > MAX_TURNS_PER_STAGE) {
+          const stalledPlan = core.getSessionStore(id).store.getter(planAtom)
+          const stalledStage = stalledPlan?.stages.find((stage) => stage.id === planStageId)
+          const error = `计划阶段「${stalledStage?.title ?? planStageId}」已连续占用超过 ${MAX_TURNS_PER_STAGE} 轮仍未推进到下一阶段，已暂停自动执行并交还给你。常见原因：该阶段拆得过大，或 submit_stage_result 反复被拒导致阶段无法关闭；请检查后手动继续、拆分该阶段，或修正提交参数。`
+          persistWorkingTurn()
+          if (isRunningRun(id, runId, core)) patchRun(id, { status: 'error', error }, core)
+          finishTrace('error', 'agent.plan_stage_over_budget', {
+            planId: stalledPlan?.id,
+            planStatus: stalledPlan?.status,
+            stageId: planStageId,
+            stage_turns: stageTurnsOnGuard,
+            limit: MAX_TURNS_PER_STAGE,
+            error,
+          })
+          return
+        }
+      }
       // 每轮重新 map itemsAtom（含上一轮 append 的 assistant/tool items），TK1。
       const items = core.getSessionStore(id).store.getter(itemsAtom)
-      const rawMessages = [system, ...items.map((it) => it.item)]
+      const continuationNotice = planContinuationNotice
+      planContinuationNotice = undefined
+      const planContext = currentPlanContext(id, core)
+      const dynamicControls: ModelItem[] = [
+        skillContext,
+        ...(planContext ? [{ role: 'system' as const, content: planContext }] : []),
+        ...(continuationNotice ? [{ role: 'system' as const, content: continuationNotice }] : []),
+      ]
+      const rawMessages: ModelItem[] = [
+        system,
+        ...items.map((it) => it.item),
+        ...dynamicControls,
+      ]
       // TP3：注入运行环境 —— web 下 isTauri() 为假，server 工具不进本轮 manifest。
       // 必须先算 tools：它的 JSON 也吃上下文额度，要从压缩预算里先扣掉。
       // 传本实例的 registry：request_tool_schema 的 enum 才会枚举【本 core】可懒加载的工具，
@@ -790,11 +1243,40 @@ export async function runToolLoop(
       //   发好（attr 逐字对齐旧代码），loop 这里不再重发（重发即双发）。
       const draft: CompactionRequestDraft = { messages: rawMessages, tools, llmTurn: turn + 1 }
       await hooks.transformContext?.(ctx, draft)
+      if (!isRunningRun(id, runId, core)) {
+        finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
+        return
+      }
       // compactionPlugin 是 Stage 1 唯一的 transformContext 注册者，draft.compaction 必被写回；
       // messages 与 compaction 局部变量刻意沿用旧名——下方 contextStats / requestBase / llmSpan
       // attrs 一个字都不用改，把集成 diff 压到最小。
       const messages = draft.messages
       const compaction = draft.compaction!
+      const cacheProfile = contextCacheTracker.observe({
+        lane: 'main',
+        scope: `${id}:${runId}:${ROOT_AGENT_PATH}`,
+        vendor: meta.settings.vendor,
+        model: meta.settings.model,
+        messages,
+        systemContent: system.content,
+        tools,
+        toolChoice: 'auto',
+        thinking: thinking?.type,
+        reasoningEffort: meta.settings.reasoning_effort,
+        compacted: compaction.compacted,
+        dynamicControls,
+        requestMode: 'tool_loop',
+      })
+      const lastCacheTotals = core
+        .getSessionStore(id)
+        .store
+        .getter(contextStatsAtom)
+        ?.cacheTotals
+      const previousCacheTotals =
+        lastCacheTotals?.profileId === cacheProfile.profileId
+        && lastCacheTotals.epoch === cacheProfile.epoch
+          ? lastCacheTotals
+          : undefined
       const contextStats = buildContextStatsSnapshot({
         runId,
         turnId,
@@ -803,6 +1285,8 @@ export async function runToolLoop(
         model: meta.settings.model,
         messages,
         tools,
+        cacheProfile,
+        cacheTotals: previousCacheTotals,
       })
       setContextStats(id, contextStats, core)
       addTranscriptEvent(id, 'tool_manifest', '注入 tools', toolManifestSummary(tools), tools, core)
@@ -818,6 +1302,15 @@ export async function runToolLoop(
         total_chars: contextStats.totalChars,
         messages_chars: contextStats.messagesChars,
         tools_chars: contextStats.toolsChars,
+        cache_profile: cacheProfile.profileId,
+        cache_epoch: cacheProfile.epoch,
+        cache_lane: cacheProfile.lane,
+        cache_epoch_reason: cacheProfile.epochReason,
+        cache_lane_scope_fingerprint: cacheProfile.laneScopeFingerprint,
+        cache_system_fingerprint: cacheProfile.systemFingerprint,
+        cache_request_projection_fingerprint: cacheProfile.requestProjectionFingerprint,
+        tool_set_fingerprint: cacheProfile.toolSetFingerprint,
+        cache_compaction_boundary: cacheProfile.compactionBoundary,
       })
       // 压缩可见性事件（'llm.context_compacted' / 'llm.context_over_budget'）已由 compactionPlugin
       // 在 transformContext 里经 ctx.traceEvent 发出——attr 名 / 值逐字对齐旧内联代码（含
@@ -825,7 +1318,7 @@ export async function runToolLoop(
       // 否则每次压缩都会双发同名事件。两个事件独立、不互斥（压过必发前者；压完仍超再发后者）。
 
       // 按 vendor 收窄 settings 后调 model（流式；最终仍归一成完整 ModelChatResponse）。
-      const streamWriter = createAssistantStreamWriter(id, runId, opts.signal, core)
+      const streamWriter = createAssistantStreamWriter(id, runId, opts.signal, core, planStageId)
       let res: ModelChatResponse
       const requestBase = {
         model: meta.settings.model,
@@ -857,6 +1350,14 @@ export async function runToolLoop(
           tools_chars: contextStats.toolsChars,
           context_compacted: compaction.compacted,
           context_within_budget: compaction.withinBudget,
+          cache_profile: cacheProfile.profileId,
+          cache_epoch: cacheProfile.epoch,
+          cache_lane: cacheProfile.lane,
+          cache_epoch_reason: cacheProfile.epochReason,
+          cache_lane_scope_fingerprint: cacheProfile.laneScopeFingerprint,
+          cache_system_fingerprint: cacheProfile.systemFingerprint,
+          cache_request_projection_fingerprint: cacheProfile.requestProjectionFingerprint,
+          tool_set_fingerprint: cacheProfile.toolSetFingerprint,
           requestPreview: llmTracePreview(requestPreviewBody),
         },
       })
@@ -871,12 +1372,26 @@ export async function runToolLoop(
           res = await streamDeepSeek(requestBody, callOptions, { onDelta: streamWriter.onDelta })
         }
       } catch (err) {
-        endSpan(llmSpan, abortStatus(opts.signal, err), { error: safeErrorMessage(err) }, err)
+        const status = abortStatus(opts.signal, err)
+        endSpan(llmSpan, status, {
+          error: safeErrorMessage(err),
+          cache_metrics_status: status === 'cancelled' ? 'cancelled' : 'request_failed',
+        }, err)
+        if (isCurrentRun(id, runId, core)) {
+          setContextStats(id, {
+            ...contextStats,
+            cache: {
+              ...contextStats.cache!,
+              metricsStatus: status === 'cancelled' ? 'cancelled' : 'request_failed',
+            },
+          }, core)
+        }
         throw err
       }
       const choice = res.choices?.[0]
       const msg = choice?.message
       const toolCalls = narrowToolCalls(msg?.tool_calls)
+      const responseCacheUsage = normalizeCacheUsage(res.usage)
       endSpan(llmSpan, 'ok', {
         finish_reason: choice?.finish_reason ?? null,
         tool_calls_count: toolCalls.length,
@@ -884,6 +1399,7 @@ export async function runToolLoop(
         reasoning_chars: responseChars(msg?.reasoning_content),
         response_id: res.id,
         response_model: res.model,
+        cache_metrics_status: responseCacheUsage ? 'available' : 'unavailable',
         responsePreview: llmTracePreview(res),
         ...usageTraceAttrs(res.usage),
       })
@@ -891,6 +1407,11 @@ export async function runToolLoop(
       // TK8 每步守卫：写回前再查会话还在、且仍是本次 run（异步期间可能被删/被顶掉）。
       if (!isCurrentRun(id, runId, core)) {
         finishTrace('cancelled', 'agent.stale_run', { reason: 'stale_run' })
+        return
+      }
+      if (!isRunningRun(id, runId, core)) {
+        streamWriter.finishPending()
+        finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
         return
       }
       // esc race：fetch 在 abort 前已返回但 signal 已中断 → stopped，不写回。
@@ -904,6 +1425,11 @@ export async function runToolLoop(
       setContextStats(id, {
         ...contextStats,
         usage: usageStats(res.usage),
+        cache: {
+          ...contextStats.cache!,
+          metricsStatus: responseCacheUsage ? 'available' : 'unavailable',
+        },
+        cacheTotals: accumulateCacheTotals(previousCacheTotals, res.usage, cacheProfile),
         finishReason: choice?.finish_reason ?? null,
         responseModel: res.model,
       }, core)
@@ -954,6 +1480,11 @@ export async function runToolLoop(
         hasStreamedItem: streamWriter.hasItem(),
       }
       const decision = (await hooks.onTurnEnd?.(ctx, turnEndEvent)) as LoopGuardTurnEndDecision | undefined
+      if (!isRunningRun(id, runId, core)) {
+        streamWriter.finishPending()
+        finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
+        return
+      }
       if (decision?.stop) {
         if (abnormalFinish) {
           // finish_abnormal 收尾（条目已由 finishReasonPlugin 在 onTurnEnd 内按 Case A/B 落好）：★ 照常
@@ -989,10 +1520,12 @@ export async function runToolLoop(
       // 进 waiting_user，同条消息里其余 tool_call 就缺 tool 消息，resume 重发会被 OpenAI 兼容接口
       // 拒绝（每个 tool_call 必须有匹配的 tool result）。
       if (toolCalls.length > 0) {
+        consecutivePlanTextTurns = 0
         if (!streamedAssistantItemId) {
           appendItem(id, {
             id: newId(),
             createdAt: Date.now(),
+            planStageId,
             item: assistantItemFromMessage(msg, msg?.content ?? null, toolCalls),
           }, core)
         }
@@ -1002,8 +1535,113 @@ export async function runToolLoop(
         // resume 重发被 OpenAI 兼容接口拒（每个 tool_call 必须有匹配 result，codex P2）。
         let pauseCall: { callId: string; payload: unknown } | undefined // ask_user 暂停
         let confirmCall: PendingToolConfirmation | undefined // S4-B 危险工具确认
+        let pendingPlanEvaluationId: string | undefined
         // 已有任一中断挂起 → 后来的中断只能退化成「已在等待」的占位 error result，避免 orphan。
         const interruptPending = () => pauseCall !== undefined || confirmCall !== undefined
+        const executeToolCall = async (
+          callId: string,
+          name: string,
+          args: Record<string, unknown>,
+        ): Promise<ToolResult> => {
+          const policy = core.tools.execution(name)
+          const toolSpan = startSpan('tool.call', {
+            kind: 'tool',
+            parent: traceSpan,
+            attrs: { sessionId: id, runId, turnId, toolName: name, callId, args },
+          })
+          try {
+            const result = await getExecutionRuntime(core).run({
+              id: callId,
+              graphId: runId,
+              sessionId: id,
+              runId,
+              type: 'tool',
+              label: name,
+              effectKeys: [...(policy?.effectKeys ?? [])],
+              signal: opts.signal,
+              task: async (signal) => {
+                const ctx = buildToolContext({
+                  sessionId: id,
+                  runId,
+                  signal,
+                  callId,
+                  toolName: name,
+                  toolArgs: args,
+                  agentPath: ROOT_AGENT_PATH,
+                  getParentTranscript: rootTranscript,
+                  delegateRuntime,
+                  core,
+                })
+                return core.tools.run(name, args, ctx)
+              },
+            })
+            const traced = toolResultTrace(result, args)
+            endSpan(toolSpan, traced.status, traced.attrs, traced.err)
+            return result
+          } catch (err) {
+            endSpan(toolSpan, abortStatus(opts.signal, err), { error: safeErrorMessage(err) }, err)
+            throw err
+          } finally {
+            removeToolActivity(id, callId, core)
+          }
+        }
+
+        // A model response is already a natural execution batch. Explicitly read-only tools
+        // can run as siblings; everything else stays on the ordered path below. This keeps
+        // confirmation, pause and mutations deterministic while allowing independent reads
+        // to use the execution graph concurrently.
+        const parallelCalls = toolCalls.flatMap((toolCall) => {
+          const parsed = parseToolCallArgs(toolCall.function.arguments)
+          if (!parsed.ok) return []
+          const name = toolCall.function.name
+          if (toolCallValidationError(name, parsed.args)) return []
+          if (core.tools.execution(name)?.mode !== 'parallel') return []
+          const meta = core.rootStore.getter(sessionsAtom)[id]
+          const risk = classifyToolRisk(name, parsed.args, { workspaceRoot: meta?.workspaceRoot })
+          if (risk.requiresConfirmation || risk.level === 'critical' || risk.level === 'dangerous') return []
+          return [{ callId: toolCall.id, name, args: parsed.args }]
+        })
+        if (parallelCalls.length === toolCalls.length && parallelCalls.length > 1) {
+          const results = await Promise.all(
+            parallelCalls.map((call) => executeToolCall(call.callId, call.name, call.args)),
+          )
+          if (!isCurrentRun(id, runId, core)) {
+            finishTrace('cancelled', 'agent.stale_run', { reason: 'stale_run' })
+            return
+          }
+          if (!isRunningRun(id, runId, core)) {
+            finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
+            return
+          }
+          if (opts.signal.aborted) {
+            patchRun(id, { status: 'stopped' }, core)
+            finishTrace('cancelled', 'agent.stopped', { reason: 'aborted' })
+            return
+          }
+          results.forEach((result, index) => {
+            appendMappedToolResult(id, parallelCalls[index].callId, result, core, planStageId)
+            pendingPlanEvaluationId ??= planEvaluationExecutionId(parallelCalls[index].name, result)
+          })
+          persistWorkingTurn()
+          if (pendingPlanEvaluationId) {
+            patchRun(id, {
+              status: 'awaiting_tool',
+              pendingExecutionId: pendingPlanEvaluationId,
+            }, core)
+            traceEvent('agent.waiting_plan_evaluation', { executionId: pendingPlanEvaluationId, plan_stage_id: planStageId })
+            continueAfterPlanEvaluation({
+              sessionId: id,
+              runId,
+              executionId: pendingPlanEvaluationId,
+              apiKey: opts.apiKey,
+              fetchImpl: opts.fetchImpl,
+              core,
+            })
+            finishTrace('ok', 'agent.plan_evaluation_scheduled', { executionId: pendingPlanEvaluationId })
+            return
+          }
+          continue
+        }
 
         for (const toolCall of toolCalls) {
           const name = toolCall.function.name
@@ -1037,10 +1675,40 @@ export async function runToolLoop(
               attrs: { sessionId: id, runId, turnId, ...attrs },
             })
             endSpan(parseSpan, 'error', attrs, parsedArgs.error)
-            appendToolResult(id, toolCall.id, JSON.stringify(resultPayload), core)
+            appendToolResult(id, toolCall.id, JSON.stringify(resultPayload), core, planStageId)
             continue
           }
           const args = parsedArgs.args
+
+          // Lazy-tool 强制闸门：provider 偶尔会无视 tools 列表，凭 system 里的能力名直接生成
+          // tool_call。只允许执行【这一轮请求实际暴露】的工具；否则不得进入风险判定、schema
+          // 校验或 execute，而是回填可自愈提示，让模型先 request_tool_schema。
+          // 这里以本轮发给 provider 的 tools 为准，而非 registry/visible：它同时覆盖环境过滤与
+          // allowedToolNames 收窄，避免“已注册但本轮不可见”的工具被幻觉调用后仍然执行。
+          if (!tools.some((tool) => tool.function.name === name)) {
+            const resultPayload = toolSchemaNotLoadedResult(name)
+            const error = String(resultPayload.error)
+            const attrs: TraceAttributes = {
+              toolName: name,
+              callId: toolCall.id,
+              schema_not_loaded: true,
+              argsPreview: tracePreview(args),
+              resultPreview: tracePreview(resultPayload),
+              errorPreview: error,
+              error,
+            }
+            traceEvent('tool.schema_not_loaded', attrs)
+            const unloadedSpan = startSpan('tool.call', {
+              kind: 'tool',
+              parent: traceSpan,
+              attrs: { sessionId: id, runId, turnId, ...attrs },
+            })
+            endSpan(unloadedSpan, 'error', attrs, error)
+            if (name === 'submit_stage_result') lastStageSubmitRejection = error
+            appendToolResult(id, toolCall.id, JSON.stringify(resultPayload), core, planStageId)
+            continue
+          }
+
           const validationError = toolCallValidationError(name, args)
           if (validationError) {
             const resultPayload = { error: validationError }
@@ -1061,11 +1729,12 @@ export async function runToolLoop(
               attrs: { sessionId: id, runId, turnId, ...attrs },
             })
             endSpan(validationSpan, 'error', attrs, validationError)
-            appendToolResult(id, toolCall.id, JSON.stringify(resultPayload), core)
+            if (name === 'submit_stage_result') lastStageSubmitRejection = validationError
+            appendToolResult(id, toolCall.id, JSON.stringify(resultPayload), core, planStageId)
             continue
           }
 
-          // request_tool_schema：懒加载 schema+guide 进 visible（累计已载写回 run），回 loadSchema JSON。同步，无需守卫。
+          // request_tool_schema：完整 schema 只进入下一轮请求的顶层 tools；历史结果仅保留加载确认和 guide。
           if (name === 'request_tool_schema') {
             const toolName = typeof args.toolName === 'string' ? args.toolName : ''
             const schemaSpan = startSpan('request_tool_schema', {
@@ -1078,61 +1747,54 @@ export async function runToolLoop(
             visible = ensureToolLoaded(id, visible, toolName, core)
             const schema = core.tools.loadSchema(toolName)
             const found = schema !== undefined
-            const resultPayload = schema ?? { error: 'unknown' }
+            const resultPayload = schema ? toolSchemaLoadedResult(schema) : { error: 'unknown' }
             traceEvent('tool.schema_requested', { toolName, callId: toolCall.id, found, args, result: resultPayload })
             endSpan(schemaSpan, found ? 'ok' : 'error', { found, result: resultPayload })
-            appendToolResult(id, toolCall.id, JSON.stringify(schema ?? { error: 'unknown' }), core)
+            appendToolResult(id, toolCall.id, JSON.stringify(resultPayload), core, planStageId)
             continue
           }
 
-          // S4-B 危险工具确认门：变更类 server 工具执行前须用户确认（除非本 session 已一律允许）。
-          //   命中即延后为 confirmCall（不建 ctx、不执行、不回填 result，留给 confirmTool 恢复时处理）。
-          //   isToolAlwaysAllowed 已穿 core（transientAtoms）：读 core 的「一律允许」集合，隔离实例走本核。
-          if (isDangerousTool(name) && !isToolAlwaysAllowed(id, name, core)) {
+          // S4-B 工具确认门：confirm 模式沿用变更类工具逐次确认；auto 仅确认 critical。
+          // critical 的优先级高于「本 session 一律允许」，不能被工具名级白名单绕过。
+          // 命中即延后为 confirmCall（不建 ctx、不执行、不回填 result，留给 confirmTool 恢复时处理）。
+          const meta = core.rootStore.getter(sessionsAtom)[id]
+          const risk = classifyToolRisk(name, args, { workspaceRoot: meta?.workspaceRoot })
+          const approvalMode = meta?.toolApprovalMode ?? 'confirm'
+          const needsConfirmation = risk.requiresConfirmation === true
+            || risk.level === 'critical'
+            || (approvalMode === 'confirm'
+              && risk.level === 'dangerous'
+              && !isToolAlwaysAllowed(id, name, core))
+          if (needsConfirmation) {
             if (interruptPending()) {
               // 同批已有一个待确认/待暂停 → 该危险工具先回占位 error（resume 只处理一个中断）。
-              appendToolResult(id, toolCall.id, JSON.stringify({ error: '已有待确认的工具调用，请先处理' }), core)
+              appendToolResult(id, toolCall.id, JSON.stringify({ error: '已有待确认的工具调用，请先处理' }), core, planStageId)
             } else {
-              confirmCall = { callId: toolCall.id, toolName: name, args }
+              confirmCall = risk.level === 'critical' || risk.requiresConfirmation
+                ? {
+                    callId: toolCall.id,
+                    toolName: name,
+                    args,
+                    ...(risk.level === 'critical' ? { risk: 'critical' as const } : { risk: 'dangerous' as const }),
+                    reason: risk.reason,
+                    irreversible: risk.irreversible,
+                  }
+                : { callId: toolCall.id, toolName: name, args }
             }
             continue
           }
 
-          // 其它工具：建 ctx（副作用白名单）→ 经工厂统一分发 → 拿 ToolResult。
-          const ctx = buildToolContext({
-            sessionId: id,
-            runId,
-            signal: opts.signal,
-            callId: toolCall.id,
-            toolName: name,
-            toolArgs: args,
-            agentPath: ROOT_AGENT_PATH,
-            getParentTranscript: rootTranscript,
-            delegateRuntime,
-            core,
-          })
-          const toolSpan = startSpan('tool.call', {
-            kind: 'tool',
-            parent: traceSpan,
-            attrs: { sessionId: id, runId, turnId, toolName: name, callId: toolCall.id, args },
-          })
-          let result: ToolResult
-          try {
-            result = await core.tools.run(name, args, ctx)
-            const traced = toolResultTrace(result, args)
-            endSpan(toolSpan, traced.status, traced.attrs, traced.err)
-          } catch (err) {
-            endSpan(toolSpan, abortStatus(opts.signal, err), { error: safeErrorMessage(err) }, err)
-            throw err
-          } finally {
-            // 无论正常返回还是 AbortError 抛出，都清掉该 tool 的进度条目 —— 否则 stop 后 UI 残留卡住的进度行（codex P2）。
-            removeToolActivity(id, toolCall.id, core)
-          }
+          // 其它工具：由执行图记录其生命周期；串行/并发只由本批调度器决定。
+          const result = await executeToolCall(toolCall.id, name, args)
 
           // TK8「每步不漏」：execute 可能异步且 signal 穿透其中，await 后写回前再查会话还在、且仍是本次 run；
           // 被顶掉的旧 run 不得把迟到 result 写进新 run；esc 中断则收成 stopped。
           if (!isCurrentRun(id, runId, core)) {
             finishTrace('cancelled', 'agent.stale_run', { reason: 'stale_run' })
+            return
+          }
+          if (!isRunningRun(id, runId, core)) {
+            finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
             return
           }
           if (opts.signal.aborted) {
@@ -1145,12 +1807,19 @@ export async function runToolLoop(
           if ('pause' in result) {
             if (interruptPending()) {
               // 已有中断（ask_user/危险工具）→ 这个多余的 pause 补个 result，别让它 orphan。
-              appendToolResult(id, toolCall.id, JSON.stringify({ error: 'already pausing' }), core)
+              appendToolResult(id, toolCall.id, JSON.stringify({ error: 'already pausing' }), core, planStageId)
             } else {
               pauseCall = { callId: toolCall.id, payload: result.pause } // 不 append，留给 resume 回填
             }
           } else {
-            appendMappedToolResult(id, toolCall.id, result, core)
+            appendMappedToolResult(id, toolCall.id, result, core, planStageId)
+            const stageEvaluationId = planEvaluationExecutionId(name, result)
+            pendingPlanEvaluationId ??= stageEvaluationId
+            if (name === 'submit_stage_result') {
+              // 提交成功（已排期 evaluator）→ 清除拒绝记录；否则记下失败原因，供下一次续跑提醒引用。
+              if (stageEvaluationId) lastStageSubmitRejection = undefined
+              else if (!result.ok) lastStageSubmitRejection = result.error
+            }
           }
         }
 
@@ -1166,9 +1835,8 @@ export async function runToolLoop(
           return
         }
 
-        // 再处理 ask_user 暂停：TK7「已回答」守卫 —— resume 后本轮已回填过 ask_user 的 result
-        //   → 不再暂停，回 {error:'user_answers_already_provided'} 让 model 用已给答案续跑，防死循环；
-        //   否则暂停 run（waiting_user + pendingQuestion），该 tool 的 result 留给 resume 回填。
+        // 再处理 ask_user 暂停。每个新 callId 都代表一次独立决策，可以在同一 plan/run 中多次中断；
+        // 当前 call 的 result 留给 resumeWithAnswers 精确回填。
         if (pauseCall) {
           const planApproval = planApprovalPayload(pauseCall.payload)
           if (planApproval) {
@@ -1179,26 +1847,52 @@ export async function runToolLoop(
             }, core)
             return
           }
-          if (askAlreadyAnswered(id, core)) {
-            traceEvent('agent.waiting_user_skipped', { callId: pauseCall.callId, reason: 'already_answered' })
-            appendToolResult(id, pauseCall.callId, JSON.stringify({ error: 'user_answers_already_provided' }), core)
-          } else {
-            traceEvent('agent.waiting_user', {
+          const origin = pendingDecisionOrigin(id, pauseCall.payload, planStageId, core)
+          traceEvent('agent.waiting_user', {
+            callId: pauseCall.callId,
+            question_count: questionCount(pauseCall.payload),
+            decision_surface: origin.surface,
+            decision_phase: origin.phase,
+            plan_id: origin.planId,
+            plan_stage_id: origin.stageId,
+          })
+          patchRun(id, {
+            status: 'waiting_user',
+            pendingQuestion: pauseCall.payload,
+            pendingUserDecision: {
               callId: pauseCall.callId,
-              question_count: questionCount(pauseCall.payload),
-            })
-            patchRun(id, { status: 'waiting_user', pendingQuestion: pauseCall.payload }, core)
-            return
-          }
+              payload: pauseCall.payload,
+              origin,
+            },
+          }, core)
+          return
         }
 
+        persistWorkingTurn()
+        if (pendingPlanEvaluationId) {
+          patchRun(id, {
+            status: 'awaiting_tool',
+            pendingExecutionId: pendingPlanEvaluationId,
+          }, core)
+          traceEvent('agent.waiting_plan_evaluation', { executionId: pendingPlanEvaluationId, plan_stage_id: planStageId })
+          continueAfterPlanEvaluation({
+            sessionId: id,
+            runId,
+            executionId: pendingPlanEvaluationId,
+            apiKey: opts.apiKey,
+            fetchImpl: opts.fetchImpl,
+            core,
+          })
+          finishTrace('ok', 'agent.plan_evaluation_scheduled', { executionId: pendingPlanEvaluationId })
+          return
+        }
         continue
       }
 
       // ── 无 tool_calls：最终答案。空回复（null/空串/纯空白）当失败，不写、不 commit。
       const content = msg?.content
       if (!content || !content.trim()) {
-        if (isCurrentRun(id, runId, core)) patchRun(id, { status: 'error', error: '模型返回空回复' }, core)
+        if (isRunningRun(id, runId, core)) patchRun(id, { status: 'error', error: '模型返回空回复' }, core)
         finishTrace('error', 'agent.error', { error: '模型返回空回复' })
         return
       }
@@ -1207,21 +1901,73 @@ export async function runToolLoop(
         appendItem(id, {
           id: newId(),
           createdAt: Date.now(),
+          planStageId,
           item: assistantItemFromMessage(msg, content),
         }, core)
       }
+
+      const currentPlan = core.getSessionStore(id).store.getter(planAtom)
+      if (currentPlan && EXECUTING_PLAN_STATUSES.has(currentPlan.status)) {
+        consecutivePlanTextTurns += 1
+        const currentStage = currentPlan.stages.find(
+          (stage) => stage.status === 'in_progress' || stage.status === 'evaluating',
+        )
+        if (consecutivePlanTextTurns >= MAX_CONSECUTIVE_PLAN_TEXT_TURNS) {
+          const error = `计划执行连续 ${MAX_CONSECUTIVE_PLAN_TEXT_TURNS} 轮未调用工具，已停止自动续跑`
+          persistWorkingTurn()
+          if (isRunningRun(id, runId, core)) patchRun(id, { status: 'error', error }, core)
+          finishTrace('error', 'agent.plan_continuation_stalled', {
+            planId: currentPlan.id,
+            planStatus: currentPlan.status,
+            stageId: currentStage?.id,
+            consecutive_text_turns: consecutivePlanTextTurns,
+            error,
+          })
+          return
+        }
+        const noticeLines = [
+          '结构化计划尚未完成，上一条文本只能视为阶段性说明，不能作为最终答案，也不能声称整个任务已完成。',
+          `当前计划状态：${currentPlan.status}。`,
+          currentStage
+            ? `当前阶段：${currentStage.title}（${currentStage.status}）。`
+            : '当前没有已完成验收的最终阶段，请调用 execute_plan 启动或恢复计划。',
+        ]
+        if (lastStageSubmitRejection) {
+          // 关键修复：把上一次 submit_stage_result 的具体拒绝原因带进提醒，
+          // 否则模型只会收到泛化的“继续执行”，无从得知自己卡在哪（schema 未加载 / 参数结构不对 / evaluator 拒绝）。
+          noticeLines.push(
+            `注意：你上一次 submit_stage_result 未成功，当前阶段仍未关闭。失败原因：${lastStageSubmitRejection}`,
+            '请先针对该原因修正后重新调用 submit_stage_result（例如先 request_tool_schema 加载 schema、或按 schema 修正参数结构），不要用纯文本描述替代提交。',
+          )
+        } else {
+          noticeLines.push(
+            '继续执行计划；完成当前阶段产出后必须调用 submit_stage_result，由 evaluator 判定阶段与计划是否完成。',
+          )
+        }
+        planContinuationNotice = noticeLines.join('\n')
+        traceEvent('agent.plan_continuation_required', {
+          planId: currentPlan.id,
+          planStatus: currentPlan.status,
+          stageId: currentStage?.id,
+          submit_rejected: lastStageSubmitRejection !== undefined,
+        })
+        persistWorkingTurn()
+        continue
+      }
+
       commitTurn() // TK9：一轮用户输入收尾 = 一个 checkpoint（并落盘）。
       patchRun(id, { status: 'done' }, core)
       finishTrace('ok', 'agent.done', { status: 'done' })
       return
     }
 
-    // 循环跑满 MAX_AGENT_TURNS 仍未收尾 → 降级为 error（TK8 上限保护）。
-    // 同样要落盘：跑满 12 轮意味着 itemsAtom 里已堆了大量 assistant/tool 条目，丢掉整轮
+    // 循环跑满本次动态上限仍未收尾 → 降级为 error（TK8 上限保护）。
+    // 同样要落盘：跑满上限意味着 itemsAtom 里已堆了大量 assistant/tool 条目，丢掉整轮
     // 代价最大（含用户那条 user 消息）。
     commitTurn()
-    if (isCurrentRun(id, runId, core)) patchRun(id, { status: 'error', error: '超过最大工具轮数' }, core)
-    finishTrace('error', 'agent.max_turns', { max_turns: MAX_AGENT_TURNS, error: '超过最大工具轮数' })
+    const error = `主 Agent 超过最大模型轮次（${agentTurnLimit}）`
+    if (isRunningRun(id, runId, core)) patchRun(id, { status: 'error', error }, core)
+    finishTrace('error', 'agent.max_turns', { max_turns: agentTurnLimit, error })
   } catch (err) {
     // U7 降级：被 esc 中断 → 'stopped'（仅当仍是本次 run，避免污染新 run）。
     // ★ 必须用 modelApi.isAbortError（按 name 鸭子类型），不能写 `err instanceof DOMException` ★ ——
@@ -1235,7 +1981,7 @@ export async function runToolLoop(
       return
     }
     // 其它失败 → 'error'（不抛崩 UI；仅当仍是本次 run）。
-    if (isCurrentRun(id, runId, core)) {
+    if (isRunningRun(id, runId, core)) {
       patchRun(id, { status: 'error', error: err instanceof Error ? err.message : String(err) }, core)
     }
     finishTrace('error', 'agent.error', { error: safeErrorMessage(err) }, err)
@@ -1249,16 +1995,10 @@ export async function runToolLoop(
     //   变成 reject —— 透传 AbortError 的意义在于让上面的 catch 认出「用户按了停止」，而这里
     //   已经在那个 catch 之后了，没有任何人会再消费它。
     try {
-      const finalRun = core.getSessionStore(id).store.getter(runAtom)
-      if (
-        !finalRun ||
-        finalRun.runId !== runId ||
-        finalRun.status === 'done' ||
-        finalRun.status === 'stopped' ||
-        finalRun.status === 'error'
-      ) {
-        await delegateRuntime.dispose?.()
-      }
+      // 父运行在 awaiting_tool 返回前已经 retain 了后台 execution 所需的 owner。
+      // 无论本轮以何种状态返回，都应释放父 owner；否则后台结束后仍会残留一个 owner，
+      // cancellation controller 与归档 writer 都无法真正清理。
+      await delegateRuntime.dispose?.()
     } catch (err) {
       traceEvent('agent.dispose_failed', {
         error: safeErrorMessage(err),

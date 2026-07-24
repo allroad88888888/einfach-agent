@@ -57,6 +57,10 @@ const REPLAY_UNSAFE_TOOLS = new Set([
   'delegate_agent', // 重跑整棵子树
   'write_file',
   'apply_patch',
+  'delete_path',
+  'copy_path',
+  'move_path',
+  'revert_workspace_change',
   'save_file',
   'shell_macos',
   'shell_linux',

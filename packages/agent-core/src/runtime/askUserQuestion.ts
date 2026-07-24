@@ -24,7 +24,13 @@ export interface AskUserQuestionItem {
 // 规整后的整体载荷。
 export interface AskUserQuestionPayload {
   title?: string
+  context?: AskUserQuestionContext
   questions: AskUserQuestionItem[]
+}
+
+export interface AskUserQuestionContext {
+  surface: 'conversation' | 'plan'
+  phase?: 'drafting' | 'approval' | 'executing' | 'evaluating' | 'acceptance'
 }
 
 const QUESTION_TYPES: readonly AskUserQuestionType[] = [
@@ -61,6 +67,23 @@ function normalizeOptions(value: unknown): string[] | undefined {
   return value
 }
 
+function normalizeContext(value: unknown): AskUserQuestionContext | undefined {
+  const context = asRecord(value)
+  if (!context || (context.surface !== 'conversation' && context.surface !== 'plan')) return undefined
+
+  const result: AskUserQuestionContext = { surface: context.surface }
+  if (
+    context.phase === 'drafting'
+    || context.phase === 'approval'
+    || context.phase === 'executing'
+    || context.phase === 'evaluating'
+    || context.phase === 'acceptance'
+  ) {
+    result.phase = context.phase
+  }
+  return result
+}
+
 // 逐条校验：无非空 string id/text → 丢弃（返回 undefined）。
 function normalizeQuestion(value: unknown): AskUserQuestionItem | undefined {
   const item = asRecord(value)
@@ -95,6 +118,8 @@ export function normalizeAskUserQuestionPayload(payload: unknown): AskUserQuesti
   const result: AskUserQuestionPayload = { questions: [] }
 
   if (nonEmptyString(value.title)) result.title = value.title
+  const context = normalizeContext(value.context)
+  if (context) result.context = context
 
   if (Array.isArray(value.questions)) {
     for (const raw of value.questions) {

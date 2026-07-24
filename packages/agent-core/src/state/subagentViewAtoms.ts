@@ -1,10 +1,22 @@
 import { atom } from '@einfach/core'
+import type { AssistantItem, ToolItem } from '@web-agent/ai'
 import type { ConversationItem } from './core.type'
 import { itemsAtom } from './sessionAtoms'
 import type { SubagentNodeStatus } from '../subagents/types'
 import { parseAgentPath } from '../subagents/path'
+import { executionGraphAtom } from '../execution/graph'
+import type {
+  ExecutionGraphSnapshot,
+  ExecutionNode,
+  ExecutionNodeStatus,
+} from '../execution/types'
 import { replaySubagentArchive, type SubagentReplayState } from '../subagents/replay'
-import { subagentEventsPath, subagentIndexPath, subagentTreePath } from '../subagents/skillCache'
+import {
+  subagentEventsPath,
+  subagentIndexPath,
+  subagentTracePath,
+  subagentTreePath,
+} from '../subagents/skillCache'
 import {
   readWorkspaceRunIndexPage,
   readWorkspaceFile,
@@ -20,13 +32,14 @@ export interface SubagentTreeViewNode {
   path: string
   parentPath?: string
   depth: number
-  status: SubagentNodeStatus
+  status: SubagentTreeViewStatus
   objective: string
   summary?: string
   error?: string
   resultFile?: string
   skillFiles: string[]
   skillIds: string[]
+  trace?: SubagentTraceRecord[]
 }
 
 export interface SubagentTreeView {
@@ -35,7 +48,7 @@ export interface SubagentTreeView {
   treeId: string
   callId: string
   createdAt: number
-  status: SubagentNodeStatus
+  status: SubagentTreeViewStatus
   strategy?: string
   archiveBasePath?: string
   nodes: SubagentTreeViewNode[]
@@ -43,6 +56,8 @@ export interface SubagentTreeView {
   eventLog?: string
   warnings?: string[]
 }
+
+export type SubagentTreeViewStatus = SubagentNodeStatus | 'interrupted'
 
 export type SubagentArchiveLoadStatus = 'loading' | 'ready' | 'empty' | 'error'
 
@@ -61,6 +76,21 @@ export interface SubagentArchivePreviewState {
   path?: string
   nodeKey?: string
   content?: string
+  error?: string
+}
+
+export interface SubagentTraceRecord {
+  timestamp: string
+  turn: number
+  item: AssistantItem | ToolItem
+}
+
+export interface SubagentTraceState {
+  status: 'idle' | 'loading' | 'ready' | 'empty' | 'error'
+  path?: string
+  nodeKey?: string
+  records: SubagentTraceRecord[]
+  warnings: string[]
   error?: string
 }
 
@@ -146,9 +176,10 @@ function toolResults(items: ConversationItem[]): Map<string, UnknownRecord> {
   return results
 }
 
-function aggregateStatus(nodes: SubagentTreeViewNode[]): SubagentNodeStatus {
+function aggregateStatus(nodes: SubagentTreeViewNode[]): SubagentTreeViewStatus {
   if (nodes.some((node) => node.status === 'running' || node.status === 'distilling')) return 'running'
   if (nodes.some((node) => node.status === 'queued')) return 'queued'
+  if (nodes.some((node) => node.status === 'interrupted')) return 'interrupted'
   if (nodes.some((node) => node.status === 'failed')) return 'failed'
   if (nodes.some((node) => node.status === 'cancelled')) return 'cancelled'
   return 'done'
@@ -179,7 +210,12 @@ function resultNodes(result: UnknownRecord, treeId: string): SubagentTreeViewNod
   })
 }
 
-function pendingNodes(args: UnknownRecord | undefined, treeId: string): SubagentTreeViewNode[] {
+function pendingNodes(
+  args: UnknownRecord | undefined,
+  treeId: string,
+  status: SubagentTreeViewStatus = 'queued',
+  error?: string,
+): SubagentTreeViewNode[] {
   if (!args || !Array.isArray(args.children)) return []
   return args.children.flatMap((value, index) => {
     if (!isRecord(value)) return []
@@ -192,8 +228,9 @@ function pendingNodes(args: UnknownRecord | undefined, treeId: string): Subagent
         path,
         parentPath: 'root',
         depth: 1,
-        status: 'queued' as const,
+        status,
         objective,
+        error,
         skillFiles: [],
         skillIds: [],
       },
@@ -212,12 +249,14 @@ export function deriveSubagentTrees(items: ConversationItem[]): SubagentTreeView
       if (call.function.name !== 'delegate_agent') continue
       const args = parseRecord(call.function.arguments)
       const result = results.get(call.id)
-      const treeId = stringValue(result?.treeId) ?? call.id
+      const treeId = stringValue(result?.treeId) ?? stringValue(result?.graphId) ?? call.id
       const batchId = call.id
       const children = resultNodes(result ?? {}, batchId)
       const error = stringValue(result?.error)
-      const nodes = children.length > 0 ? children : pendingNodes(args, batchId)
-      const rootStatus: SubagentNodeStatus = error
+      const nodes = children.length > 0
+        ? children
+        : pendingNodes(args, batchId, error ? 'failed' : 'queued', error)
+      const rootStatus: SubagentTreeViewStatus = error
         ? 'failed'
         : result
           ? aggregateStatus(nodes)
@@ -250,7 +289,146 @@ export function deriveSubagentTrees(items: ConversationItem[]): SubagentTreeView
   return trees.sort((a, b) => b.createdAt - a.createdAt)
 }
 
-export const subagentTreesAtom = atom((get) => deriveSubagentTrees(get(itemsAtom)))
+function executionAgentStatus(status: ExecutionNodeStatus): SubagentTreeViewStatus {
+  if (status === 'succeeded') return 'done'
+  if (status === 'failed') return 'failed'
+  if (status === 'cancelled') return 'cancelled'
+  if (status === 'interrupted') return 'interrupted'
+  if (status === 'queued' || status === 'ready') return 'queued'
+  return 'running'
+}
+
+function executionNodeResult(node: ExecutionNode): UnknownRecord | undefined {
+  return isRecord(node.result) ? node.result : undefined
+}
+
+function executionAgentPath(node: ExecutionNode): string {
+  const result = executionNodeResult(node)
+  return stringValue(result?.path)
+    ?? (node.id.startsWith(`${node.graphId}:`) ? node.id.slice(node.graphId.length + 1) : node.id)
+}
+
+export function deriveExecutionSubagentTrees(
+  graph: ExecutionGraphSnapshot,
+): SubagentTreeView[] {
+  const grouped = new Map<string, ExecutionNode[]>()
+  const legacyGraphIds = new Set<string>()
+  for (const id of graph.order) {
+    const node = graph.nodes[id]
+    if (!node || node.type !== 'agent' || executionAgentPath(node) === 'root') continue
+    if (!stringValue(executionNodeResult(node)?.delegationCallId)) {
+      legacyGraphIds.add(node.graphId)
+    }
+  }
+  for (const id of graph.order) {
+    const node = graph.nodes[id]
+    if (!node || node.type !== 'agent') continue
+    const result = executionNodeResult(node)
+    // root 是执行图的调度占位节点，不属于任何一次 delegate_agent。
+    // 仅旧会话存在尚未写入 callId 的子节点时保留 root，用来还原重启中断状态；
+    // 正常记录若按 graphId 分组，会制造一个无法关联到 tool call 的额外批次。
+    if (
+      executionAgentPath(node) === 'root' &&
+      !stringValue(result?.delegationCallId) &&
+      !legacyGraphIds.has(node.graphId)
+    ) continue
+    const delegationCallId = stringValue(result?.delegationCallId) ?? node.graphId
+    const nodes = grouped.get(delegationCallId) ?? []
+    nodes.push(node)
+    grouped.set(delegationCallId, nodes)
+  }
+
+  return [...grouped.entries()].map(([callId, executionNodes]) => {
+    const treeId = executionNodes[0]?.graphId ?? callId
+    const nodes = executionNodes.map((node): SubagentTreeViewNode => {
+      const result = executionNodeResult(node)
+      const path = executionAgentPath(node)
+      const parent = node.parentId ? graph.nodes[node.parentId] : undefined
+      return {
+        key: node.id,
+        path,
+        parentPath: parent ? executionAgentPath(parent) : undefined,
+        depth: parseAgentPath(path)?.length ?? (node.parentId ? 1 : 0),
+        status: executionAgentStatus(node.status),
+        objective: node.label,
+        error: node.error,
+        resultFile: stringValue(result?.resultFile),
+        skillFiles: stringList(result?.skillFiles),
+        skillIds: stringList(result?.skillIds),
+        trace: node.trace?.filter((record): record is SubagentTraceRecord =>
+          isTraceModelItem(record.item)),
+      }
+    })
+    return {
+      id: callId,
+      treeId,
+      callId,
+      createdAt: Math.min(...executionNodes.map((node) => node.createdAt)),
+      status: aggregateStatus(nodes),
+      nodes,
+      source: 'live' as const,
+    }
+  }).sort((a, b) => b.createdAt - a.createdAt)
+}
+
+function overlapScore(
+  executionTree: SubagentTreeView,
+  conversationTree: SubagentTreeView,
+): number {
+  if (executionTree.treeId !== conversationTree.treeId) return 0
+  const paths = new Set(conversationTree.nodes.map((node) => node.path))
+  return executionTree.nodes.reduce(
+    (score, node) => score + (paths.has(node.path) ? 1 : 0),
+    0,
+  )
+}
+
+function reconcileSubagentTrees(
+  executionTrees: SubagentTreeView[],
+  conversationTrees: SubagentTreeView[],
+): SubagentTreeView[] {
+  const usedConversationCallIds = new Set<string>()
+  const reconciledExecutionTrees = executionTrees.map((tree) => {
+    // 旧会话的首个 children_reserved 快照可能尚未带 delegationCallId；
+    // 用同一 treeId 下的节点 path 将其重新关联到原始 delegate_agent 调用。
+    if (tree.callId !== tree.treeId) {
+      usedConversationCallIds.add(tree.callId)
+      return tree
+    }
+    let bestMatch: SubagentTreeView | undefined
+    let bestScore = 0
+    for (const candidate of conversationTrees) {
+      if (usedConversationCallIds.has(candidate.callId)) continue
+      const score = overlapScore(tree, candidate)
+      if (score > bestScore) {
+        bestMatch = candidate
+        bestScore = score
+      }
+    }
+    if (!bestMatch) return tree
+    usedConversationCallIds.add(bestMatch.callId)
+    return {
+      ...tree,
+      id: bestMatch.callId,
+      callId: bestMatch.callId,
+      strategy: bestMatch.strategy,
+      archiveBasePath: bestMatch.archiveBasePath,
+      eventLog: bestMatch.eventLog,
+    }
+  })
+
+  const executionCallIds = new Set(reconciledExecutionTrees.map((tree) => tree.callId))
+  return [
+    ...reconciledExecutionTrees,
+    ...conversationTrees.filter((tree) => !executionCallIds.has(tree.callId)),
+  ].sort((a, b) => b.createdAt - a.createdAt)
+}
+
+export const subagentTreesAtom = atom((get) => {
+  const executionTrees = deriveExecutionSubagentTrees(get(executionGraphAtom))
+  const conversationTrees = deriveSubagentTrees(get(itemsAtom))
+  return reconcileSubagentTrees(executionTrees, conversationTrees)
+})
 
 const GLOBAL_RUNS_INDEX_PATH = subagentIndexPath('runs')
 // Also reject backslashes: they are path separators on Windows even though the archive
@@ -573,6 +751,12 @@ export const archiveSubagentTreesAtom = atom((get) =>
 
 export const subagentArchivePreviewAtom = atom<SubagentArchivePreviewState>({ status: 'idle' })
 const subagentArchivePreviewRequestTokenAtom = atom(0)
+export const subagentTraceAtom = atom<SubagentTraceState>({
+  status: 'idle',
+  records: [],
+  warnings: [],
+})
+const subagentTraceRequestTokenAtom = atom(0)
 
 export function resolveSubagentArchivePath(archiveBasePath: string, path: string): string {
   const normalized = path.replace(/^\.\//, '')
@@ -606,6 +790,112 @@ export const loadSubagentArchivePreviewAtom = atom(
     set(subagentArchivePreviewAtom, result.ok
       ? { status: 'ready', kind: input.kind, path, nodeKey: input.nodeKey, content: result.data.content }
       : { status: 'error', kind: input.kind, path, nodeKey: input.nodeKey, error: result.error })
+  },
+)
+
+function isTraceModelItem(value: unknown): value is AssistantItem | ToolItem {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false
+  const item = value as Record<string, unknown>
+  if (item.role === 'assistant') {
+    return (typeof item.content === 'string' || item.content === null) &&
+      (item.reasoning_content === undefined ||
+        item.reasoning_content === null ||
+        typeof item.reasoning_content === 'string') &&
+      (item.tool_calls === undefined || Array.isArray(item.tool_calls))
+  }
+  return item.role === 'tool' &&
+    typeof item.tool_call_id === 'string' &&
+    typeof item.content === 'string'
+}
+
+export function parseSubagentTrace(text: string): {
+  records: SubagentTraceRecord[]
+  warnings: string[]
+} {
+  const records: SubagentTraceRecord[] = []
+  const warnings: string[] = []
+  text.split(/\r?\n/).forEach((raw, index) => {
+    if (!raw.trim()) return
+    try {
+      const parsed = JSON.parse(raw) as unknown
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        warnings.push(`轨迹第 ${index + 1} 行结构无效`)
+        return
+      }
+      const value = parsed as Record<string, unknown>
+      if (
+        typeof value.timestamp !== 'string' ||
+        typeof value.turn !== 'number' ||
+        !Number.isFinite(value.turn) ||
+        !isTraceModelItem(value.item)
+      ) {
+        warnings.push(`轨迹第 ${index + 1} 行结构无效`)
+        return
+      }
+      records.push({
+        timestamp: value.timestamp,
+        turn: value.turn,
+        item: value.item,
+      })
+    } catch (error) {
+      warnings.push(`轨迹第 ${index + 1} 行无法解析：${error instanceof Error ? error.message : String(error)}`)
+    }
+  })
+  return { records, warnings }
+}
+
+export const loadSubagentTraceAtom = atom(
+  null,
+  async (get, set, input: {
+    archiveBasePath: string
+    agentPath: string
+    nodeKey: string
+    workspaceRoot?: string
+    reader?: ArchiveReader
+    silent?: boolean
+  }) => {
+    const path = subagentTracePath(input.archiveBasePath, input.agentPath)
+    const token = get(subagentTraceRequestTokenAtom) + 1
+    set(subagentTraceRequestTokenAtom, token)
+    const current = get(subagentTraceAtom)
+    if (!input.silent || current.nodeKey !== input.nodeKey) {
+      set(subagentTraceAtom, {
+        status: 'loading',
+        path,
+        nodeKey: input.nodeKey,
+        records: [],
+        warnings: [],
+      })
+    }
+    const result = await (input.reader ?? readWorkspaceFile)({
+      path,
+      maxBytes: 2_000_000,
+      workspaceRoot: input.workspaceRoot,
+    })
+    if (get(subagentTraceRequestTokenAtom) !== token) return
+    if (!result.ok) {
+      set(subagentTraceAtom, {
+        status: isMissingArchiveError(result.error) ? 'empty' : 'error',
+        path,
+        nodeKey: input.nodeKey,
+        records: [],
+        warnings: [],
+        error: result.error,
+      })
+      return
+    }
+    const parsed = parseSubagentTrace(result.data.content)
+    const warnings = result.data.truncated
+      ? [`${path} 超过 2MB，仅显示已读取部分`, ...parsed.warnings]
+      : parsed.warnings
+    set(subagentTraceAtom, {
+      status: parsed.records.length > 0 ? 'ready' : 'empty',
+      path,
+      nodeKey: input.nodeKey,
+      records: parsed.records,
+      warnings,
+      error: parsed.records.length > 0 ? undefined : '此节点没有已归档的模型轨迹',
+    })
   },
 )
 

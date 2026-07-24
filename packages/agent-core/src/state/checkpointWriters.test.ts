@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { getSessionStore, resetSessionStores } from './sessionStore'
-import { checkpointsAtom, currentTurnIndexAtom, itemsAtom } from './sessionAtoms'
+import { checkpointsAtom, currentTurnIndexAtom, itemsAtom, planAtom } from './sessionAtoms'
 import { rootStore, sessionsAtom, resetRootStore } from './rootStore'
 import type { ConversationItem, SessionMeta } from './core.type'
-import { commitCheckpoint, jumpToCheckpoint } from './checkpointWriters'
+import {
+  commitCheckpoint,
+  jumpToCheckpoint,
+  rewindBeforeCheckpoint,
+  updateCheckpoint,
+} from './checkpointWriters'
 import { createCoreInstance } from '../runtime/core/coreInstance'
+import type { PlanSnapshot } from '../planning/types'
 
 // checkpoint 写入 / 截断式回退（P6，C2）：
 //   commit —— 把当前 store 的 items 快照进 checkpointsAtom；
@@ -40,6 +46,20 @@ const item2: ConversationItem = {
   item: { role: 'user', content: 'yo' },
 }
 
+function plan(id: string, revision: number): PlanSnapshot {
+  return {
+    id,
+    title: id,
+    objective: `执行 ${id}`,
+    status: 'active',
+    revision,
+    requiresApproval: false,
+    createdAt: revision,
+    updatedAt: revision,
+    stages: [],
+  }
+}
+
 describe('checkpointWriters', () => {
   it('commitCheckpoint 追加快照并推进 currentTurnIndex', () => {
     seedS1()
@@ -73,6 +93,40 @@ describe('checkpointWriters', () => {
     expect(afterSecond[0].items).toEqual([item1])
   })
 
+  it('updateCheckpoint 覆盖同一轮的工作快照，不增加轮数', () => {
+    seedS1()
+    const store = getSessionStore('s1').store
+    store.setter(itemsAtom, [item1])
+    commitCheckpoint('s1', '[执行中] 轮1')
+    const createdAt = store.getter(checkpointsAtom)[0].createdAt
+
+    const latest = [item1, item2]
+    store.setter(itemsAtom, latest)
+    updateCheckpoint('s1', 0, '轮1')
+
+    const checkpoints = store.getter(checkpointsAtom)
+    expect(checkpoints).toHaveLength(1)
+    expect(checkpoints[0]).toMatchObject({ turnIndex: 0, label: '轮1', createdAt })
+    expect(checkpoints[0].items).toBe(latest)
+    expect(store.getter(currentTurnIndexAtom)).toBe(0)
+  })
+
+  it('checkpoint 同步保存 planAtom，update 时覆盖为最新计划快照', () => {
+    seedS1()
+    const store = getSessionStore('s1').store
+    const firstPlan = plan('p1', 1)
+    const latestPlan = plan('p1', 2)
+    store.setter(itemsAtom, [item1])
+    store.setter(planAtom, firstPlan)
+
+    commitCheckpoint('s1', '[执行中] 轮1')
+    expect(store.getter(checkpointsAtom)[0].plan).toBe(firstPlan)
+
+    store.setter(planAtom, latestPlan)
+    updateCheckpoint('s1', 0, '轮1')
+    expect(store.getter(checkpointsAtom)[0].plan).toBe(latestPlan)
+  })
+
   it('jumpToCheckpoint 恢复 items 并截断其后 checkpoint（C2）', () => {
     seedS1()
     const store = getSessionStore('s1').store
@@ -96,6 +150,24 @@ describe('checkpointWriters', () => {
     expect(store.getter(checkpointsAtom)).toHaveLength(1)
     // 游标回到第 0 轮
     expect(store.getter(currentTurnIndexAtom)).toBe(0)
+  })
+
+  it('jumpToCheckpoint 同时恢复目标轮的 planAtom 与 SessionMeta.plan', () => {
+    seedS1()
+    const store = getSessionStore('s1').store
+    const firstPlan = plan('p1', 1)
+    const secondPlan = plan('p1', 2)
+    store.setter(itemsAtom, [item1])
+    store.setter(planAtom, firstPlan)
+    commitCheckpoint('s1', '轮1')
+    store.setter(itemsAtom, [item1, item2])
+    store.setter(planAtom, secondPlan)
+    commitCheckpoint('s1', '轮2')
+
+    jumpToCheckpoint('s1', 0)
+
+    expect(store.getter(planAtom)).toBe(firstPlan)
+    expect(rootStore.getter(sessionsAtom).s1.plan).toBe(firstPlan)
   })
 
   it('恢复后 itemsAtom 是新引用（不可变替换，C4）', () => {
@@ -141,7 +213,78 @@ describe('checkpointWriters', () => {
     expect(store.getter(currentTurnIndexAtom)).toBe(turnIndexBefore)
   })
 
-  it('未登记会话（rootStore 无）→ commit/jump 均 no-op，不复活幽灵会话（C7）', () => {
+  it('rewindBeforeCheckpoint 撤回目标用户消息本身，首轮可回到空会话', () => {
+    seedS1()
+    const store = getSessionStore('s1').store
+    const assistant1: ConversationItem = {
+      id: 'a1',
+      createdAt: 1,
+      item: { role: 'assistant', content: '第一答' },
+    }
+    const assistant2: ConversationItem = {
+      id: 'a2',
+      createdAt: 3,
+      item: { role: 'assistant', content: '第二答' },
+    }
+
+    store.setter(itemsAtom, [item1, assistant1])
+    commitCheckpoint('s1', '第一轮')
+    store.setter(itemsAtom, [item1, assistant1, item2, assistant2])
+    commitCheckpoint('s1', '第二轮')
+
+    rewindBeforeCheckpoint('s1', 0)
+
+    expect(store.getter(itemsAtom)).toEqual([])
+    expect(store.getter(checkpointsAtom)).toEqual([])
+    expect(store.getter(currentTurnIndexAtom)).toBe(-1)
+  })
+
+  it('rewindBeforeCheckpoint 撤回后续轮时保留目标用户消息之前的历史', () => {
+    seedS1()
+    const store = getSessionStore('s1').store
+    const assistant1: ConversationItem = {
+      id: 'a1',
+      createdAt: 1,
+      item: { role: 'assistant', content: '第一答' },
+    }
+    const assistant2: ConversationItem = {
+      id: 'a2',
+      createdAt: 3,
+      item: { role: 'assistant', content: '第二答' },
+    }
+    const firstTurn = [item1, assistant1]
+    const firstPlan = plan('p1', 1)
+    const secondPlan = plan('p1', 2)
+    store.setter(itemsAtom, firstTurn)
+    store.setter(planAtom, firstPlan)
+    commitCheckpoint('s1', '第一轮')
+    store.setter(itemsAtom, [...firstTurn, item2, assistant2])
+    store.setter(planAtom, secondPlan)
+    commitCheckpoint('s1', '第二轮')
+
+    rewindBeforeCheckpoint('s1', 1)
+
+    expect(store.getter(itemsAtom)).toEqual(firstTurn)
+    expect(store.getter(checkpointsAtom)).toHaveLength(1)
+    expect(store.getter(currentTurnIndexAtom)).toBe(0)
+    expect(store.getter(planAtom)).toBe(firstPlan)
+    expect(rootStore.getter(sessionsAtom).s1.plan).toBe(firstPlan)
+  })
+
+  it('rewindBeforeCheckpoint 撤回首轮时清空 planning 状态', () => {
+    seedS1()
+    const store = getSessionStore('s1').store
+    store.setter(itemsAtom, [item1])
+    store.setter(planAtom, plan('p1', 1))
+    commitCheckpoint('s1', '第一轮')
+
+    rewindBeforeCheckpoint('s1', 0)
+
+    expect(store.getter(planAtom)).toBeUndefined()
+    expect(rootStore.getter(sessionsAtom).s1.plan).toBeUndefined()
+  })
+
+  it('未登记会话（rootStore 无）→ commit/jump/rewind 均 no-op，不复活幽灵会话（C7）', () => {
     // 故意不 seed：'sX' 未在 rootStore.sessionsAtom 登记 —— 是幽灵会话。
     // commit 必须被 ghost guard 拦下，不往 'sX' 的 store 写任何快照。
     commitCheckpoint('sX', 'x')
@@ -150,6 +293,7 @@ describe('checkpointWriters', () => {
 
     // jump 同样 no-op —— 不抛异常、不改任何 atom。
     expect(() => jumpToCheckpoint('sX', 0)).not.toThrow()
+    expect(() => rewindBeforeCheckpoint('sX', 0)).not.toThrow()
     expect(getSessionStore('sX').store.getter(checkpointsAtom)).toEqual([])
     expect(getSessionStore('sX').store.getter(itemsAtom)).toEqual([])
   })

@@ -38,6 +38,7 @@ export function callGlm(
 
 // 简介：调用 GLM 的 chat/completions（流式）。
 // 详情：delta 通过 handlers.onDelta 增量回调，最终仍 resolve 为完整 ModelChatResponse。
+// GLM 会在流末自动返回 usage，官方未声明需要 stream_options.include_usage，故这里不额外注入。
 export function streamGlm(
   body: GlmChatRequest,
   options: ChatCallOptions,

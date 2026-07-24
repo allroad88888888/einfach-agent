@@ -91,6 +91,7 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
       'answerQuestion',
       'discardArtifact',
       'revertToTurn',
+      'revertTurnToDraft',
       'setWorkspaceRoot',
       'renameSession',
       'withdrawCurrentTurnToDraft',

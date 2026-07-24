@@ -2,8 +2,14 @@ import { describe, expect, it, vi } from 'vitest'
 import { createDelegateAgentRuntime } from './runtime'
 import type { DelegateAgentCallContext, SubagentNodeRecord } from './types'
 
-function response(message: Record<string, unknown>): Response {
-  return new Response(JSON.stringify({ choices: [{ message }] }), {
+function response(
+  message: Record<string, unknown>,
+  usage?: Record<string, unknown>,
+): Response {
+  return new Response(JSON.stringify({
+    choices: [{ message }],
+    ...(usage ? { usage } : {}),
+  }), {
     status: 200,
     headers: { 'Content-Type': 'application/json' },
   })
@@ -126,6 +132,202 @@ function runtime(fetchImpl: typeof fetch, signal = new AbortController().signal)
 }
 
 describe('createDelegateAgentRuntime', () => {
+  it('archives provider cache usage for child, evaluator, and distill calls', async () => {
+    const usage = {
+      prompt_tokens: 100,
+      completion_tokens: 20,
+      total_tokens: 120,
+      prompt_cache_hit_tokens: 75,
+      prompt_cache_miss_tokens: 25,
+    }
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      return childPath(body)
+        ? response({ role: 'assistant', content: 'done' }, usage)
+        : response({ role: 'assistant', content: '# distilled skill' }, usage)
+    }
+    const writes = new Map<string, string>()
+    const delegateRuntime = runtime(fetchImpl)
+
+    const result = await delegateRuntime.delegateAgents({
+      children: [
+        { objective: 'inspect as worker', mode: 'worker' },
+        { objective: 'inspect as evaluator', mode: 'evaluator' },
+      ],
+    }, context(writes))
+
+    expect(result.children.every((child) => child.status === 'done')).toBe(true)
+    const usageEvents = eventsTyped(writes, 'child_model_usage')
+    // 一次 core skill + 每个 child 各一次 brief，共 3 次 distill；随后 worker/evaluator 各 1 次。
+    expect(usageEvents).toHaveLength(5)
+    expect(usageEvents.map((event) => event.data?.phase).sort())
+      .toEqual([
+        'distill:child_brief',
+        'distill:child_brief',
+        'distill:core',
+        'evaluator',
+        'subagent',
+      ])
+    for (const event of usageEvents) {
+      expect(event.data).toMatchObject({
+        promptTk: 100,
+        completionTk: 20,
+        totalTk: 120,
+        cacheMetricsStatus: 'available',
+        cacheHitTk: 75,
+        cacheMissTk: 25,
+        cacheMissSource: 'provider',
+        cacheHitRate: 0.75,
+        cacheProtocolVersion: 'agent-runtime-prefix-v2',
+        cacheLane: event.data?.phase,
+        compactionBoundary: 'full-history',
+        contextCompacted: false,
+        withinBudget: true,
+      })
+      expect(String(event.data?.cacheProfile)).toContain(String(event.data?.phase))
+      expect(event.data?.cacheEpoch).toBe(1)
+      expect(event.data?.cacheEpochReason).toBe('initial')
+      expect(String(event.data?.laneScopeFingerprint)).toMatch(/^scope-v2-fnv1a32-/)
+      expect(String(event.data?.systemFingerprint)).toMatch(/^system-v2-fnv1a32-/)
+      expect(String(event.data?.requestProjectionFingerprint)).toMatch(/^request-v2-fnv1a32-/)
+      expect(String(event.data?.toolSetFingerprint)).toMatch(/^tools-v1-fnv1a32-/)
+    }
+
+    const coreDistill = usageEvents.find((event) => event.data?.phase === 'distill:core')
+    const childBriefs = usageEvents.filter((event) => event.data?.phase === 'distill:child_brief')
+    expect(coreDistill?.agentPath).toBe('root')
+    expect(childBriefs.map((event) => event.agentPath).sort()).toEqual(['root-01', 'root-02'])
+
+    await delegateRuntime.dispose?.()
+  })
+
+  it('loads a child tool schema into the next request without duplicating inputSchema in history', async () => {
+    const childBodies: Record<string, unknown>[] = []
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (!childPath(body)) return response({ content: '# distilled skill' })
+      childBodies.push(body)
+      if (childBodies.length === 1) {
+        return namedToolCall('load-read', 'request_tool_schema', {
+          toolName: 'read_file',
+          reason: '需要读取文件',
+        })
+      }
+      return response({ role: 'assistant', content: '已获得读取能力。' })
+    }
+    const delegateRuntime = runtime(fetchImpl)
+    const writes = new Map<string, string>()
+
+    const result = await delegateRuntime.delegateAgents({
+      children: [{
+        objective: 'inspect',
+        mode: 'worker',
+        expectedOutput: 'summary',
+        maxTurns: 3,
+        toolProfile: 'workspace_read',
+      }],
+      toolProfile: 'workspace_read',
+    }, context(writes))
+
+    expect(result.children[0].status).toBe('done')
+    expect(childBodies).toHaveLength(2)
+    const historyResult = JSON.parse(toolResultFor(childBodies[1], 'load-read')) as Record<string, unknown>
+    expect(historyResult).toMatchObject({ loaded: true, toolName: 'read_file' })
+    expect(typeof historyResult.guide).toBe('string')
+    expect(historyResult).not.toHaveProperty('inputSchema')
+    const nextTools = childBodies[1].tools as Array<{
+      function: { name: string; parameters?: Record<string, unknown> }
+    }>
+    expect(nextTools.find((tool) => tool.function.name === 'read_file')?.function.parameters)
+      .toMatchObject({ type: 'object' })
+    await delegateRuntime.dispose?.()
+  })
+
+  it('preloads evaluator read tools and reserves the last turn for synthesis', async () => {
+    const childBodies: Record<string, unknown>[] = []
+    let explorationCalls = 0
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      const path = childPath(body)
+      if (!path) return response({ content: '# skill' })
+      childBodies.push(body)
+      if (body.tool_choice === 'none') {
+        return response({
+          content: '{"criteria":[]}',
+          reasoning_content: '证据已经足够，可以给出验收结论。',
+        })
+      }
+      explorationCalls += 1
+      return response({
+        role: 'assistant',
+        content: '先读取实现文件。',
+        reasoning_content: '需要核对真实代码，不能只依据摘要。',
+        tool_calls: [{
+          id: `read-${explorationCalls}`,
+          type: 'function',
+          function: { name: 'read_file', arguments: '{"path":"src/a.ts"}' },
+        }],
+      })
+    }
+    const delegateRuntime = runtime(fetchImpl)
+    const writes = new Map<string, string>()
+
+    const result = await delegateRuntime.delegateAgents({
+      children: [{
+        objective: 'evaluate',
+        mode: 'evaluator',
+        expectedOutput: 'strict JSON',
+        maxTurns: 3,
+        toolProfile: 'workspace_read',
+      }],
+      toolProfile: 'workspace_read',
+    }, context(writes))
+
+    expect(result.children[0]).toMatchObject({
+      status: 'done',
+      summary: '{"criteria":[]}',
+    })
+    expect(childBodies).toHaveLength(3)
+    const firstToolNames = (childBodies[0].tools as Array<{ function: { name: string } }>)
+      .map((tool) => tool.function.name)
+    expect(firstToolNames).toEqual(expect.arrayContaining([
+      'request_tool_schema',
+      'read_file',
+      'list_files',
+      'search_files',
+      'rg_search',
+    ]))
+    expect(childBodies[2]).toMatchObject({ tool_choice: 'none', tools: [] })
+    expect(messagesOf(childBodies[2]).at(-1)?.content).toContain('strict JSON')
+    const traceText = [...writes.entries()]
+      .find(([path]) => path.endsWith('/traces/root-01.trace.jsonl'))?.[1] ?? ''
+    const trace = traceText.trim().split('\n').map((line) => JSON.parse(line) as {
+      turn: number
+      item: { role: string; reasoning_content?: string; tool_call_id?: string }
+    })
+    expect(trace).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        turn: 1,
+        item: expect.objectContaining({
+          role: 'assistant',
+          reasoning_content: '需要核对真实代码，不能只依据摘要。',
+        }),
+      }),
+      expect.objectContaining({
+        turn: 1,
+        item: expect.objectContaining({ role: 'tool', tool_call_id: 'read-1' }),
+      }),
+      expect.objectContaining({
+        turn: 3,
+        item: expect.objectContaining({
+          role: 'assistant',
+          reasoning_content: '证据已经足够，可以给出验收结论。',
+        }),
+      }),
+    ]))
+    await delegateRuntime.dispose?.()
+  })
+
   it('shares one model-call semaphore across distillation and children', async () => {
     let active = 0
     let peak = 0
@@ -428,6 +630,20 @@ describe('createDelegateAgentRuntime', () => {
       .split('\n')
       .map((line) => JSON.parse(line) as { type: string; data?: Record<string, unknown> })
     expect(events.find((event) => event.type === 'delegate_finished')?.data?.status).toBe('failed')
+    const usageFailures = events.filter((event) => event.type === 'child_model_usage')
+    expect(usageFailures.length).toBeGreaterThan(0)
+    for (const usageFailure of usageFailures) {
+      expect(['distill:core', 'distill:child_brief']).toContain(usageFailure.data?.phase)
+      expect(usageFailure.data).toMatchObject({
+        cacheMetricsStatus: 'request_failed',
+        cacheLane: usageFailure.data?.phase,
+        cacheEpoch: 1,
+        cacheEpochReason: 'initial',
+      })
+      expect(usageFailure.data).not.toHaveProperty('promptTk')
+      expect(usageFailure.data).not.toHaveProperty('cacheHitTk')
+      expect(usageFailure.data).not.toHaveProperty('cacheMissTk')
+    }
     delegateRuntime.dispose?.()
   })
 
@@ -648,6 +864,54 @@ describe('createDelegateAgentRuntime', () => {
     expect(eventsText).toContain('"confirmedTools":["write_file"]')
     expect(eventsText).not.toContain('apply_patch')
     stableRuntime.dispose?.()
+  })
+
+  it('aggregates reversible change sets from child tool results for parent rollback', async () => {
+    const runChildTool = vi.fn(async () => ({
+      ok: true as const,
+      data: {
+        ok: true,
+        changeSet: { id: 'child-change-1', reversible: true },
+      },
+    }))
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (body.tool_choice === 'none') return response({ content: '# skill' })
+      const messages = body.messages as Array<{ role: string }>
+      return messages.some((message) => message.role === 'tool')
+        ? response({ content: 'write complete' })
+        : namedToolCall('write-change', 'write_file', { path: 'a.txt', content: 'ok' })
+    }
+    const callContext = context(new Map())
+    callContext.runChildTool = runChildTool
+    callContext.dangerousToolCapability = {
+      sessionId: 'session',
+      runId: 'run-change-sets',
+      delegationCallId: 'delegate-change-sets',
+      parentPath: 'root',
+      toolNames: ['write_file'],
+    }
+    callContext.delegationCallId = 'delegate-change-sets'
+    const delegateRuntime = createDelegateAgentRuntime({
+      sessionId: 'session',
+      runId: 'run-change-sets',
+      settings: { vendor: 'deepseek', model: 'test-model' },
+      apiKey: 'test-key',
+      signal: new AbortController().signal,
+      fetchImpl,
+    })
+
+    const result = await delegateRuntime.delegateAgents({
+      children: [{ objective: 'write', confirmedTools: ['write_file'] }],
+      confirmedTools: ['write_file'],
+    }, callContext)
+
+    expect(result.changeSets).toEqual([{ id: 'child-change-1', reversible: true }])
+    expect(result.reversible).toBe(true)
+    expect(result.children[0]?.changeSets).toEqual([
+      { id: 'child-change-1', reversible: true },
+    ])
+    delegateRuntime.dispose?.()
   })
 
   it('rejects child capability widening before starting children', async () => {
@@ -1400,8 +1664,9 @@ describe('createDelegateAgentRuntime', () => {
     // 一个是「父 agent 的 transcript / 继承 skill 太长」，混在一起排查者不知道该缩哪一头。
     expect(overBudget).toHaveLength(2)
 
-    const childEvent = overBudget.find((e) => e.data?.phase === undefined)
-    const distillEvent = overBudget.find((e) => e.data?.phase === 'distill')
+    const childEvent = overBudget.find((e) => e.data?.phase === 'subagent')
+    const distillEvent = overBudget.find((e) =>
+      String(e.data?.phase).startsWith('distill:'))
     expect(childEvent).toBeDefined()
     expect(distillEvent).toBeDefined()
 
@@ -1412,8 +1677,10 @@ describe('createDelegateAgentRuntime', () => {
     expect(data.estAfterTk as number).toBeGreaterThan(data.effectiveBudgetTk as number)
     expect(String(data.hint)).toContain('无可压缩内容')
 
-    // 蒸馏那条挂在父 agent 路径上，turn=0（它不是「轮」，靠 phase 标识）。
-    expect(distillEvent!.agentPath).toBe('root')
+    // 这里超预算的是给该子 agent 生成的 child brief，所以事件归到实际消费它的子路径；
+    // turn=0（蒸馏不是「轮」，靠 phase 标识）。
+    expect(distillEvent!.agentPath).toBe('root-01')
+    expect(distillEvent!.data?.phase).toBe('distill:child_brief')
     expect(distillEvent!.data?.turn).toBe(0)
     delegateRuntime.dispose?.()
   })

@@ -4,15 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 0.0.0.0",
-    "build": "tsc -b && vite build",
+    "dev": "vite --config vite.config.ts --host 0.0.0.0",
+    "build": "tsc -b && vite build --config vite.config.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "subagent:replay": "node scripts/subagent-replay-report.js",
     "subagent:index:compact": "node scripts/subagent-index-compact.js",
     "subagent:skills": "node scripts/subagent-skill-governance.js",
-    "preview": "vite preview --host 0.0.0.0",
-    "tauri": "tauri"
+    "preview": "vite preview --config vite.config.ts --host 0.0.0.0",
+    "tauri": "cd apps/desktop && tauri"
   },
   "dependencies": {
     "@web-agent/ai": "workspace:*",

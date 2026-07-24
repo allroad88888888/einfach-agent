@@ -11,9 +11,13 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 // runToolLoop 也 mock（resumeWithAnswers 复用它续跑，只断言被调用、不真跑 model）。
 vi.mock('./modelRun', () => ({
   runSession: vi.fn(() => Promise.resolve()),
+  resumePlanSession: vi.fn(() => Promise.resolve()),
   runToolLoop: vi.fn(() => Promise.resolve()),
 }))
-vi.mock('../state/checkpointWriters', () => ({ jumpToCheckpoint: vi.fn() }))
+vi.mock('../state/checkpointWriters', () => ({
+  jumpToCheckpoint: vi.fn(),
+  rewindBeforeCheckpoint: vi.fn(),
+}))
 // D-4：持久化桥全 mock —— 只验证 commands 按约定调用了落盘钩子（不跑真实 IndexedDB）。
 vi.mock('./persistenceBridge', () => ({
   persistSessions: vi.fn(),
@@ -39,9 +43,13 @@ import {
 } from '../state/transientAtoms'
 import type { ConversationItem, RunState, SessionMeta } from '../state/core.type'
 import { appendItem } from '../state/sessionWriters'
-import { runSession, runToolLoop } from './modelRun'
+import { setPlan } from '../state/planWriters'
+import { getPlan } from '../state/planWriters'
+import { resumePlanSession, runSession, runToolLoop } from './modelRun'
 import { defaultCore, createCoreInstance } from './core/coreInstance'
-import { jumpToCheckpoint } from '../state/checkpointWriters'
+import { getExecutionRuntime } from '../execution/runtime'
+import { executionGraphAtom } from '../execution/graph'
+import { jumpToCheckpoint, rewindBeforeCheckpoint } from '../state/checkpointWriters'
 import { persistSessions, persistDeleteSession, persistTruncate } from './persistenceBridge'
 import {
   configureCommands,
@@ -50,13 +58,16 @@ import {
   selectSession,
   removeSession,
   sendMessage,
+  continuePlan,
   stopRun,
   withdrawCurrentTurnToDraft,
   revertToTurn,
+  revertTurnToDraft,
   resumeWithAnswers,
   answerQuestion,
   discardArtifact,
   setWorkspaceRoot,
+  setApprovalMode,
   confirmTool,
   DEFAULT_SESSION_TITLE,
   deriveSessionTitle,
@@ -207,10 +218,144 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     }
   })
 
+  it('continuePlan：对没有运行中 run 的持久化计划直接续跑，不追加新的用户消息', async () => {
+    configureCommands({ deepseekApiKey: 'k' })
+    const id = newSession()
+    setPlan(id, {
+      id: 'plan-resume', title: '恢复计划', objective: '完成剩余工作', status: 'active', revision: 2,
+      requiresApproval: false, createdAt: 1, updatedAt: 2,
+      stages: [{
+        id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
+        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'in_progress', evidence: [],
+      }],
+    })
+
+    continuePlan()
+
+    expect(resumePlanSession).toHaveBeenCalledOnce()
+    expect(vi.mocked(resumePlanSession).mock.calls[0][0]).toBe(id)
+    expect(runSession).not.toHaveBeenCalled()
+    expect(getSessionStore(id).store.getter(itemsAtom)).toEqual([])
+    await flush()
+    expect(endRun).toHaveBeenCalledWith(id, expect.anything())
+  })
+
+  it('continuePlan：已有挂接中的 run 时不重复续跑', () => {
+    const id = newSession()
+    setPlan(id, {
+      id: 'plan-running', title: '运行计划', objective: '完成工作', status: 'active', revision: 1,
+      requiresApproval: false, createdAt: 1, updatedAt: 2,
+      stages: [{
+        id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
+        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'in_progress', evidence: [],
+      }],
+    })
+    getSessionStore(id).store.setter(runAtom, { runId: 'running', status: 'running' })
+
+    continuePlan()
+
+    expect(resumePlanSession).not.toHaveBeenCalled()
+    expect(runSession).not.toHaveBeenCalled()
+    expect(beginRun).not.toHaveBeenCalled()
+  })
+
+  it('continuePlan：无活跃 run 时先恢复重启遗留的 evaluating，再沿用原计划续跑', () => {
+    const id = newSession()
+    setPlan(id, {
+      id: 'plan-evaluating', title: '恢复验收', objective: '完成工作', status: 'active', revision: 4,
+      requiresApproval: false, createdAt: 1, updatedAt: 2,
+      stages: [{
+        id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
+        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'evaluating', evidence: ['pnpm test'],
+        evaluations: [{
+          attempt: 1, status: 'evaluating', summary: '实现完成', submittedEvidence: ['pnpm test'],
+          criteria: [], submittedAt: 2,
+        }],
+      }],
+    })
+
+    continuePlan()
+
+    expect(getPlan(id)).toMatchObject({
+      revision: 5,
+      stages: [{
+        status: 'in_progress',
+        evaluations: [{
+          status: 'unknown',
+          summary: '实现完成',
+          submittedEvidence: ['pnpm test'],
+          criteria: [{
+            criterion: '测试通过',
+            status: 'unknown',
+            reason: '应用或模型请求在验收完成前中断，继续执行时自动恢复',
+          }],
+        }],
+      }],
+    })
+    expect(resumePlanSession).toHaveBeenCalledOnce()
+    expect(runSession).not.toHaveBeenCalled()
+  })
+
+  it('continuePlan：活跃 run 的 evaluating 不做孤儿恢复', () => {
+    const id = newSession()
+    setPlan(id, {
+      id: 'plan-live-evaluation', title: '正在验收', objective: '完成工作', status: 'active', revision: 4,
+      requiresApproval: false, createdAt: 1, updatedAt: 2,
+      stages: [{
+        id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
+        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'evaluating', evidence: ['pnpm test'],
+        evaluations: [{
+          attempt: 1, status: 'evaluating', summary: '实现完成', submittedEvidence: ['pnpm test'],
+          criteria: [], submittedAt: 2,
+        }],
+      }],
+    })
+    getSessionStore(id).store.setter(runAtom, { runId: 'evaluating', status: 'running' })
+
+    continuePlan()
+
+    expect(getPlan(id)?.revision).toBe(4)
+    expect(getPlan(id)?.stages[0].status).toBe('evaluating')
+    expect(resumePlanSession).not.toHaveBeenCalled()
+  })
+
   it('stopRun：中断当前 active 会话的 run', () => {
     const id = newSession()
     stopRun()
     expect(abortRun).toHaveBeenCalledWith(id)
+  })
+
+  it('stopRun：awaiting_tool 即使来自旧状态且没有 execution id，也会停止 run 与后台子执行', async () => {
+    const core = createCoreInstance()
+    const commands = createCommands(core)
+    const id = commands.newSession()
+    const store = core.getSessionStore(id).store
+    const execution = getExecutionRuntime(core)
+    const handle = execution.spawn({
+      sessionId: id,
+      runId: 'run-awaiting',
+      label: '后台验收',
+      task: (signal) => new Promise((_, reject) => {
+        if (signal.aborted) {
+          reject(new DOMException('Aborted', 'AbortError'))
+          return
+        }
+        signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), {
+          once: true,
+        })
+      }),
+    })
+    store.setter(runAtom, { runId: 'run-awaiting', status: 'awaiting_tool' })
+
+    commands.stopRun()
+    await execution.join(id, handle.executionId)
+
+    expect(store.getter(runAtom)).toEqual({
+      runId: 'run-awaiting',
+      status: 'stopped',
+      pendingExecutionId: undefined,
+    })
+    expect(store.getter(executionGraphAtom).nodes[handle.executionId]?.status).toBe('cancelled')
   })
 
   it('stopRun：无 active → no-op', () => {
@@ -357,6 +502,66 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     revertToTurn(2)
     expect(jumpToCheckpoint).not.toHaveBeenCalled()
   })
+
+  function seedCompletedTurns(id: string): void {
+    const firstTurn: ConversationItem[] = [
+      { id: 'u0', createdAt: 10, item: { role: 'user', content: '第一问' } },
+      { id: 'a0', createdAt: 11, item: { role: 'assistant', content: '第一答' } },
+    ]
+    const secondTurn: ConversationItem[] = [
+      ...firstTurn,
+      { id: 'u1', createdAt: 20, item: { role: 'user', content: '第二问' } },
+      { id: 'a1', createdAt: 21, item: { role: 'assistant', content: '第二答' } },
+    ]
+    const store = getSessionStore(id).store
+    store.setter(itemsAtom, secondTurn)
+    store.setter(checkpointsAtom, [
+      { turnIndex: 0, label: '第一问', createdAt: 11, items: firstTurn },
+      { turnIndex: 1, label: '第二问', createdAt: 21, items: secondTurn },
+    ])
+    store.setter(runAtom, { runId: 'done', status: 'done' })
+  }
+
+  it('revertTurnToDraft：撤回目标轮本身并把用户输入放回草稿', () => {
+    const id = newSession()
+    seedCompletedTurns(id)
+    const store = getSessionStore(id).store
+
+    revertTurnToDraft(1)
+
+    expect(abortRun).toHaveBeenCalledWith(id)
+    expect(rewindBeforeCheckpoint).toHaveBeenCalledWith(id, 1, defaultCore)
+    expect(store.getter(runAtom)).toBeUndefined()
+    expect(store.getter(composerDraftAtom)).toBe('第二问')
+    expect(store.getter(withdrawnTurnNoticeAtom)).toMatchObject({
+      text: '已回退到该轮之前，原输入已放回输入框。',
+      sideEffects: false,
+    })
+    expect(persistTruncate).toHaveBeenCalledWith(id, 0)
+  })
+
+  it('revertTurnToDraft：首轮回退会明确截断到 -1，避免恢复同一份 checkpoint 成为空操作', () => {
+    const id = newSession()
+    seedCompletedTurns(id)
+
+    revertTurnToDraft(0)
+
+    expect(rewindBeforeCheckpoint).toHaveBeenCalledWith(id, 0, defaultCore)
+    expect(getSessionStore(id).store.getter(composerDraftAtom)).toBe('第一问')
+    expect(persistTruncate).toHaveBeenCalledWith(id, -1)
+  })
+
+  it('revertTurnToDraft：无效轮次整体 no-op', () => {
+    const id = newSession()
+    seedCompletedTurns(id)
+
+    revertTurnToDraft(-1)
+    revertTurnToDraft(2)
+
+    expect(rewindBeforeCheckpoint).not.toHaveBeenCalled()
+    expect(abortRun).not.toHaveBeenCalledWith(id)
+    expect(persistTruncate).not.toHaveBeenCalled()
+  })
 })
 
 describe('resumeWithAnswers（T-7 ask_user 暂停恢复）', () => {
@@ -424,6 +629,35 @@ describe('resumeWithAnswers（T-7 ask_user 暂停恢复）', () => {
 
     await flush()
     expect(endRun).toHaveBeenCalledWith(id, expect.anything())
+  })
+
+  it('优先按 pending decision 的 callId 回填，并保留 plan stage 归属', () => {
+    const id = seedWaiting('older-call')
+    const store = getSessionStore(id).store
+    const payload = { questions: [{ id: 'q', text: '选择？', type: 'text' }] }
+    store.setter(itemsAtom, [
+      ...store.getter(itemsAtom),
+      askAssistant('current-call'),
+    ])
+    store.setter(runAtom, {
+      runId: 'R1',
+      status: 'waiting_user',
+      pendingQuestion: payload,
+      pendingUserDecision: {
+        callId: 'current-call',
+        payload,
+        origin: {
+          surface: 'plan', phase: 'executing', planId: 'p1', planRevision: 2, stageId: 'build',
+        },
+      },
+    })
+
+    resumeWithAnswers()
+
+    const answer = store.getter(itemsAtom).at(-1)
+    expect(answer?.item).toMatchObject({ role: 'tool', tool_call_id: 'current-call' })
+    expect(answer?.planStageId).toBe('build')
+    expect(store.getter(runAtom)?.pendingUserDecision).toBeUndefined()
   })
 
   it('非 waiting_user（running）→ no-op（不回填、不续跑）', () => {
@@ -524,6 +758,27 @@ describe('setWorkspaceRoot（S4-A workspace 绑定）', () => {
   })
 })
 
+describe('setApprovalMode', () => {
+  it('按会话保存模式并持久化', () => {
+    const id = newSession()
+    vi.mocked(persistSessions).mockClear()
+
+    setApprovalMode('auto')
+
+    expect(rootStore.getter(sessionsAtom)[id].toolApprovalMode).toBe('auto')
+    expect(persistSessions).toHaveBeenCalled()
+  })
+
+  it('旧会话缺省视为 confirm，同值写入不产生持久化', () => {
+    newSession()
+    vi.mocked(persistSessions).mockClear()
+
+    setApprovalMode('confirm')
+
+    expect(persistSessions).not.toHaveBeenCalled()
+  })
+})
+
 describe('confirmTool（S4-B 危险工具确认恢复）', () => {
   // 造一条 assistant(tool_calls:[write_file{id}]) 条目（危险工具，暂停时 result 特意留空）。
   function dangerousAssistant(tcId: string): ConversationItem {
@@ -587,6 +842,25 @@ describe('confirmTool（S4-B 危险工具确认恢复）', () => {
     const id = seedConfirming('w1')
     confirmTool(true, true)
     expect(getSessionStore(id).store.getter(alwaysAllowedToolsAtom)).toContain('write_file')
+  })
+
+  it('不可撤回命令即使传入 always 也不加入「一律允许」集合', () => {
+    const id = seedConfirming('w1')
+    const store = getSessionStore(id).store
+    const run = store.getter(runAtom)
+    if (!run?.pendingToolConfirmation) throw new Error('缺少 pendingToolConfirmation')
+    store.setter(runAtom, {
+      ...run,
+      pendingToolConfirmation: {
+        ...run.pendingToolConfirmation,
+        toolName: 'shell_macos',
+        irreversible: true,
+      },
+    })
+
+    confirmTool(true, true)
+
+    expect(store.getter(alwaysAllowedToolsAtom)).not.toContain('shell_macos')
   })
 
   it('拒绝：回填该 tool_call 的 error result + 落回 running + runToolLoop 续跑（不带 resumeToolCall）', () => {

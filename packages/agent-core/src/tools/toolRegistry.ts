@@ -25,6 +25,7 @@ export interface ToolRegistry {
   has(name: string): boolean
   list(): ToolSummary[]
   loadSchema(name: string): LoadedTool | undefined
+  execution(name: string): Tool['execution'] | undefined
   run(name: string, args: unknown, ctx: ToolContext): Promise<ToolResult>
 }
 
@@ -71,6 +72,10 @@ export function createToolRegistry(): ToolRegistry {
         inputSchema: tool.inputSchema,
         guide: tool.skill.content,
       }
+    },
+
+    execution(name) {
+      return tools.get(name)?.execution
     },
 
     async run(name, args, ctx) {

@@ -1,6 +1,6 @@
 // 会话状态写入器 —— 操作「当前会话的 store」，不收 store 参数（C7）。
 // ---------------------------------------------------------------------------
-// 两个 store 的分工（CHECKPOINT-STATE-PLAN §1 C3 / C7）：
+// 两个 store 的分工：
 //   · 会话是否存在的权威事实 = 顶层 rootStore 的 sessionsAtom（登记表）。
 //     每个写入器先做 ghost guard：会话未登记 → no-op（防止给幽灵会话写内容）。
 //   · 会话内容（items / run）写在「各自会话 store」里（getSessionStore(id).store），

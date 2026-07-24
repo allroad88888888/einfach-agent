@@ -1,15 +1,20 @@
 # Core 抽离 + 插件机制蓝图（v1）
 
-把现在挤在 `src/agentNew/` 里的运行时，抽成「**薄 core + 插件**」。目标不是对标 pi，而是学它的**切缝手艺**，套到我们**更富的状态与能力**上。
+> 文档状态：演进蓝图，已部分实施。当前运行行为以
+> [核心运行时流程](core-runtime-flow.md) 和 `packages/agent-core` 代码为准。
+
+目标是把运行时持续收敛为「**薄 core + 插件**」。第一轮 workspace 抽包和 hook 切缝已经完成；
+下文仍保留目标形态及未完成的插件扩展面。
 
 对应现有实现：
-- `src/agentNew/runtime/modelRun.ts` —— 现在的耦合点（1000+ 行，九个关注点焊在一起）。
-- `src/agentNew/runtime/commands.ts` —— 已经是「自解析 store」的命令面（U2）。
-- `src/agentNew/state/{rootStore,sessionStore,sessionAtoms,transientAtoms}.ts` —— 状态核心（皇冠，原样留）。
-- `src/agentNew/state/{sessionWriters,checkpointWriters}.ts` —— guarded writers（core 内部继续走）。
-- `src/agentNew/tools/{registry,types}.ts` —— 工具抽象（已是一道缝）。
-- `src/agentNew/runtime/contextCompaction.ts` —— 纯函数（第一个要改成插件的关注点）。
-- `src/agentNew/subagents/*` —— 树运行时（保留实现，改成插件挂载）。
+
+- `packages/agent-core/src/runtime/modelRun.ts` —— 模型 run 与插件 hook 装配入口。
+- `packages/agent-core/src/runtime/core/` —— `CoreInstance`、`createCore()`、Plugin API 与 loop hooks。
+- `packages/agent-core/src/state/` —— root/session store、atoms 和 guarded writers。
+- `packages/agent-core/src/tools/` —— 工具抽象、registry 和 lazy loading。
+- `packages/agent-core/src/runtime/contextCompaction.ts` —— 上下文压缩实现。
+- `packages/agent-core/src/subagents/` —— 树形子 Agent runtime。
+- `tools/*` —— 从 Core 分离出的标准工具实现与聚合包。
 
 ---
 
@@ -20,7 +25,8 @@
 - **观察 = 订阅 atom；拦截 = hook 槽。** einfach atom 本身可订阅，观察型插件不需要独立事件总线；只有能 block/改写的拦截才需要显式 hook 槽 + 拿 store。
 - **薄 loop + 单槽 hook → 多订阅 fan-out。** core loop 只有单槽 hook；插件层把每个单槽多路复用成多订阅（带返回值即拦截）。core 永远不认识插件。
 - **工具 `ToolContext` 保持窄。** 工具是 LLM 可调能力，不塞 store；需要广状态的是编排层插件。
-- **先立缝，后拆包。** 先在 `src/agentNew/` 原地立起 CoreCtx/PluginApi/薄 loop，拿压缩跑通一个插件，再逐个搬，**最后**才物理拆 package。
+- **先立缝，后拆包。** 第一轮曾在旧 `src/agentNew/` 原地立起 CoreCtx/PluginApi/薄 loop，
+  当前 Web 宿主已迁至 `apps/web/src/agentNew/`；后续仍按“先稳定边界，再物理拆包”推进。
 - **不学 pi 的四样**：子进程 subagent（我们是进程内树）、穿参风格（我们走 store）、harness 焊进 core（我们把 session/skills/compaction 做成插件）、数组状态（我们是 store + atom）。
 
 ---

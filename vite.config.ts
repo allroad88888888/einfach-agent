@@ -213,7 +213,14 @@ function traceLogDevPlugin(): Plugin {
 }
 
 export default defineConfig({
+  root: fromRoot('./apps/web'),
+  // Web 源码已迁到 apps/web；环境变量仍统一放在仓库根目录，避免 Web/Tauri 各存一份密钥。
+  envDir: fromRoot('./'),
   plugins: [react(), traceLogDevPlugin()],
+  build: {
+    outDir: fromRoot('./apps/web/dist'),
+    emptyOutDir: true,
+  },
   resolve: {
     // react/react-dom 强制解析到本 app 的 node_modules 并去重，避免多副本 React。
     alias: {
@@ -221,21 +228,23 @@ export default defineConfig({
       'react-dom': fromRoot('./node_modules/react-dom'),
       '@web-agent/ai': fromRoot('./packages/agent-ai/src/index.ts'),
       '@web-agent/core': fromRoot('./packages/agent-core/src'),
-      // 工具域包 + meta（TSPLIT）：各解析到自己的 barrel。tools-* 更具体，排在 tools 之前。
-      '@web-agent/tools-shell': fromRoot('./packages/tools-shell/src/index.ts'),
-      '@web-agent/tools-interaction': fromRoot('./packages/tools-interaction/src/index.ts'),
-      '@web-agent/tools-fs': fromRoot('./packages/tools-fs/src/index.ts'),
-      '@web-agent/tools-planning': fromRoot('./packages/tools-planning/src/index.ts'),
-      '@web-agent/tools-skills': fromRoot('./packages/tools-skills/src/index.ts'),
-      '@web-agent/tools-agents': fromRoot('./packages/tools-agents/src/index.ts'),
-      '@web-agent/tools': fromRoot('./packages/tools/src/index.ts'),
-      '@': fromRoot('./src'),
+      // 根级工具域包 + standard 聚合包：各解析到自己的 barrel。
+      '@web-agent/tools-shell': fromRoot('./tools/shell/src/index.ts'),
+      '@web-agent/tools-interaction': fromRoot('./tools/interaction/src/index.ts'),
+      '@web-agent/tools-fs': fromRoot('./tools/fs/src/index.ts'),
+      '@web-agent/tools-planning': fromRoot('./tools/planning/src/index.ts'),
+      '@web-agent/tools-skills': fromRoot('./tools/skills/src/index.ts'),
+      '@web-agent/tools-agents': fromRoot('./tools/agents/src/index.ts'),
+      '@web-agent/tools': fromRoot('./tools/standard/src/index.ts'),
+      '@': fromRoot('./apps/web/src'),
     },
     dedupe: ['react', 'react-dom'],
   },
   test: {
+    // Vitest 覆盖 apps、packages、tools；不要跟随 Vite 的 Web app root 缩到 apps/web。
+    root: fromRoot('./'),
     environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
+    setupFiles: ['./apps/web/src/test/setup.ts'],
     css: true,
     restoreMocks: true,
     // 运行时用模块级单例（如 abortRegistry / 每会话 store 缓存），测试串行避免共享态串扰。

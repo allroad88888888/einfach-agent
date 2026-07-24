@@ -13,19 +13,20 @@
 //   core.rootStore，进度/卡片/产物写 core.getSessionStore(id).store（经 writers 的新 core 尾参），
 //   callTool 经 core.tools.run 且把 core 递归传给子 ctx。默认 defaultCore＝穿线前的模块全局单例，
 //   故不传 core 的调用点（含全部现有测试）行为逐字不变。
-//   ★ 隔离缺口（Phase 2.5 补）★：子 agent 委派路径（delegateAgents/runChildTool）本期【故意】不穿
-//   core，仍走 defaultCore.tools + 未穿 core 的 isToolAlwaysAllowed —— 因为 subagents/runtime.ts 内部
-//   尚未穿线，只穿这一层会造成半穿线不一致。见文件下方对应处的行内标注。
+//   ★ 剩余隔离缺口★：子 agent 委派路径（delegateAgents/runChildTool）仍走 defaultCore.tools，
+//   且危险工具授权调用点尚未传入当前 core。subagents/runtime.ts 完成实例化前，这条路径不能视为隔离。
 
 import type { ShellCommandInput, ToolContext, ToolResult } from '../tools/types'
 import type {
   DelegateAgentCallContext,
+  DelegateAgentInput,
   DelegateAgentRuntime,
   SubagentSkillFile,
 } from '../subagents/types'
+import { getExecutionRuntime } from '../execution/runtime'
 import { ROOT_AGENT_PATH } from '../subagents/path'
 import { isSubagentWorkspaceReadTool } from '../subagents/toolProfile'
-import { isDangerousTool } from './dangerousTools'
+import { commandUsesPermanentDelete, isDangerousTool } from './dangerousTools'
 import { toolRegistry } from '../tools/registry'
 import { sessionsAtom } from '../state/rootStore'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
@@ -49,6 +50,9 @@ import {
 import { rgSearchWorkspace } from './workspaceRg'
 import { applyWorkspacePatch } from './workspacePatch'
 import { writeWorkspaceFile, type WorkspaceWriteInput, type WorkspaceWriteResult } from './workspaceWrite'
+import { deleteWorkspacePath } from './workspaceDelete'
+import { revertWorkspaceChange } from './workspaceChange'
+import { copyWorkspacePath, moveWorkspacePath } from './workspacePathOperation'
 import { getWorkspaceDiff } from './workspaceGit'
 import { runWorkspaceTask } from './workspaceTask'
 
@@ -145,6 +149,21 @@ export function buildToolContext(opts: {
     return { ...record, workspaceRoot } as T
   }
 
+  function withChangeContext<T>(input: T): T {
+    const record = input !== null && typeof input === 'object' && !Array.isArray(input)
+      ? input as Record<string, unknown>
+      : {}
+    return {
+      ...record,
+      changeContext: {
+        changeId: newId(),
+        sessionId,
+        runId,
+        toolCallId: callId,
+      },
+    } as T
+  }
+
   function withShellCwd(input: ShellCommandInput): ShellCommandInput {
     if (!workspaceRoot) return input
     const cwd = typeof input.cwd === 'string' && input.cwd.trim().length > 0 ? input.cwd.trim() : undefined
@@ -196,6 +215,28 @@ export function buildToolContext(opts: {
     return result
   }
 
+  // 阶段验收的 evaluator 是计划状态机的一部分，归档只是辅助审计记录。
+  // Web 环境没有 workspace 写桥，桌面端也可能临时遇到归档目录权限问题；这两类失败都不能
+  // 把一个已经产出有效 JSON verdict 的 evaluator 判成失败，否则阶段会永久退回 in_progress。
+  // 首次失败后本次 evaluator 不再重复尝试，避免每个事件都撞一次相同的写入错误。
+  let evaluatorArchiveUnavailable: string | undefined
+  async function writeEvaluatorArchiveBestEffort(input: {
+    path: string
+    content: string
+    mode?: 'create' | 'overwrite' | 'append'
+  }): Promise<unknown> {
+    if (evaluatorArchiveUnavailable) {
+      return { ok: true, skipped: true, warning: evaluatorArchiveUnavailable }
+    }
+    try {
+      return await writeSubagentTextFile(input)
+    } catch (error) {
+      evaluatorArchiveUnavailable = error instanceof Error ? error.message : String(error)
+      progress(`评估器归档已跳过: ${evaluatorArchiveUnavailable}`)
+      return { ok: true, skipped: true, warning: evaluatorArchiveUnavailable }
+    }
+  }
+
   const ctx: ToolContext = {
     sessionId,
     signal,
@@ -217,15 +258,19 @@ export function buildToolContext(opts: {
       return evaluationRuntime.submitStageResult(input)
     },
     evaluateStage(input) {
-      assertFresh()
+      // evaluator may finish after the parent tool call has already returned.
+      // planId + revision is the freshness guard for this background state
+      // transition; tying it to the parent model run would strand `evaluating`.
       return evaluationRuntime.evaluateStage(input)
     },
     evaluatePlan(input) {
-      assertFresh()
+      // Same background-completion rule as evaluateStage above.
       return evaluationRuntime.evaluatePlan(input)
     },
     abortStageEvaluation(planId, revision, stageId, reason) {
-      assertFresh()
+      // 这是失败补偿，不是旧 run 的普通业务写入。模型请求被中断/替换时，发起验收的 run
+      // 很可能已经 stale，但它仍必须尝试把自己留下的 evaluating 回滚掉；真正的并发安全由
+      // EvaluationRuntime 的 planId + revision 乐观锁保证，计划已被其他 run 推进时会 fail-closed。
       return evaluationRuntime.abortStageEvaluation(planId, revision, stageId, reason)
     },
 
@@ -234,7 +279,9 @@ export function buildToolContext(opts: {
       progress(shellProgressText(input.command))
       const result = await runShellCommand(withShellCwd(input))
       assertFresh()
-      return result
+      return commandUsesPermanentDelete(opts.toolName, { command: input.command })
+        ? { ...result, reversible: false }
+        : result
     },
 
     async readWorkspaceFile(input) {
@@ -273,7 +320,9 @@ export function buildToolContext(opts: {
       assertFresh()
       progress('应用文件 patch')
       const result = await applyWorkspacePatch(
-        withWorkspaceRoot(input as Parameters<typeof applyWorkspacePatch>[0]),
+        withChangeContext(
+          withWorkspaceRoot(input as Parameters<typeof applyWorkspacePatch>[0]),
+        ),
       )
       assertFresh()
       return result
@@ -284,7 +333,54 @@ export function buildToolContext(opts: {
       const path = typeof input === 'object' && input && 'path' in input ? (input as { path?: unknown }).path : undefined
       progress(pathProgressText('写入文件', path))
       const result = await writeWorkspaceFile(
-        withWorkspaceRoot(input as Parameters<typeof writeWorkspaceFile>[0]),
+        withChangeContext(
+          withWorkspaceRoot(input as Parameters<typeof writeWorkspaceFile>[0]),
+        ),
+      )
+      assertFresh()
+      return result
+    },
+
+    async deleteWorkspacePath(input) {
+      assertFresh()
+      const path = typeof input === 'object' && input && 'path' in input
+        ? (input as { path?: unknown }).path
+        : undefined
+      progress(pathProgressText('删除路径', path))
+      const result = await deleteWorkspacePath(
+        withChangeContext(
+          withWorkspaceRoot(input as Parameters<typeof deleteWorkspacePath>[0]),
+        ),
+      )
+      assertFresh()
+      return result
+    },
+
+    async copyWorkspacePath(input) {
+      assertFresh()
+      progress('复制路径')
+      const result = await copyWorkspacePath(
+        withChangeContext(withWorkspaceRoot(input as Parameters<typeof copyWorkspacePath>[0])),
+      )
+      assertFresh()
+      return result
+    },
+
+    async moveWorkspacePath(input) {
+      assertFresh()
+      progress('移动路径')
+      const result = await moveWorkspacePath(
+        withChangeContext(withWorkspaceRoot(input as Parameters<typeof moveWorkspacePath>[0])),
+      )
+      assertFresh()
+      return result
+    },
+
+    async revertWorkspaceChange(input) {
+      assertFresh()
+      progress('回退文件更改')
+      const result = await revertWorkspaceChange(
+        withWorkspaceRoot(input as Parameters<typeof revertWorkspaceChange>[0]),
       )
       assertFresh()
       return result
@@ -357,19 +453,16 @@ export function buildToolContext(opts: {
   }
 
   if (opts.delegateRuntime) {
-    // 【隔离缺口 · Phase 2.5】子 agent 委派路径本期【故意】不穿 core：下面 runChildTool 仍走模块级
-    //   toolRegistry（＝ defaultCore.tools），isToolAlwaysAllowed 也是未穿 core 的纯读（＝ defaultCore
-    //   视图）。原因：createDelegateAgentRuntime 及 subagents/runtime.ts 内部还有大量未穿 core 的 store/
-    //   registry 访问，只穿这一个回调会造成半穿线的不一致，故整条子 agent 路径统一留在 defaultCore，
-    //   等 subagents 内部穿线（第二循环）时一并补齐。默认 core=defaultCore 时此处行为零变化。
-    ctx.delegateAgents = (input) => {
+    // 多实例缺口：runChildTool 仍走模块级 toolRegistry（defaultCore.tools），下面的危险工具授权
+    // 调用也没有传入当前 core。默认应用不受影响，独立 Core 的 delegation 暂不保证隔离。
+    const buildDelegateCallContext = (input: DelegateAgentInput): DelegateAgentCallContext => {
       const requestedConfirmedTools = opts.toolName === 'delegate_agent'
         && opts.toolArgs && typeof opts.toolArgs === 'object' && !Array.isArray(opts.toolArgs)
         && Array.isArray((opts.toolArgs as Record<string, unknown>).confirmedTools)
         ? Array.from(new Set(
             ((opts.toolArgs as Record<string, unknown>).confirmedTools as unknown[])
               .filter((name): name is string => typeof name === 'string' && isDangerousTool(name))
-              // 隔离缺口：isToolAlwaysAllowed 仍读 defaultCore（writer 3 未给它加 core）。
+              // 多实例缺口：此调用点尚未传入当前 core。
               .filter((name) => isToolAlwaysAllowed(sessionId, name)),
           ))
         : []
@@ -391,7 +484,9 @@ export function buildToolContext(opts: {
         inheritedSkillContents: opts.inheritedSkillContents,
         dangerousToolCapability,
         progress,
-        writeTextFile: writeSubagentTextFile,
+        writeTextFile: opts.toolName === 'submit_stage_result'
+          ? writeEvaluatorArchiveBestEffort
+          : writeSubagentTextFile,
         async runChildTool(name, args) {
           assertFresh()
           const confirmedDangerousTool = dangerousToolCapability?.toolNames.includes(name) === true
@@ -405,8 +500,40 @@ export function buildToolContext(opts: {
           return result
         },
       }
-      return opts.delegateRuntime!.delegateAgents(input, callContext)
+      return callContext
     }
+    ctx.delegateAgents = (input) =>
+      opts.delegateRuntime!.delegateAgents(input, buildDelegateCallContext(input))
+    ctx.spawnAgents = (input, options) => {
+      const callContext = buildDelegateCallContext(input)
+      opts.delegateRuntime!.retain?.()
+      return getExecutionRuntime(core).spawn({
+        sessionId,
+        runId,
+        label: input.children.map((child) => child.objective).join('；'),
+        task: async (executionSignal) => {
+          const cancelDelegateRuntime = () => opts.delegateRuntime!.cancel?.()
+          executionSignal.addEventListener('abort', cancelDelegateRuntime, { once: true })
+          if (executionSignal.aborted) cancelDelegateRuntime()
+          try {
+            const result = await opts.delegateRuntime!.delegateAgents(input, callContext)
+            return options?.onComplete ? await options.onComplete(result) : result
+          } catch (error) {
+            await options?.onError?.(error)
+            throw error
+          } finally {
+            executionSignal.removeEventListener('abort', cancelDelegateRuntime)
+            opts.delegateRuntime!.release?.()
+          }
+        },
+      })
+    }
+    ctx.observeExecution = (executionId) =>
+      getExecutionRuntime(core).observe(sessionId, executionId)
+    ctx.joinExecution = (executionId) =>
+      getExecutionRuntime(core).join(sessionId, executionId)
+    ctx.cancelExecution = (executionId) =>
+      getExecutionRuntime(core).cancel(sessionId, executionId)
   }
 
   return ctx

@@ -110,6 +110,27 @@ describe('normalizeAskUserQuestionPayload', () => {
     ).toBeUndefined()
   })
 
+  it('只保留合法的 Plan 决策上下文，非法 phase 被忽略', () => {
+    expect(
+      normalizeAskUserQuestionPayload({
+        context: { surface: 'plan', phase: 'drafting' },
+        questions: [],
+      }).context,
+    ).toEqual({ surface: 'plan', phase: 'drafting' })
+    expect(
+      normalizeAskUserQuestionPayload({
+        context: { surface: 'conversation', phase: 'unknown' },
+        questions: [],
+      }).context,
+    ).toEqual({ surface: 'conversation' })
+    expect(
+      normalizeAskUserQuestionPayload({
+        context: { surface: 'sidebar', phase: 'drafting' },
+        questions: [],
+      }).context,
+    ).toBeUndefined()
+  })
+
   it('payload 为 null/字符串/数组/缺 questions 时返回空 questions', () => {
     expect(normalizeAskUserQuestionPayload(null)).toEqual({ questions: [] })
     expect(normalizeAskUserQuestionPayload(undefined)).toEqual({ questions: [] })

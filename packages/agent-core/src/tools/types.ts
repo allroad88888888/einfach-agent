@@ -10,6 +10,11 @@ import type {
   SubmitStageResultInput,
   UpdatePlanInput,
 } from '../planning/types'
+import type {
+  ExecutionHandle,
+  ExecutionJoinResult,
+  ExecutionObservation,
+} from '../execution/types'
 
 /**
  * tool 的执行位置：
@@ -26,7 +31,7 @@ export interface ToolSummary {
   runtime: ToolRuntime
 }
 
-/** 懒加载后补出 schema + 指南正文（request_tool_schema 时一起给 model）。 */
+/** 懒加载后补出 schema + 指南正文；schema 进下一轮 tools，guide 进一次性工具结果。 */
 export interface LoadedTool extends ToolSummary {
   inputSchema: Record<string, unknown>
   guide: string
@@ -81,9 +86,25 @@ export interface ShellCommandResult {
   durationMs: number
   timedOut: boolean
   truncated: boolean
+  /** Present and false for shell deletion, which cannot produce a recoverable change set. */
+  reversible?: false
 }
 
 export type WorkspaceTaskKind = 'test' | 'build' | 'lint' | 'typecheck' | 'cargo_check'
+
+export interface SpawnAgentsOptions {
+  /**
+   * Runs inside the background execution before its node becomes succeeded.
+   * This is used by orchestration tools to atomically apply a child result to
+   * their own state machine without making the parent model loop wait.
+   */
+  onComplete?(result: DelegateAgentBatchResult): unknown | Promise<unknown>
+  /**
+   * Best-effort compensation hook. The execution node still becomes failed
+   * after this hook returns.
+   */
+  onError?(error: unknown): void | Promise<void>
+}
 
 export interface WorkspaceTaskInput {
   kind: WorkspaceTaskKind
@@ -118,6 +139,14 @@ export interface ToolContext {
   callTool(name: string, args: unknown): Promise<ToolResult>
   /** 启动树形 headless 子 agent；由 root runtime 注入，普通工具只能经该能力派活。 */
   delegateAgents?(input: DelegateAgentInput): Promise<DelegateAgentBatchResult>
+  /** 非阻塞启动子 agent；立即返回可观察、可显式等待的执行句柄。 */
+  spawnAgents?(input: DelegateAgentInput, options?: SpawnAgentsOptions): ExecutionHandle
+  /** 读取后台执行节点，不等待它完成。 */
+  observeExecution?(executionId: string): ExecutionObservation
+  /** 显式等待后台执行节点。 */
+  joinExecution?(executionId: string): Promise<ExecutionJoinResult>
+  /** 取消一个后台执行节点。 */
+  cancelExecution?(executionId: string): boolean
   /** 结构化计划能力。状态由宿主的 PlanRuntime 管理，工具不得直接访问 atom/store。 */
   createPlan?(input: CreatePlanInput): PlanMutationResult
   executePlan?(planId: string, revision: number): PlanMutationResult
@@ -161,6 +190,12 @@ export interface ToolContext {
   applyWorkspacePatch?(input: unknown): Promise<unknown>
   /** 写入 workspace 文本文件。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
   writeWorkspaceFile?(input: unknown): Promise<unknown>
+  /** 可撤回地删除 workspace 内的一个文件或目录。 */
+  deleteWorkspacePath?(input: unknown): Promise<unknown>
+  copyWorkspacePath?(input: unknown): Promise<unknown>
+  moveWorkspacePath?(input: unknown): Promise<unknown>
+  /** 回退一次由文件变更工具生成的 change set。 */
+  revertWorkspaceChange?(input: unknown): Promise<unknown>
   /** 读取 git status/diff。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
   getWorkspaceDiff?(input?: unknown): Promise<unknown>
   /** 运行预定义 workspace 验证任务。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
@@ -179,5 +214,14 @@ export interface Tool {
   readonly runtime: ToolRuntime
   readonly skill: ToolSkill
   readonly inputSchema: Record<string, unknown>
+  /**
+   * Scheduler hint. Only tools explicitly declaring `parallel` may overlap
+   * with siblings from the same model response. `effectKeys` are retained in
+   * the execution graph for conflict inspection and future dependency rules.
+   */
+  readonly execution?: {
+    readonly mode: 'serial' | 'parallel'
+    readonly effectKeys?: readonly string[]
+  }
   execute(args: unknown, ctx: ToolContext): ToolResult | Promise<ToolResult>
 }

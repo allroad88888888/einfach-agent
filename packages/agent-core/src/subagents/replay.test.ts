@@ -260,30 +260,36 @@ describe('replaySubagentArchive', () => {
 // 它们必须同时出现在 types.ts 的 SubagentArchiveEventType 联合【和】replay.ts 的
 // SUBAGENT_EVENT_TYPES 白名单里 —— 只加联合不加白名单，isSubagentArchiveEvent 会把它判成
 // 结构非法丢进 parseErrors，排查者在 eventCounts 里就再也看不到「这个子 agent 被压过」。
-describe('replay 认得子 agent 上下文压缩事件', () => {
-  const compactionTypes = ['child_context_compacted', 'child_context_over_budget'] as const
+describe('replay 认得子 agent 模型遥测事件', () => {
+  const telemetryTypes = [
+    'child_model_usage',
+    'child_context_compacted',
+    'child_context_over_budget',
+  ] as const
 
-  it('两类压缩事件都进 records 而不是 parseErrors', () => {
-    const text = compactionTypes
+  it('usage 与两类压缩事件都进 records 而不是 parseErrors', () => {
+    const text = telemetryTypes
       .map((type, i) => JSON.stringify({ ...event(), eventId: `ev-${i}`, type, agentPath: 'root-01' }))
       .join('\n')
 
     const result = parseSubagentEvents(text)
 
     expect(result.parseErrors).toHaveLength(0)
-    expect(result.records.map((r) => r.type)).toEqual([...compactionTypes])
+    expect(result.records.map((r) => r.type)).toEqual([...telemetryTypes])
   })
 
   it('eventCounts 统计它们（初始表漏一个键就会是 NaN/undefined）', () => {
     const text = [
       JSON.stringify(event()),
-      JSON.stringify({ ...event(), eventId: 'ev-1', type: 'child_context_compacted', agentPath: 'root-01' }),
-      JSON.stringify({ ...event(), eventId: 'ev-2', type: 'child_context_compacted', agentPath: 'root-02' }),
-      JSON.stringify({ ...event(), eventId: 'ev-3', type: 'child_context_over_budget', agentPath: 'root-02' }),
+      JSON.stringify({ ...event(), eventId: 'ev-1', type: 'child_model_usage', agentPath: 'root-01' }),
+      JSON.stringify({ ...event(), eventId: 'ev-2', type: 'child_context_compacted', agentPath: 'root-01' }),
+      JSON.stringify({ ...event(), eventId: 'ev-3', type: 'child_context_compacted', agentPath: 'root-02' }),
+      JSON.stringify({ ...event(), eventId: 'ev-4', type: 'child_context_over_budget', agentPath: 'root-02' }),
     ].join('\n')
 
     const state = replaySubagentArchive({ eventsText: text })
 
+    expect(state.eventCounts.child_model_usage).toBe(1)
     expect(state.eventCounts.child_context_compacted).toBe(2)
     expect(state.eventCounts.child_context_over_budget).toBe(1)
     // 没发生过的类型必须是 0 而不是 undefined —— 初始表少一个键，UI 上就会显示成空白而非「0 次」。

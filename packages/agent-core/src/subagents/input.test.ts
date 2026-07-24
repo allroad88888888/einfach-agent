@@ -99,7 +99,7 @@ describe('normalizeDelegateAgentInput', () => {
         maxConcurrent: 8,
         maxTotalNodes: 256,
         maxModelCalls: 512,
-        children: [{ objective: 'a', maxTurns: 8 }],
+        children: [{ objective: 'a', maxTurns: 16 }],
       },
     })
   })

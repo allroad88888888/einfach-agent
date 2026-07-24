@@ -1,4 +1,9 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
+import {
+  normalizeChangeSummary,
+  type WorkspaceChangeContext,
+  type WorkspaceChangeSummary,
+} from './workspaceChange'
 
 export type WorkspaceWriteMode = 'create' | 'overwrite' | 'append'
 
@@ -13,6 +18,8 @@ export interface WorkspaceWriteInput {
   exclusivePathLock?: boolean
   /** 可选显式 workspace root（P1）；不传则 Rust 侧走 git root 兜底。 */
   workspaceRoot?: string
+  /** Runtime-only audit metadata; tool arguments cannot provide this. */
+  changeContext?: WorkspaceChangeContext
 }
 
 export interface WorkspaceWriteResult {
@@ -23,6 +30,7 @@ export interface WorkspaceWriteResult {
   overwritten: boolean
   appended: boolean
   error?: string
+  changeSet?: WorkspaceChangeSummary
 }
 
 type TauriWorkspaceWriteInput = {
@@ -34,6 +42,7 @@ type TauriWorkspaceWriteInput = {
   max_bytes?: number
   exclusive_path_lock?: boolean
   workspace_root?: string
+  change_context?: WorkspaceChangeContext
 }
 
 function toTauriInput(input: WorkspaceWriteInput): TauriWorkspaceWriteInput {
@@ -46,6 +55,7 @@ function toTauriInput(input: WorkspaceWriteInput): TauriWorkspaceWriteInput {
     max_bytes: input.maxBytes,
     exclusive_path_lock: input.exclusivePathLock,
     workspace_root: input.workspaceRoot,
+    change_context: input.changeContext,
   }
 }
 
@@ -109,6 +119,8 @@ function normalizeResult(raw: unknown, input: WorkspaceWriteInput): WorkspaceWri
   if (!ok && error) {
     result.error = error
   }
+  const changeSet = normalizeChangeSummary(raw.changeSet ?? raw.change_set)
+  if (changeSet) result.changeSet = changeSet
   return result
 }
 

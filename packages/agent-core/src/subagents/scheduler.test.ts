@@ -8,6 +8,7 @@ describe('subagent scheduler dispatch accounting', () => {
     const firstBatch = scheduler.reserveChildren({
       treeId: 'run-1',
       sessionId: 'session-1',
+      delegationCallId: 'delegate-1',
       parentPath: 'root',
       inheritedSkillFiles: ['inherited.md'],
       inheritedSkillIds: ['sk_inherited'],
@@ -15,6 +16,7 @@ describe('subagent scheduler dispatch accounting', () => {
     })
 
     expect(firstBatch.map((node) => node.path)).toEqual(['root-01', 'root-02'])
+    expect(firstBatch.map((node) => node.delegationCallId)).toEqual(['delegate-1', 'delegate-1'])
     expect(firstBatch[0].dispatchCounter).toBe(0)
     expect(firstBatch[1].dispatchCounter).toBe(0)
 

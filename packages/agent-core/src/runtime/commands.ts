@@ -1,6 +1,6 @@
 // P-R3：runtime 命令 API —— UI ↔ runtime 的唯一边界。
 // ---------------------------------------------------------------------------
-// 契约（RUNTIME-UI-PLAN §1）：
+// 当前 UI/runtime 契约：
 //   · U1 runtime/UI 隔离：UI 只做两件事 —— 读 atom + 调这里导出的命令。UI 绝不直接
 //     setter atom / import writers / 碰 store 实例；这些命令是唯一入口边界。
 //   · U2 命令不收 store：每个命令都不接 `store` 参数，内部自取 rootStore /
@@ -36,8 +36,8 @@ import {
   setWithdrawnTurnNotice,
 } from '../state/transientAtoms'
 import type { AskUserAnswerValue } from '../state/transientAtoms'
-import { jumpToCheckpoint } from '../state/checkpointWriters'
-import { runSession, runToolLoop } from './modelRun'
+import { jumpToCheckpoint, rewindBeforeCheckpoint } from '../state/checkpointWriters'
+import { resumePlanSession, runSession, runToolLoop } from './modelRun'
 // 【实例化 · 第 2/3 期穿线】命令绑定 core（默认 defaultCore）：函数体内用工厂参数 core 显式替换旧的
 //   模块全局（rootStore / getSessionStore / beginRun/abortRun/endRun），并把 core 传进
 //   runSession/runToolLoop/writers 的 core 参数。abort 经 core.abort.*，配置经 core.config。默认
@@ -51,6 +51,8 @@ import type { ModelSettings, SessionMeta, ConversationItem } from '../state/core
 import { DEFAULT_DEEPSEEK_MODEL } from '@web-agent/ai'
 import { addEvent, getActiveSpan, runTraceKey } from '../observability/trace'
 import { isDangerousTool } from './dangerousTools'
+import { getExecutionRuntime } from '../execution/runtime'
+import { activeExecutionNodeIdsAtom, executionGraphAtom } from '../execution/graph'
 
 // ===========================================================================
 // 运行时配置注入 —— apiKey 来源（config 通电：defaultCore.config 是 CoreInstance 第五个视图）
@@ -216,6 +218,20 @@ export function createCommands(core: CoreInstance = defaultCore) {
     if (changed) persistSessions() // D-4：会话元信息变更 → 覆盖式落盘（fire-and-forget）。
   }
 
+  // 简介：切换当前会话的工具授权模式，并随 SessionMeta 持久化。
+  function setApprovalMode(mode: 'confirm' | 'auto'): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+    let changed = false
+    core.rootStore.setter(sessionsAtom, (prev) => {
+      const meta = prev[id]
+      if (!meta || (meta.toolApprovalMode ?? 'confirm') === mode) return prev
+      changed = true
+      return { ...prev, [id]: { ...meta, toolApprovalMode: mode, updatedAt: Date.now() } }
+    })
+    if (changed) persistSessions()
+  }
+
   // =========================================================================
   // 运行命令
   // =========================================================================
@@ -259,10 +275,94 @@ export function createCommands(core: CoreInstance = defaultCore) {
     )
   }
 
+  // 简介：恢复一个已经持久化、但当前没有运行中 run 的计划。
+  // 详情：计划状态会随 SessionMeta 落盘，runAtom 则是瞬态；应用重启后可能出现 plan 仍为
+  //   active/evaluating、步骤仍为 in_progress，但实际上没有模型请求在执行。该命令只允许这类
+  //   未结束计划进入新一轮，并通过 current_plan_snapshot 要求模型沿用现有计划而非重新创建。
+  function continuePlan(): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+
+    const status = core.getSessionStore(id).store.getter(runAtom)?.status
+    if (
+      status === 'running'
+      || status === 'awaiting_tool'
+      || status === 'waiting_user'
+      || status === 'waiting_confirmation'
+      || status === 'waiting_plan_approval'
+    ) return
+
+    let plan = getPlan(id)
+    if (!plan || !['approved', 'active', 'evaluating'].includes(plan.status)) return
+    if (!plan.stages.some((stage) => ['pending', 'in_progress', 'evaluating'].includes(stage.status))) return
+
+    // runAtom 不落盘，应用重启后 stage=evaluating 只可能是上次验收中断留下的孤儿状态。
+    // 先按 revision 原子回滚为 in_progress，保留提交摘要和证据并记录 unknown 验收，再让模型
+    // 从 current_plan_snapshot 继续；不追加用户消息，也不重新创建计划。
+    const orphanedEvaluations = plan.stages.filter((stage) => stage.status === 'evaluating')
+    if (orphanedEvaluations.length > 0) {
+      const evaluation = new EvaluationRuntime({
+        get: () => getPlan(id),
+        set: (next) => setPlan(id, next),
+      }, Date.now)
+      for (const stage of orphanedEvaluations) {
+        const recovered = evaluation.abortStageEvaluation(
+          plan.id,
+          plan.revision,
+          stage.id,
+          '应用或模型请求在验收完成前中断，继续执行时自动恢复',
+        )
+        if (!recovered.ok) return
+        plan = recovered.plan
+      }
+    }
+
+    const meta = core.rootStore.getter(sessionsAtom)[id]
+    if (!meta) return
+    const apiKey = meta.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
+    const signal = core.abort.beginRun(id)
+    void resumePlanSession(id, {
+      signal,
+      apiKey,
+      fetchImpl: core.config.fetchImpl,
+      core,
+    }).finally(() => core.abort.endRun(id, signal))
+  }
+
   // 简介：esc —— 中断当前 active 会话正在跑的 run。
   function stopRun(): void {
     const id = core.rootStore.getter(activeSessionIdAtom)
-    if (id) core.abort.abortRun(id)
+    if (!id) return
+    const store = core.getSessionStore(id).store
+    const run = store.getter(runAtom)
+    core.abort.abortRun(id)
+    if (!run || !['running', 'awaiting_tool'].includes(run.status)) return
+
+    // 后台 execution 启动后，父模型请求会正常 return 并释放自己的 AbortController。
+    // 因此停止不能只 abort 模型请求，还要先把 run 置 stopped 阻断完成回调的自动续跑，
+    // 再取消对应 execution（它会继续向下中断 evaluator 子树）。
+    patchRun(id, {
+      status: 'stopped',
+      pendingExecutionId: undefined,
+    }, core)
+
+    const executionIds = new Set<string>()
+    if (run.pendingExecutionId) executionIds.add(run.pendingExecutionId)
+
+    // 兼容修复前已经落盘/正在运行的会话：旧 RunState 没有 pendingExecutionId。
+    // execution graph 仍保留 runId，因此可找出该 run 下活跃的顶层 batch 并逐个取消。
+    const graph = store.getter(executionGraphAtom)
+    for (const executionId of store.getter(activeExecutionNodeIdsAtom)) {
+      const node = graph.nodes[executionId]
+      if (node?.runId === run.runId && node.type === 'agent-batch' && !node.parentId) {
+        executionIds.add(executionId)
+      }
+    }
+
+    const executionRuntime = getExecutionRuntime(core)
+    for (const executionId of executionIds) {
+      executionRuntime.cancel(id, executionId)
+    }
   }
 
   // 简介：撤回当前未完成轮并把该轮用户输入放回 Composer 草稿。
@@ -313,11 +413,13 @@ export function createCommands(core: CoreInstance = defaultCore) {
     const run = core.getSessionStore(id).store.getter(runAtom)
     if (run?.status !== 'waiting_user') return
 
-    // 找待回填的 ask_user tool_call id。
-    const toolCallId = findAskUserToolCallId(core.getSessionStore(id).store.getter(itemsAtom))
+    const pendingDecision = run.pendingUserDecision
+    // 新状态直接保存未回填的 callId；fallback 兼容只有 pendingQuestion 的旧状态。
+    const toolCallId = pendingDecision?.callId
+      ?? findAskUserToolCallId(core.getSessionStore(id).store.getter(itemsAtom))
     // 容错：找不到 ask_user 调用（异常/被回退过）→ 清 pendingQuestion + 落回 running，不续跑。
     if (!toolCallId) {
-      patchRun(id, { status: 'running', pendingQuestion: undefined }, core)
+      patchRun(id, { status: 'running', pendingQuestion: undefined, pendingUserDecision: undefined }, core)
       return
     }
 
@@ -333,11 +435,12 @@ export function createCommands(core: CoreInstance = defaultCore) {
     appendItem(id, {
       id: newId(),
       createdAt: Date.now(),
+      planStageId: pendingDecision?.origin.stageId,
       item: { role: 'tool', tool_call_id: toolCallId, content: JSON.stringify({ answers }) },
     }, core)
 
     // 落回 running + 清 pendingQuestion，复用 pending run 的 runId 续跑同一条 run。
-    patchRun(id, { status: 'running', pendingQuestion: undefined }, core)
+    patchRun(id, { status: 'running', pendingQuestion: undefined, pendingUserDecision: undefined }, core)
 
     const meta = core.rootStore.getter(sessionsAtom)[id]
     const apiKey = meta?.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
@@ -400,7 +503,9 @@ export function createCommands(core: CoreInstance = defaultCore) {
     }
 
     // 允许：可选「本 session 一律允许该工具」→ 记瞬态集合；落回 running，重入循环并让其先执行被确认工具。
-    if (always) addAlwaysAllowedTool(id, pending.toolName, core)
+    if (always && pending.risk !== 'critical' && !pending.irreversible) {
+      addAlwaysAllowedTool(id, pending.toolName, core)
+    }
     patchRun(id, { status: 'running', pendingToolConfirmation: undefined }, core)
     const signal = core.abort.beginRun(id)
     void runToolLoop(id, run.runId, {
@@ -493,13 +598,58 @@ export function createCommands(core: CoreInstance = defaultCore) {
     persistTruncate(id, turnIndex) // D-4：截断式回退 → 同步截断持久化 checkpoint（fire-and-forget）。
   }
 
+  // 简介：撤回第 turnIndex 轮到其用户消息之前，并把原输入放回 Composer 草稿。
+  // 详情：与 revertToTurn「保留目标轮结束快照」不同，本命令会丢弃目标轮本身，供消息气泡上的
+  //   「回退」入口使用。对话记录可以截断，已执行的工具外部副作用不能自动撤销，故按需显示提示。
+  function revertTurnToDraft(turnIndex: number): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+    const store = core.getSessionStore(id).store
+    const checkpoints = store.getter(checkpointsAtom)
+    const checkpoint = checkpoints[turnIndex]
+    if (!checkpoint) return
+
+    const checkpointUserIndex = currentTurnStartIndex(checkpoint.items)
+    const targetUser = checkpoint.items[checkpointUserIndex]
+    if (!targetUser || targetUser.item.role !== 'user') return
+
+    const currentItems = store.getter(itemsAtom)
+    const currentUserIndex = currentItems.findIndex((item) => item.id === targetUser.id)
+    const discardedItems = currentUserIndex >= 0
+      ? currentItems.slice(currentUserIndex)
+      : checkpoint.items.slice(checkpointUserIndex)
+    const sideEffects = currentTurnHasSideEffects(discardedItems)
+
+    // stopRun 除中断模型请求外，还会取消该 run 下仍在执行的后台 execution；随后清掉 run，
+    // 避免撤回后残留 stopped/done 状态或迟到写回污染已经截断的 transcript。
+    stopRun()
+    rewindBeforeCheckpoint(id, turnIndex, core)
+    setRun(id, undefined, core)
+    setComposerDraft(id, targetUser.item.content, core)
+    pruneBrowserCardsAfter(id, targetUser.createdAt - 1, core)
+    pruneRuntimeTranscriptEventsAfter(id, targetUser.createdAt - 1, core)
+    setWithdrawnTurnNotice(id, {
+      id: newId(),
+      createdAt: Date.now(),
+      text: sideEffects
+        ? '已回退到该轮之前，原输入已放回输入框；已触发过工具，外部副作用不会被自动撤销。'
+        : '已回退到该轮之前，原输入已放回输入框。',
+      sideEffects,
+    }, core)
+    // persistTruncate 保留 <= turnIndex 的快照；这里目标轮也要删除，故传前一轮。
+    // turnIndex=0 时传 -1 是有意清空该会话的全部 checkpoint。
+    persistTruncate(id, turnIndex - 1)
+  }
+
   return {
     renameSession,
     newSession,
     selectSession,
     removeSession,
     setWorkspaceRoot,
+    setApprovalMode,
     sendMessage,
+    continuePlan,
     stopRun,
     withdrawCurrentTurnToDraft,
     resumeWithAnswers,
@@ -509,6 +659,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
     answerQuestion,
     discardArtifact,
     revertToTurn,
+    revertTurnToDraft,
   }
 }
 
@@ -527,7 +678,9 @@ export const {
   selectSession,
   removeSession,
   setWorkspaceRoot,
+  setApprovalMode,
   sendMessage,
+  continuePlan,
   stopRun,
   withdrawCurrentTurnToDraft,
   resumeWithAnswers,
@@ -537,4 +690,5 @@ export const {
   answerQuestion,
   discardArtifact,
   revertToTurn,
+  revertTurnToDraft,
 } = createCommands()

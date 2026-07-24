@@ -8,11 +8,19 @@
 // 此环境 isTauri() 天然为 false，但这里直接传布尔参数，不依赖真实环境。
 
 import { describe, it, expect } from 'vitest'
-import { buildTurnTools, parseToolCallArgs } from './modelTurn'
+import {
+  buildSkillContextItem,
+  buildSystemItem,
+  buildTurnTools,
+  canonicalizeJsonSchema,
+  loadedToolNamesFromHistory,
+  parseToolCallArgs,
+  toolSetSchemaFingerprint,
+} from './modelTurn'
 import { toolRegistry } from '../tools/registry'
 import { createToolRegistry } from '../tools/toolRegistry'
 import type { LoadedTool } from '../tools/types'
-import type { ModelFunctionTool } from '@web-agent/ai'
+import type { ModelFunctionTool, ModelItem } from '@web-agent/ai'
 
 // 从 request_tool_schema 元工具里取 toolName enum（真实 registry 名字）。parameters 类型为 unknown，就地收窄。
 function schemaEnum(tools: ModelFunctionTool[]): string[] {
@@ -26,6 +34,19 @@ function schemaEnum(tools: ModelFunctionTool[]): string[] {
 const SERVER_TOOL = 'shell_macos'
 const SERVER_TOOL_2 = 'read_file'
 const INTERNAL_TOOL = 'skill_search'
+
+describe('system 前缀缓存边界', () => {
+  it('固定 system 不依赖本轮输入，动态 skill 名单单独生成', () => {
+    const fixed = buildSystemItem()
+    const planning = buildSkillContextItem('请规划一个多步骤重构')
+    const chart = buildSkillContextItem('画一个 chart')
+
+    expect(fixed.content).not.toContain('已匹配、但正文尚未读取的 skills：')
+    expect(planning.content).toContain('planning')
+    expect(chart.content).toContain('data-visualization')
+    expect(buildSystemItem()).toEqual(fixed)
+  })
+})
 
 describe('buildTurnTools —— TP3 server 工具按环境过滤', () => {
   it('request_tool_schema 元工具恒在场（两种 isTauri 都在返回列表首位）', () => {
@@ -117,6 +138,240 @@ describe('buildTurnTools —— TP3 server 工具按环境过滤', () => {
     // 关键：不含模块级 defaultCore.tools 的标准工具（漏穿 core 时这两个会误入，本用例即会红）。
     expect(names).not.toContain('skill_search')
     expect(names).not.toContain('shell_macos')
+  })
+})
+
+describe('buildTurnTools —— 可缓存请求前缀保持确定性', () => {
+  it('registry enum 与已加载 tools 均按稳定名称排序，且元工具始终第一', () => {
+    const registry = createToolRegistry()
+    for (const name of ['z_tool', 'a_tool', 'm_tool']) {
+      registry.register({
+        name,
+        runtime: 'internal',
+        skill: { description: name, content: `# ${name}` },
+        inputSchema: { type: 'object' },
+        execute: async () => ({ ok: true }),
+      })
+    }
+
+    const visible: LoadedTool[] = ['z_tool', 'a_tool', 'm_tool'].map((name) => ({
+      name,
+      description: name,
+      runtime: 'internal',
+      inputSchema: { type: 'object' },
+      guide: '',
+    }))
+    const tools = buildTurnTools(visible, true, { registry })
+
+    expect(schemaEnum(tools)).toEqual(['a_tool', 'm_tool', 'z_tool'])
+    expect(tools.map((tool) => tool.function.name)).toEqual([
+      'request_tool_schema',
+      'a_tool',
+      'm_tool',
+      'z_tool',
+    ])
+  })
+
+  it('递归规范化 schema 对象键，不改变数组顺序，也不修改注册表原 schema', () => {
+    const inputSchema = {
+      zeta: {
+        required: ['z', 'a'],
+        properties: {
+          z: { type: 'number' },
+          a: { type: 'string' },
+        },
+      },
+      alpha: {
+        enum: ['z', 'a'],
+        type: 'string',
+      },
+    }
+    const originalTopLevelKeys = Object.keys(inputSchema)
+    const originalNestedKeys = Object.keys(inputSchema.zeta.properties)
+    const [metaTool, loadedTool] = buildTurnTools([{
+      name: 'ordered_schema',
+      description: 'schema ordering',
+      runtime: 'internal',
+      inputSchema,
+      guide: '',
+    }], true)
+
+    const canonical = loadedTool.function.parameters as {
+      alpha: { enum: string[]; type: string }
+      zeta: {
+        properties: Record<string, unknown>
+        required: string[]
+      }
+    }
+    expect(Object.keys(canonical)).toEqual(['alpha', 'zeta'])
+    expect(Object.keys(canonical.zeta)).toEqual(['properties', 'required'])
+    expect(Object.keys(canonical.zeta.properties)).toEqual(['a', 'z'])
+    expect(canonical.zeta.required).toEqual(['z', 'a'])
+    expect(canonical.alpha.enum).toEqual(['z', 'a'])
+    expect(Object.keys(inputSchema)).toEqual(originalTopLevelKeys)
+    expect(Object.keys(inputSchema.zeta.properties)).toEqual(originalNestedKeys)
+
+    const metaParameters = metaTool.function.parameters as Record<string, unknown>
+    expect(Object.keys(metaParameters)).toEqual(['properties', 'required', 'type'])
+  })
+
+  it('规范化 helper 返回新对象并递归稳定键序', () => {
+    const schema = {
+      z: { y: 1, x: 2 },
+      a: [{ d: 4, c: 3 }],
+    }
+    expect(canonicalizeJsonSchema(schema)).toEqual({
+      a: [{ c: 3, d: 4 }],
+      z: { x: 2, y: 1 },
+    })
+    expect(Object.keys(schema)).toEqual(['z', 'a'])
+  })
+
+  it('fingerprint 不受 tool/schema 插入顺序影响，schema 语义变化时改变', () => {
+    const first: ModelFunctionTool[] = [
+      {
+        type: 'function',
+        function: {
+          name: 'z_tool',
+          description: 'z',
+          parameters: {
+            type: 'object',
+            properties: {
+              z: { type: 'number' },
+              a: { type: 'string' },
+            },
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'request_tool_schema',
+          description: 'loader',
+          parameters: {
+            type: 'object',
+            properties: { toolName: { type: 'string' } },
+          },
+        },
+      },
+    ]
+    const reordered: ModelFunctionTool[] = [
+      {
+        type: 'function',
+        function: {
+          name: 'request_tool_schema',
+          description: 'loader',
+          parameters: {
+            properties: { toolName: { type: 'string' } },
+            type: 'object',
+          },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'z_tool',
+          description: 'z',
+          parameters: {
+            properties: {
+              a: { type: 'string' },
+              z: { type: 'number' },
+            },
+            type: 'object',
+          },
+        },
+      },
+    ]
+    const changed: ModelFunctionTool[] = [
+      reordered[0],
+      {
+        ...reordered[1],
+        function: {
+          ...reordered[1].function,
+          parameters: {
+            properties: {
+              a: { type: 'boolean' },
+              z: { type: 'number' },
+            },
+            type: 'object',
+          },
+        },
+      },
+    ]
+
+    const fingerprint = toolSetSchemaFingerprint(first)
+    expect(fingerprint).toMatch(/^tools-v1-fnv1a32-[0-9a-f]{8}$/)
+    expect(toolSetSchemaFingerprint(reordered)).toBe(fingerprint)
+    expect(toolSetSchemaFingerprint(changed)).not.toBe(fingerprint)
+  })
+})
+
+describe('loadedToolNamesFromHistory —— 从历史恢复顶层 schema', () => {
+  it('识别新旧两种成功结果并返回去重后的工具名，不改写历史消息', () => {
+    const messages: ModelItem[] = [
+      { role: 'user', content: '继续' },
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'new-schema',
+          type: 'function',
+          function: {
+            name: 'request_tool_schema',
+            arguments: '{"toolName":"skill_search","reason":"搜索"}',
+          },
+        }],
+      },
+      {
+        role: 'tool',
+        tool_call_id: 'new-schema',
+        content: '{"loaded":true,"toolName":"skill_search","guide":"# search"}',
+      },
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'legacy-schema',
+          type: 'function',
+          function: {
+            name: 'request_tool_schema',
+            arguments: '{"toolName":"skill_search","reason":"旧记录"}',
+          },
+        }],
+      },
+      {
+        role: 'tool',
+        tool_call_id: 'legacy-schema',
+        content: '{"name":"skill_search","runtime":"internal","inputSchema":{"type":"object"}}',
+      },
+    ]
+    const originalMessages = JSON.stringify(messages)
+
+    expect(loadedToolNamesFromHistory(messages)).toEqual(['skill_search'])
+    expect(messages).toHaveLength(5)
+    expect(JSON.stringify(messages)).toBe(originalMessages)
+  })
+
+  it('未回填或失败的 loader 调用不会恢复成已加载工具', () => {
+    const pending: ModelItem[] = [{
+      role: 'assistant',
+      content: null,
+      tool_calls: [{
+        id: 'pending',
+        type: 'function',
+        function: {
+          name: 'request_tool_schema',
+          arguments: '{"toolName":"skill_search","reason":"搜索"}',
+        },
+      }],
+    }]
+    expect(loadedToolNamesFromHistory(pending)).toEqual([])
+
+    const failed: ModelItem[] = [
+      ...pending,
+      { role: 'tool', tool_call_id: 'pending', content: '{"error":"unknown"}' },
+    ]
+    expect(loadedToolNamesFromHistory(failed)).toEqual([])
   })
 })
 

@@ -1,0 +1,48 @@
+/* 全局基础样式（文档级 reset + 排版基线）。
+ * ---------------------------------------------------------------------------
+ * agentNew 的组件样式全在 ui/agentnew.css；本文件只留基础文档规则：
+ * 盒模型、body/#root reset、表单控件字体继承、focus 可见性。
+ * 旧多栏 UI（.agent-shell / .question-card / .browser-card 等）的样式已随旧树删除。
+ */
+
+:root {
+  color: #1b2333;
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  color: #1b2333;
+  background: #eef1f8;
+}
+
+button,
+textarea,
+input {
+  font: inherit;
+}
+
+button:focus-visible,
+textarea:focus-visible,
+input:focus-visible {
+  outline: 2px solid rgba(99, 102, 241, 0.5);
+  outline-offset: 2px;
+}

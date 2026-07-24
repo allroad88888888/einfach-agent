@@ -1,4 +1,8 @@
-import { callDeepSeek, type DeepSeekChatRequest } from '@web-agent/ai'
+import {
+  callDeepSeek,
+  normalizeCacheUsage,
+  type DeepSeekChatRequest,
+} from '@web-agent/ai'
 import { callGlm, type GlmChatRequest } from '@web-agent/ai'
 import type {
   ModelChatResponse,
@@ -12,6 +16,10 @@ import { toolRegistry } from '../tools/registry'
 import type { LoadedTool } from '../tools/types'
 import { buildTurnTools, narrowToolCalls, parseToolCallArgs } from '../runtime/modelTurn'
 import { compactContext, estimateTokensFromText } from '../runtime/contextCompaction'
+import {
+  createContextCacheTracker,
+  type ContextCacheLane,
+} from '../runtime/contextCache'
 import { normalizeDelegateAgentInput } from './input'
 import { SubagentArchiveWriter } from './archiveWriter'
 import { ROOT_AGENT_PATH, agentPathDepth } from './path'
@@ -20,6 +28,7 @@ import {
   canNarrowSubagentToolProfile,
   DEFAULT_SUBAGENT_TOOL_PROFILE,
   isSubagentWorkspaceReadTool,
+  SUBAGENT_WORKSPACE_READ_TOOLS,
   subagentAllowedTools,
 } from './toolProfile'
 import {
@@ -35,6 +44,7 @@ import {
   subagentNodePath,
   subagentResultPath,
   subagentRunPath,
+  subagentTracePath,
   subagentTreePath,
 } from './skillCache'
 import {
@@ -58,6 +68,7 @@ import type {
   SubagentToolProfile,
 } from './types'
 import { isDangerousTool } from '../runtime/dangerousTools'
+import { toolSchemaLoadedResult } from '../tools/schemaResult'
 
 const DELEGATE_TOOL_NAME = 'delegate_agent'
 const DEFAULT_CHILD_MAX_TURNS = 4
@@ -70,7 +81,7 @@ const TRUNCATED_TEXT_PREVIEW_LIMIT = 200
 // ---------------------------------------------------------------------------
 // 子 agent 循环的上下文压缩预算（与主循环 modelRun 【故意不共用】常量）
 // ---------------------------------------------------------------------------
-// 为什么子 agent 需要压缩：轮数确实有硬顶（input.ts 的 HARD_MAX_TURNS=8 会 clamp 掉模型自报的
+// 为什么子 agent 需要压缩：轮数确实有硬顶（input.ts 的 HARD_MAX_TURNS=16 会 clamp 掉模型自报的
 // spec.maxTurns，默认 DEFAULT_CHILD_MAX_TURNS=4），所以【轮数】撑不爆窗口；但【单轮 payload】
 // 可以任意大 —— read_file 的整个文件正文、嵌套 delegate_agent 回填的完整 DelegateAgentBatchResult
 // JSON 都是原样进 messages 的。深树 + 大文件场景下，4 轮就足以顶爆窗口，届时拿到的是一个硬 400
@@ -122,6 +133,42 @@ function isAbnormalFinishReason(
   return value === 'length' || value === 'content_filter' || value === 'insufficient_system_resource'
 }
 
+type ChildChangeSet = { id: string; reversible: boolean }
+
+function collectChangeSets(value: unknown, target: ChildChangeSet[]): void {
+  if (!value || typeof value !== 'object') return
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectChangeSets(item, target))
+    return
+  }
+  const record = value as Record<string, unknown>
+  const candidate = record.changeSet
+  if (
+    candidate && typeof candidate === 'object' && !Array.isArray(candidate)
+    && typeof (candidate as Record<string, unknown>).id === 'string'
+    && typeof (candidate as Record<string, unknown>).reversible === 'boolean'
+  ) {
+    const summary = candidate as ChildChangeSet
+    if (!target.some((item) => item.id === summary.id)) {
+      target.push({ id: summary.id, reversible: summary.reversible })
+    }
+  }
+  if (Array.isArray(record.changeSets)) {
+    for (const item of record.changeSets) {
+      if (
+        item && typeof item === 'object' && !Array.isArray(item)
+        && typeof (item as Record<string, unknown>).id === 'string'
+        && typeof (item as Record<string, unknown>).reversible === 'boolean'
+      ) {
+        const summary = item as ChildChangeSet
+        if (!target.some((existing) => existing.id === summary.id)) {
+          target.push({ id: summary.id, reversible: summary.reversible })
+        }
+      }
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 子 agent 上下文压缩的归档事件类型与主循环 modelRun 的 trace 事件一一对应：
 //   'child_context_compacted'   ↔ 'llm.context_compacted'
@@ -138,12 +185,11 @@ interface CallModelObservation {
   archiveBasePath: string
   agentPath: string
   // 第几轮（1-based）。同一个子 agent 的多轮压缩事件靠它区分。
-  // distill 不是「轮」——它是一次性的蒸馏调用，用 phase:'distill' 标识，turn 恒为 0。
+  // distill 不是「轮」——它是一次性的蒸馏调用，turn 恒为 0。
   turn: number
-  // 哪个阶段发起的调用。省略 = 子 agent 的工具循环轮次（绝大多数情况）。
-  // 'distill' 单列出来，是因为它超预算的成因和补救方式都不同：不是「子 agent 干太多活」，
-  // 而是「父 agent 的 transcript 或继承的 skill 正文太长」，排查者据此才知道该去缩哪一头。
-  phase?: 'distill'
+  // 哪个阶段发起的调用。各 lane 使用独立缓存 profile，避免工具集和稳定前缀不同的请求
+  // 被观测层错误归为同一个缓存序列。
+  phase: Exclude<ContextCacheLane, 'main'>
 }
 
 function truncatedTextPreview(text: string): string {
@@ -213,6 +259,13 @@ interface CreateDelegateAgentRuntimeOptions {
   apiKey: string
   signal: AbortSignal
   fetchImpl?: typeof fetch
+  onNodeChange?(node: SubagentNodeRecord): void
+  onTraceItem?(input: {
+    agentPath: string
+    timestamp: string
+    turn: number
+    item: ModelItem
+  }): void
 }
 
 function toErrorMessage(error: unknown): string {
@@ -236,6 +289,12 @@ function argsPreviewForModel(raw: string): string {
 function thinkingConfig(settings: ModelSettings): ThinkingConfig | undefined {
   if (settings.thinking === undefined) return undefined
   return { type: settings.thinking ? 'enabled' : 'disabled' }
+}
+
+function cacheHitRate(hitTokens?: number, missTokens?: number): number | undefined {
+  if (typeof hitTokens !== 'number' || typeof missTokens !== 'number') return undefined
+  const total = hitTokens + missTokens
+  return total > 0 ? hitTokens / total : undefined
 }
 
 function firstAssistantText(response: ModelChatResponse): string {
@@ -303,6 +362,7 @@ function nodeIndexRecord(node: SubagentNodeRecord): Record<string, unknown> {
 
 function childSystemPrompt(args: {
   node: SubagentNodeRecord
+  spec: DelegateAgentChildSpec
   inheritedSkills: SubagentSkillFile[]
   localSkill: SubagentSkillFile
   toolProfile: SubagentToolProfile
@@ -319,7 +379,9 @@ function childSystemPrompt(args: {
     args.confirmedTools.length > 0
       ? `本次委派另有父级已确认、仅限本 run 的危险工具能力: ${args.confirmedTools.join(', ')}。不得请求其它危险工具，也不得向后代扩大范围。`
       : '没有危险工具能力；不得请求写文件、patch 或 shell。',
-    '最终输出必须是可回填给父 agent 的简洁 Markdown：结论、发现、风险、建议下一步。',
+    args.spec.mode === 'evaluator'
+      ? '你是验收评估器。最终输出必须严格遵循任务中的期望输出；要求 JSON 时只能输出 JSON，不要 Markdown、代码围栏或额外说明。'
+      : '最终输出必须是可回填给父 agent 的简洁 Markdown：结论、发现、风险、建议下一步。',
     '',
     '继承的临时 skills:',
     skills,
@@ -385,12 +447,20 @@ async function runWithConcurrency<T>(
 export function createDelegateAgentRuntime(
   rawOpts: CreateDelegateAgentRuntimeOptions,
 ): DelegateAgentRuntime {
+  const ownerSignal = rawOpts.signal
+  const runtimeController = new AbortController()
+  const abortFromOwner = () => runtimeController.abort(ownerSignal.reason)
+  ownerSignal.addEventListener('abort', abortFromOwner, { once: true })
+  if (ownerSignal.aborted) abortFromOwner()
   // 请求路径兜底（同 modelRun）：子 agent 用父会话的 settings 发请求，父会话若带着下线模型名，
   // 扇出的【每个】子 agent 都会撞 400。在这里整体迁移一次（连带 thinking），下游 opts.settings.*
   // 全部读到迁移后的值。无需迁移时返回同一引用，opts === rawOpts，零额外开销。
   const migratedSettings = migrateModelSettings(rawOpts.settings)
-  const opts: CreateDelegateAgentRuntimeOptions =
-    migratedSettings === rawOpts.settings ? rawOpts : { ...rawOpts, settings: migratedSettings }
+  const opts: CreateDelegateAgentRuntimeOptions = {
+    ...rawOpts,
+    settings: migratedSettings,
+    signal: runtimeController.signal,
+  }
   let archiveInitialized = false
   let archiveInitialization: Promise<void> | undefined
   let eventCounter = 0
@@ -400,10 +470,23 @@ export function createDelegateAgentRuntime(
   let modelCallSemaphore: ModelCallSemaphore | undefined
   let totalNodesUsed = 1
   let modelCallsUsed = 0
+  const contextCacheTracker = createContextCacheTracker()
+  let nextChangeSetOrder = 0
+  const changeSetOrder = new Map<string, number>()
   const budgetByPath = new Map<string, TreeRuntimeBudget>()
   const toolProfileByPath = new Map<string, SubagentToolProfile>()
   const confirmedToolsByPath = new Map<string, readonly string[]>()
   const archiveWriter = new SubagentArchiveWriter()
+  let owners = 1
+  let disposed = false
+  let cleanup: Promise<void> | undefined
+  const unsubscribeScheduler = opts.onNodeChange
+    ? subagentScheduler.subscribe((node) => {
+        if (node.treeId === opts.runId && node.sessionId === opts.sessionId) {
+          opts.onNodeChange?.(node)
+        }
+      })
+    : undefined
   const batchedIndexPaths = new Set([
     subagentIndexPath('runs'),
     subagentIndexPath('skills'),
@@ -441,6 +524,15 @@ export function createDelegateAgentRuntime(
         used: modelCallsUsed,
         limit: rootBudget?.maxModelCalls ?? modelCallsUsed,
       },
+    }
+  }
+
+  function observeChangeSets(value: unknown, target: ChildChangeSet[]): void {
+    collectChangeSets(value, target)
+    for (const changeSet of target) {
+      if (!changeSetOrder.has(changeSet.id)) {
+        changeSetOrder.set(changeSet.id, nextChangeSetOrder++)
+      }
     }
   }
 
@@ -489,7 +581,7 @@ export function createDelegateAgentRuntime(
     //   compactContext 会返回 compacted:false + withinBudget:false。把 over_budget 挂在
     //   compacted 里面，恰好会漏掉「压根压不动、必然撞 400」这个最该报警的形态。
     if (args.observe) {
-      const { context, archiveBasePath, agentPath, turn } = args.observe
+      const { context, archiveBasePath, agentPath, turn, phase } = args.observe
       if (compaction.compacted) {
         // 字段口径对齐主循环 modelRun 的 'llm.context_compacted'（便于两侧交叉对照）。
         // ★ key 里避开 "token" 子串、改用 Tk 后缀 ★：observability/redact.ts 的 SENSITIVE_KEY
@@ -497,6 +589,7 @@ export function createDelegateAgentRuntime(
         //   脱敏管道，但指标名一旦定死就会被复制到别处，先按安全形态定名。
         await bestEffortRecordEvent(context, archiveBasePath, 'child_context_compacted', agentPath, {
           turn,
+          phase,
           budgetTk: SUBAGENT_CONTEXT_BUDGET_TOKENS,
           reservedTk: reservedTokens,
           effectiveBudgetTk: compaction.effectiveBudgetTokens,
@@ -515,7 +608,7 @@ export function createDelegateAgentRuntime(
       if (!compaction.withinBudget) {
         await bestEffortRecordEvent(context, archiveBasePath, 'child_context_over_budget', agentPath, {
           turn,
-          ...(args.observe.phase ? { phase: args.observe.phase } : {}),
+          phase,
           effectiveBudgetTk: compaction.effectiveBudgetTokens,
           estAfterTk: compaction.estimatedTokensAfter,
           compacted: compaction.compacted,
@@ -537,6 +630,28 @@ export function createDelegateAgentRuntime(
       stream: false,
     }
     const callOptions = { apiKey: opts.apiKey, signal: opts.signal, fetchImpl: opts.fetchImpl }
+    const cacheLane = args.observe?.phase ?? 'subagent'
+    const systemContent =
+      compaction.items.find((item) => item.role === 'system')?.content ?? ''
+    const requestMode = cacheLane.startsWith('distill:')
+      ? cacheLane
+      : args.toolChoice === 'none'
+        ? 'final_synthesis'
+        : 'tool_loop'
+    const cacheProfile = contextCacheTracker.observe({
+      lane: cacheLane,
+      scope: `${opts.sessionId}:${opts.runId}:${args.observe?.agentPath ?? 'unobserved'}:${cacheLane}`,
+      vendor: opts.settings.vendor,
+      model: opts.settings.model,
+      messages: compaction.items,
+      systemContent,
+      tools: args.tools ?? [],
+      toolChoice: args.toolChoice ?? 'auto',
+      thinking: thinkingConfig(opts.settings)?.type,
+      reasoningEffort: opts.settings.reasoning_effort,
+      compacted: compaction.compacted,
+      requestMode,
+    })
 
     const invoke = () => {
       reserveModelCall(modelCallLimit)
@@ -554,7 +669,136 @@ export function createDelegateAgentRuntime(
       }
       return callDeepSeek(body, callOptions)
     }
-    return modelCallSemaphore ? modelCallSemaphore.run(opts.signal, invoke) : invoke()
+    let response: ModelChatResponse
+    try {
+      response = await (
+        modelCallSemaphore ? modelCallSemaphore.run(opts.signal, invoke) : invoke()
+      )
+    } catch (error) {
+      if (args.observe) {
+        await bestEffortRecordEvent(
+          args.observe.context,
+          args.observe.archiveBasePath,
+          'child_model_usage',
+          args.observe.agentPath,
+          {
+            turn: args.observe.turn,
+            phase: args.observe.phase,
+            vendor: opts.settings.vendor,
+            model: opts.settings.model,
+            cacheMetricsStatus: isAbortError(error, opts.signal) ? 'cancelled' : 'request_failed',
+            cacheLane: cacheProfile.lane,
+            cacheProfile: cacheProfile.profileId,
+            cacheEpoch: cacheProfile.epoch,
+            cacheEpochReason: cacheProfile.epochReason,
+            cacheProtocolVersion: cacheProfile.protocolVersion,
+            laneScopeFingerprint: cacheProfile.laneScopeFingerprint,
+            systemFingerprint: cacheProfile.systemFingerprint,
+            requestProjectionFingerprint: cacheProfile.requestProjectionFingerprint,
+            toolSetFingerprint: cacheProfile.toolSetFingerprint,
+            compactionBoundary: cacheProfile.compactionBoundary,
+            contextCompacted: compaction.compacted,
+            withinBudget: compaction.withinBudget,
+            error: toErrorMessage(error),
+          },
+        )
+      }
+      throw error
+    }
+
+    // Provider 的隐式前缀缓存不需要、也不接受本地伪造 cache_id。这里记录的 profile/epoch
+    // 只解释稳定前缀边界；真实命中率严格来自响应 usage，缺失时明确标记 unavailable。
+    if (args.observe) {
+      const cacheUsage = normalizeCacheUsage(response.usage)
+      const hitRate = cacheHitRate(cacheUsage?.hitTokens, cacheUsage?.missTokens)
+      const promptTk = response.usage?.prompt_tokens ?? response.usage?.input_tokens
+      const completionTk = response.usage?.completion_tokens ?? response.usage?.output_tokens
+      await bestEffortRecordEvent(
+        args.observe.context,
+        args.observe.archiveBasePath,
+        'child_model_usage',
+        args.observe.agentPath,
+        {
+          turn: args.observe.turn,
+          phase: args.observe.phase,
+          vendor: opts.settings.vendor,
+          model: opts.settings.model,
+          ...(typeof promptTk === 'number' ? { promptTk } : {}),
+          ...(typeof completionTk === 'number' ? { completionTk } : {}),
+          ...(typeof response.usage?.total_tokens === 'number'
+            ? { totalTk: response.usage.total_tokens }
+            : {}),
+          cacheMetricsStatus: cacheUsage ? 'available' : 'unavailable',
+          ...(typeof cacheUsage?.hitTokens === 'number'
+            ? { cacheHitTk: cacheUsage.hitTokens }
+            : {}),
+          ...(typeof cacheUsage?.missTokens === 'number'
+            ? { cacheMissTk: cacheUsage.missTokens }
+            : {}),
+          ...(cacheUsage?.missSource
+            ? { cacheMissSource: cacheUsage.missSource }
+            : {}),
+          ...(typeof cacheUsage?.writeTokens === 'number'
+            ? { cacheWriteTk: cacheUsage.writeTokens }
+            : {}),
+          ...(typeof hitRate === 'number' ? { cacheHitRate: hitRate } : {}),
+          cacheLane: cacheProfile.lane,
+          cacheProfile: cacheProfile.profileId,
+          cacheEpoch: cacheProfile.epoch,
+          cacheEpochReason: cacheProfile.epochReason,
+          cacheProtocolVersion: cacheProfile.protocolVersion,
+          laneScopeFingerprint: cacheProfile.laneScopeFingerprint,
+          systemFingerprint: cacheProfile.systemFingerprint,
+          requestProjectionFingerprint: cacheProfile.requestProjectionFingerprint,
+          toolSetFingerprint: cacheProfile.toolSetFingerprint,
+          compactionBoundary: cacheProfile.compactionBoundary,
+          contextCompacted: compaction.compacted,
+          withinBudget: compaction.withinBudget,
+        },
+      )
+    }
+
+    return response
+  }
+
+  function releaseOwner(): Promise<void> {
+    owners = Math.max(0, owners - 1)
+    if (owners > 0 || disposed) return cleanup ?? Promise.resolve()
+    disposed = true
+    cleanup = (async () => {
+      try {
+        // The scheduler is process-local, but its observer mirrors every transition into the
+        // persisted execution graph. Never clear a tree while its root still looks active:
+        // after a normal runtime release (or an unexpected early exit) that would leave the
+        // restored desktop conversation permanently stuck at “running”.
+        const snapshot = subagentScheduler.snapshot(opts.runId)
+        const root = snapshot.find((node) => node.path === ROOT_AGENT_PATH)
+        if (
+          root
+          && (root.status === 'queued' || root.status === 'distilling' || root.status === 'running')
+        ) {
+          const descendants = snapshot.filter((node) => node.path !== ROOT_AGENT_PATH)
+          const status = opts.signal.aborted || descendants.some((node) =>
+            node.status === 'queued' || node.status === 'distilling' || node.status === 'running')
+            ? 'cancelled'
+            : descendants.some((node) => node.status === 'failed')
+              ? 'failed'
+              : descendants.some((node) => node.status === 'cancelled')
+                ? 'cancelled'
+                : 'done'
+          subagentScheduler.markNode(opts.runId, ROOT_AGENT_PATH, status)
+        }
+        await archiveWriter.close()
+      } finally {
+        ownerSignal.removeEventListener('abort', abortFromOwner)
+        unsubscribeScheduler?.()
+        budgetByPath.clear()
+        toolProfileByPath.clear()
+        confirmedToolsByPath.clear()
+        subagentScheduler.clear(opts.runId)
+      }
+    })()
+    return cleanup
   }
 
   const distillChat = async (
@@ -566,15 +810,24 @@ export function createDelegateAgentRuntime(
     // L1~L4 无一有事可做 —— 'child_context_compacted' 结构上永远不会触发。
     // 但 'child_context_over_budget' 在这条路上【是会发生的】：distill 的 user 正文含整份
     // parentTranscript，深树 + 长对话下它自己就能超预算，而这里压不动、只能原样发出去撞 400。
-    // 那是最该报警的形态之一（压根压不动），所以 observe 要传 —— 只是它带 phase:'distill'，
-    // 好让排查者知道该缩的是父 agent 的 transcript / 继承 skill，而不是子 agent 的工具输出。
+    // 那是最该报警的形态之一（压根压不动），所以 observe 要传。这里按 request 自带的 purpose
+    // 与 agentPath 拆成 core / child_brief 两类 lane，避免并发蒸馏被错误聚合。
+    const distillPhase: CallModelObservation['phase'] =
+      input.purpose === 'core' ? 'distill:core' : 'distill:child_brief'
+    const distillObserve = observe
+      ? {
+          ...observe,
+          agentPath: input.agentPath,
+          phase: distillPhase,
+        }
+      : undefined
     const response = await callModel({
       messages: [
         { role: 'system', content: input.system },
         { role: 'user', content: input.user },
       ],
       toolChoice: 'none',
-      observe,
+      observe: distillObserve,
     }, maxModelCalls)
     const text = firstAssistantText(response)
     const base = text || `# ${input.purpose}\n\nNo distilled content returned.`
@@ -714,6 +967,31 @@ export function createDelegateAgentRuntime(
     }
   }
 
+  async function bestEffortRecordTraceItem(
+    context: DelegateAgentCallContext,
+    archiveBasePath: string,
+    agentPath: string,
+    turn: number,
+    item: ModelItem,
+  ): Promise<void> {
+    const timestamp = new Date().toISOString()
+    opts.onTraceItem?.({ agentPath, timestamp, turn, item })
+    try {
+      await writeText(
+        context,
+        subagentTracePath(archiveBasePath, agentPath),
+        renderJsonLine({
+          timestamp,
+          turn,
+          item,
+        }),
+        'append',
+      )
+    } catch {
+      // 轨迹用于可观测性；归档失败不能覆盖子 agent 原本的执行结果。
+    }
+  }
+
   async function persistSkill(
     context: DelegateAgentCallContext,
     archiveBasePath: string,
@@ -768,6 +1046,7 @@ export function createDelegateAgentRuntime(
     const allowedToolNames = [...subagentAllowedTools(toolProfile), ...confirmedTools]
     const skillFiles = [...node.inheritedSkillFiles, localSkill.path]
     const skillIds = [...node.inheritedSkillIds, localSkill.skillId]
+    const changeSets: ChildChangeSet[] = []
     subagentScheduler.markNode(opts.runId, node.path, 'running', {
       localSkillFiles: [localSkill.path],
       localSkillIds: [localSkill.skillId],
@@ -786,27 +1065,62 @@ export function createDelegateAgentRuntime(
     const messages: ModelItem[] = [
       {
         role: 'system',
-        content: childSystemPrompt({ node, inheritedSkills, localSkill, toolProfile, confirmedTools }),
+        content: childSystemPrompt({ node, spec, inheritedSkills, localSkill, toolProfile, confirmedTools }),
       },
       { role: 'user', content: childUserPrompt(spec) },
     ]
-    let visible: LoadedTool[] = []
+    // evaluator 的任务天然需要核验 workspace。预加载安全只读 schema，避免第一轮直接调用失败、
+    // 第二轮才 request_tool_schema，把很小的 maxTurns 白白消耗在能力发现上。
+    let visible: LoadedTool[] = spec.mode === 'evaluator' && toolProfile === 'workspace_read'
+      ? SUBAGENT_WORKSPACE_READ_TOOLS.reduce<LoadedTool[]>(
+          (tools, name) => appendVisibleTool(tools, name),
+          [],
+        )
+      : []
     const maxTurns = spec.maxTurns ?? DEFAULT_CHILD_MAX_TURNS
 
     try {
       for (let turn = 0; turn < maxTurns; turn += 1) {
-        const tools = buildTurnTools(visible, true, { allowedToolNames })
+        // maxTurns 的最后一轮专门用于综合结论。不给工具，防止模型在最后一次调用里继续搜索，
+        // 工具执行完却没有下一轮生成最终文本，最终被误报为 exceeded maxTurns。
+        const isSynthesisTurn = turn === maxTurns - 1
+        const turnMessages: ModelItem[] = isSynthesisTurn
+          ? [
+              ...messages,
+              {
+                role: 'user',
+                content: spec.expectedOutput
+                  ? `工具调查到此结束。现在请仅输出最终结果，严格遵循：${spec.expectedOutput}`
+                  : '工具调查到此结束。现在请直接输出最终结论，不要再调用工具。',
+              },
+            ]
+          : messages
+        const tools = isSynthesisTurn
+          ? []
+          : buildTurnTools(visible, true, { allowedToolNames })
         const response = await callModel(
           {
-            messages,
+            messages: turnMessages,
             tools,
-            toolChoice: 'auto',
-            observe: { context, archiveBasePath, agentPath: node.path, turn: turn + 1 },
+            toolChoice: isSynthesisTurn ? 'none' : 'auto',
+            observe: {
+              context,
+              archiveBasePath,
+              agentPath: node.path,
+              turn: turn + 1,
+              phase: spec.mode === 'evaluator' ? 'evaluator' : 'subagent',
+            },
           },
           budget.maxModelCalls,
         )
         const msg = response.choices?.[0]?.message
         const toolCalls = narrowToolCalls(msg?.tool_calls)
+        await bestEffortRecordTraceItem(context, archiveBasePath, node.path, turn + 1, {
+          role: 'assistant',
+          content: typeof msg?.content === 'string' ? msg.content : null,
+          reasoning_content: msg?.reasoning_content ?? null,
+          tool_calls: toolCalls,
+        })
 
         // ── finish_reason 异常三态分流。
         // ★ 必须在下面 toolCalls.length === 0 的收尾路径【之前】★ —— 那条路会把 content 原样写进
@@ -891,6 +1205,7 @@ export function createDelegateAgentRuntime(
             resultFile: resultPath,
             skillFiles,
             skillIds,
+            changeSets,
           }
         }
 
@@ -900,6 +1215,16 @@ export function createDelegateAgentRuntime(
           reasoning_content: msg?.reasoning_content ?? null,
           tool_calls: toolCalls,
         })
+
+        const pushToolResult = async (toolCallId: string, content: string): Promise<void> => {
+          const item: ModelItem = {
+            role: 'tool',
+            tool_call_id: toolCallId,
+            content,
+          }
+          messages.push(item)
+          await bestEffortRecordTraceItem(context, archiveBasePath, node.path, turn + 1, item)
+        }
 
         for (const toolCall of toolCalls) {
           const name = toolCall.function.name
@@ -913,15 +1238,14 @@ export function createDelegateAgentRuntime(
             //     漏一条下一轮消息序列就非法，整条子 agent 循环会被接口拒。
             //   判据与主循环（modelRun）共用 parseToolCallArgs：空 arguments 仍是无参工具的
             //   合法形态（ok:true + {}），只有非法 JSON 与「合法 JSON 但非对象」才落到这里。
-            messages.push({
-              role: 'tool',
-              tool_call_id: toolCall.id,
-              content: JSON.stringify({
+            await pushToolResult(
+              toolCall.id,
+              JSON.stringify({
                 error: parsedArgs.error,
                 hint: '请重新发起该工具调用，并确保 arguments 是完整合法的 JSON 对象',
                 argumentsPreview: argsPreviewForModel(parsedArgs.raw),
               }),
-            })
+            )
             continue
           }
           const callArgs = parsedArgs.args
@@ -932,39 +1256,33 @@ export function createDelegateAgentRuntime(
               toolName,
             })
             if (!allowedToolNames.includes(toolName)) {
-              messages.push({
-                role: 'tool',
-                tool_call_id: toolCall.id,
-                content: JSON.stringify({ error: `tool not allowed for child agent: ${toolName}` }),
-              })
+              await pushToolResult(
+                toolCall.id,
+                JSON.stringify({ error: `tool not allowed for child agent: ${toolName}` }),
+              )
               continue
             }
-            visible = appendVisibleTool(visible, toolName)
-            messages.push({
-              role: 'tool',
-              tool_call_id: toolCall.id,
-              content: JSON.stringify(toolRegistry.loadSchema(toolName) ?? { error: 'unknown' }),
-            })
+            const loadedTool = toolRegistry.loadSchema(toolName)
+            visible = loadedTool ? appendVisibleTool(visible, toolName) : visible
+            await pushToolResult(
+              toolCall.id,
+              JSON.stringify(loadedTool ? toolSchemaLoadedResult(loadedTool) : { error: 'unknown' }),
+            )
             continue
           }
 
           if (name === DELEGATE_TOOL_NAME) {
             if (agentPathDepth(node.path) >= budget.maxDepth) {
-              messages.push({
-                role: 'tool',
-                tool_call_id: toolCall.id,
-                content: JSON.stringify({ error: `max subagent depth reached at ${node.path}` }),
-              })
+              await pushToolResult(
+                toolCall.id,
+                JSON.stringify({ error: `max subagent depth reached at ${node.path}` }),
+              )
               continue
             }
 
             const normalized = normalizeDelegateAgentInput(callArgs)
             if (!normalized.ok) {
-              messages.push({
-                role: 'tool',
-                tool_call_id: toolCall.id,
-                content: JSON.stringify({ error: normalized.error }),
-              })
+              await pushToolResult(toolCall.id, JSON.stringify({ error: normalized.error }))
               continue
             }
 
@@ -998,21 +1316,17 @@ export function createDelegateAgentRuntime(
               if (isAbortError(error, opts.signal)) throw error
               nested = { error: toErrorMessage(error) }
             }
-            messages.push({
-              role: 'tool',
-              tool_call_id: toolCall.id,
-              content: JSON.stringify(nested),
-            })
+            await pushToolResult(toolCall.id, JSON.stringify(nested))
+            observeChangeSets(nested, changeSets)
             continue
           }
 
           if ((isSubagentWorkspaceReadTool(name) || isDangerousTool(name)) && allowedToolNames.includes(name)) {
             if (!context.runChildTool) {
-              messages.push({
-                role: 'tool',
-                tool_call_id: toolCall.id,
-                content: JSON.stringify({ error: `child tool unavailable: ${name}` }),
-              })
+              await pushToolResult(
+                toolCall.id,
+                JSON.stringify({ error: `child tool unavailable: ${name}` }),
+              )
               continue
             }
             const startedAt = Date.now()
@@ -1025,30 +1339,29 @@ export function createDelegateAgentRuntime(
               if (isAbortError(error, opts.signal)) throw error
               toolResult = { ok: false, error: toErrorMessage(error) }
             }
+            if (toolResult.ok) observeChangeSets(toolResult.data, changeSets)
             await bestEffortRecordEvent(context, archiveBasePath, 'child_tool_finished', node.path, {
               toolName: name,
               ok: toolResult.ok,
               durationMs: Date.now() - startedAt,
             })
-            messages.push({
-              role: 'tool',
-              tool_call_id: toolCall.id,
-              content: JSON.stringify(
+            await pushToolResult(
+              toolCall.id,
+              JSON.stringify(
                 toolResult.ok
                   ? toolResult.warnings?.length
                     ? { data: toolResult.data ?? { ok: true }, warnings: toolResult.warnings }
                     : (toolResult.data ?? { ok: true })
                   : { error: toolResult.error },
               ),
-            })
+            )
             continue
           }
 
-          messages.push({
-            role: 'tool',
-            tool_call_id: toolCall.id,
-            content: JSON.stringify({ error: `tool not allowed for child agent: ${name}` }),
-          })
+          await pushToolResult(
+            toolCall.id,
+            JSON.stringify({ error: `tool not allowed for child agent: ${name}` }),
+          )
         }
       }
 
@@ -1078,6 +1391,7 @@ export function createDelegateAgentRuntime(
         summary: message,
         skillFiles,
         skillIds,
+        changeSets,
         error: message,
       }
     }
@@ -1211,6 +1525,9 @@ export function createDelegateAgentRuntime(
       reserveNodes(input.children.length, budget.maxTotalNodes)
     } catch (error) {
       const message = toErrorMessage(error)
+      if (parentPath === ROOT_AGENT_PATH) {
+        subagentScheduler.markNode(opts.runId, parentPath, 'failed', { error: message })
+      }
       await bestEffortRecordEvent(context, archiveBasePath, 'delegate_finished', parentPath, {
         status: 'failed',
         children: [],
@@ -1234,6 +1551,7 @@ export function createDelegateAgentRuntime(
       reserved = subagentScheduler.reserveChildren({
         treeId: opts.runId,
         sessionId: opts.sessionId,
+        delegationCallId: context.delegationCallId,
         parentPath,
         inheritedSkillFiles,
         inheritedSkillIds,
@@ -1287,7 +1605,7 @@ export function createDelegateAgentRuntime(
             archiveBasePath,
             agentPath: parentPath,
             turn: 0, // distill 不是「轮」，靠 phase 区分（见 CallModelObservation）。
-            phase: 'distill',
+            phase: 'distill:core',
           }),
       })
     } catch (error) {
@@ -1302,6 +1620,7 @@ export function createDelegateAgentRuntime(
           summary: message,
           skillFiles: [...node.inheritedSkillFiles],
           skillIds: [...node.inheritedSkillIds],
+          changeSets: [],
           error: message,
         }
       })
@@ -1367,6 +1686,13 @@ export function createDelegateAgentRuntime(
     )
 
     const children = await runWithConcurrency(tasks, budget.maxConcurrent)
+    const changeSets: ChildChangeSet[] = []
+    children.forEach((child) => collectChangeSets({ changeSets: child.changeSets ?? [] }, changeSets))
+    changeSets.sort(
+      (left, right) =>
+        (changeSetOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER)
+        - (changeSetOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER),
+    )
     const summary = childSummary(children)
     const status = batchStatus(input.strategy, summary)
     // Tree node status is kept backward-compatible; partial is represented by done parent + failed
@@ -1405,21 +1731,26 @@ export function createDelegateAgentRuntime(
       skillFiles: allDistilledFiles.map((skill) => skill.path),
       skillIds: allDistilledFiles.map((skill) => skill.skillId),
       budgetUsage: budgetUsage(),
+      changeSets,
+      reversible: changeSets.every((changeSet) => changeSet.reversible),
       children,
     }
   }
 
   return {
     delegateAgents,
-    async dispose() {
-      try {
-        await archiveWriter.close()
-      } finally {
-        budgetByPath.clear()
-        toolProfileByPath.clear()
-        confirmedToolsByPath.clear()
-        subagentScheduler.clear(opts.runId)
-      }
+    retain() {
+      if (disposed) throw new Error('delegate runtime already disposed')
+      owners += 1
+    },
+    release() {
+      void releaseOwner()
+    },
+    cancel() {
+      runtimeController.abort()
+    },
+    dispose() {
+      return releaseOwner()
     },
   }
 }

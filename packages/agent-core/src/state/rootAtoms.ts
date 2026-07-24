@@ -7,7 +7,7 @@
 //   coreInstance / rootStore 都从这里 import；rootStore.ts 再原样 re-export 它们，
 //   所以全仓 `import { sessionsAtom } from '../state/rootStore'` 照旧有效，一行不用改。
 //
-// 契约（CHECKPOINT-STATE-PLAN §1 C3）：这里只放「跨会话」的会话列表 + 当前会话 id，
+// 状态边界：这里只放「跨会话」的会话列表 + 当前会话 id，
 //   严禁出现任何 Record<sessionId, 会话内容> 分桶（那是各会话自己 store 的事）。
 
 import { atom } from '@einfach/core'

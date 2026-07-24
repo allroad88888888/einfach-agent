@@ -25,3 +25,26 @@ Planning 是独立的执行阶段，不是 assistant 回复中的临时 Markdown
 计划的运行时唯一状态源是每会话 Einfach `planAtom`。`SessionMeta.plan` 是落盘副本，启动 hydrate 时先迁移到 v2，再恢复到 `planAtom`；旧版 completed 计划保持完成，不会被追溯降级。工具只能通过 `ToolContext` 的受限能力操作状态，不直接 import store 或 atom。
 
 revision 使用乐观并发控制；依赖必须存在且无环；同一计划最多一个执行或评估中的阶段；阶段完成必须有逐条 criterion evaluation；阻塞阶段必须有 blockReason。评估异常会 fail-closed，把阶段恢复为 `in_progress` 并留下 unknown 尝试记录，不会伪造成功。
+
+## 实现入口
+
+- 数据结构与迁移：[`packages/agent-core/src/planning/types.ts`](../packages/agent-core/src/planning/types.ts)、
+  [`migrate.ts`](../packages/agent-core/src/planning/migrate.ts)
+- 计划状态机：[`packages/agent-core/src/planning/runtime.ts`](../packages/agent-core/src/planning/runtime.ts)
+- 独立评估：[`packages/agent-core/src/evaluation/runtime.ts`](../packages/agent-core/src/evaluation/runtime.ts)
+- 模型可调用工具：[`tools/planning/src`](../tools/planning/src)
+- 宿主审批与命令：
+  [`packages/agent-core/src/runtime/commands.ts`](../packages/agent-core/src/runtime/commands.ts)
+- UI：[`apps/web/src/agentNew/ui/PlanPanel.tsx`](../apps/web/src/agentNew/ui/PlanPanel.tsx)
+
+相关验证：
+
+```bash
+pnpm exec vitest run packages/agent-core/src/planning/runtime.test.ts
+pnpm exec vitest run packages/agent-core/src/evaluation/runtime.test.ts
+pnpm exec vitest run tools/planning/src/submit-stage-result/submit-stage-result.test.ts
+```
+
+> 多实例说明：默认应用路径使用 `defaultCore`。Planning 状态完全绑定独立 `CoreInstance` 仍在收口中，
+> 在此之前不要把 `createCore()` 视作 Planning 已完全隔离；详见
+> [项目路线图](ROADMAP.md#阶段-1core-多实例隔离收口)。

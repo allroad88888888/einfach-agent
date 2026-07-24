@@ -10,6 +10,7 @@ interface TreeState {
 export interface ReserveChildrenInput {
   treeId: string
   sessionId: string
+  delegationCallId?: string
   parentPath: SubagentPath
   inheritedSkillFiles: string[]
   inheritedSkillIds: string[]
@@ -25,6 +26,7 @@ export interface SubagentScheduler {
     patch?: Partial<Omit<SubagentNodeRecord, 'treeId' | 'path'>>,
   ): SubagentNodeRecord | undefined
   snapshot(treeId: string): SubagentNodeRecord[]
+  subscribe(listener: (node: SubagentNodeRecord) => void): () => void
   clear(treeId: string): void
 }
 
@@ -66,13 +68,21 @@ function cloneNode(node: SubagentNodeRecord): SubagentNodeRecord {
 
 export function createSubagentScheduler(): SubagentScheduler {
   const trees = new Map<string, TreeState>()
+  const listeners = new Set<(node: SubagentNodeRecord) => void>()
+
+  function notify(node: SubagentNodeRecord): void {
+    const snapshot = cloneNode(node)
+    for (const listener of listeners) listener(snapshot)
+  }
 
   function ensureTree(treeId: string, sessionId: string): TreeState {
     let tree = trees.get(treeId)
     if (!tree) {
       tree = { treeId, sessionId, nodes: new Map() }
-      tree.nodes.set(ROOT_AGENT_PATH, createRootNode(treeId, sessionId))
+      const root = createRootNode(treeId, sessionId)
+      tree.nodes.set(ROOT_AGENT_PATH, root)
       trees.set(treeId, tree)
+      notify(root)
     }
     return tree
   }
@@ -106,6 +116,7 @@ export function createSubagentScheduler(): SubagentScheduler {
       localSkillIds: [],
     }
     tree.nodes.set(path, parent)
+    notify(parent)
     return parent
   }
 
@@ -117,6 +128,7 @@ export function createSubagentScheduler(): SubagentScheduler {
       const now = Date.now()
       const dispatchIndex = ++parent.dispatchCounter
       parent.updatedAt = now
+      notify(parent)
 
       for (const child of input.children) {
         parent.childCounter += 1
@@ -131,6 +143,7 @@ export function createSubagentScheduler(): SubagentScheduler {
           objective: child.objective,
           mode: child.mode,
           expectedOutput: child.expectedOutput,
+          delegationCallId: input.delegationCallId,
           depth: agentPathDepth(path),
           dispatchCounter: 0,
           childCounter: 0,
@@ -142,6 +155,7 @@ export function createSubagentScheduler(): SubagentScheduler {
           localSkillIds: [],
         }
         tree.nodes.set(path, node)
+        notify(node)
         reserved.push(cloneNode(node))
       }
 
@@ -153,12 +167,18 @@ export function createSubagentScheduler(): SubagentScheduler {
       const node = tree?.nodes.get(path)
       if (!node) return undefined
       Object.assign(node, patch ?? {}, { status, updatedAt: Date.now() })
+      notify(node)
       return cloneNode(node)
     },
 
     snapshot(treeId) {
       const tree = trees.get(treeId)
       return tree ? Array.from(tree.nodes.values(), cloneNode) : []
+    },
+
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
     },
 
     clear(treeId) {

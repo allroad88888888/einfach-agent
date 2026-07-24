@@ -14,9 +14,9 @@
 //   独立成【顶层组合模块】：createCore.ts → coreInstance.ts + commands.ts；两者都不 import 本文件，
 //   本文件是叶子消费方，无环。
 //
-// 【已知缺口 · 非本期】modelRun.ts 内的 ensureToolLoaded / isToolAlwaysAllowed 尚未接下本地 core 变量
-//   （另做，见 modelRun 待办），planning 的 getPlan/setPlan 也未收 core。故 createCore 出的隔离实例在
-//   「工具懒加载 / 计划态」这两处仍会落到 defaultCore；store/registry/abort/config + 写路径已 100% 隔离。
+// 【仍待收口的多实例边界】主模型循环、工具懒加载和会话级危险工具授权已经显式使用当前 core；
+//   Planning getter/writer、持久化 bridge，以及 subagent runtime 内的工具 registry/权限调用仍有
+//   defaultCore 兼容路径。createCore 已适合隔离普通会话与主循环，但不能宣称这三条扩展路径完全隔离。
 
 import { createCoreInstance, type CoreInstance, type RuntimeConfig } from './coreInstance'
 import type { ToolRegistry } from '../../tools/toolRegistry'

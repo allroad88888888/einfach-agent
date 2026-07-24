@@ -2,18 +2,22 @@ import { createStore } from '@einfach/core'
 import { describe, expect, it } from 'vitest'
 import type { ConversationItem } from './core.type'
 import { itemsAtom } from './sessionAtoms'
+import { executionGraphAtom } from '../execution/graph'
 import {
   globalSubagentRunsAtom,
   loadGlobalSubagentRunsAtom,
   loadSubagentArchiveAtom,
   loadSubagentArchivePreviewAtom,
+  loadSubagentTraceAtom,
   parseGlobalSubagentRunsIndex,
+  parseSubagentTrace,
   readSubagentArchive,
   resolveSubagentArchivePath,
   selectedSubagentNodeAtom,
   selectedSubagentNodeKeyAtom,
   subagentArchiveLoadsAtom,
   subagentArchivePreviewAtom,
+  subagentTraceAtom,
   subagentTreesAtom,
 } from './subagentViewAtoms'
 import type {
@@ -184,6 +188,19 @@ describe('subagentViewAtoms', () => {
     ])
   })
 
+  it('旧委派调用失败且没有真实子节点时，不再把占位子节点显示为排队', () => {
+    const store = createStore()
+    store.setter(itemsAtom, delegateItems({ error: '子 agent 启动失败' }))
+
+    const [tree] = store.getter(subagentTreesAtom)
+    expect(tree.status).toBe('failed')
+    expect(tree.nodes.map((node) => [node.status, node.error])).toEqual([
+      ['failed', '子 agent 启动失败'],
+      ['failed', '子 agent 启动失败'],
+      ['failed', '子 agent 启动失败'],
+    ])
+  })
+
   it('工具结果到达后替换为真实 path、状态和详情，并由选择 atom 派生节点详情', () => {
     const store = createStore()
     store.setter(
@@ -232,6 +249,195 @@ describe('subagentViewAtoms', () => {
       status: 'failed',
       error: 'timeout',
     })
+  })
+
+  it('优先展示持久化执行图，并把重启前的活跃子树显示为已中断', () => {
+    const store = createStore()
+    store.setter(executionGraphAtom, {
+      version: 1,
+      order: ['run-live:root', 'run-live:root-01'],
+      nodes: {
+        'run-live:root': {
+          id: 'run-live:root',
+          graphId: 'run-live',
+          sessionId: 'session',
+          runId: 'run-live',
+          dependsOn: [],
+          type: 'agent',
+          status: 'interrupted',
+          label: 'root agent',
+          attempt: 1,
+          generation: 1,
+          effectKeys: [],
+          createdAt: 10,
+          updatedAt: 20,
+          result: { path: 'root' },
+        },
+        'run-live:root-01': {
+          id: 'run-live:root-01',
+          graphId: 'run-live',
+          sessionId: 'session',
+          runId: 'run-live',
+          parentId: 'run-live:root',
+          dependsOn: [],
+          type: 'agent',
+          status: 'succeeded',
+          label: '检查运行时',
+          attempt: 1,
+          generation: 1,
+          effectKeys: [],
+          createdAt: 11,
+          updatedAt: 19,
+          result: { path: 'root-01' },
+        },
+      },
+    })
+    store.setter(itemsAtom, delegateItems())
+
+    const [tree] = store.getter(subagentTreesAtom)
+    expect(tree.treeId).toBe('run-live')
+    expect(tree.status).toBe('interrupted')
+    expect(tree.nodes.map((node) => [node.path, node.status])).toEqual([
+      ['root', 'interrupted'],
+      ['root-01', 'done'],
+    ])
+  })
+
+  it('按触发 delegate_agent 的 tool call 拆分执行图，并直接携带会话内模型轨迹', () => {
+    const store = createStore()
+    store.setter(executionGraphAtom, {
+      version: 1,
+      order: ['run:root-01', 'run:root-02'],
+      nodes: {
+        'run:root-01': {
+          id: 'run:root-01',
+          graphId: 'run',
+          sessionId: 'session',
+          runId: 'run',
+          dependsOn: [],
+          type: 'agent',
+          status: 'succeeded',
+          label: '检查运行时',
+          attempt: 1,
+          generation: 1,
+          effectKeys: [],
+          createdAt: 10,
+          updatedAt: 12,
+          result: { path: 'root-01', delegationCallId: 'delegate-a' },
+          trace: [{
+            timestamp: '2026-07-23T05:00:00.000Z',
+            turn: 1,
+            item: {
+              role: 'assistant',
+              content: '已完成检查',
+              reasoning_content: '先读取运行时',
+            },
+          }],
+        },
+        'run:root-02': {
+          id: 'run:root-02',
+          graphId: 'run',
+          sessionId: 'session',
+          runId: 'run',
+          dependsOn: [],
+          type: 'agent',
+          status: 'running',
+          label: '补齐测试',
+          attempt: 1,
+          generation: 1,
+          effectKeys: [],
+          createdAt: 20,
+          updatedAt: 21,
+          result: { path: 'root-02', delegationCallId: 'delegate-b' },
+        },
+      },
+    })
+
+    const trees = store.getter(subagentTreesAtom)
+    expect(trees.map((tree) => [tree.callId, tree.nodes.map((node) => node.path)])).toEqual([
+      ['delegate-b', ['root-02']],
+      ['delegate-a', ['root-01']],
+    ])
+    expect(trees[1].nodes[0].trace).toEqual([
+      expect.objectContaining({
+        item: expect.objectContaining({
+          reasoning_content: '先读取运行时',
+          content: '已完成检查',
+        }),
+      }),
+    ])
+  })
+
+  it('把缺少 delegationCallId 的旧执行节点重新关联到原始委派调用', () => {
+    const store = createStore()
+    store.setter(itemsAtom, delegateItems({
+      treeId: 'legacy-run',
+      children: [
+        { path: 'root-01', status: 'done', objective: '检查运行时' },
+        { path: 'root-02', status: 'done', objective: '补齐测试' },
+      ],
+    }))
+    store.setter(executionGraphAtom, {
+      version: 1,
+      order: ['legacy-run:root', 'legacy-run:root-01', 'legacy-run:root-02'],
+      nodes: {
+        'legacy-run:root': {
+          id: 'legacy-run:root',
+          graphId: 'legacy-run',
+          sessionId: 'session',
+          runId: 'legacy-run',
+          dependsOn: [],
+          type: 'agent',
+          status: 'succeeded',
+          label: 'root agent',
+          attempt: 1,
+          generation: 1,
+          effectKeys: [],
+          createdAt: 9,
+          updatedAt: 12,
+          result: { path: 'root' },
+        },
+        'legacy-run:root-01': {
+          id: 'legacy-run:root-01',
+          graphId: 'legacy-run',
+          sessionId: 'session',
+          runId: 'legacy-run',
+          parentId: 'legacy-run:root',
+          dependsOn: [],
+          type: 'agent',
+          status: 'succeeded',
+          label: '检查运行时',
+          attempt: 1,
+          generation: 1,
+          effectKeys: [],
+          createdAt: 10,
+          updatedAt: 12,
+          result: { path: 'root-01' },
+        },
+        'legacy-run:root-02': {
+          id: 'legacy-run:root-02',
+          graphId: 'legacy-run',
+          sessionId: 'session',
+          runId: 'legacy-run',
+          parentId: 'legacy-run:root',
+          dependsOn: [],
+          type: 'agent',
+          status: 'succeeded',
+          label: '补齐测试',
+          attempt: 1,
+          generation: 1,
+          effectKeys: [],
+          createdAt: 10,
+          updatedAt: 12,
+          result: { path: 'root-02' },
+        },
+      },
+    })
+
+    const trees = store.getter(subagentTreesAtom)
+    expect(trees).toHaveLength(1)
+    expect(trees[0].callId).toBe('call-1')
+    expect(trees[0].nodes.map((node) => node.path)).toEqual(['root', 'root-01', 'root-02'])
   })
 
   it('忽略 malformed JSON 和非 delegate 工具调用', () => {
@@ -382,6 +588,57 @@ describe('subagentViewAtoms', () => {
       kind: 'result',
       path: '.agent-archive/run/results/new.md',
       content: 'new content',
+    })
+  })
+
+  it('按节点解析并加载完整模型与工具轨迹', async () => {
+    const store = createStore()
+    const content = [
+      JSON.stringify({
+        timestamp: '2026-07-23T00:00:00Z',
+        turn: 1,
+        item: {
+          role: 'assistant',
+          content: null,
+          reasoning_content: '先检查实现',
+          tool_calls: [{
+            id: 'call-1',
+            type: 'function',
+            function: { name: 'read_file', arguments: '{"path":"src/a.ts"}' },
+          }],
+        },
+      }),
+      '{broken',
+      JSON.stringify({
+        timestamp: '2026-07-23T00:00:01Z',
+        turn: 1,
+        item: { role: 'tool', tool_call_id: 'call-1', content: '{"content":"source"}' },
+      }),
+    ].join('\n')
+
+    const parsed = parseSubagentTrace(content)
+    expect(parsed.records).toHaveLength(2)
+    expect(parsed.warnings).toHaveLength(1)
+
+    await store.setter(loadSubagentTraceAtom, {
+      archiveBasePath: '.agent-archive/run',
+      agentPath: 'root-01',
+      nodeKey: 'tree:root-01',
+      workspaceRoot: '/workspace',
+      reader: async (input) => ({
+        ok: true,
+        data: { path: input.path, content, truncated: false, bytes: content.length },
+      }),
+    })
+
+    expect(store.getter(subagentTraceAtom)).toMatchObject({
+      status: 'ready',
+      path: '.agent-archive/run/traces/root-01.trace.jsonl',
+      nodeKey: 'tree:root-01',
+      records: [
+        { turn: 1, item: { role: 'assistant', reasoning_content: '先检查实现' } },
+        { turn: 1, item: { role: 'tool', tool_call_id: 'call-1' } },
+      ],
     })
   })
 })

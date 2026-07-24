@@ -1,4 +1,9 @@
 import { invoke, isTauri } from '@tauri-apps/api/core'
+import {
+  normalizeChangeSummary,
+  type WorkspaceChangeContext,
+  type WorkspaceChangeSummary,
+} from './workspaceChange'
 
 export type WorkspacePatchOperation =
   | { type: 'add_file'; path: string; content: string }
@@ -17,6 +22,8 @@ export interface WorkspacePatchInput {
   dryRun?: boolean
   /** 可选显式 workspace root（P1）；不传则 Rust 侧走 git root 兜底。 */
   workspaceRoot?: string
+  /** Runtime-only audit metadata; tool arguments cannot provide this. */
+  changeContext?: WorkspaceChangeContext
 }
 
 export interface WorkspacePatchRejected {
@@ -33,12 +40,14 @@ export interface WorkspacePatchResult {
   dryRun: boolean
   wouldChange: boolean
   summary: string
+  changeSet?: WorkspaceChangeSummary
 }
 
 type TauriWorkspacePatchInput = {
   operations: WorkspacePatchOperation[]
   dry_run?: boolean
   workspace_root?: string
+  change_context?: WorkspaceChangeContext
 }
 
 function toTauriInput(input: WorkspacePatchInput): TauriWorkspacePatchInput {
@@ -46,6 +55,7 @@ function toTauriInput(input: WorkspacePatchInput): TauriWorkspacePatchInput {
     operations: input.operations,
     dry_run: input.dryRun,
     workspace_root: input.workspaceRoot,
+    change_context: input.changeContext,
   }
 }
 
@@ -60,7 +70,7 @@ function messageFromError(error: unknown): string {
 }
 
 function failedResult(input: WorkspacePatchInput, reason: string): WorkspacePatchResult {
-  return {
+  const result: WorkspacePatchResult = {
     ok: false,
     changedFiles: [],
     rejected: [{ index: -1, operation: 'runtime', reason }],
@@ -68,6 +78,7 @@ function failedResult(input: WorkspacePatchInput, reason: string): WorkspacePatc
     wouldChange: false,
     summary: reason,
   }
+  return result
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -110,7 +121,7 @@ function normalizeResult(raw: unknown, input: WorkspacePatchInput): WorkspacePat
   const summary = stringValue(raw.summary, '')
   const rejected = normalizeRejected(raw.rejected)
 
-  return {
+  const result: WorkspacePatchResult = {
     ok: booleanValue(raw.ok, rejected.length === 0),
     changedFiles: stringArrayValue(raw.changedFiles ?? raw.changed_files),
     rejected,
@@ -118,6 +129,9 @@ function normalizeResult(raw: unknown, input: WorkspacePatchInput): WorkspacePat
     wouldChange: booleanValue(raw.wouldChange ?? raw.would_change, false),
     summary,
   }
+  const changeSet = normalizeChangeSummary(raw.changeSet ?? raw.change_set)
+  if (changeSet) result.changeSet = changeSet
+  return result
 }
 
 export async function applyWorkspacePatch(

@@ -1,11 +1,11 @@
-// 核心状态的数据模型（类型）—— 全部从 model API（api/*）反推。配套 atom 在 core.ts。
+// 核心状态的数据模型（类型）—— 从 model API 交互形状反推。配套 atom 在 sessionAtoms.ts。
 // ---------------------------------------------------------------------------
 // 思路：和 model 的交互形状决定了应用要存什么。
 //   · 我们能选哪些 provider     → ModelVendor（从 api/deepseek.ts / api/glm.ts 推导）
 //   · 一次请求能调哪些参数       → ModelSettings（从 ChatRequestBase + 各家特化推导）
 //   · 对话历史是什么            → ConversationItem[]（从 ModelItem 推导，发请求时映射回 messages）
 //   · 一轮往返后处于什么状态     → RunState（从响应 finish_reason / tool_calls 推导）
-// 这里只定「形状」；atom（容器）在 core.ts，store / 持久化按 REFACTOR-PLAN 在 coreState.ts。
+// 这里只定义数据形状；atom、会话 store 和持久化分别位于 state/runtime 对应模块。
 
 import type { ChatRequestBase, FinishReason, ModelItem, ModelToolCall } from '@web-agent/ai'
 import type { DeepSeekReasoningEffort } from '@web-agent/ai'
@@ -62,6 +62,8 @@ export interface ConversationItem {
   createdAt: number
   item: ModelItem
   pending?: boolean
+  /** 该条模型执行记录产生时正在运行的计划步骤；用于把思考与工具轨迹归入步骤详情。 */
+  planStageId?: string
 }
 
 // ===========================================================================
@@ -91,6 +93,9 @@ export interface PendingToolConfirmation {
   callId: string
   toolName: string
   args: unknown
+  risk?: 'dangerous' | 'critical'
+  reason?: string
+  irreversible?: boolean
 }
 
 export interface PendingPlanApproval {
@@ -99,12 +104,29 @@ export interface PendingPlanApproval {
   revision: number
 }
 
+export interface PendingUserDecisionOrigin {
+  surface: 'conversation' | 'plan'
+  phase?: 'drafting' | 'approval' | 'executing' | 'evaluating' | 'acceptance'
+  planId?: string
+  planRevision?: number
+  stageId?: string
+}
+
+export interface PendingUserDecision {
+  /** 精确对应当前尚未回填的 ask_user_question tool call。 */
+  callId: string
+  payload: unknown
+  origin: PendingUserDecisionOrigin
+}
+
 // 简介：当前 run 的运行事实。
 // 详情：finishReason 是上一轮响应的停止原因；pendingToolCalls 是 finish_reason==='tool_calls'
 // 时、已从响应里校验收窄出来的待执行调用（用请求侧必填版 ModelToolCall，因为执行需要 id/name/args 齐全）。
 export interface RunState {
   runId: string
   status: RunStatus
+  // status==='awaiting_tool' 时正在后台执行、且必须跟随“停止”一起取消的 execution。
+  pendingExecutionId?: string
   finishReason?: FinishReason
   pendingToolCalls?: ModelToolCall[]
   error?: string
@@ -113,6 +135,8 @@ export interface RunState {
   // status==='waiting_user' 时挂着的 ask_user_question payload（args 原样，含 questions 数组）；
   // tool 循环内联暂停时写入，供 UI 渲染问题卡片、resume 时回填答案（形状校验留给 T-7/T-8）。
   pendingQuestion?: unknown
+  // 带来源的待决策状态。pendingQuestion 暂时保留，兼容旧调用方与旧测试；新 UI/runtime 以本字段为准。
+  pendingUserDecision?: PendingUserDecision
   // status==='waiting_confirmation' 时挂着的危险工具调用（S4-B）；供 UI 渲染确认卡片、
   // confirmTool 允许/拒绝时消费。与 pendingQuestion 平行，同样不持久化。
   pendingToolConfirmation?: PendingToolConfirmation
@@ -137,6 +161,12 @@ export interface SessionMeta {
   //   Rust 侧走 git root 兜底（保持现状）。随 SessionMeta 一起持久化（sessionsPersistence）。
   //   放 SessionMeta 而非 ModelSettings —— 它不是模型请求参数，与 vendor/model 那套请求体字段无关。
   workspaceRoot?: string
+  // 工具授权模式：confirm 保持逐次确认；auto 仅为极高风险调用暂停。
+  // 可选以兼容旧持久化数据，读取时缺省按 confirm 处理。
+  toolApprovalMode?: 'confirm' | 'auto'
   // 当前结构化计划的持久化副本；hydrate 时恢复进该会话的 planAtom。
   plan?: import('../planning/types').PlanSnapshot
+  // 后台 agent/tool/plan 节点的可恢复执行图。Promise、AbortController 等
+  // 进程内资源不持久化；hydrate 会把未终结节点统一转成 interrupted。
+  executionGraph?: import('../execution/types').ExecutionGraphSnapshot
 }

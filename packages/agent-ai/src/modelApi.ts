@@ -91,6 +91,15 @@ export interface ThinkingConfig {
   type: 'enabled' | 'disabled'
 }
 
+// 简介：OpenAI 兼容流式请求的附加配置。
+// 详情：DeepSeek / OpenAI 用 include_usage 请求在 [DONE] 前额外返回 usage chunk；
+// 部分兼容 provider（例如 GLM）无需或未声明这个参数，所以底层只透传调用方明确给出的值，
+// 不会对所有 provider 全局强塞。
+export interface ChatStreamOptions {
+  include_usage?: boolean
+  [key: string]: unknown
+}
+
 // ===========================================================================
 // 三、请求体公共子集（各 provider 在各自文件 extends 这个）
 // ===========================================================================
@@ -107,6 +116,7 @@ export interface ChatRequestBase {
   temperature?: number
   max_tokens?: number
   stream?: boolean
+  stream_options?: ChatStreamOptions
 }
 
 // ===========================================================================
@@ -160,6 +170,8 @@ export interface ModelStreamChoice {
 
 export interface ModelChatStreamChunk {
   choices?: ModelStreamChoice[]
+  // include_usage 模式下，最后一个 chunk 通常 choices=[] 且只携带 usage。
+  usage?: ModelUsage | null
 }
 
 // 简介：响应里的一个候选。
@@ -168,11 +180,105 @@ export interface ModelResponseChoice {
   message?: ModelResponseMessage
 }
 
+export interface ModelTokenDetails {
+  cached_tokens?: number
+  [key: string]: unknown
+}
+
 export interface ModelUsage {
   prompt_tokens?: number
+  input_tokens?: number
   completion_tokens?: number
+  output_tokens?: number
   total_tokens?: number
+  // DeepSeek 的缓存命中/未命中字段。
+  prompt_cache_hit_tokens?: number
+  prompt_cache_miss_tokens?: number
+  // GLM / OpenAI Chat Completions 的缓存命中字段。
+  prompt_tokens_details?: ModelTokenDetails
+  // OpenAI Responses 风格的同义结构；保留兼容方便统一统计。
+  input_tokens_details?: ModelTokenDetails
+  // 少数 OpenAI-compatible 服务把 cached_tokens 直接放在 usage 顶层。
+  cached_tokens?: number
   [key: string]: unknown
+}
+
+// 简介：跨 provider 归一化后的输入缓存 token 用量。
+// 详情：字段缺失仍保持 undefined；normalizeCacheUsage 不会把“服务端没报告”误判成 0。
+export interface CacheUsage {
+  hitTokens?: number
+  missTokens?: number
+  missSource: 'provider' | 'derived' | 'unknown'
+  writeTokens?: number
+  totalInputTokens?: number
+}
+
+function nonNegativeFiniteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const number = nonNegativeFiniteNumber(value)
+    if (number !== undefined) return number
+  }
+  return undefined
+}
+
+// 简介：把 DeepSeek / GLM / OpenAI-compatible 的缓存 usage 统一成 CacheUsage。
+// 详情：显式 hit/miss 字段优先；只有 provider 报告过缓存指标时才返回对象。GLM/OpenAI
+// 通常只给 cached_tokens，此时仅在 total >= hit 时推导 miss。total/hit/miss 同时存在时
+// 必须满足 total = hit + miss；矛盾数据整组拒绝，不能用钳零掩盖 provider 异常。
+export function normalizeCacheUsage(usage?: ModelUsage | null): CacheUsage | undefined {
+  if (!usage) return undefined
+
+  const totalInputTokens = firstNumber(usage.prompt_tokens, usage.input_tokens)
+  let hitTokens = firstNumber(
+    usage.prompt_cache_hit_tokens,
+    usage.prompt_tokens_details?.cached_tokens,
+    usage.input_tokens_details?.cached_tokens,
+    usage.cached_tokens,
+  )
+  const providerMissTokens = nonNegativeFiniteNumber(usage.prompt_cache_miss_tokens)
+  let missTokens = providerMissTokens
+  let missSource: CacheUsage['missSource'] =
+    providerMissTokens === undefined ? 'unknown' : 'provider'
+  const writeTokens = firstNumber(
+    usage.prompt_cache_write_tokens,
+    usage.cache_creation_input_tokens,
+  )
+
+  // 没有任何缓存专属指标时，prompt_tokens 本身不能证明缓存可用。
+  if (hitTokens === undefined && missTokens === undefined && writeTokens === undefined) {
+    return undefined
+  }
+
+  if (
+    totalInputTokens !== undefined &&
+    ((hitTokens !== undefined && hitTokens > totalInputTokens) ||
+      (missTokens !== undefined && missTokens > totalInputTokens) ||
+      (hitTokens !== undefined &&
+        missTokens !== undefined &&
+        hitTokens + missTokens !== totalInputTokens))
+  ) {
+    return undefined
+  }
+
+  if (missTokens === undefined && hitTokens !== undefined && totalInputTokens !== undefined) {
+    missTokens = totalInputTokens - hitTokens
+    missSource = 'derived'
+  }
+  if (hitTokens === undefined && missTokens !== undefined && totalInputTokens !== undefined) {
+    hitTokens = totalInputTokens - missTokens
+  }
+
+  return {
+    hitTokens,
+    missTokens,
+    missSource,
+    writeTokens,
+    totalInputTokens,
+  }
 }
 
 // 简介：chat/completions 完整响应体（非流式响应，或流式累计后的最终形状，两家共用）。
@@ -454,12 +560,50 @@ function chatCompletionsUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, '')}/chat/completions`
 }
 
+function isUnexpectedEndJsonError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  return /unexpected (?:end|eof)/i.test(error.message)
+}
+
+// 简介：SSE 连接正常关闭，但 provider 没有发送协议终止标记。
+// 详情：与完整但非法的 JSON SyntaxError 分开标记，供流式重试层区分“传输被截断”和
+// “服务端给了确定性的坏数据”。
+class TruncatedStreamError extends Error {
+  constructor(message = 'Chat completion stream ended before [DONE].') {
+    super(message)
+    this.name = 'TruncatedStreamError'
+  }
+}
+
+async function parseChatResponse(response: Response): Promise<ModelChatResponse> {
+  let source: string
+  try {
+    source = await response.text()
+  } catch (error) {
+    if (isAbortError(error)) throw error
+    throw new RetriableError('Chat completion response body ended before it could be read.', {
+      originalError: error,
+    })
+  }
+
+  if (!source.trim()) {
+    throw new RetriableError('Chat completion returned an empty JSON response.')
+  }
+
+  try {
+    return JSON.parse(source) as ModelChatResponse
+  } catch (error) {
+    if (!isUnexpectedEndJsonError(error)) throw error
+    throw new RetriableError('Chat completion returned a truncated JSON response.')
+  }
+}
+
 // 简介：底层 OpenAI 兼容 chat/completions 调用（非流式）。
 // 详情：deepseek.ts / glm.ts 各自填好 baseUrl 与特化 body 后调它；body 原样序列化
 // （含各家特有的 reasoning_effort），仅补 Authorization。429/5xx/网络抖动按
 // options.retry 指数退避重试；其它 !ok 抛 Error 带回服务端 detail；AbortError 透传。
 // 非流式没有任何增量输出，重发对上层完全透明，所以整个连接阶段都可以放心重试。
-// 注意 json() 解析故意放在重试之外 —— SyntaxError 是确定性失败，重试没有意义。
+// 空响应、截断 JSON 和读取 body 失败属于传输不完整，可安全重试；其它坏 JSON 是确定性失败。
 export async function postChatCompletion(
   baseUrl: string,
   body: ChatRequestBase,
@@ -470,9 +614,10 @@ export async function postChatCompletion(
   const url = chatCompletionsUrl(baseUrl)
   const init = buildRequestInit(body, options)
 
-  const response = await withRetry(config, options.signal, () => requestOnce(fetchImpl, url, init))
-
-  return (await response.json()) as ModelChatResponse
+  return withRetry(config, options.signal, async () => {
+    const response = await requestOnce(fetchImpl, url, init)
+    return parseChatResponse(response)
+  })
 }
 
 interface StreamAccumulator {
@@ -480,6 +625,7 @@ interface StreamAccumulator {
   reasoningContent: string
   toolCalls: Map<number, ModelResponseToolCall>
   finishReason?: FinishReason | null
+  usage?: ModelUsage
 }
 
 function appendToolCallDelta(
@@ -533,7 +679,7 @@ function toChatResponse(acc: StreamAccumulator): ModelChatResponse {
     message.tool_calls = toolCalls
   }
 
-  return {
+  const response: ModelChatResponse = {
     choices: [
       {
         finish_reason: acc.finishReason ?? (toolCalls.length > 0 ? 'tool_calls' : 'stop'),
@@ -541,6 +687,8 @@ function toChatResponse(acc: StreamAccumulator): ModelChatResponse {
       },
     ],
   }
+  if (acc.usage) response.usage = acc.usage
+  return response
 }
 
 function emitFullResponseAsDelta(response: ModelChatResponse, handlers?: ChatStreamHandlers): void {
@@ -596,6 +744,10 @@ function consumeSseBuffer(
     if (data === '[DONE]') return { rest, done: true }
 
     const chunk = JSON.parse(data) as ModelChatStreamChunk
+    // include_usage 的最终 chunk 通常没有 choice；必须先读 usage，不能随 choices[0] 一起跳过。
+    if (chunk.usage) {
+      acc.usage = { ...acc.usage, ...chunk.usage }
+    }
     const choice = chunk.choices?.[0]
     const delta = choice?.delta
     if (delta) {
@@ -616,6 +768,7 @@ async function readStreamResponse(
   const decoder = new TextDecoder()
   const acc: StreamAccumulator = { content: '', reasoningContent: '', toolCalls: new Map() }
   let buffer = ''
+  let sawDone = false
 
   try {
     while (true) {
@@ -623,18 +776,26 @@ async function readStreamResponse(
       buffer += decoder.decode(value, { stream: !done })
       const consumed = consumeSseBuffer(buffer, acc, handlers)
       buffer = consumed.rest
-      if (consumed.done) break
+      if (consumed.done) {
+        sawDone = true
+        break
+      }
       if (done) {
         const trailing = buffer.trim()
         if (trailing) {
           const consumedTrailing = consumeSseBuffer(`${buffer}\n\n`, acc, handlers)
           buffer = consumedTrailing.rest
+          sawDone = consumedTrailing.done
         }
         break
       }
     }
   } finally {
     reader.releaseLock()
+  }
+
+  if (!sawDone) {
+    throw new TruncatedStreamError()
   }
 
   return toChatResponse(acc)
@@ -684,10 +845,9 @@ export async function postChatCompletionStream(
 
     const contentType = readHeader(response, 'Content-Type') ?? ''
     if (!contentType.includes('text/event-stream') || !response.body) {
-      // 非流式回退分支：与 postChatCompletion 保持一致 —— json() 解析故意放在下面的
-      // try/catch 之外。SyntaxError（网关错误页、坏 JSON 等）是确定性失败，重试没有
-      // 意义，只会让用户白等几秒、白烧几次请求换一个必然还是失败的结果。
-      const full = (await response.json()) as ModelChatResponse
+      // 非流式回退分支与 postChatCompletion 共用响应完整性判断：空响应或截断 JSON
+      // 尚未向 UI emit 内容，可安全重试；普通坏 JSON 仍立即失败。
+      const full = await parseChatResponse(response)
       emitFullResponseAsDelta(full, guardedHandlers)
       return full
     }
@@ -698,6 +858,9 @@ export async function postChatCompletionStream(
       if (isAbortError(err)) throw err // R1
       // R3：已经吐过有内容的字 → 重试会在 UI 上产生重复内容，只能把错误抛给上层。
       if (emitted) throw err
+      // 完整但非法的 SSE JSON 是确定性协议错误，重发没有意义；只有 JSON 明确在 EOF
+      // 截断时才按传输中断处理。clean EOF 与 reader 读取错误也走下面的安全重试。
+      if (err instanceof SyntaxError && !isUnexpectedEndJsonError(err)) throw err
       // 一个字都没吐出去（多半是连上后 body 就断了）→ 重发是安全的。
       throw new RetriableError(err instanceof Error ? err.message : String(err), {
         originalError: err,

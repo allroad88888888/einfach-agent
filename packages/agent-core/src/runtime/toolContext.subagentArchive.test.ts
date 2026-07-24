@@ -81,7 +81,7 @@ function contextWriting(input: { path: string; content: string; mode?: SubagentA
 
 async function delegate(
   runtime: DelegateAgentRuntime,
-  opts: { signal?: AbortSignal; runId?: string } = {},
+  opts: { signal?: AbortSignal; runId?: string; toolName?: string } = {},
 ): Promise<void> {
   seedRunningSession()
   const ctx = buildToolContext({
@@ -89,7 +89,7 @@ async function delegate(
     runId: opts.runId ?? 'r1',
     signal: opts.signal ?? new AbortController().signal,
     callId: 'call1',
-    toolName: 'delegate_agent',
+    toolName: opts.toolName ?? 'delegate_agent',
     delegateRuntime: runtime,
   })
   await ctx.delegateAgents!({ children: [{ objective: 'write archive' }] })
@@ -151,6 +151,26 @@ describe('toolContext 子 Agent 归档写入', () => {
     await expect(delegate(attempt.runtime)).rejects.toThrow(
       'Subagent archive write failed (append) for ".archive/events.jsonl": Workspace file writing is only available in the Tauri desktop runtime',
     )
+    expect(writeWorkspaceFile).toHaveBeenCalledOnce()
+  })
+
+  it('阶段评估器归档不可用时跳过归档，不阻断 evaluator 与计划推进', async () => {
+    vi.mocked(writeWorkspaceFile).mockImplementation(async (input) =>
+      writeResult(input, {
+        ok: false,
+        bytesWritten: 0,
+        overwritten: false,
+        error: 'Workspace file writing is only available in the Tauri desktop runtime',
+      }),
+    )
+    const attempt = contextWriting({ path: '.archive/evaluator.json', content: '{}', mode: 'overwrite' })
+
+    await expect(delegate(attempt.runtime, { toolName: 'submit_stage_result' })).resolves.toBeUndefined()
+    expect(attempt.result()).toMatchObject({
+      ok: true,
+      skipped: true,
+      warning: expect.stringContaining('Workspace file writing is only available'),
+    })
     expect(writeWorkspaceFile).toHaveBeenCalledOnce()
   })
 

@@ -25,6 +25,8 @@ interface SessionsPersistence {
 
 let history: HistoryDriver | undefined
 let sessions: SessionsPersistence | undefined
+const checkpointWriteTails = new Map<string, Promise<void>>()
+let sessionsWriteTail: Promise<void> | undefined
 
 // 简介：注入/更新持久化 driver（HistoryDriver + 会话列表存储）。
 // 详情：浅合并，只覆盖传入的字段；未传的保持原值。main.tsx 用与 hydrate 相同的一对实例注入。
@@ -40,6 +42,8 @@ export function configurePersistence(deps: {
 export function resetPersistence(): void {
   history = undefined
   sessions = undefined
+  checkpointWriteTails.clear()
+  sessionsWriteTail = undefined
 }
 
 // ===========================================================================
@@ -49,12 +53,36 @@ export function resetPersistence(): void {
 // 简介：把当前会话列表覆盖式落盘（会话增删改后调用）。
 // 详情：取 rootStore.sessionsAtom 全部 SessionMeta 交给 saveSessions；未配置则 `?.` 短路成 no-op。
 export function persistSessions(): void {
-  void sessions?.saveSessions(Object.values(rootStore.getter(sessionsAtom))).catch(() => {})
+  const driver = sessions
+  if (!driver) return
+  // Capture the snapshot at call time and serialize full-list overwrites. An
+  // execution node commonly emits queued → running → terminal within a short
+  // interval; letting those writes race can put an older running snapshot back
+  // on disk after the terminal one.
+  const snapshot = Object.values(rootStore.getter(sessionsAtom))
+  const write = sessionsWriteTail
+    ? sessionsWriteTail.then(() => driver.saveSessions(snapshot))
+    : driver.saveSessions(snapshot)
+  const settled = write.catch(() => {})
+  sessionsWriteTail = settled
+  void settled.finally(() => {
+    if (sessionsWriteTail === settled) sessionsWriteTail = undefined
+  })
 }
 
 // 简介：把某会话刚提交的一轮 checkpoint 落盘（commitCheckpoint 之后调用）。
 export function persistCheckpoint(id: string, checkpoint: Checkpoint): void {
-  void history?.saveCheckpoint(id, checkpoint).catch(() => {})
+  const driver = history
+  if (!driver) return
+  const previous = checkpointWriteTails.get(id)
+  const write = previous
+    ? previous.then(() => driver.saveCheckpoint(id, checkpoint))
+    : driver.saveCheckpoint(id, checkpoint)
+  const settled = write.catch(() => {})
+  checkpointWriteTails.set(id, settled)
+  void settled.finally(() => {
+    if (checkpointWriteTails.get(id) === settled) checkpointWriteTails.delete(id)
+  })
 }
 
 // 简介：截断某会话中 turnIndex 之后的持久化 checkpoint（回退 jumpToCheckpoint 之后调用）。

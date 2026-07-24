@@ -27,11 +27,17 @@ export function createMemoryHistoryDriver(): HistoryDriver {
       return list?.find((cp) => cp.turnIndex === turnIndex)
     },
 
-    // 追加一个 checkpoint 到该会话历史尾部（会话不存在则新建列表）。
+    // 追加或覆盖 checkpoint；与 IndexedDB / SQLite 的复合主键覆盖语义一致。
     async saveCheckpoint(sessionId: string, checkpoint: Checkpoint): Promise<void> {
       const list = bySession.get(sessionId)
       if (list) {
-        list.push(checkpoint)
+        const index = list.findIndex((item) => item.turnIndex === checkpoint.turnIndex)
+        if (index >= 0) {
+          list[index] = checkpoint
+        } else {
+          list.push(checkpoint)
+          list.sort((a, b) => a.turnIndex - b.turnIndex)
+        }
       } else {
         bySession.set(sessionId, [checkpoint])
       }

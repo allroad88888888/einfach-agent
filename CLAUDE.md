@@ -1,52 +1,95 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+本文件是仓库内编码 Agent 的快速工作约定。项目现状和启动方法以 `README.md` 为准，
+专题设计入口见 `docs/README.md`。
 
-## Commands
+## 命令
 
-This is a **pnpm workspace** (packages under `packages/*` use the `workspace:*` protocol, which npm does not support). Use pnpm, not npm.
+这是 pnpm workspace，`packages/*` 和 `tools/*` 使用 `workspace:*`。不要使用 `npm install`。
 
-- `pnpm install` — install deps + link workspace packages (run once on a fresh checkout).
-- `pnpm dev` — Vite dev server (`--host 0.0.0.0`).
-- `pnpm build` — type-check (`tsc -b`) then `vite build`. Use this to verify types; there is no separate lint step.
-- `pnpm test` — Vitest single run.
-- `pnpm test:watch` — Vitest watch mode.
-- Run one test file: `pnpm exec vitest run packages/agent-core/src/runtime/modelRun.test.ts`
-- Filter by name: `pnpm exec vitest run -t "ask_user"`
+- `pnpm install`：安装并链接全部 workspace 包。
+- `pnpm dev`：启动 Vite Web 预览。
+- `pnpm build`：执行 `tsc -b` 后构建 Vite；这是类型门禁。
+- `pnpm test`：Vitest 单次运行。
+- `pnpm test:watch`：Vitest watch。
+- `pnpm exec vitest run <file>`：运行单个测试文件。
+- `pnpm tauri dev` / `pnpm tauri build`：桌面端开发与打包。
+- `cargo test --manifest-path apps/desktop/Cargo.toml`：Rust 桥测试。
 
-Tests run in `jsdom` with `./src/test/setup.ts` as setup. Note `fileParallelism: false` in `vite.config.ts` — test files run serially because the runtime uses module-level singletons (`abortRegistry`'s controller map, the per-session store cache in `sessionStore.ts`), so don't reintroduce parallelism without removing that shared state. Use `renderWithStore` from `src/test/renderWithStore.tsx` to render components against a fresh `@einfach/core` store. IndexedDB tests use `fake-indexeddb`.
+Vitest 使用 jsdom 和 `apps/web/src/test/setup.ts`。`fileParallelism: false` 是有意设置：
+abort registry、默认 core 和部分会话缓存仍包含进程内共享状态。组件测试应使用
+`apps/web/src/test/renderWithStore.tsx` 提供的隔离 store；IndexedDB 测试使用 `fake-indexeddb`。
 
-## Environment / model config
+## 配置
 
-The agent talks to DeepSeek's and GLM's OpenAI-compatible APIs directly from the browser (`src/agentNew/api/{deepseek,glm,modelApi}.ts`). Copy `.env.example` → `.env.local` and set `VITE_DEEPSEEK_API_KEY` (and `VITE_GLM_API_KEY` for GLM sessions). `main.tsx` injects the keys via `configureCommands`. A session's `settings.vendor` (`'deepseek' | 'glm'`) selects the API and key. With no key, model calls fail and the run degrades to `status: 'error'` (the adapters never throw except on `AbortError`).
+`apps/web/src/main.tsx` 通过 `configureCommands` 注入：
 
-## Project layout
+- `VITE_DEEPSEEK_API_KEY`
+- `VITE_GLM_API_KEY`
 
-Everything lives under `src/agentNew/` (the app is a single, self-contained rewrite — there is **no** external path dependency and no `@ai-components` alias). `@` → `src`. `react`/`react-dom` are force-resolved+deduped to this app's `node_modules` in `vite.config.ts`. Design/decision docs live alongside the code: `CHECKPOINT-STATE-PLAN.md` (state layer), `RUNTIME-UI-PLAN.md` (runtime + UI), `FEATURES-PLAN.md` (tool/skill + persistence + Tauri + cleanup), `T8-UI-PLAN.md` (tool cards). Read these for the "why" behind the architecture and the contract IDs (U1/U2, TK*, PF4, etc.) referenced in code comments.
+模型请求从前端直接发往供应商接口。没有对应 Key 时，该供应商调用会进入 error 状态。
+不要假设 `.env.example` 之外的 `VITE_*` 变量已经接线。
 
-## Architecture
+## 当前结构
 
-A browser-only chat runtime. No backend, no real filesystem/terminal/MCP — "skills" and "tools" are in-repo simulations (the boundary is documented in `src/agentNew/skills/web-chat-agent.md`). The planned desktop shell (Tauri + SQLite via `tauri-plugin-sql`) is the only remaining unbuilt block (`Ta` in FEATURES-PLAN).
+- `apps/web/src/main.tsx`：默认应用装配；注册标准工具、配置模型、选择持久化和观测 driver。
+- `apps/web/src/agentNew/ui/`：React UI，包含会话、消息、计划、确认、子 Agent 树和输入区。
+- `apps/desktop/`：Rust/Tauri 的 shell、workspace、Git、dialog 与 SQLite 实现。
+- `packages/agent-ai/`：DeepSeek/GLM 请求、流式响应和重试。
+- `packages/agent-core/`：Agent Runtime 与所有核心状态。
+- `tools/{shell,fs,interaction,planning,skills,agents}/`：六个具体工具域。
+- `tools/standard/`：标准工具聚合包，提供 `registerStandardTools`。
+- `docs/`：当前说明和仍在推进的演进蓝图。
 
-**State: one store per session + a top-level rootStore (`@einfach/react` + `@einfach/core`, not Redux/Zustand).**
-- `state/rootStore.ts` — the single global `rootStore` holds only cross-session state: `sessionsAtom` (`Record<id, SessionMeta>`) + `activeSessionIdAtom`.
-- `state/sessionStore.ts` — `createSessionStore(id)` / `getSessionStore(id)` build and cache **one einfach `createStore()` per session** in a `Map`. Session-scoped atoms (`state/sessionAtoms.ts`: `itemsAtom`/`runAtom`/`checkpointsAtom`; `state/transientAtoms.ts`: `browserCardsAtom`/`pendingArtifactsAtom`/`pendingQuestionAnswersAtom`) are **shared atom keys whose values live in each session's own store** — value isolation comes from the store, so there is **no `Record<sessionId, T>` bucketing**.
-- Writers (`state/sessionWriters.ts`, `state/checkpointWriters.ts`, `state/transientAtoms.ts`) take an explicit `id`, write into that session's store, and **ghost-guard** (no-op if the session isn't registered in `rootStore.sessionsAtom`). All updates are immutable (checkpoint snapshots depend on it).
+依赖必须维持：
 
-**UI ↔ runtime boundary (contracts U1/U2/U3).** React components only **read atoms** (`useAtomValue`) and **call commands** (`runtime/commands.ts`) — they never call writers, never `setter` an atom, never touch a store instance. Commands don't take a `store` (they self-resolve `rootStore` / `getSessionStore(activeId)`). Provider layering: root `<Provider store={rootStore}>` drives the sidebar; `ui/ActiveSessionProvider.tsx` swaps in the active session's store with `key={activeId}` so switching sessions remounts the right pane.
+```text
+agent-ai ← agent-core ← tools-* ← tools(meta) ← app
+```
 
-**Run lifecycle — `runtime/commands.ts` + `runtime/modelRun.ts`.** `sendMessage` → `runSession` appends the user item, sets the run, and calls `runToolLoop`, a multi-turn lazy-tool loop: send `[system, ...items]` + the visible tool manifest → if the model returns `tool_calls`, append the assistant item then execute each tool (`runtime/toolExecution.ts`, dispatching `skill_search`/`skill_read`/`save_file`/`browser_action`) and append a tool-result item, then loop; on a plain `stop` append the final assistant item and `commitCheckpoint`. Items are stored directly in `itemsAtom` and re-sent each turn (no continuation blob). Tools are **lazy-loaded**: the model sees only `listToolSummaries` + a `request_tool_schema` function; `ensureToolLoaded` attaches a schema only when requested (`runtime/toolLoading.ts`). Every write-back after an `await` re-checks `isCurrentRun(id, runId)` (session still exists **and** run not superseded) **and** `signal.aborted` — a superseded/aborted run must not pollute a new one. Aborts go through `runtime/abortRegistry.ts` (a module-singleton `Map<id, AbortController>`; `beginRun` aborts any prior controller, `endRun` only clears its own).
+`agent-core` 不得反向依赖任何具体 `tools-*` 包。
 
-**AskUserQuestion flow.** When the model calls `ask_user_question`, the loop first backfills tool results for any sibling tool_calls, then sets `status: 'waiting_user'` + `pendingQuestion` and returns (leaving the ask_user tool_call un-backfilled). `ui/AskUserQuestionCard.tsx` renders the (defensively normalized) questions, collects answers via the `answerQuestion` command into `pendingQuestionAnswersAtom`, and `resumeWithAnswers` backfills the ask_user tool result and re-enters `runToolLoop` reusing the paused run's `runId`. While `waiting_user`, the Composer is locked and `sendMessage` no-ops (else a new run would orphan the ask_user tool_call and produce an invalid tool-call sequence).
+## 状态与 UI 边界
 
-**Persistence (`state/persistence/*` + `runtime/persistenceBridge.ts`).** `HistoryDriver` (IndexedDB impl) stores per-session checkpoints; a sessions store persists `SessionMeta`. `main.tsx` `hydrate`s before seeding (restores sessions + latest checkpoint items). Writes are fire-and-forget via `persistenceBridge` (no-op until `configurePersistence` injects the drivers; errors swallowed). `runAtom` (status/pendingQuestion) is **not** persisted — a refresh mid-`waiting_user` is lost by design.
+默认运行时使用一个 `defaultCore`。它持有 root store、每会话 store 缓存、工具 registry、
+abort registry 和运行时配置。`createCore()` 可创建隔离实例；默认实例本身不自动安装工具，
+应用和测试入口负责调用 `registerStandardTools`。
 
-**Checkpoints / revert.** One user turn = one checkpoint (an items snapshot committed at turn end). `ui/CheckpointBar.tsx` + the `revertToTurn` command do a truncating revert (`jumpToCheckpoint` restores items + truncates the checkpoint list; the command also prunes browser cards newer than the revert point and truncates persisted checkpoints).
+- root store 只放跨会话状态：会话元数据与当前会话 ID。
+- 每个 session 有独立 Einfach store，保存 items、run、checkpoint、plan 和瞬态 UI 状态。
+- UI 只允许读取 atom、调用 `runtime/commands.ts` 暴露的命令。
+- UI 不直接调用 writer、不 setter 业务 atom、不持有 runtime store。
+- writer 和 await 后回写必须保留 ghost guard、runId stale guard 与 AbortSignal 检查。
+- checkpoint 保存 items 的不可变快照，不能用原地修改破坏历史。
 
-## Conventions
+## 运行链路
 
-- TypeScript `strict` is on; `tsc -b` is the gate (run `pnpm build`). The model adapters' "return-a-fallback, don't throw (except AbortError)" pattern is intentional, not a smell.
-- Everything is under `src/agentNew/`: UI in `ui/`, orchestration in `runtime/`, state in `state/`, model APIs in `api/`, skills/tools in `skills/` + `tools/`. Tests are colocated `*.test.ts(x)`.
-- Skills are Markdown imported with Vite's `?raw` and registered in `skills/registry.ts`; tools are registered with name/runtime/schema in `tools/registry.ts`. Add new ones to those registries.
-- Follow the plan docs' contract IDs when touching runtime/state (ghost guard, stale-run guard, immutable updates, UI-reads-atoms-calls-commands). Each stage is closed with a `codex review --uncommitted` pass.
-- User-facing assistant strings are Chinese; keep that voice for output text (and for code comments/plan docs, matching the existing style).
+`sendMessage` 创建 run 并进入 `modelRun.ts`：
+
+1. 写入用户消息与 running 状态。
+2. 组装 system prompt、上下文、工具摘要和 `request_tool_schema`。
+3. 模型按需请求完整工具 schema。
+4. 工具经 registry 校验后，通过受限 `ToolContext` 执行。
+5. 普通工具结果回填并继续循环；ask-user、计划审批或危险工具确认会暂停。
+6. 完成后提交 checkpoint，并通过 persistence bridge 落盘。
+
+工具不得直接 import store/atom 来获得额外能力。文件、shell、计划、渲染、委派等副作用必须使用
+`ToolContext` 暴露的能力，确保 workspace confinement、权限确认、stale guard 和审计仍然生效。
+
+## 持久化与运行环境
+
+- Web：会话/历史和 trace 使用 IndexedDB。
+- Tauri：会话/历史和 trace 使用 SQLite，文件/shell/Git 通过 Rust command 执行。
+- `server` 工具在非 Tauri 环境中不会暴露给模型。
+- `.agent-archive/` 保存子 Agent 长期归档与索引，不应提交到 Git。
+
+## 测试与修改约定
+
+- TypeScript strict 开启；完成修改至少运行相关测试和 `pnpm build`。
+- runtime/state 修改优先补充 colocated `*.test.ts(x)`。
+- 模型 adapter 的“除 AbortError 外返回 fallback、不向 UI 抛出”是有意契约。
+- 新工具放到对应 `tools/<domain>/src/<tool-name>/`，同目录包含实现、说明和测试，
+  再由域包 registrar 注册。
+- 用户可见的助手文案保持中文。
+- 已完成的阶段 PLAN 只保留在 Git 历史中。判断现状时以当前代码、测试和 `docs/README.md`
+  指向的文档为准。

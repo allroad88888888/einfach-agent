@@ -13,6 +13,7 @@ interface CkRow {
   label: string
   created_at: number
   items: string
+  plan: string | null
 }
 function makeFakeDb() {
   const checkpoints: CkRow[] = []
@@ -26,9 +27,16 @@ function makeFakeDb() {
     execute: vi.fn(async (sql: string, params: unknown[] = []) => {
       if (sql.includes('CREATE TABLE')) return { rowsAffected: 0 }
       if (sql.includes('INSERT OR REPLACE INTO checkpoints')) {
-        const [session_id, turn_index, label, created_at, items] = params as [string, number, string, number, string]
+        const [session_id, turn_index, label, created_at, items, plan] = params as [
+          string,
+          number,
+          string,
+          number,
+          string,
+          string | null,
+        ]
         const i = checkpoints.findIndex((r) => r.session_id === session_id && r.turn_index === turn_index)
-        const row = { session_id, turn_index, label, created_at, items }
+        const row = { session_id, turn_index, label, created_at, items, plan }
         if (i >= 0) checkpoints[i] = row
         else checkpoints.push(row)
         return { rowsAffected: 1 }
@@ -125,7 +133,19 @@ const meta = (id: string): SessionMeta => ({
 describe('sqliteDriver — history', () => {
   it('saveCheckpoint → listCheckpoints（无 items）→ loadCheckpoint（含 items）round-trip', async () => {
     const { history } = createSqlitePersistence()
-    await history.saveCheckpoint('s1', ck(0, [{ id: 'i0', createdAt: 1, item: { role: 'user', content: 'hi' } }]))
+    const checkpoint = ck(0, [{ id: 'i0', createdAt: 1, item: { role: 'user', content: 'hi' } }])
+    checkpoint.plan = {
+      id: 'p1',
+      title: '计划',
+      objective: '验证计划快照',
+      status: 'active',
+      revision: 1,
+      requiresApproval: false,
+      createdAt: 1,
+      updatedAt: 1,
+      stages: [],
+    }
+    await history.saveCheckpoint('s1', checkpoint)
     await history.saveCheckpoint('s1', ck(1))
 
     const metas = await history.listCheckpoints('s1')
@@ -135,6 +155,7 @@ describe('sqliteDriver — history', () => {
     const cp0 = await history.loadCheckpoint('s1', 0)
     expect(cp0?.items).toHaveLength(1)
     expect(cp0?.label).toBe('t0')
+    expect(cp0?.plan).toEqual(checkpoint.plan)
     expect(await history.loadCheckpoint('s1', 99)).toBeUndefined() // 越界
   })
 

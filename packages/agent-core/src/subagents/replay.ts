@@ -18,6 +18,7 @@ const SUBAGENT_EVENT_TYPES: SubagentArchiveEventType[] = [
   'child_finished',
   'tree_snapshot_written',
   'delegate_finished',
+  'child_model_usage',
   // 与 types.ts 的 SubagentArchiveEventType 联合一一对应 —— 漏一个，该类事件就会被
   // isSubagentArchiveEvent 判为结构非法而落进 parseErrors，eventCounts 也不再统计它。
   'child_context_compacted',
@@ -316,6 +317,7 @@ export function replaySubagentArchive(input: {
     child_finished: 0,
     tree_snapshot_written: 0,
     delegate_finished: 0,
+    child_model_usage: 0,
     child_context_compacted: 0,
     child_context_over_budget: 0,
   }

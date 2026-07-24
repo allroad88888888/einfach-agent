@@ -1,6 +1,6 @@
 // 顶层「会话列表」store —— 全局唯一，只管跨会话的东西（会话元信息 + 当前会话 id）。
 // ---------------------------------------------------------------------------
-// 契约（CHECKPOINT-STATE-PLAN §1 C3）：store 架构是「每会话一个独立 store + 顶层 rootStore」。
+// 状态边界：store 架构是「每会话一个独立 store + 顶层 rootStore」。
 //   · 顶层 rootStore（本文）：全局唯一，只存会话列表 sessionsAtom + 当前会话 activeSessionIdAtom。
 //   · 会话内容（items / run / checkpoints）：不在这里，由每会话自己的 store 持有（见 P3/P4）。
 // 所以本文严禁出现任何 Record<sessionId, _> 的会话内容分桶，也严禁导出全局 agentStore 单例。

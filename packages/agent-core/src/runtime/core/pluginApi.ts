@@ -33,6 +33,7 @@ export interface CommandApi {
   sendMessage(input: string): void
   answerQuestion(questionId: string, value: AskUserAnswerValue): void
   revertToTurn(turnIndex: number): void
+  revertTurnToDraft(turnIndex: number): void
   stopRun(): void
 }
 

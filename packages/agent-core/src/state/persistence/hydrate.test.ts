@@ -13,7 +13,7 @@ import type { Checkpoint } from '../checkpoint.type'
 import type { SessionMeta } from '../core.type'
 import { rootStore, sessionsAtom, activeSessionIdAtom, resetRootStore } from '../rootStore'
 import { getSessionStore, resetSessionStores } from '../sessionStore'
-import { checkpointsAtom, currentTurnIndexAtom, itemsAtom } from '../sessionAtoms'
+import { checkpointsAtom, currentTurnIndexAtom, itemsAtom, planAtom } from '../sessionAtoms'
 import { createMemoryHistoryDriver } from './memoryHistoryDriver'
 import { hydrate } from './hydrate'
 
@@ -78,6 +78,61 @@ describe('hydrate', () => {
     expect(store2.getter(checkpointsAtom)).toHaveLength(3)
     expect(store2.getter(currentTurnIndexAtom)).toBe(2)
     expect(store2.getter(itemsAtom)).toEqual(cp(2, 's2c').items)
+  })
+
+  it('重启时从 SessionMeta 恢复计划及各步骤的最终状态', async () => {
+    const history = createMemoryHistoryDriver()
+    const persisted: SessionMeta = {
+      ...s1,
+      plan: {
+        schemaVersion: 2,
+        id: 'plan-persisted',
+        title: '持久化计划',
+        objective: '验证桌面重启恢复',
+        status: 'active',
+        revision: 6,
+        requiresApproval: false,
+        createdAt: 1,
+        updatedAt: 2,
+        stages: [
+          {
+            id: 'design',
+            title: '设计',
+            objective: '完成设计',
+            deliverables: [],
+            acceptanceCriteria: ['设计完成'],
+            dependencies: [],
+            status: 'completed',
+            evidence: ['设计已验收'],
+          },
+          {
+            id: 'implement',
+            title: '实现',
+            objective: '完成实现',
+            deliverables: [],
+            acceptanceCriteria: ['实现完成'],
+            dependencies: ['design'],
+            status: 'in_progress',
+            evidence: [],
+          },
+        ],
+      },
+    }
+
+    await expect(hydrate({
+      sessions: { loadSessions: async () => [persisted] },
+      history,
+    })).resolves.toBe(true)
+
+    expect(getSessionStore('s1').store.getter(planAtom)).toMatchObject({
+      id: 'plan-persisted',
+      revision: 6,
+      status: 'active',
+      stages: [
+        { id: 'design', status: 'completed' },
+        { id: 'implement', status: 'in_progress' },
+      ],
+    })
   })
 
   it('空 sessions → 返回 false 且 rootStore 不变', async () => {

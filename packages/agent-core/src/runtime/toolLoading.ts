@@ -1,6 +1,6 @@
 // TK3 tool lazy 加载闸门（移植自旧 loop.ts 的 appendVisibleTool / ensureToolLoaded，纯逻辑版）。
 // ---------------------------------------------------------------------------
-// 设计契约（FEATURES-PLAN §1 TK3）：manifest-only + lazy schema。
+// 设计契约：manifest-only + lazy schema。
 //   · model 只看 listToolSummaries()（无 inputSchema）；只有真正被 ensure 的 tool
 //     才 loadTool() 合成完整 schema，加入本轮可见工具列表。禁止预加载。
 // agentNew 无 timeline：去掉旧版 timeline 写入 / wait 延时，只保留纯逻辑。
@@ -17,6 +17,24 @@
 import type { LoadedTool } from '../tools/types'
 import { patchRun } from '../state/sessionWriters'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
+
+// 简介：给“模型调用了本轮未暴露工具”生成可自愈的结构化结果。
+// 详情：不泄漏未加载 schema，只明确指出 lazy-tool 协议和下一次应发起的元工具调用。
+// 主 Agent 用统一载荷代替含糊的参数缺失或 not allowed，便于模型按 nextCall 自愈。
+export function toolSchemaNotLoadedResult(toolName: string): Record<string, unknown> {
+  return {
+    error: `工具 ${toolName} 的 schema 尚未加载，不能直接调用`,
+    code: 'tool_schema_not_loaded',
+    hint: '请先调用 request_tool_schema，读取完整参数 schema 后再重新调用该工具',
+    nextCall: {
+      name: 'request_tool_schema',
+      arguments: {
+        toolName,
+        reason: `调用 ${toolName} 前加载参数 schema`,
+      },
+    },
+  }
+}
 
 // 简介：把工具加入本轮可见工具列表。
 // 详情：按 name 去重后返回新数组；已含则原样返回（同引用），只有出现在列表里的 schema 才会暴露给下一轮 model。
