@@ -15,7 +15,7 @@ Use ripgrep (`rg`) to search source code and text files. Confirm mode is confine
 ## Use
 
 - Use this as the main code-search tool when locating symbols, imports, call sites, warnings, config keys, or TODOs.
-- Use `read_file` after `rg_search` when a hit needs more surrounding context.
+- Use `read_file` after `rg_search` when a hit needs more surrounding context: pass the hit's `lineNumber` straight to `read_file.startLine` (with `lineCount`) instead of reading the file from the top and counting lines.
 - Use `search_files` only for simpler plain-text fallback searches.
 - Use `git_diff_review` after edits to inspect changed files and diffs.
 

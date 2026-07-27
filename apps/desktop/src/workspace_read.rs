@@ -47,7 +47,7 @@ const EXCLUDED_DIR_NAMES: &[&str] = &[
     ".cache",
 ];
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadWorkspaceFileResult {
     path: String,
@@ -60,6 +60,18 @@ pub struct ReadWorkspaceFileResult {
     next_offset: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     content_hash: Option<String>,
+    /// 行定位模式下本段第一行的行号（1-based）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    start_line: Option<usize>,
+    /// 行定位模式下本段最后一行的行号（1-based，含）。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    end_line: Option<usize>,
+    /// 仍有后续行时给出，直接作为下一次的 startLine。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_line: Option<usize>,
+    /// 文件总行数；行定位模式下总是给出。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    total_lines: Option<usize>,
 }
 
 #[derive(Serialize)]
@@ -117,14 +129,18 @@ pub async fn read_workspace_file(
     path: String,
     max_bytes: Option<usize>,
     offset: Option<u64>,
+    start_line: Option<usize>,
+    line_count: Option<usize>,
     workspace_root: Option<String>,
     allow_external_paths: Option<bool>,
 ) -> Result<ReadWorkspaceFileResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        read_workspace_file_blocking_with_access_at(
+        read_workspace_file_blocking_at_lines(
             path,
             max_bytes,
             offset,
+            start_line,
+            line_count,
             workspace_root,
             allow_external_paths.unwrap_or(false),
         )
@@ -217,6 +233,145 @@ fn read_workspace_file_blocking_with_access(
         workspace_root,
         allow_external_paths,
     )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn read_workspace_file_blocking_at_lines(
+    path: String,
+    max_bytes: Option<usize>,
+    offset: Option<u64>,
+    start_line: Option<usize>,
+    line_count: Option<usize>,
+    workspace_root: Option<String>,
+    allow_external_paths: bool,
+) -> Result<ReadWorkspaceFileResult, String> {
+    if start_line.is_none() && line_count.is_none() {
+        return read_workspace_file_blocking_with_access_at(
+            path,
+            max_bytes,
+            offset,
+            workspace_root,
+            allow_external_paths,
+        );
+    }
+    // 两种定位方式互斥：同时给会让「续读」产生两个互相矛盾的游标。
+    if offset.is_some_and(|value| value > 0) {
+        return Err(
+            "pass either offset or startLine, not both; use nextLine to continue a line read"
+                .to_string(),
+        );
+    }
+    read_workspace_file_lines(
+        path,
+        max_bytes,
+        start_line.unwrap_or(1),
+        line_count,
+        workspace_root,
+        allow_external_paths,
+    )
+}
+
+/// 按行定位读取。模型拿到的行号来自 rg_search / 编译错误 / diff，字节偏移接不上它们；
+/// 这条路径让「读第 342 行附近」成为一次直接调用，而不是整段读回来自己数行。
+fn read_workspace_file_lines(
+    path: String,
+    max_bytes: Option<usize>,
+    start_line: usize,
+    line_count: Option<usize>,
+    workspace_root: Option<String>,
+    allow_external_paths: bool,
+) -> Result<ReadWorkspaceFileResult, String> {
+    if start_line == 0 {
+        return Err("startLine is 1-based; use 1 for the first line".to_string());
+    }
+    if line_count == Some(0) {
+        return Err("lineCount must be greater than 0".to_string());
+    }
+
+    let root = resolve_workspace_root(workspace_root.as_deref())?;
+    let requested = path.trim();
+    if requested.is_empty() {
+        return Err("path (non-empty string) is required".to_string());
+    }
+    let file_path = resolve_workspace_path(&root, requested, allow_external_paths)?;
+    let metadata = fs::metadata(&file_path).map_err(|err| {
+        format!(
+            "file `{}` is not accessible: {err}",
+            display_path(&file_path)
+        )
+    })?;
+    if !metadata.is_file() {
+        return Err(format!("path `{}` is not a file", display_path(&file_path)));
+    }
+    let total_bytes = metadata.len();
+    // 定位第 N 行必须先看过它前面的所有字节，所以行模式按整文件读入；再大的文件退回
+    // offset 分段。
+    if total_bytes > MAX_HASH_BYTES {
+        return Err(format!(
+            "file `{}` is {total_bytes} bytes, too large for line addressing; read it in byte \
+             chunks with offset/nextOffset instead",
+            display_path(&file_path)
+        ));
+    }
+
+    let raw = fs::read(&file_path)
+        .map_err(|err| format!("failed to read `{}`: {err}", display_path(&file_path)))?;
+    reject_binary_bytes(&raw, &file_path)?;
+    let text = decode_utf8(&raw, false, &file_path)?;
+    let content_hash = content_sha256(text.as_bytes());
+
+    // split_inclusive 保留每行原本的行尾，因此拼回去与磁盘逐字节一致——CRLF 文件读出来
+    // 不会被悄悄改成 LF，这段内容可以直接当作 apply_patch 的 oldText 使用。
+    let segments: Vec<&str> = text.split_inclusive('\n').collect();
+    let total_lines = segments.len();
+    if start_line > total_lines {
+        return Err(format!(
+            "startLine {start_line} exceeds the file's {total_lines} line(s) in `{}`",
+            display_path(&file_path)
+        ));
+    }
+
+    let byte_ceiling = normalize_positive(max_bytes, DEFAULT_READ_MAX_BYTES, MAX_READ_BYTES);
+    let first_index = start_line - 1;
+    let requested_last = line_count
+        .map(|count| (first_index + count).min(total_lines))
+        .unwrap_or(total_lines);
+
+    // maxBytes 仍是硬约束，但按行读就按整行截断：返回半行会让内容无法用作 oldText。
+    let mut collected = String::new();
+    let mut end_index = first_index;
+    for segment in &segments[first_index..requested_last] {
+        if !collected.is_empty() && collected.len() + segment.len() > byte_ceiling {
+            break;
+        }
+        collected.push_str(segment);
+        end_index += 1;
+        if collected.len() >= byte_ceiling {
+            break;
+        }
+    }
+
+    let byte_offset: usize = segments[..first_index]
+        .iter()
+        .map(|segment| segment.len())
+        .sum();
+    let served_all = end_index >= total_lines;
+    let bytes = collected.len();
+    Ok(ReadWorkspaceFileResult {
+        path: relative_path(&root, &file_path),
+        content: collected,
+        truncated: !served_all,
+        bytes,
+        offset: byte_offset as u64,
+        total_bytes,
+        next_offset: (!served_all).then_some((byte_offset + bytes) as u64),
+        // 起始行读取等价于从头读，此时哈希与字节模式的首段语义一致。
+        content_hash: (start_line == 1).then_some(content_hash),
+        start_line: Some(start_line),
+        end_line: Some(end_index),
+        next_line: (!served_all).then_some(end_index + 1),
+        total_lines: Some(total_lines),
+    })
 }
 
 fn read_workspace_file_blocking_with_access_at(
@@ -317,6 +472,12 @@ fn read_workspace_file_blocking_with_access_at(
         total_bytes,
         next_offset,
         content_hash,
+        // 字节模式不报行号：算出本段起始行要先扫过它前面的全部内容，而这条路径存在的
+        // 意义正是不必读整个文件。需要行号就用 startLine。
+        start_line: None,
+        end_line: None,
+        next_line: None,
+        total_lines: None,
     })
 }
 
@@ -1045,6 +1206,168 @@ mod tests {
         assert!(!third.truncated);
         assert_eq!(third.next_offset, None);
 
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    fn read_lines(
+        ws: &Path,
+        path: &str,
+        start_line: Option<usize>,
+        line_count: Option<usize>,
+        max_bytes: Option<usize>,
+    ) -> Result<ReadWorkspaceFileResult, String> {
+        read_workspace_file_blocking_at_lines(
+            path.to_string(),
+            max_bytes,
+            None,
+            start_line,
+            line_count,
+            root_arg(ws),
+            false,
+        )
+    }
+
+    #[test]
+    fn reads_an_addressed_line_range() {
+        // rg_search 报「第 3 行」时，这一步应当是一次直接调用，而不是整段读回来数行。
+        let (base, ws) = unique_workspace();
+        fs::write(ws.join("code.rs"), "one\ntwo\nthree\nfour\nfive\n").expect("seed");
+
+        let result = read_lines(&ws, "code.rs", Some(3), Some(2), None).expect("line read");
+
+        assert_eq!(result.content, "three\nfour\n");
+        assert_eq!(result.start_line, Some(3));
+        assert_eq!(result.end_line, Some(4));
+        assert_eq!(result.next_line, Some(5));
+        assert_eq!(result.total_lines, Some(5));
+        assert!(result.truncated, "后面还有第 5 行");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn line_paging_walks_the_whole_file_via_next_line() {
+        let (base, ws) = unique_workspace();
+        fs::write(ws.join("code.rs"), "a\nb\nc\nd\n").expect("seed");
+
+        let mut cursor = Some(1);
+        let mut seen = String::new();
+        while let Some(start) = cursor {
+            let chunk = read_lines(&ws, "code.rs", Some(start), Some(3), None).expect("chunk");
+            seen.push_str(&chunk.content);
+            cursor = chunk.next_line;
+        }
+
+        assert_eq!(seen, "a\nb\nc\nd\n", "分页拼接必须与原文逐字节一致");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn line_reads_preserve_crlf_so_content_stays_usable_as_old_text() {
+        // 把行尾规范化成 LF 会让读到的内容无法当作 apply_patch 的 oldText 使用。
+        let (base, ws) = unique_workspace();
+        fs::write(ws.join("win.txt"), "alpha\r\nbeta\r\ngamma\r\n").expect("seed");
+
+        let result = read_lines(&ws, "win.txt", Some(2), Some(1), None).expect("line read");
+
+        assert_eq!(result.content, "beta\r\n");
+        assert_eq!(result.total_lines, Some(3));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn line_count_defaults_to_the_rest_of_the_file() {
+        let (base, ws) = unique_workspace();
+        fs::write(ws.join("code.rs"), "a\nb\nc\n").expect("seed");
+
+        let result = read_lines(&ws, "code.rs", Some(2), None, None).expect("line read");
+
+        assert_eq!(result.content, "b\nc\n");
+        assert_eq!(result.end_line, Some(3));
+        assert_eq!(result.next_line, None);
+        assert!(!result.truncated);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn max_bytes_truncates_line_reads_on_whole_lines() {
+        // 半行内容既不能用作 oldText，也无法让模型判断自己看到了什么。
+        let (base, ws) = unique_workspace();
+        fs::write(ws.join("code.rs"), "aaaa\nbbbb\ncccc\n").expect("seed");
+
+        let result = read_lines(&ws, "code.rs", Some(1), Some(3), Some(7)).expect("line read");
+
+        assert_eq!(result.content, "aaaa\n", "只返回完整的行");
+        assert_eq!(result.end_line, Some(1));
+        assert_eq!(result.next_line, Some(2));
+        assert!(result.truncated);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn opening_line_read_still_carries_the_file_hash() {
+        let (base, ws) = unique_workspace();
+        let content = "one\ntwo\nthree\n";
+        fs::write(ws.join("code.rs"), content).expect("seed");
+
+        let first = read_lines(&ws, "code.rs", Some(1), Some(1), None).expect("first line");
+        assert_eq!(first.content_hash, Some(content_sha256(content.as_bytes())));
+
+        let later = read_lines(&ws, "code.rs", Some(2), Some(1), None).expect("later line");
+        assert_eq!(later.content_hash, None, "非起始行不重复给出整文件哈希");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn line_addressing_rejects_conflicting_or_out_of_range_input() {
+        let (base, ws) = unique_workspace();
+        fs::write(ws.join("code.rs"), "a\nb\n").expect("seed");
+
+        let both = read_workspace_file_blocking_at_lines(
+            "code.rs".to_string(),
+            None,
+            Some(2),
+            Some(1),
+            None,
+            root_arg(&ws),
+            false,
+        )
+        .expect_err("offset 与 startLine 不能同时给");
+        assert!(both.contains("not both"));
+
+        let zero = read_lines(&ws, "code.rs", Some(0), None, None).expect_err("行号是 1-based");
+        assert!(zero.contains("1-based"));
+
+        let past_end =
+            read_lines(&ws, "code.rs", Some(9), None, None).expect_err("越过文件末尾应报错");
+        assert!(past_end.contains("exceeds the file's 2 line(s)"));
+
+        let empty_count =
+            read_lines(&ws, "code.rs", Some(1), Some(0), None).expect_err("lineCount 必须为正");
+        assert!(empty_count.contains("greater than 0"));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn byte_mode_is_untouched_by_line_addressing() {
+        // 不传行参数时必须完全走原路径，字节分页的既有行为不受影响。
+        let (base, ws) = unique_workspace();
+        fs::write(ws.join("code.rs"), "a\nb\nc\n").expect("seed");
+
+        let result = read_workspace_file_blocking_at_lines(
+            "code.rs".to_string(),
+            Some(2),
+            Some(0),
+            None,
+            None,
+            root_arg(&ws),
+            false,
+        )
+        .expect("byte read");
+
+        assert_eq!(result.content, "a\n");
+        assert_eq!(result.next_offset, Some(2));
+        assert_eq!(result.start_line, None, "字节模式不报行号");
+        assert_eq!(result.total_lines, None);
         let _ = fs::remove_dir_all(&base);
     }
 

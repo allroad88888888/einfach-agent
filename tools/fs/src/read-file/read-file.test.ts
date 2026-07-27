@@ -169,10 +169,92 @@ describe('read_file tool', () => {
     })
   })
 
+  it('startLine/lineCount 透传，供 rg_search 的行号直接接续', async () => {
+    const readWorkspaceFile = vi.fn(async () => ({
+      ok: true as const,
+      data: {
+        path: 'src/a.ts',
+        content: 'three\nfour\n',
+        truncated: true,
+        bytes: 11,
+        startLine: 3,
+        endLine: 4,
+        nextLine: 5,
+        totalLines: 9,
+      },
+    }))
+    const ctx = makeCtx({ readWorkspaceFile })
+
+    const result = await readFileTool.execute(
+      { path: 'src/a.ts', startLine: 3, lineCount: 2 },
+      ctx,
+    )
+
+    expect(readWorkspaceFile).toHaveBeenCalledWith(
+      expect.objectContaining({ path: 'src/a.ts', startLine: 3, lineCount: 2 }),
+    )
+    expect(result).toMatchObject({
+      ok: true,
+      data: expect.objectContaining({ startLine: 3, endLine: 4, nextLine: 5, totalLines: 9 }),
+    })
+  })
+
+  it('不传行参数时不污染请求', async () => {
+    const readWorkspaceFile = vi.fn(async () => ({
+      ok: true as const,
+      data: { path: 'a.txt', content: 'x', truncated: false, bytes: 1 },
+    }))
+    const ctx = makeCtx({ readWorkspaceFile })
+
+    await readFileTool.execute({ path: 'a.txt' }, ctx)
+
+    expect(readWorkspaceFile).toHaveBeenCalledWith({ path: 'a.txt', maxBytes: 20_000, offset: 0 })
+  })
+
+  it('offset 与 startLine 互斥；行号必须是 >= 1 的整数', async () => {
+    const readWorkspaceFile = vi.fn(async () => ({
+      ok: true as const,
+      data: { path: 'a.txt', content: '', truncated: false, bytes: 0 },
+    }))
+    const ctx = makeCtx({ readWorkspaceFile })
+
+    await expect(
+      readFileTool.execute({ path: 'a.txt', offset: 10, startLine: 2 }, ctx),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringContaining('not both'),
+      code: 'WORKSPACE_READ_INVALID_INPUT',
+    })
+    await expect(
+      readFileTool.execute({ path: 'a.txt', startLine: 0 }, ctx),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: 'invalid read_file: startLine must be an integer >= 1',
+    })
+    await expect(
+      readFileTool.execute({ path: 'a.txt', lineCount: 0 }, ctx),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: 'invalid read_file: lineCount must be an integer >= 1',
+    })
+
+    // offset 为 0（默认）时不算冲突，仍可用行定位。
+    await expect(
+      readFileTool.execute({ path: 'a.txt', offset: 0, startLine: 2 }, ctx),
+    ).resolves.toMatchObject({ ok: true })
+    expect(readWorkspaceFile).toHaveBeenCalledTimes(1)
+  })
+
   it('身份/runtime/schema/skill 元数据齐备', () => {
     expect(readFileTool.name).toBe('read_file')
     expect(readFileTool.runtime).toBe('server') // 依赖 Tauri 文件系统（TP3）。
-    expect(readFileTool.inputSchema).toMatchObject({ required: ['path'] })
+    expect(readFileTool.inputSchema).toMatchObject({
+      required: ['path'],
+      properties: {
+        startLine: { minimum: 1 },
+        lineCount: { minimum: 1 },
+      },
+    })
     expect(readFileTool.skill.content.length).toBeGreaterThan(0)
   })
 })

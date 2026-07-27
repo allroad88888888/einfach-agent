@@ -20,6 +20,17 @@ const inputSchema = {
       default: 0,
       description: 'UTF-8 byte offset; use the previous result.nextOffset to continue safely',
     },
+    startLine: {
+      type: 'integer',
+      minimum: 1,
+      description:
+        '1-based line to start at. Use this to follow up a line number from rg_search, a stack trace, or a diff. Cannot be combined with offset.',
+    },
+    lineCount: {
+      type: 'integer',
+      minimum: 1,
+      description: 'How many lines to read from startLine. Defaults to the rest of the file.',
+    },
   },
   required: ['path'],
   additionalProperties: false,
@@ -48,6 +59,14 @@ function normalizeOffset(value: unknown): number | string {
   if (value === undefined) return 0
   if (!Number.isSafeInteger(value) || (value as number) < 0) {
     return 'invalid read_file: offset must be a non-negative safe integer'
+  }
+  return value as number
+}
+
+function normalizeLineNumber(value: unknown, field: string): number | undefined | string {
+  if (value === undefined) return undefined
+  if (!Number.isSafeInteger(value) || (value as number) < 1) {
+    return `invalid read_file: ${field} must be an integer >= 1`
   }
   return value as number
 }
@@ -113,6 +132,25 @@ export const readFileTool: Tool = {
         retryable: false,
       }
     }
+    const startLine = normalizeLineNumber(input.startLine, 'startLine')
+    if (typeof startLine === 'string') {
+      return { ok: false, error: startLine, code: 'WORKSPACE_READ_INVALID_INPUT', retryable: false }
+    }
+    const lineCount = normalizeLineNumber(input.lineCount, 'lineCount')
+    if (typeof lineCount === 'string') {
+      return { ok: false, error: lineCount, code: 'WORKSPACE_READ_INVALID_INPUT', retryable: false }
+    }
+    // 两个游标同时给会让续读产生互相矛盾的位置；nextLine 才是行模式的接续方式。
+    if (offset > 0 && (startLine !== undefined || lineCount !== undefined)) {
+      return {
+        ok: false,
+        error:
+          'invalid read_file: pass either offset or startLine, not both; continue a line read with nextLine',
+        code: 'WORKSPACE_READ_INVALID_INPUT',
+        retryable: false,
+      }
+    }
+
     const readWorkspaceFile = (ctx as Partial<WorkspaceReadContext>).readWorkspaceFile
     if (typeof readWorkspaceFile !== 'function') {
       return {
@@ -124,7 +162,10 @@ export const readFileTool: Tool = {
     }
 
     try {
-      const result = await readWorkspaceFile.call(ctx, { path, maxBytes, offset })
+      const request: ReadWorkspaceFileInput = { path, maxBytes, offset }
+      if (startLine !== undefined) request.startLine = startLine
+      if (lineCount !== undefined) request.lineCount = lineCount
+      const result = await readWorkspaceFile.call(ctx, request)
       return toToolResult(result)
     } catch (error) {
       return {

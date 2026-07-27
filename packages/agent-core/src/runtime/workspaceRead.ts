@@ -5,6 +5,10 @@ export interface ReadWorkspaceFileInput {
   maxBytes?: number
   /** UTF-8 byte offset. Continue with the exact nextOffset returned by the previous chunk. */
   offset?: number
+  /** 1-based line to start at. Mutually exclusive with a non-zero offset. */
+  startLine?: number
+  /** How many lines to read from startLine. Defaults to the rest of the file. */
+  lineCount?: number
   /** 可选显式 workspace root（P1）；不传则 Rust 侧走 git root 兜底。 */
   workspaceRoot?: string
   /** Runtime-only：Auto 会话允许读取 workspace 外路径；工具参数不能提供此字段。 */
@@ -28,6 +32,14 @@ export interface ReadWorkspaceFileResult {
    * what write_file can replace anyway.
    */
   contentHash?: string
+  /** Line-addressed reads only: 1-based first line of this chunk. */
+  startLine?: number
+  /** Line-addressed reads only: 1-based last line of this chunk, inclusive. */
+  endLine?: number
+  /** Present when lines remain; pass it back as the next startLine. */
+  nextLine?: number
+  /** Line-addressed reads only: total lines in the file. */
+  totalLines?: number
 }
 
 export interface ReadWorkspaceRunIndexPageInput {
@@ -99,6 +111,8 @@ type TauriReadWorkspaceFileInput = {
   path: string
   max_bytes?: number
   offset?: number
+  start_line?: number
+  line_count?: number
   workspace_root?: string
   allow_external_paths?: boolean
 }
@@ -170,6 +184,8 @@ function toTauriReadInput(input: ReadWorkspaceFileInput): TauriReadWorkspaceFile
     path: input.path,
     max_bytes: input.maxBytes,
     offset: input.offset,
+    start_line: input.startLine,
+    line_count: input.lineCount,
     workspace_root: input.workspaceRoot,
     allow_external_paths: input.allowExternalPaths,
   }
@@ -233,6 +249,14 @@ function normalizeReadResult(raw: unknown): WorkspaceRuntimeResult<ReadWorkspace
   ) {
     result.contentHash = contentHash
   }
+  const startLine = optionalNumberValue(raw.startLine ?? raw.start_line)
+  if (startLine !== undefined) result.startLine = startLine
+  const endLine = optionalNumberValue(raw.endLine ?? raw.end_line)
+  if (endLine !== undefined) result.endLine = endLine
+  const nextLine = optionalNumberValue(raw.nextLine ?? raw.next_line)
+  if (nextLine !== undefined) result.nextLine = nextLine
+  const totalLines = optionalNumberValue(raw.totalLines ?? raw.total_lines)
+  if (totalLines !== undefined) result.totalLines = totalLines
   return ok(result)
 }
 
