@@ -1214,6 +1214,138 @@ describe('createDelegateAgentRuntime', () => {
     delegateRuntime.dispose?.()
   })
 
+  // 孩子的 maxTurns 默认只有 4 且最后一轮留给合成，先花一整轮做能力发现等于砍掉三分之一预算。
+  // 授权集在 spawn 时就已收窄到个位数，整体预载即可，于是「直接调用」在第一轮就能真干活。
+  it('预载整个授权集：孩子首轮直接调用即执行，不为能力发现白烧一轮', async () => {
+    const childBodies: Record<string, unknown>[] = []
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (!childPath(body)) return response({ content: '# skill' })
+      childBodies.push(body)
+      // 第一轮就不先 request_tool_schema，直接指名道姓调用 —— 正是主循环里撞闸门的那个行为。
+      if (childBodies.length === 1) {
+        return namedToolCall('first-read', 'read_file', { path: 'src/a.ts' })
+      }
+      return response({ role: 'assistant', content: '读完了。' })
+    }
+    const runChildTool = vi.fn(async () => ({ ok: true as const, data: { content: 'file body' } }))
+    const callContext = context(new Map())
+    callContext.runChildTool = runChildTool
+    const delegateRuntime = runtime(fetchImpl)
+
+    const result = await delegateRuntime.delegateAgents({
+      children: [{
+        objective: 'inspect',
+        mode: 'worker',
+        expectedOutput: 'summary',
+        maxTurns: 3,
+        toolProfile: 'workspace_read',
+      }],
+      toolProfile: 'workspace_read',
+    }, callContext)
+
+    const firstTurnTools = (childBodies[0].tools as Array<{ function: { name: string } }>)
+      .map((tool) => tool.function.name)
+    expect(firstTurnTools).toEqual(expect.arrayContaining([
+      'request_tool_schema',
+      'delegate_agent',
+      'read_file',
+      'list_files',
+      'search_files',
+      'rg_search',
+    ]))
+    // 首轮那次直接调用真的执行了（没有被闸门转成一次加载）。
+    expect(runChildTool).toHaveBeenCalledTimes(1)
+    expect(runChildTool).toHaveBeenCalledWith('read_file', { path: 'src/a.ts' }, expect.any(Number))
+    expect(result.children[0].status).toBe('done')
+    await delegateRuntime.dispose?.()
+  })
+
+  // 与主循环逐条对齐：判据是「本轮实际发出去的 tools」。注册态中途变化把工具挤出本轮 tools 时，
+  // 直接调用【不执行】，改当作一次加载 —— 旧行为是「已授权就直接跑」，会拿模型猜的参数执行。
+  it('授权工具不在本轮 tools 里时：直接调用不执行，就地加载后下一轮回到 tools', async () => {
+    const isolatedRegistry = createToolRegistry()
+    const readFileTool = {
+      name: 'read_file',
+      runtime: 'server' as const,
+      skill: { description: 'isolated reader', content: 'GUIDE' },
+      inputSchema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: { path: { type: 'string' } },
+        required: ['path'],
+      },
+      execute: async () => ({ ok: true as const, data: { source: 'isolated' } }),
+    }
+    isolatedRegistry.register(readFileTool)
+    isolatedRegistry.register({
+      ...readFileTool,
+      name: 'list_files',
+      skill: { description: 'isolated lister', content: 'GUIDE' },
+    })
+
+    const childBodies: Record<string, unknown>[] = []
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (!childPath(body)) return response({ content: '# skill' })
+      childBodies.push(body)
+      if (childBodies.length === 1) {
+        // 本轮结束后注销 read_file：下一轮 refresh 会把它挤出 visible，于是不进那一轮的 tools。
+        // 本轮仍要发一次工具调用，否则孩子直接收尾、走不到下一轮。
+        isolatedRegistry.unregister('read_file')
+        return namedToolCall('keep-going', 'list_files', { path: 'src' })
+      }
+      if (childBodies.length === 2) {
+        // 请求已发出（tools 里没有 read_file），此刻重连补回注册 —— 模拟 MCP 重连。
+        isolatedRegistry.register(readFileTool)
+        return namedToolCall('blind-read', 'read_file', { path: 'src/a.ts' })
+      }
+      if (childBodies.length === 3) {
+        return namedToolCall('real-read', 'read_file', { path: 'src/a.ts' })
+      }
+      return response({ role: 'assistant', content: '读完了。' })
+    }
+    const runChildTool = vi.fn(async () => ({ ok: true as const, data: { source: 'host' } }))
+    const callContext = context(new Map())
+    callContext.runChildTool = runChildTool
+    const delegateRuntime = createDelegateAgentRuntime({
+      sessionId: 'session',
+      runId: 'run-subagent-autoload',
+      settings: { vendor: 'deepseek', model: 'test-model' },
+      registry: isolatedRegistry,
+      apiKey: 'test-key',
+      signal: new AbortController().signal,
+      fetchImpl,
+    })
+
+    const result = await delegateRuntime.delegateAgents({
+      children: [{ objective: 'inspect', maxTurns: 6, toolProfile: 'workspace_read' }],
+      toolProfile: 'workspace_read',
+    }, callContext)
+
+    const toolNamesOf = (body: Record<string, unknown>): string[] =>
+      (body.tools as Array<{ function: { name: string } }>).map((tool) => tool.function.name)
+    // 第 2 次请求：read_file 已被挤出 tools。
+    expect(toolNamesOf(childBodies[1])).not.toContain('read_file')
+    // 那一轮的盲调没有执行，只换回一次加载确认。
+    const blindResult = JSON.parse(toolResultFor(childBodies[2], 'blind-read')) as Record<string, unknown>
+    expect(blindResult).toMatchObject({
+      loaded: true,
+      toolName: 'read_file',
+      code: 'tool_schema_autoloaded',
+      executed: false,
+    })
+    expect(blindResult).not.toHaveProperty('inputSchema')
+    // 第 3 次请求起 read_file 回到 tools，这一次才真执行。
+    expect(toolNamesOf(childBodies[2])).toContain('read_file')
+    // 总共只执行两次：第 1 轮的 list_files 与第 3 轮的 read_file。第 2 轮那次盲调没算数。
+    expect(runChildTool).toHaveBeenCalledTimes(2)
+    expect(runChildTool).toHaveBeenCalledWith('list_files', { path: 'src' }, expect.any(Number))
+    expect(runChildTool).toHaveBeenCalledWith('read_file', { path: 'src/a.ts' }, expect.any(Number))
+    expect(result.children[0].status).toBe('done')
+    await delegateRuntime.dispose?.()
+  })
+
   it('uses one injected registry for child manifest, schema loading, version snapshot, and execution', async () => {
     const isolatedRegistry = createToolRegistry()
     isolatedRegistry.register({
@@ -2291,5 +2423,70 @@ describe('createDelegateAgentRuntime · 主 Agent 模型归一化（发请求前
     expect(childBody.model).toBe('deepseek-v4-pro')
     expect(childBody.thinking).toEqual({ type: 'enabled' })
     delegateRuntime.dispose?.()
+  })
+})
+
+describe('createDelegateAgentRuntime · runLowCostExtraction', () => {
+  // 回归护栏：曾经给内部 callModel 传死 maxModelCalls=1，而那个参数是「树累计上限」而非
+  // 「本次花几次」。于是只要本 run 里跑过任何子 agent（含上一个 stage 的 evaluator），
+  // modelCallsUsed 就已 ≥ 1，这里必抛 budget exhausted —— 调用方 best-effort 吞掉异常，
+  // 能力从第二个 stage 起静默失效，且因为工具侧全 mock，测试还全绿。
+  it('子 agent 跑过之后仍然可用，并且可以连续调用', async () => {
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      return body.tool_choice === 'none' && body.model === 'deepseek-v4-flash'
+        ? response({ role: 'assistant', content: '{"commands":[],"warnings":[]}' })
+        : response({ role: 'assistant', content: 'done' })
+    }
+    const delegateRuntime = runtime(fetchImpl)
+
+    await delegateRuntime.delegateAgents(
+      { children: [{ objective: 'inspect one bounded item' }] },
+      context(new Map()),
+    )
+    const first = await delegateRuntime.runLowCostExtraction!({ systemPrompt: 'sys', userPrompt: 'user' })
+    const second = await delegateRuntime.runLowCostExtraction!({ systemPrompt: 'sys', userPrompt: 'user' })
+
+    expect(first.model).toBe('deepseek-v4-flash')
+    expect(second.model).toBe('deepseek-v4-flash')
+    delegateRuntime.dispose?.()
+  })
+
+  it('走的是 flash 档、无工具、temperature 0、thinking 关闭', async () => {
+    let extractionBody: Record<string, unknown> = {}
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      extractionBody = requestBody(init)
+      return response({ role: 'assistant', content: '{}' })
+    }
+    const delegateRuntime = runtime(fetchImpl)
+
+    await delegateRuntime.runLowCostExtraction!({
+      systemPrompt: 'sys',
+      userPrompt: 'user',
+      maxOutputTokens: 1_200,
+    })
+
+    expect(extractionBody.model).toBe('deepseek-v4-flash')
+    expect(extractionBody.temperature).toBe(0)
+    expect(extractionBody.thinking).toEqual({ type: 'disabled' })
+    expect(extractionBody.tool_choice).toBe('none')
+    expect(messagesOf(extractionBody).map((message) => message.role)).toEqual(['system', 'user'])
+    delegateRuntime.dispose?.()
+  })
+
+  // 供应商支持与否在构造时就确定，故做成「方法在不在」而不是「调用时抛」：
+  // 后者会让宿主的能力探测恒真，把永久性不可用伪装成可重试的运行时失败。
+  it('非 DeepSeek 双档模型时，整个方法不挂载', async () => {
+    const fetchImpl: typeof fetch = async () => response({ role: 'assistant', content: 'done' })
+    const glm = createDelegateAgentRuntime({
+      sessionId: 'session',
+      runId: 'run-glm',
+      settings: { vendor: 'glm', model: 'glm-4.6' },
+      apiKey: 'test-key',
+      signal: new AbortController().signal,
+      fetchImpl,
+    })
+    expect(glm.runLowCostExtraction).toBeUndefined()
+    glm.dispose?.()
   })
 })

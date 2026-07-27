@@ -19,6 +19,8 @@ export const EMPTY_MESSAGE_WINDOW: MessageWindow = {
 
 export const messageWindowAtom = atom<MessageWindow>(EMPTY_MESSAGE_WINDOW)
 export const planTraceWindowsAtom = atom<Record<string, MessageWindow>>({})
+// 仅在当前 run 工作时由 MessageList 每秒推进；值保存在会话 Provider 对应的 Einfach store。
+export const messageElapsedClockAtom = atom(Date.now())
 
 export function latestMessageWindow(total: number): MessageWindow {
   return {

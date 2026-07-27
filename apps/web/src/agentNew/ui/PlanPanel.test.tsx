@@ -194,6 +194,26 @@ describe('PlanPanel', () => {
     expect(screen.queryByRole('button', { name: '继续执行' })).not.toBeInTheDocument()
   })
 
+  it('已取消评审遗留的 awaiting_tool 显示继续入口', () => {
+    vi.mocked(continuePlan).mockClear()
+    const store = createStore()
+    store.setter(planAtom, {
+      id: 'p-orphaned-evaluation', title: '恢复评审', objective: '继续未完成工作', status: 'active', revision: 4,
+      requiresApproval: false, createdAt: 1, updatedAt: 2,
+      stages: [{
+        id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
+        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'evaluating', evidence: [],
+      }],
+    })
+    store.setter(runAtom, { runId: 'orphaned-evaluation', status: 'awaiting_tool' })
+
+    renderWithStore(<PlanPanel />, { store })
+
+    expect(screen.getAllByText('待继续')).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: '继续执行' }))
+    expect(continuePlan).toHaveBeenCalledOnce()
+  })
+
   it('在对应步骤详情中展示该步骤的模型思考、工具调用与结果', () => {
     const store = createStore()
     store.setter(planAtom, {

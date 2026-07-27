@@ -405,6 +405,32 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(beginRun).not.toHaveBeenCalled()
   })
 
+  it('continuePlan：已取消后台评审遗留的 awaiting_tool 会恢复原 run', () => {
+    const id = newSession()
+    setPlan(id, {
+      id: 'plan-orphaned-evaluation', title: '恢复评审', objective: '完成工作', status: 'active', revision: 4,
+      requiresApproval: false, createdAt: 1, updatedAt: 2,
+      stages: [{
+        id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
+        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'evaluating', evidence: ['pnpm test'],
+        evaluations: [{
+          attempt: 1, status: 'evaluating', summary: '实现完成', submittedEvidence: ['pnpm test'],
+          criteria: [], submittedAt: 2,
+        }],
+      }],
+    })
+    getSessionStore(id).store.setter(runAtom, { runId: 'orphaned-evaluation', status: 'awaiting_tool' })
+
+    continuePlan()
+
+    expect(resumeInterruptedSession).toHaveBeenCalledOnce()
+    expect(resumePlanSession).not.toHaveBeenCalled()
+    expect(getPlan(id)).toMatchObject({
+      revision: 5,
+      stages: [{ status: 'in_progress' }],
+    })
+  })
+
   it('continuePlan：无活跃 run 时先恢复重启遗留的 evaluating，再沿用原计划续跑', () => {
     const id = newSession()
     setPlan(id, {

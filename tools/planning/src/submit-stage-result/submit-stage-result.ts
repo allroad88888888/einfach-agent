@@ -125,18 +125,26 @@ export const submitStageResultTool: Tool = {
       return planResult.plan
     }
 
-    const repairInputFor = (result: DelegateResult) => {
+    // 一次解析、一次判定，同时给出重试输入和用于报错的缺口描述。
+    const repairPlanFor = (result: DelegateResult) => {
       const summary = evaluatorSummary(result)
       const evaluation = parseEvaluation(summary)
-      const missingCriteria = repairableCoverageGap(evaluation, stage.acceptanceCriteria, isFinalStage)
-      if (!missingCriteria) return undefined
-      return createEvaluatorInput([
+      const gap = repairableCoverageGap(evaluation, stage.acceptanceCriteria, isFinalStage)
+      if (!gap) return undefined
+      const missing = [
+        gap.missingCriteria.length > 0
+          ? `did not cover every acceptance criterion (missing ${gap.missingCriteria.length} of ${stage.acceptanceCriteria.length})`
+          : '',
+        gap.missingFinal ? 'omitted the required final verdict' : '',
+      ].filter(Boolean).join(' and ')
+      const input = createEvaluatorInput([
         'Act as an independent evaluator. Do not implement or modify anything.',
-        'A previous evaluator response was structurally valid but did not cover every acceptance criterion.',
+        `A previous evaluator response was structurally valid but ${missing}.`,
         `Plan objective: ${submitted.plan.objective}`,
         `Stage objective: ${stage.objective}`,
         `Acceptance criteria: ${JSON.stringify(stage.acceptanceCriteria)}`,
-        `Missing criteria: ${JSON.stringify(missingCriteria)}`,
+        `Missing criteria: ${JSON.stringify(gap.missingCriteria)}`,
+        gap.missingFinal ? 'The "final" object was absent and is REQUIRED for this last stage.' : '',
         `Previous evaluator response: ${summary}`,
         `Test/lint command candidates (configuration-derived only; not execution evidence): ${JSON.stringify(commandDiscovery)}`,
         'Inspect the workspace when useful. Return ONLY one JSON object.',
@@ -147,7 +155,8 @@ export const submitStageResultTool: Tool = {
           ? ',"final":{"status":"passed|failed|unknown","evidence":["integration/regression/goal evidence"],"reason":"reason or empty","requiresUserAcceptance":boolean}}'
           : '}',
         'Passed requires evidence; failed/unknown requires reason.',
-      ].join('\n'))
+      ].filter(Boolean).join('\n'))
+      return { input, missing }
     }
 
     const rollbackEvaluation = (error: unknown) => {
@@ -163,9 +172,9 @@ export const submitStageResultTool: Tool = {
       }
     }
 
-    const repairFailure = (receivedCriteria: number, error: unknown) => {
+    const repairFailure = (missing: string, error: unknown) => {
       const reason = error instanceof Error ? error.message : String(error)
-      return new Error(`evaluator repair failed after initial result covered ${receivedCriteria}/${stage.acceptanceCriteria.length} criteria: ${reason}`)
+      return new Error(`evaluator repair failed after initial result ${missing}: ${reason}`)
     }
 
     // Production path: evaluator becomes a child execution node. The tool
@@ -175,18 +184,17 @@ export const submitStageResultTool: Tool = {
       try {
         const evaluation = ctx.spawnAgents(evaluatorInput, {
           onComplete: (result) => {
-            const repairInput = repairInputFor(result)
-            if (!repairInput) return applyEvaluation(result)
-            const receivedCriteria = parseEvaluation(evaluatorSummary(result)).criteria.length
-            return ctx.spawnAgents!(repairInput, {
+            const repair = repairPlanFor(result)
+            if (!repair) return applyEvaluation(result)
+            return ctx.spawnAgents!(repair.input, {
               onComplete: (repairResult) => {
                 try {
                   return applyEvaluation(repairResult)
                 } catch (error) {
-                  throw repairFailure(receivedCriteria, error)
+                  throw repairFailure(repair.missing, error)
                 }
               },
-              onError: (error) => rollbackEvaluation(repairFailure(receivedCriteria, error)),
+              onError: (error) => rollbackEvaluation(repairFailure(repair.missing, error)),
             })
           },
           onError: rollbackEvaluation,
@@ -223,14 +231,13 @@ export const submitStageResultTool: Tool = {
     // background execution runtime yet.
     try {
       let result = await ctx.delegateAgents!(evaluatorInput)
-      const repairInput = repairInputFor(result)
-      if (repairInput) {
-        const receivedCriteria = parseEvaluation(evaluatorSummary(result)).criteria.length
+      const repair = repairPlanFor(result)
+      if (repair) {
         try {
-          result = await ctx.delegateAgents!(repairInput)
+          result = await ctx.delegateAgents!(repair.input)
           return { ok: true, data: applyEvaluation(result) }
         } catch (error) {
-          throw repairFailure(receivedCriteria, error)
+          throw repairFailure(repair.missing, error)
         }
       }
       return { ok: true, data: applyEvaluation(result) }
@@ -305,19 +312,31 @@ function validateEvaluationPayload(value: ParsedEvaluation, expectedCriteria: st
   validateFinalResult(value.final)
 }
 
+interface CoverageGap {
+  missingCriteria: string[]
+  missingFinal: boolean
+}
+
 /**
  * A retry is safe only when the evaluator produced valid verdict entries for a
- * strict subset of the requested criteria. Unknown, duplicate, or malformed
- * entries remain protocol errors and must be surfaced rather than repaired.
+ * subset of the requested criteria and/or omitted a required final verdict.
+ * Unknown, duplicate, or malformed entries remain protocol errors and must be
+ * surfaced rather than repaired.
+ *
+ * 少一条 criterion 和少一个 final 都只是「答漏了」，可修复性上没有区别 —— 早先按
+ * criteria.length 一刀切会让「criteria 全齐但漏 final」直接回滚，白扔掉一次完整评估。
  */
-function repairableCoverageGap(value: ParsedEvaluation, expectedCriteria: string[], finalRequired: boolean): string[] | undefined {
-  if (value.criteria.length >= expectedCriteria.length) return undefined
+function repairableCoverageGap(value: ParsedEvaluation, expectedCriteria: string[], finalRequired: boolean): CoverageGap | undefined {
+  if (value.criteria.length > expectedCriteria.length) return undefined
   validateCriterionResults(value.criteria, expectedCriteria)
   // A missing final verdict can be supplied by the complete replacement
   // response. A present but malformed verdict is still a protocol error.
   if (finalRequired && value.final) validateFinalResult(value.final)
   const covered = new Set(value.criteria.map((item) => item.criterion))
-  return expectedCriteria.filter((criterion) => !covered.has(criterion))
+  const missingCriteria = expectedCriteria.filter((criterion) => !covered.has(criterion))
+  const missingFinal = finalRequired && !value.final
+  if (missingCriteria.length === 0 && !missingFinal) return undefined
+  return { missingCriteria, missingFinal }
 }
 
 function validateCriterionResults(value: ParsedEvaluation['criteria'], expectedCriteria: string[]): void {

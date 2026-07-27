@@ -102,7 +102,105 @@ describe('find_test_lint_commands tool', () => {
         commands: [{
           kind: 'test', argv: ['pnpm', 'test'], cwd: '.', origin: 'declared', evidence: 'package.json scripts.test', confidence: 'high',
         }],
-        warnings: ['Python command not declared'],
+        warnings: [
+          '1 extracted command(s) were discarded as malformed or outside the inspected manifest directories',
+          'Python command not declared',
+        ],
+      },
+    })
+  })
+
+  // 丢弃必须显形：不然「模型回的 cwd 全不匹配」和「本仓库确实没有命令」都长成 commands: []。
+  it('reports discarded commands instead of silently returning an empty list', async () => {
+    const listWorkspaceFiles = vi.fn(async () => ({
+      ok: true as const,
+      data: { entries: [{ path: 'package.json', type: 'file' }], truncated: false },
+    }))
+    const runLowCostExtraction = vi.fn(async () => ({
+      // cwd 带尾斜杠 → 不在白名单；单个 `&` 是后台符 → argv 清洗拒收。
+      content: JSON.stringify({
+        commands: [
+          { kind: 'test', argv: ['pnpm', 'test'], cwd: './', origin: 'declared', evidence: 'scripts.test', confidence: 'high' },
+          { kind: 'lint', argv: ['pnpm', 'lint', '&'], cwd: '.', origin: 'declared', evidence: 'scripts.lint', confidence: 'high' },
+        ],
+        warnings: [],
+      }),
+      model: 'deepseek-chat',
+    }))
+    const ctx = makeCtx({ listWorkspaceFiles, runLowCostExtraction })
+
+    const result = await findTestLintCommandsTool.execute({}, ctx)
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        commands: [],
+        warnings: ['2 extracted command(s) were discarded as malformed or outside the inspected manifest directories'],
+      },
+    })
+  })
+
+  // 纯字典序会把根 manifest 排在每个 apps/** 之后，MAX_MANIFESTS 截断时先丢的正是最该留的。
+  it('inspects shallow manifests first so the root manifest survives the cap', async () => {
+    const nested = Array.from({ length: 20 }, (_, index) => ({
+      path: `apps/app-${String(index).padStart(2, '0')}/package.json`,
+      type: 'file',
+    }))
+    const listWorkspaceFiles = vi.fn(async () => ({
+      ok: true as const,
+      data: { entries: [...nested, { path: 'package.json', type: 'file' }], truncated: false },
+    }))
+    const readWorkspaceFile = vi.fn(async ({ path }: ReadWorkspaceFileInput) => ({
+      ok: true as const,
+      data: { path, content: '{}', truncated: false, bytes: 2 },
+    }))
+    const ctx = makeCtx({ listWorkspaceFiles, readWorkspaceFile })
+
+    const result = await findTestLintCommandsTool.execute({}, ctx)
+
+    const inspected = readWorkspaceFile.mock.calls.map(([input]) => input.path)
+    expect(inspected).toHaveLength(16)
+    expect(inspected[0]).toBe('package.json')
+    expect(result).toMatchObject({
+      ok: true,
+      data: { warnings: ['5 deeper manifest(s) beyond the 16-manifest cap were not inspected'] },
+    })
+  })
+
+  // 单文件 8KB × 16 = 128KB 会作为一条 user 消息发出，而 compactContext 对 [system,user]
+  // 是硬保护、压不动。真正的护栏是聚合上限。
+  it('caps the total excerpt payload and reports what it skipped', async () => {
+    const entries = Array.from({ length: 10 }, (_, index) => ({
+      path: `pkg-${index}/package.json`,
+      type: 'file',
+    }))
+    const listWorkspaceFiles = vi.fn(async () => ({
+      ok: true as const,
+      data: { entries, truncated: false },
+    }))
+    const readWorkspaceFile = vi.fn(async ({ path, maxBytes = 0 }: ReadWorkspaceFileInput) => {
+      const bytes = Math.min(7_000, maxBytes)
+      return {
+        ok: true as const,
+        data: { path, content: 'x'.repeat(bytes), truncated: bytes < 7_000, bytes },
+      }
+    })
+    const ctx = makeCtx({ listWorkspaceFiles, readWorkspaceFile })
+
+    const result = await findTestLintCommandsTool.execute({}, ctx)
+
+    // 前 6 个各吃 7000（共 42000），第 7 个的单文件上限被收敛到剩余的 6000
+    // ——而不是照发 8000 把总量顶到 54000。剩下 3 个直接跳过。
+    expect(readWorkspaceFile.mock.calls.map(([input]) => input.maxBytes)).toEqual([
+      8_000, 8_000, 8_000, 8_000, 8_000, 8_000, 6_000,
+    ])
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        warnings: expect.arrayContaining([
+          'pkg-6/package.json was truncated at 6000 bytes',
+          '3 manifest(s) were skipped after the 48000-byte excerpt budget was exhausted',
+        ]),
       },
     })
   })

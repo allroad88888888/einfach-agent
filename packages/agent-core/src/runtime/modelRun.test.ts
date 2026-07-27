@@ -21,6 +21,7 @@ import {
 } from '../state/transientAtoms'
 import { toolRegistry } from '../tools/registry'
 import { buildSkillManifestText } from '../skills/registry'
+import { buildToolManifestText } from './modelTurn'
 import type { ModelSettings } from '../state/core.type'
 import type { ModelFunctionTool, ModelUsage } from '@web-agent/ai'
 import {
@@ -564,11 +565,13 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(messages[0].role).toBe('system')
     expect(messages[0].content).not.toContain('可用 skills')
     expect(messages[0].content).toContain('禁止凭工具名猜参数')
-    // 阶段 3：全量 skill 清单是稳定前缀第二段（固定 system 之后、首条历史之前），
-    // 动态尾巴里不再有任何 skill 项——纯追加的这一轮尾巴整体为空。
-    expect(messages.slice(1).map((item) => item.role)).toEqual(['system', 'user'])
+    // 全量 skill 清单与当前环境工具摘要都在首条历史之前；动态尾巴此轮为空。
+    expect(messages.slice(1).map((item) => item.role)).toEqual(['system', 'system', 'user'])
     expect(messages[1].content).toBe(buildSkillManifestText())
     expect(messages[1].content).toContain('· planning — 何时用')
+    expect(messages[2].content).toBe(buildToolManifestText(false, { registry: toolRegistry }))
+    expect(messages[2].content).toContain('· skill_search [internal]')
+    expect(messages[2].content).not.toContain('· shell_macos [server]')
     expect(messages.at(-1)).toMatchObject({ role: 'user', content: 'hi' })
 
     const events = store.getter(runtimeTranscriptEventsAtom)
@@ -578,15 +581,45 @@ describe('runSession（P-R2 最小单轮 run）', () => {
         && event.title === '注入 skill 清单'
         && event.detail === buildSkillManifestText()),
     ).toBe(true)
+    expect(
+      events.some((event) =>
+        event.kind === 'system_injection'
+        && event.title === '注入工具摘要清单'
+        && event.detail === buildToolManifestText(false, { registry: toolRegistry })),
+    ).toBe(true)
     expect(events.some((event) => event.kind === 'tool_manifest' && event.detail?.includes('request_tool_schema'))).toBe(
       true,
     )
   })
 
-  it('稳定前缀三段有序：固定 system → skill 清单 → 自定义指令，全部在首条历史之前', async () => {
+  it('Tauri 首轮请求能发现 shell_macos，但未加载前仍不把它作为可调用 function 暴露', async () => {
+    tauriControl.enabled = true
+    seedSession('inject-tauri-tools', { vendor: 'deepseek', model: 'm' })
+    let captured: Record<string, unknown> = {}
+    const fetchImpl: typeof fetch = (_url, init) => {
+      captured = JSON.parse(init!.body as string)
+      return Promise.resolve(jsonResponse('ok'))
+    }
+
+    await runSession('inject-tauri-tools', '检查本机项目', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+
+    const messages = captured.messages as Array<{ role: string; content?: string }>
+    expect(messages[2].content).toBe(buildToolManifestText(true, { registry: toolRegistry }))
+    expect(messages[2].content).toContain('· shell_macos [server]')
+
+    const exposedToolNames = (captured.tools as ModelFunctionTool[])
+      .map((tool) => tool.function.name)
+    expect(exposedToolNames).toEqual(['request_tool_schema'])
+  })
+
+  it('稳定前缀四段有序：固定 system → skill 清单 → 工具摘要 → 自定义指令，全部在首条历史之前', async () => {
     // 自定义指令与 skill 名单都是低频变更内容。它们曾经和 plan 提醒一起挂在历史【之后】，于是
     // 历史每增长一条就把它们顶到新位置，实测每轮都被记成 history_inserted_before_dynamic_tail、
-    // 这段 token 每轮全额 cache miss。现在按变更频率从低到高固定在 index 0/1/2，
+    // 这段 token 每轮全额 cache miss。现在按变更频率从低到高固定在 index 0/1/2/3，
     // 只有内容本身改动（改指令 / 增删 skill）才会掉缓存。
     const core = createCoreInstance({ config: { customInstructions: '  请始终使用中文回复\n' } })
     const id = 'custom-instructions-prefix'
@@ -614,14 +647,15 @@ describe('runSession（P-R2 最小单轮 run）', () => {
 
     const marker = '用户在设置中保存了以下长期自定义指令'
     const messages = captured.messages as Array<{ role: string; content?: string }>
-    // [固定 system, skill 清单, 自定义指令, ...历史]；尾巴此轮为空。
-    expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'user'])
+    // [固定 system, skill 清单, 工具摘要, 自定义指令, ...历史]；尾巴此轮为空。
+    expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'system', 'user'])
     expect(messages[0].content).toContain('禁止凭工具名猜参数')
     expect(messages[0].content).not.toContain(marker)
     expect(messages[1].content).toBe(buildSkillManifestText())
-    expect(messages[2].content).toContain(marker)
-    expect(messages[2].content).toContain('请始终使用中文回复')
-    expect(messages[3]).toMatchObject({ role: 'user', content: 'hi' })
+    expect(messages[2].content).toBe(buildToolManifestText(false, { registry: core.tools }))
+    expect(messages[3].content).toContain(marker)
+    expect(messages[3].content).toContain('请始终使用中文回复')
+    expect(messages[4]).toMatchObject({ role: 'user', content: 'hi' })
     // 两段低频内容各只此一份，且都不在历史之后（尾巴只剩事件驱动项，本轮没有）。
     expect(messages.filter((item) => item.content?.includes(marker))).toHaveLength(1)
     expect(messages.filter((item) => item.content === buildSkillManifestText())).toHaveLength(1)
@@ -645,10 +679,11 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     await runSession(id, '第二句话', { signal: new AbortController().signal, apiKey: 'k', fetchImpl, core })
 
     const events = core.getSessionStore(id).store.getter(runtimeTranscriptEventsAtom)
-    // 四类卡片各自只有一条——第二次 run 内容与第一次逐字相同，不应再记。
+    // 五类卡片各自只有一条——第二次 run 内容与第一次逐字相同，不应再记。
     expect(events.filter((e) => e.title === '注入 system')).toHaveLength(1)
     expect(events.filter((e) => e.title === '注入自定义指令')).toHaveLength(1)
     expect(events.filter((e) => e.title === '注入 skill 清单')).toHaveLength(1)
+    expect(events.filter((e) => e.title === '注入工具摘要清单')).toHaveLength(1)
     expect(events.filter((e) => e.title === '注入 tools')).toHaveLength(1)
     // 且不应出现任何「已更新」变体——内容确实没变。
     expect(events.some((e) => e.title === '自定义指令已更新')).toBe(false)
@@ -775,7 +810,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
       },
       finishReason: null,
     })
-    expect(stats?.roles.system.count).toBe(2)
+    expect(stats?.roles.system.count).toBe(3)
     expect(stats?.roles.user.count).toBe(1)
     expect(stats?.roles.assistant.count).toBe(0)
     expect(stats?.toolNames).toContain('request_tool_schema')
@@ -1244,47 +1279,134 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(getSessionStore('t2').store.getter(runAtom)?.status).toBe('done')
   })
 
-  it('未加载工具被幻觉调用时不执行，并引导先加载 schema 后恢复', async () => {
+  // 稳定前缀里的工具摘要给了模型精确名字，它于是常常跳过 request_tool_schema 直接调用。
+  // 这次调用本身已经说清了「要哪个工具」＝ request_tool_schema 唯一要问的事，所以闸门把它
+  // 当作一次加载请求走同一条 lazy 通道，而不是回一条纯拒绝让模型白烧一轮再问一遍。
+  it('直接调用未加载工具：本次不执行，但就地加载 schema，下一轮起随 tools 长期携带', async () => {
     const trace = captureTrace()
     configureObservability({ driver: trace.driver })
-    seedSession('lazy-guard', { vendor: 'deepseek', model: 'x' })
-    const { fetchImpl } = seqFetch([
-      // 第一轮只向模型暴露 request_tool_schema；模拟 provider 仍凭名称猜调用和参数。
+    seedSession('lazy-autoload', { vendor: 'deepseek', model: 'x' })
+    const exposedPerRequest: string[][] = []
+    const responses: Array<() => Response> = [
+      // 首轮 tools 里只有 request_tool_schema；模型凭工具摘要猜了名字（参数还猜错了）。
       () => toolCallsResponse([{ name: 'skill_search', args: { skillName: 'planning' }, id: 'guessed' }]),
-      () => toolCallsResponse([{
-        name: 'request_tool_schema',
-        args: { toolName: 'skill_search', reason: '读取正确参数' },
-        id: 'load',
-      }]),
+      // 关键断言点：模型【不需要】再单发一次 request_tool_schema，直接按真 schema 重发即可。
       () => toolCallsResponse([{ name: 'skill_search', args: { query: 'planning' }, id: 'search' }]),
-      () => jsonResponse('已恢复'),
-    ])
+      () => jsonResponse('已完成'),
+    ]
+    let index = 0
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(init!.body as string) as { tools: ModelFunctionTool[] }
+      exposedPerRequest.push(body.tools.map((tool) => tool.function.name))
+      const maker = responses[Math.min(index, responses.length - 1)]
+      index += 1
+      return maker()
+    }
 
-    await runSession('lazy-guard', '规划任务', {
+    await runSession('lazy-autoload', '规划任务', {
       signal: new AbortController().signal,
       apiKey: 'k',
       fetchImpl,
     })
     await flushObservability()
 
-    const items = getSessionStore('lazy-guard').store.getter(itemsAtom)
-    const guessedResult = items.find(
+    // 三次请求就收工（旧行为要四次：猜调被拒 → request_tool_schema → 真调用 → 收尾）。
+    expect(exposedPerRequest).toHaveLength(3)
+    expect(exposedPerRequest[0]).toEqual(['request_tool_schema'])
+    expect(exposedPerRequest[1]).toContain('skill_search')
+    // 「加载后永久携带」：后续每一轮都还在 tools 里。
+    expect(exposedPerRequest[2]).toContain('skill_search')
+
+    const items = getSessionStore('lazy-autoload').store.getter(itemsAtom)
+    const autoloaded = items.find(
       (item) => item.item.role === 'tool' && item.item.tool_call_id === 'guessed',
     )?.item
-    if (!guessedResult || guessedResult.role !== 'tool') throw new Error('缺少未加载工具结果')
-    expect(guessedResult.content).toContain('tool_schema_not_loaded')
-    expect(guessedResult.content).toContain('request_tool_schema')
-    expect(guessedResult.content).not.toContain('缺少必填字段')
+    if (!autoloaded || autoloaded.role !== 'tool') throw new Error('缺少加载结果')
+    const payload = JSON.parse(autoloaded.content) as Record<string, unknown>
+    expect(payload.code).toBe('tool_schema_autoloaded')
+    expect(payload.loaded).toBe(true)
+    // 【不执行】：猜出来的 skillName 没有落地成一次真实搜索，结果里只有加载确认与 guide。
+    expect(payload.executed).toBe(false)
+    expect(payload).not.toHaveProperty('results')
+    expect(Object.keys(payload).sort()).toEqual(
+      ['code', 'executed', 'guide', 'hint', 'loaded', 'toolName'],
+    )
+    // 【inputSchema 不进消息历史】：完整 schema 只经顶层 tools 下发。
+    expect(autoloaded.content).not.toContain('inputSchema')
 
     const searchResult = items.find(
       (item) => item.item.role === 'tool' && item.item.tool_call_id === 'search',
     )?.item
     if (!searchResult || searchResult.role !== 'tool') throw new Error('缺少搜索结果')
     expect(searchResult.content).toContain('results')
+
     expect(trace.events.some((event) =>
-      event.name === 'tool.schema_not_loaded' && event.attrs?.toolName === 'skill_search'
+      event.name === 'tool.schema_autoloaded' && event.attrs?.toolName === 'skill_search'
     )).toBe(true)
-    expect(getSessionStore('lazy-guard').store.getter(runAtom)?.status).toBe('done')
+    expect(trace.events.some((event) => event.name === 'tool.schema_not_loaded')).toBe(false)
+    expect(getSessionStore('lazy-autoload').store.getter(runAtom)?.status).toBe('done')
+  })
+
+  it('未注册的幻觉工具名仍然硬拒绝，不会被当作加载请求', async () => {
+    const trace = captureTrace()
+    configureObservability({ driver: trace.driver })
+    seedSession('lazy-ghost', { vendor: 'deepseek', model: 'x' })
+    const { fetchImpl } = seqFetch([
+      () => toolCallsResponse([{ name: 'totally_unknown_tool', args: { x: 1 }, id: 'ghost' }]),
+      () => jsonResponse('收到'),
+    ])
+
+    await runSession('lazy-ghost', '干点什么', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+    await flushObservability()
+
+    const items = getSessionStore('lazy-ghost').store.getter(itemsAtom)
+    const ghostResult = items.find(
+      (item) => item.item.role === 'tool' && item.item.tool_call_id === 'ghost',
+    )?.item
+    if (!ghostResult || ghostResult.role !== 'tool') throw new Error('缺少未加载工具结果')
+    expect(ghostResult.content).toContain('tool_schema_not_loaded')
+    expect(ghostResult.content).toContain('request_tool_schema')
+    expect(trace.events.some((event) =>
+      event.name === 'tool.schema_not_loaded' && event.attrs?.toolName === 'totally_unknown_tool'
+    )).toBe(true)
+    expect(trace.events.some((event) => event.name === 'tool.schema_autoloaded')).toBe(false)
+  })
+
+  it('TP3：web 下直接调用 server 工具仍然硬拒绝，不会被加载进 tools', async () => {
+    // 该工具在 web 下既不进工具摘要也不进 tools，模型调它就是真的调了一个当前环境不存在的能力。
+    tauriControl.enabled = false
+    seedSession('lazy-server-tool', { vendor: 'deepseek', model: 'x' })
+    const exposedPerRequest: string[][] = []
+    const responses: Array<() => Response> = [
+      () => toolCallsResponse([{ name: 'shell_macos', args: { command: 'ls' }, id: 'server-call' }]),
+      () => jsonResponse('收到'),
+    ]
+    let index = 0
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(init!.body as string) as { tools: ModelFunctionTool[] }
+      exposedPerRequest.push(body.tools.map((tool) => tool.function.name))
+      const maker = responses[Math.min(index, responses.length - 1)]
+      index += 1
+      return maker()
+    }
+
+    await runSession('lazy-server-tool', '跑个命令', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+
+    const items = getSessionStore('lazy-server-tool').store.getter(itemsAtom)
+    const rejected = items.find(
+      (item) => item.item.role === 'tool' && item.item.tool_call_id === 'server-call',
+    )?.item
+    if (!rejected || rejected.role !== 'tool') throw new Error('缺少拒绝结果')
+    expect(rejected.content).toContain('tool_schema_not_loaded')
+    expect(exposedPerRequest[1]).not.toContain('shell_macos')
   })
 
   it('observability：成功工具轮记录脱敏 payload shape 和可读 preview', async () => {
@@ -2113,7 +2235,9 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
         evidence: [],
       }],
     })
-    // submit_stage_result 未在本轮 tools 暴露（懒加载）→ 命中 schema_not_loaded，作为拒绝原因被记录。
+    // submit_stage_result 未在本轮 tools 暴露（懒加载）→ 闸门把这次调用转成一次 schema 加载、
+    // 本次提交不执行。阶段仍未关闭，因此「这次没落地」必须作为拒绝原因进续跑提醒，
+    // 否则模型会以为已经提交过了。
     const responses: Array<() => Response> = [
       () => toolCallsResponse([{ name: 'submit_stage_result', args: { stageId: 'stage-1', summary: 's', evidence: [] } }]),
       () => jsonResponse('我已经完成了当前阶段的设计。'),
@@ -2141,7 +2265,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
       .map((m) => m.content)
       .join('\n')
     expect(injected).toContain('submit_stage_result 未成功')
-    expect(injected).toContain('schema 尚未加载')
+    expect(injected).toContain('本次调用未执行')
+    expect(injected).toContain('schema 此前未加载')
   })
 
   it('单个阶段连续占用超过阈值轮次仍不推进时，阶段进度 guard 硬暂停', async () => {
@@ -3675,8 +3800,8 @@ describe('上下文压缩接入', () => {
     await runSession('cc0', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
     await flushObservability()
 
-    // 固定 system + user + 尾部动态 skill context，一条没少。
-    expect((captured.messages as unknown[]).length).toBe(3)
+    // 固定 system + skill 清单 + 工具摘要 + user，一条没少。
+    expect((captured.messages as unknown[]).length).toBe(4)
     expect(trace.events.some((event) => event.name === 'llm.context_compacted')).toBe(false)
     expect(trace.events.some((event) => event.name === 'llm.context_over_budget')).toBe(false)
   })

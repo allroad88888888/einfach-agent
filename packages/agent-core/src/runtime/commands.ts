@@ -495,6 +495,25 @@ export function createCommands(core: CoreInstance = defaultCore) {
     }).finally(() => core.abort.endRun(id, signal))
   }
 
+  // 旧版 recovery 曾在提交阶段验收后只写入 awaiting_tool，而没有持久化
+  // pendingExecutionId。若对应的后台执行随后取消，这个 run 会永久占住计划的
+  // “正在运行”状态。只在确认同一 run 没有任何活跃执行节点时，才把它恢复为
+  // interrupted；有节点时保持等待，避免并发重复续跑。
+  function recoverOrphanedAwaitingToolRun(id: string): boolean {
+    const store = core.getSessionStore(id).store
+    const run = store.getter(runAtom)
+    if (run?.status !== 'awaiting_tool' || run.pendingExecutionId) return false
+
+    const graph = store.getter(executionGraphAtom)
+    const hasActiveExecution = store.getter(activeExecutionNodeIdsAtom)
+      .some((executionId) => graph.nodes[executionId]?.runId === run.runId)
+    if (hasActiveExecution) return false
+
+    patchRun(id, { status: 'interrupted', pendingExecutionId: undefined }, core)
+    persistCurrentRunRecovery(id, core)
+    return true
+  }
+
   // 简介：恢复一个已经持久化、但当前没有运行中 run 的旧版计划。
   // 详情：新版 checkpoint 若恢复出了 interrupted run，则转交通用恢复入口并保持原 runId；
   // 没有 recovery 的历史 checkpoint 仍走原计划恢复兼容路径。
@@ -503,6 +522,10 @@ export function createCommands(core: CoreInstance = defaultCore) {
     if (!id) return
 
     const status = core.getSessionStore(id).store.getter(runAtom)?.status
+    if (status === 'awaiting_tool' && recoverOrphanedAwaitingToolRun(id)) {
+      continueInterruptedRun()
+      return
+    }
     if (status === 'interrupted') {
       continueInterruptedRun()
       return

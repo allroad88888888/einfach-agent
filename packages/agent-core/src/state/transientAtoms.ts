@@ -194,7 +194,7 @@ export const runtimeTranscriptEventsAtom = atom<RuntimeTranscriptEvent[]>([])
 // 详情：只服务 UI，不进 checkpoint、不参与 model messages；runId 用于阻止旧 run 清掉新 run 的流消息。
 export const assistantStreamAtom = atom<AssistantStreamState | undefined>(undefined)
 
-// 简介：当前会话四类注入卡片（system / 自定义指令 / skill 清单 / tools）各自最近一次
+// 简介：当前会话五类注入卡片（system / 自定义指令 / skill 清单 / 工具摘要 / tools）各自最近一次
 //   记录时的内容指纹，供 runtime 判断"相对上一次记录是否变化"（只在变化时记新卡片）。
 // 详情：值随 store 隔离，与 runtimeTranscriptEventsAtom 同店同生命周期——都不持久化，
 //   应用刷新/重启后二者一起清空（届时可见 transcript 本身也是空的，下一轮各重记一次不构成
@@ -206,16 +206,19 @@ export interface TranscriptInjectionFingerprints {
   customInstructions?: string | null
   /** 全量 skill 清单（进稳定前缀）的内容指纹：只随 registry 注册态变化，不随本轮输入变。 */
   skillManifest?: string
+  /** 当前环境的全量工具摘要（进稳定前缀），不含 schema/guide。 */
+  toolManifest?: string
   toolsFingerprint?: string
   toolsCount?: number
 }
 
-// 简介：当前会话四类注入卡片的判重指纹。
+// 简介：当前会话五类注入卡片的判重指纹。
 // 详情：只服务 runtime 判重，不进 checkpoint、不持久化。
 export const transcriptInjectionFingerprintsAtom = atom<TranscriptInjectionFingerprints>({})
 
-// 简介：当前会话已展开的「思考过程」分组（group key → 是否展开）。
-// 详情：只保存用户的展开选择；虚拟列表的高度、可视范围等 DOM 测量状态不进入 atom。
+// 简介：当前会话「思考过程」分组的显式展开选择（group key → 是否展开）。
+// 详情：未出现的分组默认展开；只保存用户的折叠/展开选择，虚拟列表的高度、可视范围等
+//   DOM 测量状态不进入 atom。
 export const expandedTranscriptGroupsAtom = atom<Record<string, boolean>>({})
 
 // 简介：当前会话对计划阶段详情的显式展开选择（stage id → 是否展开）。

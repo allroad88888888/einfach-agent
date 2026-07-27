@@ -3,8 +3,11 @@
 // 主循环契约：多轮 lazy-tool 循环 + ask_user 暂停/恢复。
 //   · TK1 itemsAtom 直存：assistant(tool_calls) 与 tool result 直接 appendItem 进 itemsAtom，
 //     每轮重新 `items.map(it=>it.item)` 重发；不用 continuation blob。
-//   · TK3 manifest-only + lazy schema：model 只看 request_tool_schema + 本轮已加载 visible tools；
-//     完整 schema 经 ensureToolLoaded 懒加载，禁止预加载。
+//   · TK3 manifest-only + lazy schema：稳定前缀给出当前环境的全量工具摘要（仅名字+简介）；
+//     model 可调用的 function 仍只有 request_tool_schema + 本轮已加载 visible tools。完整
+//     schema 经 ensureToolLoaded 懒加载、只随顶层 tools 下发，禁止预加载、禁止进消息历史。
+//     加载有【两个】等价入口：显式 request_tool_schema，以及模型直接调用某个未加载工具——
+//     后者被闸门就地转成同一次 ensureToolLoaded（本次调用不执行），见下方闸门处的长注释。
 //   · TK4 skill 走 tool：稳定前缀只放全量 skill 清单元数据（buildSkillManifestText），
 //     正文与资源不进 prompt，一律经 skill_read。
 //   · TK6 tool 错误不打断：runRuntimeTool 内部把失败封 {error} JSON 回给 model，loop 继续。
@@ -75,7 +78,7 @@ import {
   toolRegistrationChangedResult,
   toolSchemaNotLoadedResult,
 } from './toolLoading'
-import { toolSchemaLoadedResult } from '../tools/schemaResult'
+import { toolSchemaAutoloadedResult, toolSchemaLoadedResult } from '../tools/schemaResult'
 import { buildToolContext } from './toolContext'
 // 【实例化 · 第 2 期穿线】core（CoreInstance，默认 defaultCore）决定本 run 用谁的 store/registry/abort。
 import { defaultCore, type CoreInstance } from './core/coreInstance'
@@ -84,6 +87,7 @@ import { defaultCore, type CoreInstance } from './core/coreInstance'
 import {
   buildCustomInstructionsItem,
   buildSystemItem,
+  buildToolManifestText,
   buildTurnTools,
   loadedToolNamesFromHistory,
   MAX_TURN_TOOLS,
@@ -294,7 +298,7 @@ function skillManifestSummary(): string {
   return `清单含 ${names.length} 个 skill：${names.join('、')}`
 }
 
-// FNV-1a 32-bit：system / 自定义指令 / skill 清单三类注入卡片的判重指纹（纯文本内容）。
+// FNV-1a 32-bit：system / 自定义指令 / skill 清单 / 工具摘要四类注入卡片的判重指纹（纯文本内容）。
 // tools 卡片改用 modelTurn 的 toolSetSchemaFingerprint——工具集有自己的稳定序列化规则
 // （排序、canonicalize schema），不能套用这里的纯文本 hash。
 // 与 contextCache.ts / modelTurn.ts 里各自独立的同名实现同算法、不共享闭包或状态——
@@ -1059,8 +1063,9 @@ export async function runSession(
   if (rootSpan) bindActiveSpan(traceKey, rootSpan)
 
   // 追加用户输入 + 起 run（会话未登记时二者均 no-op，见 sessionWriters ghost guard）。
-  appendItem(id, { id: userItemId, createdAt: Date.now(), item: { role: 'user', content: input } }, core)
-  setRun(id, { runId, status: 'running', turnId: userItemId }, core)
+  const startedAt = Date.now()
+  appendItem(id, { id: userItemId, createdAt: startedAt, item: { role: 'user', content: input } }, core)
+  setRun(id, { runId, status: 'running', turnId: userItemId, startedAt }, core)
 
   // 与 resume 复用同一循环入口（此时最后一条 user 就是刚 append 的 input，行为与旧版等价）。
   // core 已随 opts 透传（{ ...opts } 含 opts.core），runToolLoop 内部会 opts.core ?? defaultCore 解析同一实例。
@@ -1133,6 +1138,7 @@ export async function resumePlanSession(
     runId,
     status: 'running',
     turnId,
+    startedAt: resumedRun?.startedAt,
     loadedTools: resumedRun?.loadedTools,
   }, core)
   await runToolLoop(id, runId, { ...opts, resumePlan: true, turnId })
@@ -1344,29 +1350,38 @@ export async function runToolLoop(
   // 普通任务与计划任务共用这条路径，重启后不再只剩 plan 能继续。
   persistWorkingTurn()
 
-  // 三段稳定前缀都只用于请求、不入库（TK4）。
+  // 四段稳定前缀都只用于请求、不入库（TK4）。
   const system = buildSystemItem()
   // 全量 skill 清单每个 run 组装一次：内容只依赖 registry 注册态，运行期字节稳定（不含本轮
   // 输入），因此可以待在历史之前而不是尾巴里。
   const skillManifest: SystemItem = { role: 'system', content: buildSkillManifestText() }
+  // 当前环境的全量工具摘要同样每个 run 组装一次。这里只放 name/description/runtime，
+  // schema/guide 仍由 request_tool_schema 懒加载；Tauri 与 web 复用和实际 tools 相同的过滤判据。
+  const runtimeIsTauri = isTauri()
+  const toolManifest: SystemItem = {
+    role: 'system',
+    content: buildToolManifestText(runtimeIsTauri, { registry: core.tools }),
+  }
   const customInstructions = buildCustomInstructionsItem(core.config.customInstructions)
-  // ★ 稳定前缀（固定 system + skill 清单 + 自定义指令）★ —— 位置在 append-only 历史【之前】，
-  //   段序按变更频率从低到高：固定 system（进程内恒定）→ skill 清单（改注册态才变）→
-  //   自定义指令（用户改设置才变），越靠前越不容易被推翻。
+  // ★ 稳定前缀（固定 system + skill 清单 + 工具摘要 + 自定义指令）★ —— 位置在 append-only
+  //   历史【之前】，段序按变更频率从低到高：固定 system（进程内恒定）→ skill 清单（改
+  //   注册态才变）→ 工具摘要（工具注册态或运行环境变化才变）→ 自定义指令（用户改设置才变）。
   //   自定义指令与 skill 名单曾经一起挂在历史之后，于是历史每轮增长都把它们顶到新位置，
   //   实测 185 轮会话每一轮都是 history_inserted_before_dynamic_tail、这段 token 全额 miss。
-  //   二者都是低频变更内容，不该为此付每轮代价；挪到前缀后只有真改指令/增删 skill 那一次会
-  //   掉缓存（contextCache 记 profile_changed，见下方 stablePrefixContent）。
+  //   这些目录/设置都是低频变更内容，不该为此付每轮代价；挪到前缀后只有真改指令、增删
+  //   skill 或工具注册态变化时才会掉缓存（contextCache 记 profile_changed）。
   const stablePrefix: SystemItem[] = [
     system,
     skillManifest,
+    toolManifest,
     ...(customInstructions ? [customInstructions] : []),
   ]
   // contextCache 的 systemFingerprint 输入：整个稳定前缀，而不只是固定 system。少了自定义指令
-  //   或 skill 清单这两段，改指令 / 增删 skill 就会退化成「尾巴/投影变了」，归因错、也不再新起 epoch。
+  //   / skill 清单 / 工具摘要，相关注册态或设置变化就会退化成「尾巴/投影变了」，归因错、
+  //   也不再新起 epoch。
   const stablePrefixContent = stablePrefix.map((item) => item.content).join('\n')
 
-  // UI transcript 的四类注入卡片改为「内容相对上一次记录发生变化才记」——原先每次 run/turn
+  // UI transcript 的五类注入卡片改为「内容相对上一次记录发生变化才记」——原先每次 run/turn
   // 都无条件记一遍，同一会话多说几句话就被同样几张卡刷屏（system/自定义指令/skill 清单
   // 内容常常逐字未变）。判重指纹存在 per-session 瞬态 atom
   // （transcriptInjectionFingerprintsAtom），与 runtimeTranscriptEventsAtom 同店同生命周期：
@@ -1419,6 +1434,19 @@ export async function runToolLoop(
     )
     patchTranscriptInjectionFingerprints(id, { skillManifest: skillManifestFingerprint }, core)
   }
+
+  const toolManifestFingerprint = injectionContentFingerprint(toolManifest.content)
+  if (injectionFingerprints.toolManifest !== toolManifestFingerprint) {
+    addTranscriptEvent(
+      id,
+      'system_injection',
+      '注入工具摘要清单',
+      compactTranscriptText(toolManifest.content),
+      toolManifest.content,
+      core,
+    )
+    patchTranscriptInjectionFingerprints(id, { toolManifest: toolManifestFingerprint }, core)
+  }
   traceEvent('llm.system_injected', { system_chars: system.content.length })
   // thinking：状态层 boolean → 线协议 { type:'enabled'|'disabled' }。区分三态（codex P2）：
   //   undefined → 不传（用服务端默认）；true → enabled；false → disabled（显式关思考，
@@ -1449,8 +1477,8 @@ export async function runToolLoop(
       })
     },
   })
-  // 与真实请求投影同形：稳定前缀（含 skill 清单）→ 历史。动态尾巴不进这里——plan/续跑/工具
-  // 失败提醒都是逐轮临时值，不属于「父 agent 到目前为止的语境」。
+  // 与真实请求投影同形：稳定前缀（含 skill 清单与工具摘要）→ 历史。动态尾巴不进这里——
+  // plan/续跑/工具失败提醒都是逐轮临时值，不属于「父 agent 到目前为止的语境」。
   const rootTranscript = () => formatSubagentTranscript([
     ...stablePrefix,
     ...currentTurnItems(id, core).map((it) => it.item),
@@ -1677,7 +1705,7 @@ export async function runToolLoop(
       }
       const planContext = currentPlanContext(id, core)
       // 动态尾巴只剩【事件驱动】的控制消息：plan 状态、续跑提醒、工具失败提醒——它们随运行
-      // 状态变，只在真的发生时出现。低频变更的自定义指令与全量 skill 清单都已上移进
+      // 状态变，只在真的发生时出现。低频变更的自定义指令、全量 skill 清单和工具摘要都已上移进
       // stablePrefix，不再挂这里。
       // ★ 收益 ★：纯追加的多数轮次这里为空（dynamicTailCount=0），新历史只是把请求投影往后
       //   append，contextCache 的 isPrefix 判定通过 → epoch 不再每轮 +1
@@ -1699,7 +1727,7 @@ export async function runToolLoop(
       visible = refreshVisibleTools(id, visible, core, MAX_TURN_TOOLS - 1)
       // 传本实例的 registry：request_tool_schema 的分页目录只检索【本 core】可懒加载的工具，
       // 而非模块级 defaultCore.tools（隔离实例装自定义工具集时的正确性，codex review [P1]）。
-      const tools = buildTurnTools(visible, isTauri(), {
+      const tools = buildTurnTools(visible, runtimeIsTauri, {
         registry: core.tools,
         maxTools: MAX_TURN_TOOLS,
         recentToolNames,
@@ -1741,8 +1769,8 @@ export async function runToolLoop(
         vendor: meta.settings.vendor,
         model: meta.settings.model,
         messages,
-        // 整个稳定前缀（固定 system + skill 清单 + 自定义指令）都参与 systemFingerprint：
-        // 改自定义指令、增删/改写 skill = 换 profile（profile_changed / 新 epoch），
+        // 整个稳定前缀（固定 system + skill 清单 + 工具摘要 + 自定义指令）都参与
+        // systemFingerprint：改自定义指令、增删/改写 skill 或工具摘要 = 换 profile，
         // 而不是被误记成尾巴或投影变化。
         systemContent: stablePrefixContent,
         tools,
@@ -2298,10 +2326,54 @@ export async function runToolLoop(
 
           // Lazy-tool 强制闸门：provider 偶尔会无视 tools 列表，凭 system 里的能力名直接生成
           // tool_call。只允许执行【这一轮请求实际暴露】的工具；否则不得进入风险判定、schema
-          // 校验或 execute，而是回填可自愈提示，让模型先 request_tool_schema。
+          // 校验或 execute。
           // 这里以本轮发给 provider 的 tools 为准，而非 registry/visible：它同时覆盖环境过滤与
           // allowedToolNames 收窄，避免“已注册但本轮不可见”的工具被幻觉调用后仍然执行。
           if (!tools.some((tool) => tool.function.name === name)) {
+            // ★ 已注册工具：把这次直接调用【当作一次加载请求】★
+            //   稳定前缀里的工具摘要给了模型精确名字，它于是常常跳过 request_tool_schema 直接
+            //   指名道姓地调用（2026-07-27 实测：摘要上线后的两个冷启动会话，首轮工具调用
+            //   2/2 全被拒，各白烧一整轮；上线前 402 次请求零发生）。而这次调用本身已经把
+            //   「我要用哪个工具」说清楚了 —— 那正是 request_tool_schema 唯一要问的事，
+            //   没有理由再逼它用另一个工具名把同一句话重说一遍。
+            //   于是走【同一条】lazy 通道：ensureToolLoaded 装进 visible，下一轮起随 tools
+            //   长期携带，与 request_tool_schema 的效果逐字一致。
+            //   ★ 机制没有被绕过 ★：本次调用仍然不执行，猜测的参数一律不落地；完整
+            //   inputSchema 仍然只经顶层 tools 下发、不进消息历史（见 toolSchemaAutoloadedResult）。
+            //   TP3：web 下的 server 工具既不进摘要也不该被加载，与未注册的幻觉工具一起继续
+            //   走下面的硬拒绝 —— 那时模型是真的调了一个当前环境不存在的能力。
+            const autoloadable = core.tools.loadSchema(name)
+            if (autoloadable && (autoloadable.runtime !== 'server' || runtimeIsTauri)) {
+              visible = ensureToolLoaded(id, visible, name, core, MAX_TURN_TOOLS - 1)
+              recentToolNames = touchRecentToolName(recentToolNames, name)
+              const resultPayload = toolSchemaAutoloadedResult(autoloadable)
+              const attrs: TraceAttributes = {
+                toolName: name,
+                callId: toolCall.id,
+                schema_autoloaded: true,
+                argsPreview: tracePreview(args),
+                resultPreview: tracePreview(resultPayload),
+              }
+              traceEvent('tool.schema_autoloaded', attrs)
+              // span 用 request_tool_schema 而非 tool.call：它记的是一次 schema 加载，
+              // 不是一次工具执行，也不该把 tool.call 的错误率算脏。
+              const autoloadSpan = startSpan('request_tool_schema', {
+                kind: 'internal',
+                parent: traceSpan,
+                attrs: { sessionId: id, runId, turnId, toolName: name, callId: toolCall.id, args },
+              })
+              endSpan(autoloadSpan, 'ok', {
+                found: true,
+                autoloaded: true,
+                discovery: false,
+                result: resultPayload,
+              })
+              // 阶段仍未关闭：续跑提醒要说明这次提交没落地，否则模型会以为阶段已提交。
+              if (name === 'submit_stage_result') lastStageSubmitRejection = resultPayload.hint
+              appendToolResult(id, toolCall.id, JSON.stringify(resultPayload), core, planStageId)
+              continue
+            }
+
             const resultPayload = toolSchemaNotLoadedResult(name)
             const error = String(resultPayload.error)
             const attrs: TraceAttributes = {
@@ -2672,7 +2744,7 @@ export async function runToolLoop(
       }
 
       commitTurn() // TK9：一轮用户输入收尾 = 一个 checkpoint（并落盘）。
-      patchRun(id, { status: 'done' }, core)
+      patchRun(id, { status: 'done', finishedAt: Date.now() }, core)
       finishTrace('ok', 'agent.done', { status: 'done' })
       return
     }

@@ -2,7 +2,7 @@ import { afterEach, describe, it, expect, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
-import { checkpointsAtom, itemsAtom } from '@web-agent/core/state/sessionAtoms'
+import { checkpointsAtom, itemsAtom, runAtom } from '@web-agent/core/state/sessionAtoms'
 import {
   browserCardsAtom,
   runtimeTranscriptEventsAtom,
@@ -20,10 +20,8 @@ import {
 
 vi.mock('@web-agent/core/runtime/commands', () => ({ revertTurnToDraft: vi.fn() }))
 
-function expandThinkingProcess() {
+function expectThinkingProcessExpanded() {
   const toggle = screen.getByRole('button', { name: /思考过程/ })
-  expect(toggle).toHaveAttribute('aria-expanded', 'false')
-  fireEvent.click(toggle)
   expect(toggle).toHaveAttribute('aria-expanded', 'true')
   return toggle
 }
@@ -79,7 +77,7 @@ describe('MessageList', () => {
     expect(screen.queryByRole('button', { name: /回退到第/ })).toBeNull()
   })
 
-  it('渲染右侧 user、assistant markdown，并把 tool result 收进默认折叠的思考过程', () => {
+  it('渲染右侧 user、assistant markdown，并把 tool result 收进默认展开的思考过程', () => {
     const store = createStore()
     const items: ConversationItem[] = [
       { id: 'u1', createdAt: 0, item: { role: 'user', content: '你好' } },
@@ -97,10 +95,15 @@ describe('MessageList', () => {
     const strong = screen.getByText('回复')
     expect(strong).toBeInTheDocument()
     expect(strong.tagName).toBe('STRONG')
-    // system ConversationItem 不渲染；折叠内容不挂载，展开后才渲染 tool result。
+    // system ConversationItem 不渲染；思考过程默认展开并直接挂载 tool result。
     expect(screen.queryByText('系统')).toBeNull()
-    expect(screen.queryByText('工具')).toBeNull()
-    expandThinkingProcess()
+    const toggle = expectThinkingProcessExpanded()
+    expect(screen.getByText('工具 x')).toBeInTheDocument()
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByText('工具 x')).toBeNull()
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('工具 x')).toBeInTheDocument()
   })
 
@@ -157,12 +160,12 @@ describe('MessageList', () => {
     const { container } = renderWithStore(<MessageList />, { store })
 
     expect(container.querySelectorAll('.agentnew-msg--assistant')).toHaveLength(0)
-    expandThinkingProcess()
+    expectThinkingProcessExpanded()
     expect(screen.getByText('调用工具 skill_search')).toBeInTheDocument()
     expect(screen.getByText('query=stream output')).toBeInTheDocument()
   })
 
-  it('reasoning_content 显示在折叠思考过程，最终 content 仍作为 assistant 气泡显示', () => {
+  it('reasoning_content 显示在默认展开的思考过程，最终 content 仍作为 assistant 气泡显示', () => {
     const store = createStore()
     store.setter(itemsAtom, [
       {
@@ -178,8 +181,7 @@ describe('MessageList', () => {
 
     const { container } = renderWithStore(<MessageList />, { store })
 
-    expect(screen.queryByText('先分析用户意图，再组织答案。')).toBeNull()
-    expandThinkingProcess()
+    expectThinkingProcessExpanded()
     expect(screen.getByText('模型思考')).toBeInTheDocument()
     expect(screen.getByText('先分析用户意图，再组织答案。')).toBeInTheDocument()
     expect(screen.getByText('最终答案').closest('.agentnew-msg--assistant')).not.toBeNull()
@@ -210,7 +212,7 @@ describe('MessageList', () => {
 
     const { container } = renderWithStore(<MessageList />, { store })
 
-    expandThinkingProcess()
+    expectThinkingProcessExpanded()
     expect(screen.getByText('需要先读取工具定义。')).toBeInTheDocument()
     expect(screen.getByText('调用工具 request_tool_schema')).toBeInTheDocument()
     expect(container.querySelectorAll('.agentnew-msg--assistant')).toHaveLength(0)
@@ -240,7 +242,7 @@ describe('MessageList', () => {
 
     renderWithStore(<MessageList />, { store })
 
-    expandThinkingProcess()
+    expectThinkingProcessExpanded()
     const execution = screen.getByText('工具 skill_read').closest('.agentnew-debug-entry')
     expect(execution).not.toBeNull()
     expect(execution).toHaveTextContent('调用：name=web-chat-agent')
@@ -316,10 +318,8 @@ describe('MessageList', () => {
       },
     })
 
-    const { container } = renderWithStore(<MessageList />, { store })
-    expect(container.querySelector('.agentnew-subagent-inline')).toBeNull()
-
-    expandThinkingProcess()
+    renderWithStore(<MessageList />, { store })
+    expectThinkingProcessExpanded()
     const delegateEntry = screen.getByText('调用工具 delegate_agent')
       .closest('.agentnew-debug-entry')
     const inline = delegateEntry?.parentElement?.querySelector('details.agentnew-subagent-inline')
@@ -378,7 +378,7 @@ describe('MessageList', () => {
 
     renderWithStore(<MessageList />, { store })
 
-    expandThinkingProcess()
+    expectThinkingProcessExpanded()
     const errorEntry = screen.getByText('工具失败 save_file').closest('.agentnew-debug-entry')
     expect(errorEntry).toHaveClass('agentnew-debug-entry--error')
     expect(errorEntry).toHaveTextContent('错误')
@@ -411,7 +411,7 @@ describe('MessageList', () => {
 
     const { container } = renderWithStore(<MessageList />, { store })
 
-    expandThinkingProcess()
+    expectThinkingProcessExpanded()
     expect(screen.getByText('工具 tc-success')).toBeInTheDocument()
     expect(container.querySelector('.agentnew-debug-entry--error')).toBeNull()
     expect(container.querySelector('.agentnew-debug-entry--warning')).toBeNull()
@@ -432,7 +432,7 @@ describe('MessageList', () => {
 
     renderWithStore(<MessageList />, { store })
 
-    expandThinkingProcess()
+    expectThinkingProcessExpanded()
     expect(screen.getByText('注入')).toBeInTheDocument()
     expect(screen.getByText('注入 system')).toBeInTheDocument()
     expect(screen.getByText('已加载 skills：web-chat-agent')).toBeInTheDocument()
@@ -454,6 +454,46 @@ describe('MessageList', () => {
     expect(bubbles[0].querySelector('.agentnew-stream-caret')).not.toBeNull()
     expect(bubbles[1].classList.contains('agentnew-msg--streaming')).toBe(false)
     expect(bubbles[1].querySelector('.agentnew-stream-caret')).toBeNull()
+  })
+
+  it('运行中显示 Working for，并按当前轮用户消息起点计算耗时', () => {
+    const store = createStore()
+    const startedAt = Date.now() - 220_500
+    store.setter(itemsAtom, [
+      { id: 'u-working', createdAt: startedAt, item: { role: 'user', content: '开始工作' } },
+      { id: 'a-working', createdAt: startedAt + 1_000, pending: true, item: { role: 'assistant', content: '处理中' } },
+    ])
+    store.setter(runAtom, {
+      runId: 'run-working',
+      turnId: 'u-working',
+      status: 'running',
+      startedAt,
+    })
+
+    renderWithStore(<MessageList />, { store })
+
+    const status = screen.getByLabelText('对话正在进行，已用时 3m 40s')
+    expect(status).toHaveTextContent('Working for 3m 40s')
+  })
+
+  it('对话完成后显示 Brewed for，并固定为 run 的真实完成耗时', () => {
+    const store = createStore()
+    store.setter(itemsAtom, [
+      { id: 'u-done', createdAt: 1_000, item: { role: 'user', content: '完成任务' } },
+      { id: 'a-done', createdAt: 61_000, item: { role: 'assistant', content: '已经完成' } },
+    ])
+    store.setter(runAtom, {
+      runId: 'run-done',
+      turnId: 'u-done',
+      status: 'done',
+      startedAt: 1_000,
+      finishedAt: 221_000,
+    })
+
+    renderWithStore(<MessageList />, { store })
+
+    const status = screen.getByLabelText('对话已结束，用时 3m 40s')
+    expect(status).toHaveTextContent('Brewed for 3m 40s')
   })
 
   it('browser 卡片与消息按 createdAt 合并排序渲染', () => {

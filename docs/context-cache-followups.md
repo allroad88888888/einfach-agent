@@ -14,10 +14,12 @@
 | F3 | 会话过长的用户提示 | 待做 | 中 |
 | F4 | 离线归因口径固化 | 已在文档固化，无需改码 | — |
 | F5 | 跨 run 投影复用 | **暂不做**（理由见下） | 负 |
+| F6 | 工具集增长步数的实测（schema 直接加载上线后） | 待做 | 低成本 |
 | C1 | `initial` 归因细化 | **已关闭**：正常行为 | — |
 | C2 | 工具结果体积治理 | **已关闭**：不是瓶颈 | — |
 
 先做 F1。在拿到复用的真实数据之前，F3/F5 的收益都无法估准，容易做无用功。
+F6 与 F1 用同一批会话、同一套 SQL，顺手一起验即可。
 
 ---
 
@@ -117,6 +119,63 @@
 
 **重新评估的触发条件**：F1 实测后，若发现跨 run 重压占剩余失效的多数（例如短 run 密集的
 交互式使用模式下，16 次重压占了失效的大头），再回来考虑。
+
+---
+
+## F6 · 工具集增长步数的实测（schema 直接加载上线后）
+
+**背景**：稳定前缀加上全量工具摘要后，模型拿到了精确工具名，于是常常跳过 `request_tool_schema`
+直接指名道姓调用。原先这会撞上 lazy 闸门被拒、白烧一整轮（2026-07-27 实测：摘要上线后的两个
+冷启动会话首轮工具调用 2/2 全被拒，上线前 402 次请求零发生）。现在闸门把这次调用**当作一次
+加载请求**：装进 `visible`、下一轮起随 tools 长期携带，但本次不执行。
+
+**与缓存的关系**：`toolSetFingerprint` 参与 `profileId`（`contextCache.ts`），所以**工具集每变一次
+就是一次 `profile_changed` / 新 epoch / 整段前缀重读**。要盯的是「工具集变了几步」，不是「发了
+几次请求」。
+
+同一条轨迹上改动**不增加失效、净省**：
+
+| | 改前 | 改后 |
+| --- | --- | --- |
+| turn1 | tools=[rts] → epoch 1 | tools=[rts] → epoch 1 |
+| turn2 | tools 未变，只追加拒绝结果 → isPrefix 通过，不掉 epoch | tools=[rts,+3] → epoch 2 |
+| turn3 | tools=[rts,+4] → epoch 2 | — |
+| 合计 | 3 次请求，1 次失效 | **2 次请求，1 次失效** |
+
+且历史里**永久**少掉每个工具一对「盲调 + 拒绝」条目，后续每一轮都跟着省。
+
+**那么要验什么**：方向性风险——拒绝会逼模型停下来集中补课（22:18 那次一口气 load 了 4 个，其中
+`skill_read` 是预判要用的），而就地加载让它边干边取，工具集可能变成**多次小步增长**，每一步都是
+一次全量失效。已在 `toolSchemaAutoloadedResult` 的 hint 里留了「同一轮用 `request_tool_schema`
+一并加载」的推荐，但这靠模型自觉，必须实测。
+
+**做法**：与 F1 同一批长会话，在其 SQL 基础上加两段——
+
+```sql
+-- ① 每个 run 的工具集变了几步（越小越好）
+SELECT run_id, COUNT(DISTINCT json_extract(attrs,'$.tools_count')) AS 工具集步数,
+       MAX(json_extract(attrs,'$.tools_count')) AS 最终工具数
+FROM trace_events WHERE name='llm.context_snapshot' GROUP BY run_id ORDER BY 工具集步数 DESC;
+
+-- ② 就地加载 vs 显式加载的比例，以及是否还有硬拒绝
+SELECT name, COUNT(*) FROM trace_events
+WHERE name IN ('tool.schema_autoloaded','tool.schema_requested','tool.schema_not_loaded')
+GROUP BY name;
+```
+
+**改动前基线**（2026-07-27 19:02 之后、即工具摘要已上线但闸门尚未改的 16 个 run）：
+工具集步数**均值 1.94、最大 9**；`tool.schema_not_loaded` 8 次、`tool.schema_requested` 63 次。
+
+**验收标准**：
+
+1. `tool.schema_not_loaded` 在冷启动会话里归零（只剩幻觉工具名与 web 下的 server 工具这两类
+   真·不可加载的情况）；
+2. 工具集步数均值不高于 1.94、最大值不高于 9——**这是本项的核心指标**；
+3. 按 (scope, epoch) 去重后，`profile_changed` 的真实失效次数没有相对上升。
+
+**若第 2 条不达标**（步数明显变多）：说明就地加载确实让模型放弃了批量补课。候选对策按代价从低
+到高：加强 hint 措辞 → 在首轮 system 里显式要求「一次性列出本任务需要的全部工具」→ 对冷启动
+首轮做一次小批量预载（子 agent 侧已经是这个做法，见 `subagents/runtime.ts` 的授权集预载）。
 
 ---
 

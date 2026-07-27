@@ -9,17 +9,18 @@
 //   · assistant：reasoning_content 归入思考过程；最终 content 渲染文本气泡；
 //     带 tool_calls 的中间 content 作为执行说明归入思考过程；
 //   · tool：通过 tool_call_id 合并进对应工具调用卡片；
-//   · runtime transcript event / 工具执行：连续项合并为默认收起的思考过程；
+//   · runtime transcript event / 工具执行：连续项合并为默认展开的思考过程；
 //   · system ConversationItem：仍然不渲染，避免把异常入库的 system 当成正常 transcript。
 
 import { useAtom, useAtomValue } from '@einfach/react'
 import {
   useCallback,
+  useEffect,
   useMemo,
   type ReactNode,
 } from 'react'
 import { revertTurnToDraft } from '@web-agent/core/runtime/commands'
-import { checkpointsAtom, itemsAtom } from '@web-agent/core/state/sessionAtoms'
+import { checkpointsAtom, itemsAtom, runAtom } from '@web-agent/core/state/sessionAtoms'
 import {
   assistantStreamAtom,
   browserCardsAtom,
@@ -28,11 +29,12 @@ import {
   type BrowserCard,
   type RuntimeTranscriptEvent,
 } from '@web-agent/core/state/transientAtoms'
-import type { ConversationItem } from '@web-agent/core/state/core.type'
+import type { ConversationItem, RunState } from '@web-agent/core/state/core.type'
 import type { ModelToolCall, ToolItem } from '@web-agent/ai'
 import { BrowserActionCard } from './BrowserActionCard'
 import { MessageMarkdown } from './MessageMarkdown'
 import {
+  messageElapsedClockAtom,
   messageWindowAtom,
   planTraceWindowsAtom,
 } from './messageWindowModel'
@@ -547,7 +549,7 @@ function flattenVirtualEntries(
       sortKey: entry.sortKey,
       group: entry,
     }
-    if (!expandedGroups[entry.sortKey]) return [header]
+    if (expandedGroups[entry.sortKey] === false) return [header]
     return [
       header,
       ...entry.entries.map((thinkingEntry): VirtualEntry => ({
@@ -587,8 +589,79 @@ function virtualEntryVersion(entry: VirtualEntry): string {
   return `${entry.sortKey}:${length}:${entry.ci.pending ? 1 : 0}`
 }
 
+function formatElapsedDuration(durationMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1_000))
+  const hours = Math.floor(totalSeconds / 3_600)
+  const minutes = Math.floor((totalSeconds % 3_600) / 60)
+  const seconds = totalSeconds % 60
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`
+  if (minutes > 0) return `${minutes}m ${seconds}s`
+  return `${seconds}s`
+}
+
+function runStartIndex(items: ConversationItem[], turnId?: string): number {
+  if (turnId) {
+    const anchored = items.findIndex((item) => item.id === turnId)
+    if (anchored >= 0) return anchored
+  }
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (items[index].item.role === 'user') return index
+  }
+  return -1
+}
+
+function RunDurationStatus({
+  items,
+  run,
+}: {
+  items: ConversationItem[]
+  run?: RunState
+}) {
+  const [clock, setClock] = useAtom(messageElapsedClockAtom)
+  const working = run?.status === 'running' || run?.status === 'awaiting_tool'
+
+  useEffect(() => {
+    if (!working) return
+    const updateClock = () => setClock(Date.now())
+    updateClock()
+    const timer = window.setInterval(updateClock, 1_000)
+    return () => window.clearInterval(timer)
+  }, [run?.runId, setClock, working])
+
+  if (!run || (!working && run.status !== 'done')) return null
+  const startIndex = runStartIndex(items, run.turnId)
+  if (startIndex < 0) return null
+
+  const startedAt = run.startedAt ?? items[startIndex].createdAt
+  let endedAt = startedAt
+  for (let index = startIndex; index < items.length; index += 1) {
+    endedAt = Math.max(endedAt, items[index].createdAt)
+  }
+  endedAt = run.finishedAt ?? endedAt
+  const durationMs = Math.max(0, (working ? clock : endedAt) - startedAt)
+  const duration = formatElapsedDuration(durationMs)
+  const label = working ? 'Working' : 'Brewed'
+
+  return (
+    <div
+      className={`agentnew-run-duration${working ? ' is-working' : ' is-complete'}`}
+      aria-label={working ? `对话正在进行，已用时 ${duration}` : `对话已结束，用时 ${duration}`}
+    >
+      <span className="agentnew-run-duration-mark" aria-hidden="true">
+        {working ? null : '✓'}
+      </span>
+      <span>
+        <strong>{label}</strong>
+        {' for '}
+        <time dateTime={`PT${Math.floor(durationMs / 1_000)}S`}>{duration}</time>
+      </span>
+    </div>
+  )
+}
+
 export function MessageList() {
   const items = useAtomValue(itemsAtom)
+  const run = useAtomValue(runAtom)
   const assistantStream = useAtomValue(assistantStreamAtom)
   const checkpoints = useAtomValue(checkpointsAtom)
   const cards = useAtomValue(browserCardsAtom)
@@ -687,7 +760,9 @@ export function MessageList() {
     total: virtualEntries.length,
     storedWindow,
     setStoredWindow: setMessageWindow,
-    latestVersion: latestEntry ? virtualEntryVersion(latestEntry) : '',
+    latestVersion: latestEntry
+      ? `${virtualEntryVersion(latestEntry)}:${run?.runId ?? ''}:${run?.status ?? ''}`
+      : '',
   })
   const visibleEntries = virtualEntries.slice(messageWindow.start, messageWindow.end)
 
@@ -700,12 +775,14 @@ export function MessageList() {
       {visibleEntries.map((entry) => {
           let content: ReactNode
           if (entry.kind === 'thinking-header') {
-            const expanded = expandedGroups[entry.sortKey] === true
+            const expanded = expandedGroups[entry.sortKey] !== false
+            const stepCount = entry.group.entries.length
             content = (
               <section className={`agentnew-thinking-group${expanded ? ' is-open' : ''}`}>
                 <button
                   type="button"
                   className="agentnew-thinking-toggle"
+                  aria-label={`${expanded ? '收起' : '展开'}思考过程，共 ${stepCount} 步`}
                   aria-expanded={expanded}
                   onClick={() => setExpandedGroups((current) => ({
                     ...current,
@@ -713,9 +790,21 @@ export function MessageList() {
                   }))}
                 >
                   <span className="agentnew-thinking-summary-content">
-                    <strong>思考过程</strong>
-                    <small>{entry.group.entries.length} 步</small>
-                    <i aria-hidden="true">⌄</i>
+                    <span className="agentnew-thinking-mark" aria-hidden="true">✦</span>
+                    <span className="agentnew-thinking-heading">
+                      <strong>思考过程</strong>
+                      <small>{stepCount} 个步骤</small>
+                    </span>
+                    <span className="agentnew-thinking-action" aria-hidden="true">
+                      {expanded ? '收起' : '展开'}
+                    </span>
+                    <svg
+                      className="agentnew-thinking-chevron"
+                      aria-hidden="true"
+                      viewBox="0 0 16 16"
+                    >
+                      <path d="m4 6 4 4 4-4" />
+                    </svg>
                   </span>
                 </button>
               </section>
@@ -775,6 +864,9 @@ export function MessageList() {
             </SlidingWindowRow>
           )
         })}
+      {messageWindow.end >= virtualEntries.length
+        ? <RunDurationStatus items={items} run={run} />
+        : null}
     </div>
   )
 }

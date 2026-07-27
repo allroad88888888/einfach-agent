@@ -131,6 +131,9 @@ export interface PendingUserDecision {
 export interface RunState {
   runId: string
   status: RunStatus
+  // 用于界面展示本次连续运行的真实耗时；可选以兼容旧 checkpoint。
+  startedAt?: number
+  finishedAt?: number
   // 本次连续运行最初的 user item。运行中追加的排队输入不会改变该锚点，
   // 因而 checkpoint、skill 与恢复路径仍能看到本次 run 的完整 transcript。
   turnId?: string

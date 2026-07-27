@@ -10,6 +10,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildCustomInstructionsItem,
   buildSystemItem,
+  buildToolManifestText,
   buildTurnTools,
   canonicalizeJsonSchema,
   DEFAULT_TOOL_MANIFEST_PAGE_SIZE,
@@ -99,6 +100,53 @@ describe('system 前缀缓存边界', () => {
 })
 
 describe('buildTurnTools —— TP3 server 工具按环境过滤', () => {
+  it('首轮工具摘要列出全部可发现工具，但未加载工具仍不进入 function tools', () => {
+    const manifest = buildToolManifestText(true)
+    const shellSummary = toolRegistry.list().find((tool) => tool.name === SERVER_TOOL)
+
+    expect(shellSummary).toBeDefined()
+    expect(manifest).toContain(`· ${SERVER_TOOL} [server] — ${shellSummary!.description}`)
+    expect(manifest).toContain(`· ${INTERNAL_TOOL} [internal]`)
+    expect(manifest).not.toContain('inputSchema')
+    expect(manifest).not.toContain('"properties"')
+    expect(buildTurnTools([], true).map((tool) => tool.function.name)).toEqual([
+      'request_tool_schema',
+    ])
+  })
+
+  it('web 工具摘要与 function tools 使用同一环境过滤，不暴露 server 工具', () => {
+    const manifest = buildToolManifestText(false)
+
+    expect(manifest).not.toContain(`· ${SERVER_TOOL} [server]`)
+    expect(manifest).not.toContain(`· ${SERVER_TOOL_2} [server]`)
+    expect(manifest).toContain(`· ${INTERNAL_TOOL} [internal]`)
+  })
+
+  it('工具摘要使用传入 registry、名称稳定排序，并折叠描述换行', () => {
+    const registry = createToolRegistry()
+    registry.register({
+      name: 'z_tool',
+      runtime: 'internal',
+      skill: { description: 'line one\n  line two', content: '# full guide must stay lazy' },
+      inputSchema: { type: 'object', properties: { secretSchema: { type: 'string' } } },
+      execute: async () => ({ ok: true }),
+    })
+    registry.register({
+      name: 'a_tool',
+      runtime: 'internal',
+      skill: { description: 'alpha', content: '# alpha guide' },
+      inputSchema: { type: 'object' },
+      execute: async () => ({ ok: true }),
+    })
+
+    const manifest = buildToolManifestText(true, { registry })
+    expect(manifest.indexOf('· a_tool')).toBeLessThan(manifest.indexOf('· z_tool'))
+    expect(manifest).toContain('· z_tool [internal] — line one line two')
+    expect(manifest).not.toContain('full guide must stay lazy')
+    expect(manifest).not.toContain('secretSchema')
+    expect(manifest).not.toContain('skill_search')
+  })
+
   it('request_tool_schema 元工具恒在场（两种 isTauri 都在返回列表首位）', () => {
     for (const isTauri of [false, true]) {
       const tools = buildTurnTools([], isTauri)
@@ -632,6 +680,58 @@ describe('loadedToolNamesFromHistory —— 从历史恢复顶层 schema', () =>
       { role: 'tool', tool_call_id: 'pending', content: '{"error":"unknown"}' },
     ]
     expect(loadedToolNamesFromHistory(failed)).toEqual([])
+  })
+
+  // 加载有两个等价入口：显式 request_tool_schema，以及模型直接调用未加载工具时闸门就地
+  // 转成的那一次（modelRun）。后者同样让工具此后长期可用，恢复期漏认会让重启后白重载一次。
+  it('直接调用被闸门转成的加载同样算已加载', () => {
+    const messages: ModelItem[] = [
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'guessed',
+          type: 'function',
+          function: { name: 'skill_search', arguments: '{"skillName":"planning"}' },
+        }],
+      },
+      {
+        role: 'tool',
+        tool_call_id: 'guessed',
+        content: JSON.stringify({
+          loaded: true,
+          toolName: 'skill_search',
+          guide: '# search',
+          code: 'tool_schema_autoloaded',
+          executed: false,
+          hint: '本次调用未执行',
+        }),
+      },
+    ]
+
+    expect(loadedToolNamesFromHistory(messages)).toEqual(['skill_search'])
+  })
+
+  it('普通工具结果不会被误当成一次 schema 加载', () => {
+    // 判别码 + 工具名自洽是硬判据：业务工具碰巧回了 {loaded:true,toolName} 也不算。
+    const messages: ModelItem[] = [
+      {
+        role: 'assistant',
+        content: null,
+        tool_calls: [{
+          id: 'real-call',
+          type: 'function',
+          function: { name: 'skill_search', arguments: '{"query":"planning"}' },
+        }],
+      },
+      {
+        role: 'tool',
+        tool_call_id: 'real-call',
+        content: '{"loaded":true,"toolName":"skill_search","results":[]}',
+      },
+    ]
+
+    expect(loadedToolNamesFromHistory(messages)).toEqual([])
   })
 })
 

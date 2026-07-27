@@ -1,6 +1,7 @@
 import { useAtom, useAtomValue } from '@einfach/react'
 import { useMemo } from 'react'
 import { itemsAtom, planAtom, runAtom } from '@web-agent/core/state/sessionAtoms'
+import { activeExecutionNodeIdsAtom, executionGraphAtom } from '@web-agent/core/execution/graph'
 import {
   assistantStreamAtom,
   expandedPlanStagesAtom,
@@ -32,6 +33,8 @@ const planStatusText = {
 export function PlanPanel() {
   const plan = useAtomValue(planAtom)
   const run = useAtomValue(runAtom)
+  const executionGraph = useAtomValue(executionGraphAtom)
+  const activeExecutionNodeIds = useAtomValue(activeExecutionNodeIdsAtom)
   const items = useAtomValue(itemsAtom)
   const assistantStream = useAtomValue(assistantStreamAtom)
   const [expandedStages, setExpandedStages] = useAtom(expandedPlanStagesAtom)
@@ -84,13 +87,12 @@ export function PlanPanel() {
       </section>
     )
   }
-  const runIsAttached = run != null && [
-    'running',
-    'awaiting_tool',
-    'waiting_user',
-    'waiting_confirmation',
-    'waiting_plan_approval',
-  ].includes(run.status)
+  const hasActiveExecution = run != null && activeExecutionNodeIds
+    .some((executionId) => executionGraph.nodes[executionId]?.runId === run.runId)
+  const runIsAttached = run != null && (
+    ['running', 'waiting_user', 'waiting_confirmation', 'waiting_plan_approval'].includes(run.status)
+    || (run.status === 'awaiting_tool' && (run.pendingExecutionId != null || hasActiveExecution))
+  )
   const planIsUnfinished = ['approved', 'active', 'evaluating'].includes(plan.status)
     && plan.stages.some((stage) => ['pending', 'in_progress', 'evaluating'].includes(stage.status))
   const canContinue = planIsUnfinished && !runIsAttached

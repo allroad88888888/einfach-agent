@@ -61,7 +61,21 @@ epoch，并归一化 provider 返回的命中/未命中 token；它不保存或�
 - `request_tool_schema` 本身的 schema。
 
 模型需要尚未加载的工具时，先调用 `request_tool_schema`。Runtime 将 schema 加入后续请求，
-而不是一次把全部标准工具 schema 塞入上下文。实际工具调用经过：
+而不是一次把全部标准工具 schema 塞入上下文。
+
+加载有**两个等价入口**。模型拿到 manifest 里的精确名字后经常跳过元工具、直接指名道姓调用；
+这次调用本身已经说清「要哪个工具」，因此 runtime 把它**当作一次加载请求**处理，而不是回一条
+纯拒绝让模型白烧一轮再问一遍。两条不变量在两个入口上都成立：
+
+- **本次不执行**——模型猜的参数一律不落地，必须按真 schema 重新发起调用；
+- **完整 `inputSchema` 只经顶层 `tools` 下发**，不写进消息历史。
+
+只有真正不可加载的调用才硬拒绝（`tool_schema_not_loaded`）：未注册的幻觉工具名，以及 web 下的
+`server` 工具。主循环（`modelRun`）与子 agent 循环（`subagents/runtime`）用同一判据——「本轮实际
+发给 provider 的 `tools`」；子 agent 另在 spawn 时预载自己那份个位数的授权集，使这道闸门不会挤占
+它很小的 `maxTurns`。
+
+实际工具调用经过：
 
 1. `ToolRegistry` 查找与 schema 校验。
 2. `modelRun` 创建携带 sessionId、runId、callId 和 AbortSignal 的 `ToolContext`。

@@ -8,6 +8,8 @@
 //     全额 cache miss。现在改为 registry 的 buildSkillManifestText() 产出【全量】清单，
 //     与固定 system 同区进稳定前缀，由模型按 description 自判该读哪个；
 //     TK4 不变——进 prompt 的只有清单元数据，正文与资源仍必须经 skill_read。
+//   · buildToolManifestText —— 组当前环境下的全量工具摘要（仅 name/description/runtime），
+//     让 model 首轮即可发现精确工具名；不含 schema/guide。
 //   · buildTurnTools  —— 组本轮暴露给 model 的 function 列表（TK3：request_tool_schema
 //     恒在场 + 已懒加载的 visible tools；未加载的工具永不进 tools）。
 //   · narrowToolCalls —— 把宽松响应收窄成请求侧必填形状。
@@ -24,6 +26,7 @@ import type {
   ModelToolCall,
   SystemItem,
 } from '@web-agent/ai'
+import { TOOL_SCHEMA_AUTOLOADED_CODE } from '../tools/schemaResult'
 import { newId } from './newId'
 // 收尾自查 / 如实报告两条条款住在零依赖叶子模块：evals 的 prompt 行为 A/B 要 import 同一份
 // 字节做对照实验，而本文件（经 skills/registry 的 .md?raw + tools/registry 的 defaultCore）
@@ -215,6 +218,29 @@ function availableToolSummaries(
       compareStableText(left.name, right.name)
       || compareStableText(left.description, right.description)
       || compareStableText(left.runtime, right.runtime))
+}
+
+/**
+ * 生成当前环境可发现的全量工具摘要，供调用方放入稳定 system 前缀。
+ *
+ * 这里只包含 name/description/runtime；inputSchema、guide 仍只能经 request_tool_schema
+ * 懒加载。description 折叠为空白稳定的单行，避免第三方工具的换行破坏清单边界。
+ */
+export function buildToolManifestText(
+  isTauri: boolean,
+  options?: BuildTurnToolsOptions,
+): string {
+  const tools = availableToolSummaries(isTauri, options)
+  const lines = tools.map((tool) => {
+    const description = tool.description.replace(/\s+/g, ' ').trim()
+    return `· ${tool.name} [${tool.runtime}] — ${description}`
+  })
+
+  return [
+    '可用工具摘要（当前环境；仅用于发现，不代表参数 schema 已加载）：',
+    ...(lines.length > 0 ? lines : ['（当前没有可发现的业务工具）']),
+    '需要调用尚未加载的工具时，先用 request_tool_schema 的 toolName 传入上述精确名称，读取完整参数 schema；加载成功后该 schema 会在后续轮次继续保留。',
+  ].join('\n')
 }
 
 const TOOL_MANIFEST_CURSOR_PREFIX = 'tool-manifest-v1'
@@ -494,16 +520,37 @@ function loadedToolName(content: string, requestedToolName: string): string | un
   return resultToolName === requestedToolName ? resultToolName : undefined
 }
 
-// 简介：从历史 request_tool_schema call/result 恢复已成功加载的工具名。
+// 简介：判定一条 tool 结果是不是「直接调用被当作加载请求」的产物（modelRun 的 lazy 闸门）。
+// 详情：只认 code 判别码 + 工具名自洽两条硬判据，避免某个业务工具碰巧回了 {loaded:true} 就被
+//   误当成一次 schema 加载。
+function autoloadedToolName(
+  content: string,
+  calledToolName: string | undefined,
+): string | undefined {
+  if (!calledToolName) return undefined
+  const result = parsedObject(content)
+  if (!result) return undefined
+  return result.code === TOOL_SCHEMA_AUTOLOADED_CODE && result.toolName === calledToolName
+    ? calledToolName
+    : undefined
+}
+
+// 简介：从历史的 schema 加载 call/result 恢复已成功加载的工具名。
 // 详情：只读取历史、不改写发给模型的 messages。调用方应从当前 registry 重新取得最新 schema，
 // 放入请求顶层 tools；原始 loader call/result 继续进入模型请求，保持缓存前缀与执行因果。
+// 两个加载入口都要认账：显式的 request_tool_schema，以及【直接调用未加载工具】被闸门就地转成
+// 的那一次加载 —— 后者同样让该工具此后长期可用，漏认会让重启/回滚后的会话白白重新加载一次。
 export function loadedToolNamesFromHistory(messages: readonly ModelItem[]): string[] {
   const requestedByCallId = new Map<string, string>()
+  const directCallByCallId = new Map<string, string>()
 
   for (const message of messages) {
     if (message.role === 'assistant') {
       for (const toolCall of message.tool_calls ?? []) {
-        if (toolCall.function.name !== 'request_tool_schema') continue
+        if (toolCall.function.name !== 'request_tool_schema') {
+          directCallByCallId.set(toolCall.id, toolCall.function.name)
+          continue
+        }
         const parsed = parseToolCallArgs(toolCall.function.arguments)
         const toolName = parsed.ok && typeof parsed.args.toolName === 'string'
           ? parsed.args.toolName.trim()
@@ -519,8 +566,9 @@ export function loadedToolNamesFromHistory(messages: readonly ModelItem[]): stri
   for (const message of messages) {
     if (message.role !== 'tool') continue
     const requestedToolName = requestedByCallId.get(message.tool_call_id)
-    if (!requestedToolName) continue
-    const loaded = loadedToolName(message.content, requestedToolName)
+    const loaded = requestedToolName
+      ? loadedToolName(message.content, requestedToolName)
+      : autoloadedToolName(message.content, directCallByCallId.get(message.tool_call_id))
     if (!loaded) continue
     loadedToolNames.delete(loaded)
     loadedToolNames.add(loaded)

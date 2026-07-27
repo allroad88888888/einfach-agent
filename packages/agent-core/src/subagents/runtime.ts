@@ -43,7 +43,6 @@ import {
   canNarrowSubagentToolProfile,
   DEFAULT_SUBAGENT_TOOL_PROFILE,
   isSubagentWorkspaceReadTool,
-  SUBAGENT_WORKSPACE_READ_TOOLS,
   subagentAllowedTools,
 } from './toolProfile'
 import {
@@ -84,7 +83,7 @@ import type {
   SubagentToolProfile,
 } from './types'
 import { isDelegatableDangerousTool } from '../runtime/dangerousTools'
-import { toolSchemaLoadedResult } from '../tools/schemaResult'
+import { toolSchemaAutoloadedResult, toolSchemaLoadedResult } from '../tools/schemaResult'
 import { toolRegistrationChangedResult } from '../runtime/toolLoading'
 
 const DELEGATE_TOOL_NAME = 'delegate_agent'
@@ -497,9 +496,7 @@ function childModelRoute(
 ): SubagentRouteDecision {
   return routeSubagentModel({
     vendor: primarySettings.vendor,
-    supportsDeepSeekTierRouting:
-      primarySettings.vendor === 'deepseek'
-      && (primarySettings.model === DEEPSEEK_PRO_MODEL || primarySettings.model === DEEPSEEK_FLASH_MODEL),
+    supportsDeepSeekTierRouting: supportsDeepSeekTierRouting(primarySettings),
     parentPath,
     requestedTier: spec.modelTier,
     taskCategory: spec.taskCategory,
@@ -513,14 +510,20 @@ function childModelRoute(
   })
 }
 
+/**
+ * 双档路由（pro ↔ flash）只在 DeepSeek 的这两个型号之间成立。该判定同时决定
+ * 子 agent 降档和 runLowCostExtraction 是否可用，四处口径必须一致，故收敛到这里。
+ */
+function supportsDeepSeekTierRouting(settings: ModelSettings): boolean {
+  return settings.vendor === 'deepseek'
+    && (settings.model === DEEPSEEK_PRO_MODEL || settings.model === DEEPSEEK_FLASH_MODEL)
+}
+
 function childModelSettings(
   primarySettings: ModelSettings,
   tier: SubagentModelTier,
 ): ModelSettings {
-  if (
-    primarySettings.vendor !== 'deepseek'
-    || (primarySettings.model !== DEEPSEEK_PRO_MODEL && primarySettings.model !== DEEPSEEK_FLASH_MODEL)
-  ) {
+  if (!supportsDeepSeekTierRouting(primarySettings)) {
     return primarySettings
   }
   return {
@@ -1195,14 +1198,19 @@ export function createDelegateAgentRuntime(
       },
       { role: 'user', content: childUserPrompt(spec) },
     ]
-    // evaluator 的任务天然需要核验 workspace。预加载安全只读 schema，避免第一轮直接调用失败、
-    // 第二轮才 request_tool_schema，把很小的 maxTurns 白白消耗在能力发现上。
-    let visible: LoadedTool[] = spec.mode === 'evaluator' && toolProfile === 'workspace_read'
-      ? SUBAGENT_WORKSPACE_READ_TOOLS.reduce<LoadedTool[]>(
-          (tools, name) => appendVisibleTool(tools, name, registry),
-          [],
-        )
-      : []
+    // 授权集整体预载（原先只有 evaluator + workspace_read 这一种孩子享受此待遇）。
+    // 理由与那条旧注释同源、只是把结论推广到所有孩子：孩子的 maxTurns 默认只有 4，且最后一轮
+    // 是合成轮 —— 让它先花一整轮做能力发现，等于砍掉三分之一的产出预算。
+    // ★ 与主循环 TK3「禁止预加载」不冲突 ★ ——那条针对的是主 agent 三十多个工具的清单成本；
+    //   孩子的 allowedToolNames 在 spawn 时就已收窄到个位数（delegate_only 1 个、
+    //   workspace_read 5 个，外加本次委派显式确认的危险工具）。
+    // ★ 不放宽任何授权边界 ★ ——预载只是把【已授权】工具的 schema 摆上桌；未授权的工具
+    //   既不在这里，也进不了 buildTurnTools（它同样吃 allowedToolNames）。
+    // 这也是下面那道闸门能变严（不再拿猜的参数执行）而不伤预算的前提。
+    let visible: LoadedTool[] = allowedToolNames.reduce<LoadedTool[]>(
+      (tools, name) => appendVisibleTool(tools, name, registry),
+      [],
+    )
     let recentToolNames = visible.map((tool) => tool.name).reverse()
     const maxTurns = spec.maxTurns ?? DEFAULT_CHILD_MAX_TURNS
 
@@ -1243,9 +1251,7 @@ export function createDelegateAgentRuntime(
         fallbackCount = 1
         routeDecision = routeSubagentModel({
           vendor: opts.settings.vendor,
-          supportsDeepSeekTierRouting:
-            opts.settings.vendor === 'deepseek'
-            && (opts.settings.model === DEEPSEEK_PRO_MODEL || opts.settings.model === DEEPSEEK_FLASH_MODEL),
+          supportsDeepSeekTierRouting: supportsDeepSeekTierRouting(opts.settings),
           parentPath: node.parentPath,
           requestedTier: spec.modelTier,
           taskCategory: spec.taskCategory,
@@ -1519,6 +1525,38 @@ export function createDelegateAgentRuntime(
               )),
             )
             continue
+          }
+
+          // ★ Lazy 闸门：与主循环（modelRun）逐条对齐 ★
+          //   判据同样是「本轮实际发给 provider 的 tools」，而不是 registry / allowedToolNames ——
+          //   工具不在本轮 tools 里就【不执行】，改把这次调用当作一次 schema 加载：装进 visible，
+          //   下一轮起随 tools 长期携带，与 request_tool_schema 的效果逐字一致。
+          //   旧行为是「已授权就直接跑」：registry 只做 schema 校验，模型猜的参数只要形状碰对
+          //   就会真执行 —— 对 confirmedTools 里的 shell/write 这类危险工具尤其不该如此。
+          //   有了上面的授权集预载，正常情况下授权工具本来就在 tools 里，这道闸门只在
+          //   「注册态中途变化」这类边角上兜底，不额外消耗孩子的 maxTurns。
+          //   合成轮（tools 被有意清空、toolChoice='none'）不适用：那里的「不在 tools 里」表示
+          //   能力被主动收回，不是 schema 没加载。
+          if (
+            !isSynthesisTurn
+            && allowedToolNames.includes(name)
+            && !tools.some((exposed) => exposed.function.name === name)
+          ) {
+            const autoloadable = registry.loadSchema(name)
+            if (autoloadable) {
+              visible = appendVisibleTool(visible, name, registry)
+              recentToolNames = touchRecentToolName(recentToolNames, name)
+              await recordEvent(context, archiveBasePath, 'child_tool_schema_requested', node.path, {
+                toolName: name,
+                discovery: false,
+                autoloaded: true,
+              })
+              await pushToolResult(
+                toolCall.id,
+                JSON.stringify(toolSchemaAutoloadedResult(autoloadable)),
+              )
+              continue
+            }
           }
 
           const expectedRegistrationVersion = requestedRegistrationVersions.get(name)
@@ -2047,16 +2085,20 @@ export function createDelegateAgentRuntime(
     }
   }
 
+  /**
+   * ★ 不要给这里的 callModel 传第二参 ★ —— 那个参数是「树累计模型调用上限」，不是
+   * 「本次花几次」。曾经写死的 1 会让 reserveModelCall 拿 min(rootBudget, 1) 当上限，
+   * 于是只要本 run 里任何子 agent 发过一次请求（含上一个 stage 的 evaluator），
+   * modelCallsUsed 就已 ≥ 1，这里必抛 budget exhausted；而调用方是 best-effort 吞异常的，
+   * 结果就是整个能力从第二个 stage 起静默失效、测试还全绿。
+   * 同 submit_stage_result 里 maxTotalNodes 写 1 的那个坑，口径一致：走树级共享预算。
+   */
   async function runLowCostExtraction(input: {
     systemPrompt: string
     userPrompt: string
     maxOutputTokens?: number
   }): Promise<{ content: string; model: string }> {
     if (disposed) throw new Error('delegate runtime already disposed')
-    if (opts.settings.vendor !== 'deepseek'
-      || (opts.settings.model !== DEEPSEEK_PRO_MODEL && opts.settings.model !== DEEPSEEK_FLASH_MODEL)) {
-      throw new Error('low-cost extraction is unavailable for the configured model provider')
-    }
     const systemPrompt = input.systemPrompt.trim()
     const userPrompt = input.userPrompt.trim()
     if (!systemPrompt || !userPrompt) throw new Error('low-cost extraction requires systemPrompt and userPrompt')
@@ -2077,7 +2119,7 @@ export function createDelegateAgentRuntime(
         thinking: false,
         max_tokens: Math.max(256, Math.min(requestedMaxTokens, 2_000)),
       },
-    }, 1)
+    })
     const content = firstAssistantText(response)
     if (!content) throw new Error('low-cost extraction returned no text')
     return { content, model: DEEPSEEK_FLASH_MODEL }
@@ -2085,7 +2127,10 @@ export function createDelegateAgentRuntime(
 
   return {
     delegateAgents,
-    runLowCostExtraction,
+    // 供应商是否支持低成本档在 runtime 构造时就已确定（opts.settings 终生不变）。
+    // 只在支持时才挂上这个可选方法，宿主/工具据此判定的「不可用」才是永久性的，
+    // 不会被伪装成一个可重试的运行时失败。
+    ...(supportsDeepSeekTierRouting(opts.settings) ? { runLowCostExtraction } : {}),
     retain() {
       if (disposed) throw new Error('delegate runtime already disposed')
       owners += 1
