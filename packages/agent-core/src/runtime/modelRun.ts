@@ -5,7 +5,8 @@
 //     每轮重新 `items.map(it=>it.item)` 重发；不用 continuation blob。
 //   · TK3 manifest-only + lazy schema：model 只看 request_tool_schema + 本轮已加载 visible tools；
 //     完整 schema 经 ensureToolLoaded 懒加载，禁止预加载。
-//   · TK4 skill 走 tool：system 只放已匹配 skill 名（buildSystemItem），内容不进 prompt。
+//   · TK4 skill 走 tool：稳定前缀只放全量 skill 清单元数据（buildSkillManifestText），
+//     正文与资源不进 prompt，一律经 skill_read。
 //   · TK6 tool 错误不打断：runRuntimeTool 内部把失败封 {error} JSON 回给 model，loop 继续。
 //   · TK7 ask_user 可多次中断：每个新 tool call 都可暂停，答案按当前 callId 精确回填。
 //   · TK8 每步守卫：每次 model 调用后写回前 isCurrentRun + ghost guard；MAX_AGENT_TURNS 上限。
@@ -40,6 +41,10 @@ import {
   contextStatsAtom,
   setContextStats,
   takeQueuedUserMessages,
+  getTranscriptInjectionFingerprints,
+  patchTranscriptInjectionFingerprints,
+  clearAssistantStream,
+  setAssistantStream,
   type ContextCacheTotals,
   type ContextStatsSnapshot,
   type ContextUsageStats,
@@ -59,6 +64,7 @@ import type {
   ModelItem,
   ModelResponseMessage,
   ModelStreamDelta,
+  SystemItem,
 } from '@web-agent/ai'
 import type { LoadedTool, ToolResult } from '../tools/types'
 import {
@@ -76,15 +82,24 @@ import { defaultCore, type CoreInstance } from './core/coreInstance'
 import {
   buildCustomInstructionsItem,
   buildSystemItem,
-  buildSkillContextItem,
   buildTurnTools,
   loadedToolNamesFromHistory,
   MAX_TURN_TOOLS,
   narrowToolCalls,
   parseToolCallArgs,
   searchToolManifestPage,
+  toolSetSchemaFingerprint,
   touchRecentToolName,
 } from './modelTurn'
+// 全量 skill 清单（L1）由 registry 直接产出：内容只依赖注册态，进稳定前缀（阶段 3）。
+import { buildSkillManifestText, listSkillSummaries } from '../skills/registry'
+// 收尾自查条款与工具失败提醒文案的单一来源（零依赖叶子模块，evals 的 prompt 行为 A/B 也 import 它）。
+import {
+  toolFailureStreakNotice,
+  TOOL_FAILURE_ERROR_PREVIEW_LIMIT,
+  TOOL_FAILURE_STREAK_THRESHOLD,
+  type ToolFailureStreak,
+} from './selfReflectionPrompts'
 // estimateTokensFromText 仍留着（buildContextStatsSnapshot 的 role 统计在用，与压缩无关）；
 // 压缩本体（compactContext / DEFAULT_KEEP_RECENT_TURNS + 窗口预算常量）已内化进 compactionPlugin。
 import { estimateTokensFromText } from './contextCompaction'
@@ -146,7 +161,8 @@ const MAX_PLAN_AGENT_TURNS = 256
 const MAX_DEEPSEEK_INSUFFICIENT_RESOURCE_RETRIES = 1
 const EXECUTING_PLAN_STATUSES = new Set(['approved', 'active', 'evaluating'])
 // LOOP_DETECTION_THRESHOLD / LOOP_DETECTED_ERROR 已随循环检测搬进 loopGuardPlugin（Core 抽离 Stage 2a）。
-const STREAM_UPDATE_INTERVAL_MS = 50
+const STREAM_UPDATE_INTERVAL_MIN_MS = 150
+const STREAM_UPDATE_INTERVAL_MAX_MS = 250
 const SHELL_TOOLS_REQUIRING_COMMAND = new Set(['shell_macos', 'shell_linux', 'shell_powershell'])
 const LLM_TRACE_PREVIEW_LIMIT = 80_000
 const LLM_TRACE_PREVIEW_OPTIONS = {
@@ -157,6 +173,9 @@ const LLM_TRACE_PREVIEW_OPTIONS = {
 }
 // 回填给 model 的「坏参数」预览长度：够它认出自己发了什么，又不至于把截断的巨串再塞回上下文。
 const ARGS_PREVIEW_LIMIT = 200
+// 工具失败软提醒的阈值、错误摘要长度、per-run 计数类型与提醒文案都住在 selfReflectionPrompts.ts
+// （零依赖叶子模块）—— evals 的 prompt 行为 A/B 要复用同一份字节与同一个阈值来复刻注入语义，
+// 而本文件的模块图（tauri / 持久化桥 / 全部 atoms）不可能被那套离线 eval 直接 import。
 
 // finish_reason 异常三态的 type + 用户可见文案（三份 Record）已搬进 finishReasonPlugin（Core 抽离
 // Stage 2a），本文件改从插件 import：AbnormalFinishReason（下方 LABEL_TAGS 的键类型）/ FINISH_REASON_ERRORS
@@ -266,20 +285,39 @@ function transcriptDetail(value: unknown): string {
   }
 }
 
-function systemInjectionSummary(content: string): string {
-  const skillLine = content
-    .split('\n')
-    .find((line) => line.startsWith('已匹配、但正文尚未读取的 skills：'))
-  return skillLine ?? compactTranscriptText(content)
+// skill 清单卡片的摘要：清单正文是逐行「name — 触发条件」，展开看 detail 即可；折叠态只报
+// 数量与名字。名字与 buildSkillManifestText 同源同序（都取自 registry 注册态、按名字排序）。
+function skillManifestSummary(): string {
+  const names = listSkillSummaries().map((skill) => skill.name).sort()
+  return `清单含 ${names.length} 个 skill：${names.join('、')}`
+}
+
+// FNV-1a 32-bit：system / 自定义指令 / skill 清单三类注入卡片的判重指纹（纯文本内容）。
+// tools 卡片改用 modelTurn 的 toolSetSchemaFingerprint——工具集有自己的稳定序列化规则
+// （排序、canonicalize schema），不能套用这里的纯文本 hash。
+// 与 contextCache.ts / modelTurn.ts 里各自独立的同名实现同算法、不共享闭包或状态——
+// 这里只是 UI transcript 判重用的内容指纹，不是安全签名，没必要跨模块复用同一份实现。
+function injectionContentFingerprint(content: string): string {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < content.length; index += 1) {
+    hash ^= content.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
 function toolNames(tools: ModelFunctionTool[]): string[] {
   return tools.map((tool) => tool.function.name)
 }
 
-function toolManifestSummary(tools: ModelFunctionTool[]): string {
+// previousCount 传入时（tools 卡片判重命中"变化"、非首次记录）在数量前带上变化前后的对比，
+// 如 "3 → 4"；省略或与当前数量相同则退化成旧文案 "暴露 N 个工具：..."。
+function toolManifestSummary(tools: ModelFunctionTool[], previousCount?: number): string {
   const names = toolNames(tools)
-  return compactTranscriptText(`暴露 ${tools.length} 个工具：${names.join('、') || '无'}`)
+  const countLabel = previousCount !== undefined && previousCount !== tools.length
+    ? `${previousCount} → ${tools.length}`
+    : `${tools.length}`
+  return compactTranscriptText(`暴露 ${countLabel} 个工具：${names.join('、') || '无'}`)
 }
 
 function emptyRoleStats() {
@@ -638,6 +676,18 @@ function planResumeNotice(id: string, core: CoreInstance): string {
   ].join('\n')
 }
 
+// 已组装好、等待下一轮消费一次的失败提醒。文案与 trace 载荷在【写入那一刻】一起定型，
+// 消费侧不再重新读 Map —— 两者永远描述同一批工具，不会因中途清零而漂移。
+interface PendingToolFailureNotice {
+  text: string
+  tools: Array<{ name: string; count: number }>
+}
+
+// 提醒文案里的短文本截断（尾省略号口径与 argsPreviewForModel 一致）。
+function noticePreview(text: string, limit: number): string {
+  return text.length > limit ? `${text.slice(0, limit)}...` : text
+}
+
 function persistedModelTurnsForStage(
   items: ConversationItem[],
   stageId: string,
@@ -724,9 +774,11 @@ function createAssistantStreamWriter(
   planStageId?: string,
 ) {
   let assistantItemId: string | undefined
+  let assistantCreatedAt: number | undefined
   let content = ''
   let reasoningContent = ''
   let lastFlushAt = 0
+  let flushTimer: ReturnType<typeof setTimeout> | undefined
 
   function canWrite(ignoreAbort = false): boolean {
     return (ignoreAbort || !signal.aborted) && isRunningRun(id, runId, core)
@@ -740,22 +792,64 @@ function createAssistantStreamWriter(
     }
   }
 
+  function streamUpdateInterval(): number {
+    const chars = content.length + reasoningContent.length
+    if (chars >= 48_000) return STREAM_UPDATE_INTERVAL_MAX_MS
+    if (chars >= 16_000) return 200
+    return STREAM_UPDATE_INTERVAL_MIN_MS
+  }
+
+  function currentConversationItem(): ConversationItem | undefined {
+    if (!assistantItemId || assistantCreatedAt === undefined) return undefined
+    return {
+      id: assistantItemId,
+      createdAt: assistantCreatedAt,
+      pending: true,
+      planStageId,
+      item: assistantItemFromMessage(currentMessage(), content),
+    }
+  }
+
+  function cancelScheduledFlush(): void {
+    if (flushTimer === undefined) return
+    clearTimeout(flushTimer)
+    flushTimer = undefined
+  }
+
   function flush(force = false): void {
     // reasoning 往往先于正文持续数秒返回。只等 content 会让界面在整段思考期间完全空白，
     // 也会导致纯 reasoning + tool_calls 的轮次直到收尾才出现。两者任一有内容就建立/更新条目。
     if ((!content.trim() && !reasoningContent.trim()) || !canWrite()) return
     const now = Date.now()
-    const item = assistantItemFromMessage(currentMessage(), content)
 
     if (!assistantItemId) {
       assistantItemId = newId()
-      appendItem(id, { id: assistantItemId, createdAt: now, pending: true, planStageId, item }, core)
+      assistantCreatedAt = now
+      const streamItem = currentConversationItem()
+      if (!streamItem) return
+      // itemsAtom 只放一个稳定占位条目；中间 delta 走 assistantStreamAtom，避免替换整段历史。
+      appendItem(id, streamItem, core)
+      setAssistantStream(id, { runId, item: streamItem }, core)
       lastFlushAt = now
       return
     }
 
-    if (!force && now - lastFlushAt < STREAM_UPDATE_INTERVAL_MS) return
-    updateItem(id, assistantItemId, { pending: true, item }, core)
+    const remainingMs = streamUpdateInterval() - (now - lastFlushAt)
+    if (!force && remainingMs > 0) {
+      // 高频 delta 可能全部挤在一个节流窗口内；补一个 trailing flush，避免最后一批文本要等到
+      // 下一次 delta（甚至整个请求结束）才出现在界面上。
+      if (flushTimer === undefined) {
+        flushTimer = setTimeout(() => {
+          flushTimer = undefined
+          flush(true)
+        }, remainingMs)
+      }
+      return
+    }
+    cancelScheduledFlush()
+    const streamItem = currentConversationItem()
+    if (!streamItem) return
+    setAssistantStream(id, { runId, item: streamItem }, core)
     lastFlushAt = now
   }
 
@@ -773,7 +867,12 @@ function createAssistantStreamWriter(
       toolCalls?: AssistantItem['tool_calls'],
       contentSuffix?: string,
     ): string | undefined {
-      if (!assistantItemId || !canWrite()) return assistantItemId
+      cancelScheduledFlush()
+      if (!assistantItemId) return assistantItemId
+      if (!canWrite()) {
+        clearAssistantStream(id, runId, assistantItemId, core)
+        return assistantItemId
+      }
       const baseContent = typeof msg?.content === 'string' ? msg.content : content
       const finalContent = contentSuffix ? `${baseContent}${contentSuffix}` : baseContent
       const finalMsg: ModelResponseMessage = {
@@ -786,10 +885,20 @@ function createAssistantStreamWriter(
         pending: false,
         item: assistantItemFromMessage(finalMsg, finalContent, toolCalls),
       }, core)
+      clearAssistantStream(id, runId, assistantItemId, core)
       return assistantItemId
     },
     finishPending(): void {
-      if (assistantItemId && canWrite(true)) updateItem(id, assistantItemId, { pending: false }, core)
+      cancelScheduledFlush()
+      if (!assistantItemId) return
+      if (isCurrentRun(id, runId, core)) {
+        const finalMsg = currentMessage()
+        updateItem(id, assistantItemId, {
+          pending: false,
+          item: assistantItemFromMessage(finalMsg, content),
+        }, core)
+      }
+      clearAssistantStream(id, runId, assistantItemId, core)
     },
     // 流式期间是否已经 append 过 assistant 条目。异常收尾分支据此决定要不要补一条 ——
     // 补重了会出现两条一样的回复，不补则非流式响应下用户看不到「模型说到哪被掐断的」。
@@ -821,7 +930,8 @@ function currentTurnItems(id: string, core: CoreInstance) {
 }
 
 // 驱动本轮的用户文本：本轮起头那条 user 的 content（fresh run 即刚 append 的 input，
-// resume 时为暂停前的原始提问）。用于按触发词选 skill 组 system、以及 checkpoint 摘要。
+// resume 时为暂停前的原始提问）。用于 checkpoint 摘要标签。
+// （它曾经还用来按触发词选 skill；skill 清单改为全量进稳定前缀后，请求组装不再依赖本轮输入。）
 function latestUserInput(id: string, core: CoreInstance): string {
   const first = currentTurnItems(id, core)[0]?.item
   return first?.role === 'user' ? first.content : ''
@@ -899,8 +1009,9 @@ export async function resumePlanSession(
 
 // 简介：多轮 lazy-tool 循环入口（T-6/T-7 复用）—— 不 append user、不 setRun，
 //   假定调用方（runSession 起新 run / resumeWithAnswers 续 pending run）已备好 items 与 run。
-// 详情：组 system（不入库，按本轮起头 user 选 skill）→ 多轮循环：每轮重发
-//   [system, ...items] + [request_tool_schema, ...visible]，按响应有无 tool_calls 分流：
+// 详情：组稳定前缀（不入库：固定 system + 全量 skill 清单 + 自定义指令）→ 多轮循环：每轮重发
+//   [...稳定前缀, ...items, ...事件驱动尾巴] + [request_tool_schema, ...visible]，
+//   按响应有无 tool_calls 分流：
 //   有 → append assistant(tool_calls) + 逐个执行工具 append ToolItem → 续轮；
 //   无 → 空回复守卫 → append 最终 assistant → commitCheckpoint → done。
 //   ask_user_question 内联暂停（waiting_user + pendingQuestion）并 return；已答过则续跑（TK7）；
@@ -1063,7 +1174,9 @@ export async function runToolLoop(
   //   写过东西、且不会再续跑」的终止路径都必须调它一次，
   //   否则丢的不只是模型那半截回复，连用户自己发出去的那条 user 消息都会一起蒸发。
   //   触顶截断/循环/超轮数这几种异常收尾的文本通常仍然有用，落盘后 run 状态另置 error 即可。
-  //   刻意【不】给 stopped（用户主动停）与 waiting_* （暂停中、续跑时才收尾）路径调用。
+  //   waiting_*（暂停中、续跑时才收尾）路径不调用；stopped 会用 [已停止] 标签收成一个可撤回
+  //   checkpoint。否则用户继续发下一条消息后，上一条被停止的 user 消息永远没有气泡回退入口，
+  //   而且刷新时会随未持久化 items 一起丢失。
   //   labelTag：异常收尾时给 checkpoint label 加的前缀（如 '[截断] '）。label 会落盘，是「刷新
   //   之后仍然看得出这一轮不正常」的另一半（另一半是 assistant 正文里的系统标注）。正常轮不传。
   const commitTurn = (labelTag = ''): void => {
@@ -1079,35 +1192,95 @@ export async function runToolLoop(
     persistSessions()
   }
 
+  // 只给【当前 run 且状态已经是 stopped】的轮次收快照。stale run 不能碰新 run 的会话，
+  // waiting_* 仍保留“暂停而非收尾”的原语义；所有取消出口共用此守卫，避免误提交。
+  const commitStoppedTurn = (): void => {
+    const run = core.getSessionStore(id).store.getter(runAtom)
+    if (run?.runId !== runId || run.status !== 'stopped') return
+    commitTurn('[已停止] ')
+  }
+
   const persistWorkingTurn = (): void => {
     const plan = core.getSessionStore(id).store.getter(planAtom)
     if (!plan || !EXECUTING_PLAN_STATUSES.has(plan.status)) return
     persistTurnSnapshot(`${WORKING_CHECKPOINT_PREFIX}${input.slice(0, 20)}`)
   }
 
-  // system 只用于请求、不入库（TK4）：按输入选 skill，system 只列已加载 skill 名。
+  // 三段稳定前缀都只用于请求、不入库（TK4）。
   const system = buildSystemItem()
+  // 全量 skill 清单每个 run 组装一次：内容只依赖 registry 注册态，运行期字节稳定（不含本轮
+  // 输入），因此可以待在历史之前而不是尾巴里。
+  const skillManifest: SystemItem = { role: 'system', content: buildSkillManifestText() }
   const customInstructions = buildCustomInstructionsItem(core.config.customInstructions)
-  const skillContext = buildSkillContextItem(input)
-  addTranscriptEvent(id, 'system_injection', '注入 system', systemInjectionSummary(system.content), system.content, core)
+  // ★ 稳定前缀（固定 system + skill 清单 + 自定义指令）★ —— 位置在 append-only 历史【之前】，
+  //   段序按变更频率从低到高：固定 system（进程内恒定）→ skill 清单（改注册态才变）→
+  //   自定义指令（用户改设置才变），越靠前越不容易被推翻。
+  //   自定义指令与 skill 名单曾经一起挂在历史之后，于是历史每轮增长都把它们顶到新位置，
+  //   实测 185 轮会话每一轮都是 history_inserted_before_dynamic_tail、这段 token 全额 miss。
+  //   二者都是低频变更内容，不该为此付每轮代价；挪到前缀后只有真改指令/增删 skill 那一次会
+  //   掉缓存（contextCache 记 profile_changed，见下方 stablePrefixContent）。
+  const stablePrefix: SystemItem[] = [
+    system,
+    skillManifest,
+    ...(customInstructions ? [customInstructions] : []),
+  ]
+  // contextCache 的 systemFingerprint 输入：整个稳定前缀，而不只是固定 system。少了自定义指令
+  //   或 skill 清单这两段，改指令 / 增删 skill 就会退化成「尾巴/投影变了」，归因错、也不再新起 epoch。
+  const stablePrefixContent = stablePrefix.map((item) => item.content).join('\n')
+
+  // UI transcript 的四类注入卡片改为「内容相对上一次记录发生变化才记」——原先每次 run/turn
+  // 都无条件记一遍，同一会话多说几句话就被同样几张卡刷屏（system/自定义指令/skill 清单
+  // 内容常常逐字未变）。判重指纹存在 per-session 瞬态 atom
+  // （transcriptInjectionFingerprintsAtom），与 runtimeTranscriptEventsAtom 同店同生命周期：
+  // 不进 checkpoint、不持久化，应用刷新/重启后二者一起清空——届时可见 transcript 本身也是
+  // 空的，重新各记一次不构成"重复"；同一存活期内的连续多次 run 才是本设计要解决的重复源。
+  const injectionFingerprints = getTranscriptInjectionFingerprints(id, core)
+
+  // system 内容在一次进程生命周期内恒定（buildSystemItem 是纯字面量拼接），指纹比对天然让它
+  // "会话内首 run 记一次，其后不再记"——不需要为"实际不可能变化"的内容单写判空分支。
+  const systemFingerprint = injectionContentFingerprint(system.content)
+  if (injectionFingerprints.system !== systemFingerprint) {
+    addTranscriptEvent(id, 'system_injection', '注入 system', compactTranscriptText(system.content), system.content, core)
+    patchTranscriptInjectionFingerprints(id, { system: systemFingerprint }, core)
+  }
+
   if (customInstructions) {
+    const customInstructionsFingerprint = injectionContentFingerprint(customInstructions.content)
+    if (injectionFingerprints.customInstructions !== customInstructionsFingerprint) {
+      // undefined（从未出现过）与 null（出现过、后被清空过）统一按"首次出现"措辞；
+      // 只有"上次也在、这次内容不同"才是"已更新"。
+      const title = injectionFingerprints.customInstructions == null ? '注入自定义指令' : '自定义指令已更新'
+      addTranscriptEvent(
+        id,
+        'system_injection',
+        title,
+        compactTranscriptText(customInstructions.content),
+        customInstructions.content,
+        core,
+      )
+      patchTranscriptInjectionFingerprints(id, { customInstructions: customInstructionsFingerprint }, core)
+    }
+  } else if (injectionFingerprints.customInstructions != null) {
+    // 之前出现过自定义指令、这次被清空（用户在设置里清空）：记一条"已清除"，并把状态标记成
+    // null（区别于 undefined 的"从未出现过"），避免用户之后重填相同内容时被误判成"不变不记"。
+    addTranscriptEvent(id, 'system_injection', '自定义指令已清除', '用户已清空自定义指令', '', core)
+    patchTranscriptInjectionFingerprints(id, { customInstructions: null }, core)
+  }
+
+  // skill 清单同样按内容判重。它现在只随 registry 注册态变化（不再随本轮输入重算），所以
+  // 常态是「会话内首 run 记一次，其后不再记」——只有真的增删/改写 skill 才会再记一张新卡。
+  const skillManifestFingerprint = injectionContentFingerprint(skillManifest.content)
+  if (injectionFingerprints.skillManifest !== skillManifestFingerprint) {
     addTranscriptEvent(
       id,
       'system_injection',
-      '注入自定义指令',
-      systemInjectionSummary(customInstructions.content),
-      customInstructions.content,
+      '注入 skill 清单',
+      skillManifestSummary(),
+      skillManifest.content,
       core,
     )
+    patchTranscriptInjectionFingerprints(id, { skillManifest: skillManifestFingerprint }, core)
   }
-  addTranscriptEvent(
-    id,
-    'system_injection',
-    '注入 skill context',
-    systemInjectionSummary(skillContext.content),
-    skillContext.content,
-    core,
-  )
   traceEvent('llm.system_injected', { system_chars: system.content.length })
   // thinking：状态层 boolean → 线协议 { type:'enabled'|'disabled' }。区分三态（codex P2）：
   //   undefined → 不传（用服务端默认）；true → enabled；false → disabled（显式关思考，
@@ -1138,11 +1311,11 @@ export async function runToolLoop(
       })
     },
   })
+  // 与真实请求投影同形：稳定前缀（含 skill 清单）→ 历史。动态尾巴不进这里——plan/续跑/工具
+  // 失败提醒都是逐轮临时值，不属于「父 agent 到目前为止的语境」。
   const rootTranscript = () => formatSubagentTranscript([
-    system,
+    ...stablePrefix,
     ...currentTurnItems(id, core).map((it) => it.item),
-    ...(customInstructions ? [customInstructions] : []),
-    skillContext,
   ])
 
   // 本轮可见工具（懒加载累积）：恢复运行时从 run 快照与持久历史重建，避免新 runId 让模型
@@ -1228,12 +1401,14 @@ export async function runToolLoop(
         return
       }
       if (!isRunningRun(id, runId, core)) {
+        commitStoppedTurn()
         finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
         return
       }
       if (opts.signal.aborted) {
         if (isCurrentRun(id, runId, core)) {
           patchRun(id, { status: 'stopped' }, core)
+          commitStoppedTurn()
           finishTrace('cancelled', 'agent.stopped', { reason: 'aborted' })
         }
         return
@@ -1258,10 +1433,50 @@ export async function runToolLoop(
     // 记录上一次 submit_stage_result 的失败原因（schema 未加载 / 参数校验 / 执行返回 error），
     // 供计划续跑提醒引用；提交成功排期 evaluator 后清空。
     let lastStageSubmitRejection: string | undefined
+    // 工具失败软提醒：模型拿到 { error } 后要么原样重发同一个调用白烧轮次，要么两败就弃。这里按
+    // 工具名累计【连续】失败次数，达阈值（TOOL_FAILURE_STREAK_THRESHOLD = 1，即每次失败）时
+    // 【当场】组装提醒，下一轮请求消费一次。
+    // per-run 局部状态：不进 store、不落 checkpoint；一旦该工具成功或暂停即清零。
+    // ★ 一次性消费（与 planContinuationNotice 同構，不是 planContext 那种每轮重算）★ ——
+    //   若按「Map 里还有失败计数就注入」的每轮重算写法，模型改用别的工具成功推进之后，
+    //   旧工具的 streak 仍留在 Map 里，会让这条过时提醒每一轮都重发一次，变成纯噪音。
+    //   写入点在「刚刚又失败了」那一刻，因此只提醒紧随其后的那一轮；同一工具继续失败
+    //   （count 2、3…）会再次写入，天然形成持续提醒，并由文案区分单次/多次。
+    // 危险工具确认恢复（上方 resume 分支）刻意不计数 —— 用户已介入，语义是重新开始。
+    // 协议层拒绝（坏 JSON 参数 / schema 未加载 / 注册版本不匹配 / 参数校验）走 appendToolResult
+    // 自造 error payload、不经本函数，故【不计入】连败 —— 它们各有自己的引导提示与恢复路径。
+    const toolFailureStreaks = new Map<string, ToolFailureStreak>()
+    let pendingToolFailureNotice: PendingToolFailureNotice | undefined
+    const recordToolOutcome = (name: string, result: ToolResult): void => {
+      if ('pause' in result || result.ok) {
+        toolFailureStreaks.delete(name)
+        return
+      }
+      const count = (toolFailureStreaks.get(name)?.count ?? 0) + 1
+      toolFailureStreaks.set(name, {
+        count,
+        lastError: noticePreview(result.error, TOOL_FAILURE_ERROR_PREVIEW_LIMIT),
+      })
+      if (count < TOOL_FAILURE_STREAK_THRESHOLD) return
+      // 按当前 Map 重新组装：并发批里多个工具同时失败时，本轮提醒一次把它们列全
+      // （同批的第二次写入覆盖第一次，得到的是并集而不是最后一个）。
+      const failing = [...toolFailureStreaks.entries()]
+        .filter(([, streak]) => streak.count >= TOOL_FAILURE_STREAK_THRESHOLD)
+      pendingToolFailureNotice = {
+        text: toolFailureStreakNotice(failing),
+        tools: failing.map(([toolName, streak]) => ({ name: toolName, count: streak.count })),
+      }
+    }
+    // 用户中途插话 = 新语境：失败计数与待发提醒一并作废（与 resume 重建闭包的清零语义对齐）。
+    const resetToolFailureStreaks = (): void => {
+      toolFailureStreaks.clear()
+      pendingToolFailureNotice = undefined
+    }
     for (let turn = 0; turn < agentTurnLimit; turn += 1) {
       // AbortSignal 是取消请求的优化手段，run atom 才是是否继续执行的权威状态。
       // 某些 provider/fetch 实现不会及时响应 abort，因此每轮都必须独立检查 status。
       if (!isRunningRun(id, runId, core)) {
+        commitStoppedTurn()
         finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
         return
       }
@@ -1270,6 +1485,7 @@ export async function runToolLoop(
       const promotedAtBoundary = promoteQueuedInputs()
       if (promotedAtBoundary > 0) {
         agentTurnLimit += Math.max(1, promotedAtBoundary)
+        resetToolFailureStreaks()
       }
       agentTurnLimit = Math.max(agentTurnLimit, maxAgentTurns(id, core))
       // 固定本轮归属：工具（尤其 submit_stage_result）可能在执行中推进计划状态，
@@ -1310,15 +1526,26 @@ export async function runToolLoop(
       const items = core.getSessionStore(id).store.getter(itemsAtom)
       const continuationNotice = planContinuationNotice
       planContinuationNotice = undefined
+      // 工具失败提醒同样是一次性消费：读出即置空，只进本轮请求投影，绝不写 itemsAtom / checkpoint。
+      const toolFailureNotice = pendingToolFailureNotice
+      pendingToolFailureNotice = undefined
+      if (toolFailureNotice) {
+        traceEvent('agent.tool_failure_notice', { tools: toolFailureNotice.tools })
+      }
       const planContext = currentPlanContext(id, core)
+      // 动态尾巴只剩【事件驱动】的控制消息：plan 状态、续跑提醒、工具失败提醒——它们随运行
+      // 状态变，只在真的发生时出现。低频变更的自定义指令与全量 skill 清单都已上移进
+      // stablePrefix，不再挂这里。
+      // ★ 收益 ★：纯追加的多数轮次这里为空（dynamicTailCount=0），新历史只是把请求投影往后
+      //   append，contextCache 的 isPrefix 判定通过 → epoch 不再每轮 +1
+      //   （原先常驻尾巴的 skill 名单是 history_inserted_before_dynamic_tail 的最后一个结构性来源）。
       const dynamicControls: ModelItem[] = [
-        ...(customInstructions ? [customInstructions] : []),
-        skillContext,
         ...(planContext ? [{ role: 'system' as const, content: planContext }] : []),
         ...(continuationNotice ? [{ role: 'system' as const, content: continuationNotice }] : []),
+        ...(toolFailureNotice ? [{ role: 'system' as const, content: toolFailureNotice.text }] : []),
       ]
       const rawMessages: ModelItem[] = [
-        system,
+        ...stablePrefix,
         ...items.map((it) => it.item),
         ...dynamicControls,
       ]
@@ -1356,6 +1583,7 @@ export async function runToolLoop(
       const draft: CompactionRequestDraft = { messages: rawMessages, tools, llmTurn: turn + 1 }
       await hooks.transformContext?.(ctx, draft)
       if (!isRunningRun(id, runId, core)) {
+        commitStoppedTurn()
         finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
         return
       }
@@ -1370,7 +1598,10 @@ export async function runToolLoop(
         vendor: meta.settings.vendor,
         model: meta.settings.model,
         messages,
-        systemContent: system.content,
+        // 整个稳定前缀（固定 system + skill 清单 + 自定义指令）都参与 systemFingerprint：
+        // 改自定义指令、增删/改写 skill = 换 profile（profile_changed / 新 epoch），
+        // 而不是被误记成尾巴或投影变化。
+        systemContent: stablePrefixContent,
         tools,
         toolChoice: 'auto',
         thinking: thinking?.type,
@@ -1401,7 +1632,22 @@ export async function runToolLoop(
         cacheTotals: previousCacheTotals,
       })
       setContextStats(id, contextStats, core)
-      addTranscriptEvent(id, 'tool_manifest', '注入 tools', toolManifestSummary(tools), tools, core)
+      // tools 卡片按 turn 判重（其余三类只在循环外按 run 判重一次）：lazy-load 可能在任意一个
+      // turn 让可见工具集变化，只有指纹真的变化的那一轮才记新卡片；首 turn（指纹尚未记录过）恒记一次。
+      const toolsFingerprint = toolSetSchemaFingerprint(tools)
+      const priorInjectionFingerprints = getTranscriptInjectionFingerprints(id, core)
+      if (priorInjectionFingerprints.toolsFingerprint !== toolsFingerprint) {
+        const isFirstToolsRecord = priorInjectionFingerprints.toolsFingerprint === undefined
+        addTranscriptEvent(
+          id,
+          'tool_manifest',
+          isFirstToolsRecord ? '注入 tools' : '工具集已更新',
+          toolManifestSummary(tools, isFirstToolsRecord ? undefined : priorInjectionFingerprints.toolsCount),
+          tools,
+          core,
+        )
+        patchTranscriptInjectionFingerprints(id, { toolsFingerprint, toolsCount: tools.length }, core)
+      }
       traceEvent('llm.tools_injected', {
         tools_count: tools.length,
         tool_names: names.join(','),
@@ -1499,6 +1745,8 @@ export async function runToolLoop(
             res = await streamDeepSeek(requestBody, callOptions, { onDelta: streamWriter.onDelta })
           }
         } catch (err) {
+          // 网络错误/取消也要把最后一个尚未到节流窗口的 delta 对账进稳定条目，并清掉瞬态流。
+          streamWriter.finishPending()
           const status = abortStatus(opts.signal, err)
           endSpan(llmSpan, status, {
             error: safeErrorMessage(err),
@@ -1545,11 +1793,13 @@ export async function runToolLoop(
 
         // TK8 每步守卫必须先于协议级 retry：迟到的旧 run 和已 abort 的 run 连请求都不能再发一次。
         if (!isCurrentRun(id, runId, core)) {
+          streamWriter.finishPending()
           finishTrace('cancelled', 'agent.stale_run', { reason: 'stale_run' })
           return
         }
         if (!isRunningRun(id, runId, core)) {
           streamWriter.finishPending()
+          commitStoppedTurn()
           finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
           return
         }
@@ -1557,6 +1807,7 @@ export async function runToolLoop(
         if (opts.signal.aborted) {
           streamWriter.finishPending()
           if (isCurrentRun(id, runId, core)) patchRun(id, { status: 'stopped' }, core)
+          commitStoppedTurn()
           finishTrace('cancelled', 'agent.stopped', { reason: 'aborted' })
           return
         }
@@ -1658,7 +1909,7 @@ export async function runToolLoop(
           ? finishReason
           : undefined
       // Case A（流式已建条目）的系统标注必须由 loop 侧在 onTurnEnd【之前】finalize 追加 —— 完整正文只
-      //   活在 streamWriter 闭包里（flush 有 50ms 节流），插件从 store 只能拿到最后一次节流快照，自己拼
+      //   活在 streamWriter 闭包里（flush 有自适应节流），插件从 store 只能拿到最后一次节流快照，自己拼
       //   标注会把末尾那截文字顶掉（这就是「流式风险挡在插件外」）。传 toolCalls=undefined：assistantItem-
       //   FromMessage 只看第三参、不回落 msg.tool_calls，绝不落没有 result 的孤儿 tool_calls（本分支要终止、
       //   不执行工具）；finalize 在 !assistantItemId（Case B 非流式）时直接 return，与插件补条目不冲突。
@@ -1680,6 +1931,7 @@ export async function runToolLoop(
       const decision = (await hooks.onTurnEnd?.(ctx, turnEndEvent)) as LoopGuardTurnEndDecision | undefined
       if (!isRunningRun(id, runId, core)) {
         streamWriter.finishPending()
+        commitStoppedTurn()
         finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
         return
       }
@@ -1825,15 +2077,19 @@ export async function runToolLoop(
             return
           }
           if (!isRunningRun(id, runId, core)) {
+            commitStoppedTurn()
             finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
             return
           }
           if (opts.signal.aborted) {
             patchRun(id, { status: 'stopped' }, core)
+            commitStoppedTurn()
             finishTrace('cancelled', 'agent.stopped', { reason: 'aborted' })
             return
           }
           results.forEach((result, index) => {
+            // 失败计数与顺序分支同口径：失败累加、成功/暂停清零（并发批的每个结果都要过一遍）。
+            recordToolOutcome(parallelCalls[index].name, result)
             appendMappedToolResult(id, parallelCalls[index].callId, result, core, planStageId)
             pendingPlanEvaluationId ??= planEvaluationExecutionId(parallelCalls[index].name, result)
           })
@@ -2089,14 +2345,19 @@ export async function runToolLoop(
             return
           }
           if (!isRunningRun(id, runId, core)) {
+            commitStoppedTurn()
             finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
             return
           }
           if (opts.signal.aborted) {
             if (isCurrentRun(id, runId, core)) patchRun(id, { status: 'stopped' }, core)
+            commitStoppedTurn()
             finishTrace('cancelled', 'agent.stopped', { reason: 'aborted' })
             return
           }
+
+          // 失败计数：失败累加、成功/暂停清零（放在结果映射之前，pause 分支也要清）。
+          recordToolOutcome(name, result)
 
           // 结果映射（§4）：pause 延后处理；ok → data JSON；error → {error} JSON（TK6，不打断）。
           if ('pause' in result) {
@@ -2255,6 +2516,7 @@ export async function runToolLoop(
       const promotedAfterReply = promoteQueuedInputs()
       if (promotedAfterReply > 0) {
         agentTurnLimit += Math.max(1, promotedAfterReply)
+        resetToolFailureStreaks()
         persistWorkingTurn()
         continue
       }
@@ -2281,6 +2543,7 @@ export async function runToolLoop(
     //   判据必须和抛出侧（modelApi）保持同一份，否则每加一个 fetch 实现就复发一次。
     if (isAbortError(err)) {
       if (isCurrentRun(id, runId, core)) patchRun(id, { status: 'stopped' }, core)
+      commitStoppedTurn()
       finishTrace('cancelled', 'agent.stopped', { reason: 'abort_error' }, err)
       return
     }

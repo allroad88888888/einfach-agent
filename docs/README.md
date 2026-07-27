@@ -12,6 +12,7 @@
 | [树形子 Agent Runtime](tree-subagent-runtime.md) | delegation、权限、预算、archive、后台执行与治理脚本 |
 | [Context Caching](context-caching.md) | provider 自动缓存契约、profile/epoch、usage 归一化与观测 |
 | [MCP 集成](mcp-integration.md) | MCP 传输、配置与会话生命周期、动态工具对账和安全边界 |
+| [Tauri 卡顿诊断日志](performance-diagnostics.md) | 长对话、plan 更新、大文件写入的分段耗时与前后端关联排障 |
 | [工具规范](../packages/agent-core/src/tools/TOOLS-SPEC.md) | Tool、Registry、ToolContext、安全边界与新增工具约定 |
 
 这些文档必须与当前 pnpm workspace、代码接口和测试同步更新。
@@ -21,6 +22,7 @@
 | 文档 | 状态 |
 | --- | --- |
 | [Core 插件化蓝图](core-plugin-extraction-blueprint.md) | 部分实施；hook、插件工具与订阅基础已存在，UI renderer、command facade 和多实例收口仍待推进 |
+| [Skills 树形结构与稳定前缀清单](skills-tree-blueprint.md) | 未实施；树形 L3 资源 → 行为 eval 门禁（B04/B05）→ 全量清单迁入稳定前缀，附带退役 harness 预筛 |
 | [项目路线图](ROADMAP.md) | 当前未完成工作：CI 护栏、多实例隔离、插件产品化、安全发布和性能治理 |
 
 蓝图描述目标形态，不代表所有 API 都已交付。引用蓝图时需要同时核对实现和测试。

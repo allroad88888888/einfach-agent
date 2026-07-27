@@ -46,6 +46,11 @@ export interface ObserveContextCacheInput {
   vendor: string
   model: string
   messages: readonly ModelItem[]
+  /**
+   * 本 lane 稳定前缀的全部正文（不只是第一条 system）。主循环传「固定 system + 自定义指令」
+   * 的拼接：前缀字节一变就应换 profile（profile_changed / 新 epoch），而不是被下面的
+   * dynamicControls / 投影比较误判成尾巴变化。
+   */
   systemContent: string
   tools: readonly ModelFunctionTool[]
   toolChoice?: ModelToolChoice

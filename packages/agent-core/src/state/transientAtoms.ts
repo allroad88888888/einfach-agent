@@ -28,6 +28,7 @@
 import { atom } from '@einfach/core'
 import { sessionsAtom } from './rootStore'
 import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
+import type { ConversationItem } from './core.type'
 
 // save_file 工具暂存、等用户手势落盘的文件产物（临时 UI 态，不持久化）。
 export interface PendingArtifact {
@@ -67,6 +68,13 @@ export interface RuntimeTranscriptEvent {
   title: string
   summary?: string
   detail?: string
+}
+
+// 当前 LLM 流式输出的 UI 快照。itemsAtom 只保留一个稳定占位条目，流式正文在这里低频更新，
+// 避免每个 delta 都替换整段会话历史并触发消息索引、计划索引和 Markdown 全量重算。
+export interface AssistantStreamState {
+  runId: string
+  item: ConversationItem
 }
 
 export interface WithdrawnTurnNotice {
@@ -179,6 +187,30 @@ export const toolActivityAtom = atom<ToolActivity[]>([])
 // 简介：当前会话的 runtime transcript 调试事件。
 // 详情：值随 store 隔离；只服务 UI 展示，不进 checkpoint、不参与 model messages。
 export const runtimeTranscriptEventsAtom = atom<RuntimeTranscriptEvent[]>([])
+
+// 简介：当前会话正在生成的 assistant 消息。
+// 详情：只服务 UI，不进 checkpoint、不参与 model messages；runId 用于阻止旧 run 清掉新 run 的流消息。
+export const assistantStreamAtom = atom<AssistantStreamState | undefined>(undefined)
+
+// 简介：当前会话四类注入卡片（system / 自定义指令 / skill 清单 / tools）各自最近一次
+//   记录时的内容指纹，供 runtime 判断"相对上一次记录是否变化"（只在变化时记新卡片）。
+// 详情：值随 store 隔离，与 runtimeTranscriptEventsAtom 同店同生命周期——都不持久化，
+//   应用刷新/重启后二者一起清空（届时可见 transcript 本身也是空的，下一轮各重记一次不构成
+//   重复；同一存活期内的连续多次 run/turn 才是本设计要解决的重复源）。
+//   customInstructions 用 string | null 区分「从未出现过」（undefined）与「出现过、现已被
+//   清空」（null）两种缺失态，供调用方决定是否需要补一条「已清除」事件。
+export interface TranscriptInjectionFingerprints {
+  system?: string
+  customInstructions?: string | null
+  /** 全量 skill 清单（进稳定前缀）的内容指纹：只随 registry 注册态变化，不随本轮输入变。 */
+  skillManifest?: string
+  toolsFingerprint?: string
+  toolsCount?: number
+}
+
+// 简介：当前会话四类注入卡片的判重指纹。
+// 详情：只服务 runtime 判重，不进 checkpoint、不持久化。
+export const transcriptInjectionFingerprintsAtom = atom<TranscriptInjectionFingerprints>({})
 
 // 简介：当前会话已展开的「思考过程」分组（group key → 是否展开）。
 // 详情：只保存用户的展开选择；虚拟列表的高度、可视范围等 DOM 测量状态不进入 atom。
@@ -364,6 +396,40 @@ export function addRuntimeTranscriptEvent(
 }
 
 /**
+ * 更新当前 assistant 流消息。会话未登记时 no-op；相同 item id 会替换瞬态快照，
+ * 不触碰持久化的 itemsAtom。
+ */
+export function setAssistantStream(
+  id: string,
+  stream: AssistantStreamState,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(assistantStreamAtom, stream)
+}
+
+/**
+ * 仅当 runId（以及可选 itemId）仍匹配时清除流消息，避免迟到的旧请求清掉新 run 的输出。
+ */
+export function clearAssistantStream(
+  id: string,
+  runId: string,
+  itemId?: string,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(assistantStreamAtom, (current) => {
+    if (!current || current.runId !== runId) return current
+    if (itemId !== undefined && current.item.id !== itemId) return current
+    return undefined
+  })
+}
+
+/**
  * 丢弃该会话中 createdAt 晚于 `createdAt` 的 runtime transcript 调试事件。
  * 用途同 pruneBrowserCardsAfter：截断回退后不展示被丢弃轮次的旁路调试记录。
  * core 默认 defaultCore，语义见文件头。
@@ -379,6 +445,32 @@ export function pruneRuntimeTranscriptEventsAfter(
   core.getSessionStore(id).store.setter(runtimeTranscriptEventsAtom, (prev) =>
     prev.filter((event) => event.createdAt <= createdAt),
   )
+}
+
+/**
+ * 读取该会话四类注入卡片当前的判重指纹（未记录过任何一类时为空对象）。
+ * core 默认 defaultCore：不传时读模块全局那份；传入独立 core 只读该 core 自己的 session store。
+ */
+export function getTranscriptInjectionFingerprints(
+  id: string,
+  core: CoreInstance = defaultCore,
+): TranscriptInjectionFingerprints {
+  return core.getSessionStore(id).store.getter(transcriptInjectionFingerprintsAtom)
+}
+
+/**
+ * 浅合并更新该会话的注入卡片判重指纹。会话未登记则 no-op（ghost guard）。
+ * core 默认 defaultCore，语义见文件头。
+ */
+export function patchTranscriptInjectionFingerprints(
+  id: string,
+  patch: Partial<TranscriptInjectionFingerprints>,
+  core: CoreInstance = defaultCore,
+): void {
+  if (sessionMissing(id, core)) {
+    return
+  }
+  core.getSessionStore(id).store.setter(transcriptInjectionFingerprintsAtom, (prev) => ({ ...prev, ...patch }))
 }
 
 /**

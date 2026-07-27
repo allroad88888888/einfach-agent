@@ -13,6 +13,7 @@ import {
   queuedUserMessagesAtom,
   withdrawnTurnNoticeAtom,
   contextStatsAtom,
+  assistantStreamAtom,
   addPendingArtifact,
   removePendingArtifact,
   addBrowserCard,
@@ -27,6 +28,10 @@ import {
   takeQueuedUserMessages,
   setWithdrawnTurnNotice,
   setContextStats,
+  setAssistantStream,
+  clearAssistantStream,
+  getTranscriptInjectionFingerprints,
+  patchTranscriptInjectionFingerprints,
   type PendingArtifact,
   type BrowserCard,
   type ContextStatsSnapshot,
@@ -108,6 +113,38 @@ describe('transientAtoms —— 共享单例 key 值随 store 隔离（不分桶
     expect(b.getter(queuedUserMessagesAtom)).toEqual([])
     expect(b.getter(withdrawnTurnNoticeAtom)).toBeUndefined()
     expect(b.getter(contextStatsAtom)).toBeUndefined()
+    expect(b.getter(assistantStreamAtom)).toBeUndefined()
+  })
+})
+
+describe('assistantStreamAtom', () => {
+  const stream = {
+    runId: 'run-1',
+    item: {
+      id: 'assistant-1',
+      createdAt: 1,
+      pending: true,
+      item: { role: 'assistant' as const, content: '正在写入' },
+    },
+  }
+
+  it('只更新瞬态流快照，并用 runId/itemId 防止旧 run 误清理', () => {
+    seedSession()
+
+    setAssistantStream('s1', stream)
+    expect(getSessionStore('s1').store.getter(assistantStreamAtom)).toEqual(stream)
+
+    clearAssistantStream('s1', 'old-run', 'assistant-1')
+    clearAssistantStream('s1', 'run-1', 'other-item')
+    expect(getSessionStore('s1').store.getter(assistantStreamAtom)).toEqual(stream)
+
+    clearAssistantStream('s1', 'run-1', 'assistant-1')
+    expect(getSessionStore('s1').store.getter(assistantStreamAtom)).toBeUndefined()
+  })
+
+  it('未登记会话不会生成 ghost stream', () => {
+    setAssistantStream('ghost', stream)
+    expect(getSessionStore('ghost').store.getter(assistantStreamAtom)).toBeUndefined()
   })
 })
 
@@ -394,6 +431,34 @@ describe('contextStatsAtom', () => {
     setContextStats('sX', sampleStats)
 
     expect(getSessionStore('sX').store.getter(contextStatsAtom)).toBeUndefined()
+    expect(rootStore.getter(sessionsAtom).sX).toBeUndefined()
+  })
+})
+
+describe('transcriptInjectionFingerprintsAtom', () => {
+  it('patchTranscriptInjectionFingerprints 浅合并写入，getTranscriptInjectionFingerprints 读回', () => {
+    seedSession()
+
+    patchTranscriptInjectionFingerprints('s1', { system: 'fp-system' })
+    expect(getTranscriptInjectionFingerprints('s1')).toEqual({ system: 'fp-system' })
+
+    // 浅合并：只覆盖传入的字段，其余已写入字段保留。
+    patchTranscriptInjectionFingerprints('s1', { toolsFingerprint: 'fp-tools', toolsCount: 3 })
+    expect(getTranscriptInjectionFingerprints('s1')).toEqual({
+      system: 'fp-system',
+      toolsFingerprint: 'fp-tools',
+      toolsCount: 3,
+    })
+
+    // customInstructions 用 null 表示"出现过、现已被清空"，区别于 undefined 的"从未出现过"。
+    patchTranscriptInjectionFingerprints('s1', { customInstructions: null })
+    expect(getTranscriptInjectionFingerprints('s1').customInstructions).toBeNull()
+  })
+
+  it('未登记会话 → patchTranscriptInjectionFingerprints no-op，读取仍为空对象', () => {
+    patchTranscriptInjectionFingerprints('sX', { system: 'fp-system' })
+
+    expect(getTranscriptInjectionFingerprints('sX')).toEqual({})
     expect(rootStore.getter(sessionsAtom).sX).toBeUndefined()
   })
 })

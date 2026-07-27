@@ -1,15 +1,19 @@
 // 多轮 tool 循环的纯函数 helper（组 system / 组 tools / 解析响应）—— 无副作用、无 store。
 // ---------------------------------------------------------------------------
 // 从 modelRun 里抽出的三件事，方便单测与复用：
-//   · buildSystemItem / buildSkillContextItem —— 固定运行时协议放请求首部，按输入变化的
-//     skill 名放历史尾部；skill 内容仍不进 prompt。
+//   · buildSystemItem / buildCustomInstructionsItem —— 固定运行时协议与长期自定义指令，都放在
+//     append-only 历史【之前】的稳定前缀里，不含本轮输入。
+//     ★ skill 名单不再由本文件产出 ★（阶段 3，docs/skills-tree-blueprint.md）：曾经的
+//     buildSkillContextItem 按本轮输入匹配 skill、把名单挂在历史尾部，导致每轮都被新历史顶位、
+//     全额 cache miss。现在改为 registry 的 buildSkillManifestText() 产出【全量】清单，
+//     与固定 system 同区进稳定前缀，由模型按 description 自判该读哪个；
+//     TK4 不变——进 prompt 的只有清单元数据，正文与资源仍必须经 skill_read。
 //   · buildTurnTools  —— 组本轮暴露给 model 的 function 列表（TK3：request_tool_schema
 //     恒在场 + 已懒加载的 visible tools；未加载的工具永不进 tools）。
 //   · narrowToolCalls —— 把宽松响应收窄成请求侧必填形状。
 //   · parseToolCallArgs —— 判别联合版的参数解析（区分「没传参」与「传了坏 JSON」），
 //     主循环（modelRun）与子 agent 循环（subagents/runtime）共用同一份判据。
 
-import { pickSkillsForInput } from '../skills/registry'
 import { toolRegistry } from '../tools/registry'
 import type { ToolRegistry } from '../tools/toolRegistry'
 import type { LoadedTool, ToolRuntime, ToolSummary } from '../tools/types'
@@ -21,6 +25,10 @@ import type {
   SystemItem,
 } from '@web-agent/ai'
 import { newId } from './newId'
+// 收尾自查 / 如实报告两条条款住在零依赖叶子模块：evals 的 prompt 行为 A/B 要 import 同一份
+// 字节做对照实验，而本文件（经 skills/registry 的 .md?raw + tools/registry 的 defaultCore）
+// 在那个 tsconfig 下既无法解析也不该被实例化。详见 selfReflectionPrompts.ts 顶部说明。
+import { SELF_CHECK_CLAUSES } from './selfReflectionPrompts'
 
 // 简介：组固定的运行时 system 指令（不 appendItem，只用于请求）。
 // 详情：这里不能混入本轮输入、时间或计划状态，否则每轮都会从 token 0 打断 Provider 的前缀缓存。
@@ -32,35 +40,28 @@ export function buildSystemItem(): SystemItem {
     'skill 正文不在此展示；需要其内容时，先用 request_tool_schema 加载 skill_read，再严格按返回 schema 调用 skill_read。',
     '复杂、分阶段或执行中升级为多阶段的任务，应先按 lazy-tool 协议读取 planning skill，再按其中说明加载并使用 create_plan → execute_plan → submit_stage_result；submit_stage_result 会触发独立 evaluator，update_plan 只处理阻塞或跳过，不要自行判定完成。',
     '需要审批的计划只能由宿主界面批准，模型不得自行批准或绕过 execute_plan。',
+    ...SELF_CHECK_CLAUSES,
   ].join('\n')
 
   return { role: 'system', content }
 }
 
-// 简介：把宿主保存的长期自定义指令组成本轮动态 system 消息。
-// 详情：它与固定运行时协议分开，并由调用方放在 append-only 历史之后；这样只有自定义指令变化时
-// 才会影响后缀缓存，不会把稳定的运行时协议和既有对话一起变成动态前缀。
+// 简介：把宿主保存的长期自定义指令组成一条独立 system 消息。
+// 详情：它与固定运行时协议分开成条（便于观测与替换），但由调用方放在【固定 system 之后、
+//   append-only 历史之前】，与固定 system 一起构成本 lane 的稳定前缀。
+// ★ 缓存权衡（曾经放在历史之后，实测每轮全额 miss）★ ——
+//   自定义指令是低频变更的长期设置，却随着历史每轮增长被顶到新位置，于是每一轮都要为这段
+//   token 付一次 cache miss。挪进稳定前缀后：不变的轮次（绝大多数）整段命中；用户真去设置里
+//   改了指令的那一次，前缀字节变化会让 contextCache 记一次 profile_changed（新 epoch）、
+//   provider 侧对应一次全量 miss —— 用「变更时的一次性代价」换「每一轮的持续命中」。
+//   因此调用方须把本条内容并入 contextCache 的 systemContent，让变更被归因为 profile_changed，
+//   而不是被误当成尾巴动态控制的变化。
 export function buildCustomInstructionsItem(instructions: string): SystemItem | undefined {
   const normalized = instructions.trim()
   if (!normalized) return undefined
   return {
     role: 'system',
     content: `用户在设置中保存了以下长期自定义指令，请在本次任务中遵循：\n${normalized}`,
-  }
-}
-
-// 简介：组本轮动态 skill 提示。
-// 详情（TK4）：只列按输入匹配到的 skill 名，正文仍须经 skill_read 读取。调用方把它放到
-// append-only 历史之后，避免本轮变化污染固定 system + 已有对话的可缓存前缀。
-export function buildSkillContextItem(input: string): SystemItem {
-  const skillNames = pickSkillsForInput(input)
-    .map((skill) => skill.name)
-    .sort(compareStableText)
-    .join('、')
-
-  return {
-    role: 'system',
-    content: `已匹配、但正文尚未读取的 skills：${skillNames}`,
   }
 }
 
