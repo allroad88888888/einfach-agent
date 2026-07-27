@@ -106,6 +106,30 @@ type ContextCacheLane =
 Context cache 不扩大模型窗口，也不替代 compaction。lazy tool schema 继续按需加载；
 工具集合变化只记录为 profile/epoch 变化，不预加载全部 schema 来换取表面稳定。
 
+### 压缩投影复用
+
+`compactContext` 是纯函数，每轮拿当轮完整 items 从头重算。items 每轮追加，保护窗口与单元切分点
+随之整体后移，产出的投影逐字不同 —— 对 provider 的前缀缓存而言等于每轮换一个 prompt。实测
+（2026-07-27，512 次请求）：越过压缩线之后每个 `cache_epoch` 只剩 1 次请求、reason 恒为
+`compaction_projection_changed`，占当天全部请求的 45.3%；压缩线之前一个 epoch 能撑 28~92 次。
+
+因此 `compactionPlugin` 记住上一次真压缩的产物及其输入快照，后续轮次在同时满足下面两条时直接
+复用该投影、把新增条目原样接在后面：
+
+- 本轮 items 是那份输入的 append-only 延长（逐条引用比较，checkpoint 回滚/revert 天然失配）；
+- 旧投影 + 新增原文仍在本轮预算内。
+
+外加一道 CC3 兜底：拼接结果里每条 `role:'tool'` 都必须能在其前面找到声明过该 `tool_call_id` 的
+assistant，否则放弃复用。三条中任意一条不成立就回落到完整压缩。
+
+这不违反上面「不得为提高命中率」的禁令：复用发出去的仍是完整 system + 压缩后的完整有效历史，
+旧投影本身即一次合法压缩的产物，新增部分是原文，没有只发后缀、也没有跳过压缩（预算每轮照查）。
+复用也不会让本该是原文的内容退化成摘要 —— 压缩当轮受 `keepRecentTurns` 保护的那几轮在旧投影里
+就是原文，此后新增的也都是原文，被摘要的只有当轮就该摘要的历史部分。
+
+缓存挂在插件闭包上，即 per-run（`runToolLoop` 每个 run 装配一次插件），run 结束随闭包释放。
+跨 run 重压一次是有意的：跨 run 必然有新用户输入，保护窗口本就该借机重新取景。
+
 ## 可观测性
 
 每次请求记录 profile、epoch、边界指纹和以下指标状态：
@@ -117,6 +141,18 @@ Context cache 不扩大模型窗口，也不替代 compaction。lazy tool schema
 只有 `available` 且字段合法时才累计 hit/miss。统计按当前 profile + epoch 聚合，不把不同 lane
 混成单个“对话命中率”。UI 入口是 `apps/web/src/agentNew/ui/ContextStats.tsx`，trace 属性使用
 `cache_*` 前缀。
+
+压缩相关的三个 trace 事件各司其职，不要混用：
+
+| 事件 | 语义 |
+| --- | --- |
+| `llm.context_compacted` | 本轮真执行了一次压缩 |
+| `llm.context_over_budget` | 四级降级跑完仍超预算（该开新会话了） |
+| `llm.context_projection_reused` | 本轮复用了上一次的压缩投影，未重压；`reuse_count` 表示这份投影已摊了几轮 |
+
+判断投影复用是否真的生效，看 `llm.context_projection_reused` 与 `llm.context_compacted` 的条数
+比值，以及 `llm.context_snapshot` 里 `cache_epoch_reason` 为 `compaction_projection_changed`
+的占比是否下降。
 
 ## 验证
 

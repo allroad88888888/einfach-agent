@@ -6,6 +6,12 @@
 // 【最高铁律】纯结构搬迁，行为零变化：trace 事件名 / attr 名 / 请求体 / compaction 结果都必须
 // 与搬迁前逐字一致。
 //
+// ── 搬迁完成【之后】的有意行为变更（不受上面那条铁律约束，各自单列理由）──
+//   · CR1 压缩投影复用（见下方「压缩投影复用」段）：一次压缩的产物在后续 append-only 轮次里
+//     直接复用，不再每轮重压。压缩语义本身没变（预算每轮照查、放不下立刻重压），变的是
+//     「同一份投影能服务几轮」。新增独立事件 llm.context_projection_reused；
+//     llm.context_compacted / llm.context_over_budget 的 attr 集合一个字未动。
+//
 // ── 与 loop（modelRun.ts）的协作契约（集成时务必对齐；类型见下方 CompactionRequestDraft）──
 // LoopHooks 的 RequestDraft 只定义了 `messages`；tools / llmTurn / compaction 是本插件与 loop
 // 之间的私有扩展字段——不污染 core 的公共契约（coreCtx.ts / loopHooks.ts / pluginApi.ts 已由
@@ -37,11 +43,12 @@
 //   estimateTokensFromText 算别的（buildContextStatsSnapshot 那份 role 统计）应继续从那边导入，
 //   但 compactContext / DEFAULT_KEEP_RECENT_TURNS 抽完后 modelRun.ts 不再需要直接导入。
 
-import type { ModelFunctionTool } from '@web-agent/ai'
+import type { ModelFunctionTool, ModelItem } from '@web-agent/ai'
 import { sessionsAtom } from '../../../state/rootStore'
 import {
   compactContext,
   DEFAULT_KEEP_RECENT_TURNS,
+  estimateItemsTokens,
   estimateTokensFromText,
   type ContextCompactionResult,
 } from '../../contextCompaction'
@@ -144,12 +151,121 @@ export interface CompactionRequestDraft extends RequestDraft {
   compaction?: ContextCompactionResult
 }
 
+// ---------------------------------------------------------------------------
+// 压缩投影复用（CR1）
+// ---------------------------------------------------------------------------
+// 问题：compactContext 是纯函数，每轮拿【当轮完整 items】从头重算。items 每轮追加，
+//   protectedStartIndex 的保护窗口、historyUnits 的切分点随之整体后移，产出的投影逐字不同——
+//   对 provider 的前缀缓存来说，这等于每轮把整个 prompt 换一遍。
+//   实测（trace 的 cache_epoch_reason，2026-07-27 一天 512 次请求）：
+//     · 压缩线【之前】一个 cache_epoch 能撑 28~92 次请求，缓存正常复用；
+//     · 越过压缩线【之后】每个 epoch 只剩 1 次请求，reason 恒为 compaction_projection_changed
+//       —— 即每轮 17 万 token 全额 cache-miss、零复用，当天 45.3% 的请求栽在这里。
+//
+// 做法：把上一次真压缩的产物连同【它的输入快照】一起记住。下一轮若同时满足
+//   (a) 本轮 items 是那份输入的 append-only 延长，(b) 旧投影 + 新增原文仍在预算内，
+//   就直接复用旧投影、把新增条目原样接在后面，不重压。前缀于是逐字不变，provider 整段命中。
+//
+// ★ 为什么这【不是】「为提高命中率牺牲正确性」（docs/context-caching.md 的禁令）★
+//   复用发出去的仍是「完整 system + 压缩后的完整有效历史」：旧投影本身就是一次合法压缩的产物，
+//   新增部分是原文，两者拼接仍是合法序列。既没有「只发未缓存的后缀」，也没有跳过压缩——预算
+//   每轮照查，放不下立刻回落重压。
+//
+// ★ 复用不会让本该是原文的内容退化成摘要 ★
+//   压缩当轮 keepRecentTurns 保护的最近若干轮，在旧投影里【就是原文】；此后每轮新增的也都是
+//   原文。被摘要的只有压缩当轮就已经该摘要的历史部分。所以复用态投影的信息量只会 ≥ 重压一次的
+//   结果（重压反而会把「当时受保护、如今已变老」的那几轮一并摘掉）。真正需要重压时，预算检查
+//   会把它逼出来。
+
+interface CompactionProjectionEntry {
+  /** 产出该投影的输入快照（浅拷贝的引用数组，只用于 append-only 校验，不读内容）。 */
+  source: readonly ModelItem[]
+  /** 该输入的压缩产物，可直接充当后续轮次的稳定前缀。 */
+  projection: ModelItem[]
+  /** projection 的精确 token 估算（= 压缩当轮的 estimatedTokensAfter）。 */
+  projectionTokens: number
+  summarizedToolResults: number
+  droppedItems: number
+  /** 已被连续复用的轮数，只用于 trace 可观测。 */
+  reuseCount: number
+}
+
+// 简介：压缩投影复用缓存。由 compactionPlugin 的闭包持有 = per-run（见插件定义处）。
+export interface CompactionProjectionCache {
+  entry?: CompactionProjectionEntry
+}
+
+// 简介：建一个空的投影缓存。生产路径由插件装配时调用；测试可显式建一个来跨轮复用。
+export function createCompactionProjectionCache(): CompactionProjectionCache {
+  return {}
+}
+
+// 简介：校验 tool 协议完整性（CC3）——每条 role:'tool' 之前都得有声明过它 tool_call_id 的 assistant。
+// 详情：复用路径的兜底。按理说切点落在 unit 边界上不会产生孤儿（丢弃是整组进行的，而新增条目
+//   引用的 tool_call 必然落在压缩当轮的保护窗口内、没被丢），但这条判据便宜——O(条目数)、
+//   不做任何序列化——与其依赖上面那段推理，不如每次复用前直接验一遍：不成立就放弃复用、
+//   老老实实重压，代价只是白跑一次遍历。
+function isToolProtocolIntact(items: readonly ModelItem[]): boolean {
+  const declared = new Set<string>()
+  for (const item of items) {
+    if (item.role === 'assistant') {
+      for (const call of item.tool_calls ?? []) declared.add(call.id)
+      continue
+    }
+    if (item.role === 'tool' && !declared.has(item.tool_call_id)) return false
+  }
+  return true
+}
+
+interface ReusedProjection {
+  items: ModelItem[]
+  tokens: number
+  appendedCount: number
+  appendedTokens: number
+}
+
+// 简介：尝试复用上一轮的压缩投影。返回 undefined = 不能复用，调用方须走完整压缩。
+function tryReuseProjection(
+  cache: CompactionProjectionCache,
+  rawMessages: readonly ModelItem[],
+  effectiveBudget: number,
+): ReusedProjection | undefined {
+  const entry = cache.entry
+  if (!entry) return undefined
+
+  // append-only 校验：长度只能增不能减，且前缀逐条【同一引用】。
+  // items 是 append-only 的不可变数组，checkpoint 回滚 / revert 会整批换掉对象，引用比较因此
+  // 天然能捕获「历史被改写」——不需要额外的版本号或内容指纹，也不会因为「内容碰巧相同」误判。
+  const prefixLength = entry.source.length
+  if (rawMessages.length < prefixLength) return undefined
+  for (let i = 0; i < prefixLength; i += 1) {
+    if (rawMessages[i] !== entry.source[i]) return undefined
+  }
+
+  // 新增部分按【原文】接在旧投影后面。预算不够就得重压——这正是「不跳过压缩」的落点：
+  // 复用只在「压缩结论仍然成立」时才成立。
+  const appended = rawMessages.slice(prefixLength)
+  const appendedTokens = estimateItemsTokens(appended)
+  const total = entry.projectionTokens + appendedTokens
+  if (total > effectiveBudget) return undefined
+
+  const items = appended.length > 0 ? [...entry.projection, ...appended] : entry.projection
+  if (!isToolProtocolIntact(items)) return undefined
+
+  return { items, tokens: total, appendedCount: appended.length, appendedTokens }
+}
+
 // 简介：压缩逻辑本体——从 modelRun.ts 的 runToolLoop 内联代码逐字搬来（组 requestBase 前那段）。
 // 详情：读 ctx.root 的会话 settings + draft.tools/llmTurn 算预算，调 compactContext，把结果写回
 //   draft.messages/draft.compaction，并按原样通过 ctx.traceEvent 发 llm.context_compacted /
 //   llm.context_over_budget（compacted 时发前者；仍超预算时发后者，两者独立、不互斥，与旧代码
 //   两个独立 if 一致）。
-export function applyCompaction(ctx: CoreCtx, draft: CompactionRequestDraft): void {
+//   cache 省略时行为与引入投影复用之前逐字一致（每轮重压）——单测据此隔离验「压缩本身」。
+export function applyCompaction(
+  ctx: CoreCtx,
+  draft: CompactionRequestDraft,
+  cache?: CompactionProjectionCache,
+): void {
   // 会话 settings 来自 ctx.root（跨会话 sessionsAtom），不是 ctx.store——vendor/model/max_tokens
   // 是 SessionMeta 的一部分，随会话存在与否而定。没有 settings（会话已被 drop）就没法算预算，
   // 什么都不做——loop 侧在进入这一轮之前已经过 ghost/stale 守卫，正常路径不会触发这一分支。
@@ -189,6 +305,49 @@ export function applyCompaction(ctx: CoreCtx, draft: CompactionRequestDraft): vo
     (settings.max_tokens ?? DEFAULT_RESERVED_OUTPUT_TOKENS) +
     Math.ceil(budgetTokens * CONTEXT_SAFETY_MARGIN_RATIO)
 
+  // 与 compactContext 内部 effectiveBudget 同口径（max(0, maxTokens - reservedTokens)）。
+  // 复用路径要在【不调用 compactContext】的前提下自己判预算，所以这里先算一份；两处口径必须
+  // 一致，否则会出现「复用判定说放得下、真压缩却认为超了」的分叉。
+  const effectiveBudget = Math.max(0, budgetTokens - reservedTokens)
+
+  // ── 复用命中：前缀逐字不变，provider 的 KV cache 整段可用，本轮一次压缩都不做。
+  const reused = cache ? tryReuseProjection(cache, rawMessages, effectiveBudget) : undefined
+  if (reused && cache?.entry) {
+    const entry = cache.entry
+    entry.reuseCount += 1
+    draft.messages = reused.items
+    let before: number | undefined
+    draft.compaction = {
+      items: reused.items,
+      // 投影确实是压缩过的产物——compacted 为真才与 contextStats / llmSpan 的语义对齐。
+      compacted: true,
+      withinBudget: true,
+      // 惰性：复用路径没人非看「未压缩时多大」不可，读到才付这次 O(n) 序列化的钱。
+      get estimatedTokensBefore(): number {
+        if (before === undefined) before = estimateItemsTokens(rawMessages)
+        return before
+      },
+      estimatedTokensAfter: reused.tokens,
+      effectiveBudgetTokens: effectiveBudget,
+      summarizedToolResults: entry.summarizedToolResults,
+      droppedItems: entry.droppedItems,
+    }
+    // 与 llm.context_compacted 分开的独立事件：那个的语义是「本轮执行了压缩」，复用轮没有。
+    // 有了它才能在 trace 里直接看出「一次压缩摊了几轮」——即这项优化的实际收益。
+    ctx.traceEvent('llm.context_projection_reused', {
+      llm_turn: draft.llmTurn,
+      effective_budget_tk: effectiveBudget,
+      projection_tk: entry.projectionTokens,
+      appended_tk: reused.appendedTokens,
+      est_after_tk: reused.tokens,
+      appended_items: reused.appendedCount,
+      messages_before: messagesBefore,
+      messages_after: reused.items.length,
+      reuse_count: entry.reuseCount,
+    })
+    return
+  }
+
   // keepRecentTurns 必须 >= 1（这里显式用默认值 2）：它保证「最后一条 user 之后的全部条目」
   // 不被丢弃——ask_user / 危险工具确认暂停时那个特意不回填的 tool_call 就靠它活着。
   const compaction = compactContext(rawMessages, {
@@ -196,6 +355,23 @@ export function applyCompaction(ctx: CoreCtx, draft: CompactionRequestDraft): vo
     reservedTokens,
     keepRecentTurns: DEFAULT_KEEP_RECENT_TURNS,
   })
+
+  // 记住本轮投影供后续轮复用。只缓存「真压过且压回了预算内」的：
+  //   · 没压过 —— 下轮粗筛（estimateItemsTokensUpperBound）自会飞快通过，不必占缓存；
+  //   · 压完仍超预算 —— 异常态（该开新会话了），复用它只会把异常一路延续下去。
+  if (cache) {
+    cache.entry =
+      compaction.compacted && compaction.withinBudget
+        ? {
+            source: rawMessages.slice(),
+            projection: compaction.items,
+            projectionTokens: compaction.estimatedTokensAfter,
+            summarizedToolResults: compaction.summarizedToolResults,
+            droppedItems: compaction.droppedItems,
+            reuseCount: 0,
+          }
+        : undefined
+  }
   // 同一个数组同时喂 contextStats 与请求体——两处必须一致，否则 UI 显示的用量和实际发出去的
   // 对不上。未超预算时 compaction.items 就是 rawMessages 同一引用。
   draft.messages = compaction.items
@@ -239,7 +415,13 @@ export function applyCompaction(ctx: CoreCtx, draft: CompactionRequestDraft): vo
 // 详情：RequestDraft 到 CompactionRequestDraft 的 cast 在这里做一次，其余逻辑全在 applyCompaction
 //   里（可独立单测，不必每次都经 assemblePlugins 装配）。
 export const compactionPlugin: AgentPlugin = (api) => {
+  // 投影缓存挂在插件闭包上 = per-run：modelRun 在 runToolLoop 里、进多轮循环【之前】调一次
+  // assemblePlugins，于是同一个 run 的所有轮次共享这一份缓存，run 结束即随闭包释放。
+  // 天然按 run 隔离（与 loopGuardPlugin 的 per-run 计数同款做法），不需要按 sessionId 分桶，
+  // 也不会在隔离 core 实例之间串味。跨 run 重压一次是可接受的——跨 run 必然有新的用户输入，
+  // 保护窗口本来就该借这个机会重新取景。
+  const cache = createCompactionProjectionCache()
   api.hook('transformContext', (ctx, draft) => {
-    applyCompaction(ctx, draft as CompactionRequestDraft)
+    applyCompaction(ctx, draft as CompactionRequestDraft, cache)
   })
 }

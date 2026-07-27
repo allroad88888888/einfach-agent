@@ -23,6 +23,8 @@
 | --- | --- |
 | [Core 插件化蓝图](core-plugin-extraction-blueprint.md) | 部分实施；hook、插件工具与订阅基础已存在，UI renderer、command facade 和多实例收口仍待推进 |
 | [Skills 树形结构与稳定前缀清单](skills-tree-blueprint.md) | 未实施；树形 L3 资源 → 行为 eval 门禁（B04/B05）→ 全量清单迁入稳定前缀，附带退役 harness 预筛 |
+| [上下文缓存成本治理](context-cache-cost.md) | 压缩投影复用已实现、收益待实测；含账单归因方法与验证 SQL |
+| [上下文缓存成本 · 后续跟进项](context-cache-followups.md) | F1 实测验证（最高优先）、F2 尾巴失效归零、F3 会话过长提示；F5 跨 run 复用暂不做，C1/C2 已关闭并附结论 |
 | [项目路线图](ROADMAP.md) | 当前未完成工作：CI 护栏、多实例隔离、插件产品化、安全发布和性能治理 |
 
 蓝图描述目标形态，不代表所有 API 都已交付。引用蓝图时需要同时核对实现和测试。

@@ -257,6 +257,180 @@ describe('compactionPlugin —— draft.tools / draft.llmTurn 省略时的兜底
   })
 })
 
+// ---------------------------------------------------------------------------
+// 压缩投影复用（CR1）
+// ---------------------------------------------------------------------------
+// 这一组盯的是「一次压缩摊到多轮」这件事本身，以及它的三道刹车：append-only 校验、预算复查、
+// tool 协议兜底。任何一道被摘掉，长会话都会退回「每轮全额 cache-miss」的老样子（或更糟——
+// 发出非法序列）。
+//
+// fixture 约定：max_tokens=100 让 reservedTokens 很小、effectiveBudget 很宽裕，靠一条 400KB 的
+// 历史 tool 结果把 before 顶过预算 —— compacted:true 且 withinBudget:true，正是「会被缓存」
+// 的唯一组合（与上面「压完仍超」那个用例刻意区分）。
+const REUSABLE_SETTINGS: ModelSettings = { vendor: 'deepseek', model: 'x', max_tokens: 100 }
+function bigToolContent(): string {
+  return JSON.stringify({ data: 'x'.repeat(400_000) })
+}
+// tools/llmTurn 是 CompactionRequestDraft 的私有扩展字段，不在 LoopHooks 的 RequestDraft 上。
+// 内联字面量传进 transformContext 会按 RequestDraft 做 excess property 检查而报 TS2353，
+// 故统一经这个带标注的构造器建 draft。
+function reuseDraft(messages: ModelItem[], llmTurn: number): CompactionRequestDraft {
+  return { messages, tools: [], llmTurn }
+}
+
+describe('compactionPlugin —— 压缩投影复用', () => {
+  it('append-only 的下一轮直接复用上轮投影：不重压、前缀逐条同引用、只发 reused 事件', async () => {
+    const { ctx, traceEvent } = fakeCtx(REUSABLE_SETTINGS)
+    const hooks = assemblePlugins([compactionPlugin])
+
+    const base = turnWithBigToolResult(bigToolContent())
+    const draft1 = reuseDraft(base, 1)
+    await hooks.transformContext?.(ctx, draft1)
+    expect(draft1.compaction?.compacted).toBe(true)
+    const projection = draft1.messages
+
+    // 第二轮：items 纯追加一条小 assistant（前 6 条与第一轮【同引用】）。
+    const appended: ModelItem = { role: 'assistant', content: '第二轮答复' }
+    const draft2: CompactionRequestDraft = { messages: [...base, appended], tools: [], llmTurn: 2 }
+    await hooks.transformContext?.(ctx, draft2)
+
+    // ★ 核心断言 ★：复用轮的前缀与上一轮投影【逐条同引用】—— 序列化出来必然逐字节相同，
+    // provider 的前缀缓存才有可能整段命中。
+    expect(draft2.messages.length).toBe(projection.length + 1)
+    projection.forEach((item, index) => {
+      expect(draft2.messages[index]).toBe(item)
+    })
+    expect(draft2.messages[draft2.messages.length - 1]).toBe(appended)
+
+    // 复用轮不再执行压缩，因此不发 context_compacted；发的是独立的 reused 事件。
+    expect(traceEvent).toHaveBeenCalledWith('llm.context_projection_reused', expect.objectContaining({
+      llm_turn: 2,
+      reuse_count: 1,
+      appended_items: 1,
+    }))
+    expect(traceEvent).not.toHaveBeenCalledWith('llm.context_compacted', expect.objectContaining({ llm_turn: 2 }))
+    // compacted 仍为真：投影确实是压缩产物，contextStats / llmSpan 的语义不能因复用而失真。
+    expect(draft2.compaction?.compacted).toBe(true)
+    expect(draft2.compaction?.withinBudget).toBe(true)
+  })
+
+  it('连续多轮复用：reuse_count 递增，全程只压过一次', async () => {
+    const { ctx, traceEvent } = fakeCtx(REUSABLE_SETTINGS)
+    const hooks = assemblePlugins([compactionPlugin])
+
+    let messages = turnWithBigToolResult(bigToolContent())
+    await hooks.transformContext?.(ctx, reuseDraft(messages, 1))
+    for (let turn = 2; turn <= 5; turn += 1) {
+      messages = [...messages, { role: 'assistant', content: `第 ${turn} 轮` }]
+      await hooks.transformContext?.(ctx, reuseDraft(messages, turn))
+    }
+
+    const compactedCalls = traceEvent.mock.calls.filter(([name]) => name === 'llm.context_compacted')
+    const reusedCalls = traceEvent.mock.calls.filter(([name]) => name === 'llm.context_projection_reused')
+    expect(compactedCalls).toHaveLength(1) // 一次压缩摊了四轮
+    expect(reusedCalls).toHaveLength(4)
+    expect((reusedCalls[3][1] as Record<string, unknown>).reuse_count).toBe(4)
+  })
+
+  it('历史被改写（checkpoint 回滚 / revert）→ 前缀引用对不上，回落重压', async () => {
+    const { ctx, traceEvent } = fakeCtx(REUSABLE_SETTINGS)
+    const hooks = assemblePlugins([compactionPlugin])
+
+    const base = turnWithBigToolResult(bigToolContent())
+    await hooks.transformContext?.(ctx, reuseDraft(base, 1))
+
+    // 同样的内容、全新的对象 —— 引用比较必须把它判成「历史变了」，否则回滚后的会话会拿到
+    // 属于旧历史的投影。
+    const rebuilt = turnWithBigToolResult(bigToolContent())
+    const draft2 = reuseDraft(rebuilt, 2)
+    await hooks.transformContext?.(ctx, draft2)
+
+    expect(traceEvent).toHaveBeenCalledWith('llm.context_compacted', expect.objectContaining({ llm_turn: 2 }))
+    expect(traceEvent).not.toHaveBeenCalledWith('llm.context_projection_reused', expect.anything())
+  })
+
+  it('历史变短（回退到更早的 checkpoint）→ 不复用', async () => {
+    const { ctx, traceEvent } = fakeCtx(REUSABLE_SETTINGS)
+    const hooks = assemblePlugins([compactionPlugin])
+
+    const base = turnWithBigToolResult(bigToolContent())
+    await hooks.transformContext?.(ctx, reuseDraft(base, 1))
+    await hooks.transformContext?.(ctx, reuseDraft(base.slice(0, 4), 2))
+
+    expect(traceEvent).not.toHaveBeenCalledWith('llm.context_projection_reused', expect.anything())
+  })
+
+  it('新增内容把预算撑爆 → 复用失效、重新压缩（不允许「为了命中率跳过压缩」）', async () => {
+    const { ctx, traceEvent } = fakeCtx(REUSABLE_SETTINGS)
+    const hooks = assemblePlugins([compactionPlugin])
+
+    const base = turnWithBigToolResult(bigToolContent())
+    await hooks.transformContext?.(ctx, reuseDraft(base, 1))
+
+    // 第二轮新增一条巨大的 assistant 正文：旧投影 + 它必然超预算。
+    const huge: ModelItem = { role: 'assistant', content: 'y'.repeat(400_000) }
+    const draft2 = reuseDraft([...base, huge], 2)
+    await hooks.transformContext?.(ctx, draft2)
+
+    expect(traceEvent).not.toHaveBeenCalledWith('llm.context_projection_reused', expect.anything())
+    expect(traceEvent).toHaveBeenCalledWith('llm.context_compacted', expect.objectContaining({ llm_turn: 2 }))
+  })
+
+  it('新增条目引用了投影里不存在的 tool_call_id → tool 协议兜底拒绝复用（CC3）', async () => {
+    const { ctx, traceEvent } = fakeCtx(REUSABLE_SETTINGS)
+    const hooks = assemblePlugins([compactionPlugin])
+
+    const base = turnWithBigToolResult(bigToolContent())
+    await hooks.transformContext?.(ctx, reuseDraft(base, 1))
+
+    // 孤儿 tool：没有任何 assistant 声明过 'ghost'。若照常复用就会把非法序列发出去。
+    const orphan: ModelItem = { role: 'tool', tool_call_id: 'ghost', content: '孤儿结果' }
+    await hooks.transformContext?.(ctx, reuseDraft([...base, orphan], 2))
+
+    expect(traceEvent).not.toHaveBeenCalledWith('llm.context_projection_reused', expect.anything())
+    expect(traceEvent).toHaveBeenCalledWith('llm.context_compacted', expect.objectContaining({ llm_turn: 2 }))
+  })
+
+  it('压完仍超预算的投影不进缓存（异常态不该被一路延续）', async () => {
+    // reservedTokens 吃光预算 → withinBudget:false，与「超预算压完仍超」用例同款配置。
+    const settings: ModelSettings = { vendor: 'deepseek', model: 'x', max_tokens: 63_500 }
+    const { ctx, traceEvent } = fakeCtx(settings)
+    const hooks = assemblePlugins([compactionPlugin])
+
+    const base = turnWithBigToolResult(bigToolContent())
+    const draft1 = reuseDraft(base, 1)
+    await hooks.transformContext?.(ctx, draft1)
+    expect(draft1.compaction?.withinBudget).toBe(false)
+
+    await hooks.transformContext?.(ctx, reuseDraft([...base, { role: 'assistant', content: '下一轮' }], 2))
+    expect(traceEvent).not.toHaveBeenCalledWith('llm.context_projection_reused', expect.anything())
+  })
+
+  it('未触发压缩的轮次不写缓存（下轮照常走粗筛，不受影响）', async () => {
+    const { ctx, traceEvent } = fakeCtx({ vendor: 'deepseek', model: 'x' })
+    const hooks = assemblePlugins([compactionPlugin])
+
+    const small: ModelItem[] = [sysItem('系统指令'), userItem('你好')]
+    await hooks.transformContext?.(ctx, reuseDraft(small, 1))
+    const draft2 = reuseDraft([...small, { role: 'assistant', content: '答复' }], 2)
+    await hooks.transformContext?.(ctx, draft2)
+
+    expect(traceEvent).not.toHaveBeenCalled()
+    expect(draft2.compaction?.compacted).toBe(false)
+  })
+
+  it('不传 cache 时逐轮重压——与引入复用之前逐字一致（applyCompaction 本体默认行为）', async () => {
+    const { ctx, traceEvent } = fakeCtx(REUSABLE_SETTINGS)
+    const base = turnWithBigToolResult(bigToolContent())
+
+    applyCompaction(ctx, reuseDraft(base, 1))
+    applyCompaction(ctx, reuseDraft([...base, { role: 'assistant', content: 'x' }], 2))
+
+    expect(traceEvent.mock.calls.filter(([name]) => name === 'llm.context_compacted')).toHaveLength(2)
+    expect(traceEvent).not.toHaveBeenCalledWith('llm.context_projection_reused', expect.anything())
+  })
+})
+
 // applyCompaction 本体的独立单测（不经 assemblePlugins/PluginApi 装配这层）——确保「插件注册」
 // 与「压缩逻辑」两层各自都可单独验证，符合契约里「applyCompaction 可独立单测」的设计意图。
 describe('applyCompaction（不经插件装配，直接调用本体）', () => {
