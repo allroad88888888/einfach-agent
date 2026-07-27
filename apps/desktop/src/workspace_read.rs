@@ -1,5 +1,6 @@
 use crate::workspace_common::resolve_workspace_root;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::{
     collections::hash_map::DefaultHasher,
     fs,
@@ -49,6 +50,8 @@ pub struct ReadWorkspaceFileResult {
     content: String,
     truncated: bool,
     bytes: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content_hash: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -206,6 +209,7 @@ fn read_workspace_file_blocking(
         bytes.truncate(max_bytes);
     }
     reject_binary_bytes(&bytes, &file_path)?;
+    let content_hash = (!truncated).then(|| content_sha256(&bytes));
     let content = decode_utf8(&bytes, truncated, &file_path)?;
     let bytes = content.as_bytes().len();
 
@@ -214,7 +218,14 @@ fn read_workspace_file_blocking(
         content,
         truncated,
         bytes,
+        content_hash,
     })
+}
+
+fn content_sha256(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("sha256:{:x}", hasher.finalize())
 }
 
 fn run_index_snapshot(bytes: &[u8]) -> String {
@@ -823,6 +834,10 @@ mod tests {
             .expect("read should succeed");
         assert_eq!(result.content, "hello read world");
         assert!(!result.truncated);
+        assert_eq!(
+            result.content_hash,
+            Some(content_sha256(b"hello read world"))
+        );
         assert_eq!(result.path, "notes.txt", "path 应为 workspace 相对路径");
 
         let _ = fs::remove_dir_all(&base);
@@ -845,6 +860,7 @@ mod tests {
         .expect("trace read should succeed");
         assert_eq!(trace.content.len(), content.len());
         assert!(!trace.truncated);
+        assert_eq!(trace.content_hash, Some(content_sha256(content.as_bytes())));
 
         let ordinary = read_workspace_file_blocking(
             "ordinary.txt".to_string(),
@@ -854,6 +870,7 @@ mod tests {
         .expect("ordinary read should succeed");
         assert_eq!(ordinary.content.len(), MAX_READ_BYTES);
         assert!(ordinary.truncated);
+        assert_eq!(ordinary.content_hash, None);
 
         let _ = fs::remove_dir_all(&base);
     }

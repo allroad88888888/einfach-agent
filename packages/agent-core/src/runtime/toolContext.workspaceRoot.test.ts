@@ -12,7 +12,16 @@ vi.mock('./workspaceRead', () => ({
   searchWorkspaceFiles: vi.fn(async (input: unknown) => ({ ok: true, data: input })),
 }))
 vi.mock('./workspacePatch', () => ({ applyWorkspacePatch: vi.fn(async (input: unknown) => input) }))
-vi.mock('./workspaceWrite', () => ({ writeWorkspaceFile: vi.fn(async (input: unknown) => input) }))
+vi.mock('./workspaceWrite', () => ({
+  writeWorkspaceFile: vi.fn(async (input: { path?: string }) => ({
+    ok: true,
+    path: input.path ?? '',
+    bytesWritten: 0,
+    created: true,
+    overwritten: false,
+    appended: false,
+  })),
+}))
 vi.mock('./workspaceGit', () => ({ getWorkspaceDiff: vi.fn(async (input: unknown) => input) }))
 vi.mock('./workspaceTask', () => ({ runWorkspaceTask: vi.fn(async (input: unknown) => input) }))
 vi.mock('./shellCommand', () => ({

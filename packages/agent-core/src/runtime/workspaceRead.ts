@@ -12,6 +12,8 @@ export interface ReadWorkspaceFileResult {
   content: string
   truncated: boolean
   bytes: number
+  /** Present only for a complete, non-truncated read. Can guard a later overwrite. */
+  contentHash?: string
 }
 
 export interface ReadWorkspaceRunIndexPageInput {
@@ -185,12 +187,20 @@ function normalizeReadResult(raw: unknown): WorkspaceRuntimeResult<ReadWorkspace
   }
 
   const content = stringValue(raw.content, '')
-  return ok({
+  const result: ReadWorkspaceFileResult = {
     path: stringValue(raw.path, ''),
     content,
     truncated: booleanValue(raw.truncated, false),
     bytes: numberValue(raw.bytes, content.length),
-  })
+  }
+  const contentHash = raw.contentHash ?? raw.content_hash
+  if (
+    typeof contentHash === 'string' &&
+    /^sha256:[0-9a-f]{64}$/.test(contentHash)
+  ) {
+    result.contentHash = contentHash
+  }
+  return ok(result)
 }
 
 function normalizeRunIndexPageResult(

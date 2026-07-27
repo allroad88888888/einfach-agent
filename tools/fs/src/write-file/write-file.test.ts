@@ -10,6 +10,7 @@ type WriteInput = {
   content: string
   mode: 'create' | 'overwrite' | 'append'
   expectedOldContent?: string
+  expectedContentHash?: string
   createDirs: boolean
   maxBytes: number
 }
@@ -116,6 +117,31 @@ describe('write_file tool', () => {
     })
   })
 
+  it('overwrite 参数透传 read_file 返回的 expectedContentHash', async () => {
+    const writeWorkspaceFile = vi.fn(async (input: WriteInput) => makeWriteResult(input))
+    const ctx = makeCtx(writeWorkspaceFile)
+    const expectedContentHash = `sha256:${'a'.repeat(64)}`
+
+    await writeFileTool.execute(
+      {
+        path: 'a.txt',
+        content: 'new',
+        mode: 'overwrite',
+        expectedContentHash,
+      },
+      ctx,
+    )
+
+    expect(writeWorkspaceFile).toHaveBeenCalledWith({
+      path: 'a.txt',
+      content: 'new',
+      mode: 'overwrite',
+      expectedContentHash,
+      createDirs: false,
+      maxBytes: DEFAULT_MAX_BYTES,
+    })
+  })
+
   it('append 参数按文本追加模式透传', async () => {
     const writeWorkspaceFile = vi.fn(async (input: WriteInput) => makeWriteResult(input))
     const ctx = makeCtx(writeWorkspaceFile)
@@ -162,6 +188,39 @@ describe('write_file tool', () => {
       ok: false,
       error: 'invalid write_file: binary content is not supported',
     })
+    await expect(
+      writeFileTool.execute({
+        path: 'a.txt',
+        content: 'x',
+        mode: 'overwrite',
+        expectedContentHash: 'sha256:not-a-hash',
+      }, ctx),
+    ).resolves.toEqual({
+      ok: false,
+      error: 'invalid write_file: expectedContentHash must use sha256:<64 lowercase hex characters>',
+    })
+    await expect(
+      writeFileTool.execute({
+        path: 'a.txt',
+        content: 'x',
+        expectedOldContent: 'old',
+      }, ctx),
+    ).resolves.toEqual({
+      ok: false,
+      error: 'invalid write_file: optimistic guards are only valid with mode "overwrite"',
+    })
+    await expect(
+      writeFileTool.execute({
+        path: 'a.txt',
+        content: 'x',
+        mode: 'overwrite',
+        expectedOldContent: 'old',
+        expectedContentHash: `sha256:${'a'.repeat(64)}`,
+      }, ctx),
+    ).resolves.toEqual({
+      ok: false,
+      error: 'invalid write_file: pass either expectedOldContent or expectedContentHash, not both',
+    })
     expect(writeWorkspaceFile).not.toHaveBeenCalled()
   })
 
@@ -206,6 +265,33 @@ describe('write_file tool', () => {
     expect(result).toEqual({ ok: false, error: 'boom' })
   })
 
+  it('ctx.writeWorkspaceFile 业务拒绝 → 顶层 {ok:false, error}', async () => {
+    const writeWorkspaceFile = vi.fn(async (input: WriteInput) =>
+      makeWriteResult(input, {
+        ok: false,
+        bytesWritten: 0,
+        created: false,
+        error: 'expectedOldContent does not match current file content',
+      }),
+    )
+    const ctx = makeCtx(writeWorkspaceFile)
+
+    const result = await writeFileTool.execute(
+      {
+        path: 'a.txt',
+        content: 'new',
+        mode: 'overwrite',
+        expectedOldContent: 'old',
+      },
+      ctx,
+    )
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'expectedOldContent does not match current file content',
+    })
+  })
+
   it('ctx 未接 writeWorkspaceFile → {ok:false, error}', async () => {
     const ctx = makeCtx()
     delete (ctx as Partial<WriteCtx>).writeWorkspaceFile
@@ -221,7 +307,17 @@ describe('write_file tool', () => {
   it('身份/runtime/schema/skill 元数据齐备', () => {
     expect(writeFileTool.name).toBe('write_file')
     expect(writeFileTool.runtime).toBe('server') // 依赖 Tauri 文件系统（TP3）。
-    expect(writeFileTool.inputSchema).toMatchObject({ required: ['path', 'content'] })
+    expect(writeFileTool.inputSchema).toMatchObject({
+      required: ['path', 'content'],
+      properties: {
+        expectedOldContent: {
+          description: expect.stringContaining('complete, untruncated current file'),
+        },
+        expectedContentHash: {
+          pattern: '^sha256:[0-9a-f]{64}$',
+        },
+      },
+    })
     expect(writeFileTool.skill.content.length).toBeGreaterThan(0)
   })
 })

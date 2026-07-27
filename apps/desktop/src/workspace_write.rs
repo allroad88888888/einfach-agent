@@ -4,6 +4,7 @@ use crate::workspace_change_journal::{
 };
 use crate::workspace_common::resolve_workspace_root;
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::{
     fs,
     io::{Seek, SeekFrom, Write},
@@ -47,6 +48,7 @@ pub async fn write_workspace_file(
     content: String,
     mode: Option<String>,
     expected_old_content: Option<String>,
+    expected_content_hash: Option<String>,
     create_dirs: Option<bool>,
     max_bytes: Option<usize>,
     exclusive_path_lock: Option<bool>,
@@ -62,6 +64,7 @@ pub async fn write_workspace_file(
             content,
             mode,
             expected_old_content,
+            expected_content_hash,
             create_dirs,
             max_bytes,
             exclusive_path_lock,
@@ -89,6 +92,7 @@ fn write_workspace_file_blocking(
         content,
         mode,
         expected_old_content,
+        None,
         create_dirs,
         max_bytes,
         exclusive_path_lock,
@@ -103,6 +107,7 @@ fn write_workspace_file_blocking_with_journal(
     content: String,
     mode: Option<String>,
     expected_old_content: Option<String>,
+    expected_content_hash: Option<String>,
     create_dirs: Option<bool>,
     max_bytes: Option<usize>,
     exclusive_path_lock: Option<bool>,
@@ -113,6 +118,20 @@ fn write_workspace_file_blocking_with_journal(
         Ok(mode) => mode,
         Err(err) => return Ok(error_result(&path, err)),
     };
+    if mode != WriteMode::Overwrite
+        && (expected_old_content.is_some() || expected_content_hash.is_some())
+    {
+        return Ok(error_result(
+            &path,
+            "optimistic guards are only valid with mode \"overwrite\"",
+        ));
+    }
+    if expected_old_content.is_some() && expected_content_hash.is_some() {
+        return Ok(error_result(
+            &path,
+            "pass either expectedOldContent or expectedContentHash, not both",
+        ));
+    }
     if content.contains('\0') {
         return Ok(error_result(&path, "binary content is not supported"));
     }
@@ -214,8 +233,12 @@ fn write_workspace_file_blocking_with_journal(
             if !existed {
                 Err("cannot overwrite a file that does not exist".to_string())
             } else {
-                verify_expected_content(&target_path, expected_old_content.as_deref())
-                    .and_then(|_| fs::write(&target_path, content.as_bytes()).map_err(to_io_error))
+                verify_expected_content(
+                    &target_path,
+                    expected_old_content.as_deref(),
+                    expected_content_hash.as_deref(),
+                )
+                .and_then(|_| fs::write(&target_path, content.as_bytes()).map_err(to_io_error))
             }
         }
         WriteMode::Append => write_append(&target_path, content.as_bytes()),
@@ -549,7 +572,14 @@ fn write_create(path: &Path, content: &[u8]) -> Result<(), String> {
         .create_new(true)
         .open(path)
         .and_then(|mut file| file.write_all(content))
-        .map_err(to_io_error)
+        .map_err(|err| {
+            if err.kind() == std::io::ErrorKind::AlreadyExists {
+                "file already exists; use mode \"overwrite\" only when replacing it is intentional"
+                    .to_string()
+            } else {
+                to_io_error(err)
+            }
+        })
 }
 
 fn write_append(path: &Path, content: &[u8]) -> Result<(), String> {
@@ -561,17 +591,86 @@ fn write_append(path: &Path, content: &[u8]) -> Result<(), String> {
         .map_err(to_io_error)
 }
 
-fn verify_expected_content(path: &Path, expected: Option<&str>) -> Result<(), String> {
-    let Some(expected) = expected else {
+fn verify_expected_content(
+    path: &Path,
+    expected: Option<&str>,
+    expected_hash: Option<&str>,
+) -> Result<(), String> {
+    if expected.is_some() && expected_hash.is_some() {
+        return Err("pass either expectedOldContent or expectedContentHash, not both".to_string());
+    }
+    if expected.is_none() && expected_hash.is_none() {
         return Ok(());
-    };
+    }
 
     let current = fs::read_to_string(path)
-        .map_err(|err| format!("failed to read existing file for expectedOldContent: {err}"))?;
-    if current != expected {
-        return Err("expectedOldContent does not match current file content".to_string());
+        .map_err(|err| format!("failed to read existing file for optimistic guard: {err}"))?;
+    if let Some(expected) = expected {
+        if current != expected {
+            return Err(format!(
+                "expectedOldContent does not match current file content \
+                 (expected_bytes={}, current_bytes={}, first_mismatch_byte={}, \
+                 expected_trailing_lf={}, current_trailing_lf={}). Re-read the complete, \
+                 untruncated file and pass it exactly, including final newlines; do not pass a snippet",
+                expected.len(),
+                current.len(),
+                first_mismatch_byte(expected.as_bytes(), current.as_bytes()),
+                trailing_lf_count(expected.as_bytes()),
+                trailing_lf_count(current.as_bytes()),
+            ));
+        }
+    }
+    if let Some(expected_hash) = expected_hash {
+        validate_content_hash(expected_hash)?;
+        if content_sha256(current.as_bytes()) != expected_hash {
+            return Err(
+                "expectedContentHash does not match current file content; the file changed after \
+                 read_file. Re-read it and retry with the new contentHash"
+                    .to_string(),
+            );
+        }
     }
     Ok(())
+}
+
+fn validate_content_hash(value: &str) -> Result<(), String> {
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        return Err(
+            "expectedContentHash must use sha256:<64 lowercase hex characters>".to_string(),
+        );
+    };
+    if hex.len() != 64
+        || !hex
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(
+            "expectedContentHash must use sha256:<64 lowercase hex characters>".to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn content_sha256(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("sha256:{:x}", hasher.finalize())
+}
+
+fn first_mismatch_byte(expected: &[u8], current: &[u8]) -> usize {
+    expected
+        .iter()
+        .zip(current)
+        .position(|(left, right)| left != right)
+        .unwrap_or(expected.len().min(current.len()))
+}
+
+fn trailing_lf_count(content: &[u8]) -> usize {
+    content
+        .iter()
+        .rev()
+        .take_while(|byte| **byte == b'\n')
+        .count()
 }
 
 fn parse_mode(mode: Option<&str>) -> Result<WriteMode, String> {
@@ -755,6 +854,72 @@ mod tests {
     }
 
     #[test]
+    fn create_existing_file_returns_actionable_error() {
+        let (base, ws) = unique_workspace();
+        fs::write(ws.join("existing.txt"), "old").expect("seed existing file");
+
+        let result = write_workspace_file_blocking(
+            "existing.txt".to_string(),
+            "new".to_string(),
+            Some("create".to_string()),
+            None,
+            None,
+            None,
+            None,
+            root_arg(&ws),
+        )
+        .expect("worker layer should return a structured rejection");
+
+        assert!(!result.ok);
+        assert_eq!(
+            result.error.as_deref(),
+            Some(
+                "file already exists; use mode \"overwrite\" only when replacing it is intentional"
+            )
+        );
+        assert_eq!(
+            fs::read_to_string(ws.join("existing.txt")).expect("existing file remains readable"),
+            "old"
+        );
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn expected_old_content_mismatch_reports_exact_difference_shape() {
+        let (base, ws) = unique_workspace();
+        let target = ws.join("existing.txt");
+        fs::write(&target, "line\n\n").expect("seed existing file");
+
+        let error = verify_expected_content(&target, Some("line\n"), None)
+            .expect_err("different final newline count must reject");
+
+        assert!(error.contains("expected_bytes=5"));
+        assert!(error.contains("current_bytes=6"));
+        assert!(error.contains("first_mismatch_byte=5"));
+        assert!(error.contains("expected_trailing_lf=1"));
+        assert!(error.contains("current_trailing_lf=2"));
+        assert!(error.contains("do not pass a snippet"));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn expected_content_hash_accepts_current_and_rejects_stale_content() {
+        let (base, ws) = unique_workspace();
+        let target = ws.join("existing.txt");
+        fs::write(&target, "old\n\n").expect("seed existing file");
+        let current_hash = content_sha256(b"old\n\n");
+
+        verify_expected_content(&target, None, Some(&current_hash))
+            .expect("matching content hash should pass");
+        fs::write(&target, "changed\n").expect("modify existing file");
+        let error = verify_expected_content(&target, None, Some(&current_hash))
+            .expect_err("stale content hash must reject");
+
+        assert!(error.contains("file changed after read_file"));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
     fn rejects_parent_escape() {
         // ../ 越界写：结构化失败(ok=false，error 含 ..)，磁盘上不留文件。
         let (base, ws) = unique_workspace();
@@ -812,6 +977,7 @@ mod tests {
             "new.txt".to_string(),
             "content".to_string(),
             Some("create".to_string()),
+            None,
             None,
             None,
             None,

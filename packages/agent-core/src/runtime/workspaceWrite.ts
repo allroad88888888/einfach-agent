@@ -12,6 +12,8 @@ export interface WorkspaceWriteInput {
   content: string
   mode?: WorkspaceWriteMode
   expectedOldContent?: string
+  /** A contentHash returned by a complete readWorkspaceFile call. */
+  expectedContentHash?: string
   createDirs?: boolean
   maxBytes?: number
   /** Serialize this target across app processes. Used by the subagent archive. */
@@ -38,6 +40,7 @@ type TauriWorkspaceWriteInput = {
   content: string
   mode?: WorkspaceWriteMode
   expected_old_content?: string
+  expected_content_hash?: string
   create_dirs?: boolean
   max_bytes?: number
   exclusive_path_lock?: boolean
@@ -51,6 +54,7 @@ function toTauriInput(input: WorkspaceWriteInput): TauriWorkspaceWriteInput {
     content: input.content,
     mode: input.mode,
     expected_old_content: input.expectedOldContent,
+    expected_content_hash: input.expectedContentHash,
     create_dirs: input.createDirs,
     max_bytes: input.maxBytes,
     exclusive_path_lock: input.exclusivePathLock,

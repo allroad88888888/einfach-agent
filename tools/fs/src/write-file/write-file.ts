@@ -12,6 +12,7 @@ interface WorkspaceWriteInput {
   content: string
   mode: WorkspaceWriteMode
   expectedOldContent?: string
+  expectedContentHash?: string
   createDirs: boolean
   maxBytes: number
 }
@@ -33,20 +34,42 @@ type WorkspaceWriteContext = ToolContext & {
 const inputSchema = {
   type: 'object',
   properties: {
-    path: { type: 'string' },
-    content: { type: 'string' },
+    path: {
+      type: 'string',
+      description: 'Workspace-relative path to the text file.',
+    },
+    content: {
+      type: 'string',
+      description: 'Complete text to create/overwrite, or text to append in append mode.',
+    },
     mode: {
       type: 'string',
       enum: ['create', 'overwrite', 'append'],
       default: 'create',
+      description: 'create refuses existing files; overwrite replaces an existing file; append adds text.',
     },
-    expectedOldContent: { type: 'string' },
-    createDirs: { type: 'boolean', default: false },
+    expectedOldContent: {
+      type: 'string',
+      description:
+        'Overwrite-only optimistic guard. Must be the complete, untruncated current file exactly as read, including every final newline. This is not a search snippet. Prefer expectedContentHash when read_file returned one.',
+    },
+    expectedContentHash: {
+      type: 'string',
+      pattern: '^sha256:[0-9a-f]{64}$',
+      description:
+        'Overwrite-only optimistic guard. Pass contentHash from a non-truncated read_file result to avoid copying or normalizing the old content.',
+    },
+    createDirs: {
+      type: 'boolean',
+      default: false,
+      description: 'Create missing parent directories when true.',
+    },
     maxBytes: {
       type: 'integer',
       minimum: 1,
       maximum: MAX_BYTES,
       default: DEFAULT_MAX_BYTES,
+      description: 'Maximum UTF-8 byte length accepted for content.',
     },
   },
   required: ['path', 'content'],
@@ -101,6 +124,7 @@ export const writeFileTool: Tool = {
     const mode = input.mode === undefined ? 'create' : input.mode
     const createDirs = input.createDirs === undefined ? false : input.createDirs
     const expectedOldContent = input.expectedOldContent
+    const expectedContentHash = input.expectedContentHash
     const maxBytes = normalizeMaxBytes(input.maxBytes)
 
     if (!path || !hasStringContent) {
@@ -114,6 +138,33 @@ export const writeFileTool: Tool = {
     }
     if (expectedOldContent !== undefined && typeof expectedOldContent !== 'string') {
       return { ok: false, error: 'invalid write_file: expectedOldContent must be a string when provided' }
+    }
+    if (
+      expectedContentHash !== undefined &&
+      (
+        typeof expectedContentHash !== 'string' ||
+        !/^sha256:[0-9a-f]{64}$/.test(expectedContentHash)
+      )
+    ) {
+      return {
+        ok: false,
+        error: 'invalid write_file: expectedContentHash must use sha256:<64 lowercase hex characters>',
+      }
+    }
+    if (
+      mode !== 'overwrite' &&
+      (expectedOldContent !== undefined || expectedContentHash !== undefined)
+    ) {
+      return {
+        ok: false,
+        error: 'invalid write_file: optimistic guards are only valid with mode "overwrite"',
+      }
+    }
+    if (expectedOldContent !== undefined && expectedContentHash !== undefined) {
+      return {
+        ok: false,
+        error: 'invalid write_file: pass either expectedOldContent or expectedContentHash, not both',
+      }
     }
     if (content.includes('\0')) {
       return { ok: false, error: 'invalid write_file: binary content is not supported' }
@@ -139,9 +190,21 @@ export const writeFileTool: Tool = {
     if (expectedOldContent !== undefined) {
       writeInput.expectedOldContent = expectedOldContent
     }
+    if (expectedContentHash !== undefined) {
+      writeInput.expectedContentHash = expectedContentHash
+    }
 
     try {
-      const result = await ctx.writeWorkspaceFile(writeInput)
+      const writeWorkspaceFile = ctx.writeWorkspaceFile as (
+        input: WorkspaceWriteInput
+      ) => Promise<WorkspaceWriteResult>
+      const result = await writeWorkspaceFile(writeInput)
+      if (!result.ok) {
+        return {
+          ok: false,
+          error: result.error || `write_file was rejected for ${result.path || path}`,
+        }
+      }
       return { ok: true, data: result }
     } catch (error) {
       return { ok: false, error: toErrorMessage(error) }

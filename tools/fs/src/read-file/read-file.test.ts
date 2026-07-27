@@ -41,7 +41,13 @@ function makeCtx(overrides: Partial<TestCtx> = {}): TestCtx {
 
 describe('read_file tool', () => {
   it('合法参数 → ctx.readWorkspaceFile 被调用，返回文件内容', async () => {
-    const data = { path: 'src/a.ts', content: 'const a = 1', truncated: false, bytes: 11 }
+    const data = {
+      path: 'src/a.ts',
+      content: 'const a = 1',
+      truncated: false,
+      bytes: 11,
+      contentHash: `sha256:${'a'.repeat(64)}`,
+    }
     const readWorkspaceFile = vi.fn(async () => ({ ok: true as const, data }))
     const ctx = makeCtx({ readWorkspaceFile })
 
