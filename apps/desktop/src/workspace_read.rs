@@ -12,6 +12,10 @@ use std::{
 
 const DEFAULT_READ_MAX_BYTES: usize = 20_000;
 const MAX_READ_BYTES: usize = 200_000;
+// contentHash 的唯一用途是给 write_file / apply_patch 当乐观锁，所以只对它们真的能整体
+// 覆盖的大小计算——上限对齐 write_file。更大的文件即使给出哈希也没有工具能用它做覆盖，
+// 白扫一遍全文没有意义。
+const MAX_HASH_BYTES: u64 = 8 * 1024 * 1024;
 // 完整轨迹只在选中单个子 agent 时读取，因此仅对归档轨迹目录放宽显式读取上限。
 const MAX_TRACE_READ_BYTES: usize = 2_000_000;
 const DEFAULT_RUN_INDEX_PAGE_RECORDS: usize = 50;
@@ -267,23 +271,42 @@ fn read_workspace_file_blocking_with_access_at(
             display_path(&file_path)
         )
     })?;
+    // 乐观锁需要的是【整个文件】的哈希，不是本段的。之前只在「一次读完」时才给，于是任何
+    // 超过 max_bytes 的文件都永远拿不到 contentHash，只能裸覆盖——而大文件恰恰最该防并发修改。
+    //
+    // 起始段读取时把整个文件一次读入来算它：分两次读（一次取内容、一次算哈希）会让 content
+    // 与 contentHash 可能对应到不同的文件版本，guard 通过了但模型看到的并不是那一版。
+    let hash_whole_file = offset == 0 && total_bytes <= MAX_HASH_BYTES;
     let mut bytes = Vec::new();
-    file.by_ref()
-        .take((max_bytes + 1) as u64)
-        .read_to_end(&mut bytes)
-        .map_err(|err| format!("failed to read `{}`: {err}", display_path(&file_path)))?;
+    let mut content_hash = None;
+    if hash_whole_file {
+        // take 是竞态兜底：metadata 之后文件可能变大，读入量仍要卡住上限。
+        file.by_ref()
+            .take(MAX_HASH_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|err| format!("failed to read `{}`: {err}", display_path(&file_path)))?;
+        if bytes.len() as u64 <= MAX_HASH_BYTES {
+            content_hash = Some(content_sha256(&bytes));
+        }
+    } else {
+        file.by_ref()
+            .take((max_bytes + 1) as u64)
+            .read_to_end(&mut bytes)
+            .map_err(|err| format!("failed to read `{}`: {err}", display_path(&file_path)))?;
+    }
 
     let buffer_truncated = bytes.len() > max_bytes;
     if buffer_truncated {
         bytes.truncate(max_bytes);
     }
+    // 二进制与 UTF-8 判定仍然只针对返回的这一段，避免文件尾部的非文本内容让一次合法的
+    // 首段读取整体失败。
     reject_binary_bytes(&bytes, &file_path)?;
     let content = decode_utf8(&bytes, buffer_truncated, &file_path)?;
     let bytes = content.as_bytes().len();
     let next_position = offset + bytes as u64;
     let truncated = next_position < total_bytes;
     let next_offset = truncated.then_some(next_position);
-    let content_hash = (offset == 0 && !truncated).then(|| content_sha256(content.as_bytes()));
 
     Ok(ReadWorkspaceFileResult {
         path: relative_path(&root, &file_path),
@@ -985,7 +1008,18 @@ mod tests {
         assert_eq!(first.next_offset, Some(2));
         assert_eq!(first.total_bytes, content.len() as u64);
         assert!(first.truncated);
-        assert_eq!(first.content_hash, None);
+        // 首段即使被截断也要给出【整文件】哈希：否则大文件永远拿不到 contentHash，
+        // 只能裸覆盖。注意它必须等于整个文件的哈希，而不是本段 "ab" 的哈希。
+        assert_eq!(
+            first.content_hash,
+            Some(content_sha256(content.as_bytes())),
+            "首段应返回整文件哈希"
+        );
+        assert_ne!(
+            first.content_hash,
+            Some(content_sha256(b"ab")),
+            "不能是本段内容的哈希"
+        );
 
         let second = read_workspace_file_blocking_with_access_at(
             "paged.txt".to_string(),
@@ -1011,6 +1045,64 @@ mod tests {
         assert!(!third.truncated);
         assert_eq!(third.next_offset, None);
 
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn content_hash_is_only_offered_on_the_opening_chunk() {
+        // 续读段拿不到哈希是对的：它描述整个文件，只在「我正要开始读这个文件」时有意义，
+        // 每段都重算一遍纯属浪费。
+        let (base, ws) = unique_workspace();
+        let content = "0123456789";
+        fs::write(ws.join("paged.txt"), content).expect("seed");
+
+        let tail = read_workspace_file_blocking_with_access_at(
+            "paged.txt".to_string(),
+            Some(4),
+            Some(4),
+            root_arg(&ws),
+            false,
+        )
+        .expect("tail chunk");
+
+        assert_eq!(tail.offset, 4);
+        assert_eq!(tail.content_hash, None);
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn content_hash_is_skipped_past_the_writable_ceiling() {
+        // 超过 write_file 上限的文件没有工具能整体覆盖，给出哈希也用不上，
+        // 不值得为此把整个文件扫一遍。
+        let (base, ws) = unique_workspace();
+        let oversized = "y".repeat((MAX_HASH_BYTES + 1) as usize);
+        fs::write(ws.join("huge.txt"), &oversized).expect("seed huge file");
+
+        let result = read_workspace_file_blocking("huge.txt".to_string(), Some(64), root_arg(&ws))
+            .expect("huge read should still succeed");
+
+        assert!(result.truncated);
+        assert_eq!(result.total_bytes, oversized.len() as u64);
+        assert_eq!(result.content_hash, None, "超出可写上限不再计算哈希");
+        assert_eq!(result.content.len(), 64, "内容本身照常按 maxBytes 返回");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn opening_chunk_hash_round_trips_as_a_write_guard() {
+        // 这条锁的是端到端契约：read_file 首段给出的哈希，必须正是 write_file 覆盖
+        // 该文件时校验的那一个。两边算法漂移会让大文件的乐观锁静默失效。
+        let (base, ws) = unique_workspace();
+        let content = "line one\nline two\n".repeat(20_000); // 远超单次读取上限
+        fs::write(ws.join("big.txt"), &content).expect("seed");
+
+        let first = read_workspace_file_blocking("big.txt".to_string(), Some(100), root_arg(&ws))
+            .expect("opening chunk");
+        assert!(first.truncated, "该文件必须触发截断，否则这个用例没测到点子上");
+
+        let hash = first.content_hash.expect("opening chunk carries a hash");
+        // write_file 侧对完整文件内容做同样计算。
+        assert_eq!(hash, content_sha256(content.as_bytes()));
         let _ = fs::remove_dir_all(&base);
     }
 
@@ -1041,7 +1133,11 @@ mod tests {
         .expect("ordinary read should succeed");
         assert_eq!(ordinary.content.len(), MAX_READ_BYTES);
         assert!(ordinary.truncated);
-        assert_eq!(ordinary.content_hash, None);
+        // 被读取上限截断不影响哈希：它描述的是整个文件，正是覆盖这个文件时要传的 guard。
+        assert_eq!(
+            ordinary.content_hash,
+            Some(content_sha256(content.as_bytes()))
+        );
 
         let _ = fs::remove_dir_all(&base);
     }

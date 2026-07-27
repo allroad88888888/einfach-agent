@@ -33,7 +33,7 @@ Rules:
 
 ## Optimistic guards
 `overwrite_file` requires proof that you read the file first — pass either:
-- `expectedContentHash`: the `contentHash` from a non-truncated `read_file`. **Prefer this** — it does not resend the file.
+- `expectedContentHash`: the `contentHash` from `read_file`. **Prefer this** — it does not resend the file, and it is returned even when the read was truncated, so large files are still protected.
 - `oldContent`: the complete, untruncated previous text.
 
 Pass one or the other, never both. `delete_file` accepts the same two guards, optionally. These are the same guard names and semantics as `write_file`.

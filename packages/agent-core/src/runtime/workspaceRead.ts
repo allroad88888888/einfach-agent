@@ -22,7 +22,11 @@ export interface ReadWorkspaceFileResult {
   totalBytes?: number
   /** Present when more bytes remain; pass it back as the next input offset. */
   nextOffset?: number
-  /** Present only for a complete, non-truncated read. Can guard a later overwrite. */
+  /**
+   * Hash of the whole file, returned on the opening chunk (offset 0) even when the
+   * read was truncated. Guards a later overwrite. Absent past 8 MB, which is beyond
+   * what write_file can replace anyway.
+   */
   contentHash?: string
 }
 
