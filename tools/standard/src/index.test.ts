@@ -8,15 +8,15 @@ import { describe, it, expect } from 'vitest'
 import { createToolRegistry } from '@web-agent/core/tools/toolRegistry'
 import { registerStandardTools } from './index'
 
-// 6 域 29 个标准工具的权威清单（顺序 = 注册顺序：shell → interaction → fs → planning → skills → agents）。
+// 6 域 30 个标准工具的权威清单（顺序 = 注册顺序：shell → interaction → fs → planning → skills → agents）。
 const STANDARD_TOOLS = [
   // shell（5）
   'shell_macos', 'shell_linux', 'shell_powershell', 'run_task', 'git_diff_review',
   // interaction（3）
   'ask_user_question', 'browser_action', 'save_file',
-  // fs（10）
+  // fs（11）
   'read_file', 'list_files', 'search_files', 'rg_search', 'apply_patch', 'write_file',
-  'delete_path', 'copy_path', 'move_path', 'revert_workspace_change',
+  'delete_path', 'copy_path', 'move_path', 'revert_workspace_change', 'find_test_lint_commands',
   // planning（5）
   'get_plan', 'create_plan', 'update_plan', 'execute_plan', 'submit_stage_result',
   // skills（2）
@@ -26,11 +26,11 @@ const STANDARD_TOOLS = [
 ] as const
 
 describe('@web-agent/tools —— 标准工具集聚合（TSPLIT TS2）', () => {
-  it('registerStandardTools 恰好装齐 29 个工具', () => {
+  it('registerStandardTools 恰好装齐 30 个工具', () => {
     const reg = createToolRegistry()
     registerStandardTools(reg)
-    expect(reg.list().length).toBe(29)
-    expect(STANDARD_TOOLS.length).toBe(29)
+    expect(reg.list().length).toBe(30)
+    expect(STANDARD_TOOLS.length).toBe(30)
   })
 
   it('六域每个工具都按 name 就位', () => {
@@ -45,6 +45,6 @@ describe('@web-agent/tools —— 标准工具集聚合（TSPLIT TS2）', () => 
     const reg = createToolRegistry()
     registerStandardTools(reg)
     registerStandardTools(reg)
-    expect(reg.list().length).toBe(29)
+    expect(reg.list().length).toBe(30)
   })
 })

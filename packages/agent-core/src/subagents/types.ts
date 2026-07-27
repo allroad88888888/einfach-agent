@@ -242,6 +242,16 @@ export interface DelegateAgentCallContext {
 
 export interface DelegateAgentRuntime {
   delegateAgents(input: DelegateAgentInput, context: DelegateAgentCallContext): Promise<DelegateAgentBatchResult>
+  /**
+   * A deliberately narrow, context-free extraction lane for internal tools.
+   * Unlike delegateAgents it creates no node, inherits no transcript, and
+   * cannot receive tools. Hosts use it for bounded structured extraction only.
+   */
+  runLowCostExtraction?(input: {
+    systemPrompt: string
+    userPrompt: string
+    maxOutputTokens?: number
+  }): Promise<{ content: string; model: string }>
   retain?(): void
   release?(): void
   cancel?(): void

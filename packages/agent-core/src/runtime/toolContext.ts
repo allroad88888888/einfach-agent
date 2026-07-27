@@ -529,6 +529,10 @@ export function buildToolContext(opts: {
     }
     ctx.delegateAgents = (input) =>
       opts.delegateRuntime!.delegateAgents(input, buildDelegateCallContext(input))
+    ctx.runLowCostExtraction = (input) =>
+      opts.delegateRuntime!.runLowCostExtraction
+        ? opts.delegateRuntime!.runLowCostExtraction(input)
+        : Promise.reject(new Error('low-cost extraction is unavailable'))
     ctx.spawnAgents = (input, options) => {
       const callContext = buildDelegateCallContext(input)
       opts.delegateRuntime!.retain?.()

@@ -2047,8 +2047,45 @@ export function createDelegateAgentRuntime(
     }
   }
 
+  async function runLowCostExtraction(input: {
+    systemPrompt: string
+    userPrompt: string
+    maxOutputTokens?: number
+  }): Promise<{ content: string; model: string }> {
+    if (disposed) throw new Error('delegate runtime already disposed')
+    if (opts.settings.vendor !== 'deepseek'
+      || (opts.settings.model !== DEEPSEEK_PRO_MODEL && opts.settings.model !== DEEPSEEK_FLASH_MODEL)) {
+      throw new Error('low-cost extraction is unavailable for the configured model provider')
+    }
+    const systemPrompt = input.systemPrompt.trim()
+    const userPrompt = input.userPrompt.trim()
+    if (!systemPrompt || !userPrompt) throw new Error('low-cost extraction requires systemPrompt and userPrompt')
+    const requestedMaxTokens = Number.isFinite(input.maxOutputTokens)
+      ? Math.floor(input.maxOutputTokens!)
+      : 1_200
+    const response = await callModel({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      tools: [],
+      toolChoice: 'none',
+      settings: {
+        ...opts.settings,
+        model: DEEPSEEK_FLASH_MODEL,
+        temperature: 0,
+        thinking: false,
+        max_tokens: Math.max(256, Math.min(requestedMaxTokens, 2_000)),
+      },
+    }, 1)
+    const content = firstAssistantText(response)
+    if (!content) throw new Error('low-cost extraction returned no text')
+    return { content, model: DEEPSEEK_FLASH_MODEL }
+  }
+
   return {
     delegateAgents,
+    runLowCostExtraction,
     retain() {
       if (disposed) throw new Error('delegate runtime already disposed')
       owners += 1

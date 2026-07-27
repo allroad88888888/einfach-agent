@@ -10,6 +10,7 @@ import { writeFileTool } from './write-file/write-file'
 import { deletePathTool } from './delete-path/delete-path'
 import { copyPathTool, movePathTool } from './path-operation/path-operation'
 import { revertWorkspaceChangeTool } from './revert-workspace-change/revert-workspace-change'
+import { findTestLintCommandsTool } from './find-test-lint-commands/find-test-lint-commands'
 
 export {
   readFileTool,
@@ -22,6 +23,7 @@ export {
   copyPathTool,
   movePathTool,
   revertWorkspaceChangeTool,
+  findTestLintCommandsTool,
 }
 
 /** 把 fs 域全部工具注册进给定 registry（幂等：同名覆盖）。 */
@@ -37,6 +39,7 @@ export function registerFsTools(registry: ToolRegistry): void {
     copyPathTool,
     movePathTool,
     revertWorkspaceChangeTool,
+    findTestLintCommandsTool,
   ]) {
     registry.register(tool)
   }

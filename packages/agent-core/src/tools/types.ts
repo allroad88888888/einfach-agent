@@ -166,6 +166,16 @@ export interface ToolContext {
   progress(text: string): void
   /** 工具互调：经工厂转发，harness 加防环/限深/signal 透传（见 §8）。 */
   callTool(name: string, args: unknown): Promise<ToolResult>
+  /**
+   * Context-free, no-tools structured extraction on the provider's low-cost
+   * lane. It is intentionally unavailable to ordinary model prompts and does
+   * not create a child agent or inherit the conversation transcript.
+   */
+  runLowCostExtraction?(input: {
+    systemPrompt: string
+    userPrompt: string
+    maxOutputTokens?: number
+  }): Promise<{ content: string; model: string }>
   /** 启动树形 headless 子 agent；由 root runtime 注入，普通工具只能经该能力派活。 */
   delegateAgents?(input: DelegateAgentInput): Promise<DelegateAgentBatchResult>
   /** 非阻塞启动子 agent；立即返回可观察、可显式等待的执行句柄。 */
