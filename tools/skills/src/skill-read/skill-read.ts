@@ -3,7 +3,7 @@
 // runtime 'internal'：纯只读查询，无副作用。绝不 import state/store/atom；只依赖 skills registry 的只读查询。
 import type { Tool } from '@web-agent/core/tools/types'
 import guide from './skill-read.md?raw' // skill 正文（同目录 .md）
-import { readSkill, readSkillResource } from '@web-agent/core/skills/registry'
+import { readSkill, readSkillResource, searchSkills } from '@web-agent/core/skills/registry'
 
 const inputSchema = {
   type: 'object',
@@ -12,6 +12,7 @@ const inputSchema = {
     resource: { type: 'string' },
   },
   required: ['name'],
+  additionalProperties: false,
 }
 
 // 防御式把未知 args 视为普通对象（非对象 → 空对象），避免直接取字段崩。
@@ -32,13 +33,39 @@ export const skillReadTool: Tool = {
   execute(args) {
     // §10 防御式取参：非法/缺失 name 收敛成空字符串，不崩；resource 非字符串时视为省略（读正文）。
     const record = asRecord(args)
-    const name = String(record.name ?? '')
-    const resource = typeof record.resource === 'string' ? record.resource : undefined
+    const name = typeof record.name === 'string' ? record.name.trim() : ''
+    const resource = typeof record.resource === 'string' ? record.resource.trim() : undefined
+    if (!name) {
+      return {
+        ok: false,
+        error: 'skill_read requires a non-empty skill name',
+        code: 'SKILL_NAME_INVALID',
+        retryable: false,
+      }
+    }
+    if (resource !== undefined && !resource) {
+      return {
+        ok: false,
+        error: 'skill_read resource must be non-empty when provided',
+        code: 'SKILL_RESOURCE_INVALID',
+        retryable: false,
+      }
+    }
 
     if (resource !== undefined) {
       const result = readSkillResource(name, resource)
       // 未命中（skill 不存在或资源键不存在）→ error 原样透传，文案已含可用资源键列表引导自我修正。
-      if (!result.ok) return { ok: false, error: result.error }
+      if (!result.ok) {
+        return {
+          ok: false,
+          error: result.error,
+          code: result.availableResources ? 'SKILL_RESOURCE_NOT_FOUND' : 'SKILL_NOT_FOUND',
+          retryable: false,
+          details: result.availableResources
+            ? { availableResources: result.availableResources }
+            : undefined,
+        }
+      }
       return {
         ok: true,
         data: {
@@ -52,8 +79,18 @@ export const skillReadTool: Tool = {
 
     const skill = readSkill(name)
     // 命中 → ok:true 带正文 + 可读资源目录；未命中 → ok:false 带明确 error（TK6，不 throw）。
-    return skill
-      ? { ok: true, data: { name, skill, resources: skill.resources } }
-      : { ok: false, error: `skill not found: ${name}` }
+    if (skill) return { ok: true, data: { name, skill, resources: skill.resources } }
+
+    const suggestions = searchSkills(name).slice(0, 3).map((match) => match.name)
+    return {
+      ok: false,
+      error: `skill not found: ${name}`,
+      code: 'SKILL_NOT_FOUND',
+      retryable: false,
+      hint: suggestions.length > 0
+        ? `Did you mean: ${suggestions.join(', ')}?`
+        : 'Call skill_search with an empty query to list available skills.',
+      details: { suggestions },
+    }
   },
 }

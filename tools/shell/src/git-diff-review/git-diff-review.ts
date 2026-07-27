@@ -8,11 +8,13 @@ const MAX_DIFF_CHARS = 100_000
 interface WorkspaceDiffInput {
   paths?: string[]
   staged?: boolean
+  base?: string
   maxDiffChars?: number
   includeStat?: boolean
 }
 
 interface WorkspaceDiffResult {
+  base?: string
   statusShort: string
   stat?: string
   diff: string
@@ -22,9 +24,7 @@ interface WorkspaceDiffResult {
   stderr: string
 }
 
-type WorkspaceDiffContext = ToolContext & {
-  getWorkspaceDiff(input: WorkspaceDiffInput): Promise<WorkspaceDiffResult>
-}
+type GetWorkspaceDiff = (input: WorkspaceDiffInput) => Promise<WorkspaceDiffResult>
 
 type NormalizedInput =
   | { ok: true; input: WorkspaceDiffInput }
@@ -38,6 +38,10 @@ const inputSchema = {
       items: { type: 'string' },
     },
     staged: { type: 'boolean', default: false },
+    base: {
+      type: 'string',
+      description: 'Optional commit or ref to compare against, such as HEAD~1 or origin/main.',
+    },
     maxDiffChars: {
       type: 'integer',
       minimum: 1,
@@ -46,6 +50,7 @@ const inputSchema = {
     },
     includeStat: { type: 'boolean', default: true },
   },
+  additionalProperties: false,
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -120,19 +125,38 @@ function normalizeInput(args: unknown): NormalizedInput {
   const maxDiffChars = normalizeMaxDiffChars(value.maxDiffChars)
   if (typeof maxDiffChars === 'string') return { ok: false, error: maxDiffChars }
 
+  let base: string | undefined
+  if (value.base !== undefined) {
+    if (typeof value.base !== 'string') {
+      return { ok: false, error: 'invalid git_diff_review: base must be a string' }
+    }
+    base = value.base.trim()
+    if (
+      !base
+      || base.startsWith('-')
+      || [...base].some((character) => /\s/.test(character) || character.charCodeAt(0) < 32)
+    ) {
+      return {
+        ok: false,
+        error: 'invalid git_diff_review: base must be a ref or commit without leading `-`, whitespace, or control characters',
+      }
+    }
+  }
+
   return {
     ok: true,
     input: {
       paths,
       staged,
+      base,
       maxDiffChars,
       includeStat,
     },
   }
 }
 
-function getWorkspaceDiffFromContext(ctx: ToolContext): WorkspaceDiffContext['getWorkspaceDiff'] | undefined {
-  const candidate = (ctx as Partial<WorkspaceDiffContext>).getWorkspaceDiff
+function getWorkspaceDiffFromContext(ctx: ToolContext): GetWorkspaceDiff | undefined {
+  const candidate = (ctx as ToolContext & { getWorkspaceDiff?: GetWorkspaceDiff }).getWorkspaceDiff
   return typeof candidate === 'function' ? candidate.bind(ctx) : undefined
 }
 
@@ -149,7 +173,12 @@ export const gitDiffReviewTool: Tool = {
   async execute(args, ctx) {
     const normalized = normalizeInput(args)
     if (!normalized.ok) {
-      return { ok: false, error: normalized.error }
+      return {
+        ok: false,
+        error: normalized.error,
+        code: 'GIT_DIFF_INVALID_INPUT',
+        retryable: false,
+      }
     }
 
     const getWorkspaceDiff = getWorkspaceDiffFromContext(ctx)
@@ -157,14 +186,30 @@ export const gitDiffReviewTool: Tool = {
       return {
         ok: false,
         error: 'git_diff_review unavailable: ctx.getWorkspaceDiff is not configured',
+        code: 'GIT_DIFF_UNAVAILABLE',
+        retryable: false,
       }
     }
 
     try {
       const result = await getWorkspaceDiff(normalized.input)
+      if (result.exitCode !== 0) {
+        return {
+          ok: false,
+          error: result.stderr || `git_diff_review exited with code ${result.exitCode}`,
+          code: 'GIT_DIFF_FAILED',
+          retryable: false,
+          details: result,
+        }
+      }
       return { ok: true, data: result }
     } catch (error) {
-      return { ok: false, error: toErrorMessage(error) }
+      return {
+        ok: false,
+        error: toErrorMessage(error),
+        code: 'GIT_DIFF_FAILED',
+        retryable: false,
+      }
     }
   },
 }

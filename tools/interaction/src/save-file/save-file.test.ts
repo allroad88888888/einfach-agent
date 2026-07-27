@@ -2,7 +2,7 @@
 // 隔离红利：不需要 store，只 mock 一个 ctx，saveArtifact 用 vi.fn 可编程返回。
 import { describe, it, expect, vi } from 'vitest'
 import type { ToolContext } from '@web-agent/core/tools/types'
-import { saveFileTool } from './save-file'
+import { SAVE_FILE_MAX_BYTES, saveFileTool } from './save-file'
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
   return {
@@ -78,7 +78,26 @@ describe('save_file tool（agentNew · 经 ctx.saveArtifact，不碰 atom）', (
 
     const result = await saveFileTool.execute({ filename: 'a.txt', content: 'x' }, ctx)
 
-    expect(result).toEqual({ ok: false, error: 'stale' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'stale',
+      code: 'SAVE_ARTIFACT_FAILED',
+      retryable: false,
+    })
+  })
+
+  it('saveArtifact 抛错时返回可重试的结构化失败', async () => {
+    const result = await saveFileTool.execute(
+      { filename: 'a.txt', content: 'x' },
+      makeCtx({ saveArtifact: vi.fn(() => { throw new Error('artifact bridge failed') }) }),
+    )
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'artifact bridge failed',
+      code: 'SAVE_ARTIFACT_FAILED',
+      retryable: true,
+    })
   })
 
   it('filename 空 → {ok:false}，且不调 saveArtifact', async () => {
@@ -90,6 +109,8 @@ describe('save_file tool（agentNew · 经 ctx.saveArtifact，不碰 atom）', (
     expect(result).toEqual({
       ok: false,
       error: 'invalid save_file: filename (non-empty) and string content are required',
+      code: 'SAVE_FILE_INVALID_INPUT',
+      retryable: false,
     })
     expect(saveArtifact).not.toHaveBeenCalled()
   })
@@ -103,7 +124,20 @@ describe('save_file tool（agentNew · 经 ctx.saveArtifact，不碰 atom）', (
     expect(result).toEqual({
       ok: false,
       error: 'invalid save_file: filename (non-empty) and string content are required',
+      code: 'SAVE_FILE_INVALID_INPUT',
+      retryable: false,
     })
+    expect(saveArtifact).not.toHaveBeenCalled()
+  })
+
+  it('按 UTF-8 字节拒绝超大内容，不暂存产物', async () => {
+    const saveArtifact = vi.fn(() => ({ artifactId: 'x' }))
+    const result = await saveFileTool.execute({
+      filename: 'large.txt',
+      content: '你'.repeat(Math.floor(SAVE_FILE_MAX_BYTES / 3) + 1),
+    }, makeCtx({ saveArtifact }))
+
+    expect(result).toMatchObject({ ok: false, code: 'SAVE_FILE_TOO_LARGE' })
     expect(saveArtifact).not.toHaveBeenCalled()
   })
 

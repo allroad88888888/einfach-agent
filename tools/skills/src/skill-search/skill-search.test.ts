@@ -38,13 +38,18 @@ describe('tools/skill-search/skill-search', () => {
   })
 
   it('正常 query → { ok:true, data.results 是数组 }，且回显 query', async () => {
-    const result = await skillSearchTool.execute({ query: 'skill' }, makeCtx())
+    const result = await skillSearchTool.execute({ query: '  planning  ', limit: 1 }, makeCtx())
 
     expect(result).toMatchObject({ ok: true })
     if (!('ok' in result) || result.ok !== true) throw new Error('expected ok:true')
     const data = result.data as { query: string; results: unknown }
-    expect(data.query).toBe('skill')
+    expect(data.query).toBe('planning')
     expect(Array.isArray(data.results)).toBe(true)
+    expect((data.results as Array<Record<string, unknown>>)[0]).toMatchObject({
+      name: 'planning',
+      matchedFields: expect.any(Array),
+      score: expect.any(Number),
+    })
   })
 
   it('空 / 缺失 query 不崩，仍返回 ok:true + 空字符串 query', async () => {
@@ -56,6 +61,7 @@ describe('tools/skill-search/skill-search', () => {
     if ('ok' in empty && empty.ok === true) {
       expect((empty.data as { query: string }).query).toBe('')
       expect(Array.isArray((empty.data as { results: unknown }).results)).toBe(true)
+      expect((empty.data as { total: number }).total).toBeGreaterThan(0)
     }
   })
 

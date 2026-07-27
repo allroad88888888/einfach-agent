@@ -6,6 +6,8 @@ export const MAX_DIFF_CHARS = 100_000
 export interface WorkspaceDiffInput {
   paths?: string[]
   staged?: boolean
+  /** Optional commit/ref to compare against (for example `HEAD~1` or `origin/main`). */
+  base?: string
   maxDiffChars?: number
   includeStat?: boolean
   /** 可选显式 workspace root（P1）；不传则 Rust 侧走 git root 兜底。 */
@@ -13,6 +15,7 @@ export interface WorkspaceDiffInput {
 }
 
 export interface WorkspaceDiffResult {
+  base?: string
   statusShort: string
   stat?: string
   diff: string
@@ -25,6 +28,7 @@ export interface WorkspaceDiffResult {
 type TauriWorkspaceDiffInput = {
   paths?: string[]
   staged?: boolean
+  base?: string
   max_diff_chars?: number
   include_stat?: boolean
   workspace_root?: string
@@ -34,6 +38,7 @@ function toTauriInput(input: WorkspaceDiffInput): TauriWorkspaceDiffInput {
   return {
     paths: input.paths,
     staged: input.staged,
+    base: input.base,
     max_diff_chars: input.maxDiffChars,
     include_stat: input.includeStat,
     workspace_root: input.workspaceRoot,
@@ -95,6 +100,10 @@ function normalizeResult(raw: unknown): WorkspaceDiffResult {
     stderr: stringValue(raw.stderr, ''),
   }
 
+  const base = raw.base
+  if (typeof base === 'string') {
+    result.base = base
+  }
   const stat = raw.stat
   if (typeof stat === 'string') {
     result.stat = stat

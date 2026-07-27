@@ -5,9 +5,9 @@ import type {
 } from '@web-agent/core/runtime/workspaceChange'
 import guide from './revert-workspace-change.md?raw'
 
-type RevertContext = ToolContext & {
-  revertWorkspaceChange(input: WorkspaceRevertInput): Promise<WorkspaceRevertResult>
-}
+type RevertWorkspaceChange = (
+  input: WorkspaceRevertInput,
+) => Promise<WorkspaceRevertResult>
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -15,8 +15,10 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {}
 }
 
-function hasRevert(ctx: ToolContext): ctx is RevertContext {
-  return typeof ctx.revertWorkspaceChange === 'function'
+function getRevertWorkspaceChange(ctx: ToolContext): RevertWorkspaceChange | undefined {
+  const candidate = (ctx as ToolContext & { revertWorkspaceChange?: RevertWorkspaceChange })
+    .revertWorkspaceChange
+  return typeof candidate === 'function' ? candidate.bind(ctx) : undefined
 }
 
 export const revertWorkspaceChangeTool: Tool = {
@@ -41,6 +43,7 @@ export const revertWorkspaceChangeTool: Tool = {
       dryRun: { type: 'boolean', default: false },
     },
     anyOf: [{ required: ['changeSetId'] }, { required: ['changeSetIds'] }],
+    additionalProperties: false,
   },
   async execute(args, ctx) {
     const input = asRecord(args)
@@ -49,33 +52,69 @@ export const revertWorkspaceChangeTool: Tool = {
       ? input.changeSetIds.map((id) => typeof id === 'string' ? id.trim() : '')
       : []
     if (!changeSetId && changeSetIds.length === 0) {
-      return { ok: false, error: 'invalid revert_workspace_change: changeSetId or changeSetIds is required' }
+      return {
+        ok: false,
+        error: 'invalid revert_workspace_change: changeSetId or changeSetIds is required',
+        code: 'WORKSPACE_REVERT_INVALID_INPUT',
+        retryable: false,
+      }
     }
     if (changeSetIds.some((id) => !id) || new Set(changeSetIds).size !== changeSetIds.length) {
-      return { ok: false, error: 'invalid revert_workspace_change: changeSetIds must contain unique non-empty strings' }
+      return {
+        ok: false,
+        error: 'invalid revert_workspace_change: changeSetIds must contain unique non-empty strings',
+        code: 'WORKSPACE_REVERT_INVALID_INPUT',
+        retryable: false,
+      }
     }
     if (changeSetId && changeSetIds.length > 0) {
-      return { ok: false, error: 'invalid revert_workspace_change: provide changeSetId or changeSetIds, not both' }
+      return {
+        ok: false,
+        error: 'invalid revert_workspace_change: provide changeSetId or changeSetIds, not both',
+        code: 'WORKSPACE_REVERT_INVALID_INPUT',
+        retryable: false,
+      }
     }
     if (input.dryRun !== undefined && typeof input.dryRun !== 'boolean') {
-      return { ok: false, error: 'invalid revert_workspace_change: dryRun must be a boolean' }
+      return {
+        ok: false,
+        error: 'invalid revert_workspace_change: dryRun must be a boolean',
+        code: 'WORKSPACE_REVERT_INVALID_INPUT',
+        retryable: false,
+      }
     }
-    if (!hasRevert(ctx)) {
+    const revertWorkspaceChange = getRevertWorkspaceChange(ctx)
+    if (!revertWorkspaceChange) {
       return {
         ok: false,
         error: 'revert_workspace_change unavailable: ctx.revertWorkspaceChange is not configured',
+        code: 'WORKSPACE_REVERT_UNAVAILABLE',
+        retryable: false,
       }
     }
     try {
-      const result = await ctx.revertWorkspaceChange({
+      const result = await revertWorkspaceChange({
         ...(changeSetId ? { changeSetId } : { changeSetIds }),
         dryRun: input.dryRun === true,
       })
+      if (!result.ok) {
+        return {
+          ok: false,
+          error: result.error || `revert_workspace_change failed with status ${result.status}`,
+          code: result.status === 'conflict'
+            ? 'WORKSPACE_REVERT_CONFLICT'
+            : 'WORKSPACE_REVERT_FAILED',
+          retryable: false,
+          details: result,
+        }
+      }
       return { ok: true, data: result }
     } catch (error) {
       return {
         ok: false,
         error: error instanceof Error ? error.message : String(error),
+        code: 'WORKSPACE_REVERT_FAILED',
+        retryable: false,
       }
     }
   },

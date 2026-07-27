@@ -2,6 +2,7 @@
 // runtime 'internal'。关键契约：合法 questions → 返回 { pause: args }，由 harness 置 waiting_user 并暂停 run。
 // 绝不 import 任何 state/store/atom —— 暂停/回填全由 harness 循环侧处理，本工具只做参数校验。
 import type { Tool } from '@web-agent/core/tools/types'
+import { normalizeAskUserQuestionPayload } from '@web-agent/core/runtime/askUserQuestion'
 import guide from './ask-user-question.md?raw' // skill 正文（同目录 .md）
 
 // inputSchema —— 【刻意宽松】：本工具的唯一真相是 runtime/askUserQuestion.ts 的
@@ -62,12 +63,18 @@ export const askUserQuestionTool: Tool = {
   },
   inputSchema,
   execute(args) {
-    // §7：合法 questions（非空数组）→ 返回 { pause: 原 args }，交给 harness 暂停 run 收答案。
-    const questions = asRecord(args).questions
-    if (Array.isArray(questions) && questions.length > 0) {
-      return { pause: args }
+    // Normalize before pausing. A raw non-empty array can become empty after invalid
+    // entries are discarded; pausing with zero renderable questions deadlocks the run.
+    const payload = normalizeAskUserQuestionPayload(args)
+    if (payload.questions.length > 0) {
+      return { pause: payload }
     }
     // 非法参数 → ok:false（TK6，不 throw、不暂停）。
-    return { ok: false, error: 'invalid ask_user_question: questions (non-empty array) required' }
+    return {
+      ok: false,
+      error: 'invalid ask_user_question: questions (non-empty array) required',
+      code: 'ASK_USER_QUESTION_INVALID_INPUT',
+      retryable: false,
+    }
   },
 }

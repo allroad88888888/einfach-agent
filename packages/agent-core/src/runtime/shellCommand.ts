@@ -80,15 +80,23 @@ function normalizeResult(raw: unknown, input: ShellCommandInput, startedAt: numb
   }
 
   const timedOut = booleanValue(raw.timedOut ?? raw.timed_out, false)
+  const rawExitCode = raw.exitCode ?? raw.exit_code
+  const validExitCode = typeof rawExitCode === 'number' && Number.isFinite(rawExitCode)
+  const stderr = stringValue(raw.stderr, '')
 
   return {
     platform: isShellPlatform(raw.platform) ? raw.platform : input.platform,
     shell: stringValue(raw.shell, ''),
     command: stringValue(raw.command, input.command),
     cwd: stringValue(raw.cwd, input.cwd ?? ''),
-    exitCode: numberValue(raw.exitCode ?? raw.exit_code, timedOut ? -1 : 0),
+    // A missing exit code is a malformed bridge response, never a successful command.
+    exitCode: validExitCode ? rawExitCode : -1,
     stdout: stringValue(raw.stdout, ''),
-    stderr: stringValue(raw.stderr, ''),
+    stderr: validExitCode
+      ? stderr
+      : [stderr, 'run_shell_command returned a response without a valid exit code']
+          .filter(Boolean)
+          .join('\n'),
     durationMs: numberValue(raw.durationMs ?? raw.duration_ms, durationSince(startedAt)),
     timedOut,
     truncated: booleanValue(raw.truncated, false),

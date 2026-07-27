@@ -472,7 +472,18 @@ function toolResultTrace(result: ToolResult, args?: unknown): {
   }
   return {
     status: 'error',
-    attrs: { ...baseAttrs, result_kind: 'error', result: { error: result.error }, error: result.error },
+    attrs: {
+      ...baseAttrs,
+      result_kind: 'error',
+      result: {
+        error: result.error,
+        ...(result.code ? { code: result.code } : {}),
+        ...(result.hint ? { hint: result.hint } : {}),
+        ...(result.retryable !== undefined ? { retryable: result.retryable } : {}),
+        ...(result.details !== undefined ? { details: result.details } : {}),
+      },
+      error: result.error,
+    },
     err: result.error,
   }
 }
@@ -749,7 +760,19 @@ function appendMappedToolResult(
       planStageId,
     )
   } else {
-    appendToolResult(id, toolCallId, JSON.stringify({ error: result.error }), core, planStageId)
+    appendToolResult(
+      id,
+      toolCallId,
+      JSON.stringify({
+        error: result.error,
+        ...(result.code ? { code: result.code } : {}),
+        ...(result.hint ? { hint: result.hint } : {}),
+        ...(result.retryable !== undefined ? { retryable: result.retryable } : {}),
+        ...(result.details !== undefined ? { details: result.details } : {}),
+      }),
+      core,
+      planStageId,
+    )
   }
 }
 

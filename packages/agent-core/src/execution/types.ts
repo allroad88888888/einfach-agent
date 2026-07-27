@@ -90,4 +90,6 @@ export interface ExecutionJoinResult {
   status: ExecutionNodeStatus
   result?: unknown
   error?: string
+  /** True when join returned before a still-running execution reached a terminal state. */
+  timedOut?: boolean
 }

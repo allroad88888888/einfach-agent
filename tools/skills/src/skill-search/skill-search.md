@@ -7,11 +7,12 @@
 - 命中后再用 `skill_read` 读取该 skill 的完整正文。
 
 ## 参数
-- `query`（string，可选）：搜索词，大小写不敏感，按 skill 的名称/描述/触发词做子串匹配。省略或传空字符串会匹配全部。
-- 只接受 `query` 这个字段；不要传 `skillName`、`name` 或 `pattern`。
+- `query`（string，可选）：搜索词，大小写不敏感，按 skill 的名称、描述和触发词做相关度排序。省略或传空字符串会按名称稳定列出全部。
+- `limit`（integer，可选，默认 10，最大 50）：限制返回条数。
+- 不要传 `skillName`、`name` 或 `pattern`。
 
 ## 返回
-`{ query, results }`，其中 `results` 是命中 skill 的摘要数组（name/description/triggers），可能为空数组。
+`{ query, results, total, limit, truncated }`。每个结果除摘要外还带 `score` 和 `matchedFields`，说明相关度及命中的元数据字段。
 
 ## 注意
 - 只做只读搜索，不会读出正文；要正文请接着调 `skill_read`。

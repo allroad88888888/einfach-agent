@@ -1,5 +1,6 @@
 // tools/shell-macos/shell-macos.ts —— macOS shell 工具。副作用只经 ctx.runShell。
 import type { Tool } from '@web-agent/core/tools/types'
+import { shellCommandToolResult } from '../command-result'
 import { detectShellFileWrite, shellFileWriteRejected } from '../file-write-guard'
 import guide from './shell-macos.md?raw'
 
@@ -26,6 +27,7 @@ const inputSchema = {
     },
   },
   required: ['command'],
+  additionalProperties: false,
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -77,6 +79,8 @@ export const shellMacosTool: Tool = {
       return {
         ok: false,
         error: 'invalid shell_macos: command (non-empty string) is required',
+        code: 'SHELL_INVALID_INPUT',
+        retryable: false,
       }
     }
 
@@ -103,9 +107,14 @@ export const shellMacosTool: Tool = {
         maxOutputChars,
         env,
       })
-      return { ok: true, data: result }
+      return shellCommandToolResult(result)
     } catch (error) {
-      return { ok: false, error: toErrorMessage(error) }
+      return {
+        ok: false,
+        error: toErrorMessage(error),
+        code: 'SHELL_EXECUTION_ERROR',
+        retryable: true,
+      }
     }
   },
 }

@@ -1607,7 +1607,14 @@ export function createDelegateAgentRuntime(
             const startedAt = Date.now()
             let toolResult:
               | { ok: true; data?: unknown; warnings?: string[] }
-              | { ok: false; error: string }
+              | {
+                  ok: false
+                  error: string
+                  code?: string
+                  hint?: string
+                  retryable?: boolean
+                  details?: unknown
+                }
             try {
               toolResult = await context.runChildTool(
                 name,
@@ -1632,7 +1639,17 @@ export function createDelegateAgentRuntime(
                   ? toolResult.warnings?.length
                     ? { data: toolResult.data ?? { ok: true }, warnings: toolResult.warnings }
                     : (toolResult.data ?? { ok: true })
-                  : { error: toolResult.error },
+                  : {
+                      error: toolResult.error,
+                      ...(toolResult.code ? { code: toolResult.code } : {}),
+                      ...(toolResult.hint ? { hint: toolResult.hint } : {}),
+                      ...(toolResult.retryable !== undefined
+                        ? { retryable: toolResult.retryable }
+                        : {}),
+                      ...(toolResult.details !== undefined
+                        ? { details: toolResult.details }
+                        : {}),
+                    },
               ),
             )
             continue

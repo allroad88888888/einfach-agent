@@ -1,7 +1,7 @@
 // P8-a：把 `unknown` 的 ask_user_question payload 防御式规整成打字类型。
 // ---------------------------------------------------------------------------
 // RunState.pendingQuestion 存的是模型 tool_call 的原样 args（unknown），可能畸形。
-// 卡片渲染前必须先经此 normalizer 收敛成 `{ title?, questions: AskUserQuestionItem[] }`：
+// 卡片渲染前必须先经此 normalizer 收敛成 `{ id?, title?, questions: AskUserQuestionItem[] }`：
 //   · 非法整体 → 空 questions；非法单条 → 丢弃该条；全程绝不抛（见 §5 R1）。
 // AskUserAnswerValue 复用 state 侧的定义（agentNew 内单一来源），此处仅再导出便于消费。
 
@@ -23,6 +23,8 @@ export interface AskUserQuestionItem {
 
 // 规整后的整体载荷。
 export interface AskUserQuestionPayload {
+  /** Optional caller-provided correlation id retained for backwards compatibility. */
+  id?: string
   title?: string
   context?: AskUserQuestionContext
   questions: AskUserQuestionItem[]
@@ -107,7 +109,7 @@ function normalizeQuestion(value: unknown): AskUserQuestionItem | undefined {
 /**
  * 把 unknown 的 ask_user_question payload 防御式规整成打字类型。
  * - payload 非对象/为 null/数组 → `{ questions: [] }`。
- * - title 仅当非空字符串时保留。
+ * - id/title 仅当非空字符串时保留。
  * - questions 非数组 → `[]`；逐条校验，非法项丢弃；type 不识别归 'text'。
  * - 全程绝不抛异常。
  */
@@ -117,6 +119,7 @@ export function normalizeAskUserQuestionPayload(payload: unknown): AskUserQuesti
 
   const result: AskUserQuestionPayload = { questions: [] }
 
+  if (nonEmptyString(value.id)) result.id = value.id
   if (nonEmptyString(value.title)) result.title = value.title
   const context = normalizeContext(value.context)
   if (context) result.context = context

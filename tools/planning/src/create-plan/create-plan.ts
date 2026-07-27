@@ -3,12 +3,12 @@ import type { Tool } from '@web-agent/core/tools/types'
 import guide from './create-plan.md?raw'
 
 const stageProperties = {
-  id: { type: 'string' },
-  title: { type: 'string' },
-  objective: { type: 'string' },
-  deliverables: { type: 'array', items: { type: 'string' } },
-  acceptanceCriteria: { type: 'array', minItems: 1, items: { type: 'string' } },
-  dependencies: { type: 'array', uniqueItems: true, items: { type: 'string' } },
+  id: { type: 'string', minLength: 1 },
+  title: { type: 'string', minLength: 1 },
+  objective: { type: 'string', minLength: 1 },
+  deliverables: { type: 'array', items: { type: 'string', minLength: 1 } },
+  acceptanceCriteria: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } },
+  dependencies: { type: 'array', uniqueItems: true, items: { type: 'string', minLength: 1 } },
 }
 
 export const createPlanTool: Tool = {
@@ -22,20 +22,45 @@ export const createPlanTool: Tool = {
   inputSchema: {
     type: 'object',
     properties: {
-      title: { type: 'string' },
-      objective: { type: 'string' },
+      title: { type: 'string', minLength: 1 },
+      objective: { type: 'string', minLength: 1 },
       approvalMode: { type: 'string', enum: ['auto', 'required'], default: 'auto' },
       stages: {
         type: 'array', minItems: 1,
-        items: { type: 'object', properties: stageProperties, required: ['id', 'title', 'objective', 'acceptanceCriteria'] },
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: stageProperties,
+          required: ['id', 'title', 'objective', 'acceptanceCriteria'],
+        },
       },
     },
     required: ['title', 'objective', 'stages'],
+    additionalProperties: false,
   },
   execute(args, ctx) {
-    if (!ctx.createPlan) return { ok: false, error: 'create_plan unavailable' }
-    const result = ctx.createPlan(args as unknown as CreatePlanInput)
-    if (!result.ok) return result
+    if (!ctx.createPlan) {
+      return { ok: false, error: 'create_plan unavailable', code: 'PLAN_UNAVAILABLE', retryable: false }
+    }
+    let result
+    try {
+      result = ctx.createPlan(args as unknown as CreatePlanInput)
+    } catch (error) {
+      return {
+        ok: false,
+        error: `create_plan failed: ${error instanceof Error ? error.message : String(error)}`,
+        code: 'PLAN_INVALID_INPUT',
+        retryable: false,
+      }
+    }
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: result.error,
+        code: 'PLAN_CREATE_REJECTED',
+        retryable: false,
+      }
+    }
     if (result.plan.status === 'awaiting_approval') {
       return { pause: { kind: 'plan_approval', planId: result.plan.id, revision: result.plan.revision } }
     }

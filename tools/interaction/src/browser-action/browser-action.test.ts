@@ -2,7 +2,7 @@
 // 隔离红利：不需要 store，只 mock 一个 ctx，renderCard 用 vi.fn 可编程返回。
 import { describe, it, expect, vi } from 'vitest'
 import type { ToolContext } from '@web-agent/core/tools/types'
-import { browserActionTool } from './browser-action'
+import { BROWSER_CARD_BODY_MAX_CHARS, browserActionTool } from './browser-action'
 
 // 造一个 fake ctx：renderCard/saveArtifact 用 vi.fn，可按测试编程返回值。
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
@@ -93,7 +93,26 @@ describe('browser_action tool（agentNew · 经 ctx.renderCard，不碰 atom）'
       ctx,
     )
 
-    expect(result).toEqual({ ok: false, error: 'stale' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'stale',
+      code: 'BROWSER_CARD_RENDER_FAILED',
+      retryable: false,
+    })
+  })
+
+  it('renderCard 抛错时返回可重试的结构化失败', async () => {
+    const result = await browserActionTool.execute(
+      { action: 'render_card', payload: { title: 't' } },
+      makeCtx({ renderCard: vi.fn(() => { throw new Error('render bridge failed') }) }),
+    )
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'render bridge failed',
+      code: 'BROWSER_CARD_RENDER_FAILED',
+      retryable: true,
+    })
   })
 
   it('action 非 render_card → {ok:false}，且不调 renderCard', async () => {
@@ -105,7 +124,12 @@ describe('browser_action tool（agentNew · 经 ctx.renderCard，不碰 atom）'
       ctx,
     )
 
-    expect(result).toEqual({ ok: false, error: 'unsupported browser_action: click' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'unsupported browser_action: click',
+      code: 'BROWSER_ACTION_UNSUPPORTED',
+      retryable: false,
+    })
     expect(renderCard).not.toHaveBeenCalled()
   })
 
@@ -121,7 +145,20 @@ describe('browser_action tool（agentNew · 经 ctx.renderCard，不碰 atom）'
     expect(result).toEqual({
       ok: false,
       error: 'invalid browser_action payload: title (non-empty string) is required',
+      code: 'BROWSER_CARD_INVALID_INPUT',
+      retryable: false,
     })
+    expect(renderCard).not.toHaveBeenCalled()
+  })
+
+  it('拒绝超大卡片正文，不写入瞬态状态', async () => {
+    const renderCard = vi.fn(() => ({ cardId: 'x' }))
+    const result = await browserActionTool.execute({
+      action: 'render_card',
+      payload: { title: 't', body: 'x'.repeat(BROWSER_CARD_BODY_MAX_CHARS + 1) },
+    }, makeCtx({ renderCard }))
+
+    expect(result).toMatchObject({ ok: false, code: 'BROWSER_CARD_TOO_LARGE' })
     expect(renderCard).not.toHaveBeenCalled()
   })
 
@@ -131,6 +168,8 @@ describe('browser_action tool（agentNew · 经 ctx.renderCard，不碰 atom）'
     expect(await browserActionTool.execute({ action: 'render_card' }, ctx)).toEqual({
       ok: false,
       error: 'invalid browser_action payload: title (non-empty string) is required',
+      code: 'BROWSER_CARD_INVALID_INPUT',
+      retryable: false,
     })
   })
 

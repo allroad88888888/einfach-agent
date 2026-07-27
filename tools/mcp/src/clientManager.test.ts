@@ -161,11 +161,12 @@ describe('McpClientManager', () => {
         structuredContent: { args: { city: 'Shanghai' } },
       },
     })
-    expect(connection.calls[0]).toEqual({
+    expect(connection.calls[0]).toMatchObject({
       name: 'forecast',
       args: { city: 'Shanghai' },
-      signal: controller.signal,
     })
+    expect(connection.calls[0]?.signal).toBeDefined()
+    expect(connection.calls[0]?.signal?.aborted).toBe(false)
 
     await expect(manager.disconnect(HTTP_CONFIG.id)).resolves.toMatchObject({
       status: 'disconnected',

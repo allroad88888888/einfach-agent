@@ -17,6 +17,7 @@ const inputSchema = {
     maxEntries: { type: 'integer', minimum: 1, maximum: MAX_ENTRIES, default: DEFAULT_MAX_ENTRIES },
     includeHidden: { type: 'boolean', default: false },
   },
+  additionalProperties: false,
 }
 
 type MaybeWorkspaceResult<T> = WorkspaceRuntimeResult<T> | T
@@ -38,6 +39,13 @@ function normalizePositiveInteger(value: unknown, fallback: number, max: number)
   return Math.min(Math.floor(value), max)
 }
 
+function normalizeBoolean(value: unknown, fallback: boolean, name: string): boolean | string {
+  if (value === undefined) return fallback
+  return typeof value === 'boolean'
+    ? value
+    : `invalid list_files: ${name} must be a boolean`
+}
+
 function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message || error.name
   if (typeof error === 'string') return error
@@ -46,7 +54,14 @@ function toErrorMessage(error: unknown): string {
 
 function toToolResult<T>(result: MaybeWorkspaceResult<T>): ToolResult {
   if (isStructuredResult(result)) {
-    return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error }
+    return result.ok
+      ? { ok: true, data: result.data }
+      : {
+          ok: false,
+          error: result.error,
+          code: 'WORKSPACE_LIST_FAILED',
+          retryable: false,
+        }
   }
   return { ok: true, data: result }
 }
@@ -73,12 +88,23 @@ export const listFilesTool: Tool = {
   async execute(args, ctx) {
     const input = asRecord(args)
     const path = typeof input.path === 'string' && input.path.trim() ? input.path.trim() : '.'
-    const recursive = typeof input.recursive === 'boolean' ? input.recursive : false
-    const includeHidden = typeof input.includeHidden === 'boolean' ? input.includeHidden : false
+    const recursive = normalizeBoolean(input.recursive, false, 'recursive')
+    if (typeof recursive === 'string') {
+      return { ok: false, error: recursive, code: 'WORKSPACE_LIST_INVALID_INPUT', retryable: false }
+    }
+    const includeHidden = normalizeBoolean(input.includeHidden, false, 'includeHidden')
+    if (typeof includeHidden === 'string') {
+      return { ok: false, error: includeHidden, code: 'WORKSPACE_LIST_INVALID_INPUT', retryable: false }
+    }
     const maxEntries = normalizePositiveInteger(input.maxEntries, DEFAULT_MAX_ENTRIES, MAX_ENTRIES)
     const listWorkspaceFiles = (ctx as Partial<WorkspaceListContext>).listWorkspaceFiles
     if (typeof listWorkspaceFiles !== 'function') {
-      return { ok: false, error: 'list_files is unavailable: ctx.listWorkspaceFiles is not configured' }
+      return {
+        ok: false,
+        error: 'list_files is unavailable: ctx.listWorkspaceFiles is not configured',
+        code: 'WORKSPACE_LIST_UNAVAILABLE',
+        retryable: false,
+      }
     }
 
     try {
@@ -90,7 +116,12 @@ export const listFilesTool: Tool = {
       })
       return toToolResult(result)
     } catch (error) {
-      return { ok: false, error: toErrorMessage(error) }
+      return {
+        ok: false,
+        error: toErrorMessage(error),
+        code: 'WORKSPACE_LIST_FAILED',
+        retryable: false,
+      }
     }
   },
 }

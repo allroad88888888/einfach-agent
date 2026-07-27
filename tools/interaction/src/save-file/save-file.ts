@@ -5,15 +5,20 @@
 import type { Tool } from '@web-agent/core/tools/types'
 import guide from './save-file.md?raw' // skill 正文（同目录 .md）
 
+export const SAVE_FILE_MAX_BYTES = 5 * 1024 * 1024
+export const SAVE_FILE_NAME_MAX_CHARS = 255
+export const SAVE_FILE_MIME_MAX_CHARS = 255
+
 // lazy schema（照旧 registry）：filename + content 必填，mimeType 可选。
 const inputSchema = {
   type: 'object',
   properties: {
-    filename: { type: 'string' },
-    content: { type: 'string' },
-    mimeType: { type: 'string' },
+    filename: { type: 'string', minLength: 1, maxLength: SAVE_FILE_NAME_MAX_CHARS },
+    content: { type: 'string', maxLength: SAVE_FILE_MAX_BYTES },
+    mimeType: { type: 'string', maxLength: SAVE_FILE_MIME_MAX_CHARS },
   },
   required: ['filename', 'content'],
+  additionalProperties: false,
 }
 
 // 把未知 args 安全视为普通对象，避免直接取字段崩。
@@ -45,6 +50,30 @@ export const saveFileTool: Tool = {
       return {
         ok: false,
         error: 'invalid save_file: filename (non-empty) and string content are required',
+        code: 'SAVE_FILE_INVALID_INPUT',
+        retryable: false,
+      }
+    }
+    if (
+      filename.length > SAVE_FILE_NAME_MAX_CHARS
+      || (mimeType?.length ?? 0) > SAVE_FILE_MIME_MAX_CHARS
+    ) {
+      return {
+        ok: false,
+        error: 'invalid save_file: filename or mimeType exceeds the supported length',
+        code: 'SAVE_FILE_METADATA_TOO_LARGE',
+        retryable: false,
+      }
+    }
+
+    const bytes = new TextEncoder().encode(content).byteLength
+    if (bytes > SAVE_FILE_MAX_BYTES) {
+      return {
+        ok: false,
+        error: `invalid save_file: content is ${bytes} bytes; maximum is ${SAVE_FILE_MAX_BYTES}`,
+        code: 'SAVE_FILE_TOO_LARGE',
+        retryable: false,
+        hint: 'Write large output to the workspace in chunks or reduce the exported content.',
       }
     }
 
@@ -52,15 +81,30 @@ export const saveFileTool: Tool = {
     const file: { filename: string; content: string; mimeType?: string } = { filename, content }
     if (mimeType) file.mimeType = mimeType
 
-    const r = ctx.saveArtifact(file)
+    let r: ReturnType<typeof ctx.saveArtifact>
+    try {
+      r = ctx.saveArtifact(file)
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message || error.name : String(error),
+        code: 'SAVE_ARTIFACT_FAILED',
+        retryable: true,
+      }
+    }
     if ('error' in r) {
-      return { ok: false, error: r.error }
+      return {
+        ok: false,
+        error: r.error,
+        code: 'SAVE_ARTIFACT_FAILED',
+        retryable: false,
+      }
     }
 
     // 3) 成功：回 readiness（accepted / artifactId / bytes）给 model。
     return {
       ok: true,
-      data: { accepted: true, artifactId: r.artifactId, bytes: content.length },
+      data: { accepted: true, artifactId: r.artifactId, bytes },
     }
   },
 }

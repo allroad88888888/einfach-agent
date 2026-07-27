@@ -1,14 +1,14 @@
 // @web-agent/tools 的聚合完整性测试（TSPLIT TS2）。
 // ---------------------------------------------------------------------------
 // 登记反转后，「标准工具集是否装齐、名字是否正确」这件事的归属从 core 移到这里 ——
-// core 只提供空注册表 + 抽象；本 meta 包负责把 6 域 27 工具聚合成 registerStandardTools。
+// core 只提供空注册表 + 抽象；本 meta 包负责把 6 域 29 工具聚合成 registerStandardTools。
 // 故这份断言留在 meta（而非 agent-core），agent-core 的测试对具体工具保持无知。
 
 import { describe, it, expect } from 'vitest'
 import { createToolRegistry } from '@web-agent/core/tools/toolRegistry'
 import { registerStandardTools } from './index'
 
-// 6 域 27 个标准工具的权威清单（顺序 = 注册顺序：shell → interaction → fs → planning → skills → agents）。
+// 6 域 29 个标准工具的权威清单（顺序 = 注册顺序：shell → interaction → fs → planning → skills → agents）。
 const STANDARD_TOOLS = [
   // shell（5）
   'shell_macos', 'shell_linux', 'shell_powershell', 'run_task', 'git_diff_review',
@@ -17,20 +17,20 @@ const STANDARD_TOOLS = [
   // fs（10）
   'read_file', 'list_files', 'search_files', 'rg_search', 'apply_patch', 'write_file',
   'delete_path', 'copy_path', 'move_path', 'revert_workspace_change',
-  // planning（4）
-  'create_plan', 'update_plan', 'execute_plan', 'submit_stage_result',
+  // planning（5）
+  'get_plan', 'create_plan', 'update_plan', 'execute_plan', 'submit_stage_result',
   // skills（2）
   'skill_search', 'skill_read',
-  // agents（3）
-  'delegate_agent', 'observe_agent', 'join_agent',
+  // agents（4）
+  'delegate_agent', 'observe_agent', 'join_agent', 'cancel_agent',
 ] as const
 
 describe('@web-agent/tools —— 标准工具集聚合（TSPLIT TS2）', () => {
-  it('registerStandardTools 恰好装齐 27 个工具', () => {
+  it('registerStandardTools 恰好装齐 29 个工具', () => {
     const reg = createToolRegistry()
     registerStandardTools(reg)
-    expect(reg.list().length).toBe(27)
-    expect(STANDARD_TOOLS.length).toBe(27)
+    expect(reg.list().length).toBe(29)
+    expect(STANDARD_TOOLS.length).toBe(29)
   })
 
   it('六域每个工具都按 name 就位', () => {
@@ -45,6 +45,6 @@ describe('@web-agent/tools —— 标准工具集聚合（TSPLIT TS2）', () => 
     const reg = createToolRegistry()
     registerStandardTools(reg)
     registerStandardTools(reg)
-    expect(reg.list().length).toBe(27)
+    expect(reg.list().length).toBe(29)
   })
 })

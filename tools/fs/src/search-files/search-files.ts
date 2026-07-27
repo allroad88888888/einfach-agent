@@ -4,6 +4,7 @@ import type {
   SearchWorkspaceFilesResult,
   WorkspaceRuntimeResult,
 } from '@web-agent/core/runtime/workspaceRead'
+import type { RgSearchInput, RgSearchResult } from '@web-agent/core/runtime/workspaceRg'
 import guide from './search-files.md?raw'
 
 const DEFAULT_MAX_MATCHES = 100
@@ -18,12 +19,14 @@ const inputSchema = {
     maxMatches: { type: 'integer', minimum: 1, maximum: MAX_MATCHES, default: DEFAULT_MAX_MATCHES },
   },
   required: ['query'],
+  additionalProperties: false,
 }
 
 type MaybeWorkspaceResult<T> = WorkspaceRuntimeResult<T> | T
 
 type WorkspaceSearchContext = ToolContext & {
   searchWorkspaceFiles(input: SearchWorkspaceFilesInput): Promise<MaybeWorkspaceResult<SearchWorkspaceFilesResult>>
+  rgSearchWorkspace?(input: RgSearchInput): Promise<RgSearchResult>
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -47,7 +50,14 @@ function toErrorMessage(error: unknown): string {
 
 function toToolResult<T>(result: MaybeWorkspaceResult<T>): ToolResult {
   if (isStructuredResult(result)) {
-    return result.ok ? { ok: true, data: result.data } : { ok: false, error: result.error }
+    return result.ok
+      ? { ok: true, data: result.data }
+      : {
+          ok: false,
+          error: result.error,
+          code: 'SEARCH_FILES_FAILED',
+          retryable: false,
+        }
   }
   return { ok: true, data: result }
 }
@@ -75,22 +85,88 @@ export const searchFilesTool: Tool = {
     const input = asRecord(args)
     const query = typeof input.query === 'string' ? input.query.trim() : ''
     if (!query) {
-      return { ok: false, error: 'invalid search_files: query (non-empty string) is required' }
+      return {
+        ok: false,
+        error: 'invalid search_files: query (non-empty string) is required',
+        code: 'SEARCH_FILES_INVALID_INPUT',
+        retryable: false,
+      }
     }
 
     const path = typeof input.path === 'string' && input.path.trim() ? input.path.trim() : '.'
     const glob = typeof input.glob === 'string' && input.glob.trim() ? input.glob.trim() : undefined
     const maxMatches = normalizePositiveInteger(input.maxMatches, DEFAULT_MAX_MATCHES, MAX_MATCHES)
     const searchWorkspaceFiles = (ctx as Partial<WorkspaceSearchContext>).searchWorkspaceFiles
-    if (typeof searchWorkspaceFiles !== 'function') {
-      return { ok: false, error: 'search_files is unavailable: ctx.searchWorkspaceFiles is not configured' }
+    const rgSearchWorkspace = (ctx as Partial<WorkspaceSearchContext>).rgSearchWorkspace
+    if (
+      typeof rgSearchWorkspace !== 'function'
+      && typeof searchWorkspaceFiles !== 'function'
+    ) {
+      return {
+        ok: false,
+        error: 'search_files is unavailable: no workspace search backend is configured',
+        code: 'SEARCH_FILES_UNAVAILABLE',
+        retryable: false,
+      }
+    }
+
+    let rgFailure: RgSearchResult | undefined
+    let rgError: string | undefined
+    if (typeof rgSearchWorkspace === 'function') {
+      try {
+        const rgResult = await rgSearchWorkspace.call(ctx, {
+          query,
+          path,
+          regex: false,
+          caseSensitive: true,
+          globs: glob ? [glob] : undefined,
+          contextLines: 0,
+          maxMatches,
+        })
+        if (rgResult.ok) {
+          return {
+            ok: true,
+            data: {
+              matches: rgResult.matches.map((match) => ({
+                path: match.path,
+                line: match.line,
+                lineNumber: match.lineNumber,
+              })),
+              truncated: rgResult.truncated,
+            } satisfies SearchWorkspaceFilesResult,
+          }
+        }
+        rgFailure = rgResult
+      } catch (error) {
+        // A missing/broken ripgrep bridge must not disable the built-in
+        // literal search backend.
+        rgError = toErrorMessage(error)
+      }
     }
 
     try {
-      const result = await searchWorkspaceFiles.call(ctx, { query, path, glob, maxMatches })
-      return toToolResult(result)
+      if (typeof searchWorkspaceFiles === 'function') {
+        const result = await searchWorkspaceFiles.call(ctx, { query, path, glob, maxMatches })
+        return toToolResult(result)
+      }
+      return {
+        ok: false,
+        error:
+          rgFailure?.stderr
+          || rgError
+          || `rg_search exited with code ${rgFailure?.exitCode ?? -1}`,
+        code: 'SEARCH_FILES_FAILED',
+        retryable: false,
+        details: rgFailure ?? (rgError ? { backend: 'ripgrep', error: rgError } : undefined),
+      }
     } catch (error) {
-      return { ok: false, error: toErrorMessage(error) }
+      return {
+        ok: false,
+        error: toErrorMessage(error),
+        code: 'SEARCH_FILES_FAILED',
+        retryable: false,
+        details: rgFailure ?? (rgError ? { backend: 'ripgrep', error: rgError } : undefined),
+      }
     }
   },
 }

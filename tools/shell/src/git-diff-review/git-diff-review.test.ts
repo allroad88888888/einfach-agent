@@ -5,11 +5,13 @@ import { gitDiffReviewTool } from './git-diff-review'
 interface WorkspaceDiffInput {
   paths?: string[]
   staged?: boolean
+  base?: string
   maxDiffChars?: number
   includeStat?: boolean
 }
 
 interface WorkspaceDiffResult {
+  base?: string
   statusShort: string
   stat?: string
   diff: string
@@ -75,6 +77,7 @@ describe('git_diff_review tool', () => {
     expect(getWorkspaceDiff).toHaveBeenCalledWith({
       paths: undefined,
       staged: false,
+      base: undefined,
       maxDiffChars: 20_000,
       includeStat: true,
     })
@@ -89,6 +92,7 @@ describe('git_diff_review tool', () => {
       {
         paths: ['  src/a.ts  ', './src/b.ts'],
         staged: true,
+        base: 'origin/main',
         maxDiffChars: 999_999,
         includeStat: false,
       },
@@ -98,10 +102,21 @@ describe('git_diff_review tool', () => {
     expect(getWorkspaceDiff).toHaveBeenCalledWith({
       paths: ['src/a.ts', './src/b.ts'],
       staged: true,
+      base: 'origin/main',
       maxDiffChars: 100_000,
       includeStat: false,
     })
     expect(result).toMatchObject({ ok: true })
+  })
+
+  it('拒绝可能被 git 解析为选项的 base', async () => {
+    const getWorkspaceDiff = vi.fn(async () => makeWorkspaceDiffResult())
+    const ctx = makeCtx(getWorkspaceDiff)
+
+    const result = await gitDiffReviewTool.execute({ base: '--output=/tmp/x' }, ctx)
+
+    expect(result).toMatchObject({ ok: false })
+    expect(getWorkspaceDiff).not.toHaveBeenCalled()
   })
 
   it('非法 paths → {ok:false}，且不调 ctx.getWorkspaceDiff', async () => {
@@ -113,6 +128,8 @@ describe('git_diff_review tool', () => {
     expect(result).toEqual({
       ok: false,
       error: 'invalid git_diff_review: paths must be workspace-relative strings without parent traversal',
+      code: 'GIT_DIFF_INVALID_INPUT',
+      retryable: false,
     })
     expect(getWorkspaceDiff).not.toHaveBeenCalled()
   })
@@ -125,7 +142,12 @@ describe('git_diff_review tool', () => {
 
     const result = await gitDiffReviewTool.execute({}, ctx)
 
-    expect(result).toEqual({ ok: false, error: 'boom' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'boom',
+      code: 'GIT_DIFF_FAILED',
+      retryable: false,
+    })
   })
 
   it('ctx 未接 getWorkspaceDiff → {ok:false, error}', async () => {
@@ -137,6 +159,8 @@ describe('git_diff_review tool', () => {
     expect(result).toEqual({
       ok: false,
       error: 'git_diff_review unavailable: ctx.getWorkspaceDiff is not configured',
+      code: 'GIT_DIFF_UNAVAILABLE',
+      retryable: false,
     })
   })
 

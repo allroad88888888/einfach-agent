@@ -14,6 +14,7 @@ const MAX_GIT_STDERR_CHARS: usize = 10_000;
 
 #[derive(Serialize)]
 pub struct WorkspaceDiffResult {
+    base: Option<String>,
     status_short: String,
     stat: Option<String>,
     diff: String,
@@ -40,12 +41,20 @@ struct GitDiffCapture {
 pub async fn get_workspace_diff(
     paths: Option<Vec<String>>,
     staged: Option<bool>,
+    base: Option<String>,
     max_diff_chars: Option<usize>,
     include_stat: Option<bool>,
     workspace_root: Option<String>,
 ) -> Result<WorkspaceDiffResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        get_workspace_diff_blocking(paths, staged, max_diff_chars, include_stat, workspace_root)
+        get_workspace_diff_blocking(
+            paths,
+            staged,
+            base,
+            max_diff_chars,
+            include_stat,
+            workspace_root,
+        )
     })
     .await
     .map_err(|err| format!("workspace git worker failed: {err}"))?
@@ -54,6 +63,7 @@ pub async fn get_workspace_diff(
 fn get_workspace_diff_blocking(
     paths: Option<Vec<String>>,
     staged: Option<bool>,
+    base: Option<String>,
     max_diff_chars: Option<usize>,
     include_stat: Option<bool>,
     workspace_root: Option<String>,
@@ -70,6 +80,33 @@ fn get_workspace_diff_blocking(
         Ok(paths) => paths,
         Err(err) => return Ok(failed_result(err)),
     };
+    let base = match normalize_base(base) {
+        Ok(base) => base,
+        Err(err) => return Ok(failed_result(err)),
+    };
+    if let Some(base_ref) = base.as_deref() {
+        let commit = format!("{base_ref}^{{commit}}");
+        let verify = run_git(
+            &root,
+            &[
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "--end-of-options",
+                &commit,
+            ],
+        )?;
+        if verify.exit_code != 0 {
+            return Ok(failed_result(format!(
+                "git diff base `{base_ref}` does not resolve to a commit{}",
+                if verify.stderr.is_empty() {
+                    String::new()
+                } else {
+                    format!(": {}", verify.stderr.trim())
+                }
+            )));
+        }
+    }
 
     // P2：调用方给了 paths 做聚焦 review 时，status 也要按同一批 pathspec 收窄，
     // 否则 status_short/changed_files 混入无关文件（混合改动的 worktree 里可能很大且误导），
@@ -77,6 +114,7 @@ fn get_workspace_diff_blocking(
     let status = run_git(&root, &status_args(&pathspecs))?;
     if status.exit_code != 0 {
         return Ok(WorkspaceDiffResult {
+            base,
             status_short: status.stdout,
             stat: None,
             diff: String::new(),
@@ -90,7 +128,7 @@ fn get_workspace_diff_blocking(
     let mut stderr_parts = vec![status.stderr];
     let mut stat_exit_code = None;
     let stat = if include_stat {
-        let stat_output = run_git(&root, &diff_args(staged, true, &pathspecs))?;
+        let stat_output = run_git(&root, &diff_args(staged, base.as_deref(), true, &pathspecs))?;
         if stat_output.exit_code != 0 {
             stat_exit_code = Some(stat_output.exit_code);
         }
@@ -100,18 +138,42 @@ fn get_workspace_diff_blocking(
         None
     };
 
-    let diff_output =
-        run_git_diff_capped(&root, &diff_args(staged, false, &pathspecs), max_diff_chars)?;
+    let diff_output = run_git_diff_capped(
+        &root,
+        &diff_args(staged, base.as_deref(), false, &pathspecs),
+        max_diff_chars,
+    )?;
     let exit_code = if diff_output.exit_code != 0 {
         diff_output.exit_code
     } else {
         stat_exit_code.unwrap_or(diff_output.exit_code)
     };
     stderr_parts.push(diff_output.stderr);
+
+    let changed_files = if base.is_some() {
+        let names = run_git(
+            &root,
+            &diff_name_only_args(staged, base.as_deref(), &pathspecs),
+        )?;
+        if names.exit_code != 0 {
+            stderr_parts.push(names.stderr);
+            Vec::new()
+        } else {
+            names
+                .stdout
+                .lines()
+                .filter(|path| !path.is_empty())
+                .map(str::to_string)
+                .collect()
+        }
+    } else {
+        parse_changed_files(&status.stdout)
+    };
     let stderr = join_stderr(stderr_parts);
 
     Ok(WorkspaceDiffResult {
-        changed_files: parse_changed_files(&status.stdout),
+        base,
+        changed_files,
         status_short: status.stdout,
         stat,
         diff: diff_output.text,
@@ -123,6 +185,7 @@ fn get_workspace_diff_blocking(
 
 fn failed_result(stderr: String) -> WorkspaceDiffResult {
     WorkspaceDiffResult {
+        base: None,
         status_short: String::new(),
         stat: None,
         diff: String::new(),
@@ -131,6 +194,27 @@ fn failed_result(stderr: String) -> WorkspaceDiffResult {
         exit_code: 1,
         stderr,
     }
+}
+
+fn normalize_base(base: Option<String>) -> Result<Option<String>, String> {
+    let Some(base) = base else {
+        return Ok(None);
+    };
+    let trimmed = base.trim();
+    if trimmed.is_empty() {
+        return Err("git diff base cannot be empty".to_string());
+    }
+    if trimmed.starts_with('-')
+        || trimmed
+            .chars()
+            .any(|character| character.is_control() || character.is_whitespace())
+    {
+        return Err(
+            "git diff base must be a ref or commit without leading `-`, whitespace, or control characters"
+                .to_string(),
+        );
+    }
+    Ok(Some(trimmed.to_string()))
 }
 
 fn normalize_max_diff_chars(max_diff_chars: Option<usize>) -> usize {
@@ -293,7 +377,20 @@ fn status_args(paths: &[String]) -> Vec<String> {
     args
 }
 
-fn diff_args(staged: bool, stat: bool, paths: &[String]) -> Vec<String> {
+fn diff_args(staged: bool, base: Option<&str>, stat: bool, paths: &[String]) -> Vec<String> {
+    diff_args_with_format(staged, base, stat.then_some("--stat"), paths)
+}
+
+fn diff_name_only_args(staged: bool, base: Option<&str>, paths: &[String]) -> Vec<String> {
+    diff_args_with_format(staged, base, Some("--name-only"), paths)
+}
+
+fn diff_args_with_format(
+    staged: bool,
+    base: Option<&str>,
+    format: Option<&str>,
+    paths: &[String],
+) -> Vec<String> {
     // P1：diff 与 stat 都要堵死外部 diff / textconv driver（"只读" review 绝不 spawn 外部命令）。
     //   · `-c diff.external=` 是全局选项，必须放在子命令 `diff` 之前，用空值覆盖仓库 config 的 diff.external；
     //   · `--no-ext-diff` / `--no-textconv` 是 diff 子命令选项，放 `diff` 之后。
@@ -308,8 +405,11 @@ fn diff_args(staged: bool, stat: bool, paths: &[String]) -> Vec<String> {
     if staged {
         args.push("--cached".to_string());
     }
-    if stat {
-        args.push("--stat".to_string());
+    if let Some(format) = format {
+        args.push(format.to_string());
+    }
+    if let Some(base) = base {
+        args.push(base.to_string());
     }
     if !paths.is_empty() {
         args.push("--".to_string());
@@ -496,7 +596,7 @@ mod tests {
         let root = init_git_workspace();
         fs::write(root.join("a.txt"), "ALPHA_MODIFIED\n").expect("modify a.txt");
 
-        let result = get_workspace_diff_blocking(None, None, None, None, root_arg(&root))
+        let result = get_workspace_diff_blocking(None, None, None, None, None, root_arg(&root))
             .expect("diff worker should not error");
         assert_eq!(result.exit_code, 0, "git 应成功，stderr: {}", result.stderr);
         assert!(
@@ -525,6 +625,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             root_arg(&root),
         )
         .expect("diff worker should not error");
@@ -550,11 +651,60 @@ mod tests {
     }
 
     #[test]
+    fn diff_can_compare_against_a_base_commit() {
+        let root = init_git_workspace();
+        fs::write(root.join("a.txt"), "ALPHA_IN_SECOND_COMMIT\n").expect("modify a.txt");
+        run_setup_git(&root, &["add", "a.txt"]);
+        run_setup_git(
+            &root,
+            &["-c", "commit.gpgsign=false", "commit", "-q", "-m", "second"],
+        );
+
+        let result = get_workspace_diff_blocking(
+            None,
+            None,
+            Some("HEAD~1".to_string()),
+            None,
+            None,
+            root_arg(&root),
+        )
+        .expect("base diff worker should not error");
+
+        assert_eq!(result.exit_code, 0, "git 应成功，stderr: {}", result.stderr);
+        assert_eq!(result.base.as_deref(), Some("HEAD~1"));
+        assert!(result.diff.contains("ALPHA_IN_SECOND_COMMIT"));
+        assert_eq!(result.changed_files, vec!["a.txt".to_string()]);
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn diff_rejects_option_like_or_unknown_base() {
+        let root = init_git_workspace();
+        for base in ["--output=/tmp/x", "missing-ref"] {
+            let result = get_workspace_diff_blocking(
+                None,
+                None,
+                Some(base.to_string()),
+                None,
+                None,
+                root_arg(&root),
+            )
+            .expect("invalid base should be a structured failure");
+            assert_eq!(result.exit_code, 1);
+            assert!(result.stderr.contains("base"));
+        }
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn diff_rejects_path_escaping_workspace() {
         // confine：请求 ../ 越界 pathspec → 结构化失败(exit_code=1，stderr 说明越界)。
         let root = init_git_workspace();
         let result = get_workspace_diff_blocking(
             Some(vec!["../outside.txt".to_string()]),
+            None,
             None,
             None,
             None,
@@ -575,7 +725,7 @@ mod tests {
     #[test]
     fn diff_args_disable_external_diff_and_textconv() {
         for (staged, stat) in [(false, false), (true, false), (false, true), (true, true)] {
-            let args = diff_args(staged, stat, &[]);
+            let args = diff_args(staged, None, stat, &[]);
             let external_idx = args
                 .iter()
                 .position(|arg| arg == "diff.external=")

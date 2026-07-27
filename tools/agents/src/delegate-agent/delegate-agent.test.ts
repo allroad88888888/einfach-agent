@@ -60,7 +60,9 @@ describe('delegate_agent tool', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'delegate_agent unavailable: ctx.delegateAgents is not configured',
+      error: 'delegate_agent unavailable: no execution runtime is configured',
+      code: 'AGENT_DELEGATION_UNAVAILABLE',
+      retryable: false,
     })
   })
 
@@ -115,5 +117,34 @@ describe('delegate_agent tool', () => {
     })
     expect(progress).toHaveBeenCalledWith('派发 1 个子 agent')
     expect(result).toMatchObject({ ok: true })
+  })
+
+  it('surfaces a terminal failed batch as an outer tool failure', async () => {
+    const delegateAgents = vi.fn(async () => ({
+      treeId: 'run',
+      conversationId: 's',
+      runId: 'run',
+      parentPath: 'root',
+      strategy: 'parallel_wait_all' as const,
+      status: 'failed' as const,
+      summary: { total: 1, done: 0, failed: 1, cancelled: 0 },
+      cacheBasePath: '.agent-archive/conversations/s/runs/run',
+      archiveBasePath: '.agent-archive/conversations/s/runs/run',
+      eventLog: '.agent-archive/conversations/s/runs/run/events.jsonl',
+      skillFiles: [],
+      skillIds: [],
+      children: [],
+    }))
+
+    const result = await delegateAgentTool.execute(
+      { children: [{ objective: 'inspect something' }] },
+      makeCtx({ delegateAgents }),
+    )
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'AGENT_DELEGATION_FAILED',
+      details: { status: 'failed' },
+    })
   })
 })

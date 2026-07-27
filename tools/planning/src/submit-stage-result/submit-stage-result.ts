@@ -13,22 +13,47 @@ export const submitStageResultTool: Tool = {
   inputSchema: {
     type: 'object',
     properties: {
-      planId: { type: 'string' },
+      planId: { type: 'string', minLength: 1 },
       revision: { type: 'integer', minimum: 1 },
-      stageId: { type: 'string' },
-      summary: { type: 'string' },
-      evidence: { type: 'array', minItems: 1, items: { type: 'string' } },
+      stageId: { type: 'string', minLength: 1 },
+      summary: { type: 'string', minLength: 1 },
+      evidence: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } },
     },
     required: ['planId', 'revision', 'stageId', 'summary', 'evidence'],
+    additionalProperties: false,
   },
   async execute(args, ctx) {
-    if (!ctx.submitStageResult) return { ok: false, error: 'submit_stage_result unavailable' }
+    if (!ctx.submitStageResult) {
+      return { ok: false, error: 'submit_stage_result unavailable', code: 'PLAN_UNAVAILABLE', retryable: false }
+    }
     if ((!ctx.spawnAgents && !ctx.delegateAgents) || !ctx.evaluateStage || !ctx.evaluatePlan || !ctx.abortStageEvaluation) {
-      return { ok: false, error: 'automatic evaluator unavailable' }
+      return {
+        ok: false,
+        error: 'automatic evaluator unavailable',
+        code: 'PLAN_EVALUATOR_UNAVAILABLE',
+        retryable: false,
+      }
     }
     const input = args as unknown as SubmitStageResultInput
-    const submitted = ctx.submitStageResult(input)
-    if (!submitted.ok) return submitted
+    let submitted
+    try {
+      submitted = ctx.submitStageResult(input)
+    } catch (error) {
+      return {
+        ok: false,
+        error: `submit_stage_result failed: ${error instanceof Error ? error.message : String(error)}`,
+        code: 'PLAN_INVALID_INPUT',
+        retryable: false,
+      }
+    }
+    if (!submitted.ok) {
+      return {
+        ok: false,
+        error: submitted.error,
+        code: 'PLAN_STAGE_SUBMISSION_REJECTED',
+        retryable: false,
+      }
+    }
     const stage = submitted.plan.stages.find((item) => item.id === input.stageId)!
     const isFinalStage = submitted.plan.stages.every((item) => item.id === stage.id || item.status === 'completed' || item.status === 'skipped')
     const evaluatorInput = {
@@ -105,16 +130,36 @@ export const submitStageResultTool: Tool = {
     // result is returned immediately, while completion advances the Plan via
     // its revision-guarded state machine.
     if (ctx.spawnAgents) {
-      const evaluation = ctx.spawnAgents(evaluatorInput, {
-        onComplete: applyEvaluation,
-        onError: rollbackEvaluation,
-      })
-      return {
-        ok: true,
-        data: {
-          plan: submitted.plan,
-          evaluation,
-        },
+      try {
+        const evaluation = ctx.spawnAgents(evaluatorInput, {
+          onComplete: applyEvaluation,
+          onError: rollbackEvaluation,
+        })
+        return {
+          ok: true,
+          data: {
+            plan: submitted.plan,
+            evaluation,
+          },
+        }
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        try {
+          rollbackEvaluation(error)
+        } catch (rollbackError) {
+          return {
+            ok: false,
+            error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+            code: 'PLAN_EVALUATION_ROLLBACK_FAILED',
+            retryable: false,
+          }
+        }
+        return {
+          ok: false,
+          error: `automatic evaluation failed to start: ${reason}`,
+          code: 'PLAN_EVALUATION_START_FAILED',
+          retryable: true,
+        }
       }
     }
 
@@ -128,9 +173,19 @@ export const submitStageResultTool: Tool = {
       try {
         rollbackEvaluation(error)
       } catch (rollbackError) {
-        return { ok: false, error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError) }
+        return {
+          ok: false,
+          error: rollbackError instanceof Error ? rollbackError.message : String(rollbackError),
+          code: 'PLAN_EVALUATION_ROLLBACK_FAILED',
+          retryable: false,
+        }
       }
-      return { ok: false, error: `automatic evaluation failed: ${reason}` }
+      return {
+        ok: false,
+        error: `automatic evaluation failed: ${reason}`,
+        code: 'PLAN_EVALUATION_FAILED',
+        retryable: true,
+      }
     }
   },
 }

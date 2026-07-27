@@ -35,12 +35,16 @@ describe('revert_workspace_change tool', () => {
     await expect(revertWorkspaceChangeTool.execute({}, context())).resolves.toEqual({
       ok: false,
       error: 'invalid revert_workspace_change: changeSetId or changeSetIds is required',
+      code: 'WORKSPACE_REVERT_INVALID_INPUT',
+      retryable: false,
     })
     await expect(
       revertWorkspaceChangeTool.execute({ changeSetId: 'change-1' }, context()),
     ).resolves.toEqual({
       ok: false,
       error: 'revert_workspace_change unavailable: ctx.revertWorkspaceChange is not configured',
+      code: 'WORKSPACE_REVERT_UNAVAILABLE',
+      retryable: false,
     })
   })
 

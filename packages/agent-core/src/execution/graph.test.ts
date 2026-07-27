@@ -35,6 +35,46 @@ describe('execution graph', () => {
     expect(next).toBe(graph)
   })
 
+  it('keeps cancellation terminal when an abort-ignoring task completes later', () => {
+    const node = {
+      ...createExecutionNode({
+        id: 'n1',
+        graphId: 'g1',
+        sessionId: 's1',
+        runId: 'r1',
+        type: 'agent',
+        label: 'child',
+        now: 1,
+      }),
+      status: 'running' as const,
+    }
+    const graph = { version: 1 as const, nodes: { n1: node }, order: ['n1'] }
+    const cancelled = reduceExecutionGraph(graph, {
+      type: 'node.status',
+      nodeId: 'n1',
+      status: 'cancelled',
+      at: 2,
+      attempt: 1,
+      generation: 1,
+      error: 'cancelled',
+    })
+    const lateSuccess = reduceExecutionGraph(cancelled, {
+      type: 'node.status',
+      nodeId: 'n1',
+      status: 'succeeded',
+      at: 3,
+      attempt: 1,
+      generation: 1,
+      result: 'late',
+    })
+
+    expect(lateSuccess).toBe(cancelled)
+    expect(lateSuccess.nodes.n1).toMatchObject({
+      status: 'cancelled',
+      error: 'cancelled',
+    })
+  })
+
   it('derives ready nodes from dependency completion', () => {
     const store = createStore()
     const dependency = {

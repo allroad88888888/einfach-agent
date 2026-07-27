@@ -79,24 +79,34 @@ describe('list_files tool', () => {
     })
   })
 
-  it('maxEntries 执行上限 clamp，非法布尔值回默认', async () => {
+  it('maxEntries 执行上限 clamp，并拒绝非法布尔值', async () => {
     const listWorkspaceFiles = vi.fn(async () => ({
       ok: true as const,
       data: { entries: [], truncated: false },
     }))
     const ctx = makeCtx({ listWorkspaceFiles })
 
-    await listFilesTool.execute(
-      { path: 'src', recursive: 'yes', includeHidden: 'yes', maxEntries: 999_999 },
-      ctx,
-    )
-
+    await listFilesTool.execute({ path: 'src', maxEntries: 999_999 }, ctx)
     expect(listWorkspaceFiles).toHaveBeenCalledWith({
       path: 'src',
       recursive: false,
       maxEntries: 2_000,
       includeHidden: false,
     })
+    listWorkspaceFiles.mockClear()
+
+    const invalid = await listFilesTool.execute(
+      { path: 'src', recursive: 'yes', includeHidden: 'yes', maxEntries: 999_999 },
+      ctx,
+    )
+
+    expect(invalid).toEqual({
+      ok: false,
+      error: 'invalid list_files: recursive must be a boolean',
+      code: 'WORKSPACE_LIST_INVALID_INPUT',
+      retryable: false,
+    })
+    expect(listWorkspaceFiles).not.toHaveBeenCalled()
   })
 
   it('ctx 返回结构化错误 → {ok:false, error}', async () => {
@@ -105,7 +115,12 @@ describe('list_files tool', () => {
 
     const result = await listFilesTool.execute({ path: '../x' }, ctx)
 
-    expect(result).toEqual({ ok: false, error: 'outside root' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'outside root',
+      code: 'WORKSPACE_LIST_FAILED',
+      retryable: false,
+    })
   })
 
   it('ctx 抛错 → {ok:false, error}', async () => {
@@ -116,7 +131,12 @@ describe('list_files tool', () => {
 
     const result = await listFilesTool.execute({ path: '.' }, ctx)
 
-    expect(result).toEqual({ ok: false, error: 'boom' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'boom',
+      code: 'WORKSPACE_LIST_FAILED',
+      retryable: false,
+    })
   })
 
   it('身份/runtime/schema/skill 元数据齐备', () => {

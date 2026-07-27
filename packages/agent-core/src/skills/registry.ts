@@ -29,6 +29,13 @@ export interface SkillSummary {
   triggers: string[]
 }
 
+export interface SkillSearchMatch extends SkillSummary {
+  /** Deterministic relevance score; larger values sort first. */
+  score: number
+  /** Metadata fields that contributed to the match. */
+  matchedFields: Array<'name' | 'description' | 'trigger'>
+}
+
 export interface LoadedSkill extends SkillSummary {
   content: string
   /** 可读 L3 资源键列表（如 'references/evaluation.md'）；skill 无资源时为空数组。 */
@@ -118,15 +125,81 @@ export function listSkillSummaries(): SkillSummary[] {
   return skillSources.map(({ name, description, triggers }) => ({ name, description, triggers }))
 }
 
-export function searchSkills(query: string): SkillSummary[] {
-  const normalizedQuery = query.toLowerCase()
-  return listSkillSummaries().filter((skill) => {
-    const searchable = [skill.name, skill.description, ...skill.triggers].join(' ').toLowerCase()
-    return (
-      searchable.includes(normalizedQuery) ||
-      skill.triggers.some((trigger) => normalizedQuery.includes(trigger.toLowerCase()))
-    )
-  })
+function normalizedSearchText(value: string): string {
+  return value.normalize('NFKC').trim().toLowerCase()
+}
+
+function queryTokens(query: string): string[] {
+  return Array.from(new Set(
+    query
+      .split(/[\s,，。！？!?、:：;；()[\]{}"'“”‘’/\\|]+/)
+      .map((token) => token.trim())
+      .filter(Boolean),
+  ))
+}
+
+/**
+ * Ranked skill retrieval used by skill_search. Exact name/trigger hits outrank
+ * substrings, while description-only hits stay useful but lower.
+ */
+export function searchSkills(query: string): SkillSearchMatch[] {
+  const normalizedQuery = normalizedSearchText(query)
+  const tokens = queryTokens(normalizedQuery)
+
+  return listSkillSummaries()
+    .map((skill): SkillSearchMatch | undefined => {
+      const name = normalizedSearchText(skill.name)
+      const description = normalizedSearchText(skill.description)
+      const triggers = skill.triggers.map(normalizedSearchText)
+      const matchedFields = new Set<SkillSearchMatch['matchedFields'][number]>()
+      let score = 0
+
+      if (!normalizedQuery) return { ...skill, score, matchedFields: [] }
+
+      if (name === normalizedQuery) {
+        score += 120
+        matchedFields.add('name')
+      } else if (name.includes(normalizedQuery) || normalizedQuery.includes(name)) {
+        score += 70
+        matchedFields.add('name')
+      }
+
+      for (const trigger of triggers) {
+        if (trigger === normalizedQuery) {
+          score += 100
+          matchedFields.add('trigger')
+        } else if (trigger.includes(normalizedQuery) || normalizedQuery.includes(trigger)) {
+          score += 55
+          matchedFields.add('trigger')
+        }
+      }
+
+      if (description.includes(normalizedQuery)) {
+        score += 40
+        matchedFields.add('description')
+      }
+
+      for (const token of tokens) {
+        if (token === normalizedQuery) continue
+        if (name.includes(token) || token.includes(name)) {
+          score += 24
+          matchedFields.add('name')
+        }
+        if (triggers.some((trigger) => trigger.includes(token) || token.includes(trigger))) {
+          score += 18
+          matchedFields.add('trigger')
+        }
+        if (description.includes(token)) {
+          score += 8
+          matchedFields.add('description')
+        }
+      }
+
+      if (score === 0) return undefined
+      return { ...skill, score, matchedFields: Array.from(matchedFields).sort() }
+    })
+    .filter((skill): skill is SkillSearchMatch => skill !== undefined)
+    .sort((left, right) => right.score - left.score || compareSkillName(left.name, right.name))
 }
 
 export function readSkill(name: string): LoadedSkill | undefined {

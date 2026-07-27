@@ -96,44 +96,38 @@ async function delegate(
 }
 
 describe('toolContext 子 Agent 归档写入', () => {
-  it('overwrite snapshot：首次目标不存在时回退 create，后续直接覆盖', async () => {
+  it('归档 snapshot 用 upsert 一次落盘：不存在则新建、已存在则覆盖，且不再有探测往返', async () => {
     let exists = false
     vi.mocked(writeWorkspaceFile).mockImplementation(async (input) => {
-      if (input.mode === 'overwrite' && !exists) {
-        return writeResult(input, {
-          ok: false,
-          bytesWritten: 0,
-          overwritten: false,
-          error: 'cannot overwrite a file that does not exist',
-        })
-      }
-      if (input.mode === 'create') exists = true
-      return writeResult(input)
+      const created = !exists
+      exists = true
+      return writeResult(input, { created, overwritten: !created })
     })
-    const first = contextWriting({ path: '.archive/tree.json', content: 'first', mode: 'overwrite' })
+    const first = contextWriting({ path: '.archive/tree.json', content: 'first' })
 
     await delegate(first.runtime)
 
     expect(first.result()).toMatchObject({ ok: true, created: true })
-    expect(vi.mocked(writeWorkspaceFile).mock.calls.map(([input]) => input)).toEqual([
+    // 关键：首次落盘也只有一次写调用。旧实现要先 overwrite 失败再 create。
+    expect(writeWorkspaceFile).toHaveBeenCalledOnce()
+    expect(writeWorkspaceFile).toHaveBeenCalledWith(
       expect.objectContaining({
         path: '.archive/tree.json',
-        mode: 'overwrite',
+        mode: 'upsert',
         createDirs: true,
         exclusivePathLock: true,
         workspaceRoot: '/workspace',
       }),
-      expect.objectContaining({ path: '.archive/tree.json', mode: 'create', workspaceRoot: '/workspace' }),
-    ])
+    )
 
     vi.mocked(writeWorkspaceFile).mockClear()
-    const second = contextWriting({ path: '.archive/tree.json', content: 'second', mode: 'overwrite' })
+    const second = contextWriting({ path: '.archive/tree.json', content: 'second' })
     await delegate(second.runtime)
 
     expect(second.result()).toMatchObject({ ok: true, overwritten: true })
     expect(writeWorkspaceFile).toHaveBeenCalledOnce()
     expect(writeWorkspaceFile).toHaveBeenCalledWith(
-      expect.objectContaining({ path: '.archive/tree.json', content: 'second', mode: 'overwrite' }),
+      expect.objectContaining({ path: '.archive/tree.json', content: 'second', mode: 'upsert' }),
     )
   })
 
@@ -174,30 +168,22 @@ describe('toolContext 子 Agent 归档写入', () => {
     expect(writeWorkspaceFile).toHaveBeenCalledOnce()
   })
 
-  it('overwrite 回退 create 也失败时不会静默继续', async () => {
-    vi.mocked(writeWorkspaceFile)
-      .mockImplementationOnce(async (input) =>
-        writeResult(input, {
-          ok: false,
-          bytesWritten: 0,
-          overwritten: false,
-          error: 'cannot overwrite a file that does not exist',
-        }),
-      )
-      .mockImplementationOnce(async (input) =>
-        writeResult(input, {
-          ok: false,
-          bytesWritten: 0,
-          created: false,
-          error: 'permission denied',
-        }),
-      )
-    const attempt = contextWriting({ path: '.archive/tree.json', content: '{}', mode: 'overwrite' })
+  it('upsert 快照写入失败时不会静默继续，且不再重试第二种模式', async () => {
+    vi.mocked(writeWorkspaceFile).mockImplementation(async (input) =>
+      writeResult(input, {
+        ok: false,
+        bytesWritten: 0,
+        created: false,
+        overwritten: false,
+        error: 'permission denied',
+      }),
+    )
+    const attempt = contextWriting({ path: '.archive/tree.json', content: '{}' })
 
     await expect(delegate(attempt.runtime)).rejects.toThrow(
-      'Subagent archive write failed (overwrite) for ".archive/tree.json": permission denied',
+      'Subagent archive write failed (upsert) for ".archive/tree.json": permission denied',
     )
-    expect(writeWorkspaceFile).toHaveBeenCalledTimes(2)
+    expect(writeWorkspaceFile).toHaveBeenCalledOnce()
   })
 
   it('当前 run 已 abort 仍允许写入最终审计归档', async () => {

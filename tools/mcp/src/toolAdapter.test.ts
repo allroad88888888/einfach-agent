@@ -4,6 +4,7 @@ import {
   MCP_GUIDE_MAX_CHARS,
   MCP_INPUT_SCHEMA_MAX_CHARS,
   MCP_TOOL_NAME_MAX_CHARS,
+  MCP_TOOL_CALL_TIMEOUT_MS,
   MCP_TOOL_RESULT_DROPPED_MARKER,
   MCP_TOOL_RESULT_MAX_CHARS,
   createMcpToolAdapter,
@@ -39,7 +40,7 @@ describe('MCP tool adapter', () => {
     expect(first).not.toBe(second)
   })
 
-  it('bounds remote metadata, labels its source, and ignores annotations', () => {
+  it('bounds remote metadata, labels its source, and ignores arbitrary annotations', () => {
     const hiddenInstruction = 'SECRET_ANNOTATION_INSTRUCTION'
     const registered = createMcpToolAdapter({
       serverId: 'external-service',
@@ -67,9 +68,10 @@ describe('MCP tool adapter', () => {
     )
     expect(registered.tool.skill.content).not.toContain(hiddenInstruction)
     expect(registered.snapshot.title?.length).toBeLessThanOrEqual(128)
+    expect(registered.tool.execution?.mode).toBe('serial')
   })
 
-  it('forwards arguments and AbortSignal, while keeping transport metadata out of model-visible data', async () => {
+  it('forwards arguments and a live AbortSignal, while keeping transport metadata out of model-visible data', async () => {
     const controller = new AbortController()
     const callTool = vi.fn<McpConnection['callTool']>(async () => ({
       content: [{ type: 'text', text: 'sunny' }],
@@ -101,8 +103,9 @@ describe('MCP tool adapter', () => {
     expect(callTool).toHaveBeenCalledWith(
       'forecast',
       { city: 'Shanghai' },
-      { signal: controller.signal },
+      { signal: expect.any(AbortSignal) },
     )
+    expect(callTool.mock.calls[0]?.[2]?.signal?.aborted).toBe(false)
   })
 
   it('normalizes MCP error content without exposing an unbounded message', () => {
@@ -131,12 +134,114 @@ describe('MCP tool adapter', () => {
       ],
     })
 
-    expect(result).toMatchObject({ ok: false })
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'MCP_REMOTE_ERROR',
+      retryable: false,
+    })
     if ('ok' in result && !result.ok) {
       expect(result.error.length).toBeLessThanOrEqual(4_000)
       expect(result.error.endsWith('…')).toBe(true)
     }
     expect(inspectedLateItem).toBe(false)
+  })
+
+  it('uses standardized read-only annotations only for scheduling', () => {
+    const registered = createMcpToolAdapter({
+      serverId: 'catalog',
+      connection: connection(),
+      runtime: 'internal',
+      remoteTool: {
+        name: 'lookup',
+        description: 'Look up a record',
+        inputSchema: { type: 'object' },
+        annotations: {
+          readOnlyHint: true,
+          instructions: 'THIS_MUST_NOT_REACH_THE_MODEL',
+        },
+      },
+    })
+
+    expect(registered.tool.execution).toEqual({
+      mode: 'parallel',
+      effectKeys: ['external:mcp:catalog:read'],
+    })
+    expect(registered.tool.skill.content).toContain('declares this tool read-only')
+    expect(registered.tool.skill.content).not.toContain('THIS_MUST_NOT_REACH_THE_MODEL')
+  })
+
+  it('returns bounded timeout and transport failures with stable codes', async () => {
+    const timedOut = createMcpToolAdapter({
+      serverId: 'slow',
+      connection: connection(() => new Promise(() => undefined)),
+      runtime: 'internal',
+      callTimeoutMs: 5,
+      remoteTool: {
+        name: 'wait',
+        inputSchema: { type: 'object' },
+      },
+    })
+    await expect(
+      timedOut.tool.execute({}, {
+        signal: new AbortController().signal,
+      } as never),
+    ).resolves.toMatchObject({
+      ok: false,
+      code: 'MCP_TOOL_TIMEOUT',
+      retryable: true,
+      details: { timeoutMs: 5 },
+    })
+
+    const broken = createMcpToolAdapter({
+      serverId: 'broken',
+      connection: connection(async () => {
+        throw new Error('connection reset')
+      }),
+      runtime: 'internal',
+      remoteTool: {
+        name: 'call',
+        inputSchema: { type: 'object' },
+      },
+    })
+    await expect(
+      broken.tool.execute({}, {
+        signal: new AbortController().signal,
+      } as never),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: 'MCP transport failed: connection reset',
+      code: 'MCP_TRANSPORT_ERROR',
+      retryable: true,
+    })
+  })
+
+  it('keeps caller cancellation as AbortError control flow', async () => {
+    const controller = new AbortController()
+    const registered = createMcpToolAdapter({
+      serverId: 'slow',
+      connection: connection((_name, _args, options) =>
+        new Promise((_resolve, reject) => {
+          options?.signal?.addEventListener('abort', () => {
+            reject(options.signal?.reason)
+          }, { once: true })
+        })),
+      runtime: 'internal',
+      remoteTool: {
+        name: 'wait',
+        inputSchema: { type: 'object' },
+      },
+    })
+
+    const running = registered.tool.execute({}, { signal: controller.signal } as never)
+    controller.abort(new Error('cancelled by caller'))
+    await expect(running).rejects.toMatchObject({
+      name: 'AbortError',
+      message: 'cancelled by caller',
+    })
+  })
+
+  it('uses a finite default call deadline', () => {
+    expect(MCP_TOOL_CALL_TIMEOUT_MS).toBeGreaterThan(0)
   })
 
   it('rejects a missing or non-object MCP input schema before registration', () => {

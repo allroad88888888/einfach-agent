@@ -32,4 +32,36 @@ describe('readWorkspaceFile contentHash', () => {
       data: { contentHash },
     })
   })
+
+  it('映射 byte offset 并规范化分段读取元数据', async () => {
+    tauri.invoke.mockResolvedValue({
+      path: 'large.txt',
+      content: 'next',
+      truncated: true,
+      bytes: 4,
+      offset: 20_000,
+      total_bytes: 40_000,
+      next_offset: 20_004,
+    })
+
+    await expect(
+      readWorkspaceFile({ path: 'large.txt', maxBytes: 4, offset: 20_000 }),
+    ).resolves.toEqual({
+      ok: true,
+      data: {
+        path: 'large.txt',
+        content: 'next',
+        truncated: true,
+        bytes: 4,
+        offset: 20_000,
+        totalBytes: 40_000,
+        nextOffset: 20_004,
+      },
+    })
+    expect(tauri.invoke).toHaveBeenCalledWith('read_workspace_file', expect.objectContaining({
+      path: 'large.txt',
+      max_bytes: 4,
+      offset: 20_000,
+    }))
+  })
 })

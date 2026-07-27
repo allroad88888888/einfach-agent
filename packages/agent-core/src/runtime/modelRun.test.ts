@@ -1325,7 +1325,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(toolSpan?.attrs).toMatchObject({
       result_kind: 'object',
       args: { redacted: true, kind: 'object', keys: 1 },
-      result: { redacted: true, kind: 'object', keys: 2 },
+      result: { redacted: true, kind: 'object', keys: 5 },
     })
     expect(toolSpan?.attrs?.argsPreview).toContain('"query":"chart"')
     expect(toolSpan?.attrs?.resultPreview).toContain('"results"')
@@ -2671,7 +2671,9 @@ describe('危险工具确认门（S4-B）', () => {
       (item) => item.item.role === 'tool' && item.item.tool_call_id === 'rm1',
     )?.item
     if (!result || result.role !== 'tool') throw new Error('缺少 rm tool result')
-    expect(JSON.parse(result.content)).toMatchObject({ reversible: false })
+    expect(JSON.parse(result.content)).toMatchObject({
+      details: { reversible: false },
+    })
     expect(count()).toBe(3)
   })
 

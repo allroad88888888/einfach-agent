@@ -23,6 +23,7 @@ const ACTIVE_STATUSES = new Set<ExecutionNodeStatus>([
   'waiting-children',
   'waiting-user',
 ])
+const TERMINAL_STATUSES = new Set<ExecutionNodeStatus>(['succeeded', 'failed', 'cancelled'])
 
 export const readyExecutionNodeIdsAtom = atom((get) => {
   const graph = get(executionGraphAtom)
@@ -89,8 +90,13 @@ export function reduceExecutionGraph(
   if (current.attempt !== event.attempt || current.generation !== event.generation) {
     return graph
   }
+  // Terminal state is monotonic. In particular, a task that ignores AbortSignal
+  // must not overwrite an already-dispatched cancellation when it resolves later.
+  if (TERMINAL_STATUSES.has(current.status)) {
+    return graph
+  }
 
-  const terminal = ['succeeded', 'failed', 'cancelled'].includes(event.status)
+  const terminal = TERMINAL_STATUSES.has(event.status)
   const startedAt = event.status === 'running'
     ? current.startedAt ?? event.at
     : current.startedAt

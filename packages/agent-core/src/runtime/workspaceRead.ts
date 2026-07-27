@@ -3,6 +3,8 @@ import { invoke, isTauri } from '@tauri-apps/api/core'
 export interface ReadWorkspaceFileInput {
   path: string
   maxBytes?: number
+  /** UTF-8 byte offset. Continue with the exact nextOffset returned by the previous chunk. */
+  offset?: number
   /** 可选显式 workspace root（P1）；不传则 Rust 侧走 git root 兜底。 */
   workspaceRoot?: string
   /** Runtime-only：Auto 会话允许读取 workspace 外路径；工具参数不能提供此字段。 */
@@ -14,6 +16,12 @@ export interface ReadWorkspaceFileResult {
   content: string
   truncated: boolean
   bytes: number
+  /** Byte offset at which this chunk started. */
+  offset?: number
+  /** Total file size in bytes at read time. */
+  totalBytes?: number
+  /** Present when more bytes remain; pass it back as the next input offset. */
+  nextOffset?: number
   /** Present only for a complete, non-truncated read. Can guard a later overwrite. */
   contentHash?: string
 }
@@ -86,6 +94,7 @@ export type WorkspaceRuntimeResult<T> = { ok: true; data: T } | { ok: false; err
 type TauriReadWorkspaceFileInput = {
   path: string
   max_bytes?: number
+  offset?: number
   workspace_root?: string
   allow_external_paths?: boolean
 }
@@ -156,6 +165,7 @@ function toTauriReadInput(input: ReadWorkspaceFileInput): TauriReadWorkspaceFile
   return {
     path: input.path,
     max_bytes: input.maxBytes,
+    offset: input.offset,
     workspace_root: input.workspaceRoot,
     allow_external_paths: input.allowExternalPaths,
   }
@@ -204,7 +214,14 @@ function normalizeReadResult(raw: unknown): WorkspaceRuntimeResult<ReadWorkspace
     content,
     truncated: booleanValue(raw.truncated, false),
     bytes: numberValue(raw.bytes, content.length),
+    offset: numberValue(raw.offset, 0),
+    totalBytes: numberValue(
+      raw.totalBytes ?? raw.total_bytes,
+      numberValue(raw.offset, 0) + numberValue(raw.bytes, content.length),
+    ),
   }
+  const nextOffset = optionalNumberValue(raw.nextOffset ?? raw.next_offset)
+  if (nextOffset !== undefined) result.nextOffset = nextOffset
   const contentHash = raw.contentHash ?? raw.content_hash
   if (
     typeof contentHash === 'string' &&

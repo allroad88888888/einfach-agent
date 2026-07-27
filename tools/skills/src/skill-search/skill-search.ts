@@ -4,10 +4,14 @@ import type { Tool } from '@web-agent/core/tools/types'
 import guide from './skill-search.md?raw' // skill 正文（同目录 .md）
 import { searchSkills } from '@web-agent/core/skills/registry'
 
+const DEFAULT_LIMIT = 10
+const MAX_LIMIT = 50
+
 const inputSchema = {
   type: 'object',
   properties: {
     query: { type: 'string' },
+    limit: { type: 'integer', minimum: 1, maximum: MAX_LIMIT, default: DEFAULT_LIMIT },
   },
   additionalProperties: false,
 }
@@ -29,7 +33,21 @@ export const skillSearchTool: Tool = {
   inputSchema,
   execute(args) {
     // query 省略或为空字符串都表示列出全部；未知字段已由 schema 拒绝。
-    const query = String(asRecord(args).query ?? '')
-    return { ok: true, data: { query, results: searchSkills(query) } }
+    const input = asRecord(args)
+    const query = typeof input.query === 'string' ? input.query.trim() : ''
+    const limit = typeof input.limit === 'number' && Number.isSafeInteger(input.limit)
+      ? Math.max(1, Math.min(MAX_LIMIT, input.limit))
+      : DEFAULT_LIMIT
+    const matches = searchSkills(query)
+    return {
+      ok: true,
+      data: {
+        query,
+        results: matches.slice(0, limit),
+        total: matches.length,
+        limit,
+        truncated: matches.length > limit,
+      },
+    }
   },
 }

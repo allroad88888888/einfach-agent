@@ -7,6 +7,7 @@ import type {
   EvaluatePlanInput,
   EvaluateStageInput,
   PlanMutationResult,
+  PlanSnapshot,
   SubmitStageResultInput,
   UpdatePlanInput,
 } from '../planning/types'
@@ -77,7 +78,19 @@ export interface ToolSkill {
  */
 export type ToolResult =
   | { ok: true; data?: unknown; warnings?: string[] }
-  | { ok: false; error: string }
+  | {
+      ok: false
+      /** Human-readable summary suitable for the model and UI. */
+      error: string
+      /** Stable machine-readable category used by retry/telemetry policy. */
+      code?: string
+      /** Optional actionable recovery guidance. */
+      hint?: string
+      /** Whether retrying the same operation may succeed without changing arguments. */
+      retryable?: boolean
+      /** Bounded structured diagnostics such as exitCode/stdout/stderr. */
+      details?: unknown
+    }
   | { pause: unknown }
 
 export type ShellPlatform = 'macos' | 'linux' | 'windows'
@@ -160,10 +173,11 @@ export interface ToolContext {
   /** 读取后台执行节点，不等待它完成。 */
   observeExecution?(executionId: string): ExecutionObservation
   /** 显式等待后台执行节点。 */
-  joinExecution?(executionId: string): Promise<ExecutionJoinResult>
+  joinExecution?(executionId: string, timeoutMs?: number): Promise<ExecutionJoinResult>
   /** 取消一个后台执行节点。 */
   cancelExecution?(executionId: string): boolean
   /** 结构化计划能力。状态由宿主的 PlanRuntime 管理，工具不得直接访问 atom/store。 */
+  getPlan?(): PlanSnapshot | undefined
   createPlan?(input: CreatePlanInput): PlanMutationResult
   executePlan?(planId: string, revision: number): PlanMutationResult
   updatePlan?(input: UpdatePlanInput): PlanMutationResult
@@ -177,6 +191,7 @@ export interface ToolContext {
   readWorkspaceFile?(input: {
     path: string
     maxBytes?: number
+    offset?: number
     workspaceRoot?: string
     allowExternalPaths?: boolean
   }): Promise<unknown>

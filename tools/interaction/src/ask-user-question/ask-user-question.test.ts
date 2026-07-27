@@ -59,7 +59,7 @@ describe('tools/ask-user-question/ask-user-question', () => {
     expect(item.properties.type.description).toContain('single-choice')
   })
 
-  it('有 questions → { pause: 原 args }（暂停，§7）', async () => {
+  it('有 questions → 规范化后暂停（§7）', async () => {
     const args = {
       id: 'q1',
       title: '确认范围',
@@ -67,9 +67,14 @@ describe('tools/ask-user-question/ask-user-question', () => {
     }
     const result = await askUserQuestionTool.execute(args, makeCtx())
 
-    expect(result).toMatchObject({ pause: args })
+    expect(result).toMatchObject({
+      pause: {
+        title: '确认范围',
+        questions: [{ id: 'a', text: '要哪个方案？', type: 'single-choice', options: ['x', 'y'] }],
+      },
+    })
     if (!('pause' in result)) throw new Error('expected pause')
-    expect(result.pause).toBe(args)
+    expect(result.pause).not.toBe(args)
   })
 
   it('无 questions → { ok:false, error }', async () => {
@@ -81,6 +86,14 @@ describe('tools/ask-user-question/ask-user-question', () => {
 
   it('空 questions 数组 → { ok:false, error }', async () => {
     const result = await askUserQuestionTool.execute({ id: 'q1', questions: [] }, makeCtx())
+    expect(result).toMatchObject({ ok: false })
+  })
+
+  it('原数组非空但全部问题无效时不暂停', async () => {
+    const result = await askUserQuestionTool.execute(
+      { questions: [{ id: '', text: 'missing id' }, null, { id: 'q', text: '' }] },
+      makeCtx(),
+    )
     expect(result).toMatchObject({ ok: false })
   })
 })

@@ -5,10 +5,12 @@ import type {
   SearchWorkspaceFilesResult,
   WorkspaceRuntimeResult,
 } from '@web-agent/core/runtime/workspaceRead'
+import type { RgSearchInput, RgSearchResult } from '@web-agent/core/runtime/workspaceRg'
 import { searchFilesTool } from './search-files'
 
 type TestCtx = ToolContext & {
   searchWorkspaceFiles: (input: SearchWorkspaceFilesInput) => Promise<WorkspaceRuntimeResult<SearchWorkspaceFilesResult>>
+  rgSearchWorkspace?: (input: RgSearchInput) => Promise<RgSearchResult>
 }
 
 function makeCtx(overrides: Partial<TestCtx> = {}): TestCtx {
@@ -62,6 +64,92 @@ describe('search_files tool', () => {
     expect(result).toEqual({ ok: true, data })
   })
 
+  it('优先使用 ripgrep，并把结果归一化为 search_files 形状', async () => {
+    const rgSearchWorkspace = vi.fn(async (): Promise<RgSearchResult> => ({
+      ok: true,
+      matches: [{
+        path: 'src/a.ts',
+        lineNumber: 7,
+        column: 9,
+        line: 'const needle = true',
+        before: [],
+        after: [],
+      }],
+      truncated: false,
+      exitCode: 0,
+      stderr: '',
+    }))
+    const searchWorkspaceFiles = vi.fn(async () => ({
+      ok: true as const,
+      data: { matches: [], truncated: false },
+    }))
+
+    const result = await searchFilesTool.execute(
+      { query: 'needle', path: 'src', glob: '*.ts', maxMatches: 5 },
+      makeCtx({ rgSearchWorkspace, searchWorkspaceFiles }),
+    )
+
+    expect(rgSearchWorkspace).toHaveBeenCalledWith({
+      query: 'needle',
+      path: 'src',
+      regex: false,
+      caseSensitive: true,
+      globs: ['*.ts'],
+      contextLines: 0,
+      maxMatches: 5,
+    })
+    expect(searchWorkspaceFiles).not.toHaveBeenCalled()
+    expect(result).toEqual({
+      ok: true,
+      data: {
+        matches: [{ path: 'src/a.ts', line: 'const needle = true', lineNumber: 7 }],
+        truncated: false,
+      },
+    })
+  })
+
+  it('ripgrep 不可用时退回内置搜索', async () => {
+    const rgSearchWorkspace = vi.fn(async (): Promise<RgSearchResult> => ({
+      ok: false,
+      matches: [],
+      truncated: false,
+      exitCode: 1,
+      stderr: 'failed to spawn `rg`',
+    }))
+    const data = {
+      matches: [{ path: 'README.md', line: 'needle', lineNumber: 2 }],
+      truncated: false,
+    }
+    const searchWorkspaceFiles = vi.fn(async () => ({ ok: true as const, data }))
+
+    const result = await searchFilesTool.execute(
+      { query: 'needle' },
+      makeCtx({ rgSearchWorkspace, searchWorkspaceFiles }),
+    )
+
+    expect(searchWorkspaceFiles).toHaveBeenCalledOnce()
+    expect(result).toEqual({ ok: true, data })
+  })
+
+  it('ripgrep bridge 抛错时也退回内置搜索', async () => {
+    const rgSearchWorkspace = vi.fn(async (): Promise<RgSearchResult> => {
+      throw new Error('rg command not found')
+    })
+    const data = {
+      matches: [{ path: 'README.md', line: 'needle', lineNumber: 2 }],
+      truncated: false,
+    }
+    const searchWorkspaceFiles = vi.fn(async () => ({ ok: true as const, data }))
+
+    const result = await searchFilesTool.execute(
+      { query: 'needle' },
+      makeCtx({ rgSearchWorkspace, searchWorkspaceFiles }),
+    )
+
+    expect(searchWorkspaceFiles).toHaveBeenCalledOnce()
+    expect(result).toEqual({ ok: true, data })
+  })
+
   it('非法 query → {ok:false}，且不调 ctx', async () => {
     const searchWorkspaceFiles = vi.fn(async () => ({
       ok: true as const,
@@ -74,6 +162,8 @@ describe('search_files tool', () => {
     expect(result).toEqual({
       ok: false,
       error: 'invalid search_files: query (non-empty string) is required',
+      code: 'SEARCH_FILES_INVALID_INPUT',
+      retryable: false,
     })
     expect(searchWorkspaceFiles).not.toHaveBeenCalled()
   })
@@ -108,7 +198,12 @@ describe('search_files tool', () => {
 
     const result = await searchFilesTool.execute({ query: 'q', path: '../x' }, ctx)
 
-    expect(result).toEqual({ ok: false, error: 'outside root' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'outside root',
+      code: 'SEARCH_FILES_FAILED',
+      retryable: false,
+    })
   })
 
   it('ctx 抛错 → {ok:false, error}', async () => {
@@ -119,7 +214,12 @@ describe('search_files tool', () => {
 
     const result = await searchFilesTool.execute({ query: 'q' }, ctx)
 
-    expect(result).toEqual({ ok: false, error: 'boom' })
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'boom',
+      code: 'SEARCH_FILES_FAILED',
+      retryable: false,
+    })
   })
 
   it('身份/runtime/schema/skill 元数据齐备', () => {

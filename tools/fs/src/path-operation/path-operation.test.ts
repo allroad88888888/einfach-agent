@@ -33,6 +33,8 @@ describe('workspace path operation tools', () => {
     await expect(copyPathTool.execute({ source: 'a' }, context())).resolves.toEqual({
       ok: false,
       error: 'invalid copy_path: source and destination are required',
+      code: 'WORKSPACE_PATH_OPERATION_INVALID_INPUT',
+      retryable: false,
     })
   })
 })

@@ -90,21 +90,32 @@ export const runTaskTool: Tool = {
       return {
         ok: false,
         error: `invalid run_task: kind must be one of ${RUN_TASK_KINDS.join(', ')}`,
+        code: 'TASK_INVALID_INPUT',
+        retryable: false,
       }
     }
 
     const timeoutMs = normalizeOptionalPositiveInteger(input.timeoutMs, MAX_TIMEOUT_MS, 'timeoutMs')
-    if (typeof timeoutMs === 'string') return { ok: false, error: timeoutMs }
+    if (typeof timeoutMs === 'string') {
+      return { ok: false, error: timeoutMs, code: 'TASK_INVALID_INPUT', retryable: false }
+    }
     const maxOutputChars = normalizeOptionalPositiveInteger(
       input.maxOutputChars,
       MAX_OUTPUT_CHARS,
       'maxOutputChars',
     )
-    if (typeof maxOutputChars === 'string') return { ok: false, error: maxOutputChars }
+    if (typeof maxOutputChars === 'string') {
+      return { ok: false, error: maxOutputChars, code: 'TASK_INVALID_INPUT', retryable: false }
+    }
 
     const runWorkspaceTask = getRunWorkspaceTaskFromContext(ctx)
     if (!runWorkspaceTask) {
-      return { ok: false, error: 'run_task unavailable: ctx.runWorkspaceTask is not configured' }
+      return {
+        ok: false,
+        error: 'run_task unavailable: ctx.runWorkspaceTask is not configured',
+        code: 'TASK_UNAVAILABLE',
+        retryable: false,
+      }
     }
 
     const taskInput: RunTaskInput = { kind }
@@ -113,9 +124,25 @@ export const runTaskTool: Tool = {
 
     try {
       const result = await runWorkspaceTask(taskInput)
+      if (!result.ok || result.timedOut || result.exitCode !== 0) {
+        return {
+          ok: false,
+          error: result.timedOut
+            ? `run_task timed out after ${result.durationMs}ms`
+            : `run_task ${kind} exited with code ${result.exitCode}`,
+          code: result.timedOut ? 'TASK_TIMEOUT' : 'TASK_FAILED',
+          retryable: result.timedOut,
+          details: result,
+        }
+      }
       return { ok: true, data: result }
     } catch (error) {
-      return { ok: false, error: toErrorMessage(error) }
+      return {
+        ok: false,
+        error: toErrorMessage(error),
+        code: 'TASK_EXECUTION_ERROR',
+        retryable: true,
+      }
     }
   },
 }

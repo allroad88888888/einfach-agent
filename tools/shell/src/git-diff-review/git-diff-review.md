@@ -5,6 +5,7 @@ Read-only Git workspace review tool for checking local changes before a final an
 ## Parameters
 - `paths` (optional): list of workspace-relative paths to diff. Omit to review all changed tracked files.
 - `staged` (optional): when `true`, read the staged diff (`git diff --cached`). Defaults to `false`.
+- `base` (optional): compare against a commit or ref such as `HEAD~1` or `origin/main`. With `staged: true`, compare that base to the index.
 - `maxDiffChars` (optional): maximum returned diff characters. Defaults to `20000`, maximum `100000`.
 - `includeStat` (optional): include `git diff --stat`. Defaults to `true`.
 

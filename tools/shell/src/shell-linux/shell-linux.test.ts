@@ -73,6 +73,8 @@ describe('shell_linux tool', () => {
     expect(result).toEqual({
       ok: false,
       error: 'invalid shell_linux: command (non-empty string) is required',
+      code: 'SHELL_INVALID_INPUT',
+      retryable: false,
     })
     expect(runShell).not.toHaveBeenCalled()
   })
@@ -130,7 +132,12 @@ describe('shell_linux tool', () => {
 
     const result = await shellLinuxTool.execute({ command: 'pwd' }, ctx)
 
-    expect(result).toEqual({ ok: false, error: 'boom' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'boom',
+      code: 'SHELL_EXECUTION_ERROR',
+      retryable: true,
+    })
   })
 
   it('身份/runtime/schema/skill 元数据齐备', () => {

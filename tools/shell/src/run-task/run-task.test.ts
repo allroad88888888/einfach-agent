@@ -68,6 +68,8 @@ describe('run_task tool', () => {
     expect(result).toEqual({
       ok: false,
       error: 'run_task unavailable: ctx.runWorkspaceTask is not configured',
+      code: 'TASK_UNAVAILABLE',
+      retryable: false,
     })
   })
 
@@ -98,5 +100,30 @@ describe('run_task tool', () => {
       maxOutputChars: 5000,
     })
     expect(result).toEqual({ ok: true, data: taskResult })
+  })
+
+  it('任务失败返回外层结构化失败', async () => {
+    const taskResult: WorkspaceTaskResult = {
+      ok: false,
+      kind: 'test',
+      exitCode: 1,
+      stdout: '',
+      stderr: 'tests failed',
+      durationMs: 12,
+      timedOut: false,
+      truncated: false,
+      command: ['npm', 'run', 'test'],
+      cwd: '/workspace',
+    }
+    const result = await runTaskTool.execute(
+      { kind: 'test' },
+      makeCtx(vi.fn(async () => taskResult)),
+    )
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'TASK_FAILED',
+      retryable: false,
+      details: taskResult,
+    })
   })
 })

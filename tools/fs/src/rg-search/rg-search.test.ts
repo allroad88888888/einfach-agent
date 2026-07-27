@@ -101,14 +101,20 @@ describe('rg_search tool', () => {
     await expect(rgSearchTool.execute({ query: '   ' }, ctx)).resolves.toEqual({
       ok: false,
       error: 'invalid rg_search: query (non-empty string) is required',
+      code: 'RG_SEARCH_INVALID_INPUT',
+      retryable: false,
     })
     await expect(rgSearchTool.execute({ query: 'x', globs: [1] }, ctx)).resolves.toEqual({
       ok: false,
       error: 'invalid rg_search: globs must be an array of strings',
+      code: 'RG_SEARCH_INVALID_INPUT',
+      retryable: false,
     })
     await expect(rgSearchTool.execute({ query: 'x', maxMatches: 0 }, ctx)).resolves.toEqual({
       ok: false,
       error: 'invalid rg_search: maxMatches must be a positive number',
+      code: 'RG_SEARCH_INVALID_INPUT',
+      retryable: false,
     })
     expect(rgSearchWorkspace).not.toHaveBeenCalled()
   })
@@ -121,7 +127,12 @@ describe('rg_search tool', () => {
 
     const result = await rgSearchTool.execute({ query: 'hello' }, ctx)
 
-    expect(result).toEqual({ ok: false, error: 'boom' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'boom',
+      code: 'RG_SEARCH_FAILED',
+      retryable: false,
+    })
   })
 
   it('ctx 未接 rgSearchWorkspace → {ok:false,error}', async () => {
@@ -133,6 +144,8 @@ describe('rg_search tool', () => {
     expect(result).toEqual({
       ok: false,
       error: 'rg_search unavailable: ctx.rgSearchWorkspace is not configured',
+      code: 'RG_SEARCH_UNAVAILABLE',
+      retryable: false,
     })
   })
 

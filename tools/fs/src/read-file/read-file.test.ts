@@ -53,7 +53,7 @@ describe('read_file tool', () => {
 
     const result = await readFileTool.execute({ path: '  src/a.ts  ', maxBytes: 1234 }, ctx)
 
-    expect(readWorkspaceFile).toHaveBeenCalledWith({ path: 'src/a.ts', maxBytes: 1234 })
+    expect(readWorkspaceFile).toHaveBeenCalledWith({ path: 'src/a.ts', maxBytes: 1234, offset: 0 })
     expect(result).toEqual({ ok: true, data })
   })
 
@@ -69,6 +69,8 @@ describe('read_file tool', () => {
     expect(result).toEqual({
       ok: false,
       error: 'invalid read_file: path (non-empty string) is required',
+      code: 'WORKSPACE_READ_INVALID_INPUT',
+      retryable: false,
     })
     expect(readWorkspaceFile).not.toHaveBeenCalled()
   })
@@ -83,8 +85,58 @@ describe('read_file tool', () => {
     await readFileTool.execute({ path: 'a.txt' }, ctx)
     await readFileTool.execute({ path: 'a.txt', maxBytes: 999_999 }, ctx)
 
-    expect(readWorkspaceFile).toHaveBeenNthCalledWith(1, { path: 'a.txt', maxBytes: 20_000 })
-    expect(readWorkspaceFile).toHaveBeenNthCalledWith(2, { path: 'a.txt', maxBytes: 200_000 })
+    expect(readWorkspaceFile).toHaveBeenNthCalledWith(1, {
+      path: 'a.txt',
+      maxBytes: 20_000,
+      offset: 0,
+    })
+    expect(readWorkspaceFile).toHaveBeenNthCalledWith(2, {
+      path: 'a.txt',
+      maxBytes: 200_000,
+      offset: 0,
+    })
+  })
+
+  it('forwards the exact next byte offset for chunked reads', async () => {
+    const data = {
+      path: 'large.txt',
+      content: 'next',
+      truncated: true,
+      bytes: 4,
+      offset: 20_000,
+      totalBytes: 40_000,
+      nextOffset: 20_004,
+    }
+    const readWorkspaceFile = vi.fn(async () => ({ ok: true as const, data }))
+
+    const result = await readFileTool.execute(
+      { path: 'large.txt', maxBytes: 4, offset: 20_000 },
+      makeCtx({ readWorkspaceFile }),
+    )
+
+    expect(readWorkspaceFile).toHaveBeenCalledWith({
+      path: 'large.txt',
+      maxBytes: 4,
+      offset: 20_000,
+    })
+    expect(result).toEqual({ ok: true, data })
+  })
+
+  it('rejects unsafe or negative offsets', async () => {
+    const ctx = makeCtx()
+
+    expect(await readFileTool.execute({ path: 'a.txt', offset: -1 }, ctx)).toEqual({
+      ok: false,
+      error: 'invalid read_file: offset must be a non-negative safe integer',
+      code: 'WORKSPACE_READ_INVALID_INPUT',
+      retryable: false,
+    })
+    expect(await readFileTool.execute({ path: 'a.txt', offset: Number.MAX_VALUE }, ctx)).toEqual({
+      ok: false,
+      error: 'invalid read_file: offset must be a non-negative safe integer',
+      code: 'WORKSPACE_READ_INVALID_INPUT',
+      retryable: false,
+    })
   })
 
   it('ctx 返回结构化错误 → {ok:false, error}', async () => {
@@ -93,7 +145,12 @@ describe('read_file tool', () => {
 
     const result = await readFileTool.execute({ path: '../secret' }, ctx)
 
-    expect(result).toEqual({ ok: false, error: 'outside root' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'outside root',
+      code: 'WORKSPACE_READ_FAILED',
+      retryable: false,
+    })
   })
 
   it('ctx 抛错 → {ok:false, error}', async () => {
@@ -104,7 +161,12 @@ describe('read_file tool', () => {
 
     const result = await readFileTool.execute({ path: 'a.txt' }, ctx)
 
-    expect(result).toEqual({ ok: false, error: 'boom' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'boom',
+      code: 'WORKSPACE_READ_FAILED',
+      retryable: false,
+    })
   })
 
   it('身份/runtime/schema/skill 元数据齐备', () => {

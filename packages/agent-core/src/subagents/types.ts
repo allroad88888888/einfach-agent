@@ -5,7 +5,7 @@ export type SubagentPath = string
 export type DelegateAgentStrategy = 'parallel_wait_all' | 'parallel_best_effort'
 export type DelegateAgentBatchStatus = 'done' | 'partial' | 'failed' | 'cancelled'
 export type SubagentToolProfile = 'delegate_only' | 'workspace_read'
-export type SubagentArchiveWriteMode = 'create' | 'overwrite' | 'append'
+export type SubagentArchiveWriteMode = 'create' | 'overwrite' | 'append' | 'upsert'
 export type SubagentSkillPromotion = 'ephemeral' | 'candidate' | 'promoted' | 'archived'
 
 export type SubagentArchiveEventType =
@@ -229,7 +229,14 @@ export interface DelegateAgentCallContext {
     expectedRegistrationVersion?: number,
   ): Promise<
     | { ok: true; data?: unknown; warnings?: string[] }
-    | { ok: false; error: string }
+    | {
+        ok: false
+        error: string
+        code?: string
+        hint?: string
+        retryable?: boolean
+        details?: unknown
+      }
   >
 }
 

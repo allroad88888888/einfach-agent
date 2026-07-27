@@ -33,10 +33,14 @@ describe('delete_path tool', () => {
     await expect(deletePathTool.execute({}, context())).resolves.toEqual({
       ok: false,
       error: 'invalid delete_path: path is required',
+      code: 'WORKSPACE_DELETE_INVALID_INPUT',
+      retryable: false,
     })
     await expect(deletePathTool.execute({ path: 'a.txt' }, context())).resolves.toEqual({
       ok: false,
       error: 'delete_path unavailable: ctx.deleteWorkspacePath is not configured',
+      code: 'WORKSPACE_DELETE_UNAVAILABLE',
+      retryable: false,
     })
   })
 })

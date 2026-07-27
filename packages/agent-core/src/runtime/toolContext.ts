@@ -31,7 +31,7 @@ import { sessionsAtom, workspacesAtom } from '../state/rootStore'
 import { resolveSessionWorkspaceRoot } from '../state/workspaceState'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
 import { runAtom } from '../state/sessionAtoms'
-import { getPlan, setPlan } from '../state/planWriters'
+import { getPlan as readStoredPlan, setPlan } from '../state/planWriters'
 import { PlanRuntime } from '../planning/runtime'
 import { EvaluationRuntime } from '../evaluation/runtime'
 import {
@@ -92,7 +92,7 @@ function taskProgressText(kind: unknown): string {
 function assertSubagentWriteSucceeded(
   result: WorkspaceWriteResult,
   path: string,
-  mode: 'create' | 'overwrite' | 'append',
+  mode: 'create' | 'overwrite' | 'append' | 'upsert',
 ): void {
   if (result.ok) return
   const detail = result.error?.trim() || 'unknown workspace write error'
@@ -133,11 +133,11 @@ export function buildToolContext(opts: {
   const allowExternalReadPaths =
     core.rootStore.getter(sessionsAtom)[sessionId]?.toolApprovalMode === 'auto'
   const planRuntime = new PlanRuntime({
-    get: () => getPlan(sessionId),
+    get: () => readStoredPlan(sessionId),
     set: (plan) => setPlan(sessionId, plan),
   }, Date.now, newId)
   const evaluationRuntime = new EvaluationRuntime({
-    get: () => getPlan(sessionId),
+    get: () => readStoredPlan(sessionId),
     set: (plan) => setPlan(sessionId, plan),
   })
 
@@ -212,11 +212,13 @@ export function buildToolContext(opts: {
   async function writeSubagentTextFile(input: {
     path: string
     content: string
-    mode?: 'create' | 'overwrite' | 'append'
+    mode?: 'create' | 'overwrite' | 'append' | 'upsert'
   }): Promise<unknown> {
     assertArchiveCurrent()
     progress(pathProgressText('写入子 agent 归档', input.path))
-    const mode = input.mode ?? 'overwrite'
+    // 归档文件是 snapshot 语义：已存在时覆盖，首次落盘时创建。这正是 upsert，
+    // 由 Rust 在同一把路径锁内判定，不再需要"先 overwrite 失败再 create"的两次往返。
+    const mode = input.mode ?? 'upsert'
     const writeInput = withWorkspaceRoot({
       path: input.path,
       content: input.content,
@@ -226,13 +228,7 @@ export function buildToolContext(opts: {
       exclusivePathLock: true,
     } satisfies WorkspaceWriteInput)
 
-    let result = await writeWorkspaceFile(writeInput)
-    // 归档文件是 snapshot 语义：已存在时覆盖，首次落盘时创建。
-    // Rust 的 overwrite 刻意拒绝不存在的目标，因此只对这一个可预期错误回退到 create；
-    // 其它错误（包括非 Tauri 运行时）不应被隐藏。
-    if (mode === 'overwrite' && !result.ok && result.error?.includes('does not exist')) {
-      result = await writeWorkspaceFile({ ...writeInput, mode: 'create' })
-    }
+    const result = await writeWorkspaceFile(writeInput)
     assertArchiveCurrent()
     assertSubagentWriteSucceeded(result, input.path, mode)
     return result
@@ -246,7 +242,7 @@ export function buildToolContext(opts: {
   async function writeEvaluatorArchiveBestEffort(input: {
     path: string
     content: string
-    mode?: 'create' | 'overwrite' | 'append'
+    mode?: 'create' | 'overwrite' | 'append' | 'upsert'
   }): Promise<unknown> {
     if (evaluatorArchiveUnavailable) {
       return { ok: true, skipped: true, warning: evaluatorArchiveUnavailable }
@@ -264,6 +260,10 @@ export function buildToolContext(opts: {
     sessionId,
     signal,
     progress,
+    getPlan() {
+      assertFresh()
+      return readStoredPlan(sessionId)
+    },
     createPlan(input) {
       assertFresh()
       return planRuntime.create(input)
@@ -555,8 +555,8 @@ export function buildToolContext(opts: {
     }
     ctx.observeExecution = (executionId) =>
       getExecutionRuntime(core).observe(sessionId, executionId)
-    ctx.joinExecution = (executionId) =>
-      getExecutionRuntime(core).join(sessionId, executionId)
+    ctx.joinExecution = (executionId, timeoutMs) =>
+      getExecutionRuntime(core).join(sessionId, executionId, timeoutMs)
     ctx.cancelExecution = (executionId) =>
       getExecutionRuntime(core).cancel(sessionId, executionId)
   }

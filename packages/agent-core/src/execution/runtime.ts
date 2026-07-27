@@ -46,7 +46,7 @@ export interface ExecutionRuntime {
     signal?: AbortSignal
   }): Promise<T>
   observe(sessionId: string, executionId: string): ExecutionObservation
-  join(sessionId: string, executionId: string): Promise<ExecutionJoinResult>
+  join(sessionId: string, executionId: string, timeoutMs?: number): Promise<ExecutionJoinResult>
   cancel(sessionId: string, executionId: string): boolean
   syncAgentNode(node: SubagentNodeRecord): void
   appendAgentTrace(input: {
@@ -74,6 +74,13 @@ function eventForStatus(
     generation: 1,
     ...patch,
   }
+}
+
+function executionAbortError(signal: AbortSignal): Error {
+  const reason = signal.reason
+  const error = reason instanceof Error ? reason : new Error('execution cancelled')
+  error.name = 'AbortError'
+  return error
 }
 
 export function getExecutionRuntime(core: CoreInstance): ExecutionRuntime {
@@ -176,6 +183,9 @@ export function getExecutionRuntime(core: CoreInstance): ExecutionRuntime {
       if (input.signal?.aborted) abort()
       try {
         const result = await input.task(controller.signal)
+        if (controller.signal.aborted) {
+          throw executionAbortError(controller.signal)
+        }
         dispatch(input.sessionId, eventForStatus(input.id, 'succeeded', { result }))
         return result
       } catch (error) {
@@ -202,25 +212,57 @@ export function getExecutionRuntime(core: CoreInstance): ExecutionRuntime {
       }
     },
 
-    async join(sessionId, executionId) {
+    async join(sessionId, executionId, timeoutMs) {
       const active = running.get(executionId)
-      if (active) {
-        try {
-          await active.promise
-        } catch {
-          // The graph node contains the normalized failure.
+      const beforeJoin = core.getSessionStore(sessionId).store
+        .getter(executionGraphAtom).nodes[executionId]
+      const terminal = beforeJoin && (
+        beforeJoin.status === 'succeeded'
+        || beforeJoin.status === 'failed'
+        || beforeJoin.status === 'cancelled'
+      )
+      let timedOut = false
+      if (active && !terminal) {
+        if (timeoutMs !== undefined && Number.isFinite(timeoutMs) && timeoutMs >= 0) {
+          let timer: ReturnType<typeof setTimeout> | undefined
+          try {
+            const outcome = await Promise.race([
+              active.promise.then(
+                () => 'settled' as const,
+                () => 'settled' as const,
+              ),
+              new Promise<'timeout'>((resolve) => {
+                timer = setTimeout(() => resolve('timeout'), timeoutMs)
+              }),
+            ])
+            timedOut = outcome === 'timeout'
+          } finally {
+            if (timer !== undefined) clearTimeout(timer)
+          }
+        } else {
+          try {
+            await active.promise
+          } catch {
+            // The graph node contains the normalized failure.
+          }
         }
       }
       const node = core.getSessionStore(sessionId).store.getter(executionGraphAtom).nodes[executionId]
       if (!node) {
         return { executionId, status: 'failed', error: `unknown execution: ${executionId}` }
       }
-      return { executionId, status: node.status, result: node.result, error: node.error }
+      return {
+        executionId,
+        status: node.status,
+        result: node.result,
+        error: node.error,
+        ...(timedOut ? { timedOut: true } : {}),
+      }
     },
 
     cancel(sessionId, executionId) {
       const active = running.get(executionId)
-      if (!active) return false
+      if (!active || active.controller.signal.aborted) return false
       active.controller.abort()
       dispatch(sessionId, eventForStatus(executionId, 'cancelled', { error: 'cancelled' }))
       return true

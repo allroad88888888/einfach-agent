@@ -73,6 +73,8 @@ describe('shell_macos tool', () => {
     expect(result).toEqual({
       ok: false,
       error: 'invalid shell_macos: command (non-empty string) is required',
+      code: 'SHELL_INVALID_INPUT',
+      retryable: false,
     })
     expect(runShell).not.toHaveBeenCalled()
   })
@@ -190,7 +192,40 @@ describe('shell_macos tool', () => {
 
     const result = await shellMacosTool.execute({ command: 'pwd' }, ctx)
 
-    expect(result).toEqual({ ok: false, error: 'boom' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'boom',
+      code: 'SHELL_EXECUTION_ERROR',
+      retryable: true,
+    })
+  })
+
+  it('找不到命令时返回 shell/cwd 和可执行诊断建议', async () => {
+    const shellResult = makeShellResult(
+      { platform: 'macos', command: 'missing-command' },
+      {
+        shell: '/bin/zsh -lc',
+        cwd: '/workspace',
+        exitCode: 127,
+        stderr: 'command not found',
+      },
+    )
+    const result = await shellMacosTool.execute(
+      { command: 'missing-command' },
+      makeCtx(vi.fn(async () => shellResult)),
+    )
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'SHELL_COMMAND_NOT_FOUND',
+      retryable: false,
+      details: shellResult,
+    })
+    if ('ok' in result && !result.ok) {
+      expect(result.error).toContain('/bin/zsh -lc')
+      expect(result.error).toContain('/workspace')
+      expect(result.hint).toContain('command -v')
+    }
   })
 
   it('身份/runtime/schema/skill 元数据齐备', () => {

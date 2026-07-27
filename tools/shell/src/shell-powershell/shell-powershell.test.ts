@@ -73,6 +73,8 @@ describe('shell_powershell tool', () => {
     expect(result).toEqual({
       ok: false,
       error: 'invalid shell_powershell: command (non-empty string) is required',
+      code: 'SHELL_INVALID_INPUT',
+      retryable: false,
     })
     expect(runShell).not.toHaveBeenCalled()
   })
@@ -156,7 +158,12 @@ describe('shell_powershell tool', () => {
 
     const result = await shellPowershellTool.execute({ command: 'Get-Location' }, ctx)
 
-    expect(result).toEqual({ ok: false, error: 'boom' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'boom',
+      code: 'SHELL_EXECUTION_ERROR',
+      retryable: true,
+    })
   })
 
   it('身份/runtime/schema/skill 元数据齐备', () => {

@@ -11,8 +11,9 @@ const inputSchema = {
       minItems: 1,
       items: {
         type: 'object',
+        additionalProperties: false,
         properties: {
-          objective: { type: 'string' },
+          objective: { type: 'string', minLength: 1 },
           mode: { type: 'string' },
           expectedOutput: { type: 'string' },
           modelTier: {
@@ -79,6 +80,7 @@ const inputSchema = {
     },
   },
   required: ['children'],
+  additionalProperties: false,
 }
 
 function toErrorMessage(error: unknown): string {
@@ -133,12 +135,24 @@ export const delegateAgentTool: Tool = {
   inputSchema,
   async execute(args, ctx) {
     const normalized = normalizeDelegateAgentInput(args)
-    if (!normalized.ok) return { ok: false, error: normalized.error }
+    if (!normalized.ok) {
+      return {
+        ok: false,
+        error: normalized.error,
+        code: 'AGENT_DELEGATION_INVALID_INPUT',
+        retryable: false,
+      }
+    }
 
     const spawnAgents = getSpawnAgents(ctx)
     const delegateAgents = getDelegateAgents(ctx)
     if (!spawnAgents && !delegateAgents) {
-      return { ok: false, error: 'delegate_agent unavailable: ctx.delegateAgents is not configured' }
+      return {
+        ok: false,
+        error: 'delegate_agent unavailable: no execution runtime is configured',
+        code: 'AGENT_DELEGATION_UNAVAILABLE',
+        retryable: false,
+      }
     }
 
     try {
@@ -150,9 +164,25 @@ export const delegateAgentTool: Tool = {
         return { ok: true, data: spawnAgents(input) }
       }
       const result = await delegateAgents!(input)
+      if (result.status === 'failed' || result.status === 'cancelled') {
+        return {
+          ok: false,
+          error: `delegated agent batch ${result.status}: ${result.summary.done}/${result.summary.total} completed`,
+          code: result.status === 'failed'
+            ? 'AGENT_DELEGATION_FAILED'
+            : 'AGENT_DELEGATION_CANCELLED',
+          retryable: false,
+          details: result,
+        }
+      }
       return { ok: true, data: result }
     } catch (error) {
-      return { ok: false, error: toErrorMessage(error) }
+      return {
+        ok: false,
+        error: toErrorMessage(error),
+        code: 'AGENT_DELEGATION_FAILED',
+        retryable: false,
+      }
     }
   },
 }

@@ -6,7 +6,7 @@ use std::{
     fs,
     fs::File,
     hash::{Hash, Hasher},
-    io::Read,
+    io::{Read, Seek, SeekFrom},
     path::{Path, PathBuf, MAIN_SEPARATOR},
 };
 
@@ -50,6 +50,10 @@ pub struct ReadWorkspaceFileResult {
     content: String,
     truncated: bool,
     bytes: usize,
+    offset: u64,
+    total_bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_offset: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     content_hash: Option<String>,
 }
@@ -108,13 +112,15 @@ pub struct SearchWorkspaceFilesResult {
 pub async fn read_workspace_file(
     path: String,
     max_bytes: Option<usize>,
+    offset: Option<u64>,
     workspace_root: Option<String>,
     allow_external_paths: Option<bool>,
 ) -> Result<ReadWorkspaceFileResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        read_workspace_file_blocking_with_access(
+        read_workspace_file_blocking_with_access_at(
             path,
             max_bytes,
+            offset,
             workspace_root,
             allow_external_paths.unwrap_or(false),
         )
@@ -190,12 +196,29 @@ fn read_workspace_file_blocking(
     max_bytes: Option<usize>,
     workspace_root: Option<String>,
 ) -> Result<ReadWorkspaceFileResult, String> {
-    read_workspace_file_blocking_with_access(path, max_bytes, workspace_root, false)
+    read_workspace_file_blocking_with_access_at(path, max_bytes, None, workspace_root, false)
 }
 
+#[cfg(test)]
 fn read_workspace_file_blocking_with_access(
     path: String,
     max_bytes: Option<usize>,
+    workspace_root: Option<String>,
+    allow_external_paths: bool,
+) -> Result<ReadWorkspaceFileResult, String> {
+    read_workspace_file_blocking_with_access_at(
+        path,
+        max_bytes,
+        None,
+        workspace_root,
+        allow_external_paths,
+    )
+}
+
+fn read_workspace_file_blocking_with_access_at(
+    path: String,
+    max_bytes: Option<usize>,
+    offset: Option<u64>,
     workspace_root: Option<String>,
     allow_external_paths: bool,
 ) -> Result<ReadWorkspaceFileResult, String> {
@@ -215,6 +238,14 @@ fn read_workspace_file_blocking_with_access(
     if !metadata.is_file() {
         return Err(format!("path `{}` is not a file", display_path(&file_path)));
     }
+    let total_bytes = metadata.len();
+    let offset = offset.unwrap_or(0);
+    if offset > total_bytes {
+        return Err(format!(
+            "offset {offset} exceeds file size {total_bytes} for `{}`",
+            display_path(&file_path)
+        ));
+    }
 
     let relative_file_path = file_path.strip_prefix(&root).unwrap_or(&file_path);
     let read_ceiling = if relative_file_path.starts_with(Path::new(".agent-archive/traces"))
@@ -230,26 +261,38 @@ fn read_workspace_file_blocking_with_access(
     let max_bytes = normalize_positive(max_bytes, DEFAULT_READ_MAX_BYTES, read_ceiling);
     let mut file = File::open(&file_path)
         .map_err(|err| format!("failed to open `{}`: {err}", display_path(&file_path)))?;
+    file.seek(SeekFrom::Start(offset)).map_err(|err| {
+        format!(
+            "failed to seek `{}` to {offset}: {err}",
+            display_path(&file_path)
+        )
+    })?;
     let mut bytes = Vec::new();
     file.by_ref()
         .take((max_bytes + 1) as u64)
         .read_to_end(&mut bytes)
         .map_err(|err| format!("failed to read `{}`: {err}", display_path(&file_path)))?;
 
-    let truncated = bytes.len() > max_bytes;
-    if truncated {
+    let buffer_truncated = bytes.len() > max_bytes;
+    if buffer_truncated {
         bytes.truncate(max_bytes);
     }
     reject_binary_bytes(&bytes, &file_path)?;
-    let content_hash = (!truncated).then(|| content_sha256(&bytes));
-    let content = decode_utf8(&bytes, truncated, &file_path)?;
+    let content = decode_utf8(&bytes, buffer_truncated, &file_path)?;
     let bytes = content.as_bytes().len();
+    let next_position = offset + bytes as u64;
+    let truncated = next_position < total_bytes;
+    let next_offset = truncated.then_some(next_position);
+    let content_hash = (offset == 0 && !truncated).then(|| content_sha256(content.as_bytes()));
 
     Ok(ReadWorkspaceFileResult {
         path: relative_path(&root, &file_path),
         content,
         truncated,
         bytes,
+        offset,
+        total_bytes,
+        next_offset,
         content_hash,
     })
 }
@@ -919,6 +962,54 @@ mod tests {
             Some(content_sha256(b"hello read world"))
         );
         assert_eq!(result.path, "notes.txt", "path 应为 workspace 相对路径");
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn read_file_supports_lossless_byte_offset_paging() {
+        let (base, ws) = unique_workspace();
+        let content = "ab你cd";
+        fs::write(ws.join("paged.txt"), content).expect("seed paged file");
+
+        let first = read_workspace_file_blocking_with_access_at(
+            "paged.txt".to_string(),
+            Some(4),
+            Some(0),
+            root_arg(&ws),
+            false,
+        )
+        .expect("first chunk");
+        assert_eq!(first.content, "ab");
+        assert_eq!(first.offset, 0);
+        assert_eq!(first.next_offset, Some(2));
+        assert_eq!(first.total_bytes, content.len() as u64);
+        assert!(first.truncated);
+        assert_eq!(first.content_hash, None);
+
+        let second = read_workspace_file_blocking_with_access_at(
+            "paged.txt".to_string(),
+            Some(4),
+            first.next_offset,
+            root_arg(&ws),
+            false,
+        )
+        .expect("second chunk");
+        assert_eq!(second.content, "你c");
+        assert_eq!(second.offset, 2);
+        assert_eq!(second.next_offset, Some(6));
+
+        let third = read_workspace_file_blocking_with_access_at(
+            "paged.txt".to_string(),
+            Some(4),
+            second.next_offset,
+            root_arg(&ws),
+            false,
+        )
+        .expect("third chunk");
+        assert_eq!(third.content, "d");
+        assert!(!third.truncated);
+        assert_eq!(third.next_offset, None);
 
         let _ = fs::remove_dir_all(&base);
     }

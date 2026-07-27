@@ -33,7 +33,7 @@ describe('skills/registry（agentNew · 移植版）', () => {
     }
   })
 
-  it('searchSkills 按 name/description/triggers 双向子串匹配', () => {
+  it('searchSkills 按 name/description/triggers 排序并解释命中字段', () => {
     // query 是触发词的子串（searchable 命中）。
     const byTrigger = searchSkills('echarts').map((skill) => skill.name)
     expect(byTrigger).toContain('data-visualization')
@@ -41,6 +41,18 @@ describe('skills/registry（agentNew · 移植版）', () => {
     // query 反向包含触发词（normalizedQuery.includes(trigger)）。
     const byReverse = searchSkills('请帮我提问确认一下').map((skill) => skill.name)
     expect(byReverse).toContain('ask-user-question')
+
+    const exact = searchSkills('planning')
+    expect(exact[0]).toMatchObject({
+      name: 'planning',
+      matchedFields: expect.arrayContaining(['name']),
+    })
+    expect(exact[0]!.score).toBeGreaterThan(0)
+  })
+
+  it('searchSkills 空查询稳定列出全部，按名称排序', () => {
+    const names = searchSkills('').map((skill) => skill.name)
+    expect(names).toEqual(listSkillSummaries().map((skill) => skill.name).sort())
   })
 
   // --- 阶段 1（docs/skills-tree-blueprint.md）：树形资源与 L3 读取 ---------------------------

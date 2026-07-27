@@ -13,18 +13,32 @@ export const updatePlanTool: Tool = {
   inputSchema: {
     type: 'object',
     properties: {
-      planId: { type: 'string' },
+      planId: { type: 'string', minLength: 1 },
       revision: { type: 'integer', minimum: 1 },
-      stageId: { type: 'string' },
+      stageId: { type: 'string', minLength: 1 },
       status: { type: 'string', enum: ['blocked'] },
-      evidence: { type: 'array', items: { type: 'string' } },
-      blockReason: { type: 'string' },
+      evidence: { type: 'array', items: { type: 'string', minLength: 1 } },
+      blockReason: { type: 'string', minLength: 1 },
     },
     required: ['planId', 'revision', 'stageId', 'status'],
+    additionalProperties: false,
   },
   execute(args, ctx) {
-    if (!ctx.updatePlan) return { ok: false, error: 'update_plan unavailable' }
-    const result = ctx.updatePlan(args as unknown as UpdatePlanInput)
-    return result.ok ? { ok: true, data: result.plan } : result
+    if (!ctx.updatePlan) {
+      return { ok: false, error: 'update_plan unavailable', code: 'PLAN_UNAVAILABLE', retryable: false }
+    }
+    try {
+      const result = ctx.updatePlan(args as unknown as UpdatePlanInput)
+      return result.ok
+        ? { ok: true, data: result.plan }
+        : { ok: false, error: result.error, code: 'PLAN_UPDATE_REJECTED', retryable: false }
+    } catch (error) {
+      return {
+        ok: false,
+        error: `update_plan failed: ${error instanceof Error ? error.message : String(error)}`,
+        code: 'PLAN_INVALID_INPUT',
+        retryable: false,
+      }
+    }
   },
 }

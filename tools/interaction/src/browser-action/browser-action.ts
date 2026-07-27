@@ -5,6 +5,9 @@
 import type { Tool } from '@web-agent/core/tools/types'
 import guide from './browser-action.md?raw' // skill 正文（同目录 .md）
 
+export const BROWSER_CARD_TITLE_MAX_CHARS = 200
+export const BROWSER_CARD_BODY_MAX_CHARS = 100_000
+
 // lazy schema（照旧 registry）：唯一 action 是 render_card；payload 只承载 title/body。
 const inputSchema = {
   type: 'object',
@@ -14,13 +17,15 @@ const inputSchema = {
       type: 'object',
       // 执行侧卡片只承载 title/body；schema 不广告 items/options，避免误导 model。
       properties: {
-        title: { type: 'string' },
-        body: { type: 'string' },
+        title: { type: 'string', minLength: 1, maxLength: BROWSER_CARD_TITLE_MAX_CHARS },
+        body: { type: 'string', maxLength: BROWSER_CARD_BODY_MAX_CHARS },
       },
       required: ['title'],
+      additionalProperties: false,
     },
   },
   required: ['action', 'payload'],
+  additionalProperties: false,
 }
 
 // 把未知 payload 安全视为普通对象（非对象 / 数组 → 空对象），避免直接取字段崩。
@@ -58,7 +63,12 @@ export const browserActionTool: Tool = {
     const input = asRecord(args)
     const action = typeof input.action === 'string' ? input.action : undefined
     if (action !== 'render_card') {
-      return { ok: false, error: `unsupported browser_action: ${action ?? '(missing)'}` }
+      return {
+        ok: false,
+        error: `unsupported browser_action: ${action ?? '(missing)'}`,
+        code: 'BROWSER_ACTION_UNSUPPORTED',
+        retryable: false,
+      }
     }
 
     const card = normalizeCardPayload(input.payload)
@@ -66,13 +76,47 @@ export const browserActionTool: Tool = {
       return {
         ok: false,
         error: 'invalid browser_action payload: title (non-empty string) is required',
+        code: 'BROWSER_CARD_INVALID_INPUT',
+        retryable: false,
+      }
+    }
+    if (card.title.length > BROWSER_CARD_TITLE_MAX_CHARS) {
+      return {
+        ok: false,
+        error: `invalid browser_action payload: title exceeds ${BROWSER_CARD_TITLE_MAX_CHARS} characters`,
+        code: 'BROWSER_CARD_TOO_LARGE',
+        retryable: false,
+      }
+    }
+    if ((card.body?.length ?? 0) > BROWSER_CARD_BODY_MAX_CHARS) {
+      return {
+        ok: false,
+        error: `invalid browser_action payload: body exceeds ${BROWSER_CARD_BODY_MAX_CHARS} characters`,
+        code: 'BROWSER_CARD_TOO_LARGE',
+        retryable: false,
+        hint: 'Summarize the body or split it across smaller cards.',
       }
     }
 
     // 2) 副作用只经 ctx：harness 写 atom + 施 stale/ghost 守卫，回 {cardId} 或 {error}。
-    const r = ctx.renderCard(card)
+    let r: ReturnType<typeof ctx.renderCard>
+    try {
+      r = ctx.renderCard(card)
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message || error.name : String(error),
+        code: 'BROWSER_CARD_RENDER_FAILED',
+        retryable: true,
+      }
+    }
     if ('error' in r) {
-      return { ok: false, error: r.error }
+      return {
+        ok: false,
+        error: r.error,
+        code: 'BROWSER_CARD_RENDER_FAILED',
+        retryable: false,
+      }
     }
 
     // 3) 成功：卡片不持久化，提示 model 在最终回复里文字概括。

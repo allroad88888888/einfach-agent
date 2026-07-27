@@ -1,13 +1,13 @@
 import type { Tool } from '@web-agent/core/tools/types'
-import guide from './observe-agent.md?raw'
+import guide from './cancel-agent.md?raw'
 
-export const observeAgentTool: Tool = {
-  name: 'observe_agent',
-  execution: { mode: 'parallel', effectKeys: ['execution:read'] },
+export const cancelAgentTool: Tool = {
+  name: 'cancel_agent',
+  execution: { mode: 'serial', effectKeys: ['execution:write'] },
   runtime: 'internal',
   skill: {
-    description: '读取后台子 agent 执行状态，不等待完成。',
-    triggers: ['observe agent', 'agent status', '子agent状态'],
+    description: '取消仍在运行的后台子 agent 执行。',
+    triggers: ['cancel agent', 'stop agent', '取消子agent', '停止子agent'],
     content: guide,
   },
   inputSchema: {
@@ -19,11 +19,11 @@ export const observeAgentTool: Tool = {
     additionalProperties: false,
   },
   execute(args, ctx) {
-    if (!ctx.observeExecution) {
+    if (!ctx.cancelExecution) {
       return {
         ok: false,
-        error: 'observe_agent unavailable',
-        code: 'AGENT_OBSERVE_UNAVAILABLE',
+        error: 'cancel_agent unavailable',
+        code: 'AGENT_CANCEL_UNAVAILABLE',
         retryable: false,
       }
     }
@@ -34,24 +34,27 @@ export const observeAgentTool: Tool = {
     if (!executionId) {
       return {
         ok: false,
-        error: 'invalid observe_agent: executionId is required',
+        error: 'invalid cancel_agent: executionId is required',
         code: 'AGENT_INVALID_EXECUTION_ID',
         retryable: false,
       }
     }
-    let observation: ReturnType<typeof ctx.observeExecution>
+
+    let cancelled: boolean
+    let observation: ReturnType<NonNullable<typeof ctx.observeExecution>> | undefined
     try {
-      observation = ctx.observeExecution(executionId)
+      cancelled = ctx.cancelExecution(executionId)
+      observation = ctx.observeExecution?.(executionId)
     } catch (error) {
       return {
         ok: false,
-        error: `observe_agent failed: ${error instanceof Error ? error.message || error.name : String(error)}`,
-        code: 'AGENT_OBSERVE_FAILED',
+        error: `cancel_agent failed: ${error instanceof Error ? error.message || error.name : String(error)}`,
+        code: 'AGENT_CANCEL_FAILED',
         retryable: true,
         details: { executionId },
       }
     }
-    if (!observation.node) {
+    if (!cancelled && !observation?.node) {
       return {
         ok: false,
         error: `unknown execution: ${executionId}`,
@@ -59,6 +62,13 @@ export const observeAgentTool: Tool = {
         retryable: false,
       }
     }
-    return { ok: true, data: observation }
+    return {
+      ok: true,
+      data: {
+        executionId,
+        cancelled,
+        status: observation?.node?.status,
+      },
+    }
   },
 }

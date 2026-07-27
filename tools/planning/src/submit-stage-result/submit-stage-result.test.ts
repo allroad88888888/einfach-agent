@@ -214,12 +214,65 @@ describe('submit_stage_result tool', () => {
         evaluation.abortStageEvaluation(planId, revision, stageId, reason),
     }))
 
-    expect(result).toEqual({ ok: false, error: 'automatic evaluation failed: Load failed' })
+    expect(result).toEqual({
+      ok: false,
+      error: 'automatic evaluation failed: Load failed',
+      code: 'PLAN_EVALUATION_FAILED',
+      retryable: true,
+    })
     expect(plan?.stages[0]).toMatchObject({
       status: 'in_progress',
       evaluations: [{
         status: 'unknown',
         criteria: [{ criterion: 'tests pass', status: 'unknown', reason: 'Load failed' }],
+      }],
+    })
+  })
+
+  it('后台 evaluator 启动失败时回滚 evaluating，使阶段可以重试', async () => {
+    let plan: PlanSnapshot | undefined
+    let now = 0
+    const store = {
+      get: () => plan,
+      set: (next: PlanSnapshot | undefined) => { plan = next },
+    }
+    const planning = new PlanRuntime(store, () => ++now, () => 'plan-1')
+    const evaluation = new EvaluationRuntime(store, () => ++now)
+    const created = planning.create({
+      title: 'Delivery',
+      objective: 'Ship safely',
+      stages: [{ id: 'build', title: 'Build', objective: 'Implement', acceptanceCriteria: ['tests pass'] }],
+    })
+    if (!created.ok) throw new Error(created.error)
+    const started = planning.execute(created.plan.id, created.plan.revision)
+    if (!started.ok) throw new Error(started.error)
+
+    const result = await submitStageResultTool.execute({
+      planId: 'plan-1',
+      revision: started.plan.revision,
+      stageId: 'build',
+      summary: 'Implemented',
+      evidence: ['tests passed'],
+    }, baseContext({
+      spawnAgents: vi.fn(() => { throw new Error('scheduler unavailable') }),
+      submitStageResult: (input) => evaluation.submitStageResult(input),
+      evaluateStage: (input) => evaluation.evaluateStage(input),
+      evaluatePlan: (input) => evaluation.evaluatePlan(input),
+      abortStageEvaluation: (planId, revision, stageId, reason) =>
+        evaluation.abortStageEvaluation(planId, revision, stageId, reason),
+    }))
+
+    expect(result).toEqual({
+      ok: false,
+      error: 'automatic evaluation failed to start: scheduler unavailable',
+      code: 'PLAN_EVALUATION_START_FAILED',
+      retryable: true,
+    })
+    expect(plan?.stages[0]).toMatchObject({
+      status: 'in_progress',
+      evaluations: [{
+        status: 'unknown',
+        criteria: [{ criterion: 'tests pass', status: 'unknown', reason: 'scheduler unavailable' }],
       }],
     })
   })

@@ -9,9 +9,7 @@ import {
 } from '@web-agent/core/runtime/workspaceRg'
 import guide from './rg-search.md?raw'
 
-type RgSearchContext = ToolContext & {
-  rgSearchWorkspace(input: RgSearchInput): Promise<RgSearchResult>
-}
+type RgSearchWorkspace = (input: RgSearchInput) => Promise<RgSearchResult>
 
 const inputSchema = {
   type: 'object',
@@ -38,6 +36,7 @@ const inputSchema = {
     },
   },
   required: ['query'],
+  additionalProperties: false,
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -82,8 +81,8 @@ function toErrorMessage(error: unknown): string {
   return 'rgSearchWorkspace failed'
 }
 
-function getRgSearchFromContext(ctx: ToolContext): RgSearchContext['rgSearchWorkspace'] | undefined {
-  const candidate = (ctx as Partial<RgSearchContext>).rgSearchWorkspace
+function getRgSearchFromContext(ctx: ToolContext): RgSearchWorkspace | undefined {
+  const candidate = (ctx as ToolContext & { rgSearchWorkspace?: RgSearchWorkspace }).rgSearchWorkspace
   return typeof candidate === 'function' ? candidate.bind(ctx) : undefined
 }
 
@@ -101,34 +100,54 @@ export const rgSearchTool: Tool = {
     const value = asRecord(args)
     const query = typeof value.query === 'string' ? value.query.trim() : ''
     if (!query) {
-      return { ok: false, error: 'invalid rg_search: query (non-empty string) is required' }
+      return {
+        ok: false,
+        error: 'invalid rg_search: query (non-empty string) is required',
+        code: 'RG_SEARCH_INVALID_INPUT',
+        retryable: false,
+      }
     }
 
     const path = typeof value.path === 'string' && value.path.trim() ? value.path.trim() : undefined
     const regex = normalizeBoolean(value.regex, false, 'regex')
-    if (typeof regex === 'string') return { ok: false, error: regex }
+    if (typeof regex === 'string') {
+      return { ok: false, error: regex, code: 'RG_SEARCH_INVALID_INPUT', retryable: false }
+    }
     const caseSensitive = normalizeBoolean(value.caseSensitive, true, 'caseSensitive')
-    if (typeof caseSensitive === 'string') return { ok: false, error: caseSensitive }
+    if (typeof caseSensitive === 'string') {
+      return { ok: false, error: caseSensitive, code: 'RG_SEARCH_INVALID_INPUT', retryable: false }
+    }
     const contextLines = normalizePositiveInteger(
       value.contextLines,
       DEFAULT_RG_CONTEXT_LINES,
       MAX_RG_CONTEXT_LINES,
       'contextLines',
     )
-    if (typeof contextLines === 'string') return { ok: false, error: contextLines }
+    if (typeof contextLines === 'string') {
+      return { ok: false, error: contextLines, code: 'RG_SEARCH_INVALID_INPUT', retryable: false }
+    }
     const maxMatches = normalizePositiveInteger(
       value.maxMatches,
       DEFAULT_RG_MAX_MATCHES,
       MAX_RG_MATCHES,
       'maxMatches',
     )
-    if (typeof maxMatches === 'string') return { ok: false, error: maxMatches }
+    if (typeof maxMatches === 'string') {
+      return { ok: false, error: maxMatches, code: 'RG_SEARCH_INVALID_INPUT', retryable: false }
+    }
     const globs = normalizeGlobs(value.globs)
-    if (typeof globs === 'string') return { ok: false, error: globs }
+    if (typeof globs === 'string') {
+      return { ok: false, error: globs, code: 'RG_SEARCH_INVALID_INPUT', retryable: false }
+    }
 
     const rgSearchWorkspace = getRgSearchFromContext(ctx)
     if (!rgSearchWorkspace) {
-      return { ok: false, error: 'rg_search unavailable: ctx.rgSearchWorkspace is not configured' }
+      return {
+        ok: false,
+        error: 'rg_search unavailable: ctx.rgSearchWorkspace is not configured',
+        code: 'RG_SEARCH_UNAVAILABLE',
+        retryable: false,
+      }
     }
 
     try {
@@ -141,9 +160,23 @@ export const rgSearchTool: Tool = {
         contextLines,
         maxMatches,
       })
+      if (!result.ok) {
+        return {
+          ok: false,
+          error: result.stderr || `rg_search exited with code ${result.exitCode}`,
+          code: 'RG_SEARCH_FAILED',
+          retryable: false,
+          details: result,
+        }
+      }
       return { ok: true, data: result }
     } catch (error) {
-      return { ok: false, error: toErrorMessage(error) }
+      return {
+        ok: false,
+        error: toErrorMessage(error),
+        code: 'RG_SEARCH_FAILED',
+        retryable: false,
+      }
     }
   },
 }
