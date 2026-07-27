@@ -28,8 +28,9 @@ export type SubagentArchiveEventType =
   // llm.context_over_budget）。前者：本轮请求体里的历史工具正文被摘要过；
   // 后者：四级降级跑完仍超预算（请求照发、大概率换来硬 400）—— 它与前者【相互独立】，
   // 消息只有 [system,user] 时会是 compacted:false + withinBudget:false，那正是最该报警的形态。
-  // 新增类型时记得同步 replay.ts 的 SUBAGENT_EVENT_TYPES 白名单，否则 replay 会把它判为
-  // 'invalid subagent archive event structure' 丢进 parseErrors。
+  // 新增类型时，replay.ts 的 SUBAGENT_EVENT_TYPE_SET 会在编译期强制要求补齐（Record 少键即
+  // 报错），scripts/subagent-replay-lib.js 的副本则由 subagent-replay-lib.test.js 锁步校验。
+  // 两道闸都不再依赖人工记忆。
   | 'child_context_compacted'
   | 'child_context_over_budget'
 
@@ -74,6 +75,8 @@ export interface DelegateAgentChildSpec {
   riskLevel?: SubagentRiskLevel
   /** 跨模块任务需要 Pro；不要依赖 objective 文本猜测。 */
   crossModule?: boolean
+  /** 跨时区转换、时间排序去重或日期/时长运算需要 Pro。 */
+  requiresTemporalNormalization?: boolean
   /** 最终验收需要 Pro；mode=evaluator 也会被运行时视为最终验收。 */
   finalAcceptance?: boolean
   /** 同一子任务在当前可观测历史中的失败次数；大于 0 时直接升级 Pro。 */

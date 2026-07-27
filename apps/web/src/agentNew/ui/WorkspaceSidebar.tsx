@@ -9,6 +9,7 @@ import {
   workspacesAtom,
 } from '@web-agent/core/state/rootStore'
 import {
+  newSession,
   newWorkspace,
   renameWorkspace,
   selectWorkspace,
@@ -134,6 +135,15 @@ export function WorkspaceSidebar() {
                         {workspace.name}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      className="agentnew-workspace-new-session"
+                      aria-label={`在 ${workspace.name} 中新建对话`}
+                      title="新建对话"
+                      onClick={() => newSession({ workspaceId: workspace.id })}
+                    >
+                      +
+                    </button>
                     <button
                       type="button"
                       className={`agentnew-workspace-settings${isSettingsOpen ? ' active' : ''}`}

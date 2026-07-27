@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { createDeepSeekProtocolMatrix } from './matrix'
+import {
+  createDeepSeekMaxTargetedCases,
+  createDeepSeekProtocolMatrix,
+} from './matrix'
 import { writeDeepSeekResults } from './report'
 import { runDeepSeekEvalCase } from './runner'
 
@@ -13,7 +16,11 @@ describe.skipIf(!LIVE_ENABLED)('DeepSeek live protocol smoke', () => {
     }
     const timeoutMs = Number(process.env.DEEPSEEK_SMOKE_CASE_TIMEOUT_MS ?? 180_000)
     const results = []
-    for (const testCase of createDeepSeekProtocolMatrix()) {
+    const testCases = [
+      ...createDeepSeekProtocolMatrix(),
+      ...createDeepSeekMaxTargetedCases(),
+    ]
+    for (const testCase of testCases) {
       results.push(await runDeepSeekEvalCase(testCase, {
         apiKey,
         baseUrl: process.env.DEEPSEEK_BASE_URL,
@@ -28,6 +35,15 @@ describe.skipIf(!LIVE_ENABLED)('DeepSeek live protocol smoke', () => {
     expect(
       results.filter((result) => !result.success),
       'See the JSONL evidence path above for protocol/transport details.',
+    ).toEqual([])
+    expect(
+      results
+        .filter((result) =>
+          result.request_shapes.length !== result.request_count ||
+          result.request_shapes.some((shape) => !shape.body_parseable)
+        )
+        .map((result) => result.case_id),
+      'Every live request must emit parseable, redacted request-shape evidence.',
     ).toEqual([])
   }, 50 * 60 * 1_000)
 })

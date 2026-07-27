@@ -148,6 +148,15 @@ export function normalizeDelegateAgentInput(value: unknown):
       }
       spec.crossModule = child.crossModule
     }
+    if (child.requiresTemporalNormalization !== undefined) {
+      if (typeof child.requiresTemporalNormalization !== 'boolean') {
+        return {
+          ok: false,
+          error: 'invalid delegate_agent: child requiresTemporalNormalization must be boolean',
+        }
+      }
+      spec.requiresTemporalNormalization = child.requiresTemporalNormalization
+    }
     if (child.finalAcceptance !== undefined) {
       if (typeof child.finalAcceptance !== 'boolean') {
         return { ok: false, error: 'invalid delegate_agent: child finalAcceptance must be boolean' }

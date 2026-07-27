@@ -40,3 +40,24 @@ export function createDeepSeekProtocolMatrix(): DeepSeekEvalCase[] {
     ),
   )
 }
+
+export function createDeepSeekMaxTargetedCases(): DeepSeekEvalCase[] {
+  return [
+    {
+      id: 'targeted-max/pro/non-stream/tool',
+      model: DEEPSEEK_PRO_MODEL,
+      thinking: true,
+      effort: 'max',
+      stream: false,
+      toolCall: true,
+    },
+    {
+      id: 'targeted-max/flash/stream/chat',
+      model: DEEPSEEK_FLASH_MODEL,
+      thinking: true,
+      effort: 'max',
+      stream: true,
+      toolCall: false,
+    },
+  ]
+}

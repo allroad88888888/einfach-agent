@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { replaySubagentArchive } from './subagent-replay-lib.js'
+import { replaySubagentArchive, SUBAGENT_EVENT_TYPES } from './subagent-replay-lib.js'
+// 权威事件类型清单只有一份，在 agent-core。本文件不再手抄一遍：抄写副本会和源头一起腐化，
+// 却测不出腐化本身。
+import { SUBAGENT_EVENT_TYPES as CANONICAL_EVENT_TYPES } from '@web-agent/core/subagents/replay'
 
 function event(overrides = {}) {
   return {
@@ -90,5 +93,28 @@ describe('subagent replay CLI library', () => {
 
     expect(result.nodes.root.status).toBe('done')
     expect(result.summary).toMatchObject({ total: 1, running: 0, done: 1 })
+  })
+
+  // agent-core 新增事件类型而 CLI 白名单漏同步时，这条立刻失败——取代原来靠注释提醒的做法。
+  it('keeps the CLI whitelist in lockstep with agent-core', () => {
+    expect([...SUBAGENT_EVENT_TYPES].sort()).toEqual([...CANONICAL_EVENT_TYPES].sort())
+  })
+
+  it('accepts and counts every replay event type used by agent-core', () => {
+    const eventTypes = CANONICAL_EVENT_TYPES
+    const eventsText = eventTypes
+      .map((type, index) => JSON.stringify(event({
+        eventId: `ev-${index + 1}`,
+        type,
+      })))
+      .join('\n')
+
+    const result = replaySubagentArchive({ eventsText })
+
+    expect(result.parseErrors).toEqual([])
+    expect(result.events).toHaveLength(eventTypes.length)
+    expect(result.eventCounts).toEqual(
+      Object.fromEntries(eventTypes.map((type) => [type, 1])),
+    )
   })
 })

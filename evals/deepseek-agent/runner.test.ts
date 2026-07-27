@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { createDeepSeekProtocolMatrix } from './matrix'
+import {
+  createDeepSeekMaxTargetedCases,
+  createDeepSeekProtocolMatrix,
+} from './matrix'
 import { runDeepSeekEvalCase, runDeepSeekProtocolMatrix } from './runner'
 
 interface FakeDeepSeekOptions {
@@ -107,6 +110,7 @@ function fakeDeepSeek(options: FakeDeepSeekOptions = {}): typeof fetch {
 describe('DeepSeek protocol eval matrix', () => {
   it('covers the complete model/thinking/stream/tool-call product matrix', () => {
     const matrix = createDeepSeekProtocolMatrix()
+    const maxTargeted = createDeepSeekMaxTargetedCases()
 
     expect(matrix).toHaveLength(16)
     expect(new Set(matrix.map((item) => item.model)).size).toBe(2)
@@ -115,18 +119,29 @@ describe('DeepSeek protocol eval matrix', () => {
     expect(new Set(matrix.map((item) => item.toolCall))).toEqual(new Set([false, true]))
     expect(matrix.filter((item) => item.thinking).every((item) => item.effort === 'high')).toBe(true)
     expect(matrix.filter((item) => !item.thinking).every((item) => item.effort === null)).toBe(true)
+    expect(maxTargeted).toHaveLength(2)
+    expect(maxTargeted.every((item) => item.thinking && item.effort === 'max')).toBe(true)
+    expect(new Set(maxTargeted.map((item) => item.model))).toEqual(
+      new Set(matrix.map((item) => item.model)),
+    )
+    expect(new Set(maxTargeted.map((item) => item.stream))).toEqual(new Set([false, true]))
+    expect(new Set(maxTargeted.map((item) => item.toolCall))).toEqual(new Set([false, true]))
   })
 
-  it('runs all 16 cases offline and emits comparable result records', async () => {
+  it('runs the main matrix and targeted max cases with redacted request-shape evidence', async () => {
     let time = 1_700_000_000_000
-    const results = await runDeepSeekProtocolMatrix(createDeepSeekProtocolMatrix(), {
+    const cases = [
+      ...createDeepSeekProtocolMatrix(),
+      ...createDeepSeekMaxTargetedCases(),
+    ]
+    const results = await runDeepSeekProtocolMatrix(cases, {
       apiKey: 'offline-key',
       fetchImpl: fakeDeepSeek(),
       retry: { maxRetries: 0 },
       now: () => time++,
     })
 
-    expect(results).toHaveLength(16)
+    expect(results).toHaveLength(18)
     expect(results.every((result) => result.success)).toBe(true)
     expect(results.every((result) => result.http_status === 200)).toBe(true)
     expect(results.every((result) => result.finish_reason === 'stop')).toBe(true)
@@ -138,9 +153,32 @@ describe('DeepSeek protocol eval matrix', () => {
     expect(results.filter((result) => result.stream).every((result) =>
       result.stream_delta_count > 0
     )).toBe(true)
+    for (const result of results) {
+      expect(result.request_shapes).toHaveLength(result.request_count)
+      expect(result.request_shapes.every((shape) =>
+        shape.body_parseable &&
+        shape.has_thinking &&
+        shape.has_tools === result.tool_call &&
+        shape.has_tool_choice === (result.tool_call && !result.thinking)
+      )).toBe(true)
+      if (result.tool_call) {
+        expect(result.request_shapes[0]?.assistant_tool_call).toBeNull()
+        expect(result.request_shapes[1]?.assistant_tool_call).toEqual({
+          has_reasoning_content: result.thinking,
+          content_non_null: result.thinking,
+        })
+      } else {
+        expect(result.request_shapes.every((shape) =>
+          shape.assistant_tool_call === null
+        )).toBe(true)
+      }
+    }
+    expect(JSON.stringify(results.map((result) => result.request_shapes))).not.toMatch(
+      /pong|brief reasoning|left|right|add/,
+    )
   })
 
-  it('preserves reasoning_content in the tool result round and records retries/statuses', async () => {
+  it('normalizes thinking tool turns and records retries/statuses', async () => {
     const capturedBodies: Array<Record<string, unknown>> = []
     const testCase = createDeepSeekProtocolMatrix().find((item) =>
       item.thinking && !item.stream && item.toolCall
@@ -162,6 +200,32 @@ describe('DeepSeek protocol eval matrix', () => {
     expect(result).toMatchObject({
       success: true,
       request_count: 3,
+      request_shapes: [
+        {
+          body_parseable: true,
+          has_tool_choice: false,
+          has_thinking: true,
+          has_tools: true,
+          assistant_tool_call: null,
+        },
+        {
+          body_parseable: true,
+          has_tool_choice: false,
+          has_thinking: true,
+          has_tools: true,
+          assistant_tool_call: null,
+        },
+        {
+          body_parseable: true,
+          has_tool_choice: false,
+          has_thinking: true,
+          has_tools: true,
+          assistant_tool_call: {
+            has_reasoning_content: true,
+            content_non_null: true,
+          },
+        },
+      ],
       http_statuses: [503, 200, 200],
       retry_count: 1,
       finish_reasons: ['tool_calls', 'stop'],
@@ -172,11 +236,13 @@ describe('DeepSeek protocol eval matrix', () => {
       messages?: Array<Record<string, unknown>>
     }
     expect(secondBody.messages?.find((item) => item.role === 'assistant')).toMatchObject({
+      content: '',
       reasoning_content: 'brief reasoning',
       tool_calls: [{
         id: 'call_add',
         function: { name: 'add', arguments: '{"left":2,"right":3}' },
       }],
     })
+    expect(secondBody).not.toHaveProperty('tool_choice')
   })
 })

@@ -1,14 +1,22 @@
-const SUBAGENT_EVENT_TYPES = [
+// Keep this whitelist and eventCounts in lockstep with agent-core/src/subagents/replay.ts.
+// subagent-replay-lib.test.js imports the canonical list from there and fails on any drift,
+// so a new event type added to agent-core cannot silently go unhandled here.
+export const SUBAGENT_EVENT_TYPES = [
   'archive_initialized',
   'delegate_requested',
   'children_reserved',
   'skill_written',
   'child_started',
   'child_tool_schema_requested',
+  'child_tool_finished',
   'nested_delegate_requested',
   'child_finished',
   'tree_snapshot_written',
   'delegate_finished',
+  'child_model_usage',
+  'child_model_escalated',
+  'child_context_compacted',
+  'child_context_over_budget',
 ]
 
 const ROOT_AGENT_PATH = 'root'
@@ -238,10 +246,15 @@ export function replaySubagentArchive(input) {
     skill_written: 0,
     child_started: 0,
     child_tool_schema_requested: 0,
+    child_tool_finished: 0,
     nested_delegate_requested: 0,
     child_finished: 0,
     tree_snapshot_written: 0,
     delegate_finished: 0,
+    child_model_usage: 0,
+    child_model_escalated: 0,
+    child_context_compacted: 0,
+    child_context_over_budget: 0,
   }
 
   // The snapshot hydrates the latest known node metadata. Events are then replayed

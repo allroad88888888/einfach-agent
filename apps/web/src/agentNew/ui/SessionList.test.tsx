@@ -2,15 +2,14 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import { renderWithStore } from '../../test/renderWithStore'
 import { rootStore, sessionsAtom, activeSessionIdAtom, resetRootStore } from '@web-agent/core/state/rootStore'
-import { newSession, selectSession, removeSession, renameSession } from '@web-agent/core/runtime/commands'
+import { selectSession, removeSession, renameSession } from '@web-agent/core/runtime/commands'
 import { SessionList } from './SessionList'
 
 // P-U2 SessionList：左栏会话列表。契约 U1 —— UI 只读 atom（sessionsAtom /
-// activeSessionIdAtom）+ 调命令（newSession / selectSession / removeSession /
-// renameSession），绝不碰 store setter / writers。故 commands 整个 mock 掉，
+// activeSessionIdAtom）+ 调命令（selectSession / removeSession / renameSession），
+// 绝不碰 store setter / writers。故 commands 整个 mock 掉，
 // 只断言「点了什么 → 调了哪个命令」。
 vi.mock('@web-agent/core/runtime/commands', () => ({
-  newSession: vi.fn(),
   selectSession: vi.fn(),
   removeSession: vi.fn(),
   renameSession: vi.fn(),
@@ -36,14 +35,6 @@ describe('SessionList (P-U2)', () => {
 
     expect(screen.getByText('会话一')).toBeInTheDocument()
     expect(screen.getByText('会话二')).toBeInTheDocument()
-  })
-
-  it('点「新建对话」→ 调 newSession', () => {
-    seed()
-    renderWithStore(<SessionList />, { store: rootStore })
-
-    fireEvent.click(screen.getByText('+ 新建对话'))
-    expect(newSession).toHaveBeenCalledTimes(1)
   })
 
   it('点会话标题 → 以其 id 调 selectSession', () => {

@@ -15,6 +15,7 @@ export type SubagentRouteReason =
   | 'cross_module_requires_pro'
   | 'high_risk_requires_pro'
   | 'evaluator_requires_pro'
+  | 'temporal_normalization_requires_pro'
   | 'explicit_pro'
   | 'low_risk_retrieval_uses_flash'
   | 'low_risk_extraction_uses_flash'
@@ -29,6 +30,7 @@ export interface SubagentRouteFeatures {
   taskCategory?: SubagentTaskCategory
   riskLevel?: SubagentRiskLevel
   crossModule?: boolean
+  requiresTemporalNormalization?: boolean
   finalAcceptance?: boolean
   priorFailureCount?: number
   mode?: string
@@ -78,6 +80,9 @@ export function routeSubagentModel(features: SubagentRouteFeatures): SubagentRou
   }
   if (features.mode === 'evaluator') {
     return { tier: 'pro', reason: 'evaluator_requires_pro' }
+  }
+  if (features.requiresTemporalNormalization) {
+    return { tier: 'pro', reason: 'temporal_normalization_requires_pro' }
   }
   if (features.requestedTier === 'pro') {
     return { tier: 'pro', reason: 'explicit_pro' }

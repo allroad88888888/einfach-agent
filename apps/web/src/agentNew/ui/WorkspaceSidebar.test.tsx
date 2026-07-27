@@ -97,11 +97,11 @@ describe('WorkspaceSidebar', () => {
     expect(screen.getByRole('button', { name: '展开 项目二' })).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('新建对话固定归属当前展开的工作区', () => {
+  it('工作区标题右侧的新建按钮固定归属该工作区', () => {
     seed()
     renderWithStore(<WorkspaceSidebar />, { store: rootStore })
 
-    fireEvent.click(screen.getByRole('button', { name: /新建对话/ }))
+    fireEvent.click(screen.getByRole('button', { name: '在 项目一 中新建对话' }))
     expect(newSession).toHaveBeenCalledWith({ workspaceId: 'w1' })
   })
 

@@ -287,6 +287,50 @@ describe('createDelegateAgentRuntime', () => {
     await delegateRuntime.dispose?.()
   })
 
+  it('routes temporal normalization to Pro and archives the feature', async () => {
+    const childBodies: Record<string, unknown>[] = []
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (!childPath(body)) return response({ role: 'assistant', content: '# distilled skill' })
+      childBodies.push(body)
+      return response({ role: 'assistant', content: 'done' })
+    }
+    const writes = new Map<string, string>()
+    const delegateRuntime = runtime(fetchImpl)
+
+    const result = await delegateRuntime.delegateAgents({
+      children: [{
+        objective: 'normalize events across time zones',
+        taskCategory: 'extraction',
+        riskLevel: 'low',
+        requiresTemporalNormalization: true,
+      }],
+    }, context(writes))
+
+    expect(result.children.every((child) => child.status === 'done')).toBe(true)
+    expect(childBodies.map((body) => [childPath(body), body.model]).sort()).toEqual([
+      ['root-01', 'deepseek-v4-pro'],
+    ])
+
+    const started = eventsTyped(writes, 'child_started')
+    expect(started.find((event) => event.agentPath === 'root-01')?.data).toMatchObject({
+      modelTier: 'pro',
+      route_reason: 'temporal_normalization_requires_pro',
+      requiresTemporalNormalization: true,
+    })
+
+    const requestedChildren = eventsTyped(writes, 'delegate_requested')[0]?.data?.children
+    expect(requestedChildren).toEqual([
+      expect.objectContaining({
+        modelTier: 'pro',
+        route_reason: 'temporal_normalization_requires_pro',
+        requiresTemporalNormalization: true,
+      }),
+    ])
+
+    await delegateRuntime.dispose?.()
+  })
+
   it('upgrades an eligible Flash child to Pro once and archives the route reason', async () => {
     const childModels: string[] = []
     const fetchImpl: typeof fetch = async (_url, init) => {

@@ -1,8 +1,8 @@
 // 左栏：会话列表（P-U2）。契约 U1 —— UI 只读 atom + 调命令。
 // ---------------------------------------------------------------------------
 // 读：rootStore 的 sessionsAtom / activeSessionIdAtom（在根 rootStore Provider 下）。
-// 写：一律走 runtime/commands 的命令（newSession / selectSession / removeSession /
-//   renameSession）—— 本组件绝不直接 setter atom、不 import writers、不碰 store 实例（U1 边界）。
+// 写：一律走 runtime/commands 的命令（selectSession / removeSession / renameSession）
+//   —— 本组件绝不直接 setter atom、不 import writers、不碰 store 实例（U1 边界）。
 // 顺序（TU1）：按 updatedAt 倒序（最近活跃在最上）；并列退 createdAt 倒序，再并列按 id 稳定。
 // 行内改名（TT4）：双击标题进入编辑（editingId + draft 纯本地 UI 态，不进 atom）；
 //   Enter/失焦提交（调 renameSession，trim 空由命令层 no-op 兜底）、Esc 取消；单击行为不变。
@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAtomValue } from '@einfach/react'
 import { sessionsAtom, activeSessionIdAtom } from '@web-agent/core/state/rootStore'
-import { newSession, selectSession, removeSession, renameSession } from '@web-agent/core/runtime/commands'
+import { selectSession, removeSession, renameSession } from '@web-agent/core/runtime/commands'
 
 // TU2：删除确认态的自动复位时限。
 const CONFIRM_TIMEOUT_MS = 3000
@@ -93,13 +93,6 @@ export function SessionList({ workspaceId }: { workspaceId?: string }) {
 
   return (
     <div className="agentnew-session-list">
-      <button
-        type="button"
-        className="agentnew-new-session"
-        onClick={() => newSession(workspaceId ? { workspaceId } : undefined)}
-      >
-        + 新建对话
-      </button>
       {ordered.map((s) => {
         const isActive = s.id === activeId
         const isConfirming = confirmingId === s.id

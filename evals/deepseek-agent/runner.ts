@@ -43,6 +43,7 @@ export interface DeepSeekEvalResult {
   started_at: string
   latency_ms: number
   request_count: number
+  request_shapes: DeepSeekRequestShape[]
   stream_delta_count: number
   http_status: number | null
   http_statuses: number[]
@@ -66,6 +67,17 @@ export interface DeepSeekEvalResult {
   }
 }
 
+export interface DeepSeekRequestShape {
+  body_parseable: boolean
+  has_tool_choice: boolean | null
+  has_thinking: boolean | null
+  has_tools: boolean | null
+  assistant_tool_call: {
+    has_reasoning_content: boolean
+    content_non_null: boolean
+  } | null
+}
+
 export interface RunDeepSeekEvalCaseOptions {
   apiKey: string
   baseUrl?: string
@@ -79,8 +91,75 @@ interface MutableObservation {
   httpStatuses: number[]
   retries: string[]
   requestCount: number
+  requestShapes: DeepSeekRequestShape[]
   streamDeltaCount: number
   responses: ModelChatResponse[]
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function hasOwn(value: Record<string, unknown>, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(value, key)
+}
+
+function requestShape(init?: RequestInit): DeepSeekRequestShape {
+  if (typeof init?.body !== 'string') {
+    return {
+      body_parseable: false,
+      has_tool_choice: null,
+      has_thinking: null,
+      has_tools: null,
+      assistant_tool_call: null,
+    }
+  }
+
+  let body: unknown
+  try {
+    body = JSON.parse(init.body)
+  } catch {
+    return {
+      body_parseable: false,
+      has_tool_choice: null,
+      has_thinking: null,
+      has_tools: null,
+      assistant_tool_call: null,
+    }
+  }
+  if (!isRecord(body)) {
+    return {
+      body_parseable: false,
+      has_tool_choice: null,
+      has_thinking: null,
+      has_tools: null,
+      assistant_tool_call: null,
+    }
+  }
+
+  const assistantToolCall = Array.isArray(body.messages)
+    ? body.messages.find((message) =>
+      isRecord(message) &&
+      message.role === 'assistant' &&
+      Array.isArray(message.tool_calls) &&
+      message.tool_calls.length > 0
+    )
+    : undefined
+
+  return {
+    body_parseable: true,
+    has_tool_choice: hasOwn(body, 'tool_choice'),
+    has_thinking: hasOwn(body, 'thinking'),
+    has_tools: hasOwn(body, 'tools'),
+    assistant_tool_call: assistantToolCall
+      ? {
+        has_reasoning_content: hasOwn(assistantToolCall, 'reasoning_content'),
+        content_non_null:
+          hasOwn(assistantToolCall, 'content') &&
+          assistantToolCall.content !== null,
+      }
+      : null,
+  }
 }
 
 function finiteNumber(value: unknown): number | undefined {
@@ -198,12 +277,14 @@ export async function runDeepSeekEvalCase(
     httpStatuses: [],
     retries: [],
     requestCount: 0,
+    requestShapes: [],
     streamDeltaCount: 0,
     responses: [],
   }
   const upstreamFetch = options.fetchImpl ?? fetch
   const observedFetch: typeof fetch = async (input, init) => {
     observation.requestCount += 1
+    observation.requestShapes.push(requestShape(init))
     const response = await upstreamFetch(input, init)
     observation.httpStatuses.push(response.status)
     return response
@@ -312,6 +393,7 @@ export async function runDeepSeekEvalCase(
     started_at: new Date(startedAtMs).toISOString(),
     latency_ms: Math.max(0, now() - startedAtMs),
     request_count: observation.requestCount,
+    request_shapes: observation.requestShapes,
     stream_delta_count: observation.streamDeltaCount,
     http_status: lastStatus ?? null,
     http_statuses: observation.httpStatuses,

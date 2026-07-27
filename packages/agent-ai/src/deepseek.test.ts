@@ -58,7 +58,7 @@ describe('DeepSeek V4 请求协议', () => {
     expect(normalizeDeepSeekUserId(42)).toBeUndefined()
   })
 
-  it('thinking 开启时移除不支持的采样参数，并允许 max reasoning effort', async () => {
+  it('thinking 开启时移除不支持的采样参数和 tool_choice，并允许 max reasoning effort', async () => {
     let captured: Record<string, unknown> | undefined
     const body: DeepSeekChatRequest = {
       model: 'deepseek-v4-pro',
@@ -70,6 +70,7 @@ describe('DeepSeek V4 请求协议', () => {
       top_p: 0.8,
       presence_penalty: 0.1,
       frequency_penalty: 0.3,
+      tool_choice: { type: 'function', function: { name: 'read_file' } },
     }
 
     await callDeepSeek(body, {
@@ -92,15 +93,17 @@ describe('DeepSeek V4 请求协议', () => {
     expect(captured).not.toHaveProperty('top_p')
     expect(captured).not.toHaveProperty('presence_penalty')
     expect(captured).not.toHaveProperty('frequency_penalty')
+    expect(captured).not.toHaveProperty('tool_choice')
     expect(body).toMatchObject({
       temperature: 0.2,
       top_p: 0.8,
       presence_penalty: 0.1,
       frequency_penalty: 0.3,
+      tool_choice: { type: 'function', function: { name: 'read_file' } },
     })
   })
 
-  it('thinking 关闭时原样保留采样参数', async () => {
+  it('thinking 关闭时原样保留采样参数和 tool_choice', async () => {
     let captured: Record<string, unknown> | undefined
 
     await callDeepSeek(
@@ -113,6 +116,7 @@ describe('DeepSeek V4 请求协议', () => {
         top_p: 0.8,
         presence_penalty: 0.1,
         frequency_penalty: 0.3,
+        tool_choice: 'required',
       },
       {
         apiKey: 'test-key',
@@ -131,6 +135,7 @@ describe('DeepSeek V4 请求协议', () => {
       top_p: 0.8,
       presence_penalty: 0.1,
       frequency_penalty: 0.3,
+      tool_choice: 'required',
     })
   })
 
@@ -148,6 +153,7 @@ describe('DeepSeek V4 请求协议', () => {
         top_p: 0.9,
         presence_penalty: 0,
         frequency_penalty: 0,
+        tool_choice: 'auto',
       },
       {
         apiKey: 'test-key',
@@ -169,9 +175,10 @@ describe('DeepSeek V4 请求协议', () => {
     expect(captured).not.toHaveProperty('top_p')
     expect(captured).not.toHaveProperty('presence_penalty')
     expect(captured).not.toHaveProperty('frequency_penalty')
+    expect(captured).not.toHaveProperty('tool_choice')
   })
 
-  it('净化请求时完整保留 tool-call assistant 的 reasoning_content 回填链', async () => {
+  it('净化请求时保留 reasoning_content，并把工具调用 assistant 的 null content 规范为空串', async () => {
     let captured: Record<string, unknown> | undefined
     const messages: DeepSeekChatRequest['messages'] = [
       { role: 'user', content: '读取配置' },
@@ -209,7 +216,18 @@ describe('DeepSeek V4 请求协议', () => {
       },
     )
 
-    expect(captured?.messages).toEqual(messages)
+    expect(captured?.messages).toEqual([
+      messages[0],
+      {
+        ...messages[1],
+        content: '',
+      },
+      messages[2],
+    ])
+    expect(messages[1]).toMatchObject({
+      content: null,
+      reasoning_content: '需要先读取配置文件，再继续回答。',
+    })
   })
 
   it('不会隐式生成 user_id，并在协议边界丢弃非法值', async () => {

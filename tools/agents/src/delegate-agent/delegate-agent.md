@@ -15,6 +15,8 @@ handle immediately; it does not wait for the child tree.
   `implementation`, `verification`, or `final_acceptance`.
 - `children[].riskLevel` (optional): `low`, `medium`, or `high`.
 - `children[].crossModule` (optional): whether the task spans multiple modules.
+- `children[].requiresTemporalNormalization` (optional): whether the answer requires cross-time-zone
+  conversion, temporal ordering/deduplication, or date/duration arithmetic. `true` routes to Pro.
 - `children[].finalAcceptance` (optional): whether the child owns the final acceptance decision.
 - `children[].priorFailureCount` (optional): observable failures for the same task in the current
   history. Any positive value routes to Pro.
@@ -47,7 +49,9 @@ Budget exhaustion is explicit: the current delegation/model turn fails with a `s
   `riskLevel` is `low`, and no Pro-forcing feature applies. This can happen with or without an
   explicit `modelTier: "flash"` preference.
 - Nested delegation, prior failures, final acceptance, evaluator mode, cross-module work, high
-  risk, and any confirmed dangerous capability always route to Pro.
+  risk, temporal normalization, and any confirmed dangerous capability always route to Pro.
+- Set `requiresTemporalNormalization` from the task contract, not by guessing from incidental time
+  words.
 - Every initial decision is archived as `route_reason`. A Flash provider failure or
   `insufficient_system_resource` may upgrade once to Pro and records `fallback_count: 1`.
 - Automatic Flash → Pro upgrade is allowed only before any tool execution and only when the

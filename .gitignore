@@ -10,3 +10,7 @@ node_modules/.tmp
 agentnew-*.png
 .agent-cache/
 .agent-archive/
+# CodeGraph 本地索引（含 20MB+ 的 codegraph.db），每台机器各自重建，不入库
+.codegraph/
+# 个人本地 Claude Code 配置（含机器特有的绝对路径），不入库
+.claude/settings.local.json

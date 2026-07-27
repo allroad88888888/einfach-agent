@@ -3,7 +3,7 @@
  * 只求「两栏清晰、能用」，不追求精美。由 main.tsx 统一 import（本文件不被其它模块 import）。
  * 类名与 ui/ 各组件一一对应：
  *   AppShell         → .agentnew-shell / .agentnew-sidebar / .agentnew-main
- *   SessionList      → .agentnew-session-list / -new-session / -session-item(.active) / -session-title / -session-rename-input / -session-remove(.confirming)
+ *   SessionList      → .agentnew-session-list / -session-item(.active) / -session-title / -session-rename-input / -session-remove(.confirming)
  *   ActiveSessionProvider → .agentnew-empty
  *   MessageList      → .agentnew-message-list / .agentnew-msg(.--assistant) / .agentnew-user-message / .agentnew-message-revert / .agentnew-message-empty
  *   CheckpointBar    → .agentnew-checkpoint-bar / .agentnew-checkpoint-item(.active)
@@ -156,19 +156,40 @@
   box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.12);
 }
 
+.agentnew-workspace-new-session,
 .agentnew-workspace-settings {
   flex: 0 0 28px;
   width: 28px;
   height: 28px;
-  margin-right: 2px;
   border: 0;
   border-radius: 7px;
   background: transparent;
   color: #7a8598;
-  font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
   cursor: pointer;
+  transition: opacity 120ms ease;
 }
 
+.agentnew-workspace-heading:hover .agentnew-workspace-new-session,
+.agentnew-workspace-heading:hover .agentnew-workspace-settings,
+.agentnew-workspace-heading:focus-within .agentnew-workspace-new-session,
+.agentnew-workspace-heading:focus-within .agentnew-workspace-settings {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.agentnew-workspace-new-session {
+  font-size: 19px;
+  line-height: 1;
+}
+
+.agentnew-workspace-settings {
+  margin-right: 2px;
+  font-size: 13px;
+}
+
+.agentnew-workspace-new-session:hover,
 .agentnew-workspace-settings:hover,
 .agentnew-workspace-settings.active {
   color: #4444bd;
@@ -184,32 +205,6 @@
   flex-direction: column;
   gap: 4px;
   padding: 2px 4px 8px 22px;
-}
-
-.agentnew-workspace-content .agentnew-new-session {
-  margin-bottom: 2px;
-  padding: 7px 9px;
-  border-style: dashed;
-  font-size: 12px;
-}
-
-.agentnew-new-session {
-  width: 100%;
-  margin-bottom: 8px;
-  padding: 9px 12px;
-  border: 1px solid #d4dbe8;
-  border-radius: 8px;
-  background: #ffffff;
-  color: #1b2333;
-  font-size: 13px;
-  font-weight: 600;
-  text-align: left;
-  cursor: pointer;
-}
-
-.agentnew-new-session:hover {
-  border-color: #a5a8f4;
-  background: #eef0fe;
 }
 
 .agentnew-session-item {

@@ -58,6 +58,30 @@ function successfulGlmStream(usage: ModelUsage): Response {
 }
 
 describe('流式 usage 请求与响应', () => {
+  it('DeepSeek SSE 聚合后保留服务端顶层 id 和 model', async () => {
+    const result = await streamDeepSeek(
+      { ...BODY, model: 'deepseek-v4-pro' },
+      {
+        apiKey: 'k',
+        fetchImpl: async () => sseResponse([
+          {
+            id: 'chatcmpl-deepseek-observed',
+            model: 'deepseek-v4-pro-20260724',
+            choices: [{ delta: { role: 'assistant', content: 'ok' } }],
+          },
+          { choices: [{ delta: {}, finish_reason: 'stop' }] },
+        ]),
+        retry: { maxRetries: 0 },
+      },
+    )
+
+    expect(result).toMatchObject({
+      id: 'chatcmpl-deepseek-observed',
+      model: 'deepseek-v4-pro-20260724',
+      choices: [{ finish_reason: 'stop', message: { content: 'ok' } }],
+    })
+  })
+
   it('透传显式 stream_options，并保留 choices=[] 最终 chunk 的 usage', async () => {
     const bodies: Array<Record<string, unknown>> = []
     const usage: ModelUsage = {

@@ -31,6 +31,10 @@ const inputSchema = {
             description: 'Risk derived from the bounded task scope and requested capabilities. Omission is treated conservatively.',
           },
           crossModule: { type: 'boolean', description: 'Whether the task spans multiple modules; true forces Pro.' },
+          requiresTemporalNormalization: {
+            type: 'boolean',
+            description: 'Whether the answer requires time-zone conversion, temporal ordering/deduplication, or date/duration arithmetic; true forces Pro.',
+          },
           finalAcceptance: { type: 'boolean', description: 'Whether this child makes the final acceptance decision; true forces Pro.' },
           priorFailureCount: {
             type: 'integer',

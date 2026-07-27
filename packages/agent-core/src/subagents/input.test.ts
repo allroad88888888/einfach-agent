@@ -70,6 +70,7 @@ describe('normalizeDelegateAgentInput', () => {
         taskCategory: 'extraction',
         riskLevel: 'low',
         crossModule: false,
+        requiresTemporalNormalization: true,
         finalAcceptance: false,
         priorFailureCount: 2,
       }],
@@ -81,6 +82,7 @@ describe('normalizeDelegateAgentInput', () => {
           taskCategory: 'extraction',
           riskLevel: 'low',
           crossModule: false,
+          requiresTemporalNormalization: true,
           finalAcceptance: false,
           priorFailureCount: 2,
         }],
@@ -97,8 +99,24 @@ describe('normalizeDelegateAgentInput', () => {
       children: [{ objective: 'x', finalAcceptance: 'yes' }],
     })).toMatchObject({ ok: false })
     expect(normalizeDelegateAgentInput({
+      children: [{ objective: 'x', requiresTemporalNormalization: 'yes' }],
+    })).toEqual({
+      ok: false,
+      error: 'invalid delegate_agent: child requiresTemporalNormalization must be boolean',
+    })
+    expect(normalizeDelegateAgentInput({
       children: [{ objective: 'x', priorFailureCount: -1 }],
     })).toMatchObject({ ok: false })
+  })
+
+  it('preserves omission of optional routing features for backward compatibility', () => {
+    const result = normalizeDelegateAgentInput({
+      children: [{ objective: 'legacy child' }],
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.input.children[0]).not.toHaveProperty('requiresTemporalNormalization')
   })
 
   it('validates root and child tool profiles', () => {

@@ -42,12 +42,29 @@ export interface DeepSeekChatRequest extends ChatRequestBase {
   frequency_penalty?: number
 }
 
+// 简介：规范化 DeepSeek V4 thinking 工具调用历史。
+// 详情：官方协议要求工具调用续轮完整回传 assistant 的 reasoning_content；同时工具调用
+// assistant 的 content 不能为 null。这里只把纯工具调用轮的 null 规范为空字符串，不修改
+// 调用方原始 messages。
+function prepareDeepSeekThinkingMessages(
+  messages: DeepSeekChatRequest['messages'],
+): DeepSeekChatRequest['messages'] {
+  return messages.map((message) => (
+    message.role === 'assistant'
+      && message.content === null
+      && (message.tool_calls?.length ?? 0) > 0
+      ? { ...message, content: '' }
+      : message
+  ))
+}
+
 // 简介：按 DeepSeek V4 thinking 协议净化请求。
-// 详情：thinking 开启时，DeepSeek 不支持四个采样参数。调用方的会话设置仍需保留，
-// 因此这里只创建一个不带这些字段的新对象，不修改传入 body。
+// 详情：thinking 开启时，DeepSeek 不支持四个采样参数，也不接受 tool_choice。调用方的
+// 会话设置仍需保留，因此这里只创建一个兼容的新对象，不修改传入 body。
 function prepareDeepSeekRequest(body: DeepSeekChatRequest): DeepSeekChatRequest {
   const {
     user_id: rawUserId,
+    tool_choice: rawToolChoice,
     temperature: _temperature,
     top_p: _topP,
     presence_penalty: _presencePenalty,
@@ -57,10 +74,16 @@ function prepareDeepSeekRequest(body: DeepSeekChatRequest): DeepSeekChatRequest 
   const userId = normalizeDeepSeekUserId(rawUserId)
   const request = userId === undefined ? baseRequest : { ...baseRequest, user_id: userId }
 
-  if (body.thinking?.type === 'enabled') return request
+  if (body.thinking?.type === 'enabled') {
+    return {
+      ...request,
+      messages: prepareDeepSeekThinkingMessages(body.messages),
+    }
+  }
 
   return {
     ...request,
+    tool_choice: rawToolChoice,
     temperature: body.temperature,
     top_p: body.top_p,
     presence_penalty: body.presence_penalty,

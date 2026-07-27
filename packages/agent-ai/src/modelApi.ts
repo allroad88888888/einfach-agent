@@ -169,6 +169,8 @@ export interface ModelStreamChoice {
 }
 
 export interface ModelChatStreamChunk {
+  id?: string
+  model?: string
   choices?: ModelStreamChoice[]
   // include_usage 模式下，最后一个 chunk 通常 choices=[] 且只携带 usage。
   usage?: ModelUsage | null
@@ -621,6 +623,8 @@ export async function postChatCompletion(
 }
 
 interface StreamAccumulator {
+  id?: string
+  model?: string
   content: string
   reasoningContent: string
   toolCalls: Map<number, ModelResponseToolCall>
@@ -687,6 +691,8 @@ function toChatResponse(acc: StreamAccumulator): ModelChatResponse {
       },
     ],
   }
+  if (acc.id !== undefined) response.id = acc.id
+  if (acc.model !== undefined) response.model = acc.model
   if (acc.usage) response.usage = acc.usage
   return response
 }
@@ -744,6 +750,14 @@ function consumeSseBuffer(
     if (data === '[DONE]') return { rest, done: true }
 
     const chunk = JSON.parse(data) as ModelChatStreamChunk
+    // id/model 属于 SSE chunk 顶层元数据，不会出现在 delta 中；记录首次出现的值，
+    // 让聚合后的响应保留服务端实际响应身份与模型，而不是只能依赖请求体推断。
+    if (typeof chunk.id === 'string' && acc.id === undefined) {
+      acc.id = chunk.id
+    }
+    if (typeof chunk.model === 'string' && acc.model === undefined) {
+      acc.model = chunk.model
+    }
     // include_usage 的最终 chunk 通常没有 choice；必须先读 usage，不能随 choices[0] 一起跳过。
     if (chunk.usage) {
       acc.usage = { ...acc.usage, ...chunk.usage }

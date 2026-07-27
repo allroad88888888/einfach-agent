@@ -6,25 +6,31 @@ import type {
 } from './types'
 import { compareAgentPaths, parseAgentPath } from './path'
 
-const SUBAGENT_EVENT_TYPES: SubagentArchiveEventType[] = [
-  'archive_initialized',
-  'delegate_requested',
-  'children_reserved',
-  'skill_written',
-  'child_started',
-  'child_tool_schema_requested',
-  'child_tool_finished',
-  'nested_delegate_requested',
-  'child_finished',
-  'tree_snapshot_written',
-  'delegate_finished',
-  'child_model_usage',
-  'child_model_escalated',
-  // 与 types.ts 的 SubagentArchiveEventType 联合一一对应 —— 漏一个，该类事件就会被
-  // isSubagentArchiveEvent 判为结构非法而落进 parseErrors，eventCounts 也不再统计它。
-  'child_context_compacted',
-  'child_context_over_budget',
-]
+// 与 types.ts 的 SubagentArchiveEventType 联合一一对应 —— 漏一个，该类事件就会被
+// isSubagentArchiveEvent 判为结构非法而落进 parseErrors，eventCounts 也不再统计它。
+// 用 Record 而非数组字面量：数组类型允许子集，漏写不会报错；Record 少一个键编译期就失败，
+// 多一个键也会被拒。scripts/subagent-replay-lib.js 里的同名白名单由该文件的测试锁步校验。
+const SUBAGENT_EVENT_TYPE_SET: Record<SubagentArchiveEventType, true> = {
+  archive_initialized: true,
+  delegate_requested: true,
+  children_reserved: true,
+  skill_written: true,
+  child_started: true,
+  child_tool_schema_requested: true,
+  child_tool_finished: true,
+  nested_delegate_requested: true,
+  child_finished: true,
+  tree_snapshot_written: true,
+  delegate_finished: true,
+  child_model_usage: true,
+  child_model_escalated: true,
+  child_context_compacted: true,
+  child_context_over_budget: true,
+}
+
+export const SUBAGENT_EVENT_TYPES = Object.keys(
+  SUBAGENT_EVENT_TYPE_SET,
+) as SubagentArchiveEventType[]
 
 const ROOT_AGENT_PATH = 'root'
 
@@ -306,23 +312,10 @@ export function replaySubagentArchive(input: {
 
   const nodeMap: Record<string, SubagentNodeRecord> = {}
   const childResults: ChildAgentResult[] = []
-  const eventCounts: Record<SubagentArchiveEventType, number> = {
-    archive_initialized: 0,
-    delegate_requested: 0,
-    children_reserved: 0,
-    skill_written: 0,
-    child_started: 0,
-    child_tool_schema_requested: 0,
-    child_tool_finished: 0,
-    nested_delegate_requested: 0,
-    child_finished: 0,
-    tree_snapshot_written: 0,
-    delegate_finished: 0,
-    child_model_usage: 0,
-    child_model_escalated: 0,
-    child_context_compacted: 0,
-    child_context_over_budget: 0,
-  }
+  // 从同一份白名单派生，避免在本文件里维护第二份 15 行的类型清单。
+  const eventCounts = Object.fromEntries(
+    SUBAGENT_EVENT_TYPES.map((type) => [type, 0]),
+  ) as Record<SubagentArchiveEventType, number>
 
   // The snapshot hydrates the latest known node metadata. Events are then replayed
   // in archive order to reconstruct transitions and results. Monotonic counters are

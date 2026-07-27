@@ -47,6 +47,18 @@ describe('routeSubagentModel', () => {
     })
   })
 
+  it('routes temporal normalization to Pro', () => {
+    expect(routeSubagentModel({
+      parentPath: 'root',
+      taskCategory: 'extraction',
+      riskLevel: 'low',
+      requiresTemporalNormalization: true,
+    })).toEqual({
+      tier: 'pro',
+      reason: 'temporal_normalization_requires_pro',
+    })
+  })
+
   it('keeps high-risk, cross-module, final-acceptance, and failed work on Pro', () => {
     expect(routeSubagentModel({
       parentPath: 'root',
