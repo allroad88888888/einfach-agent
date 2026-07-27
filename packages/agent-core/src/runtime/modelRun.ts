@@ -39,6 +39,7 @@ import {
   isToolAlwaysAllowed,
   addRuntimeTranscriptEvent,
   contextStatsAtom,
+  queuedUserMessagesAtom,
   setContextStats,
   takeQueuedUserMessages,
   getTranscriptInjectionFingerprints,
@@ -51,6 +52,7 @@ import {
 } from '../state/transientAtoms'
 import { classifyToolRisk } from './dangerousTools'
 import type { ConversationItem, PendingToolConfirmation, PendingUserDecisionOrigin } from '../state/core.type'
+import type { RunRecoverySnapshot } from '../state/checkpoint.type'
 import { normalizeAskUserQuestionPayload } from './askUserQuestion'
 import { persistCheckpoint, persistSessions } from './persistenceBridge'
 import { streamDeepSeek, type DeepSeekChatRequest } from '@web-agent/ai'
@@ -937,6 +939,75 @@ function latestUserInput(id: string, core: CoreInstance): string {
   return first?.role === 'user' ? first.content : ''
 }
 
+function currentRunRecoverySnapshot(
+  id: string,
+  runId: string,
+  core: CoreInstance,
+): RunRecoverySnapshot | undefined {
+  const store = core.getSessionStore(id).store
+  const run = store.getter(runAtom)
+  if (
+    run?.runId !== runId
+    || ![
+      'running',
+      'awaiting_tool',
+      'waiting_user',
+      'waiting_confirmation',
+      'waiting_plan_approval',
+    ].includes(run.status)
+  ) return undefined
+  return {
+    run: { ...run, pendingExecutionId: undefined },
+    queuedUserMessages: store.getter(queuedUserMessagesAtom),
+  }
+}
+
+// 运行中追加的用户输入也属于恢复状态。命令把消息放入队列后立刻覆盖同一份工作 checkpoint，
+// 不等下一次模型/工具安全边界，避免恰好在网络请求期间退出时漏掉补充输入。
+export function persistCurrentRunRecovery(
+  id: string,
+  core: CoreInstance = defaultCore,
+): void {
+  const store = core.getSessionStore(id).store
+  const run = store.getter(runAtom)
+  if (!run) return
+  const recovery = currentRunRecoverySnapshot(id, run.runId, core)
+  if (!recovery) return
+  const checkpoints = store.getter(checkpointsAtom)
+  const latest = checkpoints[checkpoints.length - 1]
+  if (
+    !latest?.label.startsWith('[执行中] ')
+    || latest.recovery?.run.runId !== run.runId
+  ) return
+  updateCheckpoint(id, latest.turnIndex, latest.label, core, recovery)
+  const updated = store.getter(checkpointsAtom)[latest.turnIndex]
+  if (updated) persistCheckpoint(id, updated)
+}
+
+// 重启可能发生在 assistant(tool_calls) 已落工作 checkpoint、但 tool result 尚未安全落盘之间。
+// 这时不能自动重放工具（写文件/外部调用可能已经产生副作用），但直接续传又违反 tool-call 协议。
+// 恢复时给每个孤儿调用补一条明确的 unknown 结果，让模型先检查当前状态再决定是否重新调用。
+function closeInterruptedToolCalls(id: string, core: CoreInstance): void {
+  const unresolved = new Map<string, { name: string; planStageId?: string }>()
+  for (const entry of currentTurnItems(id, core)) {
+    const item = entry.item
+    if (item.role === 'assistant') {
+      for (const call of item.tool_calls ?? []) {
+        unresolved.set(call.id, { name: call.function.name, planStageId: entry.planStageId })
+      }
+    } else if (item.role === 'tool') {
+      unresolved.delete(item.tool_call_id)
+    }
+  }
+  for (const [callId, pending] of unresolved) {
+    appendToolResult(id, callId, JSON.stringify({
+      error: `应用重启时工具 ${pending.name} 尚未保存结果；为避免重复副作用，本次未自动重试。请检查当前状态后再决定是否重新调用。`,
+      interrupted: true,
+      result: 'unknown',
+    }), core, pending.planStageId)
+  }
+}
+
 // 简介：跑一轮多轮 lazy-tool 对话 run（T-6）。
 // 详情：append user → setRun('running') → 交给 runToolLoop 驱动多轮循环（与 resume 同一入口）。
 export async function runSession(
@@ -971,6 +1042,43 @@ export async function runSession(
   // 与 resume 复用同一循环入口（此时最后一条 user 就是刚 append 的 input，行为与旧版等价）。
   // core 已随 opts 透传（{ ...opts } 含 opts.core），runToolLoop 内部会 opts.core ?? defaultCore 解析同一实例。
   await runToolLoop(id, runId, { ...opts, traceSpan: rootSpan, turnId: userItemId })
+}
+
+// 简介：继续最新工作 checkpoint 中被应用重启打断的普通/计划任务。
+// 详情：复用持久化的 runId/turnId 和同一轮 checkpoint，不追加 user；孤儿 tool_call 先按 unknown
+// 安全闭合，避免重复执行可能已有副作用的工具。计划若仍未结束，同一入口会附带计划恢复上下文。
+export async function resumeInterruptedSession(
+  id: string,
+  opts: {
+    signal: AbortSignal
+    apiKey: string
+    fetchImpl?: typeof fetch
+    core?: CoreInstance
+  },
+): Promise<void> {
+  const core = opts.core ?? defaultCore
+  const previousRun = core.getSessionStore(id).store.getter(runAtom)
+  if (previousRun?.status !== 'interrupted') return
+
+  closeInterruptedToolCalls(id, core)
+  const plan = core.getSessionStore(id).store.getter(planAtom)
+  setRun(id, {
+    ...previousRun,
+    status: 'running',
+    pendingExecutionId: undefined,
+    pendingToolCalls: undefined,
+    pendingQuestion: undefined,
+    pendingUserDecision: undefined,
+    pendingToolConfirmation: undefined,
+    pendingPlanApproval: undefined,
+    error: undefined,
+  }, core)
+  await runToolLoop(id, previousRun.runId, {
+    ...opts,
+    resumeInterrupted: true,
+    resumePlan: Boolean(plan && EXECUTING_PLAN_STATUSES.has(plan.status)),
+    turnId: previousRun.turnId,
+  })
 }
 
 // 简介：从持久化的计划游标恢复执行，不追加新的 user item。
@@ -1028,6 +1136,7 @@ export async function runToolLoop(
     fetchImpl?: typeof fetch
     resumeToolCall?: PendingToolConfirmation
     resumePlan?: boolean
+    resumeInterrupted?: boolean
     traceSpan?: TraceSpan
     turnId?: string
     core?: CoreInstance
@@ -1138,8 +1247,11 @@ export async function runToolLoop(
 
   const WORKING_CHECKPOINT_PREFIX = '[执行中] '
   const initialCheckpoints = core.getSessionStore(id).store.getter(checkpointsAtom)
-  const resumableWorkingCheckpoint = opts.resumePlan
-    ? initialCheckpoints[initialCheckpoints.length - 1]
+  const latestCheckpoint = initialCheckpoints[initialCheckpoints.length - 1]
+  const resumableWorkingCheckpoint = latestCheckpoint?.recovery?.run.runId === runId
+    || opts.resumePlan
+    || opts.resumeInterrupted
+    ? latestCheckpoint
     : undefined
   let workingTurnIndex = resumableWorkingCheckpoint?.label.startsWith(WORKING_CHECKPOINT_PREFIX)
     ? resumableWorkingCheckpoint.turnIndex
@@ -1147,14 +1259,15 @@ export async function runToolLoop(
 
   // 把当前 items 写进本轮 checkpoint。第一次追加，此后覆盖同一个 turnIndex，避免长计划的
   // 每个工具批次都被误算成一轮；同一会话的异步写盘由 persistenceBridge 保序。
-  const persistTurnSnapshot = (label: string): void => {
+  const persistTurnSnapshot = (label: string, includeRecovery: boolean): void => {
     if (!isCurrentRun(id, runId, core)) return
+    const recovery = includeRecovery ? currentRunRecoverySnapshot(id, runId, core) : undefined
     if (workingTurnIndex === undefined) {
-      commitCheckpoint(id, label, core)
+      commitCheckpoint(id, label, core, recovery)
       const checkpoints = core.getSessionStore(id).store.getter(checkpointsAtom)
       workingTurnIndex = checkpoints[checkpoints.length - 1]?.turnIndex
     } else {
-      updateCheckpoint(id, workingTurnIndex, label, core)
+      updateCheckpoint(id, workingTurnIndex, label, core, recovery)
     }
     const checkpoint = workingTurnIndex === undefined
       ? undefined
@@ -1174,7 +1287,7 @@ export async function runToolLoop(
   //   写过东西、且不会再续跑」的终止路径都必须调它一次，
   //   否则丢的不只是模型那半截回复，连用户自己发出去的那条 user 消息都会一起蒸发。
   //   触顶截断/循环/超轮数这几种异常收尾的文本通常仍然有用，落盘后 run 状态另置 error 即可。
-  //   waiting_*（暂停中、续跑时才收尾）路径不调用；stopped 会用 [已停止] 标签收成一个可撤回
+  //   waiting_* 会继续覆盖同一份工作 checkpoint，stopped 会用 [已停止] 标签收成一个可撤回
   //   checkpoint。否则用户继续发下一条消息后，上一条被停止的 user 消息永远没有气泡回退入口，
   //   而且刷新时会随未持久化 items 一起丢失。
   //   labelTag：异常收尾时给 checkpoint label 加的前缀（如 '[截断] '）。label 会落盘，是「刷新
@@ -1182,7 +1295,7 @@ export async function runToolLoop(
   const commitTurn = (labelTag = ''): void => {
     // stale-run 守卫：被新 run 顶掉后不得再往（已属于新 run 的）会话里塞旧 checkpoint。
     if (!isCurrentRun(id, runId, core)) return
-    persistTurnSnapshot(`${labelTag}${input.slice(0, 20)}`)
+    persistTurnSnapshot(`${labelTag}${input.slice(0, 20)}`, false)
     const committed = workingTurnIndex === undefined
       ? undefined
       : core.getSessionStore(id).store.getter(checkpointsAtom)[workingTurnIndex]
@@ -1201,10 +1314,12 @@ export async function runToolLoop(
   }
 
   const persistWorkingTurn = (): void => {
-    const plan = core.getSessionStore(id).store.getter(planAtom)
-    if (!plan || !EXECUTING_PLAN_STATUSES.has(plan.status)) return
-    persistTurnSnapshot(`${WORKING_CHECKPOINT_PREFIX}${input.slice(0, 20)}`)
+    persistTurnSnapshot(`${WORKING_CHECKPOINT_PREFIX}${input.slice(0, 20)}`, true)
   }
+
+  // 用户消息和 run 已经在内存中建立，第一发模型请求前就写工作 checkpoint。
+  // 普通任务与计划任务共用这条路径，重启后不再只剩 plan 能继续。
+  persistWorkingTurn()
 
   // 三段稳定前缀都只用于请求、不入库（TK4）。
   const system = buildSystemItem()
@@ -1318,14 +1433,19 @@ export async function runToolLoop(
     ...currentTurnItems(id, core).map((it) => it.item),
   ])
 
-  // 本轮可见工具（懒加载累积）：恢复运行时从 run 快照与持久历史重建，避免新 runId 让模型
-  // 对同一工具再次 request_tool_schema。schema 始终从当前 registry 获取，不信任历史里的旧 JSON。
+  // 本轮可见工具（懒加载累积）：优先从会话级持久化 LRU 恢复，再叠加持久历史与 run 快照，
+  // 避免新 runId 或应用重启让模型重复 request_tool_schema。schema 始终从当前 registry 获取，
+  // 不信任历史或持久化数据里的旧 JSON。
   let visible: LoadedTool[] = []
   const persistedItems = core.getSessionStore(id).store.getter(itemsAtom).map((item) => item.item)
+  const sessionTools = Array.isArray(meta.loadedTools)
+    ? meta.loadedTools.filter((toolName): toolName is string =>
+      typeof toolName === 'string' && toolName.length > 0)
+    : []
   const historicalTools = loadedToolNamesFromHistory(persistedItems)
   const runTools = core.getSessionStore(id).store.getter(runAtom)?.loadedTools ?? []
   const restoredToolNames: string[] = []
-  for (const toolName of [...historicalTools, ...runTools]) {
+  for (const toolName of [...sessionTools, ...historicalTools, ...runTools]) {
     const previousIndex = restoredToolNames.indexOf(toolName)
     if (previousIndex >= 0) restoredToolNames.splice(previousIndex, 1)
     restoredToolNames.push(toolName)
@@ -1509,8 +1629,8 @@ export async function runToolLoop(
           const stalledPlan = core.getSessionStore(id).store.getter(planAtom)
           const stalledStage = stalledPlan?.stages.find((stage) => stage.id === planStageId)
           const error = `计划阶段「${stalledStage?.title ?? planStageId}」已连续占用超过 ${MAX_TURNS_PER_STAGE} 轮仍未推进到下一阶段，已暂停自动执行并交还给你。常见原因：该阶段拆得过大，或 submit_stage_result 反复被拒导致阶段无法关闭；请检查后手动继续、拆分该阶段，或修正提交参数。`
-          persistWorkingTurn()
           if (isRunningRun(id, runId, core)) patchRun(id, { status: 'error', error }, core)
+          persistWorkingTurn()
           finishTrace('error', 'agent.plan_stage_over_budget', {
             planId: stalledPlan?.id,
             planStatus: stalledPlan?.status,
@@ -1979,6 +2099,7 @@ export async function runToolLoop(
             item: assistantItemFromMessage(msg, msg?.content ?? null, toolCalls),
           }, core)
         }
+        persistWorkingTurn()
 
         // 本批至多允许「一个」中断（ask_user 暂停 或 危险工具确认）——先记着，等同条消息里其它
         // tool_call 都补齐 result 再统一处理。否则提前 return 会漏掉其余 tool_call 的 tool 消息，
@@ -2093,12 +2214,12 @@ export async function runToolLoop(
             appendMappedToolResult(id, parallelCalls[index].callId, result, core, planStageId)
             pendingPlanEvaluationId ??= planEvaluationExecutionId(parallelCalls[index].name, result)
           })
-          persistWorkingTurn()
           if (pendingPlanEvaluationId) {
             patchRun(id, {
               status: 'awaiting_tool',
               pendingExecutionId: pendingPlanEvaluationId,
             }, core)
+            persistWorkingTurn()
             traceEvent('agent.waiting_plan_evaluation', { executionId: pendingPlanEvaluationId, plan_stage_id: planStageId })
             continueAfterPlanEvaluation({
               sessionId: id,
@@ -2111,6 +2232,7 @@ export async function runToolLoop(
             finishTrace('ok', 'agent.plan_evaluation_scheduled', { executionId: pendingPlanEvaluationId })
             return
           }
+          persistWorkingTurn()
           continue
         }
 
@@ -2388,6 +2510,7 @@ export async function runToolLoop(
             args: confirmCall.args,
           })
           patchRun(id, { status: 'waiting_confirmation', pendingToolConfirmation: confirmCall }, core)
+          persistWorkingTurn()
           return
         }
 
@@ -2401,6 +2524,7 @@ export async function runToolLoop(
               status: 'waiting_plan_approval',
               pendingPlanApproval: { callId: pauseCall.callId, ...planApproval },
             }, core)
+            persistWorkingTurn()
             return
           }
           const origin = pendingDecisionOrigin(id, pauseCall.payload, planStageId, core)
@@ -2421,15 +2545,16 @@ export async function runToolLoop(
               origin,
             },
           }, core)
+          persistWorkingTurn()
           return
         }
 
-        persistWorkingTurn()
         if (pendingPlanEvaluationId) {
           patchRun(id, {
             status: 'awaiting_tool',
             pendingExecutionId: pendingPlanEvaluationId,
           }, core)
+          persistWorkingTurn()
           traceEvent('agent.waiting_plan_evaluation', { executionId: pendingPlanEvaluationId, plan_stage_id: planStageId })
           continueAfterPlanEvaluation({
             sessionId: id,
@@ -2442,6 +2567,7 @@ export async function runToolLoop(
           finishTrace('ok', 'agent.plan_evaluation_scheduled', { executionId: pendingPlanEvaluationId })
           return
         }
+        persistWorkingTurn()
         continue
       }
 
@@ -2449,6 +2575,7 @@ export async function runToolLoop(
       const content = msg?.content
       if (!content || !content.trim()) {
         if (isRunningRun(id, runId, core)) patchRun(id, { status: 'error', error: '模型返回空回复' }, core)
+        persistWorkingTurn()
         finishTrace('error', 'agent.error', { error: '模型返回空回复' })
         return
       }
@@ -2470,8 +2597,8 @@ export async function runToolLoop(
         )
         if (consecutivePlanTextTurns >= MAX_CONSECUTIVE_PLAN_TEXT_TURNS) {
           const error = `计划执行连续 ${MAX_CONSECUTIVE_PLAN_TEXT_TURNS} 轮未调用工具，已停止自动续跑`
-          persistWorkingTurn()
           if (isRunningRun(id, runId, core)) patchRun(id, { status: 'error', error }, core)
+          persistWorkingTurn()
           finishTrace('error', 'agent.plan_continuation_stalled', {
             planId: currentPlan.id,
             planStatus: currentPlan.status,
@@ -2550,6 +2677,7 @@ export async function runToolLoop(
     // 其它失败 → 'error'（不抛崩 UI；仅当仍是本次 run）。
     if (isRunningRun(id, runId, core)) {
       patchRun(id, { status: 'error', error: err instanceof Error ? err.message : String(err) }, core)
+      persistWorkingTurn()
     }
     finishTrace('error', 'agent.error', { error: safeErrorMessage(err) }, err)
   } finally {

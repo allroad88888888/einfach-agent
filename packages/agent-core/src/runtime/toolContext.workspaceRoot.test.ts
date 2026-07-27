@@ -11,6 +11,7 @@ vi.mock('./workspaceRead', () => ({
   listWorkspaceFiles: vi.fn(async (input: unknown) => ({ ok: true, data: input })),
   searchWorkspaceFiles: vi.fn(async (input: unknown) => ({ ok: true, data: input })),
 }))
+vi.mock('./workspaceRg', () => ({ rgSearchWorkspace: vi.fn(async (input: unknown) => input) }))
 vi.mock('./workspacePatch', () => ({ applyWorkspacePatch: vi.fn(async (input: unknown) => input) }))
 vi.mock('./workspaceWrite', () => ({
   writeWorkspaceFile: vi.fn(async (input: { path?: string }) => ({
@@ -44,6 +45,7 @@ import { getSessionStore, resetSessionStores } from '../state/sessionStore'
 import { setRun } from '../state/sessionWriters'
 import { buildToolContext } from './toolContext'
 import { readWorkspaceFile, listWorkspaceFiles, searchWorkspaceFiles } from './workspaceRead'
+import { rgSearchWorkspace } from './workspaceRg'
 import { applyWorkspacePatch } from './workspacePatch'
 import { writeWorkspaceFile } from './workspaceWrite'
 import { getWorkspaceDiff } from './workspaceGit'
@@ -60,10 +62,22 @@ afterEach(() => {
 })
 
 // 登记一个 running 会话（可选 workspaceRoot），让 ctx.assertFresh 通过。
-function seedSession(id: string, workspaceRoot?: string): void {
+function seedSession(
+  id: string,
+  workspaceRoot?: string,
+  toolApprovalMode?: 'confirm' | 'auto',
+): void {
   rootStore.setter(sessionsAtom, (prev) => ({
     ...prev,
-    [id]: { id, title: 't', settings: { vendor: 'deepseek', model: 'x' }, createdAt: 0, updatedAt: 0, workspaceRoot },
+    [id]: {
+      id,
+      title: 't',
+      settings: { vendor: 'deepseek', model: 'x' },
+      createdAt: 0,
+      updatedAt: 0,
+      workspaceRoot,
+      toolApprovalMode,
+    },
   }))
   setRun(id, { runId: 'r', status: 'running' })
 }
@@ -271,13 +285,14 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     })
   })
 
-  it('会话已绑定 workspaceRoot：读/列/搜/patch/写/git/task 各桥入参都带上它', async () => {
+  it('会话已绑定 workspaceRoot：读/列/搜/rg/patch/写/git/task 各桥入参都带上它', async () => {
     seedSession('s1', '/ws/root')
     const ctx = ctxFor('s1')
 
     await ctx.readWorkspaceFile!({ path: 'a.txt' })
     await ctx.listWorkspaceFiles!({ path: '.' })
     await ctx.searchWorkspaceFiles!({ query: 'x' })
+    await ctx.rgSearchWorkspace!({ query: 'x' })
     await ctx.applyWorkspacePatch!({ operations: [] })
     await ctx.writeWorkspaceFile!({ path: 'a.txt', content: 'y' })
     await ctx.getWorkspaceDiff!({})
@@ -287,6 +302,7 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     expect(vi.mocked(readWorkspaceFile).mock.calls[0][0]).toMatchObject({ path: 'a.txt', workspaceRoot: '/ws/root' })
     expect(vi.mocked(listWorkspaceFiles).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/ws/root' })
     expect(vi.mocked(searchWorkspaceFiles).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/ws/root' })
+    expect(vi.mocked(rgSearchWorkspace).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/ws/root' })
     expect(vi.mocked(applyWorkspacePatch).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/ws/root' })
     expect(vi.mocked(writeWorkspaceFile).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/ws/root' })
     expect(vi.mocked(getWorkspaceDiff).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/ws/root' })
@@ -326,6 +342,46 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     seedSession('s4', '/session/root')
     await ctxFor('s4').readWorkspaceFile!({ path: 'a.txt', workspaceRoot: '/caller/root' })
     expect(vi.mocked(readWorkspaceFile).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/caller/root' })
+  })
+
+  it('Auto 从会话状态为四个只读桥注入外部路径权限', async () => {
+    seedSession('s-auto', '/session/root', 'auto')
+    const ctx = ctxFor('s-auto')
+
+    await ctx.readWorkspaceFile!({ path: '/other/a.txt' })
+    await ctx.listWorkspaceFiles!({ path: '../other' })
+    await ctx.searchWorkspaceFiles!({ query: 'needle', path: '/other' })
+    await ctx.rgSearchWorkspace!({ query: 'needle', path: '/other' })
+
+    for (const call of [
+      vi.mocked(readWorkspaceFile).mock.calls[0][0],
+      vi.mocked(listWorkspaceFiles).mock.calls[0][0],
+      vi.mocked(searchWorkspaceFiles).mock.calls[0][0],
+      vi.mocked(rgSearchWorkspace).mock.calls[0][0],
+    ]) {
+      expect(call).toMatchObject({
+        workspaceRoot: '/session/root',
+        allowExternalPaths: true,
+      })
+    }
+  })
+
+  it('confirm 移除调用方伪造的外部路径权限，写桥也不会获得该权限', async () => {
+    seedSession('s-confirm', '/session/root', 'confirm')
+    const ctx = ctxFor('s-confirm')
+
+    await ctx.readWorkspaceFile!({
+      path: '/other/a.txt',
+      allowExternalPaths: true,
+    })
+    await ctx.writeWorkspaceFile!({
+      path: '/other/a.txt',
+      content: 'no',
+      allowExternalPaths: true,
+    })
+
+    expect(vi.mocked(readWorkspaceFile).mock.calls[0][0]).not.toHaveProperty('allowExternalPaths')
+    expect(vi.mocked(writeWorkspaceFile).mock.calls[0][0]).not.toHaveProperty('allowExternalPaths')
   })
 
   it('shell 调用方已显式带 cwd：尊重调用方 cwd，不被会话 root 覆盖', async () => {

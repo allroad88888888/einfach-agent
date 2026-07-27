@@ -5,6 +5,7 @@
 // Composer。本组件只做组装（U4）：不读 atom、不调命令，那些都在各子组件内部。
 // 布局用 className；样式在 agentnew.css（由 main.tsx 统一 import，本文件不 import）。
 
+import { Profiler } from 'react'
 import { ActiveSessionProvider } from './ActiveSessionProvider'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
 import { MessageList } from './MessageList'
@@ -16,6 +17,7 @@ import { ContextStats } from './ContextStats'
 import { Composer } from './Composer'
 import { PlanPanel } from './PlanPanel'
 import { SettingsCenter } from './SettingsCenter'
+import { reportReactCommit } from '../../performanceDiagnostics'
 
 export function AppShell() {
   return (
@@ -29,7 +31,9 @@ export function AppShell() {
           <>
           {/* SaveArtifact 属于「当前对话内容」的一部分，排在 MessageList 之后。 */}
           <MessageList />
-          <PlanPanel />
+          <Profiler id="PlanPanel" onRender={reportReactCommit}>
+            <PlanPanel />
+          </Profiler>
           {/* 工具进度条：显示「工具正在干啥」，紧跟消息列表。 */}
           <ToolActivity />
           <SaveArtifact />

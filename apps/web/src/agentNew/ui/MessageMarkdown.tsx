@@ -11,6 +11,7 @@
 // 内容里的 <script>/<img onerror=...> 只会以纯文本呈现，不会长成真实 DOM 节点。
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import { memo } from 'react'
 
 const components: Components = {
   // props 先展开、target/rel 后置 —— 我们的安全属性恒胜（防御纵深；纯 markdown 本也产不出这俩属性）。
@@ -22,10 +23,10 @@ const components: Components = {
   ),
 }
 
-export function MessageMarkdown({ children }: { children: string }) {
+export const MessageMarkdown = memo(function MessageMarkdown({ children }: { children: string }) {
   return (
     <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
       {children}
     </ReactMarkdown>
   )
-}
+})

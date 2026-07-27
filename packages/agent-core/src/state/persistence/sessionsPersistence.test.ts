@@ -20,6 +20,7 @@ const a: SessionMeta = {
   settings: { vendor: 'deepseek', model: 'x' },
   createdAt: 0,
   updatedAt: 0,
+  loadedTools: ['shell_macos', 'read_file'],
 }
 const b: SessionMeta = {
   id: 's2',

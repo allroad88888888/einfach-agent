@@ -128,6 +128,10 @@ export function buildToolContext(opts: {
 
   // S4-A：本会话 workspace root（ctx 构造期解析一次；一次 run 内稳定）。
   const workspaceRoot = resolveWorkspaceRoot(sessionId, core)
+  // Auto 的跨 workspace 只读权限只从宿主会话状态派生。它不会进入工具 schema，且下面的
+  // withWorkspaceReadAccess 会覆盖/移除调用方同名字段，避免模型伪造 runtime-only 权限。
+  const allowExternalReadPaths =
+    core.rootStore.getter(sessionsAtom)[sessionId]?.toolApprovalMode === 'auto'
   const planRuntime = new PlanRuntime({
     get: () => getPlan(sessionId),
     set: (plan) => setPlan(sessionId, plan),
@@ -140,15 +144,32 @@ export function buildToolContext(opts: {
   // S4-A：把会话 workspaceRoot 注入桥入参 —— session 未绑定则原样（Rust 走 git root 兜底，保持现状）；
   //   调用方（工具）已显式带 workspaceRoot 则尊重调用方、不覆盖；桥不带 input（getWorkspaceDiff）时合成一个。
   function withWorkspaceRoot<T>(input: T): T {
-    if (!workspaceRoot) return input
-    if (input === null || typeof input !== 'object' || Array.isArray(input)) {
-      return { workspaceRoot } as unknown as T
+    const record = input !== null && typeof input === 'object' && !Array.isArray(input)
+      ? input as Record<string, unknown>
+      : {}
+    const { allowExternalPaths: _untrusted, ...trustedInput } = record
+
+    if (!workspaceRoot) return trustedInput as T
+    if (
+      typeof trustedInput.workspaceRoot === 'string'
+      && trustedInput.workspaceRoot.trim().length > 0
+    ) {
+      return trustedInput as T
     }
-    const record = input as Record<string, unknown>
-    if (typeof record.workspaceRoot === 'string' && record.workspaceRoot.trim().length > 0) {
-      return input
-    }
-    return { ...record, workspaceRoot } as T
+    return { ...trustedInput, workspaceRoot } as T
+  }
+
+  function withWorkspaceReadAccess<T>(input: T): T {
+    const rooted = withWorkspaceRoot(input)
+    const record = rooted !== null && typeof rooted === 'object' && !Array.isArray(rooted)
+      ? rooted as Record<string, unknown>
+      : {}
+    const { allowExternalPaths: _untrusted, ...trustedInput } = record
+    return (
+      allowExternalReadPaths
+        ? { ...trustedInput, allowExternalPaths: true }
+        : trustedInput
+    ) as T
   }
 
   function withChangeContext<T>(input: T): T {
@@ -289,7 +310,7 @@ export function buildToolContext(opts: {
     async readWorkspaceFile(input) {
       assertFresh()
       progress(pathProgressText('读取文件', input.path))
-      const result = await readWorkspaceFile(withWorkspaceRoot(input))
+      const result = await readWorkspaceFile(withWorkspaceReadAccess(input))
       assertFresh()
       return result
     },
@@ -297,7 +318,7 @@ export function buildToolContext(opts: {
     async listWorkspaceFiles(input) {
       assertFresh()
       progress(pathProgressText('列出文件', input.path))
-      const result = await listWorkspaceFiles(withWorkspaceRoot(input))
+      const result = await listWorkspaceFiles(withWorkspaceReadAccess(input))
       assertFresh()
       return result
     },
@@ -305,7 +326,7 @@ export function buildToolContext(opts: {
     async searchWorkspaceFiles(input) {
       assertFresh()
       progress(pathProgressText('搜索文件', input.path))
-      const result = await searchWorkspaceFiles(withWorkspaceRoot(input))
+      const result = await searchWorkspaceFiles(withWorkspaceReadAccess(input))
       assertFresh()
       return result
     },
@@ -313,7 +334,7 @@ export function buildToolContext(opts: {
     async rgSearchWorkspace(input) {
       assertFresh()
       progress(pathProgressText('rg 搜索', input.path))
-      const result = await rgSearchWorkspace(withWorkspaceRoot(input))
+      const result = await rgSearchWorkspace(withWorkspaceReadAccess(input))
       assertFresh()
       return result
     },

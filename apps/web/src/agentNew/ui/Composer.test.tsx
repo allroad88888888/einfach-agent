@@ -10,6 +10,7 @@ import {
 } from '@web-agent/core/state/transientAtoms'
 import { Composer } from './Composer'
 import {
+  continueInterruptedRun,
   sendMessage,
   setApprovalMode,
   stopRun,
@@ -20,6 +21,7 @@ import {
 // （sendMessage / stopRun）。这里把命令整模块 mock，断言「按了什么就调了什么」，
 // 不触碰真正的 runtime / store setter。
 vi.mock('@web-agent/core/runtime/commands', () => ({
+  continueInterruptedRun: vi.fn(),
   sendMessage: vi.fn(),
   setApprovalMode: vi.fn(),
   stopRun: vi.fn(),
@@ -241,6 +243,19 @@ describe('Composer', () => {
     fireEvent.click(screen.getByRole('button', { name: '撤回并编辑' }))
 
     expect(withdrawCurrentTurnToDraft).toHaveBeenCalledTimes(1)
+  })
+
+  it('interrupted 态：锁定普通输入并提供继续执行入口', () => {
+    const store = createStore()
+    store.setter(runAtom, { runId: 'r', status: 'interrupted', turnId: 'u1' })
+    renderWithStore(<Composer />, { store })
+
+    expect(screen.getByRole('textbox')).toBeDisabled()
+    expect(screen.getByText('应用重启中断了任务')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '继续执行' }))
+
+    expect(continueInterruptedRun).toHaveBeenCalledTimes(1)
+    expect(sendMessage).not.toHaveBeenCalled()
   })
 
   it('撤回提示显示；再次输入后清除提示', () => {

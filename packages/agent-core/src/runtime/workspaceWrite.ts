@@ -4,6 +4,10 @@ import {
   type WorkspaceChangeContext,
   type WorkspaceChangeSummary,
 } from './workspaceChange'
+import {
+  beginPerformanceDiagnostic,
+  performanceNow,
+} from '../observability/performanceDiagnostics'
 
 export type WorkspaceWriteMode = 'create' | 'overwrite' | 'append'
 
@@ -46,9 +50,13 @@ type TauriWorkspaceWriteInput = {
   exclusive_path_lock?: boolean
   workspace_root?: string
   change_context?: WorkspaceChangeContext
+  diagnostic_operation_id?: string
 }
 
-function toTauriInput(input: WorkspaceWriteInput): TauriWorkspaceWriteInput {
+function toTauriInput(
+  input: WorkspaceWriteInput,
+  diagnosticOperationId: string,
+): TauriWorkspaceWriteInput {
   return {
     path: input.path,
     content: input.content,
@@ -60,6 +68,7 @@ function toTauriInput(input: WorkspaceWriteInput): TauriWorkspaceWriteInput {
     exclusive_path_lock: input.exclusivePathLock,
     workspace_root: input.workspaceRoot,
     change_context: input.changeContext,
+    diagnostic_operation_id: diagnosticOperationId,
   }
 }
 
@@ -91,6 +100,12 @@ function booleanValue(value: unknown, fallback: boolean): boolean {
 
 function byteLength(text: string): number {
   return new TextEncoder().encode(text).length
+}
+
+function diagnosticPath(path: string): string {
+  const absolute = path.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(path)
+  if (absolute) return `<absolute-path:${path.length}-chars>`
+  return path.length > 240 ? `${path.slice(0, 237)}...` : path
 }
 
 function failedResult(input: WorkspaceWriteInput, error: string): WorkspaceWriteResult {
@@ -133,10 +148,63 @@ export async function writeWorkspaceFile(input: WorkspaceWriteInput): Promise<Wo
     return failedResult(input, 'Workspace file writing is only available in the Tauri desktop runtime')
   }
 
+  const context = input.changeContext
+  const operation = beginPerformanceDiagnostic(
+    'workspace.write.ipc',
+    {
+      sessionId: context?.sessionId,
+      runId: context?.runId,
+      toolCallId: context?.toolCallId,
+      changeId: context?.changeId,
+      path: diagnosticPath(input.path),
+      mode: input.mode ?? 'overwrite',
+      contentChars: input.content.length,
+      expectedOldContentChars: input.expectedOldContent?.length ?? 0,
+      createDirs: input.createDirs ?? true,
+      exclusivePathLock: input.exclusivePathLock ?? false,
+    },
+    { operationId: context?.changeId, slowMs: 100 },
+  )
+  const dispatchStartedAt = performanceNow()
+  let invokeDispatchMs = 0
   try {
-    const raw = await invoke<unknown>('write_workspace_file', toTauriInput(input))
-    return normalizeResult(raw, input)
+    const pending = invoke<unknown>(
+      'write_workspace_file',
+      toTauriInput(input, operation.operationId),
+    )
+    invokeDispatchMs = performanceNow() - dispatchStartedAt
+    const hostWaitStartedAt = performanceNow()
+    const raw = await pending
+    const hostWaitMs = performanceNow() - hostWaitStartedAt
+    const normalizeStartedAt = performanceNow()
+    const result = normalizeResult(raw, input)
+    const responseNormalizeMs = performanceNow() - normalizeStartedAt
+    operation.finish(
+      'ok',
+      {
+        invokeDispatchMs,
+        hostWaitMs,
+        responseNormalizeMs,
+        bytesWritten: result.bytesWritten,
+        resultOk: result.ok,
+        created: result.created,
+        overwritten: result.overwritten,
+        appended: result.appended,
+        changeSetId: result.changeSet?.id,
+      },
+    )
+    return result
   } catch (error) {
+    operation.finish(
+      'error',
+      {
+        invokeDispatchMs,
+        hostWaitMs: Math.max(0, performanceNow() - dispatchStartedAt - invokeDispatchMs),
+        resultOk: false,
+        failureKind: 'invoke_rejected',
+      },
+      new Error('write_workspace_file invoke rejected'),
+    )
     return failedResult(input, `write_workspace_file failed: ${messageFromError(error)}`)
   }
 }

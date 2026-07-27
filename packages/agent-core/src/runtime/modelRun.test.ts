@@ -23,7 +23,13 @@ import { toolRegistry } from '../tools/registry'
 import { buildSkillManifestText } from '../skills/registry'
 import type { ModelSettings } from '../state/core.type'
 import type { ModelFunctionTool, ModelUsage } from '@web-agent/ai'
-import { resumePlanSession, runSession, runToolLoop } from './modelRun'
+import {
+  persistCurrentRunRecovery,
+  resumeInterruptedSession,
+  resumePlanSession,
+  runSession,
+  runToolLoop,
+} from './modelRun'
 import { configurePersistence, resetPersistence } from './persistenceBridge'
 import type { Checkpoint } from '../state/checkpoint.type'
 import { configureObservability, flushObservability, resetObservability } from '../observability/trace'
@@ -305,6 +311,14 @@ describe('runSession（P-R2 最小单轮 run）', () => {
       content: '再补充第二件事',
       targetRunId: runId!,
     })
+    persistCurrentRunRecovery('queued-final')
+    expect(store.getter(checkpointsAtom)[0].recovery?.queuedUserMessages).toEqual([
+      expect.objectContaining({
+        id: 'queued-user-1',
+        content: '再补充第二件事',
+        targetRunId: runId,
+      }),
+    ])
 
     resolveFirst(jsonResponse('第一件事完成'))
     await running
@@ -408,7 +422,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     const checkpoints = getSessionStore('s2').store.getter(checkpointsAtom)
     expect(checkpoints).toHaveLength(1)
     expect(checkpoints[0].label).toBe('[已停止] hi')
-    expect(persistence.saved[0]).toMatchObject({
+    expect(persistence.saved.at(-1)).toMatchObject({
       sessionId: 's2',
       checkpoint: { turnIndex: 0, label: '[已停止] hi' },
     })
@@ -820,7 +834,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(failedLlm?.attrs).not.toHaveProperty('cache_miss_tk')
   })
 
-  it('空回复：model 返回空 content → error，不写空 assistant、不 commit checkpoint', async () => {
+  it('空回复：model 返回空 content → error，不写空 assistant，保留无恢复标记的工作 checkpoint', async () => {
     seedSession('s6', { vendor: 'deepseek', model: 'x' })
     const fetchImpl: typeof fetch = async () =>
       new Response(
@@ -840,8 +854,10 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     // 不写空 assistant 条目（只留 user 一条）。
     const items = getSessionStore('s6').store.getter(itemsAtom)
     expect(items.some((it) => it.item.role === 'assistant')).toBe(false)
-    // 空回复不算成功一轮：不 commit checkpoint。
-    expect(getSessionStore('s6').store.getter(checkpointsAtom)).toHaveLength(0)
+    // 用户消息已在请求前写进同一工作 checkpoint；error 会清掉 recovery，刷新后不会误报可继续。
+    const checkpoints = getSessionStore('s6').store.getter(checkpointsAtom)
+    expect(checkpoints).toHaveLength(1)
+    expect(checkpoints[0]).toMatchObject({ label: '[执行中] hi', recovery: undefined })
   })
 
   it('stale-run：本次 run 被新 run 顶掉后，迟到的写回不污染新 run', async () => {
@@ -1168,6 +1184,40 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(store.getter(runAtom)?.status).toBe('done')
   })
 
+  it('应用重启后的新 run 从 SessionMeta 恢复已加载 schema，无需 loader 历史或旧 run', async () => {
+    seedSession('schema-restart', { vendor: 'deepseek', model: 'x' })
+    rootStore.setter(sessionsAtom, (sessions) => ({
+      ...sessions,
+      'schema-restart': {
+        ...sessions['schema-restart'],
+        loadedTools: ['skill_search'],
+      },
+    }))
+    const store = getSessionStore('schema-restart').store
+    store.setter(itemsAtom, [
+      { id: 'user-after-restart', createdAt: 1, item: { role: 'user', content: '继续搜索' } },
+    ])
+    setRun('schema-restart', { runId: 'new-process-run', status: 'running' })
+    let captured: Record<string, unknown> = {}
+    const fetchImpl: typeof fetch = async (_input, init) => {
+      captured = JSON.parse(init!.body as string) as Record<string, unknown>
+      return jsonResponse('已从持久化工具缓存继续')
+    }
+
+    await runToolLoop('schema-restart', 'new-process-run', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+
+    const sentTools = captured.tools as ModelFunctionTool[]
+    expect(sentTools.map((tool) => tool.function.name)).toContain('skill_search')
+    expect(sentTools.find((tool) => tool.function.name === 'skill_search')?.function.parameters)
+      .toEqual(toolRegistry.loadSchema('skill_search')?.inputSchema)
+    expect(store.getter(runAtom)?.loadedTools).toContain('skill_search')
+    expect(store.getter(runAtom)?.status).toBe('done')
+  })
+
   it('runtime tool：加载 skill_search 后调用它，tool result 含 results', async () => {
     seedSession('t2', { vendor: 'deepseek', model: 'x' })
     const { fetchImpl } = seqFetch([
@@ -1323,8 +1373,18 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     // schema call 已完整回填；ask_user 的 ToolItem 未回填（留给 resume）。
     const items = getSessionStore('t3').store.getter(itemsAtom)
     expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
-    // 暂停不算收尾：不 commit checkpoint。
-    expect(getSessionStore('t3').store.getter(checkpointsAtom)).toHaveLength(0)
+    // 暂停状态和未闭合 ask tool_call 一起覆盖进同一工作 checkpoint，刷新后卡片仍可回答。
+    const checkpoints = getSessionStore('t3').store.getter(checkpointsAtom)
+    expect(checkpoints).toHaveLength(1)
+    expect(checkpoints[0]).toMatchObject({
+      label: '[执行中] hi',
+      recovery: {
+        run: {
+          status: 'waiting_user',
+          pendingQuestion: payload,
+        },
+      },
+    })
   })
 
   it('已有 ask_user 答案后，新的 ask call 仍可再次中断同一个 run', async () => {
@@ -1571,8 +1631,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     // ★ 回归：跑满 32 轮时 itemsAtom 里已堆了大量 assistant/tool 条目，整轮不落盘代价最大 ——
     //   刷新后连用户那条 user 消息都没了。
     expect(store.getter(checkpointsAtom)).toHaveLength(1)
-    expect(persistence.saved).toHaveLength(1)
-    expect(persistence.saved[0].checkpoint.items[0].item).toEqual({ role: 'user', content: 'hi' })
+    expect(persistence.saved.length).toBeGreaterThan(1)
+    expect(persistence.saved.at(-1)?.checkpoint.items[0].item).toEqual({ role: 'user', content: 'hi' })
   })
 
   it('计划运行：按阶段数放大主 Agent 轮次预算，且不计入子 Agent 轮次', async () => {
@@ -1966,14 +2026,13 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
       turnIndex: 0,
       label: '[执行中] 执行完整计划',
     })
-    expect(persistence.saved[0].checkpoint.items).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          planStageId: 'stage-current',
-          item: expect.objectContaining({ role: 'assistant', content: '总结：整个任务已完成' }),
-        }),
-      ]),
-    )
+    expect(persistence.saved.some(({ checkpoint }) =>
+      checkpoint.items.some((item) =>
+        item.planStageId === 'stage-current'
+        && item.item.role === 'assistant'
+        && item.item.content === '总结：整个任务已完成'
+      )
+    )).toBe(true)
     expect(persistence.saved.at(-1)?.checkpoint).toMatchObject({
       turnIndex: 0,
       label: '执行完整计划',
@@ -2466,8 +2525,22 @@ describe('危险工具确认门（S4-B）', () => {
     const items = store.getter(itemsAtom)
     expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
     expect(items.some((it) => it.item.role === 'tool' && it.item.tool_call_id === 'w1')).toBe(false)
-    // 暂停不算收尾：不 commit checkpoint。
-    expect(store.getter(checkpointsAtom)).toHaveLength(0)
+    // 确认状态和未执行的危险 tool_call 一起覆盖进工作 checkpoint，刷新后仍由用户决定。
+    const checkpoints = store.getter(checkpointsAtom)
+    expect(checkpoints).toHaveLength(1)
+    expect(checkpoints[0]).toMatchObject({
+      label: '[执行中] hi',
+      recovery: {
+        run: {
+          status: 'waiting_confirmation',
+          pendingToolConfirmation: {
+            callId: 'w1',
+            toolName: 'write_file',
+            args,
+          },
+        },
+      },
+    })
   })
 
   it('只读 server 工具（read_file）：不触发确认，正常执行并续跑到 done', async () => {
@@ -2761,6 +2834,94 @@ describe('危险工具确认门（S4-B）', () => {
 })
 
 describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
+  it('重启中断恢复：沿用原 run/checkpoint，孤儿写工具按 unknown 闭合且不自动重放', async () => {
+    seedSession('restart-resume', { vendor: 'deepseek', model: 'x' })
+    const store = getSessionStore('restart-resume').store
+    const interruptedItems = [
+      { id: 'u1', createdAt: 1, item: { role: 'user' as const, content: '修改文件' } },
+      {
+        id: 'a1',
+        createdAt: 2,
+        item: {
+          role: 'assistant' as const,
+          content: null,
+          tool_calls: [{
+            id: 'write-1',
+            type: 'function' as const,
+            function: {
+              name: 'write_file',
+              arguments: JSON.stringify({ path: 'a.txt', content: 'new' }),
+            },
+          }],
+        },
+      },
+    ]
+    store.setter(itemsAtom, interruptedItems)
+    store.setter(checkpointsAtom, [{
+      turnIndex: 0,
+      label: '[执行中] 修改文件',
+      createdAt: 3,
+      items: interruptedItems,
+      recovery: {
+        run: {
+          runId: 'original-run',
+          turnId: 'u1',
+          status: 'interrupted',
+        },
+      },
+    }])
+    setRun('restart-resume', {
+      runId: 'original-run',
+      turnId: 'u1',
+      status: 'interrupted',
+    })
+    let requestMessages: Array<{ role: string; tool_call_id?: string; content?: string }> = []
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as { messages: typeof requestMessages }
+      requestMessages = body.messages
+      return jsonResponse('已检查并继续完成')
+    }
+
+    await resumeInterruptedSession('restart-resume', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+
+    expect(store.getter(runAtom)).toMatchObject({
+      runId: 'original-run',
+      turnId: 'u1',
+      status: 'done',
+    })
+    expect(store.getter(itemsAtom).map(({ item }) => item.role)).toEqual([
+      'user',
+      'assistant',
+      'tool',
+      'assistant',
+    ])
+    const interruptedToolResult = store.getter(itemsAtom)[2].item
+    if (interruptedToolResult.role !== 'tool') throw new Error('意外的条目形状')
+    expect(interruptedToolResult.tool_call_id).toBe('write-1')
+    expect(JSON.parse(interruptedToolResult.content)).toMatchObject({
+      interrupted: true,
+      result: 'unknown',
+    })
+    expect(requestMessages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'tool',
+        tool_call_id: 'write-1',
+        content: expect.stringContaining('"interrupted":true'),
+      }),
+    ]))
+    const checkpoints = store.getter(checkpointsAtom)
+    expect(checkpoints).toHaveLength(1)
+    expect(checkpoints[0]).toMatchObject({
+      turnIndex: 0,
+      label: '修改文件',
+      recovery: undefined,
+    })
+  })
+
   it('直接跑 runToolLoop：seed items + setRun 后跑到 done，不 append user', async () => {
     seedSession('r1', { vendor: 'deepseek', model: 'x' })
     const store = getSessionStore('r1').store
@@ -2810,9 +2971,9 @@ describe('finish_reason 异常分流', () => {
     //   这一轮若不落盘，用户刷新后不只半截答案没了，连他自己发的那条 user 消息也一起消失。
     expect(store.getter(checkpointsAtom)).toHaveLength(1)
     expect(store.getter(checkpointsAtom)[0].items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
-    expect(persistence.saved).toHaveLength(1)
-    expect(persistence.saved[0].sessionId).toBe('fr1')
-    expect(persistence.saved[0].checkpoint.items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
+    expect(persistence.saved).toHaveLength(2)
+    expect(persistence.saved.at(-1)?.sessionId).toBe('fr1')
+    expect(persistence.saved.at(-1)?.checkpoint.items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
     // 状态仍是 error（落盘不代表这轮算成功），也不再发第二次请求。
     expect(count()).toBe(1)
   })
@@ -3245,8 +3406,8 @@ describe('finish_reason 异常分流', () => {
     const committedAssistant = checkpoint.items[1].item
     if (committedAssistant.role !== 'assistant') throw new Error('意外的条目形状')
     expect(String(committedAssistant.content)).toContain('content_filter')
-    expect(persistence.saved).toHaveLength(1)
-    const savedAssistant = persistence.saved[0].checkpoint.items[1].item
+    expect(persistence.saved).toHaveLength(2)
+    const savedAssistant = persistence.saved.at(-1)!.checkpoint.items[1].item
     if (savedAssistant.role !== 'assistant') throw new Error('意外的条目形状')
     expect(String(savedAssistant.content)).toContain('content_filter')
 
@@ -3312,9 +3473,9 @@ describe('finish_reason 异常分流', () => {
     expect(String(committedAssistant.content)).toContain('第一步先算出 42')
     expect(String(committedAssistant.content)).toContain('finish_reason=length')
     // 落盘的那一份（刷新后唯一的真相源）必须同样带着标注与 label 前缀。
-    expect(persistence.saved).toHaveLength(1)
-    expect(persistence.saved[0].checkpoint.label.startsWith('[截断]')).toBe(true)
-    const savedAssistant = persistence.saved[0].checkpoint.items[1].item
+    expect(persistence.saved).toHaveLength(2)
+    expect(persistence.saved.at(-1)?.checkpoint.label.startsWith('[截断]')).toBe(true)
+    const savedAssistant = persistence.saved.at(-1)!.checkpoint.items[1].item
     if (savedAssistant.role !== 'assistant') throw new Error('意外的条目形状')
     expect(String(savedAssistant.content)).toContain('finish_reason=length')
 

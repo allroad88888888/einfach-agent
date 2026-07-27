@@ -4,7 +4,8 @@
 // 但按 agentNew 既定架构（sessionAtoms 范式，C3）落到「每会话一个 store」：
 //   · 这些 atom 只是共享 key，值真正存在各自 session store 里 —— 天然隔离，
 //     无需也禁止把它们做成 `Record<sessionId, T>` 分桶。
-//   · 都是「临时 UI 产物」，不进持久化快照（对齐旧 D2 语义）。
+//   · 默认都是临时 UI 产物；运行中的 queuedUserMessages 会随当前工作 checkpoint 一起落盘，
+//     其余瞬态 atom 不进持久化快照。
 // 写入器沿用 sessionWriters 范式（C7）：内部取 getSessionStore(id).store；
 // 先做 ghost guard（会话未在 rootStore 登记 → no-op，防给幽灵会话写内容）；
 // 所有更新不可变（替换数组/对象，C4）。
@@ -84,8 +85,9 @@ export interface WithdrawnTurnNotice {
   sideEffects: boolean
 }
 
-// AI 正在运行时由用户追加的输入。消息先留在会话级瞬态队列，等 runtime 到达安全边界后
-// 再转成普通 user ConversationItem，避免插进尚未闭合的 assistant tool_call / tool result 中间。
+// AI 正在运行时由用户追加的输入。消息先留在会话级队列并同步进当前工作 checkpoint，
+// 等 runtime 到达安全边界后再转成普通 user ConversationItem，避免插进尚未闭合的
+// assistant tool_call / tool result 中间。
 export interface QueuedUserMessage {
   id: string
   createdAt: number

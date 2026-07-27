@@ -15,6 +15,8 @@ export interface RgSearchInput {
   maxMatches?: number
   /** 可选显式 workspace root；不传则 Rust 侧走 git root 兜底。 */
   workspaceRoot?: string
+  /** Runtime-only：Auto 会话允许搜索 workspace 外路径；工具参数不能提供此字段。 */
+  allowExternalPaths?: boolean
 }
 
 export interface RgSearchMatch {
@@ -43,6 +45,7 @@ type TauriRgSearchInput = {
   context_lines?: number
   max_matches?: number
   workspace_root?: string
+  allow_external_paths?: boolean
 }
 
 function toTauriInput(input: RgSearchInput): TauriRgSearchInput {
@@ -55,6 +58,7 @@ function toTauriInput(input: RgSearchInput): TauriRgSearchInput {
     context_lines: input.contextLines,
     max_matches: input.maxMatches,
     workspace_root: input.workspaceRoot,
+    allow_external_paths: input.allowExternalPaths,
   }
 }
 

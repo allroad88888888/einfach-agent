@@ -66,7 +66,7 @@ export const shellLinuxTool: Tool = {
   runtime: 'server', // 依赖 Tauri 本机 shell（ctx.runShell），web 下不进 manifest（TP3）。
   skill: {
     description: '在本机 Linux shell 中执行非交互命令。',
-    triggers: ['shell', 'linux', 'terminal', '命令行', '终端'],
+    triggers: ['shell', 'linux', 'terminal', 'exec', 'run command', '命令行', '终端'],
     content: guide,
   },
   inputSchema,

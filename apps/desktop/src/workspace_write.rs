@@ -10,7 +10,7 @@ use std::{
     io::{Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf, MAIN_SEPARATOR},
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 const DEFAULT_MAX_BYTES: usize = 200 * 1024;
@@ -21,6 +21,75 @@ const ARCHIVE_LOCK_POLL: Duration = Duration::from_millis(20);
 const INDEX_COMPACT_MIN_BYTES: u64 = 128 * 1024;
 const INDEX_COMPACT_THROTTLE: Duration = Duration::from_secs(5 * 60);
 const INDEX_COMPACT_MAX_BYTES: u64 = 16 * 1024 * 1024;
+const PERF_LOG_TARGET: &str = "web_agent::perf";
+
+struct WorkspaceWritePerf {
+    operation_id: String,
+    started_at: Instant,
+    phase_started_at: Instant,
+}
+
+impl WorkspaceWritePerf {
+    fn new(
+        operation_id: String,
+        content_bytes: usize,
+        mode: Option<&str>,
+        exclusive_path_lock: bool,
+        journal_enabled: bool,
+    ) -> Self {
+        log::info!(
+            target: PERF_LOG_TARGET,
+            "workspace_write.start operation_id={} content_bytes={} mode={} exclusive_path_lock={} journal_enabled={}",
+            operation_id,
+            content_bytes,
+            mode.unwrap_or("overwrite"),
+            exclusive_path_lock,
+            journal_enabled,
+        );
+        let now = Instant::now();
+        Self {
+            operation_id,
+            started_at: now,
+            phase_started_at: now,
+        }
+    }
+
+    fn phase(&mut self, phase: &str) {
+        let now = Instant::now();
+        log::info!(
+            target: PERF_LOG_TARGET,
+            "workspace_write.phase operation_id={} phase={} phase_ms={:.1} total_ms={:.1}",
+            self.operation_id,
+            phase,
+            now.duration_since(self.phase_started_at).as_secs_f64() * 1000.0,
+            now.duration_since(self.started_at).as_secs_f64() * 1000.0,
+        );
+        self.phase_started_at = now;
+    }
+
+    fn finish(&self, result: &Result<WorkspaceWriteResult, String>) {
+        let duration_ms = self.started_at.elapsed().as_secs_f64() * 1000.0;
+        match result {
+            Ok(value) => log::info!(
+                target: PERF_LOG_TARGET,
+                "workspace_write.finish operation_id={} status=ok duration_ms={:.1} bytes_written={} created={} overwritten={} appended={}",
+                self.operation_id,
+                duration_ms,
+                value.bytes_written,
+                value.created,
+                value.overwritten,
+                value.appended,
+            ),
+            Err(error) => log::error!(
+                target: PERF_LOG_TARGET,
+                "workspace_write.finish operation_id={} status=error duration_ms={:.1} reason={:?}",
+                self.operation_id,
+                duration_ms,
+                error,
+            ),
+        }
+    }
+}
 
 #[derive(Serialize)]
 pub struct WorkspaceWriteResult {
@@ -54,10 +123,33 @@ pub async fn write_workspace_file(
     exclusive_path_lock: Option<bool>,
     workspace_root: Option<String>,
     change_context: Option<WorkspaceChangeContext>,
+    diagnostic_operation_id: Option<String>,
 ) -> Result<WorkspaceWriteResult, String> {
+    let operation_id = diagnostic_operation_id
+        .or_else(|| {
+            change_context
+                .as_ref()
+                .map(|context| context.change_id.clone())
+        })
+        .unwrap_or_else(|| {
+            format!(
+                "workspace-write-{}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+            )
+        });
+    let journal_resolve_started_at = Instant::now();
     let journal = change_context
         .map(|context| journal_dir(&app).map(|directory| (directory, context)))
         .transpose()?;
+    log::info!(
+        target: PERF_LOG_TARGET,
+        "workspace_write.host operation_id={} phase=journal_resolve phase_ms={:.1}",
+        operation_id,
+        journal_resolve_started_at.elapsed().as_secs_f64() * 1000.0,
+    );
     tauri::async_runtime::spawn_blocking(move || {
         write_workspace_file_blocking_with_journal(
             path,
@@ -70,6 +162,7 @@ pub async fn write_workspace_file(
             exclusive_path_lock,
             workspace_root,
             journal,
+            operation_id,
         )
     })
     .await
@@ -98,6 +191,7 @@ fn write_workspace_file_blocking(
         exclusive_path_lock,
         workspace_root_arg,
         None,
+        "workspace-write-test".to_string(),
     )
 }
 
@@ -113,162 +207,182 @@ fn write_workspace_file_blocking_with_journal(
     exclusive_path_lock: Option<bool>,
     workspace_root_arg: Option<String>,
     journal: Option<(PathBuf, WorkspaceChangeContext)>,
+    diagnostic_operation_id: String,
 ) -> Result<WorkspaceWriteResult, String> {
-    let mode = match parse_mode(mode.as_deref()) {
-        Ok(mode) => mode,
-        Err(err) => return Ok(error_result(&path, err)),
-    };
-    if mode != WriteMode::Overwrite
-        && (expected_old_content.is_some() || expected_content_hash.is_some())
-    {
-        return Ok(error_result(
-            &path,
-            "optimistic guards are only valid with mode \"overwrite\"",
-        ));
-    }
-    if expected_old_content.is_some() && expected_content_hash.is_some() {
-        return Ok(error_result(
-            &path,
-            "pass either expectedOldContent or expectedContentHash, not both",
-        ));
-    }
-    if content.contains('\0') {
-        return Ok(error_result(&path, "binary content is not supported"));
-    }
-
-    let max_bytes = normalize_max_bytes(max_bytes);
-    let bytes = content.as_bytes().len();
-    if bytes > max_bytes {
-        return Ok(error_result(
-            &path,
-            format!("content is too large: {bytes} bytes exceeds limit {max_bytes}"),
-        ));
-    }
-
-    let workspace_root = match resolve_workspace_root(workspace_root_arg.as_deref()) {
-        Ok(root) => root,
-        Err(err) => return Ok(error_result(&path, err)),
-    };
-    let target_path = match resolve_workspace_path(&workspace_root, &path) {
-        Ok(path) => path,
-        Err(err) => return Ok(error_result(&path, err)),
-    };
-    // P2：返回相对 workspace root 的路径（与 read/list/patch 一致），不把 /Users/.../repo 这类
-    // 绝对路径泄漏给 model 与聊天记录。
-    let display_path = relative_path(&workspace_root, &target_path);
-
-    if let Some(parent) = target_path.parent() {
-        if !parent.exists() {
-            if create_dirs.unwrap_or(false) {
-                if let Err(err) = fs::create_dir_all(parent) {
-                    return Ok(error_result(
-                        &display_path,
-                        format!("failed to create parent directories: {err}"),
-                    ));
-                }
-            } else {
-                return Ok(error_result(
-                    &display_path,
-                    "parent directory does not exist; set createDirs=true to create it",
-                ));
-            }
-        }
-    }
-
-    let _path_lock = if exclusive_path_lock.unwrap_or(false) {
-        match ArchivePathLock::acquire(&target_path) {
-            Ok(lock) => Some(lock),
-            Err(err) => return Ok(error_result(&display_path, err)),
-        }
-    } else {
-        None
-    };
-
-    if mode == WriteMode::Append && exclusive_path_lock.unwrap_or(false) {
-        if let Err(err) = maybe_compact_subagent_index(&target_path) {
-            return Ok(error_result(&display_path, err));
-        }
-    }
-
-    let existed = target_path.exists();
-    let prepared_change = if let Some((directory, context)) = journal.as_ref() {
-        let before = match read_reversible_text(&target_path) {
-            Ok(content) => content,
-            Err(error) => return Ok(error_result(&display_path, error)),
+    let mut perf = WorkspaceWritePerf::new(
+        diagnostic_operation_id,
+        content.len(),
+        mode.as_deref(),
+        exclusive_path_lock.unwrap_or(false),
+        journal.is_some(),
+    );
+    let result = (|| -> Result<WorkspaceWriteResult, String> {
+        let mode = match parse_mode(mode.as_deref()) {
+            Ok(mode) => mode,
+            Err(err) => return Ok(error_result(&path, err)),
         };
-        let after = match mode {
-            WriteMode::Create | WriteMode::Overwrite => content.clone(),
-            WriteMode::Append => {
-                let mut value = before.clone().unwrap_or_default();
-                value.push_str(&content);
-                value
-            }
-        };
-        if after.len() > MAX_BYTES {
+        if mode != WriteMode::Overwrite
+            && (expected_old_content.is_some() || expected_content_hash.is_some())
+        {
             return Ok(error_result(
-                &display_path,
-                format!("resulting file exceeds reversible {MAX_BYTES} byte limit"),
+                &path,
+                "optimistic guards are only valid with mode \"overwrite\"",
             ));
         }
-        match prepare_change_set(
-            directory,
-            context.clone(),
-            &workspace_root,
-            vec![ChangeFileInput {
-                path: display_path.clone(),
-                before,
-                after: Some(after),
-            }],
-        ) {
-            Ok(summary) => Some((directory.clone(), summary)),
-            Err(error) => return Ok(error_result(&display_path, error)),
+        if expected_old_content.is_some() && expected_content_hash.is_some() {
+            return Ok(error_result(
+                &path,
+                "pass either expectedOldContent or expectedContentHash, not both",
+            ));
         }
-    } else {
-        None
-    };
-
-    let write_result = match mode {
-        WriteMode::Create => write_create(&target_path, content.as_bytes()),
-        WriteMode::Overwrite => {
-            if !existed {
-                Err("cannot overwrite a file that does not exist".to_string())
-            } else {
-                verify_expected_content(
-                    &target_path,
-                    expected_old_content.as_deref(),
-                    expected_content_hash.as_deref(),
-                )
-                .and_then(|_| fs::write(&target_path, content.as_bytes()).map_err(to_io_error))
-            }
+        if content.contains('\0') {
+            return Ok(error_result(&path, "binary content is not supported"));
         }
-        WriteMode::Append => write_append(&target_path, content.as_bytes()),
-    };
 
-    match write_result {
-        Ok(()) => {
-            if let Some((directory, summary)) = prepared_change.as_ref() {
-                if let Err(error) = mark_change_applied(directory, &summary.id) {
-                    log::warn!("failed to mark workspace change as applied: {error}");
+        let max_bytes = normalize_max_bytes(max_bytes);
+        let bytes = content.as_bytes().len();
+        if bytes > max_bytes {
+            return Ok(error_result(
+                &path,
+                format!("content is too large: {bytes} bytes exceeds limit {max_bytes}"),
+            ));
+        }
+
+        let workspace_root = match resolve_workspace_root(workspace_root_arg.as_deref()) {
+            Ok(root) => root,
+            Err(err) => return Ok(error_result(&path, err)),
+        };
+        let target_path = match resolve_workspace_path(&workspace_root, &path) {
+            Ok(path) => path,
+            Err(err) => return Ok(error_result(&path, err)),
+        };
+        // P2：返回相对 workspace root 的路径（与 read/list/patch 一致），不把 /Users/.../repo 这类
+        // 绝对路径泄漏给 model 与聊天记录。
+        let display_path = relative_path(&workspace_root, &target_path);
+        perf.phase("validate_and_resolve");
+
+        if let Some(parent) = target_path.parent() {
+            if !parent.exists() {
+                if create_dirs.unwrap_or(false) {
+                    if let Err(err) = fs::create_dir_all(parent) {
+                        return Ok(error_result(
+                            &display_path,
+                            format!("failed to create parent directories: {err}"),
+                        ));
+                    }
+                } else {
+                    return Ok(error_result(
+                        &display_path,
+                        "parent directory does not exist; set createDirs=true to create it",
+                    ));
                 }
             }
-            Ok(WorkspaceWriteResult {
-                ok: true,
-                path: display_path,
-                bytes_written: bytes,
-                created: !existed,
-                overwritten: mode == WriteMode::Overwrite,
-                appended: mode == WriteMode::Append,
-                error: None,
-                change_set: prepared_change.map(|(_, summary)| summary),
-            })
         }
-        Err(err) => {
-            if let Some((directory, summary)) = prepared_change.as_ref() {
-                discard_prepared_change(directory, &summary.id);
+        perf.phase("prepare_parent");
+
+        let _path_lock = if exclusive_path_lock.unwrap_or(false) {
+            match ArchivePathLock::acquire(&target_path) {
+                Ok(lock) => Some(lock),
+                Err(err) => return Ok(error_result(&display_path, err)),
             }
-            Ok(error_result(&display_path, err))
+        } else {
+            None
+        };
+        perf.phase("exclusive_lock");
+
+        if mode == WriteMode::Append && exclusive_path_lock.unwrap_or(false) {
+            if let Err(err) = maybe_compact_subagent_index(&target_path) {
+                return Ok(error_result(&display_path, err));
+            }
         }
-    }
+        perf.phase("archive_compaction");
+
+        let existed = target_path.exists();
+        let prepared_change = if let Some((directory, context)) = journal.as_ref() {
+            let before = match read_reversible_text(&target_path) {
+                Ok(content) => content,
+                Err(error) => return Ok(error_result(&display_path, error)),
+            };
+            let after = match mode {
+                WriteMode::Create | WriteMode::Overwrite => content.clone(),
+                WriteMode::Append => {
+                    let mut value = before.clone().unwrap_or_default();
+                    value.push_str(&content);
+                    value
+                }
+            };
+            if after.len() > MAX_BYTES {
+                return Ok(error_result(
+                    &display_path,
+                    format!("resulting file exceeds reversible {MAX_BYTES} byte limit"),
+                ));
+            }
+            match prepare_change_set(
+                directory,
+                context.clone(),
+                &workspace_root,
+                vec![ChangeFileInput {
+                    path: display_path.clone(),
+                    before,
+                    after: Some(after),
+                }],
+            ) {
+                Ok(summary) => Some((directory.clone(), summary)),
+                Err(error) => return Ok(error_result(&display_path, error)),
+            }
+        } else {
+            None
+        };
+        perf.phase("journal_prepare");
+
+        let write_result = match mode {
+            WriteMode::Create => write_create(&target_path, content.as_bytes()),
+            WriteMode::Overwrite => {
+                if !existed {
+                    Err("cannot overwrite a file that does not exist".to_string())
+                } else {
+                    verify_expected_content(
+                        &target_path,
+                        expected_old_content.as_deref(),
+                        expected_content_hash.as_deref(),
+                    )
+                    .and_then(|_| fs::write(&target_path, content.as_bytes()).map_err(to_io_error))
+                }
+            }
+            WriteMode::Append => write_append(&target_path, content.as_bytes()),
+        };
+        perf.phase("file_write");
+
+        let result = match write_result {
+            Ok(()) => {
+                if let Some((directory, summary)) = prepared_change.as_ref() {
+                    if let Err(error) = mark_change_applied(directory, &summary.id) {
+                        log::warn!("failed to mark workspace change as applied: {error}");
+                    }
+                }
+                Ok(WorkspaceWriteResult {
+                    ok: true,
+                    path: display_path,
+                    bytes_written: bytes,
+                    created: !existed,
+                    overwritten: mode == WriteMode::Overwrite,
+                    appended: mode == WriteMode::Append,
+                    error: None,
+                    change_set: prepared_change.map(|(_, summary)| summary),
+                })
+            }
+            Err(err) => {
+                if let Some((directory, summary)) = prepared_change.as_ref() {
+                    discard_prepared_change(directory, &summary.id);
+                }
+                Ok(error_result(&display_path, err))
+            }
+        };
+        perf.phase("journal_finalize");
+        result
+    })();
+    perf.finish(&result);
+    result
 }
 
 fn read_reversible_text(path: &Path) -> Result<Option<String>, String> {
@@ -992,6 +1106,7 @@ mod tests {
                     tool_call_id: "call".to_string(),
                 },
             )),
+            "write-change".to_string(),
         )
         .expect("write journaled file");
 

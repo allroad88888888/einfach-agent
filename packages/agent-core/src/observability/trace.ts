@@ -16,6 +16,17 @@ type EventInput = {
   attrs?: TraceAttributes
 }
 
+type CompletedSpanInput = {
+  kind?: SpanKind
+  traceId?: string
+  parentSpanId?: string
+  startedAt: number
+  endedAt: number
+  status?: Exclude<TraceStatus, 'running'>
+  attrs?: TraceAttributes
+  error?: unknown
+}
+
 let driver: TraceDriver | undefined
 let queue: Promise<void> = Promise.resolve()
 const activeSpans = new Map<string, TraceSpan>()
@@ -89,6 +100,34 @@ export function startSpan(name: string, input: SpanInput = {}): TraceSpan {
   }
   const snapshot = snapshotSpan(span)
   enqueue((d) => d.writeSpan(snapshot))
+  return span
+}
+
+/**
+ * Records an already-completed span with one driver write.
+ *
+ * Performance probes use this instead of startSpan/endSpan so observing a
+ * SQLite write does not create two extra SQLite writes of its own.
+ */
+export function recordCompletedSpan(name: string, input: CompletedSpanInput): TraceSpan {
+  const startedAt = Number.isFinite(input.startedAt) ? input.startedAt : Date.now()
+  const endedAt = Number.isFinite(input.endedAt)
+    ? Math.max(startedAt, input.endedAt)
+    : Math.max(startedAt, Date.now())
+  const span: TraceSpan = {
+    id: createId(),
+    traceId: input.traceId ?? createId(),
+    parentSpanId: input.parentSpanId,
+    name,
+    kind: input.kind ?? 'internal',
+    status: input.status ?? 'ok',
+    startedAt,
+    endedAt,
+    durationMs: Math.max(0, endedAt - startedAt),
+    attrs: input.attrs,
+    error: input.error === undefined ? undefined : errorMessage(input.error),
+  }
+  enqueue((d) => d.writeSpan(snapshotSpan(span)))
   return span
 }
 

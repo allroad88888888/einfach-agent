@@ -4,6 +4,10 @@ import {
   type WorkspaceChangeContext,
   type WorkspaceChangeSummary,
 } from './workspaceChange'
+import {
+  beginPerformanceDiagnostic,
+  performanceNow,
+} from '../observability/performanceDiagnostics'
 
 export type WorkspacePatchOperation =
   | { type: 'add_file'; path: string; content: string }
@@ -48,14 +52,19 @@ type TauriWorkspacePatchInput = {
   dry_run?: boolean
   workspace_root?: string
   change_context?: WorkspaceChangeContext
+  diagnostic_operation_id?: string
 }
 
-function toTauriInput(input: WorkspacePatchInput): TauriWorkspacePatchInput {
+function toTauriInput(
+  input: WorkspacePatchInput,
+  diagnosticOperationId: string,
+): TauriWorkspacePatchInput {
   return {
     operations: input.operations,
     dry_run: input.dryRun,
     workspace_root: input.workspaceRoot,
     change_context: input.changeContext,
+    diagnostic_operation_id: diagnosticOperationId,
   }
 }
 
@@ -134,6 +143,19 @@ function normalizeResult(raw: unknown, input: WorkspacePatchInput): WorkspacePat
   return result
 }
 
+function patchPayloadChars(operations: WorkspacePatchOperation[]): number {
+  return operations.reduce((total, operation) => {
+    if (operation.type === 'add_file') return total + operation.path.length + operation.content.length
+    if (operation.type === 'delete_file') {
+      return total + operation.path.length + (operation.oldContent?.length ?? 0)
+    }
+    if (operation.type === 'replace') {
+      return total + operation.path.length + operation.oldText.length + operation.newText.length
+    }
+    return total + operation.path.length + operation.content.length + (operation.oldContent?.length ?? 0)
+  }, 0)
+}
+
 export async function applyWorkspacePatch(
   input: WorkspacePatchInput,
 ): Promise<WorkspacePatchResult> {
@@ -144,10 +166,55 @@ export async function applyWorkspacePatch(
     )
   }
 
+  const context = input.changeContext
+  const operation = beginPerformanceDiagnostic(
+    'workspace.patch.ipc',
+    {
+      sessionId: context?.sessionId,
+      runId: context?.runId,
+      toolCallId: context?.toolCallId,
+      changeId: context?.changeId,
+      operationCount: input.operations.length,
+      payloadChars: patchPayloadChars(input.operations),
+      dryRun: input.dryRun ?? false,
+    },
+    { operationId: context?.changeId, slowMs: 100 },
+  )
+  const dispatchStartedAt = performanceNow()
+  let invokeDispatchMs = 0
   try {
-    const raw = await invoke<unknown>('apply_workspace_patch', toTauriInput(input))
-    return normalizeResult(raw, input)
+    const pending = invoke<unknown>(
+      'apply_workspace_patch',
+      toTauriInput(input, operation.operationId),
+    )
+    invokeDispatchMs = performanceNow() - dispatchStartedAt
+    const hostWaitStartedAt = performanceNow()
+    const raw = await pending
+    const hostWaitMs = performanceNow() - hostWaitStartedAt
+    const normalizeStartedAt = performanceNow()
+    const result = normalizeResult(raw, input)
+    operation.finish(result.ok ? 'ok' : 'error', {
+      invokeDispatchMs,
+      hostWaitMs,
+      responseNormalizeMs: performanceNow() - normalizeStartedAt,
+      resultOk: result.ok,
+      changedFileCount: result.changedFiles.length,
+      rejectedCount: result.rejected.length,
+      wouldChange: result.wouldChange,
+      changeSetId: result.changeSet?.id,
+    })
+    return result
   } catch (error) {
+    operation.finish(
+      'error',
+      {
+        invokeDispatchMs,
+        hostWaitMs: Math.max(0, performanceNow() - dispatchStartedAt - invokeDispatchMs),
+        resultOk: false,
+        failureKind: 'invoke_rejected',
+      },
+      new Error('apply_workspace_patch invoke rejected'),
+    )
     return failedResult(input, `apply_workspace_patch failed: ${messageFromError(error)}`)
   }
 }

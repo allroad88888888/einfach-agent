@@ -439,7 +439,7 @@ function childSystemPrompt(args: {
     `父 agent: ${args.node.parentPath ?? ROOT_AGENT_PATH}`,
     '你在 headless 子 agent 运行时中工作：不要要求 UI 暂停；需要更多并行分析时，可以调用 delegate_agent 派生下一层子 agent。',
     args.toolProfile === 'workspace_read'
-      ? '允许 delegate_agent 和只读 workspace 工具；不得声称或尝试写文件、执行 shell。'
+      ? '允许 delegate_agent 和只读文件工具（路径权限继承会话授权模式）；不得声称或尝试写文件、执行 shell。'
       : '只允许 delegate_agent；不要模拟工具调用，不要声称已经改文件。',
     args.confirmedTools.length > 0
       ? `本次委派另有父级已确认、仅限本 run 的危险工具能力: ${args.confirmedTools.join(', ')}。不得请求其它危险工具，也不得向后代扩大范围。`

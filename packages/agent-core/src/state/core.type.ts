@@ -74,6 +74,8 @@ export interface ConversationItem {
 // 简介：一次 run 的状态。
 // 详情：直接由响应驱动 —— finish_reason==='tool_calls' → 'awaiting_tool'（要执行工具再续）；
 // ==='stop' → 'done'；'length'/异常 → 'error'；中途等用户补充 → 'waiting_user'；被打断 → 'stopped'。
+// 应用重启时无法复活原网络请求，持久化中的 running/awaiting_tool 会恢复成 'interrupted'，
+// 等用户显式继续；保留原 runId/turnId 以复用同一轮 checkpoint 和排队输入。
 // 另有 'waiting_confirmation'：模型要调用「变更类危险工具」，执行前暂停等用户确认（S4-B，镜像 ask_user）。
 export type RunStatus =
   | 'idle'
@@ -82,6 +84,7 @@ export type RunStatus =
   | 'waiting_user'
   | 'waiting_confirmation'
   | 'waiting_plan_approval'
+  | 'interrupted'
   | 'done'
   | 'stopped'
   | 'error'
@@ -89,7 +92,7 @@ export type RunStatus =
 // 简介：等待用户确认的危险工具调用（S4-B）。
 // 详情：与 pendingQuestion 平行 —— tool 循环遇到危险工具时，先把同批其它 tool_call 的 result 补齐，
 // 再置 waiting_confirmation + 本字段并暂停本 run（该 tool_call 的 result 留给 confirmTool 恢复时回填/执行）。
-// args 是模型给的原样参数（unknown），resume 允许时直接拿去执行。与 run 同为瞬态，不持久化。
+// args 是模型给的原样参数（unknown），resume 允许时直接拿去执行。
 export interface PendingToolConfirmation {
   callId: string
   toolName: string
@@ -144,7 +147,7 @@ export interface RunState {
   // 带来源的待决策状态。pendingQuestion 暂时保留，兼容旧调用方与旧测试；新 UI/runtime 以本字段为准。
   pendingUserDecision?: PendingUserDecision
   // status==='waiting_confirmation' 时挂着的危险工具调用（S4-B）；供 UI 渲染确认卡片、
-  // confirmTool 允许/拒绝时消费。与 pendingQuestion 平行，同样不持久化。
+  // confirmTool 允许/拒绝时消费。与 pendingQuestion 平行。
   pendingToolConfirmation?: PendingToolConfirmation
   // create_plan 要求审批时挂起；只能由宿主 approvePlan 命令消费，模型无法自行批准。
   pendingPlanApproval?: PendingPlanApproval
@@ -177,9 +180,13 @@ export interface SessionMeta {
   // 旧版把目录直接挂在会话上；新写入不再使用，仅供 hydrate/runtime 兼容读取。
   /** @deprecated 使用 WorkspaceMeta.rootPath。 */
   workspaceRoot?: string
-  // 工具授权模式：confirm 保持逐次确认；auto 仅为极高风险调用暂停。
+  // 工具授权模式：confirm 保持逐次确认并把只读文件工具限制在 workspace；
+  // auto 允许只读文件工具访问外部路径，且仅为极高风险调用暂停。
   // 可选以兼容旧持久化数据，读取时缺省按 confirm 处理。
   toolApprovalMode?: 'confirm' | 'auto'
+  // 会话级持久化的 lazy-tool LRU（仅保存工具名，不保存可能过期的 schema）。
+  // 新 run / 应用重启后会从当前 registry 重新加载这些工具的最新 schema。
+  loadedTools?: string[]
   // 当前结构化计划的持久化副本；hydrate 时恢复进该会话的 planAtom。
   plan?: import('../planning/types').PlanSnapshot
   // 后台 agent/tool/plan 节点的可恢复执行图。Promise、AbortController 等

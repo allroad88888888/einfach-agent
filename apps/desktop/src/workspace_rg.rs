@@ -53,6 +53,7 @@ pub async fn rg_search_workspace(
     context_lines: Option<usize>,
     max_matches: Option<usize>,
     workspace_root: Option<String>,
+    allow_external_paths: Option<bool>,
 ) -> Result<RgSearchResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         rg_search_workspace_blocking(
@@ -64,6 +65,7 @@ pub async fn rg_search_workspace(
             context_lines,
             max_matches,
             workspace_root,
+            allow_external_paths.unwrap_or(false),
         )
     })
     .await
@@ -80,6 +82,7 @@ fn rg_search_workspace_blocking(
     context_lines: Option<usize>,
     max_matches: Option<usize>,
     workspace_root: Option<String>,
+    allow_external_paths: bool,
 ) -> Result<RgSearchResult, String> {
     let query = query.trim().to_string();
     if query.is_empty() {
@@ -92,7 +95,7 @@ fn rg_search_workspace_blocking(
         Ok(root) => root,
         Err(err) => return Ok(failed_result(err)),
     };
-    let target = match normalize_target_path(path, &root) {
+    let target = match normalize_target_path(path, &root, allow_external_paths) {
         Ok(path) => path,
         Err(err) => return Ok(failed_result(err)),
     };
@@ -302,7 +305,11 @@ fn extract_line(value: &Value) -> String {
         .to_string()
 }
 
-fn normalize_target_path(path: Option<String>, root: &Path) -> Result<String, String> {
+fn normalize_target_path(
+    path: Option<String>,
+    root: &Path,
+    allow_external_paths: bool,
+) -> Result<String, String> {
     let Some(path) = path else {
         return Ok(".".to_string());
     };
@@ -322,8 +329,11 @@ fn normalize_target_path(path: Option<String>, root: &Path) -> Result<String, St
     };
     let canonical = fs::canonicalize(&joined)
         .map_err(|err| format!("path `{trimmed}` is not accessible: {err}"))?;
-    if !canonical.starts_with(root) {
+    if !allow_external_paths && !canonical.starts_with(root) {
         return Err(format!("path `{trimmed}` escapes workspace root"));
+    }
+    if !canonical.starts_with(root) {
+        return Ok(canonical.to_string_lossy().replace('\\', "/"));
     }
     if canonical == root {
         return Ok(".".to_string());
@@ -402,5 +412,75 @@ fn failed_result(stderr: String) -> RgSearchResult {
         truncated: false,
         exit_code: 1,
         stderr,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn unique_workspace() -> (PathBuf, PathBuf) {
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let mut base = std::env::temp_dir();
+        base.push(format!("ws_rg_it_{}_{}", std::process::id(), seq));
+        fs::create_dir_all(&base).expect("create base");
+        let base = fs::canonicalize(&base).expect("canonicalize base");
+        let ws = base.join("ws");
+        fs::create_dir_all(&ws).expect("create workspace");
+        let ws = fs::canonicalize(&ws).expect("canonicalize workspace");
+        (base, ws)
+    }
+
+    #[test]
+    fn auto_normalizes_parent_and_absolute_external_targets() {
+        let (base, ws) = unique_workspace();
+        let outside = base.join("outside");
+        fs::create_dir_all(&outside).expect("create outside");
+        let outside = fs::canonicalize(&outside).expect("canonicalize outside");
+        let expected = outside.to_string_lossy().replace('\\', "/");
+
+        let strict_error = normalize_target_path(Some("../outside".to_string()), &ws, false)
+            .expect_err("Confirm must reject parent escape");
+        assert!(strict_error.contains("escapes workspace root"));
+
+        let via_parent = normalize_target_path(Some("../outside".to_string()), &ws, true)
+            .expect("Auto should allow parent path");
+        assert_eq!(via_parent, expected);
+
+        let via_absolute =
+            normalize_target_path(Some(outside.to_string_lossy().into_owned()), &ws, true)
+                .expect("Auto should allow absolute outside path");
+        assert_eq!(via_absolute, expected);
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn auto_normalizes_symlink_to_external_target_while_confirm_rejects_it() {
+        use std::os::unix::fs::symlink;
+
+        let (base, ws) = unique_workspace();
+        let outside = base.join("outside");
+        fs::create_dir_all(&outside).expect("create outside");
+        symlink(&outside, ws.join("outside-link")).expect("create symlink");
+
+        let strict_error = normalize_target_path(Some("outside-link".to_string()), &ws, false)
+            .expect_err("Confirm must reject external symlink");
+        assert!(strict_error.contains("escapes workspace root"));
+
+        let auto_target = normalize_target_path(Some("outside-link".to_string()), &ws, true)
+            .expect("Auto should allow external symlink");
+        assert_eq!(
+            auto_target,
+            fs::canonicalize(&outside)
+                .expect("canonicalize outside")
+                .to_string_lossy()
+                .replace('\\', "/")
+        );
+
+        let _ = fs::remove_dir_all(&base);
     }
 }

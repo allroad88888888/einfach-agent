@@ -24,10 +24,14 @@ import type {
  */
 export type ToolRuntime = 'internal' | 'browser' | 'server'
 
-/** manifest-only 摘要——model 只看这一层。description 取自 tool.skill.description（terse，TK3/TK4）。 */
+/**
+ * manifest-only 摘要——model 只看这一层。description/triggers 取自 tool.skill，
+ * 用于懒加载前的工具发现；不包含 inputSchema/guide（TK3/TK4）。
+ */
 export interface ToolSummary {
   name: string
   description: string
+  triggers?: string[]
   runtime: ToolRuntime
 }
 
@@ -169,25 +173,32 @@ export interface ToolContext {
   abortStageEvaluation?(planId: string, revision: number, stageId: string, reason: string): PlanMutationResult
   /** 执行桌面 shell command。工具只经 ctx 调用，Tauri invoke 细节集中在 runtime 桥接层。 */
   runShell(input: ShellCommandInput): Promise<ShellCommandResult>
-  /** 读取 workspace 内文本文件。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
-  readWorkspaceFile?(input: { path: string; maxBytes?: number; workspaceRoot?: string }): Promise<unknown>
-  /** 列出 workspace 内文件。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
+  /** 读取文本文件；Auto 会话可读取 workspace 外路径。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
+  readWorkspaceFile?(input: {
+    path: string
+    maxBytes?: number
+    workspaceRoot?: string
+    allowExternalPaths?: boolean
+  }): Promise<unknown>
+  /** 列出文件；Auto 会话可读取 workspace 外路径。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
   listWorkspaceFiles?(input: {
     path?: string
     recursive?: boolean
     maxEntries?: number
     includeHidden?: boolean
     workspaceRoot?: string
+    allowExternalPaths?: boolean
   }): Promise<unknown>
-  /** 搜索 workspace 内文本文件。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
+  /** 搜索文本文件；Auto 会话可读取 workspace 外路径。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
   searchWorkspaceFiles?(input: {
     query: string
     path?: string
     glob?: string
     maxMatches?: number
     workspaceRoot?: string
+    allowExternalPaths?: boolean
   }): Promise<unknown>
-  /** 用 ripgrep 搜索 workspace。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
+  /** 用 ripgrep 搜索文件；Auto 会话可搜索 workspace 外路径。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
   rgSearchWorkspace?(input: {
     query: string
     path?: string
@@ -197,6 +208,7 @@ export interface ToolContext {
     contextLines?: number
     maxMatches?: number
     workspaceRoot?: string
+    allowExternalPaths?: boolean
   }): Promise<unknown>
   /** 应用结构化 workspace patch。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
   applyWorkspacePatch?(input: unknown): Promise<unknown>

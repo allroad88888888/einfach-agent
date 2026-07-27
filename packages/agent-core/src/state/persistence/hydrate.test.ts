@@ -20,7 +20,8 @@ import {
   resetRootStore,
 } from '../rootStore'
 import { getSessionStore, resetSessionStores } from '../sessionStore'
-import { checkpointsAtom, currentTurnIndexAtom, itemsAtom, planAtom } from '../sessionAtoms'
+import { checkpointsAtom, currentTurnIndexAtom, itemsAtom, planAtom, runAtom } from '../sessionAtoms'
+import { queuedUserMessagesAtom } from '../transientAtoms'
 import { createMemoryHistoryDriver } from './memoryHistoryDriver'
 import { hydrate } from './hydrate'
 
@@ -92,6 +93,22 @@ describe('hydrate', () => {
     expect(store2.getter(itemsAtom)).toEqual(cp(2, 's2c').items)
   })
 
+  it('重启 hydrate 保留会话级 loadedTools，供新 run 重建当前 schema', async () => {
+    const history = createMemoryHistoryDriver()
+    const persisted: SessionMeta = {
+      ...s1,
+      loadedTools: ['shell_macos', 'read_file'],
+    }
+
+    await expect(hydrate({
+      sessions: { loadSessions: async () => [persisted] },
+      history,
+    })).resolves.toBe(true)
+
+    expect(rootStore.getter(sessionsAtom).s1?.loadedTools)
+      .toEqual(['shell_macos', 'read_file'])
+  })
+
   it('重启时从 SessionMeta 恢复计划及各步骤的最终状态', async () => {
     const history = createMemoryHistoryDriver()
     const persisted: SessionMeta = {
@@ -144,6 +161,69 @@ describe('hydrate', () => {
         { id: 'design', status: 'completed' },
         { id: 'implement', status: 'in_progress' },
       ],
+    })
+  })
+
+  it('最新工作 checkpoint 的 running 恢复为 interrupted，并保留 run 锚点与排队输入', async () => {
+    const history = createMemoryHistoryDriver()
+    const working: Checkpoint = {
+      ...cp(0, '进行中的普通任务'),
+      label: '[执行中] 进行中的普通任务',
+      recovery: {
+        run: {
+          runId: 'run-before-restart',
+          turnId: '进行中的普通任务-0',
+          status: 'running',
+          pendingExecutionId: 'stale-execution',
+          loadedTools: ['write_file'],
+        },
+        queuedUserMessages: [{
+          id: 'q1',
+          createdAt: 2,
+          content: '补充要求',
+          targetRunId: 'run-before-restart',
+        }],
+      },
+    }
+    await history.saveCheckpoint('s1', working)
+
+    await expect(hydrate({
+      sessions: { loadSessions: async () => [s1] },
+      history,
+    })).resolves.toBe(true)
+
+    const store = getSessionStore('s1').store
+    expect(store.getter(runAtom)).toEqual({
+      runId: 'run-before-restart',
+      turnId: '进行中的普通任务-0',
+      status: 'interrupted',
+      pendingExecutionId: undefined,
+      loadedTools: ['write_file'],
+    })
+    expect(store.getter(queuedUserMessagesAtom)).toEqual(working.recovery?.queuedUserMessages)
+  })
+
+  it('等待用户的 checkpoint 原样恢复 pending 决策，不误标为 interrupted', async () => {
+    const history = createMemoryHistoryDriver()
+    const pendingQuestion = { questions: [{ id: 'choice', question: '继续吗？' }] }
+    await history.saveCheckpoint('s1', {
+      ...cp(0, '等待回答'),
+      recovery: {
+        run: {
+          runId: 'waiting-run',
+          turnId: '等待回答-0',
+          status: 'waiting_user',
+          pendingQuestion,
+        },
+      },
+    })
+
+    await hydrate({ sessions: { loadSessions: async () => [s1] }, history })
+
+    expect(getSessionStore('s1').store.getter(runAtom)).toMatchObject({
+      runId: 'waiting-run',
+      status: 'waiting_user',
+      pendingQuestion,
     })
   })
 

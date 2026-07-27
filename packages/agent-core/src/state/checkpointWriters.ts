@@ -20,7 +20,7 @@
 
 import { sessionsAtom } from './rootStore'
 import { checkpointsAtom, currentTurnIndexAtom, itemsAtom, planAtom } from './sessionAtoms'
-import type { Checkpoint } from './checkpoint.type'
+import type { Checkpoint, RunRecoverySnapshot } from './checkpoint.type'
 import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
 import type { PlanSnapshot } from '../planning/types'
 import { persistSessions } from '../runtime/persistenceBridge'
@@ -55,14 +55,19 @@ function restorePlan(
  * turnIndex 取「追加前的列表长度」，游标推进到该 turnIndex。
  * core 默认 defaultCore：不传时与旧版模块全局逐字等价；传入独立 core 则只读写该实例的 store。
  */
-export function commitCheckpoint(id: string, label: string, core: CoreInstance = defaultCore): void {
+export function commitCheckpoint(
+  id: string,
+  label: string,
+  core: CoreInstance = defaultCore,
+  recovery?: RunRecoverySnapshot,
+): void {
   if (sessionMissing(id, core)) return
   const store = core.getSessionStore(id).store
   const items = store.getter(itemsAtom)
   const plan = store.getter(planAtom)
   // 新快照的 turnIndex = 现有 checkpoint 数量（即它入列表后的下标）。
   const turnIndex = store.getter(checkpointsAtom).length
-  const cp: Checkpoint = { turnIndex, label, createdAt: Date.now(), items, plan }
+  const cp: Checkpoint = { turnIndex, label, createdAt: Date.now(), items, plan, recovery }
   store.setter(checkpointsAtom, (prev) => [...prev, cp])
   store.setter(currentTurnIndexAtom, turnIndex)
 }
@@ -76,6 +81,7 @@ export function updateCheckpoint(
   turnIndex: number,
   label: string,
   core: CoreInstance = defaultCore,
+  recovery?: RunRecoverySnapshot,
 ): void {
   if (sessionMissing(id, core)) return
   const store = core.getSessionStore(id).store
@@ -88,6 +94,7 @@ export function updateCheckpoint(
     createdAt: previous.createdAt,
     items: store.getter(itemsAtom),
     plan: store.getter(planAtom),
+    recovery,
   }
   store.setter(checkpointsAtom, list.map((item, index) => (index === turnIndex ? checkpoint : item)))
   store.setter(currentTurnIndexAtom, turnIndex)

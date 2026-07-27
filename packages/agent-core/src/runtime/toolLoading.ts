@@ -15,8 +15,10 @@
 //   （第 3 期隔离证明，见 toolLoading.test.ts）。
 
 import type { LoadedTool } from '../tools/types'
+import { sessionsAtom } from '../state/rootAtoms'
 import { patchRun } from '../state/sessionWriters'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
+import { persistSessions } from './persistenceBridge'
 
 // 简介：给“模型调用了本轮未暴露工具”生成可自愈的结构化结果。
 // 详情：不泄漏未加载 schema，只明确指出 lazy-tool 协议和下一次应发起的元工具调用。
@@ -75,19 +77,78 @@ function sameRegistration(left: LoadedTool, right: LoadedTool): boolean {
     && left.registrationVersion === right.registrationVersion
 }
 
+function nextSessionLoadedToolNames(
+  id: string,
+  toolName: string,
+  core: CoreInstance,
+  maxVisibleTools: number | undefined,
+): string[] | undefined {
+  const session = core.rootStore.getter(sessionsAtom)[id]
+  if (!session) return undefined
+
+  // SessionMeta 保存的是“期望在下次 run / 应用重启后恢复”的 LRU，而不是 registry
+  // 此刻恰好在线的工具集合。动态 MCP 在重连前可能暂时不存在，不能因此把它从缓存抹掉。
+  const loadedTools: string[] = []
+  for (const name of session.loadedTools ?? []) {
+    if (typeof name !== 'string' || name.length === 0 || name === toolName) continue
+    const duplicateIndex = loadedTools.indexOf(name)
+    if (duplicateIndex >= 0) loadedTools.splice(duplicateIndex, 1)
+    loadedTools.push(name)
+  }
+  loadedTools.push(toolName)
+
+  const limit = visibleToolLimit(maxVisibleTools)
+  if (limit === undefined || loadedTools.length <= limit) return loadedTools
+  if (limit === 0) return []
+  return loadedTools.slice(-limit)
+}
+
 function persistVisibleToolNames(
   id: string,
   before: readonly LoadedTool[],
   after: readonly LoadedTool[],
   core: CoreInstance,
+  durableLoadedTools?: readonly string[],
 ): void {
-  if (
-    before.length === after.length
-    && before.every((tool, index) => tool.name === after[index]?.name)
-  ) {
-    return
+  const visibleChanged = (
+    before.length !== after.length
+    || before.some((tool, index) => tool.name !== after[index]?.name)
+  )
+  if (visibleChanged) {
+    patchRun(id, { loadedTools: after.map((tool) => tool.name) }, core)
   }
-  patchRun(id, { loadedTools: after.map((tool) => tool.name) }, core)
+  if (durableLoadedTools === undefined) return
+
+  // RunState 只镜像本次运行内当前可见的 schema；SessionMeta 保存期望恢复的会话级
+  // LRU。后者仅在成功加载 / touch 时更新，工具暂时注销或 MCP 尚未重连时不能删除。
+  // 独立 CoreInstance 仍只更新自己的 rootStore；现有 persistence driver 只服务 defaultCore。
+  const loadedTools = [...durableLoadedTools]
+  let sessionChanged = false
+  core.rootStore.setter(sessionsAtom, (sessions) => {
+    const session = sessions[id]
+    if (!session) return sessions
+    const persisted = session.loadedTools ?? []
+    if (
+      persisted.length === loadedTools.length
+      && persisted.every((name, index) => name === loadedTools[index])
+    ) {
+      return sessions
+    }
+    sessionChanged = true
+    return {
+      ...sessions,
+      [id]: {
+        ...session,
+        loadedTools,
+      },
+    }
+  })
+  if (sessionChanged && core === defaultCore) {
+    persistSessions({
+      reason: 'tool_schema_visibility_changed',
+      sessionId: id,
+    })
+  }
 }
 
 /**
@@ -172,6 +233,12 @@ export function ensureToolLoaded(
     existing && sameRegistration(existing, tool) ? existing : tool,
   ]
   const nextTools = trimVisibleTools(promoted, maxVisibleTools)
-  persistVisibleToolNames(id, currentTools, nextTools, core)
+  persistVisibleToolNames(
+    id,
+    currentTools,
+    nextTools,
+    core,
+    nextSessionLoadedToolNames(id, toolName, core, maxVisibleTools),
+  )
   return nextTools
 }

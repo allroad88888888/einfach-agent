@@ -41,7 +41,7 @@ function mockHistory(overrides?: Partial<HistoryDriver>): HistoryDriver {
 
 // 假会话列表存储（默认 resolve）。
 function mockSessions(overrides?: Partial<{
-  saveSessions: (sessions: SessionMeta[]) => Promise<void>
+  saveSessions: (sessions: SessionMeta[], diagnosticOperationId?: string) => Promise<void>
   loadSessions: () => Promise<SessionMeta[]>
 }>) {
   return {
@@ -74,6 +74,50 @@ describe('persistenceBridge（D-4 fire-and-forget 接线）', () => {
 
     expect(() => persistSessions()).not.toThrow()
     expect(sessions.saveSessions).toHaveBeenCalledWith([meta])
+  })
+
+  it('persistSessions：把 plan 操作关联 ID 传给支持诊断的 driver', () => {
+    const sessions = mockSessions()
+    configurePersistence({ sessions })
+    rootStore.setter(sessionsAtom, { s1: meta })
+
+    persistSessions({ operationId: 'plan-op-1', reason: 'plan.update', sessionId: 's1' })
+
+    expect(sessions.saveSessions).toHaveBeenCalledWith([meta], 'plan-op-1')
+  })
+
+  it('persistSessions：写入繁忙时只补写最新快照，不排队保存每个中间状态', async () => {
+    let releaseFirst: (() => void) | undefined
+    const firstWrite = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    const saveSessions = vi.fn()
+      .mockImplementationOnce(() => firstWrite)
+      .mockResolvedValue(undefined)
+    const sessions = mockSessions({ saveSessions })
+    configurePersistence({ sessions })
+
+    rootStore.setter(sessionsAtom, { s1: meta })
+    persistSessions({ operationId: 'initial' })
+    rootStore.setter(sessionsAtom, { s1: { ...meta, updatedAt: 1 } })
+    persistSessions({ operationId: 'intermediate' })
+    rootStore.setter(sessionsAtom, { s1: { ...meta, updatedAt: 2 } })
+    persistSessions({ operationId: 'latest' })
+
+    expect(saveSessions).toHaveBeenCalledTimes(1)
+    expect(saveSessions).toHaveBeenNthCalledWith(1, [meta], 'initial')
+
+    releaseFirst?.()
+    await firstWrite
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(saveSessions).toHaveBeenCalledTimes(2)
+    expect(saveSessions).toHaveBeenNthCalledWith(
+      2,
+      [{ ...meta, updatedAt: 2 }],
+      'latest',
+    )
   })
 
   it('persistCheckpoint：转成 history.saveCheckpoint(id, cp)', () => {

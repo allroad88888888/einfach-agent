@@ -26,6 +26,10 @@ import {
   configureAppSettingsEnvironment,
   hydrateAppSettings,
 } from './settings/commands'
+import {
+  reportReactCommit,
+  startUiPerformanceDiagnostics,
+} from './performanceDiagnostics'
 import './styles/global.css'
 import './agentNew/ui/agentnew.css'
 
@@ -98,7 +102,12 @@ function renderRoot(children: React.ReactNode): void {
 }
 
 function renderApp(): void {
-  renderRoot(<AppShell />)
+  startUiPerformanceDiagnostics()
+  renderRoot(
+    <React.Profiler id="AppShell" onRender={reportReactCommit}>
+      <AppShell />
+    </React.Profiler>,
+  )
 }
 
 function renderTraceViewer(): void {

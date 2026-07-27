@@ -109,9 +109,15 @@ pub async fn read_workspace_file(
     path: String,
     max_bytes: Option<usize>,
     workspace_root: Option<String>,
+    allow_external_paths: Option<bool>,
 ) -> Result<ReadWorkspaceFileResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        read_workspace_file_blocking(path, max_bytes, workspace_root)
+        read_workspace_file_blocking_with_access(
+            path,
+            max_bytes,
+            workspace_root,
+            allow_external_paths.unwrap_or(false),
+        )
     })
     .await
     .map_err(|err| format!("read_workspace_file worker failed: {err}"))?
@@ -139,9 +145,17 @@ pub async fn list_workspace_files(
     max_entries: Option<usize>,
     include_hidden: Option<bool>,
     workspace_root: Option<String>,
+    allow_external_paths: Option<bool>,
 ) -> Result<ListWorkspaceFilesResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        list_workspace_files_blocking(path, recursive, max_entries, include_hidden, workspace_root)
+        list_workspace_files_blocking_with_access(
+            path,
+            recursive,
+            max_entries,
+            include_hidden,
+            workspace_root,
+            allow_external_paths.unwrap_or(false),
+        )
     })
     .await
     .map_err(|err| format!("list_workspace_files worker failed: {err}"))?
@@ -154,18 +168,36 @@ pub async fn search_workspace_files(
     glob: Option<String>,
     max_matches: Option<usize>,
     workspace_root: Option<String>,
+    allow_external_paths: Option<bool>,
 ) -> Result<SearchWorkspaceFilesResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        search_workspace_files_blocking(query, path, glob, max_matches, workspace_root)
+        search_workspace_files_blocking_with_access(
+            query,
+            path,
+            glob,
+            max_matches,
+            workspace_root,
+            allow_external_paths.unwrap_or(false),
+        )
     })
     .await
     .map_err(|err| format!("search_workspace_files worker failed: {err}"))?
 }
 
+#[cfg(test)]
 fn read_workspace_file_blocking(
     path: String,
     max_bytes: Option<usize>,
     workspace_root: Option<String>,
+) -> Result<ReadWorkspaceFileResult, String> {
+    read_workspace_file_blocking_with_access(path, max_bytes, workspace_root, false)
+}
+
+fn read_workspace_file_blocking_with_access(
+    path: String,
+    max_bytes: Option<usize>,
+    workspace_root: Option<String>,
+    allow_external_paths: bool,
 ) -> Result<ReadWorkspaceFileResult, String> {
     let root = resolve_workspace_root(workspace_root.as_deref())?;
     let requested = path.trim();
@@ -173,7 +205,7 @@ fn read_workspace_file_blocking(
         return Err("path (non-empty string) is required".to_string());
     }
 
-    let file_path = resolve_workspace_path(&root, requested)?;
+    let file_path = resolve_workspace_path(&root, requested, allow_external_paths)?;
     let metadata = fs::metadata(&file_path).map_err(|err| {
         format!(
             "file `{}` is not accessible: {err}",
@@ -253,7 +285,7 @@ fn read_workspace_run_index_page_blocking(
     workspace_root: Option<String>,
 ) -> Result<ReadWorkspaceRunIndexPageResult, String> {
     let root = resolve_workspace_root(workspace_root.as_deref())?;
-    let file_path = resolve_workspace_path(&root, RUNS_INDEX_PATH)?;
+    let file_path = resolve_workspace_path(&root, RUNS_INDEX_PATH, false)?;
     let metadata = fs::metadata(&file_path).map_err(|err| {
         format!(
             "file `{}` is not accessible: {err}",
@@ -336,6 +368,7 @@ fn read_workspace_run_index_page_blocking(
     })
 }
 
+#[cfg(test)]
 fn list_workspace_files_blocking(
     path: Option<String>,
     recursive: Option<bool>,
@@ -343,9 +376,27 @@ fn list_workspace_files_blocking(
     include_hidden: Option<bool>,
     workspace_root: Option<String>,
 ) -> Result<ListWorkspaceFilesResult, String> {
+    list_workspace_files_blocking_with_access(
+        path,
+        recursive,
+        max_entries,
+        include_hidden,
+        workspace_root,
+        false,
+    )
+}
+
+fn list_workspace_files_blocking_with_access(
+    path: Option<String>,
+    recursive: Option<bool>,
+    max_entries: Option<usize>,
+    include_hidden: Option<bool>,
+    workspace_root: Option<String>,
+    allow_external_paths: bool,
+) -> Result<ListWorkspaceFilesResult, String> {
     let root = resolve_workspace_root(workspace_root.as_deref())?;
     let requested = optional_path_or_default(path.as_deref(), ".");
-    let dir = resolve_workspace_path(&root, requested)?;
+    let dir = resolve_workspace_path(&root, requested, allow_external_paths)?;
     let metadata = fs::metadata(&dir)
         .map_err(|err| format!("path `{}` is not accessible: {err}", display_path(&dir)))?;
     if !metadata.is_dir() {
@@ -364,6 +415,7 @@ fn list_workspace_files_blocking(
         recursive,
         include_hidden,
         max_entries,
+        allow_external_paths,
         &mut entries,
         &mut truncated,
     )?;
@@ -371,12 +423,31 @@ fn list_workspace_files_blocking(
     Ok(ListWorkspaceFilesResult { entries, truncated })
 }
 
+#[cfg(test)]
 fn search_workspace_files_blocking(
     query: String,
     path: Option<String>,
     glob: Option<String>,
     max_matches: Option<usize>,
     workspace_root: Option<String>,
+) -> Result<SearchWorkspaceFilesResult, String> {
+    search_workspace_files_blocking_with_access(
+        query,
+        path,
+        glob,
+        max_matches,
+        workspace_root,
+        false,
+    )
+}
+
+fn search_workspace_files_blocking_with_access(
+    query: String,
+    path: Option<String>,
+    glob: Option<String>,
+    max_matches: Option<usize>,
+    workspace_root: Option<String>,
+    allow_external_paths: bool,
 ) -> Result<SearchWorkspaceFilesResult, String> {
     let root = resolve_workspace_root(workspace_root.as_deref())?;
     let query = query.trim().to_string();
@@ -385,7 +456,7 @@ fn search_workspace_files_blocking(
     }
 
     let requested = optional_path_or_default(path.as_deref(), ".");
-    let target = resolve_workspace_path(&root, requested)?;
+    let target = resolve_workspace_path(&root, requested, allow_external_paths)?;
     let metadata = fs::metadata(&target)
         .map_err(|err| format!("path `{}` is not accessible: {err}", display_path(&target)))?;
     let glob = glob.and_then(|value| {
@@ -420,6 +491,7 @@ fn search_workspace_files_blocking(
             &query,
             glob.as_deref(),
             max_matches,
+            allow_external_paths,
             &mut scanned,
             &mut matches,
             &mut truncated,
@@ -441,15 +513,19 @@ fn optional_path_or_default<'a>(path: Option<&'a str>, default_path: &'a str) ->
     }
 }
 
-fn resolve_workspace_path(root: &Path, requested: &str) -> Result<PathBuf, String> {
+fn resolve_workspace_path(
+    root: &Path,
+    requested: &str,
+    allow_external_paths: bool,
+) -> Result<PathBuf, String> {
     let requested_path = PathBuf::from(requested);
     let joined = if requested_path.is_absolute() {
         requested_path
     } else {
         root.join(requested_path)
     };
-    // P1 confine：绝对路径也一样先 canonicalize（解析符号链接/`..`），再校验 starts_with(root)——
-    // 绝对路径不能绕过限制。配合 resolve_workspace_root 拒 `/`，cwd 不可控也不会失守。
+    // confirm 模式：绝对路径也先 canonicalize（解析符号链接/`..`），再校验 starts_with(root)。
+    // Auto 模式由宿主传入 runtime-only allow_external_paths，可读取 canonicalize 后的外部目标。
     let resolved = fs::canonicalize(&joined).map_err(|err| {
         format!(
             "path `{}` is not accessible in workspace `{}`: {err}",
@@ -458,7 +534,7 @@ fn resolve_workspace_path(root: &Path, requested: &str) -> Result<PathBuf, Strin
         )
     })?;
 
-    if !resolved.starts_with(root) {
+    if !allow_external_paths && !resolved.starts_with(root) {
         return Err(format!(
             "path `{}` escapes workspace root `{}`",
             requested,
@@ -482,6 +558,7 @@ fn collect_entries(
     recursive: bool,
     include_hidden: bool,
     max_entries: usize,
+    allow_external_paths: bool,
     entries: &mut Vec<WorkspaceFileEntry>,
     truncated: &mut bool,
 ) -> Result<(), String> {
@@ -498,7 +575,7 @@ fn collect_entries(
             Ok(resolved) => resolved,
             Err(_) => continue,
         };
-        if !resolved.starts_with(root) {
+        if !allow_external_paths && !resolved.starts_with(root) {
             continue;
         }
 
@@ -520,6 +597,7 @@ fn collect_entries(
                 recursive,
                 include_hidden,
                 max_entries,
+                allow_external_paths,
                 entries,
                 truncated,
             )?;
@@ -538,6 +616,7 @@ fn collect_search_matches(
     query: &str,
     glob: Option<&str>,
     max_matches: usize,
+    allow_external_paths: bool,
     scanned: &mut usize,
     matches: &mut Vec<WorkspaceSearchMatch>,
     truncated: &mut bool,
@@ -563,7 +642,7 @@ fn collect_search_matches(
             Ok(resolved) => resolved,
             Err(_) => continue,
         };
-        if !resolved.starts_with(root) {
+        if !allow_external_paths && !resolved.starts_with(root) {
             continue;
         }
 
@@ -582,6 +661,7 @@ fn collect_search_matches(
                 query,
                 glob,
                 max_matches,
+                allow_external_paths,
                 scanned,
                 matches,
                 truncated,
@@ -1052,6 +1132,117 @@ mod tests {
         assert!(
             err.contains("escapes workspace root"),
             "应因越界被拒，实际: {err}"
+        );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn auto_read_allows_parent_and_absolute_outside_paths() {
+        let (base, ws) = unique_workspace();
+        let outside = base.join("secret.txt");
+        fs::write(&outside, "auto readable").expect("seed outside file");
+        let outside = fs::canonicalize(&outside).expect("canonicalize outside");
+        let expected_path = display_path(&outside);
+
+        let via_parent = read_workspace_file_blocking_with_access(
+            "../secret.txt".to_string(),
+            None,
+            root_arg(&ws),
+            true,
+        )
+        .expect("Auto should allow parent path");
+        assert_eq!(via_parent.content, "auto readable");
+        assert_eq!(via_parent.path, expected_path);
+
+        let via_absolute = read_workspace_file_blocking_with_access(
+            outside.to_string_lossy().into_owned(),
+            None,
+            root_arg(&ws),
+            true,
+        )
+        .expect("Auto should allow absolute outside path");
+        assert_eq!(via_absolute.content, "auto readable");
+        assert_eq!(via_absolute.path, expected_path);
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn auto_list_and_search_allow_external_directory() {
+        let (base, ws) = unique_workspace();
+        let outside_dir = base.join("outside");
+        fs::create_dir_all(&outside_dir).expect("create outside dir");
+        let outside_file = outside_dir.join("notes.txt");
+        fs::write(&outside_file, "line one\nAUTO_OUTSIDE_NEEDLE\n").expect("seed outside file");
+        let outside_dir = fs::canonicalize(&outside_dir).expect("canonicalize outside dir");
+        let outside_file = fs::canonicalize(&outside_file).expect("canonicalize outside file");
+        let expected_path = display_path(&outside_file);
+
+        let listed = list_workspace_files_blocking_with_access(
+            Some(outside_dir.to_string_lossy().into_owned()),
+            Some(false),
+            None,
+            None,
+            root_arg(&ws),
+            true,
+        )
+        .expect("Auto should list outside dir");
+        assert!(
+            listed
+                .entries
+                .iter()
+                .any(|entry| entry.path == expected_path && entry.entry_type == "file"),
+            "external list should return absolute path"
+        );
+
+        let searched = search_workspace_files_blocking_with_access(
+            "AUTO_OUTSIDE_NEEDLE".to_string(),
+            Some("../outside".to_string()),
+            None,
+            None,
+            root_arg(&ws),
+            true,
+        )
+        .expect("Auto should search outside dir");
+        assert_eq!(searched.matches.len(), 1);
+        assert_eq!(searched.matches[0].path, expected_path);
+        assert_eq!(searched.matches[0].line_number, 2);
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn auto_read_follows_symlink_to_external_file_while_confirm_rejects_it() {
+        use std::os::unix::fs::symlink;
+
+        let (base, ws) = unique_workspace();
+        let outside = base.join("secret.txt");
+        fs::write(&outside, "linked outside").expect("seed outside file");
+        symlink(&outside, ws.join("linked-secret.txt")).expect("create symlink");
+
+        let strict_error = match read_workspace_file_blocking(
+            "linked-secret.txt".to_string(),
+            None,
+            root_arg(&ws),
+        ) {
+            Err(err) => err,
+            Ok(_) => panic!("Confirm must reject a symlink escaping workspace"),
+        };
+        assert!(strict_error.contains("escapes workspace root"));
+
+        let result = read_workspace_file_blocking_with_access(
+            "linked-secret.txt".to_string(),
+            None,
+            root_arg(&ws),
+            true,
+        )
+        .expect("Auto should follow external symlink");
+        assert_eq!(result.content, "linked outside");
+        assert_eq!(
+            result.path,
+            display_path(&fs::canonicalize(&outside).expect("canonicalize outside"))
         );
 
         let _ = fs::remove_dir_all(&base);

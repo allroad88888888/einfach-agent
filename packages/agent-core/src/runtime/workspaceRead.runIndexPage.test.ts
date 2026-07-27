@@ -7,7 +7,12 @@ const tauri = vi.hoisted(() => ({
 
 vi.mock('@tauri-apps/api/core', () => tauri)
 
-import { readWorkspaceRunIndexPage } from './workspaceRead'
+import {
+  listWorkspaceFiles,
+  readWorkspaceFile,
+  readWorkspaceRunIndexPage,
+  searchWorkspaceFiles,
+} from './workspaceRead'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -43,5 +48,70 @@ describe('readWorkspaceRunIndexPage', () => {
     await expect(readWorkspaceRunIndexPage({})).resolves.toEqual({
       ok: false, error: 'read_workspace_run_index_page returned an invalid snapshot',
     })
+  })
+})
+
+describe('Auto external path bridge inputs', () => {
+  it('只读文件桥把 runtime-only 外部路径权限映射为 Tauri snake_case 参数', async () => {
+    tauri.invoke
+      .mockResolvedValueOnce({
+        path: '/outside/a.txt',
+        content: 'a',
+        truncated: false,
+        bytes: 1,
+      })
+      .mockResolvedValueOnce({ entries: [], truncated: false })
+      .mockResolvedValueOnce({ matches: [], truncated: false })
+
+    await readWorkspaceFile({
+      path: '/outside/a.txt',
+      workspaceRoot: '/workspace',
+      allowExternalPaths: true,
+    })
+    await listWorkspaceFiles({
+      path: '/outside',
+      workspaceRoot: '/workspace',
+      allowExternalPaths: true,
+    })
+    await searchWorkspaceFiles({
+      query: 'needle',
+      path: '/outside',
+      workspaceRoot: '/workspace',
+      allowExternalPaths: true,
+    })
+
+    expect(tauri.invoke).toHaveBeenNthCalledWith(1, 'read_workspace_file', expect.objectContaining({
+      allow_external_paths: true,
+    }))
+    expect(tauri.invoke).toHaveBeenNthCalledWith(2, 'list_workspace_files', expect.objectContaining({
+      allow_external_paths: true,
+    }))
+    expect(tauri.invoke).toHaveBeenNthCalledWith(3, 'search_workspace_files', expect.objectContaining({
+      allow_external_paths: true,
+    }))
+  })
+
+  it('rg 桥把 runtime-only 外部路径权限映射为 Tauri snake_case 参数', async () => {
+    vi.resetModules()
+    const { rgSearchWorkspace } = await import('./workspaceRg')
+    tauri.invoke.mockResolvedValue({
+      ok: true,
+      matches: [],
+      truncated: false,
+      exitCode: 1,
+      stderr: '',
+    })
+
+    const result = await rgSearchWorkspace({
+      query: 'needle',
+      path: '../outside',
+      workspaceRoot: '/workspace',
+      allowExternalPaths: true,
+    })
+
+    expect(result.stderr).toBe('')
+    expect(tauri.invoke).toHaveBeenCalledWith('rg_search_workspace', expect.objectContaining({
+      allow_external_paths: true,
+    }))
   })
 })

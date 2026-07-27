@@ -56,7 +56,7 @@ describe('tools/registry —— 抽象工厂 ToolRegistry（§3/§4）', () => {
     expect(typeof reg.run).toBe('function')
   })
 
-  it('register 后 has/list 反映；list 项只有 name/description(=skill.description)/runtime', () => {
+  it('register 后 has/list 反映；list 项只有 name/description/triggers/runtime', () => {
     const reg = createToolRegistry()
     expect(reg.has('demo')).toBe(false)
 
@@ -66,8 +66,13 @@ describe('tools/registry —— 抽象工厂 ToolRegistry（§3/§4）', () => {
     const list = reg.list()
     expect(list).toHaveLength(1)
     const [item] = list
-    // description 取自 skill.description（terse）。
-    expect(item).toEqual({ name: 'demo', description: 'demo 一句话摘要', runtime: 'internal' })
+    // description/triggers 取自 skill，triggers 供 manifest 搜索别名。
+    expect(item).toEqual({
+      name: 'demo',
+      description: 'demo 一句话摘要',
+      triggers: ['demo'],
+      runtime: 'internal',
+    })
     // manifest-only（TK3）：绝不含 inputSchema / guide / content / skill。
     expect(item).not.toHaveProperty('inputSchema')
     expect(item).not.toHaveProperty('guide')
@@ -96,6 +101,7 @@ describe('tools/registry —— 抽象工厂 ToolRegistry（§3/§4）', () => {
     expect(loaded).toEqual({
       name: 'demo',
       description: 'demo 一句话摘要',
+      triggers: ['demo'],
       runtime: 'internal',
       registrationVersion: 1,
       inputSchema: { type: 'object', properties: { q: { type: 'string' } }, required: ['q'] },
@@ -114,7 +120,7 @@ describe('tools/registry —— 抽象工厂 ToolRegistry（§3/§4）', () => {
 
     expect(list.map((tool) => tool.name).sort()).toEqual([...shellNames].sort())
     for (const item of list) {
-      expect(Object.keys(item).sort()).toEqual(['description', 'name', 'runtime'])
+      expect(Object.keys(item).sort()).toEqual(['description', 'name', 'runtime', 'triggers'])
       expect(item.runtime).toBe('server') // 依赖 Tauri 本机 shell（TP3）。
     }
 
@@ -138,7 +144,7 @@ describe('tools/registry —— 抽象工厂 ToolRegistry（§3/§4）', () => {
 
     expect(list.map((tool) => tool.name).sort()).toEqual([...fileToolNames].sort())
     for (const item of list) {
-      expect(Object.keys(item).sort()).toEqual(['description', 'name', 'runtime'])
+      expect(Object.keys(item).sort()).toEqual(['description', 'name', 'runtime', 'triggers'])
       expect(item.runtime).toBe('server') // 依赖 Tauri 文件系统/git（TP3）。
     }
 

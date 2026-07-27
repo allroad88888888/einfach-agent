@@ -151,6 +151,14 @@ describe('buildTurnTools —— TP3 server 工具按环境过滤', () => {
     for (const tool of toolRegistry.list()) {
       expect(names).toContain(tool.name)
     }
+
+    // 最近真实运行中模型使用过这些英文查询；都应能发现当前平台 shell。
+    for (const query of ['exec', 'terminal', 'run command']) {
+      const search = searchToolManifestPage({ query }, true)
+      expect(search.kind).toBe('tool_manifest_page')
+      if (search.kind !== 'tool_manifest_page') throw new Error(search.error)
+      expect(search.items.map((tool) => tool.name)).toContain('shell_macos')
+    }
   })
 
   it('visible 过滤：server 工具 web 下不进 function 列表、Tauri 下进', () => {
@@ -296,12 +304,16 @@ describe('request_tool_schema —— 有界 manifest 搜索与游标', () => {
     expect(new Set(collected).size).toBe(names.length)
   })
 
-  it('query 对 name/description 做大小写无关 AND 搜索，limit 被硬钳到页上限', () => {
+  it('query 对 name/description/triggers 做大小写无关 AND 搜索，limit 被硬钳到页上限', () => {
     const registry = createToolRegistry()
     registry.register({
       name: 'alpha_reader',
       runtime: 'internal',
-      skill: { description: 'Read Alpha Documents', content: '# alpha' },
+      skill: {
+        description: 'Read Alpha Documents',
+        triggers: ['terminal', '命令行'],
+        content: '# alpha',
+      },
       inputSchema: { type: 'object' },
       execute: async () => ({ ok: true }),
     })
@@ -322,6 +334,11 @@ describe('request_tool_schema —— 有界 manifest 搜索与游标', () => {
     if (result.kind !== 'tool_manifest_page') throw new Error(result.error)
     expect(result.limit).toBe(MAX_TOOL_MANIFEST_PAGE_SIZE)
     expect(result.items.map((tool) => tool.name)).toEqual(['alpha_reader'])
+
+    const triggerResult = searchToolManifestPage({ query: 'TERMINAL' }, true, { registry })
+    expect(triggerResult.kind).toBe('tool_manifest_page')
+    if (triggerResult.kind !== 'tool_manifest_page') throw new Error(triggerResult.error)
+    expect(triggerResult.items.map((tool) => tool.name)).toEqual(['alpha_reader'])
   })
 
   it('目录变化或游标损坏会显式报错并给出重启参数，不会静默跳项', () => {

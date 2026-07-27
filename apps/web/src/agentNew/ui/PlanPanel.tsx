@@ -1,9 +1,16 @@
 import { useAtom, useAtomValue } from '@einfach/react'
 import { useMemo } from 'react'
 import { itemsAtom, planAtom, runAtom } from '@web-agent/core/state/sessionAtoms'
-import { expandedPlanStagesAtom } from '@web-agent/core/state/transientAtoms'
+import {
+  assistantStreamAtom,
+  expandedPlanStagesAtom,
+} from '@web-agent/core/state/transientAtoms'
 import { acceptPlanResult, approvePlan, continuePlan } from '@web-agent/core/runtime/commands'
 import type { PlanStageStatus } from '@web-agent/core/planning/types'
+import {
+  performanceNow,
+  recordPerformanceDiagnostic,
+} from '@web-agent/core/observability/performanceDiagnostics'
 import { buildPlanStageExecutionEntries, PlanStageExecutionTrace } from './MessageList'
 import { AskUserQuestionCard } from './AskUserQuestionCard'
 
@@ -26,10 +33,36 @@ export function PlanPanel() {
   const plan = useAtomValue(planAtom)
   const run = useAtomValue(runAtom)
   const items = useAtomValue(itemsAtom)
+  const assistantStream = useAtomValue(assistantStreamAtom)
   const [expandedStages, setExpandedStages] = useAtom(expandedPlanStagesAtom)
-  const executionEntriesByStage = useMemo(
-    () => buildPlanStageExecutionEntries(items),
-    [items],
+  const streamedItemId = assistantStream?.item.id
+  const historicalItems = useMemo(
+    () => streamedItemId ? items.filter((item) => item.id !== streamedItemId) : items,
+    [items, streamedItemId],
+  )
+  const executionEntriesByStage = useMemo(() => {
+    const startedAt = performanceNow()
+    const entries = buildPlanStageExecutionEntries(historicalItems)
+    const durationMs = performanceNow() - startedAt
+    if (durationMs >= 16) {
+      recordPerformanceDiagnostic(
+        'ui.plan_execution_index',
+        durationMs,
+        {
+          sessionItemCount: historicalItems.length,
+          stageBucketCount: entries.size,
+          thresholdMs: 16,
+        },
+        { slowMs: 16 },
+      )
+    }
+    return entries
+  }, [historicalItems])
+  const streamingEntriesByStage = useMemo(
+    () => assistantStream
+      ? buildPlanStageExecutionEntries([assistantStream.item])
+      : buildPlanStageExecutionEntries([]),
+    [assistantStream],
   )
   const planDecision = run?.status === 'waiting_user'
     && run.pendingUserDecision?.origin.surface === 'plan'
@@ -150,7 +183,10 @@ export function PlanPanel() {
                 <PlanStageExecutionTrace
                   windowId={`${plan.id}:${stage.id}`}
                   stageId={stage.id}
-                  entries={executionEntriesByStage.get(stage.id)}
+                  entries={[
+                    ...(executionEntriesByStage.get(stage.id) ?? []),
+                    ...(streamingEntriesByStage.get(stage.id) ?? []),
+                  ]}
                 />
                 {awaitingDecision ? <AskUserQuestionCard surface="plan" /> : null}
               </div> : null}

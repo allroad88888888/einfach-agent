@@ -21,6 +21,7 @@ import {
 import { revertTurnToDraft } from '@web-agent/core/runtime/commands'
 import { checkpointsAtom, itemsAtom } from '@web-agent/core/state/sessionAtoms'
 import {
+  assistantStreamAtom,
   browserCardsAtom,
   expandedTranscriptGroupsAtom,
   runtimeTranscriptEventsAtom,
@@ -588,11 +589,20 @@ function virtualEntryVersion(entry: VirtualEntry): string {
 
 export function MessageList() {
   const items = useAtomValue(itemsAtom)
+  const assistantStream = useAtomValue(assistantStreamAtom)
   const checkpoints = useAtomValue(checkpointsAtom)
   const cards = useAtomValue(browserCardsAtom)
   const runtimeEvents = useAtomValue(runtimeTranscriptEventsAtom)
   const [expandedGroups, setExpandedGroups] = useAtom(expandedTranscriptGroupsAtom)
   const [storedWindow, setMessageWindow] = useAtom(messageWindowAtom)
+  const streamedItemId = assistantStream?.item.id
+
+  // 流式占位条目也在 itemsAtom 中，但正文更新只走 assistantStreamAtom。历史索引排除占位，
+  // 让每个 delta 只重算当前这一条消息，不扫描整段会话。
+  const historicalItems = useMemo(
+    () => streamedItemId ? items.filter((item) => item.id !== streamedItemId) : items,
+    [items, streamedItemId],
+  )
 
   const checkpointTurnByUserItemId = useMemo(() => {
     const turns = new Map<string, number>()
@@ -607,10 +617,10 @@ export function MessageList() {
     return turns
   }, [checkpoints])
 
-  const entries = useMemo<RenderEntry[]>(() => {
-    const toolExecutionIndex = buildToolExecutionIndex(items)
+  const historicalEntries = useMemo<RenderEntry[]>(() => {
+    const toolExecutionIndex = buildToolExecutionIndex(historicalItems)
     const merged = [
-      ...items.flatMap((ci, index) => (
+      ...historicalItems.flatMap((ci, index) => (
         itemEntries(ci, index, toolExecutionIndex)
           // 当前计划步骤产生的 assistant 文本也是阶段执行说明，不是全局最终答复。
           // 它和该步骤的模型思考/工具记录一起只在步骤详情中展示。
@@ -640,11 +650,33 @@ export function MessageList() {
       return 0
     })
     return groupThinkingEntries(merged)
-  }, [cards, items, runtimeEvents])
+  }, [cards, historicalItems, runtimeEvents])
 
+  const streamingEntries = useMemo<RenderEntry[]>(() => {
+    const ci = assistantStream?.item
+    if (!ci) return []
+    const toolExecutionIndex = buildToolExecutionIndex([ci])
+    const merged = itemEntries(ci, historicalItems.length, toolExecutionIndex)
+      .filter((entry) => (
+        !ci.planStageId ||
+        entry.kind !== 'message' ||
+        entry.ci.item.role !== 'assistant'
+      ))
+      .filter((entry) => !ci.planStageId || !isThinkingEntry(entry))
+    return groupThinkingEntries(merged)
+  }, [assistantStream, historicalItems.length])
+
+  const historicalVirtualEntries = useMemo(
+    () => flattenVirtualEntries(historicalEntries, expandedGroups),
+    [historicalEntries, expandedGroups],
+  )
+  const streamingVirtualEntries = useMemo(
+    () => flattenVirtualEntries(streamingEntries, expandedGroups),
+    [streamingEntries, expandedGroups],
+  )
   const virtualEntries = useMemo(
-    () => flattenVirtualEntries(entries, expandedGroups),
-    [entries, expandedGroups],
+    () => [...historicalVirtualEntries, ...streamingVirtualEntries],
+    [historicalVirtualEntries, streamingVirtualEntries],
   )
   const latestEntry = virtualEntries.at(-1)
   const {
@@ -659,7 +691,7 @@ export function MessageList() {
   })
   const visibleEntries = virtualEntries.slice(messageWindow.start, messageWindow.end)
 
-  if (entries.length === 0) {
+  if (historicalEntries.length === 0 && streamingEntries.length === 0) {
     return <div className="agentnew-message-empty">开始对话吧</div>
   }
 

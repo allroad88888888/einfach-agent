@@ -5,6 +5,8 @@ export interface ReadWorkspaceFileInput {
   maxBytes?: number
   /** 可选显式 workspace root（P1）；不传则 Rust 侧走 git root 兜底。 */
   workspaceRoot?: string
+  /** Runtime-only：Auto 会话允许读取 workspace 外路径；工具参数不能提供此字段。 */
+  allowExternalPaths?: boolean
 }
 
 export interface ReadWorkspaceFileResult {
@@ -42,6 +44,8 @@ export interface ListWorkspaceFilesInput {
   includeHidden?: boolean
   /** 可选显式 workspace root（P1）；不传则 Rust 侧走 git root 兜底。 */
   workspaceRoot?: string
+  /** Runtime-only：Auto 会话允许读取 workspace 外路径；工具参数不能提供此字段。 */
+  allowExternalPaths?: boolean
 }
 
 export interface WorkspaceFileEntry {
@@ -62,6 +66,8 @@ export interface SearchWorkspaceFilesInput {
   maxMatches?: number
   /** 可选显式 workspace root（P1）；不传则 Rust 侧走 git root 兜底。 */
   workspaceRoot?: string
+  /** Runtime-only：Auto 会话允许读取 workspace 外路径；工具参数不能提供此字段。 */
+  allowExternalPaths?: boolean
 }
 
 export interface WorkspaceSearchMatch {
@@ -81,6 +87,7 @@ type TauriReadWorkspaceFileInput = {
   path: string
   max_bytes?: number
   workspace_root?: string
+  allow_external_paths?: boolean
 }
 
 type TauriReadWorkspaceRunIndexPageInput = {
@@ -95,6 +102,7 @@ type TauriListWorkspaceFilesInput = {
   max_entries?: number
   include_hidden?: boolean
   workspace_root?: string
+  allow_external_paths?: boolean
 }
 
 type TauriSearchWorkspaceFilesInput = {
@@ -103,6 +111,7 @@ type TauriSearchWorkspaceFilesInput = {
   glob?: string
   max_matches?: number
   workspace_root?: string
+  allow_external_paths?: boolean
 }
 
 function ok<T>(data: T): WorkspaceRuntimeResult<T> {
@@ -148,6 +157,7 @@ function toTauriReadInput(input: ReadWorkspaceFileInput): TauriReadWorkspaceFile
     path: input.path,
     max_bytes: input.maxBytes,
     workspace_root: input.workspaceRoot,
+    allow_external_paths: input.allowExternalPaths,
   }
 }
 
@@ -168,6 +178,7 @@ function toTauriListInput(input: ListWorkspaceFilesInput): TauriListWorkspaceFil
     max_entries: input.maxEntries,
     include_hidden: input.includeHidden,
     workspace_root: input.workspaceRoot,
+    allow_external_paths: input.allowExternalPaths,
   }
 }
 
@@ -178,6 +189,7 @@ function toTauriSearchInput(input: SearchWorkspaceFilesInput): TauriSearchWorksp
     glob: input.glob,
     max_matches: input.maxMatches,
     workspace_root: input.workspaceRoot,
+    allow_external_paths: input.allowExternalPaths,
   }
 }
 

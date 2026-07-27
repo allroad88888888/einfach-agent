@@ -92,7 +92,7 @@ export const rgSearchTool: Tool = {
   execution: { mode: 'parallel', effectKeys: ['workspace:read'] },
   runtime: 'server', // 依赖 Tauri + ripgrep（ctx.rgSearchWorkspace），web 下不进 manifest（TP3）。
   skill: {
-    description: '用 ripgrep 在 workspace 内执行高性能代码搜索（支持正则、glob、上下文行）。',
+    description: '用 ripgrep 执行高性能代码搜索；Auto 模式也可搜索 workspace 外路径。',
     triggers: ['rg', 'ripgrep', 'grep', '搜索代码', '代码搜索'],
     content: guide,
   },

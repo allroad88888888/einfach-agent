@@ -6,20 +6,23 @@
 //     patchRun(id, { loadedTools }) 累计已载 → 返回新数组。未知 tool 原样返回。
 // 依赖状态层：seed 会话 + setRun 建 run（patchRun 无既有 run 时 no-op）。
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { rootStore, sessionsAtom, resetRootStore } from '../state/rootStore'
 import { getSessionStore, resetSessionStores } from '../state/sessionStore'
 import { runAtom } from '../state/sessionAtoms'
 import { setRun } from '../state/sessionWriters'
+import type { SessionMeta } from '../state/core.type'
 import { toolRegistry } from '../tools/registry'
 import type { LoadedTool, Tool } from '../tools/types'
 import { createCoreInstance, type CoreInstance } from './core/coreInstance'
+import { configurePersistence, resetPersistence } from './persistenceBridge'
 // 集成性质：本文件测的是「懒加载真实 save_file 工具」，故从 meta 包取标准工具装进独立 core（TS2）。
 import { registerStandardTools } from '@web-agent/tools'
 import { appendVisibleTool, ensureToolLoaded, refreshVisibleTools } from './toolLoading'
 
 afterEach(() => {
+  resetPersistence()
   resetRootStore()
   resetSessionStores()
 })
@@ -88,7 +91,7 @@ describe('appendVisibleTool', () => {
 })
 
 describe('ensureToolLoaded', () => {
-  it('加载新 tool → 返回长度 1 且含 save_file，并累计到 run.loadedTools', () => {
+  it('加载新 tool → 同步累计到 run 与会话级 loadedTools', () => {
     seedRunningSession('s1')
 
     const next = ensureToolLoaded('s1', [], 'save_file')
@@ -96,6 +99,30 @@ describe('ensureToolLoaded', () => {
     expect(next).toHaveLength(1)
     expect(next.map((t) => t.name)).toContain('save_file')
     expect(getSessionStore('s1').store.getter(runAtom)?.loadedTools).toContain('save_file')
+    expect(rootStore.getter(sessionsAtom).s1?.loadedTools).toEqual(['save_file'])
+  })
+
+  it('defaultCore 加载成功后立即把会话级 LRU 交给 sessions persistence', () => {
+    const saveSessions = vi.fn(async (_sessions: SessionMeta[]) => {})
+    configurePersistence({
+      sessions: {
+        saveSessions,
+        async loadSessions() {
+          return []
+        },
+      },
+    })
+    seedRunningSession('s1')
+
+    ensureToolLoaded('s1', [], 'save_file')
+
+    expect(saveSessions).toHaveBeenCalledTimes(1)
+    expect(saveSessions.mock.calls[0]?.[0]).toEqual([
+      expect.objectContaining({
+        id: 's1',
+        loadedTools: ['save_file'],
+      }),
+    ])
   })
 
   it('对同一 tool 再 ensure → 幂等（长度不变、原样返回）', () => {
@@ -115,6 +142,28 @@ describe('ensureToolLoaded', () => {
 
     expect(next).toEqual([])
     expect(getSessionStore('s1').store.getter(runAtom)?.loadedTools).toBeUndefined()
+  })
+
+  it('macOS/Linux/PowerShell shell、文件与 skill 共用同一会话级持久化路径', () => {
+    seedRunningSession('all-platforms')
+    const toolNames = [
+      'shell_macos',
+      'shell_linux',
+      'shell_powershell',
+      'read_file',
+      'skill_search',
+    ]
+    let visible: LoadedTool[] = []
+
+    for (const toolName of toolNames) {
+      visible = ensureToolLoaded('all-platforms', visible, toolName)
+    }
+
+    expect(visible.map((tool) => tool.name)).toEqual(toolNames)
+    expect(getSessionStore('all-platforms').store.getter(runAtom)?.loadedTools)
+      .toEqual(toolNames)
+    expect(rootStore.getter(sessionsAtom)['all-platforms']?.loadedTools)
+      .toEqual(toolNames)
   })
 })
 
@@ -143,6 +192,7 @@ describe('ensureToolLoaded —— core 参数隔离（第 3 期）', () => {
     expect(next.map((t) => t.name)).toContain('save_file')
     // 写回确实落进了独立 core 自己的 run（core.tools.loadSchema + patchRun(..., core) 都吃到了传入 core）。
     expect(core.getSessionStore(id).store.getter(runAtom)?.loadedTools).toContain('save_file')
+    expect(core.rootStore.getter(sessionsAtom)[id]?.loadedTools).toEqual(['save_file'])
 
     // defaultCore 一侧：该会话从未在 defaultCore.rootStore（= 顶层 rootStore）登记过；
     // 模块级 getSessionStore(id) 取到的是 defaultCore 私有 Map 里的 store —— run 应仍是 undefined。
@@ -200,6 +250,41 @@ describe('dynamic tool snapshots and visible-tool LRU', () => {
 
     expect(removed).toEqual([])
     expect(core.getSessionStore(id).store.getter(runAtom)?.loadedTools).toEqual([])
+    // registry 的瞬时下线只影响当前 run；会话级恢复意图必须保留，供 MCP 重连后命中。
+    expect(core.rootStore.getter(sessionsAtom)[id]?.loadedTools).toEqual(['remote_search'])
+  })
+
+  it('a temporarily unavailable dynamic tool does not disappear when another schema loads', () => {
+    const core = createCoreInstance()
+    const id = 'restart-before-mcp-reconnect'
+    seedIndependentRunningSession(core, id)
+    core.rootStore.setter(sessionsAtom, (sessions) => ({
+      ...sessions,
+      [id]: {
+        ...sessions[id],
+        loadedTools: ['remote_search', 'local_tool'],
+      },
+    }))
+    core.tools.register(makeVersionedTestTool('local_tool', 'v1'))
+
+    let visible = ensureToolLoaded(id, [], 'remote_search', core, 2)
+    visible = ensureToolLoaded(id, visible, 'local_tool', core, 2)
+
+    expect(visible.map((tool) => tool.name)).toEqual(['local_tool'])
+    expect(core.getSessionStore(id).store.getter(runAtom)?.loadedTools).toEqual(['local_tool'])
+    expect(core.rootStore.getter(sessionsAtom)[id]?.loadedTools).toEqual([
+      'remote_search',
+      'local_tool',
+    ])
+
+    core.tools.register(makeVersionedTestTool('remote_search', 'v2'))
+    visible = ensureToolLoaded(id, visible, 'remote_search', core, 2)
+
+    expect(visible.map((tool) => tool.name)).toEqual(['local_tool', 'remote_search'])
+    expect(core.rootStore.getter(sessionsAtom)[id]?.loadedTools).toEqual([
+      'local_tool',
+      'remote_search',
+    ])
   })
 
   it('re-requesting a loaded tool promotes it to the LRU tail and evicts the oldest over budget', () => {
@@ -221,6 +306,10 @@ describe('dynamic tool snapshots and visible-tool LRU', () => {
     expect(promoted.map((tool) => tool.name)).toEqual(['gamma', 'beta'])
     expect(promoted[1]).toBe(betaSnapshot)
     expect(core.getSessionStore(id).store.getter(runAtom)?.loadedTools).toEqual([
+      'gamma',
+      'beta',
+    ])
+    expect(core.rootStore.getter(sessionsAtom)[id]?.loadedTools).toEqual([
       'gamma',
       'beta',
     ])

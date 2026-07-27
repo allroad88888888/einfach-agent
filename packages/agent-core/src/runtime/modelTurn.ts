@@ -222,7 +222,7 @@ const TOOL_MANIFEST_CURSOR_PREFIX = 'tool-manifest-v1'
 function manifestCatalogFingerprint(query: string, tools: readonly ToolSummary[]): string {
   return fnv1a32(JSON.stringify({
     query,
-    tools: tools.map((tool) => [tool.name, tool.description, tool.runtime]),
+    tools: tools.map((tool) => [tool.name, tool.description, tool.triggers ?? [], tool.runtime]),
   }))
 }
 
@@ -255,7 +255,7 @@ function manifestError(
 /**
  * 返回经过环境/权限过滤的有界工具目录页，不包含 inputSchema 或 guide。
  *
- * query 以空白分词，对 name/description/runtime 做大小写无关的 AND 匹配；结果固定按名称排序。
+ * query 以空白分词，对 name/description/triggers/runtime 做大小写无关的 AND 匹配；结果固定按名称排序。
  * cursor 同时绑定 query 与完整匹配目录的指纹。翻页期间 registry 变化时返回 stale_cursor，
  * 让调用方从第一页重启，避免 offset 漂移导致工具被静默跳过。
  */
@@ -278,7 +278,12 @@ export function searchToolManifestPage(
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
   const matched = availableToolSummaries(isTauri, options).filter((tool) => {
     if (terms.length === 0) return true
-    const searchable = `${tool.name}\n${tool.description}\n${tool.runtime}`.toLowerCase()
+    const searchable = [
+      tool.name,
+      tool.description,
+      ...(tool.triggers ?? []),
+      tool.runtime,
+    ].join('\n').toLowerCase()
     return terms.every((term) => searchable.includes(term))
   })
   const fingerprint = manifestCatalogFingerprint(query, matched)

@@ -24,7 +24,8 @@ import {
   activeSessionIdAtom,
 } from '../rootStore'
 import { getSessionStore } from '../sessionStore'
-import { checkpointsAtom, currentTurnIndexAtom, itemsAtom, planAtom } from '../sessionAtoms'
+import { checkpointsAtom, currentTurnIndexAtom, itemsAtom, planAtom, runAtom } from '../sessionAtoms'
+import { queuedUserMessagesAtom } from '../transientAtoms'
 import type { HistoryDriver } from './historyDriver'
 import { migrateSessionMeta } from './modelMigration'
 import { migratePlanSnapshot } from '../../planning/migrate'
@@ -205,6 +206,27 @@ export async function hydrate(deps: {
       store.setter(checkpointsAtom, checkpoints)
       store.setter(itemsAtom, latest.items)
       store.setter(currentTurnIndexAtom, latest.turnIndex)
+      const recovery = latest.recovery
+      if (recovery) {
+        const status = recovery.run.status
+        if (status === 'running' || status === 'awaiting_tool' || status === 'interrupted') {
+          // 进程重启后旧请求和 execution 都已不存在，不能谎称仍在运行。保留同一 runId/turnId，
+          // 由显式“继续执行”入口复用当前工作 checkpoint；旧 executionId 不可再消费。
+          store.setter(runAtom, {
+            ...recovery.run,
+            status: 'interrupted',
+            pendingExecutionId: undefined,
+          })
+        } else if (
+          status === 'waiting_user'
+          || status === 'waiting_confirmation'
+          || status === 'waiting_plan_approval'
+        ) {
+          // 这三种状态没有飞行中的副作用，相关 pending payload 可以直接恢复，原 UI 卡片继续消费。
+          store.setter(runAtom, recovery.run)
+        }
+        store.setter(queuedUserMessagesAtom, recovery.queuedUserMessages ?? [])
+      }
     }
 
     return true

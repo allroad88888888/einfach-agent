@@ -14,6 +14,7 @@ interface CkRow {
   created_at: number
   items: string
   plan: string | null
+  recovery: string | null
 }
 function makeFakeDb() {
   const checkpoints: CkRow[] = []
@@ -27,16 +28,17 @@ function makeFakeDb() {
     execute: vi.fn(async (sql: string, params: unknown[] = []) => {
       if (sql.includes('CREATE TABLE')) return { rowsAffected: 0 }
       if (sql.includes('INSERT OR REPLACE INTO checkpoints')) {
-        const [session_id, turn_index, label, created_at, items, plan] = params as [
+        const [session_id, turn_index, label, created_at, items, plan, recovery] = params as [
           string,
           number,
           string,
           number,
           string,
           string | null,
+          string | null,
         ]
         const i = checkpoints.findIndex((r) => r.session_id === session_id && r.turn_index === turn_index)
-        const row = { session_id, turn_index, label, created_at, items, plan }
+        const row = { session_id, turn_index, label, created_at, items, plan, recovery }
         if (i >= 0) checkpoints[i] = row
         else checkpoints.push(row)
         return { rowsAffected: 1 }
@@ -145,6 +147,19 @@ describe('sqliteDriver — history', () => {
       updatedAt: 1,
       stages: [],
     }
+    checkpoint.recovery = {
+      run: {
+        runId: 'running-before-restart',
+        turnId: 'i0',
+        status: 'running',
+      },
+      queuedUserMessages: [{
+        id: 'queued-1',
+        createdAt: 2,
+        content: '补充要求',
+        targetRunId: 'running-before-restart',
+      }],
+    }
     await history.saveCheckpoint('s1', checkpoint)
     await history.saveCheckpoint('s1', ck(1))
 
@@ -156,6 +171,7 @@ describe('sqliteDriver — history', () => {
     expect(cp0?.items).toHaveLength(1)
     expect(cp0?.label).toBe('t0')
     expect(cp0?.plan).toEqual(checkpoint.plan)
+    expect(cp0?.recovery).toEqual(checkpoint.recovery)
     expect(await history.loadCheckpoint('s1', 99)).toBeUndefined() // 越界
   })
 
@@ -188,8 +204,11 @@ describe('sqliteDriver — history', () => {
 describe('sqliteDriver — sessions', () => {
   it('saveSessions 单行 blob 落盘 → loadSessions round-trip；再存更少 → 删掉的不残留', async () => {
     const { sessions } = createSqlitePersistence()
-    await sessions.saveSessions([meta('a'), meta('b')])
-    expect((await sessions.loadSessions()).map((s) => s.id).sort()).toEqual(['a', 'b'])
+    await sessions.saveSessions([{ ...meta('a'), loadedTools: ['shell_macos', 'read_file'] }, meta('b')])
+    const loaded = await sessions.loadSessions()
+    expect(loaded.map((s) => s.id).sort()).toEqual(['a', 'b'])
+    expect(loaded.find((session) => session.id === 'a')?.loadedTools)
+      .toEqual(['shell_macos', 'read_file'])
 
     await sessions.saveSessions([meta('a')]) // 覆盖：b 应消失
     expect((await sessions.loadSessions()).map((s) => s.id)).toEqual(['a'])

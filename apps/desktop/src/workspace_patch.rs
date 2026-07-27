@@ -8,9 +8,83 @@ use std::{
     collections::HashMap,
     fs,
     path::{Component, Path, PathBuf},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 const MAX_FILE_BYTES: usize = 1024 * 1024;
+const PERF_LOG_TARGET: &str = "web_agent::perf";
+
+struct WorkspacePatchPerf {
+    operation_id: String,
+    started_at: Instant,
+    phase_started_at: Instant,
+    finished: bool,
+}
+
+impl WorkspacePatchPerf {
+    fn new(
+        operation_id: String,
+        operation_count: usize,
+        dry_run: bool,
+        journal_enabled: bool,
+    ) -> Self {
+        log::info!(
+            target: PERF_LOG_TARGET,
+            "workspace_patch.start operation_id={} operation_count={} dry_run={} journal_enabled={}",
+            operation_id,
+            operation_count,
+            dry_run,
+            journal_enabled,
+        );
+        let now = Instant::now();
+        Self {
+            operation_id,
+            started_at: now,
+            phase_started_at: now,
+            finished: false,
+        }
+    }
+
+    fn phase(&mut self, phase: &str) {
+        let now = Instant::now();
+        log::info!(
+            target: PERF_LOG_TARGET,
+            "workspace_patch.phase operation_id={} phase={} phase_ms={:.1} total_ms={:.1}",
+            self.operation_id,
+            phase,
+            now.duration_since(self.phase_started_at).as_secs_f64() * 1000.0,
+            now.duration_since(self.started_at).as_secs_f64() * 1000.0,
+        );
+        self.phase_started_at = now;
+    }
+
+    fn finish(&mut self, status: &str, changed_file_count: usize, rejected_count: usize) {
+        self.finished = true;
+        log::info!(
+            target: PERF_LOG_TARGET,
+            "workspace_patch.finish operation_id={} status={} duration_ms={:.1} changed_file_count={} rejected_count={}",
+            self.operation_id,
+            status,
+            self.started_at.elapsed().as_secs_f64() * 1000.0,
+            changed_file_count,
+            rejected_count,
+        );
+    }
+}
+
+impl Drop for WorkspacePatchPerf {
+    fn drop(&mut self) {
+        if self.finished {
+            return;
+        }
+        log::error!(
+            target: PERF_LOG_TARGET,
+            "workspace_patch.finish operation_id={} status=error duration_ms={:.1}",
+            self.operation_id,
+            self.started_at.elapsed().as_secs_f64() * 1000.0,
+        );
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -75,16 +149,40 @@ pub async fn apply_workspace_patch(
     dry_run: Option<bool>,
     workspace_root: Option<String>,
     change_context: Option<WorkspaceChangeContext>,
+    diagnostic_operation_id: Option<String>,
 ) -> Result<WorkspacePatchResult, String> {
+    let operation_id = diagnostic_operation_id
+        .or_else(|| {
+            change_context
+                .as_ref()
+                .map(|context| context.change_id.clone())
+        })
+        .unwrap_or_else(|| {
+            format!(
+                "workspace-patch-{}",
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_nanos()
+            )
+        });
+    let journal_resolve_started_at = Instant::now();
     let journal = change_context
         .map(|context| journal_dir(&app).map(|directory| (directory, context)))
         .transpose()?;
+    log::info!(
+        target: PERF_LOG_TARGET,
+        "workspace_patch.host operation_id={} phase=journal_resolve phase_ms={:.1}",
+        operation_id,
+        journal_resolve_started_at.elapsed().as_secs_f64() * 1000.0,
+    );
     tauri::async_runtime::spawn_blocking(move || {
         apply_workspace_patch_blocking_with_journal(
             operations,
             dry_run.unwrap_or(false),
             workspace_root,
             journal,
+            operation_id,
         )
     })
     .await
@@ -97,7 +195,13 @@ fn apply_workspace_patch_blocking(
     dry_run: bool,
     workspace_root: Option<String>,
 ) -> Result<WorkspacePatchResult, String> {
-    apply_workspace_patch_blocking_with_journal(operations, dry_run, workspace_root, None)
+    apply_workspace_patch_blocking_with_journal(
+        operations,
+        dry_run,
+        workspace_root,
+        None,
+        "workspace-patch-test".to_string(),
+    )
 }
 
 fn apply_workspace_patch_blocking_with_journal(
@@ -105,8 +209,16 @@ fn apply_workspace_patch_blocking_with_journal(
     dry_run: bool,
     workspace_root: Option<String>,
     journal: Option<(PathBuf, WorkspaceChangeContext)>,
+    diagnostic_operation_id: String,
 ) -> Result<WorkspacePatchResult, String> {
+    let mut perf = WorkspacePatchPerf::new(
+        diagnostic_operation_id,
+        operations.len(),
+        dry_run,
+        journal.is_some(),
+    );
     let root = resolve_workspace_root(workspace_root.as_deref())?;
+    perf.phase("resolve_workspace");
     let mut files: HashMap<PathBuf, FileState> = HashMap::new();
     let mut rejected = Vec::new();
 
@@ -120,9 +232,11 @@ fn apply_workspace_patch_blocking_with_journal(
             });
         }
     }
+    perf.phase("stage_operations");
 
     if !rejected.is_empty() {
         let summary = format!("rejected {} operation(s); no files changed", rejected.len());
+        perf.finish("rejected", 0, rejected.len());
         return Ok(WorkspacePatchResult {
             ok: false,
             changed_files: Vec::new(),
@@ -163,6 +277,7 @@ fn apply_workspace_patch_blocking_with_journal(
     } else {
         None
     };
+    perf.phase("journal_prepare");
 
     if !dry_run {
         if let Err(error) = commit_changes(&root, &changed_paths, &files) {
@@ -172,12 +287,14 @@ fn apply_workspace_patch_blocking_with_journal(
             return Err(error);
         }
     }
+    perf.phase("file_commit");
 
     if let Some((directory, summary)) = prepared_change.as_ref() {
         if let Err(error) = mark_change_applied(directory, &summary.id) {
             log::warn!("failed to mark workspace change as applied: {error}");
         }
     }
+    perf.phase("journal_finalize");
 
     let summary = if dry_run {
         format!("dry run: {} file(s) would change", changed_files.len())
@@ -185,6 +302,7 @@ fn apply_workspace_patch_blocking_with_journal(
         format!("applied patch: {} file(s) changed", changed_files.len())
     };
 
+    perf.finish("ok", changed_files.len(), rejected.len());
     Ok(WorkspacePatchResult {
         ok: true,
         changed_files,
@@ -753,6 +871,7 @@ mod tests {
                     tool_call_id: "call".to_string(),
                 },
             )),
+            "patch-change".to_string(),
         )
         .expect("apply journaled patch");
 

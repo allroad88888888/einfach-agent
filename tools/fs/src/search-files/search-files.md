@@ -1,6 +1,6 @@
 # search_files
 
-在 workspace 内搜索文本文件中的字符串。
+在文本文件中搜索字符串。Confirm 模式限制在当前 workspace；Auto 模式也允许搜索 workspace 外路径。
 
 ## 参数
 - `query`（必填）：要查找的非空字符串。
@@ -13,6 +13,6 @@
 - `truncated`：是否因为匹配上限或文件读取上限被截断。
 
 ## 注意
-- 路径限制在 workspace root 内，逃逸路径会失败。
+- Confirm 模式会拒绝逃逸 workspace root 的路径；Auto 模式可使用绝对路径或包含 `..` 的路径，外部匹配以绝对路径返回。
 - 搜索使用普通字符串包含匹配，不支持正则。
 - 二进制或非 UTF-8 文件会被跳过。

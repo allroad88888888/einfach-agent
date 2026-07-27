@@ -11,6 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } fr
 // runToolLoop 也 mock（resumeWithAnswers 复用它续跑，只断言被调用、不真跑 model）。
 vi.mock('./modelRun', () => ({
   runSession: vi.fn(() => Promise.resolve()),
+  persistCurrentRunRecovery: vi.fn(),
+  resumeInterruptedSession: vi.fn(() => Promise.resolve()),
   resumePlanSession: vi.fn(() => Promise.resolve()),
   runToolLoop: vi.fn(() => Promise.resolve()),
 }))
@@ -56,7 +58,13 @@ import type { ConversationItem, RunState, SessionMeta } from '../state/core.type
 import { appendItem } from '../state/sessionWriters'
 import { setPlan } from '../state/planWriters'
 import { getPlan } from '../state/planWriters'
-import { resumePlanSession, runSession, runToolLoop } from './modelRun'
+import {
+  persistCurrentRunRecovery,
+  resumeInterruptedSession,
+  resumePlanSession,
+  runSession,
+  runToolLoop,
+} from './modelRun'
 import { defaultCore, createCoreInstance } from './core/coreInstance'
 import { getExecutionRuntime } from '../execution/runtime'
 import { executionGraphAtom } from '../execution/graph'
@@ -79,6 +87,7 @@ import {
   selectSession,
   removeSession,
   sendMessage,
+  continueInterruptedRun,
   continuePlan,
   stopRun,
   withdrawCurrentTurnToDraft,
@@ -291,6 +300,9 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
       expect.objectContaining({ content: '第一条', targetRunId: 'r' }),
       expect.objectContaining({ content: '第二条', targetRunId: 'r' }),
     ])
+    expect(persistCurrentRunRecovery).toHaveBeenCalledTimes(2)
+    expect(persistCurrentRunRecovery).toHaveBeenNthCalledWith(1, id, defaultCore)
+    expect(persistCurrentRunRecovery).toHaveBeenNthCalledWith(2, id, defaultCore)
     expect(runSession).not.toHaveBeenCalled()
     expect(beginRun).not.toHaveBeenCalled()
   })
@@ -298,7 +310,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
   it('sendMessage：结构化决策暂停时仍 no-op，不能绕过未回填的 tool call', () => {
     const id = newSession()
     const store = getSessionStore(id).store
-    for (const status of ['waiting_user', 'waiting_confirmation', 'waiting_plan_approval'] as const) {
+    for (const status of ['waiting_user', 'waiting_confirmation', 'waiting_plan_approval', 'interrupted'] as const) {
       store.setter(runAtom, { runId: 'r', status })
       sendMessage('hi')
     }
@@ -306,6 +318,50 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(store.getter(queuedUserMessagesAtom)).toEqual([])
     expect(runSession).not.toHaveBeenCalled()
     expect(beginRun).not.toHaveBeenCalled()
+  })
+
+  it('continueInterruptedRun：沿用恢复出的 run 继续普通任务，不追加用户消息', async () => {
+    configureCommands({ deepseekApiKey: 'k' })
+    const id = newSession()
+    const store = getSessionStore(id).store
+    store.setter(itemsAtom, [
+      { id: 'u1', createdAt: 1, item: { role: 'user', content: '继续这个任务' } },
+    ])
+    store.setter(runAtom, {
+      runId: 'run-before-restart',
+      turnId: 'u1',
+      status: 'interrupted',
+    })
+
+    continueInterruptedRun()
+
+    expect(resumeInterruptedSession).toHaveBeenCalledOnce()
+    expect(vi.mocked(resumeInterruptedSession).mock.calls[0][0]).toBe(id)
+    expect(store.getter(itemsAtom)).toHaveLength(1)
+    expect(runSession).not.toHaveBeenCalled()
+    await flush()
+    expect(endRun).toHaveBeenCalledWith(id, expect.anything())
+  })
+
+  it('continuePlan：新版计划 checkpoint 的 interrupted run 转交通用恢复入口', () => {
+    const id = newSession()
+    setPlan(id, {
+      id: 'plan-interrupted', title: '恢复计划', objective: '完成工作', status: 'active', revision: 1,
+      requiresApproval: false, createdAt: 1, updatedAt: 2,
+      stages: [{
+        id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
+        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'in_progress', evidence: [],
+      }],
+    })
+    getSessionStore(id).store.setter(runAtom, {
+      runId: 'run-before-restart',
+      status: 'interrupted',
+    })
+
+    continuePlan()
+
+    expect(resumeInterruptedSession).toHaveBeenCalledOnce()
+    expect(resumePlanSession).not.toHaveBeenCalled()
   })
 
   it('continuePlan：对没有运行中 run 的持久化计划直接续跑，不追加新的用户消息', async () => {
@@ -512,6 +568,30 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(store.getter(composerDraftAtom)).toBe('跑一下 pwd')
     expect(store.getter(withdrawnTurnNoticeAtom)).toMatchObject({ sideEffects: true })
     expect(store.getter(withdrawnTurnNoticeAtom)?.text).toContain('外部副作用')
+  })
+
+  it('withdrawCurrentTurnToDraft：stopped checkpoint 走标准回退并同步截断持久化历史', () => {
+    const id = newSession()
+    const store = getSessionStore(id).store
+    const items: ConversationItem[] = [
+      { id: 'u0', createdAt: 1, item: { role: 'user', content: '上一轮' } },
+      { id: 'a0', createdAt: 2, item: { role: 'assistant', content: '上一轮回答' } },
+      { id: 'u1', createdAt: 10, item: { role: 'user', content: '当前输入' } },
+      { id: 'a1', createdAt: 11, item: { role: 'assistant', content: '半截回答' } },
+    ]
+    store.setter(itemsAtom, items)
+    store.setter(checkpointsAtom, [
+      { turnIndex: 0, label: '上一轮', createdAt: 2, items: items.slice(0, 2) },
+      { turnIndex: 1, label: '[已停止] 当前输入', createdAt: 11, items },
+    ])
+    store.setter(runAtom, { runId: 'r', status: 'stopped' })
+
+    withdrawCurrentTurnToDraft()
+
+    expect(rewindBeforeCheckpoint).toHaveBeenCalledWith(id, 1, defaultCore)
+    expect(store.getter(runAtom)).toBeUndefined()
+    expect(store.getter(composerDraftAtom)).toBe('当前输入')
+    expect(persistTruncate).toHaveBeenCalledWith(id, 0)
   })
 
   it('withdrawCurrentTurnToDraft：非 stopped 状态 no-op', () => {

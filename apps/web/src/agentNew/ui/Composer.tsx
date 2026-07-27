@@ -15,6 +15,7 @@ import {
   withdrawnTurnNoticeAtom,
 } from '@web-agent/core/state/transientAtoms'
 import {
+  continueInterruptedRun,
   sendMessage,
   setApprovalMode,
   stopRun,
@@ -39,6 +40,7 @@ export function Composer({ approvalMode = 'confirm' }: { approvalMode?: 'confirm
   const setNotice = useSetAtom(withdrawnTurnNoticeAtom)
   const running = run?.status === 'running' || run?.status === 'awaiting_tool'
   const stopped = run?.status === 'stopped'
+  const interrupted = run?.status === 'interrupted'
   const runError = run?.status === 'error' ? run.error : undefined
   // waiting_user（等 ask_user 回答）/ waiting_confirmation（等危险工具确认，S4-B）也锁输入：此时应走
   //   卡片的「继续/允许/拒绝」，不能发新消息顶掉暂停中的 run —— 否则暂停中的 tool_call 无 tool result，
@@ -46,7 +48,7 @@ export function Composer({ approvalMode = 'confirm' }: { approvalMode?: 'confirm
   const paused = run?.status === 'waiting_user'
     || run?.status === 'waiting_confirmation'
     || run?.status === 'waiting_plan_approval'
-  const locked = paused
+  const locked = paused || interrupted
 
   const send = () => {
     if (!draft.trim() || locked) return
@@ -127,6 +129,14 @@ export function Composer({ approvalMode = 'confirm' }: { approvalMode?: 'confirm
           </button>
         </div>
       ) : null}
+      {interrupted ? (
+        <div className="agentnew-withdraw-bar">
+          <span>应用重启中断了任务</span>
+          <button type="button" className="agentnew-withdraw-button" onClick={continueInterruptedRun}>
+            继续执行
+          </button>
+        </div>
+      ) : null}
       <div className="agentnew-composer-editor">
         <div className="agentnew-composer-status-line">
           <button
@@ -183,7 +193,7 @@ export function Composer({ approvalMode = 'confirm' }: { approvalMode?: 'confirm
           type="button"
           className="agentnew-composer-send"
           onClick={send}
-          disabled={!draft.trim() || paused}
+          disabled={!draft.trim() || locked}
         >
           {running ? '加入队列' : '发送'}
         </button>

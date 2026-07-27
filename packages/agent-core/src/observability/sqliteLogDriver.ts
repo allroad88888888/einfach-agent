@@ -74,6 +74,22 @@ async function getDb(): Promise<Database> {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_trace_events_trace_id ON trace_events(trace_id)')
       await db.execute('CREATE INDEX IF NOT EXISTS idx_trace_events_session_timestamp ON trace_events(session_id, timestamp)')
       await db.execute('CREATE INDEX IF NOT EXISTS idx_trace_events_run_id ON trace_events(run_id)')
+      // 上次应用进程若在执行中被强退，trace 的正常 endSpan 没机会写回，数据库会永久显示
+      // “running”。初始化发生在本进程第一条新 span 写入之前，因此只会收掉数据库里遗留的旧行。
+      const recoveredAt = Date.now()
+      try {
+        await db.execute(
+          `UPDATE trace_spans
+             SET status = 'cancelled',
+                 ended_at = $1,
+                 duration_ms = MAX(0, $1 - started_at),
+                 error = COALESCE(error, 'Recovered after application restart')
+           WHERE status = 'running'`,
+          [recoveredAt],
+        )
+      } catch {
+        // 恢复旧 trace 是 best-effort；失败不能阻塞新会话运行。
+      }
       return db
     })()
     dbPromise.catch(() => {

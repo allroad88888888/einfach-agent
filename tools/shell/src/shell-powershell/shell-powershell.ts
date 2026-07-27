@@ -66,7 +66,7 @@ export const shellPowershellTool: Tool = {
   runtime: 'server', // 依赖 Tauri 本机 shell（ctx.runShell），web 下不进 manifest（TP3）。
   skill: {
     description: '在本机 PowerShell 中执行非交互命令。',
-    triggers: ['shell', 'powershell', 'pwsh', '命令行', '终端'],
+    triggers: ['shell', 'powershell', 'pwsh', 'terminal', 'exec', 'run command', '命令行', '终端'],
     content: guide,
   },
   inputSchema,

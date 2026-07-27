@@ -64,7 +64,7 @@ export const readFileTool: Tool = {
   execution: { mode: 'parallel', effectKeys: ['workspace:read'] },
   runtime: 'server', // 依赖 Tauri 文件系统（ctx.readWorkspaceFile），web 下不进 manifest（TP3）。
   skill: {
-    description: '读取 workspace 内的文本文件内容。',
+    description: '读取文本文件内容；Auto 模式也可读取 workspace 外的绝对路径或上级路径。',
     triggers: ['read file', '读取文件', '查看文件', '打开文件'],
     content: guide,
   },

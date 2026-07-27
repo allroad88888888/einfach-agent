@@ -54,7 +54,7 @@ export interface ToolRegistry {
  * 建一个 ToolRegistry。内部保存 Map<name, { tool, registrationVersion }>：
  *   · register 幂等——同名后注册直接覆盖，不报错；每次注册都会签发更高版本；
  *   · 删除不会遗忘该名称最后签发的版本，之后同名重注册不会复用旧版本；
- *   · list() 只摘 name/description(=skill.description)/runtime，绝不含 inputSchema/guide（manifest-only）；
+ *   · list() 只摘 name/description/triggers/runtime，绝不含 inputSchema/guide（manifest-only）；
  *   · loadSchema(name) 在 summary 之上补 inputSchema + guide(=skill.content)，未知名 → undefined；
  *   · run(name,args,ctx) 走 §4 生命周期（见方法内注释）。
  */
@@ -95,11 +95,12 @@ export function createToolRegistry(): ToolRegistry {
     },
 
     list() {
-      // manifest-only（TK3）：只暴露 name/description/runtime，绝不含 inputSchema/guide。
-      // description 取自 tool.skill.description（一句话，terse）。
+      // manifest-only（TK3）：只暴露 name/description/triggers/runtime，绝不含 inputSchema/guide。
+      // description/triggers 取自 tool.skill，triggers 供懒加载目录搜索别名。
       return Array.from(registrations.values(), ({ tool }) => ({
         name: tool.name,
         description: tool.skill.description,
+        ...(tool.skill.triggers?.length ? { triggers: [...tool.skill.triggers] } : {}),
         runtime: tool.runtime,
       }))
     },
@@ -113,6 +114,7 @@ export function createToolRegistry(): ToolRegistry {
       return {
         name: tool.name,
         description: tool.skill.description,
+        ...(tool.skill.triggers?.length ? { triggers: [...tool.skill.triggers] } : {}),
         runtime: tool.runtime,
         registrationVersion,
         inputSchema: tool.inputSchema,

@@ -5,7 +5,8 @@
 //   · 列表 UI 只需轻量元信息，不必加载整段 items → CheckpointMeta。
 // 这里只定「形状」；写入/回退 helper 在 checkpointWriters.ts，持久化 driver 在 persistence/*。
 
-import type { ConversationItem } from './core.type'
+import type { ConversationItem, RunState } from './core.type'
+import type { QueuedUserMessage } from './transientAtoms'
 import type { PlanSnapshot } from '../planning/types'
 
 // ===========================================================================
@@ -22,6 +23,7 @@ export interface Checkpoint {
   createdAt: number
   items: ConversationItem[]
   plan?: PlanSnapshot
+  recovery?: RunRecoverySnapshot
 }
 
 // ===========================================================================
@@ -29,5 +31,11 @@ export interface Checkpoint {
 // ===========================================================================
 
 // 简介：Checkpoint 去掉完整会话状态的轻量版（供列表 UI）。
-// 详情：不含 items / plan，供列表懒加载 —— 列表只渲染 turnIndex / label / createdAt。
-export type CheckpointMeta = Omit<Checkpoint, 'items' | 'plan'>
+// 详情：不含 items / plan / recovery，供列表懒加载 —— 列表只渲染 turnIndex / label / createdAt。
+export type CheckpointMeta = Omit<Checkpoint, 'items' | 'plan' | 'recovery'>
+// 活动轮的恢复信息直接跟随工作 checkpoint 落盘。它不是第二套状态源：
+// checkpoint 仍是历史和恢复的唯一持久化单元，runAtom/队列只在 hydrate 时由最新 checkpoint 回填。
+export interface RunRecoverySnapshot {
+  run: RunState
+  queuedUserMessages?: QueuedUserMessage[]
+}

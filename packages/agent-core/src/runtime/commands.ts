@@ -45,7 +45,13 @@ import {
 } from '../state/transientAtoms'
 import type { AskUserAnswerValue } from '../state/transientAtoms'
 import { jumpToCheckpoint, rewindBeforeCheckpoint } from '../state/checkpointWriters'
-import { resumePlanSession, runSession, runToolLoop } from './modelRun'
+import {
+  persistCurrentRunRecovery,
+  resumeInterruptedSession,
+  resumePlanSession,
+  runSession,
+  runToolLoop,
+} from './modelRun'
 // 【实例化 · 第 2/3 期穿线】命令绑定 core（默认 defaultCore）：函数体内用工厂参数 core 显式替换旧的
 //   模块全局（rootStore / getSessionStore / beginRun/abortRun/endRun），并把 core 传进
 //   runSession/runToolLoop/writers 的 core 参数。abort 经 core.abort.*，配置经 core.config。默认
@@ -414,6 +420,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
         content,
         targetRunId: run.runId,
       }, core)
+      persistCurrentRunRecovery(id, core)
       return
     }
 
@@ -422,6 +429,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
       status === 'waiting_user' ||
       status === 'waiting_confirmation'
       || status === 'waiting_plan_approval'
+      || status === 'interrupted'
     )
       return
 
@@ -440,30 +448,11 @@ export function createCommands(core: CoreInstance = defaultCore) {
     )
   }
 
-  // 简介：恢复一个已经持久化、但当前没有运行中 run 的计划。
-  // 详情：计划状态会随 SessionMeta 落盘，runAtom 则是瞬态；应用重启后可能出现 plan 仍为
-  //   active/evaluating、步骤仍为 in_progress，但实际上没有模型请求在执行。该命令只允许这类
-  //   未结束计划进入新一轮，并通过 current_plan_snapshot 要求模型沿用现有计划而非重新创建。
-  function continuePlan(): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
-    if (!id) return
-
-    const status = core.getSessionStore(id).store.getter(runAtom)?.status
-    if (
-      status === 'running'
-      || status === 'awaiting_tool'
-      || status === 'waiting_user'
-      || status === 'waiting_confirmation'
-      || status === 'waiting_plan_approval'
-    ) return
-
+  // 计划 evaluator 不能跨进程存活。无论是旧版 continuePlan，还是新版通用中断恢复，
+  // 都先把 orphaned evaluating 原子回滚为 in_progress，再交给同一模型循环继续。
+  function recoverInterruptedPlanEvaluation(id: string): boolean {
     let plan = getPlan(id)
-    if (!plan || !['approved', 'active', 'evaluating'].includes(plan.status)) return
-    if (!plan.stages.some((stage) => ['pending', 'in_progress', 'evaluating'].includes(stage.status))) return
-
-    // runAtom 不落盘，应用重启后 stage=evaluating 只可能是上次验收中断留下的孤儿状态。
-    // 先按 revision 原子回滚为 in_progress，保留提交摘要和证据并记录 unknown 验收，再让模型
-    // 从 current_plan_snapshot 继续；不追加用户消息，也不重新创建计划。
+    if (!plan) return true
     const orphanedEvaluations = plan.stages.filter((stage) => stage.status === 'evaluating')
     if (orphanedEvaluations.length > 0) {
       const evaluation = new EvaluationRuntime({
@@ -477,10 +466,59 @@ export function createCommands(core: CoreInstance = defaultCore) {
           stage.id,
           '应用或模型请求在验收完成前中断，继续执行时自动恢复',
         )
-        if (!recovered.ok) return
+        if (!recovered.ok) return false
         plan = recovered.plan
       }
     }
+    return true
+  }
+
+  // 简介：继续最新 checkpoint 中因应用重启而中断的普通任务或计划任务。
+  // 详情：沿用持久化 runId/turnId 与同一轮工作快照，不追加用户消息；真正执行由
+  // resumeInterruptedSession 负责安全闭合孤儿 tool_call 后复用原模型循环。
+  function continueInterruptedRun(): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+    const run = core.getSessionStore(id).store.getter(runAtom)
+    if (run?.status !== 'interrupted') return
+    if (!recoverInterruptedPlanEvaluation(id)) return
+
+    const meta = core.rootStore.getter(sessionsAtom)[id]
+    if (!meta) return
+    const apiKey = meta.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
+    const signal = core.abort.beginRun(id)
+    void resumeInterruptedSession(id, {
+      signal,
+      apiKey,
+      fetchImpl: core.config.fetchImpl,
+      core,
+    }).finally(() => core.abort.endRun(id, signal))
+  }
+
+  // 简介：恢复一个已经持久化、但当前没有运行中 run 的旧版计划。
+  // 详情：新版 checkpoint 若恢复出了 interrupted run，则转交通用恢复入口并保持原 runId；
+  // 没有 recovery 的历史 checkpoint 仍走原计划恢复兼容路径。
+  function continuePlan(): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+
+    const status = core.getSessionStore(id).store.getter(runAtom)?.status
+    if (status === 'interrupted') {
+      continueInterruptedRun()
+      return
+    }
+    if (
+      status === 'running'
+      || status === 'awaiting_tool'
+      || status === 'waiting_user'
+      || status === 'waiting_confirmation'
+      || status === 'waiting_plan_approval'
+    ) return
+
+    const plan = getPlan(id)
+    if (!plan || !['approved', 'active', 'evaluating'].includes(plan.status)) return
+    if (!plan.stages.some((stage) => ['pending', 'in_progress', 'evaluating'].includes(stage.status))) return
+    if (!recoverInterruptedPlanEvaluation(id)) return
 
     const meta = core.rootStore.getter(sessionsAtom)[id]
     if (!meta) return
@@ -546,6 +584,19 @@ export function createCommands(core: CoreInstance = defaultCore) {
     const user = items[start].item
     if (user.role !== 'user') return
 
+    // 新版 stopped 轮会先收成 [已停止] checkpoint，保证刷新不丢且消息气泡能显示回退。
+    // 这里若命中该快照，必须走标准 checkpoint 撤回链路，把内存和盘上的目标轮一起截掉；
+    // 否则仅 slice items 会让这轮在刷新后从持久化 checkpoint 中重新出现。
+    const checkpoints = store.getter(checkpointsAtom)
+    for (let index = checkpoints.length - 1; index >= 0; index -= 1) {
+      const checkpoint = checkpoints[index]
+      const checkpointUserIndex = currentTurnStartIndex(checkpoint.items)
+      if (checkpoint.items[checkpointUserIndex]?.id !== items[start].id) continue
+      revertTurnToDraft(checkpoint.turnIndex)
+      return
+    }
+
+    // 兼容修复前遗留、尚未形成 checkpoint 的 stopped 轮。
     core.abort.abortRun(id)
     const turnItems = items.slice(start)
     const sideEffects = currentTurnHasSideEffects(turnItems)
@@ -830,6 +881,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
     setWorkspaceRoot,
     setApprovalMode,
     sendMessage,
+    continueInterruptedRun,
     continuePlan,
     stopRun,
     withdrawCurrentTurnToDraft,
@@ -866,6 +918,7 @@ export const {
   setWorkspaceRoot,
   setApprovalMode,
   sendMessage,
+  continueInterruptedRun,
   continuePlan,
   stopRun,
   withdrawCurrentTurnToDraft,
