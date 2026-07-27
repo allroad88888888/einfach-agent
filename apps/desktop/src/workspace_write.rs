@@ -2,19 +2,31 @@ use crate::workspace_change_journal::{
     discard_prepared_change, journal_dir, mark_change_applied, prepare_change_set, ChangeFileInput,
     WorkspaceChangeContext, WorkspaceChangeSummary,
 };
-use crate::workspace_common::resolve_workspace_root;
+use crate::workspace_common::{
+    atomic_write, compute_change_summary, resolve_workspace_root, FileChangeSummary,
+};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::{
+    collections::HashMap,
     fs,
     io::{Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf, MAIN_SEPARATOR},
+    sync::{Arc, Mutex, OnceLock},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
-const DEFAULT_MAX_BYTES: usize = 200 * 1024;
-const MAX_BYTES: usize = 1024 * 1024;
+/// Hard ceiling on a single write. `max_bytes` is no longer part of the model-facing
+/// schema, so an absent value means "the maximum", not a smaller default — capping it
+/// lower here would silently reject writes the tool layer already accepted.
+const MAX_BYTES: usize = 8 * 1024 * 1024;
+/// Rollback stores full before/after text in the journal, so reversibility has a much
+/// tighter budget than the write itself. Past this a write still succeeds, but reports
+/// `reversible: false` instead of failing.
+const REVERSIBLE_MAX_BYTES: usize = 1024 * 1024;
+/// Path locks are cached per target; sweep the cache once it grows past this.
+const PATH_LOCK_SWEEP_THRESHOLD: usize = 1024;
 const ARCHIVE_LOCK_WAIT: Duration = Duration::from_secs(10);
 const ARCHIVE_LOCK_STALE: Duration = Duration::from_secs(30);
 const ARCHIVE_LOCK_POLL: Duration = Duration::from_millis(20);
@@ -101,13 +113,52 @@ pub struct WorkspaceWriteResult {
     appended: bool,
     error: Option<String>,
     change_set: Option<WorkspaceChangeSummary>,
+    /// What actually changed on disk, so the caller does not have to re-read the
+    /// file to confirm the edit. Absent when the previous content was unreadable.
+    change_summary: Option<FileChangeSummary>,
+    /// Whether this write produced a rollback entry. Binary content and files past
+    /// the reversible budget still get written — they just cannot be reverted, and
+    /// say so rather than failing outright.
+    reversible: bool,
+    /// Why the write is not reversible. Only set when `reversible` is false.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reversible_reason: Option<String>,
+    /// True when `dry_run` was requested: nothing was written, and the other fields
+    /// describe what a real write would have done.
+    dry_run: bool,
+    would_change: bool,
 }
+
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum WriteMode {
     Create,
     Overwrite,
     Append,
+    Upsert,
+}
+
+/// Previous on-disk content, read once inside the path lock and then shared by
+/// the optimistic guard, the rollback journal, and the change summary.
+enum BeforeContent {
+    Missing,
+    Text(String),
+    /// Present but not representable as reversible UTF-8 text; carries the reason
+    /// so guard/journal callers can fail with the same message as before.
+    Unsupported(String),
+}
+
+impl BeforeContent {
+    fn existed(&self) -> bool {
+        !matches!(self, BeforeContent::Missing)
+    }
+
+    fn text(&self) -> Option<&str> {
+        match self {
+            BeforeContent::Text(value) => Some(value.as_str()),
+            _ => None,
+        }
+    }
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -122,6 +173,9 @@ pub async fn write_workspace_file(
     max_bytes: Option<usize>,
     exclusive_path_lock: Option<bool>,
     workspace_root: Option<String>,
+    encoding: Option<String>,
+    executable: Option<bool>,
+    dry_run: Option<bool>,
     change_context: Option<WorkspaceChangeContext>,
     diagnostic_operation_id: Option<String>,
 ) -> Result<WorkspaceWriteResult, String> {
@@ -161,6 +215,9 @@ pub async fn write_workspace_file(
             max_bytes,
             exclusive_path_lock,
             workspace_root,
+            encoding,
+            executable,
+            dry_run,
             journal,
             operation_id,
         )
@@ -170,6 +227,7 @@ pub async fn write_workspace_file(
 }
 
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)]
 fn write_workspace_file_blocking(
     path: String,
     content: String,
@@ -191,6 +249,39 @@ fn write_workspace_file_blocking(
         exclusive_path_lock,
         workspace_root_arg,
         None,
+        None,
+        None,
+        None,
+        "workspace-write-test".to_string(),
+    )
+}
+
+/// Test entry point for the options that are not part of the legacy positional helper.
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+fn write_workspace_file_blocking_with_options(
+    path: String,
+    content: String,
+    mode: Option<String>,
+    workspace_root_arg: Option<String>,
+    encoding: Option<String>,
+    executable: Option<bool>,
+    dry_run: Option<bool>,
+) -> Result<WorkspaceWriteResult, String> {
+    write_workspace_file_blocking_with_journal(
+        path,
+        content,
+        mode,
+        None,
+        None,
+        None,
+        None,
+        None,
+        workspace_root_arg,
+        encoding,
+        executable,
+        dry_run,
+        None,
         "workspace-write-test".to_string(),
     )
 }
@@ -206,9 +297,13 @@ fn write_workspace_file_blocking_with_journal(
     max_bytes: Option<usize>,
     exclusive_path_lock: Option<bool>,
     workspace_root_arg: Option<String>,
+    encoding: Option<String>,
+    executable: Option<bool>,
+    dry_run: Option<bool>,
     journal: Option<(PathBuf, WorkspaceChangeContext)>,
     diagnostic_operation_id: String,
 ) -> Result<WorkspaceWriteResult, String> {
+    let dry_run = dry_run.unwrap_or(false);
     let mut perf = WorkspaceWritePerf::new(
         diagnostic_operation_id,
         content.len(),
@@ -221,12 +316,17 @@ fn write_workspace_file_blocking_with_journal(
             Ok(mode) => mode,
             Err(err) => return Ok(error_result(&path, err)),
         };
-        if mode != WriteMode::Overwrite
-            && (expected_old_content.is_some() || expected_content_hash.is_some())
-        {
+        let encoding = match parse_encoding(encoding.as_deref()) {
+            Ok(encoding) => encoding,
+            Err(err) => return Ok(error_result(&path, err)),
+        };
+        let guard_requested = expected_old_content.is_some() || expected_content_hash.is_some();
+        // Append accepts guards too: without one, a retried chunked append cannot tell
+        // "my write was lost" from "my write landed", so it can only duplicate content.
+        if mode == WriteMode::Create && guard_requested {
             return Ok(error_result(
                 &path,
-                "optimistic guards are only valid with mode \"overwrite\"",
+                "optimistic guards are not valid with mode \"create\"; the file must not exist",
             ));
         }
         if expected_old_content.is_some() && expected_content_hash.is_some() {
@@ -235,12 +335,28 @@ fn write_workspace_file_blocking_with_journal(
                 "pass either expectedOldContent or expectedContentHash, not both",
             ));
         }
-        if content.contains('\0') {
-            return Ok(error_result(&path, "binary content is not supported"));
-        }
+
+        // One byte view for every mode; text-ness decides diffing and reversibility.
+        let payload = match encoding {
+            ContentEncoding::Utf8 => content.clone().into_bytes(),
+            ContentEncoding::Base64 => match decode_base64(&content) {
+                Ok(bytes) => bytes,
+                Err(err) => return Ok(error_result(&path, err)),
+            },
+        };
+        let payload_text = match encoding {
+            ContentEncoding::Utf8 => Some(content.clone()),
+            // Base64 is how binary arrives, but it is also a legitimate way to send text.
+            // Recovering the text keeps diffs and rollback working for that case.
+            ContentEncoding::Base64 => {
+                String::from_utf8(payload.clone())
+                    .ok()
+                    .filter(|text| !text.contains('\0'))
+            }
+        };
 
         let max_bytes = normalize_max_bytes(max_bytes);
-        let bytes = content.as_bytes().len();
+        let bytes = payload.len();
         if bytes > max_bytes {
             return Ok(error_result(
                 &path,
@@ -263,7 +379,9 @@ fn write_workspace_file_blocking_with_journal(
 
         if let Some(parent) = target_path.parent() {
             if !parent.exists() {
-                if create_dirs.unwrap_or(false) {
+                // Defaults to true, matching apply_patch. A missing parent directory
+                // was the single most common first-write failure.
+                if create_dirs.unwrap_or(true) {
                     if let Err(err) = fs::create_dir_all(parent) {
                         return Ok(error_result(
                             &display_path,
@@ -297,60 +415,167 @@ fn write_workspace_file_blocking_with_journal(
         }
         perf.phase("archive_compaction");
 
-        let existed = target_path.exists();
-        let prepared_change = if let Some((directory, context)) = journal.as_ref() {
-            let before = match read_reversible_text(&target_path) {
-                Ok(content) => content,
-                Err(error) => return Ok(error_result(&display_path, error)),
-            };
-            let after = match mode {
-                WriteMode::Create | WriteMode::Overwrite => content.clone(),
-                WriteMode::Append => {
-                    let mut value = before.clone().unwrap_or_default();
-                    value.push_str(&content);
-                    value
-                }
-            };
-            if after.len() > MAX_BYTES {
-                return Ok(error_result(
-                    &display_path,
-                    format!("resulting file exceeds reversible {MAX_BYTES} byte limit"),
-                ));
-            }
-            match prepare_change_set(
-                directory,
-                context.clone(),
-                &workspace_root,
-                vec![ChangeFileInput {
-                    path: display_path.clone(),
-                    before,
-                    after: Some(after),
-                }],
-            ) {
-                Ok(summary) => Some((directory.clone(), summary)),
-                Err(error) => return Ok(error_result(&display_path, error)),
-            }
+        // Everything from here to the write is one critical section. The previous
+        // content is read exactly once and shared by the optimistic guard, the
+        // rollback journal and the change summary, so the guard can no longer pass
+        // against content that a concurrent write in this process already replaced.
+        let process_lock = path_lock(&target_path);
+        let _process_guard = process_lock.lock().unwrap_or_else(|err| err.into_inner());
+        perf.phase("path_lock");
+
+        // Append never needs the old bytes for its own sake; only the journal does.
+        let needs_before = journal.is_some()
+            || guard_requested
+            || matches!(mode, WriteMode::Overwrite | WriteMode::Upsert);
+        let before = if needs_before {
+            read_before_content(&target_path)
         } else {
-            None
+            BeforeContent::Missing
+        };
+        let existed = if needs_before {
+            before.existed()
+        } else {
+            target_path.exists()
+        };
+        perf.phase("read_before");
+
+        // `upsert` collapses the read-probe round trip: it creates when absent and
+        // overwrites when present, so callers do not have to know which it is.
+        let effective_mode = match mode {
+            WriteMode::Upsert if existed => WriteMode::Overwrite,
+            WriteMode::Upsert => WriteMode::Create,
+            other => other,
+        };
+
+        if mode == WriteMode::Overwrite && !existed {
+            return Ok(error_result(
+                &display_path,
+                "cannot overwrite a file that does not exist; use mode \"upsert\" to create it when absent",
+            ));
+        }
+        if effective_mode == WriteMode::Overwrite || (effective_mode == WriteMode::Append && existed)
+        {
+            if let Err(error) = verify_expected_content(
+                &before,
+                expected_old_content.as_deref(),
+                expected_content_hash.as_deref(),
+            ) {
+                return Ok(error_result(&display_path, error));
+            }
+        } else if guard_requested {
+            // Reached only via `upsert` on a missing file: the caller asserted a
+            // specific previous state, so creating a fresh file would silently
+            // discard that intent.
+            return Ok(error_result(
+                &display_path,
+                "optimistic guard was provided but the file does not exist; drop the guard to create it",
+            ));
+        }
+        perf.phase("verify_guard");
+
+        // The full post-write content, when it is representable as text. `None` means
+        // binary (or an unreadable previous file), which is exactly the condition that
+        // makes a write non-reversible and undiffable.
+        let after_text = match effective_mode {
+            WriteMode::Create | WriteMode::Overwrite => payload_text.clone(),
+            WriteMode::Append => match (&before, &payload_text) {
+                (_, None) => None,
+                (BeforeContent::Missing, Some(appended)) => Some(appended.clone()),
+                (BeforeContent::Text(existing), Some(appended)) => {
+                    Some(format!("{existing}{appended}"))
+                }
+                (BeforeContent::Unsupported(_), _) => None,
+            },
+            WriteMode::Upsert => unreachable!("upsert is resolved into create/overwrite above"),
+        };
+
+        // Reversibility is a property of the content, not a precondition for writing.
+        // Binary artifacts and oversized files used to be rejected outright; now they
+        // are written and reported as non-reversible, so the capability exists and the
+        // limitation is visible instead of silent.
+        let reversible_reason: Option<String> = match (&before, &after_text) {
+            (BeforeContent::Unsupported(reason), _) => Some(reason.clone()),
+            (_, None) => Some("binary content is not reversible".to_string()),
+            (_, Some(after)) if after.len() > REVERSIBLE_MAX_BYTES => Some(format!(
+                "resulting file exceeds the reversible {REVERSIBLE_MAX_BYTES} byte limit"
+            )),
+            _ => None,
+        };
+
+        let prepared_change = match (journal.as_ref(), &reversible_reason, &after_text) {
+            (Some((directory, context)), None, Some(after)) => {
+                let journal_before = before.text().map(str::to_string);
+                match prepare_change_set(
+                    directory,
+                    context.clone(),
+                    &workspace_root,
+                    vec![ChangeFileInput {
+                        path: display_path.clone(),
+                        before: journal_before,
+                        after: Some(after.clone()),
+                    }],
+                ) {
+                    Ok(summary) => Some((directory.clone(), summary)),
+                    Err(error) => return Ok(error_result(&display_path, error)),
+                }
+            }
+            _ => None,
         };
         perf.phase("journal_prepare");
 
-        let write_result = match mode {
-            WriteMode::Create => write_create(&target_path, content.as_bytes()),
-            WriteMode::Overwrite => {
-                if !existed {
-                    Err("cannot overwrite a file that does not exist".to_string())
-                } else {
-                    verify_expected_content(
-                        &target_path,
-                        expected_old_content.as_deref(),
-                        expected_content_hash.as_deref(),
-                    )
-                    .and_then(|_| fs::write(&target_path, content.as_bytes()).map_err(to_io_error))
-                }
+        let change_summary = match (&before, &after_text) {
+            (_, None) => None,
+            (BeforeContent::Text(previous), Some(after)) => {
+                Some(compute_change_summary(Some(previous), after))
             }
-            WriteMode::Append => write_append(&target_path, content.as_bytes()),
+            (BeforeContent::Missing, Some(after)) if !existed => {
+                Some(compute_change_summary(None, after))
+            }
+            _ => None,
         };
+
+        // dry_run stops here: every check that could reject the write has already run,
+        // so the caller learns whether it would be accepted and what it would change.
+        if dry_run {
+            if let Some((directory, summary)) = prepared_change.as_ref() {
+                discard_prepared_change(directory, &summary.id);
+            }
+            let would_change = change_summary
+                .as_ref()
+                .map(|summary| summary.lines_added > 0 || summary.lines_removed > 0)
+                .unwrap_or(true);
+            perf.phase("dry_run");
+            return Ok(WorkspaceWriteResult {
+                ok: true,
+                path: display_path,
+                bytes_written: 0,
+                created: !existed,
+                overwritten: effective_mode == WriteMode::Overwrite,
+                appended: effective_mode == WriteMode::Append,
+                error: None,
+                change_set: None,
+                change_summary,
+                reversible: reversible_reason.is_none(),
+                reversible_reason,
+                dry_run: true,
+                would_change,
+            });
+        }
+
+        let write_result = match effective_mode {
+            // `create` keeps O_EXCL: refusing an existing file is the whole point of
+            // the mode, and a rename would defeat it.
+            WriteMode::Create => write_create(&target_path, &payload),
+            // Overwrite goes through a temp file + rename so a crash mid-write can
+            // never leave the target truncated or half-written.
+            WriteMode::Overwrite => atomic_write(&target_path, &payload),
+            WriteMode::Append => write_append(&target_path, &payload),
+            WriteMode::Upsert => unreachable!("upsert is resolved into create/overwrite above"),
+        }
+        .and_then(|()| match executable {
+            Some(executable) => apply_executable_bit(&target_path, executable),
+            None => Ok(()),
+        });
         perf.phase("file_write");
 
         let result = match write_result {
@@ -365,10 +590,15 @@ fn write_workspace_file_blocking_with_journal(
                     path: display_path,
                     bytes_written: bytes,
                     created: !existed,
-                    overwritten: mode == WriteMode::Overwrite,
-                    appended: mode == WriteMode::Append,
+                    overwritten: effective_mode == WriteMode::Overwrite,
+                    appended: effective_mode == WriteMode::Append,
                     error: None,
                     change_set: prepared_change.map(|(_, summary)| summary),
+                    change_summary,
+                    reversible: reversible_reason.is_none(),
+                    reversible_reason,
+                    dry_run: false,
+                    would_change: true,
                 })
             }
             Err(err) => {
@@ -385,29 +615,55 @@ fn write_workspace_file_blocking_with_journal(
     result
 }
 
-fn read_reversible_text(path: &Path) -> Result<Option<String>, String> {
-    if !path.exists() {
-        return Ok(None);
-    }
-    let metadata = fs::metadata(path)
-        .map_err(|error| format!("failed to inspect file for rollback: {error}"))?;
+/// Read the current content once for the guard, the journal and the diff.
+///
+/// Unreadable-but-present files are reported as `Unsupported` rather than as an
+/// error: only callers that actually need the old bytes (an optimistic guard, or
+/// a journaled write that must stay reversible) reject them, so a plain overwrite
+/// of a large or binary file keeps working and merely loses its change summary.
+fn read_before_content(path: &Path) -> BeforeContent {
+    let Ok(metadata) = fs::metadata(path) else {
+        return BeforeContent::Missing;
+    };
     if !metadata.is_file() {
-        return Err("rollback only supports regular files".to_string());
+        return BeforeContent::Unsupported("rollback only supports regular files".to_string());
     }
     if metadata.len() > MAX_BYTES as u64 {
-        return Err(format!(
+        return BeforeContent::Unsupported(format!(
             "existing file exceeds reversible {MAX_BYTES} byte limit"
         ));
     }
-    let bytes =
-        fs::read(path).map_err(|error| format!("failed to read file for rollback: {error}"))?;
+    let bytes = match fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            return BeforeContent::Unsupported(format!("failed to read file for rollback: {error}"))
+        }
+    };
     if bytes.contains(&0) {
-        return Err("binary files are not reversible".to_string());
+        return BeforeContent::Unsupported("binary files are not reversible".to_string());
     }
-    String::from_utf8(bytes)
-        .map(Some)
-        .map_err(|_| "non-UTF-8 files are not reversible".to_string())
+    match String::from_utf8(bytes) {
+        Ok(text) => BeforeContent::Text(text),
+        Err(_) => BeforeContent::Unsupported("non-UTF-8 files are not reversible".to_string()),
+    }
 }
+
+/// Serializes read-verify-write for a single target within this process, so the
+/// optimistic guard cannot pass against content another in-flight write already
+/// replaced. Cross-process races (an external editor) remain outside its reach.
+fn path_lock(path: &Path) -> Arc<Mutex<()>> {
+    static LOCKS: OnceLock<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>> = OnceLock::new();
+    let locks = LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut map = locks.lock().unwrap_or_else(|err| err.into_inner());
+    if map.len() > PATH_LOCK_SWEEP_THRESHOLD {
+        map.retain(|_, lock| Arc::strong_count(lock) > 1);
+    }
+    Arc::clone(
+        map.entry(path.to_path_buf())
+            .or_insert_with(|| Arc::new(Mutex::new(()))),
+    )
+}
+
 
 struct ArchivePathLock {
     path: PathBuf,
@@ -705,8 +961,11 @@ fn write_append(path: &Path, content: &[u8]) -> Result<(), String> {
         .map_err(to_io_error)
 }
 
+/// Verifies the optimistic guard against content already read inside the path
+/// lock, rather than re-reading the file, so no window remains between the check
+/// and the write it protects.
 fn verify_expected_content(
-    path: &Path,
+    before: &BeforeContent,
     expected: Option<&str>,
     expected_hash: Option<&str>,
 ) -> Result<(), String> {
@@ -717,8 +976,19 @@ fn verify_expected_content(
         return Ok(());
     }
 
-    let current = fs::read_to_string(path)
-        .map_err(|err| format!("failed to read existing file for optimistic guard: {err}"))?;
+    let current = match before {
+        BeforeContent::Text(value) => value.as_str(),
+        BeforeContent::Missing => {
+            return Err(
+                "failed to read existing file for optimistic guard: file does not exist".to_string(),
+            )
+        }
+        BeforeContent::Unsupported(reason) => {
+            return Err(format!(
+                "failed to read existing file for optimistic guard: {reason}"
+            ))
+        }
+    };
     if let Some(expected) = expected {
         if current != expected {
             return Err(format!(
@@ -792,8 +1062,9 @@ fn parse_mode(mode: Option<&str>) -> Result<WriteMode, String> {
         "create" => Ok(WriteMode::Create),
         "overwrite" => Ok(WriteMode::Overwrite),
         "append" => Ok(WriteMode::Append),
+        "upsert" => Ok(WriteMode::Upsert),
         other => Err(format!(
-            "invalid mode `{other}`; expected `create`, `overwrite`, or `append`"
+            "invalid mode `{other}`; expected `create`, `overwrite`, `upsert`, or `append`"
         )),
     }
 }
@@ -801,8 +1072,107 @@ fn parse_mode(mode: Option<&str>) -> Result<WriteMode, String> {
 fn normalize_max_bytes(max_bytes: Option<usize>) -> usize {
     match max_bytes {
         Some(value) if value > 0 => value.min(MAX_BYTES),
-        _ => DEFAULT_MAX_BYTES,
+        _ => MAX_BYTES,
     }
+}
+
+/// How `content` is carried over IPC. Base64 exists so the tool can produce binary
+/// artifacts at all; JSON strings cannot hold arbitrary bytes.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ContentEncoding {
+    Utf8,
+    Base64,
+}
+
+fn parse_encoding(encoding: Option<&str>) -> Result<ContentEncoding, String> {
+    match encoding.unwrap_or("utf8") {
+        "utf8" | "utf-8" => Ok(ContentEncoding::Utf8),
+        "base64" => Ok(ContentEncoding::Base64),
+        other => Err(format!(
+            "invalid encoding `{other}`; expected `utf8` or `base64`"
+        )),
+    }
+}
+
+/// Minimal RFC 4648 base64 decoder. Vendored rather than pulled in as a dependency:
+/// this is the only place the app needs base64, and the whole contract is 30 lines.
+fn decode_base64(input: &str) -> Result<Vec<u8>, String> {
+    fn value(byte: u8) -> Option<u32> {
+        match byte {
+            b'A'..=b'Z' => Some((byte - b'A') as u32),
+            b'a'..=b'z' => Some((byte - b'a') as u32 + 26),
+            b'0'..=b'9' => Some((byte - b'0') as u32 + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    }
+
+    // Whitespace is legal padding in transport; anything else must be real base64.
+    let symbols: Vec<u8> = input
+        .bytes()
+        .filter(|byte| !byte.is_ascii_whitespace())
+        .collect();
+    let body = symbols.strip_suffix(b"==").unwrap_or_else(|| {
+        symbols
+            .strip_suffix(b"=")
+            .unwrap_or(symbols.as_slice())
+    });
+    let padding = symbols.len() - body.len();
+    if padding > 2 || (symbols.len() % 4 != 0 && padding > 0) {
+        return Err("content is not valid base64: malformed padding".to_string());
+    }
+
+    let mut output = Vec::with_capacity(body.len() / 4 * 3 + 3);
+    let mut accumulator: u32 = 0;
+    let mut bits: u32 = 0;
+    for byte in body {
+        let Some(decoded) = value(*byte) else {
+            return Err(format!(
+                "content is not valid base64: unexpected character `{}`",
+                char::from(*byte).escape_default()
+            ));
+        };
+        accumulator = (accumulator << 6) | decoded;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            output.push((accumulator >> bits) as u8);
+        }
+    }
+    // Leftover bits must be zero padding; anything else means truncated input.
+    if bits >= 6 || (accumulator & ((1 << bits) - 1)) != 0 {
+        return Err("content is not valid base64: truncated input".to_string());
+    }
+    Ok(output)
+}
+
+/// Apply an explicit executable request after the content is in place. A no-op on
+/// platforms without a POSIX mode.
+#[cfg(unix)]
+fn apply_executable_bit(path: &Path, executable: bool) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let metadata =
+        fs::metadata(path).map_err(|err| format!("failed to inspect file mode: {err}"))?;
+    let mut permissions = metadata.permissions();
+    let mode = permissions.mode();
+    // Mirror the read bits: a file readable by group/other becomes executable by them too.
+    let updated = if executable {
+        mode | ((mode & 0o444) >> 2)
+    } else {
+        mode & !0o111
+    };
+    if updated == mode {
+        return Ok(());
+    }
+    permissions.set_mode(updated);
+    fs::set_permissions(path, permissions)
+        .map_err(|err| format!("failed to update file mode: {err}"))
+}
+
+#[cfg(not(unix))]
+fn apply_executable_bit(_path: &Path, _executable: bool) -> Result<(), String> {
+    Ok(())
 }
 
 fn resolve_workspace_path(workspace_root: &Path, raw_path: &str) -> Result<PathBuf, String> {
@@ -909,6 +1279,11 @@ fn error_result(path: &str, error: impl Into<String>) -> WorkspaceWriteResult {
         appended: false,
         error: Some(error.into()),
         change_set: None,
+        change_summary: None,
+        reversible: false,
+        reversible_reason: None,
+        dry_run: false,
+        would_change: false,
     }
 }
 
@@ -1004,7 +1379,7 @@ mod tests {
         let target = ws.join("existing.txt");
         fs::write(&target, "line\n\n").expect("seed existing file");
 
-        let error = verify_expected_content(&target, Some("line\n"), None)
+        let error = verify_expected_content(&read_before_content(&target), Some("line\n"), None)
             .expect_err("different final newline count must reject");
 
         assert!(error.contains("expected_bytes=5"));
@@ -1023,13 +1398,550 @@ mod tests {
         fs::write(&target, "old\n\n").expect("seed existing file");
         let current_hash = content_sha256(b"old\n\n");
 
-        verify_expected_content(&target, None, Some(&current_hash))
+        verify_expected_content(&read_before_content(&target), None, Some(&current_hash))
             .expect("matching content hash should pass");
         fs::write(&target, "changed\n").expect("modify existing file");
-        let error = verify_expected_content(&target, None, Some(&current_hash))
+        let error = verify_expected_content(&read_before_content(&target), None, Some(&current_hash))
             .expect_err("stale content hash must reject");
 
         assert!(error.contains("file changed after read_file"));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn upsert_creates_when_absent_and_overwrites_when_present() {
+        let (base, ws) = unique_workspace();
+
+        let created = write_workspace_file_blocking(
+            "notes/entry.txt".to_string(),
+            "first".to_string(),
+            Some("upsert".to_string()),
+            None,
+            None, // create_dirs 默认应为 true
+            None,
+            None,
+            root_arg(&ws),
+        )
+        .expect("upsert create");
+        assert!(created.ok, "upsert 应能新建，错误: {:?}", created.error);
+        assert!(created.created, "缺失文件时 upsert 记为新建");
+        assert!(!created.overwritten);
+
+        let replaced = write_workspace_file_blocking(
+            "notes/entry.txt".to_string(),
+            "second".to_string(),
+            Some("upsert".to_string()),
+            None,
+            None,
+            None,
+            None,
+            root_arg(&ws),
+        )
+        .expect("upsert overwrite");
+        assert!(replaced.ok, "错误: {:?}", replaced.error);
+        assert!(!replaced.created, "已存在文件时 upsert 记为覆盖");
+        assert!(replaced.overwritten);
+        assert_eq!(
+            fs::read_to_string(ws.join("notes/entry.txt")).expect("read back"),
+            "second"
+        );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn overwrite_on_missing_file_points_at_upsert() {
+        let (base, ws) = unique_workspace();
+        let result = write_workspace_file_blocking(
+            "absent.txt".to_string(),
+            "x".to_string(),
+            Some("overwrite".to_string()),
+            None,
+            None,
+            None,
+            None,
+            root_arg(&ws),
+        )
+        .expect("structured rejection");
+
+        assert!(!result.ok);
+        assert!(
+            result.error.as_deref().unwrap_or_default().contains("upsert"),
+            "错误应指向 upsert，实际: {:?}",
+            result.error
+        );
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn upsert_with_guard_refuses_to_create_a_missing_file() {
+        // guard 表达的是"我基于某个已知版本改"。文件不存在时静默新建会丢掉这个前提。
+        let (base, ws) = unique_workspace();
+        let result = write_workspace_file_blocking(
+            "absent.txt".to_string(),
+            "x".to_string(),
+            Some("upsert".to_string()),
+            Some("expected old".to_string()),
+            None,
+            None,
+            None,
+            root_arg(&ws),
+        )
+        .expect("structured rejection");
+
+        assert!(!result.ok);
+        assert!(result
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("does not exist"));
+        assert!(!ws.join("absent.txt").exists(), "被拒时不应留下文件");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn overwrite_preserves_the_executable_bit() {
+        // 原子写是 temp+rename，rename 会带走 temp 的 umask 权限；不显式回填就会把
+        // 脚本的可执行位悄悄抹掉。
+        use std::os::unix::fs::PermissionsExt;
+        let (base, ws) = unique_workspace();
+        let target = ws.join("run.sh");
+        fs::write(&target, "#!/bin/sh\necho old\n").expect("seed script");
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o755)).expect("chmod");
+
+        let result = write_workspace_file_blocking(
+            "run.sh".to_string(),
+            "#!/bin/sh\necho new\n".to_string(),
+            Some("overwrite".to_string()),
+            None,
+            None,
+            None,
+            None,
+            root_arg(&ws),
+        )
+        .expect("overwrite script");
+        assert!(result.ok, "错误: {:?}", result.error);
+
+        let mode = fs::metadata(&target).expect("stat").permissions().mode();
+        assert_eq!(mode & 0o777, 0o755, "覆盖后应保留可执行位");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn atomic_write_leaves_no_temporary_files_behind() {
+        let (base, ws) = unique_workspace();
+        let target = ws.join("data.txt");
+        fs::write(&target, "old\n").expect("seed");
+
+        write_workspace_file_blocking(
+            "data.txt".to_string(),
+            "new\n".to_string(),
+            Some("overwrite".to_string()),
+            None,
+            None,
+            None,
+            None,
+            root_arg(&ws),
+        )
+        .expect("overwrite")
+        .ok
+        .then_some(())
+        .expect("overwrite should succeed");
+
+        let leftovers: Vec<_> = fs::read_dir(&ws)
+            .expect("read workspace")
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .filter(|name| name.ends_with(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "不应残留临时文件: {leftovers:?}");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn base64_encoding_writes_real_binary_bytes() {
+        // 二进制产出以前是硬拒（content 含 \0 直接失败），shell 侧又被写保护挡死，
+        // 等于 agent 完全无法产出二进制文件。
+        let (base, ws) = unique_workspace();
+        let png_header = [0x89u8, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0xFF];
+
+        let result = write_workspace_file_blocking_with_options(
+            "assets/pixel.png".to_string(),
+            "iVBORw0KGgoA/w==".to_string(),
+            Some("create".to_string()),
+            root_arg(&ws),
+            Some("base64".to_string()),
+            None,
+            None,
+        )
+        .expect("binary write");
+
+        assert!(result.ok, "错误: {:?}", result.error);
+        assert_eq!(
+            fs::read(ws.join("assets/pixel.png")).expect("read back"),
+            png_header
+        );
+        // 二进制可以写，但 journal 只能存文本，所以必须明说它不可回滚。
+        assert!(!result.reversible);
+        assert!(result
+            .reversible_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("binary"));
+        assert!(result.change_summary.is_none(), "二进制没有行级 diff");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn base64_carrying_text_stays_diffable_and_reversible() {
+        let (base, ws) = unique_workspace();
+        let result = write_workspace_file_blocking_with_options(
+            "note.txt".to_string(),
+            "aGVsbG8K".to_string(), // "hello\n"
+            Some("create".to_string()),
+            root_arg(&ws),
+            Some("base64".to_string()),
+            None,
+            None,
+        )
+        .expect("base64 text write");
+
+        assert!(result.ok);
+        assert_eq!(
+            fs::read_to_string(ws.join("note.txt")).expect("read back"),
+            "hello\n"
+        );
+        assert!(result.reversible, "base64 承载的文本仍然可回滚");
+        assert_eq!(
+            result.change_summary.expect("summary").lines_added,
+            1,
+            "base64 承载的文本仍然有 diff"
+        );
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn malformed_base64_is_rejected_before_touching_disk() {
+        let (base, ws) = unique_workspace();
+        // "a" 单字符只剩 6 个有效位，凑不出一个字节；"==" 是纯 padding；"!" 非法字符。
+        for payload in ["not base64!", "a", "=="] {
+            let result = write_workspace_file_blocking_with_options(
+                "bad.bin".to_string(),
+                payload.to_string(),
+                Some("create".to_string()),
+                root_arg(&ws),
+                Some("base64".to_string()),
+                None,
+                None,
+            )
+            .expect("structured rejection");
+            assert!(!result.ok, "`{payload}` 应被拒");
+            assert!(result
+                .error
+                .as_deref()
+                .unwrap_or_default()
+                .contains("base64"));
+        }
+        assert!(!ws.join("bad.bin").exists(), "被拒时不应留下文件");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn base64_decoder_matches_rfc4648_vectors() {
+        assert_eq!(decode_base64("").expect("empty"), b"");
+        assert_eq!(decode_base64("Zg==").expect("f"), b"f");
+        assert_eq!(decode_base64("Zm8=").expect("fo"), b"fo");
+        assert_eq!(decode_base64("Zm9v").expect("foo"), b"foo");
+        assert_eq!(decode_base64("Zm9vYmFy").expect("foobar"), b"foobar");
+        // 传输中换行是合法的，内容里的换行不影响解码结果。
+        assert_eq!(decode_base64("Zm9v\nYmFy").expect("wrapped"), b"foobar");
+        // 省略 padding 是 RFC 4648 允许的，模型生成的 base64 未必带 `=`。
+        assert_eq!(decode_base64("Zm8").expect("unpadded fo"), b"fo");
+        assert_eq!(decode_base64("Zg").expect("unpadded f"), b"f");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn executable_flag_sets_and_clears_the_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let (base, ws) = unique_workspace();
+
+        let created = write_workspace_file_blocking_with_options(
+            "bin/run.sh".to_string(),
+            "#!/bin/sh\n".to_string(),
+            Some("create".to_string()),
+            root_arg(&ws),
+            None,
+            Some(true),
+            None,
+        )
+        .expect("create executable");
+        assert!(created.ok, "错误: {:?}", created.error);
+        let mode = fs::metadata(ws.join("bin/run.sh"))
+            .expect("stat")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o100, 0o100, "owner 执行位应被置上");
+
+        let cleared = write_workspace_file_blocking_with_options(
+            "bin/run.sh".to_string(),
+            "#!/bin/sh\necho hi\n".to_string(),
+            Some("overwrite".to_string()),
+            root_arg(&ws),
+            None,
+            Some(false),
+            None,
+        )
+        .expect("clear executable");
+        assert!(cleared.ok);
+        let mode = fs::metadata(ws.join("bin/run.sh"))
+            .expect("stat")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o111, 0, "显式 false 应清掉执行位");
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn dry_run_reports_the_change_without_writing() {
+        let (base, ws) = unique_workspace();
+        fs::write(ws.join("code.txt"), "keep\nold\n").expect("seed");
+
+        let result = write_workspace_file_blocking_with_options(
+            "code.txt".to_string(),
+            "keep\nnew\n".to_string(),
+            Some("overwrite".to_string()),
+            root_arg(&ws),
+            None,
+            None,
+            Some(true),
+        )
+        .expect("dry run");
+
+        assert!(result.ok);
+        assert!(result.dry_run);
+        assert!(result.would_change);
+        assert_eq!(result.bytes_written, 0);
+        assert!(result.change_set.is_none(), "dry run 不产生可回滚记录");
+        let summary = result.change_summary.expect("summary");
+        assert_eq!(summary.lines_added, 1);
+        assert_eq!(summary.lines_removed, 1);
+        assert_eq!(
+            fs::read_to_string(ws.join("code.txt")).expect("read back"),
+            "keep\nold\n",
+            "dry run 不能改动磁盘"
+        );
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn dry_run_still_reports_a_guard_mismatch() {
+        // dry run 的价值就在于能提前知道这次写会不会被拒。
+        let (base, ws) = unique_workspace();
+        let target = ws.join("code.txt");
+        fs::write(&target, "current\n").expect("seed");
+
+        let result = write_workspace_file_blocking_with_journal(
+            "code.txt".to_string(),
+            "next\n".to_string(),
+            Some("overwrite".to_string()),
+            Some("stale\n".to_string()),
+            None,
+            None,
+            None,
+            None,
+            root_arg(&ws),
+            None,
+            None,
+            Some(true),
+            None,
+            "dry-guard".to_string(),
+        )
+        .expect("structured rejection");
+
+        assert!(!result.ok);
+        assert!(result
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("expectedOldContent"));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn append_accepts_an_optimistic_guard() {
+        // 分块追加失败重试时，没有前置条件就无法区分「上次写丢了」和「上次写成功了」。
+        let (base, ws) = unique_workspace();
+        let target = ws.join("log.jsonl");
+        fs::write(&target, "one\n").expect("seed");
+        let current_hash = content_sha256(b"one\n");
+
+        let appended = write_workspace_file_blocking(
+            "log.jsonl".to_string(),
+            "two\n".to_string(),
+            Some("append".to_string()),
+            None,
+            None,
+            None,
+            None,
+            root_arg(&ws),
+        )
+        .expect("plain append");
+        assert!(appended.ok);
+
+        // 文件已经变了，旧 hash 必须挡住重复追加。
+        let stale = write_workspace_file_blocking_with_journal(
+            "log.jsonl".to_string(),
+            "two\n".to_string(),
+            Some("append".to_string()),
+            None,
+            Some(current_hash),
+            None,
+            None,
+            None,
+            root_arg(&ws),
+            None,
+            None,
+            None,
+            None,
+            "append-guard".to_string(),
+        )
+        .expect("structured rejection");
+
+        assert!(!stale.ok, "过期 hash 必须拒绝重复追加");
+        assert_eq!(
+            fs::read_to_string(&target).expect("read back"),
+            "one\ntwo\n",
+            "被拒的追加不能落盘"
+        );
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn oversized_text_is_written_but_marked_non_reversible() {
+        // 以前超过可逆上限直接失败，等于「太大就不给写」。现在照写，只是标明不可回滚。
+        let (base, ws) = unique_workspace();
+        let big = "x".repeat(REVERSIBLE_MAX_BYTES + 1024);
+
+        let result = write_workspace_file_blocking_with_options(
+            "big.txt".to_string(),
+            big.clone(),
+            Some("create".to_string()),
+            root_arg(&ws),
+            None,
+            None,
+            None,
+        )
+        .expect("large write");
+
+        assert!(result.ok, "错误: {:?}", result.error);
+        assert_eq!(result.bytes_written, big.len());
+        assert!(!result.reversible);
+        assert!(result
+            .reversible_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("reversible"));
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn absent_max_bytes_allows_writes_past_the_old_default() {
+        // max_bytes 已不在模型可见的 schema 里；不传必须等于「用最大上限」，
+        // 否则工具层放行的内容会在 host 侧被静默拒绝。
+        let (base, ws) = unique_workspace();
+        let content = "y".repeat(600 * 1024);
+
+        let result = write_workspace_file_blocking(
+            "medium.txt".to_string(),
+            content.clone(),
+            Some("create".to_string()),
+            None,
+            None,
+            None, // max_bytes 缺省
+            None,
+            root_arg(&ws),
+        )
+        .expect("write");
+
+        assert!(result.ok, "600KB 不应被拒: {:?}", result.error);
+        assert_eq!(result.bytes_written, content.len());
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn change_summary_reports_the_edited_region_only() {
+        let before = "a\nb\nc\nd\ne\n";
+        let after = "a\nb\nCHANGED\nd\ne\n";
+        let summary = compute_change_summary(Some(before), after);
+
+        assert_eq!(summary.lines_added, 1);
+        assert_eq!(summary.lines_removed, 1);
+        assert_eq!(summary.before_lines, 5);
+        assert_eq!(summary.after_lines, 5);
+        assert!(!summary.approximate);
+        assert!(!summary.diff_truncated);
+        let diff = summary.diff.expect("diff present");
+        assert!(diff.contains("-c"), "diff 应含删除行: {diff}");
+        assert!(diff.contains("+CHANGED"), "diff 应含新增行: {diff}");
+        assert!(!diff.contains("+a"), "未变动的头部不应进 diff: {diff}");
+    }
+
+    #[test]
+    fn change_summary_for_a_new_file_counts_every_line_as_added() {
+        let summary = compute_change_summary(None, "one\ntwo\n");
+        assert_eq!(summary.lines_added, 2);
+        assert_eq!(summary.lines_removed, 0);
+        assert_eq!(summary.before_lines, 0);
+        assert_eq!(summary.after_lines, 2);
+    }
+
+    #[test]
+    fn identical_content_reports_no_change_and_no_diff() {
+        let summary = compute_change_summary(Some("same\n"), "same\n");
+        assert_eq!(summary.lines_added, 0);
+        assert_eq!(summary.lines_removed, 0);
+        assert!(summary.diff.is_none());
+    }
+
+    #[test]
+    fn oversized_edits_degrade_to_an_approximate_block_summary() {
+        // 超出 LCS 预算时不能假装算得出最小 diff：整段按替换上报并标记 approximate。
+        let before: String = (0..1200).map(|index| format!("before {index}\n")).collect();
+        let after: String = (0..1200).map(|index| format!("after {index}\n")).collect();
+        let summary = compute_change_summary(Some(&before), &after);
+
+        assert!(summary.approximate, "应降级为近似摘要");
+        assert_eq!(summary.lines_removed, 1200);
+        assert_eq!(summary.lines_added, 1200);
+        assert!(summary.diff_truncated, "diff 应被截断");
+        let diff = summary.diff.expect("diff present");
+        // 头部 hunk 行 + 截断提示行，所以比纯 diff 预算多两行。
+        assert!(diff.lines().count() <= 62);
+        assert!(diff.contains("more diff lines"));
+    }
+
+    #[test]
+    fn successful_overwrite_returns_a_change_summary() {
+        let (base, ws) = unique_workspace();
+        fs::write(ws.join("code.txt"), "keep\nold\n").expect("seed");
+
+        let result = write_workspace_file_blocking(
+            "code.txt".to_string(),
+            "keep\nnew\n".to_string(),
+            Some("overwrite".to_string()),
+            None,
+            None,
+            None,
+            None,
+            root_arg(&ws),
+        )
+        .expect("overwrite");
+
+        let summary = result.change_summary.expect("summary present");
+        assert_eq!(summary.lines_added, 1);
+        assert_eq!(summary.lines_removed, 1);
         let _ = fs::remove_dir_all(&base);
     }
 
@@ -1097,6 +2009,9 @@ mod tests {
             None,
             None,
             root_arg(&ws),
+            None,
+            None,
+            None,
             Some((
                 journal.clone(),
                 WorkspaceChangeContext {

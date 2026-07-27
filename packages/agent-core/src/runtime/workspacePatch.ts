@@ -8,10 +8,14 @@ import {
   beginPerformanceDiagnostic,
   performanceNow,
 } from '../observability/performanceDiagnostics'
+import {
+  normalizeWriteChangeSummary,
+  type WorkspaceWriteChangeSummary,
+} from './workspaceWrite'
 
 export type WorkspacePatchOperation =
-  | { type: 'add_file'; path: string; content: string }
-  | { type: 'delete_file'; path: string; oldContent?: string }
+  | { type: 'add_file'; path: string; content: string; executable?: boolean }
+  | { type: 'delete_file'; path: string; oldContent?: string; expectedContentHash?: string }
   | {
       type: 'replace'
       path: string
@@ -19,7 +23,15 @@ export type WorkspacePatchOperation =
       newText: string
       expectedReplacements?: number
     }
-  | { type: 'overwrite_file'; path: string; content: string; oldContent?: string }
+  | {
+      type: 'overwrite_file'
+      path: string
+      content: string
+      oldContent?: string
+      /** Hash form of `oldContent`, matching write_file's guard of the same name. */
+      expectedContentHash?: string
+      executable?: boolean
+    }
 
 export interface WorkspacePatchInput {
   operations: WorkspacePatchOperation[]
@@ -37,9 +49,18 @@ export interface WorkspacePatchRejected {
   reason: string
 }
 
+export interface WorkspacePatchFileChange {
+  path: string
+  created: boolean
+  deleted: boolean
+  /** Same shape write_file returns, so both tools report changes identically. */
+  changeSummary?: WorkspaceWriteChangeSummary
+}
+
 export interface WorkspacePatchResult {
   ok: boolean
   changedFiles: string[]
+  changes?: WorkspacePatchFileChange[]
   rejected: WorkspacePatchRejected[]
   dryRun: boolean
   wouldChange: boolean
@@ -140,7 +161,30 @@ function normalizeResult(raw: unknown, input: WorkspacePatchInput): WorkspacePat
   }
   const changeSet = normalizeChangeSummary(raw.changeSet ?? raw.change_set)
   if (changeSet) result.changeSet = changeSet
+  const changes = normalizePatchFileChanges(raw.changes)
+  if (changes) result.changes = changes
   return result
+}
+
+function normalizePatchFileChanges(raw: unknown): WorkspacePatchFileChange[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const changes: WorkspacePatchFileChange[] = []
+  for (const entry of raw) {
+    if (!isRecord(entry)) continue
+    const path = entry.path
+    if (typeof path !== 'string' || path.length === 0) continue
+    const change: WorkspacePatchFileChange = {
+      path,
+      created: booleanValue(entry.created, false),
+      deleted: booleanValue(entry.deleted, false),
+    }
+    const summary: WorkspaceWriteChangeSummary | undefined = normalizeWriteChangeSummary(
+      entry.changeSummary ?? entry.change_summary,
+    )
+    if (summary) change.changeSummary = summary
+    changes.push(change)
+  }
+  return changes
 }
 
 function patchPayloadChars(operations: WorkspacePatchOperation[]): number {

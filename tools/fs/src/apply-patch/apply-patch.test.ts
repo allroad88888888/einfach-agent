@@ -158,6 +158,131 @@ describe('apply_patch tool', () => {
     })
   })
 
+  it('expectedContentHash 与 write_file 同名同格式，可替代 oldContent 全文', async () => {
+    // 以前覆盖已存在文件只能靠 oldContent 全文比对，等于每次都把整个旧文件塞进参数。
+    const applyWorkspacePatch = vi.fn(async () => makeResult())
+    const ctx = makeCtx(applyWorkspacePatch)
+    const expectedContentHash = `sha256:${'a'.repeat(64)}`
+
+    await applyPatchTool.execute(
+      {
+        operations: [
+          { type: 'overwrite_file', path: 'c.txt', content: 'next', expectedContentHash },
+          { type: 'delete_file', path: 'd.txt', expectedContentHash },
+        ],
+      },
+      ctx,
+    )
+
+    expect(applyWorkspacePatch).toHaveBeenCalledWith({
+      operations: [
+        { type: 'overwrite_file', path: 'c.txt', content: 'next', expectedContentHash },
+        { type: 'delete_file', path: 'd.txt', expectedContentHash },
+      ],
+    })
+  })
+
+  it('executable 透传，false 也必须透传', async () => {
+    const applyWorkspacePatch = vi.fn(async () => makeResult())
+    const ctx = makeCtx(applyWorkspacePatch)
+
+    await applyPatchTool.execute(
+      {
+        operations: [
+          { type: 'add_file', path: 'run.sh', content: '#!/bin/sh\n', executable: true },
+          { type: 'overwrite_file', path: 'old.sh', content: 'x', oldContent: 'y', executable: false },
+        ],
+      },
+      ctx,
+    )
+
+    expect(applyWorkspacePatch).toHaveBeenCalledWith({
+      operations: [
+        { type: 'add_file', path: 'run.sh', content: '#!/bin/sh\n', executable: true },
+        { type: 'overwrite_file', path: 'old.sh', content: 'x', oldContent: 'y', executable: false },
+      ],
+    })
+  })
+
+  it('两种 guard 不能同时给，非法 hash / executable 直接拒', async () => {
+    const applyWorkspacePatch = vi.fn(async () => makeResult())
+    const ctx = makeCtx(applyWorkspacePatch)
+    const expectedContentHash = `sha256:${'a'.repeat(64)}`
+
+    await expect(
+      applyPatchTool.execute(
+        {
+          operations: [
+            { type: 'overwrite_file', path: 'c.txt', content: 'n', oldContent: 'o', expectedContentHash },
+          ],
+        },
+        ctx,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      error:
+        'invalid apply_patch: operations[0] must pass either oldContent or expectedContentHash, not both',
+    })
+
+    await expect(
+      applyPatchTool.execute(
+        {
+          operations: [
+            { type: 'overwrite_file', path: 'c.txt', content: 'n', expectedContentHash: 'sha256:nope' },
+          ],
+        },
+        ctx,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      error:
+        'invalid apply_patch: operations[0].expectedContentHash must use sha256:<64 lowercase hex characters>',
+    })
+
+    await expect(
+      applyPatchTool.execute(
+        { operations: [{ type: 'add_file', path: 'a.txt', content: 'x', executable: 'yes' }] },
+        ctx,
+      ),
+    ).resolves.toEqual({
+      ok: false,
+      error: 'invalid apply_patch: operations[0].executable must be a boolean',
+    })
+
+    expect(applyWorkspacePatch).not.toHaveBeenCalled()
+  })
+
+  it('每文件 changeSummary 原样回传给模型', async () => {
+    const patchResult = makeResult({
+      changedFiles: ['a.txt'],
+      wouldChange: true,
+      changes: [
+        {
+          path: 'a.txt',
+          created: false,
+          deleted: false,
+          changeSummary: {
+            linesAdded: 1,
+            linesRemoved: 1,
+            beforeLines: 2,
+            afterLines: 2,
+            diff: '@@ -2,1 +2,1 @@\n-old\n+new',
+            diffTruncated: false,
+            approximate: false,
+          },
+        },
+      ],
+    })
+    const ctx = makeCtx(vi.fn(async () => patchResult))
+
+    const result = await applyPatchTool.execute(
+      { operations: [{ type: 'overwrite_file', path: 'a.txt', content: 'x', oldContent: 'y' }] },
+      ctx,
+    )
+
+    expect(result).toEqual({ ok: true, data: patchResult })
+  })
+
   it('身份/runtime/schema/skill 元数据齐备', () => {
     expect(applyPatchTool.name).toBe('apply_patch')
     expect(applyPatchTool.runtime).toBe('server') // 依赖 Tauri 文件系统（TP3）。

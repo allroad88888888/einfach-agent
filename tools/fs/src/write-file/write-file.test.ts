@@ -2,17 +2,18 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ToolContext } from '@web-agent/core/tools/types'
 import { writeFileTool } from './write-file'
 
-const DEFAULT_MAX_BYTES = 200 * 1024
-const MAX_BYTES = 1024 * 1024
+const MAX_BYTES = 8 * 1024 * 1024
 
 type WriteInput = {
   path: string
   content: string
-  mode: 'create' | 'overwrite' | 'append'
+  mode: 'create' | 'overwrite' | 'append' | 'upsert'
+  encoding?: 'utf8' | 'base64'
+  executable?: boolean
+  dryRun?: boolean
   expectedOldContent?: string
   expectedContentHash?: string
   createDirs: boolean
-  maxBytes: number
 }
 
 type WriteResult = {
@@ -66,7 +67,7 @@ function makeCtx(writeWorkspaceFile = vi.fn(async (input: WriteInput) => makeWri
 }
 
 describe('write_file tool', () => {
-  it('create 参数默认值 → ctx.writeWorkspaceFile 被调用，返回 {ok:true, data}', async () => {
+  it('create 参数默认值：createDirs 默认 true，不再透传 maxBytes', async () => {
     const writeWorkspaceFile = vi.fn(async (input: WriteInput) => makeWriteResult(input))
     const ctx = makeCtx(writeWorkspaceFile)
 
@@ -76,8 +77,7 @@ describe('write_file tool', () => {
       path: 'notes/a.txt',
       content: 'hello',
       mode: 'create',
-      createDirs: false,
-      maxBytes: DEFAULT_MAX_BYTES,
+      createDirs: true,
     })
     expect(result).toEqual({
       ok: true,
@@ -85,13 +85,23 @@ describe('write_file tool', () => {
         path: 'notes/a.txt',
         content: 'hello',
         mode: 'create',
-        createDirs: false,
-        maxBytes: DEFAULT_MAX_BYTES,
+        createDirs: true,
       }),
     })
   })
 
-  it('overwrite 参数保留 expectedOldContent/createDirs/maxBytes', async () => {
+  it('createDirs 可显式关闭', async () => {
+    const writeWorkspaceFile = vi.fn(async (input: WriteInput) => makeWriteResult(input))
+    const ctx = makeCtx(writeWorkspaceFile)
+
+    await writeFileTool.execute({ path: 'a.txt', content: 'x', createDirs: false }, ctx)
+
+    expect(writeWorkspaceFile).toHaveBeenCalledWith(
+      expect.objectContaining({ createDirs: false }),
+    )
+  })
+
+  it('overwrite 参数保留 expectedOldContent/createDirs', async () => {
     const writeWorkspaceFile = vi.fn(async (input: WriteInput) => makeWriteResult(input))
     const ctx = makeCtx(writeWorkspaceFile)
 
@@ -102,7 +112,6 @@ describe('write_file tool', () => {
         mode: 'overwrite',
         expectedOldContent: 'old',
         createDirs: true,
-        maxBytes: 500,
       },
       ctx,
     )
@@ -113,7 +122,6 @@ describe('write_file tool', () => {
       mode: 'overwrite',
       expectedOldContent: 'old',
       createDirs: true,
-      maxBytes: 500,
     })
   })
 
@@ -137,9 +145,98 @@ describe('write_file tool', () => {
       content: 'new',
       mode: 'overwrite',
       expectedContentHash,
-      createDirs: false,
-      maxBytes: DEFAULT_MAX_BYTES,
+      createDirs: true,
     })
+  })
+
+  it('upsert 模式透传，且允许携带乐观锁', async () => {
+    const writeWorkspaceFile = vi.fn(async (input: WriteInput) => makeWriteResult(input))
+    const ctx = makeCtx(writeWorkspaceFile)
+    const expectedContentHash = `sha256:${'b'.repeat(64)}`
+
+    await writeFileTool.execute(
+      { path: 'a.txt', content: 'new', mode: 'upsert', expectedContentHash },
+      ctx,
+    )
+
+    expect(writeWorkspaceFile).toHaveBeenCalledWith({
+      path: 'a.txt',
+      content: 'new',
+      mode: 'upsert',
+      expectedContentHash,
+      createDirs: true,
+    })
+  })
+
+  it('base64 编码透传，且 NUL 字节在此模式下不再被拦', async () => {
+    const writeWorkspaceFile = vi.fn(async (input: WriteInput) => makeWriteResult(input))
+    const ctx = makeCtx(writeWorkspaceFile)
+
+    const result = await writeFileTool.execute(
+      { path: 'img.png', content: 'iVBORw0KGgo=', encoding: 'base64' },
+      ctx,
+    )
+
+    expect(result).toMatchObject({ ok: true })
+    expect(writeWorkspaceFile).toHaveBeenCalledWith({
+      path: 'img.png',
+      content: 'iVBORw0KGgo=',
+      mode: 'create',
+      encoding: 'base64',
+      createDirs: true,
+    })
+  })
+
+  it('encoding=utf8 是默认值，不占用透传字段', async () => {
+    const writeWorkspaceFile = vi.fn(async (input: WriteInput) => makeWriteResult(input))
+    const ctx = makeCtx(writeWorkspaceFile)
+
+    await writeFileTool.execute({ path: 'a.txt', content: 'x', encoding: 'utf8' }, ctx)
+
+    expect(writeWorkspaceFile).toHaveBeenCalledWith({
+      path: 'a.txt',
+      content: 'x',
+      mode: 'create',
+      createDirs: true,
+    })
+  })
+
+  it('executable 与 dryRun 透传，false 也必须透传', async () => {
+    const writeWorkspaceFile = vi.fn(async (input: WriteInput) => makeWriteResult(input))
+    const ctx = makeCtx(writeWorkspaceFile)
+
+    await writeFileTool.execute(
+      { path: 'run.sh', content: '#!/bin/sh\n', mode: 'upsert', executable: true, dryRun: true },
+      ctx,
+    )
+    expect(writeWorkspaceFile).toHaveBeenCalledWith(
+      expect.objectContaining({ executable: true, dryRun: true }),
+    )
+
+    // executable:false 是「清掉执行位」的显式意图，不能被当成未提供而丢掉。
+    await writeFileTool.execute(
+      { path: 'run.sh', content: '#!/bin/sh\n', mode: 'overwrite', executable: false },
+      ctx,
+    )
+    expect(writeWorkspaceFile).toHaveBeenLastCalledWith(
+      expect.objectContaining({ executable: false }),
+    )
+  })
+
+  it('append 也允许乐观锁，用于可重试的分块追加', async () => {
+    const writeWorkspaceFile = vi.fn(async (input: WriteInput) => makeWriteResult(input))
+    const ctx = makeCtx(writeWorkspaceFile)
+    const expectedContentHash = `sha256:${'c'.repeat(64)}`
+
+    const result = await writeFileTool.execute(
+      { path: 'log.jsonl', content: '{}\n', mode: 'append', expectedContentHash },
+      ctx,
+    )
+
+    expect(result).toMatchObject({ ok: true })
+    expect(writeWorkspaceFile).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: 'append', expectedContentHash }),
+    )
   })
 
   it('append 参数按文本追加模式透传', async () => {
@@ -156,7 +253,6 @@ describe('write_file tool', () => {
       content: '\nline',
       mode: 'append',
       createDirs: true,
-      maxBytes: DEFAULT_MAX_BYTES,
     })
   })
 
@@ -176,7 +272,7 @@ describe('write_file tool', () => {
       writeFileTool.execute({ path: 'a.txt', content: 'x', mode: 'bad' }, ctx),
     ).resolves.toEqual({
       ok: false,
-      error: 'invalid write_file: mode must be create, overwrite, or append',
+      error: 'invalid write_file: mode must be create, overwrite, upsert, or append',
     })
     await expect(
       writeFileTool.execute({ path: 'a.txt', content: 'x', createDirs: 'yes' }, ctx),
@@ -186,7 +282,7 @@ describe('write_file tool', () => {
     })
     await expect(writeFileTool.execute({ path: 'a.txt', content: 'a\0b' }, ctx)).resolves.toEqual({
       ok: false,
-      error: 'invalid write_file: binary content is not supported',
+      error: 'invalid write_file: binary content requires encoding "base64"',
     })
     await expect(
       writeFileTool.execute({
@@ -207,7 +303,26 @@ describe('write_file tool', () => {
       }, ctx),
     ).resolves.toEqual({
       ok: false,
-      error: 'invalid write_file: optimistic guards are only valid with mode "overwrite"',
+      error:
+        'invalid write_file: optimistic guards are not valid with mode "create"; the file must not exist',
+    })
+    await expect(
+      writeFileTool.execute({ path: 'a.txt', content: 'x', encoding: 'hex' }, ctx),
+    ).resolves.toEqual({
+      ok: false,
+      error: 'invalid write_file: encoding must be utf8 or base64',
+    })
+    await expect(
+      writeFileTool.execute({ path: 'a.txt', content: 'x', executable: 'yes' }, ctx),
+    ).resolves.toEqual({
+      ok: false,
+      error: 'invalid write_file: executable must be a boolean when provided',
+    })
+    await expect(
+      writeFileTool.execute({ path: 'a.txt', content: 'x', dryRun: 'yes' }, ctx),
+    ).resolves.toEqual({
+      ok: false,
+      error: 'invalid write_file: dryRun must be a boolean when provided',
     })
     await expect(
       writeFileTool.execute({
@@ -224,7 +339,7 @@ describe('write_file tool', () => {
     expect(writeWorkspaceFile).not.toHaveBeenCalled()
   })
 
-  it('maxBytes 执行上限 clamp，并拒绝超过 clamp 后上限的内容', async () => {
+  it('内容上限固定为 1 MB，模型传入的 maxBytes 不再参与也不再透传', async () => {
     const writeWorkspaceFile = vi.fn(async (input: WriteInput) => makeWriteResult(input))
     const ctx = makeCtx(writeWorkspaceFile)
 
@@ -237,10 +352,10 @@ describe('write_file tool', () => {
       path: 'a.txt',
       content: 'x',
       mode: 'create',
-      createDirs: false,
-      maxBytes: MAX_BYTES,
+      createDirs: true,
     })
 
+    // 曾经可以靠调大 maxBytes 抬高上限；现在上限是固定的，调不动。
     const tooLarge = 'x'.repeat(MAX_BYTES + 1)
     const result = await writeFileTool.execute(
       { path: 'big.txt', content: tooLarge, maxBytes: Number.MAX_SAFE_INTEGER },
@@ -310,6 +425,9 @@ describe('write_file tool', () => {
     expect(writeFileTool.inputSchema).toMatchObject({
       required: ['path', 'content'],
       properties: {
+        mode: { enum: ['create', 'overwrite', 'append', 'upsert'] },
+        encoding: { enum: ['utf8', 'base64'] },
+        createDirs: { default: true },
         expectedOldContent: {
           description: expect.stringContaining('complete, untruncated current file'),
         },
@@ -318,6 +436,8 @@ describe('write_file tool', () => {
         },
       },
     })
+    // maxBytes 曾经是纯噪声参数：模型只会为过校验把它调大，真正的上限在 host 侧。
+    expect(writeFileTool.inputSchema.properties).not.toHaveProperty('maxBytes')
     expect(writeFileTool.skill.content.length).toBeGreaterThan(0)
   })
 })

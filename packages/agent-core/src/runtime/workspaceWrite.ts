@@ -9,12 +9,33 @@ import {
   performanceNow,
 } from '../observability/performanceDiagnostics'
 
-export type WorkspaceWriteMode = 'create' | 'overwrite' | 'append'
+export type WorkspaceWriteMode = 'create' | 'overwrite' | 'append' | 'upsert'
+
+/** What actually changed on disk, so callers do not have to re-read to confirm. */
+export interface WorkspaceWriteChangeSummary {
+  linesAdded: number
+  linesRemoved: number
+  beforeLines: number
+  afterLines: number
+  /** Unified diff of the changed region, truncated by the host. */
+  diff?: string
+  diffTruncated: boolean
+  /** The changed region was too large for a minimal diff; counts are an upper bound. */
+  approximate: boolean
+}
+
+export type WorkspaceWriteEncoding = 'utf8' | 'base64'
 
 export interface WorkspaceWriteInput {
   path: string
   content: string
   mode?: WorkspaceWriteMode
+  /** How `content` is carried. base64 is the only way to produce binary files. */
+  encoding?: WorkspaceWriteEncoding
+  /** Explicitly set or clear the executable bit after writing. Unix only. */
+  executable?: boolean
+  /** Validate and report the change without touching disk. */
+  dryRun?: boolean
   expectedOldContent?: string
   /** A contentHash returned by a complete readWorkspaceFile call. */
   expectedContentHash?: string
@@ -37,12 +58,23 @@ export interface WorkspaceWriteResult {
   appended: boolean
   error?: string
   changeSet?: WorkspaceChangeSummary
+  changeSummary?: WorkspaceWriteChangeSummary
+  /** False when the write succeeded but produced no rollback entry. */
+  reversible?: boolean
+  /** Why the write is not reversible. Only present when `reversible` is false. */
+  reversibleReason?: string
+  /** True when nothing was written because `dryRun` was requested. */
+  dryRun?: boolean
+  wouldChange?: boolean
 }
 
 type TauriWorkspaceWriteInput = {
   path: string
   content: string
   mode?: WorkspaceWriteMode
+  encoding?: WorkspaceWriteEncoding
+  executable?: boolean
+  dry_run?: boolean
   expected_old_content?: string
   expected_content_hash?: string
   create_dirs?: boolean
@@ -61,6 +93,9 @@ function toTauriInput(
     path: input.path,
     content: input.content,
     mode: input.mode,
+    encoding: input.encoding,
+    executable: input.executable,
+    dry_run: input.dryRun,
     expected_old_content: input.expectedOldContent,
     expected_content_hash: input.expectedContentHash,
     create_dirs: input.createDirs,
@@ -120,6 +155,27 @@ function failedResult(input: WorkspaceWriteInput, error: string): WorkspaceWrite
   }
 }
 
+/** Exported so apply_patch can report per-file changes in the identical shape. */
+export function normalizeWriteChangeSummary(
+  raw: unknown,
+): WorkspaceWriteChangeSummary | undefined {
+  if (!isRecord(raw)) return undefined
+  const linesAdded = raw.linesAdded ?? raw.lines_added
+  const linesRemoved = raw.linesRemoved ?? raw.lines_removed
+  if (typeof linesAdded !== 'number' || typeof linesRemoved !== 'number') return undefined
+  const summary: WorkspaceWriteChangeSummary = {
+    linesAdded,
+    linesRemoved,
+    beforeLines: numberValue(raw.beforeLines ?? raw.before_lines, 0),
+    afterLines: numberValue(raw.afterLines ?? raw.after_lines, 0),
+    diffTruncated: booleanValue(raw.diffTruncated ?? raw.diff_truncated, false),
+    approximate: booleanValue(raw.approximate, false),
+  }
+  const diff = raw.diff
+  if (typeof diff === 'string' && diff.length > 0) summary.diff = diff
+  return summary
+}
+
 function normalizeResult(raw: unknown, input: WorkspaceWriteInput): WorkspaceWriteResult {
   if (!isRecord(raw)) {
     return failedResult(input, 'write_workspace_file returned an invalid response')
@@ -140,6 +196,21 @@ function normalizeResult(raw: unknown, input: WorkspaceWriteInput): WorkspaceWri
   }
   const changeSet = normalizeChangeSummary(raw.changeSet ?? raw.change_set)
   if (changeSet) result.changeSet = changeSet
+  const changeSummary = normalizeWriteChangeSummary(raw.changeSummary ?? raw.change_summary)
+  if (changeSummary) result.changeSummary = changeSummary
+
+  // Reversibility defaults to true only for a successful write the host reported on;
+  // a failure never produced a change set.
+  const reversible = raw.reversible
+  if (typeof reversible === 'boolean') result.reversible = reversible
+  const reversibleReason = raw.reversibleReason ?? raw.reversible_reason
+  if (typeof reversibleReason === 'string' && reversibleReason.length > 0) {
+    result.reversibleReason = reversibleReason
+  }
+  const dryRun = raw.dryRun ?? raw.dry_run
+  if (typeof dryRun === 'boolean') result.dryRun = dryRun
+  const wouldChange = raw.wouldChange ?? raw.would_change
+  if (typeof wouldChange === 'boolean') result.wouldChange = wouldChange
   return result
 }
 

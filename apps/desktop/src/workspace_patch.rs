@@ -2,8 +2,11 @@ use crate::workspace_change_journal::{
     discard_prepared_change, journal_dir, mark_change_applied, prepare_change_set, ChangeFileInput,
     WorkspaceChangeContext, WorkspaceChangeSummary,
 };
-use crate::workspace_common::resolve_workspace_root;
+use crate::workspace_common::{
+    atomic_write, compute_change_summary, resolve_workspace_root, FileChangeSummary,
+};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     fs,
@@ -92,11 +95,16 @@ pub enum PatchOperation {
     AddFile {
         path: String,
         content: String,
+        /// Set the executable bit on the created file. Unix only.
+        executable: Option<bool>,
     },
     DeleteFile {
         path: String,
         #[serde(rename = "oldContent")]
         old_content: Option<String>,
+        /// Hash form of `oldContent`, matching write_file's guard of the same name.
+        #[serde(rename = "expectedContentHash")]
+        expected_content_hash: Option<String>,
     },
     Replace {
         path: String,
@@ -112,6 +120,11 @@ pub enum PatchOperation {
         content: String,
         #[serde(rename = "oldContent")]
         old_content: Option<String>,
+        /// Hash form of `oldContent`. Overwriting an existing file requires one of the
+        /// two; the hash avoids resending the whole previous file just to prove it was read.
+        #[serde(rename = "expectedContentHash")]
+        expected_content_hash: Option<String>,
+        executable: Option<bool>,
     },
 }
 
@@ -120,11 +133,24 @@ pub enum PatchOperation {
 pub struct WorkspacePatchResult {
     ok: bool,
     changed_files: Vec<String>,
+    /// Per-file line counts and diffs, in the same shape write_file returns, so the
+    /// caller can confirm the edit without re-reading every touched file.
+    changes: Vec<PatchFileChange>,
     rejected: Vec<RejectedOperation>,
     dry_run: bool,
     would_change: bool,
     summary: String,
     change_set: Option<WorkspaceChangeSummary>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PatchFileChange {
+    path: String,
+    created: bool,
+    deleted: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    change_summary: Option<FileChangeSummary>,
 }
 
 #[derive(Debug, Serialize)]
@@ -140,6 +166,61 @@ pub struct RejectedOperation {
 struct FileState {
     initial: Option<String>,
     current: Option<String>,
+    /// Explicit executable request from the last operation that set one.
+    executable: Option<bool>,
+}
+
+/// Verify an optimistic guard against content already staged in this transaction.
+/// Accepts either the full previous text or its hash; the hash exists so a caller
+/// does not have to resend a whole file to prove it read it.
+fn verify_staged_guard(
+    current: &str,
+    old_content: Option<&str>,
+    expected_content_hash: Option<&str>,
+) -> Result<(), String> {
+    if old_content.is_some() && expected_content_hash.is_some() {
+        return Err("pass either oldContent or expectedContentHash, not both".to_string());
+    }
+    if let Some(old_content) = old_content {
+        if old_content != current {
+            return Err("oldContent did not match current file content".to_string());
+        }
+    }
+    if let Some(expected) = expected_content_hash {
+        validate_content_hash(expected)?;
+        if content_sha256(current.as_bytes()) != expected {
+            return Err(
+                "expectedContentHash did not match current file content; re-read the file and \
+                 retry with the new contentHash"
+                    .to_string(),
+            );
+        }
+    }
+    Ok(())
+}
+
+fn validate_content_hash(value: &str) -> Result<(), String> {
+    let Some(hex) = value.strip_prefix("sha256:") else {
+        return Err(
+            "expectedContentHash must use sha256:<64 lowercase hex characters>".to_string(),
+        );
+    };
+    if hex.len() != 64
+        || !hex
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err(
+            "expectedContentHash must use sha256:<64 lowercase hex characters>".to_string(),
+        );
+    }
+    Ok(())
+}
+
+fn content_sha256(bytes: &[u8]) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("sha256:{:x}", hasher.finalize())
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -240,6 +321,7 @@ fn apply_workspace_patch_blocking_with_journal(
         return Ok(WorkspacePatchResult {
             ok: false,
             changed_files: Vec::new(),
+            changes: Vec::new(),
             rejected,
             dry_run,
             would_change: false,
@@ -254,6 +336,21 @@ fn apply_workspace_patch_blocking_with_journal(
         .map(|path| display_path(&root, path))
         .collect::<Vec<_>>();
     let would_change = !changed_files.is_empty();
+    let changes = changed_paths
+        .iter()
+        .filter_map(|path| {
+            let state = files.get(path)?;
+            Some(PatchFileChange {
+                path: display_path(&root, path),
+                created: state.initial.is_none() && state.current.is_some(),
+                deleted: state.current.is_none(),
+                change_summary: state
+                    .current
+                    .as_deref()
+                    .map(|after| compute_change_summary(state.initial.as_deref(), after)),
+            })
+        })
+        .collect::<Vec<_>>();
 
     let prepared_change = if !dry_run && !changed_paths.is_empty() {
         if let Some((directory, context)) = journal.as_ref() {
@@ -306,6 +403,7 @@ fn apply_workspace_patch_blocking_with_journal(
     Ok(WorkspacePatchResult {
         ok: true,
         changed_files,
+        changes,
         rejected,
         dry_run,
         would_change,
@@ -326,7 +424,12 @@ fn commit_changes(
             .get(path)
             .ok_or_else(|| format!("missing staged state for `{}`", path.display()))?;
         let result = match &state.current {
-            Some(content) => write_text_file(root, path, content),
+            Some(content) => write_text_file(root, path, content).and_then(|()| {
+                match state.executable {
+                    Some(executable) => apply_executable_bit(path, executable),
+                    None => Ok(()),
+                }
+            }),
             None => delete_file_if_present(path),
         };
 
@@ -379,7 +482,11 @@ fn stage_operation(
     operation: &PatchOperation,
 ) -> Result<(), String> {
     match operation {
-        PatchOperation::AddFile { path, content } => {
+        PatchOperation::AddFile {
+            path,
+            content,
+            executable,
+        } => {
             validate_text_input("content", content)?;
             let path = resolve_workspace_path(root, path)?;
             let state = load_state(files, &path)?;
@@ -399,9 +506,16 @@ fn stage_operation(
                 );
             }
             state.current = Some(content.clone());
+            if executable.is_some() {
+                state.executable = *executable;
+            }
             Ok(())
         }
-        PatchOperation::DeleteFile { path, old_content } => {
+        PatchOperation::DeleteFile {
+            path,
+            old_content,
+            expected_content_hash,
+        } => {
             if let Some(old_content) = old_content {
                 validate_text_input("oldContent", old_content)?;
             }
@@ -410,11 +524,11 @@ fn stage_operation(
             let Some(current) = state.current.as_ref() else {
                 return Err("file does not exist".to_string());
             };
-            if let Some(old_content) = old_content {
-                if old_content != current {
-                    return Err("oldContent did not match current file content".to_string());
-                }
-            }
+            verify_staged_guard(
+                current,
+                old_content.as_deref(),
+                expected_content_hash.as_deref(),
+            )?;
             state.current = None;
             Ok(())
         }
@@ -460,6 +574,8 @@ fn stage_operation(
             path,
             content,
             old_content,
+            expected_content_hash,
+            executable,
         } => {
             validate_text_input("content", content)?;
             if let Some(old_content) = old_content {
@@ -469,16 +585,26 @@ fn stage_operation(
             let path = resolve_workspace_path(root, path)?;
             let state = load_state(files, &path)?;
             if let Some(current) = state.current.as_ref() {
-                let Some(old_content) = old_content else {
+                // Replacing an existing file still demands proof it was read first;
+                // expectedContentHash is the cheap way to give that proof.
+                if old_content.is_none() && expected_content_hash.is_none() {
                     return Err(
-                        "oldContent is required when overwriting an existing file".to_string()
+                        "oldContent or expectedContentHash is required when overwriting an \
+                         existing file"
+                            .to_string(),
                     );
-                };
-                if old_content != current {
-                    return Err("oldContent did not match current file content".to_string());
                 }
+                let current = current.clone();
+                verify_staged_guard(
+                    &current,
+                    old_content.as_deref(),
+                    expected_content_hash.as_deref(),
+                )?;
             }
             state.current = Some(content.clone());
+            if executable.is_some() {
+                state.executable = *executable;
+            }
             Ok(())
         }
     }
@@ -495,6 +621,7 @@ fn load_state<'a>(
             FileState {
                 initial: initial.clone(),
                 current: initial,
+                executable: None,
             },
         );
     }
@@ -675,7 +802,37 @@ fn write_text_file(root: &Path, path: &Path, content: &str) -> Result<(), String
             return Err("parent directory is outside the workspace root".to_string());
         }
     }
-    fs::write(path, content).map_err(|err| format!("failed to write `{}`: {err}", path.display()))
+    // 与 write_file 走同一个崩溃安全实现：commit 中途失败/断电不能留下截断文件，
+    // 否则 rollback 面对的已经是一个坏文件了。
+    atomic_write(path, content.as_bytes())
+        .map_err(|err| format!("failed to write `{}`: {err}", path.display()))
+}
+
+/// Mirror write_file's executable handling so the same request means the same thing
+/// in both tools.
+#[cfg(unix)]
+fn apply_executable_bit(path: &Path, executable: bool) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let metadata =
+        fs::metadata(path).map_err(|err| format!("failed to inspect file mode: {err}"))?;
+    let mut permissions = metadata.permissions();
+    let mode = permissions.mode();
+    let updated = if executable {
+        mode | ((mode & 0o444) >> 2)
+    } else {
+        mode & !0o111
+    };
+    if updated == mode {
+        return Ok(());
+    }
+    permissions.set_mode(updated);
+    fs::set_permissions(path, permissions)
+        .map_err(|err| format!("failed to update file mode: {err}"))
+}
+
+#[cfg(not(unix))]
+fn apply_executable_bit(_path: &Path, _executable: bool) -> Result<(), String> {
+    Ok(())
 }
 
 fn delete_file_if_present(path: &Path) -> Result<(), String> {
@@ -736,6 +893,7 @@ mod tests {
         PatchOperation::AddFile {
             path: path.to_string(),
             content: content.to_string(),
+            executable: None,
         }
     }
 
@@ -743,7 +901,222 @@ mod tests {
         PatchOperation::DeleteFile {
             path: path.to_string(),
             old_content: None,
+            expected_content_hash: None,
         }
+    }
+
+    fn overwrite(
+        path: &str,
+        content: &str,
+        old_content: Option<&str>,
+        expected_content_hash: Option<&str>,
+    ) -> PatchOperation {
+        PatchOperation::OverwriteFile {
+            path: path.to_string(),
+            content: content.to_string(),
+            old_content: old_content.map(str::to_string),
+            expected_content_hash: expected_content_hash.map(str::to_string),
+            executable: None,
+        }
+    }
+
+    #[test]
+    fn overwrite_accepts_a_content_hash_instead_of_the_whole_previous_file() {
+        // 以前只能靠 oldContent 全文比对，等于每次覆盖都要把整个旧文件塞进参数里。
+        let root = unique_root();
+        fs::write(root.join("code.txt"), "old\n").expect("seed");
+        let hash = content_sha256(b"old\n");
+
+        let result = apply_workspace_patch_blocking(
+            vec![overwrite("code.txt", "new\n", None, Some(&hash))],
+            false,
+            Some(root.to_string_lossy().into_owned()),
+        )
+        .expect("patch");
+
+        assert!(result.ok, "被拒: {:?}", result.rejected);
+        assert_eq!(
+            fs::read_to_string(root.join("code.txt")).expect("read back"),
+            "new\n"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn overwrite_rejects_a_stale_content_hash() {
+        let root = unique_root();
+        fs::write(root.join("code.txt"), "current\n").expect("seed");
+        let stale = content_sha256(b"outdated\n");
+
+        let result = apply_workspace_patch_blocking(
+            vec![overwrite("code.txt", "new\n", None, Some(&stale))],
+            false,
+            Some(root.to_string_lossy().into_owned()),
+        )
+        .expect("patch");
+
+        assert!(!result.ok);
+        assert!(result.rejected[0].reason.contains("expectedContentHash"));
+        assert_eq!(
+            fs::read_to_string(root.join("code.txt")).expect("read back"),
+            "current\n",
+            "被拒的事务不能落盘"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn overwrite_still_demands_proof_the_file_was_read() {
+        let root = unique_root();
+        fs::write(root.join("code.txt"), "old\n").expect("seed");
+
+        let result = apply_workspace_patch_blocking(
+            vec![overwrite("code.txt", "new\n", None, None)],
+            false,
+            Some(root.to_string_lossy().into_owned()),
+        )
+        .expect("patch");
+
+        assert!(!result.ok);
+        assert!(result.rejected[0]
+            .reason
+            .contains("oldContent or expectedContentHash is required"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn guards_cannot_be_supplied_twice_over() {
+        let root = unique_root();
+        fs::write(root.join("code.txt"), "old\n").expect("seed");
+        let hash = content_sha256(b"old\n");
+
+        let result = apply_workspace_patch_blocking(
+            vec![overwrite("code.txt", "new\n", Some("old\n"), Some(&hash))],
+            false,
+            Some(root.to_string_lossy().into_owned()),
+        )
+        .expect("patch");
+
+        assert!(!result.ok);
+        assert!(result.rejected[0].reason.contains("not both"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn malformed_content_hash_is_rejected() {
+        let root = unique_root();
+        fs::write(root.join("code.txt"), "old\n").expect("seed");
+
+        let result = apply_workspace_patch_blocking(
+            vec![overwrite("code.txt", "new\n", None, Some("sha256:nope"))],
+            false,
+            Some(root.to_string_lossy().into_owned()),
+        )
+        .expect("patch");
+
+        assert!(!result.ok);
+        assert!(result.rejected[0]
+            .reason
+            .contains("64 lowercase hex characters"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn result_reports_per_file_change_summaries() {
+        // 和 write_file 同形的回执：模型不必为了确认改动而把每个文件再读一遍。
+        let root = unique_root();
+        fs::write(root.join("edit.txt"), "keep\nold\n").expect("seed");
+        fs::write(root.join("gone.txt"), "bye\n").expect("seed");
+
+        let result = apply_workspace_patch_blocking(
+            vec![
+                add("fresh.txt", "one\ntwo\n"),
+                overwrite("edit.txt", "keep\nnew\n", Some("keep\nold\n"), None),
+                delete("gone.txt"),
+            ],
+            false,
+            Some(root.to_string_lossy().into_owned()),
+        )
+        .expect("patch");
+
+        assert!(result.ok, "被拒: {:?}", result.rejected);
+        let by_path = |name: &str| {
+            result
+                .changes
+                .iter()
+                .find(|change| change.path == name)
+                .unwrap_or_else(|| panic!("missing change for {name}"))
+        };
+
+        let fresh = by_path("fresh.txt");
+        assert!(fresh.created);
+        assert_eq!(fresh.change_summary.as_ref().expect("summary").lines_added, 2);
+
+        let edited = by_path("edit.txt");
+        assert!(!edited.created && !edited.deleted);
+        let summary = edited.change_summary.as_ref().expect("summary");
+        assert_eq!(summary.lines_added, 1);
+        assert_eq!(summary.lines_removed, 1);
+
+        let removed = by_path("gone.txt");
+        assert!(removed.deleted);
+        assert!(removed.change_summary.is_none(), "删除没有 after 可 diff");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn executable_bit_applies_within_the_transaction() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = unique_root();
+
+        let result = apply_workspace_patch_blocking(
+            vec![PatchOperation::AddFile {
+                path: "run.sh".to_string(),
+                content: "#!/bin/sh\n".to_string(),
+                executable: Some(true),
+            }],
+            false,
+            Some(root.to_string_lossy().into_owned()),
+        )
+        .expect("patch");
+
+        assert!(result.ok, "被拒: {:?}", result.rejected);
+        let mode = fs::metadata(root.join("run.sh"))
+            .expect("stat")
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o100, 0o100, "脚手架脚本应可直接执行");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn dry_run_reports_summaries_without_writing() {
+        let root = unique_root();
+        fs::write(root.join("edit.txt"), "old\n").expect("seed");
+
+        let result = apply_workspace_patch_blocking(
+            vec![overwrite("edit.txt", "new\n", Some("old\n"), None)],
+            true,
+            Some(root.to_string_lossy().into_owned()),
+        )
+        .expect("patch");
+
+        assert!(result.ok && result.dry_run && result.would_change);
+        assert_eq!(
+            result.changes[0]
+                .change_summary
+                .as_ref()
+                .expect("summary")
+                .lines_added,
+            1
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("edit.txt")).expect("read back"),
+            "old\n",
+            "dry run 不能改动磁盘"
+        );
+        let _ = fs::remove_dir_all(&root);
     }
 
     fn replace(path: &str, old: &str, new: &str) -> PatchOperation {

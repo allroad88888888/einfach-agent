@@ -19,6 +19,7 @@ const inputSchema = {
               type: { const: 'add_file' },
               path: { type: 'string' },
               content: { type: 'string' },
+              executable: { type: 'boolean' },
             },
             required: ['type', 'path', 'content'],
           },
@@ -28,6 +29,7 @@ const inputSchema = {
               type: { const: 'delete_file' },
               path: { type: 'string' },
               oldContent: { type: 'string' },
+              expectedContentHash: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
             },
             required: ['type', 'path'],
           },
@@ -49,6 +51,8 @@ const inputSchema = {
               path: { type: 'string' },
               content: { type: 'string' },
               oldContent: { type: 'string' },
+              expectedContentHash: { type: 'string', pattern: '^sha256:[0-9a-f]{64}$' },
+              executable: { type: 'boolean' },
             },
             required: ['type', 'path', 'content'],
           },
@@ -82,6 +86,27 @@ function normalizePath(value: unknown): string | undefined {
   return path ? path : undefined
 }
 
+const CONTENT_HASH_PATTERN = /^sha256:[0-9a-f]{64}$/
+
+/**
+ * The hash guard exists so an overwrite does not have to resend the entire previous
+ * file just to prove it was read. Same name and format as write_file's guard.
+ */
+function contentHashError(value: unknown, index: number): string | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'string' || !CONTENT_HASH_PATTERN.test(value)) {
+    return `invalid apply_patch: operations[${index}].expectedContentHash must use sha256:<64 lowercase hex characters>`
+  }
+  return undefined
+}
+
+function executableError(value: unknown, index: number): string | undefined {
+  if (value !== undefined && typeof value !== 'boolean') {
+    return `invalid apply_patch: operations[${index}].executable must be a boolean`
+  }
+  return undefined
+}
+
 function normalizeExpectedReplacements(value: unknown): number | undefined {
   if (value === undefined) return undefined
   if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) return undefined
@@ -101,15 +126,31 @@ function normalizeOperation(value: unknown, index: number): WorkspacePatchOperat
       if (typeof operation.content !== 'string') {
         return `invalid apply_patch: operations[${index}].content must be a string`
       }
-      return { type, path, content: operation.content }
+      const executableInvalid = executableError(operation.executable, index)
+      if (executableInvalid) return executableInvalid
+      const added: WorkspacePatchOperation = { type, path, content: operation.content }
+      if (operation.executable !== undefined) {
+        added.executable = operation.executable as boolean
+      }
+      return added
     }
     case 'delete_file': {
       if (operation.oldContent !== undefined && typeof operation.oldContent !== 'string') {
         return `invalid apply_patch: operations[${index}].oldContent must be a string`
       }
-      return operation.oldContent === undefined
-        ? { type, path }
-        : { type, path, oldContent: operation.oldContent }
+      const hashInvalid = contentHashError(operation.expectedContentHash, index)
+      if (hashInvalid) return hashInvalid
+      if (operation.oldContent !== undefined && operation.expectedContentHash !== undefined) {
+        return `invalid apply_patch: operations[${index}] must pass either oldContent or expectedContentHash, not both`
+      }
+      const deleted: WorkspacePatchOperation = { type, path }
+      if (operation.oldContent !== undefined) {
+        deleted.oldContent = operation.oldContent
+      }
+      if (operation.expectedContentHash !== undefined) {
+        deleted.expectedContentHash = operation.expectedContentHash as string
+      }
+      return deleted
     }
     case 'replace': {
       if (typeof operation.oldText !== 'string' || operation.oldText.length === 0) {
@@ -139,9 +180,24 @@ function normalizeOperation(value: unknown, index: number): WorkspacePatchOperat
       if (operation.oldContent !== undefined && typeof operation.oldContent !== 'string') {
         return `invalid apply_patch: operations[${index}].oldContent must be a string`
       }
-      return operation.oldContent === undefined
-        ? { type, path, content: operation.content }
-        : { type, path, content: operation.content, oldContent: operation.oldContent }
+      const hashInvalid = contentHashError(operation.expectedContentHash, index)
+      if (hashInvalid) return hashInvalid
+      if (operation.oldContent !== undefined && operation.expectedContentHash !== undefined) {
+        return `invalid apply_patch: operations[${index}] must pass either oldContent or expectedContentHash, not both`
+      }
+      const executableInvalid = executableError(operation.executable, index)
+      if (executableInvalid) return executableInvalid
+      const overwritten: WorkspacePatchOperation = { type, path, content: operation.content }
+      if (operation.oldContent !== undefined) {
+        overwritten.oldContent = operation.oldContent
+      }
+      if (operation.expectedContentHash !== undefined) {
+        overwritten.expectedContentHash = operation.expectedContentHash as string
+      }
+      if (operation.executable !== undefined) {
+        overwritten.executable = operation.executable as boolean
+      }
+      return overwritten
     }
     default:
       return `invalid apply_patch: unsupported operation type ${JSON.stringify(type)}`
