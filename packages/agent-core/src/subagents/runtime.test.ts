@@ -230,7 +230,7 @@ describe('createDelegateAgentRuntime', () => {
     await delegateRuntime.dispose?.()
   })
 
-  it('uses Flash only for a structured low-risk direct child selected by the main agent', async () => {
+  it('routes Flash by task features at any depth while nested requests without features stay Pro', async () => {
     const childBodies: Record<string, unknown>[] = []
     const fetchImpl: typeof fetch = async (_url, init) => {
       const body = requestBody(init)
@@ -239,7 +239,17 @@ describe('createDelegateAgentRuntime', () => {
       childBodies.push(body)
       if (path === 'root-01' && !messagesOf(body).some((message) => message.role === 'tool')) {
         return toolCall('nested', {
-          children: [{ objective: 'nested check', modelTier: 'flash' }],
+          children: [
+            // 只声明偏好、无可观测安全特征 → 即使嵌套也拒绝 Flash。
+            { objective: 'nested check', modelTier: 'flash' },
+            // 完整安全特征 → Flash 资格与深度无关。
+            {
+              objective: 'nested lookup',
+              modelTier: 'flash',
+              taskCategory: 'retrieval',
+              riskLevel: 'low',
+            },
+          ],
         })
       }
       return response({ role: 'assistant', content: 'done' })
@@ -268,8 +278,9 @@ describe('createDelegateAgentRuntime', () => {
       'deepseek-v4-flash',
       'deepseek-v4-flash',
     ])
-    // 子 Agent 不能继续把 Flash 选择权下放；嵌套子任务保守使用 Pro。
+    // 嵌套不再一律 Pro：Flash 只看任务特征。偏好而无特征 → Pro；特征齐全 → Flash。
     expect(modelsByPath['root-01-01']).toEqual(['deepseek-v4-pro'])
+    expect(modelsByPath['root-01-02']).toEqual(['deepseek-v4-flash'])
 
     const started = eventsTyped(writes, 'child_started')
     expect(started.find((event) => event.agentPath === 'root-01')?.data).toMatchObject({
@@ -281,7 +292,12 @@ describe('createDelegateAgentRuntime', () => {
     expect(started.find((event) => event.agentPath === 'root-01-01')?.data).toMatchObject({
       modelTier: 'pro',
       model: 'deepseek-v4-pro',
-      route_reason: 'nested_subagent_requires_pro',
+      route_reason: 'flash_request_missing_safe_features',
+    })
+    expect(started.find((event) => event.agentPath === 'root-01-02')?.data).toMatchObject({
+      modelTier: 'flash',
+      model: 'deepseek-v4-flash',
+      route_reason: 'low_risk_retrieval_uses_flash',
     })
 
     await delegateRuntime.dispose?.()

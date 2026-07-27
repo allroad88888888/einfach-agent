@@ -695,7 +695,7 @@ export function shadowRouteForTask(task: DeepSeekTaskSpec): SubagentRouteDecisio
   return routeSubagentModel({
     ...task.routeFeatures,
     // The task suite evaluates first-level child routing. Leaving this undefined would correctly
-    // trigger the production fail-closed nested-agent guard, but would not model this suite.
+    // trigger the production fail-closed unknown-parent-path guard, but would not model this suite.
     parentPath: task.routeFeatures.parentPath ?? ROOT_AGENT_PATH,
   })
 }

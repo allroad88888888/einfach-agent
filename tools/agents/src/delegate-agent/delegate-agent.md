@@ -48,8 +48,12 @@ Budget exhaustion is explicit: the current delegation/model turn fails with a `s
 - A direct root child is routed to Flash only when `taskCategory` is `retrieval` or `extraction`,
   `riskLevel` is `low`, and no Pro-forcing feature applies. This can happen with or without an
   explicit `modelTier: "flash"` preference.
-- Nested delegation, prior failures, final acceptance, evaluator mode, cross-module work, high
-  risk, temporal normalization, and any confirmed dangerous capability always route to Pro.
+- Prior failures, final acceptance, evaluator mode, cross-module work, high risk, temporal
+  normalization, and any confirmed dangerous capability always route to Pro. These quality gates
+  apply at every tree depth.
+- Flash eligibility itself is depth-independent: a nested child with observable low-risk
+  retrieval/extraction features may use Flash. A missing or invalid parent path fails closed
+  to Pro.
 - Set `requiresTemporalNormalization` from the task contract, not by guessing from incidental time
   words.
 - Every initial decision is archived as `route_reason`. A Flash provider failure or

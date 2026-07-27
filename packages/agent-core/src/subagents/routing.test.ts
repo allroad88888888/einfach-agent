@@ -85,7 +85,7 @@ describe('routeSubagentModel', () => {
     }).reason).toBe('prior_failure_requires_pro')
   })
 
-  it('rejects unsafe Flash requests and never delegates Flash routing to nested agents', () => {
+  it('rejects Flash requests that lack observable safe features', () => {
     expect(routeSubagentModel({
       parentPath: 'root',
       requestedTier: 'flash',
@@ -93,15 +93,57 @@ describe('routeSubagentModel', () => {
       tier: 'pro',
       reason: 'flash_request_missing_safe_features',
     })
+  })
+
+  it('extends Flash eligibility to valid nested paths without relaxing quality gates', () => {
+    // Flash 资格只看任务特征，与树深度无关。
     expect(routeSubagentModel({
       parentPath: 'root-01',
       requestedTier: 'flash',
       taskCategory: 'retrieval',
       riskLevel: 'low',
     })).toEqual({
-      tier: 'pro',
-      reason: 'nested_subagent_requires_pro',
+      tier: 'flash',
+      reason: 'low_risk_retrieval_uses_flash',
     })
+    expect(routeSubagentModel({
+      parentPath: 'root-02-03',
+      taskCategory: 'extraction',
+      riskLevel: 'low',
+    })).toEqual({
+      tier: 'flash',
+      reason: 'low_risk_extraction_uses_flash',
+    })
+    // 质量闸门不因深度豁免：嵌套 + 先前失败仍升级 Pro。
+    expect(routeSubagentModel({
+      parentPath: 'root-01',
+      taskCategory: 'retrieval',
+      riskLevel: 'low',
+      priorFailureCount: 1,
+    }).reason).toBe('prior_failure_requires_pro')
+    // 嵌套 + 缺安全特征的 Flash 请求同样被拒。
+    expect(routeSubagentModel({
+      parentPath: 'root-01',
+      requestedTier: 'flash',
+    }).reason).toBe('flash_request_missing_safe_features')
+  })
+
+  it('fails closed to Pro when the parent path is missing or invalid', () => {
+    // 树上下文缺失或伪造时不给 Flash：这是原「嵌套一律 Pro」规则真正要守的东西。
+    expect(routeSubagentModel({
+      taskCategory: 'retrieval',
+      riskLevel: 'low',
+    })).toEqual({
+      tier: 'pro',
+      reason: 'unknown_parent_path_requires_pro',
+    })
+    for (const bad of ['', 'ROOT', 'root-', 'root-00', 'root-1x', 'node-01']) {
+      expect(routeSubagentModel({
+        parentPath: bad,
+        taskCategory: 'retrieval',
+        riskLevel: 'low',
+      }).reason).toBe('unknown_parent_path_requires_pro')
+    }
   })
 
   it('keeps dangerous capabilities and evaluator work on Pro', () => {

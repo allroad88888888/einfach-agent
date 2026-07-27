@@ -1,4 +1,4 @@
-import { ROOT_AGENT_PATH } from './path'
+import { isAgentPath } from './path'
 import type {
   SubagentModelTier,
   SubagentRiskLevel,
@@ -8,7 +8,7 @@ import type {
 export type SubagentRouteReason =
   | 'non_deepseek_provider_uses_parent_model'
   | 'custom_deepseek_model_uses_parent_model'
-  | 'nested_subagent_requires_pro'
+  | 'unknown_parent_path_requires_pro'
   | 'prior_failure_requires_pro'
   | 'final_acceptance_requires_pro'
   | 'dangerous_capability_requires_pro'
@@ -60,8 +60,12 @@ export function routeSubagentModel(features: SubagentRouteFeatures): SubagentRou
   if (features.vendor === 'deepseek' && features.supportsDeepSeekTierRouting === false) {
     return { tier: 'pro', reason: 'custom_deepseek_model_uses_parent_model' }
   }
-  if (features.parentPath !== ROOT_AGENT_PATH) {
-    return { tier: 'pro', reason: 'nested_subagent_requires_pro' }
+  // parentPath 缺失或非法说明调用方丢失（或伪造）了树上下文，fail-closed 走 Pro。
+  // 合法的嵌套 path（root-01 等）不再一律强制 Pro：Flash 资格只看任务特征，与深度无关
+  // ——低风险检索/提取在任意层级都可享受 Flash 价差；而质量闸门（先前失败、evaluator、
+  // 危险能力、跨模块、时间归一化……）本就与深度无关，照常生效。
+  if (features.parentPath === undefined || !isAgentPath(features.parentPath)) {
+    return { tier: 'pro', reason: 'unknown_parent_path_requires_pro' }
   }
   if ((features.priorFailureCount ?? 0) > 0) {
     return { tier: 'pro', reason: 'prior_failure_requires_pro' }
