@@ -19,8 +19,14 @@
 //   与 defaultCore 互不污染（第 3 期隔离雏形）。
 
 import { sessionsAtom } from './rootStore'
-import { checkpointsAtom, currentTurnIndexAtom, itemsAtom, planAtom } from './sessionAtoms'
-import type { Checkpoint, RunRecoverySnapshot } from './checkpoint.type'
+import {
+  checkpointsAtom,
+  currentTurnIndexAtom,
+  itemsAtom,
+  planAtom,
+  planStageCheckpointsAtom,
+} from './sessionAtoms'
+import type { Checkpoint, PlanStageCheckpoint, RunRecoverySnapshot } from './checkpoint.type'
 import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
 import type { PlanSnapshot } from '../planning/types'
 import { persistSessions } from '../runtime/persistenceBridge'
@@ -32,12 +38,16 @@ function sessionMissing(id: string, core: CoreInstance): boolean {
 }
 
 // checkpoint 恢复必须同时更新 planAtom 和 SessionMeta.plan：前者驱动当前 UI，后者负责刷新后 hydrate。
+// 阶段回退点跟随同一份快照回退：它记录的 itemCount 指向被恢复的那段 items，
+// 若留着回退点不动，轮级回退后它们会指向已经被截断掉的位置。
 function restorePlan(
   id: string,
   plan: PlanSnapshot | undefined,
+  stagePoints: PlanStageCheckpoint[] | undefined,
   core: CoreInstance,
 ): void {
   core.getSessionStore(id).store.setter(planAtom, plan)
+  core.getSessionStore(id).store.setter(planStageCheckpointsAtom, stagePoints ?? [])
   core.rootStore.setter(sessionsAtom, (previous) => {
     const session = previous[id]
     if (!session) return previous
@@ -48,6 +58,13 @@ function restorePlan(
   })
   // persistenceBridge 绑定的是 defaultCore 的 rootStore；隔离 core 不写入默认实例的持久化层。
   if (core === defaultCore) persistSessions()
+}
+
+// 没有阶段回退点的会话（绝大多数普通对话）不必给每条 checkpoint 都塞一个空数组。
+function stageCheckpointsSnapshot(
+  points: PlanStageCheckpoint[],
+): PlanStageCheckpoint[] | undefined {
+  return points.length > 0 ? points : undefined
 }
 
 /**
@@ -67,7 +84,15 @@ export function commitCheckpoint(
   const plan = store.getter(planAtom)
   // 新快照的 turnIndex = 现有 checkpoint 数量（即它入列表后的下标）。
   const turnIndex = store.getter(checkpointsAtom).length
-  const cp: Checkpoint = { turnIndex, label, createdAt: Date.now(), items, plan, recovery }
+  const cp: Checkpoint = {
+    turnIndex,
+    label,
+    createdAt: Date.now(),
+    items,
+    plan,
+    recovery,
+    planStageCheckpoints: stageCheckpointsSnapshot(store.getter(planStageCheckpointsAtom)),
+  }
   store.setter(checkpointsAtom, (prev) => [...prev, cp])
   store.setter(currentTurnIndexAtom, turnIndex)
 }
@@ -95,6 +120,7 @@ export function updateCheckpoint(
     items: store.getter(itemsAtom),
     plan: store.getter(planAtom),
     recovery,
+    planStageCheckpoints: stageCheckpointsSnapshot(store.getter(planStageCheckpointsAtom)),
   }
   store.setter(checkpointsAtom, list.map((item, index) => (index === turnIndex ? checkpoint : item)))
   store.setter(currentTurnIndexAtom, turnIndex)
@@ -121,10 +147,49 @@ export function jumpToCheckpoint(
   }
   // 恢复该轮的 items（整体替换，C4）。
   store.setter(itemsAtom, cp.items)
-  restorePlan(id, cp.plan, core)
+  restorePlan(id, cp.plan, cp.planStageCheckpoints, core)
   // 截断：丢弃第 turnIndex 轮之后的全部快照（git reset --hard 语义）。
   store.setter(checkpointsAtom, list.slice(0, turnIndex + 1))
   store.setter(currentTurnIndexAtom, turnIndex)
+}
+
+/**
+ * 回退到某个计划阶段开始之前（阶段级回退，轮级 jumpToCheckpoint 的计划内部版本）：
+ * 恢复该阶段的回退点快照、把对话截断回打点时的长度，并丢弃该点及其之后的全部回退点。
+ * 没有对应回退点（旧会话、或该阶段从未开始）时返回 undefined，由调用方决定降级行为。
+ *
+ * 恢复出的计划**不复用**快照里的旧 revision，而是从当前 revision 继续向前发号：
+ * revision 是评估回写的乐观锁令牌，回退若把它退回旧值，第一遍执行残留的后台 evaluator
+ * （持有当时的 revision）就可能在重跑过程中正好匹配上，把过期评估写进新一轮执行。
+ * 只向前发号可保证任何用过的 revision 永不复现，僵尸回写一律 fail-closed。
+ */
+export function revertToPlanStageCheckpoint(
+  id: string,
+  stageId: string,
+  core: CoreInstance = defaultCore,
+): PlanStageCheckpoint | undefined {
+  if (sessionMissing(id, core)) return undefined
+  const store = core.getSessionStore(id).store
+  const points = store.getter(planStageCheckpointsAtom)
+  const index = points.findIndex((point) => point.stageId === stageId)
+  const point = points[index]
+  if (!point) return undefined
+
+  const current = store.getter(planAtom)
+  // 计划已被换掉或清空时，回退点指向的计划已经不是当前这份，整体 no-op。
+  if (!current || current.id !== point.plan.id) return undefined
+
+  // itemCount 是打点时的全局下标。轮级回退可能已经把对话截得更短，slice 在这种情况下
+  // 自然退化成「保持原样」，不会越界。
+  store.setter(itemsAtom, store.getter(itemsAtom).slice(0, point.itemCount))
+  restorePlan(
+    id,
+    { ...point.plan, revision: current.revision + 1, updatedAt: Date.now() },
+    // 该点及其之后的回退点都指向刚被丢弃的那段执行，一并截断。
+    points.slice(0, index),
+    core,
+  )
+  return point
 }
 
 /**
@@ -155,7 +220,8 @@ export function rewindBeforeCheckpoint(
 
   store.setter(itemsAtom, cp.items.slice(0, userIndex))
   // 撤回目标轮本身时，恢复的是“上一轮结束后”的计划；撤回首轮则回到无计划状态。
-  restorePlan(id, list[turnIndex - 1]?.plan, core)
+  const previousTurn = list[turnIndex - 1]
+  restorePlan(id, previousTurn?.plan, previousTurn?.planStageCheckpoints, core)
   store.setter(checkpointsAtom, list.slice(0, turnIndex))
   store.setter(currentTurnIndexAtom, turnIndex - 1)
 }

@@ -19,6 +19,8 @@ vi.mock('./modelRun', () => ({
 vi.mock('../state/checkpointWriters', () => ({
   jumpToCheckpoint: vi.fn(),
   rewindBeforeCheckpoint: vi.fn(),
+  revertToPlanStageCheckpoint: vi.fn(),
+  updateCheckpoint: vi.fn(),
 }))
 // D-4：持久化桥全 mock —— 只验证 commands 按约定调用了落盘钩子（不跑真实 IndexedDB）。
 vi.mock('./persistenceBridge', () => ({
@@ -26,6 +28,7 @@ vi.mock('./persistenceBridge', () => ({
   persistWorkspaces: vi.fn(),
   persistDeleteSession: vi.fn(),
   persistTruncate: vi.fn(),
+  persistCheckpoint: vi.fn(),
 }))
 
 import {
@@ -68,7 +71,12 @@ import {
 import { defaultCore, createCoreInstance } from './core/coreInstance'
 import { getExecutionRuntime } from '../execution/runtime'
 import { executionGraphAtom } from '../execution/graph'
-import { jumpToCheckpoint, rewindBeforeCheckpoint } from '../state/checkpointWriters'
+import {
+  jumpToCheckpoint,
+  revertToPlanStageCheckpoint,
+  rewindBeforeCheckpoint,
+  updateCheckpoint,
+} from '../state/checkpointWriters'
 import {
   persistSessions,
   persistWorkspaces,
@@ -93,6 +101,7 @@ import {
   withdrawCurrentTurnToDraft,
   revertToTurn,
   revertTurnToDraft,
+  rollbackPlanStage,
   resumeWithAnswers,
   answerQuestion,
   discardArtifact,
@@ -745,6 +754,95 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(rewindBeforeCheckpoint).toHaveBeenCalledWith(id, 0, defaultCore)
     expect(getSessionStore(id).store.getter(composerDraftAtom)).toBe('第一问')
     expect(persistTruncate).toHaveBeenCalledWith(id, -1)
+  })
+
+  // 阶段级回退：checkpoint 按用户消息分轮，而计划的几十次阶段推进通常都在同一轮内，
+  // 轮级回退够不着计划内部。rollbackPlanStage 优先走阶段回退点（快照 + 截断对话），
+  // 没有回退点的旧会话降级成前向重置（只清空阶段状态，不动对话）。
+  function seedPlanStage(id: string, status: 'in_progress' | 'completed' = 'completed'): void {
+    setPlan(id, {
+      id: 'plan-rollback', title: '计划', objective: 'o', status: 'active', revision: 4,
+      requiresApproval: false, createdAt: 1, updatedAt: 2,
+      stages: [{
+        id: 'build', title: '实现', objective: 'o', deliverables: [],
+        acceptanceCriteria: ['测试通过'], dependencies: [], status, evidence: [], evaluations: [],
+      }],
+    })
+  }
+
+  it('rollbackPlanStage：命中回退点时停 run、恢复快照并同步落盘当轮 checkpoint', () => {
+    const id = newSession()
+    const store = getSessionStore(id).store
+    seedPlanStage(id)
+    store.setter(runAtom, { runId: 'r1', status: 'running' })
+    store.setter(checkpointsAtom, [
+      {
+        turnIndex: 0,
+        label: '[执行中] 轮1',
+        createdAt: 5,
+        items: [],
+        recovery: { run: { runId: 'r1', status: 'awaiting_tool' } },
+      },
+    ])
+    vi.mocked(revertToPlanStageCheckpoint).mockReturnValue({
+      stageId: 'build',
+      plan: { id: 'plan-rollback' } as never,
+      itemCount: 0,
+      createdAt: 7,
+    })
+
+    rollbackPlanStage('plan-rollback', getPlan(id)!.revision, 'build')
+
+    expect(abortRun).toHaveBeenCalledWith(id)
+    expect(revertToPlanStageCheckpoint).toHaveBeenCalledWith(id, 'build', defaultCore)
+    expect(store.getter(runAtom)).toBeUndefined()
+    // 内存回退了、当轮 checkpoint 不同步的话，刷新就把被丢弃的阶段执行复活了。
+    // 第 5 参 undefined = 清掉旧 run 的 recovery，避免刷新后被 hydrate 复活成可「继续执行」的 interrupted run。
+    expect(updateCheckpoint).toHaveBeenCalledWith(id, 0, '[执行中] 轮1', defaultCore, undefined)
+    expect(store.getter(withdrawnTurnNoticeAtom)?.text).toContain('已回退到该阶段开始前')
+  })
+
+  it('rollbackPlanStage：没有回退点的旧会话降级成前向重置，不动对话', () => {
+    const id = newSession()
+    const store = getSessionStore(id).store
+    seedPlanStage(id)
+    const items: ConversationItem[] = [{ id: 'u1', createdAt: 1, item: { role: 'user', content: 'hi' } }]
+    store.setter(itemsAtom, items)
+    vi.mocked(revertToPlanStageCheckpoint).mockReturnValue(undefined)
+
+    rollbackPlanStage('plan-rollback', getPlan(id)!.revision, 'build')
+
+    expect(store.getter(itemsAtom)).toBe(items)
+    // 前向重置：阶段被重新打开，计划 revision 前进。
+    expect(getPlan(id)?.stages[0].status).toBe('in_progress')
+    expect(getPlan(id)?.revision).toBe(5)
+    expect(store.getter(withdrawnTurnNoticeAtom)).toBeUndefined()
+  })
+
+  it('rollbackPlanStage：revision 不匹配（并发推进）→ 整体 no-op', () => {
+    const id = newSession()
+    seedPlanStage(id)
+
+    rollbackPlanStage('plan-rollback', 999, 'build')
+
+    expect(revertToPlanStageCheckpoint).not.toHaveBeenCalled()
+    expect(abortRun).not.toHaveBeenCalledWith(id)
+  })
+
+  it('rollbackPlanStage：尚未开始的阶段 → 整体 no-op', () => {
+    const id = newSession()
+    setPlan(id, {
+      id: 'plan-rollback', title: '计划', objective: 'o', status: 'active', revision: 4,
+      requiresApproval: false, createdAt: 1, updatedAt: 2,
+      stages: [{
+        id: 'build', title: '实现', objective: 'o', deliverables: [],
+        acceptanceCriteria: ['c'], dependencies: [], status: 'pending', evidence: [], evaluations: [],
+      }],
+    })
+
+    rollbackPlanStage('plan-rollback', getPlan(id)!.revision, 'build')
+
+    expect(revertToPlanStageCheckpoint).not.toHaveBeenCalled()
   })
 
   it('revertTurnToDraft：无效轮次整体 no-op', () => {

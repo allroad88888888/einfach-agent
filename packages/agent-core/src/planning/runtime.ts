@@ -140,6 +140,53 @@ export class PlanRuntime {
     return this.write({ ...current!, status: terminal ? 'evaluating' : 'active', stages })
   }
 
+  /**
+   * 将指定阶段及所有依赖它的后续阶段重新打开。
+   *
+   * 已完成的前置阶段保持不变；被回滚的阶段会丢弃旧的执行证据和评估结果，
+   * 由宿主在下一次 continuePlan 时从目标阶段重新执行。
+   */
+  rollbackStage(planId: string, revision: number, stageId: string): PlanMutationResult {
+    const current = this.store.get()
+    const error = this.guard(current, planId, revision)
+    if (error) return fail(error)
+    if (!['active', 'evaluating', 'awaiting_user_acceptance', 'completed', 'failed', 'rejected'].includes(current!.status)) {
+      return fail(`plan is ${current!.status}, no executed stage can be rolled back`)
+    }
+
+    const target = current!.stages.find((stage) => stage.id === stageId)
+    if (!target) return fail(`unknown stage: ${stageId}`)
+    if (target.status === 'pending') return fail(`stage ${stageId} has not started`)
+
+    const rolledBack = new Set<string>([stageId])
+    let changed = true
+    while (changed) {
+      changed = false
+      for (const stage of current!.stages) {
+        if (rolledBack.has(stage.id) || !stage.dependencies.some((dependency) => rolledBack.has(dependency))) continue
+        rolledBack.add(stage.id)
+        changed = true
+      }
+    }
+
+    return this.write({
+      ...current!,
+      status: 'active',
+      evaluation: undefined,
+      userAcceptance: undefined,
+      stages: current!.stages.map((stage) => {
+        if (!rolledBack.has(stage.id)) return stage
+        return {
+          ...stage,
+          status: stage.id === stageId ? 'in_progress' : 'pending',
+          evidence: [],
+          evaluations: [],
+          blockReason: undefined,
+        }
+      }),
+    })
+  }
+
   private guard(current: PlanSnapshot | undefined, planId: string, revision: number): string | undefined {
     if (!current) return 'no plan exists'
     if (current.id !== planId) return `plan id mismatch: active plan is ${current.id}`

@@ -225,6 +225,10 @@ export const expandedTranscriptGroupsAtom = atom<Record<string, boolean>>({})
 // 详情：未出现的 id 仍由阶段状态决定默认值，例如执行中阶段默认展开。
 export const expandedPlanStagesAtom = atom<Record<string, boolean>>({})
 
+// 简介：当前会话计划面板整体是否展开。
+// 详情：默认展开；收起后仅保留计划标题、状态和展开入口，减少长计划的垂直占用。
+export const planPanelExpandedAtom = atom(true)
+
 // 简介：当前会话最近一次 LLM 调用的上下文统计。
 // 详情：只记录 system/messages/tools 的轻量统计和 provider usage；不进 messages、不持久化、不回发给 model。
 export const contextStatsAtom = atom<ContextStatsSnapshot | undefined>(undefined)

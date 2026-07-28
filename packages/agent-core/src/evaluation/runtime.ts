@@ -52,6 +52,18 @@ function stageVerdict(criteria: CriterionEvaluation[]): EvaluationVerdict {
   return 'passed'
 }
 
+/**
+ * unknown 不是「不合格」，而是「没法判定」—— 阶段落 blocked 而不是 failed，理由必须可读，
+ * 否则 UI 和模型都只看到一个空的 blocked，无从判断该重试还是该交给用户裁定。
+ */
+function unknownBlockReason(criteria: CriterionEvaluation[]): string {
+  const reasons = criteria
+    .filter((item) => item.status === 'unknown')
+    .map((item) => item.reason.trim())
+    .filter(Boolean)
+  return reasons.slice(0, 3).join('; ') || 'evaluation could not verify acceptance criteria'
+}
+
 export class EvaluationRuntime {
   constructor(
     private readonly store: EvaluationRuntimeStore,
@@ -103,9 +115,13 @@ export class EvaluationRuntime {
     const attempts = target.evaluations ?? []
     const latest = attempts.at(-1)
     if (!latest || latest.status !== 'evaluating') return fail('stage has no submitted result to evaluate')
+    // failed = 判定不合格，blocked = 判定不了（评估器够不着的验收标准）。两者都不解锁依赖、
+    // 两种状态都不解锁依赖，但都能被 execute_plan 重新拉起。
+    const stageStatus = verdict === 'passed' ? 'completed' as const : verdict === 'failed' ? 'failed' as const : 'blocked' as const
     let stages = current!.stages.map((stage) => stage.id === input.stageId ? {
       ...stage,
-      status: verdict === 'passed' ? 'completed' as const : 'failed' as const,
+      status: stageStatus,
+      blockReason: verdict === 'unknown' ? unknownBlockReason(input.criteria) : undefined,
       evaluations: attempts.map((attempt, index) => index === attempts.length - 1 ? {
         ...attempt,
         status: verdict,

@@ -24,6 +24,21 @@ export interface Checkpoint {
   items: ConversationItem[]
   plan?: PlanSnapshot
   recovery?: RunRecoverySnapshot
+  planStageCheckpoints?: PlanStageCheckpoint[]
+}
+
+// 简介：一个计划阶段「开始之前」的回退点。
+// 详情：checkpoint 的粒度是「用户消息轮」，而一个计划的几十次阶段推进通常全部发生在同一轮内，
+// 轮级回退因此够不着计划内部（回退整轮 = 计划整个消失，回退别的轮 = 计划纹丝不动）。
+// 阶段回退点补上这一层：某阶段首次进入 in_progress 时记一笔「变更前的计划快照 + 当时的 items 长度」，
+// 回退该阶段 = 恢复这份计划快照 + 把对话截断回 itemCount，让模型从干净状态重跑该阶段。
+// plan 是阶段开始前的快照（该阶段在其中仍是 pending），itemCount 是打点时 itemsAtom 的长度。
+// 与 Checkpoint 一样必须可 JSON 序列化（C5）。
+export interface PlanStageCheckpoint {
+  stageId: string
+  plan: PlanSnapshot
+  itemCount: number
+  createdAt: number
 }
 
 // ===========================================================================
@@ -31,8 +46,12 @@ export interface Checkpoint {
 // ===========================================================================
 
 // 简介：Checkpoint 去掉完整会话状态的轻量版（供列表 UI）。
-// 详情：不含 items / plan / recovery，供列表懒加载 —— 列表只渲染 turnIndex / label / createdAt。
-export type CheckpointMeta = Omit<Checkpoint, 'items' | 'plan' | 'recovery'>
+// 详情：不含 items / plan / recovery / planStageCheckpoints，供列表懒加载 ——
+// 列表只渲染 turnIndex / label / createdAt。
+export type CheckpointMeta = Omit<
+  Checkpoint,
+  'items' | 'plan' | 'recovery' | 'planStageCheckpoints'
+>
 // 活动轮的恢复信息直接跟随工作 checkpoint 落盘。它不是第二套状态源：
 // checkpoint 仍是历史和恢复的唯一持久化单元，runAtom/队列只在 hydrate 时由最新 checkpoint 回填。
 export interface RunRecoverySnapshot {

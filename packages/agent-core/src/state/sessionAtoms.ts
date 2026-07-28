@@ -7,7 +7,7 @@
 
 import { atom } from '@einfach/core'
 import type { ConversationItem, RunState } from './core.type'
-import type { Checkpoint } from './checkpoint.type'
+import type { Checkpoint, PlanStageCheckpoint } from './checkpoint.type'
 import type { PlanSnapshot } from '../planning/types'
 
 // 简介：当前会话的对话历史。
@@ -28,3 +28,8 @@ export const currentTurnIndexAtom = atom<number>(-1)
 
 // 当前会话的结构化执行计划。它是运行时与 UI 的唯一内存状态源；SessionMeta.plan 仅是持久化副本。
 export const planAtom = atom<PlanSnapshot | undefined>(undefined)
+
+// 简介：当前会话的计划阶段回退点序列（按打点先后排列）。
+// 详情：值随 store 隔离，非分桶。由 setPlan 在阶段首次转 in_progress 时追加，随 checkpoint
+// 一起快照与恢复 —— 轮级回退会连同它一起回到那一轮的状态，不留下指向已废弃 items 的回退点。
+export const planStageCheckpointsAtom = atom<PlanStageCheckpoint[]>([])

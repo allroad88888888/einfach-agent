@@ -44,7 +44,12 @@ import {
   setWithdrawnTurnNotice,
 } from '../state/transientAtoms'
 import type { AskUserAnswerValue } from '../state/transientAtoms'
-import { jumpToCheckpoint, rewindBeforeCheckpoint } from '../state/checkpointWriters'
+import {
+  jumpToCheckpoint,
+  revertToPlanStageCheckpoint,
+  rewindBeforeCheckpoint,
+  updateCheckpoint,
+} from '../state/checkpointWriters'
 import {
   persistCurrentRunRecovery,
   resumeInterruptedSession,
@@ -60,6 +65,7 @@ import {
 //   createCore({ config }) 在构造时预置，其命令读自己的 core.config。
 import { defaultCore, type RuntimeConfig, type CoreInstance } from './core/coreInstance'
 import {
+  persistCheckpoint,
   persistSessions,
   persistWorkspaces,
   persistDeleteSession,
@@ -804,6 +810,64 @@ export function createCommands(core: CoreInstance = defaultCore) {
     runtime.acceptPlan(planId, revision, accepted)
   }
 
+  // 回滚计划中的一个阶段。已经执行的文件/网络等外部副作用不会被自动撤销。
+  //
+  // 优先走**阶段回退点**（快照语义）：恢复该阶段开始前的计划快照，并把该阶段之后产生的对话一并截断，
+  // 让模型从干净状态重跑。这是「一轮内跑完几十个阶段、轮级回退够不着计划内部」的正解 ——
+  // checkpoint 按用户消息分轮，而计划推进几乎全部发生在轮内。
+  //
+  // 没有回退点时（回退点上线前的旧会话）降级成前向重置：只把阶段状态和评估记录清空重开，
+  // 对话保持原样。两条路径都先 stopRun —— 它除了中断模型请求，还会取消该 run 下仍在跑的
+  // 后台 evaluator，避免它们在重跑期间继续消耗额度并尝试回写。
+  function rollbackPlanStage(planId: string, revision: number, stageId: string): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+    const current = getPlan(id)
+    if (!current || current.id !== planId || current.revision !== revision) return
+    if (
+      !['active', 'evaluating', 'awaiting_user_acceptance', 'completed', 'failed', 'rejected'].includes(current.status)
+      || !current.stages.some((stage) => stage.id === stageId && stage.status !== 'pending')
+    ) return
+
+    const store = core.getSessionStore(id).store
+    const discardedItems = store.getter(itemsAtom)
+    stopRun()
+    setRun(id, undefined, core)
+
+    const point = revertToPlanStageCheckpoint(id, stageId, core)
+    if (!point) {
+      const runtime = new PlanRuntime({ get: () => getPlan(id), set: (plan) => setPlan(id, plan) }, Date.now, newId)
+      runtime.rollbackStage(planId, revision, stageId)
+      return
+    }
+
+    // 截断掉的那段对话可能带着 browser 卡片和 runtime transcript 事件；它们不进 checkpoint 快照，
+    // 需要按打点时刻单独裁剪，否则回退后仍会渲染已废弃阶段的卡片（与 revertToTurn 同一处理）。
+    pruneBrowserCardsAfter(id, point.createdAt, core)
+    pruneRuntimeTranscriptEventsAfter(id, point.createdAt, core)
+
+    // 内存里的 items/plan 已经回退，当轮 checkpoint 还停在回退前 —— 不同步落盘的话刷新就复活了。
+    const checkpoints = store.getter(checkpointsAtom)
+    const working = checkpoints[checkpoints.length - 1]
+    if (working) {
+      // recovery 显式清空：它指向刚被中断的那个 run（含 pendingExecutionId），留着的话刷新后
+      // hydrate 会把它复活成 interrupted 并提供「继续执行」，而那个 run 的 items 已经被截断掉了。
+      updateCheckpoint(id, working.turnIndex, working.label, core, undefined)
+      const updated = store.getter(checkpointsAtom)[working.turnIndex]
+      if (updated) persistCheckpoint(id, updated)
+    }
+
+    const sideEffects = currentTurnHasSideEffects(discardedItems.slice(point.itemCount))
+    setWithdrawnTurnNotice(id, {
+      id: newId(),
+      createdAt: Date.now(),
+      text: sideEffects
+        ? '已回退到该阶段开始前，该阶段之后的对话已撤回；已触发过工具，外部副作用不会被自动撤销。'
+        : '已回退到该阶段开始前，该阶段之后的对话已撤回。',
+      sideEffects,
+    }, core)
+  }
+
   // =========================================================================
   // 卡片交互命令（P8-c）—— UI 卡片的答案回填 / 产物丢弃
   // =========================================================================
@@ -912,6 +976,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
     confirmTool,
     approvePlan,
     acceptPlanResult,
+    rollbackPlanStage,
     answerQuestion,
     discardArtifact,
     revertToTurn,
@@ -949,6 +1014,7 @@ export const {
   confirmTool,
   approvePlan,
   acceptPlanResult,
+  rollbackPlanStage,
   answerQuestion,
   discardArtifact,
   revertToTurn,

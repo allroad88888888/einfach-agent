@@ -1,11 +1,18 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { getSessionStore, resetSessionStores } from './sessionStore'
-import { checkpointsAtom, currentTurnIndexAtom, itemsAtom, planAtom } from './sessionAtoms'
+import {
+  checkpointsAtom,
+  currentTurnIndexAtom,
+  itemsAtom,
+  planAtom,
+  planStageCheckpointsAtom,
+} from './sessionAtoms'
 import { rootStore, sessionsAtom, resetRootStore } from './rootStore'
 import type { ConversationItem, SessionMeta } from './core.type'
 import {
   commitCheckpoint,
   jumpToCheckpoint,
+  revertToPlanStageCheckpoint,
   rewindBeforeCheckpoint,
   updateCheckpoint,
 } from './checkpointWriters'
@@ -345,5 +352,134 @@ describe('checkpointWriters — core 穿线隔离（第 2 期）', () => {
     // defaultCore 一侧：同 id 's1' 的 session store 完全空白，没被这次隔离 core 的操作影响到。
     expect(getSessionStore('s1').store.getter(itemsAtom)).toEqual([])
     expect(getSessionStore('s1').store.getter(checkpointsAtom)).toEqual([])
+  })
+})
+
+// ===========================================================================
+// 阶段级回退（revertToPlanStageCheckpoint）
+// ---------------------------------------------------------------------------
+// 轮级回退按用户消息分轮，而一个计划的几十次阶段推进通常都发生在同一轮内，够不着计划内部。
+// 阶段回退点补这一层：恢复阶段开始前的计划快照 + 把对话截断回打点时的长度。
+// ===========================================================================
+describe('revertToPlanStageCheckpoint', () => {
+  const items: ConversationItem[] = [
+    item1,
+    item2,
+    { id: 'i3', createdAt: 2, item: { role: 'assistant', content: '阶段2产出' } },
+    { id: 'i4', createdAt: 3, item: { role: 'assistant', content: '阶段3产出' } },
+  ]
+
+  function seedStagePoint(): void {
+    seedS1()
+    const store = getSessionStore('s1').store
+    store.setter(itemsAtom, items)
+    store.setter(planAtom, plan('p1', 9))
+    store.setter(planStageCheckpointsAtom, [
+      { stageId: 'st1', plan: plan('p1', 2), itemCount: 1, createdAt: 10 },
+      { stageId: 'st2', plan: plan('p1', 5), itemCount: 2, createdAt: 20 },
+    ])
+  }
+
+  it('恢复阶段开始前的计划快照并把对话截断回打点长度', () => {
+    seedStagePoint()
+    const store = getSessionStore('s1').store
+
+    const point = revertToPlanStageCheckpoint('s1', 'st2')
+
+    expect(point?.stageId).toBe('st2')
+    expect(store.getter(itemsAtom)).toEqual([item1, item2])
+    expect(store.getter(planAtom)?.createdAt).toBe(plan('p1', 5).createdAt)
+    // 该点及其之后的回退点一并截断（它们指向刚被丢弃的那段执行）。
+    expect(store.getter(planStageCheckpointsAtom).map((p) => p.stageId)).toEqual(['st1'])
+  })
+
+  it('revision 只向前发号，不复用快照里的旧号（僵尸评估回写必须 fail-closed）', () => {
+    seedStagePoint()
+    const store = getSessionStore('s1').store
+
+    revertToPlanStageCheckpoint('s1', 'st2')
+
+    // 快照本身是 r5，当前是 r9 → 恢复后必须是 r10，而不是退回 r5。
+    expect(store.getter(planAtom)?.revision).toBe(10)
+    expect(rootStore.getter(sessionsAtom).s1.plan?.revision).toBe(10)
+  })
+
+  it('SessionMeta.plan 同步恢复，保证刷新后 hydrate 拿到的是回退后的计划', () => {
+    seedStagePoint()
+    revertToPlanStageCheckpoint('s1', 'st1')
+    // plan() 用 revision 同时填 createdAt，故 createdAt=2 唯一标识「st1 开始前」那份快照。
+    expect(rootStore.getter(sessionsAtom).s1.plan?.createdAt).toBe(2)
+  })
+
+  it('阶段没有回退点时整体 no-op 并返回 undefined', () => {
+    seedStagePoint()
+    const store = getSessionStore('s1').store
+
+    expect(revertToPlanStageCheckpoint('s1', 'st9')).toBeUndefined()
+    expect(store.getter(itemsAtom)).toBe(items)
+    expect(store.getter(planStageCheckpointsAtom)).toHaveLength(2)
+  })
+
+  it('当前计划已被换成另一份时整体 no-op（回退点不属于这份计划）', () => {
+    seedStagePoint()
+    const store = getSessionStore('s1').store
+    store.setter(planAtom, plan('p2', 1))
+
+    expect(revertToPlanStageCheckpoint('s1', 'st2')).toBeUndefined()
+    expect(store.getter(itemsAtom)).toBe(items)
+    expect(store.getter(planAtom)?.id).toBe('p2')
+  })
+
+  it('itemCount 大于当前对话长度时截断退化成保持原样，不越界', () => {
+    seedS1()
+    const store = getSessionStore('s1').store
+    store.setter(itemsAtom, [item1])
+    store.setter(planAtom, plan('p1', 9))
+    store.setter(planStageCheckpointsAtom, [
+      { stageId: 'st1', plan: plan('p1', 2), itemCount: 99, createdAt: 10 },
+    ])
+
+    revertToPlanStageCheckpoint('s1', 'st1')
+
+    expect(store.getter(itemsAtom)).toEqual([item1])
+  })
+
+  it('未登记的会话整体 no-op（ghost guard）', () => {
+    const store = getSessionStore('ghost').store
+    store.setter(planStageCheckpointsAtom, [
+      { stageId: 'st1', plan: plan('p1', 2), itemCount: 0, createdAt: 10 },
+    ])
+    expect(revertToPlanStageCheckpoint('ghost', 'st1')).toBeUndefined()
+  })
+
+  it('轮级回退会连同阶段回退点一起回到那一轮的状态', () => {
+    seedS1()
+    const store = getSessionStore('s1').store
+    // 轮 0：还没有计划。
+    store.setter(itemsAtom, [item1])
+    commitCheckpoint('s1', '轮1')
+    // 轮 1：计划跑起来并打了两个阶段回退点。
+    store.setter(itemsAtom, items)
+    store.setter(planAtom, plan('p1', 9))
+    store.setter(planStageCheckpointsAtom, [
+      { stageId: 'st1', plan: plan('p1', 2), itemCount: 1, createdAt: 10 },
+      { stageId: 'st2', plan: plan('p1', 5), itemCount: 2, createdAt: 20 },
+    ])
+    commitCheckpoint('s1', '轮2')
+    expect(store.getter(checkpointsAtom)[1].planStageCheckpoints).toHaveLength(2)
+
+    jumpToCheckpoint('s1', 0)
+
+    // 回到无计划的轮 0：阶段回退点必须一并消失，否则它们会指向已被截断掉的 items 位置。
+    expect(store.getter(planAtom)).toBeUndefined()
+    expect(store.getter(planStageCheckpointsAtom)).toEqual([])
+  })
+
+  it('没有阶段回退点的普通对话不给 checkpoint 塞空数组', () => {
+    seedS1()
+    getSessionStore('s1').store.setter(itemsAtom, [item1])
+    commitCheckpoint('s1', '轮1')
+    expect(getSessionStore('s1').store.getter(checkpointsAtom)[0].planStageCheckpoints)
+      .toBeUndefined()
   })
 })

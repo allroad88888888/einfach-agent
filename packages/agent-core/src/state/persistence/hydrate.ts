@@ -24,7 +24,14 @@ import {
   activeSessionIdAtom,
 } from '../rootStore'
 import { getSessionStore } from '../sessionStore'
-import { checkpointsAtom, currentTurnIndexAtom, itemsAtom, planAtom, runAtom } from '../sessionAtoms'
+import {
+  checkpointsAtom,
+  currentTurnIndexAtom,
+  itemsAtom,
+  planAtom,
+  planStageCheckpointsAtom,
+  runAtom,
+} from '../sessionAtoms'
 import { queuedUserMessagesAtom } from '../transientAtoms'
 import type { HistoryDriver } from './historyDriver'
 import { migrateSessionMeta } from './modelMigration'
@@ -206,6 +213,8 @@ export async function hydrate(deps: {
       store.setter(checkpointsAtom, checkpoints)
       store.setter(itemsAtom, latest.items)
       store.setter(currentTurnIndexAtom, latest.turnIndex)
+      // 阶段回退点跟随最新一轮恢复：它记录的 itemCount 对应的正是这份 items。
+      store.setter(planStageCheckpointsAtom, latest.planStageCheckpoints ?? [])
       const recovery = latest.recovery
       if (recovery) {
         const status = recovery.run.status

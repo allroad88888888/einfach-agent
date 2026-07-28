@@ -43,6 +43,7 @@ interface CheckpointRow {
   items: string
   plan?: string | null
   recovery?: string | null
+  plan_stage_checkpoints?: string | null
 }
 
 // 惰性 + memoized 打开 db 并建表：整个进程只 load 一次、建表一次。失败则抛（由各方法各自 catch 降级）。
@@ -95,6 +96,7 @@ async function getDb(): Promise<Database> {
              items TEXT NOT NULL,
              plan TEXT,
              recovery TEXT,
+             plan_stage_checkpoints TEXT,
              PRIMARY KEY (session_id, turn_index)
            )`,
         )
@@ -108,6 +110,11 @@ async function getDb(): Promise<Database> {
           await db.execute('ALTER TABLE checkpoints ADD COLUMN recovery TEXT')
         } catch {
           // 新库已经包含 recovery，或旧库迁移已完成；两种情况都可继续。
+        }
+        try {
+          await db.execute('ALTER TABLE checkpoints ADD COLUMN plan_stage_checkpoints TEXT')
+        } catch {
+          // 新库已经包含 plan_stage_checkpoints，或旧库迁移已完成；两种情况都可继续。
         }
         schemaMs = performanceNow() - phaseStartedAt
         operation.finish('ok', {
@@ -179,7 +186,7 @@ const sqliteHistoryDriver: HistoryDriver = {
     try {
       const db = await getDb()
       const rows = await db.select<CheckpointRow[]>(
-        'SELECT turn_index, label, created_at, items, plan, recovery FROM checkpoints WHERE session_id = $1 AND turn_index = $2',
+        'SELECT turn_index, label, created_at, items, plan, recovery, plan_stage_checkpoints FROM checkpoints WHERE session_id = $1 AND turn_index = $2',
         [sessionId, turnIndex],
       )
       const row = rows[0]
@@ -191,6 +198,9 @@ const sqliteHistoryDriver: HistoryDriver = {
         items: JSON.parse(row.items),
         plan: row.plan ? JSON.parse(row.plan) : undefined,
         recovery: row.recovery ? JSON.parse(row.recovery) : undefined,
+        planStageCheckpoints: row.plan_stage_checkpoints
+          ? JSON.parse(row.plan_stage_checkpoints)
+          : undefined,
       }
     } catch {
       return undefined
@@ -224,14 +234,17 @@ const sqliteHistoryDriver: HistoryDriver = {
       const itemsJson = JSON.stringify(checkpoint.items)
       const planJson = checkpoint.plan === undefined ? null : JSON.stringify(checkpoint.plan)
       const recoveryJson = checkpoint.recovery === undefined ? null : JSON.stringify(checkpoint.recovery)
+      const planStageCheckpointsJson = checkpoint.planStageCheckpoints === undefined
+        ? null
+        : JSON.stringify(checkpoint.planStageCheckpoints)
       serializeMs = performanceNow() - phaseStartedAt
       itemJsonChars = itemsJson.length
       planJsonChars = planJson?.length ?? 0
       recoveryJsonChars = recoveryJson?.length ?? 0
       phaseStartedAt = performanceNow()
       await db.execute(
-        `INSERT OR REPLACE INTO checkpoints (session_id, turn_index, label, created_at, items, plan, recovery)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        `INSERT OR REPLACE INTO checkpoints (session_id, turn_index, label, created_at, items, plan, recovery, plan_stage_checkpoints)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
           sessionId,
           checkpoint.turnIndex,
@@ -240,6 +253,7 @@ const sqliteHistoryDriver: HistoryDriver = {
           itemsJson,
           planJson,
           recoveryJson,
+          planStageCheckpointsJson,
         ],
       )
       executeMs = performanceNow() - phaseStartedAt

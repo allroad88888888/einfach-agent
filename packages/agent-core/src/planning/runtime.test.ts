@@ -60,4 +60,37 @@ describe('PlanRuntime', () => {
     if (!created.ok) throw new Error(created.error)
     expect(runtime.execute(created.plan.id, created.plan.revision + 1)).toMatchObject({ ok: false, error: expect.stringContaining('revision conflict') })
   })
+
+  it('回滚阶段会重置目标及其下游阶段，但保留已完成的前置阶段', () => {
+    let completed: PlanSnapshot = {
+      id: 'plan-1', title: '交付功能', objective: '完成实现与验证', status: 'completed', revision: 8,
+      requiresApproval: false, createdAt: 1, updatedAt: 2,
+      evaluation: { status: 'passed', evidence: ['all checks passed'], reason: '', evaluatedAt: 1, requiresUserAcceptance: false },
+      stages: [
+        { id: 'design', title: '设计', objective: '确定协议', deliverables: [], acceptanceCriteria: ['协议可验证'], dependencies: [], status: 'completed', evidence: ['design proof'] },
+        { id: 'build', title: '实现', objective: '完成代码', deliverables: [], acceptanceCriteria: ['测试通过'], dependencies: ['design'], status: 'completed', evidence: ['build proof'] },
+        { id: 'verify', title: '验证', objective: '回归验证', deliverables: [], acceptanceCriteria: ['回归通过'], dependencies: ['build'], status: 'completed', evidence: ['verify proof'] },
+      ],
+    }
+    const rollbackRuntime = new PlanRuntime(
+      { get: () => completed, set: (next) => { if (next) completed = next } },
+      () => 20,
+      () => 'plan-1',
+    )
+    const rolledBack = rollbackRuntime.rollbackStage(completed.id, completed.revision, 'build')
+
+    expect(rolledBack).toMatchObject({
+      ok: true,
+      plan: {
+        status: 'active',
+        evaluation: undefined,
+        stages: [
+          { id: 'design', status: 'completed', evidence: ['design proof'] },
+          { id: 'build', status: 'in_progress', evidence: [], evaluations: [] },
+          { id: 'verify', status: 'pending', evidence: [], evaluations: [] },
+        ],
+      },
+    })
+    expect(completed.revision).toBe(9)
+  })
 })

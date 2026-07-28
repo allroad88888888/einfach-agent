@@ -3,7 +3,7 @@ import { PlanRuntime } from '../planning/runtime'
 import type { PlanSnapshot } from '../planning/types'
 import { EvaluationRuntime } from './runtime'
 
-function harness() {
+function harness(stageACriteria: string[] = ['测试通过']) {
   let plan: PlanSnapshot | undefined
   let time = 0
   const store = { get: () => plan, set: (next: PlanSnapshot | undefined) => { plan = next } }
@@ -11,7 +11,7 @@ function harness() {
   const evaluation = new EvaluationRuntime(store, () => ++time)
   const created = planning.create({
     title: '交付', objective: '可靠完成', stages: [
-      { id: 'a', title: '实现', objective: '写代码', acceptanceCriteria: ['测试通过'] },
+      { id: 'a', title: '实现', objective: '写代码', acceptanceCriteria: stageACriteria },
       { id: 'b', title: '回归', objective: '验证集成', acceptanceCriteria: ['构建通过'], dependencies: ['a'] },
     ],
   })
@@ -69,4 +69,51 @@ describe('EvaluationRuntime', () => {
     if (!accepted.ok) return
     expect(accepted.plan.userAcceptance?.status).toBe('accepted')
   })
+
+  it('unknown 判定落 blocked 并留下阻塞原因，仍可 execute_plan 重试', () => {
+    const { planning, evaluation, started } = harness()
+    const submitted = evaluation.submitStageResult({ planId: 'p1', revision: started.plan.revision, stageId: 'a', summary: '已实现', evidence: ['见改动'] })
+    if (!submitted.ok) throw new Error(submitted.error)
+    const unknown = evaluation.evaluateStage({
+      planId: 'p1', revision: submitted.plan.revision, stageId: 'a',
+      criteria: [{ criterion: '测试通过', status: 'unknown', evidence: [], reason: '评估器无 shell 执行能力' }],
+    })
+    if (!unknown.ok) throw new Error(unknown.error)
+    expect(unknown.plan.stages.map((stage) => stage.status)).toEqual(['blocked', 'pending'])
+    expect(unknown.plan.stages[0].blockReason).toBe('评估器无 shell 执行能力')
+    expect(unknown.plan.stages[0].evaluations?.at(-1)?.status).toBe('unknown')
+    expect(unknown.plan.status).toBe('active')
+    const retried = planning.execute('p1', unknown.plan.revision)
+    expect(retried.ok && retried.plan.stages[0].status).toBe('in_progress')
+  })
+
+  it('多条 unknown 理由拼成 blockReason；含 failed 时仍落 failed 且不写 blockReason', () => {
+    const blocked = harness(['测试通过', '构建通过'])
+    const blockedSubmit = blocked.evaluation.submitStageResult({ planId: 'p1', revision: blocked.started.plan.revision, stageId: 'a', summary: '已实现', evidence: ['见改动'] })
+    if (!blockedSubmit.ok) throw new Error(blockedSubmit.error)
+    const unknown = blocked.evaluation.evaluateStage({
+      planId: 'p1', revision: blockedSubmit.plan.revision, stageId: 'a',
+      criteria: [
+        { criterion: '测试通过', status: 'unknown', evidence: [], reason: '无法执行测试' },
+        { criterion: '构建通过', status: 'unknown', evidence: [], reason: '无法执行构建' },
+      ],
+    })
+    expect(unknown.ok && unknown.plan.stages[0].blockReason).toBe('无法执行测试; 无法执行构建')
+
+    const failedCase = harness(['测试通过', '构建通过'])
+    const failedSubmit = failedCase.evaluation.submitStageResult({ planId: 'p1', revision: failedCase.started.plan.revision, stageId: 'a', summary: '已实现', evidence: ['见改动'] })
+    if (!failedSubmit.ok) throw new Error(failedSubmit.error)
+    const failed = failedCase.evaluation.evaluateStage({
+      planId: 'p1', revision: failedSubmit.plan.revision, stageId: 'a',
+      criteria: [
+        { criterion: '测试通过', status: 'failed', evidence: [], reason: '断言失败' },
+        { criterion: '构建通过', status: 'unknown', evidence: [], reason: '无法执行构建' },
+      ],
+    })
+    if (!failed.ok) throw new Error(failed.error)
+    expect(failed.plan.stages[0].status).toBe('failed')
+    expect(failed.plan.stages[0].blockReason).toBeUndefined()
+    expect(failed.plan.status).toBe('active')
+  })
+
 })
