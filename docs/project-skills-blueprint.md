@@ -1,0 +1,248 @@
+# 项目内 Skills 自动加载蓝图（`.agent/` 约定）
+
+目标：让 agent 在绑定某个 workspace 后，**自动发现并加载该仓库自带的 skills**，与编译期内置
+skills 并列进入 L1 清单，正文与资源沿用既有 L2/L3 协议按需读取。
+
+本文是 [`skills-tree-blueprint.md`](skills-tree-blueprint.md)「阶段 4 — （可选）Tauri 文件系统
+skills 目录」占位项的展开，接续其阶段 1–3 已落地的成果，不重复其结论。
+
+## 背景：三个事实
+
+1. **现状是纯静态的**（`packages/agent-core/src/skills/registry.ts`）：5 个 skill 由
+   `import x from './x.md?raw'` 在编译期打包成模块级常量 `skillSources`，元数据（name /
+   description / triggers / resources）写死在数组里。运行期**没有任何注册入口**，
+   `buildSkillManifestText()` / `readSkill()` / `readSkillResource()` 全是同步纯查询。
+   换言之：当前无论 workspace 里有什么，agent 都看不见。
+2. **文件系统地基已经齐全，无需新增 Rust command**。`list_workspace_files` 支持
+   `recursive` 与 `includeHidden`（`.agent` 是隐藏目录，必须后者），`read_workspace_file`
+   带 workspace confinement；两者都经 `toolContext.ts` 的 `withWorkspaceReadAccess` 注入会话
+   绑定的 `workspaceRoot`（`resolveWorkspaceRoot`，session → workspace 解析已存在）。
+   `tools/fs/find-test-lint-commands` 已经是「列目录 + 读文件 → 推断项目约定」的同构先例。
+3. **`.agent-archive/` 是另一条线，不要混淆**。子 agent 的 `sk_*` 经验技能
+   （`subagents/skillCache.ts` + `runtime/skillGovernance.ts`）由子 agent 产出、经 CLI
+   （`npm run subagent:skills`）治理 promote，**不进主会话 registry、不进清单**。本蓝图只覆盖
+   「仓库作者预置、给主会话用」的静态 skills。三个目录职责互不重叠：
+
+   | 目录 | 归属 | 是否入库 |
+   | --- | --- | --- |
+   | `.agent/` | 仓库作者预置的 skills（本蓝图） | **入库** |
+   | `.agent-archive/` | 子 agent 运行归档与经验技能 | 已在 `.gitignore` |
+   | `.agent-cache/` | 本地缓存 | 已在 `.gitignore` |
+
+## 目录约定
+
+```text
+<workspace>/
+  .agent/
+    skills/
+      deploy-flow/
+        SKILL.md              # 必需：frontmatter(name, description) + 正文（L2）
+        references/
+          checklist.md        # 可选：L3 资源，键即相对 SKILL.md 的路径
+  .claude/
+    skills/
+      legacy-skill/SKILL.md   # 兼容读取（只读，格式同构）
+```
+
+- 一个 skill = 一个目录 + 目录内的 `SKILL.md`；`SKILL.md` 同目录下的其它文本文件即该 skill 的
+  L3 资源，资源键是相对该目录的路径（`references/checklist.md`），与内置 skill 的
+  `resources` Record 键语义逐字一致。
+- 扫描根：`.agent/skills/` 与 `.claude/skills/`（后者是兼容路径，只读，不写）。
+- 深度：skill 目录只认扫描根的**直接子目录**；资源可再嵌套。
+
+## 命名空间：项目 skill 一律带 `project/` 前缀
+
+清单里项目 skill 显示为 `project/deploy-flow`，`skill_read` 也用这个名字。理由有三条，
+每条都单独成立：
+
+1. **消灭撞名**：内置 `planning` 与项目 `planning` 不会互相覆盖，无需定义谁赢。
+2. **来源可见**：用户选择了「自动加载、不设确认」（见「安全边界」），来源标注就是模型侧
+   仅存的可信度信号——它必须出现在名字里，而不只在段落说明里。
+3. **前缀内的分段可排序**：清单按「内置段 → 项目段」分区，各段内按名字字节序排，
+   字节稳定契约不受影响。
+
+`.agent/skills/x` 与 `.claude/skills/x` 撞名时 **`.agent` 胜**（自家约定优先），
+落选者不进清单，并记一条可观测告警。
+
+## 数据模型
+
+```ts
+/** 扫描产出的快照条目：只含元数据与路径，不含正文。 */
+interface ProjectSkillEntry {
+  /** 清单与 skill_read 使用的名字，恒为 `project/<dir-name>`。 */
+  name: string
+  /** frontmatter description，单行化并截断后的结果；缺失则该 skill 被丢弃。 */
+  description: string
+  /** frontmatter triggers（可选），仅供 skill_search 检索，不参与请求组装。 */
+  triggers: string[]
+  /** SKILL.md 相对 workspaceRoot 的路径。 */
+  filePath: string
+  /** 资源键（相对 skill 目录）→ 相对 workspaceRoot 的路径。白名单，见「安全边界」。 */
+  resources: Record<string, string>
+  /** 'agent' | 'claude'，用于告警与 UI 展示。 */
+  origin: 'agent' | 'claude'
+}
+
+interface ProjectSkillsSnapshot {
+  workspaceRoot: string
+  entries: ProjectSkillEntry[]
+  /** 扫描期的降级信息（读失败、超限截断、撞名落选），供 UI 与 trace 展示，不进 prompt。 */
+  diagnostics: string[]
+}
+```
+
+**只读元数据、不预读正文**是有意的：清单只需要 name + description，正文与资源留到
+`skill_read` 时按需 IO。扫描成本因此与 skill 数量成正比、与内容体积无关。
+
+### frontmatter 子集
+
+```markdown
+---
+name: deploy-flow
+description: 何时用：改发布脚本或排查发布失败时读我；何时不用：普通业务改动。
+triggers: [deploy, 发布, 上线]
+---
+
+正文从这里开始（L2）。
+```
+
+自写最小解析器，不引第三方依赖（仓库无 yaml 依赖，`skillCache.ts` 手写 yaml 输出是既有先例）：
+
+- 只识别文件**开头**的 `---` 围栏，只支持 `name` / `description` / `triggers` 三个键；
+  值只支持单行 scalar 与行内数组，不支持嵌套与多行。
+- 未知键忽略并计入 `diagnostics`（不静默）。
+- `name` 缺失 → 用目录名。`description` 缺失 → **丢弃该 skill**：清单里没有「何时用」的条目
+  对模型是纯噪声，而这正是阶段 3 之后模型唯一的选择依据。
+- 无 frontmatter 的 `SKILL.md` 同样按「description 缺失」处理。
+
+> 不对称记录：内置 skill 的元数据在 `registry.ts` 数组里、`.md` 本身没有 frontmatter。
+> 统一（内置也迁 frontmatter）是可选的后续项，不在本蓝图范围内。
+
+## 加载时机与缓存
+
+- **缓存键是 `workspaceRoot`，不是 sessionId**。同一 core 内不同会话可绑不同 workspace，
+  同 workspace 的多会话共享一份快照。存储挂 `CoreInstance`（`core.projectSkills`，与
+  `core.tools` 同构），`createCore()` 的隔离性天然成立；**内置层保持模块级常量不动**
+  （编译期恒定，无隔离问题）。
+- **触发点**：`modelRun` 组装稳定前缀之前 `await ensureProjectSkills(sessionId, core)`。
+  命中缓存时同步返回，只有首次绑定或显式刷新才走真实 IO；`buildSkillManifestText` 因此仍是
+  同步纯函数，只是多接一个快照入参。
+- **失效**：会话切换 workspace、用户在 UI 显式刷新。**第一期不做文件监听**——改了
+  `.agent/skills` 要点一下刷新，或换会话。
+- **降级**：非 Tauri（web）没有文件系统 → 快照恒为空。**此时清单逐字等于今天的输出**
+  （项目段整体不出现，而不是出现一个空段），web 端零回归是硬要求。
+  扫描失败（无 workspace、目录不存在、桥报错）同样降级为空快照 + `diagnostics`，
+  **绝不让 run 失败**。
+
+## 与稳定前缀 / 缓存 epoch 的关系
+
+项目段并入 `buildSkillManifestText()` 的输出，位置仍在 `stablePrefix` 的第二段
+（`modelRun.ts:1379` 附近），已被 `stablePrefixContent` 计入 `systemFingerprint`，
+因此无需改 contextCache：
+
+- 同一 workspace 内连续对话：快照不变 → 清单字节不变 → 缓存照常命中，**epoch 不动**。
+- 切 workspace / 刷新 / 仓库改了 skill：前缀字节变 → contextCache 归因 `profile_changed`
+  并起新 epoch，一次性全量 miss。这与「用户改自定义指令」「工具注册态变化」是同一权衡，
+  低频、可解释。
+- transcript 的「注入 skill 清单」卡片按内容指纹判重（`modelRun.ts:1431` 附近），
+  项目 skills 变化会自然记一张新卡，无需额外改动。
+
+## 读取链路
+
+现有 `skill_read` / `skill_search` 直接 `import` registry 模块函数。项目 skills 是 per-core
+数据，必须改经 `ToolContext`——这同时修正了「工具绕过 ctx 拿能力」的既有小违例：
+
+```ts
+// ToolContext 新增只读能力（buildToolContext 从 core + sessionId 注入）
+skills?: {
+  list(): SkillSummary[]                                   // 内置 + 项目（快照）
+  read(name: string): LoadedSkill | undefined              // 内置：同步命中正文
+  resolveProjectPath(name: string, resource?: string): string | undefined
+}
+```
+
+- `skill_search`：改读 `ctx.skills.list()`，评分逻辑不变；ctx 缺失时回退模块级内置 registry，
+  现有测试逐字不变。
+- `skill_read(name)`：`project/` 前缀 → `resolveProjectPath` 拿到 `SKILL.md` 路径 →
+  `ctx.readWorkspaceFile` 读取 → **剥掉 frontmatter** 返回正文 + `resources` 目录；
+  非项目名走今天的同步分支。`execute` 改 async（`Tool.execute` 本就允许返回 Promise，
+  `tools/types.ts:280`）。
+- `skill_read(name, resource)`：资源键必须在快照白名单内精确命中，命中后才用其**扫描时记录的
+  路径**去读——不接受模型给出的任意路径。
+
+## 安全边界
+
+**已定决策：自动加载，不设首次确认**（用户 2026-07-28 决定）。据此如实记录权衡与缓解。
+
+风险面是真实的：项目 skill 的 description 直接进 system 稳定前缀，等价于「clone 到本地的任何
+仓库都能往 system prompt 里写字」。不设确认意味着这条注入路径**默认敞开**，本蓝图不假装
+它被关上了。以下缓解不改变「自动加载」的体验，必须全部落地：
+
+1. **来源可见**：`project/` 名字前缀 + 清单项目段固定前言（「以下由当前 workspace 提供，
+   非内置」）。模型据此知道这批条目的可信度低于内置。
+2. **注入卫生**（纯函数，可单测）：name 限定 `[a-z0-9-]{1,64}`，越界即丢弃；description
+   剥离控制字符、折成单行、截断至 160 字符——防止伪造清单行、伪造段落分隔、撑爆前缀。
+3. **路径不由模型给**：L3 资源只读扫描期已发现的键，路径来自快照；叠加 Rust 侧既有的
+   workspace confinement 兜底。
+4. **治理上限**：单 workspace 最多 32 个 skill（超出按名字序截断并告警），单 skill 最多 32 个
+   资源，单资源 64KB（复用 `truncateSkillResourceContent`），扫描 `maxEntries` 上限 2000。
+5. **资源扩展名白名单**：`.md/.txt/.json/.yaml/.yml/.csv/.ts/.tsx/.js/.sql`，其余忽略，
+   避免把二进制读进上下文。
+6. **可观测**：`diagnostics` 进 UI 与 trace，用户随时能看到「这个 workspace 往清单里加了什么」。
+
+若日后要收紧，最小改动是在 §加载时机的 `ensureProjectSkills` 前加一道 workspace 信任门，
+其余设计不动。
+
+## 实施阶段
+
+### 阶段 A — 纯函数层（零 IO，全单测）
+
+- `skills/projectSkills.ts`：frontmatter 解析、name/description 卫生化、条目构建、
+  撞名与上限裁决、`diagnostics` 生成；全部是「输入 = 文件清单 + 文本，输出 = 快照」的纯函数。
+- `buildSkillManifestText(snapshot?)` 扩展：无快照/空快照时输出与今天逐字相同（回归护栏）。
+- colocated 测试：frontmatter 各种残缺形态、卫生化边界（控制字符/超长/非法 name）、
+  `.agent` 与 `.claude` 撞名、上限截断、空快照字节一致性。
+
+### 阶段 B — 扫描与缓存
+
+- `skills/projectSkillsLoader.ts`：经 `listWorkspaceFiles`（`recursive: true, includeHidden: true`）
+  扫两个根 → 读各 `SKILL.md` 的前 4KB 取 frontmatter → 组快照；非 Tauri / 失败一律空快照。
+- `CoreInstance.projectSkills`：`Map<workspaceRoot, ProjectSkillsSnapshot>` + `ensure` / `refresh` / `clear`。
+- 测试用 fake 桥（不碰真实 fs），覆盖：命中缓存不重复 IO、读失败降级、无 workspace 降级。
+
+### 阶段 C — 请求组装与读取链路
+
+- `modelRun` 组装前 `await ensureProjectSkills`，清单带上快照；
+- `ToolContext.skills` 注入 + `skill_read` / `skill_search` 改造（含 async 分支与白名单校验）；
+- 测试：项目 skill 进清单的快照断言、web 端清单零回归、`skill_read` 读项目正文/资源/
+  非法资源键、`skill_read` 对未知 `project/*` 的错误引导。
+
+### 阶段 D — UI 与可观测
+
+- 会话/设置面板展示当前 workspace 的项目 skills（名字、来源、资源数）与刷新按钮；
+- `diagnostics` 展示；transcript 注入卡片沿用既有判重，无需改动。
+
+### 阶段 E —（可选）行为 eval
+
+沿用 `evals/deepseek-agent` 的 B04 框架，验证「内置 + 项目 skills 混排」时的命中率与误触率
+不劣于纯内置基线。项目 skill 数少时优先级低，可在真实仓库跑出问题后再补。
+
+## 风险与对策
+
+| 风险 | 对策 |
+| --- | --- |
+| 仓库经 description 注入 system 前缀 | 用户已选自动加载；靠 `project/` 前缀 + 卫生化 + 上限 + 可观测缓解，信任门留作后续最小改动 |
+| 清单 token 膨胀 | description ≤ 160 字符 + skill 数 ≤ 32；超限走 `skill_search` 兜底（机制已存在） |
+| 每 run 多一次 IO | 缓存键为 workspaceRoot，命中即同步返回；只有首次绑定/显式刷新走真实 IO |
+| 切 workspace 掉缓存 | 归因 `profile_changed`，与改自定义指令同权衡；同 workspace 连续对话 epoch 不动 |
+| `.claude/skills` 格式漂移 | 只读 name/description/triggers 三个键，未知键忽略并告警；不跟随其它字段语义 |
+| 与 `.agent-archive/` 混淆 | 目录职责表 + 本蓝图只覆盖静态预置 skills；governance 流水线不动 |
+| 改了文件不生效 | 第一期无文件监听，UI 提供显式刷新；文档写明 |
+
+## 验收门禁（每阶段）
+
+1. `pnpm exec vitest run packages/agent-core/ tools/skills/` 全绿；
+2. `pnpm build` 通过；
+3. **web 端清单字节零回归**：非 Tauri 下 `buildSkillManifestText()` 输出与实施前逐字相同；
+4. 阶段 C 后附 Tauri 实测：一个带 `.agent/skills` 的 workspace，确认清单出现项目段、
+   `skill_read` 能读到正文与 L3 资源、同 workspace 连续对话 `cache_epoch` 不变。

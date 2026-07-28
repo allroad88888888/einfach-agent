@@ -102,10 +102,12 @@ interface SkillSource {
 - 适配 modelRun / modelTurn / contextCache 测试；trace 验收：Tauri 实测一个多轮会话，
   确认 epoch 仅在事件驱动注入轮次变化。
 
-### 阶段 4 —（可选）Tauri 文件系统 skills 目录
+### 阶段 4 — 项目内 skills 自动加载（`.agent/`）
 
-用户自定义 skill 目录（`SKILL.md` + 资源文件），Rust command 加载、真实路径安全
-（canonicalize + 根目录约束）、变更时 registry 重注册。独立蓝图另立，此处仅占位。
+workspace 自带的 skill 目录（`SKILL.md` + 资源文件）自动进 L1 清单，正文与资源沿用本蓝图的
+L2/L3 协议。已展开为独立蓝图：[`project-skills-blueprint.md`](project-skills-blueprint.md)。
+注：无需新增 Rust command——`list_workspace_files` / `read_workspace_file` 已带 workspace
+confinement 与 `workspaceRoot` 注入。
 
 ## 风险与对策
 
