@@ -5,6 +5,7 @@ use std::{
     io::{self, Read},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
+    sync::{Arc, Mutex, MutexGuard},
     thread,
     time::{Duration, Instant},
 };
@@ -14,6 +15,11 @@ const MAX_OUTPUT_CHARS: usize = 100_000;
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const MAX_TIMEOUT_MS: u64 = 120_000;
 const WAIT_POLL_INTERVAL_MS: u64 = 10;
+// 直接子进程退出后，残留在管道里的输出只有一个管道缓冲区那么多，读完是微秒级的；
+// 留 500ms 是给线程调度的余量，正常命令不会等满（读完即返回）。
+const ORPHAN_DRAIN_GRACE_MS: u64 = 500;
+// 杀掉进程组到写端真正关闭之间同样只需调度余量。
+const ORPHAN_KILL_GRACE_MS: u64 = 500;
 
 #[derive(Serialize)]
 pub struct ShellCommandResult {
@@ -27,6 +33,9 @@ pub struct ShellCommandResult {
     duration_ms: u64,
     timed_out: bool,
     truncated: bool,
+    /// 命令留下了仍持有 stdout/stderr 的后台进程，它们已被强制清理。
+    /// 调用方据此知道 `cmd &` 起的服务并没有活下来。
+    background_processes_killed: bool,
 }
 
 struct ShellSpec {
@@ -35,10 +44,18 @@ struct ShellSpec {
     display: String,
 }
 
+#[derive(Default)]
 struct CapturedOutput {
     text: String,
+    chars_written: usize,
     truncated: bool,
 }
+
+/// 读线程与调用线程共享捕获缓冲：读线程可能因孤儿进程握着管道而永不结束，
+/// 此时调用线程仍要能取走已经读到的部分输出。
+type OutputSink = Arc<Mutex<CapturedOutput>>;
+
+type ReaderHandle = (thread::JoinHandle<io::Result<()>>, &'static str);
 
 #[tauri::command(rename_all = "snake_case")]
 pub async fn run_shell_command(
@@ -149,14 +166,20 @@ fn run_shell_command_blocking(
         .take()
         .ok_or_else(|| "failed to capture child stderr".to_string())?;
 
-    let stdout_handle = thread::spawn(move || read_capped(stdout, max_output_chars));
-    let stderr_handle = thread::spawn(move || read_capped(stderr, max_output_chars));
+    let stdout_sink = OutputSink::default();
+    let stderr_sink = OutputSink::default();
+    let stdout_handle = spawn_output_reader(stdout, max_output_chars, &stdout_sink);
+    let stderr_handle = spawn_output_reader(stderr, max_output_chars, &stderr_sink);
 
     let (exit_code, timed_out) = wait_for_child(&mut child, timeout_ms)?;
+    let background_processes_killed = drain_output_readers(
+        &mut child,
+        vec![(stdout_handle, "stdout"), (stderr_handle, "stderr")],
+    )?;
     let duration_ms = millis_since(start);
 
-    let stdout = join_output_reader(stdout_handle, "stdout")?;
-    let stderr = join_output_reader(stderr_handle, "stderr")?;
+    let stdout = take_captured(&stdout_sink);
+    let stderr = take_captured(&stderr_sink);
 
     Ok(ShellCommandResult {
         platform: requested_platform.to_string(),
@@ -169,6 +192,7 @@ fn run_shell_command_blocking(
         duration_ms,
         timed_out,
         truncated: stdout.truncated || stderr.truncated,
+        background_processes_killed,
     })
 }
 
@@ -191,6 +215,7 @@ fn failed_result(
         duration_ms: millis_since(start),
         timed_out: false,
         truncated: false,
+        background_processes_killed: false,
     }
 }
 
@@ -358,46 +383,110 @@ fn wait_for_child(child: &mut Child, timeout_ms: u64) -> Result<(Option<i32>, bo
     }
 }
 
-fn read_capped<R: Read>(mut reader: R, max_chars: usize) -> io::Result<CapturedOutput> {
-    let mut output = String::new();
-    let mut chars_written = 0usize;
-    let mut truncated = false;
+fn spawn_output_reader<R: Read + Send + 'static>(
+    reader: R,
+    max_chars: usize,
+    sink: &OutputSink,
+) -> thread::JoinHandle<io::Result<()>> {
+    let sink = Arc::clone(sink);
+    thread::spawn(move || read_capped_into(reader, max_chars, &sink))
+}
+
+fn read_capped_into<R: Read>(mut reader: R, max_chars: usize, sink: &OutputSink) -> io::Result<()> {
     let mut buffer = [0u8; 8192];
 
     loop {
         let bytes_read = reader.read(&mut buffer)?;
         if bytes_read == 0 {
-            break;
+            return Ok(());
         }
 
         let chunk = String::from_utf8_lossy(&buffer[..bytes_read]);
         let chunk_chars = chunk.chars().count();
+        let mut captured = lock_sink(sink);
 
-        if chars_written < max_chars {
-            let remaining = max_chars - chars_written;
+        if captured.chars_written < max_chars {
+            let remaining = max_chars - captured.chars_written;
             if chunk_chars <= remaining {
-                output.push_str(&chunk);
-                chars_written += chunk_chars;
+                captured.text.push_str(&chunk);
+                captured.chars_written += chunk_chars;
             } else {
-                output.extend(chunk.chars().take(remaining));
-                chars_written = max_chars;
-                truncated = true;
+                captured.text.extend(chunk.chars().take(remaining));
+                captured.chars_written = max_chars;
+                captured.truncated = true;
             }
         } else {
-            truncated = true;
+            captured.truncated = true;
         }
     }
+}
 
-    Ok(CapturedOutput {
-        text: output,
-        truncated,
-    })
+// 读线程 panic 会毒化锁，但缓冲里已捕获的内容仍然有效，照常取用。
+fn lock_sink(sink: &OutputSink) -> MutexGuard<'_, CapturedOutput> {
+    sink.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn take_captured(sink: &OutputSink) -> CapturedOutput {
+    let mut captured = lock_sink(sink);
+    CapturedOutput {
+        text: std::mem::take(&mut captured.text),
+        chars_written: captured.chars_written,
+        truncated: captured.truncated,
+    }
+}
+
+/// 直接子进程已经退出，但 stdout/stderr 的写端可能还被它派生的后台孙进程持有
+/// （`cmd &`、nohup 之类）。这种情况下读线程永远等不到 EOF —— 超时只覆盖
+/// `wait_for_child`，覆盖不到这里，无条件 join 会让整个调用永久挂起。
+///
+/// 所以先留一小段时间读完残留输出；读不完就说明确实有孤儿握着管道，杀掉整个进程组
+/// 逼出 EOF；仍读不完则放弃读线程，用共享缓冲里已捕获的部分输出返回。
+///
+/// 返回是否清理过后台进程。正常退出且已收到 EOF 的命令不会走到 kill 分支，
+/// 真正 daemon 化（关掉继承 fd）的进程同样不受影响。
+fn drain_output_readers(child: &mut Child, readers: Vec<ReaderHandle>) -> Result<bool, String> {
+    let pending = wait_for_readers(readers, Duration::from_millis(ORPHAN_DRAIN_GRACE_MS))?;
+    if pending.is_empty() {
+        return Ok(false);
+    }
+
+    let _ = kill_child(child);
+    let _ = child.try_wait();
+    let _ = wait_for_readers(pending, Duration::from_millis(ORPHAN_KILL_GRACE_MS))?;
+    Ok(true)
+}
+
+/// 在 deadline 内轮询回收已结束的读线程，返回仍未结束的那些（不 join，避免阻塞）。
+fn wait_for_readers(
+    readers: Vec<ReaderHandle>,
+    timeout: Duration,
+) -> Result<Vec<ReaderHandle>, String> {
+    let start = Instant::now();
+    let mut pending = readers;
+
+    loop {
+        let mut still_reading = Vec::with_capacity(pending.len());
+        for (handle, stream_name) in pending {
+            if handle.is_finished() {
+                join_output_reader(handle, stream_name)?;
+            } else {
+                still_reading.push((handle, stream_name));
+            }
+        }
+        pending = still_reading;
+
+        if pending.is_empty() || start.elapsed() >= timeout {
+            return Ok(pending);
+        }
+
+        thread::sleep(Duration::from_millis(WAIT_POLL_INTERVAL_MS));
+    }
 }
 
 fn join_output_reader(
-    handle: thread::JoinHandle<io::Result<CapturedOutput>>,
+    handle: thread::JoinHandle<io::Result<()>>,
     stream_name: &str,
-) -> Result<CapturedOutput, String> {
+) -> Result<(), String> {
     handle
         .join()
         .map_err(|_| format!("{stream_name} reader thread panicked"))?
@@ -544,6 +633,83 @@ mod tests {
         assert!(
             elapsed < Duration::from_secs(3),
             "超时应快速返回(杀掉进程)，实际耗时 {:?}",
+            elapsed
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn background_process_holding_pipe_does_not_hang_the_call() {
+        // 回归用例（对应实测的 96 分钟挂死）：`cmd &` 让孙进程继承 stdout 管道，
+        // 父 shell 立刻退出 —— 超时只管直接子进程，所以修复前读线程等不到 EOF、
+        // 整个调用一直挂到孤儿自己退出为止（`npm run dev` 这种就是永久）。
+        //
+        // 两个后台进程各自证明一件事：`sleep 30` 长期握着管道，修复前会把调用拖满
+        // 30s（远超下面的 5s 断言）；短命的 touch 则证明进程组真的被杀掉了——
+        // 只要它还活着，1s 后 marker 就会出现。
+        let dir = unique_dir();
+        let marker = dir.join("orphan-survived");
+        let command = format!(
+            "sleep 30 & (sleep 1 && touch {}) & echo started",
+            marker.to_string_lossy()
+        );
+
+        let started = Instant::now();
+        let result =
+            run_shell_command_blocking(host_platform(), command, None, Some(10_000), None, None)
+                .expect("worker 层不应报错");
+        let elapsed = started.elapsed();
+
+        assert!(
+            elapsed < Duration::from_secs(5),
+            "后台进程握住管道时调用仍应快速返回，实际耗时 {:?}",
+            elapsed
+        );
+        assert_eq!(result.exit_code, Some(0), "父 shell 应以 0 退出");
+        assert!(
+            result.stdout.contains("started"),
+            "放弃读线程前已捕获的输出不应丢失，实际: {:?}",
+            result.stdout
+        );
+        assert!(
+            result.background_processes_killed,
+            "应标记后台进程已被清理"
+        );
+        assert!(!result.timed_out, "父 shell 未超时，不应标记 timed_out");
+
+        // 跨过孤儿的 1s touch 时点再检查：文件不存在才说明进程组真的被杀了。
+        thread::sleep(Duration::from_millis(1_500));
+        assert!(
+            !marker.exists(),
+            "孤儿进程应已被杀死，不应还能创建 {}",
+            marker.to_string_lossy()
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn normal_command_does_not_report_background_kill() {
+        // 反向断言：正常退出、管道正常 EOF 的命令不进 kill 分支，也不该被加上 grace 延迟。
+        let started = Instant::now();
+        let result = run_shell_command_blocking(
+            host_platform(),
+            "echo done".to_string(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .expect("worker 层不应报错");
+        let elapsed = started.elapsed();
+
+        assert!(
+            !result.background_processes_killed,
+            "普通命令不应报告清理后台进程"
+        );
+        assert!(
+            elapsed < Duration::from_millis(ORPHAN_DRAIN_GRACE_MS),
+            "普通命令不应等满 drain grace，实际耗时 {:?}",
             elapsed
         );
     }

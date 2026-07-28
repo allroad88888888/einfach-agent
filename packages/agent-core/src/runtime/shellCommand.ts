@@ -100,6 +100,10 @@ function normalizeResult(raw: unknown, input: ShellCommandInput, startedAt: numb
     durationMs: numberValue(raw.durationMs ?? raw.duration_ms, durationSince(startedAt)),
     timedOut,
     truncated: booleanValue(raw.truncated, false),
+    backgroundProcessesKilled: booleanValue(
+      raw.backgroundProcessesKilled ?? raw.background_processes_killed,
+      false,
+    ),
   }
 }
 
