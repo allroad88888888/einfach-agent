@@ -53,7 +53,7 @@ import { runWorkspaceTask } from './workspaceTask'
 import { runShellCommand } from './shellCommand'
 import type { DelegateAgentRuntime } from '../subagents/types'
 import { addAlwaysAllowedTool, alwaysAllowedToolsAtom } from '../state/transientAtoms'
-import { createCoreInstance } from './core/coreInstance'
+import { createCoreInstance, defaultCore } from './core/coreInstance'
 
 afterEach(() => {
   resetRootStore()
@@ -388,5 +388,107 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     seedSession('s5', '/session/root')
     await ctxFor('s5').runShell({ platform: 'macos', command: 'pwd', cwd: '  /caller/root  ' })
     expect(vi.mocked(runShellCommand).mock.calls[0][0]).toMatchObject({ cwd: '/caller/root' })
+  })
+})
+
+// workspace_verify 档位的宿主侧闸门。
+// ---------------------------------------------------------------------------
+// run_verification_command 仅经子 agent 工具桥暴露；主循环没有 workspace_verify 档位。
+describe('toolContext 验证命令执行（workspace_verify）', () => {
+  function delegateRuntimeCapturing(
+    run: (callContext: DelegateAgentRuntimeCallContext) => Promise<void>,
+    sessionId: string,
+  ): DelegateAgentRuntime {
+    return {
+      async delegateAgents(_input, callContext) {
+        await run(callContext)
+        return {
+          treeId: 'r',
+          conversationId: sessionId,
+          runId: 'r',
+          parentPath: 'root',
+          strategy: 'parallel_wait_all',
+          status: 'done',
+          summary: { total: 0, done: 0, failed: 0, cancelled: 0 },
+          cacheBasePath: '.agent-archive/test',
+          archiveBasePath: '.agent-archive/test',
+          eventLog: '.agent-archive/test/events.jsonl',
+          skillFiles: [],
+          skillIds: [],
+          children: [],
+        }
+      },
+    }
+  }
+
+  type DelegateAgentRuntimeCallContext = Parameters<DelegateAgentRuntime['delegateAgents']>[1]
+
+  it('workspace_verify 子 agent 可执行验收所需的 shell 命令', async () => {
+    seedSession('verify-allowed', '/ws/root')
+    let allowed: unknown
+    let additionalCommand: unknown
+    const ctx = buildToolContext({
+      sessionId: 'verify-allowed',
+      runId: 'r',
+      signal: new AbortController().signal,
+      callId: 'c',
+      toolName: 'submit_stage_result',
+      delegateRuntime: delegateRuntimeCapturing(async (callContext) => {
+        allowed = await callContext.runChildTool?.('run_verification_command', { command: 'pnpm test' })
+        additionalCommand = await callContext.runChildTool?.('run_verification_command', { command: 'pnpm test --bail' })
+      }, 'verify-allowed'),
+    })
+
+    await ctx.delegateAgents!({
+      children: [{ objective: 'verify' }],
+      toolProfile: 'workspace_verify',
+    })
+
+    expect(allowed).toMatchObject({ ok: true })
+    expect(additionalCommand).toMatchObject({ ok: true })
+    expect(vi.mocked(runShellCommand)).toHaveBeenCalledTimes(2)
+    expect(vi.mocked(runShellCommand).mock.calls[0][0]).toMatchObject({
+      command: 'pnpm test',
+      cwd: '/ws/root',
+    })
+  })
+
+  it('workspace_read 子 agent 无法使用验证工具', async () => {
+    seedSession('verify-missing', '/ws/root')
+    let result: unknown
+    const ctx = buildToolContext({
+      sessionId: 'verify-missing',
+      runId: 'r',
+      signal: new AbortController().signal,
+      callId: 'c',
+      toolName: 'delegate_agent',
+      delegateRuntime: delegateRuntimeCapturing(async (callContext) => {
+        result = await callContext.runChildTool?.('run_verification_command', { command: 'pnpm test' })
+      }, 'verify-missing'),
+    })
+
+    await ctx.delegateAgents!({
+      children: [{ objective: 'read' }],
+      toolProfile: 'workspace_read',
+    })
+
+    expect(result).toEqual({ ok: false, error: 'tool not allowed for child agent: run_verification_command' })
+    expect(vi.mocked(runShellCommand)).not.toHaveBeenCalled()
+  })
+
+  it('直接执行验证工具时不受命令白名单限制', async () => {
+    seedSession('verify-main-agent', '/ws/root')
+    const ctx = buildToolContext({
+      sessionId: 'verify-main-agent',
+      runId: 'r',
+      signal: new AbortController().signal,
+      callId: 'c',
+      toolName: 'run_verification_command',
+    })
+
+    const result = await defaultCore.tools.run('run_verification_command', { command: 'pnpm test' }, ctx)
+
+    expect(result).toMatchObject({ ok: true })
+    expect(vi.mocked(runShellCommand)).toHaveBeenCalledOnce()
   })
 })

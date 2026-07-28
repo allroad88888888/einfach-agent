@@ -42,6 +42,7 @@ import { subagentScheduler } from './scheduler'
 import {
   canNarrowSubagentToolProfile,
   DEFAULT_SUBAGENT_TOOL_PROFILE,
+  isSubagentVerificationTool,
   isSubagentWorkspaceReadTool,
   subagentAllowedTools,
 } from './toolProfile'
@@ -422,6 +423,23 @@ function nodeIndexRecord(node: SubagentNodeRecord): Record<string, unknown> {
   }
 }
 
+/**
+ * 档位对应的能力说明。
+ */
+function childToolProfilePromptLines(toolProfile: SubagentToolProfile): string[] {
+  if (toolProfile === 'workspace_verify') {
+    return [
+      '允许 delegate_agent、只读文件工具（路径权限继承会话授权模式），以及验证工具 run_verification_command；不得写文件。',
+      'run_verification_command 可执行验收所需的 shell 命令及项目脚本。它的输出就是你的执行证据：用真实退出码与输出下判断，不要凭推测断言测试通过或失败。',
+    ]
+  }
+  return [
+    toolProfile === 'workspace_read'
+      ? '允许 delegate_agent 和只读文件工具（路径权限继承会话授权模式）；不得声称或尝试写文件、执行 shell。'
+      : '只允许 delegate_agent；不要模拟工具调用，不要声称已经改文件。',
+  ]
+}
+
 function childSystemPrompt(args: {
   node: SubagentNodeRecord
   spec: DelegateAgentChildSpec
@@ -437,9 +455,7 @@ function childSystemPrompt(args: {
     `你是树形子 agent ${args.node.path}。`,
     `父 agent: ${args.node.parentPath ?? ROOT_AGENT_PATH}`,
     '你在 headless 子 agent 运行时中工作：不要要求 UI 暂停；需要更多并行分析时，可以调用 delegate_agent 派生下一层子 agent。',
-    args.toolProfile === 'workspace_read'
-      ? '允许 delegate_agent 和只读文件工具（路径权限继承会话授权模式）；不得声称或尝试写文件、执行 shell。'
-      : '只允许 delegate_agent；不要模拟工具调用，不要声称已经改文件。',
+    ...childToolProfilePromptLines(args.toolProfile),
     args.confirmedTools.length > 0
       ? `本次委派另有父级已确认、仅限本 run 的危险工具能力: ${args.confirmedTools.join(', ')}。不得请求其它危险工具，也不得向后代扩大范围。`
       : '没有危险工具能力；不得请求写文件、patch 或 shell。',
@@ -1154,7 +1170,17 @@ export function createDelegateAgentRuntime(
     toolProfile: SubagentToolProfile
     confirmedTools: readonly string[]
   }): Promise<ChildAgentResult> {
-    const { node, spec, context, archiveBasePath, inheritedSkills, localSkill, budget, toolProfile, confirmedTools } = args
+    const {
+      node,
+      spec,
+      context,
+      archiveBasePath,
+      inheritedSkills,
+      localSkill,
+      budget,
+      toolProfile,
+      confirmedTools,
+    } = args
     let routeDecision = childModelRoute(opts.settings, node.parentPath, spec, confirmedTools)
     let modelSettings = childModelSettings(opts.settings, routeDecision.tier)
     let fallbackCount = 0
@@ -1632,7 +1658,9 @@ export function createDelegateAgentRuntime(
           }
 
           if (
-            (isSubagentWorkspaceReadTool(name) || isDelegatableDangerousTool(name))
+            (isSubagentWorkspaceReadTool(name)
+              || isDelegatableDangerousTool(name)
+              || isSubagentVerificationTool(name))
             && allowedToolNames.includes(name)
           ) {
             if (!context.runChildTool) {

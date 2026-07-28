@@ -1,4 +1,5 @@
 import type { SubmitStageResultInput } from '@web-agent/core/planning/types'
+import type { DelegateAgentInput } from '@web-agent/core/subagents/types'
 import type { Tool } from '@web-agent/core/tools/types'
 import guide from './submit-stage-result.md?raw'
 
@@ -56,12 +57,10 @@ export const submitStageResultTool: Tool = {
     }
     const stage = submitted.plan.stages.find((item) => item.id === input.stageId)!
     const isFinalStage = submitted.plan.stages.every((item) => item.id === stage.id || item.status === 'completed' || item.status === 'skipped')
-    // This is intentionally a single, best-effort tool call. The discovery
-    // tool uses an isolated low-cost model request and only configuration
-    // excerpts; evaluator availability must never depend on it succeeding.
-    const commandDiscovery = await discoverTestLintCommands(ctx)
-    const createEvaluatorInput = (objective: string) => ({
-      strategy: 'parallel_wait_all' as const,
+    // 验收评估器始终能运行项目所需的 shell 命令，包括仓库提供的验证脚本。
+    const evaluatorToolProfile = 'workspace_verify'
+    const createEvaluatorInput = (objective: string): DelegateAgentInput => ({
+      strategy: 'parallel_wait_all',
       // 这是整次主 run 共用的根预算，不是“本次只启动几个 evaluator”。若这里都写 1，
       // 根节点本身已经占掉唯一 node，首个 evaluator 必然报 used 1 of 1；即使偶发失败，
       // 后续重试也永远没有额度。保持树级默认容量，单次评估仍由 children/maxTurns 限成 1×12。
@@ -69,13 +68,15 @@ export const submitStageResultTool: Tool = {
       maxConcurrent: 4,
       maxTotalNodes: 64,
       maxModelCalls: 128,
-      toolProfile: 'workspace_read' as const,
+      toolProfile: evaluatorToolProfile,
       children: [{
         mode: 'evaluator',
         objective,
         expectedOutput: 'Strict JSON evaluation only',
+        // 12 轮不因为可执行命令而变：一次 run_verification_command 也只占一轮，命令自身
+        // 的 600s 超时消耗的是墙钟而不是轮次，实跑反而比翻文件猜结论更省轮。
         maxTurns: 12,
-        toolProfile: 'workspace_read' as const,
+        toolProfile: evaluatorToolProfile,
       }],
     })
     const evaluatorInput = createEvaluatorInput([
@@ -85,9 +86,8 @@ export const submitStageResultTool: Tool = {
       `Acceptance criteria: ${JSON.stringify(stage.acceptanceCriteria)}`,
       `Submitted summary: ${input.summary}`,
       `Submitted evidence: ${JSON.stringify(input.evidence)}`,
-      `Test/lint command candidates (configuration-derived only; not execution evidence): ${JSON.stringify(commandDiscovery)}`,
       'Inspect the workspace when useful. Return ONLY one JSON object.',
-      'Use the read-only tools efficiently. Finish the inspection before the reserved final synthesis turn.',
+      'Run the verification commands you need early, including project shell scripts, then inspect files for what they cannot show. Finish everything before the reserved final synthesis turn.',
       'Schema: {"criteria":[{"criterion":"exact criterion text","status":"passed|failed|unknown","evidence":["concrete evidence"],"reason":"reason or empty"}]',
       isFinalStage
         ? ',"final":{"status":"passed|failed|unknown","evidence":["integration/regression/goal evidence"],"reason":"reason or empty","requiresUserAcceptance":boolean}}'
@@ -146,7 +146,7 @@ export const submitStageResultTool: Tool = {
         `Missing criteria: ${JSON.stringify(gap.missingCriteria)}`,
         gap.missingFinal ? 'The "final" object was absent and is REQUIRED for this last stage.' : '',
         `Previous evaluator response: ${summary}`,
-        `Test/lint command candidates (configuration-derived only; not execution evidence): ${JSON.stringify(commandDiscovery)}`,
+        'Run the verification commands you need early, including project shell scripts, then inspect files for what they cannot show. Finish everything before the reserved final synthesis turn.',
         'Inspect the workspace when useful. Return ONLY one JSON object.',
         'Return a COMPLETE replacement evaluation: every original criterion exactly once. Preserve valid prior verdicts when supported, but correct them if your inspection requires it.',
         'Do not return only the missing criteria and do not explain outside the JSON object.',
@@ -266,35 +266,6 @@ export const submitStageResultTool: Tool = {
 interface ParsedEvaluation {
   criteria: Array<{ criterion: string; status: 'passed' | 'failed' | 'unknown'; evidence: string[]; reason: string }>
   final?: { status: 'passed' | 'failed' | 'unknown'; evidence?: string[]; reason?: string; requiresUserAcceptance?: boolean }
-}
-
-interface TestLintCommandDiscovery {
-  commands: unknown[]
-  warnings: string[]
-}
-
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined
-}
-
-/** The evaluator still runs when discovery is unavailable or returns bad data. */
-async function discoverTestLintCommands(ctx: Parameters<Tool['execute']>[1]): Promise<TestLintCommandDiscovery> {
-  try {
-    const result = await ctx.callTool('find_test_lint_commands', {})
-    const response = asRecord(result)
-    const data = response?.ok === true ? asRecord(response.data) : undefined
-    if (!data) return { commands: [], warnings: ['test/lint command discovery was unavailable'] }
-    return {
-      commands: Array.isArray(data.commands) ? data.commands.slice(0, 32) : [],
-      warnings: Array.isArray(data.warnings)
-        ? data.warnings.filter((warning): warning is string => typeof warning === 'string').slice(0, 16)
-        : [],
-    }
-  } catch {
-    return { commands: [], warnings: ['test/lint command discovery was unavailable'] }
-  }
 }
 
 function parseEvaluation(text: string): ParsedEvaluation {

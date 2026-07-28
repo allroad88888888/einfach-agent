@@ -183,14 +183,6 @@ describe('submit_stage_result tool', () => {
       }],
       }
     })
-    const callTool = vi.fn().mockResolvedValue({
-      ok: true,
-      data: {
-        commands: [{ kind: 'test', argv: ['pnpm', 'test'], cwd: '.', origin: 'declared', evidence: 'package.json', confidence: 'high' }],
-        warnings: [],
-      },
-    })
-
     const result = await submitStageResultTool.execute({
       planId: 'plan-1',
       revision: started.plan.revision,
@@ -199,7 +191,6 @@ describe('submit_stage_result tool', () => {
       evidence: ['3 tests passed'],
     }, baseContext({
       delegateAgents,
-      callTool,
       submitStageResult: (input) => evaluation.submitStageResult(input),
       evaluateStage: (input) => evaluation.evaluateStage(input),
       evaluatePlan: (input) => evaluation.evaluatePlan(input),
@@ -207,8 +198,6 @@ describe('submit_stage_result tool', () => {
     }))
 
     expect(delegateAgents).toHaveBeenCalledOnce()
-    expect(callTool).toHaveBeenCalledOnce()
-    expect(callTool).toHaveBeenCalledWith('find_test_lint_commands', {})
     expect(delegateAgents).toHaveBeenCalledWith(expect.objectContaining({
       maxChildren: 6,
       maxConcurrent: 4,
@@ -217,7 +206,9 @@ describe('submit_stage_result tool', () => {
       children: [expect.objectContaining({ mode: 'evaluator', maxTurns: 12 })],
     }))
     if (!evaluatorInput) throw new Error('missing evaluator input')
-    expect(evaluatorInput.children[0].objective).toContain('"argv":["pnpm","test"]')
+    expect(evaluatorInput.toolProfile).toBe('workspace_verify')
+    expect(evaluatorInput.children[0].objective).toContain('Run the verification commands you need early')
+    expect(evaluatorInput.children[0].objective).toContain('including project shell scripts')
     expect(result).toMatchObject({ ok: true })
     expect(plan?.stages.map((stage) => stage.status)).toEqual(['completed', 'in_progress'])
   })
@@ -253,14 +244,6 @@ describe('submit_stage_result tool', () => {
           { criterion: 'lint passes', status: 'passed', evidence: ['lint clean'], reason: '' },
         ],
       }))
-    const callTool = vi.fn().mockResolvedValue({
-      ok: true,
-      data: {
-        commands: [{ kind: 'lint', argv: ['pnpm', 'lint'], cwd: '.', origin: 'declared', evidence: 'package.json', confidence: 'high' }],
-        warnings: [],
-      },
-    })
-
     const result = await submitStageResultTool.execute({
       planId: 'plan-1',
       revision: started.plan.revision,
@@ -269,7 +252,6 @@ describe('submit_stage_result tool', () => {
       evidence: ['3 tests passed', 'lint clean'],
     }, baseContext({
       delegateAgents,
-      callTool,
       submitStageResult: (input) => evaluation.submitStageResult(input),
       evaluateStage: (input) => evaluation.evaluateStage(input),
       evaluatePlan: (input) => evaluation.evaluatePlan(input),
@@ -277,12 +259,11 @@ describe('submit_stage_result tool', () => {
     }))
 
     expect(result).toMatchObject({ ok: true })
-    expect(callTool).toHaveBeenCalledOnce()
     expect(delegateAgents).toHaveBeenCalledTimes(2)
-    expect(delegateAgents.mock.calls[0][0].children[0].objective).toContain('"argv":["pnpm","lint"]')
+    expect(delegateAgents.mock.calls[0][0].children[0].objective).toContain('including project shell scripts')
     expect(delegateAgents.mock.calls[1][0].children[0].objective).toContain('Missing criteria: ["lint passes"]')
     expect(delegateAgents.mock.calls[1][0].children[0].objective).toContain('COMPLETE replacement evaluation')
-    expect(delegateAgents.mock.calls[1][0].children[0].objective).toContain('"argv":["pnpm","lint"]')
+    expect(delegateAgents.mock.calls[1][0].children[0].objective).toContain('including project shell scripts')
     expect(plan?.stages.map((stage) => stage.status)).toEqual(['completed', 'in_progress'])
   })
 
@@ -389,7 +370,7 @@ describe('submit_stage_result tool', () => {
     expect(delegateAgents).toHaveBeenCalledTimes(2)
     expect(result).toMatchObject({
       ok: false,
-      error: 'automatic evaluation failed: evaluator repair failed after initial result covered 1/2 criteria: evaluator must cover every criterion',
+      error: 'automatic evaluation failed: evaluator repair failed after initial result did not cover every acceptance criterion (missing 1 of 2): evaluator must cover every criterion',
     })
     expect(plan?.stages[0]).toMatchObject({ status: 'in_progress', evaluations: [{ status: 'unknown' }] })
   })
@@ -438,6 +419,57 @@ describe('submit_stage_result tool', () => {
       ok: false,
       error: 'automatic evaluation failed: evaluator returned unknown or duplicate criterion',
     })
+  })
+
+  // 少一条 criterion 和少一个 final 都只是「答漏了」。按 criteria.length 一刀切会让
+  // 「criteria 全齐但漏 final」直接回滚，白扔掉一次已经跑完的完整评估。
+  it('repairs a last-stage response that covered every criterion but omitted the final verdict', async () => {
+    let plan: PlanSnapshot | undefined
+    let now = 0
+    const store = {
+      get: () => plan,
+      set: (next: PlanSnapshot | undefined) => { plan = next },
+    }
+    const planning = new PlanRuntime(store, () => ++now, () => 'plan-1')
+    const evaluation = new EvaluationRuntime(store, () => ++now)
+    const created = planning.create({
+      title: 'Delivery',
+      objective: 'Ship safely',
+      stages: [{ id: 'build', title: 'Build', objective: 'Implement', acceptanceCriteria: ['tests pass'] }],
+    })
+    if (!created.ok) throw new Error(created.error)
+    const started = planning.execute(created.plan.id, created.plan.revision)
+    if (!started.ok) throw new Error(started.error)
+
+    const criteria = [{ criterion: 'tests pass', status: 'passed', evidence: ['3 tests passed'], reason: '' }]
+    const delegateAgents = vi.fn()
+      .mockResolvedValueOnce(evaluatorResult({ criteria }))
+      .mockResolvedValueOnce(evaluatorResult({
+        criteria,
+        final: { status: 'passed', evidence: ['regression suite green'], reason: '', requiresUserAcceptance: false },
+      }))
+
+    const result = await submitStageResultTool.execute({
+      planId: 'plan-1',
+      revision: started.plan.revision,
+      stageId: 'build',
+      summary: 'Implemented',
+      evidence: ['3 tests passed'],
+    }, baseContext({
+      delegateAgents,
+      submitStageResult: (input) => evaluation.submitStageResult(input),
+      evaluateStage: (input) => evaluation.evaluateStage(input),
+      evaluatePlan: (input) => evaluation.evaluatePlan(input),
+      abortStageEvaluation: (planId, revision, stageId, reason) => evaluation.abortStageEvaluation(planId, revision, stageId, reason),
+    }))
+
+    expect(delegateAgents).toHaveBeenCalledTimes(2)
+    const repairObjective = delegateAgents.mock.calls[1][0].children[0].objective
+    expect(repairObjective).toContain('omitted the required final verdict')
+    expect(repairObjective).toContain('The "final" object was absent and is REQUIRED for this last stage.')
+    expect(repairObjective).not.toContain('did not cover every acceptance criterion')
+    expect(result).toMatchObject({ ok: true })
+    expect(plan?.stages[0].status).toBe('completed')
   })
 
   it('evaluator 请求失败时回滚 evaluating，使阶段可以重试', async () => {
@@ -534,5 +566,119 @@ describe('submit_stage_result tool', () => {
         criteria: [{ criterion: 'tests pass', status: 'unknown', reason: 'scheduler unavailable' }],
       }],
     })
+  })
+
+})
+
+describe('submit_stage_result evaluator verification profile', () => {
+  function harness(acceptanceCriteria: string[]) {
+    let plan: PlanSnapshot | undefined
+    let now = 0
+    const store = {
+      get: () => plan,
+      set: (next: PlanSnapshot | undefined) => { plan = next },
+    }
+    const planning = new PlanRuntime(store, () => ++now, () => 'plan-1')
+    const evaluation = new EvaluationRuntime(store, () => ++now)
+    const created = planning.create({
+      title: 'Delivery',
+      objective: 'Ship safely',
+      stages: [
+        { id: 'build', title: 'Build', objective: 'Implement', acceptanceCriteria },
+        { id: 'release', title: 'Release', objective: 'Package', acceptanceCriteria: ['build passes'], dependencies: ['build'] },
+      ],
+    })
+    if (!created.ok) throw new Error(created.error)
+    const started = planning.execute(created.plan.id, created.plan.revision)
+    if (!started.ok) throw new Error(started.error)
+    return { store, evaluation, revision: started.plan.revision, current: () => store.get()! }
+  }
+
+  function submit(instance: ReturnType<typeof harness>, overrides: Partial<ToolContext>) {
+    return submitStageResultTool.execute({
+      planId: 'plan-1',
+      revision: instance.revision,
+      stageId: 'build',
+      summary: 'Implemented',
+      evidence: ['3 tests passed'],
+    }, baseContext({
+      submitStageResult: (input) => instance.evaluation.submitStageResult(input),
+      evaluateStage: (input) => instance.evaluation.evaluateStage(input),
+      evaluatePlan: (input) => instance.evaluation.evaluatePlan(input),
+      abortStageEvaluation: (planId, revision, stageId, reason) =>
+        instance.evaluation.abortStageEvaluation(planId, revision, stageId, reason),
+      ...overrides,
+    }))
+  }
+
+  function capturingSpawn() {
+    const inputs: Array<Parameters<NonNullable<ToolContext['spawnAgents']>>[0]> = []
+    const spawnImplementation: NonNullable<ToolContext['spawnAgents']> = (input) => {
+      inputs.push(input)
+      return {
+        executionId: `evaluation-${inputs.length}`,
+        graphId: 'run-1',
+        nodeIds: ['evaluation-node'],
+        status: 'scheduled',
+      }
+    }
+    return { inputs, spawnAgents: vi.fn(spawnImplementation) }
+  }
+
+  it('uses workspace_verify for both evaluator levels', async () => {
+    const instance = harness(['tests pass'])
+    const { inputs, spawnAgents } = capturingSpawn()
+
+    const result = await submit(instance, { spawnAgents })
+
+    expect(result).toMatchObject({ ok: true })
+    const input = inputs[0]
+    expect(input.toolProfile).toBe('workspace_verify')
+    expect(input.children[0].toolProfile).toBe('workspace_verify')
+    const objective = input.children[0].objective
+    expect(objective).toContain('Run the verification commands you need early')
+    expect(objective).toContain('including project shell scripts')
+    expect(objective).toContain('then inspect files for what they cannot show')
+    expect(objective).not.toContain('configuration-derived only')
+  })
+
+  it('does not depend on command discovery before scheduling verification', async () => {
+    const instance = harness(['tests pass'])
+    const { inputs, spawnAgents } = capturingSpawn()
+
+    const result = await submit(instance, { spawnAgents, callTool: vi.fn(() => { throw new Error('unexpected discovery') }) })
+
+    expect(result).toMatchObject({ ok: true })
+    const input = inputs[0]
+    expect(input.toolProfile).toBe('workspace_verify')
+    expect(input.children[0].toolProfile).toBe('workspace_verify')
+    const objective = input.children[0].objective
+    expect(objective).toContain('Run the verification commands you need early')
+    expect(objective).toContain('including project shell scripts')
+  })
+
+  it('uses the verification profile for corrective evaluator requests', async () => {
+    const instance = harness(['tests pass', 'lint passes'])
+    const delegateAgents = vi.fn()
+      .mockResolvedValueOnce(evaluatorResult({
+        criteria: [{ criterion: 'tests pass', status: 'passed', evidence: ['3 tests passed'], reason: '' }],
+      }))
+      .mockResolvedValueOnce(evaluatorResult({
+        criteria: [
+          { criterion: 'tests pass', status: 'passed', evidence: ['3 tests passed'], reason: '' },
+          { criterion: 'lint passes', status: 'passed', evidence: ['lint clean'], reason: '' },
+        ],
+      }))
+
+    const result = await submit(instance, { delegateAgents })
+
+    expect(result).toMatchObject({ ok: true })
+    expect(delegateAgents).toHaveBeenCalledTimes(2)
+    for (const call of delegateAgents.mock.calls) {
+      expect(call[0].toolProfile).toBe('workspace_verify')
+      expect(call[0].children[0].toolProfile).toBe('workspace_verify')
+      expect(call[0].children[0].objective).toContain('Run the verification commands you need early')
+      expect(call[0].children[0].objective).toContain('including project shell scripts')
+    }
   })
 })

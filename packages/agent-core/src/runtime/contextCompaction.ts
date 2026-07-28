@@ -66,6 +66,7 @@ const REPLAY_UNSAFE_TOOLS = new Set([
   'shell_linux',
   'shell_powershell',
   'run_task', // 跑一次 test/build 的代价远超摘要本身
+  'run_verification_command', // 同上：白名单里的 test/lint 命令重跑一次同样昂贵
 ])
 
 function compactedNoteFor(toolName: string | undefined): string {

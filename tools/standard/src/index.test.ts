@@ -1,17 +1,18 @@
 // @web-agent/tools 的聚合完整性测试（TSPLIT TS2）。
 // ---------------------------------------------------------------------------
 // 登记反转后，「标准工具集是否装齐、名字是否正确」这件事的归属从 core 移到这里 ——
-// core 只提供空注册表 + 抽象；本 meta 包负责把 6 域 29 工具聚合成 registerStandardTools。
+// core 只提供空注册表 + 抽象；本 meta 包负责把 6 域 31 工具聚合成 registerStandardTools。
 // 故这份断言留在 meta（而非 agent-core），agent-core 的测试对具体工具保持无知。
 
 import { describe, it, expect } from 'vitest'
 import { createToolRegistry } from '@web-agent/core/tools/toolRegistry'
 import { registerStandardTools } from './index'
 
-// 6 域 30 个标准工具的权威清单（顺序 = 注册顺序：shell → interaction → fs → planning → skills → agents）。
+// 6 域 31 个标准工具的权威清单（顺序 = 注册顺序：shell → interaction → fs → planning → skills → agents）。
 const STANDARD_TOOLS = [
-  // shell（5）
-  'shell_macos', 'shell_linux', 'shell_powershell', 'run_task', 'git_diff_review',
+  // shell（6）
+  'shell_macos', 'shell_linux', 'shell_powershell', 'run_task', 'run_verification_command',
+  'git_diff_review',
   // interaction（3）
   'ask_user_question', 'browser_action', 'save_file',
   // fs（11）
@@ -26,11 +27,11 @@ const STANDARD_TOOLS = [
 ] as const
 
 describe('@web-agent/tools —— 标准工具集聚合（TSPLIT TS2）', () => {
-  it('registerStandardTools 恰好装齐 30 个工具', () => {
+  it('registerStandardTools 恰好装齐 31 个工具', () => {
     const reg = createToolRegistry()
     registerStandardTools(reg)
-    expect(reg.list().length).toBe(30)
-    expect(STANDARD_TOOLS.length).toBe(30)
+    expect(reg.list().length).toBe(31)
+    expect(STANDARD_TOOLS.length).toBe(31)
   })
 
   it('六域每个工具都按 name 就位', () => {
@@ -45,6 +46,6 @@ describe('@web-agent/tools —— 标准工具集聚合（TSPLIT TS2）', () => 
     const reg = createToolRegistry()
     registerStandardTools(reg)
     registerStandardTools(reg)
-    expect(reg.list().length).toBe(30)
+    expect(reg.list().length).toBe(31)
   })
 })

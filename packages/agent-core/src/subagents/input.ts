@@ -7,7 +7,10 @@ import type {
   SubagentTaskCategory,
   SubagentToolProfile,
 } from './types'
-import { DEFAULT_SUBAGENT_TOOL_PROFILE, SUBAGENT_TOOL_PROFILES } from './toolProfile'
+import {
+  DEFAULT_SUBAGENT_TOOL_PROFILE,
+  SUBAGENT_TOOL_PROFILES,
+} from './toolProfile'
 import { isDelegatableDangerousTool } from '../runtime/dangerousTools'
 
 const DEFAULT_MAX_CHILDREN = 6
@@ -45,6 +48,8 @@ function normalizeStrategy(value: unknown): DelegateAgentStrategy {
   return value === 'parallel_best_effort' ? 'parallel_best_effort' : 'parallel_wait_all'
 }
 
+// 从单一真源派生，避免新增档位后错误文案漏改。
+const TOOL_PROFILE_LIST = SUBAGENT_TOOL_PROFILES.join(', ')
 function normalizeToolProfile(value: unknown): SubagentToolProfile | undefined {
   return SUBAGENT_TOOL_PROFILES.includes(value as SubagentToolProfile)
     ? (value as SubagentToolProfile)
@@ -182,7 +187,7 @@ export function normalizeDelegateAgentInput(value: unknown):
     if (child.toolProfile !== undefined) {
       const childToolProfile = normalizeToolProfile(child.toolProfile)
       if (!childToolProfile) {
-        return { ok: false, error: 'invalid delegate_agent: child toolProfile must be delegate_only or workspace_read' }
+        return { ok: false, error: `invalid delegate_agent: child toolProfile must be one of ${TOOL_PROFILE_LIST}` }
       }
       spec.toolProfile = childToolProfile
     }
@@ -200,7 +205,7 @@ export function normalizeDelegateAgentInput(value: unknown):
     ? DEFAULT_SUBAGENT_TOOL_PROFILE
     : normalizeToolProfile(record.toolProfile)
   if (!toolProfile) {
-    return { ok: false, error: 'invalid delegate_agent: toolProfile must be delegate_only or workspace_read' }
+    return { ok: false, error: `invalid delegate_agent: toolProfile must be one of ${TOOL_PROFILE_LIST}` }
   }
 
   const confirmedTools = record.confirmedTools === undefined

@@ -1214,6 +1214,97 @@ describe('createDelegateAgentRuntime', () => {
     delegateRuntime.dispose?.()
   })
 
+  it('dispatches the verification tool for workspace_verify and permits project shell commands', async () => {
+    const writes = new Map<string, string>()
+    const runChildTool = vi.fn(async () => ({
+      ok: true as const,
+      data: { exitCode: 0, stdout: '6 passed', stderr: '' },
+    }))
+    const systemPrompts: string[] = []
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (body.tool_choice === 'none') return response({ content: '# skill' })
+      const messages = messagesOf(body)
+      if (childPath(body)) systemPrompts.push(messages[0]?.content ?? '')
+      if (!messages.some((message) => message.role === 'tool')) {
+        return namedToolCall('verify-1', 'run_verification_command', { command: 'pnpm test' })
+      }
+      expect(toolResultFor(body, 'verify-1')).toContain('6 passed')
+      return response({ content: 'verified' })
+    }
+    const callContext = context(writes)
+    callContext.runChildTool = runChildTool
+    const delegateRuntime = runtime(fetchImpl)
+
+    const result = await delegateRuntime.delegateAgents(
+      {
+        children: [{ objective: 'verify stage' }],
+        toolProfile: 'workspace_verify',
+      },
+      callContext,
+    )
+
+    expect(result.children[0]).toMatchObject({ status: 'done', summary: 'verified' })
+    expect(runChildTool).toHaveBeenCalledWith(
+      'run_verification_command',
+      { command: 'pnpm test' },
+      expect.any(Number),
+    )
+    expect(systemPrompts[0]).toContain('run_verification_command')
+    expect(systemPrompts[0]).toContain('验收所需的 shell 命令及项目脚本')
+    delegateRuntime.dispose?.()
+  })
+
+  it('states the shell verification capability for every workspace_verify child', async () => {
+    const writes = new Map<string, string>()
+    const systemPrompts: string[] = []
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (body.tool_choice === 'none') return response({ content: '# skill' })
+      if (childPath(body)) systemPrompts.push(messagesOf(body)[0]?.content ?? '')
+      return response({ content: 'no evidence available' })
+    }
+    const callContext = context(writes)
+    const delegateRuntime = runtime(fetchImpl)
+
+    await delegateRuntime.delegateAgents(
+      { children: [{ objective: 'verify stage' }], toolProfile: 'workspace_verify' },
+      callContext,
+    )
+
+    expect(systemPrompts[0]).toContain('run_verification_command')
+    expect(systemPrompts[0]).toContain('验收所需的 shell 命令及项目脚本')
+    delegateRuntime.dispose?.()
+  })
+
+  it('keeps the verification tool out of reach for workspace_read children', async () => {
+    const runChildTool = vi.fn(async () => ({ ok: true as const, data: { stdout: 'ran' } }))
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (body.tool_choice === 'none') return response({ content: '# skill' })
+      const messages = messagesOf(body)
+      if (!messages.some((message) => message.role === 'tool')) {
+        return namedToolCall('verify-2', 'run_verification_command', { command: 'pnpm test' })
+      }
+      expect(toolResultFor(body, 'verify-2')).toContain(
+        'tool not allowed for child agent: run_verification_command',
+      )
+      return response({ content: 'recovered' })
+    }
+    const callContext = context(new Map())
+    callContext.runChildTool = runChildTool
+    const delegateRuntime = runtime(fetchImpl)
+
+    const result = await delegateRuntime.delegateAgents(
+      { children: [{ objective: 'read' }], toolProfile: 'workspace_read' },
+      callContext,
+    )
+
+    expect(result.children[0]).toMatchObject({ status: 'done', summary: 'recovered' })
+    expect(runChildTool).not.toHaveBeenCalled()
+    delegateRuntime.dispose?.()
+  })
+
   // 孩子的 maxTurns 默认只有 4 且最后一轮留给合成，先花一整轮做能力发现等于砍掉三分之一预算。
   // 授权集在 spawn 时就已收窄到个位数，整体预载即可，于是「直接调用」在第一轮就能真干活。
   it('预载整个授权集：孩子首轮直接调用即执行，不为能力发现白烧一轮', async () => {

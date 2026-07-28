@@ -5,13 +5,28 @@ import { shellMacosTool } from './shell-macos/shell-macos'
 import { shellLinuxTool } from './shell-linux/shell-linux'
 import { shellPowershellTool } from './shell-powershell/shell-powershell'
 import { runTaskTool } from './run-task/run-task'
+import { runVerificationCommandTool } from './run-verification-command/run-verification-command'
 import { gitDiffReviewTool } from './git-diff-review/git-diff-review'
 
-export { shellMacosTool, shellLinuxTool, shellPowershellTool, runTaskTool, gitDiffReviewTool }
+export {
+  shellMacosTool,
+  shellLinuxTool,
+  shellPowershellTool,
+  runTaskTool,
+  runVerificationCommandTool,
+  gitDiffReviewTool,
+}
 
 /** 把 shell 域全部工具注册进给定 registry（幂等：同名覆盖）。 */
 export function registerShellTools(registry: ToolRegistry): void {
-  for (const tool of [shellMacosTool, shellLinuxTool, shellPowershellTool, runTaskTool, gitDiffReviewTool]) {
+  for (const tool of [
+    shellMacosTool,
+    shellLinuxTool,
+    shellPowershellTool,
+    runTaskTool,
+    runVerificationCommandTool,
+    gitDiffReviewTool,
+  ]) {
     registry.register(tool)
   }
 }

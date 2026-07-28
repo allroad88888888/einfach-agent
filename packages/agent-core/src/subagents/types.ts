@@ -4,7 +4,13 @@ export type SubagentPath = string
 
 export type DelegateAgentStrategy = 'parallel_wait_all' | 'parallel_best_effort'
 export type DelegateAgentBatchStatus = 'done' | 'partial' | 'failed' | 'cancelled'
-export type SubagentToolProfile = 'delegate_only' | 'workspace_read'
+/**
+ * 子 agent 工具档位（全序能力阶梯，见 toolProfile.ts）：
+ *   · delegate_only    —— 只能 delegate_agent。
+ *   · workspace_read   —— 追加只读文件工具。
+ *   · workspace_verify —— 再追加 run_verification_command，用于评估器独立核验验收标准。
+ */
+export type SubagentToolProfile = 'delegate_only' | 'workspace_read' | 'workspace_verify'
 export type SubagentArchiveWriteMode = 'create' | 'overwrite' | 'append' | 'upsert'
 export type SubagentSkillPromotion = 'ephemeral' | 'candidate' | 'promoted' | 'archived'
 

@@ -130,10 +130,26 @@ describe('normalizeDelegateAgentInput', () => {
         children: [{ objective: 'read', toolProfile: 'delegate_only' }],
       },
     })
+    expect(normalizeDelegateAgentInput({
+      toolProfile: 'workspace_verify',
+      children: [{ objective: 'verify', toolProfile: 'workspace_read' }],
+    })).toMatchObject({
+      ok: true,
+      input: {
+        toolProfile: 'workspace_verify',
+        children: [{ objective: 'verify', toolProfile: 'workspace_read' }],
+      },
+    })
     expect(normalizeDelegateAgentInput({ toolProfile: 'write_all', children: [{ objective: 'x' }] }))
-      .toEqual({ ok: false, error: 'invalid delegate_agent: toolProfile must be delegate_only or workspace_read' })
+      .toEqual({
+        ok: false,
+        error: 'invalid delegate_agent: toolProfile must be one of delegate_only, workspace_read, workspace_verify',
+      })
     expect(normalizeDelegateAgentInput({ children: [{ objective: 'x', toolProfile: 'write_all' }] }))
-      .toEqual({ ok: false, error: 'invalid delegate_agent: child toolProfile must be delegate_only or workspace_read' })
+      .toEqual({
+        ok: false,
+        error: 'invalid delegate_agent: child toolProfile must be one of delegate_only, workspace_read, workspace_verify',
+      })
   })
 
   it('accepts only known dangerous tools in explicit confirmed capability requests', () => {

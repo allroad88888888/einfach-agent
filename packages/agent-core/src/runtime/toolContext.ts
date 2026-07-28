@@ -25,7 +25,10 @@ import type {
 } from '../subagents/types'
 import { getExecutionRuntime } from '../execution/runtime'
 import { ROOT_AGENT_PATH } from '../subagents/path'
-import { isSubagentWorkspaceReadTool } from '../subagents/toolProfile'
+import {
+  isSubagentVerificationTool,
+  isSubagentWorkspaceReadTool,
+} from '../subagents/toolProfile'
 import { commandUsesPermanentDelete, isDelegatableDangerousTool } from './dangerousTools'
 import { sessionsAtom, workspacesAtom } from '../state/rootStore'
 import { resolveSessionWorkspaceRoot } from '../state/workspaceState'
@@ -496,6 +499,7 @@ export function buildToolContext(opts: {
             toolNames: requestedConfirmedTools,
           }
         : undefined
+      const childToolCtx: ToolContext = ctx
       const callContext: DelegateAgentCallContext = {
         parentPath: opts.agentPath ?? ROOT_AGENT_PATH,
         delegationCallId: callId,
@@ -511,13 +515,14 @@ export function buildToolContext(opts: {
         async runChildTool(name, args, expectedRegistrationVersion) {
           assertFresh()
           const confirmedDangerousTool = dangerousToolCapability?.toolNames.includes(name) === true
-          if (!isSubagentWorkspaceReadTool(name) && !confirmedDangerousTool) {
+          const allowedVerificationTool = input.toolProfile === 'workspace_verify' && isSubagentVerificationTool(name)
+          if (!isSubagentWorkspaceReadTool(name) && !confirmedDangerousTool && !allowedVerificationTool) {
             return { ok: false, error: `tool not allowed for child agent: ${name}` }
           }
           const result = await core.tools.run(
             name,
             args,
-            ctx,
+            childToolCtx,
             expectedRegistrationVersion,
           )
           assertFresh()

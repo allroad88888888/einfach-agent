@@ -136,7 +136,7 @@ UI 中的 Promote/Archive 确认只生成上述审计 CLI，并明确标记“�
    - run-local：`runs/<runId>/skills/<agentPath>.<ordinal>-<kind>.md`
    - global：`.agent-archive/skills/<skillId>.md`
 8. runtime 按 `maxConcurrent` 并发运行子 agent。
-9. 子 agent 默认只允许 `delegate_agent`，可继续分裂下一层；显式 `workspace_read` 时可使用受宿主守卫的只读 workspace 工具。
+9. 子 agent 默认只允许 `delegate_agent`，可继续分裂下一层；显式 `workspace_read` 时可使用受宿主守卫的只读 workspace 工具；`workspace_verify` 再加 `run_verification_command`，可执行验收所需的 shell 命令和项目脚本。
 10. 子 agent 结束后写 result、node、tree snapshot、events 和 indexes。
 11. 父 agent 收到 `DelegateAgentBatchResult`，包含 `archiveBasePath`、`eventLog`、`skillIds`、children 结果等。
 
@@ -158,7 +158,7 @@ interface DelegateAgentInput {
     maxDepth?: number
     maxChildren?: number
     maxTurns?: number
-    toolProfile?: 'delegate_only' | 'workspace_read'
+    toolProfile?: 'delegate_only' | 'workspace_read' | 'workspace_verify'
     confirmedTools?: Array<'shell_macos' | 'shell_linux' | 'shell_powershell' | 'write_file' | 'apply_patch'>
   }>
   strategy?: 'parallel_wait_all' | 'parallel_best_effort'
@@ -167,7 +167,7 @@ interface DelegateAgentInput {
   maxConcurrent?: number
   maxTotalNodes?: number
   maxModelCalls?: number
-  toolProfile?: 'delegate_only' | 'workspace_read'
+  toolProfile?: 'delegate_only' | 'workspace_read' | 'workspace_verify'
   confirmedTools?: Array<'shell_macos' | 'shell_linux' | 'shell_powershell' | 'write_file' | 'apply_patch'>
 }
 ```
@@ -182,7 +182,7 @@ interface DelegateAgentInput {
 - 子 agent 默认 `maxTurns = 4`，硬上限 `8`。
 - 整树 `maxTotalNodes` 默认 `64`、硬上限 `256`，包含 root；所有后代共享计数且只能收紧上限。
 - 整树 `maxModelCalls` 默认 `128`、硬上限 `512`，覆盖 core/brief 蒸馏和 child turn；取得并发许可后、真正请求模型前计数。
-- `toolProfile` 默认 `delegate_only`；`workspace_read` 可在批次或 child 级显式启用，后代只能继承或收紧。
+- `toolProfile` 默认 `delegate_only`；`workspace_read`、`workspace_verify` 可在批次或 child 级显式启用，后代只能继承或收紧。
 - `confirmedTools` 默认空，批次和 child 均只能显式请求宿主签发 capability 的子集；省略不会继承。
 
 实现入口：
@@ -199,9 +199,10 @@ interface DelegateAgentInput {
 
 ### 子 agent 工具 profile（已接入）
 
-- `toolProfile` 必须显式选择，默认 `delegate_only`；可选 `workspace_read`。
+- `toolProfile` 必须显式选择，默认 `delegate_only`；可选 `workspace_read`、`workspace_verify`。
 - `delegate_only` 白名单仅含 `delegate_agent`；`workspace_read` 只增加 `read_file`、`list_files`、`search_files`、`rg_search`，严禁 shell、write、patch、task 和 git 写操作。
-- profile 是树预算的一部分：后代只能继承或从 `workspace_read` 收紧到 `delegate_only`，不能自行放宽。
+- `workspace_verify` = `workspace_read` + `run_verification_command`：可执行验收所需的 shell 命令，用于验收评估器自己取得执行证据；它仍然不能写文件，也拿不到通用 shell。
+- profile 是全序能力阶梯 `delegate_only ⊂ workspace_read ⊂ workspace_verify`：后代只能继承或收紧，不能自行放宽。
 - child 不直接持有文件桥。宿主通过 `DelegateAgentCallContext.runChildTool(name, args)` 转发到完整 `ToolContext`，复用 workspaceRoot confinement、stale/runId、AbortSignal 和 registry 白名单守卫。
 - 工具结果仍以普通 tool message 回填，并写入仅含名称、耗时、成功状态的审计事件；不得把文件正文复制进 archive event。
 - shell、write、patch、ask_user、browser 等工具不会自动下放给 child。
