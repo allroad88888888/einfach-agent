@@ -1305,6 +1305,60 @@ describe('createDelegateAgentRuntime', () => {
     delegateRuntime.dispose?.()
   })
 
+  // 一个 runtime 服务整轮 run 的多次 root 委派：模型自己派的只读调研，和 submit_stage_result
+  // 拉起的 workspace_verify 评估器，都从 root 发起。root 的档位来自宿主而非上一次 root 调用 ——
+  // 曾经在首次调用里锁死 root 档位，于是「先 workspace_read 调研、后 workspace_verify 评估」
+  // 必然报 cannot widen inherited workspace_read，评估器起不来、阶段被回滚。
+  it('每次 root 委派各自决定 toolProfile，既不被上一次锁死也不靠省略继承', async () => {
+    const runChildTool = vi.fn(async (name: string) => (
+      name === 'run_verification_command'
+        ? { ok: true as const, data: { exitCode: 0, stdout: '6 passed', stderr: '' } }
+        : { ok: true as const, data: { content: 'file body' } }
+    ))
+    const toolResults: string[] = []
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (body.tool_choice === 'none') return response({ content: '# skill' })
+      const messages = messagesOf(body)
+      if (messages.some((message) => message.role === 'tool')) {
+        toolResults.push(messages
+          .filter((message) => message.role === 'tool')
+          .map((message) => message.content ?? '')
+          .join('\n'))
+        return response({ content: 'done' })
+      }
+      return messages.some((message) => message.content?.includes('verify stage'))
+        ? namedToolCall('verify-root', 'run_verification_command', { command: 'pnpm test' })
+        : namedToolCall('read-root', 'read_file', { path: 'src/a.ts' })
+    }
+    const callContext = context(new Map())
+    callContext.runChildTool = runChildTool
+    const delegateRuntime = runtime(fetchImpl)
+
+    const research = await delegateRuntime.delegateAgents(
+      { children: [{ objective: 'research' }], toolProfile: 'workspace_read' },
+      callContext,
+    )
+    const evaluator = await delegateRuntime.delegateAgents(
+      { children: [{ objective: 'verify stage' }], toolProfile: 'workspace_verify' },
+      callContext,
+    )
+    const omitted = await delegateRuntime.delegateAgents(
+      { children: [{ objective: 'plain' }] },
+      callContext,
+    )
+
+    expect(research.children[0]).toMatchObject({ status: 'done', summary: 'done' })
+    expect(evaluator.children[0]).toMatchObject({ status: 'done', summary: 'done' })
+    expect(omitted.children[0]).toMatchObject({ status: 'done', summary: 'done' })
+    expect(runChildTool).toHaveBeenNthCalledWith(1, 'read_file', { path: 'src/a.ts' }, expect.any(Number))
+    expect(runChildTool).toHaveBeenNthCalledWith(2, 'run_verification_command', { command: 'pnpm test' }, expect.any(Number))
+    // 省略 toolProfile 的 root 调用回落 delegate_only，不白捡上一次 root 调用的档位。
+    expect(runChildTool).toHaveBeenCalledTimes(2)
+    expect(toolResults[2]).toContain('tool not allowed for child agent: read_file')
+    delegateRuntime.dispose?.()
+  })
+
   // 孩子的 maxTurns 默认只有 4 且最后一轮留给合成，先花一整轮做能力发现等于砍掉三分之一预算。
   // 授权集在 spawn 时就已收窄到个位数，整体预载即可，于是「直接调用」在第一轮就能真干活。
   it('预载整个授权集：孩子首轮直接调用即执行，不为能力发现白烧一轮', async () => {

@@ -591,7 +591,6 @@ export function createDelegateAgentRuntime(
   let eventCounter = 0
   const archiveStartedAt = new Date().toISOString()
   let rootBudget: TreeRuntimeBudget | undefined
-  let rootToolProfile: SubagentToolProfile | undefined
   let modelCallSemaphore: ModelCallSemaphore | undefined
   let totalNodesUsed = 1
   let modelCallsUsed = 0
@@ -1786,8 +1785,6 @@ export function createDelegateAgentRuntime(
       }
       modelCallSemaphore = new ModelCallSemaphore(rootBudget.maxConcurrent)
       budgetByPath.set(ROOT_AGENT_PATH, rootBudget)
-      rootToolProfile = input.toolProfile ?? DEFAULT_SUBAGENT_TOOL_PROFILE
-      toolProfileByPath.set(ROOT_AGENT_PATH, rootToolProfile)
     }
     const inheritedBudget = budgetByPath.get(parentPath) ?? rootBudget
     const budget: TreeRuntimeBudget = {
@@ -1807,17 +1804,23 @@ export function createDelegateAgentRuntime(
         ? Math.min(inheritedBudget.maxModelCalls, input.maxModelCalls ?? inheritedBudget.maxModelCalls)
         : inheritedBudget.maxModelCalls,
     }
-    const inheritedToolProfile = toolProfileByPath.get(parentPath)
-      ?? rootToolProfile
-      ?? DEFAULT_SUBAGENT_TOOL_PROFILE
+    // root 的档位来自宿主，不来自上一次 root 调用：一个 runtime 服务整轮 run 的多次 root 委派
+    // （模型的 delegate_agent、submit_stage_result 拉起的验收评估器……），每次都各自决定档位。
+    // 曾经在首次调用里把 root 档位锁死，于是「先派 workspace_read 调研、再拉 workspace_verify
+    // 评估器」必然被判成加宽而起不来。省略即 delegate_only，不继承上一次 root 调用的档位。
+    const isRootCall = parentPath === ROOT_AGENT_PATH
+    const inheritedToolProfile = isRootCall
+      ? undefined
+      : toolProfileByPath.get(parentPath) ?? DEFAULT_SUBAGENT_TOOL_PROFILE
     const requestedToolProfile = hasOwn(rawInput, 'toolProfile')
       ? input.toolProfile ?? DEFAULT_SUBAGENT_TOOL_PROFILE
-      : inheritedToolProfile
-    if (!canNarrowSubagentToolProfile(inheritedToolProfile, requestedToolProfile)) {
+      : inheritedToolProfile ?? DEFAULT_SUBAGENT_TOOL_PROFILE
+    if (inheritedToolProfile && !canNarrowSubagentToolProfile(inheritedToolProfile, requestedToolProfile)) {
       throw new Error(
         `invalid delegate_agent: toolProfile ${requestedToolProfile} cannot widen inherited ${inheritedToolProfile}`,
       )
     }
+    if (isRootCall) toolProfileByPath.set(ROOT_AGENT_PATH, requestedToolProfile)
     for (const child of input.children) {
       const childToolProfile = child.toolProfile ?? requestedToolProfile
       if (!canNarrowSubagentToolProfile(requestedToolProfile, childToolProfile)) {
