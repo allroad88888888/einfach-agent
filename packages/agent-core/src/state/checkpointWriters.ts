@@ -27,6 +27,7 @@ import {
   planStageCheckpointsAtom,
 } from './sessionAtoms'
 import type { Checkpoint, PlanStageCheckpoint, RunRecoverySnapshot } from './checkpoint.type'
+import type { ConversationItem } from './core.type'
 import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
 import type { PlanSnapshot } from '../planning/types'
 import { persistSessions } from '../runtime/persistenceBridge'
@@ -154,6 +155,36 @@ export function jumpToCheckpoint(
 }
 
 /**
+ * 阶段回退点是在**工具执行过程中**打的：execute_plan / submit_stage_result 推进阶段时才调
+ * setPlan，而此刻发起该调用的 assistant(tool_calls) 已经进了 items、它的 tool result 还没回填。
+ * 直接按 itemCount 截断会留下一条无人应答的 tool_calls，下一次请求必被接口 400 拒绝
+ * （"An assistant message with 'tool_calls' must be followed by tool messages"）。
+ *
+ * 这里把尾部未闭合的那条 assistant 连同它已回填的部分结果一起丢掉 —— 它正是启动该阶段的
+ * 那次调用，本就属于被回退掉的那一段。并发批可能只回填了部分结果，因此判定按「该 assistant
+ * 的每个 call id 都有对应 tool 结果」来做，而不是只看最后一条是不是 assistant。
+ *
+ * 只需检查最后一条 assistant：协议保证上一批工具结果全部回填后才会产生下一条 assistant，
+ * 更早的配对不可能残缺。
+ */
+function dropUnclosedToolCalls(items: ConversationItem[]): ConversationItem[] {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const message = items[index].item
+    if (message.role !== 'assistant') continue
+    const callIds = (message.tool_calls ?? []).map((call) => call.id)
+    if (callIds.length === 0) return items
+    const answered = new Set(
+      items.slice(index + 1)
+        .map((entry) => entry.item)
+        .filter((entry) => entry.role === 'tool')
+        .map((entry) => entry.tool_call_id),
+    )
+    return callIds.every((callId) => answered.has(callId)) ? items : items.slice(0, index)
+  }
+  return items
+}
+
+/**
  * 回退到某个计划阶段开始之前（阶段级回退，轮级 jumpToCheckpoint 的计划内部版本）：
  * 恢复该阶段的回退点快照、把对话截断回打点时的长度，并丢弃该点及其之后的全部回退点。
  * 没有对应回退点（旧会话、或该阶段从未开始）时返回 undefined，由调用方决定降级行为。
@@ -180,8 +211,8 @@ export function revertToPlanStageCheckpoint(
   if (!current || current.id !== point.plan.id) return undefined
 
   // itemCount 是打点时的全局下标。轮级回退可能已经把对话截得更短，slice 在这种情况下
-  // 自然退化成「保持原样」，不会越界。
-  store.setter(itemsAtom, store.getter(itemsAtom).slice(0, point.itemCount))
+  // 自然退化成「保持原样」，不会越界。截断后再抹掉尾部未闭合的 tool_calls（见上方注释）。
+  store.setter(itemsAtom, dropUnclosedToolCalls(store.getter(itemsAtom).slice(0, point.itemCount)))
   restorePlan(
     id,
     { ...point.plan, revision: current.revision + 1, updatedAt: Date.now() },

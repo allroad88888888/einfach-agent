@@ -444,6 +444,73 @@ describe('revertToPlanStageCheckpoint', () => {
     expect(store.getter(itemsAtom)).toEqual([item1])
   })
 
+  // 回退点是在工具执行【过程中】打的（推进阶段的 setPlan 发生在 execute_plan /
+  // submit_stage_result 的 execute 内部），此刻 assistant(tool_calls) 已进 items、
+  // tool result 还没回填。按 itemCount 硬截会留下无人应答的 tool_calls，下一次请求会被
+  // 接口 400 拒（insufficient tool messages following tool_calls message）。
+  function assistantCalling(id: string, createdAt: number, callIds: string[]): ConversationItem {
+    return {
+      id,
+      createdAt,
+      item: {
+        role: 'assistant',
+        content: null,
+        tool_calls: callIds.map((callId) => ({
+          id: callId,
+          type: 'function' as const,
+          function: { name: 'execute_plan', arguments: '{}' },
+        })),
+      },
+    }
+  }
+  function toolResult(id: string, createdAt: number, callId: string): ConversationItem {
+    return { id, createdAt, item: { role: 'tool', tool_call_id: callId, content: '{}' } }
+  }
+
+  function seedUnclosed(itemCount: number, tail: ConversationItem[]): void {
+    seedS1()
+    const store = getSessionStore('s1').store
+    store.setter(itemsAtom, [item1, ...tail])
+    store.setter(planAtom, plan('p1', 9))
+    store.setter(planStageCheckpointsAtom, [
+      { stageId: 'st1', plan: plan('p1', 2), itemCount, createdAt: 10 },
+    ])
+  }
+
+  it('截断点落在 tool_calls 与其结果之间时，连同那条 assistant 一起丢弃', () => {
+    // items = [user, assistant(call-1), tool(call-1)]；打点时结果还没回填 → itemCount = 2。
+    seedUnclosed(2, [assistantCalling('i2', 1, ['call-1']), toolResult('i3', 2, 'call-1')])
+
+    revertToPlanStageCheckpoint('s1', 'st1')
+
+    expect(getSessionStore('s1').store.getter(itemsAtom)).toEqual([item1])
+  })
+
+  it('并发批只回填了部分结果时，整条 assistant 及已回填的结果一起丢弃', () => {
+    seedUnclosed(3, [
+      assistantCalling('i2', 1, ['call-1', 'call-2']),
+      toolResult('i3', 2, 'call-1'),
+      toolResult('i4', 3, 'call-2'),
+    ])
+
+    revertToPlanStageCheckpoint('s1', 'st1')
+
+    expect(getSessionStore('s1').store.getter(itemsAtom)).toEqual([item1])
+  })
+
+  it('截断点本身已闭合时不多丢任何一条', () => {
+    seedUnclosed(3, [
+      assistantCalling('i2', 1, ['call-1']),
+      toolResult('i3', 2, 'call-1'),
+      { id: 'i4', createdAt: 3, item: { role: 'assistant', content: '阶段产出' } },
+    ])
+
+    const kept = getSessionStore('s1').store.getter(itemsAtom).slice(0, 3)
+    revertToPlanStageCheckpoint('s1', 'st1')
+
+    expect(getSessionStore('s1').store.getter(itemsAtom)).toEqual(kept)
+  })
+
   it('未登记的会话整体 no-op（ghost guard）', () => {
     const store = getSessionStore('ghost').store
     store.setter(planStageCheckpointsAtom, [
