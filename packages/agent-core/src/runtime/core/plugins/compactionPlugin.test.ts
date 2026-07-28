@@ -162,6 +162,7 @@ describe('compactionPlugin —— 超预算（reservedTokens 吃光预算，压�
       dropped_items: compaction!.droppedItems,
       messages_before: messages.length,
       messages_after: draft.messages.length,
+      dynamic_tail_items: 0, // 本用例没传 dynamicTailCount → 尾巴为空，压缩作用于全部消息
       within_budget: false,
     })
     // key 集合完整性：防止「值凑巧对了但漏发/改名了某个 attr」这类变异逃过上面的 toHaveBeenCalledWith
@@ -176,6 +177,7 @@ describe('compactionPlugin —— 超预算（reservedTokens 吃光预算，压�
         'effective_budget_tk',
         'est_after_tk',
         'est_before_tk',
+        'dynamic_tail_items',
         'llm_turn',
         'messages_after',
         'messages_before',
@@ -396,6 +398,127 @@ describe('compactionPlugin —— 压缩投影复用', () => {
 
     expect(traceEvent).not.toHaveBeenCalledWith('llm.context_projection_reused', expect.anything())
     expect(traceEvent).toHaveBeenCalledWith('llm.context_compacted', expect.objectContaining({ llm_turn: 2 }))
+  })
+
+  // ── CR2：动态尾巴（plan 快照等）不参与压缩与前缀比较 ────────────────────────────
+  // 这一组是账单驱动的回归：尾巴挂在 messages 末尾且每轮可能整条替换，位置又随历史增长后移。
+  // 修复前它参与 entry.source 的引用比较，于是「历史追加一条」= 上一轮尾巴的下标被新条目占据
+  // = 复用必然失败 = 每轮全额 cache-miss。实测两天里 dynamic_control_changed(173 次) +
+  // compaction_projection_changed(214 次) 合计占 DeepSeek 账单的 71%。
+  function tailDraft(messages: ModelItem[], llmTurn: number, dynamicTailCount: number): CompactionRequestDraft {
+    return { messages, tools: [], llmTurn, dynamicTailCount }
+  }
+
+  it('尾巴逐轮替换 + 历史追加 → 仍复用投影，且尾巴按最新值接回（CR2 核心）', async () => {
+    const { ctx, traceEvent } = fakeCtx(REUSABLE_SETTINGS)
+    const hooks = assemblePlugins([compactionPlugin])
+
+    const base = turnWithBigToolResult(bigToolContent())
+    const tail1 = sysItem('<current_plan_snapshot>{"revision":1}</current_plan_snapshot>')
+    const draft1 = tailDraft([...base, tail1], 1, 1)
+    await hooks.transformContext?.(ctx, draft1)
+    expect(draft1.compaction?.compacted).toBe(true)
+    // 投影 = 事实历史压缩结果 + 尾巴；去掉尾巴那段才是下一轮要逐条同引用的前缀。
+    const factProjection = draft1.messages.slice(0, -1)
+    expect(draft1.messages[draft1.messages.length - 1]).toBe(tail1)
+
+    // 第二轮：历史追加一条，尾巴换成新对象、内容也变了（plan revision 前进）。
+    const appended: ModelItem = { role: 'assistant', content: '第二轮答复' }
+    const tail2 = sysItem('<current_plan_snapshot>{"revision":2}</current_plan_snapshot>')
+    const draft2 = tailDraft([...base, appended, tail2], 2, 1)
+    await hooks.transformContext?.(ctx, draft2)
+
+    // ★ 核心断言 ★：事实前缀逐条同引用 —— provider 能从头命中到尾巴之前。
+    factProjection.forEach((item, index) => {
+      expect(draft2.messages[index]).toBe(item)
+    })
+    expect(draft2.messages[factProjection.length]).toBe(appended)
+    expect(draft2.messages[draft2.messages.length - 1]).toBe(tail2)
+    expect(draft2.messages.length).toBe(factProjection.length + 2)
+
+    expect(traceEvent).toHaveBeenCalledWith('llm.context_projection_reused', expect.objectContaining({
+      llm_turn: 2,
+      reuse_count: 1,
+      appended_items: 1,
+      dynamic_tail_items: 1,
+    }))
+    expect(traceEvent).not.toHaveBeenCalledWith('llm.context_compacted', expect.objectContaining({ llm_turn: 2 }))
+  })
+
+  it('对照：同样的输入不声明 dynamicTailCount 就会复用失败（证明修复确有作用）', async () => {
+    const { ctx, traceEvent } = fakeCtx(REUSABLE_SETTINGS)
+    const hooks = assemblePlugins([compactionPlugin])
+
+    const base = turnWithBigToolResult(bigToolContent())
+    const tail1 = sysItem('<current_plan_snapshot>{"revision":1}</current_plan_snapshot>')
+    await hooks.transformContext?.(ctx, reuseDraft([...base, tail1], 1))
+
+    const appended: ModelItem = { role: 'assistant', content: '第二轮答复' }
+    const tail2 = sysItem('<current_plan_snapshot>{"revision":2}</current_plan_snapshot>')
+    await hooks.transformContext?.(ctx, reuseDraft([...base, appended, tail2], 2))
+
+    // 尾巴占着 entry.source 的最后一格，第二轮那一格换成了 appended → 引用比较失败 → 重压。
+    expect(traceEvent).not.toHaveBeenCalledWith('llm.context_projection_reused', expect.anything())
+    expect(traceEvent).toHaveBeenCalledWith('llm.context_compacted', expect.objectContaining({ llm_turn: 2 }))
+  })
+
+  it('尾巴的 token 计入预算：不会因为「压缩时看不见尾巴」而超发', async () => {
+    const { ctx } = fakeCtx(REUSABLE_SETTINGS)
+    const hooks = assemblePlugins([compactionPlugin])
+
+    const base = turnWithBigToolResult(bigToolContent())
+    const fat = sysItem('计'.repeat(20_000)) // 尾巴本身很占地方
+    const draft = tailDraft([...base, fat], 1, 1)
+    await hooks.transformContext?.(ctx, draft)
+
+    // estimatedTokensAfter 描述整个请求（含尾巴），且必须仍在 effectiveBudget + 尾巴之内 ——
+    // 即压缩没有因为看不见尾巴而多留了本该压掉的历史。
+    const compaction = draft.compaction!
+    expect(draft.messages[draft.messages.length - 1]).toBe(fat)
+    expect(compaction.estimatedTokensAfter).toBeGreaterThan(estimateTokensFromText('计'.repeat(20_000)))
+    expect(compaction.estimatedTokensAfter).toBeLessThanOrEqual(
+      compaction.effectiveBudgetTokens + estimateTokensFromText('计'.repeat(20_000)) + 8,
+    )
+  })
+
+  // ── CR4：投影缓存按会话 store 分桶，跨 run 存活 ──────────────────────────────
+  it('跨 run 复用：第二个 run 重新装配插件，同一会话仍不重压（CR4）', async () => {
+    const { ctx, traceEvent } = fakeCtx(REUSABLE_SETTINGS)
+    const base = turnWithBigToolResult(bigToolContent())
+
+    // run #1：assemblePlugins 建一份新闭包（旧实现里缓存就挂在这份闭包上）。
+    const hooks1 = assemblePlugins([compactionPlugin])
+    await hooks1.transformContext?.(ctx, reuseDraft(base, 1))
+    expect(traceEvent).toHaveBeenCalledWith('llm.context_compacted', expect.objectContaining({ llm_turn: 1 }))
+
+    // run #2：新的一次装配 = 新闭包，但会话 store 没变 —— 用户只是追加了一条消息。
+    // 旧实现在这里必然重压（缓存随闭包丢失），实测就是 epochReason='initial' 那 105 次全量 miss。
+    const hooks2 = assemblePlugins([compactionPlugin])
+    const nextUserTurn: ModelItem = { role: 'user', content: '新 run 的第一条消息' }
+    const draft2 = reuseDraft([...base, nextUserTurn], 1)
+    await hooks2.transformContext?.(ctx, draft2)
+
+    expect(traceEvent).toHaveBeenCalledWith('llm.context_projection_reused', expect.objectContaining({
+      appended_items: 1,
+    }))
+    // 全程只压过一次：第二个 run 的首个请求整段命中。
+    expect(traceEvent.mock.calls.filter(([name]) => name === 'llm.context_compacted')).toHaveLength(1)
+    expect(draft2.messages[draft2.messages.length - 1]).toBe(nextUserTurn)
+  })
+
+  it('不同会话各自独立：A 的投影不会被 B 复用', async () => {
+    const a = fakeCtx(REUSABLE_SETTINGS)
+    const b = fakeCtx(REUSABLE_SETTINGS)
+    const hooks = assemblePlugins([compactionPlugin])
+
+    const base = turnWithBigToolResult(bigToolContent())
+    await hooks.transformContext?.(a.ctx, reuseDraft(base, 1))
+    expect(a.traceEvent).toHaveBeenCalledWith('llm.context_compacted', expect.anything())
+
+    // B 是另一个会话 store：即使消息数组逐条同引用，也必须自己压一次，不能借 A 的投影。
+    await hooks.transformContext?.(b.ctx, reuseDraft([...base, { role: 'assistant', content: 'B' }], 1))
+    expect(b.traceEvent).not.toHaveBeenCalledWith('llm.context_projection_reused', expect.anything())
+    expect(b.traceEvent).toHaveBeenCalledWith('llm.context_compacted', expect.anything())
   })
 
   it('压完仍超预算的投影不进缓存（异常态不该被一路延续）', async () => {
