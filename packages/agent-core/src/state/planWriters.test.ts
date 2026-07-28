@@ -42,7 +42,7 @@ function plan(
   id = 'p1',
 ): PlanSnapshot {
   return {
-    schemaVersion: 2,
+    schemaVersion: 4,
     id,
     title: 'plan',
     objective: 'o',
@@ -56,7 +56,6 @@ function plan(
       title: `阶段 ${index + 1}`,
       objective: 'o',
       deliverables: [],
-      acceptanceCriteria: ['c'],
       dependencies: [],
       status,
       evidence: [],

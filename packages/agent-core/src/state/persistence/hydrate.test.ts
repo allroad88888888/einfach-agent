@@ -114,7 +114,7 @@ describe('hydrate', () => {
     const persisted: SessionMeta = {
       ...s1,
       plan: {
-        schemaVersion: 2,
+        schemaVersion: 4,
         id: 'plan-persisted',
         title: '持久化计划',
         objective: '验证桌面重启恢复',
@@ -129,7 +129,6 @@ describe('hydrate', () => {
             title: '设计',
             objective: '完成设计',
             deliverables: [],
-            acceptanceCriteria: ['设计完成'],
             dependencies: [],
             status: 'completed',
             evidence: ['设计已验收'],
@@ -139,7 +138,6 @@ describe('hydrate', () => {
             title: '实现',
             objective: '完成实现',
             deliverables: [],
-            acceptanceCriteria: ['实现完成'],
             dependencies: ['design'],
             status: 'in_progress',
             evidence: [],

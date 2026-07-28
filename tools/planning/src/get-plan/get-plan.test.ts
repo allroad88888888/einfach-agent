@@ -17,7 +17,7 @@ function makeContext(getPlan?: ToolContext['getPlan']): ToolContext {
 }
 
 const plan: PlanSnapshot = {
-  schemaVersion: 2,
+  schemaVersion: 4,
   id: 'plan-1',
   title: 'Plan',
   objective: 'Ship it',

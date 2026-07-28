@@ -44,7 +44,6 @@ vi.mock('@web-agent/core/runtime/commands', () => ({
   setWorkspaceRoot: vi.fn(),
   confirmTool: vi.fn(),
   approvePlan: vi.fn(),
-  acceptPlanResult: vi.fn(),
   continuePlan: vi.fn(),
   setApprovalMode: vi.fn(),
   withdrawCurrentTurnToDraft: vi.fn(),
@@ -150,7 +149,7 @@ describe('AppShell', () => {
       requiresApproval: false, createdAt: 1, updatedAt: 1,
       stages: [{
         id: 'build', title: '实现', objective: '写代码', deliverables: [],
-        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'in_progress', evidence: [],
+        dependencies: [], status: 'in_progress', evidence: [],
       }],
     })
     const payload = {

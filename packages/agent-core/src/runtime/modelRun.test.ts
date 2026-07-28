@@ -5,7 +5,7 @@
 // 只依赖状态层 + api 层；mock fetchImpl 注入模型响应/异常。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { rootStore, sessionsAtom, resetRootStore } from '../state/rootStore'
+import { rootStore, sessionsAtom, workspacesAtom, resetRootStore } from '../state/rootStore'
 import { getSessionStore, resetSessionStores } from '../state/sessionStore'
 import { itemsAtom, runAtom, checkpointsAtom, planAtom } from '../state/sessionAtoms'
 import { executionGraphAtom } from '../execution/graph'
@@ -565,13 +565,14 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(messages[0].role).toBe('system')
     expect(messages[0].content).not.toContain('可用 skills')
     expect(messages[0].content).toContain('禁止凭工具名猜参数')
-    // 全量 skill 清单与当前环境工具摘要都在首条历史之前；动态尾巴此轮为空。
-    expect(messages.slice(1).map((item) => item.role)).toEqual(['system', 'system', 'user'])
+    // 全量 skill 清单、工具摘要与运行环境都在首条历史之前；动态尾巴此轮为空。
+    expect(messages.slice(1).map((item) => item.role)).toEqual(['system', 'system', 'system', 'user'])
     expect(messages[1].content).toBe(buildSkillManifestText())
     expect(messages[1].content).toContain('· planning — 何时用')
     expect(messages[2].content).toBe(buildToolManifestText(false, { registry: toolRegistry }))
     expect(messages[2].content).toContain('· skill_search [internal]')
     expect(messages[2].content).not.toContain('· shell_macos [server]')
+    expect(messages[3].content).toContain('运行环境：')
     expect(messages.at(-1)).toMatchObject({ role: 'user', content: 'hi' })
 
     const events = store.getter(runtimeTranscriptEventsAtom)
@@ -616,11 +617,12 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(exposedToolNames).toEqual(['request_tool_schema'])
   })
 
-  it('稳定前缀四段有序：固定 system → skill 清单 → 工具摘要 → 自定义指令，全部在首条历史之前', async () => {
+  it('稳定前缀五段有序：固定 system → skill 清单 → 工具摘要 → 自定义指令 → 运行环境，全部在首条历史之前', async () => {
     // 自定义指令与 skill 名单都是低频变更内容。它们曾经和 plan 提醒一起挂在历史【之后】，于是
     // 历史每增长一条就把它们顶到新位置，实测每轮都被记成 history_inserted_before_dynamic_tail、
-    // 这段 token 每轮全额 cache miss。现在按变更频率从低到高固定在 index 0/1/2/3，
-    // 只有内容本身改动（改指令 / 增删 skill）才会掉缓存。
+    // 这段 token 每轮全额 cache miss。现在按变更频率从低到高固定在 index 0..4，
+    // 只有内容本身改动（改指令 / 增删 skill / 换 workspace）才会掉缓存。
+    // 运行环境垫底：它是唯一按会话变化的一段，排最后才能让不同 workspace 的会话共享前四段。
     const core = createCoreInstance({ config: { customInstructions: '  请始终使用中文回复\n' } })
     const id = 'custom-instructions-prefix'
     core.rootStore.setter(sessionsAtom, {
@@ -647,15 +649,16 @@ describe('runSession（P-R2 最小单轮 run）', () => {
 
     const marker = '用户在设置中保存了以下长期自定义指令'
     const messages = captured.messages as Array<{ role: string; content?: string }>
-    // [固定 system, skill 清单, 工具摘要, 自定义指令, ...历史]；尾巴此轮为空。
-    expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'system', 'user'])
+    // [固定 system, skill 清单, 工具摘要, 自定义指令, 运行环境, ...历史]；尾巴此轮为空。
+    expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'system', 'system', 'user'])
     expect(messages[0].content).toContain('禁止凭工具名猜参数')
     expect(messages[0].content).not.toContain(marker)
     expect(messages[1].content).toBe(buildSkillManifestText())
     expect(messages[2].content).toBe(buildToolManifestText(false, { registry: core.tools }))
     expect(messages[3].content).toContain(marker)
     expect(messages[3].content).toContain('请始终使用中文回复')
-    expect(messages[4]).toMatchObject({ role: 'user', content: 'hi' })
+    expect(messages[4].content).toContain('运行环境：')
+    expect(messages[5]).toMatchObject({ role: 'user', content: 'hi' })
     // 两段低频内容各只此一份，且都不在历史之后（尾巴只剩事件驱动项，本轮没有）。
     expect(messages.filter((item) => item.content?.includes(marker))).toHaveLength(1)
     expect(messages.filter((item) => item.content === buildSkillManifestText())).toHaveLength(1)
@@ -663,6 +666,48 @@ describe('runSession（P-R2 最小单轮 run）', () => {
 
     const events = core.getSessionStore(id).store.getter(runtimeTranscriptEventsAtom)
     expect(events.some((event) => event.kind === 'system_injection' && event.detail?.includes(marker))).toBe(true)
+  })
+
+  it('运行环境段把会话绑定的 workspace 根目录送进请求（缺它模型只能猜路径）', async () => {
+    // 回归用例。缺这一段时的实测事故：DeepSeek 首轮直接对
+    // /Users/<某人>/develop/android/... 发 read_file，报 WORKSPACE_READ_FAILED，
+    // 模型是从错误文案里才第一次看到真实根目录，白烧三轮。
+    tauriControl.enabled = true
+    const core = createCoreInstance()
+    const id = 'env-workspace'
+    core.rootStore.setter(workspacesAtom, {
+      ws1: { id: 'ws1', name: 'web-agent', rootPath: '/Volumes/work/ai/web-agent/', createdAt: 0, updatedAt: 0 },
+    })
+    core.rootStore.setter(sessionsAtom, {
+      [id]: {
+        id,
+        title: 't',
+        settings: { vendor: 'deepseek', model: 'm' },
+        workspaceId: 'ws1',
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    })
+    let captured: Record<string, unknown> = {}
+    const fetchImpl: typeof fetch = (_url, init) => {
+      captured = JSON.parse(init!.body as string)
+      return Promise.resolve(jsonResponse('ok'))
+    }
+
+    await runSession(id, '了解下这个项目', { signal: new AbortController().signal, apiKey: 'k', fetchImpl, core })
+
+    const messages = captured.messages as Array<{ role: string; content?: string }>
+    const environment = messages.at(-2)
+    // 运行环境是稳定前缀最后一段：紧贴首条历史之前，且根目录已去掉尾部分隔符。
+    expect(environment?.role).toBe('system')
+    expect(environment?.content).toContain('当前工作区根目录：/Volumes/work/ai/web-agent')
+    expect(environment?.content).not.toContain('/Volumes/work/ai/web-agent/\n')
+    expect(messages.at(-1)).toMatchObject({ role: 'user', content: '了解下这个项目' })
+
+    const events = core.getSessionStore(id).store.getter(runtimeTranscriptEventsAtom)
+    expect(
+      events.some((event) => event.title === '注入运行环境' && event.detail?.includes('/Volumes/work/ai/web-agent')),
+    ).toBe(true)
   })
 
   it('注入卡片改为按内容变化判重：同一会话连续两次 runSession 不重复记同一张卡', async () => {
@@ -679,8 +724,9 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     await runSession(id, '第二句话', { signal: new AbortController().signal, apiKey: 'k', fetchImpl, core })
 
     const events = core.getSessionStore(id).store.getter(runtimeTranscriptEventsAtom)
-    // 五类卡片各自只有一条——第二次 run 内容与第一次逐字相同，不应再记。
+    // 六类卡片各自只有一条——第二次 run 内容与第一次逐字相同，不应再记。
     expect(events.filter((e) => e.title === '注入 system')).toHaveLength(1)
+    expect(events.filter((e) => e.title === '注入运行环境')).toHaveLength(1)
     expect(events.filter((e) => e.title === '注入自定义指令')).toHaveLength(1)
     expect(events.filter((e) => e.title === '注入 skill 清单')).toHaveLength(1)
     expect(events.filter((e) => e.title === '注入工具摘要清单')).toHaveLength(1)
@@ -810,7 +856,8 @@ describe('runSession（P-R2 最小单轮 run）', () => {
       },
       finishReason: null,
     })
-    expect(stats?.roles.system.count).toBe(3)
+    // 固定 system + skill 清单 + 工具摘要 + 运行环境（本会话无自定义指令）。
+    expect(stats?.roles.system.count).toBe(4)
     expect(stats?.roles.user.count).toBe(1)
     expect(stats?.roles.assistant.count).toBe(0)
     expect(stats?.toolNames).toContain('request_tool_schema')
@@ -1568,7 +1615,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     seedSession('plan-wait', { vendor: 'deepseek', model: 'x' })
     const args = {
       title: '实现功能', objective: '完成实现与验证', approvalMode: 'required',
-      stages: [{ id: 'build', title: '实现', objective: '写代码', acceptanceCriteria: ['测试通过'] }],
+      stages: [{ id: 'build', title: '实现', objective: '写代码' }],
     }
     const { fetchImpl, count } = seqFetch([
       () => toolCallsResponse([{
@@ -1762,7 +1809,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     const store = getSessionStore('plan-turn-limit').store
     const now = Date.now()
     store.setter(planAtom, {
-      schemaVersion: 2,
+      schemaVersion: 4,
       id: 'plan-1',
       title: '单阶段计划',
       objective: '验证计划轮次预算',
@@ -1776,7 +1823,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
         title: '执行',
         objective: '持续执行',
         deliverables: [],
-        acceptanceCriteria: ['完成'],
         dependencies: [],
         status: 'in_progress',
         evidence: [],
@@ -1820,7 +1866,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
       items: [...savedItems],
     }])
     store.setter(planAtom, {
-      schemaVersion: 2,
+      schemaVersion: 4,
       id: 'plan-resume-1',
       title: '恢复计划',
       objective: '完成剩余工作',
@@ -1834,7 +1880,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
         title: '当前阶段',
         objective: '继续实现',
         deliverables: [],
-        acceptanceCriteria: ['完成'],
         dependencies: [],
         status: 'in_progress',
         evidence: [],
@@ -1872,188 +1917,13 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(persistence.saved.at(-1)?.checkpoint.turnIndex).toBe(0)
   })
 
-  it('计划恢复：上次 evaluator 基础设施失败时只重试既有提交，不重新执行阶段', async () => {
-    seedSession('plan-resume-evaluator-retry', { vendor: 'deepseek', model: 'x' })
-    const store = getSessionStore('plan-resume-evaluator-retry').store
-    const now = Date.now()
-    store.setter(itemsAtom, [{
-      id: 'original-user',
-      createdAt: 1,
-      item: { role: 'user', content: '完成这个多步骤任务' },
-    }])
-    store.setter(planAtom, {
-      schemaVersion: 2,
-      id: 'plan-retry-1',
-      title: '恢复验收',
-      objective: '完成剩余工作',
-      status: 'active',
-      revision: 7,
-      requiresApproval: false,
-      createdAt: now,
-      updatedAt: now,
-      stages: [{
-        id: 'stage-current',
-        title: '当前阶段',
-        objective: '实现功能',
-        deliverables: [],
-        acceptanceCriteria: ['测试通过'],
-        dependencies: [],
-        status: 'in_progress',
-        evidence: ['pnpm test 通过'],
-        evaluations: [{
-          attempt: 1,
-          status: 'unknown',
-          summary: '功能已经实现',
-          submittedEvidence: ['pnpm test 通过'],
-          criteria: [{
-            criterion: '测试通过',
-            status: 'unknown',
-            evidence: [],
-            reason: 'JSON Parse error: Unexpected EOF',
-          }],
-          submittedAt: now - 2,
-          evaluatedAt: now - 1,
-        }],
-      }],
-    })
-    const fetchImpl: typeof fetch = async (_input, init) => {
-      const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content?: string }> }
-      const injected = body.messages.filter((message) => message.role === 'system').map((message) => message.content).join('\n')
-      expect(injected).toContain('上次只是 evaluator 基础设施失败')
-      expect(injected).toContain('不要重新实现')
-      expect(injected).toContain('"revision":7')
-      expect(injected).toContain('"summary":"功能已经实现"')
-      expect(injected).toContain('JSON Parse error: Unexpected EOF')
-      store.setter(planAtom, (plan) => plan ? {
-        ...plan,
-        status: 'completed',
-        stages: plan.stages.map((stage) => ({ ...stage, status: 'completed' as const })),
-      } : plan)
-      return jsonResponse('验收已通过。')
-    }
-
-    await resumePlanSession('plan-resume-evaluator-retry', {
-      signal: new AbortController().signal,
-      apiKey: 'k',
-      fetchImpl,
-    })
-
-    expect(store.getter(runAtom)?.status).toBe('done')
-  })
-
-  it('阶段评估在后台运行时暂停父循环，并在 execution atom 完成后自动续跑', async () => {
-    const core = createCoreInstance()
-    const sessionId = 'plan-background-evaluation'
-    core.rootStore.setter(sessionsAtom, {
-      [sessionId]: {
-        id: sessionId,
-        title: 't',
-        settings: { vendor: 'deepseek', model: 'x' },
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      },
-    })
-    const store = core.getSessionStore(sessionId).store
-    const now = Date.now()
-    store.setter(planAtom, {
-      schemaVersion: 2,
-      id: 'plan-background',
-      title: '后台评估计划',
-      objective: '验证父循环等待子节点',
-      status: 'active',
-      revision: 1,
-      requiresApproval: false,
-      createdAt: now,
-      updatedAt: now,
-      stages: [{
-        id: 'stage-1',
-        title: '第一阶段',
-        objective: '完成第一阶段',
-        deliverables: [],
-        acceptanceCriteria: ['完成'],
-        dependencies: [],
-        status: 'in_progress',
-        evidence: [],
-      }],
-    })
-
-    let releaseEvaluation = (): void => {}
-    const evaluationGate = new Promise<void>((resolve) => {
-      releaseEvaluation = resolve
-    })
-    core.tools.register({
-      name: 'submit_stage_result',
-      runtime: 'internal',
-      skill: { description: '提交阶段结果', content: '测试后台阶段评估' },
-      inputSchema: { type: 'object', properties: {} },
-      execute(_args, ctx) {
-        store.setter(planAtom, (plan) => plan ? {
-          ...plan,
-          status: 'evaluating',
-          revision: plan.revision + 1,
-          stages: plan.stages.map((stage) => ({ ...stage, status: 'evaluating' as const })),
-        } : plan)
-        const evaluation = getExecutionRuntime(core).spawn({
-          sessionId,
-          runId: 'evaluation-run',
-          label: '评估第一阶段',
-          async task() {
-            await evaluationGate
-            store.setter(planAtom, (plan) => plan ? {
-              ...plan,
-              status: 'completed',
-              revision: plan.revision + 1,
-              stages: plan.stages.map((stage) => ({ ...stage, status: 'completed' as const })),
-            } : plan)
-            return { passed: true }
-          },
-        })
-        return { ok: true, data: { plan: store.getter(planAtom), evaluation } }
-      },
-    })
-
-    const { fetchImpl, count } = seqFetch([
-      () => toolCallsResponse([{
-        name: 'request_tool_schema',
-        args: { toolName: 'submit_stage_result', reason: '提交第一阶段' },
-        id: 'load-submit-stage',
-      }]),
-      () => toolCallsResponse([{
-        name: 'submit_stage_result',
-        args: {},
-        id: 'submit-stage',
-      }]),
-      () => jsonResponse('计划已完成'),
-    ])
-
-    await runSession(sessionId, '执行计划', {
-      signal: new AbortController().signal,
-      apiKey: 'k',
-      fetchImpl,
-      core,
-    })
-
-    expect(count()).toBe(2)
-    expect(store.getter(runAtom)?.status).toBe('awaiting_tool')
-    expect(store.getter(planAtom)?.stages[0].status).toBe('evaluating')
-
-    releaseEvaluation()
-    await waitUntil(() => store.getter(runAtom)?.status === 'done', 'plan evaluation continuation')
-
-    expect(count()).toBe(3)
-    expect(store.getter(planAtom)?.status).toBe('completed')
-    expect(store.getter(itemsAtom).filter(({ item }) =>
-      item.role === 'assistant' && item.tool_calls?.some((call) => call.function.name === 'submit_stage_result'),
-    )).toHaveLength(1)
-  })
-
   it('计划仍在执行时，文本总结只算阶段说明并继续运行，不能提前结束', async () => {
     const persistence = captureCheckpointPersistence()
     seedSession('plan-premature-final', { vendor: 'deepseek', model: 'x' })
     const store = getSessionStore('plan-premature-final').store
     const now = Date.now()
     store.setter(planAtom, {
-      schemaVersion: 2,
+      schemaVersion: 4,
       id: 'plan-premature',
       title: '多阶段计划',
       objective: '完整完成计划',
@@ -2067,7 +1937,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
         title: '当前阶段',
         objective: '完成当前工作',
         deliverables: [],
-        acceptanceCriteria: ['完成'],
         dependencies: [],
         status: 'in_progress',
         evidence: [],
@@ -2166,7 +2035,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     const store = getSessionStore('plan-text-loop').store
     const now = Date.now()
     store.setter(planAtom, {
-      schemaVersion: 2,
+      schemaVersion: 4,
       id: 'plan-text-loop-plan',
       title: '循环保护计划',
       objective: '不能机械重复回复',
@@ -2180,7 +2049,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
         title: '当前阶段',
         objective: '调用工具完成工作',
         deliverables: [],
-        acceptanceCriteria: ['完成'],
         dependencies: [],
         status: 'in_progress',
         evidence: [],
@@ -2215,7 +2083,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     const store = getSessionStore('plan-submit-reject').store
     const now = Date.now()
     store.setter(planAtom, {
-      schemaVersion: 2,
+      schemaVersion: 4,
       id: 'plan-submit-reject-plan',
       title: '提交拒绝提醒计划',
       objective: '提交失败原因必须回传模型',
@@ -2229,7 +2097,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
         title: '当前阶段',
         objective: '提交阶段结果',
         deliverables: [],
-        acceptanceCriteria: ['完成'],
         dependencies: [],
         status: 'in_progress',
         evidence: [],
@@ -2277,7 +2144,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     const now = Date.now()
     // 3 阶段计划：总预算 = max(64, 32+3*24)=104；单阶段 guard=64（=MIN_PLAN_AGENT_TURNS）先于 max_turns 触发。
     store.setter(planAtom, {
-      schemaVersion: 2,
+      schemaVersion: 4,
       id: 'plan-stage-guard-plan',
       title: '多阶段计划',
       objective: '验证阶段进度 guard',
@@ -2287,9 +2154,9 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
       createdAt: now,
       updatedAt: now,
       stages: [
-        { id: 'stage-1', title: '阶段一', objective: 'x', deliverables: [], acceptanceCriteria: ['done'], dependencies: [], status: 'in_progress', evidence: [] },
-        { id: 'stage-2', title: '阶段二', objective: 'x', deliverables: [], acceptanceCriteria: ['done'], dependencies: [], status: 'pending', evidence: [] },
-        { id: 'stage-3', title: '阶段三', objective: 'x', deliverables: [], acceptanceCriteria: ['done'], dependencies: [], status: 'pending', evidence: [] },
+        { id: 'stage-1', title: '阶段一', objective: 'x', deliverables: [], dependencies: [], status: 'in_progress', evidence: [] },
+        { id: 'stage-2', title: '阶段二', objective: 'x', deliverables: [], dependencies: [], status: 'pending', evidence: [] },
+        { id: 'stage-3', title: '阶段三', objective: 'x', deliverables: [], dependencies: [], status: 'pending', evidence: [] },
       ],
     })
     let count = 0
@@ -2321,7 +2188,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     const store = getSessionStore('plan-stage-persisted-guard').store
     const now = Date.now()
     store.setter(planAtom, {
-      schemaVersion: 2,
+      schemaVersion: 4,
       id: 'plan-stage-persisted-guard-plan',
       title: '跨恢复阶段保护',
       objective: '同一阶段不能无限恢复',
@@ -2331,8 +2198,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
       createdAt: now,
       updatedAt: now,
       stages: [
-        { id: 'stage-1', title: '阶段一', objective: 'x', deliverables: [], acceptanceCriteria: ['done'], dependencies: [], status: 'in_progress', evidence: [] },
-        { id: 'stage-2', title: '阶段二', objective: 'x', deliverables: [], acceptanceCriteria: ['done'], dependencies: ['stage-1'], status: 'pending', evidence: [] },
+        { id: 'stage-1', title: '阶段一', objective: 'x', deliverables: [], dependencies: [], status: 'in_progress', evidence: [] },
+        { id: 'stage-2', title: '阶段二', objective: 'x', deliverables: [], dependencies: ['stage-1'], status: 'pending', evidence: [] },
       ],
     })
     store.setter(itemsAtom, [
@@ -3800,8 +3667,8 @@ describe('上下文压缩接入', () => {
     await runSession('cc0', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
     await flushObservability()
 
-    // 固定 system + skill 清单 + 工具摘要 + user，一条没少。
-    expect((captured.messages as unknown[]).length).toBe(4)
+    // 固定 system + skill 清单 + 工具摘要 + 运行环境 + user，一条没少。
+    expect((captured.messages as unknown[]).length).toBe(5)
     expect(trace.events.some((event) => event.name === 'llm.context_compacted')).toBe(false)
     expect(trace.events.some((event) => event.name === 'llm.context_over_budget')).toBe(false)
   })

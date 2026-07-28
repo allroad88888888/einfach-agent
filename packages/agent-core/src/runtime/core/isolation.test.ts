@@ -16,7 +16,7 @@
 //   全程还钉死 defaultCore 零污染（隔离实例绝不回写全局默认那一套）。
 //
 // 已知残留缺口（本测【不】触发，故不影响绿）：子 agent 委派（subagents/runtime.ts 内部走
-//   defaultCore，Phase 2.5 补）、planning 的 getPlan/setPlan（approvePlan/acceptPlanResult 仍绑
+//   defaultCore，Phase 2.5 补）、planning 的 getPlan/setPlan（approvePlan 仍绑
 //   defaultCore）、以及 core/events.ts 的 subscribeAgentEvents 尚未 core-aware（走模块级 getSessionStore）。
 //   工具懒加载 ensureToolLoaded 与 isToolAlwaysAllowed 的主循环调用点【已穿 core】（本轮收尾），不再是缺口。
 //   主循环的「纯对话」路径（本测走的这条）已 100% 穿好，隔离成立。

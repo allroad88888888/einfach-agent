@@ -59,12 +59,14 @@ import type {
   McpServerView,
   SettingsCenterTab,
 } from '../../mcp/types'
+import { ProjectSkillsPanel } from './ProjectSkillsPanel'
 
 const SETTINGS_TABS: ReadonlyArray<{ id: SettingsCenterTab; label: string }> = [
   { id: 'mcp', label: 'MCP 服务' },
   { id: 'model', label: '模型' },
   { id: 'instructions', label: '自定义指令' },
   { id: 'general', label: '通用' },
+  { id: 'skills', label: '项目 Skills' },
 ]
 
 const TRANSPORT_OPTIONS = [
@@ -792,6 +794,8 @@ export function SettingsCenter() {
                 ? <ModelSettingsPanel />
               : activeTab === 'instructions'
                 ? <CustomInstructionsPanel />
+              : activeTab === 'skills'
+                ? <ProjectSkillsPanel />
                 : <PlaceholderPanel />}
           </div>
         </div>

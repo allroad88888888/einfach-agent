@@ -1,6 +1,6 @@
 import type { McpServerStatus } from '@web-agent/tools-mcp'
 
-export type SettingsCenterTab = 'mcp' | 'model' | 'instructions' | 'general'
+export type SettingsCenterTab = 'mcp' | 'model' | 'instructions' | 'general' | 'skills'
 export type McpTransport = 'streamable-http' | 'stdio'
 export type McpPersistenceMode = 'persistent' | 'temporary'
 export type McpAddMode = 'form' | 'json'

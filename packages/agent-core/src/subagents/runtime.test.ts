@@ -673,7 +673,7 @@ describe('createDelegateAgentRuntime', () => {
       childBodies.push(body)
       if (body.tool_choice === 'none') {
         return response({
-          content: '{"criteria":[]}',
+          content: '{"stage":{"status":"passed","evidence":["ok"],"reason":""}}',
           reasoning_content: '证据已经足够，可以给出验收结论。',
         })
       }
@@ -705,7 +705,7 @@ describe('createDelegateAgentRuntime', () => {
 
     expect(result.children[0]).toMatchObject({
       status: 'done',
-      summary: '{"criteria":[]}',
+      summary: '{"stage":{"status":"passed","evidence":["ok"],"reason":""}}',
     })
     expect(childBodies).toHaveLength(3)
     const firstToolNames = (childBodies[0].tools as Array<{ function: { name: string } }>)

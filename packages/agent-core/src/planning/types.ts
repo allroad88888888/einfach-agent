@@ -3,40 +3,17 @@ export type PlanStatus =
   | 'awaiting_approval'
   | 'approved'
   | 'active'
-  | 'evaluating'
-  | 'awaiting_user_acceptance'
   | 'completed'
   | 'failed'
-  | 'rejected'
   | 'cancelled'
 
-export type PlanStageStatus = 'pending' | 'in_progress' | 'evaluating' | 'completed' | 'failed' | 'blocked' | 'skipped'
+export type PlanStageStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'blocked' | 'skipped'
 
-export type EvaluationVerdict = 'passed' | 'failed' | 'unknown'
-
-export interface CriterionEvaluation {
-  criterion: string
-  status: EvaluationVerdict
-  evidence: string[]
-  reason: string
-}
-
-export interface StageEvaluationAttempt {
-  attempt: number
-  status: 'evaluating' | EvaluationVerdict
+/** 阶段完成时留下的产出记录。多次提交只保留最后一次。 */
+export interface StageResult {
   summary: string
-  submittedEvidence: string[]
-  criteria: CriterionEvaluation[]
-  submittedAt: number
-  evaluatedAt?: number
-}
-
-export interface PlanEvaluation {
-  status: EvaluationVerdict
   evidence: string[]
-  reason: string
-  evaluatedAt: number
-  requiresUserAcceptance: boolean
+  submittedAt: number
 }
 
 export interface PlanStage {
@@ -44,18 +21,17 @@ export interface PlanStage {
   title: string
   objective: string
   deliverables: string[]
-  acceptanceCriteria: string[]
   dependencies: string[]
   status: PlanStageStatus
   evidence: string[]
-  /** 可选以兼容 Evaluation 上线前已持久化的计划。 */
-  evaluations?: StageEvaluationAttempt[]
+  /** 仅在阶段被 submit_stage_result 完成后存在。 */
+  result?: StageResult
   blockReason?: string
 }
 
 export interface PlanSnapshot {
-  /** v2 introduces evaluator-owned completion records; optional only for legacy persisted data. */
-  schemaVersion?: 2
+  /** v4 removes host-run evaluation; optional only for legacy persisted data. */
+  schemaVersion?: 4
   id: string
   title: string
   objective: string
@@ -65,8 +41,6 @@ export interface PlanSnapshot {
   createdAt: number
   updatedAt: number
   stages: PlanStage[]
-  evaluation?: PlanEvaluation
-  userAcceptance?: { status: 'accepted' | 'rejected'; decidedAt: number }
 }
 
 export interface CreatePlanInput {
@@ -78,7 +52,6 @@ export interface CreatePlanInput {
     title: string
     objective: string
     deliverables?: string[]
-    acceptanceCriteria: string[]
     dependencies?: string[]
   }>
 }
@@ -98,22 +71,6 @@ export interface SubmitStageResultInput {
   stageId: string
   summary: string
   evidence: string[]
-}
-
-export interface EvaluateStageInput {
-  planId: string
-  revision: number
-  stageId: string
-  criteria: CriterionEvaluation[]
-}
-
-export interface EvaluatePlanInput {
-  planId: string
-  revision: number
-  status: EvaluationVerdict
-  evidence?: string[]
-  reason?: string
-  requiresUserAcceptance?: boolean
 }
 
 export type PlanMutationResult =

@@ -15,7 +15,11 @@
 // web 端资源是编译期 `?raw` 打包出的 Record<string, string>——没有真实文件系统，键即完整逻辑
 // 相对路径，按 Record 精确匹配，不做任何路径解析/规范化（无穿越面，详见 readSkillResource
 // 注释）。Tauri 真实文件系统 skills 目录是阶段 4 的范畴，不在本文件内。
+//
+// 阶段 4（project-skills-blueprint.md）：buildSkillManifestText 新增可选 snapshot 入参，
+// 无快照/空快照时输出与今天逐字相同（web 端回归护栏）。项目段由调用方传入，本模块只负责拼。
 
+import type { ProjectSkillsSnapshot } from './projectSkills'
 import askUserQuestion from './ask-user-question.md?raw'
 import dataVisualization from './data-visualization.md?raw'
 import toolLoading from './tool-loading.md?raw'
@@ -109,16 +113,38 @@ function compareSkillName(left: string, right: string): number {
  *
  * 只放元数据：正文（L2）与资源（L3）必须经 skill_read 读取（TK4）。
  */
-export function buildSkillManifestText(): string {
-  const lines = skillSources
+export function buildSkillManifestText(snapshot?: ProjectSkillsSnapshot): string {
+  const builtinLines = skillSources
     .map((skill) => ({ name: skill.name, description: skill.description }))
     .sort((left, right) => compareSkillName(left.name, right.name))
     .map((skill) => `· ${skill.name} — ${skill.description}`)
 
+  const projectSection = buildProjectManifestSection(snapshot)
+
   return [
     '可用 skills（正文不在此展示，需要时用 skill_read 按名称读取；带资源的 skill 会在正文返回可读资源目录）：',
-    ...lines,
+    ...builtinLines,
+    ...projectSection,
   ].join('\n')
+}
+
+/**
+ * 组项目段清单文本（L1）。snapshot 为 undefined 或 entries 为空时返回空数组——
+ * 保证 web 端清单逐字等于今天输出（零回归）。
+ */
+function buildProjectManifestSection(snapshot?: ProjectSkillsSnapshot): string[] {
+  if (!snapshot || snapshot.entries.length === 0) return []
+
+  const projectLines = snapshot.entries
+    .map((entry) => ({ name: entry.name, description: entry.description }))
+    .sort((left, right) => compareSkillName(left.name, right.name))
+    .map((skill) => `· ${skill.name} — ${skill.description}`)
+
+  return [
+    '',
+    '以下由当前 workspace 提供（非内置，可信度低于上方内置 skills）：',
+    ...projectLines,
+  ]
 }
 
 export function listSkillSummaries(): SkillSummary[] {
@@ -141,12 +167,16 @@ function queryTokens(query: string): string[] {
 /**
  * Ranked skill retrieval used by skill_search. Exact name/trigger hits outrank
  * substrings, while description-only hits stay useful but lower.
+ *
+ * `extra` 让调用方把内置之外的条目（当前是项目 skills）并进同一次排名。评分规则只此一份：
+ * 让工具侧另写一套「项目 skills 的评分」必然与这里漂移，同一个 query 在两类 skill 上的
+ * 排序就不再可比。
  */
-export function searchSkills(query: string): SkillSearchMatch[] {
+export function searchSkills(query: string, extra: readonly SkillSummary[] = []): SkillSearchMatch[] {
   const normalizedQuery = normalizedSearchText(query)
   const tokens = queryTokens(normalizedQuery)
 
-  return listSkillSummaries()
+  return [...listSkillSummaries(), ...extra]
     .map((skill): SkillSearchMatch | undefined => {
       const name = normalizedSearchText(skill.name)
       const description = normalizedSearchText(skill.description)

@@ -36,7 +36,6 @@ import { defaultCore, type CoreInstance } from './core/coreInstance'
 import { runAtom } from '../state/sessionAtoms'
 import { getPlan as readStoredPlan, setPlan } from '../state/planWriters'
 import { PlanRuntime } from '../planning/runtime'
-import { EvaluationRuntime } from '../evaluation/runtime'
 import {
   addBrowserCard,
   addPendingArtifact,
@@ -58,6 +57,7 @@ import { revertWorkspaceChange } from './workspaceChange'
 import { copyWorkspacePath, moveWorkspacePath } from './workspacePathOperation'
 import { getWorkspaceDiff } from './workspaceGit'
 import { runWorkspaceTask } from './workspaceTask'
+import { listSkillSummaries } from '../skills/registry'
 
 const MAX_TOOL_DEPTH = 4
 
@@ -139,10 +139,9 @@ export function buildToolContext(opts: {
     get: () => readStoredPlan(sessionId),
     set: (plan) => setPlan(sessionId, plan),
   }, Date.now, newId)
-  const evaluationRuntime = new EvaluationRuntime({
-    get: () => readStoredPlan(sessionId),
-    set: (plan) => setPlan(sessionId, plan),
-  })
+
+  // Skills 只读入口：合并内置 + 项目快照（workspaceRoot 为空时降级为仅内置）。
+  const projectSkillsSnapshot = workspaceRoot ? core.projectSkills.get(workspaceRoot) : undefined
 
   // S4-A：把会话 workspaceRoot 注入桥入参 —— session 未绑定则原样（Rust 走 git root 兜底，保持现状）；
   //   调用方（工具）已显式带 workspaceRoot 则尊重调用方、不覆盖；桥不带 input（getWorkspaceDiff）时合成一个。
@@ -281,23 +280,7 @@ export function buildToolContext(opts: {
     },
     submitStageResult(input) {
       assertFresh()
-      return evaluationRuntime.submitStageResult(input)
-    },
-    evaluateStage(input) {
-      // evaluator may finish after the parent tool call has already returned.
-      // planId + revision is the freshness guard for this background state
-      // transition; tying it to the parent model run would strand `evaluating`.
-      return evaluationRuntime.evaluateStage(input)
-    },
-    evaluatePlan(input) {
-      // Same background-completion rule as evaluateStage above.
-      return evaluationRuntime.evaluatePlan(input)
-    },
-    abortStageEvaluation(planId, revision, stageId, reason) {
-      // 这是失败补偿，不是旧 run 的普通业务写入。模型请求被中断/替换时，发起验收的 run
-      // 很可能已经 stale，但它仍必须尝试把自己留下的 evaluating 回滚掉；真正的并发安全由
-      // EvaluationRuntime 的 planId + revision 乐观锁保证，计划已被其他 run 推进时会 fail-closed。
-      return evaluationRuntime.abortStageEvaluation(planId, revision, stageId, reason)
+      return planRuntime.submitStageResult(input)
     },
 
     async runShell(input) {
@@ -447,6 +430,26 @@ export function buildToolContext(opts: {
         mimeType: file.mimeType,
       }, core)
       return { artifactId }
+    },
+
+    skills: {
+      list() {
+        const builtins = listSkillSummaries().map((s) => ({ ...s }))
+        if (!projectSkillsSnapshot || projectSkillsSnapshot.entries.length === 0) return builtins
+        const projects: Array<{ name: string; description: string; triggers: string[] }> =
+          projectSkillsSnapshot.entries.map((e) => ({
+            name: e.name,
+            description: e.description,
+            triggers: e.triggers,
+          }))
+        return [...builtins, ...projects]
+      },
+      resolveProjectPath(name) {
+        if (!projectSkillsSnapshot || !name.startsWith('project/')) return undefined
+        const entry = projectSkillsSnapshot.entries.find((candidate) => candidate.name === name)
+        if (!entry) return undefined
+        return { filePath: entry.filePath, resources: entry.resources }
+      },
     },
 
     async callTool(name, args): Promise<ToolResult> {

@@ -8,6 +8,8 @@
 //     全额 cache miss。现在改为 registry 的 buildSkillManifestText() 产出【全量】清单，
 //     与固定 system 同区进稳定前缀，由模型按 description 自判该读哪个；
 //     TK4 不变——进 prompt 的只有清单元数据，正文与资源仍必须经 skill_read。
+//   · buildEnvironmentItem —— 组「运行环境」段（workspace 根目录 / 宿主 / 平台 + 路径纪律）。
+//     它是稳定前缀里唯一按会话变化的一段，故排在其它前缀段【之后】。
 //   · buildToolManifestText —— 组当前环境下的全量工具摘要（仅 name/description/runtime），
 //     让 model 首轮即可发现精确工具名；不含 schema/guide。
 //   · buildTurnTools  —— 组本轮暴露给 model 的 function 列表（TK3：request_tool_schema
@@ -18,7 +20,7 @@
 
 import { toolRegistry } from '../tools/registry'
 import type { ToolRegistry } from '../tools/toolRegistry'
-import type { LoadedTool, ToolRuntime, ToolSummary } from '../tools/types'
+import type { LoadedTool, ShellPlatform, ToolRuntime, ToolSummary } from '../tools/types'
 import type {
   ModelFunctionTool,
   ModelItem,
@@ -47,6 +49,46 @@ export function buildSystemItem(): SystemItem {
   ].join('\n')
 
   return { role: 'system', content }
+}
+
+export interface EnvironmentItemInput {
+  /** 该会话绑定的 workspace 根目录（已归一化）；未绑定时为 undefined。 */
+  workspaceRoot?: string
+  /** 宿主是否为 Tauri 桌面端：决定本机文件/shell 工具是否存在。 */
+  isTauri: boolean
+  /** 本机平台，取自 detectHostPlatform()（与 shell 桥实际收到的值同源）。 */
+  platform: ShellPlatform
+}
+
+// 简介：组「运行环境」system 消息——告诉模型它在哪台机器、哪个工作区里干活。
+// 详情：这是稳定前缀里【唯一按会话变化】的一段，因此调用方须把它排在其它前缀段之后
+//   （见 modelRun 的 stablePrefix 注释）。内容只依赖会话绑定的 workspace 与宿主环境，
+//   不含本轮输入、时间或计划状态，所以整个会话生命周期内逐字不变。
+// ★ 为什么必须有这一段 ★ —— 缺它时模型对「我在哪」零信息，只能猜；实测 DeepSeek 首轮
+//   直接编出一条训练数据里的绝对路径（/Users/<某人>/develop/...），read_file 报
+//   WORKSPACE_READ_FAILED，模型是从【报错文案】里才第一次看到真实 workspace 根目录，
+//   白烧三轮才走上正轨。把根目录摆进稳定前缀能整类消灭这种开局失败，且因为在前缀里、
+//   逐字不变，token 成本被 provider 前缀缓存吃掉。
+export function buildEnvironmentItem(input: EnvironmentItemInput): SystemItem {
+  const lines = ['运行环境：']
+
+  if (input.isTauri) {
+    lines.push(`- 宿主：Tauri 桌面端（可用本机文件、shell 与 Git 工具）；本机平台 ${input.platform}。`)
+    if (input.workspaceRoot) {
+      lines.push(`- 当前工作区根目录：${input.workspaceRoot}`)
+      lines.push('- 文件与 shell 工具的相对路径都以该根目录为基准；除非明确需要访问外部路径，优先传相对路径。')
+    } else {
+      // 没有根目录可报时不能造一个，也不能说"以该根目录为基准"——指代会落空。
+      lines.push('- 当前会话未绑定工作区根目录：本机侧会自行推断（通常取 Git 根目录）。先用一次目录列举取得实际根目录，再据此组路径；此前一律传相对路径。')
+    }
+    // 反臆造条款：模型编路径时往往同时编出「项目是什么」，所以这里同时禁掉「按记忆假设内容」。
+    lines.push('- 你对这个工作区里有什么文件【一无所知】。不要凭记忆或猜测写出本段未给出的绝对路径，也不要假设某个文件存在；先用目录列举或搜索类工具确认，再读写。')
+  } else {
+    lines.push(`- 宿主：浏览器（Web 预览）；本机平台 ${input.platform}。`)
+    lines.push('- 本机文件、shell 与 Git 工具在本环境不可用，工具清单里也不会出现它们；不要声称自己读过或改过本机文件。')
+  }
+
+  return { role: 'system', content: lines.join('\n') }
 }
 
 // 简介：把宿主保存的长期自定义指令组成一条独立 system 消息。

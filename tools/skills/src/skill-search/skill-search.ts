@@ -31,14 +31,18 @@ export const skillSearchTool: Tool = {
     content: guide,
   },
   inputSchema,
-  execute(args) {
+  execute(args, ctx) {
     // query 省略或为空字符串都表示列出全部；未知字段已由 schema 拒绝。
     const input = asRecord(args)
     const query = typeof input.query === 'string' ? input.query.trim() : ''
     const limit = typeof input.limit === 'number' && Number.isSafeInteger(input.limit)
       ? Math.max(1, Math.min(MAX_LIMIT, input.limit))
       : DEFAULT_LIMIT
-    const matches = searchSkills(query)
+
+    // 项目 skills 经 ctx 注入后与内置条目一起参与【同一次】评分排序（评分规则只在 registry
+    // 里存一份）。ctx 无 skills 能力（旧宿主/单测桩）时退化成纯内置，行为与本能力上线前一致。
+    const projectSkills = ctx.skills?.list().filter((skill) => skill.name.startsWith('project/')) ?? []
+    const matches = searchSkills(query, projectSkills)
     return {
       ok: true,
       data: {

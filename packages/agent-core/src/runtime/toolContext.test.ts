@@ -115,7 +115,7 @@ describe('ctx 副作用 + stale 守卫', () => {
     expect(ctx.saveArtifact({ filename: 'a.txt', content: 'x' })).toEqual({ error: 'stale' })
   })
 
-  it('stale run 仍可回滚自己留下的 evaluating；revision 防止覆盖新状态', () => {
+  it('被顶掉的旧 run 不能提交阶段结果；计划状态保持不变', () => {
     seedRunningSession('s1', 'new-run')
     setPlan('s1', {
       id: 'plan-1',
@@ -131,36 +131,21 @@ describe('ctx 副作用 + stale 守卫', () => {
         title: '实现',
         objective: '写代码',
         deliverables: [],
-        acceptanceCriteria: ['测试通过'],
         dependencies: [],
-        status: 'evaluating',
+        status: 'in_progress',
         evidence: ['tests'],
-        evaluations: [{
-          attempt: 1,
-          status: 'evaluating',
-          summary: '已实现',
-          submittedEvidence: ['tests'],
-          criteria: [],
-          submittedAt: 2,
-        }],
       }],
     })
     const stale = ctxFor('submit_stage_result', 's1', 'old-run')
 
-    const recovered = stale.abortStageEvaluation?.('plan-1', 3, 'build', 'Load failed')
-
-    expect(recovered).toMatchObject({ ok: true })
-    expect(getPlan('s1')?.stages[0]).toMatchObject({
-      status: 'in_progress',
-      evaluations: [{
-        status: 'unknown',
-        criteria: [{ criterion: '测试通过', status: 'unknown', reason: 'Load failed' }],
-      }],
-    })
-    expect(stale.abortStageEvaluation?.('plan-1', 3, 'build', 'late cleanup')).toMatchObject({
-      ok: false,
-      error: expect.stringContaining('revision conflict'),
-    })
+    expect(() => stale.submitStageResult?.({
+      planId: 'plan-1',
+      revision: 3,
+      stageId: 'build',
+      summary: '已实现',
+      evidence: ['tests'],
+    })).toThrow('stale')
+    expect(getPlan('s1')).toMatchObject({ revision: 3, stages: [{ status: 'in_progress' }] })
   })
 })
 

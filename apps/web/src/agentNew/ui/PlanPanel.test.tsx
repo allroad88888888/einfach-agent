@@ -4,7 +4,6 @@ import { describe, expect, it, vi } from 'vitest'
 import { renderWithStore } from '../../test/renderWithStore'
 import { itemsAtom, planAtom, runAtom } from '@web-agent/core/state/sessionAtoms'
 import {
-  acceptPlanResult,
   approvePlan,
   continuePlan,
   rollbackPlanStage,
@@ -18,7 +17,6 @@ import {
 
 vi.mock('@web-agent/core/runtime/commands', () => ({
   approvePlan: vi.fn(),
-  acceptPlanResult: vi.fn(),
   continuePlan: vi.fn(),
   rollbackPlanStage: vi.fn(),
   answerQuestion: vi.fn(),
@@ -60,7 +58,7 @@ describe('PlanPanel', () => {
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
         id: 'implement', title: '实现', objective: '写代码', deliverables: [],
-        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'in_progress', evidence: [],
+        dependencies: [], status: 'in_progress', evidence: [],
       }],
     })
     const payload = {
@@ -95,8 +93,8 @@ describe('PlanPanel', () => {
       id: 'p1', title: '发布功能', objective: '可靠交付', status: 'awaiting_approval', revision: 1,
       requiresApproval: true, createdAt: 1, updatedAt: 1,
       stages: [
-        { id: 'a', title: '实现', objective: '写代码', deliverables: [], acceptanceCriteria: ['测试通过'], dependencies: [], status: 'pending', evidence: [] },
-        { id: 'b', title: '验证', objective: '做回归', deliverables: [], acceptanceCriteria: ['构建通过'], dependencies: ['a'], status: 'pending', evidence: [] },
+        { id: 'a', title: '实现', objective: '写代码', deliverables: [], dependencies: [], status: 'pending', evidence: [] },
+        { id: 'b', title: '验证', objective: '做回归', deliverables: [], dependencies: ['a'], status: 'pending', evidence: [] },
       ],
     })
     store.setter(runAtom, { runId: 'r1', status: 'waiting_plan_approval', pendingPlanApproval: { callId: 'c1', planId: 'p1', revision: 1 } })
@@ -107,25 +105,39 @@ describe('PlanPanel', () => {
     expect(approvePlan).toHaveBeenCalledWith(true)
   })
 
-  it('逐条展示 evaluator 结论，并由宿主验收最终结果', () => {
+  it('展开已完成阶段时展示提交的产出摘要与证据', () => {
     const store = createStore()
     store.setter(planAtom, {
-      schemaVersion: 2,
-      id: 'p2', title: '发布功能', objective: '可靠交付', status: 'awaiting_user_acceptance', revision: 8,
+      schemaVersion: 4,
+      id: 'p2', title: '发布功能', objective: '可靠交付', status: 'completed', revision: 8,
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
-        id: 'a', title: '实现', objective: '写代码', deliverables: [], acceptanceCriteria: ['测试通过'], dependencies: [], status: 'completed', evidence: ['3 tests passed'],
-        evaluations: [{ attempt: 1, status: 'passed', summary: '实现完成', submittedEvidence: ['3 tests passed'], submittedAt: 2, evaluatedAt: 3, criteria: [{ criterion: '测试通过', status: 'passed', evidence: ['3 tests passed'], reason: '' }] }],
+        id: 'a', title: '实现', objective: '写代码', deliverables: [], dependencies: [], status: 'completed', evidence: ['3 tests passed'],
+        result: { summary: '实现完成', evidence: ['3 tests passed'], submittedAt: 2 },
       }],
-      evaluation: { status: 'passed', evidence: ['full regression passed'], reason: '', evaluatedAt: 4, requiresUserAcceptance: true },
     })
     renderWithStore(<PlanPanel />, { store })
-    expect(screen.queryByText('证据：3 tests passed')).toBeNull()
+    expect(screen.queryByText('实现完成')).toBeNull()
     fireEvent.click(screen.getByText('实现', { selector: 'summary strong' }).closest('summary')!)
-    expect(screen.getByText('通过')).toBeInTheDocument()
-    expect(screen.getAllByText('证据：3 tests passed')).toHaveLength(2)
-    fireEvent.click(screen.getByRole('button', { name: '接受结果' }))
-    expect(acceptPlanResult).toHaveBeenCalledWith('p2', 8, true)
+    expect(screen.getByText('实现完成')).toBeInTheDocument()
+    expect(screen.getByText('证据：3 tests passed')).toBeInTheDocument()
+  })
+
+  it('阻塞阶段展示阻塞原因', () => {
+    const store = createStore()
+    store.setter(planAtom, {
+      schemaVersion: 4,
+      id: 'p3', title: '发布功能', objective: '可靠交付', status: 'active', revision: 4,
+      requiresApproval: false, createdAt: 1, updatedAt: 2,
+      stages: [{
+        id: 'a', title: '实现', objective: '写代码', deliverables: [], dependencies: [], status: 'blocked', evidence: [],
+        blockReason: '上游接口尚未提供',
+      }],
+    })
+    renderWithStore(<PlanPanel />, { store })
+    fireEvent.click(screen.getByText('实现', { selector: 'summary strong' }).closest('summary')!)
+    expect(screen.getByText('已阻塞')).toBeInTheDocument()
+    expect(screen.getByText('阻塞：上游接口尚未提供')).toBeInTheDocument()
   })
 
   it('每个步骤可独立展开详情，执行中的步骤默认展开并展示交付物与依赖', () => {
@@ -136,11 +148,11 @@ describe('PlanPanel', () => {
       stages: [
         {
           id: 'design', title: '设计', objective: '确定方案', deliverables: ['设计说明'],
-          acceptanceCriteria: ['方案可执行'], dependencies: [], status: 'completed', evidence: [],
+          dependencies: [], status: 'completed', evidence: [],
         },
         {
           id: 'implement', title: '实现', objective: '完成代码', deliverables: ['功能代码', '单元测试'],
-          acceptanceCriteria: ['测试通过'], dependencies: ['design'], status: 'in_progress', evidence: [],
+          dependencies: ['design'], status: 'in_progress', evidence: [],
         },
       ],
     })
@@ -168,9 +180,9 @@ describe('PlanPanel', () => {
       id: 'p-rollback', title: '多步骤任务', objective: '完成实现与验证', status: 'active', revision: 3,
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [
-        { id: 'design', title: '设计', objective: '确定方案', deliverables: [], acceptanceCriteria: ['方案可执行'], dependencies: [], status: 'completed', evidence: [] },
-        { id: 'implement', title: '实现', objective: '完成代码', deliverables: [], acceptanceCriteria: ['测试通过'], dependencies: ['design'], status: 'in_progress', evidence: [] },
-        { id: 'verify', title: '验证', objective: '执行回归', deliverables: [], acceptanceCriteria: ['构建通过'], dependencies: ['implement'], status: 'pending', evidence: [] },
+        { id: 'design', title: '设计', objective: '确定方案', deliverables: [], dependencies: [], status: 'completed', evidence: [] },
+        { id: 'implement', title: '实现', objective: '完成代码', deliverables: [], dependencies: ['design'], status: 'in_progress', evidence: [] },
+        { id: 'verify', title: '验证', objective: '执行回归', deliverables: [], dependencies: ['implement'], status: 'pending', evidence: [] },
       ],
     })
 
@@ -193,7 +205,7 @@ describe('PlanPanel', () => {
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
         id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
-        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'in_progress', evidence: [],
+        dependencies: [], status: 'in_progress', evidence: [],
       }],
     })
 
@@ -215,7 +227,7 @@ describe('PlanPanel', () => {
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
         id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
-        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'in_progress', evidence: [],
+        dependencies: [], status: 'in_progress', evidence: [],
       }],
     })
 
@@ -234,7 +246,7 @@ describe('PlanPanel', () => {
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
         id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
-        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'in_progress', evidence: [],
+        dependencies: [], status: 'in_progress', evidence: [],
       }],
     })
     store.setter(runAtom, { runId: 'r-running', status: 'running' })
@@ -246,18 +258,18 @@ describe('PlanPanel', () => {
     expect(screen.queryByRole('button', { name: '继续执行' })).not.toBeInTheDocument()
   })
 
-  it('已取消评审遗留的 awaiting_tool 显示继续入口', () => {
+  it('中断遗留的 awaiting_tool 显示继续入口', () => {
     vi.mocked(continuePlan).mockClear()
     const store = createStore()
     store.setter(planAtom, {
-      id: 'p-orphaned-evaluation', title: '恢复评审', objective: '继续未完成工作', status: 'active', revision: 4,
+      id: 'p-orphaned-run', title: '恢复执行', objective: '继续未完成工作', status: 'active', revision: 4,
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
         id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
-        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'evaluating', evidence: [],
+        dependencies: [], status: 'in_progress', evidence: [],
       }],
     })
-    store.setter(runAtom, { runId: 'orphaned-evaluation', status: 'awaiting_tool' })
+    store.setter(runAtom, { runId: 'orphaned-run', status: 'awaiting_tool' })
 
     renderWithStore(<PlanPanel />, { store })
 
@@ -273,7 +285,7 @@ describe('PlanPanel', () => {
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
         id: 'search', title: '检索代码', objective: '找到实现位置', deliverables: [],
-        acceptanceCriteria: ['定位文件'], dependencies: [], status: 'in_progress', evidence: [],
+        dependencies: [], status: 'in_progress', evidence: [],
       }],
     })
     store.setter(itemsAtom, [
@@ -333,7 +345,7 @@ describe('PlanPanel', () => {
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
         id: 'execute', title: '执行', objective: '处理大量步骤', deliverables: [],
-        acceptanceCriteria: ['完成'], dependencies: [], status: 'in_progress', evidence: [],
+        dependencies: [], status: 'in_progress', evidence: [],
       }],
     })
     store.setter(itemsAtom, Array.from({ length: 500 }, (_, index) => ({
@@ -383,7 +395,7 @@ describe('PlanPanel', () => {
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
         id: 'verify', title: '验证', objective: '执行回归', deliverables: [],
-        acceptanceCriteria: ['构建通过'], dependencies: [], status: 'blocked', evidence: [],
+        dependencies: [], status: 'blocked', evidence: [],
         blockReason: '需要实跑集成测试才能核验，评估器只有只读权限',
       }],
     })

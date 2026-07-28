@@ -222,6 +222,50 @@ skills?: {
 - 会话/设置面板展示当前 workspace 的项目 skills（名字、来源、资源数）与刷新按钮；
 - `diagnostics` 展示；transcript 注入卡片沿用既有判重，无需改动。
 
+### 实施状态（2026-07-28）
+
+阶段 A–D 已落地并通过 `pnpm exec vitest run` 全量与 `pnpm build`。阶段 E 未做。
+
+首版代码经 review 后修正了以下缺陷，都属于「跑起来像是好的、实际不工作或长期劣化」的类型，
+后续改动不要回退：
+
+| 缺陷 | 后果 | 现状 |
+| --- | --- | --- |
+| `skill_read` 直接取 `ctx.readWorkspaceFile(...).content` | 该函数返回 `{ok,data}`，取 `.content` 恒为 undefined → **项目 skill 的正文与资源永远是空字符串，且返回 ok:true** | 显式解包并判 `ok`，失败透出桥的 error |
+| bridge 对 `{ok:false}` 直接取 `.data.entries` | 抛 TypeError 顶替真实原因，诊断信息变成 `Cannot read properties of undefined` | 失败即 throw，带原始 error |
+| 目录不存在被当成扫描错误 | 绝大多数仓库两个根都没有 → 设置面板对每个正常仓库常驻两条「错误」 | 识别为常态，静默返回空 |
+| UI 刷新按钮调 `refresh(root)` 不传 bridge | bridge 缺省分支＝「本环境无文件系统」→ **点刷新等于清空已加载的 skills** | 走 `refreshProjectSkills` 命令，命令内部构建 bridge |
+| 快照存在 core 私有 Map | UI 无从订阅，重扫完成不重渲染；且 UI 直接 import `defaultCore` 违反 U1 边界 | 快照存 `rootStore.projectSkillsAtom`，UI 只读 atom + 调命令 |
+| `ensure` 只在 `runSession` | 其余六个 `runToolLoop` 入口用空快照拼清单 → 同会话相邻请求前缀字节不同，缓存整段作废 | 收进 `runToolLoop`，所有入口统一 |
+| 资源键未命中报 `SKILL_NOT_FOUND` | skill 存在、只是资源名写错时谎报 skill 不存在，模型无从自我修正 | 报 `SKILL_RESOURCE_NOT_FOUND` 并列出可读键 |
+| frontmatter 围栏逻辑在 core 与 tools 各写一份 | 两处对同一文件可能切在不同位置 | 收口成 `splitFrontmatter`，唯一判定处 |
+| `skill_search` 另写一套项目 skills 评分 | 与 registry 的评分常量必然漂移，两类 skill 的排序不再可比 | `searchSkills(query, extra)` 单一实现 |
+| YAML scalar 把任意位置的 `#` 当注释 | `description: 修复 #123 的问题` 被截成「修复」 | 遵循 YAML：`#` 前需有空白 |
+
+另外两处非缺陷改进：两个扫描根与各 `SKILL.md` 的读取改为并发（原先串行，32 个 skill 要排 32 个
+IPC 往返）；`ensure` 增加 in-flight promise 去重（并发 run 只扫一次）。
+
+#### 真实数据验证（门禁 3/4）
+
+对本仓库真实扫描（`.agent/skills/demo` + 已存在的 `.claude/skills/codegraph`）跑通了
+L1 清单 → L2 正文 → L3 资源全链路，`diagnostics` 干净。两条 Rust 侧行为经
+`cargo test --manifest-path apps/desktop/Cargo.toml` 实测确认，并固化为**跨语言契约测试**
+（`workspace_read.rs` 的 `list_returns_workspace_relative_slash_paths_for_nested_skill_dirs`
+与 `list_missing_directory_errors_with_not_accessible_text`）：
+
+1. `list_workspace_files` 返回的 `path` 是 workspace 相对、正斜杠、无 `./` 前缀 ——
+   loader 的四段判定依赖它。**漂移是静默的**：多一个前缀，项目 skills 会全部消失且不报错。
+2. 目录不存在确实报 `is not accessible ... No such file or directory` ——
+   `isMissingDirectoryError` 的文本判据依赖它。
+
+真实数据还暴露了一个规格问题（已修）：`codegraph` 的 description 长 200+ 字符，被 160 上限
+**截在句子中间且无任何标记**（「…索引未覆盖的文件也」，原文是「也不要用」）。截断点恰好吞掉
+「何时不用」的限制条件，模型有把约束读反的风险。Claude Code 生态的 description 普遍是这个
+长度，所以这不是个别现象。现在截断会追加 `…`，并回一条 diagnostics 提示作者改短。
+
+边界记录：子 agent 的工具白名单（`subagents/toolProfile.ts`）不含 `skill_read` / `skill_search`，
+子 agent 不参与 skills 机制，因此无需为其注入项目清单。
+
 ### 阶段 E —（可选）行为 eval
 
 沿用 `evals/deepseek-agent` 的 B04 框架，验证「内置 + 项目 skills 混排」时的命中率与误触率

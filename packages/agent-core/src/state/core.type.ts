@@ -112,7 +112,7 @@ export interface PendingPlanApproval {
 
 export interface PendingUserDecisionOrigin {
   surface: 'conversation' | 'plan'
-  phase?: 'drafting' | 'approval' | 'executing' | 'evaluating' | 'acceptance'
+  phase?: 'drafting' | 'approval' | 'executing'
   planId?: string
   planRevision?: number
   stageId?: string

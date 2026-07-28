@@ -102,7 +102,6 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
       'resumeWithAnswers',
       'confirmTool',
       'approvePlan',
-      'acceptPlanResult',
       'answerQuestion',
       'discardArtifact',
       'revertToTurn',

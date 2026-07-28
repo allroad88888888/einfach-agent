@@ -9,6 +9,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   buildCustomInstructionsItem,
+  buildEnvironmentItem,
   buildSystemItem,
   buildToolManifestText,
   buildTurnTools,
@@ -96,6 +97,51 @@ describe('system 前缀缓存边界', () => {
     expect(fixed.content).toContain('如实报告')
     expect(fixed.content).not.toContain('可用 skills')
     expect(buildSystemItem()).toEqual(fixed)
+  })
+})
+
+describe('buildEnvironmentItem —— 运行环境锚点', () => {
+  it('桌面端给出 workspace 根目录、平台与反臆造条款', () => {
+    const item = buildEnvironmentItem({
+      workspaceRoot: '/Volumes/work/ai/web-agent',
+      isTauri: true,
+      platform: 'macos',
+    })
+
+    expect(item.role).toBe('system')
+    expect(item.content).toContain('当前工作区根目录：/Volumes/work/ai/web-agent')
+    expect(item.content).toContain('macos')
+    // 这条是本段存在的理由：不给它，模型会编出训练数据里的绝对路径。
+    expect(item.content).toContain('不要凭记忆或猜测写出本段未给出的绝对路径')
+  })
+
+  it('未绑定 workspace 时明说「以工具返回路径为准」，不伪造一个根目录', () => {
+    const item = buildEnvironmentItem({ isTauri: true, platform: 'linux' })
+
+    expect(item.content).toContain('未绑定工作区根目录')
+    expect(item.content).toContain('先用一次目录列举取得实际根目录')
+    expect(item.content).not.toContain('当前工作区根目录：')
+    // 没有根目录时不能出现指代落空的「以该根目录为基准」。
+    expect(item.content).not.toContain('以该根目录为基准')
+  })
+
+  it('web 宿主不谈 workspace 路径，只声明本机工具不可用', () => {
+    const item = buildEnvironmentItem({
+      workspaceRoot: '/Volumes/work/ai/web-agent',
+      isTauri: false,
+      platform: 'macos',
+    })
+
+    expect(item.content).toContain('本机文件、shell 与 Git 工具在本环境不可用')
+    expect(item.content).not.toContain('/Volumes/work/ai/web-agent')
+  })
+
+  it('同一输入逐字稳定——它待在稳定前缀里，字节抖动即每轮 cache miss', () => {
+    const input = { workspaceRoot: '/repo', isTauri: true, platform: 'macos' } as const
+
+    expect(buildEnvironmentItem(input)).toEqual(buildEnvironmentItem(input))
+    // 不含时间、轮次、计划状态等动态痕迹。
+    expect(buildEnvironmentItem(input).content).not.toMatch(/\d{4}-\d{2}-\d{2}/)
   })
 })
 

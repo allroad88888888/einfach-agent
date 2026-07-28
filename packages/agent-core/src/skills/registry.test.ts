@@ -153,3 +153,54 @@ describe('skills/registry（agentNew · 移植版）', () => {
     }
   })
 })
+
+describe('buildSkillManifestText · 项目段（docs/project-skills-blueprint.md 阶段 C）', () => {
+  const snapshot = {
+    workspaceRoot: '/w',
+    entries: [
+      {
+        name: 'project/deploy-flow',
+        description: '何时用：发布相关',
+        triggers: [],
+        filePath: '.agent/skills/deploy-flow/SKILL.md',
+        resources: {},
+        origin: 'agent' as const,
+      },
+    ],
+    diagnostics: [],
+  }
+
+  it('无快照 / 空快照 → 与今天的输出【逐字】相同（web 端零回归门禁）', () => {
+    const baseline = buildSkillManifestText()
+    expect(buildSkillManifestText(undefined)).toBe(baseline)
+    expect(buildSkillManifestText({ workspaceRoot: '/w', entries: [], diagnostics: [] })).toBe(baseline)
+    expect(baseline).not.toContain('project/')
+  })
+
+  it('有项目 skills → 内置段原样保留，项目段追加在后并标注来源', () => {
+    const text = buildSkillManifestText(snapshot)
+    expect(text.startsWith(buildSkillManifestText())).toBe(true)
+    expect(text).toContain('· project/deploy-flow — 何时用：发布相关')
+    expect(text).toContain('非内置')
+  })
+
+  it('同一快照重复调用逐字相同（稳定前缀的字节稳定契约）', () => {
+    expect(buildSkillManifestText(snapshot)).toBe(buildSkillManifestText(snapshot))
+  })
+})
+
+describe('searchSkills · extra 条目', () => {
+  const projectSkill = { name: 'project/deploy-flow', description: '发布排查', triggers: ['deploy'] }
+
+  it('extra 条目与内置共用同一套评分，不另起一套规则', () => {
+    const matches = searchSkills('deploy', [projectSkill])
+    expect(matches[0].name).toBe('project/deploy-flow')
+    // 触发词精确命中 = 100 分，与内置条目同口径
+    expect(matches[0].score).toBeGreaterThanOrEqual(100)
+    expect(matches[0].matchedFields).toContain('trigger')
+  })
+
+  it('不传 extra 时行为与之前一致', () => {
+    expect(searchSkills('planning')).toEqual(searchSkills('planning', []))
+  })
+})

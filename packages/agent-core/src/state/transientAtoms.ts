@@ -197,7 +197,7 @@ export const runtimeTranscriptEventsAtom = atom<RuntimeTranscriptEvent[]>([])
 // 详情：只服务 UI，不进 checkpoint、不参与 model messages；runId 用于阻止旧 run 清掉新 run 的流消息。
 export const assistantStreamAtom = atom<AssistantStreamState | undefined>(undefined)
 
-// 简介：当前会话五类注入卡片（system / 自定义指令 / skill 清单 / 工具摘要 / tools）各自最近一次
+// 简介：当前会话六类注入卡片（system / 运行环境 / 自定义指令 / skill 清单 / 工具摘要 / tools）各自最近一次
 //   记录时的内容指纹，供 runtime 判断"相对上一次记录是否变化"（只在变化时记新卡片）。
 // 详情：值随 store 隔离，与 runtimeTranscriptEventsAtom 同店同生命周期——都不持久化，
 //   应用刷新/重启后二者一起清空（届时可见 transcript 本身也是空的，下一轮各重记一次不构成
@@ -206,6 +206,8 @@ export const assistantStreamAtom = atom<AssistantStreamState | undefined>(undefi
 //   清空」（null）两种缺失态，供调用方决定是否需要补一条「已清除」事件。
 export interface TranscriptInjectionFingerprints {
   system?: string
+  /** 运行环境段（workspace 根目录 / 宿主 / 平台）：会话内常态只记一次，改 workspace 才再记。 */
+  environment?: string
   customInstructions?: string | null
   /** 全量 skill 清单（进稳定前缀）的内容指纹：只随 registry 注册态变化，不随本轮输入变。 */
   skillManifest?: string
@@ -215,7 +217,7 @@ export interface TranscriptInjectionFingerprints {
   toolsCount?: number
 }
 
-// 简介：当前会话五类注入卡片的判重指纹。
+// 简介：当前会话六类注入卡片的判重指纹。
 // 详情：只服务 runtime 判重，不进 checkpoint、不持久化。
 export const transcriptInjectionFingerprintsAtom = atom<TranscriptInjectionFingerprints>({})
 
@@ -460,7 +462,7 @@ export function pruneRuntimeTranscriptEventsAfter(
 }
 
 /**
- * 读取该会话四类注入卡片当前的判重指纹（未记录过任何一类时为空对象）。
+ * 读取该会话六类注入卡片当前的判重指纹（未记录过任何一类时为空对象）。
  * core 默认 defaultCore：不传时读模块全局那份；传入独立 core 只读该 core 自己的 session store。
  */
 export function getTranscriptInjectionFingerprints(

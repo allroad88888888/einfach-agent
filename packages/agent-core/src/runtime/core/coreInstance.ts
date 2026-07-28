@@ -24,6 +24,10 @@
 
 import { createStore, type Store } from '@einfach/core'
 import { createToolRegistry, type ToolRegistry } from '../../tools/toolRegistry'
+import type { ProjectSkillsSnapshot } from '../../skills/projectSkills'
+import { emptyProjectSkillsSnapshot } from '../../skills/projectSkills'
+// rootAtoms 是零 runtime 依赖的叶子层（破环地基），coreInstance 可以安全引用它的 atom 定义。
+import { projectSkillsAtom } from '../../state/rootAtoms'
 
 // 单会话独立 store 的形状（对齐原 sessionStore.ts 的 SessionStore；本轮先不放 undo）。
 // 定义放这里、由 sessionStore.ts re-export，避免 coreInstance 反向 import sessionStore 成环。
@@ -40,6 +44,41 @@ export interface AbortRegistryLike {
   endRun(id: string, signal: AbortSignal): void
   isRunning(id: string): boolean
   reset(): void
+}
+
+/**
+ * 项目 Skills 存储接口。
+ * 缓存键 = workspaceRoot（非 sessionId），同 workspace 多会话共享一份快照。
+ */
+export interface ProjectSkillsStore {
+  /** 取或建快照，命中缓存时同步返回，否则走 bridge 扫描（传 undefined 则直接空快照）。 */
+  ensure(workspaceRoot: string, bridge?: ProjectSkillsLoaderBridge): Promise<ProjectSkillsSnapshot>
+  /** 强制重扫（无视缓存）。 */
+  refresh(workspaceRoot: string, bridge?: ProjectSkillsLoaderBridge): Promise<ProjectSkillsSnapshot>
+  /** 清空该 workspaceRoot 的缓存。 */
+  clear(workspaceRoot: string): void
+  /** 获取缓存中的快照（不触发扫描）。 */
+  get(workspaceRoot: string): ProjectSkillsSnapshot | undefined
+}
+
+/**
+ * projectSkillsLoader 依赖的文件系统桥接口。
+ * 生产实现走 ToolContext 的 listWorkspaceFiles / readWorkspaceFile，
+ * 测试 fake 此接口完成纯内存覆盖。
+ */
+export interface ProjectSkillsLoaderBridge {
+  listFiles(path: string, options: {
+    recursive: boolean
+    includeHidden: boolean
+    maxEntries: number
+    workspaceRoot: string
+    allowExternalPaths: boolean
+  }): Promise<{ entries: Array<{ path: string; type: string }> }>
+  readFile(path: string, options: {
+    maxBytes: number
+    workspaceRoot: string
+    allowExternalPaths: boolean
+  }): Promise<{ content: string }>
 }
 
 // 运行时配置（apiKey 等）。形状对齐 commands.ts 的运行时配置。
@@ -72,6 +111,8 @@ export interface CoreInstance {
   readonly abort: AbortRegistryLike
   // 该实例的运行时配置（apiKey 等）。引用只读，字段可改（供 configureCommands 覆盖）。
   readonly config: RuntimeConfig
+  // 该实例的项目 Skills 缓存（per workspaceRoot，与 core.tools 同构）。
+  readonly projectSkills: ProjectSkillsStore
 }
 
 /**
@@ -166,6 +207,63 @@ export function createCoreInstance(opts?: {
     ...opts?.config,
   }
 
+  // 6) 项目 Skills 缓存：快照存本实例 rootStore 的 projectSkillsAtom（按 workspaceRoot 分桶），
+  //    UI 因此可以直接订阅；in-flight promise 另用 Map 去重，不进 store（它是瞬态调度信息）。
+  const projectSkillsInFlight = new Map<string, Promise<ProjectSkillsSnapshot>>()
+  const readProjectSkills = (workspaceRoot: string): ProjectSkillsSnapshot | undefined =>
+    rootStore.getter(projectSkillsAtom)[workspaceRoot]
+  const writeProjectSkills = (snapshot: ProjectSkillsSnapshot): ProjectSkillsSnapshot => {
+    rootStore.setter(projectSkillsAtom, {
+      ...rootStore.getter(projectSkillsAtom),
+      [snapshot.workspaceRoot]: snapshot,
+    })
+    return snapshot
+  }
+  const projectSkills: ProjectSkillsStore = {
+    get(workspaceRoot) {
+      return readProjectSkills(workspaceRoot)
+    },
+    async ensure(workspaceRoot, bridge) {
+      const cached = readProjectSkills(workspaceRoot)
+      if (cached) return cached
+      // 同一 workspace 的并发 run 各自 ensure 时只扫一次：后来者复用同一个 in-flight promise。
+      const inFlight = projectSkillsInFlight.get(workspaceRoot)
+      if (inFlight) return inFlight
+      return projectSkills.refresh(workspaceRoot, bridge)
+    },
+    async refresh(workspaceRoot, bridge) {
+      // 无 bridge（web 端非 Tauri）＝ 这个环境永远没有项目 skills，空快照即正确答案。
+      if (!bridge) return writeProjectSkills(emptyProjectSkillsSnapshot(workspaceRoot))
+
+      const scan = (async () => {
+        try {
+          const { scanProjectSkills } = await import('../../skills/projectSkillsLoader')
+          return writeProjectSkills(await scanProjectSkills(workspaceRoot, bridge))
+        } catch (error) {
+          // 扫描器本身崩了（不是单个文件读失败——那些在 loader 内部已降级成 diagnostics）。
+          // 绝不让它冒泡到 run：项目 skills 是增强，不是运行前提。
+          const detail = error instanceof Error ? error.message : String(error)
+          return writeProjectSkills({
+            workspaceRoot,
+            entries: [],
+            diagnostics: [`项目 skills 扫描失败，已降级为无项目 skills：${detail}`],
+          })
+        } finally {
+          projectSkillsInFlight.delete(workspaceRoot)
+        }
+      })()
+      projectSkillsInFlight.set(workspaceRoot, scan)
+      return scan
+    },
+    clear(workspaceRoot) {
+      const current = rootStore.getter(projectSkillsAtom)
+      if (!(workspaceRoot in current)) return
+      const next = { ...current }
+      delete next[workspaceRoot]
+      rootStore.setter(projectSkillsAtom, next)
+    },
+  }
+
   return {
     rootStore,
     getSessionStore,
@@ -175,6 +273,7 @@ export function createCoreInstance(opts?: {
     tools,
     abort,
     config,
+    projectSkills,
   }
 }
 

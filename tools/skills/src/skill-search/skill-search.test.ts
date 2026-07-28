@@ -78,3 +78,35 @@ describe('tools/skill-search/skill-search', () => {
     }
   })
 })
+
+describe('tools/skill-search/skill-search · 项目 skills', () => {
+  function ctxWithProjectSkills(): ToolContext {
+    const ctx = makeCtx() as ToolContext & Record<string, unknown>
+    ctx.skills = {
+      list: () => [
+        { name: 'project/deploy-flow', description: '何时用：发布与上线排查', triggers: ['deploy', '发布'] },
+      ],
+      resolveProjectPath: () => undefined,
+    }
+    return ctx
+  }
+
+  it('项目 skill 与内置条目一起参与同一次排名（触发词命中排到前面）', async () => {
+    const result = await skillSearchTool.execute({ query: 'deploy' }, ctxWithProjectSkills())
+    expect(result).toMatchObject({ ok: true })
+    const results = (result as { data: { results: Array<{ name: string }> } }).data.results
+    expect(results[0].name).toBe('project/deploy-flow')
+  })
+
+  it('空 query 列出全部时也包含项目 skills', async () => {
+    const result = await skillSearchTool.execute({}, ctxWithProjectSkills())
+    const data = (result as { data: { results: Array<{ name: string }>; total: number } }).data
+    expect(data.results.map((skill) => skill.name)).toContain('project/deploy-flow')
+  })
+
+  it('ctx 无 skills 能力 → 退化成纯内置，行为与本能力上线前一致', async () => {
+    const result = await skillSearchTool.execute({}, makeCtx())
+    const data = (result as { data: { results: Array<{ name: string }> } }).data
+    expect(data.results.every((skill) => !skill.name.startsWith('project/'))).toBe(true)
+  })
+})

@@ -1,59 +1,41 @@
-# 评估准则详细说明
+# 阶段目标与证据
 
-本资源是 planning skill 正文里「host 调用独立评估者判定 stage/plan」一句的展开，帮助你写出
-真正可评估的 `acceptanceCriteria`、提交经得住核对的证据，并理解评估结果的结构。跳过本资源
-不影响你使用 create_plan → execute_plan → submit_stage_result 的基本协议；正文已经包含协议
-本身的全部关键信息，这里只补充「怎么写得更好」。
+本资源是 planning skill 正文里「阶段目标要可观察、提交要带真实证据」两句的展开。跳过本资源不
+影响你使用 create_plan → execute_plan → submit_stage_result 的基本协议；正文已经包含协议本身
+的全部关键信息，这里只补充「怎么写得更好」。
 
-## acceptanceCriteria：如何写才可评估
+## 阶段目标：如何写才可判断
 
-`create_plan` 的每个 stage 必须提供非空、去重的 `acceptanceCriteria`（宿主在创建时校验，缺失
-或重复会被直接拒绝）。好的验收标准是**可观察、可核对**的陈述，而不是目标的同义复述：
+`objective` 是判断一个阶段是否做完的唯一依据。好的目标是**可观察、可核对**的完成态陈述，而不
+是活动描述：
 
-- 好：`pnpm exec vitest run packages/foo 全绿，新增 3 个用例覆盖边界情况`
+- 好：`packages/foo 的边界情况有测试覆盖且 pnpm exec vitest run packages/foo 全绿`
 - 好：`GET /api/users/:id 对不存在的 id 返回 404 而不是 500，错误码为 USER_NOT_FOUND`
-- 差：`用户模块工作正常`（无法核对，评估者无从判断证据是否充分）
-- 差：`代码质量提升`（没有可观察的验收信号）
+- 差：`重构用户模块`（只说做什么，没说做到什么程度算完）
+- 差：`提升代码质量`（没有可观察的完成信号）
 
-一条标准只断言一件事；需要同时验证多件事时拆成多条，方便评估者逐条给出结论，也方便你逐条
-准备证据。
+一个阶段只承担一件可判定的事。需要同时达成几件互相独立的事时，拆成多个 stage 并用
+`dependencies` 串起来——这样任何一件没做到都能精确定位到具体阶段，而不是让一个阶段含混地
+「部分完成」。
 
-## 独立评估者看到什么
+## 提交前先验证
 
-`submit_stage_result` 提交后，宿主会针对当前 stage 的每一条 `acceptanceCriteria` 产出一条
-`CriterionEvaluation`：
+完成阶段是你自己的判断，没有第三方复核。因此「提交」意味着你已经按目标实际验证过：目标提到
+测试就把测试跑起来，提到接口行为就把接口调用一次。**不要提交一个你跳过了验证的阶段，更不要
+为没跑过的命令编造输出。**
 
-```ts
-interface CriterionEvaluation {
-  criterion: string           // 对应某条 acceptanceCriteria 原文
-  status: 'passed' | 'failed' | 'unknown'
-  evidence: string[]          // 评估者认定支撑该结论的证据
-  reason: string              // 为什么给出这个 status
-}
-```
+## 证据格式
 
-多次提交会累积成一轮又一轮的评估尝试，保留每轮的 summary、你提交的证据、评估结论与时间戳，
-便于回头看清楚前几轮为什么没通过。
+`submit_stage_result` 的 `evidence` 是字符串数组，每条应该是具体、可回溯的信号，而不是复述结论：
 
-## 「all-passed」的含义
-
-只有当该 stage **全部** `CriterionEvaluation.status === 'passed'` 时，stage 才算完成。任意
-一条 `unknown`（证据不足、无法判断）或 `failed`（明确不满足）都会让 stage 停在待改进状态，需
-要你补充证据或调整实现后再次 `submit_stage_result`——而不是自行宣称通过。整个 plan 在最后一个
-stage 完成后，宿主还会做一轮 final integration / regression / original-goal 评估，同样遵循
-「不自评、不自批、不代用户验收」的边界（正文已强调，这里不重复）。
-
-## 提交证据的建议格式
-
-`submit_stage_result` 的 `evidence` 是字符串数组，每条应该是评估者能独立核对的具体信号，而不
-是复述结论：
-
-- 命令 + 结果摘要：`pnpm exec vitest run tools/skills/ → 12 passed`
+- 命令 + 真实结果：`pnpm exec vitest run tools/skills/ → 12 passed`
 - 文件路径 + 关键行为：`tools/skills/src/skill-read/skill-read.ts:40 已支持 resource 参数`
-- 逐条对照 `acceptanceCriteria` 原文给出对应证据，避免一条笼统证据糊住多条标准。
+- 覆盖 `objective` 里断言的每个可观察点，别用一条笼统证据糊过去。
 
-## 遇到无法达成的验收标准怎么办
+这些记录会保留在计划面板上，是用户回看「这个阶段到底做了什么」的唯一入口。
 
-不要静默跳过或自行放宽标准。当某条 `acceptanceCriteria` 确实无法满足（例如依赖被前置条件阻
-塞），用 `update_plan` 把该 stage 标记为 `blocked` 并写明 `blockReason`，交由宿主/用户决定下
-一步，而不是在 `submit_stage_result` 里回避该标准或假装满足。
+## 目标达不成怎么办
+
+不要静默跳过、自行放宽目标，或者提交一份夸大的结果。当阶段目标确实无法达成（例如依赖被前置
+条件阻塞），用 `update_plan` 把该 stage 标记为 `blocked` 并写明 `blockReason`，交由用户决定下
+一步。

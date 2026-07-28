@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { EvaluationRuntime } from '@web-agent/core/evaluation/runtime'
 import { PlanRuntime } from '@web-agent/core/planning/runtime'
 import type { PlanSnapshot } from '@web-agent/core/planning/types'
-import type { DelegateAgentBatchResult } from '@web-agent/core/subagents/types'
 import type { ToolContext } from '@web-agent/core/tools/types'
 import { submitStageResultTool } from './submit-stage-result'
 
@@ -19,666 +17,123 @@ function baseContext(overrides: Partial<ToolContext>): ToolContext {
   }
 }
 
-function evaluatorResult(payload: unknown): DelegateAgentBatchResult {
+/** 默认两个阶段；singleStage 用于覆盖「最后一个阶段完成 → 计划完成」。 */
+function harness(singleStage = false) {
+  let plan: PlanSnapshot | undefined
+  let now = 0
+  const store = {
+    get: () => plan,
+    set: (next: PlanSnapshot | undefined) => { plan = next },
+  }
+  const planning = new PlanRuntime(store, () => ++now, () => 'plan-1')
+  const created = planning.create({
+    title: 'Delivery',
+    objective: 'Ship safely',
+    stages: singleStage
+      ? [{ id: 'build', title: 'Build', objective: 'Implement' }]
+      : [
+        { id: 'build', title: 'Build', objective: 'Implement' },
+        { id: 'release', title: 'Release', objective: 'Package', dependencies: ['build'] },
+      ],
+  })
+  if (!created.ok) throw new Error(created.error)
+  const started = planning.execute(created.plan.id, created.plan.revision)
+  if (!started.ok) throw new Error(started.error)
   return {
-    treeId: 'evaluation-run',
-    conversationId: 'session-1',
-    runId: 'evaluation-run',
-    parentPath: 'root',
-    strategy: 'parallel_wait_all',
-    status: 'done',
-    summary: { total: 1, done: 1, failed: 0, cancelled: 0 },
-    cacheBasePath: '.agent-archive/conversations/session-1/runs/evaluation-run',
-    archiveBasePath: '.agent-archive/conversations/session-1/runs/evaluation-run',
-    eventLog: '.agent-archive/conversations/session-1/runs/evaluation-run/events.jsonl',
-    skillFiles: [],
-    skillIds: [],
-    children: [{
-      path: 'root/evaluator-1',
-      objective: 'Evaluate',
-      status: 'done',
-      summary: JSON.stringify(payload),
-      skillFiles: [],
-      skillIds: [],
-    }],
+    planning,
+    revision: started.plan.revision,
+    plan: () => store.get(),
+    stageStatuses: () => store.get()?.stages.map((stage) => stage.status),
   }
 }
 
+function submit(
+  instance: ReturnType<typeof harness>,
+  args: Partial<{ planId: string; revision: number; stageId: string; summary: string; evidence: string[] }> = {},
+) {
+  return submitStageResultTool.execute({
+    planId: 'plan-1',
+    revision: instance.revision,
+    stageId: 'build',
+    summary: 'Implemented',
+    evidence: ['3 tests passed'],
+    ...args,
+  }, baseContext({
+    submitStageResult: (input) => instance.planning.submitStageResult(input),
+  }))
+}
+
 describe('submit_stage_result tool', () => {
-  it('schedules evaluation without blocking and advances the plan when the child finishes', async () => {
-    let plan: PlanSnapshot | undefined
-    let now = 0
-    const store = {
-      get: () => plan,
-      set: (next: PlanSnapshot | undefined) => { plan = next },
-    }
-    const planning = new PlanRuntime(store, () => ++now, () => 'plan-1')
-    const evaluation = new EvaluationRuntime(store, () => ++now)
-    const created = planning.create({
-      title: 'Delivery',
-      objective: 'Ship safely',
-      stages: [
-        { id: 'build', title: 'Build', objective: 'Implement', acceptanceCriteria: ['tests pass'] },
-        { id: 'release', title: 'Release', objective: 'Package', acceptanceCriteria: ['build passes'], dependencies: ['build'] },
-      ],
-    })
-    if (!created.ok) throw new Error(created.error)
-    const started = planning.execute(created.plan.id, created.plan.revision)
-    if (!started.ok) throw new Error(started.error)
+  it('完成当前阶段并激活下一个依赖就绪阶段', async () => {
+    const instance = harness()
 
-    let complete: ((result: DelegateAgentBatchResult) => unknown | Promise<unknown>) | undefined
-    const spawnImplementation: NonNullable<ToolContext['spawnAgents']> = (_input, options) => {
-      complete = options?.onComplete
-      return {
-        executionId: 'evaluation-node',
-        graphId: 'run-1',
-        nodeIds: ['evaluation-node'],
-        status: 'scheduled',
-      }
-    }
-    const spawnAgents = vi.fn(spawnImplementation)
+    const result = await submit(instance)
 
-    const result = await submitStageResultTool.execute({
-      planId: 'plan-1',
-      revision: started.plan.revision,
-      stageId: 'build',
+    expect(result).toMatchObject({ ok: true, data: { status: 'active' } })
+    expect(instance.stageStatuses()).toEqual(['completed', 'in_progress'])
+    expect(instance.plan()?.stages[0].result).toMatchObject({
       summary: 'Implemented',
       evidence: ['3 tests passed'],
-    }, baseContext({
-      spawnAgents,
-      submitStageResult: (input) => evaluation.submitStageResult(input),
-      evaluateStage: (input) => evaluation.evaluateStage(input),
-      evaluatePlan: (input) => evaluation.evaluatePlan(input),
-      abortStageEvaluation: (planId, revision, stageId, reason) =>
-        evaluation.abortStageEvaluation(planId, revision, stageId, reason),
-    }))
+    })
+  })
+
+  it('最后一个阶段完成后计划直接完成', async () => {
+    const instance = harness(true)
+
+    const result = await submit(instance)
+
+    expect(result).toMatchObject({ ok: true, data: { status: 'completed' } })
+    expect(instance.stageStatuses()).toEqual(['completed'])
+  })
+
+  it('summary 或 evidence 为空时拒绝提交，阶段保持 in_progress', async () => {
+    const instance = harness()
+
+    expect(await submit(instance, { summary: '   ' })).toMatchObject({
+      ok: false,
+      error: 'stage result requires summary',
+      code: 'PLAN_STAGE_SUBMISSION_REJECTED',
+    })
+    expect(await submit(instance, { evidence: ['  '] })).toMatchObject({
+      ok: false,
+      error: 'stage result requires evidence',
+    })
+    expect(instance.stageStatuses()).toEqual(['in_progress', 'pending'])
+  })
+
+  it('revision 过期时 fail-closed，不推进计划', async () => {
+    const instance = harness()
+
+    const result = await submit(instance, { revision: instance.revision + 1 })
 
     expect(result).toMatchObject({
-      ok: true,
-      data: {
-        plan: { status: 'active' },
-        evaluation: { executionId: 'evaluation-node', status: 'scheduled' },
-      },
+      ok: false,
+      error: expect.stringContaining('revision conflict'),
+      retryable: false,
     })
-    expect(plan?.stages[0].status).toBe('evaluating')
-
-    await complete?.({
-      treeId: 'evaluation-run',
-      conversationId: 'session-1',
-      runId: 'evaluation-run',
-      parentPath: 'root',
-      strategy: 'parallel_wait_all',
-      status: 'done',
-      summary: { total: 1, done: 1, failed: 0, cancelled: 0 },
-      cacheBasePath: '.agent-archive/conversations/session-1/runs/evaluation-run',
-      archiveBasePath: '.agent-archive/conversations/session-1/runs/evaluation-run',
-      eventLog: '.agent-archive/conversations/session-1/runs/evaluation-run/events.jsonl',
-      skillFiles: [],
-      skillIds: [],
-      children: [{
-        path: 'root/evaluator-1',
-        objective: 'Evaluate',
-        status: 'done',
-        summary: JSON.stringify({
-          criteria: [{ criterion: 'tests pass', status: 'passed', evidence: ['3 tests passed'], reason: '' }],
-        }),
-        skillFiles: [],
-        skillIds: [],
-      }],
-    })
-
-    expect(plan?.stages.map((stage) => stage.status)).toEqual(['completed', 'in_progress'])
+    expect(instance.stageStatuses()).toEqual(['in_progress', 'pending'])
   })
 
-  it('delegates evaluation and only advances after the independent verdict passes', async () => {
-    let plan: PlanSnapshot | undefined
-    let now = 0
-    const store = {
-      get: () => plan,
-      set: (next: PlanSnapshot | undefined) => { plan = next },
-    }
-    const planning = new PlanRuntime(store, () => ++now, () => 'plan-1')
-    const evaluation = new EvaluationRuntime(store, () => ++now)
-    const created = planning.create({
-      title: 'Delivery',
-      objective: 'Ship safely',
-      stages: [
-        { id: 'build', title: 'Build', objective: 'Implement', acceptanceCriteria: ['tests pass'] },
-        { id: 'release', title: 'Release', objective: 'Package', acceptanceCriteria: ['build passes'], dependencies: ['build'] },
-      ],
-    })
-    if (!created.ok) throw new Error(created.error)
-    const started = planning.execute(created.plan.id, created.plan.revision)
-    if (!started.ok) throw new Error(started.error)
+  it('不能提交未在执行中的阶段', async () => {
+    const instance = harness()
 
-    let evaluatorInput: Parameters<NonNullable<ToolContext['delegateAgents']>>[0] | undefined
-    const delegateAgents = vi.fn(async (input: Parameters<NonNullable<ToolContext['delegateAgents']>>[0]): Promise<DelegateAgentBatchResult> => {
-      evaluatorInput = input
-      return {
-      treeId: 'evaluation-run',
-      conversationId: 'session-1',
-      runId: 'evaluation-run',
-      parentPath: 'root',
-      strategy: 'parallel_wait_all',
-      status: 'done',
-      summary: { total: 1, done: 1, failed: 0, cancelled: 0 },
-      cacheBasePath: '.agent-archive/conversations/session-1/runs/evaluation-run',
-      archiveBasePath: '.agent-archive/conversations/session-1/runs/evaluation-run',
-      eventLog: '.agent-archive/conversations/session-1/runs/evaluation-run/events.jsonl',
-      skillFiles: [],
-      skillIds: [],
-      budgetUsage: {
-        totalNodes: { used: 1, limit: 1 },
-        modelCalls: { used: 1, limit: 4 },
-      },
-      children: [{
-        path: 'root/evaluator-1',
-        objective: 'Evaluate',
-        status: 'done',
-        summary: JSON.stringify({
-          criteria: [{ criterion: 'tests pass', status: 'passed', evidence: ['3 tests passed'], reason: '' }],
-        }),
-        skillFiles: [],
-        skillIds: [],
-      }],
-      }
-    })
-    const result = await submitStageResultTool.execute({
-      planId: 'plan-1',
-      revision: started.plan.revision,
-      stageId: 'build',
-      summary: 'Implemented',
-      evidence: ['3 tests passed'],
-    }, baseContext({
-      delegateAgents,
-      submitStageResult: (input) => evaluation.submitStageResult(input),
-      evaluateStage: (input) => evaluation.evaluateStage(input),
-      evaluatePlan: (input) => evaluation.evaluatePlan(input),
-      abortStageEvaluation: (planId, revision, stageId, reason) => evaluation.abortStageEvaluation(planId, revision, stageId, reason),
-    }))
+    const result = await submit(instance, { stageId: 'release' })
 
-    expect(delegateAgents).toHaveBeenCalledOnce()
-    expect(delegateAgents).toHaveBeenCalledWith(expect.objectContaining({
-      maxChildren: 6,
-      maxConcurrent: 4,
-      maxTotalNodes: 64,
-      maxModelCalls: 128,
-      children: [expect.objectContaining({ mode: 'evaluator', maxTurns: 12 })],
-    }))
-    if (!evaluatorInput) throw new Error('missing evaluator input')
-    expect(evaluatorInput.toolProfile).toBe('workspace_verify')
-    expect(evaluatorInput.children[0].objective).toContain('Run the verification commands you need early')
-    expect(evaluatorInput.children[0].objective).toContain('including project shell scripts')
-    expect(result).toMatchObject({ ok: true })
-    expect(plan?.stages.map((stage) => stage.status)).toEqual(['completed', 'in_progress'])
-  })
-
-  it('sends one corrective evaluator request when a valid response misses criteria', async () => {
-    let plan: PlanSnapshot | undefined
-    let now = 0
-    const store = {
-      get: () => plan,
-      set: (next: PlanSnapshot | undefined) => { plan = next },
-    }
-    const planning = new PlanRuntime(store, () => ++now, () => 'plan-1')
-    const evaluation = new EvaluationRuntime(store, () => ++now)
-    const created = planning.create({
-      title: 'Delivery',
-      objective: 'Ship safely',
-      stages: [
-        { id: 'build', title: 'Build', objective: 'Implement', acceptanceCriteria: ['tests pass', 'lint passes'] },
-        { id: 'release', title: 'Release', objective: 'Package', acceptanceCriteria: ['build passes'], dependencies: ['build'] },
-      ],
-    })
-    if (!created.ok) throw new Error(created.error)
-    const started = planning.execute(created.plan.id, created.plan.revision)
-    if (!started.ok) throw new Error(started.error)
-
-    const delegateAgents = vi.fn()
-      .mockResolvedValueOnce(evaluatorResult({
-        criteria: [{ criterion: 'tests pass', status: 'passed', evidence: ['3 tests passed'], reason: '' }],
-      }))
-      .mockResolvedValueOnce(evaluatorResult({
-        criteria: [
-          { criterion: 'tests pass', status: 'passed', evidence: ['3 tests passed'], reason: '' },
-          { criterion: 'lint passes', status: 'passed', evidence: ['lint clean'], reason: '' },
-        ],
-      }))
-    const result = await submitStageResultTool.execute({
-      planId: 'plan-1',
-      revision: started.plan.revision,
-      stageId: 'build',
-      summary: 'Implemented',
-      evidence: ['3 tests passed', 'lint clean'],
-    }, baseContext({
-      delegateAgents,
-      submitStageResult: (input) => evaluation.submitStageResult(input),
-      evaluateStage: (input) => evaluation.evaluateStage(input),
-      evaluatePlan: (input) => evaluation.evaluatePlan(input),
-      abortStageEvaluation: (planId, revision, stageId, reason) => evaluation.abortStageEvaluation(planId, revision, stageId, reason),
-    }))
-
-    expect(result).toMatchObject({ ok: true })
-    expect(delegateAgents).toHaveBeenCalledTimes(2)
-    expect(delegateAgents.mock.calls[0][0].children[0].objective).toContain('including project shell scripts')
-    expect(delegateAgents.mock.calls[1][0].children[0].objective).toContain('Missing criteria: ["lint passes"]')
-    expect(delegateAgents.mock.calls[1][0].children[0].objective).toContain('COMPLETE replacement evaluation')
-    expect(delegateAgents.mock.calls[1][0].children[0].objective).toContain('including project shell scripts')
-    expect(plan?.stages.map((stage) => stage.status)).toEqual(['completed', 'in_progress'])
-  })
-
-  it('schedules one corrective evaluator request in the background path', async () => {
-    let plan: PlanSnapshot | undefined
-    let now = 0
-    const store = {
-      get: () => plan,
-      set: (next: PlanSnapshot | undefined) => { plan = next },
-    }
-    const planning = new PlanRuntime(store, () => ++now, () => 'plan-1')
-    const evaluation = new EvaluationRuntime(store, () => ++now)
-    const created = planning.create({
-      title: 'Delivery',
-      objective: 'Ship safely',
-      stages: [
-        { id: 'build', title: 'Build', objective: 'Implement', acceptanceCriteria: ['tests pass', 'lint passes'] },
-        { id: 'release', title: 'Release', objective: 'Package', acceptanceCriteria: ['build passes'], dependencies: ['build'] },
-      ],
-    })
-    if (!created.ok) throw new Error(created.error)
-    const started = planning.execute(created.plan.id, created.plan.revision)
-    if (!started.ok) throw new Error(started.error)
-
-    const completions: Array<(result: DelegateAgentBatchResult) => unknown | Promise<unknown>> = []
-    const spawnAgents = vi.fn((_input, options) => {
-      if (!options?.onComplete) throw new Error('missing completion callback')
-      completions.push(options.onComplete)
-      return { executionId: `evaluation-${completions.length}`, graphId: 'run-1', nodeIds: [], status: 'scheduled' as const }
-    })
-
-    await submitStageResultTool.execute({
-      planId: 'plan-1',
-      revision: started.plan.revision,
-      stageId: 'build',
-      summary: 'Implemented',
-      evidence: ['3 tests passed', 'lint clean'],
-    }, baseContext({
-      spawnAgents,
-      submitStageResult: (input) => evaluation.submitStageResult(input),
-      evaluateStage: (input) => evaluation.evaluateStage(input),
-      evaluatePlan: (input) => evaluation.evaluatePlan(input),
-      abortStageEvaluation: (planId, revision, stageId, reason) => evaluation.abortStageEvaluation(planId, revision, stageId, reason),
-    }))
-
-    await completions[0](evaluatorResult({
-      criteria: [{ criterion: 'tests pass', status: 'passed', evidence: ['3 tests passed'], reason: '' }],
-    }))
-    expect(spawnAgents).toHaveBeenCalledTimes(2)
-    expect(plan?.stages[0].status).toBe('evaluating')
-
-    await completions[1](evaluatorResult({
-      criteria: [
-        { criterion: 'tests pass', status: 'passed', evidence: ['3 tests passed'], reason: '' },
-        { criterion: 'lint passes', status: 'passed', evidence: ['lint clean'], reason: '' },
-      ],
-    }))
-    expect(plan?.stages.map((stage) => stage.status)).toEqual(['completed', 'in_progress'])
-  })
-
-  it('rolls back after the one corrective request is still incomplete', async () => {
-    let plan: PlanSnapshot | undefined
-    let now = 0
-    const store = {
-      get: () => plan,
-      set: (next: PlanSnapshot | undefined) => { plan = next },
-    }
-    const planning = new PlanRuntime(store, () => ++now, () => 'plan-1')
-    const evaluation = new EvaluationRuntime(store, () => ++now)
-    const created = planning.create({
-      title: 'Delivery',
-      objective: 'Ship safely',
-      stages: [
-        { id: 'build', title: 'Build', objective: 'Implement', acceptanceCriteria: ['tests pass', 'lint passes'] },
-        { id: 'release', title: 'Release', objective: 'Package', acceptanceCriteria: ['build passes'], dependencies: ['build'] },
-      ],
-    })
-    if (!created.ok) throw new Error(created.error)
-    const started = planning.execute(created.plan.id, created.plan.revision)
-    if (!started.ok) throw new Error(started.error)
-
-    const delegateAgents = vi.fn()
-      .mockResolvedValueOnce(evaluatorResult({
-        criteria: [{ criterion: 'tests pass', status: 'passed', evidence: ['3 tests passed'], reason: '' }],
-      }))
-      .mockResolvedValueOnce(evaluatorResult({
-        criteria: [{ criterion: 'tests pass', status: 'passed', evidence: ['3 tests passed'], reason: '' }],
-      }))
-
-    const result = await submitStageResultTool.execute({
-      planId: 'plan-1',
-      revision: started.plan.revision,
-      stageId: 'build',
-      summary: 'Implemented',
-      evidence: ['3 tests passed'],
-    }, baseContext({
-      delegateAgents,
-      submitStageResult: (input) => evaluation.submitStageResult(input),
-      evaluateStage: (input) => evaluation.evaluateStage(input),
-      evaluatePlan: (input) => evaluation.evaluatePlan(input),
-      abortStageEvaluation: (planId, revision, stageId, reason) => evaluation.abortStageEvaluation(planId, revision, stageId, reason),
-    }))
-
-    expect(delegateAgents).toHaveBeenCalledTimes(2)
     expect(result).toMatchObject({
       ok: false,
-      error: 'automatic evaluation failed: evaluator repair failed after initial result did not cover every acceptance criterion (missing 1 of 2): evaluator must cover every criterion',
-    })
-    expect(plan?.stages[0]).toMatchObject({ status: 'in_progress', evaluations: [{ status: 'unknown' }] })
-  })
-
-  it('does not repair an incomplete response with an unknown criterion', async () => {
-    let plan: PlanSnapshot | undefined
-    let now = 0
-    const store = {
-      get: () => plan,
-      set: (next: PlanSnapshot | undefined) => { plan = next },
-    }
-    const planning = new PlanRuntime(store, () => ++now, () => 'plan-1')
-    const evaluation = new EvaluationRuntime(store, () => ++now)
-    const created = planning.create({
-      title: 'Delivery',
-      objective: 'Ship safely',
-      stages: [
-        { id: 'build', title: 'Build', objective: 'Implement', acceptanceCriteria: ['tests pass', 'lint passes'] },
-        { id: 'release', title: 'Release', objective: 'Package', acceptanceCriteria: ['build passes'], dependencies: ['build'] },
-      ],
-    })
-    if (!created.ok) throw new Error(created.error)
-    const started = planning.execute(created.plan.id, created.plan.revision)
-    if (!started.ok) throw new Error(started.error)
-
-    const delegateAgents = vi.fn().mockResolvedValue(evaluatorResult({
-      criteria: [{ criterion: 'unrelated check', status: 'passed', evidence: ['proof'], reason: '' }],
-    }))
-
-    const result = await submitStageResultTool.execute({
-      planId: 'plan-1',
-      revision: started.plan.revision,
-      stageId: 'build',
-      summary: 'Implemented',
-      evidence: ['proof'],
-    }, baseContext({
-      delegateAgents,
-      submitStageResult: (input) => evaluation.submitStageResult(input),
-      evaluateStage: (input) => evaluation.evaluateStage(input),
-      evaluatePlan: (input) => evaluation.evaluatePlan(input),
-      abortStageEvaluation: (planId, revision, stageId, reason) => evaluation.abortStageEvaluation(planId, revision, stageId, reason),
-    }))
-
-    expect(delegateAgents).toHaveBeenCalledOnce()
-    expect(result).toMatchObject({
-      ok: false,
-      error: 'automatic evaluation failed: evaluator returned unknown or duplicate criterion',
+      error: 'stage release is pending, not in_progress',
     })
   })
 
-  // 少一条 criterion 和少一个 final 都只是「答漏了」。按 criteria.length 一刀切会让
-  // 「criteria 全齐但漏 final」直接回滚，白扔掉一次已经跑完的完整评估。
-  it('repairs a last-stage response that covered every criterion but omitted the final verdict', async () => {
-    let plan: PlanSnapshot | undefined
-    let now = 0
-    const store = {
-      get: () => plan,
-      set: (next: PlanSnapshot | undefined) => { plan = next },
-    }
-    const planning = new PlanRuntime(store, () => ++now, () => 'plan-1')
-    const evaluation = new EvaluationRuntime(store, () => ++now)
-    const created = planning.create({
-      title: 'Delivery',
-      objective: 'Ship safely',
-      stages: [{ id: 'build', title: 'Build', objective: 'Implement', acceptanceCriteria: ['tests pass'] }],
-    })
-    if (!created.ok) throw new Error(created.error)
-    const started = planning.execute(created.plan.id, created.plan.revision)
-    if (!started.ok) throw new Error(started.error)
-
-    const criteria = [{ criterion: 'tests pass', status: 'passed', evidence: ['3 tests passed'], reason: '' }]
-    const delegateAgents = vi.fn()
-      .mockResolvedValueOnce(evaluatorResult({ criteria }))
-      .mockResolvedValueOnce(evaluatorResult({
-        criteria,
-        final: { status: 'passed', evidence: ['regression suite green'], reason: '', requiresUserAcceptance: false },
-      }))
-
+  it('宿主未提供计划能力时报 PLAN_UNAVAILABLE', async () => {
     const result = await submitStageResultTool.execute({
       planId: 'plan-1',
-      revision: started.plan.revision,
+      revision: 1,
       stageId: 'build',
       summary: 'Implemented',
       evidence: ['3 tests passed'],
-    }, baseContext({
-      delegateAgents,
-      submitStageResult: (input) => evaluation.submitStageResult(input),
-      evaluateStage: (input) => evaluation.evaluateStage(input),
-      evaluatePlan: (input) => evaluation.evaluatePlan(input),
-      abortStageEvaluation: (planId, revision, stageId, reason) => evaluation.abortStageEvaluation(planId, revision, stageId, reason),
-    }))
+    }, baseContext({}))
 
-    expect(delegateAgents).toHaveBeenCalledTimes(2)
-    const repairObjective = delegateAgents.mock.calls[1][0].children[0].objective
-    expect(repairObjective).toContain('omitted the required final verdict')
-    expect(repairObjective).toContain('The "final" object was absent and is REQUIRED for this last stage.')
-    expect(repairObjective).not.toContain('did not cover every acceptance criterion')
-    expect(result).toMatchObject({ ok: true })
-    expect(plan?.stages[0].status).toBe('completed')
-  })
-
-  it('evaluator 请求失败时回滚 evaluating，使阶段可以重试', async () => {
-    let plan: PlanSnapshot | undefined
-    let now = 0
-    const store = {
-      get: () => plan,
-      set: (next: PlanSnapshot | undefined) => { plan = next },
-    }
-    const planning = new PlanRuntime(store, () => ++now, () => 'plan-1')
-    const evaluation = new EvaluationRuntime(store, () => ++now)
-    const created = planning.create({
-      title: 'Delivery',
-      objective: 'Ship safely',
-      stages: [{ id: 'build', title: 'Build', objective: 'Implement', acceptanceCriteria: ['tests pass'] }],
-    })
-    if (!created.ok) throw new Error(created.error)
-    const started = planning.execute(created.plan.id, created.plan.revision)
-    if (!started.ok) throw new Error(started.error)
-
-    const result = await submitStageResultTool.execute({
-      planId: 'plan-1',
-      revision: started.plan.revision,
-      stageId: 'build',
-      summary: 'Implemented',
-      evidence: ['tests passed'],
-    }, baseContext({
-      delegateAgents: vi.fn(async () => { throw new Error('Load failed') }),
-      submitStageResult: (input) => evaluation.submitStageResult(input),
-      evaluateStage: (input) => evaluation.evaluateStage(input),
-      evaluatePlan: (input) => evaluation.evaluatePlan(input),
-      abortStageEvaluation: (planId, revision, stageId, reason) =>
-        evaluation.abortStageEvaluation(planId, revision, stageId, reason),
-    }))
-
-    expect(result).toEqual({
-      ok: false,
-      error: 'automatic evaluation failed: Load failed',
-      code: 'PLAN_EVALUATION_FAILED',
-      retryable: true,
-    })
-    expect(plan?.stages[0]).toMatchObject({
-      status: 'in_progress',
-      evaluations: [{
-        status: 'unknown',
-        criteria: [{ criterion: 'tests pass', status: 'unknown', reason: 'Load failed' }],
-      }],
-    })
-  })
-
-  it('后台 evaluator 启动失败时回滚 evaluating，使阶段可以重试', async () => {
-    let plan: PlanSnapshot | undefined
-    let now = 0
-    const store = {
-      get: () => plan,
-      set: (next: PlanSnapshot | undefined) => { plan = next },
-    }
-    const planning = new PlanRuntime(store, () => ++now, () => 'plan-1')
-    const evaluation = new EvaluationRuntime(store, () => ++now)
-    const created = planning.create({
-      title: 'Delivery',
-      objective: 'Ship safely',
-      stages: [{ id: 'build', title: 'Build', objective: 'Implement', acceptanceCriteria: ['tests pass'] }],
-    })
-    if (!created.ok) throw new Error(created.error)
-    const started = planning.execute(created.plan.id, created.plan.revision)
-    if (!started.ok) throw new Error(started.error)
-
-    const result = await submitStageResultTool.execute({
-      planId: 'plan-1',
-      revision: started.plan.revision,
-      stageId: 'build',
-      summary: 'Implemented',
-      evidence: ['tests passed'],
-    }, baseContext({
-      spawnAgents: vi.fn(() => { throw new Error('scheduler unavailable') }),
-      submitStageResult: (input) => evaluation.submitStageResult(input),
-      evaluateStage: (input) => evaluation.evaluateStage(input),
-      evaluatePlan: (input) => evaluation.evaluatePlan(input),
-      abortStageEvaluation: (planId, revision, stageId, reason) =>
-        evaluation.abortStageEvaluation(planId, revision, stageId, reason),
-    }))
-
-    expect(result).toEqual({
-      ok: false,
-      error: 'automatic evaluation failed to start: scheduler unavailable',
-      code: 'PLAN_EVALUATION_START_FAILED',
-      retryable: true,
-    })
-    expect(plan?.stages[0]).toMatchObject({
-      status: 'in_progress',
-      evaluations: [{
-        status: 'unknown',
-        criteria: [{ criterion: 'tests pass', status: 'unknown', reason: 'scheduler unavailable' }],
-      }],
-    })
-  })
-
-})
-
-describe('submit_stage_result evaluator verification profile', () => {
-  function harness(acceptanceCriteria: string[]) {
-    let plan: PlanSnapshot | undefined
-    let now = 0
-    const store = {
-      get: () => plan,
-      set: (next: PlanSnapshot | undefined) => { plan = next },
-    }
-    const planning = new PlanRuntime(store, () => ++now, () => 'plan-1')
-    const evaluation = new EvaluationRuntime(store, () => ++now)
-    const created = planning.create({
-      title: 'Delivery',
-      objective: 'Ship safely',
-      stages: [
-        { id: 'build', title: 'Build', objective: 'Implement', acceptanceCriteria },
-        { id: 'release', title: 'Release', objective: 'Package', acceptanceCriteria: ['build passes'], dependencies: ['build'] },
-      ],
-    })
-    if (!created.ok) throw new Error(created.error)
-    const started = planning.execute(created.plan.id, created.plan.revision)
-    if (!started.ok) throw new Error(started.error)
-    return { store, evaluation, revision: started.plan.revision, current: () => store.get()! }
-  }
-
-  function submit(instance: ReturnType<typeof harness>, overrides: Partial<ToolContext>) {
-    return submitStageResultTool.execute({
-      planId: 'plan-1',
-      revision: instance.revision,
-      stageId: 'build',
-      summary: 'Implemented',
-      evidence: ['3 tests passed'],
-    }, baseContext({
-      submitStageResult: (input) => instance.evaluation.submitStageResult(input),
-      evaluateStage: (input) => instance.evaluation.evaluateStage(input),
-      evaluatePlan: (input) => instance.evaluation.evaluatePlan(input),
-      abortStageEvaluation: (planId, revision, stageId, reason) =>
-        instance.evaluation.abortStageEvaluation(planId, revision, stageId, reason),
-      ...overrides,
-    }))
-  }
-
-  function capturingSpawn() {
-    const inputs: Array<Parameters<NonNullable<ToolContext['spawnAgents']>>[0]> = []
-    const spawnImplementation: NonNullable<ToolContext['spawnAgents']> = (input) => {
-      inputs.push(input)
-      return {
-        executionId: `evaluation-${inputs.length}`,
-        graphId: 'run-1',
-        nodeIds: ['evaluation-node'],
-        status: 'scheduled',
-      }
-    }
-    return { inputs, spawnAgents: vi.fn(spawnImplementation) }
-  }
-
-  it('uses workspace_verify for both evaluator levels', async () => {
-    const instance = harness(['tests pass'])
-    const { inputs, spawnAgents } = capturingSpawn()
-
-    const result = await submit(instance, { spawnAgents })
-
-    expect(result).toMatchObject({ ok: true })
-    const input = inputs[0]
-    expect(input.toolProfile).toBe('workspace_verify')
-    expect(input.children[0].toolProfile).toBe('workspace_verify')
-    const objective = input.children[0].objective
-    expect(objective).toContain('Run the verification commands you need early')
-    expect(objective).toContain('including project shell scripts')
-    expect(objective).toContain('then inspect files for what they cannot show')
-    expect(objective).not.toContain('configuration-derived only')
-  })
-
-  it('does not depend on command discovery before scheduling verification', async () => {
-    const instance = harness(['tests pass'])
-    const { inputs, spawnAgents } = capturingSpawn()
-
-    const result = await submit(instance, { spawnAgents, callTool: vi.fn(() => { throw new Error('unexpected discovery') }) })
-
-    expect(result).toMatchObject({ ok: true })
-    const input = inputs[0]
-    expect(input.toolProfile).toBe('workspace_verify')
-    expect(input.children[0].toolProfile).toBe('workspace_verify')
-    const objective = input.children[0].objective
-    expect(objective).toContain('Run the verification commands you need early')
-    expect(objective).toContain('including project shell scripts')
-  })
-
-  it('uses the verification profile for corrective evaluator requests', async () => {
-    const instance = harness(['tests pass', 'lint passes'])
-    const delegateAgents = vi.fn()
-      .mockResolvedValueOnce(evaluatorResult({
-        criteria: [{ criterion: 'tests pass', status: 'passed', evidence: ['3 tests passed'], reason: '' }],
-      }))
-      .mockResolvedValueOnce(evaluatorResult({
-        criteria: [
-          { criterion: 'tests pass', status: 'passed', evidence: ['3 tests passed'], reason: '' },
-          { criterion: 'lint passes', status: 'passed', evidence: ['lint clean'], reason: '' },
-        ],
-      }))
-
-    const result = await submit(instance, { delegateAgents })
-
-    expect(result).toMatchObject({ ok: true })
-    expect(delegateAgents).toHaveBeenCalledTimes(2)
-    for (const call of delegateAgents.mock.calls) {
-      expect(call[0].toolProfile).toBe('workspace_verify')
-      expect(call[0].children[0].toolProfile).toBe('workspace_verify')
-      expect(call[0].children[0].objective).toContain('Run the verification commands you need early')
-      expect(call[0].children[0].objective).toContain('including project shell scripts')
-    }
+    expect(result).toMatchObject({ ok: false, code: 'PLAN_UNAVAILABLE', retryable: false })
   })
 })

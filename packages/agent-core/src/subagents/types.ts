@@ -8,7 +8,7 @@ export type DelegateAgentBatchStatus = 'done' | 'partial' | 'failed' | 'cancelle
  * 子 agent 工具档位（全序能力阶梯，见 toolProfile.ts）：
  *   · delegate_only    —— 只能 delegate_agent。
  *   · workspace_read   —— 追加只读文件工具。
- *   · workspace_verify —— 再追加 run_verification_command，用于评估器独立核验验收标准。
+ *   · workspace_verify —— 再追加 run_verification_command，用于核验型子 agent 取得真实执行证据。
  */
 export type SubagentToolProfile = 'delegate_only' | 'workspace_read' | 'workspace_verify'
 export type SubagentArchiveWriteMode = 'create' | 'overwrite' | 'append' | 'upsert'

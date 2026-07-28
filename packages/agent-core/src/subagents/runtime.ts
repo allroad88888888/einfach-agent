@@ -276,6 +276,12 @@ interface CreateDelegateAgentRuntimeOptions {
   /** Registry owned by the current CoreInstance. Defaults to the legacy singleton for direct callers. */
   registry?: ToolRegistry
   customInstructions?: string
+  /**
+   * 父 agent 那份「运行环境」段的正文（buildEnvironmentItem 的产物）。
+   * 孩子和父亲跑在同一台机器、同一个 workspace 上，缺这段同样会凭空编绝对路径；
+   * 由 modelRun 把已算好的正文传下来，避免 subagents 反向去摸 store。
+   */
+  environment?: string
   /** Stable, opaque installation identifier sent only to DeepSeek request bodies. */
   deepseekUserId?: string
   apiKey: string
@@ -448,9 +454,11 @@ function childSystemPrompt(args: {
   toolProfile: SubagentToolProfile
   confirmedTools: readonly string[]
   customInstructions?: string
+  environment?: string
 }): string {
   const skills = renderSkillsForPrompt([...args.inheritedSkills, args.localSkill])
   const customInstructions = buildCustomInstructionsItem(args.customInstructions ?? '')
+  const environment = args.environment?.trim()
   return [
     `你是树形子 agent ${args.node.path}。`,
     `父 agent: ${args.node.parentPath ?? ROOT_AGENT_PATH}`,
@@ -462,6 +470,9 @@ function childSystemPrompt(args: {
     args.spec.mode === 'evaluator'
       ? '你是验收评估器。最终输出必须严格遵循任务中的期望输出；要求 JSON 时只能输出 JSON，不要 Markdown、代码围栏或额外说明。'
       : '最终输出必须是可回填给父 agent 的简洁 Markdown：结论、发现、风险、建议下一步。',
+    // 孩子与父亲同机同 workspace：不给根目录它一样会编路径，而孩子的 maxTurns 默认只有 4，
+    // 一次 WORKSPACE_READ_FAILED 就吃掉四分之一产出预算。
+    ...(environment ? ['', environment] : []),
     ...(customInstructions ? ['', customInstructions.content] : []),
     '',
     '继承的临时 skills:',
@@ -1219,6 +1230,7 @@ export function createDelegateAgentRuntime(
           toolProfile,
           confirmedTools,
           customInstructions: opts.customInstructions,
+          environment: opts.environment,
         }),
       },
       { role: 'user', content: childUserPrompt(spec) },

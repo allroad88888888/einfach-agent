@@ -1,0 +1,3 @@
+# L3 资源验证清单
+
+MARKER_L3_RESOURCE_OK

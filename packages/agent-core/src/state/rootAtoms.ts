@@ -12,6 +12,7 @@
 
 import { atom } from '@einfach/core'
 import type { SessionMeta, WorkspaceMeta } from './core.type'
+import type { ProjectSkillsSnapshot } from '../skills/projectSkills'
 
 // 一级工作区登记表。数量通常很小，适合一个浅层 Record atom；会话内容仍按会话独立 store 分桶。
 export const workspacesAtom = atom<Record<string, WorkspaceMeta>>({})
@@ -27,6 +28,16 @@ export const workspaceSettingsOpenIdsAtom = atom<Record<string, boolean>>({})
 
 // 工作区标题行内编辑草稿。目标 id 与草稿必须同步切换，作为一个紧耦合编辑事务保存。
 export const workspaceRenameStateAtom = atom<{ id: string; draft: string } | null>(null)
+
+// 项目 Skills 快照，按 workspaceRoot 分桶（不是按 sessionId —— 同一 workspace 的多个会话共享
+// 同一份扫描结果，见 docs/project-skills-blueprint.md「加载时机与缓存」）。这是 workspace 级
+// 的跨会话数据，与 workspacesAtom 同类，不违反「禁止会话内容分桶」的边界。
+//
+// ★ 为什么是 atom 而不是 CoreInstance 里的私有 Map ★ —— 快照有两个消费者：请求组装
+//   （modelRun 读它拼清单）和设置面板（展示条目与 diagnostics）。放进 Map 则 UI 无从订阅，
+//   点「刷新」后重扫完成也不会重渲染；放进 rootStore 则两者同一事实源，且 core 隔离照旧
+//   （每个 CoreInstance 有自己的 rootStore）。
+export const projectSkillsAtom = atom<Record<string, ProjectSkillsSnapshot>>({})
 
 // 当前工作区元信息与工具执行根目录均为纯派生值，不重复存状态。
 export const activeWorkspaceMetaAtom = atom(

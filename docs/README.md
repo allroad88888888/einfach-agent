@@ -8,7 +8,7 @@
 | 文档 | 适用范围 |
 | --- | --- |
 | [核心运行时流程](core-runtime-flow.md) | 应用装配、模型循环、工具调用、执行图、暂停恢复、状态与持久化 |
-| [Planning Runtime](planning-runtime.md) | 结构化计划、阶段执行、独立评估和用户验收 |
+| [Planning Runtime](planning-runtime.md) | 结构化计划、审批、阶段执行与产出留痕 |
 | [树形子 Agent Runtime](tree-subagent-runtime.md) | delegation、权限、预算、archive、后台执行与治理脚本 |
 | [Context Caching](context-caching.md) | provider 自动缓存契约、profile/epoch、usage 归一化与观测 |
 | [MCP 集成](mcp-integration.md) | MCP 传输、配置与会话生命周期、动态工具对账和安全边界 |
@@ -23,7 +23,7 @@
 | --- | --- |
 | [Core 插件化蓝图](core-plugin-extraction-blueprint.md) | 部分实施；hook、插件工具与订阅基础已存在，UI renderer、command facade 和多实例收口仍待推进 |
 | [Skills 树形结构与稳定前缀清单](skills-tree-blueprint.md) | 阶段 1–3 已实施：L3 资源树、B04/B05 行为门禁通过、全量清单进稳定前缀、harness 预筛已退役；阶段 4 拆出为下一行 |
-| [项目内 Skills 自动加载（`.agent/`）](project-skills-blueprint.md) | 未实施；workspace 的 `.agent/skills` 与 `.claude/skills` 自动进 L1 清单，正文与资源沿用 L2/L3 协议 |
+| [项目内 Skills 自动加载（`.agent/`）](project-skills-blueprint.md) | 阶段 A–D 已实施：workspace 的 `.agent/skills` 与 `.claude/skills` 自动进 L1 清单，正文与资源经 `skill_read` 按需读；阶段 E（行为 eval）可选未做 |
 | [上下文缓存成本治理](context-cache-cost.md) | 压缩投影复用已实现、收益待实测；含账单归因方法与验证 SQL |
 | [上下文缓存成本 · 后续跟进项](context-cache-followups.md) | F1 实测验证（最高优先）、F2 尾巴失效归零、F3 会话过长提示；F5 跨 run 复用暂不做，C1/C2 已关闭并附结论 |
 | [项目路线图](ROADMAP.md) | 当前未完成工作：CI 护栏、多实例隔离、插件产品化、安全发布和性能治理 |

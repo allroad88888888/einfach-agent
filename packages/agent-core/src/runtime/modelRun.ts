@@ -33,6 +33,8 @@
 import { isTauri } from '@tauri-apps/api/core'
 import { sessionsAtom, workspacesAtom } from '../state/rootStore'
 import { resolveSessionWorkspaceRoot } from '../state/workspaceState'
+import { buildProjectSkillsBridge } from './projectSkillsBridge'
+import { detectHostPlatform } from './hostPlatform'
 import { itemsAtom, runAtom, checkpointsAtom, planAtom } from '../state/sessionAtoms'
 import { executionGraphAtom } from '../execution/graph'
 import { appendItem, setRun, patchRun, updateItem } from '../state/sessionWriters'
@@ -86,6 +88,7 @@ import { defaultCore, type CoreInstance } from './core/coreInstance'
 // 必须共用同一份「坏 JSON 不执行工具」的判据，各抄一份迟早会漂移。
 import {
   buildCustomInstructionsItem,
+  buildEnvironmentItem,
   buildSystemItem,
   buildToolManifestText,
   buildTurnTools,
@@ -169,7 +172,7 @@ const MAX_PLAN_AGENT_TURNS = 256
 // 它不会进入 modelApi 对 429/5xx/网络错误的 HTTP 退避。这里只补一层很窄的协议级恢复：
 // 同一模型轮最多额外请求一次，且一旦流式 writer 已经把内容写进会话就绝不重放。
 const MAX_DEEPSEEK_INSUFFICIENT_RESOURCE_RETRIES = 1
-const EXECUTING_PLAN_STATUSES = new Set(['approved', 'active', 'evaluating'])
+const EXECUTING_PLAN_STATUSES = new Set(['approved', 'active'])
 // LOOP_DETECTION_THRESHOLD / LOOP_DETECTED_ERROR 已随循环检测搬进 loopGuardPlugin（Core 抽离 Stage 2a）。
 const STREAM_UPDATE_INTERVAL_MIN_MS = 150
 const STREAM_UPDATE_INTERVAL_MAX_MS = 250
@@ -513,79 +516,9 @@ function isRunningRun(id: string, runId: string, core: CoreInstance): boolean {
   return core.getSessionStore(id).store.getter(runAtom)?.status === 'running'
 }
 
-function planEvaluationExecutionId(toolName: string, result: ToolResult): string | undefined {
-  if (toolName !== 'submit_stage_result' || !('ok' in result) || !result.ok) return undefined
-  const data = result.data
-  if (!data || typeof data !== 'object' || !('evaluation' in data)) return undefined
-  const evaluation = data.evaluation
-  if (!evaluation || typeof evaluation !== 'object' || !('executionId' in evaluation)) return undefined
-  return typeof evaluation.executionId === 'string' && evaluation.executionId
-    ? evaluation.executionId
-    : undefined
-}
-
-function continueAfterPlanEvaluation(input: {
-  sessionId: string
-  runId: string
-  executionId: string
-  apiKey: string
-  fetchImpl?: typeof fetch
-  core: CoreInstance
-}): void {
-  const { sessionId, runId, executionId, apiKey, fetchImpl, core } = input
-  const store = core.getSessionStore(sessionId).store
-  let settled = false
-  let unsubscribe = (): void => {}
-
-  const observe = (): void => {
-    if (settled) return
-    const node = store.getter(executionGraphAtom).nodes[executionId]
-    if (!node || !['succeeded', 'failed', 'cancelled', 'interrupted'].includes(node.status)) return
-    settled = true
-    unsubscribe()
-
-    // execution atom 的写入发生在后台 promise 收尾中。延后一拍再起新 run，确保当前
-    // runToolLoop 已 return、commands 的 finally 已释放旧 AbortController。
-    setTimeout(() => {
-      if (!isCurrentRun(sessionId, runId, core)) return
-      const run = store.getter(runAtom)
-      if (run?.status !== 'awaiting_tool') return
-
-      if (node.status !== 'succeeded') {
-        patchRun(sessionId, {
-          status: node.status === 'cancelled' || node.status === 'interrupted' ? 'stopped' : 'error',
-          pendingExecutionId: undefined,
-          error: node.error || '自动阶段评估未完成',
-        }, core)
-        return
-      }
-
-      if (!store.getter(planAtom)) {
-        patchRun(sessionId, { status: 'error', error: '阶段评估完成，但计划状态已丢失' }, core)
-        return
-      }
-
-      const signal = core.abort.beginRun(sessionId)
-      void resumePlanSession(sessionId, {
-        signal,
-        apiKey,
-        fetchImpl,
-        core,
-        runId,
-        turnId: run.turnId,
-      }).finally(() => core.abort.endRun(sessionId, signal))
-    }, 0)
-  }
-
-  unsubscribe = store.sub(executionGraphAtom, observe)
-  // 防止节点在订阅建立前已经完成。
-  observe()
-  if (settled) unsubscribe()
-}
-
 function currentPlanStageId(id: string, core: CoreInstance): string | undefined {
   const plan = core.getSessionStore(id).store.getter(planAtom)
-  return plan?.stages.find((stage) => stage.status === 'in_progress' || stage.status === 'evaluating')?.id
+  return plan?.stages.find((stage) => stage.status === 'in_progress')?.id
 }
 
 function pendingDecisionOrigin(
@@ -598,9 +531,7 @@ function pendingDecisionOrigin(
   if (plan) {
     const phase = plan.status === 'draft' ? 'drafting'
       : plan.status === 'awaiting_approval' ? 'approval'
-        : plan.status === 'evaluating' ? 'evaluating'
-          : plan.status === 'awaiting_user_acceptance' ? 'acceptance'
-            : 'executing'
+        : 'executing'
     return {
       surface: 'plan',
       phase,
@@ -624,10 +555,7 @@ function currentPlanContext(id: string, core: CoreInstance): string | undefined 
   const plan = core.getSessionStore(id).store.getter(planAtom)
   if (!plan || !EXECUTING_PLAN_STATUSES.has(plan.status)) return undefined
 
-  const currentStage = plan.stages.find(
-    (stage) => stage.status === 'in_progress' || stage.status === 'evaluating',
-  )
-  const latestEvaluation = currentStage?.evaluations?.at(-1)
+  const currentStage = plan.stages.find((stage) => stage.status === 'in_progress')
   const snapshot = {
     planId: plan.id,
     revision: plan.revision,
@@ -640,19 +568,7 @@ function currentPlanContext(id: string, core: CoreInstance): string | undefined 
       objective: currentStage.objective,
       status: currentStage.status,
       deliverables: currentStage.deliverables,
-      acceptanceCriteria: currentStage.acceptanceCriteria,
       evidence: currentStage.evidence,
-      latestEvaluation: latestEvaluation ? {
-        attempt: latestEvaluation.attempt,
-        status: latestEvaluation.status,
-        summary: latestEvaluation.summary,
-        submittedEvidence: latestEvaluation.submittedEvidence,
-        failureReasons: [...new Set(
-          latestEvaluation.criteria
-            .filter((criterion) => criterion.status !== 'passed' && criterion.reason.trim())
-            .map((criterion) => criterion.reason),
-        )],
-      } : null,
     } : null,
     stages: plan.stages.map((stage) => ({
       stageId: stage.id,
@@ -670,28 +586,7 @@ function currentPlanContext(id: string, core: CoreInstance): string | undefined 
   ].join('\n')
 }
 
-function planResumeNotice(id: string, core: CoreInstance): string {
-  const plan = core.getSessionStore(id).store.getter(planAtom)
-  const stage = plan?.stages.find(
-    (candidate) => candidate.status === 'in_progress' || candidate.status === 'evaluating',
-  )
-  const latestEvaluation = stage?.evaluations?.at(-1)
-  if (plan && stage?.status === 'in_progress' && latestEvaluation?.status === 'unknown') {
-    return [
-      '这是一次从持久化状态恢复的计划执行，不是新的用户请求。',
-      '当前阶段已经完成过实现并提交了产出；上次只是 evaluator 基础设施失败，验收状态被回滚为 unknown。',
-      '不要重新实现、不要扩展到其他阶段，也不要重复读取工作区来重新证明已有结果。',
-      '立即使用 submit_stage_result 重新提交下面这份既有结果，让 evaluator 重试验收；使用当前 revision。',
-      JSON.stringify({
-        planId: plan.id,
-        revision: plan.revision,
-        stageId: stage.id,
-        summary: latestEvaluation.summary,
-        evidence: latestEvaluation.submittedEvidence,
-      }),
-      '验收通过后再按新的 current_plan_snapshot 进入下一阶段。',
-    ].join('\n')
-  }
+function planResumeNotice(): string {
   return [
     '这是一次从持久化状态恢复的计划执行，不是新的用户请求。',
     '沿用 current_plan_snapshot 中的计划、revision 与当前阶段；不要重新创建计划。',
@@ -1356,11 +1251,25 @@ export async function runToolLoop(
   // 普通任务与计划任务共用这条路径，重启后不再只剩 plan 能继续。
   persistWorkingTurn()
 
-  // 四段稳定前缀都只用于请求、不入库（TK4）。
+  // 项目 skills 快照：清单要用它，所以必须在组装稳定前缀【之前】就绪。
+  //
+  // ★ 为什么 ensure 在这里、而不在 runSession ★ —— runToolLoop 有七个入口（新消息、ask_user
+  //   恢复、危险工具确认、计划续跑、中断恢复…）。只在发新消息那条路径上 ensure，其余入口就会
+  //   用「还没扫过」的空快照拼清单：同一会话相邻两次请求的稳定前缀字节不同，provider 缓存
+  //   整段作废（contextCache 记 profile_changed），而这恰恰是本设计要避免的事。
+  //   命中缓存时 ensure 是一次同步 Map 查找 + 已决议 promise，不产生 IO。
+  const sessionWorkspaceRoot = resolveSessionWorkspaceRoot(meta, core.rootStore.getter(workspacesAtom))
+  if (sessionWorkspaceRoot) {
+    // web 端 buildProjectSkillsBridge() 返回 undefined → 空快照 → 清单逐字回归到纯内置。
+    await core.projectSkills.ensure(sessionWorkspaceRoot, buildProjectSkillsBridge())
+  }
+
+  // 五段稳定前缀都只用于请求、不入库（TK4）。
   const system = buildSystemItem()
-  // 全量 skill 清单每个 run 组装一次：内容只依赖 registry 注册态，运行期字节稳定（不含本轮
-  // 输入），因此可以待在历史之前而不是尾巴里。
-  const skillManifest: SystemItem = { role: 'system', content: buildSkillManifestText() }
+  // 全量 skill 清单每个 run 组装一次：内容只依赖 registry 注册态 + 上面刚 ensure 过的项目
+  // 快照，运行期字节稳定（不含本轮输入），因此可以待在历史之前而不是尾巴里。
+  const projectSkillsSnapshot = sessionWorkspaceRoot ? core.projectSkills.get(sessionWorkspaceRoot) : undefined
+  const skillManifest: SystemItem = { role: 'system', content: buildSkillManifestText(projectSkillsSnapshot) }
   // 当前环境的全量工具摘要同样每个 run 组装一次。这里只放 name/description/runtime，
   // schema/guide 仍由 request_tool_schema 懒加载；Tauri 与 web 复用和实际 tools 相同的过滤判据。
   const runtimeIsTauri = isTauri()
@@ -1369,25 +1278,37 @@ export async function runToolLoop(
     content: buildToolManifestText(runtimeIsTauri, { registry: core.tools }),
   }
   const customInstructions = buildCustomInstructionsItem(core.config.customInstructions)
-  // ★ 稳定前缀（固定 system + skill 清单 + 工具摘要 + 自定义指令）★ —— 位置在 append-only
-  //   历史【之前】，段序按变更频率从低到高：固定 system（进程内恒定）→ skill 清单（改
-  //   注册态才变）→ 工具摘要（工具注册态或运行环境变化才变）→ 自定义指令（用户改设置才变）。
+  // 运行环境：workspace 根目录 + 宿主 + 本机平台 + 路径纪律。缺这一段时模型对「我在哪」
+  // 零信息，只能猜路径（实测 DeepSeek 首轮直接编训练数据里的绝对路径，见 buildEnvironmentItem）。
+  const environment = buildEnvironmentItem({
+    workspaceRoot: sessionWorkspaceRoot,
+    isTauri: runtimeIsTauri,
+    platform: detectHostPlatform(),
+  })
+  // ★ 稳定前缀（固定 system + skill 清单 + 工具摘要 + 自定义指令 + 运行环境）★ —— 位置在
+  //   append-only 历史【之前】，段序按变更频率从低到高：固定 system（进程内恒定）→ skill 清单
+  //   （改注册态才变）→ 工具摘要（工具注册态或运行环境变化才变）→ 自定义指令（用户改设置才变）
+  //   → 运行环境（会话绑定的 workspace 变才变）。
   //   自定义指令与 skill 名单曾经一起挂在历史之后，于是历史每轮增长都把它们顶到新位置，
   //   实测 185 轮会话每一轮都是 history_inserted_before_dynamic_tail、这段 token 全额 miss。
   //   这些目录/设置都是低频变更内容，不该为此付每轮代价；挪到前缀后只有真改指令、增删
   //   skill 或工具注册态变化时才会掉缓存（contextCache 记 profile_changed）。
+  // ★ 运行环境为什么排在最后 ★ —— 它是这五段里【唯一按会话变化】的一段（前四段对同一进程的
+  //   所有会话逐字相同）。provider 的前缀缓存在首个不同字节处断开：把它排在末尾，切到另一个
+  //   workspace 的会话仍能命中前四段；排在前面则每个 workspace 各自一套前缀，白丢共享命中。
   const stablePrefix: SystemItem[] = [
     system,
     skillManifest,
     toolManifest,
     ...(customInstructions ? [customInstructions] : []),
+    environment,
   ]
   // contextCache 的 systemFingerprint 输入：整个稳定前缀，而不只是固定 system。少了自定义指令
   //   / skill 清单 / 工具摘要，相关注册态或设置变化就会退化成「尾巴/投影变了」，归因错、
   //   也不再新起 epoch。
   const stablePrefixContent = stablePrefix.map((item) => item.content).join('\n')
 
-  // UI transcript 的五类注入卡片改为「内容相对上一次记录发生变化才记」——原先每次 run/turn
+  // UI transcript 的六类注入卡片改为「内容相对上一次记录发生变化才记」——原先每次 run/turn
   // 都无条件记一遍，同一会话多说几句话就被同样几张卡刷屏（system/自定义指令/skill 清单
   // 内容常常逐字未变）。判重指纹存在 per-session 瞬态 atom
   // （transcriptInjectionFingerprintsAtom），与 runtimeTranscriptEventsAtom 同店同生命周期：
@@ -1401,6 +1322,21 @@ export async function runToolLoop(
   if (injectionFingerprints.system !== systemFingerprint) {
     addTranscriptEvent(id, 'system_injection', '注入 system', compactTranscriptText(system.content), system.content, core)
     patchTranscriptInjectionFingerprints(id, { system: systemFingerprint }, core)
+  }
+
+  // 运行环境同样按内容判重：会话生命周期内常态是「首 run 记一次」，只有 workspace 根目录
+  // 真被改过（或宿主从 web 切到桌面端）才会再记一张新卡。
+  const environmentFingerprint = injectionContentFingerprint(environment.content)
+  if (injectionFingerprints.environment !== environmentFingerprint) {
+    addTranscriptEvent(
+      id,
+      'system_injection',
+      '注入运行环境',
+      compactTranscriptText(environment.content),
+      environment.content,
+      core,
+    )
+    patchTranscriptInjectionFingerprints(id, { environment: environmentFingerprint }, core)
   }
 
   if (customInstructions) {
@@ -1453,7 +1389,12 @@ export async function runToolLoop(
     )
     patchTranscriptInjectionFingerprints(id, { toolManifest: toolManifestFingerprint }, core)
   }
-  traceEvent('llm.system_injected', { system_chars: system.content.length })
+  traceEvent('llm.system_injected', {
+    system_chars: system.content.length,
+    environment_chars: environment.content.length,
+    // 排障用：开局编路径的会话，先看这一位是不是 false。
+    workspace_bound: sessionWorkspaceRoot !== undefined,
+  })
   // thinking：状态层 boolean → 线协议 { type:'enabled'|'disabled' }。区分三态（codex P2）：
   //   undefined → 不传（用服务端默认）；true → enabled；false → disabled（显式关思考，
   //   否则 reasoning-默认-开 的 provider 会无视用户的关闭设置）。
@@ -1469,6 +1410,8 @@ export async function runToolLoop(
     settings: meta.settings,
     registry: core.tools,
     customInstructions: core.config.customInstructions,
+    // 孩子继承父亲同一份运行环境正文：同机同 workspace，路径锚点必须一致。
+    environment: environment.content,
     deepseekUserId: core.config.deepseekUserId,
     apiKey: opts.apiKey,
     signal: opts.signal,
@@ -1598,7 +1541,7 @@ export async function runToolLoop(
     let agentTurnLimit = maxAgentTurns(id, core)
     // 模型偶尔会在计划仍执行中时先给一段阶段性总结。它不是最终答案：下一轮临时注入提醒，
     // 继续要求模型走 execute_plan / submit_stage_result 协议；提醒只进请求投影，不污染持久历史。
-    let planContinuationNotice = opts.resumePlan ? planResumeNotice(id, core) : undefined
+    let planContinuationNotice = opts.resumePlan ? planResumeNotice() : undefined
     const MAX_CONSECUTIVE_PLAN_TEXT_TURNS = 2
     let consecutivePlanTextTurns = 0
     // 阶段进度 guard：同一阶段在本次运行内连续占用过多轮次却始终不推进（tool-churn 或 submit 反复被拒），
@@ -1757,7 +1700,14 @@ export async function runToolLoop(
       //   等价的结果（预算/摘要/降级全在插件里，vendor/model/max_tokens 由插件从 ctx.root 取）。
       //   压缩发出的 'llm.context_compacted' / 'llm.context_over_budget' 已由插件经 ctx.traceEvent
       //   发好（attr 逐字对齐旧代码），loop 这里不再重发（重发即双发）。
-      const draft: CompactionRequestDraft = { messages: rawMessages, tools, llmTurn: turn + 1 }
+      // dynamicTailCount 让插件把尾巴摘出压缩与前缀比较之外（CR2）：这几条每轮可能整条替换、
+      // 位置又随历史增长后移，若参与投影复用的引用比较，每追加一条历史就会作废一次投影。
+      const draft: CompactionRequestDraft = {
+        messages: rawMessages,
+        tools,
+        llmTurn: turn + 1,
+        dynamicTailCount: dynamicControls.length,
+      }
       await hooks.transformContext?.(ctx, draft)
       if (!isRunningRun(id, runId, core)) {
         commitStoppedTurn()
@@ -2170,7 +2120,6 @@ export async function runToolLoop(
         // resume 重发被 OpenAI 兼容接口拒（每个 tool_call 必须有匹配 result，codex P2）。
         let pauseCall: { callId: string; payload: unknown } | undefined // ask_user 暂停
         let confirmCall: PendingToolConfirmation | undefined // S4-B 危险工具确认
-        let pendingPlanEvaluationId: string | undefined
         // 已有任一中断挂起 → 后来的中断只能退化成「已在等待」的占位 error result，避免 orphan。
         const interruptPending = () => pauseCall !== undefined || confirmCall !== undefined
         const executeToolCall = async (
@@ -2276,26 +2225,7 @@ export async function runToolLoop(
             // 失败计数与顺序分支同口径：失败累加、成功/暂停清零（并发批的每个结果都要过一遍）。
             recordToolOutcome(parallelCalls[index].name, result)
             appendMappedToolResult(id, parallelCalls[index].callId, result, core, planStageId)
-            pendingPlanEvaluationId ??= planEvaluationExecutionId(parallelCalls[index].name, result)
           })
-          if (pendingPlanEvaluationId) {
-            patchRun(id, {
-              status: 'awaiting_tool',
-              pendingExecutionId: pendingPlanEvaluationId,
-            }, core)
-            persistWorkingTurn()
-            traceEvent('agent.waiting_plan_evaluation', { executionId: pendingPlanEvaluationId, plan_stage_id: planStageId })
-            continueAfterPlanEvaluation({
-              sessionId: id,
-              runId,
-              executionId: pendingPlanEvaluationId,
-              apiKey: opts.apiKey,
-              fetchImpl: opts.fetchImpl,
-              core,
-            })
-            finishTrace('ok', 'agent.plan_evaluation_scheduled', { executionId: pendingPlanEvaluationId })
-            return
-          }
           persistWorkingTurn()
           continue
         }
@@ -2599,12 +2529,9 @@ export async function runToolLoop(
             }
           } else {
             appendMappedToolResult(id, toolCall.id, result, core, planStageId)
-            const stageEvaluationId = planEvaluationExecutionId(name, result)
-            pendingPlanEvaluationId ??= stageEvaluationId
             if (name === 'submit_stage_result') {
-              // 提交成功（已排期 evaluator）→ 清除拒绝记录；否则记下失败原因，供下一次续跑提醒引用。
-              if (stageEvaluationId) lastStageSubmitRejection = undefined
-              else if (!result.ok) lastStageSubmitRejection = result.error
+              // 提交成功 → 清除拒绝记录；否则记下失败原因，供下一次续跑提醒引用。
+              lastStageSubmitRejection = result.ok ? undefined : result.error
             }
           }
         }
@@ -2657,24 +2584,6 @@ export async function runToolLoop(
           return
         }
 
-        if (pendingPlanEvaluationId) {
-          patchRun(id, {
-            status: 'awaiting_tool',
-            pendingExecutionId: pendingPlanEvaluationId,
-          }, core)
-          persistWorkingTurn()
-          traceEvent('agent.waiting_plan_evaluation', { executionId: pendingPlanEvaluationId, plan_stage_id: planStageId })
-          continueAfterPlanEvaluation({
-            sessionId: id,
-            runId,
-            executionId: pendingPlanEvaluationId,
-            apiKey: opts.apiKey,
-            fetchImpl: opts.fetchImpl,
-            core,
-          })
-          finishTrace('ok', 'agent.plan_evaluation_scheduled', { executionId: pendingPlanEvaluationId })
-          return
-        }
         persistWorkingTurn()
         continue
       }
@@ -2700,9 +2609,7 @@ export async function runToolLoop(
       const currentPlan = core.getSessionStore(id).store.getter(planAtom)
       if (currentPlan && EXECUTING_PLAN_STATUSES.has(currentPlan.status)) {
         consecutivePlanTextTurns += 1
-        const currentStage = currentPlan.stages.find(
-          (stage) => stage.status === 'in_progress' || stage.status === 'evaluating',
-        )
+        const currentStage = currentPlan.stages.find((stage) => stage.status === 'in_progress')
         if (consecutivePlanTextTurns >= MAX_CONSECUTIVE_PLAN_TEXT_TURNS) {
           const error = `计划执行连续 ${MAX_CONSECUTIVE_PLAN_TEXT_TURNS} 轮未调用工具，已停止自动续跑`
           if (isRunningRun(id, runId, core)) patchRun(id, { status: 'error', error }, core)

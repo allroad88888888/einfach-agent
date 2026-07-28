@@ -4,8 +4,6 @@
 import type { DelegateAgentBatchResult, DelegateAgentInput } from '../subagents/types'
 import type {
   CreatePlanInput,
-  EvaluatePlanInput,
-  EvaluateStageInput,
   PlanMutationResult,
   PlanSnapshot,
   SubmitStageResultInput,
@@ -16,6 +14,7 @@ import type {
   ExecutionJoinResult,
   ExecutionObservation,
 } from '../execution/types'
+import type { SkillSummary } from '../skills/registry'
 
 /**
  * tool 的执行位置：
@@ -197,9 +196,6 @@ export interface ToolContext {
   executePlan?(planId: string, revision: number): PlanMutationResult
   updatePlan?(input: UpdatePlanInput): PlanMutationResult
   submitStageResult?(input: SubmitStageResultInput): PlanMutationResult
-  evaluateStage?(input: EvaluateStageInput): PlanMutationResult
-  evaluatePlan?(input: EvaluatePlanInput): PlanMutationResult
-  abortStageEvaluation?(planId: string, revision: number, stageId: string, reason: string): PlanMutationResult
   /** 执行桌面 shell command。工具只经 ctx 调用，Tauri invoke 细节集中在 runtime 桥接层。 */
   runShell(input: ShellCommandInput): Promise<ShellCommandResult>
   /** 读取文本文件；Auto 会话可读取 workspace 外路径。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
@@ -260,6 +256,19 @@ export interface ToolContext {
   saveArtifact(file: { filename: string; content: string; mimeType?: string }):
     | { artifactId: string }
     | { error: string }
+  /** Skill 注册表只读入口（内置 + 项目）。工具缺失 ctx 时回退模块级内置 registry。 */
+  skills?: {
+    /** 合并内置 + 项目 Skills 的清单。 */
+    list(): SkillSummary[]
+    /**
+     * 解析 `project/` 前缀 skill 的 workspace 路径；不是 `project/` 或未命中返回 undefined。
+     *
+     * `resources` 是扫描期发现的「资源键 → workspace 路径」白名单：调用方只能拿键去查表，
+     * 绝不能用模型给的字符串拼路径（这是 L3 资源没有穿越面的原因，Rust 侧的 workspace
+     * confinement 只是兜底）。
+     */
+    resolveProjectPath(name: string): { filePath: string; resources: Record<string, string> } | undefined
+  }
 }
 
 /** 统一抽象：一个工具要具备的全部。execute 同步/异步都行（工厂 await 吸收）。 */

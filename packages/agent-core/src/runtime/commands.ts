@@ -29,7 +29,6 @@ import {
 import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
 import { getPlan, setPlan } from '../state/planWriters'
 import { PlanRuntime } from '../planning/runtime'
-import { EvaluationRuntime } from '../evaluation/runtime'
 import { appendItem, patchRun, setItems, setRun } from '../state/sessionWriters'
 import {
   getPendingQuestionAnswers,
@@ -87,7 +86,9 @@ import {
   DEFAULT_WORKSPACE_NAME,
   deriveWorkspaceName,
   normalizeWorkspaceRoot,
+  resolveSessionWorkspaceRoot,
 } from '../state/workspaceState'
+import { buildProjectSkillsBridge } from './projectSkillsBridge'
 
 // ===========================================================================
 // 运行时配置注入 —— apiKey 来源（config 通电：defaultCore.config 是 CoreInstance 第五个视图）
@@ -454,31 +455,6 @@ export function createCommands(core: CoreInstance = defaultCore) {
     )
   }
 
-  // 计划 evaluator 不能跨进程存活。无论是旧版 continuePlan，还是新版通用中断恢复，
-  // 都先把 orphaned evaluating 原子回滚为 in_progress，再交给同一模型循环继续。
-  function recoverInterruptedPlanEvaluation(id: string): boolean {
-    let plan = getPlan(id)
-    if (!plan) return true
-    const orphanedEvaluations = plan.stages.filter((stage) => stage.status === 'evaluating')
-    if (orphanedEvaluations.length > 0) {
-      const evaluation = new EvaluationRuntime({
-        get: () => getPlan(id),
-        set: (next) => setPlan(id, next),
-      }, Date.now)
-      for (const stage of orphanedEvaluations) {
-        const recovered = evaluation.abortStageEvaluation(
-          plan.id,
-          plan.revision,
-          stage.id,
-          '应用或模型请求在验收完成前中断，继续执行时自动恢复',
-        )
-        if (!recovered.ok) return false
-        plan = recovered.plan
-      }
-    }
-    return true
-  }
-
   // 简介：继续最新 checkpoint 中因应用重启而中断的普通任务或计划任务。
   // 详情：沿用持久化 runId/turnId 与同一轮工作快照，不追加用户消息；真正执行由
   // resumeInterruptedSession 负责安全闭合孤儿 tool_call 后复用原模型循环。
@@ -487,7 +463,6 @@ export function createCommands(core: CoreInstance = defaultCore) {
     if (!id) return
     const run = core.getSessionStore(id).store.getter(runAtom)
     if (run?.status !== 'interrupted') return
-    if (!recoverInterruptedPlanEvaluation(id)) return
 
     const meta = core.rootStore.getter(sessionsAtom)[id]
     if (!meta) return
@@ -545,9 +520,8 @@ export function createCommands(core: CoreInstance = defaultCore) {
     ) return
 
     const plan = getPlan(id)
-    if (!plan || !['approved', 'active', 'evaluating'].includes(plan.status)) return
-    if (!plan.stages.some((stage) => ['pending', 'in_progress', 'evaluating'].includes(stage.status))) return
-    if (!recoverInterruptedPlanEvaluation(id)) return
+    if (!plan || !['approved', 'active'].includes(plan.status)) return
+    if (!plan.stages.some((stage) => ['pending', 'in_progress'].includes(stage.status))) return
 
     const meta = core.rootStore.getter(sessionsAtom)[id]
     if (!meta) return
@@ -801,15 +775,6 @@ export function createCommands(core: CoreInstance = defaultCore) {
     void runToolLoop(id, run.runId, { signal, apiKey, fetchImpl: core.config.fetchImpl, core }).finally(() => core.abort.endRun(id, signal))
   }
 
-  // 最终结果验收同样是宿主专用命令；显式 planId/revision 让切会话和双击都 fail-closed。
-  // 注：同 approvePlan，getPlan/setPlan 未收 core → 计划态落 defaultCore（planning 本期不穿线）。
-  function acceptPlanResult(planId: string, revision: number, accepted: boolean): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
-    if (!id) return
-    const runtime = new EvaluationRuntime({ get: () => getPlan(id), set: (plan) => setPlan(id, plan) }, Date.now)
-    runtime.acceptPlan(planId, revision, accepted)
-  }
-
   // 回滚计划中的一个阶段。已经执行的文件/网络等外部副作用不会被自动撤销。
   //
   // 优先走**阶段回退点**（快照语义）：恢复该阶段开始前的计划快照，并把该阶段之后产生的对话一并截断，
@@ -825,7 +790,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
     const current = getPlan(id)
     if (!current || current.id !== planId || current.revision !== revision) return
     if (
-      !['active', 'evaluating', 'awaiting_user_acceptance', 'completed', 'failed', 'rejected'].includes(current.status)
+      !['active', 'completed', 'failed'].includes(current.status)
       || !current.stages.some((stage) => stage.id === stageId && stage.status !== 'pending')
     ) return
 
@@ -866,6 +831,25 @@ export function createCommands(core: CoreInstance = defaultCore) {
         : '已回退到该阶段开始前，该阶段之后的对话已撤回。',
       sideEffects,
     }, core)
+  }
+
+  // =========================================================================
+  // 项目 Skills 命令
+  // =========================================================================
+
+  // 简介：重扫当前 active 会话所属 workspace 的项目 skills（.agent/skills 与 .claude/skills）。
+  // 详情：第一期不做文件监听（见 docs/project-skills-blueprint.md），改了 SKILL.md 要靠这条
+  //   命令生效。UI 只调它、只读 projectSkillsAtom，不碰 core.projectSkills 本身。
+  //   ★ 必须带上 bridge ★ —— refresh 的 bridge 缺省分支是「这个环境没有文件系统」，
+  //   不传等于把已扫到的 skills 清空。
+  async function refreshProjectSkills(): Promise<void> {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+    const meta = core.rootStore.getter(sessionsAtom)[id]
+    if (!meta) return
+    const workspaceRoot = resolveSessionWorkspaceRoot(meta, core.rootStore.getter(workspacesAtom))
+    if (!workspaceRoot) return
+    await core.projectSkills.refresh(workspaceRoot, buildProjectSkillsBridge())
   }
 
   // =========================================================================
@@ -975,12 +959,12 @@ export function createCommands(core: CoreInstance = defaultCore) {
     resumeWithAnswers,
     confirmTool,
     approvePlan,
-    acceptPlanResult,
     rollbackPlanStage,
     answerQuestion,
     discardArtifact,
     revertToTurn,
     revertTurnToDraft,
+    refreshProjectSkills,
   }
 }
 
@@ -1013,10 +997,10 @@ export const {
   resumeWithAnswers,
   confirmTool,
   approvePlan,
-  acceptPlanResult,
   rollbackPlanStage,
   answerQuestion,
   discardArtifact,
+  refreshProjectSkills,
   revertToTurn,
   revertTurnToDraft,
 } = createCommands()

@@ -7,7 +7,6 @@ const stageProperties = {
   title: { type: 'string', minLength: 1 },
   objective: { type: 'string', minLength: 1 },
   deliverables: { type: 'array', items: { type: 'string', minLength: 1 } },
-  acceptanceCriteria: { type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } },
   dependencies: { type: 'array', uniqueItems: true, items: { type: 'string', minLength: 1 } },
 }
 
@@ -15,7 +14,7 @@ export const createPlanTool: Tool = {
   name: 'create_plan',
   runtime: 'internal',
   skill: {
-    description: '创建带依赖、验收标准和审批策略的结构化分阶段计划。',
+    description: '创建带依赖、交付物和审批策略的结构化分阶段计划。',
     triggers: ['plan', '规划', '阶段', '复杂任务', '多步骤'],
     content: guide,
   },
@@ -31,7 +30,7 @@ export const createPlanTool: Tool = {
           type: 'object',
           additionalProperties: false,
           properties: stageProperties,
-          required: ['id', 'title', 'objective', 'acceptanceCriteria'],
+          required: ['id', 'title', 'objective'],
         },
       },
     },

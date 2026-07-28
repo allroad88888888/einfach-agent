@@ -359,7 +359,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
         id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
-        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'in_progress', evidence: [],
+        dependencies: [], status: 'in_progress', evidence: [],
       }],
     })
     getSessionStore(id).store.setter(runAtom, {
@@ -381,7 +381,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
         id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
-        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'in_progress', evidence: [],
+        dependencies: [], status: 'in_progress', evidence: [],
       }],
     })
 
@@ -402,7 +402,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
         id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
-        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'in_progress', evidence: [],
+        dependencies: [], status: 'in_progress', evidence: [],
       }],
     })
     getSessionStore(id).store.setter(runAtom, { runId: 'running', status: 'running' })
@@ -414,89 +414,60 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(beginRun).not.toHaveBeenCalled()
   })
 
-  it('continuePlan：已取消后台评审遗留的 awaiting_tool 会恢复原 run', () => {
+  it('continuePlan：中断遗留的 awaiting_tool 会恢复原 run', () => {
     const id = newSession()
     setPlan(id, {
-      id: 'plan-orphaned-evaluation', title: '恢复评审', objective: '完成工作', status: 'active', revision: 4,
+      id: 'plan-orphaned-run', title: '恢复执行', objective: '完成工作', status: 'active', revision: 4,
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
         id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
-        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'evaluating', evidence: ['pnpm test'],
-        evaluations: [{
-          attempt: 1, status: 'evaluating', summary: '实现完成', submittedEvidence: ['pnpm test'],
-          criteria: [], submittedAt: 2,
-        }],
+        dependencies: [], status: 'in_progress', evidence: ['pnpm test'],
       }],
     })
-    getSessionStore(id).store.setter(runAtom, { runId: 'orphaned-evaluation', status: 'awaiting_tool' })
+    getSessionStore(id).store.setter(runAtom, { runId: 'orphaned-run', status: 'awaiting_tool' })
 
     continuePlan()
 
     expect(resumeInterruptedSession).toHaveBeenCalledOnce()
     expect(resumePlanSession).not.toHaveBeenCalled()
-    expect(getPlan(id)).toMatchObject({
-      revision: 5,
-      stages: [{ status: 'in_progress' }],
-    })
   })
 
-  it('continuePlan：无活跃 run 时先恢复重启遗留的 evaluating，再沿用原计划续跑', () => {
+  it('continuePlan：无活跃 run 时沿用原计划续跑，不改动计划状态', () => {
     const id = newSession()
     setPlan(id, {
-      id: 'plan-evaluating', title: '恢复验收', objective: '完成工作', status: 'active', revision: 4,
+      id: 'plan-resume', title: '恢复执行', objective: '完成工作', status: 'active', revision: 4,
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
         id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
-        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'evaluating', evidence: ['pnpm test'],
-        evaluations: [{
-          attempt: 1, status: 'evaluating', summary: '实现完成', submittedEvidence: ['pnpm test'],
-          criteria: [], submittedAt: 2,
-        }],
+        dependencies: [], status: 'in_progress', evidence: ['pnpm test'],
       }],
     })
 
     continuePlan()
 
     expect(getPlan(id)).toMatchObject({
-      revision: 5,
-      stages: [{
-        status: 'in_progress',
-        evaluations: [{
-          status: 'unknown',
-          summary: '实现完成',
-          submittedEvidence: ['pnpm test'],
-          criteria: [{
-            criterion: '测试通过',
-            status: 'unknown',
-            reason: '应用或模型请求在验收完成前中断，继续执行时自动恢复',
-          }],
-        }],
-      }],
+      revision: 4,
+      stages: [{ status: 'in_progress' }],
     })
     expect(resumePlanSession).toHaveBeenCalledOnce()
     expect(runSession).not.toHaveBeenCalled()
   })
 
-  it('continuePlan：活跃 run 的 evaluating 不做孤儿恢复', () => {
+  it('continuePlan：活跃 run 不重复续跑', () => {
     const id = newSession()
     setPlan(id, {
-      id: 'plan-live-evaluation', title: '正在验收', objective: '完成工作', status: 'active', revision: 4,
+      id: 'plan-live', title: '正在执行', objective: '完成工作', status: 'active', revision: 4,
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
         id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
-        acceptanceCriteria: ['测试通过'], dependencies: [], status: 'evaluating', evidence: ['pnpm test'],
-        evaluations: [{
-          attempt: 1, status: 'evaluating', summary: '实现完成', submittedEvidence: ['pnpm test'],
-          criteria: [], submittedAt: 2,
-        }],
+        dependencies: [], status: 'in_progress', evidence: ['pnpm test'],
       }],
     })
-    getSessionStore(id).store.setter(runAtom, { runId: 'evaluating', status: 'running' })
+    getSessionStore(id).store.setter(runAtom, { runId: 'live', status: 'running' })
 
     continuePlan()
 
     expect(getPlan(id)?.revision).toBe(4)
-    expect(getPlan(id)?.stages[0].status).toBe('evaluating')
     expect(resumePlanSession).not.toHaveBeenCalled()
   })
 
@@ -765,7 +736,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
         id: 'build', title: '实现', objective: 'o', deliverables: [],
-        acceptanceCriteria: ['测试通过'], dependencies: [], status, evidence: [], evaluations: [],
+        dependencies: [], status, evidence: [],
       }],
     })
   }
@@ -836,7 +807,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
       requiresApproval: false, createdAt: 1, updatedAt: 2,
       stages: [{
         id: 'build', title: '实现', objective: 'o', deliverables: [],
-        acceptanceCriteria: ['c'], dependencies: [], status: 'pending', evidence: [], evaluations: [],
+        dependencies: [], status: 'pending', evidence: [],
       }],
     })
 

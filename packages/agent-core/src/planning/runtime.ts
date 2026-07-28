@@ -3,6 +3,7 @@ import type {
   PlanMutationResult,
   PlanSnapshot,
   PlanStage,
+  SubmitStageResultInput,
   UpdatePlanInput,
 } from './types'
 
@@ -31,8 +32,6 @@ function validateStages(input: CreatePlanInput['stages']): string | undefined {
   for (const stage of input) {
     if (!stage.id.trim() || !stage.title.trim() || !stage.objective.trim()) return 'stage id, title and objective are required'
     if (ids.has(stage.id)) return `duplicate stage id: ${stage.id}`
-    if (!stage.acceptanceCriteria.length) return `stage ${stage.id} needs acceptance criteria`
-    if (new Set(stage.acceptanceCriteria).size !== stage.acceptanceCriteria.length) return `stage ${stage.id} has duplicate acceptance criteria`
     ids.add(stage.id)
   }
   for (const stage of input) {
@@ -71,7 +70,7 @@ export class PlanRuntime {
     const createdAt = this.now()
     const requiresApproval = input.approvalMode === 'required'
     const plan: PlanSnapshot = {
-      schemaVersion: 2,
+      schemaVersion: 4,
       id: this.id(),
       title: input.title.trim(),
       objective: input.objective.trim(),
@@ -85,7 +84,6 @@ export class PlanRuntime {
         title: stage.title.trim(),
         objective: stage.objective.trim(),
         deliverables: stage.deliverables ?? [],
-        acceptanceCriteria: stage.acceptanceCriteria,
         dependencies: stage.dependencies ?? [],
         status: 'pending',
         evidence: [],
@@ -109,7 +107,7 @@ export class PlanRuntime {
     const error = this.guard(current, planId, revision)
     if (error) return fail(error)
     if (current!.status !== 'approved' && current!.status !== 'active') return fail(`plan is ${current!.status}, approval is required before execution`)
-    if (current!.stages.some((stage) => stage.status === 'in_progress' || stage.status === 'evaluating')) return { ok: true, plan: current! }
+    if (current!.stages.some((stage) => stage.status === 'in_progress')) return { ok: true, plan: current! }
     const next = nextRetryableStage(current!.stages) ?? nextReadyStage(current!.stages)
     if (!next) return fail('plan has no ready stage')
     return this.write({
@@ -127,30 +125,66 @@ export class PlanRuntime {
     const target = current!.stages.find((stage) => stage.id === input.stageId)
     if (!target) return fail(`unknown stage: ${input.stageId}`)
     if (target.status !== 'in_progress') return fail(`stage ${input.stageId} is ${target.status}, not in_progress`)
-    if (input.status !== 'blocked') return fail('completion and skipping require host evaluation')
-    if (input.status === 'blocked' && !input.blockReason?.trim()) return fail('blocked stage requires blockReason')
+    if (input.status !== 'blocked') return fail('completing a stage requires submit_stage_result')
+    if (!input.blockReason?.trim()) return fail('blocked stage requires blockReason')
+
+    return this.write({
+      ...current!,
+      status: 'active',
+      stages: current!.stages.map((stage) => stage.id === input.stageId ? {
+        ...stage,
+        status: input.status,
+        evidence: [...stage.evidence, ...(input.evidence ?? [])],
+        blockReason: input.blockReason!.trim(),
+      } : stage),
+    })
+  }
+
+  /**
+   * 提交阶段产出并完成该阶段，随后激活下一个依赖就绪的阶段。
+   *
+   * summary 与 evidence 是强制留痕：阶段完成没有第三方判定，产出至少要留下可回看的记录，
+   * 否则计划面板上只剩一串「已完成」，无从判断当时到底做了什么。
+   */
+  submitStageResult(input: SubmitStageResultInput): PlanMutationResult {
+    const current = this.store.get()
+    const error = this.guard(current, input.planId, input.revision)
+    if (error) return fail(error)
+    if (current!.status !== 'active') return fail(`plan is ${current!.status}, not active`)
+    const target = current!.stages.find((stage) => stage.id === input.stageId)
+    if (!target) return fail(`unknown stage: ${input.stageId}`)
+    if (target.status !== 'in_progress') return fail(`stage ${input.stageId} is ${target.status}, not in_progress`)
+    const summary = input.summary.trim()
+    if (!summary) return fail('stage result requires summary')
+    const evidence = input.evidence.map((item) => item.trim()).filter(Boolean)
+    if (!evidence.length) return fail('stage result requires evidence')
 
     let stages = current!.stages.map((stage) => stage.id === input.stageId ? {
       ...stage,
-      status: input.status,
-      evidence: [...stage.evidence, ...(input.evidence ?? [])],
-      blockReason: input.status === 'blocked' ? input.blockReason!.trim() : undefined,
+      status: 'completed' as const,
+      evidence: [...stage.evidence, ...evidence],
+      blockReason: undefined,
+      result: { summary, evidence, submittedAt: this.now() },
     } : stage)
     const terminal = stages.every((stage) => stage.status === 'completed' || stage.status === 'skipped')
-    return this.write({ ...current!, status: terminal ? 'evaluating' : 'active', stages })
+    if (!terminal) {
+      const next = nextReadyStage(stages)
+      if (next) stages = stages.map((stage) => stage.id === next.id ? { ...stage, status: 'in_progress' as const } : stage)
+    }
+    return this.write({ ...current!, status: terminal ? 'completed' : 'active', stages })
   }
 
   /**
    * 将指定阶段及所有依赖它的后续阶段重新打开。
    *
-   * 已完成的前置阶段保持不变；被回滚的阶段会丢弃旧的执行证据和评估结果，
+   * 已完成的前置阶段保持不变；被回滚的阶段会丢弃旧的执行证据和产出记录，
    * 由宿主在下一次 continuePlan 时从目标阶段重新执行。
    */
   rollbackStage(planId: string, revision: number, stageId: string): PlanMutationResult {
     const current = this.store.get()
     const error = this.guard(current, planId, revision)
     if (error) return fail(error)
-    if (!['active', 'evaluating', 'awaiting_user_acceptance', 'completed', 'failed', 'rejected'].includes(current!.status)) {
+    if (!['active', 'completed', 'failed'].includes(current!.status)) {
       return fail(`plan is ${current!.status}, no executed stage can be rolled back`)
     }
 
@@ -172,15 +206,13 @@ export class PlanRuntime {
     return this.write({
       ...current!,
       status: 'active',
-      evaluation: undefined,
-      userAcceptance: undefined,
       stages: current!.stages.map((stage) => {
         if (!rolledBack.has(stage.id)) return stage
         return {
           ...stage,
           status: stage.id === stageId ? 'in_progress' : 'pending',
           evidence: [],
-          evaluations: [],
+          result: undefined,
           blockReason: undefined,
         }
       }),

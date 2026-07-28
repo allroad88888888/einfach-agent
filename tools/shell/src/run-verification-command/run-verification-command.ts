@@ -3,7 +3,8 @@
 // 仅验证子 agent 的 workspace_verify profile 会暴露本工具；命令本身不受发现结果限制，
 // 因此可执行项目自己的验收脚本。副作用仍只经 ctx.runShell，与 shell_* 共用同一条
 // workspace confinement / 超时 / 截断通道。
-import type { ShellPlatform, Tool } from '@web-agent/core/tools/types'
+import type { Tool } from '@web-agent/core/tools/types'
+import { detectHostPlatform } from '@web-agent/core/runtime/hostPlatform'
 import { shellCommandToolResult } from '../command-result'
 import guide from './run-verification-command.md?raw'
 
@@ -16,7 +17,7 @@ const inputSchema = {
     command: {
       type: 'string',
       minLength: 1,
-      description: 'A non-empty shell command needed to verify the acceptance criteria.',
+      description: 'A non-empty shell command needed to verify the stage objective.',
     },
   },
   required: ['command'],
@@ -27,23 +28,6 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {}
-}
-
-/**
- * 本机平台。Rust 桥会拒绝与宿主不一致的 platform，命令参数本身没有平台信息，
- * 所以这里从运行环境推断（Tauri 的 webview UA 稳定包含 Macintosh / Windows / Linux）。
- */
-function detectPlatform(): ShellPlatform {
-  const userAgent = typeof navigator === 'object' && typeof navigator?.userAgent === 'string'
-    ? navigator.userAgent
-    : ''
-  if (/windows|win32|win64/i.test(userAgent)) return 'windows'
-  if (/mac os|macintosh|darwin/i.test(userAgent)) return 'macos'
-  if (/linux|x11|cros/i.test(userAgent)) return 'linux'
-  const nodePlatform = (globalThis as { process?: { platform?: string } }).process?.platform
-  if (nodePlatform === 'win32') return 'windows'
-  if (nodePlatform === 'darwin') return 'macos'
-  return 'linux'
 }
 
 function toErrorMessage(error: unknown): string {
@@ -85,7 +69,9 @@ export const runVerificationCommandTool: Tool = {
     try {
       ctx.progress(`核验命令: ${command.slice(0, 120)}`)
       const result = await ctx.runShell({
-        platform: detectPlatform(),
+        // Rust 桥会拒绝与宿主不一致的 platform，命令参数本身没有平台信息，
+        // 所以从运行环境推断；与注入给模型的「运行环境」段共用同一个探测函数。
+        platform: detectHostPlatform(),
         command,
         timeoutMs: TIMEOUT_MS,
         maxOutputChars: MAX_OUTPUT_CHARS,

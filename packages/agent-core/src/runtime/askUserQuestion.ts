@@ -32,7 +32,7 @@ export interface AskUserQuestionPayload {
 
 export interface AskUserQuestionContext {
   surface: 'conversation' | 'plan'
-  phase?: 'drafting' | 'approval' | 'executing' | 'evaluating' | 'acceptance'
+  phase?: 'drafting' | 'approval' | 'executing'
 }
 
 const QUESTION_TYPES: readonly AskUserQuestionType[] = [
@@ -78,8 +78,6 @@ function normalizeContext(value: unknown): AskUserQuestionContext | undefined {
     context.phase === 'drafting'
     || context.phase === 'approval'
     || context.phase === 'executing'
-    || context.phase === 'evaluating'
-    || context.phase === 'acceptance'
   ) {
     result.phase = context.phase
   }

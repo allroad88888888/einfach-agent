@@ -17,8 +17,8 @@ const input: CreatePlanInput = {
   title: '交付功能',
   objective: '完成实现与验证',
   stages: [
-    { id: 'design', title: '设计', objective: '确定协议', acceptanceCriteria: ['协议可验证'] },
-    { id: 'build', title: '实现', objective: '完成代码', acceptanceCriteria: ['测试通过'], dependencies: ['design'] },
+    { id: 'design', title: '设计', objective: '确定协议' },
+    { id: 'build', title: '实现', objective: '完成代码', dependencies: ['design'] },
   ],
 }
 
@@ -48,12 +48,56 @@ describe('PlanRuntime', () => {
     expect(blocked.ok && blocked.plan.stages[0].status).toBe('blocked')
   })
 
+  it('提交阶段结果完成该阶段、激活下一阶段，最后一个阶段完成后计划结束', () => {
+    const { runtime } = harness()
+    const created = runtime.create({ ...input, stages: [...input.stages] })
+    if (!created.ok) throw new Error(created.error)
+    const started = runtime.execute(created.plan.id, created.plan.revision)
+    if (!started.ok) throw new Error(started.error)
+
+    const first = runtime.submitStageResult({
+      planId: started.plan.id, revision: started.plan.revision, stageId: 'design',
+      summary: '协议已确定', evidence: ['docs/protocol.md'],
+    })
+    if (!first.ok) throw new Error(first.error)
+    expect(first.plan.status).toBe('active')
+    expect(first.plan.stages.map((stage) => stage.status)).toEqual(['completed', 'in_progress'])
+    expect(first.plan.stages[0].result).toMatchObject({ summary: '协议已确定', evidence: ['docs/protocol.md'] })
+    expect(first.plan.stages[0].evidence).toEqual(['docs/protocol.md'])
+
+    const second = runtime.submitStageResult({
+      planId: first.plan.id, revision: first.plan.revision, stageId: 'build',
+      summary: '代码完成', evidence: ['pnpm test → 12 passed'],
+    })
+    expect(second.ok && second.plan.status).toBe('completed')
+    expect(second.ok && second.plan.stages.every((stage) => stage.status === 'completed')).toBe(true)
+  })
+
+  it('提交必须带 summary 与 evidence，且只能提交执行中的阶段', () => {
+    const { runtime } = harness()
+    const created = runtime.create({ ...input, stages: [...input.stages] })
+    if (!created.ok) throw new Error(created.error)
+    const started = runtime.execute(created.plan.id, created.plan.revision)
+    if (!started.ok) throw new Error(started.error)
+    const args = { planId: started.plan.id, revision: started.plan.revision, stageId: 'design' }
+
+    expect(runtime.submitStageResult({ ...args, summary: '  ', evidence: ['x'] }))
+      .toMatchObject({ ok: false, error: 'stage result requires summary' })
+    expect(runtime.submitStageResult({ ...args, summary: 'ok', evidence: ['   '] }))
+      .toMatchObject({ ok: false, error: 'stage result requires evidence' })
+    // 依赖未就绪的后续阶段还没 in_progress，不能被抢先提交。
+    expect(runtime.submitStageResult({ ...args, stageId: 'build', summary: 'ok', evidence: ['x'] }))
+      .toMatchObject({ ok: false, error: 'stage build is pending, not in_progress' })
+    expect(runtime.submitStageResult({ ...args, revision: started.plan.revision + 1, summary: 'ok', evidence: ['x'] }))
+      .toMatchObject({ ok: false, error: expect.stringContaining('revision conflict') })
+  })
+
   it('拒绝环依赖和过期 revision', () => {
     const { runtime } = harness()
     expect(runtime.create({
       title: '环', objective: '错误计划', stages: [
-        { id: 'a', title: 'A', objective: 'A', acceptanceCriteria: ['A'], dependencies: ['b'] },
-        { id: 'b', title: 'B', objective: 'B', acceptanceCriteria: ['B'], dependencies: ['a'] },
+        { id: 'a', title: 'A', objective: 'A', dependencies: ['b'] },
+        { id: 'b', title: 'B', objective: 'B', dependencies: ['a'] },
       ],
     })).toMatchObject({ ok: false })
     const created = runtime.create({ ...input, stages: [...input.stages] })
@@ -65,11 +109,10 @@ describe('PlanRuntime', () => {
     let completed: PlanSnapshot = {
       id: 'plan-1', title: '交付功能', objective: '完成实现与验证', status: 'completed', revision: 8,
       requiresApproval: false, createdAt: 1, updatedAt: 2,
-      evaluation: { status: 'passed', evidence: ['all checks passed'], reason: '', evaluatedAt: 1, requiresUserAcceptance: false },
       stages: [
-        { id: 'design', title: '设计', objective: '确定协议', deliverables: [], acceptanceCriteria: ['协议可验证'], dependencies: [], status: 'completed', evidence: ['design proof'] },
-        { id: 'build', title: '实现', objective: '完成代码', deliverables: [], acceptanceCriteria: ['测试通过'], dependencies: ['design'], status: 'completed', evidence: ['build proof'] },
-        { id: 'verify', title: '验证', objective: '回归验证', deliverables: [], acceptanceCriteria: ['回归通过'], dependencies: ['build'], status: 'completed', evidence: ['verify proof'] },
+        { id: 'design', title: '设计', objective: '确定协议', deliverables: [], dependencies: [], status: 'completed', evidence: ['design proof'] },
+        { id: 'build', title: '实现', objective: '完成代码', deliverables: [], dependencies: ['design'], status: 'completed', evidence: ['build proof'] },
+        { id: 'verify', title: '验证', objective: '回归验证', deliverables: [], dependencies: ['build'], status: 'completed', evidence: ['verify proof'] },
       ],
     }
     const rollbackRuntime = new PlanRuntime(
@@ -83,11 +126,10 @@ describe('PlanRuntime', () => {
       ok: true,
       plan: {
         status: 'active',
-        evaluation: undefined,
         stages: [
           { id: 'design', status: 'completed', evidence: ['design proof'] },
-          { id: 'build', status: 'in_progress', evidence: [], evaluations: [] },
-          { id: 'verify', status: 'pending', evidence: [], evaluations: [] },
+          { id: 'build', status: 'in_progress', evidence: [], result: undefined },
+          { id: 'verify', status: 'pending', evidence: [], result: undefined },
         ],
       },
     })

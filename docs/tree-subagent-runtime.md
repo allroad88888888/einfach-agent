@@ -203,10 +203,10 @@ interface DelegateAgentInput {
 
 - `toolProfile` 必须显式选择，默认 `delegate_only`；可选 `workspace_read`、`workspace_verify`。
 - `delegate_only` 白名单仅含 `delegate_agent`；`workspace_read` 只增加 `read_file`、`list_files`、`search_files`、`rg_search`，严禁 shell、write、patch、task 和 git 写操作。
-- `workspace_verify` = `workspace_read` + `run_verification_command`：可执行验收所需的 shell 命令，用于验收评估器自己取得执行证据；它仍然不能写文件，也拿不到通用 shell。
+- `workspace_verify` = `workspace_read` + `run_verification_command`：可执行验证所需的 shell 命令，让核验型子 agent 自己取得执行证据；它仍然不能写文件，也拿不到通用 shell。
 - profile 是全序能力阶梯 `delegate_only ⊂ workspace_read ⊂ workspace_verify`：后代只能继承或收紧，不能自行放宽。
 - root 的档位由宿主每次调用现给，不由上一次 root 调用遗留；模型经 `delegate_agent` 最高只能请求 `workspace_read`，
-  `workspace_verify` 只由宿主内部的验收评估器使用。
+  `workspace_verify` 需要由宿主在调用时显式给出。
 - child 不直接持有文件桥。宿主通过 `DelegateAgentCallContext.runChildTool(name, args)` 转发到完整 `ToolContext`，复用 workspaceRoot confinement、stale/runId、AbortSignal 和 registry 白名单守卫。
 - 工具结果仍以普通 tool message 回填，并写入仅含名称、耗时、成功状态的审计事件；不得把文件正文复制进 archive event。
 - shell、write、patch、ask_user、browser 等工具不会自动下放给 child。
