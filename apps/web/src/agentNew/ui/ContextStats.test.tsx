@@ -19,7 +19,8 @@ const baseStats: ContextStatsSnapshot = {
   messagesChars: 240,
   toolsChars: 160,
   totalChars: 400,
-  estimatedTokens: 250_000,
+  estimatedTokens: 44_000,
+  inputBudgetTokens: 176_000,
   roles: {
     system: { count: 1, chars: 120, estimatedTokens: 30 },
     user: { count: 1, chars: 120, estimatedTokens: 30 },
@@ -43,7 +44,8 @@ describe('ContextStats', () => {
 
     expect(screen.getByLabelText('上下文统计')).toBeInTheDocument()
     expect(screen.getByText('上下文 25%')).toBeInTheDocument()
-    expect(screen.getByText('250,000 / 1,000,000 tokens (25%)')).toBeInTheDocument()
+    expect(screen.getByText('44,000 / 176,000 tokens (25%)')).toBeInTheDocument()
+    expect(screen.getByText('本次可用输入额度（已扣除输出预留与安全余量）')).toBeInTheDocument()
     expect(screen.getByText(/^tools 1$/)).toBeInTheDocument()
     expect(screen.getByText('deepseek/deepseek-chat')).toBeInTheDocument()
     expect(screen.getByText('request_tool_schema')).toBeInTheDocument()
@@ -60,7 +62,7 @@ describe('ContextStats', () => {
     renderWithStore(<ContextStats />, { store })
 
     expect(screen.getByText('上下文 0%')).toBeInTheDocument()
-    expect(screen.getByText('120 / 1,000,000 tokens (0%)')).toBeInTheDocument()
+    expect(screen.getByText('120 / 176,000 tokens (0%)')).toBeInTheDocument()
     expect(screen.getByText(/prompt 120 \/ completion 30 \/ total 150/)).toBeInTheDocument()
   })
 

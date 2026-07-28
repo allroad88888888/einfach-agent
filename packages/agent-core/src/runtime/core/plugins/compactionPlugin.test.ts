@@ -28,6 +28,7 @@ import {
   COST_SOFT_CAP_TOKENS,
   DEFAULT_RESERVED_OUTPUT_TOKENS,
   VENDOR_CONTEXT_WINDOW_TOKENS,
+  contextInputBudgetTokens,
   contextWindowTokens,
   type CompactionRequestDraft,
 } from './compactionPlugin'
@@ -67,6 +68,12 @@ function assistantWithToolCall(): AssistantItem {
 function toolResult(content: string): ToolItem {
   return { role: 'tool', tool_call_id: 'c1', content }
 }
+
+describe('contextInputBudgetTokens', () => {
+  it('大窗口模型按本地 200K 请求预算扣除输出预留和安全余量，而非按标称 1M', () => {
+    expect(contextInputBudgetTokens('deepseek', 'deepseek-v4-pro')).toBe(176_000)
+  })
+})
 
 // 一段「第一轮工具结果超大 + 第二轮起头」的 messages —— 唯一的体积来源是 bigContent，
 // 其余条目都很小，方便据此推理压缩后 estimatedTokensAfter 会落在哪。

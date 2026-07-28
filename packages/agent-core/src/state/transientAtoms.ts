@@ -156,6 +156,9 @@ export interface ContextStatsSnapshot {
   toolsChars: number
   totalChars: number
   estimatedTokens: number
+  // 本次请求实际可用的输入上下文额度：已按本地成本上限扣除了输出预留与安全余量。
+  // 有值时 UI 必须用它做占用百分比的分母，不能拿 provider 标称窗口。
+  inputBudgetTokens?: number
   roles: {
     system: ContextRoleStats
     user: ContextRoleStats

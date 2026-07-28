@@ -3,7 +3,7 @@
 // 只读 contextStatsAtom：发送前显示估算 tokens；响应后若 provider 返回 usage，则显示真实 usage。
 
 import { useAtomValue } from '@einfach/react'
-import { contextWindowTokens } from '@web-agent/core/runtime/core/plugins/compactionPlugin'
+import { contextInputBudgetTokens } from '@web-agent/core/runtime/core/plugins/compactionPlugin'
 import { contextStatsAtom, type ContextStatsSnapshot } from '@web-agent/core/state/transientAtoms'
 
 const numberFormatter = new Intl.NumberFormat('en-US')
@@ -66,7 +66,10 @@ export function ContextStats() {
   if (!stats) return null
 
   const currentTokens = currentContextTokens(stats)
-  const maxContextTokens = contextWindowTokens(stats.vendor, stats.model)
+  // 使用运行时实际输入预算，而非供应商标称窗口（例如 DeepSeek V4 的 1M）。
+  // 旧快照没有该字段时按同一套本地默认预算回退。
+  const maxContextTokens = stats.inputBudgetTokens
+    ?? contextInputBudgetTokens(stats.vendor, stats.model)
   const contextPercentage = Math.round((currentTokens / maxContextTokens) * 100)
   const summary = `上下文 ${contextPercentage}%`
 
@@ -89,6 +92,8 @@ export function ContextStats() {
           <strong>
             {fmt(currentTokens)} / {fmt(maxContextTokens)} tokens ({contextPercentage}%)
           </strong>
+          <span>计算基数</span>
+          <strong>本次可用输入额度（已扣除输出预留与安全余量）</strong>
           <span>usage</span>
           <strong>
             {hasUsage(stats)

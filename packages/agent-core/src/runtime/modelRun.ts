@@ -119,7 +119,11 @@ import { estimateTokensFromText } from './contextCompaction'
 //   危险工具确认 / ask_user 暂停两条挂起/恢复流留 Stage 2b，原样待在下面的 loop 里、一行未动。
 import { makeCoreCtx } from './core/coreCtx'
 import { assemblePlugins } from './core/pluginApi'
-import { compactionPlugin, type CompactionRequestDraft } from './core/plugins/compactionPlugin'
+import {
+  compactionPlugin,
+  contextInputBudgetTokens,
+  type CompactionRequestDraft,
+} from './core/plugins/compactionPlugin'
 import { migrationPlugin } from './core/plugins/migrationPlugin'
 import {
   finishReasonPlugin,
@@ -387,6 +391,7 @@ function buildContextStatsSnapshot(args: {
   tools: ModelFunctionTool[]
   cacheProfile: ContextCacheProfile
   cacheTotals?: ContextCacheTotals
+  inputBudgetTokens: number
 }): ContextStatsSnapshot {
   const roles: ContextStatsSnapshot['roles'] = {
     system: emptyRoleStats(),
@@ -427,6 +432,7 @@ function buildContextStatsSnapshot(args: {
       roles.assistant.estimatedTokens +
       roles.tool.estimatedTokens +
       estimateTokensFromText(toolsText),
+    inputBudgetTokens: args.inputBudgetTokens,
     roles,
     toolNames: toolNames(args.tools),
     cache: {
@@ -1801,6 +1807,13 @@ export async function runToolLoop(
         tools,
         cacheProfile,
         cacheTotals: previousCacheTotals,
+        // 全部输入（messages + tools）可占用的总额度，供 UI 百分比使用。
+        // 这与 compaction 的请求总预算同源，但不减工具 schema，避免 schema 很大时把分母算小。
+        inputBudgetTokens: contextInputBudgetTokens(
+          meta.settings.vendor,
+          meta.settings.model,
+          meta.settings.max_tokens,
+        ),
       })
       setContextStats(id, contextStats, core)
       // tools 卡片按 turn 判重（其余三类只在循环外按 run 判重一次）：lazy-load 可能在任意一个

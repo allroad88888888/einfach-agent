@@ -128,6 +128,22 @@ export function contextWindowTokens(vendor: string, model: string): number {
   )
 }
 
+// 简介：计算一次请求可用于输入上下文的总额度。
+// 详情：这是界面展示占用百分比时应使用的分母：先取本地实际执行预算（硬窗口与成本上限较小者），
+// 再扣除输出预留与安全余量；不能直接拿 provider 标称的 1M 窗口，否则长窗口模型会把占用比例
+// 显示得过小。工具 schema 属于输入的一部分，因此不在这里扣除。
+export function contextInputBudgetTokens(
+  vendor: string,
+  model: string,
+  reservedOutputTokens = DEFAULT_RESERVED_OUTPUT_TOKENS,
+): number {
+  const requestBudget = Math.min(contextWindowTokens(vendor, model), COST_SOFT_CAP_TOKENS)
+  return Math.max(
+    0,
+    requestBudget - reservedOutputTokens - Math.ceil(requestBudget * CONTEXT_SAFETY_MARGIN_RATIO),
+  )
+}
+
 // modelRun.ts 里同名私有 helper 的逐字复制。不从 modelRun.ts import（会成环——modelRun 要反过来
 // import 本插件），孤立成本可忽略（6 行的 try/catch JSON.stringify），换来插件对 modelRun 零依赖。
 function stringForStats(value: unknown): string {
