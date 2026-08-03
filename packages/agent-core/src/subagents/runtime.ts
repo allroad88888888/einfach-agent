@@ -29,6 +29,11 @@ import {
   createContextCacheTracker,
   type ContextCacheLane,
 } from '../runtime/contextCache'
+import {
+  FINISH_REASON_ERRORS,
+  isAbnormalFinishReason,
+} from '../runtime/core/plugins/finishReasonPlugin'
+import { createConcurrencyLimiter, type ConcurrencyLimiter } from './concurrency'
 import { normalizeDelegateAgentInput } from './input'
 import {
   callSelectedSubagentModel,
@@ -112,29 +117,6 @@ const SUBAGENT_CONTEXT_SAFETY_MARGIN_RATIO = 0.08
 // 显式写 1 是为了让这个「无论如何都不丢历史」的意图留在代码里，而不是靠默认值巧合成立。
 const SUBAGENT_KEEP_RECENT_TURNS = 1
 
-// finish_reason 异常三态在子 agent 语境下的文案。
-// 三种成因语义不同，父 agent 的应对也不同（缩小任务 / 换表述 / 稍后重试），所以必须分别写清；
-// 混成一句笼统的「子 agent 失败」会让父 agent 无从判断该怎么补救。
-// 与主循环 modelRun 的 FINISH_REASON_ERRORS 同口径，但主语换成子 agent —— 这份文案最终是写进
-// ChildAgentResult.error/summary 回填给父 agent 的，不是给终端用户看的 run 状态。
-const SUBAGENT_FINISH_REASON_ERRORS: Record<
-  'length' | 'content_filter' | 'insufficient_system_resource',
-  string
-> = {
-  length:
-    '子 agent 输出触顶被截断（finish_reason=length），本次产出不完整、不可作为结论采用；请缩小子任务范围或调高 max_tokens 后重试',
-  content_filter:
-    '子 agent 输出被内容安全策略拦截（finish_reason=content_filter），本次没有可用产出；请调整子任务表述后重试',
-  insufficient_system_resource:
-    '子 agent 所用模型服务容量不足（finish_reason=insufficient_system_resource），本次没有产出；请稍后重试',
-}
-
-function isAbnormalFinishReason(
-  value: unknown,
-): value is 'length' | 'content_filter' | 'insufficient_system_resource' {
-  return value === 'length' || value === 'content_filter' || value === 'insufficient_system_resource'
-}
-
 type ChildChangeSet = { id: string; reversible: boolean }
 
 function collectChangeSets(value: unknown, target: ChildChangeSet[]): void {
@@ -212,56 +194,12 @@ interface TreeRuntimeBudget {
 
 interface DelegationCallState {
   rootBudget: TreeRuntimeBudget
-  modelCallSemaphore: ModelCallSemaphore
+  modelCallLimiter: ConcurrencyLimiter
   totalNodesUsed: number
   modelCallsUsed: number
   budgetByPath: Map<string, TreeRuntimeBudget>
   toolProfileByPath: Map<string, SubagentToolProfile>
   confirmedToolsByPath: Map<string, readonly string[]>
-}
-
-class ModelCallSemaphore {
-  private active = 0
-  private readonly waiters: Array<() => void> = []
-
-  constructor(private readonly limit: number) {}
-
-  async run<T>(signal: AbortSignal, task: () => Promise<T>): Promise<T> {
-    await this.acquire(signal)
-    try {
-      return await task()
-    } finally {
-      this.release()
-    }
-  }
-
-  private acquire(signal: AbortSignal): Promise<void> {
-    if (signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'))
-    if (this.active < this.limit) {
-      this.active += 1
-      return Promise.resolve()
-    }
-
-    return new Promise<void>((resolve, reject) => {
-      const wake = () => {
-        signal.removeEventListener('abort', onAbort)
-        this.active += 1
-        resolve()
-      }
-      const onAbort = () => {
-        const index = this.waiters.indexOf(wake)
-        if (index >= 0) this.waiters.splice(index, 1)
-        reject(new DOMException('Aborted', 'AbortError'))
-      }
-      signal.addEventListener('abort', onAbort, { once: true })
-      this.waiters.push(wake)
-    })
-  }
-
-  private release(): void {
-    this.active -= 1
-    this.waiters.shift()?.()
-  }
 }
 
 interface CreateDelegateAgentRuntimeOptions {
@@ -379,27 +317,6 @@ function isSubset(requested: readonly string[], ceiling: readonly string[]): boo
   return requested.every((name) => ceiling.includes(name))
 }
 
-async function runWithConcurrency<T>(
-  tasks: Array<() => Promise<T>>,
-  maxConcurrent: number,
-): Promise<T[]> {
-  const results: T[] = []
-  let nextIndex = 0
-
-  async function worker(): Promise<void> {
-    for (;;) {
-      const index = nextIndex
-      nextIndex += 1
-      if (index >= tasks.length) return
-      results[index] = await tasks[index]()
-    }
-  }
-
-  const workers = Array.from({ length: Math.max(1, Math.min(maxConcurrent, tasks.length)) }, () => worker())
-  await Promise.all(workers)
-  return results
-}
-
 export function createDelegateAgentRuntime(
   rawOpts: CreateDelegateAgentRuntimeOptions,
 ): DelegateAgentRuntime {
@@ -453,7 +370,7 @@ export function createDelegateAgentRuntime(
     }
     return {
       rootBudget,
-      modelCallSemaphore: new ModelCallSemaphore(rootBudget.maxConcurrent),
+      modelCallLimiter: createConcurrencyLimiter(rootBudget.maxConcurrent),
       totalNodesUsed: 1,
       modelCallsUsed: 0,
       budgetByPath: new Map([[ROOT_AGENT_PATH, rootBudget]]),
@@ -644,7 +561,7 @@ export function createDelegateAgentRuntime(
     let response: ModelChatResponse
     try {
       response = await (
-        state.modelCallSemaphore.run(opts.signal, invoke)
+        state.modelCallLimiter.run(invoke, opts.signal)
       )
     } catch (error) {
       if (args.observe) {
@@ -812,7 +729,7 @@ export function createDelegateAgentRuntime(
     return [
       base,
       '',
-      `> ${SUBAGENT_FINISH_REASON_ERRORS[finishReason]}`,
+      `> ${FINISH_REASON_ERRORS[finishReason]}`,
       '> 本 skill 内容不完整，不得当作完整约束执行；缺失部分请回到父 agent 澄清后再动手。',
     ].join('\n')
   }
@@ -1064,8 +981,8 @@ export function createDelegateAgentRuntime(
             .join('；')
           throw new Error(
             detail
-              ? `${SUBAGENT_FINISH_REASON_ERRORS[finishReason]}；${detail}`
-              : SUBAGENT_FINISH_REASON_ERRORS[finishReason],
+              ? `${FINISH_REASON_ERRORS[finishReason]}；${detail}`
+              : FINISH_REASON_ERRORS[finishReason],
           )
         }
 
@@ -1690,7 +1607,7 @@ export function createDelegateAgentRuntime(
       }),
     )
 
-    const children = await runWithConcurrency(tasks, budget.maxConcurrent)
+    const children = await createConcurrencyLimiter(budget.maxConcurrent).runAll(tasks)
     const changeSets: ChildChangeSet[] = []
     children.forEach((child) => collectChangeSets({ changeSets: child.changeSets ?? [] }, changeSets))
     changeSets.sort(

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { FINISH_REASON_ERRORS } from '../runtime/core/plugins/finishReasonPlugin'
 import { createDelegateAgentRuntime } from './runtime'
 import type { DelegateAgentCallContext, SubagentNodeRecord } from './types'
 import { createToolRegistry } from '../tools/toolRegistry'
@@ -748,7 +749,7 @@ describe('createDelegateAgentRuntime', () => {
     await delegateRuntime.dispose?.()
   })
 
-  it('shares one model-call semaphore across distillation and children', async () => {
+  it('shares one model-call limiter across distillation and children', async () => {
     let active = 0
     let peak = 0
     const fetchImpl: typeof fetch = async (_url, init) => {
@@ -2149,8 +2150,7 @@ describe('createDelegateAgentRuntime', () => {
     expect(child.status).not.toBe('done')
     expect(child.status).toBe('failed')
     // 父 agent 能明确看到「不完整」以及精确成因。
-    expect(child.error).toContain('finish_reason=length')
-    expect(child.error).toContain('产出不完整')
+    expect(child.error).toContain(FINISH_REASON_ERRORS.length)
     expect(child.summary).toBe(child.error)
     // 半截文本只作为定位线索出现，且被明确标注成不完整。
     expect(child.error).toContain('截断片段（仅供定位，不完整）')
@@ -2203,8 +2203,7 @@ describe('createDelegateAgentRuntime', () => {
     const child = result.children[0]
     expect(child.status).not.toBe('done')
     expect(child.status).toBe('failed')
-    expect(child.error).toContain('finish_reason=content_filter')
-    expect(child.error).toContain('内容安全策略拦截')
+    expect(child.error).toContain(FINISH_REASON_ERRORS.content_filter)
     // 不能再伪装成「跑完了但没话说」。
     expect(child.summary).not.toContain('子 agent 未返回有效文本')
     expect(child.resultFile).toBeUndefined()
@@ -2239,9 +2238,7 @@ describe('createDelegateAgentRuntime', () => {
     )
 
     expect(result.children.map((child) => child.status)).toEqual(['failed', 'failed'])
-    expect(result.children[0].error).toContain('finish_reason=insufficient_system_resource')
-    expect(result.children[0].error).toContain('容量不足')
-    expect(result.children[0].error).toContain('稍后重试')
+    expect(result.children[0].error).toContain(FINISH_REASON_ERRORS.insufficient_system_resource)
     // 三态文案各不相同：父 agent 据此选择重试而不是改写任务。
     expect(result.children[0].error).not.toContain('finish_reason=length')
     expect(result.children[0].error).not.toContain('content_filter')
