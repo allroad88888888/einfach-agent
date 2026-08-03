@@ -28,7 +28,7 @@
 //   ★ 剩余隔离缺口（默认路径无影响，双实例时仍可能落 defaultCore）★：
 //     · createDelegateAgentRuntime + 子 agent 委派路径；
 //     · Planning getter/writer；
-//     · persistSessions（persistenceBridge 内部自取 defaultCore.rootStore）。
+//     · persistence bridge 的默认兼容门面（主循环已按 core 写入）。
 
 import { isTauri } from '@tauri-apps/api/core'
 import { sessionsAtom, workspacesAtom } from '../state/rootStore'
@@ -59,7 +59,6 @@ import { classifyToolRisk } from './dangerousTools'
 import type { ConversationItem, PendingToolConfirmation, PendingUserDecisionOrigin } from '../state/core.type'
 import type { RunRecoverySnapshot } from '../state/checkpoint.type'
 import { normalizeAskUserQuestionPayload } from './askUserQuestion'
-import { persistCheckpoint, persistSessions } from './persistenceBridge'
 import { streamDeepSeek, type DeepSeekChatRequest } from '@web-agent/ai'
 import { streamGlm, type GlmChatRequest } from '@web-agent/ai'
 import { isAbortError } from '@web-agent/ai'
@@ -873,7 +872,7 @@ export function persistCurrentRunRecovery(
   ) return
   updateCheckpoint(id, latest.turnIndex, latest.label, core, recovery)
   const updated = store.getter(checkpointsAtom)[latest.turnIndex]
-  if (updated) persistCheckpoint(id, updated)
+  if (updated) core.persistence.persistCheckpoint(id, updated)
 }
 
 // 重启可能发生在 assistant(tool_calls) 已落工作 checkpoint、但 tool result 尚未安全落盘之间。
@@ -1179,7 +1178,7 @@ export async function runToolLoop(
         items_count: checkpoint.items.length,
         working: label.startsWith(WORKING_CHECKPOINT_PREFIX),
       })
-      persistCheckpoint(id, checkpoint)
+      core.persistence.persistCheckpoint(id, checkpoint)
     }
   }
 
@@ -1203,7 +1202,7 @@ export async function runToolLoop(
     if (committed) {
       traceEvent('checkpoint.commit', { turnIndex: committed.turnIndex, items_count: committed.items.length })
     }
-    persistSessions()
+    core.persistence.persistSessions()
   }
 
   // 只给【当前 run 且状态已经是 stopped】的轮次收快照。stale run 不能碰新 run 的会话，

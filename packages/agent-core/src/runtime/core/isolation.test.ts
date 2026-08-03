@@ -21,16 +21,18 @@
 //   工具懒加载 ensureToolLoaded 与 isToolAlwaysAllowed 的主循环调用点【已穿 core】（本轮收尾），不再是缺口。
 //   主循环的「纯对话」路径（本测走的这条）已 100% 穿好，隔离成立。
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createCore } from './createCore'
 import { defaultCore } from './coreInstance'
 import type { Tool } from '../../tools/types'
 import { sessionsAtom, activeSessionIdAtom, resetRootStore } from '../../state/rootStore'
 import { resetSessionStores } from '../../state/sessionStore'
 import { itemsAtom, runAtom, checkpointsAtom } from '../../state/sessionAtoms'
-import { resetPersistence } from '../persistenceBridge'
+import { configurePersistence, resetPersistence } from '../persistenceBridge'
 import { resetObservability } from '../../observability/trace'
 import type { ConversationItem, SessionMeta } from '../../state/core.type'
+import type { SessionsPersistence } from '../../state/persistence/contract'
+import type { HistoryDriver } from '../../state/persistence/historyDriver'
 
 // ── 假 fetch ───────────────────────────────────────────────────────────────
 // 非流式 JSON 响应：postChatCompletionStream 检测到 content-type 非 text/event-stream 即回退
@@ -62,6 +64,28 @@ function makeTool(name: string): Tool {
     skill: { description: `${name} 摘要`, content: `# ${name}` },
     inputSchema: { type: 'object', properties: {} },
     execute: async () => ({ ok: true }),
+  }
+}
+
+function persistenceSpies() {
+  const saveCheckpoint = vi.fn(async () => {})
+  const saveSessions = vi.fn(async (_sessions: SessionMeta[]) => {})
+  return {
+    history: {
+      listCheckpoints: vi.fn(async () => []),
+      loadCheckpoint: vi.fn(async () => undefined),
+      saveCheckpoint,
+      truncateAfter: vi.fn(async () => {}),
+      deleteSession: vi.fn(async () => {}),
+    } satisfies HistoryDriver,
+    sessions: {
+      saveSessions,
+      loadSessions: vi.fn(async () => []),
+      saveWorkspaces: vi.fn(async () => {}),
+      loadWorkspaces: vi.fn(async () => []),
+    } satisfies SessionsPersistence,
+    saveCheckpoint,
+    saveSessions,
   }
 }
 
@@ -300,5 +324,49 @@ describe('双实例隔离证明（createCore × 真主循环 × 假 fetch）', (
     // A 的订阅只收到 A 的增量（user+assistant），B 的只收到 B 的 —— 一条都不串。
     expect(seenA).toEqual(['A-question', 'A-reply'])
     expect(seenB).toEqual(['B-question', 'B-reply'])
+  })
+
+  it('persistence checkpoint 按实例隔离：A 的 turn snapshot 不会写入 defaultCore driver', async () => {
+    const defaultPersistence = persistenceSpies()
+    const aPersistence = persistenceSpies()
+    configurePersistence({ history: defaultPersistence.history })
+    const A = createCore({ config: { deepseekApiKey: 'KA', fetchImpl: replyFetch('A-reply').fetchImpl } })
+    A.persistence.configure({ history: aPersistence.history })
+    seedSession(A, 's', 'A-session')
+
+    A.sendMessage('A-question')
+    await waitUntil(() => A.getSessionStore('s').store.getter(runAtom)?.status === 'done', 'A done')
+
+    expect(aPersistence.saveCheckpoint).toHaveBeenCalledWith(
+      's',
+      expect.objectContaining({ items: expect.any(Array) }),
+    )
+    expect(defaultPersistence.saveCheckpoint).not.toHaveBeenCalled()
+  })
+
+  it('persistence sessions 按实例隔离：A/B 的 commit snapshots 只写各自 driver，defaultCore 零污染', async () => {
+    const defaultPersistence = persistenceSpies()
+    const aPersistence = persistenceSpies()
+    const bPersistence = persistenceSpies()
+    configurePersistence({ sessions: defaultPersistence.sessions })
+    const A = createCore({ config: { deepseekApiKey: 'KA', fetchImpl: replyFetch('A-reply').fetchImpl } })
+    const B = createCore({ config: { deepseekApiKey: 'KB', fetchImpl: replyFetch('B-reply').fetchImpl } })
+    A.persistence.configure({ sessions: aPersistence.sessions })
+    B.persistence.configure({ sessions: bPersistence.sessions })
+    seedSession(A, 's', 'A-session')
+    seedSession(B, 's', 'B-session')
+
+    A.sendMessage('A-question')
+    B.sendMessage('B-question')
+    await waitUntil(
+      () =>
+        A.getSessionStore('s').store.getter(runAtom)?.status === 'done' &&
+        B.getSessionStore('s').store.getter(runAtom)?.status === 'done',
+      '两个 run 都 done',
+    )
+
+    expect(aPersistence.saveSessions).toHaveBeenCalledWith([expect.objectContaining({ title: 'A-session' })])
+    expect(bPersistence.saveSessions).toHaveBeenCalledWith([expect.objectContaining({ title: 'B-session' })])
+    expect(defaultPersistence.saveSessions).not.toHaveBeenCalled()
   })
 })

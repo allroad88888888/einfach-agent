@@ -1,13 +1,14 @@
-// runtime/core/coreInstance.ts —— 「实例化」的地基：把五类模块级资源收进一个 CoreInstance。
+// runtime/core/coreInstance.ts —— 「实例化」的地基：把六类模块级资源收进一个 CoreInstance。
 // ---------------------------------------------------------------------------
-// 背景：现状是五类各自为政的模块资源——
+// 背景：现状是六类各自为政的模块资源——
 //   · state/rootStore.ts      的 rootStore（会话列表 store）
 //   · state/sessionStore.ts   的 per-session store 缓存 Map
 //   · tools/registry.ts       的 toolRegistry（工具注册表）
 //   · runtime/abortRegistry.ts 的 controllers Map（每会话 AbortController）
 //   · subagents/scheduler.ts  的任务树与订阅者（子 agent 调度状态）
-// 本模块把这五类资源收进一个 CoreInstance 抽象，并造 `defaultCore = createCoreInstance()`
-// 把它们实例化一次。上面五个模块随后【全部改写成 defaultCore 的视图】——照旧导出同名符号，
+//   · runtime/persistenceBridge.ts 的 driver、写队列与 rootStore 快照
+// 本模块把这六类资源收进一个 CoreInstance 抽象，并造 `defaultCore = createCoreInstance()`
+// 把它们实例化一次。上面六个模块随后【全部改写成 defaultCore 的视图】——照旧导出同名符号，
 // 只是背后取自 defaultCore。对所有调用点完全透明（本期不穿线到 runtime，行为零变化）。
 //
 // 【破环】本模块只 import 叶子层：createStore（einfach）、createToolRegistry（tools/toolRegistry，
@@ -22,12 +23,16 @@
 //   defaultCore 造出来是【无工具】的；app（main.tsx）与测试（test/setup.ts）各调一次
 //   registerStandardTools(defaultCore.tools) 恢复"默认 21 工具"。于是 core 变无主张（可嵌任意工具集），
 //   batteries-included 由消费层一行恢复。
-
 import { createStore, type Store } from '@einfach/core'
 import { createToolRegistry, type ToolRegistry } from '../../tools/toolRegistry'
 import { createSubagentScheduler, type SubagentScheduler } from '../../subagents/schedulerState'
 import type { ProjectSkillsSnapshot } from '../../skills/projectSkills'
 import { emptyProjectSkillsSnapshot } from '../../skills/projectSkills'
+import {
+  createPersistenceBridge,
+  setDefaultPersistenceBridge,
+  type PersistenceBridge,
+} from '../persistenceBridge'
 // rootAtoms 是零 runtime 依赖的叶子层（破环地基），coreInstance 可以安全引用它的 atom 定义。
 import { projectSkillsAtom } from '../../state/rootAtoms'
 
@@ -94,8 +99,7 @@ export interface RuntimeConfig {
   fetchImpl?: typeof fetch
 }
 
-// 一个 CoreInstance = 一套互相隔离的「根 store + 会话 store 缓存 + 工具注册表 + abort 注册表 + 子 agent 调度器 + 配置」。
-// defaultCore 是全局默认那一套；未来 createCore（第 3 期）可造出彼此隔离的另一套。
+// 一个 CoreInstance 包含彼此隔离的 root/session stores、tools、abort、scheduler、config、skills 与 persistence。
 export interface CoreInstance {
   // 该实例的根 store：sessionsAtom/activeSessionIdAtom 的值域（会话列表 + 当前会话 id）。
   readonly rootStore: Store
@@ -117,6 +121,8 @@ export interface CoreInstance {
   readonly config: RuntimeConfig
   // 该实例的项目 Skills 缓存（per workspaceRoot，与 core.tools 同构）。
   readonly projectSkills: ProjectSkillsStore
+  // 该实例的持久化 driver、写队列与 rootStore 快照。
+  readonly persistence: PersistenceBridge
 }
 
 /**
@@ -134,6 +140,7 @@ export function createCoreInstance(opts?: {
 }): CoreInstance {
   // 1) 根 store：该实例的会话列表值域。
   const rootStore = createStore()
+  const persistence = createPersistenceBridge(rootStore)
 
   // 2) per-session store 缓存：本实例私有 Map（逻辑照搬原 sessionStore.ts，Map 从模块级变实例字段）。
   const sessionStores = new Map<string, SessionStore>()
@@ -282,6 +289,7 @@ export function createCoreInstance(opts?: {
     subagentScheduler,
     config,
     projectSkills,
+    persistence,
   }
 }
 
@@ -289,3 +297,4 @@ export function createCoreInstance(opts?: {
 // 首次求值即创建——任一视图模块被 import 时触发。【登记反转】它造出来是【无工具】的：
 // app（main.tsx）与测试（test/setup.ts）负责调 registerStandardTools(defaultCore.tools) 装标准工具。
 export const defaultCore: CoreInstance = createCoreInstance()
+setDefaultPersistenceBridge(defaultCore.persistence)
