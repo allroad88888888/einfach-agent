@@ -30,7 +30,7 @@
 | [项目内 Skills 自动加载（`.agent/`）](project-skills-blueprint.md) | 阶段 A–D 已实施：workspace 的 `.agent/skills` 与 `.claude/skills` 自动进 L1 清单，正文与资源经 `skill_read` 按需读；阶段 E（行为 eval）可选未做 |
 | [上下文缓存成本治理](context-cache-cost.md) | 压缩投影复用已实现、收益待实测；含账单归因方法与验证 SQL |
 | [上下文缓存成本 · 后续跟进项](context-cache-followups.md) | F1 实测验证（最高优先）、F2 尾巴失效归零、F3 会话过长提示；F5 跨 run 复用暂不做，C1/C2 已关闭并附结论 |
-| [项目路线图](ROADMAP.md) | 本次结构优化范围之外的后续路线：阶段 2/3 的插件产品化与安全发布，再进入阶段 4 的性能与长期运行 |
+| [项目路线图](ROADMAP.md) | 阶段 0–4 已完成的交付与验收记录；后续仅在获得明确授权后推进 R5 协议实现、可选行为评测或新的路线图条目 |
 
 蓝图描述目标形态，不代表所有 API 都已交付。引用蓝图时需要同时核对实现和测试。
 
