@@ -2,6 +2,8 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
 import { toolRegistry } from '@web-agent/core/tools/registry'
+import { resetRootStore } from '@web-agent/core/state/rootStore'
+import { resetSessionStores } from '@web-agent/core/state/sessionStore'
 import { registerStandardTools } from '@web-agent/tools'
 
 // 【登记反转 · TS1】defaultCore 造出来无工具（core 不再硬编码标准工具）。测试大量断言 defaultCore/
@@ -20,5 +22,9 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  // Vitest isolates every test file in its own worker. These default-core stores only need
+  // cleanup between cases inside that worker; they are never used to serialize test files.
+  resetSessionStores()
+  resetRootStore()
   vi.unstubAllEnvs()
 })

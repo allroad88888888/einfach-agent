@@ -4,9 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Provider } from '@einfach/react'
 import type { ConversationItem, SessionMeta } from '@web-agent/core/state/core.type'
 import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
-import { activeSessionIdAtom, resetRootStore, sessionsAtom } from '@web-agent/core/state/rootStore'
+import { activeSessionIdAtom, sessionsAtom } from '@web-agent/core/state/rootStore'
 import { itemsAtom } from '@web-agent/core/state/sessionAtoms'
-import { resetSessionStores } from '@web-agent/core/state/sessionStore'
 import { SubagentTreePanel } from './SubagentTreePanel'
 import { readWorkspaceFile, readWorkspaceRunIndexPage } from '@web-agent/core/runtime/workspaceRead'
 
@@ -16,8 +15,6 @@ vi.mock('@web-agent/core/runtime/workspaceRead', () => ({
 }))
 
 beforeEach(() => {
-  resetRootStore()
-  resetSessionStores()
   vi.clearAllMocks()
   vi.mocked(readWorkspaceFile).mockResolvedValue({ ok: false, error: 'file does not exist' })
   vi.mocked(readWorkspaceRunIndexPage).mockResolvedValue({ ok: false, error: 'file does not exist' })

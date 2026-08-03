@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createStore } from '@einfach/core'
 import { pendingArtifactsAtom, type PendingArtifact } from '@web-agent/core/state/transientAtoms'
-import { rootStore, activeSessionIdAtom, resetRootStore } from '@web-agent/core/state/rootStore'
+import { rootStore, activeSessionIdAtom } from '@web-agent/core/state/rootStore'
 import { renderWithStore } from '../../test/renderWithStore'
 import { discardArtifact } from '@web-agent/core/runtime/commands'
 import { SaveArtifact } from './SaveArtifact'
@@ -38,7 +38,6 @@ afterEach(() => {
   } else {
     ;(window as unknown as Record<string, unknown>).showSaveFilePicker = ORIGINAL_SHOW_SAVE
   }
-  resetRootStore()
   vi.clearAllMocks()
   vi.restoreAllMocks()
 })

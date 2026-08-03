@@ -21,10 +21,10 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import { rootStore, sessionsAtom, resetRootStore } from '../../state/rootStore'
-import { getSessionStore, resetSessionStores } from '../../state/sessionStore'
+import { rootStore, sessionsAtom } from '../../state/rootStore'
+import { getSessionStore } from '../../state/sessionStore'
 import { itemsAtom, runAtom } from '../../state/sessionAtoms'
 import { createToolRegistry } from '../../tools/registry'
 import type { Tool } from '../../tools/types'
@@ -34,11 +34,7 @@ import { subscribeAgentEvents, type AgentEvent } from './events'
 import type { RequestDraft } from './loopHooks'
 import { assemblePlugins, type AgentPlugin } from './pluginApi'
 
-// fileParallelism:false —— 每个用例自 seed，afterEach 清 store / rootStore 缓存做隔离（同 events.test）。
-afterEach(() => {
-  resetSessionStores()
-  resetRootStore()
-})
+// 每个用例自 seed；共享 store 由测试 setup 在每个用例后复位（同 events.test）。
 
 // 在 rootStore 登记会话（ghost guard 的权威事实；runToolLoop 也据此不 no-op）。
 function seedSession(id: string): void {

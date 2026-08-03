@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import { rootStore, sessionsAtom, resetRootStore } from '../../state/rootStore'
-import { getSessionStore, resetSessionStores } from '../../state/sessionStore'
+import { rootStore, sessionsAtom } from '../../state/rootStore'
+import { getSessionStore } from '../../state/sessionStore'
 import { itemsAtom, runAtom } from '../../state/sessionAtoms'
 import { appendItem, setRun, setRunStatus } from '../../state/sessionWriters'
 import type { ConversationItem, RunState } from '../../state/core.type'
@@ -9,12 +9,7 @@ import { isRunEndStatus, subscribeAgentEvents, type AgentEvent } from './events'
 
 // events 投影器（PX5）—— 纯观察：从 itemsAtom / runAtom 无损派生规范化 AgentEvent。
 // 用【真 store】（getSessionStore，与投影器同一实例）驱动；部分用例走真 writer + seedSession
-// 验证生产路径。afterEach 清 store / rootStore 缓存，隔离用例（fileParallelism:false）。
-
-afterEach(() => {
-  resetSessionStores()
-  resetRootStore()
-})
+// 验证生产路径。共享 store 由测试 setup 在每个用例后复位。
 
 // 在 rootStore 登记表里 seed 一个会话（真 writer 的 ghost guard 需要它才不 no-op）。
 function seedSession(id = 's1'): void {

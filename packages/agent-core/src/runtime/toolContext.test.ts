@@ -1,9 +1,9 @@
 // toolContext 单测：ctx 白名单的守卫（cycle/depth/stale）+ 副作用落地。
 // 用唯一名的 fake tool 注册进单例工厂（不与真实工具重名，无污染）。
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { rootStore, sessionsAtom, resetRootStore } from '../state/rootStore'
-import { getSessionStore, resetSessionStores } from '../state/sessionStore'
+import { describe, expect, it, vi } from 'vitest'
+import { rootStore, sessionsAtom } from '../state/rootStore'
+import { getSessionStore } from '../state/sessionStore'
 import { setRun } from '../state/sessionWriters'
 import { getPlan, setPlan } from '../state/planWriters'
 import { browserCardsAtom, toolActivityAtom } from '../state/transientAtoms'
@@ -11,11 +11,6 @@ import { toolRegistry } from '../tools/registry'
 import type { Tool } from '../tools/types'
 import { createCoreInstance, type CoreInstance } from './core/coreInstance'
 import { buildToolContext } from './toolContext'
-
-afterEach(() => {
-  resetRootStore()
-  resetSessionStores()
-})
 
 function seedRunningSession(id = 's1', runId = 'r'): void {
   rootStore.setter(sessionsAtom, (prev) => ({

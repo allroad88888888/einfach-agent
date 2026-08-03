@@ -1,8 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { createStore } from '@einfach/core'
 
-import { rootStore, sessionsAtom, resetRootStore } from './rootStore'
-import { getSessionStore, resetSessionStores } from './sessionStore'
+import { rootStore, sessionsAtom } from './rootStore'
+import { getSessionStore } from './sessionStore'
 import { createCoreInstance } from '../runtime/core/coreInstance'
 import {
   pendingArtifactsAtom,
@@ -39,11 +39,6 @@ import {
 
 // TK5 瞬态 atom —— 单测先行（C6）。这些 atom 是「会话 store 内共享单例 key」，
 // 值随 store 隔离（不分桶）；写入器 ghost guard 查 rootStore.sessionsAtom 登记表。
-
-afterEach(() => {
-  resetRootStore()
-  resetSessionStores()
-})
 
 // 在 rootStore 登记表里 seed 一个会话（否则 ghost guard 会拦掉写入）。
 function seedSession(id = 's1'): void {

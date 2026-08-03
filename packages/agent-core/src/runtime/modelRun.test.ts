@@ -5,8 +5,8 @@
 // 只依赖状态层 + api 层；mock fetchImpl 注入模型响应/异常。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { rootStore, sessionsAtom, workspacesAtom, resetRootStore } from '../state/rootStore'
-import { getSessionStore, resetSessionStores } from '../state/sessionStore'
+import { rootStore, sessionsAtom, workspacesAtom } from '../state/rootStore'
+import { getSessionStore } from '../state/sessionStore'
 import { itemsAtom, runAtom, checkpointsAtom, planAtom } from '../state/sessionAtoms'
 import { executionGraphAtom } from '../execution/graph'
 import { getExecutionRuntime } from '../execution/runtime'
@@ -72,8 +72,6 @@ afterEach(() => {
   tauriControl.enabled = false
   resetObservability()
   resetPersistence()
-  resetRootStore()
-  resetSessionStores()
 })
 
 // 只记录 saveCheckpoint 的假 HistoryDriver —— 用来证明「落盘」真的发生了，

@@ -248,7 +248,7 @@ export default defineConfig({
     setupFiles: ['./apps/web/src/test/setup.ts'],
     css: true,
     restoreMocks: true,
-    // 运行时用模块级单例（如 abortRegistry / 每会话 store 缓存），测试串行避免共享态串扰。
-    fileParallelism: false,
+    // 每个测试文件在独立 worker 中运行；setup 负责同一 worker 内的默认 store 清理。
+    isolate: true,
   },
 })

@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest'
-import { getSessionStore, resetSessionStores } from './sessionStore'
+import { describe, expect, it } from 'vitest'
+import { getSessionStore } from './sessionStore'
 import {
   checkpointsAtom,
   currentTurnIndexAtom,
@@ -7,7 +7,7 @@ import {
   planAtom,
   planStageCheckpointsAtom,
 } from './sessionAtoms'
-import { rootStore, sessionsAtom, resetRootStore } from './rootStore'
+import { rootStore, sessionsAtom } from './rootStore'
 import type { ConversationItem, SessionMeta } from './core.type'
 import {
   commitCheckpoint,
@@ -24,11 +24,7 @@ import type { PlanSnapshot } from '../planning/types'
 //   jump   —— 恢复某轮 items + 截断其后的 checkpoint（git reset --hard 语义）。
 // ghost guard（C7）：会话未在 rootStore.sessionsAtom 登记 → 写入器必须 no-op，
 //   所以下面每个「正常路径」用例都先 seed 's1'，否则加 guard 后会全部 no-op。
-// 每个用例后清空全部 session store + 复位 rootStore，隔离状态。
-afterEach(() => {
-  resetSessionStores()
-  resetRootStore()
-})
+// 默认 store 由测试 setup 在每个用例后复位。
 
 // 登记一个 's1' 会话（写入器的 ghost guard 就查这张登记表）。
 const s1Meta: SessionMeta = {

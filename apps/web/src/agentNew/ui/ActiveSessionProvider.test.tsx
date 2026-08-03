@@ -1,9 +1,9 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { act, screen } from '@testing-library/react'
 import { useAtomValue } from '@einfach/react'
 import { renderWithStore } from '../../test/renderWithStore'
-import { rootStore, activeSessionIdAtom, resetRootStore } from '@web-agent/core/state/rootStore'
-import { getSessionStore, resetSessionStores } from '@web-agent/core/state/sessionStore'
+import { rootStore, activeSessionIdAtom } from '@web-agent/core/state/rootStore'
+import { getSessionStore } from '@web-agent/core/state/sessionStore'
 import { itemsAtom } from '@web-agent/core/state/sessionAtoms'
 import type { ConversationItem } from '@web-agent/core/state/core.type'
 import { ActiveSessionProvider } from './ActiveSessionProvider'
@@ -25,11 +25,6 @@ const oneItem: ConversationItem = {
 }
 
 describe('ActiveSessionProvider (RUI1)', () => {
-  afterEach(() => {
-    resetRootStore()
-    resetSessionStores()
-  })
-
   it('切 activeSessionId → key 切 store，子组件读到新会话 store 的值；无会话时空占位', () => {
     // 准备两个会话的独立 store，各写不同长度的 items。
     getSessionStore('a').store.setter(itemsAtom, [oneItem])

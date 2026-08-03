@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { rootStore, sessionsAtom, resetRootStore } from './rootStore'
-import { getSessionStore, resetSessionStores } from './sessionStore'
+import { rootStore, sessionsAtom } from './rootStore'
+import { getSessionStore } from './sessionStore'
 import { itemsAtom, runAtom } from './sessionAtoms'
 import {
   appendItem,
@@ -19,8 +19,6 @@ import { createCoreInstance, type CoreInstance } from '../runtime/core/coreInsta
 // ghost guard 查 rootStore.sessionsAtom（会话登记表），内容写各自 session store。
 
 afterEach(() => {
-  resetRootStore()
-  resetSessionStores()
   vi.restoreAllMocks()
 })
 

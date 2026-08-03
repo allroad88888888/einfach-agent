@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import { renderWithStore } from '../../test/renderWithStore'
-import { rootStore, sessionsAtom, activeSessionIdAtom, resetRootStore } from '@web-agent/core/state/rootStore'
+import { rootStore, sessionsAtom, activeSessionIdAtom } from '@web-agent/core/state/rootStore'
 import { selectSession, removeSession, renameSession } from '@web-agent/core/runtime/commands'
 import { SessionList } from './SessionList'
 
@@ -25,7 +25,6 @@ function seed() {
 
 describe('SessionList (P-U2)', () => {
   afterEach(() => {
-    resetRootStore()
     vi.clearAllMocks()
   })
 

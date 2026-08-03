@@ -2,8 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./workspaceWrite', () => ({ writeWorkspaceFile: vi.fn() }))
 
-import { rootStore, sessionsAtom, resetRootStore } from '../state/rootStore'
-import { resetSessionStores } from '../state/sessionStore'
+import { rootStore, sessionsAtom } from '../state/rootStore'
 import { setRun } from '../state/sessionWriters'
 import type {
   DelegateAgentCallContext,
@@ -14,8 +13,6 @@ import { buildToolContext } from './toolContext'
 import { writeWorkspaceFile, type WorkspaceWriteInput, type WorkspaceWriteResult } from './workspaceWrite'
 
 afterEach(() => {
-  resetRootStore()
-  resetSessionStores()
   vi.clearAllMocks()
 })
 

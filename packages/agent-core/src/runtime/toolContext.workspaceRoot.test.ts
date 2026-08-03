@@ -40,8 +40,8 @@ vi.mock('./shellCommand', () => ({
   })),
 }))
 
-import { rootStore, sessionsAtom, resetRootStore } from '../state/rootStore'
-import { getSessionStore, resetSessionStores } from '../state/sessionStore'
+import { rootStore, sessionsAtom } from '../state/rootStore'
+import { getSessionStore } from '../state/sessionStore'
 import { setRun } from '../state/sessionWriters'
 import { buildToolContext } from './toolContext'
 import { readWorkspaceFile, listWorkspaceFiles, searchWorkspaceFiles } from './workspaceRead'
@@ -56,8 +56,6 @@ import { addAlwaysAllowedTool, alwaysAllowedToolsAtom } from '../state/transient
 import { createCoreInstance, defaultCore } from './core/coreInstance'
 
 afterEach(() => {
-  resetRootStore()
-  resetSessionStores()
   vi.clearAllMocks()
 })
 

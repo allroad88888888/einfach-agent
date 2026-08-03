@@ -8,9 +8,8 @@ import {
   expandedWorkspaceIdsAtom,
   sessionsAtom,
   activeSessionIdAtom,
-  resetRootStore,
 } from '@web-agent/core/state/rootStore'
-import { getSessionStore, resetSessionStores } from '@web-agent/core/state/sessionStore'
+import { getSessionStore } from '@web-agent/core/state/sessionStore'
 import { checkpointsAtom, planAtom, runAtom } from '@web-agent/core/state/sessionAtoms'
 import { contextStatsAtom, pendingArtifactsAtom } from '@web-agent/core/state/transientAtoms'
 import type { SessionMeta } from '@web-agent/core/state/core.type'
@@ -76,8 +75,6 @@ function seedActiveSession(id = 's1'): void {
 
 describe('AppShell', () => {
   afterEach(() => {
-    resetRootStore()
-    resetSessionStores()
     resetMcpSettingsState(rootStore)
   })
 

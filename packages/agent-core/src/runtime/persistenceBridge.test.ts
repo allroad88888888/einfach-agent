@@ -8,7 +8,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { rootStore, sessionsAtom, workspacesAtom, resetRootStore } from '../state/rootStore'
+import { rootStore, sessionsAtom, workspacesAtom } from '../state/rootStore'
 import type { SessionMeta, WorkspaceMeta } from '../state/core.type'
 import type { Checkpoint } from '../state/checkpoint.type'
 import type { SessionsPersistence } from '../state/persistence/contract'
@@ -25,7 +25,6 @@ import {
 
 afterEach(() => {
   resetPersistence()
-  resetRootStore()
   vi.clearAllMocks()
 })
 

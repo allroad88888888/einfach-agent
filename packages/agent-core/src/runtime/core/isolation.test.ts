@@ -25,8 +25,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createCore } from './createCore'
 import { defaultCore, type CoreInstance } from './coreInstance'
 import type { Tool } from '../../tools/types'
-import { sessionsAtom, activeSessionIdAtom, resetRootStore } from '../../state/rootStore'
-import { resetSessionStores } from '../../state/sessionStore'
+import { sessionsAtom, activeSessionIdAtom } from '../../state/rootStore'
 import { itemsAtom, runAtom, checkpointsAtom } from '../../state/sessionAtoms'
 import { getPlan, setPlan } from '../../state/planWriters'
 import { configurePersistence, resetPersistence } from '../persistenceBridge'
@@ -148,10 +147,7 @@ function awaitingPlan(title: string): PlanSnapshot {
 }
 
 afterEach(() => {
-  // 隔离实例（A/B）随用例 GC，无需复位；只复原共享的 defaultCore，避免污染后续用例
-  //   （vite.config.ts fileParallelism:false，测试文件串行跑，共享单例必须自清）。
-  resetRootStore()
-  resetSessionStores()
+  // 隔离实例（A/B）随用例 GC；只复原本文件配置过的共享 defaultCore。
   defaultCore.abort.reset()
   Object.assign(defaultCore.config, {
     deepseekApiKey: '',

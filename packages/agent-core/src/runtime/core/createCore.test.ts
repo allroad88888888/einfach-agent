@@ -29,8 +29,7 @@ import { defaultCore } from './coreInstance'
 import type { Tool } from '../../tools/types'
 import { configureCommands } from '../commands'
 import { runSession, runToolLoop } from '../modelRun'
-import { sessionsAtom, activeSessionIdAtom, resetRootStore } from '../../state/rootStore'
-import { resetSessionStores } from '../../state/sessionStore'
+import { sessionsAtom, activeSessionIdAtom } from '../../state/rootStore'
 import { itemsAtom, runAtom } from '../../state/sessionAtoms'
 import type { SessionMeta } from '../../state/core.type'
 
@@ -41,9 +40,7 @@ async function flush(): Promise<void> {
 }
 
 afterEach(() => {
-  // 隔离实例随用例 GC，无需复位；只需把共享的 defaultCore 复原，避免污染后续（fileParallelism:false 串行跑）。
-  resetRootStore()
-  resetSessionStores()
+  // 隔离实例随用例 GC；共享 defaultCore 的非 store 配置仍在本文件复原。
   defaultCore.abort.reset()
   Object.assign(defaultCore.config, {
     deepseekApiKey: '',

@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import type { SessionMeta } from './core.type'
 import {
   rootStore,
@@ -7,9 +7,6 @@ import {
   activeSessionMetaAtom,
   resetRootStore,
 } from './rootStore'
-
-// 每个用例后把顶层 store 复位，保证全局单例 rootStore 在用例间互不污染。
-afterEach(resetRootStore)
 
 // 会话元信息样例：DeepSeek 设置最小合法字面量。
 const meta: SessionMeta = {

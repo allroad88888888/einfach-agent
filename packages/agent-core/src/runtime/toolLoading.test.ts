@@ -8,8 +8,8 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { rootStore, sessionsAtom, resetRootStore } from '../state/rootStore'
-import { getSessionStore, resetSessionStores } from '../state/sessionStore'
+import { rootStore, sessionsAtom } from '../state/rootStore'
+import { getSessionStore } from '../state/sessionStore'
 import { runAtom } from '../state/sessionAtoms'
 import { setRun } from '../state/sessionWriters'
 import type { SessionMeta } from '../state/core.type'
@@ -23,8 +23,6 @@ import { appendVisibleTool, ensureToolLoaded, refreshVisibleTools } from './tool
 
 afterEach(() => {
   resetPersistence()
-  resetRootStore()
-  resetSessionStores()
 })
 
 // 在 rootStore 登记会话（ghost guard 的权威事实），并建一个 running run。

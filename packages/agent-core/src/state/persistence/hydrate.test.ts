@@ -7,7 +7,7 @@
 //   · loadSessions 抛错 → 返回 false 且不抛（容错，DK2）。
 // 用内存 HistoryDriver + fake sessions（{ loadSessions }），不引真实 IndexedDB。
 
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
 import type { Checkpoint } from '../checkpoint.type'
 import type { ModelSettings, SessionMeta } from '../core.type'
@@ -24,11 +24,6 @@ import { checkpointsAtom, currentTurnIndexAtom, itemsAtom, planAtom, runAtom } f
 import { queuedUserMessagesAtom } from '../transientAtoms'
 import { createMemoryHistoryDriver } from './memoryHistoryDriver'
 import { hydrate } from './hydrate'
-
-afterEach(() => {
-  resetRootStore()
-  resetSessionStores()
-})
 
 // 两个会话：s2 的 updatedAt 更大（更新更晚），hydrate 后应作为 active。
 const s1: SessionMeta = {

@@ -1,16 +1,12 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
   createSessionStore,
   dropSessionStore,
   getSessionStore,
-  resetSessionStores,
 } from './sessionStore'
 
 // 每会话一个独立 store（C3）：工厂按需创建 + Map 缓存。
-// 每个用例后清空 Map，保证会话之间彼此隔离，不残留。
-afterEach(() => {
-  resetSessionStores()
-})
+// 默认 Map 由测试 setup 在每个用例后清空。
 
 describe('sessionStore', () => {
   it('getSessionStore 同 id 幂等：连续两次返回同一实例（Map 缓存）', () => {

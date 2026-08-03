@@ -2,20 +2,15 @@
 // ---------------------------------------------------------------------------
 // 打点契约：某阶段从「非 in_progress」转入 in_progress 时，记下**变更前**的计划快照和
 // 当时的 items 长度。同一阶段只留最早的一个点（重试/回滚后重开不覆盖），换计划或清空计划时整体清空。
-import { afterEach, describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest'
 
-import { rootStore, sessionsAtom, resetRootStore } from './rootStore'
-import { getSessionStore, resetSessionStores } from './sessionStore'
+import { rootStore, sessionsAtom } from './rootStore'
+import { getSessionStore } from './sessionStore'
 import { itemsAtom, planAtom, planStageCheckpointsAtom } from './sessionAtoms'
 import { setPlan } from './planWriters'
 import { createCoreInstance } from '../runtime/core/coreInstance'
 import type { ConversationItem, SessionMeta } from './core.type'
 import type { PlanSnapshot, PlanStageStatus } from '../planning/types'
-
-afterEach(() => {
-  resetSessionStores()
-  resetRootStore()
-})
 
 const meta: SessionMeta = {
   id: 's1',

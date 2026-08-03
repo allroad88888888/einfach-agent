@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createCoreInstance, defaultCore } from '../runtime/core/coreInstance'
 import { configurePersistence, resetPersistence } from '../runtime/persistenceBridge'
-import { resetRootStore, sessionsAtom } from '../state/rootStore'
+import { sessionsAtom } from '../state/rootStore'
 import type { SessionsPersistence } from '../state/persistence/contract'
 import type { SessionMeta, WorkspaceMeta } from '../state/core.type'
 import { getExecutionRuntime } from './runtime'
@@ -28,7 +28,6 @@ function sessionMeta(id: string): SessionMeta {
 
 afterEach(() => {
   resetPersistence()
-  resetRootStore()
 })
 
 describe('execution runtime persistence isolation', () => {

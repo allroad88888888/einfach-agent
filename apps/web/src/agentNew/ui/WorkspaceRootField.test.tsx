@@ -4,11 +4,9 @@ import userEvent from '@testing-library/user-event'
 import { renderWithStore } from '../../test/renderWithStore'
 import {
   activeWorkspaceIdAtom,
-  resetRootStore,
   rootStore,
   workspacesAtom,
 } from '@web-agent/core/state/rootStore'
-import { resetSessionStores } from '@web-agent/core/state/sessionStore'
 import { setWorkspaceRoot } from '@web-agent/core/runtime/commands'
 import { pickWorkspaceDirectory } from '@web-agent/core/runtime/workspaceDialog'
 import { WorkspaceRootField } from './WorkspaceRootField'
@@ -37,8 +35,6 @@ function seedActiveSession(): void {
 
 describe('WorkspaceRootField', () => {
   afterEach(() => {
-    resetRootStore()
-    resetSessionStores()
     vi.clearAllMocks()
   })
 

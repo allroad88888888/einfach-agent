@@ -39,9 +39,8 @@ import {
   workspaceSettingsOpenIdsAtom,
   sessionsAtom,
   activeSessionIdAtom,
-  resetRootStore,
 } from '../state/rootStore'
-import { getSessionStore, resetSessionStores } from '../state/sessionStore'
+import { getSessionStore } from '../state/sessionStore'
 import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
 import {
   getPendingQuestionAnswers,
@@ -130,8 +129,6 @@ beforeEach(() => {
 })
 
 afterEach(() => {
-  resetRootStore()
-  resetSessionStores()
   vi.clearAllMocks()
 })
 

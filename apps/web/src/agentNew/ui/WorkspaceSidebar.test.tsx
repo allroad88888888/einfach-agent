@@ -6,7 +6,6 @@ import {
   activeWorkspaceIdAtom,
   expandedWorkspaceIdsAtom,
   workspaceSettingsOpenIdsAtom,
-  resetRootStore,
   rootStore,
   sessionsAtom,
   workspacesAtom,
@@ -81,7 +80,6 @@ function seed(): void {
 
 describe('WorkspaceSidebar', () => {
   afterEach(() => {
-    resetRootStore()
     vi.clearAllMocks()
   })
 
