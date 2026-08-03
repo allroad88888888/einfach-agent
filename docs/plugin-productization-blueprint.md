@@ -1,0 +1,74 @@
+# 插件扩展面产品化蓝图
+
+更新时间：2026-08-03。前置条件：结构优化蓝图 B1–B7 已完成；Core 已支持多实例。
+
+## 目标与边界
+
+把已有的 loop hook、工具与订阅注册能力接入真实 `CoreInstance` 生命周期，使外部包能够在不读取 Core 内部 store 的前提下注册工具、观察状态并调用受限命令。
+
+本计划只覆盖阶段 2 的非 UI 插件面。不实现 `registerRenderer`，不迁移 API key，不改变无插件时的模型、工具并发和持久化行为。
+
+当前缺口是生产 loop 只消费 `onRunStart`、`transformContext` 与 `onTurnEnd`；`prepareRequest`、`beforeToolCall`、`afterToolCall`、`shouldStop`，以及 `registerTool`、`subscribe` 和插件 disposer 均尚未实际接线。
+
+## 固定设计约束
+
+- 插件按 Core 实例安装：入口采用 `createCore({ plugins })` 或等价显式安装 API，禁止进程级全局注册。
+- 安装期资源和每次 run 资源分层：工具注册与安装 disposer 属于 Core 生命周期；hook 闭包、订阅和 run disposer 属于单次 run，必须在所有 `finally` 路径释放。
+- command facade 由顶层 `createCore` 组合并注入当前 Core 的受限命令；`pluginApi` 不得反向 import `commands.ts`。
+- 工具重名采取安装前全量预检、原子拒绝策略；不得让插件覆盖宿主工具，也不得在失败后留下部分注册。
+- 插件错误必须隔离并产生 trace 证据。是否中止当前 run 由具体 hook 契约明确，不允许静默吞掉后继续执行危险工具。
+- 旧 `AgentPlugin` 的兼容行为先由适配层保持；公开稳定 API 在垂直样板验证后再冻结。
+
+## 批次 P2.1 —— Core 插件宿主与生命周期
+
+**只做**：建立每个 Core 私有的插件安装、预检、卸载和每 run 激活边界。
+
+- 新建一个单职责 plugin host，持有安装的插件描述、工具所有权和安装期 disposer；不把 React 或应用层类型引入 `agent-core`。
+- 由 `createCore` 组合当前 Core、受限 command facade 与 host；bootstrap 从当前 Core 读取激活的 run plugins，不再只硬编码内置插件数组。
+- 在工具注册前检查 host 与插件内的全部名称冲突；任一冲突则一个都不注册。
+- 在 bootstrap 绑定订阅；在 `runToolLoop` 的完成、暂停、异常、abort 与 stale 路径统一解绑。Core 卸载时注销自己安装的工具并执行安装 disposer。
+
+验收：两个 Core 的插件、工具和订阅完全隔离；卸载后无残留；无插件时请求、工具列表和 trace 保持不变；同名冲突不产生部分安装。
+
+## 批次 P2.2 —— 请求 hook 的真实接线
+
+**只做**：让 `prepareRequest` 在一次真实模型请求中生效。
+
+- 明确 `RequestDraft` 是本轮请求投影，不回写会话 `itemsAtom`。
+- 在 `transformContext` 后、请求 payload 投影与缓存统计前调用 `prepareRequest`；确定并测试 hook 失败时的 run 状态和 trace 名称。
+- 覆盖普通、恢复与计划恢复请求，确保每次模型请求仅触发一次、不会把草稿污染到下一轮。
+
+验收：外部插件追加 marker 后真实 fetch body 可见；会话项目不变；未安装插件的请求逐字不变；失败 hook 不会留下活跃订阅。
+
+## 批次 P2.3 —— 工具 hook 契约收紧与接线
+
+**只做**：使工具前后 hook 覆盖全部执行路径且不破坏状态机结果。
+
+- 将公共事件收紧为稳定的 `callId`、工具名和已验证参数；`afterToolCall` 只能返回可验证的 `ToolResult` 补丁，不能覆盖 `{ pause }` 等内部控制结果。
+- `beforeToolCall` 放在权限/参数校验成功后、确认与实际执行前；被阻断时写入确定的 tool result，不执行工具也不进入确认。
+- 所有串行、并行和确认恢复路径使用同一个 hook 包装器。首版若安装了工具 hook，则按声明顺序串行执行；无插件仍沿用现有并行快路径。
+
+验收：三种路径各触发一次 before/after；阻断不执行；after 的结果进入后续模型上下文；无插件的并行回归保持不变。
+
+## 批次 P2.4 —— 停止决策、受限命令与垂直样板
+
+**只做**：完成一个可交付插件的端到端闭环。
+
+- 将 `shouldStop: boolean` 设计为含 run 状态、原因和 checkpoint 语义的显式决定；在契约完成前不把旧槽直接接入 loop。
+- 以当前 Core 绑定的最小 command facade 替换手写目标类型；只暴露经过现有运行状态与确认边界的命令，不暴露 store。
+- 实现一个非 React 的样板插件，覆盖工具注册、run 观察、一个受限命令、卸载和异常隔离。`registerRenderer` 留作独立 UI 协议任务。
+
+验收：外部包不导入内部 store 即可完成上述能力；卸载无订阅或工具残留；插件异常不会破坏主 run；样板覆盖注册冲突和 Core 隔离。
+
+## 迁移与回归策略
+
+- 先为每个批次补端到端失败用例，再实现最小接线；每项保持一个可撤回 commit。
+- 执行 `codegraph affected -q -d 1 <改动文件>`、相关测试、`pnpm build`；批次完成后跑全量 `pnpm test`。
+- 新增模块遵循单一职责与行数上限；不得把生命周期、hook 聚合和工具执行塞回同一文件。
+- 完成后更新 [项目路线图](ROADMAP.md) 与 [文档导航](README.md)，并将旧的“零消费 hook”说明替换为实际契约。
+
+## 后续边界
+
+- `registerRenderer` 需要 Core item 协议与 React 宿主 registry 的独立设计，不能让 `agent-core` 依赖 React。
+- API key 从前端移出、Tauri 凭证与模型代理属于阶段 3；它们不通过插件 API 绕过安全边界。
+- 子 Agent 树单一事实源涉及执行图、归档格式和会话 tool result 的迁移，另行立项。
