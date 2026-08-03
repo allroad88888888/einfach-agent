@@ -22,7 +22,8 @@ import {
   performanceNow,
   recordPerformanceDiagnostic,
 } from '@web-agent/core/observability/performanceDiagnostics'
-import { buildPlanStageExecutionEntries, PlanStageExecutionTrace } from './MessageList'
+import { projectPlanStageTimelineItems } from '@web-agent/core/timeline'
+import { PlanStageExecutionTrace } from './PlanStageExecutionTrace'
 import { AskUserQuestionCard } from './AskUserQuestionCard'
 
 const statusText: Record<PlanStageStatus, string> = {
@@ -56,7 +57,7 @@ export function PlanPanel() {
   )
   const executionEntriesByStage = useMemo(() => {
     const startedAt = performanceNow()
-    const entries = buildPlanStageExecutionEntries(historicalItems)
+    const entries = projectPlanStageTimelineItems(historicalItems)
     const durationMs = performanceNow() - startedAt
     if (durationMs >= 16) {
       recordPerformanceDiagnostic(
@@ -74,8 +75,8 @@ export function PlanPanel() {
   }, [historicalItems])
   const streamingEntriesByStage = useMemo(
     () => assistantStream
-      ? buildPlanStageExecutionEntries([assistantStream.item])
-      : buildPlanStageExecutionEntries([]),
+      ? projectPlanStageTimelineItems([assistantStream.item])
+      : projectPlanStageTimelineItems([]),
     [assistantStream],
   )
   const planDecision = run?.status === 'waiting_user'
