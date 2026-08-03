@@ -39,7 +39,7 @@ import {
 import { buildChildSystemPrompt, buildChildUserPrompt } from './prompt'
 import { SubagentArchiveIO } from './archiveIO'
 import { ROOT_AGENT_PATH, agentPathDepth } from './path'
-import { subagentScheduler } from './scheduler'
+import { subagentScheduler, type SubagentScheduler } from './scheduler'
 import {
   canNarrowSubagentToolProfile,
   DEFAULT_SUBAGENT_TOOL_PROFILE,
@@ -270,6 +270,8 @@ interface CreateDelegateAgentRuntimeOptions {
   settings: ModelSettings
   /** Registry owned by the current CoreInstance. Defaults to the legacy singleton for direct callers. */
   registry?: ToolRegistry
+  /** Scheduler owned by the current CoreInstance. Defaults to the legacy default-core proxy. */
+  scheduler?: SubagentScheduler
   customInstructions?: string
   /**
    * 父 agent 那份「运行环境」段的正文（buildEnvironmentItem 的产物）。
@@ -402,6 +404,7 @@ export function createDelegateAgentRuntime(
   rawOpts: CreateDelegateAgentRuntimeOptions,
 ): DelegateAgentRuntime {
   const registry = rawOpts.registry ?? toolRegistry
+  const scheduler = rawOpts.scheduler ?? subagentScheduler
   const ownerSignal = rawOpts.signal
   const runtimeController = new AbortController()
   const abortFromOwner = () => runtimeController.abort(ownerSignal.reason)
@@ -431,7 +434,7 @@ export function createDelegateAgentRuntime(
   let disposed = false
   let cleanup: Promise<void> | undefined
   const unsubscribeScheduler = opts.onNodeChange
-    ? subagentScheduler.subscribe((node) => {
+    ? scheduler.subscribe((node) => {
         if (node.treeId === opts.runId && node.sessionId === opts.sessionId) {
           opts.onNodeChange?.(node)
         }
@@ -740,7 +743,7 @@ export function createDelegateAgentRuntime(
         // persisted execution graph. Never clear a tree while its root still looks active:
         // after a normal runtime release (or an unexpected early exit) that would leave the
         // restored desktop conversation permanently stuck at “running”.
-        const snapshot = subagentScheduler.snapshot(opts.runId)
+        const snapshot = scheduler.snapshot(opts.runId)
         const root = snapshot.find((node) => node.path === ROOT_AGENT_PATH)
         if (
           root
@@ -755,14 +758,14 @@ export function createDelegateAgentRuntime(
               : descendants.some((node) => node.status === 'cancelled')
                 ? 'cancelled'
                 : 'done'
-          subagentScheduler.markNode(opts.runId, ROOT_AGENT_PATH, status)
+          scheduler.markNode(opts.runId, ROOT_AGENT_PATH, status)
         }
         await archive.close()
       } finally {
         ownerSignal.removeEventListener('abort', abortFromOwner)
         unsubscribeScheduler?.()
         delegationStateByChildPath.clear()
-        subagentScheduler.clear(opts.runId)
+        scheduler.clear(opts.runId)
       }
     })()
     return cleanup
@@ -849,7 +852,7 @@ export function createDelegateAgentRuntime(
     const skillIds = [...node.inheritedSkillIds, localSkill.skillId]
     const changeSets: ChildChangeSet[] = []
     const executedToolNames: string[] = []
-    subagentScheduler.markNode(opts.runId, node.path, 'running', {
+    scheduler.markNode(opts.runId, node.path, 'running', {
       localSkillFiles: [localSkill.path],
       localSkillIds: [localSkill.skillId],
       inheritedSkillFiles: [...node.inheritedSkillFiles],
@@ -1070,7 +1073,7 @@ export function createDelegateAgentRuntime(
           const summary = firstAssistantText(response) || '子 agent 未返回有效文本。'
           const resultPath = subagentResultPath(archiveBasePath, node.path)
           await archive.writeText(context, resultPath, `${summary.trim()}\n`)
-          subagentScheduler.markNode(opts.runId, node.path, 'done', {
+          scheduler.markNode(opts.runId, node.path, 'done', {
             resultFile: resultPath,
             localSkillFiles: [localSkill.path],
             localSkillIds: [localSkill.skillId],
@@ -1361,7 +1364,7 @@ export function createDelegateAgentRuntime(
     } catch (error) {
       const message = toErrorMessage(error)
       const status = isAbortError(error, opts.signal) ? 'cancelled' : 'failed'
-      subagentScheduler.markNode(opts.runId, node.path, status, {
+      scheduler.markNode(opts.runId, node.path, status, {
         error: message,
         localSkillFiles: [localSkill.path],
         localSkillIds: [localSkill.skillId],
@@ -1488,7 +1491,7 @@ export function createDelegateAgentRuntime(
     }
 
     await archive.ensureArchiveInitialized(context, archiveBasePath)
-    subagentScheduler.markNode(opts.runId, parentPath, 'running')
+    scheduler.markNode(opts.runId, parentPath, 'running')
     await archive.recordEvent(context, archiveBasePath, 'delegate_requested', parentPath, {
       children: input.children.map((child) => {
         const childConfirmedTools = child.confirmedTools ?? requestedConfirmedTools
@@ -1526,7 +1529,7 @@ export function createDelegateAgentRuntime(
     } catch (error) {
       const message = toErrorMessage(error)
       if (parentPath === ROOT_AGENT_PATH) {
-        subagentScheduler.markNode(opts.runId, parentPath, 'failed', { error: message })
+        scheduler.markNode(opts.runId, parentPath, 'failed', { error: message })
       }
       await archive.bestEffortRecordEvent(context, archiveBasePath, 'delegate_finished', parentPath, {
         status: 'failed',
@@ -1548,7 +1551,7 @@ export function createDelegateAgentRuntime(
     }
     let reserved: SubagentNodeRecord[]
     try {
-      reserved = subagentScheduler.reserveChildren({
+      reserved = scheduler.reserveChildren({
         treeId: opts.runId,
         sessionId: opts.sessionId,
         delegationCallId: context.delegationCallId,
@@ -1574,7 +1577,7 @@ export function createDelegateAgentRuntime(
       state.confirmedToolsByPath.set(node.path, spec.confirmedTools ?? requestedConfirmedTools)
       delegationStateByChildPath.set(node.path, state)
     })
-    const parentSnapshot = subagentScheduler.snapshot(opts.runId).find((node) => node.path === parentPath)
+    const parentSnapshot = scheduler.snapshot(opts.runId).find((node) => node.path === parentPath)
     const parentDispatchIndex = parentSnapshot ? Math.max(1, parentSnapshot.dispatchCounter) : 1
     await archive.recordEvent(context, archiveBasePath, 'children_reserved', parentPath, {
       paths: reserved.map((node) => node.path),
@@ -1584,7 +1587,7 @@ export function createDelegateAgentRuntime(
     })
 
     for (const node of reserved) {
-      subagentScheduler.markNode(opts.runId, node.path, 'distilling')
+      scheduler.markNode(opts.runId, node.path, 'distilling')
     }
 
     let distilled
@@ -1613,7 +1616,7 @@ export function createDelegateAgentRuntime(
       const message = toErrorMessage(error)
       const status = isAbortError(error, opts.signal) ? 'cancelled' : 'failed'
       const children: ChildAgentResult[] = reserved.map((node, index) => {
-        subagentScheduler.markNode(opts.runId, node.path, status, { error: message })
+        scheduler.markNode(opts.runId, node.path, status, { error: message })
         return {
           path: node.path,
           status,
@@ -1625,7 +1628,7 @@ export function createDelegateAgentRuntime(
           error: message,
         }
       })
-      if (parentPath === ROOT_AGENT_PATH) subagentScheduler.markNode(opts.runId, parentPath, status, { error: message })
+      if (parentPath === ROOT_AGENT_PATH) scheduler.markNode(opts.runId, parentPath, status, { error: message })
       await Promise.all(
         children.map((child) =>
           archive.bestEffortRecordEvent(context, archiveBasePath, 'child_finished', child.path, {
@@ -1639,7 +1642,7 @@ export function createDelegateAgentRuntime(
         ),
       )
       try {
-        await archive.persistTreeSnapshot(context, archiveBasePath, subagentScheduler.snapshot(opts.runId))
+        await archive.persistTreeSnapshot(context, archiveBasePath, scheduler.snapshot(opts.runId))
         await archive.writeRunArchiveRecord(
           context,
           archiveBasePath,
@@ -1660,8 +1663,8 @@ export function createDelegateAgentRuntime(
 
     const allDistilledFiles = [distilled.coreSkill, ...distilled.childSkills]
     await Promise.all(allDistilledFiles.map((skill) => archive.persistSkill(context, archiveBasePath, skill)))
-    const parentBefore = subagentScheduler.snapshot(opts.runId).find((node) => node.path === parentPath)
-    subagentScheduler.markNode(opts.runId, parentPath, 'running', {
+    const parentBefore = scheduler.snapshot(opts.runId).find((node) => node.path === parentPath)
+    scheduler.markNode(opts.runId, parentPath, 'running', {
       localSkillFiles: Array.from(new Set([...(parentBefore?.localSkillFiles ?? []), distilled.coreSkill.path])),
       localSkillIds: Array.from(new Set([...(parentBefore?.localSkillIds ?? []), distilled.coreSkill.skillId])),
       inheritedSkillFiles,
@@ -1701,9 +1704,9 @@ export function createDelegateAgentRuntime(
     // child nodes, while the batch result/event carries the precise `partial` outcome.
     const parentNodeStatus = status === 'partial' ? 'done' : status
     if (parentPath === ROOT_AGENT_PATH) {
-      subagentScheduler.markNode(opts.runId, parentPath, parentNodeStatus)
+      scheduler.markNode(opts.runId, parentPath, parentNodeStatus)
     }
-    const snapshot = subagentScheduler.snapshot(opts.runId)
+    const snapshot = scheduler.snapshot(opts.runId)
     await archive.persistTreeSnapshot(context, archiveBasePath, snapshot)
     await archive.writeRunArchiveRecord(
       context,

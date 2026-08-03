@@ -25,7 +25,7 @@ function makeTool(name: string): Tool {
 }
 
 describe('coreInstance —— CoreInstance 抽象与 defaultCore', () => {
-  describe('两次 createCoreInstance 得到互相隔离的四样单例', () => {
+  describe('两次 createCoreInstance 得到互相隔离的五类资源', () => {
     it('rootStore 隔离：一个里 setter sessionsAtom 不影响另一个', () => {
       const a = createCoreInstance()
       const b = createCoreInstance()
@@ -111,6 +111,28 @@ describe('coreInstance —— CoreInstance 抽象与 defaultCore', () => {
       expect(signal2.aborted).toBe(false)
       a.abort.endRun('run1', signal2)
       expect(a.abort.isRunning('run1')).toBe(false)
+    })
+
+    it('subagent 调度器隔离：同一 treeId 的预留节点不会串到另一 CoreInstance', () => {
+      const a = createCoreInstance()
+      const b = createCoreInstance()
+
+      expect(a.subagentScheduler).not.toBe(b.subagentScheduler)
+
+      a.subagentScheduler.reserveChildren({
+        treeId: 'shared-run',
+        sessionId: 'session-a',
+        parentPath: 'root',
+        inheritedSkillFiles: [],
+        inheritedSkillIds: [],
+        children: [{ objective: 'only-a' }],
+      })
+
+      expect(a.subagentScheduler.snapshot('shared-run').map((node) => node.objective)).toEqual([
+        'root agent',
+        'only-a',
+      ])
+      expect(b.subagentScheduler.snapshot('shared-run')).toEqual([])
     })
   })
 

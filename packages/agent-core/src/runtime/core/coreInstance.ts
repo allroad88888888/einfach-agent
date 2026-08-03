@@ -1,17 +1,18 @@
-// runtime/core/coreInstance.ts —— 「实例化」的地基：把四个模块级单例收进一个 CoreInstance。
+// runtime/core/coreInstance.ts —— 「实例化」的地基：把五类模块级资源收进一个 CoreInstance。
 // ---------------------------------------------------------------------------
-// 背景：现状是四个各自为政的模块单例——
+// 背景：现状是五类各自为政的模块资源——
 //   · state/rootStore.ts      的 rootStore（会话列表 store）
 //   · state/sessionStore.ts   的 per-session store 缓存 Map
 //   · tools/registry.ts       的 toolRegistry（工具注册表）
 //   · runtime/abortRegistry.ts 的 controllers Map（每会话 AbortController）
-// 本模块把这四样收进一个 CoreInstance 抽象，并造 `defaultCore = createCoreInstance()`
-// 把它们实例化一次。上面四个模块随后【全部改写成 defaultCore 的视图】——照旧导出同名符号，
+//   · subagents/scheduler.ts  的任务树与订阅者（子 agent 调度状态）
+// 本模块把这五类资源收进一个 CoreInstance 抽象，并造 `defaultCore = createCoreInstance()`
+// 把它们实例化一次。上面五个模块随后【全部改写成 defaultCore 的视图】——照旧导出同名符号，
 // 只是背后取自 defaultCore。对所有调用点完全透明（本期不穿线到 runtime，行为零变化）。
 //
 // 【破环】本模块只 import 叶子层：createStore（einfach）、createToolRegistry（tools/toolRegistry，
-//   不是 tools/registry）。它【绝不】import 那四个视图模块（rootStore/sessionStore/registry/
-//   abortRegistry），也【不再】import 任何具体工具或 tools/register —— 工具改由调用方经 opts.registerTools
+//   不是 tools/registry）。它【绝不】import 那五个视图模块（rootStore/sessionStore/registry/
+//   abortRegistry/scheduler），也【不再】import 任何具体工具或 tools/register —— 工具改由调用方经 opts.registerTools
 //   注入（登记反转，见下）。视图模块反过来 import 本模块的 defaultCore，构成单向依赖（视图 → coreInstance），
 //   无环。详见 tools/toolRegistry.ts 顶部注释。
 //
@@ -24,6 +25,7 @@
 
 import { createStore, type Store } from '@einfach/core'
 import { createToolRegistry, type ToolRegistry } from '../../tools/toolRegistry'
+import { createSubagentScheduler, type SubagentScheduler } from '../../subagents/schedulerState'
 import type { ProjectSkillsSnapshot } from '../../skills/projectSkills'
 import { emptyProjectSkillsSnapshot } from '../../skills/projectSkills'
 // rootAtoms 是零 runtime 依赖的叶子层（破环地基），coreInstance 可以安全引用它的 atom 定义。
@@ -92,7 +94,7 @@ export interface RuntimeConfig {
   fetchImpl?: typeof fetch
 }
 
-// 一个 CoreInstance = 一套互相隔离的「根 store + 会话 store 缓存 + 工具注册表 + abort 注册表 + 配置」。
+// 一个 CoreInstance = 一套互相隔离的「根 store + 会话 store 缓存 + 工具注册表 + abort 注册表 + 子 agent 调度器 + 配置」。
 // defaultCore 是全局默认那一套；未来 createCore（第 3 期）可造出彼此隔离的另一套。
 export interface CoreInstance {
   // 该实例的根 store：sessionsAtom/activeSessionIdAtom 的值域（会话列表 + 当前会话 id）。
@@ -109,6 +111,8 @@ export interface CoreInstance {
   readonly tools: ToolRegistry
   // 该实例私有的 abort 注册表。
   readonly abort: AbortRegistryLike
+  // 该实例私有的子 agent 调度器。
+  readonly subagentScheduler: SubagentScheduler
   // 该实例的运行时配置（apiKey 等）。引用只读，字段可改（供 configureCommands 覆盖）。
   readonly config: RuntimeConfig
   // 该实例的项目 Skills 缓存（per workspaceRoot，与 core.tools 同构）。
@@ -199,7 +203,10 @@ export function createCoreInstance(opts?: {
     },
   }
 
-  // 5) 运行时配置：默认空 key，opts.config 浅合并覆盖。
+  // 5) 子 agent 调度器：调度树和观察者均只归属这个 core。
+  const subagentScheduler = createSubagentScheduler()
+
+  // 6) 运行时配置：默认空 key，opts.config 浅合并覆盖。
   const config: RuntimeConfig = {
     deepseekApiKey: '',
     glmApiKey: '',
@@ -207,7 +214,7 @@ export function createCoreInstance(opts?: {
     ...opts?.config,
   }
 
-  // 6) 项目 Skills 缓存：快照存本实例 rootStore 的 projectSkillsAtom（按 workspaceRoot 分桶），
+  // 7) 项目 Skills 缓存：快照存本实例 rootStore 的 projectSkillsAtom（按 workspaceRoot 分桶），
   //    UI 因此可以直接订阅；in-flight promise 另用 Map 去重，不进 store（它是瞬态调度信息）。
   const projectSkillsInFlight = new Map<string, Promise<ProjectSkillsSnapshot>>()
   const readProjectSkills = (workspaceRoot: string): ProjectSkillsSnapshot | undefined =>
@@ -272,12 +279,13 @@ export function createCoreInstance(opts?: {
     resetSessionStores,
     tools,
     abort,
+    subagentScheduler,
     config,
     projectSkills,
   }
 }
 
-// 全局默认实例：四个视图模块（rootStore/sessionStore/registry/abortRegistry）都取自它。
+// 全局默认实例：五个视图模块（rootStore/sessionStore/registry/abortRegistry/scheduler）都取自它。
 // 首次求值即创建——任一视图模块被 import 时触发。【登记反转】它造出来是【无工具】的：
 // app（main.tsx）与测试（test/setup.ts）负责调 registerStandardTools(defaultCore.tools) 装标准工具。
 export const defaultCore: CoreInstance = createCoreInstance()

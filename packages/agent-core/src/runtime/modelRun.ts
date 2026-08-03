@@ -1399,6 +1399,7 @@ export async function runToolLoop(
     runId,
     settings: meta.settings,
     registry: core.tools,
+    scheduler: core.subagentScheduler,
     customInstructions: core.config.customInstructions,
     // 孩子继承父亲同一份运行环境正文：同机同 workspace，路径锚点必须一致。
     environment: environment.content,

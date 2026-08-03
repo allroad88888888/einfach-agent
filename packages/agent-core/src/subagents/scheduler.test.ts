@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { createSubagentScheduler } from './scheduler'
+import { createSubagentScheduler, subagentScheduler } from './scheduler'
+import { defaultCore } from '../runtime/core/coreInstance'
 
 describe('subagent scheduler dispatch accounting', () => {
   it('increments dispatchCounter per reservation batch and keeps child paths monotonic', () => {
@@ -87,5 +88,28 @@ describe('subagent scheduler dispatch accounting', () => {
     expect(root?.dispatchCounter).toBe(2)
     expect(parent?.dispatchCounter).toBe(2)
     expect(parent?.childCounter).toBe(2)
+  })
+
+  it('keeps the legacy scheduler export as a defaultCore proxy', () => {
+    const treeId = 'legacy-scheduler-proxy'
+    subagentScheduler.clear(treeId)
+
+    try {
+      subagentScheduler.reserveChildren({
+        treeId,
+        sessionId: 'session-default',
+        parentPath: 'root',
+        inheritedSkillFiles: [],
+        inheritedSkillIds: [],
+        children: [{ objective: 'default-only' }],
+      })
+
+      expect(defaultCore.subagentScheduler.snapshot(treeId).map((node) => node.objective)).toEqual([
+        'root agent',
+        'default-only',
+      ])
+    } finally {
+      subagentScheduler.clear(treeId)
+    }
   })
 })
