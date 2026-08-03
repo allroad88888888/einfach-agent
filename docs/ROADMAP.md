@@ -64,7 +64,7 @@ P2.5 的 UI 协议设计已完成，R1–R4 已按独立、可回退批次交付
 - 根据构建分析拆分较大的 UI、Markdown/trace 和低频面板代码。
 - 为长会话、并发子树和 archive 索引建立容量基准。
 - 增加 archive 清理、导出和恢复策略，同时保持审计事件 append-only。
-- 记录关键指标：首屏加载、单 turn 延迟、工具耗时、模型调用数和归档写入失败率。
+- 记录关键指标：首屏加载、单 turn 延迟、工具耗时、模型调用数和归档写入失败率。（已完成：`perf.ui.first_contentful_paint`、`agent.turn`、`tool.call`、`llm.chat` 与 `subagent.archive_write_summary`；trace 汇总包含归档尝试数、失败数和失败率。）
 
 ### 当前 archive 容量基准（archive v1）
 

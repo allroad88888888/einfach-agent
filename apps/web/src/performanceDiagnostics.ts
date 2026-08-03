@@ -7,11 +7,42 @@ import {
 const EVENT_LOOP_INTERVAL_MS = 250
 const EVENT_LOOP_STALL_MS = 120
 const LONG_TASK_MS = 50
+const FIRST_CONTENTFUL_PAINT_SLOW_MS = 2_500
 
 let started = false
 
 function viewName(): string {
   return new URLSearchParams(window.location.search).get('view') ?? 'app'
+}
+
+function observeFirstContentfulPaint(): void {
+  if (
+    typeof PerformanceObserver === 'undefined'
+    || !PerformanceObserver.supportedEntryTypes?.includes('paint')
+  ) return
+
+  try {
+    const observer = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        if (entry.name !== 'first-contentful-paint') continue
+        recordPerformanceDiagnostic(
+          'ui.first_contentful_paint',
+          entry.startTime,
+          {
+            entryType: entry.entryType,
+            paintName: entry.name,
+            view: viewName(),
+          },
+          { slowMs: FIRST_CONTENTFUL_PAINT_SLOW_MS },
+        )
+        observer.disconnect()
+        return
+      }
+    })
+    observer.observe({ type: 'paint', buffered: true })
+  } catch {
+    // Older WebViews can expose the constructor without Paint Timing support.
+  }
 }
 
 /**
@@ -21,6 +52,7 @@ function viewName(): string {
 export function startUiPerformanceDiagnostics(): void {
   if (started || typeof window === 'undefined') return
   started = true
+  observeFirstContentfulPaint()
 
   let expectedAt = performanceNow() + EVENT_LOOP_INTERVAL_MS
   window.setInterval(() => {

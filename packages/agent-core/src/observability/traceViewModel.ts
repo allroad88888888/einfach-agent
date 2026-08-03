@@ -68,6 +68,9 @@ export interface TraceRunSummary {
   eventCount: number
   llmCount: number
   toolCount: number
+  archiveWriteAttempts: number
+  archiveWriteFailures: number
+  archiveWriteFailureRate?: number
   errorCount: number
   highlightCount: number
   highlight?: TraceHighlight
@@ -339,6 +342,15 @@ function buildRuns(snapshot: TraceLogSnapshot | undefined): TraceRunSummary[] {
           : undefined
       const llmCount = group.spans.filter((span) => span.kind === 'llm' || span.name === 'llm.chat').length
       const toolCount = group.spans.filter((span) => span.kind === 'tool' || span.name === 'tool.call').length
+      const archiveWriteSummaries = group.spans.filter((span) => span.name === 'subagent.archive_write_summary')
+      const archiveWriteAttempts = archiveWriteSummaries.reduce(
+        (sum, span) => sum + attrNumber(span.attrs, 'archive_write_attempts'),
+        0,
+      )
+      const archiveWriteFailures = archiveWriteSummaries.reduce(
+        (sum, span) => sum + attrNumber(span.attrs, 'archive_write_failures'),
+        0,
+      )
       const totalTokens = group.spans.reduce((sum, span) => sum + attrNumber(span.attrs, 'total_tokens'), 0)
       const timelineHighlights = timeline.map((entry) => entry.highlight).filter((item): item is TraceHighlight => item !== undefined)
       const errorCount = timeline.filter((entry) => {
@@ -363,6 +375,9 @@ function buildRuns(snapshot: TraceLogSnapshot | undefined): TraceRunSummary[] {
         eventCount: group.events.length,
         llmCount,
         toolCount,
+        archiveWriteAttempts,
+        archiveWriteFailures,
+        archiveWriteFailureRate: archiveWriteAttempts > 0 ? archiveWriteFailures / archiveWriteAttempts : undefined,
         errorCount,
         highlightCount: timelineHighlights.length,
         highlight: strongestHighlight(timelineHighlights),

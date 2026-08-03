@@ -1,10 +1,18 @@
 import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
+import { recordCompletedSpan } from '../observability/trace'
 import type { SubagentArchiveWriteMode } from './types'
 
 export interface SubagentArchiveWriteInput {
   path: string
   content: string
   mode: SubagentArchiveWriteMode
+}
+
+export interface SubagentArchiveWriteTelemetryContext {
+  sessionId?: string
+  runId?: string
+  vendor?: string
+  model?: string
 }
 
 type ArchiveWriteExecutor = (input: SubagentArchiveWriteInput) => Promise<void>
@@ -37,8 +45,14 @@ export class SubagentArchiveWriter {
   private readonly pendingAppends = new Map<string, PendingAppend>()
   private batchScheduled = false
   private closed = false
+  private writeAttempts = 0
+  private writeFailures = 0
+  private writeMetricRecorded = false
 
-  constructor(private readonly core: CoreInstance = defaultCore) {}
+  constructor(
+    private readonly core: CoreInstance = defaultCore,
+    private readonly telemetry: SubagentArchiveWriteTelemetryContext = {},
+  ) {}
 
   write(
     input: SubagentArchiveWriteInput,
@@ -69,7 +83,11 @@ export class SubagentArchiveWriter {
   async close(): Promise<void> {
     if (this.closed) return this.flush()
     this.closed = true
-    await this.flush()
+    try {
+      await this.flush()
+    } finally {
+      this.recordWriteSummary()
+    }
   }
 
   private queueBatchedAppend(
@@ -119,13 +137,35 @@ export class SubagentArchiveWriter {
     const pathTails = pathTailsFor(this.core)
     const previous = pathTails.get(path) ?? Promise.resolve()
     const operation = previous.catch(() => undefined).then(task)
+    this.writeAttempts += 1
     pathTails.set(path, operation)
     this.operations.add(operation)
     const cleanup = () => {
       this.operations.delete(operation)
       if (pathTails.get(path) === operation) pathTails.delete(path)
     }
-    void operation.then(cleanup, cleanup)
+    void operation.then(cleanup, () => {
+      this.writeFailures += 1
+      cleanup()
+    })
     return operation
+  }
+
+  private recordWriteSummary(): void {
+    if (this.writeMetricRecorded) return
+    this.writeMetricRecorded = true
+    const endedAt = Date.now()
+    recordCompletedSpan('subagent.archive_write_summary', {
+      kind: 'internal',
+      startedAt: endedAt,
+      endedAt,
+      status: this.writeFailures > 0 ? 'error' : 'ok',
+      attrs: {
+        ...this.telemetry,
+        archive_write_attempts: this.writeAttempts,
+        archive_write_failures: this.writeFailures,
+        archive_write_failure_rate: this.writeAttempts === 0 ? 0 : this.writeFailures / this.writeAttempts,
+      },
+    })
   }
 }

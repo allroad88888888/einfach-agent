@@ -112,6 +112,40 @@ describe('traceViewModel', () => {
     expect(view.runs.find((run) => run.runId === 'r2')?.waitingState).toBe('user')
   })
 
+  it('aggregates archive write metrics for a run', () => {
+    const input = snapshot()
+    input.spans.push(
+      {
+        id: 'archive-1',
+        traceId: 'archive-trace-1',
+        name: 'subagent.archive_write_summary',
+        kind: 'internal',
+        status: 'ok',
+        startedAt: 221,
+        endedAt: 221,
+        durationMs: 0,
+        attrs: { sessionId: 's1', runId: 'r1', archive_write_attempts: 3, archive_write_failures: 0 },
+      },
+      {
+        id: 'archive-2',
+        traceId: 'archive-trace-2',
+        name: 'subagent.archive_write_summary',
+        kind: 'internal',
+        status: 'error',
+        startedAt: 222,
+        endedAt: 222,
+        durationMs: 0,
+        attrs: { sessionId: 's1', runId: 'r1', archive_write_attempts: 2, archive_write_failures: 1 },
+      },
+    )
+
+    expect(buildTraceViewModel(input).runs.find((run) => run.runId === 'r1')).toMatchObject({
+      archiveWriteAttempts: 5,
+      archiveWriteFailures: 1,
+      archiveWriteFailureRate: 0.2,
+    })
+  })
+
   it('filters runs by status, kind and search query', () => {
     const view = buildTraceViewModel(snapshot())
 

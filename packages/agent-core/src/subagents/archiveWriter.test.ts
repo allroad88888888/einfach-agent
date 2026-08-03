@@ -1,6 +1,31 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import {
+  configureObservability,
+  flushObservability,
+  resetObservability,
+} from '../observability/trace'
+import type { TraceDriver, TraceEvent, TraceSpan } from '../observability/types'
 import { createCoreInstance } from '../runtime/core/coreInstance'
 import { SubagentArchiveWriter, type SubagentArchiveWriteInput } from './archiveWriter'
+
+function mockDriver(): TraceDriver & { spans: TraceSpan[]; events: TraceEvent[] } {
+  const spans: TraceSpan[] = []
+  const events: TraceEvent[] = []
+  return {
+    spans,
+    events,
+    async writeSpan(span) {
+      spans.push(span)
+    },
+    async writeEvent(event) {
+      events.push(event)
+    },
+  }
+}
+
+afterEach(() => {
+  resetObservability()
+})
 
 describe('SubagentArchiveWriter', () => {
   it('batches concurrent index appends into one write', async () => {
@@ -146,5 +171,42 @@ describe('SubagentArchiveWriter', () => {
     await expect(
       writer.write({ path: 'index', content: 'late\n', mode: 'append' }, execute),
     ).rejects.toThrow('closed')
+  })
+
+  it('records physical archive write failure metrics when closing', async () => {
+    const driver = mockDriver()
+    configureObservability({ driver })
+    const writer = new SubagentArchiveWriter(createCoreInstance(), { sessionId: 'session-1', runId: 'run-1' })
+
+    const firstIndexAppend = writer.write(
+      { path: 'index.jsonl', content: 'one\n', mode: 'append' },
+      async () => undefined,
+      { batchAppend: true },
+    )
+    const secondIndexAppend = writer.write(
+      { path: 'index.jsonl', content: 'two\n', mode: 'append' },
+      async () => undefined,
+      { batchAppend: true },
+    )
+    await Promise.all([firstIndexAppend, secondIndexAppend])
+    await expect(writer.write(
+      { path: 'events.jsonl', content: 'broken\n', mode: 'append' },
+      async () => { throw new Error('disk full') },
+    )).rejects.toThrow('disk full')
+    await writer.close()
+    await flushObservability()
+
+    expect(driver.spans).toContainEqual(expect.objectContaining({
+      name: 'subagent.archive_write_summary',
+      kind: 'internal',
+      status: 'error',
+      attrs: {
+        sessionId: 'session-1',
+        runId: 'run-1',
+        archive_write_attempts: 2,
+        archive_write_failures: 1,
+        archive_write_failure_rate: 0.5,
+      },
+    }))
   })
 })

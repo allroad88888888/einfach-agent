@@ -98,7 +98,7 @@ export class SubagentArchiveIO {
   private eventCounter = 0
 
   constructor(private readonly options: SubagentArchiveIOOptions) {
-    this.writer = new SubagentArchiveWriter(options.core)
+    this.writer = new SubagentArchiveWriter(options.core, { sessionId: options.sessionId, runId: options.runId, vendor: options.vendor, model: options.model })
   }
 
   close(): Promise<void> {
