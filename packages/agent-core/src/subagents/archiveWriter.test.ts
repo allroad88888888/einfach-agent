@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { createCoreInstance } from '../runtime/core/coreInstance'
 import { SubagentArchiveWriter, type SubagentArchiveWriteInput } from './archiveWriter'
 
 describe('SubagentArchiveWriter', () => {
@@ -47,12 +48,13 @@ describe('SubagentArchiveWriter', () => {
     ])
   })
 
-  it('shares the same-path lock across runtime writer instances', async () => {
+  it('serializes the same path across writers owned by one core', async () => {
     let releaseFirst!: () => void
     const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve })
     const order: string[] = []
-    const firstWriter = new SubagentArchiveWriter()
-    const secondWriter = new SubagentArchiveWriter()
+    const core = createCoreInstance()
+    const firstWriter = new SubagentArchiveWriter(core)
+    const secondWriter = new SubagentArchiveWriter(core)
     const execute = async (input: SubagentArchiveWriteInput) => {
       order.push(`start:${input.content}`)
       if (input.content === 'run-one') await firstGate
@@ -65,6 +67,27 @@ describe('SubagentArchiveWriter', () => {
     releaseFirst()
     await Promise.all([first, second])
     expect(order).toEqual(['start:run-one', 'end:run-one', 'start:run-two', 'end:run-two'])
+  })
+
+  it('does not block the same path between different cores', async () => {
+    let releaseFirst!: () => void
+    const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve })
+    const order: string[] = []
+    const firstWriter = new SubagentArchiveWriter(createCoreInstance())
+    const secondWriter = new SubagentArchiveWriter(createCoreInstance())
+    const execute = async (input: SubagentArchiveWriteInput) => {
+      order.push(`start:${input.content}`)
+      if (input.content === 'run-one') await firstGate
+      order.push(`end:${input.content}`)
+    }
+
+    const first = firstWriter.write({ path: 'shared-index', content: 'run-one', mode: 'append' }, execute)
+    await vi.waitFor(() => expect(order).toEqual(['start:run-one']))
+    const second = secondWriter.write({ path: 'shared-index', content: 'run-two', mode: 'append' }, execute)
+    await second
+    expect(order).toEqual(['start:run-one', 'start:run-two', 'end:run-two'])
+    releaseFirst()
+    await first
   })
 
   it('propagates a batched flush failure to every caller and flush', async () => {

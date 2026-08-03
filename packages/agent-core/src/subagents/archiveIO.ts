@@ -1,4 +1,5 @@
 import type { ModelItem } from '@web-agent/ai'
+import type { CoreInstance } from '../runtime/core/coreInstance'
 import { SubagentArchiveWriter } from './archiveWriter'
 import { ROOT_AGENT_PATH } from './path'
 import {
@@ -25,6 +26,7 @@ import type {
 } from './types'
 
 interface SubagentArchiveIOOptions {
+  core?: CoreInstance
   sessionId: string
   runId: string
   model: string
@@ -84,7 +86,7 @@ function nodeIndexRecord(node: SubagentNodeRecord): Record<string, unknown> {
 
 /** Persists one delegate runtime's archive documents, events, traces, and indexes. */
 export class SubagentArchiveIO {
-  private readonly writer = new SubagentArchiveWriter()
+  private readonly writer: SubagentArchiveWriter
   private readonly batchedIndexPaths = new Set([
     subagentIndexPath('runs'),
     subagentIndexPath('skills'),
@@ -95,7 +97,9 @@ export class SubagentArchiveIO {
   private initialization: Promise<void> | undefined
   private eventCounter = 0
 
-  constructor(private readonly options: SubagentArchiveIOOptions) {}
+  constructor(private readonly options: SubagentArchiveIOOptions) {
+    this.writer = new SubagentArchiveWriter(options.core)
+  }
 
   close(): Promise<void> {
     return this.writer.close()

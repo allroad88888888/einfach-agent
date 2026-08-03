@@ -1390,6 +1390,7 @@ export async function runToolLoop(
     sessionId: id,
     runId,
     settings: meta.settings,
+    core,
     registry: core.tools,
     scheduler: core.subagentScheduler,
     customInstructions: core.config.customInstructions,

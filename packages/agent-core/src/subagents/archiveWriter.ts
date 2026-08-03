@@ -1,3 +1,4 @@
+import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
 import type { SubagentArchiveWriteMode } from './types'
 
 export interface SubagentArchiveWriteInput {
@@ -14,9 +15,17 @@ interface PendingAppend {
   waiters: Array<{ resolve(): void; reject(error: unknown): void }>
 }
 
-// Archive indexes are shared by every root run. Keep the path lock process-wide,
-// while batching/lifecycle remain scoped to an individual runtime writer.
-const sharedPathTails = new Map<string, Promise<void>>()
+// A core can have multiple runtime writers, but no write queue may leak to another core.
+const pathTailsByCore = new WeakMap<CoreInstance, Map<string, Promise<void>>>()
+
+function pathTailsFor(core: CoreInstance): Map<string, Promise<void>> {
+  let pathTails = pathTailsByCore.get(core)
+  if (!pathTails) {
+    pathTails = new Map<string, Promise<void>>()
+    pathTailsByCore.set(core, pathTails)
+  }
+  return pathTails
+}
 
 /**
  * Serializes writes to the same archive path. Selected JSONL indexes may opt into
@@ -28,6 +37,8 @@ export class SubagentArchiveWriter {
   private readonly pendingAppends = new Map<string, PendingAppend>()
   private batchScheduled = false
   private closed = false
+
+  constructor(private readonly core: CoreInstance = defaultCore) {}
 
   write(
     input: SubagentArchiveWriteInput,
@@ -105,13 +116,14 @@ export class SubagentArchiveWriter {
   }
 
   private enqueue(path: string, task: () => Promise<void>): Promise<void> {
-    const previous = sharedPathTails.get(path) ?? Promise.resolve()
+    const pathTails = pathTailsFor(this.core)
+    const previous = pathTails.get(path) ?? Promise.resolve()
     const operation = previous.catch(() => undefined).then(task)
-    sharedPathTails.set(path, operation)
+    pathTails.set(path, operation)
     this.operations.add(operation)
     const cleanup = () => {
       this.operations.delete(operation)
-      if (sharedPathTails.get(path) === operation) sharedPathTails.delete(path)
+      if (pathTails.get(path) === operation) pathTails.delete(path)
     }
     void operation.then(cleanup, cleanup)
     return operation

@@ -12,6 +12,7 @@ import type {
   ThinkingConfig,
 } from '@web-agent/ai'
 import type { ModelSettings } from '../state/core.type'
+import type { CoreInstance } from '../runtime/core/coreInstance'
 import { normalizePrimaryAgentSettings } from '../state/persistence/modelMigration'
 import { toolRegistry } from '../tools/registry'
 import type { ToolRegistry } from '../tools/toolRegistry'
@@ -206,6 +207,8 @@ interface CreateDelegateAgentRuntimeOptions {
   sessionId: string
   runId: string
   settings: ModelSettings
+  /** Core that owns the archive write lock. Defaults to the legacy default core. */
+  core?: CoreInstance
   /** Registry owned by the current CoreInstance. Defaults to the legacy singleton for direct callers. */
   registry?: ToolRegistry
   /** Scheduler owned by the current CoreInstance. Defaults to the legacy default-core proxy. */
@@ -336,6 +339,7 @@ export function createDelegateAgentRuntime(
     signal: runtimeController.signal,
   }
   const archive = new SubagentArchiveIO({
+    core: opts.core,
     sessionId: opts.sessionId,
     runId: opts.runId,
     model: opts.settings.model,
