@@ -25,7 +25,10 @@ export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolea
     args: input.args,
     turnTools: input.tools,
     isSynthesisTurn: false,
-    isAllowedTool: () => true,
+    isAllowedTool: (name) => {
+      const schema = base.core.tools.loadSchema(name)
+      return schema?.runtime !== 'server' || base.runtimeIsTauri
+    },
     loadSchema: (name) => {
       const schema = base.core.tools.loadSchema(name)
       return schema && (schema.runtime !== 'server' || base.runtimeIsTauri) ? schema : undefined
@@ -57,6 +60,10 @@ export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolea
   }
   if (gate.kind === 'tool_not_allowed') {
     traceFailure('tool.schema_not_loaded', { schema_not_loaded: true }, toolSchemaNotLoadedResult(input.name))
+    return true
+  }
+  if (gate.kind === 'schema_request_denied') {
+    traceFailure('tool.schema_request_denied', { schema_request_denied: true, requestedToolName: gate.toolName }, gate.result)
     return true
   }
   if (gate.kind === 'registration_changed') {
