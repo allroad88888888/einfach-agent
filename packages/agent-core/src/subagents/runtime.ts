@@ -1,7 +1,6 @@
 import {
   callDeepSeek,
   DEEPSEEK_FLASH_MODEL,
-  DEEPSEEK_PRO_MODEL,
   normalizeCacheUsage,
   type DeepSeekChatRequest,
 } from '@web-agent/ai'
@@ -18,7 +17,6 @@ import { toolRegistry } from '../tools/registry'
 import type { ToolRegistry } from '../tools/toolRegistry'
 import type { LoadedTool } from '../tools/types'
 import {
-  buildCustomInstructionsItem,
   buildTurnTools,
   MAX_TURN_TOOLS,
   narrowToolCalls,
@@ -33,9 +31,12 @@ import {
 } from '../runtime/contextCache'
 import { normalizeDelegateAgentInput } from './input'
 import {
-  routeSubagentModel,
-  type SubagentRouteDecision,
-} from './routing'
+  callSelectedSubagentModel,
+  createSubagentModelSelection,
+  routeChildModel,
+  supportsDeepSeekTierRouting,
+} from './modelSelection'
+import { buildChildSystemPrompt, buildChildUserPrompt } from './prompt'
 import { SubagentArchiveIO } from './archiveIO'
 import { ROOT_AGENT_PATH, agentPathDepth } from './path'
 import { subagentScheduler } from './scheduler'
@@ -64,7 +65,6 @@ import type {
   DelegateAgentChildSpec,
   DelegateAgentInput,
   DelegateAgentRuntime,
-  SubagentModelTier,
   SubagentNodeRecord,
   SubagentSkillFile,
   SubagentToolProfile,
@@ -75,7 +75,6 @@ import { toolRegistrationChangedResult } from '../runtime/toolLoading'
 
 const DELEGATE_TOOL_NAME = 'delegate_agent'
 const DEFAULT_CHILD_MAX_TURNS = 4
-const SKILL_CONTEXT_LIMIT = 18_000
 // 回填给子 agent 的坏参数原文截断长度，与主循环 modelRun 的 ARGS_PREVIEW_LIMIT 对齐。
 const ARGS_PREVIEW_LIMIT = 200
 // 回填给父 agent 的「截断片段」预览长度：只用于定位断在哪里，不是可用产出。
@@ -302,24 +301,6 @@ function isAbortError(error: unknown, signal: AbortSignal): boolean {
   return signal.aborted || (error instanceof Error && error.name === 'AbortError')
 }
 
-function isDeterministicModelRequestError(error: unknown): boolean {
-  const match = /^Chat completion returned (\d{3})(?:\b|:)/.exec(toErrorMessage(error))
-  if (!match) return false
-  const status = Number(match[1])
-  return status === 400 || status === 401 || status === 402 || status === 422
-}
-
-function hasAssistantPayload(response: ModelChatResponse): boolean {
-  const message = response.choices?.[0]?.message
-  return (
-    (typeof message?.content === 'string' && message.content.length > 0)
-    || (typeof message?.reasoning_content === 'string' && message.reasoning_content.length > 0)
-    // Raw presence matters here: malformed calls are still attempted output and must never be
-    // replayed merely because narrowToolCalls cannot dispatch them.
-    || (Array.isArray(message?.tool_calls) && message.tool_calls.length > 0)
-  )
-}
-
 function hasOwn(value: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key)
 }
@@ -373,64 +354,6 @@ function refreshChildVisibleTools(
   }, []).slice(-(MAX_TURN_TOOLS - 1))
 }
 
-function renderSkillsForPrompt(skills: SubagentSkillFile[]): string {
-  const body = skills
-    .map((skill) => [`# ${skill.filename}`, skill.content.trim()].join('\n\n'))
-    .join('\n\n---\n\n')
-  return body.length > SKILL_CONTEXT_LIMIT ? `${body.slice(0, SKILL_CONTEXT_LIMIT)}\n...[truncated]` : body
-}
-
-/**
- * 档位对应的能力说明。
- */
-function childToolProfilePromptLines(toolProfile: SubagentToolProfile): string[] {
-  if (toolProfile === 'workspace_verify') {
-    return [
-      '允许 delegate_agent、只读文件工具（路径权限继承会话授权模式），以及验证工具 run_verification_command；不得写文件。',
-      'run_verification_command 可执行验收所需的 shell 命令及项目脚本。它的输出就是你的执行证据：用真实退出码与输出下判断，不要凭推测断言测试通过或失败。',
-    ]
-  }
-  return [
-    toolProfile === 'workspace_read'
-      ? '允许 delegate_agent 和只读文件工具（路径权限继承会话授权模式）；不得声称或尝试写文件、执行 shell。'
-      : '只允许 delegate_agent；不要模拟工具调用，不要声称已经改文件。',
-  ]
-}
-
-function childSystemPrompt(args: {
-  node: SubagentNodeRecord
-  spec: DelegateAgentChildSpec
-  inheritedSkills: SubagentSkillFile[]
-  localSkill: SubagentSkillFile
-  toolProfile: SubagentToolProfile
-  confirmedTools: readonly string[]
-  customInstructions?: string
-  environment?: string
-}): string {
-  const skills = renderSkillsForPrompt([...args.inheritedSkills, args.localSkill])
-  const customInstructions = buildCustomInstructionsItem(args.customInstructions ?? '')
-  const environment = args.environment?.trim()
-  return [
-    `你是树形子 agent ${args.node.path}。`,
-    `父 agent: ${args.node.parentPath ?? ROOT_AGENT_PATH}`,
-    '你在 headless 子 agent 运行时中工作：不要要求 UI 暂停；需要更多并行分析时，可以调用 delegate_agent 派生下一层子 agent。',
-    ...childToolProfilePromptLines(args.toolProfile),
-    args.confirmedTools.length > 0
-      ? `本次委派另有父级已确认、仅限本 run 的危险工具能力: ${args.confirmedTools.join(', ')}。不得请求其它危险工具，也不得向后代扩大范围。`
-      : '没有危险工具能力；不得请求写文件、patch 或 shell。',
-    args.spec.mode === 'evaluator'
-      ? '你是验收评估器。最终输出必须严格遵循任务中的期望输出；要求 JSON 时只能输出 JSON，不要 Markdown、代码围栏或额外说明。'
-      : '最终输出必须是可回填给父 agent 的简洁 Markdown：结论、发现、风险、建议下一步。',
-    // 孩子与父亲同机同 workspace：不给根目录它一样会编路径，而孩子的 maxTurns 默认只有 4，
-    // 一次 WORKSPACE_READ_FAILED 就吃掉四分之一产出预算。
-    ...(environment ? ['', environment] : []),
-    ...(customInstructions ? ['', customInstructions.content] : []),
-    '',
-    '继承的临时 skills:',
-    skills,
-  ].join('\n')
-}
-
 function childSummary(children: readonly ChildAgentResult[]): DelegateAgentBatchResult['summary'] {
   return {
     total: children.length,
@@ -452,62 +375,6 @@ function batchStatus(
 
 function isSubset(requested: readonly string[], ceiling: readonly string[]): boolean {
   return requested.every((name) => ceiling.includes(name))
-}
-
-function childUserPrompt(spec: DelegateAgentChildSpec): string {
-  return [
-    `任务目标: ${spec.objective}`,
-    spec.mode ? `模式: ${spec.mode}` : '',
-    spec.expectedOutput ? `期望输出: ${spec.expectedOutput}` : '',
-    '',
-    '请完成任务；如果需要拆分并行工作，调用 delegate_agent。',
-  ]
-    .filter(Boolean)
-    .join('\n')
-}
-
-function childModelRoute(
-  primarySettings: ModelSettings,
-  parentPath: string | undefined,
-  spec: DelegateAgentChildSpec,
-  confirmedTools: readonly string[],
-): SubagentRouteDecision {
-  return routeSubagentModel({
-    vendor: primarySettings.vendor,
-    supportsDeepSeekTierRouting: supportsDeepSeekTierRouting(primarySettings),
-    parentPath,
-    requestedTier: spec.modelTier,
-    taskCategory: spec.taskCategory,
-    riskLevel: spec.riskLevel,
-    crossModule: spec.crossModule,
-    requiresTemporalNormalization: spec.requiresTemporalNormalization,
-    finalAcceptance: spec.finalAcceptance,
-    priorFailureCount: spec.priorFailureCount,
-    mode: spec.mode,
-    confirmedToolCount: confirmedTools.length,
-  })
-}
-
-/**
- * 双档路由（pro ↔ flash）只在 DeepSeek 的这两个型号之间成立。该判定同时决定
- * 子 agent 降档和 runLowCostExtraction 是否可用，四处口径必须一致，故收敛到这里。
- */
-function supportsDeepSeekTierRouting(settings: ModelSettings): boolean {
-  return settings.vendor === 'deepseek'
-    && (settings.model === DEEPSEEK_PRO_MODEL || settings.model === DEEPSEEK_FLASH_MODEL)
-}
-
-function childModelSettings(
-  primarySettings: ModelSettings,
-  tier: SubagentModelTier,
-): ModelSettings {
-  if (!supportsDeepSeekTierRouting(primarySettings)) {
-    return primarySettings
-  }
-  return {
-    ...primarySettings,
-    model: tier === 'flash' ? DEEPSEEK_FLASH_MODEL : DEEPSEEK_PRO_MODEL,
-  }
 }
 
 async function runWithConcurrency<T>(
@@ -971,9 +838,12 @@ export function createDelegateAgentRuntime(
       toolProfile,
       confirmedTools,
     } = args
-    let routeDecision = childModelRoute(opts.settings, node.parentPath, spec, confirmedTools)
-    let modelSettings = childModelSettings(opts.settings, routeDecision.tier)
-    let fallbackCount = 0
+    const modelSelection = createSubagentModelSelection({
+      primarySettings: opts.settings,
+      parentPath: node.parentPath,
+      spec,
+      confirmedTools,
+    })
     const allowedToolNames = [...subagentAllowedTools(toolProfile), ...confirmedTools]
     const skillFiles = [...node.inheritedSkillFiles, localSkill.path]
     const skillIds = [...node.inheritedSkillIds, localSkill.skillId]
@@ -988,10 +858,10 @@ export function createDelegateAgentRuntime(
     await archive.recordEvent(context, archiveBasePath, 'child_started', node.path, {
       objective: spec.objective,
       mode: spec.mode,
-      modelTier: routeDecision.tier,
-      model: modelSettings.model,
-      route_reason: routeDecision.reason,
-      fallback_count: fallbackCount,
+      modelTier: modelSelection.routeDecision.tier,
+      model: modelSelection.settings.model,
+      route_reason: modelSelection.routeDecision.reason,
+      fallback_count: modelSelection.fallbackCount,
       requiresTemporalNormalization: spec.requiresTemporalNormalization,
       toolProfile,
       confirmedTools,
@@ -1002,7 +872,7 @@ export function createDelegateAgentRuntime(
     const messages: ModelItem[] = [
       {
         role: 'system',
-        content: childSystemPrompt({
+        content: buildChildSystemPrompt({
           node,
           spec,
           inheritedSkills,
@@ -1013,7 +883,7 @@ export function createDelegateAgentRuntime(
           environment: opts.environment,
         }),
       },
-      { role: 'user', content: childUserPrompt(spec) },
+      { role: 'user', content: buildChildUserPrompt(spec) },
     ]
     // 授权集整体预载（原先只有 evaluator + workspace_read 这一种孩子享受此待遇）。
     // 理由与那条旧注释同源、只是把结论推广到所有孩子：孩子的 maxTurns 默认只有 4，且最后一轮
@@ -1045,83 +915,50 @@ export function createDelegateAgentRuntime(
       toolChoice: 'auto' | 'none'
       turn: number
     }): Promise<ModelChatResponse> => {
-      const invoke = () => callModel(
-        state,
-        {
-          messages: input.messages,
-          tools: input.tools,
-          toolChoice: input.toolChoice,
-          settings: modelSettings,
-          observe: {
-            context,
-            archiveBasePath,
-            agentPath: node.path,
-            turn: input.turn,
-            phase: spec.mode === 'evaluator' ? 'evaluator' : 'subagent',
-          },
-        },
-        budget.maxModelCalls,
-      )
-
-      const escalateOnce = async (trigger: string, error?: unknown): Promise<ModelChatResponse> => {
-        const previousRoute = routeDecision
-        const previousModel = modelSettings.model
-        fallbackCount = 1
-        routeDecision = routeSubagentModel({
-          vendor: opts.settings.vendor,
-          supportsDeepSeekTierRouting: supportsDeepSeekTierRouting(opts.settings),
+      return callSelectedSubagentModel({
+        selection: modelSelection,
+        input: {
+          primarySettings: opts.settings,
           parentPath: node.parentPath,
-          requestedTier: spec.modelTier,
-          taskCategory: spec.taskCategory,
-          riskLevel: spec.riskLevel,
-          crossModule: spec.crossModule,
-          requiresTemporalNormalization: spec.requiresTemporalNormalization,
-          finalAcceptance: spec.finalAcceptance,
-          priorFailureCount: Math.max(1, (spec.priorFailureCount ?? 0) + 1),
-          mode: spec.mode,
-          confirmedToolCount: confirmedTools.length,
-        })
-        modelSettings = childModelSettings(opts.settings, routeDecision.tier)
-        await archive.bestEffortRecordEvent(context, archiveBasePath, 'child_model_escalated', node.path, {
-          fromModelTier: previousRoute.tier,
-          toModelTier: routeDecision.tier,
-          fromModel: previousModel,
-          toModel: modelSettings.model,
-          route_reason: routeDecision.reason,
-          fallback_count: fallbackCount,
-          trigger,
-          ...(error === undefined ? {} : { error: toErrorMessage(error) }),
-        })
-        // Only one fallback is possible: routeDecision is now Pro, and this call is deliberately
-        // made directly instead of recursively entering the escalation wrapper.
-        return invoke()
-      }
-
-      try {
-        const response = await invoke()
-        const finishReason = response.choices?.[0]?.finish_reason
-        if (
-          routeDecision.tier === 'flash'
-          && fallbackCount === 0
-          && finishReason === 'insufficient_system_resource'
-          && !hasAssistantPayload(response)
-          && canEscalateFlash()
-        ) {
-          return escalateOnce('insufficient_system_resource')
-        }
-        return response
-      } catch (error) {
-        if (
-          routeDecision.tier !== 'flash'
-          || fallbackCount > 0
-          || isAbortError(error, opts.signal)
-          || isDeterministicModelRequestError(error)
-          || !canEscalateFlash()
-        ) {
-          throw error
-        }
-        return escalateOnce('request_failed', error)
-      }
+          spec,
+          confirmedTools,
+        },
+        signal: opts.signal,
+        invoke: (settings) => callModel(
+          state,
+          {
+            messages: input.messages,
+            tools: input.tools,
+            toolChoice: input.toolChoice,
+            settings,
+            observe: {
+              context,
+              archiveBasePath,
+              agentPath: node.path,
+              turn: input.turn,
+              phase: spec.mode === 'evaluator' ? 'evaluator' : 'subagent',
+            },
+          },
+          budget.maxModelCalls,
+        ),
+        canEscalate: canEscalateFlash,
+        onEscalated: async (escalation) => archive.bestEffortRecordEvent(
+          context,
+          archiveBasePath,
+          'child_model_escalated',
+          node.path,
+          {
+            fromModelTier: escalation.fromRoute.tier,
+            toModelTier: escalation.toRoute.tier,
+            fromModel: escalation.fromModel,
+            toModel: escalation.toModel,
+            route_reason: escalation.toRoute.reason,
+            fallback_count: escalation.fallbackCount,
+            trigger: escalation.trigger,
+            ...(escalation.error === undefined ? {} : { error: escalation.error }),
+          },
+        ),
+      })
     }
 
     try {
@@ -1247,9 +1084,9 @@ export function createDelegateAgentRuntime(
             resultFile: resultPath,
             skillFiles,
             skillIds,
-            modelTier: routeDecision.tier,
-            route_reason: routeDecision.reason,
-            fallback_count: fallbackCount,
+            modelTier: modelSelection.routeDecision.tier,
+            route_reason: modelSelection.routeDecision.reason,
+            fallback_count: modelSelection.fallbackCount,
           })
           return {
             path: node.path,
@@ -1260,9 +1097,9 @@ export function createDelegateAgentRuntime(
             skillFiles,
             skillIds,
             changeSets,
-            modelTier: routeDecision.tier,
-            routeReason: routeDecision.reason,
-            fallbackCount,
+            modelTier: modelSelection.routeDecision.tier,
+            routeReason: modelSelection.routeDecision.reason,
+            fallbackCount: modelSelection.fallbackCount,
           }
         }
 
@@ -1538,9 +1375,9 @@ export function createDelegateAgentRuntime(
         error: message,
         skillFiles,
         skillIds,
-        modelTier: routeDecision.tier,
-        route_reason: routeDecision.reason,
-        fallback_count: fallbackCount,
+        modelTier: modelSelection.routeDecision.tier,
+        route_reason: modelSelection.routeDecision.reason,
+        fallback_count: modelSelection.fallbackCount,
       })
       return {
         path: node.path,
@@ -1550,9 +1387,9 @@ export function createDelegateAgentRuntime(
         skillFiles,
         skillIds,
         changeSets,
-        modelTier: routeDecision.tier,
-        routeReason: routeDecision.reason,
-        fallbackCount,
+        modelTier: modelSelection.routeDecision.tier,
+        routeReason: modelSelection.routeDecision.reason,
+        fallbackCount: modelSelection.fallbackCount,
         error: message,
       }
     }
@@ -1655,7 +1492,7 @@ export function createDelegateAgentRuntime(
     await archive.recordEvent(context, archiveBasePath, 'delegate_requested', parentPath, {
       children: input.children.map((child) => {
         const childConfirmedTools = child.confirmedTools ?? requestedConfirmedTools
-        const route = childModelRoute(opts.settings, parentPath, child, childConfirmedTools)
+        const route = routeChildModel(opts.settings, parentPath, child, childConfirmedTools)
         return {
           objective: child.objective,
           mode: child.mode,
