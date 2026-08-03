@@ -32,6 +32,7 @@ import {
   createUnavailableModelCredentialHost,
 } from './settings/modelCredentialHost'
 import { createTauriModelFetch } from './modelTransport/tauriModelTransport'
+import { createDevPreviewModelFetch } from './modelTransport/devPreviewModelTransport'
 import { createUnavailableModelFetch } from './modelTransport/unavailableModelTransport'
 import {
   reportReactCommit,
@@ -60,12 +61,16 @@ configureMcpSettings({
   capabilities: { stdio: tauriHost },
 })
 
-// API Key 不进入前端配置：桌面端仅以占位标记驱动原生代理，浏览器产物直接拒绝模型请求。
+// API Key 不进入前端配置：桌面端走原生代理，开发浏览器走本地 Node 中继，静态产物拒绝模型请求。
 const desktopManagedCredentialMarker = 'desktop-managed-credential'
 configureCommands({
   deepseekApiKey: desktopManagedCredentialMarker,
   glmApiKey: desktopManagedCredentialMarker,
-  fetchImpl: tauriHost ? createTauriModelFetch() : createUnavailableModelFetch(),
+  fetchImpl: tauriHost
+    ? createTauriModelFetch()
+    : import.meta.env.DEV
+      ? createDevPreviewModelFetch()
+      : createUnavailableModelFetch(),
 })
 configureModelCredentialHost(
   tauriHost ? createTauriModelCredentialHost() : createUnavailableModelCredentialHost(),

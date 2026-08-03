@@ -6,8 +6,10 @@ import { homedir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { defineConfig, type Plugin } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
+import { createModelPreviewRelayPlugin } from './scripts/model-preview-relay'
+import { assertNoPublicModelCredentials } from './scripts/public-model-credential-guard'
 
 // 相对本配置文件解析（不再硬编码 /Volumes/... 绝对路径）——项目挪目录 / 换机器都不受影响。
 const fromRoot = (relative: string) => fileURLToPath(new URL(relative, import.meta.url))
@@ -212,44 +214,58 @@ function traceLogDevPlugin(): Plugin {
   }
 }
 
-export default defineConfig({
-  root: fromRoot('./apps/web'),
-  // Web 源码已迁到 apps/web；环境变量仍统一放在仓库根目录，避免 Web/Tauri 各存一份密钥。
-  envDir: fromRoot('./'),
-  plugins: [react(), traceLogDevPlugin()],
-  build: {
-    outDir: fromRoot('./apps/web/dist'),
-    emptyOutDir: true,
-  },
-  resolve: {
-    // react/react-dom 强制解析到本 app 的 node_modules 并去重，避免多副本 React。
-    alias: {
-      react: fromRoot('./node_modules/react'),
-      'react-dom': fromRoot('./node_modules/react-dom'),
-      '@web-agent/ai': fromRoot('./packages/agent-ai/src/index.ts'),
-      '@web-agent/core': fromRoot('./packages/agent-core/src'),
-      '@web-agent/react-plugin': fromRoot('./packages/agent-react/src/index.ts'),
-      // 根级工具域包 + standard 聚合包：各解析到自己的 barrel。
-      '@web-agent/tools-shell': fromRoot('./tools/shell/src/index.ts'),
-      '@web-agent/tools-interaction': fromRoot('./tools/interaction/src/index.ts'),
-      '@web-agent/tools-fs': fromRoot('./tools/fs/src/index.ts'),
-      '@web-agent/tools-planning': fromRoot('./tools/planning/src/index.ts'),
-      '@web-agent/tools-skills': fromRoot('./tools/skills/src/index.ts'),
-      '@web-agent/tools-agents': fromRoot('./tools/agents/src/index.ts'),
-      '@web-agent/tools-mcp': fromRoot('./tools/mcp/src/index.ts'),
-      '@web-agent/tools': fromRoot('./tools/standard/src/index.ts'),
-      '@': fromRoot('./apps/web/src'),
+export default defineConfig(({ command, mode }) => {
+  const environment = loadEnv(mode, fromRoot('./'), '')
+  assertNoPublicModelCredentials(environment)
+
+  return {
+    root: fromRoot('./apps/web'),
+    // Web 源码已迁到 apps/web；环境变量仍统一放在仓库根目录，避免 Web/Tauri 各存一份密钥。
+    envDir: fromRoot('./'),
+    plugins: [
+      react(),
+      traceLogDevPlugin(),
+      ...(command === 'serve'
+        ? [createModelPreviewRelayPlugin({
+            deepseek: environment.DEEPSEEK_API_KEY,
+            glm: environment.GLM_API_KEY,
+          })]
+        : []),
+    ],
+    build: {
+      outDir: fromRoot('./apps/web/dist'),
+      emptyOutDir: true,
     },
-    dedupe: ['react', 'react-dom'],
-  },
-  test: {
-    // Vitest 覆盖 apps、packages、tools；不要跟随 Vite 的 Web app root 缩到 apps/web。
-    root: fromRoot('./'),
-    environment: 'jsdom',
-    setupFiles: ['./apps/web/src/test/setup.ts'],
-    css: true,
-    restoreMocks: true,
-    // 每个测试文件在独立 worker 中运行；setup 负责同一 worker 内的默认 store 清理。
-    isolate: true,
-  },
+    resolve: {
+      // react/react-dom 强制解析到本 app 的 node_modules 并去重，避免多副本 React。
+      alias: {
+        react: fromRoot('./node_modules/react'),
+        'react-dom': fromRoot('./node_modules/react-dom'),
+        '@web-agent/ai': fromRoot('./packages/agent-ai/src/index.ts'),
+        '@web-agent/core': fromRoot('./packages/agent-core/src'),
+        '@web-agent/react-plugin': fromRoot('./packages/agent-react/src/index.ts'),
+        // 根级工具域包 + standard 聚合包：各解析到自己的 barrel。
+        '@web-agent/tools-shell': fromRoot('./tools/shell/src/index.ts'),
+        '@web-agent/tools-interaction': fromRoot('./tools/interaction/src/index.ts'),
+        '@web-agent/tools-fs': fromRoot('./tools/fs/src/index.ts'),
+        '@web-agent/tools-planning': fromRoot('./tools/planning/src/index.ts'),
+        '@web-agent/tools-skills': fromRoot('./tools/skills/src/index.ts'),
+        '@web-agent/tools-agents': fromRoot('./tools/agents/src/index.ts'),
+        '@web-agent/tools-mcp': fromRoot('./tools/mcp/src/index.ts'),
+        '@web-agent/tools': fromRoot('./tools/standard/src/index.ts'),
+        '@': fromRoot('./apps/web/src'),
+      },
+      dedupe: ['react', 'react-dom'],
+    },
+    test: {
+      // Vitest 覆盖 apps、packages、tools；不要跟随 Vite 的 Web app root 缩到 apps/web。
+      root: fromRoot('./'),
+      environment: 'jsdom',
+      setupFiles: ['./apps/web/src/test/setup.ts'],
+      css: true,
+      restoreMocks: true,
+      // 每个测试文件在独立 worker 中运行；setup 负责同一 worker 内的默认 store 清理。
+      isolate: true,
+    },
+  }
 })
