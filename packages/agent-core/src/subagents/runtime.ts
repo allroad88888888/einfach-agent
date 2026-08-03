@@ -24,6 +24,7 @@ import {
   searchToolManifestPage,
   touchRecentToolName,
 } from '../runtime/modelTurn'
+import { selectToolGate } from '../runtime/toolGates'
 import { compactContext, estimateTokensFromText } from '../runtime/contextCompaction'
 import {
   createContextCacheTracker,
@@ -75,8 +76,7 @@ import type {
   SubagentToolProfile,
 } from './types'
 import { isDelegatableDangerousTool } from '../runtime/dangerousTools'
-import { toolSchemaAutoloadedResult, toolSchemaLoadedResult } from '../tools/schemaResult'
-import { toolRegistrationChangedResult } from '../runtime/toolLoading'
+import { toolSchemaLoadedResult } from '../tools/schemaResult'
 
 const DELEGATE_TOOL_NAME = 'delegate_agent'
 const DEFAULT_CHILD_MAX_TURNS = 4
@@ -1063,17 +1063,38 @@ export function createDelegateAgentRuntime(
             continue
           }
           const callArgs = parsedArgs.args
-
-          if (name === 'request_tool_schema') {
+          const expectedRegistrationVersion = requestedRegistrationVersions.get(name)
+          const gate = selectToolGate({
+            name,
+            args: callArgs,
+            turnTools: tools,
+            isSynthesisTurn,
+            isAllowedTool: (toolName) => allowedToolNames.includes(toolName),
+            loadSchema: (toolName) => registry.loadSchema(toolName),
+            expectedRegistrationVersion,
+            registrationVersion: (toolName) => registry.registrationVersion(toolName),
+            canExecuteTool: (toolName) => (
+              isSubagentWorkspaceReadTool(toolName)
+              || isDelegatableDangerousTool(toolName)
+              || isSubagentVerificationTool(toolName)
+            ),
+            delegate: {
+              name: DELEGATE_TOOL_NAME,
+              path: node.path,
+              depth: name === DELEGATE_TOOL_NAME ? agentPathDepth(node.path) : 0,
+              maxDepth: budget.maxDepth,
+            },
+          })
+          if (gate.kind === 'schema_request' || gate.kind === 'schema_request_denied') {
             const toolName = typeof callArgs.toolName === 'string' ? callArgs.toolName.trim() : ''
             await archive.recordEvent(context, archiveBasePath, 'child_tool_schema_requested', node.path, {
               toolName: toolName || undefined,
               discovery: !toolName,
             })
-            if (toolName && !allowedToolNames.includes(toolName)) {
+            if (gate.kind === 'schema_request_denied') {
               await pushToolResult(
                 toolCall.id,
-                JSON.stringify({ error: `tool not allowed for child agent: ${toolName}` }),
+                JSON.stringify(gate.result),
               )
               continue
             }
@@ -1112,12 +1133,8 @@ export function createDelegateAgentRuntime(
           //   「注册态中途变化」这类边角上兜底，不额外消耗孩子的 maxTurns。
           //   合成轮（tools 被有意清空、toolChoice='none'）不适用：那里的「不在 tools 里」表示
           //   能力被主动收回，不是 schema 没加载。
-          if (
-            !isSynthesisTurn
-            && allowedToolNames.includes(name)
-            && !tools.some((exposed) => exposed.function.name === name)
-          ) {
-            const autoloadable = registry.loadSchema(name)
+          if (gate.kind === 'schema_autoloaded') {
+            const autoloadable = gate.tool
             if (autoloadable) {
               visible = appendVisibleTool(visible, name, registry)
               recentToolNames = touchRecentToolName(recentToolNames, name)
@@ -1128,40 +1145,21 @@ export function createDelegateAgentRuntime(
               })
               await pushToolResult(
                 toolCall.id,
-                JSON.stringify(toolSchemaAutoloadedResult(autoloadable)),
+                JSON.stringify(gate.result),
               )
               continue
             }
           }
 
-          const expectedRegistrationVersion = requestedRegistrationVersions.get(name)
-          if (allowedToolNames.includes(name)) {
-            const currentRegistrationVersion = registry.registrationVersion(name)
-            if (
-              expectedRegistrationVersion === undefined
-              || expectedRegistrationVersion !== currentRegistrationVersion
-            ) {
-              await pushToolResult(
-                toolCall.id,
-                JSON.stringify(toolRegistrationChangedResult(
-                  name,
-                  expectedRegistrationVersion,
-                  currentRegistrationVersion,
-                )),
-              )
-              continue
-            }
+          if (gate.kind === 'registration_changed') {
+            await pushToolResult(
+              toolCall.id,
+              JSON.stringify(gate.result),
+            )
+            continue
           }
 
-          if (name === DELEGATE_TOOL_NAME) {
-            if (agentPathDepth(node.path) >= budget.maxDepth) {
-              await pushToolResult(
-                toolCall.id,
-                JSON.stringify({ error: `max subagent depth reached at ${node.path}` }),
-              )
-              continue
-            }
-
+          if (gate.kind === 'delegate') {
             const normalized = normalizeDelegateAgentInput(callArgs)
             if (!normalized.ok) {
               await pushToolResult(toolCall.id, JSON.stringify({ error: normalized.error }))
@@ -1206,12 +1204,7 @@ export function createDelegateAgentRuntime(
             continue
           }
 
-          if (
-            (isSubagentWorkspaceReadTool(name)
-              || isDelegatableDangerousTool(name)
-              || isSubagentVerificationTool(name))
-            && allowedToolNames.includes(name)
-          ) {
+          if (gate.kind === 'execute') {
             if (!context.runChildTool) {
               await pushToolResult(
                 toolCall.id,
@@ -1270,10 +1263,7 @@ export function createDelegateAgentRuntime(
             continue
           }
 
-          await pushToolResult(
-            toolCall.id,
-            JSON.stringify({ error: `tool not allowed for child agent: ${name}` }),
-          )
+          await pushToolResult(toolCall.id, JSON.stringify(gate.result))
         }
       }
 
