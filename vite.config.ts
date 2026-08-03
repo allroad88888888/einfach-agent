@@ -235,6 +235,17 @@ export default defineConfig(({ command, mode }) => {
     build: {
       outDir: fromRoot('./apps/web/dist'),
       emptyOutDir: true,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('/node_modules/react/')
+              || id.includes('/node_modules/react-dom/')
+              || id.includes('/node_modules/scheduler/')) {
+              return 'react-runtime'
+            }
+          },
+        },
+      },
     },
     resolve: {
       // react/react-dom 强制解析到本 app 的 node_modules 并去重，避免多副本 React。
