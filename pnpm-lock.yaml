@@ -125,6 +125,12 @@ importers:
       '@web-agent/core':
         specifier: workspace:*
         version: link:../agent-core
+      '@web-agent/react-plugin':
+        specifier: workspace:*
+        version: link:../agent-react
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
 
   packages/agent-react:
     dependencies:
