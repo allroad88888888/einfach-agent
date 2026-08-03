@@ -59,6 +59,67 @@ export interface TurnEndEvent {
   hasStreamedItem: boolean
 }
 
+// 简介：shouldStop 的显式终止决定。
+// 详情：该槽只允许正常停止；等待用户输入/确认/计划审批必须由 tool loop 写入对应 pending 状态，
+// 不能借由一个泛化的 stop 决定伪造。checkpoint 与 runStatus 一起固定，供消费方原子地结束本轮。
+export interface ShouldStopDecision {
+  readonly stop: true
+  readonly runStatus: 'stopped'
+  readonly reason: string
+  readonly checkpoint: {
+    readonly kind: 'stopped'
+  }
+}
+
+// 简介：shouldStop 返回值不符合协议时抛出的错误。
+// 详情：插件可来自未类型检查的运行时边界；拒绝旧 boolean 或不完整对象，避免 loop 猜测终止语义。
+export class ShouldStopDecisionValidationError extends Error {
+  constructor(message: string) {
+    super(`Invalid shouldStop decision: ${message}`)
+    this.name = 'ShouldStopDecisionValidationError'
+  }
+}
+
+function isDecisionRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+// 简介：校验 shouldStop 的运行时返回值。
+// 详情：undefined 是唯一的继续信号；所有终止必须带齐 stopped 状态、非空原因和 stopped checkpoint。
+export function validateShouldStopDecision(value: unknown): ShouldStopDecision | undefined {
+  if (value === undefined) return undefined
+
+  if (typeof value === 'boolean') {
+    throw new ShouldStopDecisionValidationError('boolean results are not supported')
+  }
+  if (!isDecisionRecord(value)) {
+    throw new ShouldStopDecisionValidationError('result must be a decision object or undefined')
+  }
+  if (value.stop === false) {
+    throw new ShouldStopDecisionValidationError('stop:false is not supported; return undefined to continue')
+  }
+  if (value.stop !== true) {
+    throw new ShouldStopDecisionValidationError('stop must be true')
+  }
+  if (value.runStatus !== 'stopped') {
+    throw new ShouldStopDecisionValidationError('runStatus must be stopped')
+  }
+  const reason = value.reason
+  if (typeof reason !== 'string' || reason.trim().length === 0) {
+    throw new ShouldStopDecisionValidationError('reason must be a non-empty string')
+  }
+  if (!isDecisionRecord(value.checkpoint) || value.checkpoint.kind !== 'stopped') {
+    throw new ShouldStopDecisionValidationError('checkpoint.kind must be stopped')
+  }
+
+  return {
+    stop: true,
+    runStatus: 'stopped',
+    reason,
+    checkpoint: { kind: 'stopped' },
+  }
+}
+
 // 简介：onTurnEnd 的完整终止决策（Stage 2a）—— 插件看完一轮后可要求 loop【带状态终止 run】。
 // 详情：finish_reason 异常收尾、循环检测都用它。stop:true 是唯一的终止开关，且终止路径必须带齐
 // run 状态、原因与 trace 事件名；loop 直接消费它们，不再补默认值。
@@ -128,6 +189,9 @@ export interface LoopHooks {
     ctx: CoreCtx,
     ev: TurnEndEvent,
   ): void | TurnEndDecision | Promise<void | TurnEndDecision>
-  /** 是否在本轮后优雅停（ask_user / plan 审批挂这，Stage 2）。任一返回 true 即停。 */
-  shouldStop?(ctx: CoreCtx): boolean | Promise<boolean>
+  /** 本轮结束后是否显式停止。undefined 继续；决定必须通过 validateShouldStopDecision 运行时校验。 */
+  shouldStop?(
+    ctx: CoreCtx,
+    ev: TurnEndEvent,
+  ): ShouldStopDecision | undefined | Promise<ShouldStopDecision | undefined>
 }

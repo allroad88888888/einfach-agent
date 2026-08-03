@@ -10,6 +10,13 @@ import { assemblePlugins, type AgentPlugin } from './pluginApi'
 
 const ctx = { sessionId: 's', runId: 'r' } as unknown as CoreCtx
 
+const shouldStopDecision = {
+  stop: true,
+  runStatus: 'stopped',
+  reason: 'plugin requested stop',
+  checkpoint: { kind: 'stopped' },
+} as const
+
 function fakeTool(name: string): Tool {
   return {
     name,
@@ -53,9 +60,9 @@ describe('registerTool —— 收集插件注册的工具（PX2），不碰任�
 
   it('registerTool 与 hook 独立生效', async () => {
     const tool = fakeTool('mix')
-    const hooks = assemblePlugins([(api) => { api.registerTool(tool); api.hook('shouldStop', () => true) }])
+    const hooks = assemblePlugins([(api) => { api.registerTool(tool); api.hook('shouldStop', () => shouldStopDecision) }])
     expect(hooks.tools).toEqual([tool])
-    expect(await hooks.shouldStop?.(ctx)).toBe(true)
+    expect(await hooks.shouldStop?.(ctx, turnEndEvent())).toEqual(shouldStopDecision)
     expect(hooks.beforeToolCall).toBeUndefined()
   })
 })
@@ -111,14 +118,14 @@ describe('多插件混注册 —— hook / subscribe / registerTool 互不干扰
     const seen: string[] = []
     const hooks = assemblePlugins([
       (api) => api.registerTool(toolA),
-      (api) => api.hook('shouldStop', () => true),
+      (api) => api.hook('shouldStop', () => shouldStopDecision),
       (api) => api.subscribe(runAtom, () => seen.push('subscribed')),
       (api) => api.registerTool(toolB),
       (api) => api.hook('onTurnEnd', () => void seen.push('turn-end')),
     ])
     hooks.bindSubscriptions(store)
     expect(hooks.tools).toEqual([toolA, toolB])
-    expect(await hooks.shouldStop?.(ctx)).toBe(true)
+    expect(await hooks.shouldStop?.(ctx, turnEndEvent())).toEqual(shouldStopDecision)
     await hooks.onTurnEnd?.(ctx, turnEndEvent())
     store.setter(runAtom, { runId: 'r1', status: 'running' })
     expect(seen).toEqual(['turn-end', 'subscribed'])

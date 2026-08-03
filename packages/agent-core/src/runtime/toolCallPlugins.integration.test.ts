@@ -158,8 +158,11 @@ describe('tool-call plugin production integration', () => {
     const order: string[] = []
     let release = () => {}
     const firstGate = new Promise<void>((resolve) => { release = resolve })
+    const serializingPlugin: CorePlugin = {
+      activate: (api) => api.hook('afterToolCall', () => undefined),
+    }
     const core = createCore({
-      plugins: [{ activate: (api) => api.hook('afterToolCall', () => undefined) }],
+      plugins: [serializingPlugin],
       registerTools(registry) {
         registry.register(testTool(firstName, async () => {
           order.push('first:start')
@@ -204,12 +207,15 @@ describe('tool-call plugin production integration', () => {
     const name = 'mcp__test__confirmed_action'
     const before = vi.fn()
     const execute = vi.fn(() => ({ ok: true as const, data: 'executed once' }))
-    const core = createCore({
-      config: { deepseekApiKey: 'k' },
-      plugins: [{ activate: (api) => api.hook('beforeToolCall', (_ctx, event) => {
+    const confirmationPlugin: CorePlugin = {
+      activate: (api) => api.hook('beforeToolCall', (_ctx, event) => {
         if (event.toolName === name) before()
         return undefined
-      }) }],
+      }),
+    }
+    const core = createCore({
+      config: { deepseekApiKey: 'k' },
+      plugins: [confirmationPlugin],
       registerTools: (registry) => registry.register(testTool(name, execute)),
     })
     let requests = 0

@@ -64,8 +64,8 @@ describe('LoopHooks / RequestDraft 契约形状', () => {
       onTurnEnd(_ctx, _ev: TurnEndEvent): void {
         /* 观察型：无返回 */
       },
-      shouldStop(): boolean {
-        return true
+      shouldStop(): { stop: true; runStatus: 'stopped'; reason: string; checkpoint: { kind: 'stopped' } } {
+        return { stop: true, runStatus: 'stopped', reason: 'test stop', checkpoint: { kind: 'stopped' } }
       },
     }
 
@@ -79,7 +79,12 @@ describe('LoopHooks / RequestDraft 契约形状', () => {
     })
     expect(rewritten).toEqual({ data: { touched: true } })
 
-    expect(await hooks.shouldStop?.(fakeCtx)).toBe(true)
+    expect(await hooks.shouldStop?.(fakeCtx, turnEndEvent())).toEqual({
+      stop: true,
+      runStatus: 'stopped',
+      reason: 'test stop',
+      checkpoint: { kind: 'stopped' },
+    })
 
     const draft: RequestDraft = { messages: [] as ModelItem[] }
     await hooks.prepareRequest?.(fakeCtx, draft)

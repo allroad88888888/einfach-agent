@@ -45,7 +45,7 @@ describe('onRunStart —— run 启动、首轮请求前，按注册序依次 aw
   })
 
   it('无人注册 onRunStart → 该槽为 undefined（loop 侧据此跳过）', () => {
-    const hooks = assemblePlugins([(api) => api.hook('shouldStop', () => true)])
+    const hooks = assemblePlugins([(api) => api.hook('onTurnEnd', () => undefined)])
     expect(hooks.onRunStart).toBeUndefined()
   })
 })

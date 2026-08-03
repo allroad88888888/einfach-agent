@@ -21,6 +21,7 @@
 import { createCoreInstance, type CoreInstance, type RuntimeConfig } from './coreInstance'
 import type { ToolRegistry } from '../../tools/toolRegistry'
 import { createCommands, type CommandApi } from '../commands'
+import { createPluginCommandFacade } from './pluginCommandFacade'
 import type { PluginInput } from './pluginHost'
 
 // 简介：造一套隔离的 CoreInstance 并把绑定它的命令挂上去，合体返回。
@@ -39,5 +40,6 @@ export function createCore(opts?: {
 }): CoreInstance & CommandApi {
   const instance = createCoreInstance(opts)
   const commands = createCommands(instance)
+  instance.plugins.bindCommandFacade(createPluginCommandFacade(commands))
   return Object.assign(instance, commands)
 }

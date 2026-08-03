@@ -11,6 +11,7 @@ import { createRunLifecycleCommands } from './commands/runLifecycleCommands'
 import { createSessionCommands, DEFAULT_SESSION_TITLE, deriveSessionTitle } from './commands/sessionCommands'
 import { createSubagentViewCommands } from './commands/subagentViewCommands'
 import { createWorkspaceCommands } from './commands/workspaceCommands'
+import { createPluginCommandFacade } from './core/pluginCommandFacade'
 
 export { DEFAULT_SESSION_TITLE, deriveSessionTitle } from './commands/sessionCommands'
 
@@ -48,6 +49,9 @@ export function createCommands(core: CoreInstance = defaultCore) {
 }
 
 export type CommandApi = ReturnType<typeof createCommands>
+
+const defaultCommands = createCommands()
+defaultCore.plugins.bindCommandFacade(createPluginCommandFacade(defaultCommands))
 
 export const {
   newWorkspace,
@@ -87,4 +91,4 @@ export const {
   openSkillGovernanceDialog,
   closeSkillGovernanceDialog,
   confirmSkillGovernance,
-} = createCommands()
+} = defaultCommands

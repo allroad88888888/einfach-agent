@@ -7,13 +7,16 @@
 //   一并交给消费方落地——消费方决定 tools 进哪个 ToolRegistry、何时调 bindSubscriptions(store)。
 //
 // Stage 3（本文件）新增 registerTool + subscribe。registerRenderer（涉及 UI，React 组件按 timeline
-// 类型注册）留到后续 Stage；commands 的取舍见下方 CommandApi 附近的说明（转发会成环，本 Stage 只定类型）。
+// 类型注册）留到后续独立 UI 协议任务；命令通过实例绑定的受限 facade 暴露。
 
 import type { Atom, Store } from '@einfach/core'
-import type { AskUserAnswerValue } from '../../state/transientAtoms'
+import { runAtom } from '../../state/sessionAtoms'
 import type { Tool } from '../../tools/types'
 import { applyToolResultPatch, toolResultPatchBetween } from '../toolResultPatch'
 import type { CoreCtx } from './coreCtx'
+import type { PluginCommandFacade } from './pluginCommandFacade'
+import type { PluginRunSnapshot, RunObserver } from './pluginContracts'
+import { validateShouldStopDecision } from './loopHooks'
 import type {
   AfterToolCallEvent,
   BeforeToolCallEvent,
@@ -24,25 +27,13 @@ import type {
   TurnEndEvent,
 } from './loopHooks'
 
-// 简介：commands 访问器的目标形状（PX2 imperative actions）——手写镜像 runtime/commands.ts 现有
-//   导出的部分签名（sendMessage/answerQuestion/revertToTurn/stopRun），不 import 该文件。
-// 详情：非穷举——只挑最常用的几个对齐类型；真正接线时按需扩展、并与 commands.ts 实际签名核对
-//   （手写意味着两边可能悄悄漂移，这是刻意避开下方 import 环的代价，接线那一刻必须回读 commands.ts
-//   核对一遍）。本 Stage 没有任何字段引用这个类型（PluginApi 上没有 commands 字段，见下方 PluginApi
-//   的 TODO 注释），纯为未来接线预留形状。
-export interface CommandApi {
-  sendMessage(input: string): void
-  answerQuestion(questionId: string, value: AskUserAnswerValue): void
-  revertToTurn(turnIndex: number): void
-  revertTurnToDraft(turnIndex: number): void
-  stopRun(): void
-}
-
 // 简介：装配期注册面（PX2）。
 // 详情：hook 累积单槽实现供 fan-out；registerTool 累积插件要挂给 model 的工具；subscribe 只记
 //   「插件想观察哪个 atom」的意向——装配期没有运行时 store，真正的 store.sub() 推迟到 loop 侧调用
 //   assemblePlugins 返回值上的 bindSubscriptions(store)（见下方 AssembledPlugins，PX5）。
 export interface PluginApi {
+  /** 仅对公开插件开放的、已绑定当前 Core 的命令投影。 */
+  readonly commands: PluginCommandFacade
   hook<K extends keyof LoopHooks>(name: K, fn: NonNullable<LoopHooks[K]>): void
   /** 注册一个 LLM 可调工具。消费方（loop/宿主）决定把 AssembledPlugins.tools 落进哪个 ToolRegistry；
    *  本 API 不直接碰任何全局 toolRegistry 单例（为将来多实例铺路）。 */
@@ -55,18 +46,8 @@ export interface PluginApi {
    *  不提前把未用 API 的形状焊死。等 subscribe 真正接进 modelRun 时（那时 ctx 现成），再补成
    *  (value, ctx)=>void + bindSubscriptions(ctx)——届时 2 处测试调用点跟着改即可。别以为这是漏了。 */
   subscribe<T>(atom: Atom<T>, fn: (value: T) => void): void
-  // TODO(Stage 3+): registerRenderer —— 涉及 UI（React 组件按 timeline 类型注册），留到后续 Stage。
-  // TODO(commands)：蓝图 §三 PX2 设想 PluginApi 上还有一个 `commands: CommandApi`（转发 sendMessage/
-  //   answerQuestion/revertToTurn 等到 runtime/commands.ts）。本 Stage 没有接进来——commands.ts 除了
-  //   自解析全局 store，还 `import { runSession, runToolLoop } from './modelRun'`，而 modelRun.ts 又
-  //   `import { assemblePlugins } from './core/pluginApi'`（本文件）。一旦本文件反过来 import
-  //   commands.ts，就是一个闭合环：
-  //     pluginApi.ts → commands.ts → modelRun.ts → pluginApi.ts
-  //   诚实优先：本 Stage 只在上方定义 CommandApi 这个【目标形状】（手写、零依赖边，不 import
-  //   commands.ts），不在 PluginApi 上挂 commands 字段——挂了却给不出真实现是比不挂更糟的半成品
-  //   （调用方会以为能用）。等「实例化」阶段（蓝图 §八·4：commands 不再自解析模块级单例、而是随
-  //   core 实例注入）这个环会自然断开，届时把 CommandApi 接成 PluginApi 的真字段、assemblePlugins
-  //   里转发过去即可。
+  /** 不暴露 Atom 的 run 观察入口；绑定时立即投递当前安全快照。 */
+  observeRun(listener: RunObserver): void
 }
 
 // 简介：一个插件 = 装配期拿到 api 做注册的函数；可选返回一个 dispose。
@@ -132,18 +113,23 @@ export interface AssembledPlugins extends LoopHooks {
 //   · afterToolCall：按注册序串成改写管道，逐字段覆盖合并（omit 保留原值）；每环见到上一环的累积结果。
 //   · onTurnEnd：按注册序依次 await；决策【合并】——第一个返回 {stop:true} 的胜、短路（其余不再调），
 //     把它的 runStatus/reason 整份带出；无人 stop（含返回 void / {stop:false}）→ undefined（loop 继续）。
-//   · shouldStop：任一返回 true 即 true（短路）。
+//   · shouldStop：第一个经验证的停止决定胜、短路；未决定时返回 undefined，非法决定抛错。
 //   某槽无人注册 → 该槽为 undefined（loop 侧据此跳过）。
 //   · tools：跨插件累积成一个数组，无人注册 → 空数组（不是 undefined——它不是「槽」，是清单）。
 //   · subscribe：只收集意向，不在此处碰任何 store；见 bindSubscriptions。
-export function assemblePlugins(plugins: AgentPlugin[]): AssembledPlugins {
+export function assemblePlugins(
+  plugins: AgentPlugin[],
+  commands: PluginCommandFacade = { stopCurrentRun: () => false },
+): AssembledPlugins {
   const buckets = createHookBuckets()
   const tools: Tool[] = []
   const subscriptions: SubscriptionEntry[] = []
+  const runObservers: RunObserver[] = []
   const disposers: Array<() => void> = []
   let disposed = false
 
   const api: PluginApi = {
+    commands,
     hook<K extends keyof LoopHooks>(name: K, fn: NonNullable<LoopHooks[K]>): void {
       const bucket = buckets[name] as NonNullable<LoopHooks[K]>[]
       bucket.push(fn)
@@ -153,6 +139,9 @@ export function assemblePlugins(plugins: AgentPlugin[]): AssembledPlugins {
     },
     subscribe<T>(atom: Atom<T>, fn: (value: T) => void): void {
       subscriptions.push({ atom: atom as Atom<unknown>, fn: fn as (value: unknown) => void })
+    },
+    observeRun(listener: RunObserver): void {
+      runObservers.push(listener)
     },
   }
 
@@ -222,11 +211,12 @@ export function assemblePlugins(plugins: AgentPlugin[]): AssembledPlugins {
     : undefined
 
   const shouldStop: LoopHooks['shouldStop'] = buckets.shouldStop.length
-    ? async (ctx: CoreCtx): Promise<boolean> => {
+    ? async (ctx: CoreCtx, ev: TurnEndEvent) => {
         for (const fn of buckets.shouldStop) {
-          if (await fn(ctx)) return true
+          const decision = validateShouldStopDecision(await fn(ctx, ev))
+          if (decision) return decision
         }
-        return false
+        return undefined
       }
     : undefined
 
@@ -236,7 +226,22 @@ export function assemblePlugins(plugins: AgentPlugin[]): AssembledPlugins {
   //   不依赖任何在 bind 时就已过期的闭包快照。返回值把这批 unsub 打包成一个统一 dispose。
   function bindSubscriptions(store: Store): () => void {
     const unsubs: Array<() => void> = []
+    const notifyRunObserver = (observer: RunObserver) => {
+      const run = store.getter(runAtom)
+      const snapshot: PluginRunSnapshot | undefined = run === undefined
+        ? undefined
+        : Object.freeze({ runId: run.runId, status: run.status })
+      try {
+        observer(snapshot)
+      } catch {
+        // 观察者异常不能影响主 run；可执行 hook 的失败由 loop trace 留痕。
+      }
+    }
     try {
+      for (const observer of runObservers) {
+        notifyRunObserver(observer)
+        unsubs.push(store.sub(runAtom, () => notifyRunObserver(observer)))
+      }
       for (const { atom, fn } of subscriptions) unsubs.push(store.sub(atom, () => fn(store.getter(atom))))
     } catch (error) {
       for (const unsubscribe of unsubs) try { unsubscribe() } catch { /* 保留绑定失败 */ }

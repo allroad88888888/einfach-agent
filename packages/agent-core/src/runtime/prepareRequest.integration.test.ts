@@ -103,9 +103,10 @@ describe('prepareRequest production integration', () => {
   it('records the hook failure, marks the run as error, and does not issue a model request', async () => {
     const trace = captureTrace()
     configureObservability({ driver: trace.driver })
-    const core = createCore({
-      plugins: [{ activate: (api) => api.hook('prepareRequest', () => { throw new Error('prepare request failed') }) }],
-    })
+    const failurePlugin: CorePlugin = {
+      activate: (api) => api.hook('prepareRequest', () => { throw new Error('prepare request failed') }),
+    }
+    const core = createCore({ plugins: [failurePlugin] })
     const id = 'prepare-failure'
     seedSession(core, id)
     let requests = 0

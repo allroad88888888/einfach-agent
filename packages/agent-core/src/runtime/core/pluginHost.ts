@@ -1,12 +1,13 @@
 // Core 私有插件宿主：安装期工具所有权与每次 run 的 hook/订阅生命周期。
 import type { Store } from '@einfach/core'
+import { runAtom } from '../../state/sessionAtoms'
 import type { Tool } from '../../tools/types'
 import type { ToolRegistry } from '../../tools/toolRegistry'
 import { assemblePlugins, type AgentPlugin, type AssembledPlugins, type PluginApi } from './pluginApi'
+import type { PluginCommandFacade } from './pluginCommandFacade'
+import { isPublicPlugin, type PluginInstallApi, type PluginRunApi, type PublicPlugin } from './pluginContracts'
 
-export interface PluginInstallApi {
-  registerTool(tool: Tool): void
-}
+export type { PluginInstallApi } from './pluginContracts'
 
 /** A Core plugin separates long-lived tool registration from per-run behavior. */
 export interface CorePlugin {
@@ -14,7 +15,7 @@ export interface CorePlugin {
   activate?(api: PluginApi): void | (() => void)
 }
 
-export type PluginInput = CorePlugin | AgentPlugin
+export type PluginInput = CorePlugin | AgentPlugin | PublicPlugin
 
 export interface PluginRun {
   readonly hooks: AssembledPlugins
@@ -22,18 +23,52 @@ export interface PluginRun {
 }
 
 export interface PluginHost {
-  activateRun(store: Store): Promise<PluginRun>
+  bindCommandFacade(commands: PluginCommandFacade): void
+  activateRun(store: Store, activation?: PluginRunActivation): Promise<PluginRun>
   dispose(): void
 }
 
+interface PluginRunActivation {
+  readonly runId?: string
+  readonly isActiveSession?: () => boolean
+}
+
+const unavailableCommands: PluginCommandFacade = Object.freeze({ stopCurrentRun: () => false })
+
+function publicRunApi(api: PluginApi): PluginRunApi {
+  return {
+    commands: api.commands,
+    observeRun: api.observeRun,
+    onAfterToolCall(listener) {
+      api.hook('afterToolCall', async (_ctx, event) => {
+        await listener(Object.freeze({
+          callId: event.callId,
+          toolName: event.toolName,
+          args: Object.freeze({ ...event.args }),
+          result: Object.freeze({ ...event.result }),
+        }))
+        return undefined
+      })
+    },
+  }
+}
+
 function adaptPlugin(plugin: PluginInput): CorePlugin {
+  if (isPublicPlugin(plugin)) {
+    return {
+      install: plugin.install,
+      activate: plugin.activate ? (api) => plugin.activate?.(publicRunApi(api)) : undefined,
+    }
+  }
   if (typeof plugin !== 'function') return plugin
   return {
     install(api) {
       return plugin({
+        commands: unavailableCommands,
         hook() {},
         registerTool: api.registerTool,
         subscribe() {},
+        observeRun() {},
       } as PluginApi)
     },
     activate: plugin,
@@ -84,15 +119,31 @@ export function createPluginHost(registry: ToolRegistry, inputs: readonly Plugin
   const installed = installPlugins(registry, plugins)
   const activeRuns = new Set<PluginRun>()
   let disposed = false
+  let boundCommands = unavailableCommands
 
   return {
-    async activateRun(store) {
+    bindCommandFacade(commands) {
+      if (disposed) throw new Error('plugin host is disposed')
+      boundCommands = commands
+    },
+    async activateRun(store, activation = {}) {
       if (disposed) throw new Error('plugin host is disposed')
       // 内置插件延迟导入：compaction 仍兼容 rootStore/defaultCore，不能在 defaultCore 的构造期反向求值。
       const { defaultCorePlugins } = await import('./plugins/defaultPlugins')
       if (disposed) throw new Error('plugin host is disposed')
       const activePlugins = [...defaultCorePlugins, ...plugins]
-      const hooks = assemblePlugins(activePlugins.flatMap((plugin) => (plugin.activate ? [plugin.activate] : [])))
+      const scopedCommands: PluginCommandFacade = Object.freeze({
+        stopCurrentRun: () => {
+          const run = store.getter(runAtom)
+          if (!activation.isActiveSession?.() || !activation.runId || run?.runId !== activation.runId) return false
+          if (run.status !== 'running' && run.status !== 'awaiting_tool') return false
+          return boundCommands.stopCurrentRun()
+        },
+      })
+      const hooks = assemblePlugins(
+        activePlugins.flatMap((plugin) => (plugin.activate ? [plugin.activate] : [])),
+        scopedCommands,
+      )
       let unsubscribe: () => void
       try {
         unsubscribe = hooks.bindSubscriptions(store)

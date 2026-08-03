@@ -1,6 +1,6 @@
 import { maxTurnToolsForVendor } from '@web-agent/ai'
 import { itemsAtom, runAtom } from '../state/sessionAtoms'
-import { sessionsAtom } from '../state/rootStore'
+import { activeSessionIdAtom, sessionsAtom } from '../state/rootStore'
 import { appendItem, patchRun } from '../state/sessionWriters'
 import { takeQueuedUserMessages } from '../state/transientAtoms'
 import { buildStableModelPrefix } from './modelTurnPrefix'
@@ -41,7 +41,10 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
     return undefined
   }
   const guard = createRunGuard(id, runId, core)
-  const pluginRun = await core.plugins.activateRun(core.getSessionStore(id).store)
+  const pluginRun = await core.plugins.activateRun(core.getSessionStore(id).store, {
+    runId,
+    isActiveSession: () => core.rootStore.getter(activeSessionIdAtom) === id,
+  })
   let handedOff = false
   try {
     const hooks = pluginRun.hooks

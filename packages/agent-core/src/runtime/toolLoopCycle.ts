@@ -13,6 +13,7 @@ import type { ToolLoopBase } from './toolLoopContracts'
 import { currentPlanContext, currentPlanStageId } from './toolLoopPlan'
 import { stopOverBudgetPlanStage } from './toolLoopPlanStageGuard'
 import { handleTextTurn } from './toolLoopTextTurn'
+import { safeErrorMessage } from './toolLoopSupport'
 
 export type ToolLoopCycleResult = 'continue' | 'finished'
 
@@ -92,6 +93,29 @@ export async function runToolLoopCycle(input: {
       if (base.control.isCurrent()) patchRun(base.id, { status: decision.runStatus, error: decision.reason }, base.core)
       base.trace.finish('error', decision.traceEventName, decision.traceAttrs)
     }
+    return 'finished'
+  }
+  let pluginStop
+  try {
+    pluginStop = await base.hooks.shouldStop?.(base.pluginContext, turnEnd)
+  } catch (error) {
+    const message = safeErrorMessage(error)
+    modelTurn.streamWriter.finishPending()
+    if (base.control.isCurrent()) patchRun(base.id, { status: 'error', error: message }, base.core)
+    checkpoints.commitTurn({ kind: 'abnormal', finishReason: 'plugin_should_stop_failed' })
+    base.trace.finish('error', 'agent.plugin_should_stop_failed', { error: message }, error)
+    return 'finished'
+  }
+  if (endInactive(modelTurn.streamWriter)) return 'finished'
+  if (pluginStop) {
+    modelTurn.streamWriter.finishPending()
+    if (base.control.isCurrent()) patchRun(base.id, { status: pluginStop.runStatus, error: pluginStop.reason }, base.core)
+    checkpoints.commitStoppedTurn()
+    base.trace.finish('cancelled', 'agent.plugin_should_stop', {
+      reason: pluginStop.reason,
+      run_status: pluginStop.runStatus,
+      checkpoint_kind: pluginStop.checkpoint.kind,
+    })
     return 'finished'
   }
   const streamedItemId = modelTurn.streamWriter.finalize(modelTurn.message, modelTurn.toolCalls)

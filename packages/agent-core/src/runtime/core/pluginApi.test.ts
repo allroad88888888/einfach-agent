@@ -7,6 +7,13 @@ import { assemblePlugins, type AgentPlugin } from './pluginApi'
 // 组合逻辑不读 ctx，用最小假 ctx 即可（makeCoreCtx 的接线由 coreCtx.test 覆盖）。
 const ctx = { sessionId: 's', runId: 'r' } as unknown as CoreCtx
 
+const shouldStopDecision = {
+  stop: true,
+  runStatus: 'stopped',
+  reason: 'plugin requested stop',
+  checkpoint: { kind: 'stopped' },
+} as const
+
 function turnEndEvent(over: Partial<TurnEndEvent> = {}): TurnEndEvent {
   return {
     finishReason: null,
@@ -158,36 +165,36 @@ describe('onTurnEnd —— 决策合并：首个 stop:true 胜且短路', () => 
   })
 })
 
-describe('shouldStop —— 任一返回 true 即 true（短路）', () => {
-  it('遇到首个 true 即返回，其后的 hook 不再被调', async () => {
+describe('shouldStop —— 首个显式停止决定胜且短路', () => {
+  it('遇到首个决定即返回，其后的 hook 不再被调', async () => {
     const calls: string[] = []
     const hooks = assemblePlugins([
       (api) =>
         api.hook('shouldStop', () => {
           calls.push('f')
-          return false
+          return undefined
         }),
       (api) =>
         api.hook('shouldStop', () => {
           calls.push('t')
-          return true
+          return shouldStopDecision
         }),
       (api) =>
         api.hook('shouldStop', () => {
           calls.push('never')
-          return true
+          return shouldStopDecision
         }),
     ])
-    expect(await hooks.shouldStop?.(ctx)).toBe(true)
+    expect(await hooks.shouldStop?.(ctx, turnEndEvent())).toEqual(shouldStopDecision)
     expect(calls).toEqual(['f', 't'])
   })
 
-  it('全部返回 false → false', async () => {
+  it('全部继续 → undefined', async () => {
     const hooks = assemblePlugins([
-      (api) => api.hook('shouldStop', () => false),
-      (api) => api.hook('shouldStop', () => false),
+      (api) => api.hook('shouldStop', () => undefined),
+      (api) => api.hook('shouldStop', () => undefined),
     ])
-    expect(await hooks.shouldStop?.(ctx)).toBe(false)
+    expect(await hooks.shouldStop?.(ctx, turnEndEvent())).toBeUndefined()
   })
 })
 
@@ -196,25 +203,25 @@ describe('assemblePlugins —— 装配细节', () => {
     let transformed = false
     const plugin: AgentPlugin = (api) => {
       api.hook('transformContext', () => void (transformed = true))
-      api.hook('shouldStop', () => true)
+      api.hook('shouldStop', () => shouldStopDecision)
     }
     const hooks = assemblePlugins([plugin])
 
     await hooks.transformContext?.(ctx, { messages: [] })
     expect(transformed).toBe(true)
-    expect(await hooks.shouldStop?.(ctx)).toBe(true)
+    expect(await hooks.shouldStop?.(ctx, turnEndEvent())).toEqual(shouldStopDecision)
     expect(hooks.beforeToolCall).toBeUndefined()
   })
 
   it('插件返回 dispose 函数不影响装配（本 Stage 不消费 dispose）', async () => {
     const plugin: AgentPlugin = (api) => {
-      api.hook('shouldStop', () => true)
+      api.hook('shouldStop', () => shouldStopDecision)
       return () => {
         /* dispose，本 Stage 忽略 */
       }
     }
     const hooks = assemblePlugins([plugin])
-    expect(await hooks.shouldStop?.(ctx)).toBe(true)
+    expect(await hooks.shouldStop?.(ctx, turnEndEvent())).toEqual(shouldStopDecision)
   })
 
   it('注册序 = 插件数组序，然后是插件内 hook() 调用序', async () => {

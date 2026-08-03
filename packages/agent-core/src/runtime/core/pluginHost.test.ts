@@ -5,6 +5,7 @@ import { createToolRegistry } from '../../tools/toolRegistry'
 import type { Tool } from '../../tools/types'
 import { createCoreInstance } from './coreInstance'
 import { createPluginHost, type CorePlugin } from './pluginHost'
+import { definePlugin } from './pluginContracts'
 
 function makeTool(name: string): Tool {
   return {
@@ -113,5 +114,36 @@ describe('pluginHost', () => {
 
     await expect(host.activateRun(createStore())).rejects.toThrow('activation failed')
     expect(release).toHaveBeenCalledTimes(1)
+  })
+
+  it('limits public stop commands to the current active run and mutable run statuses', async () => {
+    const calls: boolean[] = []
+    const stopCurrentRun = vi.fn(() => true)
+    const host = createPluginHost(createToolRegistry(), [definePlugin({
+      activate(api) {
+        api.observeRun(() => calls.push(api.commands.stopCurrentRun()))
+      },
+    })])
+    const store = createStore()
+    host.bindCommandFacade({ stopCurrentRun })
+
+    store.setter(runAtom, { runId: 'run-1', status: 'waiting_confirmation' })
+    const waiting = await host.activateRun(store, { runId: 'run-1', isActiveSession: () => true })
+    waiting.dispose()
+
+    store.setter(runAtom, { runId: 'other-run', status: 'running' })
+    const stale = await host.activateRun(store, { runId: 'run-1', isActiveSession: () => true })
+    stale.dispose()
+
+    store.setter(runAtom, { runId: 'run-1', status: 'running' })
+    const inactive = await host.activateRun(store, { runId: 'run-1', isActiveSession: () => false })
+    inactive.dispose()
+
+    const active = await host.activateRun(store, { runId: 'run-1', isActiveSession: () => true })
+    active.dispose()
+
+    expect(calls).toEqual([false, false, false, true])
+    expect(stopCurrentRun).toHaveBeenCalledTimes(1)
+    host.dispose()
   })
 })
