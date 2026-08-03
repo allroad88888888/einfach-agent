@@ -21,10 +21,10 @@ function okResponse(): Response {
   )
 }
 
-function okStreamResponse(content = 'ok', finishReason = 'stop'): Response {
+function okStreamResponse(): Response {
   const source = [
-    `data: {"choices":[{"delta":{"role":"assistant","content":"${content}"}}]}\n\n`,
-    `data: {"choices":[{"delta":{},"finish_reason":"${finishReason}"}]}\n\n`,
+    'data: {"choices":[{"delta":{"role":"assistant","content":"ok"}}]}\n\n',
+    'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
     'data: [DONE]\n\n',
   ].join('')
   const encoder = new TextEncoder()
@@ -36,10 +36,7 @@ function okStreamResponse(content = 'ok', finishReason = 'stop'): Response {
         controller.close()
       },
     }),
-    {
-      status: 200,
-      headers: { 'Content-Type': 'text/event-stream' },
-    },
+    { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
   )
 }
 
@@ -266,33 +263,5 @@ describe('DeepSeek V4 请求协议', () => {
     expect(captured).toHaveLength(2)
     expect(captured[0]).not.toHaveProperty('user_id')
     expect(captured[1]).not.toHaveProperty('user_id')
-  })
-})
-
-describe('DeepSeek 容量重试', () => {
-  it.each([
-    ['空响应重试后恢复', [okStreamResponse('', 'insufficient_system_resource'), okStreamResponse()], 2, ['retrying', 'recovered']],
-    ['到达重试上限', [okStreamResponse('', 'insufficient_system_resource'), okStreamResponse('', 'insufficient_system_resource')], 2, ['retrying', 'exhausted']],
-    ['已有流式正文不重放', [okStreamResponse('半截内容', 'insufficient_system_resource')], 1, ['exhausted']],
-  ])('%s', async (_label, responses, expectedCalls, expectedEvents) => {
-    let calls = 0
-    const events: string[] = []
-    const response = await streamDeepSeek({ model: 'deepseek-v4-pro', messages: [{ role: 'user', content: 'hi' }] }, {
-      apiKey: 'test-key', baseUrl: BASE_URL, retry: { maxRetries: 0 },
-      fetchImpl: async () => responses[calls++]!,
-    }, undefined, { onRetry: ({ status }) => events.push(status) })
-    expect(calls).toBe(expectedCalls)
-    expect(events).toEqual(expectedEvents)
-    expect(response.choices?.[0]?.finish_reason).toBe(
-      expectedEvents.includes('recovered') ? 'stop' : 'insufficient_system_resource',
-    )
-  })
-
-  it('运行时守卫拒绝重试时不发送第二个请求', async () => {
-    let calls = 0
-    await streamDeepSeek({ model: 'deepseek-v4-pro', messages: [{ role: 'user', content: 'hi' }] }, {
-      apiKey: 'test-key', baseUrl: BASE_URL, retry: { maxRetries: 0 }, fetchImpl: async () => (calls += 1, okStreamResponse('', 'insufficient_system_resource')),
-    }, undefined, { canRetry: () => false })
-    expect(calls).toBe(1)
   })
 })

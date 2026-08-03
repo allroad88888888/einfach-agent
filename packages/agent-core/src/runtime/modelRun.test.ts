@@ -3162,6 +3162,48 @@ describe('finish_reason 异常分流', () => {
     expect(assistantItem.content).not.toContain('以上回复')
   })
 
+  it('容量响应抵达时已 abort：adapter 守卫不得发送第二个请求', async () => {
+    seedSession('fr-resource-abort', { vendor: 'deepseek', model: 'x' })
+    const controller = new AbortController()
+    let calls = 0
+    const fetchImpl: typeof fetch = async () => {
+      calls += 1
+      controller.abort()
+      return finishReasonResponse('insufficient_system_resource', null)
+    }
+
+    await runSession('fr-resource-abort', 'hi', {
+      signal: controller.signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+
+    expect(calls).toBe(1)
+    expect(getSessionStore('fr-resource-abort').store.getter(runAtom)?.status).toBe('stopped')
+  })
+
+  it('容量响应抵达后 run 已过期：adapter 守卫不得为新 run 重试', async () => {
+    seedSession('fr-resource-stale', { vendor: 'deepseek', model: 'x' })
+    let calls = 0
+    const fetchImpl: typeof fetch = async () => {
+      calls += 1
+      setRun('fr-resource-stale', { runId: 'NEW-RUN', status: 'running' })
+      return finishReasonResponse('insufficient_system_resource', null)
+    }
+
+    await runSession('fr-resource-stale', 'hi', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+    })
+
+    expect(calls).toBe(1)
+    expect(getSessionStore('fr-resource-stale').store.getter(runAtom)).toMatchObject({
+      runId: 'NEW-RUN',
+      status: 'running',
+    })
+  })
+
   it('content_filter 补条目：刷新（落盘）和下一轮重发给模型都看得见「这里被拦截过」', async () => {
     const persistence = captureCheckpointPersistence()
     seedSession('fr-cf-mark', { vendor: 'deepseek', model: 'x' })
