@@ -6,9 +6,17 @@ import { createCoreInstance } from './core/coreInstance'
 import { handleToolGate } from './toolCallGate'
 import type { ToolLoopBase } from './toolLoopContracts'
 
-function serverTool(): Tool {
+const SERVER_TOOL_NAMES = [
+  'shell_macos',
+  'shell_linux',
+  'shell_powershell',
+  'write_file',
+  'git_diff_review',
+] as const
+
+function serverTool(name: string): Tool {
   return {
-    name: 'shell_macos',
+    name,
     runtime: 'server',
     skill: {
       description: 'run a shell command',
@@ -22,9 +30,9 @@ function serverTool(): Tool {
   }
 }
 
-function baseFor(runtimeIsTauri: boolean): ToolLoopBase {
+function baseFor(runtimeIsTauri: boolean, name: string): ToolLoopBase {
   const core = createCoreInstance({
-    registerTools: (registry) => registry.register(serverTool()),
+    registerTools: (registry) => registry.register(serverTool(name)),
   })
   core.rootStore.setter(sessionsAtom, {
     session: {
@@ -57,38 +65,38 @@ function baseFor(runtimeIsTauri: boolean): ToolLoopBase {
   } as unknown as ToolLoopBase
 }
 
-function requestServerSchema(base: ToolLoopBase): void {
+function requestServerSchema(base: ToolLoopBase, name: string): void {
   expect(handleToolGate(base, {
     callId: 'schema-call',
     name: 'request_tool_schema',
-    args: { toolName: 'shell_macos' },
+    args: { toolName: name },
     tools: [],
     expectedRegistrationVersion: undefined,
   })).toBe(true)
 }
 
 describe('handleToolGate server schema visibility', () => {
-  it('rejects a server-tool schema request in Web runtime', () => {
-    const base = baseFor(false)
+  it.each(SERVER_TOOL_NAMES)('rejects %s schema requests in Web runtime', (name) => {
+    const base = baseFor(false, name)
 
-    requestServerSchema(base)
+    requestServerSchema(base, name)
 
     expect(base.state.visible).toEqual([])
     const [result] = base.core.getSessionStore(base.id).store.getter(itemsAtom)
     expect(JSON.parse(result.item.content ?? '')).toEqual({
-      error: 'tool not allowed for child agent: shell_macos',
+      error: `tool not allowed for child agent: ${name}`,
     })
   })
 
-  it('loads the same schema in the Tauri runtime', () => {
-    const base = baseFor(true)
+  it.each(SERVER_TOOL_NAMES)('loads %s schema in the Tauri runtime', (name) => {
+    const base = baseFor(true, name)
 
-    requestServerSchema(base)
+    requestServerSchema(base, name)
 
-    expect(base.state.visible.map((tool) => tool.name)).toEqual(['shell_macos'])
+    expect(base.state.visible.map((tool) => tool.name)).toEqual([name])
     const [result] = base.core.getSessionStore(base.id).store.getter(itemsAtom)
     expect(JSON.parse(result.item.content ?? '')).toMatchObject({
-      toolName: 'shell_macos',
+      toolName: name,
       loaded: true,
     })
   })
