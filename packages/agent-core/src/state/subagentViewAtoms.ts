@@ -19,14 +19,19 @@ import {
   subagentTreePath,
 } from '../subagents/skillCache'
 import {
-  readWorkspaceRunIndexPage,
-  readWorkspaceFile,
-  type ReadWorkspaceFileInput,
-  type ReadWorkspaceFileResult,
-  type ReadWorkspaceRunIndexPageInput,
-  type ReadWorkspaceRunIndexPageResult,
-  type WorkspaceRuntimeResult,
-} from '../runtime/workspaceRead'
+  readSubagentArchiveDocuments,
+  readSubagentArchiveFile,
+  readSubagentRunIndexPage,
+  type ArchiveReader,
+  type RunIndexPageReader,
+} from './subagentArchiveReader'
+import {
+  parseJsonl,
+  parseJsonlLines,
+  type JsonlLine,
+} from '../subagents/jsonl'
+
+export type { RunIndexPageReader } from './subagentArchiveReader'
 
 export interface SubagentTreeViewNode {
   key: string
@@ -124,14 +129,6 @@ export interface GlobalSubagentRunSelection {
   archiveBasePath: string
   workspaceRoot?: string
 }
-
-type ArchiveReader = (
-  input: ReadWorkspaceFileInput,
-) => Promise<WorkspaceRuntimeResult<ReadWorkspaceFileResult>>
-
-export type RunIndexPageReader = (
-  input: ReadWorkspaceRunIndexPageInput,
-) => Promise<WorkspaceRuntimeResult<ReadWorkspaceRunIndexPageResult>>
 
 type UnknownRecord = Record<string, unknown>
 
@@ -461,6 +458,14 @@ function globalRunRecord(value: unknown): GlobalSubagentRun | undefined {
   }
 }
 
+const INVALID_GLOBAL_RUN_RECORD = 'invalid global subagent run record'
+
+function globalRunIndexWarning(line: number, error: string): string {
+  return error === INVALID_GLOBAL_RUN_RECORD
+    ? `run 索引第 ${line} 行字段或归档路径不合法，已忽略`
+    : `run 索引第 ${line} 行不是合法 JSON，已忽略`
+}
+
 function timestampValue(value?: string): number {
   if (!value) return 0
   const parsed = Date.parse(value)
@@ -471,63 +476,47 @@ export function parseGlobalSubagentRunsIndex(
   content: string,
   truncated = false,
 ): { runs: GlobalSubagentRun[]; warnings: string[] } {
-  const warnings: string[] = []
-  const latest = new Map<string, GlobalSubagentRun>()
   if (truncated) {
     return {
       runs: [],
       warnings: [`${GLOBAL_RUNS_INDEX_PATH} 超过 200KB，无法安全展示不完整历史；请先压缩索引`],
     }
   }
-  for (const [index, line] of content.split(/\r?\n/).entries()) {
-    if (!line.trim()) continue
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(line)
-    } catch {
-      warnings.push(`run 索引第 ${index + 1} 行不是合法 JSON，已忽略`)
-      continue
-    }
-    const run = globalRunRecord(parsed)
-    if (!run) {
-      warnings.push(`run 索引第 ${index + 1} 行字段或归档路径不合法，已忽略`)
-      continue
-    }
+  const parsed = parseJsonl(content, {
+    parse: globalRunRecord,
+    invalidRecordError: INVALID_GLOBAL_RUN_RECORD,
+  })
+  const latest = new Map<string, GlobalSubagentRun>()
+  for (const run of parsed.records) {
     latest.set(run.key, run)
   }
   return {
     runs: [...latest.values()].sort((a, b) =>
       timestampValue(b.updatedAt ?? b.startedAt) - timestampValue(a.updatedAt ?? a.startedAt)),
-    warnings,
+    warnings: parsed.parseErrors.map((error) => globalRunIndexWarning(error.line, error.error)),
   }
 }
 
 function parseGlobalSubagentRunsPage(
-  lines: ReadWorkspaceRunIndexPageResult['lines'],
+  lines: readonly JsonlLine[],
 ): { runs: GlobalSubagentRun[]; warnings: string[] } {
   const runs: GlobalSubagentRun[] = []
   const seen = new Set<string>()
-  const warnings: string[] = []
+  const parsed = parseJsonlLines(lines, {
+    parse: globalRunRecord,
+    invalidRecordError: INVALID_GLOBAL_RUN_RECORD,
+  })
   // 后端从文件尾向前返回；同一逻辑 run 第一次出现的就是最新 append 记录。
-  for (const line of lines) {
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(line.content)
-    } catch {
-      warnings.push(`run 索引第 ${line.lineNumber} 行不是合法 JSON，已忽略`)
-      continue
-    }
-    const run = globalRunRecord(parsed)
-    if (!run) {
-      warnings.push(`run 索引第 ${line.lineNumber} 行字段或归档路径不合法，已忽略`)
-      continue
-    }
+  for (const run of parsed.records) {
     if (!seen.has(run.key)) {
       seen.add(run.key)
       runs.push(run)
     }
   }
-  return { runs, warnings }
+  return {
+    runs,
+    warnings: parsed.parseErrors.map((error) => globalRunIndexWarning(error.line, error.error)),
+  }
 }
 
 function mergeGlobalSubagentRuns(
@@ -545,9 +534,9 @@ function mergeGlobalSubagentRuns(
 export async function readGlobalSubagentRunsPage(
   workspaceRoot?: string,
   cursor?: string,
-  reader: RunIndexPageReader = readWorkspaceRunIndexPage,
+  reader?: RunIndexPageReader,
 ): Promise<GlobalSubagentRunsState> {
-  const result = await reader({ cursor, maxRecords: 50, workspaceRoot })
+  const result = await readSubagentRunIndexPage({ cursor, maxRecords: 50, workspaceRoot }, reader)
   if (result.ok === false) {
     return isMissingArchiveError(result.error)
       ? { workspaceRoot, status: 'empty', runs: [], warnings: [], hasMore: false, error: '尚无历史 run' }
@@ -668,27 +657,11 @@ function replayTreeView(archiveBasePath: string, replay: SubagentReplayState, wa
   }
 }
 
-async function readArchiveText(
-  reader: ArchiveReader,
-  path: string,
-  workspaceRoot?: string,
-): Promise<{ content?: string; warning?: string; error?: string }> {
-  const result = await reader({ path, maxBytes: 200_000, workspaceRoot })
-  if (!result.ok) return { error: result.error }
-  return {
-    content: result.data.content,
-    warning: result.data.truncated ? `${path} 超过 200KB，回放内容已截断` : undefined,
-  }
-}
-
 export async function readSubagentArchive(
   input: { archiveBasePath: string; workspaceRoot?: string },
-  reader: ArchiveReader = readWorkspaceFile,
+  reader?: ArchiveReader,
 ): Promise<SubagentArchiveLoadState> {
-  const [treeResult, eventsResult] = await Promise.all([
-    readArchiveText(reader, subagentTreePath(input.archiveBasePath), input.workspaceRoot),
-    readArchiveText(reader, subagentEventsPath(input.archiveBasePath), input.workspaceRoot),
-  ])
+  const { treeResult, eventsResult } = await readSubagentArchiveDocuments(input, reader)
   if (!treeResult.content && !eventsResult.content) {
     const errors = [treeResult.error, eventsResult.error].filter((value): value is string => Boolean(value))
     return {
@@ -780,7 +753,10 @@ export const loadSubagentArchivePreviewAtom = atom(
       set(subagentArchivePreviewAtom, { status: 'ready', kind: input.kind, path, nodeKey: input.nodeKey, content: input.content })
       return
     }
-    const result = await (input.reader ?? readWorkspaceFile)({ path, maxBytes: 200_000, workspaceRoot: input.workspaceRoot })
+    const result = await readSubagentArchiveFile(
+      { path, maxBytes: 200_000, workspaceRoot: input.workspaceRoot },
+      input.reader,
+    )
     if (!subagentArchivePreviewLoader.isLatest(_get, token)) return
     set(subagentArchivePreviewAtom, result.ok
       ? { status: 'ready', kind: input.kind, path, nodeKey: input.nodeKey, content: result.data.content }
@@ -807,36 +783,25 @@ export function parseSubagentTrace(text: string): {
   records: SubagentTraceRecord[]
   warnings: string[]
 } {
-  const records: SubagentTraceRecord[] = []
-  const warnings: string[] = []
-  text.split(/\r?\n/).forEach((raw, index) => {
-    if (!raw.trim()) return
-    try {
-      const parsed = JSON.parse(raw) as unknown
-      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        warnings.push(`轨迹第 ${index + 1} 行结构无效`)
-        return
-      }
-      const value = parsed as Record<string, unknown>
+  const parsed = parseJsonl(text, {
+    parse: (value): SubagentTraceRecord | undefined => {
+      if (!isRecord(value)) return undefined
       if (
         typeof value.timestamp !== 'string' ||
         typeof value.turn !== 'number' ||
         !Number.isFinite(value.turn) ||
         !isTraceModelItem(value.item)
-      ) {
-        warnings.push(`轨迹第 ${index + 1} 行结构无效`)
-        return
-      }
-      records.push({
-        timestamp: value.timestamp,
-        turn: value.turn,
-        item: value.item,
-      })
-    } catch (error) {
-      warnings.push(`轨迹第 ${index + 1} 行无法解析：${error instanceof Error ? error.message : String(error)}`)
-    }
+      ) return undefined
+      return { timestamp: value.timestamp, turn: value.turn, item: value.item }
+    },
+    invalidRecordError: 'invalid subagent trace record',
   })
-  return { records, warnings }
+  return {
+    records: parsed.records,
+    warnings: parsed.parseErrors.map((error) => error.error === 'invalid subagent trace record'
+      ? `轨迹第 ${error.line} 行结构无效`
+      : `轨迹第 ${error.line} 行无法解析：${error.error}`),
+  }
 }
 
 export const loadSubagentTraceAtom = atom(
@@ -861,11 +826,11 @@ export const loadSubagentTraceAtom = atom(
         warnings: [],
       })
     }
-    const result = await (input.reader ?? readWorkspaceFile)({
+    const result = await readSubagentArchiveFile({
       path,
       maxBytes: 2_000_000,
       workspaceRoot: input.workspaceRoot,
-    })
+    }, input.reader)
     if (!subagentTraceLoader.isLatest(get, token)) return
     if (!result.ok) {
       set(subagentTraceAtom, {

@@ -241,6 +241,7 @@ describe('replaySubagentArchive', () => {
     const parsed = parseSubagentTreeSnapshot(badTree)
     expect(parsed.records).toHaveLength(1)
     expect(parsed.parseErrors).toHaveLength(1)
+    expect(parseSubagentTreeSnapshot('  ')).toEqual({ records: [], parseErrors: [] })
 
     const eventsText = JSON.stringify({
       ...event(),

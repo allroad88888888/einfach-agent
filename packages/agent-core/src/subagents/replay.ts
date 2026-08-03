@@ -4,7 +4,15 @@ import type {
   SubagentArchiveEventType,
   SubagentNodeRecord,
 } from './types'
+import {
+  parseJsonDocument,
+  parseJsonl,
+  type JsonlParseError as ParseError,
+  type JsonlParseResult,
+} from './jsonl'
 import { compareAgentPaths, parseAgentPath } from './path'
+
+export type { JsonlParseError as ParseError, JsonlParseResult } from './jsonl'
 
 // 与 types.ts 的 SubagentArchiveEventType 联合一一对应 —— 漏一个，该类事件就会被
 // isSubagentArchiveEvent 判为结构非法而落进 parseErrors，eventCounts 也不再统计它。
@@ -33,17 +41,6 @@ export const SUBAGENT_EVENT_TYPES = Object.keys(
 ) as SubagentArchiveEventType[]
 
 const ROOT_AGENT_PATH = 'root'
-
-export interface ParseError {
-  line: number
-  raw: string
-  error: string
-}
-
-export interface JsonlParseResult<T> {
-  records: T[]
-  parseErrors: ParseError[]
-}
 
 export interface SubagentTreeSnapshot {
   nodes: SubagentNodeRecord[]
@@ -214,85 +211,58 @@ function directChildIndex(parentPath: string, childPath: string): number | undef
 }
 
 export function parseSubagentEvents(text: string): JsonlParseResult<SubagentArchiveEvent> {
-  const records: SubagentArchiveEvent[] = []
-  const parseErrors: ParseError[] = []
-
-  const lines = text.split('\n')
-  lines.forEach((line, index) => {
-    const raw = line.trim()
-    if (!raw) return
-    try {
-      const parsed = JSON.parse(raw)
-      if (!isSubagentArchiveEvent(parsed)) {
-        parseErrors.push({
-          line: index + 1,
-          raw,
-          error: 'invalid subagent archive event structure',
-        })
-        return
-      }
-      records.push(parsed)
-    } catch (error) {
-      parseErrors.push({
-        line: index + 1,
-        raw,
-        error: error instanceof Error ? error.message : 'invalid json line',
-      })
-    }
+  return parseJsonl(text, {
+    parse: (value) => isSubagentArchiveEvent(value) ? value : undefined,
+    invalidRecordError: 'invalid subagent archive event structure',
   })
-
-  return { records, parseErrors }
 }
 
 export function parseSubagentTreeSnapshot(text: string): JsonlParseResult<SubagentTreeSnapshot> {
-  const parseErrors: ParseError[] = []
-  try {
-    const trimmed = text.trim()
-    if (!trimmed) return { records: [], parseErrors }
-
-    const parsed = JSON.parse(trimmed)
-    if (!isRecord(parsed)) {
-      parseErrors.push({ line: 1, raw: text, error: 'tree snapshot must be a json object' })
-      return { records: [], parseErrors }
-    }
-
-    const maybeNodes = parsed.nodes
-    if (!Array.isArray(maybeNodes)) {
-      parseErrors.push({ line: 1, raw: text, error: 'tree snapshot must be { nodes: [...] }' })
-      return { records: [], parseErrors }
-    }
-
-    const nodes: SubagentNodeRecord[] = []
-    maybeNodes.forEach((rawNode, index) => {
-      if (!isRecord(rawNode)) {
-        parseErrors.push({
-          line: 1,
-          raw: JSON.stringify(rawNode),
-          error: `invalid node record at index ${index}`,
-        })
-        return
-      }
-      const node = normalizeNodeFromSnapshot(rawNode)
-      if (!node) {
-        parseErrors.push({
-          line: 1,
-          raw: JSON.stringify(rawNode),
-          error: `invalid node record at index ${index}`,
-        })
-        return
-      }
-      nodes.push(node)
-    })
-
-    return { records: [{ nodes }], parseErrors }
-  } catch (error) {
-    parseErrors.push({
-      line: 1,
-      raw: text,
-      error: error instanceof Error ? error.message : 'invalid json',
-    })
-    return { records: [], parseErrors }
+  if (!text.trim()) return { records: [], parseErrors: [] }
+  const parsedDocument = parseJsonDocument(text)
+  if (parsedDocument.parseErrors.length > 0) {
+    return { records: [], parseErrors: parsedDocument.parseErrors }
   }
+  const parsed = parsedDocument.records[0]
+  if (!isRecord(parsed)) {
+    return {
+      records: [],
+      parseErrors: [{ line: 1, raw: text, error: 'tree snapshot must be a json object' }],
+    }
+  }
+
+  const maybeNodes = parsed.nodes
+  if (!Array.isArray(maybeNodes)) {
+    return {
+      records: [],
+      parseErrors: [{ line: 1, raw: text, error: 'tree snapshot must be { nodes: [...] }' }],
+    }
+  }
+
+  const nodes: SubagentNodeRecord[] = []
+  const parseErrors: ParseError[] = []
+  maybeNodes.forEach((rawNode, index) => {
+    if (!isRecord(rawNode)) {
+      parseErrors.push({
+        line: 1,
+        raw: JSON.stringify(rawNode),
+        error: `invalid node record at index ${index}`,
+      })
+      return
+    }
+    const node = normalizeNodeFromSnapshot(rawNode)
+    if (!node) {
+      parseErrors.push({
+        line: 1,
+        raw: JSON.stringify(rawNode),
+        error: `invalid node record at index ${index}`,
+      })
+      return
+    }
+    nodes.push(node)
+  })
+
+  return { records: [{ nodes }], parseErrors }
 }
 
 export function replaySubagentArchive(input: {
