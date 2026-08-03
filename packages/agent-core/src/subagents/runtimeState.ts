@@ -58,6 +58,8 @@ export interface CreateDelegateAgentRuntimeOptions {
   customInstructions?: string
   /** Parent agent's resolved execution-environment prompt section. */
   environment?: string
+  /** Whether this delegate runtime runs inside the native Tauri host. Omitted is Web-safe. */
+  runtimeIsTauri?: boolean
   /** Stable, opaque installation identifier sent only to DeepSeek request bodies. */
   deepseekUserId?: string
   apiKey: string
@@ -137,6 +139,7 @@ export class DelegateAgentRuntimeState {
     this.migratedSettings = normalizePrimaryAgentSettings(rawOpts.settings)
     this.opts = {
       ...rawOpts,
+      runtimeIsTauri: rawOpts.runtimeIsTauri === true,
       settings: this.migratedSettings,
       signal: this.runtimeController.signal,
     }

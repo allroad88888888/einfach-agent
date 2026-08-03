@@ -77,7 +77,7 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
     const modelUserId = runtimeModelIdentity(core.config)
     const rootTranscript = () => formatSubagentTranscript([...stablePrefix.items, ...currentTurnItems(id, core).map((item) => item.item)])
     const delegateRuntime = createDelegateAgentRuntime({
-      sessionId: id, runId, settings: session.settings, core, registry: core.tools, scheduler: core.subagentScheduler, customInstructions: core.config.customInstructions, environment: stablePrefix.environment.content, ...delegateModelIdentity(modelUserId), apiKey: opts.apiKey, signal: opts.signal, fetchImpl: opts.fetchImpl,
+      sessionId: id, runId, settings: session.settings, core, registry: core.tools, scheduler: core.subagentScheduler, customInstructions: core.config.customInstructions, environment: stablePrefix.environment.content, runtimeIsTauri: stablePrefix.isTauri, ...delegateModelIdentity(modelUserId), apiKey: opts.apiKey, signal: opts.signal, fetchImpl: opts.fetchImpl,
       onNodeChange: (node) => getExecutionRuntime(core).syncAgentNode(node),
       onTraceItem: ({ agentPath, timestamp, turn, item }) => getExecutionRuntime(core).appendAgentTrace({ sessionId: id, treeId: runId, agentPath, record: { timestamp, turn, item } }),
     })

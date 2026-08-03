@@ -17,10 +17,10 @@ import {
 import { buildChildSystemPrompt, buildChildUserPrompt } from './prompt'
 import { subagentAllowedTools } from './toolProfile'
 import {
-  appendVisibleChildTool,
   executeChildAgentToolCalls,
   type ChildAgentToolLoopState,
 } from './childAgentToolCalls'
+import { appendVisibleChildTool, loadVisibleChildTool } from './childToolVisibility'
 import { firstAssistantText, type ChildModelCaller } from './childModelClient'
 import type { DelegateAgents } from './delegationBatch'
 import type {
@@ -64,7 +64,7 @@ function refreshChildVisibleTools(
   maxLoadedTools: number,
 ): import('../tools/types').LoadedTool[] {
   const visible = current.reduce<import('../tools/types').LoadedTool[]>((refreshed, snapshot) => {
-    const latest = runtime.registry.loadSchema(snapshot.name)
+    const latest = loadVisibleChildTool(snapshot.name, runtime)
     if (!latest) return refreshed
     return [...refreshed, latest.registrationVersion === snapshot.registrationVersion ? snapshot : latest]
   }, [])
@@ -253,7 +253,7 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
       loop.visible = refreshChildVisibleTools(loop.visible, runtime, maxTurnTools - 1)
       const tools = isSynthesisTurn
         ? []
-        : buildTurnTools(loop.visible, true, {
+        : buildTurnTools(loop.visible, runtime.opts.runtimeIsTauri === true, {
             allowedToolNames,
             registry: runtime.registry,
             vendor: modelSelection.settings.vendor,

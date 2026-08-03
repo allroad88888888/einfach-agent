@@ -1,6 +1,7 @@
 // tools/delegate-agent/delegate-agent.ts -- tree-shaped child-agent delegation.
 import type { Tool, ToolContext } from '@web-agent/core/tools/types'
 import { normalizeDelegateAgentInput } from '@web-agent/core/subagents/input'
+import { SUBAGENT_TOOL_PROFILES } from '@web-agent/core/subagents/toolProfile'
 import guide from './delegate-agent.md?raw'
 
 const inputSchema = {
@@ -46,7 +47,7 @@ const inputSchema = {
           maxDepth: { type: 'integer', minimum: 1 },
           maxChildren: { type: 'integer', minimum: 1 },
           maxTurns: { type: 'integer', minimum: 1 },
-          toolProfile: { type: 'string', enum: ['delegate_only', 'workspace_read'] },
+          toolProfile: { type: 'string', enum: SUBAGENT_TOOL_PROFILES },
           confirmedTools: {
             type: 'array',
             uniqueItems: true,
@@ -68,7 +69,7 @@ const inputSchema = {
     maxModelCalls: { type: 'integer', minimum: 1, maximum: 512, default: 128 },
     toolProfile: {
       type: 'string',
-      enum: ['delegate_only', 'workspace_read'],
+      enum: SUBAGENT_TOOL_PROFILES,
       default: 'delegate_only',
       description: 'Child tool capability ceiling. Descendants may inherit or narrow it, never widen it.',
     },

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ToolContext } from '@web-agent/core/tools/types'
+import { SUBAGENT_TOOL_PROFILES } from '@web-agent/core/subagents/toolProfile'
 import { delegateAgentTool } from './delegate-agent'
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
@@ -46,10 +47,16 @@ describe('delegate_agent tool', () => {
             },
           },
         },
-        toolProfile: { enum: ['delegate_only', 'workspace_read'] },
+        toolProfile: { enum: SUBAGENT_TOOL_PROFILES },
         confirmedTools: { type: 'array' },
       },
     })
+    const childProfile = (
+      delegateAgentTool.inputSchema.properties as unknown as {
+        children: { items: { properties: { toolProfile: { enum: readonly string[] } } } }
+      }
+    ).children.items.properties.toolProfile.enum
+    expect(childProfile).toEqual(SUBAGENT_TOOL_PROFILES)
   })
 
   it('returns an explicit error when runtime capability is missing', async () => {

@@ -9,6 +9,7 @@ import { isDelegatableDangerousTool } from '../runtime/dangerousTools'
 import { toolSchemaLoadedResult } from '../tools/schemaResult'
 import { normalizeDelegateAgentInput } from './input'
 import { agentPathDepth } from './path'
+import { appendVisibleChildTool, loadVisibleChildTool } from './childToolVisibility'
 import { formatSubagentTranscript } from './distill'
 import {
   isSubagentVerificationTool,
@@ -69,20 +70,6 @@ function argsPreviewForModel(raw: string): string {
   return raw.length > ARGS_PREVIEW_LIMIT ? `${raw.slice(0, ARGS_PREVIEW_LIMIT)}...` : raw
 }
 
-export function appendVisibleChildTool(
-  current: import('../tools/types').LoadedTool[],
-  name: string,
-  runtime: DelegateAgentRuntimeState,
-  maxLoadedTools: number,
-): import('../tools/types').LoadedTool[] {
-  const tool = runtime.registry.loadSchema(name)
-  if (!tool) return current.filter((loaded) => loaded.name !== name)
-  const existing = current.find((loaded) => loaded.name === name)
-  const snapshot = existing?.registrationVersion === tool.registrationVersion ? existing : tool
-  const visible = [...current.filter((loaded) => loaded.name !== name), snapshot]
-  return maxLoadedTools > 0 ? visible.slice(-maxLoadedTools) : []
-}
-
 export async function executeChildAgentToolCalls(
   input: ExecuteChildAgentToolCallsInput,
 ): Promise<void> {
@@ -141,11 +128,13 @@ export async function executeChildAgentToolCalls(
       args: callArgs,
       turnTools,
       isSynthesisTurn,
-      isAllowedTool: (toolName) => allowedToolNames.includes(toolName),
-      loadSchema: (toolName) => runtime.registry.loadSchema(toolName),
+      isAllowedTool: (toolName) => (
+        allowedToolNames.includes(toolName) && loadVisibleChildTool(toolName, runtime) !== undefined
+      ),
+      loadSchema: (toolName) => loadVisibleChildTool(toolName, runtime),
       expectedRegistrationVersion,
       registrationVersion: (toolName) => runtime.registry.registrationVersion(toolName),
-      canExecuteTool: (toolName) => (
+      canExecuteTool: (toolName) => loadVisibleChildTool(toolName, runtime) !== undefined && (
         isSubagentWorkspaceReadTool(toolName)
         || isDelegatableDangerousTool(toolName)
         || isSubagentVerificationTool(toolName)
@@ -168,7 +157,7 @@ export async function executeChildAgentToolCalls(
         continue
       }
       if (toolName) {
-        const loadedTool = runtime.registry.loadSchema(toolName)
+        const loadedTool = loadVisibleChildTool(toolName, runtime)
         loop.visible = loadedTool
           ? appendVisibleChildTool(loop.visible, toolName, runtime, maxTurnTools - 1)
           : loop.visible
@@ -193,7 +182,7 @@ export async function executeChildAgentToolCalls(
             cursor: typeof callArgs.cursor === 'string' ? callArgs.cursor : undefined,
             limit: typeof callArgs.limit === 'number' ? callArgs.limit : undefined,
           },
-          true,
+          runtime.opts.runtimeIsTauri === true,
           { registry: runtime.registry, allowedToolNames },
         )),
       )
