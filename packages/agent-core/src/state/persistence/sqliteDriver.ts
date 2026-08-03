@@ -326,7 +326,8 @@ const sqliteSessions: SessionsPersistence = {
       serializeMs = performanceNow() - phaseStartedAt
       jsonChars = sessionsJson.length
       phaseStartedAt = performanceNow()
-      await db.execute(`INSERT OR REPLACE INTO sessions (id, meta) VALUES ('${SESSIONS_BLOB_ID}', $1)`, [
+      await db.execute('INSERT OR REPLACE INTO sessions (id, meta) VALUES ($1, $2)', [
+        SESSIONS_BLOB_ID,
         sessionsJson,
       ])
       executeMs = performanceNow() - phaseStartedAt
@@ -394,8 +395,8 @@ const sqliteSessions: SessionsPersistence = {
       jsonChars = workspacesJson.length
       phaseStartedAt = performanceNow()
       await db.execute(
-        `INSERT OR REPLACE INTO sessions (id, meta) VALUES ('${WORKSPACES_BLOB_ID}', $1)`,
-        [workspacesJson],
+        'INSERT OR REPLACE INTO sessions (id, meta) VALUES ($1, $2)',
+        [WORKSPACES_BLOB_ID, workspacesJson],
       )
       executeMs = performanceNow() - phaseStartedAt
       operation.finish('ok', { dbReadyMs, serializeMs, executeMs, jsonChars })

@@ -64,13 +64,13 @@ function makeFakeDb() {
         }
         return { rowsAffected: 0 }
       }
-      // sessions 单行 blob upsert：driver 固定写 id='__all__'（params 只带 meta 一个）。
+      // sessions 单行 blob upsert：driver 用参数绑定传递固定 blob id 和 JSON。
       if (sql.includes('INSERT OR REPLACE INTO sessions')) {
         if (ctrl.failSessionsInsert) throw new Error('simulated sessions upsert failure')
-        const [meta] = params as [string]
-        const i = sessions.findIndex((s) => s.id === '__all__')
-        if (i >= 0) sessions[i] = { id: '__all__', meta }
-        else sessions.push({ id: '__all__', meta })
+        const [id, meta] = params as [string, string]
+        const i = sessions.findIndex((s) => s.id === id)
+        if (i >= 0) sessions[i] = { id, meta }
+        else sessions.push({ id, meta })
         return { rowsAffected: 1 }
       }
       return { rowsAffected: 0 }
@@ -227,8 +227,8 @@ describe('sqliteDriver — sessions', () => {
     // 单条 upsert，写入固定 '__all__' 行 + 整个数组的 JSON。
     const inserts = fakeDb.execute.mock.calls.filter((c) => String(c[0]).includes('INSERT OR REPLACE INTO sessions'))
     expect(inserts).toHaveLength(1)
-    expect(String(inserts[0][0])).toContain("'__all__'")
-    const blob = JSON.parse((inserts[0][1] as unknown[])[0] as string) as SessionMeta[]
+    expect(inserts[0][1]).toMatchObject(['__all__', expect.any(String)])
+    const blob = JSON.parse((inserts[0][1] as unknown[])[1] as string) as SessionMeta[]
     expect(blob.map((s) => s.id).sort()).toEqual(['a', 'b'])
   })
 

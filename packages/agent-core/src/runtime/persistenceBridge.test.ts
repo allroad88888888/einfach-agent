@@ -165,6 +165,39 @@ describe('persistenceBridge（D-4 fire-and-forget 接线）', () => {
     expect(saveCheckpoint).toHaveBeenNthCalledWith(2, 's1', finalCheckpoint)
   })
 
+  it('persistTruncate：等待同会话排队 checkpoint 写入完成后再截断', async () => {
+    let releaseFirst: (() => void) | undefined
+    const firstWrite = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    const calls: string[] = []
+    const saveCheckpoint = vi.fn()
+      .mockImplementationOnce(() => {
+        calls.push('checkpoint:working')
+        return firstWrite
+      })
+      .mockImplementation(() => {
+        calls.push('checkpoint:final')
+        return Promise.resolve()
+      })
+    const truncateAfter = vi.fn(async () => {
+      calls.push('truncate')
+    })
+    configurePersistence({ history: mockHistory({ saveCheckpoint, truncateAfter }) })
+
+    persistCheckpoint('s1', cp)
+    persistCheckpoint('s1', { ...cp, label: 'done' })
+    persistTruncate('s1', 0)
+
+    expect(calls).toEqual(['checkpoint:working'])
+    releaseFirst?.()
+    await firstWrite
+    for (let index = 0; index < 5; index += 1) await Promise.resolve()
+
+    expect(calls).toEqual(['checkpoint:working', 'checkpoint:final', 'truncate'])
+    expect(truncateAfter).toHaveBeenCalledWith('s1', 0)
+  })
+
   it('persistTruncate：转成 history.truncateAfter(id, turnIndex)', () => {
     const history = mockHistory()
     configurePersistence({ history })
