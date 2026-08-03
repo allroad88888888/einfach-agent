@@ -103,6 +103,7 @@ import {
   revertTurnToDraft,
   rollbackPlanStage,
   resumeWithAnswers,
+  approvePlan,
   answerQuestion,
   discardArtifact,
   setWorkspaceRoot,
@@ -903,6 +904,7 @@ describe('resumeWithAnswers（T-7 ask_user 暂停恢复）', () => {
     expect(call[0]).toBe(id)
     expect(call[1]).toBe('R1')
     expect(call[2].apiKey).toBe('k')
+    expect(call[2]).not.toHaveProperty('resumeToolCall')
 
     await flush()
     expect(endRun).toHaveBeenCalledWith(id, expect.anything())
@@ -973,6 +975,52 @@ describe('resumeWithAnswers（T-7 ask_user 暂停恢复）', () => {
   it('无 active → no-op', () => {
     resumeWithAnswers()
     expect(runToolLoop).not.toHaveBeenCalled()
+  })
+})
+
+describe('approvePlan（计划审批暂停恢复）', () => {
+  it('批准后回填结果、清 pendingPlanApproval，并沿用原 run 续跑', async () => {
+    configureCommands({ deepseekApiKey: 'k' })
+    const id = newSession()
+    const store = getSessionStore(id).store
+    setPlan(id, {
+      id: 'plan-approval', title: '审批计划', objective: '完成工作', status: 'awaiting_approval', revision: 3,
+      requiresApproval: true, createdAt: 1, updatedAt: 2,
+      stages: [{
+        id: 'implement', title: '实现', objective: '完成代码', deliverables: [],
+        dependencies: [], status: 'pending', evidence: [],
+      }],
+    })
+    store.setter(runAtom, {
+      runId: 'R-plan',
+      status: 'waiting_plan_approval',
+      pendingPlanApproval: { callId: 'plan-call', planId: 'plan-approval', revision: 3 },
+    })
+    vi.clearAllMocks()
+
+    approvePlan(true)
+
+    const last = store.getter(itemsAtom).at(-1)?.item
+    expect(last).toMatchObject({ role: 'tool', tool_call_id: 'plan-call' })
+    if (last?.role !== 'tool') throw new Error('意外的条目形状')
+    expect(JSON.parse(last.content)).toMatchObject({
+      approved: true,
+      plan: { id: 'plan-approval', status: 'approved' },
+    })
+    expect(getPlan(id)?.status).toBe('approved')
+    expect(store.getter(runAtom)).toMatchObject({ status: 'running' })
+    expect(store.getter(runAtom)?.pendingPlanApproval).toBeUndefined()
+
+    expect(beginRun).toHaveBeenCalledWith(id)
+    expect(runToolLoop).toHaveBeenCalledOnce()
+    const call = vi.mocked(runToolLoop).mock.calls[0]
+    expect(call[0]).toBe(id)
+    expect(call[1]).toBe('R-plan')
+    expect(call[2]).toMatchObject({ apiKey: 'k' })
+    expect(call[2]).not.toHaveProperty('resumeToolCall')
+
+    await flush()
+    expect(endRun).toHaveBeenCalledWith(id, expect.anything())
   })
 })
 
@@ -1190,6 +1238,7 @@ describe('confirmTool（S4-B 危险工具确认恢复）', () => {
     expect(runToolLoop).toHaveBeenCalledTimes(1)
     // 拒绝不执行工具 → 不带 resumeToolCall。
     expect(vi.mocked(runToolLoop).mock.calls[0][2].resumeToolCall).toBeUndefined()
+    expect(vi.mocked(runToolLoop).mock.calls[0][2]).not.toHaveProperty('resumeToolCall')
   })
 
   it('非 waiting_confirmation（running）→ no-op（不回填、不续跑）', () => {

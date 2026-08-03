@@ -26,15 +26,12 @@ import {
 import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
 import { getPlan, setPlan } from '../state/planWriters'
 import { PlanRuntime } from '../planning/runtime'
-import { appendItem, patchRun, setItems, setRun } from '../state/sessionWriters'
+import { patchRun, setItems, setRun } from '../state/sessionWriters'
 import {
-  getPendingQuestionAnswers,
-  clearPendingQuestionAnswers,
   setPendingQuestionAnswer,
   removePendingArtifact,
   pruneBrowserCardsAfter,
   pruneRuntimeTranscriptEventsAfter,
-  addAlwaysAllowedTool,
   enqueueUserMessage,
   setComposerDraft,
   setWithdrawnTurnNotice,
@@ -51,7 +48,6 @@ import {
   resumeInterruptedSession,
   resumePlanSession,
   runSession,
-  runToolLoop,
 } from './modelRun'
 // 【实例化 · 第 2/3 期穿线】命令绑定 core（默认 defaultCore）：函数体内用工厂参数 core 显式替换旧的
 //   模块全局（rootStore / getSessionStore / beginRun/abortRun/endRun），并把 core 传进
@@ -66,13 +62,9 @@ import {
 } from './persistenceBridge'
 import { newId } from './newId'
 import type {
-  SessionMeta,
   ConversationItem,
-  RunState,
-  RunStatus,
 } from '../state/core.type'
-import { addEvent, getActiveSpan, runTraceKey } from '../observability/trace'
-import { isDangerousTool, isMcpTool } from './dangerousTools'
+import { isDangerousTool } from './dangerousTools'
 import { getExecutionRuntime } from '../execution/runtime'
 import { activeExecutionNodeIdsAtom, executionGraphAtom } from '../execution/graph'
 import {
@@ -81,6 +73,12 @@ import {
 import { buildProjectSkillsBridge } from './projectSkillsBridge'
 import { createSessionCommands, DEFAULT_SESSION_TITLE, deriveSessionTitle } from './commands/sessionCommands'
 import { createWorkspaceCommands } from './commands/workspaceCommands'
+import {
+  assertRunStatus,
+  createRunCommands,
+  resolveApiKey,
+  withRun,
+} from './commands/runCommands'
 
 export { DEFAULT_SESSION_TITLE, deriveSessionTitle } from './commands/sessionCommands'
 
@@ -102,26 +100,6 @@ export function configureCommands(cfg: Partial<RuntimeConfig>): void {
 
 const SIDE_EFFECT_TOOL_NAMES = new Set(['run_task'])
 
-function resolveApiKey(meta: SessionMeta | undefined, core: CoreInstance): string {
-  return meta?.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
-}
-
-function withRun(
-  id: string,
-  core: CoreInstance,
-  start: (signal: AbortSignal) => Promise<unknown>,
-): void {
-  const signal = core.abort.beginRun(id)
-  void start(signal).finally(() => core.abort.endRun(id, signal))
-}
-
-function assertRunStatus(
-  run: RunState | undefined,
-  ...expectedStatuses: RunStatus[]
-): run is RunState {
-  return Boolean(run && expectedStatuses.includes(run.status))
-}
-
 function currentTurnStartIndex(items: ConversationItem[]): number {
   for (let i = items.length - 1; i >= 0; i -= 1) {
     if (items[i].item.role === 'user') return i
@@ -140,18 +118,6 @@ function currentTurnHasSideEffects(items: ConversationItem[]): boolean {
   return false
 }
 
-// 从对话历史里取「最后一条 assistant」的 ask_user_question tool_call id（找不到返回 undefined）。
-// 该 id 即暂停时未回填的 ask_user ToolItem 的 tool_call_id，resume 用它把答案回填给 model。
-function findAskUserToolCallId(items: ConversationItem[]): string | undefined {
-  for (let i = items.length - 1; i >= 0; i -= 1) {
-    const item = items[i].item
-    if (item.role === 'assistant') {
-      return item.tool_calls?.find((toolCall) => toolCall.function.name === 'ask_user_question')?.id
-    }
-  }
-  return undefined
-}
-
 // ===========================================================================
 // createCommands 工厂 —— 把全部命令绑定到传入的 core（默认 defaultCore）
 // ===========================================================================
@@ -162,6 +128,7 @@ function findAskUserToolCallId(items: ConversationItem[]): string | undefined {
 export function createCommands(core: CoreInstance = defaultCore) {
   const workspaceCommands = createWorkspaceCommands(core)
   const sessionCommands = createSessionCommands(core)
+  const runCommands = createRunCommands(core)
 
   // =========================================================================
   // 运行命令
@@ -378,160 +345,6 @@ export function createCommands(core: CoreInstance = defaultCore) {
     }, core)
   }
 
-  // 简介：ask_user 恢复（T-7/TK7）—— 用户填完答案后续跑 pending run。
-  // 详情：仅当当前 active 会话 run 处于 waiting_user 时生效。从 itemsAtom 找最后一条 assistant 的
-  //   ask_user_question tool_call（取其 id=tool_call_id）；找不到则容错清 pendingQuestion + 落回
-  //   running 后返回（不续跑）。否则读并清 pendingQuestionAnswers → 回填 ask_user 的 ToolItem（把
-  //   {answers} 当 tool result）→ 落回 running + 清 pendingQuestion → 复用 pending run 的 runId、
-  //   beginRun 拿新 signal，走 runToolLoop 续跑（apiKey 按会话 vendor 取，与 sendMessage 同逻辑；
-  //   finally endRun 清理）。
-  function resumeWithAnswers(): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
-    if (!id) return
-    const run = core.getSessionStore(id).store.getter(runAtom)
-    if (!assertRunStatus(run, 'waiting_user')) return
-
-    const pendingDecision = run.pendingUserDecision
-    // 新状态直接保存未回填的 callId；fallback 兼容只有 pendingQuestion 的旧状态。
-    const toolCallId = pendingDecision?.callId
-      ?? findAskUserToolCallId(core.getSessionStore(id).store.getter(itemsAtom))
-    // 容错：找不到 ask_user 调用（异常/被回退过）→ 清 pendingQuestion + 落回 running，不续跑。
-    if (!toolCallId) {
-      patchRun(id, { status: 'running', pendingQuestion: undefined, pendingUserDecision: undefined }, core)
-      return
-    }
-
-    // 读答案 + 清答案（避免旧答案污染下一次等待用户输入）。
-    const answers = getPendingQuestionAnswers(id, core)
-    clearPendingQuestionAnswers(id, core)
-    addEvent('agent.resume.answers', {
-      span: getActiveSpan(runTraceKey(id, run.runId)),
-      attrs: { sessionId: id, runId: run.runId, callId: toolCallId, answers_count: Object.keys(answers).length },
-    })
-
-    // 回填 ask_user 的 ToolItem：把 {answers} 作为 tool result 回给 model。
-    appendItem(id, {
-      id: newId(),
-      createdAt: Date.now(),
-      planStageId: pendingDecision?.origin.stageId,
-      item: { role: 'tool', tool_call_id: toolCallId, content: JSON.stringify({ answers }) },
-    }, core)
-
-    // 落回 running + 清 pendingQuestion，复用 pending run 的 runId 续跑同一条 run。
-    patchRun(id, { status: 'running', pendingQuestion: undefined, pendingUserDecision: undefined }, core)
-
-    const meta = core.rootStore.getter(sessionsAtom)[id]
-    const apiKey = resolveApiKey(meta, core)
-    withRun(id, core, (signal) => runToolLoop(id, run.runId, {
-      signal, apiKey, fetchImpl: core.config.fetchImpl, core,
-    }))
-  }
-
-  // 简介：危险工具确认恢复（S4-B）—— 用户在确认卡片点「允许」/「拒绝」后续跑 pending run。镜像 resumeWithAnswers。
-  // 详情：仅当当前 active 会话 run 处于 waiting_confirmation 时生效。取 pendingToolConfirmation；缺失则容错清空 +
-  //   落回 running 后返回（不续跑）。approved=true → 复用 pending run 的 runId，把该危险工具作为 resumeToolCall
-  //   传进 runToolLoop（循环开头执行它、回填结果，再进正常多轮）；always=true 则先把该工具记进本 session
-  //   「一律允许」集合（后续不再确认）。approved=false → 给该 tool_call 回填 {error} result 后重入循环，
-  //   让 model 据此改道。apiKey 按会话 vendor 取（与 sendMessage 同逻辑）；finally endRun 清理。
-  function confirmTool(approved: boolean, always?: boolean): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
-    if (!id) return
-    const run = core.getSessionStore(id).store.getter(runAtom)
-    if (!assertRunStatus(run, 'waiting_confirmation')) return
-
-    const pending = run.pendingToolConfirmation
-    // 容错：无 pending（异常/被回退过）→ 清 pendingToolConfirmation + 落回 running，不续跑。
-    if (!pending) {
-      addEvent('agent.confirmation.missing_pending', {
-        span: getActiveSpan(runTraceKey(id, run.runId)),
-        attrs: { sessionId: id, runId: run.runId },
-      })
-      patchRun(id, { status: 'running', pendingToolConfirmation: undefined }, core)
-      return
-    }
-    // MCP 工具必须逐次确认；即便绕过 UI 直接传 always=true，也不能写入 session 授权。
-    const registrationStillCurrent = pending.registrationVersion === undefined
-      || core.tools.registrationVersion(pending.toolName) === pending.registrationVersion
-    const rememberApproval = approved
-      && Boolean(always)
-      && registrationStillCurrent
-      && pending.risk !== 'critical'
-      && !pending.irreversible
-      && !isMcpTool(pending.toolName)
-    addEvent('agent.confirmation.decision', {
-      span: getActiveSpan(runTraceKey(id, run.runId)),
-      attrs: {
-        sessionId: id,
-        runId: run.runId,
-        toolName: pending.toolName,
-        callId: pending.callId,
-        approved,
-        always: rememberApproval,
-        registrationVersion: pending.registrationVersion,
-        registrationStillCurrent,
-      },
-    })
-
-    const meta = core.rootStore.getter(sessionsAtom)[id]
-    const apiKey = resolveApiKey(meta, core)
-
-    if (!approved) {
-      // 拒绝：给该 tool_call 回填 error result（序列合法），落回 running，重入循环让 model 改道。
-      appendItem(id, {
-        id: newId(),
-        createdAt: Date.now(),
-        item: { role: 'tool', tool_call_id: pending.callId, content: JSON.stringify({ error: '用户拒绝执行该工具' }) },
-      }, core)
-      patchRun(id, { status: 'running', pendingToolConfirmation: undefined }, core)
-      withRun(id, core, (signal) => runToolLoop(id, run.runId, {
-        signal, apiKey, fetchImpl: core.config.fetchImpl, core,
-      }))
-      return
-    }
-
-    // 允许：可选「本 session 一律允许该工具」→ 记瞬态集合；落回 running，重入循环并让其先执行被确认工具。
-    if (rememberApproval) {
-      addAlwaysAllowedTool(id, pending.toolName, core)
-    }
-    patchRun(id, { status: 'running', pendingToolConfirmation: undefined }, core)
-    withRun(id, core, (signal) => runToolLoop(id, run.runId, {
-      signal,
-      apiKey,
-      fetchImpl: core.config.fetchImpl,
-      resumeToolCall: pending,
-      core,
-    }))
-  }
-
-  // 计划审批是宿主专用命令：模型没有对应 approve tool，因而不能自批。
-  // 注：getPlan/setPlan 尚未收 core（planning 本期不穿线），故计划读写仍落 defaultCore —— 隔离实例上
-  //   approvePlan 的计划态会漂到 defaultCore，属已知缺口（本期不碰 planning/evaluation）；默认实例无影响。
-  function approvePlan(approved: boolean): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
-    if (!id) return
-    const run = core.getSessionStore(id).store.getter(runAtom)
-    const pending = run?.pendingPlanApproval
-    if (!assertRunStatus(run, 'waiting_plan_approval') || !pending) return
-
-    const runtime = new PlanRuntime({ get: () => getPlan(id), set: (plan) => setPlan(id, plan) }, Date.now, newId)
-    const decision = runtime.approve(pending.planId, pending.revision, approved)
-    const content = decision.ok
-      ? JSON.stringify(approved ? { approved: true, plan: decision.plan } : { error: '用户拒绝了计划', plan: decision.plan })
-      : JSON.stringify({ error: decision.error })
-    appendItem(id, {
-      id: newId(),
-      createdAt: Date.now(),
-      item: { role: 'tool', tool_call_id: pending.callId, content },
-    }, core)
-    patchRun(id, { status: 'running', pendingPlanApproval: undefined }, core)
-
-    const meta = core.rootStore.getter(sessionsAtom)[id]
-    const apiKey = resolveApiKey(meta, core)
-    withRun(id, core, (signal) => runToolLoop(id, run.runId, {
-      signal, apiKey, fetchImpl: core.config.fetchImpl, core,
-    }))
-  }
-
   // 回滚计划中的一个阶段。已经执行的文件/网络等外部副作用不会被自动撤销。
   //
   // 优先走**阶段回退点**（快照语义）：恢复该阶段开始前的计划快照，并把该阶段之后产生的对话一并截断，
@@ -704,9 +517,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
     continuePlan,
     stopRun,
     withdrawCurrentTurnToDraft,
-    resumeWithAnswers,
-    confirmTool,
-    approvePlan,
+    ...runCommands,
     rollbackPlanStage,
     answerQuestion,
     discardArtifact,
