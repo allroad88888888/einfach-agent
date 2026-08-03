@@ -51,27 +51,11 @@ const REPLAY_UNSAFE_NOTE =
   '历史工具结果已省略。该工具有副作用或代价高昂，不要为了拿回这段内容而重新调用它；' +
   '如确需完整内容，请改用只读工具获取，或向用户确认。'
 
-// 重放不安全的工具名。本模块是零依赖纯函数，刻意【不】import tools/registry
-// （那会把 runtime 依赖倒灌进来）；新增有副作用的工具时记得同步这张表。
-// 判据：重调一次会产生新的副作用，或消耗显著配额/时间——而不是「再算一遍同样的结果」。
-const REPLAY_UNSAFE_TOOLS = new Set([
-  'delegate_agent', // 重跑整棵子树
-  'write_file',
-  'apply_patch',
-  'delete_path',
-  'copy_path',
-  'move_path',
-  'revert_workspace_change',
-  'save_file',
-  'shell_macos',
-  'shell_linux',
-  'shell_powershell',
-  'run_task', // 跑一次 test/build 的代价远超摘要本身
-  'run_verification_command', // 同上：白名单里的 test/lint 命令重跑一次同样昂贵
-])
-
-function compactedNoteFor(toolName: string | undefined): string {
-  return toolName && REPLAY_UNSAFE_TOOLS.has(toolName) ? REPLAY_UNSAFE_NOTE : REPLAY_SAFE_NOTE
+function compactedNoteFor(
+  toolName: string | undefined,
+  replayUnsafeToolNames: ReadonlySet<string> | undefined,
+): string {
+  return toolName && replayUnsafeToolNames?.has(toolName) ? REPLAY_UNSAFE_NOTE : REPLAY_SAFE_NOTE
 }
 
 // 简介：压缩预算。
@@ -85,6 +69,8 @@ export interface ContextCompactionBudget {
   keepRecentTurns?: number
   toolResultHeadChars?: number
   toolResultTailChars?: number
+  /** Snapshot of registered tools whose result must not recommend replaying the call. */
+  replayUnsafeToolNames?: ReadonlySet<string>
 }
 
 // 简介：压缩结果。
@@ -357,6 +343,7 @@ function summarizeToolResultContent(
   toolName: string | undefined,
   headChars: number,
   tailChars: number,
+  replayUnsafeToolNames: ReadonlySet<string> | undefined,
 ): string | undefined {
   if (!content) return undefined
 
@@ -374,7 +361,7 @@ function summarizeToolResultContent(
     chars: content.length,
     head: content.slice(0, head),
     tail: tail > 0 ? content.slice(content.length - tail) : '',
-    note: compactedNoteFor(toolName),
+    note: compactedNoteFor(toolName, replayUnsafeToolNames),
   })
 
   return placeholder.length < content.length ? placeholder : undefined
@@ -495,7 +482,13 @@ export function compactContext(
   const summarizeToolIndex = (index: number): void => {
     const item = working[index]
     if (!item || item.role !== 'tool') return
-    const summary = summarizeToolResultContent(item.content, nameByCallId.get(item.tool_call_id), headChars, tailChars)
+    const summary = summarizeToolResultContent(
+      item.content,
+      nameByCallId.get(item.tool_call_id),
+      headChars,
+      tailChars,
+      budget.replayUnsafeToolNames,
+    )
     if (summary === undefined) return
     const next: ToolItem = { ...item, content: summary }
     replaceAt(index, next)

@@ -1,6 +1,7 @@
 import {
   callDeepSeek,
   DEEPSEEK_FLASH_MODEL,
+  maxTurnToolsForVendor,
   normalizeCacheUsage,
   type DeepSeekChatRequest,
 } from '@web-agent/ai'
@@ -19,7 +20,6 @@ import type { ToolRegistry } from '../tools/toolRegistry'
 import type { LoadedTool } from '../tools/types'
 import {
   buildTurnTools,
-  MAX_TURN_TOOLS,
   narrowToolCalls,
   parseToolCallArgs,
   searchToolManifestPage,
@@ -272,29 +272,33 @@ function appendVisibleTool(
   current: LoadedTool[],
   name: string,
   registry: ToolRegistry,
+  maxLoadedTools: number,
 ): LoadedTool[] {
   const tool = registry.loadSchema(name)
   if (!tool) return current.filter((loaded) => loaded.name !== name)
   const existing = current.find((loaded) => loaded.name === name)
   const snapshot = existing?.registrationVersion === tool.registrationVersion ? existing : tool
-  return [
+  const visible = [
     ...current.filter((loaded) => loaded.name !== name),
     snapshot,
-  ].slice(-(MAX_TURN_TOOLS - 1))
+  ]
+  return maxLoadedTools > 0 ? visible.slice(-maxLoadedTools) : []
 }
 
 function refreshChildVisibleTools(
   current: LoadedTool[],
   registry: ToolRegistry,
+  maxLoadedTools: number,
 ): LoadedTool[] {
-  return current.reduce<LoadedTool[]>((refreshed, snapshot) => {
+  const visible = current.reduce<LoadedTool[]>((refreshed, snapshot) => {
     const latest = registry.loadSchema(snapshot.name)
     if (!latest) return refreshed
     return [
       ...refreshed,
       latest.registrationVersion === snapshot.registrationVersion ? snapshot : latest,
     ]
-  }, []).slice(-(MAX_TURN_TOOLS - 1))
+  }, [])
+  return maxLoadedTools > 0 ? visible.slice(-maxLoadedTools) : []
 }
 
 function childSummary(children: readonly ChildAgentResult[]): DelegateAgentBatchResult['summary'] {
@@ -456,6 +460,7 @@ export function createDelegateAgentRuntime(
       maxTokens: SUBAGENT_CONTEXT_BUDGET_TOKENS,
       reservedTokens,
       keepRecentTurns: SUBAGENT_KEEP_RECENT_TURNS,
+      replayUnsafeToolNames: registry.replayUnsafeToolNames(),
     })
 
     // ── 压缩的可观测性。
@@ -768,6 +773,7 @@ export function createDelegateAgentRuntime(
       spec,
       confirmedTools,
     })
+    const maxTurnTools = maxTurnToolsForVendor(modelSelection.settings.vendor)
     const allowedToolNames = [...subagentAllowedTools(toolProfile), ...confirmedTools]
     const skillFiles = [...node.inheritedSkillFiles, localSkill.path]
     const skillIds = [...node.inheritedSkillIds, localSkill.skillId]
@@ -819,7 +825,7 @@ export function createDelegateAgentRuntime(
     //   既不在这里，也进不了 buildTurnTools（它同样吃 allowedToolNames）。
     // 这也是下面那道闸门能变严（不再拿猜的参数执行）而不伤预算的前提。
     let visible: LoadedTool[] = allowedToolNames.reduce<LoadedTool[]>(
-      (tools, name) => appendVisibleTool(tools, name, registry),
+      (tools, name) => appendVisibleTool(tools, name, registry, maxTurnTools - 1),
       [],
     )
     let recentToolNames = visible.map((tool) => tool.name).reverse()
@@ -901,13 +907,13 @@ export function createDelegateAgentRuntime(
               },
             ]
           : messages
-        visible = refreshChildVisibleTools(visible, registry)
+        visible = refreshChildVisibleTools(visible, registry, maxTurnTools - 1)
         const tools = isSynthesisTurn
           ? []
           : buildTurnTools(visible, true, {
               allowedToolNames,
               registry,
-              maxTools: MAX_TURN_TOOLS,
+              vendor: modelSelection.settings.vendor,
               recentToolNames,
             })
         // 子 agent 的既有宿主契约允许 provider/test double 直接返回“已授权但尚未显式加载”
@@ -1104,8 +1110,12 @@ export function createDelegateAgentRuntime(
             }
             if (toolName) {
               const loadedTool = registry.loadSchema(toolName)
-              visible = loadedTool ? appendVisibleTool(visible, toolName, registry) : visible
-              if (loadedTool) recentToolNames = touchRecentToolName(recentToolNames, toolName)
+              visible = loadedTool
+                ? appendVisibleTool(visible, toolName, registry, maxTurnTools - 1)
+                : visible
+              if (loadedTool) {
+                recentToolNames = touchRecentToolName(recentToolNames, toolName, maxTurnTools - 1)
+              }
               await pushToolResult(
                 toolCall.id,
                 JSON.stringify(loadedTool ? toolSchemaLoadedResult(loadedTool) : { error: 'unknown' }),
@@ -1140,8 +1150,8 @@ export function createDelegateAgentRuntime(
           if (gate.kind === 'schema_autoloaded') {
             const autoloadable = gate.tool
             if (autoloadable) {
-              visible = appendVisibleTool(visible, name, registry)
-              recentToolNames = touchRecentToolName(recentToolNames, name)
+              visible = appendVisibleTool(visible, name, registry, maxTurnTools - 1)
+              recentToolNames = touchRecentToolName(recentToolNames, name, maxTurnTools - 1)
               await archive.recordEvent(context, archiveBasePath, 'child_tool_schema_requested', node.path, {
                 toolName: name,
                 discovery: false,

@@ -467,7 +467,7 @@ describe('compactContext —— 极端与退化输入', () => {
 // 子 agent 循环，于是被摘要的对象里多了一类：嵌套 delegate_agent 回填的整棵子树结果。
 // 对它说「需要完整内容请重新调用该工具」，模型照做就是重跑一整棵子 agent 子树 ——
 // 非幂等、再烧一遍配额、归档写盘与危险工具副作用全部重来。占位文案必须按工具分叉。
-describe('compactContext —— 摘要占位的重调建议按工具是否可安全重放分叉', () => {
+describe('compactContext —— 摘要占位的重调建议按 replayUnsafe 注册元数据分叉', () => {
   function noteOf(items: readonly ModelItem[], callId: string): string {
     const item = items.find((it) => it.role === 'tool' && it.tool_call_id === callId)
     if (!item || item.role !== 'tool') throw new Error(`找不到 tool 结果 ${callId}`)
@@ -475,8 +475,8 @@ describe('compactContext —— 摘要占位的重调建议按工具是否可安
     return parsed.note ?? ''
   }
 
-  // 同一段超大正文，只有工具名不同 —— 隔离出「文案随工具名分叉」这一个变量。
-  function compactedWithTool(toolName: string): string {
+  // 同一段超大正文，只有注册元数据不同 —— 隔离出「文案随 replayUnsafe 分叉」这一个变量。
+  function compactedWithTool(toolName: string, replayUnsafe = false): string {
     const items: ModelItem[] = [
       system(),
       user('第一轮'),
@@ -488,7 +488,11 @@ describe('compactContext —— 摘要占位的重调建议按工具是否可安
       toolResult('c2', bigPayload('recent', 8000)),
       user('第三轮'),
     ]
-    const result = compactContext(items, { maxTokens: 1200, keepRecentTurns: 1 })
+    const result = compactContext(items, {
+      maxTokens: 1200,
+      keepRecentTurns: 1,
+      replayUnsafeToolNames: replayUnsafe ? new Set([toolName]) : undefined,
+    })
     expect(result.compacted).toBe(true)
     return noteOf(result.items, 'c1')
   }
@@ -499,18 +503,22 @@ describe('compactContext —— 摘要占位的重调建议按工具是否可安
     expect(note).not.toContain('不要')
   })
 
-  it('delegate_agent：绝不建议重新调用（重调 = 重跑一整棵子树，非幂等且烧配额）', () => {
-    const note = compactedWithTool('delegate_agent')
+  it('注册为 replayUnsafe 的工具：绝不建议重新调用', () => {
+    const note = compactedWithTool('delegate_agent', true)
     expect(note).toContain('不要')
     expect(note).toContain('副作用')
   })
 
-  it('写类工具与高代价工具同样不建议重调（重放会二次改动 workspace）', () => {
+  it('只信任注册快照，名字本身不会被硬编码为不可重放', () => {
+    expect(compactedWithTool('delegate_agent')).toContain('重新调用')
+  })
+
+  it('多个注册为 replayUnsafe 的工具同样不建议重调', () => {
     for (const toolName of ['write_file', 'apply_patch', 'shell_macos', 'run_task']) {
       expect(noteOfTool(toolName)).toContain('不要')
     }
     function noteOfTool(toolName: string): string {
-      return compactedWithTool(toolName)
+      return compactedWithTool(toolName, true)
     }
   })
 })

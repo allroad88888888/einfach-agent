@@ -7,3 +7,4 @@
 export * from './modelApi'
 export * from './deepseek'
 export * from './glm'
+export * from './vendorDescriptor'

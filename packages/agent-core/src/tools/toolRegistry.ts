@@ -40,6 +40,8 @@ export interface ToolRegistry {
   /** 当前注册实例的版本；未注册（包括已删除）时返回 undefined。 */
   registrationVersion(name: string): number | undefined
   list(): ToolSummary[]
+  /** Snapshot of the currently registered tools that must not be replayed after compaction. */
+  replayUnsafeToolNames(): ReadonlySet<string>
   loadSchema(name: string): RegisteredToolSnapshot | undefined
   execution(name: string): Tool['execution'] | undefined
   run(
@@ -103,6 +105,14 @@ export function createToolRegistry(): ToolRegistry {
         ...(tool.skill.triggers?.length ? { triggers: [...tool.skill.triggers] } : {}),
         runtime: tool.runtime,
       }))
+    },
+
+    replayUnsafeToolNames() {
+      const names = new Set<string>()
+      for (const { tool } of registrations.values()) {
+        if (tool.replayUnsafe) names.add(tool.name)
+      }
+      return names
     },
 
     loadSchema(name) {

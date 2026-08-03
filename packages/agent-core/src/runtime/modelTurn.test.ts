@@ -7,6 +7,7 @@
 // 此环境 isTauri() 天然为 false，但这里直接传布尔参数，不依赖真实环境。
 
 import { describe, it, expect } from 'vitest'
+import { maxTurnToolsForVendor, type ModelFunctionTool, type ModelItem } from '@web-agent/ai'
 import {
   buildCustomInstructionsItem,
   buildEnvironmentItem,
@@ -17,7 +18,6 @@ import {
   DEFAULT_TOOL_MANIFEST_PAGE_SIZE,
   loadedToolNamesFromHistory,
   MAX_TOOL_MANIFEST_PAGE_SIZE,
-  MAX_TURN_TOOLS,
   parseToolCallArgs,
   searchToolManifestPage,
   selectTurnLoadedTools,
@@ -27,7 +27,6 @@ import {
 import { toolRegistry } from '../tools/registry'
 import { createToolRegistry } from '../tools/toolRegistry'
 import type { LoadedTool } from '../tools/types'
-import type { ModelFunctionTool, ModelItem } from '@web-agent/ai'
 
 // 读取 request_tool_schema 的输入契约。parameters 类型为 unknown，就地收窄。
 function loaderParameters(tools: ModelFunctionTool[]) {
@@ -320,15 +319,16 @@ describe('buildTurnTools —— TP3 server 工具按环境过滤', () => {
   })
 })
 
-describe('buildTurnTools —— DeepSeek 128 工具硬预算', () => {
+describe('buildTurnTools —— vendor descriptor 工具预算', () => {
   const names = Array.from({ length: 140 }, (_, index) => `tool_${String(index).padStart(3, '0')}`)
   const visible = names.map(fakeLoadedTool)
 
-  it('loader 固定占 1 个，总数不超过 128，并优先保留后加载工具', () => {
-    const tools = buildTurnTools(visible, true)
+  it('loader 固定占 1 个，总数不超过当前 vendor 预算，并优先保留后加载工具', () => {
+    const maxTurnTools = maxTurnToolsForVendor('deepseek')
+    const tools = buildTurnTools(visible, true, { vendor: 'deepseek' })
     const selectedNames = tools.map((tool) => tool.function.name)
 
-    expect(tools).toHaveLength(MAX_TURN_TOOLS)
+    expect(tools).toHaveLength(maxTurnTools)
     expect(selectedNames[0]).toBe('request_tool_schema')
     expect(selectedNames).not.toContain('tool_012')
     expect(selectedNames).toContain('tool_013')
@@ -336,9 +336,11 @@ describe('buildTurnTools —— DeepSeek 128 工具硬预算', () => {
     expect(selectedNames.slice(1)).toEqual([...selectedNames.slice(1)].sort())
   })
 
-  it('maxTools 只能下调不能突破硬上限，最小预算仍保留 loader', () => {
-    expect(buildTurnTools(visible, true, { maxTools: 999 })).toHaveLength(MAX_TURN_TOOLS)
-    expect(buildTurnTools(visible, true, { maxTools: 1 }).map((tool) => tool.function.name))
+  it('maxTools 只能下调不能突破 vendor 预算，最小预算仍保留 loader', () => {
+    const maxTurnTools = maxTurnToolsForVendor('deepseek')
+    expect(buildTurnTools(visible, true, { vendor: 'deepseek', maxTools: 999 }))
+      .toHaveLength(maxTurnTools)
+    expect(buildTurnTools(visible, true, { vendor: 'deepseek', maxTools: 1 }).map((tool) => tool.function.name))
       .toEqual(['request_tool_schema'])
   })
 

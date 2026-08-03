@@ -226,6 +226,7 @@ function normalizeInput(args: unknown): WorkspacePatchInput | string {
 export const applyPatchTool: Tool = {
   name: 'apply_patch',
   runtime: 'server', // 依赖 Tauri 文件系统（ctx.applyWorkspacePatch），web 下不进 manifest（TP3）。
+  replayUnsafe: true,
   skill: {
     description: 'Apply a structured, workspace-confined file patch through the desktop runtime.',
     triggers: ['apply_patch', 'patch', 'edit file', '修改文件'],

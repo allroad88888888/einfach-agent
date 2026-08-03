@@ -2,17 +2,29 @@ import { describe, expect, it } from 'vitest'
 import { createToolRegistry } from './toolRegistry'
 import type { Tool } from './types'
 
-function tool(name: string, description: string): Tool {
+function tool(name: string, description: string, replayUnsafe = false): Tool {
   return {
     name,
     runtime: 'internal',
     skill: { description, content: description },
     inputSchema: { type: 'object' },
+    replayUnsafe,
     execute: () => ({ ok: true }),
   }
 }
 
 describe('ToolRegistry dynamic lifecycle', () => {
+  it('derives replay safety from the current registration metadata', () => {
+    const registry = createToolRegistry()
+    registry.register(tool('read_file', 'safe read'))
+    registry.register(tool('write_file', 'effectful write', true))
+
+    expect(registry.replayUnsafeToolNames()).toEqual(new Set(['write_file']))
+
+    registry.register(tool('write_file', 'safe replacement'))
+    expect(registry.replayUnsafeToolNames()).toEqual(new Set())
+  })
+
   it('unregister removes a tool from every registry view', async () => {
     const registry = createToolRegistry()
     const registered = tool('dynamic', 'remote tool')

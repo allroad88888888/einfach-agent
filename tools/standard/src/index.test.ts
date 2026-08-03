@@ -26,6 +26,12 @@ const STANDARD_TOOLS = [
   'delegate_agent', 'observe_agent', 'join_agent', 'cancel_agent',
 ] as const
 
+const REPLAY_UNSAFE_STANDARD_TOOLS = [
+  'shell_macos', 'shell_linux', 'shell_powershell', 'run_task', 'run_verification_command',
+  'save_file', 'apply_patch', 'write_file', 'delete_path', 'copy_path', 'move_path',
+  'revert_workspace_change', 'delegate_agent',
+] as const
+
 describe('@web-agent/tools —— 标准工具集聚合（TSPLIT TS2）', () => {
   it('registerStandardTools 恰好装齐 31 个工具', () => {
     const reg = createToolRegistry()
@@ -47,5 +53,11 @@ describe('@web-agent/tools —— 标准工具集聚合（TSPLIT TS2）', () => 
     registerStandardTools(reg)
     registerStandardTools(reg)
     expect(reg.list().length).toBe(31)
+  })
+
+  it('副作用或高代价工具通过 replayUnsafe 元数据登记', () => {
+    const reg = createToolRegistry()
+    registerStandardTools(reg)
+    expect([...reg.replayUnsafeToolNames()].sort()).toEqual([...REPLAY_UNSAFE_STANDARD_TOOLS].sort())
   })
 })

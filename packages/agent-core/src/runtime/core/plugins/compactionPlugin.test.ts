@@ -15,7 +15,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createStore } from '@einfach/core'
 
-import type { AssistantItem, ModelItem, ToolItem, UserItem } from '@web-agent/ai'
+import { contextWindowTokens, type AssistantItem, type ModelItem, type ToolItem, type UserItem } from '@web-agent/ai'
 import { sessionsAtom } from '../../../state/rootStore'
 import type { ModelSettings, SessionMeta } from '../../../state/core.type'
 import { estimateTokensFromText } from '../../contextCompaction'
@@ -27,9 +27,7 @@ import {
   CONTEXT_SAFETY_MARGIN_RATIO,
   COST_SOFT_CAP_TOKENS,
   DEFAULT_RESERVED_OUTPUT_TOKENS,
-  VENDOR_CONTEXT_WINDOW_TOKENS,
   contextInputBudgetTokens,
-  contextWindowTokens,
   type CompactionRequestDraft,
 } from './compactionPlugin'
 
@@ -120,7 +118,12 @@ describe('compactionPlugin —— 超预算（reservedTokens 吃光预算，压�
     const bigContent = JSON.stringify({ data: 'x'.repeat(4000) })
     expect(bigContent.length).toBeGreaterThan(300) // 上一轮的坑：fixture 太短压不动会假绿
     const messages = turnWithBigToolResult(bigContent)
-    const draft: CompactionRequestDraft = { messages, tools: [], llmTurn: 7 }
+    const draft: CompactionRequestDraft = {
+      messages,
+      tools: [],
+      llmTurn: 7,
+      replayUnsafeToolNames: new Set(['skill_search']),
+    }
 
     const hooks = assemblePlugins([compactionPlugin])
     await hooks.transformContext?.(ctx, draft)
@@ -130,12 +133,13 @@ describe('compactionPlugin —— 超预算（reservedTokens 吃光预算，压�
     const compactedTool = draft.messages.find((m): m is ToolItem => m.role === 'tool')
     expect(compactedTool).toBeDefined()
     expect(compactedTool?.content).toContain('_compacted')
+    expect(compactedTool?.content).toContain('不要为了拿回这段内容而重新调用')
     expect(compactedTool!.content.length).toBeLessThan(bigContent.length)
 
     // 独立按文档里写明的同一份公式重算预算（不调用 applyCompaction 本身)，核对两处 trace 的
     // attrs 与之逐字一致——这样才能测出「插件真的照公式算」而不是随手编了个数字。
     const contextWindow = contextWindowTokens(settings.vendor, settings.model)
-    expect(contextWindow).toBe(VENDOR_CONTEXT_WINDOW_TOKENS.deepseek) // 'x' 查不到表 → vendor 兜底
+    expect(contextWindow).toBe(64_000) // 'x' 查不到 descriptor → vendor 兜底
     const budgetTokens = Math.min(contextWindow, COST_SOFT_CAP_TOKENS)
     const reservedTokens =
       estimateTokensFromText(EMPTY_TOOLS_STATS) +

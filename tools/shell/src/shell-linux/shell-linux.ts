@@ -66,6 +66,7 @@ function toErrorMessage(error: unknown): string {
 export const shellLinuxTool: Tool = {
   name: 'shell_linux',
   runtime: 'server', // 依赖 Tauri 本机 shell（ctx.runShell），web 下不进 manifest（TP3）。
+  replayUnsafe: true,
   skill: {
     description: '在本机 Linux shell 中执行非交互命令。',
     triggers: ['shell', 'linux', 'terminal', 'exec', 'run command', '命令行', '终端'],

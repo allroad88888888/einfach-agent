@@ -3803,7 +3803,7 @@ describe('上下文压缩接入', () => {
     configureObservability({ driver: trace.driver })
     // max_tokens 把预算吃光 → 必然触发压缩（不必造一个几十万字的会话）。
     // ★ 刻意用表里【没有】的 model 名 'x' ★ —— 这里验的是压缩接线，不是某个真实模型的窗口。
-    //   写真实模型名会把这个测试钉死在 MODEL_CONTEXT_WINDOW_TOKENS 的具体数值上：官方一改窗口
+    //   写真实模型名会把这个测试钉死在 vendor descriptor 的具体数值上：官方一改窗口
     //   （deepseek-chat 就从 64K 改成了 1M），这条与模型无关的测试就会无辜地红掉。
     //   'x' 查不到条目 → 落到 vendor 兜底 64_000，预算基准稳定。
     seedSession('cc1', { vendor: 'deepseek', model: 'x', max_tokens: 63_500 })

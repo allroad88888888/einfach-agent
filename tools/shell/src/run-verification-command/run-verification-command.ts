@@ -39,6 +39,7 @@ function toErrorMessage(error: unknown): string {
 export const runVerificationCommandTool: Tool = {
   name: 'run_verification_command',
   runtime: 'server', // 依赖 Tauri 本机 shell（ctx.runShell），web 下不进 manifest（TP3）。
+  replayUnsafe: true,
   skill: {
     description: '执行验收所需的本机 shell 命令，为验收标准取得真实执行证据。',
     triggers: ['verify', 'verification', 'run test', 'run lint', '验收', '核验', '执行证据'],

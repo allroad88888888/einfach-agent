@@ -8,6 +8,7 @@ function createPathOperationTool(operation: Operation): Tool {
   return {
     name,
     runtime: 'server',
+    replayUnsafe: true,
     skill: {
       description: `${operation === 'copy' ? '复制' : '移动'} workspace 内文件或目录，并返回可撤回的 changeSet。`,
       triggers: [operation, name, operation === 'copy' ? '复制路径' : '移动路径'],

@@ -277,6 +277,8 @@ export interface Tool {
   readonly runtime: ToolRuntime
   readonly skill: ToolSkill
   readonly inputSchema: Record<string, unknown>
+  /** Compacted results must not tell the model to repeat this effectful or costly call. */
+  readonly replayUnsafe?: boolean
   /**
    * Scheduler hint. Only tools explicitly declaring `parallel` may overlap
    * with siblings from the same model response. `effectKeys` are retained in

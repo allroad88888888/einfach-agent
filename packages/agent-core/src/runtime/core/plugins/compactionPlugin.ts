@@ -36,14 +36,13 @@
 //   发好（attr 名与旧代码逐字相同），loop 侧不需要、也不应该再发一遍。
 //
 // 移走的符号（原先定义在 modelRun.ts，现在从本文件 import）：
-//   MODEL_CONTEXT_WINDOW_TOKENS / VENDOR_CONTEXT_WINDOW_TOKENS / FALLBACK_CONTEXT_WINDOW_TOKENS /
-//   DEFAULT_RESERVED_OUTPUT_TOKENS / CONTEXT_SAFETY_MARGIN_RATIO / COST_SOFT_CAP_TOKENS /
-//   contextWindowTokens()。compactContext / estimateTokensFromText / DEFAULT_KEEP_RECENT_TURNS
+//   DEFAULT_RESERVED_OUTPUT_TOKENS / CONTEXT_SAFETY_MARGIN_RATIO / COST_SOFT_CAP_TOKENS。
+//   provider 的上下文窗口查询来自 @web-agent/ai。compactContext / estimateTokensFromText / DEFAULT_KEEP_RECENT_TURNS
 //   仍在 runtime/contextCompaction.ts（未挪动，本文件只 import）——modelRun.ts 若还用
 //   estimateTokensFromText 算别的（buildContextStatsSnapshot 那份 role 统计）应继续从那边导入，
 //   但 compactContext / DEFAULT_KEEP_RECENT_TURNS 抽完后 modelRun.ts 不再需要直接导入。
 
-import type { ModelFunctionTool, ModelItem } from '@web-agent/ai'
+import { contextWindowTokens, type ModelFunctionTool, type ModelItem } from '@web-agent/ai'
 import { sessionsAtom } from '../../../state/rootStore'
 import {
   compactContext,
@@ -58,55 +57,10 @@ import type { AgentPlugin } from '../pluginApi'
 import { stringForStats } from '../../shared/preview'
 
 // ---------------------------------------------------------------------------
-// 上下文压缩预算（原样从 modelRun.ts 搬来，注释与数值一字未改）
+// 上下文压缩预算
 // ---------------------------------------------------------------------------
-// 模型上下文窗口（token）—— 压缩预算的分母。刻意「宁小勿大」：估小了只是多压一点（可再生的
-// 历史工具正文先被摘要），估大了会直接撞 provider 的硬上限，而那正是压缩本来要防的事。
-// 精确匹配 model 名（小写），未知模型退回 vendor 保守默认。上新模型时在这加一行即可。
-//
-// ★ 数值口径（务必看完再改）★
-//   · 只收录官方一手文档明确写着窗口大小的型号；查不到 / 只有二手说法的一律【不进表】，
-//     让它落到下面的 vendor 兜底（兜底刻意保守，宁可多压一点也别撞 400）。
-//   · 官方文档全程只给缩写标签（"1M" / "200K" / "128K"），没有任何一处给出逐位精确整数。
-//     这里按【十进制】换算（1M=1_000_000，1K=1_000）—— 与 DeepSeek 计价页 "per 1M tokens"
-//     的单位习惯一致。所以可信的是【量级】，不是个位；真实窗口若按 2 的幂算（1M=1048576、
-//     128K=131072）只会比这里的数更大，方向上仍然偏保守，安全。
-//   · 来源：
-//       DeepSeek  https://api-docs.deepseek.com/quick_start/pricing/ （CONTEXT LENGTH 1M）
-//       GLM       https://docs.bigmodel.cn/cn/guide/start/model-overview （模型一览表）
-//                 https://docs.bigmodel.cn/cn/guide/models/text/glm-5.2 （详情页独立确认 1M）
-export const MODEL_CONTEXT_WINDOW_TOKENS: Record<string, number> = {
-  // —— DeepSeek：官方定价页四个型号窗口一律 1M。
-  'deepseek-v4-pro': 1_000_000, // DEFAULT_DEEPSEEK_MODEL（deepseek.ts）
-  'deepseek-v4-flash': 1_000_000,
-  // 旧模型名，官方标注 2026/07/24 15:59 UTC 下线；兼容期内分别被路由到 deepseek-v4-flash 的
-  // 非思考 / 思考模式，窗口同为 1M。下线后这两个名字发请求本身就会失败，不是这张表能挽救的事，
-  // 留着只为兼容期内别把 1M 的窗口当 64K 用（会毫无必要地把历史压掉）。
-  'deepseek-chat': 1_000_000,
-  'deepseek-reasoner': 1_000_000,
-  // —— GLM：旗舰 5.2 与 glm-4-long 是 1M，5.x/4.7/4.6 系是 200K，4.5-air 系与 4-flash 系是 128K。
-  'glm-5.2': 1_000_000, // DEFAULT_GLM_MODEL（glm.ts）
-  'glm-5.1': 200_000,
-  'glm-5': 200_000,
-  'glm-5-turbo': 200_000,
-  'glm-4.7': 200_000,
-  'glm-4.7-flashx': 200_000,
-  'glm-4.7-flash': 200_000,
-  'glm-4.6': 200_000,
-  'glm-4.5-air': 128_000,
-  'glm-4.5-airx': 128_000,
-  'glm-4.5-flash': 128_000,
-  'glm-4-long': 1_000_000,
-  'glm-4-flashx-250414': 128_000,
-  'glm-4-flash-250414': 128_000,
-}
-// vendor 兜底刻意【不】跟着上面调大：这条路径专门伺候「表里没有的 model 名」，包括用户手填的
-// 私有部署 / 未来型号 / 拼错的名字。对未知模型乐观估窗口 = 直接撞 provider 硬上限。
-export const VENDOR_CONTEXT_WINDOW_TOKENS: Record<string, number> = {
-  deepseek: 64_000,
-  glm: 128_000,
-}
-export const FALLBACK_CONTEXT_WINDOW_TOKENS = 64_000
+// provider 的模型窗口与工具容量由 @web-agent/ai 的 vendor descriptor 统一维护；core 只消费
+// 保守查询结果，避免在执行层重复维护 provider 数据。
 // settings.max_tokens 未设时给输出预留的额度（provider 侧默认上限通常在这个量级）。
 export const DEFAULT_RESERVED_OUTPUT_TOKENS = 8_000
 // 额外安全余量比例：本地估算对 tool_calls 的 JSON 结构偏乐观，留一档避免「估着没超、实际超了」。
@@ -119,15 +73,6 @@ export const CONTEXT_SAFETY_MARGIN_RATIO = 0.08
 // 所以压缩预算取 min(硬窗口, 成本软上限)：硬窗口防 400，软上限防账单，两者职责分开。
 // 200K ≈ 单轮 $0.087（同价目），且压缩摘掉的是可再生的历史工具正文、不动对话主干。
 export const COST_SOFT_CAP_TOKENS = 200_000
-
-// 简介：查该 vendor/model 的上下文窗口 token 数。
-export function contextWindowTokens(vendor: string, model: string): number {
-  return (
-    MODEL_CONTEXT_WINDOW_TOKENS[model.toLowerCase()] ??
-    VENDOR_CONTEXT_WINDOW_TOKENS[vendor] ??
-    FALLBACK_CONTEXT_WINDOW_TOKENS
-  )
-}
 
 // 简介：计算一次请求可用于输入上下文的总额度。
 // 详情：这是界面展示占用百分比时应使用的分母：先取本地实际执行预算（硬窗口与成本上限较小者），
@@ -154,6 +99,8 @@ export interface CompactionRequestDraft extends RequestDraft {
   tools?: ModelFunctionTool[]
   /** 本轮是 loop 里的第几轮（1-based）。只用于 trace 事件的 llm_turn 属性。 */
   llmTurn?: number
+  /** 当前工具注册表中不可安全重放工具的名称快照。 */
+  replayUnsafeToolNames?: ReadonlySet<string>
   /** 本插件写回的完整压缩结果，供 loop 侧组 llmSpan attrs（context_compacted / context_within_budget）用。 */
   compaction?: ContextCompactionResult
   /**
@@ -394,6 +341,7 @@ export function applyCompaction(
     maxTokens: budgetTokens,
     reservedTokens,
     keepRecentTurns: DEFAULT_KEEP_RECENT_TURNS,
+    replayUnsafeToolNames: draft.replayUnsafeToolNames,
   })
 
   // 记住本轮投影供后续轮复用。只缓存「真压过且压回了预算内」的：

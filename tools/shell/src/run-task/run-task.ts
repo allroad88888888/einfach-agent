@@ -77,6 +77,7 @@ function getRunWorkspaceTaskFromContext(ctx: ToolContext): RunTaskContext['runWo
 export const runTaskTool: Tool = {
   name: 'run_task',
   runtime: 'server', // 依赖 Tauri workspace task runner（ctx.runWorkspaceTask），web 下不进 manifest（TP3）。
+  replayUnsafe: true,
   skill: {
     description: '运行预定义的 workspace test/build/lint/typecheck/cargo_check 任务。',
     triggers: ['test', 'build', 'lint', 'typecheck', 'cargo check', '运行测试', '构建'],

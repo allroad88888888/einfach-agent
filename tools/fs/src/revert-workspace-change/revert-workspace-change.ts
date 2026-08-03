@@ -24,6 +24,7 @@ function getRevertWorkspaceChange(ctx: ToolContext): RevertWorkspaceChange | und
 export const revertWorkspaceChangeTool: Tool = {
   name: 'revert_workspace_change',
   runtime: 'server',
+  replayUnsafe: true,
   skill: {
     description: '安全回退一个或一批 workspace changeSet；批量输入按执行顺序传入并以逆序原子回退。',
     triggers: ['revert', 'rollback', 'undo', '回退', '撤销文件'],

@@ -31,6 +31,7 @@ function asRecord(value: unknown): Record<string, unknown> {
 export const saveFileTool: Tool = {
   name: 'save_file',
   runtime: 'browser',
+  replayUnsafe: true,
   skill: {
     description: '准备一份文件内容供用户在浏览器内手势保存到本地（File System Access）。',
     triggers: ['保存', '下载', 'save', 'file', '导出'],

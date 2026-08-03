@@ -21,12 +21,13 @@
 import { toolRegistry } from '../tools/registry'
 import type { ToolRegistry } from '../tools/toolRegistry'
 import type { LoadedTool, ShellPlatform, ToolRuntime, ToolSummary } from '../tools/types'
-import type {
-  ModelFunctionTool,
-  ModelItem,
-  ModelResponseToolCall,
-  ModelToolCall,
-  SystemItem,
+import {
+  maxTurnToolsForVendor,
+  type ModelFunctionTool,
+  type ModelItem,
+  type ModelResponseToolCall,
+  type ModelToolCall,
+  type SystemItem,
 } from '@web-agent/ai'
 import { TOOL_SCHEMA_AUTOLOADED_CODE } from '../tools/schemaResult'
 import { newId } from './newId'
@@ -111,9 +112,8 @@ export function buildCustomInstructionsItem(instructions: string): SystemItem | 
   }
 }
 
-// DeepSeek chat/completions 最多接受 128 个 function tools。request_tool_schema 固定占 1 个，
-// 所以已加载工具的默认/绝对上限都是 127；其它 provider 如需更小预算可通过 maxTools 下调。
-export const MAX_TURN_TOOLS = 128
+// 每个 provider 的 function tools 容量由 @web-agent/ai 的 canonical vendor descriptor 提供。
+// request_tool_schema 固定占一个槽位，maxTools 只能在该 provider 的上限内继续下调。
 export const DEFAULT_TOOL_MANIFEST_PAGE_SIZE = 16
 export const MAX_TOOL_MANIFEST_PAGE_SIZE = 32
 export const MAX_TOOL_MANIFEST_QUERY_LENGTH = 128
@@ -125,7 +125,9 @@ export interface BuildTurnToolsOptions {
   // 【登记反转 · TS1 收口】manifest 搜索必须读绑定 core 的 registry，而非模块级
   // toolRegistry（＝ defaultCore.tools）。缺省回落仅用于 defaultCore 路径。
   registry?: ToolRegistry
-  /** 请求顶层 tools 的总数预算；只能下调，任何大于 128 的值都会钳到 128。 */
+  /** 请求所用 provider；省略时使用保守 fallback descriptor。 */
+  vendor?: string
+  /** 请求顶层 tools 的总数预算；只能在 provider descriptor 上限内下调。 */
   maxTools?: number
   /**
    * 最近请求过 schema 的工具名，新 → 旧。
@@ -224,9 +226,10 @@ function compareCanonicalTools(
     || compareStableText(left.serialized, right.serialized)
 }
 
-function normalizedMaxTurnTools(value: number | undefined): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return MAX_TURN_TOOLS
-  return Math.max(1, Math.min(MAX_TURN_TOOLS, Math.floor(value)))
+function normalizedMaxTurnTools(value: number | undefined, vendor: string | undefined): number {
+  const maximum = maxTurnToolsForVendor(vendor ?? '')
+  if (typeof value !== 'number' || !Number.isFinite(value)) return maximum
+  return Math.max(1, Math.min(maximum, Math.floor(value)))
 }
 
 function normalizedManifestLimit(value: number | undefined): number {
@@ -387,11 +390,11 @@ export function searchToolManifestPage(
 export function touchRecentToolName(
   current: readonly string[],
   toolName: string,
-  maxEntries = MAX_TURN_TOOLS - 1,
+  maxEntries = maxTurnToolsForVendor('') - 1,
 ): string[] {
   const capacity = Number.isFinite(maxEntries)
-    ? Math.max(0, Math.min(MAX_TURN_TOOLS - 1, Math.floor(maxEntries)))
-    : MAX_TURN_TOOLS - 1
+    ? Math.max(0, Math.floor(maxEntries))
+    : maxTurnToolsForVendor('') - 1
   if (capacity === 0) return []
   const next = toolName
     ? [toolName, ...current.filter((name) => name !== toolName)]
@@ -408,7 +411,7 @@ export function selectTurnLoadedTools(
   isTauri: boolean,
   options?: BuildTurnToolsOptions,
 ): LoadedTool[] {
-  const capacity = normalizedMaxTurnTools(options?.maxTools) - 1
+  const capacity = normalizedMaxTurnTools(options?.maxTools, options?.vendor) - 1
   if (capacity <= 0) return []
 
   const byName = new Map<string, LoadedTool>()
@@ -462,7 +465,7 @@ export function toolSetSchemaFingerprint(tools: readonly ModelFunctionTool[]): s
 }
 
 // 简介：组本轮暴露给 model 的 function 列表（TK3 + TP3）。
-// 详情：request_tool_schema 恒在场；其后最多 127 个已加载 schema 的 visible tools。
+// 详情：request_tool_schema 恒在场；其后最多 provider descriptor 上限减一的已加载 schema 的 visible tools。
 // 超预算时优先最近请求/后加载的工具，再按名称稳定输出。未加载的工具不进；server 工具在 web
 // 下（isTauri=false）既不能经 manifest 发现，也不进 visible（TP3，防御 web 混入的 server 工具）。
 export function buildTurnTools(

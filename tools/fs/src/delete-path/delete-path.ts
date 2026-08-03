@@ -23,6 +23,7 @@ function getDeleteWorkspacePath(ctx: ToolContext): DeleteWorkspacePath | undefin
 export const deletePathTool: Tool = {
   name: 'delete_path',
   runtime: 'server',
+  replayUnsafe: true,
   skill: {
     description: '可撤回地删除当前 workspace 内的文件或目录；删除时应优先使用本工具而不是 shell rm。',
     triggers: ['delete', 'remove', 'rm', '删除文件', '删除目录', '撤回删除'],

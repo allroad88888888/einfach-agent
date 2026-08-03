@@ -63,7 +63,7 @@ import { normalizeAskUserQuestionPayload } from './askUserQuestion'
 import { streamDeepSeek, type DeepSeekChatRequest } from '@web-agent/ai'
 import { streamGlm, type GlmChatRequest } from '@web-agent/ai'
 import { isAbortError } from '@web-agent/ai'
-import { normalizeCacheUsage } from '@web-agent/ai'
+import { maxTurnToolsForVendor, normalizeCacheUsage } from '@web-agent/ai'
 import type {
   AssistantItem,
   ModelChatResponse,
@@ -93,7 +93,6 @@ import {
   buildToolManifestText,
   buildTurnTools,
   loadedToolNamesFromHistory,
-  MAX_TURN_TOOLS,
   narrowToolCalls,
   parseToolCallArgs,
   searchToolManifestPage,
@@ -1072,6 +1071,7 @@ export async function runToolLoop(
   // contextStats 全部读这份【迁移后】meta，全线一致。rawMeta 保持迁移前引用，供下方 `meta !== rawMeta`
   // 判定是否真迁过（发 model_migrated_at_request trace）。
   const meta = core.rootStore.getter(sessionsAtom)[id]
+  const maxTurnTools = maxTurnToolsForVendor(meta.settings.vendor)
 
   const storedRun = core.getSessionStore(id).store.getter(runAtom)
   const turnId = opts.turnId ?? storedRun?.turnId ?? currentTurnItems(id, core)[0]?.id ?? newId()
@@ -1435,7 +1435,7 @@ export async function runToolLoop(
     restoredToolNames.push(toolName)
   }
   for (const toolName of restoredToolNames) {
-    visible = ensureToolLoaded(id, visible, toolName, core, MAX_TURN_TOOLS - 1)
+    visible = ensureToolLoaded(id, visible, toolName, core, maxTurnTools - 1)
   }
   let recentToolNames = visible.map((tool) => tool.name).reverse()
   // 循环检测的跨轮累计状态（原 consecutiveToolOnlyTurns / repeatedToolSignatures）已随 loopGuardPlugin
@@ -1657,12 +1657,12 @@ export async function runToolLoop(
       // 必须先算 tools：它的 JSON 也吃上下文额度，要从压缩预算里先扣掉。
       // MCP tools_changed / reconnect 可在任意两轮之间替换同名 adapter。每轮从 registry
       // 刷新快照，确保下一次请求使用当前 schema，并移除已经注销的工具。
-      visible = refreshVisibleTools(id, visible, core, MAX_TURN_TOOLS - 1)
+      visible = refreshVisibleTools(id, visible, core, maxTurnTools - 1)
       // 传本实例的 registry：request_tool_schema 的分页目录只检索【本 core】可懒加载的工具，
       // 而非模块级 defaultCore.tools（隔离实例装自定义工具集时的正确性，codex review [P1]）。
       const tools = buildTurnTools(visible, runtimeIsTauri, {
         registry: core.tools,
-        maxTools: MAX_TURN_TOOLS,
+        vendor: meta.settings.vendor,
         recentToolNames,
       })
       const names = toolNames(tools)
@@ -1690,6 +1690,7 @@ export async function runToolLoop(
         messages: rawMessages,
         tools,
         llmTurn: turn + 1,
+        replayUnsafeToolNames: core.tools.replayUnsafeToolNames(),
         dynamicTailCount: dynamicControls.length,
       }
       await hooks.transformContext?.(ctx, draft)
@@ -2269,8 +2270,8 @@ export async function runToolLoop(
             //   走下面的硬拒绝 —— 那时模型是真的调了一个当前环境不存在的能力。
             const autoloadable = core.tools.loadSchema(name)
             if (autoloadable && (autoloadable.runtime !== 'server' || runtimeIsTauri)) {
-              visible = ensureToolLoaded(id, visible, name, core, MAX_TURN_TOOLS - 1)
-              recentToolNames = touchRecentToolName(recentToolNames, name)
+              visible = ensureToolLoaded(id, visible, name, core, maxTurnTools - 1)
+              recentToolNames = touchRecentToolName(recentToolNames, name, maxTurnTools - 1)
               const resultPayload = toolSchemaAutoloadedResult(autoloadable)
               const attrs: TraceAttributes = {
                 toolName: name,
@@ -2403,11 +2404,11 @@ export async function runToolLoop(
                 visible,
                 toolName,
                 core,
-                MAX_TURN_TOOLS - 1,
+                maxTurnTools - 1,
               )
               const schema = core.tools.loadSchema(toolName)
               found = schema !== undefined
-              if (schema) recentToolNames = touchRecentToolName(recentToolNames, toolName)
+              if (schema) recentToolNames = touchRecentToolName(recentToolNames, toolName, maxTurnTools - 1)
               resultPayload = schema ? toolSchemaLoadedResult(schema) : { error: 'unknown' }
             } else {
               const manifest = searchToolManifestPage(

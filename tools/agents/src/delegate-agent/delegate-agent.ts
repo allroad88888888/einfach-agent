@@ -127,6 +127,7 @@ function inputPreservingOptionalPresence(
 export const delegateAgentTool: Tool = {
   name: 'delegate_agent',
   runtime: 'internal',
+  replayUnsafe: true,
   skill: {
     description: '并发启动一批树形 headless 子 agent；运行时依据可观测任务特征解释性路由 Pro/Flash，并接收结构化结果。',
     triggers: ['delegate', 'subagent', '子agent', '并发分析', '派活'],
