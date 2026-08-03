@@ -24,9 +24,15 @@ import { WindowScrollDemo } from './demos/WindowScrollDemo'
 import { configureMcpSettings } from './mcp/commands'
 import { createTauriStdioMcpConnector } from './mcp/tauriStdioConnector'
 import {
-  configureAppSettingsEnvironment,
+  configureModelCredentialHost,
   hydrateAppSettings,
 } from './settings/commands'
+import {
+  createTauriModelCredentialHost,
+  createUnavailableModelCredentialHost,
+} from './settings/modelCredentialHost'
+import { createTauriModelFetch } from './modelTransport/tauriModelTransport'
+import { createUnavailableModelFetch } from './modelTransport/unavailableModelTransport'
 import {
   reportReactCommit,
   startUiPerformanceDiagnostics,
@@ -54,15 +60,18 @@ configureMcpSettings({
   capabilities: { stdio: tauriHost },
 })
 
-// 环境变量是模型密钥的兜底；设备设置中的 DeepSeek key 会在 hydrate 时覆盖它。
-const environmentDeepSeekApiKey = import.meta.env.VITE_DEEPSEEK_API_KEY ?? ''
+// API Key 不进入前端配置：桌面端仅以占位标记驱动原生代理，浏览器产物直接拒绝模型请求。
+const desktopManagedCredentialMarker = 'desktop-managed-credential'
 configureCommands({
-  deepseekApiKey: environmentDeepSeekApiKey,
-  glmApiKey: import.meta.env.VITE_GLM_API_KEY ?? '',
+  deepseekApiKey: desktopManagedCredentialMarker,
+  glmApiKey: desktopManagedCredentialMarker,
+  fetchImpl: tauriHost ? createTauriModelFetch() : createUnavailableModelFetch(),
 })
-configureAppSettingsEnvironment({ deepseekApiKey: environmentDeepSeekApiKey })
+configureModelCredentialHost(
+  tauriHost ? createTauriModelCredentialHost() : createUnavailableModelCredentialHost(),
+)
 // 在首次渲染/新会话之前同步恢复全局设置，避免首个请求读到过期的运行时配置。
-hydrateAppSettings()
+void hydrateAppSettings()
 
 // 持久化 driver：桌面壳（Tauri）用 SQLite，浏览器用 IndexedDB（TaK1，上层逻辑不变）。
 // hydrate（读回）与 configurePersistence（写盘钩子）必须用同一对实例。sqlite 实现**动态 import**

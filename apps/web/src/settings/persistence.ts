@@ -28,11 +28,6 @@ function cloneSettings(settings: AppSettings): AppSettings {
     agent: {
       customInstructions: settings.agent.customInstructions,
     },
-    providers: {
-      deepseek: {
-        apiKey: settings.providers.deepseek.apiKey,
-      },
-    },
   }
 }
 
@@ -46,24 +41,38 @@ function validGeneratedInstallationId(factory: () => string): string {
   return installationId
 }
 
-function parseSettings(
-  raw: string,
+function settingsWithInstallationId(
+  parsed: Record<string, unknown>,
   installationIdFactory: () => string,
 ): { settings: AppSettings; repairedInstallationId: boolean } {
-  const parsed: unknown = JSON.parse(raw)
-  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error('应用设置格式无效')
-  }
-
-  const persistedInstallationId = (parsed as { installationId?: unknown }).installationId
+  const persistedInstallationId = parsed.installationId
   const repairedInstallationId = !isInstallationId(persistedInstallationId)
   const settings = sanitizeAppSettings({
     ...parsed,
+    version: APP_SETTINGS_VERSION,
     installationId: repairedInstallationId
       ? validGeneratedInstallationId(installationIdFactory)
       : persistedInstallationId,
   })
   return { settings, repairedInstallationId }
+}
+
+function parseSettings(
+  raw: string,
+  installationIdFactory: () => string,
+): { settings: AppSettings; migratedCredential: boolean; repairedInstallationId: boolean } {
+  const parsed: unknown = JSON.parse(raw)
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw new Error('应用设置格式无效')
+  }
+  const record = parsed as Record<string, unknown>
+  if (record.version === APP_SETTINGS_VERSION) {
+    return { ...settingsWithInstallationId(record, installationIdFactory), migratedCredential: false }
+  }
+  if (record.version !== 1) throw new Error('应用设置格式无效')
+
+  const { settings, repairedInstallationId } = settingsWithInstallationId(record, installationIdFactory)
+  return { settings, repairedInstallationId, migratedCredential: true }
 }
 
 function parseLegacyCustomInstructions(
@@ -118,8 +127,8 @@ export function createAppSettingsStorage(
         return settings
       }
       if (raw) {
-        const { settings, repairedInstallationId } = parseSettings(raw, installationIdFactory)
-        if (repairedInstallationId) persistBestEffort(settings)
+        const { settings, migratedCredential, repairedInstallationId } = parseSettings(raw, installationIdFactory)
+        if (migratedCredential || repairedInstallationId) persistBestEffort(settings)
         return settings
       }
 

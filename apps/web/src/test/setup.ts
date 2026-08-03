@@ -17,7 +17,6 @@ window.scrollTo = vi.fn()
 
 beforeEach(() => {
   vi.stubEnv('VITE_AGENT_MODEL_PROVIDER', 'mock')
-  vi.stubEnv('VITE_DEEPSEEK_API_KEY', '')
 })
 
 afterEach(() => {

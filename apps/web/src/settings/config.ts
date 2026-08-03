@@ -1,6 +1,6 @@
 import { normalizeDeepSeekUserId } from '@web-agent/ai'
 
-export const APP_SETTINGS_VERSION = 1 as const
+export const APP_SETTINGS_VERSION = 2 as const
 export const MAX_CUSTOM_INSTRUCTIONS_LENGTH = 12_000
 export const MAX_MODEL_API_KEY_LENGTH = 1_024
 export const INSTALLATION_ID_RANDOM_BYTES = 24
@@ -57,11 +57,6 @@ export interface AppSettings {
   agent: {
     customInstructions: string
   }
-  providers: {
-    deepseek: {
-      apiKey: string
-    }
-  }
 }
 
 export function createDefaultAppSettings(
@@ -74,22 +69,12 @@ export function createDefaultAppSettings(
     agent: {
       customInstructions: '',
     },
-    providers: {
-      deepseek: {
-        apiKey: '',
-      },
-    },
   }
 }
 
 export function sanitizeCustomInstructions(value: unknown): string {
   if (typeof value !== 'string') throw new Error('应用设置格式无效')
   return value.slice(0, MAX_CUSTOM_INSTRUCTIONS_LENGTH)
-}
-
-export function sanitizeModelApiKey(value: unknown): string {
-  if (typeof value !== 'string') throw new Error('应用设置格式无效')
-  return value.slice(0, MAX_MODEL_API_KEY_LENGTH)
 }
 
 export function sanitizeAppSettings(value: unknown): AppSettings {
@@ -110,22 +95,6 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
     throw new Error('应用设置格式无效')
   }
 
-  const providers = (value as { providers?: unknown }).providers
-  let deepseekApiKey = ''
-  if (providers !== undefined) {
-    if (typeof providers !== 'object' || providers === null || Array.isArray(providers)) {
-      throw new Error('应用设置格式无效')
-    }
-    const deepseek = (providers as { deepseek?: unknown }).deepseek
-    if (deepseek !== undefined) {
-      if (typeof deepseek !== 'object' || deepseek === null || Array.isArray(deepseek)) {
-        throw new Error('应用设置格式无效')
-      }
-      const apiKey = (deepseek as { apiKey?: unknown }).apiKey
-      if (apiKey !== undefined) deepseekApiKey = sanitizeModelApiKey(apiKey)
-    }
-  }
-
   return {
     version: APP_SETTINGS_VERSION,
     installationId,
@@ -133,11 +102,6 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
       customInstructions: sanitizeCustomInstructions(
         (agent as { customInstructions?: unknown }).customInstructions,
       ),
-    },
-    providers: {
-      deepseek: {
-        apiKey: deepseekApiKey,
-      },
     },
   }
 }

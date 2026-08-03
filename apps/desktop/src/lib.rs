@@ -1,4 +1,7 @@
 mod mcp;
+mod model_credentials;
+mod model_provider;
+mod model_proxy;
 mod shell;
 mod workspace_change_journal;
 mod workspace_common;
@@ -30,6 +33,10 @@ pub fn run() {
             mcp::mcp_list_tools,
             mcp::mcp_call_tool,
             mcp::mcp_disconnect,
+            model_credentials::model_credential_status,
+            model_credentials::model_credential_set,
+            model_credentials::model_credential_delete,
+            model_proxy::model_chat_completions,
             shell::run_shell_command,
             workspace_read::read_workspace_file,
             workspace_read::read_workspace_run_index_page,

@@ -23,13 +23,7 @@ Vitest 使用 jsdom 和 `apps/web/src/test/setup.ts`，保持测试文件并行�
 
 ## 配置
 
-`apps/web/src/main.tsx` 通过 `configureCommands` 注入：
-
-- `VITE_DEEPSEEK_API_KEY`
-- `VITE_GLM_API_KEY`
-
-模型请求从前端直接发往供应商接口。没有对应 Key 时，该供应商调用会进入 error 状态。
-不要假设 `.env.example` 之外的 `VITE_*` 变量已经接线。
+`apps/web/src/main.tsx` 只为运行时注入桌面受管凭证标记和受限模型传输。真实 Key 由桌面原生层从系统钥匙串或进程环境变量 `DEEPSEEK_API_KEY` / `GLM_API_KEY` 读取；浏览器产物绝不读取 `VITE_*` 模型密钥，也不会直接调用供应商。
 
 ## 当前结构
 

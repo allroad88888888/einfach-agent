@@ -62,19 +62,15 @@ Tauri 平台依赖：
 
 ## 配置模型
 
+`.env.example` 仅列出可用变量名；桌面应用不会自动从 `.env.local` 读取密钥。可任选一种方式配置模型 Key：在设置页保存到系统钥匙串，或仅为桌面进程提供环境变量：
+
 ```bash
-cp .env.example .env.local
+DEEPSEEK_API_KEY=... pnpm tauri dev
+# 或者
+GLM_API_KEY=... pnpm tauri dev
 ```
 
-至少配置一个模型 Key：
-
-```dotenv
-VITE_DEEPSEEK_API_KEY=
-VITE_GLM_API_KEY=
-```
-
-新会话默认使用 DeepSeek；会话设置中的 `vendor` 决定实际调用 DeepSeek 或 GLM。
-这些 `VITE_*` 值会进入前端构建产物，不应把面向不可信用户的生产密钥直接打入公开 Web 包。
+新会话默认使用 DeepSeek；会话设置中的 `vendor` 决定实际调用 DeepSeek 或 GLM。密钥只由桌面原生层读取并请求供应商；它不会保存到浏览器 localStorage 或编译进前端包。静态 Web 部署没有可信模型代理，不能直接调用模型服务。
 
 ## 开发命令
 
