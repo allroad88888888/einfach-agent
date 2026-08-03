@@ -1,7 +1,5 @@
 import { activeSessionIdAtom, sessionsAtom } from '../../state/rootStore'
 import { itemsAtom, runAtom } from '../../state/sessionAtoms'
-import { getPlan, setPlan } from '../../state/planWriters'
-import { PlanRuntime } from '../../planning/runtime'
 import { appendItem, patchRun } from '../../state/sessionWriters'
 import {
   addAlwaysAllowedTool,
@@ -51,7 +49,7 @@ function findAskUserToolCallId(items: ConversationItem[]): string | undefined {
   return undefined
 }
 
-function resumePausedRun(
+export function resumePausedRun(
   id: string,
   run: RunState,
   patch: Omit<Partial<RunState>, 'status'>,
@@ -163,25 +161,5 @@ export function createRunCommands(core: CoreInstance) {
     })
   }
 
-  function approvePlan(approved: boolean): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
-    if (!id) return
-    const run = core.getSessionStore(id).store.getter(runAtom)
-    const pending = run?.pendingPlanApproval
-    if (!assertRunStatus(run, 'waiting_plan_approval') || !pending) return
-
-    const runtime = new PlanRuntime({ get: () => getPlan(id), set: (plan) => setPlan(id, plan) }, Date.now, newId)
-    const decision = runtime.approve(pending.planId, pending.revision, approved)
-    const content = decision.ok
-      ? JSON.stringify(approved ? { approved: true, plan: decision.plan } : { error: '用户拒绝了计划', plan: decision.plan })
-      : JSON.stringify({ error: decision.error })
-    appendItem(id, {
-      id: newId(),
-      createdAt: Date.now(),
-      item: { role: 'tool', tool_call_id: pending.callId, content },
-    }, core)
-    resumePausedRun(id, run, { pendingPlanApproval: undefined }, core)
-  }
-
-  return { resumeWithAnswers, confirmTool, approvePlan }
+  return { resumeWithAnswers, confirmTool }
 }

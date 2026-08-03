@@ -1,541 +1,54 @@
-// P-R3：runtime 命令 API —— UI ↔ runtime 的唯一边界。
-// ---------------------------------------------------------------------------
-// 当前 UI/runtime 契约：
-//   · U1 runtime/UI 隔离：UI 只做两件事 —— 读 atom + 调这里导出的命令。UI 绝不直接
-//     setter atom / import writers / 碰 store 实例；这些命令是唯一入口边界。
-//   · U2 命令不收 store：每个命令都不接 `store` 参数，内部自取 rootStore /
-//     getSessionStore(activeId)。UI 拿不到、也不需要 store 引用。
-//   · U7 signal 全穿透 + 失败降级：sendMessage 起 run 时把 abort signal 穿到 model；
-//     model 失败由 runSession 内部降级（不抛崩 UI）。
-// 本文只编排 rootStore / sessionStore / abortRegistry / modelRun / checkpointWriters，
-// 不 import 任何 UI（U1）。
-//
-// 【实例化 · 第 3 期 · createCommands 工厂】命令不再写死 defaultCore，而是收进一个
-//   createCommands(core = defaultCore) 工厂：每条命令闭包捕获传入的 core，把所有 store/registry/
-//   abort/config 访问一律经这个 core（内部命令互调也走同工厂的成员，保证同 core）。模块级导出
-//   （UI/测试 import 的那些同名命令）= createCommands() 的成员（默认 core=defaultCore），故现有
-//   import 一行不用改、默认路径行为逐字不变。第 3 期 createCore（runtime/core/createCore.ts）就靠
-//   createCommands(隔离实例) 造出「只在自己那套 store/registry/abort/config 上跑」的命令集 —— 与
-//   defaultCore 完全隔离，这是「能嵌两次」的收口证明（见 createCore.test.ts）。
+// Runtime command facade: the only mutation surface consumed by UI code.
+// Each command is bound to a CoreInstance; the default exports below bind defaultCore.
 
-import {
-  workspacesAtom,
-  sessionsAtom,
-  activeSessionIdAtom,
-} from '../state/rootStore'
-import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
-import { getPlan, setPlan } from '../state/planWriters'
-import { PlanRuntime } from '../planning/runtime'
-import { patchRun, setItems, setRun } from '../state/sessionWriters'
-import {
-  setPendingQuestionAnswer,
-  removePendingArtifact,
-  pruneBrowserCardsAfter,
-  pruneRuntimeTranscriptEventsAfter,
-  enqueueUserMessage,
-  setComposerDraft,
-  setWithdrawnTurnNotice,
-} from '../state/transientAtoms'
-import type { AskUserAnswerValue } from '../state/transientAtoms'
-import {
-  jumpToCheckpoint,
-  revertToPlanStageCheckpoint,
-  rewindBeforeCheckpoint,
-  updateCheckpoint,
-} from '../state/checkpointWriters'
-import {
-  persistCurrentRunRecovery,
-  resumeInterruptedSession,
-  resumePlanSession,
-  runSession,
-} from './modelRun'
-// 【实例化 · 第 2/3 期穿线】命令绑定 core（默认 defaultCore）：函数体内用工厂参数 core 显式替换旧的
-//   模块全局（rootStore / getSessionStore / beginRun/abortRun/endRun），并把 core 传进
-//   runSession/runToolLoop/writers 的 core 参数。abort 经 core.abort.*，配置经 core.config。默认
-//   core=defaultCore 时行为逐字不变（defaultCore 就是穿线前的模块全局单例）；createCore 可绑定隔离 core。
-//   configureCommands 仍写 defaultCore.config（注入 env key 到全局默认实例）；隔离实例的 config 由
-//   createCore({ config }) 在构造时预置，其命令读自己的 core.config。
-import { defaultCore, type RuntimeConfig, type CoreInstance } from './core/coreInstance'
-import {
-  persistCheckpoint,
-  persistTruncate,
-} from './persistenceBridge'
-import { newId } from './newId'
-import type {
-  ConversationItem,
-} from '../state/core.type'
-import { isDangerousTool } from './dangerousTools'
-import { getExecutionRuntime } from '../execution/runtime'
-import { activeExecutionNodeIdsAtom, executionGraphAtom } from '../execution/graph'
-import {
-  resolveSessionWorkspaceRoot,
-} from '../state/workspaceState'
-import { buildProjectSkillsBridge } from './projectSkillsBridge'
+import { defaultCore, type CoreInstance, type RuntimeConfig } from './core/coreInstance'
+import { createCardCommands } from './commands/cardCommands'
+import { createCheckpointCommands } from './commands/checkpointCommands'
+import { createPlanCommands } from './commands/planCommands'
+import { createProjectSkillsCommands } from './commands/projectSkillsCommands'
+import { createRunCommands } from './commands/runCommands'
+import { createRunLifecycleCommands } from './commands/runLifecycleCommands'
 import { createSessionCommands, DEFAULT_SESSION_TITLE, deriveSessionTitle } from './commands/sessionCommands'
+import { createSubagentViewCommands } from './commands/subagentViewCommands'
 import { createWorkspaceCommands } from './commands/workspaceCommands'
-import {
-  assertRunStatus,
-  createRunCommands,
-  resolveApiKey,
-  withRun,
-} from './commands/runCommands'
 
 export { DEFAULT_SESSION_TITLE, deriveSessionTitle } from './commands/sessionCommands'
 
-// ===========================================================================
-// 运行时配置注入 —— apiKey 来源（config 通电：defaultCore.config 是 CoreInstance 第五个视图）
-// ===========================================================================
-// 【实例化 · 第 2 期 · config 通电】运行时配置不再是本模块私有的 runtimeConfig，而是 defaultCore.config
-//   （CoreInstance 的第五个字段）。configureCommands 用 Object.assign 就地改写 defaultCore.config 的字段
-//   —— config 引用只读、字段可变，绝不替换引用（否则与别处持有的同一引用漂移成两份）。main.tsx 照旧调
-//   configureCommands 注入 env key，行为逐字不变，只是背后写进 defaultCore.config。
-//   【第 3 期】configureCommands 专注注入【全局默认实例】的 config，故仍写死 defaultCore.config，不进
-//   createCommands 工厂（工厂命令读 core.config；隔离实例的 config 走 createCore({ config }) 构造预置）。
-
-// 简介：注入/更新【默认实例】运行时配置（apiKey / 可选 fetchImpl）→ 就地写进 defaultCore.config。
-// 详情：Object.assign 浅合并，只覆盖传入字段；未传的保持原值。就地改字段、不替换 config 引用。
-export function configureCommands(cfg: Partial<RuntimeConfig>): void {
-  Object.assign(defaultCore.config, cfg)
+/** Updates runtime configuration for the default command instance. */
+export function configureCommands(config: Partial<RuntimeConfig>): void {
+  Object.assign(defaultCore.config, config)
 }
 
-const SIDE_EFFECT_TOOL_NAMES = new Set(['run_task'])
-
-function currentTurnStartIndex(items: ConversationItem[]): number {
-  for (let i = items.length - 1; i >= 0; i -= 1) {
-    if (items[i].item.role === 'user') return i
-  }
-  return -1
-}
-
-function currentTurnHasSideEffects(items: ConversationItem[]): boolean {
-  for (const { item } of items) {
-    if (item.role !== 'assistant') continue
-    for (const toolCall of item.tool_calls ?? []) {
-      const name = toolCall.function.name
-      if (isDangerousTool(name) || SIDE_EFFECT_TOOL_NAMES.has(name)) return true
-    }
-  }
-  return false
-}
-
-// ===========================================================================
-// createCommands 工厂 —— 把全部命令绑定到传入的 core（默认 defaultCore）
-// ===========================================================================
-
-// 简介：造一组绑定到 `core` 的命令。默认 core=defaultCore → 模块级导出即绑默认实例（行为零变化）；
-//   createCore 传隔离实例 → 命令只在那套 store/registry/abort/config 上跑（互不串台）。
-// 详情：命令间互调（sendMessage→renameSession）走同一工厂闭包内的成员，保证同 core。
+/** Builds the complete command surface bound to a single runtime core. */
 export function createCommands(core: CoreInstance = defaultCore) {
-  const workspaceCommands = createWorkspaceCommands(core)
-  const sessionCommands = createSessionCommands(core)
-  const runCommands = createRunCommands(core)
-
-  // =========================================================================
-  // 运行命令
-  // =========================================================================
-
-  // 简介：对当前 active 会话起一轮 run（U5 单轮切片）。
-  // 详情：无 active / 空输入 / 会话未登记 → no-op。apiKey 按会话 vendor 取（glm→glmApiKey，
-  //   否则 deepseekApiKey）。beginRun 拿 signal（U7 穿透）；runSession 失败内部降级；
-  //   finally 里 endRun 清理（只删自己那个 controller）。
-  function sendMessage(input: string): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
-    const content = input.trim()
-    if (!id || !content) return
-    const meta = core.rootStore.getter(sessionsAtom)[id]
-    if (!meta) return
-
-    const run = core.getSessionStore(id).store.getter(runAtom)
-    // 模型请求或工具批次仍在运行时，不另起 run；把输入绑定到当前 run，交给 modelRun 在
-    // tool-call/result 闭合后的安全边界提升为普通 user 消息。
-    if (assertRunStatus(run, 'running', 'awaiting_tool')) {
-      enqueueUserMessage(id, {
-        id: newId(),
-        createdAt: Date.now(),
-        content,
-        targetRunId: run.runId,
-      }, core)
-      persistCurrentRunRecovery(id, core)
-      return
-    }
-
-    // 结构化决策暂停仍必须走对应卡片，不能用普通消息绕过未回填的 tool call。
-    if (assertRunStatus(
-      run,
-      'waiting_user',
-      'waiting_confirmation',
-      'waiting_plan_approval',
-      'interrupted',
-    )) return
-
-    // 自动标题（TT1）：标题仍为默认值时，用本条输入派生一次标题（复用 renameSession 走
-    //   ghost guard/updatedAt/落盘）。用户改过名（≠默认）绝不覆盖；同会话第二条消息时标题
-    //   已非默认，天然不再触发。派生为空（理论上上面已挡空输入）→ 保留默认名。
-    if (meta.title === DEFAULT_SESSION_TITLE) {
-      const derived = deriveSessionTitle(content)
-      if (derived) sessionCommands.renameSession(id, derived)
-    }
-
-    const apiKey = resolveApiKey(meta, core)
-    withRun(id, core, (signal) => runSession(id, content, {
-      signal, apiKey, fetchImpl: core.config.fetchImpl, core,
-    }))
-  }
-
-  // 简介：继续最新 checkpoint 中因应用重启而中断的普通任务或计划任务。
-  // 详情：沿用持久化 runId/turnId 与同一轮工作快照，不追加用户消息；真正执行由
-  // resumeInterruptedSession 负责安全闭合孤儿 tool_call 后复用原模型循环。
-  function continueInterruptedRun(): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
-    if (!id) return
-    const run = core.getSessionStore(id).store.getter(runAtom)
-    if (!assertRunStatus(run, 'interrupted')) return
-
-    const meta = core.rootStore.getter(sessionsAtom)[id]
-    if (!meta) return
-    const apiKey = resolveApiKey(meta, core)
-    withRun(id, core, (signal) => resumeInterruptedSession(id, {
-      signal,
-      apiKey,
-      fetchImpl: core.config.fetchImpl,
-      core,
-    }))
-  }
-
-  // 旧版 recovery 曾在提交阶段验收后只写入 awaiting_tool，而没有持久化
-  // pendingExecutionId。若对应的后台执行随后取消，这个 run 会永久占住计划的
-  // “正在运行”状态。只在确认同一 run 没有任何活跃执行节点时，才把它恢复为
-  // interrupted；有节点时保持等待，避免并发重复续跑。
-  function recoverOrphanedAwaitingToolRun(id: string): boolean {
-    const store = core.getSessionStore(id).store
-    const run = store.getter(runAtom)
-    if (!assertRunStatus(run, 'awaiting_tool') || run.pendingExecutionId) return false
-
-    const graph = store.getter(executionGraphAtom)
-    const hasActiveExecution = store.getter(activeExecutionNodeIdsAtom)
-      .some((executionId) => graph.nodes[executionId]?.runId === run.runId)
-    if (hasActiveExecution) return false
-
-    patchRun(id, { status: 'interrupted', pendingExecutionId: undefined }, core)
-    persistCurrentRunRecovery(id, core)
-    return true
-  }
-
-  // 简介：恢复一个已经持久化、但当前没有运行中 run 的旧版计划。
-  // 详情：新版 checkpoint 若恢复出了 interrupted run，则转交通用恢复入口并保持原 runId；
-  // 没有 recovery 的历史 checkpoint 仍走原计划恢复兼容路径。
-  function continuePlan(): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
-    if (!id) return
-
-    const run = core.getSessionStore(id).store.getter(runAtom)
-    if (assertRunStatus(run, 'awaiting_tool') && recoverOrphanedAwaitingToolRun(id)) {
-      continueInterruptedRun()
-      return
-    }
-    if (assertRunStatus(run, 'interrupted')) {
-      continueInterruptedRun()
-      return
-    }
-    if (assertRunStatus(
-      run,
-      'running',
-      'awaiting_tool',
-      'waiting_user',
-      'waiting_confirmation',
-      'waiting_plan_approval',
-    )) return
-
-    const plan = getPlan(id)
-    if (!plan || !['approved', 'active'].includes(plan.status)) return
-    if (!plan.stages.some((stage) => ['pending', 'in_progress'].includes(stage.status))) return
-
-    const meta = core.rootStore.getter(sessionsAtom)[id]
-    if (!meta) return
-    const apiKey = resolveApiKey(meta, core)
-    withRun(id, core, (signal) => resumePlanSession(id, {
-      signal,
-      apiKey,
-      fetchImpl: core.config.fetchImpl,
-      core,
-    }))
-  }
-
-  // 简介：esc —— 中断当前 active 会话正在跑的 run。
-  function stopRun(): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
-    if (!id) return
-    const store = core.getSessionStore(id).store
-    const run = store.getter(runAtom)
-    core.abort.abortRun(id)
-    if (!assertRunStatus(run, 'running', 'awaiting_tool')) return
-
-    // 后台 execution 启动后，父模型请求会正常 return 并释放自己的 AbortController。
-    // 因此停止不能只 abort 模型请求，还要先把 run 置 stopped 阻断完成回调的自动续跑，
-    // 再取消对应 execution（它会继续向下中断 evaluator 子树）。
-    patchRun(id, {
-      status: 'stopped',
-      pendingExecutionId: undefined,
-    }, core)
-
-    const executionIds = new Set<string>()
-    if (run.pendingExecutionId) executionIds.add(run.pendingExecutionId)
-
-    // 兼容修复前已经落盘/正在运行的会话：旧 RunState 没有 pendingExecutionId。
-    // execution graph 仍保留 runId，因此可找出该 run 下活跃的顶层 batch 并逐个取消。
-    const graph = store.getter(executionGraphAtom)
-    for (const executionId of store.getter(activeExecutionNodeIdsAtom)) {
-      const node = graph.nodes[executionId]
-      if (node?.runId === run.runId && node.type === 'agent-batch' && !node.parentId) {
-        executionIds.add(executionId)
-      }
-    }
-
-    const executionRuntime = getExecutionRuntime(core)
-    for (const executionId of executionIds) {
-      executionRuntime.cancel(id, executionId)
-    }
-  }
-
-  // 简介：撤回当前未完成轮并把该轮用户输入放回 Composer 草稿。
-  // 详情：仅处理 run.status==='stopped' 的当前 active 会话；成功完成的轮次走 checkpoint 回退，不走这里。
-  //   该操作只撤回对话 transcript，不承诺撤销已执行的外部副作用；若本轮出现过危险/执行类工具，会写入提示。
-  function withdrawCurrentTurnToDraft(): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
-    if (!id) return
-    const store = core.getSessionStore(id).store
-    const run = store.getter(runAtom)
-    if (!assertRunStatus(run, 'stopped')) return
-
-    const items = store.getter(itemsAtom)
-    const start = currentTurnStartIndex(items)
-    if (start < 0) return
-    const user = items[start].item
-    if (user.role !== 'user') return
-
-    // 新版 stopped 轮会先收成 [已停止] checkpoint，保证刷新不丢且消息气泡能显示回退。
-    // 这里若命中该快照，必须走标准 checkpoint 撤回链路，把内存和盘上的目标轮一起截掉；
-    // 否则仅 slice items 会让这轮在刷新后从持久化 checkpoint 中重新出现。
-    const checkpoints = store.getter(checkpointsAtom)
-    for (let index = checkpoints.length - 1; index >= 0; index -= 1) {
-      const checkpoint = checkpoints[index]
-      const checkpointUserIndex = currentTurnStartIndex(checkpoint.items)
-      if (checkpoint.items[checkpointUserIndex]?.id !== items[start].id) continue
-      revertTurnToDraft(checkpoint.turnIndex)
-      return
-    }
-
-    // 兼容修复前遗留、尚未形成 checkpoint 的 stopped 轮。
-    core.abort.abortRun(id)
-    const turnItems = items.slice(start)
-    const sideEffects = currentTurnHasSideEffects(turnItems)
-    const cutoffCreatedAt = items[start].createdAt
-    setItems(id, items.slice(0, start), core)
-    setRun(id, undefined, core)
-    setComposerDraft(id, user.content, core)
-    pruneBrowserCardsAfter(id, cutoffCreatedAt - 1, core)
-    pruneRuntimeTranscriptEventsAfter(id, cutoffCreatedAt - 1, core)
-    setWithdrawnTurnNotice(id, {
-      id: newId(),
-      createdAt: Date.now(),
-      text: sideEffects
-        ? '已撤回本轮对话并放回输入框；本轮已触发过工具，外部副作用不会被自动撤销。'
-        : '已撤回本轮对话并放回输入框。',
-      sideEffects,
-    }, core)
-  }
-
-  // 回滚计划中的一个阶段。已经执行的文件/网络等外部副作用不会被自动撤销。
-  //
-  // 优先走**阶段回退点**（快照语义）：恢复该阶段开始前的计划快照，并把该阶段之后产生的对话一并截断，
-  // 让模型从干净状态重跑。这是「一轮内跑完几十个阶段、轮级回退够不着计划内部」的正解 ——
-  // checkpoint 按用户消息分轮，而计划推进几乎全部发生在轮内。
-  //
-  // 没有回退点时（回退点上线前的旧会话）降级成前向重置：只把阶段状态和评估记录清空重开，
-  // 对话保持原样。两条路径都先 stopRun —— 它除了中断模型请求，还会取消该 run 下仍在跑的
-  // 后台 evaluator，避免它们在重跑期间继续消耗额度并尝试回写。
-  function rollbackPlanStage(planId: string, revision: number, stageId: string): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
-    if (!id) return
-    const current = getPlan(id)
-    if (!current || current.id !== planId || current.revision !== revision) return
-    if (
-      !['active', 'completed', 'failed'].includes(current.status)
-      || !current.stages.some((stage) => stage.id === stageId && stage.status !== 'pending')
-    ) return
-
-    const store = core.getSessionStore(id).store
-    const discardedItems = store.getter(itemsAtom)
-    stopRun()
-    setRun(id, undefined, core)
-
-    const point = revertToPlanStageCheckpoint(id, stageId, core)
-    if (!point) {
-      const runtime = new PlanRuntime({ get: () => getPlan(id), set: (plan) => setPlan(id, plan) }, Date.now, newId)
-      runtime.rollbackStage(planId, revision, stageId)
-      return
-    }
-
-    // 截断掉的那段对话可能带着 browser 卡片和 runtime transcript 事件；它们不进 checkpoint 快照，
-    // 需要按打点时刻单独裁剪，否则回退后仍会渲染已废弃阶段的卡片（与 revertToTurn 同一处理）。
-    pruneBrowserCardsAfter(id, point.createdAt, core)
-    pruneRuntimeTranscriptEventsAfter(id, point.createdAt, core)
-
-    // 内存里的 items/plan 已经回退，当轮 checkpoint 还停在回退前 —— 不同步落盘的话刷新就复活了。
-    const checkpoints = store.getter(checkpointsAtom)
-    const working = checkpoints[checkpoints.length - 1]
-    if (working) {
-      // recovery 显式清空：它指向刚被中断的那个 run（含 pendingExecutionId），留着的话刷新后
-      // hydrate 会把它复活成 interrupted 并提供「继续执行」，而那个 run 的 items 已经被截断掉了。
-      updateCheckpoint(id, working.turnIndex, working.label, core, undefined)
-      const updated = store.getter(checkpointsAtom)[working.turnIndex]
-      if (updated) persistCheckpoint(id, updated)
-    }
-
-    const sideEffects = currentTurnHasSideEffects(discardedItems.slice(point.itemCount))
-    setWithdrawnTurnNotice(id, {
-      id: newId(),
-      createdAt: Date.now(),
-      text: sideEffects
-        ? '已回退到该阶段开始前，该阶段之后的对话已撤回；已触发过工具，外部副作用不会被自动撤销。'
-        : '已回退到该阶段开始前，该阶段之后的对话已撤回。',
-      sideEffects,
-    }, core)
-  }
-
-  // =========================================================================
-  // 项目 Skills 命令
-  // =========================================================================
-
-  // 简介：重扫当前 active 会话所属 workspace 的项目 skills（.agent/skills 与 .claude/skills）。
-  // 详情：第一期不做文件监听（见 docs/project-skills-blueprint.md），改了 SKILL.md 要靠这条
-  //   命令生效。UI 只调它、只读 projectSkillsAtom，不碰 core.projectSkills 本身。
-  //   ★ 必须带上 bridge ★ —— refresh 的 bridge 缺省分支是「这个环境没有文件系统」，
-  //   不传等于把已扫到的 skills 清空。
-  async function refreshProjectSkills(): Promise<void> {
-    const id = core.rootStore.getter(activeSessionIdAtom)
-    if (!id) return
-    const meta = core.rootStore.getter(sessionsAtom)[id]
-    if (!meta) return
-    const workspaceRoot = resolveSessionWorkspaceRoot(meta, core.rootStore.getter(workspacesAtom))
-    if (!workspaceRoot) return
-    await core.projectSkills.refresh(workspaceRoot, buildProjectSkillsBridge())
-  }
-
-  // =========================================================================
-  // 卡片交互命令（P8-c）—— UI 卡片的答案回填 / 产物丢弃
-  // =========================================================================
-
-  // 简介：记录当前 active 会话某个 question 的答案（AskUserQuestionCard onChange 调用）。
-  // 详情：取 activeId，无 active → no-op。写入走 transientAtoms 的 setter（内部已带 ghost guard）。
-  function answerQuestion(questionId: string, value: AskUserAnswerValue): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
-    if (!id) return
-    setPendingQuestionAnswer(id, questionId, value, core)
-  }
-
-  // 简介：从指定会话丢弃一个 save_file 待保存产物（SaveArtifact 保存成功后调用）。
-  // 详情：收显式 sessionId（PF4）—— 卡片点击时捕获归属会话，异步保存期间 active 可能被切走，
-  //   故不取 active，只删传入 sessionId 的产物（removePendingArtifact 内部带 ghost guard）。
-  function discardArtifact(sessionId: string, artifactId: string): void {
-    removePendingArtifact(sessionId, artifactId, core)
-  }
-
-  // =========================================================================
-  // 回退命令
-  // =========================================================================
-
-  // 简介：对当前 active 会话回退到第 turnIndex 轮（截断式回退）。
-  function revertToTurn(turnIndex: number): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
-    if (!id) return
-    // 先校验 turnIndex 合法（越界/负数 → 整体 no-op）。否则 jumpToCheckpoint 内存里 no-op、但
-    // persistTruncate(id, -1) 会走 truncateAfter(id, -1) 把盘上「全部」checkpoint 删光，刷新丢历史
-    // （codex P2）。校验读该会话 store 的 checkpointsAtom；幽灵会话取到 [] → 任何 index 都越界 → no-op。
-    const checkpoints = core.getSessionStore(id).store.getter(checkpointsAtom)
-    if (turnIndex < 0 || turnIndex >= checkpoints.length) return
-    // 回退前先停当前 run —— 否则回退改了 items/checkpoints，正在跑的 run 完成时又
-    // appendItem/commitCheckpoint 会污染回退后的状态（与 removeSession 的破坏性命令前先 abort 一致）。
-    core.abort.abortRun(id)
-    jumpToCheckpoint(id, turnIndex, core)
-    // 剪掉「被丢弃轮次」产生的 browser 卡片（codex P2）：browserCards 不进 checkpoint 快照，
-    //   jumpToCheckpoint 只截断 items，需按回退点 checkpoint 的 createdAt 把之后的卡片一并剪掉，
-    //   否则回退后仍渲染已废弃轮的卡片。
-    pruneBrowserCardsAfter(id, checkpoints[turnIndex].createdAt, core)
-    pruneRuntimeTranscriptEventsAfter(id, checkpoints[turnIndex].createdAt, core)
-    persistTruncate(id, turnIndex) // D-4：截断式回退 → 同步截断持久化 checkpoint（fire-and-forget）。
-  }
-
-  // 简介：撤回第 turnIndex 轮到其用户消息之前，并把原输入放回 Composer 草稿。
-  // 详情：与 revertToTurn「保留目标轮结束快照」不同，本命令会丢弃目标轮本身，供消息气泡上的
-  //   「回退」入口使用。对话记录可以截断，已执行的工具外部副作用不能自动撤销，故按需显示提示。
-  function revertTurnToDraft(turnIndex: number): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
-    if (!id) return
-    const store = core.getSessionStore(id).store
-    const checkpoints = store.getter(checkpointsAtom)
-    const checkpoint = checkpoints[turnIndex]
-    if (!checkpoint) return
-
-    const checkpointUserIndex = currentTurnStartIndex(checkpoint.items)
-    const targetUser = checkpoint.items[checkpointUserIndex]
-    if (!targetUser || targetUser.item.role !== 'user') return
-
-    const currentItems = store.getter(itemsAtom)
-    const currentUserIndex = currentItems.findIndex((item) => item.id === targetUser.id)
-    const discardedItems = currentUserIndex >= 0
-      ? currentItems.slice(currentUserIndex)
-      : checkpoint.items.slice(checkpointUserIndex)
-    const sideEffects = currentTurnHasSideEffects(discardedItems)
-
-    // stopRun 除中断模型请求外，还会取消该 run 下仍在执行的后台 execution；随后清掉 run，
-    // 避免撤回后残留 stopped/done 状态或迟到写回污染已经截断的 transcript。
-    stopRun()
-    rewindBeforeCheckpoint(id, turnIndex, core)
-    setRun(id, undefined, core)
-    setComposerDraft(id, targetUser.item.content, core)
-    pruneBrowserCardsAfter(id, targetUser.createdAt - 1, core)
-    pruneRuntimeTranscriptEventsAfter(id, targetUser.createdAt - 1, core)
-    setWithdrawnTurnNotice(id, {
-      id: newId(),
-      createdAt: Date.now(),
-      text: sideEffects
-        ? '已回退到该轮之前，原输入已放回输入框；已触发过工具，外部副作用不会被自动撤销。'
-        : '已回退到该轮之前，原输入已放回输入框。',
-      sideEffects,
-    }, core)
-    // persistTruncate 保留 <= turnIndex 的快照；这里目标轮也要删除，故传前一轮。
-    // turnIndex=0 时传 -1 是有意清空该会话的全部 checkpoint。
-    persistTruncate(id, turnIndex - 1)
-  }
-
+  const workspace = createWorkspaceCommands(core)
+  const session = createSessionCommands(core)
+  const runLifecycle = createRunLifecycleCommands(core, {
+    renameSession: session.renameSession,
+    defaultSessionTitle: DEFAULT_SESSION_TITLE,
+    deriveSessionTitle,
+  })
+  const pausedRun = createRunCommands(core)
+  const checkpoint = createCheckpointCommands(core, runLifecycle.stopRun)
+  const plan = createPlanCommands(core, runLifecycle.stopRun)
+  const cards = createCardCommands(core)
+  const projectSkills = createProjectSkillsCommands(core)
+  const subagentView = createSubagentViewCommands(core)
   return {
-    ...workspaceCommands,
-    ...sessionCommands,
-    sendMessage,
-    continueInterruptedRun,
-    continuePlan,
-    stopRun,
-    withdrawCurrentTurnToDraft,
-    ...runCommands,
-    rollbackPlanStage,
-    answerQuestion,
-    discardArtifact,
-    revertToTurn,
-    revertTurnToDraft,
-    refreshProjectSkills,
+    ...workspace,
+    ...session,
+    ...runLifecycle,
+    ...pausedRun,
+    ...checkpoint,
+    ...plan,
+    ...cards,
+    ...projectSkills,
+    ...subagentView,
   }
 }
 
-// createCommands 的返回形状 —— UI ↔ runtime 的命令面（configureCommands 除外，见其说明）。
-// 用 ReturnType 从工厂返回值推导，零漂移（新增/改命令自动同步到类型）。
 export type CommandApi = ReturnType<typeof createCommands>
 
-// ===========================================================================
-// 模块级命令导出 —— 绑定 defaultCore（行为逐字不变，现有 UI/测试 import 一行不用改）
-// ===========================================================================
-// createCommands() 无参 → core=defaultCore，成员即穿线前的模块级命令。UI/测试照旧
-//   `import { sendMessage, ... } from './commands'` 拿到的就是绑定默认实例的那一组。
 export const {
   newWorkspace,
   selectWorkspace,
@@ -552,14 +65,26 @@ export const {
   continueInterruptedRun,
   continuePlan,
   stopRun,
-  withdrawCurrentTurnToDraft,
   resumeWithAnswers,
   confirmTool,
+  revertToTurn,
+  revertTurnToDraft,
+  withdrawCurrentTurnToDraft,
   approvePlan,
   rollbackPlanStage,
   answerQuestion,
   discardArtifact,
   refreshProjectSkills,
-  revertToTurn,
-  revertTurnToDraft,
+  selectSubagentNode,
+  selectGlobalSubagentRun,
+  loadGlobalSubagentRuns,
+  loadSubagentArchive,
+  loadSubagentArchivePreview,
+  loadSubagentTrace,
+  setCandidateSkillFilter,
+  selectCandidateSkill,
+  loadCandidateSkills,
+  openSkillGovernanceDialog,
+  closeSkillGovernanceDialog,
+  confirmSkillGovernance,
 } = createCommands()
