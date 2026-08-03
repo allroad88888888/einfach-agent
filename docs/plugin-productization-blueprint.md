@@ -8,7 +8,7 @@
 
 本计划只覆盖阶段 2 的非 UI 插件面。不实现 `registerRenderer`，不迁移 API key，不改变无插件时的模型、工具并发和持久化行为。
 
-P2.1 已将 `registerTool`、`subscribe` 与插件 disposer 接入真实 Core/run 生命周期；P2.2 已接入 `prepareRequest`。当前生产 loop 还未消费 `beforeToolCall`、`afterToolCall` 与 `shouldStop`。
+P2.1 已将 `registerTool`、`subscribe` 与插件 disposer 接入真实 Core/run 生命周期；P2.2 已接入 `prepareRequest`；P2.3 已接入 `beforeToolCall` 与 `afterToolCall`。当前生产 loop 尚未消费 `shouldStop`。
 
 ## 固定设计约束
 
@@ -40,15 +40,16 @@ P2.1 已将 `registerTool`、`subscribe` 与插件 disposer 接入真实 Core/ru
 
 验收：外部插件追加 marker 后真实 fetch body 可见；会话项目不变；未安装插件的请求逐字不变；失败 hook 不会留下活跃订阅。
 
-## 批次 P2.3 —— 工具 hook 契约收紧与接线
+## 批次 P2.3 —— 工具 hook 契约收紧与接线（已完成）
 
-**只做**：使工具前后 hook 覆盖全部执行路径且不破坏状态机结果。
+**已完成（`4e2976d`）**：以受限事件和统一执行包装器覆盖工具调用生命周期，保持未安装 hook 时的原路径。
 
-- 将公共事件收紧为稳定的 `callId`、工具名和已验证参数；`afterToolCall` 只能返回可验证的 `ToolResult` 补丁，不能覆盖 `{ pause }` 等内部控制结果。
-- `beforeToolCall` 放在权限/参数校验成功后、确认与实际执行前；被阻断时写入确定的 tool result，不执行工具也不进入确认。
-- 所有串行、并行和确认恢复路径使用同一个 hook 包装器。首版若安装了工具 hook，则按声明顺序串行执行；无插件仍沿用现有并行快路径。
+- 公共事件固定为 `callId`、工具名和只读的已验证参数；`afterToolCall` 只接受已完成 `ToolResult` 的白名单补丁，不能改写 `ok` 或 `{ pause }` 控制分支。
+- `beforeToolCall` 位于权限和参数校验之后、确认与实际执行之前；阻断或 hook 异常均写入确定结果，既不执行工具也不进入确认。
+- 常规、安装 hook 时的批处理和确认恢复均通过同一包装器；确认挂起会记录已执行的 before 标记，恢复时不会重复触发。安装工具生命周期 hook 后按声明顺序串行；未安装时仍走原有并行和串行路径。
+- 集成测试覆盖参数规范化、after 结果进入下一轮模型上下文、MCP 阻断、hook 下串行化、确认恢复不重复 before；既有无 hook 并行回归保持通过。
 
-验收：三种路径各触发一次 before/after；阻断不执行；after 的结果进入后续模型上下文；无插件的并行回归保持不变。
+验收：三种路径各触发一次 before/after；阻断不执行；after 的结果进入后续模型上下文；无插件的并行回归保持不变。已由全量测试、TypeScript 检查与生产构建验证。
 
 ## 批次 P2.4 —— 停止决策、受限命令与垂直样板
 
