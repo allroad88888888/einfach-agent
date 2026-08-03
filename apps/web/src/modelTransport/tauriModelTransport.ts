@@ -2,6 +2,7 @@ import { Channel, invoke } from '@tauri-apps/api/core'
 import { modelProviderForChatRequest, type ModelProvider } from './modelEndpoint'
 
 type ModelProxyEvent =
+  | { type: 'started' }
   | { type: 'response'; status: number; contentType?: string }
   | { type: 'chunk'; bytes: number[] }
   | { type: 'end' }
@@ -10,7 +11,10 @@ type ModelProxyEvent =
 type ModelProxyInput = {
   provider: ModelProvider
   body: string
+  requestId: string
 }
+
+let fallbackRequestSequence = 0
 
 function abortedError(): DOMException {
   return new DOMException('The operation was aborted.', 'AbortError')
@@ -21,11 +25,21 @@ function requestBody(init?: RequestInit): string {
   return init.body
 }
 
+function createRequestId(): string {
+  const uuid = globalThis.crypto?.randomUUID?.()
+  if (uuid) return uuid
+  fallbackRequestSequence += 1
+  return `model-${Date.now().toString(36)}-${fallbackRequestSequence.toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
 /** Rebuilds a streaming fetch Response from the desktop process's restricted model gateway. */
 export function createTauriModelFetch(): typeof fetch {
   return (input, init) => new Promise<Response>((resolve, reject) => {
     let started = false
     let finished = false
+    let abortRequested = false
+    let nativeStarted = false
+    let cancelSent = false
     let controller: ReadableStreamDefaultController<Uint8Array> | undefined
     const signal = init?.signal
     const fail = (error: Error) => {
@@ -35,7 +49,17 @@ export function createTauriModelFetch(): typeof fetch {
       if (started) controller?.error(error)
       else reject(error)
     }
-    const onAbort = () => fail(abortedError())
+    const requestId = createRequestId()
+    const cancelNativeRequest = () => {
+      if (!nativeStarted || cancelSent) return
+      cancelSent = true
+      void invoke<boolean>('cancel_model_chat_completions', { requestId }).catch(() => {})
+    }
+    const onAbort = () => {
+      abortRequested = true
+      cancelNativeRequest()
+      fail(abortedError())
+    }
     if (signal?.aborted) {
       onAbort()
       return
@@ -47,6 +71,7 @@ export function createTauriModelFetch(): typeof fetch {
       proxyInput = {
         provider: modelProviderForChatRequest(input),
         body: requestBody(init),
+        requestId,
       }
     } catch (error) {
       fail(error instanceof Error ? error : new Error('模型请求格式无效'))
@@ -59,6 +84,11 @@ export function createTauriModelFetch(): typeof fetch {
       },
     })
     const events = new Channel<ModelProxyEvent>((event) => {
+      if (event.type === 'started') {
+        nativeStarted = true
+        if (abortRequested) cancelNativeRequest()
+        return
+      }
       if (finished) return
       if (event.type === 'response') {
         started = true

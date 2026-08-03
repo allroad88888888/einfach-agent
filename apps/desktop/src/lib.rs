@@ -2,6 +2,7 @@ mod mcp;
 mod model_credentials;
 mod model_provider;
 mod model_proxy;
+mod model_request_registry;
 mod shell;
 mod workspace_change_journal;
 mod workspace_common;
@@ -18,6 +19,7 @@ mod workspace_write;
 pub fn run() {
     tauri::Builder::default()
         .manage(mcp::McpManager::default())
+        .manage(model_request_registry::ModelRequestCanceller::default())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_dialog::init())
         .plugin(
@@ -37,6 +39,7 @@ pub fn run() {
             model_credentials::model_credential_set,
             model_credentials::model_credential_delete,
             model_proxy::model_chat_completions,
+            model_proxy::cancel_model_chat_completions,
             shell::run_shell_command,
             workspace_read::read_workspace_file,
             workspace_read::read_workspace_run_index_page,

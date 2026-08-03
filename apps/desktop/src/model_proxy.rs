@@ -1,9 +1,12 @@
 use crate::model_credentials::active_model_credential;
 use crate::model_provider::ModelProvider;
+use crate::model_request_registry::ModelRequestCanceller;
 use futures_util::StreamExt;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
+use tauri::State;
+use tokio_util::sync::CancellationToken;
 
 const MAX_REQUEST_BODY_BYTES: usize = 4 * 1024 * 1024;
 const MODEL_REQUEST_TIMEOUT_SECONDS: u64 = 120;
@@ -13,11 +16,13 @@ const MODEL_REQUEST_TIMEOUT_SECONDS: u64 = 120;
 pub struct ModelChatCompletionsInput {
     pub provider: ModelProvider,
     pub body: String,
+    pub request_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ModelProxyEvent {
+    Started,
     Response {
         status: u16,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -57,18 +62,46 @@ fn model_http_client() -> Result<reqwest::Client, String> {
 pub async fn model_chat_completions(
     input: ModelChatCompletionsInput,
     events: Channel<ModelProxyEvent>,
+    cancellations: State<'_, ModelRequestCanceller>,
 ) -> Result<(), String> {
     valid_request_body(&input.body)?;
-    let (api_key, _) = active_model_credential(input.provider).await?;
+    let cancellation = cancellations.register(&input.request_id)?;
+    let result = match events.send(ModelProxyEvent::Started) {
+        Ok(()) => send_model_request(&input, &events, &cancellation).await,
+        Err(_) => Err("模型响应通道已关闭".to_string()),
+    };
+    cancellations.finish(&input.request_id);
+    result
+}
+
+#[tauri::command]
+pub fn cancel_model_chat_completions(
+    request_id: String,
+    cancellations: State<'_, ModelRequestCanceller>,
+) -> Result<bool, String> {
+    cancellations.cancel(&request_id)
+}
+
+async fn send_model_request(
+    input: &ModelChatCompletionsInput,
+    events: &Channel<ModelProxyEvent>,
+    cancellation: &CancellationToken,
+) -> Result<(), String> {
+    let credential = tokio::select! {
+        _ = cancellation.cancelled() => return Ok(()),
+        credential = active_model_credential(input.provider) => credential?,
+    };
+    let (api_key, _) = credential;
     let client = model_http_client()?;
-    let response = client
-        .post(input.provider.chat_completions_url())
-        .header(CONTENT_TYPE, "application/json")
-        .header(AUTHORIZATION, format!("Bearer {api_key}"))
-        .body(input.body)
-        .send()
-        .await
-        .map_err(|_| "模型服务请求失败")?;
+    let response = tokio::select! {
+        _ = cancellation.cancelled() => return Ok(()),
+        response = client
+            .post(input.provider.chat_completions_url())
+            .header(CONTENT_TYPE, "application/json")
+            .header(AUTHORIZATION, format!("Bearer {api_key}"))
+            .body(input.body.clone())
+            .send() => response.map_err(|_| "模型服务请求失败")?,
+    };
     let status = response.status().as_u16();
     let content_type = response
         .headers()
@@ -83,7 +116,14 @@ pub async fn model_chat_completions(
         .map_err(|_| "模型响应通道已关闭")?;
 
     let mut chunks = response.bytes_stream();
-    while let Some(chunk) = chunks.next().await {
+    loop {
+        let chunk = tokio::select! {
+            _ = cancellation.cancelled() => return Ok(()),
+            chunk = chunks.next() => chunk,
+        };
+        let Some(chunk) = chunk else {
+            break;
+        };
         match chunk {
             Ok(bytes) => events
                 .send(ModelProxyEvent::Chunk {
