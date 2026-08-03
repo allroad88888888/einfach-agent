@@ -41,6 +41,18 @@ fn valid_request_body(body: &str) -> Result<(), String> {
         .map_err(|_| "模型请求格式无效".to_string())
 }
 
+fn model_http_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(15))
+        .timeout(std::time::Duration::from_secs(
+            MODEL_REQUEST_TIMEOUT_SECONDS,
+        ))
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|_| "无法初始化模型网络连接".to_string())
+}
+
 #[tauri::command]
 pub async fn model_chat_completions(
     input: ModelChatCompletionsInput,
@@ -48,13 +60,7 @@ pub async fn model_chat_completions(
 ) -> Result<(), String> {
     valid_request_body(&input.body)?;
     let (api_key, _) = active_model_credential(input.provider).await?;
-    let client = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(15))
-        .timeout(std::time::Duration::from_secs(
-            MODEL_REQUEST_TIMEOUT_SECONDS,
-        ))
-        .build()
-        .map_err(|_| "无法初始化模型网络连接")?;
+    let client = model_http_client()?;
     let response = client
         .post(input.provider.chat_completions_url())
         .header(CONTENT_TYPE, "application/json")
@@ -99,12 +105,43 @@ pub async fn model_chat_completions(
 
 #[cfg(test)]
 mod tests {
-    use super::valid_request_body;
+    use super::{model_http_client, valid_request_body};
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
 
     #[test]
     fn validates_json_before_forwarding_it() {
         assert!(valid_request_body("{\"model\":\"x\"}").is_ok());
         assert!(valid_request_body("not json").is_err());
         assert!(valid_request_body(&"x".repeat(4 * 1024 * 1024 + 1)).is_err());
+    }
+
+    #[test]
+    fn model_client_does_not_follow_redirects() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind redirect server");
+        let address = listener.local_addr().expect("read redirect server address");
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().expect("accept model request");
+            let mut request = [0_u8; 1_024];
+            stream.read(&mut request).expect("read model request");
+            stream
+                .write_all(
+                    b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/redirected\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .expect("write redirect response");
+        });
+
+        let response = tauri::async_runtime::block_on(async {
+            model_http_client()
+                .expect("build model client")
+                .post(format!("http://{address}/chat/completions"))
+                .body("{}")
+                .send()
+                .await
+        })
+        .expect("return redirect response without following it");
+
+        assert_eq!(response.status(), reqwest::StatusCode::FOUND);
+        server.join().expect("finish redirect server");
     }
 }
