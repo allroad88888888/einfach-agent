@@ -18,7 +18,7 @@ describe('BrowserActionCard', () => {
     expect(container.querySelector('.agentnew-browser-card-body')).toBeNull()
   })
 
-  it('有 body：markdown 渲染出正文文本', () => {
+  it('有 body：markdown 渲染出正文文本', async () => {
     const card: BrowserCard = { id: 'c2', createdAt: 2, title: '标题Y', body: '**粗体**正文' }
 
     const { container } = render(<BrowserActionCard card={card} />)
@@ -28,7 +28,7 @@ describe('BrowserActionCard', () => {
     // 正文区在
     expect(container.querySelector('.agentnew-browser-card-body')).not.toBeNull()
     // markdown 已转：**粗体** → <strong>粗体</strong>
-    const strong = screen.getByText('粗体')
+    const strong = await screen.findByText('粗体')
     expect(strong).toBeInTheDocument()
     expect(strong.tagName).toBe('STRONG')
     // 正文其余文本也在
