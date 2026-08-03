@@ -10,8 +10,8 @@
 // 表结构（items/meta 存 JSON 文本）：
 //   sessions(id TEXT PRIMARY KEY, meta TEXT)  —— 会话列表存**单行 blob**：固定 id='__all__'，
 //       meta 为整个 SessionMeta[] 的 JSON。单语句 upsert 天然原子，无需跨语句事务（见 sqliteSessions）。
-//   checkpoints(session_id TEXT, turn_index INTEGER, label TEXT, created_at INTEGER, items TEXT, plan TEXT,
-//               recovery TEXT,
+//   checkpoints(session_id TEXT, turn_index INTEGER, label TEXT, kind TEXT, finish_reason TEXT, created_at INTEGER,
+//               items TEXT, plan TEXT, recovery TEXT,
 //               PRIMARY KEY(session_id, turn_index))
 //
 // 连接调优（PRAGMA，见 getDb）：journal_mode=WAL + busy_timeout=5000 + synchronous=NORMAL。
@@ -23,6 +23,7 @@
 
 import Database from '@tauri-apps/plugin-sql'
 import type { SessionMeta, WorkspaceMeta } from '../core.type'
+import type { CheckpointFinishReason, CheckpointKind } from '../checkpoint.type'
 import type { SessionsPersistence } from './contract'
 import type { HistoryDriver } from './historyDriver'
 import {
@@ -40,6 +41,8 @@ const WORKSPACES_BLOB_ID = '__workspaces__'
 interface CheckpointRow {
   turn_index: number
   label: string
+  kind?: CheckpointKind | null
+  finish_reason?: CheckpointFinishReason | null
   created_at: number
   items: string
   plan?: string | null
@@ -93,6 +96,8 @@ async function getDb(): Promise<Database> {
              session_id TEXT NOT NULL,
              turn_index INTEGER NOT NULL,
              label TEXT NOT NULL,
+             kind TEXT,
+             finish_reason TEXT,
              created_at INTEGER NOT NULL,
              items TEXT NOT NULL,
              plan TEXT,
@@ -116,6 +121,16 @@ async function getDb(): Promise<Database> {
           await db.execute('ALTER TABLE checkpoints ADD COLUMN plan_stage_checkpoints TEXT')
         } catch {
           // 新库已经包含 plan_stage_checkpoints，或旧库迁移已完成；两种情况都可继续。
+        }
+        try {
+          await db.execute('ALTER TABLE checkpoints ADD COLUMN kind TEXT')
+        } catch {
+          // 新库已经包含 kind，或旧库迁移已完成；两种情况都可继续。
+        }
+        try {
+          await db.execute('ALTER TABLE checkpoints ADD COLUMN finish_reason TEXT')
+        } catch {
+          // 新库已经包含 finish_reason，或旧库迁移已完成；两种情况都可继续。
         }
         schemaMs = performanceNow() - phaseStartedAt
         operation.finish('ok', {
@@ -172,7 +187,7 @@ const sqliteHistoryDriver: HistoryDriver = {
     try {
       const db = await getDb()
       const rows = await db.select<CheckpointRow[]>(
-        'SELECT turn_index, label, created_at, items, plan, recovery, plan_stage_checkpoints FROM checkpoints WHERE session_id = $1 AND turn_index = $2',
+        'SELECT turn_index, label, kind, finish_reason, created_at, items, plan, recovery, plan_stage_checkpoints FROM checkpoints WHERE session_id = $1 AND turn_index = $2',
         [sessionId, turnIndex],
       )
       const row = rows[0]
@@ -180,6 +195,8 @@ const sqliteHistoryDriver: HistoryDriver = {
       return {
         turnIndex: row.turn_index,
         label: row.label,
+        kind: row.kind ?? undefined,
+        finishReason: row.finish_reason ?? undefined,
         createdAt: row.created_at,
         items: JSON.parse(row.items),
         plan: row.plan ? JSON.parse(row.plan) : undefined,
@@ -229,12 +246,14 @@ const sqliteHistoryDriver: HistoryDriver = {
       recoveryJsonChars = recoveryJson?.length ?? 0
       phaseStartedAt = performanceNow()
       await db.execute(
-        `INSERT OR REPLACE INTO checkpoints (session_id, turn_index, label, created_at, items, plan, recovery, plan_stage_checkpoints)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        `INSERT OR REPLACE INTO checkpoints (session_id, turn_index, label, kind, finish_reason, created_at, items, plan, recovery, plan_stage_checkpoints)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           sessionId,
           checkpoint.turnIndex,
           checkpoint.label,
+          checkpoint.kind ?? null,
+          checkpoint.finishReason ?? null,
           checkpoint.createdAt,
           itemsJson,
           planJson,

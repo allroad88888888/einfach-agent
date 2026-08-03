@@ -24,14 +24,13 @@
 //   notice 文案（沿用三份常量的逐字内容）；③ 仅在【没有流式条目】时（Case B，非流式响应）通过
 //   ctx.store.setter 往 itemsAtom【追加】那条「系统标注」条目（对应旧代码 `if (!streamWriter.hasItem()
 //   && isCurrentRun) appendItem(...)` 那一段）；④ 返回完整 TurnEndStopDecision。
-// 【loop / 集成 agent 收到 decision 后负责】：setContextStats / commit checkpoint（带
-//   FINISH_REASON_LABEL_TAGS 前缀，该常量【不搬】、留在 modelRun.ts）/ persist / patchRun status /
+// 【loop / 集成 agent 收到 decision 后负责】：setContextStats / commit checkpoint（写入结构化
+//   kind / finishReason）/ persist / patchRun status /
 //   finishTrace('agent.finish_abnormal') / 退出。即「条目内容插件写，run 收尾 loop 做」。
 //
 // ── 移走的符号（原先定义在 modelRun.ts，集成 agent 会改成从本文件 import）──
 //   FINISH_REASON_ERRORS / FINISH_REASON_ITEM_NOTICES / FINISH_REASON_STANDALONE_NOTICES。
-//   AbnormalFinishReason 与异常判据归 loopHooks 的 turn-end 契约单源；FINISH_REASON_LABEL_TAGS【不搬】——
-//   它只在 loop 侧 commitTurn 的 label 前缀用。
+//   AbnormalFinishReason 与异常判据归 loopHooks 的 turn-end 契约单源。
 
 import { itemsAtom } from '../../../state/sessionAtoms'
 import type { ConversationItem } from '../../../state/core.type'

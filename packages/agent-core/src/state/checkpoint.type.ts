@@ -22,9 +22,24 @@ export interface Checkpoint {
   label: string
   createdAt: number
   items: ConversationItem[]
+  // 新 checkpoint 用结构化状态表示运行结果；可选以兼容尚未迁移的旧 label 前缀数据。
+  kind?: CheckpointKind
+  finishReason?: CheckpointFinishReason
   plan?: PlanSnapshot
   recovery?: RunRecoverySnapshot
   planStageCheckpoints?: PlanStageCheckpoint[]
+}
+
+export type CheckpointKind = 'working' | 'completed' | 'stopped' | 'abnormal'
+
+export type CheckpointFinishReason =
+  | 'length'
+  | 'content_filter'
+  | 'insufficient_system_resource'
+
+export interface CheckpointState {
+  kind: CheckpointKind
+  finishReason?: CheckpointFinishReason
 }
 
 // 简介：一个计划阶段「开始之前」的回退点。

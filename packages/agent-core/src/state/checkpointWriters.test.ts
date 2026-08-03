@@ -104,7 +104,7 @@ describe('checkpointWriters', () => {
     seedS1()
     const store = getSessionStore('s1').store
     store.setter(itemsAtom, [item1])
-    commitCheckpoint('s1', '[执行中] 轮1')
+    commitCheckpoint('s1', '轮1', undefined, undefined, { kind: 'working' })
     const createdAt = store.getter(checkpointsAtom)[0].createdAt
 
     const latest = [item1, item2]
@@ -113,7 +113,7 @@ describe('checkpointWriters', () => {
 
     const checkpoints = store.getter(checkpointsAtom)
     expect(checkpoints).toHaveLength(1)
-    expect(checkpoints[0]).toMatchObject({ turnIndex: 0, label: '轮1', createdAt })
+    expect(checkpoints[0]).toMatchObject({ turnIndex: 0, label: '轮1', kind: 'working', createdAt })
     expect(checkpoints[0].items).toBe(latest)
     expect(store.getter(currentTurnIndexAtom)).toBe(0)
   })
@@ -126,7 +126,7 @@ describe('checkpointWriters', () => {
     store.setter(itemsAtom, [item1])
     store.setter(planAtom, firstPlan)
 
-    commitCheckpoint('s1', '[执行中] 轮1')
+    commitCheckpoint('s1', '轮1', undefined, undefined, { kind: 'working' })
     expect(store.getter(checkpointsAtom)[0].plan).toBe(firstPlan)
 
     store.setter(planAtom, latestPlan)

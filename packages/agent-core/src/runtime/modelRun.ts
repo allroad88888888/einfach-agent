@@ -39,6 +39,7 @@ import { itemsAtom, runAtom, checkpointsAtom, planAtom } from '../state/sessionA
 import { executionGraphAtom } from '../execution/graph'
 import { appendItem, setRun, patchRun, updateItem } from '../state/sessionWriters'
 import { commitCheckpoint, updateCheckpoint } from '../state/checkpointWriters'
+import { readCheckpointState } from '../state/checkpointKind'
 import {
   removeToolActivity,
   isToolAlwaysAllowed,
@@ -57,7 +58,7 @@ import {
 } from '../state/transientAtoms'
 import { classifyToolRisk } from './dangerousTools'
 import type { ConversationItem, PendingToolConfirmation, PendingUserDecisionOrigin } from '../state/core.type'
-import type { RunRecoverySnapshot } from '../state/checkpoint.type'
+import type { CheckpointState, RunRecoverySnapshot } from '../state/checkpoint.type'
 import { normalizeAskUserQuestionPayload } from './askUserQuestion'
 import { streamDeepSeek, type DeepSeekChatRequest } from '@web-agent/ai'
 import { streamGlm, type GlmChatRequest } from '@web-agent/ai'
@@ -189,20 +190,6 @@ const ARGS_PREVIEW_LIMIT = 200
 // 工具失败软提醒的阈值、错误摘要长度、per-run 计数类型与提醒文案都住在 selfReflectionPrompts.ts
 // （零依赖叶子模块）—— evals 的 prompt 行为 A/B 要复用同一份字节与同一个阈值来复刻注入语义，
 // 而本文件的模块图（tauri / 持久化桥 / 全部 atoms）不可能被那套离线 eval 直接 import。
-
-// finish_reason 异常三态的 type + 用户可见文案（三份 Record）已搬进 finishReasonPlugin（Core 抽离
-// Stage 2a），本文件改从插件 import：AbnormalFinishReason（下方 LABEL_TAGS 的键类型）/ FINISH_REASON_ERRORS
-// （run.error 文案，现由 onTurnEnd 决策 decision.reason 回传，loop 不再直接索引）/ FINISH_REASON_ITEM_NOTICES
-// （Case A 流式标注，loop 侧 finalize 仍要用，故 import）/ FINISH_REASON_STANDALONE_NOTICES（Case B 非流式
-// 独立标注，只插件内部用）。本文件只保留 loop 收尾自用的 FINISH_REASON_LABEL_TAGS —— 它不在迁移清单
-// （仅 commitTurn 的 label 前缀用），故需 import AbnormalFinishReason 给它做 Record 键类型。
-
-// checkpoint label 前缀 —— 让 CheckpointBar 上这一轮一眼就和成功轮区分开（label 同样落盘）。
-const FINISH_REASON_LABEL_TAGS: Record<AbnormalFinishReason, string> = {
-  length: '[截断] ',
-  content_filter: '[已拦截] ',
-  insufficient_system_resource: '[已中断] ',
-}
 
 // span 收尾状态：中断算 'cancelled'，其余算 'error'。
 // 同时看 signal 和错误本身 —— 有些中断（工具内部的超时/级联 abort）不会体现在外层 signal 上，
@@ -867,10 +854,10 @@ export function persistCurrentRunRecovery(
   const checkpoints = store.getter(checkpointsAtom)
   const latest = checkpoints[checkpoints.length - 1]
   if (
-    !latest?.label.startsWith('[执行中] ')
+    !latest || readCheckpointState(latest).kind !== 'working'
     || latest.recovery?.run.runId !== run.runId
   ) return
-  updateCheckpoint(id, latest.turnIndex, latest.label, core, recovery)
+  updateCheckpoint(id, latest.turnIndex, latest.label, core, recovery, { kind: 'working' })
   const updated = store.getter(checkpointsAtom)[latest.turnIndex]
   if (updated) core.persistence.persistCheckpoint(id, updated)
 }
@@ -1145,7 +1132,6 @@ export async function runToolLoop(
   // 本轮驱动输入取自 itemsAtom（不由参数传入）：fresh run = 刚 append 的 user；resume = 原始提问。
   const input = latestUserInput(id, core)
 
-  const WORKING_CHECKPOINT_PREFIX = '[执行中] '
   const initialCheckpoints = core.getSessionStore(id).store.getter(checkpointsAtom)
   const latestCheckpoint = initialCheckpoints[initialCheckpoints.length - 1]
   const resumableWorkingCheckpoint = latestCheckpoint?.recovery?.run.runId === runId
@@ -1153,21 +1139,26 @@ export async function runToolLoop(
     || opts.resumeInterrupted
     ? latestCheckpoint
     : undefined
-  let workingTurnIndex = resumableWorkingCheckpoint?.label.startsWith(WORKING_CHECKPOINT_PREFIX)
+  let workingTurnIndex = resumableWorkingCheckpoint
+    && readCheckpointState(resumableWorkingCheckpoint).kind === 'working'
     ? resumableWorkingCheckpoint.turnIndex
     : undefined
 
   // 把当前 items 写进本轮 checkpoint。第一次追加，此后覆盖同一个 turnIndex，避免长计划的
   // 每个工具批次都被误算成一轮；同一会话的异步写盘由 persistenceBridge 保序。
-  const persistTurnSnapshot = (label: string, includeRecovery: boolean): void => {
+  const persistTurnSnapshot = (
+    label: string,
+    checkpointState: CheckpointState,
+    includeRecovery: boolean,
+  ): void => {
     if (!isCurrentRun(currentRunGuard)) return
     const recovery = includeRecovery ? currentRunRecoverySnapshot(id, runId, core) : undefined
     if (workingTurnIndex === undefined) {
-      commitCheckpoint(id, label, core, recovery)
+      commitCheckpoint(id, label, core, recovery, checkpointState)
       const checkpoints = core.getSessionStore(id).store.getter(checkpointsAtom)
       workingTurnIndex = checkpoints[checkpoints.length - 1]?.turnIndex
     } else {
-      updateCheckpoint(id, workingTurnIndex, label, core, recovery)
+      updateCheckpoint(id, workingTurnIndex, label, core, recovery, checkpointState)
     }
     const checkpoint = workingTurnIndex === undefined
       ? undefined
@@ -1176,7 +1167,7 @@ export async function runToolLoop(
       traceEvent('checkpoint.persist', {
         turnIndex: checkpoint.turnIndex,
         items_count: checkpoint.items.length,
-        working: label.startsWith(WORKING_CHECKPOINT_PREFIX),
+        working: checkpointState.kind === 'working',
       })
       core.persistence.persistCheckpoint(id, checkpoint)
     }
@@ -1187,15 +1178,17 @@ export async function runToolLoop(
   //   写过东西、且不会再续跑」的终止路径都必须调它一次，
   //   否则丢的不只是模型那半截回复，连用户自己发出去的那条 user 消息都会一起蒸发。
   //   触顶截断/循环/超轮数这几种异常收尾的文本通常仍然有用，落盘后 run 状态另置 error 即可。
-  //   waiting_* 会继续覆盖同一份工作 checkpoint，stopped 会用 [已停止] 标签收成一个可撤回
+  //   waiting_* 会继续覆盖同一份工作 checkpoint，stopped 保留既有展示标签并收成一个可撤回
   //   checkpoint。否则用户继续发下一条消息后，上一条被停止的 user 消息永远没有气泡回退入口，
   //   而且刷新时会随未持久化 items 一起丢失。
-  //   labelTag：异常收尾时给 checkpoint label 加的前缀（如 '[截断] '）。label 会落盘，是「刷新
-  //   之后仍然看得出这一轮不正常」的另一半（另一半是 assistant 正文里的系统标注）。正常轮不传。
-  const commitTurn = (labelTag = ''): void => {
+  //   checkpoint 的运行结果落在结构化 kind / finishReason；除 stopped 的既有展示标签外，label 只保存输入摘要。
+  const commitTurn = (
+    checkpointState: CheckpointState = { kind: 'completed' },
+    label = input.slice(0, 20),
+  ): void => {
     // stale-run 守卫：被新 run 顶掉后不得再往（已属于新 run 的）会话里塞旧 checkpoint。
     if (!isCurrentRun(currentRunGuard)) return
-    persistTurnSnapshot(`${labelTag}${input.slice(0, 20)}`, false)
+    persistTurnSnapshot(label, checkpointState, false)
     const committed = workingTurnIndex === undefined
       ? undefined
       : core.getSessionStore(id).store.getter(checkpointsAtom)[workingTurnIndex]
@@ -1210,11 +1203,11 @@ export async function runToolLoop(
   const commitStoppedTurn = (): void => {
     const run = core.getSessionStore(id).store.getter(runAtom)
     if (run?.runId !== runId || run.status !== 'stopped') return
-    commitTurn('[已停止] ')
+    commitTurn({ kind: 'stopped' }, `[已停止] ${input.slice(0, 20)}`)
   }
 
   const persistWorkingTurn = (): void => {
-    persistTurnSnapshot(`${WORKING_CHECKPOINT_PREFIX}${input.slice(0, 20)}`, true)
+    persistTurnSnapshot(input.slice(0, 20), { kind: 'working' }, true)
   }
 
   // 用户消息和 run 已经在内存中建立，第一发模型请求前就写工作 checkpoint。
@@ -2057,8 +2050,8 @@ export async function runToolLoop(
         if (abnormalFinish) {
           // finish_abnormal 收尾（条目已由 finishReasonPlugin 在 onTurnEnd 内按 Case A/B 落好）：★ 照常
           //   commitCheckpoint + 落盘 ★——本轮虽收成 error 但条目已进 itemsAtom，而 itemsAtom 不持久化，
-          //   不落 checkpoint 用户刷新后连自己那条 user 消息都会一起蒸发。label 带 [截断]/[已拦截]/[已中断] 前缀。
-          commitTurn(FINISH_REASON_LABEL_TAGS[abnormalFinish])
+          //   不落 checkpoint 用户刷新后连自己那条 user 消息都会一起蒸发。异常结果保存在结构化字段。
+          commitTurn({ kind: 'abnormal', finishReason: abnormalFinish })
           if (isCurrentRun(currentRunGuard)) {
             patchRun(id, { status: decision.runStatus, error: decision.reason }, core)
           }

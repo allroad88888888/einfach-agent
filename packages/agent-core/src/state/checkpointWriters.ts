@@ -26,7 +26,12 @@ import {
   planAtom,
   planStageCheckpointsAtom,
 } from './sessionAtoms'
-import type { Checkpoint, PlanStageCheckpoint, RunRecoverySnapshot } from './checkpoint.type'
+import type {
+  Checkpoint,
+  CheckpointState,
+  PlanStageCheckpoint,
+  RunRecoverySnapshot,
+} from './checkpoint.type'
 import type { ConversationItem } from './core.type'
 import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
 import type { PlanSnapshot } from '../planning/types'
@@ -78,6 +83,7 @@ export function commitCheckpoint(
   label: string,
   core: CoreInstance = defaultCore,
   recovery?: RunRecoverySnapshot,
+  checkpointState: CheckpointState = { kind: 'completed' },
 ): void {
   if (sessionMissing(id, core)) return
   const store = core.getSessionStore(id).store
@@ -90,6 +96,8 @@ export function commitCheckpoint(
     label,
     createdAt: Date.now(),
     items,
+    kind: checkpointState.kind,
+    finishReason: checkpointState.finishReason,
     plan,
     recovery,
     planStageCheckpoints: stageCheckpointsSnapshot(store.getter(planStageCheckpointsAtom)),
@@ -108,17 +116,22 @@ export function updateCheckpoint(
   label: string,
   core: CoreInstance = defaultCore,
   recovery?: RunRecoverySnapshot,
+  checkpointState?: CheckpointState,
 ): void {
   if (sessionMissing(id, core)) return
   const store = core.getSessionStore(id).store
   const list = store.getter(checkpointsAtom)
   const previous = list[turnIndex]
   if (!previous) return
+  const state = checkpointState ?? (previous.kind
+    ? { kind: previous.kind, finishReason: previous.finishReason }
+    : undefined)
   const checkpoint: Checkpoint = {
     turnIndex,
     label,
     createdAt: previous.createdAt,
     items: store.getter(itemsAtom),
+    ...(state ? { kind: state.kind, finishReason: state.finishReason } : {}),
     plan: store.getter(planAtom),
     recovery,
     planStageCheckpoints: stageCheckpointsSnapshot(store.getter(planStageCheckpointsAtom)),

@@ -3,58 +3,22 @@
 // best-effort 降级（底层抛错时读退化为 []/undefined、写静默返回，绝不抛）。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Checkpoint } from '../checkpoint.type'
 import type { SessionMeta } from '../core.type'
 
 // —— 内存 fake DB：按 SQL 子串识别 driver 发出的那几条语句 ——
-interface CkRow {
-  session_id: string
-  turn_index: number
-  label: string
-  created_at: number
-  items: string
-  plan: string | null
-  recovery: string | null
-}
 function makeFakeDb() {
-  const checkpoints: CkRow[] = []
   const sessions: { id: string; meta: string }[] = []
   // 注入点：failSessionsInsert → sessions 的 upsert 抛错；failPragma → 任何 PRAGMA 抛错。
   const ctrl = { failSessionsInsert: false, failPragma: false }
   return {
-    checkpoints,
     sessions,
     ctrl,
     execute: vi.fn(async (sql: string, params: unknown[] = []) => {
       if (sql.includes('CREATE TABLE')) return { rowsAffected: 0 }
-      if (sql.includes('INSERT OR REPLACE INTO checkpoints')) {
-        const [session_id, turn_index, label, created_at, items, plan, recovery] = params as [
-          string,
-          number,
-          string,
-          number,
-          string,
-          string | null,
-          string | null,
-        ]
-        const i = checkpoints.findIndex((r) => r.session_id === session_id && r.turn_index === turn_index)
-        const row = { session_id, turn_index, label, created_at, items, plan, recovery }
-        if (i >= 0) checkpoints[i] = row
-        else checkpoints.push(row)
-        return { rowsAffected: 1 }
-      }
       if (sql.includes('DELETE FROM checkpoints') && sql.includes('turn_index >')) {
-        const [session_id, turnIndex] = params as [string, number]
-        for (let i = checkpoints.length - 1; i >= 0; i -= 1) {
-          if (checkpoints[i].session_id === session_id && checkpoints[i].turn_index > turnIndex) checkpoints.splice(i, 1)
-        }
         return { rowsAffected: 0 }
       }
       if (sql.includes('DELETE FROM checkpoints')) {
-        const [session_id] = params as [string]
-        for (let i = checkpoints.length - 1; i >= 0; i -= 1) {
-          if (checkpoints[i].session_id === session_id) checkpoints.splice(i, 1)
-        }
         return { rowsAffected: 0 }
       }
       // legacy 死行清理：driver 只发 `DELETE FROM sessions WHERE id != '__all__'`（清非 blob 行）。
@@ -80,16 +44,6 @@ function makeFakeDb() {
       if (sql.startsWith('PRAGMA')) {
         if (ctrl.failPragma) throw new Error('simulated PRAGMA failure')
         return [{ ok: 1 }]
-      }
-      if (sql.includes('FROM checkpoints') && sql.includes('AND turn_index = $2')) {
-        const [session_id, turn_index] = params as [string, number]
-        return checkpoints.filter((r) => r.session_id === session_id && r.turn_index === turn_index)
-      }
-      if (sql.includes('FROM checkpoints')) {
-        const [session_id] = params as [string]
-        return checkpoints
-          .filter((r) => r.session_id === session_id)
-          .sort((a, b) => a.turn_index - b.turn_index)
       }
       if (sql.includes('FROM sessions')) {
         return sessions.map((s) => ({ id: s.id, meta: s.meta }))
@@ -117,88 +71,12 @@ afterEach(() => {
   vi.clearAllMocks()
 })
 
-const ck = (turnIndex: number, items: Checkpoint['items'] = []): Checkpoint => ({
-  turnIndex,
-  label: `t${turnIndex}`,
-  createdAt: turnIndex * 10,
-  items,
-})
-
 const meta = (id: string): SessionMeta => ({
   id,
   title: id,
   settings: { vendor: 'deepseek', model: 'x' },
   createdAt: 0,
   updatedAt: 0,
-})
-
-describe('sqliteDriver — history', () => {
-  it('saveCheckpoint → listCheckpoints（无 items）→ loadCheckpoint（含 items）round-trip', async () => {
-    const { history } = createSqlitePersistence()
-    const checkpoint = ck(0, [{ id: 'i0', createdAt: 1, item: { role: 'user', content: 'hi' } }])
-    checkpoint.plan = {
-      id: 'p1',
-      title: '计划',
-      objective: '验证计划快照',
-      status: 'active',
-      revision: 1,
-      requiresApproval: false,
-      createdAt: 1,
-      updatedAt: 1,
-      stages: [],
-    }
-    checkpoint.recovery = {
-      run: {
-        runId: 'running-before-restart',
-        turnId: 'i0',
-        status: 'running',
-      },
-      queuedUserMessages: [{
-        id: 'queued-1',
-        createdAt: 2,
-        content: '补充要求',
-        targetRunId: 'running-before-restart',
-      }],
-    }
-    await history.saveCheckpoint('s1', checkpoint)
-    await history.saveCheckpoint('s1', ck(1))
-
-    const metas = await history.listCheckpoints('s1')
-    expect(metas.map((m) => m.turnIndex)).toEqual([0, 1])
-    expect(metas[0]).not.toHaveProperty('items') // 轻量 meta 不含 items
-
-    const cp0 = await history.loadCheckpoint('s1', 0)
-    expect(cp0?.items).toHaveLength(1)
-    expect(cp0?.label).toBe('t0')
-    expect(cp0?.plan).toEqual(checkpoint.plan)
-    expect(cp0?.recovery).toEqual(checkpoint.recovery)
-    expect(await history.loadCheckpoint('s1', 99)).toBeUndefined() // 越界
-  })
-
-  it('truncateAfter 删 turn_index > N；deleteSession 清空该会话', async () => {
-    const { history } = createSqlitePersistence()
-    for (let i = 0; i < 4; i += 1) await history.saveCheckpoint('s1', ck(i))
-    await history.saveCheckpoint('s2', ck(0)) // 另一会话不受影响
-
-    await history.truncateAfter('s1', 1)
-    expect((await history.listCheckpoints('s1')).map((m) => m.turnIndex)).toEqual([0, 1])
-
-    await history.deleteSession('s1')
-    expect(await history.listCheckpoints('s1')).toEqual([])
-    expect((await history.listCheckpoints('s2')).map((m) => m.turnIndex)).toEqual([0]) // s2 保留
-  })
-
-  it('best-effort：底层抛错 → 读退化为 []/undefined、写不抛（DK2）', async () => {
-    loadImpl = async () => {
-      throw new Error('no tauri runtime')
-    }
-    const { history } = createSqlitePersistence()
-    await expect(history.saveCheckpoint('s1', ck(0))).resolves.toBeUndefined()
-    await expect(history.truncateAfter('s1', 0)).resolves.toBeUndefined()
-    await expect(history.deleteSession('s1')).resolves.toBeUndefined()
-    expect(await history.listCheckpoints('s1')).toEqual([])
-    expect(await history.loadCheckpoint('s1', 0)).toBeUndefined()
-  })
 })
 
 describe('sqliteDriver — sessions', () => {

@@ -422,10 +422,10 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     // stopped 轮也必须形成可撤回快照；否则刷新会丢 user，继续对话后该消息也没有气泡回退入口。
     const checkpoints = getSessionStore('s2').store.getter(checkpointsAtom)
     expect(checkpoints).toHaveLength(1)
-    expect(checkpoints[0].label).toBe('[已停止] hi')
+    expect(checkpoints[0]).toMatchObject({ label: '[已停止] hi', kind: 'stopped' })
     expect(persistence.saved.at(-1)).toMatchObject({
       sessionId: 's2',
-      checkpoint: { turnIndex: 0, label: '[已停止] hi' },
+      checkpoint: { turnIndex: 0, label: '[已停止] hi', kind: 'stopped' },
     })
     expect(getSessionStore('s2').store.getter(contextStatsAtom)?.cache?.metricsStatus).toBe('cancelled')
     expect(getSessionStore('s2').store.getter(contextStatsAtom)?.usage).toBeUndefined()
@@ -939,7 +939,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     // 用户消息已在请求前写进同一工作 checkpoint；error 会清掉 recovery，刷新后不会误报可继续。
     const checkpoints = getSessionStore('s6').store.getter(checkpointsAtom)
     expect(checkpoints).toHaveLength(1)
-    expect(checkpoints[0]).toMatchObject({ label: '[执行中] hi', recovery: undefined })
+    expect(checkpoints[0]).toMatchObject({ label: 'hi', kind: 'working', recovery: undefined })
   })
 
   it('stale-run：本次 run 被新 run 顶掉后，迟到的写回不污染新 run', async () => {
@@ -1046,7 +1046,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     const checkpoints = getSessionStore('s1').store.getter(checkpointsAtom)
     expect(checkpoints).toHaveLength(1)
     expect(checkpoints[0].items.map((it) => it.item.role)).toEqual(['user'])
-    expect(checkpoints[0].label).toBe('[已停止] hi')
+    expect(checkpoints[0]).toMatchObject({ label: '[已停止] hi', kind: 'stopped' })
   })
 })
 
@@ -1603,7 +1603,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     const checkpoints = getSessionStore('t3').store.getter(checkpointsAtom)
     expect(checkpoints).toHaveLength(1)
     expect(checkpoints[0]).toMatchObject({
-      label: '[执行中] hi',
+      label: 'hi',
+      kind: 'working',
       recovery: {
         run: {
           status: 'waiting_user',
@@ -2072,7 +2073,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(persistence.saved.length).toBeGreaterThan(1)
     expect(persistence.saved[0].checkpoint).toMatchObject({
       turnIndex: 0,
-      label: '[执行中] 执行完整计划',
+      label: '执行完整计划',
+      kind: 'working',
     })
     expect(persistence.saved.some(({ checkpoint }) =>
       checkpoint.items.some((item) =>
@@ -2316,7 +2318,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(store.getter(runAtom)).toMatchObject({ runId, status: 'stopped' })
     expect(store.getter(itemsAtom).map(({ item }) => item.role)).toEqual(['user'])
     expect(store.getter(checkpointsAtom)).toHaveLength(1)
-    expect(store.getter(checkpointsAtom)[0].label).toBe('[已停止] 继续执行')
+    expect(store.getter(checkpointsAtom)[0]).toMatchObject({ label: '[已停止] 继续执行', kind: 'stopped' })
   })
 
   it('重复 tool-only 调用：第 3 次相同工具签名提前 loop_detected', async () => {
@@ -2388,7 +2390,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     const checkpoints = getSessionStore('t5').store.getter(checkpointsAtom)
     expect(checkpoints).toHaveLength(1)
     expect(checkpoints[0].items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool'])
-    expect(checkpoints[0].label).toBe('[已停止] hi')
+    expect(checkpoints[0]).toMatchObject({ label: '[已停止] hi', kind: 'stopped' })
   })
 
   it('模型收到旧 schema 后同名工具被重注册：旧响应不得执行新实例', async () => {
@@ -2578,7 +2580,8 @@ describe('危险工具确认门（S4-B）', () => {
     const checkpoints = store.getter(checkpointsAtom)
     expect(checkpoints).toHaveLength(1)
     expect(checkpoints[0]).toMatchObject({
-      label: '[执行中] hi',
+      label: 'hi',
+      kind: 'working',
       recovery: {
         run: {
           status: 'waiting_confirmation',
@@ -2969,8 +2972,68 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
     expect(checkpoints[0]).toMatchObject({
       turnIndex: 0,
       label: '修改文件',
+      kind: 'completed',
       recovery: undefined,
     })
+  })
+
+  it('新旧工作 checkpoint 共存时，结构化最新记录续跑且不误改旧前缀记录', async () => {
+    seedSession('mixed-checkpoint-resume', { vendor: 'deepseek', model: 'x' })
+    const store = getSessionStore('mixed-checkpoint-resume').store
+    const legacyItems = [
+      { id: 'legacy-user', createdAt: 1, item: { role: 'user' as const, content: '旧任务' } },
+    ]
+    const currentItems = [
+      { id: 'current-user', createdAt: 2, item: { role: 'user' as const, content: '新任务' } },
+    ]
+    store.setter(itemsAtom, currentItems)
+    store.setter(checkpointsAtom, [
+      {
+        turnIndex: 0,
+        label: '[执行中] 旧任务',
+        createdAt: 1,
+        items: legacyItems,
+        recovery: {
+          run: { runId: 'legacy-run', turnId: 'legacy-user', status: 'interrupted' },
+        },
+      },
+      {
+        turnIndex: 1,
+        label: '新任务',
+        kind: 'working',
+        createdAt: 2,
+        items: currentItems,
+        recovery: {
+          run: { runId: 'structured-run', turnId: 'current-user', status: 'interrupted' },
+        },
+      },
+    ])
+    setRun('mixed-checkpoint-resume', {
+      runId: 'structured-run',
+      turnId: 'current-user',
+      status: 'interrupted',
+    })
+
+    await resumeInterruptedSession('mixed-checkpoint-resume', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl: async () => jsonResponse('新任务已完成'),
+    })
+
+    const checkpoints = store.getter(checkpointsAtom)
+    expect(checkpoints).toHaveLength(2)
+    expect(checkpoints[0]).toMatchObject({
+      label: '[执行中] 旧任务',
+      recovery: { run: { runId: 'legacy-run' } },
+    })
+    expect(checkpoints[0]).not.toHaveProperty('kind')
+    expect(checkpoints[1]).toMatchObject({
+      turnIndex: 1,
+      label: '新任务',
+      kind: 'completed',
+      recovery: undefined,
+    })
+    expect(store.getter(runAtom)).toMatchObject({ runId: 'structured-run', status: 'done' })
   })
 
   it('直接跑 runToolLoop：seed items + setRun 后跑到 done，不 append user', async () => {
@@ -3451,9 +3514,9 @@ describe('finish_reason 异常分流', () => {
 
     const store = getSessionStore('fr-cf-mark').store
     // ★ 回归 a：checkpoint（落盘的唯一真相源）里必须带着这条「仅含标注」的 assistant 条目，
-    //   而不只是 checkpoint label 的 '[已拦截]' 前缀——否则刷新后聊天区看起来这轮什么都没发生。
+    //   同时把异常状态写进结构化字段——否则刷新后聊天区看起来这轮什么都没发生。
     const checkpoint = store.getter(checkpointsAtom)[0]
-    expect(checkpoint.label.startsWith('[已拦截]')).toBe(true)
+    expect(checkpoint).toMatchObject({ label: '敏感问题', kind: 'abnormal', finishReason: 'content_filter' })
     const committedAssistant = checkpoint.items[1].item
     if (committedAssistant.role !== 'assistant') throw new Error('意外的条目形状')
     expect(String(committedAssistant.content)).toContain('content_filter')
@@ -3501,7 +3564,7 @@ describe('finish_reason 异常分流', () => {
     expect(trace.events.some((event) => event.name === 'tool.args_invalid')).toBe(true)
   })
 
-  it('截断标记进持久化：正文带系统标注 + checkpoint label 带 [截断]，且重发给模型时仍看得见', async () => {
+  it('截断标记进持久化：正文带系统标注 + checkpoint 结构化状态，且重发给模型时仍看得见', async () => {
     const persistence = captureCheckpointPersistence()
     seedSession('fr-mark', { vendor: 'deepseek', model: 'x' })
     const bodies: Array<{ messages: Array<Record<string, unknown>> }> = []
@@ -3518,14 +3581,18 @@ describe('finish_reason 异常分流', () => {
     // ★ 回归 a（MAJOR）：承载 finishError 的 runAtom 不持久化，截断状态必须落在【持久化数据】上，
     //   否则刷新之后这半截回答与一条正常回复完全同形，CheckpointBar 上也分不出好坏。
     const checkpoint = store.getter(checkpointsAtom)[0]
-    expect(checkpoint.label.startsWith('[截断]')).toBe(true)
+    expect(checkpoint).toMatchObject({ label: '算个数', kind: 'abnormal', finishReason: 'length' })
     const committedAssistant = checkpoint.items[1].item
     if (committedAssistant.role !== 'assistant') throw new Error('意外的条目形状')
     expect(String(committedAssistant.content)).toContain('第一步先算出 42')
     expect(String(committedAssistant.content)).toContain('finish_reason=length')
-    // 落盘的那一份（刷新后唯一的真相源）必须同样带着标注与 label 前缀。
+    // 落盘的那一份（刷新后唯一的真相源）必须同样带着标注与结构化状态。
     expect(persistence.saved).toHaveLength(2)
-    expect(persistence.saved.at(-1)?.checkpoint.label.startsWith('[截断]')).toBe(true)
+    expect(persistence.saved.at(-1)?.checkpoint).toMatchObject({
+      label: '算个数',
+      kind: 'abnormal',
+      finishReason: 'length',
+    })
     const savedAssistant = persistence.saved.at(-1)!.checkpoint.items[1].item
     if (savedAssistant.role !== 'assistant') throw new Error('意外的条目形状')
     expect(String(savedAssistant.content)).toContain('finish_reason=length')
