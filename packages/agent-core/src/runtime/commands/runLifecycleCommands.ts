@@ -70,7 +70,7 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
     if (assertRunStatus(run, 'awaiting_tool') && recoverOrphanedAwaitingToolRun(id)) return continueInterruptedRun()
     if (assertRunStatus(run, 'interrupted')) return continueInterruptedRun()
     if (assertRunStatus(run, 'running', 'awaiting_tool', 'waiting_user', 'waiting_confirmation', 'waiting_plan_approval')) return
-    const plan = getPlan(id)
+    const plan = getPlan(id, core)
     if (!plan || !['approved', 'active'].includes(plan.status)) return
     if (!plan.stages.some((stage) => ['pending', 'in_progress'].includes(stage.status))) return
     const meta = core.rootStore.getter(sessionsAtom)[id]

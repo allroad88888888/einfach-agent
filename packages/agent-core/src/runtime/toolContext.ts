@@ -135,8 +135,8 @@ export function buildToolContext(opts: {
   const allowExternalReadPaths =
     core.rootStore.getter(sessionsAtom)[sessionId]?.toolApprovalMode === 'auto'
   const planRuntime = new PlanRuntime({
-    get: () => readStoredPlan(sessionId),
-    set: (plan) => setPlan(sessionId, plan),
+    get: () => readStoredPlan(sessionId, core),
+    set: (plan) => setPlan(sessionId, plan, core),
   }, Date.now, newId)
 
   // Skills 只读入口：合并内置 + 项目快照（workspaceRoot 为空时降级为仅内置）。
@@ -263,7 +263,7 @@ export function buildToolContext(opts: {
     progress,
     getPlan() {
       assertFresh()
-      return readStoredPlan(sessionId)
+      return readStoredPlan(sessionId, core)
     },
     createPlan(input) {
       assertFresh()

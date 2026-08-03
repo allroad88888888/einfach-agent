@@ -9,6 +9,7 @@ import { getPlan, setPlan } from '../state/planWriters'
 import { browserCardsAtom, toolActivityAtom } from '../state/transientAtoms'
 import { toolRegistry } from '../tools/registry'
 import type { Tool } from '../tools/types'
+import { createCoreInstance, type CoreInstance } from './core/coreInstance'
 import { buildToolContext } from './toolContext'
 
 afterEach(() => {
@@ -22,6 +23,14 @@ function seedRunningSession(id = 's1', runId = 'r'): void {
     [id]: { id, title: 't', settings: { vendor: 'deepseek', model: 'x' }, createdAt: 0, updatedAt: 0 },
   }))
   setRun(id, { runId, status: 'running' })
+}
+
+function seedRunningCoreSession(core: CoreInstance, id = 's1', runId = 'r'): void {
+  core.rootStore.setter(sessionsAtom, (prev) => ({
+    ...prev,
+    [id]: { id, title: 't', settings: { vendor: 'deepseek', model: 'x' }, createdAt: 0, updatedAt: 0 },
+  }))
+  setRun(id, { runId, status: 'running' }, core)
 }
 
 function fakeTool(name: string, execute: Tool['execute']): Tool {
@@ -146,6 +155,25 @@ describe('ctx 副作用 + stale 守卫', () => {
       evidence: ['tests'],
     })).toThrow('stale')
     expect(getPlan('s1')).toMatchObject({ revision: 3, stages: [{ status: 'in_progress' }] })
+  })
+})
+
+describe('ctx 计划实例归属', () => {
+  it('custom core 创建和读取计划不落入 defaultCore', () => {
+    const core = createCoreInstance()
+    seedRunningCoreSession(core)
+    const ctx = buildToolContext({
+      sessionId: 's1', runId: 'r', signal: new AbortController().signal, callId: 'call1', toolName: 'create_plan', core,
+    })
+
+    expect(ctx.createPlan!({
+      title: '自定义实例计划',
+      objective: '验证计划归属',
+      stages: [{ id: 'stage-1', title: '验证', objective: '写入 custom core' }],
+    })).toMatchObject({ ok: true })
+    expect(getPlan('s1', core)).toMatchObject({ title: '自定义实例计划' })
+    expect(ctx.getPlan!()).toMatchObject({ title: '自定义实例计划' })
+    expect(getPlan('s1')).toBeUndefined()
   })
 })
 
