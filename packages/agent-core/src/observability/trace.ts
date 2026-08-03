@@ -1,19 +1,21 @@
 import { errorMessage, redactAttributesWithPreviews } from './redact'
 import type { SpanKind, TraceAttributes, TraceDriver, TraceEvent, TraceSpan, TraceStatus } from './types'
 
+export type TraceAttributesInput = TraceAttributes | (() => TraceAttributes)
+
 type SpanInput = {
   kind?: SpanKind
   parent?: TraceSpan
   traceId?: string
   parentSpanId?: string
-  attrs?: TraceAttributes
+  attrs?: TraceAttributesInput
 }
 
 type EventInput = {
   span?: TraceSpan
   traceId?: string
   spanId?: string
-  attrs?: TraceAttributes
+  attrs?: TraceAttributesInput
 }
 
 type CompletedSpanInput = {
@@ -23,7 +25,7 @@ type CompletedSpanInput = {
   startedAt: number
   endedAt: number
   status?: Exclude<TraceStatus, 'running'>
-  attrs?: TraceAttributes
+  attrs?: TraceAttributesInput
   error?: unknown
 }
 
@@ -48,6 +50,14 @@ function snapshotEvent(event: TraceEvent): TraceEvent {
     ...event,
     attrs: redactAttributesWithPreviews(event.attrs),
   }
+}
+
+function initialAttrs(attrs: TraceAttributesInput | undefined): TraceAttributes | undefined {
+  return typeof attrs === 'function' ? undefined : attrs
+}
+
+function resolveAttrs(attrs: TraceAttributesInput | undefined): TraceAttributes | undefined {
+  return typeof attrs === 'function' ? attrs() : attrs
 }
 
 function enqueue(work: (driver: TraceDriver) => Promise<void>): void {
@@ -96,10 +106,13 @@ export function startSpan(name: string, input: SpanInput = {}): TraceSpan {
     kind: input.kind ?? 'internal',
     status: 'running',
     startedAt: Date.now(),
-    attrs: input.attrs,
+    attrs: initialAttrs(input.attrs),
   }
-  const snapshot = snapshotSpan(span)
-  enqueue((d) => d.writeSpan(snapshot))
+  if (driver) {
+    span.attrs = resolveAttrs(input.attrs)
+    const snapshot = snapshotSpan(span)
+    enqueue((d) => d.writeSpan(snapshot))
+  }
   return span
 }
 
@@ -124,14 +137,18 @@ export function recordCompletedSpan(name: string, input: CompletedSpanInput): Tr
     startedAt,
     endedAt,
     durationMs: Math.max(0, endedAt - startedAt),
-    attrs: input.attrs,
+    attrs: initialAttrs(input.attrs),
     error: input.error === undefined ? undefined : errorMessage(input.error),
   }
-  enqueue((d) => d.writeSpan(snapshotSpan(span)))
+  if (driver) {
+    span.attrs = resolveAttrs(input.attrs)
+    enqueue((d) => d.writeSpan(snapshotSpan(span)))
+  }
   return span
 }
 
 export function addEvent(name: string, input: EventInput = {}): void {
+  if (!driver) return
   const span = input.span
   const traceId = input.traceId ?? span?.traceId
   if (!traceId) return
@@ -141,7 +158,7 @@ export function addEvent(name: string, input: EventInput = {}): void {
     spanId: input.spanId ?? span?.id,
     name,
     timestamp: Date.now(),
-    attrs: input.attrs,
+    attrs: resolveAttrs(input.attrs),
   }
   const snapshot = snapshotEvent(event)
   enqueue((d) => d.writeEvent(snapshot))
@@ -150,7 +167,7 @@ export function addEvent(name: string, input: EventInput = {}): void {
 export function endSpan(
   span: TraceSpan | undefined,
   status: Exclude<TraceStatus, 'running'>,
-  attrs?: TraceAttributes,
+  attrs?: TraceAttributesInput,
   err?: unknown,
 ): void {
   if (!span || span.endedAt !== undefined) return
@@ -158,10 +175,13 @@ export function endSpan(
   span.status = status
   span.endedAt = endedAt
   span.durationMs = Math.max(0, endedAt - span.startedAt)
-  if (attrs) span.attrs = { ...(span.attrs ?? {}), ...attrs }
+  const resolvedAttrs = driver ? resolveAttrs(attrs) : initialAttrs(attrs)
+  if (resolvedAttrs) span.attrs = { ...(span.attrs ?? {}), ...resolvedAttrs }
   if (err !== undefined) span.error = errorMessage(err)
-  const snapshot = snapshotSpan(span)
-  enqueue((d) => d.writeSpan(snapshot))
+  if (driver) {
+    const snapshot = snapshotSpan(span)
+    enqueue((d) => d.writeSpan(snapshot))
+  }
 }
 
 export async function withSpan<T>(

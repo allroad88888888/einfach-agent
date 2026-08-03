@@ -7,6 +7,7 @@ import {
   endSpan,
   flushObservability,
   getActiveSpan,
+  recordCompletedSpan,
   resetObservability,
   runTraceKey,
   startSpan,
@@ -46,6 +47,42 @@ describe('observability/trace bridge', () => {
     endSpan(span, 'ok')
 
     await expect(flushObservability()).resolves.toBeUndefined()
+  })
+
+  it('仅在 driver 存在时物化 attrs thunk', async () => {
+    const noDriverAttrs = vi.fn(() => ({ requestPreview: 'large payload' }))
+    const noDriverSpan = startSpan('llm.chat', { kind: 'llm', attrs: noDriverAttrs })
+    addEvent('llm.delta', { span: noDriverSpan, attrs: noDriverAttrs })
+    endSpan(noDriverSpan, 'ok', noDriverAttrs)
+    recordCompletedSpan('performance.write', {
+      startedAt: 1,
+      endedAt: 2,
+      attrs: noDriverAttrs,
+    })
+
+    expect(noDriverAttrs).not.toHaveBeenCalled()
+
+    const captured = captureDriver()
+    configureObservability({ driver: captured.driver })
+    const observedAttrs = vi.fn(() => ({ requestPreview: 'large payload' }))
+    const observedSpan = startSpan('llm.chat', { kind: 'llm', attrs: observedAttrs })
+    addEvent('llm.delta', { span: observedSpan, attrs: observedAttrs })
+    endSpan(observedSpan, 'ok', observedAttrs)
+    recordCompletedSpan('performance.write', {
+      startedAt: 1,
+      endedAt: 2,
+      attrs: observedAttrs,
+    })
+
+    await flushObservability()
+
+    expect(observedAttrs).toHaveBeenCalledTimes(4)
+    expect(captured.spans).toHaveLength(3)
+    expect(captured.events).toHaveLength(1)
+    expect(captured.spans[0]?.attrs?.requestPreview).toBe('large payload')
+    expect(captured.events[0]?.attrs?.requestPreview).toBe('large payload')
+    expect(captured.spans[1]?.attrs?.requestPreview).toBe('large payload')
+    expect(captured.spans[2]?.attrs?.requestPreview).toBe('large payload')
   })
 
   it('写 span/event 时自动脱敏，并维护 active span', async () => {

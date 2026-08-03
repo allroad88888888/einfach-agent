@@ -1512,7 +1512,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(exposedPerRequest[1]).not.toContain('shell_macos')
   })
 
-  it('observability：成功工具轮记录脱敏 payload shape 和可读 preview', async () => {
+  it('observability：driver 启用时成功工具轮保留脱敏 payload shape 和可读 preview', async () => {
     const trace = captureTrace()
     configureObservability({ driver: trace.driver })
     seedSession('obs1', { vendor: 'deepseek', model: 'x' })
@@ -1530,6 +1530,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(llmSpans).toHaveLength(3)
     const firstRequestPreview = String(llmSpans[0]?.attrs?.requestPreview)
     const finalResponsePreview = String(llmSpans[2]?.attrs?.responsePreview)
+    expect(llmSpans[0]?.attrs?.insufficient_resource_retry_attempt).toBe(0)
     expect(firstRequestPreview).toContain('"model":"x"')
     expect(firstRequestPreview).toContain('"messages"')
     expect(firstRequestPreview).toContain('"role":"user"')

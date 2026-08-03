@@ -1814,10 +1814,6 @@ export async function runToolLoop(
         tool_choice: 'auto' as const,
         stream: true,
       }
-      const requestPreviewBody = {
-        ...requestBase,
-        reasoning_effort: meta.settings.reasoning_effort,
-      }
       let insufficientResourceRetries = 0
       let completedResponse: {
         res: ModelChatResponse
@@ -1830,7 +1826,7 @@ export async function runToolLoop(
         const llmSpan = startSpan('llm.chat', {
           kind: 'llm',
           parent: traceSpan,
-          attrs: {
+          attrs: () => ({
             sessionId: id,
             runId,
             turnId,
@@ -1852,8 +1848,11 @@ export async function runToolLoop(
             cache_system_fingerprint: cacheProfile.systemFingerprint,
             cache_request_projection_fingerprint: cacheProfile.requestProjectionFingerprint,
             tool_set_fingerprint: cacheProfile.toolSetFingerprint,
-            requestPreview: llmTracePreview(requestPreviewBody),
-          },
+            requestPreview: llmTracePreview({
+              ...requestBase,
+              reasoning_effort: meta.settings.reasoning_effort,
+            }),
+          }),
         })
         try {
           if (meta.settings.vendor === 'glm') {
@@ -1902,8 +1901,7 @@ export async function runToolLoop(
         const msg = choice?.message
         const toolCalls = narrowToolCalls(msg?.tool_calls)
         const rawToolCallsCount = Array.isArray(msg?.tool_calls) ? msg.tool_calls.length : 0
-        const responseCacheUsage = normalizeCacheUsage(res.usage)
-        endSpan(llmSpan, 'ok', {
+        endSpan(llmSpan, 'ok', () => ({
           finish_reason: choice?.finish_reason ?? null,
           tool_calls_count: toolCalls.length,
           content_chars: responseChars(msg?.content),
@@ -1911,10 +1909,10 @@ export async function runToolLoop(
           response_id: res.id,
           response_model: res.model,
           insufficient_resource_retry_attempt: insufficientResourceRetries,
-          cache_metrics_status: responseCacheUsage ? 'available' : 'unavailable',
+          cache_metrics_status: normalizeCacheUsage(res.usage) ? 'available' : 'unavailable',
           responsePreview: llmTracePreview(res),
           ...usageTraceAttrs(res.usage),
-        })
+        }))
 
         // TK8 每步守卫必须先于协议级 retry：迟到的旧 run 和已 abort 的 run 连请求都不能再发一次。
         if (!isCurrentRun(currentRunGuard)) {
