@@ -8,7 +8,7 @@
 
 本计划只覆盖阶段 2 的非 UI 插件面。不实现 `registerRenderer`，不迁移 API key，不改变无插件时的模型、工具并发和持久化行为。
 
-P2.1 已将 `registerTool`、`subscribe` 与插件 disposer 接入真实 Core/run 生命周期。当前生产 loop 仍只消费 `onRunStart`、`transformContext` 与 `onTurnEnd`；`prepareRequest`、`beforeToolCall`、`afterToolCall` 与 `shouldStop` 留待后续批次。
+P2.1 已将 `registerTool`、`subscribe` 与插件 disposer 接入真实 Core/run 生命周期；P2.2 已接入 `prepareRequest`。当前生产 loop 还未消费 `beforeToolCall`、`afterToolCall` 与 `shouldStop`。
 
 ## 固定设计约束
 
@@ -30,13 +30,13 @@ P2.1 已将 `registerTool`、`subscribe` 与插件 disposer 接入真实 Core/ru
 
 验收：两个 Core 的插件、工具和订阅完全隔离；卸载后无残留；无插件时请求、工具列表和 trace 保持不变；同名冲突不产生部分安装。
 
-## 批次 P2.2 —— 请求 hook 的真实接线
+## 批次 P2.2 —— 请求 hook 的真实接线（已完成）
 
-**只做**：让 `prepareRequest` 在一次真实模型请求中生效。
+**已完成（`38d2684`）**：让 `prepareRequest` 在一次真实模型请求中生效。
 
-- 明确 `RequestDraft` 是本轮请求投影，不回写会话 `itemsAtom`。
-- 在 `transformContext` 后、请求 payload 投影与缓存统计前调用 `prepareRequest`；确定并测试 hook 失败时的 run 状态和 trace 名称。
-- 覆盖普通、恢复与计划恢复请求，确保每次模型请求仅触发一次、不会把草稿污染到下一轮。
+- `RequestDraft` 维持为本轮请求投影，hook 只能改 draft，不会回写会话 `itemsAtom`。
+- `prepareRequest` 在 `transformContext` 后、请求 payload 投影与缓存统计前调用；失败时记录 `agent.plugin_prepare_request_failed`，主循环收敛 run 为 `error`。
+- 集成测试覆盖普通、断点恢复与计划恢复请求：每次请求只触发一次，marker 出现在真实 fetch body，草稿不会污染会话历史。
 
 验收：外部插件追加 marker 后真实 fetch body 可见；会话项目不变；未安装插件的请求逐字不变；失败 hook 不会留下活跃订阅。
 
