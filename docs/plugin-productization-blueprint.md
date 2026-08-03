@@ -71,6 +71,8 @@ P2.1 已将 `registerTool`、`subscribe` 与插件 disposer 接入真实 Core/ru
 
 ## 后续边界
 
-- `registerRenderer` 需要 Core item 协议与 React 宿主 registry 的独立设计，不能让 `agent-core` 依赖 React。
+- `registerRenderer` 的边界由[插件 UI Renderer 协议蓝图](plugin-renderer-protocol-blueprint.md)
+  固定：Core 仅导出无 React 的 item 投影，React 宿主维护 registry；实现作为 P2.5 的 R1–R5
+  独立推进。
 - API key 从前端移出、Tauri 凭证与模型代理属于阶段 3；它们不通过插件 API 绕过安全边界。
 - 子 Agent 树单一事实源涉及执行图、归档格式和会话 tool result 的迁移，另行立项。

@@ -18,9 +18,12 @@ Core 多实例隔离与结构优化蓝图 B1–B7 共 33/33 均已完成；R7 �
 
 P2.1–P2.4（至 `7d3f1be`）已完成：插件按 Core 实例安装，工具注册预检为原子操作，订阅与 disposer 已接入真实 run 生命周期；请求与工具 hook 已进入生产路径，`shouldStop` 已收紧为显式停止决定；绑定当前 `CoreInstance` 的最小 command facade 与非 React 垂直样板也已交付。
 
-阶段 2 的后续工作只保留独立 UI 协议设计：
+P2.5 的 UI 协议设计已完成，实施按独立批次推进：
 
-- 评估 `registerRenderer` 是否由 Core 提供稳定 item 协议、由 React 宿主维护 renderer registry。
+- [插件 UI Renderer 协议蓝图](plugin-renderer-protocol-blueprint.md) 固定了 Core 的无 React
+  timeline item 投影、由 React 宿主按 root 维护的 renderer registry，以及 R1–R5 迁移顺序。
+- R1 尚未开始：先将现有 `MessageList` 的纯时间线关联逻辑提取为 Core 公共投影并补回归测试；
+  然后才拆 React renderer 与虚拟列表。
 
 验收标准：
 

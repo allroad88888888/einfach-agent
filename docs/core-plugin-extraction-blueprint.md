@@ -1,7 +1,8 @@
 # Core 抽离 + 插件机制蓝图（v1）
 
 > 文档状态：演进蓝图，已部分实施。当前运行行为以
-> [核心运行时流程](core-runtime-flow.md) 和 `packages/agent-core` 代码为准。
+> [核心运行时流程](core-runtime-flow.md) 和 `packages/agent-core` 代码为准；UI renderer
+> 边界以[插件 UI Renderer 协议蓝图](plugin-renderer-protocol-blueprint.md)为准。
 
 目标是把运行时持续收敛为「**薄 core + 插件**」。第一轮 workspace 抽包和 hook 切缝已经完成；
 下文仍保留目标形态及未完成的插件扩展面。
@@ -73,7 +74,8 @@ interface CoreCtx {
 
 ## 三、插件与注册面 PluginApi（PX2）
 
-插件是 `(api: PluginApi) => void | Dispose`。`api` 是**装配期**的注册面；运行时行为通过它注册的 hook/renderer 生效。
+插件是 `(api: PluginApi) => void | Dispose`。`api` 是**装配期**的注册面；运行时行为通过它注册的
+工具、订阅与 hook 生效。React renderer 不属于 Core `PluginApi`。
 
 ```ts
 type AgentPlugin = (api: PluginApi) => void | (() => void)
@@ -81,7 +83,6 @@ type AgentPlugin = (api: PluginApi) => void | (() => void)
 interface PluginApi {
   // 能力注册（累积进注册表，core 去读）
   registerTool(tool: Tool): void
-  registerRenderer(itemType: string, render: ItemRenderer): void   // React 组件，按 timeline 类型注册
   registerCommand(name: string, cmd: Command): void
 
   // 拦截型 hook（单槽 → 多订阅 fan-out；带返回值即拦截）
@@ -94,6 +95,10 @@ interface PluginApi {
   readonly commands: CommandApi   // sendMessage / answerQuestion / revertToTurn / ...
 }
 ```
+
+上面曾提出的 `registerRenderer(itemType, render)` 已废弃：它会让 Core 公共 API 依赖 React。
+renderer registry 由 React 宿主按 root 维护，完整协议与迁移顺序见
+[插件 UI Renderer 协议蓝图](plugin-renderer-protocol-blueprint.md)。
 
 **fan-out 语义**（插件层的活，core 不管）：
 - 同名 hook 多次 `hook()` → 按注册序组合成一个复合 hook 交给 loop。
