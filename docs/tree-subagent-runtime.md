@@ -70,6 +70,8 @@
 - 三个状态索引 `runs.jsonl`、`agents.jsonl`、`skills.jsonl` 达到 128 KiB 后会在持锁期间自动去重压缩，压缩频率最多每 5 分钟一次，单文件安全上限为 16 MiB。坏行或替换失败会在本次 append 前显式失败并保留原索引；`events.jsonl` 永远不参与自动压缩或合批，继续保持逐事件 append-only。
 - runtime 正常、失败和取消收尾都会等待 archive 写入；`dispose()` 会执行最终 flush/drain。取消信号不阻止最终审计落盘，但 stale run（已被新 run 顶替）仍由宿主写入守卫拒绝，flush 失败会显式传播。
 - 索引可用 `pnpm subagent:index:compact` 预览去重，再用 `pnpm subagent:index:compact -- --write` 原子压缩。逻辑 key 分别为 run=`conversationId+runId`、agent=`conversationId+runId+path`、skill=`skillId`；坏行会中止全部写入。压缩只处理 `index/*.jsonl`，不会读取或改写 append-only 的 `conversations/**/events.jsonl`。
+- archive 容量治理使用 `pnpm subagent:archive:retention`：默认只报告当前归档大小；带 `--max-bytes` 会按最早 completed run 预览可回收的派生文件。真正清理必须同时提供外部 `--export <directory>` 和 `--write`；先复制并逐文件校验 SHA-256，再删除 `tree.json`、`nodes/`、`results/`、`traces/`、run-local `skills/`。`events.jsonl` 与 `run.json` 永远保留在 live archive，且不会被覆盖。
+- `pnpm subagent:archive:retention -- --export <directory> --conversation <id> --run <id> --write` 可以导出完整的已完成 run（含事件流）；`--restore <directory> --write` 只接受前述 prune 导出包，恢复缺失的派生文件并拒绝覆盖已有内容。所有 export/prune/restore 生命周期都 append 到 `.agent-archive/governance/retention-actions.jsonl`，导出目录不得位于 `.agent-archive` 内。
 - `.agent-archive/` 和旧 `.agent-cache/` 都已加入 `.gitignore`。
 
 实现入口：
@@ -277,6 +279,28 @@ node scripts/subagent-replay-report.js --conversation <conversationId> --run <ru
 - `解析异常`：JSON 行或类型异常会保留 `line` 与 `error`，不会阻塞报告生成。
 
 推荐将该脚本命令接到 CI/本地工具中，作为长期复盘入口。
+
+### 容量阈值治理 CLI
+
+先查看容量与清理候选；这一步不会写入 archive：
+
+```bash
+pnpm subagent:archive:retention -- --max-bytes 524288000
+```
+
+当计划确认可达阈值后，把可再生成内容导出到 archive 外的目录并清理 live 派生文件：
+
+```bash
+pnpm subagent:archive:retention -- --prune --max-bytes 524288000 \
+  --export ../subagent-retention-2026-08-03 --write
+```
+
+该操作只接受 `status: "delegated"` 的完成 run；若仅靠派生文件无法达到阈值，命令会拒绝操作，而不是删除
+`events.jsonl` 或 `run.json`。导出清单中包含每个文件的 SHA-256，恢复会重新校验并且不覆盖 live 的任何文件：
+
+```bash
+pnpm subagent:archive:retention -- --restore ../subagent-retention-2026-08-03 --write
+```
 
 ## 关键决策
 
