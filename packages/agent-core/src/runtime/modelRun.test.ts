@@ -965,6 +965,62 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(items.some((it) => it.item.role === 'assistant' && it.item.content === '迟到')).toBe(false)
   })
 
+  it('旧 run 被顶替后不再写入会话', async () => {
+    const core = createCoreInstance()
+    const id = 'stale-project-skills'
+    core.rootStore.setter(workspacesAtom, {
+      ws1: { id: 'ws1', name: 'workspace', rootPath: '/workspace', createdAt: 0, updatedAt: 0 },
+    })
+    core.rootStore.setter(sessionsAtom, {
+      [id]: {
+        id,
+        title: 't',
+        workspaceId: 'ws1',
+        settings: { vendor: 'deepseek', model: 'x' },
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    })
+    let releaseSkillScan!: () => void
+    const skillScan = new Promise<void>((resolve) => {
+      releaseSkillScan = resolve
+    })
+    const ensureSpy = vi.spyOn(core.projectSkills, 'ensure').mockImplementation(async (workspaceRoot) => {
+      await skillScan
+      return { workspaceRoot, entries: [], diagnostics: [] }
+    })
+    let requestCount = 0
+    const fetchImpl: typeof fetch = async () => {
+      requestCount += 1
+      return jsonResponse('不该请求')
+    }
+    const store = core.getSessionStore(id).store
+
+    const oldRun = runSession(id, '旧请求', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      fetchImpl,
+      core,
+    })
+    await waitUntil(() => ensureSpy.mock.calls.length === 1, 'project skills scan')
+    const itemsBeforeReplacement = clone(store.getter(itemsAtom))
+    const checkpointsBeforeReplacement = clone(store.getter(checkpointsAtom))
+
+    setRun(id, { runId: 'replacement-run', status: 'running', loadedTools: ['replacement-tool'] }, core)
+    releaseSkillScan()
+    await oldRun
+
+    expect(requestCount).toBe(0)
+    expect(store.getter(runAtom)).toMatchObject({
+      runId: 'replacement-run',
+      status: 'running',
+      loadedTools: ['replacement-tool'],
+    })
+    expect(store.getter(itemsAtom)).toEqual(itemsBeforeReplacement)
+    expect(store.getter(checkpointsAtom)).toEqual(checkpointsBeforeReplacement)
+    expect(store.getter(runtimeTranscriptEventsAtom)).toEqual([])
+  })
+
   it('esc race：fetch 在 abort 前已返回但 signal 已中断 → stopped，不写回 assistant', async () => {
     seedSession('s1', { vendor: 'deepseek', model: 'x' })
     const controller = new AbortController()
@@ -3523,6 +3579,7 @@ describe('收尾 dispose 的异常隔离', () => {
     const disposeEvent = trace.events.find((event) => event.name === 'agent.dispose_failed')
     expect(disposeEvent).toBeDefined()
     expect(String(disposeEvent?.attrs?.error)).toContain('dispose boom')
+    expect(disposeEvent?.spanId).toBeUndefined()
   })
 
   it('dispose 抛 AbortError：同样不逃逸，stopped 结局不被改写', async () => {

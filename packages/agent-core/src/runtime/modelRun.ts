@@ -1264,6 +1264,25 @@ export async function runToolLoop(
     await core.projectSkills.ensure(sessionWorkspaceRoot, buildProjectSkillsBridge())
   }
 
+  // 项目 skills 扫描是本轮组装稳定前缀前的首个真实异步边界。扫描期间本 run 可能已被后续
+  // 输入顶替或被用户停止；继续执行会把旧 run 的 transcript 注入、loaded tools 等写进新 run
+  // 的会话。因此必须在任何后续会话写入前重新确认归属与终止状态。
+  if (!isCurrentRun(id, runId, core)) {
+    finishTrace('cancelled', 'agent.stale_run', { reason: 'stale_run' })
+    return
+  }
+  if (!isRunningRun(id, runId, core)) {
+    commitStoppedTurn()
+    finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
+    return
+  }
+  if (opts.signal.aborted) {
+    patchRun(id, { status: 'stopped' }, core)
+    commitStoppedTurn()
+    finishTrace('cancelled', 'agent.stopped', { reason: 'aborted' })
+    return
+  }
+
   // 五段稳定前缀都只用于请求、不入库（TK4）。
   const system = buildSystemItem()
   // 全量 skill 清单每个 run 组装一次：内容只依赖 registry 注册态 + 上面刚 ensure 过的项目
@@ -2664,7 +2683,7 @@ export async function runToolLoop(
       }
 
       commitTurn() // TK9：一轮用户输入收尾 = 一个 checkpoint（并落盘）。
-      patchRun(id, { status: 'done', finishedAt: Date.now() }, core)
+      if (isRunningRun(id, runId, core)) patchRun(id, { status: 'done', finishedAt: Date.now() }, core)
       finishTrace('ok', 'agent.done', { status: 'done' })
       return
     }
@@ -2692,8 +2711,9 @@ export async function runToolLoop(
     // 其它失败 → 'error'（不抛崩 UI；仅当仍是本次 run）。
     if (isRunningRun(id, runId, core)) {
       patchRun(id, { status: 'error', error: err instanceof Error ? err.message : String(err) }, core)
-      persistWorkingTurn()
     }
+    // stopped run 也需留下这轮工作快照；persistTurnSnapshot 自带 stale guard，故不会写入替代者。
+    persistWorkingTurn()
     finishTrace('error', 'agent.error', { error: safeErrorMessage(err) }, err)
   } finally {
     // ★ finally 里的收尾绝不能抛 ★ —— 这个块和上面的 try/catch 是【平级】的，一旦 dispose
@@ -2710,9 +2730,14 @@ export async function runToolLoop(
       // cancellation controller 与归档 writer 都无法真正清理。
       await delegateRuntime.dispose?.()
     } catch (err) {
-      traceEvent('agent.dispose_failed', {
-        error: safeErrorMessage(err),
-        aborted: isAbortError(err) || opts.signal.aborted,
+      // 此时 finishTrace 已结束本轮 span；不能把清理失败事件再挂到已结束的 span 上。
+      addEvent('agent.dispose_failed', {
+        traceId: traceSpan.traceId,
+        attrs: {
+          ...baseTraceAttrs,
+          error: safeErrorMessage(err),
+          aborted: isAbortError(err) || opts.signal.aborted,
+        },
       })
     }
   }
