@@ -16,10 +16,10 @@ Core 多实例隔离与结构优化蓝图 B1–B7 共 33/33 均已完成；R7 �
 
 优先级：P1；Core 多实例隔离已具备。
 
-现有插件层已支持 loop hooks、`registerTool` 和订阅意向；剩余工作应围绕真实使用场景推进：
+P2.1（`3b5b89c`）已完成：插件按 Core 实例安装，工具注册预检为原子操作，订阅与 disposer 已接入真实 run 生命周期。剩余工作应围绕真实使用场景推进：
 
-- 把订阅绑定和 dispose 生命周期接入每次 run，而不只停留在装配与单测层。
 - 设计不产生循环依赖的 command facade，绑定当前 `CoreInstance`。
+- 把请求与工具 hook 接入生产执行路径，并收紧其失败、阻断和结果补丁契约。
 - 评估 `registerRenderer` 是否由 Core 提供稳定 item 协议、由 React 宿主维护 renderer registry。
 - 先迁移一个垂直能力作为样板，并验证插件卸载、异常隔离和注册冲突策略。
 

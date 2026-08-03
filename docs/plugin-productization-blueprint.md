@@ -8,7 +8,7 @@
 
 本计划只覆盖阶段 2 的非 UI 插件面。不实现 `registerRenderer`，不迁移 API key，不改变无插件时的模型、工具并发和持久化行为。
 
-当前缺口是生产 loop 只消费 `onRunStart`、`transformContext` 与 `onTurnEnd`；`prepareRequest`、`beforeToolCall`、`afterToolCall`、`shouldStop`，以及 `registerTool`、`subscribe` 和插件 disposer 均尚未实际接线。
+P2.1 已将 `registerTool`、`subscribe` 与插件 disposer 接入真实 Core/run 生命周期。当前生产 loop 仍只消费 `onRunStart`、`transformContext` 与 `onTurnEnd`；`prepareRequest`、`beforeToolCall`、`afterToolCall` 与 `shouldStop` 留待后续批次。
 
 ## 固定设计约束
 
@@ -19,14 +19,14 @@
 - 插件错误必须隔离并产生 trace 证据。是否中止当前 run 由具体 hook 契约明确，不允许静默吞掉后继续执行危险工具。
 - 旧 `AgentPlugin` 的兼容行为先由适配层保持；公开稳定 API 在垂直样板验证后再冻结。
 
-## 批次 P2.1 —— Core 插件宿主与生命周期
+## 批次 P2.1 —— Core 插件宿主与生命周期（已完成）
 
-**只做**：建立每个 Core 私有的插件安装、预检、卸载和每 run 激活边界。
+**已完成（`3b5b89c`）**：建立每个 Core 私有的插件安装、预检、卸载和每 run 激活边界。
 
-- 新建一个单职责 plugin host，持有安装的插件描述、工具所有权和安装期 disposer；不把 React 或应用层类型引入 `agent-core`。
-- 由 `createCore` 组合当前 Core、受限 command facade 与 host；bootstrap 从当前 Core 读取激活的 run plugins，不再只硬编码内置插件数组。
-- 在工具注册前检查 host 与插件内的全部名称冲突；任一冲突则一个都不注册。
-- 在 bootstrap 绑定订阅；在 `runToolLoop` 的完成、暂停、异常、abort 与 stale 路径统一解绑。Core 卸载时注销自己安装的工具并执行安装 disposer。
+- 单职责 plugin host 持有安装的插件描述、工具所有权和安装期 disposer；未引入 React 或应用层类型。内置插件集合延迟到 run 激活时加载，避免与 `defaultCore` 的初始化环。
+- `createCore({ plugins })` 将插件安装到当前 Core；bootstrap 从该 Core 激活每次 run 的插件，不再硬编码内置插件数组。
+- 工具注册前预检宿主与全部插件内的名称冲突；任一冲突均原子拒绝，不留下部分注册。
+- bootstrap 绑定订阅；`runToolLoop` 的完成、暂停、异常、abort 与 stale 路径统一解绑。Core 卸载时先释放活跃 run，再注销自己安装的工具并执行安装 disposer。
 
 验收：两个 Core 的插件、工具和订阅完全隔离；卸载后无残留；无插件时请求、工具列表和 trace 保持不变；同名冲突不产生部分安装。
 
