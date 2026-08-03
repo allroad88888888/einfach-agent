@@ -1,6 +1,5 @@
-import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
+import type { CoreInstance } from '../runtime/core/coreInstance'
 import { newId } from '../runtime/newId'
-import { persistSessions } from '../runtime/persistenceBridge'
 import { sessionsAtom } from '../state/rootStore'
 import type { SubagentNodeRecord } from '../subagents/types'
 import {
@@ -106,7 +105,7 @@ export function getExecutionRuntime(core: CoreInstance): ExecutionRuntime {
         },
       }
     })
-    if (core === defaultCore) persistSessions()
+    core.persistence.persistSessions()
   }
 
   const runtime: ExecutionRuntime = {
