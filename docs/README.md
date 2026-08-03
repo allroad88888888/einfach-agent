@@ -11,6 +11,7 @@
 | [Planning Runtime](planning-runtime.md) | 结构化计划、审批、阶段执行与产出留痕 |
 | [树形子 Agent Runtime](tree-subagent-runtime.md) | delegation、权限、预算、archive、后台执行与治理脚本 |
 | [Context Caching](context-caching.md) | provider 自动缓存契约、profile/epoch、usage 归一化与观测 |
+| [模型适配器兼容性契约](model-adapter-compatibility.md) | DeepSeek/GLM 的已验证请求差异、Rust 参考的适用边界与新增 vendor 准入项 |
 | [MCP 集成](mcp-integration.md) | MCP 传输、配置与会话生命周期、动态工具对账和安全边界 |
 | [Tauri 卡顿诊断日志](performance-diagnostics.md) | 长对话、plan 更新、大文件写入的分段耗时与前后端关联排障 |
 | [工具规范](../packages/agent-core/src/tools/TOOLS-SPEC.md) | Tool、Registry、ToolContext、安全边界与新增工具约定 |
