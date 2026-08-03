@@ -1,6 +1,6 @@
 # 插件 UI Renderer 协议蓝图
 
-> 文档状态：P2.5 的 R1 已完成（`846743a`）；R2–R5 待实施。更新时间：2026-08-03。
+> 文档状态：P2.5 的 R1–R2 已完成（`846743a`、`a2b8d97`）；R3–R5 待实施。更新时间：2026-08-03。
 
 ## 结论
 
@@ -117,8 +117,8 @@ schema/版本、大小限制、持久化与 archive 兼容策略、未知插件�
 | 批次 | 单一产出 | 验收 |
 | --- | --- | --- |
 | R1 | Core 纯 `timeline` 投影与单元测试 | 已完成（`846743a`）：不导入 React；项目关联、孤立 result、排序、不可变性与计划阶段投影均已覆盖 |
-| R2 | 独立 React registry 与默认 fallback | registry 按 root 隔离；重复/越权覆盖拒绝；unknown item 安全显示 |
-| R3 | 将 Web `MessageList` 拆成投影消费、思考分组、renderer 与虚拟列表 | registry 接线待 R2 后实施；R1 已完成前置职责拆分，行为回归不变且新文件符合行数上限 |
+| R2 | 独立 React registry 与默认 fallback | 已完成（`a2b8d97`）：root 隔离；构造期内建 kind 锁定、重复拒绝、token disposer 与安全纯文本 fallback 均有测试 |
+| R3 | 将 Web `MessageList` 拆成投影消费、思考分组、renderer 与虚拟列表 | 待将已完成的 registry 接入 Web；R1 已完成前置职责拆分，行为回归不变且新文件符合行数上限 |
 | R4 | `@web-agent/react-plugin` 公开入口及非 React Core 样板配对示例 | UI 插件无需 Core 内部 import；卸载后不残留注册 |
 | R5 | 另立自定义持久化 item RFC | schema、archive、权限和多 consumer 降级先获批准 |
 
