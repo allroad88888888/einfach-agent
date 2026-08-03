@@ -26,6 +26,7 @@
 // 协议或砍掉最后一条 user。调用方据此决定是否提示用户开新会话。
 
 import type { AssistantItem, ModelItem, ToolItem } from '@web-agent/ai'
+import { stringForStats } from './shared/preview'
 
 // 摘要占位里的标记字段名。带上它才能做幂等判定（压缩过的结果不再二次包裹），
 // UI / 测试也可据此识别「这条是被省略过的历史工具结果」。
@@ -108,14 +109,6 @@ export function estimateTokensFromText(text: string): number {
   const cjkChars = text.match(/[\u3400-\u9fff\uf900-\ufaff]/g)?.length ?? 0
   const otherChars = Math.max(0, text.length - cjkChars)
   return Math.ceil(cjkChars / 1.8 + otherChars / 4)
-}
-
-function stringForStats(value: unknown): string {
-  try {
-    return JSON.stringify(value) ?? ''
-  } catch {
-    return String(value)
-  }
 }
 
 // 简介：单条 message 的估算 token 数。

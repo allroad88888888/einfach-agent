@@ -55,6 +55,7 @@ import {
 import type { CoreCtx } from '../coreCtx'
 import type { RequestDraft } from '../loopHooks'
 import type { AgentPlugin } from '../pluginApi'
+import { stringForStats } from '../../shared/preview'
 
 // ---------------------------------------------------------------------------
 // 上下文压缩预算（原样从 modelRun.ts 搬来，注释与数值一字未改）
@@ -142,16 +143,6 @@ export function contextInputBudgetTokens(
     0,
     requestBudget - reservedOutputTokens - Math.ceil(requestBudget * CONTEXT_SAFETY_MARGIN_RATIO),
   )
-}
-
-// modelRun.ts 里同名私有 helper 的逐字复制。不从 modelRun.ts import（会成环——modelRun 要反过来
-// import 本插件），孤立成本可忽略（6 行的 try/catch JSON.stringify），换来插件对 modelRun 零依赖。
-function stringForStats(value: unknown): string {
-  try {
-    return JSON.stringify(value) ?? ''
-  } catch {
-    return String(value)
-  }
 }
 
 // 简介：RequestDraft 的私有扩展字段——本插件与 loop 的协作契约（见文件头）。

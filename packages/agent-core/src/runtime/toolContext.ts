@@ -33,7 +33,7 @@ import { commandUsesPermanentDelete, isDelegatableDangerousTool } from './danger
 import { sessionsAtom, workspacesAtom } from '../state/rootStore'
 import { resolveSessionWorkspaceRoot } from '../state/workspaceState'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
-import { runAtom } from '../state/sessionAtoms'
+import { isCurrentRun } from './shared/runGuards'
 import { getPlan as readStoredPlan, setPlan } from '../state/planWriters'
 import { PlanRuntime } from '../planning/runtime'
 import {
@@ -60,13 +60,6 @@ import { runWorkspaceTask } from './workspaceTask'
 import { listSkillSummaries } from '../skills/registry'
 
 const MAX_TOOL_DEPTH = 4
-
-// stale 守卫：会话仍登记，且该会话当前 run 就是本次 runId（未被新 run 顶掉）。
-// 【实例化第 2 期】core 由 buildToolContext 逐处显式传入（无默认值——编译期堵住「漏穿一处退回默认实例」）。
-function isCurrentRun(sessionId: string, runId: string, core: CoreInstance): boolean {
-  if (!core.rootStore.getter(sessionsAtom)[sessionId]) return false
-  return core.getSessionStore(sessionId).store.getter(runAtom)?.runId === runId
-}
 
 // S4-A：取该会话绑定的 workspace 根目录（去空白；未设置/空串 → undefined，桥不传 → Rust 走 git root 兜底）。
 // 【实例化第 2 期】读会话登记表走 core.rootStore（core 无默认值，由 buildToolContext 传入）。
@@ -128,6 +121,12 @@ export function buildToolContext(opts: {
   const { sessionId, runId, signal, callId } = opts
   const stack = opts.stack ?? []
   const core = opts.core ?? defaultCore
+  const currentRunGuard = {
+    root: core.rootStore,
+    getStore: () => core.getSessionStore(sessionId).store,
+    sessionId,
+    runId,
+  }
 
   // S4-A：本会话 workspace root（ctx 构造期解析一次；一次 run 内稳定）。
   const workspaceRoot = resolveWorkspaceRoot(sessionId, core)
@@ -197,17 +196,17 @@ export function buildToolContext(opts: {
   }
 
   function assertFresh(): void {
-    if (signal.aborted || !isCurrentRun(sessionId, runId, core)) throw new Error('stale')
+    if (signal.aborted || !isCurrentRun(currentRunGuard)) throw new Error('stale')
   }
 
   // 取消后仍需要写入最终审计事件；但被新 run 顶掉的旧 run 绝不能串写归档。
   function assertArchiveCurrent(): void {
-    if (!isCurrentRun(sessionId, runId, core)) throw new Error('stale')
+    if (!isCurrentRun(currentRunGuard)) throw new Error('stale')
   }
 
   const progress: ToolContext['progress'] = (text) => {
     // 迟到/被顶掉的 run 不写进度；esc 已断也不写。
-    if (signal.aborted || !isCurrentRun(sessionId, runId, core)) return
+    if (signal.aborted || !isCurrentRun(currentRunGuard)) return
     upsertToolActivity(sessionId, { callId, toolName: opts.toolName, text }, core)
   }
 
@@ -414,14 +413,14 @@ export function buildToolContext(opts: {
     },
 
     renderCard(card) {
-      if (signal.aborted || !isCurrentRun(sessionId, runId, core)) return { error: 'stale' }
+      if (signal.aborted || !isCurrentRun(currentRunGuard)) return { error: 'stale' }
       const cardId = newId()
       addBrowserCard(sessionId, { id: cardId, createdAt: Date.now(), title: card.title, body: card.body }, core)
       return { cardId }
     },
 
     saveArtifact(file) {
-      if (signal.aborted || !isCurrentRun(sessionId, runId, core)) return { error: 'stale' }
+      if (signal.aborted || !isCurrentRun(currentRunGuard)) return { error: 'stale' }
       const artifactId = newId()
       addPendingArtifact(sessionId, {
         id: artifactId,

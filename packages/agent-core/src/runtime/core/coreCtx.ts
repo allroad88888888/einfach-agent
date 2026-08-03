@@ -8,8 +8,7 @@
 // （modelRun 那侧把它现有的 traceEvent 闭包传进来），让 core 与埋点实现解耦、便于测试注入假的。
 
 import type { Store } from '@einfach/core'
-import { sessionsAtom } from '../../state/rootStore'
-import { runAtom } from '../../state/sessionAtoms'
+import { isCurrentRun } from '../shared/runGuards'
 
 // 简介：trace 出口回调的形状。
 // 详情：与 modelRun.ts 里现有的 `traceEvent(name, attrs?)` 闭包逐字同形 —— attrs 就是
@@ -31,20 +30,6 @@ export interface CoreCtx {
   isCurrent(): boolean
   /** 发一条 trace 事件（压缩等插件要发和现在逐字一样的 llm.* 事件）。实现由构造时注入。 */
   traceEvent(name: string, attrs?: Record<string, unknown>): void
-}
-
-// 简介：stale-run + ghost 双查的纯函数（现有 modelRun.isCurrentRun 的等价搬迁）。
-// 详情：会话仍登记（root.getter(sessionsAtom)[sessionId] 存在）、且该会话当前 run 就是本次 runId
-//   （store.getter(runAtom)?.runId === runId，未被新 run 顶掉）。store/root 由外部注入 —— 不读
-//   模块单例（rootStore / getSessionStore），便于用假 store 单测两条分支。
-export function isCurrentRun(deps: {
-  root: Store
-  store: Store
-  sessionId: string
-  runId: string
-}): boolean {
-  if (!deps.root.getter(sessionsAtom)[deps.sessionId]) return false
-  return deps.store.getter(runAtom)?.runId === deps.runId
 }
 
 // 简介：makeCoreCtx 的注入依赖。
@@ -72,7 +57,7 @@ export function makeCoreCtx(deps: MakeCoreCtxDeps): CoreCtx {
     isCurrent: (): boolean =>
       isCurrentRun({
         root: deps.root,
-        store: deps.store,
+        getStore: () => deps.store,
         sessionId: deps.sessionId,
         runId: deps.runId,
       }),

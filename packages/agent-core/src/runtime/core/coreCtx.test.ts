@@ -4,7 +4,8 @@ import { createStore } from '@einfach/core'
 import { sessionsAtom } from '../../state/rootStore'
 import { runAtom } from '../../state/sessionAtoms'
 import type { SessionMeta } from '../../state/core.type'
-import { isCurrentRun, makeCoreCtx } from './coreCtx'
+import { makeCoreCtx } from './coreCtx'
+import { isCurrentRun } from '../shared/runGuards'
 
 // isCurrentRun 只查会话登记的「存在性」与 run 的 runId，故最小可信 meta 即可（只需真值）。
 function fakeMeta(id: string): SessionMeta {
@@ -18,7 +19,7 @@ describe('isCurrentRun（ghost + stale 双查）', () => {
     root.setter(sessionsAtom, { s1: fakeMeta('s1') })
     store.setter(runAtom, { runId: 'r1', status: 'running' })
 
-    expect(isCurrentRun({ root, store, sessionId: 's1', runId: 'r1' })).toBe(true)
+    expect(isCurrentRun({ root, getStore: () => store, sessionId: 's1', runId: 'r1' })).toBe(true)
   })
 
   it('ghost：会话未登记 → false（即便 runAtom 恰好匹配）', () => {
@@ -26,7 +27,15 @@ describe('isCurrentRun（ghost + stale 双查）', () => {
     const store = createStore()
     store.setter(runAtom, { runId: 'r1', status: 'running' })
 
-    expect(isCurrentRun({ root, store, sessionId: 's1', runId: 'r1' })).toBe(false)
+    expect(isCurrentRun({ root, getStore: () => store, sessionId: 's1', runId: 'r1' })).toBe(false)
+  })
+
+  it('ghost：不读取 session store，避免为已删除会话创建 store', () => {
+    const root = createStore()
+    const getStore = vi.fn(() => createStore())
+
+    expect(isCurrentRun({ root, getStore, sessionId: 's1', runId: 'r1' })).toBe(false)
+    expect(getStore).not.toHaveBeenCalled()
   })
 
   it('stale：run 被新 run 顶掉（runId 不同）→ false', () => {
@@ -35,7 +44,7 @@ describe('isCurrentRun（ghost + stale 双查）', () => {
     root.setter(sessionsAtom, { s1: fakeMeta('s1') })
     store.setter(runAtom, { runId: 'r2', status: 'running' })
 
-    expect(isCurrentRun({ root, store, sessionId: 's1', runId: 'r1' })).toBe(false)
+    expect(isCurrentRun({ root, getStore: () => store, sessionId: 's1', runId: 'r1' })).toBe(false)
   })
 
   it('无 run（runAtom 为 undefined）→ false', () => {
@@ -44,7 +53,7 @@ describe('isCurrentRun（ghost + stale 双查）', () => {
     root.setter(sessionsAtom, { s1: fakeMeta('s1') })
     // runAtom 保持默认 undefined
 
-    expect(isCurrentRun({ root, store, sessionId: 's1', runId: 'r1' })).toBe(false)
+    expect(isCurrentRun({ root, getStore: () => store, sessionId: 's1', runId: 'r1' })).toBe(false)
   })
 
   it('只认本会话自己的 store —— 另一会话 store 的 run 不参与判定', () => {
@@ -55,8 +64,8 @@ describe('isCurrentRun（ghost + stale 双查）', () => {
     storeB.setter(runAtom, { runId: 'r1', status: 'running' }) // 放错 store
 
     // storeA 里没有 run → false（证明 run 的真相在传入的 store，不是全局）
-    expect(isCurrentRun({ root, store: storeA, sessionId: 's1', runId: 'r1' })).toBe(false)
-    expect(isCurrentRun({ root, store: storeB, sessionId: 's1', runId: 'r1' })).toBe(true)
+    expect(isCurrentRun({ root, getStore: () => storeA, sessionId: 's1', runId: 'r1' })).toBe(false)
+    expect(isCurrentRun({ root, getStore: () => storeB, sessionId: 's1', runId: 'r1' })).toBe(true)
   })
 })
 

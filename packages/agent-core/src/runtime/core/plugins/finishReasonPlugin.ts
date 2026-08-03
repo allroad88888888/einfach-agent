@@ -37,11 +37,12 @@
 
 import { itemsAtom } from '../../../state/sessionAtoms'
 import type { ConversationItem } from '../../../state/core.type'
-import type { AssistantItem, ModelResponseMessage } from '@web-agent/ai'
+import type { ModelResponseMessage } from '@web-agent/ai'
 import { newId } from '../../newId'
 import type { CoreCtx } from '../coreCtx'
 import type { TurnEndDecision, TurnEndEvent } from '../loopHooks'
 import type { AgentPlugin } from '../pluginApi'
+import { assistantItemFromMessage } from '../../shared/preview'
 
 // ---------------------------------------------------------------------------
 // finish_reason 异常三态（原样从 modelRun.ts 搬来，type + 三份文案常量一字未改）
@@ -103,25 +104,6 @@ export function isAbnormalFinishReason(reason: string | null): reason is Abnorma
     reason === 'content_filter' ||
     reason === 'insufficient_system_resource'
   )
-}
-
-// modelRun.ts 里同名私有 helper 的逐字复制（含 reasoning_content / tool_calls 处理）。不从
-// modelRun.ts import（会成环——modelRun 要反过来 import 本插件），孤立成本可忽略，换来插件对
-// modelRun 零依赖。本插件补条目只用「2 参」形态（不传 toolCalls），但完整复制保证与旧代码
-// assistantItemFromMessage(msg, noticeContent) 逐字同构（msg.reasoning_content 照样带过来）。
-function assistantItemFromMessage(
-  msg: ModelResponseMessage | undefined,
-  content: string | null,
-  toolCalls?: AssistantItem['tool_calls'],
-): AssistantItem {
-  const item: AssistantItem = {
-    role: 'assistant',
-    content,
-  }
-  const reasoningContent = msg?.reasoning_content
-  if (reasoningContent) item.reasoning_content = reasoningContent
-  if (toolCalls && toolCalls.length > 0) item.tool_calls = toolCalls
-  return item
 }
 
 // 简介：TurnEndEvent 的私有扩展字段——本插件与 loop 的协作契约（见文件头「关键分工」）。

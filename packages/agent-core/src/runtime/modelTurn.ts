@@ -34,6 +34,7 @@ import { newId } from './newId'
 // 字节做对照实验，而本文件（经 skills/registry 的 .md?raw + tools/registry 的 defaultCore）
 // 在那个 tsconfig 下既无法解析也不该被实例化。详见 selfReflectionPrompts.ts 顶部说明。
 import { SELF_CHECK_CLAUSES } from './selfReflectionPrompts'
+import { fnv1a32 } from './shared/hash'
 
 // 简介：组固定的运行时 system 指令（不 appendItem，只用于请求）。
 // 详情：这里不能混入本轮输入、时间或计划状态，否则每轮都会从 token 0 打断 Provider 的前缀缓存。
@@ -221,17 +222,6 @@ function compareCanonicalTools(
   return leftRank - rightRank
     || compareStableText(left.name, right.name)
     || compareStableText(left.serialized, right.serialized)
-}
-
-// FNV-1a 32-bit：同步、无副作用且只依赖浏览器已有的 Math.imul。
-// 这是缓存身份提示而非安全签名；版本前缀允许未来替换算法或规范化规则。
-function fnv1a32(value: string): string {
-  let hash = 0x811c9dc5
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 0x01000193)
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
 function normalizedMaxTurnTools(value: number | undefined): number {

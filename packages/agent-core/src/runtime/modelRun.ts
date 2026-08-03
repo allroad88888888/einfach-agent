@@ -20,7 +20,7 @@
 // 【实例化 · 第 2 期穿线】runSession / runToolLoop 的 opts 加了可选 core（CoreInstance，默认 defaultCore）：
 //   本文件里【每一处】原本摸模块全局的地方（rootStore / getSessionStore / toolRegistry）都改成读传入
 //   core 的字段（core.rootStore / core.getSessionStore(id) / core.tools），调 writer 时把 core 作尾参传下，
-//   建 toolContext / makeCoreCtx 时把 core 传进去。私有 helper（isCurrentRun / currentTurnItems /
+//   建 toolContext / makeCoreCtx 时把 core 传进去。私有 helper（currentTurnItems /
 //   createAssistantStreamWriter / appendToolResult 等）一律加【无默认值】的 core 形参 —— 编译期强制每个
 //   调用点显式传，堵住「漏穿一处、默认路径无症状、只有双实例才串台」的隐患。默认 core=defaultCore＝穿线
 //   前的模块全局单例（rootStore.ts / sessionStore.ts / tools/registry.ts 都已是 defaultCore 视图），故不传
@@ -122,6 +122,9 @@ import { estimateTokensFromText } from './contextCompaction'
 //   危险工具确认 / ask_user 暂停两条挂起/恢复流留 Stage 2b，原样待在下面的 loop 里、一行未动。
 import { makeCoreCtx } from './core/coreCtx'
 import { assemblePlugins } from './core/pluginApi'
+import { fnv1a32 } from './shared/hash'
+import { assistantItemFromMessage, stringForStats, tracePreview } from './shared/preview'
+import { isCurrentRun } from './shared/runGuards'
 import {
   compactionPlugin,
   contextInputBudgetTokens,
@@ -241,25 +244,13 @@ function valueKind(value: unknown): string {
   return typeof value
 }
 
-function tracePreview(value: unknown, limit = 500): string {
-  return truncatePayload(value, limit)
-}
-
 function llmTracePreview(value: unknown): string {
   return truncatePayload(value, LLM_TRACE_PREVIEW_LIMIT, LLM_TRACE_PREVIEW_OPTIONS)
 }
 
-function stringForStats(value: unknown): string {
-  try {
-    return JSON.stringify(value) ?? ''
-  } catch {
-    return String(value)
-  }
-}
-
 // 工具调用签名规范化（isPlainRecord / normalizeForSignature / normalizedArgsSignature /
-// toolCallSignature）已随循环检测搬进 loopGuardPlugin（Core 抽离 Stage 2a）。tracePreview 仍留在本文件
-// （工具执行 trace 的 argsPreview / resultPreview 还在用），插件那边是逐字复制的一份、非搬走。
+// toolCallSignature）已随循环检测搬进 loopGuardPlugin（Core 抽离 Stage 2a）。工具执行 trace 的
+// argsPreview / resultPreview 由 shared/preview 的 tracePreview 统一生成。
 
 function argsPreviewForModel(raw: string): string {
   return raw.length > ARGS_PREVIEW_LIMIT ? `${raw.slice(0, ARGS_PREVIEW_LIMIT)}...` : raw
@@ -303,20 +294,6 @@ function transcriptDetail(value: unknown): string {
 function skillManifestSummary(): string {
   const names = listSkillSummaries().map((skill) => skill.name).sort()
   return `清单含 ${names.length} 个 skill：${names.join('、')}`
-}
-
-// FNV-1a 32-bit：system / 自定义指令 / skill 清单 / 工具摘要四类注入卡片的判重指纹（纯文本内容）。
-// tools 卡片改用 modelTurn 的 toolSetSchemaFingerprint——工具集有自己的稳定序列化规则
-// （排序、canonicalize schema），不能套用这里的纯文本 hash。
-// 与 contextCache.ts / modelTurn.ts 里各自独立的同名实现同算法、不共享闭包或状态——
-// 这里只是 UI transcript 判重用的内容指纹，不是安全签名，没必要跨模块复用同一份实现。
-function injectionContentFingerprint(content: string): string {
-  let hash = 0x811c9dc5
-  for (let index = 0; index < content.length; index += 1) {
-    hash ^= content.charCodeAt(index)
-    hash = Math.imul(hash, 0x01000193)
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
 function toolNames(tools: ModelFunctionTool[]): string[] {
@@ -501,19 +478,18 @@ function toolResultTrace(result: ToolResult, args?: unknown): {
   }
 }
 
-// stale-run 守卫：会话仍登记，且该会话当前 run 就是本次 runId（未被新 run 顶掉）。
-// core 无默认值：由 runToolLoop 逐处显式传（编译期堵住漏穿）。
-function isCurrentRun(id: string, runId: string, core: CoreInstance): boolean {
-  if (!core.rootStore.getter(sessionsAtom)[id]) return false
-  return core.getSessionStore(id).store.getter(runAtom)?.runId === runId
-}
-
 // runId 只回答“是不是同一次运行”，不能回答“这次运行是否还允许继续”。
 // 用户停止时会保留 runId、仅把 status 改为 stopped；异步请求若无视 AbortSignal 后返回，
 // 只检查 isCurrentRun 会把这个已停止的 run 重新带进下一轮。
 function isRunningRun(id: string, runId: string, core: CoreInstance): boolean {
-  if (!isCurrentRun(id, runId, core)) return false
-  return core.getSessionStore(id).store.getter(runAtom)?.status === 'running'
+  const currentRunGuard = {
+    root: core.rootStore,
+    getStore: () => core.getSessionStore(id).store,
+    sessionId: id,
+    runId,
+  }
+  if (!isCurrentRun(currentRunGuard)) return false
+  return currentRunGuard.getStore().getter(runAtom)?.status === 'running'
 }
 
 function currentPlanStageId(id: string, core: CoreInstance): string | undefined {
@@ -681,21 +657,6 @@ function appendMappedToolResult(
   }
 }
 
-function assistantItemFromMessage(
-  msg: ModelResponseMessage | undefined,
-  content: string | null,
-  toolCalls?: AssistantItem['tool_calls'],
-): AssistantItem {
-  const item: AssistantItem = {
-    role: 'assistant',
-    content,
-  }
-  const reasoningContent = msg?.reasoning_content
-  if (reasoningContent) item.reasoning_content = reasoningContent
-  if (toolCalls && toolCalls.length > 0) item.tool_calls = toolCalls
-  return item
-}
-
 function createAssistantStreamWriter(
   id: string,
   runId: string,
@@ -821,7 +782,12 @@ function createAssistantStreamWriter(
     finishPending(): void {
       cancelScheduledFlush()
       if (!assistantItemId) return
-      if (isCurrentRun(id, runId, core)) {
+      if (isCurrentRun({
+        root: core.rootStore,
+        getStore: () => core.getSessionStore(id).store,
+        sessionId: id,
+        runId,
+      })) {
         const finalMsg = currentMessage()
         updateItem(id, assistantItemId, {
           pending: false,
@@ -1089,6 +1055,13 @@ export async function runToolLoop(
     return
   }
 
+  const currentRunGuard = {
+    root: core.rootStore,
+    getStore: () => core.getSessionStore(id).store,
+    sessionId: id,
+    runId,
+  }
+
   // Core 抽离 Stage 2a：一次性装配运行时插件复合 hook（PX2）。提前到读 meta 之前——migrationPlugin
   //   的 onRunStart 要在第一轮请求【之前】把迁移后 settings 归一化写回 sessionsAtom，此后 loop 与
   //   所有读 store 的插件（压缩等）天然拿到迁移后值（消除 Stage 1 review 抓到的「本地迁 vs store 未迁」分叉）。
@@ -1190,7 +1163,7 @@ export async function runToolLoop(
   // 把当前 items 写进本轮 checkpoint。第一次追加，此后覆盖同一个 turnIndex，避免长计划的
   // 每个工具批次都被误算成一轮；同一会话的异步写盘由 persistenceBridge 保序。
   const persistTurnSnapshot = (label: string, includeRecovery: boolean): void => {
-    if (!isCurrentRun(id, runId, core)) return
+    if (!isCurrentRun(currentRunGuard)) return
     const recovery = includeRecovery ? currentRunRecoverySnapshot(id, runId, core) : undefined
     if (workingTurnIndex === undefined) {
       commitCheckpoint(id, label, core, recovery)
@@ -1224,7 +1197,7 @@ export async function runToolLoop(
   //   之后仍然看得出这一轮不正常」的另一半（另一半是 assistant 正文里的系统标注）。正常轮不传。
   const commitTurn = (labelTag = ''): void => {
     // stale-run 守卫：被新 run 顶掉后不得再往（已属于新 run 的）会话里塞旧 checkpoint。
-    if (!isCurrentRun(id, runId, core)) return
+    if (!isCurrentRun(currentRunGuard)) return
     persistTurnSnapshot(`${labelTag}${input.slice(0, 20)}`, false)
     const committed = workingTurnIndex === undefined
       ? undefined
@@ -1267,7 +1240,7 @@ export async function runToolLoop(
   // 项目 skills 扫描是本轮组装稳定前缀前的首个真实异步边界。扫描期间本 run 可能已被后续
   // 输入顶替或被用户停止；继续执行会把旧 run 的 transcript 注入、loaded tools 等写进新 run
   // 的会话。因此必须在任何后续会话写入前重新确认归属与终止状态。
-  if (!isCurrentRun(id, runId, core)) {
+  if (!isCurrentRun(currentRunGuard)) {
     finishTrace('cancelled', 'agent.stale_run', { reason: 'stale_run' })
     return
   }
@@ -1337,7 +1310,7 @@ export async function runToolLoop(
 
   // system 内容在一次进程生命周期内恒定（buildSystemItem 是纯字面量拼接），指纹比对天然让它
   // "会话内首 run 记一次，其后不再记"——不需要为"实际不可能变化"的内容单写判空分支。
-  const systemFingerprint = injectionContentFingerprint(system.content)
+  const systemFingerprint = fnv1a32(system.content)
   if (injectionFingerprints.system !== systemFingerprint) {
     addTranscriptEvent(id, 'system_injection', '注入 system', compactTranscriptText(system.content), system.content, core)
     patchTranscriptInjectionFingerprints(id, { system: systemFingerprint }, core)
@@ -1345,7 +1318,7 @@ export async function runToolLoop(
 
   // 运行环境同样按内容判重：会话生命周期内常态是「首 run 记一次」，只有 workspace 根目录
   // 真被改过（或宿主从 web 切到桌面端）才会再记一张新卡。
-  const environmentFingerprint = injectionContentFingerprint(environment.content)
+  const environmentFingerprint = fnv1a32(environment.content)
   if (injectionFingerprints.environment !== environmentFingerprint) {
     addTranscriptEvent(
       id,
@@ -1359,7 +1332,7 @@ export async function runToolLoop(
   }
 
   if (customInstructions) {
-    const customInstructionsFingerprint = injectionContentFingerprint(customInstructions.content)
+    const customInstructionsFingerprint = fnv1a32(customInstructions.content)
     if (injectionFingerprints.customInstructions !== customInstructionsFingerprint) {
       // undefined（从未出现过）与 null（出现过、后被清空过）统一按"首次出现"措辞；
       // 只有"上次也在、这次内容不同"才是"已更新"。
@@ -1383,7 +1356,7 @@ export async function runToolLoop(
 
   // skill 清单同样按内容判重。它现在只随 registry 注册态变化（不再随本轮输入重算），所以
   // 常态是「会话内首 run 记一次，其后不再记」——只有真的增删/改写 skill 才会再记一张新卡。
-  const skillManifestFingerprint = injectionContentFingerprint(skillManifest.content)
+  const skillManifestFingerprint = fnv1a32(skillManifest.content)
   if (injectionFingerprints.skillManifest !== skillManifestFingerprint) {
     addTranscriptEvent(
       id,
@@ -1396,7 +1369,7 @@ export async function runToolLoop(
     patchTranscriptInjectionFingerprints(id, { skillManifest: skillManifestFingerprint }, core)
   }
 
-  const toolManifestFingerprint = injectionContentFingerprint(toolManifest.content)
+  const toolManifestFingerprint = fnv1a32(toolManifest.content)
   if (injectionFingerprints.toolManifest !== toolManifestFingerprint) {
     addTranscriptEvent(
       id,
@@ -1480,7 +1453,7 @@ export async function runToolLoop(
   //   同形），供 transformContext（压缩）/ onTurnEnd（finish_reason 三态 / 循环检测）等循环内 hook 用。
   //   插件发出的 'llm.context_compacted' 等自动带上同一份 baseTraceAttrs（sessionId/runId/turnId），与旧
   //   内联发法逐字一致。store 取本会话 einfach store，root 取 rootStore；isCurrent() 由 makeCoreCtx 闭合到
-  //   本次 (root, store, id, runId)，与本文件私有 isCurrentRun(id, runId) 等价（异步插件写回前自查用）。
+  //   本次 (root, store, id, runId)，与 shared/runGuards 的 isCurrentRun 相同（异步插件写回前自查用）。
   //   hooks 已在顶部（onRunStart 之前）装配好；此处只建带真 traceEvent 的 ctx——onRunStart 用的是上面
   //   traceEvent 为 no-op 的 bootstrapCtx。危险工具确认 / ask_user 暂停两槽留 Stage 2b，loop 里那两处未动。
   const ctx = makeCoreCtx({
@@ -1535,7 +1508,7 @@ export async function runToolLoop(
         removeToolActivity(id, callId, core)
       }
       // TK8 每步守卫：await 后写回前查会话还在、且仍是本次 run；esc 中断则收成 stopped。
-      if (!isCurrentRun(id, runId, core)) {
+      if (!isCurrentRun(currentRunGuard)) {
         finishTrace('cancelled', 'agent.stale_run', { reason: 'stale_run' })
         return
       }
@@ -1545,7 +1518,7 @@ export async function runToolLoop(
         return
       }
       if (opts.signal.aborted) {
-        if (isCurrentRun(id, runId, core)) {
+        if (isCurrentRun(currentRunGuard)) {
           patchRun(id, { status: 'stopped' }, core)
           commitStoppedTurn()
           finishTrace('cancelled', 'agent.stopped', { reason: 'aborted' })
@@ -1915,7 +1888,7 @@ export async function runToolLoop(
               error: safeErrorMessage(err),
             })
           }
-          if (isCurrentRun(id, runId, core)) {
+          if (isCurrentRun(currentRunGuard)) {
             setContextStats(id, {
               ...contextStats,
               cache: {
@@ -1945,7 +1918,7 @@ export async function runToolLoop(
         })
 
         // TK8 每步守卫必须先于协议级 retry：迟到的旧 run 和已 abort 的 run 连请求都不能再发一次。
-        if (!isCurrentRun(id, runId, core)) {
+        if (!isCurrentRun(currentRunGuard)) {
           streamWriter.finishPending()
           finishTrace('cancelled', 'agent.stale_run', { reason: 'stale_run' })
           return
@@ -1959,7 +1932,7 @@ export async function runToolLoop(
         // esc race：fetch 在 abort 前已返回但 signal 已中断 → stopped，不写回，也不容量重试。
         if (opts.signal.aborted) {
           streamWriter.finishPending()
-          if (isCurrentRun(id, runId, core)) patchRun(id, { status: 'stopped' }, core)
+          if (isCurrentRun(currentRunGuard)) patchRun(id, { status: 'stopped' }, core)
           commitStoppedTurn()
           finishTrace('cancelled', 'agent.stopped', { reason: 'aborted' })
           return
@@ -2094,7 +2067,7 @@ export async function runToolLoop(
           //   commitCheckpoint + 落盘 ★——本轮虽收成 error 但条目已进 itemsAtom，而 itemsAtom 不持久化，
           //   不落 checkpoint 用户刷新后连自己那条 user 消息都会一起蒸发。label 带 [截断]/[已拦截]/[已中断] 前缀。
           commitTurn(FINISH_REASON_LABEL_TAGS[abnormalFinish])
-          if (isCurrentRun(id, runId, core)) patchRun(id, { status: 'error', error: decision.reason }, core)
+          if (isCurrentRun(currentRunGuard)) patchRun(id, { status: 'error', error: decision.reason }, core)
           finishTrace('error', 'agent.finish_abnormal', {
             finish_reason: finishReason,
             tool_calls_count: toolCalls.length,
@@ -2109,7 +2082,7 @@ export async function runToolLoop(
           //   ='tool_calls'，与异常三态互斥），故 decision 必带 traceEventName/traceAttrs。
           streamWriter.finishPending()
           commitTurn()
-          if (isCurrentRun(id, runId, core)) patchRun(id, { status: decision.runStatus ?? 'error', error: decision.reason }, core)
+          if (isCurrentRun(currentRunGuard)) patchRun(id, { status: decision.runStatus ?? 'error', error: decision.reason }, core)
           finishTrace('error', decision.traceEventName ?? 'agent.loop_detected', decision.traceAttrs)
         }
         return
@@ -2225,7 +2198,7 @@ export async function runToolLoop(
               call.expectedRegistrationVersion,
             )),
           )
-          if (!isCurrentRun(id, runId, core)) {
+          if (!isCurrentRun(currentRunGuard)) {
             finishTrace('cancelled', 'agent.stale_run', { reason: 'stale_run' })
             return
           }
@@ -2519,7 +2492,7 @@ export async function runToolLoop(
 
           // TK8「每步不漏」：execute 可能异步且 signal 穿透其中，await 后写回前再查会话还在、且仍是本次 run；
           // 被顶掉的旧 run 不得把迟到 result 写进新 run；esc 中断则收成 stopped。
-          if (!isCurrentRun(id, runId, core)) {
+          if (!isCurrentRun(currentRunGuard)) {
             finishTrace('cancelled', 'agent.stale_run', { reason: 'stale_run' })
             return
           }
@@ -2529,7 +2502,7 @@ export async function runToolLoop(
             return
           }
           if (opts.signal.aborted) {
-            if (isCurrentRun(id, runId, core)) patchRun(id, { status: 'stopped' }, core)
+            if (isCurrentRun(currentRunGuard)) patchRun(id, { status: 'stopped' }, core)
             commitStoppedTurn()
             finishTrace('cancelled', 'agent.stopped', { reason: 'aborted' })
             return
@@ -2703,7 +2676,7 @@ export async function runToolLoop(
     //   这边若还用 instanceof 就认不出来：用户按了停止键，run 却落成 'error' + 一段英文异常。
     //   判据必须和抛出侧（modelApi）保持同一份，否则每加一个 fetch 实现就复发一次。
     if (isAbortError(err)) {
-      if (isCurrentRun(id, runId, core)) patchRun(id, { status: 'stopped' }, core)
+      if (isCurrentRun(currentRunGuard)) patchRun(id, { status: 'stopped' }, core)
       commitStoppedTurn()
       finishTrace('cancelled', 'agent.stopped', { reason: 'abort_error' }, err)
       return

@@ -4,6 +4,7 @@ import type {
   ModelToolChoice,
 } from '@web-agent/ai'
 import { toolSetSchemaFingerprint } from './modelTurn'
+import { fnv1a32 } from './shared/hash'
 
 export const CONTEXT_CACHE_PROTOCOL_VERSION = 'agent-runtime-prefix-v2'
 
@@ -94,16 +95,6 @@ function canonicalSerialize(value: unknown): string {
       .join(',')}}`
   }
   return JSON.stringify(String(value))
-}
-
-// FNV-1a 32-bit 只用于诊断性内容指纹，不是安全签名，也不承载 prompt 正文。
-function fnv1a32(value: string): string {
-  let hash = 0x811c9dc5
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index)
-    hash = Math.imul(hash, 0x01000193)
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0')
 }
 
 function fingerprint(kind: string, value: unknown): string {

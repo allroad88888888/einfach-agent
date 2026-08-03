@@ -50,14 +50,12 @@
 // ── 搬走的符号（原先私有于 modelRun.ts，现从本文件 import；集成 agent 删 modelRun 里的旧定义）──
 //   LOOP_DETECTION_THRESHOLD / LOOP_DETECTED_ERROR / toolCallSignature / normalizedArgsSignature
 //   （连同其内部 helper normalizeForSignature / isPlainRecord 一并迁来，作私有实现细节）。
-//   ★ tracePreview 是【复制】不是搬走 ★——modelRun 里它还被工具执行的 trace（argsPreview /
-//   resultPreview）继续用，故这里逐字复制一份（= truncatePayload(v, 500)），与 compactionPlugin
-//   复制 stringForStats 同款理由：换插件对 modelRun 零依赖，孤立成本可忽略。
+//   tracePreview 由 runtime/shared/preview 提供，避免插件与 modelRun 形成反向依赖。
 
 import type { ModelToolCall } from '@web-agent/ai'
-import { truncatePayload } from '../../../observability/redact'
 import type { TraceAttributes } from '../../../observability/types'
 import { parseToolCallArgs } from '../../modelTurn'
+import { tracePreview } from '../../shared/preview'
 import type { CoreCtx } from '../coreCtx'
 import type { TurnEndDecision, TurnEndEvent } from '../loopHooks'
 import type { AgentPlugin } from '../pluginApi'
@@ -102,11 +100,6 @@ export function normalizedArgsSignature(args: unknown): string {
 // 简介：`工具名:规范化参数签名` —— 跨轮判重的键。
 export function toolCallSignature(toolName: string, args: unknown): string {
   return `${toolName}:${normalizedArgsSignature(args)}`
-}
-
-// modelRun.ts 里同名私有 helper 的逐字复制（modelRun 那边仍在用，故复制而非搬走，见文件头）。
-function tracePreview(value: unknown, limit = 500): string {
-  return truncatePayload(value, limit)
 }
 
 // ---------------------------------------------------------------------------
