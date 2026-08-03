@@ -1,6 +1,6 @@
 # 插件 UI Renderer 协议蓝图
 
-> 文档状态：P2.5 设计已决；尚未进入代码迁移。更新时间：2026-08-03。
+> 文档状态：P2.5 的 R1 已完成（`846743a`）；R2–R5 待实施。更新时间：2026-08-03。
 
 ## 结论
 
@@ -29,7 +29,7 @@ registry。`PluginApi` 不新增 `registerRenderer`，Core 插件与 React UI �
 
 ### Core：稳定数据投影
 
-新增的 Core 公共入口（建议 `@web-agent/core/timeline`）只导出纯 TypeScript 类型与纯函数。
+Core 公共入口 `@web-agent/core/timeline` 只导出纯 TypeScript 类型与纯函数。
 其输入是已有的会话项目和瞬态显示数据，输出为只读、按时间排序的 `TimelineItem[]`。v1 的
 联合类型应精确表达当前已存在的可展示项目：
 
@@ -37,6 +37,7 @@ registry。`PluginApi` 不新增 `registerRenderer`，Core 插件与 React UI �
 type TimelineItem =
   | TimelineMessageItem
   | TimelineReasoningItem
+  | TimelineThinkingMessageItem
   | TimelineToolExecutionItem
   | TimelineRuntimeEventItem
   | TimelineBrowserCardItem
@@ -45,6 +46,7 @@ interface TimelineItemBase {
   readonly id: string
   readonly createdAt: number
   readonly sortKey: string
+  readonly planStageId?: string
 }
 ```
 
@@ -114,14 +116,14 @@ schema/版本、大小限制、持久化与 archive 兼容策略、未知插件�
 
 | 批次 | 单一产出 | 验收 |
 | --- | --- | --- |
-| R1 | Core 纯 `timeline` 投影与单元测试 | 不导入 React；项目关联、孤立 result、排序和不可变性全部覆盖 |
+| R1 | Core 纯 `timeline` 投影与单元测试 | 已完成（`846743a`）：不导入 React；项目关联、孤立 result、排序、不可变性与计划阶段投影均已覆盖 |
 | R2 | 独立 React registry 与默认 fallback | registry 按 root 隔离；重复/越权覆盖拒绝；unknown item 安全显示 |
-| R3 | 将 Web `MessageList` 拆成投影消费、思考分组、renderer 与虚拟列表 | 行为回归不变；新文件按单一职责且不超过行数上限 |
+| R3 | 将 Web `MessageList` 拆成投影消费、思考分组、renderer 与虚拟列表 | registry 接线待 R2 后实施；R1 已完成前置职责拆分，行为回归不变且新文件符合行数上限 |
 | R4 | `@web-agent/react-plugin` 公开入口及非 React Core 样板配对示例 | UI 插件无需 Core 内部 import；卸载后不残留注册 |
 | R5 | 另立自定义持久化 item RFC | schema、archive、权限和多 consumer 降级先获批准 |
 
-每批先补失败测试，再以单独、可撤回的 commit 实现。R1 只抽取目前 `MessageList` 已有的纯
-关联逻辑；不得在同一提交改变视觉、工具权限或持久化格式。
+每批先补失败测试，再以单独、可撤回的 commit 实现。R1 已只抽取目前 `MessageList` 已有的纯
+关联逻辑；未改变视觉、工具权限或持久化格式。
 
 ## 回归门槛
 
@@ -131,8 +133,8 @@ schema/版本、大小限制、持久化与 archive 兼容策略、未知插件�
 - React 测试覆盖内建 renderer 锁定、每 root 隔离、重复注册的原子拒绝、disposer 与未知项
   fallback；payload 不可作为 HTML 注入。
 - Web 的消息列表、计划阶段回放和子 Agent 行内展示保持现有可见顺序；必要时由端到端测试回读。
-- 每个新增/拆分的源文件遵守单一职责与行数上限；迁移中发现的既有超长 `MessageList` 以 R3
-  为界拆除，不把新增逻辑继续放入其中。
+- 每个新增/拆分的源文件遵守单一职责与行数上限；既有超长 `MessageList` 已在 R1 的前置拆分中
+  收口，R3 不把新增逻辑继续放入其中。
 
 ## 非目标
 
