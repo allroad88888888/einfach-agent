@@ -56,10 +56,10 @@ describe('LoopHooks / RequestDraft 契约形状', () => {
         d.messages.push(user('req'))
       },
       beforeToolCall(_ctx, ev: BeforeToolCallEvent): BeforeToolCallResult {
-        return { block: true, reason: String(ev.toolCall) }
+        return { block: true, reason: ev.toolName }
       },
-      afterToolCall(_ctx, ev: AfterToolCallEvent): unknown {
-        return { ...(ev.result as Record<string, unknown>), touched: true }
+      afterToolCall(_ctx, _ev: AfterToolCallEvent) {
+        return { data: { touched: true } }
       },
       onTurnEnd(_ctx, _ev: TurnEndEvent): void {
         /* 观察型：无返回 */
@@ -69,11 +69,15 @@ describe('LoopHooks / RequestDraft 契约形状', () => {
       },
     }
 
-    const blocked = await hooks.beforeToolCall?.(fakeCtx, { toolCall: 'shell', args: { cmd: 'ls' } })
+    const blocked = await hooks.beforeToolCall?.(fakeCtx, {
+      callId: 'c1', toolName: 'shell', args: { cmd: 'ls' },
+    })
     expect(blocked).toEqual({ block: true, reason: 'shell' })
 
-    const rewritten = await hooks.afterToolCall?.(fakeCtx, { toolCall: 'x', result: { a: 1 } })
-    expect(rewritten).toEqual({ a: 1, touched: true })
+    const rewritten = await hooks.afterToolCall?.(fakeCtx, {
+      callId: 'c2', toolName: 'x', args: {}, result: { ok: true, data: { a: 1 } },
+    })
+    expect(rewritten).toEqual({ data: { touched: true } })
 
     expect(await hooks.shouldStop?.(fakeCtx)).toBe(true)
 

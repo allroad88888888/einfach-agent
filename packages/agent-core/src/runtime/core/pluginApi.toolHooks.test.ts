@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { CoreCtx } from './coreCtx'
+import type { CompletedToolResult, ToolResultPatch } from '../toolResultPatch'
 import { assemblePlugins } from './pluginApi'
 
 const ctx = { sessionId: 's', runId: 'r' } as unknown as CoreCtx
@@ -26,7 +27,7 @@ describe('beforeToolCall —— 第一个 {block:true} 胜、短路', () => {
         }),
     ])
 
-    const res = await hooks.beforeToolCall?.(ctx, { toolCall: 't', args: {} })
+    const res = await hooks.beforeToolCall?.(ctx, { callId: 'c1', toolName: 't', args: {} })
     expect(res).toEqual({ block: true, reason: 'B' })
     expect(calls).toEqual(['A', 'B'])
   })
@@ -36,7 +37,7 @@ describe('beforeToolCall —— 第一个 {block:true} 胜、短路', () => {
       (api) => api.hook('beforeToolCall', () => undefined),
       (api) => api.hook('beforeToolCall', () => ({ block: false, reason: '仅记录' })),
     ])
-    const res = await hooks.beforeToolCall?.(ctx, { toolCall: 't', args: {} })
+    const res = await hooks.beforeToolCall?.(ctx, { callId: 'c1', toolName: 't', args: {} })
     expect(res).toBeUndefined()
   })
 
@@ -48,52 +49,63 @@ describe('beforeToolCall —— 第一个 {block:true} 胜、短路', () => {
           return { block: true, reason: 'async' }
         }),
     ])
-    expect(await hooks.beforeToolCall?.(ctx, { toolCall: 't', args: {} })).toEqual({
+    expect(await hooks.beforeToolCall?.(ctx, { callId: 'c1', toolName: 't', args: {} })).toEqual({
       block: true,
       reason: 'async',
     })
   })
 })
 
-describe('afterToolCall —— 按注册序逐字段覆盖合并（omit 保留原值）+ 改写管道', () => {
-  it('字段覆盖 / 新增 / omit 保留；且每环见到上一环的累积结果', async () => {
-    const seen: unknown[] = []
+describe('afterToolCall —— 只合并同一结果分支的受控补丁', () => {
+  it('按注册序合并 success patch，且每环看见上一环的累积结果', async () => {
+    const seen: CompletedToolResult[] = []
     const hooks = assemblePlugins([
       (api) =>
         api.hook('afterToolCall', (_c, ev) => {
           seen.push(ev.result)
-          return { a: 1, shared: 'A' }
+          return { data: { from: 'A' } }
         }),
       (api) =>
         api.hook('afterToolCall', (_c, ev) => {
           seen.push(ev.result)
-          return { b: 2, shared: 'B', a: undefined }
+          return { data: { from: 'B' } }
         }),
     ])
 
-    const out = await hooks.afterToolCall?.(ctx, { toolCall: 't', result: { orig: 0 } })
-    expect(out).toEqual({ orig: 0, a: 1, shared: 'B', b: 2 })
-    expect(seen[0]).toEqual({ orig: 0 })
-    expect(seen[1]).toEqual({ orig: 0, a: 1, shared: 'A' })
+    const out = await hooks.afterToolCall?.(ctx, {
+      callId: 'c1',
+      toolName: 't',
+      args: {},
+      result: { ok: true, data: { from: 'tool' } },
+    })
+    expect(out).toEqual({ data: { from: 'B' } })
+    expect(seen[0]).toEqual({ ok: true, data: { from: 'tool' } })
+    expect(seen[1]).toEqual({ ok: true, data: { from: 'A' } })
   })
 
   it('patch 为 undefined → 保留累积结果（该 hook 不改结果）', async () => {
     const hooks = assemblePlugins([(api) => api.hook('afterToolCall', () => undefined)])
-    const out = await hooks.afterToolCall?.(ctx, { toolCall: 't', result: { a: 1 } })
-    expect(out).toEqual({ a: 1 })
+    const out = await hooks.afterToolCall?.(ctx, {
+      callId: 'c1', toolName: 't', args: {}, result: { ok: true, data: { a: 1 } },
+    })
+    expect(out).toBeUndefined()
   })
 
-  it('patch 为非对象 → 整体替换累积结果', async () => {
-    const hooks = assemblePlugins([(api) => api.hook('afterToolCall', () => 'replaced')])
-    const out = await hooks.afterToolCall?.(ctx, { toolCall: 't', result: { a: 1 } })
-    expect(out).toBe('replaced')
+  it('失败结果只接受 failure patch', async () => {
+    const hooks = assemblePlugins([(api) => api.hook('afterToolCall', () => ({ code: 'plugin_code' }))])
+    const out = await hooks.afterToolCall?.(ctx, {
+      callId: 'c1', toolName: 't', args: {}, result: { ok: false, error: 'tool failed' },
+    })
+    expect(out).toEqual({ code: 'plugin_code' })
   })
 
-  it('不改动调用方传入的原始 result 对象（合并产出新对象）', async () => {
-    const original = { a: 1 }
-    const hooks = assemblePlugins([(api) => api.hook('afterToolCall', () => ({ a: 2 }))])
-    const out = await hooks.afterToolCall?.(ctx, { toolCall: 't', result: original })
-    expect(out).toEqual({ a: 2 })
-    expect(original).toEqual({ a: 1 })
+  it('拒绝试图切换结果分支的 patch', async () => {
+    const hooks = assemblePlugins([
+      (api) => api.hook('afterToolCall', () => ({ ok: false } as unknown as ToolResultPatch)),
+    ])
+
+    await expect(hooks.afterToolCall?.(ctx, {
+      callId: 'c1', toolName: 't', args: {}, result: { ok: true, data: 'tool result' },
+    })).rejects.toThrow('patch 不能覆盖 ok 或 pause 控制字段')
   })
 })

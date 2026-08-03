@@ -92,13 +92,17 @@ export type RunStatus =
 // 简介：等待用户确认的危险工具调用（S4-B）。
 // 详情：与 pendingQuestion 平行 —— tool 循环遇到危险工具时，先把同批其它 tool_call 的 result 补齐，
 // 再置 waiting_confirmation + 本字段并暂停本 run（该 tool_call 的 result 留给 confirmTool 恢复时回填/执行）。
-// args 是模型给的原样参数（unknown），resume 允许时直接拿去执行。
+// args 是已通过 schema 校验的规范化参数；确认恢复仍会复核注册版本。
 export interface PendingToolConfirmation {
   callId: string
   toolName: string
   args: unknown
   /** 注册快照版本；确认只能执行用户实际看到并批准的那一版工具。 */
   registrationVersion?: number
+  /** 初次确认前已完成 schema 规范化时留下的提示，恢复后随结果回给模型。 */
+  schemaWarnings?: string[]
+  /** 实际 beforeToolCall hook 已放行；确认恢复不能再次触发它。 */
+  beforeToolHookCompleted?: true
   risk?: 'dangerous' | 'critical'
   reason?: string
   irreversible?: boolean

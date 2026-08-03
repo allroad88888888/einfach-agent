@@ -11,6 +11,7 @@ import { tracePreview } from './shared/preview'
 import { startSpan, endSpan } from '../observability/trace'
 import { executeToolCall, type ExecutableToolCall } from './toolCallExecutor'
 import { handleToolGate } from './toolCallGate'
+import { executePreparedToolCall, hasToolCallHooks, prepareToolCall } from './toolCallPluginHooks'
 import type { ToolLoopBase } from './toolLoopContracts'
 import type { ModelTurnResult } from './modelTurnRequester'
 import { pendingDecisionOrigin, planApprovalPayload } from './toolLoopPlan'
@@ -44,7 +45,7 @@ export async function runToolCallBatch(base: ToolLoopBase, input: ToolBatchInput
     return risk.requiresConfirmation || risk.level === 'critical' || risk.level === 'dangerous' ? undefined : { callId: toolCall.id, name: toolCall.function.name, args: parsed.args, registrationVersion }
   }
   const parallelCalls = toolCalls.map(isParallel).filter((call): call is ExecutableToolCall => call !== undefined)
-  if (parallelCalls.length === toolCalls.length && parallelCalls.length > 1) {
+  if (!hasToolCallHooks(base) && parallelCalls.length === toolCalls.length && parallelCalls.length > 1) {
     const results = await Promise.all(parallelCalls.map((call) => executeToolCall(base, call)))
     const state = statusAfterAwait()
     if (state) return state
@@ -79,17 +80,54 @@ export async function runToolCallBatch(base: ToolLoopBase, input: ToolBatchInput
       continue
     }
     const registrationVersion = expectedRegistrationVersion!
+    const preparation = await prepareToolCall(base, {
+      callId: toolCall.id,
+      name,
+      args,
+      registrationVersion,
+    })
+    const preparationState = statusAfterAwait()
+    if (preparationState) return preparationState
+    if (preparation.kind === 'rejected') {
+      input.recordToolOutcome(name, preparation.result)
+      appendMappedToolResult(base.id, toolCall.id, preparation.result, base.core, input.planStageId)
+      if (name === 'submit_stage_result' && !preparation.result.ok) {
+        base.state.lastStageSubmitRejection = preparation.result.error
+      }
+      continue
+    }
+    const prepared = preparation.prepared
+    const verifiedArgs = prepared.call.args as Record<string, unknown>
     const session = base.core.rootStore.getter(sessionsAtom)[base.id]
     const workspaceRoot = resolveSessionWorkspaceRoot(session, base.core.rootStore.getter(workspacesAtom))
-    const risk = classifyToolRisk(name, args, { workspaceRoot })
+    const risk = classifyToolRisk(name, verifiedArgs, { workspaceRoot })
     const approvalMode = session?.toolApprovalMode ?? 'confirm'
     const needsConfirmation = risk.requiresConfirmation || risk.level === 'critical' || (approvalMode === 'confirm' && risk.level === 'dangerous' && !isToolAlwaysAllowed(base.id, name, base.core))
     if (needsConfirmation) {
       if (interruptPending()) appendToolResult(base.id, toolCall.id, JSON.stringify({ error: '已有待确认的工具调用，请先处理' }), base.core, input.planStageId)
-      else confirmCall = risk.level === 'critical' || risk.requiresConfirmation ? { callId: toolCall.id, toolName: name, args, registrationVersion, ...(risk.level === 'critical' ? { risk: 'critical' as const } : { risk: 'dangerous' as const }), reason: risk.reason, irreversible: risk.irreversible } : { callId: toolCall.id, toolName: name, args, registrationVersion }
+      else confirmCall = risk.level === 'critical' || risk.requiresConfirmation
+        ? {
+            callId: toolCall.id,
+            toolName: name,
+            args: verifiedArgs,
+            registrationVersion,
+            ...(prepared.schemaWarnings ? { schemaWarnings: prepared.schemaWarnings } : {}),
+            ...(prepared.beforeToolHookCompleted ? { beforeToolHookCompleted: true } : {}),
+            ...(risk.level === 'critical' ? { risk: 'critical' as const } : { risk: 'dangerous' as const }),
+            reason: risk.reason,
+            irreversible: risk.irreversible,
+          }
+        : {
+            callId: toolCall.id,
+            toolName: name,
+            args: verifiedArgs,
+            registrationVersion,
+            ...(prepared.schemaWarnings ? { schemaWarnings: prepared.schemaWarnings } : {}),
+            ...(prepared.beforeToolHookCompleted ? { beforeToolHookCompleted: true } : {}),
+          }
       continue
     }
-    const result = await executeToolCall(base, { callId: toolCall.id, name, args, registrationVersion })
+    const result = await executePreparedToolCall(base, prepared)
     const state = statusAfterAwait()
     if (state) return state
     input.recordToolOutcome(name, result)

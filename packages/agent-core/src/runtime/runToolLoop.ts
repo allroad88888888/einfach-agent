@@ -8,7 +8,7 @@ import { runToolLoopCycle, type ToolLoopTerminator } from './toolLoopCycle'
 import { createToolFailureTracker } from './toolFailureTracker'
 import { currentPlanStageId, maxAgentTurns } from './toolLoopPlan'
 import { appendMappedToolResult, safeErrorMessage } from './toolLoopSupport'
-import { executeToolCall } from './toolCallExecutor'
+import { executePreparedToolCall, prepareToolCall } from './toolCallPluginHooks'
 import { addEvent } from '../observability/trace'
 
 export { persistCurrentRunRecovery } from './runCheckpoints'
@@ -57,9 +57,31 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
   try {
     if (opts.resumeToolCall) {
       const pending = opts.resumeToolCall
-      const resumed = await executeToolCall(base, { callId: pending.callId, name: pending.toolName, args: pending.args, registrationVersion: pending.registrationVersion, resumed: true })
+      const call = {
+        callId: pending.callId,
+        name: pending.toolName,
+        args: pending.args,
+        registrationVersion: pending.registrationVersion,
+        resumed: true,
+      }
+      const preparation = pending.beforeToolHookCompleted
+        ? {
+            kind: 'ready' as const,
+            prepared: {
+              call,
+              ...(pending.schemaWarnings ? { schemaWarnings: pending.schemaWarnings } : {}),
+              beforeToolHookCompleted: true as const,
+            },
+          }
+        : await prepareToolCall(base, call)
       if (endInactive()) return
-      appendMappedToolResult(id, pending.callId, resumed, base.core, currentPlanStageId(id, base.core))
+      if (preparation.kind === 'rejected') {
+        appendMappedToolResult(id, pending.callId, preparation.result, base.core, currentPlanStageId(id, base.core))
+      } else {
+        const resumed = await executePreparedToolCall(base, preparation.prepared)
+        if (endInactive()) return
+        appendMappedToolResult(id, pending.callId, resumed, base.core, currentPlanStageId(id, base.core))
+      }
     }
     const budget = createLoopBudget(maxAgentTurns(id, base.core), () => maxAgentTurns(id, base.core))
     const failures = createToolFailureTracker()

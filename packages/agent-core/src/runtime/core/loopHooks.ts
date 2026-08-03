@@ -13,6 +13,7 @@
 
 import { finishReasonExtensionFor, type ModelItem, type ModelResponseMessage } from '@web-agent/ai'
 import type { TraceAttributes } from '../../observability/types'
+import type { CompletedToolResult, ToolResultPatch } from '../toolResultPatch'
 import type { CoreCtx } from './coreCtx'
 
 // 简介：组请求时的可变投影（压缩改这，不写回 store）。
@@ -23,12 +24,15 @@ export interface RequestDraft {
   messages: ModelItem[]
 }
 
-// 简介：beforeToolCall 收到的瞬时事件。
-// 详情：toolCall / args 都是 unknown —— core 不认识具体工具形状，交由插件自行收窄。
-export interface BeforeToolCallEvent {
-  toolCall: unknown
-  args: unknown
+// 简介：插件可观察到的、已通过 gate 和 schema 校验的工具调用。
+// 详情：args 是执行参数的不可变快照；插件不能通过修改它影响真正的工具执行。
+export interface ToolCallEvent {
+  readonly callId: string
+  readonly toolName: string
+  readonly args: Readonly<Record<string, unknown>>
 }
+
+export interface BeforeToolCallEvent extends ToolCallEvent {}
 
 // 简介：beforeToolCall 的拦截返回。
 // 详情：block:true → 拦下这次工具执行（reason 供留痕 / 回给 model）。返回 undefined 或 block 非真
@@ -39,10 +43,9 @@ export interface BeforeToolCallResult {
 }
 
 // 简介：afterToolCall 收到的瞬时事件。
-// 详情：result 是「到此为止的工具结果」（多个 afterToolCall 串成改写管道时，是上一环合并后的累积值）。
-export interface AfterToolCallEvent {
-  toolCall: unknown
-  result: unknown
+// 详情：只暴露已完成的成功/失败结果；pause 是 loop 内部控制流，不会进入插件边界。
+export interface AfterToolCallEvent extends ToolCallEvent {
+  readonly result: CompletedToolResult
 }
 
 // 简介：onTurnEnd 收到的完整瞬时事件（一轮 model 往返结束）。
@@ -114,8 +117,11 @@ export interface LoopHooks {
     ctx: CoreCtx,
     ev: BeforeToolCallEvent,
   ): BeforeToolCallResult | undefined | Promise<BeforeToolCallResult | undefined>
-  /** 工具执行后（改写结果 / 记录挂这，Stage 2）。返回值按字段覆盖合并进结果。 */
-  afterToolCall?(ctx: CoreCtx, ev: AfterToolCallEvent): unknown
+  /** 工具执行后（改写结果 / 记录挂这，Stage 2）。只能返回可验证的结果补丁。 */
+  afterToolCall?(
+    ctx: CoreCtx,
+    ev: AfterToolCallEvent,
+  ): ToolResultPatch | undefined | Promise<ToolResultPatch | undefined>
   /** 一轮结束（finish_reason 三态 / 循环检测挂这，Stage 2a）。返回完整 TurnEndStopDecision 可要求
    *  loop 带状态终止 run；返回 void / TurnEndContinueDecision = 不干预、loop 继续。 */
   onTurnEnd?(

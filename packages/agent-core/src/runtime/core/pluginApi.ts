@@ -12,6 +12,7 @@
 import type { Atom, Store } from '@einfach/core'
 import type { AskUserAnswerValue } from '../../state/transientAtoms'
 import type { Tool } from '../../tools/types'
+import { applyToolResultPatch, toolResultPatchBetween } from '../toolResultPatch'
 import type { CoreCtx } from './coreCtx'
 import type {
   AfterToolCallEvent,
@@ -90,25 +91,6 @@ function createHookBuckets(): HookBuckets {
     onTurnEnd: [],
     shouldStop: [],
   }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-// 简介：afterToolCall 的字段级覆盖合并（omit 保留原值）。
-// 详情：patch 为 undefined → 保留 acc（该 hook 不改结果）；acc/patch 任一非 plain object → patch
-//   整体替换 acc（无「字段」可保留）；两者皆 plain object → 逐字段覆盖，但值为 undefined 的字段
-//   视作 omit、保留 acc 的原值（与 pi 的 afterToolCall 字段合并同口径）。
-function mergeAfterToolResult(acc: unknown, patch: unknown): unknown {
-  if (patch === undefined) return acc
-  if (!isPlainObject(acc) || !isPlainObject(patch)) return patch
-  const merged: Record<string, unknown> = { ...acc }
-  for (const key of Object.keys(patch)) {
-    const value = patch[key]
-    if (value !== undefined) merged[key] = value
-  }
-  return merged
 }
 
 // 简介：装配期收集的一条「订阅意向」——把 subscribe<T> 的类型擦除进异质列表。
@@ -216,13 +198,13 @@ export function assemblePlugins(plugins: AgentPlugin[]): AssembledPlugins {
     : undefined
 
   const afterToolCall: LoopHooks['afterToolCall'] = buckets.afterToolCall.length
-    ? async (ctx: CoreCtx, ev: AfterToolCallEvent): Promise<unknown> => {
-        let acc: unknown = ev.result
+    ? async (ctx: CoreCtx, ev: AfterToolCallEvent) => {
+        let acc = ev.result
         for (const fn of buckets.afterToolCall) {
-          const patch = await fn(ctx, { toolCall: ev.toolCall, result: acc })
-          acc = mergeAfterToolResult(acc, patch)
+          const patch = await fn(ctx, { ...ev, result: acc })
+          acc = applyToolResultPatch(acc, patch)
         }
-        return acc
+        return toolResultPatchBetween(ev.result, acc)
       }
     : undefined
 
