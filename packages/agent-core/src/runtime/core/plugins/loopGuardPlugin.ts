@@ -24,19 +24,14 @@
 //   assistant 条目）。所以本插件也【不需要】任何 ctx.store 写入——它只累计、判定、返回决策。
 //
 // ── 与 loop（modelRun.ts）的协作契约（集成时务必对齐）──
-//   LoopHooks 的 TurnEndEvent 是上游固定契约（只有 finishReason / toolCalls，不可改）；本插件与
-//   loop 之间的私有扩展走本文件自己的 LoopGuardTurnEndEvent / LoopGuardTurnEndDecision——照
-//   compactionPlugin 的 CompactionRequestDraft 同款做法：core 公共契约类型（loopHooks.ts）只
-//   import、不改一行，扩展字段私有、loop 侧按需 `as` 使用。
-//
-//   loop 调 onTurnEnd 之前，往事件上多挂一样瞬时数据（core TurnEndEvent 里没有、插件也不该猜）：
+//   LoopHooks 的 TurnEndEvent 是 loop 与插件共享的完整契约。本插件直接读取其中的
+//   assistantHasContent，不私有扩展事件或在 hook 边界断言。
 //     · assistantHasContent —— 旧代码里的
 //         `typeof msg?.content === 'string' && msg.content.trim().length > 0`。
 //       这是一份 loop 已算好、且与 finish_reason 分支【共享】的 turn-end 量（modelRun 里只算一次），
 //       故由 loop 一次算好、连同 finishReason/toolCalls 一起喂进来，避免两个插件各算一遍而漂移。
-//       省略时按 false 算（= 更激进地把本轮当纯工具轮）——集成必须挂上它才与旧行为逐字一致。
 //
-//   onTurnEnd 命中阈值时返回 LoopGuardTurnEndDecision（未命中返回 undefined = 不干预、loop 继续）。
+//   onTurnEnd 命中阈值时返回完整 TurnEndStopDecision（未命中返回 undefined = 不干预、loop 继续）。
 //   命中决策带：
 //     · stop:true / runStatus:'error' / reason:LOOP_DETECTED_ERROR —— 上游 TurnEndDecision 契约，
 //       loop 据此终止 run + patchRun(status:'error', error:reason)。
@@ -103,23 +98,6 @@ export function toolCallSignature(toolName: string, args: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
-// 与 loop 的私有事件 / 决策扩展（core 契约类型只 import、不改；扩展字段私有）
-// ---------------------------------------------------------------------------
-// 简介：TurnEndEvent 的私有扩展——多带一份 loop 已算好的 assistantHasContent。
-export interface LoopGuardTurnEndEvent extends TurnEndEvent {
-  /** 本轮 assistant 是否含非空正文（旧 assistantHasContent）。省略按 false 算。 */
-  assistantHasContent?: boolean
-}
-
-// 简介：TurnEndDecision 的私有扩展——命中循环时把整份 trace payload 交回给 loop 用 finishTrace 落地。
-export interface LoopGuardTurnEndDecision extends TurnEndDecision {
-  /** loop 侧 finishTrace 的事件名（恒为 'agent.loop_detected'）。 */
-  traceEventName?: string
-  /** loop 侧 finishTrace 的完整 attrs（事件 + turn span 关闭共用这一份，与旧代码逐字一致）。 */
-  traceAttrs?: TraceAttributes
-}
-
-// ---------------------------------------------------------------------------
 // 检测本体（跨轮累计状态放闭包，per-run 隔离）
 // ---------------------------------------------------------------------------
 // 简介：造一个「循环检测器」——闭包里握两份累计状态，返回的函数即 onTurnEnd 的实现。
@@ -129,8 +107,8 @@ export interface LoopGuardTurnEndDecision extends TurnEndDecision {
 //   命中阈值只记第一个、非纯工具轮清零两份状态）。命中即产出决策 + 全套 trace attrs。
 export function createLoopGuardDetector(): (
   ctx: CoreCtx,
-  ev: LoopGuardTurnEndEvent,
-) => LoopGuardTurnEndDecision | undefined {
+  ev: TurnEndEvent,
+) => TurnEndDecision | undefined {
   // ★ 闭包状态 = per-run 隔离的关键 ★：每个检测器实例独占这两份，互不串味。
   let consecutiveToolOnlyTurns = 0
   const repeatedToolSignatures = new Map<string, number>()
@@ -139,8 +117,8 @@ export function createLoopGuardDetector(): (
   // 收尾写回由 loop 守卫覆盖，无需 ctx.isCurrent 自查。签名保留 ctx 以对齐 hook 形状。
   return (_ctx, ev) => {
     const toolCalls = ev.toolCalls as ModelToolCall[]
-    // assistantHasContent 由 loop 算好喂进来（与 finish_reason 分支共享同一份），省略按 false。
-    const assistantHasContent = ev.assistantHasContent ?? false
+    // assistantHasContent 由 loop 算好喂进来（与 finish_reason 分支共享同一份）。
+    const assistantHasContent = ev.assistantHasContent
     const isToolOnlyTurn =
       ev.finishReason === 'tool_calls' && toolCalls.length > 0 && !assistantHasContent
     let loopDetected:
@@ -200,9 +178,8 @@ export function createLoopGuardDetector(): (
 
 // 简介：循环检测插件（PX2 AgentPlugin）——装配期建一个 per-run 检测器、注册进 onTurnEnd 槽。
 // 详情：createLoopGuardDetector() 在此调用一次 = 本 run 一份全新计数（assemblePlugins 每 run 跑一遍
-//   plugin(api)）。内联箭头把 core 的宽事件 TurnEndEvent `as` 成插件私有 LoopGuardTurnEndEvent
-//   （与 compactionPlugin 把 RequestDraft as CompactionRequestDraft 同款），逻辑全在检测器闭包里。
+// plugin(api)），共享 TurnEndEvent 直接交给检测器，逻辑全在检测器闭包里。
 export const loopGuardPlugin: AgentPlugin = (api) => {
   const detect = createLoopGuardDetector()
-  api.hook('onTurnEnd', (ctx, ev) => detect(ctx, ev as LoopGuardTurnEndEvent))
+  api.hook('onTurnEnd', (ctx, ev) => detect(ctx, ev))
 }

@@ -20,35 +20,38 @@
 //   `streamWriter.finalize(msg, undefined, FINISH_REASON_ITEM_NOTICES[reason])` 追加——因为完整
 //   正文只活在 streamWriter 的闭包 content 里，插件从 store 里只能拿到「最后一次节流 flush 的快照」，
 //   自己去拼标注会把末尾那截文字顶掉（正是要挡在插件外的流式风险）。
-// 【本插件只负责】：① 判定 finish_reason 是否异常三态（isAbnormalFinishReason）；② 产出对应中文
+// 【本插件只负责】：① 依据共享 turn-end 契约判定 finish_reason 是否异常三态；② 产出对应中文
 //   notice 文案（沿用三份常量的逐字内容）；③ 仅在【没有流式条目】时（Case B，非流式响应）通过
 //   ctx.store.setter 往 itemsAtom【追加】那条「系统标注」条目（对应旧代码 `if (!streamWriter.hasItem()
-//   && isCurrentRun) appendItem(...)` 那一段）；④ 返回 TurnEndDecision { stop, runStatus, reason }。
+//   && isCurrentRun) appendItem(...)` 那一段）；④ 返回完整 TurnEndStopDecision。
 // 【loop / 集成 agent 收到 decision 后负责】：setContextStats / commit checkpoint（带
 //   FINISH_REASON_LABEL_TAGS 前缀，该常量【不搬】、留在 modelRun.ts）/ persist / patchRun status /
 //   finishTrace('agent.finish_abnormal') / 退出。即「条目内容插件写，run 收尾 loop 做」。
 //
 // ── 移走的符号（原先定义在 modelRun.ts，集成 agent 会改成从本文件 import）──
-//   AbnormalFinishReason（type）/ FINISH_REASON_ERRORS / FINISH_REASON_ITEM_NOTICES /
-//   FINISH_REASON_STANDALONE_NOTICES / isAbnormalFinishReason（旧代码是内联 `reason==='length' ||
-//   'content_filter' || 'insufficient_system_resource'` 的三连或，本文件收拢成具名类型守卫）。
-//   FINISH_REASON_LABEL_TAGS【不搬】——它只在 loop 侧 commitTurn 的 label 前缀用，留在 modelRun.ts，
-//   由 modelRun 从本文件 import AbnormalFinishReason 给它做 Record 键类型。
+//   FINISH_REASON_ERRORS / FINISH_REASON_ITEM_NOTICES / FINISH_REASON_STANDALONE_NOTICES。
+//   AbnormalFinishReason 与异常判据归 loopHooks 的 turn-end 契约单源；FINISH_REASON_LABEL_TAGS【不搬】——
+//   它只在 loop 侧 commitTurn 的 label 前缀用。
 
 import { itemsAtom } from '../../../state/sessionAtoms'
 import type { ConversationItem } from '../../../state/core.type'
-import type { ModelResponseMessage } from '@web-agent/ai'
 import { newId } from '../../newId'
 import type { CoreCtx } from '../coreCtx'
-import type { TurnEndDecision, TurnEndEvent } from '../loopHooks'
+import {
+  getAbnormalFinishReason,
+  type AbnormalFinishReason,
+  type TurnEndDecision,
+  type TurnEndEvent,
+} from '../loopHooks'
 import type { AgentPlugin } from '../pluginApi'
 import { assistantItemFromMessage } from '../../shared/preview'
+
+export type { AbnormalFinishReason } from '../loopHooks'
+export { isAbnormalFinishReason } from '../loopHooks'
 
 // ---------------------------------------------------------------------------
 // finish_reason 异常三态（原样从 modelRun.ts 搬来，type + 三份文案常量一字未改）
 // ---------------------------------------------------------------------------
-export type AbnormalFinishReason = 'length' | 'content_filter' | 'insufficient_system_resource'
-
 // finish_reason 异常三态的用户可见文案（同一份也回给 model / 进 trace，口径唯一）。
 export const FINISH_REASON_ERRORS: Record<AbnormalFinishReason, string> = {
   length: '模型输出触顶被截断（finish_reason=length），本轮回复不完整；请调高 max_tokens 或让模型分段输出',
@@ -95,34 +98,6 @@ export const FINISH_REASON_STANDALONE_NOTICES: Record<AbnormalFinishReason, stri
     '> ⚠️ 【系统标注】本轮回复因模型服务容量不足而中断（finish_reason=insufficient_system_resource），未产生任何内容。',
 }
 
-// 简介：finish_reason 是否落在异常三态。旧代码里是内联的三连或（reason==='length' ||
-//   'content_filter' || 'insufficient_system_resource'），这里收拢成具名类型守卫，收窄到
-//   AbnormalFinishReason 后即可安全索引上面三份 Record（也供 loop 侧选 finalize 变体 / 取 label）。
-export function isAbnormalFinishReason(reason: string | null): reason is AbnormalFinishReason {
-  return (
-    reason === 'length' ||
-    reason === 'content_filter' ||
-    reason === 'insufficient_system_resource'
-  )
-}
-
-// 简介：TurnEndEvent 的私有扩展字段——本插件与 loop 的协作契约（见文件头「关键分工」）。
-// 详情：LoopHooks（上游契约，不可改）里 TurnEndEvent 只有 { finishReason, toolCalls }；补条目
-//   （Case B）还需要两样「此刻还没进 store」的瞬时数据：本轮非流式响应的 assistant message、
-//   以及流式期间是否已建过条目。故在插件自己的文件里扩展、loop 侧按需 `as FinishReasonTurnEndEvent`
-//   使用，不改动 core 的公共类型（与 compactionPlugin 的 CompactionRequestDraft 同款做法）。
-export interface FinishReasonTurnEndEvent extends TurnEndEvent {
-  /** 本轮非流式响应的 assistant message（补条目时取 content / reasoning_content）。省略视作无内容。 */
-  msg?: ModelResponseMessage
-  /**
-   * 流式期间是否已 append 过 assistant 条目（= 旧代码 streamWriter.hasItem()）。
-   *   · true（Case A）：系统标注已由 loop 侧的 streamWriter.finalize(msg, undefined, notice) 追加，
-   *     本插件【跳过】补条目，避免出现两条重复回复。
-   *   · false / 省略（Case B，非流式响应）：本插件补一条「系统标注」assistant 条目。
-   */
-  hasStreamedItem?: boolean
-}
-
 // 简介：finish_reason 三态收尾本体——从 modelRun.ts 的 runToolLoop 内联代码逐字搬来（异常分流那段）。
 // 详情：非异常三态 → 返回 undefined（不干预，loop 继续）。length+有 tool_calls 是可恢复截断
 //   （不在此终止，留给坏 JSON 闸门）→ 同样返回 undefined。其余异常态：仅在无流式条目时补一条
@@ -130,16 +105,10 @@ export interface FinishReasonTurnEndEvent extends TurnEndEvent {
 //   短路顺序与旧代码 `!hasItem() && isCurrentRun` 一致），并返回 { stop, runStatus:'error', reason }。
 export function applyFinishReason(
   ctx: CoreCtx,
-  ev: FinishReasonTurnEndEvent,
+  ev: TurnEndEvent,
 ): TurnEndDecision | undefined {
-  const finishReason = ev.finishReason
-  // 非异常三态（stop / tool_calls / null / …）→ 不干预。
-  if (!isAbnormalFinishReason(finishReason)) return undefined
-  // length + 有 tool_calls：arguments JSON 极可能是半截的，可恢复——【不】在此终止（终止会留下
-  // 没有结果的 tool_calls）。放行给 loop 后续逐个 tool_call 的参数解析（坏 JSON 闸门）。
-  // content_filter / insufficient_system_resource 恒终止（与旧 `else if` 分支逐字等价：旧代码
-  // 第一个 if 只拦 length+tool_calls，故这两态无论 toolCalls 多少都落进终止分支）。
-  if (finishReason === 'length' && ev.toolCalls.length > 0) return undefined
+  const finishReason = getAbnormalFinishReason(ev)
+  if (!finishReason) return undefined
 
   const finishError = FINISH_REASON_ERRORS[finishReason]
   const finishNotice = FINISH_REASON_ITEM_NOTICES[finishReason]
@@ -168,14 +137,18 @@ export function applyFinishReason(
   }
 
   // 条目内容插件写完，run 收尾（commit checkpoint 落盘 + patchRun status:'error' + 退出）交给
-  // loop：stop 要求本轮后终止 run，runStatus:'error' 是异常收尾，reason 即 finishError（供 loop
-  // 的 patchRun error / finishTrace）。
-  return { stop: true, runStatus: 'error', reason: finishError }
+  // loop：完整 decision 要求本轮后终止 run；runStatus / reason / traceEventName 由 loop 直接消费。
+  return {
+    stop: true,
+    runStatus: 'error',
+    reason: finishError,
+    traceEventName: 'agent.finish_abnormal',
+  }
 }
 
 // 简介：finish_reason 三态插件（PX2 AgentPlugin）——装配期把 applyFinishReason 注册进 onTurnEnd 槽。
-// 详情：TurnEndEvent 到 FinishReasonTurnEndEvent 的 cast 在这里做一次，其余逻辑全在
-//   applyFinishReason 里（可独立单测，不必每次都经 assemblePlugins 装配）。
+// 详情：TurnEndEvent 是共享完整契约，直接交给 applyFinishReason（可独立单测，不必每次都经
+// assemblePlugins 装配）。
 export const finishReasonPlugin: AgentPlugin = (api) => {
-  api.hook('onTurnEnd', (ctx, ev) => applyFinishReason(ctx, ev as FinishReasonTurnEndEvent))
+  api.hook('onTurnEnd', (ctx, ev) => applyFinishReason(ctx, ev))
 }

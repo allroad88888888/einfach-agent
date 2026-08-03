@@ -26,6 +26,7 @@ import { createStore } from '@einfach/core'
 import type { ModelToolCall } from '@web-agent/ai'
 import { truncatePayload } from '../../../observability/redact'
 import { makeCoreCtx, type CoreCtx } from '../coreCtx'
+import type { TurnEndDecision, TurnEndEvent, TurnEndStopDecision } from '../loopHooks'
 import { assemblePlugins } from '../pluginApi'
 import {
   createLoopGuardDetector,
@@ -34,8 +35,6 @@ import {
   LOOP_DETECTION_THRESHOLD,
   normalizedArgsSignature,
   toolCallSignature,
-  type LoopGuardTurnEndDecision,
-  type LoopGuardTurnEndEvent,
 } from './loopGuardPlugin'
 
 // 检测器用不到 ctx（只吃事件里的瞬时数据）——给一个最小可信的真 CoreCtx，形状对齐即可。
@@ -59,9 +58,21 @@ function toolCall(name: string, argumentsJson: string, id = 'c1'): ModelToolCall
 // 默认造一个「纯工具轮」事件：finishReason='tool_calls' + 无正文。over 覆盖成清零态用。
 function turnEnd(
   toolCalls: ModelToolCall[],
-  over: Partial<LoopGuardTurnEndEvent> = {},
-): LoopGuardTurnEndEvent {
-  return { finishReason: 'tool_calls', toolCalls, assistantHasContent: false, ...over }
+  over: Partial<TurnEndEvent> = {},
+): TurnEndEvent {
+  return {
+    finishReason: 'tool_calls',
+    toolCalls,
+    assistantHasContent: false,
+    msg: undefined,
+    hasStreamedItem: false,
+    ...over,
+  }
+}
+
+function hit(decision: void | TurnEndDecision | undefined): TurnEndStopDecision {
+  if (!decision?.stop) throw new Error('预期循环检测返回 stop 决策')
+  return decision
 }
 
 describe('签名规范化（normalizedArgsSignature / toolCallSignature）', () => {
@@ -119,7 +130,7 @@ describe('createLoopGuardDetector —— 跨轮累计 + 达阈值判定', () => 
     expect(detect(ctx, turnEnd([call]))).toBeUndefined() // 轮1：count 1
     expect(detect(ctx, turnEnd([call]))).toBeUndefined() // 轮2：count 2
 
-    const decision = detect(ctx, turnEnd([call])) as LoopGuardTurnEndDecision // 轮3：count 3 → 命中
+    const decision = hit(detect(ctx, turnEnd([call]))) // 轮3：count 3 → 命中
     expect(decision).toBeDefined()
     expect(decision.stop).toBe(true)
     expect(decision.runStatus).toBe('error')
@@ -199,7 +210,7 @@ describe('createLoopGuardDetector —— 跨轮累计 + 达阈值判定', () => 
     detect(ctx, turnEnd([toolCall('t', '{"k":"A"}')])) // 连续1，A=1
     detect(ctx, turnEnd([toolCall('t', '{"k":"B"}')])) // 连续2，B=1
     detect(ctx, turnEnd([toolCall('t', '{"k":"A"}')])) // 连续3，A=2
-    const decision = detect(ctx, turnEnd([toolCall('t', '{"k":"A"}')])) as LoopGuardTurnEndDecision // 连续4，A=3 → 命中
+    const decision = hit(detect(ctx, turnEnd([toolCall('t', '{"k":"A"}')]))) // 连续4，A=3 → 命中
     expect(decision.traceAttrs?.repeated_count).toBe(3)
     expect(decision.traceAttrs?.consecutive_tool_turns).toBe(4)
   })
@@ -210,10 +221,10 @@ describe('createLoopGuardDetector —— 跨轮累计 + 达阈值判定', () => 
     detect(ctx, turnEnd([toolCall('t', '{"s":"X"}', 'x1'), toolCall('t', '{"s":"Y"}', 'y1')]))
     detect(ctx, turnEnd([toolCall('t', '{"s":"X"}', 'x2'), toolCall('t', '{"s":"Y"}', 'y2')]))
     // 这一轮 X、Y 都到 3，但只记数组里靠前的 X。
-    const decision = detect(
+    const decision = hit(detect(
       ctx,
       turnEnd([toolCall('t', '{"s":"X"}', 'x3'), toolCall('t', '{"s":"Y"}', 'y3')]),
-    ) as LoopGuardTurnEndDecision
+    ))
     expect(decision.traceAttrs?.callId).toBe('x3')
     expect(decision.traceAttrs?.argsPreview).toBe(truncatePayload({ s: 'X' }, 500))
   })
@@ -225,7 +236,7 @@ describe('坏 JSON 参数的签名降级', () => {
     const bad = toolCall('skill_search', '{"query":', 'loop1')
     expect(detect(ctx, turnEnd([bad]))).toBeUndefined()
     expect(detect(ctx, turnEnd([bad]))).toBeUndefined()
-    const decision = detect(ctx, turnEnd([bad])) as LoopGuardTurnEndDecision
+    const decision = hit(detect(ctx, turnEnd([bad])))
     expect(decision.stop).toBe(true)
     expect(decision.reason).toBe('检测到重复工具调用循环')
     expect(decision.traceAttrs?.toolName).toBe('skill_search')
@@ -264,7 +275,7 @@ describe('loopGuardPlugin —— 经 assemblePlugins 复合 onTurnEnd', () => {
 
     expect(await hooks.onTurnEnd?.(ctx, turnEnd([call]))).toBeUndefined()
     expect(await hooks.onTurnEnd?.(ctx, turnEnd([call]))).toBeUndefined()
-    const decision = (await hooks.onTurnEnd?.(ctx, turnEnd([call]))) as LoopGuardTurnEndDecision
+    const decision = hit(await hooks.onTurnEnd?.(ctx, turnEnd([call])))
     expect(decision.stop).toBe(true)
     expect(decision.traceEventName).toBe('agent.loop_detected')
     expect(decision.traceAttrs?.repeated_count).toBe(3)
@@ -278,7 +289,7 @@ describe('loopGuardPlugin —— 经 assemblePlugins 复合 onTurnEnd', () => {
     await a.onTurnEnd?.(ctx, turnEnd([call])) // a: 1
     await a.onTurnEnd?.(ctx, turnEnd([call])) // a: 2
     expect(await b.onTurnEnd?.(ctx, turnEnd([call]))).toBeUndefined() // b: 1
-    const aHit = (await a.onTurnEnd?.(ctx, turnEnd([call]))) as LoopGuardTurnEndDecision
+    const aHit = hit(await a.onTurnEnd?.(ctx, turnEnd([call])))
     expect(aHit.stop).toBe(true) // a: 3 → 命中
     expect(await b.onTurnEnd?.(ctx, turnEnd([call]))).toBeUndefined() // b: 2（未受 a 影响）
   })

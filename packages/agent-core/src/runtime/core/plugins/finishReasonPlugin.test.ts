@@ -25,7 +25,7 @@ import { itemsAtom, runAtom } from '../../../state/sessionAtoms'
 import type { SessionMeta } from '../../../state/core.type'
 import { makeCoreCtx, type CoreCtx } from '../coreCtx'
 import { assemblePlugins } from '../pluginApi'
-import type { TurnEndDecision } from '../loopHooks'
+import type { TurnEndDecision, TurnEndEvent } from '../loopHooks'
 import {
   applyFinishReason,
   finishReasonPlugin,
@@ -33,7 +33,6 @@ import {
   FINISH_REASON_ERRORS,
   FINISH_REASON_ITEM_NOTICES,
   FINISH_REASON_STANDALONE_NOTICES,
-  type FinishReasonTurnEndEvent,
 } from './finishReasonPlugin'
 
 // 假 CoreCtx：current=true 时登记会话 s1 + 把 store 的 runAtom 置成 runId r1，令 ctx.isCurrent()
@@ -58,16 +57,17 @@ function makeCtx(opts: { current?: boolean } = {}): { ctx: CoreCtx; store: Store
   return { ctx, store }
 }
 
-// 构造一个 FinishReasonTurnEndEvent（toolCalls 默认空数组）。
+// 构造一个完整 TurnEndEvent（toolCalls 默认空数组）。
 function turnEnd(
   finishReason: string | null,
-  extra: Partial<FinishReasonTurnEndEvent> = {},
-): FinishReasonTurnEndEvent {
+  extra: Partial<TurnEndEvent> = {},
+): TurnEndEvent {
   return {
     finishReason,
     toolCalls: extra.toolCalls ?? [],
+    assistantHasContent: extra.assistantHasContent ?? false,
     msg: extra.msg,
-    hasStreamedItem: extra.hasStreamedItem,
+    hasStreamedItem: extra.hasStreamedItem ?? false,
   }
 }
 
@@ -100,6 +100,7 @@ describe('finishReasonPlugin —— 异常三态各一（Case B：无流式条�
       stop: true,
       runStatus: 'error',
       reason: FINISH_REASON_ERRORS.length,
+      traceEventName: 'agent.finish_abnormal',
     })
   })
 
@@ -118,6 +119,7 @@ describe('finishReasonPlugin —— 异常三态各一（Case B：无流式条�
       stop: true,
       runStatus: 'error',
       reason: FINISH_REASON_ERRORS.content_filter,
+      traceEventName: 'agent.finish_abnormal',
     })
   })
 
@@ -134,6 +136,7 @@ describe('finishReasonPlugin —— 异常三态各一（Case B：无流式条�
       stop: true,
       runStatus: 'error',
       reason: FINISH_REASON_ERRORS.insufficient_system_resource,
+      traceEventName: 'agent.finish_abnormal',
     })
     // reason 逐字点名「稍后重试」（与 modelRun.test 的 fr4 用例同锚点）。
     expect(decision?.reason).toContain('稍后重试')
@@ -208,6 +211,7 @@ describe('finishReasonPlugin —— Case A（流式已建条目）不补条目�
       stop: true,
       runStatus: 'error',
       reason: FINISH_REASON_ERRORS.length,
+      traceEventName: 'agent.finish_abnormal',
     })
   })
 })
@@ -232,6 +236,7 @@ describe('finishReasonPlugin —— 经 assemblePlugins 装配（onTurnEnd fan-o
       stop: true,
       runStatus: 'error',
       reason: FINISH_REASON_ERRORS.content_filter,
+      traceEventName: 'agent.finish_abnormal',
     })
   })
 

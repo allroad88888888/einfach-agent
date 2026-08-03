@@ -134,15 +134,13 @@ import { migrationPlugin } from './core/plugins/migrationPlugin'
 import {
   finishReasonPlugin,
   FINISH_REASON_ITEM_NOTICES,
-  isAbnormalFinishReason,
-  type AbnormalFinishReason,
-  type FinishReasonTurnEndEvent,
 } from './core/plugins/finishReasonPlugin'
+import { loopGuardPlugin } from './core/plugins/loopGuardPlugin'
 import {
-  loopGuardPlugin,
-  type LoopGuardTurnEndDecision,
-  type LoopGuardTurnEndEvent,
-} from './core/plugins/loopGuardPlugin'
+  getAbnormalFinishReason,
+  type AbnormalFinishReason,
+  type TurnEndEvent,
+} from './core/loopHooks'
 import { formatSubagentTranscript } from '../subagents/distill'
 import { ROOT_AGENT_PATH } from '../subagents/path'
 import { createDelegateAgentRuntime } from '../subagents/runtime'
@@ -2027,13 +2025,16 @@ export async function runToolLoop(
           hint: '输出触顶，tool_call 参数可能被截断',
         })
       }
-      // 收敛成一个「已收窄的异常 finishReason」：非 undefined 即「本轮要因 finish_reason 终止」，与旧
-      //   else-if 逐字等价（length+tool_calls 已被上面拦走、不落这里）。isAbnormalFinishReason 收窄后既能
-      //   当布尔用、又能索引 FINISH_REASON_ITEM_NOTICES / FINISH_REASON_LABEL_TAGS。
-      const abnormalFinish: AbnormalFinishReason | undefined =
-        isAbnormalFinishReason(finishReason) && !(finishReason === 'length' && toolCalls.length > 0)
-          ? finishReason
-          : undefined
+      // onTurnEnd 事件是 loop 与插件共用的完整契约。异常 finish 判据也从这份事件单源取得，避免 loop
+      // 与 finishReasonPlugin 各自维护 length + tool_calls 的可恢复例外。
+      const turnEndEvent: TurnEndEvent = {
+        finishReason,
+        toolCalls,
+        assistantHasContent,
+        msg,
+        hasStreamedItem: streamWriter.hasItem(),
+      }
+      const abnormalFinish: AbnormalFinishReason | undefined = getAbnormalFinishReason(turnEndEvent)
       // Case A（流式已建条目）的系统标注必须由 loop 侧在 onTurnEnd【之前】finalize 追加 —— 完整正文只
       //   活在 streamWriter 闭包里（flush 有自适应节流），插件从 store 只能拿到最后一次节流快照，自己拼
       //   标注会把末尾那截文字顶掉（这就是「流式风险挡在插件外」）。传 toolCalls=undefined：assistantItem-
@@ -2044,17 +2045,10 @@ export async function runToolLoop(
       }
       // onTurnEnd fan-out：loopGuard（跨轮重复工具调用累计 + 命中即中止）先、finishReason（异常三态中止 +
       //   补 Case B 非流式标注条目）后，首个 stop 胜且短路——复刻旧代码「循环检测 block 在 finish_reason
-      //   block 之前」的评估序。loopGuard 每轮都要累计/清零，故 onTurnEnd 无条件每轮调一次。两个插件的私有
-      //   扩展字段（assistantHasContent / msg+hasStreamedItem）经交叉类型一次挂上；onTurnEnd 是循环内 await
-      //   收尾点，命中收尾里的 commitTurn/patchRun 各自带 isCurrentRun 守卫（stale/ghost 不写）。
-      const turnEndEvent: LoopGuardTurnEndEvent & FinishReasonTurnEndEvent = {
-        finishReason,
-        toolCalls,
-        assistantHasContent,
-        msg,
-        hasStreamedItem: streamWriter.hasItem(),
-      }
-      const decision = (await hooks.onTurnEnd?.(ctx, turnEndEvent)) as LoopGuardTurnEndDecision | undefined
+      //   block 之前」的评估序。loopGuard 每轮都要累计/清零，故 onTurnEnd 无条件每轮调一次。共享事件契约
+      //   已带齐两个插件所需的瞬时字段；onTurnEnd 是循环内 await 收尾点，命中收尾里的 commitTurn/patchRun
+      //   各自带 isCurrentRun 守卫（stale/ghost 不写）。
+      const decision = await hooks.onTurnEnd?.(ctx, turnEndEvent)
       if (!isRunningRun(id, runId, core)) {
         streamWriter.finishPending()
         commitStoppedTurn()
@@ -2067,8 +2061,10 @@ export async function runToolLoop(
           //   commitCheckpoint + 落盘 ★——本轮虽收成 error 但条目已进 itemsAtom，而 itemsAtom 不持久化，
           //   不落 checkpoint 用户刷新后连自己那条 user 消息都会一起蒸发。label 带 [截断]/[已拦截]/[已中断] 前缀。
           commitTurn(FINISH_REASON_LABEL_TAGS[abnormalFinish])
-          if (isCurrentRun(currentRunGuard)) patchRun(id, { status: 'error', error: decision.reason }, core)
-          finishTrace('error', 'agent.finish_abnormal', {
+          if (isCurrentRun(currentRunGuard)) {
+            patchRun(id, { status: decision.runStatus, error: decision.reason }, core)
+          }
+          finishTrace('error', decision.traceEventName, {
             finish_reason: finishReason,
             tool_calls_count: toolCalls.length,
             content_chars: responseChars(msg?.content),
@@ -2079,11 +2075,13 @@ export async function runToolLoop(
           //   assistant 条目）：commitTurn 无 label；事件名 + 全套 attrs 由 loopGuardPlugin 经 decision 交回，
           //   finishTrace 一次落地（发 'agent.loop_detected' 事件 + 关闭 turn span 同一份 attrs，与旧逐字一致）。
           //   走到这里即：decision.stop 为真但 abnormalFinish 未设 —— 只可能是 loopGuard 命中（finishReason
-          //   ='tool_calls'，与异常三态互斥），故 decision 必带 traceEventName/traceAttrs。
+          //   ='tool_calls'，与异常三态互斥）；完整 stop decision 必带 traceEventName/traceAttrs。
           streamWriter.finishPending()
           commitTurn()
-          if (isCurrentRun(currentRunGuard)) patchRun(id, { status: decision.runStatus ?? 'error', error: decision.reason }, core)
-          finishTrace('error', decision.traceEventName ?? 'agent.loop_detected', decision.traceAttrs)
+          if (isCurrentRun(currentRunGuard)) {
+            patchRun(id, { status: decision.runStatus, error: decision.reason }, core)
+          }
+          finishTrace('error', decision.traceEventName, decision.traceAttrs)
         }
         return
       }

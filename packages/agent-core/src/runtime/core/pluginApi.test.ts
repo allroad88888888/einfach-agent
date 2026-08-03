@@ -6,7 +6,7 @@ import { itemsAtom, runAtom } from '../../state/sessionAtoms'
 import type { ConversationItem } from '../../state/core.type'
 import type { Tool } from '../../tools/types'
 import type { CoreCtx } from './coreCtx'
-import type { RequestDraft } from './loopHooks'
+import type { RequestDraft, TurnEndEvent } from './loopHooks'
 import { assemblePlugins, type AgentPlugin } from './pluginApi'
 
 // 组合逻辑不读 ctx，用最小假 ctx 即可（makeCoreCtx 的接线由 coreCtx.test 覆盖）。
@@ -22,6 +22,17 @@ function draftOf(...contents: string[]): RequestDraft {
 
 function contentsOf(draft: RequestDraft): string[] {
   return draft.messages.map((m) => (m as UserItem).content)
+}
+
+function turnEndEvent(over: Partial<TurnEndEvent> = {}): TurnEndEvent {
+  return {
+    finishReason: null,
+    toolCalls: [],
+    assistantHasContent: false,
+    msg: undefined,
+    hasStreamedItem: false,
+    ...over,
+  }
 }
 
 // registerTool 测试用的最小合法 Tool——字段齐全但内容是占位符，组合逻辑不关心工具语义。
@@ -257,7 +268,7 @@ describe('onTurnEnd —— 按注册序依次 await', () => {
         }),
       (api) => api.hook('onTurnEnd', () => void order.push('B')),
     ])
-    const decision = await hooks.onTurnEnd?.(ctx, { finishReason: 'stop', toolCalls: [] })
+    const decision = await hooks.onTurnEnd?.(ctx, turnEndEvent({ finishReason: 'stop' }))
     expect(order).toEqual(['A', 'B'])
     // 全部返回 void → 无决策 → 复合 onTurnEnd 返回 undefined（loop 继续）。
     expect(decision).toBeUndefined()
@@ -275,17 +286,22 @@ describe('onTurnEnd —— 决策合并：首个 stop:true 胜且短路', () => 
       (api) =>
         api.hook('onTurnEnd', () => {
           calls.push('B')
-          return { stop: true, runStatus: 'error', reason: 'B' }
+          return { stop: true, runStatus: 'error', reason: 'B', traceEventName: 'agent.test_b' }
         }),
       (api) =>
         api.hook('onTurnEnd', () => {
           calls.push('C')
-          return { stop: true, runStatus: 'stopped', reason: 'C' }
+          return { stop: true, runStatus: 'stopped', reason: 'C', traceEventName: 'agent.test_c' }
         }),
     ])
 
-    const decision = await hooks.onTurnEnd?.(ctx, { finishReason: 'length', toolCalls: [] })
-    expect(decision).toEqual({ stop: true, runStatus: 'error', reason: 'B' })
+    const decision = await hooks.onTurnEnd?.(ctx, turnEndEvent({ finishReason: 'length' }))
+    expect(decision).toEqual({
+      stop: true,
+      runStatus: 'error',
+      reason: 'B',
+      traceEventName: 'agent.test_b',
+    })
     expect(calls).toEqual(['A', 'B']) // C 被短路
   })
 
@@ -304,7 +320,7 @@ describe('onTurnEnd —— 决策合并：首个 stop:true 胜且短路', () => 
           return {}
         }),
     ])
-    const decision = await hooks.onTurnEnd?.(ctx, { finishReason: 'stop', toolCalls: [] })
+    const decision = await hooks.onTurnEnd?.(ctx, turnEndEvent({ finishReason: 'stop' }))
     expect(decision).toBeUndefined()
     expect(calls).toEqual(['void', 'false', 'empty']) // 无 stop → 无短路
   })
@@ -321,12 +337,22 @@ describe('onTurnEnd —— 决策合并：首个 stop:true 胜且短路', () => 
       (api) =>
         api.hook('onTurnEnd', () => {
           calls.push('stop')
-          return { stop: true, runStatus: 'stopped' }
+          return {
+            stop: true,
+            runStatus: 'stopped',
+            reason: 'stopped',
+            traceEventName: 'agent.test_stopped',
+          }
         }),
       (api) => api.hook('onTurnEnd', () => void calls.push('never')),
     ])
-    const decision = await hooks.onTurnEnd?.(ctx, { finishReason: null, toolCalls: [] })
-    expect(decision).toEqual({ stop: true, runStatus: 'stopped' })
+    const decision = await hooks.onTurnEnd?.(ctx, turnEndEvent())
+    expect(decision).toEqual({
+      stop: true,
+      runStatus: 'stopped',
+      reason: 'stopped',
+      traceEventName: 'agent.test_stopped',
+    })
     expect(calls).toEqual(['v1', 'v2', 'stop']) // never 被短路
   })
 
@@ -335,13 +361,14 @@ describe('onTurnEnd —— 决策合并：首个 stop:true 胜且短路', () => 
       (api) =>
         api.hook('onTurnEnd', async () => {
           await Promise.resolve()
-          return { stop: true, runStatus: 'error', reason: 'async' }
+          return { stop: true, runStatus: 'error', reason: 'async', traceEventName: 'agent.test_async' }
         }),
     ])
-    expect(await hooks.onTurnEnd?.(ctx, { finishReason: 'stop', toolCalls: [] })).toEqual({
+    expect(await hooks.onTurnEnd?.(ctx, turnEndEvent({ finishReason: 'stop' }))).toEqual({
       stop: true,
       runStatus: 'error',
       reason: 'async',
+      traceEventName: 'agent.test_async',
     })
   })
 })
@@ -414,7 +441,7 @@ describe('assemblePlugins —— 装配细节', () => {
     const p2: AgentPlugin = (api) => api.hook('onTurnEnd', () => void order.push('p2'))
 
     const hooks = assemblePlugins([p1, p2])
-    await hooks.onTurnEnd?.(ctx, { finishReason: null, toolCalls: [] })
+    await hooks.onTurnEnd?.(ctx, turnEndEvent())
     expect(order).toEqual(['p1-a', 'p1-b', 'p2'])
   })
 })
@@ -605,7 +632,7 @@ describe('多插件混注册 —— hook / subscribe / registerTool 互不干扰
     hooks.bindSubscriptions(store)
 
     expect(hooks.tools).toEqual([toolA, toolB])
-    await hooks.onTurnEnd?.(ctx, { finishReason: 'stop', toolCalls: [] })
+    await hooks.onTurnEnd?.(ctx, turnEndEvent({ finishReason: 'stop' }))
     store.setter(runAtom, { runId: 'r1', status: 'running' })
 
     expect(order).toEqual(['turn-end', 'subscribed'])

@@ -11,7 +11,8 @@
 // 不在本文件（本文件只定义槽形状）。危险工具确认 / ask_user 暂停留到 Stage 2b，原样待在 loop 里。
 // 定义但不强制实现 —— assemblePlugins 会把每个槽按 fan-out 语义合成，loop 侧据「槽为 undefined」跳过。
 
-import type { ModelItem } from '@web-agent/ai'
+import type { ModelItem, ModelResponseMessage } from '@web-agent/ai'
+import type { TraceAttributes } from '../../observability/types'
 import type { CoreCtx } from './coreCtx'
 
 // 简介：组请求时的可变投影（压缩改这，不写回 store）。
@@ -44,24 +45,58 @@ export interface AfterToolCallEvent {
   result: unknown
 }
 
-// 简介：onTurnEnd 收到的瞬时事件（一轮 model 往返结束）。
-// 详情：finishReason 是本轮响应的停止原因（null 表示缺失）；toolCalls 是本轮模型要求的工具调用（可空数组）。
+// 简介：onTurnEnd 收到的完整瞬时事件（一轮 model 往返结束）。
+// 详情：这份事件是 loop 与终止插件唯一共享的 turn-end 契约。所有字段均由 loop 在调用 hook 前算好，
+// 插件不能再私有扩展或在边界做断言，避免两份谓词与字段可选性漂移。
 export interface TurnEndEvent {
   finishReason: string | null
   toolCalls: unknown[]
+  assistantHasContent: boolean
+  msg: ModelResponseMessage | undefined
+  hasStreamedItem: boolean
 }
 
-// 简介：onTurnEnd 的终止决策返回（Stage 2a）—— 插件看完一轮后可要求 loop【带状态终止 run】。
-// 详情：finish_reason 异常收尾、循环检测都用它。字段全可选：
-//   · stop:true  → loop 在本轮后终止 run（不再进下一轮）。是「是否终止」的唯一开关。
-//   · runStatus  → 终止时把 run 置成的状态：'error'（异常收尾）/ 'stopped'（优雅停）。语义由 loop 落地。
-//   · reason     → 供留痕 / 回给 model 的原因串。
-//   返回 void（undefined）= 不干预，loop 继续。fan-out 语义：按注册序，第一个返回 stop:true 的胜、
-//   短路（其后 onTurnEnd 不再调），把它的 runStatus/reason 整份带出；无人 stop → undefined。
-export interface TurnEndDecision {
-  stop?: boolean
-  runStatus?: 'error' | 'stopped'
+// 简介：onTurnEnd 的完整终止决策（Stage 2a）—— 插件看完一轮后可要求 loop【带状态终止 run】。
+// 详情：finish_reason 异常收尾、循环检测都用它。stop:true 是唯一的终止开关，且终止路径必须带齐
+// run 状态、原因与 trace 事件名；loop 直接消费它们，不再补默认值。
+export interface TurnEndStopDecision {
+  stop: true
+  runStatus: 'error' | 'stopped'
+  reason: string
+  traceEventName: string
+  traceAttrs?: TraceAttributes
+}
+
+// 简介：onTurnEnd 的非终止返回形状。
+// 详情：保留 { stop:false } / {} 给观察型插件使用；assemblePlugins 会继续 fan-out，不把它交给 loop。
+export interface TurnEndContinueDecision {
+  stop?: false
   reason?: string
+}
+
+export type TurnEndDecision = TurnEndStopDecision | TurnEndContinueDecision
+
+export type AbnormalFinishReason = 'length' | 'content_filter' | 'insufficient_system_resource'
+
+// 简介：finish_reason 是否落在异常三态。
+// 详情：loop 和 finishReasonPlugin 均通过同一守卫收窄，防止异常终止判据漂移。
+export function isAbnormalFinishReason(reason: string | null): reason is AbnormalFinishReason {
+  return (
+    reason === 'length' ||
+    reason === 'content_filter' ||
+    reason === 'insufficient_system_resource'
+  )
+}
+
+// 简介：取本轮需要异常终止的 finish_reason。
+// 详情：length + tool_calls 是可恢复的半截工具参数，不终止，留给坏 JSON 闸门；其余异常三态终止。
+export function getAbnormalFinishReason(
+  ev: Pick<TurnEndEvent, 'finishReason' | 'toolCalls'>,
+): AbnormalFinishReason | undefined {
+  const { finishReason, toolCalls } = ev
+  return isAbnormalFinishReason(finishReason) && !(finishReason === 'length' && toolCalls.length > 0)
+    ? finishReason
+    : undefined
 }
 
 // 简介：薄 loop 的单槽 hook 集合（PX3）。
@@ -81,8 +116,8 @@ export interface LoopHooks {
   ): BeforeToolCallResult | undefined | Promise<BeforeToolCallResult | undefined>
   /** 工具执行后（改写结果 / 记录挂这，Stage 2）。返回值按字段覆盖合并进结果。 */
   afterToolCall?(ctx: CoreCtx, ev: AfterToolCallEvent): unknown
-  /** 一轮结束（finish_reason 三态 / 循环检测挂这，Stage 2a）。返回 TurnEndDecision 可要求 loop
-   *  带状态终止 run（stop + runStatus/reason）；返回 void = 不干预、loop 继续。 */
+  /** 一轮结束（finish_reason 三态 / 循环检测挂这，Stage 2a）。返回完整 TurnEndStopDecision 可要求
+   *  loop 带状态终止 run；返回 void / TurnEndContinueDecision = 不干预、loop 继续。 */
   onTurnEnd?(
     ctx: CoreCtx,
     ev: TurnEndEvent,

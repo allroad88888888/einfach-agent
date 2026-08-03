@@ -21,6 +21,17 @@ function user(content: string): UserItem {
 
 const fakeCtx = { sessionId: 's', runId: 'r' } as unknown as CoreCtx
 
+function turnEndEvent(over: Partial<TurnEndEvent> = {}): TurnEndEvent {
+  return {
+    finishReason: null,
+    toolCalls: [],
+    assistantHasContent: false,
+    msg: undefined,
+    hasStreamedItem: false,
+    ...over,
+  }
+}
+
 describe('LoopHooks / RequestDraft 契约形状', () => {
   it('RequestDraft.messages 承载 ModelItem[]；transformContext 就地改投影、不返回新对象', async () => {
     const draft: RequestDraft = { messages: [user('a')] }
@@ -71,12 +82,15 @@ describe('LoopHooks / RequestDraft 契约形状', () => {
     expect(draft.messages).toHaveLength(1)
   })
 
-  it('TurnEndEvent.finishReason 可为 null、toolCalls 为 unknown[]', () => {
-    const ev: TurnEndEvent = { finishReason: null, toolCalls: [] }
+  it('TurnEndEvent 是 loop 与插件共享的完整终止事件契约', () => {
+    const ev = turnEndEvent()
     expect(ev.finishReason).toBeNull()
     expect(ev.toolCalls).toEqual([])
+    expect(ev.assistantHasContent).toBe(false)
+    expect(ev.msg).toBeUndefined()
+    expect(ev.hasStreamedItem).toBe(false)
 
-    const ev2: TurnEndEvent = { finishReason: 'tool_calls', toolCalls: [{ id: 'c1' }] }
+    const ev2 = turnEndEvent({ finishReason: 'tool_calls', toolCalls: [{ id: 'c1' }] })
     expect(ev2.finishReason).toBe('tool_calls')
     expect(ev2.toolCalls).toHaveLength(1)
   })
@@ -90,7 +104,9 @@ describe('LoopHooks / RequestDraft 契约形状', () => {
       },
       onTurnEnd(_ctx, ev: TurnEndEvent): TurnEndDecision | undefined {
         // finish_reason 异常 → 要求 loop 带 'error' 状态终止（形状演示，非 loop 接线）。
-        if (ev.finishReason === 'length') return { stop: true, runStatus: 'error', reason: 'length' }
+        if (ev.finishReason === 'length') {
+          return { stop: true, runStatus: 'error', reason: 'length', traceEventName: 'agent.test' }
+        }
         return undefined // 正常轮：不干预，loop 继续。
       },
     }
@@ -98,10 +114,15 @@ describe('LoopHooks / RequestDraft 契约形状', () => {
     await hooks.onRunStart?.(fakeCtx)
     expect(marks).toEqual(['run-start'])
 
-    const stop = await hooks.onTurnEnd?.(fakeCtx, { finishReason: 'length', toolCalls: [] })
-    expect(stop).toEqual({ stop: true, runStatus: 'error', reason: 'length' })
+    const stop = await hooks.onTurnEnd?.(fakeCtx, turnEndEvent({ finishReason: 'length' }))
+    expect(stop).toEqual({
+      stop: true,
+      runStatus: 'error',
+      reason: 'length',
+      traceEventName: 'agent.test',
+    })
 
-    const cont = await hooks.onTurnEnd?.(fakeCtx, { finishReason: 'stop', toolCalls: [] })
+    const cont = await hooks.onTurnEnd?.(fakeCtx, turnEndEvent({ finishReason: 'stop' }))
     expect(cont).toBeUndefined()
   })
 })
