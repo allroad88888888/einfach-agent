@@ -5,6 +5,7 @@ import {
   hydrateMcpSettings,
   selectSettingsTab,
 } from '../../mcp/commands'
+import { initializeMcpSettings } from '../../mcp/initialize'
 import { settingsCenterOpenAtom, settingsCenterTabAtom } from '../../mcp/state'
 import { hydrateAppSettings, saveCustomInstructions, updateCustomInstructionsDraft } from '../../settings/commands'
 import { MAX_CUSTOM_INSTRUCTIONS_LENGTH } from '../../settings/config'
@@ -123,6 +124,7 @@ export function SettingsDialog({ launchButtonRef }: SettingsDialogProps) {
   const wasOpenRef = useRef(false)
 
   useEffect(() => {
+    initializeMcpSettings()
     void hydrateMcpSettings()
     void hydrateAppSettings()
   }, [])

@@ -4,11 +4,6 @@ import { Provider } from '@einfach/react'
 import { rootStore } from '@web-agent/core/state/rootStore'
 import { toolRegistry } from '@web-agent/core/tools/registry'
 import { registerStandardTools } from '@web-agent/tools'
-import {
-  createMcpClientManager,
-  createMcpConnectorRouter,
-  createStreamableHttpMcpConnector,
-} from '@web-agent/tools-mcp'
 import { configureCommands, newSession } from '@web-agent/core/runtime/commands'
 import { configurePersistence } from '@web-agent/core/runtime/persistenceBridge'
 import { configureObservability } from '@web-agent/core/observability/trace'
@@ -20,8 +15,6 @@ import { isTauri } from '@tauri-apps/api/core'
 import { AppShell } from './agentNew/ui/AppShell'
 import { WebTimelineRendererRegistryProvider } from './agentNew/ui/WebTimelineRendererRegistryProvider'
 import { WindowScrollDemo } from './demos/WindowScrollDemo'
-import { configureMcpSettings } from './mcp/commands'
-import { createTauriStdioMcpConnector } from './mcp/tauriStdioConnector'
 import {
   configureModelCredentialHost,
   hydrateAppSettings,
@@ -44,21 +37,7 @@ import './agentNew/ui/agentnew.css'
 // （= toolRegistry = defaultCore.tools）。core 不再硬编码工具，装什么由消费方（这里是 app）决定。
 registerStandardTools(toolRegistry)
 
-// MCP 连接由应用层装配：浏览器与桌面共用官方 Streamable HTTP，
-// 只有 Tauri 宿主开放 stdio 子进程桥接。连接管理器负责动态注册/卸载远端工具。
 const tauriHost = isTauri()
-const mcpConnector = createMcpConnectorRouter({
-  'streamable-http': createStreamableHttpMcpConnector(),
-  ...(tauriHost ? { stdio: createTauriStdioMcpConnector() } : {}),
-})
-const mcpManager = createMcpClientManager({
-  registry: toolRegistry,
-  connector: mcpConnector,
-})
-configureMcpSettings({
-  manager: mcpManager,
-  capabilities: { stdio: tauriHost },
-})
 
 // API Key 不进入前端配置：桌面端走原生代理，开发浏览器走本地 Node 中继，静态产物拒绝模型请求。
 const desktopManagedCredentialMarker = 'desktop-managed-credential'

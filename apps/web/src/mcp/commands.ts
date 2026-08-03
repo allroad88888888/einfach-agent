@@ -41,6 +41,7 @@ let activeService: McpSettingsService = createMcpSettingsService({
   manager: unconfiguredManager,
   storage: createBrowserMcpConfigStorage(),
 })
+let configured = false
 
 export interface ConfigureMcpSettingsOptions {
   manager: Pick<
@@ -57,6 +58,7 @@ export function configureMcpSettings({
   capabilities,
 }: ConfigureMcpSettingsOptions): void {
   activeService.dispose()
+  configured = true
   const resolvedCapabilities: McpSettingsCapabilities = {
     stdio: capabilities?.stdio === true,
   }
@@ -67,6 +69,11 @@ export function configureMcpSettings({
     storage,
     capabilities: resolvedCapabilities,
   })
+}
+
+/** Reports whether an application host has replaced the unavailable MCP manager. */
+export function isMcpSettingsConfigured(): boolean {
+  return configured
 }
 
 export function hydrateMcpSettings(): Promise<void> {
