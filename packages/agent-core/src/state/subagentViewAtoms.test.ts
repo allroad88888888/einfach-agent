@@ -641,4 +641,42 @@ describe('subagentViewAtoms', () => {
       ],
     })
   })
+
+  it('后选节点轨迹完成后不被先前的慢读取覆盖', async () => {
+    const store = createStore()
+    let resolveOld!: (result: WorkspaceRuntimeResult<ReadWorkspaceFileResult>) => void
+    const oldReader = () => new Promise<WorkspaceRuntimeResult<ReadWorkspaceFileResult>>((resolve) => {
+      resolveOld = resolve
+    })
+    const newContent = JSON.stringify({
+      timestamp: '2026-07-23T00:00:01Z',
+      turn: 2,
+      item: { role: 'assistant', content: 'new trace' },
+    })
+
+    const oldRequest = store.setter(loadSubagentTraceAtom, {
+      archiveBasePath: '.agent-archive/run',
+      agentPath: 'root-01',
+      nodeKey: 'tree:root-01',
+      reader: oldReader,
+    })
+    await store.setter(loadSubagentTraceAtom, {
+      archiveBasePath: '.agent-archive/run',
+      agentPath: 'root-02',
+      nodeKey: 'tree:root-02',
+      reader: async (input) => ({
+        ok: true,
+        data: { path: input.path, content: newContent, truncated: false, bytes: newContent.length },
+      }),
+    })
+    resolveOld({ ok: false, error: 'permission denied' })
+    await oldRequest
+
+    expect(store.getter(subagentTraceAtom)).toMatchObject({
+      status: 'ready',
+      path: '.agent-archive/run/traces/root-02.trace.jsonl',
+      nodeKey: 'tree:root-02',
+      records: [expect.objectContaining({ turn: 2, item: { role: 'assistant', content: 'new trace' } })],
+    })
+  })
 })

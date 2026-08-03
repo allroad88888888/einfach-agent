@@ -1,5 +1,6 @@
 import { atom } from '@einfach/core'
 import type { AssistantItem, ToolItem } from '@web-agent/ai'
+import { createLatestOnlyLoader } from './createLatestOnlyLoader'
 import type { ConversationItem } from './core.type'
 import { itemsAtom } from './sessionAtoms'
 import type { SubagentNodeStatus } from '../subagents/types'
@@ -572,7 +573,7 @@ export const globalSubagentRunsAtom = atom<GlobalSubagentRunsState>({
   warnings: [],
   hasMore: false,
 })
-const globalSubagentRunsRequestTokenAtom = atom(0)
+const globalSubagentRunsLoader = createLatestOnlyLoader()
 export const selectedGlobalSubagentRunAtom = atom<GlobalSubagentRunSelection | undefined>(undefined)
 
 export const loadGlobalSubagentRunsAtom = atom(
@@ -587,8 +588,7 @@ export const loadGlobalSubagentRunsAtom = atom(
     const loadMore = input.loadMore === true
     if (loadMore && (current.workspaceRoot !== input.workspaceRoot || !current.hasMore || !current.cursor || current.loadingMore)) return
     if (!loadMore && !input.force && current.status !== 'idle' && current.workspaceRoot === input.workspaceRoot) return
-    const token = get(globalSubagentRunsRequestTokenAtom) + 1
-    set(globalSubagentRunsRequestTokenAtom, token)
+    const token = globalSubagentRunsLoader.start(get, set)
     set(globalSubagentRunsAtom, loadMore
       ? { ...current, loadingMore: true, error: undefined }
       : { workspaceRoot: input.workspaceRoot, status: 'loading', runs: [], warnings: [], hasMore: false })
@@ -597,7 +597,7 @@ export const loadGlobalSubagentRunsAtom = atom(
       loadMore ? current.cursor : undefined,
       input.reader,
     )
-    if (get(globalSubagentRunsRequestTokenAtom) !== token) return
+    if (!globalSubagentRunsLoader.isLatest(get, token)) return
     if (loadMore && loaded.status !== 'error' && loaded.snapshot === current.snapshot) {
       const runs = mergeGlobalSubagentRuns(current.runs, loaded.runs)
       set(globalSubagentRunsAtom, {
@@ -627,7 +627,7 @@ export const loadGlobalSubagentRunsAtom = atom(
 )
 
 export const subagentArchiveLoadsAtom = atom<Record<string, SubagentArchiveLoadState>>({})
-const subagentArchiveRequestTokensAtom = atom<Record<string, number>>({})
+const subagentArchiveLoader = createLatestOnlyLoader<string>()
 
 function isMissingArchiveError(error: string): boolean {
   return /does not exist|not found|no such file/i.test(error)
@@ -721,11 +721,7 @@ export const loadSubagentArchiveAtom = atom(
   async (get, set, input: { archiveBasePath: string; workspaceRoot?: string; force?: boolean; reader?: ArchiveReader }) => {
     const current = get(subagentArchiveLoadsAtom)[input.archiveBasePath]
     if (!input.force && current && current.workspaceRoot === input.workspaceRoot) return
-    const token = (get(subagentArchiveRequestTokensAtom)[input.archiveBasePath] ?? 0) + 1
-    set(subagentArchiveRequestTokensAtom, {
-      ...get(subagentArchiveRequestTokensAtom),
-      [input.archiveBasePath]: token,
-    })
+    const token = subagentArchiveLoader.start(get, set, input.archiveBasePath)
     set(subagentArchiveLoadsAtom, {
       ...get(subagentArchiveLoadsAtom),
       [input.archiveBasePath]: {
@@ -735,7 +731,7 @@ export const loadSubagentArchiveAtom = atom(
       },
     })
     const loaded = await readSubagentArchive(input, input.reader)
-    if (get(subagentArchiveRequestTokensAtom)[input.archiveBasePath] !== token) return
+    if (!subagentArchiveLoader.isLatest(get, token, input.archiveBasePath)) return
     set(subagentArchiveLoadsAtom, {
       ...get(subagentArchiveLoadsAtom),
       [input.archiveBasePath]: loaded,
@@ -750,13 +746,13 @@ export const archiveSubagentTreesAtom = atom((get) =>
 )
 
 export const subagentArchivePreviewAtom = atom<SubagentArchivePreviewState>({ status: 'idle' })
-const subagentArchivePreviewRequestTokenAtom = atom(0)
+const subagentArchivePreviewLoader = createLatestOnlyLoader()
 export const subagentTraceAtom = atom<SubagentTraceState>({
   status: 'idle',
   records: [],
   warnings: [],
 })
-const subagentTraceRequestTokenAtom = atom(0)
+const subagentTraceLoader = createLatestOnlyLoader()
 
 export function resolveSubagentArchivePath(archiveBasePath: string, path: string): string {
   const normalized = path.replace(/^\.\//, '')
@@ -778,15 +774,14 @@ export const loadSubagentArchivePreviewAtom = atom(
     reader?: ArchiveReader
   }) => {
     const path = resolveSubagentArchivePath(input.archiveBasePath, input.path)
-    const token = _get(subagentArchivePreviewRequestTokenAtom) + 1
-    set(subagentArchivePreviewRequestTokenAtom, token)
+    const token = subagentArchivePreviewLoader.start(_get, set)
     set(subagentArchivePreviewAtom, { status: 'loading', kind: input.kind, path, nodeKey: input.nodeKey })
     if (input.content !== undefined) {
       set(subagentArchivePreviewAtom, { status: 'ready', kind: input.kind, path, nodeKey: input.nodeKey, content: input.content })
       return
     }
     const result = await (input.reader ?? readWorkspaceFile)({ path, maxBytes: 200_000, workspaceRoot: input.workspaceRoot })
-    if (_get(subagentArchivePreviewRequestTokenAtom) !== token) return
+    if (!subagentArchivePreviewLoader.isLatest(_get, token)) return
     set(subagentArchivePreviewAtom, result.ok
       ? { status: 'ready', kind: input.kind, path, nodeKey: input.nodeKey, content: result.data.content }
       : { status: 'error', kind: input.kind, path, nodeKey: input.nodeKey, error: result.error })
@@ -855,8 +850,7 @@ export const loadSubagentTraceAtom = atom(
     silent?: boolean
   }) => {
     const path = subagentTracePath(input.archiveBasePath, input.agentPath)
-    const token = get(subagentTraceRequestTokenAtom) + 1
-    set(subagentTraceRequestTokenAtom, token)
+    const token = subagentTraceLoader.start(get, set)
     const current = get(subagentTraceAtom)
     if (!input.silent || current.nodeKey !== input.nodeKey) {
       set(subagentTraceAtom, {
@@ -872,7 +866,7 @@ export const loadSubagentTraceAtom = atom(
       maxBytes: 2_000_000,
       workspaceRoot: input.workspaceRoot,
     })
-    if (get(subagentTraceRequestTokenAtom) !== token) return
+    if (!subagentTraceLoader.isLatest(get, token)) return
     if (!result.ok) {
       set(subagentTraceAtom, {
         status: isMissingArchiveError(result.error) ? 'empty' : 'error',
