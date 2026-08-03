@@ -1,6 +1,6 @@
 # 插件 UI Renderer 协议蓝图
 
-> 文档状态：P2.5 的 R1–R3 已完成（`846743a`、`a2b8d97`、`66072f3`）；R4–R5 待实施。更新时间：2026-08-03。
+> 文档状态：P2.5 的 R1–R4 已完成（`846743a`、`a2b8d97`、`66072f3`、`79bde78`）；R5 待实施。更新时间：2026-08-03。
 
 ## 结论
 
@@ -102,6 +102,16 @@ export const reactPlugin = defineReactPlugin(/* renderer 注册 */)
 这也明确否定早期蓝图中把 React `registerRenderer` 放进 `PluginApi` 的设想。那会迫使核心
 包的稳定 API 携带 React 类型，并使非 UI consumer 被动耦合前端运行时。
 
+R4 的公开 API 以 `defineReactPlugin` 创建 branded、冻结的插件；其 `install` 只收到
+`ReactPluginInstallApi.registerRenderer(kind, renderer)`。实际安装由 React root 调用
+`installReactPlugins(registry, plugins)` 完成：注册 token 不返回给插件而由宿主集中追踪，安装中
+失败会回滚已注册 renderer，卸载时会先执行插件 disposer，再反序释放全部 renderer token。因而
+插件没有 registry 的 `resolve` 能力，也不能遗留注册项。
+
+`@web-agent/plugin-example` 的根入口保留 Core-only 样板，`@web-agent/plugin-example/react`
+才导出配对 UI 插件。样板使用现有的 `reasoning` kind，所以只能由明确未锁定该 kind 的宿主安装；
+当前 Web App 已锁定全部六个内建 kind，不能以此覆盖其视觉。
+
 ## 自定义 item 的延后决策
 
 v1 registry 仅为 Core 已定义的 kind 提供宿主级渲染替换/组合能力，且内建 renderer 由宿主
@@ -119,7 +129,7 @@ schema/版本、大小限制、持久化与 archive 兼容策略、未知插件�
 | R1 | Core 纯 `timeline` 投影与单元测试 | 已完成（`846743a`）：不导入 React；项目关联、孤立 result、排序、不可变性与计划阶段投影均已覆盖 |
 | R2 | 独立 React registry 与默认 fallback | 已完成（`a2b8d97`）：root 隔离；构造期内建 kind 锁定、重复拒绝、token disposer 与安全纯文本 fallback 均有测试 |
 | R3 | 将 Web `MessageList` 拆成投影消费、思考分组、renderer 与虚拟列表 | 已完成（`66072f3`）：每个 App React root 持有独立 registry；六个既有 Core kind 复用原有消息、思考与浏览器卡片视觉；回退动作仍留在列表 shell，未知 runtime kind 仅作纯文本 fallback |
-| R4 | `@web-agent/react-plugin` 公开入口及非 React Core 样板配对示例 | UI 插件无需 Core 内部 import；卸载后不残留注册 |
+| R4 | `@web-agent/react-plugin` 公开入口及非 React Core 样板配对示例 | 已完成（`79bde78`）：窄 `registerRenderer` 安装面、失败回滚与幂等卸载已测试；样板的 `/react` 子入口不导入 Core 内部模块，卸载后 renderer 无残留 |
 | R5 | 另立自定义持久化 item RFC | schema、archive、权限和多 consumer 降级先获批准 |
 
 每批先补失败测试，再以单独、可撤回的 commit 实现。R1 已只抽取目前 `MessageList` 已有的纯
@@ -130,8 +140,8 @@ schema/版本、大小限制、持久化与 archive 兼容策略、未知插件�
 - 静态检查确认 `packages/agent-core` 及其公开 timeline 入口没有 React 依赖。
 - 投影测试覆盖 user、assistant content、reasoning、tool call/result 配对、孤立 result、system
   隐藏、runtime event、browser card 与流式占位。
-- React 测试覆盖内建 renderer 锁定、每 root 隔离、重复注册的原子拒绝、disposer 与未知项
-  fallback；payload 不可作为 HTML 注入。
+- React 测试覆盖内建 renderer 锁定、每 root 隔离、重复注册的原子拒绝、未知项 fallback、UI
+  插件安装失败回滚、幂等卸载和清理抛错后 renderer 仍释放；payload 不可作为 HTML 注入。
 - Web 的消息列表、计划阶段回放和子 Agent 行内展示保持现有可见顺序；必要时由端到端测试回读。
 - 每个新增/拆分的源文件遵守单一职责与行数上限；既有超长 `MessageList` 已在 R1 的前置拆分中
   收口，R3 不把新增逻辑继续放入其中。

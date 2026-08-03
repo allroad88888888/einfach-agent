@@ -18,7 +18,7 @@ Core 多实例隔离与结构优化蓝图 B1–B7 共 33/33 均已完成；R7 �
 
 P2.1–P2.4（至 `7d3f1be`）已完成：插件按 Core 实例安装，工具注册预检为原子操作，订阅与 disposer 已接入真实 run 生命周期；请求与工具 hook 已进入生产路径，`shouldStop` 已收紧为显式停止决定；绑定当前 `CoreInstance` 的最小 command facade 与非 React 垂直样板也已交付。
 
-P2.5 的 UI 协议设计已完成，R1–R3 已按独立、可回退批次交付：
+P2.5 的 UI 协议设计已完成，R1–R4 已按独立、可回退批次交付：
 
 - [插件 UI Renderer 协议蓝图](plugin-renderer-protocol-blueprint.md) 固定了 Core 的无 React
   timeline item 投影、由 React 宿主按 root 维护的 renderer registry，以及 R1–R5 迁移顺序。
@@ -29,7 +29,9 @@ P2.5 的 UI 协议设计已完成，R1–R3 已按独立、可回退批次交付
   item 以安全纯文本 fallback 显示。
 - R3 已完成（`66072f3`）：App root 创建并共享 Web renderer registry，`MessageList` 通过
   dispatcher 呈现全部既有 Core timeline kind，同时保留思考分组、虚拟窗口、流式光标和用户回退。
-- 下一步为 R4：公开 React UI 插件定义，并配对非 React Core 样板。
+- R4 已完成（`79bde78`）：`@web-agent/react-plugin` 公开受限的 UI 插件安装面，宿主统一回滚和
+  释放 renderer 注册；`@web-agent/plugin-example` 以 Core 根入口与 `/react` 子入口配对示例。
+- 下一步为 R5：另立自定义持久化 timeline item 的 RFC。
 
 验收标准：
 

@@ -24,7 +24,7 @@
 | [结构优化蓝图（按并发批次）](structure-optimization-blueprint.md) | 已完成：B1–B7 共 33/33；R7 前置 `81509c0`、终拆 `338285f`，完成记录可由 Git 历史追溯 |
 | [Core 插件化蓝图](core-plugin-extraction-blueprint.md) | 部分实施；hook、插件工具、订阅与多实例隔离已收口，公开受限命令已具备；UI 协议以独立蓝图为准 |
 | [插件扩展面产品化蓝图](plugin-productization-blueprint.md) | P2.1–P2.4 已完成：Core 私有安装、真实 run 生命周期、请求/工具 hook、显式停止决定、受限命令与非 React 样板 |
-| [插件 UI Renderer 协议蓝图](plugin-renderer-protocol-blueprint.md) | P2.5 的 R1–R3 已完成（`846743a`、`a2b8d97`、`66072f3`）：Core 导出无 React 的时间线 item 投影，React 包提供 root 隔离的 renderer registry，Web 已接线并保留既有交互；R4–R5 待实施 |
+| [插件 UI Renderer 协议蓝图](plugin-renderer-protocol-blueprint.md) | P2.5 的 R1–R4 已完成（`846743a`、`a2b8d97`、`66072f3`、`79bde78`）：Core 导出无 React 的时间线投影，React 包提供 root 隔离 registry 与受限 UI 插件安装面，Web 保留既有交互；R5 待实施 |
 | [Skills 树形结构与稳定前缀清单](skills-tree-blueprint.md) | 阶段 1–3 已实施：L3 资源树、B04/B05 行为门禁通过、全量清单进稳定前缀、harness 预筛已退役；阶段 4 拆出为下一行 |
 | [项目内 Skills 自动加载（`.agent/`）](project-skills-blueprint.md) | 阶段 A–D 已实施：workspace 的 `.agent/skills` 与 `.claude/skills` 自动进 L1 清单，正文与资源经 `skill_read` 按需读；阶段 E（行为 eval）可选未做 |
 | [上下文缓存成本治理](context-cache-cost.md) | 压缩投影复用已实现、收益待实测；含账单归因方法与验证 SQL |
