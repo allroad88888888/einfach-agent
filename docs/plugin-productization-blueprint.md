@@ -8,7 +8,7 @@
 
 本计划只覆盖阶段 2 的非 UI 插件面。不实现 `registerRenderer`，不迁移 API key，不改变无插件时的模型、工具并发和持久化行为。
 
-P2.1 已将 `registerTool`、`subscribe` 与插件 disposer 接入真实 Core/run 生命周期；P2.2 已接入 `prepareRequest`；P2.3 已接入 `beforeToolCall` 与 `afterToolCall`。当前生产 loop 尚未消费 `shouldStop`。
+P2.1 已将 `registerTool`、`subscribe` 与插件 disposer 接入真实 Core/run 生命周期；P2.2 已接入 `prepareRequest`；P2.3 已接入 `beforeToolCall` 与 `afterToolCall`；P2.4 已完成公开插件入口、显式停止决定与垂直样板。
 
 ## 固定设计约束
 
@@ -51,15 +51,16 @@ P2.1 已将 `registerTool`、`subscribe` 与插件 disposer 接入真实 Core/ru
 
 验收：三种路径各触发一次 before/after；阻断不执行；after 的结果进入后续模型上下文；无插件的并行回归保持不变。已由全量测试、TypeScript 检查与生产构建验证。
 
-## 批次 P2.4 —— 停止决策、受限命令与垂直样板
+## 批次 P2.4 —— 停止决策、受限命令与垂直样板（已完成）
 
-**只做**：完成一个可交付插件的端到端闭环。
+**已完成（`7d3f1be`）**：公开入口 `@web-agent/core/plugin` 交付了一个不读取 Core 内部 store 的非 React 插件闭环。
 
-- 将 `shouldStop: boolean` 设计为含 run 状态、原因和 checkpoint 语义的显式决定；在契约完成前不把旧槽直接接入 loop。
-- 以当前 Core 绑定的最小 command facade 替换手写目标类型；只暴露经过现有运行状态与确认边界的命令，不暴露 store。
-- 实现一个非 React 的样板插件，覆盖工具注册、run 观察、一个受限命令、卸载和异常隔离。`registerRenderer` 留作独立 UI 协议任务。
+- `shouldStop` 只接受带 `runStatus:'stopped'`、非空原因与 `{ kind:'stopped' }` checkpoint 的显式停止决定；旧 boolean 与不完整运行时输入被拒绝并收敛为可追踪的 run 错误，停止发生在工具执行前。
+- `createCore` 与默认 Core 都注入同一个最小 `stopCurrentRun()` facade；公开插件仅可在当前活动会话、当前 run 且 `running`/`awaiting_tool` 状态调用它，不能读取 store 或越过确认暂停。
+- `@web-agent/plugin-example` 是非 React 垂直样板：安装期注册工具、观察不可变 run 快照、调用受限停止命令，并在卸载时释放 run disposer；其 after-tool 故障由宿主隔离且留下 trace。
+- 集成测试覆盖停止 checkpoint、旧 boolean 拒绝、命令作用域、订阅与工具卸载、工具名冲突和双 Core 隔离。
 
-验收：外部包不导入内部 store 即可完成上述能力；卸载无订阅或工具残留；插件异常不会破坏主 run；样板覆盖注册冲突和 Core 隔离。
+验收：外部包不导入内部 store 即可完成上述能力；卸载无订阅或工具残留；插件异常不会破坏主 run；样板覆盖注册冲突和 Core 隔离。已由全量测试与生产构建验证。
 
 ## 迁移与回归策略
 

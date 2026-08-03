@@ -16,17 +16,16 @@ Core 多实例隔离与结构优化蓝图 B1–B7 共 33/33 均已完成；R7 �
 
 优先级：P1；Core 多实例隔离已具备。
 
-P2.1（`3b5b89c`）与 P2.2（`38d2684`）已完成：插件按 Core 实例安装，工具注册预检为原子操作，订阅与 disposer 已接入真实 run 生命周期，`prepareRequest` 可安全变换单次请求投影。剩余工作应围绕真实使用场景推进：
+P2.1–P2.4（至 `7d3f1be`）已完成：插件按 Core 实例安装，工具注册预检为原子操作，订阅与 disposer 已接入真实 run 生命周期；请求与工具 hook 已进入生产路径，`shouldStop` 已收紧为显式停止决定；绑定当前 `CoreInstance` 的最小 command facade 与非 React 垂直样板也已交付。
 
-- 设计不产生循环依赖的 command facade，绑定当前 `CoreInstance`。
-- 把请求与工具 hook 接入生产执行路径，并收紧其失败、阻断和结果补丁契约。
+阶段 2 的后续工作只保留独立 UI 协议设计：
+
 - 评估 `registerRenderer` 是否由 Core 提供稳定 item 协议、由 React 宿主维护 renderer registry。
-- 先迁移一个垂直能力作为样板，并验证插件卸载、异常隔离和注册冲突策略。
 
 验收标准：
 
-- 一个外部包可以注册工具、观察状态并调用受限命令，不导入 Core 内部 store。
-- 插件 teardown 后没有残留订阅或工具。
+- 一个外部包可以注册工具、观察状态并调用受限命令，不导入 Core 内部 store。（已验证）
+- 插件 teardown 后没有残留订阅或工具。（已验证）
 - UI 扩展不让 `agent-core` 依赖 React。
 
 ## 阶段 3：安全与发布闭环

@@ -22,8 +22,8 @@
 | 文档 | 状态 |
 | --- | --- |
 | [结构优化蓝图（按并发批次）](structure-optimization-blueprint.md) | 已完成：B1–B7 共 33/33；R7 前置 `81509c0`、终拆 `338285f`，完成记录可由 Git 历史追溯 |
-| [Core 插件化蓝图](core-plugin-extraction-blueprint.md) | 部分实施；hook、插件工具与订阅基础已存在，多实例隔离已收口，UI renderer 和 command facade 仍待推进 |
-| [插件扩展面产品化蓝图](plugin-productization-blueprint.md) | P2.1–P2.2 已完成：Core 私有安装、run 生命周期、工具预检、卸载与请求 hook；工具 hook、受限命令和垂直样板待实施 |
+| [Core 插件化蓝图](core-plugin-extraction-blueprint.md) | 部分实施；hook、插件工具、订阅与多实例隔离已收口，公开受限命令已具备，UI renderer 和更广泛的插件迁移仍待推进 |
+| [插件扩展面产品化蓝图](plugin-productization-blueprint.md) | P2.1–P2.4 已完成：Core 私有安装、真实 run 生命周期、请求/工具 hook、显式停止决定、受限命令与非 React 样板；UI renderer 独立设计 |
 | [Skills 树形结构与稳定前缀清单](skills-tree-blueprint.md) | 阶段 1–3 已实施：L3 资源树、B04/B05 行为门禁通过、全量清单进稳定前缀、harness 预筛已退役；阶段 4 拆出为下一行 |
 | [项目内 Skills 自动加载（`.agent/`）](project-skills-blueprint.md) | 阶段 A–D 已实施：workspace 的 `.agent/skills` 与 `.claude/skills` 自动进 L1 清单，正文与资源经 `skill_read` 按需读；阶段 E（行为 eval）可选未做 |
 | [上下文缓存成本治理](context-cache-cost.md) | 压缩投影复用已实现、收益待实测；含账单归因方法与验证 SQL |
