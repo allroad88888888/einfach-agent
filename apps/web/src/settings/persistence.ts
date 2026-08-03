@@ -19,6 +19,7 @@ export interface AppSettingsStorage {
 interface StorageLike {
   getItem(key: string): string | null
   setItem(key: string, value: string): void
+  removeItem(key: string): void
 }
 
 function cloneSettings(settings: AppSettings): AppSettings {
@@ -60,19 +61,44 @@ function settingsWithInstallationId(
 function parseSettings(
   raw: string,
   installationIdFactory: () => string,
-): { settings: AppSettings; migratedCredential: boolean; repairedInstallationId: boolean } {
+): {
+  settings: AppSettings
+  migratedCredential: boolean
+  migratedLegacySettings: boolean
+  repairedInstallationId: boolean
+} {
   const parsed: unknown = JSON.parse(raw)
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw new Error('应用设置格式无效')
   }
   const record = parsed as Record<string, unknown>
   if (record.version === APP_SETTINGS_VERSION) {
-    return { ...settingsWithInstallationId(record, installationIdFactory), migratedCredential: false }
+    return {
+      ...settingsWithInstallationId(record, installationIdFactory),
+      migratedCredential: false,
+      migratedLegacySettings: false,
+    }
   }
   if (record.version !== 1) throw new Error('应用设置格式无效')
 
   const { settings, repairedInstallationId } = settingsWithInstallationId(record, installationIdFactory)
-  return { settings, repairedInstallationId, migratedCredential: true }
+  return {
+    settings,
+    repairedInstallationId,
+    migratedCredential: canContainLegacyCredential(record),
+    migratedLegacySettings: true,
+  }
+}
+
+function canContainLegacyCredential(record: Record<string, unknown>): boolean {
+  const providers = record.providers
+  if (typeof providers !== 'object' || providers === null || Array.isArray(providers)) return false
+  return Object.values(providers).some((provider) => (
+    typeof provider === 'object'
+    && provider !== null
+    && !Array.isArray(provider)
+    && typeof (provider as { apiKey?: unknown }).apiKey === 'string'
+  ))
 }
 
 function parseLegacyCustomInstructions(
@@ -112,6 +138,30 @@ export function createAppSettingsStorage(
     }
   }
 
+  const persistCredentialMigration = (settings: AppSettings): void => {
+    const serialized = serializeSettings(settings)
+    try {
+      storage.setItem(APP_SETTINGS_STORAGE_KEY, serialized)
+      if (storage.getItem(APP_SETTINGS_STORAGE_KEY) === serialized) {
+        volatileSettings = undefined
+        return
+      }
+    } catch {
+      // Fall through and remove the legacy record rather than retaining its credential.
+    }
+    try {
+      storage.removeItem(APP_SETTINGS_STORAGE_KEY)
+      if (storage.getItem(APP_SETTINGS_STORAGE_KEY) === null) {
+        volatileSettings = cloneSettings(settings)
+        return
+      }
+    } catch {
+      // The error below must stay credential-free because the old record can contain the key.
+    }
+    volatileSettings = undefined
+    throw new Error('无法安全清理旧版模型凭据，请清除应用网站数据后重试')
+  }
+
   return {
     load() {
       if (volatileSettings) return cloneSettings(volatileSettings)
@@ -127,8 +177,14 @@ export function createAppSettingsStorage(
         return settings
       }
       if (raw) {
-        const { settings, migratedCredential, repairedInstallationId } = parseSettings(raw, installationIdFactory)
-        if (migratedCredential || repairedInstallationId) persistBestEffort(settings)
+        const {
+          settings,
+          migratedCredential,
+          migratedLegacySettings,
+          repairedInstallationId,
+        } = parseSettings(raw, installationIdFactory)
+        if (migratedCredential) persistCredentialMigration(settings)
+        else if (migratedLegacySettings || repairedInstallationId) persistBestEffort(settings)
         return settings
       }
 

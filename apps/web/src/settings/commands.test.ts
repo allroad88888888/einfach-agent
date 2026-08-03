@@ -17,6 +17,7 @@ import {
 import { createMemoryAppSettingsStorage } from './persistence'
 import {
   appSettingsAtom,
+  customInstructionsStatusAtom,
   deepSeekApiKeyDraftAtom,
   deepSeekApiKeyStatusAtom,
   resetAppSettingsState,
@@ -61,6 +62,20 @@ describe('app settings commands', () => {
 
     expect(defaultCore.config.deepseekApiKey).toBe('desktop-managed-credential')
     expect(defaultCore.config.deepseekUserId).toMatch(/^wa_[a-f0-9]{48}$/)
+  })
+
+  it('surfaces a storage migration failure to settings state', async () => {
+    configureAppSettingsStorage({
+      load: () => { throw new Error('无法安全清理旧版模型凭据，请清除应用网站数据后重试') },
+      save: () => {},
+    })
+
+    await hydrateAppSettings()
+
+    expect(rootStore.getter(customInstructionsStatusAtom)).toMatchObject({
+      status: 'error',
+      error: '无法安全清理旧版模型凭据，请清除应用网站数据后重试',
+    })
   })
 
   it('saves and deletes a key through the host without persisting or exposing it in state', async () => {
