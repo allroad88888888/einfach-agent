@@ -36,7 +36,7 @@ import {
   routeSubagentModel,
   type SubagentRouteDecision,
 } from './routing'
-import { SubagentArchiveWriter } from './archiveWriter'
+import { SubagentArchiveIO } from './archiveIO'
 import { ROOT_AGENT_PATH, agentPathDepth } from './path'
 import { subagentScheduler } from './scheduler'
 import {
@@ -47,20 +47,9 @@ import {
   subagentAllowedTools,
 } from './toolProfile'
 import {
-  renderJsonDocument,
-  renderJsonLine,
-  renderNodeRecord,
-  renderSkillMarkdown,
-  renderTreeSnapshot,
   subagentCacheBasePath,
-  subagentConversationPath,
   subagentEventsPath,
-  subagentIndexPath,
-  subagentNodePath,
   subagentResultPath,
-  subagentRunPath,
-  subagentTracePath,
-  subagentTreePath,
 } from './skillCache'
 import {
   distillDelegateSkills,
@@ -75,12 +64,9 @@ import type {
   DelegateAgentChildSpec,
   DelegateAgentInput,
   DelegateAgentRuntime,
-  SubagentArchiveEvent,
-  SubagentArchiveEventType,
   SubagentModelTier,
   SubagentNodeRecord,
   SubagentSkillFile,
-  SubagentArchiveWriteMode,
   SubagentToolProfile,
 } from './types'
 import { isDelegatableDangerousTool } from '../runtime/dangerousTools'
@@ -394,51 +380,6 @@ function renderSkillsForPrompt(skills: SubagentSkillFile[]): string {
   return body.length > SKILL_CONTEXT_LIMIT ? `${body.slice(0, SKILL_CONTEXT_LIMIT)}\n...[truncated]` : body
 }
 
-function compactIndexText(value: string, limit = 500): string {
-  const trimmed = value.replace(/\s+/g, ' ').trim()
-  return trimmed.length > limit ? `${trimmed.slice(0, limit)}...[truncated]` : trimmed
-}
-
-function skillIndexRecord(skill: SubagentSkillFile): Record<string, unknown> {
-  return {
-    type: 'skill',
-    skillId: skill.skillId,
-    conversationId: skill.conversationId,
-    runId: skill.runId,
-    agentPath: skill.agentPath,
-    kind: skill.kind,
-    filename: skill.filename,
-    path: skill.path,
-    globalPath: skill.globalPath,
-    contentHash: skill.contentHash,
-    promotion: skill.promotion,
-    ttl: skill.ttl,
-    inheritSkillIds: skill.inheritSkillIds,
-    sourceTranscriptChars: skill.source.transcriptChars,
-    createdAt: skill.createdAt,
-    summary: compactIndexText(skill.content),
-  }
-}
-
-function nodeIndexRecord(node: SubagentNodeRecord): Record<string, unknown> {
-  return {
-    type: 'agent_node',
-    id: node.id,
-    conversationId: node.sessionId,
-    runId: node.treeId,
-    path: node.path,
-    parentPath: node.parentPath,
-    status: node.status,
-    objective: node.objective,
-    depth: node.depth,
-    inheritedSkillIds: node.inheritedSkillIds,
-    localSkillIds: node.localSkillIds,
-    resultFile: node.resultFile,
-    error: node.error,
-    updatedAt: node.updatedAt,
-  }
-}
-
 /**
  * 档位对应的能力说明。
  */
@@ -607,16 +548,18 @@ export function createDelegateAgentRuntime(
     settings: migratedSettings,
     signal: runtimeController.signal,
   }
-  let archiveInitialized = false
-  let archiveInitialization: Promise<void> | undefined
-  let eventCounter = 0
-  const archiveStartedAt = new Date().toISOString()
+  const archive = new SubagentArchiveIO({
+    sessionId: opts.sessionId,
+    runId: opts.runId,
+    model: opts.settings.model,
+    vendor: opts.settings.vendor,
+    onTraceItem: opts.onTraceItem,
+  })
   const contextCacheTracker = createContextCacheTracker()
   let nextChangeSetOrder = 0
   const changeSetOrder = new Map<string, number>()
   const delegationStateByChildPath = new Map<string, DelegationCallState>()
   let lowCostExtractionState: DelegationCallState | undefined
-  const archiveWriter = new SubagentArchiveWriter()
   let owners = 1
   let disposed = false
   let cleanup: Promise<void> | undefined
@@ -627,12 +570,6 @@ export function createDelegateAgentRuntime(
         }
       })
     : undefined
-  const batchedIndexPaths = new Set([
-    subagentIndexPath('runs'),
-    subagentIndexPath('skills'),
-    subagentIndexPath('agents'),
-  ])
-
   function createDelegationCallState(input?: Pick<
     DelegateAgentInput,
     'maxDepth' | 'maxChildren' | 'maxConcurrent' | 'maxTotalNodes' | 'maxModelCalls'
@@ -751,7 +688,7 @@ export function createDelegateAgentRuntime(
         // ★ key 里避开 "token" 子串、改用 Tk 后缀 ★：observability/redact.ts 的 SENSITIVE_KEY
         //   是子串匹配且含 |token|，命中的 key 会被整个抹成 '[REDACTED]'。归档目前不过那条
         //   脱敏管道，但指标名一旦定死就会被复制到别处，先按安全形态定名。
-        await bestEffortRecordEvent(context, archiveBasePath, 'child_context_compacted', agentPath, {
+        await archive.bestEffortRecordEvent(context, archiveBasePath, 'child_context_compacted', agentPath, {
           turn,
           phase,
           budgetTk: SUBAGENT_CONTEXT_BUDGET_TOKENS,
@@ -770,7 +707,7 @@ export function createDelegateAgentRuntime(
       // 这条链路大概率换来一个硬 400，而那个 400 与「压缩根本没生效」在日志里长得一模一样 ——
       // 有了这条事件才能区分「尽力了但不够」和「压缩没跑」。
       if (!compaction.withinBudget) {
-        await bestEffortRecordEvent(context, archiveBasePath, 'child_context_over_budget', agentPath, {
+        await archive.bestEffortRecordEvent(context, archiveBasePath, 'child_context_over_budget', agentPath, {
           turn,
           phase,
           effectiveBudgetTk: compaction.effectiveBudgetTokens,
@@ -841,7 +778,7 @@ export function createDelegateAgentRuntime(
       )
     } catch (error) {
       if (args.observe) {
-        await bestEffortRecordEvent(
+        await archive.bestEffortRecordEvent(
           args.observe.context,
           args.observe.archiveBasePath,
           'child_model_usage',
@@ -878,7 +815,7 @@ export function createDelegateAgentRuntime(
       const hitRate = cacheHitRate(cacheUsage?.hitTokens, cacheUsage?.missTokens)
       const promptTk = response.usage?.prompt_tokens ?? response.usage?.input_tokens
       const completionTk = response.usage?.completion_tokens ?? response.usage?.output_tokens
-      await bestEffortRecordEvent(
+      await archive.bestEffortRecordEvent(
         args.observe.context,
         args.observe.archiveBasePath,
         'child_model_usage',
@@ -953,7 +890,7 @@ export function createDelegateAgentRuntime(
                 : 'done'
           subagentScheduler.markNode(opts.runId, ROOT_AGENT_PATH, status)
         }
-        await archiveWriter.close()
+        await archive.close()
       } finally {
         ownerSignal.removeEventListener('abort', abortFromOwner)
         unsubscribeScheduler?.()
@@ -1010,191 +947,6 @@ export function createDelegateAgentRuntime(
     ].join('\n')
   }
 
-  async function writeText(
-    context: DelegateAgentCallContext,
-    path: string,
-    content: string,
-    mode: SubagentArchiveWriteMode = 'overwrite',
-  ): Promise<void> {
-    if (!context.writeTextFile) return
-    await archiveWriter.write(
-      { path, content, mode },
-      async (input) => {
-        const result = await context.writeTextFile!(input)
-        if (result && typeof result === 'object' && 'ok' in result && result.ok === false) {
-          const error = 'error' in result ? String(result.error) : 'unknown write error'
-          throw new Error(`failed to write subagent archive ${input.path}: ${error}`)
-        }
-      },
-      { batchAppend: mode === 'append' && batchedIndexPaths.has(path) },
-    )
-  }
-
-  function runArchiveRecord(
-    archiveBasePath: string,
-    status: 'running' | 'delegated',
-  ): Record<string, unknown> {
-    return {
-      archiveVersion: 1,
-      conversationId: opts.sessionId,
-      runId: opts.runId,
-      treeId: opts.runId,
-      status,
-      model: opts.settings.model,
-      vendor: opts.settings.vendor,
-      archiveBasePath,
-      eventLog: subagentEventsPath(archiveBasePath),
-      startedAt: archiveStartedAt,
-      updatedAt: new Date().toISOString(),
-    }
-  }
-
-  async function writeRunArchiveRecord(
-    context: DelegateAgentCallContext,
-    archiveBasePath: string,
-    status: 'running' | 'delegated',
-    appendIndex: boolean,
-  ): Promise<void> {
-    const record = runArchiveRecord(archiveBasePath, status)
-    await writeText(context, subagentRunPath(archiveBasePath), renderJsonDocument(record))
-    if (appendIndex) {
-      await writeText(context, subagentIndexPath('runs'), renderJsonLine(record), 'append')
-    }
-  }
-
-  async function ensureArchiveInitialized(
-    context: DelegateAgentCallContext,
-    archiveBasePath: string,
-  ): Promise<void> {
-    if (archiveInitialized) return
-    if (!archiveInitialization) {
-      archiveInitialization = (async () => {
-        const now = new Date().toISOString()
-        await Promise.all([
-          writeText(
-            context,
-            subagentConversationPath(opts.sessionId),
-            renderJsonDocument({
-              archiveVersion: 1,
-              conversationId: opts.sessionId,
-              updatedAt: now,
-            }),
-          ),
-          writeRunArchiveRecord(context, archiveBasePath, 'running', true),
-        ])
-        await recordEvent(context, archiveBasePath, 'archive_initialized', ROOT_AGENT_PATH, {
-          archiveBasePath,
-          eventLog: subagentEventsPath(archiveBasePath),
-        })
-        archiveInitialized = true
-      })()
-    }
-    try {
-      await archiveInitialization
-    } finally {
-      if (!archiveInitialized) archiveInitialization = undefined
-    }
-  }
-
-  async function recordEvent(
-    context: DelegateAgentCallContext,
-    archiveBasePath: string,
-    type: SubagentArchiveEventType,
-    agentPath: string,
-    data?: Record<string, unknown>,
-  ): Promise<void> {
-    eventCounter += 1
-    const event: SubagentArchiveEvent = {
-      eventId: `${opts.runId}:evt-${String(eventCounter).padStart(4, '0')}`,
-      type,
-      timestamp: new Date().toISOString(),
-      conversationId: opts.sessionId,
-      runId: opts.runId,
-      treeId: opts.runId,
-      agentPath,
-      data,
-    }
-    await writeText(context, subagentEventsPath(archiveBasePath), renderJsonLine(event), 'append')
-  }
-
-  async function bestEffortRecordEvent(
-    context: DelegateAgentCallContext,
-    archiveBasePath: string,
-    type: SubagentArchiveEventType,
-    agentPath: string,
-    data?: Record<string, unknown>,
-  ): Promise<void> {
-    try {
-      await recordEvent(context, archiveBasePath, type, agentPath, data)
-    } catch {
-      // A cancelled/stale host may reject archive writes. Preserve the original runtime outcome.
-    }
-  }
-
-  async function bestEffortRecordTraceItem(
-    context: DelegateAgentCallContext,
-    archiveBasePath: string,
-    agentPath: string,
-    turn: number,
-    item: ModelItem,
-  ): Promise<void> {
-    const timestamp = new Date().toISOString()
-    opts.onTraceItem?.({ agentPath, timestamp, turn, item })
-    try {
-      await writeText(
-        context,
-        subagentTracePath(archiveBasePath, agentPath),
-        renderJsonLine({
-          timestamp,
-          turn,
-          item,
-        }),
-        'append',
-      )
-    } catch {
-      // 轨迹用于可观测性；归档失败不能覆盖子 agent 原本的执行结果。
-    }
-  }
-
-  async function persistSkill(
-    context: DelegateAgentCallContext,
-    archiveBasePath: string,
-    skill: SubagentSkillFile,
-  ): Promise<void> {
-    const content = renderSkillMarkdown(skill)
-    await Promise.all([
-      writeText(context, skill.path, content),
-      writeText(context, skill.globalPath, content),
-      writeText(context, subagentIndexPath('skills'), renderJsonLine(skillIndexRecord(skill)), 'append'),
-    ])
-    await recordEvent(context, archiveBasePath, 'skill_written', skill.agentPath, {
-      skillId: skill.skillId,
-      kind: skill.kind,
-      path: skill.path,
-      globalPath: skill.globalPath,
-      contentHash: skill.contentHash,
-      promotion: skill.promotion,
-    })
-  }
-
-  async function persistTreeSnapshot(
-    context: DelegateAgentCallContext,
-    archiveBasePath: string,
-    nodes: SubagentNodeRecord[],
-  ): Promise<void> {
-    await writeText(context, subagentTreePath(archiveBasePath), renderTreeSnapshot(nodes))
-    await Promise.all(
-      nodes.map((node) => writeText(context, subagentNodePath(archiveBasePath, node.path), renderNodeRecord(node))),
-    )
-    await Promise.all(
-      nodes.map((node) => writeText(context, subagentIndexPath('agents'), renderJsonLine(nodeIndexRecord(node)), 'append')),
-    )
-    await recordEvent(context, archiveBasePath, 'tree_snapshot_written', ROOT_AGENT_PATH, {
-      nodes: nodes.length,
-      treePath: subagentTreePath(archiveBasePath),
-    })
-  }
-
   async function runChildAgent(args: {
     node: SubagentNodeRecord
     spec: DelegateAgentChildSpec
@@ -1233,7 +985,7 @@ export function createDelegateAgentRuntime(
       inheritedSkillFiles: [...node.inheritedSkillFiles],
       inheritedSkillIds: [...node.inheritedSkillIds],
     })
-    await recordEvent(context, archiveBasePath, 'child_started', node.path, {
+    await archive.recordEvent(context, archiveBasePath, 'child_started', node.path, {
       objective: spec.objective,
       mode: spec.mode,
       modelTier: routeDecision.tier,
@@ -1330,7 +1082,7 @@ export function createDelegateAgentRuntime(
           confirmedToolCount: confirmedTools.length,
         })
         modelSettings = childModelSettings(opts.settings, routeDecision.tier)
-        await bestEffortRecordEvent(context, archiveBasePath, 'child_model_escalated', node.path, {
+        await archive.bestEffortRecordEvent(context, archiveBasePath, 'child_model_escalated', node.path, {
           fromModelTier: previousRoute.tier,
           toModelTier: routeDecision.tier,
           fromModel: previousModel,
@@ -1414,7 +1166,7 @@ export function createDelegateAgentRuntime(
         })
         const msg = response.choices?.[0]?.message
         const toolCalls = narrowToolCalls(msg?.tool_calls)
-        await bestEffortRecordTraceItem(context, archiveBasePath, node.path, turn + 1, {
+        await archive.bestEffortRecordTraceItem(context, archiveBasePath, node.path, turn + 1, {
           role: 'assistant',
           content: typeof msg?.content === 'string' ? msg.content : null,
           reasoning_content: msg?.reasoning_content ?? null,
@@ -1457,7 +1209,7 @@ export function createDelegateAgentRuntime(
             )
             // best-effort：归档写失败不该把「截断」这个真正的失败原因替换成一个写盘错误。
             try {
-              await writeText(context, candidate, `${fullText.trim()}\n`)
+              await archive.writeText(context, candidate, `${fullText.trim()}\n`)
               partialPath = candidate
             } catch {
               partialPath = ''
@@ -1480,7 +1232,7 @@ export function createDelegateAgentRuntime(
         if (toolCalls.length === 0) {
           const summary = firstAssistantText(response) || '子 agent 未返回有效文本。'
           const resultPath = subagentResultPath(archiveBasePath, node.path)
-          await writeText(context, resultPath, `${summary.trim()}\n`)
+          await archive.writeText(context, resultPath, `${summary.trim()}\n`)
           subagentScheduler.markNode(opts.runId, node.path, 'done', {
             resultFile: resultPath,
             localSkillFiles: [localSkill.path],
@@ -1488,7 +1240,7 @@ export function createDelegateAgentRuntime(
             inheritedSkillFiles: [...node.inheritedSkillFiles],
             inheritedSkillIds: [...node.inheritedSkillIds],
           })
-          await recordEvent(context, archiveBasePath, 'child_finished', node.path, {
+          await archive.recordEvent(context, archiveBasePath, 'child_finished', node.path, {
             status: 'done',
             objective: spec.objective,
             summary,
@@ -1528,7 +1280,7 @@ export function createDelegateAgentRuntime(
             content,
           }
           messages.push(item)
-          await bestEffortRecordTraceItem(context, archiveBasePath, node.path, turn + 1, item)
+          await archive.bestEffortRecordTraceItem(context, archiveBasePath, node.path, turn + 1, item)
         }
 
         for (const toolCall of toolCalls) {
@@ -1557,7 +1309,7 @@ export function createDelegateAgentRuntime(
 
           if (name === 'request_tool_schema') {
             const toolName = typeof callArgs.toolName === 'string' ? callArgs.toolName.trim() : ''
-            await recordEvent(context, archiveBasePath, 'child_tool_schema_requested', node.path, {
+            await archive.recordEvent(context, archiveBasePath, 'child_tool_schema_requested', node.path, {
               toolName: toolName || undefined,
               discovery: !toolName,
             })
@@ -1612,7 +1364,7 @@ export function createDelegateAgentRuntime(
             if (autoloadable) {
               visible = appendVisibleTool(visible, name, registry)
               recentToolNames = touchRecentToolName(recentToolNames, name)
-              await recordEvent(context, archiveBasePath, 'child_tool_schema_requested', node.path, {
+              await archive.recordEvent(context, archiveBasePath, 'child_tool_schema_requested', node.path, {
                 toolName: name,
                 discovery: false,
                 autoloaded: true,
@@ -1659,7 +1411,7 @@ export function createDelegateAgentRuntime(
               continue
             }
 
-            await recordEvent(context, archiveBasePath, 'nested_delegate_requested', node.path, {
+            await archive.recordEvent(context, archiveBasePath, 'nested_delegate_requested', node.path, {
               children: normalized.input.children.length,
               maxDepth: budget.maxDepth,
               maxChildren: budget.maxChildren,
@@ -1733,7 +1485,7 @@ export function createDelegateAgentRuntime(
             }
             executedToolNames.push(name)
             if (toolResult.ok) observeChangeSets(toolResult.data, changeSets)
-            await bestEffortRecordEvent(context, archiveBasePath, 'child_tool_finished', node.path, {
+            await archive.bestEffortRecordEvent(context, archiveBasePath, 'child_tool_finished', node.path, {
               toolName: name,
               ok: toolResult.ok,
               durationMs: Date.now() - startedAt,
@@ -1779,7 +1531,7 @@ export function createDelegateAgentRuntime(
         inheritedSkillFiles: [...node.inheritedSkillFiles],
         inheritedSkillIds: [...node.inheritedSkillIds],
       })
-      await bestEffortRecordEvent(context, archiveBasePath, 'child_finished', node.path, {
+      await archive.bestEffortRecordEvent(context, archiveBasePath, 'child_finished', node.path, {
         status,
         objective: spec.objective,
         summary: message,
@@ -1898,9 +1650,9 @@ export function createDelegateAgentRuntime(
       )
     }
 
-    await ensureArchiveInitialized(context, archiveBasePath)
+    await archive.ensureArchiveInitialized(context, archiveBasePath)
     subagentScheduler.markNode(opts.runId, parentPath, 'running')
-    await recordEvent(context, archiveBasePath, 'delegate_requested', parentPath, {
+    await archive.recordEvent(context, archiveBasePath, 'delegate_requested', parentPath, {
       children: input.children.map((child) => {
         const childConfirmedTools = child.confirmedTools ?? requestedConfirmedTools
         const route = childModelRoute(opts.settings, parentPath, child, childConfirmedTools)
@@ -1939,14 +1691,14 @@ export function createDelegateAgentRuntime(
       if (parentPath === ROOT_AGENT_PATH) {
         subagentScheduler.markNode(opts.runId, parentPath, 'failed', { error: message })
       }
-      await bestEffortRecordEvent(context, archiveBasePath, 'delegate_finished', parentPath, {
+      await archive.bestEffortRecordEvent(context, archiveBasePath, 'delegate_finished', parentPath, {
         status: 'failed',
         children: [],
         error: message,
         budgetUsage: budgetUsage(state),
       })
       try {
-        await writeRunArchiveRecord(
+        await archive.writeRunArchiveRecord(
           context,
           archiveBasePath,
           'delegated',
@@ -1987,7 +1739,7 @@ export function createDelegateAgentRuntime(
     })
     const parentSnapshot = subagentScheduler.snapshot(opts.runId).find((node) => node.path === parentPath)
     const parentDispatchIndex = parentSnapshot ? Math.max(1, parentSnapshot.dispatchCounter) : 1
-    await recordEvent(context, archiveBasePath, 'children_reserved', parentPath, {
+    await archive.recordEvent(context, archiveBasePath, 'children_reserved', parentPath, {
       paths: reserved.map((node) => node.path),
       dispatchCounter: parentDispatchIndex,
       totalNodesUsed: state.totalNodesUsed,
@@ -2039,7 +1791,7 @@ export function createDelegateAgentRuntime(
       if (parentPath === ROOT_AGENT_PATH) subagentScheduler.markNode(opts.runId, parentPath, status, { error: message })
       await Promise.all(
         children.map((child) =>
-          bestEffortRecordEvent(context, archiveBasePath, 'child_finished', child.path, {
+          archive.bestEffortRecordEvent(context, archiveBasePath, 'child_finished', child.path, {
             status: child.status,
             objective: child.objective,
             summary: child.summary,
@@ -2050,8 +1802,8 @@ export function createDelegateAgentRuntime(
         ),
       )
       try {
-        await persistTreeSnapshot(context, archiveBasePath, subagentScheduler.snapshot(opts.runId))
-        await writeRunArchiveRecord(
+        await archive.persistTreeSnapshot(context, archiveBasePath, subagentScheduler.snapshot(opts.runId))
+        await archive.writeRunArchiveRecord(
           context,
           archiveBasePath,
           'delegated',
@@ -2060,7 +1812,7 @@ export function createDelegateAgentRuntime(
       } catch {
         // Keep the distillation/abort error as the primary failure.
       }
-      await bestEffortRecordEvent(context, archiveBasePath, 'delegate_finished', parentPath, {
+      await archive.bestEffortRecordEvent(context, archiveBasePath, 'delegate_finished', parentPath, {
         status,
         children: children.map((child) => ({ path: child.path, status: child.status })),
         error: message,
@@ -2070,7 +1822,7 @@ export function createDelegateAgentRuntime(
     }
 
     const allDistilledFiles = [distilled.coreSkill, ...distilled.childSkills]
-    await Promise.all(allDistilledFiles.map((skill) => persistSkill(context, archiveBasePath, skill)))
+    await Promise.all(allDistilledFiles.map((skill) => archive.persistSkill(context, archiveBasePath, skill)))
     const parentBefore = subagentScheduler.snapshot(opts.runId).find((node) => node.path === parentPath)
     subagentScheduler.markNode(opts.runId, parentPath, 'running', {
       localSkillFiles: Array.from(new Set([...(parentBefore?.localSkillFiles ?? []), distilled.coreSkill.path])),
@@ -2115,14 +1867,14 @@ export function createDelegateAgentRuntime(
       subagentScheduler.markNode(opts.runId, parentPath, parentNodeStatus)
     }
     const snapshot = subagentScheduler.snapshot(opts.runId)
-    await persistTreeSnapshot(context, archiveBasePath, snapshot)
-    await writeRunArchiveRecord(
+    await archive.persistTreeSnapshot(context, archiveBasePath, snapshot)
+    await archive.writeRunArchiveRecord(
       context,
       archiveBasePath,
       'delegated',
       parentPath === ROOT_AGENT_PATH,
     )
-    await recordEvent(context, archiveBasePath, 'delegate_finished', parentPath, {
+    await archive.recordEvent(context, archiveBasePath, 'delegate_finished', parentPath, {
       status,
       summary,
       children: children.map((child) => ({ path: child.path, status: child.status })),
