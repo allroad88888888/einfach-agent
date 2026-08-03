@@ -130,7 +130,7 @@ schema/版本、大小限制、持久化与 archive 兼容策略、未知插件�
 | R2 | 独立 React registry 与默认 fallback | 已完成（`a2b8d97`）：root 隔离；构造期内建 kind 锁定、重复拒绝、token disposer 与安全纯文本 fallback 均有测试 |
 | R3 | 将 Web `MessageList` 拆成投影消费、思考分组、renderer 与虚拟列表 | 已完成（`66072f3`）：每个 App React root 持有独立 registry；六个既有 Core kind 复用原有消息、思考与浏览器卡片视觉；回退动作仍留在列表 shell，未知 runtime kind 仅作纯文本 fallback |
 | R4 | `@web-agent/react-plugin` 公开入口及非 React Core 样板配对示例 | 已完成（`79bde78`）：窄 `registerRenderer` 安装面、失败回滚与幂等卸载已测试；样板的 `/react` 子入口不导入 Core 内部模块，卸载后 renderer 无残留 |
-| R5 | 另立自定义持久化 item RFC | schema、archive、权限和多 consumer 降级先获批准 |
+| R5 | [自定义持久化 Timeline Item RFC](persistent-plugin-timeline-item-rfc.md) | RFC 已起草，schema、archive、权限和多 consumer 降级仍须获批准后才能实现 |
 
 每批先补失败测试，再以单独、可撤回的 commit 实现。R1 已只抽取目前 `MessageList` 已有的纯
 关联逻辑；未改变视觉、工具权限或持久化格式。

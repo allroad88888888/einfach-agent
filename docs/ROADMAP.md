@@ -31,7 +31,8 @@ P2.5 的 UI 协议设计已完成，R1–R4 已按独立、可回退批次交付
   dispatcher 呈现全部既有 Core timeline kind，同时保留思考分组、虚拟窗口、流式光标和用户回退。
 - R4 已完成（`79bde78`）：`@web-agent/react-plugin` 公开受限的 UI 插件安装面，宿主统一回滚和
   释放 renderer 注册；`@web-agent/plugin-example` 以 Core 根入口与 `/react` 子入口配对示例。
-- 下一步为 R5：另立自定义持久化 timeline item 的 RFC。
+- R5 的 [自定义持久化 Timeline Item RFC](persistent-plugin-timeline-item-rfc.md) 已起草：它固定
+  checkpoint 兼容、archive 隔离、最小权限和多 consumer 降级要求；协议批准前不改持久化格式，也不开放插件写入。
 
 验收标准：
 
