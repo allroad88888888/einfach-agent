@@ -59,6 +59,7 @@ abort registry 和运行时配置。`createCore()` 可创建隔离实例；默�
 - 每个 session 有独立 Einfach store，保存 items、run、checkpoint、plan 和瞬态 UI 状态。
 - UI 只允许读取 atom、调用 `runtime/commands.ts` 暴露的命令。
 - UI 不直接调用 writer、不 setter 业务 atom、不持有 runtime store。
+- 过渡例外：`apps/web/src/agentNew/ui/SubagentTreePanel.tsx` 当前仍通过 `useSetAtom` 直接操作子 Agent 的归档、选择和 skill 治理 writer atom；这只是遗留接线，不能成为新增 UI 范式，待批次 4 C4 以 command surface 取代后删除此例外。
 - writer 和 await 后回写必须保留 ghost guard、runId stale guard 与 AbortSignal 检查。
 - checkpoint 保存 items 的不可变快照，不能用原地修改破坏历史。
 
@@ -87,7 +88,6 @@ abort registry 和运行时配置。`createCore()` 可创建隔离实例；默�
 
 - TypeScript strict 开启；完成修改至少运行相关测试和 `pnpm build`。
 - runtime/state 修改优先补充 colocated `*.test.ts(x)`。
-- 在 `apps/` 或 `packages/` 新增非测试源文件时，必须同时添加对应测试；修改核心控制流时必须添加聚焦的回归用例；业务行为改动应补充测试。
 - 模型 adapter 的“除 AbortError 外返回 fallback、不向 UI 抛出”是有意契约。
 - 新工具放到对应 `tools/<domain>/src/<tool-name>/`，同目录包含实现、说明和测试，
   再由域包 registrar 注册。
