@@ -453,7 +453,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(runSession).not.toHaveBeenCalled()
   })
 
-  it('continuePlan：活跃 run 不重复续跑', () => {
+  it('continuePlan：活跃或暂停的 run 不重复续跑', () => {
     const id = newSession()
     setPlan(id, {
       id: 'plan-live', title: '正在执行', objective: '完成工作', status: 'active', revision: 4,
@@ -463,9 +463,21 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
         dependencies: [], status: 'in_progress', evidence: ['pnpm test'],
       }],
     })
-    getSessionStore(id).store.setter(runAtom, { runId: 'live', status: 'running' })
-
-    continuePlan()
+    const store = getSessionStore(id).store
+    for (const status of [
+      'running',
+      'awaiting_tool',
+      'waiting_user',
+      'waiting_confirmation',
+      'waiting_plan_approval',
+    ] as const) {
+      store.setter(runAtom, {
+        runId: `run-${status}`,
+        status,
+        ...(status === 'awaiting_tool' ? { pendingExecutionId: 'still-running' } : {}),
+      })
+      continuePlan()
+    }
 
     expect(getPlan(id)?.revision).toBe(4)
     expect(resumePlanSession).not.toHaveBeenCalled()

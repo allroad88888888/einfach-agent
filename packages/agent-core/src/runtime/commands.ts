@@ -75,6 +75,8 @@ import type {
   ModelSettings,
   SessionMeta,
   ConversationItem,
+  RunState,
+  RunStatus,
   WorkspaceMeta,
 } from '../state/core.type'
 import { DEFAULT_DEEPSEEK_MODEL } from '@web-agent/ai'
@@ -126,6 +128,26 @@ export function deriveSessionTitle(input: string): string {
 }
 
 const SIDE_EFFECT_TOOL_NAMES = new Set(['run_task'])
+
+function resolveApiKey(meta: SessionMeta | undefined, core: CoreInstance): string {
+  return meta?.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
+}
+
+function withRun(
+  id: string,
+  core: CoreInstance,
+  start: (signal: AbortSignal) => Promise<unknown>,
+): void {
+  const signal = core.abort.beginRun(id)
+  void start(signal).finally(() => core.abort.endRun(id, signal))
+}
+
+function assertRunStatus(
+  run: RunState | undefined,
+  ...expectedStatuses: RunStatus[]
+): run is RunState {
+  return Boolean(run && expectedStatuses.includes(run.status))
+}
 
 function currentTurnStartIndex(items: ConversationItem[]): number {
   for (let i = items.length - 1; i >= 0; i -= 1) {
@@ -417,10 +439,9 @@ export function createCommands(core: CoreInstance = defaultCore) {
     if (!meta) return
 
     const run = core.getSessionStore(id).store.getter(runAtom)
-    const status = run?.status
     // 模型请求或工具批次仍在运行时，不另起 run；把输入绑定到当前 run，交给 modelRun 在
     // tool-call/result 闭合后的安全边界提升为普通 user 消息。
-    if ((status === 'running' || status === 'awaiting_tool') && run) {
+    if (assertRunStatus(run, 'running', 'awaiting_tool')) {
       enqueueUserMessage(id, {
         id: newId(),
         createdAt: Date.now(),
@@ -432,13 +453,13 @@ export function createCommands(core: CoreInstance = defaultCore) {
     }
 
     // 结构化决策暂停仍必须走对应卡片，不能用普通消息绕过未回填的 tool call。
-    if (
-      status === 'waiting_user' ||
-      status === 'waiting_confirmation'
-      || status === 'waiting_plan_approval'
-      || status === 'interrupted'
-    )
-      return
+    if (assertRunStatus(
+      run,
+      'waiting_user',
+      'waiting_confirmation',
+      'waiting_plan_approval',
+      'interrupted',
+    )) return
 
     // 自动标题（TT1）：标题仍为默认值时，用本条输入派生一次标题（复用 renameSession 走
     //   ghost guard/updatedAt/落盘）。用户改过名（≠默认）绝不覆盖；同会话第二条消息时标题
@@ -448,11 +469,10 @@ export function createCommands(core: CoreInstance = defaultCore) {
       if (derived) renameSession(id, derived)
     }
 
-    const apiKey = meta.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
-    const signal = core.abort.beginRun(id)
-    void runSession(id, content, { signal, apiKey, fetchImpl: core.config.fetchImpl, core }).finally(() =>
-      core.abort.endRun(id, signal),
-    )
+    const apiKey = resolveApiKey(meta, core)
+    withRun(id, core, (signal) => runSession(id, content, {
+      signal, apiKey, fetchImpl: core.config.fetchImpl, core,
+    }))
   }
 
   // 简介：继续最新 checkpoint 中因应用重启而中断的普通任务或计划任务。
@@ -462,18 +482,17 @@ export function createCommands(core: CoreInstance = defaultCore) {
     const id = core.rootStore.getter(activeSessionIdAtom)
     if (!id) return
     const run = core.getSessionStore(id).store.getter(runAtom)
-    if (run?.status !== 'interrupted') return
+    if (!assertRunStatus(run, 'interrupted')) return
 
     const meta = core.rootStore.getter(sessionsAtom)[id]
     if (!meta) return
-    const apiKey = meta.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
-    const signal = core.abort.beginRun(id)
-    void resumeInterruptedSession(id, {
+    const apiKey = resolveApiKey(meta, core)
+    withRun(id, core, (signal) => resumeInterruptedSession(id, {
       signal,
       apiKey,
       fetchImpl: core.config.fetchImpl,
       core,
-    }).finally(() => core.abort.endRun(id, signal))
+    }))
   }
 
   // 旧版 recovery 曾在提交阶段验收后只写入 awaiting_tool，而没有持久化
@@ -483,7 +502,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
   function recoverOrphanedAwaitingToolRun(id: string): boolean {
     const store = core.getSessionStore(id).store
     const run = store.getter(runAtom)
-    if (run?.status !== 'awaiting_tool' || run.pendingExecutionId) return false
+    if (!assertRunStatus(run, 'awaiting_tool') || run.pendingExecutionId) return false
 
     const graph = store.getter(executionGraphAtom)
     const hasActiveExecution = store.getter(activeExecutionNodeIdsAtom)
@@ -502,22 +521,23 @@ export function createCommands(core: CoreInstance = defaultCore) {
     const id = core.rootStore.getter(activeSessionIdAtom)
     if (!id) return
 
-    const status = core.getSessionStore(id).store.getter(runAtom)?.status
-    if (status === 'awaiting_tool' && recoverOrphanedAwaitingToolRun(id)) {
+    const run = core.getSessionStore(id).store.getter(runAtom)
+    if (assertRunStatus(run, 'awaiting_tool') && recoverOrphanedAwaitingToolRun(id)) {
       continueInterruptedRun()
       return
     }
-    if (status === 'interrupted') {
+    if (assertRunStatus(run, 'interrupted')) {
       continueInterruptedRun()
       return
     }
-    if (
-      status === 'running'
-      || status === 'awaiting_tool'
-      || status === 'waiting_user'
-      || status === 'waiting_confirmation'
-      || status === 'waiting_plan_approval'
-    ) return
+    if (assertRunStatus(
+      run,
+      'running',
+      'awaiting_tool',
+      'waiting_user',
+      'waiting_confirmation',
+      'waiting_plan_approval',
+    )) return
 
     const plan = getPlan(id)
     if (!plan || !['approved', 'active'].includes(plan.status)) return
@@ -525,14 +545,13 @@ export function createCommands(core: CoreInstance = defaultCore) {
 
     const meta = core.rootStore.getter(sessionsAtom)[id]
     if (!meta) return
-    const apiKey = meta.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
-    const signal = core.abort.beginRun(id)
-    void resumePlanSession(id, {
+    const apiKey = resolveApiKey(meta, core)
+    withRun(id, core, (signal) => resumePlanSession(id, {
       signal,
       apiKey,
       fetchImpl: core.config.fetchImpl,
       core,
-    }).finally(() => core.abort.endRun(id, signal))
+    }))
   }
 
   // 简介：esc —— 中断当前 active 会话正在跑的 run。
@@ -542,7 +561,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
     const store = core.getSessionStore(id).store
     const run = store.getter(runAtom)
     core.abort.abortRun(id)
-    if (!run || !['running', 'awaiting_tool'].includes(run.status)) return
+    if (!assertRunStatus(run, 'running', 'awaiting_tool')) return
 
     // 后台 execution 启动后，父模型请求会正常 return 并释放自己的 AbortController。
     // 因此停止不能只 abort 模型请求，还要先把 run 置 stopped 阻断完成回调的自动续跑，
@@ -579,7 +598,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
     if (!id) return
     const store = core.getSessionStore(id).store
     const run = store.getter(runAtom)
-    if (run?.status !== 'stopped') return
+    if (!assertRunStatus(run, 'stopped')) return
 
     const items = store.getter(itemsAtom)
     const start = currentTurnStartIndex(items)
@@ -630,7 +649,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
     const id = core.rootStore.getter(activeSessionIdAtom)
     if (!id) return
     const run = core.getSessionStore(id).store.getter(runAtom)
-    if (run?.status !== 'waiting_user') return
+    if (!assertRunStatus(run, 'waiting_user')) return
 
     const pendingDecision = run.pendingUserDecision
     // 新状态直接保存未回填的 callId；fallback 兼容只有 pendingQuestion 的旧状态。
@@ -662,11 +681,10 @@ export function createCommands(core: CoreInstance = defaultCore) {
     patchRun(id, { status: 'running', pendingQuestion: undefined, pendingUserDecision: undefined }, core)
 
     const meta = core.rootStore.getter(sessionsAtom)[id]
-    const apiKey = meta?.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
-    const signal = core.abort.beginRun(id)
-    void runToolLoop(id, run.runId, { signal, apiKey, fetchImpl: core.config.fetchImpl, core }).finally(() =>
-      core.abort.endRun(id, signal),
-    )
+    const apiKey = resolveApiKey(meta, core)
+    withRun(id, core, (signal) => runToolLoop(id, run.runId, {
+      signal, apiKey, fetchImpl: core.config.fetchImpl, core,
+    }))
   }
 
   // 简介：危险工具确认恢复（S4-B）—— 用户在确认卡片点「允许」/「拒绝」后续跑 pending run。镜像 resumeWithAnswers。
@@ -679,7 +697,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
     const id = core.rootStore.getter(activeSessionIdAtom)
     if (!id) return
     const run = core.getSessionStore(id).store.getter(runAtom)
-    if (run?.status !== 'waiting_confirmation') return
+    if (!assertRunStatus(run, 'waiting_confirmation')) return
 
     const pending = run.pendingToolConfirmation
     // 容错：无 pending（异常/被回退过）→ 清 pendingToolConfirmation + 落回 running，不续跑。
@@ -715,7 +733,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
     })
 
     const meta = core.rootStore.getter(sessionsAtom)[id]
-    const apiKey = meta?.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
+    const apiKey = resolveApiKey(meta, core)
 
     if (!approved) {
       // 拒绝：给该 tool_call 回填 error result（序列合法），落回 running，重入循环让 model 改道。
@@ -725,10 +743,9 @@ export function createCommands(core: CoreInstance = defaultCore) {
         item: { role: 'tool', tool_call_id: pending.callId, content: JSON.stringify({ error: '用户拒绝执行该工具' }) },
       }, core)
       patchRun(id, { status: 'running', pendingToolConfirmation: undefined }, core)
-      const signal = core.abort.beginRun(id)
-      void runToolLoop(id, run.runId, { signal, apiKey, fetchImpl: core.config.fetchImpl, core }).finally(() =>
-        core.abort.endRun(id, signal),
-      )
+      withRun(id, core, (signal) => runToolLoop(id, run.runId, {
+        signal, apiKey, fetchImpl: core.config.fetchImpl, core,
+      }))
       return
     }
 
@@ -737,14 +754,13 @@ export function createCommands(core: CoreInstance = defaultCore) {
       addAlwaysAllowedTool(id, pending.toolName, core)
     }
     patchRun(id, { status: 'running', pendingToolConfirmation: undefined }, core)
-    const signal = core.abort.beginRun(id)
-    void runToolLoop(id, run.runId, {
+    withRun(id, core, (signal) => runToolLoop(id, run.runId, {
       signal,
       apiKey,
       fetchImpl: core.config.fetchImpl,
       resumeToolCall: pending,
       core,
-    }).finally(() => core.abort.endRun(id, signal))
+    }))
   }
 
   // 计划审批是宿主专用命令：模型没有对应 approve tool，因而不能自批。
@@ -755,7 +771,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
     if (!id) return
     const run = core.getSessionStore(id).store.getter(runAtom)
     const pending = run?.pendingPlanApproval
-    if (run?.status !== 'waiting_plan_approval' || !pending) return
+    if (!assertRunStatus(run, 'waiting_plan_approval') || !pending) return
 
     const runtime = new PlanRuntime({ get: () => getPlan(id), set: (plan) => setPlan(id, plan) }, Date.now, newId)
     const decision = runtime.approve(pending.planId, pending.revision, approved)
@@ -770,9 +786,10 @@ export function createCommands(core: CoreInstance = defaultCore) {
     patchRun(id, { status: 'running', pendingPlanApproval: undefined }, core)
 
     const meta = core.rootStore.getter(sessionsAtom)[id]
-    const apiKey = meta?.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
-    const signal = core.abort.beginRun(id)
-    void runToolLoop(id, run.runId, { signal, apiKey, fetchImpl: core.config.fetchImpl, core }).finally(() => core.abort.endRun(id, signal))
+    const apiKey = resolveApiKey(meta, core)
+    withRun(id, core, (signal) => runToolLoop(id, run.runId, {
+      signal, apiKey, fetchImpl: core.config.fetchImpl, core,
+    }))
   }
 
   // 回滚计划中的一个阶段。已经执行的文件/网络等外部副作用不会被自动撤销。
