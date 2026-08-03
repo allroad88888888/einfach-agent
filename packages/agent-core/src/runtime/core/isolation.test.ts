@@ -23,14 +23,16 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createCore } from './createCore'
-import { defaultCore } from './coreInstance'
+import { defaultCore, type CoreInstance } from './coreInstance'
 import type { Tool } from '../../tools/types'
 import { sessionsAtom, activeSessionIdAtom, resetRootStore } from '../../state/rootStore'
 import { resetSessionStores } from '../../state/sessionStore'
 import { itemsAtom, runAtom, checkpointsAtom } from '../../state/sessionAtoms'
+import { getPlan, setPlan } from '../../state/planWriters'
 import { configurePersistence, resetPersistence } from '../persistenceBridge'
 import { resetObservability } from '../../observability/trace'
 import type { ConversationItem, SessionMeta } from '../../state/core.type'
+import type { PlanSnapshot } from '../../planning/types'
 import type { SessionsPersistence } from '../../state/persistence/contract'
 import type { HistoryDriver } from '../../state/persistence/historyDriver'
 
@@ -92,7 +94,7 @@ function persistenceSpies() {
 // 在给定 core 里登记一个会话（ghost guard 的权威事实）并设为 active。★ 调用方故意让两套实例都用
 //   同一个 id，才能真正考验隔离（共享 store 时同 id 立刻对撞）。★ title 各异，供「读到的是自己那份
 //   meta」判定。
-function seedSession(core: ReturnType<typeof createCore>, id: string, title: string): void {
+function seedSession(core: CoreInstance, id: string, title: string): void {
   const meta: SessionMeta = {
     id,
     title,
@@ -121,6 +123,28 @@ function roles(items: ConversationItem[]): string[] {
 function textOf(ci: ConversationItem | undefined): string {
   const content = (ci?.item as { content?: unknown } | undefined)?.content
   return typeof content === 'string' ? content : ''
+}
+
+function awaitingPlan(title: string): PlanSnapshot {
+  return {
+    id: 'plan-approval',
+    title,
+    objective: '完成工作',
+    status: 'awaiting_approval',
+    revision: 3,
+    requiresApproval: true,
+    createdAt: 1,
+    updatedAt: 2,
+    stages: [{
+      id: 'implement',
+      title: '实现',
+      objective: '完成代码',
+      deliverables: [],
+      dependencies: [],
+      status: 'pending',
+      evidence: [],
+    }],
+  }
 }
 
 afterEach(() => {
@@ -368,5 +392,24 @@ describe('双实例隔离证明（createCore × 真主循环 × 假 fetch）', (
     expect(aPersistence.saveSessions).toHaveBeenCalledWith([expect.objectContaining({ title: 'A-session' })])
     expect(bPersistence.saveSessions).toHaveBeenCalledWith([expect.objectContaining({ title: 'B-session' })])
     expect(defaultPersistence.saveSessions).not.toHaveBeenCalled()
+  })
+
+  it('approvePlan 只读取并更新绑定实例的同 id 计划，不串到 defaultCore', () => {
+    const A = createCore({ config: { deepseekApiKey: 'KA', fetchImpl: replyFetch('A-reply').fetchImpl } })
+    seedSession(A, 's', 'A-session')
+    seedSession(defaultCore, 's', 'default-session')
+    setPlan('s', awaitingPlan('A plan'), A)
+    setPlan('s', awaitingPlan('default plan'), defaultCore)
+    A.getSessionStore('s').store.setter(runAtom, {
+      runId: 'R-plan',
+      status: 'waiting_plan_approval',
+      pendingPlanApproval: { callId: 'plan-call', planId: 'plan-approval', revision: 3 },
+    })
+
+    A.approvePlan(true)
+
+    expect(getPlan('s', A)).toMatchObject({ title: 'A plan', status: 'approved', revision: 4 })
+    expect(getPlan('s', defaultCore)).toMatchObject({ title: 'default plan', status: 'awaiting_approval', revision: 3 })
+    A.stopRun()
   })
 })

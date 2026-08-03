@@ -2,14 +2,13 @@
 // ---------------------------------------------------------------------------
 // 打点契约：某阶段从「非 in_progress」转入 in_progress 时，记下**变更前**的计划快照和
 // 当时的 items 长度。同一阶段只留最早的一个点（重试/回滚后重开不覆盖），换计划或清空计划时整体清空。
-import { afterEach, describe, expect, it, vi } from 'vitest'
-
-vi.mock('../runtime/persistenceBridge', () => ({ persistSessions: vi.fn() }))
+import { afterEach, describe, expect, it } from 'vitest'
 
 import { rootStore, sessionsAtom, resetRootStore } from './rootStore'
 import { getSessionStore, resetSessionStores } from './sessionStore'
 import { itemsAtom, planAtom, planStageCheckpointsAtom } from './sessionAtoms'
 import { setPlan } from './planWriters'
+import { createCoreInstance } from '../runtime/core/coreInstance'
 import type { ConversationItem, SessionMeta } from './core.type'
 import type { PlanSnapshot, PlanStageStatus } from '../planning/types'
 
@@ -123,5 +122,16 @@ describe('setPlan 的阶段回退点打点', () => {
     setPlan('ghost', plan(2, ['in_progress']))
     expect(getSessionStore('ghost').store.getter(planStageCheckpointsAtom)).toEqual([])
     expect(getSessionStore('ghost').store.getter(planAtom)).toBeUndefined()
+  })
+
+  it('显式 core 只更新该实例的计划状态', () => {
+    const core = createCoreInstance()
+    core.rootStore.setter(sessionsAtom, { s1: meta })
+
+    setPlan('s1', plan(1, ['in_progress']), core)
+
+    expect(core.getSessionStore('s1').store.getter(planAtom)?.id).toBe('p1')
+    expect(rootStore.getter(sessionsAtom).s1).toBeUndefined()
+    expect(getSessionStore('s1').store.getter(planAtom)).toBeUndefined()
   })
 })

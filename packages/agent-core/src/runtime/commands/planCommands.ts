@@ -19,8 +19,7 @@ export function createPlanCommands(core: CoreInstance, stopRun: () => void) {
     const run = core.getSessionStore(id).store.getter(runAtom)
     const pending = run?.pendingPlanApproval
     if (!assertRunStatus(run, 'waiting_plan_approval') || !pending) return
-    // Core-explicit plan storage belongs to E2; preserve the current default writer contract.
-    const runtime = new PlanRuntime({ get: () => getPlan(id), set: (plan) => setPlan(id, plan) }, Date.now, newId)
+    const runtime = new PlanRuntime({ get: () => getPlan(id, core), set: (plan) => setPlan(id, plan, core) }, Date.now, newId)
     const decision = runtime.approve(pending.planId, pending.revision, approved)
     const content = decision.ok
       ? JSON.stringify(approved ? { approved: true, plan: decision.plan } : { error: '用户拒绝了计划', plan: decision.plan })
@@ -32,7 +31,7 @@ export function createPlanCommands(core: CoreInstance, stopRun: () => void) {
   function rollbackPlanStage(planId: string, revision: number, stageId: string): void {
     const id = core.rootStore.getter(activeSessionIdAtom)
     if (!id) return
-    const current = getPlan(id)
+    const current = getPlan(id, core)
     if (!current || current.id !== planId || current.revision !== revision) return
     if (!['active', 'completed', 'failed'].includes(current.status) ||
       !current.stages.some((stage) => stage.id === stageId && stage.status !== 'pending')) return
@@ -42,7 +41,7 @@ export function createPlanCommands(core: CoreInstance, stopRun: () => void) {
     setRun(id, undefined, core)
     const point = revertToPlanStageCheckpoint(id, stageId, core)
     if (!point) {
-      const runtime = new PlanRuntime({ get: () => getPlan(id), set: (plan) => setPlan(id, plan) }, Date.now, newId)
+      const runtime = new PlanRuntime({ get: () => getPlan(id, core), set: (plan) => setPlan(id, plan, core) }, Date.now, newId)
       runtime.rollbackStage(planId, revision, stageId)
       return
     }

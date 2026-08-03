@@ -1,16 +1,15 @@
 import type { PlanSnapshot } from '../planning/types'
-import { rootStore, sessionsAtom } from './rootStore'
-import { getSessionStore } from './sessionStore'
+import { sessionsAtom } from './rootAtoms'
 import { itemsAtom, planAtom, planStageCheckpointsAtom, runAtom } from './sessionAtoms'
-import { persistSessions } from '../runtime/persistenceBridge'
+import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
 import {
   beginPerformanceDiagnostic,
   performanceNow,
 } from '../observability/performanceDiagnostics'
 
-export function getPlan(sessionId: string): PlanSnapshot | undefined {
-  if (!rootStore.getter(sessionsAtom)[sessionId]) return undefined
-  return getSessionStore(sessionId).store.getter(planAtom)
+export function getPlan(sessionId: string, core: CoreInstance = defaultCore): PlanSnapshot | undefined {
+  if (!core.rootStore.getter(sessionsAtom)[sessionId]) return undefined
+  return core.getSessionStore(sessionId).store.getter(planAtom)
 }
 
 // 阶段回退点的唯一打点处：某阶段从「非 in_progress」转入 in_progress 的那一刻，
@@ -23,6 +22,7 @@ function recordStageCheckpoints(
   sessionId: string,
   previous: PlanSnapshot,
   next: PlanSnapshot,
+  core: CoreInstance,
 ): void {
   const started = next.stages.filter((stage) => (
     stage.status === 'in_progress'
@@ -30,7 +30,7 @@ function recordStageCheckpoints(
   ))
   if (started.length === 0) return
 
-  const sessionStore = getSessionStore(sessionId).store
+  const sessionStore = core.getSessionStore(sessionId).store
   const existing = sessionStore.getter(planStageCheckpointsAtom)
   const fresh = started
     .filter((stage) => !existing.some((point) => point.stageId === stage.id))
@@ -44,9 +44,9 @@ function recordStageCheckpoints(
   sessionStore.setter(planStageCheckpointsAtom, [...existing, ...fresh])
 }
 
-export function setPlan(sessionId: string, plan: PlanSnapshot | undefined): void {
-  if (!rootStore.getter(sessionsAtom)[sessionId]) return
-  const sessionStore = getSessionStore(sessionId).store
+export function setPlan(sessionId: string, plan: PlanSnapshot | undefined, core: CoreInstance = defaultCore): void {
+  if (!core.rootStore.getter(sessionsAtom)[sessionId]) return
+  const sessionStore = core.getSessionStore(sessionId).store
   const runId = sessionStore.getter(runAtom)?.runId
   const operation = beginPerformanceDiagnostic(
     'plan.commit',
@@ -69,18 +69,18 @@ export function setPlan(sessionId: string, plan: PlanSnapshot | undefined): void
       sessionStore.setter(planStageCheckpointsAtom, [])
     }
   } else {
-    recordStageCheckpoints(sessionId, previousPlan, plan)
+    recordStageCheckpoints(sessionId, previousPlan, plan, core)
   }
   const sessionAtomUpdateMs = performanceNow() - atomStartedAt
   const rootStartedAt = performanceNow()
-  rootStore.setter(sessionsAtom, (previous) => {
+  core.rootStore.setter(sessionsAtom, (previous) => {
     const session = previous[sessionId]
     if (!session) return previous
     return { ...previous, [sessionId]: { ...session, plan, updatedAt: Date.now() } }
   })
   const rootMetadataUpdateMs = performanceNow() - rootStartedAt
   const persistenceDispatchStartedAt = performanceNow()
-  persistSessions({
+  core.persistence.persistSessions({
     operationId: operation.operationId,
     reason: 'plan.update',
     sessionId,
