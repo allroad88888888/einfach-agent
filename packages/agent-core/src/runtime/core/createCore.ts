@@ -21,6 +21,7 @@
 import { createCoreInstance, type CoreInstance, type RuntimeConfig } from './coreInstance'
 import type { ToolRegistry } from '../../tools/toolRegistry'
 import { createCommands, type CommandApi } from '../commands'
+import type { PluginInput } from './pluginHost'
 
 // 简介：造一套隔离的 CoreInstance 并把绑定它的命令挂上去，合体返回。
 // 详情：命令用 createCommands(instance) 绑到 instance 本体，再 Object.assign 把这些命令方法挂回
@@ -33,6 +34,8 @@ export function createCore(opts?: {
   // 登记反转（TS1）：把工具装进这个隔离实例的私有 registry；透传给 createCoreInstance。
   // 不传则该实例【无工具】——嵌入方按需 registerStandardTools(core.tools) 或装自定义工具集。
   registerTools?: (registry: ToolRegistry) => void
+  /** Installed only on this Core; built-in loop plugins remain enabled. */
+  plugins?: readonly PluginInput[]
 }): CoreInstance & CommandApi {
   const instance = createCoreInstance(opts)
   const commands = createCommands(instance)

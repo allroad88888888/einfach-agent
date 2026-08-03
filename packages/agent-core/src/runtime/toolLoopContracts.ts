@@ -1,6 +1,7 @@
 import type { LoadedTool } from '../tools/types'
 import type { SessionMeta } from '../state/core.type'
 import type { CoreInstance } from './core/coreInstance'
+import type { PluginRun } from './core/pluginHost'
 import type { ToolLoopOptions } from './modelRunLifecycle'
 import type { TraceAttributes, TraceSpan, TraceStatus } from '../observability/types'
 
@@ -40,7 +41,8 @@ export interface ToolLoopBase {
   control: ToolLoopControl
   state: ToolLoopMutableState
   pluginContext: ReturnType<typeof import('./core/coreCtx').makeCoreCtx>
-  hooks: ReturnType<typeof import('./core/pluginApi').assemblePlugins>
+  pluginRun: PluginRun
+  hooks: PluginRun['hooks']
   delegateRuntime: ReturnType<typeof import('../subagents/runtime').createDelegateAgentRuntime>
   rootTranscript(): string
   promoteQueuedInputs(): number

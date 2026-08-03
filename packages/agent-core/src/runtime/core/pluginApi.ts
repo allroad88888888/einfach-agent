@@ -69,7 +69,7 @@ export interface PluginApi {
 }
 
 // 简介：一个插件 = 装配期拿到 api 做注册的函数；可选返回一个 dispose。
-// 详情：本 Stage 的 assemblePlugins 只消费其注册副作用；dispose 的聚合留到实例化阶段（蓝图 §八·4）。
+// 详情：装配结果保留 dispose；run 宿主在本次 run 结束时统一调用它。
 export type AgentPlugin = (api: PluginApi) => void | (() => void)
 
 // 每个槽的登记 bucket：同名 hook 多次注册累积成数组，保持注册序。
@@ -138,6 +138,8 @@ export interface AssembledPlugins extends LoopHooks {
    * 会残留上一个 run 的监听器（assemblePlugins 每次 run 重新收集一批新意向，互不清理）。
    */
   bindSubscriptions(store: Store): () => void
+  /** Releases disposers returned by this run's plugins. Safe to call repeatedly. */
+  dispose(): void
 }
 
 // 简介：把多个插件装配成一份复合 LoopHooks + tools 清单 + 订阅绑定入口（PX2 fan-out）。
@@ -156,6 +158,8 @@ export function assemblePlugins(plugins: AgentPlugin[]): AssembledPlugins {
   const buckets = createHookBuckets()
   const tools: Tool[] = []
   const subscriptions: SubscriptionEntry[] = []
+  const disposers: Array<() => void> = []
+  let disposed = false
 
   const api: PluginApi = {
     hook<K extends keyof LoopHooks>(name: K, fn: NonNullable<LoopHooks[K]>): void {
@@ -170,9 +174,14 @@ export function assemblePlugins(plugins: AgentPlugin[]): AssembledPlugins {
     },
   }
 
-  for (const plugin of plugins) {
-    // dispose（返回值）本 Stage 不消费 —— 立缝阶段没有 teardown（蓝图 §八·4 再聚合）。
-    plugin(api)
+  try {
+    for (const plugin of plugins) {
+      const dispose = plugin(api)
+      if (dispose) disposers.push(dispose)
+    }
+  } catch (error) {
+    try { dispose() } catch { /* 保留插件初始化失败 */ }
+    throw error
   }
 
   const onRunStart: LoopHooks['onRunStart'] = buckets.onRunStart.length
@@ -244,10 +253,33 @@ export function assemblePlugins(plugins: AgentPlugin[]): AssembledPlugins {
   //   的监听器签名如此——变更通知，不带值），当场 store.getter(atom) 现取最新值再喂给插件的 fn，
   //   不依赖任何在 bind 时就已过期的闭包快照。返回值把这批 unsub 打包成一个统一 dispose。
   function bindSubscriptions(store: Store): () => void {
-    const unsubs = subscriptions.map(({ atom, fn }) => store.sub(atom, () => fn(store.getter(atom))))
-    return () => {
-      for (const unsub of unsubs) unsub()
+    const unsubs: Array<() => void> = []
+    try {
+      for (const { atom, fn } of subscriptions) unsubs.push(store.sub(atom, () => fn(store.getter(atom))))
+    } catch (error) {
+      for (const unsubscribe of unsubs) try { unsubscribe() } catch { /* 保留绑定失败 */ }
+      throw error
     }
+    let unbound = false
+    return () => {
+      if (unbound) return
+      unbound = true
+      for (const unsubscribe of unsubs) unsubscribe()
+    }
+  }
+
+  function dispose(): void {
+    if (disposed) return
+    disposed = true
+    let firstError: unknown
+    for (const disposer of [...disposers].reverse()) {
+      try {
+        disposer()
+      } catch (error) {
+        firstError ??= error
+      }
+    }
+    if (firstError !== undefined) throw firstError
   }
 
   return {
@@ -260,5 +292,6 @@ export function assemblePlugins(plugins: AgentPlugin[]): AssembledPlugins {
     shouldStop,
     tools,
     bindSubscriptions,
+    dispose,
   }
 }

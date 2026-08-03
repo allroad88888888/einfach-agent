@@ -1,5 +1,3 @@
-// runtime/core/coreInstance.ts —— 「实例化」的地基：把六类模块级资源收进一个 CoreInstance。
-// ---------------------------------------------------------------------------
 // 背景：现状是六类各自为政的模块资源——
 //   · state/rootStore.ts      的 rootStore（会话列表 store）
 //   · state/sessionStore.ts   的 per-session store 缓存 Map
@@ -7,10 +5,6 @@
 //   · runtime/abortRegistry.ts 的 controllers Map（每会话 AbortController）
 //   · subagents/scheduler.ts  的任务树与订阅者（子 agent 调度状态）
 //   · runtime/persistenceBridge.ts 的 driver、写队列与 rootStore 快照
-// 本模块把这六类资源收进一个 CoreInstance 抽象，并造 `defaultCore = createCoreInstance()`
-// 把它们实例化一次。上面六个模块随后【全部改写成 defaultCore 的视图】——照旧导出同名符号，
-// 只是背后取自 defaultCore。对所有调用点完全透明（本期不穿线到 runtime，行为零变化）。
-//
 // 【破环】本模块只 import 叶子层：createStore（einfach）、createToolRegistry（tools/toolRegistry，
 //   不是 tools/registry）。它【绝不】import 那五个视图模块（rootStore/sessionStore/registry/
 //   abortRegistry/scheduler），也【不再】import 任何具体工具或 tools/register —— 工具改由调用方经 opts.registerTools
@@ -22,10 +16,10 @@
 //   消费方决定：opts.registerTools?.(registry) 在构造时注入，或事后 core.tools.register(...)。默认实例
 //   defaultCore 造出来是【无工具】的；app（main.tsx）与测试（test/setup.ts）各调一次
 //   registerStandardTools(defaultCore.tools) 恢复"默认 21 工具"。于是 core 变无主张（可嵌任意工具集），
-//   batteries-included 由消费层一行恢复。
 import { createStore, type Store } from '@einfach/core'
 import { createToolRegistry, type ToolRegistry } from '../../tools/toolRegistry'
 import { createSubagentScheduler, type SubagentScheduler } from '../../subagents/schedulerState'
+import { createPluginHost, type PluginHost, type PluginInput } from './pluginHost'
 import type { ProjectSkillsSnapshot } from '../../skills/projectSkills'
 import { emptyProjectSkillsSnapshot } from '../../skills/projectSkills'
 import {
@@ -113,6 +107,8 @@ export interface CoreInstance {
   resetSessionStores(): void
   // 该实例私有的工具注册表（登记反转后默认为空；由 opts.registerTools 或事后 register 填充）。
   readonly tools: ToolRegistry
+  // 该实例私有的插件宿主；工具归 Core，hook/订阅归单次 run。
+  readonly plugins: PluginHost
   // 该实例私有的 abort 注册表。
   readonly abort: AbortRegistryLike
   // 该实例私有的子 agent 调度器。
@@ -137,6 +133,7 @@ export interface CoreInstance {
 export function createCoreInstance(opts?: {
   config?: Partial<RuntimeConfig>
   registerTools?: (registry: ToolRegistry) => void
+  plugins?: readonly PluginInput[]
 }): CoreInstance {
   // 1) 根 store：该实例的会话列表值域。
   const rootStore = createStore()
@@ -173,6 +170,7 @@ export function createCoreInstance(opts?: {
   //    在此注入（未传则留空，消费方事后自行 register；见文件头 TS1 注释）。
   const tools = createToolRegistry()
   opts?.registerTools?.(tools)
+  const plugins = createPluginHost(tools, opts?.plugins)
 
   // 4) abort 注册表：本实例私有 Map（逻辑照搬原 abortRegistry.ts，Map 从模块级变实例字段）。
   const controllers = new Map<string, AbortController>()
@@ -285,6 +283,7 @@ export function createCoreInstance(opts?: {
     dropSessionStore,
     resetSessionStores,
     tools,
+    plugins,
     abort,
     subagentScheduler,
     config,
