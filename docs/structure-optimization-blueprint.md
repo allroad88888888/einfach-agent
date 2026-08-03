@@ -5,7 +5,7 @@
 
 ## 实施状态
 
-批次 1–6 的 32 项任务已完成（F2 `d8f6a86`、E5 `a7a61b6`、S6 `e612ab4`、R6 `67c72ca` 与重试防护测试 `a438700`）；批次 7 的 R7 进行中，`004b6aa` 仅为部分合格基线，不构成完成。
+批次 1–7 的 33 项任务均已完成（F2 `d8f6a86`、E5 `a7a61b6`、S6 `e612ab4`、R6 `67c72ca` 与重试防护测试 `a438700`）；R7 的前置提交为 `81509c0`，终拆提交为 `338285f`。
 
 ## 调度规则
 
@@ -260,23 +260,19 @@
 - 完成形态：移除全局串行；Vitest 保持文件并行并设置 `isolate: true`，setup 只在 worker 内重置兼容 `defaultCore` 的 store。
 - 验收：`pnpm test` 并行稳定通过 3 次。
 
-### G3 · 文档对齐收尾（已完成：本次变更）
+### G3 · 文档对齐收尾（已完成：`01100e7`）
 - **只做**:CLAUDE.md / `docs/README.md` / ROADMAP 与新结构对齐,本蓝图状态更新。
 - 验收:G2 的链接检查绿。
 
 ---
 
-## 批次 7 —— 主循环终拆(串行,1 任务,进行中)
+## 批次 7 —— 主循环终拆(串行,1 任务,已完成)
 
-### R7 · modelRun.ts 拆到 ≤500（进行中；`004b6aa` 仅为部分合格基线）
-- **只做**:经 R1-R6 掏空后按关注点拆出:checkpoint 四件套(`:1178-1252`)→
-  `runCheckpoints.ts`;稳定前缀组装(`:1267-1309`)→ 并入 `modelTurn.ts` 族;
-  UI 注入判重(`:1311-1391`)→ `transcriptInjection.ts`;工具闸门改用 S5 建立的
-  `toolGates.ts` 单源并删除内联版;`runToolLoop` 只剩循环骨架与插件 fan-out。
-  同步消除 `agentTurnLimit` 三处改写的裸变量(收进循环预算对象)与
-  `meta`/`ctx` 同名遮蔽。
-- 验收：`modelRun.test.ts` 全绿（当前 3966 行测试是这次拆分的安全网，先拆实现不动测试）；
-  `wc -l` 达标;`codegraph impact` 确认对外符号无断裂。
+### R7 · modelRun.ts 拆到 ≤500（已完成：前置 `81509c0`；终拆 `338285f`）
+- 完成形态：`modelRun.ts` 成为稳定导出 facade；主循环由 `runToolLoop.ts` 协调，
+  lifecycle、bootstrap、循环周期、checkpoint、模型请求和工具执行各自独立成模块。
+- 验收：`modelRun.test.ts` 回归安全网保持通过；`modelRun.ts` 仅 14 行，所有新增运行时
+  模块均符合单一职责与行数约束，对外符号保持稳定。
 
 ---
 

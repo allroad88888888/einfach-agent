@@ -40,7 +40,7 @@ Vitest 使用 jsdom 和 `apps/web/src/test/setup.ts`，保持测试文件并行�
 - `packages/agent-core/`：Agent Runtime 与所有核心状态。
 - `tools/{shell,fs,interaction,planning,skills,agents}/`：六个具体工具域。
 - `tools/standard/`：标准工具聚合包，提供 `registerStandardTools`。
-- `docs/`：当前说明和仍在推进的演进蓝图。
+- `docs/`：当前说明与演进蓝图。
 
 依赖必须维持：
 
@@ -66,7 +66,7 @@ abort registry、子 Agent scheduler、运行时配置、project skills 和 pers
 
 ## 运行链路
 
-`sendMessage` 创建 run 并进入主循环编排（当前入口仍为 `modelRun.ts`）：
+`sendMessage` 创建 run，经 `modelRun.ts` 的稳定入口进入 `runToolLoop.ts` 主循环：
 
 1. 写入用户消息与 running 状态。
 2. 组装 system prompt、上下文、工具摘要和 `request_tool_schema`。
@@ -76,7 +76,8 @@ abort registry、子 Agent scheduler、运行时配置、project skills 和 pers
 6. 完成后提交 checkpoint，并通过 persistence bridge 落盘。
 
 供应商私有请求和重试留在 `packages/agent-ai/`；子 Agent 已按单体循环、批次编排和辅助职责拆分。
-`modelRun.ts` 的终拆（B7/R7）仍在推进，不能把当前入口视为已拆分完成。
+主循环已按 lifecycle、bootstrap、循环周期、checkpoint、模型请求和工具执行拆分；`modelRun.ts`
+只保留稳定导出，`runToolLoop.ts` 负责循环编排。
 
 工具不得直接 import store/atom 来获得额外能力。文件、shell、计划、渲染、委派等副作用必须使用
 `ToolContext` 暴露的能力，确保 workspace confinement、权限确认、stale guard 和审计仍然生效。
