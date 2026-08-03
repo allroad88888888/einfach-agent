@@ -6,5 +6,7 @@
 //   · deepseek / glm —— 各 provider 的请求特化与调用入口。
 export * from './modelApi'
 export * from './deepseek'
+export * from './finishReasonExtensions'
 export * from './glm'
+export * from './modelAdapter'
 export * from './vendorDescriptor'

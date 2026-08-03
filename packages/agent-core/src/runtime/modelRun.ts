@@ -60,10 +60,13 @@ import { classifyToolRisk } from './dangerousTools'
 import type { ConversationItem, PendingToolConfirmation, PendingUserDecisionOrigin } from '../state/core.type'
 import type { CheckpointState, RunRecoverySnapshot } from '../state/checkpoint.type'
 import { normalizeAskUserQuestionPayload } from './askUserQuestion'
-import { streamDeepSeek, type DeepSeekChatRequest } from '@web-agent/ai'
-import { streamGlm, type GlmChatRequest } from '@web-agent/ai'
-import { isAbortError } from '@web-agent/ai'
-import { maxTurnToolsForVendor, normalizeCacheUsage } from '@web-agent/ai'
+import {
+  isAbortError,
+  maxTurnToolsForVendor,
+  normalizeCacheUsage,
+  streamModel,
+  type ModelRetryObserver,
+} from '@web-agent/ai'
 import type {
   AssistantItem,
   ModelChatResponse,
@@ -84,6 +87,7 @@ import { toolSchemaAutoloadedResult, toolSchemaLoadedResult } from '../tools/sch
 import { buildToolContext } from './toolContext'
 // 【实例化 · 第 2 期穿线】core（CoreInstance，默认 defaultCore）决定本 run 用谁的 store/registry/abort。
 import { defaultCore, type CoreInstance } from './core/coreInstance'
+import { delegateModelIdentity, runtimeModelIdentity } from './core/delegateModelIdentity'
 // parseToolCallArgs 住在 modelTurn（纯 helper 层）—— 主循环与 subagents 的第二条工具循环
 // 必须共用同一份「坏 JSON 不执行工具」的判据，各抄一份迟早会漂移。
 import {
@@ -168,10 +172,6 @@ const DEFAULT_MAX_AGENT_TURNS = 32
 const MIN_PLAN_AGENT_TURNS = 64
 const PLAN_AGENT_TURNS_PER_STAGE = 24
 const MAX_PLAN_AGENT_TURNS = 256
-// DeepSeek 会用 HTTP 200 + finish_reason=insufficient_system_resource 表达瞬时容量不足，
-// 它不会进入 modelApi 对 429/5xx/网络错误的 HTTP 退避。这里只补一层很窄的协议级恢复：
-// 同一模型轮最多额外请求一次，且一旦流式 writer 已经把内容写进会话就绝不重放。
-const MAX_DEEPSEEK_INSUFFICIENT_RESOURCE_RETRIES = 1
 const EXECUTING_PLAN_STATUSES = new Set(['approved', 'active'])
 // LOOP_DETECTION_THRESHOLD / LOOP_DETECTED_ERROR 已随循环检测搬进 loopGuardPlugin（Core 抽离 Stage 2a）。
 const STREAM_UPDATE_INTERVAL_MIN_MS = 150
@@ -1066,7 +1066,7 @@ export async function runToolLoop(
   // 请求路径兜底（现由 migrationPlugin.onRunStart 落地）：settings.model 若已被 provider 下线，无论它从哪条
   // 路径进了 settings（绕过 hydrate 迁移的存量会话、外部导入、旧内存态……），onRunStart 已在第一轮请求
   // 【之前】把继任者归一化写回 sessionsAtom，绝不让死模型名撞 400。hydrate 覆盖「恢复路径」、onRunStart
-  // 覆盖「发请求路径」，两道独立防线。迁移是【整体】的而非只改 model：deepseek-reasoner → v4-flash 会连带把
+  // 覆盖「发请求路径」，两道独立防线。迁移是【整体】的而非只改 model：旧推理模型 → v4-flash 会连带把
   // thinking 补成 enabled（见 modelMigration 的 impliedThinking）。下游窗口预算 / thinking 推导 / 请求体 /
   // contextStats 全部读这份【迁移后】meta，全线一致。rawMeta 保持迁移前引用，供下方 `meta !== rawMeta`
   // 判定是否真迁过（发 model_migrated_at_request trace）。
@@ -1261,7 +1261,7 @@ export async function runToolLoop(
   }
   const customInstructions = buildCustomInstructionsItem(core.config.customInstructions)
   // 运行环境：workspace 根目录 + 宿主 + 本机平台 + 路径纪律。缺这一段时模型对「我在哪」
-  // 零信息，只能猜路径（实测 DeepSeek 首轮直接编训练数据里的绝对路径，见 buildEnvironmentItem）。
+  // 零信息，只能猜路径（某些模型首轮会直接编训练数据里的绝对路径，见 buildEnvironmentItem）。
   const environment = buildEnvironmentItem({
     workspaceRoot: sessionWorkspaceRoot,
     isTauri: runtimeIsTauri,
@@ -1386,6 +1386,7 @@ export async function runToolLoop(
       : ({ type: meta.settings.thinking ? 'enabled' : 'disabled' } as const)
   const callOptions = { apiKey: opts.apiKey, signal: opts.signal, fetchImpl: opts.fetchImpl }
   const contextCacheTracker = createContextCacheTracker()
+  const modelUserId = runtimeModelIdentity(core.config)
   const delegateRuntime = createDelegateAgentRuntime({
     sessionId: id,
     runId,
@@ -1396,7 +1397,7 @@ export async function runToolLoop(
     customInstructions: core.config.customInstructions,
     // 孩子继承父亲同一份运行环境正文：同机同 workspace，路径锚点必须一致。
     environment: environment.content,
-    deepseekUserId: core.config.deepseekUserId,
+    ...delegateModelIdentity(modelUserId),
     apiKey: opts.apiKey,
     signal: opts.signal,
     fetchImpl: opts.fetchImpl,
@@ -1794,10 +1795,7 @@ export async function runToolLoop(
       // context_window_tk / budget_source / _tk 后缀那套避 redact 的口径）。这里【不能再发一遍】，
       // 否则每次压缩都会双发同名事件。两个事件独立、不互斥（压过必发前者；压完仍超再发后者）。
 
-      // 按 vendor 收窄 settings 后调 model（流式；最终仍归一成完整 ModelChatResponse）。
-      // DeepSeek 的 insufficient_system_resource 是 200 响应里的协议级容量信号，不会触发
-      // modelApi 已有的 429/5xx/网络错误退避。这里在【尚无流式条目写回】时有限重放同一请求；
-      // 其它 HTTP 错误仍直接由 adapter 处理，主 runtime 不额外 catch/重试，避免双重 retry。
+      // Runtime 只组装通用请求并将其交给 adapter；provider 私有协议与请求字段不在这里展开。
       const requestBase = {
         model: meta.settings.model,
         messages,
@@ -1808,16 +1806,10 @@ export async function runToolLoop(
         tool_choice: 'auto' as const,
         stream: true,
       }
-      let insufficientResourceRetries = 0
-      let completedResponse: {
-        res: ModelChatResponse
-        streamWriter: ReturnType<typeof createAssistantStreamWriter>
-      } | undefined
-
-      while (!completedResponse) {
-        const streamWriter = createAssistantStreamWriter(id, runId, opts.signal, core, planStageId)
-        let res: ModelChatResponse
-        const llmSpan = startSpan('llm.chat', {
+      let adapterRetryAttempts = 0
+      const streamWriter = createAssistantStreamWriter(id, runId, opts.signal, core, planStageId)
+      let res: ModelChatResponse
+      const llmSpan = startSpan('llm.chat', {
           kind: 'llm',
           parent: traceSpan,
           attrs: () => ({
@@ -1828,7 +1820,7 @@ export async function runToolLoop(
             model: meta.settings.model,
             messages_count: messages.length,
             tools_count: tools.length,
-            insufficient_resource_retry_attempt: insufficientResourceRetries,
+            adapter_retry_attempt: adapterRetryAttempts,
             estimated_context_tokens: contextStats.estimatedTokens,
             context_chars: contextStats.totalChars,
             tools_chars: contextStats.toolsChars,
@@ -1847,22 +1839,34 @@ export async function runToolLoop(
               reasoning_effort: meta.settings.reasoning_effort,
             }),
           }),
-        })
-        try {
-          if (meta.settings.vendor === 'glm') {
-            const s = meta.settings
-            const requestBody: GlmChatRequest = { ...requestBase, reasoning_effort: s.reasoning_effort }
-            res = await streamGlm(requestBody, callOptions, { onDelta: streamWriter.onDelta })
-          } else {
-            const s = meta.settings
-            const requestBody: DeepSeekChatRequest = {
-              ...requestBase,
-              reasoning_effort: s.reasoning_effort,
-              user_id: core.config.deepseekUserId,
-            }
-            res = await streamDeepSeek(requestBody, callOptions, { onDelta: streamWriter.onDelta })
-          }
-        } catch (err) {
+      })
+      const retryObserver: ModelRetryObserver = {
+        canRetry: () => (
+          isCurrentRun(currentRunGuard) && isRunningRun(id, runId, core) && !opts.signal.aborted
+        ),
+        onRetry(event) {
+          adapterRetryAttempts = event.attempt
+          traceEvent('llm.model_retry', {
+            status: event.status,
+            retry_attempt: event.attempt,
+            max_retries: event.maxRetries,
+            response_id: event.response.id,
+            response_model: event.response.model,
+          })
+        },
+      }
+      try {
+        res = await streamModel(
+          {
+            ...requestBase,
+            settings: meta.settings,
+            userId: modelUserId,
+          },
+          callOptions,
+          { onDelta: streamWriter.onDelta },
+          retryObserver,
+        )
+      } catch (err) {
           // 网络错误/取消也要把最后一个尚未到节流窗口的 delta 对账进稳定条目，并清掉瞬态流。
           streamWriter.finishPending()
           const status = abortStatus(opts.signal, err)
@@ -1870,13 +1874,10 @@ export async function runToolLoop(
             error: safeErrorMessage(err),
             cache_metrics_status: status === 'cancelled' ? 'cancelled' : 'request_failed',
           }, err)
-          if (insufficientResourceRetries > 0) {
-            traceEvent('llm.insufficient_system_resource_exhausted', {
-              retries_used: insufficientResourceRetries,
-              max_retries: MAX_DEEPSEEK_INSUFFICIENT_RESOURCE_RETRIES,
-              reason: status === 'cancelled'
-                ? 'retry_request_cancelled'
-                : 'retry_request_failed',
+          if (adapterRetryAttempts > 0) {
+            traceEvent('llm.model_retry_failed', {
+              retry_attempt: adapterRetryAttempts,
+              reason: status === 'cancelled' ? 'retry_request_cancelled' : 'retry_request_failed',
               error: safeErrorMessage(err),
             })
           }
@@ -1890,38 +1891,37 @@ export async function runToolLoop(
             }, core)
           }
           throw err
-        }
-        const choice = res.choices?.[0]
-        const msg = choice?.message
-        const toolCalls = narrowToolCalls(msg?.tool_calls)
-        const rawToolCallsCount = Array.isArray(msg?.tool_calls) ? msg.tool_calls.length : 0
-        endSpan(llmSpan, 'ok', () => ({
+      }
+      const choice = res.choices?.[0]
+      const msg = choice?.message
+      const toolCalls = narrowToolCalls(msg?.tool_calls)
+      endSpan(llmSpan, 'ok', () => ({
           finish_reason: choice?.finish_reason ?? null,
           tool_calls_count: toolCalls.length,
           content_chars: responseChars(msg?.content),
           reasoning_chars: responseChars(msg?.reasoning_content),
           response_id: res.id,
           response_model: res.model,
-          insufficient_resource_retry_attempt: insufficientResourceRetries,
+          adapter_retry_attempt: adapterRetryAttempts,
           cache_metrics_status: normalizeCacheUsage(res.usage) ? 'available' : 'unavailable',
           responsePreview: llmTracePreview(res),
           ...usageTraceAttrs(res.usage),
-        }))
+      }))
 
-        // TK8 每步守卫必须先于协议级 retry：迟到的旧 run 和已 abort 的 run 连请求都不能再发一次。
-        if (!isCurrentRun(currentRunGuard)) {
+      // Adapter 的每次重试会通过 retryObserver 先检查这些守卫；最终响应仍需写回前复核。
+      if (!isCurrentRun(currentRunGuard)) {
           streamWriter.finishPending()
           finishTrace('cancelled', 'agent.stale_run', { reason: 'stale_run' })
           return
         }
-        if (!isRunningRun(id, runId, core)) {
+      if (!isRunningRun(id, runId, core)) {
           streamWriter.finishPending()
           commitStoppedTurn()
           finishTrace('cancelled', 'agent.stopped', { reason: 'run_not_running' })
           return
         }
-        // esc race：fetch 在 abort 前已返回但 signal 已中断 → stopped，不写回，也不容量重试。
-        if (opts.signal.aborted) {
+      // esc race：fetch 在 abort 前已返回但 signal 已中断 → stopped，不写回。
+      if (opts.signal.aborted) {
           streamWriter.finishPending()
           if (isCurrentRun(currentRunGuard)) patchRun(id, { status: 'stopped' }, core)
           commitStoppedTurn()
@@ -1929,63 +1929,6 @@ export async function runToolLoop(
           return
         }
 
-        if (
-          meta.settings.vendor === 'deepseek'
-          && choice?.finish_reason === 'insufficient_system_resource'
-        ) {
-          const hasStreamedItem = streamWriter.hasItem()
-          const hasResponseText = responseChars(msg?.content) > 0
-            || responseChars(msg?.reasoning_content) > 0
-          if (
-            !hasStreamedItem
-            && !hasResponseText
-            && rawToolCallsCount === 0
-            && insufficientResourceRetries < MAX_DEEPSEEK_INSUFFICIENT_RESOURCE_RETRIES
-          ) {
-            insufficientResourceRetries += 1
-            traceEvent('llm.insufficient_system_resource_retry', {
-              retry_attempt: insufficientResourceRetries,
-              max_retries: MAX_DEEPSEEK_INSUFFICIENT_RESOURCE_RETRIES,
-              response_id: res.id,
-              response_model: res.model,
-              has_streamed_item: false,
-              has_response_text: false,
-            })
-            continue
-          }
-          traceEvent('llm.insufficient_system_resource_exhausted', {
-            retries_used: insufficientResourceRetries,
-            max_retries: MAX_DEEPSEEK_INSUFFICIENT_RESOURCE_RETRIES,
-            reason: hasStreamedItem
-              ? 'streamed_output_already_written'
-              : hasResponseText
-                ? 'response_text_returned'
-                : rawToolCallsCount > 0
-                  ? 'tool_calls_returned'
-                  : 'retry_limit_reached',
-            response_id: res.id,
-            response_model: res.model,
-            has_streamed_item: hasStreamedItem,
-            has_response_text: hasResponseText,
-            tool_calls_count: toolCalls.length,
-            raw_tool_calls_count: rawToolCallsCount,
-          })
-        } else if (insufficientResourceRetries > 0) {
-          traceEvent('llm.insufficient_system_resource_recovered', {
-            retries_used: insufficientResourceRetries,
-            final_finish_reason: choice?.finish_reason ?? null,
-            response_id: res.id,
-            response_model: res.model,
-          })
-        }
-
-        completedResponse = { res, streamWriter }
-      }
-
-      const { res, streamWriter } = completedResponse
-      const choice = res.choices?.[0]
-      const msg = choice?.message
-      const toolCalls = narrowToolCalls(msg?.tool_calls)
       const responseCacheUsage = normalizeCacheUsage(res.usage)
 
       setContextStats(id, {

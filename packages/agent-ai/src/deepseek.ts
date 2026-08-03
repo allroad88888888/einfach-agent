@@ -10,6 +10,10 @@ import {
   type ChatStreamHandlers,
   type ChatRequestBase,
   type ModelChatResponse,
+  type ModelFinishReasonExtension,
+  type ModelRetryObserver,
+  type ModelResponseMessage,
+  type ModelStreamDelta,
 } from './modelApi'
 
 // 简介：DeepSeek 接入点与默认模型。
@@ -31,6 +35,29 @@ export function normalizeDeepSeekUserId(value: unknown): string | undefined {
 // 简介：DeepSeek V4 的推理投入档位。
 // 详情：V4 只接受 high / max；旧的 low / medium 最终也只会被服务端映射成 high。
 export type DeepSeekReasoningEffort = 'high' | 'max'
+
+const MAX_INSUFFICIENT_RESOURCE_RETRIES = 1
+const INSUFFICIENT_RESOURCE_FINISH_REASON = 'insufficient_system_resource'
+
+const INSUFFICIENT_RESOURCE_EXTENSION: ModelFinishReasonExtension = {
+  reason: INSUFFICIENT_RESOURCE_FINISH_REASON,
+  error: '模型服务容量不足（finish_reason=insufficient_system_resource），请稍后重试',
+  itemNotice:
+    '\n\n> ⚠️ 【系统标注】以上回复因模型服务容量不足而中断（finish_reason=insufficient_system_resource），内容不完整。',
+  standaloneNotice:
+    '> ⚠️ 【系统标注】本轮回复因模型服务容量不足而中断（finish_reason=insufficient_system_resource），未产生任何内容。',
+}
+
+/** Resolves DeepSeek-only terminal semantics without leaking them into the common protocol. */
+export function deepSeekFinishReasonExtensionFor(
+  reason: string | null,
+): ModelFinishReasonExtension | undefined {
+  return reason === INSUFFICIENT_RESOURCE_FINISH_REASON ? INSUFFICIENT_RESOURCE_EXTENSION : undefined
+}
+
+export function deepSeekFinishReasonExtensions(): readonly ModelFinishReasonExtension[] {
+  return [INSUFFICIENT_RESOURCE_EXTENSION]
+}
 
 // 简介：发给 DeepSeek 的请求体。
 // 详情：公共字段来自 ChatRequestBase，仅 reasoning_effort 取值域为 DeepSeek 特化。
@@ -103,6 +130,18 @@ function withStreamUsage(body: DeepSeekChatRequest): DeepSeekChatRequest {
   }
 }
 
+function messageCarriesOutput(message: ModelResponseMessage | undefined): boolean {
+  if (typeof message?.content === 'string' && message.content.length > 0) return true
+  if (typeof message?.reasoning_content === 'string' && message.reasoning_content.length > 0) return true
+  return Array.isArray(message?.tool_calls) && message.tool_calls.length > 0
+}
+
+function deltaCarriesOutput(delta: ModelStreamDelta): boolean {
+  if (typeof delta.content === 'string' && delta.content.length > 0) return true
+  if (typeof delta.reasoning_content === 'string' && delta.reasoning_content.length > 0) return true
+  return Array.isArray(delta.tool_calls) && delta.tool_calls.length > 0
+}
+
 // 简介：调用 DeepSeek 的 chat/completions（一次性完整响应）。
 // 详情：默认接入 DEEPSEEK_BASE_URL，可由 options.baseUrl 覆盖。
 export function callDeepSeek(
@@ -122,11 +161,74 @@ export function streamDeepSeek(
   body: DeepSeekChatRequest,
   options: ChatCallOptions,
   handlers?: ChatStreamHandlers,
+  retryObserver?: ModelRetryObserver,
 ): Promise<ModelChatResponse> {
-  return postChatCompletionStream(
-    options.baseUrl ?? DEEPSEEK_BASE_URL,
-    withStreamUsage(prepareDeepSeekRequest(body)),
-    options,
-    handlers,
-  )
+  return streamWithCapacityRetry(body, options, handlers, retryObserver)
+}
+
+async function streamWithCapacityRetry(
+  body: DeepSeekChatRequest,
+  options: ChatCallOptions,
+  handlers: ChatStreamHandlers | undefined,
+  retryObserver: ModelRetryObserver | undefined,
+): Promise<ModelChatResponse> {
+  let retryCount = 0
+
+  for (;;) {
+    let emittedOutput = false
+    const response = await postChatCompletionStream(
+      options.baseUrl ?? DEEPSEEK_BASE_URL,
+      withStreamUsage(prepareDeepSeekRequest(body)),
+      options,
+      {
+        onDelta(delta) {
+          emittedOutput ||= deltaCarriesOutput(delta)
+          handlers?.onDelta?.(delta)
+        },
+      },
+    )
+    const message = response.choices?.[0]?.message
+    const capacityLimited = response.choices?.[0]?.finish_reason === INSUFFICIENT_RESOURCE_FINISH_REASON
+    const canRetry = retryObserver?.canRetry?.() ?? !options.signal?.aborted
+
+    if (!capacityLimited) {
+      if (retryCount > 0) {
+        retryObserver?.onRetry?.({
+          status: 'recovered',
+          attempt: retryCount,
+          maxRetries: MAX_INSUFFICIENT_RESOURCE_RETRIES,
+          response,
+        })
+      }
+      return response
+    }
+
+    if (emittedOutput || messageCarriesOutput(message) || !canRetry) {
+      retryObserver?.onRetry?.({
+        status: 'exhausted',
+        attempt: retryCount,
+        maxRetries: MAX_INSUFFICIENT_RESOURCE_RETRIES,
+        response,
+      })
+      return response
+    }
+
+    if (retryCount >= MAX_INSUFFICIENT_RESOURCE_RETRIES) {
+      retryObserver?.onRetry?.({
+        status: 'exhausted',
+        attempt: retryCount,
+        maxRetries: MAX_INSUFFICIENT_RESOURCE_RETRIES,
+        response,
+      })
+      return response
+    }
+
+    retryCount += 1
+    retryObserver?.onRetry?.({
+      status: 'retrying',
+      attempt: retryCount,
+      maxRetries: MAX_INSUFFICIENT_RESOURCE_RETRIES,
+      response,
+    })
+  }
 }

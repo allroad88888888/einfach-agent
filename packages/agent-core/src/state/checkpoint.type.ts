@@ -32,10 +32,7 @@ export interface Checkpoint {
 
 export type CheckpointKind = 'working' | 'completed' | 'stopped' | 'abnormal'
 
-export type CheckpointFinishReason =
-  | 'length'
-  | 'content_filter'
-  | 'insufficient_system_resource'
+export type CheckpointFinishReason = string
 
 export interface CheckpointState {
   kind: CheckpointKind

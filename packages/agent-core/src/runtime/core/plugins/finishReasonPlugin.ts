@@ -7,7 +7,7 @@
 //   commit/落盘、trace 都必须与搬迁前逐字一致。三份文案常量原样从 modelRun.ts 搬来（一字未改）。
 //
 // ── 关注点原貌（modelRun.ts 的 runToolLoop，回填工具结果那一步之前）──
-//   一轮 model 往返收尾，若 finish_reason ∈ {length, content_filter, insufficient_system_resource}
+//   一轮 model 往返收尾，若 finish_reason 属于标准异常原因或 provider extension
 //   且【不是 length+有 tool_calls 的可恢复截断】，就：
 //     ① 往 itemsAtom 追加/改写一条带「系统标注」的 assistant 条目（有正文则正文+ITEM_NOTICE，
 //        无正文则单独 STANDALONE_NOTICE）；
@@ -33,6 +33,7 @@
 //   AbnormalFinishReason 与异常判据归 loopHooks 的 turn-end 契约单源。
 
 import { itemsAtom } from '../../../state/sessionAtoms'
+import { finishReasonExtensions } from '@web-agent/ai'
 import type { ConversationItem } from '../../../state/core.type'
 import { newId } from '../../newId'
 import type { CoreCtx } from '../coreCtx'
@@ -49,13 +50,13 @@ export type { AbnormalFinishReason } from '../loopHooks'
 export { isAbnormalFinishReason } from '../loopHooks'
 
 // ---------------------------------------------------------------------------
-// finish_reason 异常三态（原样从 modelRun.ts 搬来，type + 三份文案常量一字未改）
+// 标准 finish_reason + provider extension（文案仍是唯一口径）。
 // ---------------------------------------------------------------------------
 // finish_reason 异常三态的用户可见文案（同一份也回给 model / 进 trace，口径唯一）。
-export const FINISH_REASON_ERRORS: Record<AbnormalFinishReason, string> = {
+export const FINISH_REASON_ERRORS: Record<string, string> = {
   length: '模型输出触顶被截断（finish_reason=length），本轮回复不完整；请调高 max_tokens 或让模型分段输出',
   content_filter: '模型输出被内容安全策略拦截（finish_reason=content_filter）',
-  insufficient_system_resource: '模型服务容量不足（finish_reason=insufficient_system_resource），请稍后重试',
+  ...Object.fromEntries(finishReasonExtensions().map(({ reason, error }) => [reason, error])),
 }
 
 // ---------------------------------------------------------------------------
@@ -72,29 +73,27 @@ export const FINISH_REASON_ERRORS: Record<AbnormalFinishReason, string> = {
 //     换成 assistant 条目内的新字段则会被原样发进 OpenAI 兼容请求体，属于协议外字段，不能碰。
 //   · 只在异常三态分支追加，正常轮的条目一个字都不动（不污染）。
 //   · revert 语义不变：标注是 items 快照的一部分，回到这一轮就带着标注、回到更早的轮就没有。
-export const FINISH_REASON_ITEM_NOTICES: Record<AbnormalFinishReason, string> = {
+export const FINISH_REASON_ITEM_NOTICES: Record<string, string> = {
   length:
     '\n\n> ⚠️ 【系统标注】以上回复因触达输出上限被截断（finish_reason=length），内容不完整。' +
     '其中的推理很可能只进行到一半，不要把它当作已成立的结论直接沿用。',
   content_filter:
     '\n\n> ⚠️ 【系统标注】以上回复被内容安全策略拦截（finish_reason=content_filter），内容不完整。',
-  insufficient_system_resource:
-    '\n\n> ⚠️ 【系统标注】以上回复因模型服务容量不足而中断（finish_reason=insufficient_system_resource），内容不完整。',
+  ...Object.fromEntries(finishReasonExtensions().map(({ reason, itemNotice }) => [reason, itemNotice])),
 }
 
 // 「仅含标注」独立条目专用文案 —— 与上面那份【分开】，因为「以上」的指代对象不同。
 // 上面那份是拼在正文【之后】的，「以上回复」指同一条消息里前面那段文字，成立；
-// 而 content_filter / insufficient_system_resource 在非流式下 content 恒为空，标注要单独成条，
+// 而没有正文的异常终止在非流式下需单独成条，
 // 此时它上面一条消息是【用户的提问】—— 再说「以上回复」就指到用户身上了。
 // 重发历史时模型看到 user → assistant('以上回复被拦截')，很可能理解成「用户的输入被拦截了」，
 // 与「让模型知道自己上一轮输出出了什么事」的目标正好相反，所以主语必须换成「本轮回复」。
-export const FINISH_REASON_STANDALONE_NOTICES: Record<AbnormalFinishReason, string> = {
+export const FINISH_REASON_STANDALONE_NOTICES: Record<string, string> = {
   length:
     '> ⚠️ 【系统标注】本轮回复因触达输出上限被截断（finish_reason=length），未产生任何内容。',
   content_filter:
     '> ⚠️ 【系统标注】本轮回复被内容安全策略拦截（finish_reason=content_filter），未产生任何内容。',
-  insufficient_system_resource:
-    '> ⚠️ 【系统标注】本轮回复因模型服务容量不足而中断（finish_reason=insufficient_system_resource），未产生任何内容。',
+  ...Object.fromEntries(finishReasonExtensions().map(({ reason, standaloneNotice }) => [reason, standaloneNotice])),
 }
 
 // 简介：finish_reason 三态收尾本体——从 modelRun.ts 的 runToolLoop 内联代码逐字搬来（异常分流那段）。
@@ -113,7 +112,7 @@ export function applyFinishReason(
   const finishNotice = FINISH_REASON_ITEM_NOTICES[finishReason]
 
   // 非流式响应下 streamWriter 没建过条目，这里补一条纯文本的，让用户看得见断在哪 ——
-  // content_filter / insufficient_system_resource 按定义 content 为空，assistantHasContent
+  // 没有正文的异常终止下 assistantHasContent
   // 必为 false：有内容就「正文+标注」（沿用原逻辑），没内容就单独落一条「仅含标注」的 assistant
   // 条目（去掉前导换行，让这条独立条目单看时不是从空行起头）。流式已建条目（Case A）时标注已由
   // loop 的 finalize 追加，此处 hasStreamedItem 为真 → 跳过，避免重复。

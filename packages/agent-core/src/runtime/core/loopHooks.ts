@@ -11,7 +11,7 @@
 // 不在本文件（本文件只定义槽形状）。危险工具确认 / ask_user 暂停留到 Stage 2b，原样待在 loop 里。
 // 定义但不强制实现 —— assemblePlugins 会把每个槽按 fan-out 语义合成，loop 侧据「槽为 undefined」跳过。
 
-import type { ModelItem, ModelResponseMessage } from '@web-agent/ai'
+import { finishReasonExtensionFor, type ModelItem, type ModelResponseMessage } from '@web-agent/ai'
 import type { TraceAttributes } from '../../observability/types'
 import type { CoreCtx } from './coreCtx'
 
@@ -76,20 +76,20 @@ export interface TurnEndContinueDecision {
 
 export type TurnEndDecision = TurnEndStopDecision | TurnEndContinueDecision
 
-export type AbnormalFinishReason = 'length' | 'content_filter' | 'insufficient_system_resource'
+export type AbnormalFinishReason = string
 
-// 简介：finish_reason 是否落在异常三态。
-// 详情：loop 和 finishReasonPlugin 均通过同一守卫收窄，防止异常终止判据漂移。
+// 简介：finish_reason 是否需要异常终止。
+// 详情：标准异常原因和 provider extension 都由同一守卫收敛，避免 loop 与插件各自维护判据。
 export function isAbnormalFinishReason(reason: string | null): reason is AbnormalFinishReason {
   return (
     reason === 'length' ||
     reason === 'content_filter' ||
-    reason === 'insufficient_system_resource'
+    finishReasonExtensionFor(reason) !== undefined
   )
 }
 
 // 简介：取本轮需要异常终止的 finish_reason。
-// 详情：length + tool_calls 是可恢复的半截工具参数，不终止，留给坏 JSON 闸门；其余异常三态终止。
+// 详情：length + tool_calls 是可恢复的半截工具参数，不终止，留给坏 JSON 闸门；其余异常原因终止。
 export function getAbnormalFinishReason(
   ev: Pick<TurnEndEvent, 'finishReason' | 'toolCalls'>,
 ): AbnormalFinishReason | undefined {

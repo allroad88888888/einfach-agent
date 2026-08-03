@@ -126,14 +126,17 @@ export interface ChatRequestBase {
 // AssistantItem/ModelToolCall（那是请求侧必填版），另立宽松版本；解析成功后才收窄。
 
 // 简介：模型本轮的停止原因。
-// 详情：'tool_calls' = 模型要调工具；'stop' = 正常结束；'length' = 触顶；
-// 'insufficient_system_resource' 是 DeepSeek 特有的容量降级原因。
-export type FinishReason =
-  | 'stop'
-  | 'length'
-  | 'tool_calls'
-  | 'content_filter'
-  | 'insufficient_system_resource'
+// 详情：OpenAI-compatible 常见值包括 stop / length / tool_calls / content_filter；provider 可扩展，
+// 因此响应侧不把线协议收窄为固定联合。
+export type FinishReason = string
+
+/** Provider-owned presentation for a non-standard finish reason. */
+export interface ModelFinishReasonExtension {
+  reason: string
+  error: string
+  itemNotice: string
+  standaloneNotice: string
+}
 
 // 简介：响应里 assistant message 中的一次工具调用（宽松版）。
 export interface ModelResponseToolCall {
@@ -165,7 +168,7 @@ export interface ModelStreamDelta {
 
 export interface ModelStreamChoice {
   delta?: ModelStreamDelta
-  finish_reason?: FinishReason | null
+  finish_reason?: string | null
 }
 
 export interface ModelChatStreamChunk {
@@ -178,7 +181,7 @@ export interface ModelChatStreamChunk {
 
 // 简介：响应里的一个候选。
 export interface ModelResponseChoice {
-  finish_reason?: FinishReason | null
+  finish_reason?: string | null
   message?: ModelResponseMessage
 }
 
@@ -290,6 +293,17 @@ export interface ModelChatResponse {
   model?: string
   usage?: ModelUsage
   choices?: ModelResponseChoice[]
+}
+
+/** Lets a caller observe an adapter-owned retry without learning its protocol detail. */
+export interface ModelRetryObserver {
+  canRetry?(): boolean
+  onRetry?(event: {
+    status: 'retrying' | 'recovered' | 'exhausted'
+    attempt: number
+    maxRetries: number
+    response: ModelChatResponse
+  }): void
 }
 
 // ===========================================================================
@@ -628,7 +642,7 @@ interface StreamAccumulator {
   content: string
   reasoningContent: string
   toolCalls: Map<number, ModelResponseToolCall>
-  finishReason?: FinishReason | null
+  finishReason?: string | null
   usage?: ModelUsage
 }
 
