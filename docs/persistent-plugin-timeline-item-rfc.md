@@ -1,7 +1,7 @@
 # 自定义持久化 Timeline Item RFC
 
-状态：提议中（R5 产物）；尚未批准，**不对应任何已开放的写入 API 或持久化格式变更**。  
-更新时间：2026-08-03。  
+状态：提议中（R5 产物）；尚未批准，**不对应任何已开放的写入 API 或持久化格式变更**。
+更新时间：2026-08-03。
 关联：[插件 UI Renderer 协议](plugin-renderer-protocol-blueprint.md)、[核心运行时流程](core-runtime-flow.md)、[树形子 Agent Runtime](tree-subagent-runtime.md)。
 
 ## 1. 问题与边界
