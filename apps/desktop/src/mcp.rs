@@ -1706,126 +1706,20 @@ fn kill_process_group(pid: u32) -> io::Result<()> {
     }
 }
 
-#[cfg(all(test, unix))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
-    const FUNCTIONAL_SERVER: &str = r#"
-while IFS= read -r line; do
-  id=$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-  case "$line" in
-    *'"method":"initialize"'*)
-      printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/message","params":{"level":"info","data":"startup"}}'
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{"listChanged":true}},"serverInfo":{"name":"fake-server","version":"1.0.0"},"instructions":"test server"}}\n' "$id"
-      printf 'server diagnostic\n' >&2
-      ;;
-    *'"method":"tools/list"'*)
-      printf '%s\n' '{"jsonrpc":"2.0","id":"server-ping","method":"ping"}'
-      case "$line" in
-        *'"cursor":"next"'*)
-          printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"second","inputSchema":{"type":"object"}}]}}\n' "$id"
-          ;;
-        *)
-          printf '{"jsonrpc":"2.0","id":%s,"result":{"tools":[{"name":"first","description":"first page","inputSchema":{"type":"object"}}],"nextCursor":"next"}}\n' "$id"
-          ;;
-      esac
-      ;;
-    *'"method":"tools/call"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"content":[{"type":"text","text":"called"}],"structuredContent":{"ok":true},"isError":false}}\n' "$id"
-      ;;
-  esac
-done
-"#;
-
-    const TIMEOUT_SERVER: &str = r#"
-while IFS= read -r line; do
-  id=$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-  case "$line" in
-    *'"method":"initialize"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"timeout-server","version":"1.0.0"}}}\n' "$id"
-      ;;
-  esac
-done
-"#;
-
-    const STUBBORN_SERVER: &str = r#"
-while IFS= read -r line; do
-  id=$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-  case "$line" in
-    *'"method":"initialize"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"stubborn-server","version":"1.0.0"}}}\n' "$id"
-      break
-      ;;
-  esac
-done
-while :; do
-  sleep 1
-done
-"#;
-
-    const EXITING_SERVER: &str = r#"
-while IFS= read -r line; do
-  id=$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-  case "$line" in
-    *'"method":"initialize"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-11-25","capabilities":{"tools":{}},"serverInfo":{"name":"exiting-server","version":"1.0.0"}}}\n' "$id"
-      ;;
-    *'"method":"notifications/initialized"'*)
-      exit 7
-      ;;
-  esac
-done
-"#;
-
-    const UNSUPPORTED_PROTOCOL_SERVER: &str = r#"
-while IFS= read -r line; do
-  id=$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-  case "$line" in
-    *'"method":"initialize"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2099-01-01","capabilities":{"tools":{}},"serverInfo":{"name":"future-server","version":"1.0.0"}}}\n' "$id"
-      ;;
-  esac
-done
-"#;
-
-    const MISSING_TOOLS_CAPABILITY_SERVER: &str = r#"
-while IFS= read -r line; do
-  id=$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-  case "$line" in
-    *'"method":"initialize"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":"2025-11-25","capabilities":{"resources":{}},"serverInfo":{"name":"resources-only-server","version":"1.0.0"}}}\n' "$id"
-      ;;
-  esac
-done
-"#;
-
-    const TOOL_LIMIT_SERVER_TEMPLATE: &str = r#"
-while IFS= read -r line; do
-  id=$(printf '%s\n' "$line" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p')
-  case "$line" in
-    *'"method":"initialize"'*)
-      printf '{"jsonrpc":"2.0","id":%s,"result":%s}\n' "$id" '__INITIALIZE_RESULT__'
-      ;;
-    *'"method":"tools/list"'*)
-      case "$line" in
-        *'"cursor":"overflow"'*)
-          printf '{"jsonrpc":"2.0","id":%s,"result":%s}\n' "$id" '__OVERFLOW_PAGE__'
-          ;;
-        *)
-          printf '{"jsonrpc":"2.0","id":%s,"result":%s}\n' "$id" '__LIMIT_PAGE__'
-          ;;
-      esac
-      ;;
-  esac
-done
-"#;
-
-    fn connect_input(server_id: &str, script: &str) -> McpConnectInput {
+    fn connect_input(server_id: &str, mode: &str) -> McpConnectInput {
         McpConnectInput {
             server_id: server_id.to_string(),
             session_token: session_token(server_id),
-            command: "/bin/sh".to_string(),
-            args: vec!["-c".to_string(), script.to_string()],
+            command: "node".to_string(),
+            args: vec![
+                format!("{}/tests/mcp-test-server.cjs", env!("CARGO_MANIFEST_DIR")),
+                mode.to_string(),
+                MAX_TOTAL_TOOLS.to_string(),
+            ],
             cwd: None,
             env: HashMap::new(),
             request_timeout_ms: Some(1_000),
@@ -1838,45 +1732,11 @@ done
         format!("{server_id}-session")
     }
 
-    fn tool_limit_server() -> String {
-        let limit_tools = (0..MAX_TOTAL_TOOLS)
-            .map(|index| {
-                json!({
-                    "name": format!("tool-{index}"),
-                    "inputSchema": { "type": "object" },
-                })
-            })
-            .collect::<Vec<_>>();
-        let initialize_result = json!({
-            "protocolVersion": DEFAULT_PROTOCOL_VERSION,
-            "capabilities": { "tools": {} },
-            "serverInfo": { "name": "tool-limit-server", "version": "1.0.0" },
-        })
-        .to_string();
-        let limit_page = json!({
-            "tools": limit_tools,
-            "nextCursor": "overflow",
-        })
-        .to_string();
-        let overflow_page = json!({
-            "tools": [{
-                "name": "one-too-many",
-                "inputSchema": { "type": "object" },
-            }],
-        })
-        .to_string();
-
-        TOOL_LIMIT_SERVER_TEMPLATE
-            .replace("__INITIALIZE_RESULT__", &initialize_result)
-            .replace("__LIMIT_PAGE__", &limit_page)
-            .replace("__OVERFLOW_PAGE__", &overflow_page)
-    }
-
     #[test]
     fn persistent_session_initializes_paginates_calls_and_disconnects() {
         let manager = McpManager::default();
         let connected = manager
-            .connect(connect_input("functional", FUNCTIONAL_SERVER))
+            .connect(connect_input("functional", "functional"))
             .expect("fake server should initialize");
         assert_eq!(connected.server_id, "functional");
         assert_eq!(connected.protocol_version, DEFAULT_PROTOCOL_VERSION);
@@ -1943,7 +1803,7 @@ done
     #[test]
     fn connect_rejects_protocol_versions_the_client_does_not_implement() {
         let manager = McpManager::default();
-        let mut unsupported_request = connect_input("unsupported-input", FUNCTIONAL_SERVER);
+        let mut unsupported_request = connect_input("unsupported-input", "functional");
         unsupported_request.protocol_version = Some("2025-06-18".to_string());
         let request_error = manager
             .connect(unsupported_request)
@@ -1952,10 +1812,7 @@ done
         assert!(request_error.message.contains("supports only"));
 
         let response_error = manager
-            .connect(connect_input(
-                "unsupported-response",
-                UNSUPPORTED_PROTOCOL_SERVER,
-            ))
+            .connect(connect_input("unsupported-response", "unsupported"))
             .expect_err("unsupported server-selected versions must fail initialize");
         assert_eq!(response_error.kind, "protocol_error");
         assert_eq!(
@@ -1970,10 +1827,7 @@ done
     fn connect_rejects_servers_without_the_tools_capability() {
         let manager = McpManager::default();
         let error = manager
-            .connect(connect_input(
-                "resources-only",
-                MISSING_TOOLS_CAPABILITY_SERVER,
-            ))
+            .connect(connect_input("resources-only", "resources-only"))
             .expect_err("a tools-only client must reject servers without tools");
 
         assert_eq!(error.kind, "protocol_error");
@@ -1984,9 +1838,8 @@ done
     #[test]
     fn list_tools_rejects_more_than_the_cumulative_safety_limit() {
         let manager = McpManager::default();
-        let script = tool_limit_server();
         manager
-            .connect(connect_input("tool-limit", &script))
+            .connect(connect_input("tool-limit", "tool-limit"))
             .expect("fake server should initialize");
 
         let at_limit = manager
@@ -2030,7 +1883,7 @@ done
     fn request_timeout_is_structured_and_session_remains_disconnectable() {
         let manager = McpManager::default();
         manager
-            .connect(connect_input("timeout", TIMEOUT_SERVER))
+            .connect(connect_input("timeout", "timeout"))
             .expect("fake server should initialize");
 
         let error = manager
@@ -2060,18 +1913,19 @@ done
     fn invalid_server_id_is_rejected_without_spawning_or_panicking() {
         let manager = McpManager::default();
         let error = manager
-            .connect(connect_input("bad\0thread-name", FUNCTIONAL_SERVER))
+            .connect(connect_input("bad\0thread-name", "functional"))
             .expect_err("null bytes must be rejected before building thread names");
 
         assert_eq!(error.kind, "invalid_input");
         assert_eq!(error.server_id, None);
     }
 
+    #[cfg(unix)]
     #[test]
     fn dropping_manager_kills_and_reaps_stubborn_server() {
         let manager = McpManager::default();
         let pid = manager
-            .connect(connect_input("stubborn", STUBBORN_SERVER))
+            .connect(connect_input("stubborn", "stubborn"))
             .expect("fake server should initialize")
             .pid;
 
@@ -2163,7 +2017,7 @@ done
             McpLifecycleEventSink::new(move |event| lock_recover(&events).push(event))
         };
         let connected = manager
-            .connect_with_events(connect_input("exiting", EXITING_SERVER), event_sink)
+            .connect_with_events(connect_input("exiting", "exiting"), event_sink)
             .expect("server should initialize before exiting");
         assert_eq!(connected.session_token, session_token("exiting"));
 
@@ -2200,7 +2054,7 @@ done
     fn stale_session_commands_cannot_observe_or_remove_the_current_session() {
         let manager = McpManager::default();
         manager
-            .connect(connect_input("generation", FUNCTIONAL_SERVER))
+            .connect(connect_input("generation", "functional"))
             .expect("current generation should connect");
 
         let stale_list = manager
@@ -2260,7 +2114,7 @@ done
     #[test]
     fn reconnect_rejects_reused_tokens_and_waits_for_closing_generation() {
         let manager = McpManager::default();
-        let first = connect_input("reuse-safe", FUNCTIONAL_SERVER);
+        let first = connect_input("reuse-safe", "functional");
         manager
             .connect(first.clone())
             .expect("first generation should connect");
@@ -2304,6 +2158,7 @@ done
             .expect("second generation should disconnect");
     }
 
+    #[cfg(unix)]
     fn process_exists(pid: u32) -> bool {
         use std::os::raw::c_int;
 
