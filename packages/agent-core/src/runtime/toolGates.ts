@@ -84,7 +84,7 @@ export function selectToolGate(input: ToolGateInput): ToolGateDecision {
     }
   }
 
-  if (isAllowed) {
+  if (isAllowed && isExposedTool(input.name, input.turnTools)) {
     const currentRegistrationVersion = input.registrationVersion(input.name)
     if (
       input.expectedRegistrationVersion === undefined
