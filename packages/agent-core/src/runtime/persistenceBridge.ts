@@ -9,21 +9,14 @@
 //   本文不 import UI，也不持有 store 引用（persistSessions 内部自取 rootStore，对齐 U2）。
 
 import { rootStore, sessionsAtom, workspacesAtom } from '../state/rootStore'
-import type { SessionMeta, WorkspaceMeta } from '../state/core.type'
+import type { SessionMeta } from '../state/core.type'
 import type { Checkpoint } from '../state/checkpoint.type'
+import type { SessionsPersistence } from '../state/persistence/contract'
 import type { HistoryDriver } from '../state/persistence/historyDriver'
 import {
   beginPerformanceDiagnostic,
   performanceNow,
 } from '../observability/performanceDiagnostics'
-
-// 会话列表持久化器的结构（对应 createSessionsPersistence 的返回形状）；接线只用到 saveSessions。
-interface SessionsPersistence {
-  saveSessions(sessions: SessionMeta[], diagnosticOperationId?: string): Promise<void>
-  loadSessions(): Promise<SessionMeta[]>
-  saveWorkspaces?(workspaces: WorkspaceMeta[]): Promise<void>
-  loadWorkspaces?(): Promise<WorkspaceMeta[]>
-}
 
 // ===========================================================================
 // 模块级 driver 注入 —— 未配置时全部 no-op
@@ -189,10 +182,10 @@ function runSessionsWrite(request: SessionsWriteRequest, generation: number): vo
   )
 }
 
-// 简介：把一级工作区登记表覆盖式落盘；旧 driver 未实现该方法时安全降级为 no-op。
+// 简介：把一级工作区登记表覆盖式落盘。
 export function persistWorkspaces(): void {
   const driver = sessions
-  if (!driver?.saveWorkspaces) return
+  if (!driver) return
   const snapshot = Object.values(rootStore.getter(workspacesAtom))
   const queuedAt = performanceNow()
   const queueDepthAtEnqueue = ++workspacesWriteDepth
@@ -205,7 +198,7 @@ export function persistWorkspaces(): void {
     const startedAt = performanceNow()
     let write: Promise<void>
     try {
-      write = driver.saveWorkspaces!(snapshot)
+      write = driver.saveWorkspaces(snapshot)
     } catch (error) {
       operation.finish(
         'error',

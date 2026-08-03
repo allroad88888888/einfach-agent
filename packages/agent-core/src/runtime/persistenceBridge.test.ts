@@ -8,14 +8,16 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { rootStore, sessionsAtom, resetRootStore } from '../state/rootStore'
-import type { SessionMeta } from '../state/core.type'
+import { rootStore, sessionsAtom, workspacesAtom, resetRootStore } from '../state/rootStore'
+import type { SessionMeta, WorkspaceMeta } from '../state/core.type'
 import type { Checkpoint } from '../state/checkpoint.type'
+import type { SessionsPersistence } from '../state/persistence/contract'
 import type { HistoryDriver } from '../state/persistence/historyDriver'
 import {
   configurePersistence,
   resetPersistence,
   persistSessions,
+  persistWorkspaces,
   persistCheckpoint,
   persistTruncate,
   persistDeleteSession,
@@ -40,13 +42,12 @@ function mockHistory(overrides?: Partial<HistoryDriver>): HistoryDriver {
 }
 
 // 假会话列表存储（默认 resolve）。
-function mockSessions(overrides?: Partial<{
-  saveSessions: (sessions: SessionMeta[], diagnosticOperationId?: string) => Promise<void>
-  loadSessions: () => Promise<SessionMeta[]>
-}>) {
+function mockSessions(overrides?: Partial<SessionsPersistence>): SessionsPersistence {
   return {
     saveSessions: vi.fn(async (_: SessionMeta[]) => {}),
     loadSessions: vi.fn(async () => [] as SessionMeta[]),
+    saveWorkspaces: vi.fn(async (_: WorkspaceMeta[]) => {}),
+    loadWorkspaces: vi.fn(async () => [] as WorkspaceMeta[]),
     ...overrides,
   }
 }
@@ -84,6 +85,16 @@ describe('persistenceBridge（D-4 fire-and-forget 接线）', () => {
     persistSessions({ operationId: 'plan-op-1', reason: 'plan.update', sessionId: 's1' })
 
     expect(sessions.saveSessions).toHaveBeenCalledWith([meta], 'plan-op-1')
+  })
+
+  it('persistWorkspaces：把 rootStore.workspacesAtom 全部 WorkspaceMeta 交给 saveWorkspaces', () => {
+    const sessions = mockSessions()
+    const workspace: WorkspaceMeta = { id: 'w1', name: 'Workspace', createdAt: 0, updatedAt: 0 }
+    configurePersistence({ sessions })
+    rootStore.setter(workspacesAtom, { w1: workspace })
+
+    expect(() => persistWorkspaces()).not.toThrow()
+    expect(sessions.saveWorkspaces).toHaveBeenCalledWith([workspace])
   })
 
   it('persistSessions：写入繁忙时只补写最新快照，不排队保存每个中间状态', async () => {

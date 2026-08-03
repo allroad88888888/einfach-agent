@@ -110,6 +110,10 @@ describe('ensureToolLoaded', () => {
         async loadSessions() {
           return []
         },
+        async saveWorkspaces() {},
+        async loadWorkspaces() {
+          return []
+        },
       },
     })
     seedRunningSession('s1')

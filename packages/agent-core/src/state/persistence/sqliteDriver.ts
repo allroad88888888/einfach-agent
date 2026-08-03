@@ -22,8 +22,9 @@
 //   修复 = 彻底移除跨语句事务（sessions 改单行 blob）+ 开 WAL/超时/NORMAL 降低锁竞争与单写开销。
 
 import Database from '@tauri-apps/plugin-sql'
-import type { Checkpoint, CheckpointMeta } from '../checkpoint.type'
 import type { SessionMeta, WorkspaceMeta } from '../core.type'
+import type { SessionsPersistence } from './contract'
+import type { HistoryDriver } from './historyDriver'
 import {
   beginPerformanceDiagnostic,
   performanceNow,
@@ -151,21 +152,6 @@ export function createSqlitePersistence(): {
   sessions: SessionsPersistence
 } {
   return { history: sqliteHistoryDriver, sessions: sqliteSessions }
-}
-
-// —— 类型别名（避免循环 import；结构与 historyDriver.ts / sessionsPersistence.ts 对齐）——
-interface HistoryDriver {
-  listCheckpoints(sessionId: string): Promise<CheckpointMeta[]>
-  loadCheckpoint(sessionId: string, turnIndex: number): Promise<Checkpoint | undefined>
-  saveCheckpoint(sessionId: string, checkpoint: Checkpoint): Promise<void>
-  truncateAfter(sessionId: string, turnIndex: number): Promise<void>
-  deleteSession(sessionId: string): Promise<void>
-}
-interface SessionsPersistence {
-  saveSessions(sessions: SessionMeta[], diagnosticOperationId?: string): Promise<void>
-  loadSessions(): Promise<SessionMeta[]>
-  saveWorkspaces(workspaces: WorkspaceMeta[]): Promise<void>
-  loadWorkspaces(): Promise<WorkspaceMeta[]>
 }
 
 const sqliteHistoryDriver: HistoryDriver = {
