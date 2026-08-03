@@ -14,18 +14,24 @@ import type {
   ModelRetryObserver,
 } from './modelApi'
 
-export type ModelStreamSettings =
+export type ModelAdapterSettings =
   | { vendor: 'deepseek'; reasoning_effort?: DeepSeekReasoningEffort }
   | { vendor: 'glm'; reasoning_effort?: GlmReasoningEffort }
 
-export interface ModelStreamRequest extends ChatRequestBase {
-  settings: ModelStreamSettings
+export interface ModelRequest extends ChatRequestBase {
+  settings: ModelAdapterSettings
   userId?: string
 }
 
+/** @deprecated Prefer ModelAdapterSettings for requests that may be non-streaming. */
+export type ModelStreamSettings = ModelAdapterSettings
+
+/** @deprecated Prefer ModelRequest for requests that may be non-streaming. */
+export type ModelStreamRequest = ModelRequest
+
 /** Calls a generic runtime request through its provider adapter. */
 export function callModel(
-  request: ModelStreamRequest,
+  request: ModelRequest,
   options: ChatCallOptions,
 ): Promise<ModelChatResponse> {
   const { settings, userId, ...body } = request
@@ -40,7 +46,7 @@ export function callModel(
 
 /** Streams a generic runtime request through its provider adapter. */
 export function streamModel(
-  request: ModelStreamRequest,
+  request: ModelRequest,
   options: ChatCallOptions,
   handlers?: ChatStreamHandlers,
   retryObserver?: ModelRetryObserver,
