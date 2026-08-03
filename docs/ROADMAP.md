@@ -66,6 +66,23 @@ P2.5 的 UI 协议设计已完成，R1–R4 已按独立、可回退批次交付
 - 增加 archive 清理、导出和恢复策略，同时保持审计事件 append-only。
 - 记录关键指标：首屏加载、单 turn 延迟、工具耗时、模型调用数和归档写入失败率。
 
+### 当前 archive 容量基准（archive v1）
+
+运行 `pnpm subagent:capacity` 会校验以下固定边界；设置
+`SUBAGENT_CAPACITY_REPORT=1` 并传入 Vitest 的 `--reporter=verbose --silent=false` 可输出原始计数。
+“内存”口径是调度器保留节点的 UTF-8 序列化载荷，避免受 GC 和 runner RSS 波动影响；磁盘口径是
+archive writer 实际交给宿主的 UTF-8 文件内容总量。
+
+- 10,000 条 `child_finished` 事件（另含初始化事件）：4 个文件、2,450,277 B archive，其中事件流
+  2,449,281 B。
+- 当前硬上限 256 节点树：262 个文件、316,809 B archive、94,972 B 节点状态载荷；事件流仍只有
+  两条 append-only 审计事件。
+- 12 子节点批次：12 个子任务都完成，子模型请求峰值严格为 8；归档为 96,314 B，节点状态载荷为
+  8,668 B。
+
+这些值是当前 schema 的可比较基准，而不是跨机器的堆/RSS 承诺；变更 archive 格式、节点字段或限额时，
+必须重新运行并更新此处数据。
+
 验收标准：
 
 - 主入口 chunk 不再触发当前的 500 KiB 构建警告，低频功能按需加载。
