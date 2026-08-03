@@ -225,6 +225,16 @@ interface TreeRuntimeBudget {
   maxModelCalls: number
 }
 
+interface DelegationCallState {
+  rootBudget: TreeRuntimeBudget
+  modelCallSemaphore: ModelCallSemaphore
+  totalNodesUsed: number
+  modelCallsUsed: number
+  budgetByPath: Map<string, TreeRuntimeBudget>
+  toolProfileByPath: Map<string, SubagentToolProfile>
+  confirmedToolsByPath: Map<string, readonly string[]>
+}
+
 class ModelCallSemaphore {
   private active = 0
   private readonly waiters: Array<() => void> = []
@@ -601,16 +611,11 @@ export function createDelegateAgentRuntime(
   let archiveInitialization: Promise<void> | undefined
   let eventCounter = 0
   const archiveStartedAt = new Date().toISOString()
-  let rootBudget: TreeRuntimeBudget | undefined
-  let modelCallSemaphore: ModelCallSemaphore | undefined
-  let totalNodesUsed = 1
-  let modelCallsUsed = 0
   const contextCacheTracker = createContextCacheTracker()
   let nextChangeSetOrder = 0
   const changeSetOrder = new Map<string, number>()
-  const budgetByPath = new Map<string, TreeRuntimeBudget>()
-  const toolProfileByPath = new Map<string, SubagentToolProfile>()
-  const confirmedToolsByPath = new Map<string, readonly string[]>()
+  const delegationStateByChildPath = new Map<string, DelegationCallState>()
+  let lowCostExtractionState: DelegationCallState | undefined
   const archiveWriter = new SubagentArchiveWriter()
   let owners = 1
   let disposed = false
@@ -628,36 +633,58 @@ export function createDelegateAgentRuntime(
     subagentIndexPath('agents'),
   ])
 
-  function reserveNodes(count: number, limit: number): void {
-    const effectiveLimit = Math.min(rootBudget?.maxTotalNodes ?? limit, limit)
-    const remaining = Math.max(0, effectiveLimit - totalNodesUsed)
+  function createDelegationCallState(input?: Pick<
+    DelegateAgentInput,
+    'maxDepth' | 'maxChildren' | 'maxConcurrent' | 'maxTotalNodes' | 'maxModelCalls'
+  >): DelegationCallState {
+    const rootBudget: TreeRuntimeBudget = {
+      maxDepth: input?.maxDepth ?? 2,
+      maxChildren: input?.maxChildren ?? 6,
+      maxConcurrent: input?.maxConcurrent ?? 4,
+      maxTotalNodes: input?.maxTotalNodes ?? 64,
+      maxModelCalls: input?.maxModelCalls ?? 128,
+    }
+    return {
+      rootBudget,
+      modelCallSemaphore: new ModelCallSemaphore(rootBudget.maxConcurrent),
+      totalNodesUsed: 1,
+      modelCallsUsed: 0,
+      budgetByPath: new Map([[ROOT_AGENT_PATH, rootBudget]]),
+      toolProfileByPath: new Map(),
+      confirmedToolsByPath: new Map(),
+    }
+  }
+
+  function reserveNodes(state: DelegationCallState, count: number, limit: number): void {
+    const effectiveLimit = Math.min(state.rootBudget.maxTotalNodes, limit)
+    const remaining = Math.max(0, effectiveLimit - state.totalNodesUsed)
     if (count > remaining) {
       throw new Error(
-        `subagent tree node budget exhausted: requested ${count}, remaining ${remaining}, used ${totalNodesUsed} of ${effectiveLimit}`,
+        `subagent tree node budget exhausted: requested ${count}, remaining ${remaining}, used ${state.totalNodesUsed} of ${effectiveLimit}`,
       )
     }
-    totalNodesUsed += count
+    state.totalNodesUsed += count
   }
 
-  function reserveModelCall(limit: number): void {
-    const effectiveLimit = Math.min(rootBudget?.maxModelCalls ?? limit, limit)
-    if (modelCallsUsed >= effectiveLimit) {
+  function reserveModelCall(state: DelegationCallState, limit: number): void {
+    const effectiveLimit = Math.min(state.rootBudget.maxModelCalls, limit)
+    if (state.modelCallsUsed >= effectiveLimit) {
       throw new Error(
-        `subagent tree model-call budget exhausted: used ${modelCallsUsed} of ${effectiveLimit}`,
+        `subagent tree model-call budget exhausted: used ${state.modelCallsUsed} of ${effectiveLimit}`,
       )
     }
-    modelCallsUsed += 1
+    state.modelCallsUsed += 1
   }
 
-  function budgetUsage(): DelegateAgentBatchResult['budgetUsage'] {
+  function budgetUsage(state: DelegationCallState): DelegateAgentBatchResult['budgetUsage'] {
     return {
       totalNodes: {
-        used: totalNodesUsed,
-        limit: rootBudget?.maxTotalNodes ?? totalNodesUsed,
+        used: state.totalNodesUsed,
+        limit: state.rootBudget.maxTotalNodes,
       },
       modelCalls: {
-        used: modelCallsUsed,
-        limit: rootBudget?.maxModelCalls ?? modelCallsUsed,
+        used: state.modelCallsUsed,
+        limit: state.rootBudget.maxModelCalls,
       },
     }
   }
@@ -671,7 +698,7 @@ export function createDelegateAgentRuntime(
     }
   }
 
-  async function callModel(args: {
+  async function callModel(state: DelegationCallState, args: {
     messages: ModelItem[]
     tools?: ModelFunctionTool[]
     toolChoice?: 'auto' | 'none'
@@ -679,7 +706,7 @@ export function createDelegateAgentRuntime(
     // 可观测性上下文。不传 = 本次调用不记压缩事件（见下方 distillChat 的说明）。
     observe?: CallModelObservation
   }, maxModelCalls?: number): Promise<ModelChatResponse> {
-    const modelCallLimit = maxModelCalls ?? rootBudget?.maxModelCalls ?? 128
+    const modelCallLimit = maxModelCalls ?? state.rootBudget.maxModelCalls
     const settings = args.settings ?? opts.settings
 
     // ── CC 接入（子 agent 循环）。
@@ -791,7 +818,7 @@ export function createDelegateAgentRuntime(
     })
 
     const invoke = () => {
-      reserveModelCall(modelCallLimit)
+      reserveModelCall(state, modelCallLimit)
       if (settings.vendor === 'glm') {
         const body: GlmChatRequest = {
           ...requestBase,
@@ -810,7 +837,7 @@ export function createDelegateAgentRuntime(
     let response: ModelChatResponse
     try {
       response = await (
-        modelCallSemaphore ? modelCallSemaphore.run(opts.signal, invoke) : invoke()
+        state.modelCallSemaphore.run(opts.signal, invoke)
       )
     } catch (error) {
       if (args.observe) {
@@ -930,9 +957,7 @@ export function createDelegateAgentRuntime(
       } finally {
         ownerSignal.removeEventListener('abort', abortFromOwner)
         unsubscribeScheduler?.()
-        budgetByPath.clear()
-        toolProfileByPath.clear()
-        confirmedToolsByPath.clear()
+        delegationStateByChildPath.clear()
         subagentScheduler.clear(opts.runId)
       }
     })()
@@ -940,6 +965,7 @@ export function createDelegateAgentRuntime(
   }
 
   const distillChat = async (
+    state: DelegationCallState,
     input: Parameters<SkillDistillChat>[0],
     maxModelCalls: number,
     observe?: CallModelObservation,
@@ -959,7 +985,7 @@ export function createDelegateAgentRuntime(
           phase: distillPhase,
         }
       : undefined
-    const response = await callModel({
+    const response = await callModel(state, {
       messages: [
         { role: 'system', content: input.system },
         { role: 'user', content: input.user },
@@ -1176,6 +1202,7 @@ export function createDelegateAgentRuntime(
     archiveBasePath: string
     inheritedSkills: SubagentSkillFile[]
     localSkill: SubagentSkillFile
+    state: DelegationCallState
     budget: TreeRuntimeBudget
     toolProfile: SubagentToolProfile
     confirmedTools: readonly string[]
@@ -1187,6 +1214,7 @@ export function createDelegateAgentRuntime(
       archiveBasePath,
       inheritedSkills,
       localSkill,
+      state,
       budget,
       toolProfile,
       confirmedTools,
@@ -1266,6 +1294,7 @@ export function createDelegateAgentRuntime(
       turn: number
     }): Promise<ModelChatResponse> => {
       const invoke = () => callModel(
+        state,
         {
           messages: input.messages,
           tools: input.tools,
@@ -1640,7 +1669,7 @@ export function createDelegateAgentRuntime(
             executedToolNames.push(name)
             let nested: DelegateAgentBatchResult | { error: string }
             try {
-              const parentConfirmedTools = confirmedToolsByPath.get(node.path) ?? []
+              const parentConfirmedTools = state.confirmedToolsByPath.get(node.path) ?? []
               nested = await delegateAgents(callArgs as unknown as DelegateAgentInput, {
                 ...context,
                 parentPath: node.path,
@@ -1786,19 +1815,16 @@ export function createDelegateAgentRuntime(
     const input = normalized.input
     const parentPath = context.parentPath || ROOT_AGENT_PATH
     const archiveBasePath = subagentCacheBasePath(opts.sessionId, opts.runId)
+    // A root call owns its complete mutable delegation state. Descendants resolve the state
+    // registered for their unique scheduler path, so overlapping root calls cannot inherit one
+    // another's quotas, semaphore, tool profile, or dangerous-tool grants.
+    const isRootCall = parentPath === ROOT_AGENT_PATH
+    const state = isRootCall
+      ? createDelegationCallState(input)
+      : delegationStateByChildPath.get(parentPath)
+    if (!state) throw new Error(`unknown subagent delegation parent path: ${parentPath}`)
 
-    if (!rootBudget) {
-      rootBudget = {
-        maxDepth: input.maxDepth ?? 2,
-        maxChildren: input.maxChildren ?? 6,
-        maxConcurrent: input.maxConcurrent ?? 4,
-        maxTotalNodes: input.maxTotalNodes ?? 64,
-        maxModelCalls: input.maxModelCalls ?? 128,
-      }
-      modelCallSemaphore = new ModelCallSemaphore(rootBudget.maxConcurrent)
-      budgetByPath.set(ROOT_AGENT_PATH, rootBudget)
-    }
-    const inheritedBudget = budgetByPath.get(parentPath) ?? rootBudget
+    const inheritedBudget = state.budgetByPath.get(parentPath) ?? state.rootBudget
     const budget: TreeRuntimeBudget = {
       maxDepth: hasOwn(rawInput, 'maxDepth')
         ? Math.min(inheritedBudget.maxDepth, input.maxDepth ?? inheritedBudget.maxDepth)
@@ -1820,10 +1846,9 @@ export function createDelegateAgentRuntime(
     // （模型的 delegate_agent、submit_stage_result 拉起的验收评估器……），每次都各自决定档位。
     // 曾经在首次调用里把 root 档位锁死，于是「先派 workspace_read 调研、再拉 workspace_verify
     // 评估器」必然被判成加宽而起不来。省略即 delegate_only，不继承上一次 root 调用的档位。
-    const isRootCall = parentPath === ROOT_AGENT_PATH
     const inheritedToolProfile = isRootCall
       ? undefined
-      : toolProfileByPath.get(parentPath) ?? DEFAULT_SUBAGENT_TOOL_PROFILE
+      : state.toolProfileByPath.get(parentPath) ?? DEFAULT_SUBAGENT_TOOL_PROFILE
     const requestedToolProfile = hasOwn(rawInput, 'toolProfile')
       ? input.toolProfile ?? DEFAULT_SUBAGENT_TOOL_PROFILE
       : inheritedToolProfile ?? DEFAULT_SUBAGENT_TOOL_PROFILE
@@ -1832,7 +1857,6 @@ export function createDelegateAgentRuntime(
         `invalid delegate_agent: toolProfile ${requestedToolProfile} cannot widen inherited ${inheritedToolProfile}`,
       )
     }
-    if (isRootCall) toolProfileByPath.set(ROOT_AGENT_PATH, requestedToolProfile)
     for (const child of input.children) {
       const childToolProfile = child.toolProfile ?? requestedToolProfile
       if (!canNarrowSubagentToolProfile(requestedToolProfile, childToolProfile)) {
@@ -1841,7 +1865,7 @@ export function createDelegateAgentRuntime(
         )
       }
     }
-    const pathConfirmedTools = confirmedToolsByPath.get(parentPath) ?? []
+    const pathConfirmedTools = state.confirmedToolsByPath.get(parentPath) ?? []
     const capability = context.dangerousToolCapability
     const capabilityIsScoped = capability
       && capability.sessionId === opts.sessionId
@@ -1852,10 +1876,6 @@ export function createDelegateAgentRuntime(
       && capability.toolNames.every(isDelegatableDangerousTool)
       && (parentPath === ROOT_AGENT_PATH || isSubset(capability.toolNames, pathConfirmedTools))
     const inheritedConfirmedTools = capabilityIsScoped ? Array.from(new Set(capability.toolNames)) : []
-    if (parentPath === ROOT_AGENT_PATH) {
-      // A runtime can serve several root delegate calls. Replace, never reuse, the previous call's grant.
-      confirmedToolsByPath.set(ROOT_AGENT_PATH, inheritedConfirmedTools)
-    }
     // Dangerous permissions are never inherited by omission. Every delegate call must explicitly
     // request a subset of the capability held by its parent path.
     const requestedConfirmedTools = hasOwn(rawInput, 'confirmedTools') ? (input.confirmedTools ?? []) : []
@@ -1901,8 +1921,8 @@ export function createDelegateAgentRuntime(
       maxConcurrent: budget.maxConcurrent,
       maxTotalNodes: budget.maxTotalNodes,
       maxModelCalls: budget.maxModelCalls,
-      totalNodesUsed,
-      modelCallsUsed,
+      totalNodesUsed: state.totalNodesUsed,
+      modelCallsUsed: state.modelCallsUsed,
       toolProfile: requestedToolProfile,
       confirmedTools: requestedConfirmedTools,
     })
@@ -1913,7 +1933,7 @@ export function createDelegateAgentRuntime(
       context.inheritedSkillIds ?? context.inheritedSkillContents?.map((skill) => skill.skillId) ?? []
     const inheritedSkillContents = context.inheritedSkillContents ?? []
     try {
-      reserveNodes(input.children.length, budget.maxTotalNodes)
+      reserveNodes(state, input.children.length, budget.maxTotalNodes)
     } catch (error) {
       const message = toErrorMessage(error)
       if (parentPath === ROOT_AGENT_PATH) {
@@ -1923,7 +1943,7 @@ export function createDelegateAgentRuntime(
         status: 'failed',
         children: [],
         error: message,
-        budgetUsage: budgetUsage(),
+        budgetUsage: budgetUsage(state),
       })
       try {
         await writeRunArchiveRecord(
@@ -1949,28 +1969,29 @@ export function createDelegateAgentRuntime(
         children: input.children,
       })
     } catch (error) {
-      totalNodesUsed -= input.children.length
+      state.totalNodesUsed -= input.children.length
       throw error
     }
     reserved.forEach((node, index) => {
       const spec = input.children[index]
-      budgetByPath.set(node.path, {
+      state.budgetByPath.set(node.path, {
         maxDepth: Math.min(budget.maxDepth, spec.maxDepth ?? budget.maxDepth),
         maxChildren: Math.min(budget.maxChildren, spec.maxChildren ?? budget.maxChildren),
         maxConcurrent: budget.maxConcurrent,
         maxTotalNodes: budget.maxTotalNodes,
         maxModelCalls: budget.maxModelCalls,
       })
-      toolProfileByPath.set(node.path, spec.toolProfile ?? requestedToolProfile)
-      confirmedToolsByPath.set(node.path, spec.confirmedTools ?? requestedConfirmedTools)
+      state.toolProfileByPath.set(node.path, spec.toolProfile ?? requestedToolProfile)
+      state.confirmedToolsByPath.set(node.path, spec.confirmedTools ?? requestedConfirmedTools)
+      delegationStateByChildPath.set(node.path, state)
     })
     const parentSnapshot = subagentScheduler.snapshot(opts.runId).find((node) => node.path === parentPath)
     const parentDispatchIndex = parentSnapshot ? Math.max(1, parentSnapshot.dispatchCounter) : 1
     await recordEvent(context, archiveBasePath, 'children_reserved', parentPath, {
       paths: reserved.map((node) => node.path),
       dispatchCounter: parentDispatchIndex,
-      totalNodesUsed,
-      maxTotalNodes: rootBudget.maxTotalNodes,
+      totalNodesUsed: state.totalNodesUsed,
+      maxTotalNodes: state.rootBudget.maxTotalNodes,
     })
 
     for (const node of reserved) {
@@ -1991,7 +2012,7 @@ export function createDelegateAgentRuntime(
         inheritedSkillIds,
         children: reserved.map((node, index) => ({ node, spec: input.children[index] })),
         chat: (request) =>
-          distillChat(request, budget.maxModelCalls, {
+          distillChat(state, request, budget.maxModelCalls, {
             context,
             archiveBasePath,
             agentPath: parentPath,
@@ -2043,7 +2064,7 @@ export function createDelegateAgentRuntime(
         status,
         children: children.map((child) => ({ path: child.path, status: child.status })),
         error: message,
-        budgetUsage: budgetUsage(),
+        budgetUsage: budgetUsage(state),
       })
       throw error
     }
@@ -2070,9 +2091,10 @@ export function createDelegateAgentRuntime(
         archiveBasePath,
         inheritedSkills: [...inheritedSkillContents, distilled.coreSkill],
         localSkill: distilled.childSkills[index],
-        budget: budgetByPath.get(node.path) ?? budget,
-        toolProfile: toolProfileByPath.get(node.path) ?? requestedToolProfile,
-        confirmedTools: confirmedToolsByPath.get(node.path) ?? [],
+        state,
+        budget: state.budgetByPath.get(node.path) ?? budget,
+        toolProfile: state.toolProfileByPath.get(node.path) ?? requestedToolProfile,
+        confirmedTools: state.confirmedToolsByPath.get(node.path) ?? [],
       }),
     )
 
@@ -2105,7 +2127,7 @@ export function createDelegateAgentRuntime(
       summary,
       children: children.map((child) => ({ path: child.path, status: child.status })),
       skillIds: allDistilledFiles.map((skill) => skill.skillId),
-      budgetUsage: budgetUsage(),
+      budgetUsage: budgetUsage(state),
     })
 
     return {
@@ -2121,7 +2143,7 @@ export function createDelegateAgentRuntime(
       eventLog: subagentEventsPath(archiveBasePath),
       skillFiles: allDistilledFiles.map((skill) => skill.path),
       skillIds: allDistilledFiles.map((skill) => skill.skillId),
-      budgetUsage: budgetUsage(),
+      budgetUsage: budgetUsage(state),
       changeSets,
       reversible: changeSets.every((changeSet) => changeSet.reversible),
       children,
@@ -2130,11 +2152,8 @@ export function createDelegateAgentRuntime(
 
   /**
    * ★ 不要给这里的 callModel 传第二参 ★ —— 那个参数是「树累计模型调用上限」，不是
-   * 「本次花几次」。曾经写死的 1 会让 reserveModelCall 拿 min(rootBudget, 1) 当上限，
-   * 于是只要本 run 里任何子 agent 发过一次请求（含上一个 stage 的 evaluator），
-   * modelCallsUsed 就已 ≥ 1，这里必抛 budget exhausted；而调用方是 best-effort 吞异常的，
-   * 结果就是整个能力从第二个 stage 起静默失效、测试还全绿。
-   * 同 submit_stage_result 里 maxTotalNodes 写 1 的那个坑，口径一致：走树级共享预算。
+   * 「本次花几次」。低成本提取不是某棵委派树的成员，使用专属的默认调用作用域；
+   * 传入 1 会把它的累计调用上限错误收紧为 1，后续 best-effort 调用会静默失效。
    */
   async function runLowCostExtraction(input: {
     systemPrompt: string
@@ -2148,21 +2167,24 @@ export function createDelegateAgentRuntime(
     const requestedMaxTokens = Number.isFinite(input.maxOutputTokens)
       ? Math.floor(input.maxOutputTokens!)
       : 1_200
-    const response = await callModel({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt },
-      ],
-      tools: [],
-      toolChoice: 'none',
-      settings: {
-        ...opts.settings,
-        model: DEEPSEEK_FLASH_MODEL,
-        temperature: 0,
-        thinking: false,
-        max_tokens: Math.max(256, Math.min(requestedMaxTokens, 2_000)),
+    const response = await callModel(
+      lowCostExtractionState ??= createDelegationCallState(),
+      {
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        tools: [],
+        toolChoice: 'none',
+        settings: {
+          ...opts.settings,
+          model: DEEPSEEK_FLASH_MODEL,
+          temperature: 0,
+          thinking: false,
+          max_tokens: Math.max(256, Math.min(requestedMaxTokens, 2_000)),
+        },
       },
-    })
+    )
     const content = firstAssistantText(response)
     if (!content) throw new Error('low-cost extraction returned no text')
     return { content, model: DEEPSEEK_FLASH_MODEL }

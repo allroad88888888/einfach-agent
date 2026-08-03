@@ -791,6 +791,85 @@ describe('createDelegateAgentRuntime', () => {
     delegateRuntime.dispose?.()
   })
 
+  it('isolates authorization and tool profiles across concurrent root delegations', async () => {
+    let activeRootBChildren = 0
+    let peakRootBChildren = 0
+    const childRequests: Array<{ root: 'a' | 'b'; body: Record<string, unknown> }> = []
+    const runChildTool = vi.fn(async () => ({ ok: true as const, data: { ok: true } }))
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = requestBody(init)
+      if (body.tool_choice === 'none') return response({ content: '# skill' })
+      const messages = messagesOf(body)
+      const root = messages.some((message) => message.content?.includes('root A writes')) ? 'a' : 'b'
+      childRequests.push({ root, body })
+      if (root === 'b') {
+        activeRootBChildren += 1
+        peakRootBChildren = Math.max(peakRootBChildren, activeRootBChildren)
+        await new Promise((resolve) => setTimeout(resolve, 5))
+        activeRootBChildren -= 1
+      }
+      if (!messages.some((message) => message.role === 'tool')) {
+        return namedToolCall(`${root}-write`, 'write_file', { path: `${root}.txt`, content: root })
+      }
+      return response({ content: `${root} done` })
+    }
+    const writes = new Map<string, string>()
+    const delegateRuntime = createDelegateAgentRuntime({
+      sessionId: 'session',
+      runId: 'run-root-isolation',
+      settings: { vendor: 'deepseek', model: 'test-model' },
+      apiKey: 'test-key',
+      signal: new AbortController().signal,
+      fetchImpl,
+    })
+    const rootAContext = context(writes)
+    rootAContext.runChildTool = runChildTool
+    rootAContext.delegationCallId = 'root-a'
+    rootAContext.dangerousToolCapability = {
+      sessionId: 'session',
+      runId: 'run-root-isolation',
+      delegationCallId: 'root-a',
+      parentPath: 'root',
+      toolNames: ['write_file'],
+    }
+    const rootBContext = context(writes)
+    rootBContext.runChildTool = runChildTool
+    rootBContext.delegationCallId = 'root-b'
+
+    const [rootA, rootB] = await Promise.all([
+      delegateRuntime.delegateAgents({
+        children: [{ objective: 'root A writes' }],
+        maxConcurrent: 1,
+        toolProfile: 'workspace_read',
+        confirmedTools: ['write_file'],
+      }, rootAContext),
+      delegateRuntime.delegateAgents({
+        children: [{ objective: 'root B one' }, { objective: 'root B two' }],
+        maxConcurrent: 2,
+        toolProfile: 'delegate_only',
+      }, rootBContext),
+    ])
+
+    expect(rootA.children.every((child) => child.status === 'done')).toBe(true)
+    expect(rootB.children.every((child) => child.status === 'done')).toBe(true)
+    expect(peakRootBChildren).toBe(2)
+    expect(runChildTool).toHaveBeenCalledTimes(1)
+    expect(runChildTool).toHaveBeenCalledWith(
+      'write_file',
+      { path: 'a.txt', content: 'a' },
+      expect.any(Number),
+    )
+    const toolNamesFor = (root: 'a' | 'b') => childRequests
+      .filter((request) => request.root === root)
+      .flatMap((request) => (request.body.tools as Array<{ function: { name: string } }>).map(
+        (tool) => tool.function.name,
+      ))
+    expect(toolNamesFor('a')).toEqual(expect.arrayContaining(['read_file', 'write_file']))
+    expect(toolNamesFor('b')).not.toContain('read_file')
+    expect(toolNamesFor('b')).not.toContain('write_file')
+    await delegateRuntime.dispose?.()
+  })
+
   it('does not deadlock at maxConcurrent=1 and cannot expand the root depth budget', async () => {
     const calls = new Map<string, number>()
     const fetchImpl: typeof fetch = async (_url, init) => {
