@@ -18,6 +18,7 @@ import { createIndexedDbLogDriver } from '@web-agent/core/observability/indexedD
 import { createSessionsPersistence } from '@web-agent/core/state/persistence/sessionsPersistence'
 import { isTauri } from '@tauri-apps/api/core'
 import { AppShell } from './agentNew/ui/AppShell'
+import { WebTimelineRendererRegistryProvider } from './agentNew/ui/WebTimelineRendererRegistryProvider'
 import { TraceViewer } from '@web-agent/core/observability/TraceViewer'
 import { WindowScrollDemo } from './demos/WindowScrollDemo'
 import { configureMcpSettings } from './mcp/commands'
@@ -104,9 +105,11 @@ function renderRoot(children: React.ReactNode): void {
 function renderApp(): void {
   startUiPerformanceDiagnostics()
   renderRoot(
-    <React.Profiler id="AppShell" onRender={reportReactCommit}>
-      <AppShell />
-    </React.Profiler>,
+    <WebTimelineRendererRegistryProvider>
+      <React.Profiler id="AppShell" onRender={reportReactCommit}>
+        <AppShell />
+      </React.Profiler>
+    </WebTimelineRendererRegistryProvider>,
   )
 }
 

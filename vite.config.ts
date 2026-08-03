@@ -228,6 +228,7 @@ export default defineConfig({
       'react-dom': fromRoot('./node_modules/react-dom'),
       '@web-agent/ai': fromRoot('./packages/agent-ai/src/index.ts'),
       '@web-agent/core': fromRoot('./packages/agent-core/src'),
+      '@web-agent/react-plugin': fromRoot('./packages/agent-react/src/index.ts'),
       // 根级工具域包 + standard 聚合包：各解析到自己的 barrel。
       '@web-agent/tools-shell': fromRoot('./tools/shell/src/index.ts'),
       '@web-agent/tools-interaction': fromRoot('./tools/interaction/src/index.ts'),

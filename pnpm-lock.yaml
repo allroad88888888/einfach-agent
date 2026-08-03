@@ -32,6 +32,9 @@ importers:
       '@web-agent/core':
         specifier: workspace:*
         version: link:packages/agent-core
+      '@web-agent/react-plugin':
+        specifier: workspace:*
+        version: link:packages/agent-react
       '@web-agent/tools':
         specifier: workspace:*
         version: link:tools/standard

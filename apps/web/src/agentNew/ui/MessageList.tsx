@@ -14,7 +14,6 @@
 
 import { useAtom, useAtomValue } from '@einfach/react'
 import {
-  useCallback,
   useMemo,
   type ReactNode,
 } from 'react'
@@ -30,13 +29,11 @@ import {
   isTimelineThinkingItem,
   projectTimelineItems,
 } from '@web-agent/core/timeline'
-import { BrowserActionCard } from './BrowserActionCard'
-import { MessageMarkdown } from './MessageMarkdown'
 import {
   messageWindowAtom,
 } from './messageWindowModel'
 import { RunDurationStatus } from './RunDurationStatus'
-import { ThinkingStep } from './ThoughtTraceEntries'
+import { TimelineItemView } from './TimelineItemView'
 import {
   flattenTimelineVirtualEntries,
   groupTimelineThinkingEntries,
@@ -44,6 +41,7 @@ import {
   type TimelineRenderEntry,
 } from './messageTimelineViewModel'
 import { SlidingWindowRow, useSlidingWindow } from './useSlidingWindow'
+import { useWebTimelineRendererRegistry } from './WebTimelineRendererRegistryProvider'
 
 export function MessageList() {
   const items = useAtomValue(itemsAtom)
@@ -54,6 +52,7 @@ export function MessageList() {
   const runtimeEvents = useAtomValue(runtimeTranscriptEventsAtom)
   const [expandedGroups, setExpandedGroups] = useAtom(expandedTranscriptGroupsAtom)
   const [storedWindow, setMessageWindow] = useAtom(messageWindowAtom)
+  const timelineRendererRegistry = useWebTimelineRendererRegistry()
   const streamedItemId = assistantStream?.item.id
 
   // 流式占位条目也在 itemsAtom 中，但正文更新只走 assistantStreamAtom。历史索引排除占位，
@@ -139,72 +138,61 @@ export function MessageList() {
   return (
     <div ref={listRef} className="agentnew-message-list">
       {visibleEntries.map((entry) => {
-          let content: ReactNode
-          if (entry.kind === 'thinking-header') {
-            const expanded = expandedGroups[entry.sortKey] !== false
-            const stepCount = entry.group.entries.length
-            content = (
-              <section className={`agentnew-thinking-group${expanded ? ' is-open' : ''}`}>
-                <button
-                  type="button"
-                  className="agentnew-thinking-toggle"
-                  aria-label={`${expanded ? '收起' : '展开'}思考过程，共 ${stepCount} 步`}
-                  aria-expanded={expanded}
-                  onClick={() => setExpandedGroups((current) => ({
-                    ...current,
-                    [entry.sortKey]: !expanded,
-                  }))}
-                >
-                  <span className="agentnew-thinking-summary-content">
-                    <span className="agentnew-thinking-mark" aria-hidden="true">✦</span>
-                    <span className="agentnew-thinking-heading">
-                      <strong>思考过程</strong>
-                      <small>{stepCount} 个步骤</small>
-                    </span>
-                    <span className="agentnew-thinking-action" aria-hidden="true">
-                      {expanded ? '收起' : '展开'}
-                    </span>
-                    <svg
-                      className="agentnew-thinking-chevron"
-                      aria-hidden="true"
-                      viewBox="0 0 16 16"
-                    >
-                      <path d="m4 6 4 4 4-4" />
-                    </svg>
+        let content: ReactNode
+        if (entry.kind === 'thinking-header') {
+          const expanded = expandedGroups[entry.sortKey] !== false
+          const stepCount = entry.group.entries.length
+          content = (
+            <section className={`agentnew-thinking-group${expanded ? ' is-open' : ''}`}>
+              <button
+                type="button"
+                className="agentnew-thinking-toggle"
+                aria-label={`${expanded ? '收起' : '展开'}思考过程，共 ${stepCount} 步`}
+                aria-expanded={expanded}
+                onClick={() => setExpandedGroups((current) => ({
+                  ...current,
+                  [entry.sortKey]: !expanded,
+                }))}
+              >
+                <span className="agentnew-thinking-summary-content">
+                  <span className="agentnew-thinking-mark" aria-hidden="true">✦</span>
+                  <span className="agentnew-thinking-heading">
+                    <strong>思考过程</strong>
+                    <small>{stepCount} 个步骤</small>
                   </span>
-                </button>
-              </section>
-            )
-          } else if (entry.kind === 'thinking-step-row') {
-            content = (
-              <div className="agentnew-thinking-step-row">
-                <ThinkingStep entry={entry.entry} />
-              </div>
-            )
-          } else if (entry.kind === 'card') {
-            content = <BrowserActionCard card={entry.card} />
+                  <span className="agentnew-thinking-action" aria-hidden="true">
+                    {expanded ? '收起' : '展开'}
+                  </span>
+                  <svg
+                    className="agentnew-thinking-chevron"
+                    aria-hidden="true"
+                    viewBox="0 0 16 16"
+                  >
+                    <path d="m4 6 4 4 4-4" />
+                  </svg>
+                </span>
+              </button>
+            </section>
+          )
+        } else if (entry.kind === 'thinking-step-row') {
+          content = (
+            <div className="agentnew-thinking-step-row">
+              <TimelineItemView item={entry.entry} registry={timelineRendererRegistry} />
+            </div>
+          )
+        } else {
+          const renderedItem = <TimelineItemView item={entry} registry={timelineRendererRegistry} />
+          if (entry.kind !== 'message') {
+            content = renderedItem
           } else {
             const ci = entry.conversationItem
-            const { item } = ci
-            const isUser = item.role === 'user'
+            const isUser = ci.item.role === 'user'
             const checkpointTurn = isUser
               ? checkpointTurnByUserItemId.get(ci.id)
               : undefined
-            const isStreaming = ci.pending === true
-            const className = [
-              'agentnew-msg',
-              isUser ? 'agentnew-msg--user' : 'agentnew-msg--assistant',
-              isStreaming ? 'agentnew-msg--streaming' : '',
-            ].filter(Boolean).join(' ')
-            const message = (
-              <div className={className}>
-                <MessageMarkdown>{item.role === 'assistant' || item.role === 'user' ? item.content ?? '' : ''}</MessageMarkdown>
-                {isStreaming ? <span className="agentnew-stream-caret" aria-label="正在生成" /> : null}
-              </div>
-            )
             content = isUser ? (
               <div className="agentnew-user-message">
-                {message}
+                {renderedItem}
                 {checkpointTurn !== undefined ? (
                   <button
                     type="button"
@@ -218,18 +206,19 @@ export function MessageList() {
                   </button>
                 ) : null}
               </div>
-            ) : message
+            ) : renderedItem
           }
-          return (
-            <SlidingWindowRow
-              key={entry.sortKey}
-              rowKey={entry.sortKey}
-              register={registerRow}
-            >
-              {content}
-            </SlidingWindowRow>
-          )
-        })}
+        }
+        return (
+          <SlidingWindowRow
+            key={entry.sortKey}
+            rowKey={entry.sortKey}
+            register={registerRow}
+          >
+            {content}
+          </SlidingWindowRow>
+        )
+      })}
       {messageWindow.end >= virtualEntries.length
         ? <RunDurationStatus items={items} run={run} />
         : null}
