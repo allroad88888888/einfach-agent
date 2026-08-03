@@ -21,6 +21,7 @@
 
 | 文档 | 状态 |
 | --- | --- |
+| [结构优化蓝图（按并发批次）](structure-optimization-blueprint.md) | 未开始；7 个批次共 33 个单一职责任务，批次内文件互不相交可并发，覆盖守卫修复、解环去重、god file 拆分、单例收口与 vendor 下沉 |
 | [Core 插件化蓝图](core-plugin-extraction-blueprint.md) | 部分实施；hook、插件工具与订阅基础已存在，UI renderer、command facade 和多实例收口仍待推进 |
 | [Skills 树形结构与稳定前缀清单](skills-tree-blueprint.md) | 阶段 1–3 已实施：L3 资源树、B04/B05 行为门禁通过、全量清单进稳定前缀、harness 预筛已退役；阶段 4 拆出为下一行 |
 | [项目内 Skills 自动加载（`.agent/`）](project-skills-blueprint.md) | 阶段 A–D 已实施：workspace 的 `.agent/skills` 与 `.claude/skills` 自动进 L1 清单，正文与资源经 `skill_read` 按需读；阶段 E（行为 eval）可选未做 |
