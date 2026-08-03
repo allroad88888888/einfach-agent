@@ -16,9 +16,10 @@
 - `pnpm tauri dev` / `pnpm tauri build`：桌面端开发与打包。
 - `cargo test --manifest-path apps/desktop/Cargo.toml`：Rust 桥测试。
 
-Vitest 使用 jsdom 和 `apps/web/src/test/setup.ts`。`fileParallelism: false` 是有意设置：
-abort registry、默认 core 和部分会话缓存仍包含进程内共享状态。组件测试应使用
-`apps/web/src/test/renderWithStore.tsx` 提供的隔离 store；IndexedDB 测试使用 `fake-indexeddb`。
+Vitest 使用 jsdom 和 `apps/web/src/test/setup.ts`，保持测试文件并行并设置 `isolate: true`。
+每个测试文件有隔离 worker；setup 在 worker 内注册标准工具，并只在用例间清理全局兼容
+`defaultCore` 的 root/session store。组件测试应使用 `apps/web/src/test/renderWithStore.tsx`
+提供的隔离 store；IndexedDB 测试使用 `fake-indexeddb`。
 
 ## 配置
 
@@ -35,7 +36,7 @@ abort registry、默认 core 和部分会话缓存仍包含进程内共享状态
 - `apps/web/src/main.tsx`：默认应用装配；注册标准工具、配置模型、选择持久化和观测 driver。
 - `apps/web/src/agentNew/ui/`：React UI，包含会话、消息、计划、确认、子 Agent 树和输入区。
 - `apps/desktop/`：Rust/Tauri 的 shell、workspace、Git、dialog 与 SQLite 实现。
-- `packages/agent-ai/`：DeepSeek/GLM 请求、流式响应和重试。
+- `packages/agent-ai/`：DeepSeek/GLM 请求、流式响应、adapter 重试和 vendor 能力描述表。
 - `packages/agent-core/`：Agent Runtime 与所有核心状态。
 - `tools/{shell,fs,interaction,planning,skills,agents}/`：六个具体工具域。
 - `tools/standard/`：标准工具聚合包，提供 `registerStandardTools`。
@@ -51,9 +52,10 @@ agent-ai ← agent-core ← tools-* ← tools(meta) ← app
 
 ## 状态与 UI 边界
 
-默认运行时使用一个 `defaultCore`。它持有 root store、每会话 store 缓存、工具 registry、
-abort registry 和运行时配置。`createCore()` 可创建隔离实例；默认实例本身不自动安装工具，
-应用和测试入口负责调用 `registerStandardTools`。
+默认运行时使用一个 `defaultCore`。每个 `CoreInstance` 私有持有 root/session store、工具与
+abort registry、子 Agent scheduler、运行时配置、project skills 和 persistence；`createCore()`
+创建隔离实例，旧模块导出仅代理默认实例。默认实例本身不自动安装工具，应用和测试入口负责调用
+`registerStandardTools`。
 
 - root store 只放跨会话状态：会话元数据与当前会话 ID。
 - 每个 session 有独立 Einfach store，保存 items、run、checkpoint、plan 和瞬态 UI 状态。
@@ -64,7 +66,7 @@ abort registry 和运行时配置。`createCore()` 可创建隔离实例；默�
 
 ## 运行链路
 
-`sendMessage` 创建 run 并进入 `modelRun.ts`：
+`sendMessage` 创建 run 并进入主循环编排（当前入口仍为 `modelRun.ts`）：
 
 1. 写入用户消息与 running 状态。
 2. 组装 system prompt、上下文、工具摘要和 `request_tool_schema`。
@@ -72,6 +74,9 @@ abort registry 和运行时配置。`createCore()` 可创建隔离实例；默�
 4. 工具经 registry 校验后，通过受限 `ToolContext` 执行。
 5. 普通工具结果回填并继续循环；ask-user、计划审批或危险工具确认会暂停。
 6. 完成后提交 checkpoint，并通过 persistence bridge 落盘。
+
+供应商私有请求和重试留在 `packages/agent-ai/`；子 Agent 已按单体循环、批次编排和辅助职责拆分。
+`modelRun.ts` 的终拆（B7/R7）仍在推进，不能把当前入口视为已拆分完成。
 
 工具不得直接 import store/atom 来获得额外能力。文件、shell、计划、渲染、委派等副作用必须使用
 `ToolContext` 暴露的能力，确保 workspace confinement、权限确认、stale guard 和审计仍然生效。

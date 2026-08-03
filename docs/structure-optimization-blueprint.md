@@ -3,6 +3,10 @@
 更新时间:2026-08-03。基线:`feat/agentnew-rewrite` @ `24da126`。
 本文任务清单来自一次全仓结构评估(codegraph + 深读),行号为该快照下的锚点,执行时以符号名为准。
 
+## 实施状态
+
+批次 1–6 的 32 项任务已完成（F2 `d8f6a86`、E5 `a7a61b6`、S6 `e612ab4`、R6 `67c72ca` 与重试防护测试 `a438700`）；批次 7 的 R7 进行中，`004b6aa` 仅为部分合格基线，不构成完成。
+
 ## 调度规则
 
 - **批次内并发,批次间串行**。同一批次内任何两个任务不修改同一个文件,可以放心派给
@@ -25,13 +29,13 @@
 | C | `runtime/commands.ts` | 命令面:去样板、按领域拆分 |
 | P | `state/persistence/` | 持久化:契约单源、写队列、core 化 |
 | V | `state/subagentViewAtoms.ts` | 视图状态:去重、分层拆分 |
-| E | 单例收口(scheduler/planWriters/bridge 等) | 多实例隔离,最终解锁 fileParallelism |
+| E | 单例收口(scheduler/planWriters/bridge 等) | 多实例隔离与测试文件并行 |
 | F | vendor/平台特化 | DeepSeek/GLM/Tauri 逻辑归位 |
 | G | CI 与文档护栏 | 自动化门禁 |
 
 ---
 
-## 批次 1 —— 正确性修复与独立护栏(7 任务,全部可并发)
+## 批次 1 —— 正确性修复与独立护栏(7 任务,已完成)
 
 ### R1 · runToolLoop 补齐 stale/abort 守卫
 - **只做**:把主循环里遗漏的 runId/status 守卫补到与既有模式一致。
@@ -90,7 +94,7 @@
 
 ---
 
-## 批次 2 —— 解环与机械去重(6 任务)
+## 批次 2 —— 解环与机械去重(6 任务,已完成)
 
 ### R2 · 解 `pluginApi → commands → modelRun` 环,删除全部逐字复制
 - **只做**:新建无反向依赖的叶子模块,把复制改成 import。这是后续所有插件接线的前置。
@@ -132,7 +136,7 @@
 
 ---
 
-## 批次 3 —— 契约单源与样板合一(5 任务)
+## 批次 3 —— 契约单源与样板合一(5 任务,已完成)
 
 ### R3 · turnEnd 契约单源化
 - **只做**:消除 loop 与插件之间"两份谓词靠注释对齐"。
@@ -168,7 +172,7 @@
 
 ---
 
-## 批次 4 —— 观测成本、命令面收口与单例第一刀(4 任务)
+## 批次 4 —— 观测成本、命令面收口与单例第一刀(4 任务,已完成)
 
 ### R4 · 观测负载惰性求值
 - **只做**:观测关闭时不再每轮全量序列化。
@@ -199,7 +203,7 @@
 
 ---
 
-## 批次 5 —— 状态编码、闸门单源与单例扫尾(6 任务)
+## 批次 5 —— 状态编码、闸门单源与单例扫尾(6 任务,已完成)
 
 ### R5 · checkpoint label 状态结构化
 - **只做**:`'[执行中] '` 前缀(`:1178`,`startsWith` 反解于 `:1186/:1209/:907`)与
@@ -242,42 +246,36 @@
 
 ---
 
-## 批次 6 —— vendor 下沉与终拆(4 任务)
+## 批次 6 —— vendor 下沉与终拆(4 任务,已完成)
 
-### R6 · DeepSeek 重试循环下沉 agent-ai
-- **只做**:`modelRun.ts:1836` 只为 `insufficient_system_resource` 存在的内层
-  `while`、`:1949-1997` 49 行 vendor 分支、`:1877` `user_id` 注入,全部下沉到
-  `agent-ai/deepseek.ts` adapter 内;该 vendor 私有 finish_reason 从通用抽象
-  (`finishReasonPlugin.ts:49` 三态之一)移除或降为 vendor 扩展位。
-- 验收:`deepseek.test.ts` 承接重试用例;`modelRun.ts` 内 `grep -i deepseek` 为零。
+### R6 · DeepSeek 重试循环下沉 agent-ai（已完成：`67c72ca`、`a438700`）
+- 完成形态：`deepseek.ts` adapter 持有 `insufficient_system_resource` 重试和 `user_id` 注入，通用主循环不含 DeepSeek 私有分支。
+- 验收：`deepseek.retry.test.ts` 覆盖重试防护；`modelRun.ts` 内无 DeepSeek 引用。
 
-### S6 · subagents/runtime.ts 终拆
-- **只做**:经 S2-S5 掏空后,把 `createDelegateAgentRuntime` 剩余部分拆为
-  单体循环(`runChildAgent`)与批次编排两个文件,各 ≤500 行;17 个共享闭包变量
-  显式化为一个 runtime 状态对象。
-- 验收:`runtime.test.ts` 全绿;`wc -l` 达标。
+### S6 · subagents/runtime.ts 终拆（已完成：`e612ab4`）
+- 完成形态：`runtime.ts` 仅保留 facade；单体循环在 `childAgentLoop.ts`，批次编排在 `delegationBatch.ts`，工具调用、模型客户端、策略和状态各自成文件（均 ≤500 行）。
+- 验收：`runtime.test.ts` 全绿；`wc -l` 达标。
 
-### E5 · 开启 fileParallelism(分目录渐进)
-- **只做**:E1-E4 + P3 完成后,先对已隔离目录开并行,最终移除
-  `vite.config.ts:262` 的全局串行;27 个手工 reset 调用点清理。
-- 验收:`pnpm test` 并行稳定通过 3 次。
+### E5 · 开启 fileParallelism（已完成：`a7a61b6`）
+- 完成形态：移除全局串行；Vitest 保持文件并行并设置 `isolate: true`，setup 只在 worker 内重置兼容 `defaultCore` 的 store。
+- 验收：`pnpm test` 并行稳定通过 3 次。
 
-### G3 · 文档对齐收尾
+### G3 · 文档对齐收尾（已完成：本次变更）
 - **只做**:CLAUDE.md / `docs/README.md` / ROADMAP 与新结构对齐,本蓝图状态更新。
 - 验收:G2 的链接检查绿。
 
 ---
 
-## 批次 7 —— 主循环终拆(串行,1 任务)
+## 批次 7 —— 主循环终拆(串行,1 任务,进行中)
 
-### R7 · modelRun.ts 拆到 ≤500
+### R7 · modelRun.ts 拆到 ≤500（进行中；`004b6aa` 仅为部分合格基线）
 - **只做**:经 R1-R6 掏空后按关注点拆出:checkpoint 四件套(`:1178-1252`)→
   `runCheckpoints.ts`;稳定前缀组装(`:1267-1309`)→ 并入 `modelTurn.ts` 族;
   UI 注入判重(`:1311-1391`)→ `transcriptInjection.ts`;工具闸门改用 S5 建立的
   `toolGates.ts` 单源并删除内联版;`runToolLoop` 只剩循环骨架与插件 fan-out。
   同步消除 `agentTurnLimit` 三处改写的裸变量(收进循环预算对象)与
   `meta`/`ctx` 同名遮蔽。
-- 验收:`modelRun.test.ts` 全绿(4136 行测试是这次拆分的安全网,先拆实现不动测试);
+- 验收：`modelRun.test.ts` 全绿（当前 3966 行测试是这次拆分的安全网，先拆实现不动测试）；
   `wc -l` 达标;`codegraph impact` 确认对外符号无断裂。
 
 ---

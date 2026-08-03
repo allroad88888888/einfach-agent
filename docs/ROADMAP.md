@@ -1,52 +1,19 @@
 # 项目路线图
 
-更新时间：2026-07-24。
+更新时间：2026-08-03。
 
-这份路线图面向当前 `feat/agentnew-rewrite` 架构。它只安排尚未收口的工作，不重复已经完成的
-workspace 拆包、Planning Runtime、树形子 Agent 和 Tauri 基础桥接。
+这份路线图面向当前 `feat/agentnew-rewrite` 架构。阶段 0 的 CI/文档护栏和阶段 1 的
+Core 多实例隔离已完成，结构优化蓝图仅余 B7/R7 主循环终拆；完成记录通过 Git 历史追溯。
 
 ## 目标
 
-1. 让 `createCore()` 成为真正可并行嵌入的隔离实例。
-2. 把现有插件接口从 loop hook 扩展为可交付的 Core 扩展面。
-3. 收紧生产密钥、桌面权限、发布和回归验证链路。
-4. 控制前端包体与长期 archive 的运维成本。
-
-## 阶段 0：CI 与文档校验
-
-优先级：P0，建议先完成。
-
-- 为 Markdown 增加相对链接与旧源码路径检查。
-- 在 CI 固定执行 `pnpm test`、`pnpm build` 和 Rust bridge 测试。
-
-pnpm workspace、环境变量说明、当前架构文档和历史 PLAN 清理已经完成；本阶段只剩自动化护栏。
-
-验收标准：
-
-- CI 能阻止失效文档链接和构建/测试回归。
-- 新增文档不能重新引用旧源码目录、npm 命令或已删除的阶段性 PLAN。
-
-## 阶段 1：Core 多实例隔离收口
-
-优先级：P0。
-
-当前 `CoreInstance` 已隔离 root/session store、工具 registry、abort registry 和 config，但源码仍明确标注
-Planning 与子 Agent 路径中的 `defaultCore` 缺口。
-
-- 让 Planning 的 getter、writer、审批和 evaluation 全程显式接收当前 core。
-- 让 delegation 的权限检查、子节点工具调用和 archive 收尾使用父 run 所属 core。
-- 完成剩余穿线，并补充两个 core 同时运行的 Planning、持久化和子 Agent 集成测试。
-- 明确默认单例兼容层：旧导出只代理 `defaultCore`，新嵌入方统一使用 `createCore()`。
-
-验收标准：
-
-- 两个相同 session id 的 core 可并发规划、调用工具和派发子 Agent，状态与权限互不串台。
-- 独立实例测试不依赖重置 `defaultCore` 才能通过。
-- 默认应用行为与现有 UI、持久化格式兼容。
+1. 把现有插件接口从 loop hook 扩展为可交付的 Core 扩展面。
+2. 收紧生产密钥、桌面权限、发布和回归验证链路。
+3. 控制前端包体与长期 archive 的运维成本。
 
 ## 阶段 2：插件扩展面产品化
 
-优先级：P1，依赖阶段 1。
+优先级：P1；Core 多实例隔离已具备。
 
 现有插件层已支持 loop hooks、`registerTool` 和订阅意向；剩余工作应围绕真实使用场景推进：
 
@@ -94,10 +61,6 @@ Planning 与子 Agent 路径中的 `defaultCore` 缺口。
 ## 推荐执行顺序
 
 ```text
-阶段 0 基线
-   ↓
-阶段 1 多实例隔离
-   ↓
 阶段 2 插件化 ─────┐
                    ├─→ 阶段 4 性能与长期运行
 阶段 3 安全发布 ───┘

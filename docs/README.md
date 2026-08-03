@@ -21,13 +21,13 @@
 
 | 文档 | 状态 |
 | --- | --- |
-| [结构优化蓝图（按并发批次）](structure-optimization-blueprint.md) | 未开始；7 个批次共 33 个单一职责任务，批次内文件互不相交可并发，覆盖守卫修复、解环去重、god file 拆分、单例收口与 vendor 下沉 |
-| [Core 插件化蓝图](core-plugin-extraction-blueprint.md) | 部分实施；hook、插件工具与订阅基础已存在，UI renderer、command facade 和多实例收口仍待推进 |
+| [结构优化蓝图（按并发批次）](structure-optimization-blueprint.md) | 批次 1–6 的 32 项任务已完成；批次 7 的 R7 主循环终拆进行中，批次内文件保持互不相交可并发 |
+| [Core 插件化蓝图](core-plugin-extraction-blueprint.md) | 部分实施；hook、插件工具与订阅基础已存在，多实例隔离已收口，UI renderer 和 command facade 仍待推进 |
 | [Skills 树形结构与稳定前缀清单](skills-tree-blueprint.md) | 阶段 1–3 已实施：L3 资源树、B04/B05 行为门禁通过、全量清单进稳定前缀、harness 预筛已退役；阶段 4 拆出为下一行 |
 | [项目内 Skills 自动加载（`.agent/`）](project-skills-blueprint.md) | 阶段 A–D 已实施：workspace 的 `.agent/skills` 与 `.claude/skills` 自动进 L1 清单，正文与资源经 `skill_read` 按需读；阶段 E（行为 eval）可选未做 |
 | [上下文缓存成本治理](context-cache-cost.md) | 压缩投影复用已实现、收益待实测；含账单归因方法与验证 SQL |
 | [上下文缓存成本 · 后续跟进项](context-cache-followups.md) | F1 实测验证（最高优先）、F2 尾巴失效归零、F3 会话过长提示；F5 跨 run 复用暂不做，C1/C2 已关闭并附结论 |
-| [项目路线图](ROADMAP.md) | 当前未完成工作：CI 护栏、多实例隔离、插件产品化、安全发布和性能治理 |
+| [项目路线图](ROADMAP.md) | 当前推荐后续工作：阶段 2/3 的插件产品化与安全发布，再进入阶段 4 的性能与长期运行 |
 
 蓝图描述目标形态，不代表所有 API 都已交付。引用蓝图时需要同时核对实现和测试。
 
