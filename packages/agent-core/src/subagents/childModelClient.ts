@@ -1,9 +1,6 @@
 import {
-  callDeepSeek,
-  callGlm,
+  callModel,
   normalizeCacheUsage,
-  type DeepSeekChatRequest,
-  type GlmChatRequest,
   type ModelChatResponse,
   type ModelFunctionTool,
   type ModelItem,
@@ -162,19 +159,11 @@ export function createChildModelCaller(runtime: DelegateAgentRuntimeState): Chil
 
     const invoke = () => {
       runtime.reserveModelCall(state, modelCallLimit)
-      if (settings.vendor === 'glm') {
-        const body: GlmChatRequest = {
-          ...requestBase,
-          reasoning_effort: settings.reasoning_effort,
-        }
-        return callGlm(body, callOptions)
-      }
-      const body: DeepSeekChatRequest = {
+      return callModel({
         ...requestBase,
-        reasoning_effort: settings.reasoning_effort,
-        user_id: runtime.opts.deepseekUserId,
-      }
-      return callDeepSeek(body, callOptions)
+        settings,
+        userId: runtime.opts.deepseekUserId,
+      }, callOptions)
     }
 
     let response: ModelChatResponse

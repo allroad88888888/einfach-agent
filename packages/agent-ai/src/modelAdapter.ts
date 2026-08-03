@@ -1,10 +1,11 @@
 // 运行时模型路由：把通用请求投影为 provider adapter 的特化请求。
 
 import {
+  callDeepSeek,
   streamDeepSeek,
   type DeepSeekReasoningEffort,
 } from './deepseek'
-import { streamGlm, type GlmReasoningEffort } from './glm'
+import { callGlm, streamGlm, type GlmReasoningEffort } from './glm'
 import type {
   ChatCallOptions,
   ChatRequestBase,
@@ -20,6 +21,21 @@ export type ModelStreamSettings =
 export interface ModelStreamRequest extends ChatRequestBase {
   settings: ModelStreamSettings
   userId?: string
+}
+
+/** Calls a generic runtime request through its provider adapter. */
+export function callModel(
+  request: ModelStreamRequest,
+  options: ChatCallOptions,
+): Promise<ModelChatResponse> {
+  const { settings, userId, ...body } = request
+  if (settings.vendor === 'glm') {
+    return callGlm({ ...body, reasoning_effort: settings.reasoning_effort }, options)
+  }
+  return callDeepSeek(
+    { ...body, reasoning_effort: settings.reasoning_effort, user_id: userId },
+    options,
+  )
 }
 
 /** Streams a generic runtime request through its provider adapter. */
