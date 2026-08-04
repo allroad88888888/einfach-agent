@@ -184,33 +184,28 @@ describe('migrateModelSettings', () => {
 })
 
 describe('normalizePrimaryAgentSettings', () => {
-  it('下线旧名先兼容迁移，再把主 Agent 收口到 Pro', () => {
+  it('下线旧名兼容迁移到 Flash 并保留旧名的思考语义', () => {
     expect(normalizePrimaryAgentSettings({ vendor: 'deepseek', model: 'deepseek-chat' })).toEqual({
       vendor: 'deepseek',
-      model: 'deepseek-v4-pro',
+      model: 'deepseek-v4-flash',
       thinking: false,
     })
     expect(normalizePrimaryAgentSettings({ vendor: 'deepseek', model: 'deepseek-reasoner' })).toEqual({
       vendor: 'deepseek',
-      model: 'deepseek-v4-pro',
+      model: 'deepseek-v4-flash',
       thinking: true,
     })
   })
 
-  it('Flash 主会话收口到 Pro，并保留其它设置', () => {
-    expect(
-      normalizePrimaryAgentSettings({
-        vendor: 'deepseek',
-        model: 'deepseek-v4-flash',
-        thinking: false,
-        temperature: 0.2,
-      }),
-    ).toEqual({
+  it('用户已保存的 Flash 选择保持同一引用', () => {
+    const flash: ModelSettings = {
       vendor: 'deepseek',
-      model: 'deepseek-v4-pro',
+      model: 'deepseek-v4-flash',
       thinking: false,
       temperature: 0.2,
-    })
+    }
+
+    expect(normalizePrimaryAgentSettings(flash)).toBe(flash)
   })
 
   it('已是 Pro 或自定义模型时不改写并保持同一引用', () => {
@@ -246,20 +241,20 @@ describe('DEPRECATED_MODEL_MIGRATIONS 表自洽性', () => {
 describe('migrateSessionMeta', () => {
   const base = { id: 's1', title: 'A', createdAt: 0, updatedAt: 100 }
 
-  it('迁移并归一化主 Agent settings，但不改 updatedAt 等其它字段', () => {
+  it('迁移下线模型名，但不改 updatedAt 等其它字段', () => {
     const session = { ...base, settings: { vendor: 'deepseek', model: 'deepseek-chat' } as ModelSettings }
 
     const after = migrateSessionMeta(session)
 
-    expect(after.settings.model).toBe('deepseek-v4-pro')
+    expect(after.settings.model).toBe('deepseek-v4-flash')
     expect(after.updatedAt).toBe(100)
     expect(after.createdAt).toBe(0)
     expect(after.id).toBe('s1')
     expect(after.title).toBe('A')
   })
 
-  it('无需迁移时原样返回同一引用（调用方据此判断「改没改」）', () => {
-    const session = { ...base, settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' } as ModelSettings }
+  it('无需迁移时原样返回同一引用（包括用户已保存的 Flash）', () => {
+    const session = { ...base, settings: { vendor: 'deepseek', model: 'deepseek-v4-flash' } as ModelSettings }
 
     expect(migrateSessionMeta(session)).toBe(session)
   })

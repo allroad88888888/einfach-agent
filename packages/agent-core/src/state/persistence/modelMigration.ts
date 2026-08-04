@@ -10,7 +10,7 @@
 //   每行必须注明 source（官方公告 URL）与 deprecatedAt（官方给的下线时刻），
 //   便于日后判断某行是否已经可以删除（存量会话都迁完之后这张表的行才是死代码）。
 
-import { DEEPSEEK_FLASH_MODEL, DEEPSEEK_PRO_MODEL } from '@web-agent/ai'
+import { DEEPSEEK_FLASH_MODEL } from '@web-agent/ai'
 import type { DeepSeekReasoningEffort } from '@web-agent/ai'
 import type { DeepSeekSettings, ModelSettings } from '../core.type'
 
@@ -76,7 +76,7 @@ export const DEPRECATED_MODEL_MIGRATIONS: readonly DeprecatedModelMigration[] = 
   {
     vendor: 'deepseek',
     from: 'deepseek-chat',
-    to: 'deepseek-v4-flash',
+    to: DEEPSEEK_FLASH_MODEL,
     impliedThinking: false, // 旧 deepseek-chat = v4-flash 的非思考模式
     deprecatedAt: '2026/07/24 15:59 UTC',
     source: 'https://api-docs.deepseek.com/quick_start/pricing/',
@@ -84,7 +84,7 @@ export const DEPRECATED_MODEL_MIGRATIONS: readonly DeprecatedModelMigration[] = 
   {
     vendor: 'deepseek',
     from: 'deepseek-reasoner',
-    to: 'deepseek-v4-flash',
+    to: DEEPSEEK_FLASH_MODEL,
     impliedThinking: true, // 旧 deepseek-reasoner = v4-flash 的思考模式
     deprecatedAt: '2026/07/24 15:59 UTC',
     source: 'https://api-docs.deepseek.com/quick_start/pricing/',
@@ -112,20 +112,15 @@ export function migrateModelSettings(settings: ModelSettings): ModelSettings {
   return migrated
 }
 
-// 简介：把主 Agent 的 DeepSeek 标准模型收口到 Pro。
-// 详情：Flash 只允许由主 Agent 在 delegate_agent 中显式分配给直接子 Agent，不能作为主会话模型。
-//   自定义模型名和其它 vendor 保持原样，避免破坏已有的私有接入。
+// 简介：兼容主 Agent 中已下线的模型别名。
+// 详情：只迁移已下线的别名；仍可用的 Flash、Pro、自定义模型和其它 vendor 都按用户保存值原样保留。
 export function normalizePrimaryAgentSettings(settings: ModelSettings): ModelSettings {
-  const migrated = migrateModelSettings(settings)
-  if (migrated.vendor !== 'deepseek' || migrated.model !== DEEPSEEK_FLASH_MODEL) {
-    return migrated
-  }
-  return { ...migrated, model: DEEPSEEK_PRO_MODEL }
+  return migrateModelSettings(settings)
 }
 
-// 简介：迁移一个 SessionMeta 的 settings，并把主 Agent 的标准模型收口到 Pro；
+// 简介：迁移一个 SessionMeta 的 settings；
 // 无需变更时**原样返回同一引用**。
-// 详情：只碰 settings，其余字段（含 updatedAt）一概不动 —— 兼容迁移/主模型路由不是「用户改了会话」，
+// 详情：只碰 settings，其余字段（含 updatedAt）一概不动 —— 兼容迁移不是「用户改了会话」，
 //   不该顶掉 updatedAt（那是 hydrate 选 active 会话的排序依据，改了会把 active 挪到老会话上）。
 export function migrateSessionMeta<T extends { settings: ModelSettings }>(session: T): T {
   const settings = normalizePrimaryAgentSettings(session.settings)

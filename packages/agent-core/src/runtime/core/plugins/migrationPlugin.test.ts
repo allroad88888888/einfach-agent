@@ -1,12 +1,11 @@
 // migrationPlugin 隔离测——不经 modelRun，用假 root/session store 直接验证 onRunStart 槽把
-// 主 Agent 模型归一化写回 sessionsAtom。
+// 下线模型名兼容迁移写回 sessionsAtom。
 // ---------------------------------------------------------------------------
 // 覆盖（对齐任务补测要求）：
-//   · deepseek-chat → onRunStart 后 sessionsAtom 里 model=deepseek-v4-pro + thinking:false（含
+//   · deepseek-chat → onRunStart 后 sessionsAtom 里 model=deepseek-v4-flash + thinking:false（含
 //     updatedAt/id/title/createdAt 逐字不变、只碰 settings）。
-//   · deepseek-reasoner → model=deepseek-v4-pro + thinking:true。
-//   · 历史 Flash 主会话 → Pro。
-//   · 已是主模型（deepseek-v4-pro）→ no-op，不写（记录引用不变）。
+//   · deepseek-reasoner → model=deepseek-v4-flash + thinking:true。
+//   · 已保存的 Flash / Pro 主会话 → no-op，不写（记录引用不变）。
 //   · 未知模型名 → 原样，不写。
 //   · 幂等：连调两次结果一致，且第二次不写。
 //   · ctx.isCurrent() 为 false（stale run）→ 不写（迁移被守卫拦下）。
@@ -67,15 +66,15 @@ async function runOnRunStart(ctx: CoreCtx): Promise<void> {
   await assemblePlugins([migrationPlugin]).onRunStart?.(ctx)
 }
 
-describe('migrationPlugin —— 主 Agent 模型归一化写回 sessionsAtom', () => {
-  it('deepseek-chat → onRunStart 后 model=deepseek-v4-pro + thinking:false，其余字段逐字不变', async () => {
+describe('migrationPlugin —— 下线模型名兼容迁移写回 sessionsAtom', () => {
+  it('deepseek-chat → onRunStart 后 model=deepseek-v4-flash + thinking:false，其余字段逐字不变', async () => {
     const { ctx, root } = makeCtx({ meta: metaWith({ vendor: 'deepseek', model: 'deepseek-chat' }) })
     const recordBefore = root.getter(sessionsAtom)
 
     await runOnRunStart(ctx)
 
     const after = root.getter(sessionsAtom).s1
-    expect(after.settings).toEqual({ vendor: 'deepseek', model: 'deepseek-v4-pro', thinking: false })
+    expect(after.settings).toEqual({ vendor: 'deepseek', model: 'deepseek-v4-flash', thinking: false })
     // 记录对象被换过（确有写回）——去掉 setter 的变异会让这条 + 上面的 model 断言一起变红。
     expect(root.getter(sessionsAtom)).not.toBe(recordBefore)
     // 兼容迁移只碰 settings：updatedAt / id / title / createdAt 逐字不动。
@@ -85,30 +84,30 @@ describe('migrationPlugin —— 主 Agent 模型归一化写回 sessionsAtom', 
     expect(after.title).toBe('存量会话')
   })
 
-  it('deepseek-reasoner → model=deepseek-v4-pro + thinking:true（旧名隐含思考模式被补上）', async () => {
+  it('deepseek-reasoner → model=deepseek-v4-flash + thinking:true（旧名隐含思考模式被补上）', async () => {
     const { ctx, root } = makeCtx({ meta: metaWith({ vendor: 'deepseek', model: 'deepseek-reasoner' }) })
 
     await runOnRunStart(ctx)
 
     expect(root.getter(sessionsAtom).s1.settings).toEqual({
       vendor: 'deepseek',
-      model: 'deepseek-v4-pro',
+      model: 'deepseek-v4-flash',
       thinking: true,
     })
   })
 
-  it('历史 Flash 主会话 → Pro，并写回 sessionsAtom', async () => {
+  it('已保存的 Flash 主会话原样保留，不写回 sessionsAtom', async () => {
     const meta = metaWith({ vendor: 'deepseek', model: 'deepseek-v4-flash' })
     const { ctx, root } = makeCtx({ meta })
     const recordBefore = root.getter(sessionsAtom)
 
     await runOnRunStart(ctx)
 
-    expect(root.getter(sessionsAtom)).not.toBe(recordBefore)
-    expect(root.getter(sessionsAtom).s1.settings.model).toBe('deepseek-v4-pro')
+    expect(root.getter(sessionsAtom)).toBe(recordBefore)
+    expect(root.getter(sessionsAtom).s1).toBe(meta)
   })
 
-  it('已是主模型（deepseek-v4-pro）→ no-op，不写（sessionsAtom 记录引用不变）', async () => {
+  it('已保存的 Pro 主会话原样保留，不写（sessionsAtom 记录引用不变）', async () => {
     const meta = metaWith({ vendor: 'deepseek', model: 'deepseek-v4-pro' })
     const { ctx, root } = makeCtx({ meta })
     const recordBefore = root.getter(sessionsAtom)
@@ -137,7 +136,7 @@ describe('migrationPlugin —— 主 Agent 模型归一化写回 sessionsAtom', 
     await runOnRunStart(ctx)
     const afterFirst = root.getter(sessionsAtom)
     const metaAfterFirst = afterFirst.s1
-    expect(metaAfterFirst.settings.model).toBe('deepseek-v4-pro')
+    expect(metaAfterFirst.settings.model).toBe('deepseek-v4-flash')
 
     await runOnRunStart(ctx)
     const afterSecond = root.getter(sessionsAtom)
@@ -145,7 +144,7 @@ describe('migrationPlugin —— 主 Agent 模型归一化写回 sessionsAtom', 
     // 第二次是 no-op：记录对象与会话 meta 都保持第一次之后的同一引用；值逐字一致。
     expect(afterSecond).toBe(afterFirst)
     expect(afterSecond.s1).toBe(metaAfterFirst)
-    expect(afterSecond.s1.settings).toEqual({ vendor: 'deepseek', model: 'deepseek-v4-pro', thinking: false })
+    expect(afterSecond.s1.settings).toEqual({ vendor: 'deepseek', model: 'deepseek-v4-flash', thinking: false })
   })
 
   it('ctx.isCurrent() 为 false（run 被顶掉）→ 不写，会话仍是下线旧名', async () => {
@@ -187,7 +186,7 @@ describe('migrationPlugin —— 主 Agent 模型归一化写回 sessionsAtom', 
 
     expect(root.getter(sessionsAtom).s1.settings).toEqual({
       vendor: 'deepseek',
-      model: 'deepseek-v4-pro',
+      model: 'deepseek-v4-flash',
       thinking: true,
     })
   })
@@ -203,7 +202,7 @@ describe('applyMigration（不经插件装配，直接调用本体）', () => {
 
     expect(root.getter(sessionsAtom).s1.settings).toEqual({
       vendor: 'deepseek',
-      model: 'deepseek-v4-pro',
+      model: 'deepseek-v4-flash',
       thinking: false,
     })
   })
@@ -228,7 +227,7 @@ describe('applyMigration（不经插件装配，直接调用本体）', () => {
 
     applyMigration(ctx)
 
-    expect(root.getter(sessionsAtom).s1.settings.model).toBe('deepseek-v4-pro')
+    expect(root.getter(sessionsAtom).s1.settings.model).toBe('deepseek-v4-flash')
     // 另一会话原封不动（同一引用）。
     expect(root.getter(sessionsAtom).s2).toBe(other)
   })

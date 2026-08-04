@@ -32,12 +32,24 @@ describe('sessionCommands', () => {
     if (!session) throw new Error('预期新会话已登记')
 
     expect(session).toMatchObject({ title: DEFAULT_SESSION_TITLE, workspaceId: expect.any(String) })
+    expect(session.settings).toEqual({ vendor: 'deepseek', model: 'deepseek-v4-flash' })
     expect(core.rootStore.getter(workspacesAtom)[session.workspaceId!]).toBeTruthy()
     expect(core.getSessionStore(id)).toBeTruthy()
     expect(core.rootStore.getter(activeWorkspaceIdAtom)).toBe(session.workspaceId)
     expect(core.rootStore.getter(activeSessionIdAtom)).toBe(id)
     expect(persistWorkspaces).toHaveBeenCalledOnce()
     expect(persistSessions).toHaveBeenCalledOnce()
+  })
+
+  it('显式指定模型时不覆盖用户选择', () => {
+    const id = commands.newSession({
+      settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' },
+    })
+
+    expect(core.rootStore.getter(sessionsAtom)[id].settings).toEqual({
+      vendor: 'deepseek',
+      model: 'deepseek-v4-pro',
+    })
   })
 
   it('选择会话会同步其工作区，重命名和授权模式会持久化', () => {

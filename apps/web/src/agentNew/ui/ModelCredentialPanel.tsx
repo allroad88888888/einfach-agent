@@ -1,5 +1,5 @@
 import { useAtomValue } from '@einfach/react'
-import { DEEPSEEK_FLASH_MODEL, DEFAULT_DEEPSEEK_MODEL } from '@web-agent/ai'
+import { DEEPSEEK_PRO_MODEL, DEFAULT_DEEPSEEK_MODEL } from '@web-agent/ai'
 import {
   deleteDeepSeekApiKey,
   saveDeepSeekApiKey,
@@ -33,17 +33,17 @@ export function ModelCredentialPanel() {
       <div className="agentnew-settings-panel-head">
         <div>
           <h3 id="agentnew-model-settings-title">模型</h3>
-          <p>主 Agent 固定使用 Pro，并为简单子任务选择 Flash。</p>
+          <p>新会话默认使用 Flash；子 Agent 按任务风险选择 Flash 或 Pro。</p>
         </div>
       </div>
 
       <div className="agentnew-model-summary" aria-label="模型分工">
         <div><span>供应商</span><strong>DeepSeek</strong></div>
-        <div><span>主 Agent</span><code>{DEFAULT_DEEPSEEK_MODEL}</code><small>DeepSeek V4 Pro</small></div>
-        <div><span>简单子 Agent</span><code>{DEEPSEEK_FLASH_MODEL}</code><small>DeepSeek V4 Flash</small></div>
+        <div><span>主 Agent 默认</span><code>{DEFAULT_DEEPSEEK_MODEL}</code><small>DeepSeek V4 Flash</small></div>
+        <div><span>子 Agent 升级档</span><code>{DEEPSEEK_PRO_MODEL}</code><small>DeepSeek V4 Pro</small></div>
       </div>
       <p className="agentnew-model-routing-note">
-        Flash 只用于主 Agent 明确判定为范围清楚、风险低且容易验证的直接子任务；未指定时使用 Pro。
+        新建会话未显式指定模型时使用 Flash；子 Agent 的高风险、跨模块或验收任务会升级到 Pro。
       </p>
 
       <label className="agentnew-model-key-field" htmlFor="agentnew-deepseek-api-key">

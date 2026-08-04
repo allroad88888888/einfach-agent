@@ -8,7 +8,7 @@
 
 | Vendor | 默认模型 | 状态 | 凭证与调用边界 |
 | --- | --- | --- | --- |
-| `deepseek` | `deepseek-v4-pro` | 支持 | 仅桌面原生层持有 Key 并请求供应商；可传不透明 `user_id` |
+| `deepseek` | `deepseek-v4-flash` | 支持 | 仅桌面原生层持有 Key 并请求供应商；可传不透明 `user_id` |
 | `glm` | `glm-5.2` | 支持 | 仅桌面原生层持有 Key 并请求供应商；不发送 `user_id` |
 | `kimi` | — | 未接入 | 不应仅凭另一项目的 provider 代码新增为可选项 |
 

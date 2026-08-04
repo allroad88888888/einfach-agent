@@ -3663,7 +3663,7 @@ describe('上下文压缩接入', () => {
   })
   // 请求路径兜底：seedSession 直接写 sessionsAtom、【不经 hydrate】—— 正是「绕过 hydrate 迁移」
   // 的场景。会话带着已下线的 deepseek-chat / deepseek-reasoner，发出去的主 Agent 请求必须
-  // 收口到 Pro，且 deepseek-reasoner 要连带把 thinking 补成 enabled（旧名隐含思考模式）。
+  // 迁移到 Flash，且 deepseek-reasoner 要连带把 thinking 补成 enabled（旧名隐含思考模式）。
   describe('主 Agent 模型在发请求前归一化（hydrate 之外的最后一道防线）', () => {
     async function capturedRequestFor(settings: ModelSettings): Promise<Record<string, unknown>> {
       seedSession('mig1', settings)
@@ -3676,16 +3676,16 @@ describe('上下文压缩接入', () => {
       return captured
     }
 
-    it('deepseek-chat → v4-pro 且 thinking 显式 disabled（保留旧非思考行为）', async () => {
+    it('deepseek-chat → v4-flash 且 thinking 显式 disabled（保留旧非思考行为）', async () => {
       const body = await capturedRequestFor({ vendor: 'deepseek', model: 'deepseek-chat' })
-      expect(body.model).toBe('deepseek-v4-pro')
-      // 旧 deepseek-chat = 非思考模式；模型收口到 Pro 时仍保留旧名隐含的模式语义。
+      expect(body.model).toBe('deepseek-v4-flash')
+      // 旧 deepseek-chat = 非思考模式；迁移后仍保留旧名隐含的模式语义。
       expect(body.thinking).toEqual({ type: 'disabled' })
     })
 
-    it('deepseek-reasoner → v4-pro 且 thinking 补成 enabled（旧名隐含思考模式）', async () => {
+    it('deepseek-reasoner → v4-flash 且 thinking 补成 enabled（旧名隐含思考模式）', async () => {
       const body = await capturedRequestFor({ vendor: 'deepseek', model: 'deepseek-reasoner' })
-      expect(body.model).toBe('deepseek-v4-pro')
+      expect(body.model).toBe('deepseek-v4-flash')
       expect(body.thinking).toEqual({ type: 'enabled' })
     })
 
@@ -3695,14 +3695,17 @@ describe('上下文压缩接入', () => {
         model: 'deepseek-reasoner',
         thinking: false,
       })
-      expect(body.model).toBe('deepseek-v4-pro')
+      expect(body.model).toBe('deepseek-v4-flash')
       expect(body.thinking).toEqual({ type: 'disabled' })
     })
 
-    it('未下线的模型名原样发出（兜底不误伤自定义/新模型名）', async () => {
-      const body = await capturedRequestFor({ vendor: 'deepseek', model: 'deepseek-v4-pro' })
-      expect(body.model).toBe('deepseek-v4-pro')
-    })
+    it.each(['deepseek-v4-flash', 'deepseek-v4-pro'])(
+      '未下线的模型名 %s 原样发出（不覆盖用户已保存的选择）',
+      async (model) => {
+        const body = await capturedRequestFor({ vendor: 'deepseek', model })
+        expect(body.model).toBe(model)
+      },
+    )
   })
 })
 

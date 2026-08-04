@@ -2622,8 +2622,8 @@ describe('createDelegateAgentRuntime', () => {
   })
 })
 
-describe('createDelegateAgentRuntime · 主 Agent 模型归一化（发请求前）', () => {
-  it('父会话带 deepseek-reasoner → 默认子 agent 请求体用 v4-pro 且 thinking enabled', async () => {
+describe('createDelegateAgentRuntime · 主 Agent 模型兼容迁移（发请求前）', () => {
+  it('父会话带 deepseek-reasoner → 迁移后默认子 agent 请求体按路由使用 v4-pro 且 thinking enabled', async () => {
     // 子 agent 复用父会话 settings。父会话若带着已下线的模型名，扇出的每个子 agent 都会撞 400。
     // createDelegateAgentRuntime 在入口整体迁移并收口主模型；未显式选择 Flash 的子任务默认使用 Pro。
     let childBody: Record<string, unknown> = {}
