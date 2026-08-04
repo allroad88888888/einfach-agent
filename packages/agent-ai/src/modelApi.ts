@@ -591,17 +591,18 @@ class TruncatedStreamError extends Error {
   }
 }
 
-async function parseChatResponse(response: Response): Promise<ModelChatResponse> {
-  let source: string
+async function readResponseText(response: Response): Promise<string> {
   try {
-    source = await response.text()
+    return await response.text()
   } catch (error) {
     if (isAbortError(error)) throw error
     throw new RetriableError('Chat completion response body ended before it could be read.', {
       originalError: error,
     })
   }
+}
 
+function parseChatResponseSource(source: string): ModelChatResponse {
   if (!source.trim()) {
     throw new RetriableError('Chat completion returned an empty JSON response.')
   }
@@ -612,6 +613,10 @@ async function parseChatResponse(response: Response): Promise<ModelChatResponse>
     if (!isUnexpectedEndJsonError(error)) throw error
     throw new RetriableError('Chat completion returned a truncated JSON response.')
   }
+}
+
+async function parseChatResponse(response: Response): Promise<ModelChatResponse> {
+  return parseChatResponseSource(await readResponseText(response))
 }
 
 // 简介：底层 OpenAI 兼容 chat/completions 调用（非流式）。
@@ -829,6 +834,84 @@ async function readStreamResponse(
   return toChatResponse(acc)
 }
 
+function sourceLooksLikeSse(source: string): boolean {
+  const firstLine = source.trimStart().split(/\r?\n/, 1)[0] ?? ''
+  return /^(?::|(?:data|event|id|retry):)/.test(firstLine)
+}
+
+function sourceMayBeSse(source: string): boolean {
+  const firstLine = source.trimStart().split(/\r?\n/, 1)[0] ?? ''
+  return [':', 'data:', 'event:', 'id:', 'retry:'].some((prefix) => prefix.startsWith(firstLine))
+}
+
+function streamWithInitialChunks(
+  initialChunks: readonly Uint8Array[],
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+): ReadableStream<Uint8Array> {
+  let index = 0
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (index < initialChunks.length) {
+        controller.enqueue(initialChunks[index++]!)
+        return
+      }
+      const { done, value } = await reader.read()
+      if (done) controller.close()
+      else controller.enqueue(value)
+    },
+    cancel(reason) {
+      return reader.cancel(reason)
+    },
+  })
+}
+
+async function readPossiblyMislabelledStreamResponse(
+  body: ReadableStream<Uint8Array>,
+  handlers?: ChatStreamHandlers,
+): Promise<{ response: ModelChatResponse; streamed: boolean }> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  const initialChunks: Uint8Array[] = []
+  let source = ''
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) return { response: parseChatResponseSource(source + decoder.decode()), streamed: false }
+      initialChunks.push(value)
+      source += decoder.decode(value, { stream: true })
+      if (sourceLooksLikeSse(source)) {
+        return {
+          response: await readStreamResponse(streamWithInitialChunks(initialChunks, reader), handlers),
+          streamed: true,
+        }
+      }
+      if (!sourceMayBeSse(source) || source.length >= 64) break
+    }
+
+    while (true) {
+      const { done, value } = await reader.read()
+      source += decoder.decode(value, { stream: !done })
+      if (done) return { response: parseChatResponseSource(source), streamed: false }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+}
+
+function rethrowStreamReadError(error: unknown, emitted: boolean): never {
+  if (isAbortError(error)) throw error // R1
+  // R3：已经吐过有内容的字 → 重试会在 UI 上产生重复内容，只能把错误抛给上层。
+  if (emitted) throw error
+  // 完整但非法的 SSE JSON 是确定性协议错误，重发没有意义；只有 JSON 明确在 EOF
+  // 截断时才按传输中断处理。clean EOF 与 reader 读取错误也走下面的安全重试。
+  if (error instanceof SyntaxError && !isUnexpectedEndJsonError(error)) throw error
+  // 一个字都没吐出去（多半是连上后 body 就断了）→ 重发是安全的。
+  throw new RetriableError(error instanceof Error ? error.message : String(error), {
+    originalError: error,
+  })
+}
+
 // 简介：底层 OpenAI 兼容 chat/completions 流式调用。
 // 详情：请求体强制 `stream:true`；SSE delta 通过 handlers.onDelta 增量上报，同时函数最终
 // resolve 成与非流式相同的 ModelChatResponse，供 tool loop 复用原有分支。
@@ -872,27 +955,28 @@ export async function postChatCompletionStream(
     const response = await requestOnce(fetchImpl, url, init)
 
     const contentType = readHeader(response, 'Content-Type') ?? ''
-    if (!contentType.includes('text/event-stream') || !response.body) {
-      // 非流式回退分支与 postChatCompletion 共用响应完整性判断：空响应或截断 JSON
-      // 尚未向 UI emit 内容，可安全重试；普通坏 JSON 仍立即失败。
-      const full = await parseChatResponse(response)
-      emitFullResponseAsDelta(full, guardedHandlers)
-      return full
+    if (contentType.includes('text/event-stream') && response.body) {
+      try {
+        return await readStreamResponse(response.body, guardedHandlers)
+      } catch (error) {
+        rethrowStreamReadError(error, emitted)
+      }
     }
 
-    try {
-      return await readStreamResponse(response.body, guardedHandlers)
-    } catch (err) {
-      if (isAbortError(err)) throw err // R1
-      // R3：已经吐过有内容的字 → 重试会在 UI 上产生重复内容，只能把错误抛给上层。
-      if (emitted) throw err
-      // 完整但非法的 SSE JSON 是确定性协议错误，重发没有意义；只有 JSON 明确在 EOF
-      // 截断时才按传输中断处理。clean EOF 与 reader 读取错误也走下面的安全重试。
-      if (err instanceof SyntaxError && !isUnexpectedEndJsonError(err)) throw err
-      // 一个字都没吐出去（多半是连上后 body 就断了）→ 重发是安全的。
-      throw new RetriableError(err instanceof Error ? err.message : String(err), {
-        originalError: err,
-      })
+    if (response.body) {
+      try {
+        // 有些 OpenAI 兼容网关错误地把 SSE 标成 application/json。正文首个协议行一旦
+        // 识别为 SSE，就立即继续逐块解析；真正的 JSON 回退仍等待整包再处理。
+        const result = await readPossiblyMislabelledStreamResponse(response.body, guardedHandlers)
+        if (!result.streamed) emitFullResponseAsDelta(result.response, guardedHandlers)
+        return result.response
+      } catch (error) {
+        rethrowStreamReadError(error, emitted)
+      }
     }
+
+    const full = await parseChatResponse(response)
+    emitFullResponseAsDelta(full, guardedHandlers)
+    return full
   })
 }

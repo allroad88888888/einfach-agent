@@ -21,7 +21,7 @@ function okResponse(): Response {
   )
 }
 
-function okStreamResponse(): Response {
+function okStreamResponse(contentType = 'text/event-stream', splitSsePrefix = false): Response {
   const source = [
     'data: {"choices":[{"delta":{"role":"assistant","content":"ok"}}]}\n\n',
     'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
@@ -32,11 +32,12 @@ function okStreamResponse(): Response {
   return new Response(
     new ReadableStream<Uint8Array>({
       start(controller) {
-        controller.enqueue(encoder.encode(source))
+        if (splitSsePrefix) controller.enqueue(encoder.encode(source.slice(0, 2)))
+        controller.enqueue(encoder.encode(splitSsePrefix ? source.slice(2) : source))
         controller.close()
       },
     }),
-    { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
+    { status: 200, headers: { 'Content-Type': contentType } },
   )
 }
 
@@ -173,6 +174,27 @@ describe('DeepSeek V4 请求协议', () => {
     expect(captured).not.toHaveProperty('presence_penalty')
     expect(captured).not.toHaveProperty('frequency_penalty')
     expect(captured).not.toHaveProperty('tool_choice')
+  })
+
+  it('上游误标 SSE 为 JSON 时仍按流协议解析', async () => {
+    const deltas: string[] = []
+
+    const result = await streamDeepSeek(
+      {
+        model: 'deepseek-v4-flash',
+        messages: [{ role: 'user', content: '流式响应' }],
+      },
+      {
+        apiKey: 'test-key',
+        baseUrl: BASE_URL,
+        fetchImpl: async () => okStreamResponse('application/json', true),
+        retry: { maxRetries: 0 },
+      },
+      { onDelta: (delta) => deltas.push(delta.content ?? '') },
+    )
+
+    expect(deltas).toEqual(['ok', ''])
+    expect(result.choices?.[0]?.message?.content).toBe('ok')
   })
 
   it('净化请求时保留 reasoning_content，并把工具调用 assistant 的 null content 规范为空串', async () => {
