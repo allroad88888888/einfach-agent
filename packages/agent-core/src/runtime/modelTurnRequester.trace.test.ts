@@ -74,10 +74,12 @@ describe('model turn trace correlation', () => {
     expect(snapshot?.attrs).toMatchObject({
       runId: expect.any(String),
       llm_turn: 1,
+      dynamic_controls_count: 0,
     })
     expect(request?.attrs).toMatchObject({
       runId: snapshot?.attrs?.runId,
       llm_turn: snapshot?.attrs?.llm_turn,
+      dynamic_controls_count: snapshot?.attrs?.dynamic_controls_count,
     })
   })
 })

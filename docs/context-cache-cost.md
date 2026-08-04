@@ -179,17 +179,19 @@ WITH completed AS (
 ), s AS (
   SELECT json_extract(e.attrs, '$.cache_lane_scope_fingerprint') scope,
          json_extract(e.attrs, '$.cache_epoch')                  epoch,
-         json_extract(e.attrs, '$.cache_epoch_reason')           reason
+         json_extract(e.attrs, '$.cache_epoch_reason')           reason,
+         CAST(json_extract(e.attrs, '$.dynamic_controls_count') AS INTEGER) AS dynamic_controls_count
   FROM trace_events e
   JOIN completed c ON c.run_id = e.run_id
     AND c.llm_turn = CAST(json_extract(e.attrs, '$.llm_turn') AS INTEGER)
   WHERE e.name = 'llm.context_snapshot'
     AND e.timestamp >= <start_ms> AND e.timestamp < <end_ms>)
-SELECT reason,
+SELECT dynamic_controls_count AS 动态尾巴条数,
+       reason,
        COUNT(*)                              AS 请求数,
        COUNT(DISTINCT scope || '#' || epoch) AS 真实失效次数,
        ROUND(1.0 * COUNT(*) / COUNT(DISTINCT scope || '#' || epoch), 2) AS 摊轮数
-FROM s GROUP BY reason ORDER BY 真实失效次数 DESC;
+FROM s GROUP BY dynamic_controls_count, reason ORDER BY 真实失效次数 DESC;
 
 -- ④ 每轮真实新增内容（确认「未命中 ≠ 新内容」这一口径仍成立）
 WITH completed AS (
