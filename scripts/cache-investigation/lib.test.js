@@ -64,15 +64,20 @@ describe('f6ToolSetSteps', () => {
 })
 
 describe('epochCauseCounts', () => {
-  it('拆开逗号分隔的多因子并统计出现次数,空值跳过', () => {
+  it('按 (scope, epoch) 去重取开 epoch 那一轮,同 epoch 后续轮与 initial 期不计', () => {
     const rows = [
-      { cache_epoch_causes: 'tool_set_changed,dynamic_control_changed' },
-      { cache_epoch_causes: 'tool_set_changed' },
+      // epoch 2 开启轮:双因子;后续两轮沿用同 epoch(未再失效)不得重复计。
+      { cache_lane_scope_fingerprint: 's1', cache_epoch: 2, cache_epoch_reason: 'profile_changed', cache_epoch_causes: 'tool_set_changed,request_params_changed' },
+      { cache_lane_scope_fingerprint: 's1', cache_epoch: 2, cache_epoch_reason: 'profile_changed', cache_epoch_causes: 'dynamic_control_changed' },
+      { cache_lane_scope_fingerprint: 's1', cache_epoch: 3, cache_epoch_reason: 'dynamic_control_changed', cache_epoch_causes: 'dynamic_control_changed' },
+      // initial 期的良性变化(如尾巴纯追加出现)不是失效,不计。
+      { cache_lane_scope_fingerprint: 's2', cache_epoch: 1, cache_epoch_reason: 'initial', cache_epoch_causes: 'dynamic_control_changed' },
       { cache_epoch_causes: '' },
       {},
     ]
     expect(epochCauseCounts(rows)).toEqual({
-      tool_set_changed: 2,
+      tool_set_changed: 1,
+      request_params_changed: 1,
       dynamic_control_changed: 1,
     })
   })

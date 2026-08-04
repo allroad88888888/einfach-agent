@@ -39,6 +39,7 @@ export type ContextCacheCompactionBoundary = 'full-history' | 'compacted-history
 export type ContextCacheEpochCause =
   | 'tool_set_changed'
   | 'system_changed'
+  | 'model_changed'
   | 'request_params_changed'
   | 'dynamic_control_changed'
   | 'compaction_projection_changed'
@@ -93,6 +94,8 @@ interface LaneState {
   profileId: string
   toolSetFingerprint: string
   systemFingerprint: string
+  modelFingerprint: string
+  requestParamsFingerprint: string
   projectionItems: ContextProjectionItemDiagnostic[]
   compacted: boolean
   dynamicControlFingerprint: string
@@ -157,6 +160,15 @@ export function createContextCacheTracker(): ContextCacheTracker {
       const dynamicControls = input.dynamicControls ?? []
       const dynamicControlFingerprint = contextCacheFingerprint('dynamic-controls', dynamicControls)
       const dynamicTailCount = dynamicControls.length
+      // 单独留指纹:profileId 是聚合哈希,没有它们就无法区分「工具集变了」与
+      // 「toolChoice/thinking/requestMode 也同时变了」——并发变化会被吞掉(评审 D1/D4)。
+      const modelFingerprint = contextCacheFingerprint('model', { vendor: input.vendor, model: input.model })
+      const requestParamsFingerprint = contextCacheFingerprint('request-params', {
+        toolChoiceFingerprint: toolChoiceFingerprint(input.toolChoice),
+        thinking: input.thinking ?? 'provider-default',
+        reasoningEffort: input.reasoningEffort ?? 'provider-default',
+        requestMode: input.requestMode ?? 'default',
+      })
       const nextProfileId = profileId(input, {
         laneScopeFingerprint,
         toolSetFingerprint,
@@ -191,15 +203,15 @@ export function createContextCacheTracker(): ContextCacheTracker {
         const controlChanged = previous.dynamicControlFingerprint !== dynamicControlFingerprint
 
         // 因子逐项收集(非互斥),与下面按优先级选摘要的 epochReason 相互独立。
+        // 每个因子有自己的指纹,互不遮蔽——并发变化必须全部可见(评审 D1)。
         if (previous.toolSetFingerprint !== toolSetFingerprint) epochCauses.push('tool_set_changed')
         if (previous.systemFingerprint !== systemFingerprint) epochCauses.push('system_changed')
-        if (
-          previous.profileId !== nextProfileId
-          && previous.toolSetFingerprint === toolSetFingerprint
-          && previous.systemFingerprint === systemFingerprint
-        ) epochCauses.push('request_params_changed')
+        if (previous.modelFingerprint !== modelFingerprint) epochCauses.push('model_changed')
+        if (previous.requestParamsFingerprint !== requestParamsFingerprint) epochCauses.push('request_params_changed')
         if (controlChanged) epochCauses.push('dynamic_control_changed')
-        if (!factAppendOnly) {
+        // 与 epoch 判定同门槛(!fullPrefixIntact):全前缀完好时事实投影的「非前缀」只是
+        // 尾巴项改判口径,投影字节没变,不得记投影因子(评审 D2)。
+        if (!fullPrefixIntact && !factAppendOnly) {
           epochCauses.push(previous.compacted || input.compacted
             ? 'compaction_projection_changed'
             : 'request_projection_changed')
@@ -229,6 +241,8 @@ export function createContextCacheTracker(): ContextCacheTracker {
         profileId: nextProfileId,
         toolSetFingerprint,
         systemFingerprint,
+        modelFingerprint,
+        requestParamsFingerprint,
         projectionItems: projectionItemsForRequest,
         compacted: input.compacted,
         dynamicControlFingerprint,

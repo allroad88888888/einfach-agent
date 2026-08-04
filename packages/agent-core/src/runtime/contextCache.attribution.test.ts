@@ -137,6 +137,43 @@ describe('createContextCacheTracker · 尾巴顶位与归因', () => {
     expect(third.epoch).toBe(second.epoch)
   })
 
+  it('工具集合与 toolChoice 同轮变化 → 两个因子都在,params 不被 toolSet 吞掉(评审 D1)', () => {
+    const tracker = createContextCacheTracker()
+    tracker.observe(input())
+    const second = tracker.observe(input({
+      tools: [tool('request_tool_schema')],
+      toolChoice: 'none',
+    }))
+    expect(second.epochReason).toBe('profile_changed')
+    expect(second.epochCauses).toContain('tool_set_changed')
+    expect(second.epochCauses).toContain('request_params_changed')
+  })
+
+  it('同 lane/scope 中途换模型 → model_changed,与参数变化可区分(评审 D4)', () => {
+    const tracker = createContextCacheTracker()
+    tracker.observe(input())
+    const second = tracker.observe(input({ model: 'deepseek-v4-pro' }))
+    expect(second.epochCauses).toEqual(['model_changed'])
+    expect(second.epochReason).toBe('profile_changed')
+  })
+
+  it('全前缀完好、仅尾巴项改判口径 → 不记投影因子(评审 D2)', () => {
+    // 两轮 messages 字节完全相同,唯一区别是最后一项从「历史」改判为 dynamicControls:
+    // 投影零变化,不得输出 request_projection_changed;epoch 也不动。
+    const tracker = createContextCacheTracker()
+    const first = tracker.observe(input({
+      messages: [system, user, skill],
+    }))
+    const second = tracker.observe(input({
+      messages: [system, user, skill],
+      dynamicControls: [skill],
+    }))
+    expect(second.requestProjectionFingerprint).toBe(first.requestProjectionFingerprint)
+    expect(second.epoch).toBe(first.epoch)
+    expect(second.epochCauses).not.toContain('request_projection_changed')
+    expect(second.epochCauses).not.toContain('compaction_projection_changed')
+  })
+
   it('压缩态下尾巴内容变化 → dynamic_control_changed，不再被 compacted 短路吞掉', () => {
     const tracker = createContextCacheTracker()
     const first = tracker.observe(input({

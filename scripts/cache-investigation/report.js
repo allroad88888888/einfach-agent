@@ -120,7 +120,7 @@ function printReport(rows) {
   console.log(`按 (scope, epoch) 去重的真实失效:${JSON.stringify(invalidations)}`)
   const causeCounts = epochCauseCounts(snapshots)
   if (Object.keys(causeCounts).length) {
-    console.log(`逐轮多因子变化(非互斥,epoch_reason 只是其中优先级最高的摘要):${JSON.stringify(causeCounts)}`)
+    console.log(`开新 epoch 轮的底层因子(非互斥,按 scope+epoch 去重;profile_changed 在此展开为具体因子):${JSON.stringify(causeCounts)}`)
   }
   console.log('  验收③:compaction_projection_changed 应接近「每 run 首压一次」;')
   console.log('  F2:history_inserted_before_dynamic_tail 应为 0(tracker 2026-08-04 起纯顶位不再计失效)\n')
