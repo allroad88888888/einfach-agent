@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   dedupEpochInvalidations,
+  epochCauseCounts,
   f1PerRun,
   f6ToolSetSteps,
   weightedHitRate,
@@ -59,6 +60,21 @@ describe('f6ToolSetSteps', () => {
     ])
     expect(result.meanSteps).toBe(1.5)
     expect(result.maxSteps).toBe(2)
+  })
+})
+
+describe('epochCauseCounts', () => {
+  it('拆开逗号分隔的多因子并统计出现次数,空值跳过', () => {
+    const rows = [
+      { cache_epoch_causes: 'tool_set_changed,dynamic_control_changed' },
+      { cache_epoch_causes: 'tool_set_changed' },
+      { cache_epoch_causes: '' },
+      {},
+    ]
+    expect(epochCauseCounts(rows)).toEqual({
+      tool_set_changed: 2,
+      dynamic_control_changed: 1,
+    })
   })
 })
 

@@ -9,6 +9,7 @@ import { join, basename } from 'node:path'
 import { spawnSync } from 'node:child_process'
 import {
   dedupEpochInvalidations,
+  epochCauseCounts,
   f1PerRun,
   f6ToolSetSteps,
   weightedHitRate,
@@ -58,6 +59,7 @@ function loadRows(dbCopy, args) {
            json_extract(attrs,'$.cache_lane_scope_fingerprint') AS cache_lane_scope_fingerprint,
            json_extract(attrs,'$.cache_epoch') AS cache_epoch,
            json_extract(attrs,'$.cache_epoch_reason') AS cache_epoch_reason,
+           json_extract(attrs,'$.cache_epoch_causes') AS cache_epoch_causes,
            json_extract(attrs,'$.llm_turn') AS llm_turn,
            json_extract(attrs,'$.tool_set_fingerprint') AS tool_set_fingerprint,
            json_extract(attrs,'$.tools_count') AS tools_count,
@@ -114,6 +116,10 @@ function printReport(rows) {
   }
   const invalidations = dedupEpochInvalidations(snapshots)
   console.log(`按 (scope, epoch) 去重的真实失效:${JSON.stringify(invalidations)}`)
+  const causeCounts = epochCauseCounts(snapshots)
+  if (Object.keys(causeCounts).length) {
+    console.log(`逐轮多因子变化(非互斥,epoch_reason 只是其中优先级最高的摘要):${JSON.stringify(causeCounts)}`)
+  }
   console.log('  验收③:compaction_projection_changed 应接近「每 run 首压一次」;')
   console.log('  F2:history_inserted_before_dynamic_tail 应为 0(tracker 2026-08-04 起纯顶位不再计失效)\n')
 

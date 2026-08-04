@@ -139,6 +139,18 @@ export function prefixStability(chatSpans) {
   return results
 }
 
+/** 多因子归因:统计逐轮 cache_epoch_causes(逗号分隔,非互斥)的出现次数。 */
+export function epochCauseCounts(snapshots) {
+  const counts = new Map()
+  for (const row of snapshots) {
+    if (typeof row.cache_epoch_causes !== 'string' || !row.cache_epoch_causes) continue
+    for (const cause of row.cache_epoch_causes.split(',')) {
+      counts.set(cause, (counts.get(cause) ?? 0) + 1)
+    }
+  }
+  return Object.fromEntries([...counts.entries()].sort((a, b) => b[1] - a[1]))
+}
+
 const REQUEST_CONTROL_SOURCES = ['plan_snapshot', 'plan_continuation', 'tool_failure_notice', 'unknown']
 
 /**

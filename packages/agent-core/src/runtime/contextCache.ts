@@ -32,6 +32,18 @@ export type ContextCacheEpochReason =
 
 export type ContextCacheCompactionBoundary = 'full-history' | 'compacted-history'
 
+/**
+ * 非互斥的逐轮变化因子。epochReason 只保留按优先级选出的一项作 UI 摘要;同一轮并发的
+ * 多类变化(如工具集合 + 控制项同时变)必须看这里,单字段会掩盖其余根因(2026-08-04 交接)。
+ */
+export type ContextCacheEpochCause =
+  | 'tool_set_changed'
+  | 'system_changed'
+  | 'request_params_changed'
+  | 'dynamic_control_changed'
+  | 'compaction_projection_changed'
+  | 'request_projection_changed'
+
 export interface ContextCacheProfile {
   lane: ContextCacheLane
   laneScopeFingerprint: string
@@ -44,6 +56,8 @@ export interface ContextCacheProfile {
   requestProjectionFingerprint: string
   compactionBoundary: ContextCacheCompactionBoundary
   projectionDiagnostics: ContextProjectionDiagnostics
+  /** 本轮相对上一轮的全部变化因子(非互斥);首轮为空数组。 */
+  epochCauses: readonly ContextCacheEpochCause[]
 }
 
 export interface ObserveContextCacheInput {
@@ -77,6 +91,8 @@ interface LaneState {
   epoch: number
   epochReason: ContextCacheEpochReason
   profileId: string
+  toolSetFingerprint: string
+  systemFingerprint: string
   projectionItems: ContextProjectionItemDiagnostic[]
   compacted: boolean
   dynamicControlFingerprint: string
@@ -156,30 +172,49 @@ export function createContextCacheTracker(): ContextCacheTracker {
 
       let epoch = previous?.epoch ?? 1
       let epochReason: ContextCacheEpochReason = previous?.epochReason ?? 'initial'
+      const epochCauses: ContextCacheEpochCause[] = []
 
       if (previous) {
+        // ★ 必须先看去掉动态尾巴后的事实投影,再看尾巴本身 ★ —— 判定顺序反过来就是
+        // 2026-08-04 回归:压缩态 + 常驻尾巴控制项时,尾巴每轮被新历史顶位,旧逻辑的
+        // 「compacted 即 compaction_projection_changed」短路把每一轮都标成投影重写
+        // (epoch 2→7),而实际投影一直在复用(见回归观察文档)。
+        const previousFingerprints = previous.projectionItems.map((item) => item.fingerprint)
+        const fullPrefixIntact = isPrefix(previousFingerprints, projectionItemFingerprints)
+        const previousFactProjection = previous.dynamicTailCount > 0
+          ? previousFingerprints.slice(0, -previous.dynamicTailCount)
+          : previousFingerprints
+        const nextFactProjection = dynamicTailCount > 0
+          ? projectionItemFingerprints.slice(0, -dynamicTailCount)
+          : projectionItemFingerprints
+        const factAppendOnly = isPrefix(previousFactProjection, nextFactProjection)
+        const controlChanged = previous.dynamicControlFingerprint !== dynamicControlFingerprint
+
+        // 因子逐项收集(非互斥),与下面按优先级选摘要的 epochReason 相互独立。
+        if (previous.toolSetFingerprint !== toolSetFingerprint) epochCauses.push('tool_set_changed')
+        if (previous.systemFingerprint !== systemFingerprint) epochCauses.push('system_changed')
+        if (
+          previous.profileId !== nextProfileId
+          && previous.toolSetFingerprint === toolSetFingerprint
+          && previous.systemFingerprint === systemFingerprint
+        ) epochCauses.push('request_params_changed')
+        if (controlChanged) epochCauses.push('dynamic_control_changed')
+        if (!factAppendOnly) {
+          epochCauses.push(previous.compacted || input.compacted
+            ? 'compaction_projection_changed'
+            : 'request_projection_changed')
+        }
+
         if (previous.profileId !== nextProfileId) {
           epoch += 1
           epochReason = 'profile_changed'
-        } else if (!isPrefix(previous.projectionItems.map((item) => item.fingerprint), projectionItemFingerprints)) {
-          // ★ 必须先看去掉动态尾巴后的事实投影,再看尾巴本身 ★ —— 判定顺序反过来就是
-          // 2026-08-04 回归:压缩态 + 常驻尾巴控制项时,尾巴每轮被新历史顶位,旧逻辑的
-          // 「compacted 即 compaction_projection_changed」短路把每一轮都标成投影重写
-          // (epoch 2→7),而实际投影一直在复用(见回归观察文档)。
-          const previousFactProjection = previous.dynamicTailCount > 0
-            ? previous.projectionItems.slice(0, -previous.dynamicTailCount).map((item) => item.fingerprint)
-            : previous.projectionItems.map((item) => item.fingerprint)
-          const nextFactProjection = dynamicTailCount > 0
-            ? projectionItemFingerprints.slice(0, -dynamicTailCount)
-            : projectionItemFingerprints
-          const factAppendOnly = isPrefix(previousFactProjection, nextFactProjection)
-
+        } else if (!fullPrefixIntact) {
           if (!factAppendOnly) {
             epoch += 1
             epochReason = previous.compacted || input.compacted
               ? 'compaction_projection_changed'
               : 'request_projection_changed'
-          } else if (previous.dynamicControlFingerprint !== dynamicControlFingerprint) {
+          } else if (controlChanged) {
             epoch += 1
             epochReason = 'dynamic_control_changed'
           }
@@ -192,6 +227,8 @@ export function createContextCacheTracker(): ContextCacheTracker {
         epoch,
         epochReason,
         profileId: nextProfileId,
+        toolSetFingerprint,
+        systemFingerprint,
         projectionItems: projectionItemsForRequest,
         compacted: input.compacted,
         dynamicControlFingerprint,
@@ -210,6 +247,7 @@ export function createContextCacheTracker(): ContextCacheTracker {
         requestProjectionFingerprint,
         compactionBoundary: input.compacted ? 'compacted-history' : 'full-history',
         projectionDiagnostics: diagnostics,
+        epochCauses,
       }
     },
   }

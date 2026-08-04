@@ -223,6 +223,7 @@ function cacheProfileData(
     cacheProfile: profile.profileId,
     cacheEpoch: profile.epoch,
     cacheEpochReason: profile.epochReason,
+    cacheEpochCauses: profile.epochCauses.join(','),
     cacheProtocolVersion: profile.protocolVersion,
     laneScopeFingerprint: profile.laneScopeFingerprint,
     systemFingerprint: profile.systemFingerprint,
