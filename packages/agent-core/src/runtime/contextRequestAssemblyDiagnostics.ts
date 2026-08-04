@@ -3,9 +3,16 @@ import { contextCacheFingerprint } from './contextCacheFingerprint'
 import { describeContextProjection, type ContextProjectionItemDiagnostic } from './contextProjectionDiagnostics'
 
 /** Identifies the runtime producer of one dynamic system control without retaining its content. */
-export type RequestControlSource = 'plan_snapshot' | 'plan_continuation' | 'tool_failure_notice' | 'unknown'
+export type RequestControlSource =
+  // plan_snapshot 已不再产生(P2 拆成 definition/state 两条),保留以兼容历史 trace 字段。
+  | 'plan_snapshot'
+  | 'plan_definition'
+  | 'plan_state'
+  | 'plan_continuation'
+  | 'tool_failure_notice'
+  | 'unknown'
 
-const CONTROL_SOURCES: RequestControlSource[] = ['plan_snapshot', 'plan_continuation', 'tool_failure_notice', 'unknown']
+const CONTROL_SOURCES: RequestControlSource[] = ['plan_snapshot', 'plan_definition', 'plan_state', 'plan_continuation', 'tool_failure_notice', 'unknown']
 
 interface RequestStageSnapshot {
   items: ContextProjectionItemDiagnostic[]
@@ -36,6 +43,8 @@ function sourceMessages(
 ): Record<RequestControlSource, ModelItem[]> {
   const grouped: Record<RequestControlSource, ModelItem[]> = {
     plan_snapshot: [],
+    plan_definition: [],
+    plan_state: [],
     plan_continuation: [],
     tool_failure_notice: [],
     unknown: [],

@@ -151,7 +151,8 @@ export function epochCauseCounts(snapshots) {
   return Object.fromEntries([...counts.entries()].sort((a, b) => b[1] - a[1]))
 }
 
-const REQUEST_CONTROL_SOURCES = ['plan_snapshot', 'plan_continuation', 'tool_failure_notice', 'unknown']
+// plan_snapshot 已由 plan_definition + plan_state 取代(P2);保留以归因历史 trace。
+const REQUEST_CONTROL_SOURCES = ['plan_snapshot', 'plan_definition', 'plan_state', 'plan_continuation', 'tool_failure_notice', 'unknown']
 
 /**
  * 把相邻 context_snapshot 的脱敏组装字段归为具体来源。

@@ -11,7 +11,7 @@ import { runToolCallBatch } from './toolCallBatch'
 import type { ToolFailureTracker } from './toolFailureTracker'
 import type { ToolLoopCheckpointWriter } from './toolLoopCheckpoint'
 import type { ToolLoopBase } from './toolLoopContracts'
-import { currentPlanContext, currentPlanStageId } from './toolLoopPlan'
+import { currentPlanDefinition, currentPlanState, currentPlanStageId } from './toolLoopPlan'
 import { stopOverBudgetPlanStage } from './toolLoopPlanStageGuard'
 import { handleTextTurn } from './toolLoopTextTurn'
 import { safeErrorMessage } from './toolLoopSupport'
@@ -44,13 +44,18 @@ export async function runToolLoopCycle(input: {
   if (planStageId && stopOverBudgetPlanStage(base, checkpoints.persistWorkingTurn, planStageId)) return 'finished'
   const failureNotice = failures.consume()
   if (failureNotice) base.trace.event('agent.tool_failure_notice', { tools: failureNotice.tools })
-  const planContext = currentPlanContext(base.id, base.core)
+  const planDefinition = currentPlanDefinition(base.id, base.core)
+  const planState = currentPlanState(base.id, base.core)
   const planContinuation = base.state.planContinuation
   const controls: ModelItem[] = []
   const controlSources: RequestControlSource[] = []
-  if (planContext) {
-    controls.push({ role: 'system', content: planContext })
-    controlSources.push('plan_snapshot')
+  if (planDefinition) {
+    controls.push({ role: 'system', content: planDefinition })
+    controlSources.push('plan_definition')
+  }
+  if (planState) {
+    controls.push({ role: 'system', content: planState })
+    controlSources.push('plan_state')
   }
   if (planContinuation) {
     controls.push({ role: 'system', content: planContinuation })

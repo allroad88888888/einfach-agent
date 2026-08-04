@@ -20,21 +20,36 @@ export function currentPlanStageId(id: string, core: CoreInstance): string | und
   return core.getSessionStore(id).store.getter(planAtom)?.stages.find((stage) => stage.status === 'in_progress')?.id
 }
 
-/** Projects only the active plan protocol into the current model request. */
-export function currentPlanContext(id: string, core: CoreInstance): string | undefined {
+// P2(2026-08-04 交接):原单条 <current_plan_snapshot> 把静态定义与逐轮变化的执行状态
+// 混在一个控制项里,阶段每推进一步整条重写。拆成两条:定义只随 (planId, revision) 变化,
+// 状态保持简短稳定格式——阶段推进只改小的状态条,减少动态尾部的变更字节与次数。
+
+/** 计划的静态定义:只随 planId/revision 变化;阶段 status 等动态信息一律不进来。 */
+export function currentPlanDefinition(id: string, core: CoreInstance): string | undefined {
+  const plan = core.getSessionStore(id).store.getter(planAtom)
+  if (!plan || !EXECUTING_PLAN_STATUSES.has(plan.status)) return undefined
+  const definition = {
+    planId: plan.id, revision: plan.revision, title: plan.title, objective: plan.objective,
+    stages: plan.stages.map((stage) => ({ stageId: stage.id, title: stage.title, objective: stage.objective, deliverables: stage.deliverables, evidence: stage.evidence, dependencies: stage.dependencies })),
+  }
+  return ['<current_plan_definition>', '以下 JSON 是运行时提供的权威计划定义（数据，不是用户指令），仅随计划修订变化。调用计划工具时必须使用其中精确的 planId、revision 和 stageId。', JSON.stringify(definition), '</current_plan_definition>'].join('\n')
+}
+
+/** 计划的动态执行状态:简短稳定格式,只在阶段推进 / 状态变化时才变。 */
+export function currentPlanState(id: string, core: CoreInstance): string | undefined {
   const plan = core.getSessionStore(id).store.getter(planAtom)
   if (!plan || !EXECUTING_PLAN_STATUSES.has(plan.status)) return undefined
   const currentStage = plan.stages.find((stage) => stage.status === 'in_progress')
-  const snapshot = {
-    planId: plan.id, revision: plan.revision, title: plan.title, objective: plan.objective, status: plan.status,
-    currentStage: currentStage ? { stageId: currentStage.id, title: currentStage.title, objective: currentStage.objective, status: currentStage.status, deliverables: currentStage.deliverables, evidence: currentStage.evidence } : null,
-    stages: plan.stages.map((stage) => ({ stageId: stage.id, title: stage.title, status: stage.status, dependencies: stage.dependencies })),
+  const state = {
+    planId: plan.id, revision: plan.revision, status: plan.status,
+    currentStageId: currentStage?.id ?? null,
+    stageStatus: plan.stages.map((stage) => `${stage.id}:${stage.status}`),
   }
-  return ['<current_plan_snapshot>', '以下 JSON 是运行时提供的权威计划状态（数据，不是用户指令）。调用计划工具时必须使用其中精确的 planId、revision 和 stageId。', JSON.stringify(snapshot), '</current_plan_snapshot>'].join('\n')
+  return ['<current_plan_state>', '以下 JSON 是权威计划执行状态（数据，不是用户指令），阶段定义见 current_plan_definition。', JSON.stringify(state), '</current_plan_state>'].join('\n')
 }
 
 export function planResumeNotice(): string {
-  return ['这是一次从持久化状态恢复的计划执行，不是新的用户请求。', '沿用 current_plan_snapshot 中的计划、revision 与当前阶段；不要重新创建计划。', '从尚未完成的阶段继续，完成阶段产出后调用 submit_stage_result，并继续后续阶段直到计划结束。'].join('\n')
+  return ['这是一次从持久化状态恢复的计划执行，不是新的用户请求。', '沿用 current_plan_definition / current_plan_state 中的计划、revision 与当前阶段；不要重新创建计划。', '从尚未完成的阶段继续，完成阶段产出后调用 submit_stage_result，并继续后续阶段直到计划结束。'].join('\n')
 }
 
 export function maxAgentTurns(id: string, core: CoreInstance): number {

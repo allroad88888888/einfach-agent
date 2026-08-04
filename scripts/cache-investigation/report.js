@@ -75,6 +75,8 @@ function loadRows(dbCopy, args) {
            json_extract(attrs,'$.cache_assembly_raw_fingerprint') AS cache_assembly_raw_fingerprint,
            json_extract(attrs,'$.cache_assembly_stable_prefix_fingerprint') AS cache_assembly_stable_prefix_fingerprint,
            json_extract(attrs,'$.cache_assembly_control_plan_snapshot_fingerprint') AS cache_assembly_control_plan_snapshot_fingerprint,
+           json_extract(attrs,'$.cache_assembly_control_plan_definition_fingerprint') AS cache_assembly_control_plan_definition_fingerprint,
+           json_extract(attrs,'$.cache_assembly_control_plan_state_fingerprint') AS cache_assembly_control_plan_state_fingerprint,
            json_extract(attrs,'$.cache_assembly_control_plan_continuation_fingerprint') AS cache_assembly_control_plan_continuation_fingerprint,
            json_extract(attrs,'$.cache_assembly_control_tool_failure_notice_fingerprint') AS cache_assembly_control_tool_failure_notice_fingerprint,
            json_extract(attrs,'$.cache_assembly_control_unknown_fingerprint') AS cache_assembly_control_unknown_fingerprint,

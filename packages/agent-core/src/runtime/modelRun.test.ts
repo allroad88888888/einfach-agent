@@ -1946,7 +1946,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
       expect(body.messages.filter((message) => message.role === 'user')).toEqual([
         { role: 'user', content: '完成这个多步骤任务' },
       ])
-      expect(body.messages.some((message) => message.content?.includes('<current_plan_snapshot>'))).toBe(true)
+      expect(body.messages.some((message) => message.content?.includes('<current_plan_definition>'))).toBe(true)
+      expect(body.messages.some((message) => message.content?.includes('<current_plan_state>'))).toBe(true)
       expect(body.messages.at(-1)).toMatchObject({
         role: 'system',
         content: expect.stringContaining('从持久化状态恢复'),
@@ -2019,11 +2020,13 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
         const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content?: string }> }
         expect(body.messages.at(-1)).toMatchObject({
           role: 'system',
-          content: expect.stringContaining('<current_plan_snapshot>'),
+          content: expect.stringContaining('<current_plan_state>'),
         })
         expect(body.messages.at(-1)?.content).toContain('"planId":"plan-premature"')
         expect(body.messages.at(-1)?.content).toContain('"revision":1')
-        expect(body.messages.at(-1)?.content).toContain('"stageId":"stage-current"')
+        expect(body.messages.at(-1)?.content).toContain('"currentStageId":"stage-current"')
+        expect(body.messages.at(-2)?.content).toContain('<current_plan_definition>')
+        expect(body.messages.at(-2)?.content).toContain('"stageId":"stage-current"')
         return jsonResponse('总结：整个任务已完成')
       }
       if (count === 2) {
