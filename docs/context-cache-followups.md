@@ -48,10 +48,13 @@ run 的 `cache_epoch_reason` 都是 `initial`，工具集均为 1 个。这只�
 
 **做法**：正常使用 app 若干个长会话（至少要有会话越过 `COST_SOFT_CAP_TOKENS = 200_000` 触发
 压缩，否则测不到东西），然后跑 [context-cache-cost.md 的验证 SQL](context-cache-cost.md#待验证)。
+验收只统计能以 `(run_id, llm_turn)` 关联到 `status='ok'` 的 `llm.chat` 的 context 事件；取消或
+供应商失败前已产生的投影事件只能说明尝试过，不得计入收益。
 
 **验收标准**（缺一不可）：
 
-1. `llm.context_projection_reused` 条数显著多于 `llm.context_compacted`；
+1. 已关联到成功请求的 `llm.context_projection_reused` 条数显著多于
+   `llm.context_compacted`；
 2. `reuse_count` 的最大值 > 1，说明确实出现了「一次压缩摊多轮」；
 3. 按 (scope, epoch) 去重后，`compaction_projection_changed` 的**真实失效次数**相对当轮压缩
    次数明显下降（理想形态：每个 run 只在首次触发压缩时失效一次）；

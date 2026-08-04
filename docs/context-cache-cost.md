@@ -124,27 +124,67 @@ Tauri 端 trace 落在 SQLite（macOS 路径如下，其他平台取对应的 Ta
 ⚠️ app 运行中该库有活动 WAL，**先复制一份再查**，不要直接在活动库上操作。
 
 ```sql
--- ① 复用是否真的发生：期望 reused 条数远多于 compacted
-SELECT name, COUNT(*) FROM trace_events
-WHERE name IN ('llm.context_compacted', 'llm.context_projection_reused')
-  AND date(timestamp/1000, 'unixepoch', 'localtime') = '<日期>'
-GROUP BY name;
+-- ① 完成请求上的复用与供应商命中：只统计能与 status='ok' 的 llm.chat
+--    以 (run_id, llm_turn) 关联的 context 事件；避免取消或失败请求污染结论。
+--    把 <start_ms>/<end_ms> 替换为当前桌面构建采样的 [start, end) 毫秒范围。
+WITH completed AS (
+  SELECT run_id,
+         CAST(json_extract(attrs, '$.llm_turn') AS INTEGER) AS llm_turn,
+         json_extract(attrs, '$.cache_metrics_status') AS cache_metrics_status,
+         CAST(json_extract(attrs, '$.cache_hit_tk') AS INTEGER) AS cache_hit_tk,
+         CAST(json_extract(attrs, '$.cache_miss_tk') AS INTEGER) AS cache_miss_tk
+  FROM trace_spans
+  WHERE name = 'llm.chat' AND status = 'ok'
+    AND started_at >= <start_ms> AND started_at < <end_ms>
+), projection_events AS (
+  SELECT run_id,
+         CAST(json_extract(attrs, '$.llm_turn') AS INTEGER) AS llm_turn,
+         name
+  FROM trace_events
+  WHERE name IN ('llm.context_compacted', 'llm.context_projection_reused')
+    AND timestamp >= <start_ms> AND timestamp < <end_ms>
+)
+SELECT p.name,
+       COUNT(*) AS 已关联成功请求数,
+       SUM(c.cache_metrics_status = 'available') AS 有供应商缓存指标数,
+       COALESCE(SUM(c.cache_hit_tk), 0) AS 供应商命中token,
+       COALESCE(SUM(c.cache_miss_tk), 0) AS 供应商未命中token
+FROM projection_events p
+JOIN completed c ON c.run_id = p.run_id AND c.llm_turn = p.llm_turn
+GROUP BY p.name;
 
--- ② 一次压缩摊了几轮：看 reuse_count 的最大值与分布
+-- ② 一次压缩摊了几轮：看成功请求上的 reuse_count 最大值与分布
+WITH completed AS (
+  SELECT run_id,
+         CAST(json_extract(attrs, '$.llm_turn') AS INTEGER) AS llm_turn
+  FROM trace_spans
+  WHERE name = 'llm.chat' AND status = 'ok'
+    AND started_at >= <start_ms> AND started_at < <end_ms>
+)
 SELECT MAX(json_extract(attrs, '$.reuse_count')) AS 最大摊轮数,
        ROUND(AVG(json_extract(attrs, '$.reuse_count'))) AS 均值
-FROM trace_events
-WHERE name = 'llm.context_projection_reused'
-  AND date(timestamp/1000, 'unixepoch', 'localtime') = '<日期>';
+FROM trace_events e
+JOIN completed c ON c.run_id = e.run_id
+  AND c.llm_turn = CAST(json_extract(e.attrs, '$.llm_turn') AS INTEGER)
+WHERE e.name = 'llm.context_projection_reused'
+  AND e.timestamp >= <start_ms> AND e.timestamp < <end_ms>;
 
 -- ③ 失效归因是否下降：按 (scope, epoch) 去重，compaction_projection_changed 应从 114 次明显回落
-WITH s AS (
-  SELECT json_extract(attrs, '$.cache_lane_scope_fingerprint') scope,
-         json_extract(attrs, '$.cache_epoch')                  epoch,
-         json_extract(attrs, '$.cache_epoch_reason')           reason
-  FROM trace_events
-  WHERE name = 'llm.context_snapshot'
-    AND date(timestamp/1000, 'unixepoch', 'localtime') = '<日期>')
+WITH completed AS (
+  SELECT run_id,
+         CAST(json_extract(attrs, '$.llm_turn') AS INTEGER) AS llm_turn
+  FROM trace_spans
+  WHERE name = 'llm.chat' AND status = 'ok'
+    AND started_at >= <start_ms> AND started_at < <end_ms>
+), s AS (
+  SELECT json_extract(e.attrs, '$.cache_lane_scope_fingerprint') scope,
+         json_extract(e.attrs, '$.cache_epoch')                  epoch,
+         json_extract(e.attrs, '$.cache_epoch_reason')           reason
+  FROM trace_events e
+  JOIN completed c ON c.run_id = e.run_id
+    AND c.llm_turn = CAST(json_extract(e.attrs, '$.llm_turn') AS INTEGER)
+  WHERE e.name = 'llm.context_snapshot'
+    AND e.timestamp >= <start_ms> AND e.timestamp < <end_ms>)
 SELECT reason,
        COUNT(*)                              AS 请求数,
        COUNT(DISTINCT scope || '#' || epoch) AS 真实失效次数,
@@ -152,12 +192,20 @@ SELECT reason,
 FROM s GROUP BY reason ORDER BY 真实失效次数 DESC;
 
 -- ④ 每轮真实新增内容（确认「未命中 ≠ 新内容」这一口径仍成立）
-WITH s AS (
-  SELECT json_extract(attrs, '$.runId') r,
-         json_extract(attrs, '$.messages_chars') mc, timestamp ts
-  FROM trace_events
-  WHERE name = 'llm.context_snapshot'
-    AND date(timestamp/1000, 'unixepoch', 'localtime') = '<日期>')
+WITH completed AS (
+  SELECT run_id,
+         CAST(json_extract(attrs, '$.llm_turn') AS INTEGER) AS llm_turn
+  FROM trace_spans
+  WHERE name = 'llm.chat' AND status = 'ok'
+    AND started_at >= <start_ms> AND started_at < <end_ms>
+), s AS (
+  SELECT e.run_id r,
+         json_extract(e.attrs, '$.messages_chars') mc, e.timestamp ts
+  FROM trace_events e
+  JOIN completed c ON c.run_id = e.run_id
+    AND c.llm_turn = CAST(json_extract(e.attrs, '$.llm_turn') AS INTEGER)
+  WHERE e.name = 'llm.context_snapshot'
+    AND e.timestamp >= <start_ms> AND e.timestamp < <end_ms>)
 SELECT ROUND(AVG(d)) AS 每轮新增字符均值, ROUND(MAX(d)) AS 峰值
 FROM (SELECT mc - LAG(mc) OVER (PARTITION BY r ORDER BY ts) d FROM s)
 WHERE d IS NOT NULL AND d > 0;
