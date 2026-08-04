@@ -13,6 +13,7 @@ import {
   f6ToolSetSteps,
   weightedHitRate,
   prefixStability,
+  requestAssemblyChanges,
 } from './lib.js'
 
 function parseArgs(argv) {
@@ -68,7 +69,18 @@ function loadRows(dbCopy, args) {
            json_extract(attrs,'$.cache_projection_current_item_role') AS cache_projection_current_item_role,
            json_extract(attrs,'$.cache_projection_previous_item_chars') AS cache_projection_previous_item_chars,
            json_extract(attrs,'$.cache_projection_current_item_chars') AS cache_projection_current_item_chars,
-           json_extract(attrs,'$.cache_projection_dynamic_controls_changed') AS cache_projection_dynamic_controls_changed
+           json_extract(attrs,'$.cache_projection_dynamic_controls_changed') AS cache_projection_dynamic_controls_changed,
+           json_extract(attrs,'$.cache_assembly_raw_fingerprint') AS cache_assembly_raw_fingerprint,
+           json_extract(attrs,'$.cache_assembly_stable_prefix_fingerprint') AS cache_assembly_stable_prefix_fingerprint,
+           json_extract(attrs,'$.cache_assembly_control_plan_snapshot_fingerprint') AS cache_assembly_control_plan_snapshot_fingerprint,
+           json_extract(attrs,'$.cache_assembly_control_plan_continuation_fingerprint') AS cache_assembly_control_plan_continuation_fingerprint,
+           json_extract(attrs,'$.cache_assembly_control_tool_failure_notice_fingerprint') AS cache_assembly_control_tool_failure_notice_fingerprint,
+           json_extract(attrs,'$.cache_assembly_control_unknown_fingerprint') AS cache_assembly_control_unknown_fingerprint,
+           json_extract(attrs,'$.cache_assembly_tool_names') AS cache_assembly_tool_names,
+           json_extract(attrs,'$.cache_assembly_tools_fingerprint') AS cache_assembly_tools_fingerprint,
+           json_extract(attrs,'$.cache_assembly_transform_changed') AS cache_assembly_transform_changed,
+           json_extract(attrs,'$.cache_assembly_prepare_changed') AS cache_assembly_prepare_changed,
+           json_extract(attrs,'$.cache_assembly_final_control_tail_changed') AS cache_assembly_final_control_tail_changed
     FROM trace_events WHERE name='llm.context_snapshot' ${where(args, 'timestamp')}`)
   const events = query(dbCopy, `
     SELECT run_id, name FROM trace_events
@@ -131,6 +143,24 @@ function printReport(rows) {
     }
   }
   console.log('  窗口内稳定 + 供应商仍报低命中 ⇒ 供应商侧因素(路由/建缓存延迟),不是本地请求不稳定')
+
+  console.log('\n== 请求组装来源归因（内容脱敏） ==')
+  const assemblyChanges = requestAssemblyChanges(snapshots)
+  if (!assemblyChanges.length) {
+    console.log('(没有新组装诊断字段：请用包含本次日志的桌面端至少完成两轮请求)')
+  }
+  for (const entry of assemblyChanges) {
+    const causes = entry.causes.map((cause) => {
+      if (cause.type === 'dynamic_control') return `动态控制:${cause.source}`
+      if (cause.type === 'tool_membership') return `工具集合:${cause.from || '无'}→${cause.to || '无'}`
+      if (cause.type === 'tool_schema') return '工具 schema 改写'
+      if (cause.type === 'stable_prefix') return '稳定前缀改写'
+      if (cause.type === 'transform_context') return 'transformContext 改写'
+      if (cause.type === 'prepare_request') return 'prepareRequest 改写'
+      return '动态控制尾巴被钩子改写'
+    }).join('；')
+    console.log(`run ${entry.runId.slice(0, 8)}…  轮 ${entry.fromTurn} → ${entry.toTurn}  ${causes}`)
+  }
 
   console.log('\n== 请求投影变更诊断（内容脱敏） ==')
   const transitions = snapshots.filter((row) => row.cache_projection_transition && row.cache_projection_transition !== 'initial')

@@ -138,3 +138,43 @@ export function prefixStability(chatSpans) {
   }
   return results
 }
+
+const REQUEST_CONTROL_SOURCES = ['plan_snapshot', 'plan_continuation', 'tool_failure_notice', 'unknown']
+
+/**
+ * 把相邻 context_snapshot 的脱敏组装字段归为具体来源。
+ * 只使用 fingerprint、数量与公开工具名，不读取 prompt 或 requestPreview。
+ */
+export function requestAssemblyChanges(snapshots) {
+  const byRun = new Map()
+  for (const row of snapshots) {
+    if (!row.run_id || !row.cache_assembly_raw_fingerprint) continue
+    const list = byRun.get(row.run_id) ?? []
+    list.push(row)
+    byRun.set(row.run_id, list)
+  }
+  const changes = []
+  for (const [runId, rows] of byRun) {
+    rows.sort((left, right) => (left.llm_turn ?? 0) - (right.llm_turn ?? 0))
+    for (let index = 1; index < rows.length; index += 1) {
+      const previous = rows[index - 1]
+      const current = rows[index]
+      const causes = []
+      if (previous.cache_assembly_stable_prefix_fingerprint !== current.cache_assembly_stable_prefix_fingerprint) causes.push({ type: 'stable_prefix' })
+      for (const source of REQUEST_CONTROL_SOURCES) {
+        const field = `cache_assembly_control_${source}_fingerprint`
+        if (previous[field] !== current[field]) causes.push({ type: 'dynamic_control', source })
+      }
+      if (previous.cache_assembly_tool_names !== current.cache_assembly_tool_names) {
+        causes.push({ type: 'tool_membership', from: previous.cache_assembly_tool_names, to: current.cache_assembly_tool_names })
+      } else if (previous.cache_assembly_tools_fingerprint !== current.cache_assembly_tools_fingerprint) {
+        causes.push({ type: 'tool_schema' })
+      }
+      if (current.cache_assembly_transform_changed) causes.push({ type: 'transform_context' })
+      if (current.cache_assembly_prepare_changed) causes.push({ type: 'prepare_request' })
+      if (current.cache_assembly_final_control_tail_changed) causes.push({ type: 'control_tail_rewritten' })
+      if (causes.length) changes.push({ runId, fromTurn: previous.llm_turn, toTurn: current.llm_turn, causes })
+    }
+  }
+  return changes
+}

@@ -4,6 +4,7 @@ import { FINISH_REASON_ITEM_NOTICES } from './core/plugins/finishReasonPlugin'
 import { getAbnormalFinishReason, type TurnEndEvent } from './core/loopHooks'
 import type { LoopBudget } from './loopBudget'
 import type { ModelTurnRequester } from './modelTurnRequester'
+import type { RequestControlSource } from './contextRequestAssemblyDiagnostics'
 import { newId } from './newId'
 import { assistantItemFromMessage } from './shared/preview'
 import { runToolCallBatch } from './toolCallBatch'
@@ -44,13 +45,23 @@ export async function runToolLoopCycle(input: {
   const failureNotice = failures.consume()
   if (failureNotice) base.trace.event('agent.tool_failure_notice', { tools: failureNotice.tools })
   const planContext = currentPlanContext(base.id, base.core)
-  const controls: ModelItem[] = [
-    ...(planContext ? [{ role: 'system' as const, content: planContext }] : []),
-    ...(base.state.planContinuation ? [{ role: 'system' as const, content: base.state.planContinuation }] : []),
-    ...(failureNotice ? [{ role: 'system' as const, content: failureNotice.text }] : []),
-  ]
+  const planContinuation = base.state.planContinuation
+  const controls: ModelItem[] = []
+  const controlSources: RequestControlSource[] = []
+  if (planContext) {
+    controls.push({ role: 'system', content: planContext })
+    controlSources.push('plan_snapshot')
+  }
+  if (planContinuation) {
+    controls.push({ role: 'system', content: planContinuation })
+    controlSources.push('plan_continuation')
+  }
+  if (failureNotice) {
+    controls.push({ role: 'system', content: failureNotice.text })
+    controlSources.push('tool_failure_notice')
+  }
   base.state.planContinuation = undefined
-  const modelTurn = await requester.request(turn, planStageId, controls)
+  const modelTurn = await requester.request(turn, planStageId, controls, controlSources)
   if ('inactive' in modelTurn) {
     endInactive(modelTurn.streamWriter)
     return 'finished'

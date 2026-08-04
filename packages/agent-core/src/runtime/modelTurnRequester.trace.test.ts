@@ -77,11 +77,20 @@ describe('model turn trace correlation', () => {
       dynamic_controls_count: 0,
       cache_projection_transition: 'initial',
       cache_projection_current_items: expect.any(Number),
+      cache_assembly_raw_items: expect.any(Number),
+      cache_assembly_control_plan_snapshot_items: 0,
+      cache_assembly_control_plan_continuation_items: 0,
+      cache_assembly_control_tool_failure_notice_items: 0,
+      cache_assembly_segment_mismatch: false,
+      cache_assembly_transform_changed: false,
+      cache_assembly_prepare_changed: false,
     })
     expect(request?.attrs).toMatchObject({
       runId: snapshot?.attrs?.runId,
       llm_turn: snapshot?.attrs?.llm_turn,
       dynamic_controls_count: snapshot?.attrs?.dynamic_controls_count,
+      cache_assembly_raw_fingerprint: snapshot?.attrs?.cache_assembly_raw_fingerprint,
+      cache_assembly_final_fingerprint: snapshot?.attrs?.cache_assembly_final_fingerprint,
     })
   })
 })

@@ -5,6 +5,7 @@ import {
   f6ToolSetSteps,
   weightedHitRate,
   prefixStability,
+  requestAssemblyChanges,
   stripTruncationTail,
 } from './lib.js'
 
@@ -103,5 +104,51 @@ describe('prefixStability', () => {
     const [result] = prefixStability(rows)
     expect(result.stable).toBe(true)
     expect(result.windowChars).toBe(500)
+  })
+})
+
+describe('requestAssemblyChanges', () => {
+  it('把动态尾巴变化拆分为计划、失败提示、工具集与钩子改写', () => {
+    const [entry] = requestAssemblyChanges([
+      {
+        run_id: 'r1', llm_turn: 1,
+        cache_assembly_raw_fingerprint: 'raw-1',
+        cache_assembly_stable_prefix_fingerprint: 'prefix',
+        cache_assembly_control_plan_snapshot_fingerprint: 'plan-1',
+        cache_assembly_control_plan_continuation_fingerprint: 'continue-1',
+        cache_assembly_control_tool_failure_notice_fingerprint: 'failure-1',
+        cache_assembly_control_unknown_fingerprint: 'unknown',
+        cache_assembly_tool_names: 'request_tool_schema',
+        cache_assembly_tools_fingerprint: 'tools-1',
+      },
+      {
+        run_id: 'r1', llm_turn: 2,
+        cache_assembly_raw_fingerprint: 'raw-2',
+        cache_assembly_stable_prefix_fingerprint: 'prefix',
+        cache_assembly_control_plan_snapshot_fingerprint: 'plan-2',
+        cache_assembly_control_plan_continuation_fingerprint: 'continue-1',
+        cache_assembly_control_tool_failure_notice_fingerprint: 'failure-2',
+        cache_assembly_control_unknown_fingerprint: 'unknown',
+        cache_assembly_tool_names: 'read_file,request_tool_schema',
+        cache_assembly_tools_fingerprint: 'tools-2',
+        cache_assembly_transform_changed: true,
+        cache_assembly_prepare_changed: true,
+        cache_assembly_final_control_tail_changed: true,
+      },
+    ])
+
+    expect(entry).toEqual({
+      runId: 'r1',
+      fromTurn: 1,
+      toTurn: 2,
+      causes: [
+        { type: 'dynamic_control', source: 'plan_snapshot' },
+        { type: 'dynamic_control', source: 'tool_failure_notice' },
+        { type: 'tool_membership', from: 'request_tool_schema', to: 'read_file,request_tool_schema' },
+        { type: 'transform_context' },
+        { type: 'prepare_request' },
+        { type: 'control_tail_rewritten' },
+      ],
+    })
   })
 })
