@@ -121,7 +121,19 @@ Tauri 端 trace 落在 SQLite（macOS 路径如下，其他平台取对应的 Ta
 ~/Library/Application Support/com.webagent.app/web-agent.db
 ```
 
-⚠️ app 运行中该库有活动 WAL，**先复制一份再查**，不要直接在活动库上操作。
+⚠️ app 运行中该库有活动 WAL，不能只复制主库文件；用 SQLite 的 backup API 取一致性只读副本，
+不要直接查询或修改活动库：
+
+```bash
+TRACE_SOURCE='<上面的数据库路径>'
+TRACE_COPY="$(mktemp -d)/web-agent-trace.db"
+sqlite3 "$TRACE_SOURCE" ".backup '$TRACE_COPY'"
+sqlite3 "$TRACE_COPY" "PRAGMA journal_mode=DELETE;"
+sqlite3 -readonly "$TRACE_COPY"
+```
+
+第三行只变更副本的 journal mode，使它能被只读打开。最后一行会进入副本的 SQLite shell；粘贴
+下面的 SQL，并将 `<start_ms>/<end_ms>` 换成当前桌面构建的采样窗口。
 
 ```sql
 -- ① 完成请求上的复用与供应商命中：只统计能与 status='ok' 的 llm.chat
