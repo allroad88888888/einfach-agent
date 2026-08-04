@@ -19,6 +19,7 @@ export type ContextCacheEpochReason =
   | 'initial'
   | 'profile_changed'
   | 'dynamic_control_changed'
+  // 已不再产生:尾巴纯顶位不再开新 epoch(2026-08-04 修正)。保留成员以兼容历史 trace 数据。
   | 'history_inserted_before_dynamic_tail'
   | 'compaction_projection_changed'
   | 'request_projection_changed'
@@ -171,27 +172,29 @@ export function createContextCacheTracker(): ContextCacheTracker {
           epoch += 1
           epochReason = 'profile_changed'
         } else if (!isPrefix(previous.projectionItemFingerprints, projectionItemFingerprints)) {
+          // ★ 必须先看去掉动态尾巴后的事实投影,再看尾巴本身 ★ —— 判定顺序反过来就是
+          // 2026-08-04 回归:压缩态 + 常驻尾巴控制项时,尾巴每轮被新历史顶位,旧逻辑的
+          // 「compacted 即 compaction_projection_changed」短路把每一轮都标成投影重写
+          // (epoch 2→7),而实际投影一直在复用(见回归观察文档)。
           const previousFactProjection = previous.dynamicTailCount > 0
             ? previous.projectionItemFingerprints.slice(0, -previous.dynamicTailCount)
             : previous.projectionItemFingerprints
           const nextFactProjection = dynamicTailCount > 0
             ? projectionItemFingerprints.slice(0, -dynamicTailCount)
             : projectionItemFingerprints
+          const factAppendOnly = isPrefix(previousFactProjection, nextFactProjection)
 
-          epoch += 1
-          if (previous.compacted || input.compacted) {
-            epochReason = 'compaction_projection_changed'
+          if (!factAppendOnly) {
+            epoch += 1
+            epochReason = previous.compacted || input.compacted
+              ? 'compaction_projection_changed'
+              : 'request_projection_changed'
           } else if (previous.dynamicControlFingerprint !== dynamicControlFingerprint) {
+            epoch += 1
             epochReason = 'dynamic_control_changed'
-          } else if (
-            previous.dynamicTailCount > 0
-            && isPrefix(previousFactProjection, nextFactProjection)
-            && nextFactProjection.length > previousFactProjection.length
-          ) {
-            epochReason = 'history_inserted_before_dynamic_tail'
-          } else {
-            epochReason = 'request_projection_changed'
           }
+          // factAppendOnly 且尾巴内容未变 = 常驻尾巴仅被新历史顶位:provider 只 miss 尾巴
+          // 那一小段,事实前缀仍然命中,不宣告新 epoch。
         }
       }
 

@@ -61,7 +61,13 @@ F1 已由修复后的真实长会话通过；后续只需在日常使用中继�
 当前摘要栏刻意显示的是最新请求，不能把它当作整次 run 的累计命中率。
 
 **做法**：正常使用 app 若干个长会话（至少要有会话越过 `COST_SOFT_CAP_TOKENS = 200_000` 触发
-压缩，否则测不到东西），然后跑 [context-cache-cost.md 的验证 SQL](context-cache-cost.md#待验证)。
+压缩，否则测不到东西），然后跑 `node scripts/cache-investigation/report.js`（F1/F2/F6 与
+前缀稳定性一键输出；等价 SQL 见 [context-cache-cost.md](context-cache-cost.md#待验证)）。
+
+**注意（2026-08-04）**：tracker 归因修复之前采的样本里，`compaction_projection_changed`
+的失效计数被「常驻尾巴顶位」污染（详见
+[回归观察](context-cache-regression-observation-2026-08-04.md)），验收③只能用修复后的
+新样本判定。
 验收只统计能以 `(run_id, llm_turn)` 关联到 `status='ok'` 的 `llm.chat` 的 context 事件；取消或
 供应商失败前已产生的投影事件只能说明尝试过，不得计入收益。
 
@@ -98,6 +104,10 @@ F1 已由修复后的真实长会话通过；后续只需在日常使用中继�
 
 **2026-08-04 结果**：24 个已成功关联、`dynamic_controls_count = 0` 的样本中，该原因是 **0**；
 另有 2 个动态尾巴样本也为 0。F2 按既定口径通过。
+
+**语义变更（2026-08-04 tracker 修复后）**：尾巴纯顶位不再开新 epoch，
+`history_inserted_before_dynamic_tail` 自此**不再产生**（类型成员保留以读取历史 trace）；
+尾巴内容变化归因 `dynamic_control_changed`。此后若在新样本里看到该原因，说明出现了回归。
 
 ---
 

@@ -56,11 +56,29 @@
 
 这两个信号相互矛盾：压缩插件说明稳定投影仍被复用，tracker 却把请求归因为投影改变。它不会改变实际发给模型的请求，但会误导 UI/trace 对缓存失效的归因，不能再把该字段直接当作供应商缓存失效证据。
 
-## 后续排查
+（复盘定位：矛盾由 tracker 判定顺序缺陷造成，机制与修复见下方「后续排查」第 2 条。）
 
-1. 为请求投影加入仅含长度与内容哈希的逐 item 前缀诊断，确认供应商实际收到的稳定前缀是否逐字一致；不记录原文。
-2. 修正 `ContextCacheTracker` 的归因：稳定压缩投影后只追加事实历史时，应保持同一 epoch，而非持续标记 `compaction_projection_changed`。
-3. 用相同的只读脚本连续跑至少 3 次，对照每轮 `cache_hit_tk` / `cache_miss_tk` 与 DeepSeek 控制台账单导出。首个验收门槛为加权命中率恢复到不低于 63.9%，并且增量压缩后的连续复用轮不再出现约 1% 的全量未命中。
+## 后续排查（2026-08-04 复盘更新）
+
+1. ~~为请求投影加入逐 item 前缀诊断~~ **已由现成数据替代**：取本 run 8 轮 `llm.chat` 的
+   `requestPreview` 逐字节对比，相邻任意两轮的前 80,012 字符（约 2 万+ token）完全一致，
+   分歧全部在截断点之后。由此形成归因锁：低命中轮 DeepSeek 报告的断点（约 1,900 token）
+   位于可证一致的区间内，且同样的字节在上一轮命中了 14 万+ token——**约 1% 命中的坏轮是
+   供应商侧行为（best-effort 路由/建缓存延迟），不是本地请求不稳定**。该对比已自动化为
+   `scripts/cache-investigation/report.js` 的「前缀稳定性」段。
+2. ~~修正 `ContextCacheTracker` 的归因~~ **已定位并修复**：`contextCache.ts` 旧判定顺序里
+   「compacted 即 `compaction_projection_changed`」短路在最前，常驻尾巴控制项
+   （本 run 第 2–7 轮各 1 条）每轮被新历史顶位就触发非前缀分支，于是每轮误标失效、
+   epoch 2→7。修复后先比对去尾的事实投影：纯顶位不再开新 epoch，尾巴内容变化归因
+   `dynamic_control_changed`，只有投影区自身改写才标 `compaction_projection_changed`。
+   附回归单测（`contextCache.test.ts`）。
+3. 用相同的只读脚本连续跑至少 3 次，跑完执行 `node scripts/cache-investigation/report.js`，
+   并对照 DeepSeek 控制台账单导出。验收口径修正为两条：
+   - **我们侧（可控，硬门槛）**：report 的前缀稳定性段全部「稳定」（压缩/延伸轮的分歧除外），
+     且 tracker 修复后按 (scope, epoch) 去重的失效接近「每 run 首压一次」；
+   - **供应商侧（统计口径，非逐轮承诺）**：多次采样的加权命中率回归 63.9% 基线。
+     单轮出现约 1% 全量未命中属供应商 best-effort 路由的正常波动，**不作为回归依据**——
+     本地无法消除，历史基线也是同一路由体制下的统计值。
 
 ## 相关实现与资料
 

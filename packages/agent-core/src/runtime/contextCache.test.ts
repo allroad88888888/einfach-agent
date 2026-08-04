@@ -129,8 +129,9 @@ describe('createContextCacheTracker', () => {
 
     expect(second.profileId).toBe(first.profileId)
     expect(second.systemFingerprint).toBe(first.systemFingerprint)
-    // 尾巴仍会被历史顶位（skill 本就该随输入变），但自定义指令已不在被顶的那一段里。
-    expect(second.epochReason).toBe('history_inserted_before_dynamic_tail')
+    // 尾巴仍会被历史顶位（skill 内容未变），但顶位只 miss 尾巴一小段 → 不再开新 epoch。
+    expect(second.epoch).toBe(first.epoch)
+    expect(second.epochReason).toBe(first.epochReason)
   })
 
   it('尾巴为空时，纯追加的连续多轮不再 bump epoch（阶段 3：skill 清单迁出尾巴的核心收益）', () => {
@@ -191,7 +192,7 @@ describe('createContextCacheTracker', () => {
     expect(new Set(profiles).size).toBe(lanes.length)
   })
 
-  it('动态尾部前插入新历史会推进 epoch 并说明原因', () => {
+  it('常驻尾巴仅被新历史顶位（内容未变）→ 同一 epoch，不再宣告失效', () => {
     const tracker = createContextCacheTracker()
     const first = tracker.observe(input({
       messages: [system, user, skill],
@@ -202,8 +203,47 @@ describe('createContextCacheTracker', () => {
       dynamicControls: [skill],
     }))
 
+    expect(second.epoch).toBe(first.epoch)
+    expect(second.epochReason).toBe(first.epochReason)
+  })
+
+  it('回归 2026-08-04：压缩复用 + 常驻尾巴逐轮顶位 → epoch 不随轮次攀升', () => {
+    // 实测形态：8 轮只读会话，投影一直复用，但每轮带 1 条尾巴控制项被新历史顶位，
+    // 旧逻辑因 compacted 短路把每轮标成 compaction_projection_changed，epoch 2→7。
+    const control: ModelItem = { role: 'system', content: 'plan context' }
+    const tracker = createContextCacheTracker()
+    const history: ModelItem[] = [user]
+    const round = () => tracker.observe(input({
+      messages: [system, ...history, control],
+      dynamicControls: [control],
+      compacted: true,
+    }))
+
+    const first = round()
+    for (let turn = 0; turn < 5; turn += 1) {
+      history.push({ role: 'assistant', content: `answer ${turn}` }, { role: 'user', content: `next ${turn}` })
+      const next = round()
+      expect(next.epoch).toBe(first.epoch)
+      expect(next.epochReason).toBe(first.epochReason)
+    }
+  })
+
+  it('压缩态下尾巴内容变化 → dynamic_control_changed，不再被 compacted 短路吞掉', () => {
+    const tracker = createContextCacheTracker()
+    const first = tracker.observe(input({
+      messages: [system, user, skill],
+      dynamicControls: [skill],
+      compacted: true,
+    }))
+    const changed: ModelItem = { role: 'system', content: 'new plan stage' }
+    const second = tracker.observe(input({
+      messages: [system, user, { role: 'assistant', content: 'answer' }, changed],
+      dynamicControls: [changed],
+      compacted: true,
+    }))
+
     expect(second.epoch).toBe(first.epoch + 1)
-    expect(second.epochReason).toBe('history_inserted_before_dynamic_tail')
+    expect(second.epochReason).toBe('dynamic_control_changed')
   })
 
   it('动态控制变化与压缩投影重写使用明确的 epoch 原因', () => {
