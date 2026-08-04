@@ -48,7 +48,7 @@ export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolea
     appendToolResult(base.id, input.callId, JSON.stringify(result), base.core, input.planStageId)
   }
   if (gate.kind === 'schema_autoloaded') {
-    base.state.visible = ensureToolLoaded(base.id, base.state.visible, input.name, base.core, base.maxTurnTools - 1)
+    base.state.visible = ensureToolLoaded(base.id, base.state.visible, input.name, base.core, base.maxTurnTools - 1, base.state.planPinnedTools)
     base.state.recentToolNames = touchRecentToolName(base.state.recentToolNames, input.name, base.maxTurnTools - 1)
     const result = gate.result as Record<string, unknown> & { hint?: string }
     base.trace.event('tool.schema_autoloaded', { toolName: input.name, callId: input.callId, schema_autoloaded: true, argsPreview: tracePreview(input.args), resultPreview: tracePreview(result) })
@@ -76,7 +76,7 @@ export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolea
   let found: boolean
   let result: Record<string, unknown>
   if (toolName) {
-    base.state.visible = ensureToolLoaded(base.id, base.state.visible, toolName, base.core, base.maxTurnTools - 1)
+    base.state.visible = ensureToolLoaded(base.id, base.state.visible, toolName, base.core, base.maxTurnTools - 1, base.state.planPinnedTools)
     const schema = base.core.tools.loadSchema(toolName)
     found = schema !== undefined
     if (schema) base.state.recentToolNames = touchRecentToolName(base.state.recentToolNames, toolName, base.maxTurnTools - 1)

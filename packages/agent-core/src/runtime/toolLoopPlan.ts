@@ -9,6 +9,12 @@ const DEFAULT_MAX_AGENT_TURNS = 32
 const PLAN_AGENT_TURNS_PER_STAGE = 24
 const MAX_PLAN_AGENT_TURNS = 256
 
+/** Whether a structured plan currently owns the loop (approved/active). */
+export function planIsExecuting(id: string, core: CoreInstance): boolean {
+  const plan = core.getSessionStore(id).store.getter(planAtom)
+  return plan !== undefined && plan !== null && EXECUTING_PLAN_STATUSES.has(plan.status)
+}
+
 /** Gets the in-progress stage that owns all writes for this model turn. */
 export function currentPlanStageId(id: string, core: CoreInstance): string | undefined {
   return core.getSessionStore(id).store.getter(planAtom)?.stages.find((stage) => stage.status === 'in_progress')?.id

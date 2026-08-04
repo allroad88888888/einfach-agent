@@ -100,6 +100,7 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
         state: {
           visible,
           recentToolNames: visible.map((tool) => tool.name).reverse(),
+          planPinnedTools: [],
           ...(opts.resumePlan ? { planContinuation: planResumeNotice() } : {}),
           consecutivePlanTextTurns: 0,
           stageTurnsOnGuard: 0,

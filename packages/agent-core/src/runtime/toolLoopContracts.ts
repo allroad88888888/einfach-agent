@@ -19,6 +19,8 @@ export interface ToolLoopControl {
 export interface ToolLoopMutableState {
   visible: LoadedTool[]
   recentToolNames: string[]
+  /** 活跃计划内被 pin 的工具名(不被 LRU 淘汰);计划结束清空,新 run 从空开始。 */
+  planPinnedTools: string[]
   planContinuation?: string
   consecutivePlanTextTurns: number
   guardStageId?: string

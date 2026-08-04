@@ -19,6 +19,7 @@ import { sessionsAtom } from '../state/rootAtoms'
 import { patchRun } from '../state/sessionWriters'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
 import { persistSessions } from './persistenceBridge'
+import { selectToolsWithinLimit } from './planToolPins'
 
 // 简介：给“模型调用了本轮未暴露工具”生成可自愈的结构化结果。
 // 详情：不泄漏未加载 schema，只明确指出 lazy-tool 协议和下一次应发起的元工具调用。
@@ -64,11 +65,12 @@ function visibleToolLimit(maxVisibleTools: number | undefined): number | undefin
   return Math.max(0, Math.floor(maxVisibleTools))
 }
 
-function trimVisibleTools(tools: LoadedTool[], maxVisibleTools: number | undefined): LoadedTool[] {
-  const limit = visibleToolLimit(maxVisibleTools)
-  if (limit === undefined || tools.length <= limit) return tools
-  if (limit === 0) return []
-  return tools.slice(-limit)
+function trimVisibleTools(
+  tools: LoadedTool[],
+  maxVisibleTools: number | undefined,
+  pinnedToolNames?: readonly string[],
+): LoadedTool[] {
+  return selectToolsWithinLimit(tools, visibleToolLimit(maxVisibleTools), pinnedToolNames)
 }
 
 function sameRegistration(left: LoadedTool, right: LoadedTool): boolean {
@@ -164,6 +166,7 @@ export function refreshVisibleTools(
   currentTools: LoadedTool[],
   core: CoreInstance = defaultCore,
   maxVisibleTools?: number,
+  pinnedToolNames?: readonly string[],
 ): LoadedTool[] {
   const refreshed: LoadedTool[] = []
   const seen = new Set<string>()
@@ -188,7 +191,7 @@ export function refreshVisibleTools(
   }
   refreshed.reverse()
 
-  const trimmed = trimVisibleTools(refreshed, maxVisibleTools)
+  const trimmed = trimVisibleTools(refreshed, maxVisibleTools, pinnedToolNames)
   if (trimmed !== refreshed) changed = true
   const nextTools = changed ? trimmed : currentTools
   persistVisibleToolNames(id, currentTools, nextTools, core)
@@ -205,13 +208,14 @@ export function ensureToolLoaded(
   toolName: string,
   core: CoreInstance = defaultCore,
   maxVisibleTools?: number,
+  pinnedToolNames?: readonly string[],
 ): LoadedTool[] {
   const tool = core.tools.loadSchema(toolName)
   const currentIndex = currentTools.findIndex((loadedTool) => loadedTool.name === toolName)
   if (!tool) {
     if (currentIndex < 0) return currentTools
     const withoutRemoved = currentTools.filter((loadedTool) => loadedTool.name !== toolName)
-    const nextTools = trimVisibleTools(withoutRemoved, maxVisibleTools)
+    const nextTools = trimVisibleTools(withoutRemoved, maxVisibleTools, pinnedToolNames)
     persistVisibleToolNames(id, currentTools, nextTools, core)
     return nextTools
   }
@@ -232,7 +236,7 @@ export function ensureToolLoaded(
     ...currentTools.filter((loadedTool) => loadedTool.name !== toolName),
     existing && sameRegistration(existing, tool) ? existing : tool,
   ]
-  const nextTools = trimVisibleTools(promoted, maxVisibleTools)
+  const nextTools = trimVisibleTools(promoted, maxVisibleTools, pinnedToolNames)
   persistVisibleToolNames(
     id,
     currentTools,
