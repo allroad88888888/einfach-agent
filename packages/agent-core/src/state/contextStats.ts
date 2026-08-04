@@ -38,8 +38,8 @@ export interface ContextCacheStats {
 }
 
 export interface ContextCacheTotals {
-  profileId: string
-  epoch: number
+  // 一个 run 内可能因工具集或压缩投影切换多个 cache epoch；累计值不能被这些边界清零。
+  runId: string
   measuredRequests: number
   hitTokens: number
   missTokens: number

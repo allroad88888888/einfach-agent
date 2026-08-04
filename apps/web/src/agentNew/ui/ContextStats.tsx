@@ -64,6 +64,10 @@ function cacheTotals(stats: ContextStatsSnapshot): string {
   )} / miss ${fmt(stats.cacheTotals.missTokens)} / rate ${fmtRate(stats.cacheTotals.hitRate)}`
 }
 
+function displayedCacheRate(stats: ContextStatsSnapshot): number | undefined {
+  return stats.cacheTotals?.hitRate ?? stats.usage?.cacheHitRate
+}
+
 function longSessionWarning(stats: ContextStatsSnapshot): string | undefined {
   const before = stats.estimatedTokensBeforeCompaction
   if (typeof before !== 'number' || before <= COST_SOFT_CAP_TOKENS) return undefined
@@ -89,8 +93,8 @@ export function ContextStats() {
     <details className="agentnew-context-stats" aria-label="上下文统计">
       <summary className="agentnew-context-stats-summary">
         <span>{summary}</span>
-        {typeof stats.usage?.cacheHitRate === 'number' ? (
-          <span>cache {fmtRate(stats.usage.cacheHitRate)}</span>
+        {typeof displayedCacheRate(stats) === 'number' ? (
+          <span>run cache {fmtRate(displayedCacheRate(stats))}</span>
         ) : null}
         <span>tools {fmt(stats.toolsCount)}</span>
       </summary>
@@ -120,9 +124,9 @@ export function ContextStats() {
                 )} / total ${fmt(stats.usage?.totalTokens)}`
               : '暂无'}
           </strong>
-          <span>缓存命中</span>
+          <span>本轮缓存命中</span>
           <strong>{cacheUsage(stats)}</strong>
-          <span>本次运行请求投影累计（本地诊断）</span>
+          <span>本次运行累计命中</span>
           <strong>{cacheTotals(stats)}</strong>
           <span>请求投影档案（本地）</span>
           <strong title={stats.cache?.profileId}>

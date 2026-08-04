@@ -108,8 +108,7 @@ describe('ContextStats', () => {
         metricsStatus: 'available',
       },
       cacheTotals: {
-        profileId: 'main:deepseek:deepseek-chat:agent-runtime-prefix-v2',
-        epoch: 1,
+        runId: 'r1',
         measuredRequests: 2,
         hitTokens: 100,
         missTokens: 50,
@@ -119,12 +118,12 @@ describe('ContextStats', () => {
 
     renderWithStore(<ContextStats />, { store })
 
-    expect(screen.getByText('cache 67%')).toBeInTheDocument()
+    expect(screen.getByText('run cache 67%')).toBeInTheDocument()
     expect(screen.getByText('hit 80 / miss 40 (unknown) / rate 67%')).toBeInTheDocument()
     expect(screen.getByText('2 requests / hit 100 / miss 50 / rate 67%')).toBeInTheDocument()
     expect(screen.getByText('main / epoch 1 (initial) / full-history')).toBeInTheDocument()
     expect(
-      screen.getByText('本次运行请求投影累计（本地诊断）'),
+      screen.getByText('本次运行累计命中'),
     ).toBeInTheDocument()
     expect(screen.getByText('请求投影档案（本地）')).toBeInTheDocument()
     expect(

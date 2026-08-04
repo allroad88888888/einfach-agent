@@ -66,7 +66,7 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
       const compaction = draft.compaction!
       const cacheProfile = cacheTracker.observe({ lane: 'main', scope: `${base.id}:${base.runId}:${ROOT_AGENT_PATH}`, vendor: base.settings.vendor, model: base.settings.model, messages, systemContent: base.stablePrefix.content, tools, toolChoice: 'auto', thinking: thinking?.type, reasoningEffort: base.settings.reasoning_effort, compacted: compaction.compacted, dynamicControls: controls, requestMode: 'tool_loop' })
       const previousTotals = base.core.getSessionStore(base.id).store.getter(contextStatsAtom)?.cacheTotals
-      const cacheTotals = previousTotals?.profileId === cacheProfile.profileId && previousTotals.epoch === cacheProfile.epoch ? previousTotals : undefined
+      const cacheTotals = previousTotals?.runId === base.runId ? previousTotals : undefined
       const contextStats = buildContextStatsSnapshot({ runId: base.runId, turnId: base.turnId, llmTurn: turn + 1, vendor: base.settings.vendor, model: base.settings.model, messages, tools, cacheProfile, cacheTotals, inputBudgetTokens: contextInputBudgetTokens(base.settings.vendor, base.settings.model, base.settings.max_tokens), estimatedTokensBeforeCompaction: compaction.compacted ? compaction.estimatedTokensBefore : undefined })
       setContextStats(base.id, contextStats, base.core)
       injectToolTranscript(base.id, tools, toolSetSchemaFingerprint(tools), base.core)
@@ -92,7 +92,7 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
       endSpan(llmSpan, 'ok', () => ({ finish_reason: choice?.finish_reason ?? null, tool_calls_count: toolCalls.length, content_chars: responseChars(message?.content), reasoning_chars: responseChars(message?.reasoning_content), response_id: response.id, response_model: response.model, adapter_retry_attempt: retries, cache_metrics_status: normalizeCacheUsage(response.usage) ? 'available' : 'unavailable', responsePreview: llmTracePreview(response), ...usageTraceAttrs(response.usage) }))
       if (!base.control.isCurrent() || !base.control.isRunning() || base.opts.signal.aborted) return { inactive: true, streamWriter }
       const responseCacheUsage = normalizeCacheUsage(response.usage)
-      setContextStats(base.id, { ...contextStats, usage: usageStats(response.usage), cache: { ...contextStats.cache!, metricsStatus: responseCacheUsage ? 'available' : 'unavailable' }, cacheTotals: accumulateCacheTotals(cacheTotals, response.usage, cacheProfile), finishReason: choice?.finish_reason ?? null, responseModel: response.model }, base.core)
+      setContextStats(base.id, { ...contextStats, usage: usageStats(response.usage), cache: { ...contextStats.cache!, metricsStatus: responseCacheUsage ? 'available' : 'unavailable' }, cacheTotals: accumulateCacheTotals(cacheTotals, response.usage, base.runId), finishReason: choice?.finish_reason ?? null, responseModel: response.model }, base.core)
       return { response, choice, message, toolCalls, tools, exposedRegistrationVersions, streamWriter }
     },
   }

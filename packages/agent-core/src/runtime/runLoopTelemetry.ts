@@ -70,18 +70,15 @@ export function usageStats(usage: ModelChatResponse['usage']): ContextUsageStats
 export function accumulateCacheTotals(
   previous: ContextCacheTotals | undefined,
   usage: ModelChatResponse['usage'],
-  profile: ContextCacheProfile,
+  runId: string,
 ): ContextCacheTotals | undefined {
-  const scopedPrevious = previous?.profileId === profile.profileId && previous.epoch === profile.epoch
-    ? previous
-    : undefined
+  const scopedPrevious = previous?.runId === runId ? previous : undefined
   const cache = normalizeCacheUsage(usage)
   if (typeof cache?.hitTokens !== 'number' || typeof cache.missTokens !== 'number') return scopedPrevious
   const hitTokens = (scopedPrevious?.hitTokens ?? 0) + cache.hitTokens
   const missTokens = (scopedPrevious?.missTokens ?? 0) + cache.missTokens
   return {
-    profileId: profile.profileId,
-    epoch: profile.epoch,
+    runId,
     measuredRequests: (scopedPrevious?.measuredRequests ?? 0) + 1,
     hitTokens,
     missTokens,
