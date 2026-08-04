@@ -4,7 +4,13 @@ import type {
   ModelToolChoice,
 } from '@web-agent/ai'
 import { toolSetSchemaFingerprint } from './modelTurn'
-import { fnv1a32 } from './shared/hash'
+import { contextCacheFingerprint } from './contextCacheFingerprint'
+import {
+  contextProjectionDiagnostics,
+  describeContextProjection,
+  type ContextProjectionDiagnostics,
+  type ContextProjectionItemDiagnostic,
+} from './contextProjectionDiagnostics'
 
 export const CONTEXT_CACHE_PROTOCOL_VERSION = 'agent-runtime-prefix-v2'
 
@@ -37,6 +43,7 @@ export interface ContextCacheProfile {
   systemFingerprint: string
   requestProjectionFingerprint: string
   compactionBoundary: ContextCacheCompactionBoundary
+  projectionDiagnostics: ContextProjectionDiagnostics
 }
 
 export interface ObserveContextCacheInput {
@@ -70,7 +77,7 @@ interface LaneState {
   epoch: number
   epochReason: ContextCacheEpochReason
   profileId: string
-  projectionItemFingerprints: string[]
+  projectionItems: ContextProjectionItemDiagnostic[]
   compacted: boolean
   dynamicControlFingerprint: string
   dynamicTailCount: number
@@ -80,34 +87,12 @@ export interface ContextCacheTracker {
   observe(input: ObserveContextCacheInput): ContextCacheProfile
 }
 
-function canonicalSerialize(value: unknown): string {
-  if (value === null) return 'null'
-  if (value === undefined) return '"[undefined]"'
-  if (typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value)
-  if (typeof value === 'string') return JSON.stringify(value)
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => canonicalSerialize(item)).join(',')}]`
-  }
-  if (typeof value === 'object') {
-    const record = value as Record<string, unknown>
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${canonicalSerialize(record[key])}`)
-      .join(',')}}`
-  }
-  return JSON.stringify(String(value))
-}
-
-function fingerprint(kind: string, value: unknown): string {
-  return `${kind}-v2-fnv1a32-${fnv1a32(canonicalSerialize(value))}`
-}
-
 function isPrefix(prefix: readonly string[], value: readonly string[]): boolean {
   return prefix.length <= value.length && prefix.every((item, index) => item === value[index])
 }
 
 function toolChoiceFingerprint(toolChoice: ModelToolChoice | undefined): string {
-  return fingerprint('tool-choice', toolChoice ?? 'provider-default')
+  return contextCacheFingerprint('tool-choice', toolChoice ?? 'provider-default')
 }
 
 function profileId(input: ObserveContextCacheInput, args: {
@@ -115,7 +100,7 @@ function profileId(input: ObserveContextCacheInput, args: {
   toolSetFingerprint: string
   systemFingerprint: string
 }): string {
-  const idFingerprint = fingerprint('profile', {
+  const idFingerprint = contextCacheFingerprint('profile', {
     lane: input.lane,
     laneScopeFingerprint: args.laneScopeFingerprint,
     vendor: input.vendor,
@@ -143,19 +128,18 @@ export function createContextCacheTracker(): ContextCacheTracker {
 
   return {
     observe(input): ContextCacheProfile {
-      const laneScopeFingerprint = fingerprint('scope', input.scope)
+      const laneScopeFingerprint = contextCacheFingerprint('scope', input.scope)
       const stateKey = `${input.lane}:${laneScopeFingerprint}`
       const toolSetFingerprint = toolSetSchemaFingerprint(input.tools)
-      const systemFingerprint = fingerprint('system', input.systemContent)
-      const projectionItemFingerprints = input.messages.map((message) =>
-        fingerprint('message', message),
-      )
-      const requestProjectionFingerprint = fingerprint(
+      const systemFingerprint = contextCacheFingerprint('system', input.systemContent)
+      const projectionItemsForRequest = describeContextProjection(input.messages)
+      const projectionItemFingerprints = projectionItemsForRequest.map((item) => item.fingerprint)
+      const requestProjectionFingerprint = contextCacheFingerprint(
         'request',
         projectionItemFingerprints,
       )
       const dynamicControls = input.dynamicControls ?? []
-      const dynamicControlFingerprint = fingerprint('dynamic-controls', dynamicControls)
+      const dynamicControlFingerprint = contextCacheFingerprint('dynamic-controls', dynamicControls)
       const dynamicTailCount = dynamicControls.length
       const nextProfileId = profileId(input, {
         laneScopeFingerprint,
@@ -163,6 +147,12 @@ export function createContextCacheTracker(): ContextCacheTracker {
         systemFingerprint,
       })
       const previous = states.get(stateKey)
+      const diagnostics = contextProjectionDiagnostics(
+        previous,
+        projectionItemsForRequest,
+        dynamicTailCount,
+        dynamicControlFingerprint,
+      )
 
       let epoch = previous?.epoch ?? 1
       let epochReason: ContextCacheEpochReason = previous?.epochReason ?? 'initial'
@@ -171,14 +161,14 @@ export function createContextCacheTracker(): ContextCacheTracker {
         if (previous.profileId !== nextProfileId) {
           epoch += 1
           epochReason = 'profile_changed'
-        } else if (!isPrefix(previous.projectionItemFingerprints, projectionItemFingerprints)) {
+        } else if (!isPrefix(previous.projectionItems.map((item) => item.fingerprint), projectionItemFingerprints)) {
           // ★ 必须先看去掉动态尾巴后的事实投影,再看尾巴本身 ★ —— 判定顺序反过来就是
           // 2026-08-04 回归:压缩态 + 常驻尾巴控制项时,尾巴每轮被新历史顶位,旧逻辑的
           // 「compacted 即 compaction_projection_changed」短路把每一轮都标成投影重写
           // (epoch 2→7),而实际投影一直在复用(见回归观察文档)。
           const previousFactProjection = previous.dynamicTailCount > 0
-            ? previous.projectionItemFingerprints.slice(0, -previous.dynamicTailCount)
-            : previous.projectionItemFingerprints
+            ? previous.projectionItems.slice(0, -previous.dynamicTailCount).map((item) => item.fingerprint)
+            : previous.projectionItems.map((item) => item.fingerprint)
           const nextFactProjection = dynamicTailCount > 0
             ? projectionItemFingerprints.slice(0, -dynamicTailCount)
             : projectionItemFingerprints
@@ -202,7 +192,7 @@ export function createContextCacheTracker(): ContextCacheTracker {
         epoch,
         epochReason,
         profileId: nextProfileId,
-        projectionItemFingerprints,
+        projectionItems: projectionItemsForRequest,
         compacted: input.compacted,
         dynamicControlFingerprint,
         dynamicTailCount,
@@ -219,6 +209,7 @@ export function createContextCacheTracker(): ContextCacheTracker {
         systemFingerprint,
         requestProjectionFingerprint,
         compactionBoundary: input.compacted ? 'compacted-history' : 'full-history',
+        projectionDiagnostics: diagnostics,
       }
     },
   }

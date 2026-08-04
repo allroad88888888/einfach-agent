@@ -57,8 +57,18 @@ function loadRows(dbCopy, args) {
            json_extract(attrs,'$.cache_lane_scope_fingerprint') AS cache_lane_scope_fingerprint,
            json_extract(attrs,'$.cache_epoch') AS cache_epoch,
            json_extract(attrs,'$.cache_epoch_reason') AS cache_epoch_reason,
+           json_extract(attrs,'$.llm_turn') AS llm_turn,
            json_extract(attrs,'$.tool_set_fingerprint') AS tool_set_fingerprint,
-           json_extract(attrs,'$.tools_count') AS tools_count
+           json_extract(attrs,'$.tools_count') AS tools_count,
+           json_extract(attrs,'$.cache_projection_transition') AS cache_projection_transition,
+           json_extract(attrs,'$.cache_projection_common_prefix_items') AS cache_projection_common_prefix_items,
+           json_extract(attrs,'$.cache_projection_fact_common_prefix_items') AS cache_projection_fact_common_prefix_items,
+           json_extract(attrs,'$.cache_projection_first_changed_item_index') AS cache_projection_first_changed_item_index,
+           json_extract(attrs,'$.cache_projection_previous_item_role') AS cache_projection_previous_item_role,
+           json_extract(attrs,'$.cache_projection_current_item_role') AS cache_projection_current_item_role,
+           json_extract(attrs,'$.cache_projection_previous_item_chars') AS cache_projection_previous_item_chars,
+           json_extract(attrs,'$.cache_projection_current_item_chars') AS cache_projection_current_item_chars,
+           json_extract(attrs,'$.cache_projection_dynamic_controls_changed') AS cache_projection_dynamic_controls_changed
     FROM trace_events WHERE name='llm.context_snapshot' ${where(args, 'timestamp')}`)
   const events = query(dbCopy, `
     SELECT run_id, name FROM trace_events
@@ -121,6 +131,23 @@ function printReport(rows) {
     }
   }
   console.log('  窗口内稳定 + 供应商仍报低命中 ⇒ 供应商侧因素(路由/建缓存延迟),不是本地请求不稳定')
+
+  console.log('\n== 请求投影变更诊断（内容脱敏） ==')
+  const transitions = snapshots.filter((row) => row.cache_projection_transition && row.cache_projection_transition !== 'initial')
+  if (!transitions.length) {
+    console.log('(没有新诊断字段：请使用包含本次日志的桌面端完成一轮测试)')
+    return
+  }
+  for (const row of transitions) {
+    const point = row.cache_projection_first_changed_item_index
+    const roles = row.cache_projection_previous_item_role || row.cache_projection_current_item_role
+      ? `${row.cache_projection_previous_item_role ?? '结束'}→${row.cache_projection_current_item_role ?? '结束'}`
+      : '无变化'
+    const chars = row.cache_projection_previous_item_chars ?? row.cache_projection_current_item_chars
+      ? ` 字符 ${row.cache_projection_previous_item_chars ?? 0}→${row.cache_projection_current_item_chars ?? 0}`
+      : ''
+    console.log(`run ${row.run_id.slice(0, 8)}…  轮 ${row.llm_turn}  ${row.cache_projection_transition}  共同前缀 ${row.cache_projection_common_prefix_items ?? 0}（事实 ${row.cache_projection_fact_common_prefix_items ?? 0}） 首差项 ${point ?? '无'} ${roles}${chars}${row.cache_projection_dynamic_controls_changed ? ' 动态控制已变' : ''}`)
+  }
 }
 
 const args = parseArgs(process.argv.slice(2))

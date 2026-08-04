@@ -75,6 +75,8 @@ describe('model turn trace correlation', () => {
       runId: expect.any(String),
       llm_turn: 1,
       dynamic_controls_count: 0,
+      cache_projection_transition: 'initial',
+      cache_projection_current_items: expect.any(Number),
     })
     expect(request?.attrs).toMatchObject({
       runId: snapshot?.attrs?.runId,
