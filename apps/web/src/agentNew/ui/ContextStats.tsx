@@ -1,8 +1,10 @@
 // 最近一次 LLM 请求的上下文统计（临时 UI 态，不进 messages/checkpoint）。
 // ---------------------------------------------------------------------------
-// 只读 contextStatsAtom：发送前显示估算 tokens；响应后若 provider 返回 usage，则显示真实 usage。
+// 读写 contextStatsAtom：发送前显示估算 tokens；响应后若 provider 返回 usage，则显示真实 usage。
 
-import { useAtomValue } from '@einfach/react'
+import { useAtom } from '@einfach/react'
+import { useEffect } from 'react'
+import { recoverCacheTotalsFromTrace } from '@web-agent/core/observability/traceCacheTotals'
 import {
   COST_SOFT_CAP_TOKENS,
   contextInputBudgetTokens,
@@ -75,7 +77,25 @@ function longSessionWarning(stats: ContextStatsSnapshot): string | undefined {
 }
 
 export function ContextStats() {
-  const stats = useAtomValue(contextStatsAtom)
+  const [stats, setStats] = useAtom(contextStatsAtom)
+  const cacheTotalsRunId = stats?.cacheTotals?.runId
+
+  useEffect(() => {
+    if (!stats?.cacheTotals || cacheTotalsRunId === stats.runId) return undefined
+    let current = true
+    void recoverCacheTotalsFromTrace(stats.runId)
+      .then((cacheTotals) => {
+        if (!current || !cacheTotals) return
+        setStats((previous) => (
+          previous?.runId === stats.runId && previous.cacheTotals?.runId !== stats.runId
+            ? { ...previous, cacheTotals }
+            : previous
+        ))
+      })
+      .catch(() => {})
+    return () => { current = false }
+  }, [cacheTotalsRunId, setStats, stats?.cacheTotals, stats?.runId])
+
   if (!stats) return null
 
   const currentTokens = currentContextTokens(stats)
