@@ -18,7 +18,7 @@ import {
   type ReactNode,
 } from 'react'
 import { revertTurnToDraft } from '@web-agent/core/runtime/commands'
-import { checkpointsAtom, itemsAtom, runAtom } from '@web-agent/core/state/sessionAtoms'
+import { checkpointsAtom, itemsAtom, planAtom, runAtom } from '@web-agent/core/state/sessionAtoms'
 import {
   assistantStreamAtom,
   browserCardsAtom,
@@ -38,6 +38,7 @@ import { TimelineItemView } from './TimelineItemView'
 import {
   flattenTimelineVirtualEntries,
   groupTimelineThinkingEntries,
+  insertCompletedPlanRecord,
   timelineVirtualEntryVersion,
   type TimelineRenderEntry,
 } from './messageTimelineViewModel'
@@ -47,6 +48,7 @@ import { useWebTimelineRendererRegistry } from './WebTimelineRendererRegistryPro
 export function MessageList() {
   const items = useAtomValue(itemsAtom)
   const run = useAtomValue(runAtom)
+  const plan = useAtomValue(planAtom)
   const assistantStream = useAtomValue(assistantStreamAtom)
   const checkpoints = useAtomValue(checkpointsAtom)
   const cards = useAtomValue(browserCardsAtom)
@@ -105,17 +107,12 @@ export function MessageList() {
     return groupTimelineThinkingEntries(merged)
   }, [assistantStream, historicalItems.length])
 
-  const historicalVirtualEntries = useMemo(
-    () => flattenTimelineVirtualEntries(historicalEntries, expandedGroups),
-    [historicalEntries, expandedGroups],
-  )
-  const streamingVirtualEntries = useMemo(
-    () => flattenTimelineVirtualEntries(streamingEntries, expandedGroups),
-    [streamingEntries, expandedGroups],
-  )
   const virtualEntries = useMemo(
-    () => [...historicalVirtualEntries, ...streamingVirtualEntries],
-    [historicalVirtualEntries, streamingVirtualEntries],
+    () => flattenTimelineVirtualEntries(
+      insertCompletedPlanRecord([...historicalEntries, ...streamingEntries], plan),
+      expandedGroups,
+    ),
+    [historicalEntries, streamingEntries, expandedGroups, plan],
   )
   const latestEntry = virtualEntries.at(-1)
   const {
@@ -132,11 +129,10 @@ export function MessageList() {
   })
   const visibleEntries = virtualEntries.slice(messageWindow.start, messageWindow.end)
 
-  if (historicalEntries.length === 0 && streamingEntries.length === 0) {
+  if (virtualEntries.length === 0) {
     return (
       <div ref={listRef} className="agentnew-message-list">
         <div className="agentnew-message-empty">开始对话吧</div>
-        <CompletedPlanRecord />
       </div>
     )
   }
@@ -186,6 +182,8 @@ export function MessageList() {
               <TimelineItemView item={entry.entry} registry={timelineRendererRegistry} />
             </div>
           )
+        } else if (entry.kind === 'completed-plan-record') {
+          content = <CompletedPlanRecord />
         } else {
           const renderedItem = <TimelineItemView item={entry} registry={timelineRendererRegistry} />
           if (entry.kind !== 'message') {
@@ -226,10 +224,7 @@ export function MessageList() {
         )
       })}
       {messageWindow.end >= virtualEntries.length ? (
-        <>
-          <CompletedPlanRecord />
-          <RunDurationStatus items={items} run={run} />
-        </>
+        <RunDurationStatus items={items} run={run} />
       ) : null}
     </div>
   )

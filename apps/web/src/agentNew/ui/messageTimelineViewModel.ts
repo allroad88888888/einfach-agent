@@ -5,9 +5,17 @@ import {
   type TimelineItem,
   type TimelineThinkingItem,
 } from '@web-agent/core/timeline'
+import type { PlanSnapshot } from '@web-agent/core/planning/types'
+
+export interface CompletedPlanRecordEntry {
+  kind: 'completed-plan-record'
+  createdAt: number
+  sortKey: string
+}
 
 export type TimelineRenderEntry =
   | Exclude<TimelineItem, TimelineThinkingItem>
+  | CompletedPlanRecordEntry
   | {
       kind: 'thinking-group'
       createdAt: number
@@ -51,6 +59,48 @@ export function groupTimelineThinkingEntries(entries: TimelineItem[]): TimelineR
   return grouped
 }
 
+function createsPlan(entry: TimelineRenderEntry): boolean {
+  const thinkingEntries = entry.kind === 'thinking-group' ? entry.entries : [entry]
+  return thinkingEntries.some((thinkingEntry) => (
+    thinkingEntry.kind === 'tool-execution-group' &&
+    thinkingEntry.executions.some((execution) => execution.call?.function.name === 'create_plan')
+  ))
+}
+
+/** Inserts the completed-plan record after the turn that created its plan. */
+export function insertCompletedPlanRecord(
+  entries: readonly TimelineRenderEntry[],
+  plan: PlanSnapshot | undefined,
+): TimelineRenderEntry[] {
+  if (plan?.status !== 'completed') return [...entries]
+
+  let closestEntryIndex = -1
+  let planCreationIndex = -1
+  entries.forEach((entry, index) => {
+    if (entry.createdAt <= plan.createdAt) closestEntryIndex = index
+    if (createsPlan(entry) && entry.createdAt <= plan.createdAt) planCreationIndex = index
+  })
+  if (planCreationIndex === -1) {
+    for (let index = entries.length - 1; index >= 0; index -= 1) {
+      if (createsPlan(entries[index])) {
+        planCreationIndex = index
+        break
+      }
+    }
+  }
+  const insertionIndex = planCreationIndex === -1 ? closestEntryIndex : planCreationIndex
+  const record: CompletedPlanRecordEntry = {
+    kind: 'completed-plan-record',
+    createdAt: plan.createdAt,
+    sortKey: `completed-plan:${plan.id}`,
+  }
+  return [
+    ...entries.slice(0, insertionIndex + 1),
+    record,
+    ...entries.slice(insertionIndex + 1),
+  ]
+}
+
 export function flattenTimelineVirtualEntries(
   entries: TimelineRenderEntry[],
   expandedGroups: Record<string, boolean>,
@@ -92,6 +142,7 @@ export function timelineVirtualEntryVersion(entry: TimelineVirtualEntry): string
     }
     return entry.sortKey
   }
+  if (entry.kind === 'completed-plan-record') return entry.sortKey
   if (entry.kind === 'card') return `${entry.sortKey}:${entry.card.title.length}:${entry.card.body?.length ?? 0}`
   const item = entry.conversationItem.item
   const length = item.role === 'assistant' || item.role === 'user' ? item.content?.length ?? 0 : 0
