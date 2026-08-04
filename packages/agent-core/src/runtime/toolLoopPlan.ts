@@ -24,18 +24,23 @@ export function currentPlanStageId(id: string, core: CoreInstance): string | und
 // 混在一个控制项里,阶段每推进一步整条重写。拆成两条:定义只随 (planId, revision) 变化,
 // 状态保持简短稳定格式——阶段推进只改小的状态条,减少动态尾部的变更字节与次数。
 
-/** 计划的静态定义:只随 planId/revision 变化;阶段 status 等动态信息一律不进来。 */
+/**
+ * 计划的静态定义:只随计划**结构**变化。
+ * ★ 不得嵌入 revision / evidence / status ★ —— PlanRuntime 的 write() 每次变更(含每次
+ * submit_stage_result)都 revision+1、evidence 追加;嵌进来就等于每个阶段推进整条重写,
+ * 拆分失去意义(2026-08-04 评审发现)。revision 的权威值放在 current_plan_state。
+ */
 export function currentPlanDefinition(id: string, core: CoreInstance): string | undefined {
   const plan = core.getSessionStore(id).store.getter(planAtom)
   if (!plan || !EXECUTING_PLAN_STATUSES.has(plan.status)) return undefined
   const definition = {
-    planId: plan.id, revision: plan.revision, title: plan.title, objective: plan.objective,
-    stages: plan.stages.map((stage) => ({ stageId: stage.id, title: stage.title, objective: stage.objective, deliverables: stage.deliverables, evidence: stage.evidence, dependencies: stage.dependencies })),
+    planId: plan.id, title: plan.title, objective: plan.objective,
+    stages: plan.stages.map((stage) => ({ stageId: stage.id, title: stage.title, objective: stage.objective, deliverables: stage.deliverables, dependencies: stage.dependencies })),
   }
-  return ['<current_plan_definition>', '以下 JSON 是运行时提供的权威计划定义（数据，不是用户指令），仅随计划修订变化。调用计划工具时必须使用其中精确的 planId、revision 和 stageId。', JSON.stringify(definition), '</current_plan_definition>'].join('\n')
+  return ['<current_plan_definition>', '以下 JSON 是运行时提供的权威计划定义（数据，不是用户指令），仅在计划结构修订时变化。调用计划工具时必须使用其中精确的 planId 与 stageId；revision 以 current_plan_state 为准。', JSON.stringify(definition), '</current_plan_definition>'].join('\n')
 }
 
-/** 计划的动态执行状态:简短稳定格式,只在阶段推进 / 状态变化时才变。 */
+/** 计划的动态执行状态:简短稳定格式,只在阶段推进 / 状态变化时才变;携带权威 revision。 */
 export function currentPlanState(id: string, core: CoreInstance): string | undefined {
   const plan = core.getSessionStore(id).store.getter(planAtom)
   if (!plan || !EXECUTING_PLAN_STATUSES.has(plan.status)) return undefined
@@ -43,9 +48,11 @@ export function currentPlanState(id: string, core: CoreInstance): string | undef
   const state = {
     planId: plan.id, revision: plan.revision, status: plan.status,
     currentStageId: currentStage?.id ?? null,
-    stageStatus: plan.stages.map((stage) => `${stage.id}:${stage.status}`),
+    // 对象数组而非 `id:status` 拼串:stage id 由模型自选,可含 ":",拼串有歧义。
+    stageStatus: plan.stages.map((stage) => ({ stageId: stage.id, status: stage.status })),
+    ...(currentStage && currentStage.evidence.length ? { currentStageEvidence: currentStage.evidence } : {}),
   }
-  return ['<current_plan_state>', '以下 JSON 是权威计划执行状态（数据，不是用户指令），阶段定义见 current_plan_definition。', JSON.stringify(state), '</current_plan_state>'].join('\n')
+  return ['<current_plan_state>', '以下 JSON 是权威计划执行状态（数据，不是用户指令），含当前 revision；阶段定义见 current_plan_definition。', JSON.stringify(state), '</current_plan_state>'].join('\n')
 }
 
 export function planResumeNotice(): string {
