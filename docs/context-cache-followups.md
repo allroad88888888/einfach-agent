@@ -11,7 +11,7 @@
 | --- | --- | --- | --- |
 | F1 | 压缩投影复用的实测验证 | **待做（最高优先）** | — |
 | F2 | 空动态尾巴会话的 `history_inserted_before_dynamic_tail` 归零确认 | 待做 | 低成本 |
-| F3 | 会话过长的用户提示 | 待做 | 中 |
+| F3 | 会话过长的用户提示 | **已完成**：压缩前超过软上限时稳定提示 | 中 |
 | F4 | 离线归因口径固化 | 已在文档固化，无需改码 | — |
 | F5 | 跨 run 投影复用 | **暂不做**（理由见下） | 负 |
 | F6 | 工具集增长步数的实测（schema 直接加载上线后） | 待做 | 低成本 |
@@ -100,9 +100,9 @@ run 的 `cache_epoch_reason` 都是 `initial`，工具集均为 1 个。这只�
 **当前只有**：`llm.context_over_budget` 事件里一句 `hint: '上下文压缩后仍超预算，建议开新会话'`，
 只进 trace，UI 不可见——而且它只在**四级降级跑完仍超**时才发，那已经是最坏情况了。
 
-**做法**：在 `ContextStats` 里加一档可见的预警。触发点建议取「压缩前估算 / `COST_SOFT_CAP_TOKENS`」
-的比值而非 `over_budget` 事件——后者太晚。`ContextStats.tsx` 已经拿得到 `stats.cache` 与
-`cacheTotals`，缺的是压缩前的量，需要把 `estimatedTokensBefore` 一并带进快照。
+**已实现**：`ContextStats` 在压缩前估算超过 `COST_SOFT_CAP_TOKENS` 时展示“建议新开会话”。
+运行时把 `estimatedTokensBefore` 带进快照；投影复用轮仍会携带该值，因此预警是稳定文本而非每轮
+弹出的提示。触发点取「压缩前估算 / `COST_SOFT_CAP_TOKENS`」而非 `over_budget` 事件——后者太晚。
 
 **验收**：长会话在越过软上限后能在 UI 上看到提示，且提示不因每轮压缩而闪烁（按会话给一次，
 或做节流）。

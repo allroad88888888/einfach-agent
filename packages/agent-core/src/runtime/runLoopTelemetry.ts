@@ -104,6 +104,7 @@ export function buildContextStatsSnapshot(args: {
   cacheProfile: ContextCacheProfile
   cacheTotals?: ContextCacheTotals
   inputBudgetTokens: number
+  estimatedTokensBeforeCompaction?: number
 }): ContextStatsSnapshot {
   const roles: ContextStatsSnapshot['roles'] = {
     system: emptyRoleStats(), user: emptyRoleStats(), assistant: emptyRoleStats(), tool: emptyRoleStats(),
@@ -125,6 +126,7 @@ export function buildContextStatsSnapshot(args: {
     systemChars: roles.system.chars, messagesChars, toolsChars, totalChars: messagesChars + toolsChars,
     estimatedTokens: roles.system.estimatedTokens + roles.user.estimatedTokens
       + roles.assistant.estimatedTokens + roles.tool.estimatedTokens + estimateTokensFromText(toolsText),
+    estimatedTokensBeforeCompaction: args.estimatedTokensBeforeCompaction,
     inputBudgetTokens: args.inputBudgetTokens,
     roles,
     toolNames: toolNames(args.tools),

@@ -49,7 +49,23 @@ describe('ContextStats', () => {
     expect(screen.getByText(/^tools 1$/)).toBeInTheDocument()
     expect(screen.getByText('deepseek/deepseek-chat')).toBeInTheDocument()
     expect(screen.getByText('request_tool_schema')).toBeInTheDocument()
+    expect(screen.queryByText(/建议新开会话/)).toBeNull()
     expect(screen.queryByText(/system 1/)).toBeNull()
+  })
+
+  it('压缩前超过会话软上限时稳定提示新开会话', () => {
+    const store = createStore()
+    store.setter(contextStatsAtom, {
+      ...baseStats,
+      estimatedTokensBeforeCompaction: 240_000,
+    })
+
+    renderWithStore(<ContextStats />, { store })
+
+    expect(screen.getByText('上下文 25% · 建议新开会话')).toBeInTheDocument()
+    expect(
+      screen.getByText('本轮压缩前约 240,000 tokens，已超过 200,000 的会话软上限；建议新开会话。'),
+    ).toBeInTheDocument()
   })
 
   it('provider 返回 usage 后优先展示真实 usage 摘要', () => {

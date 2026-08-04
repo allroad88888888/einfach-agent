@@ -3,7 +3,10 @@
 // 只读 contextStatsAtom：发送前显示估算 tokens；响应后若 provider 返回 usage，则显示真实 usage。
 
 import { useAtomValue } from '@einfach/react'
-import { contextInputBudgetTokens } from '@web-agent/core/runtime/core/plugins/compactionPlugin'
+import {
+  COST_SOFT_CAP_TOKENS,
+  contextInputBudgetTokens,
+} from '@web-agent/core/runtime/core/plugins/compactionPlugin'
 import { contextStatsAtom, type ContextStatsSnapshot } from '@web-agent/core/state/transientAtoms'
 
 const numberFormatter = new Intl.NumberFormat('en-US')
@@ -61,6 +64,12 @@ function cacheTotals(stats: ContextStatsSnapshot): string {
   )} / miss ${fmt(stats.cacheTotals.missTokens)} / rate ${fmtRate(stats.cacheTotals.hitRate)}`
 }
 
+function longSessionWarning(stats: ContextStatsSnapshot): string | undefined {
+  const before = stats.estimatedTokensBeforeCompaction
+  if (typeof before !== 'number' || before <= COST_SOFT_CAP_TOKENS) return undefined
+  return `本轮压缩前约 ${fmt(before)} tokens，已超过 ${fmt(COST_SOFT_CAP_TOKENS)} 的会话软上限；建议新开会话。`
+}
+
 export function ContextStats() {
   const stats = useAtomValue(contextStatsAtom)
   if (!stats) return null
@@ -71,7 +80,10 @@ export function ContextStats() {
   const maxContextTokens = stats.inputBudgetTokens
     ?? contextInputBudgetTokens(stats.vendor, stats.model)
   const contextPercentage = Math.round((currentTokens / maxContextTokens) * 100)
-  const summary = `上下文 ${contextPercentage}%`
+  const sessionWarning = longSessionWarning(stats)
+  const summary = sessionWarning
+    ? `上下文 ${contextPercentage}% · 建议新开会话`
+    : `上下文 ${contextPercentage}%`
 
   return (
     <details className="agentnew-context-stats" aria-label="上下文统计">
@@ -88,6 +100,12 @@ export function ContextStats() {
           <strong>{`${stats.vendor}/${stats.model}`}</strong>
           <span>估算 tokens</span>
           <strong>{fmt(stats.estimatedTokens)}</strong>
+          {sessionWarning ? (
+            <>
+              <span>会话建议</span>
+              <strong>{sessionWarning}</strong>
+            </>
+          ) : null}
           <span>上下文占用</span>
           <strong>
             {fmt(currentTokens)} / {fmt(maxContextTokens)} tokens ({contextPercentage}%)
