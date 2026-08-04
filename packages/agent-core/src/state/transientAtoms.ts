@@ -5,6 +5,7 @@ export {
   alwaysAllowedToolsAtom,
   assistantStreamAtom,
   browserCardsAtom,
+  completedPlanRecordExpandedAtom,
   composerDraftAtom,
   contextStatsAtom,
   expandedPlanStagesAtom,

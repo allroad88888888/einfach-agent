@@ -44,6 +44,9 @@ export const expandedPlanStagesAtom = atom<Record<string, boolean>>({})
 // 当前会话计划面板整体是否展开。
 export const planPanelExpandedAtom = atom(true)
 
+// 当前会话已完成计划记录是否展开；记录随消息列表滚动，不占用执行操作区。
+export const completedPlanRecordExpandedAtom = atom(false)
+
 // 当前会话最近一次 LLM 调用的上下文统计；不进 messages、不持久化、不回发给 model。
 export const contextStatsAtom = atom<ContextStatsSnapshot | undefined>(undefined)
 

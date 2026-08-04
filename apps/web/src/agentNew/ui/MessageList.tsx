@@ -33,6 +33,7 @@ import {
   messageWindowAtom,
 } from './messageWindowModel'
 import { RunDurationStatus } from './RunDurationStatus'
+import { CompletedPlanRecord } from './CompletedPlanRecord'
 import { TimelineItemView } from './TimelineItemView'
 import {
   flattenTimelineVirtualEntries,
@@ -132,7 +133,12 @@ export function MessageList() {
   const visibleEntries = virtualEntries.slice(messageWindow.start, messageWindow.end)
 
   if (historicalEntries.length === 0 && streamingEntries.length === 0) {
-    return <div className="agentnew-message-empty">开始对话吧</div>
+    return (
+      <div ref={listRef} className="agentnew-message-list">
+        <div className="agentnew-message-empty">开始对话吧</div>
+        <CompletedPlanRecord />
+      </div>
+    )
   }
 
   return (
@@ -219,9 +225,12 @@ export function MessageList() {
           </SlidingWindowRow>
         )
       })}
-      {messageWindow.end >= virtualEntries.length
-        ? <RunDurationStatus items={items} run={run} />
-        : null}
+      {messageWindow.end >= virtualEntries.length ? (
+        <>
+          <CompletedPlanRecord />
+          <RunDurationStatus items={items} run={run} />
+        </>
+      ) : null}
     </div>
   )
 }

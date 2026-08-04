@@ -15,7 +15,7 @@ import { AskUserQuestionCard } from './AskUserQuestionCard'
 import { ToolConfirmCard } from './ToolConfirmCard'
 import { ContextStats } from './ContextStats'
 import { Composer } from './Composer'
-import { PlanPanel } from './PlanPanel'
+import { ActivePlanPanel } from './ActivePlanPanel'
 import { SettingsCenter } from './SettingsCenter'
 import { reportReactCommit } from '../../performanceDiagnostics'
 
@@ -31,8 +31,8 @@ export function AppShell() {
           <>
           {/* SaveArtifact 属于「当前对话内容」的一部分，排在 MessageList 之后。 */}
           <MessageList />
-          <Profiler id="PlanPanel" onRender={reportReactCommit}>
-            <PlanPanel />
+          <Profiler id="ActivePlanPanel" onRender={reportReactCommit}>
+            <ActivePlanPanel />
           </Profiler>
           {/* 工具进度条：显示「工具正在干啥」，紧跟消息列表。 */}
           <ToolActivity />
