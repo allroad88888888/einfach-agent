@@ -26,7 +26,19 @@
 // 协议或砍掉最后一条 user。调用方据此决定是否提示用户开新会话。
 
 import type { AssistantItem, ModelItem, ToolItem } from '@web-agent/ai'
+import {
+  estimateItemTokens,
+  estimateItemsTokens,
+  estimateItemsTokensUpperBound,
+} from './contextCompactionEstimates'
 import { stringForStats } from './shared/preview'
+
+export {
+  estimateItemTokens,
+  estimateItemsTokens,
+  estimateItemsTokensUpperBound,
+  estimateTokensFromText,
+} from './contextCompactionEstimates'
 
 // 摘要占位里的标记字段名。带上它才能做幂等判定（压缩过的结果不再二次包裹），
 // UI / 测试也可据此识别「这条是被省略过的历史工具结果」。
@@ -66,6 +78,12 @@ function compactedNoteFor(
 export interface ContextCompactionBudget {
   maxTokens: number
   reservedTokens?: number
+  /**
+   * Optional lower target used only after the normal request budget has overflowed.
+   * `effectiveBudgetTokens` and `withinBudget` still describe the actual request
+   * limit; this merely leaves deliberate room for a subsequent append.
+   */
+  targetTokens?: number
   keepRecentTurns?: number
   toolResultHeadChars?: number
   toolResultTailChars?: number
@@ -86,27 +104,6 @@ export interface ContextCompactionResult {
   effectiveBudgetTokens: number
   summarizedToolResults: number
   droppedItems: number
-}
-
-// 简介：token 估算（与 modelRun 同款口径，CC5）。
-// 详情：CJK 按 1.8 字/token、其余按 4 字符/token。刻意保持和 modelRun 里那份私有实现逐字一致。
-export function estimateTokensFromText(text: string): number {
-  if (!text) return 0
-  const cjkChars = text.match(/[\u3400-\u9fff\uf900-\ufaff]/g)?.length ?? 0
-  const otherChars = Math.max(0, text.length - cjkChars)
-  return Math.ceil(cjkChars / 1.8 + otherChars / 4)
-}
-
-// 简介：单条 message 的估算 token 数。
-export function estimateItemTokens(item: ModelItem): number {
-  return estimateTokensFromText(stringForStats(item))
-}
-
-// 简介：整个 messages 数组的估算 token 数（= modelRun 里 roles.*.estimatedTokens 之和）。
-export function estimateItemsTokens(items: readonly ModelItem[]): number {
-  let total = 0
-  for (const item of items) total += estimateItemTokens(item)
-  return total
 }
 
 // ---------------------------------------------------------------------------
@@ -153,76 +150,6 @@ export function estimateItemsTokens(items: readonly ModelItem[]): number {
 //   · 每字符系数 1.5 —— 唯一【随正文长度线性放大】的项，也就是唯一的承重墙。
 //     正文一大，常数余量就被摊薄到可忽略，安全性全靠它。所以它是理论最小值，
 //     一格都不能再往下调（单测 contextCompaction.test.ts 里有专门摊薄常数余量的用例盯着它）。
-
-const JSON_MAX_ESCAPE_EXPANSION = 6 // 一个输入字符最多被转义成 \uXXXX，即 6 个 ASCII 字符
-const CHARS_PER_TOKEN_ASCII = 4 // estimateTokensFromText 里非 CJK 的折算率
-const CHARS_PER_TOKEN_CJK = 1.8 // 同上，CJK 的折算率
-const PRESCAN_TOKENS_PER_CHAR = Math.max(
-  JSON_MAX_ESCAPE_EXPANSION / CHARS_PER_TOKEN_ASCII,
-  1 / CHARS_PER_TOKEN_CJK,
-)
-
-// 标量字面量（数字 / 布尔 / null）序列化后的最长长度。JS 数字最长形如
-// -1.7976931348623157e+308（24 字符），留 24 足够；undefined / function 会被 stringify 整个丢掉，
-// 用同一个额度多算即可（多算不破坏上界）。
-const PRESCAN_SCALAR_CHARS = 24
-// 递归护栏：环状引用靠深度上限兜住，共享子图的组合爆炸靠节点上限兜住。
-// 触顶一律返回 Infinity → 粗筛判定失败 → 回落到精确路径（只亏这点白跑的指针遍历，不会出错）。
-const PRESCAN_MAX_DEPTH = 12
-const PRESCAN_MAX_NODES = 20_000
-
-interface PrescanState {
-  nodes: number
-}
-
-// 简介：不做序列化，估算一个值 JSON.stringify 后的「输入字符总数」（骨架 + 各字符串原始长度）。
-// 详情：只读 .length 与 Object.keys，复杂度是 O(字段数) 而非 O(字符数)。返回 Infinity 表示
-//   「这个值的序列化长度无从保证」（环、超深、带 toJSON、bigint 等），调用方须回落到精确计算。
-function rawCharsOf(value: unknown, depth: number, state: PrescanState): number {
-  state.nodes += 1
-  if (state.nodes > PRESCAN_MAX_NODES || depth > PRESCAN_MAX_DEPTH) return Number.POSITIVE_INFINITY
-
-  if (typeof value === 'string') return value.length + 2 // 两个引号
-  if (value === null || typeof value === 'number' || typeof value === 'boolean') return PRESCAN_SCALAR_CHARS
-  if (typeof value === 'undefined' || typeof value === 'function') return PRESCAN_SCALAR_CHARS
-  // bigint 会让 JSON.stringify 抛错、symbol 会被静默丢弃 —— 都交给精确路径，不猜。
-  if (typeof value !== 'object') return Number.POSITIVE_INFINITY
-
-  // toJSON 会把序列化产物换成任意别的东西（典型：Date → 26 字符的字符串），字符长度无从预估。
-  if (typeof (value as { toJSON?: unknown }).toJSON === 'function') return Number.POSITIVE_INFINITY
-
-  if (Array.isArray(value)) {
-    let total = 2 + Math.max(0, value.length - 1) // [ ] 与元素间逗号
-    for (const entry of value) {
-      total += rawCharsOf(entry, depth + 1, state)
-      if (!Number.isFinite(total)) return Number.POSITIVE_INFINITY
-    }
-    return total
-  }
-
-  const record = value as Record<string, unknown>
-  const keys = Object.keys(record) // 与 JSON.stringify 同口径：只看自有可枚举键
-  let total = 2 + Math.max(0, keys.length - 1) // { } 与键值对间逗号
-  for (const key of keys) {
-    total += key.length + 3 // "键": 的两个引号与一个冒号
-    total += rawCharsOf(record[key], depth + 1, state)
-    if (!Number.isFinite(total)) return Number.POSITIVE_INFINITY
-  }
-  return total
-}
-
-// 简介：estimateItemsTokens 的【上界】，不做任何 JSON.stringify。
-// 详情：保证 estimateItemsTokensUpperBound(items) >= estimateItemsTokens(items)（推导见上）。
-//   无法保证时返回 Infinity —— 调用方于是必然走精确路径，永远不会因为粗筛而漏压。
-export function estimateItemsTokensUpperBound(items: readonly ModelItem[]): number {
-  const state: PrescanState = { nodes: 0 }
-  let rawChars = 0
-  for (const item of items) {
-    rawChars += rawCharsOf(item, 0, state)
-    if (!Number.isFinite(rawChars)) return Number.POSITIVE_INFINITY
-  }
-  return Math.ceil(rawChars * PRESCAN_TOKENS_PER_CHAR) + items.length
-}
 
 // ---------------------------------------------------------------------------
 // 单元切分（CC3 的载体）
@@ -425,6 +352,10 @@ export function compactContext(
   budget: ContextCompactionBudget,
 ): ContextCompactionResult {
   const effectiveBudget = Math.max(0, (budget.maxTokens || 0) - (budget.reservedTokens ?? 0))
+  const requestedTarget = budget.targetTokens ?? effectiveBudget
+  const targetBudget = Number.isFinite(requestedTarget)
+    ? Math.min(effectiveBudget, Math.max(0, requestedTarget))
+    : effectiveBudget
 
   // ① 廉价粗筛：token 上界都没超预算 → 精确值必然也没超（推导见 estimateItemsTokensUpperBound
   //    上方注释），直接走「未超预算」分支，一次序列化都不做。绝大多数轮次走这条。
@@ -456,7 +387,9 @@ export function compactContext(
   let summarizedToolResults = 0
   let droppedItems = 0
 
-  const done = (): boolean => total <= effectiveBudget
+  // 触发压缩后可以收敛到比请求硬预算更低的目标，给下一轮 append 留出余量；
+  // `withinBudget` 仍只按实际请求预算判定，不能把「没达到优化目标」误报成请求超限。
+  const done = (): boolean => total <= targetBudget
 
   const replaceAt = (index: number, item: ModelItem): void => {
     const next = estimateItemTokens(item)

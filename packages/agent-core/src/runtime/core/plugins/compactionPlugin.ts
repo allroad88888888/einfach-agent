@@ -73,6 +73,9 @@ export const CONTEXT_SAFETY_MARGIN_RATIO = 0.08
 // 所以压缩预算取 min(硬窗口, 成本软上限)：硬窗口防 400，软上限防账单，两者职责分开。
 // 200K ≈ 单轮 $0.087（同价目），且压缩摘掉的是可再生的历史工具正文、不动对话主干。
 export const COST_SOFT_CAP_TOKENS = 200_000
+// 已压缩投影若刚好填满请求预算，下一轮哪怕只追加一条常规模型输出也无法复用，只能再次重压。
+// 这段空间覆盖一次常规 tool-loop 追加，并在连续小轮次中让同一投影服务多轮。
+export const PROJECTION_REUSE_HEADROOM_TOKENS = 24_000
 
 // 简介：计算一次请求可用于输入上下文的总额度。
 // 详情：这是界面展示占用百分比时应使用的分母：先取本地实际执行预算（硬窗口与成本上限较小者），
@@ -293,6 +296,10 @@ export function applyCompaction(
   // 复用路径要在【不调用 compactContext】的前提下自己判预算，所以这里先算一份；两处口径必须
   // 一致，否则会出现「复用判定说放得下、真压缩却认为超了」的分叉。
   const effectiveBudget = Math.max(0, budgetTokens - reservedTokens)
+  const projectionTargetTokens =
+    cache && effectiveBudget > PROJECTION_REUSE_HEADROOM_TOKENS
+      ? effectiveBudget - PROJECTION_REUSE_HEADROOM_TOKENS
+      : undefined
 
   // ── 复用命中：前缀逐字不变，provider 的 KV cache 整段可用，本轮一次压缩都不做。
   const reused = cache ? tryReuseProjection(cache, factHistory, effectiveBudget) : undefined
@@ -340,6 +347,7 @@ export function applyCompaction(
   const compaction = compactContext(factHistory, {
     maxTokens: budgetTokens,
     reservedTokens,
+    targetTokens: projectionTargetTokens,
     keepRecentTurns: DEFAULT_KEEP_RECENT_TURNS,
     replayUnsafeToolNames: draft.replayUnsafeToolNames,
   })
