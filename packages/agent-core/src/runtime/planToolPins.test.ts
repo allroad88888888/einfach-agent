@@ -25,6 +25,23 @@ describe('selectToolsWithinLimit', () => {
     const kept = selectToolsWithinLimit(tools, 2, ['p1', 'p2', 'p3'])
     expect(kept.map((tool) => tool.name)).toEqual(['p2', 'p3'])
   })
+
+  it('回归(活锁):pin 满额时刚 ensure 的新工具必须进来,最旧 pin 让位', () => {
+    // 计划期 pins 会长成 visible 全集;若满额分支只留 pin,新工具收到「schema 已加载」
+    // 却永远不在下一轮 tools 里 → 加载→不可见→再加载 死循环。
+    const tools = ['p1', 'p2', 'p3', 'newcomer'].map(loaded)
+    const kept = selectToolsWithinLimit(tools, 3, ['p1', 'p2', 'p3'])
+    expect(kept.map((tool) => tool.name)).toEqual(['p2', 'p3', 'newcomer'])
+    // 被挤出的 p1 仍在 pins 里且未注销 → 下一轮 nextPlanPinnedTools 作为 evicted 上报。
+    const next = nextPlanPinnedTools({
+      planActive: true,
+      pinned: ['p1', 'p2', 'p3'],
+      visibleNames: kept.map((tool) => tool.name),
+      isRegistered: () => true,
+    })
+    expect(next.evicted).toEqual(['p1'])
+    expect(next.pinned).toEqual(['p2', 'p3', 'newcomer'])
+  })
 })
 
 describe('nextPlanPinnedTools', () => {

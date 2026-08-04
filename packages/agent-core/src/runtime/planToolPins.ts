@@ -26,8 +26,14 @@ export function selectToolsWithinLimit(
 
   const pinned = tools.filter((tool) => pinnedSet.has(tool.name))
   if (pinned.length >= limit) {
-    // pin 自身超限:保留可见顺序里最近的 limit 个 pin,淘汰最旧的(调用方负责上报)。
-    const keep = new Set(pinned.slice(-limit).map((tool) => tool.name))
+    // ★ pin 满额时也必须给列表尾部的新来者留位 ★ —— 计划期 pins 会长成 visible 全集,
+    // 若此处只保留 pin,刚被 ensure 的新工具永远进不了下一轮 tools:模型收到「schema
+    // 已加载」却调用即被拒,陷入 加载→不可见→再加载 的活锁。新来者恒保留,其余名额
+    // 给可见顺序里最近的 pin;被挤出的最旧 pin 由下一轮 nextPlanPinnedTools 上报。
+    const keep = new Set<string>([tools[tools.length - 1].name])
+    for (let index = pinned.length - 1; index >= 0 && keep.size < limit; index -= 1) {
+      keep.add(pinned[index].name)
+    }
     return tools.filter((tool) => keep.has(tool.name))
   }
   const keep = new Set(pinned.map((tool) => tool.name))
