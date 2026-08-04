@@ -171,28 +171,61 @@ run 的 `cache_epoch_reason` 都是 `initial`，工具集均为 1 个。这只�
 一次全量失效。已在 `toolSchemaAutoloadedResult` 的 hint 里留了「同一轮用 `request_tool_schema`
 一并加载」的推荐，但这靠模型自觉，必须实测。
 
-**做法**：与 F1 同一批长会话，在其 SQL 基础上加两段——
+**做法**：与 F1 同一批长会话，在其 SQL 基础上加两段。工具集版本以
+`tool_set_fingerprint` 为准，不能只数 `tools_count`：两个不同 schema 集合可能刚好有相同数量。
+版本数包含 run 的初始工具集，因此「增长步数 = 版本数 - 1」。
 
 ```sql
--- ① 每个 run 的工具集变了几步（越小越好）
-SELECT run_id, COUNT(DISTINCT json_extract(attrs,'$.tools_count')) AS 工具集步数,
-       MAX(json_extract(attrs,'$.tools_count')) AS 最终工具数
-FROM trace_events WHERE name='llm.context_snapshot' GROUP BY run_id ORDER BY 工具集步数 DESC;
+-- ① 每个 run 的工具集版本数与增长步数（越小越好）。
+--    只看能以 (run_id, llm_turn) 关联到成功 llm.chat 的快照；
+--    <start_ms>/<end_ms> 与 F1 使用同一 [start, end) 采样窗口。
+WITH completed AS (
+  SELECT run_id,
+         CAST(json_extract(attrs, '$.llm_turn') AS INTEGER) AS llm_turn
+  FROM trace_spans
+  WHERE name = 'llm.chat' AND status = 'ok'
+    AND started_at >= <start_ms> AND started_at < <end_ms>
+), snapshots AS (
+  SELECT e.run_id,
+         json_extract(e.attrs, '$.tool_set_fingerprint') AS tool_set_fingerprint,
+         CAST(json_extract(e.attrs, '$.tools_count') AS INTEGER) AS tools_count
+  FROM trace_events e
+  JOIN completed c ON c.run_id = e.run_id
+    AND c.llm_turn = CAST(json_extract(e.attrs, '$.llm_turn') AS INTEGER)
+  WHERE e.name = 'llm.context_snapshot'
+    AND e.timestamp >= <start_ms> AND e.timestamp < <end_ms>
+), per_run AS (
+  SELECT run_id,
+         COUNT(DISTINCT tool_set_fingerprint) AS 工具集版本数,
+         MAX(tools_count) AS 最终工具数
+  FROM snapshots
+  GROUP BY run_id
+)
+SELECT run_id,
+       工具集版本数 - 1 AS 工具集增长步数,
+       工具集版本数,
+       最终工具数
+FROM per_run
+ORDER BY 工具集版本数 DESC;
 
--- ② 就地加载 vs 显式加载的比例，以及是否还有硬拒绝
-SELECT name, COUNT(*) FROM trace_events
-WHERE name IN ('tool.schema_autoloaded','tool.schema_requested','tool.schema_not_loaded')
-GROUP BY name;
+-- ② 就地加载 vs 显式加载的比例，以及是否还有硬拒绝。
+--    tool schema 事件发生在一次已成功模型响应之后，但尚无 llm_turn 字段；
+--    因此此处按同一 run 和时间窗口取样，不能把它和单次请求一一关联。
+SELECT e.run_id, e.name, COUNT(*)
+FROM trace_events e
+WHERE e.name IN ('tool.schema_autoloaded', 'tool.schema_requested', 'tool.schema_not_loaded')
+  AND e.timestamp >= <start_ms> AND e.timestamp < <end_ms>
+GROUP BY e.run_id, e.name;
 ```
 
 **改动前基线**（2026-07-27 19:02 之后、即工具摘要已上线但闸门尚未改的 16 个 run）：
-工具集步数**均值 1.94、最大 9**；`tool.schema_not_loaded` 8 次、`tool.schema_requested` 63 次。
+工具集版本数**均值 1.94、最大 9**；`tool.schema_not_loaded` 8 次、`tool.schema_requested` 63 次。
 
 **验收标准**：
 
 1. `tool.schema_not_loaded` 在冷启动会话里归零（只剩幻觉工具名与 web 下的 server 工具这两类
    真·不可加载的情况）；
-2. 工具集步数均值不高于 1.94、最大值不高于 9——**这是本项的核心指标**；
+2. 工具集版本数均值不高于 1.94、最大值不高于 9（增长步数则各减 1）——**这是本项的核心指标**；
 3. 按 (scope, epoch) 去重后，`profile_changed` 的真实失效次数没有相对上升。
 
 **若第 2 条不达标**（步数明显变多）：说明就地加载确实让模型放弃了批量补课。候选对策按代价从低
