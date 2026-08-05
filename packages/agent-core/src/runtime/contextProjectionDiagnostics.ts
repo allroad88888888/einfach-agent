@@ -1,4 +1,4 @@
-import type { ModelItem } from '@web-agent/ai'
+import { userMessageVersion, type ModelItem } from '@web-agent/ai'
 import {
   canonicalContextCacheValue,
   contextCacheFingerprintText,
@@ -38,7 +38,9 @@ export function describeContextProjection(
   messages: readonly ModelItem[],
 ): ContextProjectionItemDiagnostic[] {
   return messages.map((message) => {
-    const serialized = canonicalContextCacheValue(message)
+    const serialized = canonicalContextCacheValue(message.role === 'user'
+      ? { ...message, content: userMessageVersion(message.content) }
+      : message)
     return {
       fingerprint: contextCacheFingerprintText('message', serialized),
       role: message.role,

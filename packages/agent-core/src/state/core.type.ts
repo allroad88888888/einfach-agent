@@ -10,6 +10,7 @@
 import type { ChatRequestBase, FinishReason, ModelItem, ModelToolCall } from '@web-agent/ai'
 import type { DeepSeekReasoningEffort } from '@web-agent/ai'
 import type { GlmReasoningEffort } from '@web-agent/ai'
+import type { KimiRegion } from '@web-agent/ai'
 
 // ===========================================================================
 // 一、provider 身份 —— 从两个调用入口推导
@@ -17,39 +18,50 @@ import type { GlmReasoningEffort } from '@web-agent/ai'
 
 // 简介：当前会话用哪个 provider。
 // 详情：与 api/deepseek.ts / api/glm.ts 两个 call 入口一一对应；新增 provider 时这里 + 一个文件。
-export type ModelVendor = 'deepseek' | 'glm'
+export type ModelVendor = 'deepseek' | 'glm' | 'kimi'
 
 // ===========================================================================
 // 二、会话级模型设置 —— 从请求体推导
 // ===========================================================================
 
-// 简介：两家共用的可调参数（取自 ChatRequestBase 的可配置子集）。
-// 详情：model 必选；temperature / max_tokens 直接复用请求体的字段类型；thinking 在状态层
-// 用 bool（发请求时再转成 { type: 'enabled' | 'disabled' }）。
+// 简介：所有 Provider 都支持的会话参数。
+// 详情：thinking 在状态层用 bool（发请求时再转成 { type: 'enabled' | 'disabled' }）。
 interface SessionParamsBase {
   model: string
+  thinking?: boolean
+}
+
+// 简介：允许调用方调节采样参数的 Provider 会话参数。
+// 详情：Kimi K2.6 使用固定采样参数，故不继承这两个字段，避免 Core 把它们透传出去。
+interface TunableSessionParamsBase extends SessionParamsBase {
   temperature?: ChatRequestBase['temperature']
   max_tokens?: ChatRequestBase['max_tokens']
-  thinking?: boolean
 }
 
 // 简介：DeepSeek V4 会话设置。reasoning_effort 仅支持 'high' | 'max'；
 // 省略时交给 Provider 使用默认档位及复杂 Agent 请求的自动升级策略。
-export interface DeepSeekSettings extends SessionParamsBase {
+export interface DeepSeekSettings extends TunableSessionParamsBase {
   vendor: 'deepseek'
   reasoning_effort?: DeepSeekReasoningEffort
 }
 
 // 简介：GLM 会话设置。reasoning_effort 可到 'max'。
-export interface GlmSettings extends SessionParamsBase {
+export interface GlmSettings extends TunableSessionParamsBase {
   vendor: 'glm'
   reasoning_effort?: GlmReasoningEffort
+}
+
+// 简介：Kimi K2.6 会话设置。思考开关复用 SessionParamsBase.thinking；
+// K2.6 不接受 reasoning_effort，区域省略时由 Provider 按 cn 处理。
+export interface KimiSettings extends SessionParamsBase {
+  vendor: 'kimi'
+  region?: KimiRegion
 }
 
 // 简介：一个会话当前的模型设置（按 vendor 判别）。
 // 详情：把 API 层“参数不一样”延续到状态层 —— 按 settings.vendor 收窄后，reasoning_effort
 // 的合法取值自动随之收窄（DeepSeek 为 high|max；GLM 仍为 low|medium|high|max）。
-export type ModelSettings = DeepSeekSettings | GlmSettings
+export type ModelSettings = DeepSeekSettings | GlmSettings | KimiSettings
 
 // ===========================================================================
 // 三、对话历史 —— 从 ModelItem 推导

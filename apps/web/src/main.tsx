@@ -26,6 +26,8 @@ import {
 import { createTauriModelFetch } from './modelTransport/tauriModelTransport'
 import { createDevPreviewModelFetch } from './modelTransport/devPreviewModelTransport'
 import { createUnavailableModelFetch } from './modelTransport/unavailableModelTransport'
+import { prepareProviderUserInput } from './modelInput/prepareProviderUserInput'
+import { disposeProviderUserContent } from './modelInput/disposeProviderUserContent'
 import {
   reportReactCommit,
   startUiPerformanceDiagnostics,
@@ -41,14 +43,21 @@ const tauriHost = isTauri()
 
 // API Key 不进入前端配置：桌面端走原生代理，开发浏览器走本地 Node 中继，静态产物拒绝模型请求。
 const desktopManagedCredentialMarker = 'desktop-managed-credential'
+const providerFetch = tauriHost
+  ? createTauriModelFetch()
+  : import.meta.env.DEV
+    ? createDevPreviewModelFetch()
+    : createUnavailableModelFetch()
 configureCommands({
   deepseekApiKey: desktopManagedCredentialMarker,
   glmApiKey: desktopManagedCredentialMarker,
-  fetchImpl: tauriHost
-    ? createTauriModelFetch()
-    : import.meta.env.DEV
-      ? createDevPreviewModelFetch()
-      : createUnavailableModelFetch(),
+  kimiApiKey: desktopManagedCredentialMarker,
+  prepareUserInput: prepareProviderUserInput,
+  disposeUserContent: (discarded, retained, context) => disposeProviderUserContent(discarded, retained, context, {
+    apiKey: desktopManagedCredentialMarker,
+    fetchImpl: providerFetch,
+  }),
+  fetchImpl: providerFetch,
 })
 configureModelCredentialHost(
   tauriHost ? createTauriModelCredentialHost() : createUnavailableModelCredentialHost(),

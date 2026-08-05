@@ -1,15 +1,20 @@
-import { DEFAULT_DEEPSEEK_MODEL } from '@web-agent/ai'
+import { DEFAULT_DEEPSEEK_MODEL, userMessageLabel, type UserMessageContent } from '@web-agent/ai'
 import { activeSessionIdAtom, activeWorkspaceIdAtom, expandedWorkspaceIdsAtom, sessionsAtom, workspacesAtom } from '../../state/rootStore'
 import type { ModelSettings, SessionMeta } from '../../state/core.type'
 import type { CoreInstance } from '../core/coreInstance'
 import { newId } from '../newId'
 import { persistDeleteSession, persistSessions, persistWorkspaces } from '../persistenceBridge'
 import { createWorkspaceMeta } from './workspaceCommands'
+import { cancelSessionSubmissions } from '../sessionSubmissionGate'
+import {
+  captureUserContentReachability,
+  disposeUserContentAfterMutation,
+} from '../userContentDisposal'
 
 export const DEFAULT_SESSION_TITLE = '新对话'
 
-export function deriveSessionTitle(input: string): string {
-  const compact = input.replace(/\s+/g, ' ').trim()
+export function deriveSessionTitle(input: UserMessageContent): string {
+  const compact = userMessageLabel(input).replace(/\s+/g, ' ').trim()
   if (!compact) return ''
   const chars = Array.from(compact)
   if (chars.length <= 12) return compact
@@ -90,6 +95,9 @@ export function createSessionCommands(core: CoreInstance) {
   }
 
   function removeSession(id: string): void {
+    const meta = core.rootStore.getter(sessionsAtom)[id]
+    const before = meta ? captureUserContentReachability(core, id) : undefined
+    cancelSessionSubmissions(core, id)
     core.abort.abortRun(id)
     core.rootStore.setter(sessionsAtom, (prev) => {
       const next = { ...prev }
@@ -106,6 +114,13 @@ export function createSessionCommands(core: CoreInstance) {
     }
     persistSessions()
     persistDeleteSession(id)
+    if (meta && before) {
+      disposeUserContentAfterMutation(core, before, {
+        sessionId: id,
+        reason: 'session_removed',
+        settings: { ...meta.settings },
+      })
+    }
   }
 
   function setApprovalMode(mode: 'confirm' | 'auto'): void {

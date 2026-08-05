@@ -1,30 +1,28 @@
-import { modelProviderForChatRequest } from './modelEndpoint'
+import type { ProviderTransport, ProviderTransportInput } from '@web-agent/ai'
+import { createProviderFetch } from './providerFetch'
+import { encodeProviderWireRequest } from './providerWireEnvelope'
 
-const MODEL_PREVIEW_RELAY_PATH = '/__web_agent_model_preview'
+export const MODEL_PREVIEW_RELAY_PATH = '/__web_agent_model_preview'
 
-function requestBody(init?: RequestInit): string {
-  if (typeof init?.body !== 'string') throw new Error('模型请求格式无效')
-  return init.body
-}
-
-function requirePostMethod(init?: RequestInit): void {
-  if (!init?.method || init.method.toUpperCase() === 'POST') return
-  throw new Error('模型开发请求只允许 POST 方法')
-}
-
-/** Routes browser development requests to the local Node relay without forwarding browser credentials. */
-export function createDevPreviewModelFetch(): typeof fetch {
-  return async (input, init) => {
-    const provider = modelProviderForChatRequest(input)
-    requirePostMethod(init)
-    return fetch(`${MODEL_PREVIEW_RELAY_PATH}/${provider}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: requestBody(init),
-      signal: init?.signal,
-      credentials: 'omit',
-      cache: 'no-store',
-      redirect: 'error',
-    })
+/** Creates the typed development transport backed by the loopback-only Vite relay. */
+export function createDevPreviewProviderTransport(): ProviderTransport {
+  return {
+    async request(input: ProviderTransportInput): Promise<Response> {
+      const request = await encodeProviderWireRequest(input)
+      return fetch(MODEL_PREVIEW_RELAY_PATH, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(request),
+        signal: input.signal,
+        credentials: 'omit',
+        cache: 'no-store',
+        redirect: 'error',
+      })
+    },
   }
+}
+
+/** Preserves the existing fetch injection API for current model adapters. */
+export function createDevPreviewModelFetch(): typeof fetch {
+  return createProviderFetch(createDevPreviewProviderTransport())
 }

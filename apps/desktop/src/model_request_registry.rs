@@ -2,6 +2,8 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
+pub(crate) const MAX_MODEL_REQUEST_ID_BYTES: usize = 128;
+
 /** Tracks cancellable native model requests by their renderer-provided ID. */
 #[derive(Default)]
 pub struct ModelRequestCanceller {
@@ -10,7 +12,7 @@ pub struct ModelRequestCanceller {
 
 impl ModelRequestCanceller {
     pub fn register(&self, request_id: &str) -> Result<CancellationToken, String> {
-        valid_request_id(request_id)?;
+        validate_model_request_id(request_id)?;
         let mut requests = self
             .requests
             .lock()
@@ -24,7 +26,7 @@ impl ModelRequestCanceller {
     }
 
     pub fn cancel(&self, request_id: &str) -> Result<bool, String> {
-        valid_request_id(request_id)?;
+        validate_model_request_id(request_id)?;
         let token = self
             .requests
             .lock()
@@ -45,9 +47,9 @@ impl ModelRequestCanceller {
     }
 }
 
-fn valid_request_id(request_id: &str) -> Result<(), String> {
+pub(crate) fn validate_model_request_id(request_id: &str) -> Result<(), String> {
     let is_valid = !request_id.is_empty()
-        && request_id.len() <= 128
+        && request_id.len() <= MAX_MODEL_REQUEST_ID_BYTES
         && request_id
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'));

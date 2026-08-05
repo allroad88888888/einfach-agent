@@ -203,6 +203,17 @@ export function takeQueuedUserMessages(
   return taken
 }
 
+export function clearQueuedUserMessages(
+  id: string,
+  core: CoreInstance = defaultCore,
+): QueuedUserMessage[] {
+  if (sessionMissing(id, core)) return []
+  const store = core.getSessionStore(id).store
+  const queued = store.getter(queuedUserMessagesAtom)
+  if (queued.length > 0) store.setter(queuedUserMessagesAtom, [])
+  return queued
+}
+
 export function setWithdrawnTurnNotice(
   id: string,
   notice: WithdrawnTurnNotice | undefined,

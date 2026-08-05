@@ -1,0 +1,75 @@
+.agentnew-composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px 0;
+}
+
+.agentnew-composer-image-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
+.agentnew-composer-image-list {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+
+.agentnew-composer-image-item {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  gap: 2px 8px;
+  align-items: center;
+  min-width: 210px;
+  max-width: 320px;
+  padding: 6px;
+  border: 1px solid var(--agentnew-border, #d5d5d5);
+  border-radius: 8px;
+}
+
+.agentnew-composer-image-preview {
+  grid-row: span 2;
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: #eee;
+}
+
+.agentnew-composer-image-name,
+.agentnew-composer-image-meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentnew-composer-image-meta,
+.agentnew-composer-image-unsupported {
+  color: #727272;
+  font-size: 12px;
+}
+
+.agentnew-composer-image-remove,
+.agentnew-composer-add-image {
+  border: 0;
+  border-radius: 5px;
+  padding: 5px 8px;
+  color: inherit;
+  background: #ececec;
+  cursor: pointer;
+}
+
+.agentnew-composer-attachments [role='alert'] {
+  flex-basis: 100%;
+  color: #b42318;
+  font-size: 13px;
+}

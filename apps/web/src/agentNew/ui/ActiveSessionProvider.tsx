@@ -13,11 +13,15 @@ import {
   activeWorkspaceRootAtom,
 } from '@web-agent/core/state/rootStore'
 import { getSessionStore } from '@web-agent/core/state/sessionStore'
+import type { KimiRegion } from '@web-agent/ai'
 
 export interface ActiveSessionConfig {
   id: string
   workspaceRoot?: string
   approvalMode: 'confirm' | 'auto'
+  vendor: string
+  model: string
+  region?: KimiRegion
 }
 
 export function ActiveSessionProvider({
@@ -39,6 +43,9 @@ export function ActiveSessionProvider({
             id,
             workspaceRoot,
             approvalMode: meta?.toolApprovalMode ?? 'confirm',
+            vendor: meta?.settings.vendor ?? '',
+            model: meta?.settings.model ?? '',
+            region: meta?.settings.vendor === 'kimi' ? meta.settings.region : undefined,
           })
         : children}
     </Provider>

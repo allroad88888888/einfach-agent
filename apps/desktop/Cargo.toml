@@ -18,9 +18,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.6.3", features = [] }
 
 [dependencies]
+base64 = "0.22"
 futures-util = "0.3"
-keyring = { version = "3.6.3", features = ["apple-native", "windows-native", "sync-secret-service"] }
-reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "stream"] }
+keyring = { version = "3.6.3", features = ["apple-native", "sync-secret-service"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["multipart", "rustls", "stream"] }
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 sha2 = "0.10"
@@ -31,3 +32,11 @@ tauri = { version = "2.11.3", features = [] }
 tauri-plugin-log = "2"
 tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 tauri-plugin-dialog = "2.7.1"
+
+# 长期减负：dev 构建只保留行号级调试信息（去掉完整 DWARF），
+# 显著缩小 rlib / .a / 增量缓存体积，同时保留断点与回溯行号。
+[profile.dev]
+debug = "line-tables-only"
+# 关闭增量编译缓存：避免每次构建累积 30-57MB 的 dep-graph.bin 会话。
+# 代价是改代码后重编变慢；若更在意编译速度，删掉此行或改为 true。
+incremental = false

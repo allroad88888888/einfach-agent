@@ -237,7 +237,7 @@ describe('postChatCompletion 重试（R2：429 / 5xx / 网络错误）', () => {
     expect(result.choices?.[0]?.message?.content).toBe('截断后恢复')
   })
 
-  it('网络错误重试耗尽：抛出的是 fetch 原始错误（不被包装掉）', async () => {
+  it('网络错误重试耗尽：保留错误类型但不暴露 fetch 原始详情', async () => {
     const { sleepImpl } = recordingSleep()
     const original = new TypeError('Failed to fetch')
     let attempts = 0
@@ -252,7 +252,10 @@ describe('postChatCompletion 重试（R2：429 / 5xx / 网络错误）', () => {
         BODY,
         callOptions(fetchImpl, { sleepImpl, baseDelayMs: 1, maxRetries: 2 }),
       ),
-    ).rejects.toBe(original)
+    ).rejects.toMatchObject({
+      name: 'TypeError',
+      message: 'Chat completion transport failed (network_error).',
+    })
 
     expect(attempts).toBe(3) // 首次 + 2 次重试
   })

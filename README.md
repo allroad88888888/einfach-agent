@@ -9,7 +9,7 @@ Web Agent 是一个可在浏览器预览、以 Tauri 桌面端为完整能力目
 - **Tauri 桌面端**：完整产品形态，可使用 shell、workspace 文件、ripgrep、任务执行、补丁和 Git diff。
 - **Web 预览**：复用同一套 React UI 和 Agent Runtime；无法使用 Tauri 的 `server` 工具，
   这些工具会从模型可见清单中自动隐藏。
-- **模型接入**：当前支持 DeepSeek 与 GLM 的 OpenAI-compatible API。
+- **模型接入**：当前支持 DeepSeek 与 GLM；Kimi `kimi-k2.6` 与图片输入已实现，但真实 Key 验收前保持开放门禁关闭。
 - **运行时能力**：多会话、checkpoint/revert、lazy tool schema、危险工具确认、结构化计划与评估、
   树形子 Agent、后台执行图、上下文压缩与 provider context cache 统计、持久化和 trace viewer。
 
@@ -23,7 +23,7 @@ Web Agent 是一个可在浏览器预览、以 Tauri 桌面端为完整能力目
 │   │   └── src/                 # React 装配、UI、样式与组件测试
 │   └── desktop/                 # Tauri 2 / Rust 桌面桥
 ├── packages/
-│   ├── agent-ai/                # DeepSeek / GLM API 适配
+│   ├── agent-ai/                # DeepSeek / GLM / Kimi API 适配
 │   └── agent-core/              # 状态、运行时、计划、评估、子 Agent、持久化、观测
 ├── tools/
 │   ├── standard/                # 六个工具域的 meta 聚合包
@@ -68,9 +68,13 @@ Tauri 平台依赖：
 DEEPSEEK_API_KEY=... pnpm tauri dev
 # 或者
 GLM_API_KEY=... pnpm tauri dev
+# Kimi 中国区（仅用于门禁验收）
+KIMI_API_KEY=... pnpm tauri dev
 ```
 
-新会话默认使用 DeepSeek；会话设置中的 `vendor` 决定实际调用 DeepSeek 或 GLM。密钥只由桌面原生层读取并请求供应商；它不会保存到浏览器 localStorage 或编译进前端包。静态 Web 部署没有可信模型代理，不能直接调用模型服务。
+新会话默认使用 DeepSeek；会话设置中的 `vendor` 决定实际调用的 provider。Kimi 入口还受公开构建变量 `VITE_KIMI_IMAGE_INPUT_ENABLED` 控制，真实中国区 Key 端到端验收前必须保持 `false`。
+
+密钥只由桌面原生层读取并注入受限 provider 传输；它不会保存到浏览器 localStorage 或编译进前端包。Kimi 图片上传、`ms://` 引用与清理语义属于 Kimi adapter；Tauri 只提供端点白名单内的通用 JSON/multipart 传输。静态 Web 部署没有可信模型代理，不能直接调用模型服务。
 
 ## 开发命令
 

@@ -22,7 +22,7 @@ import {
 // 不触碰真正的 runtime / store setter。
 vi.mock('@web-agent/core/runtime/commands', () => ({
   continueInterruptedRun: vi.fn(),
-  sendMessage: vi.fn(),
+  sendMessage: vi.fn(() => ({ accepted: true })),
   setApprovalMode: vi.fn(),
   stopRun: vi.fn(),
   withdrawCurrentTurnToDraft: vi.fn(),

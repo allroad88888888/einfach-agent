@@ -7,6 +7,7 @@ import { newId } from './newId'
 import { bindActiveSpan, runTraceKey, startSpan } from '../observability/trace'
 import type { PendingToolConfirmation } from '../state/core.type'
 import type { TraceSpan } from '../observability/types'
+import type { UserMessageContent } from '@web-agent/ai'
 
 export interface ModelRunOptions {
   signal: AbortSignal
@@ -28,7 +29,7 @@ export type ToolLoopRunner = (id: string, runId: string, opts: ToolLoopOptions) 
 const EXECUTING_PLAN_STATUSES = new Set(['approved', 'active'])
 
 /** Starts a persisted user turn before passing control to the model loop. */
-export async function startModelRun(id: string, input: string, opts: ModelRunOptions, runLoop: ToolLoopRunner): Promise<void> {
+export async function startModelRun(id: string, input: UserMessageContent, opts: ModelRunOptions, runLoop: ToolLoopRunner): Promise<void> {
   const core = opts.core ?? defaultCore
   const runId = newId()
   const userItemId = newId()

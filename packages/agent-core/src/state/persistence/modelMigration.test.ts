@@ -25,10 +25,10 @@ const glmLowSettings: ModelSettings = {
   model: 'glm-5',
   reasoning_effort: 'low',
 }
-// @ts-expect-error DeepSeek V4 不再接受旧 low 档；只允许在持久化迁移边界归一化。
 const invalidDeepSeekLowSettings: ModelSettings = {
   vendor: 'deepseek',
   model: 'deepseek-v4-pro',
+  // @ts-expect-error DeepSeek V4 不再接受旧 low 档；只允许在持久化迁移边界归一化。
   reasoning_effort: 'low',
 }
 void [deepSeekMaxSettings, glmLowSettings, invalidDeepSeekLowSettings]

@@ -229,6 +229,7 @@ export default defineConfig(({ command, mode }) => {
         ? [createModelPreviewRelayPlugin({
             deepseek: environment.DEEPSEEK_API_KEY,
             glm: environment.GLM_API_KEY,
+            kimi: environment.KIMI_API_KEY,
           })]
         : []),
     ],

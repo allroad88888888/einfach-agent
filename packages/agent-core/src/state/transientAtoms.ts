@@ -26,6 +26,7 @@ export {
   addRuntimeTranscriptEvent,
   clearAssistantStream,
   clearPendingQuestionAnswers,
+  clearQueuedUserMessages,
   enqueueUserMessage,
   patchTranscriptInjectionFingerprints,
   pruneBrowserCardsAfter,

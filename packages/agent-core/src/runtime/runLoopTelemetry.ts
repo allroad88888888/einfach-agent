@@ -1,4 +1,11 @@
-import { normalizeCacheUsage, type ModelChatResponse, type ModelFunctionTool, type ModelItem } from '@web-agent/ai'
+import {
+  normalizeCacheUsage,
+  userMessageTracePreview,
+  userMessageVersion,
+  type ModelChatResponse,
+  type ModelFunctionTool,
+  type ModelItem,
+} from '@web-agent/ai'
 import type {
   ContextCacheTotals,
   ContextStatsSnapshot,
@@ -46,6 +53,19 @@ export function responseChars(value: string | null | undefined): number {
 
 export function llmTracePreview(value: unknown): string {
   return truncatePayload(value, LLM_TRACE_PREVIEW_LIMIT, LLM_TRACE_PREVIEW_OPTIONS)
+}
+
+/** Redacts provider image references while retaining useful request shape and user text. */
+export function llmRequestTracePreview(request: {
+  messages: readonly ModelItem[]
+  [key: string]: unknown
+}): string {
+  return llmTracePreview({
+    ...request,
+    messages: request.messages.map((message) => message.role === 'user'
+      ? { ...message, content: userMessageTracePreview(message.content) }
+      : message),
+  })
 }
 
 export function toolNames(tools: ModelFunctionTool[]): string[] {
@@ -107,7 +127,9 @@ export function buildContextStatsSnapshot(args: {
     system: emptyRoleStats(), user: emptyRoleStats(), assistant: emptyRoleStats(), tool: emptyRoleStats(),
   }
   for (const message of args.messages) {
-    const text = stringForStats(message)
+    const text = message.role === 'user'
+      ? userMessageVersion(message.content)
+      : stringForStats(message)
     const roleStats = roles[message.role]
     roleStats.count += 1
     roleStats.chars += text.length

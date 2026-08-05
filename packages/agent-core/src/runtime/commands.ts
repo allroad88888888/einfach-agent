@@ -14,6 +14,22 @@ import { createWorkspaceCommands } from './commands/workspaceCommands'
 import { createPluginCommandFacade } from './core/pluginCommandFacade'
 
 export { DEFAULT_SESSION_TITLE, deriveSessionTitle } from './commands/sessionCommands'
+export type { RuntimeConfig } from './core/coreInstance'
+export type {
+  PreparedUserInput,
+  PreparedUserInputRollbackReason,
+  SendMessageInput,
+  SendMessageResult,
+  UserInputImage,
+  UserInputPreparationContext,
+  UserInputPreparer,
+  UserInputSubmission,
+} from './userInputPreparation'
+export type {
+  UserContentDisposer,
+  UserContentDisposalContext,
+  UserContentDisposalReason,
+} from './userContentDisposal'
 
 /** Updates runtime configuration for the default command instance. */
 export function configureCommands(config: Partial<RuntimeConfig>): void {

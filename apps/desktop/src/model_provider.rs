@@ -5,51 +5,46 @@ use serde::{Deserialize, Serialize};
 pub enum ModelProvider {
     Deepseek,
     Glm,
+    Kimi,
+}
+
+#[derive(Debug, Default, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ProviderScope {
+    #[default]
+    Default,
+    Cn,
 }
 
 impl ModelProvider {
-    pub const fn credential_account(self) -> &'static str {
-        match self {
-            Self::Deepseek => "model-api-key:deepseek",
-            Self::Glm => "model-api-key:glm",
-        }
-    }
-
-    pub const fn environment_variable(self) -> &'static str {
-        match self {
-            Self::Deepseek => "DEEPSEEK_API_KEY",
-            Self::Glm => "GLM_API_KEY",
-        }
-    }
-
-    pub const fn chat_completions_url(self) -> &'static str {
-        match self {
-            Self::Deepseek => "https://api.deepseek.com/chat/completions",
-            Self::Glm => "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-        }
-    }
-
     pub const fn display_name(self) -> &'static str {
         match self {
             Self::Deepseek => "DeepSeek",
             Self::Glm => "GLM",
+            Self::Kimi => "Kimi",
         }
+    }
+
+    pub const fn accepts_scope(self, scope: ProviderScope) -> bool {
+        matches!(
+            (self, scope),
+            (Self::Deepseek, ProviderScope::Default)
+                | (Self::Glm, ProviderScope::Default)
+                | (Self::Kimi, ProviderScope::Cn)
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::ModelProvider;
+    use super::{ModelProvider, ProviderScope};
 
     #[test]
-    fn providers_only_map_to_fixed_chat_endpoints() {
-        assert_eq!(
-            ModelProvider::Deepseek.chat_completions_url(),
-            "https://api.deepseek.com/chat/completions",
-        );
-        assert_eq!(
-            ModelProvider::Glm.chat_completions_url(),
-            "https://open.bigmodel.cn/api/paas/v4/chat/completions",
-        );
+    fn only_fixed_provider_scope_pairs_are_allowed() {
+        assert!(ModelProvider::Deepseek.accepts_scope(ProviderScope::Default));
+        assert!(ModelProvider::Glm.accepts_scope(ProviderScope::Default));
+        assert!(ModelProvider::Kimi.accepts_scope(ProviderScope::Cn));
+        assert!(!ModelProvider::Kimi.accepts_scope(ProviderScope::Default));
+        assert!(!ModelProvider::Deepseek.accepts_scope(ProviderScope::Cn));
     }
 }

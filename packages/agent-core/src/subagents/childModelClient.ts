@@ -16,6 +16,7 @@ import {
   isAbortError,
   toErrorMessage,
 } from './runtimeState'
+import { modelReasoningEffort, modelSamplingSettings } from '../runtime/modelSettingsProjection'
 
 const CONTEXT_BUDGET_TOKENS = 60_000
 const RESERVED_OUTPUT_TOKENS = 8_000
@@ -65,9 +66,10 @@ export function createChildModelCaller(runtime: DelegateAgentRuntimeState): Chil
   return async (state, args, maxModelCalls) => {
     const modelCallLimit = maxModelCalls ?? state.rootBudget.maxModelCalls
     const settings = args.settings ?? runtime.opts.settings
+    const sampling = modelSamplingSettings(settings)
     const reservedTokens =
       estimateTokensFromText(JSON.stringify(args.tools ?? []))
-      + (settings.max_tokens ?? RESERVED_OUTPUT_TOKENS)
+      + (sampling.maxTokens ?? RESERVED_OUTPUT_TOKENS)
       + Math.ceil(CONTEXT_BUDGET_TOKENS * CONTEXT_SAFETY_MARGIN_RATIO)
     const compaction = compactContext(args.messages, {
       maxTokens: CONTEXT_BUDGET_TOKENS,
@@ -123,8 +125,8 @@ export function createChildModelCaller(runtime: DelegateAgentRuntimeState): Chil
     const requestBase = {
       model: settings.model,
       messages: compaction.items,
-      temperature: settings.temperature,
-      max_tokens: settings.max_tokens,
+      temperature: sampling.temperature,
+      max_tokens: sampling.maxTokens,
       thinking: thinkingConfig(settings),
       tools: args.tools,
       tool_choice: args.toolChoice ?? 'auto',
@@ -152,7 +154,7 @@ export function createChildModelCaller(runtime: DelegateAgentRuntimeState): Chil
       tools: args.tools ?? [],
       toolChoice: args.toolChoice ?? 'auto',
       thinking: thinkingConfig(settings)?.type,
-      reasoningEffort: settings.reasoning_effort,
+      reasoningEffort: modelReasoningEffort(settings),
       compacted: compaction.compacted,
       requestMode,
     })

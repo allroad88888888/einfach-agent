@@ -5,6 +5,7 @@ import { sessionsAtom } from '../state/rootAtoms'
 import { createCoreInstance } from './core/coreInstance'
 import { handleToolGate } from './toolCallGate'
 import type { ToolLoopBase } from './toolLoopContracts'
+import type { ConversationItem } from '../state/core.type'
 
 const SERVER_TOOL_NAMES = [
   'shell_macos',
@@ -75,6 +76,11 @@ function requestServerSchema(base: ToolLoopBase, name: string): void {
   })).toBe(true)
 }
 
+function toolResultContent(result: ConversationItem): string {
+  expect(result.item.role).toBe('tool')
+  return result.item.role === 'tool' ? result.item.content : ''
+}
+
 describe('handleToolGate server schema visibility', () => {
   it.each(SERVER_TOOL_NAMES)('rejects %s schema requests in Web runtime', (name) => {
     const base = baseFor(false, name)
@@ -83,7 +89,7 @@ describe('handleToolGate server schema visibility', () => {
 
     expect(base.state.visible).toEqual([])
     const [result] = base.core.getSessionStore(base.id).store.getter(itemsAtom)
-    expect(JSON.parse(result.item.content ?? '')).toEqual({
+    expect(JSON.parse(toolResultContent(result))).toEqual({
       error: `tool not allowed for child agent: ${name}`,
     })
   })
@@ -95,7 +101,7 @@ describe('handleToolGate server schema visibility', () => {
 
     expect(base.state.visible.map((tool) => tool.name)).toEqual([name])
     const [result] = base.core.getSessionStore(base.id).store.getter(itemsAtom)
-    expect(JSON.parse(result.item.content ?? '')).toMatchObject({
+    expect(JSON.parse(toolResultContent(result))).toMatchObject({
       toolName: name,
       loaded: true,
     })

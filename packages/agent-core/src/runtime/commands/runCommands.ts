@@ -20,7 +20,11 @@ import { newId } from '../newId'
 import type { CoreInstance } from '../core/coreInstance'
 
 export function resolveApiKey(meta: SessionMeta | undefined, core: CoreInstance): string {
-  return meta?.settings.vendor === 'glm' ? core.config.glmApiKey : core.config.deepseekApiKey
+  switch (meta?.settings.vendor) {
+    case 'glm': return core.config.glmApiKey
+    case 'kimi': return core.config.kimiApiKey
+    default: return core.config.deepseekApiKey
+  }
 }
 
 export function withRun(

@@ -29,6 +29,9 @@ import {
 } from '../persistenceBridge'
 // rootAtoms 是零 runtime 依赖的叶子层（破环地基），coreInstance 可以安全引用它的 atom 定义。
 import { projectSkillsAtom } from '../../state/rootAtoms'
+import { createRuntimeConfig, type RuntimeConfig } from './runtimeConfig'
+
+export type { RuntimeConfig } from './runtimeConfig'
 
 // 单会话独立 store 的形状（对齐原 sessionStore.ts 的 SessionStore；本轮先不放 undo）。
 // 定义放这里、由 sessionStore.ts re-export，避免 coreInstance 反向 import sessionStore 成环。
@@ -80,17 +83,6 @@ export interface ProjectSkillsLoaderBridge {
     workspaceRoot: string
     allowExternalPaths: boolean
   }): Promise<{ content: string }>
-}
-
-// 运行时配置（apiKey 等）。形状对齐 commands.ts 的运行时配置。
-// 【第 2 期 · config 通电】defaultCore.config 已是第五个「视图」：configureCommands 现在【就地写它】
-//   （Object.assign，不替换引用），命令读 apiKey/fetchImpl 也走 core.config —— 不再只是占位形状。
-export interface RuntimeConfig {
-  deepseekApiKey: string
-  deepseekUserId?: string
-  glmApiKey: string
-  customInstructions: string
-  fetchImpl?: typeof fetch
 }
 
 // 一个 CoreInstance 包含彼此隔离的 root/session stores、tools、abort、scheduler、config、skills 与 persistence。
@@ -212,12 +204,7 @@ export function createCoreInstance(opts?: {
   const subagentScheduler = createSubagentScheduler()
 
   // 6) 运行时配置：默认空 key，opts.config 浅合并覆盖。
-  const config: RuntimeConfig = {
-    deepseekApiKey: '',
-    glmApiKey: '',
-    customInstructions: '',
-    ...opts?.config,
-  }
+  const config = createRuntimeConfig(opts?.config)
 
   // 7) 项目 Skills 缓存：快照存本实例 rootStore 的 projectSkillsAtom（按 workspaceRoot 分桶），
   //    UI 因此可以直接订阅；in-flight promise 另用 Map 去重，不进 store（它是瞬态调度信息）。

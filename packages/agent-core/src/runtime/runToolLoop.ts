@@ -1,4 +1,4 @@
-import { isAbortError } from '@web-agent/ai'
+import { isAbortError, type UserMessageContent } from '@web-agent/ai'
 import { patchRun } from '../state/sessionWriters'
 import { createLoopBudget } from './loopBudget'
 import { createModelTurnRequester } from './modelTurnRequester'
@@ -15,7 +15,7 @@ import { closeUnresolvedToolCalls } from './runCheckpoints'
 export { persistCurrentRunRecovery } from './runCheckpoints'
 
 /** Starts a new public model-run lifecycle. */
-export async function runSession(id: string, input: string, opts: ModelRunOptions): Promise<void> {
+export async function runSession(id: string, input: UserMessageContent, opts: ModelRunOptions): Promise<void> {
   await startModelRun(id, input, opts, runToolLoop)
 }
 

@@ -55,6 +55,7 @@ import type { CoreCtx } from '../coreCtx'
 import type { RequestDraft } from '../loopHooks'
 import type { AgentPlugin } from '../pluginApi'
 import { stringForStats } from '../../shared/preview'
+import { modelSamplingSettings } from '../../modelSettingsProjection'
 import {
   createCompactionProjectionCache,
   incrementProjectionReuse,
@@ -194,6 +195,7 @@ export function applyCompaction(
     }
     return
   }
+  const sampling = modelSamplingSettings(settings)
 
   const tools = draft.tools ?? []
   const rawMessages = draft.messages
@@ -219,7 +221,7 @@ export function applyCompaction(
   const tailTokens = tailCount > 0 ? estimateItemsTokens(tail) : 0
   const reservedTokens =
     estimateTokensFromText(stringForStats(tools)) +
-    (settings.max_tokens ?? DEFAULT_RESERVED_OUTPUT_TOKENS) +
+    (sampling.maxTokens ?? DEFAULT_RESERVED_OUTPUT_TOKENS) +
     Math.ceil(budgetTokens * CONTEXT_SAFETY_MARGIN_RATIO) +
     tailTokens
 

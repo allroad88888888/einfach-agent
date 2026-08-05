@@ -21,6 +21,17 @@ import {
   stopRun,
   withdrawCurrentTurnToDraft,
 } from '@web-agent/core/runtime/commands'
+import {
+  addComposerImageAttachmentsAtom,
+  beginComposerImageSubmissionAtom,
+  clearComposerImageAttachmentsAtom,
+  composerImageAttachmentAtom,
+  setComposerImageAttachmentErrorAtom,
+  settleComposerImageSubmissionAtom,
+} from './composerImageAttachmentState'
+import { ComposerAttachmentTray } from './ComposerAttachmentTray'
+import { composerSubmissionOutcome, isPromiseLike } from './composerSubmissionOutcome'
+import { imageInputCapabilityForApp } from '../../modelInput/kimiImageFeature'
 
 function formatRunError(error: string) {
   if (/\b401\b|authentication fails|unauthorized|api[ _-]?key/i.test(error)) {
@@ -29,15 +40,29 @@ function formatRunError(error: string) {
   return error
 }
 
-export function Composer({ approvalMode = 'confirm' }: { approvalMode?: 'confirm' | 'auto' }) {
+export function Composer({
+  approvalMode = 'confirm',
+  vendor = '',
+  model = '',
+}: {
+  approvalMode?: 'confirm' | 'auto'
+  vendor?: string
+  model?: string
+}) {
   const composingRef = useRef(false)
   const modeShortcutLatchedRef = useRef(false)
   const run = useAtomValue(runAtom)
   const draft = useAtomValue(composerDraftAtom)
   const queuedMessages = useAtomValue(queuedUserMessagesAtom)
   const notice = useAtomValue(withdrawnTurnNoticeAtom)
+  const attachments = useAtomValue(composerImageAttachmentAtom)
   const setDraft = useSetAtom(composerDraftAtom)
   const setNotice = useSetAtom(withdrawnTurnNoticeAtom)
+  const addImages = useSetAtom(addComposerImageAttachmentsAtom)
+  const clearImages = useSetAtom(clearComposerImageAttachmentsAtom)
+  const beginImageSubmission = useSetAtom(beginComposerImageSubmissionAtom)
+  const settleImageSubmission = useSetAtom(settleComposerImageSubmissionAtom)
+  const setImageError = useSetAtom(setComposerImageAttachmentErrorAtom)
   const running = run?.status === 'running' || run?.status === 'awaiting_tool'
   const stopped = run?.status === 'stopped'
   const interrupted = run?.status === 'interrupted'
@@ -49,12 +74,48 @@ export function Composer({ approvalMode = 'confirm' }: { approvalMode?: 'confirm
     || run?.status === 'waiting_confirmation'
     || run?.status === 'waiting_plan_approval'
   const locked = paused || interrupted
+  const imageCapability = imageInputCapabilityForApp(vendor, model)
+  const preparingImages = attachments.operation !== 'idle'
+  const editorDisabled = locked || preparingImages
 
   const send = () => {
-    if (!draft.trim() || locked) return
-    sendMessage(draft.trim())
-    setDraft('')
-    setNotice(undefined)
+    const text = draft.trim()
+    const hasImages = attachments.images.length > 0
+    if ((!text && !hasImages) || editorDisabled) return
+    if (hasImages && imageCapability.kind !== 'provider-upload') {
+      setImageError(imageCapability.reason)
+      return
+    }
+    if (hasImages && !beginImageSubmission()) return
+    const settle = (value: unknown) => {
+      const outcome = composerSubmissionOutcome(value)
+      if (hasImages) settleImageSubmission({ revision: attachments.revision, ...outcome })
+      if (outcome.accepted) {
+        setDraft('')
+        setNotice(undefined)
+      }
+    }
+    const input = !hasImages
+      ? text
+      : {
+          text,
+          images: attachments.images.map((image) => ({
+            id: image.id,
+            name: image.name,
+            mimeType: image.mimeType,
+            byteSize: image.byteSize,
+            width: image.width,
+            height: image.height,
+            data: image.file,
+          })),
+        }
+    const result = sendMessage(input)
+    if (isPromiseLike(result)) {
+      void result.then(settle, (error) => settle({ accepted: false, error: error instanceof Error ? error.message : undefined }))
+      return
+    }
+    // 保留同步 command mock 的兼容路径；真实 Core command 总是返回 Promise。
+    settle(result)
   }
 
   const updateDraft = (value: string) => {
@@ -77,6 +138,7 @@ export function Composer({ approvalMode = 'confirm' }: { approvalMode?: 'confirm
       if (inComposerInput && !running) {
         event.preventDefault()
         setDraft('')
+        clearImages()
         if (notice) setNotice(undefined)
         return
       }
@@ -84,7 +146,7 @@ export function Composer({ approvalMode = 'confirm' }: { approvalMode?: 'confirm
     }
     window.addEventListener('keydown', handleGlobalKeyDown)
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [notice, running, setDraft, setNotice])
+  }, [clearImages, notice, running, setDraft, setNotice])
 
   // macOS 有时不会把修饰键的 keyup 派发回 textarea；在 window 兜底解锁下一次组合按压。
   useEffect(() => {
@@ -103,7 +165,19 @@ export function Composer({ approvalMode = 'confirm' }: { approvalMode?: 'confirm
   }, [])
 
   return (
-    <div className="agentnew-composer">
+    <div
+      className="agentnew-composer"
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes('Files')) event.preventDefault()
+      }}
+      onDrop={(event) => {
+        if (!event.dataTransfer.types.includes('Files')) return
+        event.preventDefault()
+        const files = Array.from(event.dataTransfer.files)
+        if (editorDisabled || files.length === 0) return
+        void addImages({ files, capability: imageCapability })
+      }}
+    >
       {notice ? (
         <div className={notice.sideEffects ? 'agentnew-withdraw-notice warning' : 'agentnew-withdraw-notice'}>
           {notice.text}
@@ -161,13 +235,19 @@ export function Composer({ approvalMode = 'confirm' }: { approvalMode?: 'confirm
           aria-label="消息"
           className="agentnew-composer-input"
           value={draft}
-          disabled={locked}
+          disabled={editorDisabled}
           onChange={(event) => updateDraft(event.target.value)}
           onCompositionStart={() => {
             composingRef.current = true
           }}
           onCompositionEnd={() => {
             composingRef.current = false
+          }}
+          onPaste={(event) => {
+            const files = Array.from(event.clipboardData.files)
+            if (editorDisabled || files.length === 0) return
+            event.preventDefault()
+            void addImages({ files, capability: imageCapability })
           }}
           onKeyDown={(event) => {
             if (event.shiftKey && event.metaKey && !modeShortcutLatchedRef.current) {
@@ -187,15 +267,20 @@ export function Composer({ approvalMode = 'confirm' }: { approvalMode?: 'confirm
             if (!event.shiftKey || !event.metaKey) modeShortcutLatchedRef.current = false
           }}
         />
+        <ComposerAttachmentTray
+          capability={imageCapability}
+          disabled={editorDisabled}
+          onFiles={(files) => void addImages({ files, capability: imageCapability })}
+        />
       </div>
       <div className="agentnew-composer-actions">
         <button
           type="button"
           className="agentnew-composer-send"
           onClick={send}
-          disabled={!draft.trim() || locked}
+          disabled={(!draft.trim() && attachments.images.length === 0) || editorDisabled}
         >
-          {running ? '加入队列' : '发送'}
+          {preparingImages ? '准备图片…' : running ? '加入队列' : '发送'}
         </button>
         {running ? (
           <button

@@ -338,9 +338,8 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
 
     await hydrate({ sessions, history })
 
-    expect(
-      rootStore.getter(sessionsAtom)['legacy-effort'].settings.reasoning_effort,
-    ).toBe(after)
+    const restored = rootStore.getter(sessionsAtom)['legacy-effort'].settings
+    expect(restored.vendor === 'deepseek' ? restored.reasoning_effort : undefined).toBe(after)
   })
 
   it('未知持久化 reasoning_effort 不透传：DeepSeek 删除非法值，GLM 合法 low 保留', async () => {
@@ -360,7 +359,8 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
 
     const restored = rootStore.getter(sessionsAtom)
     expect(restored['invalid-effort'].settings).not.toHaveProperty('reasoning_effort')
-    expect(restored['glm-effort'].settings.reasoning_effort).toBe('low')
+    const glmSettings = restored['glm-effort'].settings
+    expect(glmSettings.vendor === 'glm' ? glmSettings.reasoning_effort : undefined).toBe('low')
   })
 
   it('迁移幂等：把迁移后的结果再 hydrate 一次，结果不变', async () => {

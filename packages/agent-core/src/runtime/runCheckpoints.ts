@@ -6,6 +6,7 @@ import { queuedUserMessagesAtom } from '../state/transientAtoms'
 import type { RunRecoverySnapshot } from '../state/checkpoint.type'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
 import { newId } from './newId'
+import { userMessageLabel } from '@web-agent/ai'
 
 /** Returns the conversation slice that belongs to the active user turn. */
 export function currentTurnItems(sessionId: string, core: CoreInstance) {
@@ -29,7 +30,7 @@ export function currentTurnItems(sessionId: string, core: CoreInstance) {
 /** Gets the user input used for checkpoint labels without reading older turns. */
 export function latestUserInput(sessionId: string, core: CoreInstance): string {
   const first = currentTurnItems(sessionId, core)[0]?.item
-  return first?.role === 'user' ? first.content : ''
+  return first?.role === 'user' ? userMessageLabel(first.content) : ''
 }
 
 /** Captures only recoverable run state; transient execution ids are never persisted. */
@@ -67,6 +68,32 @@ export function persistCurrentRunRecovery(
     || latest.recovery?.run.runId !== run.runId
   ) return
   updateCheckpoint(sessionId, latest.turnIndex, latest.label, core, recovery, { kind: 'working' })
+  const updated = store.getter(checkpointsAtom)[latest.turnIndex]
+  if (updated) core.persistence.persistCheckpoint(sessionId, updated)
+}
+
+/** Finalizes the matching working checkpoint so a stopped run cannot revive on hydrate. */
+export function persistStoppedRunCheckpoint(
+  sessionId: string,
+  runId: string,
+  core: CoreInstance = defaultCore,
+): void {
+  const store = core.getSessionStore(sessionId).store
+  const checkpoints = store.getter(checkpointsAtom)
+  const latest = checkpoints[checkpoints.length - 1]
+  if (
+    !latest
+    || readCheckpointState(latest).kind !== 'working'
+    || latest.recovery?.run.runId !== runId
+  ) return
+  updateCheckpoint(
+    sessionId,
+    latest.turnIndex,
+    `[已停止] ${latest.label.replace(/^\[执行中\]\s*/, '')}`,
+    core,
+    undefined,
+    { kind: 'stopped' },
+  )
   const updated = store.getter(checkpointsAtom)[latest.turnIndex]
   if (updated) core.persistence.persistCheckpoint(sessionId, updated)
 }

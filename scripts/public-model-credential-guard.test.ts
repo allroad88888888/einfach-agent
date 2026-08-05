@@ -6,6 +6,7 @@ describe('assertNoPublicModelCredentials', () => {
     expect(() => assertNoPublicModelCredentials({
       DEEPSEEK_API_KEY: 'server-only-sentinel',
       GLM_API_KEY: 'server-only-sentinel',
+      KIMI_API_KEY: 'server-only-sentinel',
     })).not.toThrow()
   })
 
@@ -14,8 +15,9 @@ describe('assertNoPublicModelCredentials', () => {
     const invokeGuard = () => assertNoPublicModelCredentials({
       VITE_DEEPSEEK_API_KEY: credential,
       VITE_GLM_API_KEY: credential,
+      VITE_KIMI_API_KEY: credential,
     })
-    expect(invokeGuard).toThrow('VITE_DEEPSEEK_API_KEY, VITE_GLM_API_KEY')
+    expect(invokeGuard).toThrow('VITE_DEEPSEEK_API_KEY, VITE_GLM_API_KEY, VITE_KIMI_API_KEY')
     try {
       invokeGuard()
     } catch (error) {

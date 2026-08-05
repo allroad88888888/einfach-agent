@@ -23,14 +23,14 @@ Vitest 使用 jsdom 和 `apps/web/src/test/setup.ts`，保持测试文件并行�
 
 ## 配置
 
-`apps/web/src/main.tsx` 只为运行时注入桌面受管凭证标记和受限模型传输。真实 Key 由桌面原生层从系统钥匙串或进程环境变量 `DEEPSEEK_API_KEY` / `GLM_API_KEY` 读取；浏览器产物绝不读取 `VITE_*` 模型密钥，也不会直接调用供应商。
+`apps/web/src/main.tsx` 只为运行时注入桌面受管凭证标记和受限模型传输。真实 Key 由桌面原生层从系统钥匙串或进程环境变量 `DEEPSEEK_API_KEY` / `GLM_API_KEY` / `KIMI_API_KEY` 读取；浏览器产物绝不读取 `VITE_*` 模型密钥，也不会直接调用供应商。Kimi 的上传、引用编码和清理语义属于 `agent-ai` adapter，Tauri 只保持 provider-neutral 受限传输。
 
 ## 当前结构
 
 - `apps/web/src/main.tsx`：默认应用装配；注册标准工具、配置模型、选择持久化和观测 driver。
 - `apps/web/src/agentNew/ui/`：React UI，包含会话、消息、计划、确认、子 Agent 树和输入区。
 - `apps/desktop/`：Rust/Tauri 的 shell、workspace、Git、dialog 与 SQLite 实现。
-- `packages/agent-ai/`：DeepSeek/GLM 请求、流式响应、adapter 重试和 vendor 能力描述表。
+- `packages/agent-ai/`：DeepSeek/GLM/Kimi 请求、流式响应、provider 私有图片准备、adapter 重试和 vendor 能力描述表。
 - `packages/agent-core/`：Agent Runtime 与所有核心状态。
 - `tools/{shell,fs,interaction,planning,skills,agents}/`：六个具体工具域。
 - `tools/standard/`：标准工具聚合包，提供 `registerStandardTools`。

@@ -1119,7 +1119,7 @@ describe('createDelegateAgentRuntime', () => {
         { children: [{ objective: 'cannot distill' }] },
         context(writes),
       ),
-    ).rejects.toThrow('distillation unavailable')
+    ).rejects.toThrow('Chat completion transport failed (network_error).')
 
     const tree = JSON.parse([...writes.entries()].find(([path]) => path.endsWith('/tree.json'))?.[1] ?? '{}') as {
       nodes: SubagentNodeRecord[]

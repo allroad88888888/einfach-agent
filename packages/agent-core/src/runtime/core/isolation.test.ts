@@ -152,6 +152,7 @@ afterEach(() => {
   Object.assign(defaultCore.config, {
     deepseekApiKey: '',
     glmApiKey: '',
+    kimiApiKey: '',
     customInstructions: '',
     fetchImpl: undefined,
   })

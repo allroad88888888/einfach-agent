@@ -456,7 +456,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(getSessionStore('s2b').store.getter(itemsAtom)).toHaveLength(1)
   })
 
-  it('其它错误：fetchImpl 抛普通 Error → run.status=error（降级不崩）', async () => {
+  it('其它错误：fetchImpl 抛普通 Error → run.status=error 且隐藏传输细节', async () => {
     seedSession('s3', { vendor: 'deepseek', model: 'x' })
     const fetchImpl: typeof fetch = async () => {
       throw new Error('boom')
@@ -472,7 +472,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
 
     const run = getSessionStore('s3').store.getter(runAtom)
     expect(run?.status).toBe('error')
-    expect(run?.error).toBe('boom')
+    expect(run?.error).toBe('Chat completion transport failed (network_error).')
     expect(getSessionStore('s3').store.getter(contextStatsAtom)?.cache?.metricsStatus).toBe('request_failed')
     expect(getSessionStore('s3').store.getter(contextStatsAtom)?.usage).toBeUndefined()
   })
@@ -538,7 +538,8 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(captured).not.toHaveProperty('temperature')
     expect(captured.thinking).toEqual({ type: 'enabled' })
     expect(captured.reasoning_effort).toBe('high')
-    expect(rootStore.getter(sessionsAtom).s5.settings.temperature).toBe(0.5)
+    const restoredSettings = rootStore.getter(sessionsAtom).s5.settings
+    expect(restoredSettings.vendor === 'deepseek' ? restoredSettings.temperature : undefined).toBe(0.5)
   })
 
   it('system/tools 注入写入 UI transcript，但不进入 itemsAtom 历史', async () => {

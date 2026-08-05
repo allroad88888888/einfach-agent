@@ -1,4 +1,4 @@
-import type { ModelItem } from '@web-agent/ai'
+import { userMessageTracePreview, type ModelItem } from '@web-agent/ai'
 import type {
   DelegateAgentChildSpec,
   DelegateAgentStrategy,
@@ -63,7 +63,11 @@ function safeJson(value: unknown): string {
 }
 
 function formatModelItem(item: ModelItem): string {
-  if (item.role === 'user') return `user:\n${compact(item.content, 2_000)}`
+  if (item.role === 'user') {
+    const preview = userMessageTracePreview(item.content)
+    const imageSummary = preview.imageCount ? `\n[${preview.imageCount} image(s)]` : ''
+    return `user:\n${compact(`${preview.text}${imageSummary}`, 2_000)}`
+  }
   if (item.role === 'tool') return `tool ${item.tool_call_id}:\n${compact(item.content, 2_000)}`
   if (item.role === 'system') return `system:\n${compact(item.content, 2_000)}`
 

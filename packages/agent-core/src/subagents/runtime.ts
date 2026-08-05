@@ -42,11 +42,14 @@ export function createDelegateAgentRuntime(
         tools: [],
         toolChoice: 'none',
         settings: {
-          ...runtime.opts.settings,
+          vendor: 'deepseek',
           model: DEEPSEEK_FLASH_MODEL,
           temperature: 0,
           thinking: false,
           max_tokens: Math.max(256, Math.min(requestedMaxTokens, 2_000)),
+          ...(runtime.opts.settings.vendor === 'deepseek'
+            ? { reasoning_effort: runtime.opts.settings.reasoning_effort }
+            : {}),
         },
       },
     )

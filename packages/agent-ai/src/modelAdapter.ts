@@ -6,6 +6,8 @@ import {
   type DeepSeekReasoningEffort,
 } from './deepseek'
 import { callGlm, streamGlm, type GlmReasoningEffort } from './glm'
+import { callKimi, streamKimi } from './kimi'
+import type { KimiRegion } from './kimiRegion'
 import type {
   ChatCallOptions,
   ChatRequestBase,
@@ -17,6 +19,7 @@ import type {
 export type ModelAdapterSettings =
   | { vendor: 'deepseek'; reasoning_effort?: DeepSeekReasoningEffort }
   | { vendor: 'glm'; reasoning_effort?: GlmReasoningEffort }
+  | { vendor: 'kimi'; region?: KimiRegion }
 
 export interface ModelRequest extends ChatRequestBase {
   settings: ModelAdapterSettings
@@ -38,6 +41,12 @@ export function callModel(
   if (settings.vendor === 'glm') {
     return callGlm({ ...body, reasoning_effort: settings.reasoning_effort }, options)
   }
+  if (settings.vendor === 'kimi') {
+    return callKimi({
+      ...body,
+      region: settings.region,
+    }, options)
+  }
   return callDeepSeek(
     { ...body, reasoning_effort: settings.reasoning_effort, user_id: userId },
     options,
@@ -54,6 +63,13 @@ export function streamModel(
   const { settings, userId, ...body } = request
   if (settings.vendor === 'glm') {
     return streamGlm({ ...body, reasoning_effort: settings.reasoning_effort }, options, handlers)
+  }
+  if (settings.vendor === 'kimi') {
+    return streamKimi(
+      { ...body, region: settings.region },
+      options,
+      handlers,
+    )
   }
   return streamDeepSeek(
     { ...body, reasoning_effort: settings.reasoning_effort, user_id: userId },

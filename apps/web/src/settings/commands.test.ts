@@ -6,13 +6,17 @@ import {
   configureAppSettingsStorage,
   configureModelCredentialHost,
   deleteDeepSeekApiKey,
+  deleteKimiApiKey,
   hydrateAppSettings,
   saveDeepSeekApiKey,
+  saveKimiApiKey,
   updateDeepSeekApiKeyDraft,
+  updateKimiApiKeyDraft,
 } from './commands'
 import {
   createUnavailableModelCredentialHost,
   type ModelCredentialHost,
+  type ModelCredentialTarget,
 } from './modelCredentialHost'
 import { createMemoryAppSettingsStorage } from './persistence'
 import {
@@ -20,30 +24,43 @@ import {
   customInstructionsStatusAtom,
   deepSeekApiKeyDraftAtom,
   deepSeekApiKeyStatusAtom,
+  kimiApiKeyDraftAtom,
+  kimiApiKeyStatusAtom,
   resetAppSettingsState,
 } from './state'
 
-function credentialHost(): { host: ModelCredentialHost; saved: () => string } {
-  let apiKey = ''
-  const status = () => ({
-    configured: Boolean(apiKey),
-    source: apiKey ? 'keychain' as const : 'missing' as const,
+function targetKey(target: ModelCredentialTarget): string {
+  return `${target.provider}:${target.scope}`
+}
+
+function credentialHost(): {
+  host: ModelCredentialHost
+  saved: (target: ModelCredentialTarget) => string
+} {
+  const apiKeys = new Map<string, string>()
+  const status = (target: ModelCredentialTarget) => ({
+    configured: Boolean(apiKeys.get(targetKey(target))),
+    source: apiKeys.get(targetKey(target)) ? 'keychain' as const : 'missing' as const,
   })
   return {
     host: {
-      deepSeekStatus: async () => status(),
-      saveDeepSeek: async (value) => {
-        apiKey = value
-        return status()
+      available: true,
+      status: async (target) => status(target),
+      save: async (target, value) => {
+        apiKeys.set(targetKey(target), value)
+        return status(target)
       },
-      deleteDeepSeek: async () => {
-        apiKey = ''
-        return status()
+      delete: async (target) => {
+        apiKeys.delete(targetKey(target))
+        return status(target)
       },
     },
-    saved: () => apiKey,
+    saved: (target) => apiKeys.get(targetKey(target)) ?? '',
   }
 }
+
+const DEEPSEEK_TARGET = { provider: 'deepseek', scope: 'default' } as const
+const KIMI_CN_TARGET = { provider: 'kimi', scope: 'cn' } as const
 
 describe('app settings commands', () => {
   beforeEach(() => {
@@ -78,22 +95,32 @@ describe('app settings commands', () => {
     })
   })
 
-  it('saves and deletes a key through the host without persisting or exposing it in state', async () => {
+  it('saves and deletes provider-scoped keys without persisting or exposing them', async () => {
     const fake = credentialHost()
     configureModelCredentialHost(fake.host)
     await hydrateAppSettings()
     updateDeepSeekApiKeyDraft('deepseek-test-key')
+    updateKimiApiKeyDraft('kimi-test-key')
 
     await expect(saveDeepSeekApiKey()).resolves.toBe(true)
-    expect(fake.saved()).toBe('deepseek-test-key')
+    await expect(saveKimiApiKey()).resolves.toBe(true)
+    expect(fake.saved(DEEPSEEK_TARGET)).toBe('deepseek-test-key')
+    expect(fake.saved(KIMI_CN_TARGET)).toBe('kimi-test-key')
     expect(rootStore.getter(deepSeekApiKeyDraftAtom)).toBe('')
+    expect(rootStore.getter(kimiApiKeyDraftAtom)).toBe('')
     expect(rootStore.getter(deepSeekApiKeyStatusAtom)).toMatchObject({
       status: 'saved', configured: true, source: 'keychain',
     })
-    expect(JSON.stringify(rootStore.getter(appSettingsAtom))).not.toContain('deepseek-test-key')
+    expect(rootStore.getter(kimiApiKeyStatusAtom)).toMatchObject({
+      status: 'saved', configured: true, source: 'keychain',
+    })
+    expect(JSON.stringify(rootStore.getter(appSettingsAtom))).not.toContain('test-key')
 
     await expect(deleteDeepSeekApiKey()).resolves.toBe(true)
-    expect(fake.saved()).toBe('')
+    await expect(deleteKimiApiKey()).resolves.toBe(true)
+    expect(fake.saved(DEEPSEEK_TARGET)).toBe('')
+    expect(fake.saved(KIMI_CN_TARGET)).toBe('')
     expect(rootStore.getter(deepSeekApiKeyStatusAtom)).toMatchObject({ configured: false })
+    expect(rootStore.getter(kimiApiKeyStatusAtom)).toMatchObject({ configured: false })
   })
 })

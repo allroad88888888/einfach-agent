@@ -2,15 +2,41 @@ import { invoke } from '@tauri-apps/api/core'
 
 export type CredentialSource = 'keychain' | 'environment' | 'missing'
 
+export type ModelCredentialTarget =
+  | { provider: 'deepseek'; scope: 'default' }
+  | { provider: 'kimi'; scope: 'cn' }
+
+export type ModelCredentialId = 'deepseek-default' | 'kimi-cn'
+
+export interface ModelCredentialDescriptor {
+  id: ModelCredentialId
+  label: string
+  target: ModelCredentialTarget
+}
+
+export const MODEL_CREDENTIALS: readonly ModelCredentialDescriptor[] = [
+  {
+    id: 'deepseek-default',
+    label: 'DeepSeek',
+    target: { provider: 'deepseek', scope: 'default' },
+  },
+  {
+    id: 'kimi-cn',
+    label: 'Kimi 中国区',
+    target: { provider: 'kimi', scope: 'cn' },
+  },
+]
+
 export interface ModelCredentialStatus {
   configured: boolean
   source: CredentialSource
 }
 
 export interface ModelCredentialHost {
-  deepSeekStatus(): Promise<ModelCredentialStatus>
-  saveDeepSeek(apiKey: string): Promise<ModelCredentialStatus>
-  deleteDeepSeek(): Promise<ModelCredentialStatus>
+  available: boolean
+  status(target: ModelCredentialTarget): Promise<ModelCredentialStatus>
+  save(target: ModelCredentialTarget, apiKey: string): Promise<ModelCredentialStatus>
+  delete(target: ModelCredentialTarget): Promise<ModelCredentialStatus>
 }
 
 export function createUnavailableModelCredentialHost(): ModelCredentialHost {
@@ -18,23 +44,28 @@ export function createUnavailableModelCredentialHost(): ModelCredentialHost {
     throw new Error('模型密钥只能在桌面应用中保存。')
   }
   return {
-    deepSeekStatus: async () => ({ configured: false, source: 'missing' }),
-    saveDeepSeek: unavailable,
-    deleteDeepSeek: unavailable,
+    available: false,
+    status: async () => ({ configured: false, source: 'missing' }),
+    save: unavailable,
+    delete: unavailable,
   }
 }
 
 /** Uses desktop IPC commands whose responses never contain a credential value. */
 export function createTauriModelCredentialHost(): ModelCredentialHost {
   return {
-    deepSeekStatus: () => invoke<ModelCredentialStatus>('model_credential_status', {
-      provider: 'deepseek',
-    }),
-    saveDeepSeek: (apiKey) => invoke<ModelCredentialStatus>('model_credential_set', {
-      input: { provider: 'deepseek', apiKey },
-    }),
-    deleteDeepSeek: () => invoke<ModelCredentialStatus>('model_credential_delete', {
-      provider: 'deepseek',
-    }),
+    available: true,
+    status: ({ provider, scope }) => invoke<ModelCredentialStatus>(
+      'model_credential_status',
+      { provider, scope },
+    ),
+    save: ({ provider, scope }, apiKey) => invoke<ModelCredentialStatus>(
+      'model_credential_set',
+      { input: { provider, scope, apiKey } },
+    ),
+    delete: ({ provider, scope }) => invoke<ModelCredentialStatus>(
+      'model_credential_delete',
+      { provider, scope },
+    ),
   }
 }

@@ -1,18 +1,17 @@
-use crate::model_credentials::active_model_credential;
-use crate::model_provider::ModelProvider;
+use crate::model_provider::{ModelProvider, ProviderScope};
+use crate::model_provider_route::{
+    resolve_provider_target, ProviderMethod, ProviderTarget, ResolvedProviderTarget,
+};
+use crate::model_proxy_body::{prepare_provider_body, PreparedProviderBody, ProviderRequestBody};
+use crate::model_proxy_envelope::{validate_provider_request_envelope, ModelProviderRequestInput};
+use crate::model_proxy_http::send_provider_request;
 use crate::model_request_registry::ModelRequestCanceller;
-use futures_util::StreamExt;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
 use tauri::State;
-use tokio_util::sync::CancellationToken;
 
-const MAX_REQUEST_BODY_BYTES: usize = 4 * 1024 * 1024;
-const MODEL_REQUEST_TIMEOUT_SECONDS: u64 = 120;
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ModelChatCompletionsInput {
     pub provider: ModelProvider,
     pub body: String,
@@ -27,6 +26,8 @@ pub enum ModelProxyEvent {
         status: u16,
         #[serde(skip_serializing_if = "Option::is_none")]
         content_type: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        retry_after: Option<String>,
     },
     Chunk {
         bytes: Vec<u8>,
@@ -37,151 +38,84 @@ pub enum ModelProxyEvent {
     },
 }
 
-fn valid_request_body(body: &str) -> Result<(), String> {
-    if body.len() > MAX_REQUEST_BODY_BYTES {
-        return Err("模型请求过大".to_string());
+async fn prepare_body(
+    body: ProviderRequestBody,
+    target: &ResolvedProviderTarget,
+    cancellation: &tokio_util::sync::CancellationToken,
+) -> Result<Option<PreparedProviderBody>, String> {
+    let expected = target.body_kind;
+    let task = tauri::async_runtime::spawn_blocking(move || prepare_provider_body(body, expected));
+    tokio::select! {
+        _ = cancellation.cancelled() => Ok(None),
+        prepared = task => prepared
+            .map_err(|_| "处理模型请求失败".to_string())?
+            .map(Some),
     }
-    serde_json::from_str::<serde_json::Value>(body)
-        .map(|_| ())
-        .map_err(|_| "模型请求格式无效".to_string())
 }
 
-fn model_http_client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(15))
-        .timeout(std::time::Duration::from_secs(
-            MODEL_REQUEST_TIMEOUT_SECONDS,
-        ))
-        .no_proxy()
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|_| "无法初始化模型网络连接".to_string())
-}
-
-#[tauri::command]
-pub async fn model_chat_completions(
-    input: ModelChatCompletionsInput,
-    events: Channel<ModelProxyEvent>,
-    cancellations: State<'_, ModelRequestCanceller>,
+async fn run_provider_request(
+    input: ModelProviderRequestInput,
+    events: &Channel<ModelProxyEvent>,
+    cancellations: &ModelRequestCanceller,
 ) -> Result<(), String> {
-    valid_request_body(&input.body)?;
+    validate_provider_request_envelope(&input)?;
+    let target = resolve_provider_target(&input.target)?;
     let cancellation = cancellations.register(&input.request_id)?;
-    let result = match events.send(ModelProxyEvent::Started) {
-        Ok(()) => send_model_request(&input, &events, &cancellation).await,
-        Err(_) => Err("模型响应通道已关闭".to_string()),
+    let result = if events.send(ModelProxyEvent::Started).is_err() {
+        Err("模型响应通道已关闭".to_string())
+    } else {
+        match prepare_body(input.body, &target, &cancellation).await {
+            Ok(Some(body)) => send_provider_request(target, body, events, &cancellation).await,
+            Ok(None) => Ok(()),
+            Err(error) => Err(error),
+        }
     };
     cancellations.finish(&input.request_id);
     result
 }
 
 #[tauri::command]
-pub fn cancel_model_chat_completions(
+pub async fn model_provider_request(
+    input: ModelProviderRequestInput,
+    events: Channel<ModelProxyEvent>,
+    cancellations: State<'_, ModelRequestCanceller>,
+) -> Result<(), String> {
+    run_provider_request(input, &events, cancellations.inner()).await
+}
+
+#[tauri::command]
+pub fn cancel_model_provider_request(
     request_id: String,
     cancellations: State<'_, ModelRequestCanceller>,
 ) -> Result<bool, String> {
     cancellations.cancel(&request_id)
 }
 
-async fn send_model_request(
-    input: &ModelChatCompletionsInput,
-    events: &Channel<ModelProxyEvent>,
-    cancellation: &CancellationToken,
+/** Compatibility command for existing DeepSeek and GLM renderer builds. */
+#[tauri::command]
+pub async fn model_chat_completions(
+    input: ModelChatCompletionsInput,
+    events: Channel<ModelProxyEvent>,
+    cancellations: State<'_, ModelRequestCanceller>,
 ) -> Result<(), String> {
-    let credential = tokio::select! {
-        _ = cancellation.cancelled() => return Ok(()),
-        credential = active_model_credential(input.provider) => credential?,
+    let input = ModelProviderRequestInput {
+        target: ProviderTarget {
+            provider: input.provider,
+            scope: ProviderScope::Default,
+            method: ProviderMethod::Post,
+            path: "/chat/completions".to_string(),
+        },
+        body: ProviderRequestBody::Json { json: input.body },
+        request_id: input.request_id,
     };
-    let (api_key, _) = credential;
-    let client = model_http_client()?;
-    let response = tokio::select! {
-        _ = cancellation.cancelled() => return Ok(()),
-        response = client
-            .post(input.provider.chat_completions_url())
-            .header(CONTENT_TYPE, "application/json")
-            .header(AUTHORIZATION, format!("Bearer {api_key}"))
-            .body(input.body.clone())
-            .send() => response.map_err(|_| "模型服务请求失败")?,
-    };
-    let status = response.status().as_u16();
-    let content_type = response
-        .headers()
-        .get(CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .map(str::to_owned);
-    events
-        .send(ModelProxyEvent::Response {
-            status,
-            content_type,
-        })
-        .map_err(|_| "模型响应通道已关闭")?;
-
-    let mut chunks = response.bytes_stream();
-    loop {
-        let chunk = tokio::select! {
-            _ = cancellation.cancelled() => return Ok(()),
-            chunk = chunks.next() => chunk,
-        };
-        let Some(chunk) = chunk else {
-            break;
-        };
-        match chunk {
-            Ok(bytes) => events
-                .send(ModelProxyEvent::Chunk {
-                    bytes: bytes.to_vec(),
-                })
-                .map_err(|_| "模型响应通道已关闭")?,
-            Err(_) => {
-                let _ = events.send(ModelProxyEvent::Error {
-                    message: "模型响应中断".to_string(),
-                });
-                return Ok(());
-            }
-        }
-    }
-    events
-        .send(ModelProxyEvent::End)
-        .map_err(|_| "模型响应通道已关闭".to_string())
+    run_provider_request(input, &events, cancellations.inner()).await
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{model_http_client, valid_request_body};
-    use std::io::{Read, Write};
-    use std::net::TcpListener;
-
-    #[test]
-    fn validates_json_before_forwarding_it() {
-        assert!(valid_request_body("{\"model\":\"x\"}").is_ok());
-        assert!(valid_request_body("not json").is_err());
-        assert!(valid_request_body(&"x".repeat(4 * 1024 * 1024 + 1)).is_err());
-    }
-
-    #[test]
-    fn model_client_does_not_follow_redirects() {
-        let listener = TcpListener::bind("127.0.0.1:0").expect("bind redirect server");
-        let address = listener.local_addr().expect("read redirect server address");
-        let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().expect("accept model request");
-            let mut request = [0_u8; 1_024];
-            stream.read(&mut request).expect("read model request");
-            stream
-                .write_all(
-                    b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:1/redirected\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-                )
-                .expect("write redirect response");
-        });
-
-        let response = tauri::async_runtime::block_on(async {
-            model_http_client()
-                .expect("build model client")
-                .post(format!("http://{address}/chat/completions"))
-                .body("{}")
-                .send()
-                .await
-        })
-        .expect("return redirect response without following it");
-
-        assert_eq!(response.status(), reqwest::StatusCode::FOUND);
-        server.join().expect("finish redirect server");
-    }
+/** Compatibility cancellation command for existing renderer builds. */
+#[tauri::command]
+pub fn cancel_model_chat_completions(
+    request_id: String,
+    cancellations: State<'_, ModelRequestCanceller>,
+) -> Result<bool, String> {
+    cancellations.cancel(&request_id)
 }

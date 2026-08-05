@@ -1,4 +1,5 @@
 import { isAgentPath } from './path'
+import type { ModelVendor } from '../state/core.type'
 import type {
   SubagentModelTier,
   SubagentRiskLevel,
@@ -23,7 +24,7 @@ export type SubagentRouteReason =
   | 'default_pro'
 
 export interface SubagentRouteFeatures {
-  vendor?: 'deepseek' | 'glm'
+  vendor?: ModelVendor
   supportsDeepSeekTierRouting?: boolean
   parentPath?: string
   requestedTier?: SubagentModelTier

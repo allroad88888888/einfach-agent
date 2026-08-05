@@ -1,7 +1,11 @@
 mod mcp;
 mod model_credentials;
 mod model_provider;
+mod model_provider_route;
 mod model_proxy;
+mod model_proxy_body;
+mod model_proxy_envelope;
+mod model_proxy_http;
 mod model_request_registry;
 mod shell;
 mod workspace_change_journal;
@@ -38,6 +42,8 @@ pub fn run() {
             model_credentials::model_credential_status,
             model_credentials::model_credential_set,
             model_credentials::model_credential_delete,
+            model_proxy::model_provider_request,
+            model_proxy::cancel_model_provider_request,
             model_proxy::model_chat_completions,
             model_proxy::cancel_model_chat_completions,
             shell::run_shell_command,

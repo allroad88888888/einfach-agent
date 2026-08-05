@@ -1,13 +1,7 @@
 import { configureCommands } from '@web-agent/core/runtime/commands'
 import { rootStore } from '@web-agent/core/state/rootStore'
-import {
-  MAX_CUSTOM_INSTRUCTIONS_LENGTH,
-  MAX_MODEL_API_KEY_LENGTH,
-} from './config'
-import {
-  createUnavailableModelCredentialHost,
-  type ModelCredentialHost,
-} from './modelCredentialHost'
+import { MAX_CUSTOM_INSTRUCTIONS_LENGTH } from './config'
+import { hydrateModelCredentials } from './modelCredentialCommands'
 import {
   createBrowserAppSettingsStorage,
   type AppSettingsStorage,
@@ -17,12 +11,23 @@ import {
   customInstructionsAtom,
   customInstructionsDraftAtom,
   customInstructionsStatusAtom,
-  deepSeekApiKeyDraftAtom,
-  deepSeekApiKeyStatusAtom,
 } from './state'
 
+export {
+  configureModelCredentialHost,
+  deleteDeepSeekApiKey,
+  deleteKimiApiKey,
+  deleteModelCredential,
+  hydrateModelCredentials,
+  saveDeepSeekApiKey,
+  saveKimiApiKey,
+  saveModelCredential,
+  updateDeepSeekApiKeyDraft,
+  updateKimiApiKeyDraft,
+  updateModelCredentialDraft,
+} from './modelCredentialCommands'
+
 let activeStorage = createBrowserAppSettingsStorage()
-let activeModelCredentialHost = createUnavailableModelCredentialHost()
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message
@@ -36,18 +41,11 @@ export function configureAppSettingsStorage(
   activeStorage = storage
 }
 
-export function configureModelCredentialHost(host: ModelCredentialHost): void {
-  activeModelCredentialHost = host
-}
-
 export async function hydrateAppSettings(): Promise<void> {
   const current = rootStore.getter(customInstructionsStatusAtom)
   if (current.status !== 'idle') return
 
   rootStore.setter(customInstructionsStatusAtom, { status: 'loading' })
-  rootStore.setter(deepSeekApiKeyStatusAtom, {
-    status: 'loading', configured: false, source: 'missing',
-  })
   try {
     const settings = activeStorage.load()
     const customInstructions = settings.agent.customInstructions
@@ -61,7 +59,6 @@ export async function hydrateAppSettings(): Promise<void> {
   } catch (error) {
     rootStore.setter(customInstructionsAtom, '')
     rootStore.setter(customInstructionsDraftAtom, '')
-    rootStore.setter(deepSeekApiKeyDraftAtom, '')
     configureCommands({
       customInstructions: '',
       deepseekUserId: undefined,
@@ -72,14 +69,7 @@ export async function hydrateAppSettings(): Promise<void> {
     })
   }
 
-  try {
-    const credential = await activeModelCredentialHost.deepSeekStatus()
-    rootStore.setter(deepSeekApiKeyStatusAtom, { status: 'ready', ...credential })
-  } catch (error) {
-    rootStore.setter(deepSeekApiKeyStatusAtom, {
-      status: 'error', error: errorMessage(error), configured: false, source: 'missing',
-    })
-  }
+  await hydrateModelCredentials()
 }
 
 export function updateCustomInstructionsDraft(value: string): void {
@@ -110,63 +100,6 @@ export function saveCustomInstructions(): boolean {
     rootStore.setter(customInstructionsStatusAtom, {
       status: 'error',
       error: errorMessage(error),
-    })
-    return false
-  }
-}
-
-export function updateDeepSeekApiKeyDraft(value: string): void {
-  rootStore.setter(
-    deepSeekApiKeyDraftAtom,
-    value.slice(0, MAX_MODEL_API_KEY_LENGTH),
-  )
-  const status = rootStore.getter(deepSeekApiKeyStatusAtom)
-  rootStore.setter(deepSeekApiKeyStatusAtom, {
-    status: 'ready',
-    configured: status.configured,
-    source: status.source,
-  })
-}
-
-export async function saveDeepSeekApiKey(): Promise<boolean> {
-  const value = rootStore.getter(deepSeekApiKeyDraftAtom).trim()
-  if (!value) {
-    rootStore.setter(deepSeekApiKeyStatusAtom, {
-      status: 'error', error: '请输入 DeepSeek API Key。', configured: false, source: 'missing',
-    })
-    return false
-  }
-  rootStore.setter(deepSeekApiKeyStatusAtom, {
-    status: 'loading', configured: false, source: 'missing',
-  })
-  try {
-    const credential = await activeModelCredentialHost.saveDeepSeek(value)
-    rootStore.setter(deepSeekApiKeyDraftAtom, '')
-    rootStore.setter(deepSeekApiKeyStatusAtom, { status: 'saved', ...credential })
-    return true
-  } catch (error) {
-    rootStore.setter(deepSeekApiKeyStatusAtom, {
-      status: 'error',
-      error: errorMessage(error),
-      configured: false,
-      source: 'missing',
-    })
-    return false
-  }
-}
-
-export async function deleteDeepSeekApiKey(): Promise<boolean> {
-  rootStore.setter(deepSeekApiKeyStatusAtom, {
-    status: 'loading', configured: false, source: 'missing',
-  })
-  try {
-    const credential = await activeModelCredentialHost.deleteDeepSeek()
-    rootStore.setter(deepSeekApiKeyDraftAtom, '')
-    rootStore.setter(deepSeekApiKeyStatusAtom, { status: 'saved', ...credential })
-    return true
-  } catch (error) {
-    rootStore.setter(deepSeekApiKeyStatusAtom, {
-      status: 'error', error: errorMessage(error), configured: false, source: 'missing',
     })
     return false
   }

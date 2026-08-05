@@ -12,6 +12,8 @@ import {
   customInstructionsDraftAtom,
   deepSeekApiKeyDirtyAtom,
   deepSeekApiKeyDraftAtom,
+  kimiApiKeyDirtyAtom,
+  kimiApiKeyDraftAtom,
 } from './state'
 
 const TEST_INSTALLATION_ID = `wa_${'a'.repeat(INSTALLATION_ID_RANDOM_BYTES * 2)}`
@@ -45,11 +47,15 @@ describe('app settings state', () => {
     store.setter(customInstructionsAtom, '字'.repeat(MAX_CUSTOM_INSTRUCTIONS_LENGTH + 10))
     store.setter(customInstructionsDraftAtom, '尚未保存')
     store.setter(deepSeekApiKeyDraftAtom, 'k'.repeat(MAX_MODEL_API_KEY_LENGTH + 10))
+    store.setter(kimiApiKeyDraftAtom, 'm'.repeat(MAX_MODEL_API_KEY_LENGTH + 10))
 
     expect(store.getter(customInstructionsAtom)).toHaveLength(MAX_CUSTOM_INSTRUCTIONS_LENGTH)
     expect(store.getter(customInstructionsDirtyAtom)).toBe(true)
     expect(store.getter(deepSeekApiKeyDraftAtom)).toHaveLength(MAX_MODEL_API_KEY_LENGTH)
     expect(store.getter(deepSeekApiKeyDirtyAtom)).toBe(true)
+    expect(store.getter(kimiApiKeyDraftAtom)).toHaveLength(MAX_MODEL_API_KEY_LENGTH)
+    expect(store.getter(kimiApiKeyDirtyAtom)).toBe(true)
     expect(JSON.stringify(store.getter(appSettingsAtom))).not.toContain('kkkk')
+    expect(JSON.stringify(store.getter(appSettingsAtom))).not.toContain('mmmm')
   })
 })

@@ -18,6 +18,8 @@ import { Composer } from './Composer'
 import { ActivePlanPanel } from './ActivePlanPanel'
 import { SettingsCenter } from './SettingsCenter'
 import { reportReactCommit } from '../../performanceDiagnostics'
+import { HistoryImageCompatibilityProvider } from './HistoryImageCompatibilityContext'
+import { HistoryImageCompatibilityGuard } from './HistoryImageCompatibilityGuard'
 
 export function AppShell() {
   return (
@@ -28,7 +30,11 @@ export function AppShell() {
       </aside>
       <main className="agentnew-main" aria-label="当前对话">
         <ActiveSessionProvider>{(session) => (
-          <>
+          <HistoryImageCompatibilityProvider
+            vendor={session.vendor}
+            model={session.model}
+            region={session.region}
+          >
           {/* SaveArtifact 属于「当前对话内容」的一部分，排在 MessageList 之后。 */}
           <MessageList />
           <Profiler id="ActivePlanPanel" onRender={reportReactCommit}>
@@ -41,8 +47,14 @@ export function AppShell() {
           <AskUserQuestionCard surface="conversation" />
           <ToolConfirmCard />
           <ContextStats />
-          <Composer approvalMode={session.approvalMode} />
-          </>
+          <HistoryImageCompatibilityGuard>
+            <Composer
+              approvalMode={session.approvalMode}
+              vendor={session.vendor}
+              model={session.model}
+            />
+          </HistoryImageCompatibilityGuard>
+          </HistoryImageCompatibilityProvider>
         )}</ActiveSessionProvider>
       </main>
     </div>

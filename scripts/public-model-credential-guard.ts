@@ -1,4 +1,8 @@
-const PUBLIC_MODEL_CREDENTIAL_NAMES = ['VITE_DEEPSEEK_API_KEY', 'VITE_GLM_API_KEY'] as const
+const PUBLIC_MODEL_CREDENTIAL_NAMES = [
+  'VITE_DEEPSEEK_API_KEY',
+  'VITE_GLM_API_KEY',
+  'VITE_KIMI_API_KEY',
+] as const
 
 /** Refuses credentials that Vite would otherwise make available to browser code. */
 export function assertNoPublicModelCredentials(environment: Record<string, string | undefined>): void {

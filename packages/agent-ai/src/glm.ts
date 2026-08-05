@@ -12,6 +12,7 @@ import {
   type ChatRequestBase,
   type ModelChatResponse,
 } from './modelApi'
+import { nonVisualMessages } from './nonVisualMessages'
 
 // 简介：GLM 接入点与默认模型。
 export const GLM_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4'
@@ -27,13 +28,18 @@ export interface GlmChatRequest extends ChatRequestBase {
   reasoning_effort?: GlmReasoningEffort
 }
 
+function prepareGlmRequest(body: GlmChatRequest): GlmChatRequest {
+  const messages = nonVisualMessages(body.messages)
+  return messages === body.messages ? body : { ...body, messages }
+}
+
 // 简介：调用 GLM 的 chat/completions（一次性完整响应）。
 // 详情：默认接入 GLM_BASE_URL，可由 options.baseUrl 覆盖。
 export function callGlm(
   body: GlmChatRequest,
   options: ChatCallOptions,
 ): Promise<ModelChatResponse> {
-  return postChatCompletion(options.baseUrl ?? GLM_BASE_URL, body, options)
+  return postChatCompletion(options.baseUrl ?? GLM_BASE_URL, prepareGlmRequest(body), options)
 }
 
 // 简介：调用 GLM 的 chat/completions（流式）。
@@ -44,5 +50,10 @@ export function streamGlm(
   options: ChatCallOptions,
   handlers?: ChatStreamHandlers,
 ): Promise<ModelChatResponse> {
-  return postChatCompletionStream(options.baseUrl ?? GLM_BASE_URL, body, options, handlers)
+  return postChatCompletionStream(
+    options.baseUrl ?? GLM_BASE_URL,
+    prepareGlmRequest(body),
+    options,
+    handlers,
+  )
 }

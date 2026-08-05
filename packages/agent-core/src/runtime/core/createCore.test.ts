@@ -45,6 +45,7 @@ afterEach(() => {
   Object.assign(defaultCore.config, {
     deepseekApiKey: '',
     glmApiKey: '',
+    kimiApiKey: '',
     customInstructions: '',
     fetchImpl: undefined,
   })
@@ -81,6 +82,7 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
     expect(core.config).toEqual({
       deepseekApiKey: '',
       glmApiKey: '',
+      kimiApiKey: '',
       customInstructions: '',
     })
 

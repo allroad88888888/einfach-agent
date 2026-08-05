@@ -15,6 +15,7 @@ import {
   type ModelResponseMessage,
   type ModelStreamDelta,
 } from './modelApi'
+import { nonVisualMessages } from './nonVisualMessages'
 
 // 简介：DeepSeek 接入点与默认模型。
 export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
@@ -98,18 +99,20 @@ function prepareDeepSeekRequest(body: DeepSeekChatRequest): DeepSeekChatRequest 
     frequency_penalty: _frequencyPenalty,
     ...baseRequest
   } = body
+  const messages = nonVisualMessages(body.messages)
   const userId = normalizeDeepSeekUserId(rawUserId)
   const request = userId === undefined ? baseRequest : { ...baseRequest, user_id: userId }
 
   if (body.thinking?.type === 'enabled') {
     return {
       ...request,
-      messages: prepareDeepSeekThinkingMessages(body.messages),
+      messages: prepareDeepSeekThinkingMessages(messages),
     }
   }
 
   return {
     ...request,
+    messages,
     tool_choice: rawToolChoice,
     temperature: body.temperature,
     top_p: body.top_p,

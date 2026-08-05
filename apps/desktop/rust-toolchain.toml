@@ -1,0 +1,5 @@
+# 固定本 crate 的 Rust 工具链，避免在 stable / 1.85 / 其它版本间切换触发全量重编。
+# 如需冻结到精确版本（防未来 stable 升级引发全量重编），把 stable 换成 "1.95.0"
+# （rustup 会自动下载对应工具链）。
+[toolchain]
+channel = "stable"

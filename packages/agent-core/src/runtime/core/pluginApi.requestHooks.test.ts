@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ModelItem, UserItem } from '@web-agent/ai'
+import { userMessageText, type ModelItem, type UserItem } from '@web-agent/ai'
 import type { CoreCtx } from './coreCtx'
 import type { RequestDraft } from './loopHooks'
 import { assemblePlugins, type AgentPlugin } from './pluginApi'
@@ -16,7 +16,7 @@ function draftOf(...contents: string[]): RequestDraft {
 }
 
 function contentsOf(draft: RequestDraft): string[] {
-  return draft.messages.map((m) => (m as UserItem).content)
+  return draft.messages.map((m) => userMessageText((m as UserItem).content))
 }
 
 describe('onRunStart —— run 启动、首轮请求前，按注册序依次 await', () => {

@@ -1,5 +1,6 @@
 // 会话瞬态 atom 使用的 UI 载荷；数据不持久化，也不进入模型上下文。
 
+import type { UserMessageContent } from '@web-agent/ai'
 import type { ConversationItem } from './core.type'
 
 export interface PendingArtifact {
@@ -50,8 +51,10 @@ export interface WithdrawnTurnNotice {
 export interface QueuedUserMessage {
   id: string
   createdAt: number
-  content: string
+  content: UserMessageContent
   targetRunId: string
+  /** Monotonic within this Core instance; optional for persisted legacy queue entries. */
+  submissionSequence?: number
 }
 
 export interface TranscriptInjectionFingerprints {

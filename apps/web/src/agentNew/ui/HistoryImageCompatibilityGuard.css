@@ -1,0 +1,14 @@
+.agentnew-history-image-guard {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px 16px;
+}
+
+.agentnew-history-image-warning {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, #d97706 45%, transparent);
+  border-radius: 8px;
+  color: #92400e;
+  background: color-mix(in srgb, #fef3c7 75%, transparent);
+  font-size: 13px;
+}

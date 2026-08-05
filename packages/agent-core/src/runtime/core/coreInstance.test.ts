@@ -142,6 +142,7 @@ describe('coreInstance —— CoreInstance 抽象与 defaultCore', () => {
       expect(core.config).toEqual({
         deepseekApiKey: '',
         glmApiKey: '',
+        kimiApiKey: '',
         customInstructions: '',
       })
     })
