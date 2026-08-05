@@ -18,17 +18,8 @@ async function waitUntil(predicate: () => boolean, label: string): Promise<void>
 }
 
 describe('stopRun tool-call closure', () => {
-  it('closes uncompleted calls before the next model request', async () => {
-    let requestMessages: Array<Record<string, unknown>> = []
-    const core = createCore({
-      config: {
-        deepseekApiKey: 'test-key',
-        fetchImpl: async (_url, init) => {
-          requestMessages = (JSON.parse(String(init?.body)) as { messages: Array<Record<string, unknown>> }).messages
-          return jsonResponse('已恢复')
-        },
-      },
-    })
+  it('closes uncompleted calls when the user stops the run', () => {
+    const core = createCore()
     const id = core.newSession()
     const store = core.getSessionStore(id).store
     store.setter(itemsAtom, [
@@ -61,6 +52,38 @@ describe('stopRun tool-call closure', () => {
       content: expect.stringContaining('"interrupted":true'),
     })
     expect(store.getter(runAtom)).toMatchObject({ status: 'stopped' })
+  })
+
+  it('repairs an older stopped run before the next model request', async () => {
+    let requestMessages: Array<Record<string, unknown>> = []
+    const core = createCore({
+      config: {
+        deepseekApiKey: 'test-key',
+        fetchImpl: async (_url, init) => {
+          requestMessages = (JSON.parse(String(init?.body)) as { messages: Array<Record<string, unknown>> }).messages
+          return jsonResponse('已恢复')
+        },
+      },
+    })
+    const id = core.newSession()
+    const store = core.getSessionStore(id).store
+    store.setter(itemsAtom, [
+      { id: 'u1', createdAt: 1, item: { role: 'user' as const, content: '执行检查' } },
+      {
+        id: 'a1',
+        createdAt: 2,
+        item: {
+          role: 'assistant' as const,
+          content: null,
+          tool_calls: [
+            { id: 'completed', type: 'function' as const, function: { name: 'read_file', arguments: '{}' } },
+            { id: 'pending', type: 'function' as const, function: { name: 'shell_macos', arguments: '{"command":"pwd"}' } },
+          ],
+        },
+      },
+      { id: 't1', createdAt: 3, item: { role: 'tool' as const, tool_call_id: 'completed', content: '{"ok":true}' } },
+    ])
+    store.setter(runAtom, { runId: 'run-1', turnId: 'u1', status: 'stopped' })
 
     core.sendMessage('继续')
     await waitUntil(() => store.getter(runAtom)?.status === 'done', 'follow-up completion')

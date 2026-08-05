@@ -32,6 +32,7 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
       return
     }
     if (assertRunStatus(run, 'waiting_user', 'waiting_confirmation', 'waiting_plan_approval', 'interrupted')) return
+    closeUnresolvedToolCalls(id, core, '开始下一轮')
     if (meta.title === dependencies.defaultSessionTitle) {
       const title = dependencies.deriveSessionTitle(content)
       if (title) dependencies.renameSession(id, title)
