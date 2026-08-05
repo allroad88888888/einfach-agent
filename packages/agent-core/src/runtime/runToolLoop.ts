@@ -10,6 +10,7 @@ import { currentPlanStageId, maxAgentTurns } from './toolLoopPlan'
 import { appendMappedToolResult, safeErrorMessage } from './toolLoopSupport'
 import { executePreparedToolCall, prepareToolCall } from './toolCallPluginHooks'
 import { addEvent } from '../observability/trace'
+import { closeUnresolvedToolCalls } from './runCheckpoints'
 
 export { persistCurrentRunRecovery } from './runCheckpoints'
 
@@ -41,12 +42,14 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
     }
     if (!base.control.isRunning()) {
       streamWriter?.finishPending()
+      closeUnresolvedToolCalls(id, base.core, '本轮已停止')
       checkpoints.commitStoppedTurn()
       base.trace.finish('cancelled', 'agent.stopped', { reason: 'run_not_running' })
       return true
     }
     if (base.opts.signal.aborted) {
       streamWriter?.finishPending()
+      closeUnresolvedToolCalls(id, base.core, '本轮已中断')
       patchRun(id, { status: 'stopped' }, base.core)
       checkpoints.commitStoppedTurn()
       base.trace.finish('cancelled', 'agent.stopped', { reason: 'aborted' })
@@ -95,7 +98,10 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
     base.trace.finish('error', 'agent.max_turns', { max_turns: budget.limit(), error })
   } catch (error) {
     if (isAbortError(error)) {
-      if (base.control.isCurrent()) patchRun(id, { status: 'stopped' }, base.core)
+      if (base.control.isCurrent()) {
+        closeUnresolvedToolCalls(id, base.core, '本轮已中断')
+        patchRun(id, { status: 'stopped' }, base.core)
+      }
       checkpoints.commitStoppedTurn()
       base.trace.finish('cancelled', 'agent.stopped', { reason: 'abort_error' }, error)
     } else {

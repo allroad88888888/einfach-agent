@@ -7,6 +7,7 @@ import { activeExecutionNodeIdsAtom, executionGraphAtom } from '../../execution/
 import { getExecutionRuntime } from '../../execution/runtime'
 import { resumeInterruptedSession, resumePlanSession, runSession, persistCurrentRunRecovery } from '../modelRun'
 import { newId } from '../newId'
+import { closeUnresolvedToolCalls } from '../runCheckpoints'
 import type { CoreInstance } from '../core/coreInstance'
 import { assertRunStatus, resolveApiKey, withRun } from './runCommands'
 
@@ -86,6 +87,7 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
     const run = store.getter(runAtom)
     core.abort.abortRun(id)
     if (!assertRunStatus(run, 'running', 'awaiting_tool')) return
+    closeUnresolvedToolCalls(id, core, '用户中断本轮')
     patchRun(id, { status: 'stopped', pendingExecutionId: undefined }, core)
     const executionIds = new Set(run.pendingExecutionId ? [run.pendingExecutionId] : [])
     const graph = store.getter(executionGraphAtom)

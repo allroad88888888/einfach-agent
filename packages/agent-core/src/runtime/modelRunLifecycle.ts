@@ -1,7 +1,7 @@
 import { sessionsAtom } from '../state/rootStore'
 import { planAtom, runAtom } from '../state/sessionAtoms'
 import { appendItem, setRun } from '../state/sessionWriters'
-import { closeInterruptedToolCalls, currentTurnItems } from './runCheckpoints'
+import { closeUnresolvedToolCalls, currentTurnItems } from './runCheckpoints'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
 import { newId } from './newId'
 import { bindActiveSpan, runTraceKey, startSpan } from '../observability/trace'
@@ -46,7 +46,7 @@ export async function continueInterruptedModelRun(id: string, opts: ModelRunOpti
   const core = opts.core ?? defaultCore
   const previousRun = core.getSessionStore(id).store.getter(runAtom)
   if (previousRun?.status !== 'interrupted') return
-  closeInterruptedToolCalls(id, core)
+  closeUnresolvedToolCalls(id, core, '应用重启')
   const plan = core.getSessionStore(id).store.getter(planAtom)
   setRun(id, { ...previousRun, status: 'running', pendingExecutionId: undefined, pendingToolCalls: undefined, pendingQuestion: undefined, pendingUserDecision: undefined, pendingToolConfirmation: undefined, pendingPlanApproval: undefined, error: undefined }, core)
   await runLoop(id, previousRun.runId, { ...opts, resumeInterrupted: true, resumePlan: Boolean(plan && EXECUTING_PLAN_STATUSES.has(plan.status)), turnId: previousRun.turnId })

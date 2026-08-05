@@ -71,8 +71,8 @@ export function persistCurrentRunRecovery(
   if (updated) core.persistence.persistCheckpoint(sessionId, updated)
 }
 
-/** Safely closes calls that were persisted before an app restart interrupted them. */
-export function closeInterruptedToolCalls(sessionId: string, core: CoreInstance): void {
+/** Safely closes persisted calls whose execution ended without a saved result. */
+export function closeUnresolvedToolCalls(sessionId: string, core: CoreInstance, interruption: string): void {
   const unresolved = new Map<string, { name: string; planStageId?: string }>()
   for (const entry of currentTurnItems(sessionId, core)) {
     if (entry.item.role === 'assistant') {
@@ -92,7 +92,7 @@ export function closeInterruptedToolCalls(sessionId: string, core: CoreInstance)
         role: 'tool',
         tool_call_id: callId,
         content: JSON.stringify({
-          error: `应用重启时工具 ${pending.name} 尚未保存结果；为避免重复副作用，本次未自动重试。请检查当前状态后再决定是否重新调用。`,
+          error: `${interruption}时工具 ${pending.name} 尚未保存结果；为避免重复副作用，本次未自动重试。请检查当前状态后再决定是否重新调用。`,
           interrupted: true,
           result: 'unknown',
         }),

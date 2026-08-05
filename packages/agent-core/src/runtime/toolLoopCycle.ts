@@ -15,6 +15,7 @@ import { currentPlanDefinition, currentPlanState, currentPlanStageId } from './t
 import { stopOverBudgetPlanStage } from './toolLoopPlanStageGuard'
 import { handleTextTurn } from './toolLoopTextTurn'
 import { safeErrorMessage } from './toolLoopSupport'
+import { closeUnresolvedToolCalls } from './runCheckpoints'
 
 export type ToolLoopCycleResult = 'continue' | 'finished'
 
@@ -171,10 +172,12 @@ export async function runToolLoopCycle(input: {
     return 'finished'
   }
   if (batch === 'stopped') {
+    closeUnresolvedToolCalls(base.id, base.core, '本轮已停止')
     checkpoints.commitStoppedTurn()
     base.trace.finish('cancelled', 'agent.stopped', { reason: 'run_not_running' })
     return 'finished'
   }
+  closeUnresolvedToolCalls(base.id, base.core, '本轮已中断')
   patchRun(base.id, { status: 'stopped' }, base.core)
   checkpoints.commitStoppedTurn()
   base.trace.finish('cancelled', 'agent.stopped', { reason: 'aborted' })
