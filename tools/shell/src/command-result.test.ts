@@ -58,4 +58,33 @@ describe('shellCommandToolResult', () => {
     expect(result).toMatchObject({ ok: false, code: 'SHELL_TIMEOUT', retryable: true })
     expect('ok' in result && !result.ok ? result.hint : '').toContain('后台进程')
   })
+
+  it('非零退出把 stderr 摘要放进 hint，避免模型只看到退出码', () => {
+    const result = shellCommandToolResult(
+      makeResult({ exitCode: 101, stderr: 'error[E0559]: Event::UserInput has no field named images' }),
+    )
+
+    expect(result).toMatchObject({ ok: false, code: 'SHELL_EXIT_NONZERO' })
+    expect('ok' in result && !result.ok ? result.hint : '').toContain('error[E0559]')
+  })
+
+  it('grep 的 exit 1 提醒无匹配语义并引导使用专用搜索工具', () => {
+    const result = shellCommandToolResult(
+      makeResult({
+        command: 'grep -n "vision" crates/agent-runtime/src/ctx.rs',
+        exitCode: 1,
+      }),
+    )
+
+    expect(result).toMatchObject({ ok: false, code: 'SHELL_EXIT_NONZERO' })
+    const hint = 'ok' in result && !result.ok ? result.hint : ''
+    expect(hint).toContain('无匹配')
+    expect(hint).toContain('rg_search')
+  })
+
+  it('不含搜索命令的 exit 1 不猜测失败原因', () => {
+    const result = shellCommandToolResult(makeResult({ command: 'false', exitCode: 1 }))
+
+    expect('ok' in result && !result.ok ? result.hint : '').not.toContain('rg_search')
+  })
 })
