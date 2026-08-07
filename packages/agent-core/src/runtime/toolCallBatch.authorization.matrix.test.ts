@@ -135,6 +135,16 @@ describe('tool-call authorization matrix', () => {
     expect(run?.status).toBe('running')
   })
 
+  it('executes MCP tools directly in auto mode', async () => {
+    const { result, execute, run } = await runCall('mcp__github__create_issue', 'auto', {
+      title: 'Created without a confirmation card',
+    })
+
+    expect(result).toBe('continue')
+    expect(execute).toHaveBeenCalledOnce()
+    expect(run?.status).toBe('running')
+  })
+
   it.each(approvalModes)('executes git_diff_review directly in %s mode', async approvalMode => {
     const { result, execute, run } = await runCall('git_diff_review', approvalMode, {})
 

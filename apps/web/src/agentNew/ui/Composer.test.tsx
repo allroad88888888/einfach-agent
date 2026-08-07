@@ -59,18 +59,18 @@ describe('Composer', () => {
     expect(sendMessage).toHaveBeenCalledWith('go')
   })
 
-  it('输入框聚焦时按 Shift+Command 切换模式，单次按压只触发一次', () => {
+  it('输入框聚焦时按 Shift+Tab 切换模式，单次按压只触发一次', () => {
     const { rerender } = renderWithStore(<Composer approvalMode="confirm" />, { store: createStore() })
     const textarea = screen.getByRole('textbox')
 
-    fireEvent.keyDown(textarea, { key: 'Meta', shiftKey: true, metaKey: true })
-    fireEvent.keyDown(textarea, { key: 'Meta', shiftKey: true, metaKey: true, repeat: true })
+    fireEvent.keyDown(textarea, { key: 'Tab', shiftKey: true })
+    fireEvent.keyDown(textarea, { key: 'Tab', shiftKey: true, repeat: true })
     expect(setApprovalMode).toHaveBeenCalledTimes(1)
     expect(setApprovalMode).toHaveBeenLastCalledWith('auto')
 
-    fireEvent.keyUp(textarea, { key: 'Shift', shiftKey: false, metaKey: true })
+    fireEvent.keyUp(textarea, { key: 'Tab', shiftKey: true })
     rerender(<Composer approvalMode="auto" />)
-    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Shift', shiftKey: true, metaKey: true })
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 'Tab', shiftKey: true })
     expect(setApprovalMode).toHaveBeenLastCalledWith('confirm')
   })
 

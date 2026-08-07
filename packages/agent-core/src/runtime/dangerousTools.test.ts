@@ -49,11 +49,9 @@ describe('classifyToolRisk', () => {
     })
   })
 
-  it('外部 MCP 工具即使在 Auto 模式也必须逐次确认', () => {
+  it('外部 MCP 工具作为 dangerous 交由授权模式决定是否确认', () => {
     expect(classifyToolRisk('mcp__github__create_issue', { title: 'test' })).toEqual({
       level: 'dangerous',
-      reason: '该操作由外部 MCP 服务执行，调用前需要确认将发送的参数',
-      requiresConfirmation: true,
     })
   })
 

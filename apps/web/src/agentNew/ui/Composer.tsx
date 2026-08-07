@@ -148,10 +148,10 @@ export function Composer({
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
   }, [clearImages, notice, running, setDraft, setNotice])
 
-  // macOS 有时不会把修饰键的 keyup 派发回 textarea；在 window 兜底解锁下一次组合按压。
+  // 焦点变化时 textarea 可能收不到 keyup；在 window 兜底解锁下一次快捷键按压。
   useEffect(() => {
     const releaseShortcut = (event: KeyboardEvent) => {
-      if (event.key === 'Shift' || event.key === 'Meta') modeShortcutLatchedRef.current = false
+      if (event.key === 'Shift' || event.key === 'Tab') modeShortcutLatchedRef.current = false
     }
     const releaseOnBlur = () => {
       modeShortcutLatchedRef.current = false
@@ -216,12 +216,12 @@ export function Composer({
           <button
             type="button"
             className={`agentnew-composer-mode ${approvalMode === 'auto' ? 'is-auto' : ''}`}
-            aria-label={`授权模式：${approvalMode === 'auto' ? 'Auto' : '确认'}，Shift+Command 切换`}
-            title="点击或按 Shift + Command 切换授权模式"
+            aria-label={`授权模式：${approvalMode === 'auto' ? 'Auto' : '确认'}，Shift+Tab 切换`}
+            title="点击或按 Shift + Tab 切换授权模式"
             onClick={toggleApprovalMode}
           >
             授权：{approvalMode === 'auto' ? 'Auto' : '确认'}
-            <span aria-hidden="true"> · ⇧⌘ 切换</span>
+            <span aria-hidden="true"> · ⇧Tab 切换</span>
           </button>
           {queuedMessages.length > 0 ? (
             <span className="agentnew-composer-queue-status" role="status">
@@ -250,7 +250,7 @@ export function Composer({
             void addImages({ files, capability: imageCapability })
           }}
           onKeyDown={(event) => {
-            if (event.shiftKey && event.metaKey && !modeShortcutLatchedRef.current) {
+            if (event.key === 'Tab' && event.shiftKey && !modeShortcutLatchedRef.current) {
               event.preventDefault()
               modeShortcutLatchedRef.current = true
               toggleApprovalMode()
@@ -264,7 +264,7 @@ export function Composer({
             }
           }}
           onKeyUp={(event) => {
-            if (!event.shiftKey || !event.metaKey) modeShortcutLatchedRef.current = false
+            if (event.key === 'Shift' || event.key === 'Tab') modeShortcutLatchedRef.current = false
           }}
         />
         <ComposerAttachmentTray
