@@ -115,7 +115,7 @@
 - **改动面**：`apps/web/src/mcp/state.ts`、`service.ts`
 - **判据**：未连接的服务在 UI 上显示「上次可用工具 N 个」与探测时间
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE 8654119
 
 ---
 
@@ -394,6 +394,13 @@
 ---
 
 ## 未决（决策落地前不开工，不指派模型）
+
+- **删除服务时不清工具清单缓存**。`removeToolNameCacheEntry`（B1 建）全仓无调用方，
+  删掉一个服务后它的缓存条目会留在 `~/.webAgent/config.json` 的 `mcp.toolNameCache` 里。
+  **影响有限**：F4 的 manifest 按 manager 登记表遍历，不会把已删服务列给模型；
+  真去连也会被 `connect_mcp_server` 以「不在登记表」明确拒绝，不构成死循环；
+  B1 的总量上限也让它不会无限增长。属于陈旧数据残留而非功能缺陷，
+  但「删了还留着」在隐私上不干净——要不要在 `remove` 里顺手清掉，请决定。
 
 - **schema 校验失败时是否回显实际取值**。`packages/agent-core/src/tools/schemaValidate.ts:119` 的
   enum 失配错误会带上 `describeValue(value)`，即模型传来的原始字符串。F2 给
