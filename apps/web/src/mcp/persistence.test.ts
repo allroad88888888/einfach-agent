@@ -18,7 +18,7 @@ function httpConfig(index: number) {
 }
 
 describe('MCP config persistence', () => {
-  it('defaults missing or invalid auto-connect values to the safe disabled state', () => {
+  it('defaults missing or invalid auto-connect values to the safe disabled state', async () => {
     const storage = createMcpConfigStorage({
       getItem: () => JSON.stringify({
         version: 1,
@@ -41,7 +41,7 @@ describe('MCP config persistence', () => {
       setItem: vi.fn(),
     })
 
-    expect(storage.load()).toEqual([
+    expect(await storage.load()).toEqual([
       {
         id: 'missing-auto-connect',
         name: '缺少开关',
@@ -70,7 +70,7 @@ describe('MCP config persistence', () => {
     expect(memoryStorage.persistence).toBe('temporary')
   })
 
-  it('marks the browser fallback as temporary when localStorage is unavailable', () => {
+  it('marks the browser fallback as temporary when localStorage is unavailable', async () => {
     const descriptor = Object.getOwnPropertyDescriptor(window, 'localStorage')
     Object.defineProperty(window, 'localStorage', {
       configurable: true,
@@ -82,15 +82,15 @@ describe('MCP config persistence', () => {
     try {
       const storage = createBrowserMcpConfigStorage()
       expect(storage.persistence).toBe('temporary')
-      storage.save([httpConfig(1)])
-      expect(storage.load()).toEqual([httpConfig(1)])
+      await storage.save([httpConfig(1)])
+      expect(await storage.load()).toEqual([httpConfig(1)])
     } finally {
       if (descriptor) Object.defineProperty(window, 'localStorage', descriptor)
       else delete (window as { localStorage?: Storage }).localStorage
     }
   })
 
-  it('loads only the explicit safe whitelist and drops secret-bearing configs', () => {
+  it('loads only the explicit safe whitelist and drops secret-bearing configs', async () => {
     const getItem = vi.fn(() => JSON.stringify({
       version: 1,
       servers: [
@@ -163,7 +163,7 @@ describe('MCP config persistence', () => {
     const setItem = vi.fn()
     const storage = createMcpConfigStorage({ getItem, setItem })
 
-    const configs = storage.load()
+    const configs = await storage.load()
 
     expect(configs).toEqual([
       {
@@ -189,7 +189,7 @@ describe('MCP config persistence', () => {
       .not.toMatch(/headers|env|Authorization|TOKEN|API_KEY|secret/)
   })
 
-  it('sanitizes again before writing so headers and env can never reach storage', () => {
+  it('sanitizes again before writing so headers and env can never reach storage', async () => {
     const setItem = vi.fn()
     const storage = createMcpConfigStorage({ getItem: () => null, setItem })
     const structurallyUnsafe = [
@@ -228,7 +228,7 @@ describe('MCP config persistence', () => {
       },
     ] as const
 
-    storage.save(structurallyUnsafe)
+    await storage.save(structurallyUnsafe)
 
     expect(setItem).toHaveBeenCalledTimes(1)
     expect(setItem.mock.calls[0]?.[0]).toBe(MCP_SETTINGS_STORAGE_KEY)
@@ -256,7 +256,7 @@ describe('MCP config persistence', () => {
     })
   })
 
-  it('rejects an oversized stored list instead of silently truncating it', () => {
+  it('rejects an oversized stored list instead of silently truncating it', async () => {
     const servers = Array.from(
       { length: MCP_SETTINGS_MAX_SERVERS + 1 },
       (_, index) => httpConfig(index),
@@ -266,10 +266,10 @@ describe('MCP config persistence', () => {
       setItem: vi.fn(),
     })
 
-    expect(() => storage.load()).toThrow(`最多只能配置 ${MCP_SETTINGS_MAX_SERVERS} 个`)
+    await expect(storage.load()).rejects.toThrow(`最多只能配置 ${MCP_SETTINGS_MAX_SERVERS} 个`)
   })
 
-  it('enforces the same explicit limit before browser or memory writes', () => {
+  it('enforces the same explicit limit before browser or memory writes', async () => {
     const configs = Array.from(
       { length: MCP_SETTINGS_MAX_SERVERS + 1 },
       (_, index) => httpConfig(index),
@@ -278,23 +278,23 @@ describe('MCP config persistence', () => {
     const browserStorage = createMcpConfigStorage({ getItem: () => null, setItem })
     const memoryStorage = createMemoryMcpConfigStorage()
 
-    expect(() => browserStorage.save(configs)).toThrow(
+    await expect(browserStorage.save(configs)).rejects.toThrow(
       `最多只能配置 ${MCP_SETTINGS_MAX_SERVERS} 个`,
     )
     expect(setItem).not.toHaveBeenCalled()
-    expect(() => memoryStorage.save(configs)).toThrow(
+    await expect(memoryStorage.save(configs)).rejects.toThrow(
       `最多只能配置 ${MCP_SETTINGS_MAX_SERVERS} 个`,
     )
   })
 
-  it('rejects duplicate server ids instead of creating ambiguous runtime ownership', () => {
+  it('rejects duplicate server ids instead of creating ambiguous runtime ownership', async () => {
     const duplicate = [httpConfig(1), { ...httpConfig(2), id: 'server-1' }]
     const storage = createMcpConfigStorage({
       getItem: () => JSON.stringify({ version: 1, servers: duplicate }),
       setItem: vi.fn(),
     })
 
-    expect(() => storage.load()).toThrow('MCP 服务 ID 重复：server-1')
+    await expect(storage.load()).rejects.toThrow('MCP 服务 ID 重复：server-1')
     expect(() => createMemoryMcpConfigStorage(duplicate)).toThrow(
       'MCP 服务 ID 重复：server-1',
     )

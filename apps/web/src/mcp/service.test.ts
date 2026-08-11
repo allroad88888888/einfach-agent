@@ -119,8 +119,8 @@ function createStorage(initial: readonly PersistedMcpServerConfig[] = []): {
   save: ReturnType<typeof vi.fn<McpConfigStorage['save']>>
 } {
   let configs = [...initial]
-  const load = vi.fn<McpConfigStorage['load']>(() => configs)
-  const save = vi.fn<McpConfigStorage['save']>((next) => {
+  const load = vi.fn<McpConfigStorage['load']>(async () => configs)
+  const save = vi.fn<McpConfigStorage['save']>(async (next) => {
     configs = [...next]
   })
   return {
@@ -637,6 +637,62 @@ describe('MCP settings service', () => {
     expect(manager.get(config.id)).toBeUndefined()
     expect(store.getter(mcpServerConfigsAtom)).toEqual([])
     expect(save).toHaveBeenLastCalledWith([])
+  })
+
+  it('does not lose a concurrent write to a different server while persisting', async () => {
+    // Regression test for a data-loss race: enqueueServerOperation only
+    // serializes by serverId, so remove(A) and setAutoConnect(B) run
+    // concurrently. storage.save() below models the yield point a real
+    // Tauri IPC round trip opens (every call takes several microtask ticks)
+    // -- comfortably longer than either operation's own synchronous
+    // "read the atom, compute next" step, so both operations' reads land
+    // before either one's write. A correct implementation must still queue
+    // the two read-modify-write turns so neither clobbers the other; the
+    // bug this guards against was persist() reading store.getter() at the
+    // call site (or otherwise outside a shared critical section) and letting
+    // whichever storage.save() call resolved last commit a "next" list
+    // computed from a stale pre-image, silently dropping the other change.
+    const configA: PersistedMcpServerConfig = {
+      id: 'race-a',
+      name: 'A 服务',
+      transport: 'streamable-http',
+      url: 'https://a.example.com/mcp',
+      autoConnect: false,
+    }
+    const configB: PersistedMcpServerConfig = {
+      id: 'race-b',
+      name: 'B 服务',
+      transport: 'streamable-http',
+      url: 'https://b.example.com/mcp',
+      autoConnect: false,
+    }
+    let persistedConfigs: readonly PersistedMcpServerConfig[] = [configA, configB]
+    const load = vi.fn<McpConfigStorage['load']>(async () => persistedConfigs)
+    const save = vi.fn<McpConfigStorage['save']>(async (next) => {
+      for (let tick = 0; tick < 20; tick += 1) await Promise.resolve()
+      persistedConfigs = [...next]
+    })
+    const storage: McpConfigStorage = { persistence: 'persistent', load, save }
+    const store = createStore()
+    const service = createMcpSettingsService({ store, manager, storage })
+    await service.hydrate()
+
+    await Promise.all([
+      service.remove('race-a'),
+      service.setAutoConnect('race-b', true),
+    ])
+
+    const finalConfigs = store.getter(mcpServerConfigsAtom)
+    expect(finalConfigs.find((config) => config.id === 'race-a')).toBeUndefined()
+    expect(finalConfigs.find((config) => config.id === 'race-b')).toEqual({
+      ...configB,
+      autoConnect: true,
+    })
+    expect(persistedConfigs.find((config) => config.id === 'race-a')).toBeUndefined()
+    expect(persistedConfigs.find((config) => config.id === 'race-b')).toEqual({
+      ...configB,
+      autoConnect: true,
+    })
   })
 
   it('rejects a new service at the persisted limit without saving or connecting', async () => {

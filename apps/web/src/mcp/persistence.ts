@@ -7,10 +7,15 @@ import type {
 export const MCP_SETTINGS_STORAGE_KEY = 'web-agent.mcp-servers.v1'
 export const MCP_SETTINGS_MAX_SERVERS = 50
 
+// Tauri-backed storage (see tauriMcpConfigStorage.ts) reaches the config
+// file through an async IPC command, so both methods return promises even
+// though the localStorage/memory implementations below resolve synchronously
+// under the hood. Callers in service.ts already run inside async functions,
+// so awaiting a same-tick promise changes no observable behavior for them.
 export interface McpConfigStorage {
   readonly persistence: McpPersistenceMode
-  load(): readonly PersistedMcpServerConfig[]
-  save(configs: readonly PersistedMcpServerConfig[]): void
+  load(): Promise<readonly PersistedMcpServerConfig[]>
+  save(configs: readonly PersistedMcpServerConfig[]): Promise<void>
 }
 
 interface StorageLike {
@@ -28,7 +33,10 @@ function serializeEnvelope(configs: readonly PersistedMcpServerConfig[]): string
   return JSON.stringify(envelope)
 }
 
-function sanitizeConfigs(
+// Exported so the Tauri-backed storage (tauriMcpConfigStorage.ts) can apply
+// the exact same whitelist/limit/dedupe rules to configs read from the
+// desktop config file, instead of re-implementing them.
+export function sanitizeConfigs(
   configs: readonly unknown[],
 ): readonly PersistedMcpServerConfig[] {
   if (configs.length > MCP_SETTINGS_MAX_SERVERS) {
@@ -61,7 +69,9 @@ function parseEnvelope(raw: string): readonly PersistedMcpServerConfig[] {
 export function createMcpConfigStorage(storage: StorageLike): McpConfigStorage {
   return {
     persistence: 'persistent',
-    load() {
+    // async only to satisfy McpConfigStorage; the localStorage read itself
+    // is still fully synchronous.
+    async load() {
       const raw = storage.getItem(MCP_SETTINGS_STORAGE_KEY)
       if (!raw) return []
       const configs = parseEnvelope(raw)
@@ -74,7 +84,7 @@ export function createMcpConfigStorage(storage: StorageLike): McpConfigStorage {
       }
       return configs
     },
-    save(configs) {
+    async save(configs) {
       const safeConfigs = sanitizeConfigs(configs)
       storage.setItem(MCP_SETTINGS_STORAGE_KEY, serializeEnvelope(safeConfigs))
     },
@@ -87,8 +97,8 @@ export function createMemoryMcpConfigStorage(
   let configs = sanitizeConfigs(initial)
   return {
     persistence: 'temporary',
-    load: () => configs.map((config) => ({ ...config })),
-    save(next) {
+    load: async () => configs.map((config) => ({ ...config })),
+    async save(next) {
       configs = sanitizeConfigs(next)
     },
   }

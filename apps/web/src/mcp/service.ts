@@ -181,9 +181,33 @@ export function createMcpSettingsService({
     }
   }
 
-  const persist = (configs: readonly PersistedMcpServerConfig[]): void => {
-    storage.save(configs)
-    store.setter(mcpServerConfigsAtom, configs)
+  // Serializes every "read atom -> compute next -> await storage.save ->
+  // write atom" turn across ALL callers (submitDraft, importJson, remove,
+  // setAutoConnect), not just per-serverId the way enqueueServerOperation
+  // does. storage.save() awaits a real IPC round trip in the Tauri-backed
+  // implementation, which opens a yield point between reading the atom and
+  // committing the write. Two operations on different serverIds are NOT
+  // serialized against each other by enqueueServerOperation, so without a
+  // queue here each could read the same stale mcpServerConfigsAtom snapshot,
+  // compute divergent "next" lists, and race to persist — the later
+  // storage.save()/setter wins and silently drops the other's change, on
+  // disk as well as in memory. Taking an update function instead of a
+  // precomputed list, and reading store.getter() only inside the queued
+  // turn, is what makes read-modify-write atomic again despite the await.
+  let persistQueue: Promise<void> = Promise.resolve()
+  const persist = (
+    update: (
+      current: readonly PersistedMcpServerConfig[],
+    ) => readonly PersistedMcpServerConfig[],
+  ): Promise<readonly PersistedMcpServerConfig[]> => {
+    let next: readonly PersistedMcpServerConfig[] = []
+    const turn = persistQueue.then(async () => {
+      next = update(store.getter(mcpServerConfigsAtom))
+      await storage.save(next)
+      store.setter(mcpServerConfigsAtom, next)
+    })
+    persistQueue = turn.catch(() => undefined)
+    return turn.then(() => next)
   }
 
   const hydrate = (): Promise<void> => {
@@ -192,7 +216,7 @@ export function createMcpSettingsService({
     const attempt = (async () => {
       store.setter(mcpHydrationAtom, { status: 'loading' })
       try {
-        const loadedConfigs = storage.load()
+        const loadedConfigs = await storage.load()
         if (loadedConfigs.length > MCP_SETTINGS_MAX_SERVERS) {
           throw new Error(`MCP 服务最多只能配置 ${MCP_SETTINGS_MAX_SERVERS} 个`)
         }
@@ -202,7 +226,7 @@ export function createMcpSettingsService({
             : config,
         )
         if (configs.some((config, index) => config !== loadedConfigs[index])) {
-          storage.save(configs)
+          await storage.save(configs)
         }
         store.setter(mcpServerConfigsAtom, configs)
         store.setter(
@@ -265,8 +289,7 @@ export function createMcpSettingsService({
         const existingIds = new Set(store.getter(mcpServerConfigsAtom).map((config) => config.id))
         while (existingIds.has(id)) id = createId()
         const config = buildPersistedMcpConfig(draft, id)
-        const next = [...store.getter(mcpServerConfigsAtom), config]
-        persist(next)
+        await persist((current) => [...current, config])
         setRuntime(config.id, 'disconnected')
         store.setter(mcpDraftAtom, { ...EMPTY_MCP_DRAFT })
         store.setter(mcpAddFormOpenAtom, false)
@@ -331,7 +354,7 @@ export function createMcpSettingsService({
           )
         })
 
-        persist([...existing, ...configs])
+        await persist((current) => [...current, ...configs])
         store.setter(mcpServerRuntimeAtom, (previous) => ({
           ...previous,
           ...Object.fromEntries(configs.map((config) => [
@@ -383,8 +406,7 @@ export function createMcpSettingsService({
         setOperation(id, 'remove')
         try {
           await manager.remove(id)
-          const next = store.getter(mcpServerConfigsAtom).filter((config) => config.id !== id)
-          persist(next)
+          await persist((current) => current.filter((config) => config.id !== id))
           store.setter(mcpServerRuntimeAtom, (previous) => {
             const nextRuntime = { ...previous }
             delete nextRuntime[id]
@@ -405,10 +427,9 @@ export function createMcpSettingsService({
           return
         }
         try {
-          const next = store.getter(mcpServerConfigsAtom).map((entry) =>
+          const next = await persist((current) => current.map((entry) =>
             entry.id === id ? { ...entry, autoConnect: enabled } : entry,
-          )
-          persist(next)
+          ))
           const updated = next.find((entry) => entry.id === id)
           if (!updated) return
           if (enabled) await connectConfig(updated, false)
