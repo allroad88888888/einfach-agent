@@ -53,24 +53,24 @@ describe('SubagentTreePanel workspace history', () => {
   it('脱离对话消息列出全局 run，并复用归档树与 result/event 预览', async () => {
     const indexText = JSON.stringify({
       conversationId: 'history-conversation', runId: 'history-run', status: 'delegated',
-      archiveBasePath: '.agent-archive/conversations/history-conversation/runs/history-run',
-      eventLog: '.agent-archive/conversations/history-conversation/runs/history-run/events.jsonl',
+      archiveBasePath: '.webAgent-archive/conversations/history-conversation/runs/history-run',
+      eventLog: '.webAgent-archive/conversations/history-conversation/runs/history-run/events.jsonl',
       updatedAt: '2026-07-21T10:00:00Z',
     })
     const treeText = JSON.stringify({ nodes: [
       { path: 'root', treeId: 'history-run', status: 'done', objective: '历史根任务', depth: 0 },
-      { path: 'root-01', treeId: 'history-run', parentPath: 'root', status: 'done', objective: '历史递归任务', depth: 1, resultFile: '.agent-archive/conversations/history-conversation/runs/history-run/results/root-01.result.md' },
+      { path: 'root-01', treeId: 'history-run', parentPath: 'root', status: 'done', objective: '历史递归任务', depth: 1, resultFile: '.webAgent-archive/conversations/history-conversation/runs/history-run/results/root-01.result.md' },
     ] })
     const eventsText = `${JSON.stringify({
       eventId: 'history-event', timestamp: '2026-07-21T10:00:00Z', conversationId: 'history-conversation', runId: 'history-run', treeId: 'history-run', agentPath: 'root-01', type: 'child_finished',
-      data: { status: 'done', objective: '历史递归任务', summary: '全局历史摘要', resultFile: '.agent-archive/conversations/history-conversation/runs/history-run/results/root-01.result.md' },
+      data: { status: 'done', objective: '历史递归任务', summary: '全局历史摘要', resultFile: '.webAgent-archive/conversations/history-conversation/runs/history-run/results/root-01.result.md' },
     })}\n`
     vi.mocked(readWorkspaceFile).mockImplementation(async (input) => {
       const content = input.path.endsWith('tree.json') ? treeText : input.path.endsWith('events.jsonl') ? eventsText : '# 历史结果'
       return { ok: true, data: { path: input.path, content, truncated: false, bytes: content.length } }
     })
     vi.mocked(readWorkspaceRunIndexPage).mockResolvedValue({ ok: true, data: {
-      path: '.agent-archive/index/runs.jsonl', lines: [{ lineNumber: 1, content: indexText }], hasMore: false, snapshot: 'history-snapshot',
+      path: '.webAgent-archive/index/runs.jsonl', lines: [{ lineNumber: 1, content: indexText }], hasMore: false, snapshot: 'history-snapshot',
     } })
     const user = userEvent.setup()
 
@@ -88,12 +88,12 @@ describe('SubagentTreePanel workspace history', () => {
 
   it('通过 Einfach 分页状态加载更多历史 run，并保留最新重复记录', async () => {
     const record = (runId: string, status: string) => JSON.stringify({
-      conversationId: 'paging', runId, status, archiveBasePath: `.agent-archive/conversations/paging/runs/${runId}`,
+      conversationId: 'paging', runId, status, archiveBasePath: `.webAgent-archive/conversations/paging/runs/${runId}`,
       updatedAt: runId === 'r1' ? '2026-07-22T00:00:00Z' : '2026-07-21T00:00:00Z',
     })
     vi.mocked(readWorkspaceRunIndexPage)
-      .mockResolvedValueOnce({ ok: true, data: { path: '.agent-archive/index/runs.jsonl', lines: [{ lineNumber: 3, content: record('r1', 'done') }], cursor: 'snapshot:2', hasMore: true, snapshot: 'snapshot' } })
-      .mockResolvedValueOnce({ ok: true, data: { path: '.agent-archive/index/runs.jsonl', lines: [{ lineNumber: 2, content: record('r2', 'delegated') }, { lineNumber: 1, content: record('r1', 'running') }], hasMore: false, snapshot: 'snapshot' } })
+      .mockResolvedValueOnce({ ok: true, data: { path: '.webAgent-archive/index/runs.jsonl', lines: [{ lineNumber: 3, content: record('r1', 'done') }], cursor: 'snapshot:2', hasMore: true, snapshot: 'snapshot' } })
+      .mockResolvedValueOnce({ ok: true, data: { path: '.webAgent-archive/index/runs.jsonl', lines: [{ lineNumber: 2, content: record('r2', 'delegated') }, { lineNumber: 1, content: record('r1', 'running') }], hasMore: false, snapshot: 'snapshot' } })
     const user = userEvent.setup()
 
     renderPanel('/workspace/paging')
@@ -107,7 +107,7 @@ describe('SubagentTreePanel workspace history', () => {
 
   it('解释 candidate 评分，并经人工确认仅生成尚未执行的治理 CLI', async () => {
     const record = JSON.stringify({
-      type: 'skill', skillId: 'sk_review', kind: 'core', globalPath: '.agent-archive/skills/sk_review.md',
+      type: 'skill', skillId: 'sk_review', kind: 'core', globalPath: '.webAgent-archive/skills/sk_review.md',
       contentHash: 'h64:1234567890abcd', promotion: 'candidate', inheritSkillIds: [], sourceTranscriptChars: 1_000,
       createdAt: '2026-07-21T00:00:00.000Z', summary: '可复用的归档校验策略',
     })

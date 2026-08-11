@@ -69,7 +69,7 @@ function completedItems(): ConversationItem[] {
         content: JSON.stringify({
           treeId: 'tree-1',
           parentPath: 'root',
-          archiveBasePath: '.agent-archive/conversations/s1/runs/r1',
+          archiveBasePath: '.webAgent-archive/conversations/s1/runs/r1',
           children: [
             {
               path: 'root-01',
@@ -114,7 +114,7 @@ describe('SubagentTreePanel', () => {
     expect(detail).toHaveTextContent('root-01')
     expect(detail).toHaveTextContent('归档写入正常')
     expect(detail).toHaveTextContent('nodes/root-01/result.md')
-    expect(detail).toHaveTextContent('.agent-archive/conversations/s1/runs/r1')
+    expect(detail).toHaveTextContent('.webAgent-archive/conversations/s1/runs/r1')
     expect(detail).toHaveTextContent('技能产物：1')
   })
 
@@ -201,11 +201,11 @@ describe('SubagentTreePanel', () => {
     const treeText = JSON.stringify({ nodes: [
       { path: 'root', treeId: 'tree-1', status: 'done', objective: 'root', depth: 0 },
       { path: 'root-01', treeId: 'tree-1', parentPath: 'root', status: 'done', objective: '一级', depth: 1 },
-      { path: 'root-01-02', treeId: 'tree-1', parentPath: 'root-01', status: 'done', objective: '递归审查', depth: 2, resultFile: '.agent-archive/conversations/s1/runs/r1/results/root-01-02.result.md' },
+      { path: 'root-01-02', treeId: 'tree-1', parentPath: 'root-01', status: 'done', objective: '递归审查', depth: 2, resultFile: '.webAgent-archive/conversations/s1/runs/r1/results/root-01-02.result.md' },
     ] })
     const eventsText = `${JSON.stringify({
       eventId: 'e1', timestamp: '2026-01-01T00:00:00Z', conversationId: 's1', runId: 'r1', treeId: 'tree-1', agentPath: 'root-01-02', type: 'child_finished',
-      data: { status: 'done', objective: '递归审查', summary: '归档中的二级节点', resultFile: '.agent-archive/conversations/s1/runs/r1/results/root-01-02.result.md' },
+      data: { status: 'done', objective: '递归审查', summary: '归档中的二级节点', resultFile: '.webAgent-archive/conversations/s1/runs/r1/results/root-01-02.result.md' },
     })}\n`
     const traceText = [
       JSON.stringify({
