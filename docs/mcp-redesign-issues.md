@@ -20,7 +20,7 @@
 - 连接归属**进程级**，不是会话级：装配在 app 启动时完成。
 - **常驻 + 按需混合**：用户标常驻的服务启动即连；其余以「服务」为单位进 manifest，
   模型用 `connect_mcp_server` 按需打开。
-- 按需模式要能工作，**必须缓存每个服务的工具清单**，落在 `~/.web-agent/config.json`，
+- 按需模式要能工作，**必须缓存每个服务的工具清单**，落在 `~/.webAgent/config.json`，
   否则模型无从知道该连哪个服务。清单的主要来源是**安装时的一次性探测**——添加服务就连一次，
   顺带验证配置、取得授权，并把连接期硬失败（工具数超限、名字碰撞、`taskSupport` 不支持）
   从对话中途提前到表单上。
@@ -55,7 +55,7 @@
 - **改动面**：`apps/web/src/mcp/persistence.ts` 旁新增桌面 storage 实现
 - **判据**：非 Tauri 环境自动退回现有 localStorage 实现；`pnpm exec vitest run apps/web/src/mcp` 通过
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ---
 
@@ -137,7 +137,7 @@
 - **判据**：删除 `initializeMcpSettings()` / `hydrateMcpSettings()` 调用后，
   设置面板功能不变；`pnpm exec vitest run apps/web/src/agentNew/ui` 通过
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### C3 · 设置中心 UI 状态搬出 mcp 模块
 
@@ -172,7 +172,7 @@
   `transport_closed` / `transport_error` / `process_error` / `worker_failed`）。
   要有测试证明改 Rust 文案不会让分类退化
 - **模型**：opus（跨 Rust/TS 契约）
-- **状态**：TODO
+- **状态**：DOING
 
 > **为什么必须排在 D2 之前**：D1 的分类器默认落到「暂时失败」。
 > `tools/mcp` 现在匹配的是 `apps/desktop/src/mcp.rs` 里 `McpSession::spawn` 的字面文案——
@@ -233,7 +233,7 @@
 - **改动面**：`packages/agent-core/src/runtime/commands/runCommands.ts`
 - **判据**：现有 `registrationVersion` 判断收敛到统一的 epoch 机制，行为不回退
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ---
 
@@ -265,7 +265,7 @@
 - **判据**：serverId 指向 stdio → `dangerous`（走现有确认 UI，提示将执行的命令）；
   指向 HTTP → `safe`。沿用 `classifyToolRisk` 已有的按参数分级能力
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### F4 · manifest 里带上缓存的工具清单
 
@@ -372,5 +372,5 @@
   透明模式与那个取向相悖。要改成透明模式，F1–F5 整支重写。
 - **异步长任务**。`toolAdapter.ts` 拒绝 `taskSupport: 'required'` 的服务，且每次调用硬超时
   120 秒。要支持跑得久的工具就得动 run 的暂停/恢复模型，工作量大于 A–H 之和。
-- **MCP 配置本体是否迁出 localStorage**。缓存进了 `~/.web-agent/config.json`，
+- **MCP 配置本体是否迁出 localStorage**。缓存进了 `~/.webAgent/config.json`，
   而服务配置仍在 `web-agent.mcp-servers.v1`，形成两处存储。是否一并迁移、存量怎么迁，未定。
