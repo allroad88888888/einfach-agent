@@ -6,9 +6,17 @@ import {
   type ModelItem,
   type ThinkingConfig,
 } from '@web-agent/ai'
-import { compactContext, estimateTokensFromText } from '../runtime/contextCompaction'
 import type { ContextCacheLane } from '../runtime/contextCache'
+import { CONTEXT_SAFETY_MARGIN_RATIO, DEFAULT_RESERVED_OUTPUT_TOKENS } from '../runtime/contextBudget'
+import { contextNeedsDistillation } from '../runtime/contextDistillation'
+import { buildContextDistillationMessages, CONTEXT_DISTILLATION_MAX_TOKENS } from '../runtime/contextDistillationPrompt'
+import { parseContextDistillationResponse } from '../runtime/contextDistillationResult'
 import { type ModelSettings } from '../state/core.type'
+import {
+  createChildContextCheckpoint,
+  projectChildContextCheckpoint,
+  type ChildContextCheckpoint,
+} from './childContextCheckpoint'
 import type { DelegateAgentCallContext } from './types'
 import {
   type DelegationCallState,
@@ -18,10 +26,7 @@ import {
 } from './runtimeState'
 import { modelReasoningEffort, modelSamplingSettings } from '../runtime/modelSettingsProjection'
 
-const CONTEXT_BUDGET_TOKENS = 60_000
-const RESERVED_OUTPUT_TOKENS = 8_000
-const CONTEXT_SAFETY_MARGIN_RATIO = 0.08
-const KEEP_RECENT_TURNS = 1
+const CHILD_CONTEXT_TARGET_TOKENS = 60_000
 
 export interface CallModelObservation {
   context: DelegateAgentCallContext
@@ -37,6 +42,8 @@ interface ChildModelRequest {
   toolChoice?: 'auto' | 'none'
   settings?: ModelSettings
   observe?: CallModelObservation
+  contextCheckpoint?: ChildContextCheckpoint
+  onContextCheckpoint?: (checkpoint: ChildContextCheckpoint | undefined) => void
 }
 
 export type ChildModelCaller = (
@@ -61,70 +68,70 @@ export function firstAssistantText(response: ModelChatResponse): string {
   return typeof content === 'string' ? content.trim() : ''
 }
 
-/** Sends compacted child-model requests and records their cache observability events. */
+/** Sends child-model requests, creating a model-authored checkpoint only when needed. */
 export function createChildModelCaller(runtime: DelegateAgentRuntimeState): ChildModelCaller {
   return async (state, args, maxModelCalls) => {
     const modelCallLimit = maxModelCalls ?? state.rootBudget.maxModelCalls
     const settings = args.settings ?? runtime.opts.settings
     const sampling = modelSamplingSettings(settings)
-    const reservedTokens =
-      estimateTokensFromText(JSON.stringify(args.tools ?? []))
-      + (sampling.maxTokens ?? RESERVED_OUTPUT_TOKENS)
-      + Math.ceil(CONTEXT_BUDGET_TOKENS * CONTEXT_SAFETY_MARGIN_RATIO)
-    const compaction = compactContext(args.messages, {
-      maxTokens: CONTEXT_BUDGET_TOKENS,
-      reservedTokens,
-      keepRecentTurns: KEEP_RECENT_TURNS,
-      replayUnsafeToolNames: runtime.registry.replayUnsafeToolNames(),
-    })
-
-    if (args.observe) {
-      const { context, archiveBasePath, agentPath, turn, phase } = args.observe
-      if (compaction.compacted) {
-        await runtime.archive.bestEffortRecordEvent(
-          context,
-          archiveBasePath,
-          'child_context_compacted',
-          agentPath,
-          {
-            turn,
-            phase,
-            budgetTk: CONTEXT_BUDGET_TOKENS,
-            reservedTk: reservedTokens,
-            effectiveBudgetTk: compaction.effectiveBudgetTokens,
-            estBeforeTk: compaction.estimatedTokensBefore,
-            estAfterTk: compaction.estimatedTokensAfter,
-            summarizedToolResults: compaction.summarizedToolResults,
-            droppedItems: compaction.droppedItems,
-            messagesBefore: args.messages.length,
-            messagesAfter: compaction.items.length,
-            withinBudget: compaction.withinBudget,
-          },
-        )
-      }
-      if (!compaction.withinBudget) {
-        await runtime.archive.bestEffortRecordEvent(
-          context,
-          archiveBasePath,
-          'child_context_over_budget',
-          agentPath,
-          {
-            turn,
-            phase,
-            effectiveBudgetTk: compaction.effectiveBudgetTokens,
-            estAfterTk: compaction.estimatedTokensAfter,
-            compacted: compaction.compacted,
-            hint: compaction.compacted
-              ? '子 agent 上下文压缩后仍超预算（多半是单条工具正文自己就撑爆了预算），本次请求可能被接口拒绝；请缩小子任务范围或让工具只取所需片段'
-              : '子 agent 上下文超预算且无可压缩内容（system/user 均在硬保护范围内），本次请求可能被接口拒绝；请缩短子任务描述或继承的 skill 正文',
-          },
-        )
+    const inputBudgetTokens = Math.max(
+      0,
+      CHILD_CONTEXT_TARGET_TOKENS
+        - (sampling.maxTokens ?? DEFAULT_RESERVED_OUTPUT_TOKENS)
+        - Math.ceil(CHILD_CONTEXT_TARGET_TOKENS * CONTEXT_SAFETY_MARGIN_RATIO),
+    )
+    let projection = projectChildContextCheckpoint(args.messages, args.contextCheckpoint)
+    if (projection.invalidCheckpoint) args.onContextCheckpoint?.(undefined)
+    if (contextNeedsDistillation(projection.messages, args.tools ?? [], inputBudgetTokens)) {
+      await recordContextDistillationEvent(runtime, args.observe, 'child_context_distillation_started', {
+        sourceMessages: projection.messages.length,
+        inputBudgetTk: inputBudgetTokens,
+      })
+      try {
+        const checkpointResponse = await state.modelCallLimiter.run(() => {
+          runtime.reserveModelCall(state, modelCallLimit)
+          return callModel({
+            model: settings.model,
+            messages: buildContextDistillationMessages([], projection.messages),
+            ...(settings.vendor === 'kimi' ? {} : { temperature: 0 }),
+            max_tokens: CONTEXT_DISTILLATION_MAX_TOKENS,
+            tools: [],
+            tool_choice: 'none',
+            stream: false,
+            settings,
+            userId: runtime.opts.deepseekUserId,
+          }, {
+            apiKey: runtime.opts.apiKey,
+            signal: runtime.opts.signal,
+            fetchImpl: runtime.opts.fetchImpl,
+          })
+        }, runtime.opts.signal)
+        const summary = parseContextDistillationResponse(checkpointResponse)
+        if (!summary) throw new Error('子 agent 上下文摘要未返回有效内容；已保留原始历史。')
+        const checkpoint = createChildContextCheckpoint(args.messages, summary)
+        args.onContextCheckpoint?.(checkpoint)
+        projection = projectChildContextCheckpoint(args.messages, checkpoint)
+        if (contextNeedsDistillation(projection.messages, args.tools ?? [], inputBudgetTokens)) {
+          throw new Error('子 agent 上下文摘要仍超过请求预算；请缩小工具 schema 或子任务范围。')
+        }
+        await recordContextDistillationEvent(runtime, args.observe, 'child_context_distillation_succeeded', {
+          sourceMessages: args.messages.length,
+          summaryChars: checkpoint.summary.length,
+          sourceEstimatedTk: checkpoint.sourceEstimatedTokens,
+        })
+      } catch (error) {
+        await recordContextDistillationEvent(runtime, args.observe, 'child_context_distillation_failed', {
+          error: toErrorMessage(error),
+        })
+        throw error
       }
     }
+    const messages = projection.messages
+    const contextDistilled = projection.checkpoint !== undefined
 
     const requestBase = {
       model: settings.model,
-      messages: compaction.items,
+      messages,
       temperature: sampling.temperature,
       max_tokens: sampling.maxTokens,
       thinking: thinkingConfig(settings),
@@ -138,7 +145,7 @@ export function createChildModelCaller(runtime: DelegateAgentRuntimeState): Chil
       fetchImpl: runtime.opts.fetchImpl,
     }
     const cacheLane = args.observe?.phase ?? 'subagent'
-    const systemContent = compaction.items.find((item) => item.role === 'system')?.content ?? ''
+    const systemContent = messages.find((item) => item.role === 'system')?.content ?? ''
     const requestMode = cacheLane.startsWith('distill:')
       ? cacheLane
       : args.toolChoice === 'none'
@@ -149,13 +156,13 @@ export function createChildModelCaller(runtime: DelegateAgentRuntimeState): Chil
       scope: `${runtime.opts.sessionId}:${runtime.opts.runId}:${args.observe?.agentPath ?? 'unobserved'}:${cacheLane}`,
       vendor: settings.vendor,
       model: settings.model,
-      messages: compaction.items,
+      messages,
       systemContent,
       tools: args.tools ?? [],
       toolChoice: args.toolChoice ?? 'auto',
       thinking: thinkingConfig(settings)?.type,
       reasoningEffort: modelReasoningEffort(settings),
-      compacted: compaction.compacted,
+      compacted: contextDistilled,
       requestMode,
     })
 
@@ -178,7 +185,7 @@ export function createChildModelCaller(runtime: DelegateAgentRuntimeState): Chil
           args.observe.archiveBasePath,
           'child_model_usage',
           args.observe.agentPath,
-          modelUsageFailureData(error, runtime, settings, args.observe, cacheProfile, compaction),
+          modelUsageFailureData(error, runtime, settings, args.observe, cacheProfile, contextDistilled),
         )
       }
       throw error
@@ -208,7 +215,7 @@ export function createChildModelCaller(runtime: DelegateAgentRuntimeState): Chil
           ...(cacheUsage?.missSource ? { cacheMissSource: cacheUsage.missSource } : {}),
           ...(typeof cacheUsage?.writeTokens === 'number' ? { cacheWriteTk: cacheUsage.writeTokens } : {}),
           ...(typeof hitRate === 'number' ? { cacheHitRate: hitRate } : {}),
-          ...cacheProfileData(cacheProfile, compaction),
+          ...cacheProfileData(cacheProfile, contextDistilled),
         },
       )
     }
@@ -218,7 +225,7 @@ export function createChildModelCaller(runtime: DelegateAgentRuntimeState): Chil
 
 function cacheProfileData(
   profile: ReturnType<DelegateAgentRuntimeState['contextCacheTracker']['observe']>,
-  compaction: ReturnType<typeof compactContext>,
+  contextDistilled: boolean,
 ) {
   return {
     cacheLane: profile.lane,
@@ -232,8 +239,8 @@ function cacheProfileData(
     requestProjectionFingerprint: profile.requestProjectionFingerprint,
     toolSetFingerprint: profile.toolSetFingerprint,
     compactionBoundary: profile.compactionBoundary,
-    contextCompacted: compaction.compacted,
-    withinBudget: compaction.withinBudget,
+    contextDistilled,
+    withinBudget: true,
   }
 }
 
@@ -243,7 +250,7 @@ function modelUsageFailureData(
   settings: ModelSettings,
   observe: CallModelObservation,
   profile: ReturnType<DelegateAgentRuntimeState['contextCacheTracker']['observe']>,
-  compaction: ReturnType<typeof compactContext>,
+  contextDistilled: boolean,
 ) {
   return {
     turn: observe.turn,
@@ -251,7 +258,23 @@ function modelUsageFailureData(
     vendor: settings.vendor,
     model: settings.model,
     cacheMetricsStatus: isAbortError(error, runtime.opts.signal) ? 'cancelled' : 'request_failed',
-    ...cacheProfileData(profile, compaction),
+    ...cacheProfileData(profile, contextDistilled),
     error: toErrorMessage(error),
   }
+}
+
+async function recordContextDistillationEvent(
+  runtime: DelegateAgentRuntimeState,
+  observe: CallModelObservation | undefined,
+  type: 'child_context_distillation_started' | 'child_context_distillation_succeeded' | 'child_context_distillation_failed',
+  data: Record<string, unknown>,
+): Promise<void> {
+  if (!observe) return
+  await runtime.archive.bestEffortRecordEvent(
+    observe.context,
+    observe.archiveBasePath,
+    type,
+    observe.agentPath,
+    { turn: observe.turn, phase: observe.phase, ...data },
+  )
 }

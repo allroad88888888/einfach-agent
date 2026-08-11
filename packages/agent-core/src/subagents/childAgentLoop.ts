@@ -5,10 +5,6 @@ import {
   type ModelItem,
 } from '@web-agent/ai'
 import { buildTurnTools, narrowToolCalls } from '../runtime/modelTurn'
-import {
-  FINISH_REASON_ERRORS,
-  isAbnormalFinishReason,
-} from '../runtime/core/plugins/finishReasonPlugin'
 import { subagentResultPath } from './skillCache'
 import {
   callSelectedSubagentModel,
@@ -22,6 +18,9 @@ import {
 } from './childAgentToolCalls'
 import { appendVisibleChildTool, loadVisibleChildTool } from './childToolVisibility'
 import { firstAssistantText, type ChildModelCaller } from './childModelClient'
+import type { ChildContextCheckpoint } from './childContextCheckpoint'
+import { assertNormalChildFinish } from './childFinishReason'
+import { createChildResult } from './childResult'
 import type { DelegateAgents } from './delegationBatch'
 import type {
   ChildAgentResult,
@@ -40,8 +39,6 @@ import {
 } from './runtimeState'
 
 const DEFAULT_CHILD_MAX_TURNS = 4
-const TRUNCATED_TEXT_PREVIEW_LIMIT = 200
-
 export interface RunChildAgentInput {
   runtime: DelegateAgentRuntimeState
   callModel: ChildModelCaller
@@ -69,46 +66,6 @@ function refreshChildVisibleTools(
     return [...refreshed, latest.registrationVersion === snapshot.registrationVersion ? snapshot : latest]
   }, [])
   return maxLoadedTools > 0 ? visible.slice(-maxLoadedTools) : []
-}
-
-function truncatedTextPreview(text: string): string {
-  const flat = text.replace(/\s+/g, ' ').trim()
-  if (!flat) return ''
-  return flat.length > TRUNCATED_TEXT_PREVIEW_LIMIT
-    ? `${flat.slice(0, TRUNCATED_TEXT_PREVIEW_LIMIT)}...`
-    : flat
-}
-
-async function throwForAbnormalFinish(
-  response: ModelChatResponse,
-  archiveBasePath: string,
-  node: SubagentNodeRecord,
-  runtime: DelegateAgentRuntimeState,
-  context: DelegateAgentCallContext,
-): Promise<void> {
-  const finishReason = response.choices?.[0]?.finish_reason ?? null
-  const toolCalls = narrowToolCalls(response.choices?.[0]?.message?.tool_calls)
-  if (finishReason === 'length' && toolCalls.length > 0) return
-  if (!isAbnormalFinishReason(finishReason)) return
-  const fullText = finishReason === 'length' ? firstAssistantText(response) : ''
-  let partialPath = ''
-  if (fullText) {
-    const candidate = subagentResultPath(archiveBasePath, node.path).replace(/\.md$/, '.partial.md')
-    try {
-      await runtime.archive.writeText(context, candidate, `${fullText.trim()}\n`)
-      partialPath = candidate
-    } catch {
-      partialPath = ''
-    }
-  }
-  const preview = truncatedTextPreview(fullText)
-  const detail = [
-    preview ? `截断片段（仅供定位，不完整）: ${preview}` : '',
-    partialPath ? `完整残稿已存至 ${partialPath}（未经校验，采信前请自行判断）` : '',
-  ].filter(Boolean).join('；')
-  throw new Error(
-    detail ? `${FINISH_REASON_ERRORS[finishReason]}；${detail}` : FINISH_REASON_ERRORS[finishReason],
-  )
 }
 
 /** Runs the complete model and tool loop for one reserved child agent. */
@@ -165,6 +122,7 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
     loop.visible,
   )
   loop.recentToolNames = loop.visible.map((tool) => tool.name).reverse()
+  let contextCheckpoint: ChildContextCheckpoint | undefined
   const maxTurns = spec.maxTurns ?? DEFAULT_CHILD_MAX_TURNS
   runtime.scheduler.markNode(runtime.opts.runId, node.path, 'running', {
     localSkillFiles: [localSkill.path],
@@ -210,6 +168,8 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
         tools: args.tools,
         toolChoice: args.toolChoice,
         settings,
+        contextCheckpoint,
+        onContextCheckpoint: (nextCheckpoint) => { contextCheckpoint = nextCheckpoint },
         observe: {
           context,
           archiveBasePath,
@@ -276,7 +236,7 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
         reasoning_content: message?.reasoning_content ?? null,
         tool_calls: toolCalls,
       })
-      await throwForAbnormalFinish(response, archiveBasePath, node, runtime, context)
+      await assertNormalChildFinish(response, archiveBasePath, node, runtime, context)
       if (toolCalls.length === 0) {
         const summary = firstAssistantText(response) || '子 agent 未返回有效文本。'
         const resultPath = subagentResultPath(archiveBasePath, node.path)
@@ -294,7 +254,7 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
           route_reason: modelSelection.routeDecision.reason,
           fallback_count: modelSelection.fallbackCount,
         })
-        return childResult('done', node.path, spec.objective, summary, skillFiles, skillIds, loop.changeSets, {
+        return createChildResult('done', { path: node.path, objective: spec.objective, summary, skillFiles, skillIds, changeSets: loop.changeSets }, {
           resultFile: resultPath,
           modelTier: modelSelection.routeDecision.tier,
           routeReason: modelSelection.routeDecision.reason,
@@ -328,24 +288,11 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
       route_reason: modelSelection.routeDecision.reason,
       fallback_count: modelSelection.fallbackCount,
     })
-    return childResult(status, node.path, spec.objective, message, skillFiles, skillIds, loop.changeSets, {
+    return createChildResult(status, { path: node.path, objective: spec.objective, summary: message, skillFiles, skillIds, changeSets: loop.changeSets }, {
       modelTier: modelSelection.routeDecision.tier,
       routeReason: modelSelection.routeDecision.reason,
       fallbackCount: modelSelection.fallbackCount,
       error: message,
     })
   }
-}
-
-function childResult(
-  status: ChildAgentResult['status'],
-  path: string,
-  objective: string,
-  summary: string,
-  skillFiles: string[],
-  skillIds: string[],
-  changeSets: ChildAgentResult['changeSets'],
-  extra: Omit<ChildAgentResult, 'path' | 'status' | 'objective' | 'summary' | 'skillFiles' | 'skillIds' | 'changeSets'>,
-): ChildAgentResult {
-  return { path, status, objective, summary, skillFiles, skillIds, changeSets, ...extra }
 }

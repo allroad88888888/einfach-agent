@@ -64,6 +64,12 @@ function messagesOf(body: Record<string, unknown>): TurnMessage[] {
   return body.messages as TurnMessage[]
 }
 
+function isContextDistillationRequest(body: Record<string, unknown>): boolean {
+  return messagesOf(body).some((message) =>
+    message.content?.includes('Create the durable context checkpoint now. Return only the checkpoint text.'),
+  )
+}
+
 function toolResultFor(body: Record<string, unknown>, callId: string): string {
   return messagesOf(body).find((message) => message.tool_call_id === callId)?.content ?? ''
 }
@@ -212,7 +218,7 @@ describe('createDelegateAgentRuntime', () => {
         cacheProtocolVersion: 'agent-runtime-prefix-v2',
         cacheLane: event.data?.phase,
         compactionBoundary: 'full-history',
-        contextCompacted: false,
+        contextDistilled: false,
         withinBudget: true,
       })
       expect(String(event.data?.cacheProfile)).toContain(String(event.data?.phase))
@@ -2333,19 +2339,15 @@ describe('createDelegateAgentRuntime', () => {
     delegateRuntime.dispose?.()
   })
 
-  it('summarizes an oversized tool body in the request only, keeping messages and the distilled transcript on the original text', async () => {
+  it('creates a model checkpoint for an oversized child history without rewriting its raw transcript', async () => {
     // 子 agent 顶爆上下文的真实形状不是「轮数多」（HARD_MAX_TURNS=8 已经封顶），
     // 而是【单轮 payload 巨大】：read_file 把整个文件正文原样回填进 messages。
-    // 没有压缩时这里换来的是一个硬 400，而不是优雅降级。
     const HUGE_HEAD = 'A'.repeat(300)
-    // 标记刻意放在第 300 字符处 —— 它落在原文的前 2000 字符内（因此会出现在 distill 的
-    // transcript 里），却落在摘要占位保留的「头 200 / 尾 100 字符」之外。于是同一个标记
-    // 可以互斥地判定两件事：请求体确实被摘要了 ✕ 归档/继承链路上仍是原文。
     const MIDDLE_MARKER = 'ORIGINAL_UNCOMPACTED_MIDDLE'
     const hugeFileBody = `${HUGE_HEAD}${MIDDLE_MARKER}${'B'.repeat(400_000)}TAILEND`
 
     const distillBodies: Record<string, unknown>[] = []
-    let compactedTurnBody: Record<string, unknown> | undefined
+    let checkpointTurnBody: Record<string, unknown> | undefined
     let parentTurns = 0
 
     const runChildTool = vi.fn(async () => ({ ok: true as const, data: { content: hugeFileBody } }))
@@ -2353,6 +2355,9 @@ describe('createDelegateAgentRuntime', () => {
       const body = requestBody(init)
       if (body.tool_choice === 'none') {
         distillBodies.push(body)
+        if (isContextDistillationRequest(body)) {
+          return response({ content: JSON.stringify({ summary: '树形子 agent root-01。The huge file was read; continue the requested analysis.' }) })
+        }
         return response({ content: '# skill' })
       }
       const path = childPath(body)
@@ -2360,7 +2365,7 @@ describe('createDelegateAgentRuntime', () => {
         parentTurns += 1
         if (parentTurns === 1) return namedToolCall('read-huge', 'read_file', { path: 'src/huge.ts' })
         if (parentTurns === 2) {
-          compactedTurnBody = body
+          checkpointTurnBody = body
           // 第 2 轮顺手发起一次嵌套 delegate：runChildAgent 会把
           // formatSubagentTranscript(messages) 当作 parentTranscript 喂给 distill，
           // 而那份 brief 会被后代继承。它是「压缩污染了 messages」最致命的观测点。
@@ -2382,28 +2387,16 @@ describe('createDelegateAgentRuntime', () => {
 
     expect(result.children[0]).toMatchObject({ status: 'done', summary: 'parent done' })
 
-    // ① 请求体：超预算的历史 tool 正文被摘要成占位，原文中段标记消失。
-    expect(compactedTurnBody).toBeDefined()
-    const compactedToolResult = toolResultFor(compactedTurnBody!, 'read-huge')
-    expect(compactedToolResult).toContain('_compacted')
-    expect(compactedToolResult).not.toContain(MIDDLE_MARKER)
-    expect(compactedToolResult.length).toBeLessThan(2_000)
-    // 摘要不是「丢掉」：工具名与头尾线索仍在，模型知道该重调哪个工具。
-    expect(compactedToolResult).toContain('read_file')
+    // 下一次正常请求只带模型返回的 checkpoint，不携带本地 _compacted 占位符；
+    // 原始 records 留在 append-only transcript，供归档和后代 brief 使用。
+    expect(checkpointTurnBody).toBeDefined()
+    const checkpointText = JSON.stringify(checkpointTurnBody!.messages)
+    expect(checkpointText).toContain('Runtime context checkpoint')
+    expect(checkpointText).toContain('huge file was read')
+    expect(checkpointText).not.toContain(MIDDLE_MARKER)
+    expect(checkpointText).not.toContain('_compacted')
 
-    // ② tool-call 配对完整：摘要只改 content、不改变条目存在性，一条都不会丢，
-    //    所以 assistant.tool_calls ↔ tool_call_id 不可能出孤儿。
-    expect(orphanToolCallIds(compactedTurnBody!)).toEqual([])
-    expect(messagesOf(compactedTurnBody!).map((message) => message.role)).toEqual([
-      'system',
-      'user',
-      'assistant',
-      'tool',
-    ])
-
-    // ③ messages / 归档侧：喂进 distill 的 parent transcript 仍是【原文】。
-    //    一旦压缩结果被写回 messages，这里就会变成摘要占位 —— 后代继承到失真的 brief，
-    //    子 agent 后续轮次也会基于被摘要的历史继续推理。
+    // 给模型生成 checkpoint 的输入、以及后续嵌套 agent 的继承 transcript，始终是原文。
     const distillText = distillBodies.map((body) => JSON.stringify(body.messages)).join('\n')
     expect(distillText).toContain(MIDDLE_MARKER)
     expect(distillText).not.toContain('_compacted')
@@ -2449,14 +2442,25 @@ describe('createDelegateAgentRuntime', () => {
     delegateRuntime.dispose?.()
   })
 
-  // 一个「第 2 轮会被压缩」的最小子 agent 场景：第 1 轮读一个巨大文件，第 2 轮的 messages
-  // 因此撑爆预算。压缩的可观测性用例全部复用它。
+  // 一个「第 2 轮需要生成 checkpoint」的最小子 agent 场景：第 1 轮读一个巨大文件，第 2 轮的
+  // messages 因此撑爆预算。摘要可观测性用例全部复用它。
   function compactingChildFetch() {
     const hugeFileBody = `HEAD${'B'.repeat(400_000)}TAIL`
     const runChildTool = vi.fn(async () => ({ ok: true as const, data: { content: hugeFileBody } }))
     const fetchImpl: typeof fetch = async (_url, init) => {
       const body = requestBody(init)
-      if (body.tool_choice === 'none') return response({ content: '# skill' })
+      if (body.tool_choice === 'none') {
+        return isContextDistillationRequest(body)
+          ? response({ content: JSON.stringify({ summary: '树形子 agent root-01。The huge file was read.' }) })
+          : response({ content: '# skill' })
+      }
+      if (
+        messagesOf(body).some((message) =>
+          message.content?.includes('Runtime context checkpoint'),
+        )
+      ) {
+        return response({ content: 'done' })
+      }
       if (!messagesOf(body).some((message) => message.role === 'tool')) {
         return namedToolCall('read-huge', 'read_file', { path: 'src/huge.ts' })
       }
@@ -2465,9 +2469,7 @@ describe('createDelegateAgentRuntime', () => {
     return { fetchImpl, runChildTool }
   }
 
-  it('records a context-compaction archive event for the subagent turn that was compacted', async () => {
-    // 压缩本身是「悄悄降级」。没有这条事件，父 agent / 树面板 / trace / 归档没有任何一处能看出
-    // 子 agent 的上下文被压过 —— 排查者只会怀疑模型变笨了。
+  it('records model context-distillation events for the oversized subagent turn', async () => {
     const { fetchImpl, runChildTool } = compactingChildFetch()
     const writes = new Map<string, string>()
     const callContext = context(writes)
@@ -2480,35 +2482,27 @@ describe('createDelegateAgentRuntime', () => {
     )
     expect(result.children[0]).toMatchObject({ status: 'done', summary: 'done' })
 
-    const compacted = eventsTyped(writes, 'child_context_compacted')
-    expect(compacted).toHaveLength(1)
-    expect(compacted[0].agentPath).toBe('root-01')
-    const data = compacted[0].data ?? {}
-    // 第 1 轮（只有 [system, user]）远在预算内，不该记事件 —— 记了就是刷屏。
-    expect(data.turn).toBe(2)
-    expect(data.summarizedToolResults).toBe(1)
-    // L4 只摘要正文、不丢条目。droppedItems=0 + 前后条数相等，是「不可能产生孤儿 tool_call」
-    // 这条协议保证的数值化断言。
-    expect(data.droppedItems).toBe(0)
-    expect(data.messagesBefore).toBe(4)
-    expect(data.messagesAfter).toBe(4)
-    // 压缩前超预算、压缩后达标 —— 三个数字互相咬合，任何一个取错源都会红。
-    expect(data.estBeforeTk as number).toBeGreaterThan(data.effectiveBudgetTk as number)
-    expect(data.estAfterTk as number).toBeLessThanOrEqual(data.effectiveBudgetTk as number)
-    expect(data.estAfterTk as number).toBeLessThan(data.estBeforeTk as number)
-    expect(data.reservedTk as number).toBeGreaterThan(0)
-    expect(data.withinBudget).toBe(true)
-
-    // 压到达标之后就【不】该再报 over_budget：两条事件不是同义反复。
-    expect(eventsTyped(writes, 'child_context_over_budget')).toHaveLength(0)
+    const started = eventsTyped(writes, 'child_context_distillation_started')
+    const succeeded = eventsTyped(writes, 'child_context_distillation_succeeded')
+    expect(started).toHaveLength(1)
+    expect(succeeded).toHaveLength(1)
+    expect(started[0].agentPath).toBe('root-01')
+    expect(succeeded[0].agentPath).toBe('root-01')
+    const startData = started[0].data ?? {}
+    const successData = succeeded[0].data ?? {}
+    // 第 1 轮（只有 [system, user]）远在预算内；第 2 轮才交给模型生成 checkpoint。
+    expect(startData.turn).toBe(2)
+    expect(startData.sourceMessages).toBe(4)
+    expect(startData.inputBudgetTk as number).toBeGreaterThan(0)
+    expect(successData.turn).toBe(2)
+    expect(successData.sourceMessages).toBe(4)
+    expect(successData.summaryChars as number).toBeGreaterThan(0)
+    expect(successData.sourceEstimatedTk as number).toBeGreaterThan(startData.inputBudgetTk as number)
+    expect(eventsTyped(writes, 'child_context_distillation_failed')).toHaveLength(0)
     delegateRuntime.dispose?.()
   })
 
-  it('records no compaction event when every subagent turn stays within budget', async () => {
-    // 正常子任务占绝大多数。这两类事件一旦在未压缩时也发，事件日志立刻被淹没，
-    // 「这个子 agent 被压过」这个信号就等于没有。
-    // ★ 正文必须长到【足以被摘要】（> 头 200 + 尾 100 字符），否则本用例假绿：
-    //   短正文无论预算多小都压不动，把预算改坏也不会让它变红。
+  it('records no context-distillation event when every subagent turn stays within budget', async () => {
     const smallFileBody = `SMALL${'s'.repeat(5_000)}`
     const runChildTool = vi.fn(async () => ({ ok: true as const, data: { content: smallFileBody } }))
     const fetchImpl: typeof fetch = async (_url, init) => {
@@ -2532,21 +2526,20 @@ describe('createDelegateAgentRuntime', () => {
     expect(result.children[0]).toMatchObject({ status: 'done', summary: 'done' })
     // 事件日志本身非空（说明确实在记事件，不是路径找错了导致的空数组假绿）。
     expect(eventsOf(writes).length).toBeGreaterThan(0)
-    expect(eventsTyped(writes, 'child_context_compacted')).toHaveLength(0)
-    expect(eventsTyped(writes, 'child_context_over_budget')).toHaveLength(0)
+    expect(eventsTyped(writes, 'child_context_distillation_started')).toHaveLength(0)
+    expect(eventsTyped(writes, 'child_context_distillation_succeeded')).toHaveLength(0)
+    expect(eventsTyped(writes, 'child_context_distillation_failed')).toHaveLength(0)
     delegateRuntime.dispose?.()
   })
 
-  it('records a standalone over-budget event when the context cannot be compacted at all', async () => {
-    // withinBudget=false 的最纯形态：messages 只有 [system, user]，两条都在 compactContext 的
-    // 硬保护范围内 —— 压缩跑了但一点忙都帮不上（compacted=false）。请求照发，大概率换来一个硬
-    // 400，而那个 400 与「压缩根本没生效」在日志里长得一模一样。
-    // ★ 所以 over_budget 必须是【独立于 compacted 的判断】★：挂进 `if (compacted)` 里面，
-    //   恰好会漏掉这个最该报警的形态。
+  it('distills an oversized initial objective instead of sending an over-budget raw request', async () => {
     const hugeObjective = `analyze ${'x'.repeat(400_000)}`
     const fetchImpl: typeof fetch = async (_url, init) => {
       const body = requestBody(init)
-      return body.tool_choice === 'none' ? response({ content: '# skill' }) : response({ content: 'done' })
+      if (body.tool_choice !== 'none') return response({ content: 'done' })
+      return isContextDistillationRequest(body)
+        ? response({ content: JSON.stringify({ summary: 'Analyze the requested objective.' }) })
+        : response({ content: '# skill' })
     }
     const writes = new Map<string, string>()
     const delegateRuntime = runtime(fetchImpl)
@@ -2556,39 +2549,20 @@ describe('createDelegateAgentRuntime', () => {
       context(writes),
     )
 
-    // 超预算不中止子 agent —— 序列仍然合法，照发不误，只是留痕。
     expect(result.children[0]).toMatchObject({ status: 'done', summary: 'done' })
 
-    expect(eventsTyped(writes, 'child_context_compacted')).toHaveLength(0)
-    const overBudget = eventsTyped(writes, 'child_context_over_budget')
-    // 两条：子 agent 那一轮，加上蒸馏那次调用 —— 后者的 user 正文含整份 parentTranscript，
-    // 深树 + 长对话下它自己就能超预算，而 [system,user] 都在硬保护范围内、压不动。
-    // 两者【必须可区分】：超预算的成因和补救方式不同，一个是「子 agent 干太多活」，
-    // 一个是「父 agent 的 transcript / 继承 skill 太长」，混在一起排查者不知道该缩哪一头。
-    expect(overBudget).toHaveLength(2)
-
-    const childEvent = overBudget.find((e) => e.data?.phase === 'subagent')
-    const distillEvent = overBudget.find((e) =>
-      String(e.data?.phase).startsWith('distill:'))
-    expect(childEvent).toBeDefined()
-    expect(distillEvent).toBeDefined()
-
-    expect(childEvent!.agentPath).toBe('root-01')
-    const data = childEvent!.data ?? {}
-    expect(data.turn).toBe(1)
-    expect(data.compacted).toBe(false)
-    expect(data.estAfterTk as number).toBeGreaterThan(data.effectiveBudgetTk as number)
-    expect(String(data.hint)).toContain('无可压缩内容')
-
-    // 这里超预算的是给该子 agent 生成的 child brief，所以事件归到实际消费它的子路径；
-    // turn=0（蒸馏不是「轮」，靠 phase 标识）。
-    expect(distillEvent!.agentPath).toBe('root-01')
-    expect(distillEvent!.data?.phase).toBe('distill:child_brief')
-    expect(distillEvent!.data?.turn).toBe(0)
+    const started = eventsTyped(writes, 'child_context_distillation_started')
+    const succeeded = eventsTyped(writes, 'child_context_distillation_succeeded')
+    // 一次发生在 child brief 蒸馏，一次发生在实际子 agent 的第一轮请求；二者均由模型摘要后继续。
+    expect(started).toHaveLength(2)
+    expect(succeeded).toHaveLength(2)
+    expect(started.some((event) => event.data?.phase === 'subagent')).toBe(true)
+    expect(started.some((event) => event.data?.phase === 'distill:child_brief')).toBe(true)
+    expect(eventsTyped(writes, 'child_context_distillation_failed')).toHaveLength(0)
     delegateRuntime.dispose?.()
   })
 
-  it('keeps the subagent finishing normally when the compaction event write fails', async () => {
+  it('keeps the subagent finishing normally when a context-distillation event write fails', async () => {
     // 可观测性代码永远不该有能力让被观测的东西失败。这正是 bestEffortRecordEvent 与
     // recordEvent 的唯一差别：后者会把写盘异常抛给 callModel，一路冒到 runChildAgent 的 catch，
     // 于是「记日志失败」伪装成「子 agent 失败」回填给父 agent。
@@ -2599,8 +2573,8 @@ describe('createDelegateAgentRuntime', () => {
     const passthrough = callContext.writeTextFile!
     const rejected: string[] = []
     callContext.writeTextFile = async (input) => {
-      // 只掐压缩事件那一次写，其余归档写照常 —— 否则失败原因会混进别的链路，测不准。
-      if (input.content.includes('"child_context_compacted"')) {
+      // 只掐摘要成功事件那一次写，其余归档写照常 —— 否则失败原因会混进别的链路，测不准。
+      if (input.content.includes('"child_context_distillation_succeeded"')) {
         rejected.push(input.path)
         throw new Error('archive host is gone')
       }
@@ -2614,10 +2588,10 @@ describe('createDelegateAgentRuntime', () => {
     )
 
     // 确实走到了那条写（否则下面的「仍然 done」是空断言）。
-    expect(rejected).toHaveLength(1)
+    expect(rejected.length).toBeGreaterThan(0)
     expect(result.children[0]).toMatchObject({ status: 'done', summary: 'done' })
     // 事件没落盘，但子 agent 的产出与状态完好。
-    expect(eventsTyped(writes, 'child_context_compacted')).toHaveLength(0)
+    expect(eventsTyped(writes, 'child_context_distillation_succeeded')).toHaveLength(0)
     delegateRuntime.dispose?.()
   })
 })

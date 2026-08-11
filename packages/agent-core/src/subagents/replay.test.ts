@@ -257,18 +257,18 @@ describe('replaySubagentArchive', () => {
   })
 })
 
-// 子 agent 压缩的两类事件是后加的（对齐主循环的 llm.context_compacted / llm.context_over_budget）。
-// 它们必须同时出现在 types.ts 的 SubagentArchiveEventType 联合【和】replay.ts 的
+// 子 agent checkpoint 的事件必须同时出现在 types.ts 的 SubagentArchiveEventType 联合【和】replay.ts 的
 // SUBAGENT_EVENT_TYPES 白名单里 —— 只加联合不加白名单，isSubagentArchiveEvent 会把它判成
 // 结构非法丢进 parseErrors，排查者在 eventCounts 里就再也看不到「这个子 agent 被压过」。
 describe('replay 认得子 agent 模型遥测事件', () => {
   const telemetryTypes = [
     'child_model_usage',
-    'child_context_compacted',
-    'child_context_over_budget',
+    'child_context_distillation_started',
+    'child_context_distillation_succeeded',
+    'child_context_distillation_failed',
   ] as const
 
-  it('usage 与两类压缩事件都进 records 而不是 parseErrors', () => {
+  it('usage 与 checkpoint 事件都进 records 而不是 parseErrors', () => {
     const text = telemetryTypes
       .map((type, i) => JSON.stringify({ ...event(), eventId: `ev-${i}`, type, agentPath: 'root-01' }))
       .join('\n')
@@ -283,16 +283,17 @@ describe('replay 认得子 agent 模型遥测事件', () => {
     const text = [
       JSON.stringify(event()),
       JSON.stringify({ ...event(), eventId: 'ev-1', type: 'child_model_usage', agentPath: 'root-01' }),
-      JSON.stringify({ ...event(), eventId: 'ev-2', type: 'child_context_compacted', agentPath: 'root-01' }),
-      JSON.stringify({ ...event(), eventId: 'ev-3', type: 'child_context_compacted', agentPath: 'root-02' }),
-      JSON.stringify({ ...event(), eventId: 'ev-4', type: 'child_context_over_budget', agentPath: 'root-02' }),
+      JSON.stringify({ ...event(), eventId: 'ev-2', type: 'child_context_distillation_started', agentPath: 'root-01' }),
+      JSON.stringify({ ...event(), eventId: 'ev-3', type: 'child_context_distillation_succeeded', agentPath: 'root-02' }),
+      JSON.stringify({ ...event(), eventId: 'ev-4', type: 'child_context_distillation_failed', agentPath: 'root-02' }),
     ].join('\n')
 
     const state = replaySubagentArchive({ eventsText: text })
 
     expect(state.eventCounts.child_model_usage).toBe(1)
-    expect(state.eventCounts.child_context_compacted).toBe(2)
-    expect(state.eventCounts.child_context_over_budget).toBe(1)
+    expect(state.eventCounts.child_context_distillation_started).toBe(1)
+    expect(state.eventCounts.child_context_distillation_succeeded).toBe(1)
+    expect(state.eventCounts.child_context_distillation_failed).toBe(1)
     // 没发生过的类型必须是 0 而不是 undefined —— 初始表少一个键，UI 上就会显示成空白而非「0 次」。
     expect(state.eventCounts.child_finished).toBe(0)
   })

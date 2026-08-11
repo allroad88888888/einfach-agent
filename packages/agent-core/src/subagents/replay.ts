@@ -32,8 +32,9 @@ const SUBAGENT_EVENT_TYPE_SET: Record<SubagentArchiveEventType, true> = {
   delegate_finished: true,
   child_model_usage: true,
   child_model_escalated: true,
-  child_context_compacted: true,
-  child_context_over_budget: true,
+  child_context_distillation_started: true,
+  child_context_distillation_succeeded: true,
+  child_context_distillation_failed: true,
 }
 
 export const SUBAGENT_EVENT_TYPES = Object.keys(
