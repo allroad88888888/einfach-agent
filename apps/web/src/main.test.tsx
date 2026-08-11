@@ -98,12 +98,13 @@ describe('main entry: MCP 启动装配（C1）', () => {
     expect(rootStore.getter(mcpHydrationAtom).status).toBe('ready')
   })
 
-  // 依赖上一个用例先跑：main.tsx 与（仍会被 mount 的）SettingsDialog 的 useEffect 都会调用
-  // initializeMcpSettings() / hydrateMcpSettings()——C1 只搬装配时机，不改 SettingsDialog，
-  // 所以这两处后续会重复调用。这里模拟 SettingsDialog 之后再次触发同一对函数，
-  // 证明幂等性真的成立：不会重新 configureMcpSettings()（不会把 hydration 状态打回
-  // loading/idle），也不会抛错。
-  it('SettingsDialog 之后再调用同一对函数是幂等的，不会重新装配或重新 hydrate', async () => {
+  // 依赖上一个用例先跑：main.tsx 顶层已经装配过一次。C2 把 SettingsDialog 里重复的
+  // initializeMcpSettings() / hydrateMcpSettings() 调用删掉了（那两处调用曾是多余的——
+  // 设置弹窗只该编辑配置，不该重复装配运行时），生产代码里现在只有 main.tsx 这一个调用点。
+  // 但装配函数本身的幂等性仍然是需要保住的性质（防御性保证，避免任何未来调用点、
+  // HMR 重复求值等场景把已经 ready 的运行时打回 loading/idle），所以这里直接重复调用
+  // 这一对函数来验证：不会重新 configureMcpSettings()，也不会抛错。
+  it('重复调用 initializeMcpSettings/hydrateMcpSettings 仍是幂等的，不会重新装配或重新 hydrate', async () => {
     const { initializeMcpSettings } = await import('./mcp/initialize')
     const { hydrateMcpSettings, isMcpSettingsConfigured } = await import('./mcp/commands')
     const { mcpHydrationAtom } = await import('./mcp/state')

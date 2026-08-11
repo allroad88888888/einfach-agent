@@ -1,7 +1,5 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import { useAtomValue } from '@einfach/react'
-import { hydrateMcpSettings } from '../../mcp/commands'
-import { initializeMcpSettings } from '../../mcp/initialize'
 import {
   closeSettingsCenter,
   hydrateAppSettings,
@@ -127,8 +125,6 @@ export function SettingsDialog({ launchButtonRef }: SettingsDialogProps) {
   const wasOpenRef = useRef(false)
 
   useEffect(() => {
-    initializeMcpSettings()
-    void hydrateMcpSettings()
     void hydrateAppSettings()
   }, [])
 
