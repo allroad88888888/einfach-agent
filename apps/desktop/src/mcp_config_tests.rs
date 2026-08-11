@@ -31,14 +31,14 @@ fn test_home() -> TestHome {
 }
 
 fn write_fixture(home: &TestHome, contents: &str) {
-    let directory = home.0.join(".web-agent");
+    let directory = home.0.join(".webAgent");
     fs::create_dir_all(&directory).expect("create config directory");
     fs::write(directory.join("config.json"), contents).expect("write config fixture");
 }
 
 fn stored_config(home: &TestHome) -> Value {
     serde_json::from_str(
-        &fs::read_to_string(home.0.join(".web-agent/config.json")).expect("read config"),
+        &fs::read_to_string(home.0.join(".webAgent/config.json")).expect("read config"),
     )
     .expect("parse config")
 }
@@ -151,7 +151,7 @@ fn rejects_a_corrupted_config_file_on_read_and_write() {
         Err("模型配置文件格式无效".to_string())
     );
     assert_eq!(
-        fs::read_to_string(home.0.join(".web-agent/config.json")).expect("read config"),
+        fs::read_to_string(home.0.join(".webAgent/config.json")).expect("read config"),
         "{ not json"
     );
 }
