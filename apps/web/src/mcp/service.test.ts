@@ -10,6 +10,7 @@ import {
   MCP_SETTINGS_MAX_SERVERS,
   type McpConfigStorage,
 } from './persistence'
+import { createMemoryToolNameCacheStorage } from './toolNameCacheStorage'
 import {
   mcpAddFormOpenAtom,
   mcpDraftAtom,
@@ -369,6 +370,7 @@ describe('MCP settings service', () => {
       store,
       manager,
       storage,
+      toolNameCacheStorage: createMemoryToolNameCacheStorage(),
       capabilities: { stdio: true },
       createId: () => ids[nextId++]!,
     })
@@ -405,8 +407,11 @@ describe('MCP settings service', () => {
     ]
     expect(save).toHaveBeenCalledTimes(1)
     expect(save).toHaveBeenCalledWith(expected)
-    expect(manager.connectCalls).toHaveLength(0)
     expect(store.getter(mcpServerConfigsAtom)).toEqual(expected)
+    // 安装即探测（B2）只覆盖 HTTP：远端服务连一次取回工具清单后立刻断开，
+    // stdio 在 H2 的确认门上线前绝不起进程。两者都保持 autoConnect: false。
+    await vi.waitFor(() => expect(manager.disconnectCalls).toEqual(['remote-search']))
+    expect(manager.connectCalls.map((config) => config.id)).toEqual(['remote-search'])
     expect(store.getter(mcpServersAtom)).toEqual([
       expect.objectContaining({ id: 'local-playwright', status: 'disconnected' }),
       expect.objectContaining({ id: 'remote-search', status: 'disconnected' }),

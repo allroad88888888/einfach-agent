@@ -10,6 +10,11 @@ import {
   MCP_SETTINGS_MAX_SERVERS,
   type McpConfigStorage,
 } from './persistence'
+import { createMcpInstallProber } from './probeOnInstall'
+import {
+  createDesktopToolNameCacheStorage,
+  type McpToolNameCacheStorage,
+} from './toolNameCacheStorage'
 import {
   mcpAddModeAtom,
   mcpAddFormOpenAtom,
@@ -41,6 +46,8 @@ export interface CreateMcpSettingsServiceOptions {
   store: Store
   manager: McpSettingsManager
   storage: McpConfigStorage
+  /** 安装探测写工具名清单缓存的通道；默认桌面优先，浏览器/测试自动降级。 */
+  toolNameCacheStorage?: McpToolNameCacheStorage
   capabilities?: Partial<McpSettingsCapabilities>
   createId?: () => string
 }
@@ -77,6 +84,7 @@ export function createMcpSettingsService({
   store,
   manager,
   storage,
+  toolNameCacheStorage = createDesktopToolNameCacheStorage(),
   capabilities: requestedCapabilities,
   createId = randomServerId,
 }: CreateMcpSettingsServiceOptions): McpSettingsService {
@@ -210,6 +218,19 @@ export function createMcpSettingsService({
     return turn.then(() => next)
   }
 
+  // 安装即探测（B2）。探测本身是一块独立逻辑，放在 probeOnInstall.ts；这里只把它接到
+  // service 已有的三样东西上：按 serverId 的串行队列、用户可见的状态行、以及「这个服务
+  // 是否还在（没被删、service 没 dispose）」的判断。
+  const prober = createMcpInstallProber({
+    manager,
+    cacheStorage: toolNameCacheStorage,
+    runExclusive: enqueueServerOperation,
+    report: (text) => {
+      if (!disposed) store.setter(mcpImportStatusAtom, text)
+    },
+    shouldProbe: (id) => !disposed && configById(id) !== undefined,
+  })
+
   const hydrate = (): Promise<void> => {
     if (hydratePromise) return hydratePromise
     let succeeded = false
@@ -294,8 +315,20 @@ export function createMcpSettingsService({
         store.setter(mcpDraftAtom, { ...EMPTY_MCP_DRAFT })
         store.setter(mcpAddFormOpenAtom, false)
         store.setter(mcpFormSubmittingAtom, false)
+        // 保存已经落盘、表单也已经关掉，下面这次探测不会挡住用户；探测失败也只写状态行，
+        // 绝不回滚保存。订阅先接上，探测期间的 connecting/connected/disconnected 才能
+        // 照常刷到卡片上（hydrate 之前就添加服务时同样成立）。
+        ensureSubscription()
         if (config.autoConnect) {
-          await enqueueServerOperation(config.id, () => connectConfig(config, false))
+          // 勾了自动连接的服务本来就要连——复用这一次连接的结果，不再为探测多连一次
+          // （对同一个 id 连第二次会先关掉第一条连接，纯属浪费和噪音）。
+          await enqueueServerOperation(config.id, async () => {
+            await connectConfig(config, false)
+            // 已经持有该 serverId 的串行槽位，recordConnected 按约定不再自己排队。
+            await prober.recordConnected(config)
+          })
+        } else {
+          await prober.probeInstalled(config)
         }
         return true
       } catch (error) {
@@ -368,8 +401,12 @@ export function createMcpSettingsService({
         store.setter(mcpAddFormOpenAtom, false)
         store.setter(
           mcpImportStatusAtom,
-          `已导入 ${configs.length} 个 MCP 服务，均保持未连接`,
+          `已导入 ${configs.length} 个 MCP 服务，正在逐个检测…`,
         )
+        // 批量探测放到后台：配置已经落盘，界面不该被 N 次连接拖住；prober 内部逐个跑，
+        // 每一步都刷新上面这条状态行，最后写一次汇总。探测结论不影响导入成功与否。
+        ensureSubscription()
+        void prober.probeImported(configs).catch(() => undefined)
         return true
       } catch (error) {
         store.setter(mcpFormErrorAtom, `无法导入 MCP 服务：${messageFromError(error)}`)
