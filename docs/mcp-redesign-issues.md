@@ -137,7 +137,7 @@
 - **判据**：删除 `initializeMcpSettings()` / `hydrateMcpSettings()` 调用后，
   设置面板功能不变；`pnpm exec vitest run apps/web/src/agentNew/ui` 通过
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE dc1deab
 
 ### C3 · 设置中心 UI 状态搬出 mcp 模块
 
@@ -172,7 +172,7 @@
   `transport_closed` / `transport_error` / `process_error` / `worker_failed`）。
   要有测试证明改 Rust 文案不会让分类退化
 - **模型**：opus（跨 Rust/TS 契约）
-- **状态**：DOING
+- **状态**：DONE 5c1a20c
 
 > **为什么必须排在 D2 之前**：D1 的分类器默认落到「暂时失败」。
 > `tools/mcp` 现在匹配的是 `apps/desktop/src/mcp.rs` 里 `McpSession::spawn` 的字面文案——
@@ -233,7 +233,7 @@
 - **改动面**：`packages/agent-core/src/runtime/commands/runCommands.ts`
 - **判据**：现有 `registrationVersion` 判断收敛到统一的 epoch 机制，行为不回退
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE a2643fd
 
 ---
 
@@ -265,7 +265,7 @@
 - **判据**：serverId 指向 stdio → `dangerous`（走现有确认 UI，提示将执行的命令）；
   指向 HTTP → `safe`。沿用 `classifyToolRisk` 已有的按参数分级能力
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE 852fc28
 
 ### F4 · manifest 里带上缓存的工具清单
 
@@ -278,9 +278,30 @@
 - **模型**：opus（决定模型能否找到工具，是 F 分支的承重项）
 - **状态**：TODO
 
+### F7 · 「一律允许」不得记忆连接工具
+
+- **依赖**：F3
+- **改动面**：`packages/agent-core/src/runtime/commands/runCommands.ts` 的 `canRememberApproval`、
+  `packages/agent-core/src/state/sessionTransientMutations.ts`、`sessionTransientReaders.ts`
+- **判据**：`connect_mcp_server` 无法获得 session 级「一律允许」，每次连接都要单独确认
+- **模型**：opus（安全边界）
+- **状态**：TODO
+
+> **这是一个已经存在的洞**。仓库本来就有一条规则：MCP 工具永不获得 session 级授权
+> （`runCommands.ts`、`sessionTransientMutations.ts`、`sessionTransientReaders.ts` 三处都在查
+> `mcp__` 前缀）。但 F3 落地的连接工具叫 `connect_mcp_server`，**不带那个前缀**，于是从规则里
+> 漏了出去——用户对某一个服务勾一次「本会话一律允许」，此后本会话内连接**任意**已配置的
+> stdio 服务都不再确认，因为 `isToolAlwaysAllowed` 按工具名记忆而不是按参数。
+>
+> 顺带说明为什么不能靠「再加一处前缀判断」解决：那会变成 core 里第五处 `mcp__` 字符串特判，
+> 而这批改动一直在避免加第六处。正解是让判据走显式的工具身份或「按参数记忆」，
+> 与 F3 已经建立的 `MCP_CONNECT_TOOL_NAME` 等值匹配保持一致。
+>
+> **排序**：和 F3 一样属于 F6 的安全前置——F6 让 stdio 可达之后，这个洞才真正可被利用。
+
 ### F6 · 让 manager 认识「已配置但未连接」的服务
 
-- **依赖**：F1、**F3（安全前置，见下）**
+- **依赖**：F1、**F3 与 F7（安全前置，见上）**
 - **改动面**：`tools/mcp/src/clientManager.ts`（新增只登记不连接的入口）、
   `apps/web/src/mcp/service.ts` 的 hydrate
 - **判据**：冷启动后，配置里的**全部**服务都能被 `connect_mcp_server` 找到，
