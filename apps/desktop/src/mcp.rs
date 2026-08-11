@@ -784,9 +784,17 @@ impl McpSession {
         }
         configure_child_process(&mut command);
 
+        // `command_spawn_failed` is the structured signal for "the OS refused to
+        // start the configured command" — missing binary, not executable, or no
+        // permission. It is deliberately a different kind from `spawn_failed`
+        // below, which covers host-side setup failures *after* the child already
+        // started (pipe capture, helper threads) and is worth retrying. The web
+        // side classifies stdio failures on this kind alone
+        // (tools/mcp/src/failureClassification.ts), so the message text below is
+        // free to change without downgrading a permanent failure.
         let mut child = command.spawn().map_err(|error| {
             McpCommandError::new(
-                "spawn_failed",
+                "command_spawn_failed",
                 format!("failed to start MCP server `{server_id}`: {error}"),
             )
             .for_server(server_id)
@@ -1833,6 +1841,27 @@ mod tests {
         assert_eq!(error.kind, "protocol_error");
         assert_eq!(error.server_id.as_deref(), Some("resources-only"));
         assert!(error.message.contains("tools capability"));
+    }
+
+    #[test]
+    fn connect_reports_a_dedicated_kind_when_the_command_cannot_be_spawned() {
+        let manager = McpManager::default();
+        let mut missing = connect_input("missing-command", "functional");
+        missing.command = "web-agent-mcp-binary-that-does-not-exist".to_string();
+        missing.args = Vec::new();
+
+        let error = manager
+            .connect(missing)
+            .expect_err("a command the OS cannot start must fail to connect");
+
+        // The web side classifies stdio failures on this kind alone
+        // (tools/mcp/src/failureClassification.ts). It must stay distinct from
+        // the retryable `spawn_failed`, and it must survive serialization —
+        // the message is free-form and is never parsed.
+        assert_eq!(error.kind, "command_spawn_failed");
+        assert_eq!(error.server_id.as_deref(), Some("missing-command"));
+        let serialized = serde_json::to_value(&error).expect("error should serialize");
+        assert_eq!(serialized["kind"], json!("command_spawn_failed"));
     }
 
     #[test]

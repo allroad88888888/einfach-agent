@@ -1,14 +1,15 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import type {
-  McpCallToolResult,
-  McpConnection,
-  McpConnectionCloseListener,
-  McpConnector,
-  McpOperationOptions,
-  McpRemoteTool,
-  McpServerConfig,
-  McpToolsChangedListener,
+import {
+  attachMcpFailureKind,
+  type McpCallToolResult,
+  type McpConnection,
+  type McpConnectionCloseListener,
+  type McpConnector,
+  type McpOperationOptions,
+  type McpRemoteTool,
+  type McpServerConfig,
+  type McpToolsChangedListener,
 } from '@web-agent/tools-mcp'
 
 const CONNECT_TIMEOUT_MS = 30_000
@@ -118,6 +119,12 @@ function asTauriError(value: unknown): TauriMcpError | undefined {
   return value as TauriMcpError
 }
 
+/**
+ * Rejections from `invoke` are plain serialized `McpCommandError` records, not
+ * Errors. Converting them keeps `kind` on the resulting Error as a structured
+ * field so classifyMcpFailure() can judge stdio failures without reading the
+ * Rust-authored message — see apps/desktop/src/mcp.rs `McpCommandError`.
+ */
 function toError(value: unknown): Error {
   if (value instanceof Error) return value
   if (
@@ -129,10 +136,9 @@ function toError(value: unknown): Error {
     return abortError()
   }
   const remote = asTauriError(value)
-  if (remote?.message) {
-    return new Error(remote.message)
-  }
-  return new Error(typeof value === 'string' ? value : 'Tauri MCP 调用失败')
+  const message = remote?.message
+    ?? (typeof value === 'string' ? value : 'Tauri MCP 调用失败')
+  return attachMcpFailureKind(new Error(message), remote?.kind)
 }
 
 function isFatalConnectionError(value: unknown): boolean {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import { classifyMcpFailure, readMcpFailureKind } from '@web-agent/tools-mcp'
 import { createTauriStdioMcpConnector } from './tauriStdioConnector'
 
 vi.mock('@tauri-apps/api/core', () => ({
@@ -308,6 +309,45 @@ describe('TauriStdioMcpConnector', () => {
     expect(unlistenMocks.every((unlisten) => unlisten.mock.calls.length === 1)).toBe(true)
     expect(eventHandlers.get('mcp-stdio-tools-changed')).toHaveLength(0)
     expect(eventHandlers.get('mcp-stdio-close')).toHaveLength(0)
+  })
+
+  it('把 Rust 的结构化 kind 透传给失败分类，不依赖 Rust 文案', async () => {
+    invokeMock.mockRejectedValueOnce({
+      kind: 'command_spawn_failed',
+      message: '这段文案随时可能被 Rust 侧改写，分类不许依赖它',
+      serverId: 'local',
+    })
+
+    const failure = await createTauriStdioMcpConnector().connect({
+      id: 'local',
+      transport: 'stdio',
+      command: 'missing-command',
+    }).catch((error: unknown) => error)
+
+    expect(readMcpFailureKind(failure)).toBe('command_spawn_failed')
+    expect(classifyMcpFailure(failure)).toMatchObject({
+      status: 'error',
+      reason: 'command_unavailable',
+    })
+  })
+
+  it('把传输类 kind 也透传出去，仍归类为可重试', async () => {
+    mockSuccessfulConnect()
+    invokeMock.mockRejectedValueOnce({
+      kind: 'transport_closed',
+      message: 'MCP server transport is closed',
+      serverId: 'local',
+    })
+
+    const connection = await createTauriStdioMcpConnector().connect({
+      id: 'local',
+      transport: 'stdio',
+      command: 'node',
+    })
+    const failure = await connection.listTools().catch((error: unknown) => error)
+
+    expect(readMcpFailureKind(failure)).toBe('transport_closed')
+    expect(classifyMcpFailure(failure)).toMatchObject({ status: 'reconnecting' })
   })
 
   it('连接被取消后用旧 token 清理迟到进程，不影响同 ID 的新连接', async () => {

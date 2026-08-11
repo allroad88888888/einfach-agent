@@ -40,12 +40,66 @@ const REASON_LABEL: Record<McpFailureReason, string> = {
 }
 
 /**
+ * Property that carries the desktop stdio bridge's structured failure kind
+ * (`McpCommandError.kind`, apps/desktop/src/mcp.rs) across the Tauri boundary.
+ */
+const FAILURE_KIND_KEY = 'mcpFailureKind'
+
+/**
+ * Records the desktop bridge's structured `McpCommandError.kind` on the Error
+ * that crosses into TypeScript. Called by the host's stdio connector
+ * (apps/web/src/mcp/tauriStdioConnector.ts) — this is the *declared* channel
+ * that replaces matching on the bridge's human-readable message. The property
+ * is non-enumerable so it never leaks into Error serialization or UI text.
+ */
+export function attachMcpFailureKind<E extends Error>(
+  error: E,
+  kind: string | undefined,
+): E {
+  if (typeof kind !== 'string' || kind.length === 0) return error
+  Object.defineProperty(error, FAILURE_KIND_KEY, {
+    value: kind,
+    enumerable: false,
+    writable: true,
+    configurable: true,
+  })
+  return error
+}
+
+/** Reads back a kind recorded by attachMcpFailureKind(), if any. */
+export function readMcpFailureKind(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) return undefined
+  const kind = (error as Record<string, unknown>)[FAILURE_KIND_KEY]
+  return typeof kind === 'string' && kind.length > 0 ? kind : undefined
+}
+
+/**
+ * Structured kinds that mean "retrying will never succeed on its own".
+ *
+ * Only kinds listed here are permanent; every other kind — including ones the
+ * Rust side adds later — falls through to the message rules and then to the
+ * temporary default, so a new kind can never silently reclassify an existing
+ * failure. Rewording the Rust message cannot downgrade a permanent failure
+ * either, because nothing here reads the message.
+ */
+const PERMANENT_FAILURE_KINDS: Readonly<Record<string, McpFailureReason | undefined>> = {
+  // apps/desktop/src/mcp.rs McpSession::spawn — the OS refused to start the
+  // configured command (missing binary / not executable / no permission).
+  // Deliberately distinct from `spawn_failed`, which is a host-side setup
+  // failure *after* the child started (pipe capture, helper threads) and
+  // stays retryable.
+  command_spawn_failed: 'command_unavailable',
+}
+
+/**
  * Permanent-failure message patterns sourced from this codebase's own thrown
  * errors (clientManager.ts validateConfig/reconcile, toolAdapter.ts,
- * streamableHttp.ts) plus the desktop stdio bridge's spawn-failure text
- * (apps/desktop/src/mcp.rs `McpSession::spawn`). These are deterministic,
- * developer-authored strings, not third-party or localized text, so matching
- * on them is stable across releases.
+ * streamableHttp.ts). These are deterministic, developer-authored strings
+ * thrown inside this package, not third-party or cross-process text, so
+ * matching on them is stable across releases.
+ *
+ * The desktop stdio bridge is intentionally absent: its failures are
+ * classified through PERMANENT_FAILURE_KINDS above, never through its prose.
  */
 const PERMANENT_MESSAGE_RULES: ReadonlyArray<{
   reason: McpFailureReason
@@ -54,16 +108,6 @@ const PERMANENT_MESSAGE_RULES: ReadonlyArray<{
   { reason: 'config_invalid', pattern: /must not be empty/i },
   { reason: 'config_invalid', pattern: /must use http or https/i },
   { reason: 'config_invalid', pattern: /unsupported mcp transport/i },
-  {
-    reason: 'command_unavailable',
-    // apps/desktop/src/mcp.rs McpSession::spawn wraps OS spawn failures with
-    // this exact prefix (command not found / not executable / no permission).
-    pattern: /failed to start mcp server/i,
-  },
-  {
-    reason: 'command_unavailable',
-    pattern: /\benoent\b|command not found|no such file or directory|cannot find the file specified|is not recognized as an internal or external command|permission denied/i,
-  },
   { reason: 'tool_limit_exceeded', pattern: /exceeded \d+ tools\b/i },
   { reason: 'tool_name_collision', pattern: /colliding tool names/i },
   { reason: 'tool_name_collision', pattern: /conflicts with an existing tool/i },
@@ -118,15 +162,23 @@ function temporary(reason: McpFailureReason, detail: string): McpFailureClassifi
  * Maps an arbitrary connect/reconcile/close failure to a status + reason.
  *
  * Temporary (network/transport jitter, peer-closed connections) is the
- * fallback: only failures matching a known permanent signal — HTTP 401/403,
- * an "unauthorized"-shaped message, or one of this codebase's own
- * config/protocol/capability errors — are classified as permanent. This
- * function does not schedule or perform any retry; it only decides which of
- * 'error' | 'reconnecting' a failure deserves.
+ * fallback: only failures matching a known permanent signal — the stdio
+ * bridge's structured failure kind, HTTP 401/403, an "unauthorized"-shaped
+ * message, or one of this codebase's own config/protocol/capability errors —
+ * are classified as permanent. This function does not schedule or perform any
+ * retry; it only decides which of 'error' | 'reconnecting' a failure deserves.
  */
 export function classifyMcpFailure(error: unknown): McpFailureClassification {
   const caught = toError(error)
   const detail = caught.message
+
+  // Structured first: a typed kind from the desktop bridge outranks every
+  // heuristic below, and is the only thing the stdio path is judged on.
+  const kind = readMcpFailureKind(caught)
+  const kindReason = kind === undefined ? undefined : PERMANENT_FAILURE_KINDS[kind]
+  if (kindReason !== undefined) {
+    return permanent(kindReason, detail)
+  }
 
   const httpStatus = readHttpStatus(caught)
   if (httpStatus === 401 || httpStatus === 403) {

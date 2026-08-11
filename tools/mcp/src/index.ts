@@ -9,6 +9,7 @@ import type { ToolRegistry } from '@web-agent/core/tools/toolRegistry'
 import { createMcpConnectTool, type McpConnectManager } from './connect-mcp-server/connect-mcp-server'
 
 export * from './types'
+export * from './failureClassification'
 export * from './connectorRouter'
 export * from './streamableHttp'
 export * from './toolAdapter'
