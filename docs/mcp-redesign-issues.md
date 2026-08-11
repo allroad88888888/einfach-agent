@@ -68,8 +68,11 @@
 
 - **依赖**：A3
 - **改动面**：`apps/web/src/mcp/` 新增 `toolNameCache.ts`
-- **判据**：按 serverId 存 `{ toolNames, toolCount, cachedAt, probeStatus }`；
-  有条数上限与总长度上限；有单测
+- **判据**：按 serverId 存 `{ tools: [{ name, description }], toolCount, cachedAt, probeStatus }`；
+  有条数上限与总长度上限；有单测。
+  **只缓存名字与短描述，不缓存 `inputSchema`**——单个 schema 上限就有 128 KB，
+  且 schema 属于 `request_tool_schema` 那一层，而那一层要求工具真的已注册（= 已连接）。
+  缓存 schema 会诱使实现让模型直接调未连接的工具，破坏惰性加载的分层
 - **模型**：sonnet
 - **状态**：TODO
 
@@ -81,7 +84,9 @@
   **探测失败不得阻断保存**——配置照存，标记 `probeStatus: 'failed'` 并在界面显著提示。
   批量导入后台逐个探测且有可见进度，不阻塞界面。
   现状对照：`buildPersistedMcpConfig` 对 stdio 强制 `autoConnect: false`、`importJson` 对
-  全部导入项写死 false，所以今天这两条路径添加的服务**从不验证**
+  全部导入项写死 false，所以今天这两条路径添加的服务**从不验证**。
+  **排序约束：stdio 的探测会真的起子进程，因此它不得先于 H2 的确认门上线。**
+  本 issue 只交付 HTTP 探测，stdio 探测路径留桩，由 H2 一起开
 - **模型**：opus（同时是授权时机与 stdio 进程确认的落点）
 - **状态**：TODO
 
@@ -217,7 +222,8 @@
 
 ### F1 · 工具与注入式 registrar
 
-- **依赖**：—
+- **依赖**：C1（连接工具需要一个活的 `McpClientManager`，而它只在启动装配后才存在——
+  装配还挂在设置弹窗上时，这个工具根本注册不出来）
 - **改动面**：新增 `tools/mcp/src/connect-mcp-server/`（实现 + 说明 + 测试同目录）
 - **判据**：`createMcpConnectTool(manager)` + `registerMcpTools(registry, { manager })`。
   **这是第一个需要注入运行时依赖的工具域，后续会被抄**，签名要立得住
@@ -244,11 +250,13 @@
 
 ### F4 · manifest 里带上缓存的工具清单
 
-- **依赖**：F1、B1
+- **依赖**：F1、B2
 - **改动面**：`tools/mcp/src/connect-mcp-server/`
-- **判据**：未连接服务在工具描述里列出上次可用的工具名（有长度上限）。
-  **这条不做，模型不知道该连谁，整个按需模式失效**
-- **模型**：sonnet
+- **判据**：未连接服务在工具描述里列出缓存的工具名与短描述（有长度上限），
+  并标注 `cachedAt`。因为 B2 保证了**每个已配置服务在安装时就有清单**，
+  这里不是尽力而为的补充信息，而是模型做连接决策的唯一依据。
+  **这条不做，整个按需模式失效**
+- **模型**：opus（决定模型能否找到工具，是 F 分支的承重项）
 - **状态**：TODO
 
 ### F5 · 连接失败的可重试性分类
@@ -262,16 +270,23 @@
 
 ---
 
-## G · 首个 run 的连接 barrier
+## G · 首个 run 的连接 barrier（**建议不做**）
 
 ### G1 · 组装工具清单前等待首连 settle
 
-- **依赖**：C1
+- **依赖**：C1、F4
 - **改动面**：`packages/agent-core/src/runtime/runToolLoop.ts` 或其 bootstrap 环节
-- **判据**：只在**首个** run 生效，超时（建议 3s）后带着已连上的服务继续；
-  消除「第一条消息看不到 MCP 工具、第二条才看到」
-- **模型**：opus（run 生命周期）
-- **状态**：TODO
+- **判据**：只在**首个** run 生效，超时（建议 3s）后带着已连上的服务继续
+- **模型**：sonnet
+- **状态**：TODO（**低优先，建议排到最后再决定要不要做**）
+
+**原立项理由已被 B2 + F4 消解。** 当初要这道 barrier 是为了消除「第一条消息看不到 MCP
+工具、第二条才看到」；但既然每个已配置服务在安装时就有缓存清单，模型在任何时刻都能看到
+全部工具，无所谓连没连上——没有东西需要等。
+
+剩下的唯一价值是省一次无谓调用：常驻服务还在连接途中时，模型可能对一个 200ms 后就会连上的
+服务白调一次 `mcp_connect`。**代价是给 run 生命周期加一条阻塞路径**，而 run 生命周期是这个
+仓库最不该随便加分支的地方。建议先不做，等实际观测到这种白调再说。
 
 ---
 
@@ -299,9 +314,22 @@
 
 ## 未决（决策落地前不开工，不指派模型）
 
-- **凭据支持**。`config.ts` 的 `toManagerConfig` 主动丢弃 `headers` / `env`，
-  `parseArgsText` 还把疑似 token 的启动参数判为错误。**现在任何需要认证的 MCP 服务都接不上。**
-  要不要做、走静态 token 还是 OAuth，未定。做 OAuth 的话 D1 的状态机需要预留 `needs_auth`。
+- **凭据支持**（**已升级为 B2 的实际阻塞项**）。`config.ts` 的 `toManagerConfig` 主动丢弃
+  `headers` / `env`，`parseArgsText` 还把疑似 token 的启动参数判为错误。
+  **现在任何需要认证的 MCP 服务都接不上。**
+  安装即探测把这件事从「以后再说」变成「立刻可见」：所有需要认证的服务在 B2 里都会
+  探测失败、`probeStatus: 'failed'`、缓存为空——于是 F4 没清单可给、按需模式对这类服务完全失效。
+  换句话说 **B2 做完就会暴露这个洞**。要不要做、走静态 token 还是 OAuth，未定；
+  做 OAuth 的话 D1 的状态机需要预留 `needs_auth`。
+
+- **要不要保留显式 `mcp_connect`**。既然安装时已拿到全部工具清单，理论上可以取消这个工具：
+  把所有缓存工具作为 stub 直接注册进 registry，模型照常调 `mcp__github__create_issue`，
+  运行时发现未连接就先透明连上再执行。
+  取舍是明确的——透明模式**省一轮但费 context**（20 服务 × 20 工具 = 400 条摘要进每次请求），
+  显式模式**省 context 但多一轮**，且起进程的确认能落在一次语义明确的调用上，
+  而不是突然插进一次业务调用里。
+  当前 F 分支按**显式**设计，理由是本仓库已经为了 context 经济做了惰性 schema（`request_tool_schema`），
+  透明模式与那个取向相悖。要改成透明模式，F1–F5 整支重写。
 - **异步长任务**。`toolAdapter.ts` 拒绝 `taskSupport: 'required'` 的服务，且每次调用硬超时
   120 秒。要支持跑得久的工具就得动 run 的暂停/恢复模型，工作量大于 A–H 之和。
 - **MCP 配置本体是否迁出 localStorage**。缓存进了 `~/.web-agent/config.json`，
