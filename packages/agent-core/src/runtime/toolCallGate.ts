@@ -1,4 +1,8 @@
-import { toolSchemaLoadedResult } from '../tools/schemaResult'
+import {
+  toolProviderNotConnectedResult,
+  toolSchemaLoadedResult,
+  type UnconnectedToolProvider,
+} from '../tools/schemaResult'
 import { toolProviderDisconnectedResult, toolSchemaNotLoadedResult, ensureToolLoaded } from './toolLoading'
 import { searchToolManifestPage, touchRecentToolName } from './modelTurn'
 import { REQUEST_TOOL_SCHEMA_NAME, selectToolGate } from './toolGates'
@@ -33,6 +37,33 @@ function retiredToolTarget(base: ToolLoopBase, input: ToolGateInput): string | u
 }
 
 /**
+ * 本次调用真正指向的、出自某个未连接服务的工具名 + 它的提供方；否则 undefined。
+ *
+ * 判据是 epoch.status(name) === 'absent'（本 run 的清单里没有、registry 里也没有的真·未知名），
+ * 不看工具名长什么样——「这个名字归谁」是宿主的事实，core 只在自己彻底不认识时问一次。
+ * 与 retiredToolTarget 一样认两个入口：直接调用它，或用 request_tool_schema 点名它。
+ */
+function unconnectedProviderTarget(
+  base: ToolLoopBase,
+  input: ToolGateInput,
+): { toolName: string; provider: UnconnectedToolProvider } | undefined {
+  const probe = base.core.config.unconnectedToolProvider
+  if (!probe) return undefined
+  const candidate = input.name === REQUEST_TOOL_SCHEMA_NAME
+    ? (typeof input.args.toolName === 'string' ? input.args.toolName.trim() : '')
+    : input.name
+  if (!candidate || base.toolEpoch.status(candidate) !== 'absent') return undefined
+  try {
+    const provider = probe(candidate)
+    return provider ? { toolName: candidate, provider } : undefined
+  } catch {
+    // 探针是宿主代码。它崩了只回落到未知工具的原有路径，既不能让一次工具调用跟着崩，
+    // 也不能反过来断言「有个未连接的服务」——查不到就当查不到。
+    return undefined
+  }
+}
+
+/**
  * Handles non-executing gate decisions, including lazy schema loading.
  *
  * Every catalog read here goes through the run's tool epoch rather than the live
@@ -55,6 +86,23 @@ export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolea
   const retired = retiredToolTarget(base, input)
   if (retired) {
     traceFailure('tool.provider_disconnected', { tool_provider_disconnected: true, retiredToolName: retired }, toolProviderDisconnectedResult(retired))
+    return true
+  }
+  // 未连接服务的缓存工具（B4）。按需连接模式下模型看得到未连接服务【上次已知】的工具清单，
+  // 于是它可能跳过 connect_mcp_server 直接点名。也排在 selectToolGate 之前，因为默认的两条
+  // 回执都会把它带进死胡同：直接调用得到「schema 尚未加载，请 request_tool_schema」，
+  // 而 request_tool_schema 对一个不存在的工具只会回一句 unknown ——真正缺的是一次连接。
+  const unconnected = unconnectedProviderTarget(base, input)
+  if (unconnected) {
+    traceFailure(
+      'tool.provider_not_connected',
+      {
+        tool_provider_not_connected: true,
+        unconnectedToolName: unconnected.toolName,
+        serverId: unconnected.provider.serverId,
+      },
+      toolProviderNotConnectedResult(unconnected.toolName, unconnected.provider),
+    )
     return true
   }
   const gate = selectToolGate({

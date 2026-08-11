@@ -1,5 +1,10 @@
-// 未连接服务的工具名清单缓存：数据结构、上限与清洗规则。读写通道见同目录的
-// toolNameCacheStorage.ts——本文件不碰磁盘，只负责"什么形状的数据是安全的"。
+// 未连接服务的工具名清单缓存：数据契约——写入的清洗与上限、读出的「上次已知」语义。
+// 读写通道见同目录的 toolNameCacheStorage.ts——本文件不碰磁盘，只负责"什么形状的数据是安全的"。
+//
+// 【过期语义 · B4】MCP 协议本来就有 tools/list_changed，工具集会变；三个月前探测到的清单
+// 今天可能已经不对。所以这份数据对外【只能】被当作「上次已知」读取，连上服务之后一律以
+// 服务返回的真实清单为准。落法见文件下半段 McpLastKnownTools：读出口把 tools 与 cachedAt
+// 焊在同一个对象里，消费方拿不到"没有时间戳的工具清单"，也就没机会把它当成当前事实。
 //
 // 模型在决定要不要 connect_mcp_server 之前，需要知道一个未连接服务大致有哪些工具。
 // 只存名字与短描述，绝不存 inputSchema——那属于 request_tool_schema 那一层，且要求
@@ -195,3 +200,84 @@ export function removeToolNameCacheEntry(
   return next
 }
 
+/**
+ * 一个服务【上次已知】的工具清单——缓存唯一的对外读出形状。
+ *
+ * 【为什么读出口另起一个类型】McpToolNameCacheRecord 是存储形状，字段名读起来像在陈述事实
+ * （tools / toolCount）。这个类型把同一份数据重新包装成一句带限定的话：serverId 上次被探测到
+ * （cachedAt）时的清单长这样，其中 truncated 说明它还被上限截过。取清单必然连带取到探测时刻，
+ * 于是「误当成当前事实」这件事在类型层面就发生不了。
+ *
+ * 【为什么不在这里直接给格式化好的字符串】两个消费方要的成品不一样：给用户看的（设置面板，
+ * B5）需要相对时间与本地化，属于 UI 的事；给模型看的（connect_mcp_server 的工具描述 F4、
+ * core 的未连接回执 B4）要的是长度受控、时区无歧义的一行字，且措辞是协议的一部分。数据层
+ * 出成品只会逼两边共用一种都不合适的措辞，所以这里只出原料——但原料的形状自带限定语。
+ */
+export interface McpLastKnownTools {
+  readonly serverId: string
+  readonly tools: readonly McpToolNameCacheEntry[]
+  /** 上次探测到的工具总数；tools 被上限截断时它仍是真实总数。 */
+  readonly toolCount: number
+  /** tools 是否因上限被截断（toolCount > tools.length）。 */
+  readonly truncated: boolean
+  /** 这份清单被探测到的时刻（epoch 毫秒）。 */
+  readonly cachedAt: number
+  readonly probeStatus: McpToolProbeStatus
+}
+
+function toLastKnown(serverId: string, record: McpToolNameCacheRecord): McpLastKnownTools {
+  return {
+    serverId,
+    tools: record.tools,
+    toolCount: record.toolCount,
+    truncated: record.toolCount > record.tools.length,
+    cachedAt: record.cachedAt,
+    probeStatus: record.probeStatus,
+  }
+}
+
+/** 读出某个服务上次已知的工具清单；从未探测过返回 undefined（不要伪造成"没有工具"）。 */
+export function readLastKnownTools(
+  cache: McpToolNameCache,
+  serverId: string,
+): McpLastKnownTools | undefined {
+  const record = cache[serverId]
+  return record ? toLastKnown(serverId, record) : undefined
+}
+
+/** 读出全部服务上次已知的工具清单，供设置面板与连接工具的描述使用。 */
+export function listLastKnownTools(cache: McpToolNameCache): readonly McpLastKnownTools[] {
+  return Object.entries(cache).map(([serverId, record]) => toLastKnown(serverId, record))
+}
+
+/** findLastKnownToolProvider 的命中结果：这个注册名上次已知出自谁。 */
+export interface McpLastKnownToolProvider {
+  readonly serverId: string
+  /** 服务侧的原始工具名（缓存存的是它，注册名由 toRegisteredName 拼出）。 */
+  readonly remoteToolName: string
+  readonly cachedAt: number
+}
+
+/**
+ * 反查一个【注册名】上次已知出自哪个服务。命中不代表这个工具现在存在——它只说明
+ * 上次探测时它在那个服务的清单里，所以调用方拿到它之后只能说「上次已知」。
+ *
+ * toRegisteredName 由调用方注入（传 tools-mcp 的 makeMcpToolName）：注册名不是简单拼接，
+ * 超长或含非法字符时会退化成带哈希的形式，在这里抄一份迟早会和真身对不上。
+ *
+ * 只在「这个工具名彻底不认识」的冷路径上被调用，所以直接线性扫（上限 50 服务 × 200 工具）。
+ */
+export function findLastKnownToolProvider(
+  cache: McpToolNameCache,
+  toolName: string,
+  toRegisteredName: (serverId: string, remoteToolName: string) => string,
+): McpLastKnownToolProvider | undefined {
+  if (!toolName) return undefined
+  for (const [serverId, record] of Object.entries(cache)) {
+    for (const entry of record.tools) {
+      if (toRegisteredName(serverId, entry.name) !== toolName) continue
+      return { serverId, remoteToolName: entry.name, cachedAt: record.cachedAt }
+    }
+  }
+  return undefined
+}

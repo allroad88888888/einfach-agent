@@ -1,6 +1,7 @@
 import type { UserInputPreparer } from '../userInputPreparation'
 import type { UserContentDisposer } from '../userContentDisposal'
 import type { McpConnectTargetProbe } from '../dangerousTools'
+import type { UnconnectedToolProviderProbe } from '../../tools/schemaResult'
 
 /** Runtime dependencies supplied by the host application. */
 export interface RuntimeConfig {
@@ -18,6 +19,12 @@ export interface RuntimeConfig {
    * 不接线时 classifyToolRisk 一律按需确认（从严），不会静默放行。
    */
   mcpConnectTarget?: McpConnectTargetProbe
+  /**
+   * 工具名 → 提供它的、当前【未连接】的 MCP 服务，由持有工具名缓存的宿主接上。
+   * core 只在一个工具名彻底不认识时问它一次，据此把「unknown tool」换成「请先连接」。
+   * 不接线时保持未知工具的原有回执，绝不凭空断言存在某个未连接的服务。
+   */
+  unconnectedToolProvider?: UnconnectedToolProviderProbe
 }
 
 export function createRuntimeConfig(overrides?: Partial<RuntimeConfig>): RuntimeConfig {
