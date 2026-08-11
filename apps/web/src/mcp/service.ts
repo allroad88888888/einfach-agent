@@ -17,7 +17,9 @@ import {
   createDesktopToolNameCacheStorage,
   type McpToolNameCacheStorage,
 } from './toolNameCacheStorage'
-import { createMcpToolNameCacheWriter } from './toolNameCacheWriter'
+import { createMcpToolNameCacheProjection } from './toolNameCacheProjection'
+import { createMcpToolNameCacheHandle } from './toolNameCacheWriter'
+import type { McpToolNameCache } from './toolNameCache'
 import {
   mcpHydrationAtom,
   mcpImportStatusAtom,
@@ -65,6 +67,16 @@ export interface McpSettingsService {
   approveLaunch(id: string): Promise<void>
   /** 用户选择暂不执行：撤掉请求，配置照留，不起任何进程。 */
   dismissLaunch(id: string): void
+  /**
+   * 进程内那份工具名缓存的只读出口（B5 的取数口）——B4 的未连接工具探针与 F4 的 manifest
+   * 清单都从这里取数，因此它必须和写入点是同一份快照，不能是另一份拷贝。
+   */
+  readToolNameCache(): McpToolNameCache
+  /**
+   * 这个服务此刻是否已连接，以 manager 的登记表为准（不是界面 atom，也不是缓存）。
+   * B4 的探针拿它来闭嘴：已连接的服务一律以真实工具清单为准。
+   */
+  isServerConnected(id: string): boolean
   dispose(): void
 }
 
@@ -101,10 +113,18 @@ export function createMcpSettingsService({
   const configById = (id: string): PersistedMcpServerConfig | undefined =>
     store.getter(mcpServerConfigsAtom).find((config) => config.id === id)
 
-  // 工具名清单缓存【唯一的写入点】：安装探测（B2）与连接成功刷新（B3）都用它。为什么
-  // 必须是同一个而不是各造一个，见 toolNameCacheWriter.ts；写入留在 app 层，tools/mcp
-  // 与 core 都不碰磁盘。
-  const writeToolNameCache = createMcpToolNameCacheWriter(toolNameCacheStorage)
+  // 工具名清单缓存【进程内那一份】：安装探测（B2）与连接成功刷新（B3）共用它写入，
+  // B4/F4 的探针与设置面板共用它读出。为什么必须是同一份而不是各造一个，见
+  // toolNameCacheWriter.ts；读写都留在 app 层，tools/mcp 与 core 都不碰磁盘。
+  const toolNameCache = createMcpToolNameCacheHandle(toolNameCacheStorage)
+  // 缓存 → 设置面板 atom 的只读投影（B5）见 toolNameCacheProjection.ts。写入点统一从投影
+  // 发下去，两个写入方都不需要记得刷新界面。
+  const toolNameCacheView = createMcpToolNameCacheProjection({
+    store,
+    cache: toolNameCache,
+    isActive: () => !disposed,
+  })
+  const writeToolNameCache = toolNameCacheView.write
 
   // 连上之后工具集还会变（MCP 的 tools/list_changed 就是为此），缓存不能停在安装那一刻。
   // 哪些快照才值得落盘、为什么断开绝不清缓存，都在 refreshOnConnect.ts；这里只补上
@@ -201,6 +221,11 @@ export function createMcpSettingsService({
     const attempt = (async () => {
       store.setter(mcpHydrationAtom, { status: 'loading' })
       try {
+        // 冷启动把工具名缓存读进进程内那份快照（B5）：不读，设置面板的「上次可用工具 N 个」、
+        // B4 的未连接工具探针、F4 的 manifest 清单在「配置过但本次还没探测过」的服务上就全是空。
+        // 与配置【并行】读、到 ready 之前才收口（两份数据互不依赖）；它绝不 reject，读不回来
+        // 只是这一轮没有历史可显示，不影响冷启动成败。
+        const toolNameCacheLoaded = toolNameCacheView.load()
         const configs = await storage.load()
         if (configs.length > MCP_SETTINGS_MAX_SERVERS) {
           throw new Error(`MCP 服务最多只能配置 ${MCP_SETTINGS_MAX_SERVERS} 个`)
@@ -238,6 +263,7 @@ export function createMcpSettingsService({
               enqueueServerOperation(config.id, () =>
                 connector.connect(config, { reconnect: false }))),
         )
+        await toolNameCacheLoaded
         store.setter(mcpHydrationAtom, { status: 'ready' })
         succeeded = true
       } catch (error) {
@@ -364,6 +390,10 @@ export function createMcpSettingsService({
     },
     dismissLaunch(id) {
       launchConsent.dismiss(id)
+    },
+    readToolNameCache: toolNameCache.read,
+    isServerConnected(id) {
+      return manager.get(id)?.status === 'connected'
     },
     dispose() {
       disposed = true

@@ -1,4 +1,4 @@
-// 工具名清单缓存的【写入点】：整个进程只该有一份。
+// 工具名清单缓存的【进程内那一份】：写入点，以及从同一份快照出的读出口。
 //
 // 一次写入是「读回整份缓存 → 换掉其中一条 → 整份写回去」，而写回要过一次 Tauri IPC，
 // 中间必然让出。两轮交错就会丢掉先写的那条，所以这里和 configWriteQueue.ts 对配置的
@@ -7,8 +7,13 @@
 //
 // 【为什么单独成文件】写入时机现在有两个：安装即探测（B2，probeOnInstall.ts）与连接成功
 // 后刷新（B3，refreshOnConnect.ts）。上面那条队列和它记住的内存快照是「不丢写入」的全部
-// 依据——两边各造一份，就是两条队列各读各的旧快照再互相覆盖。共用同一个 writer 才谈得上
+// 依据——两边各造一份，就是两条队列各读各的旧快照再互相覆盖。共用同一个 handle 才谈得上
 // 原子，所以它必须是两边都拿得到的东西，而不是某一方的私有闭包。
+//
+// 【读出口为什么也在这里 · B5】读的人有三个：设置面板（未连接服务的「上次可用工具 N 个」）、
+// core 的未连接工具探针（B4）、连接工具的 manifest 清单（F4）。给读者另造一份快照就等于
+// 造了第二条读-改-写路径，也就等于上面那条纪律没了；所以读出口原样交出【同一个对象引用】，
+// 本文件仍然只负责一件事：进程内那一份工具名缓存快照的持有与串行更新。
 //
 // 缓存写入留在 app 层：tools/mcp 与 packages/agent-core 都不碰磁盘，本文件只经由注入的
 // McpToolNameCacheStorage 读写；数据形状与三条上限见 toolNameCache.ts。
@@ -45,9 +50,31 @@ export function toCachedTools(
   return tools.map((tool) => ({ name: tool.name, description: tool.description }))
 }
 
-export function createMcpToolNameCacheWriter(
+/** 进程内那一份缓存快照的把手：写入、同步读出、冷启动读盘，共用同一条队列与同一份快照。 */
+export interface McpToolNameCacheHandle {
+  /** 见 McpToolNameCacheWrite。 */
+  readonly write: McpToolNameCacheWrite
+  /**
+   * 同步读出当前那份快照——B5 两根接线（B4 未连接工具探针、F4 manifest 清单）的取数口。
+   *
+   * 缓存是不可变值，每次写入换一份新的，所以读者每次都要重新调用；返回的是内部持有的
+   * 【同一个对象引用】，不是拷贝。还没读盘也没写过时返回 {}（= 什么都不知道），
+   * 绝不因此假装某个服务没有工具。
+   */
+  read(): McpToolNameCache
+  /**
+   * 冷启动把磁盘上的缓存读进这份快照。
+   *
+   * 已经有快照（写过或读过）时原样返回：磁盘上的是旧数据，用它盖掉内存里更新的那份
+   * 正是本文件要防的丢写入。走同一条串行队列，因此不会插进某次写入的读-改-写中间。
+   * 【绝不 reject】：读不回来只是少一份可重建的清单，冷启动不该因此失败。
+   */
+  load(): Promise<McpToolNameCache>
+}
+
+export function createMcpToolNameCacheHandle(
   storage: McpToolNameCacheStorage,
-): McpToolNameCacheWrite {
+): McpToolNameCacheHandle {
   let cache: McpToolNameCache | undefined
   let queue: Promise<void> = Promise.resolve()
 
@@ -61,7 +88,7 @@ export function createMcpToolNameCacheWriter(
     }
   }
 
-  return (serverId, input) => {
+  const write: McpToolNameCacheWrite = (serverId, input) => {
     const turn = queue.then(async () => {
       const current = cache ?? await loadCache()
       const next = setToolNameCacheEntry(current, serverId, input)
@@ -70,5 +97,18 @@ export function createMcpToolNameCacheWriter(
     })
     queue = turn.catch(() => undefined)
     return turn.catch(() => undefined)
+  }
+
+  return {
+    write,
+    read: () => cache ?? {},
+    load: () => {
+      const turn = queue.then(async () => {
+        cache ??= await loadCache()
+        return cache
+      })
+      queue = turn.then(() => undefined, () => undefined)
+      return turn.catch(() => cache ?? {})
+    },
   }
 }

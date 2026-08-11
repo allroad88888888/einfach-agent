@@ -6,7 +6,7 @@ import {
   createMemoryToolNameCacheStorage,
   type McpToolNameCacheStorage,
 } from './toolNameCacheStorage'
-import { createMcpToolNameCacheWriter } from './toolNameCacheWriter'
+import { createMcpToolNameCacheHandle } from './toolNameCacheWriter'
 
 /** 判据本身：哪些快照该落盘、哪些绝不能落盘，以及两个写入方共用一个写入点。 */
 
@@ -60,7 +60,7 @@ function createCountingCacheStorage(initial: McpToolNameCache = {}): {
 function setup(initial: McpToolNameCache = {}) {
   const { storage, saved } = createCountingCacheStorage(initial)
   const removed = new Set<string>()
-  const write = createMcpToolNameCacheWriter(storage)
+  const write = createMcpToolNameCacheHandle(storage).write
   const refresher = createMcpConnectedCacheRefresher({
     write,
     shouldRefresh: (id) => !removed.has(id),

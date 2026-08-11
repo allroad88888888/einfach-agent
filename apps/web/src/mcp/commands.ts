@@ -2,6 +2,12 @@ import { rootStore } from '@web-agent/core/state/rootStore'
 import { createBrowserMcpConfigStorage, type McpConfigStorage } from './persistence'
 import { createMcpSettingsService, type McpSettingsManager, type McpSettingsService } from './service'
 import {
+  listLastKnownTools,
+  type McpLastKnownTools,
+  type McpToolNameCache,
+} from './toolNameCache'
+import type { McpToolNameCacheStorage } from './toolNameCacheStorage'
+import {
   mcpAddModeAtom,
   mcpAddFormOpenAtom,
   mcpDraftAtom,
@@ -45,12 +51,15 @@ let configured = false
 export interface ConfigureMcpSettingsOptions {
   manager: McpSettingsManager
   storage?: McpConfigStorage
+  /** 工具名清单缓存的读写通道；默认桌面优先，浏览器/测试自动降级。 */
+  toolNameCacheStorage?: McpToolNameCacheStorage
   capabilities?: Partial<McpSettingsCapabilities>
 }
 
 export function configureMcpSettings({
   manager,
   storage = createBrowserMcpConfigStorage(),
+  toolNameCacheStorage,
   capabilities,
 }: ConfigureMcpSettingsOptions): void {
   activeService.dispose()
@@ -63,8 +72,31 @@ export function configureMcpSettings({
     store: rootStore,
     manager,
     storage,
+    ...(toolNameCacheStorage ? { toolNameCacheStorage } : {}),
     capabilities: resolvedCapabilities,
   })
+}
+
+/**
+ * 进程内工具名缓存的读出口（B5）。
+ *
+ * 【为什么经这里而不是直接抓 service】configureMcpSettings 会换掉 activeService，而
+ * B4 / F4 的两根线在装配期就接好了、之后不再重接。让它们闭包住这个函数（每次调用当刻
+ * 才解析 activeService），换 service 之后取到的就是新那份缓存，不会读着一个已经 dispose
+ * 掉的旧服务。取到的是缓存持有者交出的同一个对象引用，不是拷贝。
+ */
+export function readMcpToolNameCache(): McpToolNameCache {
+  return activeService.readToolNameCache()
+}
+
+/** 未连接服务【上次已知】的工具清单，供 connect_mcp_server 的描述使用（F4）。 */
+export function listMcpLastKnownTools(): readonly McpLastKnownTools[] {
+  return listLastKnownTools(readMcpToolNameCache())
+}
+
+/** 这个服务此刻是否已连接（以 manager 的登记表为准）。B4 的探针靠它闭嘴。 */
+export function isMcpServerConnected(id: string): boolean {
+  return activeService.isServerConnected(id)
 }
 
 /** Reports whether an application host has replaced the unavailable MCP manager. */

@@ -7,6 +7,7 @@ import {
   setMcpServerAutoConnect,
 } from '../../mcp/commands'
 import { McpLaunchConsentPrompt } from './McpLaunchConsentPrompt'
+import { McpServerToolSummary } from './McpServerToolSummary'
 
 function statusLabel(server: McpServerView, operation?: McpServerOperation): string {
   if (operation === 'disconnect') return '注销中'
@@ -184,7 +185,7 @@ export function McpServerCard({
       ) : null}
 
       <div className="agentnew-mcp-card-footer">
-        <span>{server.toolCount} 个工具</span>
+        <McpServerToolSummary server={server} />
         <div className="agentnew-mcp-actions">
           <button
             type="button"

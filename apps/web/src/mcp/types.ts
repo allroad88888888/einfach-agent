@@ -1,4 +1,5 @@
 import type { McpServerStatus } from '@web-agent/tools-mcp'
+import type { McpLastKnownTools } from './toolNameCache'
 
 export type McpTransport = 'streamable-http' | 'stdio'
 export type McpPersistenceMode = 'persistent' | 'temporary'
@@ -81,6 +82,14 @@ export interface McpServerView extends McpServerRuntime {
   autoConnect: boolean
   args: readonly string[]
   cwd?: string
+  /**
+   * 这个服务【上次已知】的工具清单（B5）。与 McpServerRuntime.toolCount 不是一回事：
+   * toolCount 是当前连接的真实工具数，这里是历史，且自带探测时刻。
+   *
+   * 【没有这个字段 ≠ 探测到 0 个工具】从未探测过的服务根本没有它；呈现层必须把这两种
+   * 情况说成不同的话（见 mcpLastKnownToolsText.ts）。
+   */
+  lastKnownTools?: McpLastKnownTools
 }
 
 export type McpHydrationState =
