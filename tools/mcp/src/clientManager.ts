@@ -5,11 +5,13 @@ import {
   throwIfAborted,
   toError,
 } from './internal'
+import { McpKeepaliveMonitor } from './keepaliveMonitor'
 import {
   McpReconnectScheduler,
   mcpReconnectExhaustedMessage,
 } from './reconnectSchedule'
 import { cloneConfig, validateConfig } from './serverConfig'
+import { McpServerQueue } from './serverQueue'
 import { McpServerRecords, type McpServerRecord } from './serverRecords'
 import { createStreamableHttpMcpConnector } from './streamableHttp'
 import { reconcileMcpTools } from './toolReconciler'
@@ -37,6 +39,8 @@ interface McpToolsRefresh {
  * through connection identity checks, so an old close/list_changed event cannot
  * mutate a newer connection. A temporary failure ('reconnecting') arms a capped
  * exponential backoff (reconnectSchedule.ts); a permanent one ('error') never retries.
+ * A serving connection is probed by a lightweight keepalive ping (keepaliveMonitor.ts) so a
+ * silently dead one is found before the next real call, and re-enters through the same path.
  *
  * 登记与连接是两件事：register() 只把一个已配置服务放进登记表（serverRecords.ts），
  * 连接由 connect()/reconnect() 建立。只登记的服务对外就是一条 'disconnected' 记录。
@@ -45,7 +49,7 @@ export class McpClientManager {
   private readonly registry: McpClientManagerOptions['registry']
   private readonly connector: McpConnector
   private readonly records = new McpServerRecords()
-  private readonly operationTails = new Map<string, Promise<void>>()
+  private readonly queue = new McpServerQueue()
   private readonly activeConnects = new Map<string, AbortController>()
   private readonly toolsRefreshes = new Map<string, McpToolsRefresh>()
   /**
@@ -53,6 +57,24 @@ export class McpClientManager {
    * 都必须显式 cancel 它：connect / reconnect / disconnect / remove / 连接成功。
    */
   private readonly reconnects = new McpReconnectScheduler()
+  /**
+   * 空闲连接的保活探活（keepaliveMonitor.ts）。同样是不属于任何一次 serialize 操作的
+   * 定时器：起表只发生在一条连接真正进入服役时，停表统一收在 detachConnection() ——
+   * 那是连接退役的唯一出口（断开、删除、换代、判死都经过它）。
+   *
+   * 判死【不自己重连】，而是当成一次「传输层没来得及告诉我们的意外关闭」走
+   * handleUnexpectedClose：于是串行队列、连接身份世代检查、失败分类和 D2 的退避预算
+   * 全部沿用同一条路，探活路径上没有第二套重连逻辑。
+   */
+  private readonly keepalive = new McpKeepaliveMonitor({
+    isServing: (serverId, connection) => {
+      const record = this.records.get(serverId)
+      return record?.connection === connection && record.status === 'connected'
+    },
+    onDead: (serverId, connection, error) => {
+      void this.handleUnexpectedClose(serverId, connection, error)
+    },
+  })
 
   constructor(options: McpClientManagerOptions) {
     this.registry = options.registry
@@ -80,7 +102,7 @@ export class McpClientManager {
     validateConfig(ownedConfig)
     // 走同一条按 server 的串行队列：登记不能与连接/断开/删除交错，否则它可能落在
     // 一次 remove 之后，给刚被删掉的服务补回一条记录。
-    return this.serialize(ownedConfig.id, async () => {
+    return this.queue.serialize(ownedConfig.id, async () => {
       const { record, created } = this.records.ensure(ownedConfig)
       if (created) this.records.emit()
       return this.records.snapshot(record)
@@ -97,7 +119,7 @@ export class McpClientManager {
     this.reconnects.cancel(ownedConfig.id)
     const controller = this.replaceConnectController(ownedConfig.id)
 
-    return this.serialize(ownedConfig.id, async () => {
+    return this.queue.serialize(ownedConfig.id, async () => {
       const combined = combineAbortSignals(options?.signal, controller.signal)
       try {
         return await this.connectInternal(ownedConfig, 'connecting', {
@@ -116,7 +138,7 @@ export class McpClientManager {
   ): Promise<McpServerSnapshot> {
     this.reconnects.cancel(serverId)
     const controller = this.replaceConnectController(serverId)
-    return this.serialize(serverId, async () => {
+    return this.queue.serialize(serverId, async () => {
       const combined = combineAbortSignals(options?.signal, controller.signal)
       try {
         const record = this.records.get(serverId)
@@ -137,7 +159,7 @@ export class McpClientManager {
     this.reconnects.cancel(serverId)
     this.activeConnects.get(serverId)?.abort()
     this.cancelToolsRefresh(serverId)
-    return this.serialize(serverId, async () => {
+    return this.queue.serialize(serverId, async () => {
       const record = this.records.get(serverId)
       if (!record) return undefined
 
@@ -163,7 +185,7 @@ export class McpClientManager {
     this.reconnects.cancel(serverId)
     this.activeConnects.get(serverId)?.abort()
     this.cancelToolsRefresh(serverId)
-    return this.serialize(serverId, async () => {
+    return this.queue.serialize(serverId, async () => {
       const record = this.records.get(serverId)
       if (!record) return false
 
@@ -231,6 +253,8 @@ export class McpClientManager {
       record.error = undefined
       // 连上了就把重试预算还回去：下一次断线是一条新的重连链。
       this.reconnects.cancel(config.id)
+      // 服役开始，保活开始。放在状态落定之后：monitor 的每次探活都要先问 isServing。
+      this.keepalive.start(config.id, connection)
       this.records.emit()
       return this.records.snapshot(record)
     } catch (error) {
@@ -268,7 +292,7 @@ export class McpClientManager {
       dirty: false,
     }
     this.toolsRefreshes.set(serverId, refresh)
-    const operation = this.serialize(serverId, async () => {
+    const operation = this.queue.serialize(serverId, async () => {
       const record = this.records.get(serverId)
       if (!record || record.connection !== connection || record.status !== 'connected') {
         return
@@ -306,7 +330,7 @@ export class McpClientManager {
     error?: Error,
   ): Promise<void> {
     this.cancelToolsRefresh(serverId, connection)
-    return this.serialize(serverId, async () => {
+    return this.queue.serialize(serverId, async () => {
       const record = this.records.get(serverId)
       if (!record || record.connection !== connection) return
       await this.failClosed(
@@ -361,7 +385,7 @@ export class McpClientManager {
    */
   private startScheduledReconnect(serverId: string): void {
     const controller = this.replaceConnectController(serverId)
-    void this.serialize(serverId, async () => {
+    void this.queue.serialize(serverId, async () => {
       try {
         const record = this.records.get(serverId)
         if (
@@ -408,7 +432,9 @@ export class McpClientManager {
     })
   }
 
+  /** 连接退役的唯一出口：断开、删除、换代、判死都经过这里，保活表也在这里停。 */
   private detachConnection(record: McpServerRecord): McpConnection | undefined {
+    this.keepalive.stop(record.config.id)
     record.unsubscribeToolsChanged?.()
     record.unsubscribeClose?.()
     record.unsubscribeToolsChanged = undefined
@@ -459,22 +485,6 @@ export class McpClientManager {
     }
     this.toolsRefreshes.delete(serverId)
     refresh.controller.abort()
-  }
-
-  private serialize<T>(serverId: string, operation: () => Promise<T>): Promise<T> {
-    const previous = this.operationTails.get(serverId) ?? Promise.resolve()
-    const result = previous.catch(() => undefined).then(operation)
-    const tail = result.then(
-      () => undefined,
-      () => undefined,
-    )
-    this.operationTails.set(serverId, tail)
-    void tail.then(() => {
-      if (this.operationTails.get(serverId) === tail) {
-        this.operationTails.delete(serverId)
-      }
-    })
-    return result
   }
 }
 

@@ -65,6 +65,20 @@ export interface McpConnection {
   onToolsChanged(listener: McpToolsChangedListener): () => void
   onClose(listener: McpConnectionCloseListener): () => void
   close(): Promise<void>
+  /**
+   * 【可选】轻量探活：只回答「这条连接还活着吗」，不产生任何其它效果。对应 MCP 协议的
+   * ping 请求（JSON-RPC method `"ping"`，响应是空对象）。给保活探测用，见 keepaliveMonitor.ts。
+   *
+   * 为什么不拿 listTools 当心跳：listTools 的语义是「给我全量工具清单」，代价随工具数线性
+   * 增长（本包的硬上限是 100 页 / 1000 个工具），而且调用方拿到清单后几乎必然顺手对账 ——
+   * 于是每次心跳都要重算整份 registry 的增删改，连「工具名冲突」这种与连接死活无关的失败
+   * 都会被当成断线。心跳和对账是两件事。
+   *
+   * 【可选】是刻意的：不实现它的传输就不会被探活（monitor 只对实现了 ping 的连接起表），
+   * 绝不退化成用 listTools 顶替。stdio 可以不实现 —— 子进程退出、管道关闭是 OS 级的确定
+   * 信号，会直接走 onClose；静默死亡（NAT 超时、代理掐断、对端重启后没通知）是 HTTP/SSE 的病。
+   */
+  ping?(options?: McpOperationOptions): Promise<void>
 }
 
 export interface McpConnector {

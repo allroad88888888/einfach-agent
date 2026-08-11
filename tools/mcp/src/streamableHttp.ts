@@ -241,6 +241,16 @@ class SdkStreamableHttpConnection implements McpConnection {
     ) as Promise<McpCallToolResult>
   }
 
+  /**
+   * MCP 协议自带的 ping：请求体只有 method，响应是空对象。保活探测用它而不是 listTools，
+   * 见 types.ts 的 McpConnection.ping。超时由调用方经 signal 控制（SDK 自己的默认请求
+   * 超时是最后一道兜底，比保活探测的超时长得多）。
+   */
+  async ping(options?: McpOperationOptions): Promise<void> {
+    throwIfAborted(options?.signal)
+    await this.client.ping({ signal: options?.signal })
+  }
+
   onToolsChanged(listener: McpToolsChangedListener): () => void {
     this.toolsChangedListeners.add(listener)
     return () => this.toolsChangedListeners.delete(listener)
