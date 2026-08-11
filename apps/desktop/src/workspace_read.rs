@@ -21,7 +21,7 @@ const MAX_TRACE_READ_BYTES: usize = 2_000_000;
 const DEFAULT_RUN_INDEX_PAGE_RECORDS: usize = 50;
 const MAX_RUN_INDEX_PAGE_RECORDS: usize = 500;
 const MAX_RUN_INDEX_BYTES: usize = 16 * 1024 * 1024;
-const RUNS_INDEX_PATH: &str = ".agent-archive/index/runs.jsonl";
+const RUNS_INDEX_PATH: &str = ".webAgent-archive/index/runs.jsonl";
 const DEFAULT_LIST_MAX_ENTRIES: usize = 200;
 const MAX_LIST_ENTRIES: usize = 2_000;
 const DEFAULT_SEARCH_MAX_MATCHES: usize = 100;
@@ -407,7 +407,7 @@ fn read_workspace_file_blocking_with_access_at(
     }
 
     let relative_file_path = file_path.strip_prefix(&root).unwrap_or(&file_path);
-    let read_ceiling = if relative_file_path.starts_with(Path::new(".agent-archive/traces"))
+    let read_ceiling = if relative_file_path.starts_with(Path::new(".webAgent-archive/traces"))
         && relative_file_path
             .file_name()
             .and_then(|name| name.to_str())
@@ -1505,14 +1505,14 @@ mod tests {
     #[test]
     fn trace_read_has_a_scoped_larger_ceiling() {
         let (base, ws) = unique_workspace();
-        let trace_dir = ws.join(".agent-archive/traces");
+        let trace_dir = ws.join(".webAgent-archive/traces");
         fs::create_dir_all(&trace_dir).expect("mkdir traces");
         let content = "x".repeat(MAX_READ_BYTES + 10_000);
         fs::write(trace_dir.join("root-01.trace.jsonl"), &content).expect("seed trace");
         fs::write(ws.join("ordinary.txt"), &content).expect("seed ordinary file");
 
         let trace = read_workspace_file_blocking(
-            ".agent-archive/traces/root-01.trace.jsonl".to_string(),
+            ".webAgent-archive/traces/root-01.trace.jsonl".to_string(),
             Some(content.len()),
             root_arg(&ws),
         )
@@ -1541,7 +1541,7 @@ mod tests {
     #[test]
     fn run_index_pages_from_newest_without_truncating_large_unique_history() {
         let (base, ws) = unique_workspace();
-        let index_dir = ws.join(".agent-archive/index");
+        let index_dir = ws.join(".webAgent-archive/index");
         fs::create_dir_all(&index_dir).expect("mkdir index");
         let content = (0..4_000)
             .map(|index| {
@@ -1578,7 +1578,7 @@ mod tests {
     #[test]
     fn run_index_cursor_fails_closed_after_append() {
         let (base, ws) = unique_workspace();
-        let index_dir = ws.join(".agent-archive/index");
+        let index_dir = ws.join(".webAgent-archive/index");
         fs::create_dir_all(&index_dir).expect("mkdir index");
         let index_path = index_dir.join("runs.jsonl");
         fs::write(&index_path, "{\"runId\":\"r1\"}\n{\"runId\":\"r2\"}\n")
@@ -1603,7 +1603,7 @@ mod tests {
     #[test]
     fn run_index_cursor_fails_closed_after_compaction_replacement() {
         let (base, ws) = unique_workspace();
-        let index_dir = ws.join(".agent-archive/index");
+        let index_dir = ws.join(".webAgent-archive/index");
         fs::create_dir_all(&index_dir).expect("mkdir index");
         let index_path = index_dir.join("runs.jsonl");
         fs::write(&index_path, "{\"runId\":\"old\"}\n{\"runId\":\"latest\"}\n")
