@@ -5,8 +5,8 @@ import {
 } from '@web-agent/ai'
 import { useAtomValue } from '@einfach/react'
 import { newSession } from '@web-agent/core/runtime/commands'
-import { closeSettingsCenter } from '../../mcp/commands'
 import { isKimiImageInputEnabled } from '../../modelInput/kimiImageFeature'
+import { closeSettingsCenter } from '../../settings/commands'
 import { MODEL_CREDENTIALS } from '../../settings/modelCredentialHost'
 import {
   kimiApiKeyStatusAtom,

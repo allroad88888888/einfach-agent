@@ -13,14 +13,7 @@ import {
   type McpServerRuntime,
   type McpServerView,
   type PersistedMcpServerConfig,
-  type SettingsCenterTab,
 } from './types'
-
-export const settingsCenterOpenAtom = atom(false)
-settingsCenterOpenAtom.debugLabel = 'settingsCenterOpen'
-
-export const settingsCenterTabAtom = atom<SettingsCenterTab>('mcp')
-settingsCenterTabAtom.debugLabel = 'settingsCenterTab'
 
 export const mcpSettingsCapabilitiesAtom = atom<McpSettingsCapabilities>({ stdio: false })
 mcpSettingsCapabilitiesAtom.debugLabel = 'mcpSettingsCapabilities'
@@ -99,8 +92,6 @@ export const mcpServersAtom = atom<readonly McpServerView[]>((get) => {
 mcpServersAtom.debugLabel = 'mcpServers'
 
 export function resetMcpSettingsState(store: Store): void {
-  store.setter(settingsCenterOpenAtom, false)
-  store.setter(settingsCenterTabAtom, 'mcp')
   store.setter(mcpSettingsCapabilitiesAtom, { stdio: false })
   store.setter(mcpAddFormOpenAtom, false)
   store.setter(mcpAddModeAtom, 'form')

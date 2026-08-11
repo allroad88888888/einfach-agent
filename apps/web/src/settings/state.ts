@@ -6,6 +6,7 @@ import {
   type AppSettings,
 } from './config'
 import { resetModelCredentialState } from './modelCredentialState'
+import { resetSettingsCenterState } from './settingsCenterState'
 
 export {
   deepSeekApiKeyDirtyAtom,
@@ -20,6 +21,12 @@ export {
   type ModelCredentialEntries,
   type ModelCredentialState,
 } from './modelCredentialState'
+
+export {
+  settingsCenterOpenAtom,
+  settingsCenterTabAtom,
+  type SettingsCenterTab,
+} from './settingsCenterState'
 
 export type SettingsFieldStatus =
   | { status: 'idle' | 'loading' | 'ready' | 'saved' }
@@ -63,6 +70,7 @@ export function resetAppSettingsState(store: Store): void {
   store.setter(customInstructionsDraftAtom, '')
   store.setter(customInstructionsStatusAtom, { status: 'idle' })
   resetModelCredentialState(store)
+  resetSettingsCenterState(store)
 }
 
 /** @deprecated 使用 resetAppSettingsState；保留别名兼容现有测试与调用方。 */

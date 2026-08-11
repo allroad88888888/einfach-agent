@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import { useAtomValue } from '@einfach/react'
-import { openSettingsCenter } from '../../mcp/commands'
-import { settingsCenterOpenAtom } from '../../mcp/state'
+import { openSettingsCenter } from '../../settings/commands'
+import { settingsCenterOpenAtom } from '../../settings/state'
 
 const SettingsDialog = lazy(() => import('./SettingsDialog').then((module) => ({
   default: module.SettingsDialog,

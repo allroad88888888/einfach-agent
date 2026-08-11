@@ -10,8 +10,6 @@ import {
   mcpImportStatusAtom,
   mcpJsonDraftAtom,
   mcpSettingsCapabilitiesAtom,
-  settingsCenterOpenAtom,
-  settingsCenterTabAtom,
 } from './state'
 import {
   DEFAULT_MCP_JSON_DRAFT,
@@ -19,7 +17,6 @@ import {
   type McpAddMode,
   type McpAddServerDraft,
   type McpSettingsCapabilities,
-  type SettingsCenterTab,
 } from './types'
 
 const unconfiguredManager: McpSettingsManager = {
@@ -78,19 +75,6 @@ export function isMcpSettingsConfigured(): boolean {
 
 export function hydrateMcpSettings(): Promise<void> {
   return activeService.hydrate()
-}
-
-export function openSettingsCenter(tab: SettingsCenterTab = 'mcp'): void {
-  rootStore.setter(settingsCenterTabAtom, tab)
-  rootStore.setter(settingsCenterOpenAtom, true)
-}
-
-export function closeSettingsCenter(): void {
-  rootStore.setter(settingsCenterOpenAtom, false)
-}
-
-export function selectSettingsTab(tab: SettingsCenterTab): void {
-  rootStore.setter(settingsCenterTabAtom, tab)
 }
 
 export function openMcpAddForm(): void {

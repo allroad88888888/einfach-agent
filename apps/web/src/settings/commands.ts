@@ -27,6 +27,12 @@ export {
   updateModelCredentialDraft,
 } from './modelCredentialCommands'
 
+export {
+  closeSettingsCenter,
+  openSettingsCenter,
+  selectSettingsTab,
+} from './settingsCenterCommands'
+
 let activeStorage = createBrowserAppSettingsStorage()
 
 function errorMessage(error: unknown): string {

@@ -1,20 +1,23 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import { useAtomValue } from '@einfach/react'
+import { hydrateMcpSettings } from '../../mcp/commands'
+import { initializeMcpSettings } from '../../mcp/initialize'
 import {
   closeSettingsCenter,
-  hydrateMcpSettings,
+  hydrateAppSettings,
+  saveCustomInstructions,
   selectSettingsTab,
-} from '../../mcp/commands'
-import { initializeMcpSettings } from '../../mcp/initialize'
-import { settingsCenterOpenAtom, settingsCenterTabAtom } from '../../mcp/state'
-import { hydrateAppSettings, saveCustomInstructions, updateCustomInstructionsDraft } from '../../settings/commands'
+  updateCustomInstructionsDraft,
+} from '../../settings/commands'
 import { MAX_CUSTOM_INSTRUCTIONS_LENGTH } from '../../settings/config'
 import {
   customInstructionsDirtyAtom,
   customInstructionsDraftAtom,
   customInstructionsStatusAtom,
+  settingsCenterOpenAtom,
+  settingsCenterTabAtom,
+  type SettingsCenterTab,
 } from '../../settings/state'
-import type { SettingsCenterTab } from '../../mcp/types'
 import { McpSettingsPanel } from './McpSettingsPanel'
 import { ModelCredentialPanel } from './ModelCredentialPanel'
 import { ProjectSkillsPanel } from './ProjectSkillsPanel'
