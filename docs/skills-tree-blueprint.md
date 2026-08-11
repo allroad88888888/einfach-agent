@@ -102,7 +102,7 @@ interface SkillSource {
 - 适配 modelRun / modelTurn / contextCache 测试；trace 验收：Tauri 实测一个多轮会话，
   确认 epoch 仅在事件驱动注入轮次变化。
 
-### 阶段 4 — 项目内 skills 自动加载（`.agent/`）
+### 阶段 4 — 项目内 skills 自动加载（`.webAgent/`）
 
 workspace 自带的 skill 目录（`SKILL.md` + 资源文件）自动进 L1 清单，正文与资源沿用本蓝图的
 L2/L3 协议。已展开为独立蓝图：[`project-skills-blueprint.md`](project-skills-blueprint.md)。

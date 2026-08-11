@@ -1,4 +1,4 @@
-# 项目内 Skills 自动加载蓝图（`.agent/` 约定）
+# 项目内 Skills 自动加载蓝图（`.webAgent/` 约定）
 
 目标：让 agent 在绑定某个 workspace 后，**自动发现并加载该仓库自带的 skills**，与编译期内置
 skills 并列进入 L1 清单，正文与资源沿用既有 L2/L3 协议按需读取。
@@ -14,26 +14,26 @@ skills 目录」占位项的展开，接续其阶段 1–3 已落地的成果，
    `buildSkillManifestText()` / `readSkill()` / `readSkillResource()` 全是同步纯查询。
    换言之：当前无论 workspace 里有什么，agent 都看不见。
 2. **文件系统地基已经齐全，无需新增 Rust command**。`list_workspace_files` 支持
-   `recursive` 与 `includeHidden`（`.agent` 是隐藏目录，必须后者），`read_workspace_file`
+   `recursive` 与 `includeHidden`（`.webAgent` 是隐藏目录，必须后者），`read_workspace_file`
    带 workspace confinement；两者都经 `toolContext.ts` 的 `withWorkspaceReadAccess` 注入会话
    绑定的 `workspaceRoot`（`resolveWorkspaceRoot`，session → workspace 解析已存在）。
    `tools/fs/find-test-lint-commands` 已经是「列目录 + 读文件 → 推断项目约定」的同构先例。
-3. **`.agent-archive/` 是另一条线，不要混淆**。子 agent 的 `sk_*` 经验技能
+3. **`.webAgent-archive/` 是另一条线，不要混淆**。子 agent 的 `sk_*` 经验技能
    （`subagents/skillCache.ts` + `runtime/skillGovernance.ts`）由子 agent 产出、经 CLI
    （`npm run subagent:skills`）治理 promote，**不进主会话 registry、不进清单**。本蓝图只覆盖
    「仓库作者预置、给主会话用」的静态 skills。三个目录职责互不重叠：
 
    | 目录 | 归属 | 是否入库 |
    | --- | --- | --- |
-   | `.agent/` | 仓库作者预置的 skills（本蓝图） | **入库** |
-   | `.agent-archive/` | 子 agent 运行归档与经验技能 | 已在 `.gitignore` |
-   | `.agent-cache/` | 本地缓存 | 已在 `.gitignore` |
+   | `.webAgent/` | 仓库作者预置的 skills（本蓝图） | **入库** |
+   | `.webAgent-archive/` | 子 agent 运行归档与经验技能 | 已在 `.gitignore` |
+   | `.webAgent-cache/` | 本地缓存 | 已在 `.gitignore` |
 
 ## 目录约定
 
 ```text
 <workspace>/
-  .agent/
+  .webAgent/
     skills/
       deploy-flow/
         SKILL.md              # 必需：frontmatter(name, description) + 正文（L2）
@@ -47,7 +47,7 @@ skills 目录」占位项的展开，接续其阶段 1–3 已落地的成果，
 - 一个 skill = 一个目录 + 目录内的 `SKILL.md`；`SKILL.md` 同目录下的其它文本文件即该 skill 的
   L3 资源，资源键是相对该目录的路径（`references/checklist.md`），与内置 skill 的
   `resources` Record 键语义逐字一致。
-- 扫描根：`.agent/skills/` 与 `.claude/skills/`（后者是兼容路径，只读，不写）。
+- 扫描根：`.webAgent/skills/` 与 `.claude/skills/`（后者是兼容路径，只读，不写）。
 - 深度：skill 目录只认扫描根的**直接子目录**；资源可再嵌套。
 
 ## 命名空间：项目 skill 一律带 `project/` 前缀
@@ -61,7 +61,7 @@ skills 目录」占位项的展开，接续其阶段 1–3 已落地的成果，
 3. **前缀内的分段可排序**：清单按「内置段 → 项目段」分区，各段内按名字字节序排，
    字节稳定契约不受影响。
 
-`.agent/skills/x` 与 `.claude/skills/x` 撞名时 **`.agent` 胜**（自家约定优先），
+`.webAgent/skills/x` 与 `.claude/skills/x` 撞名时 **`.webAgent` 胜**（自家约定优先），
 落选者不进清单，并记一条可观测告警。
 
 ## 数据模型
@@ -128,7 +128,7 @@ triggers: [deploy, 发布, 上线]
   命中缓存时同步返回，只有首次绑定或显式刷新才走真实 IO；`buildSkillManifestText` 因此仍是
   同步纯函数，只是多接一个快照入参。
 - **失效**：会话切换 workspace、用户在 UI 显式刷新。**第一期不做文件监听**——改了
-  `.agent/skills` 要点一下刷新，或换会话。
+  `.webAgent/skills` 要点一下刷新，或换会话。
 - **降级**：非 Tauri（web）没有文件系统 → 快照恒为空。**此时清单逐字等于今天的输出**
   （项目段整体不出现，而不是出现一个空段），web 端零回归是硬要求。
   扫描失败（无 workspace、目录不存在、桥报错）同样降级为空快照 + `diagnostics`，
@@ -201,7 +201,7 @@ skills?: {
   撞名与上限裁决、`diagnostics` 生成；全部是「输入 = 文件清单 + 文本，输出 = 快照」的纯函数。
 - `buildSkillManifestText(snapshot?)` 扩展：无快照/空快照时输出与今天逐字相同（回归护栏）。
 - colocated 测试：frontmatter 各种残缺形态、卫生化边界（控制字符/超长/非法 name）、
-  `.agent` 与 `.claude` 撞名、上限截断、空快照字节一致性。
+  `.webAgent` 与 `.claude` 撞名、上限截断、空快照字节一致性。
 
 ### 阶段 B — 扫描与缓存
 
@@ -247,7 +247,7 @@ IPC 往返）；`ensure` 增加 in-flight promise 去重（并发 run 只扫一�
 
 #### 真实数据验证（门禁 3/4）
 
-对本仓库真实扫描（`.agent/skills/demo` + 已存在的 `.claude/skills/codegraph`）跑通了
+对本仓库真实扫描（`.webAgent/skills/demo` + 已存在的 `.claude/skills/codegraph`）跑通了
 L1 清单 → L2 正文 → L3 资源全链路，`diagnostics` 干净。两条 Rust 侧行为经
 `cargo test --manifest-path apps/desktop/Cargo.toml` 实测确认，并固化为**跨语言契约测试**
 （`workspace_read.rs` 的 `list_returns_workspace_relative_slash_paths_for_nested_skill_dirs`
@@ -280,7 +280,7 @@ L1 清单 → L2 正文 → L3 资源全链路，`diagnostics` 干净。两条 R
 | 每 run 多一次 IO | 缓存键为 workspaceRoot，命中即同步返回；只有首次绑定/显式刷新走真实 IO |
 | 切 workspace 掉缓存 | 归因 `profile_changed`，与改自定义指令同权衡；同 workspace 连续对话 epoch 不动 |
 | `.claude/skills` 格式漂移 | 只读 name/description/triggers 三个键，未知键忽略并告警；不跟随其它字段语义 |
-| 与 `.agent-archive/` 混淆 | 目录职责表 + 本蓝图只覆盖静态预置 skills；governance 流水线不动 |
+| 与 `.webAgent-archive/` 混淆 | 目录职责表 + 本蓝图只覆盖静态预置 skills；governance 流水线不动 |
 | 改了文件不生效 | 第一期无文件监听，UI 提供显式刷新；文档写明 |
 
 ## 验收门禁（每阶段）
@@ -288,5 +288,5 @@ L1 清单 → L2 正文 → L3 资源全链路，`diagnostics` 干净。两条 R
 1. `pnpm exec vitest run packages/agent-core/ tools/skills/` 全绿；
 2. `pnpm build` 通过；
 3. **web 端清单字节零回归**：非 Tauri 下 `buildSkillManifestText()` 输出与实施前逐字相同；
-4. 阶段 C 后附 Tauri 实测：一个带 `.agent/skills` 的 workspace，确认清单出现项目段、
+4. 阶段 C 后附 Tauri 实测：一个带 `.webAgent/skills` 的 workspace，确认清单出现项目段、
    `skill_read` 能读到正文与 L3 资源、同 workspace 连续对话 `cache_epoch` 不变。

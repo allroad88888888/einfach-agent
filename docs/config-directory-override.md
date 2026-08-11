@@ -13,7 +13,7 @@
 `~/.web-agent/config.json`。新文件存在时始终优先使用它，旧文件不会被删除或改写；设置
 `WEB_AGENT_CONFIG_DIR` 的覆盖目录时不会执行迁移。
 
-每个目录都有自己的 `config.json`，因此模型凭据彼此隔离。本次目录迁移只决定 `config.json` 的位置，不迁移既有浏览器 `localStorage`。项目工作区中的 `.agent/skills` 是项目 Skills 目录，不是用户配置目录。
+每个目录都有自己的 `config.json`，因此模型凭据彼此隔离。本次目录迁移只决定 `config.json` 的位置，不迁移既有浏览器 `localStorage`。项目工作区中的 `.webAgent/skills` 是项目 Skills 目录，不是用户配置目录。
 
 ## 同时启动两套实例
 

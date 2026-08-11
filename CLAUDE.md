@@ -125,8 +125,8 @@ registrar 为准**（`tools/<domain>/src/index.ts`），文档里的数量容易
 - Web：会话/历史和 trace 使用 IndexedDB。
 - Tauri：会话/历史和 trace 使用 SQLite，文件/shell/Git 通过 Rust command 执行。
 - `server` 工具在非 Tauri 环境中不会暴露给模型。
-- `.agent-archive/` 保存子 Agent 长期归档与索引，不应提交到 Git。
-- workspace 里的 `.agent/skills/` 与 `.claude/skills/` 是项目 Skills 目录，会被 project skills
+- `.webAgent-archive/` 保存子 Agent 长期归档与索引，不应提交到 Git。
+- workspace 里的 `.webAgent/skills/` 与 `.claude/skills/` 是项目 Skills 目录，会被 project skills
   loader 自动扫描进 L1 清单；它们不是用户配置目录。本仓库自己就有这两个目录，改它们等于改运行时
   行为，不只是改编辑器配置。
 

@@ -6,12 +6,12 @@ import { fileURLToPath } from 'node:url'
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const ignoredDirectories = new Set([
-  '.agent-cache',
-  '.agent-archive',
+  '.webAgent-cache',
+  '.webAgent-archive',
   '.codegraph',
   '.git',
   '.claude',
-  '.agent',
+  '.webAgent',
   'dist',
   'node_modules',
   'research',

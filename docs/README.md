@@ -29,7 +29,7 @@
 | [插件 UI Renderer 协议蓝图](plugin-renderer-protocol-blueprint.md) | P2.5 的 R1–R4 已完成（`846743a`、`a2b8d97`、`66072f3`、`79bde78`）：Core 导出无 React 的时间线投影，React 包提供 root 隔离 registry 与受限 UI 插件安装面，Web 保留既有交互；R5 的 [持久化 item RFC](persistent-plugin-timeline-item-rfc.md) 已起草，待协议批准 |
 | [自定义持久化 Timeline Item RFC](persistent-plugin-timeline-item-rfc.md) | R5 设计门槛：版本化 envelope、checkpoint/SQLite/IndexedDB 兼容、archive 隔离、最小写入权限与 Web/CLI/server 安全降级；尚未开放实现 |
 | [Skills 树形结构与稳定前缀清单](skills-tree-blueprint.md) | 阶段 1–3 已实施：L3 资源树、B04/B05 行为门禁通过、全量清单进稳定前缀、harness 预筛已退役；阶段 4 拆出为下一行 |
-| [项目内 Skills 自动加载（`.agent/`）](project-skills-blueprint.md) | 阶段 A–D 已实施：workspace 的 `.agent/skills` 与 `.claude/skills` 自动进 L1 清单，正文与资源经 `skill_read` 按需读；阶段 E（行为 eval）可选未做 |
+| [项目内 Skills 自动加载（`.webAgent/`）](project-skills-blueprint.md) | 阶段 A–D 已实施：workspace 的 `.webAgent/skills` 与 `.claude/skills` 自动进 L1 清单，正文与资源经 `skill_read` 按需读；阶段 E（行为 eval）可选未做 |
 | [图片输入协议 RFC](image-input-rfc.md) | Provider-neutral 图片内容、adapter 所有权、提交事务、持久化降级与宿主安全边界；已实现，真实 Key 联调前门禁关闭 |
 | [Kimi Provider 接入蓝图](kimi-provider-integration-blueprint.md) | Kimi（实际 API ID `kimi-k2.6`）接入的本地树形 Issue、依赖批次、逐项执行模型与开放门禁；代码完成、50B 静态审查完成，最终验收随 50A 阻塞，当前 NO-GO |
 | [启动模型密钥门禁 Issue](startup-model-credential-gate-blueprint.md) | 已完成：进入桌面主界面前按恢复会话的模型检查默认 `~/.webAgent/config.json`；默认新文件缺失时安全复制旧配置，缺失目标 Key 则用不可跳过的输入门禁阻塞工作区，并记录逐 leaf 模型分配、验证证据与独立审查结论 |

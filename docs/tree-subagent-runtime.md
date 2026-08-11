@@ -35,7 +35,7 @@
 归档目录：
 
 ```text
-.agent-archive/
+.webAgent-archive/
   conversations/
     <conversationId>/
       conversation.json
@@ -63,7 +63,7 @@
 说明：
 
 - run-local skill 文件名保持 `root-01-task_brief.md` 或 `root-01-01-task_brief.md`，用于人工阅读。
-- global skill store 使用 `.agent-archive/skills/<skillId>.md`，用于长期引用和检索。
+- global skill store 使用 `.webAgent-archive/skills/<skillId>.md`，用于长期引用和检索。
 - `events.jsonl` 是 append-only 事件流，用于复盘派发、蒸馏、子 agent 启停和结果。
 - `index/*.jsonl` 是状态索引流；同一 run/node 可能出现多条状态记录，消费方按 key 取最后一条。根 run 启动时写入 `running`，完成时再写入最终 `delegated` 状态，避免全局列表长期停留在运行中。
 - 进程内 archive writer 按目标路径串行化写入，避免同一路径并发 overwrite/append 乱序；高频 `index/*.jsonl` append 在同一 microtask 内合并后 flush。跨进程写入还会获取目标文件旁的 `.archive-write.lock`：等待上限 10 秒、每 5 秒续租、30 秒无续租可回收；超时或锁异常会显式返回写入失败。CLI 索引压缩和 skill 治理写入共用同一锁协议。
@@ -72,8 +72,8 @@
 - writer 关闭时会旁路记录 `subagent.archive_write_summary` trace span，含 `archive_write_attempts`、`archive_write_failures` 与 `archive_write_failure_rate`。计数口径是实际交给宿主的落盘批次（索引 microtask 合批计为一次），不写回 archive，也不改变 append-only 事件流。
 - 索引可用 `pnpm subagent:index:compact` 预览去重，再用 `pnpm subagent:index:compact -- --write` 原子压缩。逻辑 key 分别为 run=`conversationId+runId`、agent=`conversationId+runId+path`、skill=`skillId`；坏行会中止全部写入。压缩只处理 `index/*.jsonl`，不会读取或改写 append-only 的 `conversations/**/events.jsonl`。
 - archive 容量治理使用 `pnpm subagent:archive:retention`：默认只报告当前归档大小；带 `--max-bytes` 会按最早 completed run 预览可回收的派生文件。真正清理必须同时提供外部 `--export <directory>` 和 `--write`；先复制并逐文件校验 SHA-256，再删除 `tree.json`、`nodes/`、`results/`、`traces/`、run-local `skills/`。`events.jsonl` 与 `run.json` 永远保留在 live archive，且不会被覆盖。
-- `pnpm subagent:archive:retention -- --export <directory> --conversation <id> --run <id> --write` 可以导出完整的已完成 run（含事件流）；`--restore <directory> --write` 只接受前述 prune 导出包，恢复缺失的派生文件并拒绝覆盖已有内容。所有 export/prune/restore 生命周期都 append 到 `.agent-archive/governance/retention-actions.jsonl`，导出目录不得位于 `.agent-archive` 内。
-- `.agent-archive/` 和旧 `.agent-cache/` 都已加入 `.gitignore`。
+- `pnpm subagent:archive:retention -- --export <directory> --conversation <id> --run <id> --write` 可以导出完整的已完成 run（含事件流）；`--restore <directory> --write` 只接受前述 prune 导出包，恢复缺失的派生文件并拒绝覆盖已有内容。所有 export/prune/restore 生命周期都 append 到 `.webAgent-archive/governance/retention-actions.jsonl`，导出目录不得位于 `.webAgent-archive` 内。
+- `.webAgent-archive/` 和 `.webAgent-cache/` 都已加入 `.gitignore`。
 
 实现入口：
 
@@ -123,21 +123,21 @@ UI 中的 Promote/Archive 确认只生成上述审计 CLI，并明确标记“�
 
 需要操作其他 workspace 时使用 `--base <workspace>`。允许的单向迁移为 `candidate -> promoted`、`candidate -> archived` 和 `promoted -> archived`；不支持回退或重复迁移。命令会先完整解析 skills index，并验证 index 与全局 skill frontmatter 的 `skill_id`、`promotion` 一致；任何坏行或不一致都会 fail-closed，不写文件。写入时先持有治理锁，再按稳定路径顺序获取与 runtime 相同的 `<target>.archive-write.lock`，覆盖全局 skill、skills index 和独立 audit，避免跨进程追加与治理替换互相覆盖。
 
-三文件变更使用 `.agent-archive/governance/skill-transaction.json` 预写事务 journal。`prepared`/`committing`/`rolling_back`/`rolled_back` 在下次 mutation 时幂等回滚，`committed` 幂等前滚；每一步都通过 fsync 后的同目录临时文件替换持久化。恢复前会重新校验完整 index、frontmatter、audit、合法迁移和 previous/next 快照；目标出现事务之外的内容时拒绝覆盖。由此 `.agent-archive/governance/skill-actions.jsonl` 的每个人工动作在恢复后恰好保留一条，不会因重放重复或丢失。
+三文件变更使用 `.webAgent-archive/governance/skill-transaction.json` 预写事务 journal。`prepared`/`committing`/`rolling_back`/`rolled_back` 在下次 mutation 时幂等回滚，`committed` 幂等前滚；每一步都通过 fsync 后的同目录临时文件替换持久化。恢复前会重新校验完整 index、frontmatter、audit、合法迁移和 previous/next 快照；目标出现事务之外的内容时拒绝覆盖。由此 `.webAgent-archive/governance/skill-actions.jsonl` 的每个人工动作在恢复后恰好保留一条，不会因重放重复或丢失。
 
 ## 派发流程
 
 1. root 模型通过 lazy tools 请求并调用 `delegate_agent`。
 2. `delegate_agent` 归一化输入，调用 `ToolContext.delegateAgents`。
 3. root `modelRun` 为当前 run 创建 `DelegateAgentRuntime`，透传模型设置、apiKey、signal、fetch。
-4. runtime 初始化 `.agent-archive/conversations/<conversationId>/runs/<runId>/`。
+4. runtime 初始化 `.webAgent-archive/conversations/<conversationId>/runs/<runId>/`。
 5. scheduler 为同一批 children 同步预留 path。
 6. runtime 并行发起多条 AI 请求：
    - 1 条生成父节点 core skill。
    - N 条生成每个 child 的 task brief skill。
 7. 每个 skill 双写：
    - run-local：`runs/<runId>/skills/<agentPath>.<ordinal>-<kind>.md`
-   - global：`.agent-archive/skills/<skillId>.md`
+   - global：`.webAgent-archive/skills/<skillId>.md`
 8. runtime 按 `maxConcurrent` 并发运行子 agent。
 9. 子 agent 默认只允许 `delegate_agent`，可继续分裂下一层；显式 `workspace_read` 时可使用受宿主守卫的只读 workspace 工具；`workspace_verify` 再加 `run_verification_command`，可执行验收所需的 shell 命令和项目脚本。
 10. 子 agent 结束后写 result、node、tree snapshot、events 和 indexes。
@@ -250,7 +250,7 @@ interface DelegateAgentInput {
 所有一次 `delegate_agent` 派发都落地到以下目录（以会话 + run 分区，天然防止跨 run 冲突）：
 
 ```text
-.agent-archive/conversations/<conversationId>/runs/<runId>/
+.webAgent-archive/conversations/<conversationId>/runs/<runId>/
 ```
 
 - `events.jsonl`：append-only 的事件流，用于完整回放。
@@ -258,7 +258,7 @@ interface DelegateAgentInput {
 - `nodes/*.json`：每个节点独立快照。
 - `results/*.result.md`：子 agent 结果输出。
 - `skills/*.md`：run-local skill（用于可读性）。
-- `.agent-archive/skills/<skillId>.md`：全局 skill（长期复用/检索）。
+- `.webAgent-archive/skills/<skillId>.md`：全局 skill（长期复用/检索）。
 - `index/*.jsonl`：轻量索引（agents / skills / runs）。
 
 ### 一键复盘 CLI
@@ -267,7 +267,7 @@ interface DelegateAgentInput {
 
 ```bash
 node scripts/subagent-replay-report.js --conversation <conversationId> --run <runId>
-node scripts/subagent-replay-report.js --events .agent-archive/conversations/<conversationId>/runs/<runId>/events.jsonl --json
+node scripts/subagent-replay-report.js --events .webAgent-archive/conversations/<conversationId>/runs/<runId>/events.jsonl --json
 node scripts/subagent-replay-report.js --conversation <conversationId> --run <runId> --format text
 ```
 
@@ -342,7 +342,7 @@ pnpm subagent:archive:retention -- --restore ../subagent-retention-2026-08-03 --
 ### 长期复盘目录落点（可检索）
 
 ```text
-.agent-archive/
+.webAgent-archive/
   conversations/
     <conversationId>/runs/<runId>/events.jsonl
   skills/
@@ -356,7 +356,7 @@ pnpm subagent:archive:retention -- --restore ../subagent-retention-2026-08-03 --
 
 1. `events.jsonl`：按时间还原过程与决策。
 2. `tree.json`：某个 run 的最终快照。
-3. `skills/<root|child>.xx-*.md` 与 `.agent-archive/skills/<skillId>.md`：内容来源与长期继承关系。
+3. `skills/<root|child>.xx-*.md` 与 `.webAgent-archive/skills/<skillId>.md`：内容来源与长期继承关系。
 
 ## 对后续任务建议（可选）
 

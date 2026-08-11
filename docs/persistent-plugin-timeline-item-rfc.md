@@ -14,7 +14,7 @@ R1–R4 的 renderer registry 只处理 Core 已定义的 `TimelineItem['kind']`
 
 - 不修改 `ConversationItem`、模型请求上下文、工具确认、文件/shell/MCP 权限或子 Agent 权限。
 - 不把 React registry、atom、`CoreInstance`、`ToolContext` 或通用 session writer 暴露给插件。
-- 不把普通会话扩展自动写入 `.agent-archive`；该目录是子 Agent 审计资料的独立通道。
+- 不把普通会话扩展自动写入 `.webAgent-archive`；该目录是子 Agent 审计资料的独立通道。
 - 不在本 RFC 阶段增加 schema validator、数据库列、迁移脚本、公开插件能力或渲染器。
 
 后续实现只能在本 RFC 的批准项全部满足后，以独立、可回退的提交进行。
@@ -126,7 +126,7 @@ interface Checkpoint {
 
 ## 6. Archive 与导入导出
 
-`.agent-archive/` 保存子 Agent 的 run、events、tree、skills 与索引，并由独立 writer 串行化；它不是
+`.webAgent-archive/` 保存子 Agent 的 run、events、tree、skills 与索引，并由独立 writer 串行化；它不是
 普通会话 history 的镜像。现有 replay 对 `events.jsonl` 的事件类型采用严格白名单，archive reader
 还会对 tree/events 分别限制读取 200 KiB；两者都不能复用为插件 item 容器。因此 V1 会话持久化不修改
 现有 archive 文件、路径、event 类型或 writer。

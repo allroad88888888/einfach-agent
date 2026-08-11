@@ -12,10 +12,10 @@
 
 为避免已有用户在升级后丢失模型 Key 或 MCP 配置，默认路径下当新文件不存在且旧文件存在时，
 安全复制旧 `~/.web-agent/config.json` 到新位置；新文件优先，覆盖目录不触发迁移，旧文件不删除。
-`.agent/skills` 仍是项目 Skills 目录，不是用户配置目录，也不参与本功能。
+`.webAgent/skills` 仍是项目 Skills 目录，不是用户配置目录，也不参与本功能。
 
 非目标：把 `.webAgent` 当作环境变量名（POSIX shell 不支持 `.`）；迁移或删除项目
-`.agent` 目录；从环境变量读取 API Key；迁移浏览器 localStorage；删除旧用户配置目录。
+`.webAgent` 目录；从环境变量读取 API Key；迁移浏览器 localStorage；删除旧用户配置目录。
 
 ## 任务树
 
@@ -43,7 +43,7 @@ WEBAGENT-CONFIG-DIR  默认配置目录迁移
 | WEBAGENT-CONFIG-DIR-10A | B2 | gpt-5.6-terra（medium） | `apps/desktop/src/model_credential_config.rs` | 将默认目录断言改为 `.webAgent`，不改变凭据业务语义 | completed |
 | WEBAGENT-CONFIG-DIR-10B | B2 | gpt-5.6-terra（medium） | `apps/desktop/src/mcp_config_tests.rs` | 将 MCP 默认目录断言改为 `.webAgent`，不改变 MCP 配置语义 | completed |
 | WEBAGENT-CONFIG-DIR-30A | B1 | gpt-5.6-luna（medium） | `apps/web/src/agentNew/ui/ModelCredentialPanel.tsx` | 将界面中的配置位置替换为 `.webAgent`；不调整状态或交互 | completed |
-| WEBAGENT-CONFIG-DIR-30B | B1 | gpt-5.6-luna（medium） | `README.md`、`CLAUDE.md`、`docs/config-directory-override.md`、`docs/startup-model-credential-gate-blueprint.md`、`docs/ROADMAP.md`、`docs/README.md` | 更新所有可安全修改的用户/工程文档为真实路径与迁移语义，明确 `.agent/skills` 无关、环境变量仅选择目录且无 Key fallback；不触及主工作区已有脏改动的 MCP Issue | completed |
+| WEBAGENT-CONFIG-DIR-30B | B1 | gpt-5.6-luna（medium） | `README.md`、`CLAUDE.md`、`docs/config-directory-override.md`、`docs/startup-model-credential-gate-blueprint.md`、`docs/ROADMAP.md`、`docs/README.md` | 更新所有可安全修改的用户/工程文档为真实路径与迁移语义，明确 `.webAgent/skills` 无关、环境变量仅选择目录且无 Key fallback；不触及主工作区已有脏改动的 MCP Issue | completed |
 | WEBAGENT-CONFIG-DIR-80A | B3 | gpt-5.6-sol（high） | 无生产文件；可新增独立集成测试 | 在输入冻结后运行迁移、凭据、MCP 聚焦测试及构建；确认 worktree 与验证临时目录可安全清理 | completed |
 | WEBAGENT-CONFIG-DIR-90A | B3 | gpt-5.6-sol（high，非实现 Owner） | 只读审查 | 审查优先级：不读取 Key 环境变量、迁移不覆盖新文件/不删除旧文件、覆盖目录隔离、错误不泄露路径或密钥、变更未混入现有 MCP 脏改动 | completed：无 P0/P1 |
 
