@@ -19,7 +19,7 @@
 
 - 连接归属**进程级**，不是会话级：装配在 app 启动时完成。
 - **常驻 + 按需混合**：用户标常驻的服务启动即连；其余以「服务」为单位进 manifest，
-  模型用 `mcp_connect` 按需打开。
+  模型用 `connect_mcp_server` 按需打开。
 - 按需模式要能工作，**必须缓存每个服务的工具清单**，落在 `~/.web-agent/config.json`，
   否则模型无从知道该连哪个服务。清单的主要来源是**安装时的一次性探测**——添加服务就连一次，
   顺带验证配置、取得授权，并把连接期硬失败（工具数超限、名字碰撞、`taskSupport` 不支持）
@@ -47,7 +47,7 @@
 - **判据**：command 可读写 `config.json` 的 `mcp` 段并保留其它顶层键；Rust 测试覆盖
   空文件、损坏 JSON、并发写三种情况
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE 84a349a
 
 ### A3 · 前端侧 `mcp` 配置段读写封装
 
@@ -104,7 +104,7 @@
 - **依赖**：B1
 - **改动面**：`apps/web/src/mcp/toolNameCache.ts`、`packages/agent-core/src/tools/schemaResult.ts`
 - **判据**：清单一律呈现为「上次已知（`cachedAt`）」而非断言，连上后以真实清单为准。
-  模型跳过 `mcp_connect` 直接点名调用缓存里的工具时，接进 `schemaResult` 现有的
+  模型跳过 `connect_mcp_server` 直接点名调用缓存里的工具时，接进 `schemaResult` 现有的
   「未加载工具」路径，返回「该工具所属服务未连接，请先连接」，而不是 unknown tool
 - **模型**：opus
 - **状态**：TODO
@@ -146,7 +146,7 @@
   `settingsCenterTabAtom` → `apps/web/src/settings/`
 - **判据**：MCP 模块不再定义与 MCP 无关的全局 UI 状态；引用点全部更新；`pnpm build` 通过
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE 53fc83f
 
 ---
 
@@ -225,7 +225,7 @@
 - **判据**：run 中新注册的工具可用；被移除的工具被调用时返回结构化错误
   （「该工具所属的 MCP 服务在本轮已断开」），而不是静默消失或抛异常
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### E3 · 待确认工具的版本校验并入 epoch
 
@@ -237,7 +237,7 @@
 
 ---
 
-## F · `mcp_connect` 工具
+## F · `connect_mcp_server` 工具
 
 ### F1 · 工具与注入式 registrar
 
@@ -247,7 +247,7 @@
 - **判据**：`createMcpConnectTool(manager)` + `registerMcpTools(registry, { manager })`。
   **这是第一个需要注入运行时依赖的工具域，后续会被抄**，签名要立得住
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE 4062ad0
 
 ### F2 · 入参限定为已配置的 serverId
 
@@ -278,6 +278,27 @@
 - **模型**：opus（决定模型能否找到工具，是 F 分支的承重项）
 - **状态**：TODO
 
+### F6 · 让 manager 认识「已配置但未连接」的服务
+
+- **依赖**：F1、**F3（安全前置，见下）**
+- **改动面**：`tools/mcp/src/clientManager.ts`（新增只登记不连接的入口）、
+  `apps/web/src/mcp/service.ts` 的 hydrate
+- **判据**：冷启动后，配置里的**全部**服务都能被 `connect_mcp_server` 找到，
+  而不只是 `autoConnect` 的那批
+- **模型**：opus（要给 manager 加一个新的记录状态，会牵动世代检查与 snapshot 语义）
+- **状态**：TODO
+
+> **为什么按需模式现在还跑不通**：`manager.get(id)` 只认有 record 的服务，
+> 而 record 只在 `connect(config)` 被调用过之后才存在。`service.ts` 的 hydrate
+> 只对 `autoConnect` 的 HTTP 服务调 `connect`，所以「已配置但从未连过」的服务
+> 在 manager 里根本不存在，`connect_mcp_server` 对它们一律返回
+> `MCP_SERVER_NOT_CONFIGURED`。F2 收窄入参为 enum 时会撞上同一个数据源问题。
+>
+> **为什么它必须排在 F3 之后**：stdio 的 `autoConnect` 被写死 false，所以 stdio 服务
+> 现在**永远没有 record**——这恰好是当前唯一挡着「模型调一次工具就起子进程」的东西。
+> F6 一旦让它们可达，而 F3 的确认门还没上，就等于开了一条无需确认的起进程路径。
+> 这条约束和 B2 / H2 那条是同一种：**能力解锁必须与门禁同时或滞后落地。**
+
 ### F5 · 连接失败的可重试性分类
 
 - **依赖**：F1
@@ -304,7 +325,7 @@
 全部工具，无所谓连没连上——没有东西需要等。
 
 剩下的唯一价值是省一次无谓调用：常驻服务还在连接途中时，模型可能对一个 200ms 后就会连上的
-服务白调一次 `mcp_connect`。**代价是给 run 生命周期加一条阻塞路径**，而 run 生命周期是这个
+服务白调一次 `connect_mcp_server`。**代价是给 run 生命周期加一条阻塞路径**，而 run 生命周期是这个
 仓库最不该随便加分支的地方。建议先不做，等实际观测到这种白调再说。
 
 ---
@@ -341,7 +362,7 @@
   换句话说 **B2 做完就会暴露这个洞**。要不要做、走静态 token 还是 OAuth，未定；
   做 OAuth 的话 D1 的状态机需要预留 `needs_auth`。
 
-- **要不要保留显式 `mcp_connect`**。既然安装时已拿到全部工具清单，理论上可以取消这个工具：
+- **要不要保留显式 `connect_mcp_server`**。既然安装时已拿到全部工具清单，理论上可以取消这个工具：
   把所有缓存工具作为 stub 直接注册进 registry，模型照常调 `mcp__github__create_issue`，
   运行时发现未连接就先透明连上再执行。
   取舍是明确的——透明模式**省一轮但费 context**（20 服务 × 20 工具 = 400 条摘要进每次请求），
