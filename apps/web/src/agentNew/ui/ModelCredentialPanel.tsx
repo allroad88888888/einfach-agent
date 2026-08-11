@@ -100,7 +100,7 @@ export function ModelCredentialPanel() {
         仅桌面应用可保存密钥；静态 Web 部署不会直连模型服务。
       </p>
       <p className="agentnew-model-security-note">
-        密钥保存于 ~/.web-agent/config.json；前端不会持久化或读取已保存的值。
+        密钥保存于 ~/.webAgent/config.json；前端不会持久化或读取已保存的值。
       </p>
     </section>
   )
