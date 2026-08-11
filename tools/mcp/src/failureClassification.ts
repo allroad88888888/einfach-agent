@@ -210,8 +210,9 @@ function buildMessage(reason: McpFailureReason, detail: string, permanent: boole
   const label = REASON_LABEL[reason]
   const advice = permanent
     ? '需要人工介入才能恢复'
+    // 不写「会自动重试」：自动退避重连（D2）尚未实现，承诺不存在的行为会让用户干等。
     : reason === 'auth'
-      ? '会自动重试，若一直失败请检查凭证配置'
+      ? '可以重试；若反复失败请检查凭证配置'
       : '可以重试'
   const truncated = truncate(detail, DETAIL_MAX_CHARS)
   return `${label}，${advice}：${truncated}`

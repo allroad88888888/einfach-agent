@@ -53,10 +53,12 @@ function statusNote(server: McpServerView): McpStatusNote | undefined {
   if (server.status === 'reconnecting') {
     return {
       tone: 'retry',
-      heading: '暂时中断，不是配置问题',
+      // 不写「不是配置问题」：认证失败现在也落在 reconnecting（凭证错与服务临时故障
+      // 在没有 401/403 时无法区分），断言它与配置无关会与下面的分类文案自相矛盾。
+      heading: '暂时中断，可以重试',
       // 不写"系统正在自动重试"——自动退避重连（D2）还没做，这里如实说
       // "不用你动配置"，而不是承诺一个还不存在的后台行为。
-      advice: '这类问题通常会自行缓解；可以先不管，也可以点击下方"重连"立即重试。',
+      advice: '可以点击下方"重连"立即重试；若反复失败，请按上面的说明检查配置。',
     }
   }
   return undefined

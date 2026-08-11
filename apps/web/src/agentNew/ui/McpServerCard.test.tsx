@@ -47,12 +47,15 @@ describe('McpServerCard', () => {
     expect(card).not.toHaveTextContent('重连中')
 
     const note = screen.getByRole('status')
-    expect(note).toHaveTextContent('暂时中断，不是配置问题')
+    expect(note).toHaveTextContent('暂时中断，可以重试')
     expect(note).toHaveTextContent('连接暂时中断，可以重试：peer closed the connection')
-    expect(note).toHaveTextContent('可以先不管')
+    expect(note).toHaveTextContent('请按上面的说明检查配置')
     // 不承诺一个还不存在的自动重试行为。
     expect(note).not.toHaveTextContent('自动重试')
     expect(note).not.toHaveTextContent('人工介入')
+    // 认证失败也落在 reconnecting（无 401/403 时凭证错与临时故障无法区分），
+    // 所以这一档不能断言「与配置无关」——那会和分类文案的「请检查凭证配置」打架。
+    expect(note).not.toHaveTextContent('不是配置问题')
     expect(screen.queryByRole('alert')).toBeNull()
   })
 
