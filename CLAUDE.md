@@ -40,8 +40,8 @@ Vitest 的 root 是仓库根（不是 Vite 的 `apps/web` root），jsdom + `app
 
 ## 模型凭证与传输
 
-`apps/web/src/main.tsx` 只注入桌面受管凭证标记和受限模型传输。真实 Key 由桌面原生层从系统
-钥匙串或进程环境变量 `DEEPSEEK_API_KEY` / `GLM_API_KEY` / `KIMI_API_KEY` 读取。
+`apps/web/src/main.tsx` 只注入桌面受管凭证标记和受限模型传输。真实 Key 仅由桌面原生层从
+`~/.web-agent/config.json` 读取。
 
 三种宿主的传输各不相同：Tauri 走原生代理，浏览器 dev 走 `scripts/model-preview-relay` 的本地
 Node 中继，静态产物直接拒绝模型请求。`scripts/public-model-credential-guard.ts` 在 Vite 配置

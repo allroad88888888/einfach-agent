@@ -40,7 +40,7 @@ function credentialHost(): {
   const apiKeys = new Map<string, string>()
   const status = (target: ModelCredentialTarget) => ({
     configured: Boolean(apiKeys.get(targetKey(target))),
-    source: apiKeys.get(targetKey(target)) ? 'keychain' as const : 'missing' as const,
+    source: apiKeys.get(targetKey(target)) ? 'config' as const : 'missing' as const,
   })
   return {
     host: {
@@ -109,10 +109,10 @@ describe('app settings commands', () => {
     expect(rootStore.getter(deepSeekApiKeyDraftAtom)).toBe('')
     expect(rootStore.getter(kimiApiKeyDraftAtom)).toBe('')
     expect(rootStore.getter(deepSeekApiKeyStatusAtom)).toMatchObject({
-      status: 'saved', configured: true, source: 'keychain',
+      status: 'saved', configured: true, source: 'config',
     })
     expect(rootStore.getter(kimiApiKeyStatusAtom)).toMatchObject({
-      status: 'saved', configured: true, source: 'keychain',
+      status: 'saved', configured: true, source: 'config',
     })
     expect(JSON.stringify(rootStore.getter(appSettingsAtom))).not.toContain('test-key')
 

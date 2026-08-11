@@ -1,12 +1,13 @@
 import { invoke } from '@tauri-apps/api/core'
 
-export type CredentialSource = 'keychain' | 'environment' | 'missing'
+export type CredentialSource = 'config' | 'missing'
 
 export type ModelCredentialTarget =
   | { provider: 'deepseek'; scope: 'default' }
+  | { provider: 'glm'; scope: 'default' }
   | { provider: 'kimi'; scope: 'cn' }
 
-export type ModelCredentialId = 'deepseek-default' | 'kimi-cn'
+export type ModelCredentialId = 'deepseek-default' | 'glm-default' | 'kimi-cn'
 
 export interface ModelCredentialDescriptor {
   id: ModelCredentialId
@@ -19,6 +20,11 @@ export const MODEL_CREDENTIALS: readonly ModelCredentialDescriptor[] = [
     id: 'deepseek-default',
     label: 'DeepSeek',
     target: { provider: 'deepseek', scope: 'default' },
+  },
+  {
+    id: 'glm-default',
+    label: 'GLM',
+    target: { provider: 'glm', scope: 'default' },
   },
   {
     id: 'kimi-cn',
@@ -41,7 +47,7 @@ export interface ModelCredentialHost {
 
 export function createUnavailableModelCredentialHost(): ModelCredentialHost {
   const unavailable = async (): Promise<ModelCredentialStatus> => {
-    throw new Error('模型密钥只能在桌面应用中保存。')
+    throw new Error('模型密钥只能在桌面应用配置文件中保存。')
   }
   return {
     available: false,

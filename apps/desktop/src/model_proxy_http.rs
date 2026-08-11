@@ -4,7 +4,7 @@ use crate::model_proxy::ModelProxyEvent;
 use crate::model_proxy_body::PreparedProviderBody;
 use futures_util::StreamExt;
 use reqwest::header::{ACCEPT, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, RETRY_AFTER};
-use tauri::ipc::Channel;
+use tauri::{ipc::Channel, AppHandle};
 use tokio_util::sync::CancellationToken;
 
 const MODEL_REQUEST_TIMEOUT_SECONDS: u64 = 120;
@@ -104,6 +104,7 @@ async fn stream_response(
 }
 
 pub async fn send_provider_request(
+    app: &AppHandle,
     target: ResolvedProviderTarget,
     body: PreparedProviderBody,
     events: &Channel<ModelProxyEvent>,
@@ -111,7 +112,7 @@ pub async fn send_provider_request(
 ) -> Result<(), String> {
     let credential = tokio::select! {
         _ = cancellation.cancelled() => return Ok(()),
-        credential = active_model_credential(target.provider, target.scope) => credential?,
+        credential = active_model_credential(app, target.provider, target.scope) => credential?,
     };
     let client = model_http_client()?;
     let response = tokio::select! {

@@ -8,7 +8,7 @@ use crate::model_proxy_http::send_provider_request;
 use crate::model_request_registry::ModelRequestCanceller;
 use serde::{Deserialize, Serialize};
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -54,6 +54,7 @@ async fn prepare_body(
 }
 
 async fn run_provider_request(
+    app: &AppHandle,
     input: ModelProviderRequestInput,
     events: &Channel<ModelProxyEvent>,
     cancellations: &ModelRequestCanceller,
@@ -65,7 +66,7 @@ async fn run_provider_request(
         Err("模型响应通道已关闭".to_string())
     } else {
         match prepare_body(input.body, &target, &cancellation).await {
-            Ok(Some(body)) => send_provider_request(target, body, events, &cancellation).await,
+            Ok(Some(body)) => send_provider_request(app, target, body, events, &cancellation).await,
             Ok(None) => Ok(()),
             Err(error) => Err(error),
         }
@@ -76,11 +77,12 @@ async fn run_provider_request(
 
 #[tauri::command]
 pub async fn model_provider_request(
+    app: AppHandle,
     input: ModelProviderRequestInput,
     events: Channel<ModelProxyEvent>,
     cancellations: State<'_, ModelRequestCanceller>,
 ) -> Result<(), String> {
-    run_provider_request(input, &events, cancellations.inner()).await
+    run_provider_request(&app, input, &events, cancellations.inner()).await
 }
 
 #[tauri::command]
@@ -94,6 +96,7 @@ pub fn cancel_model_provider_request(
 /** Compatibility command for existing DeepSeek and GLM renderer builds. */
 #[tauri::command]
 pub async fn model_chat_completions(
+    app: AppHandle,
     input: ModelChatCompletionsInput,
     events: Channel<ModelProxyEvent>,
     cancellations: State<'_, ModelRequestCanceller>,
@@ -108,7 +111,7 @@ pub async fn model_chat_completions(
         body: ProviderRequestBody::Json { json: input.body },
         request_id: input.request_id,
     };
-    run_provider_request(input, &events, cancellations.inner()).await
+    run_provider_request(&app, input, &events, cancellations.inner()).await
 }
 
 /** Compatibility cancellation command for existing renderer builds. */

@@ -42,7 +42,7 @@ Tauri 命令中。
 | --- | --- | --- |
 | Composer | 选择、粘贴、拖放、预览、删除、客户端校验 | 供应商上传协议、持久化远端引用 |
 | Core runtime | 提交顺序、事务提交、排队、取消、持久化不变量 | 解析 `ms://`、拼 Kimi multipart |
-| Model adapter | model-level capability、图片准备、引用兼容、消息编码 | 读取系统钥匙串、决定宿主安全白名单 |
+| Model adapter | model-level capability、图片准备、引用兼容、消息编码 | 读取用户配置文件、决定宿主安全白名单 |
 | Web transport | 把通用请求描述映射到 Tauri 或开发 relay | 持有 Key、接受任意目标 URL |
 | Tauri transport | 凭证注入、固定 origin/method/path 白名单、限额、超时、取消 | `kimi_upload_image`、`purpose=image`、文件 ID 解析 |
 | 持久化层 | 保存短引用与展示元数据 | 保存 `File`、object URL、图片字节或 base64 |

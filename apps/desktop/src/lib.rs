@@ -1,4 +1,5 @@
 mod mcp;
+mod model_credential_config;
 mod model_credentials;
 mod model_provider;
 mod model_provider_route;

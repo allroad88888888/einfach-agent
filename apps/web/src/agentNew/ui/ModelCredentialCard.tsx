@@ -6,14 +6,14 @@ import {
 } from '../../settings/commands'
 import { MAX_MODEL_API_KEY_LENGTH } from '../../settings/config'
 import type {
+  CredentialSource,
   ModelCredentialDescriptor,
   ModelCredentialId,
 } from '../../settings/modelCredentialHost'
 import { modelCredentialEntriesAtom } from '../../settings/state'
 
-function credentialSourceLabel(source: 'keychain' | 'environment' | 'missing'): string {
-  if (source === 'keychain') return '系统钥匙串已配置'
-  if (source === 'environment') return '桌面进程环境变量已配置'
+function credentialSourceLabel(source: CredentialSource): string {
+  if (source === 'config') return '应用配置文件已配置'
   return '未配置密钥'
 }
 
@@ -59,10 +59,10 @@ export function ModelCredentialCard({
           <button
             type="button"
             className="agentnew-settings-button"
-            disabled={loading || entry.state.source !== 'keychain'}
+            disabled={loading || entry.state.source !== 'config'}
             onClick={() => { void deleteModelCredential(credential.id) }}
           >
-            删除 {credential.label} 钥匙串密钥
+            删除 {credential.label} 已保存密钥
           </button>
           <button
             type="button"
@@ -70,7 +70,7 @@ export function ModelCredentialCard({
             disabled={loading || !dirty}
             onClick={() => { void saveModelCredential(credential.id) }}
           >
-            保存 {credential.label} 到系统钥匙串
+            保存 {credential.label} 到应用配置
           </button>
         </div>
       </div>

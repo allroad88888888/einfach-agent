@@ -50,7 +50,7 @@ function credentialHost(kimiKey = '', failKimiStatus = false): {
     }
     return {
       configured: saved.has(credentialKey(target)),
-      source: saved.has(credentialKey(target)) ? 'keychain' as const : 'missing' as const,
+      source: saved.has(credentialKey(target)) ? 'config' as const : 'missing' as const,
     }
   }
   return {
@@ -113,7 +113,7 @@ describe('SettingsCenter', () => {
 
     const input = await screen.findByLabelText('DeepSeek API Key')
     await user.type(input, 'deepseek-test-key')
-    await user.click(screen.getByRole('button', { name: '保存 DeepSeek 到系统钥匙串' }))
+    await user.click(screen.getByRole('button', { name: '保存 DeepSeek 到应用配置' }))
 
     await waitFor(() => expect(fake.saved({
       provider: 'deepseek', scope: 'default',
@@ -122,7 +122,7 @@ describe('SettingsCenter', () => {
 
     const kimiInput = screen.getByLabelText('Kimi 中国区 API Key')
     await user.type(kimiInput, 'kimi-test-key')
-    await user.click(screen.getByRole('button', { name: '保存 Kimi 中国区 到系统钥匙串' }))
+    await user.click(screen.getByRole('button', { name: '保存 Kimi 中国区 到应用配置' }))
     await waitFor(() => expect(fake.saved({
       provider: 'kimi', scope: 'cn',
     })).toBe('kimi-test-key'))

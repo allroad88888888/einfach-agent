@@ -1,14 +1,14 @@
+use crate::model_credential_config::ModelCredentialStore;
 use crate::model_provider::{ModelProvider, ProviderScope};
 use serde::{Deserialize, Serialize};
+use tauri::AppHandle;
 
-const CREDENTIAL_SERVICE: &str = "com.webagent.app";
 const MAX_API_KEY_LENGTH: usize = 1_024;
 
 #[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CredentialSource {
-    Keychain,
-    Environment,
+    Config,
     Missing,
 }
 
@@ -32,8 +32,7 @@ pub struct SetModelCredentialInput {
 
 #[derive(Clone, Copy)]
 struct CredentialBinding {
-    account: &'static str,
-    environment_variable: &'static str,
+    config_key: &'static str,
 }
 
 fn credential_binding(
@@ -48,24 +47,16 @@ fn credential_binding(
 
     match (provider, scope) {
         (Deepseek, Default) => Ok(CredentialBinding {
-            account: "model-api-key:deepseek",
-            environment_variable: "DEEPSEEK_API_KEY",
+            config_key: "deepseek:default",
         }),
         (Glm, Default) => Ok(CredentialBinding {
-            account: "model-api-key:glm",
-            environment_variable: "GLM_API_KEY",
+            config_key: "glm:default",
         }),
         (Kimi, Cn) => Ok(CredentialBinding {
-            account: "model-api-key:kimi:cn",
-            environment_variable: "KIMI_API_KEY",
+            config_key: "kimi:cn",
         }),
         _ => Err("模型凭证作用域未获允许".to_string()),
     }
-}
-
-fn entry(binding: CredentialBinding) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(CREDENTIAL_SERVICE, binding.account)
-        .map_err(|_| "无法访问系统钥匙串".to_string())
 }
 
 fn normalized_key(value: String) -> Option<String> {
@@ -73,45 +64,41 @@ fn normalized_key(value: String) -> Option<String> {
     (!value.is_empty() && value.len() <= MAX_API_KEY_LENGTH).then_some(value)
 }
 
-fn read_keychain_key(binding: CredentialBinding) -> Option<String> {
-    entry(binding)
-        .ok()
-        .and_then(|entry| entry.get_password().ok())
-        .and_then(normalized_key)
-}
-
-fn read_environment_key(binding: CredentialBinding) -> Option<String> {
-    std::env::var(binding.environment_variable)
-        .ok()
-        .and_then(normalized_key)
-}
-
-pub async fn active_model_credential(
+async fn configured_model_credential(
+    app: &AppHandle,
     provider: ModelProvider,
     scope: ProviderScope,
-) -> Result<(String, CredentialSource), String> {
+) -> Result<Option<(String, CredentialSource)>, String> {
     let binding = credential_binding(provider, scope)?;
+    let store = ModelCredentialStore::from_app(app)?;
     tauri::async_runtime::spawn_blocking(move || {
-        if let Some(api_key) = read_keychain_key(binding) {
-            return Ok((api_key, CredentialSource::Keychain));
+        if let Some(api_key) = store.read_key(binding.config_key)?.and_then(normalized_key) {
+            return Ok(Some((api_key, CredentialSource::Config)));
         }
-        if let Some(api_key) = read_environment_key(binding) {
-            return Ok((api_key, CredentialSource::Environment));
-        }
-        Err(format!("未配置 {} API Key", provider.display_name()))
+        Ok(None)
     })
     .await
     .map_err(|_| "读取模型凭证失败")?
 }
 
+pub async fn active_model_credential(
+    app: &AppHandle,
+    provider: ModelProvider,
+    scope: ProviderScope,
+) -> Result<(String, CredentialSource), String> {
+    configured_model_credential(app, provider, scope)
+        .await?
+        .ok_or_else(|| format!("未配置 {} API Key", provider.display_name()))
+}
+
 async fn status(
+    app: &AppHandle,
     provider: ModelProvider,
     scope: ProviderScope,
 ) -> Result<ModelCredentialStatus, String> {
-    credential_binding(provider, scope)?;
-    let (configured, source) = match active_model_credential(provider, scope).await {
-        Ok((_, source)) => (true, source),
-        Err(_) => (false, CredentialSource::Missing),
+    let (configured, source) = match configured_model_credential(app, provider, scope).await? {
+        Some((_, source)) => (true, source),
+        None => (false, CredentialSource::Missing),
     };
     Ok(ModelCredentialStatus {
         provider,
@@ -123,43 +110,40 @@ async fn status(
 
 #[tauri::command]
 pub async fn model_credential_status(
+    app: AppHandle,
     provider: ModelProvider,
     scope: Option<ProviderScope>,
 ) -> Result<ModelCredentialStatus, String> {
-    status(provider, scope.unwrap_or_default()).await
+    status(&app, provider, scope.unwrap_or_default()).await
 }
 
 #[tauri::command]
 pub async fn model_credential_set(
+    app: AppHandle,
     input: SetModelCredentialInput,
 ) -> Result<ModelCredentialStatus, String> {
     let binding = credential_binding(input.provider, input.scope)?;
     let api_key = normalized_key(input.api_key).ok_or("模型 API Key 格式无效")?;
-    tauri::async_runtime::spawn_blocking(move || {
-        entry(binding)?
-            .set_password(&api_key)
-            .map_err(|_| "无法保存到系统钥匙串".to_string())
-    })
-    .await
-    .map_err(|_| "保存模型凭证失败")??;
-    status(input.provider, input.scope).await
+    let store = ModelCredentialStore::from_app(&app)?;
+    tauri::async_runtime::spawn_blocking(move || store.save_key(binding.config_key, api_key))
+        .await
+        .map_err(|_| "保存模型凭证失败")??;
+    status(&app, input.provider, input.scope).await
 }
 
 #[tauri::command]
 pub async fn model_credential_delete(
+    app: AppHandle,
     provider: ModelProvider,
     scope: Option<ProviderScope>,
 ) -> Result<ModelCredentialStatus, String> {
     let scope = scope.unwrap_or_default();
     let binding = credential_binding(provider, scope)?;
-    tauri::async_runtime::spawn_blocking(move || {
-        entry(binding)?
-            .delete_credential()
-            .map_err(|_| "无法从系统钥匙串删除凭证".to_string())
-    })
-    .await
-    .map_err(|_| "删除模型凭证失败")??;
-    status(provider, scope).await
+    let store = ModelCredentialStore::from_app(&app)?;
+    tauri::async_runtime::spawn_blocking(move || store.delete_key(binding.config_key))
+        .await
+        .map_err(|_| "删除模型凭证失败")??;
+    status(&app, provider, scope).await
 }
 
 #[cfg(test)]
@@ -171,10 +155,10 @@ mod tests {
     fn binds_only_supported_provider_scopes() {
         let deepseek = credential_binding(ModelProvider::Deepseek, ProviderScope::Default)
             .expect("bind legacy provider");
-        assert_eq!(deepseek.account, "model-api-key:deepseek");
+        assert_eq!(deepseek.config_key, "deepseek:default");
         let kimi =
             credential_binding(ModelProvider::Kimi, ProviderScope::Cn).expect("bind kimi cn");
-        assert_eq!(kimi.environment_variable, "KIMI_API_KEY");
+        assert_eq!(kimi.config_key, "kimi:cn");
         assert!(credential_binding(ModelProvider::Kimi, ProviderScope::Default).is_err());
     }
 
