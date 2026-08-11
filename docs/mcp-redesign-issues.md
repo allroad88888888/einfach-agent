@@ -379,7 +379,7 @@
 - **改动面**：`apps/web/src/mcp/config.ts`、`apps/web/src/mcp/service.ts`
 - **判据**：stdio 的 `autoConnect` 可持久化为 true
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE b2c850e
 
 ### H2 · 起进程的确认前移到安装探测
 
@@ -389,7 +389,7 @@
   弹一次「将执行 `<command> <args>`，之后每次启动都会自动执行」，
   确认结果落配置；此后开关自动连接不再重复问
 - **模型**：opus（安全边界）
-- **状态**：TODO
+- **状态**：DOING
 
 ---
 
