@@ -14,6 +14,7 @@ export * from './streamableHttp'
 export * from './toolAdapter'
 export * from './clientManager'
 export * from './connect-mcp-server/connect-mcp-server'
+export * from './connect-mcp-server/connectTargetProbe'
 
 /** mcp 域工具所需的运行时依赖。 */
 export interface McpToolsDependencies {

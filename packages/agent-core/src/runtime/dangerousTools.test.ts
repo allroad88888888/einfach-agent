@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { classifyToolRisk } from './dangerousTools'
+import {
+  classifyToolRisk,
+  MCP_CONNECT_TOOL_NAME,
+  type McpConnectTargetProbe,
+} from './dangerousTools'
 
 describe('classifyToolRisk', () => {
   it.each([
@@ -65,5 +69,102 @@ describe('classifyToolRisk', () => {
       'shell_powershell',
       { command: 'Remove-Item -Recurse -Force *' },
     ).level).toBe('critical')
+  })
+})
+
+// 连接 MCP 服务：同一个工具名、同一份参数形状，风险完全由 serverId 指向的落地方式决定。
+describe('classifyToolRisk · connect_mcp_server 按 serverId 分级', () => {
+  const STDIO_COMMAND = 'npx -y @modelcontextprotocol/server-filesystem /Users/me/notes'
+
+  const probe: McpConnectTargetProbe = (serverId) => {
+    if (serverId === 'local-fs') return { spawnsLocalProcess: true, command: STDIO_COMMAND }
+    if (serverId === 'quiet-stdio') return { spawnsLocalProcess: true }
+    if (serverId === 'remote-docs') return { spawnsLocalProcess: false }
+    return undefined
+  }
+
+  it('stdio 服务 → dangerous，且确认理由里带上将要执行的命令', () => {
+    const risk = classifyToolRisk(
+      MCP_CONNECT_TOOL_NAME,
+      { serverId: 'local-fs' },
+      { mcpConnectTarget: probe },
+    )
+    expect(risk.level).toBe('dangerous')
+    expect(risk.reason).toContain(STDIO_COMMAND)
+  })
+
+  it('stdio 但宿主给不出命令行 → 仍然 dangerous，理由说明会起子进程', () => {
+    const risk = classifyToolRisk(
+      MCP_CONNECT_TOOL_NAME,
+      { serverId: 'quiet-stdio' },
+      { mcpConnectTarget: probe },
+    )
+    expect(risk.level).toBe('dangerous')
+    expect(risk.reason).toContain('子进程')
+  })
+
+  it('超长命令行截断后仍能看出是什么命令，且不整段灌进确认卡片', () => {
+    const longCommand = `node ${'a'.repeat(400)}.js`
+    const risk = classifyToolRisk(
+      MCP_CONNECT_TOOL_NAME,
+      { serverId: 'x' },
+      { mcpConnectTarget: () => ({ spawnsLocalProcess: true, command: longCommand }) },
+    )
+    expect(risk.reason).toContain('node aaa')
+    expect(risk.reason).toContain('…')
+    expect(risk.reason?.length).toBeLessThan(longCommand.length)
+  })
+
+  it('HTTP 服务 → safe：只发网络请求，不打扰用户', () => {
+    expect(classifyToolRisk(
+      MCP_CONNECT_TOOL_NAME,
+      { serverId: 'remote-docs' },
+      { mcpConnectTarget: probe },
+    )).toEqual({ level: 'safe' })
+  })
+
+  // 默认从严：任何「查不到 / 说不清」都不能落到 safe，否则一次静默的本机进程启动就漏过去了。
+  it.each([
+    ['宿主根本没接探针', undefined, { serverId: 'local-fs' } as unknown],
+    ['整个 context 缺失', undefined, { serverId: 'local-fs' } as unknown],
+    ['探针不认识这个 serverId', probe, { serverId: 'never-configured' } as unknown],
+    ['serverId 不是字符串（连接配置对象）', probe, { serverId: { transport: 'stdio' } } as unknown],
+    ['serverId 为空白', probe, { serverId: '   ' } as unknown],
+    ['缺 serverId', probe, {} as unknown],
+    ['args 不是对象', probe, 'local-fs' as unknown],
+    ['args 是数组', probe, ['local-fs'] as unknown],
+    ['args 为 null', probe, null as unknown],
+  ])('信息缺失一律 dangerous：%s', (_label, injected, args) => {
+    expect(classifyToolRisk(
+      MCP_CONNECT_TOOL_NAME,
+      args,
+      { mcpConnectTarget: injected },
+    ).level).toBe('dangerous')
+  })
+
+  it('完全不传 context 时也是 dangerous（不是 safe）', () => {
+    expect(classifyToolRisk(MCP_CONNECT_TOOL_NAME, { serverId: 'remote-docs' }).level)
+      .toBe('dangerous')
+  })
+
+  it('探针抛错不穿透风险判定，且不被算成不危险', () => {
+    expect(classifyToolRisk(
+      MCP_CONNECT_TOOL_NAME,
+      { serverId: 'local-fs' },
+      { mcpConnectTarget: () => { throw new Error('manager 挂了') } },
+    ).level).toBe('dangerous')
+  })
+
+  it('是完整工具名等值匹配，不是前缀特判', () => {
+    expect(classifyToolRisk(
+      `${MCP_CONNECT_TOOL_NAME}_v2`,
+      { serverId: 'local-fs' },
+      { mcpConnectTarget: probe },
+    ).level).toBe('safe')
+  })
+
+  it('连接工具不进 DANGEROUS_TOOLS：连接能力不可授权给子 agent', async () => {
+    const { isDelegatableDangerousTool } = await import('./dangerousTools')
+    expect(isDelegatableDangerousTool(MCP_CONNECT_TOOL_NAME)).toBe(false)
   })
 })

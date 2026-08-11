@@ -41,7 +41,7 @@ export async function runToolCallBatch(base: ToolLoopBase, input: ToolBatchInput
     if (registrationVersion === undefined || base.core.tools.registrationVersion(toolCall.function.name) !== registrationVersion || base.core.tools.execution(toolCall.function.name)?.mode !== 'parallel') return undefined
     const session = base.core.rootStore.getter(sessionsAtom)[base.id]
     const workspaceRoot = resolveSessionWorkspaceRoot(session, base.core.rootStore.getter(workspacesAtom))
-    const risk = classifyToolRisk(toolCall.function.name, parsed.args, { workspaceRoot })
+    const risk = classifyToolRisk(toolCall.function.name, parsed.args, { workspaceRoot, mcpConnectTarget: base.core.config.mcpConnectTarget })
     return risk.requiresConfirmation || risk.level === 'critical' || risk.level === 'dangerous' ? undefined : { callId: toolCall.id, name: toolCall.function.name, args: parsed.args, registrationVersion }
   }
   const parallelCalls = toolCalls.map(isParallel).filter((call): call is ExecutableToolCall => call !== undefined)
@@ -100,7 +100,9 @@ export async function runToolCallBatch(base: ToolLoopBase, input: ToolBatchInput
     const verifiedArgs = prepared.call.args as Record<string, unknown>
     const session = base.core.rootStore.getter(sessionsAtom)[base.id]
     const workspaceRoot = resolveSessionWorkspaceRoot(session, base.core.rootStore.getter(workspacesAtom))
-    const risk = classifyToolRisk(name, verifiedArgs, { workspaceRoot })
+    // mcpConnectTarget：core 判不出「连接某个 MCP 服务会不会在本机起子进程」，
+    // 事实由宿主在装配 MCP manager 时接进 config（见 runtimeConfig.mcpConnectTarget）。
+    const risk = classifyToolRisk(name, verifiedArgs, { workspaceRoot, mcpConnectTarget: base.core.config.mcpConnectTarget })
     const approvalMode = session?.toolApprovalMode ?? 'confirm'
     const needsConfirmation = risk.requiresConfirmation || risk.level === 'critical' || (approvalMode === 'confirm' && risk.level === 'dangerous' && !isToolAlwaysAllowed(base.id, name, base.core))
     if (needsConfirmation) {
@@ -124,6 +126,10 @@ export async function runToolCallBatch(base: ToolLoopBase, input: ToolBatchInput
             registrationVersion,
             ...(prepared.schemaWarnings ? { schemaWarnings: prepared.schemaWarnings } : {}),
             ...(prepared.beforeToolHookCompleted ? { beforeToolHookCompleted: true } : {}),
+            // 普通 dangerous 也要带上 reason：有些工具的真实操作不在 args 里（例如
+            // connect_mcp_server 只有 serverId，将要执行的命令来自宿主配置），
+            // 丢掉 reason 用户就看不到自己在批准什么。
+            ...(risk.reason ? { reason: risk.reason } : {}),
           }
       continue
     }

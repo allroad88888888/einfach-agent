@@ -25,6 +25,18 @@ export function isMcpTool(name: string): boolean {
   return name.startsWith('mcp__')
 }
 
+/**
+ * 「按需连接一个已配置 MCP 服务」的工具名。
+ *
+ * 【为什么 core 里会出现一个具体工具名】DANGEROUS_TOOLS 里本来就写着 shell_macos / write_file
+ *   等具体工具名 ——「哪些调用要拦」是 core 的策略，工具名就是策略的一部分。这里同样是【完整
+ *   工具名的等值匹配】，不是 `mcp__` 那种前缀特判：前缀会把任何以它开头的名字一并卷进来，
+ *   等值只认这一个。
+ * 【为什么不是 import 过来】名字的真身在 tools/mcp，依赖方向是 agent-core ← tools-*，core 不能
+ *   反向依赖它。两边一致由 tools/mcp 侧的锁定测试守住（connectTargetProbe.test.ts）。
+ */
+export const MCP_CONNECT_TOOL_NAME = 'connect_mcp_server'
+
 // 简介：某工具名是否属于「执行前需用户确认」的危险工具集。
 export function isDangerousTool(name: string): boolean {
   return DANGEROUS_TOOLS.has(name) || isMcpTool(name)
@@ -46,10 +58,38 @@ export interface ToolRiskAssessment {
   irreversible?: boolean
 }
 
-function commandFromArgs(args: unknown): string {
+/**
+ * 宿主对「连接某个已配置 MCP 服务」会落到哪里的描述。
+ *
+ * 只回答风险判定用得上的那点事实，不回传连接配置本身（url / headers / env 可能含凭据）。
+ */
+export interface McpConnectTarget {
+  /** 连接它是否会在用户本机拉起子进程（stdio 传输）。 */
+  spawnsLocalProcess: boolean
+  /** 本机将要执行的命令行；仅 spawnsLocalProcess 为 true 时有意义，用于确认提示。 */
+  command?: string
+}
+
+/**
+ * serverId → 落地描述的探针，由装配 MCP manager 的宿主注入。
+ * 返回 undefined = 宿主答不上来（未登记的 id、未接线、未知传输方式）—— 由 core 按从严处理。
+ */
+export type McpConnectTargetProbe = (serverId: string) => McpConnectTarget | undefined
+
+/** classifyToolRisk 的注入面：core 拿不到的运行时事实统统从这里进来。 */
+export interface ToolRiskContext {
+  workspaceRoot?: string
+  mcpConnectTarget?: McpConnectTargetProbe
+}
+
+function stringFromArgs(args: unknown, key: string): string {
   if (!args || typeof args !== 'object' || Array.isArray(args)) return ''
-  const command = (args as Record<string, unknown>).command
-  return typeof command === 'string' ? command : ''
+  const value = (args as Record<string, unknown>)[key]
+  return typeof value === 'string' ? value : ''
+}
+
+function commandFromArgs(args: unknown): string {
+  return stringFromArgs(args, 'command')
 }
 
 function unquote(value: string): string {
@@ -120,13 +160,64 @@ export function commandUsesPermanentDelete(name: string, args: unknown): boolean
   return /(?:^|[\s;&|('"`])(?:(?:sudo|command|env)\s+)*(?:(?:\/usr)?\/bin\/)?rm(?=\s|$)/i.test(command)
 }
 
+const MCP_CONNECT_COMMAND_MAX_CHARS = 200
+
+/** 答不上来时的统一说法：不编造细节，只说清「可能是本机起进程」，让用户自己决定。 */
+const MCP_CONNECT_UNKNOWN_REASON =
+  '无法确认这个 MCP 服务的连接方式。若它是 stdio 服务，连接会在你的机器上启动一个子进程。'
+
+/**
+ * 按 serverId 指向的落地方式给「连接 MCP 服务」分级。
+ *
+ * stdio → 在用户机器上拉起子进程，与执行一条命令同级 → dangerous（确认模式逐次确认，
+ *   确认卡片里带上将要执行的命令）。
+ * HTTP  → 只发一次网络请求，不在本机执行任何东西 → safe，不打扰用户。
+ * 判不出来（探针没接、id 未登记、探针抛错、参数不是字符串 serverId）→ 一律 dangerous。
+ *   这个默认方向是本函数的安全前提：宁可多问一次，也不能因为「查不到」而静默放行一次进程启动。
+ */
+function classifyMcpConnectRisk(
+  args: unknown,
+  probe: McpConnectTargetProbe | undefined,
+): ToolRiskAssessment {
+  const serverId = stringFromArgs(args, 'serverId').trim()
+  if (!serverId || !probe) return { level: 'dangerous', reason: MCP_CONNECT_UNKNOWN_REASON }
+
+  let target: McpConnectTarget | undefined
+  try {
+    target = probe(serverId)
+  } catch {
+    // 探针是宿主代码，但它崩了不能让风险判定跟着崩，更不能把异常算成「不危险」。
+    return { level: 'dangerous', reason: MCP_CONNECT_UNKNOWN_REASON }
+  }
+  if (!target) return { level: 'dangerous', reason: MCP_CONNECT_UNKNOWN_REASON }
+  if (!target.spawnsLocalProcess) return { level: 'safe' }
+
+  const command = (target.command ?? '').trim()
+  return {
+    level: 'dangerous',
+    reason: command
+      ? `连接这个 MCP 服务会在你的机器上启动子进程执行：${
+        command.length > MCP_CONNECT_COMMAND_MAX_CHARS
+          ? `${command.slice(0, MCP_CONNECT_COMMAND_MAX_CHARS)}…`
+          : command
+      }`
+      : '连接这个 MCP 服务会在你的机器上启动一个子进程。',
+  }
+}
+
 // 参数级风险分类。普通变更工具仍是 dangerous；Auto 模式会自动执行它们，
 // 但宽范围递归强删、格式化/覆写设备等 critical 操作始终要求人工确认。
 export function classifyToolRisk(
   name: string,
   args: unknown,
-  context?: { workspaceRoot?: string },
+  context?: ToolRiskContext,
 ): ToolRiskAssessment {
+  // 连接工具没有静态等级：同一个工具、同一份参数形状，指向 stdio 就是本机起进程，
+  // 指向 HTTP 就只是一次网络请求。所以它在 isDangerousTool 之前单独分流 ——
+  // 它不进 DANGEROUS_TOOLS（那个集合同时决定「可授权给子 agent」，连接能力必须留在父级）。
+  if (name === MCP_CONNECT_TOOL_NAME) {
+    return classifyMcpConnectRisk(args, context?.mcpConnectTarget)
+  }
   if (!isDangerousTool(name)) return { level: 'safe' }
   // MCP 工具来自应用之外，服务端声明与实现也可能在重连后发生变化，
   // 所以仍作为 dangerous：确认模式逐次确认，Auto 模式则由用户的明确选择直接执行。
