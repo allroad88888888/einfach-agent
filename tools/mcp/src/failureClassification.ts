@@ -77,7 +77,7 @@ export function readMcpFailureKind(error: unknown): string | undefined {
  * Structured kinds that mean "retrying will never succeed on its own".
  *
  * Only kinds listed here are permanent; every other kind — including ones the
- * Rust side adds later — falls through to the message rules and then to the
+ * Rust side adds later — falls through to the remaining checks and then to the
  * temporary default, so a new kind can never silently reclassify an existing
  * failure. Rewording the Rust message cannot downgrade a permanent failure
  * either, because nothing here reads the message.
@@ -89,7 +89,36 @@ const PERMANENT_FAILURE_KINDS: Readonly<Record<string, McpFailureReason | undefi
   // failure *after* the child started (pipe capture, helper threads) and
   // stays retryable.
   command_spawn_failed: 'command_unavailable',
+  // apps/desktop/src/mcp.rs — the peer broke the MCP contract: an unparseable
+  // tools/list / tools/call / initialize result, a repeated pagination cursor, a
+  // protocolVersion this client does not implement, a missing tools capability.
+  // None of those become valid by reconnecting. Judged structurally *because*
+  // the Rust message inlines the server's cursor and protocolVersion verbatim,
+  // so a server answering `protocolVersion: "must not be empty"` could otherwise
+  // pick its own reason out of PERMANENT_MESSAGE_RULES.
+  protocol_error: 'protocol_violation',
 }
+
+/**
+ * Structured kinds whose message quotes the remote MCP server word for word.
+ * The text is the peer's, so no verdict may be inferred by matching it: these
+ * skip PERMANENT_MESSAGE_RULES and fall to the temporary default.
+ *
+ * The rest of apps/desktop/src/mcp.rs is host-authored and stays matchable:
+ * `invalid_input` reports on our own config; `transport_closed`,
+ * `transport_error`, `process_exited`, `process_error` and `spawn_failed` report
+ * host/OS conditions (every RpcReply::Transport string is written by the bridge,
+ * not received from the child); `timeout`, `already_connected`, `stale_session`,
+ * `session_limit` and `not_connected` are fixed bridge strings.
+ */
+const PEER_AUTHORED_MESSAGE_KINDS: ReadonlySet<string> = new Set([
+  // apps/desktop/src/mcp.rs RpcReply::Error — the message reads
+  // "MCP request `m` failed: {server error.message} ({code})", so everything
+  // after the colon is written by the server being talked to. Left matchable, a
+  // healthy server answering "must not be empty" or "exceeded 5 tools" would be
+  // declared permanently broken and never retried again.
+  'rpc_error',
+])
 
 /**
  * Permanent-failure message patterns sourced from this codebase's own thrown
@@ -98,8 +127,9 @@ const PERMANENT_FAILURE_KINDS: Readonly<Record<string, McpFailureReason | undefi
  * thrown inside this package, not third-party or cross-process text, so
  * matching on them is stable across releases.
  *
- * The desktop stdio bridge is intentionally absent: its failures are
- * classified through PERMANENT_FAILURE_KINDS above, never through its prose.
+ * Two families are intentionally kept away from this table: the desktop stdio
+ * bridge (classified through the structured kinds above) and anything whose
+ * message the peer helped write (hasPeerAuthoredMessage / an HTTP status).
  */
 const PERMANENT_MESSAGE_RULES: ReadonlyArray<{
   reason: McpFailureReason
@@ -125,8 +155,26 @@ const PERMANENT_MESSAGE_RULES: ReadonlyArray<{
   },
 ]
 
-/** Duck-typed HTTP status carried by errors such as the MCP SDK's StreamableHTTPError. */
+/**
+ * The MCP SDK's McpError (@modelcontextprotocol/sdk types.ts) relays a remote
+ * JSON-RPC failure: it sets `name` to 'McpError', puts the *server's* error code
+ * in `code`, and formats the message as "MCP error {code}: {server message}".
+ * Matched on the declared `name` rather than instanceof, which a second copy of
+ * the SDK in the dependency graph would silently defeat.
+ */
+function isSdkMcpError(error: Error): boolean {
+  return error.name === 'McpError'
+}
+
+/**
+ * Duck-typed HTTP status carried by transport errors such as the SDK's
+ * StreamableHTTPError, whose `code` is the response status. `code` is
+ * deliberately not read off an McpError: JSON-RPC reserves nothing in the
+ * 100–599 range, so a server replying `{"code": 403}` could otherwise mint an
+ * "HTTP 403" auth verdict for itself and stop us from ever reconnecting.
+ */
 function readHttpStatus(error: Error): number | undefined {
+  if (isSdkMcpError(error)) return undefined
   const record = error as unknown as Record<string, unknown>
   for (const key of ['status', 'code', 'statusCode'] as const) {
     const value = record[key]
@@ -137,6 +185,21 @@ function readHttpStatus(error: Error): number | undefined {
   return undefined
 }
 
+/** True when part of the failure message was written by the remote MCP server. */
+function hasPeerAuthoredMessage(error: Error): boolean {
+  const kind = readMcpFailureKind(error)
+  if (kind !== undefined && PEER_AUTHORED_MESSAGE_KINDS.has(kind)) return true
+  return isSdkMcpError(error)
+}
+
+/**
+ * Third-party prose that *looks* like an auth rejection. Unlike
+ * PERMANENT_MESSAGE_RULES this matches wording owned by remote servers and by
+ * the SDK, which may be localized, reworded between releases, or echoed back by
+ * a server that is not failing on auth at all. It is therefore only allowed to
+ * pick the reason label — never the permanent/temporary verdict; see
+ * classifyMcpFailure() for why temporary is the safe side of that trade.
+ */
 function isUnauthorizedMessage(message: string): boolean {
   return /unauthoriz|authentication failed|invalid token|invalid credentials|invalid api key/i.test(
     message,
@@ -145,7 +208,11 @@ function isUnauthorizedMessage(message: string): boolean {
 
 function buildMessage(reason: McpFailureReason, detail: string, permanent: boolean): string {
   const label = REASON_LABEL[reason]
-  const advice = permanent ? '需要人工介入才能恢复' : '可以重试'
+  const advice = permanent
+    ? '需要人工介入才能恢复'
+    : reason === 'auth'
+      ? '会自动重试，若一直失败请检查凭证配置'
+      : '可以重试'
   const truncated = truncate(detail, DETAIL_MAX_CHARS)
   return `${label}，${advice}：${truncated}`
 }
@@ -161,12 +228,24 @@ function temporary(reason: McpFailureReason, detail: string): McpFailureClassifi
 /**
  * Maps an arbitrary connect/reconcile/close failure to a status + reason.
  *
- * Temporary (network/transport jitter, peer-closed connections) is the
- * fallback: only failures matching a known permanent signal — the stdio
- * bridge's structured failure kind, HTTP 401/403, an "unauthorized"-shaped
- * message, or one of this codebase's own config/protocol/capability errors —
- * are classified as permanent. This function does not schedule or perform any
- * retry; it only decides which of 'error' | 'reconnecting' a failure deserves.
+ * The single rule behind the order below: **a permanent verdict may only come
+ * from a signal the peer does not author.** Those are the desktop bridge's
+ * structured kind, the HTTP response status, and this package's own thrown
+ * messages. Everything else — remote JSON-RPC error text, HTTP response
+ * bodies, SDK prose — can at most choose the reason label, and falls to the
+ * temporary default.
+ *
+ * That asymmetry is deliberate, because the two mistakes do not cost the same
+ * once the caller retries with capped exponential backoff:
+ *   - calling a temporary failure permanent stops all retries and needs a human,
+ *     and the peer can trigger it at will by echoing "invalid token" or
+ *     "exceeded 5 tools" in an ordinary 500;
+ *   - calling a permanent failure temporary costs a bounded handful of backed-off
+ *     attempts, after which the retry budget runs out and the same failure
+ *     surfaces anyway.
+ *
+ * This function does not schedule or perform any retry; it only decides which
+ * of 'error' | 'reconnecting' a failure deserves.
  */
 export function classifyMcpFailure(error: unknown): McpFailureClassification {
   const caught = toError(error)
@@ -180,15 +259,34 @@ export function classifyMcpFailure(error: unknown): McpFailureClassification {
     return permanent(kindReason, detail)
   }
 
+  // An HTTP status is observed by the transport, not written by the server, so
+  // it is both trustworthy and terminal: the verdict is a function of the number
+  // alone. The prose beside it is the response body — the SDK inlines it as
+  // "Error POSTing to endpoint: {body}" — so letting it reach the message rules
+  // would hand the peer a switch for turning its own 500 into a permanent
+  // failure. Is a structured auth signal always available? Over Streamable HTTP
+  // yes: the SDK always throws StreamableHTTPError(status, …). Over stdio, and
+  // for in-band JSON-RPC auth errors, no — those deliberately stay retryable.
   const httpStatus = readHttpStatus(caught)
-  if (httpStatus === 401 || httpStatus === 403) {
-    return permanent('auth', `HTTP ${httpStatus}：${detail}`)
+  if (httpStatus !== undefined) {
+    const httpDetail = `HTTP ${httpStatus}：${detail}`
+    if (httpStatus === 401 || httpStatus === 403) {
+      return permanent('auth', httpDetail)
+    }
+    if (httpStatus >= 400 && httpStatus < 500 && httpStatus !== 408 && httpStatus !== 429) {
+      return permanent('config_invalid', httpDetail)
+    }
+    return temporary('connection_disrupted', httpDetail)
   }
+
+  // Label only. Without a 401/403 the "unauthorized" wording is the peer's or
+  // the SDK's, and is not allowed to end retrying.
   if (isUnauthorizedMessage(detail)) {
-    return permanent('auth', detail)
+    return temporary('auth', detail)
   }
-  if (httpStatus !== undefined && httpStatus >= 400 && httpStatus < 500 && httpStatus !== 408 && httpStatus !== 429) {
-    return permanent('config_invalid', `HTTP ${httpStatus}：${detail}`)
+
+  if (hasPeerAuthoredMessage(caught)) {
+    return temporary('connection_disrupted', detail)
   }
 
   for (const rule of PERMANENT_MESSAGE_RULES) {

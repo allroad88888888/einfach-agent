@@ -1,22 +1,20 @@
+// The verdict table for the signals this package owns: HTTP response statuses
+// and the errors clientManager/toolAdapter/streamableHttp throw themselves.
+//
+// The separate contract that foreign text (the Rust bridge, remote servers, SDK
+// prose, HTTP bodies) must never produce a permanent verdict — including the
+// auth trade-off — is pinned in failureClassification.untrustedText.test.ts.
 import { describe, expect, it } from 'vitest'
-import {
-  attachMcpFailureKind,
-  classifyMcpFailure,
-  readMcpFailureKind,
-} from './failureClassification'
+import { classifyMcpFailure } from './failureClassification'
 
+/** Mirrors the SDK's StreamableHTTPError, whose `code` is the response status. */
 function withCode(message: string, code: number): Error {
   const error = new Error(message)
   ;(error as unknown as { code: number }).code = code
   return error
 }
 
-/** Mirrors what tauriStdioConnector.ts builds out of a Rust McpCommandError. */
-function withKind(kind: string, message: string): Error {
-  return attachMcpFailureKind(new Error(message), kind)
-}
-
-describe('classifyMcpFailure', () => {
+describe('classifyMcpFailure / HTTP status', () => {
   it('classifies HTTP 401/403 as a permanent auth failure', () => {
     expect(classifyMcpFailure(withCode('Streamable HTTP error: nope', 401))).toMatchObject({
       status: 'error',
@@ -26,16 +24,6 @@ describe('classifyMcpFailure', () => {
       status: 'error',
       reason: 'auth',
     })
-  })
-
-  it('classifies an "Unauthorized"-shaped message as a permanent auth failure even without a status code', () => {
-    expect(classifyMcpFailure(new Error('Unauthorized'))).toMatchObject({
-      status: 'error',
-      reason: 'auth',
-    })
-    expect(classifyMcpFailure(new Error('authentication failed: invalid api key'))).toMatchObject(
-      { status: 'error', reason: 'auth' },
-    )
   })
 
   it('classifies other 4xx (excluding 408/429) as permanent config_invalid', () => {
@@ -66,7 +54,9 @@ describe('classifyMcpFailure', () => {
       reason: 'connection_disrupted',
     })
   })
+})
 
+describe('classifyMcpFailure / this package\'s own errors', () => {
   it('classifies empty id/command/URL config errors as permanent config_invalid', () => {
     expect(classifyMcpFailure(new Error('MCP server id must not be empty'))).toMatchObject({
       status: 'error',
@@ -79,90 +69,6 @@ describe('classifyMcpFailure', () => {
     expect(
       classifyMcpFailure(new Error('MCP Streamable HTTP URL must use http or https: ftp://x')),
     ).toMatchObject({ status: 'error', reason: 'config_invalid' })
-  })
-
-  it('classifies the desktop stdio spawn kind as permanent command_unavailable', () => {
-    expect(
-      classifyMcpFailure(
-        withKind(
-          'command_spawn_failed',
-          'failed to start MCP server `local-files`: No such file or directory (os error 2)',
-        ),
-      ),
-    ).toMatchObject({ status: 'error', reason: 'command_unavailable' })
-  })
-
-  // This is the D5 guarantee: the stdio verdict is a function of the structured
-  // kind ONLY. Every message below — including one that would otherwise be read
-  // as a temporary failure, one that would be read as a *different* permanent
-  // failure, and an empty one — must yield the exact same classification, so
-  // rewording (or localizing) apps/desktop/src/mcp.rs cannot silently downgrade
-  // a permanent failure into an infinite reconnect loop.
-  it('classifies a stdio spawn failure from the kind alone, whatever the Rust message says', () => {
-    const rewrittenRustMessages = [
-      'failed to start MCP server `local-files`: No such file or directory (os error 2)',
-      '无法启动 MCP 服务器 `local-files`：系统找不到指定的文件',
-      'transport lost',
-      'MCP server "srv" returned an invalid tool list',
-      '',
-    ]
-
-    const classifications = rewrittenRustMessages.map((message) =>
-      classifyMcpFailure(withKind('command_spawn_failed', message)),
-    )
-
-    for (const classification of classifications) {
-      expect(classification).toMatchObject({
-        status: 'error',
-        reason: 'command_unavailable',
-      })
-    }
-    expect(new Set(classifications.map((entry) => entry.status)).size).toBe(1)
-    expect(new Set(classifications.map((entry) => entry.reason)).size).toBe(1)
-  })
-
-  it('no longer infers a stdio spawn failure from message text without a kind', () => {
-    // The undeclared prose contract with apps/desktop/src/mcp.rs is gone on
-    // purpose: an error that never carried a kind is not a bridge spawn failure.
-    expect(
-      classifyMcpFailure(
-        new Error('failed to start MCP server `local-files`: No such file or directory (os error 2)'),
-      ),
-    ).toMatchObject({ status: 'reconnecting', reason: 'connection_disrupted' })
-    expect(classifyMcpFailure(new Error('spawn mcp-server ENOENT'))).toMatchObject({
-      status: 'reconnecting',
-      reason: 'connection_disrupted',
-    })
-  })
-
-  it('keeps post-spawn host setup failures (spawn_failed) temporary', () => {
-    // The child already started; failing to attach its pipes or reader threads
-    // is a host resource problem, not a broken command.
-    expect(
-      classifyMcpFailure(withKind('spawn_failed', 'failed to capture MCP server stdin')),
-    ).toMatchObject({ status: 'reconnecting', reason: 'connection_disrupted' })
-    expect(
-      classifyMcpFailure(withKind('spawn_failed', 'failed to start MCP protocol reader: EAGAIN')),
-    ).toMatchObject({ status: 'reconnecting', reason: 'connection_disrupted' })
-  })
-
-  it('lets unknown and transport kinds fall through to the existing rules', () => {
-    // A kind the Rust side adds later must not reclassify anything by itself.
-    expect(
-      classifyMcpFailure(withKind('a_kind_added_later', 'MCP server id must not be empty')),
-    ).toMatchObject({ status: 'error', reason: 'config_invalid' })
-    expect(
-      classifyMcpFailure(withKind('transport_closed', 'MCP server transport is closed')),
-    ).toMatchObject({ status: 'reconnecting', reason: 'connection_disrupted' })
-  })
-
-  it('carries the kind as a non-enumerable field so it never leaks into logs', () => {
-    const error = withKind('command_spawn_failed', 'boom')
-    expect(readMcpFailureKind(error)).toBe('command_spawn_failed')
-    expect(Object.keys(error)).not.toContain('mcpFailureKind')
-    expect(JSON.stringify({ ...error })).not.toContain('command_spawn_failed')
-    expect(readMcpFailureKind(new Error('boom'))).toBeUndefined()
-    expect(readMcpFailureKind('not an error')).toBeUndefined()
   })
 
   it('classifies tool-count and tool-name-collision errors as permanent', () => {
@@ -214,7 +120,9 @@ describe('classifyMcpFailure', () => {
       classifyMcpFailure(new Error('MCP tool result contains a cyclic or repeated object reference')),
     ).toMatchObject({ status: 'error', reason: 'protocol_violation' })
   })
+})
 
+describe('classifyMcpFailure / fallback', () => {
   it('defaults unclassified failures to temporary connection_disrupted', () => {
     expect(classifyMcpFailure(new Error('transport lost'))).toMatchObject({
       status: 'reconnecting',
