@@ -1,6 +1,6 @@
 # WebAgent 默认配置目录迁移 Issue
 
-状态：验收中
+状态：已完成
 创建日期：2026-08-11  
 协调者：gpt-5.6-sol（high）
 
@@ -44,7 +44,7 @@ WEBAGENT-CONFIG-DIR  默认配置目录迁移
 | WEBAGENT-CONFIG-DIR-10B | B2 | gpt-5.6-terra（medium） | `apps/desktop/src/mcp_config_tests.rs` | 将 MCP 默认目录断言改为 `.webAgent`，不改变 MCP 配置语义 | completed |
 | WEBAGENT-CONFIG-DIR-30A | B1 | gpt-5.6-luna（medium） | `apps/web/src/agentNew/ui/ModelCredentialPanel.tsx` | 将界面中的配置位置替换为 `.webAgent`；不调整状态或交互 | completed |
 | WEBAGENT-CONFIG-DIR-30B | B1 | gpt-5.6-luna（medium） | `README.md`、`CLAUDE.md`、`docs/config-directory-override.md`、`docs/startup-model-credential-gate-blueprint.md`、`docs/ROADMAP.md`、`docs/README.md` | 更新所有可安全修改的用户/工程文档为真实路径与迁移语义，明确 `.agent/skills` 无关、环境变量仅选择目录且无 Key fallback；不触及主工作区已有脏改动的 MCP Issue | completed |
-| WEBAGENT-CONFIG-DIR-80A | B3 | gpt-5.6-sol（high） | 无生产文件；可新增独立集成测试 | 在输入冻结后运行迁移、凭据、MCP 聚焦测试及构建；确认 worktree 与验证临时目录可安全清理 | active：构建待合并后主工作区执行 |
+| WEBAGENT-CONFIG-DIR-80A | B3 | gpt-5.6-sol（high） | 无生产文件；可新增独立集成测试 | 在输入冻结后运行迁移、凭据、MCP 聚焦测试及构建；确认 worktree 与验证临时目录可安全清理 | completed |
 | WEBAGENT-CONFIG-DIR-90A | B3 | gpt-5.6-sol（high，非实现 Owner） | 只读审查 | 审查优先级：不读取 Key 环境变量、迁移不覆盖新文件/不删除旧文件、覆盖目录隔离、错误不泄露路径或密钥、变更未混入现有 MCP 脏改动 | completed：无 P0/P1 |
 
 ## 并发与交付规则
@@ -66,5 +66,5 @@ WEBAGENT-CONFIG-DIR  默认配置目录迁移
 
 ## 审查记录
 
-- 80A：存储迁移 19/19、模型凭据 5/5、MCP 9/9 通过；文档检查和 diff 检查通过。临时 worktree 没有 `node_modules`，`pnpm build` 转至合并后的主工作区执行。
+- 80A：存储迁移 19/19、模型凭据 5/5、MCP 9/9 通过；文档检查和 diff 检查通过。临时 worktree 没有 `node_modules`；合并后的主工作区 `pnpm build` 已通过。
 - 90A：默认路径、一次性兼容复制、覆盖目录隔离、0700/0600 权限、固定错误和无 API Key 环境变量读取均符合契约；无 P0/P1。P2：两份未改的历史 Issue 仍描述旧路径，留作独立文档清理。
