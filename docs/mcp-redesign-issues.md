@@ -401,7 +401,7 @@
 - **判据**：serverId 指向一个**启动命令未被确认过**的 stdio 服务时，
   `classifyToolRisk` 返回 `requiresConfirmation: true`，Auto 模式下也必须暂停
 - **模型**：opus（安全边界）
-- **状态**：DOING
+- **状态**：DONE fee2264
 
 > **收尾验收时发现的缺口。** 起进程的确认有两条独立的门，而它们的强度不一样：
 >
