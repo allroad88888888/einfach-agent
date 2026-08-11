@@ -32,8 +32,11 @@ function parseEnvelope(raw: string): McpToolNameCache {
   } catch {
     return {}
   }
+  // parsed 已被 isPlainRecord 收窄成 Record<string, unknown>，而 sanitizeToolNameCache
+  // 本来就接受 unknown——直接取 .cache 即可，不需要断言成 envelope（那个断言过不了
+  // TS 的重叠检查，因为 version 是字面量类型）。
   if (isPlainRecord(parsed) && parsed.version === 1) {
-    return sanitizeToolNameCache((parsed as ToolNameCacheEnvelope).cache)
+    return sanitizeToolNameCache(parsed.cache)
   }
   return {}
 }
