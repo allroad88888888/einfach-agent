@@ -130,3 +130,16 @@ export function removeMcpServer(id: string): Promise<void> {
 export function setMcpServerAutoConnect(id: string, enabled: boolean): Promise<void> {
   return activeService.setAutoConnect(id, enabled)
 }
+
+/**
+ * 用户确认了「在本机执行这条命令行」（H2）。确认会落进配置，此后同一条命令行不再问；
+ * 命令行被改过则自动作废，见 stdioLaunchConsent.ts。
+ */
+export function approveMcpServerLaunch(id: string): Promise<void> {
+  return activeService.approveLaunch(id)
+}
+
+/** 用户选择暂不执行：配置照留，不起任何进程。 */
+export function dismissMcpServerLaunch(id: string): void {
+  activeService.dismissLaunch(id)
+}

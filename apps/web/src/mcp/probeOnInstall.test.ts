@@ -1,6 +1,7 @@
 import { createStore } from '@einfach/core'
 import { describe, expect, it, vi } from 'vitest'
 import type { McpServerConfig, McpServerSnapshot } from '@web-agent/tools-mcp'
+import { mcpPendingLaunchConsentsAtom } from './launchConsentState'
 import { createMemoryMcpConfigStorage } from './persistence'
 import { createMcpInstallProber } from './probeOnInstall'
 import { createMcpSettingsService, type McpSettingsManager } from './service'
@@ -209,8 +210,11 @@ describe('MCP 安装即探测', () => {
     )
   })
 
-  it('stdio 一律跳过探测，绝不起进程（该限制由 H2 解除）', async () => {
-    const { store, manager, cacheStorage, service } = setup({ stdio: true })
+  it('stdio 未确认启动命令时不探测（不起进程），确认之后同一条路径才真的探测（H2）', async () => {
+    const { store, manager, cacheStorage, service } = setup({
+      ids: ['playwright'],
+      stdio: true,
+    })
     store.setter(mcpDraftAtom, {
       ...HTTP_DRAFT,
       name: 'Playwright MCP',
@@ -222,9 +226,27 @@ describe('MCP 安装即探测', () => {
 
     await expect(service.submitDraft()).resolves.toBe(true)
 
+    // 保存照常完成，但一个进程都没起：isInstallProbeSupported 在 runProbe 第一行就
+    // 把未确认的 stdio 拦成 deferred，manager.connect 根本没被调用。
     expect(manager.connectCalls).toEqual([])
     expect(await cacheStorage.load()).toEqual({})
-    expect(store.getter(mcpImportStatusAtom)).toContain('stdio')
+    expect(store.getter(mcpImportStatusAtom)).toContain('确认启动命令')
+    expect(store.getter(mcpPendingLaunchConsentsAtom).playwright).toEqual(
+      expect.objectContaining({
+        commandLine: 'npx -y @playwright/mcp@latest',
+        reason: 'install',
+      }),
+    )
+
+    await service.approveLaunch('playwright')
+
+    // 「首次真正起进程」= 安装探测，就在用户确认之后的这一刻。
+    expect(manager.connectCalls).toEqual(['playwright'])
+    expect(manager.disconnectCalls).toEqual(['playwright'])
+    expect((await cacheStorage.load()).playwright).toEqual(
+      expect.objectContaining({ toolCount: 1, probeStatus: 'success' }),
+    )
+    expect(store.getter(mcpPendingLaunchConsentsAtom)).toEqual({})
   })
 
   it('批量导入立刻返回，后台逐个探测并报告进度', async () => {
@@ -260,7 +282,7 @@ describe('MCP 安装即探测', () => {
     expect(Object.keys(await cacheStorage.load()).sort()).toEqual(ids)
   })
 
-  it('批量导入里的 stdio 只计入待确认，不参与探测', async () => {
+  it('批量导入里未确认的 stdio 只计入待确认，不参与探测', async () => {
     const { store, manager, cacheStorage, service } = setup({
       ids: ['import-http', 'import-stdio'],
       stdio: true,
@@ -275,7 +297,7 @@ describe('MCP 安装即探测', () => {
 
     await vi.waitFor(() => {
       expect(store.getter(mcpImportStatusAtom)).toBe(
-        '已导入 2 个 MCP 服务：1 个检测可用，1 个 stdio 服务需手动连接后才检测。',
+        '已导入 2 个 MCP 服务：1 个检测可用，1 个待确认启动命令后才检测。',
       )
     })
     expect(manager.connectCalls).toEqual(['import-http'])

@@ -1,4 +1,5 @@
 import type { McpServerConfig } from '@web-agent/tools-mcp'
+import { sanitizeStdioLaunchConsent } from './stdioLaunchConsent'
 import type {
   McpAddServerDraft,
   McpDraftErrors,
@@ -165,13 +166,13 @@ export function buildPersistedMcpConfig(
     command: draft.command.trim(),
     args: parsedArgs.args,
     ...(cwd ? { cwd } : {}),
-    // The persisted field itself may now legitimately be true (H1) — stdio
-    // is a normal boolean preference at the data-model layer. Whether that
-    // preference is ever allowed to actually start a local process without
-    // an explicit per-launch confirmation is a *runtime* decision gated
-    // elsewhere (service.ts hydrate, submitDraft's connect-on-save branch)
-    // pending the H2 confirmation dialog. Do not re-add a hardcoded false
-    // here; that would defeat the point of this change.
+    // The persisted field itself may legitimately be true (H1) — stdio is a
+    // normal boolean preference at the data-model layer. Whether that
+    // preference is ever allowed to actually start a local process is a
+    // separate question, answered by the launch consent recorded on the
+    // config (H2, see stdioLaunchConsent.ts). A freshly built config never
+    // carries one: consent can only come from the user answering the prompt
+    // for a concrete command line, never from a form draft.
     autoConnect: draft.autoConnect,
   }
 }
@@ -201,6 +202,12 @@ export function sanitizePersistedMcpConfig(value: unknown): PersistedMcpServerCo
   if (!parsedArgs.args) return undefined
   const cwd = normalizeOptionalText(input.cwd, MAX_CWD_LENGTH)
   if (input.cwd !== undefined && !cwd) return undefined
+  // Shape check only: whether this consent still matches the command above is
+  // decided in exactly one place (mayLaunchMcpServer). A stored consent whose
+  // fingerprint no longer matches is kept as-is and simply stops authorizing
+  // anything, so re-editing the command back restores it rather than silently
+  // requiring a second confirmation.
+  const launchConsent = sanitizeStdioLaunchConsent(input.launchConsent)
   return {
     id: input.id,
     name,
@@ -208,6 +215,7 @@ export function sanitizePersistedMcpConfig(value: unknown): PersistedMcpServerCo
     command,
     args: parsedArgs.args,
     ...(cwd ? { cwd } : {}),
+    ...(launchConsent ? { launchConsent } : {}),
     // Round-trip whatever opt-in was actually stored (see `autoConnect`
     // above), instead of silently downgrading a legitimately saved
     // true back to false. Not connecting on that value yet is a runtime

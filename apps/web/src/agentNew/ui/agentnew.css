@@ -3738,6 +3738,48 @@
   color: #b42318;
 }
 
+/*
+ * H2：起进程前的确认。用琥珀色而不是红色——它不是错误，是一次需要用户决定的动作；
+ * 但它必须比普通说明更抢眼，且命令行要以等宽字体整行摆出来（可换行、不截断），
+ * 用户要能逐字核对自己批准的是什么。
+ */
+.agentnew-mcp-launch-consent {
+  display: grid;
+  gap: 6px;
+  margin: 9px 0 0;
+  padding: 10px 12px;
+  border: 1px solid #f5d08a;
+  border-radius: 7px;
+  color: #6b4708;
+  background: #fffaf0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.agentnew-mcp-launch-consent strong {
+  color: #94620a;
+}
+
+.agentnew-mcp-launch-consent p {
+  margin: 0;
+}
+
+.agentnew-mcp-launch-consent code {
+  padding: 7px 9px;
+  border: 1px solid #eddcb8;
+  border-radius: 6px;
+  color: #40320d;
+  background: #fff;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.agentnew-mcp-launch-consent .agentnew-mcp-actions {
+  margin-top: 2px;
+}
+
 .agentnew-mcp-card-footer {
   margin-top: 13px;
   padding-top: 11px;

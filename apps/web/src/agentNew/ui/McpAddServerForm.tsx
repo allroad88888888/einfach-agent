@@ -179,30 +179,36 @@ export function McpAddServerForm({ temporaryStorage }: { temporaryStorage: boole
             </>
           )}
 
-          {draft.transport === 'stdio' ? (
-            <div className="agentnew-mcp-form-manual agentnew-mcp-form-wide" role="note">
-              <strong>仅手动连接</strong>
-              <small>stdio 会启动本地进程，不会从浏览器存储自动执行；每次启动应用后请手动重连。</small>
-            </div>
-          ) : (
-            <label className="agentnew-mcp-form-switch agentnew-mcp-form-wide">
-              <span>
-                <strong>保存后自动连接</strong>
-                <small>
-                  {temporaryStorage
+          {/*
+            stdio 也有这个开关（H2）：它只是「要不要每次启动都连」的偏好，能不能真的
+            执行由保存后的那一次命令行确认决定，勾上它不会让任何命令悄悄跑起来。
+            默认仍然是关（切到 stdio 时置 false），本地进程该由用户明确要求才常驻。
+          */}
+          <label className="agentnew-mcp-form-switch agentnew-mcp-form-wide">
+            <span>
+              <strong>保存后自动连接</strong>
+              <small>
+                {draft.transport === 'stdio'
+                  ? '保存后会先请你确认将执行的命令；确认后立即执行，并在之后每次启动时自动执行。'
+                  : temporaryStorage
                     ? '开启后会立即连接；配置和偏好仅在本次会话有效。'
                     : '开启后保存即连接；开关变化也会立即连接或注销，并作为下次启动偏好。'}
-                </small>
-              </span>
-              <input
-                className="agentnew-settings-checkbox"
-                type="checkbox"
-                checked={draft.autoConnect}
-                aria-label="保存后自动连接"
-                onChange={(event) => updateMcpDraft({ autoConnect: event.target.checked })}
-              />
-            </label>
-          )}
+              </small>
+            </span>
+            <input
+              className="agentnew-settings-checkbox"
+              type="checkbox"
+              checked={draft.autoConnect}
+              aria-label="保存后自动连接"
+              onChange={(event) => updateMcpDraft({ autoConnect: event.target.checked })}
+            />
+          </label>
+          {draft.transport === 'stdio' ? (
+            <div className="agentnew-mcp-form-manual agentnew-mcp-form-wide" role="note">
+              <strong>会在本机启动进程</strong>
+              <small>保存后会把完整命令行摆出来请你确认；未确认前不会执行任何命令。</small>
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="agentnew-mcp-json-panel">
@@ -226,10 +232,10 @@ export function McpAddServerForm({ temporaryStorage }: { temporaryStorage: boole
             不会自动连接；不支持的字段会明确报错，不会静默丢弃。
           </p>
           <div className="agentnew-mcp-form-manual" role="note">
-            <strong>{capabilities.stdio ? '本地服务需手动连接' : '当前是浏览器环境'}</strong>
+            <strong>{capabilities.stdio ? '本地服务需先确认命令' : '当前是浏览器环境'}</strong>
             <small>
               {capabilities.stdio
-                ? '含 command 的 stdio 服务导入后保持未连接，请在列表中手动重连。'
+                ? '含 command 的 stdio 服务导入后保持未连接，每个服务的卡片上会请你确认将执行的命令。'
                 : '含 command 的 stdio 配置可以保存，但浏览器无法启动；请在桌面端重新导入或配置后手动连接。'}
             </small>
           </div>

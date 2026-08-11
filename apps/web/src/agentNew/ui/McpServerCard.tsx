@@ -1,3 +1,4 @@
+import type { McpLaunchConsentRequest } from '../../mcp/launchConsentState'
 import type { McpServerOperation, McpServerView } from '../../mcp/types'
 import {
   disconnectMcpServer,
@@ -5,6 +6,7 @@ import {
   removeMcpServer,
   setMcpServerAutoConnect,
 } from '../../mcp/commands'
+import { McpLaunchConsentPrompt } from './McpLaunchConsentPrompt'
 
 function statusLabel(server: McpServerView, operation?: McpServerOperation): string {
   if (operation === 'disconnect') return '注销中'
@@ -64,21 +66,52 @@ function statusNote(server: McpServerView): McpStatusNote | undefined {
   return undefined
 }
 
+/**
+ * 自动连接开关的说明。
+ *
+ * stdio 也有这个开关（H2）：开关是【偏好】——要不要每次启动都连；确认是【授权】——
+ * 这条命令行能不能在本机执行。两件事正交，所以没有理由因为「可能还没确认」就把偏好
+ * 藏起来。打开它而命令行还没确认时不会静默起进程，只会在同一张卡片上问一次。
+ */
+function autoConnectHint(server: McpServerView, temporaryStorage: boolean): string {
+  if (server.transport === 'stdio') {
+    return temporaryStorage
+      ? '开启后每次启动都会执行该命令；首次需确认命令行，偏好仅在本次会话有效'
+      : '开启后每次启动应用都会自动执行该命令；首次需确认命令行'
+  }
+  return temporaryStorage
+    ? '切换会立即连接或注销；偏好仅在本次会话有效'
+    : '切换会立即连接或注销，并保存为启动偏好'
+}
+
 /** Renders one persisted MCP server and its connection controls. */
 export function McpServerCard({
   server,
   operation,
   stdioAvailable,
   temporaryStorage,
+  launchRequest,
+  launchConfirmed = true,
 }: {
   server: McpServerView
   operation?: McpServerOperation
   stdioAvailable: boolean
   temporaryStorage: boolean
+  /** 待用户确认的启动命令；有值时卡片上会摆出完整命令行（H2）。 */
+  launchRequest?: McpLaunchConsentRequest
+  /** stdio 的当前命令行是否已被确认过；HTTP 恒为 true。 */
+  launchConfirmed?: boolean
 }) {
   const busy = operation !== undefined
   const transportUnavailable = server.transport === 'stdio' && !stdioAvailable
   const note = statusNote(server)
+  // 只在「停着、而且没有正在等确认的命令行」时解释为什么它没连上：已经摆出确认时不必
+  // 重复一遍；正在跑时更不能说「尚未确认」——模型那条路径（F3 的工具确认）也能把 stdio
+  // 连起来，那时进程确实在跑，只是设置里还没记下这条命令行的确认。
+  const unconfirmedLaunch = !launchConfirmed
+    && !transportUnavailable
+    && !launchRequest
+    && server.status === 'disconnected'
   return (
     <article className="agentnew-mcp-card" aria-label={`MCP 服务 ${server.name}`}>
       <div className="agentnew-mcp-card-head">
@@ -96,24 +129,16 @@ export function McpServerCard({
               : `stdio${transportUnavailable ? ' · 仅桌面端' : ''}`}
           </span>
         </div>
-        {server.transport === 'stdio' ? (
+        {transportUnavailable ? (
           <div className="agentnew-mcp-manual-connect">
-            <strong>手动连接</strong>
-            <small>
-              {transportUnavailable
-                ? '当前浏览器不可用；本地进程仅能在桌面端启动'
-                : '本地进程需每次手动重连'}
-            </small>
+            <strong>仅桌面端</strong>
+            <small>当前浏览器不可用；本地进程仅能在桌面端启动</small>
           </div>
         ) : (
           <label className="agentnew-mcp-auto-connect">
             <span>
               <strong>自动连接</strong>
-              <small>
-                {temporaryStorage
-                  ? '切换会立即连接或注销；偏好仅在本次会话有效'
-                  : '切换会立即连接或注销，并保存为启动偏好'}
-              </small>
+              <small>{autoConnectHint(server, temporaryStorage)}</small>
             </span>
             <input
               className="agentnew-settings-checkbox"
@@ -139,6 +164,14 @@ export function McpServerCard({
         </div>
       ) : null}
       {server.cwd ? <div className="agentnew-mcp-detail">工作目录：{server.cwd}</div> : null}
+      {launchRequest ? <McpLaunchConsentPrompt request={launchRequest} /> : null}
+      {unconfirmedLaunch ? (
+        <div className="agentnew-mcp-status-note is-retry" role="status">
+          <strong>启动命令尚未确认</strong>
+          <p>这个服务会在本机启动进程，第一次执行前需要你确认命令行。</p>
+          <p>点击下方「重连」查看将执行的命令并确认。</p>
+        </div>
+      ) : null}
       {note ? (
         <div
           className={`agentnew-mcp-status-note is-${note.tone}`}

@@ -1,6 +1,10 @@
 import { useAtomValue } from '@einfach/react'
 import { closeMcpAddForm, openMcpAddForm } from '../../mcp/commands'
 import {
+  mcpPendingLaunchConsentsAtom,
+  mcpUnconfirmedLaunchIdsAtom,
+} from '../../mcp/launchConsentState'
+import {
   mcpAddFormOpenAtom,
   mcpHydrationAtom,
   mcpImportStatusAtom,
@@ -21,6 +25,10 @@ export function McpSettingsPanel() {
   const importStatus = useAtomValue(mcpImportStatusAtom)
   const persistenceMode = useAtomValue(mcpPersistenceModeAtom)
   const addFormOpen = useAtomValue(mcpAddFormOpenAtom)
+  // 起进程确认（H2）：待确认的命令行，以及「命令行还没被确认过」的服务。两者都按
+  // serverId 分发到对应卡片上——一次导入可能带进来多个 stdio 服务。
+  const pendingLaunchConsents = useAtomValue(mcpPendingLaunchConsentsAtom)
+  const unconfirmedLaunchIds = useAtomValue(mcpUnconfirmedLaunchIdsAtom)
   const temporaryStorage = persistenceMode === 'temporary'
 
   return (
@@ -72,6 +80,8 @@ export function McpSettingsPanel() {
               operation={operations[server.id]}
               stdioAvailable={capabilities.stdio}
               temporaryStorage={temporaryStorage}
+              launchRequest={pendingLaunchConsents[server.id]}
+              launchConfirmed={!unconfirmedLaunchIds.has(server.id)}
             />
           ))}
         </div>

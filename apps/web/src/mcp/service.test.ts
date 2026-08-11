@@ -1,6 +1,7 @@
 import { createStore } from '@einfach/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { McpServerSnapshot } from '@web-agent/tools-mcp'
+import { mcpPendingLaunchConsentsAtom } from './launchConsentState'
 import { createMcpSettingsService, type McpSettingsManager } from './service'
 import { createStorage, FakeMcpManager } from './service.fixtures'
 import {
@@ -158,7 +159,7 @@ describe('MCP settings service', () => {
     expect(store.getter(mcpFormErrorAtom)).toContain('密钥')
   })
 
-  it('persists a forged stdio autoConnect:true (H1) but never connects on save; only an explicit reconnect does (H2 gate pending)', async () => {
+  it('persists a forged stdio autoConnect:true (H1) but never connects on save, and an explicit reconnect only asks for launch consent (H2)', async () => {
     const store = createStore()
     const { storage, save } = createStorage()
     const service = createMcpSettingsService({
@@ -175,10 +176,10 @@ describe('MCP settings service', () => {
       command: 'npx',
       argsText: '-y\n@playwright/mcp@latest',
       cwd: '',
-      // The real form never produces this for stdio (it forces false on
-      // transport switch and offers no checkbox), but a stale/forged draft
-      // value must still be storable as-is (H1) without submitDraft using it
-      // to start a local process before the H2 confirmation gate exists.
+      // The form defaults this to false when switching to stdio, but a
+      // stale/forged draft value must still be storable as-is (H1) without
+      // submitDraft using it to start a local process: a brand new config
+      // never carries a launch consent, so nothing may run yet (H2).
       autoConnect: true,
     })
 
@@ -198,7 +199,19 @@ describe('MCP settings service', () => {
       status: 'disconnected',
     }))
 
+    // 「重连」也不是起进程的授权：它只把将执行的命令行摆出来等确认（H2）。
     await service.reconnect('playwright')
+
+    expect(manager.connectCalls).toHaveLength(0)
+    expect(manager.reconnectCalls).toHaveLength(0)
+    expect(store.getter(mcpPendingLaunchConsentsAtom).playwright).toEqual(
+      expect.objectContaining({
+        commandLine: 'npx -y @playwright/mcp@latest',
+        reason: 'connect',
+      }),
+    )
+
+    await service.approveLaunch('playwright')
 
     expect(manager.connectCalls).toEqual([{
       id: 'playwright',

@@ -61,6 +61,45 @@ describe('SettingsCenter MCP panel', () => {
     expect(connect).not.toHaveBeenCalled()
   })
 
+  it('asks for confirmation before the first stdio launch and only spawns after it (H2)', async () => {
+    const user = userEvent.setup()
+    const manager = new UiMcpManager()
+    const connect = vi.spyOn(manager, 'connect')
+    // 桌面端能力：这里 stdio 是真的能起进程的，所以确认必须先发生。
+    configureMcpSettings({
+      manager,
+      storage: createMemoryMcpConfigStorage(),
+      capabilities: { stdio: true },
+    })
+    renderWithStore(<SettingsCenter />, { store: rootStore })
+    await user.click(screen.getByRole('button', { name: '打开设置' }))
+    await user.click(await screen.findByRole('button', { name: '+ 添加服务' }))
+    await user.type(screen.getByLabelText('服务名称'), '本地浏览器')
+    await user.selectOptions(screen.getByLabelText('传输方式'), 'stdio')
+    await user.type(screen.getByLabelText('启动命令'), 'npx')
+    await user.type(screen.getByLabelText('启动参数'), '-y\n@playwright/mcp@latest')
+    await user.click(screen.getByRole('button', { name: '保存服务' }))
+
+    // 配置已经保存，但确认之前一个进程都没起。
+    const card = await screen.findByRole('article', { name: 'MCP 服务 本地浏览器' })
+    const prompt = await screen.findByRole('alert', { name: '确认启动 本地浏览器' })
+    expect(prompt).toHaveTextContent('npx -y @playwright/mcp@latest')
+    expect(connect).not.toHaveBeenCalled()
+
+    await user.click(screen.getByRole('button', { name: '确认并执行' }))
+
+    await waitFor(() => expect(connect).toHaveBeenCalledTimes(1))
+    expect(connect.mock.calls[0]?.[0]).toEqual(expect.objectContaining({
+      transport: 'stdio',
+      command: 'npx',
+      args: ['-y', '@playwright/mcp@latest'],
+    }))
+    // 确认落在配置上，提示随之消失；卡片不再说「尚未确认」。
+    await waitFor(() =>
+      expect(screen.queryByRole('alert', { name: '确认启动 本地浏览器' })).toBeNull())
+    expect(card).not.toHaveTextContent('启动命令尚未确认')
+  })
+
   it('adds an HTTP server and keeps invalid JSON editable', async () => {
     const user = userEvent.setup()
     renderWithStore(<SettingsCenter />, { store: rootStore })

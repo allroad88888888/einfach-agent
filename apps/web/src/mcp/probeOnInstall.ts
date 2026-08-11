@@ -21,13 +21,14 @@ import type {
   McpServerSnapshot,
 } from '@web-agent/tools-mcp'
 import { toManagerConfig } from './config'
+import { mayLaunchMcpServer } from './stdioLaunchConsent'
 import { toCachedTools, type McpToolNameCacheWrite } from './toolNameCacheWriter'
 import type { PersistedMcpServerConfig } from './types'
 
 export type McpInstallProbeOutcome =
   | { readonly kind: 'success'; readonly toolCount: number }
   | { readonly kind: 'failed'; readonly message: string }
-  /** stdio：H2 的确认门上线前不探测，见 isInstallProbeSupported。 */
+  /** stdio 的启动命令还没被确认过：不起进程，等用户确认，见 isInstallProbeSupported。 */
   | { readonly kind: 'deferred' }
   /** 排到串行槽位时服务已被删除，或 service 已 dispose。 */
   | { readonly kind: 'skipped' }
@@ -74,15 +75,18 @@ export interface McpInstallProber {
 }
 
 /**
- * 能否在安装时探测这个服务。
+ * 能否现在就探测这个服务。
  *
- * 【本限制由 H2 解除】stdio 的探测会在本机真的起一个子进程，必须先有「将执行
- * `<command> <args>`」的确认门（issue H2）才允许发生。在那之前 stdio 只留桩：
- * 这里返回 false，探测路径直接给出 deferred，绝不调 manager.connect。
- * HTTP 只发网络请求，是用户点「保存」的直接后果，不需要额外确认。
+ * stdio 的探测会在本机真的起一个子进程，所以它要过「将执行 `<command> <args>`」这道
+ * 确认门（H2）：确认落在配置上，判定只有 mayLaunchMcpServer 一处。未确认的 stdio 在
+ * runProbe 第一行就拿到 deferred，绝不调 manager.connect——门装在这里而不是靠调用方
+ * 自觉，是因为本文件是安装路径上唯一直通 manager.connect 的地方。
+ *
+ * HTTP 只发网络请求、不起进程，是用户点「保存」的直接后果，不需要额外确认（与 F3 给
+ * `connect_mcp_server` 的风险分级同一套判据）。
  */
 export function isInstallProbeSupported(config: PersistedMcpServerConfig): boolean {
-  return config.transport === 'streamable-http'
+  return mayLaunchMcpServer(config)
 }
 
 function probeErrorMessage(error: unknown): string {
@@ -108,7 +112,7 @@ function describeInstallProbe(
     case 'failed':
       return `已保存「${name}」，但连接检测失败：${outcome.message}。配置已保留，修正后可在下方卡片点「重连」。`
     case 'deferred':
-      return `已保存「${name}」：stdio 服务会在本机启动进程，需你手动连接后才检测工具。`
+      return `已保存「${name}」：它会在本机启动进程，确认启动命令后才会执行并检测工具。`
     case 'skipped':
       return undefined
   }
@@ -126,7 +130,7 @@ function describeImportProbe(summary: {
     parts.push(`${summary.failed} 个检测失败（配置已保存，原因见下方卡片）`)
   }
   if (summary.deferred > 0) {
-    parts.push(`${summary.deferred} 个 stdio 服务需手动连接后才检测`)
+    parts.push(`${summary.deferred} 个待确认启动命令后才检测`)
   }
   if (parts.length === 0) parts.push('未做连接检测')
   return `已导入 ${summary.total} 个 MCP 服务：${parts.join('，')}。`

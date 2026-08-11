@@ -1,6 +1,13 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { renderWithStore } from '../../test/renderWithStore'
+import {
+  approveMcpServerLaunch,
+  dismissMcpServerLaunch,
+  setMcpServerAutoConnect,
+} from '../../mcp/commands'
+import type { McpLaunchConsentRequest } from '../../mcp/launchConsentState'
 import type { McpServerView } from '../../mcp/types'
 import { McpServerCard } from './McpServerCard'
 
@@ -13,6 +20,8 @@ vi.mock('../../mcp/commands', () => ({
   reconnectMcpServer: vi.fn(),
   removeMcpServer: vi.fn(),
   setMcpServerAutoConnect: vi.fn(),
+  approveMcpServerLaunch: vi.fn(),
+  dismissMcpServerLaunch: vi.fn(),
 }))
 
 function baseServer(overrides: Partial<McpServerView>): McpServerView {
@@ -97,6 +106,155 @@ describe('McpServerCard', () => {
     const server = baseServer({ status: 'connected' })
     renderWithStore(<McpServerCard server={server} stdioAvailable={false} temporaryStorage={false} />)
 
+    expect(screen.queryByRole('alert')).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
+  })
+})
+
+// H2：起进程前的确认长在【它自己那张卡片】上——一次导入可能带进来好几个 stdio 服务，
+// 「哪条命令属于哪个服务」不能靠顺序猜。
+describe('McpServerCard · stdio 起进程确认', () => {
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
+
+  function stdioServer(overrides: Partial<McpServerView> = {}): McpServerView {
+    return baseServer({
+      id: 'playwright',
+      name: 'Playwright MCP',
+      transport: 'stdio',
+      target: 'npx',
+      args: ['-y', '@playwright/mcp@latest'],
+      autoConnect: false,
+      status: 'disconnected',
+      toolCount: 0,
+      ...overrides,
+    })
+  }
+
+  const REQUEST: McpLaunchConsentRequest = {
+    id: 'playwright',
+    name: 'Playwright MCP',
+    commandLine: 'npx -y @playwright/mcp@latest',
+    reason: 'install',
+    autoConnect: false,
+  }
+
+  it('待确认时把完整命令行摆出来，两个按钮各自调对应命令', async () => {
+    const user = userEvent.setup()
+    renderWithStore(
+      <McpServerCard
+        server={stdioServer()}
+        stdioAvailable
+        temporaryStorage={false}
+        launchRequest={REQUEST}
+        launchConfirmed={false}
+      />,
+    )
+
+    const prompt = screen.getByRole('alert', { name: '确认启动 Playwright MCP' })
+    expect(prompt).toHaveTextContent('npx -y @playwright/mcp@latest')
+    // 不能只说「会启动一个本地进程」——用户要能逐字核对自己批准的是什么。
+    expect(prompt).toHaveTextContent('会在你的电脑上执行')
+
+    await user.click(screen.getByRole('button', { name: '确认并执行' }))
+    expect(approveMcpServerLaunch).toHaveBeenCalledWith('playwright')
+
+    await user.click(screen.getByRole('button', { name: '暂不执行' }))
+    expect(dismissMcpServerLaunch).toHaveBeenCalledWith('playwright')
+  })
+
+  it('自动连接开启时提示说明「之后每次启动都会自动执行」', () => {
+    renderWithStore(
+      <McpServerCard
+        server={stdioServer({ autoConnect: true })}
+        stdioAvailable
+        temporaryStorage={false}
+        launchRequest={{ ...REQUEST, reason: 'auto-connect', autoConnect: true }}
+        launchConfirmed={false}
+      />,
+    )
+
+    expect(screen.getByRole('alert')).toHaveTextContent('每次启动应用都会自动执行')
+  })
+
+  it('未确认且没有待确认请求：说清楚为什么没连，并指向「重连」', () => {
+    renderWithStore(
+      <McpServerCard
+        server={stdioServer()}
+        stdioAvailable
+        temporaryStorage={false}
+        launchConfirmed={false}
+      />,
+    )
+
+    const note = screen.getByRole('status')
+    expect(note).toHaveTextContent('启动命令尚未确认')
+    expect(note).toHaveTextContent('重连')
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('stdio 也有自动连接开关：它是偏好，执行权归确认（H2）', async () => {
+    const user = userEvent.setup()
+    renderWithStore(
+      <McpServerCard
+        server={stdioServer()}
+        stdioAvailable
+        temporaryStorage={false}
+        launchConfirmed={false}
+      />,
+    )
+
+    const toggle = screen.getByRole('checkbox', { name: 'Playwright MCP 自动连接' })
+    expect(toggle).not.toBeChecked()
+    expect(screen.getByRole('article', { name: 'MCP 服务 Playwright MCP' }))
+      .toHaveTextContent('首次需确认命令行')
+
+    await user.click(toggle)
+    // UI 只负责表达偏好；起不起进程由 service 那边的确认门决定。
+    expect(setMcpServerAutoConnect).toHaveBeenCalledWith('playwright', true)
+  })
+
+  it('浏览器里不给 stdio 开关，也不提确认：那里根本起不了进程', () => {
+    renderWithStore(
+      <McpServerCard
+        server={stdioServer()}
+        stdioAvailable={false}
+        temporaryStorage={false}
+        launchConfirmed={false}
+      />,
+    )
+
+    expect(screen.queryByRole('checkbox')).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.getByRole('article', { name: 'MCP 服务 Playwright MCP' }))
+      .toHaveTextContent('仅桌面端')
+  })
+
+  it('已经连上的 stdio 不说「尚未确认」：模型那条路径（F3 的工具确认）也能把它连起来', () => {
+    renderWithStore(
+      <McpServerCard
+        server={stdioServer({ status: 'connected', toolCount: 2 })}
+        stdioAvailable
+        temporaryStorage={false}
+        launchConfirmed={false}
+      />,
+    )
+
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('已确认过的 stdio：开关照常用，不再显示任何确认提示', () => {
+    renderWithStore(
+      <McpServerCard
+        server={stdioServer({ autoConnect: true, status: 'connected', toolCount: 3 })}
+        stdioAvailable
+        temporaryStorage={false}
+      />,
+    )
+
+    expect(screen.getByRole('checkbox', { name: 'Playwright MCP 自动连接' })).toBeChecked()
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.queryByRole('status')).toBeNull()
   })

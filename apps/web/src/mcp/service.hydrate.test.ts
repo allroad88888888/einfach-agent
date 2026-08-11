@@ -42,14 +42,16 @@ describe('MCP settings service · hydrate', () => {
     manager = new FakeMcpManager()
   })
 
-  it('hydrates once, auto-connects HTTP, and never auto-starts stdio even when its persisted autoConnect is true (H1 data model, H2 gate pending)', async () => {
+  it('hydrates once, auto-connects HTTP, and never auto-starts a stdio server whose launch command was never confirmed, even with autoConnect: true (H1 + H2)', async () => {
     const store = createStore()
     const autoStdio: PersistedMcpServerConfig = {
       ...STDIO_MANUAL,
-      // H1: this is now a legitimately persistable value, not a hardcoded
-      // false. hydrate must still never turn it into a real connection —
-      // that requires the H2 confirmation gate — and, just as importantly,
-      // must not silently rewrite this back to false on disk either.
+      // H1: this is a legitimately persistable value, not a hardcoded false.
+      // H2: turning it into a real connection additionally requires a stored
+      // launch consent for this exact command line (see
+      // service.launchConsent.test.ts for the confirmed counterpart). Without
+      // one, hydrate must neither connect nor silently rewrite the preference
+      // back to false on disk.
       autoConnect: true,
     }
     const { storage, load, save } = createStorage([HTTP_AUTO, autoStdio])
