@@ -14,14 +14,15 @@ use tauri::{AppHandle, Manager};
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-const CONFIG_DIRECTORY: &str = ".web-agent";
+const CONFIG_DIRECTORY: &str = ".webAgent";
+const LEGACY_CONFIG_DIRECTORY: &str = ".web-agent";
 const CONFIG_FILE: &str = "config.json";
 const CONFIG_DIRECTORY_ENV: &str = "WEB_AGENT_CONFIG_DIR";
 const CONFIG_VERSION: u8 = 1;
 
 static CONFIG_LOCK: Mutex<()> = Mutex::new(());
 
-/** `~/.web-agent/config.json` 的顶层形状：一个版本号加任意多个具名配置段。 */
+/** `~/.webAgent/config.json` 的顶层形状：一个版本号加任意多个具名配置段。 */
 #[derive(Debug, Deserialize, Serialize)]
 struct WebAgentConfig {
     #[serde(default = "config_version")]
@@ -53,6 +54,7 @@ fn lock_config() -> Result<MutexGuard<'static, ()>, String> {
 #[derive(Clone, Debug)]
 pub struct WebAgentConfigStore {
     path: PathBuf,
+    legacy_path: Option<PathBuf>,
 }
 
 impl WebAgentConfigStore {
@@ -77,8 +79,11 @@ impl WebAgentConfigStore {
         home: PathBuf,
         config_directory_override: Option<OsString>,
     ) -> Result<Self, String> {
-        let config_directory = match config_directory_override {
-            None => home.join(CONFIG_DIRECTORY),
+        let (config_directory, legacy_path) = match config_directory_override {
+            None => (
+                home.join(CONFIG_DIRECTORY),
+                Some(home.join(LEGACY_CONFIG_DIRECTORY).join(CONFIG_FILE)),
+            ),
             Some(directory) if directory.is_empty() => {
                 return Err("WEB_AGENT_CONFIG_DIR 不能为空".to_string())
             }
@@ -88,11 +93,12 @@ impl WebAgentConfigStore {
                     return Err("WEB_AGENT_CONFIG_DIR 必须是绝对路径".to_string());
                 }
                 validate_existing_config_directory(&path)?;
-                path
+                (path, None)
             }
         };
         Ok(Self {
             path: config_directory.join(CONFIG_FILE),
+            legacy_path,
         })
     }
 
@@ -139,16 +145,14 @@ impl WebAgentConfigStore {
         let contents = match fs::read_to_string(&self.path) {
             Ok(contents) => contents,
             Err(error) if error.kind() == ErrorKind::NotFound => {
-                return Ok(WebAgentConfig::default())
+                match self.migrate_legacy_config()? {
+                    Some(contents) => contents,
+                    None => return Ok(WebAgentConfig::default()),
+                }
             }
             Err(_) => return Err("无法读取模型配置文件".to_string()),
         };
-        let config: WebAgentConfig =
-            serde_json::from_str(&contents).map_err(|_| "模型配置文件格式无效".to_string())?;
-        if config.version != CONFIG_VERSION {
-            return Err("模型配置文件版本不受支持".to_string());
-        }
-        Ok(config)
+        parse_config(&contents)
     }
 
     fn write_config(&self, config: &WebAgentConfig) -> Result<(), String> {
@@ -156,6 +160,30 @@ impl WebAgentConfigStore {
             serde_json::to_vec_pretty(config).map_err(|_| "无法编码模型配置文件".to_string())?;
         write_restricted_atomically(&self.path, &contents)
     }
+
+    fn migrate_legacy_config(&self) -> Result<Option<String>, String> {
+        let Some(legacy_path) = &self.legacy_path else {
+            return Ok(None);
+        };
+        let contents = match fs::read_to_string(legacy_path) {
+            Ok(contents) => contents,
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(_) => return Err("无法读取旧模型配置文件".to_string()),
+        };
+        parse_config(&contents).map_err(|_| "旧模型配置文件格式无效".to_string())?;
+        write_restricted_atomically(&self.path, contents.as_bytes())
+            .map_err(|_| "无法迁移旧模型配置文件".to_string())?;
+        Ok(Some(contents))
+    }
+}
+
+fn parse_config(contents: &str) -> Result<WebAgentConfig, String> {
+    let config: WebAgentConfig =
+        serde_json::from_str(contents).map_err(|_| "模型配置文件格式无效".to_string())?;
+    if config.version != CONFIG_VERSION {
+        return Err("模型配置文件版本不受支持".to_string());
+    }
+    Ok(config)
 }
 
 fn validate_existing_config_directory(path: &PathBuf) -> Result<(), String> {
@@ -177,3 +205,7 @@ fn validate_existing_config_directory(path: &PathBuf) -> Result<(), String> {
 #[cfg(test)]
 #[path = "web_agent_config_store_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "web_agent_config_store_migration_tests.rs"]
+mod migration_tests;

@@ -38,7 +38,7 @@ fn stored_config(config_directory: &PathBuf) -> serde_json::Value {
 }
 
 fn write_fixture(home: &TestHome, contents: &str) {
-    let directory = home.0.join(".web-agent");
+    let directory = home.0.join(".webAgent");
     fs::create_dir_all(&directory).expect("create config directory");
     fs::write(directory.join("config.json"), contents).expect("write config fixture");
 }
@@ -47,7 +47,7 @@ fn write_fixture(home: &TestHome, contents: &str) {
 fn uses_the_hidden_web_agent_config_path_without_an_override() {
     let home = test_home();
     let store = WebAgentConfigStore::from_home_directory(home.0.clone());
-    assert_eq!(store.path, home.0.join(".web-agent/config.json"));
+    assert_eq!(store.path, home.0.join(".webAgent/config.json"));
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn uses_an_absolute_config_directory_override_for_reads_and_writes() {
         stored_config(&config_directory)["mcp"]["servers"][0],
         "local"
     );
-    assert!(!home.0.join(".web-agent/config.json").exists());
+    assert!(!home.0.join(".webAgent/config.json").exists());
 }
 
 #[test]
@@ -171,7 +171,7 @@ fn writing_a_section_keeps_other_top_level_keys() {
         .write_section("mcp", json!({ "servers": ["local"] }))
         .expect("write section");
 
-    let config = stored_config(&home.0.join(".web-agent"));
+    let config = stored_config(&home.0.join(".webAgent"));
     assert_eq!(config["version"], 1);
     assert_eq!(config["mcp"]["servers"][0], "local");
     assert_eq!(config["modelCredentials"]["deepseek:default"], "test-key");
@@ -195,13 +195,13 @@ fn updating_a_section_sees_the_current_value_and_can_remove_it() {
         })
         .expect("update section");
     assert_eq!(
-        stored_config(&home.0.join(".web-agent"))["mcp"]["servers"][0],
+        stored_config(&home.0.join(".webAgent"))["mcp"]["servers"][0],
         "local"
     );
 
     store.remove_section("mcp").expect("remove section");
     assert_eq!(store.read_section("mcp"), Ok(None));
-    assert_eq!(stored_config(&home.0.join(".web-agent"))["version"], 1);
+    assert_eq!(stored_config(&home.0.join(".webAgent"))["version"], 1);
 }
 
 #[test]
@@ -215,7 +215,7 @@ fn keeps_the_file_untouched_when_an_update_fails() {
         Err("拒绝写入".to_string())
     );
     assert_eq!(
-        stored_config(&home.0.join(".web-agent"))["mcp"],
+        stored_config(&home.0.join(".webAgent"))["mcp"],
         json!({ "servers": [] })
     );
 }
@@ -235,7 +235,7 @@ fn rejects_a_corrupted_config_file() {
         Err("模型配置文件格式无效".to_string())
     );
     assert_eq!(
-        fs::read_to_string(home.0.join(".web-agent/config.json")).expect("read config"),
+        fs::read_to_string(home.0.join(".webAgent/config.json")).expect("read config"),
         "{ not json"
     );
 }
@@ -251,9 +251,9 @@ fn restricts_the_config_directory_and_file_to_the_current_user() {
         .write_section("mcp", json!({ "servers": [] }))
         .expect("write section");
 
-    let directory = fs::metadata(home.0.join(".web-agent")).expect("read directory metadata");
+    let directory = fs::metadata(home.0.join(".webAgent")).expect("read directory metadata");
     assert_eq!(directory.permissions().mode() & 0o777, 0o700);
-    let file = fs::metadata(home.0.join(".web-agent/config.json")).expect("read metadata");
+    let file = fs::metadata(home.0.join(".webAgent/config.json")).expect("read metadata");
     assert_eq!(file.permissions().mode() & 0o777, 0o600);
 }
 
