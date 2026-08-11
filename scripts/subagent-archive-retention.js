@@ -79,7 +79,7 @@ function helpText() {
     '  node scripts/subagent-archive-retention.js --prune --max-bytes <n> --export <directory> --write [--base <workspace>]',
     '  node scripts/subagent-archive-retention.js --export <directory> --conversation <id> --run <id> --write [--base <workspace>]',
     '  node scripts/subagent-archive-retention.js --restore <directory> --write [--base <workspace>]', '',
-    'The prune export directory must be outside .agent-archive and must not already exist.',
+    'The prune export directory must be outside .webAgent-archive and must not already exist.',
   ].join('\n') + '\n'
 }
 
@@ -174,7 +174,7 @@ async function manifestRun(run, files) {
 }
 
 async function createExport({ archiveRoot, exportPath, kind, runs, archiveBytesBefore, projectedArchiveBytesAfter, derivedOnly }) {
-  if (isInside(archiveRoot, exportPath)) throw new Error('export directory must be outside .agent-archive')
+  if (isInside(archiveRoot, exportPath)) throw new Error('export directory must be outside .webAgent-archive')
   if (await pathType(exportPath)) throw new Error(`export directory already exists: ${exportPath}`)
   const selectedRuns = await Promise.all(runs.map((run) => manifestRun(run, derivedOnly ? run.files.filter((file) => isDerivedArchivePath(file.relativePath)) : run.files)))
   const manifest = createArchiveRetentionManifest({ kind, createdAt: new Date().toISOString(), archiveBytesBefore, projectedArchiveBytesAfter, selectedRuns })
@@ -254,7 +254,7 @@ async function exportRun(archiveRoot, options) {
 }
 
 async function restore(archiveRoot, options) {
-  if (isInside(archiveRoot, options.restorePath)) throw new Error('restore directory must be outside .agent-archive')
+  if (isInside(archiveRoot, options.restorePath)) throw new Error('restore directory must be outside .webAgent-archive')
   const manifestPath = resolve(options.restorePath, 'manifest.json')
   const manifest = validateArchiveRetentionManifest(JSON.parse(await readFile(manifestPath, 'utf8')))
   if (manifest.kind !== 'subagent_retention_prune') throw new Error('only a retention prune export can be restored')
@@ -282,7 +282,7 @@ async function run() {
   const options = parseArgs(process.argv)
   if (options.help) return process.stdout.write(helpText())
   const basePath = isAbsolute(options.basePath) ? options.basePath : resolve(process.cwd(), options.basePath)
-  const archiveRoot = resolve(basePath, '.agent-archive')
+  const archiveRoot = resolve(basePath, '.webAgent-archive')
   options.exportPath = options.exportPath ? resolve(basePath, options.exportPath) : undefined
   options.restorePath = options.restorePath ? resolve(basePath, options.restorePath) : undefined
   if (options.action === 'prune') return prune(archiveRoot, options)

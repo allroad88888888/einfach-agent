@@ -115,7 +115,7 @@ function printHelp() {
     '',
     'Examples:',
     '  node scripts/subagent-replay-report.js -c c1 -r r1',
-    '  node scripts/subagent-replay-report.js --events .agent-archive/conversations/c1/runs/r1/events.jsonl --json > replay.json',
+    '  node scripts/subagent-replay-report.js --events .webAgent-archive/conversations/c1/runs/r1/events.jsonl --json > replay.json',
   ]
   return `${lines.join('\n')}\n`
 }
@@ -123,7 +123,7 @@ function printHelp() {
 function resolveArchivePaths(opts) {
   const archiveRoot = resolve(
     opts.basePath,
-    '.agent-archive',
+    '.webAgent-archive',
     'conversations',
     safeSegment(opts.conversationId),
     'runs',

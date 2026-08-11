@@ -12,7 +12,7 @@ const cli = resolve(process.cwd(), 'scripts/subagent-archive-retention.js')
 async function fixture() {
   const base = await mkdtemp(join(tmpdir(), 'subagent-retention-'))
   const exportParent = await mkdtemp(join(tmpdir(), 'subagent-retention-export-'))
-  const runRoot = join(base, '.agent-archive', 'conversations', 'conversation', 'runs', 'run')
+  const runRoot = join(base, '.webAgent-archive', 'conversations', 'conversation', 'runs', 'run')
   await mkdir(join(runRoot, 'nodes'), { recursive: true })
   await mkdir(join(runRoot, 'results'), { recursive: true })
   await mkdir(join(runRoot, 'traces'), { recursive: true })
@@ -82,7 +82,7 @@ describe('subagent archive retention', () => {
     expect(restored.stdout).toContain('events_preserved=true')
     expect(await readFile(join(runRoot, 'tree.json'), 'utf8')).toBe(tree)
     expect(await readFile(join(runRoot, 'events.jsonl'), 'utf8')).toBe(beforeRestoreEvents)
-    const audit = (await readFile(join(base, '.agent-archive', 'governance', 'retention-actions.jsonl'), 'utf8'))
+    const audit = (await readFile(join(base, '.webAgent-archive', 'governance', 'retention-actions.jsonl'), 'utf8'))
       .trim().split('\n').map(JSON.parse)
     expect(audit.map((record) => `${record.action}:${record.state}`)).toEqual([
       'prune:exported', 'prune:completed', 'restore:started', 'restore:completed',

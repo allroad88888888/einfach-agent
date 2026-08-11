@@ -152,9 +152,9 @@ function makeProjectCtx(opts?: {
   readFails?: string
 }): ToolContext {
   const files = opts?.files ?? {
-    '.agent/skills/deploy-flow/SKILL.md':
+    '.webAgent/skills/deploy-flow/SKILL.md':
       '---\nname: deploy-flow\ndescription: 何时用：发布相关\n---\n\n正文第一行\n正文第二行\n',
-    '.agent/skills/deploy-flow/references/checklist.md': '# checklist\n- 一\n- 二\n',
+    '.webAgent/skills/deploy-flow/references/checklist.md': '# checklist\n- 一\n- 二\n',
   }
   const ctx = makeCtx() as ToolContext & Record<string, unknown>
   ctx.readWorkspaceFile = vi.fn(async ({ path }: { path: string }) => {
@@ -170,8 +170,8 @@ function makeProjectCtx(opts?: {
     resolveProjectPath: (name: string) =>
       name === 'project/deploy-flow'
         ? {
-            filePath: '.agent/skills/deploy-flow/SKILL.md',
-            resources: { 'references/checklist.md': '.agent/skills/deploy-flow/references/checklist.md' },
+            filePath: '.webAgent/skills/deploy-flow/SKILL.md',
+            resources: { 'references/checklist.md': '.webAgent/skills/deploy-flow/references/checklist.md' },
           }
         : undefined,
   }
@@ -199,7 +199,7 @@ describe('tools/skill-read/skill-read · 项目 skills', () => {
     expect((result as { data: { content: string } }).data.content).toBe('# checklist\n- 一\n- 二\n')
     // 路径必须来自快照，而不是把模型给的 resource 串拼进去
     expect(ctx.readWorkspaceFile).toHaveBeenCalledWith(
-      expect.objectContaining({ path: '.agent/skills/deploy-flow/references/checklist.md' }),
+      expect.objectContaining({ path: '.webAgent/skills/deploy-flow/references/checklist.md' }),
     )
   })
 
@@ -232,7 +232,7 @@ describe('tools/skill-read/skill-read · 项目 skills', () => {
   it('桥返回 {ok:false} → 报 READ_FAILED 并透出原因，绝不静默返回空正文', async () => {
     const result = await skillReadTool.execute(
       { name: 'project/deploy-flow' },
-      makeProjectCtx({ readFails: 'path `.agent` is not accessible' }),
+      makeProjectCtx({ readFails: 'path `.webAgent` is not accessible' }),
     )
     // 回归护栏：旧实现直接取 .content，失败时得到 undefined→''，于是 ok:true + 空 skill。
     expect(result).toMatchObject({ ok: false })

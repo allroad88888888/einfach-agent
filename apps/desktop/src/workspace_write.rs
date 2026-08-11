@@ -828,7 +828,7 @@ fn subagent_index_name(path: &Path) -> Option<&'static str> {
     };
     let parent = path.parent()?;
     if parent.file_name()?.to_str()? != "index"
-        || parent.parent()?.file_name()?.to_str()? != ".agent-archive"
+        || parent.parent()?.file_name()?.to_str()? != ".webAgent-archive"
     {
         return None;
     }
@@ -2081,7 +2081,7 @@ mod tests {
     #[test]
     fn automatic_index_compaction_keeps_latest_records_only() {
         let (base, ws) = unique_workspace();
-        let index_root = ws.join(".agent-archive/index");
+        let index_root = ws.join(".webAgent-archive/index");
         fs::create_dir_all(&index_root).expect("create index root");
         let target = index_root.join("runs.jsonl");
         let filler = "x".repeat(700);
@@ -2155,7 +2155,7 @@ mod tests {
     #[test]
     fn compaction_failure_preserves_index_and_events_are_never_compacted() {
         let (base, ws) = unique_workspace();
-        let index_root = ws.join(".agent-archive/index");
+        let index_root = ws.join(".webAgent-archive/index");
         fs::create_dir_all(&index_root).expect("create index root");
         let index = index_root.join("skills.jsonl");
         let malformed = format!("{{bad}}\n{}", " ".repeat(INDEX_COMPACT_MIN_BYTES as usize));
@@ -2167,7 +2167,7 @@ mod tests {
             malformed
         );
 
-        let events = ws.join(".agent-archive/conversations/c/runs/r/events.jsonl");
+        let events = ws.join(".webAgent-archive/conversations/c/runs/r/events.jsonl");
         fs::create_dir_all(events.parent().expect("events parent")).expect("create events root");
         let event_text = format!("event\n{}", "x".repeat(INDEX_COMPACT_MIN_BYTES as usize));
         fs::write(&events, &event_text).expect("write events");

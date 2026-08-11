@@ -46,7 +46,7 @@ describe('subagent index compaction', () => {
 
   it('CLI is dry-run by default and only replaces indexes with --write', async () => {
     const basePath = await mkdtemp(join(tmpdir(), 'subagent-index-'))
-    const indexRoot = join(basePath, '.agent-archive', 'index')
+    const indexRoot = join(basePath, '.webAgent-archive', 'index')
     await mkdir(indexRoot, { recursive: true })
     const runsPath = join(indexRoot, 'runs.jsonl')
     const original = [

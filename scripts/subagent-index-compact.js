@@ -26,14 +26,14 @@ function helpText() {
   return [
     'subagent-index-compact',
     '',
-    'Deduplicate .agent-archive/index/*.jsonl by logical key, keeping the latest record.',
+    'Deduplicate .webAgent-archive/index/*.jsonl by logical key, keeping the latest record.',
     'The append-only conversations/**/events.jsonl files are never read or changed.',
     '',
     'Usage:',
     '  node scripts/subagent-index-compact.js [--base <workspace>] [--write]',
     '',
     'Options:',
-    '  --base, -b  workspace containing .agent-archive (default: process.cwd())',
+    '  --base, -b  workspace containing .webAgent-archive (default: process.cwd())',
     '  --write     atomically replace indexes; without it, only report the plan',
     '  --help      show help',
   ].join('\n') + '\n'
@@ -65,7 +65,7 @@ async function run() {
   }
 
   const basePath = isAbsolute(options.basePath) ? options.basePath : resolve(process.cwd(), options.basePath)
-  const indexRoot = resolve(basePath, '.agent-archive', 'index')
+  const indexRoot = resolve(basePath, '.webAgent-archive', 'index')
   const indexPaths = SUBAGENT_INDEX_NAMES.map((name) => resolve(indexRoot, `${name}.jsonl`))
   const existingIndexPaths = []
   for (const path of indexPaths) {

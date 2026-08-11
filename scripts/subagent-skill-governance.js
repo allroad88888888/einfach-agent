@@ -61,7 +61,7 @@ function helpText() {
     '  node scripts/subagent-skill-governance.js --archive <skillId> --write [--base <workspace>]',
     '',
     'Options:',
-    '  --base, -b         workspace containing .agent-archive (default: process.cwd())',
+    '  --base, -b         workspace containing .webAgent-archive (default: process.cwd())',
     '  --list             list candidate skills (default)',
     '  --json             emit list as JSON',
     '  --promote <id>     transition candidate -> promoted',
@@ -340,7 +340,7 @@ async function withArchivePathLocks(targetPaths, operation) {
 }
 
 async function readArchive(basePath) {
-  const archiveRoot = resolve(basePath, '.agent-archive')
+  const archiveRoot = resolve(basePath, '.webAgent-archive')
   const indexPath = resolve(archiveRoot, 'index', 'skills.jsonl')
   if (!(await fileExists(indexPath))) throw new Error(`skills index not found: ${indexPath}`)
   const indexText = await readFile(indexPath, 'utf8')
@@ -352,7 +352,7 @@ function skillPath(archiveRoot, skillId) {
 }
 
 async function listCandidates(basePath, json) {
-  const journalPath = resolve(basePath, '.agent-archive', 'governance', 'skill-transaction.json')
+  const journalPath = resolve(basePath, '.webAgent-archive', 'governance', 'skill-transaction.json')
   if (await fileExists(journalPath)) {
     throw new Error('pending governance transaction requires recovery before listing candidates')
   }
@@ -372,7 +372,7 @@ async function listCandidates(basePath, json) {
 }
 
 async function mutate(basePath, action, skillId) {
-  const archiveRoot = resolve(basePath, '.agent-archive')
+  const archiveRoot = resolve(basePath, '.webAgent-archive')
   const lockPath = resolve(archiveRoot, 'index', 'skills.governance.lock')
   await withLock(lockPath, async () => {
     const governanceRoot = resolve(archiveRoot, 'governance')
