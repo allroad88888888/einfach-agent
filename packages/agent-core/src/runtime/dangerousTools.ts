@@ -68,6 +68,13 @@ export interface McpConnectTarget {
   spawnsLocalProcess: boolean
   /** 本机将要执行的命令行；仅 spawnsLocalProcess 为 true 时有意义，用于确认提示。 */
   command?: string
+  /**
+   * 用户此前是否【亲眼确认过】这条将要执行的命令行（宿主自己的起进程确认记录）。
+   *
+   * 缺省即未确认。宿主答不上来时必须当作没确认过：一份从不可信来源导入、用户从未点开过
+   * 的配置，不能因为这个可选字段没接线就在 Auto 模式下被静默执行。
+   */
+  launchConsented?: boolean
 }
 
 /**
@@ -166,42 +173,56 @@ const MCP_CONNECT_COMMAND_MAX_CHARS = 200
 const MCP_CONNECT_UNKNOWN_REASON =
   '无法确认这个 MCP 服务的连接方式。若它是 stdio 服务，连接会在你的机器上启动一个子进程。'
 
+/** 查不到 / 说不清时的统一结论：危险，且必须停下来问（Auto 模式也不例外）。 */
+function unknownMcpConnectRisk(): ToolRiskAssessment {
+  return { level: 'dangerous', reason: MCP_CONNECT_UNKNOWN_REASON, requiresConfirmation: true }
+}
+
+function describeMcpLaunch(command: string, consented: boolean): string {
+  const shown = command.length > MCP_CONNECT_COMMAND_MAX_CHARS
+    ? `${command.slice(0, MCP_CONNECT_COMMAND_MAX_CHARS)}…`
+    : command
+  const prefix = consented
+    ? '连接这个 MCP 服务会在你的机器上启动子进程'
+    : '这条启动命令你还没有确认过；连接会在你的机器上首次启动子进程'
+  return command ? `${prefix}执行：${shown}` : `${prefix}。`
+}
+
 /**
  * 按 serverId 指向的落地方式给「连接 MCP 服务」分级。
  *
- * stdio → 在用户机器上拉起子进程，与执行一条命令同级 → dangerous（确认模式逐次确认，
- *   确认卡片里带上将要执行的命令）。
+ * stdio + 命令行已被用户确认过 → 与执行一条命令同级 → dangerous（确认模式逐次确认，
+ *   Auto 模式由用户的明确选择直接执行）。
+ * stdio + 命令行【从未被确认过】→ dangerous 且 requiresConfirmation：这条命令没有任何人
+ *   看过，Auto 模式也必须停下来先给用户看一眼。Auto 接受的是「模型当场构造的命令」这份
+ *   风险，不是「用户以为自己只是存了一份配置」的东西 —— 两者不等价。
  * HTTP  → 只发一次网络请求，不在本机执行任何东西 → safe，不打扰用户。
- * 判不出来（探针没接、id 未登记、探针抛错、参数不是字符串 serverId）→ 一律 dangerous。
- *   这个默认方向是本函数的安全前提：宁可多问一次，也不能因为「查不到」而静默放行一次进程启动。
+ * 判不出来（探针没接、id 未登记、探针抛错、参数不是字符串 serverId）→ 按「未确认的 stdio」
+ *   处理。这个默认方向是本函数的安全前提：宁可多问一次，也不能因为「查不到」而静默放行
+ *   一次进程启动。
  */
 function classifyMcpConnectRisk(
   args: unknown,
   probe: McpConnectTargetProbe | undefined,
 ): ToolRiskAssessment {
   const serverId = stringFromArgs(args, 'serverId').trim()
-  if (!serverId || !probe) return { level: 'dangerous', reason: MCP_CONNECT_UNKNOWN_REASON }
+  if (!serverId || !probe) return unknownMcpConnectRisk()
 
   let target: McpConnectTarget | undefined
   try {
     target = probe(serverId)
   } catch {
     // 探针是宿主代码，但它崩了不能让风险判定跟着崩，更不能把异常算成「不危险」。
-    return { level: 'dangerous', reason: MCP_CONNECT_UNKNOWN_REASON }
+    return unknownMcpConnectRisk()
   }
-  if (!target) return { level: 'dangerous', reason: MCP_CONNECT_UNKNOWN_REASON }
+  if (!target) return unknownMcpConnectRisk()
   if (!target.spawnsLocalProcess) return { level: 'safe' }
 
-  const command = (target.command ?? '').trim()
+  const consented = target.launchConsented === true
   return {
     level: 'dangerous',
-    reason: command
-      ? `连接这个 MCP 服务会在你的机器上启动子进程执行：${
-        command.length > MCP_CONNECT_COMMAND_MAX_CHARS
-          ? `${command.slice(0, MCP_CONNECT_COMMAND_MAX_CHARS)}…`
-          : command
-      }`
-      : '连接这个 MCP 服务会在你的机器上启动一个子进程。',
+    reason: describeMcpLaunch((target.command ?? '').trim(), consented),
+    ...(consented ? {} : { requiresConfirmation: true }),
   }
 }
 

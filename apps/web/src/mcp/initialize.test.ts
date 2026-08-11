@@ -6,6 +6,7 @@
 // 真的 localStorage 存储通道，只有 MCP 服务本身不存在（全程不连接）。
 
 import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
+import { classifyToolRisk } from '@web-agent/core/runtime/dangerousTools'
 import { toolRegistry } from '@web-agent/core/tools/registry'
 import { rootStore } from '@web-agent/core/state/rootStore'
 import { beforeEach, describe, expect, it } from 'vitest'
@@ -14,8 +15,29 @@ import { hydrateMcpSettings } from './commands'
 import { initializeMcpSettings } from './initialize'
 import { MCP_SETTINGS_STORAGE_KEY } from './persistence'
 import { mcpServersAtom } from './state'
+import { stdioLaunchFingerprint } from './stdioLaunchConsent'
 
 const CACHED_AT = Date.UTC(2026, 7, 10, 9, 30, 0)
+
+/** 用户从不可信来源导入的一份 JSON：躺在配置里，从没点开过确认弹窗。 */
+const UNSEEN_STDIO = {
+  id: 'imported',
+  name: '导入的服务',
+  transport: 'stdio' as const,
+  command: 'npx',
+  args: ['-y', '@imported/from-untrusted-json'],
+  autoConnect: false,
+}
+
+/** 用户亲眼确认过这条命令行（H2 的确认落在指纹上）。 */
+const SEEN_STDIO = {
+  id: 'approved',
+  name: '确认过的服务',
+  transport: 'stdio' as const,
+  command: 'node',
+  args: ['/Users/me/tools/server.js', '--stdio'],
+  autoConnect: false,
+}
 
 /** 上一次运行留下的东西：一个已配置但【从没连过】的服务，加它上次已知的工具清单。 */
 function seedColdStart(): void {
@@ -28,6 +50,12 @@ function seedColdStart(): void {
       url: 'https://docs.example.test/mcp',
       // 冷启动不连接：本测试要证明的正是「没连上也知道它有什么」。
       autoConnect: false,
+    }, UNSEEN_STDIO, {
+      ...SEEN_STDIO,
+      launchConsent: {
+        fingerprint: stdioLaunchFingerprint({ ...SEEN_STDIO, autoConnect: false }),
+        approvedAt: CACHED_AT,
+      },
     }],
   }))
   window.localStorage.setItem('web-agent.mcp-tool-name-cache.v1', JSON.stringify({
@@ -76,6 +104,47 @@ describe('MCP 冷启动装配 · 缓存一路走到模型与界面（B5）', () 
     expect(description).toContain('search')
     expect(description).toContain('draft')
     expect(description).toContain('上次已知')
+  })
+
+  /**
+   * F8：模型这条路上的起进程确认。装配期接进 core 的探针必须带上「这条启动命令确认过没有」，
+   * 否则用户从不可信来源导入的一份 JSON，在 Auto 模式下会被 connect_mcp_server 静默执行。
+   *
+   * 断言用真的 defaultCore.config.mcpConnectTarget（initialize.ts 接的那一根）跑 core 的分级：
+   * initialize.ts 里 isLaunchConsented 那根线被拿掉，第二条就会红。
+   */
+  it('F8：从未确认过的 stdio 服务 → requiresConfirmation（Auto 模式也要暂停）', () => {
+    const mcpConnectTarget = defaultCore.config.mcpConnectTarget
+    expect(mcpConnectTarget).toBeTypeOf('function')
+
+    const risk = classifyToolRisk(
+      MCP_CONNECT_TOOL_NAME,
+      { serverId: 'imported' },
+      { mcpConnectTarget },
+    )
+
+    expect(risk).toMatchObject({ level: 'dangerous', requiresConfirmation: true })
+    expect(risk.reason).toContain('npx -y @imported/from-untrusted-json')
+  })
+
+  it('F8：确认过的 stdio 服务仍是普通 dangerous，不额外打断 Auto', () => {
+    const risk = classifyToolRisk(
+      MCP_CONNECT_TOOL_NAME,
+      { serverId: 'approved' },
+      { mcpConnectTarget: defaultCore.config.mcpConnectTarget },
+    )
+
+    expect(risk.level).toBe('dangerous')
+    expect(risk.requiresConfirmation).toBeUndefined()
+    expect(risk.reason).toContain('node /Users/me/tools/server.js --stdio')
+  })
+
+  it('F8：HTTP 服务不受影响，仍然 safe', () => {
+    expect(classifyToolRisk(
+      MCP_CONNECT_TOOL_NAME,
+      { serverId: 'docs' },
+      { mcpConnectTarget: defaultCore.config.mcpConnectTarget },
+    )).toEqual({ level: 'safe' })
   })
 
   it('设置面板：未连接的服务带着上次已知清单进服务视图', () => {
