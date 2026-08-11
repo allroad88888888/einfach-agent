@@ -1,4 +1,5 @@
 mod mcp;
+mod mcp_config;
 mod model_credential_config;
 mod model_credentials;
 mod model_provider;
@@ -42,6 +43,8 @@ pub fn run() {
             mcp::mcp_list_tools,
             mcp::mcp_call_tool,
             mcp::mcp_disconnect,
+            mcp_config::mcp_config_read,
+            mcp_config::mcp_config_write,
             model_credentials::model_credential_status,
             model_credentials::model_credential_set,
             model_credentials::model_credential_delete,
