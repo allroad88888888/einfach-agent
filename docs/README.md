@@ -13,6 +13,7 @@
 | [Context Caching](context-caching.md) | provider 自动缓存契约、profile/epoch、usage 归一化与观测 |
 | [模型适配器兼容性契约](model-adapter-compatibility.md) | DeepSeek/GLM 的已验证请求差异、Rust 参考的适用边界与新增 vendor 准入项 |
 | [MCP 集成](mcp-integration.md) | MCP 传输、配置与会话生命周期、动态工具对账和安全边界 |
+| [用户配置目录](config-directory-override.md) | 默认 `~/.webAgent/config.json`、旧配置安全复制、`WEB_AGENT_CONFIG_DIR` 多实例隔离与密钥边界 |
 | [Tauri 卡顿诊断日志](performance-diagnostics.md) | 长对话、plan 更新、大文件写入的分段耗时与前后端关联排障 |
 | [工具规范](../packages/agent-core/src/tools/TOOLS-SPEC.md) | Tool、Registry、ToolContext、安全边界与新增工具约定 |
 
@@ -31,7 +32,7 @@
 | [项目内 Skills 自动加载（`.agent/`）](project-skills-blueprint.md) | 阶段 A–D 已实施：workspace 的 `.agent/skills` 与 `.claude/skills` 自动进 L1 清单，正文与资源经 `skill_read` 按需读；阶段 E（行为 eval）可选未做 |
 | [图片输入协议 RFC](image-input-rfc.md) | Provider-neutral 图片内容、adapter 所有权、提交事务、持久化降级与宿主安全边界；已实现，真实 Key 联调前门禁关闭 |
 | [Kimi Provider 接入蓝图](kimi-provider-integration-blueprint.md) | Kimi（实际 API ID `kimi-k2.6`）接入的本地树形 Issue、依赖批次、逐项执行模型与开放门禁；代码完成、50B 静态审查完成，最终验收随 50A 阻塞，当前 NO-GO |
-| [启动模型密钥门禁 Issue](startup-model-credential-gate-blueprint.md) | 已完成：进入桌面主界面前按恢复会话的模型检查 `~/.web-agent/config.json`；缺失时用不可跳过的输入门禁阻塞工作区，并记录逐 leaf 模型分配、验证证据与独立审查结论 |
+| [启动模型密钥门禁 Issue](startup-model-credential-gate-blueprint.md) | 已完成：进入桌面主界面前按恢复会话的模型检查默认 `~/.webAgent/config.json`；默认新文件缺失时安全复制旧配置，缺失目标 Key 则用不可跳过的输入门禁阻塞工作区，并记录逐 leaf 模型分配、验证证据与独立审查结论 |
 | [上下文缓存成本治理](context-cache-cost.md) | 压缩投影复用已实现、收益待实测；含账单归因方法与验证 SQL |
 | [上下文缓存成本 · 后续跟进项](context-cache-followups.md) | F1 实测验证（最高优先）、F2 尾巴失效归零、F3 会话过长提示；F5 跨 run 复用暂不做，C1/C2 已关闭并附结论 |
 | [请求组装归因交接（2026-08-04）](context-cache-request-assembly-handover-2026-08-04.md) | 已证实的低命中来源、trace 入口、接手实施顺序与复测口径 |

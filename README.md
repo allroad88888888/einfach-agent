@@ -62,11 +62,13 @@ Tauri 平台依赖：
 
 ## 配置模型
 
-`.env.example` 中的密钥变量仅供本机 Web 开发中继使用；桌面应用不会从 `.env.local` 或进程环境读取模型密钥。请在桌面设置页配置所需模型 Key，密钥会写入 `~/.web-agent/config.json`。旧版系统钥匙串条目不会被读取或迁移，需要在设置页重新输入。
+`.env.example` 中的密钥变量仅供本机 Web 开发中继使用；桌面应用不会从 `.env.local` 或进程环境读取模型密钥。请在桌面设置页配置所需模型 Key，密钥默认写入 `~/.webAgent/config.json`。新默认文件不存在时，应用才会安全复制旧 `~/.web-agent/config.json`；新文件优先，旧文件会保留。旧版系统钥匙串条目不会被读取或迁移，需要在设置页重新输入。
+
+`WEB_AGENT_CONFIG_DIR` 只选择桌面配置目录，例如 `$HOME/.webAgent`，不是模型 Key 来源；设置覆盖目录时不会迁移旧配置。多实例、目录要求与迁移细节见[配置目录说明](docs/config-directory-override.md)。
 
 新会话默认使用 DeepSeek；会话设置中的 `vendor` 决定实际调用的 provider。Kimi 入口还受公开构建变量 `VITE_KIMI_IMAGE_INPUT_ENABLED` 控制，真实中国区 Key 端到端验收前必须保持 `false`。
 
-密钥只由桌面原生层读取并注入受限 provider 传输；它不会保存到浏览器 localStorage 或编译进前端包。Unix 平台会将该目录设为 `0700`、配置文件设为 `0600`；文件内容是明文，勿提交、共享或复制到不受信任的位置。Kimi 图片上传、`ms://` 引用与清理语义属于 Kimi adapter；Tauri 只提供端点白名单内的通用 JSON/multipart 传输。静态 Web 部署没有可信模型代理，不能直接调用模型服务。
+密钥只由桌面原生层读取并注入受限 provider 传输；它不会保存到浏览器 localStorage 或编译进前端包。Unix 平台的新建配置目录为 `0700`、配置文件为 `0600`；既有覆盖目录必须通过私有权限检查。文件内容是明文，勿提交、共享或复制到不受信任的位置。Kimi 图片上传、`ms://` 引用与清理语义属于 Kimi adapter；Tauri 只提供端点白名单内的通用 JSON/multipart 传输。静态 Web 部署没有可信模型代理，不能直接调用模型服务。
 
 ## 开发命令
 

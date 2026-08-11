@@ -3,7 +3,7 @@
 状态：已完成
 创建日期：2026-08-11
 协调者：gpt-5.6-sol（high）
-范围：Tauri 桌面端在渲染主工作区前，确认当前启动会话所需的模型 API Key 已保存在 `~/.web-agent/config.json`；未配置时只能在门禁对话框中输入并保存。
+范围：Tauri 桌面端在渲染主工作区前，确认当前启动会话所需的模型 API Key 已保存在默认路径 `~/.webAgent/config.json`；默认新文件不存在时才安全复制旧 `~/.web-agent/config.json`，新文件优先且旧文件保留。未配置时只能在门禁对话框中输入并保存。
 非目标：不恢复 macOS Keychain 或环境变量兜底；不改变浏览器/开发中继行为；不在本次补做模型切换时的运行前检查。
 
 ## 目标与验收
@@ -21,7 +21,7 @@
 
 | 决策 | 结论 | 当前依据 |
 | --- | --- | --- |
-| 配置位置 | 只使用 `~/.web-agent/config.json` | 已完成的原生凭证层；`CredentialSource` 只包括 `config` 与 `missing` |
+| 配置位置 | 默认使用 `~/.webAgent/config.json`；默认新文件缺失时才复制旧 `~/.web-agent/config.json`；`WEB_AGENT_CONFIG_DIR` 只选目录且不迁移 | 已完成的原生凭证层；`CredentialSource` 只包括 `config` 与 `missing` |
 | 启动目标 | 优先取已恢复的激活会话；无会话则取 DeepSeek 默认目标 | `main.tsx` 先 hydrate 再 `newSession()`；`sessionCommands.ts` 默认 vendor 为 DeepSeek |
 | 等待策略 | 会话 hydrate 与 `hydrateAppSettings()`（其内含 `hydrateModelCredentials()`）都必须完成或进入明确错误态 | `bootstrapApplication()` 等待设置与会话恢复后解析 target，再决定是否渲染 `AppShell` |
 | 写入边界 | 复用 `model_credential_status` 与 `model_credential_set`，IPC 不返回 Key | `modelCredentialHost.ts` 与 `modelCredentialCommands.ts` 已有只读状态/写入接口 |
@@ -84,7 +84,7 @@ KEY-GATE  启动模型密钥门禁
 
 - 单元：目标映射、gate 状态转移、保存后状态复查、错误重试。
 - 组件/集成：Tauri 缺 Key 不渲染 `AppShell`；输入有效 Key 后才放行；保存失败、status 失败、Esc、遮罩、重复点击均不能绕过。
-- 手工桌面验收：首次启动无 `~/.web-agent/config.json` 或无对应条目时显示目标 provider 对话框；保存后重启不再出现；已恢复 GLM/Kimi 会话检查其自身 target。
+- 手工桌面验收：首次启动默认配置 `~/.webAgent/config.json` 无对应条目时显示目标 provider 对话框；保存后重启不再出现；默认新文件缺失而旧 `~/.web-agent/config.json` 存在时仅复制一次，且不改写旧文件；已恢复 GLM/Kimi 会话检查其自身 target。
 - 安全：搜索浏览器持久化、console、trace、URL 和测试快照，确认没有 API Key 明文；确认不存在 Keychain 或环境变量 fallback。
 - 文档：运行 `node scripts/check-docs.js`，并记录实际测试命令和结果。
 
@@ -98,7 +98,7 @@ KEY-GATE  启动模型密钥门禁
 - `pnpm build` 通过，仅报告既有 chunk size warning。
 - `git diff --check` 通过。
 - 实现验证时 `node scripts/check-docs.js` 通过，检查 68 个 Markdown 文件；本次补入本 Issue 的记录后复跑仍通过，共检查 69 个 Markdown 文件。
-- 独立审查确认桌面凭据只走 `~/.web-agent/config.json`，没有 macOS Keychain 或桌面环境变量兜底；没有新增非 Einfach 产品状态。审查复核了聚焦测试 22/22、TypeScript、`pnpm build`、Rust 凭据测试 6/6 与 `git diff --check`。
+- 独立审查确认桌面凭据走默认 `~/.webAgent/config.json`，并仅在该新文件缺失时安全复制旧 `~/.web-agent/config.json`；没有 macOS Keychain 或桌面环境变量兜底，`WEB_AGENT_CONFIG_DIR` 只用于选择目录；没有新增非 Einfach 产品状态。审查复核了聚焦测试 22/22、TypeScript、`pnpm build`、Rust 凭据测试 6/6 与 `git diff --check`。
 - 新增及修改的普通文件均不超过 300 行；`apps/web/src/agentNew/ui/agentnew.css` 原有 4130 行，本次只追加隔离的门禁样式块，未进行无关重构。
 
 独立审查记录了以下 P2，不阻断本 Issue；如要处理，必须先新建 leaf Issue、分配模型与文件 Owner：

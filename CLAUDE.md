@@ -41,7 +41,9 @@ Vitest 的 root 是仓库根（不是 Vite 的 `apps/web` root），jsdom + `app
 ## 模型凭证与传输
 
 `apps/web/src/main.tsx` 只注入桌面受管凭证标记和受限模型传输。真实 Key 仅由桌面原生层从
-`~/.web-agent/config.json` 读取。
+`~/.webAgent/config.json` 读取。默认新文件不存在时，原生层才安全复制旧
+`~/.web-agent/config.json`；新文件优先且旧文件保留。`WEB_AGENT_CONFIG_DIR` 只能选择配置目录，
+不能传入或读取模型 Key；设置覆盖目录时不触发迁移。
 
 三种宿主的传输各不相同：Tauri 走原生代理，浏览器 dev 走 `scripts/model-preview-relay` 的本地
 Node 中继，静态产物直接拒绝模型请求。`scripts/public-model-credential-guard.ts` 在 Vite 配置
@@ -124,8 +126,9 @@ registrar 为准**（`tools/<domain>/src/index.ts`），文档里的数量容易
 - Tauri：会话/历史和 trace 使用 SQLite，文件/shell/Git 通过 Rust command 执行。
 - `server` 工具在非 Tauri 环境中不会暴露给模型。
 - `.agent-archive/` 保存子 Agent 长期归档与索引，不应提交到 Git。
-- workspace 里的 `.agent/skills/` 与 `.claude/skills/` 会被 project skills loader 自动扫描进
-  L1 清单——本仓库自己就有这两个目录，改它们等于改运行时行为，不只是改编辑器配置。
+- workspace 里的 `.agent/skills/` 与 `.claude/skills/` 是项目 Skills 目录，会被 project skills
+  loader 自动扫描进 L1 清单；它们不是用户配置目录。本仓库自己就有这两个目录，改它们等于改运行时
+  行为，不只是改编辑器配置。
 
 ## 测试与修改约定
 
