@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { ModelFunctionTool, ModelToolCall } from '@web-agent/ai'
 import { sessionsAtom } from '../state/rootAtoms'
 import { runAtom } from '../state/sessionAtoms'
+import { alwaysAllowedToolsAtom } from '../state/transientAtoms'
 import { setRun } from '../state/sessionWriters'
 import { createCoreInstance, type RuntimeConfig } from './core/coreInstance'
 import { MCP_CONNECT_TOOL_NAME, type McpConnectTargetProbe } from './dangerousTools'
@@ -28,6 +29,7 @@ function createHarness(
   name: string,
   approvalMode: 'confirm' | 'auto',
   config?: Partial<RuntimeConfig>,
+  alwaysAllowedTools?: readonly string[],
 ) {
   const execute = vi.fn(async () => ({ ok: true as const, data: { completed: true } }))
   const core = createCoreInstance({
@@ -46,6 +48,10 @@ function createHarness(
     },
   })
   setRun('session', { runId: 'run', status: 'running', turnId: 'turn', startedAt: 0 }, core)
+  // 绕开写入器直接种「一律允许」：模拟历史数据 / 越权写入，逼 batch 只能靠读侧判据自保。
+  if (alwaysAllowedTools) {
+    core.getSessionStore('session').store.setter(alwaysAllowedToolsAtom, [...alwaysAllowedTools])
+  }
 
   const base = {
     id: 'session',
@@ -94,8 +100,9 @@ async function runCall(
   approvalMode: 'confirm' | 'auto',
   arguments_: Record<string, unknown>,
   config?: Partial<RuntimeConfig>,
+  alwaysAllowedTools?: readonly string[],
 ) {
-  const { base, execute, core } = createHarness(name, approvalMode, config)
+  const { base, execute, core } = createHarness(name, approvalMode, config, alwaysAllowedTools)
   const result = await runToolCallBatch(base, {
     result: {
       toolCalls: [createToolCall(name, arguments_)],
@@ -226,6 +233,40 @@ describe('connect_mcp_server authorization by transport', () => {
 
     expect(result).toBe('paused')
     expect(execute).not.toHaveBeenCalled()
+  })
+
+  // F7：连接工具永远拿不到 session 级「一律允许」，所以【每一次】连接都要单独确认。
+  // 记忆是按工具名的：如果它能被记住，用户对某一个服务的一次同意，就成了本会话内连接任意
+  // 已配置服务（包括在本机起进程的 stdio 服务）的通行证。
+  it('pauses every stdio connect even when the session already remembers the connect tool', async () => {
+    const { result, execute, run } = await runCall(
+      MCP_CONNECT_TOOL_NAME,
+      'confirm',
+      { serverId: 'local-tools' },
+      { mcpConnectTarget },
+      [MCP_CONNECT_TOOL_NAME],
+    )
+
+    expect(result).toBe('paused')
+    expect(execute).not.toHaveBeenCalled()
+    expect(run).toMatchObject({
+      status: 'waiting_confirmation',
+      pendingToolConfirmation: { toolName: MCP_CONNECT_TOOL_NAME },
+    })
+  })
+
+  // 对照组：普通危险工具的 session 记忆仍然照常生效，别把闸门修成一刀切。
+  it('still honors a remembered approval for an ordinary dangerous tool', async () => {
+    const { result, execute } = await runCall(
+      'write_file',
+      'confirm',
+      { path: 'note.txt', content: 'hello' },
+      undefined,
+      ['write_file'],
+    )
+
+    expect(result).toBe('continue')
+    expect(execute).toHaveBeenCalledOnce()
   })
 
   // Auto 模式下 stdio 连接直接执行：与 shell_* 同级（Auto 已允许任意本机命令），

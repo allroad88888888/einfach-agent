@@ -68,6 +68,7 @@ import {
   runToolLoop,
 } from './modelRun'
 import { defaultCore, createCoreInstance } from './core/coreInstance'
+import { MCP_CONNECT_TOOL_NAME } from './dangerousTools'
 import { getExecutionRuntime } from '../execution/runtime'
 import { executionGraphAtom } from '../execution/graph'
 import {
@@ -1194,6 +1195,41 @@ describe('confirmTool（S4-B 危险工具确认恢复）', () => {
           callId: 'mcp-1',
           toolName: 'mcp__playwright__browser_navigate',
           args: { url: 'https://example.com' },
+        },
+      }),
+    )
+  })
+
+  // F7：连接工具的风险由 serverId 决定（HTTP 只是一次网络请求，stdio 是在本机起子进程），
+  // 而「一律允许」是按【工具名】记的。一旦它能被记住，用户对某一个服务点的那次同意，就变成
+  // 了本会话内连接【任意】已配置服务的通行证。命令层必须在这里就不落库。
+  it('连接 MCP 服务的工具即使 confirmTool(true,true) 也不写入 session「一律允许」集合', () => {
+    const id = seedConfirming('connect-1')
+    const store = getSessionStore(id).store
+    const run = store.getter(runAtom)
+    if (!run?.pendingToolConfirmation) throw new Error('缺少 pendingToolConfirmation')
+    store.setter(runAtom, {
+      ...run,
+      pendingToolConfirmation: {
+        ...run.pendingToolConfirmation,
+        toolName: MCP_CONNECT_TOOL_NAME,
+        args: { serverId: 'local-fs' },
+      },
+    })
+
+    confirmTool(true, true)
+
+    expect(store.getter(alwaysAllowedToolsAtom)).not.toContain(MCP_CONNECT_TOOL_NAME)
+    expect(store.getter(alwaysAllowedToolsAtom)).toEqual([])
+    // 本次连接照常放行 —— 拦的是「记住」，不是「这一次」。
+    expect(runToolLoop).toHaveBeenCalledWith(
+      id,
+      'R1',
+      expect.objectContaining({
+        resumeToolCall: {
+          callId: 'connect-1',
+          toolName: MCP_CONNECT_TOOL_NAME,
+          args: { serverId: 'local-fs' },
         },
       }),
     )

@@ -14,9 +14,9 @@ import type {
   SessionMeta,
 } from '../../state/core.type'
 import { addEvent, getActiveSpan, runTraceKey } from '../../observability/trace'
-import { isMcpTool } from '../dangerousTools'
 import { runToolLoop } from '../modelRun'
 import { newId } from '../newId'
+import { canRememberToolApproval } from '../sessionApprovalMemory'
 import { toolProviderDisconnectedResult } from '../toolLoading'
 import { checkPendingToolRegistration } from './pendingToolRegistration'
 import type { CoreInstance } from '../core/coreInstance'
@@ -126,12 +126,14 @@ export function createRunCommands(core: CoreInstance) {
     // 判据统一走本 run 的工具集 epoch（拿不到时回退活 registry），见 pendingToolRegistration.ts。
     const registration = checkPendingToolRegistration(core, id, run.runId, pending)
     const registrationStillCurrent = registration.state === 'current'
+    // 「这一次能不能记」= 运行时条件（本轮判定）+ 工具名有没有记忆资格（单点判据，见
+    // runtime/sessionApprovalMemory.ts；不要在这里重写名字匹配）。
     const rememberApproval = approved
       && Boolean(always)
       && registrationStillCurrent
       && pending.risk !== 'critical'
       && !pending.irreversible
-      && !isMcpTool(pending.toolName)
+      && canRememberToolApproval(pending.toolName)
     addEvent('agent.confirmation.decision', {
       span: getActiveSpan(runTraceKey(id, run.runId)),
       attrs: {

@@ -1,4 +1,5 @@
 import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
+import { canRememberToolApproval } from '../runtime/sessionApprovalMemory'
 import {
   alwaysAllowedToolsAtom,
   pendingQuestionAnswersAtom,
@@ -28,13 +29,16 @@ export function getTranscriptInjectionFingerprints(
 }
 
 /**
- * 该会话是否已「一律允许」某危险工具。MCP 工具始终不能获得 session 级授权。
+ * 该会话是否已「一律允许」某危险工具。
+ *
+ * 无记忆资格的工具（MCP 工具、连接工具）始终拿不到 session 级授权：这里在读取时再判一次，
+ * 即使 atom 已被污染也不认账。判据单点见 runtime/sessionApprovalMemory.ts。
  */
 export function isToolAlwaysAllowed(
   id: string,
   toolName: string,
   core: CoreInstance = defaultCore,
 ): boolean {
-  if (toolName.startsWith('mcp__')) return false
+  if (!canRememberToolApproval(toolName)) return false
   return core.getSessionStore(id).store.getter(alwaysAllowedToolsAtom).includes(toolName)
 }

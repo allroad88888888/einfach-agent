@@ -1,4 +1,5 @@
 import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
+import { canRememberToolApproval } from '../runtime/sessionApprovalMemory'
 import { sessionsAtom } from './rootStore'
 import {
   alwaysAllowedToolsAtom,
@@ -233,8 +234,9 @@ export function addAlwaysAllowedTool(
   toolName: string,
   core: CoreInstance = defaultCore,
 ): void {
-  // MCP 授权只对单次调用有效；状态写入器也拒绝直接调用，避免绕过命令层。
-  if (toolName.startsWith('mcp__') || sessionMissing(id, core)) return
+  // 无记忆资格的工具（MCP 工具、连接工具）只对单次调用有效；写入器自己也拒绝，
+  // 避免绕过命令层。判据单点见 runtime/sessionApprovalMemory.ts。
+  if (!canRememberToolApproval(toolName) || sessionMissing(id, core)) return
   core.getSessionStore(id).store.setter(alwaysAllowedToolsAtom, (prev) =>
     prev.includes(toolName) ? prev : [...prev, toolName],
   )
