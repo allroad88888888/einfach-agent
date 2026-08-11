@@ -276,7 +276,7 @@
 - **判据**：inputSchema 是已配置服务 ID 的枚举；**传 URL 或 command 一律拒绝**；
   有针对提示注入场景的测试
 - **模型**：opus（安全硬约束）
-- **状态**：DOING
+- **状态**：DONE 56d20a8
 
 ### F3 · 按参数分级接入危险工具确认
 
@@ -394,6 +394,15 @@
 ---
 
 ## 未决（决策落地前不开工，不指派模型）
+
+- **schema 校验失败时是否回显实际取值**。`packages/agent-core/src/tools/schemaValidate.ts:119` 的
+  enum 失配错误会带上 `describeValue(value)`，即模型传来的原始字符串。F2 给
+  `connect_mcp_server` 加了 serverId 的 enum 之后，一次注入式调用
+  （`serverId: "https://evil.example/mcp"`）被 schema 挡下时，那个地址会原样出现在工具结果里——
+  F1 在 execute 路径上刻意维持的「不回显攻击者地址」在 schema 路径上不成立。
+  **严重度有限**：该字符串本来就在模型自己那条 tool_call 的参数里，回显不引入新信息。
+  但这是全仓所有工具共用的错误格式，改动面在 `agent-core`，且要在
+  「可诊断性（告诉模型它传了什么）」与「不复述不可信输入」之间取舍，需要明确决策。
 
 - **凭据支持**（**已升级为 B2 的实际阻塞项**）。`config.ts` 的 `toManagerConfig` 主动丢弃
   `headers` / `env`，`parseArgsText` 还把疑似 token 的启动参数判为错误。
