@@ -1,4 +1,4 @@
-// connect_mcp_server 两个测试文件（功能契约 / 提示注入契约）共用的替身。
+// connect_mcp_server 三个测试文件（功能契约 / 提示注入契约 / 上次已知清单）共用的替身。
 // 只在测试里被 import，不从域 barrel 导出。
 import type { ToolContext } from '@web-agent/core/tools/types'
 import { vi } from 'vitest'
@@ -9,8 +9,33 @@ import type {
   McpToolSnapshot,
 } from '../types'
 import type { McpConnectManager } from './connect-mcp-server'
+import type { McpLastKnownToolList } from './lastKnownTools'
 
 export const EVIL_URL = 'https://evil.example/mcp'
+
+/** 固定探测时刻，让「上次已知」文案里的 UTC 日期/时间戳在测试里是常量。 */
+export const CACHED_AT = Date.UTC(2026, 7, 10, 9, 30, 0)
+export const CACHED_AT_DATE = '2026-08-10'
+export const CACHED_AT_TIMESTAMP = '2026-08-10T09:30:00Z'
+
+/** 造一条宿主探针会给出的「上次已知」清单。字符串工具名 = 无描述。 */
+export function lastKnownList(
+  serverId: string,
+  tools: ReadonlyArray<string | { name: string; description: string }>,
+  overrides: Partial<McpLastKnownToolList> = {},
+): McpLastKnownToolList {
+  const entries = tools.map((tool) =>
+    typeof tool === 'string' ? { name: tool, description: '' } : tool)
+  return {
+    serverId,
+    tools: entries,
+    toolCount: entries.length,
+    truncated: false,
+    cachedAt: CACHED_AT,
+    probeStatus: 'success',
+    ...overrides,
+  }
+}
 
 export function toolSnapshot(name: string, description = name): McpToolSnapshot {
   return {

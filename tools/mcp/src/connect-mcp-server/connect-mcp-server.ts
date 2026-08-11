@@ -11,16 +11,31 @@
 //
 // execution 'serial'：连接会成批 register/unregister 全局 ToolRegistry，不能与同批工具并发交错。
 import type { Tool, ToolResult } from '@web-agent/core/tools/types'
-import guide from './connect-mcp-server.md?raw'
 import type { McpClientManager } from '../clientManager'
 import { combineAbortSignals, isRecord, raceWithAbort, throwIfAborted, truncate } from '../internal'
-import type { McpServerSnapshot } from '../types'
 import { buildConnectFailureResult, buildConnectTimeoutResult } from './connectFailureResult'
+import { describeConnectedServer } from './connectedServerResult'
+import { buildConnectSkill } from './connectSkill'
+import type { McpLastKnownToolsProbe } from './lastKnownTools'
+
+export {
+  MCP_CONNECT_LISTED_DESCRIPTION_MAX_CHARS,
+  MCP_CONNECT_MAX_LISTED_TOOLS,
+} from './connectedServerResult'
+export type {
+  McpLastKnownGap,
+  McpLastKnownToolEntry,
+  McpLastKnownToolList,
+  McpLastKnownToolsProbe,
+} from './lastKnownTools'
+export {
+  MCP_CONNECT_GUIDE_MAX_CHARS,
+  MCP_CONNECT_MANIFEST_MAX_CHARS,
+  MCP_CONNECT_MANIFEST_MAX_SERVERS,
+  MCP_CONNECT_MANIFEST_MAX_TOOLS_PER_SERVER,
+} from './lastKnownToolsText'
 
 export const MCP_CONNECT_TOOL_NAME = 'connect_mcp_server'
-/** 回给模型的工具清单条数上限（单个服务最多可有 1000 个工具，全列会撑爆上下文）。 */
-export const MCP_CONNECT_MAX_LISTED_TOOLS = 50
-export const MCP_CONNECT_LISTED_DESCRIPTION_MAX_CHARS = 160
 /** 超过这个长度的入参一定不是服务 ID，直接拒，不进任何查表或文案。 */
 export const MCP_CONNECT_SERVER_ID_MAX_CHARS = 512
 const MCP_CONNECT_MAX_LISTED_SERVER_IDS = 50
@@ -172,30 +187,18 @@ function rejectUnknownServer(requested: string, manager: McpConnectManager): Too
   }
 }
 
-function describeConnectedServer(
-  snapshot: McpServerSnapshot,
-  alreadyConnected: boolean,
-): Record<string, unknown> {
-  const listed = snapshot.tools.slice(0, MCP_CONNECT_MAX_LISTED_TOOLS)
-  const omitted = snapshot.tools.length - listed.length
-  return {
-    serverId: snapshot.id,
-    // 只暴露 transport，绝不回传 snapshot.config —— 里面有 url / headers / env，可能含凭据。
-    transport: snapshot.config.transport,
-    status: snapshot.status,
-    alreadyConnected,
-    toolCount: snapshot.tools.length,
-    tools: listed.map((tool) => ({
-      name: tool.name,
-      description: truncate(tool.description, MCP_CONNECT_LISTED_DESCRIPTION_MAX_CHARS),
-    })),
-    ...(omitted > 0 ? { omittedTools: omitted } : {}),
-  }
-}
-
 export interface CreateMcpConnectToolOptions {
   /** 连接超时；默认 MCP_CONNECT_TIMEOUT_MS。主要为宿主与确定性测试开放。 */
   connectTimeoutMs?: number
+  /**
+   * 宿主注入的「上次已知工具清单」只读读出口（F4）。
+   *
+   * 按需连接之后，未连接服务的工具不在工具清单里；模型必须先知道"我要的能力在哪个服务上"
+   * 才会来调本工具。这根线就是那条唯一的线索：接上之后，未连接服务上次已知的工具名会进
+   * 本工具的 manifest 描述，完整清单进 guide（分层理由见 lastKnownToolsText.ts 文件头）。
+   * 不接线时描述保持原样，绝不编造清单。
+   */
+  lastKnownTools?: McpLastKnownToolsProbe
 }
 
 /**
@@ -215,15 +218,15 @@ export function createMcpConnectTool(
   if (!Number.isFinite(connectTimeoutMs) || connectTimeoutMs < 1) {
     throw new Error('MCP connect timeout must be a positive number')
   }
+  const lastKnownTools = options.lastKnownTools
 
   return {
     name: MCP_CONNECT_TOOL_NAME,
     runtime: 'internal',
-    skill: {
-      description:
-        '按需连接一个【已配置】的 MCP 服务；连上之后该服务的工具才会出现在工具清单里。只接受服务 ID，不接受 URL 或命令行。',
-      triggers: ['mcp', '连接 mcp', 'mcp 服务', 'connect mcp'],
-      content: guide,
+    // getter 而不是字面量：manifest 每次 list() 都重读它，于是描述里的「上次已知」清单
+    // 永远是此刻的状态（刚装的服务立刻可见、刚连上的服务立刻不再重复历史）。理由见 connectSkill.ts。
+    get skill() {
+      return buildConnectSkill(manager, lastKnownTools)
     },
     inputSchema,
     execution: {
