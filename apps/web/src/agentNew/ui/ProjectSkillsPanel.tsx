@@ -1,6 +1,6 @@
 // apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
 // ---------------------------------------------------------------------------
-// 展示当前 workspace 的项目 Skills（来自 .agent/skills/ 与 .claude/skills/）。
+// 展示当前 workspace 的项目 Skills（来自 .webAgent/skills/ 与 .claude/skills/）。
 // 在 web 环境下永远为空（非 Tauri 无 workspace 文件系统访问），
 // Tauri 环境下显示 scanner 产出的快照条目与 diagnostics。
 import { useState, useCallback } from 'react'
@@ -27,7 +27,7 @@ function useProjectSkillsState(): { workspaceRoot?: string; snapshot?: ProjectSk
 
 function SkillEntry({ entry }: { entry: ProjectSkillEntry }) {
   const resourceCount = Object.keys(entry.resources).length
-  const originLabel = entry.origin === 'agent' ? '.agent' : '.claude'
+  const originLabel = entry.origin === 'agent' ? '.webAgent' : '.claude'
   return (
     <div className="project-skill-entry">
       <span className="project-skill-name">
@@ -62,7 +62,7 @@ export function ProjectSkillsPanel() {
       <div className="project-skills-panel">
         <div className="project-skills-empty">
           未绑定 workspace。绑定后在 Tauri 桌面端可自动加载项目内{' '}
-          <code>.agent/skills/</code> 与 <code>.claude/skills/</code> 提供的 Skills。
+          <code>.webAgent/skills/</code> 与 <code>.claude/skills/</code> 提供的 Skills。
         </div>
       </div>
     )
@@ -104,12 +104,12 @@ export function ProjectSkillsPanel() {
       {!snapshot ? (
         <div className="project-skills-empty">
           尚未扫描。发送一条消息或点「刷新」后，会自动加载{' '}
-          <code>.agent/skills/</code> 与 <code>.claude/skills/</code> 下的 Skills。
+          <code>.webAgent/skills/</code> 与 <code>.claude/skills/</code> 下的 Skills。
         </div>
       ) : entries.length === 0 ? (
         <div className="project-skills-empty">
           当前 workspace 未发现项目 Skills。在{' '}
-          <code>.agent/skills/&lt;name&gt;/SKILL.md</code> 或{' '}
+          <code>.webAgent/skills/&lt;name&gt;/SKILL.md</code> 或{' '}
           <code>.claude/skills/&lt;name&gt;/SKILL.md</code>{' '}
           中放置带 frontmatter 的 skill 文件即可自动加载。
         </div>
