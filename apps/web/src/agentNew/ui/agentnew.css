@@ -3697,6 +3697,47 @@
   overflow-wrap: anywhere;
 }
 
+/*
+ * D4：重试中（暂时失败，见 is-retry）与永久失败（is-permanent）的视觉区分。
+ * is-retry 用蓝色调、role="status"（非打扰）；is-permanent 用红色调、
+ * role="alert"（需要注意）。颜色分别对应 .agentnew-mcp-status 的
+ * is-reconnecting / is-error 配色，让徽标和下方说明呼应。
+ */
+.agentnew-mcp-status-note {
+  display: grid;
+  gap: 3px;
+  margin: 9px 0 0;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.agentnew-mcp-status-note p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.agentnew-mcp-status-note.is-retry {
+  border: 1px solid #bfdbfe;
+  color: #1e3a5f;
+  background: #eff6ff;
+}
+
+.agentnew-mcp-status-note.is-retry strong {
+  color: #1d4ed8;
+}
+
+.agentnew-mcp-status-note.is-permanent {
+  border: 1px solid #f8c9c2;
+  color: #7a1a10;
+  background: #fdecea;
+}
+
+.agentnew-mcp-status-note.is-permanent strong {
+  color: #b42318;
+}
+
 .agentnew-mcp-card-footer {
   margin-top: 13px;
   padding-top: 11px;

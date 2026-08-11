@@ -9,14 +9,57 @@ import {
 function statusLabel(server: McpServerView, operation?: McpServerOperation): string {
   if (operation === 'disconnect') return '注销中'
   if (operation === 'remove') return '删除中'
+  // connect/reconnect 正在跑：这是真的在发生的事，说"连接中/重连中"没问题。
+  if (operation === 'connect') return '连接中'
+  if (operation === 'reconnect') return '重连中'
   const labels = {
     disconnected: '未连接',
     connecting: '连接中',
-    reconnecting: '重连中',
+    // 走到这里说明没有进行中的 connect/reconnect 操作：上一次尝试已经落定
+    // 在"暂时性失败"分类（见 tools/mcp/src/failureClassification.ts），
+    // 但当前没有任何重试在后台跑——自动退避重连是 D2 的范围，还没做。
+    // 用"不稳定"而不是"重连中"，避免让用户以为系统正在自动处理。
+    reconnecting: '连接不稳定',
     connected: '已连接',
-    error: '连接错误',
+    error: '需要处理',
   }
   return labels[server.status]
+}
+
+interface McpStatusNote {
+  /** 'retry'：暂时性问题，不需要用户改配置。'permanent'：需要人工介入。 */
+  tone: 'retry' | 'permanent'
+  heading: string
+  advice: string
+}
+
+/**
+ * server.error 只会在"当前没有进行中的 connect/reconnect 尝试"时出现——
+ * clientManager 开始一次新尝试时会先清空 error（connectInternal），只有
+ * 尝试落定失败后才会重新写入。所以这里不必再看 operation：error 存在
+ * 本身就意味着"停在失败态"，而不是"正在尝试"。这就是手动重连触发的
+ * 'reconnecting' 和失败后停留的 'reconnecting' 不需要在这里分开处理的原因：
+ * 前者没有 error，走上面的 statusLabel busy 分支；后者才会走到这个函数。
+ */
+function statusNote(server: McpServerView): McpStatusNote | undefined {
+  if (!server.error) return undefined
+  if (server.status === 'error') {
+    return {
+      tone: 'permanent',
+      heading: '需要你处理',
+      advice: '请检查服务地址、启动命令、参数或访问凭据是否正确，修正后点击下方"重连"。',
+    }
+  }
+  if (server.status === 'reconnecting') {
+    return {
+      tone: 'retry',
+      heading: '暂时中断，不是配置问题',
+      // 不写"系统正在自动重试"——自动退避重连（D2）还没做，这里如实说
+      // "不用你动配置"，而不是承诺一个还不存在的后台行为。
+      advice: '这类问题通常会自行缓解；可以先不管，也可以点击下方"重连"立即重试。',
+    }
+  }
+  return undefined
 }
 
 /** Renders one persisted MCP server and its connection controls. */
@@ -33,6 +76,7 @@ export function McpServerCard({
 }) {
   const busy = operation !== undefined
   const transportUnavailable = server.transport === 'stdio' && !stdioAvailable
+  const note = statusNote(server)
   return (
     <article className="agentnew-mcp-card" aria-label={`MCP 服务 ${server.name}`}>
       <div className="agentnew-mcp-card-head">
@@ -93,8 +137,15 @@ export function McpServerCard({
         </div>
       ) : null}
       {server.cwd ? <div className="agentnew-mcp-detail">工作目录：{server.cwd}</div> : null}
-      {server.error ? (
-        <p className="agentnew-mcp-error" role="alert">{server.error}</p>
+      {note ? (
+        <div
+          className={`agentnew-mcp-status-note is-${note.tone}`}
+          role={note.tone === 'permanent' ? 'alert' : 'status'}
+        >
+          <strong>{note.heading}</strong>
+          <p>{server.error}</p>
+          <p>{note.advice}</p>
+        </div>
       ) : null}
 
       <div className="agentnew-mcp-card-footer">
