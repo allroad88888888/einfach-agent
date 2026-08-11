@@ -168,7 +168,14 @@ export function createMcpSettingsService({
         : await manager.connect(toManagerConfig(config))
       applySnapshot(snapshot)
     } catch (error) {
-      setRuntime(config.id, 'error', 0, messageFromError(error))
+      // The manager already classifies connect failures as temporary
+      // ('reconnecting') or permanent ('error') and emits that snapshot
+      // before rejecting. Prefer it so a temporary failure isn't clobbered
+      // back into 'error' here; only fall back when no snapshot exists
+      // (e.g. validateConfig rejected before any record was created).
+      const snapshot = manager.get(config.id)
+      if (snapshot) applySnapshot(snapshot)
+      else setRuntime(config.id, 'error', 0, messageFromError(error))
     } finally {
       setOperation(config.id)
     }

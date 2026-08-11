@@ -269,6 +269,63 @@ describe('MCP settings service', () => {
     }))
   })
 
+  it("keeps the manager's own status classification on a connect failure instead of forcing 'error'", async () => {
+    const store = createStore()
+    const { storage } = createStorage()
+    // The real McpClientManager classifies a connect failure as temporary
+    // ('reconnecting') or permanent ('error'), emits that snapshot, and only
+    // then rejects. This fake mirrors that ordering so the service is not
+    // allowed to clobber it back into a blanket 'error'.
+    let stored: McpServerSnapshot | undefined
+    const classifyingManager: McpSettingsManager = {
+      async connect(config) {
+        stored = {
+          id: config.id,
+          config,
+          status: 'reconnecting',
+          tools: [],
+          error: '连接暂时中断，可以重试：fetch failed',
+        }
+        throw new Error('fetch failed')
+      },
+      async reconnect() {
+        throw new Error('not used in this test')
+      },
+      async disconnect() {
+        return undefined
+      },
+      async remove() {
+        return false
+      },
+      get: () => stored,
+      list: () => (stored ? [stored] : []),
+      subscribe: () => () => {},
+    }
+    const service = createMcpSettingsService({
+      store,
+      manager: classifyingManager,
+      storage,
+      createId: () => 'flaky',
+    })
+    store.setter(mcpAddFormOpenAtom, true)
+    store.setter(mcpDraftAtom, {
+      name: '不稳定服务',
+      transport: 'streamable-http',
+      url: 'https://flaky.example.com/mcp',
+      command: '',
+      argsText: '',
+      cwd: '',
+      autoConnect: true,
+    })
+
+    await expect(service.submitDraft()).resolves.toBe(true)
+
+    expect(store.getter(mcpServersAtom)[0]).toEqual(expect.objectContaining({
+      status: 'reconnecting',
+      error: '连接暂时中断，可以重试：fetch failed',
+    }))
+  })
+
   it('imports the common Playwright JSON in a browser without starting the stdio process', async () => {
     const store = createStore()
     const { storage, save } = createStorage()

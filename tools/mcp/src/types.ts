@@ -71,6 +71,18 @@ export interface McpConnector {
   connect(config: McpServerConfig, options?: McpOperationOptions): Promise<McpConnection>
 }
 
+/**
+ * - 'connecting' / 'reconnecting': a (re)connect attempt is in flight, or a
+ *   temporary failure was just classified and is safe to retry (the actual
+ *   retry scheduling is not implemented here; see failureClassification.ts).
+ * - 'error': a permanent failure — auth rejected, invalid URL/config, command
+ *   not found/unexecutable, tool-count/name limits, or an unsupported
+ *   capability declaration. Retrying without a config/environment fix will
+ *   not help.
+ *
+ * See classifyMcpFailure() in failureClassification.ts for the exact rules
+ * that decide between 'reconnecting' and 'error'.
+ */
 export type McpServerStatus =
   | 'disconnected'
   | 'connecting'

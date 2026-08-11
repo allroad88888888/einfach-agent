@@ -321,7 +321,29 @@ describe('McpClientManager', () => {
     expect(registry.registrationVersion(name)).toBe((initialVersion ?? 0) + 1)
   })
 
-  it('fails closed and unregisters every remote tool after an unexpected close', async () => {
+  it('fails closed into "reconnecting" (temporary) after an unclassified unexpected close', async () => {
+    const registry = createToolRegistry()
+    const connection = new FakeConnection([remoteTool('alpha')])
+    const manager = new McpClientManager({
+      registry,
+      connector: connectorFor(connection),
+    })
+    await manager.connect(HTTP_CONFIG)
+
+    const failed = waitForSnapshot(
+      manager,
+      (snapshot) => snapshot.status === 'reconnecting',
+    )
+    connection.emitUnexpectedClose(new Error('transport lost'))
+    await expect(failed).resolves.toMatchObject({
+      status: 'reconnecting',
+      error: expect.stringContaining('transport lost'),
+      tools: [],
+    })
+    expect(registry.has('mcp__remote__alpha')).toBe(false)
+  })
+
+  it('fails closed into "error" (permanent) when the close reason is an auth failure', async () => {
     const registry = createToolRegistry()
     const connection = new FakeConnection([remoteTool('alpha')])
     const manager = new McpClientManager({
@@ -334,13 +356,33 @@ describe('McpClientManager', () => {
       manager,
       (snapshot) => snapshot.status === 'error',
     )
-    connection.emitUnexpectedClose(new Error('transport lost'))
+    const authError = new Error('Streamable HTTP error: unauthorized')
+    ;(authError as unknown as { code: number }).code = 401
+    connection.emitUnexpectedClose(authError)
     await expect(failed).resolves.toMatchObject({
       status: 'error',
-      error: 'transport lost',
+      error: expect.stringContaining('身份认证失败'),
       tools: [],
     })
     expect(registry.has('mcp__remote__alpha')).toBe(false)
+  })
+
+  it('classifies a transient connector failure on first connect as "reconnecting"', async () => {
+    const registry = createToolRegistry()
+    const manager = new McpClientManager({
+      registry,
+      connector: {
+        connect: vi.fn(async () => {
+          throw new Error('fetch failed: ECONNREFUSED')
+        }),
+      },
+    })
+
+    await expect(manager.connect(HTTP_CONFIG)).rejects.toThrow('ECONNREFUSED')
+    expect(manager.get(HTTP_CONFIG.id)).toMatchObject({
+      status: 'reconnecting',
+      tools: [],
+    })
   })
 
   it('validates an entire changed list before mutation and preserves local conflicts', async () => {

@@ -1,4 +1,5 @@
 import type { ToolRuntime } from '@web-agent/core/tools/types'
+import { classifyMcpFailure } from './failureClassification'
 import {
   MCP_SERVER_MAX_TOOLS,
   combineAbortSignals,
@@ -307,8 +308,9 @@ export class McpClientManager {
         record.status = 'disconnected'
         record.error = undefined
       } else {
-        record.status = 'error'
-        record.error = caught.message
+        const classification = classifyMcpFailure(caught)
+        record.status = classification.status
+        record.error = classification.message
       }
       this.emit()
       throw caught
@@ -389,8 +391,9 @@ export class McpClientManager {
       this.detachConnection(record)
     }
     this.unregisterAll(record)
-    record.status = 'error'
-    record.error = errorMessage(error)
+    const classification = classifyMcpFailure(error)
+    record.status = classification.status
+    record.error = classification.message
     this.emit()
     await connection.close().catch(() => undefined)
   }
