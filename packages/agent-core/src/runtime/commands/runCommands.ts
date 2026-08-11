@@ -17,6 +17,8 @@ import { addEvent, getActiveSpan, runTraceKey } from '../../observability/trace'
 import { isMcpTool } from '../dangerousTools'
 import { runToolLoop } from '../modelRun'
 import { newId } from '../newId'
+import { toolProviderDisconnectedResult } from '../toolLoading'
+import { checkPendingToolRegistration } from './pendingToolRegistration'
 import type { CoreInstance } from '../core/coreInstance'
 
 export function resolveApiKey(meta: SessionMeta | undefined, core: CoreInstance): string {
@@ -121,8 +123,9 @@ export function createRunCommands(core: CoreInstance) {
       return
     }
 
-    const registrationStillCurrent = pending.registrationVersion === undefined
-      || core.tools.registrationVersion(pending.toolName) === pending.registrationVersion
+    // 判据统一走本 run 的工具集 epoch（拿不到时回退活 registry），见 pendingToolRegistration.ts。
+    const registration = checkPendingToolRegistration(core, id, run.runId, pending)
+    const registrationStillCurrent = registration.state === 'current'
     const rememberApproval = approved
       && Boolean(always)
       && registrationStillCurrent
@@ -140,6 +143,10 @@ export function createRunCommands(core: CoreInstance) {
         always: rememberApproval,
         registrationVersion: pending.registrationVersion,
         registrationStillCurrent,
+        registrationState: registration.state,
+        registrationSource: registration.source,
+        currentRegistrationVersion: registration.currentRegistrationVersion,
+        ...(registration.epochId ? { epochId: registration.epochId, epochStatus: registration.epochStatus } : {}),
       },
     })
     const apiKey = resolveApiKey(core.rootStore.getter(sessionsAtom)[id], core)
@@ -152,6 +159,35 @@ export function createRunCommands(core: CoreInstance) {
           role: 'tool',
           tool_call_id: pending.callId,
           content: JSON.stringify({ error: '用户拒绝执行该工具' }),
+        },
+      }, core)
+      resumePausedRun(id, run, { pendingToolConfirmation: undefined }, core, { apiKey })
+      return
+    }
+
+    // 「所属服务已断开」与「实例被换掉」在这里分道：后者恢复执行时会被 registry.run 的
+    // expectedRegistrationVersion 挡下，回一句 `tool registration version mismatch`，模型
+    // 重读 schema 即可自愈；前者本轮无救——恢复执行只会换来一句给运维看的 `unknown tool: X`，
+    // 模型会以为自己名字写错而原样重试。所以就地回 E2 那份结构化回执，不再进执行路径。
+    if (registration.state === 'disconnected') {
+      addEvent('agent.confirmation.provider_disconnected', {
+        span: getActiveSpan(runTraceKey(id, run.runId)),
+        attrs: {
+          sessionId: id,
+          runId: run.runId,
+          toolName: pending.toolName,
+          callId: pending.callId,
+          tool_provider_disconnected: true,
+          epochId: registration.epochId,
+        },
+      })
+      appendItem(id, {
+        id: newId(),
+        createdAt: Date.now(),
+        item: {
+          role: 'tool',
+          tool_call_id: pending.callId,
+          content: JSON.stringify(toolProviderDisconnectedResult(pending.toolName)),
         },
       }, core)
       resumePausedRun(id, run, { pendingToolConfirmation: undefined }, core, { apiKey })
