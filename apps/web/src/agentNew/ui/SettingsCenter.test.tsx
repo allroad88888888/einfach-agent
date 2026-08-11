@@ -177,7 +177,11 @@ describe('SettingsCenter', () => {
     await user.click(screen.getByRole('button', { name: '打开设置' }))
     await user.click(screen.getByRole('button', { name: '模型' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Kimi 凭证状态读取失败')
+    // 凭据读取失败只暴露通用文案：hydrateModelCredentials 刻意丢弃原始错误，
+    // 不把宿主内部的异常信息带到界面上。
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('无法读取 Kimi 中国区 API Key 状态，请重试。')
+    expect(alert).not.toHaveTextContent('Kimi 凭证状态读取失败')
     expect(screen.getByRole('button', { name: '新建 Kimi 图片对话' })).toBeDisabled()
   })
 
