@@ -1,7 +1,7 @@
 // skills/projectSkillsLoader.ts —— 项目 Skills 扫描与加载
 // ---------------------------------------------------------------------------
 // 本模块负责 IO：通过 ProjectSkillsLoaderBridge 访问 workspace 文件系统，
-// 扫描 .agent/skills/ 与 .claude/skills/ 目录，取每个 SKILL.md 的 frontmatter，
+// 扫描 .webAgent/skills/ 与 .claude/skills/ 目录，取每个 SKILL.md 的 frontmatter，
 // 再调用 projectSkills.ts 的纯函数构建最终快照。
 //
 // 类型与桥接口定义在 coreInstance.ts（ProjectSkillsLoaderBridge / ProjectSkillsStore），
@@ -21,7 +21,7 @@ import {
 
 // 扫描两个根目录
 const SCAN_ROOTS: Array<{ path: string; origin: ProjectSkillOrigin }> = [
-  { path: '.agent/skills', origin: 'agent' },
+  { path: '.webAgent/skills', origin: 'agent' },
   { path: '.claude/skills', origin: 'claude' },
 ]
 
@@ -69,7 +69,7 @@ interface ScanRootResult {
 /**
  * 判定「列目录失败」是否只是「这个仓库没有该目录」。
  *
- * 绝大多数 workspace 既没有 `.agent/skills` 也没有 `.claude/skills`，如果把它当错误记进
+ * 绝大多数 workspace 既没有 `.webAgent/skills` 也没有 `.claude/skills`，如果把它当错误记进
  * diagnostics，设置面板会对每个正常仓库常驻两条「扫描反馈」——用户看到的全是噪声，真出问题时
  * 反而淹没在里面。
  *
@@ -107,12 +107,12 @@ async function scanRoot(
     const message = err instanceof Error ? err.message : String(err)
     // 目录不存在是常态（多数仓库两个根都没有），静默返回空；其余失败才是值得报告的异常。
     if (!isMissingDirectoryError(message)) {
-      diagnostics.push(`${root.origin}/skills: 列表失败 — ${message}`)
+      diagnostics.push(`${root.path}: 列表失败 — ${message}`)
     }
     return { entries, diagnostics }
   }
 
-  // 只认扫描根的直接子目录：路径必为 ['.agent', 'skills', '<dirName>', 'SKILL.md'] 四段。
+  // 只认扫描根的直接子目录：路径必为 ['.webAgent', 'skills', '<dirName>', 'SKILL.md'] 四段。
   // 更深层的 SKILL.md（例如 skills/a/b/SKILL.md）按蓝图约定不是 skill，静默跳过——它多半是
   // 某个 skill 自带的示例资源，报警反而误导。
   const skillMdPaths = fileEntries
@@ -134,7 +134,7 @@ async function scanRoot(
       return {
         skillMdPath,
         dirName,
-        error: `${root.origin}/skills/${dirName}: 读取 SKILL.md 失败 — `
+        error: `${root.path}/${dirName}: 读取 SKILL.md 失败 — `
           + `${err instanceof Error ? err.message : String(err)}，已跳过`,
       }
     }

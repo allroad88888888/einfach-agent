@@ -162,7 +162,7 @@ describe('buildSkillManifestText · 项目段（docs/project-skills-blueprint.md
         name: 'project/deploy-flow',
         description: '何时用：发布相关',
         triggers: [],
-        filePath: '.agent/skills/deploy-flow/SKILL.md',
+        filePath: '.webAgent/skills/deploy-flow/SKILL.md',
         resources: {},
         origin: 'agent' as const,
       },

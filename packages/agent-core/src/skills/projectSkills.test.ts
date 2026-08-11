@@ -345,7 +345,7 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'deploy-flow',
       origin: 'agent',
-      filePath: '.agent/skills/deploy-flow/SKILL.md',
+      filePath: '.webAgent/skills/deploy-flow/SKILL.md',
       frontmatterRaw: validFrontmatter(),
       resourceFiles: [],
     })
@@ -353,7 +353,7 @@ describe('buildProjectSkillEntry', () => {
     expect(result.entry!.name).toBe('project/my-skill')
     expect(result.entry!.description).toBe('何时用：测试；何时不用：无关')
     expect(result.entry!.triggers).toEqual(['deploy', 'ci'])
-    expect(result.entry!.filePath).toBe('.agent/skills/deploy-flow/SKILL.md')
+    expect(result.entry!.filePath).toBe('.webAgent/skills/deploy-flow/SKILL.md')
     expect(result.entry!.origin).toBe('agent')
     expect(result.entry!.resources).toEqual({})
     expect(result.diagnostics).toEqual([])
@@ -368,7 +368,7 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'my-dir',
       origin: 'agent',
-      filePath: '.agent/skills/my-dir/SKILL.md',
+      filePath: '.webAgent/skills/my-dir/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
     })
@@ -385,7 +385,7 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'bad-dir',
       origin: 'agent',
-      filePath: '.agent/skills/bad-dir/SKILL.md',
+      filePath: '.webAgent/skills/bad-dir/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
     })
@@ -404,7 +404,7 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'Bad Dir!',
       origin: 'agent',
-      filePath: '.agent/skills/Bad Dir!/SKILL.md',
+      filePath: '.webAgent/skills/Bad Dir!/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
     })
@@ -420,7 +420,7 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'no-desc',
       origin: 'agent',
-      filePath: '.agent/skills/no-desc/SKILL.md',
+      filePath: '.webAgent/skills/no-desc/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
     })
@@ -432,7 +432,7 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'no-fm',
       origin: 'agent',
-      filePath: '.agent/skills/no-fm/SKILL.md',
+      filePath: '.webAgent/skills/no-fm/SKILL.md',
       frontmatterRaw: '# 直接就是 markdown 正文',
       resourceFiles: [],
     })
@@ -450,7 +450,7 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'empty-desc',
       origin: 'agent',
-      filePath: '.agent/skills/empty-desc/SKILL.md',
+      filePath: '.webAgent/skills/empty-desc/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
     })
@@ -468,7 +468,7 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'long-desc',
       origin: 'agent',
-      filePath: '.agent/skills/long-desc/SKILL.md',
+      filePath: '.webAgent/skills/long-desc/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
     })
@@ -489,7 +489,7 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'clean',
       origin: 'agent',
-      filePath: '.agent/skills/clean/SKILL.md',
+      filePath: '.webAgent/skills/clean/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
     })
@@ -502,11 +502,11 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'with-resources',
       origin: 'agent',
-      filePath: '.agent/skills/with-resources/SKILL.md',
+      filePath: '.webAgent/skills/with-resources/SKILL.md',
       frontmatterRaw: validFrontmatter('with-resources'),
       resourceFiles: [
-        { relativePath: 'references/guide.md', workspacePath: '.agent/skills/with-resources/references/guide.md' },
-        { relativePath: 'references/script.sh', workspacePath: '.agent/skills/with-resources/references/script.sh' },
+        { relativePath: 'references/guide.md', workspacePath: '.webAgent/skills/with-resources/references/guide.md' },
+        { relativePath: 'references/script.sh', workspacePath: '.webAgent/skills/with-resources/references/script.sh' },
       ],
     })
     expect(result.entry).toBeDefined()
@@ -519,12 +519,12 @@ describe('buildProjectSkillEntry', () => {
   it('资源上限截断：超过 MAX_PROJECT_RESOURCES_PER_SKILL', () => {
     const files = Array.from({ length: MAX_PROJECT_RESOURCES_PER_SKILL + 2 }, (_, i) => ({
       relativePath: `refs/doc${i}.md`,
-      workspacePath: `.agent/skills/many/SKILL.md/refs/doc${i}.md`,
+      workspacePath: `.webAgent/skills/many/SKILL.md/refs/doc${i}.md`,
     }))
     const result = buildProjectSkillEntry({
       dirName: 'many',
       origin: 'agent',
-      filePath: '.agent/skills/many/SKILL.md',
+      filePath: '.webAgent/skills/many/SKILL.md',
       frontmatterRaw: validFrontmatter('many'),
       resourceFiles: files,
     })
@@ -555,7 +555,7 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'test',
       origin: 'agent',
-      filePath: '.agent/skills/test/SKILL.md',
+      filePath: '.webAgent/skills/test/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
     })
@@ -574,7 +574,7 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'test',
       origin: 'agent',
-      filePath: '.agent/skills/test/SKILL.md',
+      filePath: '.webAgent/skills/test/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
     })
@@ -592,7 +592,7 @@ describe('resolveProjectSkills', () => {
       name: `project/${name}`,
       description: `description for ${name}`,
       triggers: [],
-      filePath: `.${origin}/skills/${name}/SKILL.md`,
+      filePath: origin === 'agent' ? `.webAgent/skills/${name}/SKILL.md` : `.claude/skills/${name}/SKILL.md`,
       resources: {},
       origin,
     }
@@ -611,7 +611,7 @@ describe('resolveProjectSkills', () => {
     expect(snapshot.workspaceRoot).toBe('/test')
   })
 
-  it('.agent 与 .claude 撞名 → .agent 胜', () => {
+  it('.webAgent 与 .claude 撞名 → .webAgent 胜', () => {
     const snapshot = resolveProjectSkills({
       workspaceRoot: '/test',
       agentEntries: [makeEntry('deploy', 'agent')],
@@ -621,7 +621,7 @@ describe('resolveProjectSkills', () => {
     })
     expect(snapshot.entries).toHaveLength(1)
     expect(snapshot.entries[0].origin).toBe('agent')
-    expect(snapshot.diagnostics.some((d) => d.includes('.agent 同名') && d.includes('claude'))).toBe(true)
+    expect(snapshot.diagnostics.some((d) => d.includes('.webAgent 同名') && d.includes('claude'))).toBe(true)
   })
 
   it('不撞名时两路合并', () => {
@@ -729,7 +729,7 @@ describe('buildSkillManifestText 项目段', () => {
       name: 'project/deploy-flow',
       description: '何时用：改发布脚本时读我；何时不用：普通改动',
       triggers: [],
-      filePath: '.agent/skills/deploy-flow/SKILL.md',
+      filePath: '.webAgent/skills/deploy-flow/SKILL.md',
       resources: {},
       origin: 'agent',
     }
@@ -746,7 +746,7 @@ describe('buildSkillManifestText 项目段', () => {
       name: 'project/test',
       description: '测试 skill',
       triggers: [],
-      filePath: '.agent/skills/test/SKILL.md',
+      filePath: '.webAgent/skills/test/SKILL.md',
       resources: {},
       origin: 'agent',
     }
@@ -762,7 +762,7 @@ describe('buildSkillManifestText 项目段', () => {
         name: 'project/zebra',
         description: 'z desc',
         triggers: [],
-        filePath: '.agent/skills/zebra/SKILL.md',
+        filePath: '.webAgent/skills/zebra/SKILL.md',
         resources: {},
         origin: 'agent',
       },
@@ -770,7 +770,7 @@ describe('buildSkillManifestText 项目段', () => {
         name: 'project/alpha',
         description: 'a desc',
         triggers: [],
-        filePath: '.agent/skills/alpha/SKILL.md',
+        filePath: '.webAgent/skills/alpha/SKILL.md',
         resources: {},
         origin: 'agent',
       },
@@ -789,7 +789,7 @@ describe('buildSkillManifestText 项目段', () => {
       name: 'project/test',
       description: '测试 skill',
       triggers: [],
-      filePath: '.agent/skills/test/SKILL.md',
+      filePath: '.webAgent/skills/test/SKILL.md',
       resources: {},
       origin: 'agent',
     }

@@ -17,7 +17,7 @@ import { listWorkspaceFiles, readWorkspaceFile } from './workspaceRead'
  *
  * ★ 失败一律 throw，且必须带上桥的原始 error ★ —— workspaceRead 的两个函数返回的是
  *   `{ok:false, error}` 而非抛异常。直接取 `.data` 会在失败时读到 undefined，抛出的
- *   TypeError 会把「.agent/skills 不存在」这类真实原因替换成
+ *   TypeError 会把「.webAgent/skills 不存在」这类真实原因替换成
  *   「Cannot read properties of undefined」，让 loader 的 diagnostics 变成噪声。
  *   loader 依赖 error 文本判定「目录不存在 ＝ 正常无项目 skills」，所以保真是硬要求。
  */

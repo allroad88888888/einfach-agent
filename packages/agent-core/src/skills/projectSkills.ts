@@ -391,7 +391,7 @@ export function resolveProjectSkills(opts: {
   for (const entry of claudeEntries) {
     if (agentNames.has(entry.name)) {
       diagnostics.push(
-        `claude/skills/${entry.name.slice('project/'.length)}: 与 .agent 同名，.agent 胜，已跳过`,
+        `claude/skills/${entry.name.slice('project/'.length)}: 与 .webAgent 同名，.webAgent 胜，已跳过`,
       )
     } else {
       dedupedClaude.push(entry)

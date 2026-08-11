@@ -43,17 +43,17 @@ function makeFakeBridge(
 
 function basicFakeFiles(): { entries: FakeFsEntry[]; files: Record<string, FakeFile> } {
   const entries: FakeFsEntry[] = [
-    { path: '.agent/skills/deploy-flow', type: 'directory' },
-    { path: '.agent/skills/deploy-flow/SKILL.md', type: 'file' },
-    { path: '.agent/skills/deploy-flow/references/checklist.md', type: 'file' },
-    { path: '.agent/skills/test-runner', type: 'directory' },
-    { path: '.agent/skills/test-runner/SKILL.md', type: 'file' },
+    { path: '.webAgent/skills/deploy-flow', type: 'directory' },
+    { path: '.webAgent/skills/deploy-flow/SKILL.md', type: 'file' },
+    { path: '.webAgent/skills/deploy-flow/references/checklist.md', type: 'file' },
+    { path: '.webAgent/skills/test-runner', type: 'directory' },
+    { path: '.webAgent/skills/test-runner/SKILL.md', type: 'file' },
     { path: '.claude/skills/legacy-skill', type: 'directory' },
     { path: '.claude/skills/legacy-skill/SKILL.md', type: 'file' },
   ]
 
   const files: Record<string, FakeFile> = {
-    '.agent/skills/deploy-flow/SKILL.md': {
+    '.webAgent/skills/deploy-flow/SKILL.md': {
       content: [
         '---',
         'name: deploy-flow',
@@ -64,10 +64,10 @@ function basicFakeFiles(): { entries: FakeFsEntry[]; files: Record<string, FakeF
         '# 部署流程',
       ].join('\n'),
     },
-    '.agent/skills/deploy-flow/references/checklist.md': {
+    '.webAgent/skills/deploy-flow/references/checklist.md': {
       content: '# 检查清单\n- [ ] 测试通过\n- [ ] 构建通过',
     },
-    '.agent/skills/test-runner/SKILL.md': {
+    '.webAgent/skills/test-runner/SKILL.md': {
       content: [
         '---',
         'name: test-runner',
@@ -152,7 +152,7 @@ describe('projectSkillsLoader', () => {
 
   // --- 扫描结果 ---
 
-  it('扫描 .agent 和 .claude 两路', async () => {
+  it('扫描 .webAgent 和 .claude 两路', async () => {
     const { entries, files } = basicFakeFiles()
     const bridge = bridgeFromFake({ entries, files })
 
@@ -175,15 +175,15 @@ describe('projectSkillsLoader', () => {
     }
   })
 
-  it('.agent 与 .claude 撞名 → .agent 胜', async () => {
+  it('.webAgent 与 .claude 撞名 → .webAgent 胜', async () => {
     const entries: FakeFsEntry[] = [
-      { path: '.agent/skills/my-skill', type: 'directory' },
-      { path: '.agent/skills/my-skill/SKILL.md', type: 'file' },
+      { path: '.webAgent/skills/my-skill', type: 'directory' },
+      { path: '.webAgent/skills/my-skill/SKILL.md', type: 'file' },
       { path: '.claude/skills/my-skill', type: 'directory' },
       { path: '.claude/skills/my-skill/SKILL.md', type: 'file' },
     ]
     const files: Record<string, FakeFile> = {
-      '.agent/skills/my-skill/SKILL.md': {
+      '.webAgent/skills/my-skill/SKILL.md': {
         content: '---\nname: my-skill\ndescription: agent version\n---\n',
       },
       '.claude/skills/my-skill/SKILL.md': {
@@ -196,12 +196,12 @@ describe('projectSkillsLoader', () => {
     expect(snapshot.entries).toHaveLength(1)
     expect(snapshot.entries[0].origin).toBe('agent')
     expect(snapshot.entries[0].description).toBe('agent version')
-    expect(snapshot.diagnostics.some((d) => d.includes('.agent 同名'))).toBe(true)
+    expect(snapshot.diagnostics.some((d) => d.includes('.webAgent 同名'))).toBe(true)
   })
 
   // --- 降级场景 ---
 
-  it('.agent 目录不存在 → 只返回 .claude 的结果', async () => {
+  it('.webAgent 目录不存在 → 只返回 .claude 的结果', async () => {
     const entries: FakeFsEntry[] = [
       { path: '.claude/skills/only-skill', type: 'directory' },
       { path: '.claude/skills/only-skill/SKILL.md', type: 'file' },
@@ -235,13 +235,13 @@ describe('projectSkillsLoader', () => {
 
   it('单个 SKILL.md 读失败 → 该 skill 跳过、其它照常', async () => {
     const entries: FakeFsEntry[] = [
-      { path: '.agent/skills/good-skill', type: 'directory' },
-      { path: '.agent/skills/good-skill/SKILL.md', type: 'file' },
-      { path: '.agent/skills/bad-skill', type: 'directory' },
-      { path: '.agent/skills/bad-skill/SKILL.md', type: 'file' },
+      { path: '.webAgent/skills/good-skill', type: 'directory' },
+      { path: '.webAgent/skills/good-skill/SKILL.md', type: 'file' },
+      { path: '.webAgent/skills/bad-skill', type: 'directory' },
+      { path: '.webAgent/skills/bad-skill/SKILL.md', type: 'file' },
     ]
     const files: Record<string, FakeFile> = {
-      '.agent/skills/good-skill/SKILL.md': {
+      '.webAgent/skills/good-skill/SKILL.md': {
         content: '---\nname: good-skill\ndescription: works fine\n---\n',
       },
       // bad-skill 的文件不存在 → readFile 失败
@@ -263,11 +263,11 @@ describe('projectSkillsLoader', () => {
       'x'.repeat(10000),
     ].join('\n')
     const entries: FakeFsEntry[] = [
-      { path: '.agent/skills/huge', type: 'directory' },
-      { path: '.agent/skills/huge/SKILL.md', type: 'file' },
+      { path: '.webAgent/skills/huge', type: 'directory' },
+      { path: '.webAgent/skills/huge/SKILL.md', type: 'file' },
     ]
     const files: Record<string, FakeFile> = {
-      '.agent/skills/huge/SKILL.md': { content: longFrontmatter },
+      '.webAgent/skills/huge/SKILL.md': { content: longFrontmatter },
     }
     const bridge = bridgeFromFake({ entries, files })
 
@@ -284,11 +284,11 @@ describe('projectSkillsLoader', () => {
   it('refresh 后重新扫描（无视缓存）', async () => {
     // 第一次扫描：1 个 skill
     const entries1: FakeFsEntry[] = [
-      { path: '.agent/skills/alpha', type: 'directory' },
-      { path: '.agent/skills/alpha/SKILL.md', type: 'file' },
+      { path: '.webAgent/skills/alpha', type: 'directory' },
+      { path: '.webAgent/skills/alpha/SKILL.md', type: 'file' },
     ]
     const files1: Record<string, FakeFile> = {
-      '.agent/skills/alpha/SKILL.md': {
+      '.webAgent/skills/alpha/SKILL.md': {
         content: '---\nname: alpha\ndescription: first\n---\n',
       },
     }
@@ -300,12 +300,12 @@ describe('projectSkillsLoader', () => {
     // 替换桥：模拟文件系统变化（新增一个 skill）
     const entries2: FakeFsEntry[] = [
       ...entries1,
-      { path: '.agent/skills/beta', type: 'directory' },
-      { path: '.agent/skills/beta/SKILL.md', type: 'file' },
+      { path: '.webAgent/skills/beta', type: 'directory' },
+      { path: '.webAgent/skills/beta/SKILL.md', type: 'file' },
     ]
     const files2: Record<string, FakeFile> = {
       ...files1,
-      '.agent/skills/beta/SKILL.md': {
+      '.webAgent/skills/beta/SKILL.md': {
         content: '---\nname: beta\ndescription: second\n---\n',
       },
     }
@@ -353,17 +353,17 @@ describe('projectSkillsLoader', () => {
 
   it('深度 > 1 的 SKILL.md 被忽略', async () => {
     const entries: FakeFsEntry[] = [
-      { path: '.agent/skills/top-level', type: 'directory' },
-      { path: '.agent/skills/top-level/SKILL.md', type: 'file' },
+      { path: '.webAgent/skills/top-level', type: 'directory' },
+      { path: '.webAgent/skills/top-level/SKILL.md', type: 'file' },
       // 这个在嵌套子目录里，应该被忽略
-      { path: '.agent/skills/top-level/sub-dir', type: 'directory' },
-      { path: '.agent/skills/top-level/sub-dir/SKILL.md', type: 'file' },
+      { path: '.webAgent/skills/top-level/sub-dir', type: 'directory' },
+      { path: '.webAgent/skills/top-level/sub-dir/SKILL.md', type: 'file' },
     ]
     const files: Record<string, FakeFile> = {
-      '.agent/skills/top-level/SKILL.md': {
+      '.webAgent/skills/top-level/SKILL.md': {
         content: '---\nname: top\ndescription: only top-level recognized\n---\n',
       },
-      '.agent/skills/top-level/sub-dir/SKILL.md': {
+      '.webAgent/skills/top-level/sub-dir/SKILL.md': {
         content: '---\nname: nested\ndescription: should be ignored\n---\n',
       },
     }
@@ -426,13 +426,13 @@ describe('scanProjectSkills · 目录缺失与错误保真（review 修复回归
       readFile: vi.fn(),
     }
     const snapshot = await scanProjectSkills('/w', bridge as never)
-    expect(snapshot.diagnostics.join('\n')).toContain('permission denied')
+    expect(snapshot.diagnostics.join('\n')).toContain('.webAgent/skills: 列表失败 — permission denied')
   })
 
   it('一个根缺失不影响另一个根被扫到', async () => {
     const bridge = {
       listFiles: vi.fn(async (path: string) => {
-        if (path === '.agent/skills') throw new Error('path is not accessible')
+        if (path === '.webAgent/skills') throw new Error('path is not accessible')
         return {
           entries: [
             { path: '.claude/skills/legacy/SKILL.md', type: 'file' },
@@ -449,11 +449,11 @@ describe('scanProjectSkills · 目录缺失与错误保真（review 修复回归
   it('单个 SKILL.md 读失败只跳过它自己，其余照常加载', async () => {
     const bridge = {
       listFiles: vi.fn(async (path: string) => {
-        if (path !== '.agent/skills') return { entries: [] }
+        if (path !== '.webAgent/skills') return { entries: [] }
         return {
           entries: [
-            { path: '.agent/skills/good/SKILL.md', type: 'file' },
-            { path: '.agent/skills/bad/SKILL.md', type: 'file' },
+            { path: '.webAgent/skills/good/SKILL.md', type: 'file' },
+            { path: '.webAgent/skills/bad/SKILL.md', type: 'file' },
           ],
         }
       }),
@@ -464,19 +464,21 @@ describe('scanProjectSkills · 目录缺失与错误保真（review 修复回归
     }
     const snapshot = await scanProjectSkills('/w', bridge as never)
     expect(snapshot.entries.map((entry) => entry.name)).toEqual(['project/good'])
-    expect(snapshot.diagnostics.join('\n')).toContain('bad')
+    expect(snapshot.diagnostics.join('\n')).toContain('.webAgent/skills/bad: 读取 SKILL.md 失败')
   })
 
   it('深层 SKILL.md（非扫描根的直接子目录）静默跳过，不记为异常', async () => {
     const bridge = {
-      listFiles: vi.fn(async (path: string) => (path === '.agent/skills'
-        ? { entries: [{ path: '.agent/skills/a/examples/b/SKILL.md', type: 'file' }] }
+      listFiles: vi.fn(async (path: string) => (path === '.webAgent/skills'
+        ? { entries: [{ path: '.webAgent/skills/a/examples/b/SKILL.md', type: 'file' }] }
         : { entries: [] })),
       readFile: vi.fn(),
     }
     const snapshot = await scanProjectSkills('/w', bridge as never)
     expect(snapshot.entries).toEqual([])
     expect(snapshot.diagnostics).toEqual([])
+    expect(bridge.listFiles.mock.calls.map(([path]) => path))
+      .toEqual(['.webAgent/skills', '.claude/skills'])
     expect(bridge.readFile).not.toHaveBeenCalled()
   })
 })
@@ -485,8 +487,8 @@ describe('CoreInstance.projectSkills · 快照存 atom + in-flight 去重（revi
   it('快照写进 rootStore 的 projectSkillsAtom —— UI 因此可订阅', async () => {
     const core = createCoreInstance()
     const bridge: ProjectSkillsLoaderBridge = {
-      listFiles: async (path) => (path === '.agent/skills'
-        ? { entries: [{ path: '.agent/skills/x/SKILL.md', type: 'file' }] }
+      listFiles: async (path) => (path === '.webAgent/skills'
+        ? { entries: [{ path: '.webAgent/skills/x/SKILL.md', type: 'file' }] }
         : { entries: [] }),
       readFile: async () => ({ content: '---\nname: x\ndescription: 描述\n---\n正文\n' }),
     }
