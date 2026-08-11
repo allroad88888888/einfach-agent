@@ -1,0 +1,123 @@
+import { describe, expect, it, vi } from 'vitest'
+
+// C1：main.tsx 必须在启动时装配 MCP 运行时（initializeMcpSettings + hydrateMcpSettings），
+// 不能像之前那样只在 SettingsDialog 的 useEffect 里触发——那样用户不点开设置，
+// autoConnect 的 MCP 服务永远连不上。本测试直接 import 真实的 './main' 入口，
+// 全程不 import、不 mock 出任何 SettingsDialog/SettingsCenter，只把与 MCP 无关、
+// 会触发网络/持久化/DOM 副作用的重依赖换成哑实现，从而证明：即使设置弹窗从未被
+// mount 过，装配与 hydrate 依然会发生，且不阻塞首屏渲染（render 调用同步发出，
+// hydrate 不被 await）。
+
+vi.mock('@web-agent/core/runtime/commands', () => ({
+  configureCommands: vi.fn(),
+  newSession: vi.fn(),
+}))
+vi.mock('@web-agent/core/runtime/persistenceBridge', () => ({
+  configurePersistence: vi.fn(),
+}))
+vi.mock('@web-agent/core/observability/trace', () => ({
+  configureObservability: vi.fn(),
+}))
+vi.mock('@web-agent/core/state/persistence/hydrate', () => ({
+  hydrate: vi.fn(async () => false),
+}))
+vi.mock('@web-agent/core/state/persistence/indexedDbDriver', () => ({
+  createIndexedDbHistoryDriver: vi.fn(() => ({})),
+}))
+vi.mock('@web-agent/core/observability/indexedDbLogDriver', () => ({
+  createIndexedDbLogDriver: vi.fn(() => ({})),
+}))
+vi.mock('@web-agent/core/state/persistence/sessionsPersistence', () => ({
+  createSessionsPersistence: vi.fn(() => ({})),
+}))
+// AppShell 是唯一会（间接、经由懒加载）触到 SettingsDialog 的组件——换成哑组件，
+// 确保整条 import 链路里真的没有任何代码路径 mount 过 SettingsDialog/SettingsCenter。
+vi.mock('./agentNew/ui/AppShell', () => ({
+  AppShell: () => null,
+}))
+vi.mock('./agentNew/ui/StartupCredentialGate', () => ({
+  StartupCredentialGate: () => null,
+}))
+vi.mock('./agentNew/ui/WebTimelineRendererRegistryProvider', () => ({
+  WebTimelineRendererRegistryProvider: () => null,
+}))
+vi.mock('./settings/commands', () => ({
+  configureModelCredentialHost: vi.fn(),
+  hydrateAppSettings: vi.fn(async () => undefined),
+}))
+vi.mock('./settings/modelCredentialHost', () => ({
+  createTauriModelCredentialHost: vi.fn(() => ({})),
+  createUnavailableModelCredentialHost: vi.fn(() => ({})),
+}))
+vi.mock('./settings/startupCredentialTarget', () => ({
+  resolveStartupCredentialTarget: vi.fn(() => ({ status: 'unavailable' })),
+}))
+vi.mock('./modelTransport/tauriModelTransport', () => ({
+  createTauriModelFetch: vi.fn(() => vi.fn()),
+}))
+vi.mock('./modelTransport/devPreviewModelTransport', () => ({
+  createDevPreviewModelFetch: vi.fn(() => vi.fn()),
+}))
+vi.mock('./modelTransport/unavailableModelTransport', () => ({
+  createUnavailableModelFetch: vi.fn(() => vi.fn()),
+}))
+vi.mock('./modelInput/prepareProviderUserInput', () => ({
+  prepareProviderUserInput: vi.fn(),
+}))
+vi.mock('./modelInput/disposeProviderUserContent', () => ({
+  disposeProviderUserContent: vi.fn(),
+}))
+vi.mock('./performanceDiagnostics', () => ({
+  reportReactCommit: vi.fn(),
+  startUiPerformanceDiagnostics: vi.fn(),
+}))
+
+describe('main entry: MCP 启动装配（C1）', () => {
+  it('不 mount 设置弹窗/设置中心也会装配 MCP 并触发 hydrate', async () => {
+    // main.tsx 顶层会调用 renderRoot -> createRoot(document.getElementById('root')!)。
+    document.body.innerHTML = '<div id="root"></div>'
+
+    const { isMcpSettingsConfigured } = await import('./mcp/commands')
+    const { mcpHydrationAtom } = await import('./mcp/state')
+    const { rootStore } = await import('@web-agent/core/state/rootStore')
+
+    expect(isMcpSettingsConfigured()).toBe(false)
+    expect(rootStore.getter(mcpHydrationAtom).status).toBe('idle')
+
+    // 真正的入口文件：本测试从未 import 任何 SettingsDialog/SettingsCenter 模块。
+    await import('./main')
+
+    // initializeMcpSettings() 是同步调用，import 完成时必须已经生效。
+    expect(isMcpSettingsConfigured()).toBe(true)
+
+    // hydrateMcpSettings() 故意不被 main.tsx await（不阻塞首屏渲染），
+    // 但既然它已经被触发，等待一次微任务后应当离开初始的 idle 状态。
+    await vi.waitFor(() => {
+      expect(rootStore.getter(mcpHydrationAtom).status).not.toBe('idle')
+    })
+    expect(rootStore.getter(mcpHydrationAtom).status).toBe('ready')
+  })
+
+  // 依赖上一个用例先跑：main.tsx 与（仍会被 mount 的）SettingsDialog 的 useEffect 都会调用
+  // initializeMcpSettings() / hydrateMcpSettings()——C1 只搬装配时机，不改 SettingsDialog，
+  // 所以这两处后续会重复调用。这里模拟 SettingsDialog 之后再次触发同一对函数，
+  // 证明幂等性真的成立：不会重新 configureMcpSettings()（不会把 hydration 状态打回
+  // loading/idle），也不会抛错。
+  it('SettingsDialog 之后再调用同一对函数是幂等的，不会重新装配或重新 hydrate', async () => {
+    const { initializeMcpSettings } = await import('./mcp/initialize')
+    const { hydrateMcpSettings, isMcpSettingsConfigured } = await import('./mcp/commands')
+    const { mcpHydrationAtom } = await import('./mcp/state')
+    const { rootStore } = await import('@web-agent/core/state/rootStore')
+
+    expect(isMcpSettingsConfigured()).toBe(true)
+    expect(rootStore.getter(mcpHydrationAtom).status).toBe('ready')
+
+    initializeMcpSettings()
+    void hydrateMcpSettings()
+
+    // 幂等：guard 挡住了重新 configureMcpSettings，状态没有被打回 loading/idle。
+    expect(rootStore.getter(mcpHydrationAtom).status).toBe('ready')
+    await expect(hydrateMcpSettings()).resolves.toBeUndefined()
+    expect(rootStore.getter(mcpHydrationAtom).status).toBe('ready')
+  })
+})
