@@ -1,231 +1,26 @@
 import { createStore } from '@einfach/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type {
-  McpServerConfig,
-  McpServerSnapshot,
-  McpServerStatus,
-} from '@web-agent/tools-mcp'
+import type { McpServerSnapshot } from '@web-agent/tools-mcp'
 import { createMcpSettingsService, type McpSettingsManager } from './service'
+import { createStorage, FakeMcpManager } from './service.fixtures'
 import {
   MCP_SETTINGS_MAX_SERVERS,
   type McpConfigStorage,
 } from './persistence'
-import { createMemoryToolNameCacheStorage } from './toolNameCacheStorage'
 import {
   mcpAddFormOpenAtom,
   mcpDraftAtom,
   mcpFormErrorAtom,
-  mcpHydrationAtom,
   mcpServerConfigsAtom,
   mcpServersAtom,
 } from './state'
 import type { PersistedMcpServerConfig } from './types'
-
-const PLAYWRIGHT_MCP_JSON = `{
-  "mcpServers": {
-    "playwright": {
-      "command": "npx",
-      "args": [
-        "@playwright/mcp@latest"
-      ]
-    }
-  }
-}`
-
-function snapshot(
-  config: McpServerConfig,
-  status: McpServerStatus = 'connected',
-): McpServerSnapshot {
-  return {
-    id: config.id,
-    config,
-    status,
-    tools: status === 'connected'
-      ? [{
-          name: `mcp__${config.id}__search`,
-          remoteName: 'search',
-          description: 'Search',
-          inputSchema: { type: 'object' },
-        }]
-      : [],
-  }
-}
-
-class FakeMcpManager implements McpSettingsManager {
-  readonly connectCalls: McpServerConfig[] = []
-  readonly reconnectCalls: string[] = []
-  readonly disconnectCalls: string[] = []
-  readonly removeCalls: string[] = []
-
-  private readonly snapshots = new Map<string, McpServerSnapshot>()
-  private readonly listeners = new Set<(servers: readonly McpServerSnapshot[]) => void>()
-
-  async connect(config: McpServerConfig): Promise<McpServerSnapshot> {
-    this.connectCalls.push(config)
-    const next = snapshot(config)
-    this.snapshots.set(config.id, next)
-    this.emit()
-    return next
-  }
-
-  async reconnect(id: string): Promise<McpServerSnapshot> {
-    this.reconnectCalls.push(id)
-    const current = this.snapshots.get(id)
-    if (!current) throw new Error(`unknown server: ${id}`)
-    const next = snapshot(current.config)
-    this.snapshots.set(id, next)
-    this.emit()
-    return next
-  }
-
-  async disconnect(id: string): Promise<McpServerSnapshot | undefined> {
-    this.disconnectCalls.push(id)
-    const current = this.snapshots.get(id)
-    if (!current) return undefined
-    const next = snapshot(current.config, 'disconnected')
-    this.snapshots.set(id, next)
-    this.emit()
-    return next
-  }
-
-  async remove(id: string): Promise<boolean> {
-    this.removeCalls.push(id)
-    const removed = this.snapshots.delete(id)
-    this.emit()
-    return removed
-  }
-
-  get(id: string): McpServerSnapshot | undefined {
-    return this.snapshots.get(id)
-  }
-
-  list(): readonly McpServerSnapshot[] {
-    return [...this.snapshots.values()]
-  }
-
-  subscribe(listener: (servers: readonly McpServerSnapshot[]) => void): () => void {
-    this.listeners.add(listener)
-    return () => this.listeners.delete(listener)
-  }
-
-  private emit(): void {
-    const servers = this.list()
-    for (const listener of this.listeners) listener(servers)
-  }
-}
-
-function createStorage(initial: readonly PersistedMcpServerConfig[] = []): {
-  storage: McpConfigStorage
-  load: ReturnType<typeof vi.fn<McpConfigStorage['load']>>
-  save: ReturnType<typeof vi.fn<McpConfigStorage['save']>>
-} {
-  let configs = [...initial]
-  const load = vi.fn<McpConfigStorage['load']>(async () => configs)
-  const save = vi.fn<McpConfigStorage['save']>(async (next) => {
-    configs = [...next]
-  })
-  return {
-    storage: { persistence: 'persistent', load, save },
-    load,
-    save,
-  }
-}
 
 describe('MCP settings service', () => {
   let manager: FakeMcpManager
 
   beforeEach(() => {
     manager = new FakeMcpManager()
-  })
-
-  it('hydrates once, auto-connects HTTP, and never auto-starts legacy stdio configs', async () => {
-    const store = createStore()
-    const automatic: PersistedMcpServerConfig = {
-      id: 'knowledge',
-      name: '知识库',
-      transport: 'streamable-http',
-      url: 'https://mcp.example.com/',
-      autoConnect: true,
-    }
-    const manual: PersistedMcpServerConfig = {
-      id: 'local-files',
-      name: '本地文件',
-      transport: 'stdio',
-      command: 'mcp-files',
-      args: ['--root', '/workspace'],
-      // Simulates a legacy value written before stdio was made manual-only.
-      autoConnect: true,
-    }
-    const { storage, load, save } = createStorage([automatic, manual])
-    const service = createMcpSettingsService({
-      store,
-      manager,
-      storage,
-      capabilities: { stdio: true },
-    })
-
-    await service.hydrate()
-    await service.hydrate()
-
-    expect(load).toHaveBeenCalledTimes(1)
-    expect(manager.connectCalls).toEqual([{
-      id: 'knowledge',
-      name: '知识库',
-      transport: 'streamable-http',
-      url: 'https://mcp.example.com/',
-    }])
-    expect(save).toHaveBeenCalledWith([
-      automatic,
-      { ...manual, autoConnect: false },
-    ])
-    expect(store.getter(mcpServerConfigsAtom)).toEqual([
-      automatic,
-      { ...manual, autoConnect: false },
-    ])
-    expect(store.getter(mcpHydrationAtom)).toEqual({ status: 'ready' })
-    expect(store.getter(mcpServersAtom)).toEqual([
-      expect.objectContaining({
-        id: 'knowledge',
-        status: 'connected',
-        toolCount: 1,
-      }),
-      expect.objectContaining({
-        id: 'local-files',
-        status: 'disconnected',
-        toolCount: 0,
-      }),
-    ])
-  })
-
-  it('coalesces concurrent hydration, retries after failure, and stays cached after success', async () => {
-    const store = createStore()
-    const { storage, load } = createStorage()
-    load.mockImplementationOnce(() => {
-      throw new Error('temporary storage failure')
-    })
-    const service = createMcpSettingsService({ store, manager, storage })
-
-    const first = service.hydrate()
-    const concurrent = service.hydrate()
-
-    expect(concurrent).toBe(first)
-    await first
-    expect(load).toHaveBeenCalledTimes(1)
-    expect(store.getter(mcpHydrationAtom)).toEqual({
-      status: 'error',
-      error: '无法读取 MCP 设置：temporary storage failure',
-    })
-
-    const retry = service.hydrate()
-    expect(retry).not.toBe(first)
-    await retry
-    expect(load).toHaveBeenCalledTimes(2)
-    expect(store.getter(mcpHydrationAtom)).toEqual({ status: 'ready' })
-
-    const cached = service.hydrate()
-    expect(cached).toBe(retry)
-    await cached
-    expect(load).toHaveBeenCalledTimes(2)
   })
 
   it('saves a valid draft, connects it, and never passes persistence-only fields to the manager', async () => {
@@ -279,6 +74,10 @@ describe('MCP settings service', () => {
     // allowed to clobber it back into a blanket 'error'.
     let stored: McpServerSnapshot | undefined
     const classifyingManager: McpSettingsManager = {
+      async register(config) {
+        stored = { id: config.id, config, status: 'disconnected', tools: [] }
+        return stored
+      },
       async connect(config) {
         stored = {
           id: config.id,
@@ -325,157 +124,6 @@ describe('MCP settings service', () => {
       status: 'reconnecting',
       error: '连接暂时中断，可以重试：fetch failed',
     }))
-  })
-
-  it('imports the common Playwright JSON in a browser without starting the stdio process', async () => {
-    const store = createStore()
-    const { storage, save } = createStorage()
-    const service = createMcpSettingsService({
-      store,
-      manager,
-      storage,
-      capabilities: { stdio: false },
-      createId: () => 'playwright',
-    })
-
-    await expect(service.importJson(PLAYWRIGHT_MCP_JSON)).resolves.toBe(true)
-
-    const expected: PersistedMcpServerConfig = {
-      id: 'playwright',
-      name: 'playwright',
-      transport: 'stdio',
-      command: 'npx',
-      args: ['@playwright/mcp@latest'],
-      autoConnect: false,
-    }
-    expect(save).toHaveBeenCalledTimes(1)
-    expect(save).toHaveBeenCalledWith([expected])
-    expect(manager.connectCalls).toHaveLength(0)
-    expect(store.getter(mcpServerConfigsAtom)).toEqual([expected])
-    expect(store.getter(mcpServersAtom)).toEqual([
-      expect.objectContaining({
-        id: 'playwright',
-        status: 'disconnected',
-        toolCount: 0,
-      }),
-    ])
-  })
-
-  it('imports multiple services in one save and leaves every transport manual-only', async () => {
-    const store = createStore()
-    const { storage, save } = createStorage()
-    const ids = ['local-playwright', 'remote-search']
-    let nextId = 0
-    const service = createMcpSettingsService({
-      store,
-      manager,
-      storage,
-      toolNameCacheStorage: createMemoryToolNameCacheStorage(),
-      capabilities: { stdio: true },
-      createId: () => ids[nextId++]!,
-    })
-
-    await expect(service.importJson(JSON.stringify({
-      mcpServers: {
-        playwright: {
-          command: 'npx',
-          args: ['@playwright/mcp@latest'],
-        },
-        search: {
-          type: 'http',
-          url: 'https://search.example.com/mcp',
-        },
-      },
-    }))).resolves.toBe(true)
-
-    const expected: readonly PersistedMcpServerConfig[] = [
-      {
-        id: 'local-playwright',
-        name: 'playwright',
-        transport: 'stdio',
-        command: 'npx',
-        args: ['@playwright/mcp@latest'],
-        autoConnect: false,
-      },
-      {
-        id: 'remote-search',
-        name: 'search',
-        transport: 'streamable-http',
-        url: 'https://search.example.com/mcp',
-        autoConnect: false,
-      },
-    ]
-    expect(save).toHaveBeenCalledTimes(1)
-    expect(save).toHaveBeenCalledWith(expected)
-    expect(store.getter(mcpServerConfigsAtom)).toEqual(expected)
-    // 安装即探测（B2）只覆盖 HTTP：远端服务连一次取回工具清单后立刻断开，
-    // stdio 在 H2 的确认门上线前绝不起进程。两者都保持 autoConnect: false。
-    await vi.waitFor(() => expect(manager.disconnectCalls).toEqual(['remote-search']))
-    expect(manager.connectCalls.map((config) => config.id)).toEqual(['remote-search'])
-    expect(store.getter(mcpServersAtom)).toEqual([
-      expect.objectContaining({ id: 'local-playwright', status: 'disconnected' }),
-      expect.objectContaining({ id: 'remote-search', status: 'disconnected' }),
-    ])
-  })
-
-  it('rejects a case-insensitive name conflict without partially importing the batch', async () => {
-    const existing: PersistedMcpServerConfig = {
-      id: 'existing-search',
-      name: 'Search',
-      transport: 'streamable-http',
-      url: 'https://existing.example.com/mcp',
-      autoConnect: false,
-    }
-    const store = createStore()
-    const { storage, save } = createStorage([existing])
-    const service = createMcpSettingsService({ store, manager, storage })
-    await service.hydrate()
-    const configsBefore = store.getter(mcpServerConfigsAtom)
-    const serversBefore = store.getter(mcpServersAtom)
-
-    await expect(service.importJson(JSON.stringify({
-      mcpServers: {
-        docs: { url: 'https://docs.example.com/mcp' },
-        search: { url: 'https://replacement.example.com/mcp' },
-      },
-    }))).resolves.toBe(false)
-
-    expect(save).not.toHaveBeenCalled()
-    expect(manager.connectCalls).toHaveLength(0)
-    expect(store.getter(mcpServerConfigsAtom)).toEqual(configsBefore)
-    expect(store.getter(mcpServersAtom)).toEqual(serversBefore)
-    expect(store.getter(mcpFormErrorAtom)).toContain('同名')
-  })
-
-  it('keeps the existing state intact when the atomic import save fails', async () => {
-    const existing: PersistedMcpServerConfig = {
-      id: 'existing-docs',
-      name: '已有文档',
-      transport: 'streamable-http',
-      url: 'https://existing.example.com/mcp',
-      autoConnect: false,
-    }
-    const store = createStore()
-    const { storage, save } = createStorage([existing])
-    const service = createMcpSettingsService({ store, manager, storage })
-    await service.hydrate()
-    const configsBefore = store.getter(mcpServerConfigsAtom)
-    const serversBefore = store.getter(mcpServersAtom)
-    save.mockImplementation(() => {
-      throw new Error('storage unavailable')
-    })
-
-    await expect(service.importJson(JSON.stringify({
-      mcpServers: {
-        imported: { url: 'https://imported.example.com/mcp' },
-      },
-    }))).resolves.toBe(false)
-
-    expect(save).toHaveBeenCalledTimes(1)
-    expect(manager.connectCalls).toHaveLength(0)
-    expect(store.getter(mcpServerConfigsAtom)).toEqual(configsBefore)
-    expect(store.getter(mcpServersAtom)).toEqual(serversBefore)
-    expect(store.getter(mcpFormErrorAtom)).toContain('storage unavailable')
   })
 
   it.each([
@@ -592,9 +240,13 @@ describe('MCP settings service', () => {
     }
     const second = createStorage([neverConnected])
     const secondStore = createStore()
+    // 冷启动会登记全部服务，所以真实 manager 现在总是认得它。这里强制 remove 回 false，
+    // 守住原本的回归点：manager 说「我没这个服务」也必须把持久化配置删干净。
+    const forgetfulManager = new FakeMcpManager()
+    forgetfulManager.remove = async () => false
     const secondService = createMcpSettingsService({
       store: secondStore,
-      manager: new FakeMcpManager(),
+      manager: forgetfulManager,
       storage: second.storage,
     })
     await secondService.hydrate()
@@ -617,7 +269,10 @@ describe('MCP settings service', () => {
     const service = createMcpSettingsService({ store, manager, storage })
     await service.hydrate()
     await service.reconnect(config.id)
-    expect(manager.connectCalls).toHaveLength(1)
+    // 冷启动已经把它登记进 manager，所以「重连」走 manager.reconnect（配置留在 manager
+    // 内部），不再由 service 递一份配置进 connect。
+    expect(manager.reconnectCalls).toEqual([config.id])
+    expect(manager.connectCalls).toHaveLength(0)
 
     let releaseRemove!: () => void
     const removeGate = new Promise<void>((resolve) => {
@@ -637,8 +292,9 @@ describe('MCP settings service', () => {
 
     await Promise.all([removing, reconnecting, enabling])
 
-    expect(manager.connectCalls).toHaveLength(1)
-    expect(manager.reconnectCalls).toHaveLength(0)
+    // 排在删除后面的重连与「打开自动连接」都不该把服务连回来。
+    expect(manager.connectCalls).toHaveLength(0)
+    expect(manager.reconnectCalls).toHaveLength(1)
     expect(manager.get(config.id)).toBeUndefined()
     expect(store.getter(mcpServerConfigsAtom)).toEqual([])
     expect(save).toHaveBeenLastCalledWith([])

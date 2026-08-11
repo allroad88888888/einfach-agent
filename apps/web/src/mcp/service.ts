@@ -1,16 +1,14 @@
 import type { Store } from '@einfach/core'
-import type {
-  McpClientManager,
-  McpServerSnapshot,
-  McpServerStatus,
-} from '@web-agent/tools-mcp'
+import type { McpClientManager } from '@web-agent/tools-mcp'
 import { buildPersistedMcpConfig, toManagerConfig, validateMcpDraft } from './config'
+import { createMcpConfigWriteQueue } from './configWriteQueue'
 import { parseMcpJsonConfig } from './jsonConfig'
 import {
   MCP_SETTINGS_MAX_SERVERS,
   type McpConfigStorage,
 } from './persistence'
 import { createMcpInstallProber } from './probeOnInstall'
+import { createMcpRuntimeWriters, messageFromError } from './runtimeWriters'
 import {
   createDesktopToolNameCacheStorage,
   type McpToolNameCacheStorage,
@@ -26,20 +24,25 @@ import {
   mcpJsonDraftAtom,
   mcpPersistenceModeAtom,
   mcpServerConfigsAtom,
-  mcpServerOperationsAtom,
   mcpServerRuntimeAtom,
 } from './state'
 import {
   DEFAULT_MCP_JSON_DRAFT,
   EMPTY_MCP_DRAFT,
-  type McpServerOperation,
   type McpSettingsCapabilities,
   type PersistedMcpServerConfig,
 } from './types'
 
 export type McpSettingsManager = Pick<
   McpClientManager,
-  'connect' | 'reconnect' | 'disconnect' | 'remove' | 'get' | 'list' | 'subscribe'
+  | 'register'
+  | 'connect'
+  | 'reconnect'
+  | 'disconnect'
+  | 'remove'
+  | 'get'
+  | 'list'
+  | 'subscribe'
 >
 
 export interface CreateMcpSettingsServiceOptions {
@@ -61,17 +64,6 @@ export interface McpSettingsService {
   remove(id: string): Promise<void>
   setAutoConnect(id: string, enabled: boolean): Promise<void>
   dispose(): void
-}
-
-function messageFromError(error: unknown): string {
-  if (error instanceof Error && error.message.trim()) return error.message
-  if (typeof error === 'string' && error.trim()) return error
-  return '未知错误'
-}
-
-function snapshotError(snapshot: McpServerSnapshot): string | undefined {
-  const error: unknown = snapshot.error
-  return error === undefined ? undefined : messageFromError(error)
 }
 
 function randomServerId(): string {
@@ -117,37 +109,9 @@ export function createMcpSettingsService({
     return current
   }
 
-  const setOperation = (id: string, operation?: McpServerOperation): void => {
-    store.setter(mcpServerOperationsAtom, (previous) => {
-      const next = { ...previous }
-      if (operation) next[id] = operation
-      else delete next[id]
-      return next
-    })
-  }
-
-  const setRuntime = (
-    id: string,
-    status: McpServerStatus,
-    toolCount = 0,
-    error?: string,
-  ): void => {
-    store.setter(mcpServerRuntimeAtom, (previous) => ({
-      ...previous,
-      [id]: { status, toolCount, ...(error ? { error } : {}) },
-    }))
-  }
-
-  const applySnapshot = (snapshot: McpServerSnapshot): void => {
-    setRuntime(snapshot.id, snapshot.status, snapshot.tools.length, snapshotError(snapshot))
-  }
-
-  const applySnapshots = (snapshots: readonly McpServerSnapshot[]): void => {
-    const configuredIds = new Set(store.getter(mcpServerConfigsAtom).map((config) => config.id))
-    for (const snapshot of snapshots) {
-      if (configuredIds.has(snapshot.id)) applySnapshot(snapshot)
-    }
-  }
+  // 运行态写进 UI atoms 的那一层（含错误文案归一化）见 runtimeWriters.ts。
+  const { setOperation, setRuntime, applySnapshot, applySnapshots } =
+    createMcpRuntimeWriters(store)
 
   const ensureSubscription = (): void => {
     if (unsubscribe || disposed) return
@@ -158,6 +122,23 @@ export function createMcpSettingsService({
 
   const configById = (id: string): PersistedMcpServerConfig | undefined =>
     store.getter(mcpServerConfigsAtom).find((config) => config.id === id)
+
+  /**
+   * 只登记不连接（F6）：让 manager 认得这个服务，但不建立连接、不起进程。
+   *
+   * 排在与连接/删除同一条 serverId 队列上，并在轮到自己时再确认配置还在——否则一次
+   * 排在 remove 之后的登记会给刚被删掉的服务补回一条记录，让模型又能连它。
+   */
+  const registerConfig = async (config: PersistedMcpServerConfig): Promise<void> => {
+    if (!configById(config.id)) return
+    try {
+      await manager.register(toManagerConfig(config))
+    } catch (error) {
+      // 登记失败只可能是配置本身非法（manager 侧的硬校验）。配置照留在列表里，
+      // 但要让用户看见它连不上，而不是留一个永远「未连接」的卡片。
+      setRuntime(config.id, 'error', 0, `配置无法登记：${messageFromError(error)}`)
+    }
+  }
 
   const connectConfig = async (
     config: PersistedMcpServerConfig,
@@ -189,34 +170,8 @@ export function createMcpSettingsService({
     }
   }
 
-  // Serializes every "read atom -> compute next -> await storage.save ->
-  // write atom" turn across ALL callers (submitDraft, importJson, remove,
-  // setAutoConnect), not just per-serverId the way enqueueServerOperation
-  // does. storage.save() awaits a real IPC round trip in the Tauri-backed
-  // implementation, which opens a yield point between reading the atom and
-  // committing the write. Two operations on different serverIds are NOT
-  // serialized against each other by enqueueServerOperation, so without a
-  // queue here each could read the same stale mcpServerConfigsAtom snapshot,
-  // compute divergent "next" lists, and race to persist — the later
-  // storage.save()/setter wins and silently drops the other's change, on
-  // disk as well as in memory. Taking an update function instead of a
-  // precomputed list, and reading store.getter() only inside the queued
-  // turn, is what makes read-modify-write atomic again despite the await.
-  let persistQueue: Promise<void> = Promise.resolve()
-  const persist = (
-    update: (
-      current: readonly PersistedMcpServerConfig[],
-    ) => readonly PersistedMcpServerConfig[],
-  ): Promise<readonly PersistedMcpServerConfig[]> => {
-    let next: readonly PersistedMcpServerConfig[] = []
-    const turn = persistQueue.then(async () => {
-      next = update(store.getter(mcpServerConfigsAtom))
-      await storage.save(next)
-      store.setter(mcpServerConfigsAtom, next)
-    })
-    persistQueue = turn.catch(() => undefined)
-    return turn.then(() => next)
-  }
+  // 配置的原子读-改-写（含它为什么必须跨 serverId 串行）见 configWriteQueue.ts。
+  const persist = createMcpConfigWriteQueue({ store, storage })
 
   // 安装即探测（B2）。探测本身是一块独立逻辑，放在 probeOnInstall.ts；这里只把它接到
   // service 已有的三样东西上：按 serverId 的串行队列、用户可见的状态行、以及「这个服务
@@ -259,6 +214,11 @@ export function createMcpSettingsService({
         )
         ensureSubscription()
         applySnapshots(manager.list())
+        // 冷启动先把配置里的【全部】服务登记进 manager，再连该连的那批。
+        // connect_mcp_server 的准入判据是 manager 的登记表，而记录过去只在连过一次之后
+        // 才存在——不登记的话，「已配置但从未连过」的服务对模型根本不存在，按需连接形同虚设。
+        await Promise.all(configs.map((config) =>
+          enqueueServerOperation(config.id, () => registerConfig(config))))
         await Promise.all(
           configs
             .filter((config) => config.transport === 'streamable-http' && config.autoConnect)

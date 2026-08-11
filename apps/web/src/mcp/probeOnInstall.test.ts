@@ -31,6 +31,11 @@ class FakeProbeManager implements McpSettingsManager {
     this.plans.set(id, plan)
   }
 
+  async register(config: McpServerConfig): Promise<McpServerSnapshot> {
+    const existing = this.snapshots.get(config.id)
+    return existing ?? this.publish({ id: config.id, config, status: 'disconnected', tools: [] })
+  }
+
   async connect(config: McpServerConfig): Promise<McpServerSnapshot> {
     this.connectCalls.push(config.id)
     const plan = this.plans.get(config.id) ?? {}

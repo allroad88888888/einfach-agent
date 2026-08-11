@@ -20,6 +20,15 @@ export class UiMcpManager implements McpSettingsManager {
   private readonly snapshots = new Map<string, McpServerSnapshot>()
   private readonly listeners = new Set<(servers: readonly McpServerSnapshot[]) => void>()
 
+  async register(config: McpServerConfig): Promise<McpServerSnapshot> {
+    const existing = this.snapshots.get(config.id)
+    if (existing) return existing
+    const next: McpServerSnapshot = { id: config.id, config, status: 'disconnected', tools: [] }
+    this.snapshots.set(config.id, next)
+    this.emit()
+    return next
+  }
+
   async connect(config: McpServerConfig): Promise<McpServerSnapshot> {
     const next = connectedSnapshot(config)
     this.snapshots.set(config.id, next)

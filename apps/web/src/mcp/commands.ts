@@ -1,5 +1,4 @@
 import { rootStore } from '@web-agent/core/state/rootStore'
-import type { McpClientManager } from '@web-agent/tools-mcp'
 import { createBrowserMcpConfigStorage, type McpConfigStorage } from './persistence'
 import { createMcpSettingsService, type McpSettingsManager, type McpSettingsService } from './service'
 import {
@@ -20,6 +19,9 @@ import {
 } from './types'
 
 const unconfiguredManager: McpSettingsManager = {
+  // 只登记不连接：没有宿主 manager 时也没有登记表，回一份「未连接」快照即可，
+  // 不该因为「还没装配」就把每张卡片都标成错误。
+  register: async (config) => ({ id: config.id, config, status: 'disconnected', tools: [] }),
   connect: async () => {
     throw new Error('MCP manager 尚未配置')
   },
@@ -41,10 +43,7 @@ let activeService: McpSettingsService = createMcpSettingsService({
 let configured = false
 
 export interface ConfigureMcpSettingsOptions {
-  manager: Pick<
-    McpClientManager,
-    'connect' | 'reconnect' | 'disconnect' | 'remove' | 'get' | 'list' | 'subscribe'
-  >
+  manager: McpSettingsManager
   storage?: McpConfigStorage
   capabilities?: Partial<McpSettingsCapabilities>
 }

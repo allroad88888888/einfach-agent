@@ -10,30 +10,19 @@ import {
   mcpReconnectExhaustedMessage,
 } from './reconnectSchedule'
 import { cloneConfig, validateConfig } from './serverConfig'
+import { McpServerRecords, type McpServerRecord } from './serverRecords'
 import { createStreamableHttpMcpConnector } from './streamableHttp'
-import { cloneToolSnapshot, reconcileMcpTools } from './toolReconciler'
+import { reconcileMcpTools } from './toolReconciler'
 import type {
   McpClientManagerListener,
   McpClientManagerOptions,
   McpConnection,
   McpConnector,
   McpOperationOptions,
-  McpRegisteredTool,
   McpServerConfig,
   McpServerSnapshot,
-  McpServerStatus,
   McpToolSnapshot,
 } from './types'
-
-interface McpServerRecord {
-  config: McpServerConfig
-  status: McpServerStatus
-  error?: string
-  connection?: McpConnection
-  unsubscribeToolsChanged?: () => void
-  unsubscribeClose?: () => void
-  registered: Map<string, McpRegisteredTool>
-}
 
 interface McpToolsRefresh {
   connection: McpConnection
@@ -48,12 +37,14 @@ interface McpToolsRefresh {
  * through connection identity checks, so an old close/list_changed event cannot
  * mutate a newer connection. A temporary failure ('reconnecting') arms a capped
  * exponential backoff (reconnectSchedule.ts); a permanent one ('error') never retries.
+ *
+ * 登记与连接是两件事：register() 只把一个已配置服务放进登记表（serverRecords.ts），
+ * 连接由 connect()/reconnect() 建立。只登记的服务对外就是一条 'disconnected' 记录。
  */
 export class McpClientManager {
   private readonly registry: McpClientManagerOptions['registry']
   private readonly connector: McpConnector
-  private readonly records = new Map<string, McpServerRecord>()
-  private readonly listeners = new Set<McpClientManagerListener>()
+  private readonly records = new McpServerRecords()
   private readonly operationTails = new Map<string, Promise<void>>()
   private readonly activeConnects = new Map<string, AbortController>()
   private readonly toolsRefreshes = new Map<string, McpToolsRefresh>()
@@ -66,6 +57,34 @@ export class McpClientManager {
   constructor(options: McpClientManagerOptions) {
     this.registry = options.registry
     this.connector = options.connector ?? createStreamableHttpMcpConnector()
+  }
+
+  /**
+   * 【只登记，不连接】让一个已配置服务以 'disconnected' 进入登记表：此后 get() / list()
+   * 看得见它，但本次调用不建立任何连接、不发任何请求、不起任何进程。
+   *
+   * 这是按需连接的前提。connect_mcp_server 的准入判据是本登记表，而记录过去只在
+   * connect() 被调用过一次之后才存在 —— 于是「已配置但从未连过」的服务对模型根本不存在。
+   * 宿主在冷启动时把配置里的全部服务登记进来，模型才谈得上按需打开其中任何一个。
+   *
+   * 三条不变量：
+   * - 已登记过的服务【原样返回】：不改状态、不改配置、不碰退避预算、不打断进行中的连接。
+   *   重复登记（例如再次 hydrate）因此不会把一条正在重试或已判永久失败的记录冲回
+   *   'disconnected'，也不会把退避次数重置成 0。
+   * - 只登记的记录【不会引来自动重连】：退避只由 failClosed 在一条真实连接断掉时装填，
+   *   这里从头到尾没有连接可断。
+   * - 世代检查不受影响：没有连接被创建，也就没有 onClose / list_changed 回调能指向它。
+   */
+  register(config: McpServerConfig): Promise<McpServerSnapshot> {
+    const ownedConfig = cloneConfig(config)
+    validateConfig(ownedConfig)
+    // 走同一条按 server 的串行队列：登记不能与连接/断开/删除交错，否则它可能落在
+    // 一次 remove 之后，给刚被删掉的服务补回一条记录。
+    return this.serialize(ownedConfig.id, async () => {
+      const { record, created } = this.records.ensure(ownedConfig)
+      if (created) this.records.emit()
+      return this.records.snapshot(record)
+    })
   }
 
   connect(
@@ -126,17 +145,17 @@ export class McpClientManager {
       this.unregisterAll(record)
       record.status = 'disconnected'
       record.error = undefined
-      this.emit()
+      this.records.emit()
 
       if (connection) {
         try {
           await connection.close()
         } catch (error) {
           record.error = errorMessage(error)
-          this.emit()
+          this.records.emit()
         }
       }
-      return this.snapshot(record)
+      return this.records.snapshot(record)
     })
   }
 
@@ -151,7 +170,7 @@ export class McpClientManager {
       const connection = this.detachConnection(record)
       this.unregisterAll(record)
       this.records.delete(serverId)
-      this.emit()
+      this.records.emit()
       await connection?.close().catch(() => undefined)
       return true
     })
@@ -159,11 +178,11 @@ export class McpClientManager {
 
   get(serverId: string): McpServerSnapshot | undefined {
     const record = this.records.get(serverId)
-    return record ? this.snapshot(record) : undefined
+    return record ? this.records.snapshot(record) : undefined
   }
 
   list(): readonly McpServerSnapshot[] {
-    return [...this.records.values()].map((record) => this.snapshot(record))
+    return this.records.list()
   }
 
   listTools(serverId?: string): readonly McpToolSnapshot[] {
@@ -174,8 +193,7 @@ export class McpClientManager {
   }
 
   subscribe(listener: McpClientManagerListener): () => void {
-    this.listeners.add(listener)
-    return () => this.listeners.delete(listener)
+    return this.records.subscribe(listener)
   }
 
   private async connectInternal(
@@ -184,22 +202,14 @@ export class McpClientManager {
     options?: McpOperationOptions,
   ): Promise<McpServerSnapshot> {
     throwIfAborted(options?.signal)
-    let record = this.records.get(config.id)
-    if (!record) {
-      record = {
-        config,
-        status: 'disconnected',
-        registered: new Map(),
-      }
-      this.records.set(config.id, record)
-    }
+    const { record } = this.records.ensure(config)
 
     const previousConnection = this.detachConnection(record)
     this.unregisterAll(record)
     record.config = config
     record.status = startingStatus
     record.error = undefined
-    this.emit()
+    this.records.emit()
     await previousConnection?.close().catch(() => undefined)
 
     let connection: McpConnection | undefined
@@ -221,8 +231,8 @@ export class McpClientManager {
       record.error = undefined
       // 连上了就把重试预算还回去：下一次断线是一条新的重连链。
       this.reconnects.cancel(config.id)
-      this.emit()
-      return this.snapshot(record)
+      this.records.emit()
+      return this.records.snapshot(record)
     } catch (error) {
       const caught = toError(error)
       const attached = record.connection === connection
@@ -237,7 +247,7 @@ export class McpClientManager {
         record.status = classification.status
         record.error = classification.message
       }
-      this.emit()
+      this.records.emit()
       throw caught
     }
   }
@@ -269,7 +279,7 @@ export class McpClientManager {
           signal: refresh.controller.signal,
         })
         record.error = undefined
-        this.emit()
+        this.records.emit()
       } catch (error) {
         if (refresh.controller.signal.aborted) return
         await this.failClosed(record, connection, error)
@@ -323,7 +333,7 @@ export class McpClientManager {
     if (classification.status === 'reconnecting') {
       this.armReconnect(record, error)
     }
-    this.emit()
+    this.records.emit()
     await connection.close().catch(() => undefined)
   }
 
@@ -381,7 +391,7 @@ export class McpClientManager {
     // 或者记录已经被 disconnect / remove 带走了。
     if (!record || record.status !== 'reconnecting') return
     this.armReconnect(record, error)
-    this.emit()
+    this.records.emit()
   }
 
   private async reconcile(
@@ -416,29 +426,6 @@ export class McpClientManager {
       this.registry.unregister(name, registered.tool)
     }
     record.registered.clear()
-  }
-
-  private snapshot(record: McpServerRecord): McpServerSnapshot {
-    return {
-      id: record.config.id,
-      config: cloneConfig(record.config),
-      status: record.status,
-      tools: [...record.registered.values()].map(({ snapshot }) =>
-        cloneToolSnapshot(snapshot),
-      ),
-      ...(record.error ? { error: record.error } : {}),
-    }
-  }
-
-  private emit(): void {
-    const servers = this.list()
-    for (const listener of [...this.listeners]) {
-      try {
-        listener(servers)
-      } catch {
-        // Subscribers are observers; one faulty observer must not break lifecycle cleanup.
-      }
-    }
   }
 
   /**
