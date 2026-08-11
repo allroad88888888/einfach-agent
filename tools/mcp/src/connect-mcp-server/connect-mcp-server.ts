@@ -15,8 +15,17 @@ import type { McpClientManager } from '../clientManager'
 import { combineAbortSignals, isRecord, raceWithAbort, throwIfAborted, truncate } from '../internal'
 import { buildConnectFailureResult, buildConnectTimeoutResult } from './connectFailureResult'
 import { describeConnectedServer } from './connectedServerResult'
+import {
+  MCP_CONNECT_MAX_LISTED_SERVER_IDS,
+  MCP_CONNECT_SERVER_ID_MAX_CHARS,
+  buildConnectInputSchema,
+  connectableServerIds,
+} from './connectInputSchema'
 import { buildConnectSkill } from './connectSkill'
 import type { McpLastKnownToolsProbe } from './lastKnownTools'
+
+// 公开面保持不变：schema 的现算是本工具的内部机制，宿主只会用到这个上限常量。
+export { MCP_CONNECT_SERVER_ID_MAX_CHARS } from './connectInputSchema'
 
 export {
   MCP_CONNECT_LISTED_DESCRIPTION_MAX_CHARS,
@@ -36,9 +45,6 @@ export {
 } from './lastKnownToolsText'
 
 export const MCP_CONNECT_TOOL_NAME = 'connect_mcp_server'
-/** 超过这个长度的入参一定不是服务 ID，直接拒，不进任何查表或文案。 */
-export const MCP_CONNECT_SERVER_ID_MAX_CHARS = 512
-const MCP_CONNECT_MAX_LISTED_SERVER_IDS = 50
 
 /**
  * 连接的独立超时——刻意不复用 toolAdapter.ts 的 MCP_TOOL_CALL_TIMEOUT_MS（120s）。
@@ -58,19 +64,6 @@ export const MCP_CONNECT_TIMEOUT_MS = 180_000
  * 「按已登记 id 重连」这一条路径：reconnect 的配置取自 manager 自己的记录，模型永远只能选，不能造。
  */
 export type McpConnectManager = Pick<McpClientManager, 'reconnect' | 'get' | 'list'>
-
-const inputSchema = {
-  type: 'object',
-  properties: {
-    serverId: {
-      type: 'string',
-      description:
-        '要连接的【已配置】MCP 服务 ID。只接受服务 ID；URL、命令行等连接目标一律拒绝。',
-    },
-  },
-  required: ['serverId'],
-  additionalProperties: false,
-}
 
 /**
  * 「这看起来像个连接目标」的形状识别。
@@ -149,10 +142,9 @@ function parseServerId(args: unknown): ParsedServerId {
 }
 
 function configuredServerIds(manager: McpConnectManager): string[] {
-  return manager
-    .list()
+  return connectableServerIds(manager)
     .slice(0, MCP_CONNECT_MAX_LISTED_SERVER_IDS)
-    .map((server) => truncate(server.id, 120))
+    .map((id) => truncate(id, 120))
 }
 
 /**
@@ -228,7 +220,12 @@ export function createMcpConnectTool(
     get skill() {
       return buildConnectSkill(manager, lastKnownTools)
     },
-    inputSchema,
+    // 同样是 getter：serverId 的 enum 必须等于【此刻】的已配置服务。registry 的 loadSchema 与
+    // run 都在调用当刻才读这个属性，所以增删服务立刻生效，无需重新 registerMcpTools。
+    // 它是第一道闸，不是最后一道：下面 execute 里的 manager.get() 登记表准入照旧执行。
+    get inputSchema() {
+      return buildConnectInputSchema(manager)
+    },
     execution: {
       mode: 'serial',
       effectKeys: ['external:mcp:connect'],

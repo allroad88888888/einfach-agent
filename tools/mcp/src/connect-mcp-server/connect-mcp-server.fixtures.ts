@@ -68,6 +68,11 @@ export interface FakeMcpManager {
   manager: McpConnectManager
   reconnect: ReturnType<typeof vi.fn>
   connect: ReturnType<typeof vi.fn>
+  /**
+   * 活的登记表。manager 的 get/list 都实时读它，所以测试里往这里增删服务，
+   * 就等于用户在设置里增删了一个 MCP 服务 —— 用来验证 inputSchema 的 enum 是否真的跟着变。
+   */
+  records: Map<string, McpServerSnapshot>
 }
 
 /**
@@ -98,7 +103,7 @@ export function fakeManager(
     get: (serverId: string) => records.get(serverId),
     list: () => [...records.values()],
   }
-  return { manager: manager as unknown as McpConnectManager, reconnect, connect }
+  return { manager: manager as unknown as McpConnectManager, reconnect, connect, records }
 }
 
 export function toolContext(signal = new AbortController().signal): ToolContext {
