@@ -3238,6 +3238,82 @@
 .agentnew-plan-approval > div { display: flex; gap: 8px; }
 .agentnew-plan-resume > span { color: #92400e; font-size: 12px; }
 
+/* ── 启动模型密钥门禁 ───────────────────────── */
+.agentnew-startup-credential-gate {
+  display: grid;
+  min-height: 100vh;
+  padding: 24px;
+  place-items: center;
+  color: #172033;
+  background: #f4f6fb;
+}
+
+.agentnew-startup-credential-card {
+  width: min(440px, 100%);
+  padding: 28px;
+  border: 1px solid #e0e6f0;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 20px 56px rgba(15, 23, 42, 0.14);
+}
+
+.agentnew-startup-credential-card h1 {
+  margin: 0 0 10px;
+  font-size: 20px;
+}
+
+.agentnew-startup-credential-card p {
+  margin: 0;
+  color: #526078;
+  line-height: 1.6;
+}
+
+.agentnew-startup-credential-form {
+  display: grid;
+  margin-top: 20px;
+  gap: 14px;
+}
+
+.agentnew-startup-credential-form label {
+  display: grid;
+  gap: 7px;
+  color: #334155;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.agentnew-startup-credential-form input {
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  color: #172033;
+  background: #fff;
+  font: inherit;
+}
+
+.agentnew-startup-credential-button {
+  justify-self: start;
+  min-height: 36px;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 7px;
+  color: #fff;
+  background: #4f46e5;
+  font: inherit;
+  cursor: pointer;
+}
+
+.agentnew-startup-credential-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.agentnew-startup-credential-error {
+  margin-top: 14px !important;
+  color: #b42318 !important;
+}
+
 /* ── 设置中心 / MCP 服务 ───────────────────── */
 .agentnew-sidebar {
   display: flex;

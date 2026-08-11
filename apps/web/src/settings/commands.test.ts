@@ -8,6 +8,7 @@ import {
   deleteDeepSeekApiKey,
   deleteKimiApiKey,
   hydrateAppSettings,
+  hydrateModelCredentials,
   saveDeepSeekApiKey,
   saveKimiApiKey,
   updateDeepSeekApiKeyDraft,
@@ -26,6 +27,7 @@ import {
   deepSeekApiKeyStatusAtom,
   kimiApiKeyDraftAtom,
   kimiApiKeyStatusAtom,
+  modelCredentialEntriesAtom,
   resetAppSettingsState,
 } from './state'
 
@@ -122,5 +124,119 @@ describe('app settings commands', () => {
     expect(fake.saved(KIMI_CN_TARGET)).toBe('')
     expect(rootStore.getter(deepSeekApiKeyStatusAtom)).toMatchObject({ configured: false })
     expect(rootStore.getter(kimiApiKeyStatusAtom)).toMatchObject({ configured: false })
+  })
+
+  it('preserves the draft when the saved credential cannot be verified', async () => {
+    configureModelCredentialHost({
+      available: true,
+      status: async () => ({ configured: false, source: 'missing' }),
+      save: async () => ({ configured: true, source: 'config' }),
+      delete: async () => ({ configured: false, source: 'missing' }),
+    })
+    updateDeepSeekApiKeyDraft('deepseek-unverified-key')
+
+    await expect(saveDeepSeekApiKey()).resolves.toBe(false)
+
+    expect(rootStore.getter(deepSeekApiKeyDraftAtom)).toBe('deepseek-unverified-key')
+    expect(rootStore.getter(deepSeekApiKeyStatusAtom)).toMatchObject({
+      status: 'error',
+      configured: false,
+      source: 'missing',
+      error: '未能确认 DeepSeek API Key 已保存，请重试。',
+    })
+  })
+
+  it('preserves the draft and hides host errors when saving fails', async () => {
+    let statusCalls = 0
+    configureModelCredentialHost({
+      available: true,
+      status: async () => {
+        statusCalls += 1
+        return { configured: false, source: 'missing' }
+      },
+      save: async () => { throw new Error('save leaked deepseek-save-secret') },
+      delete: async () => ({ configured: false, source: 'missing' }),
+    })
+    updateDeepSeekApiKeyDraft('deepseek-save-secret')
+
+    await expect(saveDeepSeekApiKey()).resolves.toBe(false)
+
+    const status = rootStore.getter(deepSeekApiKeyStatusAtom)
+    expect(statusCalls).toBe(0)
+    expect(rootStore.getter(deepSeekApiKeyDraftAtom)).toBe('deepseek-save-secret')
+    expect(status).toMatchObject({
+      status: 'error',
+      configured: false,
+      source: 'missing',
+      error: '未能确认 DeepSeek API Key 已保存，请重试。',
+    })
+    expect(JSON.stringify(status)).not.toContain('deepseek-save-secret')
+  })
+
+  it('preserves the draft and hides host errors when verification fails', async () => {
+    let statusCalls = 0
+    configureModelCredentialHost({
+      available: true,
+      status: async () => {
+        statusCalls += 1
+        throw new Error('status leaked deepseek-verification-secret')
+      },
+      save: async () => ({ configured: true, source: 'config' }),
+      delete: async () => ({ configured: false, source: 'missing' }),
+    })
+    updateDeepSeekApiKeyDraft('deepseek-verification-secret')
+
+    await expect(saveDeepSeekApiKey()).resolves.toBe(false)
+
+    const status = rootStore.getter(deepSeekApiKeyStatusAtom)
+    expect(statusCalls).toBe(1)
+    expect(rootStore.getter(deepSeekApiKeyDraftAtom)).toBe('deepseek-verification-secret')
+    expect(status).toMatchObject({
+      status: 'error',
+      configured: false,
+      source: 'missing',
+      error: '未能确认 DeepSeek API Key 已保存，请重试。',
+    })
+    expect(JSON.stringify(status)).not.toContain('deepseek-verification-secret')
+  })
+
+  it('hides a credential status read error while retaining other credential results', async () => {
+    configureModelCredentialHost({
+      available: true,
+      status: async (target) => {
+        if (target.provider === 'deepseek') {
+          throw new Error('status leaked deepseek-hydration-secret')
+        }
+        return {
+          configured: true,
+          source: 'config',
+        }
+      },
+      save: async () => ({ configured: false, source: 'missing' }),
+      delete: async () => ({ configured: false, source: 'missing' }),
+    })
+
+    await hydrateModelCredentials()
+
+    const entries = rootStore.getter(modelCredentialEntriesAtom)
+    expect(entries['deepseek-default'].state).toEqual({
+      status: 'error',
+      error: '无法读取 DeepSeek API Key 状态，请重试。',
+      configured: false,
+      source: 'missing',
+    })
+    expect(JSON.stringify(entries['deepseek-default'].state)).not.toContain(
+      'deepseek-hydration-secret',
+    )
+    expect(entries['glm-default'].state).toEqual({
+      status: 'ready',
+      configured: true,
+      source: 'config',
+    })
+    expect(entries['kimi-cn'].state).toEqual({
+      status: 'ready',
+      configured: true,
+      source: 'config',
+    })
   })
 })

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Issue Tree Orchestrator"
+  short_description: "Plan task trees and safe parallel agents"
+  default_prompt: "Use $issue-tree-orchestrator to create a tree-shaped issue plan and coordinate safe parallel implementation."

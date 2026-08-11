@@ -20,6 +20,14 @@ function errorMessage(error: unknown): string {
   return '模型密钥操作失败'
 }
 
+function saveVerificationError(label: string): string {
+  return `未能确认 ${label} API Key 已保存，请重试。`
+}
+
+function hydrationStatusError(label: string): string {
+  return `无法读取 ${label} API Key 状态，请重试。`
+}
+
 function descriptor(id: ModelCredentialId) {
   const value = MODEL_CREDENTIALS.find((candidate) => candidate.id === id)
   if (!value) throw new Error(`未知模型凭据：${id}`)
@@ -32,17 +40,17 @@ export function configureModelCredentialHost(host: ModelCredentialHost): void {
 }
 
 export async function hydrateModelCredentials(): Promise<void> {
-  await Promise.all(MODEL_CREDENTIALS.map(async ({ id, target }) => {
+  await Promise.all(MODEL_CREDENTIALS.map(async ({ id, label, target }) => {
     setModelCredentialStatus(rootStore, id, {
       status: 'loading', configured: false, source: 'missing',
     })
     try {
       const credential = await activeHost.status(target)
       setModelCredentialStatus(rootStore, id, { status: 'ready', ...credential })
-    } catch (error) {
+    } catch {
       setModelCredentialStatus(rootStore, id, {
         status: 'error',
-        error: errorMessage(error),
+        error: hydrationStatusError(label),
         configured: false,
         source: 'missing',
       })
@@ -76,14 +84,24 @@ export async function saveModelCredential(id: ModelCredentialId): Promise<boolea
     status: 'loading', configured: false, source: 'missing',
   })
   try {
-    const credential = await activeHost.save(target, value)
+    await activeHost.save(target, value)
+    const credential = await activeHost.status(target)
+    if (!credential.configured) {
+      setModelCredentialStatus(rootStore, id, {
+        status: 'error',
+        error: saveVerificationError(label),
+        configured: false,
+        source: 'missing',
+      })
+      return false
+    }
     setModelCredentialDraft(rootStore, id, '')
     setModelCredentialStatus(rootStore, id, { status: 'saved', ...credential })
     return true
-  } catch (error) {
+  } catch {
     setModelCredentialStatus(rootStore, id, {
       status: 'error',
-      error: errorMessage(error),
+      error: saveVerificationError(label),
       configured: false,
       source: 'missing',
     })

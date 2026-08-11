@@ -1,7 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { Provider } from '@einfach/react'
-import { rootStore } from '@web-agent/core/state/rootStore'
+import { activeSessionMetaAtom, rootStore } from '@web-agent/core/state/rootStore'
 import { toolRegistry } from '@web-agent/core/tools/registry'
 import { registerStandardTools } from '@web-agent/tools'
 import { configureCommands, newSession } from '@web-agent/core/runtime/commands'
@@ -13,6 +13,7 @@ import { createIndexedDbLogDriver } from '@web-agent/core/observability/indexedD
 import { createSessionsPersistence } from '@web-agent/core/state/persistence/sessionsPersistence'
 import { isTauri } from '@tauri-apps/api/core'
 import { AppShell } from './agentNew/ui/AppShell'
+import { StartupCredentialGate } from './agentNew/ui/StartupCredentialGate'
 import { WebTimelineRendererRegistryProvider } from './agentNew/ui/WebTimelineRendererRegistryProvider'
 import { WindowScrollDemo } from './demos/WindowScrollDemo'
 import {
@@ -23,6 +24,10 @@ import {
   createTauriModelCredentialHost,
   createUnavailableModelCredentialHost,
 } from './settings/modelCredentialHost'
+import {
+  resolveStartupCredentialTarget,
+  type StartupCredentialTargetResolution,
+} from './settings/startupCredentialTarget'
 import { createTauriModelFetch } from './modelTransport/tauriModelTransport'
 import { createDevPreviewModelFetch } from './modelTransport/devPreviewModelTransport'
 import { createUnavailableModelFetch } from './modelTransport/unavailableModelTransport'
@@ -62,8 +67,6 @@ configureCommands({
 configureModelCredentialHost(
   tauriHost ? createTauriModelCredentialHost() : createUnavailableModelCredentialHost(),
 )
-// 在首次渲染/新会话之前同步恢复全局设置，避免首个请求读到过期的运行时配置。
-void hydrateAppSettings()
 
 // 持久化 driver：桌面壳（Tauri）用 SQLite，浏览器用 IndexedDB（TaK1，上层逻辑不变）。
 // hydrate（读回）与 configurePersistence（写盘钩子）必须用同一对实例。sqlite 实现**动态 import**
@@ -103,13 +106,15 @@ function renderRoot(children: React.ReactNode): void {
   )
 }
 
-function renderApp(): void {
+function renderApp(target: StartupCredentialTargetResolution): void {
   startUiPerformanceDiagnostics()
   renderRoot(
     <WebTimelineRendererRegistryProvider>
-      <React.Profiler id="AppShell" onRender={reportReactCommit}>
-        <AppShell />
-      </React.Profiler>
+      <StartupCredentialGate enabled={tauriHost} target={target}>
+        <React.Profiler id="AppShell" onRender={reportReactCommit}>
+          <AppShell />
+        </React.Profiler>
+      </StartupCredentialGate>
     </WebTimelineRendererRegistryProvider>,
   )
 }
@@ -125,24 +130,27 @@ function renderWindowScrollDemo(): void {
 }
 
 // hydrate 先于种子/渲染（RF3 / codex P1）：盘上有会话就恢复，没有才种子一个空会话，避免首次空屏。
-// 容错（DK2）：hydrate 绝不 reject；driver 解析/动态 import 失败也兜底种一个会话，别空屏。finally 必渲染。
+// 桌面端还必须等待凭据状态：AppShell 只在门禁确认目标 Key 已配置后才会挂载。
+async function bootstrapApplication(): Promise<StartupCredentialTargetResolution> {
+  const settingsHydration = hydrateAppSettings()
+  try {
+    const { history, sessions } = await resolvePersistence()
+    configurePersistence({ history, sessions })
+    configureObservabilityDriver()
+    const restored = await hydrate({ history, sessions })
+    if (!restored) newSession()
+  } catch {
+    newSession()
+  }
+  await settingsHydration
+  return resolveStartupCredentialTarget(rootStore.getter(activeSessionMetaAtom)?.settings)
+}
+
 if (currentView() === 'window-scroll-demo') {
   renderWindowScrollDemo()
 } else if (currentView() === 'traces') {
   configureObservabilityDriver()
   renderTraceViewer()
 } else {
-  resolvePersistence()
-    .then(({ history, sessions }) => {
-      configurePersistence({ history, sessions })
-      configureObservabilityDriver()
-      return hydrate({ history, sessions })
-    })
-    .then((restored) => {
-      if (!restored) newSession()
-    })
-    .catch(() => {
-      newSession()
-    })
-    .finally(renderApp)
+  void bootstrapApplication().then(renderApp)
 }
