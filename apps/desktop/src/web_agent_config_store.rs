@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     collections::BTreeMap,
+    ffi::OsString,
     fs,
     io::ErrorKind,
     path::PathBuf,
@@ -10,8 +11,12 @@ use std::{
 };
 use tauri::{AppHandle, Manager};
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 const CONFIG_DIRECTORY: &str = ".web-agent";
 const CONFIG_FILE: &str = "config.json";
+const CONFIG_DIRECTORY_ENV: &str = "WEB_AGENT_CONFIG_DIR";
 const CONFIG_VERSION: u8 = 1;
 
 static CONFIG_LOCK: Mutex<()> = Mutex::new(());
@@ -56,13 +61,39 @@ impl WebAgentConfigStore {
             .path()
             .home_dir()
             .map_err(|_| "无法定位用户主目录".to_string())?;
-        Ok(Self::from_home_directory(home))
+        Self::from_home_directory_with_config_directory(
+            home,
+            std::env::var_os(CONFIG_DIRECTORY_ENV),
+        )
     }
 
+    #[allow(dead_code)]
     pub fn from_home_directory(home: PathBuf) -> Self {
-        Self {
-            path: home.join(CONFIG_DIRECTORY).join(CONFIG_FILE),
-        }
+        Self::from_home_directory_with_config_directory(home, None)
+            .expect("默认模型配置目录必须有效")
+    }
+
+    fn from_home_directory_with_config_directory(
+        home: PathBuf,
+        config_directory_override: Option<OsString>,
+    ) -> Result<Self, String> {
+        let config_directory = match config_directory_override {
+            None => home.join(CONFIG_DIRECTORY),
+            Some(directory) if directory.is_empty() => {
+                return Err("WEB_AGENT_CONFIG_DIR 不能为空".to_string())
+            }
+            Some(directory) => {
+                let path = PathBuf::from(directory);
+                if !path.is_absolute() {
+                    return Err("WEB_AGENT_CONFIG_DIR 必须是绝对路径".to_string());
+                }
+                validate_existing_config_directory(&path)?;
+                path
+            }
+        };
+        Ok(Self {
+            path: config_directory.join(CONFIG_FILE),
+        })
     }
 
     /** 读取一个配置段；文件或配置段不存在时返回 `None`。 */
@@ -127,155 +158,22 @@ impl WebAgentConfigStore {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::WebAgentConfigStore;
-    use serde_json::json;
-    use std::{
-        fs,
-        path::PathBuf,
-        time::{SystemTime, UNIX_EPOCH},
+fn validate_existing_config_directory(path: &PathBuf) -> Result<(), String> {
+    let metadata = match fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err("无法读取 WEB_AGENT_CONFIG_DIR".to_string()),
     };
-
-    struct TestHome(PathBuf);
-
-    impl Drop for TestHome {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
+    if !metadata.is_dir() {
+        return Err("WEB_AGENT_CONFIG_DIR 必须是目录".to_string());
     }
-
-    fn test_home() -> TestHome {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        TestHome(std::env::temp_dir().join(format!(
-            "web-agent-config-store-test-{}-{nanos}",
-            std::process::id(),
-        )))
-    }
-
-    fn stored_config(home: &TestHome) -> serde_json::Value {
-        serde_json::from_str(
-            &fs::read_to_string(home.0.join(".web-agent/config.json")).expect("read config"),
-        )
-        .expect("parse config")
-    }
-
-    fn write_fixture(home: &TestHome, contents: &str) {
-        let directory = home.0.join(".web-agent");
-        fs::create_dir_all(&directory).expect("create config directory");
-        fs::write(directory.join("config.json"), contents).expect("write config fixture");
-    }
-
-    #[test]
-    fn uses_the_hidden_web_agent_config_path() {
-        let home = test_home();
-        let store = WebAgentConfigStore::from_home_directory(home.0.clone());
-        assert_eq!(store.path, home.0.join(".web-agent/config.json"));
-    }
-
-    #[test]
-    fn reads_a_missing_section_as_none() {
-        let home = test_home();
-        let store = WebAgentConfigStore::from_home_directory(home.0.clone());
-        assert_eq!(store.read_section("mcp"), Ok(None));
-
-        write_fixture(&home, r#"{"version":1,"otherSetting":{"enabled":true}}"#);
-        assert_eq!(store.read_section("mcp"), Ok(None));
-    }
-
-    #[test]
-    fn writing_a_section_keeps_other_top_level_keys() {
-        let home = test_home();
-        let store = WebAgentConfigStore::from_home_directory(home.0.clone());
-        write_fixture(
-            &home,
-            r#"{"version":1,"modelCredentials":{"deepseek:default":"test-key"},"otherSetting":{"enabled":true}}"#,
-        );
-
-        store
-            .write_section("mcp", json!({ "servers": ["local"] }))
-            .expect("write section");
-
-        let config = stored_config(&home);
-        assert_eq!(config["version"], 1);
-        assert_eq!(config["mcp"]["servers"][0], "local");
-        assert_eq!(config["modelCredentials"]["deepseek:default"], "test-key");
-        assert_eq!(config["otherSetting"]["enabled"], true);
-        assert_eq!(
-            store.read_section("mcp"),
-            Ok(Some(json!({ "servers": ["local"] })))
-        );
-    }
-
-    #[test]
-    fn updating_a_section_sees_the_current_value_and_can_remove_it() {
-        let home = test_home();
-        let store = WebAgentConfigStore::from_home_directory(home.0.clone());
-        write_fixture(&home, r#"{"version":1,"mcp":{"servers":[]}}"#);
-
-        store
-            .update_section("mcp", |current| {
-                assert_eq!(current, Some(json!({ "servers": [] })));
-                Ok(Some(json!({ "servers": ["local"] })))
-            })
-            .expect("update section");
-        assert_eq!(stored_config(&home)["mcp"]["servers"][0], "local");
-
-        store.remove_section("mcp").expect("remove section");
-        assert_eq!(store.read_section("mcp"), Ok(None));
-        assert_eq!(stored_config(&home)["version"], 1);
-    }
-
-    #[test]
-    fn keeps_the_file_untouched_when_an_update_fails() {
-        let home = test_home();
-        let store = WebAgentConfigStore::from_home_directory(home.0.clone());
-        write_fixture(&home, r#"{"version":1,"mcp":{"servers":[]}}"#);
-
-        assert_eq!(
-            store.update_section("mcp", |_| Err("拒绝写入".to_string())),
-            Err("拒绝写入".to_string())
-        );
-        assert_eq!(stored_config(&home)["mcp"], json!({ "servers": [] }));
-    }
-
-    #[test]
-    fn rejects_a_corrupted_config_file() {
-        let home = test_home();
-        let store = WebAgentConfigStore::from_home_directory(home.0.clone());
-        write_fixture(&home, "{ not json");
-
-        assert_eq!(
-            store.read_section("mcp"),
-            Err("模型配置文件格式无效".to_string())
-        );
-        assert_eq!(
-            store.write_section("mcp", json!({})),
-            Err("模型配置文件格式无效".to_string())
-        );
-        assert_eq!(
-            fs::read_to_string(home.0.join(".web-agent/config.json")).expect("read config"),
-            "{ not json"
-        );
-    }
-
     #[cfg(unix)]
-    #[test]
-    fn restricts_the_config_directory_and_file_to_the_current_user() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let home = test_home();
-        let store = WebAgentConfigStore::from_home_directory(home.0.clone());
-        store
-            .write_section("mcp", json!({ "servers": [] }))
-            .expect("write section");
-
-        let directory = fs::metadata(home.0.join(".web-agent")).expect("read directory metadata");
-        assert_eq!(directory.permissions().mode() & 0o777, 0o700);
-        let file = fs::metadata(home.0.join(".web-agent/config.json")).expect("read metadata");
-        assert_eq!(file.permissions().mode() & 0o777, 0o600);
+    if metadata.permissions().mode() & 0o777 != 0o700 {
+        return Err("WEB_AGENT_CONFIG_DIR 目录权限必须为 0700".to_string());
     }
+    Ok(())
 }
+
+#[cfg(test)]
+#[path = "web_agent_config_store_tests.rs"]
+mod tests;
