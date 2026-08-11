@@ -165,9 +165,14 @@ export function buildPersistedMcpConfig(
     command: draft.command.trim(),
     args: parsedArgs.args,
     ...(cwd ? { cwd } : {}),
-    // stdio starts a local process, so it must always require an explicit
-    // reconnect action after every application launch.
-    autoConnect: false,
+    // The persisted field itself may now legitimately be true (H1) — stdio
+    // is a normal boolean preference at the data-model layer. Whether that
+    // preference is ever allowed to actually start a local process without
+    // an explicit per-launch confirmation is a *runtime* decision gated
+    // elsewhere (service.ts hydrate, submitDraft's connect-on-save branch)
+    // pending the H2 confirmation dialog. Do not re-add a hardcoded false
+    // here; that would defeat the point of this change.
+    autoConnect: draft.autoConnect,
   }
 }
 
@@ -203,7 +208,11 @@ export function sanitizePersistedMcpConfig(value: unknown): PersistedMcpServerCo
     command,
     args: parsedArgs.args,
     ...(cwd ? { cwd } : {}),
-    autoConnect: false,
+    // Round-trip whatever opt-in was actually stored (see `autoConnect`
+    // above), instead of silently downgrading a legitimately saved
+    // true back to false. Not connecting on that value yet is a runtime
+    // decision made in service.ts, not a sanitize-time one.
+    autoConnect,
   }
 }
 

@@ -194,18 +194,13 @@ export function createMcpSettingsService({
     const attempt = (async () => {
       store.setter(mcpHydrationAtom, { status: 'loading' })
       try {
-        const loadedConfigs = await storage.load()
-        if (loadedConfigs.length > MCP_SETTINGS_MAX_SERVERS) {
+        const configs = await storage.load()
+        if (configs.length > MCP_SETTINGS_MAX_SERVERS) {
           throw new Error(`MCP 服务最多只能配置 ${MCP_SETTINGS_MAX_SERVERS} 个`)
         }
-        const configs = loadedConfigs.map((config) =>
-          config.transport === 'stdio' && config.autoConnect
-            ? { ...config, autoConnect: false }
-            : config,
-        )
-        if (configs.some((config, index) => config !== loadedConfigs[index])) {
-          await storage.save(configs)
-        }
+        // H1：stdio 的 autoConnect 现在是普通持久化字段，读回来是什么就是什么——
+        // 不再把 true 悄悄改写成 false 再回写磁盘。是否连接是下面的运行行为决定，
+        // 不该反过来篡改用户保存过的偏好。
         store.setter(mcpServerConfigsAtom, configs)
         store.setter(
           mcpServerRuntimeAtom,
@@ -221,6 +216,11 @@ export function createMcpSettingsService({
         // 才存在——不登记的话，「已配置但从未连过」的服务对模型根本不存在，按需连接形同虚设。
         await Promise.all(configs.map((config) =>
           enqueueServerOperation(config.id, () => registerConfig(config))))
+        // 冷启动只自动连 streamable-http。stdio 的 autoConnect 现在可以合法地是
+        // true（H1），但自动连接意味着在用户机器上无人确认地起一个本地进程——这道
+        // 「首次执行 <command> <args> 前必须弹窗确认」的门是 H2 才装。门装好之前，
+        // 这里必须显式把 stdio 挡在自动连接之外，不管它的 autoConnect 存的是什么；
+        // 这一行本身就是那道临时门，由 H2 解除。HTTP 的自动连接行为不受影响。
         await Promise.all(
           configs
             .filter((config) => config.transport === 'streamable-http' && config.autoConnect)
@@ -281,7 +281,13 @@ export function createMcpSettingsService({
         // 绝不回滚保存。订阅先接上，探测期间的 connecting/connected/disconnected 才能
         // 照常刷到卡片上（hydrate 之前就添加服务时同样成立）。
         ensureSubscription()
-        if (config.autoConnect) {
+        // stdio 永远走下面的 probeInstalled 分支，即使 config.autoConnect 是 true
+        // （表单本身不会产出这种 draft，但字段现在允许持久化 true——见 config.ts 的
+        // buildPersistedMcpConfig）。原因和 hydrate 那道门一样：起本地进程要先有 H2
+        // 的确认弹窗。probeInstalled 对 stdio 直接返回 deferred、不碰 manager.connect
+        // （isInstallProbeSupported，B2），所以这里不需要再重复一次那层判断，只需要
+        // 不让 stdio 走进「保存即连接」分支。
+        if (config.transport !== 'stdio' && config.autoConnect) {
           // 勾了自动连接的服务本来就要连——复用这一次连接的结果，不再为探测多连一次
           // （对同一个 id 连第二次会先关掉第一条连接，纯属浪费和噪音）。
           await enqueueServerOperation(config.id, async () => {
@@ -422,6 +428,9 @@ export function createMcpSettingsService({
       await enqueueServerOperation(id, async () => {
         const config = configById(id)
         if (!config || config.autoConnect === enabled) return
+        // UI 目前不给 stdio 提供这个开关（见 McpServerCard），这里是防御性兜底：
+        // 就算被直接调用，也不让 stdio 的自动连接从这条命令打开或触发即时连接/断开。
+        // 同一道 H2 门，见 hydrate 和 submitDraft 里的注释。
         if (config.transport === 'stdio') {
           return
         }

@@ -42,14 +42,17 @@ describe('MCP settings service · hydrate', () => {
     manager = new FakeMcpManager()
   })
 
-  it('hydrates once, auto-connects HTTP, and never auto-starts legacy stdio configs', async () => {
+  it('hydrates once, auto-connects HTTP, and never auto-starts stdio even when its persisted autoConnect is true (H1 data model, H2 gate pending)', async () => {
     const store = createStore()
-    const manual: PersistedMcpServerConfig = {
+    const autoStdio: PersistedMcpServerConfig = {
       ...STDIO_MANUAL,
-      // Simulates a legacy value written before stdio was made manual-only.
+      // H1: this is now a legitimately persistable value, not a hardcoded
+      // false. hydrate must still never turn it into a real connection —
+      // that requires the H2 confirmation gate — and, just as importantly,
+      // must not silently rewrite this back to false on disk either.
       autoConnect: true,
     }
-    const { storage, load, save } = createStorage([HTTP_AUTO, manual])
+    const { storage, load, save } = createStorage([HTTP_AUTO, autoStdio])
     const service = createMcpSettingsService({
       store,
       manager,
@@ -67,14 +70,11 @@ describe('MCP settings service · hydrate', () => {
       transport: 'streamable-http',
       url: 'https://mcp.example.com/',
     }])
-    expect(save).toHaveBeenCalledWith([
-      HTTP_AUTO,
-      { ...manual, autoConnect: false },
-    ])
-    expect(store.getter(mcpServerConfigsAtom)).toEqual([
-      HTTP_AUTO,
-      { ...manual, autoConnect: false },
-    ])
+    // hydrate must not touch storage at all here: no rewrite-and-resave of
+    // the stdio autoConnect value (that was the third hardcoded false H1
+    // removed).
+    expect(save).not.toHaveBeenCalled()
+    expect(store.getter(mcpServerConfigsAtom)).toEqual([HTTP_AUTO, autoStdio])
     expect(store.getter(mcpHydrationAtom)).toEqual({ status: 'ready' })
     expect(store.getter(mcpServersAtom)).toEqual([
       expect.objectContaining({
@@ -84,6 +84,7 @@ describe('MCP settings service · hydrate', () => {
       }),
       expect.objectContaining({
         id: 'local-files',
+        autoConnect: true,
         status: 'disconnected',
         toolCount: 0,
       }),

@@ -250,10 +250,35 @@ describe('MCP config persistence', () => {
           transport: 'stdio',
           command: 'node',
           args: ['server.js'],
-          autoConnect: false,
+          // H1: sanitize round-trips whatever autoConnect was actually
+          // stored (the input above set it to true) instead of forcing it
+          // back to false. Not auto-starting the process yet is enforced
+          // at runtime (service.ts hydrate), not by mangling this field.
+          autoConnect: true,
         },
       ],
     })
+  })
+
+  it('round-trips a stdio autoConnect:true through save and load (H1: no longer forced to false)', async () => {
+    const stdioAuto = {
+      id: 'local-tool',
+      name: '本地工具',
+      transport: 'stdio' as const,
+      command: 'npx',
+      args: ['-y', '@example/mcp-server'],
+      autoConnect: true,
+    }
+    let stored: string | null = null
+    const storage = createMcpConfigStorage({
+      getItem: () => stored,
+      setItem: (_key, value) => {
+        stored = value
+      },
+    })
+
+    await storage.save([stdioAuto])
+    expect(await storage.load()).toEqual([stdioAuto])
   })
 
   it('rejects an oversized stored list instead of silently truncating it', async () => {

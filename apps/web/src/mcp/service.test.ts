@@ -158,7 +158,7 @@ describe('MCP settings service', () => {
     expect(store.getter(mcpFormErrorAtom)).toContain('密钥')
   })
 
-  it('forces a newly selected stdio config to manual-only and connects only after reconnect', async () => {
+  it('persists a forged stdio autoConnect:true (H1) but never connects on save; only an explicit reconnect does (H2 gate pending)', async () => {
     const store = createStore()
     const { storage, save } = createStorage()
     const service = createMcpSettingsService({
@@ -175,7 +175,10 @@ describe('MCP settings service', () => {
       command: 'npx',
       argsText: '-y\n@playwright/mcp@latest',
       cwd: '',
-      // Even a stale/forged draft value cannot opt stdio into startup execution.
+      // The real form never produces this for stdio (it forces false on
+      // transport switch and offers no checkbox), but a stale/forged draft
+      // value must still be storable as-is (H1) without submitDraft using it
+      // to start a local process before the H2 confirmation gate exists.
       autoConnect: true,
     })
 
@@ -187,11 +190,11 @@ describe('MCP settings service', () => {
       transport: 'stdio',
       command: 'npx',
       args: ['-y', '@playwright/mcp@latest'],
-      autoConnect: false,
+      autoConnect: true,
     }])
     expect(manager.connectCalls).toHaveLength(0)
     expect(store.getter(mcpServersAtom)[0]).toEqual(expect.objectContaining({
-      autoConnect: false,
+      autoConnect: true,
       status: 'disconnected',
     }))
 
