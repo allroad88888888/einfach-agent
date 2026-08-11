@@ -56,8 +56,9 @@ Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter，
 
 - `apps/web/src/main.tsx`：默认应用装配；注册标准工具、配置模型传输、选择持久化和观测 driver。
 - `apps/web/src/agentNew/ui/`：React UI，包含会话、消息、计划、确认、子 Agent 树和输入区。
-- `apps/web/src/mcp/`：MCP 应用层（配置、持久化、Tauri stdio connector）。它是**懒装配**的：
-  `SettingsDialog` 首次打开时调 `initializeMcpSettings()`，不在 `main.tsx` 里装。
+- `apps/web/src/mcp/`：MCP 应用层（配置、持久化、连接编排、工具清单缓存、stdio 起进程确认、
+  Tauri stdio connector）。**在 `main.tsx` 里随应用启动装配**，不是等设置弹窗打开才装——
+  否则 `autoConnect` 形同虚设。详见 [docs/mcp-integration.md](docs/mcp-integration.md)。
 - `apps/desktop/`：Rust/Tauri 的 shell、workspace、Git、dialog、SQLite 与 MCP stdio 实现。
 - `packages/agent-ai/`：DeepSeek/GLM/Kimi 请求、流式响应、provider 私有图片准备、adapter 重试
   和 vendor 能力描述表。
