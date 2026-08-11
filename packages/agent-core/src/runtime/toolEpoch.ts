@@ -5,9 +5,9 @@
 // 时那个工具可能已经不在了——清单当场变形，模型看到的世界和运行时的世界对不上。
 //
 // 对策：run 一开始就 registry.snapshot() 冻结一份目录，本 run 全程只读这份 epoch。
-// 语义分成两层，缺一不可：
+// 语义分成三层，缺一不可：
 //
-//   ① 成员固定（本 issue 的承诺）。epoch 的名字集合在 run 开始时定死：
+//   ① 清单固定（E1 的承诺，落在 list() / toolNames 上）。给模型看的那份发现面在 run 开始时定死：
 //      · run 中途注销的工具【不会】从清单里消失——它仍在 manifest、仍带着当时的 schema，
 //        避免 provider 前缀缓存整段失效，也避免模型的既有决策凭空落空；
 //      · run 中途新注册的工具【不会】混进清单——注入的 manifest 文本是 run 开始时组装的，
@@ -20,9 +20,15 @@
 //      时间里将永久不可用。跟随版本后，既有的「registration_changed → 重新 request_tool_schema」
 //      自愈路径继续成立。
 //
-// 未落在本层的两件事（各自有独立 issue，接口已在此预留）：
-//   · E2「run 期间只增不减」：新增靠放宽 ① 的成员判定；被注销的工具在调用时给结构化错误，
-//     判据就是 status(name) === 'retired'。
+//   ③ 成员只增不减（E2）。成员 = 快照里的名字 ∪ registry 此刻还活着的名字：
+//      · 【只增】run 中途新注册的工具可以被 loadSchema、可以执行——它只是不进 ① 的清单，
+//        模型得靠 request_tool_schema 显式点名（或直接调用触发 autoload）才用得上它。
+//        「能用」与「在清单里」是两件事：清单一变，注入的 manifest 文本就和 ① 自相矛盾，
+//        provider 前缀缓存也会整段失效；而放行一个被点名的新工具，两者都不会发生。
+//      · 【不减】注销过的成员留在 status(name) === 'retired'，由调用侧翻成结构化回执，
+//        不让它退化成 registry 那句 `unknown tool: X`（见 toolCallGate / toolCallExecutor）。
+//
+// 未落在本层的一件事（有独立 issue，接口已在此预留）：
 //   · E3「待确认工具的版本校验并入 epoch」：run 暂停等待确认时循环已退出，命令层要按
 //     (sessionId, runId) 找回同一个 epoch —— 见 toolEpochStore.ts。
 
@@ -31,9 +37,9 @@ import type { ToolRegistry } from '../tools/toolRegistry'
 
 /**
  * 某个工具名相对本 run epoch 的状态：
- *   · live    —— 在 epoch 成员内，registry 里也仍有同名注册（可正常执行）；
- *   · retired —— 在 epoch 成员内，但 registry 已注销（清单里还在，执行会失败）；
- *   · absent  —— 不在本 run 的 epoch 内（含 run 中途才注册的工具）。
+ *   · live    —— registry 里有同名注册（run 开始就在，或 run 中途新注册），可正常执行；
+ *   · retired —— run 开始时在清单里，但 registry 已注销（清单里还在，执行必须给结构化回执）；
+ *   · absent  —— 既不在本 run 的清单里，registry 里也没有——真正的未知名。
  */
 export type ToolEpochStatus = 'live' | 'retired' | 'absent'
 
@@ -44,7 +50,7 @@ export interface ToolEpoch extends ToolCatalog {
   readonly sessionId: string
   readonly runId: string
   readonly capturedAt: number
-  /** 本 run 固定的工具名集合（按捕获顺序）。 */
+  /** 本 run 固定的【清单】工具名（按捕获顺序）。run 中途准入的新工具不在其中，见文件头 ①/③。 */
   readonly toolNames: readonly string[]
   /** 成员/存活判定的唯一入口；E2 的结构化错误与 E3 的确认校验都从这里取判据。 */
   status(name: string): ToolEpochStatus
@@ -66,8 +72,9 @@ export function createToolEpoch(registry: ToolRegistry, input: ToolEpochInput): 
   const epochId = `epoch-${epochSequence}`
   const capturedAt = (input.now ?? Date.now)()
 
-  // 成员判定只看快照：run 中途新注册的名字一律 absent（E2 会放宽这一条）。
-  const isMember = (name: string): boolean => frozen.has(name)
+  // 见文件头 ③：成员 = 快照 ∪ 活 registry。前半截保住「不减」（注销的仍可判为 retired），
+  // 后半截给出「只增」（新注册的可加载、可执行）。清单 list()/toolNames 不受此影响。
+  const isMember = (name: string): boolean => frozen.has(name) || registry.has(name)
 
   return {
     epochId,
@@ -82,7 +89,12 @@ export function createToolEpoch(registry: ToolRegistry, input: ToolEpochInput): 
       return isMember(name)
     },
     replayUnsafeToolNames() {
-      return frozen.replayUnsafeToolNames()
+      // 快照成员的重放安全性按 run 开始时冻结（注销了也不能忘，压缩仍要给它打不可重放标记）；
+      // run 中途准入的新成员在快照里没有条目，只能问活 registry，否则它的结果会被误判为可重放。
+      const frozenNames = frozen.replayUnsafeToolNames()
+      const admitted = [...registry.replayUnsafeToolNames()].filter((name) => !frozen.has(name))
+      if (admitted.length === 0) return frozenNames
+      return new Set([...frozenNames, ...admitted])
     },
     loadSchema(name) {
       if (!isMember(name)) return undefined

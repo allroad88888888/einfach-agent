@@ -1,7 +1,7 @@
 import { toolSchemaLoadedResult } from '../tools/schemaResult'
-import { toolSchemaNotLoadedResult, ensureToolLoaded } from './toolLoading'
+import { toolProviderDisconnectedResult, toolSchemaNotLoadedResult, ensureToolLoaded } from './toolLoading'
 import { searchToolManifestPage, touchRecentToolName } from './modelTurn'
-import { selectToolGate } from './toolGates'
+import { REQUEST_TOOL_SCHEMA_NAME, selectToolGate } from './toolGates'
 import { appendToolResult } from './toolLoopSupport'
 import { tracePreview } from './shared/preview'
 import { startSpan, endSpan } from '../observability/trace'
@@ -19,6 +19,20 @@ export interface ToolGateInput {
 }
 
 /**
+ * 本次调用真正指向的、且在本 run 内已掉线的工具名；否则 undefined。
+ *
+ * 两个入口都要认：直接调用它，或用 request_tool_schema 点名它。后者拦下来省的不只是一轮
+ * 对话——放它加载成功，模型下一轮才会撞墙，中间还白白改了一次 tool-set（provider 前缀缓存
+ * 整段失效）。判据只有 epoch.status()，不看工具名长什么样。
+ */
+function retiredToolTarget(base: ToolLoopBase, input: ToolGateInput): string | undefined {
+  if (base.toolEpoch.status(input.name) === 'retired') return input.name
+  if (input.name !== REQUEST_TOOL_SCHEMA_NAME) return undefined
+  const requested = typeof input.args.toolName === 'string' ? input.args.toolName.trim() : ''
+  return requested && base.toolEpoch.status(requested) === 'retired' ? requested : undefined
+}
+
+/**
  * Handles non-executing gate decisions, including lazy schema loading.
  *
  * Every catalog read here goes through the run's tool epoch rather than the live
@@ -26,6 +40,23 @@ export interface ToolGateInput {
  * describe the same tool set the model was given at the start of this run.
  */
 export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolean {
+  const traceFailure = (event: string, attrs: Record<string, unknown>, result: Record<string, unknown>) => {
+    const error = String(result.error)
+    const traceAttrs = { toolName: input.name, callId: input.callId, ...attrs, argsPreview: tracePreview(input.args), resultPreview: tracePreview(result), errorPreview: error, error }
+    base.trace.event(event, traceAttrs)
+    const span = startSpan('tool.call', { kind: 'tool', parent: base.trace.span, attrs: { sessionId: base.id, runId: base.runId, turnId: base.turnId, ...traceAttrs } })
+    endSpan(span, 'error', traceAttrs, error)
+    if (input.name === 'submit_stage_result') base.state.lastStageSubmitRejection = error
+    appendToolResult(base.id, input.callId, JSON.stringify(result), base.core, input.planStageId)
+  }
+  // 只增不减（E2）的「不减」侧，排在所有其它闸门【之前】：清单里还在、registry 里已经没有的
+  // 工具，在这里就地回结构化错误。晚一步，autoload 就会先给它装一份注销前的 schema，把模型
+  // 骗到下一轮才在 registry 那里撞上一句 `unknown tool: X`。
+  const retired = retiredToolTarget(base, input)
+  if (retired) {
+    traceFailure('tool.provider_disconnected', { tool_provider_disconnected: true, retiredToolName: retired }, toolProviderDisconnectedResult(retired))
+    return true
+  }
   const gate = selectToolGate({
     name: input.name,
     args: input.args,
@@ -44,15 +75,6 @@ export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolea
     canExecuteTool: (name) => input.tools.some((tool) => tool.function.name === name),
     delegate: { name: '__root_delegate__', path: ROOT_AGENT_PATH, depth: 0, maxDepth: 1 },
   })
-  const traceFailure = (event: string, attrs: Record<string, unknown>, result: Record<string, unknown>) => {
-    const error = String(result.error)
-    const traceAttrs = { toolName: input.name, callId: input.callId, ...attrs, argsPreview: tracePreview(input.args), resultPreview: tracePreview(result), errorPreview: error, error }
-    base.trace.event(event, traceAttrs)
-    const span = startSpan('tool.call', { kind: 'tool', parent: base.trace.span, attrs: { sessionId: base.id, runId: base.runId, turnId: base.turnId, ...traceAttrs } })
-    endSpan(span, 'error', traceAttrs, error)
-    if (input.name === 'submit_stage_result') base.state.lastStageSubmitRejection = error
-    appendToolResult(base.id, input.callId, JSON.stringify(result), base.core, input.planStageId)
-  }
   if (gate.kind === 'schema_autoloaded') {
     base.state.visible = ensureToolLoaded(base.id, base.state.visible, input.name, base.core, base.maxTurnTools - 1, base.state.planPinnedTools, base.toolEpoch)
     base.state.recentToolNames = touchRecentToolName(base.state.recentToolNames, input.name, base.maxTurnTools - 1)

@@ -40,6 +40,33 @@ export function toolSchemaNotLoadedResult(toolName: string): Record<string, unkn
   }
 }
 
+// 「工具还在本轮清单里，但它背后的服务已经掉线」的判别码。
+// 它与 tool_registration_changed 是一对：那条说「换了一版，重新读 schema 就能自愈」，
+// 这条说「这一轮里没得救了，别再试」。恢复期靠 code 区分，属于稳定协议字节，不要改名。
+export const TOOL_PROVIDER_DISCONNECTED_CODE = 'tool_provider_disconnected'
+
+// 简介：给「调用/点名了一个在本 run 内已被注销的工具」生成结构化回执。
+// 详情：run 级 epoch 承诺清单在一次运行内不变（工具被注销也不从 manifest 里抹掉），代价是
+//   模型可能照着清单去调一个已经掉线的工具。此时既不能让 registry 那句 `unknown tool: X`
+//   直接怼回去（模型会以为自己名字写错了，于是原样重试），也不能静默吞掉。
+//   语气要点：明确「不是你的错」「原样重试无意义」「改道或如实告知用户」。
+export function toolProviderDisconnectedResult(toolName: string): {
+  error: string
+  code: typeof TOOL_PROVIDER_DISCONNECTED_CODE
+  retryable: false
+  hint: string
+} {
+  return {
+    error: `工具 ${toolName} 所属的 MCP 服务在本轮已断开，当前不可用`,
+    code: TOOL_PROVIDER_DISCONNECTED_CODE,
+    retryable: false,
+    hint: '这不是你的调用出错：名称和参数都没有问题，是提供该工具的服务在本轮运行中掉线了，'
+      + '原样重试只会得到同样的结果。'
+      + '它仍出现在本轮工具清单里，只是为了让清单在一次运行内保持稳定，不代表它现在可用。'
+      + '请改用其它工具完成这一步；确实没有替代手段时，如实告诉用户该能力暂时不可用，不要反复调用它。',
+  }
+}
+
 export function toolRegistrationChangedResult(
   toolName: string,
   expectedRegistrationVersion: number | undefined,
