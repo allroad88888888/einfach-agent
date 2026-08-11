@@ -16,7 +16,7 @@ export interface SubagentArchiveCapacityMeasurement {
 
 const encoder = new TextEncoder()
 const EVENT_LOG_SUFFIX = '/events.jsonl'
-const INDEX_PATH_PREFIX = '.agent-archive/index/'
+const INDEX_PATH_PREFIX = '.webAgent-archive/index/'
 
 function byteLength(value: string): number {
   return encoder.encode(value).byteLength

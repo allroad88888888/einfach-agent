@@ -14,7 +14,7 @@ import type {
 const GLOBAL_RUNS_INDEX_PATH = subagentIndexPath('runs')
 // Also reject backslashes: they are path separators on Windows even though the archive
 // format itself always uses forward slashes.
-const ARCHIVE_RUN_PATH_PATTERN = /^\.agent-archive\/conversations\/([^/\\]+)\/runs\/([^/\\]+)$/
+const ARCHIVE_RUN_PATH_PATTERN = /^\.webAgent-archive\/conversations\/([^/\\]+)\/runs\/([^/\\]+)$/
 const INVALID_GLOBAL_RUN_RECORD = 'invalid global subagent run record'
 
 function archiveRunPathIsSafe(path: string): boolean {

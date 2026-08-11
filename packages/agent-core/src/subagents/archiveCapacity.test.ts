@@ -7,7 +7,7 @@ import { createDelegateAgentRuntime } from './runtime'
 import { measureSubagentArchiveCapacity, type SubagentArchiveCapacityMeasurement } from './archiveCapacity'
 import type { DelegateAgentCallContext, SubagentNodeRecord } from './types'
 
-const archiveBasePath = '.agent-archive/conversations/capacity-session/runs/capacity-run'
+const archiveBasePath = '.webAgent-archive/conversations/capacity-session/runs/capacity-run'
 
 class ArchiveHost {
   private readonly chunks = new Map<string, string[]>()

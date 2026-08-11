@@ -18,11 +18,11 @@ describe('subagent archive helpers', () => {
   it('names long-lived archive paths by conversation and run', () => {
     const base = subagentCacheBasePath('session id', 'run/id')
 
-    expect(subagentArchiveConversationBasePath('session id')).toBe('.agent-archive/conversations/session_id')
-    expect(base).toBe('.agent-archive/conversations/session_id/runs/run_id')
-    expect(subagentRunPath(base)).toBe('.agent-archive/conversations/session_id/runs/run_id/run.json')
-    expect(subagentEventsPath(base)).toBe('.agent-archive/conversations/session_id/runs/run_id/events.jsonl')
-    expect(subagentIndexPath('skills')).toBe('.agent-archive/index/skills.jsonl')
+    expect(subagentArchiveConversationBasePath('session id')).toBe('.webAgent-archive/conversations/session_id')
+    expect(base).toBe('.webAgent-archive/conversations/session_id/runs/run_id')
+    expect(subagentRunPath(base)).toBe('.webAgent-archive/conversations/session_id/runs/run_id/run.json')
+    expect(subagentEventsPath(base)).toBe('.webAgent-archive/conversations/session_id/runs/run_id/events.jsonl')
+    expect(subagentIndexPath('skills')).toBe('.webAgent-archive/index/skills.jsonl')
   })
 
   it('keeps readable filenames but gives every skill a stable global id', () => {
@@ -38,7 +38,7 @@ describe('subagent archive helpers', () => {
 
     expect(subagentSkillFilename('root-01', 1, 'task-brief')).toBe('root-01.01-task-brief.md')
     expect(skillId).toMatch(/^sk_[a-z0-9]+$/)
-    expect(subagentGlobalSkillPath(skillId)).toBe(`.agent-archive/skills/${skillId}.md`)
+    expect(subagentGlobalSkillPath(skillId)).toBe(`.webAgent-archive/skills/${skillId}.md`)
     expect(
       subagentSkillId({
         conversationId: 's',
@@ -56,8 +56,8 @@ describe('subagent archive helpers', () => {
       skillId: 'sk_abc',
       conversationId: 'session',
       runId: 'run',
-      path: '.agent-archive/conversations/session/runs/run/skills/root.01-core.md',
-      globalPath: '.agent-archive/skills/sk_abc.md',
+      path: '.webAgent-archive/conversations/session/runs/run/skills/root.01-core.md',
+      globalPath: '.webAgent-archive/skills/sk_abc.md',
       filename: 'root.01-core.md',
       agentPath: 'root',
       kind: 'core',

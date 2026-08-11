@@ -1,6 +1,6 @@
 import type { SubagentNodeRecord, SubagentSkillFile } from './types'
 
-const ARCHIVE_ROOT = '.agent-archive'
+const ARCHIVE_ROOT = '.webAgent-archive'
 const MAX_SEGMENT_LENGTH = 96
 
 function safeSegment(value: string): string {

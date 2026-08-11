@@ -8,7 +8,7 @@ const subagentArchivePreviewLoader = createLatestOnlyLoader()
 
 export function resolveSubagentArchivePath(archiveBasePath: string, path: string): string {
   const normalized = path.replace(/^\.\//, '')
-  if (normalized === archiveBasePath || normalized.startsWith(`${archiveBasePath}/`) || normalized.startsWith('.agent-archive/')) {
+  if (normalized === archiveBasePath || normalized.startsWith(`${archiveBasePath}/`) || normalized.startsWith('.webAgent-archive/')) {
     return normalized
   }
   return `${archiveBasePath}/${normalized}`

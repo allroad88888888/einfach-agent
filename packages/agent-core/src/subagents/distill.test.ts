@@ -28,7 +28,7 @@ describe('distillDelegateSkills', () => {
     const result = await distillDelegateSkills({
       conversationId: 'session',
       runId: 'run',
-      cacheBasePath: '.agent-archive/conversations/session/runs/run',
+      cacheBasePath: '.webAgent-archive/conversations/session/runs/run',
       parentPath: 'root',
       parentTranscript: 'user asks for a tree agent runtime',
       inheritedSkillFiles: ['parent.md'],
@@ -61,7 +61,7 @@ describe('distillDelegateSkills', () => {
     const result01 = await distillDelegateSkills({
       conversationId: 'session',
       runId: 'run',
-      cacheBasePath: '.agent-archive/conversations/session/runs/run',
+      cacheBasePath: '.webAgent-archive/conversations/session/runs/run',
       parentPath: 'root',
       parentDispatchIndex: 1,
       parentTranscript: 'user asks for first batch',
@@ -74,7 +74,7 @@ describe('distillDelegateSkills', () => {
     const result02 = await distillDelegateSkills({
       conversationId: 'session',
       runId: 'run',
-      cacheBasePath: '.agent-archive/conversations/session/runs/run',
+      cacheBasePath: '.webAgent-archive/conversations/session/runs/run',
       parentPath: 'root',
       parentDispatchIndex: 2,
       parentTranscript: 'user asks for second batch',
@@ -87,7 +87,7 @@ describe('distillDelegateSkills', () => {
     expect(result01.coreSkill.filename).toBe('root.01-core.md')
     expect(result02.coreSkill.filename).toBe('root.02-core.md')
     expect(result02.coreSkill.path).toBe(
-      '.agent-archive/conversations/session/runs/run/skills/root.02-core.md',
+      '.webAgent-archive/conversations/session/runs/run/skills/root.02-core.md',
     )
     expect(result01.coreSkill.skillId).not.toBe(result02.coreSkill.skillId)
   })
@@ -97,7 +97,7 @@ describe('distillDelegateSkills', () => {
     const result = await distillDelegateSkills({
       conversationId: 'session',
       runId: 'run',
-      cacheBasePath: '.agent-archive/conversations/session/runs/run',
+      cacheBasePath: '.webAgent-archive/conversations/session/runs/run',
       parentPath: 'root',
       parentTranscript: 'user asks for fallback test',
       inheritedSkillFiles: ['parent.md'],
@@ -129,7 +129,7 @@ describe('distillDelegateSkills', () => {
       distillDelegateSkills({
         conversationId: 'session',
         runId: 'run',
-        cacheBasePath: '.agent-archive/conversations/session/runs/run',
+        cacheBasePath: '.webAgent-archive/conversations/session/runs/run',
         parentPath: 'root',
         parentTranscript: 'user asks for wait_all failure test',
         inheritedSkillFiles: ['parent.md'],

@@ -21,7 +21,7 @@ function indexRecord(overrides: Record<string, unknown> = {}): Record<string, un
     type: 'skill',
     skillId: 'sk_candidate',
     kind: 'core',
-    globalPath: '.agent-archive/skills/sk_candidate.md',
+    globalPath: '.webAgent-archive/skills/sk_candidate.md',
     contentHash: HASH,
     promotion: 'candidate',
     inheritSkillIds: ['sk_parent'],
@@ -42,7 +42,7 @@ function candidate(): CandidateSkill {
   })
   return {
     skillId: 'sk_candidate', kind: 'core', summary: 'candidate summary',
-    globalPath: '.agent-archive/skills/sk_candidate.md', score: scored.score, scoreParts: scored.parts,
+    globalPath: '.webAgent-archive/skills/sk_candidate.md', score: scored.score, scoreParts: scored.parts,
   }
 }
 
@@ -63,10 +63,10 @@ describe('subagent skill governance atoms', () => {
 
   it('按最后一条状态去重，只返回 candidate，并稳定按分数和 skillId 排序', () => {
     const lines = [
-      indexRecord({ skillId: 'sk_old', globalPath: '.agent-archive/skills/sk_old.md' }),
-      indexRecord({ skillId: 'sk_old', globalPath: '.agent-archive/skills/sk_old.md', promotion: 'promoted' }),
-      indexRecord({ skillId: 'sk_b', globalPath: '.agent-archive/skills/sk_b.md', inheritSkillIds: [] }),
-      indexRecord({ skillId: 'sk_a', globalPath: '.agent-archive/skills/sk_a.md', inheritSkillIds: [] }),
+      indexRecord({ skillId: 'sk_old', globalPath: '.webAgent-archive/skills/sk_old.md' }),
+      indexRecord({ skillId: 'sk_old', globalPath: '.webAgent-archive/skills/sk_old.md', promotion: 'promoted' }),
+      indexRecord({ skillId: 'sk_b', globalPath: '.webAgent-archive/skills/sk_b.md', inheritSkillIds: [] }),
+      indexRecord({ skillId: 'sk_a', globalPath: '.webAgent-archive/skills/sk_a.md', inheritSkillIds: [] }),
     ].map((item) => JSON.stringify(item)).join('\n')
 
     expect(parseCandidateSkillsIndex(lines).map((item) => item.skillId)).toEqual(['sk_a', 'sk_b'])

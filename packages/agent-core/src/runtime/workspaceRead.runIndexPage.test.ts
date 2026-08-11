@@ -22,7 +22,7 @@ beforeEach(() => {
 describe('readWorkspaceRunIndexPage', () => {
   it('映射分页参数并规范化 snake/camel case 响应', async () => {
     tauri.invoke.mockResolvedValue({
-      path: '.agent-archive/index/runs.jsonl',
+      path: '.webAgent-archive/index/runs.jsonl',
       lines: [{ line_number: 99, content: '{"runId":"latest"}' }],
       cursor: 'snapshot:98',
       has_more: true,
@@ -32,7 +32,7 @@ describe('readWorkspaceRunIndexPage', () => {
     await expect(readWorkspaceRunIndexPage({
       cursor: 'snapshot:100', maxRecords: 2, workspaceRoot: '/workspace',
     })).resolves.toEqual({ ok: true, data: {
-      path: '.agent-archive/index/runs.jsonl',
+      path: '.webAgent-archive/index/runs.jsonl',
       lines: [{ lineNumber: 99, content: '{"runId":"latest"}' }],
       cursor: 'snapshot:98',
       hasMore: true,

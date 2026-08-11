@@ -64,12 +64,12 @@ function delegateItems(result?: unknown): ConversationItem[] {
 describe('subagentViewAtoms', () => {
   it('解析全局 run 索引时按逻辑 run 去重、排序并拒绝越界归档路径', () => {
     const parsed = parseGlobalSubagentRunsIndex([
-      JSON.stringify({ conversationId: 'c1', runId: 'r1', status: 'running', archiveBasePath: '.agent-archive/conversations/c1/runs/r1', updatedAt: '2026-01-01T00:00:00Z' }),
+      JSON.stringify({ conversationId: 'c1', runId: 'r1', status: 'running', archiveBasePath: '.webAgent-archive/conversations/c1/runs/r1', updatedAt: '2026-01-01T00:00:00Z' }),
       '{broken',
       JSON.stringify({ conversationId: 'c2', runId: 'r2', status: 'delegated', archiveBasePath: '../../secret', updatedAt: '2026-01-03T00:00:00Z' }),
-      JSON.stringify({ conversationId: 'c4', runId: 'r4', status: 'delegated', archiveBasePath: '.agent-archive/conversations/c4\\..\\secret/runs/r4', updatedAt: '2026-01-05T00:00:00Z' }),
-      JSON.stringify({ conversationId: 'c1', runId: 'r1', status: 'delegated', archiveBasePath: '.agent-archive/conversations/c1/runs/r1', updatedAt: '2026-01-02T00:00:00Z' }),
-      JSON.stringify({ conversationId: 'c3', runId: 'r3', status: 'delegated', archiveBasePath: '.agent-archive/conversations/c3/runs/r3', updatedAt: '2026-01-04T00:00:00Z' }),
+      JSON.stringify({ conversationId: 'c4', runId: 'r4', status: 'delegated', archiveBasePath: '.webAgent-archive/conversations/c4\\..\\secret/runs/r4', updatedAt: '2026-01-05T00:00:00Z' }),
+      JSON.stringify({ conversationId: 'c1', runId: 'r1', status: 'delegated', archiveBasePath: '.webAgent-archive/conversations/c1/runs/r1', updatedAt: '2026-01-02T00:00:00Z' }),
+      JSON.stringify({ conversationId: 'c3', runId: 'r3', status: 'delegated', archiveBasePath: '.webAgent-archive/conversations/c3/runs/r3', updatedAt: '2026-01-04T00:00:00Z' }),
       '',
     ].join('\n'))
 
@@ -91,12 +91,12 @@ describe('subagentViewAtoms', () => {
       conversationId: 'new-conversation',
       runId: 'new-run',
       status: 'delegated',
-      archiveBasePath: '.agent-archive/conversations/new-conversation/runs/new-run',
+      archiveBasePath: '.webAgent-archive/conversations/new-conversation/runs/new-run',
     })
     await store.setter(loadGlobalSubagentRunsAtom, {
       workspaceRoot: '/new',
       reader: async () => ({ ok: true, data: {
-        path: '.agent-archive/index/runs.jsonl',
+        path: '.webAgent-archive/index/runs.jsonl',
         lines: [{ lineNumber: 1, content }],
         hasMore: false,
         snapshot: 'new-snapshot',
@@ -118,25 +118,25 @@ describe('subagentViewAtoms', () => {
       conversationId: `c-${index}`,
       runId: `r-${index}`,
       status: 'delegated',
-      archiveBasePath: `.agent-archive/conversations/c-${index}/runs/r-${index}`,
+      archiveBasePath: `.webAgent-archive/conversations/c-${index}/runs/r-${index}`,
       updatedAt: new Date(1_700_000_000_000 + index).toISOString(),
       padding: 'x'.repeat(80),
     }))
     expect(records.join('\n').length).toBeGreaterThan(200_000)
     const latestDuplicate = JSON.stringify({
       conversationId: 'c-0', runId: 'r-0', status: 'done',
-      archiveBasePath: '.agent-archive/conversations/c-0/runs/r-0',
+      archiveBasePath: '.webAgent-archive/conversations/c-0/runs/r-0',
       updatedAt: '2026-01-01T00:00:00Z',
     })
     let call = 0
     const reader = async () => {
       call += 1
       return call === 1
-        ? { ok: true as const, data: { path: '.agent-archive/index/runs.jsonl', lines: [
+        ? { ok: true as const, data: { path: '.webAgent-archive/index/runs.jsonl', lines: [
           { lineNumber: 2_001, content: latestDuplicate },
           { lineNumber: 2_000, content: records[1_999] },
         ], cursor: 'snapshot:1999', hasMore: true, snapshot: 'snapshot' } }
-        : { ok: true as const, data: { path: '.agent-archive/index/runs.jsonl', lines: [
+        : { ok: true as const, data: { path: '.webAgent-archive/index/runs.jsonl', lines: [
           { lineNumber: 1, content: records[0] },
         ], hasMore: false, snapshot: 'snapshot' } }
     }
@@ -159,14 +159,14 @@ describe('subagentViewAtoms', () => {
     const store = createStore()
     const line = JSON.stringify({
       conversationId: 'c1', runId: 'r1',
-      archiveBasePath: '.agent-archive/conversations/c1/runs/r1',
+      archiveBasePath: '.webAgent-archive/conversations/c1/runs/r1',
     })
     await store.setter(loadGlobalSubagentRunsAtom, { reader: async () => ({ ok: true, data: {
-      path: '.agent-archive/index/runs.jsonl', lines: [{ lineNumber: 2, content: line }],
+      path: '.webAgent-archive/index/runs.jsonl', lines: [{ lineNumber: 2, content: line }],
       cursor: 's1:1', hasMore: true, snapshot: 's1',
     } }) })
     await store.setter(loadGlobalSubagentRunsAtom, { loadMore: true, reader: async () => ({ ok: true, data: {
-      path: '.agent-archive/index/runs.jsonl', lines: [{ lineNumber: 1, content: line }],
+      path: '.webAgent-archive/index/runs.jsonl', lines: [{ lineNumber: 1, content: line }],
       hasMore: false, snapshot: 's2',
     } }) })
 
@@ -209,7 +209,7 @@ describe('subagentViewAtoms', () => {
         treeId: 'tree-1',
         parentPath: 'root',
         strategy: 'parallel_wait_all',
-        archiveBasePath: '.agent-archive/runs/r1',
+        archiveBasePath: '.webAgent-archive/runs/r1',
         children: [
           {
             path: 'root-01',
@@ -474,18 +474,18 @@ describe('subagentViewAtoms', () => {
     const treeText = JSON.stringify({ nodes: [
       { path: 'root', treeId: 'tree-1', status: 'done', objective: 'root', depth: 0 },
       { path: 'root-01', treeId: 'tree-1', parentPath: 'root', status: 'done', objective: '一级', depth: 1 },
-      { path: 'root-01-02', treeId: 'tree-1', parentPath: 'root-01', status: 'failed', objective: '二级', depth: 2, resultFile: '.agent-archive/run/results/root-01-02.result.md', error: 'boom' },
+      { path: 'root-01-02', treeId: 'tree-1', parentPath: 'root-01', status: 'failed', objective: '二级', depth: 2, resultFile: '.webAgent-archive/run/results/root-01-02.result.md', error: 'boom' },
     ] })
     const eventsText = `${JSON.stringify({
       eventId: 'e1', timestamp: '2026-01-01T00:00:00Z', conversationId: 's1', runId: 'r1', treeId: 'tree-1', agentPath: 'root-01-02', type: 'child_finished',
-      data: { status: 'failed', objective: '二级', summary: '递归结果', resultFile: '.agent-archive/run/results/root-01-02.result.md', error: 'boom' },
+      data: { status: 'failed', objective: '二级', summary: '递归结果', resultFile: '.webAgent-archive/run/results/root-01-02.result.md', error: 'boom' },
     })}\n`
     const reader = async (input: ReadWorkspaceFileInput): Promise<WorkspaceRuntimeResult<ReadWorkspaceFileResult>> => ({
       ok: true,
       data: { path: input.path, content: input.path.endsWith('tree.json') ? treeText : eventsText, truncated: false, bytes: 10 },
     })
 
-    const loaded = await readSubagentArchive({ archiveBasePath: '.agent-archive/run', workspaceRoot: '/workspace' }, reader)
+    const loaded = await readSubagentArchive({ archiveBasePath: '.webAgent-archive/run', workspaceRoot: '/workspace' }, reader)
 
     expect(loaded.status).toBe('ready')
     expect(loaded.tree?.treeId).toBe('tree-1')
@@ -494,23 +494,23 @@ describe('subagentViewAtoms', () => {
       ['root-01', 1],
       ['root-01-02', 2],
     ])
-    expect(loaded.tree?.nodes[2]).toMatchObject({ summary: '递归结果', resultFile: '.agent-archive/run/results/root-01-02.result.md' })
+    expect(loaded.tree?.nodes[2]).toMatchObject({ summary: '递归结果', resultFile: '.webAgent-archive/run/results/root-01-02.result.md' })
   })
 
   it('区分无归档和读取失败，并安全解析归档内相对入口', async () => {
     const missing = await readSubagentArchive(
-      { archiveBasePath: '.agent-archive/run' },
+      { archiveBasePath: '.webAgent-archive/run' },
       async () => ({ ok: false, error: 'file does not exist' }),
     )
     const failed = await readSubagentArchive(
-      { archiveBasePath: '.agent-archive/run' },
+      { archiveBasePath: '.webAgent-archive/run' },
       async () => ({ ok: false, error: 'permission denied' }),
     )
 
     expect(missing.status).toBe('empty')
     expect(failed.status).toBe('error')
-    expect(resolveSubagentArchivePath('.agent-archive/run', 'results/a.md')).toBe('.agent-archive/run/results/a.md')
-    expect(resolveSubagentArchivePath('.agent-archive/run', '.agent-archive/run/events.jsonl')).toBe('.agent-archive/run/events.jsonl')
+    expect(resolveSubagentArchivePath('.webAgent-archive/run', 'results/a.md')).toBe('.webAgent-archive/run/results/a.md')
+    expect(resolveSubagentArchivePath('.webAgent-archive/run', '.webAgent-archive/run/events.jsonl')).toBe('.webAgent-archive/run/events.jsonl')
   })
 
   it('同一归档的新 workspace 请求完成后不被旧请求覆盖', async () => {
@@ -534,12 +534,12 @@ describe('subagentViewAtoms', () => {
     })
 
     const oldRequest = store.setter(loadSubagentArchiveAtom, {
-      archiveBasePath: '.agent-archive/run',
+      archiveBasePath: '.webAgent-archive/run',
       workspaceRoot: '/old',
       reader: oldReader,
     })
     await store.setter(loadSubagentArchiveAtom, {
-      archiveBasePath: '.agent-archive/run',
+      archiveBasePath: '.webAgent-archive/run',
       workspaceRoot: '/new',
       force: true,
       reader: newReader,
@@ -547,7 +547,7 @@ describe('subagentViewAtoms', () => {
     resolveOld({ ok: false, error: 'permission denied' })
     await oldRequest
 
-    expect(store.getter(subagentArchiveLoadsAtom)['.agent-archive/run']).toMatchObject({
+    expect(store.getter(subagentArchiveLoadsAtom)['.webAgent-archive/run']).toMatchObject({
       workspaceRoot: '/new',
       status: 'ready',
       tree: { treeId: 'new-tree' },
@@ -566,27 +566,27 @@ describe('subagentViewAtoms', () => {
     })
 
     const oldRequest = store.setter(loadSubagentArchivePreviewAtom, {
-      archiveBasePath: '.agent-archive/run',
+      archiveBasePath: '.webAgent-archive/run',
       path: 'results/old.md',
       kind: 'result',
       reader: oldReader,
     })
     await store.setter(loadSubagentArchivePreviewAtom, {
-      archiveBasePath: '.agent-archive/run',
+      archiveBasePath: '.webAgent-archive/run',
       path: 'results/new.md',
       kind: 'result',
       reader: newReader,
     })
     resolveOld({
       ok: true,
-      data: { path: '.agent-archive/run/results/old.md', content: 'old content', truncated: false, bytes: 11 },
+      data: { path: '.webAgent-archive/run/results/old.md', content: 'old content', truncated: false, bytes: 11 },
     })
     await oldRequest
 
     expect(store.getter(subagentArchivePreviewAtom)).toMatchObject({
       status: 'ready',
       kind: 'result',
-      path: '.agent-archive/run/results/new.md',
+      path: '.webAgent-archive/run/results/new.md',
       content: 'new content',
     })
   })
@@ -621,7 +621,7 @@ describe('subagentViewAtoms', () => {
     expect(parsed.warnings).toHaveLength(1)
 
     await store.setter(loadSubagentTraceAtom, {
-      archiveBasePath: '.agent-archive/run',
+      archiveBasePath: '.webAgent-archive/run',
       agentPath: 'root-01',
       nodeKey: 'tree:root-01',
       workspaceRoot: '/workspace',
@@ -633,7 +633,7 @@ describe('subagentViewAtoms', () => {
 
     expect(store.getter(subagentTraceAtom)).toMatchObject({
       status: 'ready',
-      path: '.agent-archive/run/traces/root-01.trace.jsonl',
+      path: '.webAgent-archive/run/traces/root-01.trace.jsonl',
       nodeKey: 'tree:root-01',
       records: [
         { turn: 1, item: { role: 'assistant', reasoning_content: '先检查实现' } },
@@ -655,13 +655,13 @@ describe('subagentViewAtoms', () => {
     })
 
     const oldRequest = store.setter(loadSubagentTraceAtom, {
-      archiveBasePath: '.agent-archive/run',
+      archiveBasePath: '.webAgent-archive/run',
       agentPath: 'root-01',
       nodeKey: 'tree:root-01',
       reader: oldReader,
     })
     await store.setter(loadSubagentTraceAtom, {
-      archiveBasePath: '.agent-archive/run',
+      archiveBasePath: '.webAgent-archive/run',
       agentPath: 'root-02',
       nodeKey: 'tree:root-02',
       reader: async (input) => ({
@@ -674,7 +674,7 @@ describe('subagentViewAtoms', () => {
 
     expect(store.getter(subagentTraceAtom)).toMatchObject({
       status: 'ready',
-      path: '.agent-archive/run/traces/root-02.trace.jsonl',
+      path: '.webAgent-archive/run/traces/root-02.trace.jsonl',
       nodeKey: 'tree:root-02',
       records: [expect.objectContaining({ turn: 2, item: { role: 'assistant', content: 'new trace' } })],
     })

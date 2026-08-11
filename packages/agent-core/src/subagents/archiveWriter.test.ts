@@ -34,19 +34,19 @@ describe('SubagentArchiveWriter', () => {
     const writer = new SubagentArchiveWriter()
 
     const first = writer.write(
-      { path: '.agent-archive/index/skills.jsonl', content: 'one\n', mode: 'append' },
+      { path: '.webAgent-archive/index/skills.jsonl', content: 'one\n', mode: 'append' },
       execute,
       { batchAppend: true },
     )
     const second = writer.write(
-      { path: '.agent-archive/index/skills.jsonl', content: 'two\n', mode: 'append' },
+      { path: '.webAgent-archive/index/skills.jsonl', content: 'two\n', mode: 'append' },
       execute,
       { batchAppend: true },
     )
     await Promise.all([first, second, writer.flush()])
 
     expect(writes).toEqual([
-      { path: '.agent-archive/index/skills.jsonl', content: 'one\ntwo\n', mode: 'append' },
+      { path: '.webAgent-archive/index/skills.jsonl', content: 'one\ntwo\n', mode: 'append' },
     ])
   })
 

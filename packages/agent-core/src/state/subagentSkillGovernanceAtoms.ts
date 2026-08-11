@@ -2,7 +2,7 @@ import { atom } from '@einfach/core'
 import { prepareSubagentSkillGovernance, type SkillGovernanceAction, type SkillGovernanceOperation } from '../runtime/skillGovernance'
 import { readWorkspaceFile, type ReadWorkspaceFileInput, type ReadWorkspaceFileResult, type WorkspaceRuntimeResult } from '../runtime/workspaceRead'
 
-const SKILLS_INDEX_PATH = '.agent-archive/index/skills.jsonl'
+const SKILLS_INDEX_PATH = '.webAgent-archive/index/skills.jsonl'
 const SKILL_ID = /^sk_[a-zA-Z0-9_-]{1,92}$/
 const CONTENT_HASH = /^h64:[0-9a-z]{14}$/
 
@@ -90,7 +90,7 @@ export function parseCandidateSkillsIndex(content: string, truncated = false): C
   return [...latest.values()].filter((item) => item.promotion === 'candidate').map((item) => {
     const skillId = item.skillId as string
     const globalPath = requiredString(item.globalPath, `${skillId} globalPath`)
-    if (globalPath !== `.agent-archive/skills/${skillId}.md`) throw new Error(`${skillId} globalPath 不合法`)
+    if (globalPath !== `.webAgent-archive/skills/${skillId}.md`) throw new Error(`${skillId} globalPath 不合法`)
     const summary = requiredString(item.summary, `${skillId} summary`)
     const kind = requiredString(item.kind, `${skillId} kind`)
     const contentHash = requiredString(item.contentHash, `${skillId} contentHash`)

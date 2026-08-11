@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { SubagentArchiveIO } from './archiveIO'
 import type { DelegateAgentCallContext, SubagentNodeRecord, SubagentSkillFile } from './types'
 
-const archiveBasePath = '.agent-archive/conversations/session/runs/run'
+const archiveBasePath = '.webAgent-archive/conversations/session/runs/run'
 
 function context(writes: Map<string, string>): DelegateAgentCallContext {
   return {
@@ -22,7 +22,7 @@ function skill(): SubagentSkillFile {
     conversationId: 'session',
     runId: 'run',
     path: `${archiveBasePath}/skills/root.md`,
-    globalPath: '.agent-archive/skills/skill-root.md',
+    globalPath: '.webAgent-archive/skills/skill-root.md',
     filename: 'root.md',
     agentPath: 'root',
     kind: 'core',
@@ -79,7 +79,7 @@ describe('SubagentArchiveIO', () => {
     await archive.persistTreeSnapshot(context(writes), archiveBasePath, [node()])
     await archive.close()
 
-    expect(JSON.parse(writes.get('.agent-archive/conversations/session/conversation.json') ?? '')).toMatchObject({
+    expect(JSON.parse(writes.get('.webAgent-archive/conversations/session/conversation.json') ?? '')).toMatchObject({
       archiveVersion: 1,
       conversationId: 'session',
     })
@@ -90,8 +90,8 @@ describe('SubagentArchiveIO', () => {
     })
     expect(writes.get(`${archiveBasePath}/skills/root.md`)).toContain('# Root skill')
     expect(writes.get(`${archiveBasePath}/tree.json`)).toContain('root-node')
-    expect(writes.get('.agent-archive/index/skills.jsonl')).toContain('skill-root')
-    expect(writes.get('.agent-archive/index/agents.jsonl')).toContain('root-node')
+    expect(writes.get('.webAgent-archive/index/skills.jsonl')).toContain('skill-root')
+    expect(writes.get('.webAgent-archive/index/agents.jsonl')).toContain('root-node')
     expect(events(writes).map(({ type, eventId }) => ({ type, eventId }))).toEqual([
       { type: 'archive_initialized', eventId: 'run:evt-0001' },
       { type: 'skill_written', eventId: 'run:evt-0002' },
