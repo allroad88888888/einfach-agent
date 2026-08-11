@@ -11,8 +11,10 @@ import {
 } from './connect-mcp-server.fixtures'
 import {
   MCP_CONNECT_MAX_LISTED_TOOLS,
+  MCP_CONNECT_TIMEOUT_MS,
   MCP_CONNECT_TOOL_NAME,
   createMcpConnectTool,
+  type McpConnectManager,
 } from './connect-mcp-server'
 
 describe('connect_mcp_server', () => {
@@ -89,10 +91,12 @@ describe('connect_mcp_server', () => {
     expect(reconnect).not.toHaveBeenCalled()
   })
 
-  it('reports a connection failure as a bounded, non-retryable tool result', async () => {
+  it('reports a permanent connection failure as bounded and non-retryable', async () => {
+    // "unsupported mcp transport" 是这个包自己抛的开发者字符串（validateConfig），
+    // 命中 classifyMcpFailure() 的永久失败规则（config_invalid）。
     const { manager } = fakeManager([serverSnapshot('weather', 'error')], {
       onReconnect: () => {
-        throw new Error(`E${'!'.repeat(20_000)}`)
+        throw new Error(`unsupported mcp transport: E${'!'.repeat(20_000)}`)
       },
     })
 
@@ -105,12 +109,71 @@ describe('connect_mcp_server', () => {
       ok: false,
       code: 'MCP_CONNECT_FAILED',
       retryable: false,
-      details: { serverId: 'weather', transport: 'streamable-http' },
+      details: {
+        serverId: 'weather',
+        transport: 'streamable-http',
+        status: 'error',
+        reason: 'config_invalid',
+      },
     })
     if ('error' in result) {
       expect(result.error.length).toBeLessThanOrEqual(4_100)
       expect(result.error.endsWith('…')).toBe(true)
+      expect(result.hint).toContain('不要原样重试')
     }
+  })
+
+  it('reports a temporary connection failure (network jitter) as retryable', async () => {
+    // 不命中任何永久规则的错误 → classifyMcpFailure() 的兜底 'connection_disrupted'，可重试。
+    const { manager } = fakeManager([serverSnapshot('weather', 'reconnecting')], {
+      onReconnect: () => {
+        throw new Error('socket hang up')
+      },
+    })
+
+    const result = await createMcpConnectTool(manager).execute(
+      { serverId: 'weather' },
+      toolContext(),
+    )
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'MCP_CONNECT_FAILED',
+      retryable: true,
+      details: {
+        serverId: 'weather',
+        transport: 'streamable-http',
+        status: 'reconnecting',
+        reason: 'connection_disrupted',
+      },
+    })
+  })
+
+  it('reports a connect timeout as its own bounded, retryable result — independent of the tool-call timeout', async () => {
+    const pending = new Promise<never>(() => {
+      // 永不落地：只有工具自己的连接超时能让 execute() 返回。
+    })
+    const manager: McpConnectManager = {
+      get: () => serverSnapshot('slow', 'disconnected'),
+      list: () => [serverSnapshot('slow', 'disconnected')],
+      reconnect: vi.fn(() => pending),
+    }
+
+    const result = await createMcpConnectTool(manager, { connectTimeoutMs: 20 }).execute(
+      { serverId: 'slow' },
+      toolContext(),
+    )
+
+    expect(result).toMatchObject({
+      ok: false,
+      code: 'MCP_CONNECT_TIMEOUT',
+      retryable: true,
+      details: { serverId: 'slow', transport: 'streamable-http', timeoutMs: 20 },
+    })
+  })
+
+  it('defaults the connect timeout to MCP_CONNECT_TIMEOUT_MS, independent from the 120s tool-call timeout', () => {
+    expect(MCP_CONNECT_TIMEOUT_MS).toBeGreaterThan(120_000)
   })
 
   it('keeps caller cancellation as AbortError control flow', async () => {

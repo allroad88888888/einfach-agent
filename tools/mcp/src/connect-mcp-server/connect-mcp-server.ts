@@ -13,9 +13,9 @@
 import type { Tool, ToolResult } from '@web-agent/core/tools/types'
 import guide from './connect-mcp-server.md?raw'
 import type { McpClientManager } from '../clientManager'
-import { errorMessage, isRecord, throwIfAborted, truncate } from '../internal'
-import { MCP_ERROR_MAX_CHARS } from '../toolAdapter'
+import { combineAbortSignals, isRecord, raceWithAbort, throwIfAborted, truncate } from '../internal'
 import type { McpServerSnapshot } from '../types'
+import { buildConnectFailureResult, buildConnectTimeoutResult } from './connectFailureResult'
 
 export const MCP_CONNECT_TOOL_NAME = 'connect_mcp_server'
 /** 回给模型的工具清单条数上限（单个服务最多可有 1000 个工具，全列会撑爆上下文）。 */
@@ -24,6 +24,16 @@ export const MCP_CONNECT_LISTED_DESCRIPTION_MAX_CHARS = 160
 /** 超过这个长度的入参一定不是服务 ID，直接拒，不进任何查表或文案。 */
 export const MCP_CONNECT_SERVER_ID_MAX_CHARS = 512
 const MCP_CONNECT_MAX_LISTED_SERVER_IDS = 50
+
+/**
+ * 连接的独立超时——刻意不复用 toolAdapter.ts 的 MCP_TOOL_CALL_TIMEOUT_MS（120s）。
+ * 那个 120s 是给"已连上、发一次工具调用"的开销算的；连接是重得多的一次性操作：
+ * stdio 服务可能要先 spawn 进程、走完 initialize 握手，第一次跑还可能要 npx 现下包——
+ * 网络或镜像慢的时候，光是包下载就可能花掉几十秒，这段时间进程已经起来了但还没来得及应答
+ * MCP 协议。180s 给了大约 3 倍于常规工具调用的余量，既能扛住冷启动，又不至于在服务真的
+ * 挂死时无限期占住一次模型回合。
+ */
+export const MCP_CONNECT_TIMEOUT_MS = 180_000
 
 /**
  * 连接工具需要的最小 manager 能力面。
@@ -183,15 +193,27 @@ function describeConnectedServer(
   }
 }
 
+export interface CreateMcpConnectToolOptions {
+  /** 连接超时；默认 MCP_CONNECT_TIMEOUT_MS。主要为宿主与确定性测试开放。 */
+  connectTimeoutMs?: number
+}
+
 /**
  * 造一个绑定到给定 manager 的连接工具。
  *
  * manager 走参数注入，不走模块级单例：同一进程里可以有多个隔离的 CoreInstance / manager，
  * 各自注册各自的工具实例，互不串台。
  */
-export function createMcpConnectTool(manager: McpConnectManager): Tool {
+export function createMcpConnectTool(
+  manager: McpConnectManager,
+  options: CreateMcpConnectToolOptions = {},
+): Tool {
   if (!manager || typeof manager.reconnect !== 'function') {
     throw new Error('createMcpConnectTool requires an MCP client manager')
+  }
+  const connectTimeoutMs = options.connectTimeoutMs ?? MCP_CONNECT_TIMEOUT_MS
+  if (!Number.isFinite(connectTimeoutMs) || connectTimeoutMs < 1) {
+    throw new Error('MCP connect timeout must be a positive number')
   }
 
   return {
@@ -224,29 +246,37 @@ export function createMcpConnectTool(manager: McpConnectManager): Tool {
       }
 
       ctx.progress(`正在连接 MCP 服务「${truncate(target.id, 80)}」`)
+
+      // 连接有自己的超时，不吃工具调用的 120s（MCP_TOOL_CALL_TIMEOUT_MS）：见上方常量注释。
+      // 用 raceWithAbort 而不是只把 signal 传给 manager——即使 manager/connector 某条路径
+      // 没有认真响应 abort，超时到点后本次 execute 也必须按时返回，不能被下游挂死。
+      const timeoutController = new AbortController()
+      const combined = combineAbortSignals(ctx.signal, timeoutController.signal)
+      let timedOut = false
+      const timeoutId = setTimeout(() => {
+        timedOut = true
+        timeoutController.abort(new Error(`MCP connect timed out after ${connectTimeoutMs}ms`))
+      }, connectTimeoutMs)
+
       try {
         // 交回给 manager 的是它自己记录里的 id（target.id），不是模型给的字符串；
         // reconnect 内部再对未知 id 抛错，构成第二道闸。连接配置全程只存在于 manager 内部。
-        const snapshot = await manager.reconnect(target.id, { signal: ctx.signal })
+        const snapshot = await raceWithAbort(
+          manager.reconnect(target.id, { signal: combined.signal }),
+          combined.signal,
+        )
         return { ok: true, data: describeConnectedServer(snapshot, false) }
       } catch (error) {
         // 用户/会话取消是控制流，不能被降级成一次「连接失败」的工具结果。
         throwIfAborted(ctx.signal)
-        return {
-          ok: false,
-          error: `连接 MCP 服务「${truncate(target.id, 80)}」失败：`
-            + truncate(errorMessage(error), MCP_ERROR_MAX_CHARS),
-          // 可重试性分级留给 F5：在有结构化失败分类之前，一律按不可重试处理，
-          // 避免把「命令不存在 / 配置写错」这类永久失败拖成重试风暴。
-          code: 'MCP_CONNECT_FAILED',
-          retryable: false,
-          hint: '先确认该服务的配置与运行环境；必要时让用户在设置里检查这个 MCP 服务。',
-          details: {
-            serverId: target.id,
-            transport: target.config.transport,
-            status: manager.get(target.id)?.status ?? 'error',
-          },
+        if (timedOut) {
+          return buildConnectTimeoutResult(target.id, target.config.transport, connectTimeoutMs)
         }
+        // retryable 由 classifyMcpFailure() 决定，见 connectFailureResult.ts。
+        return buildConnectFailureResult(target.id, target.config.transport, error)
+      } finally {
+        clearTimeout(timeoutId)
+        combined.dispose()
       }
     },
   }
