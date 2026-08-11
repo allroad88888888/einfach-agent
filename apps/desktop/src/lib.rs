@@ -9,6 +9,8 @@ mod model_proxy_envelope;
 mod model_proxy_http;
 mod model_request_registry;
 mod shell;
+mod web_agent_config_store;
+mod web_agent_config_write;
 mod workspace_change_journal;
 mod workspace_common;
 mod workspace_delete;
