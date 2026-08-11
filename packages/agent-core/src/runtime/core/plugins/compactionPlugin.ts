@@ -57,6 +57,12 @@ import type { AgentPlugin } from '../pluginApi'
 import { stringForStats } from '../../shared/preview'
 import { modelSamplingSettings } from '../../modelSettingsProjection'
 import {
+  contextInputBudgetTokens,
+  CONTEXT_SAFETY_MARGIN_RATIO,
+  COST_SOFT_CAP_TOKENS,
+  DEFAULT_RESERVED_OUTPUT_TOKENS,
+} from '../../contextBudget'
+import {
   createCompactionProjectionCache,
   incrementProjectionReuse,
   replaceProjection,
@@ -66,6 +72,12 @@ import {
 } from './compactionProjectionCache'
 
 export { createCompactionProjectionCache, type CompactionProjectionCache } from './compactionProjectionCache'
+export {
+  contextInputBudgetTokens,
+  CONTEXT_SAFETY_MARGIN_RATIO,
+  COST_SOFT_CAP_TOKENS,
+  DEFAULT_RESERVED_OUTPUT_TOKENS,
+} from '../../contextBudget'
 
 // ---------------------------------------------------------------------------
 // 上下文压缩预算
@@ -73,9 +85,7 @@ export { createCompactionProjectionCache, type CompactionProjectionCache } from 
 // provider 的模型窗口与工具容量由 @web-agent/ai 的 vendor descriptor 统一维护；core 只消费
 // 保守查询结果，避免在执行层重复维护 provider 数据。
 // settings.max_tokens 未设时给输出预留的额度（provider 侧默认上限通常在这个量级）。
-export const DEFAULT_RESERVED_OUTPUT_TOKENS = 8_000
 // 额外安全余量比例：本地估算对 tool_calls 的 JSON 结构偏乐观，留一档避免「估着没超、实际超了」。
-export const CONTEXT_SAFETY_MARGIN_RATIO = 0.08
 // 成本软上限 —— 与硬窗口【故意解耦】的第二道压缩触发点。
 // 起因：窗口表按官方文档校准到 1M 之后，硬窗口预算 ≈ 910K，压缩几乎永不触发；而在此之前，
 // 压缩（当时按 64K 窗口算，约 59K 就触发）一直【同时充当着隐性的成本闸门】。校准窗口是对的
@@ -83,7 +93,6 @@ export const CONTEXT_SAFETY_MARGIN_RATIO = 0.08
 // 官方 $0.435/1M cache-miss 输入价，单轮 910K 约 $0.39，长会话每一轮都这个量级，而用户毫无提示。
 // 所以压缩预算取 min(硬窗口, 成本软上限)：硬窗口防 400，软上限防账单，两者职责分开。
 // 200K ≈ 单轮 $0.087（同价目），且压缩摘掉的是可再生的历史工具正文、不动对话主干。
-export const COST_SOFT_CAP_TOKENS = 200_000
 // 已压缩投影若刚好填满请求预算，下一轮哪怕只追加一条常规模型输出也无法复用，只能再次重压。
 // 这段空间覆盖一次常规 tool-loop 追加，并在连续小轮次中让同一投影服务多轮。
 export const PROJECTION_REUSE_HEADROOM_TOKENS = 24_000
@@ -92,17 +101,6 @@ export const PROJECTION_REUSE_HEADROOM_TOKENS = 24_000
 // 详情：这是界面展示占用百分比时应使用的分母：先取本地实际执行预算（硬窗口与成本上限较小者），
 // 再扣除输出预留与安全余量；不能直接拿 provider 标称的 1M 窗口，否则长窗口模型会把占用比例
 // 显示得过小。工具 schema 属于输入的一部分，因此不在这里扣除。
-export function contextInputBudgetTokens(
-  vendor: string,
-  model: string,
-  reservedOutputTokens = DEFAULT_RESERVED_OUTPUT_TOKENS,
-): number {
-  const requestBudget = Math.min(contextWindowTokens(vendor, model), COST_SOFT_CAP_TOKENS)
-  return Math.max(
-    0,
-    requestBudget - reservedOutputTokens - Math.ceil(requestBudget * CONTEXT_SAFETY_MARGIN_RATIO),
-  )
-}
 
 // 简介：RequestDraft 的私有扩展字段——本插件与 loop 的协作契约（见文件头）。
 // 详情：LoopHooks（上游契约，不可改）里 RequestDraft 只有 `messages`；tools/llmTurn/compaction

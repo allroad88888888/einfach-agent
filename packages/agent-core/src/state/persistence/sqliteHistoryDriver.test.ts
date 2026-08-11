@@ -14,6 +14,7 @@ interface CheckpointRow {
   plan: string | null
   recovery: string | null
   plan_stage_checkpoints: string | null
+  context_checkpoint: string | null
 }
 
 function createFakeDatabase() {
@@ -33,6 +34,7 @@ function createFakeDatabase() {
           plan,
           recovery,
           plan_stage_checkpoints,
+          context_checkpoint,
         ] = params as [
           string,
           number,
@@ -41,6 +43,7 @@ function createFakeDatabase() {
           CheckpointFinishReason | null,
           number,
           string,
+          string | null,
           string | null,
           string | null,
           string | null,
@@ -56,6 +59,7 @@ function createFakeDatabase() {
           plan,
           recovery,
           plan_stage_checkpoints,
+          context_checkpoint,
         }
         const index = checkpoints.findIndex(
           (checkpoint) => checkpoint.session_id === session_id && checkpoint.turn_index === turn_index,

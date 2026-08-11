@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { rootStore, sessionsAtom, workspacesAtom } from '../state/rootStore'
 import { getSessionStore } from '../state/sessionStore'
-import { itemsAtom, runAtom, checkpointsAtom, planAtom } from '../state/sessionAtoms'
+import { contextCheckpointAtom, itemsAtom, runAtom, checkpointsAtom, planAtom } from '../state/sessionAtoms'
 import { executionGraphAtom } from '../execution/graph'
 import { getExecutionRuntime } from '../execution/runtime'
 import { patchRun, setRun } from '../state/sessionWriters'
@@ -1835,11 +1835,17 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     ).filter((callId) => callId === 'read-a' || callId === 'read-b')).toEqual(['read-a', 'read-b'])
   })
 
-  it('普通运行：模型不停请求 schema → 32 轮后 error，但整轮仍落 checkpoint', async () => {
+  it('普通运行：模型不停请求 schema → 666 轮后 error，但整轮仍落 checkpoint', async () => {
     const persistence = captureCheckpointPersistence()
     seedSession('t4', { vendor: 'deepseek', model: 'x' })
     let count = 0
-    const fetchImpl: typeof fetch = async () => {
+    let checkpointCalls = 0
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(init!.body as string) as Record<string, unknown>
+      if (JSON.stringify(body.messages).includes('Create the durable context checkpoint now. Return only the checkpoint text.')) {
+        checkpointCalls += 1
+        return jsonResponse('继续请求工具 schema。')
+      }
       count += 1
       return toolCallsResponse([
         { name: 'request_tool_schema', args: { toolName: 'skill_search', reason: `loop-${count}` } },
@@ -1851,15 +1857,16 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     const store = getSessionStore('t4').store
     const run = store.getter(runAtom)
     expect(run?.status).toBe('error')
-    expect(run?.error).toBe('主 Agent 超过最大模型轮次（32）')
+    expect(run?.error).toBe('主 Agent 超过最大模型轮次（666）')
     // 恰好跑满主 Agent 上限；子 Agent 使用独立循环与预算，不计入这里。
-    expect(count).toBe(32)
-    // ★ 回归：跑满 32 轮时 itemsAtom 里已堆了大量 assistant/tool 条目，整轮不落盘代价最大 ——
+    expect(count).toBe(666)
+    expect(checkpointCalls).toBeGreaterThan(0)
+    // ★ 回归：跑满 666 轮时 itemsAtom 里已堆了大量 assistant/tool 条目，整轮不落盘代价最大 ——
     //   刷新后连用户那条 user 消息都没了。
     expect(store.getter(checkpointsAtom)).toHaveLength(1)
     expect(persistence.saved.length).toBeGreaterThan(1)
     expect(persistence.saved.at(-1)?.checkpoint.items[0].item).toEqual({ role: 'user', content: 'hi' })
-  })
+  }, 10_000)
 
   it('计划运行：按阶段数放大主 Agent 轮次预算，且不计入子 Agent 轮次', async () => {
     seedSession('plan-turn-limit', { vendor: 'deepseek', model: 'x' })
@@ -1881,12 +1888,18 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
         objective: '持续执行',
         deliverables: [],
         dependencies: [],
-        status: 'in_progress',
+        status: 'pending',
         evidence: [],
       }],
     })
     let count = 0
-    const fetchImpl: typeof fetch = async () => {
+    let checkpointCalls = 0
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(init!.body as string) as Record<string, unknown>
+      if (JSON.stringify(body.messages).includes('Create the durable context checkpoint now. Return only the checkpoint text.')) {
+        checkpointCalls += 1
+        return jsonResponse('当前计划仍在执行；继续请求工具 schema。')
+      }
       count += 1
       return toolCallsResponse([
         { name: 'request_tool_schema', args: { toolName: 'skill_search', reason: `plan-loop-${count}` } },
@@ -1899,10 +1912,11 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
       fetchImpl,
     })
 
-    expect(count).toBe(64)
+    expect(count).toBe(501)
+    expect(checkpointCalls).toBeGreaterThan(0)
     expect(store.getter(runAtom)).toMatchObject({
       status: 'error',
-      error: '主 Agent 超过最大模型轮次（64）',
+      error: '主 Agent 超过最大模型轮次（501）',
     })
   })
 
@@ -2203,7 +2217,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     seedSession('plan-stage-guard', { vendor: 'deepseek', model: 'x' })
     const store = getSessionStore('plan-stage-guard').store
     const now = Date.now()
-    // 3 阶段计划：总预算 = max(64, 32+3*24)=104；单阶段 guard=64（=MIN_PLAN_AGENT_TURNS）先于 max_turns 触发。
+    // 3 阶段计划：总预算为每阶段 500 次加 guard 入口的余量；单阶段 guard
+    // 在第 501 次循环先于总预算触发，确保用户得到可行动的阶段诊断。
     store.setter(planAtom, {
       schemaVersion: 4,
       id: 'plan-stage-guard-plan',
@@ -2221,8 +2236,14 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
       ],
     })
     let count = 0
+    let checkpointCalls = 0
     // 每轮都调工具（不走纯文本），避免撞上 stall guard；始终停留在 stage-1，不推进。
-    const fetchImpl: typeof fetch = async () => {
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      const body = JSON.parse(init!.body as string) as Record<string, unknown>
+      if (JSON.stringify(body.messages).includes('Create the durable context checkpoint now. Return only the checkpoint text.')) {
+        checkpointCalls += 1
+        return jsonResponse('阶段一尚未完成，继续请求工具 schema。')
+      }
       count += 1
       return toolCallsResponse([
         { name: 'request_tool_schema', args: { toolName: 'skill_search', reason: `guard-loop-${count}` } },
@@ -2236,11 +2257,12 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     })
     await flushObservability()
 
-    // guard 在第 65 轮开头触发（stageTurnsOnGuard 65>64），此前已发起 64 次请求。
-    expect(count).toBe(64)
+    // guard 在第 501 轮开头触发（stageTurnsOnGuard 501>500），此前已发起 500 次请求。
+    expect(count).toBe(500)
+    expect(checkpointCalls).toBeGreaterThan(0)
     const run = store.getter(runAtom)
     expect(run?.status).toBe('error')
-    expect(run?.error).toContain('已连续占用超过 64 轮')
+    expect(run?.error).toContain('已连续占用超过 500 轮')
     expect(trace.events.some((event) => event.name === 'agent.plan_stage_over_budget')).toBe(true)
   })
 
@@ -2265,7 +2287,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     })
     store.setter(itemsAtom, [
       { id: 'user-1', createdAt: 1, item: { role: 'user', content: '执行计划' } },
-      ...Array.from({ length: 64 }, (_, index) => ({
+      ...Array.from({ length: 500 }, (_, index) => ({
         id: `assistant-${index}`,
         createdAt: index + 2,
         planStageId: 'stage-1',
@@ -2287,7 +2309,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(requestCount).toBe(0)
     expect(store.getter(runAtom)).toMatchObject({
       status: 'error',
-      error: expect.stringContaining('已连续占用超过 64 轮'),
+      error: expect.stringContaining('已连续占用超过 500 轮'),
     })
   })
 
@@ -3485,10 +3507,10 @@ describe('tool_call 参数解析', () => {
 })
 
 // ---------------------------------------------------------------------------
-// 上下文压缩接入（A4）
+// 上下文 checkpoint 接入
 // ---------------------------------------------------------------------------
-describe('上下文压缩接入', () => {
-  it('未超预算：请求体就是原始 messages，不产生压缩事件', async () => {
+describe('上下文 checkpoint 接入', () => {
+  it('未超预算：请求体就是原始 messages，不产生摘要事件', async () => {
     const trace = captureTrace()
     configureObservability({ driver: trace.driver })
     seedSession('cc0', { vendor: 'deepseek', model: 'deepseek-chat' })
@@ -3503,21 +3525,16 @@ describe('上下文压缩接入', () => {
 
     // 固定 system + skill 清单 + 工具摘要 + 运行环境 + user，一条没少。
     expect((captured.messages as unknown[]).length).toBe(5)
-    expect(trace.events.some((event) => event.name === 'llm.context_compacted')).toBe(false)
-    expect(trace.events.some((event) => event.name === 'llm.context_over_budget')).toBe(false)
+    expect(trace.events.some((event) => event.name === 'llm.context_distillation_started')).toBe(false)
+    expect(trace.events.some((event) => event.name === 'llm.context_distillation_succeeded')).toBe(false)
   })
 
-  it('超预算：请求体里的历史工具正文被摘要，但 itemsAtom 原文纹丝不动（真相源不可变）', async () => {
+  it('超预算时先生成模型 checkpoint，后续正常请求只发送它和增量历史', async () => {
     const trace = captureTrace()
     configureObservability({ driver: trace.driver })
-    // max_tokens 把预算吃光 → 必然触发压缩（不必造一个几十万字的会话）。
-    // ★ 刻意用表里【没有】的 model 名 'x' ★ —— 这里验的是压缩接线，不是某个真实模型的窗口。
-    //   写真实模型名会把这个测试钉死在 vendor descriptor 的具体数值上：官方一改窗口
-    //   （deepseek-chat 就从 64K 改成了 1M），这条与模型无关的测试就会无辜地红掉。
-    //   'x' 查不到条目 → 落到 vendor 兜底 64_000，预算基准稳定。
-    seedSession('cc1', { vendor: 'deepseek', model: 'x', max_tokens: 63_500 })
+    seedSession('cc1', { vendor: 'deepseek', model: 'x', max_tokens: 48_000 })
     const store = getSessionStore('cc1').store
-    const bigResult = JSON.stringify({ data: 'x'.repeat(4000) })
+    const bigResult = JSON.stringify({ data: 'x'.repeat(50_000) })
     store.setter(itemsAtom, [
       { id: 'u1', createdAt: 1, item: { role: 'user', content: '第一轮' } },
       {
@@ -3534,60 +3551,53 @@ describe('上下文压缩接入', () => {
       { id: 'u2', createdAt: 5, item: { role: 'user', content: '第二轮' } },
     ])
     setRun('cc1', { runId: 'CC1', status: 'running' })
-    let captured: Record<string, unknown> = {}
+    const requests: Array<Record<string, unknown>> = []
     const fetchImpl: typeof fetch = (_url, init) => {
-      captured = JSON.parse(init!.body as string)
+      const body = JSON.parse(init!.body as string) as Record<string, unknown>
+      requests.push(body)
+      if (JSON.stringify(body.messages).includes('Create the durable context checkpoint now. Return only the checkpoint text.')) {
+        return Promise.resolve(jsonResponse('已读取第一轮工具结果，继续处理第二轮请求。'))
+      }
       return Promise.resolve(jsonResponse('好'))
     }
 
     await runToolLoop('cc1', 'CC1', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
     await flushObservability()
 
-    const sentMessages = captured.messages as Array<Record<string, unknown>>
-    const sentTool = sentMessages.find((message) => message.role === 'tool')
-    // 请求体里那条 tool 结果已被摘要成占位（带 _compacted 标记）。
-    expect(String(sentTool?.content)).toContain('_compacted')
-    expect(String(sentTool?.content).length).toBeLessThan(bigResult.length)
-    // ★ 真相源不可变：itemsAtom 里仍是完整原文，压缩只是请求时的一次性投影。
+    expect(requests).toHaveLength(2)
+    const [distillationRequest, normalRequest] = requests
+    expect((distillationRequest.messages as Array<Record<string, unknown>>).some(
+      (message) => message.role === 'tool' && message.content === bigResult,
+    )).toBe(true)
+    const normalMessages = JSON.stringify(normalRequest.messages)
+    expect(normalMessages).toContain('Runtime context checkpoint')
+    expect(normalMessages).toContain('已读取第一轮工具结果')
+    expect(normalMessages).not.toContain(bigResult)
+    expect(normalMessages).not.toContain('_compacted')
+
     const items = store.getter(itemsAtom)
     const storedTool = items[2].item
     if (storedTool.role !== 'tool') throw new Error('意外的条目形状')
     expect(storedTool.content).toBe(bigResult)
-    // checkpoint 里同样是原文，不是压缩后的投影。
-    const checkpoint = store.getter(checkpointsAtom)[0]
-    const checkpointTool = checkpoint?.items.find((it) => it.item.role === 'tool')?.item
-    if (checkpointTool && checkpointTool.role === 'tool') {
-      expect(checkpointTool.content).toBe(bigResult)
-    }
-    // contextStats 与真正发出去的是同一个数组（UI 用量和实际请求必须对得上）。
-    expect(store.getter(contextStatsAtom)?.messagesCount).toBe(sentMessages.length)
-    // 压缩可见性：trace 能看出压了、压了多少。
-    const compacted = trace.events.find((event) => event.name === 'llm.context_compacted')
-    expect(compacted).toBeDefined()
-    expect(Number(compacted?.attrs?.summarized_tool_results)).toBeGreaterThan(0)
-    // attr 名用 _tk 后缀而非 *_tokens：带 "token" 子串的 key 会被 redact 抹成 '[REDACTED]'。
-    expect(Number(compacted?.attrs?.est_after_tk)).toBeLessThan(Number(compacted?.attrs?.est_before_tk))
-    // 预算被吃光 → 压完仍超预算，但 run 照跑不误（不因此中止）。
-    expect(trace.events.some((event) => event.name === 'llm.context_over_budget')).toBe(true)
+    expect(store.getter(contextCheckpointAtom)).toMatchObject({
+      schemaVersion: 1,
+      summary: '已读取第一轮工具结果，继续处理第二轮请求。',
+      coveredItemIds: ['u1', 'a1', 't1', 'a2', 'u2'],
+    })
+    expect(store.getter(contextStatsAtom)?.messagesCount).toBe(
+      (normalRequest.messages as unknown[]).length,
+    )
+    expect(trace.events.filter((event) => event.name === 'llm.context_distillation_started')).toHaveLength(1)
+    expect(trace.events.filter((event) => event.name === 'llm.context_distillation_succeeded')).toHaveLength(1)
     expect(store.getter(runAtom)?.status).toBe('done')
-    // 这条会话用的是兜底窗口（64K），远小于成本软上限 → 压缩是被【硬窗口】逼出来的。
-    expect(compacted?.attrs?.budget_source).toBe('window')
   })
 
-  // Core 抽离 Stage 1 回归钉子：压缩已从 loop 内联搬进 compactionPlugin 的 transformContext 槽。
-  //   专防【结构搬迁】才会引入、而上面那些 .find()/.some() 断言【抓不到】的两个新隐患：
-  //   1) 双发 —— loop 里原本那两个 traceEvent 已删；若哪天被加回来（或插件与 loop 同时发），
-  //      同名事件就各发两遍。.find()/.some() 只看「有没有」，看不出「几遍」，故这里数个数 === 1。
-  //   2) 脱线 —— 插件必须复用 loop 经 makeCoreCtx 注入的 traceEvent 闭包，事件才会自动带上
-  //      baseTraceAttrs（sessionId/runId/turnId）。若插件改用某个裸 emitter，事件照发得出，
-  //      但会丢掉这层身份；这三个 id 都不由插件的事件 attrs 提供，全靠那层闭包，断言带全即钉住接线。
-  it('压缩事件恰好各发一遍且带 baseTraceAttrs（防双发 / 防插件脱离 loop 的 traceEvent 闭包）', async () => {
+  it('模型摘要事件恰好各发一遍且带 baseTraceAttrs', async () => {
     const trace = captureTrace()
     configureObservability({ driver: trace.driver })
-    // 与「超预算」用例同构：max_tokens 吃光兜底窗口预算 → 必触发压缩，且压完仍超预算。
-    seedSession('cc5', { vendor: 'deepseek', model: 'x', max_tokens: 63_500 })
+    seedSession('cc5', { vendor: 'deepseek', model: 'x', max_tokens: 48_000 })
     const store = getSessionStore('cc5').store
-    const bigResult = JSON.stringify({ data: 'z'.repeat(4000) })
+    const bigResult = JSON.stringify({ data: 'z'.repeat(50_000) })
     store.setter(itemsAtom, [
       { id: 'u1', createdAt: 1, item: { role: 'user', content: '第一轮' } },
       {
@@ -3603,39 +3613,35 @@ describe('上下文压缩接入', () => {
       { id: 'u2', createdAt: 4, item: { role: 'user', content: '第二轮' } },
     ])
     setRun('cc5', { runId: 'CC5', status: 'running' })
-    // 普通回复（无 tool_calls）→ 单轮收尾，压缩只在这一轮跑一次。
-    const fetchImpl: typeof fetch = () => Promise.resolve(jsonResponse('好'))
+    const fetchImpl: typeof fetch = (_url, init) => {
+      const body = JSON.parse(init!.body as string) as Record<string, unknown>
+      return Promise.resolve(
+        JSON.stringify(body.messages).includes('Create the durable context checkpoint now. Return only the checkpoint text.')
+          ? jsonResponse('已完成第一轮分析。')
+          : jsonResponse('好'),
+      )
+    }
 
     await runToolLoop('cc5', 'CC5', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
     await flushObservability()
 
-    // 各自恰好一条：双发会让某个 length 变成 2，这条测试即红。
-    const compactedEvents = trace.events.filter((event) => event.name === 'llm.context_compacted')
-    const overBudgetEvents = trace.events.filter((event) => event.name === 'llm.context_over_budget')
-    expect(compactedEvents.length).toBe(1)
-    expect(overBudgetEvents.length).toBe(1)
-    // 身份三件套全在 → 插件确实经 loop 注入的 traceEvent 闭包发出（未脱线到裸 emitter）。
-    //   turnId 取「本轮起头 user」= 最后一条 user（u2），由 runToolLoop 从 currentTurnItems 推得。
-    for (const event of [compactedEvents[0], overBudgetEvents[0]]) {
+    const startedEvents = trace.events.filter((event) => event.name === 'llm.context_distillation_started')
+    const succeededEvents = trace.events.filter((event) => event.name === 'llm.context_distillation_succeeded')
+    expect(startedEvents).toHaveLength(1)
+    expect(succeededEvents).toHaveLength(1)
+    for (const event of [startedEvents[0], succeededEvents[0]]) {
       expect(event?.attrs?.sessionId).toBe('cc5')
       expect(event?.attrs?.runId).toBe('CC5')
       expect(event?.attrs?.turnId).toBe('u2')
     }
   })
 
-  // 窗口表按官方文档校准到 1M 之后，硬窗口预算 ≈ 910K，压缩几乎永不触发 —— 而它此前一直
-  // 兼职着成本闸门。这条钉住「成本软上限」这道与硬窗口解耦的第二道刹车：没有它，长会话每轮
-  // 都会发出接近 900K token 的请求，用户在毫无提示的情况下烧掉可观费用。
-  it('大窗口模型：压缩由成本软上限触发，而不是硬窗口（防账单失控）', async () => {
+  it('摘要直接采用模型的文本回复，不要求结构化格式', async () => {
     const trace = captureTrace()
     configureObservability({ driver: trace.driver })
-    // ★ 刻意【不】硬编码 1M / 200K 这两个具体数值 ★ —— 只断言两者的【关系】。
-    //   官方一改窗口（deepseek-chat 就从 64K 变成过 1M），硬编码的测试会无辜红掉；
-    //   而「大窗口模型的预算应当被软上限夹住」这个不变量与具体数值无关。
-    //   用 max_tokens 吃掉软上限内的预算即可触发压缩，不必真造 20 万 token 的会话。
-    seedSession('cc4', { vendor: 'deepseek', model: 'deepseek-v4-pro', max_tokens: 190_000 })
+    seedSession('cc4', { vendor: 'deepseek', model: 'x', max_tokens: 48_000 })
     const store = getSessionStore('cc4').store
-    const bigResult = JSON.stringify({ data: 'y'.repeat(4000) })
+    const bigResult = JSON.stringify({ data: 'y'.repeat(50_000) })
     store.setter(itemsAtom, [
       { id: 'u1', createdAt: 1, item: { role: 'user', content: '第一轮' } },
       {
@@ -3651,19 +3657,21 @@ describe('上下文压缩接入', () => {
       { id: 'u2', createdAt: 4, item: { role: 'user', content: '第二轮' } },
     ])
     setRun('cc4', { runId: 'CC4', status: 'running' })
-    const fetchImpl: typeof fetch = () => Promise.resolve(jsonResponse('好'))
+    let requests = 0
+    const fetchImpl: typeof fetch = () => {
+      requests += 1
+      return Promise.resolve(jsonResponse('not JSON'))
+    }
 
     await runToolLoop('cc4', 'CC4', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
     await flushObservability()
 
-    const compacted = trace.events.find((event) => event.name === 'llm.context_compacted')
-    expect(compacted).toBeDefined()
-    // 压缩是被成本软上限逼出来的，不是硬窗口。
-    expect(compacted?.attrs?.budget_source).toBe('cost_cap')
-    // 实际预算被夹到远小于该模型的真实窗口。
-    expect(Number(compacted?.attrs?.budget_tk)).toBeLessThan(
-      Number(compacted?.attrs?.context_window_tk),
-    )
+    expect(requests).toBe(2)
+    expect(store.getter(runAtom)?.status).toBe('done')
+    expect(store.getter(contextCheckpointAtom)).toMatchObject({ summary: 'not JSON' })
+    expect(store.getter(itemsAtom)[2]?.item).toMatchObject({ content: bigResult })
+    expect(trace.events.filter((event) => event.name === 'llm.context_distillation_succeeded')).toHaveLength(1)
+    expect(trace.events.filter((event) => event.name === 'llm.context_distillation_failed')).toHaveLength(0)
   })
   // 请求路径兜底：seedSession 直接写 sessionsAtom、【不经 hydrate】—— 正是「绕过 hydrate 迁移」
   // 的场景。会话带着已下线的 deepseek-chat / deepseek-reasoner，发出去的主 Agent 请求必须

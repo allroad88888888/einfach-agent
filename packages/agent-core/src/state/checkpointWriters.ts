@@ -21,6 +21,7 @@
 import { sessionsAtom } from './rootStore'
 import {
   checkpointsAtom,
+  contextCheckpointAtom,
   currentTurnIndexAtom,
   itemsAtom,
   planAtom,
@@ -101,6 +102,7 @@ export function commitCheckpoint(
     plan,
     recovery,
     planStageCheckpoints: stageCheckpointsSnapshot(store.getter(planStageCheckpointsAtom)),
+    contextCheckpoint: store.getter(contextCheckpointAtom),
   }
   store.setter(checkpointsAtom, (prev) => [...prev, cp])
   store.setter(currentTurnIndexAtom, turnIndex)
@@ -135,6 +137,7 @@ export function updateCheckpoint(
     plan: store.getter(planAtom),
     recovery,
     planStageCheckpoints: stageCheckpointsSnapshot(store.getter(planStageCheckpointsAtom)),
+    contextCheckpoint: store.getter(contextCheckpointAtom),
   }
   store.setter(checkpointsAtom, list.map((item, index) => (index === turnIndex ? checkpoint : item)))
   store.setter(currentTurnIndexAtom, turnIndex)
@@ -161,6 +164,7 @@ export function jumpToCheckpoint(
   }
   // 恢复该轮的 items（整体替换，C4）。
   store.setter(itemsAtom, cp.items)
+  store.setter(contextCheckpointAtom, cp.contextCheckpoint)
   restorePlan(id, cp.plan, cp.planStageCheckpoints, core)
   // 截断：丢弃第 turnIndex 轮之后的全部快照（git reset --hard 语义）。
   store.setter(checkpointsAtom, list.slice(0, turnIndex + 1))
@@ -226,6 +230,8 @@ export function revertToPlanStageCheckpoint(
   // itemCount 是打点时的全局下标。轮级回退可能已经把对话截得更短，slice 在这种情况下
   // 自然退化成「保持原样」，不会越界。截断后再抹掉尾部未闭合的 tool_calls（见上方注释）。
   store.setter(itemsAtom, dropUnclosedToolCalls(store.getter(itemsAtom).slice(0, point.itemCount)))
+  // 阶段回退丢弃了摘要所覆盖的尾部消息；让下一次请求从保留的原始历史重新生成摘要。
+  store.setter(contextCheckpointAtom, undefined)
   restorePlan(
     id,
     { ...point.plan, revision: current.revision + 1, updatedAt: Date.now() },
@@ -265,6 +271,7 @@ export function rewindBeforeCheckpoint(
   store.setter(itemsAtom, cp.items.slice(0, userIndex))
   // 撤回目标轮本身时，恢复的是“上一轮结束后”的计划；撤回首轮则回到无计划状态。
   const previousTurn = list[turnIndex - 1]
+  store.setter(contextCheckpointAtom, previousTurn?.contextCheckpoint)
   restorePlan(id, previousTurn?.plan, previousTurn?.planStageCheckpoints, core)
   store.setter(checkpointsAtom, list.slice(0, turnIndex))
   store.setter(currentTurnIndexAtom, turnIndex - 1)

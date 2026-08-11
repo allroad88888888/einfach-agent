@@ -4,10 +4,8 @@ import { normalizeAskUserQuestionPayload } from './askUserQuestion'
 import type { CoreInstance } from './core/coreInstance'
 
 export const EXECUTING_PLAN_STATUSES = new Set(['approved', 'active'])
-export const MIN_PLAN_AGENT_TURNS = 64
-const DEFAULT_MAX_AGENT_TURNS = 32
-const PLAN_AGENT_TURNS_PER_STAGE = 24
-const MAX_PLAN_AGENT_TURNS = 256
+export const MIN_PLAN_AGENT_TURNS = 500
+const DEFAULT_MAX_AGENT_TURNS = 666
 
 /** Whether a structured plan currently owns the loop (approved/active). */
 export function planIsExecuting(id: string, core: CoreInstance): boolean {
@@ -62,7 +60,9 @@ export function planResumeNotice(): string {
 export function maxAgentTurns(id: string, core: CoreInstance): number {
   const plan = core.getSessionStore(id).store.getter(planAtom)
   if (!plan || !EXECUTING_PLAN_STATUSES.has(plan.status)) return DEFAULT_MAX_AGENT_TURNS
-  return Math.min(MAX_PLAN_AGENT_TURNS, Math.max(MIN_PLAN_AGENT_TURNS, DEFAULT_MAX_AGENT_TURNS + plan.stages.length * PLAN_AGENT_TURNS_PER_STAGE))
+  // 留出下一次循环进入 stage guard：每个阶段可以实际请求 500 次，再由第 501 次的 guard
+  // 产出可行动的诊断，而不是被全局轮次上限抢先截断。
+  return Math.max(MIN_PLAN_AGENT_TURNS + 1, plan.stages.length * MIN_PLAN_AGENT_TURNS + 1)
 }
 
 export function persistedModelTurnsForStage(id: string, stageId: string, core: CoreInstance): number {

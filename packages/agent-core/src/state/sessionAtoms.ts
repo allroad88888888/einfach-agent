@@ -8,11 +8,15 @@
 import { atom } from '@einfach/core'
 import type { ConversationItem, RunState } from './core.type'
 import type { Checkpoint, PlanStageCheckpoint } from './checkpoint.type'
+import type { ContextCheckpoint } from './contextCheckpoint.type'
 import type { PlanSnapshot } from '../planning/types'
 
 // 简介：当前会话的对话历史。
 // 详情：值随 store 隔离——每个 session store 里是各自独立的 ConversationItem[]，非分桶。
 export const itemsAtom = atom<ConversationItem[]>([])
+
+// 已由模型生成的历史摘要；只用于请求投影，不替换 itemsAtom 中可审计的原始消息。
+export const contextCheckpointAtom = atom<ContextCheckpoint | undefined>(undefined)
 
 // 简介：当前会话的 run 状态（无 run 时 undefined）。
 // 详情：值随 store 隔离——每个 session store 各持一份 RunState，非分桶。

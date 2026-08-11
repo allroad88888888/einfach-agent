@@ -26,6 +26,7 @@ import {
 import { getSessionStore } from '../sessionStore'
 import {
   checkpointsAtom,
+  contextCheckpointAtom,
   currentTurnIndexAtom,
   itemsAtom,
   planAtom,
@@ -212,6 +213,7 @@ export async function hydrate(deps: {
       const store = getSessionStore(session.id).store
       store.setter(checkpointsAtom, checkpoints)
       store.setter(itemsAtom, latest.items)
+      store.setter(contextCheckpointAtom, latest.contextCheckpoint)
       store.setter(currentTurnIndexAtom, latest.turnIndex)
       // 阶段回退点跟随最新一轮恢复：它记录的 itemCount 对应的正是这份 items。
       store.setter(planStageCheckpointsAtom, latest.planStageCheckpoints ?? [])

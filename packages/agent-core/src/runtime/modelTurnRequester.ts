@@ -1,8 +1,11 @@
 import { normalizeCacheUsage, streamModel, type ModelChatResponse, type ModelFunctionTool, type ModelItem, type ModelRetryObserver } from '@web-agent/ai'
-import { itemsAtom } from '../state/sessionAtoms'
+import { contextCheckpointAtom, itemsAtom } from '../state/sessionAtoms'
 import { contextStatsAtom, setContextStats } from '../state/transientAtoms'
 import { buildTurnTools, narrowToolCalls, toolSetSchemaFingerprint } from './modelTurn'
-import { contextInputBudgetTokens, type CompactionRequestDraft } from './core/plugins/compactionPlugin'
+import type { RequestDraft } from './core/loopHooks'
+import { contextInputBudgetTokens } from './contextBudget'
+import { createContextCheckpoint, contextNeedsDistillation } from './contextDistillation'
+import { projectContextCheckpoint } from './contextCheckpointProjection'
 import { createContextCacheTracker } from './contextCache'
 import { contextProjectionTraceAttrs } from './contextProjectionDiagnostics'
 import { contextRequestAssemblyTraceAttrs, snapshotContextRequestAssembly, snapshotContextRequestStage, type RequestControlSource } from './contextRequestAssemblyDiagnostics'
@@ -70,10 +73,56 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
         const version = tool.registrationVersion ?? base.core.tools.registrationVersion(tool.name)
         if (version !== undefined) exposedRegistrationVersions.set(tool.name, version)
       }
-      const historyItems = base.core.getSessionStore(base.id).store.getter(itemsAtom).map((item) => item.item)
+      const sessionStore = base.core.getSessionStore(base.id).store
+      const history = sessionStore.getter(itemsAtom)
+      const historyItems = history.map((item) => item.item)
       const rawMessages: ModelItem[] = [...base.stablePrefix.items, ...historyItems, ...controls]
       const requestAssembly = snapshotContextRequestAssembly({ rawMessages, stablePrefixItems: base.stablePrefix.items.length, historyItems: historyItems.length, controls, controlSources, tools })
-      const draft: CompactionRequestDraft = { messages: rawMessages, tools, llmTurn: turn + 1, replayUnsafeToolNames: base.core.tools.replayUnsafeToolNames(), dynamicTailCount: controls.length }
+      let projection = projectContextCheckpoint(history, sessionStore.getter(contextCheckpointAtom))
+      if (projection.invalidCheckpoint) {
+        sessionStore.setter(contextCheckpointAtom, undefined)
+        base.trace.event('llm.context_checkpoint_invalidated', { reason: 'covered_history_changed' })
+      }
+      const inputBudgetTokens = contextInputBudgetTokens(base.settings.vendor, base.settings.model, sampling.maxTokens)
+      let projectedMessages: ModelItem[] = [...base.stablePrefix.items, ...projection.messages, ...controls]
+      if (contextNeedsDistillation(projectedMessages, tools, inputBudgetTokens)) {
+        base.trace.event('llm.context_distillation_started', {
+          llm_turn: turn + 1,
+          source_messages_count: projection.messages.length,
+          input_budget_tk: inputBudgetTokens,
+        })
+        try {
+          const checkpoint = await createContextCheckpoint({
+            stablePrefix: base.stablePrefix.items,
+            transcript: projection.messages,
+            coveredItemIds: history.map((item) => item.id),
+            settings: base.settings,
+            apiKey: base.opts.apiKey,
+            signal: base.opts.signal,
+            fetchImpl: base.opts.fetchImpl,
+            userId: base.modelUserId,
+          })
+          if (!base.control.isCurrent() || !base.control.isRunning() || base.opts.signal.aborted) {
+            return { inactive: true, streamWriter }
+          }
+          sessionStore.setter(contextCheckpointAtom, checkpoint)
+          projection = projectContextCheckpoint(history, checkpoint)
+          projectedMessages = [...base.stablePrefix.items, ...projection.messages, ...controls]
+          if (contextNeedsDistillation(projectedMessages, tools, inputBudgetTokens)) {
+            throw new Error('上下文摘要仍超过本次请求预算；已保留原始历史，请缩小工具 schema 或重试。')
+          }
+          base.trace.event('llm.context_distillation_succeeded', {
+            llm_turn: turn + 1,
+            source_messages_count: history.length,
+            summary_chars: checkpoint.summary.length,
+            source_estimated_tk: checkpoint.sourceEstimatedTokens,
+          })
+        } catch (error) {
+          base.trace.event('llm.context_distillation_failed', { llm_turn: turn + 1, error: safeErrorMessage(error) })
+          throw error
+        }
+      }
+      const draft: RequestDraft = { messages: projectedMessages }
       await base.hooks.transformContext?.(base.pluginContext, draft)
       if (!base.control.isCurrent() || !base.control.isRunning() || base.opts.signal.aborted) return { inactive: true, streamWriter }
       const afterTransform = snapshotContextRequestStage(draft.messages)
@@ -86,18 +135,18 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
       if (!base.control.isCurrent() || !base.control.isRunning() || base.opts.signal.aborted) return { inactive: true, streamWriter }
       const messages = draft.messages
       const requestAssemblyTrace = contextRequestAssemblyTraceAttrs({ assembly: requestAssembly, afterTransform, final: snapshotContextRequestStage(messages) })
-      const compaction = draft.compaction!
-      const cacheProfile = cacheTracker.observe({ lane: 'main', scope: `${base.id}:${base.runId}:${ROOT_AGENT_PATH}`, vendor: base.settings.vendor, model: base.settings.model, messages, systemContent: base.stablePrefix.content, tools, toolChoice: 'auto', thinking: thinking?.type, reasoningEffort, compacted: compaction.compacted, dynamicControls: controls, requestMode: 'tool_loop' })
+      const contextDistilled = projection.checkpoint !== undefined
+      const cacheProfile = cacheTracker.observe({ lane: 'main', scope: `${base.id}:${base.runId}:${ROOT_AGENT_PATH}`, vendor: base.settings.vendor, model: base.settings.model, messages, systemContent: base.stablePrefix.content, tools, toolChoice: 'auto', thinking: thinking?.type, reasoningEffort, compacted: contextDistilled, dynamicControls: controls, requestMode: 'tool_loop' })
       const previousTotals = base.core.getSessionStore(base.id).store.getter(contextStatsAtom)?.cacheTotals
       const cacheTotals = previousTotals?.runId === base.runId ? previousTotals : undefined
-      const contextStats = buildContextStatsSnapshot({ runId: base.runId, turnId: base.turnId, llmTurn: turn + 1, vendor: base.settings.vendor, model: base.settings.model, messages, tools, cacheProfile, cacheTotals, inputBudgetTokens: contextInputBudgetTokens(base.settings.vendor, base.settings.model, sampling.maxTokens), estimatedTokensBeforeCompaction: compaction.compacted ? compaction.estimatedTokensBefore : undefined })
+      const contextStats = buildContextStatsSnapshot({ runId: base.runId, turnId: base.turnId, llmTurn: turn + 1, vendor: base.settings.vendor, model: base.settings.model, messages, tools, cacheProfile, cacheTotals, inputBudgetTokens, estimatedTokensBeforeCompaction: projection.checkpoint?.sourceEstimatedTokens })
       setContextStats(base.id, contextStats, base.core)
       injectToolTranscript(base.id, tools, toolSetSchemaFingerprint(tools), base.core)
       base.trace.event('llm.tools_injected', { tools_count: tools.length, tool_names: names.join(',') })
       base.trace.event('llm.context_snapshot', { llm_turn: contextStats.llmTurn, messages_count: contextStats.messagesCount, tools_count: contextStats.toolsCount, dynamic_controls_count: controls.length, estimated_tokens: contextStats.estimatedTokens, total_chars: contextStats.totalChars, messages_chars: contextStats.messagesChars, tools_chars: contextStats.toolsChars, cache_profile: cacheProfile.profileId, cache_epoch: cacheProfile.epoch, cache_lane: cacheProfile.lane, cache_epoch_reason: cacheProfile.epochReason, cache_epoch_causes: cacheProfile.epochCauses.join(','), cache_lane_scope_fingerprint: cacheProfile.laneScopeFingerprint, cache_system_fingerprint: cacheProfile.systemFingerprint, cache_request_projection_fingerprint: cacheProfile.requestProjectionFingerprint, tool_set_fingerprint: cacheProfile.toolSetFingerprint, cache_compaction_boundary: cacheProfile.compactionBoundary, ...contextProjectionTraceAttrs(cacheProfile), ...requestAssemblyTrace })
       const requestBase = { model: base.settings.model, messages, temperature: sampling.temperature, max_tokens: sampling.maxTokens, thinking, tools, tool_choice: 'auto' as const, stream: true }
       let retries = 0
-      const llmSpan = startSpan('llm.chat', { kind: 'llm', parent: base.trace.span, attrs: () => ({ sessionId: base.id, runId: base.runId, turnId: base.turnId, llm_turn: contextStats.llmTurn, vendor: base.settings.vendor, model: base.settings.model, messages_count: messages.length, tools_count: tools.length, dynamic_controls_count: controls.length, adapter_retry_attempt: retries, estimated_context_tokens: contextStats.estimatedTokens, context_chars: contextStats.totalChars, tools_chars: contextStats.toolsChars, context_compacted: compaction.compacted, context_within_budget: compaction.withinBudget, cache_profile: cacheProfile.profileId, cache_epoch: cacheProfile.epoch, cache_lane: cacheProfile.lane, cache_epoch_reason: cacheProfile.epochReason, cache_epoch_causes: cacheProfile.epochCauses.join(','), cache_lane_scope_fingerprint: cacheProfile.laneScopeFingerprint, cache_system_fingerprint: cacheProfile.systemFingerprint, cache_request_projection_fingerprint: cacheProfile.requestProjectionFingerprint, tool_set_fingerprint: cacheProfile.toolSetFingerprint, ...contextProjectionTraceAttrs(cacheProfile), ...requestAssemblyTrace, requestPreview: llmRequestTracePreview({ ...requestBase, reasoning_effort: reasoningEffort }) }) })
+      const llmSpan = startSpan('llm.chat', { kind: 'llm', parent: base.trace.span, attrs: () => ({ sessionId: base.id, runId: base.runId, turnId: base.turnId, llm_turn: contextStats.llmTurn, vendor: base.settings.vendor, model: base.settings.model, messages_count: messages.length, tools_count: tools.length, dynamic_controls_count: controls.length, adapter_retry_attempt: retries, estimated_context_tokens: contextStats.estimatedTokens, context_chars: contextStats.totalChars, tools_chars: contextStats.toolsChars, context_distilled: contextDistilled, context_within_budget: true, cache_profile: cacheProfile.profileId, cache_epoch: cacheProfile.epoch, cache_lane: cacheProfile.lane, cache_epoch_reason: cacheProfile.epochReason, cache_epoch_causes: cacheProfile.epochCauses.join(','), cache_lane_scope_fingerprint: cacheProfile.laneScopeFingerprint, cache_system_fingerprint: cacheProfile.systemFingerprint, cache_request_projection_fingerprint: cacheProfile.requestProjectionFingerprint, tool_set_fingerprint: cacheProfile.toolSetFingerprint, ...contextProjectionTraceAttrs(cacheProfile), ...requestAssemblyTrace, requestPreview: llmRequestTracePreview({ ...requestBase, reasoning_effort: reasoningEffort }) }) })
       const retryObserver: ModelRetryObserver = { canRetry: () => base.control.isCurrent() && base.control.isRunning() && !base.opts.signal.aborted, onRetry: (event) => { retries = event.attempt; base.trace.event('llm.model_retry', { status: event.status, retry_attempt: event.attempt, max_retries: event.maxRetries, response_id: event.response.id, response_model: event.response.model }) } }
       let response: ModelChatResponse
       try { response = await streamModel({ ...requestBase, settings: base.settings, userId: base.modelUserId }, callOptions, { onDelta: streamWriter.onDelta }, retryObserver) }
