@@ -55,7 +55,7 @@
 - **改动面**：`apps/web/src/mcp/persistence.ts` 旁新增桌面 storage 实现
 - **判据**：非 Tauri 环境自动退回现有 localStorage 实现；`pnpm exec vitest run apps/web/src/mcp` 通过
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE c36ba77
 
 ---
 
@@ -180,9 +180,29 @@
 > **D2 上线后就变成对一个永远连不上的服务无限退避重试**。
 > 而结构化的 `kind` 字段本来就存在，`tauriStdioConnector.ts` 里已经在消费它。
 
+### D6 · 收紧「message 由对端控制」的失败分类
+
+- **依赖**：D5
+- **改动面**：`tools/mcp/src/failureClassification.ts`
+- **判据**：`PERMANENT_MESSAGE_RULES` 不再作用于 message 由第三方控制的失败；
+  HTTP 的 auth 判定不再单靠 `/unauthoriz|invalid token|.../i` 匹配远端散文
+- **模型**：opus
+- **状态**：TODO
+
+> D5 落地后剩下的两处同族脆弱性，合并成一个 issue 一起改（都动同一个文件，拆开会连改两次）：
+>
+> 1. **`rpc_error` 的 message 是远端 MCP server 原样返回的**，而 message 规则表仍作用其上。
+>    远端只要回一句含 `exceeded 5 tools` 或 `must not be empty` 的错误，
+>    就能把一个正常服务判成永久失败。
+> 2. **HTTP 的 auth 判定匹配的是第三方服务器与 SDK 的散文**，比我们自己的字符串更脆。
+>    文案对不上就降级成「暂时失败」——**D2 上线后会变成对一个 key 写错的服务无限重试**。
+>
+> 解法与 D5 同构：让「message 由对端控制」的失败绕开 message 规则表，
+> auth 优先用 HTTP 状态码这类结构化信号。
+
 ### D2 · 断线退避重连
 
-- **依赖**：D1、D5
+- **依赖**：D1、D5、D6
 - **改动面**：`tools/mcp/src/clientManager.ts` 的 `failClosed`
 - **判据**：指数退避 1s→2s→4s→…封顶 30s，有最大次数，可被手动重连打断；
   **重试必须沿用现有的连接身份世代检查**，旧连接的回调不得污染新连接
