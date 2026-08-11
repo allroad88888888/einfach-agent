@@ -20,13 +20,17 @@ import type {
   Tool,
   ToolContext,
   ToolResult,
-  ToolSummary,
-  RegisteredToolSnapshot,
 } from './types'
+import { createToolCatalogSnapshot, toolSnapshotOf, toolSummaryOf, type ToolCatalog } from './toolCatalog'
 import { validateAgainstSchema } from './schemaValidate'
 
-/** 抽象工厂接口：注册 + 懒加载 + 统一分发。运行时依赖它，不依赖具体 Tool（§3）。 */
-export interface ToolRegistry {
+/**
+ * 抽象工厂接口：注册 + 懒加载 + 统一分发。运行时依赖它，不依赖具体 Tool（§3）。
+ *
+ * 读面（list/loadSchema/registrationVersion/has/replayUnsafeToolNames）来自 ToolCatalog：
+ * 同一个洞既能插「活的 registry」，也能插「某一刻的不可变快照」（见 snapshot()）。
+ */
+export interface ToolRegistry extends ToolCatalog {
   register(tool: Tool): void
   /**
    * Remove a registered tool.
@@ -37,12 +41,14 @@ export interface ToolRegistry {
   unregister(name: string, expected?: Tool): boolean
   /** With expected, tests whether this exact dynamic registration is current. */
   has(name: string, expected?: Tool): boolean
-  /** 当前注册实例的版本；未注册（包括已删除）时返回 undefined。 */
-  registrationVersion(name: string): number | undefined
-  list(): ToolSummary[]
-  /** Snapshot of the currently registered tools that must not be replayed after compaction. */
-  replayUnsafeToolNames(): ReadonlySet<string>
-  loadSchema(name: string): RegisteredToolSnapshot | undefined
+  /**
+   * 冻结此刻的全部注册，返回一份此后不再变化的只读目录。
+   *
+   * 这是 run 级工具集 epoch 的原语：run 开始时取一份，之后 registry 无论怎么变
+   * （MCP 的 tools/list_changed、断线注销、重连覆盖），这份目录的成员与
+   * registrationVersion 都不动。
+   */
+  snapshot(): ToolCatalog
   execution(name: string): Tool['execution'] | undefined
   run(
     name: string,
@@ -99,12 +105,13 @@ export function createToolRegistry(): ToolRegistry {
     list() {
       // manifest-only（TK3）：只暴露 name/description/triggers/runtime，绝不含 inputSchema/guide。
       // description/triggers 取自 tool.skill，triggers 供懒加载目录搜索别名。
-      return Array.from(registrations.values(), ({ tool }) => ({
-        name: tool.name,
-        description: tool.skill.description,
-        ...(tool.skill.triggers?.length ? { triggers: [...tool.skill.triggers] } : {}),
-        runtime: tool.runtime,
-      }))
+      return Array.from(registrations.values(), ({ tool }) => toolSummaryOf(tool))
+    },
+
+    snapshot() {
+      // 复制当前 Map 的条目（含各自的 registrationVersion）交给快照持有；
+      // 快照建成后与本 registry 再无关系，后续 register/unregister 都影响不到它。
+      return createToolCatalogSnapshot(registrations.values())
     },
 
     replayUnsafeToolNames() {
@@ -120,16 +127,7 @@ export function createToolRegistry(): ToolRegistry {
       // guide 与 schema 一起随 request_tool_schema 给 model，不进 manifest（§6）。
       const registration = registrations.get(name)
       if (!registration) return undefined
-      const { tool, registrationVersion } = registration
-      return {
-        name: tool.name,
-        description: tool.skill.description,
-        ...(tool.skill.triggers?.length ? { triggers: [...tool.skill.triggers] } : {}),
-        runtime: tool.runtime,
-        registrationVersion,
-        inputSchema: tool.inputSchema,
-        guide: tool.skill.content,
-      }
+      return toolSnapshotOf(registration)
     },
 
     execution(name) {

@@ -25,6 +25,30 @@ describe('ToolRegistry dynamic lifecycle', () => {
     expect(registry.replayUnsafeToolNames()).toEqual(new Set())
   })
 
+  it('snapshot freezes the catalog against later registry mutations', () => {
+    const registry = createToolRegistry()
+    const removable = tool('dynamic', 'first implementation', true)
+    registry.register(removable)
+    registry.register(tool('stable', 'stays put'))
+
+    const snapshot = registry.snapshot()
+
+    registry.unregister('dynamic', removable)
+    registry.register(tool('late', 'registered after the snapshot'))
+    registry.register(tool('stable', 'replaced after the snapshot'))
+
+    expect(snapshot.list().map((item) => item.name)).toEqual(['dynamic', 'stable'])
+    expect(snapshot.has('late')).toBe(false)
+    expect(snapshot.loadSchema('late')).toBeUndefined()
+    // 成员与版本都定在拍照那一刻：被注销的还在，被覆盖的仍是旧版。
+    expect(snapshot.loadSchema('dynamic')?.guide).toBe('first implementation')
+    expect(snapshot.registrationVersion('dynamic')).toBe(1)
+    expect(snapshot.loadSchema('stable')?.guide).toBe('stays put')
+    expect(snapshot.registrationVersion('stable')).toBe(1)
+    expect(registry.registrationVersion('stable')).toBe(2)
+    expect(snapshot.replayUnsafeToolNames()).toEqual(new Set(['dynamic']))
+  })
+
   it('unregister removes a tool from every registry view', async () => {
     const registry = createToolRegistry()
     const registered = tool('dynamic', 'remote tool')

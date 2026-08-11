@@ -4,6 +4,7 @@ import { itemsAtom } from '../state/sessionAtoms'
 import { sessionsAtom } from '../state/rootAtoms'
 import { createCoreInstance } from './core/coreInstance'
 import { handleToolGate } from './toolCallGate'
+import { createToolEpoch } from './toolEpoch'
 import type { ToolLoopBase } from './toolLoopContracts'
 import type { ConversationItem } from '../state/core.type'
 
@@ -49,6 +50,7 @@ function baseFor(runtimeIsTauri: boolean, name: string): ToolLoopBase {
     id: 'session',
     runId: 'run',
     core,
+    toolEpoch: createToolEpoch(core.tools, { sessionId: 'session', runId: 'run' }),
     turnId: 'turn',
     maxTurnTools: 8,
     runtimeIsTauri,

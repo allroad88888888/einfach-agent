@@ -41,6 +41,10 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
     return undefined
   }
   const guard = createRunGuard(id, runId, core)
+  // 工具集 epoch 必须在任何组装动作之前定下来，且同一个 runId 重入（确认/提问恢复）时复用同一份：
+  // 那段等用户的窗口正是 MCP 最可能重连或掉线的时候，重新 snapshot 会让本 run 的清单当场变形。
+  const reusedToolEpoch = core.toolEpochs.get(id, runId) !== undefined
+  const toolEpoch = core.toolEpochs.ensure(id, runId)
   const pluginRun = await core.plugins.activateRun(core.getSessionStore(id).store, {
     runId,
     isActiveSession: () => core.rootStore.getter(activeSessionIdAtom) === id,
@@ -60,6 +64,12 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
       event: (name, attrs) => addEvent(name, { span, attrs: { ...baseAttrs, ...(attrs ?? {}) } }),
       finish: (status, eventName, attrs, error) => { addEvent(eventName, { span, attrs: { ...baseAttrs, ...(attrs ?? {}) } }); endSpan(span, status, attrs, error); clearActiveSpan(traceKey, span) },
     }
+    trace.event('agent.tool_epoch', {
+      epoch_id: toolEpoch.epochId,
+      epoch_reused: reusedToolEpoch,
+      epoch_captured_at: toolEpoch.capturedAt,
+      epoch_tools_count: toolEpoch.toolNames.length,
+    })
     const input = latestUserInput(id, core)
     const checkpoints = createToolLoopCheckpointWriter({ id, runId, labelInput: input, core, guard, traceEvent: trace.event, isRunning: () => isRunningRun(id, runId, core), resumeExisting: opts.resumePlan || opts.resumeInterrupted })
     const control: ToolLoopControl = {
@@ -67,7 +77,7 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
       isRunning: () => isRunningRun(id, runId, core),
     }
     checkpoints.persistWorkingTurn()
-    const stablePrefix = await buildStableModelPrefix(session, core)
+    const stablePrefix = await buildStableModelPrefix(session, core, toolEpoch)
     if (!control.isCurrent()) { trace.finish('cancelled', 'agent.stale_run', { reason: 'stale_run' }); return undefined }
     if (!control.isRunning()) { checkpoints.commitStoppedTurn(); trace.finish('cancelled', 'agent.stopped', { reason: 'run_not_running' }); return undefined }
     if (opts.signal.aborted) { patchRun(id, { status: 'stopped' }, core); checkpoints.commitStoppedTurn(); trace.finish('cancelled', 'agent.stopped', { reason: 'aborted' }); return undefined }
@@ -85,11 +95,11 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
     const stored = core.getSessionStore(id).store
     for (const name of [...(session.loadedTools ?? []), ...loadedToolNamesFromHistory(stored.getter(itemsAtom).map((item) => item.item)), ...(stored.getter(runAtom)?.loadedTools ?? [])]) if (name) { restored.delete(name); restored.add(name) }
     let visible = [] as ToolLoopBase['state']['visible']
-    for (const name of restored) visible = ensureToolLoaded(id, visible, name, core, maxTurnToolsForVendor(session.settings.vendor) - 1)
+    for (const name of restored) visible = ensureToolLoaded(id, visible, name, core, maxTurnToolsForVendor(session.settings.vendor) - 1, undefined, toolEpoch)
     const pluginContext = makeCoreCtx({ sessionId: id, runId, signal: opts.signal, store: stored, root: core.rootStore, traceEvent: trace.event })
     const boot = {
       base: {
-        id, runId, opts, core, turnId,
+        id, runId, opts, core, toolEpoch, turnId,
         maxTurnTools: maxTurnToolsForVendor(session.settings.vendor),
         settings: session.settings,
         modelUserId,

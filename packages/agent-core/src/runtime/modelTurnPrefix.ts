@@ -13,6 +13,7 @@ import {
   buildToolManifestText,
 } from './modelTurn'
 import type { CoreInstance } from './core/coreInstance'
+import type { ToolCatalog } from '../tools/toolCatalog'
 
 export interface StableModelPrefix {
   items: SystemItem[]
@@ -31,10 +32,14 @@ export interface StableModelPrefix {
  *
  * This is intentionally the only assembly point for stable system items: the
  * resulting order is part of the provider prefix-cache contract.
+ *
+ * `toolCatalog` defaults to the live registry; a run passes its own tool epoch so
+ * the injected manifest and the discovery pages served later describe one set.
  */
 export async function buildStableModelPrefix(
   sessionMeta: SessionMeta,
   core: CoreInstance,
+  toolCatalog: ToolCatalog = core.tools,
 ): Promise<StableModelPrefix> {
   const workspaceRoot = resolveSessionWorkspaceRoot(
     sessionMeta,
@@ -53,7 +58,7 @@ export async function buildStableModelPrefix(
   }
   const toolManifest: SystemItem = {
     role: 'system',
-    content: buildToolManifestText(runtimeIsTauri, { registry: core.tools }),
+    content: buildToolManifestText(runtimeIsTauri, { registry: toolCatalog }),
   }
   const customInstructions = buildCustomInstructionsItem(core.config.customInstructions)
   const environment = buildEnvironmentItem({

@@ -3,6 +3,7 @@ import type { SessionMeta } from '../state/core.type'
 import type { CoreInstance } from './core/coreInstance'
 import type { PluginRun } from './core/pluginHost'
 import type { ToolLoopOptions } from './modelRunLifecycle'
+import type { ToolEpoch } from './toolEpoch'
 import type { TraceAttributes, TraceSpan, TraceStatus } from '../observability/types'
 
 export interface ToolLoopTrace {
@@ -33,6 +34,12 @@ export interface ToolLoopBase {
   runId: string
   opts: ToolLoopOptions
   core: CoreInstance
+  /**
+   * 本 run 固定的工具目录。所有「给模型看」的读（manifest、发现分页、可见 schema、
+   * 暴露的 registrationVersion）都必须走它，不要直接读 core.tools——那是活的、随时会变。
+   * 真正执行仍走 core.tools，注册版本对不上时由 registry 自己 fail-closed。
+   */
+  toolEpoch: ToolEpoch
   turnId: string
   maxTurnTools: number
   settings: SessionMeta['settings']

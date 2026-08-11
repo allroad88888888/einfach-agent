@@ -15,6 +15,7 @@
 //   （第 3 期隔离证明，见 toolLoading.test.ts）。
 
 import type { LoadedTool } from '../tools/types'
+import type { ToolCatalog } from '../tools/toolCatalog'
 import { sessionsAtom } from '../state/rootAtoms'
 import { patchRun } from '../state/sessionWriters'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
@@ -154,12 +155,16 @@ function persistVisibleToolNames(
 }
 
 /**
- * Refresh the current visible-tool snapshots from the live registry.
+ * Refresh the current visible-tool snapshots from the given tool catalog.
  *
  * Same-name registrations are versioned, so a reconnect/tools_changed event can
- * replace an MCP adapter without leaving its old schema active. Removed tools are
- * dropped. Unchanged registrations retain their object identity, keeping the
- * request tool-set stable when a reconnect does not actually change a schema.
+ * replace an MCP adapter without leaving its old schema active. Tools the catalog
+ * no longer resolves are dropped. Unchanged registrations retain their object
+ * identity, keeping the request tool-set stable when a reconnect does not actually
+ * change a schema.
+ *
+ * `catalog` defaults to the live registry. A run passes its own tool epoch instead,
+ * so a mid-run unregister cannot shrink the tool-set already shown to the model.
  */
 export function refreshVisibleTools(
   id: string,
@@ -167,6 +172,7 @@ export function refreshVisibleTools(
   core: CoreInstance = defaultCore,
   maxVisibleTools?: number,
   pinnedToolNames?: readonly string[],
+  catalog: ToolCatalog = core.tools,
 ): LoadedTool[] {
   const refreshed: LoadedTool[] = []
   const seen = new Set<string>()
@@ -181,7 +187,7 @@ export function refreshVisibleTools(
     }
     seen.add(current.name)
 
-    const latest = core.tools.loadSchema(current.name)
+    const latest = catalog.loadSchema(current.name)
     if (!latest) {
       changed = true
       continue
@@ -199,9 +205,10 @@ export function refreshVisibleTools(
 }
 
 // 简介：确保某个工具的 schema 已加载到本轮可见列表，并把累计已载写回 run。
-// 详情：每次都从 registry 读取当前注册快照；同名重注册会替换旧 schema，并把本次请求的工具移到
+// 详情：每次都从工具目录读取当前注册快照；同名重注册会替换旧 schema，并把本次请求的工具移到
 // LRU 尾部。unknown 会清掉同名旧快照。maxVisibleTools 用于 provider 的硬 tool 数量预算。
-// core 默认 defaultCore，语义见文件头。
+// core 默认 defaultCore，语义见文件头；catalog 默认就是该 core 的活 registry，run 会改传
+// 自己的工具集 epoch（见 refreshVisibleTools 的说明）。
 export function ensureToolLoaded(
   id: string,
   currentTools: LoadedTool[],
@@ -209,8 +216,9 @@ export function ensureToolLoaded(
   core: CoreInstance = defaultCore,
   maxVisibleTools?: number,
   pinnedToolNames?: readonly string[],
+  catalog: ToolCatalog = core.tools,
 ): LoadedTool[] {
-  const tool = core.tools.loadSchema(toolName)
+  const tool = catalog.loadSchema(toolName)
   const currentIndex = currentTools.findIndex((loadedTool) => loadedTool.name === toolName)
   if (!tool) {
     if (currentIndex < 0) return currentTools

@@ -7,6 +7,7 @@ import { createCoreInstance } from './core/coreInstance'
 import type { Tool } from '../tools/types'
 import type { ToolLoopBase } from './toolLoopContracts'
 import { runToolCallBatch } from './toolCallBatch'
+import { createToolEpoch } from './toolEpoch'
 import type { ModelTurnResult } from './modelTurnRequester'
 
 const shellTools = ['shell_macos', 'shell_linux', 'shell_powershell'] as const
@@ -45,6 +46,7 @@ function createHarness(name: string, approvalMode: 'confirm' | 'auto') {
     runId: 'run',
     turnId: 'turn',
     core,
+    toolEpoch: createToolEpoch(core.tools, { sessionId: 'session', runId: 'run' }),
     opts: { apiKey: 'test-key', signal: new AbortController().signal },
     maxTurnTools: 8,
     runtimeIsTauri: true,

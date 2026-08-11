@@ -6,7 +6,8 @@
 //   · subagents/scheduler.ts  的任务树与订阅者（子 agent 调度状态）
 //   · runtime/persistenceBridge.ts 的 driver、写队列与 rootStore 快照
 // 【破环】本模块只 import 叶子层：createStore（einfach）、createToolRegistry（tools/toolRegistry，
-//   不是 tools/registry）。它【绝不】import 那五个视图模块（rootStore/sessionStore/registry/
+//   不是 tools/registry）、createToolEpochStore（runtime/toolEpochStore，只依赖 tools/*，不回指 core）。
+//   它【绝不】import 那五个视图模块（rootStore/sessionStore/registry/
 //   abortRegistry/scheduler），也【不再】import 任何具体工具或 tools/register —— 工具改由调用方经 opts.registerTools
 //   注入（登记反转，见下）。视图模块反过来 import 本模块的 defaultCore，构成单向依赖（视图 → coreInstance），
 //   无环。详见 tools/toolRegistry.ts 顶部注释。
@@ -18,6 +19,7 @@
 //   registerStandardTools(defaultCore.tools) 恢复"默认 21 工具"。于是 core 变无主张（可嵌任意工具集），
 import { createStore, type Store } from '@einfach/core'
 import { createToolRegistry, type ToolRegistry } from '../../tools/toolRegistry'
+import { createToolEpochStore, type ToolEpochStore } from '../toolEpochStore'
 import { createSubagentScheduler, type SubagentScheduler } from '../../subagents/schedulerState'
 import { createPluginHost, type PluginHost, type PluginInput } from './pluginHost'
 import type { ProjectSkillsSnapshot } from '../../skills/projectSkills'
@@ -99,6 +101,8 @@ export interface CoreInstance {
   resetSessionStores(): void
   // 该实例私有的工具注册表（登记反转后默认为空；由 opts.registerTools 或事后 register 填充）。
   readonly tools: ToolRegistry
+  // 该实例私有的 run 级工具集 epoch：run 开始时冻结一份目录，暂停/恢复同一 runId 时复用。
+  readonly toolEpochs: ToolEpochStore
   // 该实例私有的插件宿主；工具归 Core，hook/订阅归单次 run。
   readonly plugins: PluginHost
   // 该实例私有的 abort 注册表。
@@ -152,10 +156,13 @@ export function createCoreInstance(opts?: {
 
   function dropSessionStore(id: string): void {
     sessionStores.delete(id)
+    // 会话没了，它那份 run 工具集 epoch 也没有任何消费者了。
+    toolEpochs.release(id)
   }
 
   function resetSessionStores(): void {
     sessionStores.clear()
+    toolEpochs.reset()
   }
 
   // 3) 工具注册表：本实例私有 registry。【登记反转】不再自动装标准工具——由 opts.registerTools
@@ -163,6 +170,8 @@ export function createCoreInstance(opts?: {
   const tools = createToolRegistry()
   opts?.registerTools?.(tools)
   const plugins = createPluginHost(tools, opts?.plugins)
+  // 3.1) run 级工具集 epoch 的归属：跟 registry 一样是实例私有的，两个 core 互不可见。
+  const toolEpochs = createToolEpochStore(tools)
 
   // 4) abort 注册表：本实例私有 Map（逻辑照搬原 abortRegistry.ts，Map 从模块级变实例字段）。
   const controllers = new Map<string, AbortController>()
@@ -270,6 +279,7 @@ export function createCoreInstance(opts?: {
     dropSessionStore,
     resetSessionStores,
     tools,
+    toolEpochs,
     plugins,
     abort,
     subagentScheduler,

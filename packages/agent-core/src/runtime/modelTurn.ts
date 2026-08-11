@@ -19,7 +19,7 @@
 //     主循环（modelRun）与子 agent 循环（subagents/runtime）共用同一份判据。
 
 import { toolRegistry } from '../tools/registry'
-import type { ToolRegistry } from '../tools/toolRegistry'
+import type { ToolCatalog } from '../tools/toolCatalog'
 import type { LoadedTool, ShellPlatform, ToolRuntime, ToolSummary } from '../tools/types'
 import {
   maxTurnToolsForVendor,
@@ -124,7 +124,8 @@ export interface BuildTurnToolsOptions {
   allowedToolNames?: readonly string[]
   // 【登记反转 · TS1 收口】manifest 搜索必须读绑定 core 的 registry，而非模块级
   // toolRegistry（＝ defaultCore.tools）。缺省回落仅用于 defaultCore 路径。
-  registry?: ToolRegistry
+  // 类型是只读的 ToolCatalog：run 会在这里塞自己的工具集 epoch，让发现面与注入的 manifest 同源。
+  registry?: ToolCatalog
   /** 请求所用 provider；省略时使用保守 fallback descriptor。 */
   vendor?: string
   /** 请求顶层 tools 的总数预算；只能在 provider descriptor 上限内下调。 */
