@@ -74,7 +74,7 @@
   且 schema 属于 `request_tool_schema` 那一层，而那一层要求工具真的已注册（= 已连接）。
   缓存 schema 会诱使实现让模型直接调未连接的工具，破坏惰性加载的分层
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE d29d6e5
 
 ### B2 · 安装即探测
 
@@ -187,7 +187,7 @@
 - **判据**：`PERMANENT_MESSAGE_RULES` 不再作用于 message 由第三方控制的失败；
   HTTP 的 auth 判定不再单靠 `/unauthoriz|invalid token|.../i` 匹配远端散文
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 > D5 落地后剩下的两处同族脆弱性，合并成一个 issue 一起改（都动同一个文件，拆开会连改两次）：
 >
@@ -223,7 +223,7 @@
 - **改动面**：`apps/web/src/agentNew/ui/` 的 MCP 设置面板
 - **判据**：重试中与永久失败在界面上可区分，永久失败给出原因
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE bd4945b
 
 ---
 
@@ -305,7 +305,7 @@
   `packages/agent-core/src/state/sessionTransientMutations.ts`、`sessionTransientReaders.ts`
 - **判据**：`connect_mcp_server` 无法获得 session 级「一律允许」，每次连接都要单独确认
 - **模型**：opus（安全边界）
-- **状态**：TODO
+- **状态**：DONE 7775294
 
 > **这是一个已经存在的洞**。仓库本来就有一条规则：MCP 工具永不获得 session 级授权
 > （`runCommands.ts`、`sessionTransientMutations.ts`、`sessionTransientReaders.ts` 三处都在查
@@ -347,7 +347,7 @@
 - **判据**：配置错误 / 命令不存在 → `retryable: false`；网络抖动 → `retryable: true`；
   连接有独立超时，不吃工具调用的 120s
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ---
 
