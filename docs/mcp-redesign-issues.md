@@ -207,7 +207,7 @@
 - **判据**：指数退避 1s→2s→4s→…封顶 30s，有最大次数，可被手动重连打断；
   **重试必须沿用现有的连接身份世代检查**，旧连接的回调不得污染新连接
 - **模型**：opus（并发与生命周期，这是全仓最容易写出竞态的地方）
-- **状态**：DOING
+- **状态**：DONE 91b488f
 
 ### D3 · keepalive ping
 
@@ -379,7 +379,7 @@
 - **改动面**：`apps/web/src/mcp/config.ts`、`apps/web/src/mcp/service.ts`
 - **判据**：stdio 的 `autoConnect` 可持久化为 true
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### H2 · 起进程的确认前移到安装探测
 
