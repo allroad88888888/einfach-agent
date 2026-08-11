@@ -187,7 +187,7 @@
 - **判据**：`PERMANENT_MESSAGE_RULES` 不再作用于 message 由第三方控制的失败；
   HTTP 的 auth 判定不再单靠 `/unauthoriz|invalid token|.../i` 匹配远端散文
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE 51a7fb3
 
 > D5 落地后剩下的两处同族脆弱性，合并成一个 issue 一起改（都动同一个文件，拆开会连改两次）：
 >
@@ -347,7 +347,7 @@
 - **判据**：配置错误 / 命令不存在 → `retryable: false`；网络抖动 → `retryable: true`；
   连接有独立超时，不吃工具调用的 120s
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE 12059d3
 
 ---
 
