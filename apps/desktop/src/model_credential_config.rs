@@ -100,7 +100,7 @@ mod tests {
     fn preserves_other_config_values_when_saving_credentials() {
         let home = test_home();
         let store = ModelCredentialStore::from_home_directory(home.0.clone());
-        let directory = home.0.join(".web-agent");
+        let directory = home.0.join(".webAgent");
         fs::create_dir_all(&directory).expect("create config directory");
         fs::write(
             directory.join("config.json"),
@@ -147,7 +147,7 @@ mod tests {
     fn rejects_a_malformed_credential_section() {
         let home = test_home();
         let store = ModelCredentialStore::from_home_directory(home.0.clone());
-        let directory = home.0.join(".web-agent");
+        let directory = home.0.join(".webAgent");
         fs::create_dir_all(&directory).expect("create config directory");
         fs::write(
             directory.join("config.json"),
@@ -165,7 +165,7 @@ mod tests {
     fn rejects_an_unsupported_config_version() {
         let home = test_home();
         let store = ModelCredentialStore::from_home_directory(home.0.clone());
-        let directory = home.0.join(".web-agent");
+        let directory = home.0.join(".webAgent");
         fs::create_dir_all(&directory).expect("create config directory");
         fs::write(directory.join("config.json"), r#"{"version":2}"#).expect("write config fixture");
 
@@ -185,7 +185,7 @@ mod tests {
         store
             .save_key("deepseek:default", "test-key".to_string())
             .expect("save credential");
-        let metadata = fs::metadata(home.0.join(".web-agent/config.json")).expect("read metadata");
+        let metadata = fs::metadata(home.0.join(".webAgent/config.json")).expect("read metadata");
         assert_eq!(metadata.permissions().mode() & 0o777, 0o600);
     }
 }
