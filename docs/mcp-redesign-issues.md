@@ -393,6 +393,40 @@
 
 ---
 
+### F8 · Auto 模式下模型发起的 stdio 连接必须仍然确认
+
+- **依赖**：F3、H2（均已完成）
+- **改动面**：`tools/mcp/src/connect-mcp-server/connectTargetProbe.ts`、
+  `packages/agent-core/src/runtime/dangerousTools.ts`、`apps/web/src/mcp/initialize.ts`
+- **判据**：serverId 指向一个**启动命令未被确认过**的 stdio 服务时，
+  `classifyToolRisk` 返回 `requiresConfirmation: true`，Auto 模式下也必须暂停
+- **模型**：opus（安全边界）
+- **状态**：DOING
+
+> **收尾验收时发现的缺口。** 起进程的确认有两条独立的门，而它们的强度不一样：
+>
+> - **设置路径**（用户添加 / 重连 / 开自动连接）：`mayLaunchMcpServer` 校验命令行指纹，
+>   四个调用点全覆盖，Auto 模式不影响它。
+> - **模型路径**（`connect_mcp_server`）：靠 `classifyToolRisk` 判 `dangerous`。
+>   而 `toolCallBatch.ts` 的 `needsConfirmation` 里，`dangerous` 只在
+>   `approvalMode === 'confirm'` 时才暂停——**Auto 模式下直接执行**。
+>   这个工具走 `manager.reconnect()`，在 `tools/mcp` 层，**完全够不到 app 层的确认记录**。
+>
+> 于是：用户从不可信来源导入一份 JSON 配置（从没点开过确认）、开着 Auto 模式，
+> 模型调一次 `connect_mcp_server`，**一条从未被人看过的命令就在本机执行了**。
+> 而「第一次执行前你必须亲眼看过这条命令」正是起进程确认存在的全部意义。
+>
+> 「Auto 模式本来就允许任意 `shell_*`，所以这个不算退步」这个论证在这里不成立：
+> `shell_*` 执行的是模型当场composed、用户选择 Auto 时接受的风险；
+> 而这里执行的是用户**以为自己只是存了一份配置**的东西。
+>
+> **修法已有现成管道**：按 transport 分级的探针已经把 `{ spawnsLocalProcess, command }`
+> 从 app 送进 core，加一个 `consented: boolean` 即可。未确认时返回
+> `requiresConfirmation: true`——这个字段的注释写的就是
+> 「This operation must pause even when the session is in Auto mode」，正是为此而设。
+
+---
+
 ## 未决（决策落地前不开工，不指派模型）
 
 - **删除服务时不清工具清单缓存**。`removeToolNameCacheEntry`（B1 建）全仓无调用方，
