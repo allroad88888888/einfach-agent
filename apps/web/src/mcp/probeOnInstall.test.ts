@@ -15,6 +15,7 @@ import {
   createMemoryToolNameCacheStorage,
   type McpToolNameCacheStorage,
 } from './toolNameCacheStorage'
+import { createMcpToolNameCacheWriter } from './toolNameCacheWriter'
 import type { McpAddServerDraft } from './types'
 
 interface ServerPlan { tools?: readonly string[]; failWith?: string; gate?: Promise<void> }
@@ -287,7 +288,7 @@ describe('MCP 安装即探测', () => {
     const cacheStorage = createSlowCacheStorage()
     const prober = createMcpInstallProber({
       manager: new FakeProbeManager(),
-      cacheStorage,
+      writeCache: createMcpToolNameCacheWriter(cacheStorage),
       runExclusive: (_id, operation) => operation(),
       report: () => {},
       shouldProbe: () => true,

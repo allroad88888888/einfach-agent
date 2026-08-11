@@ -9,8 +9,9 @@
 // 两条硬约束：
 // 1. 探测失败【绝不阻断保存】。配置照存，缓存记 probeStatus: 'failed'，结论通过 report
 //    显示出来，用户可以修完再重连。探测的任何一步（连接、写缓存、断开）都不向外抛。
-// 2. 缓存写入留在 app 层——tools/mcp 与 packages/agent-core 都不碰磁盘，本文件只经由
-//    注入的 McpToolNameCacheStorage 读写。
+// 2. 缓存写入留在 app 层——tools/mcp 与 packages/agent-core 都不碰磁盘，本文件连磁盘通道
+//    都不持有，只调注入的 McpToolNameCacheWrite（与 B3 的连接成功刷新共用同一个写入点，
+//    理由见 toolNameCacheWriter.ts）。
 //
 // 本文件不 import 任何 atom / store：探测【做什么】在这里，探测结果【显示在哪】由
 // service.ts 通过 report 注入。
@@ -18,15 +19,9 @@
 import type {
   McpServerConfig,
   McpServerSnapshot,
-  McpToolSnapshot,
 } from '@web-agent/tools-mcp'
 import { toManagerConfig } from './config'
-import {
-  setToolNameCacheEntry,
-  type McpToolNameCache,
-  type SetToolNameCacheEntryInput,
-} from './toolNameCache'
-import type { McpToolNameCacheStorage } from './toolNameCacheStorage'
+import { toCachedTools, type McpToolNameCacheWrite } from './toolNameCacheWriter'
 import type { PersistedMcpServerConfig } from './types'
 
 export type McpInstallProbeOutcome =
@@ -46,7 +41,12 @@ export interface McpInstallProbeManager {
 
 export interface McpInstallProbeContext {
   readonly manager: McpInstallProbeManager
-  readonly cacheStorage: McpToolNameCacheStorage
+  /**
+   * 工具名缓存的写入点。由 service 注入而不是在这里自己造一个：它私有持有一份内存快照
+   * 和一条读-改-写队列，安装探测与连接成功刷新必须共用同一个，否则两条队列各读各的旧
+   * 快照，谁后写完谁覆盖对方（toolNameCacheWriter.ts 文件头有完整说明）。
+   */
+  readonly writeCache: McpToolNameCacheWrite
   /**
    * 复用 service 的「按 serverId 串行」队列。探测是一次真实连接，必须和删除、重连、
    * 切换自动连接排在同一条队列上，否则可能连回一个刚被删掉的服务。
@@ -91,15 +91,6 @@ function probeErrorMessage(error: unknown): string {
   return '未知错误'
 }
 
-/**
- * 缓存里存 ToolRegistry 名（`mcp__<serverId>__<remoteName>`）而不是远端原名：这份清单
- * 是给模型看的，模型日后真要调用时写的就是这个名字，B4 的「该工具所属服务未连接」提示
- * 也按这个名字匹配。remoteName 只在 adapter 内部用。
- */
-function toProbedTools(tools: readonly McpToolSnapshot[]): SetToolNameCacheEntryInput['tools'] {
-  return tools.map((tool) => ({ name: tool.name, description: tool.description }))
-}
-
 function snapshotFailureMessage(snapshot: McpServerSnapshot | undefined): string {
   if (!snapshot) return '连接未建立'
   const error: unknown = snapshot.error
@@ -142,38 +133,7 @@ function describeImportProbe(summary: {
 }
 
 export function createMcpInstallProber(context: McpInstallProbeContext): McpInstallProber {
-  const { manager, cacheStorage, runExclusive, report, shouldProbe } = context
-
-  let cache: McpToolNameCache | undefined
-  let cacheQueue: Promise<void> = Promise.resolve()
-
-  const loadCache = async (): Promise<McpToolNameCache> => {
-    try {
-      return await cacheStorage.load()
-    } catch {
-      // 缓存本来就是可丢弃的（丢了顶多重新探测），读不回来就从空开始，
-      // 绝不因此让「服务已经保存成功」这件事看起来失败。
-      return {}
-    }
-  }
-
-  /**
-   * 缓存是【整份对象】，一次写入是读-改-写。批量导入会连着写好几条，两轮交错就会
-   * 丢掉先写的那条，所以这里和 service.ts 的 persist 用同一条纪律：整轮读-改-写落在
-   * 一条串行队列里，队列内部除了必须的 load/save 不插入别的 await 点，缓存快照只在
-   * 临界区内读取。
-   */
-  const writeCache = (serverId: string, input: SetToolNameCacheEntryInput): Promise<void> => {
-    const turn = cacheQueue.then(async () => {
-      const current = cache ?? await loadCache()
-      const next = setToolNameCacheEntry(current, serverId, input)
-      await cacheStorage.save(next)
-      cache = next
-    })
-    cacheQueue = turn.catch(() => undefined)
-    // 写缓存失败只是少了一份随时可重建的清单，不该把探测结论改写成失败。
-    return turn.catch(() => undefined)
-  }
+  const { manager, writeCache, runExclusive, report, shouldProbe } = context
 
   /**
    * 探测完是否断开：只有用户勾了「自动连接」的服务才把连接留着，其余一律断开。
@@ -208,7 +168,7 @@ export function createMcpInstallProber(context: McpInstallProbeContext): McpInst
         return { kind: 'failed', message: probeErrorMessage(error) }
       }
       await writeCache(config.id, {
-        tools: toProbedTools(snapshot.tools),
+        tools: toCachedTools(snapshot.tools),
         probeStatus: 'success',
       })
       await closeProbeConnection(config)
@@ -229,7 +189,7 @@ export function createMcpInstallProber(context: McpInstallProbeContext): McpInst
       let outcome: McpInstallProbeOutcome
       if (snapshot && snapshot.status === 'connected') {
         await writeCache(config.id, {
-          tools: toProbedTools(snapshot.tools),
+          tools: toCachedTools(snapshot.tools),
           probeStatus: 'success',
         })
         outcome = { kind: 'success', toolCount: snapshot.tools.length }

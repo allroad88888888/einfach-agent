@@ -8,11 +8,14 @@ import {
   type McpConfigStorage,
 } from './persistence'
 import { createMcpInstallProber } from './probeOnInstall'
+import { createMcpConnectedCacheRefresher } from './refreshOnConnect'
 import { createMcpRuntimeWriters, messageFromError } from './runtimeWriters'
+import { createMcpServerOperationQueue } from './serverOperationQueue'
 import {
   createDesktopToolNameCacheStorage,
   type McpToolNameCacheStorage,
 } from './toolNameCacheStorage'
+import { createMcpToolNameCacheWriter } from './toolNameCacheWriter'
 import {
   mcpAddModeAtom,
   mcpAddFormOpenAtom,
@@ -88,40 +91,39 @@ export function createMcpSettingsService({
   let disposed = false
 
   store.setter(mcpPersistenceModeAtom, storage.persistence)
-  const serverQueues = new Map<string, Promise<void>>()
 
-  const enqueueServerOperation = <T>(
-    id: string,
-    operation: () => Promise<T>,
-  ): Promise<T> => {
-    const previous = serverQueues.get(id) ?? Promise.resolve()
-    const current = previous
-      .catch(() => undefined)
-      .then(operation)
-    const settled = current.then(
-      () => undefined,
-      () => undefined,
-    )
-    serverQueues.set(id, settled)
-    void settled.finally(() => {
-      if (serverQueues.get(id) === settled) serverQueues.delete(id)
-    })
-    return current
-  }
+  // 同一个服务上的命令怎么串起来见 serverOperationQueue.ts。
+  const enqueueServerOperation = createMcpServerOperationQueue()
 
   // 运行态写进 UI atoms 的那一层（含错误文案归一化）见 runtimeWriters.ts。
   const { setOperation, setRuntime, applySnapshot, applySnapshots } =
     createMcpRuntimeWriters(store)
 
+  const configById = (id: string): PersistedMcpServerConfig | undefined =>
+    store.getter(mcpServerConfigsAtom).find((config) => config.id === id)
+
+  // 工具名清单缓存【唯一的写入点】：安装探测（B2）与连接成功刷新（B3）都用它。为什么
+  // 必须是同一个而不是各造一个，见 toolNameCacheWriter.ts；写入留在 app 层，tools/mcp
+  // 与 core 都不碰磁盘。
+  const writeToolNameCache = createMcpToolNameCacheWriter(toolNameCacheStorage)
+
+  // 连上之后工具集还会变（MCP 的 tools/list_changed 就是为此），缓存不能停在安装那一刻。
+  // 哪些快照才值得落盘、为什么断开绝不清缓存，都在 refreshOnConnect.ts；这里只补上
+  // 「这个服务还算不算数」的判断。
+  const refreshCacheOnConnected = createMcpConnectedCacheRefresher({
+    write: writeToolNameCache,
+    shouldRefresh: (id) => !disposed && configById(id) !== undefined,
+  })
+
   const ensureSubscription = (): void => {
     if (unsubscribe || disposed) return
     unsubscribe = manager.subscribe((snapshots) => {
-      if (!disposed) applySnapshots(snapshots)
+      if (disposed) return
+      applySnapshots(snapshots)
+      // 不 await：落盘走 IPC，界面状态不该等它。
+      void refreshCacheOnConnected.observe(snapshots)
     })
   }
-
-  const configById = (id: string): PersistedMcpServerConfig | undefined =>
-    store.getter(mcpServerConfigsAtom).find((config) => config.id === id)
 
   /**
    * 只登记不连接（F6）：让 manager 认得这个服务，但不建立连接、不起进程。
@@ -178,7 +180,7 @@ export function createMcpSettingsService({
   // 是否还在（没被删、service 没 dispose）」的判断。
   const prober = createMcpInstallProber({
     manager,
-    cacheStorage: toolNameCacheStorage,
+    writeCache: writeToolNameCache,
     runExclusive: enqueueServerOperation,
     report: (text) => {
       if (!disposed) store.setter(mcpImportStatusAtom, text)
