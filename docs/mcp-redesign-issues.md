@@ -38,7 +38,7 @@
 - **判据**：模型凭据读写行为与权限（目录 `0700`、文件 `0600`）不变；新增按 section
   读写任意 JSON 的 API；`cargo test --manifest-path apps/desktop/Cargo.toml` 通过
 - **模型**：opus（触及凭据存储与文件权限）
-- **状态**：TODO
+- **状态**：DONE 543b239
 
 ### A2 · 新增读写 `mcp` 配置段的 Tauri command
 
@@ -128,7 +128,7 @@
 - **判据**：不打开设置弹窗，冷启动后 `autoConnect` 的 HTTP 服务自动连上且工具进
   registry；装配不阻塞首屏渲染
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE e99d1fa
 
 ### C2 · 设置弹窗只保留编辑职责
 
@@ -159,11 +159,30 @@
 - **判据**：`'reconnecting'` = 暂时失败正在重试，`'error'` = 永久失败需人工；
   认证失败 / 命令不存在 / 配置非法归入永久
 - **模型**：sonnet
+- **状态**：DONE ff9ce23
+
+### D5 · stdio 失败分类改用结构化 `kind`，不再匹配文案
+
+- **依赖**：D1
+- **改动面**：`tools/mcp/src/failureClassification.ts`、
+  `apps/web/src/mcp/tauriStdioConnector.ts`，必要时 `apps/desktop/src/mcp.rs`
+- **判据**：stdio 的 spawn 失败靠 `McpCommandError.kind` 判定，不再靠
+  `/enoent|command not found|is not recognized/i` 这类文案正则。Rust 侧若没有对应的 kind
+  就补一个（现有 kind：`rpc_error` / `not_connected` / `stale_session` / `process_exited` /
+  `transport_closed` / `transport_error` / `process_error` / `worker_failed`）。
+  要有测试证明改 Rust 文案不会让分类退化
+- **模型**：opus（跨 Rust/TS 契约）
 - **状态**：TODO
+
+> **为什么必须排在 D2 之前**：D1 的分类器默认落到「暂时失败」。
+> `tools/mcp` 现在匹配的是 `apps/desktop/src/mcp.rs` 里 `McpSession::spawn` 的字面文案——
+> 一个未声明的跨包契约。改动 Rust 文案会让永久失败静默降级成暂时失败，
+> **D2 上线后就变成对一个永远连不上的服务无限退避重试**。
+> 而结构化的 `kind` 字段本来就存在，`tauriStdioConnector.ts` 里已经在消费它。
 
 ### D2 · 断线退避重连
 
-- **依赖**：D1
+- **依赖**：D1、D5
 - **改动面**：`tools/mcp/src/clientManager.ts` 的 `failClosed`
 - **判据**：指数退避 1s→2s→4s→…封顶 30s，有最大次数，可被手动重连打断；
   **重试必须沿用现有的连接身份世代检查**，旧连接的回调不得污染新连接
@@ -197,7 +216,7 @@
 - **判据**：复用现有的 `registrationVersion` 原语；run 期间 registry 变化不改变本 run
   已组装的清单
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE c0837b2
 
 ### E2 · run 期间只增不减
 
