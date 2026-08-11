@@ -105,8 +105,11 @@ pnpm exec vitest run packages/agent-core/src/runtime/modelRun.test.ts
 pnpm exec vitest run -t "ask_user"
 ```
 
-测试文件按串行模式运行。运行时仍存在少量模块级共享状态，在移除这些共享状态前不要重新启用
-Vitest 文件并行。
+测试文件并行运行，靠 `vite.config.ts` 的 `isolate: true` 隔离：每个文件有独立 worker，
+`defaultCore` / `toolRegistry` 这类模块级单例在每个 worker 里各有一份，
+`apps/web/src/test/setup.ts` 在 worker 内注册标准工具，并只在用例之间重置 `defaultCore` 的
+root/session store。跨文件不会互相污染，因此不需要串行。需要更强隔离的测试应显式调用
+`createCore()` 或 `createCoreInstance()` 建独立实例，而不是退回文件串行。
 
 ## 构建产物
 

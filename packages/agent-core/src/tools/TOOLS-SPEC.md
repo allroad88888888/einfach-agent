@@ -13,18 +13,25 @@ Tools are split into three layers:
 | `tools/*` | Tool implementations grouped by domain |
 | `tools/standard` | The standard tool bundle registered by the application |
 
-The standard bundle currently exposes 27 tools:
+The standard bundle currently exposes 31 tools across six domains:
 
-- agents: `delegate_agent`, `observe_agent`, `join_agent`
+- agents: `delegate_agent`, `observe_agent`, `join_agent`, `cancel_agent`
 - filesystem: `read_file`, `list_files`, `search_files`, `rg_search`,
   `apply_patch`, `write_file`, `delete_path`, `copy_path`, `move_path`,
-  `revert_workspace_change`
+  `revert_workspace_change`, `find_test_lint_commands`
 - interaction: `ask_user_question`, `browser_action`, `save_file`
-- planning: `create_plan`, `update_plan`, `execute_plan`,
+- planning: `get_plan`, `create_plan`, `update_plan`, `execute_plan`,
   `submit_stage_result`
 - shell: `shell_macos`, `shell_linux`, `shell_powershell`, `run_task`,
-  `git_diff_review`
+  `run_verification_command`, `git_diff_review`
 - skills: `skill_search`, `skill_read`
+
+Each domain registrar in `tools/<domain>/src/index.ts` is authoritative for this
+list; treat the count above as a snapshot.
+
+MCP is a seventh domain (`tools/mcp`). It is deliberately outside the standard
+bundle: the application installs an `McpClientManager` against a registry and
+that manager reconciles remote tools at runtime.
 
 Applications register the bundle explicitly. Merely adding a source file does not
 make a tool available.
@@ -104,9 +111,10 @@ not see tools it cannot call in the current environment.
 
 Tools are serial by default.
 
-Only tools marked with `execution.mode: "parallel"` may overlap. The current
-parallel set is limited to read-oriented operations such as observation,
-filesystem search/read, diff review, and skill search/read.
+Only tools marked with `execution.mode: "parallel"` may overlap, and the current
+parallel set is limited to read-oriented operations: `read_file`, `list_files`,
+`search_files`, `rg_search`, `find_test_lint_commands`, `git_diff_review`,
+`get_plan`, `skill_search`, `skill_read`, `observe_agent`, and `join_agent`.
 
 `effectKeys` describe resources touched by a call and are retained in the
 session execution graph for inspection and future dependency rules. A batch is

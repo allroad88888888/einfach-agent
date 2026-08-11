@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 本文件是仓库内编码 Agent 的快速工作约定。项目现状和启动方法以 `README.md` 为准，
 专题设计入口见 `docs/README.md`。
 
@@ -9,32 +11,62 @@
 
 - `pnpm install`：安装并链接全部 workspace 包。
 - `pnpm dev`：启动 Vite Web 预览。
-- `pnpm build`：执行 `tsc -b` 后构建 Vite；这是类型门禁。
-- `pnpm test`：Vitest 单次运行。
-- `pnpm test:watch`：Vitest watch。
-- `pnpm exec vitest run <file>`：运行单个测试文件。
+- `pnpm build`：`tsc -b` 后构建 Vite。仓库没有 lint 脚本，这是唯一的静态门禁。
+- `pnpm test` / `pnpm test:watch`：Vitest。
+- `pnpm exec vitest run <file>`：单文件；`pnpm exec vitest run -t "<name>"`：按用例名过滤。
+- `node scripts/check-docs.js`：Markdown 门禁——相对链接必须真实存在，且禁止引用迁移前的旧源码
+  路径（规则见脚本里的 `legacySourcePathPattern`，连在文档里写出那个字面量都会失败）。
+  改任何 `.md` 都要跑，CI 里它排在测试之前。
 - `pnpm tauri dev` / `pnpm tauri build`：桌面端开发与打包。
 - `cargo test --manifest-path apps/desktop/Cargo.toml`：Rust 桥测试。
+- 子 Agent 治理：`pnpm subagent:replay` / `subagent:capacity` / `subagent:archive:retention` /
+  `subagent:index:compact` / `subagent:skills`。
 
-Vitest 使用 jsdom 和 `apps/web/src/test/setup.ts`，保持测试文件并行并设置 `isolate: true`。
-每个测试文件有隔离 worker；setup 在 worker 内注册标准工具，并只在用例间清理全局兼容
-`defaultCore` 的 root/session store。组件测试应使用 `apps/web/src/test/renderWithStore.tsx`
-提供的隔离 store；IndexedDB 测试使用 `fake-indexeddb`。
+CI（`.github/workflows/ci.yml`）跑两条：`check-docs → pnpm test → pnpm build`，
+以及三平台的 `cargo test` + `pnpm tauri build --no-bundle --ci`。
 
-## 配置
+## 构建与解析模型
 
-`apps/web/src/main.tsx` 只为运行时注入桌面受管凭证标记和受限模型传输。真实 Key 由桌面原生层从系统钥匙串或进程环境变量 `DEEPSEEK_API_KEY` / `GLM_API_KEY` / `KIMI_API_KEY` 读取；浏览器产物绝不读取 `VITE_*` 模型密钥，也不会直接调用供应商。Kimi 的上传、引用编码和清理语义属于 `agent-ai` adapter，Tauri 只保持 provider-neutral 受限传输。
+workspace 包**不单独编译**：`vite.config.ts` 的 `resolve.alias` 与 `tsconfig.app.json` 的
+`paths` 都把 `@web-agent/*` 直接指到各包的 `src`。改包无需 build，但新增/改名包时这两处
+alias 必须同步添加，否则类型或运行时会各错各的。`tsconfig.app.json` 的 `include` 覆盖
+`apps/web/src`、`packages/*/src`、`tools/*/src`。
+
+Vitest 的 root 是仓库根（不是 Vite 的 `apps/web` root），jsdom + `apps/web/src/test/setup.ts`，
+`isolate: true`：每个测试文件独立 worker，setup 在 worker 内注册标准工具，并只在用例之间重置
+`defaultCore` 的 root/session store。测试文件是并行的，以 `vite.config.ts` 为准
+（`README.md` 里"测试按串行模式运行"的说法已过时）。组件测试用
+`apps/web/src/test/renderWithStore.tsx` 的隔离 store；IndexedDB 测试用 `fake-indexeddb`。
+
+## 模型凭证与传输
+
+`apps/web/src/main.tsx` 只注入桌面受管凭证标记和受限模型传输。真实 Key 由桌面原生层从系统
+钥匙串或进程环境变量 `DEEPSEEK_API_KEY` / `GLM_API_KEY` / `KIMI_API_KEY` 读取。
+
+三种宿主的传输各不相同：Tauri 走原生代理，浏览器 dev 走 `scripts/model-preview-relay` 的本地
+Node 中继，静态产物直接拒绝模型请求。`scripts/public-model-credential-guard.ts` 在 Vite 配置
+阶段执行——任何 `VITE_*_API_KEY` 都会让 dev/build 直接失败，别试图用 `VITE_` 变量传密钥。
+
+Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter，Tauri 只保持 provider-neutral
+受限传输。
 
 ## 当前结构
 
-- `apps/web/src/main.tsx`：默认应用装配；注册标准工具、配置模型、选择持久化和观测 driver。
+- `apps/web/src/main.tsx`：默认应用装配；注册标准工具、配置模型传输、选择持久化和观测 driver。
 - `apps/web/src/agentNew/ui/`：React UI，包含会话、消息、计划、确认、子 Agent 树和输入区。
-- `apps/desktop/`：Rust/Tauri 的 shell、workspace、Git、dialog 与 SQLite 实现。
-- `packages/agent-ai/`：DeepSeek/GLM/Kimi 请求、流式响应、provider 私有图片准备、adapter 重试和 vendor 能力描述表。
+- `apps/web/src/mcp/`：MCP 应用层（配置、持久化、Tauri stdio connector）。它是**懒装配**的：
+  `SettingsDialog` 首次打开时调 `initializeMcpSettings()`，不在 `main.tsx` 里装。
+- `apps/desktop/`：Rust/Tauri 的 shell、workspace、Git、dialog、SQLite 与 MCP stdio 实现。
+- `packages/agent-ai/`：DeepSeek/GLM/Kimi 请求、流式响应、provider 私有图片准备、adapter 重试
+  和 vendor 能力描述表。
 - `packages/agent-core/`：Agent Runtime 与所有核心状态。
-- `tools/{shell,fs,interaction,planning,skills,agents}/`：六个具体工具域。
-- `tools/standard/`：标准工具聚合包，提供 `registerStandardTools`。
-- `docs/`：当前说明与演进蓝图。
+- `packages/agent-react/`（`@web-agent/react-plugin`）：React 侧插件安装面与 timeline renderer
+  registry；core 不依赖 React。
+- `packages/agent-plugin-example/`：插件契约的可运行样例，改插件 API 时同步更新。
+- `tools/{shell,fs,interaction,planning,skills,agents}/`：六个标准工具域。
+- `tools/standard/`（`@web-agent/tools`）：meta 聚合包，`registerStandardTools` 一次装齐六域。
+- `tools/mcp/`：第七个域，**不在**标准包里，由应用层按需装配。
+- `docs/`：当前说明与演进蓝图，入口是 `docs/README.md`。
 
 依赖必须维持：
 
@@ -42,7 +74,12 @@ Vitest 使用 jsdom 和 `apps/web/src/test/setup.ts`，保持测试文件并行�
 agent-ai ← agent-core ← tools-* ← tools(meta) ← app
 ```
 
-`agent-core` 不得反向依赖任何具体 `tools-*` 包。
+`agent-core` 不得反向依赖任何具体 `tools-*` 包，也不依赖 React。
+
+`agent-core/src` 的分区：`runtime/`（主循环与命令）、`runtime/core/`（`CoreInstance`、
+plugin host、loop hooks、默认插件）、`runtime/commands/`（UI 唯一入口）、`state/`（atom、
+writer、persistence driver）、`subagents/`、`execution/`（执行图）、`planning/`、`skills/`、
+`timeline/`、`observability/`、`tools/`（抽象与 registry，不含具体工具）。
 
 ## 状态与 UI 边界
 
@@ -73,8 +110,13 @@ abort registry、子 Agent scheduler、运行时配置、project skills 和 pers
 主循环已按 lifecycle、bootstrap、循环周期、checkpoint、模型请求和工具执行拆分；`modelRun.ts`
 只保留稳定导出，`runToolLoop.ts` 负责循环编排。
 
+压缩、finish reason、loop guard、迁移这些横切行为是 `runtime/core/plugins/` 里的**插件**，
+不是主循环里的分支。要改这类行为先看能不能落在插件 hook 上。
+
 工具不得直接 import store/atom 来获得额外能力。文件、shell、计划、渲染、委派等副作用必须使用
 `ToolContext` 暴露的能力，确保 workspace confinement、权限确认、stale guard 和审计仍然生效。
+完整工具契约见 `packages/agent-core/src/tools/TOOLS-SPEC.md`；标准工具的**实际清单以各域
+registrar 为准**（`tools/<domain>/src/index.ts`），文档里的数量容易过时。
 
 ## 持久化与运行环境
 
@@ -82,14 +124,18 @@ abort registry、子 Agent scheduler、运行时配置、project skills 和 pers
 - Tauri：会话/历史和 trace 使用 SQLite，文件/shell/Git 通过 Rust command 执行。
 - `server` 工具在非 Tauri 环境中不会暴露给模型。
 - `.agent-archive/` 保存子 Agent 长期归档与索引，不应提交到 Git。
+- workspace 里的 `.agent/skills/` 与 `.claude/skills/` 会被 project skills loader 自动扫描进
+  L1 清单——本仓库自己就有这两个目录，改它们等于改运行时行为，不只是改编辑器配置。
 
 ## 测试与修改约定
 
 - TypeScript strict 开启；完成修改至少运行相关测试和 `pnpm build`。
 - runtime/state 修改优先补充 colocated `*.test.ts(x)`。
-- 模型 adapter 的“除 AbortError 外返回 fallback、不向 UI 抛出”是有意契约。
+- 模型 adapter 的"除 AbortError 外返回 fallback、不向 UI 抛出"是有意契约。
 - 新工具放到对应 `tools/<domain>/src/<tool-name>/`，同目录包含实现、说明和测试，
-  再由域包 registrar 注册。
+  再由域包 registrar 注册；只加文件不注册 = 模型看不到。
 - 用户可见的助手文案保持中文。
-- 已完成的阶段 PLAN 只保留在 Git 历史中。判断现状时以当前代码、测试和 `docs/README.md`
-  指向的文档为准。
+- `docs/` 里"当前实现说明"与"演进蓝图"是两类文档：蓝图描述目标形态，不代表 API 已交付，
+  引用前必须核对实现和测试。已完成的阶段 PLAN 只保留在 Git 历史中。
+- 追调用链、评估改动波及面时可用仓库自带的 CodeGraph 索引（`.codegraph/`，见 skill
+  `codegraph`）；纯文本检索仍用 grep。
