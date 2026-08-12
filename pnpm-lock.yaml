@@ -35,6 +35,9 @@ importers:
       '@web-agent/persistence-idb':
         specifier: workspace:*
         version: link:packages/persistence-idb
+      '@web-agent/persistence-sqlite':
+        specifier: workspace:*
+        version: link:packages/persistence-sqlite
       '@web-agent/react-plugin':
         specifier: workspace:*
         version: link:packages/agent-react
@@ -146,6 +149,15 @@ importers:
 
   packages/persistence-idb:
     dependencies:
+      '@web-agent/core':
+        specifier: workspace:*
+        version: link:../agent-core
+
+  packages/persistence-sqlite:
+    dependencies:
+      '@tauri-apps/plugin-sql':
+        specifier: ^2.4.0
+        version: 2.4.0
       '@web-agent/core':
         specifier: workspace:*
         version: link:../agent-core

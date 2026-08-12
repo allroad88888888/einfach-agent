@@ -116,8 +116,9 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   `<domain>:<event>` 扩展时机，为 MCP 生命周期预留，本树不实现 MCP 侧接入）；
   `pnpm exec vitest run packages/agent-core/src/runtime`；`pnpm build`
 - **模型**：codex xhigh
-- **状态**：DONE（哈希在下一次提交补记；`toolCallExecutor`/`checkpointWriters` 无需改动——
-  复用其既有路径正是判据本意；风险拒绝走 `classifyToolRisk`）
+- **状态**：DONE `033290a`（`toolCallExecutor`/`checkpointWriters` 无需改动——
+  复用其既有路径正是判据本意；风险拒绝走 `classifyToolRisk`；
+  同批修复 B1 引入的 setup 模块图污染回归 `83ce772`）
 
 ### A4 · 压缩点位：preCompact / postCompact
 
@@ -244,7 +245,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   `@tauri-apps/plugin-sql` 依赖删除顺延至 D4 一并完成）；
   `pnpm exec vitest run packages/persistence-sqlite packages/agent-core/src/state`；`pnpm build`
 - **模型**：codex medium
-- **状态**：DOING
+- **状态**：DONE（哈希在下一次提交补记）
 
 ### D3 · 观测事件发射收敛为单一 port
 

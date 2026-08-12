@@ -22,14 +22,14 @@
 //   修复 = 彻底移除跨语句事务（sessions 改单行 blob）+ 开 WAL/超时/NORMAL 降低锁竞争与单写开销。
 
 import Database from '@tauri-apps/plugin-sql'
-import type { SessionMeta, WorkspaceMeta } from '../core.type'
-import type { CheckpointFinishReason, CheckpointKind } from '../checkpoint.type'
-import type { SessionsPersistence } from './contract'
-import type { HistoryDriver } from './historyDriver'
+import type { SessionMeta, WorkspaceMeta } from '@web-agent/core/state/core.type'
+import type { CheckpointFinishReason, CheckpointKind } from '@web-agent/core/state/checkpoint.type'
+import type { SessionsPersistence } from '@web-agent/core/state/persistence/contract'
+import type { HistoryDriver } from '@web-agent/core/state/persistence/historyDriver'
 import {
   beginPerformanceDiagnostic,
   performanceNow,
-} from '../../observability/performanceDiagnostics'
+} from '@web-agent/core/observability/performanceDiagnostics'
 
 const DB_URL = 'sqlite:web-agent.db'
 

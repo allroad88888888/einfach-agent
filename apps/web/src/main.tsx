@@ -83,7 +83,7 @@ configureModelCredentialHost(
 // —— 只在 Tauri 下加载，浏览器 bundle 不含它（代码分割 + 避免非 Tauri 环境引 plugin-sql）。
 async function resolvePersistence() {
   if (tauriHost) {
-    const { createSqlitePersistence } = await import('@web-agent/core/state/persistence/sqliteDriver')
+    const { createSqlitePersistence } = await import('@web-agent/persistence-sqlite')
     return createSqlitePersistence()
   }
   return {

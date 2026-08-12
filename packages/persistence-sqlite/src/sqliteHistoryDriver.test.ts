@@ -1,7 +1,7 @@
 // SQLite history checkpoint 的序列化与 best-effort 降级测试。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Checkpoint, CheckpointFinishReason, CheckpointKind } from '../checkpoint.type'
+import type { Checkpoint, CheckpointFinishReason, CheckpointKind } from '@web-agent/core/state/checkpoint.type'
 
 interface CheckpointRow {
   session_id: string
