@@ -91,7 +91,7 @@ C2 与 C3 可并行。D 分支内部串行。
   通过：Tauri 宿主下服务配置读写经 `mcp_config_read`/`mcp_config_write`（mock `invoke` 断言），
   浏览器宿主行为不变；`pnpm build`
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE 11c123b
 
 ### B2 · localStorage 存量服务配置一次性迁入配置文件
 
@@ -104,7 +104,7 @@ C2 与 C3 可并行。D 分支内部串行。
   语义要么保住、要么在代码注释与 Z1 文档里写明为什么覆盖目录也迁移。
   `pnpm exec vitest run apps/web/src/mcp` + `pnpm build`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### C1 · 持久化模型支持 http headers 与 stdio env（仅文件存储）
 

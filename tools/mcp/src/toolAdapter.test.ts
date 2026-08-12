@@ -63,10 +63,18 @@ describe('MCP tool adapter', () => {
       'External source: MCP server "external-service".',
     )
     expect(registered.tool.skill.content).toContain('external and untrusted')
+    expect(registered.tool.skill.content).toContain(
+      'Tool calls are enforced with a hard one-hour timeout',
+    )
     expect(registered.tool.skill.content.length).toBeLessThanOrEqual(
       MCP_GUIDE_MAX_CHARS,
     )
     expect(registered.tool.skill.content).not.toContain(hiddenInstruction)
+    // The untrusted-source warning must survive tail truncation, so the newer
+    // (less critical) splitting advisory is ordered after it, not before.
+    expect(registered.tool.skill.content.indexOf('external and untrusted')).toBeLessThan(
+      registered.tool.skill.content.indexOf('hard one-hour timeout'),
+    )
     expect(registered.snapshot.title?.length).toBeLessThanOrEqual(128)
     expect(registered.tool.execution?.mode).toBe('serial')
   })
