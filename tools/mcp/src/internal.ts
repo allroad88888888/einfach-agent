@@ -9,7 +9,16 @@ export function errorMessage(value: unknown): string {
 export function abortError(signal?: AbortSignal): Error {
   const reason = signal?.reason
   const error = reason instanceof Error ? reason : new Error('The operation was aborted')
-  error.name = 'AbortError'
+  if (error.name !== 'AbortError') {
+    try {
+      error.name = 'AbortError'
+    } catch {
+      // DOMException（无 reason 的 abort() 与 AbortSignal.timeout() 给的就是它）的 name 是
+      // 原型上的只读访问器，strict 模式下赋值直接抛 TypeError——把「取消」翻译成一次崩溃。
+      // 改不动名字就包一层：上游认的是 name === 'AbortError' 这个约定，message 原样保留。
+      return Object.assign(new Error(error.message), { name: 'AbortError' })
+    }
+  }
   return error
 }
 
