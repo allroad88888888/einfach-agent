@@ -1,4 +1,5 @@
 import { sanitizePersistedMcpConfig } from './config'
+import { stripMcpCredentialFields } from './credentialFields'
 import type {
   McpPersistenceMode,
   PersistedMcpServerConfig,
@@ -75,6 +76,20 @@ export function parsePersistedMcpServers(raw: string): readonly PersistedMcpServ
   return sanitizeConfigs(candidates)
 }
 
+/**
+ * 浏览器存储专属的最后一道：剥掉 headers / env（C1）。
+ *
+ * 白名单（sanitizePersistedMcpConfig）现在**接受**这两个字段——桌面配置文件要靠它净化用户
+ * 手写的凭据——所以「不落凭据」这条规则必须由宿主自己执行，而不是靠白名单一刀切。凭据的唯一
+ * 落点是 `~/.webAgent/config.json`；localStorage 里的东西同源脚本和任何能读到这台机器
+ * profile 的人都拿得到。
+ */
+function withoutCredentials(
+  configs: readonly PersistedMcpServerConfig[],
+): readonly PersistedMcpServerConfig[] {
+  return configs.map(stripMcpCredentialFields)
+}
+
 export function createMcpConfigStorage(storage: StorageLike): McpConfigStorage {
   return {
     persistence: 'persistent',
@@ -83,7 +98,9 @@ export function createMcpConfigStorage(storage: StorageLike): McpConfigStorage {
     async load() {
       const raw = storage.getItem(MCP_SETTINGS_STORAGE_KEY)
       if (!raw) return []
-      const configs = parsePersistedMcpServers(raw)
+      // 先剥再回写：读后回写这条既有行为顺带把存量里的凭据字段清干净——不管它是历史遗留、
+      // 手改的，还是别的宿主写进来的，读过一次就不再留在浏览器存储里。
+      const configs = withoutCredentials(parsePersistedMcpServers(raw))
       // Rewrite the sanitized whitelist on read so known unsafe fields and
       // credential-shaped connection strings do not remain in localStorage.
       try {
@@ -94,7 +111,7 @@ export function createMcpConfigStorage(storage: StorageLike): McpConfigStorage {
       return configs
     },
     async save(configs) {
-      const safeConfigs = sanitizeConfigs(configs)
+      const safeConfigs = withoutCredentials(sanitizeConfigs(configs))
       storage.setItem(MCP_SETTINGS_STORAGE_KEY, serializeEnvelope(safeConfigs))
     },
   }

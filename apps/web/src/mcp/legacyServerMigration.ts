@@ -1,3 +1,4 @@
+import { stripMcpCredentialFields } from './credentialFields'
 import { MCP_SETTINGS_STORAGE_KEY, parsePersistedMcpServers } from './persistence'
 import type { PersistedMcpServerConfig } from './types'
 
@@ -13,10 +14,17 @@ import type { PersistedMcpServerConfig } from './types'
 //
 // 【WEB_AGENT_CONFIG_DIR 覆盖目录也照样迁移】web 层看不出当前配置目录是否被环境变量覆盖过
 // （isTauri / invoke 都不暴露这件事），为了少搬一次配置而新增一个 IPC 不划算。取舍成立的
-// 理由：localStorage 里的这份配置本来就不含任何凭据——headers / env 在持久化模型里根本不可
-// 表示（见 types.ts），启动参数里疑似 token 的内容在 sanitize 阶段就被拒（见 config.ts）——
-// 所以把它复制进某个实例目录不放大凭据风险。用户不想要的话在设置面板删掉即可：删除会写回
-// 配置文件，servers 键随即存在，不会再被迁移覆盖。
+// 理由：搬过去的这份配置不含任何凭据——启动参数里疑似 token 的内容在 sanitize 阶段就被拒
+// （见 config.ts），headers / env 由迁移自己剥掉（见下）——所以把它复制进某个实例目录不放大
+// 凭据风险。用户不想要的话在设置面板删掉即可：删除会写回配置文件，servers 键随即存在，不会
+// 再被迁移覆盖。
+//
+// 【为什么迁移要显式剥凭据】（C1）headers / env 现在是白名单里的合法字段，配置文件存它们是
+// 本分；但迁移的**来源**是 localStorage，那里按设计一个凭据都不该有（persistence.ts 读写两端
+// 都剥）。所以此刻在 localStorage 里出现的凭据只可能是手工塞的或被注入的，把它搬进配置文件
+// 就等于让浏览器侧的写入权限升格为本机执行权限：起进程确认的指纹只盖 command/args/cwd，给一条
+// 早已确认过的命令行补一个 env（LD_PRELOAD 之类）不会让确认失效，下次自动连接就照跑不误。
+// 迁移只搬「配置」，凭据要用户在桌面端自己填。
 
 /**
  * 只读地取出 localStorage 里的存量配置。
@@ -36,8 +44,9 @@ export function readLegacyMcpServerConfigs(): readonly PersistedMcpServerConfig[
   if (!raw) return []
   try {
     // 净化在这一步就发生：parsePersistedMcpServers 内部走 sanitizeConfigs，因此后面写进
-    // 配置文件的只可能是过了白名单/上限/去重的结果，与 localStorage 宿主读到的完全一致。
-    return parsePersistedMcpServers(raw)
+    // 配置文件的只可能是过了白名单/上限/去重的结果，与 localStorage 宿主读到的完全一致——
+    // 包括「不含凭据字段」这一条，所以这里补一次剥离（理由见文件头）。
+    return parsePersistedMcpServers(raw).map(stripMcpCredentialFields)
   } catch {
     // 存量本身坏了（JSON 非法、ID 重复、超过上限）就跳过迁移：这种数据在浏览器宿主里同样
     // 读不出来，搬进配置文件只会把一份坏清单变成桌面端每次冷启动都失败的理由。

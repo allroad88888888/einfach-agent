@@ -18,6 +18,11 @@ interface PersistedMcpServerBase {
 export interface PersistedHttpMcpServer extends PersistedMcpServerBase {
   transport: 'streamable-http'
   url: string
+  /**
+   * 静态认证头（C1）。值就是凭据本身，因此只允许落在桌面配置文件里；写浏览器存储的那条
+   * 路径会剥掉这个字段（见 credentialFields.ts 与 persistence.ts）。
+   */
+  headers?: Readonly<Record<string, string>>
 }
 
 /**
@@ -41,13 +46,21 @@ export interface PersistedStdioMcpServer extends PersistedMcpServerBase {
   command: string
   args: readonly string[]
   cwd?: string
+  /**
+   * 子进程环境变量（C1）。凭据走这里，不走 args——启动参数会出现在进程列表里，而且
+   * config.ts 至今拒绝疑似 token 的启动参数。与 headers 同样只落桌面配置文件。
+   */
+  env?: Readonly<Record<string, string>>
   /** 未确认过的服务没有这个字段；没有它就不允许起进程。 */
   launchConsent?: McpStdioLaunchConsent
 }
 
 /**
- * The only MCP configuration shape that may be written to browser storage.
- * Authentication headers and process env are deliberately not representable.
+ * MCP 配置的持久化白名单：没写在这里的字段一律不落盘。
+ *
+ * 【凭据字段的宿主差异】headers / env 在这个模型里是**可表示**的，但只有桌面配置文件
+ * （`~/.webAgent/config.json`）真的存它们；localStorage 宿主在读写两端都会剥掉
+ * （见 persistence.ts 的 createMcpConfigStorage）。
  */
 export type PersistedMcpServerConfig =
   | PersistedHttpMcpServer

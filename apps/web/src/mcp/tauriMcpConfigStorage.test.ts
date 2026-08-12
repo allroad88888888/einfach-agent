@@ -80,23 +80,79 @@ describe('Tauri-backed MCP config storage', () => {
             id: 'http',
             name: '远程',
             transport: 'streamable-http',
-            url: 'https://example.com/mcp',
+            // 带凭据的查询参数：这条拒绝与凭据字段无关，仍然整条丢弃。
+            url: 'https://example.com/mcp?api_key=secret',
             autoConnect: true,
-            headers: { Authorization: 'Bearer secret' },
+          },
+          {
+            id: 'stdio',
+            name: '本地',
+            transport: 'stdio',
+            command: 'node',
+            args: ['server.js', '--token=secret'],
+            autoConnect: true,
+            // 未支持的字段不落地。
+            timeout: 30,
           },
         ],
       })
       const storage = createTauriMcpConfigStorage()
 
-      const loaded = await storage.load()
+      expect(await storage.load()).toEqual([])
+    })
 
-      expect(loaded).toEqual([{
-        id: 'http',
-        name: '远程',
-        transport: 'streamable-http',
-        url: 'https://example.com/mcp',
-        autoConnect: true,
-      }])
+    /**
+     * C1：配置文件是凭据的唯一落点，所以这条路径必须**保留** headers / env——
+     * 与 localStorage 宿主（读写两端都剥掉，见 persistence.credentials.test.ts）正好相反。
+     */
+    it('round-trips headers and env through the config file', async () => {
+      const servers = [
+        {
+          id: 'http',
+          name: '远程',
+          transport: 'streamable-http' as const,
+          url: 'https://example.com/mcp',
+          headers: { Authorization: 'Bearer sk-example' },
+          autoConnect: true,
+        },
+        {
+          id: 'stdio',
+          name: '本地',
+          transport: 'stdio' as const,
+          command: 'node',
+          args: ['server.js'],
+          env: { API_KEY: 'k-1' },
+          autoConnect: false,
+        },
+      ]
+      invokeMock.mockResolvedValueOnce(undefined)
+      const storage = createTauriMcpConfigStorage()
+
+      await storage.save(servers)
+      expect(invokeMock).toHaveBeenCalledWith('mcp_config_write', { patch: { servers } })
+
+      invokeMock.mockResolvedValueOnce({ servers })
+      expect(await storage.load()).toEqual(servers)
+    })
+
+    it('drops a server whose credential fields are malformed', async () => {
+      invokeMock.mockResolvedValueOnce({
+        servers: [
+          {
+            id: 'http',
+            name: '远程',
+            transport: 'streamable-http',
+            url: 'https://example.com/mcp',
+            // 换行会造成请求头注入，整条配置丢弃。
+            headers: { Authorization: 'Bearer a\r\nX-Injected: 1' },
+            autoConnect: true,
+          },
+          httpConfig(2),
+        ],
+      })
+      const storage = createTauriMcpConfigStorage()
+
+      expect(await storage.load()).toEqual([httpConfig(2)])
     })
 
     it('writes the sanitized configs under the servers key via mcp_config_write', async () => {

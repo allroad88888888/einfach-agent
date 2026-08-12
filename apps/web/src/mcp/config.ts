@@ -1,4 +1,5 @@
 import type { McpServerConfig } from '@web-agent/tools-mcp'
+import { sanitizeMcpEnv, sanitizeMcpHeaders } from './credentialFields'
 import { sanitizeStdioLaunchConsent } from './stdioLaunchConsent'
 import type {
   McpAddServerDraft,
@@ -104,7 +105,12 @@ export function parseArgsText(argsText: string): { args?: string[]; error?: stri
     return { error: '启动参数过长或包含不可见字符' }
   }
   if (args.some(hasUnsafeArgument)) {
-    return { error: '启动参数不能包含疑似 token、密钥或密码；当前版本不提供凭据存储' }
+    // 拒绝的理由不再是「没地方存凭据」（现在有了），而是 args 本来就不该存凭据：启动参数
+    // 会出现在本机进程列表里，任何进程都看得到。
+    return {
+      error: '启动参数不能包含疑似 token、密钥或密码；请改用 env 环境变量字段保存凭据'
+        + '（HTTP 服务用 headers 请求头字段）',
+    }
   }
   return { args }
 }
@@ -191,7 +197,18 @@ export function sanitizePersistedMcpConfig(value: unknown): PersistedMcpServerCo
     if (typeof input.url !== 'string') return undefined
     const { url } = validateHttpUrl(input.url)
     if (!url) return undefined
-    return { id: input.id, name, transport: 'streamable-http', url, autoConnect }
+    // 形状非法的凭据整条丢弃这个服务，而不是只丢掉那一个条目：留下来的会是一份「看着已保存、
+    // 连上去却没有认证」的配置，排查成本远高于服务直接消失。与下面 cwd 的处理同一口径。
+    const headers = sanitizeMcpHeaders(input.headers)
+    if (!headers.ok) return undefined
+    return {
+      id: input.id,
+      name,
+      transport: 'streamable-http',
+      url,
+      ...(headers.value ? { headers: headers.value } : {}),
+      autoConnect,
+    }
   }
 
   if (input.transport !== 'stdio') return undefined
@@ -202,6 +219,8 @@ export function sanitizePersistedMcpConfig(value: unknown): PersistedMcpServerCo
   if (!parsedArgs.args) return undefined
   const cwd = normalizeOptionalText(input.cwd, MAX_CWD_LENGTH)
   if (input.cwd !== undefined && !cwd) return undefined
+  const env = sanitizeMcpEnv(input.env)
+  if (!env.ok) return undefined
   // Shape check only: whether this consent still matches the command above is
   // decided in exactly one place (mayLaunchMcpServer). A stored consent whose
   // fingerprint no longer matches is kept as-is and simply stops authorizing
@@ -215,6 +234,7 @@ export function sanitizePersistedMcpConfig(value: unknown): PersistedMcpServerCo
     command,
     args: parsedArgs.args,
     ...(cwd ? { cwd } : {}),
+    ...(env.value ? { env: env.value } : {}),
     ...(launchConsent ? { launchConsent } : {}),
     // Round-trip whatever opt-in was actually stored (see `autoConnect`
     // above), instead of silently downgrading a legitimately saved
@@ -225,8 +245,14 @@ export function sanitizePersistedMcpConfig(value: unknown): PersistedMcpServerCo
 }
 
 /**
- * Convert the persisted whitelist to the core manager config. Keeping this
- * conversion explicit prevents headers/env from leaking into local storage.
+ * 把持久化白名单转成 core 管理器的连接配置。逐字段显式列出（而不是整个对象扔过去），
+ * 保证只有白名单里的字段能进到连接层——launchConsent 这类纯应用层记录不该出现在协议侧。
+ *
+ * 【headers / env 在这里透传】它们本来就是给连接用的凭据（C1）。曾经刻意不透传是为了拦住
+ *「凭据泄进 localStorage」，那道防线现在由 localStorage 宿主自己的剥离承担
+ * （persistence.ts 的 createMcpConfigStorage），不再靠在这里断供。
+ * 两张表都复制一份：管理器会长期持有配置并在重连时复用，共享引用等于让上游改配置能改到
+ * 一条已经连上的连接。
  */
 export function toManagerConfig(config: PersistedMcpServerConfig): McpServerConfig {
   if (config.transport === 'streamable-http') {
@@ -235,6 +261,7 @@ export function toManagerConfig(config: PersistedMcpServerConfig): McpServerConf
       name: config.name,
       transport: 'streamable-http',
       url: config.url,
+      ...(config.headers ? { headers: { ...config.headers } } : {}),
     }
   }
   return {
@@ -244,5 +271,6 @@ export function toManagerConfig(config: PersistedMcpServerConfig): McpServerConf
     command: config.command,
     args: [...config.args],
     ...(config.cwd ? { cwd: config.cwd } : {}),
+    ...(config.env ? { env: { ...config.env } } : {}),
   }
 }

@@ -178,7 +178,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   覆盖阶段 register 真实工具并释放占位登记；「抛出即 registry 未被改动」契约保持（校验阶段零副作用
   有用例）；`pnpm exec vitest run tools/mcp` + `pnpm build`
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE 9e8e08f
 
 ### D2 · 缓存清单注册为占位工具
 
@@ -192,7 +192,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   既有的「请先调用 `connect_mcp_server`」结构化回执，不引入连接路径；
   `pnpm exec vitest run tools/mcp apps/web/src/mcp` + `pnpm build`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### D3a · 起进程风险面扩展
 
