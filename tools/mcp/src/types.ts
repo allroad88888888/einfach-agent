@@ -1,5 +1,6 @@
 import type { ToolRegistry } from '@web-agent/core/tools/toolRegistry'
 import type { Tool, ToolResult } from '@web-agent/core/tools/types'
+import type { McpPlaceholderClaims } from './placeholderClaims'
 
 interface McpServerConfigBase {
   /** Stable application-local key. It also namespaces registered tool names. */
@@ -130,6 +131,14 @@ export interface McpClientManagerOptions {
    * createMcpConnectorRouter() to combine HTTP and host-native stdio.
    */
   connector?: McpConnector
+  /**
+   * 占位工具登记表，原样透传给每次 reconcile。
+   *
+   * 必须与占位同步器（placeholderSync.ts）用【同一个实例】：reconcile 靠它放行「本服务占位
+   * 正占着这个名字」，否则每个有缓存清单的服务一连接就抛工具名冲突。不接这根线 = 系统里
+   * 没有占位，连接行为与占位上线前逐字节一致。
+   */
+  placeholders?: McpPlaceholderClaims
 }
 
 export interface McpRegisteredTool {

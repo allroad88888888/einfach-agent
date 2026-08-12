@@ -9,7 +9,9 @@ import type { UnconnectedToolProviderProbe } from '@web-agent/core/tools/schemaR
 import { describe, expect, it, vi } from 'vitest'
 import {
   MCP_CONNECT_TOOL_NAME,
+  createMcpPlaceholderClaims,
   makeMcpToolName,
+  type McpClientManager,
   type McpConnectManager,
   type McpServerSnapshot,
   type McpServerStatus,
@@ -41,22 +43,28 @@ function serverSnapshot(id: string, status: McpServerStatus): McpServerSnapshot 
   }
 }
 
-/** 活的登记表：测试里改 status 就等于服务真的连上/断开了。 */
+/** 活的登记表：测试里改 status 就等于服务真的连上/断开了（并像真 manager 那样广播）。 */
 function fakeManager(...servers: McpServerSnapshot[]) {
   const records = new Map(servers.map((server) => [server.id, server]))
+  const listeners = new Set<(snapshots: readonly McpServerSnapshot[]) => void>()
   const manager = {
     reconnect: async () => {
       throw new Error('本测试不该连接任何服务')
     },
     get: (id: string) => records.get(id),
     list: () => [...records.values()],
-  } as unknown as McpConnectManager
+    subscribe: (listener: (snapshots: readonly McpServerSnapshot[]) => void) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  } as unknown as McpConnectManager & Pick<McpClientManager, 'list' | 'subscribe'>
   return {
     manager,
     setStatus(id: string, status: McpServerStatus) {
       const current = records.get(id)
       if (!current) throw new Error(`unknown server: ${id}`)
       records.set(id, { ...current, status })
+      for (const listener of [...listeners]) listener([...records.values()])
     },
   }
 }
@@ -74,9 +82,11 @@ function wire(options: {
     probe = config.unconnectedToolProvider
   })
   let cache = options.cache?.() ?? cacheWithDocs()
-  wireMcpToolProbes({
+  const claims = createMcpPlaceholderClaims()
+  const wiring = wireMcpToolProbes({
     registry,
     manager,
+    claims,
     getCache: () => cache,
     // 真实接法里这就是 manager 的登记表，所以这里也照着登记表答。
     isConnected: (serverId) => manager.get(serverId)?.status === 'connected',
@@ -85,7 +95,13 @@ function wire(options: {
   return {
     registry,
     configure,
+    claims,
     setStatus,
+    syncPlaceholders: wiring.syncPlaceholders,
+    placeholderNames: () => registry.list()
+      .map((entry) => entry.name)
+      .filter((name) => name.startsWith('mcp__'))
+      .sort(),
     setCache: (next: McpToolNameCache) => {
       cache = next
     },
@@ -160,5 +176,58 @@ describe('wireMcpToolProbes · F4 连接工具的清单', () => {
     wired.setCache(cacheWithDocs())
 
     expect(wired.connectToolDescription()).toContain('search')
+  })
+})
+
+describe('wireMcpToolProbes · D2 占位工具', () => {
+  it('未连接服务的缓存清单以占位工具的形式进 registry，模型直接看得见', () => {
+    const wired = wire()
+
+    expect(wired.placeholderNames())
+      .toEqual([makeMcpToolName('docs', 'draft'), makeMcpToolName('docs', 'search')])
+    // 占位与登记表成对：账实相符是 reconcile 能放行同名占位的前提。
+    expect(wired.claims.namesFor('docs').sort()).toEqual(wired.placeholderNames())
+  })
+
+  it('manager 状态变化经订阅自动重算：连上之后占位集合为空', () => {
+    const wired = wire()
+    expect(wired.placeholderNames()).toHaveLength(2)
+
+    wired.setStatus('docs', 'connected')
+
+    expect(wired.placeholderNames()).toEqual([])
+  })
+
+  it('缓存变化经宿主回调重算：syncPlaceholders 是接线交回给宿主的那个口子', () => {
+    const wired = wire({ cache: () => ({}) })
+    expect(wired.placeholderNames()).toEqual([])
+
+    // 真实接法里这一步由缓存投影的 publish 触发（写入 / 删除 / 冷启动读盘各一次）。
+    wired.setCache(cacheWithDocs())
+    wired.syncPlaceholders()
+
+    expect(wired.placeholderNames()).toHaveLength(2)
+  })
+
+  it('占位不覆盖真实工具：同名已注册时跳过', () => {
+    const wired = wire()
+    const name = makeMcpToolName('docs', 'search')
+    const placeholder = wired.claims.get(name)?.tool
+
+    // 模拟 reconcile 之后的状态：真实工具接管这个名字，占位登记已释放。
+    wired.registry.register({
+      name,
+      runtime: 'internal',
+      skill: { description: '真实工具', content: '真实指南' },
+      inputSchema: { type: 'object' },
+      execute: () => ({ ok: true }),
+    })
+    wired.claims.release(name, placeholder)
+
+    wired.syncPlaceholders()
+
+    expect(wired.registry.list().find((entry) => entry.name === name)?.description)
+      .toBe('真实工具')
+    expect(wired.claims.get(name)).toBeUndefined()
   })
 })

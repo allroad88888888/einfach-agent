@@ -134,7 +134,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   无 `env` 配置升级前后指纹逐字节相同的用例都要有；
   `pnpm exec vitest run apps/web/src/mcp` + `pnpm build`
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE 702d9af
 
 ### C2 · 设置面板支持录入与编辑凭据字段
 
@@ -147,7 +147,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   禁用并给中文提示（凭据仅桌面端支持）；`pnpm exec vitest run apps/web/src/agentNew/ui/SettingsCenter.mcp.test.tsx`
   + `pnpm build`
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### C3 · JSON 导入通道支持 headers/env
 
@@ -156,7 +156,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
 - **判据**：桌面宿主导入含 `headers`/`env` 的 JSON 被接受并落盘；浏览器宿主导入同样内容报中文
   错误、**不静默剥离**；`pnpm exec vitest run apps/web/src/mcp` + `pnpm build`
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE 5862a34
 
 ### D0 · 修复工具名缓存反查的双重前缀
 

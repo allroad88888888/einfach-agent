@@ -48,6 +48,8 @@ interface McpToolsRefresh {
 export class McpClientManager {
   private readonly registry: McpClientManagerOptions['registry']
   private readonly connector: McpConnector
+  /** 只做透传：怎么用见 toolReconciler.ts 与 placeholderSync.ts，本类不认识占位。 */
+  private readonly placeholders: McpClientManagerOptions['placeholders']
   private readonly records = new McpServerRecords()
   private readonly queue = new McpServerQueue()
   private readonly activeConnects = new Map<string, AbortController>()
@@ -79,6 +81,7 @@ export class McpClientManager {
   constructor(options: McpClientManagerOptions) {
     this.registry = options.registry
     this.connector = options.connector ?? createStreamableHttpMcpConnector()
+    this.placeholders = options.placeholders
   }
 
   /**
@@ -428,6 +431,7 @@ export class McpClientManager {
       config: record.config,
       connection,
       registered: record.registered,
+      ...(this.placeholders ? { placeholders: this.placeholders } : {}),
       ...(options ? { options } : {}),
     })
   }

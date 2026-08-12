@@ -35,16 +35,33 @@ export interface CreateMcpToolNameCacheProjectionOptions {
   cache: McpToolNameCacheHandle
   /** 这个 service 是否还在（dispose 之后不该再动它的 store）。 */
   isActive(): boolean
+  /**
+   * 「缓存变了」的第二个消费者：占位工具同步器（D2）。
+   *
+   * 【为什么挂在这里】占位集合是缓存的派生视图，和界面 atom 是同一件事的两个投影：缓存一变
+   * 两边都得重算。而 publish 已经是「缓存变了」唯一的汇合点——写入、删除、冷启动读盘三条路
+   * 都经过它。挂在这里，新增写入点的人不需要记得同时通知占位；另起一条通知路径才是给
+   * 「只更新了一半」留后门。
+   *
+   * 绝不 reject 的纪律照旧对它成立：它抛错不该把「缓存已经写成功」改写成失败。
+   */
+  onChange?(): void
 }
 
 export function createMcpToolNameCacheProjection({
   store,
   cache,
   isActive,
+  onChange,
 }: CreateMcpToolNameCacheProjectionOptions): McpToolNameCacheProjection {
   const publish = (): void => {
     if (!isActive()) return
     store.setter(mcpLastKnownToolsAtom, cache.read())
+    try {
+      onChange?.()
+    } catch {
+      // 观察者坏掉不能反过来打断缓存写入。
+    }
   }
 
   return {

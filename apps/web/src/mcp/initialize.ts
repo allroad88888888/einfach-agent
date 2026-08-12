@@ -6,6 +6,7 @@ import {
   createMcpClientManager,
   createMcpConnectorRouter,
   createMcpConnectTargetProbe,
+  createMcpPlaceholderClaims,
   createStreamableHttpMcpConnector,
 } from '@web-agent/tools-mcp'
 import {
@@ -49,7 +50,15 @@ export function initializeMcpSettings(): void {
     'streamable-http': createStreamableHttpMcpConnector(),
     ...(tauriHost ? { stdio: createTauriStdioMcpConnector() } : {}),
   })
-  const manager = createMcpClientManager({ registry: toolRegistry, connector })
+  // 占位登记表（D2/D2a）：manager 的 reconcile 与占位同步器必须共用【同一个实例】——
+  // reconcile 靠它放行「本服务占位正占着这个名字」，两边各造一份的话，每个有缓存清单的
+  // 服务一连接就会抛工具名冲突。所以它在这里创建，两边都从这里拿。
+  const placeholderClaims = createMcpPlaceholderClaims()
+  const manager = createMcpClientManager({
+    registry: toolRegistry,
+    connector,
+    placeholders: placeholderClaims,
+  })
   // 同一个理由的第二根线：连接工具的风险要按目标服务分级（stdio 会在本机起子进程 → 需确认；
   // HTTP 只发网络请求 → 放行），而 core 不能反向依赖本包去查 transport。这里把 mcp 域的探针接进
   // 运行时配置；不接这根线时 core 会把每次连接都当危险处理（从严），不会静默放行。
@@ -59,9 +68,14 @@ export function initializeMcpSettings(): void {
       isLaunchConsented: isMcpLaunchConsented,
     }),
   })
+  // 占位同步器要等 manager 装好才造得出来，而 service 在下一行就已经建好——所以递给它的是
+  // 一个【调用当刻才解析】的闭包，而不是同步器本身。缓存的每次写入/删除/冷启动读盘都经
+  // 投影的 publish 汇合成这一次调用（见 toolNameCacheProjection.ts）。
+  let syncPlaceholders: (() => void) | undefined
   configureMcpSettings({
     manager,
     storage: createDesktopMcpConfigStorage(),
+    onToolNameCacheChanged: () => syncPlaceholders?.(),
     // credentials 与 stdio 现在都等于「是不是桌面」，但回答的是两个不同问题（C3，见
     // types.ts 的 McpSettingsCapabilities 注释）——凭据能不能落盘，取决于桌面配置文件
     // 是不是这个宿主唯一的持久化落点，与能不能起本机子进程是两条独立的准入线，只是当前
@@ -72,11 +86,17 @@ export function initializeMcpSettings(): void {
   // 顺带把工具名缓存喂给模型看得见的那两处（B5，规矩见 toolProbeWiring.ts）：两个读出口都从
   // commands.ts 走，因此 configureMcpSettings 之后换掉的 service 也能被这两根线读到。
   // 缓存本身在 hydrateMcpSettings() 里从磁盘读进来（main.tsx 启动时就调）。
-  wireMcpToolProbes({
+  // 第三根线（D2）：未连接服务的缓存清单以占位工具的形式进 ToolRegistry。
+  const wiring = wireMcpToolProbes({
     registry: toolRegistry,
     manager,
+    claims: placeholderClaims,
     getCache: readMcpToolNameCache,
     isConnected: isMcpServerConnected,
     configure: configureCommands,
   })
+  // 同步器在创建时已经对过一次账，但装配这一刻缓存还没读盘（hydrateMcpSettings 才读），
+  // 所以那一次必然算不出任何占位。真正装上占位的是冷启动读盘完成后经上面那个闭包回来的
+  // 这一次重算——以及此后每一次缓存写入/删除。
+  syncPlaceholders = wiring.syncPlaceholders
 }

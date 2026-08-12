@@ -14,15 +14,42 @@
 // 连接状态）按上面的规矩组起来。抽出来才有一个可以直接断言「线真的接上了」的单元——
 // initialize.ts 那边还夹着 isTauri、连接器路由等一堆与本判据无关的东西。
 
+// 【第三根线 · D2】未连接服务的缓存清单还要以【占位工具】的形式进 ToolRegistry：模型于是
+// 在工具清单里直接看得见 mcp__<服务>__<工具>，而不是只在 connect_mcp_server 的描述里读到
+// 一串名字。占位的形状与生命周期都在 tools-mcp（placeholderTool.ts / placeholderSync.ts），
+// 这里只做同一件事——把宿主手里的 registry、manager、缓存读出口和占位登记表接起来。
+//
+// 【为什么占位也放这个函数】和上面两根线同理，而且更硬：占位与 B4 探针是同一份缓存的两种
+// 呈现，只接一半就会自相矛盾（清单里看得见工具，点名调用却回一句 unknown tool）。
+
 import type { UnconnectedToolProviderProbe } from '@web-agent/core/tools/schemaResult'
 import type { ToolRegistry } from '@web-agent/core/tools/toolRegistry'
-import { registerMcpTools, type McpConnectManager } from '@web-agent/tools-mcp'
+import {
+  createMcpPlaceholderSync,
+  registerMcpTools,
+  type McpClientManager,
+  type McpConnectManager,
+  type McpPlaceholderClaims,
+} from '@web-agent/tools-mcp'
 import { createCachedToolProviderProbe } from './cachedToolProviderProbe'
-import { listLastKnownTools, type McpToolNameCache } from './toolNameCache'
+import {
+  listLastKnownTools,
+  readLastKnownTools,
+  type McpToolNameCache,
+} from './toolNameCache'
 
 export interface McpToolProbeWiringOptions {
   registry: ToolRegistry
-  manager: McpConnectManager
+  /**
+   * 连接工具只要 McpConnectManager 那三个方法，占位同步器还要 list/subscribe——
+   * 交集就是这个类型。宿主递进来的本来就是同一个 manager 实例。
+   */
+  manager: McpConnectManager & Pick<McpClientManager, 'list' | 'subscribe'>
+  /**
+   * 占位登记表。必须与 createMcpClientManager 收到的是【同一个实例】：reconcile 靠它放行
+   * 「本服务占位正占着这个名字」，两边各造一份的话，每个有缓存清单的服务一连接就抛工具名冲突。
+   */
+  claims: McpPlaceholderClaims
   /**
    * 取当前那份工具名缓存。必须是进程内那一份的读出口（commands.ts 的 readMcpToolNameCache），
    * 不能是调用方自己攒的快照——那样两根线看到的会是各自不同的旧数据。
@@ -37,14 +64,28 @@ export interface McpToolProbeWiringOptions {
   configure(config: { unconnectedToolProvider: UnconnectedToolProviderProbe }): void
 }
 
-/** 注册 mcp 域工具（带上次已知清单），并把未连接工具探针接进运行时配置。 */
+export interface McpToolProbeWiring {
+  /**
+   * 立刻重算占位集合。manager 状态变化由同步器自己订阅，剩下三个时机由宿主调它：
+   * 缓存写入/删除之后、冷启动读盘（hydrate）之后、以及服务被删除后的补算。
+   */
+  syncPlaceholders(): void
+  /** 退订 manager。已注册的占位不清除——换 core 时由新的同步器接管。 */
+  dispose(): void
+}
+
+/**
+ * 注册 mcp 域工具（带上次已知清单）、把未连接工具探针接进运行时配置，并让未连接服务的
+ * 缓存清单以占位工具的形式进 ToolRegistry。
+ */
 export function wireMcpToolProbes({
   registry,
   manager,
+  claims,
   getCache,
   isConnected,
   configure,
-}: McpToolProbeWiringOptions): void {
+}: McpToolProbeWiringOptions): McpToolProbeWiring {
   // F4：清单在【调用当刻】才从缓存取，所以探测/连接刷新写进缓存之后立刻生效，
   // 不需要重新 registerMcpTools。
   registerMcpTools(registry, {
@@ -56,4 +97,21 @@ export function wireMcpToolProbes({
   configure({
     unconnectedToolProvider: createCachedToolProviderProbe({ getCache, isConnected }),
   })
+  // D2：占位同步器。同样只递一个【调用当刻才取数】的只读函数，它不认识缓存住在哪。
+  const placeholders = createMcpPlaceholderSync({
+    registry,
+    manager,
+    claims,
+    lastKnownTools: (serverId) => readLastKnownTools(getCache(), serverId),
+    // 跨服务撞名（两个服务的缓存里出现同一个注册名）是先到先得、后者跳过，但不能静默——
+    // 否则「某个工具怎么一直不出现在清单里」将完全无从查起。这里刻意【不】报「被真实工具
+    // 占着」那一类跳过：那是正常状态（真实工具永远优先），报了只会在每次连接时刷屏。
+    onSkip: ({ serverId, name, reason }) => {
+      console.warn(`[mcp] 占位工具 ${name}（服务 ${serverId}）未注册：${reason}`)
+    },
+  })
+  return {
+    syncPlaceholders: placeholders.sync,
+    dispose: placeholders.dispose,
+  }
 }
