@@ -87,6 +87,62 @@ export function sanitizeMcpEnv(value: unknown): McpCredentialFieldResult {
 }
 
 /**
+ * 凭据字段在设置表单里的**文本形态**（C2）：多行 `KEY=VALUE`，与 config.ts 里 argsText
+ * 的"文本草稿、提交时才解析"是同一套路——用户看到的是一整块可编辑文本，不是一行一个输入框
+ * 拼出来的表格。放在这个文件而不是 config.ts：这两个 parse 函数解析完立刻调用上面的
+ * sanitizeMcpHeaders / sanitizeMcpEnv 做形状校验，是「凭据字段」这一个概念的两种表示之间
+ * 的转换，不是 config.ts 里那些"名称 / 地址 / 命令行"格式校验的同类。
+ */
+export type McpCredentialTextParseResult =
+  | { readonly value?: Readonly<Record<string, string>>; readonly error?: undefined }
+  | { readonly value?: undefined; readonly error: string }
+
+/**
+ * 逐行拆成 KEY=VALUE。空文本（或全是空白行）视为"没有条目"而不是错误——表单里留空是
+ * 最常见的情况。找不到 `=`、或 `=` 前面是空字符串，都判定为格式错误，把原始行带进提示里
+ * 方便用户定位。值不做 trim（与 sanitizeCredentialMap 同一理由：前后空白可能是凭据本身）。
+ */
+function parseCredentialLines(text: string): { entries?: Record<string, string>; error?: string } {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
+  if (lines.length === 0) return {}
+
+  const entries: Record<string, string> = {}
+  for (const line of lines) {
+    const separatorIndex = line.indexOf('=')
+    const key = separatorIndex > 0 ? line.slice(0, separatorIndex).trim() : ''
+    if (!key) {
+      return { error: `格式应为每行一个“键=值”，无法解析：“${line}”` }
+    }
+    entries[key] = line.slice(separatorIndex + 1)
+  }
+  return { entries }
+}
+
+/** 把表单里多行文本解析成 streamable-http 的认证头；形状校验复用 sanitizeMcpHeaders。 */
+export function parseMcpHeadersText(text: string): McpCredentialTextParseResult {
+  const parsed = parseCredentialLines(text)
+  if (parsed.error) return { error: `请求头${parsed.error}` }
+  if (!parsed.entries) return {}
+  const sanitized = sanitizeMcpHeaders(parsed.entries)
+  if (!sanitized.ok) {
+    return { error: '请求头字段名或值不合法（字段名需符合 HTTP 请求头命名规则，且不能包含控制字符）' }
+  }
+  return { value: sanitized.value }
+}
+
+/** 把表单里多行文本解析成 stdio 子进程环境变量；形状校验复用 sanitizeMcpEnv。 */
+export function parseMcpEnvText(text: string): McpCredentialTextParseResult {
+  const parsed = parseCredentialLines(text)
+  if (parsed.error) return { error: `环境变量${parsed.error}` }
+  if (!parsed.entries) return {}
+  const sanitized = sanitizeMcpEnv(parsed.entries)
+  if (!sanitized.ok) {
+    return { error: '环境变量名或值不合法（变量名需符合 POSIX 命名规则，且不能包含控制字符）' }
+  }
+  return { value: sanitized.value }
+}
+
+/**
  * 去掉配置里的凭据字段，得到一份可以写进浏览器存储的副本。
  *
  * 只有 localStorage 宿主需要它：凭据的唯一落点是桌面配置文件，浏览器存储里的东西任何脚本、

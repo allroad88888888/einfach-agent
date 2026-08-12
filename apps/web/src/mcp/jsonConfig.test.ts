@@ -18,6 +18,8 @@ describe('parseMcpJsonConfig', () => {
       argsText: '@playwright/mcp@latest',
       cwd: '',
       autoConnect: false,
+      headersText: '',
+      envText: '',
     }])
   })
 

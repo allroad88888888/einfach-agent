@@ -68,16 +68,27 @@ mcpLastKnownToolsAtom.debugLabel = 'mcpLastKnownTools'
 export const mcpDraftValidationAtom = atom((get) => {
   const draft = get(mcpDraftAtom)
   const validation = validateMcpDraft(draft)
-  if (draft.transport !== 'stdio' || get(mcpSettingsCapabilitiesAtom).stdio) {
-    return validation
+  const capabilities = get(mcpSettingsCapabilitiesAtom)
+  let valid = validation.valid
+  let errors = validation.errors
+
+  if (draft.transport === 'stdio' && !capabilities.stdio) {
+    valid = false
+    errors = { ...errors, transport: 'stdio MCP 仅可在桌面端配置和连接' }
   }
-  return {
-    valid: false,
-    errors: {
-      ...validation.errors,
-      transport: 'stdio MCP 仅可在桌面端配置和连接',
-    },
+
+  // 输入框在浏览器宿主下是禁用的（见 McpCredentialField），这里是第二道防线：即便
+  // 某种方式绕过了禁用输入（比如一份手造的 draft），凭据文本框有内容也不该在浏览器
+  // 宿主上放行提交——凭据的唯一落点是桌面配置文件，没有 credentials 能力就没地方存。
+  if (!capabilities.credentials) {
+    const field = draft.transport === 'streamable-http' ? 'headersText' : 'envText'
+    if (draft[field]?.trim()) {
+      valid = false
+      errors = { ...errors, [field]: '凭据字段仅桌面端支持' }
+    }
   }
+
+  return { valid, errors }
 })
 mcpDraftValidationAtom.debugLabel = 'mcpDraftValidation'
 

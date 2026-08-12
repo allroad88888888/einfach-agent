@@ -84,12 +84,23 @@ export interface McpAddServerDraft {
   cwd: string
   autoConnect: boolean
   /**
-   * 凭据字段（C3）。目前唯一的产出方是 JSON 导入通道（jsonConfig.ts），且只在宿主
-   * 支持落盘凭据（McpSettingsCapabilities.credentials）时才会被填充；手填表单还没有
-   * 对应输入框，字段留空。buildPersistedMcpConfig 原样透传进持久化配置。
+   * 凭据字段的**最终形态**（C3）。唯一产出方是 JSON 导入通道（jsonConfig.ts）：解析时已经
+   * 用 credentialFields.ts 的 sanitizeMcpHeaders/sanitizeMcpEnv 校验过形状，
+   * buildPersistedMcpConfig 见它有值就直接透传，不会再解析下面的文本字段。
    */
   headers?: Readonly<Record<string, string>>
   env?: Readonly<Record<string, string>>
+  /**
+   * 凭据字段的**表单文本形态**（C2）。交互式表单（McpCredentialField 组件）是唯一的
+   * 产出方：多行 `KEY=VALUE`，和 argsText 同一套"文本草稿、提交时才解析"的路子，解析规则见
+   * credentialFields.ts 的 parseMcpHeadersText / parseMcpEnvText。headersText 对应
+   * streamable-http 的 headers，envText 对应 stdio 的 env；只在上面的 headers/env 没有
+   * 预先给出时（即不是走 JSON 导入）才会被 buildPersistedMcpConfig 拿去解析。
+   * 只在宿主支持落盘凭据（McpSettingsCapabilities.credentials）时表单里的输入框才可编辑；
+   * 浏览器宿主下这两个字段恒为空文本。
+   */
+  headersText?: string
+  envText?: string
 }
 
 export type McpDraftField = keyof McpAddServerDraft
@@ -133,6 +144,8 @@ export const EMPTY_MCP_DRAFT: McpAddServerDraft = {
   argsText: '',
   cwd: '',
   autoConnect: true,
+  headersText: '',
+  envText: '',
 }
 
 export const DEFAULT_MCP_JSON_DRAFT = `{

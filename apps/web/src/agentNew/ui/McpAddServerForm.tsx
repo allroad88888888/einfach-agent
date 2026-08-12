@@ -16,6 +16,7 @@ import {
   mcpJsonDraftAtom,
   mcpSettingsCapabilitiesAtom,
 } from '../../mcp/state'
+import { McpCredentialField } from './McpCredentialField'
 
 const TRANSPORT_OPTIONS = [
   { value: 'streamable-http', label: 'Streamable HTTP' },
@@ -47,7 +48,8 @@ export function McpAddServerForm({ temporaryStorage }: { temporaryStorage: boole
         <div>
           <h4>添加 MCP 服务</h4>
           <p>
-            连接地址与启动参数会以明文保存；当前不提供请求头、环境变量或令牌字段，请勿填写任何凭据。
+            连接地址与启动参数会以明文保存，请勿在其中填写凭据；请求头 / 环境变量仅在桌面端
+            可以填写，并只会保存到桌面本地配置文件。
           </p>
         </div>
         <button
@@ -125,18 +127,31 @@ export function McpAddServerForm({ temporaryStorage }: { temporaryStorage: boole
           </label>
 
           {draft.transport === 'streamable-http' ? (
-            <label className="agentnew-mcp-form-wide">
-              <span>服务地址</span>
-              <input
-                className="agentnew-settings-input"
-                value={draft.url}
-                placeholder="https://example.com/mcp"
-                aria-invalid={validation.errors.url ? true : undefined}
-                aria-label="服务地址"
-                onChange={(event) => updateMcpDraft({ url: event.target.value })}
+            <>
+              <label className="agentnew-mcp-form-wide">
+                <span>服务地址</span>
+                <input
+                  className="agentnew-settings-input"
+                  value={draft.url}
+                  placeholder="https://example.com/mcp"
+                  aria-invalid={validation.errors.url ? true : undefined}
+                  aria-label="服务地址"
+                  onChange={(event) => updateMcpDraft({ url: event.target.value })}
+                />
+                {validation.errors.url ? <small>{validation.errors.url}</small> : null}
+              </label>
+              <McpCredentialField
+                id="agentnew-mcp-headers-input"
+                label="请求头（可选）"
+                value={draft.headersText ?? ''}
+                placeholder={'Authorization=Bearer sk-...\nX-Api-Key=...'}
+                formatHint="每行一项，格式为 键=值；用于向服务端发送鉴权信息。"
+                disabled={!capabilities.credentials}
+                disabledHint="凭据字段仅桌面端支持"
+                error={validation.errors.headersText}
+                onChange={(value) => updateMcpDraft({ headersText: value })}
               />
-              {validation.errors.url ? <small>{validation.errors.url}</small> : null}
-            </label>
+            </>
           ) : (
             <>
               <label className="agentnew-mcp-form-wide">
@@ -176,6 +191,17 @@ export function McpAddServerForm({ temporaryStorage }: { temporaryStorage: boole
                 />
                 {validation.errors.cwd ? <small>{validation.errors.cwd}</small> : null}
               </label>
+              <McpCredentialField
+                id="agentnew-mcp-env-input"
+                label="环境变量（可选）"
+                value={draft.envText ?? ''}
+                placeholder={'API_KEY=sk-...\nTOKEN=...'}
+                formatHint="每行一项，格式为 键=值；用于向子进程传递凭据，不会出现在启动参数里。"
+                disabled={!capabilities.credentials}
+                disabledHint="凭据字段仅桌面端支持"
+                error={validation.errors.envText}
+                onChange={(value) => updateMcpDraft({ envText: value })}
+              />
             </>
           )}
 

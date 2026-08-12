@@ -1,5 +1,10 @@
 import type { McpServerConfig } from '@web-agent/tools-mcp'
-import { sanitizeMcpEnv, sanitizeMcpHeaders } from './credentialFields'
+import {
+  parseMcpEnvText,
+  parseMcpHeadersText,
+  sanitizeMcpEnv,
+  sanitizeMcpHeaders,
+} from './credentialFields'
 import { sanitizeStdioLaunchConsent } from './stdioLaunchConsent'
 import type {
   McpAddServerDraft,
@@ -129,6 +134,10 @@ export function validateMcpDraft(draft: McpAddServerDraft): {
   if (draft.transport === 'streamable-http') {
     const result = validateHttpUrl(draft.url)
     if (result.error) errors.url = result.error
+    // draft.headers（有值时）来自 JSON 导入，落笔前已经校验过，这里只管表单自己的文本框；
+    // 两者不会同时有意义的内容（见 buildPersistedMcpConfig 的取值顺序）。
+    const headers = parseMcpHeadersText(draft.headersText ?? '')
+    if (headers.error) errors.headersText = headers.error
   } else {
     const command = draft.command.trim()
     if (!command) errors.command = '请输入启动命令'
@@ -141,6 +150,8 @@ export function validateMcpDraft(draft: McpAddServerDraft): {
     if (cwd && (cwd.length > MAX_CWD_LENGTH || hasControlCharacters(cwd))) {
       errors.cwd = '工作目录格式不正确'
     }
+    const env = parseMcpEnvText(draft.envText ?? '')
+    if (env.error) errors.envText = env.error
   }
 
   return { valid: Object.keys(errors).length === 0, errors }
@@ -153,14 +164,16 @@ export function buildPersistedMcpConfig(
   if (draft.transport === 'streamable-http') {
     const { url } = validateHttpUrl(draft.url)
     if (!url) throw new Error('MCP 服务地址无效')
+    // draft.headers 有值时来自 JSON 导入，落笔前已经在 jsonConfig.ts 用 sanitizeMcpHeaders
+    // 校验过形状，直接透传、不再解析文本框；否则来自交互式表单，此刻解析 headersText
+    // （validateMcpDraft 已经校验过，这里不会再拿到错误）。
+    const headers = draft.headers ?? parseMcpHeadersText(draft.headersText ?? '').value
     return {
       id,
       name: draft.name.trim(),
       transport: 'streamable-http',
       url,
-      // 原样透传：draft.headers 只有 JSON 导入通道会填，且落笔前已经在 jsonConfig.ts
-      // 用 sanitizeMcpHeaders 校验过形状，这里不必再校验一遍。
-      ...(draft.headers ? { headers: draft.headers } : {}),
+      ...(headers ? { headers } : {}),
       autoConnect: draft.autoConnect,
     }
   }
@@ -168,6 +181,8 @@ export function buildPersistedMcpConfig(
   const parsedArgs = parseArgsText(draft.argsText)
   if (!parsedArgs.args) throw new Error(parsedArgs.error ?? 'MCP 启动参数无效')
   const cwd = draft.cwd.trim()
+  // draft.env 有值时来自 JSON 导入（同上，已在 jsonConfig.ts 校验过），否则解析 envText。
+  const env = draft.env ?? parseMcpEnvText(draft.envText ?? '').value
   return {
     id,
     name: draft.name.trim(),
@@ -175,9 +190,7 @@ export function buildPersistedMcpConfig(
     command: draft.command.trim(),
     args: parsedArgs.args,
     ...(cwd ? { cwd } : {}),
-    // 原样透传：draft.env 只有 JSON 导入通道会填，且落笔前已经在 jsonConfig.ts 用
-    // sanitizeMcpEnv 校验过形状，这里不必再校验一遍。
-    ...(draft.env ? { env: draft.env } : {}),
+    ...(env ? { env } : {}),
     // The persisted field itself may legitimately be true (H1) — stdio is a
     // normal boolean preference at the data-model layer. Whether that
     // preference is ever allowed to actually start a local process is a
