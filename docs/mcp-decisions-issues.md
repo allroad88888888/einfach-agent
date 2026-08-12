@@ -155,7 +155,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   调未连接工具时 `tool_provider_not_connected` 回执能命中；
   `pnpm exec vitest run apps/web/src/mcp tools/mcp` + `pnpm build`
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE 3088e6f
 
 ### D1 · 透明连接设计蓝图
 
@@ -178,7 +178,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   覆盖阶段 register 真实工具并释放占位登记；「抛出即 registry 未被改动」契约保持（校验阶段零副作用
   有用例）；`pnpm exec vitest run tools/mcp` + `pnpm build`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### D2 · 缓存清单注册为占位工具
 
