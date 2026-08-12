@@ -1,17 +1,22 @@
-// 占位工具的【形状】判据（蓝图第一节的那张表）。生命周期的判据在 placeholderSync.test.ts。
+// 占位工具的【形状】判据（蓝图第一节的那张表）。生命周期的判据在 placeholderSync.test.ts，
+// 透明连接 execute 的判据在 placeholderExecute.test.ts —— 本文件只钉「长什么样」，
+// 以及「execute 确实是一行委派」。
 
-import { TOOL_PROVIDER_NOT_CONNECTED_CODE } from '@web-agent/core/tools/schemaResult'
-import type { ToolContext } from '@web-agent/core/tools/types'
-import { describe, expect, it } from 'vitest'
-import { MCP_CONNECT_TOOL_NAME } from './connect-mcp-server/connect-mcp-server'
+import type { ToolContext, ToolResult } from '@web-agent/core/tools/types'
+import { describe, expect, it, vi } from 'vitest'
+import type { McpPlaceholderExecutor } from './placeholderExecute'
 import { createMcpPlaceholderTool } from './placeholderTool'
 import { createMcpToolAdapter, makeMcpToolName } from './toolAdapter'
 import type { McpConnection, McpRemoteTool } from './types'
 
-const CACHED_AT = Date.UTC(2026, 7, 10, 9, 30, 0)
-
 function toolContext(): ToolContext {
   return { signal: new AbortController().signal } as unknown as ToolContext
+}
+
+/** 形状用例不关心编排：执行器在这里只是一个可观察的替身。 */
+function fakeExecutor(result: ToolResult = { ok: true }) {
+  const execute = vi.fn(async (): Promise<ToolResult> => result)
+  return { execute } satisfies McpPlaceholderExecutor & { execute: typeof execute }
 }
 
 /** 与 app 侧 toolNameCacheWriter.toCachedTools 同一口径：存注册名 + 快照描述。 */
@@ -35,7 +40,7 @@ describe('占位工具的形状', () => {
       serverId: 'docs',
       entry: { name, description: '搜索文档' },
       runtime: 'internal',
-      cachedAt: CACHED_AT,
+      executor: fakeExecutor(),
     })
 
     // 再套一次 makeMcpToolName 会得到 mcp__docs__mcp__docs__search 这种永不命中的名字，
@@ -49,7 +54,7 @@ describe('占位工具的形状', () => {
       serverId: 'local',
       entry: { name: 'mcp__local__run', description: '' },
       runtime: 'server',
-      cachedAt: CACHED_AT,
+      executor: fakeExecutor(),
     })
 
     expect(stdio.runtime).toBe('server')
@@ -66,7 +71,7 @@ describe('占位工具的形状', () => {
       serverId: 'docs',
       entry,
       runtime: 'internal',
-      cachedAt: CACHED_AT,
+      executor: fakeExecutor(),
     })
 
     // 蓝图第八节的头号缓解手段：远端描述在缓存的 160 字符上限以内时，连接前后 manifest
@@ -79,23 +84,26 @@ describe('占位工具的形状', () => {
       serverId: 'docs',
       entry: { name: 'mcp__docs__search', description: '' },
       runtime: 'internal',
-      cachedAt: CACHED_AT,
+      executor: fakeExecutor(),
     })
 
     expect(tool.skill.description).toContain('from server "docs"')
   })
 
-  it('guide 把四件事都写明：未连接、现在调用会怎样、参数以真实 schema 为准、外部不可信', () => {
+  it('guide 把四件事都写明：上次已知、本次调用会先自动连接再执行、参数以真实 schema 为准、外部不可信', () => {
     const tool = createMcpPlaceholderTool({
       serverId: 'docs',
       entry: { name: 'mcp__docs__search', description: '搜索文档' },
       runtime: 'internal',
-      cachedAt: CACHED_AT,
+      executor: fakeExecutor(),
     })
 
     const guide = tool.skill.content
     expect(guide).toContain('上次已知')
-    expect(guide).toContain(MCP_CONNECT_TOOL_NAME)
+    // D3b 的行为开关：execute 真的会先连接再执行，guide 就必须照实说，不能再让模型
+    // 自己去调连接工具（那是 D2 的临时文案）。
+    expect(guide).toContain('会先自动连接')
+    expect(guide).not.toContain('不执行任何远端操作')
     expect(guide).toContain('真实 schema')
     expect(guide).toContain('不可信')
   })
@@ -105,7 +113,7 @@ describe('占位工具的形状', () => {
       serverId: 'docs',
       entry: { name: 'mcp__docs__search', description: '搜索文档' },
       runtime: 'internal',
-      cachedAt: CACHED_AT,
+      executor: fakeExecutor(),
     })
 
     expect(tool.inputSchema).toEqual({ type: 'object' })
@@ -123,7 +131,7 @@ describe('占位工具的形状', () => {
       serverId: 'docs',
       entry: { name: 'mcp__docs__search', description: '搜索' },
       runtime: 'internal',
-      cachedAt: CACHED_AT,
+      executor: fakeExecutor(),
     })
 
     expect(placeholder.execution).toEqual({
@@ -138,55 +146,35 @@ describe('占位工具的形状', () => {
       serverId: 'docs',
       entry: { name: '  ', description: '' },
       runtime: 'internal',
-      cachedAt: CACHED_AT,
+      executor: fakeExecutor(),
     })).toThrow('cached tool name')
+  })
+
+  it('没有执行器就不该造出占位：guide 已经向模型承诺了「会先自动连接再执行」', () => {
+    expect(() => createMcpPlaceholderTool({
+      serverId: 'docs',
+      entry: { name: 'mcp__docs__search', description: '搜索文档' },
+      runtime: 'internal',
+      executor: undefined as unknown as McpPlaceholderExecutor,
+    })).toThrow('transparent-connect executor')
   })
 })
 
-describe('占位工具的 execute（D2：只指路，不连接）', () => {
-  it('回的是与 core 同源的「该服务尚未连接」结构化回执', async () => {
+describe('占位工具的 execute（D3b：一行委派给执行器）', () => {
+  it('把 serverId、注册名、参数与 ctx 原样交给执行器，形状文件自己不写任何编排', async () => {
+    const executor = fakeExecutor({ ok: true, data: { called: true } })
     const tool = createMcpPlaceholderTool({
       serverId: 'docs',
       entry: { name: 'mcp__docs__search', description: '搜索文档' },
       runtime: 'internal',
-      cachedAt: CACHED_AT,
+      executor,
     })
+    const ctx = toolContext()
 
-    const result = await tool.execute({ q: 'hello' }, toolContext())
+    const result = await tool.execute({ q: 'hello' }, ctx)
 
-    expect(result).toMatchObject({
-      ok: false,
-      code: TOOL_PROVIDER_NOT_CONNECTED_CODE,
-      retryable: false,
-    })
-    const failure = result as { error: string; hint: string; details: Record<string, unknown> }
-    expect(failure.error).toContain('docs')
-    expect(failure.hint).toContain(MCP_CONNECT_TOOL_NAME)
-    expect(failure.details).toMatchObject({
-      serverId: 'docs',
-      executed: false,
-      // 下一步直接给成可执行的调用，模型不需要自己拼。
-      nextCall: { name: MCP_CONNECT_TOOL_NAME, arguments: { serverId: 'docs' } },
-      // trace 靠它把「撞上占位」与「撞上工具闸门」分开统计。
-      viaPlaceholder: true,
-    })
-    expect(failure.details).toMatchObject({ lastKnownAt: new Date(CACHED_AT).toISOString() })
-  })
-
-  it('取消是控制流：signal 已 abort 时抛 AbortError，不降级成一条普通失败', async () => {
-    const tool = createMcpPlaceholderTool({
-      serverId: 'docs',
-      entry: { name: 'mcp__docs__search', description: '搜索文档' },
-      runtime: 'internal',
-      cachedAt: CACHED_AT,
-    })
-    const controller = new AbortController()
-    // 用显式 Error 作为 reason，与运行时取消这条路一致（internal.ts 的 abortError 会给它
-    // 改名成 AbortError）。裸 abort() 在 jsdom 下的 reason 是只读 name 的 DOMException，
-    // 那是 abortError 的既有短板，与占位无关。
-    controller.abort(new Error('user cancelled'))
-
-    await expect(async () => tool.execute({}, { signal: controller.signal } as ToolContext))
-      .rejects.toMatchObject({ name: 'AbortError' })
+    expect(result).toEqual({ ok: true, data: { called: true } })
+    expect(executor.execute).toHaveBeenCalledTimes(1)
+    expect(executor.execute).toHaveBeenCalledWith('docs', 'mcp__docs__search', { q: 'hello' }, ctx)
   })
 })

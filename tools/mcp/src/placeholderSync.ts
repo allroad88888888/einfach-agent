@@ -30,6 +30,7 @@ import type {
   McpLastKnownToolList,
 } from './connect-mcp-server/lastKnownTools'
 import type { McpPlaceholderClaims } from './placeholderClaims'
+import { createMcpPlaceholderExecutor } from './placeholderExecute'
 import { createMcpPlaceholderTool } from './placeholderTool'
 import { runtimeFor } from './serverConfig'
 import type { McpServerSnapshot } from './types'
@@ -53,13 +54,21 @@ export interface McpPlaceholderSkip {
 
 export interface CreateMcpPlaceholderSyncOptions {
   registry: ToolRegistry
-  /** 登记表与状态变化的来源。只用到这两个读面，不给同步器任何连接能力。 */
-  manager: Pick<McpClientManager, 'list' | 'subscribe'>
+  /**
+   * 登记表、状态变化，以及占位被调用时要走的那条连接路径。
+   *
+   * 前两个（list / subscribe）是同步器自己算 desired 用的；后两个（get / reconnect）它一次
+   * 都不调，只是原样转交给执行器——透明连接的编排在 placeholderExecute.ts，同步器仍然不
+   * 拥有任何连接能力。
+   */
+  manager: Pick<McpClientManager, 'list' | 'subscribe' | 'get' | 'reconnect'>
   /** 与 manager 的 reconcile 路径【同一个实例】，否则连接时真实工具会被判成工具名冲突。 */
   claims: McpPlaceholderClaims
   lastKnownTools: McpPlaceholderToolsProbe
   /** 撞名跳过时的留痕出口。不接就是静默——所以宿主该接一个，见 app 侧接线。 */
   onSkip?(skip: McpPlaceholderSkip): void
+  /** 透明连接的独立超时；默认 180 秒。主要为宿主与确定性测试开放。 */
+  connectTimeoutMs?: number
 }
 
 export interface McpPlaceholderSync {
@@ -94,10 +103,25 @@ export function createMcpPlaceholderSync({
   claims,
   lastKnownTools,
   onSkip,
+  connectTimeoutMs,
 }: CreateMcpPlaceholderSyncOptions): McpPlaceholderSync {
   if (!registry || !manager || !claims || typeof lastKnownTools !== 'function') {
     throw new Error('createMcpPlaceholderSync requires registry, manager, claims and lastKnownTools')
   }
+
+  /**
+   * 透明连接的编排，【整个同步器只造一次】。
+   *
+   * 它内部那张「serverId → 在途连接」的单飞表必须比占位实例长寿：占位每次重算都是新实例
+   * （expected 校验按实例比对），表跟着实例走就等于每刷新一次缓存清一次账，两个并发调用会
+   * 各连一次，后一次把前一次刚建好的连接拆掉（见 placeholderExecute.ts 文件头）。
+   */
+  const executor = createMcpPlaceholderExecutor({
+    registry,
+    manager,
+    claims,
+    ...(connectTimeoutMs !== undefined ? { connectTimeoutMs } : {}),
+  })
 
   /**
    * 本同步器手上还有占位的服务。
@@ -131,7 +155,6 @@ export function createMcpPlaceholderSync({
   const registerWanted = (
     server: McpServerSnapshot,
     desired: ReadonlyMap<string, McpLastKnownToolEntry>,
-    cachedAt: number,
   ): void => {
     const serverId = server.id
     const runtime = runtimeFor(server.config)
@@ -141,7 +164,7 @@ export function createMcpPlaceholderSync({
       const holdsMine = mine !== undefined && registry.has(name, mine)
       // 每次都造新实例：registry 与登记表的 expected 校验全按实例比对，共享实例会让
       // 「谁占着这个名字」失去分辨力。形状没变时下面会原样丢弃它，不产生任何注册。
-      const placeholder = createMcpPlaceholderTool({ serverId, entry, runtime, cachedAt })
+      const placeholder = createMcpPlaceholderTool({ serverId, entry, runtime, executor })
 
       if (holdsMine && sameShape(mine, placeholder.skill.description, runtime)) continue
       if (holdsMine) {
@@ -181,7 +204,6 @@ export function createMcpPlaceholderSync({
     for (const serverId of new Set([...servedServers, ...servers.keys()])) {
       const server = servers.get(serverId)
       let desired = new Map<string, McpLastKnownToolEntry>()
-      let cachedAt = 0
 
       if (server && server.status !== 'connected') {
         let list: McpLastKnownToolList | undefined
@@ -193,11 +215,10 @@ export function createMcpPlaceholderSync({
           continue
         }
         desired = toDesired(list)
-        cachedAt = typeof list?.cachedAt === 'number' ? list.cachedAt : 0
       }
 
       releaseUnwanted(serverId, new Set(desired.keys()))
-      if (server && desired.size > 0) registerWanted(server, desired, cachedAt)
+      if (server && desired.size > 0) registerWanted(server, desired)
 
       if (claims.namesFor(serverId).length > 0) servedServers.add(serverId)
       else servedServers.delete(serverId)

@@ -220,7 +220,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   写明装配硬约束（占位注册与探针同进同退）；模型路径确认不回写起进程指纹；
   `pnpm exec vitest run packages/agent-core/src/runtime apps/web/src/mcp` + `pnpm build`
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE 3aec47b
 
 ### D3b · 占位工具透明连接 execute
 
@@ -233,7 +233,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   回归说明、工具已消失回执附真实清单、AbortError 透传、失败不清缓存不注销占位；
   `pnpm exec vitest run tools/mcp apps/web/src/mcp` + `pnpm build`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### D4 · 连接工具文案适配
 

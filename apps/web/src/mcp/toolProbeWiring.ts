@@ -55,8 +55,10 @@ import {
 export interface McpToolProbeWiringOptions {
   registry: ToolRegistry
   /**
-   * 连接工具只要 McpConnectManager 那三个方法，占位同步器还要 list/subscribe——
-   * 交集就是这个类型。宿主递进来的本来就是同一个 manager 实例。
+   * 连接工具只要 McpConnectManager 那三个方法（reconnect/get/list），占位同步器还要
+   * list/subscribe 算 desired、并把 get/reconnect 转交给透明连接执行器（D3b）——
+   * 交集就是这个类型。宿主递进来的本来就是同一个 manager 实例：显式连接与占位的透明连接
+   * 必须走同一个连接状态机，否则单飞、退避与起进程确认会各算各的。
    */
   manager: McpConnectManager & Pick<McpClientManager, 'list' | 'subscribe'>
   /**

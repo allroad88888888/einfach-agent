@@ -43,6 +43,12 @@ export function fakeManager(...servers: McpServerSnapshot[]) {
         listeners.add(listener)
         return () => listeners.delete(listener)
       },
+      // 同步器自己一次都不调这两个，它们是原样转交给透明连接执行器的（D3b）。
+      // 生命周期的用例不该连接任何东西，所以 reconnect 直接炸——真连上了就是判据错了。
+      get: (id: string) => records.get(id),
+      reconnect: async (): Promise<McpServerSnapshot> => {
+        throw new Error('本测试不该连接任何服务')
+      },
     },
     setStatus(id: string, status: McpServerStatus) {
       const current = records.get(id)
