@@ -37,6 +37,7 @@
 | [上下文缓存成本 · 后续跟进项](context-cache-followups.md) | F1 实测验证（最高优先）、F2 尾巴失效归零、F3 会话过长提示；F5 跨 run 复用暂不做，C1/C2 已关闭并附结论 |
 | [请求组装归因交接（2026-08-04）](context-cache-request-assembly-handover-2026-08-04.md) | 已证实的低命中来源、trace 入口、接手实施顺序与复测口径 |
 | [MCP 未决决策落地 Issue 树](mcp-decisions-issues.md) | 执行中：六条未决决策已全部拍板（凭据静态 token、配置迁文件存储、透明连接 hybrid、超时 1 小时等），按 issue 逐项落地 |
+| [MCP 透明连接蓝图](mcp-transparent-connect-blueprint.md) | 已批准设计、未实施：缓存清单注册为占位工具、按需透明连接、起进程确认与 reconcile 的复用规则、`connect_mcp_server` 的新分工与上下文预算 |
 | [项目路线图](ROADMAP.md) | 阶段 0–4 已完成的交付与验收记录；后续仅在获得明确授权后推进 R5 协议实现、可选行为评测或新的路线图条目 |
 
 蓝图描述目标形态，不代表所有 API 都已交付。引用蓝图时需要同时核对实现和测试。

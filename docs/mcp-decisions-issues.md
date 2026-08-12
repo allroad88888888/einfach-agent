@@ -45,9 +45,12 @@
   - C2 设置面板凭据字段
   - C3 JSON 导入支持 headers/env
 - D · 透明连接（保留显式工具）
+  - D0 修复缓存名反查的双重前缀（蓝图发现的存量 bug，前置）
   - D1 设计蓝图
+  - D2a reconciler 放行本服务占位（前置阻塞）
   - D2 缓存清单注册为占位工具
-  - D3 占位工具按需透明连接
+  - D3a 起进程风险面扩展（安全关键，必须先于 D3b）
+  - D3b 占位工具透明连接 execute
   - D4 连接工具文案适配
 - E · 长任务
   - E1 硬超时提到 1 小时
@@ -57,7 +60,8 @@
   - Z2 退役本 issue 树
 
 并行提示：A1、A2、B1、D1、E1 改动面互不重叠，可同时派。E1/E2 同文件串行（已有依赖）。
-C2 与 C3 可并行。D 分支内部串行。
+C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a → D3b → D4（顺序理由见蓝图
+「实施拆分建议」；D2/D3 按蓝图重拆为 D2a/D2/D3a/D3b，2026-08-12）。
 
 ## 卡片
 
@@ -140,6 +144,19 @@ C2 与 C3 可并行。D 分支内部串行。
 - **模型**：sonnet
 - **状态**：TODO
 
+### D0 · 修复工具名缓存反查的双重前缀
+
+- **依赖**：—
+- **改动面**：`apps/web/src/mcp/toolNameCache.ts`（`findLastKnownToolProvider` 改为直接比较缓存
+  条目名，类型注释同步修正）、其调用与接线点（`cachedToolProviderProbe.ts` /
+  `toolProbeWiring.ts`，去掉 `toRegisteredName` 注入）、`toolNameCache.lastKnown.test.ts`
+  （fixture 改用注册名，复现原 bug 后转绿）
+- **判据**：缓存条目名即注册名（`toCachedTools` 语义不变），反查直接比较；新用例证明模型用注册名
+  调未连接工具时 `tool_provider_not_connected` 回执能命中；
+  `pnpm exec vitest run apps/web/src/mcp tools/mcp` + `pnpm build`
+- **模型**：opus
+- **状态**：TODO
+
 ### D1 · 透明连接设计蓝图
 
 - **依赖**：—
@@ -152,31 +169,61 @@ C2 与 C3 可并行。D 分支内部串行。
 - **模型**：opus
 - **状态**：DOING
 
+### D2a · reconciler 放行本服务占位
+
+- **依赖**：D0、D1
+- **改动面**：`tools/mcp/src/toolReconciler.ts`（冲突判定与覆盖阶段）、占位登记表的最小接口
+  （`tools/mcp/src/` 新文件，形状以蓝图第五节为准）、colocated 测试
+- **判据**：冲突判定放行「本服务占位占着的名字」（判据来自占位登记 `owns(name)`，不看名字长相）；
+  覆盖阶段 register 真实工具并释放占位登记；「抛出即 registry 未被改动」契约保持（校验阶段零副作用
+  有用例）；`pnpm exec vitest run tools/mcp` + `pnpm build`
+- **模型**：opus
+- **状态**：TODO
+
 ### D2 · 缓存清单注册为占位工具
 
-- **依赖**：D1
-- **改动面**：以 D1 蓝图为准；预计为 `tools/mcp/src/` 新占位模块（≤300 行）、
-  `apps/web/src/mcp/toolProbeWiring.ts`（缓存 → 占位的接线）、colocated 测试
-- **判据**：未连接但有缓存清单的服务，其 `mcp__<服务>__<工具>` 出现在 registry；连接成功后被
-  reconcile 替换为真实工具；用户删除服务后占位随之注销；
+- **依赖**：D2a
+- **改动面**：`tools/mcp/src/` 新文件（占位工具工厂与生命周期同步器分开两个文件，≤300 行；蓝图
+  明令禁止塞进 `clientManager.ts` / `toolAdapter.ts`）、`apps/web/src/mcp/toolProbeWiring.ts`
+  （缓存 → 占位的接线）、colocated 测试
+- **判据**：蓝图第一节 `desired` 规则四个重算时机各有用例（manager 状态变化、缓存写/删、hydrate
+  完成、服务删除）；占位形状按蓝图表格（透传 schema、`runtimeFor`、同函数生成 description）；
+  注册纪律有用例（`registry.has` 跳过不覆盖、`expected` 注销）；本 issue 内占位 execute 暂返回
+  既有的「请先调用 `connect_mcp_server`」结构化回执，不引入连接路径；
   `pnpm exec vitest run tools/mcp apps/web/src/mcp` + `pnpm build`
 - **模型**：opus
 - **状态**：TODO
 
-### D3 · 占位工具按需透明连接
+### D3a · 起进程风险面扩展
 
 - **依赖**：D2
-- **改动面**：以 D1 蓝图为准；预计为占位模块的 execute / schema 路径（连接 → reconcile → 委派）
-  与确认链路整合、colocated 测试
-- **判据**：直调未连接服务的占位工具自动连接并返回真实结果；未确认 stdio 在 Auto 模式下暂停等
-  用户确认（复用既有探针，不新造判定点）；连接失败返回分类错误、run 不挂死；
+- **改动面**：`packages/agent-core/src/runtime/dangerousTools.ts`（`classifyToolRisk` 的 `mcp__*`
+  分支按蓝图第四节风险表）、装配期事实合成（`apps/web/src/mcp/initialize.ts` /
+  `toolProbeWiring.ts`：注册名 → serverId → 既有 `createMcpConnectTargetProbe`，已连接返回
+  undefined）、colocated 测试
+- **判据**：未连接 + stdio + 未确认 → `requiresConfirmation`（Auto 模式暂停）；未连接 + stdio +
+  已确认 → `dangerous`；HTTP 或已连接 → 维持现状零回归；探针答不上来**不从严**的语义有用例并注释
+  写明装配硬约束（占位注册与探针同进同退）；模型路径确认不回写起进程指纹；
+  `pnpm exec vitest run packages/agent-core/src/runtime apps/web/src/mcp` + `pnpm build`
+- **模型**：opus
+- **状态**：TODO
+
+### D3b · 占位工具透明连接 execute
+
+- **依赖**：D3a
+- **改动面**：D2 的占位模块（execute：入口校验 → 状态复查 → 单飞连接 → reconcile → `registry.run`
+  委派，蓝图第三节 5 步）、失败映射复用 `connectFailureResult.ts`（蓝图第六节表格，`details` 带
+  `viaPlaceholder`）、colocated 测试
+- **判据**：蓝图第三、六节逐条有用例——单飞连接（并发第二调用不拆第一条连接）、连接用独立 180 秒
+  超时不吃 1 小时硬超时、`registry.run` 委派且参数对真实 schema 二段校验、`ctx.callTool` 防环坑有
+  回归说明、工具已消失回执附真实清单、AbortError 透传、失败不清缓存不注销占位；
   `pnpm exec vitest run tools/mcp apps/web/src/mcp` + `pnpm build`
 - **模型**：opus
 - **状态**：TODO
 
 ### D4 · 连接工具文案适配
 
-- **依赖**：D3
+- **依赖**：D3b
 - **改动面**：`tools/mcp/src/connect-mcp-server/`（`connectSkill.ts`、`lastKnownToolsText.ts` 等）、
   colocated 测试
 - **判据**：`connect_mcp_server` 描述不再展开占位已可见的完整清单，定位改为显式预热与诊断；
@@ -200,7 +247,7 @@ C2 与 C3 可并行。D 分支内部串行。
 - **判据**：每个 MCP 工具的 guide 含一行英文引导（与现有 guide 行文风格一致）：调用有 1 小时
   硬超时，可拆分的长任务应拆成多次较小调用；`pnpm exec vitest run tools/mcp` + `pnpm build`
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE 1e71271
 
 ### Z1 · mcp-integration.md 现状同步
 
