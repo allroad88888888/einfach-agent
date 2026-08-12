@@ -47,12 +47,12 @@ export {
 export const MCP_CONNECT_TOOL_NAME = 'connect_mcp_server'
 
 /**
- * 连接的独立超时——刻意不复用 toolAdapter.ts 的 MCP_TOOL_CALL_TIMEOUT_MS（120s）。
- * 那个 120s 是给"已连上、发一次工具调用"的开销算的；连接是重得多的一次性操作：
- * stdio 服务可能要先 spawn 进程、走完 initialize 握手，第一次跑还可能要 npx 现下包——
- * 网络或镜像慢的时候，光是包下载就可能花掉几十秒，这段时间进程已经起来了但还没来得及应答
- * MCP 协议。180s 给了大约 3 倍于常规工具调用的余量，既能扛住冷启动，又不至于在服务真的
- * 挂死时无限期占住一次模型回合。
+ * 连接的独立超时——刻意不复用 toolAdapter.ts 的 MCP_TOOL_CALL_TIMEOUT_MS（1 小时）。
+ * 那 1 小时是给"已连上、执行一次可能长时间运行的工具调用"算的；连接是先于任何工具调用的
+ * 一次性握手动作：stdio 服务可能要先 spawn 进程、走完 initialize 握手，第一次跑还可能要
+ * npx 现下包——网络或镜像慢的时候，光是包下载就可能花掉几十秒，这段时间进程已经起来了但
+ * 还没来得及应答 MCP 协议。180s 足以扛住这类冷启动，同时远小于工具调用的 1 小时上限——
+ * 连接失败要尽快报出来，不该让模型陪跑到接近长任务量级的时长才发现服务根本连不上。
  */
 export const MCP_CONNECT_TIMEOUT_MS = 180_000
 
@@ -247,7 +247,7 @@ export function createMcpConnectTool(
 
       ctx.progress(`正在连接 MCP 服务「${truncate(target.id, 80)}」`)
 
-      // 连接有自己的超时，不吃工具调用的 120s（MCP_TOOL_CALL_TIMEOUT_MS）：见上方常量注释。
+      // 连接有自己的超时，不吃工具调用的 1 小时（MCP_TOOL_CALL_TIMEOUT_MS）：见上方常量注释。
       // 用 raceWithAbort 而不是只把 signal 传给 manager——即使 manager/connector 某条路径
       // 没有认真响应 abort，超时到点后本次 execute 也必须按时返回，不能被下游挂死。
       const timeoutController = new AbortController()

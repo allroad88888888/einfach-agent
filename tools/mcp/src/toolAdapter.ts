@@ -25,7 +25,7 @@ export const MCP_INPUT_SCHEMA_MAX_NODES = 4_000
 export const MCP_TOOL_RESULT_MAX_CHARS = 1_000_000
 export const MCP_TOOL_RESULT_MAX_DEPTH = 64
 export const MCP_TOOL_RESULT_MAX_NODES = 20_000
-export const MCP_TOOL_CALL_TIMEOUT_MS = 120_000
+export const MCP_TOOL_CALL_TIMEOUT_MS = 3_600_000
 export const MCP_TOOL_RESULT_DROPPED_MARKER = {
   outputDropped: true,
   reason: 'unsafe_or_oversized_output',

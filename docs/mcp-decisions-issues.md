@@ -80,7 +80,7 @@ C2 与 C3 可并行。D 分支内部串行。
 - **判据**：`pnpm exec vitest run apps/web/src/mcp` 通过，新用例断言删除服务后
   `readToolNameCache()` 不含该 serverId 且缓存存储被回写；`pnpm build`
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE 5e66f71
 
 ### B1 · 桌面端 MCP 服务配置接上配置文件存储
 

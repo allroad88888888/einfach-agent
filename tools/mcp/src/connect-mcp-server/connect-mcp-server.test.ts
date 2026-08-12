@@ -3,6 +3,7 @@
 import { createToolRegistry } from '@web-agent/core/tools/toolRegistry'
 import { describe, expect, it, vi } from 'vitest'
 import { registerMcpTools } from '../index'
+import { MCP_TOOL_CALL_TIMEOUT_MS } from '../toolAdapter'
 import {
   fakeManager,
   serverSnapshot,
@@ -172,8 +173,9 @@ describe('connect_mcp_server', () => {
     })
   })
 
-  it('defaults the connect timeout to MCP_CONNECT_TIMEOUT_MS, independent from the 120s tool-call timeout', () => {
-    expect(MCP_CONNECT_TIMEOUT_MS).toBeGreaterThan(120_000)
+  it('defaults the connect timeout to MCP_CONNECT_TIMEOUT_MS, independent from the tool-call timeout', () => {
+    expect(MCP_CONNECT_TIMEOUT_MS).toBe(180_000)
+    expect(MCP_CONNECT_TIMEOUT_MS).not.toBe(MCP_TOOL_CALL_TIMEOUT_MS)
   })
 
   it('keeps caller cancellation as AbortError control flow', async () => {

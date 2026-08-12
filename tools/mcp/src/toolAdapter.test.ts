@@ -240,8 +240,8 @@ describe('MCP tool adapter', () => {
     })
   })
 
-  it('uses a finite default call deadline', () => {
-    expect(MCP_TOOL_CALL_TIMEOUT_MS).toBeGreaterThan(0)
+  it('uses a finite one-hour default call deadline', () => {
+    expect(MCP_TOOL_CALL_TIMEOUT_MS).toBe(3_600_000)
   })
 
   it('rejects a missing or non-object MCP input schema before registration', () => {

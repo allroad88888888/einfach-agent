@@ -70,7 +70,7 @@ export function buildConnectFailureResult(
 }
 
 /**
- * 连接超时（独立于工具调用的 120s，见 connect-mcp-server.ts 的 MCP_CONNECT_TIMEOUT_MS）→ ToolResult。
+ * 连接超时（独立于工具调用的 1 小时，见 connect-mcp-server.ts 的 MCP_CONNECT_TIMEOUT_MS）→ ToolResult。
  * 超时不代表配置或环境已经坏了——stdio 服务首次通过 npx 之类的方式冷启动可能还在下载依赖，
  * 所以按可重试处理，而不是走上面的分类器。
  */
