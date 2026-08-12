@@ -10,7 +10,7 @@ import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import type { Checkpoint } from '../checkpoint.type'
+import type { Checkpoint } from '@web-agent/core/state/checkpoint.type'
 import { createIndexedDbHistoryDriver } from './indexedDbDriver'
 
 // cp 样例：两轮（turnIndex 0 / 1），各带一条 user item。

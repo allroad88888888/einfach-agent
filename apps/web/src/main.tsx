@@ -12,7 +12,7 @@ import { buildProjectSkillsProvider } from '@web-agent/core/runtime/projectSkill
 import { configurePersistence } from '@web-agent/core/runtime/persistenceBridge'
 import { configureObservability } from '@web-agent/core/observability/trace'
 import { hydrate } from '@web-agent/core/state/persistence/hydrate'
-import { createIndexedDbHistoryDriver } from '@web-agent/core/state/persistence/indexedDbDriver'
+import { createIndexedDbHistoryDriver } from '@web-agent/persistence-idb'
 import { createIndexedDbLogDriver } from '@web-agent/core/observability/indexedDbLogDriver'
 import { createSessionsPersistence } from '@web-agent/core/state/persistence/sessionsPersistence'
 import { isTauri } from '@tauri-apps/api/core'

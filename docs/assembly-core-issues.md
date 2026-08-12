@@ -155,7 +155,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   槽契约类型（`ProjectSkillsSnapshot` 一族）留在 core；项目 skills 行为不变：
   `pnpm exec vitest run packages/agent-core/src/runtime/core tools/skills`；`pnpm build`
 - **模型**：codex xhigh
-- **状态**：DONE（哈希在下一次提交补记；验收补充：projectSkills store 拆至
+- **状态**：DONE `e5eadb3`（验收补充：projectSkills store 拆至
   `runtime/core/projectSkillsStore.ts`、恢复 coreInstance 头部架构注释）
 
 ### B2 · skills 实现（loader、registry、内置 skill 内容）迁入 tools-skills
@@ -226,7 +226,8 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 - **判据**：`pnpm exec vitest run packages/persistence-idb packages/agent-core/src/state`；
   `pnpm build`；Web 会话持久化行为不变
 - **模型**：codex medium
-- **状态**：DOING
+- **状态**：DONE（哈希在下一次提交补记；验收补充：根 `package.json` 声明 workspace 依赖并
+  `--lockfile-only` 更新 lockfile——CI frozen install 需要）
 
 ### D2 · SQLite 持久化 driver 外移为独立包（Tauri 依赖随走）
 
@@ -286,7 +287,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 - **判据**：每个 `packages/agent-core/src/subagents/` 文件出现在且仅出现在一张卡的改动面里，
   归类附一句理由；`node scripts/check-docs.js`
 - **模型**：codex xhigh
-- **状态**：DONE（哈希在下一次提交补记；归类总表与风险清单见 Git 历史中本卡的执行记录）
+- **状态**：DONE `d0ea8d3`（归类总表与风险清单见该提交的卡片定稿）
 
 ### E1 · core 定义 delegation 执行器槽（ToolContext 委派能力经装配注入）
 

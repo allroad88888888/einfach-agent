@@ -21,7 +21,7 @@ vi.mock('@web-agent/core/observability/trace', () => ({
 vi.mock('@web-agent/core/state/persistence/hydrate', () => ({
   hydrate: vi.fn(async () => false),
 }))
-vi.mock('@web-agent/core/state/persistence/indexedDbDriver', () => ({
+vi.mock('@web-agent/persistence-idb', () => ({
   createIndexedDbHistoryDriver: vi.fn(() => ({})),
 }))
 vi.mock('@web-agent/core/observability/indexedDbLogDriver', () => ({

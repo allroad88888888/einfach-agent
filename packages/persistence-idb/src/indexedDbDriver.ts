@@ -12,8 +12,8 @@
 //   全过程 best-effort：环境无 indexedDB 或底层报错时**读退化为空、写静默返回**，绝不抛（对齐旧 driver 的降级契约）。
 //   不引任何未安装依赖 —— 纯原生 IndexedDB API（jsdom 单测下由 fake-indexeddb 提供全局实现）。
 
-import type { Checkpoint, CheckpointMeta } from '../checkpoint.type'
-import type { HistoryDriver } from './historyDriver'
+import type { Checkpoint, CheckpointMeta } from '@web-agent/core/state/checkpoint.type'
+import type { HistoryDriver } from '@web-agent/core/state/persistence/historyDriver'
 
 const DEFAULT_DB_NAME = 'web-agent-history'
 const STORE_NAME = 'checkpoints'

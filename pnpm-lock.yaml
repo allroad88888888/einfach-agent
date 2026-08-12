@@ -32,6 +32,9 @@ importers:
       '@web-agent/core':
         specifier: workspace:*
         version: link:packages/agent-core
+      '@web-agent/persistence-idb':
+        specifier: workspace:*
+        version: link:packages/persistence-idb
       '@web-agent/react-plugin':
         specifier: workspace:*
         version: link:packages/agent-react
@@ -140,6 +143,12 @@ importers:
       react:
         specifier: ^18.3.1
         version: 18.3.1
+
+  packages/persistence-idb:
+    dependencies:
+      '@web-agent/core':
+        specifier: workspace:*
+        version: link:../agent-core
 
   tools/agents:
     dependencies:
