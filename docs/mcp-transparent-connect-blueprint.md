@@ -1,8 +1,8 @@
 # MCP 透明连接蓝图
 
 > **状态：已实施（D0–D4，2026-08-12）。** 本文作为设计记录保留；当前实现以
-> [MCP 集成](mcp-integration.md) 为准，引用具体行为前仍应核对实现与测试。落地拆分见
-> [MCP 未决决策落地 Issue 树](mcp-decisions-issues.md) 的 D 分支。
+> [MCP 集成](mcp-integration.md) 为准，引用具体行为前仍应核对实现与测试。落地拆分记录在
+> 已退役的 MCP 未决决策落地 Issue 树（`docs/mcp-decisions-issues.md`，见 Git 历史）的 D 分支。
 
 ## 决策与边界
 
