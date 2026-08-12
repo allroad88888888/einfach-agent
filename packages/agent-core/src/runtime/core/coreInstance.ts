@@ -41,6 +41,7 @@ import {
   type PersistenceBridge,
 } from '../persistenceBridge'
 import { createRuntimeConfig, type RuntimeConfig } from './runtimeConfig'
+import { createDefaultPlanRuntime, type PlanRuntimeFactory } from '../../planning/runtime'
 
 export type { RuntimeConfig } from './runtimeConfig'
 
@@ -115,6 +116,7 @@ export interface CoreInstance {
   readonly skillRegistry: SkillsRegistry
   // 装配期设置此实例的内置 skill registry。
   setSkillRegistry(registry?: SkillsRegistry): void
+  planRuntime?: PlanRuntimeFactory
   // 该实例的持久化 driver、写队列与 rootStore 快照。
   readonly persistence: PersistenceBridge
 }
@@ -134,6 +136,7 @@ export function createCoreInstance(opts?: {
   plugins?: readonly PluginInput[]
   projectSkillsProvider?: ProjectSkillsProvider
   skillRegistry?: SkillsRegistry
+  planRuntime?: PlanRuntimeFactory | null
 }): CoreInstance {
   // 1) 根 store：该实例的会话列表值域。
   const rootStore = createStore()
@@ -225,6 +228,7 @@ export function createCoreInstance(opts?: {
   // 7) 项目 Skills 缓存：实现在 ./projectSkillsStore；扫描 provider 经 opts 注入（B1 反转）。
   const projectSkills = createProjectSkillsStore(rootStore, opts?.projectSkillsProvider)
   let skillRegistry = opts?.skillRegistry ?? emptySkillsRegistry
+  const planRuntime = opts?.planRuntime === null ? undefined : opts?.planRuntime ?? createDefaultPlanRuntime
   const timedDispatchers = new Map<string, ActiveTimedToolDispatcher>()
 
   function setSkillRegistry(registry?: SkillsRegistry): void {
@@ -274,6 +278,7 @@ export function createCoreInstance(opts?: {
       return skillRegistry
     },
     setSkillRegistry,
+    planRuntime,
     persistence,
   }
 }

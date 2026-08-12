@@ -4,12 +4,26 @@ import { getPlan, setPlan } from '../../state/planWriters'
 import { appendItem, setRun } from '../../state/sessionWriters'
 import { pruneBrowserCardsAfter, pruneRuntimeTranscriptEventsAfter, setWithdrawnTurnNotice } from '../../state/transientAtoms'
 import { revertToPlanStageCheckpoint, updateCheckpoint } from '../../state/checkpointWriters'
-import { PlanRuntime } from '../../planning/runtime'
 import type { CoreInstance } from '../core/coreInstance'
 import { newId } from '../newId'
 import { persistCheckpoint } from '../persistenceBridge'
 import { assertRunStatus, resumePausedRun } from './runCommands'
 import { currentTurnHasSideEffects } from './turnSafety'
+
+function planRuntimeFor(core: CoreInstance, sessionId: string) {
+  return core.planRuntime?.({
+    get: () => getPlan(sessionId, core),
+    set: (plan) => setPlan(sessionId, plan, core),
+  })
+}
+
+function appendPlanRuntimeUnavailable(sessionId: string, core: CoreInstance, action: string): void {
+  appendItem(sessionId, {
+    id: newId(),
+    createdAt: Date.now(),
+    item: { role: 'assistant', content: `当前运行环境未装配计划能力，无法${action}。` },
+  }, core)
+}
 
 /** Builds plan approval and stage rollback commands bound to one runtime core. */
 export function createPlanCommands(core: CoreInstance, stopRun: () => void) {
@@ -19,7 +33,20 @@ export function createPlanCommands(core: CoreInstance, stopRun: () => void) {
     const run = core.getSessionStore(id).store.getter(runAtom)
     const pending = run?.pendingPlanApproval
     if (!assertRunStatus(run, 'waiting_plan_approval') || !pending) return
-    const runtime = new PlanRuntime({ get: () => getPlan(id, core), set: (plan) => setPlan(id, plan, core) }, Date.now, newId)
+    const runtime = planRuntimeFor(core, id)
+    if (!runtime) {
+      appendItem(id, {
+        id: newId(),
+        createdAt: Date.now(),
+        item: {
+          role: 'tool',
+          tool_call_id: pending.callId,
+          content: JSON.stringify({ error: '当前运行环境未装配计划能力，无法审批计划。' }),
+        },
+      }, core)
+      resumePausedRun(id, run, { pendingPlanApproval: undefined }, core)
+      return
+    }
     const decision = runtime.approve(pending.planId, pending.revision, approved)
     const content = decision.ok
       ? JSON.stringify(approved ? { approved: true, plan: decision.plan } : { error: '用户拒绝了计划', plan: decision.plan })
@@ -31,7 +58,12 @@ export function createPlanCommands(core: CoreInstance, stopRun: () => void) {
   function rollbackPlanStage(planId: string, revision: number, stageId: string): void {
     const id = core.rootStore.getter(activeSessionIdAtom)
     if (!id) return
-    const current = getPlan(id, core)
+    const runtime = planRuntimeFor(core, id)
+    if (!runtime) {
+      appendPlanRuntimeUnavailable(id, core, '回退计划阶段')
+      return
+    }
+    const current = runtime.get()
     if (!current || current.id !== planId || current.revision !== revision) return
     if (!['active', 'completed', 'failed'].includes(current.status) ||
       !current.stages.some((stage) => stage.id === stageId && stage.status !== 'pending')) return
@@ -41,7 +73,6 @@ export function createPlanCommands(core: CoreInstance, stopRun: () => void) {
     setRun(id, undefined, core)
     const point = revertToPlanStageCheckpoint(id, stageId, core)
     if (!point) {
-      const runtime = new PlanRuntime({ get: () => getPlan(id, core), set: (plan) => setPlan(id, plan, core) }, Date.now, newId)
       runtime.rollbackStage(planId, revision, stageId)
       return
     }

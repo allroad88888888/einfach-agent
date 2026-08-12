@@ -76,3 +76,20 @@ export interface SubmitStageResultInput {
 export type PlanMutationResult =
   | { ok: true; plan: PlanSnapshot }
   | { ok: false; error: string }
+
+export interface PlanRuntimeStore {
+  get(): PlanSnapshot | undefined
+  set(plan: PlanSnapshot | undefined): void
+}
+
+export interface PlanRuntime {
+  get(): PlanSnapshot | undefined
+  create(input: CreatePlanInput): PlanMutationResult
+  approve(planId: string, revision: number, approved: boolean): PlanMutationResult
+  execute(planId: string, revision: number): PlanMutationResult
+  update(input: UpdatePlanInput): PlanMutationResult
+  submitStageResult(input: SubmitStageResultInput): PlanMutationResult
+  rollbackStage(planId: string, revision: number, stageId: string): PlanMutationResult
+}
+
+export type PlanRuntimeFactory = (store: PlanRuntimeStore) => PlanRuntime

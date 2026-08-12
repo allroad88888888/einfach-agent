@@ -26,6 +26,7 @@ import {
 } from './coreInstance'
 import type { ToolRegistry } from '../../tools/toolRegistry'
 import type { SkillsRegistry } from '../../skills/contracts'
+import type { PlanRuntimeFactory } from '../../planning/runtime'
 import { createCommands, type CommandApi } from '../commands'
 import { createPluginCommandFacade } from './pluginCommandFacade'
 import type { PluginInput } from './pluginHost'
@@ -47,6 +48,7 @@ export function createCore(opts?: {
   projectSkillsProvider?: ProjectSkillsProvider
   /** 内置 skill registry 由 tools-skills 装配；未传时使用空实现。 */
   skillRegistry?: SkillsRegistry
+  planRuntime?: PlanRuntimeFactory | null
 }): CoreInstance & CommandApi {
   const instance = createCoreInstance(opts)
   const commands = createCommands(instance)

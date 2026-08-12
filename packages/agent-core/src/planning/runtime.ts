@@ -1,16 +1,15 @@
 import type {
   CreatePlanInput,
   PlanMutationResult,
+  PlanRuntime as PlanRuntimeContract,
+  PlanRuntimeStore,
   PlanSnapshot,
   PlanStage,
   SubmitStageResultInput,
   UpdatePlanInput,
 } from './types'
 
-export interface PlanRuntimeStore {
-  get(): PlanSnapshot | undefined
-  set(plan: PlanSnapshot | undefined): void
-}
+export type { PlanRuntimeFactory } from './types'
 
 function fail(error: string): PlanMutationResult {
   return { ok: false, error }
@@ -56,12 +55,16 @@ function validateStages(input: CreatePlanInput['stages']): string | undefined {
   return undefined
 }
 
-export class PlanRuntime {
+export class PlanRuntime implements PlanRuntimeContract {
   constructor(
     private readonly store: PlanRuntimeStore,
     private readonly now: () => number = Date.now,
     private readonly id: () => string = () => crypto.randomUUID(),
   ) {}
+
+  get(): PlanSnapshot | undefined {
+    return this.store.get()
+  }
 
   create(input: CreatePlanInput): PlanMutationResult {
     if (!input.title.trim() || !input.objective.trim()) return fail('plan title and objective are required')
@@ -231,4 +234,8 @@ export class PlanRuntime {
     this.store.set(next)
     return { ok: true, plan: next }
   }
+}
+
+export function createDefaultPlanRuntime(store: PlanRuntimeStore): PlanRuntimeContract {
+  return new PlanRuntime(store)
 }
