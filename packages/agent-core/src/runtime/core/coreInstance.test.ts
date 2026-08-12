@@ -113,13 +113,13 @@ describe('coreInstance —— CoreInstance 抽象与 defaultCore', () => {
       expect(a.abort.isRunning('run1')).toBe(false)
     })
 
-    it('subagent 调度器隔离：同一 treeId 的预留节点不会串到另一 CoreInstance', () => {
+    it('delegation capability 隔离：同一 treeId 的预留节点不会串到另一 CoreInstance', () => {
       const a = createCoreInstance()
       const b = createCoreInstance()
 
-      expect(a.subagentScheduler).not.toBe(b.subagentScheduler)
+      expect(a.delegation?.scheduler).not.toBe(b.delegation?.scheduler)
 
-      a.subagentScheduler.reserveChildren({
+      a.delegation!.scheduler.reserveChildren({
         treeId: 'shared-run',
         sessionId: 'session-a',
         parentPath: 'root',
@@ -128,11 +128,11 @@ describe('coreInstance —— CoreInstance 抽象与 defaultCore', () => {
         children: [{ objective: 'only-a' }],
       })
 
-      expect(a.subagentScheduler.snapshot('shared-run').map((node) => node.objective)).toEqual([
+      expect(a.delegation!.scheduler.snapshot('shared-run').map((node) => node.objective)).toEqual([
         'root agent',
         'only-a',
       ])
-      expect(b.subagentScheduler.snapshot('shared-run')).toEqual([])
+      expect(b.delegation!.scheduler.snapshot('shared-run')).toEqual([])
     })
   })
 

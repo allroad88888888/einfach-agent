@@ -1,7 +1,7 @@
 // tools/types.ts —— 工具统一抽象的类型（见 TOOLS-SPEC.md §2）。
 // 零依赖：不 import runtime/state/UI，工具与工厂都只依赖本文件。
 
-import type { DelegateAgentBatchResult, DelegateAgentInput } from '../subagents/types'
+import type { DelegateAgentBatchResult, DelegateAgentInput } from '../runtime/delegationContract'
 import type {
   CreatePlanInput,
   PlanMutationResult,

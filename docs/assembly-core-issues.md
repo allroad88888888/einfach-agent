@@ -220,13 +220,16 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 ### C2 · planning 逻辑实现迁入 tools-planning，删除 core 残留
 
 - **依赖**：C1
-- **改动面**：`packages/agent-core/src/planning/migrate.ts` 与 `planning/runtime.ts` 中非契约
-  实现迁至 `tools/planning/src/`；`state/planWriters.ts` 与 plan 状态 atoms 留核；
-  装配点接线（`apps/web/src/main.tsx`、`apps/web/src/test/setup.ts`）
+- **改动面**：`planning/runtime.ts` 中非契约实现迁至 `tools/planning/src/`；
+  `planning/migrate.ts` **留核**（执行时裁决：它被 `state/persistence/hydrate.ts` 用于持久化
+  plan 形状迁移，属状态侧——A1 状态中枢化原则的直接推论，作为持久化兼容契约保留）；
+  `state/planWriters.ts` 与 plan 状态 atoms 留核；装配点接线（`apps/web/src/main.tsx`）
 - **判据**：`grep -r "from '.*planning/" packages/agent-core/src/runtime` 只剩契约 import；
   `pnpm exec vitest run tools/planning packages/agent-core`；`pnpm build`
 - **模型**：codex medium
-- **状态**：TODO
+- **状态**：DONE（哈希在下一次提交补记；验收修补：`commands.test.ts`/`toolContext.test.ts`
+  按 main.tsx 装配方式注入真实 plan runtime 补齐 4 个漏网断言，四处部分 fake 的类型 cast
+  修为 `as unknown as` 惯用法；涉及的存量超限测试文件仅小改，拆分另行立项见未决）
 
 ## D · 存储与观测外移
 
@@ -325,7 +328,9 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   `pnpm exec vitest run packages/agent-core/src/runtime tools/agents`；`pnpm build`；
   只做注入不做多实现承诺（见未决）
 - **模型**：codex xhigh
-- **状态**：TODO
+- **状态**：DONE（哈希在下一次提交补记；`DelegationRuntimeFactory` capability 持有
+  scheduler、动态加载现有实现避初始化环；旧 `subagentScheduler` 留兼容读取代理；
+  与 C2 并行的共享文件 `coreInstance.ts`/`createCore.ts` 随本卡提交）
 
 ### E2 · 调度与批次编排迁入新包，子 run 机制留核
 
@@ -410,6 +415,9 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   出现第二个实现需求时再议 port 稳定性。
 - **TraceViewer 归属**：先迁 `apps/web`；若未来出现第二个 React 宿主要复用，再议迁
   `packages/agent-react`。
+- **存量超限测试文件拆分**：`modelRun.test.ts`（4128 行）、`commands.test.ts`（1495 行）、
+  `toolContext.test.ts`、`isolation.test.ts` 均为本树多张卡路过小改的存量超限文件，按行数
+  硬规则须按 describe 域拆分；不属本树目标，另行立项。
 - **CallTiming 与 plugin hook 的长期分工**：CallTiming 已决策引入（A2/A3/B3，见页首）。
   遗留问题是既有 hook 用户（压缩 `transformContext`、finish reason、loop guard 等横切插件）
   是否长期保留在 hook 面——当前答案是保留：变换/拦截型行为（改 draft、拦工具、终止 run）

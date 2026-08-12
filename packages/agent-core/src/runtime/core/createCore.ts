@@ -27,6 +27,7 @@ import {
 import type { ToolRegistry } from '../../tools/toolRegistry'
 import type { SkillsRegistry } from '../../skills/contracts'
 import type { PlanRuntimeFactory } from '../../planning/runtime'
+import type { DelegationRuntimeFactory } from '../delegationContract'
 import { createCommands, type CommandApi } from '../commands'
 import { createPluginCommandFacade } from './pluginCommandFacade'
 import type { PluginInput } from './pluginHost'
@@ -49,6 +50,8 @@ export function createCore(opts?: {
   /** 内置 skill registry 由 tools-skills 装配；未传时使用空实现。 */
   skillRegistry?: SkillsRegistry
   planRuntime?: PlanRuntimeFactory | null
+  /** 未传时装配 core 默认委派能力；显式 null 禁用子 Agent。 */
+  delegation?: DelegationRuntimeFactory | null
 }): CoreInstance & CommandApi {
   const instance = createCoreInstance(opts)
   const commands = createCommands(instance)

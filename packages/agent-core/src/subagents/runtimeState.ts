@@ -7,7 +7,7 @@ import type { ToolRegistry } from '../tools/toolRegistry'
 import { SubagentArchiveIO } from './archiveIO'
 import { createConcurrencyLimiter, type ConcurrencyLimiter } from './concurrency'
 import { ROOT_AGENT_PATH } from './path'
-import { subagentScheduler, type SubagentScheduler } from './scheduler'
+import { createSubagentScheduler, type SubagentScheduler } from './schedulerState'
 import type {
   DelegateAgentBatchResult,
   DelegateAgentInput,
@@ -53,7 +53,7 @@ export interface CreateDelegateAgentRuntimeOptions {
   core?: CoreInstance
   /** Registry owned by the current CoreInstance. Defaults to the legacy singleton for direct callers. */
   registry?: ToolRegistry
-  /** Scheduler owned by the current CoreInstance. Defaults to the legacy default-core proxy. */
+  /** Scheduler owned by the current CoreInstance. Defaults to a legacy module-local fallback. */
   scheduler?: SubagentScheduler
   customInstructions?: string
   /** Parent agent's resolved execution-environment prompt section. */
@@ -72,6 +72,14 @@ export interface CreateDelegateAgentRuntimeOptions {
     turn: number
     item: import('@web-agent/ai').ModelItem
   }): void
+}
+
+// Compatibility only for direct createDelegateAgentRuntime callers that have
+// not yet been assembled through a Core delegation capability.
+let fallbackScheduler: SubagentScheduler | undefined
+
+function getFallbackScheduler(): SubagentScheduler {
+  return fallbackScheduler ??= createSubagentScheduler()
 }
 
 export function collectChangeSets(value: unknown, target: ChildChangeSet[]): void {
@@ -130,7 +138,7 @@ export class DelegateAgentRuntimeState {
 
   constructor(rawOpts: CreateDelegateAgentRuntimeOptions) {
     this.registry = rawOpts.registry ?? toolRegistry
-    this.scheduler = rawOpts.scheduler ?? subagentScheduler
+    this.scheduler = rawOpts.scheduler ?? getFallbackScheduler()
     this.ownerSignal = rawOpts.signal
     this.runtimeController = new AbortController()
     this.abortFromOwner = () => this.runtimeController.abort(this.ownerSignal.reason)

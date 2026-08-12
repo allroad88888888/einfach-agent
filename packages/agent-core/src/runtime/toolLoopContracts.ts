@@ -5,6 +5,7 @@ import type { PluginRun } from './core/pluginHost'
 import type { ToolLoopOptions } from './modelRunLifecycle'
 import type { ToolEpoch } from './toolEpoch'
 import type { TraceAttributes, TraceSpan, TraceStatus } from '../observability/types'
+import type { DelegationRuntime } from './delegationContract'
 
 export interface ToolLoopTrace {
   span: TraceSpan
@@ -52,7 +53,8 @@ export interface ToolLoopBase {
   pluginContext: ReturnType<typeof import('./core/coreCtx').makeCoreCtx>
   pluginRun: PluginRun
   hooks: PluginRun['hooks']
-  delegateRuntime: ReturnType<typeof import('../subagents/runtime').createDelegateAgentRuntime>
+  /** 本轮由可选 delegation capability 创建；未装配时子 Agent 工具不可用。 */
+  delegateRuntime?: DelegationRuntime
   rootTranscript(): string
   promoteQueuedInputs(): number
 }

@@ -27,6 +27,8 @@ vi.mock('../persistenceBridge', () => ({
 import { createCore } from './createCore'
 import { defaultCore } from './coreInstance'
 import type { Tool } from '../../tools/types'
+import { createSubagentScheduler } from '../../subagents/scheduler'
+import type { DelegationCapability, DelegationRuntimeFactory } from '../delegationContract'
 import { configureCommands } from '../commands'
 import { runSession, runToolLoop } from '../modelRun'
 import { sessionsAtom, activeSessionIdAtom } from '../../state/rootStore'
@@ -124,6 +126,26 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
     expect(a.tools).not.toBe(defaultCore.tools)
     expect(a.abort).not.toBe(b.abort)
     expect(a.abort).not.toBe(defaultCore.abort)
+  })
+
+  it('delegation factory 为每个 createCore 装配独立 capability；显式 null 才禁用', () => {
+    const created = [] as { scheduler: ReturnType<typeof createSubagentScheduler> }[]
+    const delegation: DelegationRuntimeFactory = () => {
+      const capability: DelegationCapability = {
+        scheduler: createSubagentScheduler(),
+        async createRuntime() { return { async delegateAgents() { return { treeId: 'fake', conversationId: 'fake', runId: 'fake', parentPath: 'root', strategy: 'parallel_wait_all', status: 'done', summary: { total: 0, done: 0, failed: 0, cancelled: 0 }, cacheBasePath: '.cache', archiveBasePath: '.archive', eventLog: '.archive/events.jsonl', skillFiles: [], skillIds: [], children: [] } } } },
+      }
+      created.push(capability)
+      return capability
+    }
+    const a = createCore({ delegation })
+    const b = createCore({ delegation })
+    expect(created).toHaveLength(2)
+    expect(a.delegation!.scheduler).toBe(created[0].scheduler)
+    expect(b.delegation!.scheduler).toBe(created[1].scheduler)
+    expect(a.delegation!.scheduler).not.toBe(b.delegation!.scheduler)
+    expect(createCore({ delegation: null }).delegation).toBeUndefined()
+    expect(createCore().delegation).toBeDefined()
   })
 
   it('透传 projectSkillsProvider 到新建 CoreInstance', async () => {

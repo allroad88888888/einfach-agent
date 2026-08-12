@@ -131,7 +131,7 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
     releaseTimedToolDispatcher()
     try { base.pluginRun.dispose() }
     catch (error) { addEvent('agent.plugin_dispose_failed', { traceId: base.trace.span.traceId, attrs: { sessionId: id, runId, turnId: base.turnId, error: safeErrorMessage(error), aborted: isAbortError(error) || opts.signal.aborted } }) }
-    try { await base.delegateRuntime.dispose?.() }
+    try { await base.delegateRuntime?.dispose?.() }
     catch (error) { addEvent('agent.dispose_failed', { traceId: base.trace.span.traceId, attrs: { sessionId: id, runId, turnId: base.turnId, error: safeErrorMessage(error), aborted: isAbortError(error) || opts.signal.aborted } }) }
   }
 }

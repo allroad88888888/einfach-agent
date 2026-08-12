@@ -92,6 +92,11 @@ shell execution, workspace operations, cards, and artifact saving. Tool
 implementations should not import application state, Tauri APIs, or Node system
 APIs to bypass this boundary.
 
+子 Agent 操作由 Core 装配时可选注入的 `delegation` capability 提供。默认 Core 注入过渡期
+factory；显式 `delegation: null` 时 `ToolContext` 不提供这些方法，`delegate_agent`、
+`observe_agent`、`join_agent` 和 `cancel_agent` 返回不可重试的
+`AGENT_DELEGATION_UNAVAILABLE`，并给出“子 Agent 委派能力不可用：当前运行环境未注入委派执行器。”。
+
 ## 3. Manifest and lazy loading
 
 `ToolRegistry.list()` returns manifest-only `ToolSummary` objects. This keeps

@@ -104,7 +104,7 @@ describe('subagent scheduler dispatch accounting', () => {
         children: [{ objective: 'default-only' }],
       })
 
-      expect(defaultCore.subagentScheduler.snapshot(treeId).map((node) => node.objective)).toEqual([
+      expect(defaultCore.delegation!.scheduler.snapshot(treeId).map((node) => node.objective)).toEqual([
         'root agent',
         'default-only',
       ])

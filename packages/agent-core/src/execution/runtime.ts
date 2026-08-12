@@ -1,7 +1,7 @@
 import type { CoreInstance } from '../runtime/core/coreInstance'
 import { newId } from '../runtime/newId'
 import { sessionsAtom } from '../state/rootStore'
-import type { SubagentNodeRecord } from '../subagents/types'
+import type { SubagentNodeRecord } from '../runtime/delegationContract'
 import {
   createExecutionNode,
   executionEventsAtom,

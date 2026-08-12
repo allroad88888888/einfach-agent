@@ -22,8 +22,8 @@ export const observeAgentTool: Tool = {
     if (!ctx.observeExecution) {
       return {
         ok: false,
-        error: 'observe_agent unavailable',
-        code: 'AGENT_OBSERVE_UNAVAILABLE',
+        error: '子 Agent 委派能力不可用：当前运行环境未注入委派执行器。',
+        code: 'AGENT_DELEGATION_UNAVAILABLE',
         retryable: false,
       }
     }

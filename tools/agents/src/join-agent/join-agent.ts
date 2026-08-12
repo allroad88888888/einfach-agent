@@ -31,8 +31,8 @@ export const joinAgentTool: Tool = {
     if (!ctx.joinExecution) {
       return {
         ok: false,
-        error: 'join_agent unavailable',
-        code: 'AGENT_JOIN_UNAVAILABLE',
+        error: '子 Agent 委派能力不可用：当前运行环境未注入委派执行器。',
+        code: 'AGENT_DELEGATION_UNAVAILABLE',
         retryable: false,
       }
     }

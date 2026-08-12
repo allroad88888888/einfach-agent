@@ -70,7 +70,7 @@ function childRuntime(input: {
   return createDelegateAgentRuntime({
     sessionId: 'session', runId: input.runId, settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' },
     apiKey: 'test', signal: input.signal ?? new AbortController().signal, fetchImpl: input.fetchImpl,
-    core, registry: core.tools, scheduler: core.subagentScheduler, runtimeIsTauri: input.runtimeIsTauri,
+    core, registry: core.tools, scheduler: core.delegation!.scheduler, runtimeIsTauri: input.runtimeIsTauri,
     onTraceItem: ({ agentPath, item }) => input.trace.push({ agentPath, item }),
   })
 }

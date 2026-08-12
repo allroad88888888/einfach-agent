@@ -20,7 +20,6 @@ import type { ShellCommandInput, ToolContext, ToolResult } from '../tools/types'
 import type {
   DelegateAgentCallContext,
   DelegateAgentInput,
-  DelegateAgentRuntime,
   SubagentSkillFile,
 } from '../subagents/types'
 import { getExecutionRuntime } from '../execution/runtime'
@@ -34,6 +33,7 @@ import { commandUsesPermanentDelete } from './shellCommandRisk'
 import { sessionsAtom, workspacesAtom } from '../state/rootStore'
 import { resolveSessionWorkspaceRoot } from '../state/workspaceState'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
+import type { DelegationRuntime } from './delegationContract'
 import { isCurrentRun } from './shared/runGuards'
 import { getPlan as readStoredPlan, setPlan } from '../state/planWriters'
 import {
@@ -111,7 +111,7 @@ export function buildToolContext(opts: {
   inheritedSkillFiles?: string[]
   inheritedSkillIds?: string[]
   inheritedSkillContents?: SubagentSkillFile[]
-  delegateRuntime?: DelegateAgentRuntime
+  delegateRuntime?: DelegationRuntime
   // 【实例化第 2 期】core 决定这次工具调用读写哪套 store/registry/abort；默认 defaultCore（＝穿线前
   //   的模块全局单例），故不传 core 的调用点（含全部现有测试）行为逐字不变。callTool 递归时把本次
   //   core 原样传给子 ctx，保证整条同 agent 互调链落在同一实例。

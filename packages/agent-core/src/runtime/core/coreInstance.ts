@@ -1,10 +1,4 @@
-// 背景：现状是六类各自为政的模块资源——
-//   · state/rootStore.ts      的 rootStore（会话列表 store）
-//   · state/sessionStore.ts   的 per-session store 缓存 Map
-//   · tools/registry.ts       的 toolRegistry（工具注册表）
-//   · runtime/abortRegistry.ts 的 controllers Map（每会话 AbortController）
-//   · subagents/scheduler.ts  的任务树与订阅者（子 agent 调度状态）
-//   · runtime/persistenceBridge.ts 的 driver、写队列与 rootStore 快照
+// 背景：root/session stores、工具注册表、abort registry、delegation capability 与 persistence 均为实例资源。
 // 【破环】本模块只 import 叶子层：createStore（einfach）、createToolRegistry（tools/toolRegistry，
 //   不是 tools/registry）、createToolEpochStore（runtime/toolEpochStore，只依赖 tools/*，不回指 core）。
 //   它【绝不】import 那五个视图模块（rootStore/sessionStore/registry/
@@ -27,7 +21,7 @@ import {
   type TimedToolRegistration,
 } from '../timedDispatch'
 import { createToolEpochStore, type ToolEpochStore } from '../toolEpochStore'
-import { createSubagentScheduler, type SubagentScheduler } from '../../subagents/schedulerState'
+import { createDefaultDelegationRuntimeFactory, type DelegationCapability, type DelegationRuntimeFactory } from '../delegationContract'
 import { emptySkillsRegistry, type SkillsRegistry } from '../../skills/contracts'
 import { createPluginHost, type PluginHost, type PluginInput } from './pluginHost'
 import {
@@ -41,12 +35,11 @@ import {
   type PersistenceBridge,
 } from '../persistenceBridge'
 import { createRuntimeConfig, type RuntimeConfig } from './runtimeConfig'
-import { createDefaultPlanRuntime, type PlanRuntimeFactory } from '../../planning/runtime'
+import type { PlanRuntimeFactory } from '../../planning/runtime'
 
 export type { RuntimeConfig } from './runtimeConfig'
 
-// 单会话独立 store 的形状（对齐原 sessionStore.ts 的 SessionStore；本轮先不放 undo）。
-// 定义放这里、由 sessionStore.ts re-export，避免 coreInstance 反向 import sessionStore 成环。
+// 单会话独立 store；由 sessionStore.ts re-export，避免 coreInstance 反向 import sessionStore 成环。
 export interface SessionStore {
   id: string
   store: Store
@@ -58,8 +51,7 @@ interface ActiveTimedToolDispatcher {
   dispatch(request: TimedToolDispatchRequest): Promise<TimedToolDispatchResult>
 }
 
-// 每会话一个 AbortController 的注册表接口（对齐原 abortRegistry.ts 的导出函数集）。
-// beginRun/abortRun/endRun/isRunning 语义与旧模块逐字一致；reset 供测试清场（= resetAbortRegistry）。
+// 每会话 AbortController 的注册表接口；reset 供测试清场。
 export interface AbortRegistryLike {
   beginRun(id: string): AbortSignal
   abortRun(id: string): void
@@ -75,7 +67,7 @@ export type {
   ProjectSkillsStore,
 } from './projectSkillsStore'
 
-// 一个 CoreInstance 包含彼此隔离的 root/session stores、tools、abort、scheduler、config、skills 与 persistence。
+// 一个 CoreInstance 包含彼此隔离的 root/session stores、tools、abort、delegation、config、skills 与 persistence。
 export interface CoreInstance {
   // 该实例的根 store：sessionsAtom/activeSessionIdAtom 的值域（会话列表 + 当前会话 id）。
   readonly rootStore: Store
@@ -106,8 +98,8 @@ export interface CoreInstance {
   readonly plugins: PluginHost
   // 该实例私有的 abort 注册表。
   readonly abort: AbortRegistryLike
-  // 该实例私有的子 agent 调度器。
-  readonly subagentScheduler: SubagentScheduler
+  // 可选的子 Agent 委派能力；scheduler 的持有权属于这项 capability。
+  readonly delegation: DelegationCapability | undefined
   // 该实例的运行时配置（apiKey 等）。引用只读，字段可改（供 configureCommands 覆盖）。
   readonly config: RuntimeConfig
   // 该实例的项目 Skills 缓存（per workspaceRoot，与 core.tools 同构）。
@@ -137,6 +129,8 @@ export function createCoreInstance(opts?: {
   projectSkillsProvider?: ProjectSkillsProvider
   skillRegistry?: SkillsRegistry
   planRuntime?: PlanRuntimeFactory | null
+  /** 未传时装配 core 默认委派能力；显式 null 禁用子 Agent。 */
+  delegation?: DelegationRuntimeFactory | null
 }): CoreInstance {
   // 1) 根 store：该实例的会话列表值域。
   const rootStore = createStore()
@@ -219,8 +213,10 @@ export function createCoreInstance(opts?: {
     },
   }
 
-  // 5) 子 agent 调度器：调度树和观察者均只归属这个 core。
-  const subagentScheduler = createSubagentScheduler()
+  // 5) 委派能力：默认 factory 为每个 core 创建独立 scheduler；显式 null 禁用子 Agent。
+  const delegation = opts?.delegation === null
+    ? undefined
+    : (opts?.delegation ?? createDefaultDelegationRuntimeFactory)()
 
   // 6) 运行时配置：默认空 key，opts.config 浅合并覆盖。
   const config = createRuntimeConfig(opts?.config)
@@ -228,7 +224,7 @@ export function createCoreInstance(opts?: {
   // 7) 项目 Skills 缓存：实现在 ./projectSkillsStore；扫描 provider 经 opts 注入（B1 反转）。
   const projectSkills = createProjectSkillsStore(rootStore, opts?.projectSkillsProvider)
   let skillRegistry = opts?.skillRegistry ?? emptySkillsRegistry
-  const planRuntime = opts?.planRuntime === null ? undefined : opts?.planRuntime ?? createDefaultPlanRuntime
+  const planRuntime = opts?.planRuntime ?? undefined
   const timedDispatchers = new Map<string, ActiveTimedToolDispatcher>()
 
   function setSkillRegistry(registry?: SkillsRegistry): void {
@@ -271,7 +267,7 @@ export function createCoreInstance(opts?: {
     toolEpochs,
     plugins,
     abort,
-    subagentScheduler,
+    delegation,
     config,
     projectSkills,
     get skillRegistry() {

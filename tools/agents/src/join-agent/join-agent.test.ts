@@ -16,6 +16,17 @@ function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
 }
 
 describe('join_agent', () => {
+  it('returns the delegation capability error when no runtime is injected', async () => {
+    const result = await joinAgentTool.execute({ executionId: 'e1' }, makeCtx())
+
+    expect(result).toEqual({
+      ok: false,
+      error: '子 Agent 委派能力不可用：当前运行环境未注入委派执行器。',
+      code: 'AGENT_DELEGATION_UNAVAILABLE',
+      retryable: false,
+    })
+  })
+
   it('uses a bounded default wait and returns a completed result', async () => {
     const joinExecution = vi.fn(async () => ({
       executionId: 'e1',

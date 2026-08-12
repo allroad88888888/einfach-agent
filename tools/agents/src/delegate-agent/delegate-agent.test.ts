@@ -67,7 +67,7 @@ describe('delegate_agent tool', () => {
 
     expect(result).toEqual({
       ok: false,
-      error: 'delegate_agent unavailable: no execution runtime is configured',
+      error: '子 Agent 委派能力不可用：当前运行环境未注入委派执行器。',
       code: 'AGENT_DELEGATION_UNAVAILABLE',
       retryable: false,
     })
