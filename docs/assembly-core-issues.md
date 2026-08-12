@@ -116,7 +116,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   `<domain>:<event>` 扩展时机，为 MCP 生命周期预留，本树不实现 MCP 侧接入）；
   `pnpm exec vitest run packages/agent-core/src/runtime`；`pnpm build`
 - **模型**：codex xhigh
-- **状态**：TODO
+- **状态**：DOING
 
 ### A4 · 压缩点位：preCompact / postCompact
 
@@ -226,7 +226,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 - **判据**：`pnpm exec vitest run packages/persistence-idb packages/agent-core/src/state`；
   `pnpm build`；Web 会话持久化行为不变
 - **模型**：codex medium
-- **状态**：TODO
+- **状态**：DOING
 
 ### D2 · SQLite 持久化 driver 外移为独立包（Tauri 依赖随走）
 
@@ -286,16 +286,26 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 - **判据**：每个 `packages/agent-core/src/subagents/` 文件出现在且仅出现在一张卡的改动面里，
   归类附一句理由；`node scripts/check-docs.js`
 - **模型**：codex xhigh
-- **状态**：DOING
+- **状态**：DONE（哈希在下一次提交补记；归类总表与风险清单见 Git 历史中本卡的执行记录）
 
 ### E1 · core 定义 delegation 执行器槽（ToolContext 委派能力经装配注入）
 
-- **依赖**：E0
-- **改动面**：`packages/agent-core/src/runtime/core/coreInstance.ts`、
-  `packages/agent-core/src/runtime/core/createCore.ts`、
-  `packages/agent-core/src/runtime/toolContext.ts`、
-  `packages/agent-core/src/tools/TOOLS-SPEC.md` 同步；未注入时 delegate 族工具不可用且有明确报错
-- **判据**：`pnpm exec vitest run packages/agent-core/src/runtime tools/agents`；`pnpm build`；
+- **依赖**：E0；与 A3 改动面重叠（`toolCallExecutor.ts`、`toolLoopBootstrap.ts`、
+  `coreInstance.ts`），须在 A3 落地后开工
+- **改动面**：`packages/agent-core/src/subagents/` 的 `types.ts`、`path.ts`、`input.ts`、
+  `toolProfile.ts` 仅保留/导出 core 所需最小委派协议、root path、受限输入、工具白名单；
+  新增 `packages/agent-core/src/runtime/delegationContract.ts`（槽、DelegationRuntimeFactory、
+  生命周期接口）与 `runtime/subagentTranscript.ts`（主循环通用 transcript）；改造
+  `runtime/core/coreInstance.ts`、`createCore.ts`（移除 `subagentScheduler` 字段与构造，
+  改收可选 delegation capability）；改造 `runtime/toolContext.ts`、`toolCallExecutor.ts`、
+  `toolCallGate.ts`、`toolLoopBootstrap.ts`、`modelTurnRequester.ts`、
+  `toolLoopContracts.ts`（type-only 反向依赖必须一并收口）、
+  `packages/agent-core/src/tools/types.ts`、`execution/runtime.ts`、
+  `tools/agents/src/delegate-agent/delegate-agent.ts`；`TOOLS-SPEC.md` 同步
+- **判据**：六个耦合文件及 `toolLoopContracts.ts` 不再 import `subagents/runtime`、
+  `schedulerState`、`distill` 等产品实现，只引用 core delegation contract；fake factory 可
+  完成独立 `createCore()` 委派测试；未注入时 `delegate_agent` 给出明确不可用错误；
+  `pnpm exec vitest run packages/agent-core/src/runtime tools/agents`；`pnpm build`；
   只做注入不做多实现承诺（见未决）
 - **模型**：codex xhigh
 - **状态**：TODO
@@ -303,14 +313,18 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 ### E2 · 调度与批次编排迁入新包，子 run 机制留核
 
 - **依赖**：E1
-- **改动面**：以 E0 归类为准。初判迁出至新包 `packages/subagents`：`scheduler.ts`、
-  `schedulerState.ts`、`delegationBatch.ts`、`delegationPolicy.ts`、
-  `delegationDistillation.ts`、`routing.ts`、`modelSelection.ts`、`concurrency.ts`、
-  `runtime.ts`、`runtimeState.ts`、`toolProfile.ts`、`skillCache.ts`；初判留核：
-  `childAgentLoop.ts`、`childAgentToolCalls.ts`、`childModelClient.ts`、
-  `childContextCheckpoint.ts`、`childFinishReason.ts`、`childResult.ts`、
-  `childToolVisibility.ts` 与硬限；`vite.config.ts`、`tsconfig.app.json`、装配点接线
-- **判据**：`runtime/` 对 subagents 的 6 个耦合文件只剩契约 import；
+- **改动面**：新建 `packages/subagents`（`package.json`、`src/delegationAssembly.ts` 与公共
+  出口，作为唯一调度/委派产品装配；`vite.config.ts`、`tsconfig.app.json` alias 同步）；
+  `apps/web/src/main.tsx` 与测试装配 helper 注入该 assembly。迁入：`delegationBatch.ts`、
+  `delegationDistillation.ts`、`runtime.ts`、`scheduler.ts`、`schedulerState.ts`。留核但去除
+  产品反向依赖、改接 E1 port：`childAgentLoop.ts`、`childAgentToolCalls.ts`、
+  `childContextCheckpoint.ts`、`childFinishReason.ts`、`childModelClient.ts`、
+  `childResult.ts`、`childToolVisibility.ts`、`concurrency.ts`、`delegationPolicy.ts`、
+  `modelSelection.ts`、`prompt.ts`、`routing.ts`、`runtimeState.ts`（尤其不再默认 import
+  scheduler/归档实现）
+- **判据**：产品包私有持有 scheduler 实例/订阅；两个 `createCore()` 的调度树不串扰；
+  child loop 的深度、总节点、并发、模型调用、工具可见性、取消、结果回传语义全部不回退；
+  runtime 六处只剩契约 import；
   `pnpm exec vitest run packages/subagents packages/agent-core tools/agents`；`pnpm build`
 - **模型**：codex xhigh
 - **状态**：TODO
@@ -318,11 +332,13 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 ### E3 · 归档治理随包迁出并对接治理脚本
 
 - **依赖**：E2
-- **改动面**：以 E0 归类为准。初判：`archiveCapacity.ts`、`archiveIO.ts`、`archiveWriter.ts`、
-  `replay.ts`、`jsonl.ts`、`path.ts`、`distill.ts`、`input.ts` 迁至 `packages/subagents`；
-  `scripts/subagent-*.js` 治理脚本 import 路径对接
-- **判据**：`pnpm subagent:replay` / `subagent:capacity` / `subagent:archive:retention` /
-  `subagent:index:compact` / `subagent:skills` 全部可运行；
+- **改动面**：迁入 `archiveCapacity.ts`、`archiveIO.ts`、`archiveWriter.ts`、`distill.ts`、
+  `jsonl.ts`、`replay.ts`、`skillCache.ts` 至 `packages/subagents/src/archive/`
+  （`path.ts` 是安全锚点**留核**，E0 裁定）；archiveWriter 移除对 `defaultCore` 的默认依赖，
+  改经注入的 trace recorder/core context；对接 `scripts/subagent-*.js` 全族与根
+  `package.json` 脚本；脚本与浏览器包共享稳定 archive schema，互不拉入对方运行时
+- **判据**：旧 archive 可被新 replay 读回；`pnpm subagent:replay` / `subagent:capacity` /
+  `subagent:archive:retention` / `subagent:index:compact` / `subagent:skills` 全部可运行；
   `pnpm exec vitest run packages/subagents`；`pnpm build`
 - **模型**：codex medium
 - **状态**：TODO
@@ -330,11 +346,19 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 ### E4 · state/ 的 subagent 视图与归档 atoms 迁移
 
 - **依赖**：E2
-- **改动面**：以 E0 归类为准。初判：`packages/agent-core/src/state/` 下 `subagentView*`、
-  `subagentArchive*`、`subagentTree*`、`subagentTrace*`、`subagentRunHistoryAtoms.ts`、
-  `subagentSkillGovernanceAtoms.ts`、`subagentConversationTreeView.ts`、
-  `subagentExecutionTreeView.ts` 迁至 `packages/subagents`；UI import 路径对接
-- **判据**：`pnpm exec vitest run packages/subagents apps/web`；`pnpm build`
+- **改动面**：迁入 `packages/agent-core/src/state/` 的 `subagentArchiveAtoms.ts`、
+  `subagentArchiveErrors.ts`、`subagentArchivePreviewAtoms.ts`、`subagentArchiveReader.ts`、
+  `subagentConversationTreeView.ts`、`subagentExecutionTreeView.ts`、
+  `subagentRunHistoryAtoms.ts`、`subagentSkillGovernanceAtoms.ts`、`subagentTraceAtoms.ts`、
+  `subagentTreeReconciliation.ts`、`subagentTreeStatus.ts`、`subagentViewAtoms.ts`、
+  `subagentViewRecord.ts`、`subagentViewTypes.ts`（含两份同名测试）至
+  `packages/subagents/src/state/`；新增 state adapter/port（消费侧提供 session items、
+  execution graph、workspace read、skill-governance action），新包不反向 import
+  agent-core 的 runtime/state；`runtime/commands/subagentViewCommands.ts` 改 facade/注入点；
+  `apps/web/src/agentNew/ui/` 五个 Subagent 组件仅改 import，不迁 UI
+- **判据**：live conversation、execution graph、archive replay、run history、trace、
+  skill governance 全部不回退；core 不反向 import 产品包；
+  `pnpm exec vitest run packages/subagents apps/web`；`pnpm build`
 - **模型**：codex medium
 - **状态**：TODO
 
