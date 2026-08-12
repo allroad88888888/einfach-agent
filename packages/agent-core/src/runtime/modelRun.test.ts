@@ -1866,7 +1866,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(store.getter(checkpointsAtom)).toHaveLength(1)
     expect(persistence.saved.length).toBeGreaterThan(1)
     expect(persistence.saved.at(-1)?.checkpoint.items[0].item).toEqual({ role: 'user', content: 'hi' })
-  }, 10_000)
+    // 666 轮在全量并发下实测会超过 10 秒，与下面两个长循环用例统一到 15 秒。
+  }, 15_000)
 
   it('计划运行：按阶段数放大主 Agent 轮次预算，且不计入子 Agent 轮次', async () => {
     seedSession('plan-turn-limit', { vendor: 'deepseek', model: 'x' })
@@ -1918,7 +1919,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
       status: 'error',
       error: '主 Agent 超过最大模型轮次（501）',
     })
-  })
+    // 501 轮循环单跑约 6 秒，全量并发时会超过默认 5 秒——与上面 666 轮用例同一理由给显式预算。
+  }, 15_000)
 
   it('计划恢复：沿原用户轮次直接续跑，不追加新的 user item', async () => {
     const persistence = captureCheckpointPersistence()
@@ -2264,7 +2266,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(run?.status).toBe('error')
     expect(run?.error).toContain('已连续占用超过 500 轮')
     expect(trace.events.some((event) => event.name === 'agent.plan_stage_over_budget')).toBe(true)
-  })
+    // 500 轮循环单跑约 6 秒，全量并发时会超过默认 5 秒——与 666 轮用例同一理由给显式预算。
+  }, 15_000)
 
   it('阶段进度 guard 跨恢复沿用持久化模型轮数，不因新 run 清零', async () => {
     seedSession('plan-stage-persisted-guard', { vendor: 'deepseek', model: 'x' })
