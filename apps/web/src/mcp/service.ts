@@ -114,17 +114,19 @@ export function createMcpSettingsService({
     store.getter(mcpServerConfigsAtom).find((config) => config.id === id)
 
   // 工具名清单缓存【进程内那一份】：安装探测（B2）与连接成功刷新（B3）共用它写入，
-  // B4/F4 的探针与设置面板共用它读出。为什么必须是同一份而不是各造一个，见
-  // toolNameCacheWriter.ts；读写都留在 app 层，tools/mcp 与 core 都不碰磁盘。
+  // 服务删除时的级联清理（A2）共用它移除，B4/F4 的探针与设置面板共用它读出。为什么
+  // 必须是同一份而不是各造一个，见 toolNameCacheWriter.ts；读写都留在 app 层，
+  // tools/mcp 与 core 都不碰磁盘。
   const toolNameCache = createMcpToolNameCacheHandle(toolNameCacheStorage)
-  // 缓存 → 设置面板 atom 的只读投影（B5）见 toolNameCacheProjection.ts。写入点统一从投影
-  // 发下去，两个写入方都不需要记得刷新界面。
+  // 缓存 → 设置面板 atom 的只读投影（B5）见 toolNameCacheProjection.ts。写入/删除点
+  // 统一从投影发下去，调用方都不需要记得刷新界面。
   const toolNameCacheView = createMcpToolNameCacheProjection({
     store,
     cache: toolNameCache,
     isActive: () => !disposed,
   })
   const writeToolNameCache = toolNameCacheView.write
+  const removeToolNameCache = toolNameCacheView.remove
 
   // 连上之后工具集还会变（MCP 的 tools/list_changed 就是为此），缓存不能停在安装那一刻。
   // 哪些快照才值得落盘、为什么断开绝不清缓存，都在 refreshOnConnect.ts；这里只补上
@@ -336,6 +338,9 @@ export function createMcpSettingsService({
         try {
           await manager.remove(id)
           await persist((current) => current.filter((config) => config.id !== id))
+          // 只有 manager.remove 与落盘都成功才级联清工具名缓存（A2）：任一步失败时
+          // 配置/连接都还留着，缓存也不该跟着凭空消失——留着它下次还能当「上次已知」看。
+          await removeToolNameCache(id)
           // 服务没了，它那条待确认请求也不该还挂在界面上。
           launchConsent.dismiss(id)
           store.setter(mcpServerRuntimeAtom, (previous) => {

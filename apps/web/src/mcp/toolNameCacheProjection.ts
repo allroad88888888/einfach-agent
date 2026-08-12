@@ -12,11 +12,20 @@
 
 import type { Store } from '@einfach/core'
 import { mcpLastKnownToolsAtom } from './state'
-import type { McpToolNameCacheHandle, McpToolNameCacheWrite } from './toolNameCacheWriter'
+import type {
+  McpToolNameCacheHandle,
+  McpToolNameCacheRemove,
+  McpToolNameCacheWrite,
+} from './toolNameCacheWriter'
 
 export interface McpToolNameCacheProjection {
   /** 写完顺手把最新快照推给界面；签名与 handle.write 完全一致，也同样绝不 reject。 */
   readonly write: McpToolNameCacheWrite
+  /**
+   * 删完顺手把最新快照推给界面；签名与 handle.remove 完全一致，也同样绝不 reject。
+   * 目前唯一的调用点是服务删除时级联清缓存（A2）。
+   */
+  readonly remove: McpToolNameCacheRemove
   /** 冷启动：把磁盘上的缓存读进快照并推给界面。绝不 reject。 */
   load(): Promise<void>
 }
@@ -41,6 +50,10 @@ export function createMcpToolNameCacheProjection({
   return {
     write: async (serverId, input) => {
       await cache.write(serverId, input)
+      publish()
+    },
+    remove: async (serverId) => {
+      await cache.remove(serverId)
       publish()
     },
     load: async () => {

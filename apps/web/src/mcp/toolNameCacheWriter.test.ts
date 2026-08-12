@@ -103,3 +103,58 @@ describe('工具名缓存 handle · 读出口', () => {
     expect(load).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('工具名缓存 handle · remove（A2 级联清理的底层落点）', () => {
+  it('移除已有条目：读出口不再含它，且落盘的是去掉它之后的那一份', async () => {
+    const cacheStorage = createMemoryToolNameCacheStorage(CACHED_DOCS)
+    const handle = createMcpToolNameCacheHandle(cacheStorage)
+    await handle.load()
+
+    await handle.remove('docs')
+
+    expect(handle.read()).toEqual({})
+    // 落盘也确实换成了去掉这条 serverId 之后的那份，不是只改了内存。
+    expect(await cacheStorage.load()).toEqual({})
+  })
+
+  it('移除一个从未存在过的 serverId：原样返回，不触发多余的一次落盘', async () => {
+    const save = vi.fn(async () => undefined)
+    const handle = createMcpToolNameCacheHandle({
+      persistence: 'persistent',
+      load: async () => CACHED_DOCS,
+      save,
+    })
+    await handle.load()
+
+    await handle.remove('never-existed')
+
+    expect(handle.read()).toEqual(CACHED_DOCS)
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('落盘失败时 remove 不 reject，但内存里那份仍然换成了去掉它之后的结果', async () => {
+    const save = vi.fn(async () => {
+      throw new Error('disk full')
+    })
+    const handle = createMcpToolNameCacheHandle({
+      persistence: 'persistent',
+      load: async () => CACHED_DOCS,
+      save,
+    })
+    await handle.load()
+
+    await expect(handle.remove('docs')).resolves.toBeUndefined()
+  })
+
+  it('remove 排在同一条队列上，不会插进一次写入的读-改-写中间', async () => {
+    const handle = createMcpToolNameCacheHandle(slowStorage(CACHED_DOCS))
+
+    const writing = handle.write('github', {
+      tools: [{ name: 'mcp__github__create_issue' }], probeStatus: 'success', cachedAt: 7,
+    })
+    const removing = handle.remove('docs')
+    await Promise.all([writing, removing])
+
+    expect(Object.keys(handle.read()).sort()).toEqual(['github'])
+  })
+})

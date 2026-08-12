@@ -55,6 +55,15 @@ describe('工具名缓存 → 服务视图的投影', () => {
     }))
   })
 
+  it('remove 之后 atom 也跟着更新，不再含被删的 serverId（A2 级联清理经这层推给界面）', async () => {
+    const { store, projection } = setup(CACHED_DOCS)
+    await projection.load()
+
+    await projection.remove('docs')
+
+    expect(store.getter(mcpLastKnownToolsAtom)).toEqual({})
+  })
+
   it('service 已经 dispose：缓存照写，但不再回写它那个 store', async () => {
     const { store, cache, projection } = setup({}, false)
 

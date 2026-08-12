@@ -69,7 +69,7 @@ C2 与 C3 可并行。D 分支内部串行。
   「未定」改为「已决策、待实施」）
 - **判据**：`node scripts/check-docs.js` 通过；六条决策每条都有结论句；第 2 条明确写「不做」及理由
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE a67ef0a
 
 ### A2 · 删除服务时级联清掉它的工具清单缓存
 
@@ -80,7 +80,7 @@ C2 与 C3 可并行。D 分支内部串行。
 - **判据**：`pnpm exec vitest run apps/web/src/mcp` 通过，新用例断言删除服务后
   `readToolNameCache()` 不含该 serverId 且缓存存储被回写；`pnpm build`
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### B1 · 桌面端 MCP 服务配置接上配置文件存储
 
@@ -91,7 +91,7 @@ C2 与 C3 可并行。D 分支内部串行。
   通过：Tauri 宿主下服务配置读写经 `mcp_config_read`/`mcp_config_write`（mock `invoke` 断言），
   浏览器宿主行为不变；`pnpm build`
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### B2 · localStorage 存量服务配置一次性迁入配置文件
 
@@ -150,7 +150,7 @@ C2 与 C3 可并行。D 分支内部串行。
   reconcile 对占位工具的替换与命名冲突语义、连接失败时占位工具的降级表现、上下文预算影响、
   保留的 `connect_mcp_server` 的新分工；D2–D4 拆分若需调整须同步改本文件
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### D2 · 缓存清单注册为占位工具
 
@@ -191,7 +191,7 @@ C2 与 C3 可并行。D 分支内部串行。
   `toolAdapter.test.ts`、`connect-mcp-server/connect-mcp-server.ts` 如有引用
 - **判据**：`pnpm exec vitest run tools/mcp` 通过（含超时用例更新）；`pnpm build`
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### E2 · guide 注入「长任务拆小」引导
 

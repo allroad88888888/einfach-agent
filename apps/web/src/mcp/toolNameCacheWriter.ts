@@ -20,6 +20,7 @@
 
 import type { McpToolSnapshot } from '@web-agent/tools-mcp'
 import {
+  removeToolNameCacheEntry,
   setToolNameCacheEntry,
   type McpToolNameCache,
   type SetToolNameCacheEntryInput,
@@ -38,6 +39,15 @@ export type McpToolNameCacheWrite = (
 ) => Promise<void>
 
 /**
+ * 移除某个 serverId 的缓存条目——目前唯一的调用点是服务被删除时的级联清理（A2）。
+ *
+ * 【绝不 reject】理由与 McpToolNameCacheWrite 相同：这只是一份可重建的缓存，删不掉
+ * 不该把「服务已经删除成功」这个结论改写成失败。未命中的 serverId 视为已经达成目标
+ * （没有残留），原样成功返回，不额外落盘。
+ */
+export type McpToolNameCacheRemove = (serverId: string) => Promise<void>
+
+/**
  * 把 manager 的工具快照转成缓存条目。
  *
  * 存 ToolRegistry 名（`mcp__<serverId>__<remoteName>`）而不是远端原名：这份清单是给模型
@@ -54,6 +64,8 @@ export function toCachedTools(
 export interface McpToolNameCacheHandle {
   /** 见 McpToolNameCacheWrite。 */
   readonly write: McpToolNameCacheWrite
+  /** 见 McpToolNameCacheRemove。 */
+  readonly remove: McpToolNameCacheRemove
   /**
    * 同步读出当前那份快照——B5 两根接线（B4 未连接工具探针、F4 manifest 清单）的取数口。
    *
@@ -99,8 +111,23 @@ export function createMcpToolNameCacheHandle(
     return turn.catch(() => undefined)
   }
 
+  // 同一条队列、同一份临界区纪律：读回当前快照、算出去掉这条 serverId 的下一份、
+  // 落盘、再换掉内存里那份引用。未命中时 next 与 current 是同一个引用，跳过落盘——
+  // 没有变化就不必再等一轮 IPC 往返。
+  const remove: McpToolNameCacheRemove = (serverId) => {
+    const turn = queue.then(async () => {
+      const current = cache ?? await loadCache()
+      const next = removeToolNameCacheEntry(current, serverId)
+      if (next !== current) await storage.save(next)
+      cache = next
+    })
+    queue = turn.catch(() => undefined)
+    return turn.catch(() => undefined)
+  }
+
   return {
     write,
+    remove,
     read: () => cache ?? {},
     load: () => {
       const turn = queue.then(async () => {
