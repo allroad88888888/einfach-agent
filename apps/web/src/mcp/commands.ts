@@ -54,6 +54,13 @@ export interface ConfigureMcpSettingsOptions {
   /** 工具名清单缓存的读写通道；默认桌面优先，浏览器/测试自动降级。 */
   toolNameCacheStorage?: McpToolNameCacheStorage
   capabilities?: Partial<McpSettingsCapabilities>
+  /**
+   * 工具名缓存变化时的通知，原样交给 service（D2 的占位同步器靠它重算）。
+   *
+   * 装配点递进来的是一个【每次调用当刻才解析】的闭包，不是同步器本身：占位同步器要等
+   * manager 装好之后才造得出来，而 service 在这一步就已经建好了。
+   */
+  onToolNameCacheChanged?: () => void
 }
 
 export function configureMcpSettings({
@@ -61,11 +68,13 @@ export function configureMcpSettings({
   storage = createBrowserMcpConfigStorage(),
   toolNameCacheStorage,
   capabilities,
+  onToolNameCacheChanged,
 }: ConfigureMcpSettingsOptions): void {
   activeService.dispose()
   configured = true
   const resolvedCapabilities: McpSettingsCapabilities = {
     stdio: capabilities?.stdio === true,
+    credentials: capabilities?.credentials === true,
   }
   rootStore.setter(mcpSettingsCapabilitiesAtom, resolvedCapabilities)
   activeService = createMcpSettingsService({
@@ -74,6 +83,7 @@ export function configureMcpSettings({
     storage,
     ...(toolNameCacheStorage ? { toolNameCacheStorage } : {}),
     capabilities: resolvedCapabilities,
+    ...(onToolNameCacheChanged ? { onToolNameCacheChanged } : {}),
   })
 }
 

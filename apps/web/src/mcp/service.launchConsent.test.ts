@@ -51,7 +51,7 @@ describe('MCP 起进程确认（H2）· 最后一道防线', () => {
     const connector = createMcpServerConnector({
       manager,
       writers: createMcpRuntimeWriters(store),
-      capabilities: { stdio: true },
+      capabilities: { stdio: true, credentials: true },
       isConfigured: () => true,
     })
     store.setter(mcpServerConfigsAtom, [PLAYWRIGHT])

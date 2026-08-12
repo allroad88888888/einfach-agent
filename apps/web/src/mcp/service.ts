@@ -53,6 +53,13 @@ export interface CreateMcpSettingsServiceOptions {
   toolNameCacheStorage?: McpToolNameCacheStorage
   capabilities?: Partial<McpSettingsCapabilities>
   createId?: () => string
+  /**
+   * 工具名缓存变化后的通知（写入 / 删除 / 冷启动读盘各一次）。
+   *
+   * 目前唯一的消费者是占位工具同步器（D2）：占位集合是这份缓存的派生视图，缓存一变就得重算。
+   * service 不认识占位，只负责把「缓存变了」这件事发出去——接不接由装配点决定。
+   */
+  onToolNameCacheChanged?: () => void
 }
 
 export interface McpSettingsService {
@@ -93,9 +100,11 @@ export function createMcpSettingsService({
   toolNameCacheStorage = createDesktopToolNameCacheStorage(),
   capabilities: requestedCapabilities,
   createId = randomServerId,
+  onToolNameCacheChanged,
 }: CreateMcpSettingsServiceOptions): McpSettingsService {
   const capabilities: McpSettingsCapabilities = {
     stdio: requestedCapabilities?.stdio === true,
+    credentials: requestedCapabilities?.credentials === true,
   }
   let unsubscribe: (() => void) | undefined
   let hydratePromise: Promise<void> | undefined
@@ -124,6 +133,7 @@ export function createMcpSettingsService({
     store,
     cache: toolNameCache,
     isActive: () => !disposed,
+    ...(onToolNameCacheChanged ? { onChange: onToolNameCacheChanged } : {}),
   })
   const writeToolNameCache = toolNameCacheView.write
   const removeToolNameCache = toolNameCacheView.remove

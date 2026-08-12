@@ -16,7 +16,10 @@ import {
   type PersistedMcpServerConfig,
 } from './types'
 
-export const mcpSettingsCapabilitiesAtom = atom<McpSettingsCapabilities>({ stdio: false })
+export const mcpSettingsCapabilitiesAtom = atom<McpSettingsCapabilities>({
+  stdio: false,
+  credentials: false,
+})
 mcpSettingsCapabilitiesAtom.debugLabel = 'mcpSettingsCapabilities'
 
 export const mcpAddFormOpenAtom = atom(false)
@@ -106,7 +109,7 @@ export const mcpServersAtom = atom<readonly McpServerView[]>((get) => {
 mcpServersAtom.debugLabel = 'mcpServers'
 
 export function resetMcpSettingsState(store: Store): void {
-  store.setter(mcpSettingsCapabilitiesAtom, { stdio: false })
+  store.setter(mcpSettingsCapabilitiesAtom, { stdio: false, credentials: false })
   store.setter(mcpAddFormOpenAtom, false)
   store.setter(mcpAddModeAtom, 'form')
   store.setter(mcpDraftAtom, { ...EMPTY_MCP_DRAFT })

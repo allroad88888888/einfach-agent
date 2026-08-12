@@ -158,6 +158,9 @@ export function buildPersistedMcpConfig(
       name: draft.name.trim(),
       transport: 'streamable-http',
       url,
+      // 原样透传：draft.headers 只有 JSON 导入通道会填，且落笔前已经在 jsonConfig.ts
+      // 用 sanitizeMcpHeaders 校验过形状，这里不必再校验一遍。
+      ...(draft.headers ? { headers: draft.headers } : {}),
       autoConnect: draft.autoConnect,
     }
   }
@@ -172,6 +175,9 @@ export function buildPersistedMcpConfig(
     command: draft.command.trim(),
     args: parsedArgs.args,
     ...(cwd ? { cwd } : {}),
+    // 原样透传：draft.env 只有 JSON 导入通道会填，且落笔前已经在 jsonConfig.ts 用
+    // sanitizeMcpEnv 校验过形状，这里不必再校验一遍。
+    ...(draft.env ? { env: draft.env } : {}),
     // The persisted field itself may legitimately be true (H1) — stdio is a
     // normal boolean preference at the data-model layer. Whether that
     // preference is ever allowed to actually start a local process is a

@@ -62,7 +62,11 @@ export function initializeMcpSettings(): void {
   configureMcpSettings({
     manager,
     storage: createDesktopMcpConfigStorage(),
-    capabilities: { stdio: tauriHost },
+    // credentials 与 stdio 现在都等于「是不是桌面」，但回答的是两个不同问题（C3，见
+    // types.ts 的 McpSettingsCapabilities 注释）——凭据能不能落盘，取决于桌面配置文件
+    // 是不是这个宿主唯一的持久化落点，与能不能起本机子进程是两条独立的准入线，只是当前
+    // 恰好同源于同一个 tauriHost 判断。
+    capabilities: { stdio: tauriHost, credentials: tauriHost },
   })
   // mcp 域工具需要注入这个进程级 manager —— 装配点就是唯一能同时拿到 registry 与 manager 的地方。
   // 顺带把工具名缓存喂给模型看得见的那两处（B5，规矩见 toolProbeWiring.ts）：两个读出口都从

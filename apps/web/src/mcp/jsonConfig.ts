@@ -1,146 +1,35 @@
 import { validateMcpDraft } from './config'
+import { sanitizeMcpEnv, sanitizeMcpHeaders } from './credentialFields'
+import { assertNoDuplicateObjectKeys } from './jsonConfigDuplicateKeys'
+import { invalidJson, serviceLabel } from './jsonConfigErrors'
 import { MCP_SETTINGS_MAX_SERVERS } from './persistence'
 import { EMPTY_MCP_DRAFT, type McpAddServerDraft } from './types'
 
 type JsonObject = Record<string, unknown>
 
 const MAX_JSON_BYTES = 256 * 1_024
+// env / headers 结构上一直允许出现（在 STDIO_FIELDS / HTTP_FIELDS 里），这样它们不会撞上
+// assertAllowedFields 那条泛泛的「不支持的字段」错误；是否真的能用，由 serverObjectToDraft
+// 里对 allowCredentials 的判断给出专门的中文提示（C3）。
 const STDIO_FIELDS = new Set([
   'command',
   'args',
   'cwd',
   'type',
   'transport',
+  'env',
 ])
 const HTTP_FIELDS = new Set([
   'url',
   'type',
   'transport',
+  'headers',
 ])
 const SINGLE_STDIO_FIELDS = new Set(['name', ...STDIO_FIELDS])
 const SINGLE_HTTP_FIELDS = new Set(['name', ...HTTP_FIELDS])
 
 function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function serviceLabel(name: string): string {
-  const visible = name.replace(/[\u0000-\u001f\u007f]/g, ' ').slice(0, 80)
-  return `MCP 服务“${visible || '未命名'}”`
-}
-
-function invalidJson(): never {
-  throw new Error('MCP JSON 格式无效')
-}
-
-/**
- * JSON.parse silently keeps the final value when an object contains duplicate
- * keys. Reject them before parsing so a pasted MCP config cannot hide a server
- * or replace a security-relevant field.
- */
-function assertNoDuplicateObjectKeys(source: string): void {
-  let cursor = 0
-
-  const skipWhitespace = (): void => {
-    while (/\s/.test(source[cursor] ?? '')) cursor += 1
-  }
-
-  const parseString = (): string => {
-    if (source[cursor] !== '"') invalidJson()
-    const start = cursor
-    cursor += 1
-    while (cursor < source.length) {
-      const char = source[cursor]
-      if (char === '\\') {
-        cursor += 2
-        continue
-      }
-      if (char === '"') {
-        cursor += 1
-        try {
-          return JSON.parse(source.slice(start, cursor)) as string
-        } catch {
-          invalidJson()
-        }
-      }
-      cursor += 1
-    }
-    invalidJson()
-  }
-
-  const duplicateKeyError = (path: readonly string[], key: string): never => {
-    if (path.length === 1 && path[0] === 'mcpServers') {
-      throw new Error(`MCP 服务名称重复：“${key}”`)
-    }
-    if (path.length >= 2 && path[0] === 'mcpServers') {
-      throw new Error(`${serviceLabel(path[1] ?? '')}存在重复字段“${key}”`)
-    }
-    throw new Error(`MCP JSON 对象存在重复字段“${key}”`)
-  }
-
-  const parseValue = (path: readonly string[]): void => {
-    skipWhitespace()
-    const char = source[cursor]
-    if (char === '{') {
-      cursor += 1
-      skipWhitespace()
-      const keys = new Set<string>()
-      if (source[cursor] === '}') {
-        cursor += 1
-        return
-      }
-      while (cursor < source.length) {
-        skipWhitespace()
-        const key = parseString()
-        if (keys.has(key)) duplicateKeyError(path, key)
-        keys.add(key)
-        skipWhitespace()
-        if (source[cursor] !== ':') invalidJson()
-        cursor += 1
-        parseValue([...path, key])
-        skipWhitespace()
-        if (source[cursor] === '}') {
-          cursor += 1
-          return
-        }
-        if (source[cursor] !== ',') invalidJson()
-        cursor += 1
-      }
-      invalidJson()
-    }
-    if (char === '[') {
-      cursor += 1
-      skipWhitespace()
-      if (source[cursor] === ']') {
-        cursor += 1
-        return
-      }
-      while (cursor < source.length) {
-        parseValue(path)
-        skipWhitespace()
-        if (source[cursor] === ']') {
-          cursor += 1
-          return
-        }
-        if (source[cursor] !== ',') invalidJson()
-        cursor += 1
-      }
-      invalidJson()
-    }
-    if (char === '"') {
-      parseString()
-      return
-    }
-    const primitive = /^(?:true|false|null|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)/.exec(
-      source.slice(cursor),
-    )
-    if (!primitive) invalidJson()
-    cursor += primitive[0].length
-  }
-
-  parseValue([])
-  skipWhitespace()
-  if (cursor !== source.length) invalidJson()
 }
 
 function assertAllowedFields(
@@ -173,10 +62,37 @@ function readDeclaredTransport(name: string, input: JsonObject): 'stdio' | 'stre
   return type ?? transport
 }
 
+/**
+ * 取出 stdio 的 env / http 的 headers（C3）。字段不存在时返回 undefined，不落一个空对象。
+ *
+ * 【为什么在这里就报「仅桌面端支持」而不是留给后面的 sanitize】不这样做的话，浏览器宿主会
+ * 拿到 sanitizeMcpEnv 的形状校验错误（比如「键名不合法」），这句话对着一份浏览器压根不该
+ * 接受的字段毫无意义，还会让用户以为把 env 写对了就能在浏览器里用。必须先问「这个宿主能不
+ * 能存」，再问「存的内容对不对」。
+ */
+function readCredentialField(
+  label: string,
+  input: JsonObject,
+  field: 'env' | 'headers',
+  allowCredentials: boolean,
+  sanitize: (value: unknown) => { ok: boolean; value?: Readonly<Record<string, string>> },
+): Readonly<Record<string, string>> | undefined {
+  if (!Object.prototype.hasOwnProperty.call(input, field)) return undefined
+  if (!allowCredentials) {
+    throw new Error(`${label}的凭据字段仅桌面端支持，请删除 headers/env 后再导入`)
+  }
+  const sanitized = sanitize(input[field])
+  if (!sanitized.ok) {
+    throw new Error(`${label}的 ${field} 格式不正确`)
+  }
+  return sanitized.value
+}
+
 function serverObjectToDraft(
   name: string,
   input: JsonObject,
   allowNameField: boolean,
+  allowCredentials: boolean,
 ): McpAddServerDraft {
   const label = serviceLabel(name)
   const hasCommand = Object.prototype.hasOwnProperty.call(input, 'command')
@@ -224,6 +140,7 @@ function serverObjectToDraft(
     if (input.cwd !== undefined && typeof input.cwd !== 'string') {
       throw new Error(`${label}的 cwd 必须是字符串`)
     }
+    const env = readCredentialField(label, input, 'env', allowCredentials, sanitizeMcpEnv)
     draft = {
       ...EMPTY_MCP_DRAFT,
       name,
@@ -233,11 +150,13 @@ function serverObjectToDraft(
       cwd: (input.cwd as string | undefined) ?? '',
       // Starting a local process always remains an explicit user action.
       autoConnect: false,
+      ...(env ? { env } : {}),
     }
   } else {
     if (typeof input.url !== 'string') {
       throw new Error(`${label}的 url 必须是字符串`)
     }
+    const headers = readCredentialField(label, input, 'headers', allowCredentials, sanitizeMcpHeaders)
     draft = {
       ...EMPTY_MCP_DRAFT,
       name,
@@ -246,6 +165,7 @@ function serverObjectToDraft(
       // Importing JSON only stages configuration. Every imported server must
       // be connected explicitly after the user has reviewed it.
       autoConnect: false,
+      ...(headers ? { headers } : {}),
     }
   }
 
@@ -261,8 +181,16 @@ function serverObjectToDraft(
  * form. Supported shapes:
  *   { "mcpServers": { "name": { "command": "...", "args": [] } } }
  *   { "name": "name", "command": "...", "args": [] }
+ *
+ * `allowCredentials`：这个宿主能不能落盘 headers/env（见 McpSettingsCapabilities.credentials，
+ * 桌面为 true）。浏览器宿主带着这两个字段导入时直接报错，不静默剥离——静默剥离会让用户以为
+ * 凭据已经保存，实际上服务器连接从一开始就没有认证。
  */
-export function parseMcpJsonConfig(jsonText: string): readonly McpAddServerDraft[] {
+export function parseMcpJsonConfig(
+  jsonText: string,
+  options?: { allowCredentials?: boolean },
+): readonly McpAddServerDraft[] {
+  const allowCredentials = options?.allowCredentials === true
   if (new TextEncoder().encode(jsonText).byteLength > MAX_JSON_BYTES) {
     throw new Error('MCP JSON 配置不能超过 256 KiB')
   }
@@ -317,6 +245,6 @@ export function parseMcpJsonConfig(jsonText: string): readonly McpAddServerDraft
     if (!isJsonObject(value)) {
       throw new Error(`${serviceLabel(name)}的配置必须是对象`)
     }
-    return serverObjectToDraft(name, value, singleServer)
+    return serverObjectToDraft(name, value, singleServer, allowCredentials)
   })
 }

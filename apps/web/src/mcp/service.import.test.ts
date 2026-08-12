@@ -120,6 +120,84 @@ describe('MCP settings service · JSON 导入', () => {
     ])
   })
 
+  it('imports headers/env on a desktop host (capabilities.credentials) and persists them', async () => {
+    const store = createStore()
+    const { storage, save } = createStorage()
+    const ids = ['local-files', 'remote-search']
+    let nextId = 0
+    const service = createMcpSettingsService({
+      store,
+      manager,
+      storage,
+      toolNameCacheStorage: createMemoryToolNameCacheStorage(),
+      capabilities: { stdio: true, credentials: true },
+      createId: () => ids[nextId++]!,
+    })
+
+    await expect(service.importJson(JSON.stringify({
+      mcpServers: {
+        files: {
+          command: 'node',
+          args: ['server.js'],
+          env: { TOKEN: 'secret-value' },
+        },
+        search: {
+          url: 'https://search.example.com/mcp',
+          headers: { Authorization: 'Bearer secret-value' },
+        },
+      },
+    }))).resolves.toBe(true)
+
+    const expected: readonly PersistedMcpServerConfig[] = [
+      {
+        id: 'local-files',
+        name: 'files',
+        transport: 'stdio',
+        command: 'node',
+        args: ['server.js'],
+        env: { TOKEN: 'secret-value' },
+        autoConnect: false,
+      },
+      {
+        id: 'remote-search',
+        name: 'search',
+        transport: 'streamable-http',
+        url: 'https://search.example.com/mcp',
+        headers: { Authorization: 'Bearer secret-value' },
+        autoConnect: false,
+      },
+    ]
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save).toHaveBeenCalledWith(expected)
+    expect(store.getter(mcpServerConfigsAtom)).toEqual(expected)
+  })
+
+  it('rejects headers/env on a browser host without persisting or silently stripping them', async () => {
+    const store = createStore()
+    const { storage, save } = createStorage()
+    // 浏览器宿主：没有 stdio、也没有 credentials（默认 Partial 缺省即 false）。
+    const service = createMcpSettingsService({
+      store,
+      manager,
+      storage,
+      capabilities: { stdio: false },
+      createId: () => 'remote-search',
+    })
+
+    await expect(service.importJson(JSON.stringify({
+      mcpServers: {
+        search: {
+          url: 'https://search.example.com/mcp',
+          headers: { Authorization: 'Bearer secret-value' },
+        },
+      },
+    }))).resolves.toBe(false)
+
+    expect(save).not.toHaveBeenCalled()
+    expect(store.getter(mcpServerConfigsAtom)).toEqual([])
+    expect(store.getter(mcpFormErrorAtom)).toContain('仅桌面端支持')
+  })
+
   it('rejects a case-insensitive name conflict without partially importing the batch', async () => {
     const existing: PersistedMcpServerConfig = {
       id: 'existing-search',

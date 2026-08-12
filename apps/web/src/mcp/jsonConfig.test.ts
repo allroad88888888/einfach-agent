@@ -103,10 +103,10 @@ describe('parseMcpJsonConfig', () => {
         playwright: {
           command: 'npx',
           args: ['@playwright/mcp@latest'],
-          env: { TOKEN: 'secret' },
+          notAField: true,
         },
       },
-    }))).toThrow('MCP 服务“playwright”包含不支持的字段：env')
+    }))).toThrow('MCP 服务“playwright”包含不支持的字段：notAField')
     expect(() => parseMcpJsonConfig(JSON.stringify({
       mcpServers: {
         remote: {
@@ -180,5 +180,65 @@ describe('parseMcpJsonConfig', () => {
     const oversized = JSON.stringify('你'.repeat(90_000))
     expect(() => parseMcpJsonConfig(oversized))
       .toThrow('MCP JSON 配置不能超过 256 KiB')
+  })
+
+  // C3：headers / env 是否被接受，完全由调用方传入的 allowCredentials 决定——这个模块本身
+  // 不猜测、也不探测宿主。不传 options（等价于 allowCredentials: false）与显式浏览器宿主
+  // 走同一条路径。
+  describe('凭据字段（headers / env）', () => {
+    it('rejects env without allowCredentials, without silently stripping it', () => {
+      expect(() => parseMcpJsonConfig(JSON.stringify({
+        mcpServers: {
+          playwright: {
+            command: 'npx',
+            args: ['@playwright/mcp@latest'],
+            env: { TOKEN: 'secret' },
+          },
+        },
+      }))).toThrow('MCP 服务“playwright”的凭据字段仅桌面端支持，请删除 headers/env 后再导入')
+    })
+
+    it('rejects headers without allowCredentials, without silently stripping it', () => {
+      expect(() => parseMcpJsonConfig(JSON.stringify({
+        mcpServers: {
+          remote: {
+            url: 'https://mcp.example.com/api',
+            headers: { Authorization: 'Bearer secret' },
+          },
+        },
+      }))).toThrow('MCP 服务“remote”的凭据字段仅桌面端支持，请删除 headers/env 后再导入')
+    })
+
+    it('accepts and sanitizes env/headers when allowCredentials is true', () => {
+      const [files, remote] = parseMcpJsonConfig(JSON.stringify({
+        mcpServers: {
+          files: {
+            command: 'node',
+            args: ['server.js'],
+            env: { TOKEN: 'secret-value' },
+          },
+          remote: {
+            url: 'https://mcp.example.com/api',
+            headers: { Authorization: 'Bearer secret-value' },
+          },
+        },
+      }), { allowCredentials: true })
+
+      expect(files).toMatchObject({ env: { TOKEN: 'secret-value' } })
+      expect(remote).toMatchObject({ headers: { Authorization: 'Bearer secret-value' } })
+    })
+
+    it('rejects malformed env/headers shapes even when allowCredentials is true', () => {
+      expect(() => parseMcpJsonConfig(JSON.stringify({
+        mcpServers: {
+          files: { command: 'node', env: { 'bad key': 'x' } },
+        },
+      }), { allowCredentials: true })).toThrow('MCP 服务“files”的 env 格式不正确')
+      expect(() => parseMcpJsonConfig(JSON.stringify({
+        mcpServers: {
+          remote: { url: 'https://mcp.example.com/api', headers: { Authorization: 123 } },
+        },
+      }), { allowCredentials: true })).toThrow('MCP 服务“remote”的 headers 格式不正确')
+    })
   })
 })

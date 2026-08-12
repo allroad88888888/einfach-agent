@@ -7,6 +7,15 @@ export type McpAddMode = 'form' | 'json'
 
 export interface McpSettingsCapabilities {
   stdio: boolean
+  /**
+   * 这个宿主能不能落盘凭据字段（C3）：streamable-http 的 headers、stdio 的 env。
+   *
+   * 【为什么不复用 stdio】两者当前都只在桌面为 true，但回答的是不同问题——stdio 问
+   * 「能不能起本机子进程」，这个问「凭据能不能安全落盘」。凭据的唯一落点是桌面配置文件
+   * `~/.webAgent/config.json`（见 credentialFields.ts），localStorage 宿主读写两端都会剥离，
+   * 因此 JSON 导入通道必须能在浏览器上把 headers/env 挡在门外并明确报错，而不是静默丢字段。
+   */
+  credentials: boolean
 }
 
 interface PersistedMcpServerBase {
@@ -74,6 +83,13 @@ export interface McpAddServerDraft {
   argsText: string
   cwd: string
   autoConnect: boolean
+  /**
+   * 凭据字段（C3）。目前唯一的产出方是 JSON 导入通道（jsonConfig.ts），且只在宿主
+   * 支持落盘凭据（McpSettingsCapabilities.credentials）时才会被填充；手填表单还没有
+   * 对应输入框，字段留空。buildPersistedMcpConfig 原样透传进持久化配置。
+   */
+  headers?: Readonly<Record<string, string>>
+  env?: Readonly<Record<string, string>>
 }
 
 export type McpDraftField = keyof McpAddServerDraft

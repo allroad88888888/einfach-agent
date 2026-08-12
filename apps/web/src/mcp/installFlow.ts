@@ -123,7 +123,9 @@ export function createMcpInstallFlow({
 
       let drafts
       try {
-        drafts = parseMcpJsonConfig(jsonText)
+        // 桌面/浏览器两种宿主对 headers/env 的支持不同（C3）：能不能落盘凭据交给
+        // capabilities.credentials 判定，而不是让 parseMcpJsonConfig 自己猜宿主。
+        drafts = parseMcpJsonConfig(jsonText, { allowCredentials: capabilities.credentials })
       } catch (error) {
         store.setter(mcpFormErrorAtom, messageFromError(error))
         return false
