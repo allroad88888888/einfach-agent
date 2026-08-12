@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { createCoreInstance, defaultCore } from './coreInstance'
 import { sessionsAtom, activeSessionIdAtom } from '../../state/rootAtoms'
 import type { Tool } from '../../tools/types'
@@ -162,6 +162,46 @@ describe('coreInstance —— CoreInstance 抽象与 defaultCore', () => {
       expect(b.config.deepseekApiKey).toBe('')
       expect(b.config.deepseekUserId).toBeUndefined()
       expect(b.config.glmApiKey).toBe('kb')
+    })
+  })
+
+  describe('projectSkillsProvider', () => {
+    it('未注入时写入空快照；注入后按 workspace 缓存 provider 结果', async () => {
+      const emptyCore = createCoreInstance()
+      await expect(emptyCore.projectSkills.ensure('/empty')).resolves.toEqual({
+        workspaceRoot: '/empty',
+        entries: [],
+        diagnostics: [],
+      })
+
+      const provider = vi.fn(async (workspaceRoot: string) => ({
+        workspaceRoot,
+        entries: [],
+        diagnostics: ['来自 provider'],
+      }))
+      const core = createCoreInstance({ projectSkillsProvider: provider })
+      const [first, second] = await Promise.all([
+        core.projectSkills.ensure('/provided'),
+        core.projectSkills.ensure('/provided'),
+      ])
+
+      expect(provider).toHaveBeenCalledTimes(1)
+      expect(second).toBe(first)
+      expect(core.projectSkills.get('/provided')).toBe(first)
+    })
+
+    it('provider 抛错时降级为空快照，不向调用方冒泡', async () => {
+      const core = createCoreInstance({
+        projectSkillsProvider: async () => {
+          throw new Error('provider exploded')
+        },
+      })
+
+      await expect(core.projectSkills.refresh('/broken')).resolves.toEqual({
+        workspaceRoot: '/broken',
+        entries: [],
+        diagnostics: ['项目 skills 扫描失败，已降级为无项目 skills：provider exploded'],
+      })
     })
   })
 

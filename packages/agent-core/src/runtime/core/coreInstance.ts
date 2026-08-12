@@ -17,20 +17,22 @@
 //   消费方决定：opts.registerTools?.(registry) 在构造时注入，或事后 core.tools.register(...)。默认实例
 //   defaultCore 造出来是【无工具】的；app（main.tsx）与测试（test/setup.ts）各调一次
 //   registerStandardTools(defaultCore.tools) 恢复"默认 21 工具"。于是 core 变无主张（可嵌任意工具集），
+//   宿主能力（项目 skills 扫描等）同理经 opts 注入（B1）。
 import { createStore, type Store } from '@einfach/core'
 import { createToolRegistry, type ToolRegistry } from '../../tools/toolRegistry'
 import { createToolEpochStore, type ToolEpochStore } from '../toolEpochStore'
 import { createSubagentScheduler, type SubagentScheduler } from '../../subagents/schedulerState'
 import { createPluginHost, type PluginHost, type PluginInput } from './pluginHost'
-import type { ProjectSkillsSnapshot } from '../../skills/projectSkills'
-import { emptyProjectSkillsSnapshot } from '../../skills/projectSkills'
+import {
+  createProjectSkillsStore,
+  type ProjectSkillsProvider,
+  type ProjectSkillsStore,
+} from './projectSkillsStore'
 import {
   createPersistenceBridge,
   setDefaultPersistenceBridge,
   type PersistenceBridge,
 } from '../persistenceBridge'
-// rootAtoms 是零 runtime 依赖的叶子层（破环地基），coreInstance 可以安全引用它的 atom 定义。
-import { projectSkillsAtom } from '../../state/rootAtoms'
 import { createRuntimeConfig, type RuntimeConfig } from './runtimeConfig'
 
 export type { RuntimeConfig } from './runtimeConfig'
@@ -52,40 +54,12 @@ export interface AbortRegistryLike {
   reset(): void
 }
 
-/**
- * 项目 Skills 存储接口。
- * 缓存键 = workspaceRoot（非 sessionId），同 workspace 多会话共享一份快照。
- */
-export interface ProjectSkillsStore {
-  /** 取或建快照，命中缓存时同步返回，否则走 bridge 扫描（传 undefined 则直接空快照）。 */
-  ensure(workspaceRoot: string, bridge?: ProjectSkillsLoaderBridge): Promise<ProjectSkillsSnapshot>
-  /** 强制重扫（无视缓存）。 */
-  refresh(workspaceRoot: string, bridge?: ProjectSkillsLoaderBridge): Promise<ProjectSkillsSnapshot>
-  /** 清空该 workspaceRoot 的缓存。 */
-  clear(workspaceRoot: string): void
-  /** 获取缓存中的快照（不触发扫描）。 */
-  get(workspaceRoot: string): ProjectSkillsSnapshot | undefined
-}
-
-/**
- * projectSkillsLoader 依赖的文件系统桥接口。
- * 生产实现走 ToolContext 的 listWorkspaceFiles / readWorkspaceFile，
- * 测试 fake 此接口完成纯内存覆盖。
- */
-export interface ProjectSkillsLoaderBridge {
-  listFiles(path: string, options: {
-    recursive: boolean
-    includeHidden: boolean
-    maxEntries: number
-    workspaceRoot: string
-    allowExternalPaths: boolean
-  }): Promise<{ entries: Array<{ path: string; type: string }> }>
-  readFile(path: string, options: {
-    maxBytes: number
-    workspaceRoot: string
-    allowExternalPaths: boolean
-  }): Promise<{ content: string }>
-}
+// 项目 Skills 缓存 store 拆至 ./projectSkillsStore（B1）；此处 re-export 维持既有 import 面。
+export type {
+  ProjectSkillsLoaderBridge,
+  ProjectSkillsProvider,
+  ProjectSkillsStore,
+} from './projectSkillsStore'
 
 // 一个 CoreInstance 包含彼此隔离的 root/session stores、tools、abort、scheduler、config、skills 与 persistence。
 export interface CoreInstance {
@@ -130,6 +104,7 @@ export function createCoreInstance(opts?: {
   config?: Partial<RuntimeConfig>
   registerTools?: (registry: ToolRegistry) => void
   plugins?: readonly PluginInput[]
+  projectSkillsProvider?: ProjectSkillsProvider
 }): CoreInstance {
   // 1) 根 store：该实例的会话列表值域。
   const rootStore = createStore()
@@ -215,62 +190,8 @@ export function createCoreInstance(opts?: {
   // 6) 运行时配置：默认空 key，opts.config 浅合并覆盖。
   const config = createRuntimeConfig(opts?.config)
 
-  // 7) 项目 Skills 缓存：快照存本实例 rootStore 的 projectSkillsAtom（按 workspaceRoot 分桶），
-  //    UI 因此可以直接订阅；in-flight promise 另用 Map 去重，不进 store（它是瞬态调度信息）。
-  const projectSkillsInFlight = new Map<string, Promise<ProjectSkillsSnapshot>>()
-  const readProjectSkills = (workspaceRoot: string): ProjectSkillsSnapshot | undefined =>
-    rootStore.getter(projectSkillsAtom)[workspaceRoot]
-  const writeProjectSkills = (snapshot: ProjectSkillsSnapshot): ProjectSkillsSnapshot => {
-    rootStore.setter(projectSkillsAtom, {
-      ...rootStore.getter(projectSkillsAtom),
-      [snapshot.workspaceRoot]: snapshot,
-    })
-    return snapshot
-  }
-  const projectSkills: ProjectSkillsStore = {
-    get(workspaceRoot) {
-      return readProjectSkills(workspaceRoot)
-    },
-    async ensure(workspaceRoot, bridge) {
-      const cached = readProjectSkills(workspaceRoot)
-      if (cached) return cached
-      // 同一 workspace 的并发 run 各自 ensure 时只扫一次：后来者复用同一个 in-flight promise。
-      const inFlight = projectSkillsInFlight.get(workspaceRoot)
-      if (inFlight) return inFlight
-      return projectSkills.refresh(workspaceRoot, bridge)
-    },
-    async refresh(workspaceRoot, bridge) {
-      // 无 bridge（web 端非 Tauri）＝ 这个环境永远没有项目 skills，空快照即正确答案。
-      if (!bridge) return writeProjectSkills(emptyProjectSkillsSnapshot(workspaceRoot))
-
-      const scan = (async () => {
-        try {
-          const { scanProjectSkills } = await import('../../skills/projectSkillsLoader')
-          return writeProjectSkills(await scanProjectSkills(workspaceRoot, bridge))
-        } catch (error) {
-          // 扫描器本身崩了（不是单个文件读失败——那些在 loader 内部已降级成 diagnostics）。
-          // 绝不让它冒泡到 run：项目 skills 是增强，不是运行前提。
-          const detail = error instanceof Error ? error.message : String(error)
-          return writeProjectSkills({
-            workspaceRoot,
-            entries: [],
-            diagnostics: [`项目 skills 扫描失败，已降级为无项目 skills：${detail}`],
-          })
-        } finally {
-          projectSkillsInFlight.delete(workspaceRoot)
-        }
-      })()
-      projectSkillsInFlight.set(workspaceRoot, scan)
-      return scan
-    },
-    clear(workspaceRoot) {
-      const current = rootStore.getter(projectSkillsAtom)
-      if (!(workspaceRoot in current)) return
-      const next = { ...current }
-      delete next[workspaceRoot]
-      rootStore.setter(projectSkillsAtom, next)
-    },
-  }
+  // 7) 项目 Skills 缓存：实现在 ./projectSkillsStore；扫描 provider 经 opts 注入（B1 反转）。
+  const projectSkills = createProjectSkillsStore(rootStore, opts?.projectSkillsProvider)
 
   return {
     rootStore,
@@ -294,3 +215,8 @@ export function createCoreInstance(opts?: {
 // app（main.tsx）与测试（test/setup.ts）负责调 registerStandardTools(defaultCore.tools) 装标准工具。
 export const defaultCore: CoreInstance = createCoreInstance()
 setDefaultPersistenceBridge(defaultCore.persistence)
+
+/** 为模块级 defaultCore 注入项目 Skills provider；仅供应用装配期调用。 */
+export function configureDefaultProjectSkillsProvider(provider?: ProjectSkillsProvider): void {
+  defaultCore.projectSkills.setProvider(provider)
+}

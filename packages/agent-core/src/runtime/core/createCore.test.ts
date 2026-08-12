@@ -126,6 +126,20 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
     expect(a.abort).not.toBe(defaultCore.abort)
   })
 
+  it('透传 projectSkillsProvider 到新建 CoreInstance', async () => {
+    const provider = vi.fn(async (workspaceRoot: string) => ({
+      workspaceRoot,
+      entries: [],
+      diagnostics: [],
+    }))
+    const core = createCore({ projectSkillsProvider: provider })
+
+    await expect(core.projectSkills.ensure('/workspace')).resolves.toMatchObject({
+      workspaceRoot: '/workspace',
+    })
+    expect(provider).toHaveBeenCalledWith('/workspace')
+  })
+
   it('rootStore 隔离：newSession 只登记进自己那套，不进另一个 / 不进 defaultCore', () => {
     const a = createCore()
     const b = createCore()

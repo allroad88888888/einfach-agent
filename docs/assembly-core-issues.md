@@ -93,7 +93,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   （本地注册的工具挂 `mcp:` 域扩展时机不受此限）；
   `pnpm exec vitest run packages/agent-core/src/tools`；`pnpm build`
 - **模型**：codex xhigh
-- **状态**：DONE（哈希在下一次提交补记）
+- **状态**：DONE `3ada9c9`（验收修正：拆除注册期 dangerous 假门、`ToolCallTiming` 独立成文件、恢复被削注释）
 
 ### A3 · loop 主干五点位到点执行、一等记账与公开分派 API
 
@@ -101,8 +101,10 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 - **改动面**：`packages/agent-core/src/runtime/runToolLoop.ts`、
   `packages/agent-core/src/runtime/toolLoopBootstrap.ts`、
   `packages/agent-core/src/runtime/toolCallExecutor.ts`、
-  `packages/agent-core/src/state/checkpointWriters.ts`、新增 `runtime/timedDispatch.ts`
-  （分派辅助，≤300 行）及 colocated 测试；与 D3 潜在重叠（runtime 循环文件），执行时错峰
+  `packages/agent-core/src/state/checkpointWriters.ts`、
+  `packages/agent-core/src/runtime/core/coreInstance.ts`（受限分派 API 挂载点）、
+  新增 `runtime/timedDispatch.ts`（分派辅助，≤300 行）及 colocated 测试；
+  与 D3 潜在重叠（runtime 循环文件），执行时错峰
 - **判据**：覆盖主干五点位 `sessionStart` / `runStart` / `runEnd` / `turnStart` / `turnEnd`；
   到点调用复用既有工具执行路径（同一 `ToolContext`、同一审计面），结果落为可持久化
   timeline item 并进 checkpoint；`sessionStart` 每会话恰好一次、恢复的会话以既有 timed item
@@ -153,7 +155,8 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   槽契约类型（`ProjectSkillsSnapshot` 一族）留在 core；项目 skills 行为不变：
   `pnpm exec vitest run packages/agent-core/src/runtime/core tools/skills`；`pnpm build`
 - **模型**：codex xhigh
-- **状态**：DOING
+- **状态**：DONE（哈希在下一次提交补记；验收补充：projectSkills store 拆至
+  `runtime/core/projectSkillsStore.ts`、恢复 coreInstance 头部架构注释）
 
 ### B2 · skills 实现（loader、registry、内置 skill 内容）迁入 tools-skills
 

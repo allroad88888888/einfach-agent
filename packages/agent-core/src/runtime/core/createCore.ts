@@ -18,7 +18,12 @@
 //   Planning getter/writer、持久化 bridge，以及 subagent runtime 内的工具 registry/权限调用仍有
 //   defaultCore 兼容路径。createCore 已适合隔离普通会话与主循环，但不能宣称这三条扩展路径完全隔离。
 
-import { createCoreInstance, type CoreInstance, type RuntimeConfig } from './coreInstance'
+import {
+  createCoreInstance,
+  type CoreInstance,
+  type ProjectSkillsProvider,
+  type RuntimeConfig,
+} from './coreInstance'
 import type { ToolRegistry } from '../../tools/toolRegistry'
 import { createCommands, type CommandApi } from '../commands'
 import { createPluginCommandFacade } from './pluginCommandFacade'
@@ -37,6 +42,8 @@ export function createCore(opts?: {
   registerTools?: (registry: ToolRegistry) => void
   /** Installed only on this Core; built-in loop plugins remain enabled. */
   plugins?: readonly PluginInput[]
+  /** 项目 Skills 扫描由装配层注入；未传时该实例固定使用空快照。 */
+  projectSkillsProvider?: ProjectSkillsProvider
 }): CoreInstance & CommandApi {
   const instance = createCoreInstance(opts)
   const commands = createCommands(instance)
