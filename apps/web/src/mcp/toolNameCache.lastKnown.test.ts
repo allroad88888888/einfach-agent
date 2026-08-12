@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { makeMcpToolName } from '@web-agent/tools-mcp'
 import {
   MCP_TOOL_NAME_CACHE_MAX_TOOLS_PER_SERVER,
   findLastKnownToolProvider,
@@ -91,37 +92,52 @@ describe('listLastKnownTools', () => {
 })
 
 describe('findLastKnownToolProvider', () => {
-  const namer = (serverId: string, remoteToolName: string) => `mcp__${serverId}__${remoteToolName}`
-
+  // 【fixture 必须是注册名】生产写入路径（toolNameCacheWriter 的 toCachedTools）存进来的是
+  // McpToolSnapshot.name，也就是 makeMcpToolName 的产出。早先这里用远端原名做 fixture，
+  // 于是"反查时再拼一次注册名"这个双重前缀的 bug 在测试里一直是绿的，生产里却从未命中。
   const cache: McpToolNameCache = setToolNameCacheEntry({}, 'github', {
-    tools: [tool('create_issue'), tool('list_repos')],
+    tools: [
+      tool(makeMcpToolName('github', 'create_issue')),
+      tool(makeMcpToolName('github', 'list_repos')),
+    ],
     probeStatus: 'success',
     cachedAt: 1000,
   })
 
   it('maps a registry tool name back to the server that last reported it', () => {
-    expect(findLastKnownToolProvider(cache, 'mcp__github__list_repos', namer)).toEqual({
+    expect(findLastKnownToolProvider(cache, 'mcp__github__list_repos')).toEqual({
       serverId: 'github',
-      remoteToolName: 'list_repos',
       cachedAt: 1000,
     })
   })
 
   it('returns undefined for a name no cached server reported', () => {
-    expect(findLastKnownToolProvider(cache, 'mcp__github__delete_repo', namer)).toBeUndefined()
-    expect(findLastKnownToolProvider(cache, 'write_file', namer)).toBeUndefined()
-    expect(findLastKnownToolProvider(cache, '', namer)).toBeUndefined()
+    expect(findLastKnownToolProvider(cache, 'mcp__github__delete_repo')).toBeUndefined()
+    expect(findLastKnownToolProvider(cache, 'write_file')).toBeUndefined()
+    expect(findLastKnownToolProvider(cache, '')).toBeUndefined()
   })
 
-  // 注册名不是简单拼接（超长/非法字符会退化成带哈希的形式），所以映射必须由调用方注入，
-  // 这里证明查找确实走注入的那一份，而不是在本文件里另抄一套拼法。
-  it('resolves the name through the injected namer rather than assuming a shape', () => {
-    const hashed = (serverId: string, remoteToolName: string) => `x_${serverId}_${remoteToolName}_9f`
+  // 模型手里只有注册名。远端原名也能查到就说明反查在自己拆名字的形状，那正是双重前缀的来路。
+  it('does not answer for the remote tool name buried inside a registry name', () => {
+    expect(findLastKnownToolProvider(cache, 'create_issue')).toBeUndefined()
+  })
 
-    expect(findLastKnownToolProvider(cache, 'x_github_create_issue_9f', hashed)).toMatchObject({
-      serverId: 'github',
-      remoteToolName: 'create_issue',
+  // 注册名超长或含非法字符时会退化成带哈希的形式，不可反解析；缓存里存的就是这份成品，
+  // 所以反查只能逐字比较——任何"在这里重拼一次"的写法都会在这条用例上翻车。
+  it('matches a hashed registry name verbatim', () => {
+    const remoteName = `${'search_'.repeat(12)}issues`
+    const hashedName = makeMcpToolName('github', remoteName)
+    expect(hashedName).not.toBe(`mcp__github__${remoteName}`)
+
+    const hashedCache = setToolNameCacheEntry({}, 'github', {
+      tools: [tool(hashedName)],
+      probeStatus: 'success',
+      cachedAt: 2000,
     })
-    expect(findLastKnownToolProvider(cache, 'mcp__github__create_issue', hashed)).toBeUndefined()
+
+    expect(findLastKnownToolProvider(hashedCache, hashedName)).toEqual({
+      serverId: 'github',
+      cachedAt: 2000,
+    })
   })
 })

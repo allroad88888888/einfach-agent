@@ -10,6 +10,11 @@
 //   连上之后一律以服务返回的真实清单为准，此时仍找不到的工具就是真的没有了（改名、下线），
 //   再回一句「请先连接」会把模型推进「连接 → 还是没有 → 再连接」的死循环。这个参数没有默认值，
 //   就是不想让接线方"先不管连接状态"——那正是最容易误导模型的一种接法。
+//
+// 【为什么不需要注入名字映射】缓存里存的已经是注册名（写入见 toolNameCacheWriter.ts 的
+//   toCachedTools），模型点名用的也是它，两边同一个字符串，逐字比较即可。这里一度注入
+//   makeMcpToolName 再拼一次，拼出 mcp__s__mcp__s__t，与模型给的名字永不相等——本探针
+//   因此在生产环境从未答出过一次。
 import type {
   UnconnectedToolProvider,
   UnconnectedToolProviderProbe,
@@ -21,8 +26,6 @@ export interface CachedToolProviderProbeSource {
   getCache(): McpToolNameCache
   /** serverId → 该服务此刻是否已连接。已连接的服务不回答，理由见文件头。 */
   isConnected(serverId: string): boolean
-  /** (serverId, 远端工具名) → 注册进 ToolRegistry 的工具名；传 tools-mcp 的 makeMcpToolName。 */
-  toRegisteredName(serverId: string, remoteToolName: string): string
 }
 
 /**
@@ -35,13 +38,11 @@ export interface CachedToolProviderProbeSource {
 export function createCachedToolProviderProbe(
   source: CachedToolProviderProbeSource,
 ): UnconnectedToolProviderProbe {
-  if (typeof source?.getCache !== 'function'
-    || typeof source?.isConnected !== 'function'
-    || typeof source?.toRegisteredName !== 'function') {
-    throw new Error('createCachedToolProviderProbe requires getCache, isConnected and toRegisteredName')
+  if (typeof source?.getCache !== 'function' || typeof source?.isConnected !== 'function') {
+    throw new Error('createCachedToolProviderProbe requires getCache and isConnected')
   }
   return (toolName): UnconnectedToolProvider | undefined => {
-    const found = findLastKnownToolProvider(source.getCache(), toolName, source.toRegisteredName)
+    const found = findLastKnownToolProvider(source.getCache(), toolName)
     if (!found || source.isConnected(found.serverId)) return undefined
     return { serverId: found.serverId, cachedAt: found.cachedAt }
   }

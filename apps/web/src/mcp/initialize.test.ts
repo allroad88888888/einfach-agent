@@ -70,9 +70,11 @@ function seedColdStart(): void {
     version: 1,
     cache: {
       docs: {
+        // 磁盘上存的是【注册名】：写入侧 toCachedTools 存的就是 McpToolSnapshot.name，
+        // 模型点名调用时给的也是它。种远端原名会让 B4 那条断言测不到真实数据形状。
         tools: [
-          { name: 'search', description: '搜索文档' },
-          { name: 'draft', description: '起草文档' },
+          { name: 'mcp__docs__search', description: '搜索文档' },
+          { name: 'mcp__docs__draft', description: '起草文档' },
         ],
         toolCount: 2,
         cachedAt: CACHED_AT,
@@ -164,8 +166,8 @@ describe('MCP 冷启动装配 · 缓存一路走到模型与界面（B5）', () 
     expect(server?.lastKnownTools).toEqual({
       serverId: 'docs',
       tools: [
-        { name: 'search', description: '搜索文档' },
-        { name: 'draft', description: '起草文档' },
+        { name: 'mcp__docs__search', description: '搜索文档' },
+        { name: 'mcp__docs__draft', description: '起草文档' },
       ],
       toolCount: 2,
       truncated: false,

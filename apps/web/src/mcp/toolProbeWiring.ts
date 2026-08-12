@@ -16,11 +16,7 @@
 
 import type { UnconnectedToolProviderProbe } from '@web-agent/core/tools/schemaResult'
 import type { ToolRegistry } from '@web-agent/core/tools/toolRegistry'
-import {
-  makeMcpToolName,
-  registerMcpTools,
-  type McpConnectManager,
-} from '@web-agent/tools-mcp'
+import { registerMcpTools, type McpConnectManager } from '@web-agent/tools-mcp'
 import { createCachedToolProviderProbe } from './cachedToolProviderProbe'
 import { listLastKnownTools, type McpToolNameCache } from './toolNameCache'
 
@@ -55,13 +51,9 @@ export function wireMcpToolProbes({
     manager,
     lastKnownTools: () => listLastKnownTools(getCache()),
   })
-  // B4：注册名由 tools-mcp 的 makeMcpToolName 拼（超长会退化成带哈希的形式），
-  // 在别处抄一份迟早对不上，所以直接把真身递进去。
+  // B4：缓存条目名就是注册名（写入侧已经过一次 makeMcpToolName），模型点名用的也是它，
+  // 所以这里只需把缓存和连接状态递进去，不再注入任何名字映射——再拼一次就是双重前缀。
   configure({
-    unconnectedToolProvider: createCachedToolProviderProbe({
-      getCache,
-      isConnected,
-      toRegisteredName: makeMcpToolName,
-    }),
+    unconnectedToolProvider: createCachedToolProviderProbe({ getCache, isConnected }),
   })
 }

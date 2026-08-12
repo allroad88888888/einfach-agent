@@ -250,11 +250,17 @@ export function listLastKnownTools(cache: McpToolNameCache): readonly McpLastKno
   return Object.entries(cache).map(([serverId, record]) => toLastKnown(serverId, record))
 }
 
-/** findLastKnownToolProvider 的命中结果：这个注册名上次已知出自谁。 */
+/**
+ * findLastKnownToolProvider 的命中结果：这个注册名上次已知出自谁。
+ *
+ * 【为什么只有 serverId 和时刻，没有工具名】缓存条目名【就是】注册名（写入见
+ * toolNameCacheWriter.ts 的 toCachedTools），命中意味着它逐字等于传进来的 toolName，
+ * 再回一个同值字段只是噪音；B4 回执要展示的名字是调用方本来就握在手里的那一个。
+ * 远端原名这里根本没有——注册名超长或含非法字符时会退化成带哈希的形式，不可反解析，
+ * 所以任何「顺手把远端原名也返回去」的想法都只能靠猜，不做。
+ */
 export interface McpLastKnownToolProvider {
   readonly serverId: string
-  /** 服务侧的原始工具名（缓存存的是它，注册名由 toRegisteredName 拼出）。 */
-  readonly remoteToolName: string
   readonly cachedAt: number
 }
 
@@ -262,21 +268,21 @@ export interface McpLastKnownToolProvider {
  * 反查一个【注册名】上次已知出自哪个服务。命中不代表这个工具现在存在——它只说明
  * 上次探测时它在那个服务的清单里，所以调用方拿到它之后只能说「上次已知」。
  *
- * toRegisteredName 由调用方注入（传 tools-mcp 的 makeMcpToolName）：注册名不是简单拼接，
- * 超长或含非法字符时会退化成带哈希的形式，在这里抄一份迟早会和真身对不上。
+ * 【为什么是逐字比较】缓存里存的已经是注册名，这里再套一次 makeMcpToolName 会得到
+ * mcp__s__mcp__s__t 这种双重前缀、与模型给的名字永不相等（B4 回执因此长期从未触发）。
+ * 名字怎么拼是写入侧的事，反查这一侧不认识、也不该认识注册名的形状。
  *
  * 只在「这个工具名彻底不认识」的冷路径上被调用，所以直接线性扫（上限 50 服务 × 200 工具）。
  */
 export function findLastKnownToolProvider(
   cache: McpToolNameCache,
   toolName: string,
-  toRegisteredName: (serverId: string, remoteToolName: string) => string,
 ): McpLastKnownToolProvider | undefined {
   if (!toolName) return undefined
   for (const [serverId, record] of Object.entries(cache)) {
     for (const entry of record.tools) {
-      if (toRegisteredName(serverId, entry.name) !== toolName) continue
-      return { serverId, remoteToolName: entry.name, cachedAt: record.cachedAt }
+      if (entry.name !== toolName) continue
+      return { serverId, cachedAt: record.cachedAt }
     }
   }
   return undefined

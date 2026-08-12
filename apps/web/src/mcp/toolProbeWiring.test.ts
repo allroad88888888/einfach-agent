@@ -19,11 +19,13 @@ import { wireMcpToolProbes } from './toolProbeWiring'
 
 const CACHED_AT = Date.UTC(2026, 7, 10, 9, 30, 0)
 
+// 缓存里存的是【注册名】（写入见 toolNameCacheWriter 的 toCachedTools），B4 反查与 F4 清单
+// 看到的都是它；fixture 写远端原名就会把两根线都测成假绿。
 function cacheWithDocs(): McpToolNameCache {
   return setToolNameCacheEntry({}, 'docs', {
     tools: [
-      { name: 'search', description: '搜索文档' },
-      { name: 'draft', description: '起草文档' },
+      { name: makeMcpToolName('docs', 'search'), description: '搜索文档' },
+      { name: makeMcpToolName('docs', 'draft'), description: '起草文档' },
     ],
     probeStatus: 'success',
     cachedAt: CACHED_AT,

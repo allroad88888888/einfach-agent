@@ -273,6 +273,9 @@ registry 里没有这个名字 → 委派前的存在性检查失败 → 返回�
 
 ## 实施前必须先修的既有缺陷
 
+> 已修复（issue 树 D0）：`findLastKnownToolProvider` 改为直接比较缓存条目名，
+> `toRegisteredName` 注入链整条拆除。以下保留原始分析。
+
 **缓存里存的是注册名，反查却按远端名。** `toCachedTools()` 写入的是
 `McpToolSnapshot.name`（即 `mcp__<serverId>__<remoteName>`），而
 `findLastKnownToolProvider()` 对每个缓存条目又套了一次 `makeMcpToolName(serverId, entry.name)`，

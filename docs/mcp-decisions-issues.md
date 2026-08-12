@@ -108,7 +108,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   语义要么保住、要么在代码注释与 Z1 文档里写明为什么覆盖目录也迁移。
   `pnpm exec vitest run apps/web/src/mcp` + `pnpm build`
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE e444d3e
 
 ### C1 · 持久化模型支持 http headers 与 stdio env（仅文件存储）
 
@@ -120,7 +120,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   往返后**不含**这两个字段；`toManagerConfig` 把两字段透传进 manager 配置；`parseArgsText`
   对疑似 token 启动参数的拒绝保持不变；`pnpm exec vitest run apps/web/src/mcp` + `pnpm build`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### C2 · 设置面板支持录入与编辑凭据字段
 
