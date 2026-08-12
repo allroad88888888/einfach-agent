@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { PlanRuntime } from '@web-agent/core/planning/runtime'
+import { PlanRuntime } from '../planRuntime'
 import type { PlanSnapshot } from '@web-agent/core/planning/types'
 import type { ToolContext } from '@web-agent/core/tools/types'
 import { submitStageResultTool } from './submit-stage-result'

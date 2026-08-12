@@ -34,6 +34,8 @@ import type { ConversationItem, SessionMeta } from '../../state/core.type'
 import type { PlanSnapshot } from '../../planning/types'
 import type { SessionsPersistence } from '../../state/persistence/contract'
 import type { HistoryDriver } from '../../state/persistence/historyDriver'
+import type { PlanRuntimeFactory } from '../../planning/runtime'
+import type { PlanRuntimeStore } from '../../planning/types'
 
 // ── 假 fetch ───────────────────────────────────────────────────────────────
 // 非流式 JSON 响应：postChatCompletionStream 检测到 content-type 非 text/event-stream 即回退
@@ -392,7 +394,19 @@ describe('双实例隔离证明（createCore × 真主循环 × 假 fetch）', (
   })
 
   it('approvePlan 只读取并更新绑定实例的同 id 计划，不串到 defaultCore', () => {
-    const A = createCore({ config: { deepseekApiKey: 'KA', fetchImpl: replyFetch('A-reply').fetchImpl } })
+    const planRuntime = ((store: PlanRuntimeStore) => ({
+      get: store.get,
+      approve: (_planId: string, revision: number, approved: boolean) => {
+        const plan = store.get()!
+        const next = { ...plan, status: approved ? 'approved' as const : 'cancelled' as const, revision: revision + 1 }
+        store.set(next)
+        return { ok: true as const, plan: next }
+      },
+    })) as unknown as PlanRuntimeFactory
+    const A = createCore({
+      config: { deepseekApiKey: 'KA', fetchImpl: replyFetch('A-reply').fetchImpl },
+      planRuntime,
+    })
     seedSession(A, 's', 'A-session')
     seedSession(defaultCore, 's', 'default-session')
     setPlan('s', awaitingPlan('A plan'), A)

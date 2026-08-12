@@ -3,6 +3,9 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import { rootStore, sessionsAtom } from '../state/rootStore'
+import { defaultCore } from './core/coreInstance'
+import { createDefaultPlanRuntime } from '@web-agent/tools-planning'
+import type { CreatePlanInput, PlanRuntimeStore } from '../planning/types'
 import { getSessionStore } from '../state/sessionStore'
 import { setRun } from '../state/sessionWriters'
 import { getPlan, setPlan } from '../state/planWriters'
@@ -10,7 +13,12 @@ import { browserCardsAtom, toolActivityAtom } from '../state/transientAtoms'
 import { toolRegistry } from '../tools/registry'
 import type { Tool } from '../tools/types'
 import { createCoreInstance, type CoreInstance } from './core/coreInstance'
+import type { PlanRuntimeFactory } from '../planning/runtime'
 import { buildToolContext } from './toolContext'
+
+// C2 后 defaultCore 不再内置 plan runtime；stale submitStageResult 用例需要真实 plan 语义，
+// 按 main.tsx 的装配方式在本文件 worker 内注入（isolate:true，不外溢）。
+defaultCore.planRuntime = createDefaultPlanRuntime
 
 function seedRunningSession(id = 's1', runId = 'r'): void {
   rootStore.setter(sessionsAtom, (prev) => ({
@@ -155,7 +163,20 @@ describe('ctx 副作用 + stale 守卫', () => {
 
 describe('ctx 计划实例归属', () => {
   it('custom core 创建和读取计划不落入 defaultCore', () => {
-    const core = createCoreInstance()
+    const core = createCoreInstance({
+      planRuntime: ((store: PlanRuntimeStore) => ({
+        get: store.get,
+        create: (input: CreatePlanInput) => {
+          const plan = {
+            id: 'plan-1', title: input.title, objective: input.objective, status: 'approved' as const,
+            revision: 1, requiresApproval: false, createdAt: 0, updatedAt: 0,
+            stages: input.stages.map((stage) => ({ ...stage, deliverables: stage.deliverables ?? [], dependencies: stage.dependencies ?? [], status: 'pending' as const, evidence: [] })),
+          }
+          store.set(plan)
+          return { ok: true as const, plan }
+        },
+      })) as unknown as PlanRuntimeFactory,
+    })
     seedRunningCoreSession(core)
     const ctx = buildToolContext({
       sessionId: 's1', runId: 'r', signal: new AbortController().signal, callId: 'call1', toolName: 'create_plan', core,

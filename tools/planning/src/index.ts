@@ -6,6 +6,7 @@ import { createPlanTool } from './create-plan/create-plan'
 import { updatePlanTool } from './update-plan/update-plan'
 import { executePlanTool } from './execute-plan/execute-plan'
 import { submitStageResultTool } from './submit-stage-result/submit-stage-result'
+export { createDefaultPlanRuntime, PlanRuntime } from './planRuntime'
 
 export { getPlanTool, createPlanTool, updatePlanTool, executePlanTool, submitStageResultTool }
 

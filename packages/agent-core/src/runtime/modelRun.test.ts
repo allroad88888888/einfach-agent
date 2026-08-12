@@ -34,9 +34,11 @@ import { configurePersistence, resetPersistence } from './persistenceBridge'
 import type { Checkpoint } from '../state/checkpoint.type'
 import { configureObservability, flushObservability, resetObservability } from '../observability/trace'
 import type { TraceDriver, TraceEvent, TraceSpan } from '../observability/types'
-import { createCoreInstance } from './core/coreInstance'
+import { createCoreInstance, defaultCore } from './core/coreInstance'
 import { createCore } from './core/createCore'
 import { buildSkillManifestText, registerStandardTools } from '@web-agent/tools'
+import type { PlanRuntimeFactory } from '../planning/runtime'
+import type { CreatePlanInput, PlanRuntimeStore } from '../planning/types'
 
 // delegateRuntime.dispose 的失败注入闸门。★ 只在 disposeControl.error 被显式设过时才把 dispose
 // 换成抛错版本 ★ —— 其余用例拿到的仍是货真价实的 delegate runtime，本文件其它测试完全不受影响。
@@ -72,6 +74,7 @@ afterEach(() => {
   tauriControl.enabled = false
   resetObservability()
   resetPersistence()
+  defaultCore.planRuntime = undefined
 })
 
 // 只记录 saveCheckpoint 的假 HistoryDriver —— 用来证明「落盘」真的发生了，
@@ -1726,6 +1729,19 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
   })
 
   it('create_plan required：进入专用计划审批状态，模型不能自行继续', async () => {
+    defaultCore.planRuntime = ((store: PlanRuntimeStore) => ({
+      get: store.get,
+      create: (input: CreatePlanInput) => {
+        const now = Date.now()
+        const plan = {
+          schemaVersion: 4 as const, id: 'plan-wait', title: input.title, objective: input.objective,
+          status: 'awaiting_approval' as const, revision: 1, requiresApproval: true, createdAt: now, updatedAt: now,
+          stages: input.stages.map((stage) => ({ ...stage, deliverables: stage.deliverables ?? [], dependencies: stage.dependencies ?? [], status: 'pending' as const, evidence: [] })),
+        }
+        store.set(plan)
+        return { ok: true as const, plan }
+      },
+    })) as unknown as PlanRuntimeFactory
     seedSession('plan-wait', { vendor: 'deepseek', model: 'x' })
     const args = {
       title: '实现功能', objective: '完成实现与验证', approvalMode: 'required',

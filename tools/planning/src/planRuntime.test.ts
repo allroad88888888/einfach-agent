@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { PlanRuntime } from './runtime'
-import type { CreatePlanInput, PlanSnapshot } from './types'
+import { PlanRuntime } from './planRuntime'
+import type { CreatePlanInput, PlanSnapshot } from '@web-agent/core/planning/types'
 
 function harness() {
   let plan: PlanSnapshot | undefined
@@ -136,3 +136,4 @@ describe('PlanRuntime', () => {
     expect(completed.revision).toBe(9)
   })
 })
+

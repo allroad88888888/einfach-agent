@@ -68,7 +68,12 @@ import {
   runToolLoop,
 } from './modelRun'
 import { defaultCore, createCoreInstance } from './core/coreInstance'
+import { createDefaultPlanRuntime } from '@web-agent/tools-planning'
 import { MCP_CONNECT_TOOL_NAME } from './dangerousTools'
+
+// C2 后 defaultCore 不再内置 plan runtime（实现在 tools-planning）；本套件的 plan 命令用例
+// 需要真实语义，按 main.tsx 的装配方式在本文件 worker 内注入（isolate:true，不外溢）。
+defaultCore.planRuntime = createDefaultPlanRuntime
 import { getExecutionRuntime } from '../execution/runtime'
 import { executionGraphAtom } from '../execution/graph'
 import {

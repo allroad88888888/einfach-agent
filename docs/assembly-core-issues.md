@@ -328,7 +328,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   `pnpm exec vitest run packages/agent-core/src/runtime tools/agents`；`pnpm build`；
   只做注入不做多实现承诺（见未决）
 - **模型**：codex xhigh
-- **状态**：DONE（哈希在下一次提交补记；`DelegationRuntimeFactory` capability 持有
+- **状态**：DONE `06a5680`（`DelegationRuntimeFactory` capability 持有
   scheduler、动态加载现有实现避初始化环；旧 `subagentScheduler` 留兼容读取代理；
   与 C2 并行的共享文件 `coreInstance.ts`/`createCore.ts` 随本卡提交）
 

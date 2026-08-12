@@ -13,7 +13,7 @@ import {
   configureDefaultProjectSkillsProvider,
   configureDefaultSkillsRegistry,
 } from '@web-agent/core/runtime/core/coreInstance'
-import { createDefaultPlanRuntime } from '@web-agent/core/planning/runtime'
+import { createDefaultPlanRuntime } from '@web-agent/tools-planning'
 import { configurePersistence } from '@web-agent/core/runtime/persistenceBridge'
 import { configureObservability } from '@web-agent/core/observability/trace'
 import { hydrate } from '@web-agent/core/state/persistence/hydrate'
