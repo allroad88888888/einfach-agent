@@ -32,7 +32,7 @@ import {
 import { TOOL_SCHEMA_AUTOLOADED_CODE } from '../tools/schemaResult'
 import { newId } from './newId'
 // 收尾自查 / 如实报告两条条款住在零依赖叶子模块：evals 的 prompt 行为 A/B 要 import 同一份
-// 字节做对照实验，而本文件（经 skills/registry 的 .md?raw + tools/registry 的 defaultCore）
+// 字节做对照实验，而本文件（经装配的 skill registry + tools/registry 的 defaultCore）
 // 在那个 tsconfig 下既无法解析也不该被实例化。详见 selfReflectionPrompts.ts 顶部说明。
 import { SELF_CHECK_CLAUSES } from './selfReflectionPrompts'
 import { fnv1a32 } from './shared/hash'

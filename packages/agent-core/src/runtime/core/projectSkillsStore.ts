@@ -14,9 +14,9 @@ import { projectSkillsAtom } from '../../state/rootAtoms'
  */
 export interface ProjectSkillsStore {
   /** 取或建快照，命中缓存时同步返回；未注入 provider 时直接写入空快照。 */
-  ensure(workspaceRoot: string, provider?: ProjectSkillsProvider | ProjectSkillsLoaderBridge): Promise<ProjectSkillsSnapshot>
+  ensure(workspaceRoot: string): Promise<ProjectSkillsSnapshot>
   /** 强制重扫（无视缓存）。 */
-  refresh(workspaceRoot: string, provider?: ProjectSkillsProvider | ProjectSkillsLoaderBridge): Promise<ProjectSkillsSnapshot>
+  refresh(workspaceRoot: string): Promise<ProjectSkillsSnapshot>
   /** 装配期设置此实例的项目 Skills provider。 */
   setProvider(provider?: ProjectSkillsProvider): void
   /** 清空该 workspaceRoot 的缓存。 */
@@ -26,7 +26,7 @@ export interface ProjectSkillsStore {
 }
 
 /**
- * projectSkillsLoader 依赖的文件系统桥接口。
+ * tools-skills 的 project skill loader 依赖的文件系统桥接口。
  * 生产实现走 ToolContext 的 listWorkspaceFiles / readWorkspaceFile，
  * 测试 fake 此接口完成纯内存覆盖。
  */
@@ -68,25 +68,23 @@ export function createProjectSkillsStore(
     get(workspaceRoot) {
       return read(workspaceRoot)
     },
-    async ensure(workspaceRoot, provider) {
+    async ensure(workspaceRoot) {
       const cached = read(workspaceRoot)
       if (cached) return cached
       // 同一 workspace 的并发 run 各自 ensure 时只扫一次：后来者复用同一个 in-flight promise。
       const pending = inFlight.get(workspaceRoot)
       if (pending) return pending
-      return store.refresh(workspaceRoot, provider)
+      return store.refresh(workspaceRoot)
     },
-    async refresh(workspaceRoot, provider) {
-      // 已配置的装配 provider 优先；调用点也可临时注入 provider。
-      const activeProvider = projectSkillsProvider ?? provider
-      // bridge 形参仅为旧调用点保留类型兼容（B2 收口），core 不再识别它或调用扫描器。
-      if (typeof activeProvider !== 'function') {
+    async refresh(workspaceRoot) {
+      const provider = projectSkillsProvider
+      if (!provider) {
         return write(emptyProjectSkillsSnapshot(workspaceRoot))
       }
 
       const scan = (async () => {
         try {
-          return write(await activeProvider(workspaceRoot))
+          return write(await provider(workspaceRoot))
         } catch (error) {
           // 扫描器本身崩了（不是单个文件读失败——那些在 loader 内部已降级成 diagnostics）。
           // 绝不让它冒泡到 run：项目 skills 是增强，不是运行前提。

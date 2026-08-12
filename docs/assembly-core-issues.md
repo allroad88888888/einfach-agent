@@ -144,7 +144,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   路径同样触发 `subagentEnd`；深度/子数/预算硬限对 timed 分派不放宽；
   `pnpm exec vitest run packages/agent-core/src/subagents`；`pnpm build`
 - **模型**：codex xhigh
-- **状态**：DONE（哈希在下一次提交补记；分派核心抽为 `dispatchTimedToolRegistrations`
+- **状态**：DONE `cc04aa4`（分派核心抽为 `dispatchTimedToolRegistrations`
   adapter 面，子循环经 `runChildTool` 执行、item 落子 Agent timeline，子工具可见性与
   预算硬限对 timed 分派生效）
 
@@ -178,7 +178,9 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   deprecated 别名删除）；`pnpm exec vitest run tools/skills packages/agent-core`；`pnpm build`
 - **模型**：codex xhigh（勘误：`tools/types.ts` 反向依赖 `skills/registry` 的 `SkillSummary`，
   契约切分超出机械搬移，按规则升险）
-- **状态**：DOING
+- **状态**：DONE（哈希在下一次提交补记；`SkillSummary` 落 `skills/contracts.ts`、
+  `buildProjectSkillsProvider` 落 tools-skills 且懒加载 workspace 桥防模块图毒化、
+  调用点过渡债与 deprecated 别名一并收口）
 
 ### B3 · skills L1 清单注入迁移为 sessionStart timed 工具
 

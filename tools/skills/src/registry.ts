@@ -1,4 +1,4 @@
-// skills/registry.ts（agentNew · 从 src/agent/skills/registry.ts 移植）
+// tools-skills/registry.ts —— 内置 skill 的内容、检索与 manifest 实现。
 // ---------------------------------------------------------------------------
 // TK4：skill 走 tool、不进 prompt —— 进 prompt 的只有清单元数据（name + 触发条件式
 // description，见 buildSkillManifestText），正文与资源永远经 skill_read。
@@ -19,7 +19,8 @@
 // 阶段 4（project-skills-blueprint.md）：buildSkillManifestText 新增可选 snapshot 入参，
 // 无快照/空快照时输出与今天逐字相同（web 端回归护栏）。项目段由调用方传入，本模块只负责拼。
 
-import type { ProjectSkillsSnapshot } from './projectSkills'
+import type { ProjectSkillsSnapshot } from '@web-agent/core/skills/projectSkills'
+import type { SkillSummary } from '@web-agent/core/skills/contracts'
 import askUserQuestion from './ask-user-question.md?raw'
 import dataVisualization from './data-visualization.md?raw'
 import toolLoading from './tool-loading.md?raw'
@@ -27,11 +28,7 @@ import webChatAgent from './web-chat-agent.md?raw'
 import planning from './planning.md?raw'
 import planningEvaluationReference from './planning/references/evaluation.md?raw'
 
-export interface SkillSummary {
-  name: string
-  description: string
-  triggers: string[]
-}
+export type { SkillSummary } from '@web-agent/core/skills/contracts'
 
 export interface SkillSearchMatch extends SkillSummary {
   /** Deterministic relevance score; larger values sort first. */

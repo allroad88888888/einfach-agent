@@ -58,7 +58,6 @@ import { revertWorkspaceChange } from './workspaceChange'
 import { copyWorkspacePath, moveWorkspacePath } from './workspacePathOperation'
 import { getWorkspaceDiff } from './workspaceGit'
 import { runWorkspaceTask } from './workspaceTask'
-import { listSkillSummaries } from '../skills/registry'
 
 const MAX_TOOL_DEPTH = 4
 
@@ -434,7 +433,7 @@ export function buildToolContext(opts: {
 
     skills: {
       list() {
-        const builtins = listSkillSummaries().map((s) => ({ ...s }))
+        const builtins = core.skillRegistry.list().map((s) => ({ ...s }))
         if (!projectSkillsSnapshot || projectSkillsSnapshot.entries.length === 0) return builtins
         const projects: Array<{ name: string; description: string; triggers: string[] }> =
           projectSkillsSnapshot.entries.map((e) => ({

@@ -1,5 +1,4 @@
 import type { ModelFunctionTool } from '@web-agent/ai'
-import { listSkillSummaries } from '../skills/registry'
 import {
   addRuntimeTranscriptEvent,
   getTranscriptInjectionFingerprints,
@@ -42,8 +41,8 @@ function addInjectionEvent(
   }, core)
 }
 
-function skillManifestSummary(): string {
-  const names = listSkillSummaries().map((skill) => skill.name).sort()
+function skillManifestSummary(core: CoreInstance): string {
+  const names = core.skillRegistry.list().map((skill) => skill.name).sort()
   return `清单含 ${names.length} 个 skill：${names.join('、')}`
 }
 
@@ -89,7 +88,7 @@ export function injectStablePrefixTranscript(
   }
 
   const manifestEntries = [
-    ['skillManifest', '注入 skill 清单', skillManifestSummary(), prefix.skillManifest.content],
+    ['skillManifest', '注入 skill 清单', skillManifestSummary(core), prefix.skillManifest.content],
     ['toolManifest', '注入工具摘要清单', compactText(prefix.toolManifest.content), prefix.toolManifest.content],
   ] as const
   for (const [key, title, summary, detail] of manifestEntries) {

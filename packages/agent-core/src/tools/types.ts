@@ -14,7 +14,7 @@ import type {
   ExecutionJoinResult,
   ExecutionObservation,
 } from '../execution/types'
-import type { SkillSummary } from '../skills/registry'
+import type { SkillSummary } from '../skills/contracts'
 import type { ToolCallTiming } from './toolCallTiming'
 
 /**
@@ -58,7 +58,7 @@ export interface RegisteredToolSnapshot extends LoadedTool {
 
 /**
  * 每个工具自带的 skill（取代裸 description）：一句话摘要 + 可选触发词 + 完整指南正文。
- * 与 skills/registry 的 skill 同形，工具因此自文档化。description 进 manifest；content 只经 loadSchema 给 model。
+ * 与运行时 skill 摘要同形，工具因此自文档化。description 进 manifest；content 只经 loadSchema 给 model。
  */
 export interface ToolSkill {
   description: string

@@ -28,6 +28,7 @@ import {
 } from '../timedDispatch'
 import { createToolEpochStore, type ToolEpochStore } from '../toolEpochStore'
 import { createSubagentScheduler, type SubagentScheduler } from '../../subagents/schedulerState'
+import { emptySkillsRegistry, type SkillsRegistry } from '../../skills/contracts'
 import { createPluginHost, type PluginHost, type PluginInput } from './pluginHost'
 import {
   createProjectSkillsStore,
@@ -110,6 +111,10 @@ export interface CoreInstance {
   readonly config: RuntimeConfig
   // 该实例的项目 Skills 缓存（per workspaceRoot，与 core.tools 同构）。
   readonly projectSkills: ProjectSkillsStore
+  // 该实例装配的内置 skill registry；core 只消费契约，不持有实现。
+  readonly skillRegistry: SkillsRegistry
+  // 装配期设置此实例的内置 skill registry。
+  setSkillRegistry(registry?: SkillsRegistry): void
   // 该实例的持久化 driver、写队列与 rootStore 快照。
   readonly persistence: PersistenceBridge
 }
@@ -128,6 +133,7 @@ export function createCoreInstance(opts?: {
   registerTools?: (registry: ToolRegistry) => void
   plugins?: readonly PluginInput[]
   projectSkillsProvider?: ProjectSkillsProvider
+  skillRegistry?: SkillsRegistry
 }): CoreInstance {
   // 1) 根 store：该实例的会话列表值域。
   const rootStore = createStore()
@@ -218,7 +224,12 @@ export function createCoreInstance(opts?: {
 
   // 7) 项目 Skills 缓存：实现在 ./projectSkillsStore；扫描 provider 经 opts 注入（B1 反转）。
   const projectSkills = createProjectSkillsStore(rootStore, opts?.projectSkillsProvider)
+  let skillRegistry = opts?.skillRegistry ?? emptySkillsRegistry
   const timedDispatchers = new Map<string, ActiveTimedToolDispatcher>()
+
+  function setSkillRegistry(registry?: SkillsRegistry): void {
+    skillRegistry = registry ?? emptySkillsRegistry
+  }
 
   async function dispatchTimedTools(request: TimedToolDispatchRequest): Promise<TimedToolDispatchResult> {
     const dispatcher = timedDispatchers.get(request.sessionId)
@@ -259,6 +270,10 @@ export function createCoreInstance(opts?: {
     subagentScheduler,
     config,
     projectSkills,
+    get skillRegistry() {
+      return skillRegistry
+    },
+    setSkillRegistry,
     persistence,
   }
 }
@@ -272,4 +287,9 @@ setDefaultPersistenceBridge(defaultCore.persistence)
 /** 为模块级 defaultCore 注入项目 Skills provider；仅供应用装配期调用。 */
 export function configureDefaultProjectSkillsProvider(provider?: ProjectSkillsProvider): void {
   defaultCore.projectSkills.setProvider(provider)
+}
+
+/** 为模块级 defaultCore 注入内置 skill registry；仅供应用装配期调用。 */
+export function configureDefaultSkillsRegistry(registry?: SkillsRegistry): void {
+  defaultCore.setSkillRegistry(registry)
 }

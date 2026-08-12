@@ -3,7 +3,7 @@
 // runtime 'internal'：纯只读查询，无副作用。绝不 import state/store/atom；只依赖 skills registry 的只读查询。
 import type { Tool } from '@web-agent/core/tools/types'
 import guide from './skill-read.md?raw' // skill 正文（同目录 .md）
-import { readSkill, readSkillResource, searchSkills } from '@web-agent/core/skills/registry'
+import { readSkill, readSkillResource, searchSkills } from '../registry'
 import { splitFrontmatter } from '@web-agent/core/skills/projectSkills'
 
 const inputSchema = {

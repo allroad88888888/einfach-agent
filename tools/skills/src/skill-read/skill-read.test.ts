@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { skillReadTool } from './skill-read'
-import { truncateSkillResourceContent } from '@web-agent/core/skills/registry'
+import { truncateSkillResourceContent } from '../registry'
 import type { ToolContext } from '@web-agent/core/tools/types'
 
 function makeCtx(): ToolContext {

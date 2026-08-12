@@ -4,11 +4,14 @@ import { Provider } from '@einfach/react'
 import { activeSessionMetaAtom, rootStore } from '@web-agent/core/state/rootStore'
 import { toolRegistry } from '@web-agent/core/tools/registry'
 import { registerStandardTools } from '@web-agent/tools'
+import { buildProjectSkillsProvider, builtInSkillsRegistry } from '@web-agent/tools-skills'
 import { hydrateMcpSettings } from './mcp/commands'
 import { initializeMcpSettings } from './mcp/initialize'
 import { configureCommands, newSession } from '@web-agent/core/runtime/commands'
-import { configureDefaultProjectSkillsProvider } from '@web-agent/core/runtime/core/coreInstance'
-import { buildProjectSkillsProvider } from '@web-agent/core/runtime/projectSkillsBridge'
+import {
+  configureDefaultProjectSkillsProvider,
+  configureDefaultSkillsRegistry,
+} from '@web-agent/core/runtime/core/coreInstance'
 import { configurePersistence } from '@web-agent/core/runtime/persistenceBridge'
 import { configureObservability } from '@web-agent/core/observability/trace'
 import { hydrate } from '@web-agent/core/state/persistence/hydrate'
@@ -47,6 +50,7 @@ import './agentNew/ui/agentnew.css'
 // 【登记反转 · TS1】defaultCore 造出来是无工具的——app 在此把标准工具装进它的 registry
 // （= toolRegistry = defaultCore.tools）。core 不再硬编码工具，装什么由消费方（这里是 app）决定。
 registerStandardTools(toolRegistry)
+configureDefaultSkillsRegistry(builtInSkillsRegistry)
 configureDefaultProjectSkillsProvider(buildProjectSkillsProvider())
 
 // MCP 运行时必须在启动时装配，不能等用户点开设置弹窗才 mount（那样 autoConnect 形同虚设）。

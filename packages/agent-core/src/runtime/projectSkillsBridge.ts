@@ -1,16 +1,16 @@
-// runtime/projectSkillsBridge.ts —— 从 workspace 读函数构建 ProjectSkillsProvider
+// runtime/projectSkillsBridge.ts —— 从 workspace 读函数构建项目 skill loader bridge
 // ---------------------------------------------------------------------------
 // 本模块是 project-skills-blueprint.md 阶段 C 的接入点：把 workspace 文件系统的
-// 已有机能（listWorkspaceFiles / readWorkspaceFile）包装成 ProjectSkillsProvider。
+// 已有机能（listWorkspaceFiles / readWorkspaceFile）包装成 loader bridge。
 //
 // web 端（非 Tauri）直接返回 undefined，不引入任何 workspace IO 依赖。
 
 import { isTauri } from '@tauri-apps/api/core'
-import type { ProjectSkillsLoaderBridge, ProjectSkillsProvider } from './core/coreInstance'
+import type { ProjectSkillsLoaderBridge } from './core/coreInstance'
 import { listWorkspaceFiles, readWorkspaceFile } from './workspaceRead'
 
 /**
- * 在 Tauri 环境下构建一个 provider；web 环境返回 undefined。
+ * 在 Tauri 环境下构建一个 workspace bridge；web 环境返回 undefined。
  *
  * bridge 只是 workspace 读函数的轻量包装，不做额外守卫（workspace confinement
  * 由底层 Rust / workspaceRead 保证）。
@@ -21,7 +21,7 @@ import { listWorkspaceFiles, readWorkspaceFile } from './workspaceRead'
  *   「Cannot read properties of undefined」，让 loader 的 diagnostics 变成噪声。
  *   loader 依赖 error 文本判定「目录不存在 ＝ 正常无项目 skills」，所以保真是硬要求。
  */
-export function buildProjectSkillsProvider(): ProjectSkillsProvider | undefined {
+export function buildProjectSkillsWorkspaceBridge(): ProjectSkillsLoaderBridge | undefined {
   if (!isTauri()) return undefined
 
   const bridge: ProjectSkillsLoaderBridge = {
@@ -49,11 +49,5 @@ export function buildProjectSkillsProvider(): ProjectSkillsProvider | undefined 
     },
   }
 
-  return async (workspaceRoot) => {
-    const { scanProjectSkills } = await import('../skills/projectSkillsLoader')
-    return scanProjectSkills(workspaceRoot, bridge)
-  }
+  return bridge
 }
-
-/** @deprecated 请改用 buildProjectSkillsProvider。 */
-export const buildProjectSkillsBridge = buildProjectSkillsProvider

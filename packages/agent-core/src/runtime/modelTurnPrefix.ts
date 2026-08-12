@@ -3,8 +3,6 @@ import { workspacesAtom } from '../state/rootStore'
 import { resolveSessionWorkspaceRoot } from '../state/workspaceState'
 import type { SessionMeta } from '../state/core.type'
 import type { SystemItem } from '@web-agent/ai'
-import { buildSkillManifestText } from '../skills/registry'
-import { buildProjectSkillsBridge } from './projectSkillsBridge'
 import { detectHostPlatform } from './hostPlatform'
 import {
   buildCustomInstructionsItem,
@@ -46,7 +44,7 @@ export async function buildStableModelPrefix(
     core.rootStore.getter(workspacesAtom),
   )
   if (workspaceRoot) {
-    await core.projectSkills.ensure(workspaceRoot, buildProjectSkillsBridge())
+    await core.projectSkills.ensure(workspaceRoot)
   }
 
   const runtimeIsTauri = isTauri()
@@ -54,7 +52,7 @@ export async function buildStableModelPrefix(
   const projectSkills = workspaceRoot ? core.projectSkills.get(workspaceRoot) : undefined
   const skillManifest: SystemItem = {
     role: 'system',
-    content: buildSkillManifestText(projectSkills),
+    content: core.skillRegistry.buildManifestText(projectSkills),
   }
   const toolManifest: SystemItem = {
     role: 'system',

@@ -1,23 +1,22 @@
-// skills/projectSkillsLoader.ts —— 项目 Skills 扫描与加载
+// tools-skills/projectSkillsLoader.ts —— 项目 Skills 扫描与加载
 // ---------------------------------------------------------------------------
 // 本模块负责 IO：通过 ProjectSkillsLoaderBridge 访问 workspace 文件系统，
 // 扫描 .webAgent/skills/ 与 .claude/skills/ 目录，取每个 SKILL.md 的 frontmatter，
 // 再调用 projectSkills.ts 的纯函数构建最终快照。
 //
-// 类型与桥接口定义在 coreInstance.ts（ProjectSkillsLoaderBridge / ProjectSkillsStore），
-// 本模块是纯实现，不 import coreInstance 以避免成环。
+// 类型与桥接口定义在 core 的契约层；本模块只承载扫描实现。
 
-import type { ProjectSkillsLoaderBridge } from '../runtime/core/coreInstance'
+import type { ProjectSkillsLoaderBridge } from '@web-agent/core/runtime/core/coreInstance'
 import type {
   ProjectSkillsSnapshot,
   ProjectSkillEntry,
   ProjectSkillOrigin,
-} from './projectSkills'
+} from '@web-agent/core/skills/projectSkills'
 import {
   buildProjectSkillEntry,
   resolveProjectSkills,
   FRONTMATTER_READ_LIMIT,
-} from './projectSkills'
+} from '@web-agent/core/skills/projectSkills'
 
 // 扫描两个根目录
 const SCAN_ROOTS: Array<{ path: string; origin: ProjectSkillOrigin }> = [
@@ -39,7 +38,7 @@ const SKILL_MD_READ_LIMIT = FRONTMATTER_READ_LIMIT
  * - 任一 SKILL.md 读失败 → 该 skill 跳过，记 diagnostics
  * - 任何 bridge 调用抛异常 → 整体降级为空快照
  *
- * 本函数由 CoreInstance.projectSkills.refresh 调用，外界不应直接 import。
+ * 本函数由 tools-skills provider 调用。
  */
 export async function scanProjectSkills(
   workspaceRoot: string,

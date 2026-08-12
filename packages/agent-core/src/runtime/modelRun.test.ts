@@ -20,7 +20,7 @@ import {
   enqueueUserMessage,
 } from '../state/transientAtoms'
 import { toolRegistry } from '../tools/registry'
-import { buildSkillManifestText } from '../skills/registry'
+import type { SkillsRegistry } from '../skills/contracts'
 import { buildToolManifestText } from './modelTurn'
 import type { ModelSettings } from '../state/core.type'
 import type { ModelFunctionTool, ModelUsage } from '@web-agent/ai'
@@ -35,13 +35,18 @@ import { configurePersistence, resetPersistence } from './persistenceBridge'
 import type { Checkpoint } from '../state/checkpoint.type'
 import { configureObservability, flushObservability, resetObservability } from '../observability/trace'
 import type { TraceDriver, TraceEvent, TraceSpan } from '../observability/types'
-import { createCoreInstance } from './core/coreInstance'
+import { configureDefaultSkillsRegistry, createCoreInstance } from './core/coreInstance'
 import { createCore } from './core/createCore'
 
 // delegateRuntime.dispose 的失败注入闸门。★ 只在 disposeControl.error 被显式设过时才把 dispose
 // 换成抛错版本 ★ —— 其余用例拿到的仍是货真价实的 delegate runtime，本文件其它测试完全不受影响。
 const disposeControl = vi.hoisted(() => ({ error: undefined as Error | undefined }))
 const tauriControl = vi.hoisted(() => ({ enabled: false }))
+const testSkillManifest = '可用 skills：\n· planning — 何时用：需要规划；何时不用：直接执行。'
+const testSkillsRegistry: SkillsRegistry = {
+  buildManifestText: () => testSkillManifest,
+  list: () => [{ name: 'planning', description: '何时用：需要规划；何时不用：直接执行。', triggers: [] }],
+}
 vi.mock('@tauri-apps/api/core', async () => {
   const actual = await vi.importActual<typeof import('@tauri-apps/api/core')>('@tauri-apps/api/core')
   return {
@@ -70,6 +75,7 @@ vi.mock('../subagents/runtime', async () => {
 afterEach(() => {
   disposeControl.error = undefined
   tauriControl.enabled = false
+  configureDefaultSkillsRegistry()
   resetObservability()
   resetPersistence()
 })
@@ -231,6 +237,10 @@ async function waitUntil(predicate: () => boolean, label: string): Promise<void>
 }
 
 describe('runSession（P-R2 最小单轮 run）', () => {
+  beforeEach(() => {
+    configureDefaultSkillsRegistry(testSkillsRegistry)
+  })
+
   it('passes only the current CoreInstance model user identity into the request body', async () => {
     const core = createCoreInstance({
       config: { deepseekUserId: 'wa_isolated_core_0123' },
@@ -566,7 +576,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(messages[0].content).toContain('禁止凭工具名猜参数')
     // 全量 skill 清单、工具摘要与运行环境都在首条历史之前；动态尾巴此轮为空。
     expect(messages.slice(1).map((item) => item.role)).toEqual(['system', 'system', 'system', 'user'])
-    expect(messages[1].content).toBe(buildSkillManifestText())
+    expect(messages[1].content).toBe(testSkillManifest)
     expect(messages[1].content).toContain('· planning — 何时用')
     expect(messages[2].content).toBe(buildToolManifestText(false, { registry: toolRegistry }))
     expect(messages[2].content).toContain('· skill_search [internal]')
@@ -579,7 +589,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
       events.some((event) =>
         event.kind === 'system_injection'
         && event.title === '注入 skill 清单'
-        && event.detail === buildSkillManifestText()),
+        && event.detail === testSkillManifest),
     ).toBe(true)
     expect(
       events.some((event) =>
@@ -622,7 +632,10 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     // 这段 token 每轮全额 cache miss。现在按变更频率从低到高固定在 index 0..4，
     // 只有内容本身改动（改指令 / 增删 skill / 换 workspace）才会掉缓存。
     // 运行环境垫底：它是唯一按会话变化的一段，排最后才能让不同 workspace 的会话共享前四段。
-    const core = createCoreInstance({ config: { customInstructions: '  请始终使用中文回复\n' } })
+    const core = createCoreInstance({
+      config: { customInstructions: '  请始终使用中文回复\n' },
+      skillRegistry: testSkillsRegistry,
+    })
     const id = 'custom-instructions-prefix'
     core.rootStore.setter(sessionsAtom, {
       [id]: {
@@ -652,7 +665,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'system', 'system', 'user'])
     expect(messages[0].content).toContain('禁止凭工具名猜参数')
     expect(messages[0].content).not.toContain(marker)
-    expect(messages[1].content).toBe(buildSkillManifestText())
+    expect(messages[1].content).toBe(testSkillManifest)
     expect(messages[2].content).toBe(buildToolManifestText(false, { registry: core.tools }))
     expect(messages[3].content).toContain(marker)
     expect(messages[3].content).toContain('请始终使用中文回复')
@@ -660,7 +673,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(messages[5]).toMatchObject({ role: 'user', content: 'hi' })
     // 两段低频内容各只此一份，且都不在历史之后（尾巴只剩事件驱动项，本轮没有）。
     expect(messages.filter((item) => item.content?.includes(marker))).toHaveLength(1)
-    expect(messages.filter((item) => item.content === buildSkillManifestText())).toHaveLength(1)
+    expect(messages.filter((item) => item.content === testSkillManifest)).toHaveLength(1)
     expect(messages.at(-1)?.role).toBe('user')
 
     const events = core.getSessionStore(id).store.getter(runtimeTranscriptEventsAtom)
@@ -1866,8 +1879,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(store.getter(checkpointsAtom)).toHaveLength(1)
     expect(persistence.saved.length).toBeGreaterThan(1)
     expect(persistence.saved.at(-1)?.checkpoint.items[0].item).toEqual({ role: 'user', content: 'hi' })
-    // 666 轮在全量并发下实测会超过 10 秒，与下面两个长循环用例统一到 15 秒。
-  }, 15_000)
+    // 666 轮在全量并发下会明显放大 worker 竞争，保留足够余量避免误判超时。
+  }, 30_000)
 
   it('计划运行：按阶段数放大主 Agent 轮次预算，且不计入子 Agent 轮次', async () => {
     seedSession('plan-turn-limit', { vendor: 'deepseek', model: 'x' })

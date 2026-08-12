@@ -1,7 +1,6 @@
 import { activeSessionIdAtom, sessionsAtom, workspacesAtom } from '../../state/rootStore'
 import { resolveSessionWorkspaceRoot } from '../../state/workspaceState'
 import type { CoreInstance } from '../core/coreInstance'
-import { buildProjectSkillsBridge } from '../projectSkillsBridge'
 
 /** Builds commands that refresh project skill discovery for the active workspace. */
 export function createProjectSkillsCommands(core: CoreInstance) {
@@ -11,7 +10,7 @@ export function createProjectSkillsCommands(core: CoreInstance) {
     const meta = core.rootStore.getter(sessionsAtom)[id]
     if (!meta) return
     const workspaceRoot = resolveSessionWorkspaceRoot(meta, core.rootStore.getter(workspacesAtom))
-    if (workspaceRoot) await core.projectSkills.refresh(workspaceRoot, buildProjectSkillsBridge())
+    if (workspaceRoot) await core.projectSkills.refresh(workspaceRoot)
   }
 
   return { refreshProjectSkills }
