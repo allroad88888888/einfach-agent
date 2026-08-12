@@ -130,7 +130,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   `pnpm exec vitest run packages/agent-core/src/runtime/core/plugins packages/agent-core/src/runtime`；
   `pnpm build`
 - **模型**：codex xhigh
-- **状态**：DONE（哈希在下一次提交补记；衔接点按例外条款落在 `modelTurnRequester` 的请求
+- **状态**：DONE `41e592a`（衔接点按例外条款落在 `modelTurnRequester` 的请求
   组装处——`transformContext` hook 拿不到 base/checkpoints；有 timed 压缩工具时放弃增量
   尾部扩展属已接受代价）
 
@@ -144,7 +144,9 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   路径同样触发 `subagentEnd`；深度/子数/预算硬限对 timed 分派不放宽；
   `pnpm exec vitest run packages/agent-core/src/subagents`；`pnpm build`
 - **模型**：codex xhigh
-- **状态**：DOING
+- **状态**：DONE（哈希在下一次提交补记；分派核心抽为 `dispatchTimedToolRegistrations`
+  adapter 面，子循环经 `runChildTool` 执行、item 落子 Agent timeline，子工具可见性与
+  预算硬限对 timed 分派生效）
 
 ## B · skills 试点（Rust 侧 M15 判例：skills = 索引 + 读取工具）
 

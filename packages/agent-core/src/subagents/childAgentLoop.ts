@@ -5,7 +5,6 @@ import {
   type ModelItem,
 } from '@web-agent/ai'
 import { buildTurnTools, narrowToolCalls } from '../runtime/modelTurn'
-import { subagentResultPath } from './skillCache'
 import {
   callSelectedSubagentModel,
   createSubagentModelSelection,
@@ -20,7 +19,7 @@ import { appendVisibleChildTool, loadVisibleChildTool } from './childToolVisibil
 import { firstAssistantText, type ChildModelCaller } from './childModelClient'
 import type { ChildContextCheckpoint } from './childContextCheckpoint'
 import { assertNormalChildFinish } from './childFinishReason'
-import { createChildResult } from './childResult'
+import { dispatchChildTimedTools, finalizeChildResult } from './childResult'
 import type { DelegateAgents } from './delegationBatch'
 import type {
   ChildAgentResult,
@@ -70,21 +69,8 @@ function refreshChildVisibleTools(
 
 /** Runs the complete model and tool loop for one reserved child agent. */
 export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAgentResult> {
-  const {
-    runtime,
-    callModel,
-    delegateAgents,
-    node,
-    spec,
-    context,
-    archiveBasePath,
-    inheritedSkills,
-    localSkill,
-    delegationState,
-    budget,
-    toolProfile,
-    confirmedTools,
-  } = input
+  const { runtime, callModel, delegateAgents, node, spec, context, archiveBasePath, inheritedSkills,
+    localSkill, delegationState, budget, toolProfile, confirmedTools } = input
   const modelSelection = createSubagentModelSelection({
     primarySettings: runtime.opts.settings,
     parentPath: node.parentPath,
@@ -144,6 +130,13 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
     inheritedSkillIds: node.inheritedSkillIds,
   })
 
+  const dispatchChildTiming = (timing: 'subagentStart' | 'subagentEnd', turn: number): Promise<void> => (
+    dispatchChildTimedTools({
+      runtime, context, archiveBasePath, node, timing, turn, allowedToolNames,
+      executedToolNames: loop.executedToolNames, changeSets: loop.changeSets,
+    })
+  )
+
   const canEscalateFlash = (): boolean => (
     confirmedTools.length === 0 && loop.changeSets.length === 0 && loop.executedToolNames.length === 0
   )
@@ -200,6 +193,7 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
   })
 
   try {
+    await dispatchChildTiming('subagentStart', 0)
     for (let turn = 0; turn < maxTurns; turn += 1) {
       const isSynthesisTurn = turn === maxTurns - 1
       const turnMessages = isSynthesisTurn
@@ -239,26 +233,10 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
       await assertNormalChildFinish(response, archiveBasePath, node, runtime, context)
       if (toolCalls.length === 0) {
         const summary = firstAssistantText(response) || '子 agent 未返回有效文本。'
-        const resultPath = subagentResultPath(archiveBasePath, node.path)
-        await runtime.archive.writeText(context, resultPath, `${summary.trim()}\n`)
-        runtime.scheduler.markNode(runtime.opts.runId, node.path, 'done', {
-          resultFile: resultPath,
-          localSkillFiles: [localSkill.path],
-          localSkillIds: [localSkill.skillId],
-          inheritedSkillFiles: [...node.inheritedSkillFiles],
-          inheritedSkillIds: [...node.inheritedSkillIds],
-        })
-        await runtime.archive.recordEvent(context, archiveBasePath, 'child_finished', node.path, {
-          status: 'done', objective: spec.objective, summary, resultFile: resultPath, skillFiles, skillIds,
-          modelTier: modelSelection.routeDecision.tier,
-          route_reason: modelSelection.routeDecision.reason,
-          fallback_count: modelSelection.fallbackCount,
-        })
-        return createChildResult('done', { path: node.path, objective: spec.objective, summary, skillFiles, skillIds, changeSets: loop.changeSets }, {
-          resultFile: resultPath,
-          modelTier: modelSelection.routeDecision.tier,
-          routeReason: modelSelection.routeDecision.reason,
-          fallbackCount: modelSelection.fallbackCount,
+        return finalizeChildResult({
+          runtime, context, archiveBasePath, node, spec, status: 'done', summary, skillFiles, skillIds,
+          changeSets: loop.changeSets, modelTier: modelSelection.routeDecision.tier,
+          routeReason: modelSelection.routeDecision.reason, fallbackCount: modelSelection.fallbackCount,
         })
       }
       loop.messages.push({
@@ -277,22 +255,12 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
   } catch (error) {
     const message = toErrorMessage(error)
     const status = isAbortError(error, runtime.opts.signal) ? 'cancelled' : 'failed'
-    runtime.scheduler.markNode(runtime.opts.runId, node.path, status, {
-      error: message,
-      localSkillFiles: [localSkill.path], localSkillIds: [localSkill.skillId],
-      inheritedSkillFiles: [...node.inheritedSkillFiles], inheritedSkillIds: [...node.inheritedSkillIds],
+    return finalizeChildResult({
+      runtime, context, archiveBasePath, node, spec, status, summary: message, skillFiles, skillIds,
+      changeSets: loop.changeSets, modelTier: modelSelection.routeDecision.tier,
+      routeReason: modelSelection.routeDecision.reason, fallbackCount: modelSelection.fallbackCount, error: message,
     })
-    await runtime.archive.bestEffortRecordEvent(context, archiveBasePath, 'child_finished', node.path, {
-      status, objective: spec.objective, summary: message, error: message, skillFiles, skillIds,
-      modelTier: modelSelection.routeDecision.tier,
-      route_reason: modelSelection.routeDecision.reason,
-      fallback_count: modelSelection.fallbackCount,
-    })
-    return createChildResult(status, { path: node.path, objective: spec.objective, summary: message, skillFiles, skillIds, changeSets: loop.changeSets }, {
-      modelTier: modelSelection.routeDecision.tier,
-      routeReason: modelSelection.routeDecision.reason,
-      fallbackCount: modelSelection.fallbackCount,
-      error: message,
-    })
+  } finally {
+    await dispatchChildTiming('subagentEnd', maxTurns + 1)
   }
 }

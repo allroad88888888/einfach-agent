@@ -2,6 +2,7 @@ import { isAbortError } from '@web-agent/ai'
 import type { ToolCallTiming } from '../tools/toolCallTiming'
 import type { Tool, ToolResult } from '../tools/types'
 import type { ToolRegistry } from '../tools/toolRegistry'
+import type { CoreInstance } from './core/coreInstance'
 import type { ToolLoopCheckpointWriter } from './toolLoopCheckpoint'
 import type { ToolLoopBase } from './toolLoopContracts'
 import { newId } from './newId'
@@ -9,6 +10,7 @@ import { newId } from './newId'
 export interface TimedToolRegistration {
   name: string
   registrationVersion: number
+  runtime: Tool['runtime']
 }
 
 export interface TimedToolDispatchRequest {
@@ -19,6 +21,20 @@ export interface TimedToolDispatchRequest {
 export interface TimedToolDispatchResult {
   status: 'dispatched' | 'no_active_run' | 'inactive'
   itemCount: number
+}
+
+/** Supplies a timeline-specific adapter while sharing timing-bucket dispatch semantics. */
+export interface TimedToolDispatchAdapter {
+  registrations: readonly TimedToolRegistration[]
+  isCurrent(): boolean
+  createCallId(name: string): string
+  canDispatch?(registration: TimedToolRegistration): boolean
+  isRecorded?(callId: string, registration: TimedToolRegistration): boolean
+  execute(registration: TimedToolRegistration, callId: string): Promise<ToolResult>
+  record(registration: TimedToolRegistration, callId: string, result: ToolResult): Promise<void> | void
+  isAbortError?(error: unknown): boolean
+  errorMessage?(error: unknown): string
+  onFailure?(input: { registration: TimedToolRegistration; callId: string; error: string }): void
 }
 
 interface TimedDispatchDependencies {
@@ -67,6 +83,7 @@ export function createTimedToolRegistry(registry: ToolRegistry): {
 } {
   const timedNames = new Map<ToolCallTiming, string[]>()
   const timingByName = new Map<string, ToolCallTiming>()
+  const runtimeByName = new Map<string, Tool['runtime']>()
   const registrationOrder = new Map<string, number>()
   let nextRegistrationOrder = 0
 
@@ -97,6 +114,8 @@ export function createTimedToolRegistry(registry: ToolRegistry): {
       registry.register(tool)
       const timing = registry.callTiming(tool.name)
       if (!existed) registrationOrder.set(tool.name, nextRegistrationOrder++)
+      if (timing) runtimeByName.set(tool.name, tool.runtime)
+      else runtimeByName.delete(tool.name)
       if (previousTiming === timing) return
       removeTimedName(tool.name, previousTiming)
       if (timing) timingByName.set(tool.name, timing)
@@ -109,6 +128,7 @@ export function createTimedToolRegistry(registry: ToolRegistry): {
       if (!removed) return false
       removeTimedName(name, timing)
       timingByName.delete(name)
+      runtimeByName.delete(name)
       registrationOrder.delete(name)
       return true
     },
@@ -121,9 +141,10 @@ export function createTimedToolRegistry(registry: ToolRegistry): {
       if (!names) return []
       return names.flatMap((name) => {
         const registrationVersion = tools.registrationVersion(name)
-        return registrationVersion === undefined || tools.callTiming(name) !== timing
+        const runtime = runtimeByName.get(name)
+        return registrationVersion === undefined || !runtime || tools.callTiming(name) !== timing
           ? []
-          : [{ name, registrationVersion }]
+          : [{ name, registrationVersion, runtime }]
       })
     },
   }
@@ -154,21 +175,65 @@ function persistTimedItems(base: ToolLoopBase, checkpoints: ToolLoopCheckpointWr
   checkpoints.persistWorkingTurn()
 }
 
-function riskForTimedCall(
-  base: ToolLoopBase,
-  name: string,
+function riskForTimedTool(
+  input: { core: CoreInstance; sessionId: string; name: string },
   dependencies: TimedDispatchDependencies,
 ) {
-  const session = base.core.rootStore.getter(dependencies.sessionsAtom)[base.id]
+  const session = input.core.rootStore.getter(dependencies.sessionsAtom)[input.sessionId]
   const workspaceRoot = dependencies.resolveSessionWorkspaceRoot(
     session,
-    base.core.rootStore.getter(dependencies.workspacesAtom),
+    input.core.rootStore.getter(dependencies.workspacesAtom),
   )
-  return dependencies.classifyToolRisk(name, {}, {
+  return dependencies.classifyToolRisk(input.name, {}, {
     workspaceRoot,
-    mcpConnectTarget: base.core.config.mcpConnectTarget,
-    mcpToolLaunchTarget: base.core.config.mcpToolLaunchTarget,
+    mcpConnectTarget: input.core.config.mcpConnectTarget,
+    mcpToolLaunchTarget: input.core.config.mcpToolLaunchTarget,
   })
+}
+
+/** Classifies a timed tool without entering confirmation hooks or executing it. */
+export async function classifyTimedToolRisk(input: {
+  core: CoreInstance
+  sessionId: string
+  name: string
+}) {
+  return riskForTimedTool(input, await loadTimedDispatchDependencies())
+}
+
+function fallbackErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * Dispatches registrations in registration order and degrades individual failures into results.
+ * Different timelines supply execution and persistence through the adapter rather than duplicating this loop.
+ */
+export async function dispatchTimedToolRegistrations(
+  adapter: TimedToolDispatchAdapter,
+): Promise<TimedToolDispatchResult> {
+  if (!adapter.isCurrent()) return { status: 'inactive', itemCount: 0 }
+  let itemCount = 0
+  for (const registration of adapter.registrations) {
+    if (!adapter.isCurrent()) return { status: 'inactive', itemCount }
+    if (adapter.canDispatch && !adapter.canDispatch(registration)) continue
+    const callId = adapter.createCallId(registration.name)
+    if (adapter.isRecorded?.(callId, registration)) continue
+    let result: ToolResult
+    try {
+      result = await adapter.execute(registration, callId)
+    } catch (error) {
+      if (adapter.isAbortError?.(error) || !adapter.isCurrent()) {
+        return { status: 'inactive', itemCount }
+      }
+      const message = adapter.errorMessage?.(error) ?? fallbackErrorMessage(error)
+      adapter.onFailure?.({ registration, callId, error: message })
+      result = { ok: false, error: message }
+    }
+    if (!adapter.isCurrent()) return { status: 'inactive', itemCount }
+    await adapter.record(registration, callId, result)
+    itemCount += 1
+  }
+  return { status: 'dispatched', itemCount }
 }
 
 /** Dispatches one timing bucket through the normal executor, never through beforeToolCall confirmation hooks. */
@@ -186,15 +251,16 @@ export async function dispatchTimedTools(input: {
   const dependencies = await loadTimedDispatchDependencies()
   if (!isDispatchCurrent(base)) return { status: 'inactive', itemCount: 0 }
 
-  let itemCount = 0
-  for (const { name, registrationVersion } of registrations) {
-    if (!isDispatchCurrent(base)) return { status: 'inactive', itemCount }
-    const callId = timedCallId(base, request.timing, name)
-    if ((request.timing === 'sessionStart' || request.timing === 'runStart' || request.timing === 'runEnd') && timedItemAlreadyRecorded(base, callId, dependencies)) continue
-
-    let result: ToolResult
-    try {
-      const risk = riskForTimedCall(base, name, dependencies)
+  return dispatchTimedToolRegistrations({
+    registrations,
+    isCurrent: () => isDispatchCurrent(base),
+    createCallId: (name) => timedCallId(base, request.timing, name),
+    isRecorded: (callId) => (
+      (request.timing === 'sessionStart' || request.timing === 'runStart' || request.timing === 'runEnd')
+      && timedItemAlreadyRecorded(base, callId, dependencies)
+    ),
+    execute: async ({ name, registrationVersion }, callId) => {
+      const risk = riskForTimedTool({ core: base.core, sessionId: base.id, name }, dependencies)
       if (risk.level !== 'safe') {
         const error = `到点工具 ${name} 因风险等级 ${risk.level} 被拒绝执行`
         base.trace.event('tool.timed_rejected', {
@@ -204,20 +270,23 @@ export async function dispatchTimedTools(input: {
           risk: risk.level,
           reason: risk.reason,
         })
-        result = { ok: false, error, details: { timing: request.timing, risk: risk.level } }
-      } else {
-        result = await dependencies.executeToolCall(base, { callId, name, args: {}, registrationVersion })
+        return { ok: false, error, details: { timing: request.timing, risk: risk.level } }
       }
-    } catch (error) {
-      if (isAbortError(error) || !isDispatchCurrent(base)) return { status: 'inactive', itemCount }
-      const message = dependencies.safeErrorMessage(error)
-      base.trace.event('tool.timed_failed', { timing: request.timing, toolName: name, callId, error: message })
-      result = { ok: false, error: message }
-    }
-    if (!isDispatchCurrent(base)) return { status: 'inactive', itemCount }
-    dependencies.appendMappedToolResult(base.id, callId, result, base.core)
-    persistTimedItems(base, checkpoints)
-    itemCount += 1
-  }
-  return { status: 'dispatched', itemCount }
+      return dependencies.executeToolCall(base, { callId, name, args: {}, registrationVersion })
+    },
+    record: (_registration, callId, result) => {
+      dependencies.appendMappedToolResult(base.id, callId, result, base.core)
+      persistTimedItems(base, checkpoints)
+    },
+    isAbortError: (error) => isAbortError(error),
+    errorMessage: dependencies.safeErrorMessage,
+    onFailure: ({ registration, callId, error }) => {
+      base.trace.event('tool.timed_failed', {
+        timing: request.timing,
+        toolName: registration.name,
+        callId,
+        error,
+      })
+    },
+  })
 }
