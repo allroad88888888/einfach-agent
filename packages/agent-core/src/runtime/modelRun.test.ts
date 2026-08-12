@@ -20,7 +20,6 @@ import {
   enqueueUserMessage,
 } from '../state/transientAtoms'
 import { toolRegistry } from '../tools/registry'
-import type { SkillsRegistry } from '../skills/contracts'
 import { buildToolManifestText } from './modelTurn'
 import type { ModelSettings } from '../state/core.type'
 import type { ModelFunctionTool, ModelUsage } from '@web-agent/ai'
@@ -35,18 +34,14 @@ import { configurePersistence, resetPersistence } from './persistenceBridge'
 import type { Checkpoint } from '../state/checkpoint.type'
 import { configureObservability, flushObservability, resetObservability } from '../observability/trace'
 import type { TraceDriver, TraceEvent, TraceSpan } from '../observability/types'
-import { configureDefaultSkillsRegistry, createCoreInstance } from './core/coreInstance'
+import { createCoreInstance } from './core/coreInstance'
 import { createCore } from './core/createCore'
+import { buildSkillManifestText, registerStandardTools } from '@web-agent/tools'
 
 // delegateRuntime.dispose 的失败注入闸门。★ 只在 disposeControl.error 被显式设过时才把 dispose
 // 换成抛错版本 ★ —— 其余用例拿到的仍是货真价实的 delegate runtime，本文件其它测试完全不受影响。
 const disposeControl = vi.hoisted(() => ({ error: undefined as Error | undefined }))
 const tauriControl = vi.hoisted(() => ({ enabled: false }))
-const testSkillManifest = '可用 skills：\n· planning — 何时用：需要规划；何时不用：直接执行。'
-const testSkillsRegistry: SkillsRegistry = {
-  buildManifestText: () => testSkillManifest,
-  list: () => [{ name: 'planning', description: '何时用：需要规划；何时不用：直接执行。', triggers: [] }],
-}
 vi.mock('@tauri-apps/api/core', async () => {
   const actual = await vi.importActual<typeof import('@tauri-apps/api/core')>('@tauri-apps/api/core')
   return {
@@ -75,7 +70,6 @@ vi.mock('../subagents/runtime', async () => {
 afterEach(() => {
   disposeControl.error = undefined
   tauriControl.enabled = false
-  configureDefaultSkillsRegistry()
   resetObservability()
   resetPersistence()
 })
@@ -237,10 +231,6 @@ async function waitUntil(predicate: () => boolean, label: string): Promise<void>
 }
 
 describe('runSession（P-R2 最小单轮 run）', () => {
-  beforeEach(() => {
-    configureDefaultSkillsRegistry(testSkillsRegistry)
-  })
-
   it('passes only the current CoreInstance model user identity into the request body', async () => {
     const core = createCoreInstance({
       config: { deepseekUserId: 'wa_isolated_core_0123' },
@@ -282,9 +272,9 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     })
 
     const items = getSessionStore('s1').store.getter(itemsAtom)
-    expect(items).toHaveLength(2)
+    expect(items).toHaveLength(3)
     expect(items[0].item).toEqual({ role: 'user', content: 'hi' })
-    expect(items[1].item).toEqual({ role: 'assistant', content: '你好' })
+    expect(items[2].item).toEqual({ role: 'assistant', content: '你好' })
 
     expect(getSessionStore('s1').store.getter(runAtom)?.status).toBe('done')
     expect(getSessionStore('s1').store.getter(checkpointsAtom)).toHaveLength(1)
@@ -336,17 +326,20 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(store.getter(runAtom)).toMatchObject({ runId, status: 'done' })
     expect(store.getter(itemsAtom).map(({ item }) => item.role)).toEqual([
       'user',
+      'tool',
       'assistant',
       'user',
       'assistant',
     ])
-    expect(store.getter(itemsAtom)[2]).toMatchObject({
+    expect(store.getter(itemsAtom)[3]).toMatchObject({
       id: 'queued-user-1',
       createdAt: queuedAt,
       item: { role: 'user', content: '再补充第二件事' },
     })
     expect(bodies[1].messages.filter(({ role }) => role !== 'system').map(({ role }) => role)).toEqual([
       'user',
+      'assistant',
+      'tool',
       'assistant',
       'user',
     ])
@@ -395,6 +388,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(requestCount).toBe(2)
     expect(store.getter(itemsAtom).map(({ item }) => item.role)).toEqual([
       'user',
+      'tool',
       'assistant',
       'tool',
       'user',
@@ -402,6 +396,8 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     ])
     expect(bodies[1].messages.filter(({ role }) => role !== 'system').map(({ role }) => role)).toEqual([
       'user',
+      'assistant',
+      'tool',
       'assistant',
       'tool',
       'user',
@@ -425,8 +421,8 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     ).resolves.toBeUndefined()
 
     expect(getSessionStore('s2').store.getter(runAtom)?.status).toBe('stopped')
-    // 只有 user 一条（assistant 未写回）。
-    expect(getSessionStore('s2').store.getter(itemsAtom)).toHaveLength(1)
+    // user 与 sessionStart 清单已写入；assistant 未写回。
+    expect(getSessionStore('s2').store.getter(itemsAtom)).toHaveLength(2)
     // stopped 轮也必须形成可撤回快照；否则刷新会丢 user，继续对话后该消息也没有气泡回退入口。
     const checkpoints = getSessionStore('s2').store.getter(checkpointsAtom)
     expect(checkpoints).toHaveLength(1)
@@ -463,7 +459,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(run?.status).toBe('stopped')
     // 不该被当成通用失败：不留英文异常文案。
     expect(run?.error).toBeUndefined()
-    expect(getSessionStore('s2b').store.getter(itemsAtom)).toHaveLength(1)
+    expect(getSessionStore('s2b').store.getter(itemsAtom)).toHaveLength(2)
   })
 
   it('其它错误：fetchImpl 抛普通 Error → run.status=error 且隐藏传输细节', async () => {
@@ -519,8 +515,8 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     })
 
     const items = getSessionStore('s4').store.getter(itemsAtom)
-    expect(items).toHaveLength(2)
-    expect(items[1].item).toEqual({ role: 'assistant', content: 'hi from glm' })
+    expect(items).toHaveLength(3)
+    expect(items[2].item).toEqual({ role: 'assistant', content: 'hi from glm' })
     expect(getSessionStore('s4').store.getter(runAtom)?.status).toBe('done')
   })
 
@@ -552,50 +548,98 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(restoredSettings.vendor === 'deepseek' ? restoredSettings.temperature : undefined).toBe(0.5)
   })
 
-  it('system/tools 注入写入 UI transcript，但不进入 itemsAtom 历史', async () => {
-    seedSession('inject1', { vendor: 'deepseek', model: 'm' })
+  it('L1 清单以 sessionStart timed tool 可达模型，稳定前缀和转录不再注入 skills', async () => {
+    const workspaceRoot = '/workspace/project-skills'
+    const projectSkills = {
+      workspaceRoot,
+      entries: [{
+        name: 'project/release-check',
+        description: '何时用：发布前检查部署流程。',
+        triggers: ['发布'],
+        filePath: '.agents/skills/release-check/SKILL.md',
+        resources: {},
+        origin: 'agent' as const,
+      }],
+      diagnostics: [],
+    }
+    const projectSkillsProvider = vi.fn(async () => projectSkills)
+    const core = createCoreInstance({ registerTools: registerStandardTools, projectSkillsProvider })
+    const id = 'inject1'
+    core.rootStore.setter(workspacesAtom, {
+      workspace: { id: 'workspace', name: '项目 skills', rootPath: workspaceRoot, createdAt: 0, updatedAt: 0 },
+    })
+    core.rootStore.setter(sessionsAtom, {
+      [id]: {
+        id,
+        title: 't',
+        settings: { vendor: 'deepseek', model: 'm' },
+        workspaceId: 'workspace',
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    })
     let captured: Record<string, unknown> = {}
     const fetchImpl: typeof fetch = (_url, init) => {
       captured = JSON.parse(init!.body as string)
       return Promise.resolve(jsonResponse('ok'))
     }
 
-    await runSession('inject1', 'hi', {
+    await runSession(id, 'hi', {
       signal: new AbortController().signal,
       apiKey: 'k',
       fetchImpl,
+      core,
     })
 
-    const store = getSessionStore('inject1').store
+    const store = core.getSessionStore(id).store
     const items = store.getter(itemsAtom)
     expect(items.some((it) => it.item.role === 'system')).toBe(false)
+    expect(items.map(({ item }) => item.role)).toEqual(['user', 'tool', 'assistant'])
+    const timedItem = items.find(
+      ({ item }) => item.role === 'tool' && item.tool_call_id === 'timed:sessionStart:skill_manifest',
+    )?.item
+    if (!timedItem || timedItem.role !== 'tool') throw new Error('缺少 sessionStart skills 清单')
 
-    const messages = captured.messages as Array<{ role: string; content?: string }>
+    const messages = captured.messages as Array<{
+      role: string
+      content?: string | null
+      tool_call_id?: string
+      tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>
+    }>
     expect(messages[0].role).toBe('system')
     expect(messages[0].content).not.toContain('可用 skills')
     expect(messages[0].content).toContain('禁止凭工具名猜参数')
-    // 全量 skill 清单、工具摘要与运行环境都在首条历史之前；动态尾巴此轮为空。
-    expect(messages.slice(1).map((item) => item.role)).toEqual(['system', 'system', 'system', 'user'])
-    expect(messages[1].content).toBe(testSkillManifest)
-    expect(messages[1].content).toContain('· planning — 何时用')
-    expect(messages[2].content).toBe(buildToolManifestText(false, { registry: toolRegistry }))
-    expect(messages[2].content).toContain('· skill_search [internal]')
-    expect(messages[2].content).not.toContain('· shell_macos [server]')
-    expect(messages[3].content).toContain('运行环境：')
-    expect(messages.at(-1)).toMatchObject({ role: 'user', content: 'hi' })
+    // stable prefix 只有固定 system、工具摘要和环境；L1 在首轮 user 之后以 timed result 到达模型。
+    expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'user', 'assistant', 'tool'])
+    expect(messages[1].content).toBe(buildToolManifestText(false, { registry: core.tools }))
+    expect(messages[1].content).toContain('· skill_search [internal]')
+    expect(messages[1].content).not.toContain('· shell_macos [server]')
+    expect(messages[2].content).toContain('运行环境：')
+    expect(messages[3]).toMatchObject({ role: 'user', content: 'hi' })
+    expect(messages[4]).toMatchObject({
+      role: 'assistant',
+      content: '',
+      tool_calls: [{
+        id: 'timed:sessionStart:skill_manifest',
+        type: 'function',
+        function: { name: 'timed_tool_result', arguments: '{}' },
+      }],
+    })
+    expect(messages[5]).toMatchObject({ role: 'tool', tool_call_id: 'timed:sessionStart:skill_manifest' })
+    const manifestText = JSON.parse(String(messages[5].content)) as string
+    expect(manifestText).toBe(buildSkillManifestText(projectSkills))
+    expect(manifestText).toBe(JSON.parse(timedItem.content))
+    expect(manifestText).toContain('· planning — 何时用：任务跨多个阶段/模块')
+    expect(manifestText).toContain('· project/release-check — 何时用：发布前检查部署流程。')
+    expect(projectSkillsProvider).toHaveBeenCalledExactlyOnceWith(workspaceRoot)
 
     const events = store.getter(runtimeTranscriptEventsAtom)
-    expect(
-      events.some((event) =>
-        event.kind === 'system_injection'
-        && event.title === '注入 skill 清单'
-        && event.detail === testSkillManifest),
-    ).toBe(true)
+    expect(events.some((event) => event.title === '注入 skill 清单')).toBe(false)
     expect(
       events.some((event) =>
         event.kind === 'system_injection'
         && event.title === '注入工具摘要清单'
-        && event.detail === buildToolManifestText(false, { registry: toolRegistry })),
+        && event.detail === buildToolManifestText(false, { registry: core.tools })),
     ).toBe(true)
     expect(events.some((event) => event.kind === 'tool_manifest' && event.detail?.includes('request_tool_schema'))).toBe(
       true,
@@ -618,23 +662,20 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     })
 
     const messages = captured.messages as Array<{ role: string; content?: string }>
-    expect(messages[2].content).toBe(buildToolManifestText(true, { registry: toolRegistry }))
-    expect(messages[2].content).toContain('· shell_macos [server]')
+    expect(messages[1].content).toBe(buildToolManifestText(true, { registry: toolRegistry }))
+    expect(messages[1].content).toContain('· shell_macos [server]')
 
     const exposedToolNames = (captured.tools as ModelFunctionTool[])
       .map((tool) => tool.function.name)
     expect(exposedToolNames).toEqual(['request_tool_schema'])
   })
 
-  it('稳定前缀五段有序：固定 system → skill 清单 → 工具摘要 → 自定义指令 → 运行环境，全部在首条历史之前', async () => {
-    // 自定义指令与 skill 名单都是低频变更内容。它们曾经和 plan 提醒一起挂在历史【之后】，于是
-    // 历史每增长一条就把它们顶到新位置，实测每轮都被记成 history_inserted_before_dynamic_tail、
-    // 这段 token 每轮全额 cache miss。现在按变更频率从低到高固定在 index 0..4，
-    // 只有内容本身改动（改指令 / 增删 skill / 换 workspace）才会掉缓存。
-    // 运行环境垫底：它是唯一按会话变化的一段，排最后才能让不同 workspace 的会话共享前四段。
+  it('稳定前缀四段有序：固定 system → 工具摘要 → 自定义指令 → 运行环境；L1 走历史 timed item', async () => {
+    // 清单由 sessionStart 工具写入历史，不再把 workspace skill 的变动纳入 stable prefix。其余低频
+    // 内容仍按变更频率固定，环境垫底以尽量让不同 workspace 共享此前缀。
     const core = createCoreInstance({
       config: { customInstructions: '  请始终使用中文回复\n' },
-      skillRegistry: testSkillsRegistry,
+      registerTools: registerStandardTools,
     })
     const id = 'custom-instructions-prefix'
     core.rootStore.setter(sessionsAtom, {
@@ -661,20 +702,22 @@ describe('runSession（P-R2 最小单轮 run）', () => {
 
     const marker = '用户在设置中保存了以下长期自定义指令'
     const messages = captured.messages as Array<{ role: string; content?: string }>
-    // [固定 system, skill 清单, 工具摘要, 自定义指令, 运行环境, ...历史]；尾巴此轮为空。
-    expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'system', 'system', 'user'])
+    // [固定 system, 工具摘要, 自定义指令, 运行环境, user, timed 配对 assistant, timed tool]。
+    expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'system', 'user', 'assistant', 'tool'])
     expect(messages[0].content).toContain('禁止凭工具名猜参数')
     expect(messages[0].content).not.toContain(marker)
-    expect(messages[1].content).toBe(testSkillManifest)
-    expect(messages[2].content).toBe(buildToolManifestText(false, { registry: core.tools }))
-    expect(messages[3].content).toContain(marker)
-    expect(messages[3].content).toContain('请始终使用中文回复')
-    expect(messages[4].content).toContain('运行环境：')
-    expect(messages[5]).toMatchObject({ role: 'user', content: 'hi' })
-    // 两段低频内容各只此一份，且都不在历史之后（尾巴只剩事件驱动项，本轮没有）。
+    expect(messages[1].content).toBe(buildToolManifestText(false, { registry: core.tools }))
+    expect(messages[2].content).toContain(marker)
+    expect(messages[2].content).toContain('请始终使用中文回复')
+    expect(messages[3].content).toContain('运行环境：')
+    expect(messages[4]).toMatchObject({ role: 'user', content: 'hi' })
+    expect(messages[5]).toMatchObject({
+      role: 'assistant',
+      tool_calls: [{ id: 'timed:sessionStart:skill_manifest' }],
+    })
+    expect(messages[6]).toMatchObject({ role: 'tool', tool_call_id: 'timed:sessionStart:skill_manifest' })
+    // 自定义指令只此一份，且不在历史之后。
     expect(messages.filter((item) => item.content?.includes(marker))).toHaveLength(1)
-    expect(messages.filter((item) => item.content === testSkillManifest)).toHaveLength(1)
-    expect(messages.at(-1)?.role).toBe('user')
 
     const events = core.getSessionStore(id).store.getter(runtimeTranscriptEventsAtom)
     expect(events.some((event) => event.kind === 'system_injection' && event.detail?.includes(marker))).toBe(true)
@@ -709,12 +752,12 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     await runSession(id, '了解下这个项目', { signal: new AbortController().signal, apiKey: 'k', fetchImpl, core })
 
     const messages = captured.messages as Array<{ role: string; content?: string }>
-    const environment = messages.at(-2)
-    // 运行环境是稳定前缀最后一段：紧贴首条历史之前，且根目录已去掉尾部分隔符。
+    const environment = messages[2]
+    // 运行环境是稳定前缀最后一段。
     expect(environment?.role).toBe('system')
     expect(environment?.content).toContain('当前工作区根目录：/Volumes/work/ai/web-agent')
     expect(environment?.content).not.toContain('/Volumes/work/ai/web-agent/\n')
-    expect(messages.at(-1)).toMatchObject({ role: 'user', content: '了解下这个项目' })
+    expect(messages[3]).toMatchObject({ role: 'user', content: '了解下这个项目' })
 
     const events = core.getSessionStore(id).store.getter(runtimeTranscriptEventsAtom)
     expect(
@@ -723,8 +766,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
   })
 
   it('注入卡片改为按内容变化判重：同一会话连续两次 runSession 不重复记同一张卡', async () => {
-    // skill 清单只依赖 registry 注册态（两次 run 之间没有增删 skill），天然逐字不变——
-    // 正是「内容不变则不重复记」要验证的常态。
+    // 本用例未注册 sessionStart 工具；稳定 system 注入的判重不依赖 skills。
     const core = createCoreInstance({ config: { customInstructions: '保持简洁' } })
     const id = 'inject-dedup'
     core.rootStore.setter(sessionsAtom, {
@@ -736,11 +778,11 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     await runSession(id, '第二句话', { signal: new AbortController().signal, apiKey: 'k', fetchImpl, core })
 
     const events = core.getSessionStore(id).store.getter(runtimeTranscriptEventsAtom)
-    // 六类卡片各自只有一条——第二次 run 内容与第一次逐字相同，不应再记。
+    // 五类稳定注入卡片各自只有一条——第二次 run 内容与第一次逐字相同，不应再记。
     expect(events.filter((e) => e.title === '注入 system')).toHaveLength(1)
     expect(events.filter((e) => e.title === '注入运行环境')).toHaveLength(1)
     expect(events.filter((e) => e.title === '注入自定义指令')).toHaveLength(1)
-    expect(events.filter((e) => e.title === '注入 skill 清单')).toHaveLength(1)
+    expect(events.filter((e) => e.title === '注入 skill 清单')).toHaveLength(0)
     expect(events.filter((e) => e.title === '注入工具摘要清单')).toHaveLength(1)
     expect(events.filter((e) => e.title === '注入 tools')).toHaveLength(1)
     // 且不应出现任何「已更新」变体——内容确实没变。
@@ -868,10 +910,10 @@ describe('runSession（P-R2 最小单轮 run）', () => {
       },
       finishReason: null,
     })
-    // 固定 system + skill 清单 + 工具摘要 + 运行环境（本会话无自定义指令）。
-    expect(stats?.roles.system.count).toBe(4)
+    // 固定 system + 工具摘要 + 运行环境；L1 是历史中的 timed tool 与投影出的 assistant 配对。
+    expect(stats?.roles.system.count).toBe(3)
     expect(stats?.roles.user.count).toBe(1)
-    expect(stats?.roles.assistant.count).toBe(0)
+    expect(stats?.roles.assistant.count).toBe(1)
     expect(stats?.toolNames).toContain('request_tool_schema')
     expect(stats?.estimatedTokens).toBeGreaterThan(0)
     expect(stats?.totalChars).toBe((stats?.messagesChars ?? 0) + (stats?.toolsChars ?? 0))
@@ -978,7 +1020,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
   })
 
   it('旧 run 被顶替后不再写入会话', async () => {
-    const core = createCoreInstance()
+    const core = createCoreInstance({ registerTools: registerStandardTools })
     const id = 'stale-project-skills'
     core.rootStore.setter(workspacesAtom, {
       ws1: { id: 'ws1', name: 'workspace', rootPath: '/workspace', createdAt: 0, updatedAt: 0 },
@@ -1017,6 +1059,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     await waitUntil(() => ensureSpy.mock.calls.length === 1, 'project skills scan')
     const itemsBeforeReplacement = clone(store.getter(itemsAtom))
     const checkpointsBeforeReplacement = clone(store.getter(checkpointsAtom))
+    const eventsBeforeReplacement = clone(store.getter(runtimeTranscriptEventsAtom))
 
     setRun(id, { runId: 'replacement-run', status: 'running', loadedTools: ['replacement-tool'] }, core)
     releaseSkillScan()
@@ -1030,7 +1073,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     })
     expect(store.getter(itemsAtom)).toEqual(itemsBeforeReplacement)
     expect(store.getter(checkpointsAtom)).toEqual(checkpointsBeforeReplacement)
-    expect(store.getter(runtimeTranscriptEventsAtom)).toEqual([])
+    expect(store.getter(runtimeTranscriptEventsAtom)).toEqual(eventsBeforeReplacement)
   })
 
   it('esc race：fetch 在 abort 前已返回但 signal 已中断 → stopped，不写回 assistant', async () => {
@@ -1057,13 +1100,13 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     // stopped 轮仍形成可撤回 checkpoint，但不写回迟到的 assistant。
     const checkpoints = getSessionStore('s1').store.getter(checkpointsAtom)
     expect(checkpoints).toHaveLength(1)
-    expect(checkpoints[0].items.map((it) => it.item.role)).toEqual(['user'])
+    expect(checkpoints[0].items.map((it) => it.item.role)).toEqual(['user', 'tool'])
     expect(checkpoints[0]).toMatchObject({ label: '[已停止] hi', kind: 'stopped' })
   })
 })
 
 describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
-  it('无工具单轮：与旧单轮等价（user+assistant、done、checkpoint 长 1）', async () => {
+  it('无业务工具单轮：保留 sessionStart 清单后完成（done、checkpoint 长 1）', async () => {
     seedSession('t0', { vendor: 'deepseek', model: 'x' })
     const fetchImpl: typeof fetch = async () => jsonResponse('直接答')
 
@@ -1071,8 +1114,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
 
     const store = getSessionStore('t0').store
     const items = store.getter(itemsAtom)
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
-    expect(items[1].item).toEqual({ role: 'assistant', content: '直接答' })
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
+    expect(items[2].item).toEqual({ role: 'assistant', content: '直接答' })
     expect(store.getter(runAtom)?.status).toBe('done')
     expect(store.getter(checkpointsAtom)).toHaveLength(1)
   })
@@ -1106,8 +1149,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     )
     const during = getSessionStore('stream-text').store.getter(itemsAtom)
     const assistantId = during.find((it) => it.item.role === 'assistant')?.id
-    expect(during.map((it) => it.item.role)).toEqual(['user', 'assistant'])
-    expect(during[1]).toMatchObject({ id: assistantId, pending: true, item: { role: 'assistant', content: '你' } })
+    expect(during.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
+    expect(during[2]).toMatchObject({ id: assistantId, pending: true, item: { role: 'assistant', content: '你' } })
 
     controller!.enqueue(encoder.encode(sseBlock({ choices: [{ delta: { content: '好' }, finish_reason: 'stop' }] })))
     controller!.enqueue(encoder.encode('data: [DONE]\n\n'))
@@ -1115,8 +1158,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     await runPromise
 
     const done = getSessionStore('stream-text').store.getter(itemsAtom)
-    expect(done).toHaveLength(2)
-    expect(done[1]).toMatchObject({ id: assistantId, pending: false, item: { role: 'assistant', content: '你好' } })
+    expect(done).toHaveLength(3)
+    expect(done[2]).toMatchObject({ id: assistantId, pending: false, item: { role: 'assistant', content: '你好' } })
     expect(getSessionStore('stream-text').store.getter(runAtom)?.status).toBe('done')
     expect(getSessionStore('stream-text').store.getter(checkpointsAtom)).toHaveLength(1)
   })
@@ -1152,7 +1195,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     )
     const during = getSessionStore('stream-reasoning').store.getter(itemsAtom)
     const assistantId = during.find((it) => it.item.role === 'assistant')?.id
-    expect(during[1]).toMatchObject({
+    expect(during[2]).toMatchObject({
       id: assistantId,
       pending: true,
       item: { role: 'assistant', content: '', reasoning_content: '先分析' },
@@ -1166,8 +1209,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     await runPromise
 
     const done = getSessionStore('stream-reasoning').store.getter(itemsAtom)
-    expect(done).toHaveLength(2)
-    expect(done[1]).toMatchObject({
+    expect(done).toHaveLength(3)
+    expect(done[2]).toMatchObject({
       id: assistantId,
       pending: false,
       item: { role: 'assistant', content: '答案', reasoning_content: '先分析' },
@@ -1223,9 +1266,9 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
 
     const store = getSessionStore('stream-tools').store
     const items = store.getter(itemsAtom)
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
-    const asstTc = items[1].item
-    const toolItem = items[2].item
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant', 'tool', 'assistant'])
+    const asstTc = items[2].item
+    const toolItem = items[3].item
     if (asstTc.role !== 'assistant' || toolItem.role !== 'tool') throw new Error('意外的条目形状')
     expect(asstTc.tool_calls?.[0].function.arguments).toBe('{"toolName":"skill_search","reason":"x"}')
     expect(toolItem.tool_call_id).toBe('tc1')
@@ -1244,11 +1287,11 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
 
     const store = getSessionStore('t1').store
     const items = store.getter(itemsAtom)
-    // user → assistant(tool_calls) → tool(schema) → assistant(final)
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
+    // user → timed 清单 → assistant(tool_calls) → tool(schema) → assistant(final)
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant', 'tool', 'assistant'])
 
-    const asstTc = items[1].item
-    const toolItem = items[2].item
+    const asstTc = items[2].item
+    const toolItem = items[3].item
     if (asstTc.role !== 'assistant' || toolItem.role !== 'tool') throw new Error('意外的条目形状')
     expect(asstTc.tool_calls?.[0].function.name).toBe('request_tool_schema')
     // 缺省 id 由 runtime 自造并一致回填：assistant.tool_calls[0].id === tool.tool_call_id。
@@ -1264,7 +1307,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
 
     expect(store.getter(runAtom)?.loadedTools).toContain('skill_search')
     expect(store.getter(runAtom)?.status).toBe('done')
-    expect((items[3].item as { content?: string }).content).toBe('最终答案')
+    expect((items[4].item as { content?: string }).content).toBe('最终答案')
     expect(store.getter(checkpointsAtom)).toHaveLength(1)
   })
 
@@ -1379,16 +1422,17 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     await runSession('t2', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
 
     const items = getSessionStore('t2').store.getter(itemsAtom)
-    // user → asst(tc schema) → tool(schema) → asst(tc skill_search) → tool(results) → asst(final)
+    // user → timed 清单 → asst(tc schema) → tool(schema) → asst(tc skill_search) → tool(results) → asst(final)
     expect(items.map((it) => it.item.role)).toEqual([
       'user',
+      'tool',
       'assistant',
       'tool',
       'assistant',
       'tool',
       'assistant',
     ])
-    const searchResult = items[4].item
+    const searchResult = items[5].item
     if (searchResult.role !== 'tool') throw new Error('意外的条目形状')
     expect(searchResult.content.includes('results')).toBe(true)
     expect(getSessionStore('t2').store.getter(runAtom)?.status).toBe('done')
@@ -1610,7 +1654,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(count()).toBe(2)
     // schema call 已完整回填；ask_user 的 ToolItem 未回填（留给 resume）。
     const items = getSessionStore('t3').store.getter(itemsAtom)
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant', 'tool', 'assistant'])
     // 暂停状态和未闭合 ask tool_call 一起覆盖进同一工作 checkpoint，刷新后卡片仍可回答。
     const checkpoints = getSessionStore('t3').store.getter(checkpointsAtom)
     expect(checkpoints).toHaveLength(1)
@@ -1709,7 +1753,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     })
     expect(count()).toBe(2)
     expect(store.getter(itemsAtom).map((item) => item.item.role)).toEqual([
-      'user', 'assistant', 'tool', 'assistant',
+      'user', 'tool', 'assistant', 'tool', 'assistant',
     ])
   })
 
@@ -1739,7 +1783,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     const items = store.getter(itemsAtom)
     // 两次 request_tool_schema 均回填；ask_user 的 result 留给 resume。
     expect(items.map((it) => it.item.role)).toEqual([
-      'user', 'assistant', 'tool', 'assistant', 'tool',
+      'user', 'tool', 'assistant', 'tool', 'assistant', 'tool',
     ])
     const toolItem = items.find(
       (item) => item.item.role === 'tool' && item.item.tool_call_id === 'ts1',
@@ -2356,7 +2400,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
 
     expect(requestCount).toBe(1)
     expect(store.getter(runAtom)).toMatchObject({ runId, status: 'stopped' })
-    expect(store.getter(itemsAtom).map(({ item }) => item.role)).toEqual(['user'])
+    expect(store.getter(itemsAtom).map(({ item }) => item.role)).toEqual(['user', 'tool'])
     expect(store.getter(checkpointsAtom)).toHaveLength(1)
     expect(store.getter(checkpointsAtom)[0]).toMatchObject({ label: '[已停止] 继续执行', kind: 'stopped' })
   })
@@ -2379,6 +2423,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(count()).toBe(3)
     expect(store.getter(itemsAtom).map((it) => it.item.role)).toEqual([
       'user',
+      'tool',
       'assistant',
       'tool',
       'assistant',
@@ -2402,6 +2447,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(store.getter(checkpointsAtom)).toHaveLength(1)
     expect(store.getter(checkpointsAtom)[0].items.map((it) => it.item.role)).toEqual([
       'user',
+      'tool',
       'assistant',
       'tool',
       'assistant',
@@ -2429,7 +2475,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）', () => {
     expect(items.some((it) => it.item.role === 'assistant' && 'content' in it.item && it.item.content === '迟到的答案')).toBe(false)
     const checkpoints = getSessionStore('t5').store.getter(checkpointsAtom)
     expect(checkpoints).toHaveLength(1)
-    expect(checkpoints[0].items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool'])
+    expect(checkpoints[0].items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant', 'tool'])
     expect(checkpoints[0]).toMatchObject({ label: '[已停止] hi', kind: 'stopped' })
   })
 
@@ -2555,7 +2601,7 @@ describe('危险工具确认门（S4-B）', () => {
 
     const items = store.getter(itemsAtom)
     expect(items.map((it) => it.item.role)).toEqual([
-      'user', 'assistant', 'tool', 'assistant', 'tool', 'assistant',
+      'user', 'tool', 'assistant', 'tool', 'assistant', 'tool', 'assistant',
     ])
     const toolItem = items.find(
       (item) => item.item.role === 'tool' && item.item.tool_call_id === 'sh1',
@@ -2614,7 +2660,7 @@ describe('危险工具确认门（S4-B）', () => {
     expect(count()).toBe(2)
     // schema call 已回填；危险工具的 ToolItem 未回填（留给 confirmTool）。
     const items = store.getter(itemsAtom)
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant', 'tool', 'assistant'])
     expect(items.some((it) => it.item.role === 'tool' && it.item.tool_call_id === 'w1')).toBe(false)
     // 确认状态和未执行的危险 tool_call 一起覆盖进工作 checkpoint，刷新后仍由用户决定。
     const checkpoints = store.getter(checkpointsAtom)
@@ -2792,7 +2838,7 @@ describe('危险工具确认门（S4-B）', () => {
     const items = store.getter(itemsAtom)
     // 两次 request_tool_schema 均回填；write_file 的 result 留给确认恢复。
     expect(items.map((it) => it.item.role)).toEqual([
-      'user', 'assistant', 'tool', 'assistant', 'tool',
+      'user', 'tool', 'assistant', 'tool', 'assistant', 'tool',
     ])
     const toolItem = items.find(
       (item) => item.item.role === 'tool' && item.item.tool_call_id === 'ts1',
@@ -2829,9 +2875,9 @@ describe('危险工具确认门（S4-B）', () => {
     })
 
     const items = store.getter(itemsAtom)
-    // user → assistant(tool_calls) → tool(w1 的 result，恢复入口执行后回填) → assistant(final)。
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
-    const toolItem = items[2].item
+    // sessionStart 清单先于确认恢复工具执行：user → assistant(tool_calls) → timed 清单 → tool(w1 的 result) → assistant(final)。
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'tool', 'assistant'])
+    const toolItem = items[3].item
     if (toolItem.role !== 'tool') throw new Error('意外的条目形状')
     expect(toolItem.tool_call_id).toBe('w1')
     expect(store.getter(runAtom)?.status).toBe('done')
@@ -2991,6 +3037,7 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
       'user',
       'assistant',
       'tool',
+      'tool',
       'assistant',
     ])
     const interruptedToolResult = store.getter(itemsAtom)[2].item
@@ -3015,6 +3062,71 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
       kind: 'completed',
       recovery: undefined,
     })
+  })
+
+  it('恢复已有 sessionStart skills 清单时不重复 ensure 或写入 timed item', async () => {
+    const workspaceRoot = '/workspace/resumed-skills'
+    const projectSkillsProvider = vi.fn(async () => ({ workspaceRoot, entries: [], diagnostics: [] }))
+    const core = createCoreInstance({ registerTools: registerStandardTools, projectSkillsProvider })
+    const id = 'resume-existing-skill-manifest'
+    core.rootStore.setter(workspacesAtom, {
+      workspace: { id: 'workspace', name: '恢复工作区', rootPath: workspaceRoot, createdAt: 0, updatedAt: 0 },
+    })
+    core.rootStore.setter(sessionsAtom, {
+      [id]: {
+        id,
+        title: 't',
+        workspaceId: 'workspace',
+        settings: { vendor: 'deepseek', model: 'x' },
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    })
+    const store = core.getSessionStore(id).store
+    store.setter(itemsAtom, [
+      { id: 'user', createdAt: 1, item: { role: 'user' as const, content: '继续执行' } },
+      {
+        id: 'existing-skill-manifest',
+        createdAt: 2,
+        item: {
+          role: 'tool' as const,
+          tool_call_id: 'timed:sessionStart:skill_manifest',
+          content: JSON.stringify('可用 skills：\n· planning — 何时用：任务跨多个阶段/模块'),
+        },
+      },
+    ])
+    setRun(id, { runId: 'interrupted-run', turnId: 'user', status: 'interrupted' }, core)
+    let requestMessages: Array<{ role: string; tool_call_id?: string; content?: string }> = []
+
+    await resumeInterruptedSession(id, {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      core,
+      fetchImpl: async (_url, init) => {
+        requestMessages = (JSON.parse(String(init?.body)) as { messages: typeof requestMessages }).messages
+        return jsonResponse('已恢复')
+      },
+    })
+
+    expect(projectSkillsProvider).not.toHaveBeenCalled()
+    expect(store.getter(itemsAtom).filter(
+      ({ item }) => item.role === 'tool' && item.tool_call_id === 'timed:sessionStart:skill_manifest',
+    )).toHaveLength(1)
+    expect(requestMessages).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        role: 'assistant',
+        content: '',
+        tool_calls: [{
+          id: 'timed:sessionStart:skill_manifest',
+          type: 'function',
+          function: { name: 'timed_tool_result', arguments: '{}' },
+        }],
+      }),
+      expect.objectContaining({
+        role: 'tool',
+        tool_call_id: 'timed:sessionStart:skill_manifest',
+      }),
+    ]))
   })
 
   it('新旧工作 checkpoint 共存时，结构化最新记录续跑且不误改旧前缀记录', async () => {
@@ -3091,9 +3203,9 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
     })
 
     const items = store.getter(itemsAtom)
-    // 只 append 了最终 assistant，没有新增 user（复用已有 user）。
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
-    expect(items[1].item).toEqual({ role: 'assistant', content: '答案' })
+    // 复用已有 user；sessionStart 清单后才 append 最终 assistant。
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
+    expect(items[2].item).toEqual({ role: 'assistant', content: '答案' })
     expect(store.getter(runAtom)?.status).toBe('done')
     // 一轮收尾 = 一个 checkpoint。
     expect(store.getter(checkpointsAtom)).toHaveLength(1)
@@ -3114,8 +3226,8 @@ describe('finish_reason 异常分流', () => {
     const store = getSessionStore('fr1').store
     const items = store.getter(itemsAtom)
     // 半截内容必须留下 —— 用户得看得见模型说到哪被掐断的。
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
-    const assistantItem = items[1].item
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
+    const assistantItem = items[2].item
     if (assistantItem.role !== 'assistant') throw new Error('意外的条目形状')
     expect(assistantItem.content).toContain('半截答案')
     const run = store.getter(runAtom)
@@ -3124,10 +3236,10 @@ describe('finish_reason 异常分流', () => {
     // ★ 回归（MAJOR）：itemsAtom 不持久化，落盘的唯一入口就是 commitCheckpoint + persistCheckpoint。
     //   这一轮若不落盘，用户刷新后不只半截答案没了，连他自己发的那条 user 消息也一起消失。
     expect(store.getter(checkpointsAtom)).toHaveLength(1)
-    expect(store.getter(checkpointsAtom)[0].items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
-    expect(persistence.saved).toHaveLength(2)
+    expect(store.getter(checkpointsAtom)[0].items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
+    expect(persistence.saved).toHaveLength(3)
     expect(persistence.saved.at(-1)?.sessionId).toBe('fr1')
-    expect(persistence.saved.at(-1)?.checkpoint.items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
+    expect(persistence.saved.at(-1)?.checkpoint.items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
     // 状态仍是 error（落盘不代表这轮算成功），也不再发第二次请求。
     expect(count()).toBe(1)
   })
@@ -3146,18 +3258,18 @@ describe('finish_reason 异常分流', () => {
 
     const store = getSessionStore('fr-stream').store
     const items = store.getter(itemsAtom)
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
     // ★ 回归（MAJOR）：finishPending() 只写 { pending:false }、从不写 content，
     //   末尾那段文字只活在 streamWriter 闭包里 —— 界面会比实际收到的还少一截且毫无提示。
-    const streamedItem = items[1].item
+    const streamedItem = items[2].item
     if (streamedItem.role !== 'assistant') throw new Error('意外的条目形状')
     expect(streamedItem.content).toContain('前半段后半段')
     // 系统标注只能【追加】在完整正文之后，不能把流式对账出来的文本顶掉。
     expect(streamedItem.content?.startsWith('前半段后半段')).toBe(true)
-    expect(items[1].pending).toBe(false)
+    expect(items[2].pending).toBe(false)
     // 半截 assistant 条目绝不能带 tool_calls：本分支要 return、不执行工具，
     // 落下 tool_calls 就成了没有 result 的孤儿，下一轮重发直接被接口判非法。
-    expect('tool_calls' in items[1].item).toBe(false)
+    expect('tool_calls' in items[2].item).toBe(false)
     const run = store.getter(runAtom)
     expect(run?.status).toBe('error')
     expect(run?.error).toContain('finish_reason=length')
@@ -3189,8 +3301,8 @@ describe('finish_reason 异常分流', () => {
     //   同 length 一样必须有落点，否则刷新后聊天区一片空白，且下一轮重发历史时模型看不出
     //   这里发生过什么（见 modelRun.ts 该分支的长注释）。
     const items = store.getter(itemsAtom)
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
-    const assistantItem = items[1].item
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
+    const assistantItem = items[2].item
     if (assistantItem.role !== 'assistant') throw new Error('意外的条目形状')
     expect(assistantItem.content).toContain('content_filter')
     expect(assistantItem.content).toContain('系统标注')
@@ -3264,11 +3376,11 @@ describe('finish_reason 异常分流', () => {
     //   同时把异常状态写进结构化字段——否则刷新后聊天区看起来这轮什么都没发生。
     const checkpoint = store.getter(checkpointsAtom)[0]
     expect(checkpoint).toMatchObject({ label: '敏感问题', kind: 'abnormal', finishReason: 'content_filter' })
-    const committedAssistant = checkpoint.items[1].item
+    const committedAssistant = checkpoint.items[2].item
     if (committedAssistant.role !== 'assistant') throw new Error('意外的条目形状')
     expect(String(committedAssistant.content)).toContain('content_filter')
-    expect(persistence.saved).toHaveLength(2)
-    const savedAssistant = persistence.saved.at(-1)!.checkpoint.items[1].item
+    expect(persistence.saved).toHaveLength(3)
+    const savedAssistant = persistence.saved.at(-1)!.checkpoint.items[2].item
     if (savedAssistant.role !== 'assistant') throw new Error('意外的条目形状')
     expect(String(savedAssistant.content)).toContain('content_filter')
 
@@ -3298,8 +3410,8 @@ describe('finish_reason 异常分流', () => {
     const store = getSessionStore('fr5').store
     const items = store.getter(itemsAtom)
     // 关键：assistant(tool_calls) 后必须有对应的 tool 结果，否则下一轮消息序列非法。
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
-    const toolItem = items[2].item
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant', 'tool', 'assistant'])
+    const toolItem = items[3].item
     if (toolItem.role !== 'tool') throw new Error('意外的条目形状')
     expect(toolItem.tool_call_id).toBe('cut1')
     const payload = JSON.parse(toolItem.content) as Record<string, unknown>
@@ -3329,18 +3441,18 @@ describe('finish_reason 异常分流', () => {
     //   否则刷新之后这半截回答与一条正常回复完全同形，CheckpointBar 上也分不出好坏。
     const checkpoint = store.getter(checkpointsAtom)[0]
     expect(checkpoint).toMatchObject({ label: '算个数', kind: 'abnormal', finishReason: 'length' })
-    const committedAssistant = checkpoint.items[1].item
+    const committedAssistant = checkpoint.items[2].item
     if (committedAssistant.role !== 'assistant') throw new Error('意外的条目形状')
     expect(String(committedAssistant.content)).toContain('第一步先算出 42')
     expect(String(committedAssistant.content)).toContain('finish_reason=length')
     // 落盘的那一份（刷新后唯一的真相源）必须同样带着标注与结构化状态。
-    expect(persistence.saved).toHaveLength(2)
+    expect(persistence.saved).toHaveLength(3)
     expect(persistence.saved.at(-1)?.checkpoint).toMatchObject({
       label: '算个数',
       kind: 'abnormal',
       finishReason: 'length',
     })
-    const savedAssistant = persistence.saved.at(-1)!.checkpoint.items[1].item
+    const savedAssistant = persistence.saved.at(-1)!.checkpoint.items[2].item
     if (savedAssistant.role !== 'assistant') throw new Error('意外的条目形状')
     expect(String(savedAssistant.content)).toContain('finish_reason=length')
 
@@ -3364,7 +3476,7 @@ describe('finish_reason 异常分流', () => {
     await runSession('fr-clean', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
 
     const store = getSessionStore('fr-clean').store
-    expect(store.getter(itemsAtom)[1].item).toEqual({ role: 'assistant', content: '完整答案' })
+    expect(store.getter(itemsAtom)[2].item).toEqual({ role: 'assistant', content: '完整答案' })
     expect(store.getter(checkpointsAtom)[0].label).toBe('hi')
   })
 })
@@ -3448,7 +3560,7 @@ describe('tool_call 参数解析', () => {
     // 坏参数绝不能被降级成 {} 后照常执行 —— 那等于拿默认参数干活。
     expect(executed).toBe(0)
     const items = getSessionStore('pa1').store.getter(itemsAtom)
-    const toolItem = items[2].item
+    const toolItem = items[3].item
     if (toolItem.role !== 'tool') throw new Error('意外的条目形状')
     const payload = JSON.parse(toolItem.content) as Record<string, unknown>
     expect(String(payload.error)).toContain('不是合法 JSON')
@@ -3476,7 +3588,7 @@ describe('tool_call 参数解析', () => {
     await runSession('pa2', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
 
     expect(executed).toBe(0)
-    const toolItem = getSessionStore('pa2').store.getter(itemsAtom)[2].item
+    const toolItem = getSessionStore('pa2').store.getter(itemsAtom)[3].item
     if (toolItem.role !== 'tool') throw new Error('意外的条目形状')
     expect(String((JSON.parse(toolItem.content) as Record<string, unknown>).error)).toContain('必须是 JSON 对象')
   })
@@ -3539,8 +3651,8 @@ describe('上下文 checkpoint 接入', () => {
     await runSession('cc0', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
     await flushObservability()
 
-    // 固定 system + skill 清单 + 工具摘要 + 运行环境 + user，一条没少。
-    expect((captured.messages as unknown[]).length).toBe(5)
+    // 固定 system + 工具摘要 + 运行环境 + user + timed 清单配对，共六条。
+    expect((captured.messages as unknown[]).length).toBe(6)
     expect(trace.events.some((event) => event.name === 'llm.context_distillation_started')).toBe(false)
     expect(trace.events.some((event) => event.name === 'llm.context_distillation_succeeded')).toBe(false)
   })
@@ -3598,8 +3710,11 @@ describe('上下文 checkpoint 接入', () => {
     expect(store.getter(contextCheckpointAtom)).toMatchObject({
       schemaVersion: 1,
       summary: '已读取第一轮工具结果，继续处理第二轮请求。',
-      coveredItemIds: ['u1', 'a1', 't1', 'a2', 'u2'],
     })
+    expect(store.getter(contextCheckpointAtom)?.coveredItemIds).toEqual(expect.arrayContaining([
+      'u1', 'a1', 't1', 'a2', 'u2',
+    ]))
+    expect(store.getter(contextCheckpointAtom)?.coveredItemIds).toHaveLength(6)
     expect(store.getter(contextStatsAtom)?.messagesCount).toBe(
       (normalRequest.messages as unknown[]).length,
     )

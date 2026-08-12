@@ -112,19 +112,21 @@ describe('无头消费者（headless consumer）—— 消费方可替换的终�
 
     // ── 5) 断言：事件流【符合真实时序】────────────────────────────────────────────
     const items = store.getter(itemsAtom)
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
     const runId = store.getter(runAtom)?.runId
     if (typeof runId !== 'string') throw new Error('run 未产生 runId')
 
     // 真实时序（事件类型逐条比对）：
     //   message_appended(user)  ← runSession appendItem(user)
     //   run_start / run_status_changed(running)  ← runSession setRun(running)
+    //   message_appended(tool) ← sessionStart timed skills 清单
     //   message_appended(assistant)  ← loop append assistant
     //   run_status_changed(done) / run_end(done)  ← loop patchRun(done)
     expect(events.map((e) => e.type)).toEqual([
       'message_appended',
       'run_start',
       'run_status_changed',
+      'message_appended',
       'message_appended',
       'run_status_changed',
       'run_end',
@@ -138,17 +140,17 @@ describe('无头消费者（headless consumer）—— 消费方可替换的终�
     // 走「先 append pending:true（内容已完整）→ 再就地 finalize 成 pending:false」两步；后一步是等长替换，
     // 投影器按契约【不再发】message_appended。故事件里是 pending:true 版本，与最终 items[1]（pending:false）
     // 同一 id、同样 role/content，仅 pending 不同。
-    const asst = events[3]
-    if (asst.type !== 'message_appended') throw new Error('期望第 4 条是 assistant message_appended')
-    expect(asst.item.id).toBe(items[1].id)
+    const asst = events[4]
+    if (asst.type !== 'message_appended') throw new Error('期望第 5 条是 assistant message_appended')
+    expect(asst.item.id).toBe(items[2].id)
     expect(asst.item.item).toEqual({ role: 'assistant', content: '你好' })
-    expect(events[4]).toEqual({ type: 'run_status_changed', status: 'done' })
-    expect(events[5]).toEqual({ type: 'run_end', runId, status: 'done' })
+    expect(events[5]).toEqual({ type: 'run_status_changed', status: 'done' })
+    expect(events[6]).toEqual({ type: 'run_end', runId, status: 'done' })
 
     // 插件的 subscribe 被【真 loop 的 itemsAtom 每一次写入】同步驱动（裸 atom 订阅，比投影器更细）：
-    //   append user → 1；append pending assistant → 2；finalize assistant（就地等长替换）→ 仍 2。
-    // 变异自检：若 subscribe 未被真 loop 驱动、或压缩等插件误写回 itemsAtom，这里会偏离 [1, 2, 2]。
-    expect(observedItemCounts).toEqual([1, 2, 2])
+    //   append user → 1；sessionStart timed tool → 2；append pending assistant → 3；finalize assistant（就地等长替换）→ 仍 3。
+    // 变异自检：若 subscribe 未被真 loop 驱动、或压缩等插件误写回 itemsAtom，这里会偏离 [1, 2, 3, 3]。
+    expect(observedItemCounts).toEqual([1, 2, 3, 3])
 
     // ── 6) transformContext hook：无头宿主用真 CoreCtx 驱动它读实时 core 状态 + 变换请求投影 ──
     const ctx = makeCoreCtx({
@@ -161,11 +163,11 @@ describe('无头消费者（headless consumer）—— 消费方可替换的终�
     })
     const draft: RequestDraft = { messages: [] }
     await hooks.transformContext?.(ctx, draft)
-    // hook 从 ctx.store 现取到真实的 2 条历史（user + assistant）。
-    expect(transformContextSawItems).toBe(2)
-    // hook 只改请求投影、绝不写回 itemsAtom（历史仍是 2 条）。
+    // hook 从 ctx.store 现取到真实的 3 条历史（user + sessionStart tool + assistant）。
+    expect(transformContextSawItems).toBe(3)
+    // hook 只改请求投影、绝不写回 itemsAtom（历史仍是 3 条）。
     expect(draft.messages).toEqual([{ role: 'system', content: 'headless-marker' }])
-    expect(store.getter(itemsAtom)).toHaveLength(2)
+    expect(store.getter(itemsAtom)).toHaveLength(3)
 
     unsubscribe()
     disposeSubs()
@@ -215,8 +217,8 @@ describe('无头消费者（headless consumer）—— 消费方可替换的终�
     })
 
     expect(events.length).toBe(seenBefore)
-    // 第二轮确实真的跑了（itemsAtom 长到 4：user/assistant ×2）—— 证明「不收事件」不是因为没跑。
-    expect(getSessionStore('h2').store.getter(itemsAtom)).toHaveLength(4)
+    // 第二轮确实真的跑了（itemsAtom 长到 5：首轮 sessionStart tool + user/assistant ×2）—— 证明「不收事件」不是因为没跑。
+    expect(getSessionStore('h2').store.getter(itemsAtom)).toHaveLength(5)
   })
 
   it('结构证明：本测试文件不 import 任何 ui/ 下的东西、不 import React（纯 core 消费方）', () => {

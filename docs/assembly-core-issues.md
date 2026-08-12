@@ -178,7 +178,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   deprecated 别名删除）；`pnpm exec vitest run tools/skills packages/agent-core`；`pnpm build`
 - **模型**：codex xhigh（勘误：`tools/types.ts` 反向依赖 `skills/registry` 的 `SkillSummary`，
   契约切分超出机械搬移，按规则升险）
-- **状态**：DONE（哈希在下一次提交补记；`SkillSummary` 落 `skills/contracts.ts`、
+- **状态**：DONE `f16ce00`（`SkillSummary` 落 `skills/contracts.ts`、
   `buildProjectSkillsProvider` 落 tools-skills 且懒加载 workspace 桥防模块图毒化、
   调用点过渡债与 deprecated 别名一并收口）
 
@@ -213,7 +213,9 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   `pnpm exec vitest run packages/agent-core/src/planning packages/agent-core/src/runtime`；
   `pnpm build`
 - **模型**：codex xhigh
-- **状态**：TODO
+- **状态**：DONE（哈希在下一次提交补记；`planRuntime?: PlanRuntimeFactory` 槽，defaultCore
+  默认注入 core 内实现、显式 `planRuntime: null` 关闭能力；其对 `toolContext.ts` 的改动
+  随 B3 提交入库）
 
 ### C2 · planning 逻辑实现迁入 tools-planning，删除 core 残留
 

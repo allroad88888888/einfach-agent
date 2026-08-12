@@ -36,7 +36,6 @@ import { resolveSessionWorkspaceRoot } from '../state/workspaceState'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
 import { isCurrentRun } from './shared/runGuards'
 import { getPlan as readStoredPlan, setPlan } from '../state/planWriters'
-import { PlanRuntime } from '../planning/runtime'
 import {
   addBrowserCard,
   addPendingArtifact,
@@ -134,10 +133,10 @@ export function buildToolContext(opts: {
   // withWorkspaceReadAccess 会覆盖/移除调用方同名字段，避免模型伪造 runtime-only 权限。
   const allowExternalReadPaths =
     core.rootStore.getter(sessionsAtom)[sessionId]?.toolApprovalMode === 'auto'
-  const planRuntime = new PlanRuntime({
+  const planRuntime = core.planRuntime?.({
     get: () => readStoredPlan(sessionId, core),
     set: (plan) => setPlan(sessionId, plan, core),
-  }, Date.now, newId)
+  })
 
   // Skills 只读入口：合并内置 + 项目快照（workspaceRoot 为空时降级为仅内置）。
   const projectSkillsSnapshot = workspaceRoot ? core.projectSkills.get(workspaceRoot) : undefined
@@ -257,13 +256,13 @@ export function buildToolContext(opts: {
     }
   }
 
-  const ctx: ToolContext = {
-    sessionId,
-    signal,
-    progress,
+  const planCapabilities: Pick<
+    ToolContext,
+    'getPlan' | 'createPlan' | 'executePlan' | 'updatePlan' | 'submitStageResult'
+  > = planRuntime ? {
     getPlan() {
       assertFresh()
-      return readStoredPlan(sessionId, core)
+      return planRuntime.get()
     },
     createPlan(input) {
       assertFresh()
@@ -281,6 +280,14 @@ export function buildToolContext(opts: {
       assertFresh()
       return planRuntime.submitStageResult(input)
     },
+  } : {}
+
+  const ctx: ToolContext = {
+    sessionId,
+    signal,
+    progress,
+    ...planCapabilities,
+    ...(workspaceRoot ? { projectSkills: { ensure: () => core.projectSkills.ensure(workspaceRoot) } } : {}),
 
     async runShell(input) {
       assertFresh()

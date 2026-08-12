@@ -27,17 +27,29 @@ describe('createContextCacheTracker · 尾巴顶位与归因', () => {
     expect(second.epochReason).toBe(first.epochReason)
   })
 
-  it('尾巴为空时，纯追加的连续多轮不再 bump epoch（阶段 3：skill 清单迁出尾巴的核心收益）', () => {
-    // 阶段 3 之前，skill 名单是常驻动态尾巴项，历史每追加一轮都把它顶到新位置 →
-    // 每轮 history_inserted_before_dynamic_tail、epoch +1、整段前缀全额 miss（实测 185/185 轮）。
-    // 清单迁进稳定前缀后，多数轮次 dynamicControls 为空，新历史只是往投影尾部 append。
-    const manifest: ModelItem = { role: 'system', content: '可用 skills：· planning — 何时用…' }
-    const systemContent = `fixed system\n${manifest.content}`
+  it('sessionStart 清单以请求投影配对留在首轮历史，连续追加不回退缓存 profile/epoch', () => {
+    // L1 清单不再进 stable systemContent。timeline 只保存 sessionStart 的孤儿 tool result；请求
+    // 投影紧贴其前补 assistant tool_call，满足供应商的配对约束。首轮真实顺序是 user → 配对 → tool。
+    const timedCall: ModelItem = {
+      role: 'assistant',
+      content: '',
+      tool_calls: [{
+        id: 'timed:sessionStart:skill_manifest',
+        type: 'function',
+        function: { name: 'timed_tool_result', arguments: '{}' },
+      }],
+    }
+    const manifest: ModelItem = {
+      role: 'tool',
+      tool_call_id: 'timed:sessionStart:skill_manifest',
+      content: JSON.stringify('可用 skills：\n· planning — 何时用…'),
+    }
+    const systemContent = 'fixed system'
     const tracker = createContextCacheTracker()
-    const history: ModelItem[] = [user]
+    const history: ModelItem[] = [user, timedCall, manifest]
     const round = (dynamicControls: ModelItem[] = []) =>
       tracker.observe(input({
-        messages: [system, manifest, ...history, ...dynamicControls],
+        messages: [system, ...history, ...dynamicControls],
         systemContent,
         dynamicControls,
       }))

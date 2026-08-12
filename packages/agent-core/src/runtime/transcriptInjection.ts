@@ -41,11 +41,6 @@ function addInjectionEvent(
   }, core)
 }
 
-function skillManifestSummary(core: CoreInstance): string {
-  const names = core.skillRegistry.list().map((skill) => skill.name).sort()
-  return `清单含 ${names.length} 个 skill：${names.join('、')}`
-}
-
 /**
  * Mirrors stable request items into the UI transcript once per changed content.
  * Fingerprints are transient, so a fresh UI transcript always gets its first set.
@@ -88,7 +83,6 @@ export function injectStablePrefixTranscript(
   }
 
   const manifestEntries = [
-    ['skillManifest', '注入 skill 清单', skillManifestSummary(core), prefix.skillManifest.content],
     ['toolManifest', '注入工具摘要清单', compactText(prefix.toolManifest.content), prefix.toolManifest.content],
   ] as const
   for (const [key, title, summary, detail] of manifestEntries) {

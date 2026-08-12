@@ -18,7 +18,6 @@ export interface StableModelPrefix {
   content: string
   system: SystemItem
   environment: SystemItem
-  skillManifest: SystemItem
   toolManifest: SystemItem
   customInstructions?: SystemItem
   workspaceRoot?: string
@@ -43,17 +42,8 @@ export async function buildStableModelPrefix(
     sessionMeta,
     core.rootStore.getter(workspacesAtom),
   )
-  if (workspaceRoot) {
-    await core.projectSkills.ensure(workspaceRoot)
-  }
-
   const runtimeIsTauri = isTauri()
   const system = buildSystemItem()
-  const projectSkills = workspaceRoot ? core.projectSkills.get(workspaceRoot) : undefined
-  const skillManifest: SystemItem = {
-    role: 'system',
-    content: core.skillRegistry.buildManifestText(projectSkills),
-  }
   const toolManifest: SystemItem = {
     role: 'system',
     content: buildToolManifestText(runtimeIsTauri, { registry: toolCatalog }),
@@ -66,7 +56,6 @@ export async function buildStableModelPrefix(
   })
   const items: SystemItem[] = [
     system,
-    skillManifest,
     toolManifest,
     ...(customInstructions ? [customInstructions] : []),
     environment,
@@ -77,7 +66,6 @@ export async function buildStableModelPrefix(
     content: items.map((item) => item.content).join('\n'),
     system,
     environment,
-    skillManifest,
     toolManifest,
     customInstructions,
     workspaceRoot,

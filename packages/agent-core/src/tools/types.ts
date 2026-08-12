@@ -272,6 +272,7 @@ export interface ToolContext {
      */
     resolveProjectPath(name: string): { filePath: string; resources: Record<string, string> } | undefined
   }
+  projectSkills?: { ensure(): Promise<import('../skills/projectSkills').ProjectSkillsSnapshot> }
 }
 
 /** 统一抽象：一个工具要具备的全部。execute 同步/异步都行（工厂 await 吸收）。 */

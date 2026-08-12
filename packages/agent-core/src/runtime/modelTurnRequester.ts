@@ -20,6 +20,7 @@ import type { ToolLoopBase } from './toolLoopContracts'
 import { startSpan, endSpan } from '../observability/trace'
 import { ROOT_AGENT_PATH } from '../subagents/path'
 import { modelReasoningEffort, modelSamplingSettings } from './modelSettingsProjection'
+import { projectTimedToolResultOrphans } from './timedToolResultProjection'
 
 export interface ModelTurnResult {
   response: ModelChatResponse
@@ -152,7 +153,9 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
         throw error
       }
       if (!base.control.isCurrent() || !base.control.isRunning() || base.opts.signal.aborted) return { inactive: true, streamWriter }
-      const messages = draft.messages
+      // timed dispatcher 的结果是 timeline 本体的孤儿 tool item；仅请求投影补齐协议配对，
+      // 后续 cache、trace 与 streamModel 因而共享实际发送给模型的同一消息序列。
+      const messages = projectTimedToolResultOrphans(draft.messages)
       const requestAssemblyTrace = contextRequestAssemblyTraceAttrs({ assembly: requestAssembly, afterTransform, final: snapshotContextRequestStage(messages) })
       const contextDistilled = projection.checkpoint !== undefined
       const cacheProfile = cacheTracker.observe({ lane: 'main', scope: `${base.id}:${base.runId}:${ROOT_AGENT_PATH}`, vendor: base.settings.vendor, model: base.settings.model, messages, systemContent: base.stablePrefix.content, tools, toolChoice: 'auto', thinking: thinking?.type, reasoningEffort, compacted: contextDistilled, dynamicControls: controls, requestMode: 'tool_loop' })
