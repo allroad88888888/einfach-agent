@@ -37,9 +37,10 @@ export interface PersistedHttpMcpServer extends PersistedMcpServerBase {
 /**
  * 用户对「在本机执行这条命令行」的一次确认（H2）。
  *
- * 【绑命令行，不绑服务】fingerprint 是 command / args / cwd 的规范化拼接（算法见
- * stdioLaunchConsent.ts）。任何一项被改过——将来的配置编辑界面、或者用户直接手改
- * `~/.webAgent/config.json`——都会与记录下来的指纹对不上，确认自动作废、下次再问一次。
+ * 【绑命令行，不绑服务】fingerprint 是 command / args / cwd 的规范化拼接，`env` 存在时作为
+ * 第四项一并纳入（没有 env 的存量配置指纹不变，算法见 stdioLaunchConsent.ts）。任何一项被
+ * 改过——将来的配置编辑界面、或者用户直接手改 `~/.webAgent/config.json`——都会与记录下来
+ * 的指纹对不上，确认自动作废、下次再问一次。
  * 如果绑在服务 id 上，改完命令还顶着旧确认自动执行，正是这道门要防的事；而绑在命令行
  * 上是【数据模型自带】的失效，不依赖将来的编辑路径记得去清标记。
  */

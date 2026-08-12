@@ -243,7 +243,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
 - **判据**：`connect_mcp_server` 描述不再展开占位已可见的完整清单，定位改为显式预热与诊断；
   `pnpm exec vitest run tools/mcp` + `pnpm build`
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE b7ce69d
 
 ### E1 · MCP 工具调用硬超时提到 1 小时
 
@@ -270,7 +270,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
 - **判据**：`node scripts/check-docs.js` 通过；文档不再宣称「需要认证的服务接不上」「两处存储」
   「120 秒超时」「只有显式连接」等已过时事实
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### Z2 · 退役本 issue 树
 

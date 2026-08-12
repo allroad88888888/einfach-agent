@@ -12,7 +12,7 @@
 | [树形子 Agent Runtime](tree-subagent-runtime.md) | delegation、权限、预算、archive、后台执行与治理脚本 |
 | [Context Caching](context-caching.md) | provider 自动缓存契约、profile/epoch、usage 归一化与观测 |
 | [模型适配器兼容性契约](model-adapter-compatibility.md) | DeepSeek/GLM 的已验证请求差异、Rust 参考的适用边界与新增 vendor 准入项 |
-| [MCP 集成](mcp-integration.md) | 连接生命周期与按需连接、失败分类与自愈、工具清单缓存、单次运行内的工具集、起进程确认与安全边界 |
+| [MCP 集成](mcp-integration.md) | 连接生命周期与按需连接、透明连接、静态凭据（headers/env）、配置文件存储、失败分类与自愈、工具清单缓存、单次运行内的工具集、起进程确认与安全边界 |
 | [用户配置目录](config-directory-override.md) | 默认 `~/.webAgent/config.json`、旧配置安全复制、`WEB_AGENT_CONFIG_DIR` 多实例隔离与密钥边界 |
 | [Tauri 卡顿诊断日志](performance-diagnostics.md) | 长对话、plan 更新、大文件写入的分段耗时与前后端关联排障 |
 | [工具规范](../packages/agent-core/src/tools/TOOLS-SPEC.md) | Tool、Registry、ToolContext、安全边界与新增工具约定 |
@@ -37,7 +37,7 @@
 | [上下文缓存成本 · 后续跟进项](context-cache-followups.md) | F1 实测验证（最高优先）、F2 尾巴失效归零、F3 会话过长提示；F5 跨 run 复用暂不做，C1/C2 已关闭并附结论 |
 | [请求组装归因交接（2026-08-04）](context-cache-request-assembly-handover-2026-08-04.md) | 已证实的低命中来源、trace 入口、接手实施顺序与复测口径 |
 | [MCP 未决决策落地 Issue 树](mcp-decisions-issues.md) | 执行中：六条未决决策已全部拍板（凭据静态 token、配置迁文件存储、透明连接 hybrid、超时 1 小时等），按 issue 逐项落地 |
-| [MCP 透明连接蓝图](mcp-transparent-connect-blueprint.md) | 已批准设计、未实施：缓存清单注册为占位工具、按需透明连接、起进程确认与 reconcile 的复用规则、`connect_mcp_server` 的新分工与上下文预算 |
+| [MCP 透明连接蓝图](mcp-transparent-connect-blueprint.md) | 已实施（D0–D4）：缓存清单注册为占位工具、按需透明连接、起进程确认与 reconcile 的复用规则、`connect_mcp_server` 的新分工与上下文预算；正文作为设计记录保留 |
 | [项目路线图](ROADMAP.md) | 阶段 0–4 已完成的交付与验收记录；后续仅在获得明确授权后推进 R5 协议实现、可选行为评测或新的路线图条目 |
 
 蓝图描述目标形态，不代表所有 API 都已交付。引用蓝图时需要同时核对实现和测试。
