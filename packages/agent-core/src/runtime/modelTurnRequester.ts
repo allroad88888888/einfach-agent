@@ -2,7 +2,7 @@ import { normalizeCacheUsage, streamModel, type ModelChatResponse, type ModelFun
 import { contextCheckpointAtom, itemsAtom } from '../state/sessionAtoms'
 import { contextStatsAtom, setContextStats } from '../state/transientAtoms'
 import { buildTurnTools, narrowToolCalls, toolSetSchemaFingerprint } from './modelTurn'
-import type { RequestDraft } from './core/loopHooks'
+import type { CompactionRequestDraft } from './core/plugins/compactionPlugin'
 import { contextInputBudgetTokens } from './contextBudget'
 import { createContextCheckpoint, contextNeedsDistillation } from './contextDistillation'
 import { projectContextCheckpoint } from './contextCheckpointProjection'
@@ -123,7 +123,25 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
           throw error
         }
       }
-      const draft: RequestDraft = { messages: projectedMessages }
+      const hasCompactionTimingTools =
+        base.core.timedToolRegistrations('preCompact').length > 0 ||
+        base.core.timedToolRegistrations('postCompact').length > 0
+      const draft: CompactionRequestDraft = {
+        messages: projectedMessages,
+        tools,
+        llmTurn: turn + 1,
+        replayUnsafeToolNames: base.toolEpoch.replayUnsafeToolNames(),
+        dynamicTailCount: controls.length,
+        ...(hasCompactionTimingTools
+          ? {
+              dispatchTimedItems: async (timing) => {
+                const before = sessionStore.getter(itemsAtom).length
+                await base.core.dispatchTimedTools({ sessionId: base.id, timing })
+                return sessionStore.getter(itemsAtom).slice(before).map(({ item }) => item)
+              },
+            }
+          : {}),
+      }
       await base.hooks.transformContext?.(base.pluginContext, draft)
       if (!base.control.isCurrent() || !base.control.isRunning() || base.opts.signal.aborted) return { inactive: true, streamWriter }
       const afterTransform = snapshotContextRequestStage(draft.messages)

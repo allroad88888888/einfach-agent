@@ -130,7 +130,9 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   `pnpm exec vitest run packages/agent-core/src/runtime/core/plugins packages/agent-core/src/runtime`；
   `pnpm build`
 - **模型**：codex xhigh
-- **状态**：TODO
+- **状态**：DONE（哈希在下一次提交补记；衔接点按例外条款落在 `modelTurnRequester` 的请求
+  组装处——`transformContext` hook 拿不到 base/checkpoints；有 timed 压缩工具时放弃增量
+  尾部扩展属已接受代价）
 
 ### A5 · 子 Agent 点位：subagentStart / subagentEnd
 
@@ -142,7 +144,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   路径同样触发 `subagentEnd`；深度/子数/预算硬限对 timed 分派不放宽；
   `pnpm exec vitest run packages/agent-core/src/subagents`；`pnpm build`
 - **模型**：codex xhigh
-- **状态**：TODO
+- **状态**：DOING
 
 ## B · skills 试点（Rust 侧 M15 判例：skills = 索引 + 读取工具）
 
@@ -170,9 +172,11 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   `runtime/transcriptInjection.ts`、`runtime/toolContext.ts` 改读槽而非直接 import
 - **判据**：`grep -r "skills/projectSkillsLoader\|skills/registry" packages/agent-core/src`
   无非契约残留；稳定前缀不因注入点变化而失效（`modelTurnPrefix` 相关测试通过）；
-  `pnpm exec vitest run tools/skills packages/agent-core`；`pnpm build`
-- **模型**：codex medium
-- **状态**：TODO
+  调用点临时注入 provider 的过渡债一并收口（`ensure/refresh` 双类型形参收敛、
+  deprecated 别名删除）；`pnpm exec vitest run tools/skills packages/agent-core`；`pnpm build`
+- **模型**：codex xhigh（勘误：`tools/types.ts` 反向依赖 `skills/registry` 的 `SkillSummary`，
+  契约切分超出机械搬移，按规则升险）
+- **状态**：DOING
 
 ### B3 · skills L1 清单注入迁移为 sessionStart timed 工具
 
@@ -245,7 +249,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   `@tauri-apps/plugin-sql` 依赖删除顺延至 D4 一并完成）；
   `pnpm exec vitest run packages/persistence-sqlite packages/agent-core/src/state`；`pnpm build`
 - **模型**：codex medium
-- **状态**：DONE（哈希在下一次提交补记）
+- **状态**：DONE `2f58462`
 
 ### D3 · 观测事件发射收敛为单一 port
 

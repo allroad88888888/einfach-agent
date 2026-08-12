@@ -42,7 +42,7 @@
 //   estimateTokensFromText 算别的（buildContextStatsSnapshot 那份 role 统计）应继续从那边导入，
 //   但 compactContext / DEFAULT_KEEP_RECENT_TURNS 抽完后 modelRun.ts 不再需要直接导入。
 
-import { contextWindowTokens, type ModelFunctionTool } from '@web-agent/ai'
+import { contextWindowTokens, type ModelFunctionTool, type ModelItem } from '@web-agent/ai'
 import { sessionsAtom } from '../../../state/rootStore'
 import {
   compactContext,
@@ -123,6 +123,10 @@ export interface CompactionRequestDraft extends RequestDraft {
    *（行为与引入本字段之前逐字一致，单测据此隔离验「压缩本身」）。
    */
   dynamicTailCount?: number
+  /** 压缩时机工具由请求组装层注入；插件只在确认本轮真的要改写投影后调用。 */
+  dispatchTimedItems?: (timing: 'preCompact' | 'postCompact') => Promise<ModelItem[]>
+  /** 防止 preCompact 写入历史后重新判定压缩时重复分派。 */
+  preCompactDispatched?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -167,7 +171,7 @@ export function applyCompaction(
   ctx: CoreCtx,
   draft: CompactionRequestDraft,
   cache?: CompactionProjectionCache,
-): void {
+): void | Promise<void> {
   // 会话 settings 来自 ctx.root（跨会话 sessionsAtom），不是 ctx.store——vendor/model/max_tokens
   // 是 SessionMeta 的一部分，随会话存在与否而定。没有 settings（会话已被 drop）就没法算预算，
   // 什么都不做——loop 侧在进入这一轮之前已经过 ghost/stale 守卫，正常路径不会触发这一分支。
@@ -275,7 +279,7 @@ export function applyCompaction(
 
   // ── 增量尾部压缩：原文追加撑破预算时，仅压新增段，保住先前已命中的稳定前缀。
   // 相比全量重新取景，这一段不会改写旧投影的任何 item；provider 可继续复用整段前缀 KV cache。
-  const extended = cache
+  const extended = cache && !draft.dispatchTimedItems
     ? tryExtendProjection(cache, factHistory, effectiveBudget, draft.replayUnsafeToolNames)
     : undefined
   if (extended) {
@@ -335,6 +339,18 @@ export function applyCompaction(
     keepRecentTurns: DEFAULT_KEEP_RECENT_TURNS,
     replayUnsafeToolNames: draft.replayUnsafeToolNames,
   })
+
+  // 先用纯函数确认本轮确实会改写投影；只有这个边界成立才把前置结果放进待压缩的事实历史，
+  // 然后以包含该结果的输入重算一次。这样空闲轮既不执行工具，也不改变投影坐标。
+  if (compaction.compacted && draft.dispatchTimedItems && !draft.preCompactDispatched) {
+    draft.preCompactDispatched = true
+    return draft.dispatchTimedItems('preCompact').then((items) => {
+      if (items.length > 0) {
+        draft.messages = insertBeforeDynamicTail(rawMessages, tailCount, items)
+      }
+      return applyCompaction(ctx, draft, cache)
+    })
+  }
 
   // 记住本轮投影供后续轮复用。只缓存「真压过且压回了预算内」的：
   //   · 没压过 —— 下轮粗筛（estimateItemsTokensUpperBound）自会飞快通过，不必占缓存；
@@ -403,6 +419,29 @@ export function applyCompaction(
       hint: '上下文压缩后仍超预算，建议开新会话',
     })
   }
+  if (compaction.compacted && draft.dispatchTimedItems) {
+    return draft.dispatchTimedItems('postCompact').then((items) => {
+      if (items.length === 0) return
+      const itemsWithPostCompact = insertBeforeDynamicTail(draft.messages, tailCount, items)
+      const result = draft.compaction!
+      draft.messages = itemsWithPostCompact
+      draft.compaction = {
+        ...result,
+        items: itemsWithPostCompact,
+        estimatedTokensAfter: result.estimatedTokensAfter + estimateItemsTokens(items),
+      }
+    })
+  }
+}
+
+function insertBeforeDynamicTail(
+  messages: ModelItem[],
+  tailCount: number,
+  items: ModelItem[],
+): ModelItem[] {
+  if (tailCount === 0) return [...messages, ...items]
+  const tailStart = messages.length - tailCount
+  return [...messages.slice(0, tailStart), ...items, ...messages.slice(tailStart)]
 }
 
 // 简介：上下文压缩插件（PX2 AgentPlugin）——装配期把 applyCompaction 注册进 transformContext 槽。
@@ -440,6 +479,6 @@ function sessionProjectionCache(ctx: CoreCtx): CompactionProjectionCache {
 //   里（可独立单测，不必每次都经 assemblePlugins 装配）。
 export const compactionPlugin: AgentPlugin = (api) => {
   api.hook('transformContext', (ctx, draft) => {
-    applyCompaction(ctx, draft as CompactionRequestDraft, sessionProjectionCache(ctx))
+    return applyCompaction(ctx, draft as CompactionRequestDraft, sessionProjectionCache(ctx))
   })
 }
