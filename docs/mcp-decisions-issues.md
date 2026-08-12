@@ -155,7 +155,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   调未连接工具时 `tool_provider_not_connected` 回执能命中；
   `pnpm exec vitest run apps/web/src/mcp tools/mcp` + `pnpm build`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### D1 · 透明连接设计蓝图
 
@@ -167,7 +167,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   reconcile 对占位工具的替换与命名冲突语义、连接失败时占位工具的降级表现、上下文预算影响、
   保留的 `connect_mcp_server` 的新分工；D2–D4 拆分若需调整须同步改本文件
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE ead8fd4
 
 ### D2a · reconciler 放行本服务占位
 

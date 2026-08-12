@@ -55,7 +55,16 @@ export function sanitizeConfigs(
   return sanitized
 }
 
-function parseEnvelope(raw: string): readonly PersistedMcpServerConfig[] {
+/**
+ * Parses one raw localStorage payload into sanitized configs. Exported so the
+ * one-time migration into the desktop config file (legacyServerMigration.ts)
+ * reads the legacy payload through the module that owns this storage format,
+ * instead of re-deriving the envelope shape somewhere else.
+ *
+ * Throws on a malformed payload — callers decide whether that is a hard error
+ * (localStorage host) or simply "no legacy data" (migration).
+ */
+export function parsePersistedMcpServers(raw: string): readonly PersistedMcpServerConfig[] {
   const parsed: unknown = JSON.parse(raw)
   const candidates = Array.isArray(parsed)
     ? parsed
@@ -74,7 +83,7 @@ export function createMcpConfigStorage(storage: StorageLike): McpConfigStorage {
     async load() {
       const raw = storage.getItem(MCP_SETTINGS_STORAGE_KEY)
       if (!raw) return []
-      const configs = parseEnvelope(raw)
+      const configs = parsePersistedMcpServers(raw)
       // Rewrite the sanitized whitelist on read so known unsafe fields and
       // credential-shaped connection strings do not remain in localStorage.
       try {
