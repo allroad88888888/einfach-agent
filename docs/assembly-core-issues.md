@@ -116,7 +116,8 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   `<domain>:<event>` 扩展时机，为 MCP 生命周期预留，本树不实现 MCP 侧接入）；
   `pnpm exec vitest run packages/agent-core/src/runtime`；`pnpm build`
 - **模型**：codex xhigh
-- **状态**：DOING
+- **状态**：DONE（哈希在下一次提交补记；`toolCallExecutor`/`checkpointWriters` 无需改动——
+  复用其既有路径正是判据本意；风险拒绝走 `classifyToolRisk`）
 
 ### A4 · 压缩点位：preCompact / postCompact
 
@@ -181,8 +182,10 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   `packages/agent-core/src/runtime/contextCacheFingerprint.ts` 相关测试
 - **判据**：模型实际收到的清单内容与迁移前语义等价（断言覆盖）；新会话的前缀缓存命中不回退
   （`modelTurnPrefix` 与 `contextCacheFingerprint` 测试）；既有会话因请求形状变化发生一次性
-  缓存失效属预期，不视为回归；`pnpm exec vitest run tools/skills packages/agent-core`；
-  `pnpm build`
+  缓存失效属预期，不视为回归；**孤儿 tool item 的请求映射必须被 provider 接受**——timed 结果
+  是无前置 assistant tool_call 的 `role:'tool'` item，OpenAI 兼容 API（DeepSeek/GLM）可能拒绝，
+  若拒绝须在请求组装处把 timed item 映射为可接受形状（本卡内解决，不得绕过 adapter 契约）；
+  `pnpm exec vitest run tools/skills packages/agent-core`；`pnpm build`
 - **模型**：codex xhigh
 - **状态**：TODO
 
@@ -226,7 +229,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 - **判据**：`pnpm exec vitest run packages/persistence-idb packages/agent-core/src/state`；
   `pnpm build`；Web 会话持久化行为不变
 - **模型**：codex medium
-- **状态**：DONE（哈希在下一次提交补记；验收补充：根 `package.json` 声明 workspace 依赖并
+- **状态**：DONE `ff2982a`（验收补充：根 `package.json` 声明 workspace 依赖并
   `--lockfile-only` 更新 lockfile——CI frozen install 需要）
 
 ### D2 · SQLite 持久化 driver 外移为独立包（Tauri 依赖随走）
@@ -234,12 +237,14 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 - **依赖**：D1
 - **改动面**：新包 `packages/persistence-sqlite`（自
   `packages/agent-core/src/state/persistence/sqliteDriver.ts` 迁入，含测试）；
-  `packages/agent-core/package.json` 移除 `@tauri-apps/plugin-sql`；
-  `vite.config.ts`、`tsconfig.app.json`、`apps/web/src/main.tsx` 接线
-- **判据**：`grep -rn "@tauri-apps/plugin-sql" packages/agent-core/src` 无结果；
+  `vite.config.ts`、`tsconfig.app.json`、`apps/web/src/main.tsx` 接线；根 `package.json`
+  声明 workspace 依赖并更新 lockfile
+- **判据**：`grep -rn "plugin-sql" packages/agent-core/src/state` 无非注释残留
+  （执行时勘误：observability 的 sqlite driver/reader 仍用 `plugin-sql`，core 的
+  `@tauri-apps/plugin-sql` 依赖删除顺延至 D4 一并完成）；
   `pnpm exec vitest run packages/persistence-sqlite packages/agent-core/src/state`；`pnpm build`
 - **模型**：codex medium
-- **状态**：TODO
+- **状态**：DOING
 
 ### D3 · 观测事件发射收敛为单一 port
 

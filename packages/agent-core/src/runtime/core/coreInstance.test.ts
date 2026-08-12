@@ -205,6 +205,34 @@ describe('coreInstance —— CoreInstance 抽象与 defaultCore', () => {
     })
   })
 
+  describe('到点工具公开分派', () => {
+    it('必须命中该会话的活跃 run；未命中时不委托也不产生记账', async () => {
+      const core = createCoreInstance()
+      const request = { sessionId: 's1', timing: 'mcp:connected' as const }
+      const dispatch = vi.fn(async () => ({ status: 'dispatched' as const, itemCount: 1 }))
+      let active = true
+
+      await expect(core.dispatchTimedTools(request)).resolves.toEqual({ status: 'no_active_run', itemCount: 0 })
+      expect(dispatch).not.toHaveBeenCalled()
+
+      const release = core.bindTimedToolDispatcher({
+        sessionId: 's1',
+        runId: 'r1',
+        isActive: () => active,
+        dispatch,
+      })
+      await expect(core.dispatchTimedTools(request)).resolves.toEqual({ status: 'dispatched', itemCount: 1 })
+      expect(dispatch).toHaveBeenCalledWith(request)
+
+      active = false
+      await expect(core.dispatchTimedTools(request)).resolves.toEqual({ status: 'no_active_run', itemCount: 0 })
+      expect(dispatch).toHaveBeenCalledTimes(1)
+
+      release()
+      await expect(core.dispatchTimedTools(request)).resolves.toEqual({ status: 'no_active_run', itemCount: 0 })
+    })
+  })
+
   describe('defaultCore', () => {
     it('是一个可用的 CoreInstance：根 store + 注册表就位（标准工具由 harness 装入）', () => {
       // 根 store 支持 getter/setter（读默认值不污染全局）。

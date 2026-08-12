@@ -20,6 +20,12 @@
 //   宿主能力（项目 skills 扫描等）同理经 opts 注入（B1）。
 import { createStore, type Store } from '@einfach/core'
 import { createToolRegistry, type ToolRegistry } from '../../tools/toolRegistry'
+import {
+  createTimedToolRegistry,
+  type TimedToolDispatchRequest,
+  type TimedToolDispatchResult,
+  type TimedToolRegistration,
+} from '../timedDispatch'
 import { createToolEpochStore, type ToolEpochStore } from '../toolEpochStore'
 import { createSubagentScheduler, type SubagentScheduler } from '../../subagents/schedulerState'
 import { createPluginHost, type PluginHost, type PluginInput } from './pluginHost'
@@ -42,6 +48,12 @@ export type { RuntimeConfig } from './runtimeConfig'
 export interface SessionStore {
   id: string
   store: Store
+}
+
+interface ActiveTimedToolDispatcher {
+  runId: string
+  isActive(): boolean
+  dispatch(request: TimedToolDispatchRequest): Promise<TimedToolDispatchResult>
 }
 
 // 每会话一个 AbortController 的注册表接口（对齐原 abortRegistry.ts 的导出函数集）。
@@ -75,6 +87,17 @@ export interface CoreInstance {
   resetSessionStores(): void
   // 该实例私有的工具注册表（登记反转后默认为空；由 opts.registerTools 或事后 register 填充）。
   readonly tools: ToolRegistry
+  // 按每个时机保留的注册顺序快照；到点分派不扫描完整工具目录。
+  timedToolRegistrations(timing: TimedToolDispatchRequest['timing']): readonly TimedToolRegistration[]
+  /** 宿主受限入口：必须明确指定会话；无活跃 run 时不执行，也不产生记账。 */
+  dispatchTimedTools(request: TimedToolDispatchRequest): Promise<TimedToolDispatchResult>
+  /** 仅由 loop 装卸当前 run 的分派器，返回的清理函数不会移除后继 run。 */
+  bindTimedToolDispatcher(input: {
+    sessionId: string
+    runId: string
+    isActive(): boolean
+    dispatch(request: TimedToolDispatchRequest): Promise<TimedToolDispatchResult>
+  }): () => void
   // 该实例私有的 run 级工具集 epoch：run 开始时冻结一份目录，暂停/恢复同一 runId 时复用。
   readonly toolEpochs: ToolEpochStore
   // 该实例私有的插件宿主；工具归 Core，hook/订阅归单次 run。
@@ -131,18 +154,21 @@ export function createCoreInstance(opts?: {
 
   function dropSessionStore(id: string): void {
     sessionStores.delete(id)
+    timedDispatchers.delete(id)
     // 会话没了，它那份 run 工具集 epoch 也没有任何消费者了。
     toolEpochs.release(id)
   }
 
   function resetSessionStores(): void {
     sessionStores.clear()
+    timedDispatchers.clear()
     toolEpochs.reset()
   }
 
   // 3) 工具注册表：本实例私有 registry。【登记反转】不再自动装标准工具——由 opts.registerTools
   //    在此注入（未传则留空，消费方事后自行 register；见文件头 TS1 注释）。
-  const tools = createToolRegistry()
+  const timedRegistry = createTimedToolRegistry(createToolRegistry())
+  const { tools } = timedRegistry
   opts?.registerTools?.(tools)
   const plugins = createPluginHost(tools, opts?.plugins)
   // 3.1) run 级工具集 epoch 的归属：跟 registry 一样是实例私有的，两个 core 互不可见。
@@ -192,6 +218,30 @@ export function createCoreInstance(opts?: {
 
   // 7) 项目 Skills 缓存：实现在 ./projectSkillsStore；扫描 provider 经 opts 注入（B1 反转）。
   const projectSkills = createProjectSkillsStore(rootStore, opts?.projectSkillsProvider)
+  const timedDispatchers = new Map<string, ActiveTimedToolDispatcher>()
+
+  async function dispatchTimedTools(request: TimedToolDispatchRequest): Promise<TimedToolDispatchResult> {
+    const dispatcher = timedDispatchers.get(request.sessionId)
+    if (!dispatcher?.isActive()) return { status: 'no_active_run', itemCount: 0 }
+    return dispatcher.dispatch(request)
+  }
+
+  function bindTimedToolDispatcher(input: {
+    sessionId: string
+    runId: string
+    isActive(): boolean
+    dispatch(request: TimedToolDispatchRequest): Promise<TimedToolDispatchResult>
+  }): () => void {
+    const dispatcher: ActiveTimedToolDispatcher = {
+      runId: input.runId,
+      isActive: input.isActive,
+      dispatch: input.dispatch,
+    }
+    timedDispatchers.set(input.sessionId, dispatcher)
+    return () => {
+      if (timedDispatchers.get(input.sessionId) === dispatcher) timedDispatchers.delete(input.sessionId)
+    }
+  }
 
   return {
     rootStore,
@@ -200,6 +250,9 @@ export function createCoreInstance(opts?: {
     dropSessionStore,
     resetSessionStores,
     tools,
+    timedToolRegistrations: timedRegistry.registrations,
+    dispatchTimedTools,
+    bindTimedToolDispatcher,
     toolEpochs,
     plugins,
     abort,

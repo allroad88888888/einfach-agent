@@ -12,6 +12,7 @@ import { makeCoreCtx } from './core/coreCtx'
 import { currentTurnItems, latestUserInput } from './runCheckpoints'
 import { createToolLoopCheckpointWriter, type ToolLoopCheckpointWriter } from './toolLoopCheckpoint'
 import { createRunGuard, isRunningRun } from './toolLoopSupport'
+import { dispatchTimedTools } from './timedDispatch'
 import { isCurrentRun } from './shared/runGuards'
 import { newId } from './newId'
 import { formatSubagentTranscript } from '../subagents/distill'
@@ -28,6 +29,7 @@ import type { ToolLoopOptions } from './modelRunLifecycle'
 export interface BootstrappedToolLoop {
   base: ToolLoopBase
   checkpoints: ToolLoopCheckpointWriter
+  releaseTimedToolDispatcher(): void
 }
 
 /** Creates the per-run dependencies before the state machine performs any model turn. */
@@ -50,6 +52,7 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
     isActiveSession: () => core.rootStore.getter(activeSessionIdAtom) === id,
   })
   let handedOff = false
+  let releaseTimedToolDispatcher: (() => void) | undefined
   try {
     const hooks = pluginRun.hooks
     await hooks.onRunStart?.(makeCoreCtx({ sessionId: id, runId, signal: opts.signal, store: core.getSessionStore(id).store, root: core.rootStore, traceEvent: () => {} }))
@@ -129,9 +132,23 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
       },
       checkpoints,
     }
+    releaseTimedToolDispatcher = core.bindTimedToolDispatcher({
+      sessionId: id,
+      runId,
+      isActive: () => control.isCurrent() && control.isRunning() && !opts.signal.aborted,
+      dispatch: (request) => dispatchTimedTools({ base: boot.base, checkpoints, request }),
+    })
+    await dispatchTimedTools({ base: boot.base, checkpoints, request: { sessionId: id, timing: 'sessionStart' } })
+    await dispatchTimedTools({ base: boot.base, checkpoints, request: { sessionId: id, timing: 'runStart' } })
+    if (!control.isCurrent()) { trace.finish('cancelled', 'agent.stale_run', { reason: 'stale_run' }); return undefined }
+    if (!control.isRunning()) { checkpoints.commitStoppedTurn(); trace.finish('cancelled', 'agent.stopped', { reason: 'run_not_running' }); return undefined }
+    if (opts.signal.aborted) { patchRun(id, { status: 'stopped' }, core); checkpoints.commitStoppedTurn(); trace.finish('cancelled', 'agent.stopped', { reason: 'aborted' }); return undefined }
     handedOff = true
-    return boot
+    return { ...boot, releaseTimedToolDispatcher }
   } finally {
-    if (!handedOff) pluginRun.dispose()
+    if (!handedOff) {
+      releaseTimedToolDispatcher?.()
+      pluginRun.dispose()
+    }
   }
 }

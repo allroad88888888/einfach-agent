@@ -11,6 +11,7 @@ import { appendMappedToolResult, safeErrorMessage } from './toolLoopSupport'
 import { executePreparedToolCall, prepareToolCall } from './toolCallPluginHooks'
 import { addEvent } from '../observability/trace'
 import { closeUnresolvedToolCalls } from './runCheckpoints'
+import { dispatchTimedTools } from './timedDispatch'
 
 export { persistCurrentRunRecovery } from './runCheckpoints'
 
@@ -33,7 +34,7 @@ export async function resumePlanSession(id: string, opts: ModelRunOptions & { ru
 export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptions): Promise<void> {
   const boot = await bootstrapToolLoop(id, runId, opts)
   if (!boot) return
-  const { base, checkpoints } = boot
+  const { base, checkpoints, releaseTimedToolDispatcher } = boot
   const endInactive: ToolLoopTerminator = (streamWriter) => {
     if (!base.control.isCurrent()) {
       streamWriter?.finishPending()
@@ -88,9 +89,24 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
     }
     const budget = createLoopBudget(maxAgentTurns(id, base.core), () => maxAgentTurns(id, base.core))
     const failures = createToolFailureTracker()
-    const requester = createModelTurnRequester(base)
+    const modelRequester = createModelTurnRequester(base)
     for (let turn = 0; budget.allows(turn); turn += 1) {
-      if ((await runToolLoopCycle({ base, checkpoints, requester, budget, failures, turn, endInactive })) === 'finished') return
+      let requestedModelTurn = false
+      const requester = {
+        async request(...args: Parameters<typeof modelRequester.request>) {
+          await dispatchTimedTools({ base, checkpoints, request: { sessionId: id, timing: 'turnStart' } })
+          if (!base.control.isCurrent() || !base.control.isRunning() || base.opts.signal.aborted) return modelRequester.request(...args)
+          requestedModelTurn = true
+          return modelRequester.request(...args)
+        },
+      }
+      let cycleResult
+      try {
+        cycleResult = await runToolLoopCycle({ base, checkpoints, requester, budget, failures, turn, endInactive })
+      } finally {
+        if (requestedModelTurn) await dispatchTimedTools({ base, checkpoints, request: { sessionId: id, timing: 'turnEnd' } })
+      }
+      if (cycleResult === 'finished') return
     }
     checkpoints.commitTurn()
     const error = `主 Agent 超过最大模型轮次（${budget.limit()}）`
@@ -110,6 +126,9 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
       base.trace.finish('error', 'agent.error', { error: safeErrorMessage(error) }, error)
     }
   } finally {
+    try { await dispatchTimedTools({ base, checkpoints, request: { sessionId: id, timing: 'runEnd' } }) }
+    catch (error) { addEvent('agent.timed_dispatch_failed', { traceId: base.trace.span.traceId, attrs: { sessionId: id, runId, turnId: base.turnId, timing: 'runEnd', error: safeErrorMessage(error) } }) }
+    releaseTimedToolDispatcher()
     try { base.pluginRun.dispose() }
     catch (error) { addEvent('agent.plugin_dispose_failed', { traceId: base.trace.span.traceId, attrs: { sessionId: id, runId, turnId: base.turnId, error: safeErrorMessage(error), aborted: isAbortError(error) || opts.signal.aborted } }) }
     try { await base.delegateRuntime.dispose?.() }
