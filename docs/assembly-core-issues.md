@@ -13,6 +13,9 @@
   槽，不做通用服务注册表——「没有第二个读者的 port 不开」）。
 - 不动的红线：子 run 机制（child 循环与硬限）留核，Rust 参考实现同样如此；
   `runtime/workspace*.ts` 等宿主桥外移是另一棵树的事（见未决）。
+- 状态中枢化（A1 裁决）：装配式 ≠ 状态私有化。进 checkpoint 的持久状态集中定义在 core 的
+  `state/`（对齐 Rust 侧中央账本），能力包迁走的是逻辑、工具与 driver；第三方持久状态待
+  R5 批准后走 `pluginTimelineItems`。
 - 已决策（2026-08-12）：引入工具 **CallTiming** 维度（A2–A5），对齐并超集 Rust 侧设计——
   生命周期动作统一进工具抽象：`callTiming` 非空的工具不进模型可见清单，由 loop 到点执行并
   作为一等 timeline item 记账。时机全集九档：`sessionStart` / `runStart` / `runEnd` /
@@ -47,9 +50,9 @@ codex exec --model gpt-5.6-terra -c model_reasoning_effort=<档位> "<卡全文+
 ## 树
 
 ```text
-A 地基          A1 checkpoint 状态切片 port；A2 CallTiming 契约 → A3 主干五点位与分派 API → A4 压缩点位、A5 子 Agent 点位
+A 地基          A1 checkpoint 状态切片 port（撤销，见卡内裁决）；A2 CallTiming 契约 → A3 主干五点位与分派 API → A4 压缩点位、A5 子 Agent 点位
 B skills 试点   B1 core 开槽 → B2 实现迁包 → B3 清单注入迁 sessionStart timed 工具（依赖 A3）
-C planning      C1 core 开槽（依赖 A1）→ C2 实现迁包
+C planning      C1 core 开槽 → C2 实现迁包（plan 状态与 planWriters 留核）
 D 存储与观测    D1 idb 持久化外移 → D2 sqlite 持久化外移；D3 观测发射收敛 → D4 观测 driver 外移 → D5 TraceViewer 出核
 E 子 Agent      E0 摸底 → E1 delegation 槽 → E2 调度编排迁包 → E3 归档治理迁包、E4 视图 atoms 迁移
 F 收尾          F1 边界执法脚本 → F2 文档同步
@@ -57,21 +60,19 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 
 ## A · 地基
 
-### A1 · core 提供能力包状态切片的 checkpoint 参与 port
+### A1 · core 提供能力包状态切片的 checkpoint 参与 port（已撤销）
 
 - **依赖**：—
-- **改动面**：`packages/agent-core/src/state/checkpoint.type.ts`、
-  `packages/agent-core/src/state/checkpointWriters.ts`、
-  `packages/agent-core/src/state/persistence/hydrate.ts`、
-  `packages/agent-core/src/runtime/core/pluginApi.ts`、
-  `packages/agent-core/src/runtime/core/pluginContracts.ts` 及 colocated 测试
-- **判据**：新增测试证明「注册切片 → 提交 checkpoint → 快照含切片 → 恢复回注」；
-  `pnpm exec vitest run packages/agent-core/src/state packages/agent-core/src/runtime/core`；
-  `pnpm build`。设计必须对齐
-  [自定义持久化 Timeline Item RFC](persistent-plugin-timeline-item-rfc.md) 的 envelope 思路，
-  不得出现第二套持久化参与机制；若发现冲突，停下升级讨论。
-- **模型**：codex xhigh
-- **状态**：DOING
+- **裁决（2026-08-12）**：执行时确认与
+  [自定义持久化 Timeline Item RFC](persistent-plugin-timeline-item-rfc.md) 结构性冲突：
+  RFC 在 owner 批准前禁止开放插件持久化写入 API，且唯一规划的 checkpoint 扩展是带
+  schema/配额/decoder/quarantine 约束的 `pluginTimelineItems`——通用 snapshot/restore
+  切片 port 恰是 RFC 要防的「第二套持久化参与机制」。裁决改走**状态中枢化**路线
+  （对齐 Rust 侧中央账本）：第一方能力包的持久状态定义留在 core 的 `state/`，能力包
+  只迁逻辑、工具与 driver；第三方持久状态待 R5 批准后走 `pluginTimelineItems`。
+  C1/C2 改动面已按此调整，不再依赖本卡。
+- **模型**：—
+- **状态**：撤销
 
 ### A2 · Tool 契约增加 callTiming 维度并从模型可见清单剔除
 
@@ -85,13 +86,14 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   及 colocated 测试
 - **判据**：`callTiming` 非空的工具不出现在 `list()` 清单、目录搜索与
   `request_tool_schema` 可达面；**剔除与分派逻辑一律按「非空即剔除 / 按值取执行点」判定，
-  禁止穷举 switch**——增补时机不得触碰剔除面；注册期校验其一：`callTiming` 非空的工具
-  不得同时标记为危险工具（确认门语义对到点执行不适用），违规注册即报错；注册期校验其二：
-  **来源为 MCP 清单或其他外部声明的工具禁止携带 `callTiming`**，注册期剥除并记诊断——
-  自动执行面不得被外部来源占用（本地注册的工具挂 `mcp:` 域扩展时机不受此限）；
+  禁止穷举 switch**——增补时机不得触碰剔除面；危险约束**不在注册期做**（验收时更正：
+  Tool 契约没有危险标记，风险由运行时按调用上下文评估——注册期布尔字段会成为第二份真相），
+  改由 A3 分派器执行前咨询既有风险评估；注册期校验：**来源为 MCP 清单或其他外部声明的
+  工具禁止携带 `callTiming`**，注册期剥除并记诊断——自动执行面不得被外部来源占用
+  （本地注册的工具挂 `mcp:` 域扩展时机不受此限）；
   `pnpm exec vitest run packages/agent-core/src/tools`；`pnpm build`
 - **模型**：codex xhigh
-- **状态**：DOING
+- **状态**：DONE（哈希在下一次提交补记）
 
 ### A3 · loop 主干五点位到点执行、一等记账与公开分派 API
 
@@ -106,7 +108,9 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   timeline item 并进 checkpoint；`sessionStart` 每会话恰好一次、恢复的会话以既有 timed item
   为准不重复执行；`runStart`/`runEnd` 每 run 一次、`turnStart`/`turnEnd` 每模型轮一次；
   timed 工具失败降级为记录错误、不中断 run；同一时机多工具按注册序；某时机无注册工具时
-  零开销、不产生 item；**分派入口经 `CoreInstance` 暴露为受限 API**（装配层据此触发
+  零开销、不产生 item；**到点分派不经过确认门，分派前必须咨询既有风险评估
+  （dangerousTools / 确认门插件语义），非 safe 的到点调用拒绝执行并记诊断**；
+  **分派入口经 `CoreInstance` 暴露为受限 API**（装配层据此触发
   `<domain>:<event>` 扩展时机，为 MCP 生命周期预留，本树不实现 MCP 侧接入）；
   `pnpm exec vitest run packages/agent-core/src/runtime`；`pnpm build`
 - **模型**：codex xhigh
@@ -183,22 +187,24 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 
 ### C1 · core 开 plan 能力槽，runtime 耦合点改经槽访问
 
-- **依赖**：A1
+- **依赖**：—
 - **改动面**：`packages/agent-core/src/planning/runtime.ts`（收缩为契约 + 槽）、
+  `packages/agent-core/src/planning/types.ts`（契约留核）、
   `packages/agent-core/src/runtime/toolContext.ts`、
-  `packages/agent-core/src/runtime/commands/planCommands.ts`
-- **判据**：plan 状态切片经 A1 port 注册进 checkpoint，`checkpoint 含 plan` 的既有测试不回退；
+  `packages/agent-core/src/runtime/commands/planCommands.ts` 及 colocated 测试
+- **判据**：plan 状态 atoms 与 `state/planWriters.ts` **留核不动**（A1 裁决：状态中枢化）；
+  toolContext 与 planCommands 对 plan 逻辑的调用改经 `createCore` 注入槽，未注入时 plan
+  工具与命令明确报错不崩溃；`checkpoint 含 plan` 的既有测试不回退；
   `pnpm exec vitest run packages/agent-core/src/planning packages/agent-core/src/runtime`；
   `pnpm build`
 - **模型**：codex xhigh
 - **状态**：TODO
 
-### C2 · planning 实现与 planWriters 迁入 tools-planning，删除 core 残留
+### C2 · planning 逻辑实现迁入 tools-planning，删除 core 残留
 
 - **依赖**：C1
-- **改动面**：`packages/agent-core/src/planning/migrate.ts`、
-  `packages/agent-core/src/planning/types.ts` 中非契约部分、
-  `packages/agent-core/src/state/planWriters.ts` 迁至 `tools/planning/src/`；
+- **改动面**：`packages/agent-core/src/planning/migrate.ts` 与 `planning/runtime.ts` 中非契约
+  实现迁至 `tools/planning/src/`；`state/planWriters.ts` 与 plan 状态 atoms 留核；
   装配点接线（`apps/web/src/main.tsx`、`apps/web/src/test/setup.ts`）
 - **判据**：`grep -r "from '.*planning/" packages/agent-core/src/runtime` 只剩契约 import；
   `pnpm exec vitest run tools/planning packages/agent-core`；`pnpm build`

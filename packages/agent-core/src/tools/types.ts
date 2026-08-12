@@ -15,6 +15,7 @@ import type {
   ExecutionObservation,
 } from '../execution/types'
 import type { SkillSummary } from '../skills/registry'
+import type { ToolCallTiming } from './toolCallTiming'
 
 /**
  * tool 的执行位置：
@@ -23,6 +24,8 @@ import type { SkillSummary } from '../skills/registry'
  *   · server   —— 依赖 Tauri 原生能力（本机 shell / 文件系统 / git）；web 下不可用、不进 manifest（TP3）。
  */
 export type ToolRuntime = 'internal' | 'browser' | 'server'
+
+export type { ToolCallTiming } from './toolCallTiming'
 
 /**
  * manifest-only 摘要——model 只看这一层。description/triggers 取自 tool.skill，
@@ -277,6 +280,10 @@ export interface Tool {
   readonly runtime: ToolRuntime
   readonly skill: ToolSkill
   readonly inputSchema: Record<string, unknown>
+  /** 缺省为 local；外部声明的工具不能声明 callTiming。 */
+  readonly origin?: 'local' | 'external'
+  /** 到点工具不进入模型发现面，由宿主按此值调度执行点。 */
+  readonly callTiming?: ToolCallTiming
   /** Compacted results must not tell the model to repeat this effectful or costly call. */
   readonly replayUnsafe?: boolean
   /**

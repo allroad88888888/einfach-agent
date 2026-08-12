@@ -11,13 +11,18 @@
 
 import type { RegisteredToolSnapshot, Tool, ToolSummary } from './types'
 
+/** callTiming 非空的工具只供宿主到点调度，不能进入模型的发现或 schema 加载面。 */
+export function isModelVisibleTool(tool: Tool): boolean {
+  return !tool.callTiming
+}
+
 /** 工具目录的只读读面。ToolRegistry 与它的不可变快照都实现本接口。 */
 export interface ToolCatalog {
   /** manifest-only 摘要（不含 inputSchema/guide）。每次调用返回新数组与新摘要对象。 */
   list(): ToolSummary[]
-  /** 懒加载完整快照（含 registrationVersion + inputSchema + guide）；未知名 → undefined。 */
+  /** 懒加载模型可达的完整快照；未知名或到点工具 → undefined。 */
   loadSchema(name: string): RegisteredToolSnapshot | undefined
-  /** 当前可见注册实例的版本；不可见时 undefined。 */
+  /** 当前注册实例的版本；未知名时 undefined。 */
   registrationVersion(name: string): number | undefined
   has(name: string): boolean
   /** 压缩后不可重放的工具名集合。 */
@@ -69,11 +74,13 @@ export function createToolCatalogSnapshot(
 
   return {
     list() {
-      return Array.from(frozen.values(), (entry) => toolSummaryOf(entry.tool))
+      return Array.from(frozen.values(), ({ tool }) => tool)
+        .filter(isModelVisibleTool)
+        .map(toolSummaryOf)
     },
     loadSchema(name) {
       const entry = frozen.get(name)
-      return entry ? toolSnapshotOf(entry) : undefined
+      return entry && isModelVisibleTool(entry.tool) ? toolSnapshotOf(entry) : undefined
     },
     registrationVersion(name) {
       return frozen.get(name)?.registrationVersion

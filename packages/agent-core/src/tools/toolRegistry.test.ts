@@ -13,6 +13,14 @@ function tool(name: string, description: string, replayUnsafe = false): Tool {
   }
 }
 
+function timedTool(overrides: Partial<Tool> = {}): Tool {
+  return {
+    ...tool('timed', '仅供宿主调度'),
+    callTiming: 'turnEnd',
+    ...overrides,
+  }
+}
+
 describe('ToolRegistry dynamic lifecycle', () => {
   it('derives replay safety from the current registration metadata', () => {
     const registry = createToolRegistry()
@@ -23,6 +31,33 @@ describe('ToolRegistry dynamic lifecycle', () => {
 
     registry.register(tool('write_file', 'safe replacement'))
     expect(registry.replayUnsafeToolNames()).toEqual(new Set())
+  })
+
+  it('从模型发现面剔除到点工具，但按原值保留宿主分派入口', () => {
+    const registry = createToolRegistry()
+    registry.register(tool('visible', '模型可见'))
+    registry.register(timedTool({ callTiming: 'plugin:flush' }))
+
+    expect(registry.list().map((item) => item.name)).toEqual(['visible'])
+    expect(registry.loadSchema('timed')).toBeUndefined()
+    expect(registry.callTiming('timed')).toBe('plugin:flush')
+
+    const snapshot = registry.snapshot()
+    expect(snapshot.list().map((item) => item.name)).toEqual(['visible'])
+    expect(snapshot.loadSchema('timed')).toBeUndefined()
+  })
+
+  it('外部工具的 callTiming 在注册时剥除并留下诊断', () => {
+    const registry = createToolRegistry()
+    const external = timedTool({ origin: 'external' })
+    registry.register(external)
+
+    expect(registry.list().map((item) => item.name)).toEqual(['timed'])
+    expect(registry.loadSchema('timed')?.name).toBe('timed')
+    expect(registry.callTiming('timed')).toBeUndefined()
+    expect(registry.diagnostics()).toEqual(['外部工具 timed 的 callTiming 已在注册时剥除'])
+    expect(registry.has('timed', external)).toBe(true)
+    expect(registry.unregister('timed', external)).toBe(true)
   })
 
   it('snapshot freezes the catalog against later registry mutations', () => {

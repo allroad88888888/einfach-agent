@@ -21,7 +21,13 @@ import type {
   ToolContext,
   ToolResult,
 } from './types'
-import { createToolCatalogSnapshot, toolSnapshotOf, toolSummaryOf, type ToolCatalog } from './toolCatalog'
+import {
+  createToolCatalogSnapshot,
+  isModelVisibleTool,
+  toolSnapshotOf,
+  toolSummaryOf,
+  type ToolCatalog,
+} from './toolCatalog'
 import { validateAgainstSchema } from './schemaValidate'
 
 /**
@@ -32,6 +38,8 @@ import { validateAgainstSchema } from './schemaValidate'
  */
 export interface ToolRegistry extends ToolCatalog {
   register(tool: Tool): void
+  /** 注册期的降级记录，例如外部工具被剥除不受支持的字段。 */
+  diagnostics(): readonly string[]
   /**
    * Remove a registered tool.
    *
@@ -50,6 +58,8 @@ export interface ToolRegistry extends ToolCatalog {
    */
   snapshot(): ToolCatalog
   execution(name: string): Tool['execution'] | undefined
+  /** 返回工具声明的到点执行值；实际到点执行由 A3 的宿主循环负责。 */
+  callTiming(name: string): Tool['callTiming'] | undefined
   run(
     name: string,
     args: unknown,
@@ -58,35 +68,50 @@ export interface ToolRegistry extends ToolCatalog {
   ): Promise<ToolResult>
 }
 
+function normalizedRegistrationTool(tool: Tool, diagnostics: string[]): Tool {
+  if (tool.origin !== 'external' || !tool.callTiming) return tool
+
+  const { callTiming: _callTiming, ...withoutCallTiming } = tool
+  diagnostics.push(`外部工具 ${tool.name} 的 callTiming 已在注册时剥除`)
+  return withoutCallTiming
+}
+
 /**
  * 建一个 ToolRegistry。内部保存 Map<name, { tool, registrationVersion }>：
  *   · register 幂等——同名后注册直接覆盖，不报错；每次注册都会签发更高版本；
  *   · 删除不会遗忘该名称最后签发的版本，之后同名重注册不会复用旧版本；
  *   · list() 只摘 name/description/triggers/runtime，绝不含 inputSchema/guide（manifest-only）；
- *   · loadSchema(name) 在 summary 之上补 inputSchema + guide(=skill.content)，未知名 → undefined；
+ *   · loadSchema(name) 在 summary 之上补 inputSchema + guide(=skill.content)，未知名或到点工具 → undefined；
  *   · run(name,args,ctx) 走 §4 生命周期（见方法内注释）。
  */
 export function createToolRegistry(): ToolRegistry {
   interface Registration {
     tool: Tool
+    source: Tool
     registrationVersion: number
   }
 
   // 当前注册与每个名称最后签发的版本分开保存：删除当前注册后，重注册仍能继续递增。
   const registrations = new Map<string, Registration>()
   const lastRegistrationVersions = new Map<string, number>()
+  const diagnostics: string[] = []
 
   return {
     register(tool) {
+      const registeredTool = normalizedRegistrationTool(tool, diagnostics)
       // 幂等：同名后注册胜；即使复用同一 Tool 实例，也会签发新的注册版本。
-      const registrationVersion = (lastRegistrationVersions.get(tool.name) ?? 0) + 1
-      lastRegistrationVersions.set(tool.name, registrationVersion)
-      registrations.set(tool.name, { tool, registrationVersion })
+      const registrationVersion = (lastRegistrationVersions.get(registeredTool.name) ?? 0) + 1
+      lastRegistrationVersions.set(registeredTool.name, registrationVersion)
+      registrations.set(registeredTool.name, { tool: registeredTool, source: tool, registrationVersion })
+    },
+
+    diagnostics() {
+      return [...diagnostics]
     },
 
     unregister(name, expected) {
       const current = registrations.get(name)
-      if (!current || (expected !== undefined && current.tool !== expected)) {
+      if (!current || (expected !== undefined && current.source !== expected)) {
         return false
       }
       return registrations.delete(name)
@@ -94,7 +119,7 @@ export function createToolRegistry(): ToolRegistry {
 
     has(name, expected) {
       const current = registrations.get(name)
-      return current !== undefined && (expected === undefined || current.tool === expected)
+      return current !== undefined && (expected === undefined || current.source === expected)
     },
 
     registrationVersion(name) {
@@ -105,7 +130,9 @@ export function createToolRegistry(): ToolRegistry {
     list() {
       // manifest-only（TK3）：只暴露 name/description/triggers/runtime，绝不含 inputSchema/guide。
       // description/triggers 取自 tool.skill，triggers 供懒加载目录搜索别名。
-      return Array.from(registrations.values(), ({ tool }) => toolSummaryOf(tool))
+      return Array.from(registrations.values(), ({ tool }) => tool)
+        .filter(isModelVisibleTool)
+        .map(toolSummaryOf)
     },
 
     snapshot() {
@@ -123,15 +150,19 @@ export function createToolRegistry(): ToolRegistry {
     },
 
     loadSchema(name) {
-      // 懒加载：未知名 → undefined；否则在 summary 之上补 inputSchema + guide(=skill.content)。
+      // 懒加载：未知名或到点工具 → undefined；否则在 summary 之上补 inputSchema + guide(=skill.content)。
       // guide 与 schema 一起随 request_tool_schema 给 model，不进 manifest（§6）。
       const registration = registrations.get(name)
-      if (!registration) return undefined
+      if (!registration || !isModelVisibleTool(registration.tool)) return undefined
       return toolSnapshotOf(registration)
     },
 
     execution(name) {
       return registrations.get(name)?.tool.execution
+    },
+
+    callTiming(name) {
+      return registrations.get(name)?.tool.callTiming
     },
 
     async run(name, args, ctx, expectedRegistrationVersion) {

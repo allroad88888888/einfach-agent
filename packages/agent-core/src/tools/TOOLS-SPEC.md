@@ -64,6 +64,8 @@ interface Tool {
   runtime: ToolRuntime;
   skill: ToolSkill;
   inputSchema: JsonSchema;
+  origin?: "local" | "external";
+  callTiming?: ToolCallTiming;
   execution?: {
     mode: "serial" | "parallel";
     effectKeys?: readonly string[];
@@ -74,6 +76,12 @@ interface Tool {
   ): ToolResult | Promise<ToolResult>;
 }
 ```
+
+`ToolCallTiming` 包含 `sessionStart`、`runStart`、`runEnd`、`turnStart`、`turnEnd`、
+`preCompact`、`postCompact`、`subagentStart`、`subagentEnd`，并允许 `<domain>:<event>` 形式的扩展值。
+`origin` 缺省为 `local`；`callTiming` 非空表示此工具只由宿主按该值到点分派，绝不进入模型清单、目录搜索或 `request_tool_schema`。
+外部声明工具（如 MCP 清单）携带 `callTiming` 时在注册期剥除并记录诊断，不会中断外部连接——自动执行面不得被外部来源占用。
+危险约束不在注册期表达：风险由运行时按调用上下文评估（dangerousTools 与确认门插件）；到点分派不经过确认门，因此分派器在执行前必须咨询既有风险评估，非 safe 的到点调用拒绝执行并记诊断。
 
 `ToolSkill` contains the manifest description, optional triggers, and the
 lazy-loaded guide content.
@@ -96,6 +104,8 @@ request. The runtime always validates and normalizes arguments before execution.
 The registry returns structured failures for normal validation or execution
 errors. `AbortError` is rethrown so cancellation remains observable by the
 runtime.
+
+`callTiming` 适合需要记账、可追踪且执行位置透明的宿主选工具场景；需要拦截、改写输入输出或改变控制流时，应使用 plugin hook。前者声明“何时执行哪个工具”，后者负责“如何拦截或变换”。
 
 ## 4. Runtime availability
 
