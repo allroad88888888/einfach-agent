@@ -39,9 +39,8 @@ export type {
 } from './lastKnownTools'
 export {
   MCP_CONNECT_GUIDE_MAX_CHARS,
+  MCP_CONNECT_GUIDE_MAX_SERVERS,
   MCP_CONNECT_MANIFEST_MAX_CHARS,
-  MCP_CONNECT_MANIFEST_MAX_SERVERS,
-  MCP_CONNECT_MANIFEST_MAX_TOOLS_PER_SERVER,
 } from './lastKnownToolsText'
 
 export const MCP_CONNECT_TOOL_NAME = 'connect_mcp_server'
@@ -185,10 +184,11 @@ export interface CreateMcpConnectToolOptions {
   /**
    * 宿主注入的「上次已知工具清单」只读读出口（F4）。
    *
-   * 按需连接之后，未连接服务的工具不在工具清单里；模型必须先知道"我要的能力在哪个服务上"
-   * 才会来调本工具。这根线就是那条唯一的线索：接上之后，未连接服务上次已知的工具名会进
-   * 本工具的 manifest 描述，完整清单进 guide（分层理由见 lastKnownToolsText.ts 文件头）。
-   * 不接线时描述保持原样，绝不编造清单。
+   * 透明连接上线后（D2/D3b），有已知清单的未连接服务，其工具已经作为占位工具出现在工具清单里，
+   * 模型直接调用即可，不需要这根线。这根线只用来支撑本工具收窄后的定位（蓝图第七节）：manifest
+   * 里的一句状态摘要（未连接服务数、【无已知清单】服务的 ID——它们没有占位，这是模型能看见它们
+   * 的唯一地方）；guide 里的诊断细节（每个已知服务的探测时间与工具数量、无清单服务的具体原因）。
+   * 不接线时描述保持原样，绝不编造清单（分层理由见 lastKnownToolsText.ts 文件头）。
    */
   lastKnownTools?: McpLastKnownToolsProbe
 }

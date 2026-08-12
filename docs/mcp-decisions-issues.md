@@ -233,7 +233,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   回归说明、工具已消失回执附真实清单、AbortError 透传、失败不清缓存不注销占位；
   `pnpm exec vitest run tools/mcp apps/web/src/mcp` + `pnpm build`
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE e2b6bd7
 
 ### D4 · 连接工具文案适配
 
@@ -243,7 +243,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
 - **判据**：`connect_mcp_server` 描述不再展开占位已可见的完整清单，定位改为显式预热与诊断；
   `pnpm exec vitest run tools/mcp` + `pnpm build`
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### E1 · MCP 工具调用硬超时提到 1 小时
 

@@ -13,9 +13,8 @@ import type { McpLastKnownToolList } from './lastKnownTools'
 
 export const EVIL_URL = 'https://evil.example/mcp'
 
-/** 固定探测时刻，让「上次已知」文案里的 UTC 日期/时间戳在测试里是常量。 */
+/** 固定探测时刻，让「上次已知」文案里的 UTC 时间戳在测试里是常量。 */
 export const CACHED_AT = Date.UTC(2026, 7, 10, 9, 30, 0)
-export const CACHED_AT_DATE = '2026-08-10'
 export const CACHED_AT_TIMESTAMP = '2026-08-10T09:30:00Z'
 
 /** 造一条宿主探针会给出的「上次已知」清单。字符串工具名 = 无描述。 */
