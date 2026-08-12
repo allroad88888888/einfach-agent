@@ -1,7 +1,8 @@
 import type { LoadedTool } from './types'
 // 名字的真身在 tools/mcp，core 不能反向依赖它，所以两边靠 dangerousTools.ts 那一个常量对齐
 // （见那里的说明与 tools/mcp 侧的锁定测试）。这里复用它而不是再抄一遍字面量：
-// dangerousTools.ts 零 import，这条 tools/ → runtime/ 的边不成环（tools/registry.ts 已有同向边）。
+// dangerousTools.ts 只 import 同层的 shellCommandRisk.ts（那个文件零 import），这条
+// tools/ → runtime/ 的边因此不成环（tools/registry.ts 已有同向边）。
 import { MCP_CONNECT_TOOL_NAME } from '../runtime/dangerousTools'
 
 // request_tool_schema 的消息历史只保留一次加载确认与使用指南。

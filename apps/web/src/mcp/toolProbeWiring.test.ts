@@ -5,6 +5,10 @@
 // 缓存里的东西有没有沿着 registry 与运行时配置这两条路，真的走到模型面前。
 
 import { createToolRegistry } from '@web-agent/core/tools/toolRegistry'
+import type {
+  McpConnectTargetProbe,
+  McpToolLaunchTargetProbe,
+} from '@web-agent/core/runtime/dangerousTools'
 import type { UnconnectedToolProviderProbe } from '@web-agent/core/tools/schemaResult'
 import { describe, expect, it, vi } from 'vitest'
 import {
@@ -69,6 +73,14 @@ function fakeManager(...servers: McpServerSnapshot[]) {
   }
 }
 
+/** 真实接法里这是 createMcpConnectTargetProbe 的产物；这里只要它答得出「起不起进程」。 */
+const connectTarget: McpConnectTargetProbe = (serverId) => {
+  if (serverId === 'local') {
+    return { spawnsLocalProcess: true, command: 'npx -y @local/mcp', launchConsented: false }
+  }
+  return { spawnsLocalProcess: false }
+}
+
 function wire(options: {
   cache?: () => McpToolNameCache
   servers?: McpServerSnapshot[]
@@ -78,8 +90,13 @@ function wire(options: {
     ...(options.servers ?? [serverSnapshot('docs', 'disconnected')]),
   )
   let probe: UnconnectedToolProviderProbe | undefined
-  const configure = vi.fn((config: { unconnectedToolProvider: UnconnectedToolProviderProbe }) => {
+  let launchProbe: McpToolLaunchTargetProbe | undefined
+  const configure = vi.fn((config: {
+    unconnectedToolProvider: UnconnectedToolProviderProbe
+    mcpToolLaunchTarget: McpToolLaunchTargetProbe
+  }) => {
     probe = config.unconnectedToolProvider
+    launchProbe = config.mcpToolLaunchTarget
   })
   let cache = options.cache?.() ?? cacheWithDocs()
   const claims = createMcpPlaceholderClaims()
@@ -87,6 +104,7 @@ function wire(options: {
     registry,
     manager,
     claims,
+    connectTarget,
     getCache: () => cache,
     // 真实接法里这就是 manager 的登记表，所以这里也照着登记表答。
     isConnected: (serverId) => manager.get(serverId)?.status === 'connected',
@@ -107,6 +125,8 @@ function wire(options: {
     },
     /** 已接线的探针；没接上就是 undefined，测试会立刻炸在这里。 */
     probe: (toolName: string) => probe?.(toolName),
+    /** D3a 的那根线；同上，没接上就是 undefined。 */
+    launchProbe: (toolName: string) => launchProbe?.(toolName),
     connectToolDescription: () =>
       registry.list().find((entry) => entry.name === MCP_CONNECT_TOOL_NAME)?.description ?? '',
   }
@@ -207,6 +227,31 @@ describe('wireMcpToolProbes · D2 占位工具', () => {
     wired.syncPlaceholders()
 
     expect(wired.placeholderNames()).toHaveLength(2)
+  })
+
+  it('占位登记与起进程探针同进同退：注册了占位就一定接了那根线', () => {
+    const wired = wire()
+
+    // 装配只调一次 configure，两根线必须在同一次里一起进配置——分两次接就给「只接了一半」
+    // 留了后门，而 core 那侧对起进程探针是【不从严】的，漏接等于静默放行。
+    expect(wired.configure).toHaveBeenCalledTimes(1)
+    const config = wired.configure.mock.calls[0][0]
+    expect(config.unconnectedToolProvider).toBeTypeOf('function')
+    expect(config.mcpToolLaunchTarget).toBeTypeOf('function')
+    // 有占位的那些名字，探针答得出它们所属服务的落地方式。
+    expect(wired.placeholderNames()).toHaveLength(2)
+    expect(wired.launchProbe(makeMcpToolName('docs', 'search')))
+      .toEqual({ spawnsLocalProcess: false })
+  })
+
+  it('服务连上、占位被撤之后，探针对同一个名字闭嘴（已连接的调用不起进程）', () => {
+    const wired = wire()
+    expect(wired.launchProbe(makeMcpToolName('docs', 'search'))).toBeDefined()
+
+    wired.setStatus('docs', 'connected')
+
+    expect(wired.placeholderNames()).toEqual([])
+    expect(wired.launchProbe(makeMcpToolName('docs', 'search'))).toBeUndefined()
   })
 
   it('占位不覆盖真实工具：同名已注册时跳过', () => {

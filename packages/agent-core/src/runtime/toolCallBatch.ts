@@ -19,6 +19,22 @@ import { questionCount } from './toolLoopSupport'
 
 export type ToolBatchResult = 'continue' | 'paused' | 'stale' | 'stopped' | 'aborted'
 
+/**
+ * 风险判定要用的运行时事实。两处 classifyToolRisk（并行准入预检与逐个分发）必须吃【同一份】
+ * 上下文：少喂一个探针，同一次调用在两条路径上就会得出不同等级。
+ *
+ * MCP 的两根探针 core 自己都判不出来——「连接某个服务会不会在本机起子进程」「这次 mcp__*
+ * 调用会不会先起一次进程」，事实都由宿主在装配 MCP manager / 占位工具时接进 config
+ * （见 runtimeConfig 的 mcpConnectTarget 与 mcpToolLaunchTarget）。
+ */
+function riskContext(base: ToolLoopBase, workspaceRoot: string | undefined) {
+  return {
+    workspaceRoot,
+    mcpConnectTarget: base.core.config.mcpConnectTarget,
+    mcpToolLaunchTarget: base.core.config.mcpToolLaunchTarget,
+  }
+}
+
 export interface ToolBatchInput {
   result: ModelTurnResult
   planStageId?: string
@@ -41,7 +57,7 @@ export async function runToolCallBatch(base: ToolLoopBase, input: ToolBatchInput
     if (registrationVersion === undefined || base.core.tools.registrationVersion(toolCall.function.name) !== registrationVersion || base.core.tools.execution(toolCall.function.name)?.mode !== 'parallel') return undefined
     const session = base.core.rootStore.getter(sessionsAtom)[base.id]
     const workspaceRoot = resolveSessionWorkspaceRoot(session, base.core.rootStore.getter(workspacesAtom))
-    const risk = classifyToolRisk(toolCall.function.name, parsed.args, { workspaceRoot, mcpConnectTarget: base.core.config.mcpConnectTarget })
+    const risk = classifyToolRisk(toolCall.function.name, parsed.args, riskContext(base, workspaceRoot))
     return risk.requiresConfirmation || risk.level === 'critical' || risk.level === 'dangerous' ? undefined : { callId: toolCall.id, name: toolCall.function.name, args: parsed.args, registrationVersion }
   }
   const parallelCalls = toolCalls.map(isParallel).filter((call): call is ExecutableToolCall => call !== undefined)
@@ -100,9 +116,7 @@ export async function runToolCallBatch(base: ToolLoopBase, input: ToolBatchInput
     const verifiedArgs = prepared.call.args as Record<string, unknown>
     const session = base.core.rootStore.getter(sessionsAtom)[base.id]
     const workspaceRoot = resolveSessionWorkspaceRoot(session, base.core.rootStore.getter(workspacesAtom))
-    // mcpConnectTarget：core 判不出「连接某个 MCP 服务会不会在本机起子进程」，
-    // 事实由宿主在装配 MCP manager 时接进 config（见 runtimeConfig.mcpConnectTarget）。
-    const risk = classifyToolRisk(name, verifiedArgs, { workspaceRoot, mcpConnectTarget: base.core.config.mcpConnectTarget })
+    const risk = classifyToolRisk(name, verifiedArgs, riskContext(base, workspaceRoot))
     const approvalMode = session?.toolApprovalMode ?? 'confirm'
     const needsConfirmation = risk.requiresConfirmation || risk.level === 'critical' || (approvalMode === 'confirm' && risk.level === 'dangerous' && !isToolAlwaysAllowed(base.id, name, base.core))
     if (needsConfirmation) {

@@ -63,11 +63,13 @@ export function initializeMcpSettings(): void {
   // HTTP 只发网络请求 → 放行），而 core 不能反向依赖本包去查 transport。这里把 mcp 域的探针接进
   // 运行时配置；不接这根线时 core 会把每次连接都当危险处理（从严），不会静默放行。
   // 探针另外带上「这条启动命令确认过没有」（F8）：没确认过的 stdio 连接在 Auto 模式下也要暂停。
-  configureCommands({
-    mcpConnectTarget: createMcpConnectTargetProbe(manager, {
-      isLaunchConsented: isMcpLaunchConsented,
-    }),
+  // 这一个探针实例同时服务两条路径：模型调 connect_mcp_server（F8），以及模型直接调用某个
+  // 未连接服务的占位工具（D3a，见 wireMcpToolProbes 的 connectTarget）。同一个服务、同一条
+  // 命令行、同一份确认记录，换一条触发路径不该换一套事实。
+  const connectTarget = createMcpConnectTargetProbe(manager, {
+    isLaunchConsented: isMcpLaunchConsented,
   })
+  configureCommands({ mcpConnectTarget: connectTarget })
   // 占位同步器要等 manager 装好才造得出来，而 service 在下一行就已经建好——所以递给它的是
   // 一个【调用当刻才解析】的闭包，而不是同步器本身。缓存的每次写入/删除/冷启动读盘都经
   // 投影的 publish 汇合成这一次调用（见 toolNameCacheProjection.ts）。
@@ -87,10 +89,12 @@ export function initializeMcpSettings(): void {
   // commands.ts 走，因此 configureMcpSettings 之后换掉的 service 也能被这两根线读到。
   // 缓存本身在 hydrateMcpSettings() 里从磁盘读进来（main.tsx 启动时就调）。
   // 第三根线（D2）：未连接服务的缓存清单以占位工具的形式进 ToolRegistry。
+  // 第四根线（D3a）：占位调用会不会顺带在本机起进程——与占位注册同处接线，同进同退。
   const wiring = wireMcpToolProbes({
     registry: toolRegistry,
     manager,
     claims: placeholderClaims,
+    connectTarget,
     getCache: readMcpToolNameCache,
     isConnected: isMcpServerConnected,
     configure: configureCommands,

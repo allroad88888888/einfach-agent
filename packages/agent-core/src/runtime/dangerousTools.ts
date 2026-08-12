@@ -7,6 +7,13 @@
 // timeout 和输出上限。这里刻意不纳入确认集，保留「改代码 → 跑验证」的最小闭环。
 // 单点定义，供 modelRun tool 循环在「分发工具前」判定是否暂停等确认（镜像 ask_user 暂停）。
 
+import {
+  commandFromArgs,
+  commandUsesPermanentDelete,
+  criticalPowerShellDelete,
+  criticalUnixDelete,
+} from './shellCommandRisk'
+
 // 危险（变更类）server 工具名集合。新增变更类工具时在这里补一行即可。
 export const DANGEROUS_TOOLS: ReadonlySet<string> = new Set([
   'shell_macos',
@@ -83,88 +90,37 @@ export interface McpConnectTarget {
  */
 export type McpConnectTargetProbe = (serverId: string) => McpConnectTarget | undefined
 
+/**
+ * 【注册名】→ 这一次 `mcp__*` 调用会不会先在本机拉起进程，由装配 MCP 占位工具的宿主注入。
+ *
+ * 【为什么与 mcpConnectTarget 是两根线】问的不是一件事：那根按 serverId 回答「连接这个服务
+ *   会落到哪里」，这根按注册名回答「模型现在要调的这一个工具，执行之前会不会先起一次进程」。
+ *   后者的事实要由宿主合成（这个名字现在是不是某个未连接服务的占位、那个服务的启动命令行
+ *   用户确认过没有），core 既够不着占位登记表，也够不着确认记录。
+ *
+ * 【返回 undefined 的默认方向与 mcpConnectTarget 相反 —— 不从严】这里的 undefined 读作
+ *   「这次调用不会拉起任何进程」（服务已连接、这名字不是占位、宿主没接这根线），一律维持
+ *   `mcp__*` 的既有 dangerous。反过来从严的话，已连接服务的每一次普通 MCP 调用都会在 Auto
+ *   模式下停下来问一遍，那是回归。
+ *
+ *   安全性因此不靠这里的默认方向兜底，而靠装配侧一条硬约束：**占位工具的注册与本探针必须
+ *   在同一处接线、同进同退**（apps/web/src/mcp/toolProbeWiring.ts）。没有占位就没有透明连接，
+ *   也就不存在可被静默拉起的进程；接了占位就必然接了这根线。
+ */
+export type McpToolLaunchTargetProbe = (toolName: string) => McpConnectTarget | undefined
+
 /** classifyToolRisk 的注入面：core 拿不到的运行时事实统统从这里进来。 */
 export interface ToolRiskContext {
   workspaceRoot?: string
   mcpConnectTarget?: McpConnectTargetProbe
+  mcpToolLaunchTarget?: McpToolLaunchTargetProbe
 }
 
-function stringFromArgs(args: unknown, key: string): string {
+/** 连接工具的 serverId 参数；不是字符串（例如模型直接塞了一整份连接配置）时按空处理。 */
+function serverIdFromArgs(args: unknown): string {
   if (!args || typeof args !== 'object' || Array.isArray(args)) return ''
-  const value = (args as Record<string, unknown>)[key]
-  return typeof value === 'string' ? value : ''
-}
-
-function commandFromArgs(args: unknown): string {
-  return stringFromArgs(args, 'command')
-}
-
-function unquote(value: string): string {
-  const trimmed = value.trim()
-  if (
-    trimmed.length >= 2
-    && ((trimmed.startsWith('"') && trimmed.endsWith('"'))
-      || (trimmed.startsWith("'") && trimmed.endsWith("'")))
-  ) {
-    return trimmed.slice(1, -1)
-  }
-  return trimmed
-}
-
-function isBroadDeleteTarget(value: string, workspaceRoot?: string): boolean {
-  const target = unquote(value).replace(/\/+$/, '') || '/'
-  const broadTargets = new Set([
-    '/',
-    '/*',
-    '.',
-    './*',
-    '..',
-    '../*',
-    '*',
-    '~',
-    '~/*',
-    '$HOME',
-    '$HOME/*',
-    '${HOME}',
-    '${HOME}/*',
-    '$PWD',
-    '$PWD/*',
-    '${PWD}',
-    '${PWD}/*',
-  ])
-  if (broadTargets.has(target)) return true
-
-  const root = workspaceRoot?.replace(/\/+$/, '')
-  return Boolean(root && (target === root || root.startsWith(`${target}/`)))
-}
-
-function criticalUnixDelete(command: string, workspaceRoot?: string): boolean {
-  for (const part of command.split(/(?:&&|\|\||[;\n])/)) {
-    const match = part.match(
-      /(?:^|\s)(?:(?:sudo|command|env)\s+)*(?:(?:\/usr)?\/bin\/)?rm\s+((?:-[^\s]+\s+)+)([^|;&]+)/i,
-    )
-    if (!match) continue
-    const flags = match[1].replace(/\s/g, '').toLowerCase()
-    if (!flags.includes('r') || !flags.includes('f')) continue
-    const targets = match[2].trim().split(/\s+/).filter((token) => !token.startsWith('-'))
-    if (targets.some((target) => isBroadDeleteTarget(target, workspaceRoot))) return true
-  }
-  return false
-}
-
-function criticalPowerShellDelete(command: string): boolean {
-  if (!/\b(?:remove-item|rm|del)\b/i.test(command)) return false
-  if (!/(?:-recurse\b|-r\b)/i.test(command) || !/(?:-force\b|-fo\b)/i.test(command)) return false
-  return /(?:^|\s)(?:["']?(?:[a-z]:\\|\\|\*|\.|~|\$home)(?:\\?\*)?["']?)(?:\s|$)/i.test(command)
-}
-
-export function commandUsesPermanentDelete(name: string, args: unknown): boolean {
-  if (!name.startsWith('shell_')) return false
-  const command = commandFromArgs(args)
-  if (name === 'shell_powershell') {
-    return /(?:^|[\s;&|('"`])(?:remove-item|rm|del)(?=\s|$)/i.test(command)
-  }
-  return /(?:^|[\s;&|('"`])(?:(?:sudo|command|env)\s+)*(?:(?:\/usr)?\/bin\/)?rm(?=\s|$)/i.test(command)
+  const value = (args as Record<string, unknown>).serverId
+  return typeof value === 'string' ? value.trim() : ''
 }
 
 const MCP_CONNECT_COMMAND_MAX_CHARS = 200
@@ -205,7 +161,7 @@ function classifyMcpConnectRisk(
   args: unknown,
   probe: McpConnectTargetProbe | undefined,
 ): ToolRiskAssessment {
-  const serverId = stringFromArgs(args, 'serverId').trim()
+  const serverId = serverIdFromArgs(args)
   if (!serverId || !probe) return unknownMcpConnectRisk()
 
   let target: McpConnectTarget | undefined
@@ -226,6 +182,50 @@ function classifyMcpConnectRisk(
   }
 }
 
+/**
+ * 卡片上要先说清「这次调用不只是一次调用」，再摆出那条命令行。
+ *
+ * 用户看到的是一个 `mcp__<服务>__<工具>`，从名字上看不出它会先在本机起一个进程 ——
+ * 那是透明连接的代价，必须在确认卡片上补回来。
+ */
+const MCP_TOOL_LAUNCH_PREFIX = '该 MCP 服务尚未连接，本次工具调用会先自动连接它。'
+
+/**
+ * 给一次 `mcp__*` 调用分级。
+ *
+ * 已连接的服务 / HTTP 服务 / 宿主没接线 → 维持既有的 dangerous：确认模式逐次确认，
+ *   Auto 模式由用户的明确选择直接执行（零回归，见 McpToolLaunchTargetProbe 的默认方向）。
+ * 未连接 + stdio + 命令行已确认 → dangerous，与今天执行一条命令同级（Auto 放行），
+ *   但仍带上 reason：确认模式下用户要看得到这次调用会先跑哪条命令。
+ * 未连接 + stdio + 命令行【从未被确认过】→ dangerous 且 requiresConfirmation：Auto 模式
+ *   也必须停下来。判据与 connect_mcp_server 完全同源——同一条命令行、同一份确认记录，
+ *   只是这次由一个 mcp__* 调用触发；由模型换一条路径触发不该换一套准入。
+ */
+function classifyMcpToolCallRisk(
+  name: string,
+  probe: McpToolLaunchTargetProbe | undefined,
+): ToolRiskAssessment {
+  if (!probe) return { level: 'dangerous' }
+
+  let target: McpConnectTarget | undefined
+  try {
+    target = probe(name)
+  } catch {
+    // 探针是宿主代码，崩了不能让风险判定跟着崩。这里【不】升级为必须确认：探针答不上来时
+    // 从严会让已连接服务的普通调用在 Auto 下集体停摆，而这条路径的安全性由「占位与探针
+    // 同处接线」保证（见 McpToolLaunchTargetProbe）。
+    return { level: 'dangerous' }
+  }
+  if (!target?.spawnsLocalProcess) return { level: 'dangerous' }
+
+  const consented = target.launchConsented === true
+  return {
+    level: 'dangerous',
+    reason: `${MCP_TOOL_LAUNCH_PREFIX}${describeMcpLaunch((target.command ?? '').trim(), consented)}`,
+    ...(consented ? {} : { requiresConfirmation: true }),
+  }
+}
+
 // 参数级风险分类。普通变更工具仍是 dangerous；Auto 模式会自动执行它们，
 // 但宽范围递归强删、格式化/覆写设备等 critical 操作始终要求人工确认。
 export function classifyToolRisk(
@@ -240,10 +240,11 @@ export function classifyToolRisk(
     return classifyMcpConnectRisk(args, context?.mcpConnectTarget)
   }
   if (!isDangerousTool(name)) return { level: 'safe' }
-  // MCP 工具来自应用之外，服务端声明与实现也可能在重连后发生变化，
-  // 所以仍作为 dangerous：确认模式逐次确认，Auto 模式则由用户的明确选择直接执行。
+  // MCP 工具来自应用之外，服务端声明与实现也可能在重连后发生变化，所以底线仍是 dangerous：
+  // 确认模式逐次确认，Auto 模式则由用户的明确选择直接执行。在此之上还有一层——透明连接让
+  // 一次普通调用可能顺带在本机拉起进程，那一层由下面这个探针的事实决定（D3a）。
   if (isMcpTool(name)) {
-    return { level: 'dangerous' }
+    return classifyMcpToolCallRisk(name, context?.mcpToolLaunchTarget)
   }
   if (!name.startsWith('shell_')) return { level: 'dangerous' }
 

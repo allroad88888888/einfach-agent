@@ -1,9 +1,11 @@
-// 冷启动这条真链路：磁盘上的工具名缓存 → 进程内快照 → 模型看得见的两处 + 设置面板（B5）。
+// 冷启动这条真链路：磁盘上的工具名缓存 → 进程内快照 → 模型看得见的三处 + 设置面板（B5/D2/D3a）。
 //
 // toolProbeWiring.test.ts 证明的是「组装函数把线接对了」，本文件证明的是「生产装配真的调了它，
-// 而且取数口一路通到磁盘」——两根线里任何一根被从 initialize.ts 里删掉，这里都会红。
+// 而且取数口一路通到磁盘」——那几根线里任何一根被从 initialize.ts 里删掉，这里都会红。
 // 走的是真的 initializeMcpSettings()、真的 toolRegistry、真的 defaultCore.config、
 // 真的 localStorage 存储通道，只有 MCP 服务本身不存在（全程不连接）。
+//
+// 存储后端的选择（B1：桌面 vs 浏览器）在 initialize.storage.test.ts，那是另一件事。
 
 import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
 import { classifyToolRisk } from '@web-agent/core/runtime/dangerousTools'
@@ -14,12 +16,12 @@ import { MCP_CONNECT_TOOL_NAME } from '@web-agent/tools-mcp'
 import { hydrateMcpSettings } from './commands'
 import { initializeMcpSettings } from './initialize'
 import { MCP_SETTINGS_STORAGE_KEY } from './persistence'
-import { mcpServersAtom } from './state'
+import { mcpServerConfigsAtom, mcpServersAtom } from './state'
 import { stdioLaunchFingerprint } from './stdioLaunchConsent'
 
-// B1 的 Tauri 宿主用例需要 isTauri() 在装配那一刻就答「是」，其余用例（包括本文件
-// 已有的浏览器宿主套件）仍要看到与真实模块一致的行为——默认返回 false、invoke 不被
-// 意外调用，因此这里只换成可控的 mock，不改变默认表现。
+// 本文件全程是浏览器宿主，但仍要把这个模块换成可控的替身：真实的 isTauri() 在 jsdom 里
+// 会去读 window 上的注入物，行为不该由环境决定。默认表现与真实模块一致——答 false、
+// invoke 不被调用。
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
   isTauri: vi.fn(() => false),
@@ -69,6 +71,20 @@ function seedColdStart(): void {
   window.localStorage.setItem('web-agent.mcp-tool-name-cache.v1', JSON.stringify({
     version: 1,
     cache: {
+      // 两个 stdio 服务也有上次已知清单 → 冷启动后它们的占位工具就在 registry 里，
+      // 模型可以直接点名调用，而那一次调用会先把进程拉起来（D3a 要守的正是这一步）。
+      imported: {
+        tools: [{ name: 'mcp__imported__run', description: '执行' }],
+        toolCount: 1,
+        cachedAt: CACHED_AT,
+        probeStatus: 'success',
+      },
+      approved: {
+        tools: [{ name: 'mcp__approved__run', description: '执行' }],
+        toolCount: 1,
+        cachedAt: CACHED_AT,
+        probeStatus: 'success',
+      },
       docs: {
         // 磁盘上存的是【注册名】：写入侧 toCachedTools 存的就是 McpToolSnapshot.name，
         // 模型点名调用时给的也是它。种远端原名会让 B4 那条断言测不到真实数据形状。
@@ -157,6 +173,56 @@ describe('MCP 冷启动装配 · 缓存一路走到模型与界面（B5）', () 
     )).toEqual({ level: 'safe' })
   })
 
+  /**
+   * D3a：模型直接调用一个未连接服务的占位工具，这一步会先把 stdio 服务拉起来。
+   * 断言用真的 defaultCore.config.mcpToolLaunchTarget（toolProbeWiring 接的那一根）跑 core 的
+   * 分级：占位注册与这根线任何一个从装配里掉出去，这条就会红。
+   */
+  it('D3a：未确认的 stdio 服务，占位调用 → requiresConfirmation（Auto 模式也要暂停）', () => {
+    const mcpToolLaunchTarget = defaultCore.config.mcpToolLaunchTarget
+    expect(mcpToolLaunchTarget).toBeTypeOf('function')
+    // 占位真的注册了，模型看得见这个名字——否则下面这条分级只是空转。
+    expect(toolRegistry.has('mcp__imported__run')).toBe(true)
+
+    const risk = classifyToolRisk('mcp__imported__run', {}, { mcpToolLaunchTarget })
+
+    expect(risk).toMatchObject({ level: 'dangerous', requiresConfirmation: true })
+    expect(risk.reason).toContain('npx -y @imported/from-untrusted-json')
+  })
+
+  it('D3a：确认过的 stdio 服务，占位调用是普通 dangerous，不额外打断 Auto', () => {
+    const risk = classifyToolRisk('mcp__approved__run', {}, {
+      mcpToolLaunchTarget: defaultCore.config.mcpToolLaunchTarget,
+    })
+
+    expect(risk.level).toBe('dangerous')
+    expect(risk.requiresConfirmation).toBeUndefined()
+    expect(risk.reason).toContain('node /Users/me/tools/server.js --stdio')
+  })
+
+  it('D3a：HTTP 服务的占位调用维持既有 dangerous，Auto 直接执行（零回归）', () => {
+    expect(classifyToolRisk('mcp__docs__search', {}, {
+      mcpToolLaunchTarget: defaultCore.config.mcpToolLaunchTarget,
+    })).toEqual({ level: 'dangerous' })
+  })
+
+  /**
+   * 模型路径的确认【不】回写起进程指纹：指纹只由用户路径（设置里的确认卡片）写入，
+   * 那是它「改了命令 = 确认作废」这一性质的单点来源。代价是同一个未确认服务在连上之前
+   * 每次都会问一次——重复询问的上限是「每次连接一次」，可接受。
+   */
+  it('D3a：分级本身不写任何确认记录，未确认的服务下次仍然要问', () => {
+    const mcpToolLaunchTarget = defaultCore.config.mcpToolLaunchTarget
+    classifyToolRisk('mcp__imported__run', {}, { mcpToolLaunchTarget })
+
+    expect(classifyToolRisk('mcp__imported__run', {}, { mcpToolLaunchTarget }).requiresConfirmation)
+      .toBe(true)
+    const imported = rootStore.getter(mcpServerConfigsAtom).find((entry) => entry.id === 'imported')
+    expect(imported?.transport).toBe('stdio')
+    expect(imported && 'launchConsent' in imported ? imported.launchConsent : undefined)
+      .toBeUndefined()
+  })
+
   it('设置面板：未连接的服务带着上次已知清单进服务视图', () => {
     const server = rootStore.getter(mcpServersAtom).find((entry) => entry.id === 'docs')
 
@@ -174,95 +240,5 @@ describe('MCP 冷启动装配 · 缓存一路走到模型与界面（B5）', () 
       cachedAt: CACHED_AT,
       probeStatus: 'success',
     })
-  })
-})
-
-describe('装配点接入桌面配置文件存储（B1）', () => {
-  // initializeMcpSettings() 按 isMcpSettingsConfigured() 只装配一次；本文件前面的套件已经
-  // 在浏览器宿主下装配过，要让 initialize.ts 重新走一遍「读 isTauri() → 选 storage」的判断，
-  // 必须换一套全新的模块实例，否则读到的永远是已经装配好的旧 service。
-  it('Tauri 宿主下，服务配置的读写都经 mcp_config_read / mcp_config_write，不落 localStorage', async () => {
-    vi.resetModules()
-    // vi.resetModules() 只清真实模块的缓存，不清 vi.mock() 造出来的替身——isTauri/invoke
-    // 这两个 mock 是整个文件共用的同一对象，调用记录必须自己清，否则会带着别的用例的历史。
-    const tauriCore = await import('@tauri-apps/api/core')
-    const isTauriMock = vi.mocked(tauriCore.isTauri)
-    const invokeMock = vi.mocked(tauriCore.invoke)
-    isTauriMock.mockReset()
-    invokeMock.mockReset()
-    isTauriMock.mockReturnValue(true)
-
-    const remoteConfig = {
-      id: 'remote-desktop',
-      name: '桌面配置里的服务',
-      transport: 'streamable-http' as const,
-      url: 'https://desktop.example.test/mcp',
-      autoConnect: false,
-    }
-    // 未识别的命令一律答 undefined 而不是抛错：这条链路上还并行挂着工具名缓存的
-    // mcp_config_read/mcp_config_write（B5，走同一对 command），本用例只关心
-    // 服务配置这一路，不想因为没模到另一路而让 hydrate 整体失败。
-    invokeMock.mockImplementation(async (command: string) => {
-      if (command === 'mcp_config_read') return { servers: [remoteConfig], toolNameCache: {} }
-      return undefined
-    })
-
-    window.localStorage.clear()
-
-    const { initializeMcpSettings: initializeFresh } = await import('./initialize')
-    const { hydrateMcpSettings: hydrateFresh, removeMcpServer: removeFresh } =
-      await import('./commands')
-
-    initializeFresh()
-    await hydrateFresh()
-
-    expect(invokeMock).toHaveBeenCalledWith('mcp_config_read')
-    // 装配读到的服务确实来自 mcp_config_read，不是 localStorage 里的旧数据。
-    expect(window.localStorage.getItem(MCP_SETTINGS_STORAGE_KEY)).toBeNull()
-
-    await removeFresh('remote-desktop')
-
-    const writeCalls = invokeMock.mock.calls.filter(([command]) => command === 'mcp_config_write')
-    expect(writeCalls).toContainEqual(['mcp_config_write', { patch: { servers: [] } }])
-    // 全程没有一次写落到浏览器存储。
-    expect(window.localStorage.getItem(MCP_SETTINGS_STORAGE_KEY)).toBeNull()
-  })
-
-  it('浏览器宿主下行为不变：装配仍走 localStorage 读写，不触碰 invoke', async () => {
-    vi.resetModules()
-    const tauriCore = await import('@tauri-apps/api/core')
-    const isTauriMock = vi.mocked(tauriCore.isTauri)
-    const invokeMock = vi.mocked(tauriCore.invoke)
-    isTauriMock.mockReset()
-    invokeMock.mockReset()
-    isTauriMock.mockReturnValue(false)
-
-    window.localStorage.clear()
-    // 与上一个用例对称：直接在 localStorage 里放一份既有配置，证明装配读到的是
-    // 浏览器存储而不是 mcp_config_read。
-    window.localStorage.setItem(MCP_SETTINGS_STORAGE_KEY, JSON.stringify({
-      version: 1,
-      servers: [{
-        id: 'browser-local',
-        name: '浏览器里的服务',
-        transport: 'streamable-http',
-        url: 'https://browser.example.test/mcp',
-        autoConnect: false,
-      }],
-    }))
-
-    const { initializeMcpSettings: initializeFresh } = await import('./initialize')
-    const { hydrateMcpSettings: hydrateFresh, removeMcpServer: removeFresh } =
-      await import('./commands')
-
-    initializeFresh()
-    await hydrateFresh()
-    expect(invokeMock).not.toHaveBeenCalled()
-
-    await removeFresh('browser-local')
-
-    expect(invokeMock).not.toHaveBeenCalled()
-    const stored = JSON.parse(window.localStorage.getItem(MCP_SETTINGS_STORAGE_KEY) ?? '{}')
-    expect(stored.servers).toEqual([])
   })
 })

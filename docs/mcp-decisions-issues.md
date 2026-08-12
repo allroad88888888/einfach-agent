@@ -147,7 +147,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   禁用并给中文提示（凭据仅桌面端支持）；`pnpm exec vitest run apps/web/src/agentNew/ui/SettingsCenter.mcp.test.tsx`
   + `pnpm build`
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE 4cfa70f（面板无编辑路径，落地为添加表单）
 
 ### C3 · JSON 导入通道支持 headers/env
 
@@ -206,7 +206,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   既有的「请先调用 `connect_mcp_server`」结构化回执，不引入连接路径；
   `pnpm exec vitest run tools/mcp apps/web/src/mcp` + `pnpm build`
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE b48c6a5
 
 ### D3a · 起进程风险面扩展
 
@@ -220,7 +220,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   写明装配硬约束（占位注册与探针同进同退）；模型路径确认不回写起进程指纹；
   `pnpm exec vitest run packages/agent-core/src/runtime apps/web/src/mcp` + `pnpm build`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### D3b · 占位工具透明连接 execute
 

@@ -22,6 +22,19 @@
 // 【为什么占位也放这个函数】和上面两根线同理，而且更硬：占位与 B4 探针是同一份缓存的两种
 // 呈现，只接一半就会自相矛盾（清单里看得见工具，点名调用却回一句 unknown tool）。
 
+// 【第四根线 · D3a】占位一旦可被直接调用，一次普通的 mcp__* 调用就可能顺带在本机拉起进程
+// （未连接的 stdio 服务会先透明连接）。风险判定要的那条事实（这次调用会不会起进程）在这里
+// 合成，接进 RuntimeConfig.mcpToolLaunchTarget。
+//
+// 【为什么必须与占位注册同处接线】这是本次改动的安全前提，不是排版偏好：core 那侧的探针在
+// 答不上来时【故意不从严】（否则已连接服务的每次调用都会在 Auto 模式下停下来问，属于回归），
+// 于是「未确认的 stdio 不会被静默拉起」这条保证完全落在装配上——占位与探针同进同退，没有
+// 占位就没有透明连接，接了占位就必然接了探针。谁把这两行拆到两个地方，谁就重新打开了那扇门。
+
+import type {
+  McpConnectTargetProbe,
+  McpToolLaunchTargetProbe,
+} from '@web-agent/core/runtime/dangerousTools'
 import type { UnconnectedToolProviderProbe } from '@web-agent/core/tools/schemaResult'
 import type { ToolRegistry } from '@web-agent/core/tools/toolRegistry'
 import {
@@ -32,6 +45,7 @@ import {
   type McpPlaceholderClaims,
 } from '@web-agent/tools-mcp'
 import { createCachedToolProviderProbe } from './cachedToolProviderProbe'
+import { createMcpToolLaunchTargetProbe } from './toolLaunchTargetProbe'
 import {
   listLastKnownTools,
   readLastKnownTools,
@@ -51,6 +65,12 @@ export interface McpToolProbeWiringOptions {
    */
   claims: McpPlaceholderClaims
   /**
+   * serverId → 落地方式与起进程确认状态。宿主递进来的是它接给 core 的【同一个】
+   * mcpConnectTarget 探针实例：模型走 connect_mcp_server 和直接调用占位，问的是同一件事
+   * （这个服务会不会在本机起进程、那条命令行确认过没有），不能各算各的。
+   */
+  connectTarget: McpConnectTargetProbe
+  /**
    * 取当前那份工具名缓存。必须是进程内那一份的读出口（commands.ts 的 readMcpToolNameCache），
    * 不能是调用方自己攒的快照——那样两根线看到的会是各自不同的旧数据。
    */
@@ -61,7 +81,10 @@ export interface McpToolProbeWiringOptions {
    */
   isConnected(serverId: string): boolean
   /** 把探针接进运行时配置；宿主传 core 的 configureCommands。 */
-  configure(config: { unconnectedToolProvider: UnconnectedToolProviderProbe }): void
+  configure(config: {
+    unconnectedToolProvider: UnconnectedToolProviderProbe
+    mcpToolLaunchTarget: McpToolLaunchTargetProbe
+  }): void
 }
 
 export interface McpToolProbeWiring {
@@ -75,13 +98,14 @@ export interface McpToolProbeWiring {
 }
 
 /**
- * 注册 mcp 域工具（带上次已知清单）、把未连接工具探针接进运行时配置，并让未连接服务的
- * 缓存清单以占位工具的形式进 ToolRegistry。
+ * 注册 mcp 域工具（带上次已知清单）、把未连接工具探针与起进程事实探针接进运行时配置，
+ * 并让未连接服务的缓存清单以占位工具的形式进 ToolRegistry。
  */
 export function wireMcpToolProbes({
   registry,
   manager,
   claims,
+  connectTarget,
   getCache,
   isConnected,
   configure,
@@ -94,8 +118,12 @@ export function wireMcpToolProbes({
   })
   // B4：缓存条目名就是注册名（写入侧已经过一次 makeMcpToolName），模型点名用的也是它，
   // 所以这里只需把缓存和连接状态递进去，不再注入任何名字映射——再拼一次就是双重前缀。
+  // D3a：起进程事实与 B4 探针同一次接进配置——同进同退是这条链路的安全前提（见文件头）。
+  // 它认的是【占位登记表】而不是缓存：登记表说的是「registry 里这个名字现在归谁」，
+  // 与「这次调用会不会先连接一个未连接的服务」一一对应（理由见 toolLaunchTargetProbe.ts）。
   configure({
     unconnectedToolProvider: createCachedToolProviderProbe({ getCache, isConnected }),
+    mcpToolLaunchTarget: createMcpToolLaunchTargetProbe({ claims, connectTarget, isConnected }),
   })
   // D2：占位同步器。同样只递一个【调用当刻才取数】的只读函数，它不认识缓存住在哪。
   const placeholders = createMcpPlaceholderSync({

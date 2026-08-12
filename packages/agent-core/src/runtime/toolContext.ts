@@ -29,7 +29,8 @@ import {
   isSubagentVerificationTool,
   isSubagentWorkspaceReadTool,
 } from '../subagents/toolProfile'
-import { commandUsesPermanentDelete, isDelegatableDangerousTool } from './dangerousTools'
+import { isDelegatableDangerousTool } from './dangerousTools'
+import { commandUsesPermanentDelete } from './shellCommandRisk'
 import { sessionsAtom, workspacesAtom } from '../state/rootStore'
 import { resolveSessionWorkspaceRoot } from '../state/workspaceState'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
