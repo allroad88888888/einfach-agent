@@ -25,6 +25,14 @@ export interface McpLaunchConsentRequest {
   /** 将执行的完整命令行。 */
   readonly commandLine: string
   readonly cwd?: string
+  /**
+   * 将注入子进程的环境变量【键名】，按键名排序；没有 env 时不带这个字段。
+   *
+   * 只放键名不放值：值是凭据，而这张卡片会被截屏（理由见 stdioLaunchConsent.ts 的
+   * stdioLaunchEnvNames）。它和 cwd 一样属于「指纹管得着、命令行字符串里看不见」的部分，
+   * 必须单独摆出来，否则用户批准的东西比他看到的多。
+   */
+  readonly envNames?: readonly string[]
   readonly reason: McpLaunchConsentReason
   /** 确认后是否会变成「每次启动都自动执行」。 */
   readonly autoConnect: boolean

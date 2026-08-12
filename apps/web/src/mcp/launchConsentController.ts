@@ -28,6 +28,7 @@ import {
 import {
   grantStdioLaunchConsent,
   stdioCommandLine,
+  stdioLaunchEnvNames,
   stdioLaunchFingerprint,
 } from './stdioLaunchConsent'
 import type { PersistedMcpServerConfig, PersistedStdioMcpServer } from './types'
@@ -93,11 +94,15 @@ export function createMcpLaunchConsentController({
   return {
     request(config, reason, run) {
       entries.set(config.id, { fingerprint: stdioLaunchFingerprint(config), run })
+      // 指纹盖到哪，卡片就要摆到哪：cwd 与 env 都不在 commandLine 字符串里，不单独摆出来
+      // 用户批准的东西就比他看到的多（C2a）。
+      const envNames = stdioLaunchEnvNames(config)
       const view: McpLaunchConsentRequest = {
         id: config.id,
         name: config.name,
         commandLine: stdioCommandLine(config),
         ...(config.cwd ? { cwd: config.cwd } : {}),
+        ...(envNames.length > 0 ? { envNames } : {}),
         reason,
         autoConnect: config.autoConnect,
       }

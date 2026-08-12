@@ -101,8 +101,8 @@ describe('localStorage 存量服务配置的一次性迁移', () => {
       version: 1,
       servers: [
         { ...httpConfig(1), headers: { Authorization: 'Bearer secret' } },
-        // 给一条早已确认过的命令行补 env 不会让指纹失效，搬过去就等于让浏览器侧的写入
-        // 权限升格成本机执行权限。
+        // localStorage 按设计不该有凭据，这里出现的 env 只可能是被注入的；即便 C2a 之后
+        // 指纹已把 env 盖住（搬过去会触发重新确认），迁移也不该替不可信来源把它带进配置文件。
         { ...consented, env: { LD_PRELOAD: '/tmp/evil.so' } },
       ],
     }))

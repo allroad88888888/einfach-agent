@@ -20,12 +20,19 @@ export function McpLaunchConsentPrompt({ request }: { request: McpLaunchConsentR
       <p>确认后会在你的电脑上执行：</p>
       <code>{request.commandLine}</code>
       {request.cwd ? <p>工作目录：{request.cwd}</p> : null}
+      {/*
+        环境变量只点名，不显示值：值是凭据，而这张卡片会被截屏。要判断的是「这条命令会不会
+        被塞进额外的东西」，看见 LD_PRELOAD / NODE_OPTIONS 这样的键名就够了。
+      */}
+      {request.envNames?.length
+        ? <p>环境变量：{request.envNames.join('、')}（值已隐藏）</p>
+        : null}
       <p>
         {request.autoConnect
           ? '这条命令现在会执行一次；之后每次启动应用都会自动执行，不再询问。'
           : '这条命令现在会执行一次；之后开启「自动连接」时也不会再询问。'}
       </p>
-      <p>请先核对命令与参数；修改命令后需要重新确认。</p>
+      <p>请先核对命令、参数、工作目录与环境变量；其中任何一项被改动后都需要重新确认。</p>
       <div className="agentnew-mcp-actions">
         <button
           type="button"

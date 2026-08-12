@@ -42,6 +42,7 @@
   - B2 localStorage 存量迁移
 - C · 静态凭据支持（依赖 B）
   - C1 持久化模型支持 headers/env
+  - C2a 起进程指纹纳入 env（C1 实施中发现的安全缺口，前置于 C2）
   - C2 设置面板凭据字段
   - C3 JSON 导入支持 headers/env
 - D · 透明连接（保留显式工具）
@@ -120,11 +121,24 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
   往返后**不含**这两个字段；`toManagerConfig` 把两字段透传进 manager 配置；`parseArgsText`
   对疑似 token 启动参数的拒绝保持不变；`pnpm exec vitest run apps/web/src/mcp` + `pnpm build`
 - **模型**：opus
+- **状态**：DONE e3ab35d
+
+### C2a · 起进程确认指纹纳入 env
+
+- **依赖**：C1
+- **改动面**：`apps/web/src/mcp/stdioLaunchConsent.ts`（`stdioLaunchFingerprint`）、
+  `stdioLaunchConsent.test.ts`
+- **判据**：改 `env` 使既有起进程确认作废（与改 command/args/cwd 同语义——`env` 能改变一条
+  已确认命令行实际执行的代码，如 `LD_PRELOAD`）；**无 `env` 的存量配置指纹保持不变**（老确认
+  不被一次升级集体作废）：`env` 仅在存在时进入指纹元组；增删 `env` 前后指纹不同的用例、
+  无 `env` 配置升级前后指纹逐字节相同的用例都要有；
+  `pnpm exec vitest run apps/web/src/mcp` + `pnpm build`
+- **模型**：opus
 - **状态**：DOING
 
 ### C2 · 设置面板支持录入与编辑凭据字段
 
-- **依赖**：C1
+- **依赖**：C2a
 - **改动面**：`apps/web/src/agentNew/ui/McpSettingsPanel.tsx`、必要时
   `apps/web/src/agentNew/ui/McpServerCard.tsx`、`apps/web/src/mcp/types.ts`（draft）、
   `apps/web/src/mcp/config.ts`（draft 校验）、`apps/web/src/mcp/state.ts`、
@@ -142,7 +156,7 @@ C2 与 C3 可并行。D 分支内部严格串行：D0 → D2a → D2 → D3a →
 - **判据**：桌面宿主导入含 `headers`/`env` 的 JSON 被接受并落盘；浏览器宿主导入同样内容报中文
   错误、**不静默剥离**；`pnpm exec vitest run apps/web/src/mcp` + `pnpm build`
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### D0 · 修复工具名缓存反查的双重前缀
 
