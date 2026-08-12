@@ -191,7 +191,7 @@ C2 与 C3 可并行。D 分支内部串行。
   `toolAdapter.test.ts`、`connect-mcp-server/connect-mcp-server.ts` 如有引用
 - **判据**：`pnpm exec vitest run tools/mcp` 通过（含超时用例更新）；`pnpm build`
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE 1a16044
 
 ### E2 · guide 注入「长任务拆小」引导
 
@@ -200,7 +200,7 @@ C2 与 C3 可并行。D 分支内部串行。
 - **判据**：每个 MCP 工具的 guide 含一行英文引导（与现有 guide 行文风格一致）：调用有 1 小时
   硬超时，可拆分的长任务应拆成多次较小调用；`pnpm exec vitest run tools/mcp` + `pnpm build`
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### Z1 · mcp-integration.md 现状同步
 

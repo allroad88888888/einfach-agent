@@ -16,6 +16,7 @@ import {
 } from './commands'
 import { mcpServerConfigsAtom } from './state'
 import { mayLaunchMcpServer, stdioCommandLine } from './stdioLaunchConsent'
+import { createDesktopMcpConfigStorage } from './tauriMcpConfigStorage'
 import { createTauriStdioMcpConnector } from './tauriStdioConnector'
 import { wireMcpToolProbes } from './toolProbeWiring'
 
@@ -58,7 +59,11 @@ export function initializeMcpSettings(): void {
       isLaunchConsented: isMcpLaunchConsented,
     }),
   })
-  configureMcpSettings({ manager, capabilities: { stdio: tauriHost } })
+  configureMcpSettings({
+    manager,
+    storage: createDesktopMcpConfigStorage(),
+    capabilities: { stdio: tauriHost },
+  })
   // mcp 域工具需要注入这个进程级 manager —— 装配点就是唯一能同时拿到 registry 与 manager 的地方。
   // 顺带把工具名缓存喂给模型看得见的那两处（B5，规矩见 toolProbeWiring.ts）：两个读出口都从
   // commands.ts 走，因此 configureMcpSettings 之后换掉的 service 也能被这两根线读到。
