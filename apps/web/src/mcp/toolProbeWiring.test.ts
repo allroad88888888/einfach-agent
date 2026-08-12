@@ -169,33 +169,54 @@ describe('wireMcpToolProbes · B4 未连接工具探针', () => {
 })
 
 describe('wireMcpToolProbes · F4 连接工具的清单', () => {
-  it('未连接服务的工具名进 connect_mcp_server 的描述，模型才知道该连哪个', () => {
+  // D4（commit b7ce69d）之后，connect_mcp_server 的描述不再逐条列有已知清单的服务/工具名：
+  // 那些工具已经由 D2 的占位同步器以真名注册进 registry，模型直接调用即可。描述收窄成一句
+  // 状态摘要（未连接总数 + 提示已知工具已可直接调用）。新形态见
+  // tools/mcp/src/connect-mcp-server/lastKnownToolsText.ts 与 connect-mcp-server.lastKnown.test.ts。
+  it('未连接服务计入 connect_mcp_server 描述的状态摘要，已知工具已经作为占位出现在工具清单里，模型不用等描述点名', () => {
     const wired = wire()
 
     const description = wired.connectToolDescription()
-    expect(description).toContain('search')
-    expect(description).toContain('draft')
-    expect(description).toContain('docs')
-    // 是历史不是当前事实，这层限定不能在接线里丢掉。
-    expect(description).toContain('上次已知')
+    expect(description).toContain('当前 1 个已配置的 MCP 服务未连接')
+    expect(description).toContain('已知工具已直接出现在工具清单里，可直接调用')
+    // D4 去重之后，逐条工具名/服务名不再重复出现在这里——它们已经是占位工具的真实注册名。
+    expect(description).not.toContain('search')
+    expect(description).not.toContain('draft')
+    expect(description).not.toContain('docs')
+    // 「模型看得见工具」这半截意图由 D2 占位机制兑现（详细行为见下方「D2 占位工具」describe
+    // 块），这里再钉一次：本次装配确实同时接上了 F4 摘要与 D2 占位两根线。
+    expect(wired.placeholderNames())
+      .toEqual([makeMcpToolName('docs', 'draft'), makeMcpToolName('docs', 'search')])
   })
 
-  it('服务连上之后描述里不再重复它的历史清单——真实工具已经在工具表里了', () => {
+  it('服务连上之后不再计入未连接摘要——真实工具已经在工具表里了，摘要与占位都不再提它', () => {
     const wired = wire()
-    expect(wired.connectToolDescription()).toContain('search')
+    expect(wired.connectToolDescription()).toContain('当前 1 个已配置的 MCP 服务未连接')
 
     wired.setStatus('docs', 'connected')
 
-    expect(wired.connectToolDescription()).not.toContain('search')
+    const description = wired.connectToolDescription()
+    // 唯一的未连接服务连上之后，总数归零，整段摘要（含服务名与工具名）一起消失。
+    expect(description).not.toContain('已配置的 MCP 服务未连接')
+    expect(description).not.toContain('docs')
+    expect(description).not.toContain('search')
   })
 
-  it('清单在调用当刻才取：探测写进缓存后无需重新注册就出现在描述里', () => {
+  it('清单在调用当刻才取：探测写进缓存后无需重新注册，摘要立刻从「暂无已知清单」点名变为已覆盖', () => {
     const wired = wire({ cache: () => ({}) })
-    expect(wired.connectToolDescription()).not.toContain('上次已知')
+    // 缓存为空时 docs 没有已知清单，属于 gap，必须被点名——它没有占位，这是模型能看见它的
+    // 唯一地方。
+    expect(wired.connectToolDescription()).toContain('其中 1 个暂无已知清单')
+    expect(wired.connectToolDescription()).toContain('docs')
 
     wired.setCache(cacheWithDocs())
 
-    expect(wired.connectToolDescription()).toContain('search')
+    const description = wired.connectToolDescription()
+    // 缓存一写入，docs 立刻从「无清单」升级为「有清单」，不再被点名，但仍计入未连接总数——
+    // 证明是调用当刻现读缓存，而不是接线那一刻的快照。
+    expect(description).not.toContain('暂无已知清单')
+    expect(description).not.toContain('docs')
+    expect(description).toContain('当前 1 个已配置的 MCP 服务未连接')
   })
 })
 

@@ -123,13 +123,25 @@ describe('MCP 冷启动装配 · 缓存一路走到模型与界面（B5）', () 
     expect(probe?.('write_file')).toBeUndefined()
   })
 
-  it('F4：未连接服务的工具名进 connect_mcp_server 的描述，模型才知道该连哪个', () => {
+  // D4（commit b7ce69d）之后，connect_mcp_server 的描述不再逐条列出有已知清单的服务/工具名：
+  // 三个种子服务（docs/imported/approved）都带着成功探测的缓存，其工具已经由 D2 的占位同步器
+  // 以真名注册进 toolRegistry，描述本身收窄成一句状态摘要。新形态见
+  // tools/mcp/src/connect-mcp-server/lastKnownToolsText.ts 与 connect-mcp-server.lastKnown.test.ts。
+  it('F4：未连接服务计入 connect_mcp_server 描述的状态摘要，已知工具已经作为占位出现在工具清单里', () => {
     const description = connectToolDescription()
 
-    expect(description).toContain('docs')
-    expect(description).toContain('search')
-    expect(description).toContain('draft')
-    expect(description).toContain('上次已知')
+    expect(description).toContain('当前 3 个已配置的 MCP 服务未连接')
+    expect(description).toContain('已知工具已直接出现在工具清单里，可直接调用')
+    // 三个服务都有已知清单，均不再被点名——继续点名就是把占位工具的信息在这里多付一遍。
+    expect(description).not.toContain('docs')
+    expect(description).not.toContain('search')
+    expect(description).not.toContain('draft')
+    // 「模型看得见工具」这半截意图在本文件的装配环境里可以直接用真实 toolRegistry 验证：
+    // 冷启动读盘之后，三个未连接服务的缓存清单都已经以占位工具的真名注册进去。
+    expect(toolRegistry.has('mcp__docs__search')).toBe(true)
+    expect(toolRegistry.has('mcp__docs__draft')).toBe(true)
+    expect(toolRegistry.has('mcp__imported__run')).toBe(true)
+    expect(toolRegistry.has('mcp__approved__run')).toBe(true)
   })
 
   /**
