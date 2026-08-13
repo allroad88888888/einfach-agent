@@ -6,36 +6,44 @@
 
 事实核对基准：[`README.md`](../../README.md) 与 [`CLAUDE.md`](../../CLAUDE.md)。
 
-> **命名占位说明**：项目名称尚未拍板（`einfach` 系 vs `web-agent`，见
-> [推广发布 Issue 树](../promotion-issues.md) 的"未决"章节），本文档中所有需要写具体项目名的地方
-> 一律用 `<项目名>` 占位，待"未决·命名"拍板后再替换为最终名称并去掉本说明。
+> **命名已拍板**：统一 einfach 系——显示名 **Einfach Agent**，GitHub 仓库维持
+> `einfach-agent`，npm scope 未来走 einfach 系（发包时才实际改包名），详见
+> [推广发布 Issue 树](../promotion-issues.md) 的"未决"章节。本文档已按此定稿替换全部
+> `<项目名>` 占位与"待拍板"表述。
 
 ## 1. Description 候选
 
-GitHub 仓库 description 是全局唯一、无版本历史的一句话，建议命名拍板后再正式填入；以下候选
-均不含具体项目名，命名拍板前也可直接使用。
+GitHub 仓库 description 是全局唯一、无版本历史的一句话。命名已拍板，建议直接使用下方
+"定稿"候选正式填入；命名拍板前起草的通用表述（不含项目名）保留作备选，供后续需要通用
+表述时参考。
 
 ### 中文（≤100 字符）
 
 | # | 候选文案 | 字符数 |
 | --- | --- | --- |
-| 1（推荐） | 装配式 Agent Runtime：一个可插拔内核驱动 Web、Tauri 桌面与 CLI 三种宿主，支持 DeepSeek、GLM 双模型 | 70 |
-| 2 | 可插拔 Agent Runtime 内核，一套代码驱动 Web、Tauri 桌面、CLI 三种宿主，树形子 Agent 与 MCP 内置 | 68 |
-| 3 | 装配式 Agent Runtime：工具/插件/观测/持久化全可插拔，Web、Tauri、CLI 三宿主一体，原生适配国产模型 | 63 |
+| 1（定稿） | Einfach Agent，装配式 Agent Runtime 开发者框架：可插拔内核驱动 Web、Tauri 桌面与 CLI 三宿主，支持 DeepSeek、GLM | 83 |
+| 2（备选） | 装配式 Agent Runtime：一个可插拔内核驱动 Web、Tauri 桌面与 CLI 三种宿主，支持 DeepSeek、GLM 双模型 | 70 |
+| 3（备选） | 可插拔 Agent Runtime 内核，一套代码驱动 Web、Tauri 桌面、CLI 三种宿主，树形子 Agent 与 MCP 内置 | 68 |
+| 4（备选） | 装配式 Agent Runtime：工具/插件/观测/持久化全可插拔，Web、Tauri、CLI 三宿主一体，原生适配国产模型 | 63 |
 
-推荐候选 1 的理由：同时点出"装配式内核"这一差异化定位、三宿主覆盖面，以及已验收可用的
-DeepSeek/GLM 模型（不提 Kimi——Kimi adapter 已实现但真实 Key 验收前公开门禁保持关闭，详见
-[`README.md`](../../README.md) "模型接入"一节，避免在门面文案上认领未对最终用户交付的能力）。
+定稿候选 1 的理由：在原推荐候选（现表中候选 2）基础上补入产品名 Einfach Agent 与"开发者
+框架"定位，对齐已拍板主打故事"开发者框架（装配式内核）"，同时保留三宿主覆盖面与已验收可用的
+DeepSeek/GLM 模型；不提 Kimi——Kimi adapter 已实现但真实 Key 验收前公开门禁保持关闭，详见
+[`README.md`](../../README.md) "模型接入"一节，避免在门面文案上认领未对最终用户交付的能力。
+候选 2/3/4 为命名拍板前起草的通用表述，不含项目名，保留作备选。
 
 ### 英文（≤120 characters）
 
 | # | 候选文案 | 字符数 |
 | --- | --- | --- |
-| 1（推荐） | A composable agent runtime core powering Web, Tauri desktop, and headless CLI hosts with DeepSeek/GLM support | 110 |
-| 2 | Pluggable Agent Runtime core: swappable tools, hooks, and observability across Web, Tauri desktop, and CLI hosts | 113 |
-| 3 | One assemblable core, three hosts (Web/Tauri/CLI): pluggable tools, tree-shaped subagents, MCP, and trace viewer | 113 |
+| 1（定稿） | Einfach Agent ("simple" in German): a composable-core framework for Web, Tauri desktop & CLI, with DeepSeek/GLM support | 119 |
+| 2（备选） | A composable agent runtime core powering Web, Tauri desktop, and headless CLI hosts with DeepSeek/GLM support | 110 |
+| 3（备选） | Pluggable Agent Runtime core: swappable tools, hooks, and observability across Web, Tauri desktop, and CLI hosts | 113 |
+| 4（备选） | One assemblable core, three hosts (Web/Tauri/CLI): pluggable tools, tree-shaped subagents, MCP, and trace viewer | 113 |
 
-推荐候选 1 与中文候选 1 对齐，保持中英文 description 传达同一定位，避免两个语言版本各说各的。
+定稿候选 1 与中文定稿候选 1 对齐，保持中英文 description 传达同一定位；额外点出 Einfach 是
+德语"简单"，呼应"装配式内核"追求的极简可插拔理念。候选 2/3/4 为命名拍板前起草的通用表述，
+保留作备选。
 
 ## 2. Topics 候选（≤20，按优先级排序）
 
@@ -102,5 +110,6 @@ GitHub Draft Release，需要发布负责人手动复核后发布，完整步骤
 
 ## 4. 社交预览图（Social Preview）建议
 
-一句话：命名拍板前用一张纯文字/图形的占位图（仓库当前定位 + `<项目名>` 占位 + 三宿主图标示意
-Web/Tauri/CLI），避免在图片里烧入未定的项目名称，命名拍板后随 README/主打故事一起重新设计成品图。
+一句话：命名已拍板，建议直接设计正式社交预览图——**Einfach Agent** 品牌字样 +
+"装配式 Agent Runtime 开发者框架"一句定位语 + 三宿主图标示意 Web/Tauri/CLI，随
+README/主打故事一起产出成品图，不再需要过渡用的占位图。
