@@ -8,7 +8,7 @@ import {
   disabledProjectSkillsByWorkspaceAtom,
   rootStore,
 } from '@web-agent/core'
-import { setProjectSkillEnabled } from '@web-agent/core/skills/projectSkillPreferences'
+import { setProjectSkillEnabled } from '@web-agent/core/skills'
 import { appSettingsAtom } from './state'
 import { saveAppSettings } from './commands'
 import {

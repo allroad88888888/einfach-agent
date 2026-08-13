@@ -8,7 +8,6 @@ import {
 } from '@web-agent/core/runtime/core/coreInstance'
 import { configurePersistence } from '@web-agent/core/runtime/persistenceBridge'
 import { createMemoryHistoryDriver } from '@web-agent/core/state/persistence'
-import { toolRegistry } from '@web-agent/core/tools/registry'
 import { createDelegationAssembly } from '@web-agent/subagents'
 import { registerStandardTools } from '@web-agent/tools'
 import { createDefaultPlanRuntime } from '@web-agent/tools-planning'
@@ -60,7 +59,7 @@ function configureOpenAiCompatBaseUrl(credentials: ResolvedCredentials): void {
 
 /** Assembles the CLI shell around the unchanged default core instance. */
 export async function assembleCliRuntime(options: AssembleCliRuntimeOptions): Promise<void> {
-  registerStandardTools(toolRegistry)
+  registerStandardTools(defaultCore.tools)
   configureDefaultSkillsRegistry(builtInSkillsRegistry)
   const bridge = buildNodeProjectSkillsBridge()
   configureDefaultProjectSkillsProvider((workspaceRoot) => scanProjectSkills(workspaceRoot, bridge))

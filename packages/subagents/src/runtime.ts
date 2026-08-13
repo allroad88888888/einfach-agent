@@ -7,7 +7,7 @@ import {
   type SubagentScheduler,
   type SubagentTierRouting,
 } from '@web-agent/core/subagents'
-import { recordCompletedSpan } from '@web-agent/core/observability/trace'
+import { recordCompletedSpan } from '@web-agent/core/observability'
 import {
   createChildModelCaller,
   firstAssistantText,

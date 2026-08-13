@@ -58,8 +58,95 @@ test('合法 import 与完整注释行会通过', async () => {
     'packages/persistence-idb/src/store.ts': "export { record } from '@web-agent/core'\n",
   })
   const result = await run(root)
-  assert.match(result.stdout, /边界检查通过（扫描 2 个非测试 TS\/TSX 文件，生效 6 条规则）。/)
+  assert.match(result.stdout, /边界检查通过（扫描 2 个非测试 TS\/TSX 文件，生效 7 条规则）。/)
   assert.doesNotMatch(result.stdout, /core 厂商名红线/)
+})
+
+test('白名单九条 subpath 与根 barrel 放行，不产生观察项', async () => {
+  const root = await fixture({
+    'tools/fs/src/read.ts': [
+      "import type { Tool } from '@web-agent/core/tools'",
+      "import { itemsAtom } from '@web-agent/core'",
+      "import { emptySkillsRegistry } from '@web-agent/core/skills'",
+      "import type { HistoryDriver } from '@web-agent/core/state/persistence'",
+      '',
+    ].join('\n'),
+  })
+  const result = await run(root)
+  assert.match(result.stdout, /边界检查通过/)
+  assert.doesNotMatch(result.stdout, /core 公开面白名单/)
+})
+
+test('白名单外且未列入豁免表的 subpath 会失败', async () => {
+  const root = await fixture({
+    'tools/fs/src/read.ts': "import { rootStore } from '@web-agent/core/state/rootStore'\n",
+  })
+  await assert.rejects(run(root), (error) => {
+    assert.match(error.stderr, /边界检查失败：/)
+    assert.match(
+      error.stderr,
+      /tools\/fs\/src\/read\.ts:1 core 公开面白名单（@web-agent\/core\/state\/rootStore 不在白名单九条内）/,
+    )
+    return true
+  })
+})
+
+test('豁免表命中只报观察项、不会失败', async () => {
+  const root = await fixture({
+    'packages/subagents/src/delegationBatch.ts': "import { runChildAgentLoop } from '@web-agent/core/subagents/childAgentLoop'\n",
+  })
+  const result = await run(root)
+  assert.match(result.stdout, /边界观察项：/)
+  assert.match(
+    result.stdout,
+    /packages\/subagents\/src\/delegationBatch\.ts:1 观察项：core 公开面白名单（@web-agent\/core\/subagents\/childAgentLoop）—— 豁免原因：S11 委派接缝整形/,
+  )
+  assert.match(result.stdout, /边界检查通过/)
+})
+
+test('豁免按消费方发放：同一 subpath 换个消费方仍然失败', async () => {
+  const root = await fixture({
+    'apps/web/src/borrow.ts': "import { runChildAgentLoop } from '@web-agent/core/subagents/childAgentLoop'\n",
+  })
+  await assert.rejects(run(root), (error) => {
+    assert.match(
+      error.stderr,
+      /apps\/web\/src\/borrow\.ts:1 core 公开面白名单（@web-agent\/core\/subagents\/childAgentLoop 不在白名单九条内）/,
+    )
+    return true
+  })
+})
+
+test('跨行花括号 import 的收尾行同样会被判', async () => {
+  const root = await fixture({
+    'tools/fs/src/read.ts': "import {\n  rootStore,\n} from '@web-agent/core/state/rootStore'\n",
+  })
+  await assert.rejects(run(root), (error) => {
+    assert.match(
+      error.stderr,
+      /tools\/fs\/src\/read\.ts:3 core 公开面白名单（@web-agent\/core\/state\/rootStore 不在白名单九条内）/,
+    )
+    return true
+  })
+})
+
+test('core 自身的内部深导入不受白名单门禁约束', async () => {
+  const root = await fixture({
+    'packages/agent-core/src/runtime/foo.ts': "import { rootStore } from '@web-agent/core/state/rootStore'\n",
+  })
+  const result = await run(root)
+  assert.match(result.stdout, /边界检查通过/)
+  assert.doesNotMatch(result.stdout, /core 公开面白名单/)
+})
+
+test('测试与脚手架文件不进白名单门禁的扫描面', async () => {
+  const root = await fixture({
+    'tools/fs/src/read.test.ts': "import { rootStore } from '@web-agent/core/state/rootStore'\n",
+    'tools/fs/src/read.testFixtures.ts': "import { rootStore } from '@web-agent/core/state/rootStore'\n",
+  })
+  const result = await run(root)
+  assert.match(result.stdout, /边界检查通过/)
+  assert.doesNotMatch(result.stdout, /core 公开面白名单/)
 })
 
 test('厂商名字面量在非豁免 core 文件命中会失败', async () => {

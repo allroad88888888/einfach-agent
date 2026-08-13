@@ -1,7 +1,9 @@
 // @web-agent/core/skills 的公开入口：内置 skills registry 契约 + 项目 Skills（L3）纯函数层。
 //
-// 不导出 projectSkillPreferences（禁用清单读写）——它是另一条工作线在途的新模块，尚未落库，
-// 不属于本卡认领的公开面（见 docs/core-surface-issues.md S4 卡"执行警戒"）。
+// projectSkillPreferences（工作区级禁用清单）在 S4 落卡时还是另一条工作线的在途模块，故当时
+// 未表态；该模块已落库（1908f87），S9 按「一条 subpath 只有一个归属」把它的公开面并进本 barrel：
+// `apps/web/src/settings/*` 三处消费方改走 `@web-agent/core/skills`，不再深导入。
+// `filterProjectSkillsSnapshot` 不收——它只有 core 内部（runtime/toolContext）一个消费方。
 
 export {
   emptySkillsRegistry,
@@ -27,3 +29,12 @@ export {
   type ProjectSkillOrigin,
   type ProjectSkillsSnapshot,
 } from './projectSkills'
+
+export {
+  // apps/web: settings/{persistence,config} —— 读回持久化偏好时的规范化入口
+  normalizeDisabledProjectSkills,
+  // apps/web: settings/projectSkillsCommands —— 面板启停单个项目 skill
+  setProjectSkillEnabled,
+  // 上面两个函数的入参/返回类型；apps/web: settings/config 的 AppSettings 字段类型
+  type DisabledProjectSkillsByWorkspace,
+} from './projectSkillPreferences'

@@ -1,6 +1,5 @@
 import { isTauri } from '@tauri-apps/api/core'
-import { toolRegistry } from '@web-agent/core/tools/registry'
-import { rootStore, configureCommands } from '@web-agent/core'
+import { defaultCore, rootStore, configureCommands } from '@web-agent/core'
 import {
   createMcpClientManager,
   createMcpConnectorRouter,
@@ -54,7 +53,7 @@ export function initializeMcpSettings(): void {
   // 服务一连接就会抛工具名冲突。所以它在这里创建，两边都从这里拿。
   const placeholderClaims = createMcpPlaceholderClaims()
   const manager = createMcpClientManager({
-    registry: toolRegistry,
+    registry: defaultCore.tools,
     connector,
     placeholders: placeholderClaims,
   })
@@ -90,7 +89,7 @@ export function initializeMcpSettings(): void {
   // 第三根线（D2）：未连接服务的缓存清单以占位工具的形式进 ToolRegistry。
   // 第四根线（D3a）：占位调用会不会顺带在本机起进程——与占位注册同处接线，同进同退。
   const wiring = wireMcpToolProbes({
-    registry: toolRegistry,
+    registry: defaultCore.tools,
     manager,
     claims: placeholderClaims,
     connectTarget,

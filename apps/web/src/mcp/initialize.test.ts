@@ -2,14 +2,13 @@
 //
 // toolProbeWiring.test.ts 证明的是「组装函数把线接对了」，本文件证明的是「生产装配真的调了它，
 // 而且取数口一路通到磁盘」——那几根线里任何一根被从 initialize.ts 里删掉，这里都会红。
-// 走的是真的 initializeMcpSettings()、真的 toolRegistry、真的 defaultCore.config、
+// 走的是真的 initializeMcpSettings()、真的 defaultCore.tools、真的 defaultCore.config、
 // 真的 localStorage 存储通道，只有 MCP 服务本身不存在（全程不连接）。
 //
 // 存储后端的选择（B1：桌面 vs 浏览器）在 initialize.storage.test.ts，那是另一件事。
 
 import { defaultCore, rootStore } from '@web-agent/core'
 import { classifyToolRisk } from '@web-agent/core/runtime/dangerousTools'
-import { toolRegistry } from '@web-agent/core/tools/registry'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MCP_CONNECT_TOOL_NAME } from '@web-agent/tools-mcp'
 import { hydrateMcpSettings } from './commands'
@@ -100,7 +99,7 @@ function seedColdStart(): void {
 }
 
 function connectToolDescription(): string {
-  return toolRegistry.list().find((entry) => entry.name === MCP_CONNECT_TOOL_NAME)?.description ?? ''
+  return defaultCore.tools.list().find((entry) => entry.name === MCP_CONNECT_TOOL_NAME)?.description ?? ''
 }
 
 describe('MCP 冷启动装配 · 缓存一路走到模型与界面（B5）', () => {
@@ -124,7 +123,7 @@ describe('MCP 冷启动装配 · 缓存一路走到模型与界面（B5）', () 
 
   // D4（commit b7ce69d）之后，connect_mcp_server 的描述不再逐条列出有已知清单的服务/工具名：
   // 三个种子服务（docs/imported/approved）都带着成功探测的缓存，其工具已经由 D2 的占位同步器
-  // 以真名注册进 toolRegistry，描述本身收窄成一句状态摘要。新形态见
+  // 以真名注册进 defaultCore.tools，描述本身收窄成一句状态摘要。新形态见
   // tools/mcp/src/connect-mcp-server/lastKnownToolsText.ts 与 connect-mcp-server.lastKnown.test.ts。
   it('F4：未连接服务计入 connect_mcp_server 描述的状态摘要，已知工具已经作为占位出现在工具清单里', () => {
     const description = connectToolDescription()
@@ -135,12 +134,12 @@ describe('MCP 冷启动装配 · 缓存一路走到模型与界面（B5）', () 
     expect(description).not.toContain('docs')
     expect(description).not.toContain('search')
     expect(description).not.toContain('draft')
-    // 「模型看得见工具」这半截意图在本文件的装配环境里可以直接用真实 toolRegistry 验证：
+    // 「模型看得见工具」这半截意图在本文件的装配环境里可以直接用真实 defaultCore.tools 验证：
     // 冷启动读盘之后，三个未连接服务的缓存清单都已经以占位工具的真名注册进去。
-    expect(toolRegistry.has('mcp__docs__search')).toBe(true)
-    expect(toolRegistry.has('mcp__docs__draft')).toBe(true)
-    expect(toolRegistry.has('mcp__imported__run')).toBe(true)
-    expect(toolRegistry.has('mcp__approved__run')).toBe(true)
+    expect(defaultCore.tools.has('mcp__docs__search')).toBe(true)
+    expect(defaultCore.tools.has('mcp__docs__draft')).toBe(true)
+    expect(defaultCore.tools.has('mcp__imported__run')).toBe(true)
+    expect(defaultCore.tools.has('mcp__approved__run')).toBe(true)
   })
 
   /**
@@ -193,7 +192,7 @@ describe('MCP 冷启动装配 · 缓存一路走到模型与界面（B5）', () 
     const mcpToolLaunchTarget = defaultCore.config.mcpToolLaunchTarget
     expect(mcpToolLaunchTarget).toBeTypeOf('function')
     // 占位真的注册了，模型看得见这个名字——否则下面这条分级只是空转。
-    expect(toolRegistry.has('mcp__imported__run')).toBe(true)
+    expect(defaultCore.tools.has('mcp__imported__run')).toBe(true)
 
     const risk = classifyToolRisk('mcp__imported__run', {}, { mcpToolLaunchTarget })
 

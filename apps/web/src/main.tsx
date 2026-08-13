@@ -13,7 +13,6 @@ import {
   configurePersistence,
   hydratePersistence,
 } from '@web-agent/core'
-import { toolRegistry } from '@web-agent/core/tools/registry'
 import { registerStandardTools } from '@web-agent/tools'
 import { buildProjectSkillsProvider, builtInSkillsRegistry } from '@web-agent/tools-skills'
 import { hydrateMcpSettings } from './mcp/commands'
@@ -61,9 +60,9 @@ import {
 import './styles/global.css'
 import './agentNew/ui/agentnew.css'
 
-// 【登记反转 · TS1】defaultCore 造出来是无工具的——app 在此把标准工具装进它的 registry
-// （= toolRegistry = defaultCore.tools）。core 不再硬编码工具，装什么由消费方（这里是 app）决定。
-registerStandardTools(toolRegistry)
+// 【登记反转 · TS1】defaultCore 造出来是无工具的——app 在此把标准工具装进它的 registry。
+// core 不再硬编码工具，装什么由消费方（这里是 app）决定。
+registerStandardTools(defaultCore.tools)
 configureDefaultSkillsRegistry(builtInSkillsRegistry)
 configureDefaultProjectSkillsProvider(buildProjectSkillsProvider())
 defaultCore.planRuntime = createDefaultPlanRuntime

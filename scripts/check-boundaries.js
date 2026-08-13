@@ -15,6 +15,10 @@ const importPatterns = [
   /\bimport\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g,
   /\bexport\s+(?:type\s+)?[^'"]*?\s+from\s+['"]([^'"]+)['"]/g,
   /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+  // 跨行 import/export 的收尾行（`} from '...'`）——整条语句里唯一带说明符的那一行，上面三条
+  // 单行正则都够不着它。少了这条，任何写成多行花括号的深导入都能绕过 S9 的公开面白名单门禁
+  // （实测 core 之外的 `@web-agent/core/*` 深导入有近半是这种写法）。
+  /^\s*\}\s*from\s+['"]([^'"]+)['"]/g,
 ]
 const coreRules = [
   { name: 'core 禁入 React', packages: ['react', '@einfach/react'] },
@@ -34,6 +38,7 @@ const capabilityRule = {
 }
 const dialogObservation = { name: '观察项：core 使用 Tauri dialog 插件', packages: ['@tauri-apps/plugin-dialog'] }
 const capabilityPackages = ['subagents', 'persistence-idb', 'persistence-sqlite', 'observability-idb', 'observability-sqlite']
+const workspaceGroups = ['apps', 'packages', 'tools']
 
 // M4：core 厂商名红线，对齐 einfach-agent-rust 红线 12（core 零厂商判断）。与上面的 import 扫描不同，
 // 这条规则扫的是整行文本字面量（含注释），因为「注释里顺嘴提厂商名」同样是本卡要收敛的对象。
@@ -56,6 +61,86 @@ const vendorNameExemptions = [
   // runtimeConfig.ts`、`runtime/delegationContract.ts`、`subagents/runtimeState.ts`、
   // `subagents/childModelClient.ts`），只做名字转接的 `runtime/core/delegateModelIdentity.ts`
   // 随之删除。
+]
+
+// S9：core 公开面白名单门禁。core 之外的包与 apps 只能经这九条入口进 core——根 barrel
+// `@web-agent/core` 本身（下面用 `subpath === ''` 表示）加八条 subpath。判据与逐条归属见
+// docs/core-public-surface-audit.md §4，落地状态见 docs/core-surface-issues.md 的 S1–S8 卡。
+// **精确匹配，不是段前缀**：段前缀会让 `tools/registry`、`subagents/childAgentLoop` 这类深路径
+// 借白名单第一段蒙混过关，而它们恰恰是本规则要收敛的对象（前者已在本卡消掉，后者留豁免待 S11）。
+const corePackageName = '@web-agent/core'
+const coreSubpathRuleName = 'core 公开面白名单'
+const coreSubpathAllowList = [
+  '', 'plugin', 'timeline', 'tools', 'subagents', 'state/persistence', 'observability', 'skills', 'planning',
+]
+// 白名单外的既有命中：命中时降级为观察项而不是 fail。每条写明原因与归属卡，`consumers` 是
+// 消费方路径前缀（仓库相对、`/` 分隔）——豁免按「哪条 subpath × 谁在用」发放，换个消费方仍会红。
+const coreSubpathExemptions = [
+  {
+    subpaths: ['runtime/workspaceDialog'],
+    consumers: ['apps/web/src/agentNew/ui/'],
+    reason: '全仓唯一 @tauri-apps/plugin-dialog 边，根 barrel 按模块图纪律拒收；拆分卡（同步能力探测 + 惰性 open）未排',
+  },
+  {
+    subpaths: ['runtime/dangerousTools'],
+    consumers: ['apps/web/src/agentNew/ui/', 'apps/web/src/mcp/', 'tools/mcp/src/'],
+    reason: '危险工具判级：函数本体无 barrel 归属（既非工具契约也非宿主装配面），待后续归属卡',
+  },
+  {
+    subpaths: ['runtime/projectSkillsBridge'],
+    consumers: ['apps/web/src/plugins/', 'tools/skills/src/'],
+    reason: '宿主读盘桥：同样无 barrel 归属，待后续归属卡',
+  },
+  {
+    subpaths: ['runtime/workspaceRead'],
+    consumers: ['apps/web/src/plugins/'],
+    reason: '同上无归属，且是 desktopImportModule 测试的 vi.mock 目标，换 barrel 会让 mock 失效',
+  },
+  {
+    subpaths: [
+      'runtime/workspaceRead', 'runtime/workspaceRg', 'runtime/workspacePatch',
+      'runtime/workspaceChange', 'runtime/hostPlatform',
+    ],
+    consumers: ['tools/fs/src/', 'tools/shell/src/'],
+    reason: 'workspace/host 桥；S1a 判定不进 ./tools——barrel 静态导链会在 vi.mock 提升前把 @tauri-apps 灌进模块图（S2c 3911c9d 的教训）',
+  },
+  {
+    subpaths: ['runtime/askUserQuestion'],
+    consumers: ['tools/interaction/src/'],
+    reason: '只有根 barrel `.` 覆盖它，而工具域按 `.` 的头注不走根 barrel；正式通路待归属卡',
+  },
+  {
+    subpaths: ['runtime/core/coreInstance'],
+    consumers: ['tools/skills/src/'],
+    reason: '同上无正式通路；且工具域直接摸 defaultCore 本身就是结构债（工具应经 ToolContext 取能力），待归属卡',
+  },
+  {
+    subpaths: ['runtime/core/coreInstance', 'state/rootStore'],
+    consumers: ['apps/web/src/test/setup.ts'],
+    reason: 'vitest setupFile 不能走根 barrel——barrel 会在各测试文件 vi.mock 提升前把 runtime/commands 整条静态导链灌进模块缓存（S5b 记档，文件内有【setupFile 纪律】注释）',
+  },
+  {
+    subpaths: [
+      'subagents/childAgentLoop', 'subagents/childModelClient', 'subagents/delegationPolicy',
+      'subagents/runtimeState', 'runtime/concurrencyLimiter', 'runtime/finishReason',
+    ],
+    consumers: ['packages/subagents/src/'],
+    reason: 'S11 委派接缝整形前的结构债（S2b 32ed5a5 剩 5 条 + S7b E8/S7a E2 归位出来的 2 条）；S11 的判据就是本条清零',
+  },
+  {
+    subpaths: ['state/core.type'],
+    consumers: ['packages/persistence-idb/src/', 'packages/persistence-sqlite/src/', 'packages/subagents/src/'],
+    reason: 'S3b 26dd539 留档：SessionMeta/ModelSettings 被 S5a 收进根 barrel `.`，但 `.` 是宿主装配面、能力包不走它，这三处暂无正式通路',
+  },
+  {
+    subpaths: [
+      'plugins/manifestTypes', 'plugins/pluginLoader', 'plugins/pluginLoaderTypes', 'plugins/pluginScanner',
+      'runtime/askUserQuestion', 'runtime/commands', 'runtime/core/coreInstance', 'runtime/core/events',
+      'runtime/persistenceBridge', 'state/core.type', 'state/sessionAtoms', 'state/transientAtoms',
+    ],
+    consumers: ['apps/cli/src/'],
+    reason: 'S6 尾款：S6（10725fe）早于 S5a 落地，状态注已写明「27 条留 S5a」；这批全部已被根 barrel `.` 覆盖，是纯符号搬家，等一张 S6 尾款卡',
+  },
 ]
 
 async function typescriptFiles(directory) {
@@ -106,6 +191,34 @@ async function checkVendorNames(files, errors, observations) {
   }
 }
 
+function coreSubpathOf(specifier) {
+  if (specifier === corePackageName) return ''
+  return specifier.startsWith(`${corePackageName}/`) ? specifier.slice(corePackageName.length + 1) : undefined
+}
+
+function coreSubpathExemptionFor(subpath, relativeFilePath) {
+  return coreSubpathExemptions.find((item) => (
+    item.subpaths.includes(subpath) && item.consumers.some((prefix) => relativeFilePath.startsWith(prefix))
+  ))
+}
+
+async function checkCoreSubpaths(files, errors, observations) {
+  for (const path of files) {
+    const file = relativePath(path)
+    const lines = (await readFile(path, 'utf8')).split('\n')
+    for (const [index, line] of lines.entries()) {
+      for (const specifier of importsInLine(line)) {
+        const subpath = coreSubpathOf(specifier)
+        if (subpath === undefined || coreSubpathAllowList.includes(subpath)) continue
+        const location = `${file}:${index + 1}`
+        const exemption = coreSubpathExemptionFor(subpath, file)
+        if (exemption) observations.push(`${location} 观察项：${coreSubpathRuleName}（${specifier}）—— 豁免原因：${exemption.reason}`)
+        else errors.push(`${location} ${coreSubpathRuleName}（${specifier} 不在白名单九条内）`)
+      }
+    }
+  }
+}
+
 async function checkFiles(files, rules, errors, observations) {
   for (const path of files) {
     const lines = (await readFile(path, 'utf8')).split('\n')
@@ -120,17 +233,36 @@ async function checkFiles(files, rules, errors, observations) {
   }
 }
 
+// 白名单门禁的扫描面：`apps/*/src`、`packages/*/src`、`tools/*/src` 里除 core 自己以外的全部
+// 非测试源码——文件枚举沿用 typescriptFiles()，测试与 testHarness/testFixtures 脚手架已被它跳过。
+async function outsideCoreFiles() {
+  const files = []
+  for (const group of workspaceGroups) {
+    const entries = await readdir(resolve(repositoryRoot, group), { withFileTypes: true })
+      .catch((error) => error.code === 'ENOENT' ? [] : Promise.reject(error))
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue
+      const sourceDirectory = `${group}/${entry.name}/src`
+      if (sourceDirectory === coreSourceDirectory) continue
+      files.push(...await typescriptFiles(resolve(repositoryRoot, sourceDirectory)))
+    }
+  }
+  return files
+}
+
 async function main() {
   const coreFiles = await typescriptFiles(resolve(repositoryRoot, coreSourceDirectory))
   const capabilityFiles = (await Promise.all(capabilityPackages.map((name) => (
     typescriptFiles(resolve(repositoryRoot, `packages/${name}/src`))
   )))).flat()
+  const consumerFiles = await outsideCoreFiles()
   const errors = []
   const observations = []
   await checkFiles(coreFiles, coreRules, errors, observations)
   await checkFiles(capabilityFiles, [capabilityRule], errors, observations)
   await checkVendorNames(coreFiles, errors, observations)
-  const scanned = coreFiles.length + capabilityFiles.length
+  await checkCoreSubpaths(consumerFiles, errors, observations)
+  const scanned = new Set([...coreFiles, ...capabilityFiles, ...consumerFiles]).size
   if (observations.length > 0) {
     console.log('边界观察项：')
     for (const observation of observations) console.log(`- ${observation}`)
@@ -141,9 +273,10 @@ async function main() {
     process.exitCode = 1
     return
   }
-  console.log(`边界检查通过（扫描 ${scanned} 个非测试 TS/TSX 文件，生效 ${coreRules.length + 2} 条规则）。`)
-  console.log('说明：import 类规则仅跳过以 // 或 * 开头的整行注释，不解析行内注释或跨行语句；')
-  console.log('厂商名红线逐行做字面量扫描，含注释在内，因为注释里的厂商名同样是本规则要收敛的对象。')
+  console.log(`边界检查通过（扫描 ${scanned} 个非测试 TS/TSX 文件，生效 ${coreRules.length + 3} 条规则）。`)
+  console.log('说明：import 类规则仅跳过以 // 或 * 开头的整行注释，不解析行内注释；跨行语句只认 `} from \'…\'` 收尾行；')
+  console.log('厂商名红线逐行做字面量扫描，含注释在内，因为注释里的厂商名同样是本规则要收敛的对象；')
+  console.log('公开面白名单对 @web-agent/core 的 subpath 做精确匹配，白名单外只有豁免表里的既有命中会降级为观察项。')
 }
 
 main().catch((error) => {
