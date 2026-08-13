@@ -182,7 +182,7 @@ interface DelegateAgentInput {
 - 默认 `maxConcurrent = 4`，硬上限 `8`；根调用锁定整棵树的模型请求并发上限，嵌套调用只能降低本分支并发。
 - `maxDepth` 与 `maxChildren` 同样沿树只允许收紧，子 agent 不能通过嵌套参数放大根预算。
 - 默认 `maxDepth = 2`，硬上限 `6`。
-- 子 agent 默认 `maxTurns = 4`，硬上限 `8`。
+- 子 agent 默认 `maxTurns = 4`，硬上限 `16`。
 - 整树 `maxTotalNodes` 默认 `64`、硬上限 `256`，包含 root；所有后代共享计数且只能收紧上限。
 - 整树 `maxModelCalls` 默认 `128`、硬上限 `512`，覆盖 core/brief 蒸馏和 child turn；取得并发许可后、真正请求模型前计数。
 - `toolProfile` 默认 `delegate_only`；`workspace_read`、`workspace_verify` 可在批次或 child 级显式启用，后代只能继承或收紧。

@@ -2340,7 +2340,7 @@ describe('createDelegateAgentRuntime', () => {
   })
 
   it('creates a model checkpoint for an oversized child history without rewriting its raw transcript', async () => {
-    // 子 agent 顶爆上下文的真实形状不是「轮数多」（HARD_MAX_TURNS=8 已经封顶），
+    // 子 agent 顶爆上下文的真实形状不是「轮数多」（HARD_MAX_TURNS=16 已经封顶），
     // 而是【单轮 payload 巨大】：read_file 把整个文件正文原样回填进 messages。
     const HUGE_HEAD = 'A'.repeat(300)
     const MIDDLE_MARKER = 'ORIGINAL_UNCOMPACTED_MIDDLE'
