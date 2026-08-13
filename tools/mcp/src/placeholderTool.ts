@@ -15,7 +15,7 @@
 // 同样的 Tool」这条纯粹性。执行器是【必填】依赖——占位的 guide 向模型承诺了「本次调用会先
 // 自动连接再执行」，造一个兑现不了这句话的占位就是骗模型。
 
-import type { Tool, ToolRuntime } from '@web-agent/core/tools/types'
+import type { Tool, ToolRuntime } from '@web-agent/core/tools'
 import type { McpLastKnownToolEntry } from './connect-mcp-server/lastKnownTools'
 import { truncate } from './internal'
 import type { McpPlaceholderExecutor } from './placeholderExecute'

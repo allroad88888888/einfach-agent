@@ -1,4 +1,4 @@
-import type { Tool, ToolResult, ToolRuntime } from '@web-agent/core/tools/types'
+import type { Tool, ToolResult, ToolRuntime } from '@web-agent/core/tools'
 import {
   combineAbortSignals,
   errorMessage,

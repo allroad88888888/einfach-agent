@@ -1,4 +1,4 @@
-import { createToolRegistry } from '@web-agent/core/tools/toolRegistry'
+import { createToolRegistry } from '@web-agent/core/tools'
 import { vi } from 'vitest'
 import { McpClientManager } from './clientManager'
 import type {

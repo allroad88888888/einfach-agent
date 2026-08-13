@@ -5,7 +5,7 @@
 // 故这份断言留在 meta（而非 agent-core），agent-core 的测试对具体工具保持无知。
 
 import { describe, it, expect } from 'vitest'
-import { createToolRegistry } from '@web-agent/core/tools/toolRegistry'
+import { createToolRegistry } from '@web-agent/core/tools'
 import { registerStandardTools } from './index'
 
 // 6 域 31 个标准工具的权威清单（顺序 = 注册顺序：shell → interaction → fs → planning → skills → agents）。

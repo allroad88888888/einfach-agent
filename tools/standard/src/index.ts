@@ -10,7 +10,7 @@
 //
 // 依赖方向：tools（meta）→ tools-*（域）→ core（抽象 + 特性）。core 不反向依赖任何 tools 包 —— 单向无环。
 
-import type { ToolRegistry } from '@web-agent/core/tools/toolRegistry'
+import type { ToolRegistry } from '@web-agent/core/tools'
 import { registerShellTools } from '@web-agent/tools-shell'
 import { registerInteractionTools } from '@web-agent/tools-interaction'
 import { registerFsTools } from '@web-agent/tools-fs'

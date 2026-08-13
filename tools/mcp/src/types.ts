@@ -1,5 +1,5 @@
-import type { ToolRegistry } from '@web-agent/core/tools/toolRegistry'
-import type { Tool, ToolResult } from '@web-agent/core/tools/types'
+import type { ToolRegistry } from '@web-agent/core/tools'
+import type { Tool, ToolResult } from '@web-agent/core/tools'
 import type { McpPlaceholderClaims } from './placeholderClaims'
 
 interface McpServerConfigBase {

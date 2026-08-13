@@ -6,7 +6,7 @@
 // 这里改锁：① manifest 只给一句状态摘要（未连接总数 + 无清单服务 ID + 一句提示），不点名任何
 // 有清单的服务；② guide 补诊断细节（探测时间、工具数量、无清单原因），同样不列单条工具名；
 // ③ 无清单的服务（没有占位）必须在两层都能被点名找到，否则它们对模型彻底不存在。
-import { createToolRegistry } from '@web-agent/core/tools/toolRegistry'
+import { createToolRegistry } from '@web-agent/core/tools'
 import { describe, expect, it } from 'vitest'
 import { registerMcpTools } from '../index'
 import {

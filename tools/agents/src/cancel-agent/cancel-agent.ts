@@ -1,4 +1,4 @@
-import type { Tool } from '@web-agent/core/tools/types'
+import type { Tool } from '@web-agent/core/tools'
 import guide from './cancel-agent.md?raw'
 
 export const cancelAgentTool: Tool = {

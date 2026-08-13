@@ -1,5 +1,5 @@
-import { createToolRegistry } from '@web-agent/core/tools/toolRegistry'
-import type { Tool } from '@web-agent/core/tools/types'
+import { createToolRegistry } from '@web-agent/core/tools'
+import type { Tool } from '@web-agent/core/tools'
 import { describe, expect, it } from 'vitest'
 // 连接替身与远端工具构造沿用既有 fixtures，不另造一份 FakeConnection。
 import { FakeConnection, remoteTool } from './clientManager.reconnect.fixtures'

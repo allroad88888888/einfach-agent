@@ -1,4 +1,4 @@
-import type { ToolRuntime } from '@web-agent/core/tools/types'
+import type { ToolRuntime } from '@web-agent/core/tools'
 import type { McpServerConfig } from './types'
 
 /**

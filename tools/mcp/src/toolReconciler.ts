@@ -1,5 +1,5 @@
-import type { ToolRegistry } from '@web-agent/core/tools/toolRegistry'
-import type { Tool } from '@web-agent/core/tools/types'
+import type { ToolRegistry } from '@web-agent/core/tools'
+import type { Tool } from '@web-agent/core/tools'
 import { MCP_SERVER_MAX_TOOLS } from './internal'
 import type { McpPlaceholderClaims } from './placeholderClaims'
 import { runtimeFor } from './serverConfig'

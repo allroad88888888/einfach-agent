@@ -1,4 +1,4 @@
-import type { Tool } from '@web-agent/core/tools/types'
+import type { Tool } from '@web-agent/core/tools'
 
 /**
  * 占位工具登记表：`注册名 → 哪个服务的哪个占位实例占着这个名字`。

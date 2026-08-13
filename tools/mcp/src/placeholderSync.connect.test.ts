@@ -5,7 +5,7 @@
 // 就等于把所有 MCP 连接打死。这里用真的 McpClientManager 走一遍连接/断开，钉住三件事：
 // 连接不冲突、真实工具原地覆盖占位、断开后占位回来。
 
-import { createToolRegistry } from '@web-agent/core/tools/toolRegistry'
+import { createToolRegistry } from '@web-agent/core/tools'
 import { describe, expect, it } from 'vitest'
 import { McpClientManager } from './clientManager'
 import {

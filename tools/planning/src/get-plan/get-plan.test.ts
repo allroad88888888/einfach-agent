@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ToolContext } from '@web-agent/core/tools/types'
+import type { ToolContext } from '@web-agent/core/tools'
 import type { PlanSnapshot } from '@web-agent/core/planning'
 import { getPlanTool } from './get-plan'
 

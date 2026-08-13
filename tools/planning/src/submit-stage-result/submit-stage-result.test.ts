@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { PlanRuntime } from '../planRuntime'
 import type { PlanSnapshot } from '@web-agent/core/planning'
-import type { ToolContext } from '@web-agent/core/tools/types'
+import type { ToolContext } from '@web-agent/core/tools'
 import { submitStageResultTool } from './submit-stage-result'
 
 function baseContext(overrides: Partial<ToolContext>): ToolContext {

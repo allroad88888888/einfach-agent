@@ -5,7 +5,7 @@
 // 所以注册器是 register<Domain>Tools(registry, dependencies) —— registry 仍是第一个位置参数，
 // 注入项收在一个具名对象里（后续要加依赖时不破坏调用点）。宿主在装配期把依赖交进来，
 // 工具自身不 import 任何单例；这是本仓「工具需要运行时依赖」的范式写法。
-import type { ToolRegistry } from '@web-agent/core/tools/toolRegistry'
+import type { ToolRegistry } from '@web-agent/core/tools'
 import {
   createMcpConnectTool,
   type McpConnectManager,

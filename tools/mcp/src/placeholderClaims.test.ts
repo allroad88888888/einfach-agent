@@ -1,4 +1,4 @@
-import type { Tool } from '@web-agent/core/tools/types'
+import type { Tool } from '@web-agent/core/tools'
 import { describe, expect, it } from 'vitest'
 import { createMcpPlaceholderClaims } from './placeholderClaims'
 

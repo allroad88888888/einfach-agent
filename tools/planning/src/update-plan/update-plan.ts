@@ -1,5 +1,5 @@
 import type { UpdatePlanInput } from '@web-agent/core/planning'
-import type { Tool } from '@web-agent/core/tools/types'
+import type { Tool } from '@web-agent/core/tools'
 import guide from './update-plan.md?raw'
 
 export const updatePlanTool: Tool = {

@@ -1,7 +1,7 @@
 // tools/skill-read/skill-read.ts —— 读取已选中的仓库 skill 完整正文，或其单个 L3 资源
 // （TOOLS-SPEC §9/§10；L3 资源见 docs/skills-tree-blueprint.md 阶段 1）。
 // runtime 'internal'：纯只读查询，无副作用。绝不 import state/store/atom；只依赖 skills registry 的只读查询。
-import type { Tool } from '@web-agent/core/tools/types'
+import type { Tool } from '@web-agent/core/tools'
 import guide from './skill-read.md?raw' // skill 正文（同目录 .md）
 import { readSkill, readSkillResource, searchSkills } from '../registry'
 import { splitFrontmatter } from '@web-agent/core/skills'

@@ -1,6 +1,6 @@
 import type { ProjectSkillsSnapshot } from '@web-agent/core/skills'
-import { createToolRegistry } from '@web-agent/core/tools/toolRegistry'
-import type { ToolContext } from '@web-agent/core/tools/types'
+import { createToolRegistry } from '@web-agent/core/tools'
+import type { ToolContext } from '@web-agent/core/tools'
 import { describe, expect, it, vi } from 'vitest'
 import { registerSkillsTools } from '../index'
 import { buildSkillManifestText } from '../registry'

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ToolContext } from '@web-agent/core/tools/types'
+import type { ToolContext } from '@web-agent/core/tools'
 import { SUBAGENT_TOOL_PROFILES } from '@web-agent/core/subagents/toolProfile'
 import { delegateAgentTool } from './delegate-agent'
 
