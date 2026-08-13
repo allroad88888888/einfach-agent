@@ -160,7 +160,7 @@ assistant，否则放弃复用。三条中任意一条不成立就回落到完�
 pnpm exec vitest run packages/agent-ai/src/modelApi.cache.test.ts
 pnpm exec vitest run packages/agent-core/src/runtime/contextCache.test.ts
 pnpm exec vitest run packages/agent-core/src/runtime/modelRun.test.ts
-pnpm exec vitest run packages/agent-core/src/subagents/runtime.test.ts
+pnpm exec vitest run packages/agent-core/src/subagents
 pnpm build
 ```
 
