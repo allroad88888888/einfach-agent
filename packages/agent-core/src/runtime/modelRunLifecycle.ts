@@ -4,9 +4,8 @@ import { appendItem, setRun } from '../state/sessionWriters'
 import { closeUnresolvedToolCalls, currentTurnItems } from './runCheckpoints'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
 import { newId } from './newId'
-import { bindActiveSpan, runTraceKey, startSpan } from '../observability/trace'
 import type { PendingToolConfirmation } from '../state/core.type'
-import type { TraceSpan } from '../observability/types'
+import type { TraceSpan } from '../observability/port'
 import type { UserMessageContent } from '@web-agent/ai'
 
 export interface ModelRunOptions {
@@ -34,8 +33,8 @@ export async function startModelRun(id: string, input: UserMessageContent, opts:
   const runId = newId()
   const userItemId = newId()
   const session = core.rootStore.getter(sessionsAtom)[id]
-  const rootSpan = session ? startSpan('agent.turn', { kind: 'agent', attrs: { sessionId: id, runId, turnId: userItemId, vendor: session.settings.vendor, model: session.settings.model } }) : undefined
-  if (rootSpan) bindActiveSpan(runTraceKey(id, runId), rootSpan)
+  const rootSpan = session ? core.observability.startSpan('agent.turn', { kind: 'agent', attrs: { sessionId: id, runId, turnId: userItemId, vendor: session.settings.vendor, model: session.settings.model } }) : undefined
+  if (rootSpan) core.observability.bindActiveSpan(core.observability.runTraceKey(id, runId), rootSpan)
   const startedAt = Date.now()
   appendItem(id, { id: userItemId, createdAt: startedAt, item: { role: 'user', content: input } }, core)
   setRun(id, { runId, status: 'running', turnId: userItemId, startedAt }, core)

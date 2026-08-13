@@ -8,7 +8,6 @@ import { classifyToolRisk } from './dangerousTools'
 import { parseToolCallArgs } from './modelTurn'
 import { appendMappedToolResult, appendToolResult, argsPreviewForModel, toolCallValidationError } from './toolLoopSupport'
 import { tracePreview } from './shared/preview'
-import { startSpan, endSpan } from '../observability/trace'
 import { executeToolCall, type ExecutableToolCall } from './toolCallExecutor'
 import { handleToolGate } from './toolCallGate'
 import { executePreparedToolCall, hasToolCallHooks, prepareToolCall } from './toolCallPluginHooks'
@@ -76,8 +75,8 @@ export async function runToolCallBatch(base: ToolLoopBase, input: ToolBatchInput
       const result = { error: parsed.error, hint: '请重新发起该工具调用，并确保 arguments 是完整合法的 JSON 对象', argumentsPreview: argsPreviewForModel(parsed.raw) }
       const attrs = { toolName: name, callId: toolCall.id, args_parse_failed: true, finish_reason: input.finishReason, argsPreview: tracePreview(parsed.raw), resultPreview: tracePreview(result), errorPreview: parsed.error, error: parsed.error }
       base.trace.event('tool.args_invalid', attrs)
-      const span = startSpan('tool.call', { kind: 'tool', parent: base.trace.span, attrs: { sessionId: base.id, runId: base.runId, turnId: base.turnId, ...attrs } })
-      endSpan(span, 'error', attrs, parsed.error)
+      const span = base.core.observability.startSpan('tool.call', { kind: 'tool', parent: base.trace.span, attrs: { sessionId: base.id, runId: base.runId, turnId: base.turnId, ...attrs } })
+      base.core.observability.endSpan(span, 'error', attrs, parsed.error)
       appendToolResult(base.id, toolCall.id, JSON.stringify(result), base.core, input.planStageId)
       continue
     }
@@ -89,8 +88,8 @@ export async function runToolCallBatch(base: ToolLoopBase, input: ToolBatchInput
       const result = { error: validationError }
       const attrs = { toolName: name, callId: toolCall.id, validation_failed: true, argsPreview: tracePreview(args), resultPreview: tracePreview(result), errorPreview: validationError, validationError, error: validationError }
       base.trace.event('tool.validation_failed', attrs)
-      const span = startSpan('tool.call', { kind: 'tool', parent: base.trace.span, attrs: { sessionId: base.id, runId: base.runId, turnId: base.turnId, ...attrs } })
-      endSpan(span, 'error', attrs, validationError)
+      const span = base.core.observability.startSpan('tool.call', { kind: 'tool', parent: base.trace.span, attrs: { sessionId: base.id, runId: base.runId, turnId: base.turnId, ...attrs } })
+      base.core.observability.endSpan(span, 'error', attrs, validationError)
       if (name === 'submit_stage_result') base.state.lastStageSubmitRejection = validationError
       appendToolResult(base.id, toolCall.id, JSON.stringify(result), base.core, input.planStageId)
       continue

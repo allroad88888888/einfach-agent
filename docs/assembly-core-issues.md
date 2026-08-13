@@ -270,7 +270,9 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 - **判据**：runtime 对 observability 的直接 import 收敛为仅 contract；
   trace 相关既有测试不回退：`pnpm exec vitest run packages/agent-core`；`pnpm build`
 - **模型**：codex xhigh
-- **状态**：DOING
+- **状态**：DONE（哈希在下一次提交补记；`ObservabilityPort` 只含 span/event 生命周期、
+  诊断与脱敏预览，Driver/Reader/TraceViewer 挡在 port 外；`coreInstance` 拆出
+  `abortRegistryStore.ts` 保行数）
 
 ### D4 · 观测 driver 外移为宿主包
 
@@ -387,7 +389,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   skill governance 全部不回退；core 不反向 import 产品包；
   `pnpm exec vitest run packages/subagents apps/web`；`pnpm build`
 - **模型**：codex medium
-- **状态**：DONE（哈希在下一次提交补记；E3 的 core→包受控例外随迁移消除；验收修补三处
+- **状态**：DONE `6a63323`（E3 的 core→包受控例外随迁移消除；验收修补三处
   tsc 抓到的类型问题：本地窄接口漏 `createdAt`、重复 import 标识符、port 不透明
   `scoreParts` 在包侧边界收窄）
 

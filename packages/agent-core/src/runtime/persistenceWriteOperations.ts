@@ -4,10 +4,7 @@ import type { SessionMeta, WorkspaceMeta } from '../state/core.type'
 import type { Checkpoint } from '../state/checkpoint.type'
 import type { SessionsPersistence } from '../state/persistence/contract'
 import type { HistoryDriver } from '../state/persistence/historyDriver'
-import {
-  beginPerformanceDiagnostic,
-  performanceNow,
-} from '../observability/performanceDiagnostics'
+import type { ObservabilityPort } from '../observability/port'
 
 export interface PersistenceDiagnosticContext {
   operationId?: string
@@ -23,13 +20,14 @@ export function writeSessions(
   queuedAt: number,
   queueDepthAtEnqueue: number,
   coalescedCalls: number,
+  observability: ObservabilityPort,
 ): Promise<void> {
   const planCount = snapshot.reduce((count, session) => count + (session.plan ? 1 : 0), 0)
   const executionNodeCount = snapshot.reduce(
     (count, session) => count + (session.executionGraph?.order.length ?? 0),
     0,
   )
-  const operation = beginPerformanceDiagnostic(
+  const operation = observability.beginPerformanceDiagnostic(
     'persistence.sessions.write',
     {
       ...context,
@@ -41,7 +39,7 @@ export function writeSessions(
     },
     { slowMs: 100, operationId: context.operationId },
   )
-  const startedAt = performanceNow()
+  const startedAt = observability.performanceNow()
   let write: Promise<void>
   try {
     write = context.operationId === undefined
@@ -52,7 +50,7 @@ export function writeSessions(
       'error',
       {
         queueWaitMs: startedAt - queuedAt,
-        driverWaitMs: performanceNow() - startedAt,
+        driverWaitMs: observability.performanceNow() - startedAt,
       },
       error,
     )
@@ -62,7 +60,7 @@ export function writeSessions(
     () => {
       operation.finish('ok', {
         queueWaitMs: startedAt - queuedAt,
-        driverWaitMs: performanceNow() - startedAt,
+        driverWaitMs: observability.performanceNow() - startedAt,
       })
     },
     (error) => {
@@ -70,7 +68,7 @@ export function writeSessions(
         'error',
         {
           queueWaitMs: startedAt - queuedAt,
-          driverWaitMs: performanceNow() - startedAt,
+          driverWaitMs: observability.performanceNow() - startedAt,
         },
         error,
       )
@@ -84,13 +82,14 @@ export function writeWorkspaces(
   snapshot: WorkspaceMeta[],
   queuedAt: number,
   queueDepthAtEnqueue: number,
+  observability: ObservabilityPort,
 ): Promise<void> {
-  const operation = beginPerformanceDiagnostic(
+  const operation = observability.beginPerformanceDiagnostic(
     'persistence.workspaces.write',
     { queueDepthAtEnqueue, workspaceCount: snapshot.length },
     { slowMs: 100 },
   )
-  const startedAt = performanceNow()
+  const startedAt = observability.performanceNow()
   let write: Promise<void>
   try {
     write = driver.saveWorkspaces(snapshot)
@@ -99,7 +98,7 @@ export function writeWorkspaces(
       'error',
       {
         queueWaitMs: startedAt - queuedAt,
-        driverWaitMs: performanceNow() - startedAt,
+        driverWaitMs: observability.performanceNow() - startedAt,
       },
       error,
     )
@@ -109,7 +108,7 @@ export function writeWorkspaces(
     () => {
       operation.finish('ok', {
         queueWaitMs: startedAt - queuedAt,
-        driverWaitMs: performanceNow() - startedAt,
+        driverWaitMs: observability.performanceNow() - startedAt,
       })
     },
     (error) => {
@@ -117,7 +116,7 @@ export function writeWorkspaces(
         'error',
         {
           queueWaitMs: startedAt - queuedAt,
-          driverWaitMs: performanceNow() - startedAt,
+          driverWaitMs: observability.performanceNow() - startedAt,
         },
         error,
       )
@@ -132,8 +131,9 @@ export function writeCheckpoint(
   checkpoint: Checkpoint,
   queuedAt: number,
   queueDepthAtEnqueue: number,
+  observability: ObservabilityPort,
 ): Promise<void> {
-  const operation = beginPerformanceDiagnostic(
+  const operation = observability.beginPerformanceDiagnostic(
     'persistence.checkpoint.write',
     {
       sessionId: id,
@@ -144,7 +144,7 @@ export function writeCheckpoint(
     },
     { slowMs: 100 },
   )
-  const startedAt = performanceNow()
+  const startedAt = observability.performanceNow()
   let write: Promise<void>
   try {
     write = driver.saveCheckpoint(id, checkpoint)
@@ -153,7 +153,7 @@ export function writeCheckpoint(
       'error',
       {
         queueWaitMs: startedAt - queuedAt,
-        driverWaitMs: performanceNow() - startedAt,
+        driverWaitMs: observability.performanceNow() - startedAt,
       },
       error,
     )
@@ -163,7 +163,7 @@ export function writeCheckpoint(
     () => {
       operation.finish('ok', {
         queueWaitMs: startedAt - queuedAt,
-        driverWaitMs: performanceNow() - startedAt,
+        driverWaitMs: observability.performanceNow() - startedAt,
       })
     },
     (error) => {
@@ -171,7 +171,7 @@ export function writeCheckpoint(
         'error',
         {
           queueWaitMs: startedAt - queuedAt,
-          driverWaitMs: performanceNow() - startedAt,
+          driverWaitMs: observability.performanceNow() - startedAt,
         },
         error,
       )

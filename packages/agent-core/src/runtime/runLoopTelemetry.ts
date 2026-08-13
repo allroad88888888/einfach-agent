@@ -15,8 +15,7 @@ import { estimateTokensFromText } from './contextCompaction'
 import type { ContextCacheProfile } from './contextCache'
 import { newId } from './newId'
 import { stringForStats } from './shared/preview'
-import { truncatePayload } from '../observability/redact'
-import type { TraceAttributes } from '../observability/types'
+import { getDefaultObservabilityPort, type TraceAttributes } from '../observability/port'
 
 const LLM_TRACE_PREVIEW_LIMIT = 80_000
 const LLM_TRACE_PREVIEW_OPTIONS = {
@@ -52,7 +51,11 @@ export function responseChars(value: string | null | undefined): number {
 }
 
 export function llmTracePreview(value: unknown): string {
-  return truncatePayload(value, LLM_TRACE_PREVIEW_LIMIT, LLM_TRACE_PREVIEW_OPTIONS)
+  return getDefaultObservabilityPort().previewPayload(
+    value,
+    LLM_TRACE_PREVIEW_LIMIT,
+    LLM_TRACE_PREVIEW_OPTIONS,
+  )
 }
 
 /** Redacts provider image references while retaining useful request shape and user text. */

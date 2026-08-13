@@ -13,7 +13,7 @@ import { sessionsAtom, workspacesAtom } from '../state/rootAtoms'
 import type { Checkpoint } from '../state/checkpoint.type'
 import type { SessionsPersistence } from '../state/persistence/contract'
 import type { HistoryDriver } from '../state/persistence/historyDriver'
-import { performanceNow } from '../observability/performanceDiagnostics'
+import type { ObservabilityPort } from '../observability/port'
 import { createWriteQueue } from './writeQueue'
 import {
   writeCheckpoint,
@@ -44,7 +44,7 @@ export interface PersistenceBridge {
 }
 
 /** Creates the persistence resources owned by one CoreInstance. */
-export function createPersistenceBridge(rootStore: Store): PersistenceBridge {
+export function createPersistenceBridge(rootStore: Store, observability: ObservabilityPort): PersistenceBridge {
   let history: HistoryDriver | undefined
   let sessions: SessionsPersistence | undefined
   const sessionsWriteQueue = createWriteQueue('latest')
@@ -73,9 +73,9 @@ export function createPersistenceBridge(rootStore: Store): PersistenceBridge {
     // Execution nodes can emit queued → running → terminal in a few milliseconds;
     // serializing every 1MB+ intermediate snapshot makes the UI appear frozen.
     const snapshot = Object.values(rootStore.getter(sessionsAtom))
-    const queuedAt = performanceNow()
+    const queuedAt = observability.performanceNow()
     sessionsWriteQueue.enqueue('sessions', ({ queueDepthAtEnqueue, coalescedCalls }) =>
-      writeSessions(driver, snapshot, context, queuedAt, queueDepthAtEnqueue, coalescedCalls),
+      writeSessions(driver, snapshot, context, queuedAt, queueDepthAtEnqueue, coalescedCalls, observability),
     )
   }
 
@@ -84,9 +84,9 @@ export function createPersistenceBridge(rootStore: Store): PersistenceBridge {
     const driver = sessions
     if (!driver) return
     const snapshot = Object.values(rootStore.getter(workspacesAtom))
-    const queuedAt = performanceNow()
+    const queuedAt = observability.performanceNow()
     workspacesWriteQueue.enqueue('workspaces', ({ queueDepthAtEnqueue }) =>
-      writeWorkspaces(driver, snapshot, queuedAt, queueDepthAtEnqueue),
+      writeWorkspaces(driver, snapshot, queuedAt, queueDepthAtEnqueue, observability),
     )
   }
 
@@ -94,9 +94,9 @@ export function createPersistenceBridge(rootStore: Store): PersistenceBridge {
   function persistCheckpoint(id: string, checkpoint: Checkpoint): void {
     const driver = history
     if (!driver) return
-    const queuedAt = performanceNow()
+    const queuedAt = observability.performanceNow()
     historyWriteQueue.enqueue(id, ({ queueDepthAtEnqueue }) =>
-      writeCheckpoint(driver, id, checkpoint, queuedAt, queueDepthAtEnqueue),
+      writeCheckpoint(driver, id, checkpoint, queuedAt, queueDepthAtEnqueue, observability),
     )
   }
 

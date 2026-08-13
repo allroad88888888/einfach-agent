@@ -8,7 +8,6 @@ import { searchToolManifestPage, touchRecentToolName } from './modelTurn'
 import { REQUEST_TOOL_SCHEMA_NAME, selectToolGate } from './toolGates'
 import { appendToolResult } from './toolLoopSupport'
 import { tracePreview } from './shared/preview'
-import { startSpan, endSpan } from '../observability/trace'
 import { ROOT_AGENT_PATH } from '../subagents/path'
 import type { ModelFunctionTool } from '@web-agent/ai'
 import type { ToolLoopBase } from './toolLoopContracts'
@@ -75,8 +74,8 @@ export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolea
     const error = String(result.error)
     const traceAttrs = { toolName: input.name, callId: input.callId, ...attrs, argsPreview: tracePreview(input.args), resultPreview: tracePreview(result), errorPreview: error, error }
     base.trace.event(event, traceAttrs)
-    const span = startSpan('tool.call', { kind: 'tool', parent: base.trace.span, attrs: { sessionId: base.id, runId: base.runId, turnId: base.turnId, ...traceAttrs } })
-    endSpan(span, 'error', traceAttrs, error)
+    const span = base.core.observability.startSpan('tool.call', { kind: 'tool', parent: base.trace.span, attrs: { sessionId: base.id, runId: base.runId, turnId: base.turnId, ...traceAttrs } })
+    base.core.observability.endSpan(span, 'error', traceAttrs, error)
     if (input.name === 'submit_stage_result') base.state.lastStageSubmitRejection = error
     appendToolResult(base.id, input.callId, JSON.stringify(result), base.core, input.planStageId)
   }
@@ -128,8 +127,8 @@ export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolea
     base.state.recentToolNames = touchRecentToolName(base.state.recentToolNames, input.name, base.maxTurnTools - 1)
     const result = gate.result as Record<string, unknown> & { hint?: string }
     base.trace.event('tool.schema_autoloaded', { toolName: input.name, callId: input.callId, schema_autoloaded: true, argsPreview: tracePreview(input.args), resultPreview: tracePreview(result) })
-    const span = startSpan('request_tool_schema', { kind: 'internal', parent: base.trace.span, attrs: { sessionId: base.id, runId: base.runId, turnId: base.turnId, toolName: input.name, callId: input.callId, args: input.args } })
-    endSpan(span, 'ok', { found: true, autoloaded: true, discovery: false, result })
+    const span = base.core.observability.startSpan('request_tool_schema', { kind: 'internal', parent: base.trace.span, attrs: { sessionId: base.id, runId: base.runId, turnId: base.turnId, toolName: input.name, callId: input.callId, args: input.args } })
+    base.core.observability.endSpan(span, 'ok', { found: true, autoloaded: true, discovery: false, result })
     if (input.name === 'submit_stage_result') base.state.lastStageSubmitRejection = result.hint
     appendToolResult(base.id, input.callId, JSON.stringify(result), base.core, input.planStageId)
     return true
@@ -148,7 +147,7 @@ export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolea
   }
   if (gate.kind !== 'schema_request') return false
   const toolName = typeof input.args.toolName === 'string' ? input.args.toolName.trim() : ''
-  const span = startSpan('request_tool_schema', { kind: 'internal', parent: base.trace.span, attrs: { sessionId: base.id, runId: base.runId, turnId: base.turnId, toolName, callId: input.callId, args: input.args } })
+  const span = base.core.observability.startSpan('request_tool_schema', { kind: 'internal', parent: base.trace.span, attrs: { sessionId: base.id, runId: base.runId, turnId: base.turnId, toolName, callId: input.callId, args: input.args } })
   let found: boolean
   let result: Record<string, unknown>
   if (toolName) {
@@ -163,7 +162,7 @@ export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolea
     result = manifest as unknown as Record<string, unknown>
   }
   base.trace.event('tool.schema_requested', { toolName: toolName || undefined, discovery: !toolName, callId: input.callId, found, args: input.args, result })
-  endSpan(span, found ? 'ok' : 'error', { found, discovery: !toolName, result })
+  base.core.observability.endSpan(span, found ? 'ok' : 'error', { found, discovery: !toolName, result })
   appendToolResult(base.id, input.callId, JSON.stringify(result), base.core, input.planStageId)
   return true
 }

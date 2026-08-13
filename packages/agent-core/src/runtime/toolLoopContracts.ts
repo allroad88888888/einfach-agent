@@ -4,7 +4,7 @@ import type { CoreInstance } from './core/coreInstance'
 import type { PluginRun } from './core/pluginHost'
 import type { ToolLoopOptions } from './modelRunLifecycle'
 import type { ToolEpoch } from './toolEpoch'
-import type { TraceAttributes, TraceSpan, TraceStatus } from '../observability/types'
+import type { TraceAttributes, TraceSpan, TraceStatus } from '../observability/port'
 import type { DelegationRuntime } from './delegationContract'
 
 export interface ToolLoopTrace {

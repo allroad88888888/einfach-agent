@@ -1,9 +1,9 @@
 import type { AssistantItem, ModelResponseMessage } from '@web-agent/ai'
-import { truncatePayload } from '../../observability/redact'
+import { getDefaultObservabilityPort } from '../../observability/port'
 
 /** Converts a value into a bounded trace representation. */
 export function tracePreview(value: unknown, limit = 500): string {
-  return truncatePayload(value, limit)
+  return getDefaultObservabilityPort().previewPayload(value, limit)
 }
 
 /** Serializes a value for token and context statistics. */

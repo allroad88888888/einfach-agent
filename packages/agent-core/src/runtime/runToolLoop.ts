@@ -9,7 +9,6 @@ import { createToolFailureTracker } from './toolFailureTracker'
 import { currentPlanStageId, maxAgentTurns } from './toolLoopPlan'
 import { appendMappedToolResult, safeErrorMessage } from './toolLoopSupport'
 import { executePreparedToolCall, prepareToolCall } from './toolCallPluginHooks'
-import { addEvent } from '../observability/trace'
 import { closeUnresolvedToolCalls } from './runCheckpoints'
 import { dispatchTimedTools } from './timedDispatch'
 
@@ -127,11 +126,11 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
     }
   } finally {
     try { await dispatchTimedTools({ base, checkpoints, request: { sessionId: id, timing: 'runEnd' } }) }
-    catch (error) { addEvent('agent.timed_dispatch_failed', { traceId: base.trace.span.traceId, attrs: { sessionId: id, runId, turnId: base.turnId, timing: 'runEnd', error: safeErrorMessage(error) } }) }
+    catch (error) { base.core.observability.addEvent('agent.timed_dispatch_failed', { traceId: base.trace.span.traceId, attrs: { sessionId: id, runId, turnId: base.turnId, timing: 'runEnd', error: safeErrorMessage(error) } }) }
     releaseTimedToolDispatcher()
     try { base.pluginRun.dispose() }
-    catch (error) { addEvent('agent.plugin_dispose_failed', { traceId: base.trace.span.traceId, attrs: { sessionId: id, runId, turnId: base.turnId, error: safeErrorMessage(error), aborted: isAbortError(error) || opts.signal.aborted } }) }
+    catch (error) { base.core.observability.addEvent('agent.plugin_dispose_failed', { traceId: base.trace.span.traceId, attrs: { sessionId: id, runId, turnId: base.turnId, error: safeErrorMessage(error), aborted: isAbortError(error) || opts.signal.aborted } }) }
     try { await base.delegateRuntime?.dispose?.() }
-    catch (error) { addEvent('agent.dispose_failed', { traceId: base.trace.span.traceId, attrs: { sessionId: id, runId, turnId: base.turnId, error: safeErrorMessage(error), aborted: isAbortError(error) || opts.signal.aborted } }) }
+    catch (error) { base.core.observability.addEvent('agent.dispose_failed', { traceId: base.trace.span.traceId, attrs: { sessionId: id, runId, turnId: base.turnId, error: safeErrorMessage(error), aborted: isAbortError(error) || opts.signal.aborted } }) }
   }
 }

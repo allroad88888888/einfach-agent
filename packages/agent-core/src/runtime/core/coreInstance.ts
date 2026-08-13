@@ -36,6 +36,8 @@ import {
 } from '../persistenceBridge'
 import { createRuntimeConfig, type RuntimeConfig } from './runtimeConfig'
 import type { PlanRuntimeFactory } from '../../planning/runtime'
+import { getDefaultObservabilityPort, type ObservabilityPort } from '../../observability/port'
+import { createAbortRegistry, type AbortRegistryLike } from './abortRegistryStore'
 
 export type { RuntimeConfig } from './runtimeConfig'
 
@@ -51,14 +53,7 @@ interface ActiveTimedToolDispatcher {
   dispatch(request: TimedToolDispatchRequest): Promise<TimedToolDispatchResult>
 }
 
-// 每会话 AbortController 的注册表接口；reset 供测试清场。
-export interface AbortRegistryLike {
-  beginRun(id: string): AbortSignal
-  abortRun(id: string): void
-  endRun(id: string, signal: AbortSignal): void
-  isRunning(id: string): boolean
-  reset(): void
-}
+export type { AbortRegistryLike } from './abortRegistryStore'
 
 // 项目 Skills 缓存 store 拆至 ./projectSkillsStore（B1）；此处 re-export 维持既有 import 面。
 export type {
@@ -69,6 +64,8 @@ export type {
 
 // 一个 CoreInstance 包含彼此隔离的 root/session stores、tools、abort、delegation、config、skills 与 persistence。
 export interface CoreInstance {
+  /** 此 Core 的观测出口；runtime 只能经此契约发射 trace。 */
+  readonly observability: ObservabilityPort
   // 该实例的根 store：sessionsAtom/activeSessionIdAtom 的值域（会话列表 + 当前会话 id）。
   readonly rootStore: Store
   // 该实例私有的 per-session store 缓存：取或建（幂等，同 id 同实例）。
@@ -125,6 +122,8 @@ export interface CoreInstance {
  */
 export function createCoreInstance(opts?: {
   config?: Partial<RuntimeConfig>
+  /** 由装配层提供的观测出口；未传时复用默认装配的静默 port。 */
+  observability?: ObservabilityPort
   registerTools?: (registry: ToolRegistry) => void
   plugins?: readonly PluginInput[]
   projectSkillsProvider?: ProjectSkillsProvider
@@ -135,7 +134,8 @@ export function createCoreInstance(opts?: {
 }): CoreInstance {
   // 1) 根 store：该实例的会话列表值域。
   const rootStore = createStore()
-  const persistence = createPersistenceBridge(rootStore)
+  const observability = opts?.observability ?? getDefaultObservabilityPort()
+  const persistence = createPersistenceBridge(rootStore, observability)
 
   // 2) per-session store 缓存：本实例私有 Map（逻辑照搬原 sessionStore.ts，Map 从模块级变实例字段）。
   const sessionStores = new Map<string, SessionStore>()
@@ -178,41 +178,8 @@ export function createCoreInstance(opts?: {
   // 3.1) run 级工具集 epoch 的归属：跟 registry 一样是实例私有的，两个 core 互不可见。
   const toolEpochs = createToolEpochStore(tools)
 
-  // 4) abort 注册表：本实例私有 Map（逻辑照搬原 abortRegistry.ts，Map 从模块级变实例字段）。
-  const controllers = new Map<string, AbortController>()
-  const abort: AbortRegistryLike = {
-    beginRun(id) {
-      // 起一个 run：若该 id 已有 controller，先 abort 旧的（新 run 顶掉旧 run），再登记全新 controller。
-      const prev = controllers.get(id)
-      if (prev) {
-        prev.abort()
-      }
-      const controller = new AbortController()
-      controllers.set(id, controller)
-      return controller.signal
-    },
-    abortRun(id) {
-      // 中断该 id 正在跑的 run：abort 并从 Map 删除；无则 no-op。
-      const controller = controllers.get(id)
-      if (!controller) return
-      controller.abort()
-      controllers.delete(id)
-    },
-    endRun(id, signal) {
-      // 仅当 Map 里该 id 当前 controller 的 signal 就是传入 signal 时才 delete，
-      // 避免被顶掉的旧 run（signal 已换）在 finally 里清掉新 run 的 controller。
-      const controller = controllers.get(id)
-      if (controller && controller.signal === signal) {
-        controllers.delete(id)
-      }
-    },
-    isRunning(id) {
-      return controllers.has(id)
-    },
-    reset() {
-      controllers.clear()
-    },
-  }
+  // 4) abort 注册表：本实例私有 Map。
+  const abort = createAbortRegistry()
 
   // 5) 委派能力：core 不内置产品实现，只有装配层显式 factory 才会创建 capability。
   const delegation = opts?.delegation?.()
@@ -254,6 +221,7 @@ export function createCoreInstance(opts?: {
   }
 
   return {
+    observability,
     rootStore,
     getSessionStore,
     createSessionStore,
@@ -281,7 +249,9 @@ export function createCoreInstance(opts?: {
 // 全局默认实例：五个视图模块（rootStore/sessionStore/registry/abortRegistry/scheduler）都取自它。
 // 首次求值即创建——任一视图模块被 import 时触发。【登记反转】它造出来是【无工具】的：
 // app（main.tsx）与测试（test/setup.ts）负责调 registerStandardTools(defaultCore.tools) 装标准工具。
-export const defaultCore: CoreInstance = createCoreInstance()
+export const defaultCore: CoreInstance = createCoreInstance({
+  observability: getDefaultObservabilityPort(),
+})
 setDefaultPersistenceBridge(defaultCore.persistence)
 
 /** 为模块级 defaultCore 注入项目 Skills provider；仅供应用装配期调用。 */

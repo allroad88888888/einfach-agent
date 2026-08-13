@@ -4,10 +4,7 @@ import {
   type WorkspaceChangeContext,
   type WorkspaceChangeSummary,
 } from './workspaceChange'
-import {
-  beginPerformanceDiagnostic,
-  performanceNow,
-} from '../observability/performanceDiagnostics'
+import { getDefaultObservabilityPort, type ObservabilityPort } from '../observability/port'
 
 export type WorkspaceWriteMode = 'create' | 'overwrite' | 'append' | 'upsert'
 
@@ -214,13 +211,16 @@ function normalizeResult(raw: unknown, input: WorkspaceWriteInput): WorkspaceWri
   return result
 }
 
-export async function writeWorkspaceFile(input: WorkspaceWriteInput): Promise<WorkspaceWriteResult> {
+export async function writeWorkspaceFile(
+  input: WorkspaceWriteInput,
+  observability: ObservabilityPort = getDefaultObservabilityPort(),
+): Promise<WorkspaceWriteResult> {
   if (!isTauri()) {
     return failedResult(input, 'Workspace file writing is only available in the Tauri desktop runtime')
   }
 
   const context = input.changeContext
-  const operation = beginPerformanceDiagnostic(
+  const operation = observability.beginPerformanceDiagnostic(
     'workspace.write.ipc',
     {
       sessionId: context?.sessionId,
@@ -236,20 +236,20 @@ export async function writeWorkspaceFile(input: WorkspaceWriteInput): Promise<Wo
     },
     { operationId: context?.changeId, slowMs: 100 },
   )
-  const dispatchStartedAt = performanceNow()
+  const dispatchStartedAt = observability.performanceNow()
   let invokeDispatchMs = 0
   try {
     const pending = invoke<unknown>(
       'write_workspace_file',
       toTauriInput(input, operation.operationId),
     )
-    invokeDispatchMs = performanceNow() - dispatchStartedAt
-    const hostWaitStartedAt = performanceNow()
+    invokeDispatchMs = observability.performanceNow() - dispatchStartedAt
+    const hostWaitStartedAt = observability.performanceNow()
     const raw = await pending
-    const hostWaitMs = performanceNow() - hostWaitStartedAt
-    const normalizeStartedAt = performanceNow()
+    const hostWaitMs = observability.performanceNow() - hostWaitStartedAt
+    const normalizeStartedAt = observability.performanceNow()
     const result = normalizeResult(raw, input)
-    const responseNormalizeMs = performanceNow() - normalizeStartedAt
+    const responseNormalizeMs = observability.performanceNow() - normalizeStartedAt
     operation.finish(
       'ok',
       {
@@ -270,7 +270,7 @@ export async function writeWorkspaceFile(input: WorkspaceWriteInput): Promise<Wo
       'error',
       {
         invokeDispatchMs,
-        hostWaitMs: Math.max(0, performanceNow() - dispatchStartedAt - invokeDispatchMs),
+        hostWaitMs: Math.max(0, observability.performanceNow() - dispatchStartedAt - invokeDispatchMs),
         resultOk: false,
         failureKind: 'invoke_rejected',
       },

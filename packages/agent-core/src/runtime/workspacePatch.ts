@@ -4,10 +4,7 @@ import {
   type WorkspaceChangeContext,
   type WorkspaceChangeSummary,
 } from './workspaceChange'
-import {
-  beginPerformanceDiagnostic,
-  performanceNow,
-} from '../observability/performanceDiagnostics'
+import { getDefaultObservabilityPort, type ObservabilityPort } from '../observability/port'
 import {
   normalizeWriteChangeSummary,
   type WorkspaceWriteChangeSummary,
@@ -202,6 +199,7 @@ function patchPayloadChars(operations: WorkspacePatchOperation[]): number {
 
 export async function applyWorkspacePatch(
   input: WorkspacePatchInput,
+  observability: ObservabilityPort = getDefaultObservabilityPort(),
 ): Promise<WorkspacePatchResult> {
   if (!isTauri()) {
     return failedResult(
@@ -211,7 +209,7 @@ export async function applyWorkspacePatch(
   }
 
   const context = input.changeContext
-  const operation = beginPerformanceDiagnostic(
+  const operation = observability.beginPerformanceDiagnostic(
     'workspace.patch.ipc',
     {
       sessionId: context?.sessionId,
@@ -224,23 +222,23 @@ export async function applyWorkspacePatch(
     },
     { operationId: context?.changeId, slowMs: 100 },
   )
-  const dispatchStartedAt = performanceNow()
+  const dispatchStartedAt = observability.performanceNow()
   let invokeDispatchMs = 0
   try {
     const pending = invoke<unknown>(
       'apply_workspace_patch',
       toTauriInput(input, operation.operationId),
     )
-    invokeDispatchMs = performanceNow() - dispatchStartedAt
-    const hostWaitStartedAt = performanceNow()
+    invokeDispatchMs = observability.performanceNow() - dispatchStartedAt
+    const hostWaitStartedAt = observability.performanceNow()
     const raw = await pending
-    const hostWaitMs = performanceNow() - hostWaitStartedAt
-    const normalizeStartedAt = performanceNow()
+    const hostWaitMs = observability.performanceNow() - hostWaitStartedAt
+    const normalizeStartedAt = observability.performanceNow()
     const result = normalizeResult(raw, input)
     operation.finish(result.ok ? 'ok' : 'error', {
       invokeDispatchMs,
       hostWaitMs,
-      responseNormalizeMs: performanceNow() - normalizeStartedAt,
+      responseNormalizeMs: observability.performanceNow() - normalizeStartedAt,
       resultOk: result.ok,
       changedFileCount: result.changedFiles.length,
       rejectedCount: result.rejected.length,
@@ -253,7 +251,7 @@ export async function applyWorkspacePatch(
       'error',
       {
         invokeDispatchMs,
-        hostWaitMs: Math.max(0, performanceNow() - dispatchStartedAt - invokeDispatchMs),
+        hostWaitMs: Math.max(0, observability.performanceNow() - dispatchStartedAt - invokeDispatchMs),
         resultOk: false,
         failureKind: 'invoke_rejected',
       },

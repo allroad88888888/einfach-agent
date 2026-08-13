@@ -13,7 +13,6 @@ import type {
   RunStatus,
   SessionMeta,
 } from '../../state/core.type'
-import { addEvent, getActiveSpan, runTraceKey } from '../../observability/trace'
 import { runToolLoop } from '../modelRun'
 import { newId } from '../newId'
 import { canRememberToolApproval } from '../sessionApprovalMemory'
@@ -91,8 +90,8 @@ export function createRunCommands(core: CoreInstance) {
 
     const answers = getPendingQuestionAnswers(id, core)
     clearPendingQuestionAnswers(id, core)
-    addEvent('agent.resume.answers', {
-      span: getActiveSpan(runTraceKey(id, run.runId)),
+    core.observability.addEvent('agent.resume.answers', {
+      span: core.observability.getActiveSpan(core.observability.runTraceKey(id, run.runId)),
       attrs: { sessionId: id, runId: run.runId, callId: toolCallId, answers_count: Object.keys(answers).length },
     })
     appendItem(id, {
@@ -115,8 +114,8 @@ export function createRunCommands(core: CoreInstance) {
 
     const pending = run.pendingToolConfirmation
     if (!pending) {
-      addEvent('agent.confirmation.missing_pending', {
-        span: getActiveSpan(runTraceKey(id, run.runId)),
+      core.observability.addEvent('agent.confirmation.missing_pending', {
+        span: core.observability.getActiveSpan(core.observability.runTraceKey(id, run.runId)),
         attrs: { sessionId: id, runId: run.runId },
       })
       patchRun(id, { status: 'running', pendingToolConfirmation: undefined }, core)
@@ -134,8 +133,8 @@ export function createRunCommands(core: CoreInstance) {
       && pending.risk !== 'critical'
       && !pending.irreversible
       && canRememberToolApproval(pending.toolName)
-    addEvent('agent.confirmation.decision', {
-      span: getActiveSpan(runTraceKey(id, run.runId)),
+    core.observability.addEvent('agent.confirmation.decision', {
+      span: core.observability.getActiveSpan(core.observability.runTraceKey(id, run.runId)),
       attrs: {
         sessionId: id,
         runId: run.runId,
@@ -172,8 +171,8 @@ export function createRunCommands(core: CoreInstance) {
     // 重读 schema 即可自愈；前者本轮无救——恢复执行只会换来一句给运维看的 `unknown tool: X`，
     // 模型会以为自己名字写错而原样重试。所以就地回 E2 那份结构化回执，不再进执行路径。
     if (registration.state === 'disconnected') {
-      addEvent('agent.confirmation.provider_disconnected', {
-        span: getActiveSpan(runTraceKey(id, run.runId)),
+      core.observability.addEvent('agent.confirmation.provider_disconnected', {
+        span: core.observability.getActiveSpan(core.observability.runTraceKey(id, run.runId)),
         attrs: {
           sessionId: id,
           runId: run.runId,

@@ -20,8 +20,7 @@ import { runtimeModelIdentity, delegateModelIdentity } from './core/delegateMode
 import { formatSubagentTranscript } from './subagentTranscript'
 import { planResumeNotice } from './toolLoopPlan'
 import { getExecutionRuntime } from '../execution/runtime'
-import { addEvent, bindActiveSpan, clearActiveSpan, endSpan, getActiveSpan, runTraceKey, startSpan } from '../observability/trace'
-import type { TraceAttributes } from '../observability/types'
+import type { TraceAttributes } from '../observability/port'
 import type { ToolLoopBase, ToolLoopControl, ToolLoopTrace } from './toolLoopContracts'
 import type { ToolLoopOptions } from './modelRunLifecycle'
 
@@ -34,11 +33,12 @@ export interface BootstrappedToolLoop {
 /** Creates the per-run dependencies before the state machine performs any model turn. */
 export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoopOptions): Promise<BootstrappedToolLoop | undefined> {
   const core = opts.core ?? defaultCore
-  const traceKey = runTraceKey(id, runId)
+  const observability = core.observability
+  const traceKey = observability.runTraceKey(id, runId)
   const initialSession = core.rootStore.getter(sessionsAtom)[id]
   if (!initialSession) {
-    const span = opts.traceSpan ?? getActiveSpan(traceKey)
-    if (span) { addEvent('agent.session_missing', { span, attrs: { sessionId: id, runId } }); endSpan(span, 'cancelled', { reason: 'session_missing' }); clearActiveSpan(traceKey, span) }
+    const span = opts.traceSpan ?? observability.getActiveSpan(traceKey)
+    if (span) { observability.addEvent('agent.session_missing', { span, attrs: { sessionId: id, runId } }); observability.endSpan(span, 'cancelled', { reason: 'session_missing' }); observability.clearActiveSpan(traceKey, span) }
     return undefined
   }
   const guard = createRunGuard(id, runId, core)
@@ -58,13 +58,13 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
     const session = core.rootStore.getter(sessionsAtom)[id]
     const turnId = opts.turnId ?? core.getSessionStore(id).store.getter(runAtom)?.turnId ?? currentTurnItems(id, core)[0]?.id ?? newId()
     if (core.getSessionStore(id).store.getter(runAtom) && !core.getSessionStore(id).store.getter(runAtom)?.turnId) patchRun(id, { turnId }, core)
-    const span = opts.traceSpan ?? getActiveSpan(traceKey) ?? startSpan('agent.turn', { kind: 'agent', attrs: { sessionId: id, runId, turnId, vendor: session.settings.vendor, model: session.settings.model, resumed: true } })
-    bindActiveSpan(traceKey, span)
+    const span = opts.traceSpan ?? observability.getActiveSpan(traceKey) ?? observability.startSpan('agent.turn', { kind: 'agent', attrs: { sessionId: id, runId, turnId, vendor: session.settings.vendor, model: session.settings.model, resumed: true } })
+    observability.bindActiveSpan(traceKey, span)
     const baseAttrs: TraceAttributes = { sessionId: id, runId, turnId }
     const trace: ToolLoopTrace = {
       span,
-      event: (name, attrs) => addEvent(name, { span, attrs: { ...baseAttrs, ...(attrs ?? {}) } }),
-      finish: (status, eventName, attrs, error) => { addEvent(eventName, { span, attrs: { ...baseAttrs, ...(attrs ?? {}) } }); endSpan(span, status, attrs, error); clearActiveSpan(traceKey, span) },
+      event: (name, attrs) => observability.addEvent(name, { span, attrs: { ...baseAttrs, ...(attrs ?? {}) } }),
+      finish: (status, eventName, attrs, error) => { observability.addEvent(eventName, { span, attrs: { ...baseAttrs, ...(attrs ?? {}) } }); observability.endSpan(span, status, attrs, error); observability.clearActiveSpan(traceKey, span) },
     }
     trace.event('agent.tool_epoch', {
       epoch_id: toolEpoch.epochId,

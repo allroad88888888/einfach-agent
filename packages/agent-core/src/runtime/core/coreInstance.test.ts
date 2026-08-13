@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createCoreInstance, defaultCore } from './coreInstance'
 import { createDelegationAssembly } from '@web-agent/subagents'
+import { createObservabilityPort, getDefaultObservabilityPort } from '../../observability/port'
 import { sessionsAtom, activeSessionIdAtom } from '../../state/rootAtoms'
 import type { Tool } from '../../tools/types'
 import type { SessionMeta } from '../../state/core.type'
@@ -112,6 +113,19 @@ describe('coreInstance —— CoreInstance 抽象与 defaultCore', () => {
       expect(signal2.aborted).toBe(false)
       a.abort.endRun('run1', signal2)
       expect(a.abort.isRunning('run1')).toBe(false)
+    })
+
+    it('观测 port 隔离：注入一个 CoreInstance 不影响另一个', () => {
+      const observability = createObservabilityPort()
+      const configuredCore = createCoreInstance({ observability })
+      const isolatedCore = createCoreInstance()
+      const span = observability.startSpan('test.port')
+
+      configuredCore.observability.bindActiveSpan('run-1', span)
+
+      expect(configuredCore.observability).toBe(observability)
+      expect(isolatedCore.observability).toBe(getDefaultObservabilityPort())
+      expect(isolatedCore.observability.getActiveSpan('run-1')).toBeUndefined()
     })
 
     it('delegation capability 隔离：同一 treeId 的预留节点不会串到另一 CoreInstance', () => {

@@ -228,7 +228,7 @@ export function buildToolContext(opts: {
       exclusivePathLock: true,
     } satisfies WorkspaceWriteInput)
 
-    const result = await writeWorkspaceFile(writeInput)
+    const result = await writeWorkspaceFile(writeInput, core.observability)
     assertArchiveCurrent()
     assertSubagentWriteSucceeded(result, input.path, mode)
     return result
@@ -338,6 +338,7 @@ export function buildToolContext(opts: {
         withChangeContext(
           withWorkspaceRoot(input as Parameters<typeof applyWorkspacePatch>[0]),
         ),
+        core.observability,
       )
       assertFresh()
       return result
@@ -351,6 +352,7 @@ export function buildToolContext(opts: {
         withChangeContext(
           withWorkspaceRoot(input as Parameters<typeof writeWorkspaceFile>[0]),
         ),
+        core.observability,
       )
       assertFresh()
       return result

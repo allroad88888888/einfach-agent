@@ -48,7 +48,7 @@
 //   tracePreview 由 runtime/shared/preview 提供，避免插件与 modelRun 形成反向依赖。
 
 import type { ModelToolCall } from '@web-agent/ai'
-import type { TraceAttributes } from '../../../observability/types'
+import type { TraceAttributes } from '../../../observability/port'
 import { parseToolCallArgs } from '../../modelTurn'
 import { tracePreview } from '../../shared/preview'
 import type { CoreCtx } from '../coreCtx'

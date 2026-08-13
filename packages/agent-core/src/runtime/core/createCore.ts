@@ -28,6 +28,7 @@ import type { ToolRegistry } from '../../tools/toolRegistry'
 import type { SkillsRegistry } from '../../skills/contracts'
 import type { PlanRuntimeFactory } from '../../planning/runtime'
 import type { DelegationRuntimeFactory } from '../delegationContract'
+import type { ObservabilityPort } from '../../observability/port'
 import { createCommands, type CommandApi } from '../commands'
 import { createPluginCommandFacade } from './pluginCommandFacade'
 import type { PluginInput } from './pluginHost'
@@ -40,6 +41,8 @@ import type { PluginInput } from './pluginHost'
 //   不会覆盖任何实例字段。想分开引用两半时解构返回值即可。
 export function createCore(opts?: {
   config?: Partial<RuntimeConfig>
+  /** 此隔离 Core 的观测出口；不传则沿用默认装配的静默 port。 */
+  observability?: ObservabilityPort
   // 登记反转（TS1）：把工具装进这个隔离实例的私有 registry；透传给 createCoreInstance。
   // 不传则该实例【无工具】——嵌入方按需 registerStandardTools(core.tools) 或装自定义工具集。
   registerTools?: (registry: ToolRegistry) => void

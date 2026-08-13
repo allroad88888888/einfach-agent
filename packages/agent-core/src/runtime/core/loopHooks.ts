@@ -12,7 +12,7 @@
 // 定义但不强制实现 —— assemblePlugins 会把每个槽按 fan-out 语义合成，loop 侧据「槽为 undefined」跳过。
 
 import { finishReasonExtensionFor, type ModelItem, type ModelResponseMessage } from '@web-agent/ai'
-import type { TraceAttributes } from '../../observability/types'
+import type { TraceAttributes } from '../../observability/port'
 import type { CompletedToolResult, ToolResultPatch } from '../toolResultPatch'
 import type { CoreCtx } from './coreCtx'
 
