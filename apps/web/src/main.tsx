@@ -159,7 +159,7 @@ function renderApp(target: StartupCredentialTargetResolution): void {
 }
 
 function renderTraceViewer(): void {
-  void import('@web-agent/core/observability/TraceViewer').then(({ TraceViewer }) => {
+  void import('./traceViewer/TraceViewer').then(({ TraceViewer }) => {
     renderRoot(<TraceViewer />)
   })
 }
