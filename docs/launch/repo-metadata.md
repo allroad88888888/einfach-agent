@@ -8,7 +8,7 @@
 
 > **命名已拍板**：统一 einfach 系——显示名 **Einfach Agent**，GitHub 仓库维持
 > `einfach-agent`，npm scope 未来走 einfach 系（发包时才实际改包名），详见
-> [推广发布 Issue 树](../promotion-issues.md) 的"未决"章节。本文档已按此定稿替换全部
+> 推广发布 issue 树（已完成，全文随 Git 历史归档） 的"未决"章节。本文档已按此定稿替换全部
 > `<项目名>` 占位与"待拍板"表述。
 
 ## 1. Description 候选
@@ -104,7 +104,7 @@ GitHub Draft Release，需要发布负责人手动复核后发布，完整步骤
 
 仓库所有内部包都是 `workspace:*` 私有包（`package.json` 标 `"private": true`），当前没有任何
 包发布到 npm registry 或 GitHub Packages，因此 About 侧栏的 Packages 区会自然保持空白，**同样
-不需要手动处理**。发包方案仍在起草（见 [推广发布 Issue 树](../promotion-issues.md) 的 E2
+不需要手动处理**。发包方案仍在起草（见 推广发布 issue 树（已完成，全文随 Git 历史归档） 的 E2
 "npm 发包方案蓝图"，状态 DOING），在该蓝图交付并真正执行首次 `npm publish` 之前，不要在 About
 区做任何 Packages 相关的手动配置或预告性文案。
 

@@ -5,7 +5,7 @@
 > 的目标形态，任何一条都不代表 API 已交付。真正按下发布键的动作由维护者手工执行。
 
 > **命名占位说明**：npm scope 取决于尚未拍板的"未决·命名"（见
-> [推广发布 Issue 树](../promotion-issues.md)），本文一律用 `<scope>` 占位，例如 `<scope>/core`。
+> 推广发布 issue 树（已完成，全文随 Git 历史归档）），本文一律用 `<scope>` 占位，例如 `<scope>/core`。
 > 现有包名前缀 `@web-agent/` 只是 workspace 内部标识，**不预设**它就是最终 npm scope。
 
 事实核对基准：[`vite.config.ts`](../../vite.config.ts)、[`tsconfig.app.json`](../../tsconfig.app.json)、
@@ -137,6 +137,6 @@ Node CLI 宿主靠 [`raw-module-loader.mjs`](../../apps/cli/src/raw-module-loade
 3. **G4（core 公开面收敛）** → 61 个深导入子路径全部公开意味着任何内部重构都是 breaking change，
    必须在 `0.1.0` 落地前决定哪些进白名单。这是本蓝图里工作量最大、也最应该先做的一项。
 
-前两项属于 [推广发布 Issue 树](../promotion-issues.md) 的"未决"章节，第三项建议单独开卡。
+前两项属于 推广发布 issue 树（已完成，全文随 Git 历史归档） 的"未决"章节，第三项建议单独开卡。
 另见 [GitHub 元信息文案草稿](repo-metadata.md) 关于 About 区 Packages 展示的说明——
 在首次 `npm publish` 真正发生前，不要在任何门面位置做预告性文案。
