@@ -117,7 +117,7 @@ describe('createSubagentModelSelection with an injected tier routing table', () 
     )
     expect(selection.routeDecision).toEqual({
       tier: 'pro',
-      reason: 'non_deepseek_provider_uses_parent_model',
+      reason: 'unrouted_provider_uses_parent_model',
     })
     expect(selection.settings.model).toBe(DEEPSEEK_TIER_ROUTING.models.flash)
   })

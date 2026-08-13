@@ -6,9 +6,17 @@ import type {
   SubagentTaskCategory,
 } from './types'
 
+/**
+ * 归档 `route_reason` 的稳定聚合标识。
+ *
+ * 前两项曾把厂商名写死在取值里，去专名化后语义不变、只换了措辞。归档读回侧
+ * （`@web-agent/subagents` 的 replay 与 CLI 复盘脚本）把该字段当不透明字符串透传，不做枚举
+ * 校验，所以老归档照常回放；旧值到新值的对照与回放夹具见
+ * `packages/subagents/src/archive/replayRouteReason.test.ts`，跨版本聚合时按该对照合并即可。
+ */
 export type SubagentRouteReason =
-  | 'non_deepseek_provider_uses_parent_model'
-  | 'custom_deepseek_model_uses_parent_model'
+  | 'unrouted_provider_uses_parent_model'
+  | 'custom_model_uses_parent_model'
   | 'unknown_parent_path_requires_pro'
   | 'prior_failure_requires_pro'
   | 'final_acceptance_requires_pro'
@@ -57,18 +65,17 @@ export interface SubagentRouteDecision {
 export function routeSubagentModel(features: SubagentRouteFeatures): SubagentRouteDecision {
   // Pro / Flash are routing policy lanes. A session whose vendor is not the one the injected tier
   // table serves stays on the conservative lane while retaining its configured parent model.
-  // reason 取值是持久化进归档 route_reason 的稳定聚合标识，措辞早于可注入档位表，故保持原样。
   if (
     features.vendor !== undefined
     && features.tierRoutingVendor !== undefined
     && features.vendor !== features.tierRoutingVendor
   ) {
-    return { tier: 'pro', reason: 'non_deepseek_provider_uses_parent_model' }
+    return { tier: 'pro', reason: 'unrouted_provider_uses_parent_model' }
   }
   // Private gateways and future custom model names are not assumed to implement the tier SKUs.
   // Preserve the configured model instead of silently substituting one.
   if (features.supportsTierRouting === false) {
-    return { tier: 'pro', reason: 'custom_deepseek_model_uses_parent_model' }
+    return { tier: 'pro', reason: 'custom_model_uses_parent_model' }
   }
   // parentPath 缺失或非法说明调用方丢失（或伪造）了树上下文，fail-closed 走 Pro。
   // 合法的嵌套 path（root-01 等）不再一律强制 Pro：Flash 资格只看任务特征，与深度无关

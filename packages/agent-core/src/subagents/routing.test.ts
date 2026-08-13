@@ -11,11 +11,11 @@ describe('routeSubagentModel', () => {
       riskLevel: 'low',
     })).toEqual({
       tier: 'pro',
-      reason: 'non_deepseek_provider_uses_parent_model',
+      reason: 'unrouted_provider_uses_parent_model',
     })
   })
 
-  it('preserves custom DeepSeek models instead of assuming official tier support', () => {
+  it('preserves out-of-table custom models instead of assuming tier support', () => {
     expect(routeSubagentModel({
       vendor: 'deepseek',
       tierRoutingVendor: 'deepseek',
@@ -25,7 +25,7 @@ describe('routeSubagentModel', () => {
       riskLevel: 'low',
     })).toEqual({
       tier: 'pro',
-      reason: 'custom_deepseek_model_uses_parent_model',
+      reason: 'custom_model_uses_parent_model',
     })
   })
 

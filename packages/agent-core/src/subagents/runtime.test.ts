@@ -131,14 +131,14 @@ function context(writes: Map<string, string>): DelegateAgentCallContext {
 function runtime(
   fetchImpl: typeof fetch,
   signal = new AbortController().signal,
-  deepseekUserId?: string,
+  modelUserId?: string,
 ) {
   return createDelegateAgentRuntime({
     sessionId: 'session',
     runId: `run-${Math.random()}`,
     settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' },
     runtimeIsTauri: true,
-    deepseekUserId,
+    modelUserId,
     apiKey: 'test-key',
     signal,
     fetchImpl,
@@ -610,13 +610,13 @@ describe('createDelegateAgentRuntime', () => {
     expect(result.children[0]).toMatchObject({
       status: 'done',
       modelTier: 'pro',
-      routeReason: 'custom_deepseek_model_uses_parent_model',
+      routeReason: 'custom_model_uses_parent_model',
       fallbackCount: 0,
     })
     expect(eventsTyped(writes, 'child_started')[0]?.data).toMatchObject({
       model: 'private-deepseek-gateway-model',
       modelTier: 'pro',
-      route_reason: 'custom_deepseek_model_uses_parent_model',
+      route_reason: 'custom_model_uses_parent_model',
     })
     expect(
       eventsTyped(writes, 'child_model_usage')
