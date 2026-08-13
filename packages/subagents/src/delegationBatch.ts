@@ -59,7 +59,13 @@ export function createDelegateAgents(runtime: DelegateAgentRuntimeState): Delega
     await runtime.archive.recordEvent(context, archiveBasePath, 'delegate_requested', parentPath, {
       children: input.children.map((child) => {
         const confirmedTools = child.confirmedTools ?? requestedConfirmedTools
-        const route = routeChildModel(runtime.opts.settings, parentPath, child, confirmedTools)
+        const route = routeChildModel({
+          primarySettings: runtime.opts.settings,
+          parentPath,
+          spec: child,
+          confirmedTools,
+          tierRouting: runtime.tierRouting,
+        })
         return {
           objective: child.objective,
           mode: child.mode,

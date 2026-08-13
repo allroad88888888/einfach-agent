@@ -76,6 +76,7 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
     parentPath: node.parentPath,
     spec,
     confirmedTools,
+    tierRouting: runtime.tierRouting,
   })
   const maxTurnTools = maxTurnToolsForVendor(modelSelection.settings.vendor)
   const allowedToolNames = [...subagentAllowedTools(toolProfile), ...confirmedTools]
@@ -152,6 +153,7 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
       parentPath: node.parentPath,
       spec,
       confirmedTools,
+      tierRouting: runtime.tierRouting,
     },
     signal: runtime.opts.signal,
     invoke: (settings) => callModel(

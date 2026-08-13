@@ -9,7 +9,7 @@ import {
   createChildModelCaller,
   firstAssistantText,
 } from '@web-agent/core/subagents/childModelClient'
-import { supportsDeepSeekTierRouting } from '@web-agent/core/subagents/modelSelection'
+import { supportsSubagentTierRouting } from '@web-agent/core/subagents/tierRouting'
 import { formatSubagentTranscript } from '@web-agent/core/runtime/subagentTranscript'
 import { SubagentArchiveIO } from './archive/archiveIO'
 import type { SubagentArchiveWriterContext } from './archive/archiveWriter'
@@ -93,7 +93,9 @@ export function createDelegateAgentRuntime(
 
   return {
     delegateAgents,
-    ...(supportsDeepSeekTierRouting(runtime.opts.settings) ? { runLowCostExtraction } : {}),
+    ...(supportsSubagentTierRouting(runtime.opts.settings, runtime.tierRouting)
+      ? { runLowCostExtraction }
+      : {}),
     retain: () => runtime.retain(),
     release: () => { void runtime.releaseOwner() },
     cancel: () => runtime.runtimeController.abort(),

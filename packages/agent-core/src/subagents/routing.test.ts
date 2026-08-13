@@ -5,6 +5,7 @@ describe('routeSubagentModel', () => {
   it('keeps other providers on the configured parent model policy lane', () => {
     expect(routeSubagentModel({
       vendor: 'glm',
+      tierRoutingVendor: 'deepseek',
       parentPath: 'root',
       taskCategory: 'retrieval',
       riskLevel: 'low',
@@ -17,7 +18,8 @@ describe('routeSubagentModel', () => {
   it('preserves custom DeepSeek models instead of assuming official tier support', () => {
     expect(routeSubagentModel({
       vendor: 'deepseek',
-      supportsDeepSeekTierRouting: false,
+      tierRoutingVendor: 'deepseek',
+      supportsTierRouting: false,
       parentPath: 'root',
       taskCategory: 'retrieval',
       riskLevel: 'low',

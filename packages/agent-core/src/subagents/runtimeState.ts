@@ -5,7 +5,9 @@ import type { ModelSettings } from '../state/core.type'
 import { toolRegistry } from '../tools/registry'
 import type { ToolRegistry } from '../tools/toolRegistry'
 import { createConcurrencyLimiter, type ConcurrencyLimiter } from './concurrency'
+import { DEFAULT_SUBAGENT_TIER_ROUTING } from './defaultTierRouting'
 import { ROOT_AGENT_PATH } from './path'
+import type { SubagentTierRouting } from './tierRouting'
 import type { DelegateAgentBatchResult, DelegateAgentInput, SubagentNodeRecord, SubagentToolProfile } from './types'
 import type {
   DelegationArchiveFormatPort,
@@ -120,6 +122,8 @@ export class DelegateAgentRuntimeState {
   readonly runtimeController: AbortController
   readonly abortFromOwner: () => void
   readonly migratedSettings: ModelSettings
+  /** 本运行时的档位路由表；注入点缺省时在这里兜一次 core 默认表，全流程只兜这一处。 */
+  readonly tierRouting: SubagentTierRouting
   readonly opts: CreateDelegateAgentRuntimeOptions
   readonly archive: SubagentArchivePort
   readonly archiveFormat: DelegationArchiveFormatPort
@@ -142,6 +146,7 @@ export class DelegateAgentRuntimeState {
     this.ownerSignal.addEventListener('abort', this.abortFromOwner, { once: true })
     if (this.ownerSignal.aborted) this.abortFromOwner()
     this.migratedSettings = normalizePrimaryAgentSettings(rawOpts.settings)
+    this.tierRouting = rawOpts.tierRouting ?? DEFAULT_SUBAGENT_TIER_ROUTING
     this.opts = {
       ...rawOpts,
       runtimeIsTauri: rawOpts.runtimeIsTauri === true,

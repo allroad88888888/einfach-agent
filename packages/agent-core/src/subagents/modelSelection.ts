@@ -1,20 +1,26 @@
-import {
-  DEEPSEEK_FLASH_MODEL,
-  DEEPSEEK_PRO_MODEL,
-  type ModelChatResponse,
-} from '@web-agent/ai'
+import type { ModelChatResponse } from '@web-agent/ai'
 import type { ModelSettings } from '../state/core.type'
 import {
   routeSubagentModel,
   type SubagentRouteDecision,
 } from './routing'
-import type { DelegateAgentChildSpec, SubagentModelTier } from './types'
+import {
+  applySubagentTier,
+  supportsSubagentTierRouting,
+  type SubagentTierRouting,
+} from './tierRouting'
+import type { DelegateAgentChildSpec } from './types'
 
 export interface SubagentModelSelectionInput {
   primarySettings: ModelSettings
   parentPath: string | undefined
   spec: DelegateAgentChildSpec
   confirmedTools: readonly string[]
+  /**
+   * 档位路由表，由装配层经 delegation ports 注入（默认表在 `defaultTierRouting.ts`）。
+   * 必填而不是可选：默认值只在运行时状态那一个入口兜一次，避免各调用点各自兜出不同的表。
+   */
+  tierRouting: SubagentTierRouting
 }
 
 export interface SubagentModelSelection {
@@ -42,23 +48,13 @@ interface CallSelectedSubagentModelArgs {
   onEscalated(escalation: SubagentModelEscalation): Promise<void>
 }
 
-export function supportsDeepSeekTierRouting(settings: ModelSettings): boolean {
-  // Pro/Flash routing only exists for these two official DeepSeek SKUs. Runtime also uses this
-  // predicate to gate low-cost extraction, so both paths retain one eligibility definition.
-  return settings.vendor === 'deepseek'
-    && (settings.model === DEEPSEEK_PRO_MODEL || settings.model === DEEPSEEK_FLASH_MODEL)
-}
-
-export function routeChildModel(
-  primarySettings: ModelSettings,
-  parentPath: string | undefined,
-  spec: DelegateAgentChildSpec,
-  confirmedTools: readonly string[],
-): SubagentRouteDecision {
+export function routeChildModel(input: SubagentModelSelectionInput): SubagentRouteDecision {
+  const { primarySettings, spec } = input
   return routeSubagentModel({
     vendor: primarySettings.vendor,
-    supportsDeepSeekTierRouting: supportsDeepSeekTierRouting(primarySettings),
-    parentPath,
+    tierRoutingVendor: input.tierRouting.vendor,
+    supportsTierRouting: supportsSubagentTierRouting(primarySettings, input.tierRouting),
+    parentPath: input.parentPath,
     requestedTier: spec.modelTier,
     taskCategory: spec.taskCategory,
     riskLevel: spec.riskLevel,
@@ -67,34 +63,18 @@ export function routeChildModel(
     finalAcceptance: spec.finalAcceptance,
     priorFailureCount: spec.priorFailureCount,
     mode: spec.mode,
-    confirmedToolCount: confirmedTools.length,
+    confirmedToolCount: input.confirmedTools.length,
   })
 }
 
 export function createSubagentModelSelection(
   input: SubagentModelSelectionInput,
 ): SubagentModelSelection {
-  const routeDecision = routeChildModel(
-    input.primarySettings,
-    input.parentPath,
-    input.spec,
-    input.confirmedTools,
-  )
+  const routeDecision = routeChildModel(input)
   return {
     routeDecision,
-    settings: childModelSettings(input.primarySettings, routeDecision.tier),
+    settings: applySubagentTier(input.primarySettings, routeDecision.tier, input.tierRouting),
     fallbackCount: 0,
-  }
-}
-
-function childModelSettings(
-  primarySettings: ModelSettings,
-  tier: SubagentModelTier,
-): ModelSettings {
-  if (!supportsDeepSeekTierRouting(primarySettings)) return primarySettings
-  return {
-    ...primarySettings,
-    model: tier === 'flash' ? DEEPSEEK_FLASH_MODEL : DEEPSEEK_PRO_MODEL,
   }
 }
 
@@ -133,16 +113,18 @@ function escalateSelection(
   const fromRoute = selection.routeDecision
   const fromModel = selection.settings.model
   selection.fallbackCount = 1
-  selection.routeDecision = routeChildModel(
-    input.primarySettings,
-    input.parentPath,
-    {
+  selection.routeDecision = routeChildModel({
+    ...input,
+    spec: {
       ...input.spec,
       priorFailureCount: Math.max(1, (input.spec.priorFailureCount ?? 0) + 1),
     },
-    input.confirmedTools,
+  })
+  selection.settings = applySubagentTier(
+    input.primarySettings,
+    selection.routeDecision.tier,
+    input.tierRouting,
   )
-  selection.settings = childModelSettings(input.primarySettings, selection.routeDecision.tier)
   return {
     fromRoute,
     fromModel,

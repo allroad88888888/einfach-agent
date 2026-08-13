@@ -1,5 +1,6 @@
 import type { ModelItem } from '@web-agent/ai'
 import type { SubagentScheduler } from '../runtime/delegationContract'
+import type { SubagentTierRouting } from './tierRouting'
 import type {
   DelegateAgentBatchResult,
   DelegateAgentCallContext,
@@ -76,4 +77,9 @@ export interface DelegationRuntimePorts {
   scheduler: SubagentScheduler
   archive: SubagentArchivePort
   archiveFormat: DelegationArchiveFormatPort
+  /**
+   * 子 agent 档位路由表（Pro/Flash 抽象档位 → 具体 vendor+模型）。
+   * 省略时用 core 内暂存的默认表；装配层接管默认表后（M6b）由这里传入。
+   */
+  tierRouting?: SubagentTierRouting
 }
