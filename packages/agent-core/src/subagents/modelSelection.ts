@@ -17,8 +17,8 @@ export interface SubagentModelSelectionInput {
   spec: DelegateAgentChildSpec
   confirmedTools: readonly string[]
   /**
-   * 档位路由表，由装配层经 delegation ports 注入（默认表在 `defaultTierRouting.ts`）。
-   * 必填而不是可选：默认值只在运行时状态那一个入口兜一次，避免各调用点各自兜出不同的表。
+   * 档位路由表，由装配层经 delegation ports 注入（默认表在
+   * `packages/subagents/src/defaultTierRouting.ts`）。core 不持有默认值。
    */
   tierRouting: SubagentTierRouting
 }

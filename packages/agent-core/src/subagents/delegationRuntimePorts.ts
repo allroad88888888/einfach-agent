@@ -79,7 +79,11 @@ export interface DelegationRuntimePorts {
   archiveFormat: DelegationArchiveFormatPort
   /**
    * 子 agent 档位路由表（Pro/Flash 抽象档位 → 具体 vendor+模型）。
-   * 省略时用 core 内暂存的默认表；装配层接管默认表后（M6b）由这里传入。
+   * 必填，与其余三个端口同风格：这张表的默认取值本身就是厂商决策（用哪家、哪个模型号），
+   * 不属于 core 该固化的东西，因此不像其余可选字段那样在 core 内兜一个默认值——
+   * core 没有"中立"的默认档位表可言，缺省注入就是装配错误，让 TypeScript 在编译期拦下，
+   * 而不是在运行时悄悄退回一张只对某家 vendor 有意义的表。装配层默认表见
+   * `packages/subagents/src/defaultTierRouting.ts`。
    */
-  tierRouting?: SubagentTierRouting
+  tierRouting: SubagentTierRouting
 }

@@ -1,4 +1,3 @@
-import { DEEPSEEK_FLASH_MODEL } from '@web-agent/ai'
 import type {
   DelegationRuntime,
   DelegationRuntimeInput,
@@ -9,11 +8,17 @@ import {
   createChildModelCaller,
   firstAssistantText,
 } from '@web-agent/core/subagents/childModelClient'
-import { supportsSubagentTierRouting } from '@web-agent/core/subagents/tierRouting'
+import {
+  subagentTierTarget,
+  supportsSubagentTierRouting,
+  type SubagentTierRouting,
+} from '@web-agent/core/subagents/tierRouting'
 import { formatSubagentTranscript } from '@web-agent/core/runtime/subagentTranscript'
+import type { ModelSettings } from '@web-agent/core/state/core.type'
 import { SubagentArchiveIO } from './archive/archiveIO'
 import type { SubagentArchiveWriterContext } from './archive/archiveWriter'
 import { subagentResultPath } from './archive/skillCache'
+import { DEFAULT_SUBAGENT_TIER_ROUTING } from './defaultTierRouting'
 import { DelegateAgentRuntimeState } from '@web-agent/core/subagents/runtimeState'
 import { createDelegateAgents } from './delegationBatch'
 import { createSubagentScheduler } from './schedulerState'
@@ -21,10 +26,21 @@ import { createSubagentScheduler } from './schedulerState'
 export type CreateDelegateAgentRuntimeOptions = DelegationRuntimeInput & {
   /** Standalone callers receive an isolated scheduler; assemblies pass their shared one. */
   scheduler?: SubagentScheduler
+  /** Overrides the shipped default Pro/Flash routing table (tests only; hosts get the default). */
+  tierRouting?: SubagentTierRouting
 }
 
 function archiveWriterContext(core: object | undefined): SubagentArchiveWriterContext {
   return { queueKey: core ?? {}, traceRecorder: { recordCompletedSpan } }
+}
+
+// 低价抽取请求：固定 temperature 0、关闭 thinking，只换模型。Kimi 的会话类型不携带
+// temperature/max_tokens（K2.6 用固定采样参数，core 故意不透传），先按 vendor 分支排除它，
+// 再展开 `primary`——展开一个已经窄化到具体成员的 ModelSettings 才会按该成员的字段集合
+// 类型检查；直接拼一个 `{ vendor: 联合类型, ... }` 字面量不会窄化到任何一个具体成员。
+function lowCostExtractionSettings(primary: ModelSettings, model: string, maxTokens: number): ModelSettings {
+  if (primary.vendor === 'kimi') return { ...primary, model, thinking: false }
+  return { ...primary, model, temperature: 0, thinking: false, max_tokens: maxTokens }
 }
 
 /** Creates the public delegate-agent runtime and owns its retain/release lifecycle. */
@@ -35,6 +51,7 @@ export function createDelegateAgentRuntime(
   const runtime = new DelegateAgentRuntimeState({
     ...rawOpts,
     scheduler,
+    tierRouting: rawOpts.tierRouting ?? DEFAULT_SUBAGENT_TIER_ROUTING,
     archive: new SubagentArchiveIO({
       writerContext: archiveWriterContext(rawOpts.core),
       sessionId: rawOpts.sessionId,
@@ -65,6 +82,8 @@ export function createDelegateAgentRuntime(
     const requestedMaxTokens = Number.isFinite(input.maxOutputTokens)
       ? Math.floor(input.maxOutputTokens!)
       : 1_200
+    // 模型来自注入的档位表而非字面量。
+    const target = subagentTierTarget(runtime.tierRouting, 'flash')
     const response = await callModel(
       runtime.lowCostExtractionState ??= runtime.createDelegationCallState(),
       {
@@ -74,21 +93,16 @@ export function createDelegateAgentRuntime(
         ],
         tools: [],
         toolChoice: 'none',
-        settings: {
-          vendor: 'deepseek',
-          model: DEEPSEEK_FLASH_MODEL,
-          temperature: 0,
-          thinking: false,
-          max_tokens: Math.max(256, Math.min(requestedMaxTokens, 2_000)),
-          ...(runtime.opts.settings.vendor === 'deepseek'
-            ? { reasoning_effort: runtime.opts.settings.reasoning_effort }
-            : {}),
-        },
+        settings: lowCostExtractionSettings(
+          runtime.opts.settings,
+          target.model,
+          Math.max(256, Math.min(requestedMaxTokens, 2_000)),
+        ),
       },
     )
     const content = firstAssistantText(response)
     if (!content) throw new Error('low-cost extraction returned no text')
-    return { content, model: DEEPSEEK_FLASH_MODEL }
+    return { content, model: target.model }
   }
 
   return {

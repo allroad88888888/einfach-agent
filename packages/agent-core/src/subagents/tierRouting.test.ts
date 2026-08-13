@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import type { ModelSettings } from '../state/core.type'
-import { DEFAULT_SUBAGENT_TIER_ROUTING } from './defaultTierRouting'
 import { createSubagentModelSelection, type SubagentModelSelection } from './modelSelection'
 import { ROOT_AGENT_PATH } from './path'
 import {
@@ -11,8 +10,13 @@ import {
 } from './tierRouting'
 import type { DelegateAgentChildSpec } from './types'
 
-// 一张与默认表不同 vendor 的档位表：用来证明档位路由确实由注入决定，
-// 而不是换了个写法的 DeepSeek 专用逻辑。
+// core 不再持有任何默认档位表（那是装配层决策，见 packages/subagents/src/defaultTierRouting.ts）；
+// 这两张表只是测试夹具，用来证明契约函数只认注入的表，不认任何厂商专属逻辑。
+const DEEPSEEK_TIER_ROUTING: SubagentTierRouting = {
+  vendor: 'deepseek',
+  models: { pro: 'deepseek-tier-pro', flash: 'deepseek-tier-flash' },
+}
+
 const GLM_TIER_ROUTING: SubagentTierRouting = {
   vendor: 'glm',
   models: { pro: 'glm-tier-pro', flash: 'glm-tier-flash' },
@@ -47,16 +51,16 @@ function select(
 describe('supportsSubagentTierRouting', () => {
   it('accepts only the exact vendor and models listed in the injected table', () => {
     expect(supportsSubagentTierRouting(
-      { vendor: 'deepseek', model: DEFAULT_SUBAGENT_TIER_ROUTING.models.flash },
-      DEFAULT_SUBAGENT_TIER_ROUTING,
+      { vendor: 'deepseek', model: DEEPSEEK_TIER_ROUTING.models.flash },
+      DEEPSEEK_TIER_ROUTING,
     )).toBe(true)
     expect(supportsSubagentTierRouting(
       { vendor: 'deepseek', model: 'private-deepseek-gateway-model' },
-      DEFAULT_SUBAGENT_TIER_ROUTING,
+      DEEPSEEK_TIER_ROUTING,
     )).toBe(false)
     expect(supportsSubagentTierRouting(
       { vendor: 'glm', model: 'glm-tier-flash' },
-      DEFAULT_SUBAGENT_TIER_ROUTING,
+      DEEPSEEK_TIER_ROUTING,
     )).toBe(false)
     expect(supportsSubagentTierRouting(
       { vendor: 'glm', model: 'glm-tier-flash' },
@@ -76,19 +80,19 @@ describe('applySubagentTier', () => {
   it('swaps only the model and keeps every other session parameter', () => {
     const settings: ModelSettings = {
       vendor: 'deepseek',
-      model: DEFAULT_SUBAGENT_TIER_ROUTING.models.pro,
+      model: DEEPSEEK_TIER_ROUTING.models.pro,
       thinking: true,
     }
-    expect(applySubagentTier(settings, 'flash', DEFAULT_SUBAGENT_TIER_ROUTING)).toEqual({
+    expect(applySubagentTier(settings, 'flash', DEEPSEEK_TIER_ROUTING)).toEqual({
       vendor: 'deepseek',
-      model: DEFAULT_SUBAGENT_TIER_ROUTING.models.flash,
+      model: DEEPSEEK_TIER_ROUTING.models.flash,
       thinking: true,
     })
   })
 
   it('returns the parent settings untouched when they are outside the table', () => {
     const settings: ModelSettings = { vendor: 'deepseek', model: 'private-deepseek-gateway-model' }
-    expect(applySubagentTier(settings, 'flash', DEFAULT_SUBAGENT_TIER_ROUTING)).toBe(settings)
+    expect(applySubagentTier(settings, 'flash', DEEPSEEK_TIER_ROUTING)).toBe(settings)
   })
 })
 
@@ -107,7 +111,7 @@ describe('createSubagentModelSelection with an injected tier routing table', () 
 
   it('leaves a session whose vendor the table does not serve on its parent model', () => {
     const selection = select(
-      { vendor: 'deepseek', model: DEFAULT_SUBAGENT_TIER_ROUTING.models.flash },
+      { vendor: 'deepseek', model: DEEPSEEK_TIER_ROUTING.models.flash },
       LOW_RISK_RETRIEVAL,
       GLM_TIER_ROUTING,
     )
@@ -115,16 +119,16 @@ describe('createSubagentModelSelection with an injected tier routing table', () 
       tier: 'pro',
       reason: 'non_deepseek_provider_uses_parent_model',
     })
-    expect(selection.settings.model).toBe(DEFAULT_SUBAGENT_TIER_ROUTING.models.flash)
+    expect(selection.settings.model).toBe(DEEPSEEK_TIER_ROUTING.models.flash)
   })
 
-  it('preserves the shipped default routing for a DeepSeek session', () => {
+  it('routes correctly for an injected DeepSeek-vendor table', () => {
     const selection = select(
-      { vendor: 'deepseek', model: DEFAULT_SUBAGENT_TIER_ROUTING.models.pro },
+      { vendor: 'deepseek', model: DEEPSEEK_TIER_ROUTING.models.pro },
       LOW_RISK_RETRIEVAL,
-      DEFAULT_SUBAGENT_TIER_ROUTING,
+      DEEPSEEK_TIER_ROUTING,
     )
     expect(selection.routeDecision).toEqual({ tier: 'flash', reason: 'low_risk_retrieval_uses_flash' })
-    expect(selection.settings.model).toBe(DEFAULT_SUBAGENT_TIER_ROUTING.models.flash)
+    expect(selection.settings.model).toBe(DEEPSEEK_TIER_ROUTING.models.flash)
   })
 })
