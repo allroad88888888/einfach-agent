@@ -9,15 +9,7 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
-    "./archive/archiveCapacity": "./src/archive/archiveCapacity.ts",
-    "./archive/archiveIO": "./src/archive/archiveIO.ts",
-    "./archive/archiveWriter": "./src/archive/archiveWriter.ts",
-    "./archive/distill": "./src/archive/distill.ts",
-    "./archive/jsonl": "./src/archive/jsonl.ts",
     "./archive/replay": "./src/archive/replay.ts",
-    "./archive/skillCache": "./src/archive/skillCache.ts",
-    "./state/subagentViewAtoms": "./src/state/subagentViewAtoms.ts",
-    "./state/subagentSkillGovernanceAtoms": "./src/state/subagentSkillGovernanceAtoms.ts",
     "./package.json": "./package.json"
   },
   "dependencies": {
