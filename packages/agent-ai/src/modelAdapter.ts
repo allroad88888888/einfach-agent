@@ -1,12 +1,11 @@
-// 运行时模型路由：把通用请求投影为 provider adapter 的特化请求。
+// 运行时模型路由：把通用请求经 provider registry 分发给对应 adapter。
+// ---------------------------------------------------------------------------
+// 这里不再有按 vendor 的 if 链，也不认识任何厂商私有字段：vendorId 交给
+// defaultProviderRegistry 解析，请求投影由各家 adapter 自己做（见 ./builtinProviders）。
 
-import {
-  callDeepSeek,
-  streamDeepSeek,
-  type DeepSeekReasoningEffort,
-} from './deepseek'
-import { callGlm, streamGlm, type GlmReasoningEffort } from './glm'
-import { callKimi, streamKimi } from './kimi'
+import { defaultProviderRegistry } from './builtinProviders'
+import type { DeepSeekReasoningEffort } from './deepseek'
+import type { GlmReasoningEffort } from './glm'
 import type { KimiRegion } from './kimiRegion'
 import type {
   ChatCallOptions,
@@ -15,6 +14,7 @@ import type {
   ModelChatResponse,
   ModelRetryObserver,
 } from './modelApi'
+import type { ProviderAdapter, ProviderRequest } from './providerRegistry'
 
 export type ModelAdapterSettings =
   | { vendor: 'deepseek'; reasoning_effort?: DeepSeekReasoningEffort }
@@ -32,25 +32,30 @@ export type ModelStreamSettings = ModelAdapterSettings
 /** @deprecated Prefer ModelRequest for requests that may be non-streaming. */
 export type ModelStreamRequest = ModelRequest
 
+interface DispatchedRequest {
+  adapter: ProviderAdapter
+  request: ProviderRequest<ModelAdapterSettings>
+}
+
+// 简介：解析 vendorId 并拆出 provider-neutral 请求体。
+// 详情：settings/userId 从线协议请求体里剥离，只作为 adapter 的投影输入；未注册的
+// vendorId 由 registry 回退到 DeepSeek，只有连回退目标都被取消注册才会抛错。
+function dispatch(request: ModelRequest): DispatchedRequest {
+  const { settings, userId, ...body } = request
+  const adapter = defaultProviderRegistry.resolve(settings.vendor)
+  if (adapter === undefined) {
+    throw new Error(`No provider adapter registered for vendor ${settings.vendor}.`)
+  }
+  return { adapter, request: { body, settings, userId } }
+}
+
 /** Calls a generic runtime request through its provider adapter. */
 export function callModel(
   request: ModelRequest,
   options: ChatCallOptions,
 ): Promise<ModelChatResponse> {
-  const { settings, userId, ...body } = request
-  if (settings.vendor === 'glm') {
-    return callGlm({ ...body, reasoning_effort: settings.reasoning_effort }, options)
-  }
-  if (settings.vendor === 'kimi') {
-    return callKimi({
-      ...body,
-      region: settings.region,
-    }, options)
-  }
-  return callDeepSeek(
-    { ...body, reasoning_effort: settings.reasoning_effort, user_id: userId },
-    options,
-  )
+  const dispatched = dispatch(request)
+  return dispatched.adapter.call(dispatched.request, options)
 }
 
 /** Streams a generic runtime request through its provider adapter. */
@@ -60,21 +65,6 @@ export function streamModel(
   handlers?: ChatStreamHandlers,
   retryObserver?: ModelRetryObserver,
 ): Promise<ModelChatResponse> {
-  const { settings, userId, ...body } = request
-  if (settings.vendor === 'glm') {
-    return streamGlm({ ...body, reasoning_effort: settings.reasoning_effort }, options, handlers)
-  }
-  if (settings.vendor === 'kimi') {
-    return streamKimi(
-      { ...body, region: settings.region },
-      options,
-      handlers,
-    )
-  }
-  return streamDeepSeek(
-    { ...body, reasoning_effort: settings.reasoning_effort, user_id: userId },
-    options,
-    handlers,
-    retryObserver,
-  )
+  const dispatched = dispatch(request)
+  return dispatched.adapter.stream(dispatched.request, options, handlers, retryObserver)
 }
