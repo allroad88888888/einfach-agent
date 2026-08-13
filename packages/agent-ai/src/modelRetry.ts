@@ -77,6 +77,7 @@ export function readHeader(response: Response, name: string): string | null {
 }
 
 const MAX_HTTP_ERROR_MESSAGE_LENGTH = 240
+const SAFE_PROVIDER_ERROR_VALUE = /^[A-Za-z0-9][A-Za-z0-9_.:[\]-]{0,95}$/
 
 function httpErrorCategory(status: number): string {
   if (status === 400 || status === 422) return 'invalid_request'
@@ -98,12 +99,40 @@ function safeRequestId(response: Response): string | undefined {
   return /(?:bearer|api[-_]?key|ms:|sk-)/i.test(value) ? undefined : value
 }
 
-function summarizeHttpError(response: Response): string {
+function safeProviderErrorValue(value: unknown): string | undefined {
+  if (typeof value !== 'string' || !SAFE_PROVIDER_ERROR_VALUE.test(value)) return undefined
+  return /(?:bearer|api[-_]?key|authorization|ms:|sk-)/i.test(value) ? undefined : value
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+async function safeProviderErrorFields(response: Response): Promise<string[]> {
+  try {
+    const payload: unknown = await response.clone().json()
+    if (!isRecord(payload) || !isRecord(payload.error)) return []
+    const fields: string[] = []
+    const type = safeProviderErrorValue(payload.error.type)
+    const code = safeProviderErrorValue(payload.error.code)
+    const param = safeProviderErrorValue(payload.error.param)
+    if (type) fields.push(`provider_type=${type}`)
+    if (code) fields.push(`provider_code=${code}`)
+    if (param) fields.push(`param=${param}`)
+    return fields
+  } catch {
+    // Error bodies are untrusted. Only structured, short identifiers are retained.
+    return []
+  }
+}
+
+async function summarizeHttpError(response: Response): Promise<string> {
   const requestId = safeRequestId(response)
   const fields = [httpErrorCategory(response.status)]
   if (requestId) fields.push(`request_id=${requestId}`)
+  fields.push(...await safeProviderErrorFields(response))
   // Keep the historical status prefix: Core uses it to avoid escalating deterministic 4xx
-  // failures to a different model. Everything after the status is constructed locally.
+  // failures to a different model. Provider bodies contribute only validated identifiers.
   return `Chat completion returned ${response.status} (${fields.join(', ')}).`
     .slice(0, MAX_HTTP_ERROR_MESSAGE_LENGTH)
 }
@@ -196,7 +225,7 @@ export async function requestOnce(
   }
 
   if (response.ok) return response
-  const message = summarizeHttpError(response)
+  const message = await summarizeHttpError(response)
   await discardResponseBody(response)
   if (response.status === 429 || response.status >= 500) {
     throw new RetriableError(message, {

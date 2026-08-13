@@ -25,6 +25,7 @@ import {
   toErrorMessage,
 } from './runtimeState'
 import { modelReasoningEffort, modelSamplingSettings } from '../runtime/modelSettingsProjection'
+import { projectTimedToolResultOrphans } from '../runtime/timedToolResultProjection'
 
 const CHILD_CONTEXT_TARGET_TOKENS = 60_000
 
@@ -92,11 +93,11 @@ export function createChildModelCaller(runtime: DelegateAgentRuntimeState): Chil
           runtime.reserveModelCall(state, modelCallLimit)
           return callModel({
             model: settings.model,
-            messages: buildContextDistillationMessages([], projection.messages),
+            messages: projectTimedToolResultOrphans(
+              buildContextDistillationMessages([], projection.messages),
+            ),
             ...(settings.vendor === 'kimi' ? {} : { temperature: 0 }),
             max_tokens: CONTEXT_DISTILLATION_MAX_TOKENS,
-            tools: [],
-            tool_choice: 'none',
             stream: false,
             settings,
             userId: runtime.opts.deepseekUserId,

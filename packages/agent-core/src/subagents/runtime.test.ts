@@ -2353,14 +2353,15 @@ describe('createDelegateAgentRuntime', () => {
     const runChildTool = vi.fn(async () => ({ ok: true as const, data: { content: hugeFileBody } }))
     const fetchImpl: typeof fetch = async (_url, init) => {
       const body = requestBody(init)
-      if (body.tool_choice === 'none') {
+      if (isContextDistillationRequest(body)) {
         distillBodies.push(body)
-        if (isContextDistillationRequest(body)) {
-          return response({ content: JSON.stringify({ summary: '树形子 agent root-01。The huge file was read; continue the requested analysis.' }) })
-        }
-        return response({ content: '# skill' })
+        return response({ content: JSON.stringify({ summary: '树形子 agent root-01。The huge file was read; continue the requested analysis.' }) })
       }
       const path = childPath(body)
+      if (!path) {
+        distillBodies.push(body)
+        return response({ content: '# skill' })
+      }
       if (path === 'root-01') {
         parentTurns += 1
         if (parentTurns === 1) return namedToolCall('read-huge', 'read_file', { path: 'src/huge.ts' })

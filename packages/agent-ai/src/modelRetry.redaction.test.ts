@@ -92,6 +92,31 @@ describe('HTTP upstream error redaction', () => {
     expectSecretsRedacted((thrown as Error).message)
   })
 
+  it('retains only validated structured provider diagnostics', async () => {
+    const response = new Response(JSON.stringify({
+      error: {
+        type: 'invalid_request_error',
+        code: 'invalid_parameter',
+        param: 'tool_choice',
+        message: 'Bearer sk-upstream-secret must never be exposed',
+      },
+    }), { status: 400, headers: { 'Content-Type': 'application/json' } })
+
+    let thrown: unknown
+    try {
+      await requestOnce(async () => response, 'unused', {})
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toBeInstanceOf(Error)
+    const message = (thrown as Error).message
+    expect(message).toContain('provider_type=invalid_request_error')
+    expect(message).toContain('provider_code=invalid_parameter')
+    expect(message).toContain('param=tool_choice')
+    expectSecretsRedacted(message)
+  })
+
   it('replaces thrown transport details in retry observers and final errors', async () => {
     const secret = 'Bearer sk-network-secret ms://private-network-reference'
     const observed: unknown[] = []

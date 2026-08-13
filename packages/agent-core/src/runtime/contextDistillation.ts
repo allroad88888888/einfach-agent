@@ -5,6 +5,7 @@ import { estimateItemsTokens, estimateTokensFromText } from './contextCompaction
 import { buildContextDistillationMessages, CONTEXT_DISTILLATION_MAX_TOKENS } from './contextDistillationPrompt'
 import { parseContextDistillationResponse } from './contextDistillationResult'
 import { stringForStats } from './shared/preview'
+import { projectTimedToolResultOrphans } from './timedToolResultProjection'
 
 export interface ContextDistillationInput {
   stablePrefix: readonly ModelItem[]
@@ -30,13 +31,16 @@ export function contextNeedsDistillation(
 export async function createContextCheckpoint(
   input: ContextDistillationInput,
 ): Promise<ContextCheckpoint> {
+  // timed tool 结果只持久化为 role:'tool'，常规模型请求会在发送前补配对 assistant。
+  // 摘要请求必须应用相同投影，否则 OpenAI-compatible 接口会把历史中的孤儿 tool 消息拒为 400。
+  const messages = projectTimedToolResultOrphans(
+    buildContextDistillationMessages(input.stablePrefix, input.transcript),
+  )
   const response = await callModel({
     model: input.settings.model,
-    messages: buildContextDistillationMessages(input.stablePrefix, input.transcript),
+    messages,
     ...(input.settings.vendor === 'kimi' ? {} : { temperature: 0 }),
     max_tokens: CONTEXT_DISTILLATION_MAX_TOKENS,
-    tools: [],
-    tool_choice: 'none',
     stream: false,
     settings: input.settings,
     userId: input.userId,
