@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { hostTauriBridgeMock } from './hostTauri.testHarness'
 
+// isTauri 分量已死：nothing 再从 '@tauri-apps/api/core' 读它（D8）。invoke 分量仍在用——
+// tauri.invoke 被下面的 './hostTauri' 桥 mock 直接引用，也被本文件的断言直接检查。
 const tauri = vi.hoisted(() => ({
   invoke: vi.fn(),
-  isTauri: vi.fn(() => true),
 }))
 
 vi.mock('@tauri-apps/api/core', () => tauri)
@@ -12,10 +14,7 @@ vi.mock('@tauri-apps/api/core', () => tauri)
 // isTauriHost 恒真、loadTauriInvoke 仍然吐同一个 tauri.invoke，既有用例的断言一字不动照旧成立。
 // 本文件末尾「rg 桥」用例会 vi.resetModules() 后重新 import('./workspaceRg')——mock 注册本身
 // 不受 resetModules 影响，重新 import 时仍会命中这份 hostTauri mock。
-vi.mock('./hostTauri', () => ({
-  isTauriHost: () => true,
-  loadTauriInvoke: async () => tauri.invoke,
-}))
+vi.mock('./hostTauri', () => hostTauriBridgeMock(async () => tauri.invoke))
 
 import {
   listWorkspaceFiles,
@@ -26,7 +25,6 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  tauri.isTauri.mockReturnValue(true)
 })
 
 describe('readWorkspaceRunIndexPage', () => {

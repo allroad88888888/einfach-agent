@@ -13,30 +13,16 @@ import { runSession } from './modelRun'
 import { createCoreInstance } from './core/coreInstance'
 import { buildSkillManifestText, registerStandardTools } from '@web-agent/tools'
 import { resetModelRunTestState, seedSession, jsonResponse } from './modelRun.testHarness'
+import { stubTauriHostFlag } from './hostTauri.testHarness'
 
-const tauriControl = vi.hoisted(() => ({ enabled: false }))
-vi.mock('@tauri-apps/api/core', async () => {
-  const actual = await vi.importActual<typeof import('@tauri-apps/api/core')>('@tauri-apps/api/core')
-  return {
-    ...actual,
-    isTauri: () => tauriControl.enabled,
-  }
-})
-
-// D2（hostTauri 脱钩）后，modelTurnPrefix.ts 的工具发现改读 isTauriHost()，它绕开上面这层
-// 模块 mock、直接读 globalThis.isTauri（见 runtime/hostTauri.ts）。本文件模拟「在 Tauri 里」
-// 时必须把两个开关一起切，否则 shell_macos/server 工具在稳定前缀里仍按非 Tauri 环境隐藏。
-type GlobalWithIsTauri = typeof globalThis & { isTauri?: boolean }
-const globalWithIsTauri = globalThis as GlobalWithIsTauri
-
-function setTauriEnabled(enabled: boolean): void {
-  tauriControl.enabled = enabled
-  globalWithIsTauri.isTauri = enabled
-}
+// modelTurnPrefix.ts 的工具发现读 isTauriHost()，直接读 globalThis.isTauri（见
+// runtime/hostTauri.ts），不经过 '@tauri-apps/api/core' 的 isTauri 导出——本文件曾经维护的
+// vi.mock('@tauri-apps/api/core', { isTauri: ... }) 分量已随 D2 迁移失效，随本卡（D8）删除，
+// 改用共享 helper 只切 globalThis.isTauri 这一个开关。
 
 afterEach(() => {
   resetModelRunTestState()
-  setTauriEnabled(false)
+  stubTauriHostFlag(false)
 })
 
 describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造', () => {
@@ -168,7 +154,7 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
   })
 
   it('Tauri 首轮请求能发现 shell_macos，但未加载前仍不把它作为可调用 function 暴露', async () => {
-    setTauriEnabled(true)
+    stubTauriHostFlag(true)
     seedSession('inject-tauri-tools', { vendor: 'deepseek', model: 'm' })
     let captured: Record<string, unknown> = {}
     const fetchImpl: typeof fetch = (_url, init) => {
@@ -248,7 +234,7 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
     // 回归用例。缺这一段时的实测事故：DeepSeek 首轮直接对
     // /Users/<某人>/develop/android/... 发 read_file，报 WORKSPACE_READ_FAILED，
     // 模型是从错误文案里才第一次看到真实根目录，白烧三轮。
-    setTauriEnabled(true)
+    stubTauriHostFlag(true)
     const core = createCoreInstance()
     const id = 'env-workspace'
     core.rootStore.setter(workspacesAtom, {

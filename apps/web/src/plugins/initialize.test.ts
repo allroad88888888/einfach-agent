@@ -9,6 +9,7 @@
 // 复用项目 skills 那条 Rust 通路正是本卡的做法，接错了这里就看不到 list_workspace_files。
 
 import type { SessionMeta, WorkspaceMeta } from '@web-agent/core'
+import { stubTauriHostFlag } from '@web-agent/core/runtime/hostTauri.testHarness'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 // 与真实模块一致的默认表现：isTauri() 答 false、invoke 不被意外调用。
@@ -23,14 +24,15 @@ vi.mock('@tauri-apps/api/core', () => ({
 // （initialize.ts 里的 isTauri()）仍走上面的 mock，两层各读各的，所以 freshHost 必须把
 // 两个开关一起切，否则「Tauri 宿主」用例里 initialize.ts 判定为桌面、但 provider 内部的
 // workspace 文件桥仍判定为浏览器，扫不到任何插件目录。
-type GlobalWithIsTauri = typeof globalThis & { isTauri?: boolean }
-const globalWithIsTauri = globalThis as GlobalWithIsTauri
-const hadIsTauriProperty = Object.prototype.hasOwnProperty.call(globalThis, 'isTauri')
-const originalIsTauriValue = globalWithIsTauri.isTauri
+//
+// globalThis.isTauri 这半个开关改用共享 helper（D8）：freshHost 运行期才知道要 stub 成什么值
+// （每个用例传不同的 tauriHost），所以不能用 stubTauriHostFlag 的"收集阶段便捷式"（不存在这种
+// 便捷式——afterEach 必须在收集阶段注册），而是把每次 stub 返回的 restore 存进这个可变引用，
+// 由下面这个模块顶层（收集阶段注册）的静态 afterEach 统一调用。
+let restoreTauriHostFlag: () => void = () => {}
 
 afterEach(() => {
-  if (hadIsTauriProperty) globalWithIsTauri.isTauri = originalIsTauriValue
-  else delete globalWithIsTauri.isTauri
+  restoreTauriHostFlag()
 })
 
 const WORKSPACE: WorkspaceMeta = {
@@ -59,7 +61,7 @@ async function freshHost(tauriHost: boolean) {
   isTauriMock.mockReset()
   invokeMock.mockReset()
   isTauriMock.mockReturnValue(tauriHost)
-  globalWithIsTauri.isTauri = tauriHost
+  restoreTauriHostFlag = stubTauriHostFlag(tauriHost)
   invokeMock.mockImplementation(async (command: string) => {
     if (command === 'list_workspace_files') return { entries: [], truncated: false }
     return undefined

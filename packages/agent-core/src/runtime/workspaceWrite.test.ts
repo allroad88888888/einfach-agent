@@ -1,8 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { hostTauriBridgeMock } from './hostTauri.testHarness'
 
+// isTauri 分量已死：nothing 再从 '@tauri-apps/api/core' 读它（D8）。invoke 分量仍在用——
+// tauri.invoke 被下面的 './hostTauri' 桥 mock 直接引用，也被本文件的断言直接检查。
 const tauri = vi.hoisted(() => ({
   invoke: vi.fn(),
-  isTauri: vi.fn(() => true),
 }))
 
 vi.mock('@tauri-apps/api/core', () => tauri)
@@ -14,13 +16,10 @@ vi.mock('@tauri-apps/api/core', () => tauri)
 const host = vi.hoisted(() => ({ loadCostMs: 0 }))
 const clock = vi.hoisted(() => ({ now: 0 }))
 
-vi.mock('./hostTauri', () => ({
-  isTauriHost: () => true,
-  loadTauriInvoke: async () => {
-    clock.now += host.loadCostMs
-    await Promise.resolve() // import() 是异步的，保留一次微任务跨越
-    return tauri.invoke
-  },
+vi.mock('./hostTauri', () => hostTauriBridgeMock(async () => {
+  clock.now += host.loadCostMs
+  await Promise.resolve() // import() 是异步的，保留一次微任务跨越
+  return tauri.invoke
 }))
 
 import { writeWorkspaceFile } from './workspaceWrite'
@@ -28,7 +27,6 @@ import type { ObservabilityPort } from '../observability/port'
 
 beforeEach(() => {
   vi.clearAllMocks()
-  tauri.isTauri.mockReturnValue(true)
 })
 
 describe('writeWorkspaceFile', () => {
