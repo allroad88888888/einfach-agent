@@ -1,0 +1,161 @@
+/* 项目 Skills 设置面板：启停状态和扫描反馈。 */
+
+.project-skills-head {
+  align-items: flex-start;
+}
+
+.project-skills-workspace,
+.project-skills-help,
+.project-skills-summary,
+.project-skills-notice {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.project-skills-workspace {
+  color: #64748b;
+  overflow-wrap: anywhere;
+}
+
+.project-skills-help {
+  margin-top: 8px;
+  color: #6b7689;
+}
+
+.project-skills-summary {
+  margin-top: 12px;
+  color: #475569;
+}
+
+.project-skills-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.project-skill-card {
+  padding: 14px 15px;
+  border: 1px solid #e1e6ef;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(32, 43, 67, 0.03);
+}
+
+.project-skill-card.is-disabled {
+  background: #f8fafc;
+  opacity: 0.78;
+}
+
+.project-skill-card-head,
+.project-skill-card-title {
+  display: flex;
+  align-items: flex-start;
+}
+
+.project-skill-card-head {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.project-skill-card-title {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.project-skill-card-title strong {
+  color: #253047;
+  font-size: 14px;
+}
+
+.project-skill-origin,
+.project-skill-resources {
+  display: block;
+  color: #8290a6;
+  font-size: 11px;
+}
+
+.project-skill-origin {
+  margin-top: 4px;
+}
+
+.project-skill-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: #64748b;
+  background: #f1f5f9;
+  font-size: 11px;
+}
+
+.project-skill-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.project-skill-status.is-enabled {
+  color: #047857;
+  background: #d1fae5;
+}
+
+.project-skill-description {
+  margin: 9px 0 0;
+  color: #526077;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.project-skill-resources {
+  margin: 7px 0 0;
+}
+
+.project-skills-notice {
+  margin-top: 9px;
+}
+
+.project-skills-notice.is-success { color: #047857; }
+.project-skills-notice.is-error { color: #b42318; overflow-wrap: anywhere; }
+
+.project-skills-diagnostics {
+  margin-top: 12px;
+  color: #6b7689;
+  font-size: 12px;
+}
+
+.project-skills-diagnostics summary {
+  cursor: pointer;
+  color: #475569;
+}
+
+.project-skills-diagnostics ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+
+.project-skills-diagnostics li {
+  margin: 2px 0;
+  overflow-wrap: anywhere;
+}
+
+.project-skills-empty {
+  margin-top: 14px;
+  padding: 22px;
+  border: 1px dashed #d9dfeb;
+  border-radius: 10px;
+  color: #7a8699;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+@media (max-width: 720px) {
+  .project-skills-head,
+  .project-skill-card-head {
+    flex-direction: column;
+  }
+}

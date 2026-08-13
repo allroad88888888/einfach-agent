@@ -1,6 +1,10 @@
 import { normalizeDeepSeekUserId } from '@web-agent/ai'
+import {
+  normalizeDisabledProjectSkills,
+  type DisabledProjectSkillsByWorkspace,
+} from '@web-agent/core/skills/projectSkillPreferences'
 
-export const APP_SETTINGS_VERSION = 2 as const
+export const APP_SETTINGS_VERSION = 3 as const
 export const MAX_CUSTOM_INSTRUCTIONS_LENGTH = 12_000
 export const MAX_MODEL_API_KEY_LENGTH = 1_024
 export const INSTALLATION_ID_RANDOM_BYTES = 24
@@ -56,6 +60,7 @@ export interface AppSettings {
   installationId: string
   agent: {
     customInstructions: string
+    disabledProjectSkills: DisabledProjectSkillsByWorkspace
   }
 }
 
@@ -68,6 +73,7 @@ export function createDefaultAppSettings(
     installationId,
     agent: {
       customInstructions: '',
+      disabledProjectSkills: {},
     },
   }
 }
@@ -101,6 +107,9 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
     agent: {
       customInstructions: sanitizeCustomInstructions(
         (agent as { customInstructions?: unknown }).customInstructions,
+      ),
+      disabledProjectSkills: normalizeDisabledProjectSkills(
+        (agent as { disabledProjectSkills?: unknown }).disabledProjectSkills,
       ),
     },
   }

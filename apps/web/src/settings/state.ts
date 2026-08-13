@@ -1,5 +1,6 @@
 import type { Store } from '@einfach/core'
 import { atom } from '@einfach/react'
+import { disabledProjectSkillsByWorkspaceAtom } from '@web-agent/core/state/rootStore'
 import {
   createDefaultAppSettings,
   sanitizeCustomInstructions,
@@ -7,6 +8,7 @@ import {
 } from './config'
 import { resetModelCredentialState } from './modelCredentialState'
 import { resetSettingsCenterState } from './settingsCenterState'
+import { resetProjectSkillsSettingsState } from './projectSkillsState'
 
 export {
   modelCredentialAtoms,
@@ -64,6 +66,8 @@ export function resetAppSettingsState(store: Store): void {
   store.setter(appSettingsAtom, createDefaultAppSettings())
   store.setter(customInstructionsDraftAtom, '')
   store.setter(customInstructionsStatusAtom, { status: 'idle' })
+  store.setter(disabledProjectSkillsByWorkspaceAtom, {})
+  resetProjectSkillsSettingsState(store)
   resetModelCredentialState(store)
   resetSettingsCenterState(store)
 }

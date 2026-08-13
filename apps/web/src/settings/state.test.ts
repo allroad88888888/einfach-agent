@@ -1,6 +1,7 @@
 import { createStore } from '@einfach/core'
 import { describe, expect, it } from 'vitest'
 import {
+  APP_SETTINGS_VERSION,
   INSTALLATION_ID_RANDOM_BYTES,
   MAX_CUSTOM_INSTRUCTIONS_LENGTH,
   MAX_MODEL_API_KEY_LENGTH,
@@ -22,9 +23,9 @@ describe('app settings state', () => {
   it('projects custom instructions from the root settings atom', () => {
     const store = createStore()
     store.setter(appSettingsAtom, {
-      version: 2,
+      version: APP_SETTINGS_VERSION,
       installationId: TEST_INSTALLATION_ID,
-      agent: { customInstructions: '请始终使用中文回复' },
+      agent: { customInstructions: '请始终使用中文回复', disabledProjectSkills: {} },
     })
 
     expect(store.getter(customInstructionsAtom)).toBe('请始终使用中文回复')
@@ -36,9 +37,9 @@ describe('app settings state', () => {
     store.setter(customInstructionsAtom, '优先给出结论')
 
     expect(store.getter(appSettingsAtom)).toEqual({
-      version: 2,
+      version: APP_SETTINGS_VERSION,
       installationId,
-      agent: { customInstructions: '优先给出结论' },
+      agent: { customInstructions: '优先给出结论', disabledProjectSkills: {} },
     })
   })
 

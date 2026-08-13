@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   activeSessionIdAtom,
+  disabledProjectSkillsByWorkspaceAtom,
   projectSkillsAtom,
   rootStore,
   sessionsAtom,
@@ -12,10 +13,14 @@ import type { ProjectSkillsSnapshot } from '@web-agent/core/skills/projectSkills
 import type { SessionMeta } from '@web-agent/core/state/core.type'
 import { renderWithStore } from '../../test/renderWithStore'
 import { ProjectSkillsPanel } from './ProjectSkillsPanel'
-import { refreshProjectSkills } from '@web-agent/core/runtime/commands'
+import {
+  refreshProjectSkillsFromSettings,
+  updateProjectSkillEnabled,
+} from '../../settings/projectSkillsCommands'
 
-vi.mock('@web-agent/core/runtime/commands', () => ({
-  refreshProjectSkills: vi.fn(),
+vi.mock('../../settings/projectSkillsCommands', () => ({
+  refreshProjectSkillsFromSettings: vi.fn(),
+  updateProjectSkillEnabled: vi.fn(),
 }))
 
 const workspaceRoot = '/workspace/project'
@@ -54,10 +59,12 @@ describe('ProjectSkillsPanel', () => {
     rootStore.setter(sessionsAtom, {})
     rootStore.setter(activeSessionIdAtom, '')
     rootStore.setter(projectSkillsAtom, {})
+    rootStore.setter(disabledProjectSkillsByWorkspaceAtom, {})
   })
 
   afterEach(() => {
     rootStore.setter(projectSkillsAtom, {})
+    rootStore.setter(disabledProjectSkillsByWorkspaceAtom, {})
   })
 
   it('在所有项目 Skills 空状态中显示 .webAgent/skills，且不显示旧路径', () => {
@@ -75,7 +82,7 @@ describe('ProjectSkillsPanel', () => {
     expect(empty.container).toHaveTextContent('.webAgent/skills/<name>/SKILL.md')
   })
 
-  it('保留刷新行为，并将 agent 来源显示为 .webAgent/skills', async () => {
+  it('管理当前 workspace 的启停状态，并保留刷新行为', async () => {
     seedPanel(projectSkillSnapshot([{
       name: 'project/release-check',
       description: '发布检查',
@@ -84,11 +91,22 @@ describe('ProjectSkillsPanel', () => {
       resources: {},
       origin: 'agent',
     }]))
+    rootStore.setter(disabledProjectSkillsByWorkspaceAtom, {
+      'workspace-1': ['project/release-check'],
+    })
     const user = userEvent.setup()
     renderWithStore(<ProjectSkillsPanel />, { store: rootStore })
 
-    expect(screen.getByText('.webAgent')).toHaveAttribute('title', '来源目录：.webAgent/skills/')
+    expect(screen.getByText('.webAgent/skills/')).toHaveAttribute('title', '来源目录：.webAgent/skills/')
+    expect(screen.getByText('已停用')).toBeInTheDocument()
+    expect(screen.getByText('已发现 1 个技能，0 个已启用')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '启用 project/release-check' }))
+    expect(updateProjectSkillEnabled).toHaveBeenCalledWith(
+      'workspace-1',
+      'project/release-check',
+      true,
+    )
     await user.click(screen.getByRole('button', { name: '刷新' }))
-    expect(refreshProjectSkills).toHaveBeenCalledOnce()
+    expect(refreshProjectSkillsFromSettings).toHaveBeenCalledOnce()
   })
 })

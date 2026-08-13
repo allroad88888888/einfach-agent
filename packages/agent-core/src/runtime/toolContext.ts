@@ -30,8 +30,13 @@ import {
 } from '../subagents/toolProfile'
 import { isDelegatableDangerousTool } from './dangerousTools'
 import { commandUsesPermanentDelete } from './shellCommandRisk'
-import { sessionsAtom, workspacesAtom } from '../state/rootStore'
+import {
+  disabledProjectSkillsByWorkspaceAtom,
+  sessionsAtom,
+  workspacesAtom,
+} from '../state/rootStore'
 import { resolveSessionWorkspaceRoot } from '../state/workspaceState'
+import { filterProjectSkillsSnapshot } from '../skills/projectSkillPreferences'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
 import type { DelegationRuntime } from './delegationContract'
 import { isCurrentRun } from './shared/runGuards'
@@ -139,7 +144,13 @@ export function buildToolContext(opts: {
   })
 
   // Skills 只读入口：合并内置 + 项目快照（workspaceRoot 为空时降级为仅内置）。
-  const projectSkillsSnapshot = workspaceRoot ? core.projectSkills.get(workspaceRoot) : undefined
+  const workspaceId = core.rootStore.getter(sessionsAtom)[sessionId]?.workspaceId
+  const disabledProjectSkills = workspaceId
+    ? core.rootStore.getter(disabledProjectSkillsByWorkspaceAtom)[workspaceId]
+    : undefined
+  const projectSkillsSnapshot = workspaceRoot
+    ? filterProjectSkillsSnapshot(core.projectSkills.get(workspaceRoot), disabledProjectSkills)
+    : undefined
 
   // S4-A：把会话 workspaceRoot 注入桥入参 —— session 未绑定则原样（Rust 走 git root 兜底，保持现状）；
   //   调用方（工具）已显式带 workspaceRoot 则尊重调用方、不覆盖；桥不带 input（getWorkspaceDiff）时合成一个。
@@ -287,7 +298,14 @@ export function buildToolContext(opts: {
     signal,
     progress,
     ...planCapabilities,
-    ...(workspaceRoot ? { projectSkills: { ensure: () => core.projectSkills.ensure(workspaceRoot) } } : {}),
+    ...(workspaceRoot ? {
+      projectSkills: {
+        ensure: async () => filterProjectSkillsSnapshot(
+          await core.projectSkills.ensure(workspaceRoot),
+          disabledProjectSkills,
+        )!,
+      },
+    } : {}),
 
     async runShell(input) {
       assertFresh()

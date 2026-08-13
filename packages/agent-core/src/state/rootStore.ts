@@ -22,6 +22,7 @@ import {
   activeWorkspaceMetaAtom,
   activeWorkspaceRootAtom,
   projectSkillsAtom,
+  disabledProjectSkillsByWorkspaceAtom,
   sessionsAtom,
   activeSessionIdAtom,
   activeSessionMetaAtom,
@@ -41,6 +42,7 @@ export {
   activeWorkspaceMetaAtom,
   activeWorkspaceRootAtom,
   projectSkillsAtom,
+  disabledProjectSkillsByWorkspaceAtom,
   sessionsAtom,
   activeSessionIdAtom,
   activeSessionMetaAtom,
@@ -54,6 +56,8 @@ export function resetRootStore(): void {
   rootStore.setter(expandedWorkspaceIdsAtom, {})
   rootStore.setter(workspaceSettingsOpenIdsAtom, {})
   rootStore.setter(workspaceRenameStateAtom, null)
+  rootStore.setter(projectSkillsAtom, {})
+  rootStore.setter(disabledProjectSkillsByWorkspaceAtom, {})
   rootStore.setter(sessionsAtom, {})
   rootStore.setter(activeSessionIdAtom, '')
 }

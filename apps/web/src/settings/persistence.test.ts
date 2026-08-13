@@ -50,7 +50,7 @@ describe('app settings persistence', () => {
     expect(JSON.parse(values.get(APP_SETTINGS_STORAGE_KEY)!)).toEqual({
       version: APP_SETTINGS_VERSION,
       installationId: settings.installationId,
-      agent: { customInstructions: '请始终使用中文回复' },
+      agent: { customInstructions: '请始终使用中文回复', disabledProjectSkills: {} },
     })
   })
 
@@ -72,7 +72,7 @@ describe('app settings persistence', () => {
     expect(storage.load()).toEqual({
       version: APP_SETTINGS_VERSION,
       installationId: TEST_INSTALLATION_ID,
-      agent: { customInstructions: '保持简洁' },
+      agent: { customInstructions: '保持简洁', disabledProjectSkills: {} },
     })
     const rewritten = values.get(APP_SETTINGS_STORAGE_KEY)!
     expect(rewritten).not.toContain(legacyCredential)
@@ -95,6 +95,28 @@ describe('app settings persistence', () => {
     expect(JSON.parse(values.get(APP_SETTINGS_STORAGE_KEY)!)).toMatchObject({
       version: APP_SETTINGS_VERSION,
       installationId: TEST_INSTALLATION_ID,
+    })
+  })
+
+  it('migrates v2 settings by adding an empty disabled project skills map', () => {
+    const { values, storage: storageLike } = mapStorage(new Map([[
+      APP_SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        version: 2,
+        installationId: TEST_INSTALLATION_ID,
+        agent: { customInstructions: '保持简洁' },
+      }),
+    ]]))
+    const storage = createAppSettingsStorage(storageLike)
+
+    expect(storage.load()).toEqual({
+      version: APP_SETTINGS_VERSION,
+      installationId: TEST_INSTALLATION_ID,
+      agent: { customInstructions: '保持简洁', disabledProjectSkills: {} },
+    })
+    expect(JSON.parse(values.get(APP_SETTINGS_STORAGE_KEY)!)).toMatchObject({
+      version: APP_SETTINGS_VERSION,
+      agent: { disabledProjectSkills: {} },
     })
   })
 
@@ -149,7 +171,7 @@ describe('app settings persistence', () => {
     expect(storage.load()).toEqual({
       version: APP_SETTINGS_VERSION,
       installationId: TEST_INSTALLATION_ID,
-      agent: { customInstructions: '优先给出结论' },
+      agent: { customInstructions: '优先给出结论', disabledProjectSkills: {} },
     })
     expect(values.get(APP_SETTINGS_STORAGE_KEY)).not.toContain('apiKey')
   })
@@ -208,7 +230,9 @@ describe('app settings persistence', () => {
     const storage = createMemoryAppSettingsStorage(settings)
     const loaded = storage.load()
     loaded.agent.customInstructions = '只修改调用方副本'
+    loaded.agent.disabledProjectSkills['workspace-1'] = ['project/release-check']
 
     expect(storage.load().agent.customInstructions).toHaveLength(MAX_CUSTOM_INSTRUCTIONS_LENGTH)
+    expect(storage.load().agent.disabledProjectSkills).toEqual({})
   })
 })

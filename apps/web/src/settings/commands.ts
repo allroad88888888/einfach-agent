@@ -1,6 +1,9 @@
 import { configureCommands } from '@web-agent/core/runtime/commands'
-import { rootStore } from '@web-agent/core/state/rootStore'
-import { MAX_CUSTOM_INSTRUCTIONS_LENGTH } from './config'
+import {
+  disabledProjectSkillsByWorkspaceAtom,
+  rootStore,
+} from '@web-agent/core/state/rootStore'
+import { MAX_CUSTOM_INSTRUCTIONS_LENGTH, type AppSettings } from './config'
 import { hydrateModelCredentials } from './modelCredentialCommands'
 import {
   createBrowserAppSettingsStorage,
@@ -56,6 +59,10 @@ export async function hydrateAppSettings(): Promise<void> {
     const settings = activeStorage.load()
     const customInstructions = settings.agent.customInstructions
     rootStore.setter(appSettingsAtom, settings)
+    rootStore.setter(
+      disabledProjectSkillsByWorkspaceAtom,
+      settings.agent.disabledProjectSkills,
+    )
     rootStore.setter(customInstructionsDraftAtom, customInstructions)
     configureCommands({
       customInstructions,
@@ -65,6 +72,7 @@ export async function hydrateAppSettings(): Promise<void> {
   } catch (error) {
     rootStore.setter(customInstructionsAtom, '')
     rootStore.setter(customInstructionsDraftAtom, '')
+    rootStore.setter(disabledProjectSkillsByWorkspaceAtom, {})
     configureCommands({
       customInstructions: '',
       modelUserId: undefined,
@@ -76,6 +84,12 @@ export async function hydrateAppSettings(): Promise<void> {
   }
 
   await hydrateModelCredentials()
+}
+
+/** Persists a complete non-secret settings snapshot before publishing it to the UI. */
+export function saveAppSettings(settings: AppSettings): void {
+  activeStorage.save(settings)
+  rootStore.setter(appSettingsAtom, settings)
 }
 
 export function updateCustomInstructionsDraft(value: string): void {

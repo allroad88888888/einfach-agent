@@ -1,125 +1,187 @@
-// apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+// 项目 Skills 设置面板：显示扫描结果并管理当前工作区的启停偏好。
 // ---------------------------------------------------------------------------
-// 展示当前 workspace 的项目 Skills（来自 .webAgent/skills/ 与 .claude/skills/）。
-// 在 web 环境下永远为空（非 Tauri 无 workspace 文件系统访问），
-// Tauri 环境下显示 scanner 产出的快照条目与 diagnostics。
-import { useState, useCallback } from 'react'
-import { workspacesAtom, activeSessionMetaAtom, projectSkillsAtom } from '@web-agent/core/state/rootStore'
-import { resolveSessionWorkspaceRoot } from '@web-agent/core/state/workspaceState'
-import { refreshProjectSkills } from '@web-agent/core/runtime/commands'
-import { useAtomValue } from '@einfach/react'
-import type { ProjectSkillEntry, ProjectSkillsSnapshot } from '@web-agent/core/skills/projectSkills'
+// 快照按 workspaceRoot 缓存，用户偏好按稳定 workspaceId 保存；二者刻意分离，避免移动项目
+// 目录后丢失选择，也避免把本机设置写进项目内的 SKILL.md。
 
-// U1：只读 atom + 调命令。快照存在 rootStore 的 projectSkillsAtom 里（不是 core 私有 Map），
-// 所以重扫完成后这里会自动重渲染。
-//
-// 「未绑定 workspace」与「已绑定但尚未扫描」是两种不同状态，必须分开：后者在会话发出第一条
-// 消息前（还没触发过 ensure）就是常态，报成「未绑定」会让用户去改一个本来就没问题的设置。
-function useProjectSkillsState(): { workspaceRoot?: string; snapshot?: ProjectSkillsSnapshot } {
+import { useAtomValue } from '@einfach/react'
+import {
+  activeSessionMetaAtom,
+  disabledProjectSkillsByWorkspaceAtom,
+  projectSkillsAtom,
+  workspacesAtom,
+} from '@web-agent/core/state/rootStore'
+import type { ProjectSkillEntry, ProjectSkillsSnapshot } from '@web-agent/core/skills/projectSkills'
+import { resolveSessionWorkspaceRoot } from '@web-agent/core/state/workspaceState'
+import {
+  refreshProjectSkillsFromSettings,
+  updateProjectSkillEnabled,
+} from '../../settings/projectSkillsCommands'
+import {
+  projectSkillsPreferenceStatusAtom,
+  projectSkillsRefreshingAtom,
+} from '../../settings/projectSkillsState'
+import './ProjectSkillsPanel.css'
+
+type ProjectSkillsState = {
+  workspaceId?: string
+  workspaceRoot?: string
+  snapshot?: ProjectSkillsSnapshot
+}
+
+function useProjectSkillsState(): ProjectSkillsState {
   const activeSession = useAtomValue(activeSessionMetaAtom)
   const workspaces = useAtomValue(workspacesAtom)
   const projectSkills = useAtomValue(projectSkillsAtom)
   if (!activeSession) return {}
+
   const workspaceRoot = resolveSessionWorkspaceRoot(activeSession, workspaces)
   if (!workspaceRoot) return {}
-  return { workspaceRoot, snapshot: projectSkills[workspaceRoot] }
+  return {
+    workspaceId: activeSession.workspaceId,
+    workspaceRoot,
+    snapshot: projectSkills[workspaceRoot],
+  }
 }
 
-function SkillEntry({ entry }: { entry: ProjectSkillEntry }) {
+function SkillEntry({
+  entry,
+  enabled,
+  workspaceId,
+}: {
+  entry: ProjectSkillEntry
+  enabled: boolean
+  workspaceId: string
+}) {
   const resourceCount = Object.keys(entry.resources).length
   const originLabel = entry.origin === 'agent' ? '.webAgent' : '.claude'
+  const action = enabled ? '停用' : '启用'
+
   return (
-    <div className="project-skill-entry">
-      <span className="project-skill-name">
-        <code>{entry.name}</code>
-      </span>
-      <span className="project-skill-origin" title={`来源目录：${originLabel}/skills/`}>
-        {originLabel}
-      </span>
-      <span className="project-skill-desc">{entry.description}</span>
-      {resourceCount > 0 && (
-        <span className="project-skill-resources">{resourceCount} 个资源文件</span>
-      )}
-    </div>
+    <article className={`project-skill-card${enabled ? '' : ' is-disabled'}`}>
+      <div className="project-skill-card-head">
+        <div>
+          <div className="project-skill-card-title">
+            <strong><code>{entry.name}</code></strong>
+            <span className={`project-skill-status${enabled ? ' is-enabled' : ' is-disabled'}`}>
+              <i aria-hidden="true" />{enabled ? '已启用' : '已停用'}
+            </span>
+          </div>
+          <span className="project-skill-origin" title={`来源目录：${originLabel}/skills/`}>
+            {originLabel}/skills/
+          </span>
+        </div>
+        <button
+          type="button"
+          className="agentnew-settings-button is-small"
+          aria-label={`${action} ${entry.name}`}
+          aria-pressed={enabled}
+          onClick={() => updateProjectSkillEnabled(workspaceId, entry.name, !enabled)}
+        >
+          {action}
+        </button>
+      </div>
+
+      <p className="project-skill-description">{entry.description}</p>
+      {resourceCount > 0 ? (
+        <p className="project-skill-resources">附带 {resourceCount} 个资源文件</p>
+      ) : null}
+    </article>
   )
 }
 
+/** Manages discovered project skills for the workspace bound to the active conversation. */
 export function ProjectSkillsPanel() {
-  const { workspaceRoot, snapshot } = useProjectSkillsState()
-  const [refreshing, setRefreshing] = useState(false)
+  const { workspaceId, workspaceRoot, snapshot } = useProjectSkillsState()
+  const disabledProjectSkills = useAtomValue(disabledProjectSkillsByWorkspaceAtom)
+  const refreshing = useAtomValue(projectSkillsRefreshingAtom)
+  const preferenceStatus = useAtomValue(projectSkillsPreferenceStatusAtom)
 
-  const handleRefresh = useCallback(async () => {
-    setRefreshing(true)
-    try {
-      await refreshProjectSkills()
-    } finally {
-      setRefreshing(false)
-    }
-  }, [])
-
-  if (!workspaceRoot) {
+  if (!workspaceRoot || !workspaceId) {
     return (
-      <div className="project-skills-panel">
+      <section className="agentnew-settings-panel project-skills-panel">
         <div className="project-skills-empty">
-          未绑定 workspace。绑定后在 Tauri 桌面端可自动加载项目内{' '}
-          <code>.webAgent/skills/</code> 与 <code>.claude/skills/</code> 提供的 Skills。
+          未绑定 workspace。绑定后，在桌面端可加载项目中的{' '}
+          <code>.webAgent/skills/</code> 与 <code>.claude/skills/</code>。
         </div>
-      </div>
+      </section>
     )
   }
 
   const entries = snapshot?.entries ?? []
   const diagnostics = snapshot?.diagnostics ?? []
+  const disabledNames = new Set(disabledProjectSkills[workspaceId] ?? [])
+  const enabledCount = entries.filter((entry) => !disabledNames.has(entry.name)).length
 
   return (
-    <div className="project-skills-panel">
-      <div className="project-skills-header">
-        <h3>项目 Skills</h3>
-        <span className="project-skills-workspace" title={workspaceRoot}>
-          {workspaceRoot}
-        </span>
+    <section className="agentnew-settings-panel project-skills-panel" aria-labelledby="project-skills-title">
+      <div className="agentnew-settings-panel-head project-skills-head">
+        <div>
+          <h3 id="project-skills-title">项目 Skills</h3>
+          <p>控制当前工作区中哪些项目技能可供 Agent 使用。</p>
+        </div>
         <button
-          className="project-skills-refresh"
-          onClick={handleRefresh}
+          type="button"
+          className="agentnew-settings-button is-small"
           disabled={refreshing}
-          title="重新扫描项目 Skills"
+          onClick={() => { void refreshProjectSkillsFromSettings() }}
         >
           {refreshing ? '扫描中…' : '刷新'}
         </button>
       </div>
 
-      {diagnostics.length > 0 && (
-        <div className="project-skills-diagnostics">
-          <details>
-            <summary>⚠ 扫描反馈（{diagnostics.length} 条）</summary>
-            <ul>
-              {diagnostics.map((d, i) => (
-                <li key={i}>{d}</li>
-              ))}
-            </ul>
-          </details>
-        </div>
-      )}
+      <p className="project-skills-workspace" title={workspaceRoot}>
+        当前工作区：<code>{workspaceRoot}</code>
+      </p>
+      <p className="project-skills-help">
+        所有发现的技能默认启用。停用后，后续读取会立即受限；新对话不会再列出该技能。
+        此选择仅保存在当前设备。
+      </p>
+
+      {snapshot && entries.length > 0 ? (
+        <p className="project-skills-summary" role="status">
+          已发现 {entries.length} 个技能，{enabledCount} 个已启用
+        </p>
+      ) : null}
+
+      {preferenceStatus.status === 'saved' ? (
+        <p className="project-skills-notice is-success" role="status">设置已保存</p>
+      ) : null}
+      {preferenceStatus.status === 'error' ? (
+        <p className="project-skills-notice is-error" role="alert">{preferenceStatus.error}</p>
+      ) : null}
+
+      {diagnostics.length > 0 ? (
+        <details className="project-skills-diagnostics">
+          <summary>扫描反馈（{diagnostics.length} 条）</summary>
+          <ul>
+            {diagnostics.map((diagnostic, index) => <li key={index}>{diagnostic}</li>)}
+          </ul>
+        </details>
+      ) : null}
 
       {!snapshot ? (
         <div className="project-skills-empty">
-          尚未扫描。发送一条消息或点「刷新」后，会自动加载{' '}
+          尚未扫描。发送一条消息或点「刷新」后，会加载{' '}
           <code>.webAgent/skills/</code> 与 <code>.claude/skills/</code> 下的 Skills。
         </div>
       ) : entries.length === 0 ? (
         <div className="project-skills-empty">
           当前 workspace 未发现项目 Skills。在{' '}
           <code>.webAgent/skills/&lt;name&gt;/SKILL.md</code> 或{' '}
-          <code>.claude/skills/&lt;name&gt;/SKILL.md</code>{' '}
-          中放置带 frontmatter 的 skill 文件即可自动加载。
+          <code>.claude/skills/&lt;name&gt;/SKILL.md</code> 中放置带 frontmatter 的 skill 文件即可自动加载。
         </div>
       ) : (
         <div className="project-skills-list">
           {entries.map((entry) => (
-            <SkillEntry key={entry.name} entry={entry} />
+            <SkillEntry
+              key={entry.name}
+              entry={entry}
+              enabled={!disabledNames.has(entry.name)}
+              workspaceId={workspaceId}
+            />
           ))}
         </div>
       )}
-    </div>
+    </section>
   )
 }

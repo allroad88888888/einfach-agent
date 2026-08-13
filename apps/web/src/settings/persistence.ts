@@ -7,6 +7,7 @@ import {
   sanitizeCustomInstructions,
   type AppSettings,
 } from './config'
+import { normalizeDisabledProjectSkills } from '@web-agent/core/skills/projectSkillPreferences'
 
 export const APP_SETTINGS_STORAGE_KEY = 'web-agent.settings.v1'
 export const LEGACY_CUSTOM_INSTRUCTIONS_STORAGE_KEY = 'web-agent.custom-instructions.v1'
@@ -28,6 +29,7 @@ function cloneSettings(settings: AppSettings): AppSettings {
     installationId: settings.installationId,
     agent: {
       customInstructions: settings.agent.customInstructions,
+      disabledProjectSkills: normalizeDisabledProjectSkills(settings.agent.disabledProjectSkills),
     },
   }
 }
@@ -79,7 +81,7 @@ function parseSettings(
       migratedLegacySettings: false,
     }
   }
-  if (record.version !== 1) throw new Error('应用设置格式无效')
+  if (record.version !== 1 && record.version !== 2) throw new Error('应用设置格式无效')
 
   const { settings, repairedInstallationId } = settingsWithInstallationId(record, installationIdFactory)
   return {

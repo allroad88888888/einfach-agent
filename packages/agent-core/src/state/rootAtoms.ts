@@ -13,6 +13,7 @@
 import { atom } from '@einfach/core'
 import type { SessionMeta, WorkspaceMeta } from './core.type'
 import type { ProjectSkillsSnapshot } from '../skills/projectSkills'
+import type { DisabledProjectSkillsByWorkspace } from '../skills/projectSkillPreferences'
 
 // 一级工作区登记表。数量通常很小，适合一个浅层 Record atom；会话内容仍按会话独立 store 分桶。
 export const workspacesAtom = atom<Record<string, WorkspaceMeta>>({})
@@ -38,6 +39,10 @@ export const workspaceRenameStateAtom = atom<{ id: string; draft: string } | nul
 //   点「刷新」后重扫完成也不会重渲染；放进 rootStore 则两者同一事实源，且 core 隔离照旧
 //   （每个 CoreInstance 有自己的 rootStore）。
 export const projectSkillsAtom = atom<Record<string, ProjectSkillsSnapshot>>({})
+
+// 项目 Skills 的启停偏好按稳定 workspace id 保存；快照仍按 root path 缓存。两者分开后，改路径
+// 不会让用户选择泄露到模型请求，也不会把本机偏好写进项目文件。
+export const disabledProjectSkillsByWorkspaceAtom = atom<DisabledProjectSkillsByWorkspace>({})
 
 // 当前工作区元信息与工具执行根目录均为纯派生值，不重复存状态。
 export const activeWorkspaceMetaAtom = atom(

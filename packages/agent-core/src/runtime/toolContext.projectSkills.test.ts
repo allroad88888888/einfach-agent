@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
-import { sessionsAtom } from '../state/rootStore'
+import {
+  disabledProjectSkillsByWorkspaceAtom,
+  sessionsAtom,
+} from '../state/rootStore'
+import type { ProjectSkillsSnapshot } from '../skills/projectSkills'
 import { setRun } from '../state/sessionWriters'
 import { createCoreInstance } from './core/coreInstance'
 import { buildToolContext } from './toolContext'
@@ -8,6 +12,7 @@ function seedSession(
   core: ReturnType<typeof createCoreInstance>,
   id: string,
   workspaceRoot?: string,
+  workspaceId?: string,
 ): void {
   core.rootStore.setter(sessionsAtom, {
     [id]: {
@@ -17,6 +22,7 @@ function seedSession(
       createdAt: 0,
       updatedAt: 0,
       workspaceRoot,
+      workspaceId,
     },
   })
   setRun(id, { runId: 'run', status: 'running' }, core)
@@ -53,5 +59,43 @@ describe('ToolContext projectSkills', () => {
     seedSession(core, 'without-workspace')
 
     expect(contextFor(core, 'without-workspace').projectSkills).toBeUndefined()
+  })
+
+  it('从清单、查找和 ensure 中一致排除当前 workspace 停用的项目 skill', async () => {
+    const snapshot: ProjectSkillsSnapshot = {
+      workspaceRoot: '/workspace/skills',
+      entries: [
+        {
+          name: 'project/release-check', description: '发布检查', triggers: [],
+          filePath: '.webAgent/skills/release-check/SKILL.md', resources: {}, origin: 'agent',
+        },
+        {
+          name: 'project/legacy-guide', description: '遗留指南', triggers: [],
+          filePath: '.claude/skills/legacy-guide/SKILL.md', resources: {}, origin: 'claude',
+        },
+      ],
+      diagnostics: [],
+    }
+    const core = createCoreInstance({ projectSkillsProvider: vi.fn(async () => snapshot) })
+    seedSession(core, 'with-disabled-skill', snapshot.workspaceRoot, 'workspace-1')
+    core.rootStore.setter(disabledProjectSkillsByWorkspaceAtom, {
+      'workspace-1': ['project/release-check'],
+    })
+
+    const manifestContext = contextFor(core, 'with-disabled-skill')
+
+    await expect(manifestContext.projectSkills!.ensure()).resolves.toEqual({
+      ...snapshot,
+      entries: [snapshot.entries[1]],
+    })
+    const ctx = contextFor(core, 'with-disabled-skill')
+    const skills = ctx.skills!
+    expect(skills.list().map((skill) => skill.name)).not.toContain('project/release-check')
+    expect(skills.list().map((skill) => skill.name)).toContain('project/legacy-guide')
+    expect(skills.resolveProjectPath('project/release-check')).toBeUndefined()
+    expect(skills.resolveProjectPath('project/legacy-guide')).toEqual({
+      filePath: '.claude/skills/legacy-guide/SKILL.md',
+      resources: {},
+    })
   })
 })
