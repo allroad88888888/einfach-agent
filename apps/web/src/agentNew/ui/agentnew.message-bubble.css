@@ -1,0 +1,186 @@
+/* agentnew.message-bubble.css —— assistant 气泡内 markdown 样式 + checkpoint 回退轮列表（T7 拆分自 agentnew.css） */
+
+/* ── assistant 气泡内 markdown 样式（轮次 3 · TM4） ─────────────── */
+/* 标题：气泡里不该巨大，逐级收敛 */
+.agentnew-msg--assistant h1 {
+  margin: 0.6em 0 0.4em;
+  font-size: 1.25em;
+  line-height: 1.4;
+}
+
+.agentnew-msg--assistant h2 {
+  margin: 0.6em 0 0.4em;
+  font-size: 1.15em;
+  line-height: 1.4;
+}
+
+.agentnew-msg--assistant h3 {
+  margin: 0.6em 0 0.4em;
+  font-size: 1.05em;
+  line-height: 1.4;
+}
+
+.agentnew-msg--assistant p {
+  margin: 0.5em 0;
+}
+
+.agentnew-msg--assistant ul,
+.agentnew-msg--assistant ol {
+  margin: 0.5em 0;
+  padding-left: 1.4em;
+}
+
+.agentnew-msg--assistant li {
+  margin: 0.2em 0;
+}
+
+.agentnew-msg--assistant li + li {
+  margin-top: 0.3em;
+}
+
+/* 代码块：比气泡底色深一档、等宽字体、横向滚动兜底宽内容 */
+.agentnew-msg--assistant pre {
+  margin: 0.6em 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #e3e7f0;
+  overflow-x: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.agentnew-msg--assistant pre code {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: inherit;
+}
+
+/* 行内 code（非 pre 内）：浅底色小圆角 */
+.agentnew-msg--assistant code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: #e3e7f0;
+  font-family:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Courier New", monospace;
+  font-size: 0.9em;
+}
+
+.agentnew-msg--assistant blockquote {
+  margin: 0.6em 0;
+  padding: 2px 12px;
+  border-left: 3px solid #cdd2f5;
+  color: #6b7689;
+}
+
+/* 表格：外层滚动容器防止撑破气泡，内层表格边框合并 */
+.agentnew-msg--assistant .agentnew-md-table-wrap {
+  margin: 0.6em 0;
+  overflow-x: auto;
+}
+
+.agentnew-msg--assistant table {
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.agentnew-msg--assistant th,
+.agentnew-msg--assistant td {
+  padding: 6px 10px;
+  border: 1px solid #d4dbe8;
+}
+
+.agentnew-msg--assistant th {
+  background: #e6eaf2;
+  font-weight: 600;
+  text-align: left;
+}
+
+/* ── checkpoint 回退轮列表 ────────────────── */
+.agentnew-checkpoint-bar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 20px;
+  border-top: 1px solid #e6eaf2;
+}
+
+.agentnew-checkpoint-item {
+  padding: 4px 10px;
+  border: 1px solid #d4dbe8;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #3a4458;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.agentnew-checkpoint-item:hover {
+  border-color: #a5a8f4;
+  background: #eef0fe;
+}
+
+.agentnew-checkpoint-item.active {
+  border-color: transparent;
+  background: #5b5bd6;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.agentnew-context-stats {
+  margin: 0 20px 8px;
+  border: 1px solid #dbe2ee;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #4b5870;
+  font-size: 12px;
+}
+
+.agentnew-context-stats-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 34px;
+  padding: 0 10px;
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.agentnew-context-stats-summary span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentnew-context-stats-summary span:first-child {
+  color: #263245;
+  font-weight: 600;
+}
+
+.agentnew-context-stats-body {
+  padding: 0 10px 10px;
+  border-top: 1px solid #eef2f7;
+}
+
+.agentnew-context-stats-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 12px;
+  padding-top: 10px;
+}
+
+.agentnew-context-stats-grid span {
+  color: #7a8597;
+}
+
+.agentnew-context-stats-grid strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #263245;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+

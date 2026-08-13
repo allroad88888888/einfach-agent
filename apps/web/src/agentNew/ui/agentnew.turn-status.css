@@ -1,0 +1,381 @@
+/* agentnew.turn-status.css —— 当前轮运行时长/完成时长 + AI 思考过程（中间文本/注入/工具调用与结果）（T7 拆分自 agentnew.css） */
+
+/* ── 当前轮运行时长 / 完成时长 ─────────────────────────── */
+.agentnew-run-duration {
+  display: flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 7px;
+  width: min(760px, 88%);
+  margin: -2px 0 10px;
+  color: #81899a;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.agentnew-run-duration::after {
+  flex: 1;
+  height: 1px;
+  margin-left: 3px;
+  background: linear-gradient(90deg, #e1e4ec 0%, transparent 100%);
+  content: '';
+}
+
+.agentnew-run-duration strong {
+  color: #646d80;
+  font-weight: 600;
+}
+
+.agentnew-run-duration time {
+  font-variant-numeric: tabular-nums;
+}
+
+.agentnew-run-duration-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+}
+
+.agentnew-run-duration.is-working .agentnew-run-duration-mark {
+  border: 2px solid #dedff0;
+  border-top-color: #716ed0;
+  animation: agentnew-run-duration-spin 900ms linear infinite;
+}
+
+.agentnew-run-duration.is-complete .agentnew-run-duration-mark {
+  border: 1px solid #d8def0;
+  background: #f1f3fb;
+  color: #6966bd;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+@keyframes agentnew-run-duration-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── AI 思考过程：中间文本 / 注入 / 工具调用与结果 ───────── */
+.agentnew-thinking-group {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  width: min(760px, 88%);
+  border: 1px solid #dfe2f1;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #f9f9ff 0%, #f5f7fc 100%);
+  box-shadow: 0 1px 2px rgb(44 52 90 / 5%);
+  color: #536173;
+  font-size: 12px;
+  overflow: hidden;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.agentnew-thinking-group:hover {
+  border-color: #ccd1ea;
+  box-shadow: 0 3px 10px rgb(44 52 90 / 7%);
+}
+
+.agentnew-thinking-toggle {
+  display: block;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  user-select: none;
+}
+
+.agentnew-thinking-toggle:hover {
+  background: rgb(105 102 211 / 4%);
+}
+
+.agentnew-thinking-toggle:focus-visible {
+  outline: 2px solid #6966d3;
+  outline-offset: -3px;
+  border-radius: 10px;
+}
+
+.agentnew-thinking-summary-content {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.agentnew-thinking-mark {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 25px;
+  height: 25px;
+  border: 1px solid #dcddf7;
+  border-radius: 8px;
+  background: #efefff;
+  color: #6562c8;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.agentnew-thinking-heading {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 7px;
+}
+
+.agentnew-thinking-summary-content strong {
+  color: #343c53;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agentnew-thinking-summary-content small {
+  color: #8a91a3;
+  font-size: 11px;
+}
+
+.agentnew-thinking-action {
+  margin-left: auto;
+  color: #8a91a3;
+  font-size: 11px;
+}
+
+.agentnew-thinking-chevron {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: #747d91;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+  transition: transform 160ms ease;
+}
+
+.agentnew-thinking-group.is-open .agentnew-thinking-chevron {
+  transform: rotate(180deg);
+}
+
+.agentnew-thinking-step-row {
+  position: relative;
+  align-self: flex-start;
+  box-sizing: border-box;
+  width: min(760px, 88%);
+  padding: 1px 0 1px 24px;
+}
+
+.agentnew-thinking-step-row::before {
+  position: absolute;
+  top: -13px;
+  bottom: -13px;
+  left: 9px;
+  width: 1px;
+  background: #dfe2f2;
+  content: '';
+}
+
+.agentnew-thinking-step-row::after {
+  position: absolute;
+  top: 14px;
+  left: 6px;
+  box-sizing: border-box;
+  width: 7px;
+  height: 7px;
+  border: 2px solid #f7f8fc;
+  border-radius: 999px;
+  background: #7774d4;
+  box-shadow: 0 0 0 1px #c9cbed;
+  content: '';
+}
+
+.agentnew-thinking-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px;
+  border-top: 1px solid #e3e7ef;
+}
+
+.agentnew-thinking-text {
+  padding: 9px 12px;
+  border: 1px solid #e1e3f1;
+  border-left: 3px solid #7774d4;
+  border-radius: 9px;
+  background: #fafaff;
+  box-shadow: 0 1px 2px rgb(44 52 90 / 4%);
+  color: #354054;
+}
+
+.agentnew-thinking-text > .agentnew-debug-label {
+  display: inline-block;
+  margin-bottom: 5px;
+}
+
+.agentnew-thinking-text > :last-child {
+  margin-bottom: 0;
+}
+
+.agentnew-tool-execution-group {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.agentnew-tool-execution-group.is-multiple {
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(260px, 1fr);
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.agentnew-tool-execution-item {
+  min-width: 0;
+}
+
+.agentnew-debug-entry {
+  width: auto;
+  padding: 9px 12px;
+  border: 1px solid #dbe0ec;
+  border-left: 3px solid #5b5bd6;
+  border-radius: 9px;
+  background: #fbfcff;
+  box-shadow: 0 1px 2px rgb(44 52 90 / 4%);
+  color: #1b2333;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.agentnew-debug-entry--tool-execution {
+  border-left-color: #6a7a48;
+}
+
+.agentnew-debug-entry--injection {
+  border-left-color: #8a6f32;
+  background: #fffdf6;
+}
+
+.agentnew-debug-entry--warning {
+  border-color: #e7c56a;
+  border-left-color: #d58b16;
+  background: #fff9eb;
+}
+
+.agentnew-debug-entry--warning .agentnew-debug-label {
+  border-color: #edcf84;
+  background: #fff3cf;
+  color: #8a5a08;
+}
+
+.agentnew-debug-entry--error {
+  border-color: #efb8bd;
+  border-left-color: #d1434b;
+  background: #fff4f5;
+}
+
+.agentnew-debug-entry--error .agentnew-debug-label {
+  border-color: #e9aab0;
+  background: #ffe3e6;
+  color: #a72f38;
+}
+
+.agentnew-debug-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agentnew-debug-label {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid #ccd4e3;
+  border-radius: 999px;
+  background: #f5f7fb;
+  color: #596476;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.agentnew-debug-title {
+  min-width: 0;
+  color: #1f2a3d;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.agentnew-debug-summary {
+  margin-top: 5px;
+  color: #536173;
+  overflow-wrap: anywhere;
+}
+
+.agentnew-debug-summary > span {
+  color: #768195;
+}
+
+.agentnew-debug-summary--pending {
+  color: #7a8494;
+}
+
+.agentnew-debug-details {
+  margin-top: 6px;
+}
+
+.agentnew-debug-details summary {
+  width: max-content;
+  cursor: pointer;
+  color: #4a569f;
+  font-size: 12px;
+}
+
+.agentnew-debug-detail-sections {
+  display: grid;
+  gap: 8px;
+  margin-top: 7px;
+}
+
+.agentnew-debug-detail-sections section > b {
+  display: block;
+  margin-bottom: 4px;
+  color: #596476;
+  font-size: 11px;
+}
+
+.agentnew-debug-detail-sections p {
+  margin: 0;
+  color: #7a8494;
+}
+
+.agentnew-debug-details pre {
+  margin: 6px 0 0;
+  max-height: 340px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 6px;
+  background: #f4f6fa;
+  color: #253044;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 720px) {
+  .agentnew-tool-execution-group.is-multiple {
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+    grid-template-columns: minmax(0, 1fr);
+    overflow-x: visible;
+  }
+}
+

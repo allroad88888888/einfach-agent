@@ -1,0 +1,205 @@
+/* agentnew.settings-model.css —— Agent instructions 编辑区 + 模型路由/密钥设置（T7 拆分自 agentnew.css） */
+
+.agentnew-instructions-field {
+  display: grid;
+  gap: 7px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agentnew-instructions-textarea {
+  min-height: 220px;
+  line-height: 1.6;
+  font-weight: 400;
+}
+
+.agentnew-instructions-textarea:disabled {
+  color: #94a3b8;
+  background: #f8fafc;
+}
+
+.agentnew-instructions-help {
+  margin: 9px 0 0;
+  color: #7a8699;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.agentnew-instructions-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.agentnew-instructions-footer > span {
+  color: #8290a6;
+  font-size: 11px;
+}
+
+.agentnew-instructions-status {
+  margin: 10px 0 0;
+  font-size: 12px;
+}
+
+.agentnew-instructions-status.is-success {
+  color: #047857;
+}
+
+.agentnew-instructions-status.is-error {
+  color: #b42318;
+}
+
+.agentnew-model-summary {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.6fr) repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+  margin-bottom: 10px;
+  padding: 14px 15px;
+  border: 1px solid #dfe4ed;
+  border-radius: 9px;
+  background: #f8f9fc;
+}
+
+.agentnew-model-summary > div {
+  display: grid;
+  gap: 4px;
+}
+
+.agentnew-model-summary span {
+  color: #8290a6;
+  font-size: 10px;
+}
+
+.agentnew-model-summary strong,
+.agentnew-model-summary code {
+  color: #293449;
+  font-size: 13px;
+}
+
+.agentnew-model-summary code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.agentnew-model-summary small {
+  justify-self: start;
+  padding: 3px 8px;
+  border-radius: 999px;
+  color: #4444bd;
+  background: #e9ebff;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.agentnew-model-routing-note {
+  margin: 0 0 18px;
+  color: #667085;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.agentnew-model-key-field {
+  display: grid;
+  gap: 7px;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.agentnew-model-key-field .agentnew-settings-input:disabled {
+  color: #94a3b8;
+  background: #f8fafc;
+}
+
+.agentnew-model-help,
+.agentnew-model-security-note {
+  margin: 9px 0 0;
+  color: #7a8699;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.agentnew-model-help code {
+  color: #5359b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.agentnew-model-security-note {
+  padding: 9px 11px;
+  border: 1px solid #f2cc8f;
+  border-radius: 7px;
+  color: #7c4a03;
+  background: #fff8e8;
+}
+
+.agentnew-model-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.agentnew-model-footer > span {
+  color: #8290a6;
+  font-size: 11px;
+}
+
+@media (max-width: 720px) {
+  .agentnew-settings-modal {
+    width: 100%;
+    max-height: calc(100vh - 24px);
+  }
+
+  .agentnew-settings-layout {
+    grid-template-columns: 1fr;
+    min-height: min(620px, 78vh);
+  }
+
+  .agentnew-settings-tabs {
+    flex-direction: row;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid #e5e9f0;
+  }
+
+  .agentnew-settings-tabs > * {
+    min-width: max-content;
+  }
+
+  .agentnew-settings-content {
+    max-height: calc(min(620px, 78vh) - 64px);
+    padding: 18px;
+  }
+
+  .agentnew-model-summary {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .agentnew-model-summary small {
+    justify-self: start;
+  }
+
+  .agentnew-mcp-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .agentnew-mcp-form-wide {
+    grid-column: auto;
+  }
+
+  .agentnew-mcp-card-head,
+  .agentnew-mcp-card-footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .agentnew-mcp-auto-connect > span,
+  .agentnew-mcp-manual-connect {
+    text-align: left;
+  }
+}

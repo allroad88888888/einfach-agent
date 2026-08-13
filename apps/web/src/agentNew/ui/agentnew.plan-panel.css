@@ -1,0 +1,112 @@
+/* agentnew.plan-panel.css —— 计划面板（Plan/PlanStage）（T7 拆分自 agentnew.css） */
+
+.agentnew-plan {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 68vh;
+  margin: 12px 20px;
+  padding: 16px;
+  border: 1px solid var(--agentnew-border, #d8dee9);
+  border-radius: 12px;
+  background: var(--agentnew-surface, #fff);
+  content-visibility: auto;
+  contain-intrinsic-size: auto 420px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+
+.agentnew-plan-header,
+.agentnew-plan-stage-heading,
+.agentnew-plan-approval {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agentnew-plan-eyebrow { color: #64748b; font-size: 12px; }
+.agentnew-plan-title { margin: 3px 0; font-size: 16px; }
+.agentnew-plan-objective { margin: 0; color: #475569; font-size: 13px; }
+.agentnew-plan-status { padding: 3px 8px; border-radius: 999px; background: #e2e8f0; font-size: 11px; }
+.agentnew-plan-header-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+.agentnew-plan-toggle {
+  padding: 3px 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  color: #475569;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.agentnew-plan-toggle:hover { background: #f8fafc; }
+.agentnew-plan-toggle:focus-visible { outline: 2px solid #626fd0; outline-offset: 2px; }
+.agentnew-plan-status.is-active { color: #1d4ed8; background: #dbeafe; }
+.agentnew-plan-status.is-completed { color: #047857; background: #d1fae5; }
+.agentnew-plan-status.is-failed,
+.agentnew-plan-status.is-rejected { color: #b91c1c; background: #fee2e2; }
+.agentnew-plan-status.is-awaiting_approval { color: #a16207; background: #fef3c7; }
+.agentnew-plan-status.is-awaiting-decision { color: #92400e; background: #fef3c7; }
+.agentnew-plan-status.is-paused { color: #a16207; background: #fef3c7; }
+.agentnew-plan-stages { display: grid; gap: 8px; margin: 16px 0 0; padding: 0; list-style: none; }
+.agentnew-plan-stage { display: grid; grid-template-columns: 12px minmax(0, 1fr); gap: 10px; }
+.agentnew-plan-stage-card { display: grid; min-width: 0; gap: 6px; }
+.agentnew-plan-stage-marker { width: 9px; height: 9px; margin-top: 14px; border-radius: 50%; background: #cbd5e1; }
+.agentnew-plan-stage.is-in_progress .agentnew-plan-stage-marker { background: #3b82f6; box-shadow: 0 0 0 3px #dbeafe; }
+.agentnew-plan-stage.is-paused .agentnew-plan-stage-marker { background: #f59e0b; box-shadow: 0 0 0 3px #fef3c7; }
+.agentnew-plan-stage.is-awaiting-decision .agentnew-plan-stage-marker { background: #f59e0b; box-shadow: 0 0 0 3px #fef3c7; }
+.agentnew-plan-stage.is-completed .agentnew-plan-stage-marker { background: #10b981; }
+.agentnew-plan-stage.is-failed .agentnew-plan-stage-marker,
+.agentnew-plan-stage.is-blocked .agentnew-plan-stage-marker { background: #ef4444; }
+.agentnew-plan-stage-details { min-width: 0; border: 1px solid #e2e8f0; border-radius: 9px; background: #f8fafc; overflow: hidden; }
+.agentnew-plan-stage-details[open] { background: #fff; }
+.agentnew-plan-stage-details > summary { padding: 9px 10px; cursor: pointer; list-style: none; }
+.agentnew-plan-stage-details > summary::-webkit-details-marker { display: none; }
+.agentnew-plan-stage-details > summary:hover { background: #f1f5f9; }
+.agentnew-plan-stage-details > summary:focus-visible { outline: 2px solid #626fd0; outline-offset: -2px; }
+.agentnew-plan-stage-details[open] > summary { border-bottom: 1px solid #e2e8f0; }
+.agentnew-plan-stage-heading strong { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.agentnew-plan-stage-status-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
+.agentnew-plan-stage-status-actions > span { color: #64748b; font-size: 12px; }
+.agentnew-plan-stage-heading i { color: #94a3b8; font-size: 14px; font-style: normal; transition: transform 150ms ease; }
+.agentnew-plan-stage-details[open] .agentnew-plan-stage-heading i { transform: rotate(180deg); }
+.agentnew-plan-stage-body { padding: 10px; }
+.agentnew-plan-stage-body p { margin: 0 0 10px; color: #475569; font-size: 13px; }
+.agentnew-plan-stage-meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.agentnew-plan-stage-meta > div { display: grid; align-content: start; gap: 3px; padding: 7px 8px; border-radius: 6px; background: #f8fafc; color: #64748b; font-size: 12px; }
+.agentnew-plan-stage-meta strong,
+.agentnew-plan-section-title { color: #334155; font-size: 12px; }
+.agentnew-plan-stage-meta ul { margin: 0; padding-left: 16px; }
+.agentnew-plan-evidence,
+.agentnew-plan-block { margin-top: 4px; color: #64748b; font-size: 12px; }
+.agentnew-plan-stage-rollback {
+  padding: 4px 8px;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  color: #b91c1c;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.agentnew-plan-stage-rollback:hover:not(:disabled) { background: #fef2f2; }
+.agentnew-plan-stage-rollback:focus-visible { outline: 2px solid #ef4444; outline-offset: 2px; }
+.agentnew-plan-stage-rollback:disabled { border-color: #cbd5e1; color: #94a3b8; cursor: not-allowed; }
+.agentnew-plan-stage-result { margin-top: 7px; color: #475569; font-size: 12px; }
+.agentnew-plan-stage-trace { display: grid; gap: 7px; margin-top: 12px; padding-top: 10px; border-top: 1px solid #e2e8f0; }
+.agentnew-plan-stage-trace .agentnew-thinking-steps { padding: 0; border-top: 0; }
+.agentnew-plan-stage-trace-window {
+  max-height: min(42vh, 420px);
+  overflow-y: auto;
+  overflow-anchor: none;
+  scrollbar-gutter: stable;
+  -webkit-overflow-scrolling: touch;
+}
+.agentnew-plan-trace-row { flex: 0 0 auto; min-width: 0; }
+.agentnew-plan-stage-trace-empty { color: #94a3b8; font-size: 12px; }
+.agentnew-plan-evidence { color: #047857; }
+.agentnew-plan-block { color: #b91c1c; }
+.agentnew-plan-approval { align-items: center; margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0; }
+.agentnew-plan-approval > div { display: flex; gap: 8px; }
+.agentnew-plan-resume > span { color: #92400e; font-size: 12px; }
+

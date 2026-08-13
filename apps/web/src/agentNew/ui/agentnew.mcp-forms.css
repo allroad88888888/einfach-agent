@@ -1,0 +1,214 @@
+/* agentnew.mcp-forms.css —— MCP 新增/JSON 导入表单 + 空态/告警提示（T7 拆分自 agentnew.css） */
+
+.agentnew-mcp-form {
+  margin-bottom: 16px;
+  padding: 15px;
+  border: 1px solid #dfe4ff;
+  border-radius: 10px;
+  background: #fafbff;
+}
+
+.agentnew-mcp-form-head {
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.agentnew-mcp-form h4 {
+  font-size: 14px;
+}
+
+.agentnew-mcp-add-mode {
+  display: inline-flex;
+  gap: 3px;
+  margin-bottom: 14px;
+  padding: 3px;
+  border: 1px solid #dfe4ed;
+  border-radius: 7px;
+  background: #f1f4f8;
+}
+
+.agentnew-mcp-add-mode button {
+  min-height: 28px;
+  padding: 3px 11px;
+  border: 0;
+  border-radius: 5px;
+  color: #64748b;
+  background: transparent;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.agentnew-mcp-add-mode button:hover {
+  color: #3f46a6;
+}
+
+.agentnew-mcp-add-mode button:focus-visible {
+  outline: 2px solid #6669d2;
+  outline-offset: 1px;
+}
+
+.agentnew-mcp-add-mode .is-active {
+  color: #3f46a6;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(39, 51, 73, 0.12);
+}
+
+.agentnew-mcp-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 13px;
+}
+
+.agentnew-mcp-form-grid > label:not(.agentnew-mcp-form-switch) {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  min-width: 0;
+  color: #475569;
+  font-size: 12px;
+}
+
+.agentnew-mcp-form-grid > label > small {
+  color: #b42318;
+  font-size: 11px;
+}
+
+.agentnew-mcp-form-wide {
+  grid-column: 1 / -1;
+}
+
+.agentnew-mcp-form-switch,
+.agentnew-mcp-form-manual {
+  padding: 9px 10px;
+  border-radius: 7px;
+  background: #f2f4fb;
+}
+
+.agentnew-mcp-form-switch > span,
+.agentnew-mcp-form-manual {
+  display: grid;
+  gap: 2px;
+}
+
+.agentnew-mcp-form-switch strong,
+.agentnew-mcp-form-manual strong {
+  color: #475569;
+  font-size: 12px;
+}
+
+.agentnew-mcp-form-switch small,
+.agentnew-mcp-form-manual small {
+  color: #7a8699;
+  font-size: 11px;
+}
+
+.agentnew-mcp-json-panel {
+  display: grid;
+  gap: 7px;
+  color: #475569;
+  font-size: 12px;
+}
+
+.agentnew-mcp-json-input {
+  min-height: 230px;
+  tab-size: 2;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  line-height: 1.55;
+}
+
+.agentnew-mcp-json-panel > p {
+  margin: 0 0 3px;
+  color: #6b7689;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.agentnew-mcp-json-panel code {
+  color: #4444bd;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.agentnew-mcp-import-status {
+  margin: 0 0 14px;
+  padding: 9px 11px;
+  border: 1px solid #b9e1cb;
+  border-radius: 7px;
+  color: #17663a;
+  background: #f0faf5;
+  font-size: 12px;
+}
+
+.agentnew-mcp-form-submit {
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.agentnew-mcp-empty,
+.agentnew-settings-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 260px;
+  padding: 24px;
+  border: 1px dashed #d9dfeb;
+  border-radius: 10px;
+  color: #7a8699;
+  text-align: center;
+}
+
+.agentnew-mcp-empty > span,
+.agentnew-settings-placeholder > span {
+  margin-bottom: 8px;
+  color: #626fd0;
+  font-size: 28px;
+}
+
+.agentnew-mcp-empty strong {
+  color: #3d485c;
+  font-size: 14px;
+}
+
+.agentnew-mcp-empty p,
+.agentnew-settings-placeholder p {
+  max-width: 390px;
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+.agentnew-settings-placeholder h3 {
+  font-size: 17px;
+}
+
+.agentnew-settings-placeholder small {
+  margin-top: 12px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  font-size: 11px;
+}
+
+.agentnew-mcp-notice {
+  margin: 10px 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.agentnew-mcp-storage-warning {
+  display: grid;
+  gap: 3px;
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid #f2cc8f;
+  border-radius: 7px;
+  color: #7c4a03;
+  background: #fff8e8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.agentnew-mcp-storage-warning strong {
+  color: #6b3d00;
+}
+

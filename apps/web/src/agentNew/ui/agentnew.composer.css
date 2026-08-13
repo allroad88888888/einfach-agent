@@ -1,0 +1,367 @@
+/* agentnew.composer.css —— 底部输入区 + browser_action 信息卡片 + 工具进度条 + 待保存文件（save_file 产物）（T7 拆分自 agentnew.css） */
+
+/* ── 底部输入区 ───────────────────────────── */
+.agentnew-composer {
+  position: sticky;
+  z-index: 20;
+  bottom: 0;
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 12px 20px 16px;
+  border-top: 1px solid #e6eaf2;
+  background: #f7f9fc;
+}
+
+.agentnew-composer-editor {
+  display: grid;
+  flex: 1 1 0;
+  gap: 2px;
+  min-width: 0;
+}
+
+.agentnew-composer-status-line {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-height: 16px;
+  padding-left: 2px;
+}
+
+.agentnew-composer-queue-status {
+  color: #4f46b8;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.agentnew-composer-mode {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #68758a;
+  font: inherit;
+  font-size: 11px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.agentnew-composer-mode:hover {
+  color: #364155;
+  text-decoration: underline;
+}
+
+.agentnew-composer-mode.is-auto {
+  color: #23733c;
+}
+
+.agentnew-confirm-reason {
+  margin: 0;
+  color: #a33a3a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.agentnew-withdraw-notice,
+.agentnew-withdraw-bar,
+.agentnew-run-error {
+  flex: 1 0 100%;
+}
+
+.agentnew-run-error {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid #efb5b5;
+  border-radius: 8px;
+  background: #fff5f5;
+  color: #8f2424;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.agentnew-run-error strong {
+  font-size: 13px;
+}
+
+.agentnew-run-error details {
+  min-width: 0;
+}
+
+.agentnew-run-error summary {
+  width: max-content;
+  cursor: pointer;
+  color: #a33a3a;
+}
+
+.agentnew-run-error code {
+  display: block;
+  max-height: 100px;
+  margin-top: 4px;
+  padding: 6px 8px;
+  overflow: auto;
+  border-radius: 6px;
+  background: rgba(143, 36, 36, 0.07);
+  color: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.agentnew-withdraw-notice {
+  padding: 8px 10px;
+  border: 1px solid #dbe0ec;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #536173;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.agentnew-withdraw-notice.warning {
+  border-color: #ead7a7;
+  background: #fffaf0;
+  color: #6e5523;
+}
+
+.agentnew-withdraw-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #6b7689;
+  font-size: 12px;
+}
+
+.agentnew-withdraw-button {
+  flex: 0 0 auto;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid #cbd4e3;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #253047;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agentnew-withdraw-button:hover {
+  border-color: #aeb9cc;
+  background: #edf2f8;
+}
+
+.agentnew-composer-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  max-height: 160px;
+  padding: 11px 12px;
+  border: 1px solid #d4dbe8;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #1b2333;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: none;
+}
+
+.agentnew-composer-input:focus {
+  outline: none;
+  border-color: #a5a8f4;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16);
+}
+
+.agentnew-composer-input:disabled {
+  background: #f2f4f8;
+  color: #6b7689;
+}
+
+.agentnew-composer-send {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 10px;
+  background: #5b5bd6;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agentnew-composer-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.agentnew-composer-stop {
+  border: 1px solid #d4dbe8;
+  background: #ffffff;
+  color: #39445a;
+}
+
+.agentnew-composer-stop:hover:not(:disabled) {
+  border-color: #aeb9cc;
+  background: #edf2f8;
+}
+
+.agentnew-composer-send:hover:not(:disabled) {
+  background: #4444bd;
+}
+
+.agentnew-composer-send:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ── T-8 工具卡片：browser_action 信息卡片（内联在消息列表里） ─── */
+.agentnew-browser-card {
+  align-self: flex-start;
+  max-width: 72%;
+  padding: 12px 14px;
+  border: 1px solid #dbe0ec;
+  border-left: 3px solid #5b5bd6;
+  border-radius: 10px;
+  background: #fbfcff;
+}
+
+.agentnew-browser-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #3a3aa8;
+}
+
+.agentnew-browser-card-body {
+  margin-top: 6px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #1b2333;
+  overflow-wrap: anywhere;
+}
+
+.agentnew-browser-card-body > :first-child {
+  margin-top: 0;
+}
+
+.agentnew-browser-card-body > :last-child {
+  margin-bottom: 0;
+}
+
+/* ── 工具进度条（显示工具正在干啥） ───────── */
+.agentnew-tool-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 20px 8px;
+}
+
+.agentnew-tool-activity-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px dashed #cdd2f5;
+  border-radius: 8px;
+  background: #f7f8ff;
+  font-size: 12px;
+  color: #3a4458;
+}
+
+.agentnew-tool-activity-spinner {
+  color: #5b5bd6;
+}
+
+.agentnew-tool-activity-name {
+  font-weight: 600;
+  color: #3a3aa8;
+}
+
+.agentnew-tool-activity-text {
+  color: #6b7689;
+  overflow-wrap: anywhere;
+}
+
+/* ── T-8 待保存文件（save_file 产物） ───────── */
+.agentnew-save-artifact {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 20px 12px;
+  padding: 12px 14px;
+  border: 1px solid #e6eaf2;
+  border-radius: 10px;
+  background: #f7f9fc;
+}
+
+.agentnew-save-artifact-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #6b7689;
+}
+
+.agentnew-save-artifact-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.agentnew-save-artifact-info {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.agentnew-save-artifact-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1b2333;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.agentnew-save-artifact-meta {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: #9aa3b5;
+}
+
+.agentnew-save-artifact-hint {
+  font-size: 12px;
+  color: #6b7689;
+}
+
+.agentnew-save-artifact-error {
+  font-size: 12px;
+  color: #dc4636;
+}
+
+.agentnew-save-artifact-button {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  border: 1px solid #d4dbe8;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #3a4458;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agentnew-save-artifact-button:hover:not(:disabled) {
+  border-color: #a5a8f4;
+  background: #eef0fe;
+}
+
+.agentnew-save-artifact-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+

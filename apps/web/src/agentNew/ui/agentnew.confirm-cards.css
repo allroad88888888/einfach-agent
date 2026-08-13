@@ -1,0 +1,451 @@
+/* agentnew.confirm-cards.css —— ask_user_question 暂停确认卡片 + 工作区设置面板 + WorkspaceRootField + ToolConfirmCard（T7 拆分自 agentnew.css） */
+
+/* ── T-8 ask_user_question 暂停确认卡片 ─────── */
+.agentnew-ask {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 20px 12px;
+  padding: 16px;
+  border: 1px solid #cdd2f5;
+  border-radius: 12px;
+  background: #f5f6ff;
+}
+
+.agentnew-plan > .agentnew-ask,
+.agentnew-plan-stage-body > .agentnew-ask {
+  margin: 12px 0 0;
+}
+
+.agentnew-plan > .agentnew-ask.is-plan-embedded,
+.agentnew-plan-stage-body > .agentnew-ask.is-plan-embedded {
+  border-color: #f2d08b;
+  background: #fffbeb;
+}
+
+.agentnew-ask-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agentnew-ask-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b6be0;
+}
+
+.agentnew-ask-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1b2333;
+}
+
+.agentnew-ask-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.agentnew-ask-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agentnew-ask-label {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 14px;
+  color: #1b2333;
+}
+
+.agentnew-ask-index {
+  font-size: 11px;
+  font-weight: 600;
+  color: #9aa3b5;
+}
+
+.agentnew-ask-required {
+  color: #dc4636;
+}
+
+.agentnew-ask-textarea {
+  min-height: 40px;
+  max-height: 140px;
+  padding: 9px 11px;
+  border: 1px solid #d4dbe8;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1b2333;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.agentnew-ask-textarea:focus {
+  outline: none;
+  border-color: #a5a8f4;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16);
+}
+
+.agentnew-ask-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agentnew-ask-option {
+  padding: 6px 14px;
+  border: 1px solid #d4dbe8;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #3a4458;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.agentnew-ask-option:hover {
+  border-color: #a5a8f4;
+  background: #eef0fe;
+}
+
+.agentnew-ask-option--selected {
+  border-color: transparent;
+  background: #5b5bd6;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.agentnew-ask-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.agentnew-ask-hint {
+  font-size: 12px;
+  color: #6b7689;
+}
+
+.agentnew-ask-submit {
+  flex: 0 0 auto;
+  padding: 8px 18px;
+  border: 0;
+  border-radius: 10px;
+  background: #5b5bd6;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agentnew-ask-submit:hover:not(:disabled) {
+  background: #4444bd;
+}
+
+.agentnew-ask-submit:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* 工作区设置：遮罩层中的居中大面板，后续工作区级功能继续追加到 body。 */
+.agentnew-workspace-settings-backdrop {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  padding: 32px;
+  background: rgba(15, 23, 42, 0.46);
+  backdrop-filter: blur(2px);
+}
+
+.agentnew-workspace-settings-dialog {
+  display: flex;
+  width: min(780px, 100%);
+  min-height: min(520px, calc(100vh - 64px));
+  max-height: calc(100vh - 64px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(216, 222, 234, 0.9);
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.24);
+}
+
+.agentnew-workspace-settings-header {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 24px 28px 20px;
+  border-bottom: 1px solid #e8ecf3;
+}
+
+.agentnew-workspace-settings-eyebrow {
+  margin-bottom: 5px;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.agentnew-workspace-settings-header h2 {
+  margin: 0;
+  color: #1b2333;
+  font-size: 22px;
+  line-height: 1.3;
+}
+
+.agentnew-workspace-settings-close {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #697386;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.agentnew-workspace-settings-close:hover {
+  color: #30384a;
+  background: #f0f2f7;
+}
+
+.agentnew-workspace-settings-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 28px;
+  background: #f8f9fc;
+}
+
+.agentnew-workspace-settings-section {
+  padding: 22px;
+  border: 1px solid #e0e5ee;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.agentnew-workspace-settings-section h3 {
+  margin: 0 0 7px;
+  color: #263044;
+  font-size: 15px;
+}
+
+.agentnew-workspace-settings-section > p {
+  margin: 0 0 20px;
+  color: #6b7689;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* S4-A WorkspaceRootField（工作区设置里的目录绑定） */
+.agentnew-workspace-root {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e6eaf2;
+}
+
+.agentnew-workspace-settings-section .agentnew-workspace-root {
+  margin: 0;
+  padding: 0;
+  border-bottom: 0;
+}
+
+@media (max-width: 640px) {
+  .agentnew-workspace-settings-backdrop {
+    padding: 12px;
+  }
+
+  .agentnew-workspace-settings-dialog {
+    min-height: calc(100vh - 24px);
+    max-height: calc(100vh - 24px);
+    border-radius: 14px;
+  }
+
+  .agentnew-workspace-settings-header,
+  .agentnew-workspace-settings-body {
+    padding: 20px;
+  }
+
+  .agentnew-workspace-settings-section {
+    padding: 18px;
+  }
+}
+
+.agentnew-workspace-root-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b7689;
+}
+
+.agentnew-workspace-root-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agentnew-workspace-root-input {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 7px 10px;
+  border: 1px solid #d4dbe8;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #1b2333;
+  font: inherit;
+  font-size: 13px;
+}
+
+.agentnew-workspace-root-input:focus {
+  outline: none;
+  border-color: #a5a8f4;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.16);
+}
+
+.agentnew-workspace-root-button {
+  flex: 0 0 auto;
+  min-height: 33px;
+  padding: 0 10px;
+  border: 1px solid #cbd4e3;
+  border-radius: 8px;
+  background: #f7f9fc;
+  color: #253047;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agentnew-workspace-root-button:hover:not(:disabled) {
+  border-color: #aeb9cc;
+  background: #edf2f8;
+}
+
+.agentnew-workspace-root-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.agentnew-workspace-root-error {
+  font-size: 12px;
+  line-height: 1.35;
+  color: #b42318;
+}
+
+/* S4-B ToolConfirmCard（危险工具执行前的确认卡片） */
+.agentnew-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0 20px 12px;
+  padding: 16px;
+  border: 1px solid #f0cba8;
+  border-radius: 12px;
+  background: #fff8f0;
+}
+
+.agentnew-confirm-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agentnew-confirm-eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #c2731a;
+}
+
+.agentnew-confirm-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1b2333;
+}
+
+.agentnew-confirm-tool {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: #f4e2cd;
+  color: #92500c;
+  font-size: 13px;
+}
+
+.agentnew-confirm-preview {
+  margin: 0;
+  max-height: 160px;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid #ecd9bf;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #3a4458;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.agentnew-confirm-always {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #3a4458;
+}
+
+.agentnew-confirm-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.agentnew-confirm-reject,
+.agentnew-confirm-approve {
+  padding: 8px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agentnew-confirm-reject {
+  border: 1px solid #d4dbe8;
+  background: #ffffff;
+  color: #3a4458;
+}
+
+.agentnew-confirm-reject:hover {
+  border-color: #c0c7d6;
+  background: #f4f6fa;
+}
+
+.agentnew-confirm-approve {
+  border: 0;
+  background: #d97917;
+  color: #ffffff;
+}
+
+.agentnew-confirm-approve:hover {
+  background: #bd6510;
+}
+
