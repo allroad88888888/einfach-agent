@@ -2,19 +2,19 @@ import { createConcurrencyLimiter } from '@web-agent/core/subagents/concurrency'
 import { resolveDelegationRequestPolicy } from '@web-agent/core/subagents/delegationPolicy'
 import { runChildAgent } from '@web-agent/core/subagents/childAgentLoop'
 import { createChildModelCaller } from '@web-agent/core/subagents/childModelClient'
-import { routeChildModel } from '@web-agent/core/subagents/modelSelection'
-import { ROOT_AGENT_PATH } from '@web-agent/core/subagents/path'
+import {
+  ROOT_AGENT_PATH,
+  routeChildModel,
+  type ChildAgentResult,
+  type DelegateAgentBatchResult,
+  type DelegateAgentBatchStatus,
+  type DelegateAgentCallContext,
+  type DelegateAgentInput,
+  type DelegateAgents,
+  type SubagentNodeRecord,
+} from '@web-agent/core/subagents'
 import { subagentCacheBasePath, subagentEventsPath } from './archive/skillCache'
 import { distillDelegateSkills } from './archive/distill'
-import type { DelegateAgents } from '@web-agent/core/subagents/delegationRuntimePorts'
-import type {
-  ChildAgentResult,
-  DelegateAgentBatchResult,
-  DelegateAgentBatchStatus,
-  DelegateAgentCallContext,
-  DelegateAgentInput,
-  SubagentNodeRecord,
-} from '@web-agent/core/subagents/types'
 import {
   collectChangeSets,
   DelegateAgentRuntimeState,

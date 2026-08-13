@@ -1,6 +1,6 @@
 import { createStore } from '@einfach/core'
 import { describe, expect, it } from 'vitest'
-import type { ReadWorkspaceFileInput, ReadWorkspaceFileResult, WorkspaceRuntimeResult } from '@web-agent/core/state/stateViewPort'
+import type { ReadWorkspaceFileInput, ReadWorkspaceFileResult, WorkspaceRuntimeResult } from '@web-agent/core/subagents'
 import { prepareSubagentSkillGovernance } from '@web-agent/core/runtime/skillGovernance'
 import {
   candidateSkillsAtom,

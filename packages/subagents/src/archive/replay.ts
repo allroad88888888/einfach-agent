@@ -1,16 +1,17 @@
-import type {
-  ChildAgentResult,
-  SubagentArchiveEvent,
-  SubagentArchiveEventType,
-  SubagentNodeRecord,
-} from '@web-agent/core/subagents/types'
+import {
+  compareAgentPaths,
+  parseAgentPath,
+  type ChildAgentResult,
+  type SubagentArchiveEvent,
+  type SubagentArchiveEventType,
+  type SubagentNodeRecord,
+} from '@web-agent/core/subagents'
 import {
   parseJsonDocument,
   parseJsonl,
   type JsonlParseError as ParseError,
   type JsonlParseResult,
 } from './jsonl'
-import { compareAgentPaths, parseAgentPath } from '@web-agent/core/subagents/path'
 
 export type { JsonlParseError as ParseError, JsonlParseResult } from './jsonl'
 

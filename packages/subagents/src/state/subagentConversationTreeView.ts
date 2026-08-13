@@ -1,5 +1,5 @@
 import type { ModelItem } from '@web-agent/ai'
-import { parseAgentPath } from '@web-agent/core/subagents/path'
+import { parseAgentPath } from '@web-agent/core/subagents'
 import { aggregateSubagentTreeStatus } from './subagentTreeStatus'
 import {
   isRecord,

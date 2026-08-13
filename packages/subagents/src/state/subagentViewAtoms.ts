@@ -1,5 +1,5 @@
 import { atom } from '@einfach/core'
-import { subagentStatePort } from '@web-agent/core/state/stateViewPort'
+import { subagentStatePort } from '@web-agent/core/subagents'
 import { archiveSubagentTreesAtom } from './subagentArchiveAtoms'
 import {
   globalSubagentRunsAtom,

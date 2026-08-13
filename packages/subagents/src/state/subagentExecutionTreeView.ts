@@ -1,5 +1,9 @@
-import type { ExecutionGraphSnapshot, ExecutionNode, ExecutionNodeStatus } from '@web-agent/core/execution/types'
-import { parseAgentPath } from '@web-agent/core/subagents/path'
+import {
+  parseAgentPath,
+  type ExecutionGraphSnapshot,
+  type ExecutionNode,
+  type ExecutionNodeStatus,
+} from '@web-agent/core/subagents'
 import { isSubagentTraceModelItem } from './subagentTraceAtoms'
 import { aggregateSubagentTreeStatus } from './subagentTreeStatus'
 import { isRecord, stringList, stringValue, type UnknownRecord } from './subagentViewRecord'

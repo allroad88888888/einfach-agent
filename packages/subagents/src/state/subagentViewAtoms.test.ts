@@ -25,7 +25,7 @@ import type {
   ReadWorkspaceFileResult,
   ReadWorkspaceRunIndexPageResult,
   WorkspaceRuntimeResult,
-} from '@web-agent/core/state/stateViewPort'
+} from '@web-agent/core/subagents'
 
 function delegateItems(result?: unknown): ConversationItem[] {
   const items: ConversationItem[] = [

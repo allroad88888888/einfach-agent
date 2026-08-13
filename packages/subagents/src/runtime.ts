@@ -1,19 +1,17 @@
-import type {
-  DelegationRuntime,
-  DelegationRuntimeInput,
-  SubagentScheduler,
-} from '@web-agent/core/runtime/delegationContract'
+import {
+  formatSubagentTranscript,
+  subagentTierTarget,
+  supportsSubagentTierRouting,
+  type DelegationRuntime,
+  type DelegationRuntimeInput,
+  type SubagentScheduler,
+  type SubagentTierRouting,
+} from '@web-agent/core/subagents'
 import { recordCompletedSpan } from '@web-agent/core/observability/trace'
 import {
   createChildModelCaller,
   firstAssistantText,
 } from '@web-agent/core/subagents/childModelClient'
-import {
-  subagentTierTarget,
-  supportsSubagentTierRouting,
-  type SubagentTierRouting,
-} from '@web-agent/core/subagents/tierRouting'
-import { formatSubagentTranscript } from '@web-agent/core/runtime/subagentTranscript'
 import type { ModelSettings } from '@web-agent/core/state/core.type'
 import { SubagentArchiveIO } from './archive/archiveIO'
 import type { SubagentArchiveWriterContext } from './archive/archiveWriter'

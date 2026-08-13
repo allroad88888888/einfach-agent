@@ -1,6 +1,13 @@
-import type { ReserveChildrenInput, SubagentScheduler } from '@web-agent/core/runtime/delegationContract'
-import { ROOT_AGENT_PATH, agentPathDepth, childAgentPath, parentAgentPath } from '@web-agent/core/subagents/path'
-import type { SubagentNodeRecord, SubagentPath } from '@web-agent/core/subagents/types'
+import {
+  ROOT_AGENT_PATH,
+  agentPathDepth,
+  childAgentPath,
+  parentAgentPath,
+  type ReserveChildrenInput,
+  type SubagentNodeRecord,
+  type SubagentPath,
+  type SubagentScheduler,
+} from '@web-agent/core/subagents'
 
 interface TreeState {
   treeId: string

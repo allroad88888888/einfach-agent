@@ -5,7 +5,7 @@ import {
   type ReadWorkspaceRunIndexPageInput,
   type ReadWorkspaceRunIndexPageResult,
   type WorkspaceRuntimeResult,
-} from '@web-agent/core/state/stateViewPort'
+} from '@web-agent/core/subagents'
 import { parseJsonl, parseJsonlLines, type JsonlLine } from '../archive/jsonl'
 import { replaySubagentArchive, type SubagentReplayState } from '../archive/replay'
 import {

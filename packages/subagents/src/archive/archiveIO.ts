@@ -1,6 +1,5 @@
 import type { ModelItem } from '@web-agent/ai'
 import { SubagentArchiveWriter, type SubagentArchiveWriterContext } from './archiveWriter'
-import { ROOT_AGENT_PATH } from '@web-agent/core/subagents/path'
 import {
   renderJsonDocument,
   renderJsonLine,
@@ -15,14 +14,15 @@ import {
   subagentTracePath,
   subagentTreePath,
 } from './skillCache'
-import type {
-  DelegateAgentCallContext,
-  SubagentArchiveEvent,
-  SubagentArchiveEventType,
-  SubagentArchiveWriteMode,
-  SubagentNodeRecord,
-  SubagentSkillFile,
-} from '@web-agent/core/subagents/types'
+import {
+  ROOT_AGENT_PATH,
+  type DelegateAgentCallContext,
+  type SubagentArchiveEvent,
+  type SubagentArchiveEventType,
+  type SubagentArchiveWriteMode,
+  type SubagentNodeRecord,
+  type SubagentSkillFile,
+} from '@web-agent/core/subagents'
 
 interface SubagentArchiveIOOptions {
   writerContext: SubagentArchiveWriterContext

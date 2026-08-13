@@ -12,7 +12,7 @@ import {
   subagentSkillFilename,
   subagentSkillId,
 } from './skillCache'
-import type { SubagentSkillFile } from '@web-agent/core/subagents/types'
+import type { SubagentSkillFile } from '@web-agent/core/subagents'
 
 describe('subagent archive helpers', () => {
   it('names long-lived archive paths by conversation and run', () => {

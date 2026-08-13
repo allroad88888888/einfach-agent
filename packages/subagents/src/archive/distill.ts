@@ -1,13 +1,11 @@
 import {
   compactSubagentTranscript,
   formatSubagentTranscript,
-} from '@web-agent/core/runtime/subagentTranscript'
-import type {
-  DelegateAgentChildSpec,
-  DelegateAgentStrategy,
-  SubagentNodeRecord,
-  SubagentSkillFile,
-} from '@web-agent/core/subagents/types'
+  type DelegateAgentChildSpec,
+  type DelegateAgentStrategy,
+  type SubagentNodeRecord,
+  type SubagentSkillFile,
+} from '@web-agent/core/subagents'
 import {
   subagentContentHash,
   subagentGlobalSkillPath,

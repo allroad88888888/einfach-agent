@@ -1,4 +1,4 @@
-import { registerSubagentViewCommandFacade } from '@web-agent/core/state/stateViewPort'
+import { registerSubagentViewCommandFacade } from '@web-agent/core/subagents'
 import {
   loadSubagentArchiveAtom,
   loadSubagentArchivePreviewAtom,

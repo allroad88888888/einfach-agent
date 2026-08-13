@@ -6,7 +6,7 @@
 // `DelegateAgentRuntimeState` 时传入；core 不再持有任何默认值。
 
 import { DEEPSEEK_FLASH_MODEL, DEEPSEEK_PRO_MODEL } from '@web-agent/ai'
-import type { SubagentTierRouting } from '@web-agent/core/subagents/tierRouting'
+import type { SubagentTierRouting } from '@web-agent/core/subagents'
 
 /** 未显式注入档位路由表时使用的默认表；语义与拆分前写死的 Pro/Flash 映射完全一致。 */
 export const DEFAULT_SUBAGENT_TIER_ROUTING: SubagentTierRouting = {
