@@ -24,12 +24,14 @@ import { assemblePlugins } from '../pluginApi'
 import {
   applyCompaction,
   compactionPlugin,
+  type CompactionRequestDraft,
+} from './compactionPlugin'
+import {
   CONTEXT_SAFETY_MARGIN_RATIO,
   COST_SOFT_CAP_TOKENS,
   DEFAULT_RESERVED_OUTPUT_TOKENS,
   contextInputBudgetTokens,
-  type CompactionRequestDraft,
-} from './compactionPlugin'
+} from '../../contextBudget'
 
 // 只需要 .settings——与 coreCtx.test.ts 的 fakeMeta 同款「最小可信 fake + 强转」写法。
 function fakeMeta(settings: ModelSettings): SessionMeta {

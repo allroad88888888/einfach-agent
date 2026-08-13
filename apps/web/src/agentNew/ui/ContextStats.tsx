@@ -4,11 +4,11 @@
 
 import { useAtom } from '@einfach/react'
 import { useEffect } from 'react'
-import { recoverCacheTotalsFromTrace } from '@web-agent/core/observability/traceCacheTotals'
+import { recoverCacheTotalsFromTrace } from '@web-agent/core/observability'
 import {
   COST_SOFT_CAP_TOKENS,
   contextInputBudgetTokens,
-} from '@web-agent/core/runtime/core/plugins/compactionPlugin'
+} from '@web-agent/core/runtime/contextBudget'
 import { contextStatsAtom, type ContextStatsSnapshot } from '@web-agent/core/state/transientAtoms'
 
 const numberFormatter = new Intl.NumberFormat('en-US')

@@ -3,7 +3,7 @@ import { narrowToolCalls } from '../runtime/modelTurn'
 import {
   FINISH_REASON_ERRORS,
   isAbnormalFinishReason,
-} from '../runtime/core/plugins/finishReasonPlugin'
+} from '../runtime/finishReason'
 import { firstAssistantText } from './childModelClient'
 import type { DelegateAgentCallContext, SubagentNodeRecord } from './types'
 import type { DelegateAgentRuntimeState } from './runtimeState'

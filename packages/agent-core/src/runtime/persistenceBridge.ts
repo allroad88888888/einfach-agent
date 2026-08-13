@@ -35,6 +35,8 @@ export interface PersistenceDependencies {
 
 export interface PersistenceBridge {
   configure(deps: PersistenceDependencies): void
+  /** 回读本实例当前配置的 driver 对（启动读回要用同一对，别再由宿主手拼）。 */
+  dependencies(): PersistenceDependencies
   reset(): void
   persistSessions(context?: PersistenceDiagnosticContext): void
   persistWorkspaces(): void
@@ -54,6 +56,10 @@ export function createPersistenceBridge(rootStore: Store, observability: Observa
   function configure(deps: PersistenceDependencies): void {
     if (deps.history !== undefined) history = deps.history
     if (deps.sessions !== undefined) sessions = deps.sessions
+  }
+
+  function dependencies(): PersistenceDependencies {
+    return { history, sessions }
   }
 
   function reset(): void {
@@ -116,6 +122,7 @@ export function createPersistenceBridge(rootStore: Store, observability: Observa
 
   return {
     configure,
+    dependencies,
     reset,
     persistSessions,
     persistWorkspaces,
@@ -135,6 +142,26 @@ export function setDefaultPersistenceBridge(bridge: PersistenceBridge): void {
 
 export function configurePersistence(deps: PersistenceDependencies): void {
   defaultBridgeRef.current?.configure(deps)
+}
+
+// 简介：启动读回 —— 用刚 configurePersistence 进来的那对 driver 把盘上的会话恢复进内存 store；
+//   返回「是否恢复了任何会话」（false 时宿主该种子一个空会话）。
+// 详情：这是持久化的【读】那一半，与写钩子同属本桥 —— 收在这里，宿主就不必再深挖
+//   state/persistence/hydrate（盘点 E4），也不会出现「hydrate 与 configurePersistence 用了
+//   两对不同实例」这种只靠注释维持的隐性约定：driver 从本桥自己的 dependencies() 取。
+//   · 只服务默认实例：state/persistence/hydrate 回填的是 defaultCore 的 root/session store
+//     （它 import 的是 state/rootStore 这个 defaultCore 视图），因此本函数与其他兼容导出一样
+//     绑定 defaultCore，没有做成 per-instance 方法——那会对 createCore() 的隔离实例说谎。
+//   · hydrate 走【动态 import】：静态 import 会连出
+//     persistenceBridge → hydrate → state/rootStore → core/coreInstance → persistenceBridge
+//     这个初始化期循环（coreInstance 模块顶层就调 setDefaultPersistenceBridge，撞上本模块
+//     defaultBridgeRef 的 TDZ）。推到调用时刻加载即可绕开，且它本就在启动关键路径上。
+//   · driver 未配置 → 直接 false（与 hydrate 自身「失败不阻塞启动」的容错契约一致）。
+export async function hydratePersistence(): Promise<boolean> {
+  const { history, sessions } = defaultBridgeRef.current?.dependencies() ?? {}
+  if (!history || !sessions) return false
+  const { hydrate } = await import('../state/persistence/hydrate')
+  return hydrate({ history, sessions })
 }
 
 export function resetPersistence(): void {

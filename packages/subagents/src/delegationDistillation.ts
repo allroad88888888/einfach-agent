@@ -1,7 +1,7 @@
 import {
   FINISH_REASON_ERRORS,
   isAbnormalFinishReason,
-} from '@web-agent/core/runtime/core/plugins/finishReasonPlugin'
+} from '@web-agent/core/runtime/finishReason'
 import type { SkillDistillChat } from './archive/distill'
 import {
   firstAssistantText,

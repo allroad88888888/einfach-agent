@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createDelegateAgentRuntime } from '@web-agent/subagents'
-import { FINISH_REASON_ERRORS } from '../runtime/core/plugins/finishReasonPlugin'
+import { FINISH_REASON_ERRORS } from '../runtime/finishReason'
 import type { DelegateAgentCallContext, SubagentNodeRecord } from './types'
 import { createToolRegistry } from '../tools/toolRegistry'
 

@@ -72,12 +72,11 @@ import {
 } from './compactionProjectionCache'
 
 export { createCompactionProjectionCache, type CompactionProjectionCache } from './compactionProjectionCache'
-export {
-  contextInputBudgetTokens,
-  CONTEXT_SAFETY_MARGIN_RATIO,
-  COST_SOFT_CAP_TOKENS,
-  DEFAULT_RESERVED_OUTPUT_TOKENS,
-} from '../../contextBudget'
+// 预算常量与 contextInputBudgetTokens 【不从本文件转出】（盘点 E1 的处置）：它们是
+// runtime/contextBudget.ts 的纯常量/纯函数，与「压缩插件」这个可替换实现无关。本文件曾把它们
+// 原样 re-export，结果 UI（ContextStats）顺着这条链把默认插件的文件路径当成了公开 API——换插件
+// 即破 UI。消费方一律直接 import '../../contextBudget'（core 内）或 `@web-agent/core/runtime/
+// contextBudget`（core 外）。
 
 // ---------------------------------------------------------------------------
 // 上下文压缩预算

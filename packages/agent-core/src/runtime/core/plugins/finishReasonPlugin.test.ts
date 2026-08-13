@@ -29,11 +29,13 @@ import type { TurnEndDecision, TurnEndEvent } from '../loopHooks'
 import {
   applyFinishReason,
   finishReasonPlugin,
+} from './finishReasonPlugin'
+import {
   isAbnormalFinishReason,
   FINISH_REASON_ERRORS,
   FINISH_REASON_ITEM_NOTICES,
   FINISH_REASON_STANDALONE_NOTICES,
-} from './finishReasonPlugin'
+} from '../../finishReason'
 
 // 假 CoreCtx：current=true 时登记会话 s1 + 把 store 的 runAtom 置成 runId r1，令 ctx.isCurrent()
 // 为真（isCurrentRun 双查：会话在 root.sessionsAtom + store.runAtom.runId === runId）。

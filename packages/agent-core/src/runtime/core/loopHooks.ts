@@ -11,7 +11,8 @@
 // 不在本文件（本文件只定义槽形状）。危险工具确认 / ask_user 暂停留到 Stage 2b，原样待在 loop 里。
 // 定义但不强制实现 —— assemblePlugins 会把每个槽按 fan-out 语义合成，loop 侧据「槽为 undefined」跳过。
 
-import { finishReasonExtensionFor, type ModelItem, type ModelResponseMessage } from '@web-agent/ai'
+import type { ModelItem, ModelResponseMessage } from '@web-agent/ai'
+import { isAbnormalFinishReason, type AbnormalFinishReason } from '../finishReason'
 import type { TraceAttributes } from '../../observability/port'
 import type { CompletedToolResult, ToolResultPatch } from '../toolResultPatch'
 import type { CoreCtx } from './coreCtx'
@@ -140,17 +141,11 @@ export interface TurnEndContinueDecision {
 
 export type TurnEndDecision = TurnEndStopDecision | TurnEndContinueDecision
 
-export type AbnormalFinishReason = string
-
-// 简介：finish_reason 是否需要异常终止。
-// 详情：标准异常原因和 provider extension 都由同一守卫收敛，避免 loop 与插件各自维护判据。
-export function isAbnormalFinishReason(reason: string | null): reason is AbnormalFinishReason {
-  return (
-    reason === 'length' ||
-    reason === 'content_filter' ||
-    finishReasonExtensionFor(reason) !== undefined
-  )
-}
+// 判据与文案的定义已搬到中立的 runtime/finishReason.ts（盘点 E2）：loop、插件、子 Agent 与
+// packages/subagents 都消费它，不该从「turn-end 契约」或「默认插件」里深挖。turn-end 契约仍
+// 原样转出判据与类型，插件作者的 import 面不变。
+export type { AbnormalFinishReason } from '../finishReason'
+export { isAbnormalFinishReason } from '../finishReason'
 
 // 简介：取本轮需要异常终止的 finish_reason。
 // 详情：length + tool_calls 是可恢复的半截工具参数，不终止，留给坏 JSON 闸门；其余异常原因终止。

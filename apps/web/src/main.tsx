@@ -18,9 +18,8 @@ import {
 } from '@web-agent/core/runtime/core/coreInstance'
 import { createDefaultPlanRuntime } from '@web-agent/tools-planning'
 import { createDelegationAssembly } from '@web-agent/subagents'
-import { configurePersistence } from '@web-agent/core/runtime/persistenceBridge'
+import { configurePersistence, hydratePersistence } from '@web-agent/core/runtime/persistenceBridge'
 import { configureObservability } from '@web-agent/core/observability/trace'
-import { hydrate } from '@web-agent/core/state/persistence/hydrate'
 import { createIndexedDbHistoryDriver } from '@web-agent/persistence-idb'
 import { createIndexedDbLogDriver, createIndexedDbLogReader } from '@web-agent/observability-idb'
 import { configureTraceLogReader as configureTraceLogReaderFactory } from '@web-agent/core/observability/logReader'
@@ -102,7 +101,8 @@ configureModelCredentialHost(
 )
 
 // 持久化 driver：桌面壳（Tauri）用 SQLite，浏览器用 IndexedDB（TaK1，上层逻辑不变）。
-// hydrate（读回）与 configurePersistence（写盘钩子）必须用同一对实例。sqlite 实现**动态 import**
+// 读回与写盘必须用同一对实例——这条现在由 persistenceBridge 结构性保证：configurePersistence
+// 注入的那对 driver 就是 hydratePersistence 读回时用的那对。sqlite 实现**动态 import**
 // —— 只在 Tauri 下加载，浏览器 bundle 不含它（代码分割 + 避免非 Tauri 环境引 plugin-sql）。
 async function resolvePersistence() {
   if (tauriHost) {
@@ -189,7 +189,7 @@ async function bootstrapApplication(): Promise<StartupCredentialTargetResolution
     configurePersistence({ history, sessions })
     configureObservabilityDriver()
     configureTraceLogReaderHost()
-    const restored = await hydrate({ history, sessions })
+    const restored = await hydratePersistence()
     if (!restored) newSession()
   } catch {
     newSession()

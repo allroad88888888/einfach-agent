@@ -15,6 +15,7 @@ import type { SessionsPersistence } from '../state/persistence/contract'
 import type { HistoryDriver } from '../state/persistence/historyDriver'
 import {
   configurePersistence,
+  hydratePersistence,
   resetPersistence,
   persistSessions,
   persistWorkspaces,
@@ -246,5 +247,31 @@ describe('persistenceBridge（D-4 fire-and-forget 接线）', () => {
     expect(() => persistCheckpoint('s1', cp)).not.toThrow()
     expect(() => persistTruncate('s1', 1)).not.toThrow()
     expect(() => persistDeleteSession('s1')).not.toThrow()
+  })
+})
+
+// 启动读回（盘点 E4）：宿主不再自己深挖 state/persistence/hydrate 并手拼 driver，
+// 读回用的就是 configurePersistence 注入的那对实例。
+describe('hydratePersistence（启动读回收口）', () => {
+  it('未配置 driver → 直接 false，不去读盘', async () => {
+    await expect(hydratePersistence()).resolves.toBe(false)
+  })
+
+  it('用 configurePersistence 注入的那对 driver 读回；盘上无会话 → false', async () => {
+    const history = mockHistory()
+    const sessions = mockSessions()
+    configurePersistence({ history, sessions })
+
+    await expect(hydratePersistence()).resolves.toBe(false)
+    expect(sessions.loadSessions).toHaveBeenCalled()
+  })
+
+  it('盘上有会话 → 回填 rootStore 并返回 true', async () => {
+    const history = mockHistory()
+    const sessions = mockSessions({ loadSessions: vi.fn(async () => [meta]) })
+    configurePersistence({ history, sessions })
+
+    await expect(hydratePersistence()).resolves.toBe(true)
+    expect(rootStore.getter(sessionsAtom).s1?.id).toBe('s1')
   })
 })

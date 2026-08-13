@@ -14,12 +14,10 @@ vi.mock('@web-agent/core/runtime/commands', () => ({
 }))
 vi.mock('@web-agent/core/runtime/persistenceBridge', () => ({
   configurePersistence: vi.fn(),
+  hydratePersistence: vi.fn(async () => false),
 }))
 vi.mock('@web-agent/core/observability/trace', () => ({
   configureObservability: vi.fn(),
-}))
-vi.mock('@web-agent/core/state/persistence/hydrate', () => ({
-  hydrate: vi.fn(async () => false),
 }))
 vi.mock('@web-agent/persistence-idb', () => ({
   createIndexedDbHistoryDriver: vi.fn(() => ({})),

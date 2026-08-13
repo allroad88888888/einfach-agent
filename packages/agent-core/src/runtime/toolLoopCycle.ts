@@ -1,6 +1,6 @@
 import type { ModelItem } from '@web-agent/ai'
 import { appendItem, patchRun } from '../state/sessionWriters'
-import { FINISH_REASON_ITEM_NOTICES } from './core/plugins/finishReasonPlugin'
+import { FINISH_REASON_ITEM_NOTICES } from './finishReason'
 import { getAbnormalFinishReason, type TurnEndEvent } from './core/loopHooks'
 import type { LoopBudget } from './loopBudget'
 import type { ModelTurnRequester } from './modelTurnRequester'
