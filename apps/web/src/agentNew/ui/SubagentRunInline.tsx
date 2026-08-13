@@ -5,7 +5,7 @@ import {
   type SubagentTraceRecord,
   type SubagentTreeView,
   type SubagentTreeViewNode,
-} from '@web-agent/core/state/subagentViewAtoms'
+} from '@web-agent/subagents'
 import { MessageMarkdown } from './MessageMarkdown'
 
 const STATUS_LABEL: Record<SubagentTreeViewNode['status'], string> = {

@@ -11,7 +11,7 @@ import {
   subagentTraceAtom,
   subagentTreesAtom,
   type SubagentTreeView as SubagentTree,
-} from '@web-agent/core/state/subagentViewAtoms'
+} from '@web-agent/subagents'
 import {
   loadGlobalSubagentRuns,
   loadSubagentArchive,

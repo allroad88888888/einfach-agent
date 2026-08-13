@@ -7,7 +7,7 @@ import {
   selectedCandidateSkillIdAtom,
   skillGovernanceDialogAtom,
   type CandidateSkill,
-} from '@web-agent/core/state/subagentSkillGovernanceAtoms'
+} from '@web-agent/subagents'
 import {
   closeSkillGovernanceDialog,
   confirmSkillGovernance,

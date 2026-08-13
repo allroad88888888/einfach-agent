@@ -1,5 +1,5 @@
-import type { ConversationItem } from './core.type'
-import { parseAgentPath } from '../subagents/path'
+import type { ModelItem } from '@web-agent/ai'
+import { parseAgentPath } from '@web-agent/core/subagents/path'
 import { aggregateSubagentTreeStatus } from './subagentTreeStatus'
 import {
   isRecord,
@@ -14,6 +14,11 @@ import type {
   SubagentTreeViewNode,
   SubagentTreeViewStatus,
 } from './subagentViewTypes'
+
+interface ConversationItem {
+  item: ModelItem
+  createdAt: number
+}
 
 function toolResults(items: ConversationItem[]): Map<string, UnknownRecord> {
   const results = new Map<string, UnknownRecord>()

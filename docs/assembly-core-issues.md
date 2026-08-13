@@ -365,7 +365,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   `subagent:archive:retention` / `subagent:index:compact` / `subagent:skills` 全部可运行；
   `pnpm exec vitest run packages/subagents`；`pnpm build`
 - **模型**：codex medium
-- **状态**：DONE（哈希在下一次提交补记；archiveWriter 改显式 `SubagentArchiveWriterContext`
+- **状态**：DONE `19cee1c`（archiveWriter 改显式 `SubagentArchiveWriterContext`
   注入、脚本与包以 canonical event schema 相等断言锁步；**受控过渡债**：
   `state/subagentArchiveReader.ts` 暂以单文件例外 import `@web-agent/subagents`，
   E4 迁出该文件后消除——因此 F1 边界脚本必须排在 E4 之后执行）
@@ -387,7 +387,9 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   skill governance 全部不回退；core 不反向 import 产品包；
   `pnpm exec vitest run packages/subagents apps/web`；`pnpm build`
 - **模型**：codex medium
-- **状态**：TODO
+- **状态**：DONE（哈希在下一次提交补记；E3 的 core→包受控例外随迁移消除；验收修补三处
+  tsc 抓到的类型问题：本地窄接口漏 `createdAt`、重复 import 标识符、port 不透明
+  `scoreParts` 在包侧边界收窄）
 
 ## F · 收尾
 

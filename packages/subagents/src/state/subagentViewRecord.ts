@@ -1,4 +1,4 @@
-import type { SubagentNodeStatus } from '../subagents/types'
+import type { SubagentNodeStatus } from '@web-agent/core/subagents/types'
 
 export type UnknownRecord = Record<string, unknown>
 

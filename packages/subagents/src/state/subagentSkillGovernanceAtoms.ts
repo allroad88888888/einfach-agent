@@ -1,13 +1,19 @@
 import { atom } from '@einfach/core'
-import { prepareSubagentSkillGovernance, type SkillGovernanceAction, type SkillGovernanceOperation } from '../runtime/skillGovernance'
-import { readWorkspaceFile, type ReadWorkspaceFileInput, type ReadWorkspaceFileResult, type WorkspaceRuntimeResult } from '../runtime/workspaceRead'
+import {
+  subagentStatePort,
+  type ReadWorkspaceFileInput,
+  type ReadWorkspaceFileResult,
+  type SkillGovernanceAction,
+  type SkillGovernanceOperation,
+  type WorkspaceRuntimeResult,
+} from '@web-agent/core/state/stateViewPort'
 
 const SKILLS_INDEX_PATH = '.webAgent-archive/index/skills.jsonl'
 const SKILL_ID = /^sk_[a-zA-Z0-9_-]{1,92}$/
 const CONTENT_HASH = /^h64:[0-9a-z]{14}$/
 
 type Reader = (input: ReadWorkspaceFileInput) => Promise<WorkspaceRuntimeResult<ReadWorkspaceFileResult>>
-type Preparer = typeof prepareSubagentSkillGovernance
+type Preparer = typeof subagentStatePort.prepareSkillGovernance
 
 export interface CandidateSkillScorePart { label: string; points: number; maximum: number; explanation: string }
 export interface CandidateSkill {
@@ -120,7 +126,7 @@ function validateFrontmatter(markdown: string, candidate: CandidateSkill): void 
   } catch { throw new Error(`${candidate.skillId} index 与 frontmatter 不一致`) }
 }
 
-export async function readCandidateSkills(workspaceRoot?: string, reader: Reader = readWorkspaceFile): Promise<CandidateSkillsState> {
+export async function readCandidateSkills(workspaceRoot?: string, reader: Reader = subagentStatePort.readWorkspaceFile): Promise<CandidateSkillsState> {
   const index = await reader({ path: SKILLS_INDEX_PATH, maxBytes: 200_000, workspaceRoot })
   if (!index.ok) return { workspaceRoot, status: /not found|does not exist|no such file/i.test(index.error) ? 'empty' : 'error', candidates: [], error: index.error }
   try {
@@ -167,7 +173,7 @@ export const confirmSkillGovernanceAtom = atom(null, async (get, set, input?: { 
   if (dialog.status !== 'confirming' || !dialog.action || !dialog.candidate) return
   set(skillGovernanceDialogAtom, { ...dialog, status: 'submitting' })
   try {
-    const operation = await (input?.preparer ?? prepareSubagentSkillGovernance)({ action: dialog.action, skillId: dialog.candidate.skillId })
+    const operation = await (input?.preparer ?? subagentStatePort.prepareSkillGovernance)({ action: dialog.action, skillId: dialog.candidate.skillId })
     set(skillGovernanceDialogAtom, { ...dialog, status: 'prepared', operation })
   } catch (error) {
     set(skillGovernanceDialogAtom, { ...dialog, status: 'error', error: error instanceof Error ? error.message : String(error) })

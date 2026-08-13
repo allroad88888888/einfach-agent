@@ -1,23 +1,19 @@
 import {
-  readWorkspaceFile,
-  readWorkspaceRunIndexPage,
+  subagentStatePort,
   type ReadWorkspaceFileInput,
   type ReadWorkspaceFileResult,
   type ReadWorkspaceRunIndexPageInput,
   type ReadWorkspaceRunIndexPageResult,
   type WorkspaceRuntimeResult,
-} from '../runtime/workspaceRead'
+} from '@web-agent/core/state/stateViewPort'
+import { parseJsonl, parseJsonlLines, type JsonlLine } from '../archive/jsonl'
+import { replaySubagentArchive, type SubagentReplayState } from '../archive/replay'
 import {
-  parseJsonl,
-  parseJsonlLines,
-  replaySubagentArchive,
   subagentEventsPath,
   subagentIndexPath,
   subagentTracePath,
   subagentTreePath,
-  type JsonlLine,
-  type SubagentReplayState,
-} from '@web-agent/subagents'
+} from '../archive/skillCache'
 
 export {
   parseJsonl,
@@ -46,14 +42,14 @@ export interface SubagentArchiveText {
 
 export async function readSubagentArchiveFile(
   input: ReadWorkspaceFileInput,
-  reader: ArchiveReader = readWorkspaceFile,
+  reader: ArchiveReader = subagentStatePort.readWorkspaceFile,
 ): Promise<WorkspaceRuntimeResult<ReadWorkspaceFileResult>> {
   return reader(input)
 }
 
 export async function readSubagentRunIndexPage(
   input: ReadWorkspaceRunIndexPageInput,
-  reader: RunIndexPageReader = readWorkspaceRunIndexPage,
+  reader: RunIndexPageReader = subagentStatePort.readWorkspaceRunIndexPage,
 ): Promise<WorkspaceRuntimeResult<ReadWorkspaceRunIndexPageResult>> {
   return reader(input)
 }

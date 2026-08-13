@@ -1,11 +1,10 @@
 import { atom } from '@einfach/core'
-import { executionGraphAtom } from '../execution/graph'
+import { subagentStatePort } from '@web-agent/core/state/stateViewPort'
 import { archiveSubagentTreesAtom } from './subagentArchiveAtoms'
 import {
   globalSubagentRunsAtom,
   selectedGlobalSubagentRunAtom,
 } from './subagentRunHistoryAtoms'
-import { itemsAtom } from './sessionAtoms'
 import { deriveSubagentTrees } from './subagentConversationTreeView'
 import { deriveExecutionSubagentTrees } from './subagentExecutionTreeView'
 import { reconcileSubagentTrees } from './subagentTreeReconciliation'
@@ -50,8 +49,8 @@ export {
 } from './subagentTraceAtoms'
 
 export const subagentTreesAtom = atom((get) => {
-  const executionTrees = deriveExecutionSubagentTrees(get(executionGraphAtom))
-  const conversationTrees = deriveSubagentTrees(get(itemsAtom))
+  const executionTrees = deriveExecutionSubagentTrees(get(subagentStatePort.executionGraphAtom))
+  const conversationTrees = deriveSubagentTrees(get(subagentStatePort.itemsAtom))
   return reconcileSubagentTrees(executionTrees, conversationTrees)
 })
 

@@ -115,6 +115,7 @@ describe('toolContext 子 Agent 归档写入', () => {
         exclusivePathLock: true,
         workspaceRoot: '/workspace',
       }),
+      expect.anything(),
     )
 
     vi.mocked(writeWorkspaceFile).mockClear()
@@ -125,6 +126,7 @@ describe('toolContext 子 Agent 归档写入', () => {
     expect(writeWorkspaceFile).toHaveBeenCalledOnce()
     expect(writeWorkspaceFile).toHaveBeenCalledWith(
       expect.objectContaining({ path: '.archive/tree.json', content: 'second', mode: 'upsert' }),
+      expect.anything(),
     )
   })
 
