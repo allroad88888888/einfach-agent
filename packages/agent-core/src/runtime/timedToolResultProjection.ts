@@ -7,12 +7,12 @@ const SYNTHETIC_TIMED_TOOL_NAME = 'timed_tool_result'
  * 为仅存在于 timeline 的 timed tool result 补齐请求协议配对。
  *
  * timed dispatcher 故意只持久化 role:'tool' 结果：它没有模型发起的 assistant tool_call，不能把伪造
- * assistant 写回会话历史。OpenAI-compatible 的请求序列则要求 tool result 紧跟声明同 id 的
+ * assistant 写回会话历史。chat/completions 的请求序列则要求 tool result 紧跟声明同 id 的
  * assistant tool_calls；所以只在这份即将送入模型的数组中、紧贴孤儿 timed result 前合成配对项。
  *
  * 合成项固定为同 call id、空 content、`timed_tool_result` / `{}`，保证重放稳定且不把 provider
- * 差异带进 core。DeepSeek 编码同样将有 tool_calls 的 assistant null content 规范为空串，并在其
- * 测试中以 assistant tool_calls 后紧随同 id tool result 覆盖该协议顺序。
+ * 差异带进 core。上游 provider 的 SDK 同样将有 tool_calls 的 assistant null content 规范为空串，
+ * 并在其测试中以 assistant tool_calls 后紧随同 id tool result 覆盖该协议顺序。
  *
  * 作用域只限 `timed:`：非 timed 的未知孤儿是原始历史或上游协议问题，本投影不应掩盖它们。
  */

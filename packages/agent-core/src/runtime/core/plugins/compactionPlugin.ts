@@ -89,7 +89,7 @@ export {
 // 成本软上限 —— 与硬窗口【故意解耦】的第二道压缩触发点。
 // 起因：窗口表按官方文档校准到 1M 之后，硬窗口预算 ≈ 910K，压缩几乎永不触发；而在此之前，
 // 压缩（当时按 64K 窗口算，约 59K 就触发）一直【同时充当着隐性的成本闸门】。校准窗口是对的
-// ——它消除了「本来放得下却被压掉」的浪费——但顺带把这个刹车一起拆了：按 deepseek-v4-pro
+// ——它消除了「本来放得下却被压掉」的浪费——但顺带把这个刹车一起拆了：按当时主力模型
 // 官方 $0.435/1M cache-miss 输入价，单轮 910K 约 $0.39，长会话每一轮都这个量级，而用户毫无提示。
 // 所以压缩预算取 min(硬窗口, 成本软上限)：硬窗口防 400，软上限防账单，两者职责分开。
 // 200K ≈ 单轮 $0.087（同价目），且压缩摘掉的是可再生的历史工具正文、不动对话主干。
@@ -176,7 +176,7 @@ export function applyCompaction(
   // 是 SessionMeta 的一部分，随会话存在与否而定。没有 settings（会话已被 drop）就没法算预算，
   // 什么都不做——loop 侧在进入这一轮之前已经过 ghost/stale 守卫，正常路径不会触发这一分支。
   // ★ settings 已是【迁移后】值 ★：migrationPlugin.onRunStart 在 run 启动（早于每轮 transformContext）
-  // 就把下线旧名（deepseek-chat/deepseek-reasoner）归一化写回了 sessionsAtom，store 从此是「有效
+  // 就把下线旧模型名归一化写回了 sessionsAtom（历史映射见 modelMigration.ts），store 从此是「有效
   // settings」唯一真相源。故这里直接读、【不再二次迁移】——窗口/预算与请求体 / contextStats 天然按
   // 同一个迁移后模型名算，两侧不分叉。唯一 onRunStart 跳过写回的情形是 stale run（isCurrent=false），
   // 其压缩产物本就被其它 stale 守卫丢弃，无可观测差异。

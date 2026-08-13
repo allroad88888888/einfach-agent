@@ -11,7 +11,7 @@
 //     故障点（还慢、还可能被同一个 context limit 打回）。一律本地规则压缩。
 //   · CC3 tool-call 协议完整性（最容易搞砸的地方）：assistant.tool_calls 与其后 tool_call_id
 //     匹配的 role:'tool' 条目是一个不可分割的原子单元。丢弃 assistant 却留下 tool 结果（或
-//     反之）会被 OpenAI 兼容接口判为非法，整个 run 报错。故「丢弃」必须整组进行。
+//     反之）会被 chat/completions 协议判为非法，整个 run 报错。故「丢弃」必须整组进行。
 //   · CC4 system 恒保留；最近若干轮尽量原样保留；最后一条 user 输入绝不被压缩或丢弃。
 //   · CC5 估算口径与 modelRun.buildContextStatsSnapshot 完全一致：逐条
 //     estimateTokensFromText(JSON.stringify(item)) 后求和 —— 否则 UI 显示的用量和压缩阈值

@@ -70,7 +70,7 @@ export const FINISH_REASON_ERRORS: Record<string, string> = {
 // 故截断状态必须成为【持久化数据本身】的一部分，落点选在 assistant 条目正文末尾：
 //   · 正文是唯一同时进 itemsAtom → checkpoint → 落盘 → 且每轮原样重发给模型的载体，一处改动
 //     同时满足 a 和 b。换成 ConversationItem 上的新字段只能满足 a（该字段不进线协议、模型看不见）；
-//     换成 assistant 条目内的新字段则会被原样发进 OpenAI 兼容请求体，属于协议外字段，不能碰。
+//     换成 assistant 条目内的新字段则会被原样发进 chat/completions 请求体，属于协议外字段，不能碰。
 //   · 只在异常三态分支追加，正常轮的条目一个字都不动（不污染）。
 //   · revert 语义不变：标注是 items 快照的一部分，回到这一轮就带着标注、回到更早的轮就没有。
 export const FINISH_REASON_ITEM_NOTICES: Record<string, string> = {

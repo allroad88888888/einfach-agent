@@ -5,7 +5,7 @@
 //   · SELF_CHECK_CLAUSES —— buildSystemItem（modelTurn.ts）固定 system 的最后两条静态条款；
 //   · toolFailureStreakNotice —— modelRun.ts 工具失败软提醒的一次性注入文案；
 //   · TOOL_FAILURE_STREAK_THRESHOLD / TOOL_FAILURE_ERROR_PREVIEW_LIMIT —— 触发阈值与错误摘要长度。
-// evals/deepseek-agent 的 prompt 行为 A/B 直接 import 这里，保证测的就是线上文案。
+// evals 目录下的 prompt 行为 A/B 套件直接 import 这里，保证测的就是线上文案。
 //
 // ★ 为什么单开一个叶子文件，而不是从 modelTurn / modelRun 导出 ★
 //   · modelTurn.ts 会经装配的 skill registry 拉进 .md?raw 模块声明 —— evals 的独立 tsconfig
@@ -27,7 +27,7 @@ export const SELF_CHECK_CLAUSES: readonly string[] = [
 // 阈值 1 = 每次失败落地即提醒一次（一次性消费）；streak 计数仍按连续失败累计，供文案区分单次/多次。
 // 只提醒、不熔断 —— 终止职责在 loopGuard / max_turns，这里永远不改 run 状态。
 // ★ 为什么是 1 而不是 2 ★ —— 首轮行为 A/B 实测（results/2026-07-27T04-30-44.647Z.behavior-ab.jsonl）：
-//   DeepSeek v4 Pro 的主导失败模式是「两败即弃」（8/10 run 在第 3 次调用前放弃），不是「原样重试」
+//   评测里主力模型的主导失败模式是「两败即弃」（8/10 run 在第 3 次调用前放弃），不是「原样重试」
 //   （10 run 仅 1 例）。阈值 2 的提醒到达时机与放弃时机重合，5 次注入 0 转化，故提前到第一次失败。
 export const TOOL_FAILURE_STREAK_THRESHOLD = 1
 // 提醒里回带的「最近一次错误」摘要长度：够模型认出失败原因，又不至于把长错误再灌满上下文。
