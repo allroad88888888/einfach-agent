@@ -47,6 +47,7 @@ vi.mock('./settings/commands', () => ({
   hydrateAppSettings: vi.fn(async () => undefined),
 }))
 vi.mock('./settings/modelCredentialHost', () => ({
+  MODEL_CREDENTIALS: [],
   createTauriModelCredentialHost: vi.fn(() => ({})),
   createUnavailableModelCredentialHost: vi.fn(() => ({})),
 }))

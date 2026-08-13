@@ -44,9 +44,7 @@ const coreSourceDirectory = 'packages/agent-core/src'
 // 人工核实后新增的既有命中（详情见对应 issue 卡与提交说明）。
 const vendorNameExemptions = [
   { path: 'state/persistence/modelMigration.ts', reason: '历史迁移必须认识旧厂商模型名' },
-  { path: 'subagents/modelSelection.ts', reason: '子 agent 档位路由，待 M6a/M6b 迁出为可注入档位表' },
   { path: 'subagents/childModelClient.ts', reason: '子 agent 档位路由，待 M6a/M6b 迁出为可注入档位表' },
-  { path: 'subagents/defaultTierRouting.ts', reason: 'M6a 落地的默认档位路由表常量；文件自身注明这是 core 内唯一厂商模型名，待 M6b 整体搬到装配层' },
   { path: 'runtime/core/runtimeConfig.ts', reason: 'deepseekUserId 字段，待 M7 去专名化' },
   { path: 'runtime/delegationContract.ts', reason: 'deepseekUserId 字段，待 M7 去专名化' },
   { path: 'runtime/core/delegateModelIdentity.ts', reason: 'deepseekUserId 字段，待 M7 去专名化' },
