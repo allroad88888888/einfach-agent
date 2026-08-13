@@ -13,7 +13,7 @@ demo、包未发布）铺到"路人 30 秒看懂、10 分钟跑通"的可发布�
 ```text
 未决  命名 / License / 主打故事（不排期，拍板前依赖它们的卡不开工）
 A 开源就绪   A1 秘钥审计  A2 冷启动验证  A3 CONTRIBUTING  A4 元信息文案
-             A5 LICENSE   A6 中文 README  A7 英文 README  A8 esbuild 占位符修复
+             A5 LICENSE   A6 中文 README  A7 英文 README  A8 esbuild 占位符修复  A9 元信息定稿  A10 旧称同步  A11 桌面标题
 B Demo 物料  B1 CLI 录屏  B2 截图清单    B3 截图执行
 C 文章草稿   C1 装配内核  C2 CallTiming  C3 dogfood 400  C4 DeepSeek 踩坑  C5 子 Agent 治理
              C6 maxTurns 文档修正
@@ -26,12 +26,12 @@ G 收尾       G1 删除本树
 并行规则：依赖满足且改动面不重叠的卡可同时派。A1/A2/A3/A4/B1/B2/C1–C5/D1/E1/E2 不依赖
 未决项，可先行；A5/A6/A7/D2/F1/F2 在对应决策拍板前不开工。
 
-## 未决（不编号、不排期、不指派模型）
+## 未决（已全部拍板，2026-08-13）
 
-- **命名**：统一到 einfach 系（与 einfach-agent-rust 成一族）还是维持 web-agent。
-  影响 A6/A7/F1/F2 与未来 npm scope。
-- **License**：MIT 还是 Apache-2.0（后者带专利条款，对企业采用更友好）。影响 A5。
-- **主打故事**：开发者框架（装配式内核）还是桌面产品。影响 A6/A7/D2/F1/F2 的侧重。
+- **命名**：✅ 统一 einfach 系。显示名 Einfach Agent；GitHub 仓库维持 einfach-agent；
+  npm scope 采用 einfach 系（实际包改名留到发包执行时，见 E2 蓝图的 scope 占位）。
+- **License**：✅ MIT。
+- **主打故事**：✅ 开发者框架（装配式内核），桌面版定位为内核能力展示品。
 
 ## A · 开源就绪
 
@@ -80,7 +80,7 @@ G 收尾       G1 删除本树
 - **判据**：LICENSE 文本与拍板一致；`grep -r '"license"' --include=package.json` 各包一致；
   `pnpm build` 通过
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE f043968
 
 ### A6 · 中文 README 重写
 
@@ -89,7 +89,7 @@ G 收尾       G1 删除本树
 - **判据**：`node scripts/check-docs.js` 通过；首屏含一句定位、demo GIF 引用、≤5 步
   quickstart；A2 记录的摩擦点已修正
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE 1fcf890
 
 ### A7 · 英文 README
 
@@ -97,7 +97,7 @@ G 收尾       G1 删除本树
 - **改动面**：`README.en.md`（新建）；`README.md` 顶部加互链
 - **判据**：`node scripts/check-docs.js` 通过；结构与中文版对齐，非逐句直译
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE 49194e8
 
 ### A8 · 修复 pnpm-workspace.yaml 的 esbuild 占位符
 
@@ -110,6 +110,37 @@ G 收尾       G1 删除本树
 - **模型**：sonnet
 - **状态**：DONE 8d55dfd
 
+### A9 · 元信息文案按命名定稿
+
+- **依赖**：未决·命名（已拍板：einfach 系）
+- **改动面**：`docs/launch/repo-metadata.md`
+- **判据**：把 `<项目名>` 占位与"待拍板"说明替换为 Einfach Agent 定稿口径；
+  `node scripts/check-docs.js` 通过
+- **模型**：sonnet
+- **状态**：DONE 5ce6c41
+
+### A10 · 文档旧称同步为 Einfach Agent
+
+- **依赖**：未决·命名（已拍板）
+- **改动面**：除 `README.md`（A6 负责）外所有含旧称"Web Agent"的文档：`CONTRIBUTING.md`、
+  `docs/**`、`.github/**` 等；不改代码标识符（`@web-agent/*` 包名、`~/.webAgent` 配置目录、
+  `WEB_AGENT_*` 环境变量维持原样，属发包/兼容范畴）
+- **判据**：`grep -rn "Web Agent" --include="*.md"` 里除 README（A6 处理）与历史性引用外
+  的旧称改为 Einfach Agent；`node scripts/check-docs.js` 通过
+- **模型**：sonnet
+- **状态**：DONE 94ff705
+
+### A11 · 桌面窗口标题与 release 名称改为 Einfach Agent
+
+- **依赖**：未决·命名（已拍板）
+- **改动面**：`apps/desktop/tauri.conf.json`（`"title"`）、`apps/desktop/src/mcp.rs`
+  （MCP clientInfo title）、`.github/workflows/release-desktop.yml`（`releaseName`）；
+  代码标识符（crate 名、文件名、`web_agent_config_store` 等）不改
+- **判据**：三处用户可见字符串改为 Einfach Agent；
+  `cargo test --manifest-path apps/desktop/Cargo.toml` 通过；workflow 仅改 releaseName 一处
+- **模型**：sonnet
+- **状态**：DONE 68c34ca
+
 ## B · Demo 物料
 
 ### B1 · CLI demo 录制
@@ -120,7 +151,7 @@ G 收尾       G1 删除本树
   `demo-script.md` 按其步骤可复录。真实 Key 走 `pnpm cli` 的既有凭据链路，禁止出现在
   任何产物里；录制工具缺失时先交脚本并记录安装步骤，由主会话补录
 - **模型**：sonnet
-- **状态**：DONE 9ea55a8（cast/gif 待录屏工具，复录步骤见 demo-script.md）
+- **状态**：DONE 9ea55a8 + 69fb8cc（gif 已用 vhs 补录）
 
 ### B2 · 桌面版截图清单
 
@@ -215,7 +246,7 @@ G 收尾       G1 删除本树
 - **判据**：`node scripts/check-docs.js` 通过；诚实列出本项目弱项 ≥3 条；强项与代码事实
   一致（不写未交付能力）
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE e33eb8b
 
 ## E · 发布工程
 
@@ -248,7 +279,7 @@ G 收尾       G1 删除本树
 - **判据**：`node scripts/check-docs.js` 通过；三个渠道各一版且调性区分（V2EX 克制、
   掘金带技术细节、即刻短句）
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE 9e6c99d
 
 ### F2 · 英文渠道帖（Show HN / r/LocalLLaMA）
 
@@ -257,7 +288,7 @@ G 收尾       G1 删除本树
 - **判据**：`node scripts/check-docs.js` 通过；Show HN 标题 ≤80 字符、首段无 marketing 腔；
   LocalLLaMA 版突出国产模型协议细节
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE 165140b
 
 ## G · 收尾
 
@@ -268,4 +299,4 @@ G 收尾       G1 删除本树
   去留由用户届时决定
 - **判据**：`node scripts/check-docs.js` 通过
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING（本卡与树的删除同批执行）
