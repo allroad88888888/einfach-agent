@@ -1,4 +1,4 @@
-import { invoke, isTauri } from '@tauri-apps/api/core'
+import { isTauriHost, loadTauriInvoke } from './hostTauri'
 
 export const DEFAULT_MAX_DIFF_CHARS = 20_000
 export const MAX_DIFF_CHARS = 100_000
@@ -113,11 +113,12 @@ function normalizeResult(raw: unknown): WorkspaceDiffResult {
 }
 
 export async function getWorkspaceDiff(input: WorkspaceDiffInput = {}): Promise<WorkspaceDiffResult> {
-  if (!isTauri()) {
+  if (!isTauriHost()) {
     return failedResult('Workspace git diff is only available in the Tauri desktop runtime')
   }
 
   try {
+    const invoke = await loadTauriInvoke()
     const raw = await invoke<unknown>('get_workspace_diff', toTauriInput(input))
     return normalizeResult(raw)
   } catch (error) {

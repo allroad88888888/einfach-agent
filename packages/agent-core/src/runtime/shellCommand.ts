@@ -1,4 +1,4 @@
-import { invoke, isTauri } from '@tauri-apps/api/core'
+import { isTauriHost, loadTauriInvoke } from './hostTauri'
 import type { ShellCommandInput, ShellCommandResult, ShellPlatform } from '../tools/types'
 
 type TauriShellCommandInput = {
@@ -110,11 +110,12 @@ function normalizeResult(raw: unknown, input: ShellCommandInput, startedAt: numb
 export async function runShellCommand(input: ShellCommandInput): Promise<ShellCommandResult> {
   const startedAt = now()
 
-  if (!isTauri()) {
+  if (!isTauriHost()) {
     return failedResult(input, startedAt, 'Shell command execution is only available in the Tauri desktop runtime')
   }
 
   try {
+    const invoke = await loadTauriInvoke()
     const raw = await invoke<unknown>('run_shell_command', toTauriInput(input))
     return normalizeResult(raw, input, startedAt)
   } catch (error) {

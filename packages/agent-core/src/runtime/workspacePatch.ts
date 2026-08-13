@@ -1,4 +1,4 @@
-import { invoke, isTauri } from '@tauri-apps/api/core'
+import { isTauriHost, loadTauriInvoke } from './hostTauri'
 import {
   normalizeChangeSummary,
   type WorkspaceChangeContext,
@@ -201,11 +201,22 @@ export async function applyWorkspacePatch(
   input: WorkspacePatchInput,
   observability: ObservabilityPort = getDefaultObservabilityPort(),
 ): Promise<WorkspacePatchResult> {
-  if (!isTauri()) {
+  if (!isTauriHost()) {
     return failedResult(
       input,
       'Workspace patching is only available in the Tauri desktop runtime',
     )
+  }
+
+  // 惰性加载必须在下面的 dispatchStartedAt 采样之前完成：首次 import @tauri-apps/api/core 有几 ms
+  // 开销（每个模块实例只发生一次），若落在计时区间里，invokeDispatchMs 报的就不再是「IPC 派发有多慢」
+  // 而是「模块加载有多慢」。加载失败复用 invoke 失败的同一条错误出口，返回契约不变——此处尚未
+  // beginPerformanceDiagnostic，所以没有需要 finish 的 operation。
+  let invoke: Awaited<ReturnType<typeof loadTauriInvoke>>
+  try {
+    invoke = await loadTauriInvoke()
+  } catch (error) {
+    return failedResult(input, `apply_workspace_patch failed: ${messageFromError(error)}`)
   }
 
   const context = input.changeContext

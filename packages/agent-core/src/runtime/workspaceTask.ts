@@ -1,4 +1,4 @@
-import { invoke, isTauri } from '@tauri-apps/api/core'
+import { isTauriHost, loadTauriInvoke } from './hostTauri'
 import type { WorkspaceTaskInput, WorkspaceTaskKind, WorkspaceTaskResult } from '../tools/types'
 
 export type { WorkspaceTaskInput, WorkspaceTaskKind, WorkspaceTaskResult } from '../tools/types'
@@ -107,11 +107,12 @@ function normalizeResult(raw: unknown, input: WorkspaceTaskInput, startedAt: num
 export async function runWorkspaceTask(input: WorkspaceTaskInput): Promise<WorkspaceTaskResult> {
   const startedAt = now()
 
-  if (!isTauri()) {
+  if (!isTauriHost()) {
     return failedResult(input, startedAt, 'run_workspace_task is only available in the Tauri desktop runtime')
   }
 
   try {
+    const invoke = await loadTauriInvoke()
     const raw = await invoke<unknown>('run_workspace_task', toTauriInput(input))
     return normalizeResult(raw, input, startedAt)
   } catch (error) {
