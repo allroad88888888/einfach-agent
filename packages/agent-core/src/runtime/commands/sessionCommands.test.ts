@@ -32,7 +32,7 @@ describe('sessionCommands', () => {
     if (!session) throw new Error('预期新会话已登记')
 
     expect(session).toMatchObject({ title: DEFAULT_SESSION_TITLE, workspaceId: expect.any(String) })
-    expect(session.settings).toEqual({ vendor: 'deepseek', model: 'deepseek-v4-flash' })
+    expect(session.settings).toEqual({ vendor: 'deepseek', model: 'deepseek-v4-pro' })
     expect(core.rootStore.getter(workspacesAtom)[session.workspaceId!]).toBeTruthy()
     expect(core.getSessionStore(id)).toBeTruthy()
     expect(core.rootStore.getter(activeWorkspaceIdAtom)).toBe(session.workspaceId)

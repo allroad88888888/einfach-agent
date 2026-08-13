@@ -21,7 +21,7 @@ import { nonVisualMessages } from './nonVisualMessages'
 export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
 export const DEEPSEEK_PRO_MODEL = 'deepseek-v4-pro'
 export const DEEPSEEK_FLASH_MODEL = 'deepseek-v4-flash'
-export const DEFAULT_DEEPSEEK_MODEL = DEEPSEEK_FLASH_MODEL
+export const DEFAULT_DEEPSEEK_MODEL = DEEPSEEK_PRO_MODEL
 export const MAX_DEEPSEEK_USER_ID_LENGTH = 512
 
 // 简介：校验 DeepSeek 官方 user_id 线协议约束。
