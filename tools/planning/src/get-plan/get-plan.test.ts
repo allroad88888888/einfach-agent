@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ToolContext } from '@web-agent/core/tools/types'
-import type { PlanSnapshot } from '@web-agent/core/planning/types'
+import type { PlanSnapshot } from '@web-agent/core/planning'
 import { getPlanTool } from './get-plan'
 
 function makeContext(getPlan?: ToolContext['getPlan']): ToolContext {

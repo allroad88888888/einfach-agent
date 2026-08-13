@@ -11,12 +11,12 @@ import type {
   ProjectSkillsSnapshot,
   ProjectSkillEntry,
   ProjectSkillOrigin,
-} from '@web-agent/core/skills/projectSkills'
+} from '@web-agent/core/skills'
 import {
   buildProjectSkillEntry,
   resolveProjectSkills,
   FRONTMATTER_READ_LIMIT,
-} from '@web-agent/core/skills/projectSkills'
+} from '@web-agent/core/skills'
 
 // 扫描两个根目录
 const SCAN_ROOTS: Array<{ path: string; origin: ProjectSkillOrigin }> = [

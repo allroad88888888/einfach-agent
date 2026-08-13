@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PlanRuntime } from './planRuntime'
-import type { CreatePlanInput, PlanSnapshot } from '@web-agent/core/planning/types'
+import type { CreatePlanInput, PlanSnapshot } from '@web-agent/core/planning'
 
 function harness() {
   let plan: PlanSnapshot | undefined

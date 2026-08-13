@@ -1,4 +1,4 @@
-import type { CreatePlanInput } from '@web-agent/core/planning/types'
+import type { CreatePlanInput } from '@web-agent/core/planning'
 import type { Tool } from '@web-agent/core/tools/types'
 import guide from './create-plan.md?raw'
 

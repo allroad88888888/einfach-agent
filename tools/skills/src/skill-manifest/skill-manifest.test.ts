@@ -1,4 +1,4 @@
-import type { ProjectSkillsSnapshot } from '@web-agent/core/skills/projectSkills'
+import type { ProjectSkillsSnapshot } from '@web-agent/core/skills'
 import { createToolRegistry } from '@web-agent/core/tools/toolRegistry'
 import type { ToolContext } from '@web-agent/core/tools/types'
 import { describe, expect, it, vi } from 'vitest'

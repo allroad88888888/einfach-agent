@@ -1,4 +1,4 @@
-import { emptyProjectSkillsSnapshot } from '@web-agent/core/skills/projectSkills'
+import { emptyProjectSkillsSnapshot } from '@web-agent/core/skills'
 import type {
   ProjectSkillsLoaderBridge,
   ProjectSkillsProvider,

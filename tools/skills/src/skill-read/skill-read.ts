@@ -4,7 +4,7 @@
 import type { Tool } from '@web-agent/core/tools/types'
 import guide from './skill-read.md?raw' // skill 正文（同目录 .md）
 import { readSkill, readSkillResource, searchSkills } from '../registry'
-import { splitFrontmatter } from '@web-agent/core/skills/projectSkills'
+import { splitFrontmatter } from '@web-agent/core/skills'
 
 const inputSchema = {
   type: 'object',
