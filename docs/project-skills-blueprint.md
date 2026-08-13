@@ -15,7 +15,7 @@ skills 目录」占位项的展开，接续其阶段 1–3 已落地的成果，
    换言之：当前无论 workspace 里有什么，agent 都看不见。
 2. **文件系统地基已经齐全，无需新增 Rust command**。`list_workspace_files` 支持
    `recursive` 与 `includeHidden`（`.webAgent` 是隐藏目录，必须后者），`read_workspace_file`
-   带 workspace confinement；两者都经 `toolContext.ts` 的 `withWorkspaceReadAccess` 注入会话
+   带 workspace confinement；两者都经 `toolContext/workspaceInputGuards.ts` 的 `withWorkspaceReadAccess` 注入会话
    绑定的 `workspaceRoot`（`resolveWorkspaceRoot`，session → workspace 解析已存在）。
    `tools/fs/find-test-lint-commands` 已经是「列目录 + 读文件 → 推断项目约定」的同构先例。
 3. **`.webAgent-archive/` 是另一条线，不要混淆**。子 agent 的 `sk_*` 经验技能
