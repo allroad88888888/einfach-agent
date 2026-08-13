@@ -188,27 +188,81 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
 - **模型**：opus（例外档案判断量升级）
 - **状态**：DONE 4eee1e7（7 条规则 / 58 处观察项 11 条豁免；跨行 import 门禁漏洞一并修复）
 
-### S11 · 委派接缝整形（S2a 发现的结构债）
+### S11 · 委派接缝整形（侦察完成，方向 A：batch 下沉回 core）
 
-- **依赖**：S9（门禁先带临时例外落地）；开工前向用户拍板（体量可能自成一树）
-- **改动面**：`packages/subagents/src/delegationBatch.ts` 对 core 内部容器的 5 条深导入
-  （childAgentLoop/childModelClient/delegationPolicy/runtimeState/concurrency）——
-  方向二选一：batch 执行段下沉回 core，或 `DelegateAgentRuntimeState` 收成
-  opaque handle + 窄方法组
-- **判据**：S9 白名单门禁的临时例外清零；委派行为不回归（subagents 全量测试）
-- **模型**：opus
-- **状态**：TODO（待拍板）
+- **侦察结论**：B（opaque handle）被否——公开面反而 +16 条且是内核结构换名，三处倒置
+  （事件词汇分裂 / core 测试反向依赖 / Map 读写分居两包）一条不修；A 恢复"委派执行整块
+  归一层"（Rust 侧实地核对的可迁移教训）。执行拆为 S11a–S11g。
+- **状态**：DOING（按子卡推进）
 
-### S6b · CLI 尾款：21 处深导入搬家根 barrel
+### S11a · firstAssistantText 归位 @web-agent/ai
 
-- **依赖**：S9
-- **改动面**：`apps/cli/src` 除 setup 类地雷外的 21 处白名单外深导入 → `@web-agent/core`
-  根 barrel（S9 已确认全部有正式通路，纯符号搬家）；`scripts/check-boundaries.js` 豁免表
-  砍掉 apps/cli 那条（58→约 37 处观察项）
-- **判据**：`pnpm exec vitest run apps/cli scripts` 全绿；`pnpm cli --help` 冒烟；
-  `node scripts/check-boundaries.js` 通过且观察项减少
+- **依赖**：—
+- **改动面**：`packages/agent-ai/src/modelContent.ts` 增访问器并导出；core 的
+  `subagents/{childModelClient,childAgentLoop,childFinishReason}` 与
+  `packages/subagents/src/{runtime,delegationDistillation}.ts` 改指 `@web-agent/ai`
+- **判据**：`pnpm exec vitest run packages/agent-ai packages/agent-core/src/subagents packages/subagents` 全绿；childModelClient 不再导出该函数
 - **模型**：sonnet
-- **状态**：DONE 309e091（观察项 78→57，apps/cli 豁免整条清除）
+- **状态**：DOING
+
+### S11b · 委派端口补三条
+
+- **依赖**：—
+- **改动面**：`delegationRuntimePorts.ts`：`DelegationArchiveFormatPort` 增
+  `cacheBasePath`/`eventsPath`；新增 `SubagentSkillDistillPort`（含 `SkillDistillChatInput`）
+  与 `lowCostExtractionSettings` 端口成员；barrel 补类型；`packages/subagents/src/runtime.ts`
+  按新形状注入（指向既有实现）。只加端口不搬逻辑
+- **判据**：build + 相关 vitest；新端口签名不出现内核可变容器类型（逐条核对）
+- **模型**：opus
+- **状态**：DOING
+
+### S11c · 蒸馏 chat 包装下沉 core
+
+- **依赖**：S11a、S11b
+- **改动面**：`delegationDistillation.ts`（42 行）搬为 core 的 `subagents/skillDistillChat.ts`，
+  深导入变相对导入；删原文件
+- **判据**：相关 vitest 全绿；`runtime/finishReason` 观察项消失
+- **模型**：sonnet
+- **状态**：TODO
+
+### S11d · batch 执行段下沉 core（主刀）
+
+- **依赖**：S11c
+- **改动面**：`delegationBatch.ts`（260 行）搬进 core，4 条深导入变相对导入，
+  3 处产品调用换 S11b 端口；删原文件
+- **判据**：8 份 `runtime.*.test.ts` + `archiveCapacity.test.ts` 全绿；新文件 ≤300；
+  `packages/subagents` 对 childAgentLoop/delegationPolicy/concurrencyLimiter 的深导入归零
+- **模型**：opus
+- **状态**：TODO
+
+### S11e · runtime 工厂下沉与 barrel 收口
+
+- **依赖**：S11d
+- **改动面**：core 新建 `subagents/delegationRuntime.ts`（`createDelegationRuntime`，含
+  生命周期四件套与 `runLowCostExtraction` 经端口取厂商档设置）；`packages/subagents/src/runtime.ts`
+  退化为端口装配，**保留既有工厂名与签名**；barrel 补导出
+- **判据**：`runtime.modelCompat.test.ts` 三例全绿；
+  `grep -r '@web-agent/core/subagents/' packages/subagents/src` 归零；build
+- **模型**：opus
+- **状态**：TODO
+
+### S11f · 门禁豁免清零与模块图复核
+
+- **依赖**：S11e
+- **改动面**：豁免表删 `packages/subagents` 整条；barrel 头注与两份盘点/树文档同步
+- **判据**：门禁通过且观察项 -6；**全量 pnpm test + build**，重点复验 workspaceRead
+  四处 vi.mock 与 SubagentTreePanel（barrel 值闭包 14→≈60 的 S2c 同款风险复验点）
+- **模型**：opus
+- **状态**：TODO
+
+### S11g ·（可选）core 侧测试归位
+
+- **依赖**：S11f
+- **改动面**：`runtime.testHarness.ts` 等 11 份 core 测试改用 core 自己的工厂 + 假端口，
+  斩断 core 测试 → `@web-agent/subagents` 反向依赖；真测装配的逐条说明保留
+- **判据**：`grep -r '@web-agent/subagents' packages/agent-core/src` 只剩带说明的装配测试
+- **模型**：opus
+- **状态**：TODO
 
 ### S10 · 删通配与 exports 定稿（GATED）
 
