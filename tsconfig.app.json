@@ -22,6 +22,7 @@
     "paths": {
       "@/*": ["apps/web/src/*"],
       "@web-agent/ai": ["packages/agent-ai/src/index.ts"],
+      "@web-agent/core": ["packages/agent-core/src/index.ts"],
       "@web-agent/core/*": ["packages/agent-core/src/*"],
       "@web-agent/observability-idb": ["packages/observability-idb/src"],
       "@web-agent/observability-sqlite": ["packages/observability-sqlite/src"],
