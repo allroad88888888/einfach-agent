@@ -1,5 +1,9 @@
 import { errorMessage, redactAttributesWithPreviews, truncatePayload } from './redact'
-import { createPerformanceDiagnostics } from './performanceDiagnosticPort'
+import {
+  consolePerformanceDiagnosticSink,
+  createPerformanceDiagnostics,
+  type PerformanceDiagnosticSink,
+} from './performanceDiagnosticPort'
 import type {
   AddEventInput,
   CompletedSpanInput,
@@ -12,9 +16,14 @@ import type { TraceAttributes, TraceDriver, TraceEvent, TraceSpan, TraceStatus }
 export type { TraceAttributesInput } from './port'
 
 interface ConfigurableObservabilityPort extends ObservabilityPort {
-  configure(deps: { driver?: TraceDriver }): void
+  configure(deps: ObservabilityOptions): void
   reset(): void
   flush(): Promise<void>
+}
+
+export interface ObservabilityOptions {
+  driver?: TraceDriver
+  performanceDiagnosticSink?: PerformanceDiagnosticSink
 }
 
 function createId(): string {
@@ -41,6 +50,7 @@ function resolveAttrs(attrs: TraceAttributesInput | undefined): TraceAttributes 
 function createConfigurableObservabilityPort(): ConfigurableObservabilityPort {
   let driver: TraceDriver | undefined
   let queue: Promise<void> = Promise.resolve()
+  let performanceDiagnosticSink: PerformanceDiagnosticSink = consolePerformanceDiagnosticSink
   const activeSpans = new Map<string, TraceSpan>()
 
   function enqueue(work: (current: TraceDriver) => Promise<void>): void {
@@ -75,14 +85,18 @@ function createConfigurableObservabilityPort(): ConfigurableObservabilityPort {
     return span
   }
 
-  const diagnostics = createPerformanceDiagnostics(recordCompletedSpan)
+  const diagnostics = createPerformanceDiagnostics(recordCompletedSpan, (diagnostic) => {
+    performanceDiagnosticSink(diagnostic)
+  })
 
   return {
     configure(deps) {
       driver = deps.driver
+      performanceDiagnosticSink = deps.performanceDiagnosticSink ?? consolePerformanceDiagnosticSink
     },
     reset() {
       driver = undefined
+      performanceDiagnosticSink = consolePerformanceDiagnosticSink
       activeSpans.clear()
       queue = Promise.resolve()
     },
@@ -170,7 +184,7 @@ export function getDefaultObservabilityPort(): ObservabilityPort {
   return defaultObservabilityPort
 }
 
-export function configureObservability(deps: { driver?: TraceDriver }): void {
+export function configureObservability(deps: ObservabilityOptions): void {
   defaultObservabilityPort.configure(deps)
 }
 

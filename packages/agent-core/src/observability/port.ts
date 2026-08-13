@@ -1,4 +1,7 @@
-import type { PerformanceDiagnosticOperation, PerformanceDiagnosticOptions } from './performanceDiagnosticPort'
+import type {
+  PerformanceDiagnosticOperation,
+  PerformanceDiagnosticOptions,
+} from './performanceDiagnosticPort'
 import type { SafePayloadPreviewOptions } from './redact'
 import type { SpanKind, TraceAttributes, TraceSpan, TraceStatus } from './types'
 
@@ -61,7 +64,13 @@ export interface ObservabilityPort {
   previewPayload(value: unknown, limit?: number, options?: SafePayloadPreviewOptions): string
 }
 
-export type { PerformanceDiagnosticOperation, PerformanceDiagnosticOptions } from './performanceDiagnosticPort'
+export type {
+  PerformanceDiagnosticLog,
+  PerformanceDiagnosticOperation,
+  PerformanceDiagnosticOptions,
+  PerformanceDiagnosticSink,
+} from './performanceDiagnosticPort'
+export { consolePerformanceDiagnosticSink } from './performanceDiagnosticPort'
 export type { SpanKind, TraceAttributes, TraceSpan, TraceStatus } from './types'
 export type { SafePayloadPreviewOptions } from './redact'
 export { createObservabilityPort, getDefaultObservabilityPort } from './trace'

@@ -10,6 +10,17 @@ export interface PerformanceDiagnosticOptions {
   monotonicNow?: () => number
 }
 
+export type PerformanceDiagnosticLevel = 'debug' | 'warn' | 'error'
+
+export interface PerformanceDiagnosticLog {
+  level: PerformanceDiagnosticLevel
+  name: string
+  attrs: TraceAttributes
+}
+
+/** Receives diagnostic output without coupling performance measurement to a host console. */
+export type PerformanceDiagnosticSink = (diagnostic: PerformanceDiagnosticLog) => void
+
 export interface PerformanceDiagnosticOperation {
   readonly operationId: string
   finish(
@@ -47,7 +58,8 @@ function rounded(value: number): number {
   return Math.round(value * 10) / 10
 }
 
-function safeConsole(level: 'debug' | 'warn' | 'error', name: string, attrs: TraceAttributes): void {
+/** The compatibility sink used when a host does not configure diagnostic output. */
+export function consolePerformanceDiagnosticSink({ level, name, attrs }: PerformanceDiagnosticLog): void {
   try {
     console[level](`${LOG_PREFIX} ${name}`, attrs)
   } catch {
@@ -55,7 +67,23 @@ function safeConsole(level: 'debug' | 'warn' | 'error', name: string, attrs: Tra
   }
 }
 
-export function createPerformanceDiagnostics(recordCompletedSpan: CompletedSpanRecorder): {
+function writeDiagnostic(
+  sink: PerformanceDiagnosticSink,
+  level: PerformanceDiagnosticLevel,
+  name: string,
+  attrs: TraceAttributes,
+): void {
+  try {
+    sink({ level, name, attrs })
+  } catch {
+    // Diagnostics must never affect the observed operation.
+  }
+}
+
+export function createPerformanceDiagnostics(
+  recordCompletedSpan: CompletedSpanRecorder,
+  diagnosticSink: PerformanceDiagnosticSink = consolePerformanceDiagnosticSink,
+): {
   performanceNow(): number
   beginPerformanceDiagnostic(
     name: string,
@@ -88,7 +116,7 @@ export function createPerformanceDiagnostics(recordCompletedSpan: CompletedSpanR
     const slowMs = options.slowMs ?? DEFAULT_SLOW_MS
     let finished = false
 
-    safeConsole('debug', `${name}.start`, { ...attrs, operationId })
+    writeDiagnostic(diagnosticSink, 'debug', `${name}.start`, { ...attrs, operationId })
 
     return {
       operationId,
@@ -105,7 +133,7 @@ export function createPerformanceDiagnostics(recordCompletedSpan: CompletedSpanR
           attrs: combined,
           error,
         })
-        safeConsole(status === 'error' ? 'error' : durationMs >= slowMs ? 'warn' : 'debug', `${name}.finish`, {
+        writeDiagnostic(diagnosticSink, status === 'error' ? 'error' : durationMs >= slowMs ? 'warn' : 'debug', `${name}.finish`, {
           ...combined,
           status,
           ...(error === undefined ? {} : { error: errorText(error) }),
@@ -134,7 +162,12 @@ export function createPerformanceDiagnostics(recordCompletedSpan: CompletedSpanR
       status: 'ok',
       attrs: combined,
     })
-    safeConsole(safeDuration >= (options.slowMs ?? DEFAULT_SLOW_MS) ? 'warn' : 'debug', name, combined)
+    writeDiagnostic(
+      diagnosticSink,
+      safeDuration >= (options.slowMs ?? DEFAULT_SLOW_MS) ? 'warn' : 'debug',
+      name,
+      combined,
+    )
   }
 
   return { performanceNow, beginPerformanceDiagnostic, recordPerformanceDiagnostic }
