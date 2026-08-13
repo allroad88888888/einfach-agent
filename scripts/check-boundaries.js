@@ -8,7 +8,9 @@ const defaultRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const rootArgument = process.argv.indexOf('--root')
 const repositoryRoot = rootArgument === -1 ? defaultRoot : resolve(process.argv[rootArgument + 1] ?? '')
 const sourceFilePattern = /\.(?:ts|tsx)$/
-const testFilePattern = /\.test\.(?:ts|tsx)$/
+// 测试脚手架同 .test.ts 一样不属于生产代码：testHarness/testFixtures 只被测试文件 import，
+// 里面的能力包引用与厂商名是测试夹具语义，不构成 core 的运行时依赖承诺。
+const testFilePattern = /\.(?:test|testHarness|testFixtures)\.(?:ts|tsx)$/
 const importPatterns = [
   /\bimport\s+(?:type\s+)?(?:[^'"]*?\s+from\s+)?['"]([^'"]+)['"]/g,
   /\bexport\s+(?:type\s+)?[^'"]*?\s+from\s+['"]([^'"]+)['"]/g,
