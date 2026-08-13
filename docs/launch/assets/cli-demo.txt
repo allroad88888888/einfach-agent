@@ -1,0 +1,24 @@
+# CLI Demo —— 真实运行的干净输出（录制工具缺失时的过渡产物）
+
+本文件是 `pnpm cli -p "<prompt>"` 的一次真实运行输出，逐字保留（未编辑内容，只加了这段说明头和下面
+的复现命令行）。当前环境未安装 asciinema / agg / vhs（探测结果见 `docs/launch/demo-script.md`），
+所以先交付这份文本产物，由后续拿到录屏工具的主会话据此录出 `cli-demo.cast` 或 `cli-demo.gif`。
+
+复现命令（在仓库根目录执行；真实 Key 由 CLI 自身从 `~/.webAgent/config.json` 读取，命令行本身不
+包含任何凭据）：
+
+```
+pnpm cli -p '用 skill_search 搜索和"计划 planning"相关的 skill，找到后用 skill_read 读取最相关的一个，最后用三四句话中文总结这个项目的计划机制是什么、什么时候该用它。'
+```
+
+---
+
+> web-agent@0.1.0 cli /Volumes/work/ai/web-agent
+> tsx --tsconfig apps/cli/tsconfig.json apps/cli/src/main.ts -p '用 skill_search 搜索和"计划 planning"相关的 skill，找到后用 skill_read 读取最相关的一个，最后用三四句话中文总结这个项目的计划机制是什么、什么时候该用它。'
+
+[tool] skill_manifest → ok
+[tool] request_tool_schema → ok
+[tool] skill_read → ok
+[assistant] 这个项目把「计划（Planning）」当成一等执行阶段，而不是一段装饰性文字。它的计划机制是：用 `create_plan` 建立带稳定阶段 ID、交付物、依赖关系和「可观察的完成目标」的结构化计划（需要用户先审阅、结果差异大、或具有破坏性/对外可见/昂贵/模糊时要求审批），批准后用 `execute_plan` 只推进当前活动阶段，阶段目标达成且经真实验证后调用 `submit_stage_result` 提交证据并激活下一阶段，`update_plan` 只用来记录阻塞，绝不能自己批准计划。
+
+什么时候该用它：当任务跨多个有依赖的阶段/模块、涉及架构调整、重构、迁移、多子代理协作，或包含「实现 + 验证/文档」这类多步骤工作，以及执行途中发现复杂度升级时；反之，一步就能完成、可直接回答或可逆的小改动就无需计划。
