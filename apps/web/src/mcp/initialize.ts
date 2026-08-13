@@ -1,7 +1,6 @@
 import { isTauri } from '@tauri-apps/api/core'
 import { toolRegistry } from '@web-agent/core/tools/registry'
-import { rootStore } from '@web-agent/core/state/rootStore'
-import { configureCommands } from '@web-agent/core/runtime/commands'
+import { rootStore, configureCommands } from '@web-agent/core'
 import {
   createMcpClientManager,
   createMcpConnectorRouter,

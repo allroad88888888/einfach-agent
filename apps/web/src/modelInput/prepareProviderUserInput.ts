@@ -4,7 +4,7 @@ import {
   type KimiLocalImage,
   type UserContentBlock,
 } from '@web-agent/ai'
-import type { UserInputPreparer } from '@web-agent/core/runtime/commands'
+import type { UserInputPreparer } from '@web-agent/core'
 import { imageInputCapabilityForApp } from './kimiImageFeature'
 import { kimiRegionSetting } from './kimiRegionSetting'
 

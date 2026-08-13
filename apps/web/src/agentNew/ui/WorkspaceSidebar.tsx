@@ -7,15 +7,13 @@ import {
   workspaceRenameStateAtom,
   workspaceSettingsOpenIdsAtom,
   workspacesAtom,
-} from '@web-agent/core/state/rootStore'
-import {
   newSession,
   newWorkspace,
   renameWorkspace,
   selectWorkspace,
   toggleWorkspaceExpanded,
   toggleWorkspaceSettings,
-} from '@web-agent/core/runtime/commands'
+} from '@web-agent/core'
 import {
   canPickWorkspaceDirectory,
   pickWorkspaceDirectory,

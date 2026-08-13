@@ -2,20 +2,18 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
-import { runAtom } from '@web-agent/core/state/sessionAtoms'
 import {
+  runAtom,
   composerDraftAtom,
   queuedUserMessagesAtom,
   withdrawnTurnNoticeAtom,
-} from '@web-agent/core/state/transientAtoms'
-import { Composer } from './Composer'
-import {
   continueInterruptedRun,
   sendMessage,
   setApprovalMode,
   stopRun,
   withdrawCurrentTurnToDraft,
-} from '@web-agent/core/runtime/commands'
+} from '@web-agent/core'
+import { Composer } from './Composer'
 
 // P-U4 Composer：右栏输入框。契约 U1 —— UI 只读 atom（runAtom）+ 调命令
 // （sendMessage / stopRun）。这里把命令整模块 mock，断言「按了什么就调了什么」，

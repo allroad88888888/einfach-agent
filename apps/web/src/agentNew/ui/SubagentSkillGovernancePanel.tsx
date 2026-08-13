@@ -15,7 +15,7 @@ import {
   openSkillGovernanceDialog,
   selectCandidateSkill,
   setCandidateSkillFilter,
-} from '@web-agent/core/runtime/commands'
+} from '@web-agent/core'
 
 function CandidateScore({ candidate }: { candidate: CandidateSkill }) {
   return (

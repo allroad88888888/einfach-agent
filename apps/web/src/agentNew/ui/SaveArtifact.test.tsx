@@ -2,10 +2,14 @@ import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createStore } from '@einfach/core'
-import { pendingArtifactsAtom, type PendingArtifact } from '@web-agent/core/state/transientAtoms'
-import { rootStore, activeSessionIdAtom } from '@web-agent/core/state/rootStore'
+import {
+  pendingArtifactsAtom,
+  type PendingArtifact,
+  rootStore,
+  activeSessionIdAtom,
+  discardArtifact,
+} from '@web-agent/core'
 import { renderWithStore } from '../../test/renderWithStore'
-import { discardArtifact } from '@web-agent/core/runtime/commands'
 import { SaveArtifact } from './SaveArtifact'
 
 // P8-f SaveArtifact：读 pendingArtifactsAtom（会话 store Provider 下）+ 保存产物。

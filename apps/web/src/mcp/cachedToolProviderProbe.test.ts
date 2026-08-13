@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { makeMcpToolName, type McpToolSnapshot } from '@web-agent/tools-mcp'
-import { toolProviderNotConnectedResult } from '@web-agent/core/tools/schemaResult'
+import { toolProviderNotConnectedResult } from '@web-agent/core/tools'
 import { createCachedToolProviderProbe } from './cachedToolProviderProbe'
 import { setToolNameCacheEntry, type McpToolNameCache } from './toolNameCache'
 import { toCachedTools } from './toolNameCacheWriter'

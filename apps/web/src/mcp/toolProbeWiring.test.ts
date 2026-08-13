@@ -4,12 +4,11 @@
 // connect-mcp-server.lastKnown.test.ts），所以本文件不重复它们的内部行为，只钉装配：
 // 缓存里的东西有没有沿着 registry 与运行时配置这两条路，真的走到模型面前。
 
-import { createToolRegistry } from '@web-agent/core/tools/toolRegistry'
+import { createToolRegistry, type UnconnectedToolProviderProbe } from '@web-agent/core/tools'
 import type {
   McpConnectTargetProbe,
   McpToolLaunchTargetProbe,
 } from '@web-agent/core/runtime/dangerousTools'
-import type { UnconnectedToolProviderProbe } from '@web-agent/core/tools/schemaResult'
 import { describe, expect, it, vi } from 'vitest'
 import {
   MCP_CONNECT_TOOL_NAME,

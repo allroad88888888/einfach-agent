@@ -5,8 +5,7 @@
 // 两种形状（`import {…} from 'blob:…'` / `export {…}` / `export default …`）的极小求值器——
 // 它不是 bundler，只是把「blob URL → 模块命名空间」这一步在 jsdom 里补上。
 
-import { loadScannedPlugins } from '@web-agent/core/plugins/pluginLoader'
-import { scanPlugins, type PluginScanBridge } from '@web-agent/core/plugins/pluginScanner'
+import { loadScannedPlugins, scanPlugins, type PluginScanBridge } from '@web-agent/core'
 import { createCore } from '@web-agent/core/plugin'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createContractModuleBridge } from './contractModuleBridge'

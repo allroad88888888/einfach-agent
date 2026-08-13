@@ -1,8 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import {
-  disabledProjectSkillsByWorkspaceAtom,
-  rootStore,
-} from '@web-agent/core/state/rootStore'
+import { disabledProjectSkillsByWorkspaceAtom, rootStore } from '@web-agent/core'
 import { configureAppSettingsStorage } from './commands'
 import {
   updateProjectSkillEnabled,

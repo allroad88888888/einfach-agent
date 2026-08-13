@@ -4,7 +4,7 @@ import {
   DEFAULT_KIMI_MODEL,
 } from '@web-agent/ai'
 import { useAtomValue } from '@einfach/react'
-import { newSession } from '@web-agent/core/runtime/commands'
+import { newSession } from '@web-agent/core'
 import { isKimiImageInputEnabled } from '../../modelInput/kimiImageFeature'
 import { closeSettingsCenter } from '../../settings/commands'
 import { MODEL_CREDENTIALS } from '../../settings/modelCredentialHost'

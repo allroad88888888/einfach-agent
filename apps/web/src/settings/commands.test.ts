@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { configureCommands } from '@web-agent/core/runtime/commands'
-import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
-import { rootStore } from '@web-agent/core/state/rootStore'
+import { configureCommands, defaultCore, rootStore } from '@web-agent/core'
 import {
   configureAppSettingsStorage,
   configureModelCredentialHost,

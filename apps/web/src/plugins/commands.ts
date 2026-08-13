@@ -5,7 +5,7 @@
 // 是 P10 的卡，在那之前任何宿主（包括还没跑 configurePluginSettings 的浏览器预览）看到的都是
 // 明确的"不支持"空态，而不是一个假装能用但什么都不做的面板。
 
-import { rootStore } from '@web-agent/core/state/rootStore'
+import { rootStore } from '@web-agent/core'
 import { createPluginSettingsService, type PluginSettingsService } from './service'
 import { createLocalStoragePluginToggleStorage } from './toggleStorage'
 import type { PluginSettingsProvider, PluginToggleStorage } from './types'

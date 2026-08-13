@@ -1,5 +1,5 @@
 import { useAtomValue } from '@einfach/react'
-import { planAtom } from '@web-agent/core/state/sessionAtoms'
+import { planAtom } from '@web-agent/core'
 import { PlanPanel } from './PlanPanel'
 
 /** Keeps actionable plans near the composer while completed plans live in the transcript. */

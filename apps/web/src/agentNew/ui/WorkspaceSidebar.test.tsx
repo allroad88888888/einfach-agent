@@ -9,15 +9,13 @@ import {
   rootStore,
   sessionsAtom,
   workspacesAtom,
-} from '@web-agent/core/state/rootStore'
-import {
   newSession,
   newWorkspace,
   renameWorkspace,
   selectWorkspace,
   toggleWorkspaceExpanded,
   toggleWorkspaceSettings,
-} from '@web-agent/core/runtime/commands'
+} from '@web-agent/core'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
 
 vi.mock('@web-agent/core/runtime/commands', () => ({

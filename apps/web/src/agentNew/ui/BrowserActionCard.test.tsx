@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import type { BrowserCard } from '@web-agent/core/state/transientAtoms'
+import type { BrowserCard } from '@web-agent/core'
 import { BrowserActionCard } from './BrowserActionCard'
 
 // P8-e BrowserActionCard：纯展示卡片（新 BrowserCard 只有 title + 可选 body）。

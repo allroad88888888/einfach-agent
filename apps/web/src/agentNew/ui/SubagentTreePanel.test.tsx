@@ -2,10 +2,14 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { Provider } from '@einfach/react'
-import type { ConversationItem, SessionMeta } from '@web-agent/core/state/core.type'
-import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
-import { activeSessionIdAtom, sessionsAtom } from '@web-agent/core/state/rootStore'
-import { itemsAtom } from '@web-agent/core/state/sessionAtoms'
+import {
+  type ConversationItem,
+  type SessionMeta,
+  defaultCore,
+  activeSessionIdAtom,
+  sessionsAtom,
+  itemsAtom,
+} from '@web-agent/core'
 import { SubagentTreePanel } from './SubagentTreePanel'
 import { readWorkspaceFile, readWorkspaceRunIndexPage } from '@web-agent/core/runtime/workspaceRead'
 

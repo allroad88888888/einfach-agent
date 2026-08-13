@@ -1,7 +1,7 @@
 import { useMemo, type ReactNode } from 'react'
 import { useAtomValue } from '@einfach/react'
 import { projectHistoryImage, type UserImageContentBlock } from '@web-agent/ai'
-import { itemsAtom } from '@web-agent/core/state/sessionAtoms'
+import { itemsAtom } from '@web-agent/core'
 import { useHistoryImageTarget } from './HistoryImageCompatibilityContext'
 import './HistoryImageCompatibilityGuard.css'
 

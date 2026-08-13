@@ -9,9 +9,9 @@ import {
   disabledProjectSkillsByWorkspaceAtom,
   projectSkillsAtom,
   workspacesAtom,
-} from '@web-agent/core/state/rootStore'
-import type { ProjectSkillEntry, ProjectSkillsSnapshot } from '@web-agent/core/skills/projectSkills'
-import { resolveSessionWorkspaceRoot } from '@web-agent/core/state/workspaceState'
+  resolveSessionWorkspaceRoot,
+} from '@web-agent/core'
+import type { ProjectSkillEntry, ProjectSkillsSnapshot } from '@web-agent/core/skills'
 import {
   refreshProjectSkillsFromSettings,
   updateProjectSkillEnabled,

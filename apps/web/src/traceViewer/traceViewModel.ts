@@ -1,5 +1,10 @@
-import type { TraceEvent, TraceSpan, TraceStatus, SpanKind } from '@web-agent/core/observability/types'
-import type { TraceLogSnapshot } from '@web-agent/core/observability/logReader'
+import type {
+  TraceEvent,
+  TraceSpan,
+  TraceStatus,
+  SpanKind,
+  TraceLogSnapshot,
+} from '@web-agent/core/observability'
 
 export type TraceLevelFilter = 'all' | TraceStatus
 export type TraceTypeFilter = 'all' | SpanKind | 'event'

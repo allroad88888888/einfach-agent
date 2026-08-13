@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { rootStore } from '@web-agent/core/state/rootStore'
+import { rootStore } from '@web-agent/core'
 import { renderWithStore } from '../../test/renderWithStore'
 import {
   configureModelCredentialHost,

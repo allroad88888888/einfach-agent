@@ -8,11 +8,14 @@ import {
   expandedWorkspaceIdsAtom,
   sessionsAtom,
   activeSessionIdAtom,
-} from '@web-agent/core/state/rootStore'
-import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
-import { checkpointsAtom, planAtom, runAtom } from '@web-agent/core/state/sessionAtoms'
-import { contextStatsAtom, pendingArtifactsAtom } from '@web-agent/core/state/transientAtoms'
-import type { SessionMeta } from '@web-agent/core/state/core.type'
+  defaultCore,
+  checkpointsAtom,
+  planAtom,
+  runAtom,
+  contextStatsAtom,
+  pendingArtifactsAtom,
+  type SessionMeta,
+} from '@web-agent/core'
 import { resetMcpSettingsState } from '../../mcp/state'
 import { AppShell } from './AppShell'
 

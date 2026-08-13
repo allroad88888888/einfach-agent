@@ -3,11 +3,11 @@
 // UI 不直接写 atom 或存储；这里先落盘，再把同一偏好发布给 runtime root store，确保下一次
 // skill_manifest、skill_search 与 skill_read 读取的都是用户刚刚选择的集合。
 
-import { refreshProjectSkills } from '@web-agent/core/runtime/commands'
 import {
+  refreshProjectSkills,
   disabledProjectSkillsByWorkspaceAtom,
   rootStore,
-} from '@web-agent/core/state/rootStore'
+} from '@web-agent/core'
 import { setProjectSkillEnabled } from '@web-agent/core/skills/projectSkillPreferences'
 import { appSettingsAtom } from './state'
 import { saveAppSettings } from './commands'

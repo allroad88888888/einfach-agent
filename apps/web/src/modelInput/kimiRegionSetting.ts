@@ -1,5 +1,5 @@
 import type { KimiRegion } from '@web-agent/ai'
-import type { ModelSettings } from '@web-agent/core/state/core.type'
+import type { ModelSettings } from '@web-agent/core'
 
 /**
  * 从会话设置袋里取出 Kimi 的区域。

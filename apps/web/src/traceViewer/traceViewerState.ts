@@ -1,5 +1,5 @@
 import { atom } from '@einfach/core'
-import { createTraceLogReader, type TraceLogSnapshot } from '@web-agent/core/observability/logReader'
+import { createTraceLogReader, type TraceLogSnapshot } from '@web-agent/core/observability'
 import {
   buildTraceView,
   DEFAULT_TRACE_FILTERS,

@@ -12,9 +12,13 @@
 
 import { useState } from 'react'
 import { useAtomValue } from '@einfach/react'
-import { pendingArtifactsAtom, type PendingArtifact } from '@web-agent/core/state/transientAtoms'
-import { rootStore, activeSessionIdAtom } from '@web-agent/core/state/rootStore'
-import { discardArtifact } from '@web-agent/core/runtime/commands'
+import {
+  pendingArtifactsAtom,
+  type PendingArtifact,
+  rootStore,
+  activeSessionIdAtom,
+  discardArtifact,
+} from '@web-agent/core'
 
 type SaveStatus = { kind: 'idle' | 'saving' | 'cancelled' | 'error'; message?: string }
 

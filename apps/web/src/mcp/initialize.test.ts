@@ -7,10 +7,9 @@
 //
 // 存储后端的选择（B1：桌面 vs 浏览器）在 initialize.storage.test.ts，那是另一件事。
 
-import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
+import { defaultCore, rootStore } from '@web-agent/core'
 import { classifyToolRisk } from '@web-agent/core/runtime/dangerousTools'
 import { toolRegistry } from '@web-agent/core/tools/registry'
-import { rootStore } from '@web-agent/core/state/rootStore'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MCP_CONNECT_TOOL_NAME } from '@web-agent/tools-mcp'
 import { hydrateMcpSettings } from './commands'

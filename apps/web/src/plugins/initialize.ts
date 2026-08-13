@@ -12,8 +12,12 @@
 
 import { atom } from '@einfach/core'
 import { isTauri } from '@tauri-apps/api/core'
-import { activeSessionMetaAtom, rootStore, workspacesAtom } from '@web-agent/core/state/rootStore'
-import { resolveSessionWorkspaceRoot } from '@web-agent/core/state/workspaceState'
+import {
+  activeSessionMetaAtom,
+  rootStore,
+  workspacesAtom,
+  resolveSessionWorkspaceRoot,
+} from '@web-agent/core'
 import { configurePluginSettings, hydratePluginSettings } from './commands'
 import { createDesktopPluginSettingsProvider } from './desktopProvider'
 import type { PluginToggleStorage } from './types'

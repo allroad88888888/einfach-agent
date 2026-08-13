@@ -17,14 +17,17 @@ import {
   useMemo,
   type ReactNode,
 } from 'react'
-import { revertTurnToDraft } from '@web-agent/core/runtime/commands'
-import { checkpointsAtom, itemsAtom, planAtom, runAtom } from '@web-agent/core/state/sessionAtoms'
 import {
+  revertTurnToDraft,
+  checkpointsAtom,
+  itemsAtom,
+  planAtom,
+  runAtom,
   assistantStreamAtom,
   browserCardsAtom,
   expandedTranscriptGroupsAtom,
   runtimeTranscriptEventsAtom,
-} from '@web-agent/core/state/transientAtoms'
+} from '@web-agent/core'
 import {
   isTimelineThinkingItem,
   projectTimelineItems,

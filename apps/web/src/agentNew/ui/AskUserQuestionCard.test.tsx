@@ -2,10 +2,13 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import { fireEvent, screen, act } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
-import { runAtom } from '@web-agent/core/state/sessionAtoms'
-import { pendingQuestionAnswersAtom } from '@web-agent/core/state/transientAtoms'
+import {
+  runAtom,
+  pendingQuestionAnswersAtom,
+  answerQuestion,
+  resumeWithAnswers,
+} from '@web-agent/core'
 import { AskUserQuestionCard } from './AskUserQuestionCard'
-import { answerQuestion, resumeWithAnswers } from '@web-agent/core/runtime/commands'
 
 // P8-d AskUserQuestionCard：暂停确认卡片。契约 U1 —— UI 只读 atom（runAtom /
 // pendingQuestionAnswersAtom）+ 调命令（answerQuestion / resumeWithAnswers）。

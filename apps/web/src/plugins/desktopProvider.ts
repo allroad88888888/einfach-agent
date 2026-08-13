@@ -12,19 +12,17 @@
 //
 // 装配（何时创建本 provider、workspace 换了怎么办）在 initialize.ts，本文件只管加载语义。
 
-import { loadScannedPlugins } from '@web-agent/core/plugins/pluginLoader'
-import type { PluginApiVersionRange } from '@web-agent/core/plugins/manifestTypes'
-import type {
-  PluginInstallHost,
-  PluginLoaderDeps,
-  PluginLoadResult,
-} from '@web-agent/core/plugins/pluginLoaderTypes'
 import {
+  loadScannedPlugins,
+  type PluginApiVersionRange,
+  type PluginInstallHost,
+  type PluginLoaderDeps,
+  type PluginLoadResult,
   scanPlugins,
   type PluginScanBridge,
   type ScannedPlugin,
-} from '@web-agent/core/plugins/pluginScanner'
-import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
+  defaultCore,
+} from '@web-agent/core'
 import { createDesktopImportModule } from './desktopImportModule'
 import type { LoadedPlugin, PluginSettingsProvider, PluginToolGate } from './types'
 

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { rootStore } from '@web-agent/core/state/rootStore'
+import { rootStore } from '@web-agent/core'
 import { renderWithStore } from '../../test/renderWithStore'
 import { configurePluginSettings } from '../../plugins/commands'
 import { resetPluginSettingsState } from '../../plugins/state'

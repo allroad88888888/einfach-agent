@@ -1,4 +1,4 @@
-import type { ModelSettings } from '@web-agent/core/state/core.type'
+import type { ModelSettings } from '@web-agent/core'
 import { kimiRegionSetting } from '../modelInput/kimiRegionSetting'
 import type { ModelCredentialId } from './modelCredentialHost'
 

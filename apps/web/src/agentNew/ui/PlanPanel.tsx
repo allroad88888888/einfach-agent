@@ -5,23 +5,17 @@ import {
   planAtom,
   planStageCheckpointsAtom,
   runAtom,
-} from '@web-agent/core/state/sessionAtoms'
-import { activeExecutionNodeIdsAtom, executionGraphAtom } from '@web-agent/core/execution/graph'
-import {
+  activeExecutionNodeIdsAtom,
+  executionGraphAtom,
   assistantStreamAtom,
   expandedPlanStagesAtom,
   planPanelExpandedAtom,
-} from '@web-agent/core/state/transientAtoms'
-import {
   approvePlan,
   continuePlan,
   rollbackPlanStage,
-} from '@web-agent/core/runtime/commands'
-import type { PlanStageStatus } from '@web-agent/core/planning/types'
-import {
-  performanceNow,
-  recordPerformanceDiagnostic,
-} from '@web-agent/core/observability/performanceDiagnostics'
+} from '@web-agent/core'
+import type { PlanStageStatus } from '@web-agent/core/planning'
+import { performanceNow, recordPerformanceDiagnostic } from '@web-agent/core/observability'
 import { projectPlanStageTimelineItems } from '@web-agent/core/timeline'
 import { PlanStageExecutionTrace } from './PlanStageExecutionTrace'
 import { AskUserQuestionCard } from './AskUserQuestionCard'

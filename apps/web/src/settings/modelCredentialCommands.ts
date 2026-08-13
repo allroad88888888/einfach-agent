@@ -1,4 +1,4 @@
-import { rootStore } from '@web-agent/core/state/rootStore'
+import { rootStore } from '@web-agent/core'
 import {
   createUnavailableModelCredentialHost,
   MODEL_CREDENTIALS,

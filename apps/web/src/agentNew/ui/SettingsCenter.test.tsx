@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { configureCommands } from '@web-agent/core/runtime/commands'
-import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
 import {
+  configureCommands,
+  defaultCore,
   activeSessionIdAtom,
   rootStore,
   sessionsAtom,
-} from '@web-agent/core/state/rootStore'
+} from '@web-agent/core'
 import { renderWithStore } from '../../test/renderWithStore'
 import { configureMcpSettings } from '../../mcp/commands'
 import { createMemoryMcpConfigStorage } from '../../mcp/persistence'

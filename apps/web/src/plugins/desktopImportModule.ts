@@ -22,7 +22,7 @@
 // definePlugin。品牌那半边由 pluginContracts.ts 的 Symbol.for 兜底，两者互不依赖：
 // 桥保证「解析得到」，全局 Symbol 保证「即使换了实例也认得出」。
 
-import type { PluginLoaderDeps } from '@web-agent/core/plugins/pluginLoaderTypes'
+import type { PluginLoaderDeps } from '@web-agent/core'
 import { readWorkspaceFile } from '@web-agent/core/runtime/workspaceRead'
 import { rewriteContractImports } from './contractImportRewrite'
 import { defaultContractModuleBridge, type ContractModuleResolver } from './contractModuleBridge'

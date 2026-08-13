@@ -1,9 +1,5 @@
 import { useAtom, useAtomValue } from '@einfach/react'
-import { planAtom } from '@web-agent/core/state/sessionAtoms'
-import {
-  completedPlanRecordExpandedAtom,
-  expandedPlanStagesAtom,
-} from '@web-agent/core/state/transientAtoms'
+import { planAtom, completedPlanRecordExpandedAtom, expandedPlanStagesAtom } from '@web-agent/core'
 
 /** Renders a completed plan as a compact, expandable transcript record. */
 export function CompletedPlanRecord() {

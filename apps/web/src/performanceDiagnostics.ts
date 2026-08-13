@@ -1,8 +1,5 @@
 import type { ProfilerOnRenderCallback } from 'react'
-import {
-  performanceNow,
-  recordPerformanceDiagnostic,
-} from '@web-agent/core/observability/performanceDiagnostics'
+import { performanceNow, recordPerformanceDiagnostic } from '@web-agent/core/observability'
 
 const EVENT_LOOP_INTERVAL_MS = 250
 const EVENT_LOOP_STALL_MS = 120

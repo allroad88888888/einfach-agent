@@ -1,4 +1,4 @@
-import { rootStore } from '@web-agent/core/state/rootStore'
+import { rootStore } from '@web-agent/core'
 import { settingsCenterOpenAtom, settingsCenterTabAtom, type SettingsCenterTab } from './settingsCenterState'
 
 export function openSettingsCenter(tab: SettingsCenterTab = 'mcp'): void {

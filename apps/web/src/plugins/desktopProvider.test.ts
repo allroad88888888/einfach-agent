@@ -5,7 +5,7 @@
 // desktopImportModule.test.ts，装配（谁在什么时候造 provider）在 initialize.test.ts。
 
 import { createCore, definePlugin } from '@web-agent/core/plugin'
-import type { PluginScanBridge } from '@web-agent/core/plugins/pluginScanner'
+import type { PluginScanBridge } from '@web-agent/core'
 import { describe, expect, it, vi } from 'vitest'
 import { createDesktopPluginSettingsProvider } from './desktopProvider'
 

@@ -11,8 +11,8 @@ import {
   activeSessionIdAtom,
   activeSessionMetaAtom,
   activeWorkspaceRootAtom,
-} from '@web-agent/core/state/rootStore'
-import { sessionAtomScope } from '@web-agent/core/runtime/commands'
+  sessionAtomScope,
+} from '@web-agent/core'
 import type { KimiRegion } from '@web-agent/ai'
 import { kimiRegionSetting } from '../../modelInput/kimiRegionSetting'
 

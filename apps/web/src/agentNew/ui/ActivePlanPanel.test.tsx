@@ -1,7 +1,7 @@
 import { createStore } from '@einfach/core'
 import { screen } from '@testing-library/react'
 import { describe, expect, it } from 'vitest'
-import { planAtom } from '@web-agent/core/state/sessionAtoms'
+import { planAtom } from '@web-agent/core'
 import { renderWithStore } from '../../test/renderWithStore'
 import { ActivePlanPanel } from './ActivePlanPanel'
 

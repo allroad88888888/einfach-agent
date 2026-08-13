@@ -19,7 +19,7 @@ import {
   loadSubagentTrace,
   selectGlobalSubagentRun,
   selectSubagentNode,
-} from '@web-agent/core/runtime/commands'
+} from '@web-agent/core'
 import { SubagentRunTrace } from './SubagentRunTrace'
 import { SubagentSkillGovernancePanel } from './SubagentSkillGovernancePanel'
 import { SubagentStatusBadge, SubagentTreeView } from './SubagentTreeView'

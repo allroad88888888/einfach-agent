@@ -1,8 +1,4 @@
-import { configureCommands } from '@web-agent/core/runtime/commands'
-import {
-  disabledProjectSkillsByWorkspaceAtom,
-  rootStore,
-} from '@web-agent/core/state/rootStore'
+import { configureCommands, disabledProjectSkillsByWorkspaceAtom, rootStore } from '@web-agent/core'
 import { MAX_CUSTOM_INSTRUCTIONS_LENGTH, type AppSettings } from './config'
 import { hydrateModelCredentials } from './modelCredentialCommands'
 import {

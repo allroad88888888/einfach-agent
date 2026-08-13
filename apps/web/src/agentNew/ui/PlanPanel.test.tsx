@@ -2,12 +2,14 @@ import { createStore } from '@einfach/core'
 import { fireEvent, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { renderWithStore } from '../../test/renderWithStore'
-import { itemsAtom, planAtom, runAtom } from '@web-agent/core/state/sessionAtoms'
 import {
+  itemsAtom,
+  planAtom,
+  runAtom,
   approvePlan,
   continuePlan,
   rollbackPlanStage,
-} from '@web-agent/core/runtime/commands'
+} from '@web-agent/core'
 import { PlanPanel } from './PlanPanel'
 import {
   MESSAGE_WINDOW_SIZE,

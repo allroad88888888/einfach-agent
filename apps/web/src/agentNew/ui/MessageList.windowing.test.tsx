@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
-import { itemsAtom } from '@web-agent/core/state/sessionAtoms'
-import type { ConversationItem } from '@web-agent/core/state/core.type'
+import { itemsAtom, type ConversationItem } from '@web-agent/core'
 import { MessageList } from './MessageList'
 import {
   MESSAGE_WINDOW_SIZE,

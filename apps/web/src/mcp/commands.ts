@@ -1,4 +1,4 @@
-import { rootStore } from '@web-agent/core/state/rootStore'
+import { rootStore } from '@web-agent/core'
 import { createBrowserMcpConfigStorage, type McpConfigStorage } from './persistence'
 import { createMcpSettingsService, type McpSettingsManager, type McpSettingsService } from './service'
 import {

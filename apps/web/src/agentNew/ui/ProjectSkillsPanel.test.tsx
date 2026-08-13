@@ -8,9 +8,9 @@ import {
   rootStore,
   sessionsAtom,
   workspacesAtom,
-} from '@web-agent/core/state/rootStore'
-import type { ProjectSkillsSnapshot } from '@web-agent/core/skills/projectSkills'
-import type { SessionMeta } from '@web-agent/core/state/core.type'
+  type SessionMeta,
+} from '@web-agent/core'
+import type { ProjectSkillsSnapshot } from '@web-agent/core/skills'
 import { renderWithStore } from '../../test/renderWithStore'
 import { ProjectSkillsPanel } from './ProjectSkillsPanel'
 import {

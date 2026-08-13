@@ -2,9 +2,8 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import { createStore } from '@einfach/core'
 import { fireEvent, screen } from '@testing-library/react'
 import { renderWithStore } from '../../test/renderWithStore'
-import { checkpointsAtom, currentTurnIndexAtom } from '@web-agent/core/state/sessionAtoms'
-import type { Checkpoint } from '@web-agent/core/state/checkpoint.type'
-import { revertToTurn } from '@web-agent/core/runtime/commands'
+import { checkpointsAtom, currentTurnIndexAtom, revertToTurn } from '@web-agent/core'
+import type { Checkpoint } from '@web-agent/core/state/persistence'
 import { CheckpointBar } from './CheckpointBar'
 
 // P-U5：CheckpointBar = 右栏「回退到某一轮」的可点轮列表（在会话 store 的 Provider 下）。

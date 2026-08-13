@@ -2,9 +2,13 @@ import { afterEach, describe, it, expect, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
-import { checkpointsAtom, itemsAtom, runAtom } from '@web-agent/core/state/sessionAtoms'
-import type { ConversationItem } from '@web-agent/core/state/core.type'
-import { revertTurnToDraft } from '@web-agent/core/runtime/commands'
+import {
+  checkpointsAtom,
+  itemsAtom,
+  runAtom,
+  type ConversationItem,
+  revertTurnToDraft,
+} from '@web-agent/core'
 import { MessageList } from './MessageList'
 
 vi.mock('@web-agent/core/runtime/commands', () => ({ revertTurnToDraft: vi.fn() }))

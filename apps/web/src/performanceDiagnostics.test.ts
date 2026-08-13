@@ -3,8 +3,10 @@ import {
   configureObservability,
   flushObservability,
   resetObservability,
-} from '@web-agent/core/observability/trace'
-import type { TraceDriver, TraceEvent, TraceSpan } from '@web-agent/core/observability/types'
+  type TraceDriver,
+  type TraceEvent,
+  type TraceSpan,
+} from '@web-agent/core/observability'
 import { startUiPerformanceDiagnostics } from './performanceDiagnostics'
 
 function mockDriver(): TraceDriver & { spans: TraceSpan[]; events: TraceEvent[] } {

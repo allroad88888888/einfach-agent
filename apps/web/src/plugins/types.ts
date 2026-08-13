@@ -6,7 +6,7 @@
 // packages/agent-core/src/plugins/pluginLoaderTypes.ts）经这一层转成面板可直接
 // 渲染的 PluginRow，宿主接线（P10）与真实存储只需实现下面两个接口。
 
-import type { LoadedPlugin, PluginLoadResult } from '@web-agent/core/plugins/pluginLoaderTypes'
+import type { LoadedPlugin, PluginLoadResult } from '@web-agent/core'
 
 export type { LoadedPlugin, PluginLoadResult }
 

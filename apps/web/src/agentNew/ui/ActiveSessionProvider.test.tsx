@@ -2,10 +2,13 @@ import { describe, it, expect } from 'vitest'
 import { act, screen } from '@testing-library/react'
 import { useAtomValue } from '@einfach/react'
 import { renderWithStore } from '../../test/renderWithStore'
-import { rootStore, activeSessionIdAtom } from '@web-agent/core/state/rootStore'
-import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
-import { itemsAtom } from '@web-agent/core/state/sessionAtoms'
-import type { ConversationItem } from '@web-agent/core/state/core.type'
+import {
+  rootStore,
+  activeSessionIdAtom,
+  defaultCore,
+  itemsAtom,
+  type ConversationItem,
+} from '@web-agent/core'
 import { ActiveSessionProvider } from './ActiveSessionProvider'
 
 // RUI1 spike：验证「einfach <Provider> 嵌套 + key 切 store」这套地基是否工作。

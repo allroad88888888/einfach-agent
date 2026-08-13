@@ -2,11 +2,15 @@ import { Provider } from '@einfach/react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { ConversationItem, SessionMeta } from '@web-agent/core/state/core.type'
-import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
+import {
+  type ConversationItem,
+  type SessionMeta,
+  defaultCore,
+  activeSessionIdAtom,
+  sessionsAtom,
+  itemsAtom,
+} from '@web-agent/core'
 import { readWorkspaceFile, readWorkspaceRunIndexPage } from '@web-agent/core/runtime/workspaceRead'
-import { activeSessionIdAtom, sessionsAtom } from '@web-agent/core/state/rootStore'
-import { itemsAtom } from '@web-agent/core/state/sessionAtoms'
 import { SubagentTreePanel } from './SubagentTreePanel'
 
 vi.mock('@web-agent/core/runtime/workspaceRead', () => ({

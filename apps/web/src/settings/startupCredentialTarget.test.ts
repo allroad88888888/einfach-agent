@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ModelSettings } from '@web-agent/core/state/core.type'
+import type { ModelSettings } from '@web-agent/core'
 import { resolveStartupCredentialTarget } from './startupCredentialTarget'
 
 describe('resolveStartupCredentialTarget', () => {

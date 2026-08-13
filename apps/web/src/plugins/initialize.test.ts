@@ -8,7 +8,7 @@
 // 桌面这一路走真的 scanPlugins + 真的 projectSkillsBridge，只把 Tauri IPC 这一层换成替身——
 // 复用项目 skills 那条 Rust 通路正是本卡的做法，接错了这里就看不到 list_workspace_files。
 
-import type { SessionMeta, WorkspaceMeta } from '@web-agent/core/state/core.type'
+import type { SessionMeta, WorkspaceMeta } from '@web-agent/core'
 import { describe, expect, it, vi } from 'vitest'
 
 // 与真实模块一致的默认表现：isTauri() 答 false、invoke 不被意外调用。

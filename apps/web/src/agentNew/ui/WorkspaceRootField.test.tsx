@@ -2,12 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithStore } from '../../test/renderWithStore'
-import {
-  activeWorkspaceIdAtom,
-  rootStore,
-  workspacesAtom,
-} from '@web-agent/core/state/rootStore'
-import { setWorkspaceRoot } from '@web-agent/core/runtime/commands'
+import { activeWorkspaceIdAtom, rootStore, workspacesAtom, setWorkspaceRoot } from '@web-agent/core'
 import { pickWorkspaceDirectory } from '@web-agent/core/runtime/workspaceDialog'
 import { WorkspaceRootField } from './WorkspaceRootField'
 

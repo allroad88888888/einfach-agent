@@ -1,8 +1,14 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { act, fireEvent, screen, within } from '@testing-library/react'
 import { renderWithStore } from '../../test/renderWithStore'
-import { rootStore, sessionsAtom, activeSessionIdAtom } from '@web-agent/core/state/rootStore'
-import { selectSession, removeSession, renameSession } from '@web-agent/core/runtime/commands'
+import {
+  rootStore,
+  sessionsAtom,
+  activeSessionIdAtom,
+  selectSession,
+  removeSession,
+  renameSession,
+} from '@web-agent/core'
 import { SessionList } from './SessionList'
 
 // P-U2 SessionList：左栏会话列表。契约 U1 —— UI 只读 atom（sessionsAtom /

@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
-import { itemsAtom, planAtom } from '@web-agent/core/state/sessionAtoms'
-import { browserCardsAtom, type BrowserCard } from '@web-agent/core/state/transientAtoms'
+import { itemsAtom, planAtom, browserCardsAtom, type BrowserCard } from '@web-agent/core'
 import { MessageList } from './MessageList'
 
 /** Covers MessageList ordering and empty-state behavior for timeline rows. */

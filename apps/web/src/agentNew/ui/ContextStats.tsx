@@ -8,8 +8,9 @@ import { recoverCacheTotalsFromTrace } from '@web-agent/core/observability'
 import {
   COST_SOFT_CAP_TOKENS,
   contextInputBudgetTokens,
-} from '@web-agent/core/runtime/contextBudget'
-import { contextStatsAtom, type ContextStatsSnapshot } from '@web-agent/core/state/transientAtoms'
+  contextStatsAtom,
+  type ContextStatsSnapshot,
+} from '@web-agent/core'
 
 const numberFormatter = new Intl.NumberFormat('en-US')
 

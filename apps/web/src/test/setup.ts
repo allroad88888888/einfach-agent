@@ -3,6 +3,10 @@ import { cleanup } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
 import { toolRegistry } from '@web-agent/core/tools/registry'
 import { resetRootStore } from '@web-agent/core/state/rootStore'
+// 【setupFile 纪律】本文件是 vitest setupFile，在每个测试文件的 vi.mock 提升之前执行。
+// 这里**不能**改走根 barrel `@web-agent/core`：barrel 会把 runtime/commands 整条静态导链
+// 提前灌进模块缓存，导致测试里 vi.mock('@web-agent/core/runtime/commands') 拿到的是缓存的
+// 真实实现（表现为「not a spy」）。故 defaultCore 保持深路径。
 import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
 import { registerStandardTools } from '@web-agent/tools'
 

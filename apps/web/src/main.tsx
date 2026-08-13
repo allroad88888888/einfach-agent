@@ -1,7 +1,18 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { Provider } from '@einfach/react'
-import { activeSessionMetaAtom, rootStore } from '@web-agent/core/state/rootStore'
+import {
+  activeSessionMetaAtom,
+  rootStore,
+  configureCommands,
+  newSession,
+  defaultCore,
+  configureDefaultDelegation,
+  configureDefaultProjectSkillsProvider,
+  configureDefaultSkillsRegistry,
+  configurePersistence,
+  hydratePersistence,
+} from '@web-agent/core'
 import { toolRegistry } from '@web-agent/core/tools/registry'
 import { registerStandardTools } from '@web-agent/tools'
 import { buildProjectSkillsProvider, builtInSkillsRegistry } from '@web-agent/tools-skills'
@@ -9,23 +20,17 @@ import { hydrateMcpSettings } from './mcp/commands'
 import { initializeMcpSettings } from './mcp/initialize'
 import { hydratePluginSettings } from './plugins/commands'
 import { initializePluginSettings } from './plugins/initialize'
-import { configureCommands, newSession } from '@web-agent/core/runtime/commands'
-import {
-  defaultCore,
-  configureDefaultDelegation,
-  configureDefaultProjectSkillsProvider,
-  configureDefaultSkillsRegistry,
-} from '@web-agent/core/runtime/core/coreInstance'
 import { createDefaultPlanRuntime } from '@web-agent/tools-planning'
 import { createDelegationAssembly } from '@web-agent/subagents'
-import { configurePersistence, hydratePersistence } from '@web-agent/core/runtime/persistenceBridge'
-import { configureObservability } from '@web-agent/core/observability/trace'
+import {
+  configureObservability,
+  configureTraceLogReader as configureTraceLogReaderFactory,
+} from '@web-agent/core/observability'
 import {
   createIndexedDbHistoryDriver,
   createIndexedDbSessionsPersistence,
 } from '@web-agent/persistence-idb'
 import { createIndexedDbLogDriver, createIndexedDbLogReader } from '@web-agent/observability-idb'
-import { configureTraceLogReader as configureTraceLogReaderFactory } from '@web-agent/core/observability/logReader'
 import { isTauri } from '@tauri-apps/api/core'
 import { AppShell } from './agentNew/ui/AppShell'
 import { StartupCredentialGate } from './agentNew/ui/StartupCredentialGate'

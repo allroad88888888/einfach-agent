@@ -5,7 +5,7 @@ import {
   type TimelineItem,
   type TimelineThinkingItem,
 } from '@web-agent/core/timeline'
-import type { PlanSnapshot } from '@web-agent/core/planning/types'
+import type { PlanSnapshot } from '@web-agent/core/planning'
 
 export interface CompletedPlanRecordEntry {
   kind: 'completed-plan-record'

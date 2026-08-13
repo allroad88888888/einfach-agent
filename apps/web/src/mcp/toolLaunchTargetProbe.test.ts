@@ -6,7 +6,7 @@
 
 import type { McpConnectTargetProbe } from '@web-agent/core/runtime/dangerousTools'
 import { createMcpPlaceholderClaims } from '@web-agent/tools-mcp'
-import type { Tool } from '@web-agent/core/tools/types'
+import type { Tool } from '@web-agent/core/tools'
 import { describe, expect, it, vi } from 'vitest'
 import { createMcpToolLaunchTargetProbe } from './toolLaunchTargetProbe'
 
