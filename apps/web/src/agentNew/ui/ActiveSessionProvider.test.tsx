@@ -3,7 +3,7 @@ import { act, screen } from '@testing-library/react'
 import { useAtomValue } from '@einfach/react'
 import { renderWithStore } from '../../test/renderWithStore'
 import { rootStore, activeSessionIdAtom } from '@web-agent/core/state/rootStore'
-import { getSessionStore } from '@web-agent/core/state/sessionStore'
+import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
 import { itemsAtom } from '@web-agent/core/state/sessionAtoms'
 import type { ConversationItem } from '@web-agent/core/state/core.type'
 import { ActiveSessionProvider } from './ActiveSessionProvider'
@@ -27,8 +27,8 @@ const oneItem: ConversationItem = {
 describe('ActiveSessionProvider (RUI1)', () => {
   it('切 activeSessionId → key 切 store，子组件读到新会话 store 的值；无会话时空占位', () => {
     // 准备两个会话的独立 store，各写不同长度的 items。
-    getSessionStore('a').store.setter(itemsAtom, [oneItem])
-    getSessionStore('b').store.setter(itemsAtom, [oneItem, { ...oneItem, id: 'i2' }])
+    defaultCore.getSessionStore('a').store.setter(itemsAtom, [oneItem])
+    defaultCore.getSessionStore('b').store.setter(itemsAtom, [oneItem, { ...oneItem, id: 'i2' }])
     rootStore.setter(activeSessionIdAtom, 'a')
 
     renderWithStore(

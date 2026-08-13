@@ -131,6 +131,24 @@ done < /tmp/core-nontest.txt | sort -u \
 S7b 之后 `state/sessionStore` 也落到这一类（E7 处置掉了它唯一的产品消费方），S8 按同一口径处理，
 届时这类是 6 条。
 
+**S8 处置结果**（只改测试文件，未新开任何 barrel 导出）：
+
+| subpath | 消费方（改前） | 处置 |
+| --- | --- | --- |
+| `runtime/core/pluginContracts` | `apps/web/src/plugins/desktopProvider.test.ts`、`apps/cli/src/plugins.test.ts`（fixture 字面量） | **已消**：`definePlugin` 本就在 `./plugin` 白名单里，两处改走 `@web-agent/core/plugin` |
+| `runtime/core/pluginHost` | `apps/web/src/plugins/{desktopProvider,desktopImportModule.bridge}.test.ts` | **已消**：两处内联 `createPluginHost(createToolRegistry(), [])` 换成 `createCore().plugins`（`createCore` 同样在 `./plugin` 白名单里，效果等价——都是一个空工具注册表上的隔离 `PluginHost`） |
+| `runtime/skillGovernance` | `packages/subagents/src/state/subagentSkillGovernanceAtoms.test.ts` | **已消**：`prepareSubagentSkillGovernance` 本就经 `subagentStatePort.prepareSkillGovernance` 挂在 `./subagents` 白名单里（见 `state/stateViewPort.ts`），测试改走它 |
+| `state/sessionWriters` | `apps/cli/src/event-renderer.test.ts` | **已消**：测试实际验证的是 `subscribeCliRenderer` 对 `itemsAtom` 变化的反应，不是写入器本身；换成两个文件内 helper，直接对 `defaultCore.getSessionStore(id).store` 做 `itemsAtom` 的不可变更新（`defaultCore`/`itemsAtom` 都已在白名单），不复现 `touchSession` 副作用（本文件断言从不依赖它） |
+| `tools/schemaValidate` | `tools/fs/src/apply-patch/apply-patch.schema.test.ts` | **改不动，留作 S9 豁免候选**：`validateAgainstSchema` 在 core 内部同样零非测试消费方（S1a 已判 D 类、明确排除出 `./tools`），补白名单属于新开公开 API，超出"只改测试文件"的边界；搬回 core 包内会反向撤销 TSPLIT TS2 的既有决定（该测试当初就是为了不让 core 的通用 schema 测试反向依赖具体工具才搬来 `tools/fs` 的）。现状：`check-boundaries.js` 的 `typescriptFiles()` 本就跳过 `*.test.ts`，S9 若延续这个既有惯例，这条深导入天然不会被判红——留给 S9 落地时核实 |
+
+`state/sessionStore` 的 3 处测试脚手架（`apps/web/src/agentNew/ui/{ActiveSessionProvider,AppShell}.test.tsx`
+与 `apps/web/src/test/setup.ts` 的 `resetSessionStores`）**已消**：`getSessionStore`/`resetSessionStores`
+在 `state/sessionStore.ts` 里就是 `defaultCore.getSessionStore`/`defaultCore.resetSessionStores` 的薄委托
+（见该文件"实例化 · 第 1 期"注释），三处改走 `defaultCore`（`runtime/core/coreInstance`，A 类白名单）
+的同名实例方法，行为逐字不变。
+
+D 类清单 S8 后剩 1 条（`tools/schemaValidate`，测试专用、不进白名单），其余全部改走已有白名单入口。
+
 ### 3.5 E · 疑似内部泄漏（8）——逐条点名
 
 | # | subpath | 泄漏点（非测试消费方） | 为什么算泄漏 | 处置结论 |

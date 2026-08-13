@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { loadCliPlugins } from './plugins'
 
 // 临时工作区必须落在仓库内（本文件所在目录下）：`good` fixture 会 import
-// `@web-agent/core/runtime/core/pluginContracts`，Node 的裸说明符解析要沿目录链向上找
+// `@web-agent/core/plugin`，Node 的裸说明符解析要沿目录链向上找
 // node_modules——只有落在仓库树内才能找到 workspace 符号链接（node_modules/@web-agent/core）。
 const here = dirname(fileURLToPath(import.meta.url))
 let workspaceRoot: string | undefined
@@ -45,7 +45,7 @@ describe('loadCliPlugins', () => {
     await writePluginDir(workspaceRoot, 'good', {
       'plugin.json': manifest({ id: 'acme.good' }),
       'core.mjs': [
-        "import { definePlugin } from '@web-agent/core/runtime/core/pluginContracts'",
+        "import { definePlugin } from '@web-agent/core/plugin'",
         'export default definePlugin({ install() {} })',
         '',
       ].join('\n'),

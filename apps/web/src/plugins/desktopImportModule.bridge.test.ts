@@ -7,8 +7,7 @@
 
 import { loadScannedPlugins } from '@web-agent/core/plugins/pluginLoader'
 import { scanPlugins, type PluginScanBridge } from '@web-agent/core/plugins/pluginScanner'
-import { createPluginHost } from '@web-agent/core/runtime/core/pluginHost'
-import { createToolRegistry } from '@web-agent/core/tools/toolRegistry'
+import { createCore } from '@web-agent/core/plugin'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createContractModuleBridge } from './contractModuleBridge'
 import { createDesktopImportModule } from './desktopImportModule'
@@ -119,7 +118,7 @@ async function loadHelloPlugin(contractBridge?: ReturnType<typeof createContract
       evaluate: evaluateBlobModule,
       ...(contractBridge ? { contractBridge } : {}),
     }),
-    host: createPluginHost(createToolRegistry(), []),
+    host: createCore().plugins,
     apiVersionRange: HOST_API_VERSION_RANGE,
     isToolEnabled: () => true,
   })

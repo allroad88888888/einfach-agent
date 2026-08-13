@@ -1,7 +1,11 @@
 import { createStore } from '@einfach/core'
 import { describe, expect, it } from 'vitest'
-import type { ReadWorkspaceFileInput, ReadWorkspaceFileResult, WorkspaceRuntimeResult } from '@web-agent/core/subagents'
-import { prepareSubagentSkillGovernance } from '@web-agent/core/runtime/skillGovernance'
+import {
+  subagentStatePort,
+  type ReadWorkspaceFileInput,
+  type ReadWorkspaceFileResult,
+  type WorkspaceRuntimeResult,
+} from '@web-agent/core/subagents'
 import {
   candidateSkillsAtom,
   confirmSkillGovernanceAtom,
@@ -129,9 +133,9 @@ describe('subagent skill governance atoms', () => {
   })
 
   it('准备 CLI 时拒绝非法 action 和 skillId，避免命令注入', async () => {
-    await expect(prepareSubagentSkillGovernance({ action: 'delete' as 'promote', skillId: 'sk_candidate' }))
+    await expect(subagentStatePort.prepareSkillGovernance({ action: 'delete' as 'promote', skillId: 'sk_candidate' }))
       .rejects.toThrow('invalid governance action')
-    await expect(prepareSubagentSkillGovernance({ action: 'promote', skillId: 'sk_ok; rm' }))
+    await expect(subagentStatePort.prepareSkillGovernance({ action: 'promote', skillId: 'sk_ok; rm' }))
       .rejects.toThrow('invalid managed skill id')
   })
 })

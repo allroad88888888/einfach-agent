@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { newSession, removeSession } from '@web-agent/core/runtime/commands'
 import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
-import { appendItem, updateItem } from '@web-agent/core/state/sessionWriters'
+import { itemsAtom } from '@web-agent/core/state/sessionAtoms'
 import { setAssistantStream } from '@web-agent/core/state/transientAtoms'
 import type { ConversationItem } from '@web-agent/core/state/core.type'
 import { subscribeCliRenderer } from './event-renderer'
@@ -10,6 +10,21 @@ const sessionIds: string[] = []
 
 function assistant(id: string, content: string, pending = true): ConversationItem {
   return { id, createdAt: 1, pending, item: { role: 'assistant', content } }
+}
+
+// 本文件测的是 subscribeCliRenderer 对 itemsAtom 变化的反应，不是写入器本身——
+// state/sessionWriters 是 D 类（仅测试在用），CLAUDE.md 明令「UI 不直接调用 writer」，
+// 这两个本地 helper 直接对该会话 store 的 itemsAtom 做不可变更新，绕开那条内部深导入，
+// 效果与 appendItem/updateItem 对 itemsAtom 的改动一致（不复现它们的 touchSession 副作用，
+// 本文件的断言从不依赖 rootStore 的 updatedAt）。
+function appendItem(sessionId: string, item: ConversationItem): void {
+  defaultCore.getSessionStore(sessionId).store.setter(itemsAtom, (prev) => [...prev, item])
+}
+
+function updateItem(sessionId: string, itemId: string, patch: Partial<ConversationItem>): void {
+  defaultCore.getSessionStore(sessionId).store.setter(itemsAtom, (prev) =>
+    prev.map((it) => (it.id === itemId ? { ...it, ...patch } : it)),
+  )
 }
 
 function createRenderer(): { sessionId: string; lines: string[]; dispose: () => void } {

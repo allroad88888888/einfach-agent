@@ -9,7 +9,7 @@ import {
   sessionsAtom,
   activeSessionIdAtom,
 } from '@web-agent/core/state/rootStore'
-import { getSessionStore } from '@web-agent/core/state/sessionStore'
+import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
 import { checkpointsAtom, planAtom, runAtom } from '@web-agent/core/state/sessionAtoms'
 import { contextStatsAtom, pendingArtifactsAtom } from '@web-agent/core/state/transientAtoms'
 import type { SessionMeta } from '@web-agent/core/state/core.type'
@@ -26,9 +26,9 @@ import { AppShell } from './AppShell'
 // 真实实现，否则右栏 Provider 拿不到本用例 seed 过的那个会话 store。工厂里用动态 import 取，
 // 避免依赖 vi.mock 提升后顶层 import 绑定的初始化时序。
 vi.mock('@web-agent/core/runtime/commands', async () => {
-  const { getSessionStore: realGetSessionStore } = await import('@web-agent/core/state/sessionStore')
+  const { defaultCore: realDefaultCore } = await import('@web-agent/core/runtime/core/coreInstance')
   return {
-    sessionAtomScope: (id: string) => realGetSessionStore(id).store,
+    sessionAtomScope: (id: string) => realDefaultCore.getSessionStore(id).store,
     configureCommands: vi.fn(),
     newWorkspace: vi.fn(),
     renameWorkspace: vi.fn(),
@@ -122,7 +122,7 @@ describe('AppShell', () => {
     // 在该会话 store 上 seed 一个「暂停等待补充」的 run，让默认渲染 null 的
     // AskUserQuestionCard 显形——从而证明它确实被挂在右栏 Provider 内。
     // 用 confirm 题以免多出一个 textbox 干扰对 Composer textbox 的断言。
-    getSessionStore('s1').store.setter(runAtom, {
+    defaultCore.getSessionStore('s1').store.setter(runAtom, {
       runId: 'r1',
       status: 'waiting_user',
       pendingQuestion: {
@@ -147,7 +147,7 @@ describe('AppShell', () => {
 
   it('Plan 决策只在 Plan 内显示一次，不再落到 Composer 上方的普通提问槽', () => {
     seedActiveSession('s1')
-    const store = getSessionStore('s1').store
+    const store = defaultCore.getSessionStore('s1').store
     store.setter(planAtom, {
       id: 'p1', title: '实现功能', objective: '交付功能', status: 'active', revision: 1,
       requiresApproval: false, createdAt: 1, updatedAt: 1,
@@ -180,7 +180,7 @@ describe('AppShell', () => {
   it('会话有待保存产物：右栏 ActiveSessionProvider 内挂出 SaveArtifact', () => {
     seedActiveSession('s1')
     // 在该会话 store 上 seed 一个待保存产物，让默认渲染 null 的 SaveArtifact 显形。
-    getSessionStore('s1').store.setter(pendingArtifactsAtom, [
+    defaultCore.getSessionStore('s1').store.setter(pendingArtifactsAtom, [
       { id: 'a1', filename: 'plan.md', content: '# Plan', mimeType: 'text/markdown' },
     ])
 
@@ -194,7 +194,7 @@ describe('AppShell', () => {
 
   it('会话有 checkpoint：不展示 checkpoint bar、用户原文或轮次', () => {
     seedActiveSession('s1')
-    getSessionStore('s1').store.setter(checkpointsAtom, [
+    defaultCore.getSessionStore('s1').store.setter(checkpointsAtom, [
       { turnIndex: 0, label: '用户输入的原文', createdAt: 1, items: [] },
     ])
 
@@ -207,7 +207,7 @@ describe('AppShell', () => {
 
   it('会话有 context stats：右栏输入区上方挂出上下文统计', () => {
     seedActiveSession('s1')
-    getSessionStore('s1').store.setter(contextStatsAtom, {
+    defaultCore.getSessionStore('s1').store.setter(contextStatsAtom, {
       id: 'ctx1',
       createdAt: 1,
       vendor: 'deepseek',

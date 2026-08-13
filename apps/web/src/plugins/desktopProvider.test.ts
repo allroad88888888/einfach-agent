@@ -4,10 +4,8 @@
 // loadScannedPlugins，只有「怎么读盘」「怎么求值」两处换成替身——blob 求值那半截在
 // desktopImportModule.test.ts，装配（谁在什么时候造 provider）在 initialize.test.ts。
 
-import { definePlugin } from '@web-agent/core/runtime/core/pluginContracts'
-import { createPluginHost } from '@web-agent/core/runtime/core/pluginHost'
+import { createCore, definePlugin } from '@web-agent/core/plugin'
 import type { PluginScanBridge } from '@web-agent/core/plugins/pluginScanner'
-import { createToolRegistry } from '@web-agent/core/tools/toolRegistry'
 import { describe, expect, it, vi } from 'vitest'
 import { createDesktopPluginSettingsProvider } from './desktopProvider'
 
@@ -54,7 +52,7 @@ function memoryBridge(files: Record<string, string>, listError?: string): Plugin
 }
 
 function pluginHost() {
-  return createPluginHost(createToolRegistry(), [])
+  return createCore().plugins
 }
 
 describe('createDesktopPluginSettingsProvider', () => {
