@@ -1,4 +1,5 @@
 import {
+  firstAssistantText,
   maxTurnToolsForVendor,
   type ModelChatResponse,
   type ModelFunctionTool,
@@ -16,7 +17,7 @@ import {
   type ChildAgentToolLoopState,
 } from './childAgentToolCalls'
 import { appendVisibleChildTool, loadVisibleChildTool } from './childToolVisibility'
-import { firstAssistantText, type ChildModelCaller } from './childModelClient'
+import type { ChildModelCaller } from './childModelClient'
 import type { ChildContextCheckpoint } from './childContextCheckpoint'
 import { assertNormalChildFinish } from './childFinishReason'
 import { dispatchChildTimedTools, finalizeChildResult } from './childResult'

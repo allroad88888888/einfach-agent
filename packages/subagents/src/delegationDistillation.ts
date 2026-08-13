@@ -1,10 +1,10 @@
+import { firstAssistantText } from '@web-agent/ai'
 import {
   FINISH_REASON_ERRORS,
   isAbnormalFinishReason,
 } from '@web-agent/core/runtime/finishReason'
 import type { SkillDistillChat } from './archive/distill'
 import {
-  firstAssistantText,
   type ChildModelCaller,
   type CallModelObservation,
 } from '@web-agent/core/subagents/childModelClient'

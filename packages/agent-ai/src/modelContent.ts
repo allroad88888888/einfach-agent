@@ -1,4 +1,5 @@
 import type {
+  ModelChatResponse,
   UserContentBlock,
   UserMessageContent,
 } from './modelProtocol'
@@ -57,4 +58,10 @@ export function userMessageVersion(content: UserMessageContent): string {
         block.width ?? null,
         block.height ?? null,
       ]))
+}
+
+/** Extracts the first assistant text choice from a chat response, if any. */
+export function firstAssistantText(response: ModelChatResponse): string {
+  const content = response.choices?.[0]?.message?.content
+  return typeof content === 'string' ? content.trim() : ''
 }

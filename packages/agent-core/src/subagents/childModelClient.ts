@@ -68,11 +68,6 @@ function cacheHitRate(hitTokens?: number, missTokens?: number): number | undefin
   return total > 0 ? hitTokens / total : undefined
 }
 
-export function firstAssistantText(response: ModelChatResponse): string {
-  const content = response.choices?.[0]?.message?.content
-  return typeof content === 'string' ? content.trim() : ''
-}
-
 /** Sends child-model requests, creating a model-authored checkpoint only when needed. */
 export function createChildModelCaller(runtime: DelegateAgentRuntimeState): ChildModelCaller {
   return async (state, args, maxModelCalls) => {

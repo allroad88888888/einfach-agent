@@ -1,10 +1,9 @@
-import type { ModelChatResponse } from '@web-agent/ai'
+import { firstAssistantText, type ModelChatResponse } from '@web-agent/ai'
 import { narrowToolCalls } from '../runtime/modelTurn'
 import {
   FINISH_REASON_ERRORS,
   isAbnormalFinishReason,
 } from '../runtime/finishReason'
-import { firstAssistantText } from './childModelClient'
 import type { DelegateAgentCallContext, SubagentNodeRecord } from './types'
 import type { DelegateAgentRuntimeState } from './runtimeState'
 

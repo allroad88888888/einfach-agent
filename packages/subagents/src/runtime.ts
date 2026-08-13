@@ -1,3 +1,4 @@
+import { firstAssistantText } from '@web-agent/ai'
 import {
   formatSubagentTranscript,
   subagentTierTarget,
@@ -8,10 +9,7 @@ import {
   type SubagentTierRouting,
 } from '@web-agent/core/subagents'
 import { recordCompletedSpan } from '@web-agent/core/observability'
-import {
-  createChildModelCaller,
-  firstAssistantText,
-} from '@web-agent/core/subagents/childModelClient'
+import { createChildModelCaller } from '@web-agent/core/subagents/childModelClient'
 import type { ModelSettings } from '@web-agent/core/state/core.type'
 import { SubagentArchiveIO } from './archive/archiveIO'
 import type { SubagentArchiveWriterContext } from './archive/archiveWriter'
