@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { createProviderRegistry, type ProviderAdapter } from './providerRegistry'
+import { createProviderRegistry, type ProviderAdapter, type VendorDescriptor } from './providerRegistry'
+
+const stubDescriptor: VendorDescriptor = { contextWindowTokens: 1, maxTurnTools: 1, models: {} }
 
 function stubAdapter(label: string): ProviderAdapter {
   return {
+    descriptor: stubDescriptor,
     call: async () => ({ id: `${label}:call` }),
     stream: async () => ({ id: `${label}:stream` }),
   }
@@ -65,6 +68,7 @@ describe('provider registry', () => {
     const registry = createProviderRegistry()
     const seen: unknown[] = []
     registry.register('a', {
+      descriptor: stubDescriptor,
       call: async (request) => {
         seen.push(request)
         return {}
@@ -86,5 +90,28 @@ describe('provider registry', () => {
 
     expect(seen[0]).toEqual(request)
     expect(seen[1]).toEqual({ request, hasObserver: true })
+  })
+
+  it('describe 返回已注册 vendorId 的 descriptor', () => {
+    const registry = createProviderRegistry()
+    const descriptor: VendorDescriptor = { contextWindowTokens: 999, maxTurnTools: 7, models: {} }
+    registry.register('a', { ...stubAdapter('a'), descriptor })
+
+    expect(registry.describe('a')).toBe(descriptor)
+  })
+
+  it('describe 对未注册 vendorId 使用保守默认值，不复用 resolve 的 fallbackVendorId', () => {
+    const registry = createProviderRegistry({ fallbackVendorId: 'a' })
+    const fallbackDescriptor: VendorDescriptor = {
+      contextWindowTokens: 999,
+      maxTurnTools: 7,
+      models: { 'a-model': { contextWindowTokens: 5, imageInput: { kind: 'unsupported', reason: 'x' } } },
+    }
+    registry.register('a', { ...stubAdapter('a'), descriptor: fallbackDescriptor })
+
+    // resolve 会把未知 vendorId 兜到 'a' 的 adapter，但 describe 不应该跟着继承 'a' 的模型清单。
+    expect(registry.resolve('unknown')).toBe(registry.resolve('a'))
+    expect(registry.describe('unknown')).not.toBe(fallbackDescriptor)
+    expect(registry.describe('unknown')).toEqual({ contextWindowTokens: 64_000, maxTurnTools: 128, models: {} })
   })
 })

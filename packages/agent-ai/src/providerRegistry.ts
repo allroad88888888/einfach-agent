@@ -1,9 +1,11 @@
-// Provider 注册表：把不透明的 vendorId 解析成执行请求的 adapter。
+// Provider 注册表：把不透明的 vendorId 解析成执行请求的 adapter，并携带各家的能力描述。
 // ---------------------------------------------------------------------------
-// 这一层只回答「谁来执行」，本身不认识任何厂商：厂商私有的请求投影（DeepSeek 的
-// reasoning_effort/user_id、GLM 的 reasoning_effort、Kimi 的 region 等）一律由各家 adapter
-// 在 call/stream 内部从通用设置归一出来。内置三家的装配表在 ./builtinProviders。
+// 这一层只回答「谁来执行」与「这家能力如何」，本身不认识任何厂商：厂商私有的请求投影
+// （DeepSeek 的 reasoning_effort/user_id、GLM 的 reasoning_effort、Kimi 的 region 等）与
+// 能力描述（上下文窗口、单轮工具上限、逐模型能力）一律随 adapter 一起注册。内置三家的
+// 装配表在 ./builtinProviders，那里是包内唯一允许出现厂商名与厂商能力数据的地方。
 
+import type { ImageInputCapability } from './imageCapability'
 import type {
   ChatCallOptions,
   ChatRequestBase,
@@ -27,10 +29,36 @@ export interface ProviderRequest<TSettings extends ProviderSettings = ProviderSe
   userId?: string
 }
 
-// 简介：一家 provider 的执行契约。
-// 详情：两个入口对应非流式与流式；retryObserver 只有实现了厂商级重试的 adapter 才会消费。
+// 简介：单个模型的能力描述，供 runtime 只读消费，不依赖任何厂商私有代码。
+export interface ModelDescriptor {
+  readonly contextWindowTokens: number
+  readonly imageInput: ImageInputCapability
+}
+
+// 简介：一家 provider 的能力描述。
+// 详情：contextWindowTokens/maxTurnTools 是 vendor 级别的保守默认值；models 是逐模型覆盖表，
+// 未知模型回退到 vendor 级别默认值。
+export interface VendorDescriptor {
+  readonly contextWindowTokens: number
+  readonly maxTurnTools: number
+  readonly models: Readonly<Record<string, ModelDescriptor>>
+}
+
+// 简介：未注册厂商的保守能力描述。
+// 详情：这是 registry 机制自身的兜底，与任何具体厂商无关——即使 fallbackVendorId 指向的
+// adapter 也未注册，描述查询依然要有值可用，而不是抛错或返回 undefined。
+const FALLBACK_VENDOR_DESCRIPTOR: VendorDescriptor = {
+  contextWindowTokens: 64_000,
+  maxTurnTools: 128,
+  models: {},
+}
+
+// 简介：一家 provider 的执行契约与能力描述。
+// 详情：call/stream 两个入口对应非流式与流式；retryObserver 只有实现了厂商级重试的 adapter
+// 才会消费。descriptor 与 call/stream 一起注册，新增厂商时能力表和执行逻辑落在同一处。
 // 泛型参数让各家 adapter 在实现内部拿到自己的设置形状，registry 侧按通用形状擦除保存。
 export interface ProviderAdapter<TSettings extends ProviderSettings = ProviderSettings> {
+  descriptor: VendorDescriptor
   call(
     request: ProviderRequest<TSettings>,
     options: ChatCallOptions,
@@ -57,6 +85,10 @@ export interface ProviderRegistry {
   // 简介：解析 vendorId 对应的 adapter。
   // 详情：未注册时回退到 fallbackVendorId 的 adapter；连回退目标都没有才返回 undefined。
   resolve(vendorId: string): ProviderAdapter | undefined
+  // 简介：查询 vendorId 的能力描述。
+  // 详情：故意不复用 resolve() 的 fallbackVendorId 链——未注册的 vendorId 应该拿到与任何
+  // 具体厂商无关的保守默认值，而不是被误判成拥有 fallback 厂商的具体模型清单。
+  describe(vendorId: string): VendorDescriptor
 }
 
 // 简介：创建一个独立的 provider registry。
@@ -75,6 +107,9 @@ export function createProviderRegistry(
       const adapter = adapters.get(vendorId)
       if (adapter !== undefined) return adapter
       return fallbackVendorId === undefined ? undefined : adapters.get(fallbackVendorId)
+    },
+    describe(vendorId) {
+      return adapters.get(vendorId)?.descriptor ?? FALLBACK_VENDOR_DESCRIPTOR
     },
   }
 }
