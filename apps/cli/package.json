@@ -2,6 +2,7 @@
   "name": "@web-agent/cli",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "@web-agent/core": "workspace:*",
