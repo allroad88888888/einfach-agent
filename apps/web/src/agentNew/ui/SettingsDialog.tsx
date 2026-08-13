@@ -18,6 +18,7 @@ import {
 } from '../../settings/state'
 import { McpSettingsPanel } from './McpSettingsPanel'
 import { ModelCredentialPanel } from './ModelCredentialPanel'
+import { PluginSettingsPanel } from './PluginSettingsPanel'
 import { ProjectSkillsPanel } from './ProjectSkillsPanel'
 
 const SETTINGS_TABS: ReadonlyArray<{ id: SettingsCenterTab; label: string }> = [
@@ -26,6 +27,7 @@ const SETTINGS_TABS: ReadonlyArray<{ id: SettingsCenterTab; label: string }> = [
   { id: 'instructions', label: '自定义指令' },
   { id: 'general', label: '通用' },
   { id: 'skills', label: '项目 Skills' },
+  { id: 'plugins', label: '插件' },
 ]
 
 const SETTINGS_FOCUSABLE_SELECTOR = [
@@ -222,7 +224,9 @@ export function SettingsDialog({ launchButtonRef }: SettingsDialogProps) {
                 ? <CustomInstructionsPanel />
                 : activeTab === 'skills'
                   ? <ProjectSkillsPanel />
-                  : <PlaceholderPanel />}
+                  : activeTab === 'plugins'
+                    ? <PluginSettingsPanel />
+                    : <PlaceholderPanel />}
         </div>
       </div>
     </dialog>

@@ -1,7 +1,7 @@
 import type { Store } from '@einfach/core'
 import { atom } from '@einfach/react'
 
-export type SettingsCenterTab = 'mcp' | 'model' | 'instructions' | 'general' | 'skills'
+export type SettingsCenterTab = 'mcp' | 'model' | 'instructions' | 'general' | 'skills' | 'plugins'
 
 export const settingsCenterOpenAtom = atom(false)
 settingsCenterOpenAtom.debugLabel = 'settingsCenterOpen'
