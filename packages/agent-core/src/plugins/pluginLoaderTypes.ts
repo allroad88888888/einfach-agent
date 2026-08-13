@@ -9,6 +9,7 @@
 
 import type { PluginApiVersionRange, PluginCapability } from './manifestTypes'
 import type { PluginDisposer, PublicPlugin } from '../runtime/core/pluginContracts'
+import type { PluginIdentity } from '../runtime/core/pluginHost'
 
 /**
  * 一次加载的终态。入口状态 `discovered` 由 P3 扫描器给出，本层只产出这三个终态之一：
@@ -25,9 +26,11 @@ export const TOP_LEVEL_SIDE_EFFECT_TODO =
   + '插件模块 top-level 直接触达宿主全局（DOM、fetch、Tauri IPC）无法在 core 侧检测，'
   + '第一期由宿主的 importModule 求值策略约定保证（蓝图第 3.4 节：capabilities 是申报不是沙箱）'
 
-/** 加载器需要宿主提供的安装面。runtime/core/pluginHost 的 PluginHost 结构上满足它。 */
+/** 加载器需要宿主提供的安装面。runtime/core/pluginHost 的 PluginHost 结构上满足它。
+ *  identity 透传给 host——熔断（P7）按 identity.id 计数并归因，manifest 解析出的
+ *  id/name/version 结构上满足 PluginIdentity，调用方不必额外裁剪字段。 */
 export interface PluginInstallHost {
-  installPlugin(plugin: PublicPlugin): { dispose: PluginDisposer }
+  installPlugin(plugin: PublicPlugin, identity: PluginIdentity): { dispose: PluginDisposer }
 }
 
 /** 注入依赖：core 不做 IO，也不决定「怎么把一个路径变成模块」。 */

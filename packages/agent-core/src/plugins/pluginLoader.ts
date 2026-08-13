@@ -127,7 +127,7 @@ async function loadOne(
 
   let installation: { dispose: () => void }
   try {
-    installation = deps.host.installPlugin(gated.plugin)
+    installation = deps.host.installPlugin(gated.plugin, identity)
   } catch (error) {
     // 安装期预检失败（工具重名等）：host 已原子回滚本次注册，这里只记账。
     return failure(item, [

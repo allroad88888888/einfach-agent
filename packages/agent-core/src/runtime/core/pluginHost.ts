@@ -6,8 +6,10 @@ import type { ToolRegistry } from '../../tools/toolRegistry'
 import { assemblePlugins, type AgentPlugin, type AssembledPlugins, type PluginApi } from './pluginApi'
 import type { PluginCommandFacade } from './pluginCommandFacade'
 import { isPublicPlugin, type PluginInstallApi, type PluginRunApi, type PublicPlugin } from './pluginContracts'
+import { wrapDynamicPluginActivate, type PluginIdentity } from './pluginCircuitBreaker'
 
 export type { PluginInstallApi } from './pluginContracts'
+export type { PluginIdentity } from './pluginCircuitBreaker'
 
 /** A Core plugin separates long-lived tool registration from per-run behavior. */
 export interface CorePlugin {
@@ -37,8 +39,13 @@ export interface PluginHost {
    *
    * 已在跑的 run 不受影响——activateRun 在 run 开始时取一次插件快照，
    * 新装/卸载的插件从下一个 run 起生效（docs/plugin-ecosystem-blueprint.md 第 5 节）。
+   *
+   * identity 是必填的动态插件身份（P7 熔断与归因）：它注册的 hook 连续失败达到
+   * `PLUGIN_HOOK_FAILURE_THRESHOLD`（pluginCircuitBreaker.ts）次会自动调用本次返回句柄的
+   * dispose()；构造期传入 `inputs` 的插件不经过这条路径，不受此约束。trace 里对应的 hook
+   * 失败/自动停用事件都带 `plugin.id`/`plugin.version`。
    */
-  installPlugin(plugin: PluginInput): PluginInstallation
+  installPlugin(plugin: PluginInput, identity: PluginIdentity): PluginInstallation
   activateRun(store: Store, activation?: PluginRunActivation): Promise<PluginRun>
   dispose(): void
 }
@@ -142,25 +149,33 @@ export function createPluginHost(registry: ToolRegistry, inputs: readonly Plugin
       if (disposed) throw new Error('plugin host is disposed')
       boundCommands = commands
     },
-    installPlugin(plugin) {
+    installPlugin(plugin, identity) {
       if (disposed) throw new Error('plugin host is disposed')
       const adapted = adaptPlugin(plugin)
       // 预检失败时 installPlugins 已回滚本次安装期资源并抛出，plugins 不会被污染。
       const added = installPlugins(registry, [adapted])
-      plugins.push(adapted)
       let installationDisposed = false
+      // 间接引用：熔断触发时要调用这次安装的 dispose，但 installation 常量本身要等下面才建好。
+      let disposeInstallation = () => {}
+      // 熔断只代理动态插件的 activate（P7）；install 阶段已由上面的 installPlugins 处理，与熔断无关。
+      const activate = adapted.activate
+      const registered: CorePlugin = activate
+        ? { ...adapted, activate: wrapDynamicPluginActivate(activate, identity, () => disposeInstallation()) }
+        : adapted
       const installation: PluginInstallation = {
         tools: added.tools,
         dispose() {
           if (installationDisposed) return
           installationDisposed = true
           dynamicInstallations.delete(installation)
-          const index = plugins.indexOf(adapted)
+          const index = plugins.indexOf(registered)
           if (index >= 0) plugins.splice(index, 1)
           for (const tool of added.tools) registry.unregister(tool.name, tool)
           disposeAll(added.disposers)
         },
       }
+      disposeInstallation = () => installation.dispose()
+      plugins.push(registered)
       dynamicInstallations.add(installation)
       return installation
     },

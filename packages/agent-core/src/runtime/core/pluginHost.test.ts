@@ -3,9 +3,17 @@ import { describe, expect, it, vi } from 'vitest'
 import { runAtom } from '../../state/sessionAtoms'
 import { createToolRegistry } from '../../tools/toolRegistry'
 import type { Tool } from '../../tools/types'
+import { makeCoreCtx } from './coreCtx'
 import { createCoreInstance } from './coreInstance'
 import { createPluginHost, type CorePlugin } from './pluginHost'
 import { definePlugin } from './pluginContracts'
+import type { PluginApi } from './pluginApi'
+
+function traceCtx(store: ReturnType<typeof createStore>, traceEvent = vi.fn()) {
+  return makeCoreCtx({
+    sessionId: 's', runId: 'r', signal: new AbortController().signal, store, root: store, traceEvent,
+  })
+}
 
 function makeTool(name: string): Tool {
   return {
@@ -145,5 +153,98 @@ describe('pluginHost', () => {
     expect(calls).toEqual([false, false, false, true])
     expect(stopCurrentRun).toHaveBeenCalledTimes(1)
     host.dispose()
+  })
+
+  describe('P7 · 动态安装插件的熔断', () => {
+    const identity = { id: 'acme.dynamic', version: '1.0.0' }
+    const failingDynamicPlugin = (): CorePlugin => ({
+      install: (api) => api.registerTool(makeTool('dynamic-tool')),
+      activate: (api) => {
+        api.hook('beforeToolCall', () => {
+          throw new Error('dynamic boom')
+        })
+      },
+    })
+
+    it('连续 3 次 hook 失败自动卸载动态插件的工具，并发带 plugin.id 的自动停用事件', async () => {
+      const registry = createToolRegistry()
+      const host = createPluginHost(registry, [])
+      host.installPlugin(failingDynamicPlugin(), identity)
+      const store = createStore()
+      const run = await host.activateRun(store)
+      const traceEvent = vi.fn()
+      const ctx = traceCtx(store, traceEvent)
+      const ev = { callId: 'c1', toolName: 'dynamic-tool', args: {} }
+
+      await expect(run.hooks.beforeToolCall?.(ctx, ev)).rejects.toThrow('dynamic boom')
+      await expect(run.hooks.beforeToolCall?.(ctx, ev)).rejects.toThrow('dynamic boom')
+      expect(registry.has('dynamic-tool')).toBe(true)
+
+      await expect(run.hooks.beforeToolCall?.(ctx, ev)).rejects.toThrow('dynamic boom')
+      expect(registry.has('dynamic-tool')).toBe(false)
+      expect(traceEvent).toHaveBeenCalledWith('agent.plugin_auto_disabled', expect.objectContaining({
+        'plugin.id': 'acme.dynamic',
+        'plugin.version': '1.0.0',
+      }))
+
+      run.dispose()
+      host.dispose()
+    })
+
+    it('自动停用后手动重新 installPlugin 得到全新计数——不继承之前的失败次数', async () => {
+      const registry = createToolRegistry()
+      const host = createPluginHost(registry, [])
+      const store = createStore()
+      const ev = { callId: 'c1', toolName: 'dynamic-tool', args: {} }
+
+      host.installPlugin(failingDynamicPlugin(), identity)
+      const firstRun = await host.activateRun(store)
+      for (let i = 0; i < 3; i += 1) {
+        await expect(firstRun.hooks.beforeToolCall?.(traceCtx(store), ev)).rejects.toThrow()
+      }
+      expect(registry.has('dynamic-tool')).toBe(false)
+      firstRun.dispose()
+
+      // 手动恢复（对应 P5 面板的启用动作）：同一 identity 重新 install。
+      host.installPlugin(failingDynamicPlugin(), identity)
+      expect(registry.has('dynamic-tool')).toBe(true)
+      const secondRun = await host.activateRun(store)
+      const traceEvent = vi.fn()
+      const ctx = traceCtx(store, traceEvent)
+      await expect(secondRun.hooks.beforeToolCall?.(ctx, ev)).rejects.toThrow()
+      await expect(secondRun.hooks.beforeToolCall?.(ctx, ev)).rejects.toThrow()
+
+      // 只失败 2 次，未达阈值 3——证明没有带着上一次安装的计数。
+      expect(registry.has('dynamic-tool')).toBe(true)
+      expect(traceEvent).not.toHaveBeenCalledWith('agent.plugin_auto_disabled', expect.anything())
+
+      secondRun.dispose()
+      host.dispose()
+    })
+
+    it('构造期插件是宿主源码信任域，hook 反复失败不经过熔断', async () => {
+      const registry = createToolRegistry()
+      const host = createPluginHost(registry, [{
+        activate: (api: PluginApi) => {
+          api.hook('beforeToolCall', () => {
+            throw new Error('construction boom')
+          })
+        },
+      }])
+      const store = createStore()
+      const run = await host.activateRun(store)
+      const traceEvent = vi.fn()
+      const ctx = traceCtx(store, traceEvent)
+      const ev = { callId: 'c1', toolName: 'demo', args: {} }
+
+      for (let i = 0; i < 5; i += 1) {
+        await expect(run.hooks.beforeToolCall?.(ctx, ev)).rejects.toThrow('construction boom')
+      }
+      // 没有任何一次调用经过熔断包装——不会有 plugin_hook_failed / plugin_auto_disabled 事件。
+      expect(traceEvent).not.toHaveBeenCalled()
+
+      run.dispose()
+      host.dispose()
+    })
   })
 })
