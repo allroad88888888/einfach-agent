@@ -93,25 +93,27 @@ test('白名单外且未列入豁免表的 subpath 会失败', async () => {
 
 test('豁免表命中只报观察项、不会失败', async () => {
   const root = await fixture({
-    'packages/subagents/src/runtime.ts': "import { createDelegateAgents } from '@web-agent/core/subagents/delegationBatch'\n",
+    'tools/fs/src/read.ts': "import { readWorkspaceFile } from '@web-agent/core/runtime/workspaceRead'\n",
   })
   const result = await run(root)
   assert.match(result.stdout, /边界观察项：/)
   assert.match(
     result.stdout,
-    /packages\/subagents\/src\/runtime\.ts:1 观察项：core 公开面白名单（@web-agent\/core\/subagents\/delegationBatch）—— 豁免原因：S11 委派接缝整形/,
+    /tools\/fs\/src\/read\.ts:1 观察项：core 公开面白名单（@web-agent\/core\/runtime\/workspaceRead）—— 豁免原因：workspace\/host 桥/,
   )
   assert.match(result.stdout, /边界检查通过/)
 })
 
 test('豁免按消费方发放：同一 subpath 换个消费方仍然失败', async () => {
+  // workspaceRead 只对 tools/fs、tools/shell 与 apps/web/src/plugins 发豁免；
+  // 同一条 subpath 换到 apps/web 的其它目录仍然是白名单外命中。
   const root = await fixture({
-    'apps/web/src/borrow.ts': "import { createDelegateAgents } from '@web-agent/core/subagents/delegationBatch'\n",
+    'apps/web/src/borrow.ts': "import { readWorkspaceFile } from '@web-agent/core/runtime/workspaceRead'\n",
   })
   await assert.rejects(run(root), (error) => {
     assert.match(
       error.stderr,
-      /apps\/web\/src\/borrow\.ts:1 core 公开面白名单（@web-agent\/core\/subagents\/delegationBatch 不在白名单九条内）/,
+      /apps\/web\/src\/borrow\.ts:1 core 公开面白名单（@web-agent\/core\/runtime\/workspaceRead 不在白名单九条内）/,
     )
     return true
   })

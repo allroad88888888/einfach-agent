@@ -22,6 +22,8 @@
 //                              `ChildModelCaller(state: DelegationCallState, …)` 都绑在内部容器上；
 //                              `firstAssistantText` 是 `ModelChatResponse` 的通用取文本工具，
 //                              归属 agent-ai，与 E8 `concurrency` 同类（错位的通用原语）。
+//   · ./delegationBatch     —— `createDelegateAgents(runtime: DelegateAgentRuntimeState)` 同上绑在
+//                              内部容器上；唯一消费方是同目录的 `./delegationRuntime`（相对导入）。
 //   · ./delegationPolicy    —— `resolveDelegationRequestPolicy(runtime: DelegateAgentRuntimeState, …)`
 //                              入参出参都含内部状态（`DelegationCallState`、`TreeRuntimeBudget`）。
 //   · ./runtimeState        —— `DelegateAgentRuntimeState` 是 core 子 run 的可变资源容器（registry、
@@ -44,25 +46,25 @@
 // 委派协议词汇（`./types`）
 // ---------------------------------------------------------------------------
 export type {
-  // packages/subagents: delegationBatch、archive/replay
+  // packages/subagents: archive/replay
   ChildAgentResult,
-  // packages/subagents: delegationBatch
+  // `DelegationRuntime.delegateAgents` 的返回类型（公开签名词汇）；具名消费方随 S11d 起在 core 内
   DelegateAgentBatchResult,
   DelegateAgentBatchStatus,
-  // packages/subagents: delegationBatch、archive/archiveIO（+ archiveCapacity/archiveIO 测试）
+  // packages/subagents: archive/archiveIO（+ archiveCapacity/archiveIO 测试）；
+  // 同时是 `DelegationRuntime.delegateAgents` 的入参类型
   DelegateAgentCallContext,
   // packages/subagents: archive/distill
   DelegateAgentChildSpec,
   DelegateAgentStrategy,
-  // packages/subagents: delegationBatch
+  // `DelegationRuntime.delegateAgents` 的入参类型（公开签名词汇）
   DelegateAgentInput,
   // packages/subagents: archive/replay、archive/archiveIO
   SubagentArchiveEvent,
   SubagentArchiveEventType,
   // packages/subagents: archive/archiveWriter
   SubagentArchiveWriteMode,
-  // packages/subagents: delegationBatch、schedulerState、archive/{replay,archiveIO,skillCache,
-  // archiveCapacity,distill}
+  // packages/subagents: schedulerState、archive/{replay,archiveIO,skillCache,archiveCapacity,distill}
   SubagentNodeRecord,
   // packages/subagents: state/subagentViewRecord、state/subagentViewTypes
   SubagentNodeStatus,
@@ -76,7 +78,7 @@ export type {
 // agent path 寻址格式（`./path`）——归档、调度、树视图三方必须按同一格式解析
 // ---------------------------------------------------------------------------
 export {
-  // packages/subagents: delegationBatch、schedulerState、archive/archiveIO
+  // packages/subagents: schedulerState、archive/archiveIO
   ROOT_AGENT_PATH,
   // packages/subagents: schedulerState、archive/archiveCapacity(.test)
   agentPathDepth,
@@ -94,11 +96,12 @@ export {
 // 档位契约（`./tierRouting`）——Pro/Flash 抽象档位 → 具体 vendor+模型，装配层注入
 // ---------------------------------------------------------------------------
 export type {
-  // packages/subagents: defaultTierRouting（默认表的类型）、runtime（注入口）
+  // packages/subagents: defaultTierRouting（默认表的类型）、runtime（端口注入口）
   SubagentTierRouting,
 } from './tierRouting'
 export {
-  // packages/subagents: runtime（低价抽取取 flash 目标）
+  // 低价抽取的 flash 目标与资格判据；S11e 起随工厂下沉在 core 内消费，外部具名消费方为零，
+  // 去留由 S11f 的模块图复核统一处置
   subagentTierTarget,
   supportsSubagentTierRouting,
 } from './tierRouting'
@@ -119,19 +122,21 @@ export {
 // 模型路由（`./modelSelection`）——签名只吃协议词汇（settings/spec/档位表）
 // ---------------------------------------------------------------------------
 export type {
-  // packages/subagents: delegationBatch（当前以对象字面量传入，具名可选）
+  // S11d 起在 core 内消费（delegationBatch 以对象字面量传入），外部具名消费方为零，
+  // 去留由 S11f 的模块图复核统一处置
   SubagentModelSelectionInput,
 } from './modelSelection'
 export {
-  // packages/subagents: delegationBatch（把档位与 route_reason 写进 node record）
+  // 同上：把档位与 route_reason 写进 node record 的调用方已随批次执行段回到 core
   routeChildModel,
 } from './modelSelection'
 
 // ---------------------------------------------------------------------------
-// 注入端口（`./delegationRuntimePorts`）——装配层必须满足的四个端口
+// 注入端口（`./delegationRuntimePorts`）——装配层必须满足的六个端口（S11b 后：
+// scheduler / archive / archiveFormat / skillDistill / lowCostExtractionSettings / tierRouting）
 // ---------------------------------------------------------------------------
 export type {
-  // packages/subagents: delegationBatch（createDelegateAgents 的返回类型）
+  // `createDelegateAgents` 的返回类型；S11d 起在 core 内消费，外部具名消费方为零
   DelegateAgents,
   // packages/subagents: archive/archiveIO 结构化实现（当前未具名 import，S2b 可具名化）
   SubagentArchivePort,
@@ -144,9 +149,18 @@ export type {
   SubagentSkillDistillInput,
   SubagentSkillDistillResult,
   SkillDistillChatInput,
-  // packages/subagents: runtime 构造运行时状态时按此形状注入
+  // packages/subagents: runtime 按此形状构造端口对象，交给 `createDelegationRuntime`
   DelegationRuntimePorts,
 } from './delegationRuntimePorts'
+
+// ---------------------------------------------------------------------------
+// 委派运行时工厂（`./delegationRuntime`）——签名只由协议词汇构成（per-run 输入 + 端口 →
+// 公开运行时），执行装配本身留在 core，装配层只负责组端口
+// ---------------------------------------------------------------------------
+export {
+  // packages/subagents: runtime（createDelegateAgentRuntime 的唯一实现）
+  createDelegationRuntime,
+} from './delegationRuntime'
 
 // ---------------------------------------------------------------------------
 // 委派能力契约（`../runtime/delegationContract`）——整个文件就是契约本身，全量 re-export；

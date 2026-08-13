@@ -120,18 +120,6 @@ const coreSubpathExemptions = [
     reason: 'vitest setupFile 不能走根 barrel——barrel 会在各测试文件 vi.mock 提升前把 runtime/commands 整条静态导链灌进模块缓存（S5b 记档，文件内有【setupFile 纪律】注释）',
   },
   {
-    subpaths: [
-      'subagents/childModelClient', 'subagents/runtimeState', 'subagents/delegationBatch',
-    ],
-    consumers: ['packages/subagents/src/'],
-    reason: 'S11 委派接缝整形前的结构债；S11d 把批次执行段（原 delegationBatch.ts）搬进 core 后，'
-      + 'childAgentLoop/delegationPolicy/concurrencyLimiter/skillDistillChat 四条深导入随文件一起消失，'
-      + '只剩装配层 runtime.ts 的三条：childModelClient（低价抽取自建 caller）、runtimeState（构造内核容器）、'
-      + '新增的 subagents/delegationBatch——三者签名都吃 `DelegateAgentRuntimeState`/`DelegationCallState` '
-      + '这类内核子 run 的可变容器，按 subagents/index.ts 的收录判据不进 barrel；S11e 把 runtime 工厂本身'
-      + '下沉 core 后这三条一起消失，S11 的判据就是本条清零',
-  },
-  {
     subpaths: ['state/core.type'],
     consumers: ['packages/persistence-idb/src/', 'packages/persistence-sqlite/src/', 'packages/subagents/src/'],
     reason: 'S3b 26dd539 留档：SessionMeta/ModelSettings 被 S5a 收进根 barrel `.`，但 `.` 是宿主装配面、能力包不走它，这三处暂无正式通路',
