@@ -1615,7 +1615,7 @@ fn normalize_client_info(
     let info = client_info.unwrap_or_else(|| McpImplementationInfo {
         name: "web-agent-desktop".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
-        title: Some("Web Agent Desktop".to_string()),
+        title: Some("Einfach Agent Desktop".to_string()),
         extra: Map::new(),
     });
     validate_peer_info(&info, "clientInfo", server_id)?;

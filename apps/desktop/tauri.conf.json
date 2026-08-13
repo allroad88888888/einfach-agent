@@ -18,7 +18,7 @@
   "app": {
     "windows": [
       {
-        "title": "Web Agent",
+        "title": "Einfach Agent",
         "width": 1100,
         "height": 760,
         "minWidth": 720,
