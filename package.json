@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "cli": "tsx --tsconfig apps/cli/tsconfig.json apps/cli/src/main.ts",
     "dev": "vite --config vite.config.ts",
     "build": "tsc -b && vite build --config vite.config.ts",
     "test": "vitest run",
@@ -51,6 +52,7 @@
     "@types/react-dom": "^18.3.7",
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^27.3.0",
+    "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "vitest": "^4.0.15"
   }

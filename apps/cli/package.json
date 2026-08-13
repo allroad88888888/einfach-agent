@@ -1,0 +1,13 @@
+{
+  "name": "@web-agent/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@web-agent/core": "workspace:*",
+    "@web-agent/subagents": "workspace:*",
+    "@web-agent/tools": "workspace:*",
+    "@web-agent/tools-planning": "workspace:*",
+    "@web-agent/tools-skills": "workspace:*"
+  }
+}

@@ -21,6 +21,7 @@ Web Agent 是一个可在浏览器预览、以 Tauri 桌面端为完整能力目
 │   ├── web/
 │   │   ├── index.html           # Vite HTML 入口
 │   │   └── src/                 # React 装配、UI、样式与组件测试
+│   ├── cli/                     # headless CLI 宿主（dogfood 与自动化驱动真实 run）
 │   └── desktop/                 # Tauri 2 / Rust 桌面桥
 ├── packages/
 │   ├── agent-ai/                # DeepSeek / GLM / Kimi API 适配

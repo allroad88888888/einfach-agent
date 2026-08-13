@@ -39,5 +39,5 @@
       "@web-agent/tools-mcp": ["tools/mcp/src/index.ts"]
     }
   },
-  "include": ["apps/web/src", "packages/*/src", "tools/*/src"]
+  "include": ["apps/web/src", "apps/cli/src", "packages/*/src", "tools/*/src"]
 }

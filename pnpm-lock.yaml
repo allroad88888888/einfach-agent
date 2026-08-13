@@ -25,7 +25,7 @@ importers:
         version: 2.4.0
       '@vitejs/plugin-react':
         specifier: ^5.1.1
-        version: 5.2.0(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0))
+        version: 5.2.0(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)(tsx@4.23.7))
       '@web-agent/ai':
         specifier: workspace:*
         version: link:packages/agent-ai
@@ -70,7 +70,7 @@ importers:
         version: 4.0.1
       vite:
         specifier: ^7.2.7
-        version: 7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)
+        version: 7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)(tsx@4.23.7)
     devDependencies:
       '@tauri-apps/cli':
         specifier: ^2.11.4
@@ -102,12 +102,33 @@ importers:
       jsdom:
         specifier: ^27.3.0
         version: 27.4.0
+      tsx:
+        specifier: ^4.21.0
+        version: 4.23.7
       typescript:
         specifier: ^5.9.3
         version: 5.9.3
       vitest:
         specifier: ^4.0.15
-        version: 4.1.10(@types/node@24.13.3)(jsdom@27.4.0)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0))
+        version: 4.1.10(@types/node@24.13.3)(jsdom@27.4.0)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)(tsx@4.23.7))
+
+  apps/cli:
+    dependencies:
+      '@web-agent/core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
+      '@web-agent/subagents':
+        specifier: workspace:*
+        version: link:../../packages/subagents
+      '@web-agent/tools':
+        specifier: workspace:*
+        version: link:../../tools/standard
+      '@web-agent/tools-planning':
+        specifier: workspace:*
+        version: link:../../tools/planning
+      '@web-agent/tools-skills':
+        specifier: workspace:*
+        version: link:../../tools/skills
 
   packages/agent-ai: {}
 
@@ -1949,6 +1970,11 @@ packages:
   trough@2.2.0:
     resolution: {integrity: sha512-tmMpK00BjZiUyVyvrBK7knerNgmgvcV/KLVyuma/SC+TQN167GrMRciANTz09+k3zW8L8t60jWO1GpfkZdjTaw==}
 
+  tsx@4.23.7:
+    resolution: {integrity: sha512-3f/u/+UDCNQ7iwUZW9FCMnNGIHzElGJYh0S/yy8IvWSsn5O7fEO/897FaG7FA2W8yryiRyuwXZ1PYLAKYaqSuQ==}
+    engines: {node: '>=18.0.0'}
+    hasBin: true
+
   type-is@2.1.0:
     resolution: {integrity: sha512-faYHw0anBbc/kWF3zFTEnxSFOAGUX9GFbOBthvDdLsIlEoWOFOtS0zgCiQYwIskL9iGXZL3kAXD8OoZ4GmMATA==}
     engines: {node: '>= 18'}
@@ -2681,7 +2707,7 @@ snapshots:
 
   '@ungap/structured-clone@1.3.3': {}
 
-  '@vitejs/plugin-react@5.2.0(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0))':
+  '@vitejs/plugin-react@5.2.0(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)(tsx@4.23.7))':
     dependencies:
       '@babel/core': 7.29.7
       '@babel/plugin-transform-react-jsx-self': 7.29.7(@babel/core@7.29.7)
@@ -2689,7 +2715,7 @@ snapshots:
       '@rolldown/pluginutils': 1.0.0-rc.3
       '@types/babel__core': 7.20.5
       react-refresh: 0.18.0
-      vite: 7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)
+      vite: 7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)(tsx@4.23.7)
     transitivePeerDependencies:
       - supports-color
 
@@ -2702,13 +2728,13 @@ snapshots:
       chai: 6.2.2
       tinyrainbow: 3.1.0
 
-  '@vitest/mocker@4.1.10(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0))':
+  '@vitest/mocker@4.1.10(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)(tsx@4.23.7))':
     dependencies:
       '@vitest/spy': 4.1.10
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)
+      vite: 7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)(tsx@4.23.7)
 
   '@vitest/pretty-format@4.1.10':
     dependencies:
@@ -4026,6 +4052,12 @@ snapshots:
 
   trough@2.2.0: {}
 
+  tsx@4.23.7:
+    dependencies:
+      esbuild: 0.28.1
+    optionalDependencies:
+      fsevents: 2.3.3
+
   type-is@2.1.0:
     dependencies:
       content-type: 2.0.0
@@ -4089,7 +4121,7 @@ snapshots:
       '@types/unist': 3.0.3
       vfile-message: 4.0.3
 
-  vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0):
+  vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)(tsx@4.23.7):
     dependencies:
       esbuild: 0.28.1
       fdir: 6.5.0(picomatch@4.0.5)
@@ -4102,11 +4134,12 @@ snapshots:
       fsevents: 2.3.3
       jiti: 2.7.0
       less: 4.8.0
+      tsx: 4.23.7
 
-  vitest@4.1.10(@types/node@24.13.3)(jsdom@27.4.0)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)):
+  vitest@4.1.10(@types/node@24.13.3)(jsdom@27.4.0)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)(tsx@4.23.7)):
     dependencies:
       '@vitest/expect': 4.1.10
-      '@vitest/mocker': 4.1.10(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0))
+      '@vitest/mocker': 4.1.10(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)(tsx@4.23.7))
       '@vitest/pretty-format': 4.1.10
       '@vitest/runner': 4.1.10
       '@vitest/snapshot': 4.1.10
@@ -4123,7 +4156,7 @@ snapshots:
       tinyexec: 1.2.4
       tinyglobby: 0.2.17
       tinyrainbow: 3.1.0
-      vite: 7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)
+      vite: 7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)(tsx@4.23.7)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 24.13.3

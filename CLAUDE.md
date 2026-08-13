@@ -17,6 +17,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `node scripts/check-docs.js`：Markdown 门禁——相对链接必须真实存在，且禁止引用迁移前的旧源码
   路径（规则见脚本里的 `legacySourcePathPattern`，连在文档里写出那个字面量都会失败）。
   改任何 `.md` 都要跑，CI 里它排在测试之前。
+- `pnpm cli -p "<prompt>"`：headless CLI 宿主跑一轮真实 run（读 `~/.webAgent/config.json`
+  或环境变量取模型 Key；`--help` 看全部选项）；无 `-p` 进入 REPL。
 - `pnpm tauri dev` / `pnpm tauri build`：桌面端开发与打包。
 - `cargo test --manifest-path apps/desktop/Cargo.toml`：Rust 桥测试。
 - 子 Agent 治理：`pnpm subagent:replay` / `subagent:capacity` / `subagent:archive:retention` /
