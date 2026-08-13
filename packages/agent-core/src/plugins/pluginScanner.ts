@@ -14,7 +14,8 @@ import { isPlainRecord } from './manifestFields'
 import { parsePluginManifest } from './manifest'
 import type { ManifestParseResult } from './manifestTypes'
 
-const PLUGINS_DIR = '.webAgent/plugins'
+/** 插件根目录，workspace 相对 POSIX 路径。P4 加载器按同一常量拼入口路径，避免两处各写一份字面量。 */
+export const PLUGINS_DIR = '.webAgent/plugins'
 const MANIFEST_FILE = 'plugin.json'
 const PACKAGE_FILE = 'package.json'
 /** 单份 manifest 最多读多少字节：远大于任何合理 plugin.json/package.json。 */

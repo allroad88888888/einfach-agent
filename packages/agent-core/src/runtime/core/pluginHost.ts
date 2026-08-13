@@ -22,8 +22,23 @@ export interface PluginRun {
   dispose(): void
 }
 
+/** 一次构造后安装的句柄：dispose 撤销该插件的工具注册与安装期资源，不影响其余插件。 */
+export interface PluginInstallation {
+  /** 本次安装真正注册进 registry 的工具实例。 */
+  readonly tools: readonly Tool[]
+  dispose(): void
+}
+
 export interface PluginHost {
   bindCommandFacade(commands: PluginCommandFacade): void
+  /**
+   * 构造之后再装一个插件（动态加载用）：走与构造期相同的全量预检与原子拒绝，
+   * 冲突时抛错且不留半装状态；成功则返回卸载句柄。
+   *
+   * 已在跑的 run 不受影响——activateRun 在 run 开始时取一次插件快照，
+   * 新装/卸载的插件从下一个 run 起生效（docs/plugin-ecosystem-blueprint.md 第 5 节）。
+   */
+  installPlugin(plugin: PluginInput): PluginInstallation
   activateRun(store: Store, activation?: PluginRunActivation): Promise<PluginRun>
   dispose(): void
 }
@@ -118,6 +133,7 @@ export function createPluginHost(registry: ToolRegistry, inputs: readonly Plugin
   const plugins = inputs.map(adaptPlugin)
   const installed = installPlugins(registry, plugins)
   const activeRuns = new Set<PluginRun>()
+  const dynamicInstallations = new Set<PluginInstallation>()
   let disposed = false
   let boundCommands = unavailableCommands
 
@@ -125,6 +141,28 @@ export function createPluginHost(registry: ToolRegistry, inputs: readonly Plugin
     bindCommandFacade(commands) {
       if (disposed) throw new Error('plugin host is disposed')
       boundCommands = commands
+    },
+    installPlugin(plugin) {
+      if (disposed) throw new Error('plugin host is disposed')
+      const adapted = adaptPlugin(plugin)
+      // 预检失败时 installPlugins 已回滚本次安装期资源并抛出，plugins 不会被污染。
+      const added = installPlugins(registry, [adapted])
+      plugins.push(adapted)
+      let installationDisposed = false
+      const installation: PluginInstallation = {
+        tools: added.tools,
+        dispose() {
+          if (installationDisposed) return
+          installationDisposed = true
+          dynamicInstallations.delete(installation)
+          const index = plugins.indexOf(adapted)
+          if (index >= 0) plugins.splice(index, 1)
+          for (const tool of added.tools) registry.unregister(tool.name, tool)
+          disposeAll(added.disposers)
+        },
+      }
+      dynamicInstallations.add(installation)
+      return installation
     },
     async activateRun(store, activation = {}) {
       if (disposed) throw new Error('plugin host is disposed')
@@ -182,6 +220,13 @@ export function createPluginHost(registry: ToolRegistry, inputs: readonly Plugin
       for (const run of [...activeRuns]) {
         try {
           run.dispose()
+        } catch (error) {
+          firstError ??= error
+        }
+      }
+      for (const installation of [...dynamicInstallations]) {
+        try {
+          installation.dispose()
         } catch (error) {
           firstError ??= error
         }
