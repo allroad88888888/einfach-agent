@@ -1,6 +1,13 @@
 import Database from '@tauri-apps/plugin-sql'
-import type { TraceLogReader, TraceLogSnapshot } from '@web-agent/core/observability/logReader'
-import type { SpanKind, TraceAttributes, TraceEvent, TraceSpan, TraceStatus } from '@web-agent/core/observability/types'
+import type {
+  TraceLogReader,
+  TraceLogSnapshot,
+  SpanKind,
+  TraceAttributes,
+  TraceEvent,
+  TraceSpan,
+  TraceStatus,
+} from '@web-agent/core/observability'
 
 const DB_URL = 'sqlite:web-agent.db'
 

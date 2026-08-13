@@ -23,13 +23,13 @@
 
 import Database from '@tauri-apps/plugin-sql'
 import type { SessionMeta, WorkspaceMeta } from '@web-agent/core/state/core.type'
-import type { CheckpointFinishReason, CheckpointKind } from '@web-agent/core/state/checkpoint.type'
-import type { SessionsPersistence } from '@web-agent/core/state/persistence/contract'
-import type { HistoryDriver } from '@web-agent/core/state/persistence/historyDriver'
-import {
-  beginPerformanceDiagnostic,
-  performanceNow,
-} from '@web-agent/core/observability/performanceDiagnostics'
+import type {
+  CheckpointFinishReason,
+  CheckpointKind,
+  SessionsPersistence,
+  HistoryDriver,
+} from '@web-agent/core/state/persistence'
+import { beginPerformanceDiagnostic, performanceNow } from '@web-agent/core/observability'
 
 const DB_URL = 'sqlite:web-agent.db'
 

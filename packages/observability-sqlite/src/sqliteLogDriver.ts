@@ -1,7 +1,7 @@
 // Tauri SQLite trace driver：复用 sqlite:web-agent.db，本地 best-effort 写 span/event。
 
 import Database from '@tauri-apps/plugin-sql'
-import type { TraceAttributes, TraceDriver, TraceEvent, TraceSpan } from '@web-agent/core/observability/types'
+import type { TraceAttributes, TraceDriver, TraceEvent, TraceSpan } from '@web-agent/core/observability'
 
 const DB_URL = 'sqlite:web-agent.db'
 

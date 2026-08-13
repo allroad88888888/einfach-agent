@@ -1,5 +1,4 @@
-import type { TraceLogReader, TraceLogSnapshot } from '@web-agent/core/observability/logReader'
-import type { TraceEvent, TraceSpan } from '@web-agent/core/observability/types'
+import type { TraceLogReader, TraceLogSnapshot, TraceEvent, TraceSpan } from '@web-agent/core/observability'
 
 const DEFAULT_DB_NAME = 'web-agent-observability'
 const SPANS_STORE = 'trace_spans'
