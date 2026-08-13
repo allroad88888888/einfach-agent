@@ -298,7 +298,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 - **判据**：`grep -rn "from 'react'" packages/agent-core/src` 无结果；
   trace viewer 组件测试随迁通过；`pnpm exec vitest run apps/web packages/agent-core`；`pnpm build`
 - **模型**：codex medium
-- **状态**：DONE（哈希在下一次提交补记；`traceViewModel` 随迁、`logReader` 留核为契约；
+- **状态**：DONE `39c0a80`（`traceViewModel` 随迁、`logReader` 留核为契约；
   core 自此零 React——CLAUDE.md 的「core 不依赖 React」首次在依赖层面成立）
 
 ## E · 子 Agent 机制/产品切割（最后执行）
@@ -406,7 +406,8 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 - **判据**：脚本在当前树上全绿；人为加一条违规 import 时 CI 判红（本地验证后撤销）；
   `node scripts/check-boundaries.js` 幂等可重跑
 - **模型**：codex medium
-- **状态**：TODO
+- **状态**：DONE（哈希在下一次提交补记；`plugin-dialog` 降级为观察项——`workspaceDialog.ts`
+  仍属宿主桥范围；测试文件豁免，能力包反向依赖 5 条规则全部执法）
 
 ### F2 · 文档同步
 

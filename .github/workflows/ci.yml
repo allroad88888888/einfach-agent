@@ -24,6 +24,8 @@ jobs:
       - run: pnpm install
       - name: Check Markdown documentation
         run: node scripts/check-docs.js
+      - name: Check assembly boundaries
+        run: node scripts/check-boundaries.js
       - run: pnpm test
       - run: pnpm build
 
