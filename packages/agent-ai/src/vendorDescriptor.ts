@@ -37,10 +37,10 @@ export const VENDOR_DESCRIPTORS = {
     contextWindowTokens: 64_000,
     maxTurnTools: 128,
     models: {
+      // 只保留 V4 双模型；下线旧名 deepseek-chat / deepseek-reasoner 不再是合法选项，
+      // 旧会话经 state/persistence/modelMigration.ts 的映射迁到 v4-flash。
       'deepseek-v4-pro': textModel(1_000_000),
       'deepseek-v4-flash': textModel(1_000_000),
-      'deepseek-chat': textModel(1_000_000),
-      'deepseek-reasoner': textModel(1_000_000),
     },
   },
   glm: {

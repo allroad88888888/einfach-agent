@@ -27,7 +27,7 @@ export function input(overrides: Partial<ObserveContextCacheInput> = {}): Observ
     lane: 'main',
     scope: 'run-1:root',
     vendor: 'deepseek',
-    model: 'deepseek-chat',
+    model: 'deepseek-v4-flash',
     messages: [system, user],
     systemContent: 'fixed system',
     tools: [tool('request_tool_schema'), tool('read_file')],
