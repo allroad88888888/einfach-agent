@@ -358,7 +358,7 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
 - **改动面**：core 的 `runtime/modelTurn.ts` 按职责拆（先读结构再定切面），公开导出不变
 - **判据**：`pnpm exec vitest run packages/agent-core/src/runtime` 全绿 + build + 波及面口径；各文件 ≤500
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE 6c726c0
 
 ### T10 · 拆 runtime/toolContext.ts（604 行）
 
@@ -367,7 +367,7 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
   注意该文件刚被 1908f87（workspace skill controls）改过，基线以 HEAD 为准
 - **判据**：`pnpm exec vitest run packages/agent-core/src/runtime tools` 全绿 + build；各文件 ≤500
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE b93c27f
 
 ### T11 · 拆 workspace_write.rs（2178 行）
 
@@ -375,7 +375,7 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
 - **改动面**：`apps/desktop/src/workspace_write.rs` 按 T8 的 `#[path]` 子模块先例拆
 - **判据**：`cargo test --manifest-path apps/desktop/Cargo.toml` 全绿；各文件 ≤500
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE fea37d5
 
 ### T12 · 拆 workspace_read.rs（1843 行）
 
@@ -383,7 +383,7 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
 - **改动面**：`apps/desktop/src/workspace_read.rs` 同款拆分
 - **判据**：cargo test 全绿；各文件 ≤500
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE 8c208ed
 
 ### T13 · 拆 workspace_change_journal.rs（1366）与 workspace_patch.rs（1258）
 
@@ -391,7 +391,7 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
 - **改动面**：两文件同款拆分
 - **判据**：cargo test 全绿；各文件 ≤500
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE f62868e
 
 ### T14 · 拆 workspace_git.rs（786）与 shell.rs（716）
 
@@ -399,4 +399,4 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
 - **改动面**：两文件同款拆分
 - **判据**：cargo test 全绿；各文件 ≤500
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE bfe7703（全仓生产源码硬上限违规归零）
