@@ -1,6 +1,3 @@
-import { isTauri } from '@tauri-apps/api/core'
-import { createDevSqliteLogReader } from './devSqliteLogReader'
-import { createIndexedDbLogReader } from './indexedDbLogReader'
 import type { TraceEvent, TraceSpan } from './types'
 
 export type TraceLogSource = 'indexeddb' | 'sqlite'
@@ -17,11 +14,16 @@ export interface TraceLogReader {
   readAll(): Promise<TraceLogSnapshot>
 }
 
+export type TraceLogReaderFactory = () => TraceLogReader | Promise<TraceLogReader>
+
+let traceLogReaderFactory: TraceLogReaderFactory | undefined
+
+/** Configures the host-owned reader used by trace presentation and recovery. */
+export function configureTraceLogReader(factory: TraceLogReaderFactory): void {
+  traceLogReaderFactory = factory
+}
+
 export async function createTraceLogReader(): Promise<TraceLogReader> {
-  if (isTauri()) {
-    const { createSqliteLogReader } = await import('./sqliteLogReader')
-    return createSqliteLogReader()
-  }
-  if (import.meta.env.DEV) return createDevSqliteLogReader()
-  return createIndexedDbLogReader()
+  if (!traceLogReaderFactory) throw new Error('Trace log reader is not configured by the host')
+  return traceLogReaderFactory()
 }

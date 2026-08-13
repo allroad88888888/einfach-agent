@@ -20,7 +20,8 @@ import { configurePersistence } from '@web-agent/core/runtime/persistenceBridge'
 import { configureObservability } from '@web-agent/core/observability/trace'
 import { hydrate } from '@web-agent/core/state/persistence/hydrate'
 import { createIndexedDbHistoryDriver } from '@web-agent/persistence-idb'
-import { createIndexedDbLogDriver } from '@web-agent/core/observability/indexedDbLogDriver'
+import { createIndexedDbLogDriver, createIndexedDbLogReader } from '@web-agent/observability-idb'
+import { configureTraceLogReader as configureTraceLogReaderFactory } from '@web-agent/core/observability/logReader'
 import { createSessionsPersistence } from '@web-agent/core/state/persistence/sessionsPersistence'
 import { isTauri } from '@tauri-apps/api/core'
 import { AppShell } from './agentNew/ui/AppShell'
@@ -104,12 +105,30 @@ async function resolvePersistence() {
 
 function configureObservabilityDriver(): void {
   if (tauriHost) {
-    void import('@web-agent/core/observability/sqliteLogDriver')
+    void import('@web-agent/observability-sqlite')
       .then(({ createSqliteLogDriver }) => configureObservability({ driver: createSqliteLogDriver() }))
       .catch(() => {})
     return
   }
   configureObservability({ driver: createIndexedDbLogDriver() })
+}
+
+function configureTraceLogReaderHost(): void {
+  if (tauriHost) {
+    configureTraceLogReaderFactory(async () => {
+      const { createSqliteLogReader } = await import('@web-agent/observability-sqlite')
+      return createSqliteLogReader()
+    })
+    return
+  }
+  if (import.meta.env.DEV) {
+    configureTraceLogReaderFactory(async () => {
+      const { createDevSqliteLogReader } = await import('@web-agent/observability-sqlite')
+      return createDevSqliteLogReader()
+    })
+    return
+  }
+  configureTraceLogReaderFactory(createIndexedDbLogReader)
 }
 
 function currentView(): string | null {
@@ -157,6 +176,7 @@ async function bootstrapApplication(): Promise<StartupCredentialTargetResolution
     const { history, sessions } = await resolvePersistence()
     configurePersistence({ history, sessions })
     configureObservabilityDriver()
+    configureTraceLogReaderHost()
     const restored = await hydrate({ history, sessions })
     if (!restored) newSession()
   } catch {
@@ -170,6 +190,7 @@ if (currentView() === 'window-scroll-demo') {
   renderWindowScrollDemo()
 } else if (currentView() === 'traces') {
   configureObservabilityDriver()
+  configureTraceLogReaderHost()
   renderTraceViewer()
 } else {
   void bootstrapApplication().then(renderApp)

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createDevSqliteLogReader } from './devSqliteLogReader'
-import type { TraceLogReader, TraceLogSnapshot } from './logReader'
+import type { TraceLogReader, TraceLogSnapshot } from '@web-agent/core/observability/logReader'
 
 function fallbackReader(snapshot: TraceLogSnapshot): TraceLogReader {
   return {

@@ -25,6 +25,8 @@
     "@vitejs/plugin-react": "^5.1.1",
     "@web-agent/ai": "workspace:*",
     "@web-agent/core": "workspace:*",
+    "@web-agent/observability-idb": "workspace:*",
+    "@web-agent/observability-sqlite": "workspace:*",
     "@web-agent/persistence-idb": "workspace:*",
     "@web-agent/persistence-sqlite": "workspace:*",
     "@web-agent/react-plugin": "workspace:*",

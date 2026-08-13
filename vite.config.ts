@@ -255,6 +255,8 @@ export default defineConfig(({ command, mode }) => {
         'react-dom': fromRoot('./node_modules/react-dom'),
         '@web-agent/ai': fromRoot('./packages/agent-ai/src/index.ts'),
         '@web-agent/core': fromRoot('./packages/agent-core/src'),
+        '@web-agent/observability-idb': fromRoot('./packages/observability-idb/src'),
+        '@web-agent/observability-sqlite': fromRoot('./packages/observability-sqlite/src'),
         '@web-agent/persistence-idb': fromRoot('./packages/persistence-idb/src'),
         '@web-agent/persistence-sqlite': fromRoot('./packages/persistence-sqlite/src'),
         '@web-agent/react-plugin': fromRoot('./packages/agent-react/src/index.ts'),

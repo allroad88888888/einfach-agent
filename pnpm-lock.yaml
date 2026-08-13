@@ -32,6 +32,12 @@ importers:
       '@web-agent/core':
         specifier: workspace:*
         version: link:packages/agent-core
+      '@web-agent/observability-idb':
+        specifier: workspace:*
+        version: link:packages/observability-idb
+      '@web-agent/observability-sqlite':
+        specifier: workspace:*
+        version: link:packages/observability-sqlite
       '@web-agent/persistence-idb':
         specifier: workspace:*
         version: link:packages/persistence-idb
@@ -119,9 +125,6 @@ importers:
       '@tauri-apps/plugin-dialog':
         specifier: ^2.7.1
         version: 2.7.2
-      '@tauri-apps/plugin-sql':
-        specifier: ^2.4.0
-        version: 2.4.0
       '@web-agent/ai':
         specifier: workspace:*
         version: link:../agent-ai
@@ -149,6 +152,24 @@ importers:
       react:
         specifier: ^18.3.1
         version: 18.3.1
+
+  packages/observability-idb:
+    dependencies:
+      '@web-agent/core':
+        specifier: workspace:*
+        version: link:../agent-core
+
+  packages/observability-sqlite:
+    dependencies:
+      '@tauri-apps/plugin-sql':
+        specifier: ^2.4.0
+        version: 2.4.0
+      '@web-agent/core':
+        specifier: workspace:*
+        version: link:../agent-core
+      '@web-agent/observability-idb':
+        specifier: workspace:*
+        version: link:../observability-idb
 
   packages/persistence-idb:
     dependencies:

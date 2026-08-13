@@ -270,7 +270,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 - **判据**：runtime 对 observability 的直接 import 收敛为仅 contract；
   trace 相关既有测试不回退：`pnpm exec vitest run packages/agent-core`；`pnpm build`
 - **模型**：codex xhigh
-- **状态**：DONE（哈希在下一次提交补记；`ObservabilityPort` 只含 span/event 生命周期、
+- **状态**：DONE `d422e4f`（`ObservabilityPort` 只含 span/event 生命周期、
   诊断与脱敏预览，Driver/Reader/TraceViewer 挡在 port 外；`coreInstance` 拆出
   `abortRegistryStore.ts` 保行数）
 
@@ -286,7 +286,8 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   `pnpm exec vitest run packages/observability-idb packages/observability-sqlite packages/agent-core`；
   `pnpm build`
 - **模型**：codex medium
-- **状态**：TODO
+- **状态**：DONE（哈希在下一次提交补记；`@tauri-apps/plugin-sql` 依赖自 core 摘除，
+  trace log reader 改宿主注册工厂）
 
 ### D5 · TraceViewer 出核，core 摘除 react peerDependency
 
