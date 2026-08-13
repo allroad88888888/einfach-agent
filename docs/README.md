@@ -13,6 +13,7 @@
 | [Context Caching](context-caching.md) | provider 自动缓存契约、profile/epoch、usage 归一化与观测 |
 | [模型适配器兼容性契约](model-adapter-compatibility.md) | DeepSeek/GLM 的已验证请求差异、Rust 参考的适用边界与新增 vendor 准入项 |
 | [MCP 集成](mcp-integration.md) | 连接生命周期与按需连接、透明连接、静态凭据（headers/env）、配置文件存储、失败分类与自愈、工具清单缓存、单次运行内的工具集、起进程确认与安全边界 |
+| [插件上手：20 分钟写一个外部插件](plugin-quickstart.md) | 从零写 `plugin.json` + 单文件 ESM 入口、放进 `.webAgent/plugins/`、用 CLI 验证生效；当前边界（工具默认不可见、renderer 待桌面接线、浏览器预览不支持） |
 | [用户配置目录](config-directory-override.md) | 默认 `~/.webAgent/config.json`、旧配置安全复制、`WEB_AGENT_CONFIG_DIR` 多实例隔离与密钥边界 |
 | [Tauri 卡顿诊断日志](performance-diagnostics.md) | 长对话、plan 更新、大文件写入的分段耗时与前后端关联排障 |
 | [工具规范](../packages/agent-core/src/tools/TOOLS-SPEC.md) | Tool、Registry、ToolContext、安全边界与新增工具约定 |

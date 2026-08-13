@@ -8,6 +8,18 @@
 > 对应 issue：[插件生态与模型 Provider 注册化 Issue 树](plugin-and-provider-issues.md) 的 P1。
 > 更新时间：2026-08-13。
 
+> **交付状态（截至 P9，2026-08-13）**：第 3 节的目录约定（3.1）、加载协议（3.2，manifest 解析 +
+> 动态导入 + branded 导出校验）与错误隔离（3.3）已交付并有测试覆盖
+> （`packages/agent-core/src/plugins/`）；第 4 节的工具闸门（模型可见工具默认不注册，拍板 3）
+> 已交付（`pluginToolGate.ts`）；第 5 节的设置面板 view-state/service 层与熔断
+> （连续 3 次失败自动停用，拍板 5）已交付，但前者是 `apps/web/src/plugins/` 的独立层，尚未挂进
+> 正在跑的桌面应用，后者在 `packages/agent-core/src/runtime/core/pluginCircuitBreaker.ts`；
+> CLI 宿主接线（3.4 的 CLI 一行）已交付（`apps/cli/src/plugins.ts`，`pnpm cli -v` 可见诊断），
+> 20 分钟上手验收见 [`plugin-quickstart.md`](plugin-quickstart.md)。**未交付**：桌面宿主的扫描
+> /加载接线（3.4 的桌面一行，issue 树 P10，在途）——面板与 React renderer 入口在它落地前都不会
+> 在真实应用里生效；第 6 节的 npm 分发仍阻塞于 G4（core 公开面收敛）；第 7 节的
+> `timeline.persist` 阻塞于 R5 RFC 未批准。
+
 ## 1. 问题陈述
 
 今天的插件是 **assembly-time** 的：宿主源码里 `createCore({ plugins })` 传入，改插件 = 改仓库 =
