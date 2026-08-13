@@ -24,8 +24,10 @@ export default definePackageBuild({
   // atom 家族）。关着 splitting 时每条 entry 会各自内联一份，消费方同时 import 两条 subpath
   // 就会拿到两个互不可见的 store —— 详见 tsup.preset.ts 的 splitting 注释。
   splitting: true,
-  // 四个运行时依赖（@web-agent/ai、@einfach/core、@tauri-apps/api、@tauri-apps/plugin-dialog）
-  // 都已在本包 package.json 的 dependencies 里，tsup 按包名前缀自动 external，
+  // 四个运行时依赖里，@web-agent/ai 与 @einfach/core 在本包 dependencies，
+  // @tauri-apps/api 与 @tauri-apps/plugin-dialog 是 optional peerDependencies（D6）——
+  // tsup 的自动 external 同时覆盖 dependencies + peerDependencies，且按包名前缀匹配，
   // `@tauri-apps/api/core` 这种子路径形态一并覆盖，故这里留空。
+  // 降 optional peer 后仍成立已实测：dist 里两处动态 import 保持裸说明符、零内联。
   external: [],
 })
