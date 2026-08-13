@@ -1,6 +1,4 @@
-import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
-import { recordCompletedSpan } from '../observability/trace'
-import type { SubagentArchiveWriteMode } from './types'
+import type { SubagentArchiveWriteMode } from '@web-agent/core/subagents/types'
 
 export interface SubagentArchiveWriteInput {
   path: string
@@ -15,6 +13,22 @@ export interface SubagentArchiveWriteTelemetryContext {
   model?: string
 }
 
+export interface SubagentArchiveTraceRecorder {
+  recordCompletedSpan(name: string, input: {
+    kind: 'internal'
+    startedAt: number
+    endedAt: number
+    status: 'ok' | 'error'
+    attrs: Record<string, string | number | undefined>
+  }): void
+}
+
+/** Explicit host-owned context; archive code never reaches for a process default core. */
+export interface SubagentArchiveWriterContext {
+  readonly queueKey: object
+  readonly traceRecorder?: SubagentArchiveTraceRecorder
+}
+
 type ArchiveWriteExecutor = (input: SubagentArchiveWriteInput) => Promise<void>
 
 interface PendingAppend {
@@ -24,9 +38,9 @@ interface PendingAppend {
 }
 
 // A core can have multiple runtime writers, but no write queue may leak to another core.
-const pathTailsByCore = new WeakMap<CoreInstance, Map<string, Promise<void>>>()
+const pathTailsByCore = new WeakMap<object, Map<string, Promise<void>>>()
 
-function pathTailsFor(core: CoreInstance): Map<string, Promise<void>> {
+function pathTailsFor(core: object): Map<string, Promise<void>> {
   let pathTails = pathTailsByCore.get(core)
   if (!pathTails) {
     pathTails = new Map<string, Promise<void>>()
@@ -50,7 +64,7 @@ export class SubagentArchiveWriter {
   private writeMetricRecorded = false
 
   constructor(
-    private readonly core: CoreInstance = defaultCore,
+    private readonly context: SubagentArchiveWriterContext,
     private readonly telemetry: SubagentArchiveWriteTelemetryContext = {},
   ) {}
 
@@ -134,7 +148,7 @@ export class SubagentArchiveWriter {
   }
 
   private enqueue(path: string, task: () => Promise<void>): Promise<void> {
-    const pathTails = pathTailsFor(this.core)
+    const pathTails = pathTailsFor(this.context.queueKey)
     const previous = pathTails.get(path) ?? Promise.resolve()
     const operation = previous.catch(() => undefined).then(task)
     this.writeAttempts += 1
@@ -155,7 +169,7 @@ export class SubagentArchiveWriter {
     if (this.writeMetricRecorded) return
     this.writeMetricRecorded = true
     const endedAt = Date.now()
-    recordCompletedSpan('subagent.archive_write_summary', {
+    this.context.traceRecorder?.recordCompletedSpan('subagent.archive_write_summary', {
       kind: 'internal',
       startedAt: endedAt,
       endedAt,

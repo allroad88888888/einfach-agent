@@ -1,4 +1,4 @@
-// Keep this registry in lockstep with agent-core/src/subagents/replay.ts.
+// Keep this Node-side registry in lockstep with the stable subagents archive schema.
 export const SUBAGENT_EVENT_TYPES = [
   'archive_initialized',
   'delegate_requested',

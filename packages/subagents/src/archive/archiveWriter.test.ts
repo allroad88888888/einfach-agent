@@ -2,11 +2,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   configureObservability,
   flushObservability,
+  recordCompletedSpan,
   resetObservability,
-} from '../observability/trace'
-import type { TraceDriver, TraceEvent, TraceSpan } from '../observability/types'
-import { createCoreInstance } from '../runtime/core/coreInstance'
+} from '@web-agent/core/observability/trace'
+import type { TraceDriver, TraceEvent, TraceSpan } from '@web-agent/core/observability/types'
+import { createCoreInstance } from '@web-agent/core/runtime/core/coreInstance'
 import { SubagentArchiveWriter, type SubagentArchiveWriteInput } from './archiveWriter'
+
+function writerContext(queueKey: object = {}): { queueKey: object } {
+  return { queueKey }
+}
 
 function mockDriver(): TraceDriver & { spans: TraceSpan[]; events: TraceEvent[] } {
   const spans: TraceSpan[] = []
@@ -31,7 +36,7 @@ describe('SubagentArchiveWriter', () => {
   it('batches concurrent index appends into one write', async () => {
     const writes: SubagentArchiveWriteInput[] = []
     const execute = vi.fn(async (input: SubagentArchiveWriteInput) => { writes.push(input) })
-    const writer = new SubagentArchiveWriter()
+    const writer = new SubagentArchiveWriter(writerContext())
 
     const first = writer.write(
       { path: '.webAgent-archive/index/skills.jsonl', content: 'one\n', mode: 'append' },
@@ -54,7 +59,7 @@ describe('SubagentArchiveWriter', () => {
     let releaseFirst!: () => void
     const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve })
     const order: string[] = []
-    const writer = new SubagentArchiveWriter()
+    const writer = new SubagentArchiveWriter(writerContext())
     const execute = async (input: SubagentArchiveWriteInput) => {
       order.push(`start:${input.content}`)
       if (input.content === 'first') await firstGate
@@ -78,8 +83,8 @@ describe('SubagentArchiveWriter', () => {
     const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve })
     const order: string[] = []
     const core = createCoreInstance()
-    const firstWriter = new SubagentArchiveWriter(core)
-    const secondWriter = new SubagentArchiveWriter(core)
+    const firstWriter = new SubagentArchiveWriter(writerContext(core))
+    const secondWriter = new SubagentArchiveWriter(writerContext(core))
     const execute = async (input: SubagentArchiveWriteInput) => {
       order.push(`start:${input.content}`)
       if (input.content === 'run-one') await firstGate
@@ -98,8 +103,8 @@ describe('SubagentArchiveWriter', () => {
     let releaseFirst!: () => void
     const firstGate = new Promise<void>((resolve) => { releaseFirst = resolve })
     const order: string[] = []
-    const firstWriter = new SubagentArchiveWriter(createCoreInstance())
-    const secondWriter = new SubagentArchiveWriter(createCoreInstance())
+    const firstWriter = new SubagentArchiveWriter(writerContext(createCoreInstance()))
+    const secondWriter = new SubagentArchiveWriter(writerContext(createCoreInstance()))
     const execute = async (input: SubagentArchiveWriteInput) => {
       order.push(`start:${input.content}`)
       if (input.content === 'run-one') await firstGate
@@ -117,7 +122,7 @@ describe('SubagentArchiveWriter', () => {
 
   it('propagates a batched flush failure to every caller and flush', async () => {
     const failure = new Error('disk full')
-    const writer = new SubagentArchiveWriter()
+    const writer = new SubagentArchiveWriter(writerContext())
     const execute = vi.fn(async () => { throw failure })
     const first = writer.write({ path: 'index', content: 'one\n', mode: 'append' }, execute, { batchAppend: true })
     const second = writer.write({ path: 'index', content: 'two\n', mode: 'append' }, execute, { batchAppend: true })
@@ -135,7 +140,7 @@ describe('SubagentArchiveWriter', () => {
     const slowGate = new Promise<void>((resolve) => { releaseSlow = resolve })
     const completed: string[] = []
     const failure = new Error('index unavailable')
-    const writer = new SubagentArchiveWriter()
+    const writer = new SubagentArchiveWriter(writerContext())
 
     const failed = writer.write(
       { path: 'failed-index', content: 'bad', mode: 'append' },
@@ -162,7 +167,7 @@ describe('SubagentArchiveWriter', () => {
 
   it('close performs a final flush and rejects later writes', async () => {
     const execute = vi.fn(async () => undefined)
-    const writer = new SubagentArchiveWriter()
+    const writer = new SubagentArchiveWriter(writerContext())
     const pending = writer.write({ path: 'index', content: 'line\n', mode: 'append' }, execute, { batchAppend: true })
 
     await writer.close()
@@ -176,7 +181,10 @@ describe('SubagentArchiveWriter', () => {
   it('records physical archive write failure metrics when closing', async () => {
     const driver = mockDriver()
     configureObservability({ driver })
-    const writer = new SubagentArchiveWriter(createCoreInstance(), { sessionId: 'session-1', runId: 'run-1' })
+    const writer = new SubagentArchiveWriter({
+      queueKey: createCoreInstance(),
+      traceRecorder: { recordCompletedSpan: (name, input) => recordCompletedSpan(name, input) },
+    }, { sessionId: 'session-1', runId: 'run-1' })
 
     const firstIndexAppend = writer.write(
       { path: 'index.jsonl', content: 'one\n', mode: 'append' },

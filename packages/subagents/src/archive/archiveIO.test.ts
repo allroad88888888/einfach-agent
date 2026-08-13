@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { SubagentArchiveIO } from './archiveIO'
-import type { DelegateAgentCallContext, SubagentNodeRecord, SubagentSkillFile } from './types'
+import type { DelegateAgentCallContext, SubagentNodeRecord, SubagentSkillFile } from '@web-agent/core/subagents/types'
 
 const archiveBasePath = '.webAgent-archive/conversations/session/runs/run'
 
@@ -68,6 +68,7 @@ describe('SubagentArchiveIO', () => {
   it('persists run, skill, tree, and event archive documents', async () => {
     const writes = new Map<string, string>()
     const archive = new SubagentArchiveIO({
+      writerContext: { queueKey: {} },
       sessionId: 'session',
       runId: 'run',
       model: 'deepseek-v4-pro',
@@ -113,6 +114,7 @@ describe('SubagentArchiveIO', () => {
       return { ok: true }
     }
     const archive = new SubagentArchiveIO({
+      writerContext: { queueKey: {} },
       sessionId: 'session',
       runId: 'run',
       model: 'deepseek-v4-pro',

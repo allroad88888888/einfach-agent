@@ -7,7 +7,28 @@ import {
   type ReadWorkspaceRunIndexPageResult,
   type WorkspaceRuntimeResult,
 } from '../runtime/workspaceRead'
-import { subagentEventsPath, subagentTreePath } from '../subagents/skillCache'
+import {
+  parseJsonl,
+  parseJsonlLines,
+  replaySubagentArchive,
+  subagentEventsPath,
+  subagentIndexPath,
+  subagentTracePath,
+  subagentTreePath,
+  type JsonlLine,
+  type SubagentReplayState,
+} from '@web-agent/subagents'
+
+export {
+  parseJsonl,
+  parseJsonlLines,
+  replaySubagentArchive,
+  subagentEventsPath,
+  subagentIndexPath,
+  subagentTracePath,
+  subagentTreePath,
+}
+export type { JsonlLine, SubagentReplayState }
 
 export type ArchiveReader = (
   input: ReadWorkspaceFileInput,

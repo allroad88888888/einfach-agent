@@ -1,4 +1,4 @@
-import type { SubagentNodeRecord } from './types'
+import type { SubagentNodeRecord } from '@web-agent/core/subagents/types'
 
 export interface SubagentArchiveCapacityFile {
   path: string

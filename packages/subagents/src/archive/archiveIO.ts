@@ -1,7 +1,6 @@
 import type { ModelItem } from '@web-agent/ai'
-import type { CoreInstance } from '../runtime/core/coreInstance'
-import { SubagentArchiveWriter } from './archiveWriter'
-import { ROOT_AGENT_PATH } from './path'
+import { SubagentArchiveWriter, type SubagentArchiveWriterContext } from './archiveWriter'
+import { ROOT_AGENT_PATH } from '@web-agent/core/subagents/path'
 import {
   renderJsonDocument,
   renderJsonLine,
@@ -23,10 +22,10 @@ import type {
   SubagentArchiveWriteMode,
   SubagentNodeRecord,
   SubagentSkillFile,
-} from './types'
+} from '@web-agent/core/subagents/types'
 
 interface SubagentArchiveIOOptions {
-  core?: CoreInstance
+  writerContext: SubagentArchiveWriterContext
   sessionId: string
   runId: string
   model: string
@@ -98,7 +97,7 @@ export class SubagentArchiveIO {
   private eventCounter = 0
 
   constructor(private readonly options: SubagentArchiveIOOptions) {
-    this.writer = new SubagentArchiveWriter(options.core, { sessionId: options.sessionId, runId: options.runId, vendor: options.vendor, model: options.model })
+    this.writer = new SubagentArchiveWriter(options.writerContext, { sessionId: options.sessionId, runId: options.runId, vendor: options.vendor, model: options.model })
   }
 
   close(): Promise<void> {

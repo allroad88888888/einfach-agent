@@ -1,4 +1,4 @@
-import type { SubagentNodeRecord, SubagentSkillFile } from './types'
+import type { SubagentNodeRecord, SubagentSkillFile } from '@web-agent/core/subagents/types'
 
 const ARCHIVE_ROOT = '.webAgent-archive'
 const MAX_SEGMENT_LENGTH = 96

@@ -3,14 +3,14 @@ import type {
   SubagentArchiveEvent,
   SubagentArchiveEventType,
   SubagentNodeRecord,
-} from './types'
+} from '@web-agent/core/subagents/types'
 import {
   parseJsonDocument,
   parseJsonl,
   type JsonlParseError as ParseError,
   type JsonlParseResult,
 } from './jsonl'
-import { compareAgentPaths, parseAgentPath } from './path'
+import { compareAgentPaths, parseAgentPath } from '@web-agent/core/subagents/path'
 
 export type { JsonlParseError as ParseError, JsonlParseResult } from './jsonl'
 

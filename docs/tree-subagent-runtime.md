@@ -77,8 +77,8 @@
 
 实现入口：
 
-- [skillCache.ts](../packages/agent-core/src/subagents/skillCache.ts)
-- [distill.ts](../packages/agent-core/src/subagents/distill.ts)
+- [skillCache.ts](../packages/subagents/src/archive/skillCache.ts)
+- [distill.ts](../packages/subagents/src/archive/distill.ts)
 
 ## Skill Frontmatter
 
@@ -334,7 +334,7 @@ pnpm subagent:archive:retention -- --restore ../subagent-retention-2026-08-03 --
 - 汇总：`summary` 提供 `running/distilling/queued/done/failed/cancelled`，`childResults` 直接给出已结束的节点产出。
 
 入口与导出位于：
-- [replay.ts](../packages/agent-core/src/subagents/replay.ts)
+- [replay.ts](../packages/subagents/src/archive/replay.ts)
 - `parseSubagentEvents`
 - `parseSubagentTreeSnapshot`
 - `replaySubagentArchive`

@@ -270,7 +270,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 - **判据**：runtime 对 observability 的直接 import 收敛为仅 contract；
   trace 相关既有测试不回退：`pnpm exec vitest run packages/agent-core`；`pnpm build`
 - **模型**：codex xhigh
-- **状态**：TODO
+- **状态**：DOING
 
 ### D4 · 观测 driver 外移为宿主包
 
@@ -349,7 +349,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   runtime 六处只剩契约 import；
   `pnpm exec vitest run packages/subagents packages/agent-core tools/agents`；`pnpm build`
 - **模型**：codex xhigh
-- **状态**：DONE（哈希在下一次提交补记；中途被手动终止一次、经续跑 prompt 从半成品完成，
+- **状态**：DONE `adff099`（中途被手动终止一次、经续跑 prompt 从半成品完成，
   续跑修正 `parentPath` 传递与 scheduler port 类型导入；`createCoreInstance()` 不再默认
   装配 delegation，Web 入口从 `@web-agent/subagents` 注入）
 
@@ -365,7 +365,10 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   `subagent:archive:retention` / `subagent:index:compact` / `subagent:skills` 全部可运行；
   `pnpm exec vitest run packages/subagents`；`pnpm build`
 - **模型**：codex medium
-- **状态**：TODO
+- **状态**：DONE（哈希在下一次提交补记；archiveWriter 改显式 `SubagentArchiveWriterContext`
+  注入、脚本与包以 canonical event schema 相等断言锁步；**受控过渡债**：
+  `state/subagentArchiveReader.ts` 暂以单文件例外 import `@web-agent/subagents`，
+  E4 迁出该文件后消除——因此 F1 边界脚本必须排在 E4 之后执行）
 
 ### E4 · state/ 的 subagent 视图与归档 atoms 迁移
 

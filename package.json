@@ -9,7 +9,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "subagent:replay": "node scripts/subagent-replay-report.js",
-    "subagent:capacity": "vitest run packages/agent-core/src/subagents/archiveCapacity.test.ts",
+    "subagent:capacity": "vitest run packages/subagents/src/archive/archiveCapacity.test.ts",
     "subagent:archive:retention": "node scripts/subagent-archive-retention.js",
     "subagent:index:compact": "node scripts/subagent-index-compact.js",
     "subagent:skills": "node scripts/subagent-skill-governance.js",

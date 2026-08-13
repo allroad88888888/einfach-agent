@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { createDelegateAgentRuntime, createSubagentScheduler } from '@web-agent/subagents'
 import { SubagentArchiveIO } from './archiveIO'
-import { agentPathDepth } from './path'
-import { normalizeDelegateAgentInput } from './input'
+import { agentPathDepth } from '@web-agent/core/subagents/path'
+import { normalizeDelegateAgentInput } from '@web-agent/core/subagents/input'
 import { measureSubagentArchiveCapacity, type SubagentArchiveCapacityMeasurement } from './archiveCapacity'
-import type { DelegateAgentCallContext, SubagentNodeRecord } from './types'
+import type { DelegateAgentCallContext, SubagentNodeRecord } from '@web-agent/core/subagents/types'
 
 const archiveBasePath = '.webAgent-archive/conversations/capacity-session/runs/capacity-run'
 
@@ -105,6 +105,7 @@ describe('subagent archive capacity baselines', () => {
   it('materializes a repeatable 10,000-event long-session archive', async () => {
     const host = new ArchiveHost()
     const archive = new SubagentArchiveIO({
+      writerContext: { queueKey: {} },
       sessionId: 'capacity-session',
       runId: 'capacity-run',
       model: 'deepseek-v4-pro',
@@ -134,6 +135,7 @@ describe('subagent archive capacity baselines', () => {
     const host = new ArchiveHost()
     const nodes = maximumTreeNodes()
     const archive = new SubagentArchiveIO({
+      writerContext: { queueKey: {} },
       sessionId: 'capacity-session',
       runId: 'capacity-run',
       model: 'deepseek-v4-pro',

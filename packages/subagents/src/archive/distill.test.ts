@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { distillDelegateSkills } from './distill'
-import type { SubagentNodeRecord } from './types'
+import type { SubagentNodeRecord } from '@web-agent/core/subagents/types'
 
 function node(path: string): SubagentNodeRecord {
   return {

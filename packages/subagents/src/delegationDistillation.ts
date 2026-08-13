@@ -2,7 +2,7 @@ import {
   FINISH_REASON_ERRORS,
   isAbnormalFinishReason,
 } from '@web-agent/core/runtime/core/plugins/finishReasonPlugin'
-import type { SkillDistillChat } from '@web-agent/core/subagents/distill'
+import type { SkillDistillChat } from './archive/distill'
 import {
   firstAssistantText,
   type ChildModelCaller,

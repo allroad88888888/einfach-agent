@@ -4,8 +4,8 @@ import { runChildAgent } from '@web-agent/core/subagents/childAgentLoop'
 import { createChildModelCaller } from '@web-agent/core/subagents/childModelClient'
 import { routeChildModel } from '@web-agent/core/subagents/modelSelection'
 import { ROOT_AGENT_PATH } from '@web-agent/core/subagents/path'
-import { subagentCacheBasePath, subagentEventsPath } from '@web-agent/core/subagents/skillCache'
-import { distillDelegateSkills } from '@web-agent/core/subagents/distill'
+import { subagentCacheBasePath, subagentEventsPath } from './archive/skillCache'
+import { distillDelegateSkills } from './archive/distill'
 import type { DelegateAgents } from '@web-agent/core/subagents/delegationRuntimePorts'
 import type {
   ChildAgentResult,

@@ -8,6 +8,13 @@
   "types": "./src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./archive/archiveCapacity": "./src/archive/archiveCapacity.ts",
+    "./archive/archiveIO": "./src/archive/archiveIO.ts",
+    "./archive/archiveWriter": "./src/archive/archiveWriter.ts",
+    "./archive/distill": "./src/archive/distill.ts",
+    "./archive/jsonl": "./src/archive/jsonl.ts",
+    "./archive/replay": "./src/archive/replay.ts",
+    "./archive/skillCache": "./src/archive/skillCache.ts",
     "./package.json": "./package.json"
   },
   "dependencies": {

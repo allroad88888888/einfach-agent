@@ -4,14 +4,16 @@ import type {
   DelegationRuntimeInput,
   SubagentScheduler,
 } from '@web-agent/core/runtime/delegationContract'
-import { SubagentArchiveIO } from '@web-agent/core/subagents/archiveIO'
+import { recordCompletedSpan } from '@web-agent/core/observability/trace'
 import {
   createChildModelCaller,
   firstAssistantText,
 } from '@web-agent/core/subagents/childModelClient'
 import { supportsDeepSeekTierRouting } from '@web-agent/core/subagents/modelSelection'
 import { formatSubagentTranscript } from '@web-agent/core/runtime/subagentTranscript'
-import { subagentResultPath } from '@web-agent/core/subagents/skillCache'
+import { SubagentArchiveIO } from './archive/archiveIO'
+import type { SubagentArchiveWriterContext } from './archive/archiveWriter'
+import { subagentResultPath } from './archive/skillCache'
 import { DelegateAgentRuntimeState } from '@web-agent/core/subagents/runtimeState'
 import { createDelegateAgents } from './delegationBatch'
 import { createSubagentScheduler } from './schedulerState'
@@ -19,6 +21,10 @@ import { createSubagentScheduler } from './schedulerState'
 export type CreateDelegateAgentRuntimeOptions = DelegationRuntimeInput & {
   /** Standalone callers receive an isolated scheduler; assemblies pass their shared one. */
   scheduler?: SubagentScheduler
+}
+
+function archiveWriterContext(core: object | undefined): SubagentArchiveWriterContext {
+  return { queueKey: core ?? {}, traceRecorder: { recordCompletedSpan } }
 }
 
 /** Creates the public delegate-agent runtime and owns its retain/release lifecycle. */
@@ -30,7 +36,7 @@ export function createDelegateAgentRuntime(
     ...rawOpts,
     scheduler,
     archive: new SubagentArchiveIO({
-      core: rawOpts.core,
+      writerContext: archiveWriterContext(rawOpts.core),
       sessionId: rawOpts.sessionId,
       runId: rawOpts.runId,
       model: rawOpts.settings.model,
