@@ -155,9 +155,7 @@ describe('coreInstance —— CoreInstance 抽象与 defaultCore', () => {
     it('默认 config 是空 key', () => {
       const core = createCoreInstance()
       expect(core.config).toEqual({
-        deepseekApiKey: '',
-        glmApiKey: '',
-        kimiApiKey: '',
+        modelCredentials: {},
         customInstructions: '',
       })
     })
@@ -165,18 +163,18 @@ describe('coreInstance —— CoreInstance 抽象与 defaultCore', () => {
     it('opts.config 浅合并覆盖默认值，且实例间不共享', () => {
       const a = createCoreInstance({
         config: {
-          deepseekApiKey: 'ka',
+          modelCredentials: { deepseek: 'ka' },
           deepseekUserId: 'wa_instance_a',
         },
       })
-      const b = createCoreInstance({ config: { glmApiKey: 'kb' } })
+      const b = createCoreInstance({ config: { modelCredentials: { glm: 'kb' } } })
 
-      expect(a.config.deepseekApiKey).toBe('ka')
+      expect(a.config.modelCredentials.deepseek).toBe('ka')
       expect(a.config.deepseekUserId).toBe('wa_instance_a')
-      expect(a.config.glmApiKey).toBe('')
-      expect(b.config.deepseekApiKey).toBe('')
+      expect(a.config.modelCredentials.glm).toBeUndefined()
+      expect(b.config.modelCredentials.deepseek).toBeUndefined()
       expect(b.config.deepseekUserId).toBeUndefined()
-      expect(b.config.glmApiKey).toBe('kb')
+      expect(b.config.modelCredentials.glm).toBe('kb')
     })
   })
 

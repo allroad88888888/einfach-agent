@@ -5,10 +5,16 @@ import type { UnconnectedToolProviderProbe } from '../../tools/schemaResult'
 
 /** Runtime dependencies supplied by the host application. */
 export interface RuntimeConfig {
-  deepseekApiKey: string
+  /**
+   * vendor id（对 core 是不透明字符串，取值由装配层与 agent-ai 的 provider registry 商定）
+   * → 该厂商的 API Key。core 只按会话的 `settings.vendor` 查表，不认识任何具体厂商名；
+   * 新增一家 provider 不需要改这里。
+   *
+   * 注意语义：`configureCommands` 走 `Object.assign`，传入的 map 会整体替换旧 map，
+   * 不做逐 vendor 合并——装配层每次都传完整的凭据表。
+   */
+  modelCredentials: Record<string, string>
   deepseekUserId?: string
-  glmApiKey: string
-  kimiApiKey: string
   customInstructions: string
   fetchImpl?: typeof fetch
   prepareUserInput?: UserInputPreparer
@@ -35,9 +41,7 @@ export interface RuntimeConfig {
 
 export function createRuntimeConfig(overrides?: Partial<RuntimeConfig>): RuntimeConfig {
   return {
-    deepseekApiKey: '',
-    glmApiKey: '',
-    kimiApiKey: '',
+    modelCredentials: {},
     customInstructions: '',
     ...overrides,
   }

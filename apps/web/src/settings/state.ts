@@ -9,12 +9,7 @@ import { resetModelCredentialState } from './modelCredentialState'
 import { resetSettingsCenterState } from './settingsCenterState'
 
 export {
-  deepSeekApiKeyDirtyAtom,
-  deepSeekApiKeyDraftAtom,
-  deepSeekApiKeyStatusAtom,
-  kimiApiKeyDirtyAtom,
-  kimiApiKeyDraftAtom,
-  kimiApiKeyStatusAtom,
+  modelCredentialAtoms,
   modelCredentialHostAvailableAtom,
   modelCredentialEntriesAtom,
   type ModelCredentialEntry,

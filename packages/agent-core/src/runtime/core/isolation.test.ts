@@ -152,9 +152,7 @@ afterEach(() => {
   // 隔离实例（A/B）随用例 GC；只复原本文件配置过的共享 defaultCore。
   defaultCore.abort.reset()
   Object.assign(defaultCore.config, {
-    deepseekApiKey: '',
-    glmApiKey: '',
-    kimiApiKey: '',
+    modelCredentials: {},
     customInstructions: '',
     fetchImpl: undefined,
   })
@@ -167,8 +165,8 @@ describe('双实例隔离证明（createCore × 真主循环 × 假 fetch）', (
     const a = replyFetch('A-reply')
     const b = replyFetch('B-reply')
     // config 预置各自的 apiKey + fetchImpl —— 命令读【自己】的 core.config，与 defaultCore 无关。
-    const A = createCore({ config: { deepseekApiKey: 'KA', fetchImpl: a.fetchImpl } })
-    const B = createCore({ config: { deepseekApiKey: 'KB', fetchImpl: b.fetchImpl } })
+    const A = createCore({ config: { modelCredentials: { deepseek: 'KA' }, fetchImpl: a.fetchImpl } })
+    const B = createCore({ config: { modelCredentials: { deepseek: 'KB' }, fetchImpl: b.fetchImpl } })
 
     // 故意同 id "s"，且给不同 title —— 共享 rootStore 会让后写覆盖先写，立刻暴露。
     seedSession(A, 's', 'A-session')
@@ -238,8 +236,8 @@ describe('双实例隔离证明（createCore × 真主循环 × 假 fetch）', (
 
   it('abort 隔离：A 起 run 只动 A 自己的 abort，B 与 defaultCore 的 abort 全程不被触碰', async () => {
     const a = replyFetch('A-reply')
-    const A = createCore({ config: { deepseekApiKey: 'KA', fetchImpl: a.fetchImpl } })
-    const B = createCore({ config: { deepseekApiKey: 'KB' } })
+    const A = createCore({ config: { modelCredentials: { deepseek: 'KA' }, fetchImpl: a.fetchImpl } })
+    const B = createCore({ config: { modelCredentials: { deepseek: 'KB' } } })
 
     // spy 三套 abort：只有 A 自己的该被调。
     const beginA: string[] = []
@@ -310,8 +308,8 @@ describe('双实例隔离证明（createCore × 真主循环 × 假 fetch）', (
     //   ★ 标题刻意说「atom 变更」而非「事件流 API」：subscribeAgentEvents 尚未 core-aware，本测证的是前者。
     const a = replyFetch('A-reply')
     const b = replyFetch('B-reply')
-    const A = createCore({ config: { deepseekApiKey: 'KA', fetchImpl: a.fetchImpl } })
-    const B = createCore({ config: { deepseekApiKey: 'KB', fetchImpl: b.fetchImpl } })
+    const A = createCore({ config: { modelCredentials: { deepseek: 'KA' }, fetchImpl: a.fetchImpl } })
+    const B = createCore({ config: { modelCredentials: { deepseek: 'KB' }, fetchImpl: b.fetchImpl } })
 
     seedSession(A, 's', 'A-session')
     seedSession(B, 's', 'B-session')
@@ -353,7 +351,7 @@ describe('双实例隔离证明（createCore × 真主循环 × 假 fetch）', (
     const defaultPersistence = persistenceSpies()
     const aPersistence = persistenceSpies()
     configurePersistence({ history: defaultPersistence.history })
-    const A = createCore({ config: { deepseekApiKey: 'KA', fetchImpl: replyFetch('A-reply').fetchImpl } })
+    const A = createCore({ config: { modelCredentials: { deepseek: 'KA' }, fetchImpl: replyFetch('A-reply').fetchImpl } })
     A.persistence.configure({ history: aPersistence.history })
     seedSession(A, 's', 'A-session')
 
@@ -372,8 +370,8 @@ describe('双实例隔离证明（createCore × 真主循环 × 假 fetch）', (
     const aPersistence = persistenceSpies()
     const bPersistence = persistenceSpies()
     configurePersistence({ sessions: defaultPersistence.sessions })
-    const A = createCore({ config: { deepseekApiKey: 'KA', fetchImpl: replyFetch('A-reply').fetchImpl } })
-    const B = createCore({ config: { deepseekApiKey: 'KB', fetchImpl: replyFetch('B-reply').fetchImpl } })
+    const A = createCore({ config: { modelCredentials: { deepseek: 'KA' }, fetchImpl: replyFetch('A-reply').fetchImpl } })
+    const B = createCore({ config: { modelCredentials: { deepseek: 'KB' }, fetchImpl: replyFetch('B-reply').fetchImpl } })
     A.persistence.configure({ sessions: aPersistence.sessions })
     B.persistence.configure({ sessions: bPersistence.sessions })
     seedSession(A, 's', 'A-session')
@@ -404,7 +402,7 @@ describe('双实例隔离证明（createCore × 真主循环 × 假 fetch）', (
       },
     })) as unknown as PlanRuntimeFactory
     const A = createCore({
-      config: { deepseekApiKey: 'KA', fetchImpl: replyFetch('A-reply').fetchImpl },
+      config: { modelCredentials: { deepseek: 'KA' }, fetchImpl: replyFetch('A-reply').fetchImpl },
       planRuntime,
     })
     seedSession(A, 's', 'A-session')

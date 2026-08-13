@@ -263,7 +263,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
   })
 
   it('sendMessage：起 run（beginRun→runSession，apiKey 按 vendor 取）', async () => {
-    configureCommands({ deepseekApiKey: 'k' })
+    configureCommands({ modelCredentials: { deepseek: 'k' } })
     const id = newSession() // deepseek 默认
 
     sendMessage('hi')
@@ -279,8 +279,8 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(endRun).toHaveBeenCalledWith(id, expect.anything())
   })
 
-  it('sendMessage：vendor=glm → 取 glmApiKey', () => {
-    configureCommands({ deepseekApiKey: 'dk', glmApiKey: 'gk' })
+  it('sendMessage：vendor=glm → 取 modelCredentials.glm', () => {
+    configureCommands({ modelCredentials: { deepseek: 'dk', glm: 'gk' } })
     newSession({ settings: { vendor: 'glm', model: 'glm-x' } })
 
     sendMessage('hi')
@@ -300,7 +300,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
   })
 
   it('sendMessage：running/awaiting_tool 时绑定当前 run 进入 FIFO 队列，不另起 run', () => {
-    configureCommands({ deepseekApiKey: 'k' })
+    configureCommands({ modelCredentials: { deepseek: 'k' } })
     const id = newSession()
     const store = getSessionStore(id).store
     store.setter(runAtom, { runId: 'r', status: 'running' })
@@ -334,7 +334,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
   })
 
   it('continueInterruptedRun：沿用恢复出的 run 继续普通任务，不追加用户消息', async () => {
-    configureCommands({ deepseekApiKey: 'k' })
+    configureCommands({ modelCredentials: { deepseek: 'k' } })
     const id = newSession()
     const store = getSessionStore(id).store
     store.setter(itemsAtom, [
@@ -378,7 +378,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
   })
 
   it('continuePlan：对没有运行中 run 的持久化计划直接续跑，不追加新的用户消息', async () => {
-    configureCommands({ deepseekApiKey: 'k' })
+    configureCommands({ modelCredentials: { deepseek: 'k' } })
     const id = newSession()
     setPlan(id, {
       id: 'plan-resume', title: '恢复计划', objective: '完成剩余工作', status: 'active', revision: 2,
@@ -864,7 +864,7 @@ describe('resumeWithAnswers（T-7 ask_user 暂停恢复）', () => {
   // 种一个 waiting_user 会话：user + assistant(ask_user tc1)、run waiting_user + pendingQuestion、
   // pendingQuestionAnswers 有答案。返回 id（newSession 已设为 active）。
   function seedWaiting(tcId = 'tc1'): string {
-    configureCommands({ deepseekApiKey: 'k' })
+    configureCommands({ modelCredentials: { deepseek: 'k' } })
     const id = newSession() // deepseek 默认 + 设为 active
     const store = getSessionStore(id).store
     store.setter(itemsAtom, [
@@ -983,7 +983,7 @@ describe('resumeWithAnswers（T-7 ask_user 暂停恢复）', () => {
 
 describe('approvePlan（计划审批暂停恢复）', () => {
   it('批准后回填结果、清 pendingPlanApproval，并沿用原 run 续跑', async () => {
-    configureCommands({ deepseekApiKey: 'k' })
+    configureCommands({ modelCredentials: { deepseek: 'k' } })
     const id = newSession()
     const store = getSessionStore(id).store
     setPlan(id, {
@@ -1127,7 +1127,7 @@ describe('confirmTool（S4-B 危险工具确认恢复）', () => {
   // 种一个 waiting_confirmation 会话：user + assistant(write_file tc)、run waiting_confirmation +
   //   pendingToolConfirmation。返回 id（newSession 已设为 active）。
   function seedConfirming(tcId = 'w1'): string {
-    configureCommands({ deepseekApiKey: 'k' })
+    configureCommands({ modelCredentials: { deepseek: 'k' } })
     const id = newSession()
     const store = getSessionStore(id).store
     store.setter(itemsAtom, [
@@ -1371,7 +1371,7 @@ describe('renameSession（TT3 会话改名命令）', () => {
 
 describe('sendMessage 自动标题（TT1）', () => {
   it('标题仍为默认值 → 用本条输入派生标题（run 照常启动）', () => {
-    configureCommands({ deepseekApiKey: 'k' })
+    configureCommands({ modelCredentials: { deepseek: 'k' } })
     const id = newSession()
     expect(rootStore.getter(sessionsAtom)[id].title).toBe(DEFAULT_SESSION_TITLE)
 
@@ -1382,7 +1382,7 @@ describe('sendMessage 自动标题（TT1）', () => {
   })
 
   it('用户已改名（≠默认）→ 绝不覆盖', () => {
-    configureCommands({ deepseekApiKey: 'k' })
+    configureCommands({ modelCredentials: { deepseek: 'k' } })
     const id = newSession({ title: '我的会话' })
 
     sendMessage('hello world')
@@ -1391,7 +1391,7 @@ describe('sendMessage 自动标题（TT1）', () => {
   })
 
   it('第二条消息不再改（首条已把标题改成非默认）', () => {
-    configureCommands({ deepseekApiKey: 'k' })
+    configureCommands({ modelCredentials: { deepseek: 'k' } })
     const id = newSession()
 
     sendMessage('第一条消息')
@@ -1404,20 +1404,20 @@ describe('sendMessage 自动标题（TT1）', () => {
 
 describe('config 通电 + core 穿线（第 2/3 期实例化）', () => {
   it('configureCommands 就地写进 defaultCore.config（config 通电 = CoreInstance 第五个视图）', () => {
-    configureCommands({ deepseekApiKey: 'dk-power', glmApiKey: 'gk-power' })
-    expect(defaultCore.config.deepseekApiKey).toBe('dk-power')
-    expect(defaultCore.config.glmApiKey).toBe('gk-power')
+    configureCommands({ modelCredentials: { deepseek: 'dk-power', glm: 'gk-power' } })
+    expect(defaultCore.config.modelCredentials.deepseek).toBe('dk-power')
+    expect(defaultCore.config.modelCredentials.glm).toBe('gk-power')
   })
 
   it('configureCommands 就地改字段、不替换 config 引用（别处持有同一引用不漂移）', () => {
     const ref = defaultCore.config
-    configureCommands({ deepseekApiKey: 'in-place' })
+    configureCommands({ modelCredentials: { deepseek: 'in-place' } })
     expect(defaultCore.config).toBe(ref) // 同一引用（Object.assign 而非替换）
-    expect(ref.deepseekApiKey).toBe('in-place') // 字段已被就地改写
+    expect(ref.modelCredentials.deepseek).toBe('in-place') // 字段已被就地改写
   })
 
   it('默认命令把 defaultCore 作为 core 传进 runSession（穿线口径：core 放 opts 内、不改参数位）', () => {
-    configureCommands({ deepseekApiKey: 'k' })
+    configureCommands({ modelCredentials: { deepseek: 'k' } })
     newSession()
     sendMessage('hi')
     // 既有断言（call[2].apiKey）不受影响，core 只是 opts 里新增的一个字段。
@@ -1426,10 +1426,10 @@ describe('config 通电 + core 穿线（第 2/3 期实例化）', () => {
 
   it('createCoreInstance({config}) 的 config/store 与 defaultCore 隔离（第 3 期雏形）', () => {
     // 独立 config：configureCommands 只改 defaultCore.config，不碰隔离实例。
-    const iso = createCoreInstance({ config: { deepseekApiKey: 'iso-key' } })
-    configureCommands({ deepseekApiKey: 'default-key' })
-    expect(iso.config.deepseekApiKey).toBe('iso-key')
-    expect(defaultCore.config.deepseekApiKey).toBe('default-key')
+    const iso = createCoreInstance({ config: { modelCredentials: { deepseek: 'iso-key' } } })
+    configureCommands({ modelCredentials: { deepseek: 'default-key' } })
+    expect(iso.config.modelCredentials.deepseek).toBe('iso-key')
+    expect(defaultCore.config.modelCredentials.deepseek).toBe('default-key')
 
     // 独立 store：在 iso 登记会话、以 iso 作 core 写 items —— 只落 iso 的 store，defaultCore 无此内容。
     const id = 'iso-sess'
@@ -1468,7 +1468,7 @@ describe('createCommands 工厂（第 3 期 · 可绑定任意 core）', () => {
   })
 
   it('createCommands(iso).sendMessage 以 iso 作 core、取 iso.config.apiKey、只调 iso.abort（不碰 defaultCore.abort）', () => {
-    const iso = createCoreInstance({ config: { deepseekApiKey: 'iso-key' } })
+    const iso = createCoreInstance({ config: { modelCredentials: { deepseek: 'iso-key' } } })
     const beginIso = vi.spyOn(iso.abort, 'beginRun').mockImplementation(() => new AbortController().signal)
     const cmds = createCommands(iso)
 

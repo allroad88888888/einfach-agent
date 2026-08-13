@@ -52,9 +52,7 @@ export function assembleCliRuntime(options: AssembleCliRuntimeOptions): void {
   configurePersistence({ history: createMemoryHistoryDriver() })
   configureTraceOutput(options.verbose)
   configureCommands({
-    deepseekApiKey: options.credentials.deepseekApiKey,
-    glmApiKey: options.credentials.glmApiKey,
-    kimiApiKey: options.credentials.kimiApiKey,
+    modelCredentials: options.credentials.modelCredentials,
     fetchImpl: globalThis.fetch,
   })
 }

@@ -75,7 +75,7 @@ async function pauseAtConfirmation(
     if (turn === 2) return toolCallsResponse([{ id: CALL_ID, name: TOOL, args: { path: 'a.txt' } }])
     return textResponse('已处理')
   }
-  const core = createCore({ config: { deepseekApiKey: 'k', fetchImpl }, ...(plugins ? { plugins } : {}) })
+  const core = createCore({ config: { modelCredentials: { deepseek: 'k' }, fetchImpl }, ...(plugins ? { plugins } : {}) })
   core.tools.register(dangerousTool(execute))
   const id = core.newSession({ settings: { vendor: 'deepseek', model: 'x' } })
   core.sendMessage('写个文件')

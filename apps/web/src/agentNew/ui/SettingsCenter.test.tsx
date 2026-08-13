@@ -74,7 +74,10 @@ describe('SettingsCenter', () => {
   beforeEach(() => {
     resetMcpSettingsState(rootStore)
     resetAppSettingsState(rootStore)
-    configureCommands({ customInstructions: '', deepseekApiKey: 'desktop-managed-credential' })
+    configureCommands({
+      customInstructions: '',
+      modelCredentials: { deepseek: 'desktop-managed-credential' },
+    })
     configureAppSettingsStorage(createMemoryAppSettingsStorage())
     configureMcpSettings({ manager: new UiMcpManager(), storage: createMemoryMcpConfigStorage() })
   })
@@ -130,7 +133,7 @@ describe('SettingsCenter', () => {
 
     expect(JSON.stringify(storage.load())).not.toContain('deepseek-test-key')
     expect(JSON.stringify(storage.load())).not.toContain('kimi-test-key')
-    expect(defaultCore.config.deepseekApiKey).toBe('desktop-managed-credential')
+    expect(defaultCore.config.modelCredentials.deepseek).toBe('desktop-managed-credential')
   })
 
   it('keeps the Kimi image entry closed when the feature gate is off', async () => {

@@ -90,25 +90,27 @@ function credentialDraftAtom(id: ModelCredentialId, debugLabel: string) {
   return result
 }
 
-export const deepSeekApiKeyDraftAtom = credentialDraftAtom(
-  'deepseek-default',
-  'deepSeekApiKeyDraft',
-)
-export const deepSeekApiKeyStatusAtom = atom(
-  (get) => get(modelCredentialEntriesAtom)['deepseek-default'].state,
-)
-deepSeekApiKeyStatusAtom.debugLabel = 'deepSeekApiKeyStatus'
-export const deepSeekApiKeyDirtyAtom = atom(
-  (get) => get(modelCredentialEntriesAtom)['deepseek-default'].draft.trim().length > 0,
-)
-deepSeekApiKeyDirtyAtom.debugLabel = 'deepSeekApiKeyDirty'
+function createCredentialAtoms(id: ModelCredentialId) {
+  const draft = credentialDraftAtom(id, `${id}Draft`)
+  const status = atom((get) => get(modelCredentialEntriesAtom)[id].state)
+  status.debugLabel = `${id}Status`
+  const dirty = atom(
+    (get) => get(modelCredentialEntriesAtom)[id].draft.trim().length > 0,
+  )
+  dirty.debugLabel = `${id}Dirty`
+  return { draft, status, dirty }
+}
 
-export const kimiApiKeyDraftAtom = credentialDraftAtom('kimi-cn', 'kimiApiKeyDraft')
-export const kimiApiKeyStatusAtom = atom(
-  (get) => get(modelCredentialEntriesAtom)['kimi-cn'].state,
-)
-kimiApiKeyStatusAtom.debugLabel = 'kimiApiKeyStatus'
-export const kimiApiKeyDirtyAtom = atom(
-  (get) => get(modelCredentialEntriesAtom)['kimi-cn'].draft.trim().length > 0,
-)
-kimiApiKeyDirtyAtom.debugLabel = 'kimiApiKeyDirty'
+const credentialAtomsById = new Map<ModelCredentialId, ReturnType<typeof createCredentialAtoms>>()
+
+/**
+ * 取某条凭据的 draft / status / dirty atom；同一 id 恒返回同一组实例（订阅身份稳定）。
+ * 凭据按 id 取用，界面与状态层都不需要按厂商各写一份 atom。
+ */
+export function modelCredentialAtoms(id: ModelCredentialId) {
+  const existing = credentialAtomsById.get(id)
+  if (existing) return existing
+  const created = createCredentialAtoms(id)
+  credentialAtomsById.set(id, created)
+  return created
+}

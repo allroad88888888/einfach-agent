@@ -69,7 +69,7 @@ function input(text: string): UserInputSubmission {
 
 function setup(prepareUserInput: UserInputPreparer) {
   const core = createCore({
-    config: { kimiApiKey: 'kimi-key', prepareUserInput },
+    config: { modelCredentials: { kimi: 'kimi-key' }, prepareUserInput },
   })
   const id = core.newSession({
     title: 'existing',

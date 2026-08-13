@@ -214,7 +214,7 @@ describe('tool-call plugin production integration', () => {
       }),
     }
     const core = createCore({
-      config: { deepseekApiKey: 'k' },
+      config: { modelCredentials: { deepseek: 'k' } },
       plugins: [confirmationPlugin],
       registerTools: (registry) => registry.register(testTool(name, execute)),
     })

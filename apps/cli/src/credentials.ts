@@ -2,13 +2,25 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-export interface ModelCredentials {
-  deepseekApiKey: string
-  glmApiKey: string
-  kimiApiKey: string
+/** CLI 装配层显式登记的凭据来源：vendor id ← 环境变量 / 配置文件键。 */
+interface CredentialSource {
+  vendor: string
+  environmentVariable: string
+  configKey: string
 }
 
-export interface ResolvedCredentials extends ModelCredentials {
+const CREDENTIAL_SOURCES: readonly CredentialSource[] = [
+  { vendor: 'deepseek', environmentVariable: 'DEEPSEEK_API_KEY', configKey: 'deepseek:default' },
+  { vendor: 'glm', environmentVariable: 'GLM_API_KEY', configKey: 'glm:default' },
+  { vendor: 'kimi', environmentVariable: 'KIMI_API_KEY', configKey: 'kimi:cn' },
+]
+
+/** CLI 默认模型的 vendor id：没有它就没法起 run。 */
+const DEFAULT_VENDOR = 'deepseek'
+
+export interface ResolvedCredentials {
+  /** vendor id → API Key，直接喂给运行时的 `modelCredentials`；未配置的 vendor 不出现。 */
+  modelCredentials: Record<string, string>
   configPath: string
 }
 
@@ -25,13 +37,18 @@ interface CredentialConfig {
   modelCredentials?: Record<string, unknown>
 }
 
-function valueFromEnv(value: string | undefined): string {
-  return value?.trim() ?? ''
-}
-
 function valueFromConfig(config: CredentialConfig, key: string): string {
   const value = config.modelCredentials?.[key]
   return typeof value === 'string' ? value.trim() : ''
+}
+
+function credentialsFromEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
+  const credentials: Record<string, string> = {}
+  for (const { vendor, environmentVariable } of CREDENTIAL_SOURCES) {
+    const value = env[environmentVariable]?.trim() ?? ''
+    if (value) credentials[vendor] = value
+  }
+  return credentials
 }
 
 function configFilePath(options: ResolveCredentialOptions): string {
@@ -60,32 +77,24 @@ export async function resolveModelCredentials(
 ): Promise<ResolvedCredentials> {
   const env = options.env ?? process.env
   const configPath = configFilePath(options)
-  const fromEnvironment: ModelCredentials = {
-    deepseekApiKey: valueFromEnv(env.DEEPSEEK_API_KEY),
-    glmApiKey: valueFromEnv(env.GLM_API_KEY),
-    kimiApiKey: valueFromEnv(env.KIMI_API_KEY),
-  }
+  const fromEnvironment = credentialsFromEnvironment(env)
 
   // DeepSeek is the default model. Its environment variable is a complete no-file path,
   // so a malformed optional config cannot break a correctly configured CLI invocation.
-  if (fromEnvironment.deepseekApiKey) return { ...fromEnvironment, configPath }
+  if (fromEnvironment[DEFAULT_VENDOR]) return { modelCredentials: fromEnvironment, configPath }
 
   const config = await readConfig(configPath, options.readConfigFile ?? readFile)
-  return {
-    deepseekApiKey: valueFromEnvironmentOrConfig(fromEnvironment.deepseekApiKey, config, 'deepseek:default'),
-    glmApiKey: valueFromEnvironmentOrConfig(fromEnvironment.glmApiKey, config, 'glm:default'),
-    kimiApiKey: valueFromEnvironmentOrConfig(fromEnvironment.kimiApiKey, config, 'kimi:cn'),
-    configPath,
+  const modelCredentials: Record<string, string> = {}
+  for (const { vendor, configKey } of CREDENTIAL_SOURCES) {
+    const value = fromEnvironment[vendor] || valueFromConfig(config, configKey)
+    if (value) modelCredentials[vendor] = value
   }
-}
-
-function valueFromEnvironmentOrConfig(environmentValue: string, config: CredentialConfig, key: string): string {
-  return environmentValue || valueFromConfig(config, key)
+  return { modelCredentials, configPath }
 }
 
 /** Throws a user-facing error without including the credential value. */
 export function requireDeepSeekCredential(credentials: ResolvedCredentials): void {
-  if (credentials.deepseekApiKey) return
+  if (credentials.modelCredentials[DEFAULT_VENDOR]) return
   throw new Error(
     `未找到 DeepSeek API Key。请设置环境变量 DEEPSEEK_API_KEY，或在配置文件 ${credentials.configPath} 中配置 modelCredentials["deepseek:default"]。`,
   )

@@ -23,13 +23,13 @@ import { createMemoryAppSettingsStorage } from './persistence'
 import {
   appSettingsAtom,
   customInstructionsStatusAtom,
-  deepSeekApiKeyDraftAtom,
-  deepSeekApiKeyStatusAtom,
-  kimiApiKeyDraftAtom,
-  kimiApiKeyStatusAtom,
+  modelCredentialAtoms,
   modelCredentialEntriesAtom,
   resetAppSettingsState,
 } from './state'
+
+const deepSeekCredential = modelCredentialAtoms('deepseek-default')
+const kimiCredential = modelCredentialAtoms('kimi-cn')
 
 function targetKey(target: ModelCredentialTarget): string {
   return `${target.provider}:${target.scope}`
@@ -67,7 +67,10 @@ const KIMI_CN_TARGET = { provider: 'kimi', scope: 'cn' } as const
 describe('app settings commands', () => {
   beforeEach(() => {
     resetAppSettingsState(rootStore)
-    configureCommands({ customInstructions: '', deepseekApiKey: 'desktop-managed-credential' })
+    configureCommands({
+      customInstructions: '',
+      modelCredentials: { deepseek: 'desktop-managed-credential' },
+    })
     configureAppSettingsStorage(createMemoryAppSettingsStorage())
   })
 
@@ -79,7 +82,7 @@ describe('app settings commands', () => {
   it('hydrates non-secret settings without overwriting the managed runtime marker', async () => {
     await hydrateAppSettings()
 
-    expect(defaultCore.config.deepseekApiKey).toBe('desktop-managed-credential')
+    expect(defaultCore.config.modelCredentials.deepseek).toBe('desktop-managed-credential')
     expect(defaultCore.config.deepseekUserId).toMatch(/^wa_[a-f0-9]{48}$/)
   })
 
@@ -108,12 +111,12 @@ describe('app settings commands', () => {
     await expect(saveKimiApiKey()).resolves.toBe(true)
     expect(fake.saved(DEEPSEEK_TARGET)).toBe('deepseek-test-key')
     expect(fake.saved(KIMI_CN_TARGET)).toBe('kimi-test-key')
-    expect(rootStore.getter(deepSeekApiKeyDraftAtom)).toBe('')
-    expect(rootStore.getter(kimiApiKeyDraftAtom)).toBe('')
-    expect(rootStore.getter(deepSeekApiKeyStatusAtom)).toMatchObject({
+    expect(rootStore.getter(deepSeekCredential.draft)).toBe('')
+    expect(rootStore.getter(kimiCredential.draft)).toBe('')
+    expect(rootStore.getter(deepSeekCredential.status)).toMatchObject({
       status: 'saved', configured: true, source: 'config',
     })
-    expect(rootStore.getter(kimiApiKeyStatusAtom)).toMatchObject({
+    expect(rootStore.getter(kimiCredential.status)).toMatchObject({
       status: 'saved', configured: true, source: 'config',
     })
     expect(JSON.stringify(rootStore.getter(appSettingsAtom))).not.toContain('test-key')
@@ -122,8 +125,8 @@ describe('app settings commands', () => {
     await expect(deleteKimiApiKey()).resolves.toBe(true)
     expect(fake.saved(DEEPSEEK_TARGET)).toBe('')
     expect(fake.saved(KIMI_CN_TARGET)).toBe('')
-    expect(rootStore.getter(deepSeekApiKeyStatusAtom)).toMatchObject({ configured: false })
-    expect(rootStore.getter(kimiApiKeyStatusAtom)).toMatchObject({ configured: false })
+    expect(rootStore.getter(deepSeekCredential.status)).toMatchObject({ configured: false })
+    expect(rootStore.getter(kimiCredential.status)).toMatchObject({ configured: false })
   })
 
   it('preserves the draft when the saved credential cannot be verified', async () => {
@@ -137,8 +140,8 @@ describe('app settings commands', () => {
 
     await expect(saveDeepSeekApiKey()).resolves.toBe(false)
 
-    expect(rootStore.getter(deepSeekApiKeyDraftAtom)).toBe('deepseek-unverified-key')
-    expect(rootStore.getter(deepSeekApiKeyStatusAtom)).toMatchObject({
+    expect(rootStore.getter(deepSeekCredential.draft)).toBe('deepseek-unverified-key')
+    expect(rootStore.getter(deepSeekCredential.status)).toMatchObject({
       status: 'error',
       configured: false,
       source: 'missing',
@@ -161,9 +164,9 @@ describe('app settings commands', () => {
 
     await expect(saveDeepSeekApiKey()).resolves.toBe(false)
 
-    const status = rootStore.getter(deepSeekApiKeyStatusAtom)
+    const status = rootStore.getter(deepSeekCredential.status)
     expect(statusCalls).toBe(0)
-    expect(rootStore.getter(deepSeekApiKeyDraftAtom)).toBe('deepseek-save-secret')
+    expect(rootStore.getter(deepSeekCredential.draft)).toBe('deepseek-save-secret')
     expect(status).toMatchObject({
       status: 'error',
       configured: false,
@@ -188,9 +191,9 @@ describe('app settings commands', () => {
 
     await expect(saveDeepSeekApiKey()).resolves.toBe(false)
 
-    const status = rootStore.getter(deepSeekApiKeyStatusAtom)
+    const status = rootStore.getter(deepSeekCredential.status)
     expect(statusCalls).toBe(1)
-    expect(rootStore.getter(deepSeekApiKeyDraftAtom)).toBe('deepseek-verification-secret')
+    expect(rootStore.getter(deepSeekCredential.draft)).toBe('deepseek-verification-secret')
     expect(status).toMatchObject({
       status: 'error',
       configured: false,

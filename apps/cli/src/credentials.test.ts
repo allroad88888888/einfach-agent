@@ -11,7 +11,7 @@ describe('resolveModelCredentials', () => {
       },
     })
 
-    expect(credentials.deepseekApiKey).toBe('environment-key')
+    expect(credentials.modelCredentials.deepseek).toBe('environment-key')
   })
 
   it('环境变量缺失时从配置文件读取默认 DeepSeek 凭证', async () => {
@@ -23,12 +23,14 @@ describe('resolveModelCredentials', () => {
       }),
     })
 
-    expect(credentials).toMatchObject({ deepseekApiKey: 'config-key', glmApiKey: 'glm-key' })
+    expect(credentials).toMatchObject({
+      modelCredentials: { deepseek: 'config-key', glm: 'glm-key' },
+    })
   })
 
   it('缺少默认凭证时给出环境变量与配置文件两条路径', () => {
     expect(() => requireDeepSeekCredential({
-      configPath: '/tmp/config.json', deepseekApiKey: '', glmApiKey: '', kimiApiKey: '',
+      configPath: '/tmp/config.json', modelCredentials: {},
     })).toThrow(/DEEPSEEK_API_KEY.*modelCredentials/)
   })
 })

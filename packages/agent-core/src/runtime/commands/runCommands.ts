@@ -20,12 +20,14 @@ import { toolProviderDisconnectedResult } from '../toolLoading'
 import { checkPendingToolRegistration } from './pendingToolRegistration'
 import type { CoreInstance } from '../core/coreInstance'
 
+/**
+ * 按会话的 vendor 查凭据表。vendor 对 core 是不透明字符串：查不到（含没有会话元信息）
+ * 一律回空串，由 adapter 侧报「缺少 Key」，core 不替任何一家厂商兜底。
+ */
 export function resolveApiKey(meta: SessionMeta | undefined, core: CoreInstance): string {
-  switch (meta?.settings.vendor) {
-    case 'glm': return core.config.glmApiKey
-    case 'kimi': return core.config.kimiApiKey
-    default: return core.config.deepseekApiKey
-  }
+  const vendor = meta?.settings.vendor
+  if (!vendor) return ''
+  return core.config.modelCredentials[vendor] ?? ''
 }
 
 export function withRun(

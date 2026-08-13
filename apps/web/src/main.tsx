@@ -35,6 +35,7 @@ import {
 import {
   createTauriModelCredentialHost,
   createUnavailableModelCredentialHost,
+  MODEL_CREDENTIALS,
 } from './settings/modelCredentialHost'
 import {
   resolveStartupCredentialTarget,
@@ -74,10 +75,13 @@ const providerFetch = tauriHost
   : import.meta.env.DEV
     ? createDevPreviewModelFetch()
     : createUnavailableModelFetch()
+// 凭据表按 MODEL_CREDENTIALS 的 provider 生成：新增一家 provider 只改那张描述表，
+// 不必在这里再列一遍厂商名（core 侧只按 vendor id 查表）。
+const managedModelCredentials = Object.fromEntries(
+  MODEL_CREDENTIALS.map(({ target }) => [target.provider, desktopManagedCredentialMarker]),
+)
 configureCommands({
-  deepseekApiKey: desktopManagedCredentialMarker,
-  glmApiKey: desktopManagedCredentialMarker,
-  kimiApiKey: desktopManagedCredentialMarker,
+  modelCredentials: managedModelCredentials,
   prepareUserInput: prepareProviderUserInput,
   disposeUserContent: (discarded, retained, context) => disposeProviderUserContent(discarded, retained, context, {
     apiKey: desktopManagedCredentialMarker,

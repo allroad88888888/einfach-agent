@@ -58,7 +58,7 @@ describe('stopRun tool-call closure', () => {
     let requestMessages: Array<Record<string, unknown>> = []
     const core = createCore({
       config: {
-        deepseekApiKey: 'test-key',
+        modelCredentials: { deepseek: 'test-key' },
         fetchImpl: async (_url, init) => {
           requestMessages = (JSON.parse(String(init?.body)) as { messages: Array<Record<string, unknown>> }).messages
           return jsonResponse('已恢复')

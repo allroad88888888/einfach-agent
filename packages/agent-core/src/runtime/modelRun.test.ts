@@ -2938,7 +2938,7 @@ describe('危险工具确认门（S4-B）', () => {
       return jsonResponse('已处理注册变化')
     }
     const core = createCore({
-      config: { deepseekApiKey: 'k', fetchImpl },
+      config: { modelCredentials: { deepseek: 'k' }, fetchImpl },
     })
     const inputSchema = {
       type: 'object',

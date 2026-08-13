@@ -9,7 +9,7 @@ import { isKimiImageInputEnabled } from '../../modelInput/kimiImageFeature'
 import { closeSettingsCenter } from '../../settings/commands'
 import { MODEL_CREDENTIALS } from '../../settings/modelCredentialHost'
 import {
-  kimiApiKeyStatusAtom,
+  modelCredentialAtoms,
   modelCredentialHostAvailableAtom,
 } from '../../settings/state'
 import { ModelCredentialCard } from './ModelCredentialCard'
@@ -29,7 +29,7 @@ function startKimiImageSession(): void {
 /** Describes model routing and hosts provider-scoped credential controls. */
 export function ModelCredentialPanel() {
   const credentialHostAvailable = useAtomValue(modelCredentialHostAvailableAtom)
-  const kimiCredential = useAtomValue(kimiApiKeyStatusAtom)
+  const kimiCredential = useAtomValue(modelCredentialAtoms('kimi-cn').status)
   const kimiEntryVisible = isKimiImageInputEnabled() && credentialHostAvailable
   const kimiCredentialLoading = kimiCredential.status === 'idle'
     || kimiCredential.status === 'loading'

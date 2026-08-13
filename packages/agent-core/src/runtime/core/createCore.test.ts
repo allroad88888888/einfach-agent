@@ -45,9 +45,7 @@ afterEach(() => {
   // 隔离实例随用例 GC；共享 defaultCore 的非 store 配置仍在本文件复原。
   defaultCore.abort.reset()
   Object.assign(defaultCore.config, {
-    deepseekApiKey: '',
-    glmApiKey: '',
-    kimiApiKey: '',
+    modelCredentials: {},
     customInstructions: '',
     fetchImpl: undefined,
   })
@@ -82,9 +80,7 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
     expect(core.tools.has('probe')).toBe(true)
     expect(typeof core.abort.beginRun).toBe('function')
     expect(core.config).toEqual({
-      deepseekApiKey: '',
-      glmApiKey: '',
-      kimiApiKey: '',
+      modelCredentials: {},
       customInstructions: '',
     })
 
@@ -197,8 +193,8 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
   })
 
   it('sendMessage 只在自己那套上跑：读自己 config.apiKey、调自己 abort.beginRun、以自己作 core 传 runSession；另一实例 + defaultCore 的 abort 不被触碰', async () => {
-    const a = createCore({ config: { deepseekApiKey: 'KA' } })
-    const b = createCore({ config: { deepseekApiKey: 'KB' } })
+    const a = createCore({ config: { modelCredentials: { deepseek: 'KA' } } })
+    const b = createCore({ config: { modelCredentials: { deepseek: 'KB' } } })
 
     const beginA = vi.spyOn(a.abort, 'beginRun')
     const beginB = vi.spyOn(b.abort, 'beginRun')
@@ -228,17 +224,17 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
   })
 
   it('config 隔离：createCore({config}) 各自预置；configureCommands 只改 defaultCore，不碰任一隔离实例', () => {
-    const a = createCore({ config: { deepseekApiKey: 'KA', glmApiKey: 'GA' } })
-    const b = createCore({ config: { deepseekApiKey: 'KB' } })
+    const a = createCore({ config: { modelCredentials: { deepseek: 'KA', glm: 'GA' } } })
+    const b = createCore({ config: { modelCredentials: { deepseek: 'KB' } } })
 
     // configureCommands 专写全局默认实例。
-    configureCommands({ deepseekApiKey: 'K-default' })
+    configureCommands({ modelCredentials: { deepseek: 'K-default' } })
 
-    expect(a.config.deepseekApiKey).toBe('KA')
-    expect(a.config.glmApiKey).toBe('GA')
-    expect(b.config.deepseekApiKey).toBe('KB')
-    expect(b.config.glmApiKey).toBe('') // 未预置 → 保持默认空
-    expect(defaultCore.config.deepseekApiKey).toBe('K-default')
+    expect(a.config.modelCredentials.deepseek).toBe('KA')
+    expect(a.config.modelCredentials.glm).toBe('GA')
+    expect(b.config.modelCredentials.deepseek).toBe('KB')
+    expect(b.config.modelCredentials.glm).toBeUndefined() // 未预置 → 保持默认空
+    expect(defaultCore.config.modelCredentials.deepseek).toBe('K-default')
   })
 
   // 在给定实例里种一个 waiting_confirmation 会话（同一 id，供两套实例对撞验证）。
@@ -266,8 +262,8 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
   }
 
   it('命令写路径隔离：confirmTool(拒绝) 的 error tool result 只落自己会话 store，另一实例 + defaultCore 的同 id 会话为空', () => {
-    const a = createCore({ config: { deepseekApiKey: 'KA' } })
-    const b = createCore({ config: { deepseekApiKey: 'KB' } })
+    const a = createCore({ config: { modelCredentials: { deepseek: 'KA' } } })
+    const b = createCore({ config: { modelCredentials: { deepseek: 'KB' } } })
     const id = 'shared-sess'
 
     seedConfirming(a, id)
