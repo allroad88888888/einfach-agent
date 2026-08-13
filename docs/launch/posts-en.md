@@ -1,7 +1,7 @@
 # 英文渠道帖文案（Show HN / r/LocalLLaMA）
 
 > 本文件是**草稿**：两个英文渠道各一版可直接复制粘贴的正文，供维护者审阅与改写。**发布动作一律
-> 由维护者手工执行**，仓库里没有任何自动发帖流程。事实以 `README.en.md`、
+> 由维护者手工执行**，仓库里没有任何自动发帖流程。事实以 `README.md`、
 > `docs/launch/comparison.md` 以及 `docs/launch/articles/` 下的 `deepseek-v4-pitfalls.md`、
 > `dogfood-400.md` 为准；未交付的能力（Kimi 入口、npm 发布）只写进诚实段落，不写进强项。正文里的
 > 仓库文件一律用反引号标注，不放仓库内相对链接——帖子发出去以后相对路径是死的。
@@ -65,7 +65,7 @@ What it is not, so you don't find out the hard way:
 - Nothing is published to npm. Every package is `private: true` and its `exports` point at
   uncompiled `src/*.ts`, resolved by this repo's own Vite aliases and tsconfig paths — that does not
   hold outside the workspace. Using it means cloning the repo.
-- Docs and in-app copy are Chinese-first. `README.en.md` is the English entry point; the design
+- Docs and in-app copy are Chinese-first. `README.md` is the English entry point; the design
   articles behind it are not translated.
 - Three provider adapters, hand-written instead of going through an aggregation SDK, and only
   DeepSeek and GLM are enabled by default. Kimi is implemented but gated off until it has been
@@ -162,7 +162,7 @@ Caveats, since this subreddit will find them anyway:
 - **No local model support.** No Ollama, no llama.cpp, no OpenAI-compatible `base_url` fallback. If you run
   local weights, this repo is protocol notes and a runtime to read, not something to plug into.
 - Nothing is on npm: packages are `private: true` with `exports` pointing at uncompiled `src/*.ts`. Clone it.
-- Docs and UI copy are Chinese-first; `README.en.md` is the English entry point.
+- Docs and UI copy are Chinese-first; `README.md` is the English entry point.
 - Three adapters, two on by default (DeepSeek, GLM). Kimi is implemented but gated off until it is verified
   against a real key. No OpenAI, Anthropic or Gemini.
 - No lint script, no CHANGELOG, no release process, no semver promise past `0.1.0`.

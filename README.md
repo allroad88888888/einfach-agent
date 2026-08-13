@@ -1,218 +1,199 @@
 # Einfach Agent
 
-[English](README.en.md) | 中文
+English | [中文](README.zh-CN.md)
 
-**装配式 Agent Runtime 开发者框架。** 一个可插拔内核——工具契约、插件、观测、持久化、
-子 Agent 委派全部按槽位注入——驱动 Web 预览、Tauri 桌面端、headless CLI 三个宿主；
-DeepSeek / GLM 等模型是一等公民，而不是事后适配。
+**A developer framework for assembling agent runtimes.** The kernel ships mechanism, not implementations:
+tools, loop plugins, observability, persistence and sub-agent delegation are injected into named slots. One
+kernel drives three hosts — a browser preview, a Tauri desktop app, and a headless CLI. DeepSeek and GLM are
+wired in as first-class providers, not bolted on afterwards.
 
-> einfach 是德语的"简单"：内核只管该管的，其余全部换得掉。
+> *einfach* is German for "simple". The kernel keeps only what has to live in a kernel; everything else is swappable.
 
-![CLI 宿主一次真实 run](docs/launch/assets/cli-demo.gif)
+![One real run in the CLI host](docs/launch/assets/cli-demo.gif)
+
+**Heads-up for English readers:** the docs and the in-app copy are currently Chinese-first. This README is the
+English entry point; the design articles linked at the bottom have not been translated.
 
 ## Quickstart
 
-前置条件：Node.js **≥ 20.19 或 ≥ 22.12**；包管理器固定用 **pnpm**（仓库靠 `workspace:*`
-互链，`npm install` 会装出错误的依赖树）。桌面端另需 Rust stable ≥ 1.77.2，见[环境要求](#环境要求)。
+You need Node.js **≥ 20.19 or ≥ 22.12** and **pnpm** — the repo links its packages with `workspace:*`, so
+`npm install` resolves the wrong dependency tree. Desktop builds also need Rust stable ≥ 1.77.2, see
+[Requirements](#requirements).
 
 ```bash
-# 1. 拉取仓库
 git clone https://github.com/allroad88888888/einfach-agent.git && cd einfach-agent
-
-# 2. 安装并链接全部 workspace 包
 pnpm install
 
-# 3. 配置模型 Key：写入 ~/.webAgent/config.json，或在桌面设置页填写（见「配置模型」）
+# Add a model key: write ~/.webAgent/config.json, or use the desktop settings page.
 
-# 4. 起一个宿主
-pnpm dev            # 浏览器预览
-pnpm tauri dev      # Tauri 桌面端（完整能力）
+pnpm dev            # browser preview
+pnpm tauri dev      # Tauri desktop, full capabilities
 
-# 5. 或者一条命令跑一次真实 run（headless；CLI 宿主无本机文件工具，示例用内置 skills）
-pnpm cli -p "搜索并读取 planning skill，用三句话总结这个项目的计划机制"
+# Or drive one real run from the terminal. The CLI host has no local file tools,
+# so this example works off the built-in skills.
+pnpm cli -p "Read the planning skill and summarize this project's plan mechanism in three sentences"
 ```
 
-## 能力边界
+## What each host can do
 
-- **Tauri 桌面端**：完整产品形态，可使用 shell、workspace 文件、ripgrep、任务执行、补丁和 Git diff。
-- **Web 预览**：复用同一套 React UI 和 Agent Runtime；无法使用 Tauri 的 `server` 工具，
-  这些工具会从模型可见清单中自动隐藏。
-- **headless CLI**：无 UI 驱动真实 run，用于 dogfood、自动化和编码 Agent 自测；`-v` 把 trace
-  与性能诊断打到 stderr。
-- **模型接入**：当前支持 DeepSeek 与 GLM；Kimi `kimi-k2.6` 与图片输入已实现，但真实 Key 验收前保持开放门禁关闭。
-- **运行时能力**：多会话、checkpoint/revert、lazy tool schema、危险工具确认、结构化计划与评估、
-  树形子 Agent、后台执行图、上下文压缩与 provider context cache 统计、持久化和 trace viewer。
+- **Tauri desktop** — the complete product: shell, workspace files, ripgrep, task execution, patches, Git diffs.
+- **Browser preview** — same React UI, same runtime; tools backed by the Tauri `server` bridge are unavailable
+  and disappear from the model's tool list automatically.
+- **Headless CLI** — real runs without a UI, for dogfooding, automation, and letting a coding agent test itself.
+  `-v` prints traces and timing diagnostics to stderr.
+- **Models** — DeepSeek and GLM today, integrated directly rather than through an OpenAI-compatible shim. Kimi
+  (`kimi-k2.6`, image input included) is implemented but gated off until it has been verified against a real
+  key. OpenAI and Anthropic are not supported yet.
+- **Runtime** — multi-session, checkpoint/revert, lazy tool schemas, confirmation for dangerous tools, structured
+  plans, a tree of sub-agents, a background execution graph, context compaction with provider cache stats, traces.
 
-## 装配式内核
+## The assembly kernel
 
-`packages/agent-core` 只提供机制，不提供实现。`createCore()` 造出的每个实例私有持有
-store、工具 registry、abort registry、插件宿主和观测出口，能在同一进程里跑两份互不干扰：
+`packages/agent-core` provides mechanism only. Each instance from `createCore()` privately owns its store, tool
+registry, abort registry, plugin host and observability port, so two can run side by side in one process:
 
-| 槽位 | 注入什么 |
+| Slot | What you inject |
 | --- | --- |
-| `registerTools` | 工具集。不传则该实例**没有任何工具**；应用侧调 `registerStandardTools` 装齐六域 |
-| `plugins` | 循环插件。压缩、finish reason、loop guard、迁移都是插件，不是主循环里的 if |
-| `observability` | trace 出口（IndexedDB / SQLite / stderr / 静默） |
-| `projectSkillsProvider`、`skillRegistry` | 项目 Skills 扫描与内置 skill 清单 |
-| `planRuntime` | 结构化计划运行时 |
-| `delegation` | 子 Agent 委派运行时；不注入就没有子 Agent |
-| `config` | apiKey、vendor 等运行时配置 |
+| `registerTools` | The tool set. Leave it out and the instance has **no tools at all**; apps call `registerStandardTools` for the six standard domains |
+| `plugins` | Loop plugins. Compaction, finish-reason handling, the loop guard and migrations are plugins, not branches in the main loop |
+| `observability` | Trace sink: IndexedDB, SQLite, stderr, or none |
+| `projectSkillsProvider`, `skillRegistry` | Project skill discovery and the built-in skill catalog |
+| `planRuntime` | The structured planning runtime |
+| `delegation` | The sub-agent delegation runtime; without it there are no sub-agents |
+| `config` | Runtime configuration such as API key and vendor |
 
-会话/历史持久化不走构造参数，由宿主通过 persistence bridge 配置 driver。
-
-依赖方向单向，且**不靠自觉**：
+Session and history persistence is not a constructor argument — the host configures a driver through the
+persistence bridge. The dependency direction is one-way, and it is not left to good intentions:
 
 ```text
-packages/agent-ai ← packages/agent-core ← {tools-*、能力包} ← app
+packages/agent-ai ← packages/agent-core ← {tools-*, capability packages} ← app
 ```
 
-`node scripts/check-boundaries.js` 在 CI 里排在测试之前，静态扫描 import 语句，一旦 core 引入
-React、任何 `@web-agent/tools-*` 或持久化/观测/子 Agent 能力包就直接失败。
+`node scripts/check-boundaries.js` runs before the tests in CI: it scans import statements and fails outright if
+the core ever pulls in React, a `@web-agent/tools-*` package, or any capability package.
 
-## 一个内核，三个宿主
+## One kernel, three hosts
 
-同一个内核，三处装配入口各自选实现：
+Three assembly entry points, each choosing its own implementations:
 
-- **Web 预览** —— `apps/web/src/main.tsx`：标准工具 + IndexedDB 持久化/trace + React UI + MCP 应用层。
-- **Tauri 桌面端** —— 复用同一份 Web 装配，由 `apps/desktop/` 的 Rust 桥换上 SQLite 持久化、
-  真实 shell/文件/Git 和原生模型代理。
-- **headless CLI** —— `apps/cli/src/runtime.ts`：同一套标准工具，内存 history driver、
-  stderr trace，无 React。
+- **Browser preview** — `apps/web/src/main.tsx`: standard tools, IndexedDB persistence and traces, the React UI,
+  and the MCP application layer.
+- **Tauri desktop** — reuses that same web assembly; the Rust bridge in `apps/desktop/` swaps in SQLite
+  persistence, real shell/file/Git access, and a native model proxy.
+- **Headless CLI** — `apps/cli/src/runtime.ts`: same standard tools, in-memory history driver, stderr traces, no React.
 
-![桌面端计划审批](docs/launch/assets/plan-approval.png)
+![Plan approval on the desktop host](docs/launch/assets/plan-approval.png)
 
-## 环境要求
+## Requirements
 
-- Node.js ≥ 20.19，或 ≥ 22.12
-- pnpm（仓库使用 `workspace:*`，不要使用 npm 安装依赖）
-- 构建 Tauri 时还需要 Rust stable ≥ 1.77.2 和对应平台的系统依赖
+- Node.js ≥ 20.19, or ≥ 22.12
+- pnpm (the repo uses `workspace:*`; do not install with npm)
+- For Tauri: Rust stable ≥ 1.77.2, plus platform dependencies — Xcode Command Line Tools on macOS, Microsoft
+  C++ Build Tools and the WebView2 Runtime on Windows, WebKitGTK and a build toolchain on Linux. See the
+  [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
-Tauri 平台依赖：
+Tauri normally has to be built on the target OS (`.exe/.msi`, `.app/.dmg`, `.deb/.rpm/.AppImage`). Web output
+lands in `apps/web/dist/`, desktop bundles in `apps/desktop/target/release/bundle/`.
 
-- macOS：Xcode Command Line Tools
-- Windows：Microsoft C++ Build Tools 和 WebView2 Runtime
-- Linux：Tauri 2 所需的 WebKitGTK、编译工具链及系统库
+## Configuring models
 
-详见 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)。
+The key variables in `.env.example` exist only for the local browser development relay. The desktop app never
+reads model keys from `.env.local` or the process environment — enter them on the settings page and they are
+written to `~/.webAgent/config.json`. If that file does not exist yet, the app safely copies an older
+`~/.web-agent/config.json`; the new path wins and the old file is kept. Keychain entries from older versions are
+not migrated. The CLI host reads the same file, or another path via `--config <file>`.
 
-## 配置模型
+`WEB_AGENT_CONFIG_DIR` only selects the desktop configuration directory (for example `$HOME/.webAgent`). It is
+not a source of model keys, and setting it disables migration; see
+[the configuration directory notes](docs/config-directory-override.md) for multi-instance setups and directory
+requirements.
 
-`.env.example` 中的密钥变量仅供本机 Web 开发中继使用；桌面应用不会从 `.env.local` 或进程环境读取模型密钥。请在桌面设置页配置所需模型 Key，密钥默认写入 `~/.webAgent/config.json`。新默认文件不存在时，应用才会安全复制旧 `~/.web-agent/config.json`；新文件优先，旧文件会保留。旧版系统钥匙串条目不会被读取或迁移，需要在设置页重新输入。
+New sessions default to DeepSeek, and the session's `vendor` setting decides which provider is actually called.
+The Kimi entry point is additionally gated by the public build flag `VITE_KIMI_IMAGE_INPUT_ENABLED`, which stays
+`false` until Kimi has been accepted end-to-end against a real China-region key.
 
-CLI 宿主读同一份 `~/.webAgent/config.json`，也可用 `--config <文件>` 指定其他路径。
+Keys are read by the native desktop layer only and injected into a restricted provider transport. They are never
+stored in browser localStorage or compiled into the frontend bundle. On Unix the config directory is created
+`0700` and the file `0600`, and an override directory must pass the same permission check. The file is
+plaintext, so do not commit, share or copy it anywhere untrusted. Kimi image uploads, `ms://` references and
+their cleanup semantics live in the Kimi adapter — Tauri only offers generic JSON/multipart transport within an
+endpoint allowlist. A static web build has no trusted proxy and cannot call model services at all.
 
-`WEB_AGENT_CONFIG_DIR` 只选择桌面配置目录，例如 `$HOME/.webAgent`，不是模型 Key 来源；设置覆盖目录时不会迁移旧配置。多实例、目录要求与迁移细节见[配置目录说明](docs/config-directory-override.md)。
-
-新会话默认使用 DeepSeek；会话设置中的 `vendor` 决定实际调用的 provider。Kimi 入口还受公开构建变量 `VITE_KIMI_IMAGE_INPUT_ENABLED` 控制，真实中国区 Key 端到端验收前必须保持 `false`。
-
-密钥只由桌面原生层读取并注入受限 provider 传输；它不会保存到浏览器 localStorage 或编译进前端包。Unix 平台的新建配置目录为 `0700`、配置文件为 `0600`；既有覆盖目录必须通过私有权限检查。文件内容是明文，勿提交、共享或复制到不受信任的位置。Kimi 图片上传、`ms://` 引用与清理语义属于 Kimi adapter；Tauri 只提供端点白名单内的通用 JSON/multipart 传输。静态 Web 部署没有可信模型代理，不能直接调用模型服务。
-
-## 开发命令
+## Development commands
 
 ```bash
 pnpm install
 
-# Web 开发预览
-pnpm dev
+pnpm dev            # browser development preview
+pnpm build          # type check + production build
+pnpm test           # frontend tests
 
-# headless CLI 宿主：-p 跑一轮后退出，无 -p 进入 REPL；-h 看全部选项
+# Headless CLI host: -p runs once and exits, no -p opens a REPL, -h lists every option
 pnpm cli -p "<prompt>"
-pnpm cli -h
 
-# 类型检查 + 生产构建
-pnpm build
+node scripts/check-boundaries.js   # assembly boundary gate, runs before the tests in CI
+node scripts/check-docs.js         # documentation link gate, same
 
-# 前端测试
-pnpm test
-
-# 装配边界与文档链接门禁（CI 里排在测试之前）
-node scripts/check-boundaries.js
-node scripts/check-docs.js
-
-# Tauri 开发和打包
 pnpm tauri dev
 pnpm tauri build
+cargo test --manifest-path apps/desktop/Cargo.toml   # Rust bridge integration tests
 
-# Rust 桥集成测试
-cargo test --manifest-path apps/desktop/Cargo.toml
-```
-
-`pnpm build` 过程中打印的 chunk 体积、chunk 拆分和动态导入相关警告是预期噪音，
-不代表构建失败——以命令退出码为准。
-
-运行单个测试：
-
-```bash
+# A single test file, or a single case by name
 pnpm exec vitest run packages/agent-core/src/runtime/modelRun.test.ts
 pnpm exec vitest run -t "ask_user"
 ```
 
-测试文件并行运行，靠 `vite.config.ts` 的 `isolate: true` 隔离：每个文件有独立 worker，
-`defaultCore` / `toolRegistry` 这类模块级单例在每个 worker 里各有一份，
-`apps/web/src/test/setup.ts` 在 worker 内注册标准工具，并只在用例之间重置 `defaultCore` 的
-root/session store。跨文件不会互相污染，因此不需要串行。需要更强隔离的测试应显式调用
-`createCore()` 或 `createCoreInstance()` 建独立实例，而不是退回文件串行。
+Warnings about chunk size, chunk splitting and dynamic imports during `pnpm build` are expected noise, not
+failures — trust the exit code.
 
-## 仓库结构
+Test files run in parallel, isolated by `isolate: true` in `vite.config.ts`: each file gets its own worker, so
+module-level singletons such as `defaultCore` exist once per worker and nothing leaks across files. A test that
+needs stronger isolation should call `createCore()` rather than fall back to serial execution.
+
+## Repository layout
 
 ```text
 .
 ├── apps/
-│   ├── web/
-│   │   ├── index.html           # Vite HTML 入口
-│   │   └── src/                 # React 装配、UI、样式与组件测试
-│   ├── cli/                     # headless CLI 宿主（dogfood 与自动化驱动真实 run）
-│   └── desktop/                 # Tauri 2 / Rust 桌面桥
+│   ├── web/                     # Vite entry, React assembly, UI, component tests
+│   ├── cli/                     # headless CLI host, for dogfooding and automation
+│   └── desktop/                 # Tauri 2 / Rust desktop bridge
 ├── packages/
-│   ├── agent-ai/                # DeepSeek / GLM / Kimi API 适配
-│   ├── agent-core/              # 装配式内核：状态、运行时、工具契约、plugin/观测/持久化 contract
-│   ├── agent-react/             # React 插件安装面与 timeline renderer registry
-│   ├── subagents/               # 委派调度、批次、归档治理与视图 state
-│   ├── persistence-idb/         # IndexedDB 会话/历史持久化 driver
-│   ├── persistence-sqlite/      # SQLite 会话/历史持久化 driver
-│   ├── observability-idb/       # IndexedDB trace driver 与 reader
-│   └── observability-sqlite/    # SQLite trace driver 与 reader
+│   ├── agent-ai/                # DeepSeek / GLM / Kimi API adapters
+│   ├── agent-core/              # the kernel: state, runtime, tool contract, plugin/observability/persistence contracts
+│   ├── agent-react/             # React plugin surface and timeline renderer registry
+│   ├── subagents/               # delegation scheduling, batching, archive governance, view state
+│   ├── persistence-{idb,sqlite}/    # session and history drivers
+│   └── observability-{idb,sqlite}/  # trace drivers and readers
 ├── tools/
-│   ├── standard/                # 六个工具域的 meta 聚合包
-│   ├── shell/                   # shell / task / Git
-│   ├── fs/                      # workspace 文件、搜索和补丁
-│   ├── interaction/             # ask_user / browser card / artifact
-│   ├── planning/                # 结构化计划工具
-│   ├── skills/                  # skill 搜索与读取
-│   ├── agents/                  # delegate / observe / join Agent
-│   └── mcp/                     # 第七域，不在标准包里，由应用层按需装配
-├── docs/                        # 当前实现说明与仍在推进的演进蓝图
-└── scripts/                     # 门禁脚本与子 Agent archive/skill 治理
+│   ├── standard/                # meta package aggregating the six standard domains
+│   ├── shell/ fs/ interaction/ planning/ skills/ agents/   # those six domains
+│   └── mcp/                     # a seventh domain, outside the standard package, assembled by the app
+├── docs/                        # current behaviour notes plus in-progress blueprints
+└── scripts/                     # gate scripts and sub-agent archive/skill governance
 ```
 
-Core 不自动安装具体工具或能力实现。应用入口安装标准工具集，并向 `createCore`/默认实例装配
-project skills、plan、delegation、持久化与观测所需的能力；其他消费方也可以只注册需要的工具域。
+The core installs no tools or capability implementations by itself. Application entry points register the
+standard tool set and hand `createCore` the project skills, planning, delegation, persistence and observability
+they need; other consumers can register only the domains they want.
 
-## 构建产物
+## Design deep dives
 
-- Web：`apps/web/dist/`
-- Tauri 原始可执行文件：`apps/desktop/target/release/`
-- Tauri 安装包：`apps/desktop/target/release/bundle/`
+Why the kernel looks the way it does, and which walls we walked into. These articles are in Chinese:
 
-Tauri 通常需要在目标操作系统上构建：Windows 构建 `.exe/.msi`，macOS 构建 `.app/.dmg`，
-Linux 构建 `.deb/.rpm/.AppImage`。
+- [One kernel, three hosts: designing an assembled agent runtime](docs/launch/articles/assembly-kernel.md) (Chinese)
+- [Giving tools a lifecycle: the CallTiming mechanism](docs/launch/articles/call-timing.md) (Chinese)
+- [Sub-agent governance: replay, capacity and archiving](docs/launch/articles/subagent-governance.md) (Chinese)
+- [Dogfooding with the CLI host: catching a production 400 in ten minutes](docs/launch/articles/dogfood-400.md) (Chinese)
+- [Field notes on the DeepSeek V4 thinking protocol](docs/launch/articles/deepseek-v4-pitfalls.md) (Chinese)
 
-## 深入设计
+## Docs and contributing
 
-想知道内核为什么长这样，以及踩过哪些坑：
-
-- [一个内核，三个宿主：装配式 Agent Runtime 设计](docs/launch/articles/assembly-kernel.md)
-- [给工具加生命周期：CallTiming 机制](docs/launch/articles/call-timing.md)
-- [子 Agent 治理：replay、容量与归档](docs/launch/articles/subagent-governance.md)
-- [用 CLI 宿主 dogfood，十分钟抓出一个线上 400](docs/launch/articles/dogfood-400.md)
-- [DeepSeek V4 thinking 协议踩坑实录](docs/launch/articles/deepseek-v4-pitfalls.md)
-
-## 文档与参与
-
-- 完整文档导航见 [docs/README.md](docs/README.md)：区分当前有效说明与仍在推进的演进蓝图；
-  已完成的阶段性 PLAN 只保留在 Git 历史中。
-- 提 PR 前先读 [CONTRIBUTING.md](CONTRIBUTING.md)：环境准备、提交前门禁、commit 约定和代码红线。
-- 仓库内编码 Agent 的工作约定见 [CLAUDE.md](CLAUDE.md)。
+- [docs/README.md](docs/README.md) is the documentation index; it separates notes describing current behaviour
+  from blueprints describing where things are heading. Completed phase plans live only in Git history.
+- Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR: environment setup, the gates to run before
+  committing, commit conventions, and the hard rules.
+- [CLAUDE.md](CLAUDE.md) holds the working conventions for coding agents inside this repo.
 
 ## License
 
