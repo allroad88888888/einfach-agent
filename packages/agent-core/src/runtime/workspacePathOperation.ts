@@ -1,4 +1,4 @@
-import { invoke, isTauri } from '@tauri-apps/api/core'
+import { isTauriHost, loadTauriInvoke } from './hostTauri'
 import {
   normalizeChangeSummary,
   type WorkspaceChangeContext,
@@ -38,8 +38,9 @@ async function operate(
     reversible: false,
     error,
   })
-  if (!isTauri()) return failed(`Workspace ${operation} is only available in the Tauri desktop runtime`)
+  if (!isTauriHost()) return failed(`Workspace ${operation} is only available in the Tauri desktop runtime`)
   try {
+    const invoke = await loadTauriInvoke()
     const raw = await invoke<unknown>(`${operation}_workspace_path`, {
       source: input.source,
       destination: input.destination,

@@ -7,6 +7,14 @@ const tauri = vi.hoisted(() => ({
 
 vi.mock('@tauri-apps/api/core', () => tauri)
 
+// D4：workspaceRead 改用 ./hostTauri 之后，宿主判定读的是 globalThis.isTauri、invoke 走惰性动态
+// import，两者都不再经过上面那份模块 mock。这里把 hostTauri 一并 mock 掉：isTauriHost 恒真、
+// loadTauriInvoke 仍然吐同一个 tauri.invoke，既有用例的断言一字不动照旧成立。
+vi.mock('./hostTauri', () => ({
+  isTauriHost: () => true,
+  loadTauriInvoke: async () => tauri.invoke,
+}))
+
 import { readWorkspaceFile } from './workspaceRead'
 
 beforeEach(() => {

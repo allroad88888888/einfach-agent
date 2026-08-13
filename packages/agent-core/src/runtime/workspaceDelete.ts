@@ -1,4 +1,4 @@
-import { invoke, isTauri } from '@tauri-apps/api/core'
+import { isTauriHost, loadTauriInvoke } from './hostTauri'
 import {
   normalizeChangeSummary,
   type WorkspaceChangeContext,
@@ -38,10 +38,11 @@ function failed(input: WorkspaceDeleteInput, error: string): WorkspaceDeleteResu
 }
 
 export async function deleteWorkspacePath(input: WorkspaceDeleteInput): Promise<WorkspaceDeleteResult> {
-  if (!isTauri()) {
+  if (!isTauriHost()) {
     return failed(input, 'Workspace deletion is only available in the Tauri desktop runtime')
   }
   try {
+    const invoke = await loadTauriInvoke()
     const raw = await invoke<unknown>('delete_workspace_path', {
       path: input.path,
       recursive: input.recursive,

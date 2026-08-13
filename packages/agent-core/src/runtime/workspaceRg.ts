@@ -1,4 +1,4 @@
-import { invoke, isTauri } from '@tauri-apps/api/core'
+import { isTauriHost, loadTauriInvoke } from './hostTauri'
 
 export const DEFAULT_RG_MAX_MATCHES = 200
 export const MAX_RG_MATCHES = 1_000
@@ -140,11 +140,12 @@ function normalizeResult(raw: unknown): RgSearchResult {
 }
 
 export async function rgSearchWorkspace(input: RgSearchInput): Promise<RgSearchResult> {
-  if (!isTauri()) {
+  if (!isTauriHost()) {
     return failedResult('rg_search is only available in the Tauri desktop runtime')
   }
 
   try {
+    const invoke = await loadTauriInvoke()
     const raw = await invoke<unknown>('rg_search_workspace', toTauriInput(input))
     return normalizeResult(raw)
   } catch (error) {
