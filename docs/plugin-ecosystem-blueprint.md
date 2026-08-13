@@ -5,7 +5,7 @@
 > [插件扩展面产品化蓝图](plugin-productization-blueprint.md)、
 > [插件 UI Renderer 协议蓝图](plugin-renderer-protocol-blueprint.md) 与
 > [`packages/agent-core/src/plugin.ts`](../packages/agent-core/src/plugin.ts) 的代码为准。
-> 对应 issue：[插件生态与模型 Provider 注册化 Issue 树](plugin-and-provider-issues.md) 的 P1。
+> 对应 issue：插件生态与模型 Provider 注册化 issue 树（已完成，全文随 Git 历史归档） 的 P1。
 > 更新时间：2026-08-13。
 
 > **交付状态（截至 P11，2026-08-13）**：第 3 节全部交付——目录约定（3.1）、加载协议（3.2，

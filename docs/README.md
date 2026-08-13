@@ -39,7 +39,6 @@
 | [请求组装归因交接（2026-08-04）](context-cache-request-assembly-handover-2026-08-04.md) | 已证实的低命中来源、trace 入口、接手实施顺序与复测口径 |
 | [MCP 透明连接蓝图](mcp-transparent-connect-blueprint.md) | 已实施（D0–D4）：缓存清单注册为占位工具、按需透明连接、起进程确认与 reconcile 的复用规则、`connect_mcp_server` 的新分工与上下文预算；正文作为设计记录保留 |
 | [项目路线图](ROADMAP.md) | 阶段 0–4 已完成的交付与验收记录；后续仅在获得明确授权后推进 R5 协议实现、可选行为评测或新的路线图条目 |
-| [插件生态与模型 Provider 注册化 Issue 树](plugin-and-provider-issues.md) | 执行中：M 线对齐 Rust 侧红线 12（core 零厂商判断），P 线插件生态蓝图先行；实现卡待蓝图评审 |
 | [插件生态蓝图](plugin-ecosystem-blueprint.md) | 设计阶段，无实现：把 assembly-time 插件产品化为 `.webAgent/plugins/` 动态加载的用户插件——加载协议与错误隔离、借鉴 MCP 起进程确认的信任模型、启停与 plugin id 归因、npm 分发前置；`timeline.persist` 阻塞于 R5；默认信任姿态、首期宿主与模型可见工具三项待用户拍板 |
 
 蓝图描述目标形态，不代表所有 API 都已交付。引用蓝图时需要同时核对实现和测试。

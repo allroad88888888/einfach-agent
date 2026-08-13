@@ -1,6 +1,6 @@
 # 插件上手：20 分钟写一个外部插件
 
-> 本文是 [插件生态与模型 Provider 注册化 Issue 树](plugin-and-provider-issues.md) P9 卡的判据文档：
+> 本文是 插件生态与模型 Provider 注册化 issue 树（已完成，全文随 Git 历史归档） P9 卡的判据文档：
 > 照着下面的步骤操作，20 分钟内能写完一个第三方插件并在 CLI 里看到它生效——这是
 > [插件生态蓝图](plugin-ecosystem-blueprint.md) 第 6 节定的成败标准。
 > 已验证（2026-08-13）：从零建目录到 `pnpm cli -v` 打出 `enabled`，实测约 10 分钟，
