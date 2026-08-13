@@ -139,7 +139,7 @@ pnpm tauri build
 cargo test --manifest-path apps/desktop/Cargo.toml   # Rust bridge integration tests
 
 # A single test file, or a single case by name
-pnpm exec vitest run packages/agent-core/src/runtime/modelRun.test.ts
+pnpm exec vitest run packages/agent-core/src/runtime/modelRun.singleTurn.test.ts
 pnpm exec vitest run -t "ask_user"
 ```
 

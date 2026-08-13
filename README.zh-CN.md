@@ -143,7 +143,7 @@ cargo test --manifest-path apps/desktop/Cargo.toml
 运行单个测试：
 
 ```bash
-pnpm exec vitest run packages/agent-core/src/runtime/modelRun.test.ts
+pnpm exec vitest run packages/agent-core/src/runtime/modelRun.singleTurn.test.ts
 pnpm exec vitest run -t "ask_user"
 ```
 

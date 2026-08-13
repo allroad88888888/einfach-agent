@@ -33,7 +33,7 @@ pnpm tauri dev
 跑单个测试文件或按用例名过滤，比跑全量测试快很多，改动局部时优先用这个：
 
 ```bash
-pnpm exec vitest run packages/agent-core/src/runtime/modelRun.test.ts
+pnpm exec vitest run packages/agent-core/src/runtime/modelRun.singleTurn.test.ts
 pnpm exec vitest run -t "ask_user"
 ```
 
