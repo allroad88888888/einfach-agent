@@ -30,9 +30,27 @@ export interface PackageBuildInput {
    * 全仓通用的 `?raw` 内联插件已默认接上（见下方 esbuildPlugins），这里传的是追加项。
    */
   esbuildPlugins?: Options['esbuildPlugins']
+  /**
+   * 包间会变 ④：代码分割。默认 false（单 entry 包的正确口径，产物扁平、无哈希 chunk）。
+   *
+   * **多 entry 且 entry 之间共享可变状态（模块级单例：store、registry、计数器）的包必须开。**
+   * 理由：`splitting: false` 下每个 entry 各自打成一个独立 bundle，共享模块会被**逐份内联**；
+   * 消费方同时 `import '@x/pkg'` 和 `import '@x/pkg/sub'` 时就拿到两份单例，状态直接分裂——
+   * 这是运行时才炸、且没有任何构建期警告的正确性事故。开 splitting 后 esbuild 把共享模块提到
+   * 独立 chunk，两条 entry 相对 import 同一个 chunk，单例回到一份。
+   *
+   * 代价：dist 里多出 `chunk-*.js`。entry 文件名不受影响（仍按 entry key 落地），所以
+   * package.json 的 exports 照样能写死路径；chunk 只被 entry 以相对说明符引用，不进 exports。
+   */
+  splitting?: boolean
 }
 
-export function definePackageBuild({ entry, external = [], esbuildPlugins }: PackageBuildInput) {
+export function definePackageBuild({
+  entry,
+  external = [],
+  esbuildPlugins,
+  splitting = false,
+}: PackageBuildInput) {
   return defineConfig({
     entry,
     // 全仓 `"type": "module"`，没有 CJS 消费方；只出 ESM，顺带避开 dual-package hazard。
@@ -45,10 +63,12 @@ export function definePackageBuild({ entry, external = [], esbuildPlugins }: Pac
     clean: true,
     // **不用 tsup --dts**：rollup 系声明打包在 core 那种大类型面上容易慢或在循环类型上失败，
     // 声明产物一律由各包的 tsconfig.build.json 出。
+    // 代价是 tsc 原样保留无扩展名的相对说明符，所以各包 build script **必须接
+    // `node ../../scripts/fix-dts-specifiers.mjs dist`**，否则 node16/nodenext 消费方直接红
+    // （TS2834 起，barrel re-export 连带全灭）。
     dts: false,
-    // 产物必须与 entry 一一对应：package.json 的 exports 要写死路径，不能有代码分割出来的
-    // 哈希 chunk 名。
-    splitting: false,
+    // 见 PackageBuildInput.splitting：默认关，多 entry + 共享可变状态的包按需开。
+    splitting,
     external,
     // `?raw` 内联对全仓生效：源码里的 `*.md?raw` 是 Vite 语法，产物必须已经把正文变成字符串，
     // 否则消费方的打包器/Node 会去找一个叫 `x.md?raw` 的文件。包自带插件排在它后面。

@@ -13,10 +13,51 @@
   "publishConfig": {
     "access": "public"
   },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./plugin": {
+      "types": "./dist/plugin.d.ts",
+      "default": "./dist/plugin.js"
+    },
+    "./timeline": {
+      "types": "./dist/timeline.d.ts",
+      "default": "./dist/timeline.js"
+    },
+    "./tools": {
+      "types": "./dist/tools/index.d.ts",
+      "default": "./dist/tools/index.js"
+    },
+    "./subagents": {
+      "types": "./dist/subagents/index.d.ts",
+      "default": "./dist/subagents/index.js"
+    },
+    "./state/persistence": {
+      "types": "./dist/state/persistence/index.d.ts",
+      "default": "./dist/state/persistence/index.js"
+    },
+    "./observability": {
+      "types": "./dist/observability/index.d.ts",
+      "default": "./dist/observability/index.js"
+    },
+    "./skills": {
+      "types": "./dist/skills/index.d.ts",
+      "default": "./dist/skills/index.js"
+    },
+    "./planning": {
+      "types": "./dist/planning/index.d.ts",
+      "default": "./dist/planning/index.js"
+    },
     "./*": "./src/*",
     "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json && node ../../scripts/fix-dts-specifiers.mjs dist"
   },
   "dependencies": {
     "@web-agent/ai": "workspace:*",

@@ -1,0 +1,42 @@
+// 声明产物专用 tsconfig：只出 .d.ts，JS 由 tsup 出（见 tsup.config.ts 与根 tsup.preset.ts）。
+// core 是全仓拓扑根，本文件是「跨包声明 emit」这一步的样板，逐包接线时整份复制。
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // 包平时的 tsconfig.json 是 noEmit 的纯类型门禁，这里翻开只为 emit 声明。
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    // 不出 declaration map：发布物 `files: ["dist"]` 不含 src，map 只会指向不存在的路径。
+    "declarationMap": false,
+    // 不能开 incremental/composite：tsup 的 clean 会先清空 dist，而 buildinfo 只看源码变没变，
+    // 于是「源码没改 + dist 被清空」会让 tsc 直接跳过 emit，产出一个没有 .d.ts 的 dist。
+    "incremental": false,
+    "composite": false,
+    // **清空继承来的 paths**（tsconfig.app.json 把 `@web-agent/*` 指向各包**源码**）。
+    // 不清空：依赖包的 .ts 源码会被拉进本 program，而 rootDir 要求可 emit 文件都在 src 下，
+    // 每个跨包文件一条 TS6059，tsc 非零退出。清空后走 node_modules 解析，吃到的是依赖 dist 里的
+    // .d.ts —— 声明文件不参与 rootDir 判定，所以不再冲突。
+    // **前提是依赖已按拓扑序先出 dist 且其 exports 指向 dist**；依赖还指着 src 时这里会变成
+    // 一片 TS2307（TS 不解析 node_modules 里的 .ts）。
+    "paths": {},
+    // pnpm 的 node_modules 是符号链接，TS 默认会 realpath 到 `node_modules/.pnpm/<pkg>@<ver>/...`；
+    // 给推断出来的类型起名时它就写不出可移植的说明符，报 TS2742
+    // 「cannot be named without a reference to '.pnpm/@einfach+core@…'」——本包实测 3 处
+    // （runtime/commands.ts 的 createCommands / sessionAtomScope、toolLoopSupport.ts 的
+    // createRunGuard，都是返回值里带 @einfach/core 的 Store 类型的导出函数）。
+    // 关掉 realpath 后，TS 认 `packages/agent-core/node_modules/@einfach/core` 这条真实存在的
+    // 依赖路径，声明里就是裸说明符 `@einfach/core`。
+    // 只影响这份「声明 emit 专用」配置：日常类型门禁（tsconfig.json）、Vite/Vitest 都不读它。
+    // 另一条路是给这些导出手写返回值类型标注，那是几十处源码改动，成本更高。
+    "preserveSymlinks": true,
+    // 不可省：缺了 rootDir，TS 会把公共根推断到仓库根，产物变成 dist/packages/agent-core/...
+    // 并把跨包源码一起漏进 dist，而 fix-dts-specifiers 对这种畸形 dist 不会报错（它只查
+    // 说明符解析得到与否），错误会一路静默到发布。
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  "include": ["src"],
+  // 测试与测试脚手架不进发布物（口径同 scripts/check-boundaries.js 的 testFilePattern）。
+  "exclude": ["src/**/*.test.ts", "src/**/*.testFixtures.ts", "src/**/*.testHarness.ts"]
+}
