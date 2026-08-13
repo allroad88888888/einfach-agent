@@ -1,52 +1,32 @@
 import {
   compareAgentPaths,
-  parseAgentPath,
   type ChildAgentResult,
   type SubagentArchiveEvent,
   type SubagentArchiveEventType,
   type SubagentNodeRecord,
 } from '@web-agent/core/subagents'
-import {
-  parseJsonDocument,
-  parseJsonl,
-  type JsonlParseError as ParseError,
-  type JsonlParseResult,
-} from './jsonl'
+import type { JsonlParseError as ParseError, JsonlParseResult } from './jsonl'
 
 export type { JsonlParseError as ParseError, JsonlParseResult } from './jsonl'
 
-// 与 types.ts 的 SubagentArchiveEventType 联合一一对应 —— 漏一个，该类事件就会被
-// isSubagentArchiveEvent 判为结构非法而落进 parseErrors，eventCounts 也不再统计它。
-// 用 Record 而非数组字面量：数组类型允许子集，漏写不会报错；Record 少一个键编译期就失败，
-// 多一个键也会被拒。scripts/subagent-replay-lib.js 里的同名白名单由该文件的测试锁步校验。
-const SUBAGENT_EVENT_TYPE_SET: Record<SubagentArchiveEventType, true> = {
-  archive_initialized: true,
-  delegate_requested: true,
-  children_reserved: true,
-  skill_written: true,
-  child_started: true,
-  child_tool_schema_requested: true,
-  child_tool_finished: true,
-  nested_delegate_requested: true,
-  child_finished: true,
-  tree_snapshot_written: true,
-  delegate_finished: true,
-  child_model_usage: true,
-  child_model_escalated: true,
-  child_context_distillation_started: true,
-  child_context_distillation_succeeded: true,
-  child_context_distillation_failed: true,
-}
+export { SUBAGENT_EVENT_TYPES, parseSubagentEvents } from './replayEventSchema'
+export {
+  parseSubagentTreeSnapshot,
+  type SubagentTreeSnapshot,
+} from './replayNodeState'
 
-export const SUBAGENT_EVENT_TYPES = Object.keys(
-  SUBAGENT_EVENT_TYPE_SET,
-) as SubagentArchiveEventType[]
-
-const ROOT_AGENT_PATH = 'root'
-
-export interface SubagentTreeSnapshot {
-  nodes: SubagentNodeRecord[]
-}
+import { SUBAGENT_EVENT_TYPES, parseSubagentEvents } from './replayEventSchema'
+import {
+  appendUnique,
+  asStringArray,
+  asStringOrUndefined,
+  cloneNode,
+  directChildIndex,
+  incRecord,
+  inferTimestamp,
+  newNode,
+  parseSubagentTreeSnapshot,
+} from './replayNodeState'
 
 export interface SubagentReplayState {
   conversationId: string
@@ -67,204 +47,6 @@ export interface SubagentReplayState {
     failed: number
     cancelled: number
   }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-}
-
-function isString(value: unknown): value is string {
-  return typeof value === 'string'
-}
-
-function isSubagentArchiveEventType(value: unknown): value is SubagentArchiveEventType {
-  return isString(value) && SUBAGENT_EVENT_TYPES.includes(value as SubagentArchiveEventType)
-}
-
-function isSubagentArchiveEvent(value: unknown): value is SubagentArchiveEvent {
-  if (!isRecord(value)) return false
-  if (!isString(value.eventId)) return false
-  if (!isString(value.timestamp)) return false
-  if (!isString(value.conversationId)) return false
-  if (!isString(value.runId)) return false
-  if (!isString(value.treeId)) return false
-  if (!isString(value.agentPath)) return false
-  if (!isSubagentArchiveEventType(value.type)) return false
-  return value.data === undefined || isRecord(value.data)
-}
-
-function asStringArray(value: unknown): string[] | undefined {
-  return Array.isArray(value) && value.every((item) => isString(item)) ? (value as string[]) : undefined
-}
-
-function asStringOrUndefined(value: unknown): string | undefined {
-  return isString(value) ? value : undefined
-}
-
-function inferTimestamp(value: unknown): number | undefined {
-  if (typeof value === 'number' && Number.isFinite(value)) return value
-  if (!isString(value)) return undefined
-  const parsed = Date.parse(value)
-  return Number.isNaN(parsed) ? undefined : parsed
-}
-
-function cloneNode(node: SubagentNodeRecord): SubagentNodeRecord {
-  return {
-    ...node,
-    inheritedSkillFiles: [...node.inheritedSkillFiles],
-    inheritedSkillIds: [...node.inheritedSkillIds],
-    localSkillFiles: [...node.localSkillFiles],
-    localSkillIds: [...node.localSkillIds],
-  }
-}
-
-function normalizeNodeFromSnapshot(record: Record<string, unknown>): SubagentNodeRecord | null {
-  const path = asStringOrUndefined(record.path)
-  if (!path) return null
-
-  const status = (() => {
-    const value = asStringOrUndefined(record.status)
-    return value === 'running' || value === 'distilling' || value === 'done' || value === 'failed' || value === 'cancelled'
-      ? value
-      : 'queued'
-  })()
-
-  const createdAt = inferTimestamp(record.createdAt) ?? Date.now()
-  const updatedAt = inferTimestamp(record.updatedAt) ?? createdAt
-
-  return {
-    id: asStringOrUndefined(record.id) ?? `${asStringOrUndefined(record.treeId) ?? ''}:${path}`,
-    treeId: asStringOrUndefined(record.treeId) ?? '',
-    sessionId: asStringOrUndefined(record.sessionId) ?? '',
-    path,
-    parentPath: asStringOrUndefined(record.parentPath) ?? (path === ROOT_AGENT_PATH ? undefined : resolveParentPath(path)),
-    status,
-    objective: asStringOrUndefined(record.objective) ?? (path === ROOT_AGENT_PATH ? 'root agent' : `agent ${path}`),
-    mode: asStringOrUndefined(record.mode),
-    expectedOutput: asStringOrUndefined(record.expectedOutput),
-    depth: typeof record.depth === 'number' && Number.isFinite(record.depth)
-      ? Math.max(0, Math.floor(record.depth))
-      : (parseAgentPath(path)?.length ?? 0),
-    dispatchCounter: typeof record.dispatchCounter === 'number' && Number.isFinite(record.dispatchCounter)
-      ? Math.max(0, Math.floor(record.dispatchCounter))
-      : 0,
-    childCounter: typeof record.childCounter === 'number' && Number.isFinite(record.childCounter)
-      ? Math.max(0, Math.floor(record.childCounter))
-      : 0,
-    createdAt,
-    updatedAt,
-    inheritedSkillFiles: asStringArray(record.inheritedSkillFiles) ?? [],
-    inheritedSkillIds: asStringArray(record.inheritedSkillIds) ?? [],
-    localSkillFiles: asStringArray(record.localSkillFiles) ?? [],
-    localSkillIds: asStringArray(record.localSkillIds) ?? [],
-    resultFile: asStringOrUndefined(record.resultFile),
-    error: asStringOrUndefined(record.error),
-  }
-}
-
-function resolveParentPath(path: string): string | undefined {
-  const dashIndex = path.lastIndexOf('-')
-  if (dashIndex <= ROOT_AGENT_PATH.length) return ROOT_AGENT_PATH
-  return path.slice(0, dashIndex)
-}
-
-function newNode(input: {
-  conversationId: string
-  runId: string
-  treeId: string
-  createdAt?: number
-}, path: string): SubagentNodeRecord {
-  const now = input.createdAt ?? Date.now()
-  const safePath = path || ROOT_AGENT_PATH
-  return {
-    id: `${input.treeId}:${safePath}`,
-    treeId: input.treeId,
-    sessionId: input.conversationId,
-    path: safePath,
-    parentPath: safePath === ROOT_AGENT_PATH ? undefined : resolveParentPath(safePath),
-    status: safePath === ROOT_AGENT_PATH ? 'running' : 'queued',
-    objective: safePath === ROOT_AGENT_PATH ? 'root agent' : `agent ${safePath}`,
-    dispatchCounter: 0,
-    depth: parseAgentPath(safePath)?.length ?? 0,
-    childCounter: 0,
-    createdAt: now,
-    updatedAt: now,
-    inheritedSkillFiles: [],
-    inheritedSkillIds: [],
-    localSkillFiles: [],
-    localSkillIds: [],
-  }
-}
-
-function incRecord<K extends string>(record: Record<K, number>, key: K): void {
-  record[key] = (record[key] ?? 0) + 1
-}
-
-function appendUnique(values: string[], value: string): string[] {
-  return values.includes(value) ? values : [...values, value]
-}
-
-function directChildIndex(parentPath: string, childPath: string): number | undefined {
-  const parentSegments = parseAgentPath(parentPath)
-  const childSegments = parseAgentPath(childPath)
-  if (!parentSegments || !childSegments || childSegments.length !== parentSegments.length + 1) return undefined
-  if (!parentSegments.every((segment, index) => childSegments[index] === segment)) return undefined
-  return childSegments[childSegments.length - 1]
-}
-
-export function parseSubagentEvents(text: string): JsonlParseResult<SubagentArchiveEvent> {
-  return parseJsonl(text, {
-    parse: (value) => isSubagentArchiveEvent(value) ? value : undefined,
-    invalidRecordError: 'invalid subagent archive event structure',
-  })
-}
-
-export function parseSubagentTreeSnapshot(text: string): JsonlParseResult<SubagentTreeSnapshot> {
-  if (!text.trim()) return { records: [], parseErrors: [] }
-  const parsedDocument = parseJsonDocument(text)
-  if (parsedDocument.parseErrors.length > 0) {
-    return { records: [], parseErrors: parsedDocument.parseErrors }
-  }
-  const parsed = parsedDocument.records[0]
-  if (!isRecord(parsed)) {
-    return {
-      records: [],
-      parseErrors: [{ line: 1, raw: text, error: 'tree snapshot must be a json object' }],
-    }
-  }
-
-  const maybeNodes = parsed.nodes
-  if (!Array.isArray(maybeNodes)) {
-    return {
-      records: [],
-      parseErrors: [{ line: 1, raw: text, error: 'tree snapshot must be { nodes: [...] }' }],
-    }
-  }
-
-  const nodes: SubagentNodeRecord[] = []
-  const parseErrors: ParseError[] = []
-  maybeNodes.forEach((rawNode, index) => {
-    if (!isRecord(rawNode)) {
-      parseErrors.push({
-        line: 1,
-        raw: JSON.stringify(rawNode),
-        error: `invalid node record at index ${index}`,
-      })
-      return
-    }
-    const node = normalizeNodeFromSnapshot(rawNode)
-    if (!node) {
-      parseErrors.push({
-        line: 1,
-        raw: JSON.stringify(rawNode),
-        error: `invalid node record at index ${index}`,
-      })
-      return
-    }
-    nodes.push(node)
-  })
-
-  return { records: [{ nodes }], parseErrors }
 }
 
 export function replaySubagentArchive(input: {
