@@ -123,4 +123,22 @@ describe('main entry: MCP 启动装配（C1）', () => {
     await expect(hydrateMcpSettings()).resolves.toBeUndefined()
     expect(rootStore.getter(mcpHydrationAtom).status).toBe('ready')
   })
+
+  // P10：插件运行时同样在 main.tsx 启动时装配（理由与 MCP 一致——插件注册的是 hook 与工具，
+  // 等用户点开设置面板才装等于"不打开设置就没有插件"）。但本测试文件跑在浏览器预览宿主下
+  // （jsdom 里 isTauri() 为 false），所以正确结果是**不装配**：面板照旧如实说"当前宿主不
+  // 支持用户插件"，绝不为浏览器造一条读盘通路（蓝图 3.4）。桌面那一侧在
+  // plugins/initialize.test.ts。依赖第一个用例先 import 过 './main'。
+  it('浏览器预览宿主：插件面保持 unsupported 默认，不接任何真实加载面（P10）', async () => {
+    const { isPluginSettingsConfigured } = await import('./plugins/commands')
+    const { pluginHydrationAtom, pluginSettingsCapabilitiesAtom } = await import('./plugins/state')
+    const { rootStore } = await import('@web-agent/core/state/rootStore')
+
+    expect(isPluginSettingsConfigured()).toBe(false)
+    // main.tsx 同样不 await 这次 hydrate（不阻塞首屏），但它确实被触发了。
+    await vi.waitFor(() => {
+      expect(rootStore.getter(pluginHydrationAtom).status).toBe('ready')
+    })
+    expect(rootStore.getter(pluginSettingsCapabilitiesAtom)).toEqual({ supported: false })
+  })
 })

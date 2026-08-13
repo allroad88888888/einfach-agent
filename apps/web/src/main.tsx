@@ -7,6 +7,8 @@ import { registerStandardTools } from '@web-agent/tools'
 import { buildProjectSkillsProvider, builtInSkillsRegistry } from '@web-agent/tools-skills'
 import { hydrateMcpSettings } from './mcp/commands'
 import { initializeMcpSettings } from './mcp/initialize'
+import { hydratePluginSettings } from './plugins/commands'
+import { initializePluginSettings } from './plugins/initialize'
 import { configureCommands, newSession } from '@web-agent/core/runtime/commands'
 import {
   defaultCore,
@@ -65,6 +67,12 @@ configureDefaultDelegation(createDelegationAssembly)
 // hydrate 会去连网络服务，故意不 await：让它在后台跑，不阻塞首屏渲染。
 initializeMcpSettings()
 void hydrateMcpSettings()
+
+// 用户插件同理（P10）：桌面宿主在这里接上真实加载面并立即扫描一次，浏览器预览什么都不装，
+// 保持 plugins/commands.ts 里那个如实回答"当前宿主不支持用户插件"的默认 service（蓝图 3.4）。
+// 启动这一刻 workspace 还没 hydrate 回来，真正的扫描由 initialize 内的 root 订阅触发。
+initializePluginSettings()
+void hydratePluginSettings()
 
 const tauriHost = isTauri()
 
