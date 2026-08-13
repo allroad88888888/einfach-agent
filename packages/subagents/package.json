@@ -22,7 +22,11 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@einfach/core": "^0.2.18",
     "@web-agent/ai": "workspace:*",
     "@web-agent/core": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.15"
   }
 }

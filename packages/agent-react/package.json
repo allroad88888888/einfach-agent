@@ -23,5 +23,9 @@
   "peerDependencies": {
     "@web-agent/core": "workspace:^",
     "react": "^18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.0",
+    "vitest": "^4.0.15"
   }
 }

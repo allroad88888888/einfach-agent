@@ -22,5 +22,9 @@
   },
   "dependencies": {
     "@web-agent/core": "workspace:*"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
+    "vitest": "^4.0.15"
   }
 }

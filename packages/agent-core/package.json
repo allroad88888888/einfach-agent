@@ -23,5 +23,8 @@
     "@einfach/core": "^0.2.18",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.1"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.15"
   }
 }

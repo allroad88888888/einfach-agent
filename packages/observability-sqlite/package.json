@@ -24,5 +24,8 @@
     "@tauri-apps/plugin-sql": "^2.4.0",
     "@web-agent/core": "workspace:*",
     "@web-agent/observability-idb": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.15"
   }
 }

@@ -19,5 +19,8 @@
   },
   "dependencies": {
     "@web-agent/core": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.15"
   }
 }

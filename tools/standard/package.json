@@ -18,11 +18,15 @@
     "./package.json": "./package.json"
   },
   "dependencies": {
+    "@web-agent/core": "workspace:*",
     "@web-agent/tools-shell": "workspace:*",
     "@web-agent/tools-interaction": "workspace:*",
     "@web-agent/tools-fs": "workspace:*",
     "@web-agent/tools-planning": "workspace:*",
     "@web-agent/tools-skills": "workspace:*",
     "@web-agent/tools-agents": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.15"
   }
 }
