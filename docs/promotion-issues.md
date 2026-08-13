@@ -1,0 +1,247 @@
+# 推广发布 Issue 树
+
+目标：把已 public 但处于"裸公开"状态的仓库（无 LICENSE、无 description、README 无首屏
+demo、包未发布）铺到"路人 30 秒看懂、10 分钟跑通"的可发布状态，并备齐发布素材。
+
+非目标：任何"按发布键"的动作（npm publish、发帖、repo 改名）都由用户执行，不在本树内。
+
+约定：发布素材统一落 `docs/launch/`（发布完成后整目录可归档删除）；文内引用代码路径用
+反引号不用链接；每卡目标 20 分钟左右（含主会话验收）。
+
+## 树
+
+```text
+未决  命名 / License / 主打故事（不排期，拍板前依赖它们的卡不开工）
+A 开源就绪   A1 秘钥审计  A2 冷启动验证  A3 CONTRIBUTING  A4 元信息文案
+             A5 LICENSE   A6 中文 README  A7 英文 README
+B Demo 物料  B1 CLI 录屏  B2 截图清单    B3 截图执行
+C 文章草稿   C1 装配内核  C2 CallTiming  C3 dogfood 400  C4 DeepSeek 踩坑  C5 子 Agent 治理
+D 对比定位   D1 竞品事实  D2 对比表
+E 发布工程   E1 release workflow  E2 npm 发包方案
+F Launch 帖  F1 中文渠道  F2 英文渠道
+G 收尾       G1 删除本树
+```
+
+并行规则：依赖满足且改动面不重叠的卡可同时派。A1/A2/A3/A4/B1/B2/C1–C5/D1/E1/E2 不依赖
+未决项，可先行；A5/A6/A7/D2/F1/F2 在对应决策拍板前不开工。
+
+## 未决（不编号、不排期、不指派模型）
+
+- **命名**：统一到 einfach 系（与 einfach-agent-rust 成一族）还是维持 web-agent。
+  影响 A6/A7/F1/F2 与未来 npm scope。
+- **License**：MIT 还是 Apache-2.0（后者带专利条款，对企业采用更友好）。影响 A5。
+- **主打故事**：开发者框架（装配式内核）还是桌面产品。影响 A6/A7/D2/F1/F2 的侧重。
+
+## A · 开源就绪
+
+### A1 · git 全历史秘钥审计
+
+- **依赖**：—
+- **改动面**：仓库零改动；报告写入会话 scratchpad
+- **判据**：对全历史跑 `git log -p` 按 `sk-`、`ghp_`、`AKIA`、`api[_-]?key` 等模式扫描；
+  确认 `.env.local`、`~/.webAgent` 相关文件未被追踪；报告给出"是否发现泄漏"的明确结论。
+  发现泄漏则另立卡处理，本卡不改历史
+- **模型**：sonnet
+- **状态**：TODO
+
+### A2 · quickstart 冷启动验证
+
+- **依赖**：—
+- **改动面**：仓库零改动；摩擦点报告写入会话 scratchpad
+- **判据**：在干净临时目录 `git clone` 本仓库后依次 `pnpm install`、`pnpm build`、
+  `pnpm cli --help` 全部成功；README 步骤与实际差异逐条记录，供 A6 修正
+- **模型**：sonnet
+- **状态**：TODO
+
+### A3 · CONTRIBUTING.md
+
+- **依赖**：—
+- **改动面**：`CONTRIBUTING.md`（新建）
+- **判据**：`node scripts/check-docs.js` 通过；覆盖 pnpm workspace 流程、测试与 build
+  门禁、conventional commit 约定、文件行数红线
+- **模型**：sonnet
+- **状态**：TODO
+
+### A4 · GitHub 元信息文案
+
+- **依赖**：—
+- **改动面**：`docs/launch/repo-metadata.md`（新建）
+- **判据**：`node scripts/check-docs.js` 通过；含 description（中英各一句）、topics 候选
+  （≤20 个）、About 区建议；名字处标注占位待"未决·命名"
+- **模型**：sonnet
+- **状态**：TODO
+
+### A5 · LICENSE 落地
+
+- **依赖**：未决·License
+- **改动面**：`LICENSE`（新建）；根与各 `apps/*`、`packages/*`、`tools/*` 的
+  `package.json` 增加 `license` 字段
+- **判据**：LICENSE 文本与拍板一致；`grep -r '"license"' --include=package.json` 各包一致；
+  `pnpm build` 通过
+- **模型**：sonnet
+- **状态**：TODO
+
+### A6 · 中文 README 重写
+
+- **依赖**：未决·命名、未决·主打故事、B1、A2
+- **改动面**：`README.md`
+- **判据**：`node scripts/check-docs.js` 通过；首屏含一句定位、demo GIF 引用、≤5 步
+  quickstart；A2 记录的摩擦点已修正
+- **模型**：opus
+- **状态**：TODO
+
+### A7 · 英文 README
+
+- **依赖**：A6
+- **改动面**：`README.en.md`（新建）；`README.md` 顶部加互链
+- **判据**：`node scripts/check-docs.js` 通过；结构与中文版对齐，非逐句直译
+- **模型**：opus
+- **状态**：TODO
+
+## B · Demo 物料
+
+### B1 · CLI demo 录制
+
+- **依赖**：—
+- **改动面**：`docs/launch/assets/cli-demo.gif`（或 `.cast`）、`docs/launch/demo-script.md`
+- **判据**：产物文件存在且可播放；演示覆盖一次真实 run（工具调用 + 流式回复）；
+  `demo-script.md` 按其步骤可复录。真实 Key 走 `pnpm cli` 的既有凭据链路，禁止出现在
+  任何产物里；录制工具缺失时先交脚本并记录安装步骤，由主会话补录
+- **模型**：sonnet
+- **状态**：TODO
+
+### B2 · 桌面版截图清单
+
+- **依赖**：—
+- **改动面**：`docs/launch/screenshot-plan.md`（新建）
+- **判据**：`node scripts/check-docs.js` 通过；列出 ≥6 个界面场景（会话流、计划审批、
+  子 Agent 树、危险工具确认、trace viewer、MCP 设置），每项写明需要的前置状态
+- **模型**：sonnet
+- **状态**：TODO
+
+### B3 · 桌面截图执行
+
+- **依赖**：B2
+- **改动面**：`docs/launch/assets/*.png`
+- **判据**：清单场景各有一张截图；画面里无隐私信息（本机路径、key、真实会话内容）
+- **模型**：—（主会话亲自执行，GUI 操作无法委派）
+- **状态**：TODO
+
+## C · 技术文章草稿（全部落 `docs/launch/articles/`）
+
+### C1 · 《一个内核，三个宿主：装配式 Agent Runtime 设计》
+
+- **依赖**：—
+- **改动面**：`docs/launch/articles/assembly-kernel.md`（新建）
+- **判据**：`node scripts/check-docs.js` 通过；引用的 API 与文件路径和当前代码一致
+  （抽查 `createCore` 槽位、Web/桌面/CLI 三处装配入口）
+- **模型**：opus
+- **状态**：TODO
+
+### C2 · 《给工具加生命周期：CallTiming 机制》
+
+- **依赖**：—
+- **改动面**：`docs/launch/articles/call-timing.md`（新建）
+- **判据**：`node scripts/check-docs.js` 通过；九个核心时机与
+  `packages/agent-core/src/tools/toolCallTiming.ts` 定义一致；与 Claude Code hooks 的
+  对比至少 3 条且事实准确
+- **模型**：opus
+- **状态**：TODO
+
+### C3 · 《用 CLI 宿主 dogfood，十分钟抓出一个线上 400》
+
+- **依赖**：—
+- **改动面**：`docs/launch/articles/dogfood-400.md`（新建）
+- **判据**：`node scripts/check-docs.js` 通过；叙事与 `f4e3359` 前后的提交事实一致；
+  全文不出现任何真实 key 片段
+- **模型**：opus
+- **状态**：TODO
+
+### C4 · 《DeepSeek V4 thinking 协议踩坑实录》
+
+- **依赖**：—
+- **改动面**：`docs/launch/articles/deepseek-v4-pitfalls.md`（新建）
+- **判据**：`node scripts/check-docs.js` 通过；坑位描述与
+  `packages/agent-ai/src/deepseek.ts` 的请求净化与 thinking 归一化行为一致
+- **模型**：opus
+- **状态**：TODO
+
+### C5 · 《子 Agent 治理：replay、容量与归档》
+
+- **依赖**：—
+- **改动面**：`docs/launch/articles/subagent-governance.md`（新建）
+- **判据**：`node scripts/check-docs.js` 通过；提到的治理脚本与根 `package.json` 的
+  `subagent:*` 脚本一一对应
+- **模型**：opus
+- **状态**：TODO
+
+## D · 对比与定位
+
+### D1 · 竞品事实收集
+
+- **依赖**：—
+- **改动面**：`docs/launch/competitor-facts.md`（新建）
+- **判据**：`node scripts/check-docs.js` 通过；pi / OpenCode / Cline / Cherry Studio 每家
+  覆盖架构形态、扩展机制、模型支持、子 Agent 与观测能力，逐条附来源链接（需联网检索）
+- **模型**：sonnet
+- **状态**：TODO
+
+### D2 · 对比表成文
+
+- **依赖**：D1、未决·主打故事
+- **改动面**：`docs/launch/comparison.md`（新建）
+- **判据**：`node scripts/check-docs.js` 通过；诚实列出本项目弱项 ≥3 条；强项与代码事实
+  一致（不写未交付能力）
+- **模型**：opus
+- **状态**：TODO
+
+## E · 发布工程
+
+### E1 · release workflow 草稿
+
+- **依赖**：—
+- **改动面**：`.github/workflows/release.yml`（新建）
+- **判据**：`actionlint`（或 `npx --yes yaml-lint`）通过；仅 tag push 触发；tauri 三平台
+  矩阵与 `ci.yml` 现有矩阵一致；不改动 `ci.yml`
+- **模型**：opus
+- **状态**：TODO
+
+### E2 · npm 发包方案蓝图
+
+- **依赖**：—
+- **改动面**：`docs/launch/npm-publish-plan.md`（新建）
+- **判据**：`node scripts/check-docs.js` 通过；覆盖 src-alias 不编译的现状、构建工具选型、
+  包间发布顺序、不发布清单（`apps/*`、示例包）、版本与 dist-tag 策略；明确标注为蓝图
+- **模型**：opus
+- **状态**：TODO
+
+## F · Launch 帖草稿
+
+### F1 · 中文渠道帖（V2EX / 掘金 / 即刻）
+
+- **依赖**：A6、B1、未决·命名、未决·主打故事
+- **改动面**：`docs/launch/posts-zh.md`（新建）
+- **判据**：`node scripts/check-docs.js` 通过；三个渠道各一版且调性区分（V2EX 克制、
+  掘金带技术细节、即刻短句）
+- **模型**：opus
+- **状态**：TODO
+
+### F2 · 英文渠道帖（Show HN / r/LocalLLaMA）
+
+- **依赖**：A7、未决·命名、未决·主打故事
+- **改动面**：`docs/launch/posts-en.md`（新建）
+- **判据**：`node scripts/check-docs.js` 通过；Show HN 标题 ≤80 字符、首段无 marketing 腔；
+  LocalLLaMA 版突出国产模型协议细节
+- **模型**：opus
+- **状态**：TODO
+
+## G · 收尾
+
+### G1 · 删除本树
+
+- **依赖**：其余全部 DONE
+- **改动面**：删除 `docs/promotion-issues.md` 与 `docs/README.md` 的索引行；`docs/launch/`
+  去留由用户届时决定
+- **判据**：`node scripts/check-docs.js` 通过
+- **模型**：sonnet
+- **状态**：TODO
