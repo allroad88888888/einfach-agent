@@ -22,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 子 Agent 治理：`pnpm subagent:replay` / `subagent:capacity` / `subagent:archive:retention` /
   `subagent:index:compact` / `subagent:skills`。
 
-CI（`.github/workflows/ci.yml`）跑两条：`check-docs → pnpm test → pnpm build`，
+CI（`.github/workflows/ci.yml`）跑两条：`check-docs → check-boundaries → pnpm test → pnpm build`，
 以及三平台的 `cargo test` + `pnpm tauri build --no-bundle --ci`。
 
 ## 构建与解析模型
@@ -62,11 +62,17 @@ Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter，
 - `apps/desktop/`：Rust/Tauri 的 shell、workspace、Git、dialog、SQLite 与 MCP stdio 实现。
 - `packages/agent-ai/`：DeepSeek/GLM/Kimi 请求、流式响应、provider 私有图片准备、adapter 重试
   和 vendor 能力描述表。
-- `packages/agent-core/`：Agent Runtime 与所有核心状态。
+- `packages/agent-core/`：装配式 Agent Runtime 内核：工具契约/registry、loop、插件、观测与持久化
+  contract、checkpoint 与 atoms；不含具体工具域或宿主 driver。
 - `packages/agent-react/`（`@web-agent/react-plugin`）：React 侧插件安装面与 timeline renderer
   registry；core 不依赖 React。
 - `packages/agent-plugin-example/`：插件契约的可运行样例，改插件 API 时同步更新。
-- `tools/{shell,fs,interaction,planning,skills,agents}/`：六个标准工具域。
+- `packages/subagents/`：委派调度、批次编排、归档治理与子 Agent 视图 state。
+- `packages/persistence-{idb,sqlite}/`：IndexedDB / SQLite 会话与历史持久化 driver。
+- `packages/observability-{idb,sqlite}/`：IndexedDB / SQLite trace driver 与 reader。
+- `apps/web/src/traceViewer/`：React TraceViewer 与其 view state。
+- `tools/{shell,fs,interaction,planning,skills,agents}/`：六个标准工具域；skills 的 loader、registry
+  和内置内容在 `tools/skills`，默认 plan runtime 在 `tools/planning`。
 - `tools/standard/`（`@web-agent/tools`）：meta 聚合包，`registerStandardTools` 一次装齐六域。
 - `tools/mcp/`：第七个域，**不在**标准包里，由应用层按需装配。
 - `docs/`：当前说明与演进蓝图，入口是 `docs/README.md`。
@@ -74,21 +80,22 @@ Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter，
 依赖必须维持：
 
 ```text
-agent-ai ← agent-core ← tools-* ← tools(meta) ← app
+agent-ai ← agent-core ← {tools-*、能力包} ← app
 ```
 
 `agent-core` 不得反向依赖任何具体 `tools-*` 包，也不依赖 React。
 
-`agent-core/src` 的分区：`runtime/`（主循环与命令）、`runtime/core/`（`CoreInstance`、
-plugin host、loop hooks、默认插件）、`runtime/commands/`（UI 唯一入口）、`state/`（atom、
-writer、persistence driver）、`subagents/`、`execution/`（执行图）、`planning/`、`skills/`、
-`timeline/`、`observability/`、`tools/`（抽象与 registry，不含具体工具）。
+`agent-core/src` 的分区：`runtime/`（主循环、命令与到点分派）、`runtime/core/`（`CoreInstance`、
+plugin host、loop hooks、默认插件）、`state/`（atom、writer、persistence contract）、`execution/`
+（执行图）、`planning/` 与 `skills/`（契约）、`subagents/`（子 run 机制与委派协议）、`timeline/`、
+`observability/`（port 与纯逻辑）、`tools/`（抽象与 registry，不含具体工具）。
 
 ## 状态与 UI 边界
 
 默认运行时使用一个 `defaultCore`。每个 `CoreInstance` 私有持有 root/session store、工具与
-abort registry、子 Agent scheduler、运行时配置、project skills 和 persistence；`createCore()`
-创建隔离实例，旧模块导出仅代理默认实例。默认实例本身不自动安装工具，应用和测试入口负责调用
+abort registry、运行时配置、plugin host、观测 port 与 persistence bridge；`createCore()` 创建隔离
+实例。`projectSkillsProvider`、`planRuntime`、`delegation` 与观测 port 由装配层按槽注入，持久化
+driver 由宿主配置 bridge。默认实例本身不自动安装工具，应用和测试入口负责调用
 `registerStandardTools`。
 
 - root store 只放跨会话状态：会话元数据与当前会话 ID。
@@ -105,8 +112,10 @@ abort registry、子 Agent scheduler、运行时配置、project skills 和 pers
 1. 写入用户消息与 running 状态。
 2. 组装 system prompt、上下文、工具摘要和 `request_tool_schema`。
 3. 模型按需请求完整工具 schema。
-4. 工具经 registry 校验后，通过受限 `ToolContext` 执行。
-5. 普通工具结果回填并继续循环；ask-user、计划审批或危险工具确认会暂停。
+4. `callTiming` 非空的工具由 `timedDispatch.ts` 在相应点位执行并投影为 timeline item；九个核心
+   时机为 session/run/turn、压缩和子 Agent 的开始/结束，`<domain>:<event>` 由宿主经受限 API 分派。
+5. 模型可见工具经 registry 校验后，通过受限 `ToolContext` 执行；普通结果回填并继续循环，ask-user、
+   计划审批或危险工具确认会暂停。
 6. 完成后提交 checkpoint，并通过 persistence bridge 落盘。
 
 供应商私有请求和重试留在 `packages/agent-ai/`；子 Agent 已按单体循环、批次编排和辅助职责拆分。

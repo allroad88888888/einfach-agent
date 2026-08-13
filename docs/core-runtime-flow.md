@@ -9,8 +9,11 @@
 flowchart LR
   APP[apps/web/src/main.tsx] --> CORE[defaultCore]
   APP --> TOOLS[registerStandardTools]
+  APP --> SKILLS[Project Skills Provider]
+  APP --> PLAN[Plan Runtime]
+  APP --> DELEGATION[Delegation Capability]
   APP --> PERSIST[Persistence Driver]
-  APP --> OBS[Observability Driver]
+  APP --> OBS[Observability Port / Driver]
   TOOLS --> REG[ToolRegistry]
   CORE --> ROOT[Root Store]
   CORE --> SESSION[Per-session Stores]
@@ -18,8 +21,10 @@ flowchart LR
   CORE --> REG
 ```
 
-`defaultCore` 创建时工具 registry 为空。应用入口和测试入口显式安装标准工具。
-需要嵌入 Runtime 的其他消费方可以用 `createCore({ registerTools, config })` 创建隔离实例。
+`defaultCore` 创建时工具 registry 为空。应用入口和测试入口显式安装标准工具，并装配 project
+skills、默认 plan runtime、delegation、持久化与观测。需要嵌入 Runtime 的其他消费方可以用
+`createCore({ registerTools, projectSkillsProvider, planRuntime, delegation, observability, config })`
+创建隔离实例；未注入的能力保持为空或禁用。
 
 ## 主链路
 
@@ -29,6 +34,8 @@ flowchart TD
   CMD --> BEGIN[创建 run / AbortSignal]
   BEGIN --> RUN[runSession]
   RUN --> LOOP[runToolLoop]
+  LOOP --> TIMED[CallTiming 到点分派]
+  TIMED --> TCTX
   LOOP --> CTX[压缩并组装模型上下文]
   CTX --> CACHE[记录 cache profile / epoch]
   CACHE --> MODEL[DeepSeek 或 GLM]
@@ -85,6 +92,12 @@ epoch，并归一化 provider 返回的命中/未命中 token；它不保存或�
 工具默认串行。只有显式标记为 `parallel` 的只读工具，且同一批调用全部满足并发条件时，
 Runtime 才会并发执行；每个调用无论串行或并发都会写入会话 execution graph。
 
+`callTiming` 非空的工具不进入模型 manifest 或 schema 加载面。`timedDispatch.ts` 复用受限
+`ToolContext`，在九个核心时机（session/run/turn、压缩、子 Agent 各自的开始或结束）按注册顺序
+执行，并由 `timedToolResultProjection.ts` 记为可持久化 timeline item。宿主或插件可通过
+`CoreInstance.dispatchTimedTools` 触发 `<domain>:<event>` 扩展时机；到点调用仍经风险评估，非 safe
+调用拒绝执行并记录诊断。
+
 ## 暂停与恢复
 
 以下流程会把 run 留在可恢复状态：
@@ -111,7 +124,13 @@ CoreInstance
 │   ├── executionGraphAtom
 │   └── transient atoms
 ├── tools: ToolRegistry
+├── plugins: PluginHost
 ├── abort: AbortRegistry
+├── observability: ObservabilityPort
+├── persistence: PersistenceBridge
+├── projectSkills: ProjectSkillsStore
+├── planRuntime?: PlanRuntimeFactory
+├── delegation?: DelegationCapability
 └── config: model keys / fetch
 ```
 
@@ -147,13 +166,18 @@ AbortController。可持久化的是 execution graph 快照，不是这些进程
 | 单轮请求 | `packages/agent-core/src/runtime/modelTurn.ts` |
 | Context cache 诊断 | `packages/agent-core/src/runtime/contextCache.ts` |
 | 执行图与后台任务 | `packages/agent-core/src/execution/` |
-| Core 实例 | `packages/agent-core/src/runtime/core/coreInstance.ts` |
+| Core 实例与能力槽 | `packages/agent-core/src/runtime/core/coreInstance.ts` |
+| 到点工具分派与结果投影 | `packages/agent-core/src/runtime/timedDispatch.ts`、`packages/agent-core/src/runtime/timedToolResultProjection.ts` |
 | 隔离 Core | `packages/agent-core/src/runtime/core/createCore.ts` |
 | 工具抽象 | `packages/agent-core/src/tools/` |
 | 工具能力边界 | `packages/agent-core/src/runtime/toolContext.ts` |
 | 状态 | `packages/agent-core/src/state/` |
 | 模型适配 | `packages/agent-ai/src/` |
 | 标准工具聚合 | `tools/standard/src/index.ts` |
+| Skills 实现与 L1 清单工具 | `tools/skills/src/` |
+| 默认 Plan Runtime | `tools/planning/src/planRuntime.ts` |
+| 子 Agent 产品能力 | `packages/subagents/src/` |
+| React TraceViewer | `apps/web/src/traceViewer/` |
 | Tauri bridge | `apps/desktop/src/lib.rs` |
 
 ## 本地验证

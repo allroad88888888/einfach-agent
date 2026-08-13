@@ -23,7 +23,6 @@
 
 | 文档 | 状态 |
 | --- | --- |
-| [装配式内核 Issue 树](assembly-core-issues.md) | 进行中：agent-core 向「工具 + 钩子」装配式内核收敛——skills/planning/子 Agent/存储/观测从内核子系统改为可组装能力包，含 CallTiming 工具触发时机机制，逐 issue 指派 codex 模型 |
 | [结构优化蓝图（按并发批次）](structure-optimization-blueprint.md) | 已完成：B1–B7 共 33/33；R7 前置 `81509c0`、终拆 `338285f`，完成记录可由 Git 历史追溯 |
 | [Core 插件化蓝图](core-plugin-extraction-blueprint.md) | 部分实施；hook、插件工具、订阅与多实例隔离已收口，公开受限命令已具备；UI 协议以独立蓝图为准 |
 | [插件扩展面产品化蓝图](plugin-productization-blueprint.md) | P2.1–P2.4 已完成：Core 私有安装、真实 run 生命周期、请求/工具 hook、显式停止决定、受限命令与非 React 样板 |

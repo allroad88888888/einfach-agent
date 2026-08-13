@@ -24,7 +24,12 @@ Web Agent 是一个可在浏览器预览、以 Tauri 桌面端为完整能力目
 │   └── desktop/                 # Tauri 2 / Rust 桌面桥
 ├── packages/
 │   ├── agent-ai/                # DeepSeek / GLM / Kimi API 适配
-│   └── agent-core/              # 状态、运行时、计划、评估、子 Agent、持久化、观测
+│   ├── agent-core/              # 装配式内核：状态、运行时、工具契约、plugin/观测/持久化 contract
+│   ├── subagents/               # 委派调度、批次、归档治理与视图 state
+│   ├── persistence-idb/         # IndexedDB 会话/历史持久化 driver
+│   ├── persistence-sqlite/      # SQLite 会话/历史持久化 driver
+│   ├── observability-idb/       # IndexedDB trace driver 与 reader
+│   └── observability-sqlite/    # SQLite trace driver 与 reader
 ├── tools/
 │   ├── standard/                # 六个工具域的 meta 聚合包
 │   ├── shell/                   # shell / task / Git
@@ -40,11 +45,11 @@ Web Agent 是一个可在浏览器预览、以 Tauri 桌面端为完整能力目
 依赖方向保持单向：
 
 ```text
-packages/agent-ai ← packages/agent-core ← tools/* ← tools/standard ← app
+packages/agent-ai ← packages/agent-core ← {tools-*、能力包} ← app
 ```
 
-Core 不自动安装具体工具。应用入口通过 `registerStandardTools(toolRegistry)` 安装标准工具集；
-其他消费方也可以只注册需要的工具域。
+Core 不自动安装具体工具或能力实现。应用入口安装标准工具集，并向 `createCore`/默认实例装配
+project skills、plan、delegation、持久化与观测所需的能力；其他消费方也可以只注册需要的工具域。
 
 ## 环境要求
 
