@@ -122,10 +122,13 @@ const coreSubpathExemptions = [
   {
     subpaths: [
       'subagents/childAgentLoop', 'subagents/childModelClient', 'subagents/delegationPolicy',
-      'subagents/runtimeState', 'runtime/concurrencyLimiter', 'runtime/finishReason',
+      'subagents/runtimeState', 'runtime/concurrencyLimiter', 'subagents/skillDistillChat',
     ],
     consumers: ['packages/subagents/src/'],
-    reason: 'S11 委派接缝整形前的结构债（S2b 32ed5a5 剩 5 条 + S7b E8/S7a E2 归位出来的 2 条）；S11 的判据就是本条清零',
+    reason: 'S11 委派接缝整形前的结构债（S2b 32ed5a5 剩 5 条 + S7b E8/S7a E2 归位出来的 2 条）；S11c 把蒸馏 chat 包装'
+      + '（原 delegationDistillation.ts）搬进 core 后 runtime/finishReason 这条深导入随之消失，换成新增的'
+      + ' subagents/skillDistillChat——`createSkillDistillChat` 签名含 `DelegationCallState`/`ChildModelCaller`'
+      + ' 等内核子 run 调用帧类型，按 subagents/index.ts 的收录判据不进 barrel，S11d 收尾；S11 的判据就是本条清零',
   },
   {
     subpaths: ['state/core.type'],

@@ -23,7 +23,11 @@ import {
   type ChildChangeSet,
   type DelegationCallState,
 } from '@web-agent/core/subagents/runtimeState'
-import { createSkillDistillChat } from './delegationDistillation'
+// S11c 蒸馏 chat 包装已下沉 core（packages/agent-core/src/subagents/skillDistillChat.ts）；
+// 未进 barrel（`createSkillDistillChat` 签名含 `DelegationCallState`/`ChildModelCaller` 等内核
+// 子 run 调用帧类型，按 subagents/index.ts 的收录判据属内部），暂走深路径，见
+// scripts/check-boundaries.js 豁免表 packages/subagents 那组，S11d 收尾。
+import { createSkillDistillChat } from '@web-agent/core/subagents/skillDistillChat'
 
 function childSummary(children: readonly ChildAgentResult[]): DelegateAgentBatchResult['summary'] {
   return {

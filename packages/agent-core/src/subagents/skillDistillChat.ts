@@ -2,18 +2,18 @@ import { firstAssistantText } from '@web-agent/ai'
 import {
   FINISH_REASON_ERRORS,
   isAbnormalFinishReason,
-} from '@web-agent/core/runtime/finishReason'
-import type { SkillDistillChat } from './archive/distill'
+} from '../runtime/finishReason'
 import {
   type ChildModelCaller,
   type CallModelObservation,
-} from '@web-agent/core/subagents/childModelClient'
-import type { DelegationCallState } from '@web-agent/core/subagents/runtimeState'
+} from './childModelClient'
+import type { DelegationCallState } from './runtimeState'
+import type { SkillDistillChatInput } from './delegationRuntimePorts'
 
 /** Makes the no-tool model call used to distill a delegation core and child briefs. */
 export function createSkillDistillChat(callModel: ChildModelCaller): (
   state: DelegationCallState,
-  input: Parameters<SkillDistillChat>[0],
+  input: SkillDistillChatInput,
   maxModelCalls: number,
   observe?: CallModelObservation,
 ) => Promise<string> {
