@@ -75,7 +75,8 @@ export interface DelegationRuntimeInput {
   customInstructions?: string
   environment?: string
   runtimeIsTauri?: boolean
-  deepseekUserId?: string
+  /** 不透明调用方标识；core 只透传，是否上行由 provider adapter 决定。 */
+  modelUserId?: string
   apiKey: string
   signal: AbortSignal
   fetchImpl?: typeof fetch

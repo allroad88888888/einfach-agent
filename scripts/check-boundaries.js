@@ -44,13 +44,12 @@ const coreSourceDirectory = 'packages/agent-core/src'
 // 人工核实后新增的既有命中（详情见对应 issue 卡与提交说明）。
 const vendorNameExemptions = [
   { path: 'state/persistence/modelMigration.ts', reason: '历史迁移必须认识旧厂商模型名' },
-  { path: 'subagents/childModelClient.ts', reason: '子 agent 档位路由，待 M6a/M6b 迁出为可注入档位表' },
-  { path: 'runtime/core/runtimeConfig.ts', reason: 'deepseekUserId 字段，待 M7 去专名化' },
-  { path: 'runtime/delegationContract.ts', reason: 'deepseekUserId 字段，待 M7 去专名化' },
-  { path: 'runtime/core/delegateModelIdentity.ts', reason: 'deepseekUserId 字段，待 M7 去专名化' },
-  { path: 'subagents/runtimeState.ts', reason: 'deepseekUserId 字段，待 M7 去专名化（M4 卡原始豁免清单遗漏，本次核实后补齐）' },
   // M9 落地后删除的 7 项：`state/core.type.ts` 的闭合 union 换成「不透明 vendor id + 供应商
   // 附加设置袋」，按它派生的 4 处收窄分支与 3 份测试夹具随之不再需要厂商名。
+  // M7 落地后删除的 5 项：运行时调用方标识改名为中立的 `modelUserId`（`runtime/core/
+  // runtimeConfig.ts`、`runtime/delegationContract.ts`、`subagents/runtimeState.ts`、
+  // `subagents/childModelClient.ts`），只做名字转接的 `runtime/core/delegateModelIdentity.ts`
+  // 随之删除。
 ]
 
 async function typescriptFiles(directory) {

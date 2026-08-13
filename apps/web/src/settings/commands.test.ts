@@ -83,7 +83,7 @@ describe('app settings commands', () => {
     await hydrateAppSettings()
 
     expect(defaultCore.config.modelCredentials.deepseek).toBe('desktop-managed-credential')
-    expect(defaultCore.config.deepseekUserId).toMatch(/^wa_[a-f0-9]{48}$/)
+    expect(defaultCore.config.modelUserId).toMatch(/^wa_[a-f0-9]{48}$/)
   })
 
   it('surfaces a storage migration failure to settings state', async () => {

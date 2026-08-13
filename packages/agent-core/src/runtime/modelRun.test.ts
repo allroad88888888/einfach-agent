@@ -250,7 +250,7 @@ async function waitUntil(predicate: () => boolean, label: string): Promise<void>
 describe('runSession（P-R2 最小单轮 run）', () => {
   it('passes only the current CoreInstance model user identity into the request body', async () => {
     const core = createCoreInstance({
-      config: { deepseekUserId: 'wa_isolated_core_0123' },
+      config: { modelUserId: 'wa_isolated_core_0123' },
     })
     const id = 'instance-deepseek-user-id'
     core.rootStore.setter(sessionsAtom, {

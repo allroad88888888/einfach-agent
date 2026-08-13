@@ -59,7 +59,7 @@ export async function hydrateAppSettings(): Promise<void> {
     rootStore.setter(customInstructionsDraftAtom, customInstructions)
     configureCommands({
       customInstructions,
-      deepseekUserId: settings.installationId,
+      modelUserId: settings.installationId,
     })
     rootStore.setter(customInstructionsStatusAtom, { status: 'ready' })
   } catch (error) {
@@ -67,7 +67,7 @@ export async function hydrateAppSettings(): Promise<void> {
     rootStore.setter(customInstructionsDraftAtom, '')
     configureCommands({
       customInstructions: '',
-      deepseekUserId: undefined,
+      modelUserId: undefined,
     })
     rootStore.setter(customInstructionsStatusAtom, {
       status: 'error',

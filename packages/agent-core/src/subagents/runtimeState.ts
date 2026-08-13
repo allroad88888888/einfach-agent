@@ -65,8 +65,8 @@ export interface CreateDelegateAgentRuntimeOptions extends DelegationRuntimePort
   environment?: string
   /** Whether this delegate runtime runs inside the native Tauri host. Omitted is Web-safe. */
   runtimeIsTauri?: boolean
-  /** Stable, opaque installation identifier sent only to DeepSeek request bodies. */
-  deepseekUserId?: string
+  /** Stable, opaque caller identifier; each provider adapter decides whether to send it. */
+  modelUserId?: string
   apiKey: string
   signal: AbortSignal
   fetchImpl?: typeof fetch

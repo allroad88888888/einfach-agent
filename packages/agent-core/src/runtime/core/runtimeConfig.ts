@@ -21,7 +21,15 @@ export interface RuntimeConfig {
    * agent-ai 内置装配给出的缺省（见 `DEFAULT_MODEL_SETTINGS`）。
    */
   defaultModelSettings?: ModelSettings
-  deepseekUserId?: string
+  /**
+   * 装配层给的不透明调用方标识（可不给）。core 只把它原样交给当前会话 provider 的 adapter，
+   * 既不解释也不校验，更不知道有没有哪家会把它发上行——「是否上行、上行成哪个字段、非法值
+   * 怎么处理」全部由 adapter 决定（见 `packages/agent-ai` 的 provider registry）。
+   *
+   * 隐私语义由装配层负责：只允许放本机生成的随机 ID，不得放邮箱、账号、路径等真实身份；
+   * 协议边界对不合法的值整体丢弃而不是截断，避免把私密数据「修剪」成仍会发出去的标识。
+   */
+  modelUserId?: string
   customInstructions: string
   fetchImpl?: typeof fetch
   prepareUserInput?: UserInputPreparer

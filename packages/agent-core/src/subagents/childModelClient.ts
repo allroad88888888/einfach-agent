@@ -105,7 +105,7 @@ export function createChildModelCaller(runtime: DelegateAgentRuntimeState): Chil
             max_tokens: CONTEXT_DISTILLATION_MAX_TOKENS,
             stream: false,
             settings: modelAdapterSettings(settings),
-            userId: runtime.opts.deepseekUserId,
+            userId: runtime.opts.modelUserId,
           }, {
             apiKey: runtime.opts.apiKey,
             signal: runtime.opts.signal,
@@ -177,7 +177,7 @@ export function createChildModelCaller(runtime: DelegateAgentRuntimeState): Chil
       return callModel({
         ...requestBase,
         settings: modelAdapterSettings(settings),
-        userId: runtime.opts.deepseekUserId,
+        userId: runtime.opts.modelUserId,
       }, callOptions)
     }
 

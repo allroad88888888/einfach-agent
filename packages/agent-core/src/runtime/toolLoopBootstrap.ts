@@ -16,7 +16,6 @@ import { dispatchTimedTools } from './timedDispatch'
 import { isCurrentRun } from './shared/runGuards'
 import { newId } from './newId'
 import { ROOT_AGENT_PATH } from '../subagents/path'
-import { runtimeModelIdentity, delegateModelIdentity } from './core/delegateModelIdentity'
 import { formatSubagentTranscript } from './subagentTranscript'
 import { planResumeNotice } from './toolLoopPlan'
 import { getExecutionRuntime } from '../execution/runtime'
@@ -86,10 +85,10 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
     injectStablePrefixTranscript(id, stablePrefix, core)
     trace.event('llm.system_injected', { system_chars: stablePrefix.system.content.length, environment_chars: stablePrefix.environment.content.length, workspace_bound: stablePrefix.workspaceRoot !== undefined })
     if (session !== initialSession) trace.event('agent.model_migrated_at_request', { from: initialSession.settings.model, to: session.settings.model })
-    const modelUserId = runtimeModelIdentity(core.config)
+    const modelUserId = core.config.modelUserId
     const rootTranscript = () => formatSubagentTranscript([...stablePrefix.items, ...currentTurnItems(id, core).map((item) => item.item)])
     const delegateRuntime = await core.delegation?.createRuntime({
-      sessionId: id, runId, settings: session.settings, core, registry: core.tools, customInstructions: core.config.customInstructions, environment: stablePrefix.environment.content, runtimeIsTauri: stablePrefix.isTauri, ...delegateModelIdentity(modelUserId), apiKey: opts.apiKey, signal: opts.signal, fetchImpl: opts.fetchImpl,
+      sessionId: id, runId, settings: session.settings, core, registry: core.tools, customInstructions: core.config.customInstructions, environment: stablePrefix.environment.content, runtimeIsTauri: stablePrefix.isTauri, modelUserId, apiKey: opts.apiKey, signal: opts.signal, fetchImpl: opts.fetchImpl,
       onNodeChange: (node) => getExecutionRuntime(core).syncAgentNode(node),
       onTraceItem: ({ agentPath, timestamp, turn, item }) => getExecutionRuntime(core).appendAgentTrace({ sessionId: id, treeId: runId, agentPath, record: { timestamp, turn, item } }),
     })

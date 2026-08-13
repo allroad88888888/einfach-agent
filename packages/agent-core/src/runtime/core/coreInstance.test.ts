@@ -164,16 +164,16 @@ describe('coreInstance —— CoreInstance 抽象与 defaultCore', () => {
       const a = createCoreInstance({
         config: {
           modelCredentials: { deepseek: 'ka' },
-          deepseekUserId: 'wa_instance_a',
+          modelUserId: 'wa_instance_a',
         },
       })
       const b = createCoreInstance({ config: { modelCredentials: { glm: 'kb' } } })
 
       expect(a.config.modelCredentials.deepseek).toBe('ka')
-      expect(a.config.deepseekUserId).toBe('wa_instance_a')
+      expect(a.config.modelUserId).toBe('wa_instance_a')
       expect(a.config.modelCredentials.glm).toBeUndefined()
       expect(b.config.modelCredentials.deepseek).toBeUndefined()
-      expect(b.config.deepseekUserId).toBeUndefined()
+      expect(b.config.modelUserId).toBeUndefined()
       expect(b.config.modelCredentials.glm).toBe('kb')
     })
   })
