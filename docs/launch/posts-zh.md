@@ -108,7 +108,7 @@ export function assembleCliRuntime(options: AssembleCliRuntimeOptions): void {
   configureDefaultDelegation(createDelegationAssembly)
   configurePersistence({ history: createMemoryHistoryDriver() })   // 浏览器用 IndexedDB，桌面用 SQLite
   configureTraceOutput(options.verbose)                            // trace 打到 stderr
-  configureCommands({ deepseekApiKey: /* ... */, fetchImpl: globalThis.fetch })
+  configureCommands({ modelCredentials: { deepseek: /* ... */ }, fetchImpl: globalThis.fetch })
 }
 ```
 
