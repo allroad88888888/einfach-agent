@@ -96,3 +96,31 @@ test('core 文件不含厂商名字面量时厂商名红线无观察项也不失
   assert.match(result.stdout, /边界检查通过/)
   assert.doesNotMatch(result.stdout, /core 厂商名红线/)
 })
+
+test('厂商名 snake_case 内嵌（下划线两侧，无其他命中位置）在非豁免 core 文件命中会失败', async () => {
+  // 全行唯一的 "deepseek" 出现在下划线两侧，旧 \b 正则会把 "_" 当单词字符从而漏判；
+  // 这条 fixture 里刻意不放任何被引号 / 非字母数字包围的厂商名，专门用来卡这一漏洞。
+  const root = await fixture({
+    'packages/agent-core/src/runtime/foo.ts': "const non_deepseek_provider = true\n",
+  })
+  await assert.rejects(run(root), (error) => {
+    assert.match(error.stderr, /边界检查失败：/)
+    assert.match(error.stderr, /packages\/agent-core\/src\/runtime\/foo\.ts:1 core 厂商名红线（deepseek）/)
+    return true
+  })
+})
+
+test('厂商名 snake_case 内嵌在豁免 core 文件命中只报观察项、不会失败', async () => {
+  const root = await fixture({
+    'packages/agent-core/src/state/persistence/modelMigration.ts': "const legacy_deepseek_vendor_map = true\n",
+  })
+  const result = await run(root)
+  assert.match(result.stdout, /边界观察项：/)
+  assert.ok(
+    result.stdout.includes(
+      'packages/agent-core/src/state/persistence/modelMigration.ts:1 观察项：core 厂商名红线（deepseek）—— 豁免原因：历史迁移必须认识旧厂商模型名',
+    ),
+    result.stdout,
+  )
+  assert.match(result.stdout, /边界检查通过/)
+})

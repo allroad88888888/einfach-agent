@@ -37,7 +37,11 @@ const capabilityPackages = ['subagents', 'persistence-idb', 'persistence-sqlite'
 // 这条规则扫的是整行文本字面量（含注释），因为「注释里顺嘴提厂商名」同样是本卡要收敛的对象。
 const vendorNameRuleName = 'core 厂商名红线'
 const vendorNames = ['deepseek', 'glm', 'kimi', 'moonshot', 'zhipu', 'openai', 'anthropic', 'gemini']
-const vendorNamePattern = new RegExp(`\\b(${vendorNames.join('|')})\\b`, 'i')
+// `\b` 词边界把 `_` 算作单词字符，snake_case 里内嵌的厂商名（如 `non_deepseek_provider`）因此
+// 逃过匹配——`deepseek` 两侧都挨着 `_`，判定成"词中间"而不是"词边界"。改用手写环视：前后不允许
+// 紧跟字母或数字（不含下划线），`_deepseek_`／`deepseekClient` 都会命中，只有真正被字母数字
+// 直接拼接的情况（如子串 `deepseeker`）才继续放行。
+const vendorNamePattern = new RegExp(`(?<![A-Za-z0-9])(${vendorNames.join('|')})(?![A-Za-z0-9])`, 'i')
 const coreSourceDirectory = 'packages/agent-core/src'
 // 豁免清单：路径相对 packages/agent-core/src；命中时降级为观察项而不是 fail。每项必须写明原因，
 // 不允许空口白牌。前 6 项是 M4 卡判据里明确点名的既定豁免；其余是本卡实现时跑一遍脚本、

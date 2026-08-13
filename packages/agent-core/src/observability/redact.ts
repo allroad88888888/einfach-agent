@@ -30,7 +30,7 @@ function isTokenMetric(key: string, value: unknown): boolean {
 const PAYLOAD_KEY = /^(prompt|messages?|response|completion|content|reasoning_content|arguments|args|result|answers)$/i
 const EXPLICIT_PREVIEW_KEY = /Preview$/
 const BEARER_VALUE = /\bBearer\s+[^\s,}]+/gi
-const OPENAI_STYLE_KEY = /\bsk-[A-Za-z0-9_-]{8,}\b/g
+const SK_PREFIXED_KEY = /\bsk-[A-Za-z0-9_-]{8,}\b/g
 const SECRET_ASSIGNMENT =
   /(\b(?:api[_-]?key|authorization|access[_-]?token|refresh[_-]?token|token|secret|password|passwd)\b["']?\s*[:=]\s*["']?)[^"',\s}]+/gi
 
@@ -71,7 +71,7 @@ function safeKeyCount(value: object): number {
 function maskSensitiveText(value: string): string {
   return value
     .replace(BEARER_VALUE, 'Bearer [REDACTED]')
-    .replace(OPENAI_STYLE_KEY, '[REDACTED]')
+    .replace(SK_PREFIXED_KEY, '[REDACTED]')
     .replace(SECRET_ASSIGNMENT, '$1[REDACTED]')
 }
 
