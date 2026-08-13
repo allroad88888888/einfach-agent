@@ -1,11 +1,13 @@
-// 内置三家 provider 的装配：把 deepseek/glm/kimi 连同各自能力描述装进默认 registry。
+// 内置四家 provider 的装配：把 deepseek/glm/kimi/openai-compat 连同各自能力描述装进默认 registry。
 // ---------------------------------------------------------------------------
 // 参照 Rust 侧「装配层显式列举合法」：这里是 adapter 包内唯一允许出现厂商名与厂商能力数据
 // （上下文窗口、单轮工具上限、逐模型清单）的地方。每家的私有请求字段都在自己的 adapter 里
 // 从通用 ProviderSettings 投影出来，registry 与上层路由（modelAdapter）都不认识这些字段；
 // 能力描述同理只在这里出现，vendorDescriptor.ts 只经 registry 查询、不再持有厂商数据。
 // 默认 registry 的 fallback 是 deepseek —— 未注册的 vendorId 沿用历史行为按 DeepSeek 执行。
-// 新增第四家 provider 只需要在本文件加一段 adapter + descriptor 并注册，其余文件零改动。
+// 新增 provider 在本文件加一段 adapter + descriptor 并注册；如果新家的 vendor 字面量要出现
+// 在 ModelAdapterSettings 的类型判别式上（modelAdapter.ts），那一处的一行 union 分支也要跟着
+// 加——这是 agent-ai 包内部的类型收窄，不算跨包改动，packages/agent-core 全程不需要知道。
 
 import {
   callDeepSeek,
@@ -17,6 +19,12 @@ import { callGlm, streamGlm, type GlmChatRequest, type GlmReasoningEffort } from
 import { KIMI_K2_6_IMAGE_INPUT, UNSUPPORTED_IMAGE_INPUT } from './imageCapability'
 import { callKimi, streamKimi, type KimiChatRequest } from './kimi'
 import type { KimiRegion } from './kimiRegion'
+import {
+  callOpenAiCompat,
+  streamOpenAiCompat,
+  type OpenAiCompatChatRequest,
+} from './openaiCompat'
+import type { ChatCallOptions } from './modelApi'
 import {
   createProviderRegistry,
   type ModelDescriptor,
@@ -30,6 +38,7 @@ import {
 export const DEEPSEEK_VENDOR_ID = 'deepseek'
 export const GLM_VENDOR_ID = 'glm'
 export const KIMI_VENDOR_ID = 'kimi'
+export const OPENAI_COMPAT_VENDOR_ID = 'openai-compat'
 
 // 简介：构造一个只有文本上下文窗口、不支持图片输入的模型描述。
 // 详情：多数模型没有经过验证的图片输入协议，用这个帮助函数省掉逐个模型重复
@@ -84,6 +93,17 @@ const kimiDescriptor: VendorDescriptor = {
   },
 }
 
+// 简介：标准 OpenAI-compatible 协议的能力描述。
+// 详情：这是唯一一家没有具体产品背书的 vendor——任何声称兼容 OpenAI /chat/completions
+// 的端点都可能挂在这里，因此不编具体厂商才会有的数字：contextWindowTokens/maxTurnTools
+// 取与 registry 自身 FALLBACK_VENDOR_DESCRIPTOR 一致的保守值，models 留空（没有实测数据
+// 支撑任何一条逐模型覆盖）。接入某个具体服务后如果有了真实数据，再回来补 models。
+const openAiCompatDescriptor: VendorDescriptor = {
+  contextWindowTokens: 64_000,
+  maxTurnTools: 128,
+  models: {},
+}
+
 type DeepSeekProviderSettings = ProviderSettings & { reasoning_effort?: DeepSeekReasoningEffort }
 type GlmProviderSettings = ProviderSettings & { reasoning_effort?: GlmReasoningEffort }
 type KimiProviderSettings = ProviderSettings & { region?: KimiRegion }
@@ -112,6 +132,50 @@ function kimiRequest(request: ProviderRequest<KimiProviderSettings>): KimiChatRe
   return { ...request.body, region: request.settings.region }
 }
 
+// 简介：标准协议没有厂商私有字段可归一，请求体原样转发；userId 不上行。
+function openAiCompatRequest(request: ProviderRequest<ProviderSettings>): OpenAiCompatChatRequest {
+  return { ...request.body }
+}
+
+// 简介：装配层可选的默认接入点。
+// 详情：per-request 的 settings.baseUrl 优先于这里；两者都缺失时交给
+// callOpenAiCompat/streamOpenAiCompat 自己的 requireBaseUrl 报配置错误，不在这里重复校验。
+export interface OpenAiCompatAdapterConfig {
+  baseUrl?: string
+}
+
+// 简介：解析这次调用实际要用的 ChatCallOptions.baseUrl。
+// 详情：优先级 settings.baseUrl（per-request 覆盖）> config.baseUrl（装配层注册时烘焙的
+// 默认接入点）> options.baseUrl（调用方直接传的，兜底给非 core 的直接调用方，比如测试）。
+function resolveOpenAiCompatOptions(
+  request: ProviderRequest<ProviderSettings>,
+  options: ChatCallOptions,
+  config: OpenAiCompatAdapterConfig,
+): ChatCallOptions {
+  return { ...options, baseUrl: request.settings.baseUrl ?? config.baseUrl ?? options.baseUrl }
+}
+
+// 简介：构造标准 OpenAI-compatible adapter。
+// 详情：baseUrl 没有厂商官方值可猜，因此拆成两层可配——装配层在注册时可以烘焙一个默认
+// 接入点（比如 CLI/桌面从环境变量解析出的自建网关地址），每次请求仍可用 settings.baseUrl
+// 覆盖它。默认注册（见 registerBuiltinProviders）不带任何默认值，两者都缺失时请求会带着
+// OpenAiCompatConfigError 拒绝，而不是发给未知主机。
+export function createOpenAiCompatAdapter(
+  config: OpenAiCompatAdapterConfig = {},
+): ProviderAdapter<ProviderSettings> {
+  return {
+    descriptor: openAiCompatDescriptor,
+    call: (request, options) =>
+      callOpenAiCompat(openAiCompatRequest(request), resolveOpenAiCompatOptions(request, options, config)),
+    stream: (request, options, handlers) =>
+      streamOpenAiCompat(
+        openAiCompatRequest(request),
+        resolveOpenAiCompatOptions(request, options, config),
+        handlers,
+      ),
+  }
+}
+
 const deepseekAdapter: ProviderAdapter<DeepSeekProviderSettings> = {
   descriptor: deepseekDescriptor,
   call: (request, options) => callDeepSeek(deepseekRequest(request), options),
@@ -131,16 +195,22 @@ const kimiAdapter: ProviderAdapter<KimiProviderSettings> = {
   stream: (request, options, handlers) => streamKimi(kimiRequest(request), options, handlers),
 }
 
-// 简介：把内置三家注册进给定 registry。
+// 默认注册不烘焙任何接入点；宿主想要一个进程级默认 baseUrl 时，用
+// `registry.register(OPENAI_COMPAT_VENDOR_ID, createOpenAiCompatAdapter({ baseUrl }))`
+// 覆盖它（registry 的「重复注册以最后一次为准」语义，见 providerRegistry.ts）。
+const openAiCompatAdapter = createOpenAiCompatAdapter()
+
+// 简介：把内置四家注册进给定 registry。
 // 详情：宿主想要一个只带部分厂商的隔离 registry 时，可以自建实例再选择性注册。
 export function registerBuiltinProviders(registry: ProviderRegistry): void {
   registry.register(DEEPSEEK_VENDOR_ID, deepseekAdapter)
   registry.register(GLM_VENDOR_ID, glmAdapter)
   registry.register(KIMI_VENDOR_ID, kimiAdapter)
+  registry.register(OPENAI_COMPAT_VENDOR_ID, openAiCompatAdapter)
 }
 
 // 简介：默认 provider registry（modelAdapter 的分发表）。
-// 详情：模块加载即完成三家注册；fallback 到 DeepSeek 保持未知 vendor 的历史回退语义。
+// 详情：模块加载即完成四家注册；fallback 到 DeepSeek 保持未知 vendor 的历史回退语义。
 export const defaultProviderRegistry: ProviderRegistry = createProviderRegistry({
   fallbackVendorId: DEEPSEEK_VENDOR_ID,
 })

@@ -2,17 +2,30 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-/** CLI 装配层显式登记的凭据来源：vendor id ← 环境变量 / 配置文件键。 */
+/**
+ * CLI 装配层显式登记的凭据来源：vendor id ← 环境变量 / 配置文件键。
+ * baseUrl 两个字段是可选的——只有没有厂商官方接入点的 vendor（目前只有 openai-compat）
+ * 才需要；deepseek/glm/kimi 各自在 agent-ai adapter 里有域名常量，不必在这里配。
+ */
 interface CredentialSource {
   vendor: string
   environmentVariable: string
   configKey: string
+  baseUrlEnvironmentVariable?: string
+  baseUrlConfigKey?: string
 }
 
 const CREDENTIAL_SOURCES: readonly CredentialSource[] = [
   { vendor: 'deepseek', environmentVariable: 'DEEPSEEK_API_KEY', configKey: 'deepseek:default' },
   { vendor: 'glm', environmentVariable: 'GLM_API_KEY', configKey: 'glm:default' },
   { vendor: 'kimi', environmentVariable: 'KIMI_API_KEY', configKey: 'kimi:cn' },
+  {
+    vendor: 'openai-compat',
+    environmentVariable: 'OPENAI_COMPAT_API_KEY',
+    configKey: 'openai-compat:default',
+    baseUrlEnvironmentVariable: 'OPENAI_COMPAT_BASE_URL',
+    baseUrlConfigKey: 'openai-compat:default:baseUrl',
+  },
 ]
 
 /** CLI 默认模型的 vendor id：没有它就没法起 run。 */
@@ -21,6 +34,12 @@ const DEFAULT_VENDOR = 'deepseek'
 export interface ResolvedCredentials {
   /** vendor id → API Key，直接喂给运行时的 `modelCredentials`；未配置的 vendor 不出现。 */
   modelCredentials: Record<string, string>
+  /**
+   * vendor id → 接入点覆盖；只有 openai-compat 这类没有官方域名的 vendor 才会出现。
+   * 装配层（runtime.ts）用它给 openai-compat adapter 烘焙默认 baseUrl，不喂给 core——
+   * core 的 `modelCredentials` 表只认 API Key，没有 baseUrl 的位置。
+   */
+  modelBaseUrls: Record<string, string>
   configPath: string
 }
 
@@ -51,6 +70,16 @@ function credentialsFromEnvironment(env: NodeJS.ProcessEnv): Record<string, stri
   return credentials
 }
 
+function baseUrlsFromEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
+  const baseUrls: Record<string, string> = {}
+  for (const { vendor, baseUrlEnvironmentVariable } of CREDENTIAL_SOURCES) {
+    if (!baseUrlEnvironmentVariable) continue
+    const value = env[baseUrlEnvironmentVariable]?.trim() ?? ''
+    if (value) baseUrls[vendor] = value
+  }
+  return baseUrls
+}
+
 function configFilePath(options: ResolveCredentialOptions): string {
   return resolve(options.configPath ?? join(options.homeDirectory ?? homedir(), '.webAgent', 'config.json'))
 }
@@ -78,18 +107,26 @@ export async function resolveModelCredentials(
   const env = options.env ?? process.env
   const configPath = configFilePath(options)
   const fromEnvironment = credentialsFromEnvironment(env)
+  const baseUrlsFromEnv = baseUrlsFromEnvironment(env)
 
   // DeepSeek is the default model. Its environment variable is a complete no-file path,
   // so a malformed optional config cannot break a correctly configured CLI invocation.
-  if (fromEnvironment[DEFAULT_VENDOR]) return { modelCredentials: fromEnvironment, configPath }
+  if (fromEnvironment[DEFAULT_VENDOR]) {
+    return { modelCredentials: fromEnvironment, modelBaseUrls: baseUrlsFromEnv, configPath }
+  }
 
   const config = await readConfig(configPath, options.readConfigFile ?? readFile)
   const modelCredentials: Record<string, string> = {}
-  for (const { vendor, configKey } of CREDENTIAL_SOURCES) {
+  const modelBaseUrls: Record<string, string> = { ...baseUrlsFromEnv }
+  for (const { vendor, configKey, baseUrlConfigKey } of CREDENTIAL_SOURCES) {
     const value = fromEnvironment[vendor] || valueFromConfig(config, configKey)
     if (value) modelCredentials[vendor] = value
+    if (baseUrlConfigKey && !modelBaseUrls[vendor]) {
+      const baseUrl = valueFromConfig(config, baseUrlConfigKey)
+      if (baseUrl) modelBaseUrls[vendor] = baseUrl
+    }
   }
-  return { modelCredentials, configPath }
+  return { modelCredentials, modelBaseUrls, configPath }
 }
 
 /** Throws a user-facing error without including the credential value. */

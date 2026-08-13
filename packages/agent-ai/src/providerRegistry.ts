@@ -18,6 +18,11 @@ import type {
 // 详情：所有厂商唯一共有的字段就是 vendorId；其余字段是各家私有的，registry 不看。
 export interface ProviderSettings {
   vendor: string
+  // 简介：调用方要求的接入点覆盖（可选）。
+  // 详情：不透明、非厂商专名——registry 与更上层的 core 都不解释这个字段，只有 adapter
+  // 自己决定要不要消费它。标准 OpenAI-compatible 协议没有官方端点，靠这个字段（或 adapter
+  // 注册时装配层烘焙的默认值）才能拿到 baseUrl；deepseek/glm/kimi 各自有域名常量，忽略它。
+  baseUrl?: string
 }
 
 // 简介：交给 adapter 执行的通用请求。

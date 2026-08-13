@@ -20,6 +20,9 @@ export type ModelAdapterSettings =
   | { vendor: 'deepseek'; reasoning_effort?: DeepSeekReasoningEffort }
   | { vendor: 'glm'; reasoning_effort?: GlmReasoningEffort }
   | { vendor: 'kimi'; region?: KimiRegion }
+  // baseUrl 必填才能真正发出请求，但类型上留成可选：装配层可以在注册 adapter 时烘焙默认
+  // 接入点（见 builtinProviders.createOpenAiCompatAdapter），未提供时才需要靠这里补。
+  | { vendor: 'openai-compat'; baseUrl?: string }
 
 export interface ModelRequest extends ChatRequestBase {
   settings: ModelAdapterSettings
