@@ -21,7 +21,11 @@ import {
 } from './archive/skillCache'
 import { DEFAULT_SUBAGENT_TIER_ROUTING } from './defaultTierRouting'
 import { DelegateAgentRuntimeState } from '@web-agent/core/subagents/runtimeState'
-import { createDelegateAgents } from './delegationBatch'
+// S11d 批次执行段已下沉 core（packages/agent-core/src/subagents/delegationBatch.ts）；
+// 未进 barrel（`createDelegateAgents(runtime: DelegateAgentRuntimeState)` 的入参是内核子 run 的
+// 可变资源容器，按 subagents/index.ts 的收录判据属内部），暂走深路径，见
+// scripts/check-boundaries.js 豁免表 packages/subagents 那组，S11e 工厂下沉后本行消失。
+import { createDelegateAgents } from '@web-agent/core/subagents/delegationBatch'
 import { createSubagentScheduler } from './schedulerState'
 
 export type CreateDelegateAgentRuntimeOptions = DelegationRuntimeInput & {

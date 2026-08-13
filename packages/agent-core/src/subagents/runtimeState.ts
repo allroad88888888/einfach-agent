@@ -12,6 +12,7 @@ import type {
   DelegationArchiveFormatPort,
   DelegationRuntimePorts,
   SubagentArchivePort,
+  SubagentSkillDistillPort,
 } from './delegationRuntimePorts'
 import type { SubagentScheduler } from '../runtime/delegationContract'
 
@@ -126,6 +127,7 @@ export class DelegateAgentRuntimeState {
   readonly opts: CreateDelegateAgentRuntimeOptions
   readonly archive: SubagentArchivePort
   readonly archiveFormat: DelegationArchiveFormatPort
+  readonly skillDistill: SubagentSkillDistillPort
   readonly contextCacheTracker: ContextCacheTracker
   nextChangeSetOrder = 0
   readonly changeSetOrder = new Map<string, number>()
@@ -154,6 +156,7 @@ export class DelegateAgentRuntimeState {
     }
     this.archive = rawOpts.archive
     this.archiveFormat = rawOpts.archiveFormat
+    this.skillDistill = rawOpts.skillDistill
     this.contextCacheTracker = createContextCacheTracker()
     this.unsubscribeScheduler = this.opts.onNodeChange
       ? this.scheduler.subscribe((node) => {

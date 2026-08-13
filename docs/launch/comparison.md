@@ -64,7 +64,7 @@ Web 预览、Tauri 桌面、headless CLI 跑同一个 runtime；差异全部落�
 探索、observability 属企业方案，Cherry Studio 有子智能体和调用链视图但没查到跨会话 trace 与回放。
 "树形 + 预算 + 归档 + 回放"这四件同时具备，在本表范围内是本项目独有的组合。
 
-- 树形与逐路径预算：[`packages/subagents/src/delegationBatch.ts`](../../packages/subagents/src/delegationBatch.ts)
+- 树形与逐路径预算：[`packages/agent-core/src/subagents/delegationBatch.ts`](../../packages/agent-core/src/subagents/delegationBatch.ts)
   （`maxDepth` / `maxChildren` / `maxConcurrent` / `maxTotalNodes` / `maxModelCalls`，子节点预算按
   路径收窄且不得超过父预算）
 - 归档与回放：[`packages/subagents/src/archive/`](../../packages/subagents/src/archive/)（JSONL

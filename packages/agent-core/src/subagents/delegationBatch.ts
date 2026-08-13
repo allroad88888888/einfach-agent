@@ -1,20 +1,10 @@
-import { createConcurrencyLimiter } from '@web-agent/core/runtime/concurrencyLimiter'
-import { resolveDelegationRequestPolicy } from '@web-agent/core/subagents/delegationPolicy'
-import { runChildAgent } from '@web-agent/core/subagents/childAgentLoop'
-import { createChildModelCaller } from '@web-agent/core/subagents/childModelClient'
-import {
-  ROOT_AGENT_PATH,
-  routeChildModel,
-  type ChildAgentResult,
-  type DelegateAgentBatchResult,
-  type DelegateAgentBatchStatus,
-  type DelegateAgentCallContext,
-  type DelegateAgentInput,
-  type DelegateAgents,
-  type SubagentNodeRecord,
-} from '@web-agent/core/subagents'
-import { subagentCacheBasePath, subagentEventsPath } from './archive/skillCache'
-import { distillDelegateSkills } from './archive/distill'
+import { createConcurrencyLimiter } from '../runtime/concurrencyLimiter'
+import { runChildAgent } from './childAgentLoop'
+import { createChildModelCaller } from './childModelClient'
+import { resolveDelegationRequestPolicy } from './delegationPolicy'
+import type { DelegateAgents } from './delegationRuntimePorts'
+import { routeChildModel } from './modelSelection'
+import { ROOT_AGENT_PATH } from './path'
 import {
   collectChangeSets,
   DelegateAgentRuntimeState,
@@ -22,12 +12,16 @@ import {
   toErrorMessage,
   type ChildChangeSet,
   type DelegationCallState,
-} from '@web-agent/core/subagents/runtimeState'
-// S11c 蒸馏 chat 包装已下沉 core（packages/agent-core/src/subagents/skillDistillChat.ts）；
-// 未进 barrel（`createSkillDistillChat` 签名含 `DelegationCallState`/`ChildModelCaller` 等内核
-// 子 run 调用帧类型，按 subagents/index.ts 的收录判据属内部），暂走深路径，见
-// scripts/check-boundaries.js 豁免表 packages/subagents 那组，S11d 收尾。
-import { createSkillDistillChat } from '@web-agent/core/subagents/skillDistillChat'
+} from './runtimeState'
+import { createSkillDistillChat } from './skillDistillChat'
+import type {
+  ChildAgentResult,
+  DelegateAgentBatchResult,
+  DelegateAgentBatchStatus,
+  DelegateAgentCallContext,
+  DelegateAgentInput,
+  SubagentNodeRecord,
+} from './types'
 
 function childSummary(children: readonly ChildAgentResult[]): DelegateAgentBatchResult['summary'] {
   return {
@@ -57,7 +51,7 @@ export function createDelegateAgents(runtime: DelegateAgentRuntimeState): Delega
     const {
       input, parentPath, isRootCall, state, budget, requestedToolProfile, requestedConfirmedTools,
     } = policy
-    const archiveBasePath = subagentCacheBasePath(runtime.opts.sessionId, runtime.opts.runId)
+    const archiveBasePath = runtime.archiveFormat.cacheBasePath(runtime.opts.sessionId, runtime.opts.runId)
     await runtime.archive.ensureArchiveInitialized(context, archiveBasePath)
     runtime.scheduler.markNode(runtime.opts.runId, parentPath, 'running')
     await runtime.archive.recordEvent(context, archiveBasePath, 'delegate_requested', parentPath, {
@@ -178,7 +172,7 @@ export function createDelegateAgents(runtime: DelegateAgentRuntimeState): Delega
     return {
       treeId: runtime.opts.runId, conversationId: runtime.opts.sessionId, runId: runtime.opts.runId,
       parentPath, strategy: input.strategy ?? 'parallel_wait_all', status, summary,
-      cacheBasePath: archiveBasePath, archiveBasePath, eventLog: subagentEventsPath(archiveBasePath),
+      cacheBasePath: archiveBasePath, archiveBasePath, eventLog: runtime.archiveFormat.eventsPath(archiveBasePath),
       skillFiles: allDistilledFiles.map((skill) => skill.path), skillIds: allDistilledFiles.map((skill) => skill.skillId),
       budgetUsage: runtime.budgetUsage(state), changeSets, reversible: changeSets.every((changeSet) => changeSet.reversible), children,
     }
@@ -223,7 +217,7 @@ async function distillBatchSkills(
   reserved: SubagentNodeRecord[],
 ) {
   try {
-    return await distillDelegateSkills({
+    return await runtime.skillDistill.distill({
       conversationId: runtime.opts.sessionId, runId: runtime.opts.runId, cacheBasePath: archiveBasePath,
       parentPath, parentDispatchIndex, strategy: input.strategy ?? 'parallel_wait_all', parentTranscript,
       inheritedSkillFiles, inheritedSkillIds,

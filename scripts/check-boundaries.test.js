@@ -93,25 +93,25 @@ test('白名单外且未列入豁免表的 subpath 会失败', async () => {
 
 test('豁免表命中只报观察项、不会失败', async () => {
   const root = await fixture({
-    'packages/subagents/src/delegationBatch.ts': "import { runChildAgentLoop } from '@web-agent/core/subagents/childAgentLoop'\n",
+    'packages/subagents/src/runtime.ts': "import { createDelegateAgents } from '@web-agent/core/subagents/delegationBatch'\n",
   })
   const result = await run(root)
   assert.match(result.stdout, /边界观察项：/)
   assert.match(
     result.stdout,
-    /packages\/subagents\/src\/delegationBatch\.ts:1 观察项：core 公开面白名单（@web-agent\/core\/subagents\/childAgentLoop）—— 豁免原因：S11 委派接缝整形/,
+    /packages\/subagents\/src\/runtime\.ts:1 观察项：core 公开面白名单（@web-agent\/core\/subagents\/delegationBatch）—— 豁免原因：S11 委派接缝整形/,
   )
   assert.match(result.stdout, /边界检查通过/)
 })
 
 test('豁免按消费方发放：同一 subpath 换个消费方仍然失败', async () => {
   const root = await fixture({
-    'apps/web/src/borrow.ts': "import { runChildAgentLoop } from '@web-agent/core/subagents/childAgentLoop'\n",
+    'apps/web/src/borrow.ts': "import { createDelegateAgents } from '@web-agent/core/subagents/delegationBatch'\n",
   })
   await assert.rejects(run(root), (error) => {
     assert.match(
       error.stderr,
-      /apps\/web\/src\/borrow\.ts:1 core 公开面白名单（@web-agent\/core\/subagents\/childAgentLoop 不在白名单九条内）/,
+      /apps\/web\/src\/borrow\.ts:1 core 公开面白名单（@web-agent\/core\/subagents\/delegationBatch 不在白名单九条内）/,
     )
     return true
   })
