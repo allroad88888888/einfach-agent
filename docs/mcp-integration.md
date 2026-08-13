@@ -1,6 +1,6 @@
 # MCP 集成
 
-本文描述 Web Agent 当前的 MCP（Model Context Protocol）接入边界、生命周期与安全约束。实现由三层
+本文描述 Einfach Agent 当前的 MCP（Model Context Protocol）接入边界、生命周期与安全约束。实现由三层
 组成：`tools/mcp`（协议客户端、连接管理、失败分类与远端工具适配）、`apps/desktop/src/mcp.rs`
 （Tauri 桌面端的 stdio 子进程与 JSON-RPC 会话）、`apps/web/src/mcp`（装配、配置持久化、工具清单
 缓存、起进程确认与设置中心状态）。UI 只读取 Einfach atom 并调用命令，不直接访问 registry 或传输层。
