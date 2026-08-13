@@ -10,8 +10,8 @@ import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import type { SessionMeta, WorkspaceMeta } from '../core.type'
-import { createSessionsPersistence } from './sessionsPersistence'
+import type { SessionMeta, WorkspaceMeta } from '@web-agent/core/state/core.type'
+import { createIndexedDbSessionsPersistence } from './sessionsPersistence'
 
 // SessionMeta 样例：两个会话，settings 用最简 deepseek 形状。
 const a: SessionMeta = {
@@ -37,14 +37,14 @@ const workspace: WorkspaceMeta = {
   updatedAt: 1,
 }
 
-describe('createSessionsPersistence', () => {
+describe('createIndexedDbSessionsPersistence', () => {
   // 每个用例给一个干净的 IndexedDB 实例（丢掉上一个用例落盘的所有库）。
   beforeEach(() => {
     globalThis.indexedDB = new IDBFactory()
   })
 
   it('saveSessions([a,b]) → loadSessions() 返回 2 项', async () => {
-    const p = createSessionsPersistence()
+    const p = createIndexedDbSessionsPersistence()
     await p.saveSessions([a, b])
 
     const loaded = await p.loadSessions()
@@ -54,7 +54,7 @@ describe('createSessionsPersistence', () => {
   })
 
   it('覆盖式：saveSessions([a]) 后 loadSessions() 只剩 1（clear 再 put）', async () => {
-    const p = createSessionsPersistence()
+    const p = createIndexedDbSessionsPersistence()
     await p.saveSessions([a, b])
     await p.saveSessions([a])
 
@@ -64,12 +64,12 @@ describe('createSessionsPersistence', () => {
   })
 
   it('空库 loadSessions() → []', async () => {
-    const p = createSessionsPersistence()
+    const p = createIndexedDbSessionsPersistence()
     expect(await p.loadSessions()).toEqual([])
   })
 
   it('工作区可独立覆盖式持久化，不与会话记录混在一起', async () => {
-    const p = createSessionsPersistence()
+    const p = createIndexedDbSessionsPersistence()
     await p.saveWorkspaces([workspace])
     expect(await p.loadWorkspaces()).toEqual([workspace])
 

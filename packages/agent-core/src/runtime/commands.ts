@@ -9,6 +9,7 @@ import { createProjectSkillsCommands } from './commands/projectSkillsCommands'
 import { createRunCommands } from './commands/runCommands'
 import { createRunLifecycleCommands } from './commands/runLifecycleCommands'
 import { createSessionCommands, DEFAULT_SESSION_TITLE, deriveSessionTitle } from './commands/sessionCommands'
+import { createSessionScopeCommands } from './commands/sessionScopeCommands'
 import { createSubagentViewCommands } from './commands/subagentViewCommands'
 import { createWorkspaceCommands } from './commands/workspaceCommands'
 import { createPluginCommandFacade } from './core/pluginCommandFacade'
@@ -40,6 +41,7 @@ export function configureCommands(config: Partial<RuntimeConfig>): void {
 export function createCommands(core: CoreInstance = defaultCore) {
   const workspace = createWorkspaceCommands(core)
   const session = createSessionCommands(core)
+  const sessionScope = createSessionScopeCommands(core)
   const runLifecycle = createRunLifecycleCommands(core, {
     renameSession: session.renameSession,
     defaultSessionTitle: DEFAULT_SESSION_TITLE,
@@ -54,6 +56,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
   return {
     ...workspace,
     ...session,
+    ...sessionScope,
     ...runLifecycle,
     ...pausedRun,
     ...checkpoint,
@@ -79,6 +82,7 @@ export const {
   newSession,
   selectSession,
   removeSession,
+  sessionAtomScope,
   setWorkspaceRoot,
   setApprovalMode,
   sendMessage,

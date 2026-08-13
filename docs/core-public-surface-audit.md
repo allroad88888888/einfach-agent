@@ -128,6 +128,9 @@ done < /tmp/core-nontest.txt | sort -u \
 它出现在跨包测试里而不出现在产品代码里，正是规则生效的证据。这 5 条的迁移方向是让跨包测试改走
 白名单入口，或把用例挪回 core 包内用相对路径。
 
+S7b 之后 `state/sessionStore` 也落到这一类（E7 处置掉了它唯一的产品消费方），S8 按同一口径处理，
+届时这类是 6 条。
+
 ### 3.5 E · 疑似内部泄漏（8）——逐条点名
 
 | # | subpath | 泄漏点（非测试消费方） | 为什么算泄漏 | 处置结论 |
@@ -136,13 +139,15 @@ done < /tmp/core-nontest.txt | sort -u \
 | E2 | `runtime/core/plugins/finishReasonPlugin` | `packages/subagents/src/delegationDistillation.ts:4` | 同上；能力包依赖 core 的某个默认插件文件路径 | **已消（S7a）**：判据 + 三份文案抽到中立的 `runtime/finishReason`，插件与 loop 一样只当消费方 |
 | E3 | `observability/traceCacheTotals` | `apps/web/src/agentNew/ui/ContextStats.tsx:7` | 从 trace 反推缓存总量的补偿逻辑，是观测内部实现而非观测契约 | **补 barrel + 记债（S7a）**：无等价公开 API 可换，收进 `./observability`；债见下方 |
 | E4 | `state/persistence/hydrate` | `apps/web/src/main.tsx:23` | 持久化启动步骤；宿主已有 `runtime/persistenceBridge` 这条正式收口 | **已消（S7a）**：`persistenceBridge` 新增 `hydratePersistence()`，读回用桥自己那对 driver |
-| E5 | `state/persistence/sessionsPersistence` | `apps/web/src/main.tsx:27` | 同 E4，内部工厂被装配层直接拼 | 待 S7b |
-| E6 | `state/persistence/memoryHistoryDriver` | `apps/cli/src/runtime.ts:10` | core 内的内存 driver 实现被 CLI 当产品依赖 | 待 S7b |
-| E7 | `state/sessionStore` | `apps/web/src/agentNew/ui/ActiveSessionProvider.tsx:15` | `getSessionStore` 把 runtime store 交给 UI，与 [`CLAUDE.md`](../CLAUDE.md) 的"UI 不持有 runtime store"直接冲突 | 待 S7b（必须换只读通路，不许补 barrel 了事） |
-| E8 | `subagents/concurrency` | `packages/subagents/src/delegationBatch.ts:1` | `createConcurrencyLimiter` 是通用并发原语，不属委派契约 | 待 S7b |
+| E5 | `state/persistence/sessionsPersistence` | `apps/web/src/main.tsx:27` | 同 E4，内部工厂被装配层直接拼 | **已消（S7b）**：那本就是个 IndexedDB 实现，搬去 `@web-agent/persistence-idb` 并更名 `createIndexedDbSessionsPersistence`（与 `createIndexedDbHistoryDriver` 同包同载体，对称于 sqlite 侧的 `createSqlitePersistence`）；core 只留 `SessionsPersistence` 契约 |
+| E6 | `state/persistence/memoryHistoryDriver` | `apps/cli/src/runtime.ts:10` | core 内的内存 driver 实现被 CLI 当产品依赖 | **补 barrel（S7b）**：判定它该算公开面——零宿主依赖（只 import 本目录两个类型）、语义就是"进程内 Map 不落盘"、是 `HistoryDriver` 契约的参考实现，且 `apps/cli` 是真实产品消费方。收进 `./persistence`，CLI 改走 barrel |
+| E7 | `state/sessionStore` | `apps/web/src/agentNew/ui/ActiveSessionProvider.tsx:15` | `getSessionStore` 把 runtime store 交给 UI，与 [`CLAUDE.md`](../CLAUDE.md) 的"UI 不持有 runtime store"直接冲突 | **已消（S7b）**：命令面补一条受限只读通路 `sessionAtomScope(id)`（[`runtime/commands/sessionScopeCommands.ts`](../packages/agent-core/src/runtime/commands/sessionScopeCommands.ts)）——只给"该会话的 atom 作用域"供 `<Provider>` 绑定，**不给** store 生命周期（建/丢/清仍归 `newSession`/`removeSession`）。没有补 barrel |
+| E8 | `subagents/concurrency` | `packages/subagents/src/delegationBatch.ts:1` | `createConcurrencyLimiter` 是通用并发原语，不属委派契约 | **归位（S7b）**：搬到 `runtime/concurrencyLimiter`，与同层的 `runtime/writeQueue`、`runtime/newId` 一样是零依赖原语；core 侧 `subagents/runtimeState` 与包侧 `delegationBatch` 都改指新路径，`subagents/` 目录不再混装通用工具。跨包深导入本身留给 S11（它本就把 concurrency 列在 `delegationBatch` 的 5 条里） |
 
 E1–E3、E8 的处置是"要么补进对应 barrel 成为正式 API，要么给消费方换等价公开 API"；
 E4–E7 的处置**倾向后者**——正式通路（`persistenceBridge` / commands / atoms）已经存在。
+S7a/S7b 落地后 8 条全部有结论：E1、E2、E4、E5、E7 换正式通路，E3、E6 补 barrel，E8 先归位、
+剩下的跨包接缝交 S11。
 
 **S7a 记的两笔债**（E1–E4 已处置，但留下两处要在后续卡兑现）：
 
@@ -156,6 +161,18 @@ E4–E7 的处置**倾向后者**——正式通路（`persistenceBridge` / comm
   同理 E2 抽出的 `runtime/finishReason` 是 `packages/subagents` 的接缝，S2a 的 `./subagents`
   barrel 或根 barrel 需覆盖它。
 
+**S7b 记的两笔债**（E5–E8 已处置，同样留下两处后续兑现）：
+
+- **E8 归位后跨包深导入还在**：`packages/subagents/src/delegationBatch.ts` 改成
+  `@web-agent/core/runtime/concurrencyLimiter`，路径诚实了（通用原语不再冒充委派契约），
+  但白名单里仍没有这条——与 `runtime/finishReason` 同一处境。两条出路二选一：S11 按既定方向
+  收掉 `delegationBatch` 对 core 内部的深导入（届时这条消费方自动消失），或 S9 门禁前把它
+  与 `finishReason`、`contextBudget` 一起并进某个 barrel。**不要**为它单开第 10 条 subpath。
+- **E7 消解后 `state/sessionStore` 降级为仅测试在用**：产品代码里已无消费方，剩下
+  `apps/web/src/agentNew/ui/{ActiveSessionProvider,AppShell}.test.tsx` 与
+  `apps/web/src/test/setup.ts`（`resetSessionStores`）三处测试脚手架。它按 §3.4 的口径归 D 类，
+  由 S8 一并改道（测试要 `setter` 写种子数据，不该走 `sessionAtomScope` 这条只读通路假装合规）。
+
 ## 4. 白名单方案：68 → 9
 
 建议的公开 subpath 清单（外加 `./package.json`），每条一个显式 barrel 文件：
@@ -166,8 +183,8 @@ E4–E7 的处置**倾向后者**——正式通路（`persistenceBridge` / comm
 | 2 | `./plugin` | 已存在，不动 | 外部插件作者、`plugin-example` |
 | 3 | `./timeline` | 已存在，不动 | `agent-react`、`apps/web` |
 | 4 | `./tools` | `tools/types`、`tools/toolRegistry`、`tools/schemaResult` + workspace 桥 5 条 | 七个工具域、`tools/standard` |
-| 5 | `./subagents` | 委派接缝 15 条（含 `delegationContract`、`stateViewPort`、`execution/types`）+ S7a 抽出的 `runtime/finishReason` | `packages/subagents`、`tools/agents` |
-| 6 | `./persistence` | `contract`、`historyDriver`、`checkpoint.type` | `persistence-idb`、`persistence-sqlite` |
+| 5 | `./subagents` | 委派接缝 15 条（含 `delegationContract`、`stateViewPort`、`execution/types`）+ S7a 抽出的 `runtime/finishReason`（`runtime/concurrencyLimiter` 见 3.5 的 S7b 债，优先由 S11 消掉消费方） | `packages/subagents`、`tools/agents` |
+| 6 | `./persistence` | `contract`、`historyDriver`、`checkpoint.type` + S7b 收进来的 `memoryHistoryDriver`（E6） | `persistence-idb`、`persistence-sqlite`、`apps/cli` |
 | 7 | `./observability` | `types`、`logReader`、`port`、`trace` + S7a 收进来的 `traceCacheTotals`（记债，见 3.5） | `observability-idb`、`observability-sqlite`、`apps/web` |
 | 8 | `./skills` | `contracts`、`projectSkills` | `tools/skills` |
 | 9 | `./planning` | `planning/types` | `tools/planning` |

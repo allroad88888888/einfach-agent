@@ -4,7 +4,7 @@ import { normalizePrimaryAgentSettings } from '../state/persistence/modelMigrati
 import type { ModelSettings } from '../state/core.type'
 import { toolRegistry } from '../tools/registry'
 import type { ToolRegistry } from '../tools/toolRegistry'
-import { createConcurrencyLimiter, type ConcurrencyLimiter } from './concurrency'
+import { createConcurrencyLimiter, type ConcurrencyLimiter } from '../runtime/concurrencyLimiter'
 import { ROOT_AGENT_PATH } from './path'
 import type { SubagentTierRouting } from './tierRouting'
 import type { DelegateAgentBatchResult, DelegateAgentInput, SubagentNodeRecord, SubagentToolProfile } from './types'

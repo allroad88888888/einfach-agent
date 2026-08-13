@@ -167,7 +167,7 @@ export function __resetSqliteForTest(): void {
 }
 
 // 简介：创建 SQLite 支撑的持久化器（history + sessions），供桌面壳（Tauri）下替换 IndexedDB。
-// 详情：两者共享 getDb() 的同一连接；方法签名与 HistoryDriver / createSessionsPersistence 完全一致，
+// 详情：两者共享 getDb() 的同一连接；方法签名与 HistoryDriver / SessionsPersistence 契约完全一致，
 //   故 persistenceBridge / hydrate / main.tsx 只需按环境换注入实例，其余不动（TaK1）。
 export function createSqlitePersistence(): {
   history: HistoryDriver

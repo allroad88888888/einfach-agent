@@ -20,10 +20,12 @@ import { createDefaultPlanRuntime } from '@web-agent/tools-planning'
 import { createDelegationAssembly } from '@web-agent/subagents'
 import { configurePersistence, hydratePersistence } from '@web-agent/core/runtime/persistenceBridge'
 import { configureObservability } from '@web-agent/core/observability/trace'
-import { createIndexedDbHistoryDriver } from '@web-agent/persistence-idb'
+import {
+  createIndexedDbHistoryDriver,
+  createIndexedDbSessionsPersistence,
+} from '@web-agent/persistence-idb'
 import { createIndexedDbLogDriver, createIndexedDbLogReader } from '@web-agent/observability-idb'
 import { configureTraceLogReader as configureTraceLogReaderFactory } from '@web-agent/core/observability/logReader'
-import { createSessionsPersistence } from '@web-agent/core/state/persistence/sessionsPersistence'
 import { isTauri } from '@tauri-apps/api/core'
 import { AppShell } from './agentNew/ui/AppShell'
 import { StartupCredentialGate } from './agentNew/ui/StartupCredentialGate'
@@ -111,7 +113,7 @@ async function resolvePersistence() {
   }
   return {
     history: createIndexedDbHistoryDriver(),
-    sessions: createSessionsPersistence(),
+    sessions: createIndexedDbSessionsPersistence(),
   }
 }
 

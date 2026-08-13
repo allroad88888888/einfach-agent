@@ -7,7 +7,7 @@ import {
   defaultCore,
 } from '@web-agent/core/runtime/core/coreInstance'
 import { configurePersistence } from '@web-agent/core/runtime/persistenceBridge'
-import { createMemoryHistoryDriver } from '@web-agent/core/state/persistence/memoryHistoryDriver'
+import { createMemoryHistoryDriver } from '@web-agent/core/state/persistence'
 import { toolRegistry } from '@web-agent/core/tools/registry'
 import { createDelegationAssembly } from '@web-agent/subagents'
 import { registerStandardTools } from '@web-agent/tools'

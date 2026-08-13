@@ -27,7 +27,8 @@
 //   · ./runtimeState        —— `DelegateAgentRuntimeState` 是 core 子 run 的可变资源容器（registry、
 //                              AbortController、缓存追踪、owners 引用计数）；`collectChangeSets` /
 //                              `isAbortError` / `toErrorMessage` 是通用工具错位，同 E8 口径。
-//   · ./concurrency         —— 盘点 E8 已判定为内部泄漏（通用并发原语，不属委派契约），归 S7 处置。
+//   · ./concurrency         —— 已按盘点 E8 / 卡 S7b 处置：文件搬去 `runtime/concurrencyLimiter`
+//                              （通用原语归通用层），本目录不再有这个文件，barrel 自然不必表态。
 //   · ./childResult、./childToolVisibility、./prompt、./routing、./childAgentToolCalls 等
 //                           —— 外部消费方为零，本就不在公开面。
 //   · `getSubagentViewCommandFacade`（stateViewPort）—— core 内部 `runtime/commands/subagentViewCommands.ts`

@@ -21,13 +21,11 @@ vi.mock('@web-agent/core/observability/trace', () => ({
 }))
 vi.mock('@web-agent/persistence-idb', () => ({
   createIndexedDbHistoryDriver: vi.fn(() => ({})),
+  createIndexedDbSessionsPersistence: vi.fn(() => ({})),
 }))
 vi.mock('@web-agent/observability-idb', () => ({
   createIndexedDbLogDriver: vi.fn(() => ({})),
   createIndexedDbLogReader: vi.fn(() => ({})),
-}))
-vi.mock('@web-agent/core/state/persistence/sessionsPersistence', () => ({
-  createSessionsPersistence: vi.fn(() => ({})),
 }))
 // AppShell 是唯一会（间接、经由懒加载）触到 SettingsDialog 的组件——换成哑组件，
 // 确保整条 import 链路里真的没有任何代码路径 mount 过 SettingsDialog/SettingsCenter。

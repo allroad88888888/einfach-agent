@@ -22,31 +22,38 @@ import { AppShell } from './AppShell'
 // P8-h 追加：AskUserQuestionCard / SaveArtifact 也挂在右栏 ActiveSessionProvider 内，
 // 故把它们依赖的命令一并 mock（渲染不触发，仅补齐模块形状）。
 
-vi.mock('@web-agent/core/runtime/commands', () => ({
-  configureCommands: vi.fn(),
-  newWorkspace: vi.fn(),
-  renameWorkspace: vi.fn(),
-  selectWorkspace: vi.fn(),
-  toggleWorkspaceExpanded: vi.fn(),
-  toggleWorkspaceSettings: vi.fn(),
-  newSession: vi.fn(),
-  selectSession: vi.fn(),
-  removeSession: vi.fn(),
-  sendMessage: vi.fn(),
-  stopRun: vi.fn(),
-  revertToTurn: vi.fn(),
-  revertTurnToDraft: vi.fn(),
-  answerQuestion: vi.fn(),
-  resumeWithAnswers: vi.fn(),
-  discardArtifact: vi.fn(),
-  // S4：WorkspaceRootField / ToolConfirmCard 也挂在 AppShell 内，补齐它们依赖的命令形状。
-  setWorkspaceRoot: vi.fn(),
-  confirmTool: vi.fn(),
-  approvePlan: vi.fn(),
-  continuePlan: vi.fn(),
-  setApprovalMode: vi.fn(),
-  withdrawCurrentTurnToDraft: vi.fn(),
-}))
+// sessionAtomScope 是 ActiveSessionProvider 绑定会话作用域的只读通路（盘点 E7）——它必须是
+// 真实实现，否则右栏 Provider 拿不到本用例 seed 过的那个会话 store。工厂里用动态 import 取，
+// 避免依赖 vi.mock 提升后顶层 import 绑定的初始化时序。
+vi.mock('@web-agent/core/runtime/commands', async () => {
+  const { getSessionStore: realGetSessionStore } = await import('@web-agent/core/state/sessionStore')
+  return {
+    sessionAtomScope: (id: string) => realGetSessionStore(id).store,
+    configureCommands: vi.fn(),
+    newWorkspace: vi.fn(),
+    renameWorkspace: vi.fn(),
+    selectWorkspace: vi.fn(),
+    toggleWorkspaceExpanded: vi.fn(),
+    toggleWorkspaceSettings: vi.fn(),
+    newSession: vi.fn(),
+    selectSession: vi.fn(),
+    removeSession: vi.fn(),
+    sendMessage: vi.fn(),
+    stopRun: vi.fn(),
+    revertToTurn: vi.fn(),
+    revertTurnToDraft: vi.fn(),
+    answerQuestion: vi.fn(),
+    resumeWithAnswers: vi.fn(),
+    discardArtifact: vi.fn(),
+    // S4：WorkspaceRootField / ToolConfirmCard 也挂在 AppShell 内，补齐它们依赖的命令形状。
+    setWorkspaceRoot: vi.fn(),
+    confirmTool: vi.fn(),
+    approvePlan: vi.fn(),
+    continuePlan: vi.fn(),
+    setApprovalMode: vi.fn(),
+    withdrawCurrentTurnToDraft: vi.fn(),
+  }
+})
 
 // 造一个登记在 rootStore 的活跃会话（P8-h 两个新挂载点都要求会话在 Provider 下）。
 function seedActiveSession(id = 's1'): void {

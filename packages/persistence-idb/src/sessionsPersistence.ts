@@ -11,7 +11,14 @@
 //   （对齐 indexedDbDriver 的降级契约）。不引任何未安装依赖 —— 纯原生 IndexedDB API
 //   （jsdom 单测下由 fake-indexeddb 提供全局实现）。
 
-import type { SessionMeta, WorkspaceMeta } from '../core.type'
+// 【归位 · 盘点 E5 / 卡 S7b】本文件原先住在 `agent-core/src/state/persistence/`：一个 IndexedDB
+//   实现长在 core 里，宿主装配层只能深挖 core 内部把它拼出来（`createSessionsPersistence()`
+//   交给 configurePersistence）。IndexedDB 是浏览器载体，与 createIndexedDbHistoryDriver 同属
+//   本包；core 从此只留 SessionsPersistence 契约，桌面壳那一半照旧在 persistence-sqlite。
+//   对称关系：history driver ↔ sessions persistence，两个载体各自成包。
+
+import type { SessionMeta, WorkspaceMeta } from '@web-agent/core/state/core.type'
+import type { SessionsPersistence } from '@web-agent/core/state/persistence'
 
 const DEFAULT_DB_NAME = 'web-agent-sessions'
 const SESSION_STORE_NAME = 'sessions'
@@ -43,12 +50,9 @@ function openDb(dbName: string): Promise<IDBDatabase> {
 // 简介：创建一个 IndexedDB 支撑的会话列表持久化器。
 // 详情：dbName 可选（默认 'web-agent-sessions'）—— 供测试隔离或多实例并存。两个 async 方法：
 //   saveSessions 覆盖式落盘（clear→put），loadSessions round-trip 取回全部。
-export function createSessionsPersistence(dbName: string = DEFAULT_DB_NAME): {
-  saveSessions(sessions: SessionMeta[]): Promise<void>
-  loadSessions(): Promise<SessionMeta[]>
-  saveWorkspaces(workspaces: WorkspaceMeta[]): Promise<void>
-  loadWorkspaces(): Promise<WorkspaceMeta[]>
-} {
+export function createIndexedDbSessionsPersistence(
+  dbName: string = DEFAULT_DB_NAME,
+): SessionsPersistence {
   return {
     // 覆盖式落盘：一个 readwrite 事务里先 clear 再逐个 put，落盘结果与传入列表完全一致；出错静默返回。
     async saveSessions(sessions: SessionMeta[]): Promise<void> {

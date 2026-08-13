@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createConcurrencyLimiter } from './concurrency'
+import { createConcurrencyLimiter } from './concurrencyLimiter'
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolve: () => void = () => undefined

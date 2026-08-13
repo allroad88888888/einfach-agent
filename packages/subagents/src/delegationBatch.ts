@@ -1,4 +1,4 @@
-import { createConcurrencyLimiter } from '@web-agent/core/subagents/concurrency'
+import { createConcurrencyLimiter } from '@web-agent/core/runtime/concurrencyLimiter'
 import { resolveDelegationRequestPolicy } from '@web-agent/core/subagents/delegationPolicy'
 import { runChildAgent } from '@web-agent/core/subagents/childAgentLoop'
 import { createChildModelCaller } from '@web-agent/core/subagents/childModelClient'

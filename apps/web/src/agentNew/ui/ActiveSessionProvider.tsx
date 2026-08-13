@@ -12,7 +12,7 @@ import {
   activeSessionMetaAtom,
   activeWorkspaceRootAtom,
 } from '@web-agent/core/state/rootStore'
-import { getSessionStore } from '@web-agent/core/state/sessionStore'
+import { sessionAtomScope } from '@web-agent/core/runtime/commands'
 import type { KimiRegion } from '@web-agent/ai'
 import { kimiRegionSetting } from '../../modelInput/kimiRegionSetting'
 
@@ -36,7 +36,9 @@ export function ActiveSessionProvider({
   if (!id) {
     return <div className="agentnew-empty">还没有会话，点“新建对话”开始</div>
   }
-  const store = getSessionStore(id).store
+  // 只读通路：命令面只给「该会话的 atom 作用域」，不给 store 的生命周期（建/丢/清）——
+  // 那些仍归 newSession / removeSession 命令（盘点 E7）。
+  const store = sessionAtomScope(id)
   return (
     <Provider store={store} key={id}>
       {typeof children === 'function'
