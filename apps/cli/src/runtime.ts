@@ -21,11 +21,13 @@ import {
 import { scanProjectSkills } from '../../../tools/skills/src/projectSkillsLoader'
 import type { ResolvedCredentials } from './credentials'
 import { createCliPerformanceDiagnosticSink } from './performance-output'
+import { assembleCliPlugins } from './plugins'
 import { buildNodeProjectSkillsBridge } from './workspace-files'
 
 interface AssembleCliRuntimeOptions {
   credentials: ResolvedCredentials
   verbose: boolean
+  workspaceRoot: string
 }
 
 function configureTraceOutput(verbose: boolean): void {
@@ -57,7 +59,7 @@ function configureOpenAiCompatBaseUrl(credentials: ResolvedCredentials): void {
 }
 
 /** Assembles the CLI shell around the unchanged default core instance. */
-export function assembleCliRuntime(options: AssembleCliRuntimeOptions): void {
+export async function assembleCliRuntime(options: AssembleCliRuntimeOptions): Promise<void> {
   registerStandardTools(toolRegistry)
   configureDefaultSkillsRegistry(builtInSkillsRegistry)
   const bridge = buildNodeProjectSkillsBridge()
@@ -71,4 +73,7 @@ export function assembleCliRuntime(options: AssembleCliRuntimeOptions): void {
     modelCredentials: options.credentials.modelCredentials,
     fetchImpl: globalThis.fetch,
   })
+  // 标准工具与命令先装好，插件的 install 才有一个稳定的 registry 可注册；扫描/加载失败
+  // 不阻塞启动（assembleCliPlugins 自身兜底），因此放在装配的最后一步即可。
+  await assembleCliPlugins(options.workspaceRoot, options.verbose)
 }

@@ -64,7 +64,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   const credentials = await resolveModelCredentials({ configPath: options.configPath })
   requireDeepSeekCredential(credentials)
   const workspaceRoot = await resolveWorkspaceRoot(options.workspaceRoot)
-  assembleCliRuntime({ credentials, verbose: options.verbose })
+  await assembleCliRuntime({ credentials, verbose: options.verbose, workspaceRoot })
   const sessionId = newSession()
   setWorkspaceRoot(workspaceRoot)
   const unsubscribeRenderer = subscribeCliRenderer(sessionId, output)
