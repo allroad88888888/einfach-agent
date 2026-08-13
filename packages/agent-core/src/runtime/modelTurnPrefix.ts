@@ -1,9 +1,9 @@
-import { isTauri } from '@tauri-apps/api/core'
 import { workspacesAtom } from '../state/rootStore'
 import { resolveSessionWorkspaceRoot } from '../state/workspaceState'
 import type { SessionMeta } from '../state/core.type'
 import type { SystemItem } from '@web-agent/ai'
 import { detectHostPlatform } from './hostPlatform'
+import { isTauriHost } from './hostTauri'
 import {
   buildCustomInstructionsItem,
   buildEnvironmentItem,
@@ -42,7 +42,7 @@ export async function buildStableModelPrefix(
     sessionMeta,
     core.rootStore.getter(workspacesAtom),
   )
-  const runtimeIsTauri = isTauri()
+  const runtimeIsTauri = isTauriHost()
   const system = buildSystemItem()
   const toolManifest: SystemItem = {
     role: 'system',

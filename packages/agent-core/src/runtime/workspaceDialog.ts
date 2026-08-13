@@ -1,5 +1,5 @@
-import { isTauri } from '@tauri-apps/api/core'
 import { open } from '@tauri-apps/plugin-dialog'
+import { isTauriHost } from './hostTauri'
 
 export type PickWorkspaceDirectoryResult =
   | { ok: true; path?: string }
@@ -16,11 +16,11 @@ function errorMessage(error: unknown): string {
 }
 
 export function canPickWorkspaceDirectory(): boolean {
-  return isTauri()
+  return isTauriHost()
 }
 
 export async function pickWorkspaceDirectory(defaultPath?: string): Promise<PickWorkspaceDirectoryResult> {
-  if (!isTauri()) {
+  if (!isTauriHost()) {
     return { ok: false, error: 'Directory picker is only available in the Tauri desktop runtime' }
   }
 

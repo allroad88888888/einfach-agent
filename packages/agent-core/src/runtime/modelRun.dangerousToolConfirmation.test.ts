@@ -21,15 +21,26 @@ vi.mock('@tauri-apps/api/core', async () => {
   }
 })
 
+// D2（hostTauri 脱钩）后，modelTurnPrefix.ts 的工具发现改读 isTauriHost()，它绕开上面这层
+// 模块 mock、直接读 globalThis.isTauri（见 runtime/hostTauri.ts）。本文件模拟「在 Tauri 里」
+// 时必须把两个开关一起切，否则 shell_macos/server 工具在稳定前缀里仍按非 Tauri 环境隐藏。
+type GlobalWithIsTauri = typeof globalThis & { isTauri?: boolean }
+const globalWithIsTauri = globalThis as GlobalWithIsTauri
+
+function setTauriEnabled(enabled: boolean): void {
+  tauriControl.enabled = enabled
+  globalWithIsTauri.isTauri = enabled
+}
+
 afterEach(() => {
   resetModelRunTestState()
-  tauriControl.enabled = false
+  setTauriEnabled(false)
 })
 
 describe('危险工具确认门（S4-B）', () => {
   beforeEach(() => {
     // 这一组验证桌面端 server 工具的参数校验与授权门；只有 Tauri 环境会向模型暴露这些 schema。
-    tauriControl.enabled = true
+    setTauriEnabled(true)
   })
 
   it('危险 shell 参数缺 command：先 validation_failed 回填 tool error，不进入 waiting_confirmation', async () => {

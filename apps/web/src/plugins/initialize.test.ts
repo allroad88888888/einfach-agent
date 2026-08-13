@@ -9,13 +9,29 @@
 // 复用项目 skills 那条 Rust 通路正是本卡的做法，接错了这里就看不到 list_workspace_files。
 
 import type { SessionMeta, WorkspaceMeta } from '@web-agent/core'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 // 与真实模块一致的默认表现：isTauri() 答 false、invoke 不被意外调用。
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
   isTauri: vi.fn(() => false),
 }))
+
+// D2（hostTauri 脱钩）后，desktopProvider.ts 装载的 buildProjectSkillsWorkspaceBridge
+// 改读 isTauriHost()，它绕开上面这层模块 mock、直接读 globalThis.isTauri（见
+// packages/agent-core/src/runtime/hostTauri.ts）。initializePluginSettings 自己的宿主门
+// （initialize.ts 里的 isTauri()）仍走上面的 mock，两层各读各的，所以 freshHost 必须把
+// 两个开关一起切，否则「Tauri 宿主」用例里 initialize.ts 判定为桌面、但 provider 内部的
+// workspace 文件桥仍判定为浏览器，扫不到任何插件目录。
+type GlobalWithIsTauri = typeof globalThis & { isTauri?: boolean }
+const globalWithIsTauri = globalThis as GlobalWithIsTauri
+const hadIsTauriProperty = Object.prototype.hasOwnProperty.call(globalThis, 'isTauri')
+const originalIsTauriValue = globalWithIsTauri.isTauri
+
+afterEach(() => {
+  if (hadIsTauriProperty) globalWithIsTauri.isTauri = originalIsTauriValue
+  else delete globalWithIsTauri.isTauri
+})
 
 const WORKSPACE: WorkspaceMeta = {
   id: 'workspace-1',
@@ -43,6 +59,7 @@ async function freshHost(tauriHost: boolean) {
   isTauriMock.mockReset()
   invokeMock.mockReset()
   isTauriMock.mockReturnValue(tauriHost)
+  globalWithIsTauri.isTauri = tauriHost
   invokeMock.mockImplementation(async (command: string) => {
     if (command === 'list_workspace_files') return { entries: [], truncated: false }
     return undefined
