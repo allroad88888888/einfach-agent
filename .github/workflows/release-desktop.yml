@@ -34,7 +34,7 @@ jobs:
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
         run: |
           set -euo pipefail
-          expected_tag="app-v$(node -p \"require('./apps/desktop/tauri.conf.json').version\")"
+          expected_tag="app-v$(node -p "require('./apps/desktop/tauri.conf.json').version")"
           if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
             echo "::error::expected tag $expected_tag, got $GITHUB_REF_NAME"
             exit 1
