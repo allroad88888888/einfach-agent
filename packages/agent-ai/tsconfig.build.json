@@ -1,0 +1,22 @@
+// 声明产物专用 tsconfig：只出 .d.ts，JS 由 tsup 出（见 tsup.config.ts 与根 tsup.preset.ts）。
+// V3 逐包接线时整份复制，除 extends 外无需改动。
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // 包平时的 tsconfig.json 是 noEmit 的纯类型门禁，这里翻开只为 emit 声明。
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    // 不出 declaration map：发布物 `files: ["dist"]` 不含 src，map 只会指向不存在的路径。
+    "declarationMap": false,
+    // 不能开 incremental/composite：tsup 的 clean 会先清空 dist，而 buildinfo 只看源码变没变，
+    // 于是「源码没改 + dist 被清空」会让 tsc 直接跳过 emit，产出一个没有 .d.ts 的 dist。
+    "incremental": false,
+    "composite": false,
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  "include": ["src"],
+  // 测试与测试脚手架不进发布物（口径同 scripts/check-boundaries.js 的 testFilePattern）。
+  "exclude": ["src/**/*.test.ts", "src/**/*.testFixtures.ts", "src/**/*.testHarness.ts"]
+}
