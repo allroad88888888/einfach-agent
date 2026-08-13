@@ -249,6 +249,46 @@ describe('DeepSeek V4 请求协议', () => {
     })
   })
 
+  it('工具调用 assistant 缺 reasoning_content 时补空串（合成配对轮的 thinking 校验要求）', async () => {
+    let captured: Record<string, unknown> | undefined
+    const messages: DeepSeekChatRequest['messages'] = [
+      { role: 'user', content: 'hi' },
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          {
+            id: 'timed:sessionStart:skill_manifest',
+            type: 'function',
+            function: { name: 'timed_tool_result', arguments: '{}' },
+          },
+        ],
+      },
+      { role: 'tool', tool_call_id: 'timed:sessionStart:skill_manifest', content: 'manifest' },
+    ]
+
+    // 故意不带 thinking 字段：服务端把全部 deepseek 别名路由到 thinking 家族，
+    // 归一化必须在默认路径同样生效。
+    await callDeepSeek(
+      { model: 'deepseek-v4-flash', messages },
+      {
+        apiKey: 'test-key',
+        baseUrl: BASE_URL,
+        fetchImpl: async (_input, init) => {
+          captured = requestBody(init)
+          return okResponse()
+        },
+        retry: { maxRetries: 0 },
+      },
+    )
+
+    expect(captured?.messages).toEqual([
+      messages[0],
+      { ...messages[1], reasoning_content: '' },
+      messages[2],
+    ])
+  })
+
   it('不会隐式生成 user_id，并在协议边界丢弃非法值', async () => {
     const captured: Record<string, unknown>[] = []
     const fetchImpl = async (_input: RequestInfo | URL, init?: RequestInit) => {

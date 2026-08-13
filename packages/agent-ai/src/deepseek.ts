@@ -72,18 +72,21 @@ export interface DeepSeekChatRequest extends ChatRequestBase {
 
 // 简介：规范化 DeepSeek V4 thinking 工具调用历史。
 // 详情：官方协议要求工具调用续轮完整回传 assistant 的 reasoning_content；同时工具调用
-// assistant 的 content 不能为 null。这里只把纯工具调用轮的 null 规范为空字符串，不修改
-// 调用方原始 messages。
+// assistant 的 content 不能为 null。这里把纯工具调用轮的 null content 规范为空字符串，并给
+// 缺失 reasoning_content 的工具调用 assistant 补空串——core 为孤儿 timed tool result 合成的
+// 配对 assistant（timedToolResultProjection）没有推理正文，thinking 模式下缺字段会被服务端
+// 400（"reasoning_content ... must be passed back"）；空串已实测可过校验。不修改调用方原始
+// messages。
 function prepareDeepSeekThinkingMessages(
   messages: DeepSeekChatRequest['messages'],
 ): DeepSeekChatRequest['messages'] {
-  return messages.map((message) => (
-    message.role === 'assistant'
-      && message.content === null
-      && (message.tool_calls?.length ?? 0) > 0
-      ? { ...message, content: '' }
-      : message
-  ))
+  return messages.map((message) => {
+    if (message.role !== 'assistant' || (message.tool_calls?.length ?? 0) === 0) return message
+    const content = message.content === null ? '' : message.content
+    const reasoning = typeof message.reasoning_content === 'string' ? message.reasoning_content : ''
+    if (content === message.content && reasoning === message.reasoning_content) return message
+    return { ...message, content, reasoning_content: reasoning }
+  })
 }
 
 // 简介：按 DeepSeek V4 thinking 协议净化请求。
@@ -99,14 +102,17 @@ function prepareDeepSeekRequest(body: DeepSeekChatRequest): DeepSeekChatRequest 
     frequency_penalty: _frequencyPenalty,
     ...baseRequest
   } = body
-  const messages = nonVisualMessages(body.messages)
+  // 工具调用轮归一化不看请求级 thinking 开关：DeepSeek 服务端已把 deepseek-chat 等别名
+  // 路由到 thinking 家族（实测请求 deepseek-chat 返回 model=deepseek-v4-flash），请求未声明
+  // thinking 时缺 reasoning_content 一样会 400；非 thinking 路径带空串字段已实测可过校验。
+  const messages = prepareDeepSeekThinkingMessages(nonVisualMessages(body.messages))
   const userId = normalizeDeepSeekUserId(rawUserId)
   const request = userId === undefined ? baseRequest : { ...baseRequest, user_id: userId }
 
   if (body.thinking?.type === 'enabled') {
     return {
       ...request,
-      messages: prepareDeepSeekThinkingMessages(messages),
+      messages,
     }
   }
 

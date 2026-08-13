@@ -163,9 +163,11 @@ describe('DeepSeek protocol eval matrix', () => {
       )).toBe(true)
       if (result.tool_call) {
         expect(result.request_shapes[0]?.assistant_tool_call).toBeNull()
+        // adapter 现对工具调用轮无条件补 reasoning_content/非空 content：
+        // DeepSeek 服务端把全部别名路由到 thinking 家族，缺字段在默认路径也会 400。
         expect(result.request_shapes[1]?.assistant_tool_call).toEqual({
-          has_reasoning_content: result.thinking,
-          content_non_null: result.thinking,
+          has_reasoning_content: true,
+          content_non_null: true,
         })
       } else {
         expect(result.request_shapes.every((shape) =>

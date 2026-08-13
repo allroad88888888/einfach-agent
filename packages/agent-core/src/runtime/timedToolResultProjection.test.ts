@@ -90,6 +90,8 @@ describe('sessionStart timed tool 的请求组装', () => {
       {
         role: 'assistant',
         content: '',
+        // deepseek adapter 对工具调用轮统一补空 reasoning_content（thinking 家族校验要求）。
+        reasoning_content: '',
         tool_calls: [{
           id: 'timed:sessionStart:timed_manifest_fixture',
           type: 'function',
