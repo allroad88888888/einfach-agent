@@ -1,7 +1,10 @@
-import { subscribeAgentEvents, type AgentEvent } from '@web-agent/core/runtime/core/events'
-import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
-import { assistantStreamAtom } from '@web-agent/core/state/transientAtoms'
-import { itemsAtom } from '@web-agent/core/state/sessionAtoms'
+import {
+  assistantStreamAtom,
+  defaultCore,
+  itemsAtom,
+  subscribeAgentEvents,
+  type AgentEvent,
+} from '@web-agent/core'
 
 export interface TextOutput {
   write(text: string): void

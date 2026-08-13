@@ -1,6 +1,6 @@
 import { lstat, readdir, readFile, stat } from 'node:fs/promises'
 import { relative, resolve, sep } from 'node:path'
-import type { ProjectSkillsLoaderBridge } from '@web-agent/core/runtime/core/coreInstance'
+import type { ProjectSkillsLoaderBridge } from '@web-agent/core'
 
 interface FileEntry {
   path: string

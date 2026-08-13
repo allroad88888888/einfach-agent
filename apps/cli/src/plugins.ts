@@ -10,11 +10,15 @@
 // 后续卡（该卡未拆出前，勾选状态在 CLI 上恒为全关）。
 
 import { pathToFileURL } from 'node:url'
-import { scanPlugins, type PluginScanBridge } from '@web-agent/core/plugins/pluginScanner'
-import { loadScannedPlugins } from '@web-agent/core/plugins/pluginLoader'
-import type { PluginLoaderDeps, PluginLoadResult } from '@web-agent/core/plugins/pluginLoaderTypes'
-import type { PluginApiVersionRange } from '@web-agent/core/plugins/manifestTypes'
-import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
+import {
+  defaultCore,
+  loadScannedPlugins,
+  scanPlugins,
+  type PluginApiVersionRange,
+  type PluginLoaderDeps,
+  type PluginLoadResult,
+  type PluginScanBridge,
+} from '@web-agent/core'
 import { buildNodeProjectSkillsBridge, resolveWorkspacePath } from './workspace-files'
 
 /**

@@ -2,10 +2,10 @@ import {
   answerQuestion,
   approvePlan,
   confirmTool,
+  normalizeAskUserQuestionPayload,
   resumeWithAnswers,
-} from '@web-agent/core/runtime/commands'
-import { normalizeAskUserQuestionPayload } from '@web-agent/core/runtime/askUserQuestion'
-import type { RunState } from '@web-agent/core/state/core.type'
+  type RunState,
+} from '@web-agent/core'
 import type { TextOutput } from './event-renderer'
 
 export interface ReadlineBridge {

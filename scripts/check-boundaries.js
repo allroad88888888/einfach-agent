@@ -132,15 +132,6 @@ const coreSubpathExemptions = [
     consumers: ['packages/persistence-idb/src/', 'packages/persistence-sqlite/src/', 'packages/subagents/src/'],
     reason: 'S3b 26dd539 留档：SessionMeta/ModelSettings 被 S5a 收进根 barrel `.`，但 `.` 是宿主装配面、能力包不走它，这三处暂无正式通路',
   },
-  {
-    subpaths: [
-      'plugins/manifestTypes', 'plugins/pluginLoader', 'plugins/pluginLoaderTypes', 'plugins/pluginScanner',
-      'runtime/askUserQuestion', 'runtime/commands', 'runtime/core/coreInstance', 'runtime/core/events',
-      'runtime/persistenceBridge', 'state/core.type', 'state/sessionAtoms', 'state/transientAtoms',
-    ],
-    consumers: ['apps/cli/src/'],
-    reason: 'S6 尾款：S6（10725fe）早于 S5a 落地，状态注已写明「27 条留 S5a」；这批全部已被根 barrel `.` 覆盖，是纯符号搬家，等一张 S6 尾款卡',
-  },
 ]
 
 async function typescriptFiles(directory) {

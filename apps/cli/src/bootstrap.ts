@@ -6,11 +6,15 @@ import { subscribeCliRenderer, type TextOutput } from './event-renderer'
 import { renderWaitingState, resumeWaitingRun, runRepl, type ReadlineBridge } from './repl'
 import { assembleCliRuntime } from './runtime'
 import { resolveWorkspaceRoot } from './workspace-files'
-import { newSession, sendMessage, setWorkspaceRoot } from '@web-agent/core/runtime/commands'
-import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
-import { subscribeAgentEvents } from '@web-agent/core/runtime/core/events'
-import { runAtom } from '@web-agent/core/state/sessionAtoms'
-import type { RunState } from '@web-agent/core/state/core.type'
+import {
+  defaultCore,
+  newSession,
+  runAtom,
+  sendMessage,
+  setWorkspaceRoot,
+  subscribeAgentEvents,
+  type RunState,
+} from '@web-agent/core'
 
 const output: TextOutput = { write: (text) => stdout.write(text) }
 

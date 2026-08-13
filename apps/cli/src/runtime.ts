@@ -1,12 +1,12 @@
 import { configureObservability } from '@web-agent/core/observability'
-import { configureCommands } from '@web-agent/core/runtime/commands'
 import {
+  configureCommands,
   configureDefaultDelegation,
   configureDefaultProjectSkillsProvider,
   configureDefaultSkillsRegistry,
+  configurePersistence,
   defaultCore,
-} from '@web-agent/core/runtime/core/coreInstance'
-import { configurePersistence } from '@web-agent/core/runtime/persistenceBridge'
+} from '@web-agent/core'
 import { createMemoryHistoryDriver } from '@web-agent/core/state/persistence'
 import { createDelegationAssembly } from '@web-agent/subagents'
 import { registerStandardTools } from '@web-agent/tools'
