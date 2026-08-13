@@ -406,7 +406,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
 - **判据**：脚本在当前树上全绿；人为加一条违规 import 时 CI 判红（本地验证后撤销）；
   `node scripts/check-boundaries.js` 幂等可重跑
 - **模型**：codex medium
-- **状态**：DONE（哈希在下一次提交补记；`plugin-dialog` 降级为观察项——`workspaceDialog.ts`
+- **状态**：DONE `dc3caf2`（`plugin-dialog` 降级为观察项——`workspaceDialog.ts`
   仍属宿主桥范围；测试文件豁免，能力包反向依赖 5 条规则全部执法）
 
 ### F2 · 文档同步
@@ -416,7 +416,7 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   `docs/core-runtime-flow.md`；按仓库约定删除本 issue 文件并从 `docs/README.md` 移除条目
 - **判据**：`node scripts/check-docs.js`；文档描述与 `pnpm build` 通过的实际包结构一致
 - **模型**：codex medium
-- **状态**：TODO
+- **状态**：DOING
 
 ## 未决（不编号、不排期、不指派模型）
 
