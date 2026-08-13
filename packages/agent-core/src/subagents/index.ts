@@ -35,8 +35,17 @@
 //                           —— 外部消费方为零，本就不在公开面。
 //   · `getSubagentViewCommandFacade`（stateViewPort）—— core 内部 `runtime/commands/subagentViewCommands.ts`
 //                              读取用，方向是 core→包，外部零消费方。
-//   · `applySubagentTier`（tierRouting）、`toolProfile` 的裁剪函数、`modelSelection` 的
-//     `createSubagentModelSelection` / `callSelectedSubagentModel` —— 子 run 内核自用，外部零消费方。
+//   · `./tierRouting` 的 `applySubagentTier` / `subagentTierTarget` / `supportsSubagentTierRouting`、
+//     `toolProfile` 的裁剪函数、`./modelSelection` 整个文件（`routeChildModel`、
+//     `SubagentModelSelectionInput`、`createSubagentModelSelection`、`callSelectedSubagentModel`）、
+//     `./delegationRuntimePorts` 的 `DelegateAgents` —— 子 run 内核自用，外部零消费方。
+//     其中 `subagentTierTarget` / `supportsSubagentTierRouting` / `routeChildModel` /
+//     `SubagentModelSelectionInput` / `DelegateAgents` 这五条曾随 S11d/S11e 的下沉短暂留在
+//     barrel 里等复核：S11f 逐条 grep 复核确认消费方
+//     只剩 core 内的相对导入（`delegationRuntime` / `modelSelection` / `delegationBatch` /
+//     `childAgentLoop` / `childAgentToolCalls` / `runtimeState` 与同目录测试），且都不是任何
+//     已导出签名的构成类型（`DelegationRuntime.delegateAgents`、`ToolContext.delegateAgents`
+//     写的是内联方法签名，不引用 `DelegateAgents` 别名），故一并从公开面删除。
 //   · `types.ts` 里 `SubagentToolProfile`、`SubagentModelTier`、`SubagentTaskCategory`、
 //     `SubagentRiskLevel`、`SubagentSkillPromotion`、`SubagentSkillSource`、
 //     `SubagentDangerousToolCapability`、`DelegateAgentRuntime`、`SubagentRuntimeTranscript`
@@ -99,12 +108,6 @@ export type {
   // packages/subagents: defaultTierRouting（默认表的类型）、runtime（端口注入口）
   SubagentTierRouting,
 } from './tierRouting'
-export {
-  // 低价抽取的 flash 目标与资格判据；S11e 起随工厂下沉在 core 内消费，外部具名消费方为零，
-  // 去留由 S11f 的模块图复核统一处置
-  subagentTierTarget,
-  supportsSubagentTierRouting,
-} from './tierRouting'
 
 // ---------------------------------------------------------------------------
 // 工具档位与输入归一化（`./toolProfile`、`./input`）——delegate_agent 工具的入参协议
@@ -119,25 +122,10 @@ export {
 } from './input'
 
 // ---------------------------------------------------------------------------
-// 模型路由（`./modelSelection`）——签名只吃协议词汇（settings/spec/档位表）
-// ---------------------------------------------------------------------------
-export type {
-  // S11d 起在 core 内消费（delegationBatch 以对象字面量传入），外部具名消费方为零，
-  // 去留由 S11f 的模块图复核统一处置
-  SubagentModelSelectionInput,
-} from './modelSelection'
-export {
-  // 同上：把档位与 route_reason 写进 node record 的调用方已随批次执行段回到 core
-  routeChildModel,
-} from './modelSelection'
-
-// ---------------------------------------------------------------------------
 // 注入端口（`./delegationRuntimePorts`）——装配层必须满足的六个端口（S11b 后：
 // scheduler / archive / archiveFormat / skillDistill / lowCostExtractionSettings / tierRouting）
 // ---------------------------------------------------------------------------
 export type {
-  // `createDelegateAgents` 的返回类型；S11d 起在 core 内消费，外部具名消费方为零
-  DelegateAgents,
   // packages/subagents: archive/archiveIO 结构化实现（当前未具名 import，S2b 可具名化）
   SubagentArchivePort,
   // packages/subagents: runtime 结构化实现

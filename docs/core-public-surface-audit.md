@@ -160,12 +160,12 @@ D 类清单 S8 后剩 1 条（`tools/schemaValidate`，测试专用、不进白�
 | E5 | `state/persistence/sessionsPersistence` | `apps/web/src/main.tsx:27` | 同 E4，内部工厂被装配层直接拼 | **已消（S7b）**：那本就是个 IndexedDB 实现，搬去 `@web-agent/persistence-idb` 并更名 `createIndexedDbSessionsPersistence`（与 `createIndexedDbHistoryDriver` 同包同载体，对称于 sqlite 侧的 `createSqlitePersistence`）；core 只留 `SessionsPersistence` 契约 |
 | E6 | `state/persistence/memoryHistoryDriver` | `apps/cli/src/runtime.ts:10` | core 内的内存 driver 实现被 CLI 当产品依赖 | **补 barrel（S7b）**：判定它该算公开面——零宿主依赖（只 import 本目录两个类型）、语义就是"进程内 Map 不落盘"、是 `HistoryDriver` 契约的参考实现，且 `apps/cli` 是真实产品消费方。收进 `./persistence`，CLI 改走 barrel |
 | E7 | `state/sessionStore` | `apps/web/src/agentNew/ui/ActiveSessionProvider.tsx:15` | `getSessionStore` 把 runtime store 交给 UI，与 [`CLAUDE.md`](../CLAUDE.md) 的"UI 不持有 runtime store"直接冲突 | **已消（S7b）**：命令面补一条受限只读通路 `sessionAtomScope(id)`（[`runtime/commands/sessionScopeCommands.ts`](../packages/agent-core/src/runtime/commands/sessionScopeCommands.ts)）——只给"该会话的 atom 作用域"供 `<Provider>` 绑定，**不给** store 生命周期（建/丢/清仍归 `newSession`/`removeSession`）。没有补 barrel |
-| E8 | `subagents/concurrency` | `packages/subagents/src/delegationBatch.ts:1` | `createConcurrencyLimiter` 是通用并发原语，不属委派契约 | **归位（S7b）**：搬到 `runtime/concurrencyLimiter`，与同层的 `runtime/writeQueue`、`runtime/newId` 一样是零依赖原语；core 侧 `subagents/runtimeState` 与包侧 `delegationBatch` 都改指新路径，`subagents/` 目录不再混装通用工具。跨包深导入本身留给 S11（它本就把 concurrency 列在 `delegationBatch` 的 5 条里） |
+| E8 | `subagents/concurrency` | `packages/subagents/src/delegationBatch.ts:1` | `createConcurrencyLimiter` 是通用并发原语，不属委派契约 | **归位（S7b）**：搬到 `runtime/concurrencyLimiter`，与同层的 `runtime/writeQueue`、`runtime/newId` 一样是零依赖原语；core 侧 `subagents/runtimeState` 与包侧 `delegationBatch` 都改指新路径，`subagents/` 目录不再混装通用工具。跨包深导入本身留给 S11（它本就把 concurrency 列在 `delegationBatch` 的 5 条里）。**已随 S11 清偿**：S11d 把批次执行段下沉回 core，包侧那个文件连同这条深导入一起消失，`createConcurrencyLimiter` 现在只有 core 内的相对消费方 |
 
 E1–E3、E8 的处置是"要么补进对应 barrel 成为正式 API，要么给消费方换等价公开 API"；
 E4–E7 的处置**倾向后者**——正式通路（`persistenceBridge` / commands / atoms）已经存在。
 S7a/S7b 落地后 8 条全部有结论：E1、E2、E4、E5、E7 换正式通路，E3、E6 补 barrel，E8 先归位、
-剩下的跨包接缝交 S11。
+剩下的跨包接缝交 S11——**该接缝已随 S11 清偿**（见下方 S7b 债注）。
 
 **S7a 记的两笔债**（E1–E4 已处置，但留下两处要在后续卡兑现）：
 
@@ -181,11 +181,13 @@ S7a/S7b 落地后 8 条全部有结论：E1、E2、E4、E5、E7 换正式通路�
 
 **S7b 记的两笔债**（E5–E8 已处置，同样留下两处后续兑现）：
 
-- **E8 归位后跨包深导入还在**：`packages/subagents/src/delegationBatch.ts` 改成
-  `@web-agent/core/runtime/concurrencyLimiter`，路径诚实了（通用原语不再冒充委派契约），
-  但白名单里仍没有这条——与 `runtime/finishReason` 同一处境。两条出路二选一：S11 按既定方向
-  收掉 `delegationBatch` 对 core 内部的深导入（届时这条消费方自动消失），或 S9 门禁前把它
-  与 `finishReason`、`contextBudget` 一起并进某个 barrel。**不要**为它单开第 10 条 subpath。
+- **E8 归位后跨包深导入还在** —— **已随 S11 清偿**。原状：`packages/subagents` 的批次执行段
+  深导入 `@web-agent/core/runtime/concurrencyLimiter`，路径诚实了（通用原语不再冒充委派契约），
+  但白名单里仍没有这条——与 `runtime/finishReason` 同一处境。当时给的两条出路里，S11 走了第一条：
+  S11d 把批次执行段下沉回 core（`subagents/delegationBatch.ts`），包侧那个文件随之消失，
+  这条深导入的消费方自动归零，不必为它并 barrel，更不必单开第 10 条 subpath。
+  `runtime/finishReason` 同步归零（S11 收掉包侧消费方后已无跨包引用）；`contextBudget` 则早已按
+  E1 的原方案收进根 barrel（`COST_SOFT_CAP_TOKENS` / `contextInputBudgetTokens`）。
 - **E7 消解后 `state/sessionStore` 降级为仅测试在用**：产品代码里已无消费方，剩下
   `apps/web/src/agentNew/ui/{ActiveSessionProvider,AppShell}.test.tsx` 与
   `apps/web/src/test/setup.ts`（`resetSessionStores`）三处测试脚手架。它按 §3.4 的口径归 D 类，
@@ -201,7 +203,7 @@ S7a/S7b 落地后 8 条全部有结论：E1、E2、E4、E5、E7 换正式通路�
 | 2 | `./plugin` | 已存在，不动 | 外部插件作者、`plugin-example` |
 | 3 | `./timeline` | 已存在，不动 | `agent-react`、`apps/web` |
 | 4 | `./tools` | `tools/types`、`tools/toolRegistry`、`tools/schemaResult` + workspace 桥 5 条 | 七个工具域、`tools/standard` |
-| 5 | `./subagents` | 委派接缝 15 条（含 `delegationContract`、`stateViewPort`、`execution/types`）+ S7a 抽出的 `runtime/finishReason`（`runtime/concurrencyLimiter` 见 3.5 的 S7b 债，优先由 S11 消掉消费方） | `packages/subagents`、`tools/agents` |
+| 5 | `./subagents` | 委派接缝 15 条（含 `delegationContract`、`stateViewPort`、`execution/types`）。**已随 S11 清偿**：`runtime/concurrencyLimiter` 与 `runtime/finishReason` 两条跨包接缝的消费方都被 S11 收回 core，barrel 不必覆盖它们；委派执行段下沉后本 barrel 只留协议词汇 + 端口 + 工厂，S11f 又删掉 5 条零消费导出（`subagentTierTarget`、`supportsSubagentTierRouting`、`routeChildModel`、`SubagentModelSelectionInput`、`DelegateAgents`） | `packages/subagents`、`tools/agents` |
 | 6 | `./persistence` | `contract`、`historyDriver`、`checkpoint.type` + S7b 收进来的 `memoryHistoryDriver`（E6） | `persistence-idb`、`persistence-sqlite`、`apps/cli` |
 | 7 | `./observability` | `types`、`logReader`、`port`、`trace` + S7a 收进来的 `traceCacheTotals`（记债，见 3.5） | `observability-idb`、`observability-sqlite`、`apps/web` |
 | 8 | `./skills` | `contracts`、`projectSkills` | `tools/skills` |
