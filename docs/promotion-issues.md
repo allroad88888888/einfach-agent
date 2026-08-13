@@ -13,11 +13,12 @@ demo、包未发布）铺到"路人 30 秒看懂、10 分钟跑通"的可发布�
 ```text
 未决  命名 / License / 主打故事（不排期，拍板前依赖它们的卡不开工）
 A 开源就绪   A1 秘钥审计  A2 冷启动验证  A3 CONTRIBUTING  A4 元信息文案
-             A5 LICENSE   A6 中文 README  A7 英文 README
+             A5 LICENSE   A6 中文 README  A7 英文 README  A8 esbuild 占位符修复
 B Demo 物料  B1 CLI 录屏  B2 截图清单    B3 截图执行
 C 文章草稿   C1 装配内核  C2 CallTiming  C3 dogfood 400  C4 DeepSeek 踩坑  C5 子 Agent 治理
+             C6 maxTurns 文档修正
 D 对比定位   D1 竞品事实  D2 对比表
-E 发布工程   E1 release workflow  E2 npm 发包方案
+E 发布工程   E1 release 审计  E2 npm 发包方案
 F Launch 帖  F1 中文渠道  F2 英文渠道
 G 收尾       G1 删除本树
 ```
@@ -42,7 +43,7 @@ G 收尾       G1 删除本树
   确认 `.env.local`、`~/.webAgent` 相关文件未被追踪；报告给出"是否发现泄漏"的明确结论。
   发现泄漏则另立卡处理，本卡不改历史
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE（仓库零改动，报告在会话 scratchpad）
 
 ### A2 · quickstart 冷启动验证
 
@@ -51,7 +52,7 @@ G 收尾       G1 删除本树
 - **判据**：在干净临时目录 `git clone` 本仓库后依次 `pnpm install`、`pnpm build`、
   `pnpm cli --help` 全部成功；README 步骤与实际差异逐条记录，供 A6 修正
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE（仓库零改动，报告在会话 scratchpad）
 
 ### A3 · CONTRIBUTING.md
 
@@ -60,7 +61,7 @@ G 收尾       G1 删除本树
 - **判据**：`node scripts/check-docs.js` 通过；覆盖 pnpm workspace 流程、测试与 build
   门禁、conventional commit 约定、文件行数红线
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE fc00103
 
 ### A4 · GitHub 元信息文案
 
@@ -69,7 +70,7 @@ G 收尾       G1 删除本树
 - **判据**：`node scripts/check-docs.js` 通过；含 description（中英各一句）、topics 候选
   （≤20 个）、About 区建议；名字处标注占位待"未决·命名"
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE 335ac98
 
 ### A5 · LICENSE 落地
 
@@ -98,6 +99,17 @@ G 收尾       G1 删除本树
 - **模型**：opus
 - **状态**：TODO
 
+### A8 · 修复 pnpm-workspace.yaml 的 esbuild 占位符
+
+- **依赖**：—
+- **改动面**：`pnpm-workspace.yaml`
+- **判据**：A2 冷启动发现第 7 行是字面量占位符 `esbuild: set this to true or false`，每次
+  install 都打印 "Ignored build scripts" 警告；查证构建脚本被忽略时 esbuild 是否仍完好
+  （平台二进制经 optionalDependencies 分发则应设 false），落成真实布尔值；
+  `CI=true pnpm install < /dev/null` 不再出该警告；`pnpm build` 通过
+- **模型**：sonnet
+- **状态**：DONE 8d55dfd
+
 ## B · Demo 物料
 
 ### B1 · CLI demo 录制
@@ -108,7 +120,7 @@ G 收尾       G1 删除本树
   `demo-script.md` 按其步骤可复录。真实 Key 走 `pnpm cli` 的既有凭据链路，禁止出现在
   任何产物里；录制工具缺失时先交脚本并记录安装步骤，由主会话补录
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE 9ea55a8（cast/gif 待录屏工具，复录步骤见 demo-script.md）
 
 ### B2 · 桌面版截图清单
 
@@ -117,7 +129,7 @@ G 收尾       G1 删除本树
 - **判据**：`node scripts/check-docs.js` 通过；列出 ≥6 个界面场景（会话流、计划审批、
   子 Agent 树、危险工具确认、trace viewer、MCP 设置），每项写明需要的前置状态
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE d7a4685
 
 ### B3 · 桌面截图执行
 
@@ -125,7 +137,7 @@ G 收尾       G1 删除本树
 - **改动面**：`docs/launch/assets/*.png`
 - **判据**：清单场景各有一张截图；画面里无隐私信息（本机路径、key、真实会话内容）
 - **模型**：—（主会话亲自执行，GUI 操作无法委派）
-- **状态**：TODO
+- **状态**：DONE 8390f15（浏览器草稿 3 张：会话流式/决策提问/计划审批；危险确认、子 agent 树、trace viewer、MCP 已连接态受浏览器宿主限制，待桌面补拍）
 
 ## C · 技术文章草稿（全部落 `docs/launch/articles/`）
 
@@ -136,7 +148,7 @@ G 收尾       G1 删除本树
 - **判据**：`node scripts/check-docs.js` 通过；引用的 API 与文件路径和当前代码一致
   （抽查 `createCore` 槽位、Web/桌面/CLI 三处装配入口）
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE e3fe18f
 
 ### C2 · 《给工具加生命周期：CallTiming 机制》
 
@@ -146,7 +158,7 @@ G 收尾       G1 删除本树
   `packages/agent-core/src/tools/toolCallTiming.ts` 定义一致；与 Claude Code hooks 的
   对比至少 3 条且事实准确
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE a006f43
 
 ### C3 · 《用 CLI 宿主 dogfood，十分钟抓出一个线上 400》
 
@@ -155,7 +167,7 @@ G 收尾       G1 删除本树
 - **判据**：`node scripts/check-docs.js` 通过；叙事与 `f4e3359` 前后的提交事实一致；
   全文不出现任何真实 key 片段
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE 605c4a7
 
 ### C4 · 《DeepSeek V4 thinking 协议踩坑实录》
 
@@ -164,7 +176,7 @@ G 收尾       G1 删除本树
 - **判据**：`node scripts/check-docs.js` 通过；坑位描述与
   `packages/agent-ai/src/deepseek.ts` 的请求净化与 thinking 归一化行为一致
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE 1e624f0
 
 ### C5 · 《子 Agent 治理：replay、容量与归档》
 
@@ -173,7 +185,17 @@ G 收尾       G1 删除本树
 - **判据**：`node scripts/check-docs.js` 通过；提到的治理脚本与根 `package.json` 的
   `subagent:*` 脚本一一对应
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE f31de61
+
+### C6 · 修正子 Agent 文档与测试注释里过时的 maxTurns 数字
+
+- **依赖**：—
+- **改动面**：`docs/tree-subagent-runtime.md`、`packages/agent-core/src/subagents/runtime.test.ts`（仅注释）
+- **判据**：C5 写作核实发现文档写 maxTurns 硬上限 8，代码 `subagents/input.ts` 的
+  `HARD_MAX_TURNS = 16`；`runtime.test.ts:2343` 注释同样写 8。两处改为与代码一致；
+  `node scripts/check-docs.js` 与 `pnpm exec vitest run packages/agent-core/src/subagents/runtime.test.ts` 通过
+- **模型**：sonnet
+- **状态**：DONE 28e059a
 
 ## D · 对比与定位
 
@@ -184,7 +206,7 @@ G 收尾       G1 删除本树
 - **判据**：`node scripts/check-docs.js` 通过；pi / OpenCode / Cline / Cherry Studio 每家
   覆盖架构形态、扩展机制、模型支持、子 Agent 与观测能力，逐条附来源链接（需联网检索）
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE 442ad3e
 
 ### D2 · 对比表成文
 
@@ -197,14 +219,16 @@ G 收尾       G1 删除本树
 
 ## E · 发布工程
 
-### E1 · release workflow 草稿
+### E1 · release workflow 审计（原"新建草稿"，前提失效后改写）
 
 - **依赖**：—
-- **改动面**：`.github/workflows/release.yml`（新建）
-- **判据**：`actionlint`（或 `npx --yes yaml-lint`）通过；仅 tag push 触发；tauri 三平台
-  矩阵与 `ci.yml` 现有矩阵一致；不改动 `ci.yml`
+- **改动面**：审计报告写入会话 scratchpad；仅确认真实缺陷时才修改
+  `.github/workflows/release-desktop.yml`
+- **判据**：写卡时漏看了已存在的 `release-desktop.yml`（`e90ab14`，签名校验 + draft
+  release 齐备），本卡改为：与 `ci.yml` 的环境一致性核对、缺陷排查（引号转义、权限提升、
+  并发设置）、lint；结论落 scratchpad 报告
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE 7a0ade2
 
 ### E2 · npm 发包方案蓝图
 
@@ -213,7 +237,7 @@ G 收尾       G1 删除本树
 - **判据**：`node scripts/check-docs.js` 通过；覆盖 src-alias 不编译的现状、构建工具选型、
   包间发布顺序、不发布清单（`apps/*`、示例包）、版本与 dist-tag 策略；明确标注为蓝图
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE c5117e2
 
 ## F · Launch 帖草稿
 
