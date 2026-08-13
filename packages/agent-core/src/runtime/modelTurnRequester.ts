@@ -18,7 +18,7 @@ import { createAssistantStreamWriter } from './assistantStreamWriter'
 import { abortStatus, safeErrorMessage } from './toolLoopSupport'
 import type { ToolLoopBase } from './toolLoopContracts'
 import { ROOT_AGENT_PATH } from '../subagents/path'
-import { modelReasoningEffort, modelSamplingSettings } from './modelSettingsProjection'
+import { modelAdapterSettings, modelReasoningEffort, modelSamplingSettings } from './modelSettingsProjection'
 import { projectTimedToolResultOrphans } from './timedToolResultProjection'
 
 export interface ModelTurnResult {
@@ -170,7 +170,7 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
       const llmSpan = base.core.observability.startSpan('llm.chat', { kind: 'llm', parent: base.trace.span, attrs: () => ({ sessionId: base.id, runId: base.runId, turnId: base.turnId, llm_turn: contextStats.llmTurn, vendor: base.settings.vendor, model: base.settings.model, messages_count: messages.length, tools_count: tools.length, dynamic_controls_count: controls.length, adapter_retry_attempt: retries, estimated_context_tokens: contextStats.estimatedTokens, context_chars: contextStats.totalChars, tools_chars: contextStats.toolsChars, context_distilled: contextDistilled, context_within_budget: true, cache_profile: cacheProfile.profileId, cache_epoch: cacheProfile.epoch, cache_lane: cacheProfile.lane, cache_epoch_reason: cacheProfile.epochReason, cache_epoch_causes: cacheProfile.epochCauses.join(','), cache_lane_scope_fingerprint: cacheProfile.laneScopeFingerprint, cache_system_fingerprint: cacheProfile.systemFingerprint, cache_request_projection_fingerprint: cacheProfile.requestProjectionFingerprint, tool_set_fingerprint: cacheProfile.toolSetFingerprint, ...contextProjectionTraceAttrs(cacheProfile), ...requestAssemblyTrace, requestPreview: llmRequestTracePreview({ ...requestBase, reasoning_effort: reasoningEffort }) }) })
       const retryObserver: ModelRetryObserver = { canRetry: () => base.control.isCurrent() && base.control.isRunning() && !base.opts.signal.aborted, onRetry: (event) => { retries = event.attempt; base.trace.event('llm.model_retry', { status: event.status, retry_attempt: event.attempt, max_retries: event.maxRetries, response_id: event.response.id, response_model: event.response.model }) } }
       let response: ModelChatResponse
-      try { response = await streamModel({ ...requestBase, settings: base.settings, userId: base.modelUserId }, callOptions, { onDelta: streamWriter.onDelta }, retryObserver) }
+      try { response = await streamModel({ ...requestBase, settings: modelAdapterSettings(base.settings), userId: base.modelUserId }, callOptions, { onDelta: streamWriter.onDelta }, retryObserver) }
       catch (error) {
         streamWriter.finishPending()
         const status = abortStatus(base.opts.signal, error)

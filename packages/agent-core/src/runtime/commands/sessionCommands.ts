@@ -1,4 +1,4 @@
-import { DEFAULT_DEEPSEEK_MODEL, userMessageLabel, type UserMessageContent } from '@web-agent/ai'
+import { DEFAULT_MODEL_SETTINGS, userMessageLabel, type UserMessageContent } from '@web-agent/ai'
 import { activeSessionIdAtom, activeWorkspaceIdAtom, expandedWorkspaceIdsAtom, sessionsAtom, workspacesAtom } from '../../state/rootStore'
 import type { ModelSettings, SessionMeta } from '../../state/core.type'
 import type { CoreInstance } from '../core/coreInstance'
@@ -54,10 +54,11 @@ export function createSessionCommands(core: CoreInstance) {
       core.rootStore.setter(workspacesAtom, (prev) => ({ ...prev, [workspace.id]: workspace }))
     }
     const id = newId()
-    const settings: ModelSettings = opts?.settings ?? {
-      vendor: 'deepseek',
-      model: DEFAULT_DEEPSEEK_MODEL,
-    }
+    // 缺省 provider 不是 core 能知道的事：优先用装配层配的默认设置，没有才退回
+    // agent-ai 内置装配给出的缺省（与 provider registry 的 fallback 同源）。
+    const settings: ModelSettings = opts?.settings
+      ?? core.config.defaultModelSettings
+      ?? { ...DEFAULT_MODEL_SETTINGS }
     const now = Date.now()
     const meta: SessionMeta = {
       id,

@@ -5,13 +5,14 @@
 // 从通用 ProviderSettings 投影出来，registry 与上层路由（modelAdapter）都不认识这些字段；
 // 能力描述同理只在这里出现，vendorDescriptor.ts 只经 registry 查询、不再持有厂商数据。
 // 默认 registry 的 fallback 是 deepseek —— 未注册的 vendorId 沿用历史行为按 DeepSeek 执行。
-// 新增 provider 在本文件加一段 adapter + descriptor 并注册；如果新家的 vendor 字面量要出现
-// 在 ModelAdapterSettings 的类型判别式上（modelAdapter.ts），那一处的一行 union 分支也要跟着
-// 加——这是 agent-ai 包内部的类型收窄，不算跨包改动，packages/agent-core 全程不需要知道。
+// 新增 provider 只在本文件加一段 adapter + descriptor 并注册：ModelAdapterSettings 已经是
+// 「不透明 vendorId + 各家私有字段」的开放形状，没有需要同步扩的判别式，packages/agent-core
+// 全程不需要知道。
 
 import {
   callDeepSeek,
   streamDeepSeek,
+  DEFAULT_DEEPSEEK_MODEL,
   type DeepSeekChatRequest,
   type DeepSeekReasoningEffort,
 } from './deepseek'
@@ -39,6 +40,15 @@ export const DEEPSEEK_VENDOR_ID = 'deepseek'
 export const GLM_VENDOR_ID = 'glm'
 export const KIMI_VENDOR_ID = 'kimi'
 export const OPENAI_COMPAT_VENDOR_ID = 'openai-compat'
+
+// 简介：内置装配的缺省会话模型（vendorId + 模型名）。
+// 详情：core 不认识任何厂商，因此「新会话默认用谁」这件事只能由认识厂商的一侧给出。
+// 与 defaultProviderRegistry 的 fallbackVendorId 同源：两者都表达「没有别的信息时按内置
+// 第一家处理」。宿主想换默认家，用 RuntimeConfig.defaultModelSettings 覆盖，不改 core。
+export const DEFAULT_MODEL_SETTINGS: { readonly vendor: string; readonly model: string } = {
+  vendor: DEEPSEEK_VENDOR_ID,
+  model: DEFAULT_DEEPSEEK_MODEL,
+}
 
 // 简介：构造一个只有文本上下文窗口、不支持图片输入的模型描述。
 // 详情：多数模型没有经过验证的图片输入协议，用这个帮助函数省掉逐个模型重复

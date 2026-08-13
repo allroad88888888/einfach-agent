@@ -1,3 +1,4 @@
+import type { ModelSettings } from '../../state/core.type'
 import type { UserInputPreparer } from '../userInputPreparation'
 import type { UserContentDisposer } from '../userContentDisposal'
 import type { McpConnectTargetProbe, McpToolLaunchTargetProbe } from '../dangerousTools'
@@ -14,6 +15,12 @@ export interface RuntimeConfig {
    * 不做逐 vendor 合并——装配层每次都传完整的凭据表。
    */
   modelCredentials: Record<string, string>
+  /**
+   * 新会话在调用方没有显式给设置时用的缺省模型设置。
+   * core 不认识任何厂商，也就编不出默认 vendor/model：装配层不接这一项时，退回
+   * agent-ai 内置装配给出的缺省（见 `DEFAULT_MODEL_SETTINGS`）。
+   */
+  defaultModelSettings?: ModelSettings
   deepseekUserId?: string
   customInstructions: string
   fetchImpl?: typeof fetch

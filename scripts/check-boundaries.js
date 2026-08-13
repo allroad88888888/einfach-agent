@@ -51,16 +51,8 @@ const vendorNameExemptions = [
   { path: 'runtime/delegationContract.ts', reason: 'deepseekUserId 字段，待 M7 去专名化' },
   { path: 'runtime/core/delegateModelIdentity.ts', reason: 'deepseekUserId 字段，待 M7 去专名化' },
   { path: 'subagents/runtimeState.ts', reason: 'deepseekUserId 字段，待 M7 去专名化（M4 卡原始豁免清单遗漏，本次核实后补齐）' },
-  {
-    path: 'state/core.type.ts',
-    reason: 'ModelVendor/ModelSettings 是按厂商判别的闭合 union，是 core 内厂商名的根源；M 线暂无对应卡号收敛，本次核实新发现，建议后续开新卡',
-  },
-  { path: 'runtime/modelSettingsProjection.ts', reason: '按 core.type.ts 的 vendor 判别式收窄采样参数支持面；根因同上，暂无对应卡号' },
-  { path: 'runtime/contextDistillation.ts', reason: '摘要请求按 vendor 判别式跳过 kimi 的 temperature；根因同上，暂无对应卡号' },
-  { path: 'runtime/commands/sessionCommands.ts', reason: '新会话缺省 vendor 硬编码为 deepseek；根因同上，暂无对应卡号' },
-  { path: 'runtime/contextCache.testFixtures.ts', reason: '测试夹具需要具体 vendor 字面量才能构造合法 ModelSettings；根因同上' },
-  { path: 'runtime/toolAvailability.testFixtures.ts', reason: '测试夹具需要具体 vendor 字面量才能构造合法 ModelSettings；根因同上' },
-  { path: 'runtime/toolCallBatch.authorization.testFixtures.ts', reason: '测试夹具需要具体 vendor 字面量才能构造合法 ModelSettings；根因同上' },
+  // M9 落地后删除的 7 项：`state/core.type.ts` 的闭合 union 换成「不透明 vendor id + 供应商
+  // 附加设置袋」，按它派生的 4 处收窄分支与 3 份测试夹具随之不再需要厂商名。
 ]
 
 async function typescriptFiles(directory) {

@@ -47,7 +47,7 @@ export function createHarness(
       title: 'Authorization matrix',
       createdAt: 0,
       updatedAt: 0,
-      settings: { vendor: 'deepseek', model: 'test-model' },
+      settings: { vendor: 'test-vendor', model: 'test-model' },
       toolApprovalMode: approvalMode,
     },
   })

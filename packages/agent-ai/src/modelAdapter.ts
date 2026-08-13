@@ -4,9 +4,6 @@
 // defaultProviderRegistry 解析，请求投影由各家 adapter 自己做（见 ./builtinProviders）。
 
 import { defaultProviderRegistry } from './builtinProviders'
-import type { DeepSeekReasoningEffort } from './deepseek'
-import type { GlmReasoningEffort } from './glm'
-import type { KimiRegion } from './kimiRegion'
 import type {
   ChatCallOptions,
   ChatRequestBase,
@@ -14,15 +11,15 @@ import type {
   ModelChatResponse,
   ModelRetryObserver,
 } from './modelApi'
-import type { ProviderAdapter, ProviderRequest } from './providerRegistry'
+import type { ProviderAdapter, ProviderRequest, ProviderSettings } from './providerRegistry'
 
-export type ModelAdapterSettings =
-  | { vendor: 'deepseek'; reasoning_effort?: DeepSeekReasoningEffort }
-  | { vendor: 'glm'; reasoning_effort?: GlmReasoningEffort }
-  | { vendor: 'kimi'; region?: KimiRegion }
-  // baseUrl 必填才能真正发出请求，但类型上留成可选：装配层可以在注册 adapter 时烘焙默认
-  // 接入点（见 builtinProviders.createOpenAiCompatAdapter），未提供时才需要靠这里补。
-  | { vendor: 'openai-compat'; baseUrl?: string }
+// 简介：一次请求的模型设置：不透明 vendorId + 该厂商自己的附加字段。
+// 详情：这一层刻意**不是**按 vendor 判别的闭合联合——新增一家 provider 只注册 adapter，
+// 不改这里。索引签名承载各家私有字段（reasoning_effort / region / user 侧覆盖的 baseUrl 等）；
+// 谁能解释哪个字段，由拿到 ProviderRequest 的那个 adapter 自己收窄（见 ./builtinProviders）。
+export interface ModelAdapterSettings extends ProviderSettings {
+  readonly [key: string]: unknown
+}
 
 export interface ModelRequest extends ChatRequestBase {
   settings: ModelAdapterSettings

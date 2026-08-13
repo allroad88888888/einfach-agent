@@ -1,67 +1,45 @@
 // 核心状态的数据模型（类型）—— 从 model API 交互形状反推。配套 atom 在 sessionAtoms.ts。
 // ---------------------------------------------------------------------------
 // 思路：和 model 的交互形状决定了应用要存什么。
-//   · 我们能选哪些 provider     → ModelVendor（从 api/deepseek.ts / api/glm.ts 推导）
-//   · 一次请求能调哪些参数       → ModelSettings（从 ChatRequestBase + 各家特化推导）
+//   · 会话挂在哪个 provider 上   → ModelVendor（不透明 id，core 不解释取值）
+//   · 一次请求能调哪些参数       → ModelSettings（通用参数在顶层，特化参数进设置袋）
 //   · 对话历史是什么            → ConversationItem[]（从 ModelItem 推导，发请求时映射回 messages）
 //   · 一轮往返后处于什么状态     → RunState（从响应 finish_reason / tool_calls 推导）
 // 这里只定义数据形状；atom、会话 store 和持久化分别位于 state/runtime 对应模块。
 
 import type { ChatRequestBase, FinishReason, ModelItem, ModelToolCall } from '@web-agent/ai'
-import type { DeepSeekReasoningEffort } from '@web-agent/ai'
-import type { GlmReasoningEffort } from '@web-agent/ai'
-import type { KimiRegion } from '@web-agent/ai'
 
 // ===========================================================================
-// 一、provider 身份 —— 从两个调用入口推导
+// 一、provider 身份 —— 一个不透明 id
 // ===========================================================================
 
 // 简介：当前会话用哪个 provider。
-// 详情：与 api/deepseek.ts / api/glm.ts 两个 call 入口一一对应；新增 provider 时这里 + 一个文件。
-export type ModelVendor = 'deepseek' | 'glm' | 'kimi'
+// 详情：**不透明约定** —— 取值由装配层与 agent-ai 的 provider registry 商定，core 只做相等
+// 比较与查表（凭据、能力描述、档位路由表都按它索引），既不枚举合法取值，也不为任何具体取值
+// 写分支。新增一家 provider 不需要改动 packages/agent-core 的任何一行。
+export type ModelVendor = string
 
 // ===========================================================================
-// 二、会话级模型设置 —— 从请求体推导
+// 二、会话级模型设置 —— 通用字段 + 供应商附加设置袋
 // ===========================================================================
 
-// 简介：所有 Provider 都支持的会话参数。
-// 详情：thinking 在状态层用 bool（发请求时再转成 { type: 'enabled' | 'disabled' }）。
-interface SessionParamsBase {
+// 简介：一个会话当前的模型设置。
+// 详情：切分判据是「会不会有第二家 provider 区别对待这个字段」——
+//   · 顶层只放**跨厂商通用**且 core 自己要用的字段：vendor/model 是路由与展示的事实，
+//     thinking/temperature/max_tokens 是 core 组装请求体时直接投影的通用参数；
+//   · 只有某一家才认识的字段（reasoning_effort、region、baseUrl 覆盖……）一律进
+//     `vendorSettings` 这个不透明袋子。core 只负责原样搬运与持久化，**不解释袋内任何 key**；
+//     解释权在 agent-ai 的 adapter（见 packages/agent-ai/src/builtinProviders.ts），
+//     发请求前由 runtime/modelSettingsProjection.ts 把袋子摊平交给它。
+// 老会话把特化字段存在顶层，读回时由 state/persistence/settingsBagMigration.ts 收进袋子。
+export type ModelSettings = {
+  vendor: ModelVendor
   model: string
   thinking?: boolean
-}
-
-// 简介：允许调用方调节采样参数的 Provider 会话参数。
-// 详情：Kimi K2.6 使用固定采样参数，故不继承这两个字段，避免 Core 把它们透传出去。
-interface TunableSessionParamsBase extends SessionParamsBase {
   temperature?: ChatRequestBase['temperature']
   max_tokens?: ChatRequestBase['max_tokens']
+  vendorSettings?: Readonly<Record<string, unknown>>
 }
-
-// 简介：DeepSeek V4 会话设置。reasoning_effort 仅支持 'high' | 'max'；
-// 省略时交给 Provider 使用默认档位及复杂 Agent 请求的自动升级策略。
-export interface DeepSeekSettings extends TunableSessionParamsBase {
-  vendor: 'deepseek'
-  reasoning_effort?: DeepSeekReasoningEffort
-}
-
-// 简介：GLM 会话设置。reasoning_effort 可到 'max'。
-export interface GlmSettings extends TunableSessionParamsBase {
-  vendor: 'glm'
-  reasoning_effort?: GlmReasoningEffort
-}
-
-// 简介：Kimi K2.6 会话设置。思考开关复用 SessionParamsBase.thinking；
-// K2.6 不接受 reasoning_effort，区域省略时由 Provider 按 cn 处理。
-export interface KimiSettings extends SessionParamsBase {
-  vendor: 'kimi'
-  region?: KimiRegion
-}
-
-// 简介：一个会话当前的模型设置（按 vendor 判别）。
-// 详情：把 API 层“参数不一样”延续到状态层 —— 按 settings.vendor 收窄后，reasoning_effort
-// 的合法取值自动随之收窄（DeepSeek 为 high|max；GLM 仍为 low|medium|high|max）。
-export type ModelSettings = DeepSeekSettings | GlmSettings | KimiSettings
 
 // ===========================================================================
 // 三、对话历史 —— 从 ModelItem 推导

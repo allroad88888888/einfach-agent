@@ -12,7 +12,8 @@
 
 import { DEEPSEEK_FLASH_MODEL } from '@web-agent/ai'
 import type { DeepSeekReasoningEffort } from '@web-agent/ai'
-import type { DeepSeekSettings, ModelSettings } from '../core.type'
+import type { ModelSettings } from '../core.type'
+import { liftLegacyVendorSettings, withVendorSettings } from './settingsBagMigration'
 
 // 简介：把持久化数据中的 DeepSeek reasoning_effort 收口到 V4 的 high|max。
 // 详情：V4 会把旧 SDK/旧 UI 的 low、medium 都视为 high，把 xhigh 视为 max。持久化 JSON
@@ -30,20 +31,17 @@ export function normalizeDeepSeekReasoningEffort(
 function normalizeDeepSeekSettings(settings: ModelSettings): ModelSettings {
   if (settings.vendor !== 'deepseek') return settings
 
-  // loadSessions() 的静态返回类型是 SessionMeta[]，但底层来自 JSON/SQLite，历史字段在运行时仍可能
-  // 超出当前 DeepSeekSettings 类型域；必须先按 unknown 读取再归一化。
-  const raw = (settings as DeepSeekSettings & { reasoning_effort?: unknown }).reasoning_effort
+  // 设置袋里的值来自 JSON/SQLite，运行时形状没有类型保证，故按 unknown 读取再归一化。
+  const raw = settings.vendorSettings?.reasoning_effort
+  if (raw === undefined) return settings
   const normalized = normalizeDeepSeekReasoningEffort(raw)
   if (raw === normalized) return settings
 
-  if (normalized === undefined) {
-    const {
-      reasoning_effort: _discarded,
-      ...safeSettings
-    } = settings as DeepSeekSettings & { reasoning_effort?: unknown }
-    return safeSettings as DeepSeekSettings
-  }
-  return { ...settings, reasoning_effort: normalized }
+  const { reasoning_effort: _discarded, ...rest } = settings.vendorSettings ?? {}
+  return withVendorSettings(
+    settings,
+    normalized === undefined ? rest : { ...rest, reasoning_effort: normalized },
+  )
 }
 
 // 简介：一条「旧模型名 → 继任模型名」的迁移规则。
@@ -99,7 +97,8 @@ export const DEPRECATED_MODEL_MIGRATIONS: readonly DeprecatedModelMigration[] = 
 //   · 不覆盖用户的显式选择：thinking 只在 undefined（= 用户从没表过态，modelRun 据此不发该字段）
 //     时才按旧名补上。用户若显式设过 true/false，那是他对模式的主动选择，比旧名的隐含语义优先。
 export function migrateModelSettings(settings: ModelSettings): ModelSettings {
-  const normalized = normalizeDeepSeekSettings(settings)
+  // 先把老形状（特化字段平铺在顶层）收进设置袋，后面的归一化只需认识设置袋这一种形状。
+  const normalized = normalizeDeepSeekSettings(liftLegacyVendorSettings(settings))
   const rule = DEPRECATED_MODEL_MIGRATIONS.find(
     (r) => r.vendor === normalized.vendor && r.from === normalized.model,
   )

@@ -1,4 +1,5 @@
 import type { ModelSettings } from '@web-agent/core/state/core.type'
+import { kimiRegionSetting } from '../modelInput/kimiRegionSetting'
 import type { ModelCredentialId } from './modelCredentialHost'
 
 export type StartupCredentialTargetResolution =
@@ -21,7 +22,8 @@ export function resolveStartupCredentialTarget(
   }
 
   if (settings.vendor === 'kimi') {
-    if (settings.region === undefined || settings.region === 'cn') {
+    const region = kimiRegionSetting(settings)
+    if (region === undefined || region === 'cn') {
       return { ok: true, id: 'kimi-cn' }
     }
     return { ok: false, error: 'unsupported-kimi-region' }

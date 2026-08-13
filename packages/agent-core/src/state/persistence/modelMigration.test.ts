@@ -14,24 +14,20 @@ import {
   normalizePrimaryAgentSettings,
 } from './modelMigration'
 
-// 编译期回归：两家 Provider 的取值域必须继续按 vendor 独立收窄。
-const deepSeekMaxSettings: ModelSettings = {
+// 编译期回归：vendor 是不透明 id（core 不枚举合法取值），厂商特化字段只能走设置袋。
+const unregisteredVendorSettings: ModelSettings = { vendor: 'some-new-provider', model: 'x' }
+const baggedSettings: ModelSettings = {
   vendor: 'deepseek',
   model: 'deepseek-v4-pro',
+  vendorSettings: { reasoning_effort: 'max' },
+}
+const flatSpecializedSettings: ModelSettings = {
+  vendor: 'deepseek',
+  model: 'deepseek-v4-pro',
+  // @ts-expect-error 特化字段不得再平铺在顶层；只有持久化迁移边界会遇到这种老形状。
   reasoning_effort: 'max',
 }
-const glmLowSettings: ModelSettings = {
-  vendor: 'glm',
-  model: 'glm-5',
-  reasoning_effort: 'low',
-}
-const invalidDeepSeekLowSettings: ModelSettings = {
-  vendor: 'deepseek',
-  model: 'deepseek-v4-pro',
-  // @ts-expect-error DeepSeek V4 不再接受旧 low 档；只允许在持久化迁移边界归一化。
-  reasoning_effort: 'low',
-}
-void [deepSeekMaxSettings, glmLowSettings, invalidDeepSeekLowSettings]
+void [unregisteredVendorSettings, baggedSettings, flatSpecializedSettings]
 
 describe('normalizeDeepSeekReasoningEffort', () => {
   it.each([
@@ -68,12 +64,12 @@ describe('migrateModelSettings', () => {
     expect(after.thinking).toBe(true)
   })
 
-  it('迁移保留 settings 的其它字段（vendor / temperature / reasoning_effort）', () => {
+  it('迁移保留 settings 的其它字段（vendor / temperature / 设置袋）', () => {
     const after = migrateModelSettings({
       vendor: 'deepseek',
       model: 'deepseek-reasoner',
       temperature: 0.3,
-      reasoning_effort: 'high',
+      vendorSettings: { reasoning_effort: 'high' },
     })
 
     expect(after).toEqual({
@@ -81,7 +77,7 @@ describe('migrateModelSettings', () => {
       model: 'deepseek-v4-flash',
       thinking: true,
       temperature: 0.3,
-      reasoning_effort: 'high',
+      vendorSettings: { reasoning_effort: 'high' },
     })
   })
 
@@ -134,36 +130,45 @@ describe('migrateModelSettings', () => {
       reasoning_effort,
     } as unknown as ModelSettings)
 
-    expect(migrateModelSettings(legacy('low'))).toMatchObject({
+    // 老形状（顶层平铺）读回后既要归一化取值，也要落进设置袋。
+    expect(migrateModelSettings(legacy('low'))).toEqual({
+      vendor: 'deepseek',
       model: 'deepseek-v4-flash',
-      reasoning_effort: 'high',
+      thinking: false,
+      vendorSettings: { reasoning_effort: 'high' },
     })
     expect(migrateModelSettings(legacy('medium'))).toMatchObject({
       model: 'deepseek-v4-flash',
-      reasoning_effort: 'high',
+      vendorSettings: { reasoning_effort: 'high' },
     })
     expect(migrateModelSettings(legacy('xhigh'))).toMatchObject({
       model: 'deepseek-v4-flash',
-      reasoning_effort: 'max',
+      vendorSettings: { reasoning_effort: 'max' },
     })
   })
 
-  it('DeepSeek 任意非法历史值会被移除，GLM 合法旧档保持原样', () => {
+  it('DeepSeek 任意非法历史值会被移除，别家的旧档只搬家不改值', () => {
     const invalidDeepSeek = {
       vendor: 'deepseek',
       model: 'deepseek-v4-pro',
       reasoning_effort: 'turbo',
     } as unknown as ModelSettings
-    const glm: ModelSettings = {
+    const glm = {
       vendor: 'glm',
       model: 'glm-5',
       reasoning_effort: 'low',
-    }
+    } as unknown as ModelSettings
 
     const safeDeepSeek = migrateModelSettings(invalidDeepSeek)
     expect(safeDeepSeek).not.toHaveProperty('reasoning_effort')
+    expect(safeDeepSeek.vendorSettings).toBeUndefined()
     expect(safeDeepSeek).not.toBe(invalidDeepSeek)
-    expect(migrateModelSettings(glm)).toBe(glm)
+    // core 不认识别家的取值域：只把老字段搬进设置袋，不做任何归一化。
+    expect(migrateModelSettings(glm)).toEqual({
+      vendor: 'glm',
+      model: 'glm-5',
+      vendorSettings: { reasoning_effort: 'low' },
+    })
   })
 
   it('不给未声明 impliedThinking 的规则乱补 thinking', () => {

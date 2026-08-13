@@ -543,7 +543,8 @@ describe('runSession（P-R2 最小单轮 run）', () => {
       model: 'm',
       temperature: 0.5,
       thinking: true,
-      reasoning_effort: 'high',
+      // 特化字段走设置袋：core 只搬运，由 DeepSeek adapter 解释并上行。
+      vendorSettings: { reasoning_effort: 'high' },
     })
     let captured: Record<string, unknown> = {}
     const fetchImpl: typeof fetch = (_url, init) => {
@@ -562,7 +563,7 @@ describe('runSession（P-R2 最小单轮 run）', () => {
     expect(captured.thinking).toEqual({ type: 'enabled' })
     expect(captured.reasoning_effort).toBe('high')
     const restoredSettings = rootStore.getter(sessionsAtom).s5.settings
-    expect(restoredSettings.vendor === 'deepseek' ? restoredSettings.temperature : undefined).toBe(0.5)
+    expect(restoredSettings.temperature).toBe(0.5)
   })
 
   it('L1 清单以 sessionStart timed tool 可达模型，稳定前缀和转录不再注入 skills', async () => {

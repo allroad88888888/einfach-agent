@@ -92,7 +92,7 @@ export function seedCore(): TestCore {
     [SESSION_ID]: {
       id: SESSION_ID,
       title: 't',
-      settings: { vendor: 'deepseek', model: 'x' },
+      settings: { vendor: 'test-vendor', model: 'x' },
       createdAt: 0,
       updatedAt: 0,
     },

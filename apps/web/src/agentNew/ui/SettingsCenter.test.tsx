@@ -205,7 +205,7 @@ describe('SettingsCenter', () => {
       settings: {
         vendor: 'kimi',
         model: 'kimi-k2.6',
-        region: 'cn',
+        vendorSettings: { region: 'cn' },
       },
     })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()

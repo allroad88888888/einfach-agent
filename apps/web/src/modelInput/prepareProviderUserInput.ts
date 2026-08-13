@@ -6,6 +6,7 @@ import {
 } from '@web-agent/ai'
 import type { UserInputPreparer } from '@web-agent/core/runtime/commands'
 import { imageInputCapabilityForApp } from './kimiImageFeature'
+import { kimiRegionSetting } from './kimiRegionSetting'
 
 function kimiImages(
   images: NonNullable<Parameters<UserInputPreparer>[0]['images']>,
@@ -35,7 +36,7 @@ export const prepareProviderUserInput: UserInputPreparer = async (input, context
   if (context.settings.vendor !== 'kimi') {
     throw new Error(`模型供应商 ${context.settings.vendor} 尚未配置图片准备 adapter。`)
   }
-  const region = resolveKimiRegion(context.settings.region)
+  const region = resolveKimiRegion(kimiRegionSetting(context.settings))
   if (region !== 'cn') throw new Error('当前宿主尚未开放 Kimi 全球区图片传输。')
   const batch = await prepareKimiImageBatch(kimiImages(input.images), {
     apiKey: context.apiKey,

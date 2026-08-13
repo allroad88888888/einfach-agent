@@ -53,7 +53,7 @@ describe('provider user input preparation', () => {
       },
       {
         sessionId: 'session-1',
-        settings: { vendor: 'kimi', model: 'kimi-k2.6', region: 'cn' },
+        settings: { vendor: 'kimi', model: 'kimi-k2.6', vendorSettings: { region: 'cn' } },
         apiKey: 'managed',
         signal,
         fetchImpl,
@@ -87,7 +87,7 @@ describe('provider user input preparation', () => {
       },
       {
         sessionId: 'session-1',
-        settings: { vendor: 'kimi', model: 'unknown-kimi', region: 'cn' },
+        settings: { vendor: 'kimi', model: 'unknown-kimi', vendorSettings: { region: 'cn' } },
         apiKey: 'managed',
         signal,
         fetchImpl,
@@ -113,7 +113,7 @@ describe('provider user input preparation', () => {
       },
       {
         sessionId: 'session-1',
-        settings: { vendor: 'kimi', model: 'kimi-k2.6', region: 'cn' },
+        settings: { vendor: 'kimi', model: 'kimi-k2.6', vendorSettings: { region: 'cn' } },
         apiKey: 'managed',
         signal,
         fetchImpl,

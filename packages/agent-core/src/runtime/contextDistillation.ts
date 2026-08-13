@@ -4,6 +4,7 @@ import type { ModelSettings } from '../state/core.type'
 import { estimateItemsTokens, estimateTokensFromText } from './contextCompaction'
 import { buildContextDistillationMessages, CONTEXT_DISTILLATION_MAX_TOKENS } from './contextDistillationPrompt'
 import { parseContextDistillationResponse } from './contextDistillationResult'
+import { modelAdapterSettings } from './modelSettingsProjection'
 import { stringForStats } from './shared/preview'
 import { projectTimedToolResultOrphans } from './timedToolResultProjection'
 
@@ -32,17 +33,19 @@ export async function createContextCheckpoint(
   input: ContextDistillationInput,
 ): Promise<ContextCheckpoint> {
   // timed tool 结果只持久化为 role:'tool'，常规模型请求会在发送前补配对 assistant。
-  // 摘要请求必须应用相同投影，否则 OpenAI-compatible 接口会把历史中的孤儿 tool 消息拒为 400。
+  // 摘要请求必须应用相同投影，否则 chat/completions 线协议会把历史中的孤儿 tool 消息拒为 400。
   const messages = projectTimedToolResultOrphans(
     buildContextDistillationMessages(input.stablePrefix, input.transcript),
   )
+  // temperature 一律带上（摘要要的是确定性）；固定采样参数的 provider 由自家 adapter
+  // 在投影请求时丢弃它，core 不为此写厂商分支。
   const response = await callModel({
     model: input.settings.model,
     messages,
-    ...(input.settings.vendor === 'kimi' ? {} : { temperature: 0 }),
+    temperature: 0,
     max_tokens: CONTEXT_DISTILLATION_MAX_TOKENS,
     stream: false,
-    settings: input.settings,
+    settings: modelAdapterSettings(input.settings),
     userId: input.userId,
   }, {
     apiKey: input.apiKey,

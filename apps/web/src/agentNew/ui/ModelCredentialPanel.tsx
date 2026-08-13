@@ -20,7 +20,8 @@ function startKimiImageSession(): void {
     settings: {
       vendor: 'kimi',
       model: DEFAULT_KIMI_MODEL,
-      region: 'cn',
+      // 区域是 Kimi 独有的设置，走供应商附加设置袋；core 只搬运不解释。
+      vendorSettings: { region: 'cn' },
     },
   })
   closeSettingsCenter()

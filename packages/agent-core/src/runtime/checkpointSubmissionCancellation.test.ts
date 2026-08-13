@@ -54,7 +54,7 @@ function setupPendingPreparation() {
   const core = createCore({ config: { prepareUserInput } })
   const id = core.newSession({
     title: 'rollback cancellation',
-    settings: { vendor: 'kimi', model: 'kimi-k2.6', region: 'cn' },
+    settings: { vendor: 'kimi', model: 'kimi-k2.6', vendorSettings: { region: 'cn' } },
   })
   const store = core.getSessionStore(id).store
   const send = core.sendMessage({

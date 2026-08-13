@@ -339,7 +339,9 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
     await hydrate({ sessions, history })
 
     const restored = rootStore.getter(sessionsAtom)['legacy-effort'].settings
-    expect(restored.vendor === 'deepseek' ? restored.reasoning_effort : undefined).toBe(after)
+    // 老数据把 reasoning_effort 平铺在顶层，读回后应收进供应商附加设置袋。
+    expect(restored).not.toHaveProperty('reasoning_effort')
+    expect(restored.vendorSettings?.reasoning_effort).toBe(after)
   })
 
   it('未知持久化 reasoning_effort 不透传：DeepSeek 删除非法值，GLM 合法 low 保留', async () => {
@@ -351,7 +353,7 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
         vendor: 'glm',
         model: 'glm-5',
         reasoning_effort: 'low',
-      },
+      } as unknown as ModelSettings,
     }
     const sessions = { loadSessions: async () => [invalidDeepSeek, glm] }
 
@@ -359,8 +361,9 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
 
     const restored = rootStore.getter(sessionsAtom)
     expect(restored['invalid-effort'].settings).not.toHaveProperty('reasoning_effort')
-    const glmSettings = restored['glm-effort'].settings
-    expect(glmSettings.vendor === 'glm' ? glmSettings.reasoning_effort : undefined).toBe('low')
+    expect(restored['invalid-effort'].settings.vendorSettings?.reasoning_effort).toBeUndefined()
+    // 未被归一化的厂商：设置袋原样保留老值，不因为 core 不认识它就丢掉。
+    expect(restored['glm-effort'].settings.vendorSettings?.reasoning_effort).toBe('low')
   })
 
   it('迁移幂等：把迁移后的结果再 hydrate 一次，结果不变', async () => {

@@ -14,6 +14,7 @@ import {
 } from '@web-agent/core/state/rootStore'
 import { getSessionStore } from '@web-agent/core/state/sessionStore'
 import type { KimiRegion } from '@web-agent/ai'
+import { kimiRegionSetting } from '../../modelInput/kimiRegionSetting'
 
 export interface ActiveSessionConfig {
   id: string
@@ -45,7 +46,7 @@ export function ActiveSessionProvider({
             approvalMode: meta?.toolApprovalMode ?? 'confirm',
             vendor: meta?.settings.vendor ?? '',
             model: meta?.settings.model ?? '',
-            region: meta?.settings.vendor === 'kimi' ? meta.settings.region : undefined,
+            region: kimiRegionSetting(meta?.settings),
           })
         : children}
     </Provider>

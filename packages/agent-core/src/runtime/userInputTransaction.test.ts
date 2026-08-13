@@ -73,7 +73,7 @@ function setup(prepareUserInput: UserInputPreparer) {
   })
   const id = core.newSession({
     title: 'existing',
-    settings: { vendor: 'kimi', model: 'kimi-k2.6', region: 'cn', thinking: true },
+    settings: { vendor: 'kimi', model: 'kimi-k2.6', vendorSettings: { region: 'cn' }, thinking: true },
   })
   return { core, id, store: core.getSessionStore(id).store }
 }
@@ -173,7 +173,7 @@ describe('sendMessage prepared input transaction', () => {
         ...current,
         settings: {
           thinking: true,
-          region: 'cn',
+          vendorSettings: { region: 'cn' },
           model: 'kimi-k2.6',
           vendor: 'kimi',
         },

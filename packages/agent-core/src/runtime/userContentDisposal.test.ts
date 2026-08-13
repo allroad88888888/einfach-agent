@@ -41,7 +41,7 @@ function setup(disposeUserContent = vi.fn()) {
   const core = createCore({ config: { disposeUserContent } })
   const id = core.newSession({
     title: 'structured',
-    settings: { vendor: 'kimi', model: 'kimi-k2.6', region: 'cn', thinking: true },
+    settings: { vendor: 'kimi', model: 'kimi-k2.6', vendorSettings: { region: 'cn' }, thinking: true },
   })
   return { core, id, store: core.getSessionStore(id).store, disposeUserContent }
 }
@@ -74,7 +74,7 @@ describe('provider-neutral user content disposal', () => {
       expect(dispose).toHaveBeenCalledWith([first, second], [], {
         sessionId: id,
         reason: 'session_removed',
-        settings: { vendor: 'kimi', model: 'kimi-k2.6', region: 'cn', thinking: true },
+        settings: { vendor: 'kimi', model: 'kimi-k2.6', vendorSettings: { region: 'cn' }, thinking: true },
       })
     }
   })
@@ -85,7 +85,7 @@ describe('provider-neutral user content disposal', () => {
     store.setter(itemsAtom, [user('u1', discarded, 1)])
     const retainedId = core.newSession({
       title: 'retained',
-      settings: { vendor: 'kimi', model: 'kimi-k2.6', region: 'cn', thinking: true },
+      settings: { vendor: 'kimi', model: 'kimi-k2.6', vendorSettings: { region: 'cn' }, thinking: true },
     })
     const retained = imageContent('shared-ref', 'different retained label')
     core.getSessionStore(retainedId).store.setter(itemsAtom, [user('u2', retained, 2)])

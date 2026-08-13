@@ -24,7 +24,11 @@ import {
   isAbortError,
   toErrorMessage,
 } from './runtimeState'
-import { modelReasoningEffort, modelSamplingSettings } from '../runtime/modelSettingsProjection'
+import {
+  modelAdapterSettings,
+  modelReasoningEffort,
+  modelSamplingSettings,
+} from '../runtime/modelSettingsProjection'
 import { projectTimedToolResultOrphans } from '../runtime/timedToolResultProjection'
 
 const CHILD_CONTEXT_TARGET_TOKENS = 60_000
@@ -96,10 +100,11 @@ export function createChildModelCaller(runtime: DelegateAgentRuntimeState): Chil
             messages: projectTimedToolResultOrphans(
               buildContextDistillationMessages([], projection.messages),
             ),
-            ...(settings.vendor === 'kimi' ? {} : { temperature: 0 }),
+            // 固定采样参数的 provider 由自家 adapter 丢弃 temperature，core 不写厂商分支。
+            temperature: 0,
             max_tokens: CONTEXT_DISTILLATION_MAX_TOKENS,
             stream: false,
-            settings,
+            settings: modelAdapterSettings(settings),
             userId: runtime.opts.deepseekUserId,
           }, {
             apiKey: runtime.opts.apiKey,
@@ -171,7 +176,7 @@ export function createChildModelCaller(runtime: DelegateAgentRuntimeState): Chil
       runtime.reserveModelCall(state, modelCallLimit)
       return callModel({
         ...requestBase,
-        settings,
+        settings: modelAdapterSettings(settings),
         userId: runtime.opts.deepseekUserId,
       }, callOptions)
     }
