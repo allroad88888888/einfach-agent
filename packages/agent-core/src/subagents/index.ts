@@ -135,8 +135,15 @@ export type {
   DelegateAgents,
   // packages/subagents: archive/archiveIO 结构化实现（当前未具名 import，S2b 可具名化）
   SubagentArchivePort,
-  // packages/subagents: runtime 结构化实现（resultPath/formatParentTranscript）
+  // packages/subagents: runtime 结构化实现
+  // （cacheBasePath/eventsPath/resultPath/formatParentTranscript）
   DelegationArchiveFormatPort,
+  // packages/subagents: runtime 结构化实现（distill → archive/distill）
+  SubagentSkillDistillPort,
+  // packages/subagents: archive/distill 的入参出参形状契约（S11c/S11d 接线后由 core 调用）
+  SubagentSkillDistillInput,
+  SubagentSkillDistillResult,
+  SkillDistillChatInput,
   // packages/subagents: runtime 构造运行时状态时按此形状注入
   DelegationRuntimePorts,
 } from './delegationRuntimePorts'

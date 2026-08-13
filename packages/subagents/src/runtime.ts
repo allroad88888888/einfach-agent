@@ -13,7 +13,12 @@ import { createChildModelCaller } from '@web-agent/core/subagents/childModelClie
 import type { ModelSettings } from '@web-agent/core/state/core.type'
 import { SubagentArchiveIO } from './archive/archiveIO'
 import type { SubagentArchiveWriterContext } from './archive/archiveWriter'
-import { subagentResultPath } from './archive/skillCache'
+import { distillDelegateSkills } from './archive/distill'
+import {
+  subagentCacheBasePath,
+  subagentEventsPath,
+  subagentResultPath,
+} from './archive/skillCache'
 import { DEFAULT_SUBAGENT_TIER_ROUTING } from './defaultTierRouting'
 import { DelegateAgentRuntimeState } from '@web-agent/core/subagents/runtimeState'
 import { createDelegateAgents } from './delegationBatch'
@@ -57,9 +62,13 @@ export function createDelegateAgentRuntime(
       onTraceItem: rawOpts.onTraceItem,
     }),
     archiveFormat: {
+      cacheBasePath: subagentCacheBasePath,
+      eventsPath: subagentEventsPath,
       resultPath: subagentResultPath,
       formatParentTranscript: formatSubagentTranscript,
     },
+    skillDistill: { distill: distillDelegateSkills },
+    lowCostExtractionSettings,
   })
   const callModel = createChildModelCaller(runtime)
   const delegateAgents = createDelegateAgents(runtime)
