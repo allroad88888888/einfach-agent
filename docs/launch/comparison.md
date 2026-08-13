@@ -17,7 +17,7 @@
 | --- | --- | --- | --- | --- | --- |
 | **架构形态** | pnpm workspace 分包、单向依赖；一个 core 装配出 Web / Tauri 桌面 / headless CLI 三宿主 | 单进程 CLI，四模式：交互 TUI、print/JSON、RPC（stdin/stdout JSONL）、SDK 嵌入 | client-server：Bun + Hono 后端，TUI / 桌面 / Web / IDE 前端经 HTTP + SSE 接入 | IDE 扩展起家，覆盖 VS Code/JetBrains/Zed/Neovim 等 + CLI + Kanban 看板，统一在开源 Cline SDK 运行时上 | Electron 桌面客户端，"全能 AI 工作站"（对话、知识库、绘图、翻译、定时任务） |
 | **扩展机制** | 工具按域分包装配（shell/fs/interaction/planning/skills/agents 六域 + MCP 独立域）；plugin host + 生命周期 hook；项目内 Skills 目录自动扫描；MCP stdio/HTTP | 无内置 MCP（明写 "No MCP"）；Extensions（TS）/ Skills（MD）/ Prompt Templates / Themes 四层 | Plugins / MCP servers / Custom Tools / LSP 四类入口 | 原生 MCP（STDIO + Streamable HTTP + 遗留 SSE），按 server 启停与 `autoApprove` | 原生 MCP（数百种工具一键接入）+ Skill 能力包 + 300+ 预设助手 + 可视化工作流构建器 |
-| **模型支持** | 自研 adapter 3 家：DeepSeek、GLM 默认开放，Kimi 门禁默认关闭；无聚合层、无 OpenAI-compatible 兜底 | 官方 30+ provider；含 DeepSeek、Kimi For Coding、MiniMax、小米 MiMo、蚂蚁 Ling；未查到官方 GLM 页 | 官方称 75+ provider（Vercel AI SDK 抽象）；DeepSeek / Moonshot / Z.AI GLM 各有独立配置页 | 官方计费 + ClinePass 订阅 + BYOK 30+；DeepSeek、Moonshot、Z.AI、豆包、Qwen、华为云等 | DeepSeek、智谱 GLM、Kimi、豆包、文心、百炼、百川、MiniMax + 硅基流动/ModelScope 聚合 + Ollama 本地 |
+| **模型支持** | 自研 adapter 4 家：DeepSeek、GLM 默认开放，Kimi 门禁默认关闭；新增标准 OpenAI-compatible 协议基线（CLI 经环境变量接自定义 base_url，桌面 UI 暂未接入可选）；无聚合层 | 官方 30+ provider；含 DeepSeek、Kimi For Coding、MiniMax、小米 MiMo、蚂蚁 Ling；未查到官方 GLM 页 | 官方称 75+ provider（Vercel AI SDK 抽象）；DeepSeek / Moonshot / Z.AI GLM 各有独立配置页 | 官方计费 + ClinePass 订阅 + BYOK 30+；DeepSeek、Moonshot、Z.AI、豆包、Qwen、华为云等 | DeepSeek、智谱 GLM、Kimi、豆包、文心、百炼、百川、MiniMax + 硅基流动/ModelScope 聚合 + Ollama 本地 |
 | **子 Agent** | 树形 delegation，逐路径预算（深度/子节点/并发/总节点/模型调用数），JSONL 归档 + 治理脚本 | 不内置（明写 "No sub-agents"）；会话 JSONL 树 + `/tree`、`/fork`、`/clone`；有社区包 pi-subagent | 配置文件定义（`mode: subagent`），自动选择或 `@` 手动调用，父子会话导航命令 | 实验性 `use_subagents` 并行只读探索：独立上下文与 token 预算，不能改文件/用浏览器/访问 MCP/嵌套；另有 shadow Git checkpoint | 智能体可"派子智能体"，右侧面板看状态/文件/子任务，开发者模式可看调用链 |
 | **观测与回放** | 一等 trace：结构化 span（agent/llm/tool/internal）落 IndexedDB/SQLite，内置 TraceViewer；子 Agent 归档可脚本回放 | 会话内完整记录工具调用，可导出 JSON / 生成 HTML 分享；未查到 trace 框架或跨会话分析 | 官方文档未提内置 trace；OTel 仅第三方社区插件 `@devtheops/opencode-plugin-otel` | 企业方案页提 Observability（OTel、Datadog）；与 checkpoint/subagent 的关联未详述 | 开发者模式可看调用链；跨会话 trace 存储、结构化 span、回放**未查到公开资料** |
 | **可嵌入性 / 装配自由度** | core 无主张：工具、存储、观测、技能、委派全部槽位注入，CI 强制依赖边界；但包全部 `private`，未发 npm，只能 clone 进 workspace | 官方 SDK 模式 + npm 包（周下载约 130 万）+ RPC 模式供外部进程集成 | server 可被任意客户端经 HTTP+SSE 接入；未见"作为库嵌入"的官方定位 | 2026 年开源 Cline SDK 作为共享 agent 运行时，官方三端（IDE/CLI/Kanban）复用同一套 | 面向终端用户的成品应用；未见作为库/运行时被第三方嵌入的公开路径 |
@@ -102,13 +102,21 @@ Cline 覆盖 7 个以上编辑器平台。没有第三方插件市场，没有�
 
 ### 3. 模型支持面窄，且已交付的比代码里写的还少
 
-自研 adapter 只有 3 家，默认构建下真正能用的是 DeepSeek 与 GLM 两家。Kimi 的 adapter、上传协议、
+自研 adapter 有 4 家，默认构建下真正能用的是 DeepSeek 与 GLM 两家。Kimi 的 adapter、上传协议、
 区域路由代码都已写完，但整个入口挂在构建开关下：`VITE_KIMI_IMAGE_INPUT_ENABLED` 不为 `'true'` 时，
 [`apps/web/src/agentNew/ui/ModelCredentialPanel.tsx`](../../apps/web/src/agentNew/ui/ModelCredentialPanel.tsx)
 会把 Kimi 凭据卡与会话入口整体隐藏，[`apps/web/src/modelInput/kimiImageFeature.ts`](../../apps/web/src/modelInput/kimiImageFeature.ts)
-把能力降级为 `unsupported`；[`docs/README.md`](../README.md) 记录其状态为 NO-GO。同时没有 OpenAI /
-Anthropic / Gemini 通路，没有 Ollama 等本地模型支持，也没有 OpenAI-compatible 自定义 base_url 兜底。
-对面 OpenCode 官方称 75+ provider、Cline BYOK 30+、Cherry Studio 还能经聚合平台和本地部署再扩一层。
+把能力降级为 `unsupported`；[`docs/README.md`](../README.md) 记录其状态为 NO-GO。第四家
+`openai-compat`（[`packages/agent-ai/src/openaiCompat.ts`](../../packages/agent-ai/src/openaiCompat.ts)）
+已交付标准协议基线——baseUrl 必填、不做任何厂商私有净化——并在 CLI 侧接线完成：
+`OPENAI_COMPAT_API_KEY` / `OPENAI_COMPAT_BASE_URL` 环境变量或 `~/.webAgent/config.json` 可以指向
+任意自定义 base_url 的兼容端点（接线见
+[`apps/cli/src/credentials.ts`](../../apps/cli/src/credentials.ts)）。但桌面凭据面板还没跟上——
+`apps/desktop/src/model_credentials.rs` 的 `ModelProvider` 枚举只收录 deepseek/glm/kimi 三家，
+openai-compat 在桌面 UI 里目前选不了，只能经 CLI 使用。同时仍没有 OpenAI / Anthropic / Gemini
+品牌通路，本地模型（如 Ollama）也未经验证或产品化——即便理论上能经 openai-compat 的通用协议连接，
+这条路目前没有测试覆盖，不计入已交付能力。对面 OpenCode 官方称 75+ provider、Cline BYOK 30+、
+Cherry Studio 还能经聚合平台和本地部署再扩一层。
 
 ### 4. 文档与产品文案只有中文
 
