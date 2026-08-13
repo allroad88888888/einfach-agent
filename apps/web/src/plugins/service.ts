@@ -3,10 +3,14 @@
 // 把注入的 PluginSettingsProvider（P10 会接桌面真实加载器，本卡用内存 fixture）
 // 与 PluginToggleStorage 接到 state.ts 的 atom 上：hydrate 拉一次快照并按用户存储
 // 里的停用记录立即 dispose 掉应停用的项；enable/disable 分别调用 provider.enable
-// 与 LoadedPlugin.dispose，并把结果写回 atom。组织方式对齐 apps/web/src/mcp/service.ts，
+// 与 LoadedPlugin.dispose，setToolEnabled 改勾选记录后走同一条重装路径，让 P4 的闸门
+// 按新记录重新算一遍放行/拦截。组织方式对齐 apps/web/src/mcp/service.ts，
 // 但插件不需要连接队列/订阅这些 MCP 特有的复杂度，规模小很多。
+//
+// 行投影（LoadedPlugin + 记录 → PluginRow）在 rows.ts，本文件只管编排与副作用顺序。
 
 import type { Store } from '@einfach/core'
+import { isToolChecked, toRow, withPluginDisabled, withToolToggle } from './rows'
 import {
   pluginHydrationAtom,
   pluginOperationsAtom,
@@ -15,17 +19,17 @@ import {
 } from './state'
 import type {
   LoadedPlugin,
-  PluginRow,
-  PluginRowStatus,
   PluginSettingsProvider,
-  PluginToggleRecord,
   PluginToggleStorage,
+  PluginToolGate,
 } from './types'
 
 export interface PluginSettingsService {
   hydrate(): Promise<void>
   enable(dirName: string): Promise<void>
   disable(dirName: string): Promise<void>
+  /** 勾选/取消一个模型可见工具；插件仍装着时立即重装，让闸门按新记录放行或收回。 */
+  setToolEnabled(dirName: string, toolName: string, enabled: boolean): Promise<void>
   dispose(): void
 }
 
@@ -33,28 +37,6 @@ export interface CreatePluginSettingsServiceOptions {
   store: Store
   provider: PluginSettingsProvider
   toggleStorage: PluginToggleStorage
-}
-
-function deriveStatus(item: LoadedPlugin, disabled: PluginToggleRecord): PluginRowStatus {
-  if (item.status === 'incompatible') return 'incompatible'
-  if (item.status === 'failed') return item.id === undefined ? 'invalid' : 'failed'
-  // item.status === 'enabled'：manifest 解析成功过，identity 必然存在（见 pluginLoader.ts）。
-  if (item.id !== undefined && disabled[item.id]) return 'disabled'
-  return 'enabled'
-}
-
-function toRow(item: LoadedPlugin, disabled: PluginToggleRecord): PluginRow {
-  const status = deriveStatus(item, disabled)
-  return {
-    dirName: item.dirName,
-    ...(item.id !== undefined ? { id: item.id } : {}),
-    ...(item.name !== undefined ? { name: item.name } : {}),
-    ...(item.version !== undefined ? { version: item.version } : {}),
-    status,
-    diagnostics: item.diagnostics,
-    withheldToolsCount: item.withheldTools.length,
-    toggleable: status === 'enabled' || status === 'disabled',
-  }
 }
 
 function messageOf(error: unknown): string {
@@ -72,12 +54,17 @@ export function createPluginSettingsService({
   let disposed = false
   let hydratePromise: Promise<void> | undefined
 
+  // 交给 provider（最终是 P4 loader）的闸门查询。每次调用重读存储：勾选变化后立刻重装，
+  // 读的必须是刚写进去的那份记录，缓存一份反而要自己维护失效时机。
+  const isToolEnabled: PluginToolGate = (pluginId, toolName) =>
+    isToolChecked(toggleStorage.load().tools, pluginId, toolName)
+
   const writeRows = (): void => {
     if (disposed) return
-    const disabledIds = toggleStorage.load()
+    const state = toggleStorage.load()
     const rows = [...installed.values()]
       .sort((a, b) => a.dirName.localeCompare(b.dirName))
-      .map((item) => toRow(item, disabledIds))
+      .map((item) => toRow(item, state))
     store.setter(pluginRowsAtom, rows)
   }
 
@@ -94,6 +81,22 @@ export function createPluginSettingsService({
     })
   }
 
+  /** 重跑一次安装：启用与工具勾选变化共用这一条路径，两者都是"按当前闸门重装一遍"。 */
+  const reinstall = async (dirName: string, current: LoadedPlugin): Promise<LoadedPlugin> => {
+    try {
+      return await provider.enable(dirName, isToolEnabled)
+    } catch (error) {
+      // provider 约定不抛异常（P4 的错误隔离纪律），但注入的实现不一定守约定——
+      // 兜底降级为 failed，不让一个不听话的 provider 打断整张面板。
+      return {
+        ...current,
+        status: 'failed',
+        diagnostics: [...current.diagnostics, `启用失败 — ${messageOf(error)}`],
+        dispose: undefined,
+      }
+    }
+  }
+
   const hydrate = (): Promise<void> => {
     if (hydratePromise) return hydratePromise
     let succeeded = false
@@ -108,7 +111,7 @@ export function createPluginSettingsService({
         return
       }
       try {
-        const result = await provider.load()
+        const result = await provider.load(isToolEnabled)
         installed.clear()
         for (const item of result.plugins) installed.set(item.dirName, item)
 
@@ -116,9 +119,10 @@ export function createPluginSettingsService({
         // （P4 的 loader 只产出 enabled/incompatible/failed），所以刚装完的项如果 id
         // 命中用户之前的停用记录，这里立即补一次 dispose，让运行时状态和面板要展示的
         // "disabled" 一致——不然会出现"面板说停用了，但 hook/工具其实还装着"的悬空态。
-        const disabledIds = toggleStorage.load()
+        // 工具勾选不需要这一步：它在 load() 里就经 isToolEnabled 生效了。
+        const { disabled } = toggleStorage.load()
         for (const item of installed.values()) {
-          if (item.status === 'enabled' && item.id !== undefined && disabledIds[item.id]) {
+          if (item.status === 'enabled' && item.id !== undefined && disabled[item.id]) {
             item.dispose?.()
             installed.set(item.dirName, { ...item, dispose: undefined })
           }
@@ -144,7 +148,7 @@ export function createPluginSettingsService({
     try {
       item.dispose?.()
       installed.set(dirName, { ...item, dispose: undefined })
-      toggleStorage.save({ ...toggleStorage.load(), [id]: true })
+      toggleStorage.save(withPluginDisabled(toggleStorage.load(), id, true))
       writeRows()
     } finally {
       setOperation(dirName)
@@ -157,26 +161,40 @@ export function createPluginSettingsService({
     const id = item.id
     setOperation(dirName, 'enabling')
     try {
-      let reinstalled: LoadedPlugin
-      try {
-        reinstalled = await provider.enable(dirName)
-      } catch (error) {
-        // provider 约定不抛异常（P4 的错误隔离纪律），但注入的实现不一定守约定——
-        // 兜底降级为 failed，不让一个不听话的 provider 打断整张面板。
-        reinstalled = {
-          ...item,
-          status: 'failed',
-          diagnostics: [...item.diagnostics, `启用失败 — ${messageOf(error)}`],
-          dispose: undefined,
-        }
-      }
-      installed.set(dirName, reinstalled)
-      const current = toggleStorage.load()
-      if (id in current) {
-        const next = { ...current }
-        delete next[id]
-        toggleStorage.save(next)
-      }
+      // 记录先落盘：重装期间 provider 会经 isToolEnabled 回读这份记录。
+      toggleStorage.save(withPluginDisabled(toggleStorage.load(), id, false))
+      installed.set(dirName, await reinstall(dirName, item))
+      writeRows()
+    } finally {
+      setOperation(dirName)
+    }
+  }
+
+  const setToolEnabled = async (
+    dirName: string,
+    toolName: string,
+    enabled: boolean,
+  ): Promise<void> => {
+    const item = installed.get(dirName)
+    if (!item || item.id === undefined) return
+    const id = item.id
+    const state = toggleStorage.load()
+    if (isToolChecked(state.tools, id, toolName) === enabled) return
+    toggleStorage.save(withToolToggle(state, id, toolName, enabled))
+
+    // 用户已停用或本就没装成功的插件：只记录，等下次启用时由那条路径统一生效。
+    // 硬要在这里重装等于替用户把插件又启用了一遍。
+    if (item.status !== 'enabled' || state.disabled[id]) {
+      writeRows()
+      return
+    }
+
+    setOperation(dirName, 'enabling')
+    try {
+      // 先卸载再装：闸门只在注册期判定一次（见 pluginToolGate.ts），不重装就既放行不了
+      // 新勾中的工具，也收不回刚取消的那个。
+      item.dispose?.()
+      installed.set(dirName, await reinstall(dirName, { ...item, dispose: undefined }))
       writeRows()
     } finally {
       setOperation(dirName)
@@ -187,6 +205,7 @@ export function createPluginSettingsService({
     hydrate,
     enable,
     disable,
+    setToolEnabled,
     dispose() {
       disposed = true
       for (const item of installed.values()) item.dispose?.()

@@ -64,7 +64,7 @@ describe('PluginSettingsPanel', () => {
     })
     configurePluginSettings({
       provider,
-      toggleStorage: createMemoryPluginToggleStorage({ 'com.example.disabled': true }),
+      toggleStorage: createMemoryPluginToggleStorage({ disabled: { 'com.example.disabled': true } }),
     })
 
     renderWithStore(<PluginSettingsPanel />, { store: rootStore })
@@ -104,12 +104,12 @@ describe('PluginSettingsPanel', () => {
     await user.click(within(card).getByRole('button', { name: '停用' }))
 
     await waitFor(() => expect(provider.disposeCalls).toEqual(['toggle-me']))
-    expect(toggleStorage.load()).toEqual({ 'com.example.toggle': true })
+    expect(toggleStorage.load()).toEqual({ disabled: { 'com.example.toggle': true }, tools: {} })
     expect(card).toHaveTextContent('已停用')
 
     await user.click(within(card).getByRole('button', { name: '启用' }))
     await waitFor(() => expect(provider.enableCalls).toEqual(['toggle-me']))
-    expect(toggleStorage.load()).toEqual({})
+    expect(toggleStorage.load()).toEqual({ disabled: {}, tools: {} })
     expect(card).toHaveTextContent('已启用')
   })
 
@@ -140,7 +140,8 @@ describe('PluginSettingsPanel', () => {
     expect(details).toHaveTextContent('broken: 安装失败 — 工具名重复')
   })
 
-  it('shows the withheld-tools count without a per-tool checkbox (that gate is P6)', async () => {
+  it('gates model-visible tools behind per-tool checkboxes that default to off', async () => {
+    const user = userEvent.setup()
     const provider = new FakePluginSettingsProvider({
       plugins: [
         loadedPlugin({
@@ -154,12 +155,54 @@ describe('PluginSettingsPanel', () => {
         }),
       ],
     })
-    configurePluginSettings({ provider })
+    const toggleStorage = createMemoryPluginToggleStorage()
+    configurePluginSettings({ provider, toggleStorage })
     renderWithStore(<PluginSettingsPanel />, { store: rootStore })
 
     const card = await screen.findByRole('article', { name: '插件 带工具插件' })
-    expect(card).toHaveTextContent('3 个模型可见工具待勾选')
-    expect(within(card).queryByRole('checkbox')).toBeNull()
+    expect(card).toHaveTextContent('勾选后此工具将进入模型上下文与执行路径')
+    const boxes = within(card).getAllByRole('checkbox')
+    expect(boxes).toHaveLength(3)
+    expect(boxes.every((box) => !(box as HTMLInputElement).checked)).toBe(true)
+
+    await user.click(within(card).getByRole('checkbox', { name: 'plugin_tool_a' }))
+
+    // 勾选走的是"改记录 + 重装插件"，闸门在重装时按新记录放行这一个工具。
+    await waitFor(() => expect(provider.enableCalls).toEqual(['with-tools']))
+    expect(toggleStorage.load().tools).toEqual({ 'com.example.tools': { plugin_tool_a: true } })
+    await waitFor(() =>
+      expect(within(card).getByRole('checkbox', { name: 'plugin_tool_a' })).toBeChecked(),
+    )
+    expect(card).toHaveTextContent('2/3 未启用')
+
+    await user.click(within(card).getByRole('checkbox', { name: 'plugin_tool_a' }))
+
+    await waitFor(() => expect(toggleStorage.load().tools).toEqual({}))
+    expect(within(card).getByRole('checkbox', { name: 'plugin_tool_a' })).not.toBeChecked()
+  })
+
+  it('keeps the tool checkboxes read-only while the plugin itself is disabled', async () => {
+    const provider = new FakePluginSettingsProvider({
+      plugins: [
+        loadedPlugin({
+          dirName: 'off-dir',
+          id: 'com.example.off',
+          name: '停用插件',
+          version: '1.0.0',
+          status: 'enabled',
+          withheldTools: ['plugin_tool_a'],
+          dispose: () => {},
+        }),
+      ],
+    })
+    configurePluginSettings({
+      provider,
+      toggleStorage: createMemoryPluginToggleStorage({ disabled: { 'com.example.off': true } }),
+    })
+    renderWithStore(<PluginSettingsPanel />, { store: rootStore })
+
+    const card = await screen.findByRole('article', { name: '插件 停用插件' })
+    expect(within(card).getByRole('checkbox', { name: 'plugin_tool_a' })).toBeDisabled()
   })
 
   it('shows an explicit unsupported-host empty state and skips scanning', async () => {

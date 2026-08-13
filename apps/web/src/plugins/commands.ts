@@ -56,3 +56,12 @@ export function enablePlugin(dirName: string): Promise<void> {
 export function disablePlugin(dirName: string): Promise<void> {
   return activeService.disable(dirName)
 }
+
+/** 勾选/取消一个插件声明的模型可见工具（拍板 3 的唯一硬闸门）；记录按用户存。 */
+export function setPluginToolEnabled(
+  dirName: string,
+  toolName: string,
+  enabled: boolean,
+): Promise<void> {
+  return activeService.setToolEnabled(dirName, toolName, enabled)
+}

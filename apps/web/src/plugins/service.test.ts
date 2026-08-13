@@ -51,7 +51,7 @@ describe('createPluginSettingsService', () => {
     expect(invalidRow?.id).toBeUndefined()
   })
 
-  it('reports withheldTools count without exposing tool names as an interaction', async () => {
+  it('reports the withheld-tools count on the row (per-tool checkboxes: service.tools.test.ts)', async () => {
     const provider = new FakePluginSettingsProvider({
       plugins: [
         loadedPlugin({
@@ -83,7 +83,7 @@ describe('createPluginSettingsService', () => {
         loadedPlugin({ dirName: 'was-off', id: 'com.example.off', name: 'Off', version: '1.0.0', status: 'enabled', dispose: () => {} }),
       ],
     })
-    const toggleStorage = createMemoryPluginToggleStorage({ 'com.example.off': true })
+    const toggleStorage = createMemoryPluginToggleStorage({ disabled: { 'com.example.off': true } })
     const service = createPluginSettingsService({ store, provider, toggleStorage })
 
     await service.hydrate()
@@ -105,13 +105,13 @@ describe('createPluginSettingsService', () => {
 
     await service.disable('toggle-me')
     expect(provider.disposeCalls).toEqual(['toggle-me'])
-    expect(toggleStorage.load()).toEqual({ 'com.example.toggle': true })
+    expect(toggleStorage.load()).toEqual({ disabled: { 'com.example.toggle': true }, tools: {} })
     expect(rowByDir(store.getter(pluginRowsAtom), 'toggle-me')?.status).toBe('disabled')
     expect(store.getter(pluginOperationsAtom)).toEqual({})
 
     await service.enable('toggle-me')
     expect(provider.enableCalls).toEqual(['toggle-me'])
-    expect(toggleStorage.load()).toEqual({})
+    expect(toggleStorage.load()).toEqual({ disabled: {}, tools: {} })
     expect(rowByDir(store.getter(pluginRowsAtom), 'toggle-me')?.status).toBe('enabled')
   })
 
@@ -124,7 +124,7 @@ describe('createPluginSettingsService', () => {
     provider.enable = async () => {
       throw new Error('boom')
     }
-    const toggleStorage = createMemoryPluginToggleStorage({ 'com.example.flaky': true })
+    const toggleStorage = createMemoryPluginToggleStorage({ disabled: { 'com.example.flaky': true } })
     const service = createPluginSettingsService({ store, provider, toggleStorage })
     await service.hydrate()
 

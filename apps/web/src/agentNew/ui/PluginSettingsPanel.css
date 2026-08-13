@@ -66,10 +66,41 @@
   font-size: 11px;
 }
 
-.agentnew-plugin-withheld {
-  margin: 9px 0 0;
+.agentnew-plugin-tools {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px dashed #e6eaf2;
+}
+
+.agentnew-plugin-tools-hint {
+  margin: 0;
   color: #6b7689;
   font-size: 12px;
+  line-height: 1.5;
+}
+
+.agentnew-plugin-tools ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agentnew-plugin-tools li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.agentnew-plugin-tools label {
+  color: #475569;
+  font-size: 12px;
+}
+
+.agentnew-plugin-tools input:disabled + label {
+  color: #a3adbd;
 }
 
 .agentnew-plugin-diagnostics {

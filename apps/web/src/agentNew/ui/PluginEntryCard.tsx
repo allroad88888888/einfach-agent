@@ -1,11 +1,12 @@
 // apps/web/src/agentNew/ui/PluginEntryCard.tsx
 // ---------------------------------------------------------------------------
-// 渲染插件设置面板里的一行：身份 + 状态徽标、诊断折叠、withheldTools 计数提示、
+// 渲染插件设置面板里的一行：身份 + 状态徽标、诊断折叠、模型可见工具勾选面、
 // 可切换时的启停按钮。样式对齐 McpServerCard.tsx 的既有 card 结构。
 
 import { disablePlugin, enablePlugin } from '../../plugins/commands'
 import type { PluginOperation } from '../../plugins/state'
 import type { PluginRow, PluginRowStatus } from '../../plugins/types'
+import { PluginToolToggleList } from './PluginToolToggleList'
 
 const STATUS_LABELS: Record<PluginRowStatus, string> = {
   enabled: '已启用',
@@ -66,11 +67,7 @@ export function PluginEntryCard({
         ) : null}
       </div>
 
-      {row.withheldToolsCount > 0 ? (
-        <p className="agentnew-plugin-withheld">
-          {row.withheldToolsCount} 个模型可见工具待勾选
-        </p>
-      ) : null}
+      <PluginToolToggleList row={row} busy={busy} />
 
       {row.diagnostics.length > 0 ? (
         <details className="agentnew-plugin-diagnostics">
