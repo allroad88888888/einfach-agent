@@ -3,8 +3,24 @@ import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
-import { test } from 'node:test'
-import assert from 'node:assert/strict'
+import { expect, it as test } from 'vitest'
+// vitest 全量套件会扫描 scripts/*.test.js，故与兄弟脚本测试一致用 vitest 断言面。
+const assert = {
+  equal: (a, b, msg) => expect(a, msg).toBe(b),
+  match: (a, re, msg) => expect(a, msg).toMatch(re),
+  doesNotMatch: (a, re, msg) => expect(a, msg).not.toMatch(re),
+  ok: (v, msg) => expect(v, msg).toBeTruthy(),
+  rejects: async (promise, validate) => {
+    let rejected = false
+    try {
+      await promise
+    } catch (error) {
+      rejected = true
+      if (validate) expect(validate(error)).not.toBe(false)
+    }
+    expect(rejected, '期望 Promise 被拒绝').toBe(true)
+  },
+}
 
 const execFileAsync = promisify(execFile)
 const cli = resolve(process.cwd(), 'scripts/check-boundaries.js')
