@@ -1,4 +1,4 @@
-import type { Tool, ToolContext } from '@web-agent/core/tools/types'
+import type { Tool, ToolContext } from '@web-agent/core/tools'
 import guide from './delete-path.md?raw'
 
 type DeleteWorkspacePathResult = {

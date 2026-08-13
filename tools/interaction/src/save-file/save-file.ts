@@ -2,7 +2,7 @@
 // 关键差异：不再直接 addPendingArtifact / 写 stale 守卫；暂存统一经 ctx.saveArtifact，
 // harness 负责写 atom + 集中 stale/ghost 守卫，回 {artifactId} 或 {error}。
 // 本文件零依赖：只 import 类型；绝不 import state/atom/store；副作用只经 ctx。
-import type { Tool } from '@web-agent/core/tools/types'
+import type { Tool } from '@web-agent/core/tools'
 import guide from './save-file.md?raw' // skill 正文（同目录 .md）
 
 export const SAVE_FILE_MAX_BYTES = 5 * 1024 * 1024

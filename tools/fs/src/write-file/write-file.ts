@@ -1,5 +1,5 @@
 // tools/write-file/write-file.ts -- workspace file writing tool. Side effects only go through ctx.
-import type { Tool, ToolContext } from '@web-agent/core/tools/types'
+import type { Tool, ToolContext } from '@web-agent/core/tools'
 import guide from './write-file.md?raw'
 
 const MAX_BYTES = 8 * 1024 * 1024

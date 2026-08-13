@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import type { ToolContext } from '@web-agent/core/tools/types'
+import type { ToolContext } from '@web-agent/core/tools'
 import type {
   SearchWorkspaceFilesInput,
   SearchWorkspaceFilesResult,

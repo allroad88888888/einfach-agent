@@ -1,5 +1,5 @@
 // tools/rg-search/rg-search.ts —— ripgrep-backed workspace code search. Side effects only go through ctx.
-import type { Tool, ToolContext } from '@web-agent/core/tools/types'
+import type { Tool, ToolContext } from '@web-agent/core/tools'
 import type { RgSearchInput, RgSearchResult } from '@web-agent/core/runtime/workspaceRg'
 import {
   DEFAULT_RG_CONTEXT_LINES,

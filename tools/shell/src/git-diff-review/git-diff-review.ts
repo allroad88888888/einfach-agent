@@ -1,5 +1,5 @@
 // tools/git-diff-review/git-diff-review.ts —— 只读 Git diff review 工具。副作用只经 ctx.getWorkspaceDiff。
-import type { Tool, ToolContext } from '@web-agent/core/tools/types'
+import type { Tool, ToolContext } from '@web-agent/core/tools'
 import guide from './git-diff-review.md?raw'
 
 const DEFAULT_MAX_DIFF_CHARS = 20_000

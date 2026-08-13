@@ -1,4 +1,4 @@
-import type { Tool, ToolContext, ToolResult } from '@web-agent/core/tools/types'
+import type { Tool, ToolContext, ToolResult } from '@web-agent/core/tools'
 import type {
   ListWorkspaceFilesInput,
   ListWorkspaceFilesResult,

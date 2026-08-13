@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ToolContext } from '@web-agent/core/tools/types'
+import type { ToolContext } from '@web-agent/core/tools'
 import { revertWorkspaceChangeTool } from './revert-workspace-change'
 
 function context(revertWorkspaceChange?: ToolContext['revertWorkspaceChange']): ToolContext {

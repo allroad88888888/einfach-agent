@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import type { ToolContext, WorkspaceTaskInput, WorkspaceTaskResult } from '@web-agent/core/tools/types'
+import type { ToolContext, WorkspaceTaskInput, WorkspaceTaskResult } from '@web-agent/core/tools'
 import { runTaskTool } from './run-task'
 
 type TestToolContext = ToolContext & {

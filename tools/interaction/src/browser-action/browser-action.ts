@@ -2,7 +2,7 @@
 // 关键差异：不再直接 addBrowserCard / 写 stale 守卫；卡片渲染统一经 ctx.renderCard，
 // harness 负责写 atom + 集中 stale/ghost 守卫，回 {cardId} 或 {error}。
 // 本文件零依赖：只 import 类型；绝不 import state/atom/store；副作用只经 ctx。
-import type { Tool } from '@web-agent/core/tools/types'
+import type { Tool } from '@web-agent/core/tools'
 import guide from './browser-action.md?raw' // skill 正文（同目录 .md）
 
 export const BROWSER_CARD_TITLE_MAX_CHARS = 200

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { ShellCommandResult } from '@web-agent/core/tools/types'
+import type { ShellCommandResult } from '@web-agent/core/tools'
 import { shellCommandToolResult } from './command-result'
 
 function makeResult(overrides: Partial<ShellCommandResult> = {}): ShellCommandResult {

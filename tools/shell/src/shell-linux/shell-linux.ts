@@ -1,5 +1,5 @@
 // tools/shell-linux/shell-linux.ts —— Linux shell 工具。副作用只经 ctx.runShell。
-import type { Tool } from '@web-agent/core/tools/types'
+import type { Tool } from '@web-agent/core/tools'
 import { shellCommandToolResult } from '../command-result'
 import { detectShellFileWrite, shellFileWriteRejected } from '../file-write-guard'
 import guide from './shell-linux.md?raw'

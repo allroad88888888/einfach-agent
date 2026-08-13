@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import type { ShellCommandInput, ShellCommandResult, ToolContext } from '@web-agent/core/tools/types'
+import type { ShellCommandInput, ShellCommandResult, ToolContext } from '@web-agent/core/tools'
 import { shellLinuxTool } from './shell-linux'
 
 function makeShellResult(

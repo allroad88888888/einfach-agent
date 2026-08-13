@@ -1,6 +1,6 @@
 // tools-shell —— @web-agent/tools-shell：shell 域内置工具的桶文件 + 注册器（TSPLIT TS2）。
 // 依赖：仅 @web-agent/core（工具抽象 ToolRegistry + 本域用到的 core 特性）。core 不反向依赖本包 —— 单向无环。
-import type { ToolRegistry } from '@web-agent/core/tools/toolRegistry'
+import type { ToolRegistry } from '@web-agent/core/tools'
 import { shellMacosTool } from './shell-macos/shell-macos'
 import { shellLinuxTool } from './shell-linux/shell-linux'
 import { shellPowershellTool } from './shell-powershell/shell-powershell'
