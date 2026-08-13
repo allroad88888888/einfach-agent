@@ -17,6 +17,9 @@
     ".": "./src/index.ts",
     "./package.json": "./package.json"
   },
+  "scripts": {
+    "build": "tsup"
+  },
   "dependencies": {
     "@web-agent/core": "workspace:*"
   },

@@ -5,6 +5,7 @@
 // `.d.ts` 交给各包自己的 `tsc -p tsconfig.build.json --emitDeclarationOnly`，两者产物合流同一个 dist。
 // 要改「全仓怎么构建」就改这个文件，别在单包 tsup.config.ts 里各改各的。
 import { defineConfig, type Options } from 'tsup'
+import { rawTextPlugin } from './tsup.rawPlugin'
 
 export interface PackageBuildInput {
   /**
@@ -25,8 +26,8 @@ export interface PackageBuildInput {
    */
   external?: NonNullable<Options['external']>
   /**
-   * 包间会变 ③（少数包才用）：额外的 esbuild 插件。
-   * V2 的 `.md?raw` 内联插件会作为默认插件加进本预设，届时这里只留「某包独有」的插件。
+   * 包间会变 ③（少数包才用）：**某包独有**的 esbuild 插件。
+   * 全仓通用的 `?raw` 内联插件已默认接上（见下方 esbuildPlugins），这里传的是追加项。
    */
   esbuildPlugins?: Options['esbuildPlugins']
 }
@@ -49,6 +50,8 @@ export function definePackageBuild({ entry, external = [], esbuildPlugins }: Pac
     // 哈希 chunk 名。
     splitting: false,
     external,
-    ...(esbuildPlugins ? { esbuildPlugins } : {}),
+    // `?raw` 内联对全仓生效：源码里的 `*.md?raw` 是 Vite 语法，产物必须已经把正文变成字符串，
+    // 否则消费方的打包器/Node 会去找一个叫 `x.md?raw` 的文件。包自带插件排在它后面。
+    esbuildPlugins: [rawTextPlugin(), ...(esbuildPlugins ?? [])],
   })
 }

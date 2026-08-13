@@ -14,5 +14,11 @@
   // 构建侧配置（Vite + 发包用的 tsup 预设与各包 tsup.config.ts）一并进 `tsc -b` 的静态门禁：
   // 这些文件不在 tsconfig.app.json 的 `*/src` 扫描面里，不列进来就只有 esbuild 剥类型、写错
   // 选项名也不报错。通配写法让 V3 逐包接构建时无需再动本文件。
-  "include": ["vite.config.ts", "tsup.preset.ts", "packages/*/tsup.config.ts", "tools/*/tsup.config.ts"]
+  "include": [
+    "vite.config.ts",
+    "tsup.preset.ts",
+    "tsup.rawPlugin.ts",
+    "packages/*/tsup.config.ts",
+    "tools/*/tsup.config.ts"
+  ]
 }

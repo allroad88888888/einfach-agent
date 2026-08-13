@@ -1,0 +1,31 @@
+// 声明产物专用 tsconfig：只出 .d.ts，JS 由 tsup 出（见 tsup.config.ts 与根 tsup.preset.ts）。
+// V3 逐包接线时整份复制，除 extends 外无需改动。
+//
+// **本包的 build script 暂时只跑 tsup，没接这一步**，因为跨包声明 emit 还缺前置条件：
+// tsconfig.app.json 的 paths 把 `@web-agent/core/*` 指向 core 的**源码**，于是 core 的 .ts
+// 全都进了本 program，而 `rootDir: ./src` 要求所有可 emit 文件都在 src 下 —— 每个 core 文件
+// 一条 TS6059，tsc 以非零码退出（声明本身是对的，只在 dist 下出 7 个 src 对应的 .d.ts）。
+// 走 node_modules 解析（把 paths 置空）同样不行：TS 不会解析 node_modules 里的 .ts 源码，
+// 而 core 的 exports 现在正指着 `./src/*`，只会得到一片 TS2307。
+// 解法属于 V3（G2）：core 先出 dist 并把 exports 改指 dist，本文件再补 `"paths": {}` 让声明
+// emit 吃依赖的 .d.ts（此时它们是声明文件，不参与 rootDir 判定），同时按拓扑序先构建 core。
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // 包平时的 tsconfig.json 是 noEmit 的纯类型门禁，这里翻开只为 emit 声明。
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    // 不出 declaration map：发布物 `files: ["dist"]` 不含 src，map 只会指向不存在的路径。
+    "declarationMap": false,
+    // 不能开 incremental/composite：tsup 的 clean 会先清空 dist，而 buildinfo 只看源码变没变，
+    // 于是「源码没改 + dist 被清空」会让 tsc 直接跳过 emit，产出一个没有 .d.ts 的 dist。
+    "incremental": false,
+    "composite": false,
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  "include": ["src"],
+  // 测试与测试脚手架不进发布物（口径同 scripts/check-boundaries.js 的 testFilePattern）。
+  "exclude": ["src/**/*.test.ts", "src/**/*.testFixtures.ts", "src/**/*.testHarness.ts"]
+}
