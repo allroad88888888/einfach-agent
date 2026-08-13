@@ -1,5 +1,7 @@
 # Einfach Agent
 
+[English](README.en.md) | 中文
+
 **装配式 Agent Runtime 开发者框架。** 一个可插拔内核——工具契约、插件、观测、持久化、
 子 Agent 委派全部按槽位注入——驱动 Web 预览、Tauri 桌面端、headless CLI 三个宿主；
 DeepSeek / GLM 等模型是一等公民，而不是事后适配。
