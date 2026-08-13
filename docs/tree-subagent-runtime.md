@@ -146,7 +146,7 @@ UI 中的 Promote/Archive 确认只生成上述审计 CLI，并明确标记“�
 核心入口：
 
 - [delegate-agent.ts](../tools/agents/src/delegate-agent/delegate-agent.ts)
-- [runtime.ts](../packages/agent-core/src/subagents/runtime.ts)
+- [runtime.ts](../packages/subagents/src/runtime.ts)（E2 起随调度编排迁入 `@web-agent/subagents`）
 - [toolContext.ts](../packages/agent-core/src/runtime/toolContext.ts)
 - [modelRun.ts](../packages/agent-core/src/runtime/modelRun.ts)
 

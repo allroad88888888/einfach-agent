@@ -1,31 +1,29 @@
-import { createConcurrencyLimiter } from './concurrency'
-import { createSkillDistillChat } from './delegationDistillation'
-import { resolveDelegationRequestPolicy } from './delegationPolicy'
-import { runChildAgent } from './childAgentLoop'
-import { createChildModelCaller } from './childModelClient'
-import { routeChildModel } from './modelSelection'
-import { ROOT_AGENT_PATH } from './path'
-import { subagentCacheBasePath, subagentEventsPath } from './skillCache'
-import { distillDelegateSkills } from './distill'
+import { createConcurrencyLimiter } from '@web-agent/core/subagents/concurrency'
+import { resolveDelegationRequestPolicy } from '@web-agent/core/subagents/delegationPolicy'
+import { runChildAgent } from '@web-agent/core/subagents/childAgentLoop'
+import { createChildModelCaller } from '@web-agent/core/subagents/childModelClient'
+import { routeChildModel } from '@web-agent/core/subagents/modelSelection'
+import { ROOT_AGENT_PATH } from '@web-agent/core/subagents/path'
+import { subagentCacheBasePath, subagentEventsPath } from '@web-agent/core/subagents/skillCache'
+import { distillDelegateSkills } from '@web-agent/core/subagents/distill'
+import type { DelegateAgents } from '@web-agent/core/subagents/delegationRuntimePorts'
 import type {
   ChildAgentResult,
   DelegateAgentBatchResult,
   DelegateAgentBatchStatus,
   DelegateAgentCallContext,
   DelegateAgentInput,
-} from './types'
+  SubagentNodeRecord,
+} from '@web-agent/core/subagents/types'
 import {
   collectChangeSets,
   DelegateAgentRuntimeState,
   isAbortError,
   toErrorMessage,
   type ChildChangeSet,
-} from './runtimeState'
-
-export type DelegateAgents = (
-  rawInput: DelegateAgentInput,
-  context: DelegateAgentCallContext,
-) => Promise<DelegateAgentBatchResult>
+  type DelegationCallState,
+} from '@web-agent/core/subagents/runtimeState'
+import { createSkillDistillChat } from './delegationDistillation'
 
 function childSummary(children: readonly ChildAgentResult[]): DelegateAgentBatchResult['summary'] {
   return {
@@ -184,7 +182,7 @@ async function recordReservationFailure(
   archiveBasePath: string,
   parentPath: string,
   isRootCall: boolean,
-  state: import('./runtimeState').DelegationCallState,
+  state: DelegationCallState,
   error: unknown,
 ): Promise<void> {
   const message = toErrorMessage(error)
@@ -207,12 +205,12 @@ async function distillBatchSkills(
   parentPath: string,
   parentDispatchIndex: number,
   input: DelegateAgentInput,
-  state: import('./runtimeState').DelegationCallState,
+  state: DelegationCallState,
   maxModelCalls: number,
   inheritedSkillFiles: string[],
   inheritedSkillIds: string[],
   parentTranscript: string,
-  reserved: import('./types').SubagentNodeRecord[],
+  reserved: SubagentNodeRecord[],
 ) {
   try {
     return await distillDelegateSkills({

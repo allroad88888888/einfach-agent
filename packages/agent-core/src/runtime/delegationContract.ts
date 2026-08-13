@@ -1,12 +1,14 @@
 import type { ModelItem } from '@web-agent/ai'
 import type { ModelSettings } from '../state/core.type'
 import type { ToolRegistry } from '../tools/toolRegistry'
-import { createSubagentScheduler, type SubagentScheduler } from '../subagents/schedulerState'
 import type {
   DelegateAgentBatchResult,
   DelegateAgentCallContext,
+  DelegateAgentChildSpec,
   DelegateAgentInput,
   SubagentNodeRecord,
+  SubagentNodeStatus,
+  SubagentPath,
 } from '../subagents/types'
 import type { CoreInstance } from './core/coreInstance'
 
@@ -16,6 +18,31 @@ export type {
   DelegateAgentInput,
   SubagentNodeRecord,
 } from '../subagents/types'
+
+/** Input for reserving a set of child nodes in one delegation tree. */
+export interface ReserveChildrenInput {
+  treeId: string
+  sessionId: string
+  delegationCallId?: string
+  parentPath: SubagentPath
+  inheritedSkillFiles: string[]
+  inheritedSkillIds: string[]
+  children: DelegateAgentChildSpec[]
+}
+
+/** Scheduler port owned by an injected delegation capability. */
+export interface SubagentScheduler {
+  reserveChildren(input: ReserveChildrenInput): SubagentNodeRecord[]
+  markNode(
+    treeId: string,
+    path: SubagentPath,
+    status: SubagentNodeStatus,
+    patch?: Partial<Omit<SubagentNodeRecord, 'treeId' | 'path'>>,
+  ): SubagentNodeRecord | undefined
+  snapshot(treeId: string): SubagentNodeRecord[]
+  subscribe(listener: (node: SubagentNodeRecord) => void): () => void
+  clear(treeId: string): void
+}
 
 /** Runtime ownership operations shared by every injected delegation implementation. */
 export interface DelegationRuntimeLifecycle {
@@ -72,18 +99,3 @@ export interface DelegationCapability {
 
 /** Installs one independent delegation capability into a Core instance. */
 export type DelegationRuntimeFactory = () => DelegationCapability
-
-/**
- * Transitional core implementation. E2 can replace this factory without
- * changing the main runtime consumers or the scheduler compatibility view.
- */
-export const createDefaultDelegationRuntimeFactory: DelegationRuntimeFactory = () => {
-  const scheduler = createSubagentScheduler()
-  return {
-    scheduler,
-    async createRuntime(input) {
-      const { createDelegateAgentRuntime } = await import('../subagents/runtime')
-      return createDelegateAgentRuntime({ ...input, scheduler })
-    },
-  }
-}

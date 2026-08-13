@@ -41,6 +41,9 @@ importers:
       '@web-agent/react-plugin':
         specifier: workspace:*
         version: link:packages/agent-react
+      '@web-agent/subagents':
+        specifier: workspace:*
+        version: link:packages/subagents
       '@web-agent/tools':
         specifier: workspace:*
         version: link:tools/standard
@@ -158,6 +161,15 @@ importers:
       '@tauri-apps/plugin-sql':
         specifier: ^2.4.0
         version: 2.4.0
+      '@web-agent/core':
+        specifier: workspace:*
+        version: link:../agent-core
+
+  packages/subagents:
+    dependencies:
+      '@web-agent/ai':
+        specifier: workspace:*
+        version: link:../agent-ai
       '@web-agent/core':
         specifier: workspace:*
         version: link:../agent-core

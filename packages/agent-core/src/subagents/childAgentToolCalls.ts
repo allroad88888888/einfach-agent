@@ -10,7 +10,6 @@ import { toolSchemaLoadedResult } from '../tools/schemaResult'
 import { normalizeDelegateAgentInput } from './input'
 import { agentPathDepth } from './path'
 import { appendVisibleChildTool, loadVisibleChildTool } from './childToolVisibility'
-import { formatSubagentTranscript } from './distill'
 import {
   isSubagentVerificationTool,
   isSubagentWorkspaceReadTool,
@@ -25,12 +24,12 @@ import type {
 import {
   type ChildChangeSet,
   type DelegationCallState,
+  type DelegateAgents,
   DelegateAgentRuntimeState,
   isAbortError,
   toErrorMessage,
 } from './runtimeState'
 import type { TreeRuntimeBudget } from './runtimeState'
-import type { DelegateAgents } from './delegationBatch'
 
 const DELEGATE_TOOL_NAME = 'delegate_agent'
 const ARGS_PREVIEW_LIMIT = 200
@@ -233,7 +232,7 @@ export async function executeChildAgentToolCalls(
                 toolNames: parentConfirmedTools,
               }
             : undefined,
-          parentTranscript: formatSubagentTranscript(loop.messages),
+          parentTranscript: runtime.archiveFormat.formatParentTranscript(loop.messages),
           inheritedSkillFiles: skillFiles,
           inheritedSkillIds: skillIds,
           inheritedSkillContents: [...inheritedSkills, localSkill],

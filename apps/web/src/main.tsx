@@ -10,10 +10,12 @@ import { initializeMcpSettings } from './mcp/initialize'
 import { configureCommands, newSession } from '@web-agent/core/runtime/commands'
 import {
   defaultCore,
+  configureDefaultDelegation,
   configureDefaultProjectSkillsProvider,
   configureDefaultSkillsRegistry,
 } from '@web-agent/core/runtime/core/coreInstance'
 import { createDefaultPlanRuntime } from '@web-agent/tools-planning'
+import { createDelegationAssembly } from '@web-agent/subagents'
 import { configurePersistence } from '@web-agent/core/runtime/persistenceBridge'
 import { configureObservability } from '@web-agent/core/observability/trace'
 import { hydrate } from '@web-agent/core/state/persistence/hydrate'
@@ -55,6 +57,7 @@ registerStandardTools(toolRegistry)
 configureDefaultSkillsRegistry(builtInSkillsRegistry)
 configureDefaultProjectSkillsProvider(buildProjectSkillsProvider())
 defaultCore.planRuntime = createDefaultPlanRuntime
+configureDefaultDelegation(createDelegationAssembly)
 
 // MCP 运行时必须在启动时装配，不能等用户点开设置弹窗才 mount（那样 autoConnect 形同虚设）。
 // hydrate 会去连网络服务，故意不 await：让它在后台跑，不阻塞首屏渲染。

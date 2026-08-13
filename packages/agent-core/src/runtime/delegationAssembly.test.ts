@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { registerAgentsTools } from '@web-agent/tools-agents'
-import { createSubagentScheduler } from '../subagents/scheduler'
+import { createSubagentScheduler } from '@web-agent/subagents'
 import type { ExecutionHandle } from '../execution/types'
 import { sessionsAtom } from '../state/rootStore'
 import { setRun } from '../state/sessionWriters'
@@ -47,8 +47,8 @@ function delegateContext(
 }
 
 describe('delegation capability assembly', () => {
-  it('explicit delegation: null leaves delegate_agent unavailable on an independent Core', async () => {
-    const core = createCore({ delegation: null, registerTools: registerAgentsTools })
+  it('未注入 delegation 时，独立 Core 的 delegate_agent 返回不可用错误', async () => {
+    const core = createCore({ registerTools: registerAgentsTools })
     seedRunningSession(core)
     const ctx = delegateContext(core)
 

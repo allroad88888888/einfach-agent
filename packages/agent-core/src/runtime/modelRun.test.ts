@@ -34,9 +34,10 @@ import { configurePersistence, resetPersistence } from './persistenceBridge'
 import type { Checkpoint } from '../state/checkpoint.type'
 import { configureObservability, flushObservability, resetObservability } from '../observability/trace'
 import type { TraceDriver, TraceEvent, TraceSpan } from '../observability/types'
-import { createCoreInstance, defaultCore } from './core/coreInstance'
+import { configureDefaultDelegation, createCoreInstance, defaultCore } from './core/coreInstance'
 import { createCore } from './core/createCore'
 import { buildSkillManifestText, registerStandardTools } from '@web-agent/tools'
+import { createDelegateAgentRuntime, createSubagentScheduler } from '@web-agent/subagents'
 import type { PlanRuntimeFactory } from '../planning/runtime'
 import type { CreatePlanInput, PlanRuntimeStore } from '../planning/types'
 
@@ -51,8 +52,8 @@ vi.mock('@tauri-apps/api/core', async () => {
     isTauri: () => tauriControl.enabled,
   }
 })
-vi.mock('../subagents/runtime', async () => {
-  const actual = await vi.importActual<typeof import('../subagents/runtime')>('../subagents/runtime')
+vi.mock('@web-agent/subagents', async () => {
+  const actual = await vi.importActual<typeof import('@web-agent/subagents')>('@web-agent/subagents')
   return {
     ...actual,
     createDelegateAgentRuntime: (opts: Parameters<typeof actual.createDelegateAgentRuntime>[0]) => {
@@ -75,7 +76,20 @@ afterEach(() => {
   resetObservability()
   resetPersistence()
   defaultCore.planRuntime = undefined
+  configureDefaultDelegation(null)
 })
+
+function installDefaultDelegationForDisposeTest(): void {
+  configureDefaultDelegation(() => {
+    const scheduler = createSubagentScheduler()
+    return {
+      scheduler,
+      async createRuntime(input) {
+        return createDelegateAgentRuntime({ ...input, scheduler })
+      },
+    }
+  })
+}
 
 // 只记录 saveCheckpoint 的假 HistoryDriver —— 用来证明「落盘」真的发生了，
 // 而不只是 checkpointsAtom 里多了一条（itemsAtom 不持久化，刷新后全靠落盘的 checkpoint）。
@@ -3507,6 +3521,7 @@ describe('收尾 dispose 的异常隔离', () => {
     // ★ 回归：finally 与外层 try/catch 是平级的 —— dispose 一抛，异常直接从 runToolLoop 逃逸，
     //   绕过刚做完的降级逻辑：run 停在最后一次 patchRun 的值上，调用方的 endRun 执行与否看天。
     disposeControl.error = new Error('dispose boom')
+    installDefaultDelegationForDisposeTest()
     seedSession('dp1', { vendor: 'deepseek', model: 'x' })
     const fetchImpl: typeof fetch = async () => jsonResponse('你好')
 
@@ -3533,6 +3548,7 @@ describe('收尾 dispose 的异常隔离', () => {
     const abortErr = new Error('The operation was aborted.')
     abortErr.name = 'AbortError'
     disposeControl.error = abortErr
+    installDefaultDelegationForDisposeTest()
     seedSession('dp2', { vendor: 'deepseek', model: 'x' })
     const fetchImpl: typeof fetch = async () => {
       throw new DOMException('aborted', 'AbortError')

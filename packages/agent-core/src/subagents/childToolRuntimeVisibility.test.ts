@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { createDelegateAgentRuntime } from '@web-agent/subagents'
 import type { Tool } from '../tools/types'
 import { createToolRegistry } from '../tools/toolRegistry'
-import { createDelegateAgentRuntime } from './runtime'
 import type { DelegateAgentCallContext } from './types'
 
 const VERIFICATION_TOOL = 'run_verification_command'

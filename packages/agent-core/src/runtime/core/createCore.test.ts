@@ -27,7 +27,7 @@ vi.mock('../persistenceBridge', () => ({
 import { createCore } from './createCore'
 import { defaultCore } from './coreInstance'
 import type { Tool } from '../../tools/types'
-import { createSubagentScheduler } from '../../subagents/scheduler'
+import { createSubagentScheduler } from '@web-agent/subagents'
 import type { DelegationCapability, DelegationRuntimeFactory } from '../delegationContract'
 import { configureCommands } from '../commands'
 import { runSession, runToolLoop } from '../modelRun'
@@ -128,7 +128,7 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
     expect(a.abort).not.toBe(defaultCore.abort)
   })
 
-  it('delegation factory 为每个 createCore 装配独立 capability；显式 null 才禁用', () => {
+  it('delegation factory 为每个 createCore 装配独立 capability，未注入与 null 都禁用', () => {
     const created = [] as { scheduler: ReturnType<typeof createSubagentScheduler> }[]
     const delegation: DelegationRuntimeFactory = () => {
       const capability: DelegationCapability = {
@@ -144,8 +144,20 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
     expect(a.delegation!.scheduler).toBe(created[0].scheduler)
     expect(b.delegation!.scheduler).toBe(created[1].scheduler)
     expect(a.delegation!.scheduler).not.toBe(b.delegation!.scheduler)
+    a.delegation!.scheduler.reserveChildren({
+      treeId: 'same-tree-id', sessionId: 'a', parentPath: 'root',
+      inheritedSkillFiles: [], inheritedSkillIds: [], children: [{ objective: 'only-a' }],
+    })
+    b.delegation!.scheduler.reserveChildren({
+      treeId: 'same-tree-id', sessionId: 'b', parentPath: 'root',
+      inheritedSkillFiles: [], inheritedSkillIds: [], children: [{ objective: 'only-b' }],
+    })
+    expect(a.delegation!.scheduler.snapshot('same-tree-id').map((node) => node.objective)).toContain('only-a')
+    expect(a.delegation!.scheduler.snapshot('same-tree-id').map((node) => node.objective)).not.toContain('only-b')
+    expect(b.delegation!.scheduler.snapshot('same-tree-id').map((node) => node.objective)).toContain('only-b')
+    expect(b.delegation!.scheduler.snapshot('same-tree-id').map((node) => node.objective)).not.toContain('only-a')
     expect(createCore({ delegation: null }).delegation).toBeUndefined()
-    expect(createCore().delegation).toBeDefined()
+    expect(createCore().delegation).toBeUndefined()
   })
 
   it('透传 projectSkillsProvider 到新建 CoreInstance', async () => {

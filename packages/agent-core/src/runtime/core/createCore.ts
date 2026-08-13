@@ -50,7 +50,7 @@ export function createCore(opts?: {
   /** 内置 skill registry 由 tools-skills 装配；未传时使用空实现。 */
   skillRegistry?: SkillsRegistry
   planRuntime?: PlanRuntimeFactory | null
-  /** 未传时装配 core 默认委派能力；显式 null 禁用子 Agent。 */
+  /** 子 Agent 委派能力必须由产品装配层显式提供；null 与未传都表示未注入。 */
   delegation?: DelegationRuntimeFactory | null
 }): CoreInstance & CommandApi {
   const instance = createCoreInstance(opts)

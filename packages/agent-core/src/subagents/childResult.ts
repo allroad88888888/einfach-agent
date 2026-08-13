@@ -7,7 +7,6 @@ import {
 } from '../runtime/timedDispatch'
 import type { ToolResult } from '../tools/types'
 import { loadVisibleChildTool } from './childToolVisibility'
-import { subagentResultPath } from './skillCache'
 import type { ChildAgentResult } from './types'
 import type {
   DelegateAgentCallContext,
@@ -145,7 +144,7 @@ export async function finalizeChildResult(input: {
   error?: string
 }): Promise<ChildAgentResult> {
   const { runtime, context, archiveBasePath, node, spec, status, summary, skillFiles, skillIds } = input
-  const resultFile = status === 'done' ? subagentResultPath(archiveBasePath, node.path) : undefined
+  const resultFile = status === 'done' ? runtime.archiveFormat.resultPath(archiveBasePath, node.path) : undefined
   if (resultFile) await runtime.archive.writeText(context, resultFile, `${summary.trim()}\n`)
   runtime.scheduler.markNode(runtime.opts.runId, node.path, status, {
     ...(resultFile ? { resultFile } : {}),

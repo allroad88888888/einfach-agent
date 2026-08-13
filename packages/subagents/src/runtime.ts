@@ -1,20 +1,47 @@
 import { DEEPSEEK_FLASH_MODEL } from '@web-agent/ai'
-import { createDelegateAgents } from './delegationBatch'
-import { firstAssistantText, createChildModelCaller } from './childModelClient'
-import { supportsDeepSeekTierRouting } from './modelSelection'
+import type {
+  DelegationRuntime,
+  DelegationRuntimeInput,
+  SubagentScheduler,
+} from '@web-agent/core/runtime/delegationContract'
+import { SubagentArchiveIO } from '@web-agent/core/subagents/archiveIO'
 import {
-  type CreateDelegateAgentRuntimeOptions,
-  DelegateAgentRuntimeState,
-} from './runtimeState'
-import type { DelegateAgentRuntime } from './types'
+  createChildModelCaller,
+  firstAssistantText,
+} from '@web-agent/core/subagents/childModelClient'
+import { supportsDeepSeekTierRouting } from '@web-agent/core/subagents/modelSelection'
+import { formatSubagentTranscript } from '@web-agent/core/runtime/subagentTranscript'
+import { subagentResultPath } from '@web-agent/core/subagents/skillCache'
+import { DelegateAgentRuntimeState } from '@web-agent/core/subagents/runtimeState'
+import { createDelegateAgents } from './delegationBatch'
+import { createSubagentScheduler } from './schedulerState'
 
-export type { CreateDelegateAgentRuntimeOptions } from './runtimeState'
+export type CreateDelegateAgentRuntimeOptions = DelegationRuntimeInput & {
+  /** Standalone callers receive an isolated scheduler; assemblies pass their shared one. */
+  scheduler?: SubagentScheduler
+}
 
 /** Creates the public delegate-agent runtime and owns its retain/release lifecycle. */
 export function createDelegateAgentRuntime(
   rawOpts: CreateDelegateAgentRuntimeOptions,
-): DelegateAgentRuntime {
-  const runtime = new DelegateAgentRuntimeState(rawOpts)
+): DelegationRuntime {
+  const scheduler = rawOpts.scheduler ?? createSubagentScheduler()
+  const runtime = new DelegateAgentRuntimeState({
+    ...rawOpts,
+    scheduler,
+    archive: new SubagentArchiveIO({
+      core: rawOpts.core,
+      sessionId: rawOpts.sessionId,
+      runId: rawOpts.runId,
+      model: rawOpts.settings.model,
+      vendor: rawOpts.settings.vendor,
+      onTraceItem: rawOpts.onTraceItem,
+    }),
+    archiveFormat: {
+      resultPath: subagentResultPath,
+      formatParentTranscript: formatSubagentTranscript,
+    },
+  })
   const callModel = createChildModelCaller(runtime)
   const delegateAgents = createDelegateAgents(runtime)
 

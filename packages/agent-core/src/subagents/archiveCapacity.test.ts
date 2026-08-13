@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { createSubagentScheduler } from './scheduler'
+import { createDelegateAgentRuntime, createSubagentScheduler } from '@web-agent/subagents'
 import { SubagentArchiveIO } from './archiveIO'
 import { agentPathDepth } from './path'
 import { normalizeDelegateAgentInput } from './input'
-import { createDelegateAgentRuntime } from './runtime'
 import { measureSubagentArchiveCapacity, type SubagentArchiveCapacityMeasurement } from './archiveCapacity'
 import type { DelegateAgentCallContext, SubagentNodeRecord } from './types'
 

@@ -258,6 +258,7 @@ export default defineConfig(({ command, mode }) => {
         '@web-agent/persistence-idb': fromRoot('./packages/persistence-idb/src'),
         '@web-agent/persistence-sqlite': fromRoot('./packages/persistence-sqlite/src'),
         '@web-agent/react-plugin': fromRoot('./packages/agent-react/src/index.ts'),
+        '@web-agent/subagents': fromRoot('./packages/subagents/src'),
         // 根级工具域包 + standard 聚合包：各解析到自己的 barrel。
         '@web-agent/tools-shell': fromRoot('./tools/shell/src/index.ts'),
         '@web-agent/tools-interaction': fromRoot('./tools/interaction/src/index.ts'),

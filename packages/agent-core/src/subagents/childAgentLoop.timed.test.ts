@@ -3,7 +3,7 @@ import type { ModelItem } from '@web-agent/ai'
 import { sessionsAtom } from '../state/rootStore'
 import { createCoreInstance } from '../runtime/core/coreInstance'
 import type { Tool } from '../tools/types'
-import { createDelegateAgentRuntime } from './runtime'
+import { createDelegationAssembly, createDelegateAgentRuntime } from '@web-agent/subagents'
 import type { DelegateAgentCallContext } from './types'
 
 type TraceEntry = {
@@ -60,7 +60,7 @@ function childRuntime(input: {
   trace: TraceEntry[]
   signal?: AbortSignal
 }) {
-  const core = createCoreInstance({ registerTools: (registry) => {
+  const core = createCoreInstance({ delegation: createDelegationAssembly, registerTools: (registry) => {
     registry.register(plainTool('delegate_agent'))
     input.tools.forEach((tool) => registry.register(tool))
   } })

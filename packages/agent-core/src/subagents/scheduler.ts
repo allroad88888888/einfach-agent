@@ -1,11 +1,6 @@
 import { defaultCore } from '../runtime/core/coreInstance'
-import {
-  createSubagentScheduler,
-  type ReserveChildrenInput,
-  type SubagentScheduler,
-} from './schedulerState'
+import type { ReserveChildrenInput, SubagentScheduler } from '../runtime/delegationContract'
 
-export { createSubagentScheduler }
 export type { ReserveChildrenInput, SubagentScheduler }
 
 function defaultScheduler(): SubagentScheduler {

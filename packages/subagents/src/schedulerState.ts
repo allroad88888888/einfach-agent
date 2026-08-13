@@ -1,33 +1,11 @@
-import type { DelegateAgentChildSpec, SubagentNodeRecord, SubagentPath, SubagentNodeStatus } from './types'
-import { ROOT_AGENT_PATH, agentPathDepth, childAgentPath, parentAgentPath } from './path'
+import type { ReserveChildrenInput, SubagentScheduler } from '@web-agent/core/runtime/delegationContract'
+import { ROOT_AGENT_PATH, agentPathDepth, childAgentPath, parentAgentPath } from '@web-agent/core/subagents/path'
+import type { SubagentNodeRecord, SubagentPath } from '@web-agent/core/subagents/types'
 
 interface TreeState {
   treeId: string
   sessionId: string
   nodes: Map<SubagentPath, SubagentNodeRecord>
-}
-
-export interface ReserveChildrenInput {
-  treeId: string
-  sessionId: string
-  delegationCallId?: string
-  parentPath: SubagentPath
-  inheritedSkillFiles: string[]
-  inheritedSkillIds: string[]
-  children: DelegateAgentChildSpec[]
-}
-
-export interface SubagentScheduler {
-  reserveChildren(input: ReserveChildrenInput): SubagentNodeRecord[]
-  markNode(
-    treeId: string,
-    path: SubagentPath,
-    status: SubagentNodeStatus,
-    patch?: Partial<Omit<SubagentNodeRecord, 'treeId' | 'path'>>,
-  ): SubagentNodeRecord | undefined
-  snapshot(treeId: string): SubagentNodeRecord[]
-  subscribe(listener: (node: SubagentNodeRecord) => void): () => void
-  clear(treeId: string): void
 }
 
 function nodeId(treeId: string, path: SubagentPath): string {
@@ -123,7 +101,12 @@ export function createSubagentScheduler(): SubagentScheduler {
   return {
     reserveChildren(input) {
       const tree = ensureTree(input.treeId, input.sessionId)
-      const parent = ensureParent(tree, input.parentPath, input.inheritedSkillFiles, input.inheritedSkillIds)
+      const parent = ensureParent(
+        tree,
+        input.parentPath,
+        input.inheritedSkillFiles,
+        input.inheritedSkillIds,
+      )
       const reserved: SubagentNodeRecord[] = []
       const now = Date.now()
       const dispatchIndex = ++parent.dispatchCounter
@@ -133,7 +116,7 @@ export function createSubagentScheduler(): SubagentScheduler {
       for (const child of input.children) {
         parent.childCounter += 1
         const path = childAgentPath(input.parentPath, parent.childCounter)
-        const node: SubagentNodeRecord = {
+        const record: SubagentNodeRecord = {
           id: nodeId(input.treeId, path),
           treeId: input.treeId,
           sessionId: input.sessionId,
@@ -154,14 +137,13 @@ export function createSubagentScheduler(): SubagentScheduler {
           localSkillFiles: [],
           localSkillIds: [],
         }
-        tree.nodes.set(path, node)
-        notify(node)
-        reserved.push(cloneNode(node))
+        tree.nodes.set(path, record)
+        notify(record)
+        reserved.push(cloneNode(record))
       }
 
       return reserved
     },
-
     markNode(treeId, path, status, patch) {
       const tree = trees.get(treeId)
       const node = tree?.nodes.get(path)
@@ -170,17 +152,14 @@ export function createSubagentScheduler(): SubagentScheduler {
       notify(node)
       return cloneNode(node)
     },
-
     snapshot(treeId) {
       const tree = trees.get(treeId)
       return tree ? Array.from(tree.nodes.values(), cloneNode) : []
     },
-
     subscribe(listener) {
       listeners.add(listener)
       return () => listeners.delete(listener)
     },
-
     clear(treeId) {
       trees.delete(treeId)
     },

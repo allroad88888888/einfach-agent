@@ -28,6 +28,7 @@
     "@web-agent/persistence-idb": "workspace:*",
     "@web-agent/persistence-sqlite": "workspace:*",
     "@web-agent/react-plugin": "workspace:*",
+    "@web-agent/subagents": "workspace:*",
     "@web-agent/tools": "workspace:*",
     "@web-agent/tools-mcp": "workspace:*",
     "react": "^18.3.1",

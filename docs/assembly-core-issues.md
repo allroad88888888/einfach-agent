@@ -349,7 +349,9 @@ F 收尾          F1 边界执法脚本 → F2 文档同步
   runtime 六处只剩契约 import；
   `pnpm exec vitest run packages/subagents packages/agent-core tools/agents`；`pnpm build`
 - **模型**：codex xhigh
-- **状态**：TODO
+- **状态**：DONE（哈希在下一次提交补记；中途被手动终止一次、经续跑 prompt 从半成品完成，
+  续跑修正 `parentPath` 传递与 scheduler port 类型导入；`createCoreInstance()` 不再默认
+  装配 delegation，Web 入口从 `@web-agent/subagents` 注入）
 
 ### E3 · 归档治理随包迁出并对接治理脚本
 

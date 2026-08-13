@@ -4,16 +4,22 @@ import { normalizePrimaryAgentSettings } from '../state/persistence/modelMigrati
 import type { ModelSettings } from '../state/core.type'
 import { toolRegistry } from '../tools/registry'
 import type { ToolRegistry } from '../tools/toolRegistry'
-import { SubagentArchiveIO } from './archiveIO'
 import { createConcurrencyLimiter, type ConcurrencyLimiter } from './concurrency'
 import { ROOT_AGENT_PATH } from './path'
-import { createSubagentScheduler, type SubagentScheduler } from './schedulerState'
+import type { DelegateAgentBatchResult, DelegateAgentInput, SubagentNodeRecord, SubagentToolProfile } from './types'
 import type {
-  DelegateAgentBatchResult,
-  DelegateAgentInput,
-  SubagentNodeRecord,
-  SubagentToolProfile,
-} from './types'
+  DelegationArchiveFormatPort,
+  DelegationRuntimePorts,
+  SubagentArchivePort,
+} from './delegationRuntimePorts'
+import type { SubagentScheduler } from '../runtime/delegationContract'
+
+export type {
+  DelegateAgents,
+  DelegationArchiveFormatPort,
+  DelegationRuntimePorts,
+  SubagentArchivePort,
+} from './delegationRuntimePorts'
 
 export interface TreeRuntimeBudget {
   maxDepth: number
@@ -45,7 +51,7 @@ export function isAbortError(error: unknown, signal: AbortSignal): boolean {
   return signal.aborted || (error instanceof Error && error.name === 'AbortError')
 }
 
-export interface CreateDelegateAgentRuntimeOptions {
+export interface CreateDelegateAgentRuntimeOptions extends DelegationRuntimePorts {
   sessionId: string
   runId: string
   settings: ModelSettings
@@ -53,8 +59,6 @@ export interface CreateDelegateAgentRuntimeOptions {
   core?: CoreInstance
   /** Registry owned by the current CoreInstance. Defaults to the legacy singleton for direct callers. */
   registry?: ToolRegistry
-  /** Scheduler owned by the current CoreInstance. Defaults to a legacy module-local fallback. */
-  scheduler?: SubagentScheduler
   customInstructions?: string
   /** Parent agent's resolved execution-environment prompt section. */
   environment?: string
@@ -72,14 +76,6 @@ export interface CreateDelegateAgentRuntimeOptions {
     turn: number
     item: import('@web-agent/ai').ModelItem
   }): void
-}
-
-// Compatibility only for direct createDelegateAgentRuntime callers that have
-// not yet been assembled through a Core delegation capability.
-let fallbackScheduler: SubagentScheduler | undefined
-
-function getFallbackScheduler(): SubagentScheduler {
-  return fallbackScheduler ??= createSubagentScheduler()
 }
 
 export function collectChangeSets(value: unknown, target: ChildChangeSet[]): void {
@@ -125,7 +121,8 @@ export class DelegateAgentRuntimeState {
   readonly abortFromOwner: () => void
   readonly migratedSettings: ModelSettings
   readonly opts: CreateDelegateAgentRuntimeOptions
-  readonly archive: SubagentArchiveIO
+  readonly archive: SubagentArchivePort
+  readonly archiveFormat: DelegationArchiveFormatPort
   readonly contextCacheTracker: ContextCacheTracker
   nextChangeSetOrder = 0
   readonly changeSetOrder = new Map<string, number>()
@@ -138,7 +135,7 @@ export class DelegateAgentRuntimeState {
 
   constructor(rawOpts: CreateDelegateAgentRuntimeOptions) {
     this.registry = rawOpts.registry ?? toolRegistry
-    this.scheduler = rawOpts.scheduler ?? getFallbackScheduler()
+    this.scheduler = rawOpts.scheduler
     this.ownerSignal = rawOpts.signal
     this.runtimeController = new AbortController()
     this.abortFromOwner = () => this.runtimeController.abort(this.ownerSignal.reason)
@@ -151,14 +148,8 @@ export class DelegateAgentRuntimeState {
       settings: this.migratedSettings,
       signal: this.runtimeController.signal,
     }
-    this.archive = new SubagentArchiveIO({
-      core: this.opts.core,
-      sessionId: this.opts.sessionId,
-      runId: this.opts.runId,
-      model: this.opts.settings.model,
-      vendor: this.opts.settings.vendor,
-      onTraceItem: this.opts.onTraceItem,
-    })
+    this.archive = rawOpts.archive
+    this.archiveFormat = rawOpts.archiveFormat
     this.contextCacheTracker = createContextCacheTracker()
     this.unsubscribeScheduler = this.opts.onNodeChange
       ? this.scheduler.subscribe((node) => {

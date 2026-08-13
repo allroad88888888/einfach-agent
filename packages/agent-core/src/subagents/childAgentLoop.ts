@@ -20,7 +20,6 @@ import { firstAssistantText, type ChildModelCaller } from './childModelClient'
 import type { ChildContextCheckpoint } from './childContextCheckpoint'
 import { assertNormalChildFinish } from './childFinishReason'
 import { dispatchChildTimedTools, finalizeChildResult } from './childResult'
-import type { DelegateAgents } from './delegationBatch'
 import type {
   ChildAgentResult,
   DelegateAgentCallContext,
@@ -31,6 +30,7 @@ import type {
 } from './types'
 import {
   type DelegationCallState,
+  type DelegateAgents,
   DelegateAgentRuntimeState,
   isAbortError,
   toErrorMessage,

@@ -21,7 +21,7 @@ import {
   type TimedToolRegistration,
 } from '../timedDispatch'
 import { createToolEpochStore, type ToolEpochStore } from '../toolEpochStore'
-import { createDefaultDelegationRuntimeFactory, type DelegationCapability, type DelegationRuntimeFactory } from '../delegationContract'
+import type { DelegationCapability, DelegationRuntimeFactory } from '../delegationContract'
 import { emptySkillsRegistry, type SkillsRegistry } from '../../skills/contracts'
 import { createPluginHost, type PluginHost, type PluginInput } from './pluginHost'
 import {
@@ -99,7 +99,8 @@ export interface CoreInstance {
   // 该实例私有的 abort 注册表。
   readonly abort: AbortRegistryLike
   // 可选的子 Agent 委派能力；scheduler 的持有权属于这项 capability。
-  readonly delegation: DelegationCapability | undefined
+  // defaultCore 可由产品装配层在启动时注入，独立 core 则在 createCore 时显式传入。
+  delegation: DelegationCapability | undefined
   // 该实例的运行时配置（apiKey 等）。引用只读，字段可改（供 configureCommands 覆盖）。
   readonly config: RuntimeConfig
   // 该实例的项目 Skills 缓存（per workspaceRoot，与 core.tools 同构）。
@@ -129,7 +130,7 @@ export function createCoreInstance(opts?: {
   projectSkillsProvider?: ProjectSkillsProvider
   skillRegistry?: SkillsRegistry
   planRuntime?: PlanRuntimeFactory | null
-  /** 未传时装配 core 默认委派能力；显式 null 禁用子 Agent。 */
+  /** 子 Agent 委派能力必须由产品装配层显式提供；null 与未传都表示未注入。 */
   delegation?: DelegationRuntimeFactory | null
 }): CoreInstance {
   // 1) 根 store：该实例的会话列表值域。
@@ -213,10 +214,8 @@ export function createCoreInstance(opts?: {
     },
   }
 
-  // 5) 委派能力：默认 factory 为每个 core 创建独立 scheduler；显式 null 禁用子 Agent。
-  const delegation = opts?.delegation === null
-    ? undefined
-    : (opts?.delegation ?? createDefaultDelegationRuntimeFactory)()
+  // 5) 委派能力：core 不内置产品实现，只有装配层显式 factory 才会创建 capability。
+  const delegation = opts?.delegation?.()
 
   // 6) 运行时配置：默认空 key，opts.config 浅合并覆盖。
   const config = createRuntimeConfig(opts?.config)
@@ -293,4 +292,9 @@ export function configureDefaultProjectSkillsProvider(provider?: ProjectSkillsPr
 /** 为模块级 defaultCore 注入内置 skill registry；仅供应用装配期调用。 */
 export function configureDefaultSkillsRegistry(registry?: SkillsRegistry): void {
   defaultCore.setSkillRegistry(registry)
+}
+
+/** 为模块级 defaultCore 注入子 Agent 委派能力；仅供产品装配期调用。 */
+export function configureDefaultDelegation(factory?: DelegationRuntimeFactory | null): void {
+  defaultCore.delegation = factory?.()
 }

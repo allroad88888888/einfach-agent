@@ -26,6 +26,7 @@
       "@web-agent/persistence-idb": ["packages/persistence-idb/src"],
       "@web-agent/persistence-sqlite": ["packages/persistence-sqlite/src"],
       "@web-agent/react-plugin": ["packages/agent-react/src/index.ts"],
+      "@web-agent/subagents": ["packages/subagents/src"],
       "@web-agent/tools": ["tools/standard/src/index.ts"],
       "@web-agent/tools-shell": ["tools/shell/src/index.ts"],
       "@web-agent/tools-interaction": ["tools/interaction/src/index.ts"],

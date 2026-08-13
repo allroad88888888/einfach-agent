@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { createSubagentScheduler, subagentScheduler } from './scheduler'
-import { defaultCore } from '../runtime/core/coreInstance'
+import { createDelegationAssembly, createSubagentScheduler } from '@web-agent/subagents'
+import { configureDefaultDelegation, defaultCore } from '../runtime/core/coreInstance'
+import { subagentScheduler } from './scheduler'
 
 describe('subagent scheduler dispatch accounting', () => {
   it('increments dispatchCounter per reservation batch and keeps child paths monotonic', () => {
@@ -92,7 +93,9 @@ describe('subagent scheduler dispatch accounting', () => {
 
   it('keeps the legacy scheduler export as a defaultCore proxy', () => {
     const treeId = 'legacy-scheduler-proxy'
-    subagentScheduler.clear(treeId)
+    configureDefaultDelegation(null)
+    expect(() => subagentScheduler.snapshot(treeId)).toThrow('默认 Core 未注入子 Agent 委派能力')
+    configureDefaultDelegation(createDelegationAssembly)
 
     try {
       subagentScheduler.reserveChildren({
@@ -110,6 +113,7 @@ describe('subagent scheduler dispatch accounting', () => {
       ])
     } finally {
       subagentScheduler.clear(treeId)
+      configureDefaultDelegation(null)
     }
   })
 })

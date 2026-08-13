@@ -1,11 +1,14 @@
 import {
   FINISH_REASON_ERRORS,
   isAbnormalFinishReason,
-} from '../runtime/core/plugins/finishReasonPlugin'
-import type { SkillDistillChat } from './distill'
-import type { ChildModelCaller, CallModelObservation } from './childModelClient'
-import { firstAssistantText } from './childModelClient'
-import type { DelegationCallState } from './runtimeState'
+} from '@web-agent/core/runtime/core/plugins/finishReasonPlugin'
+import type { SkillDistillChat } from '@web-agent/core/subagents/distill'
+import {
+  firstAssistantText,
+  type ChildModelCaller,
+  type CallModelObservation,
+} from '@web-agent/core/subagents/childModelClient'
+import type { DelegationCallState } from '@web-agent/core/subagents/runtimeState'
 
 /** Makes the no-tool model call used to distill a delegation core and child briefs. */
 export function createSkillDistillChat(callModel: ChildModelCaller): (

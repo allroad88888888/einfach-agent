@@ -4,7 +4,6 @@ import {
   FINISH_REASON_ERRORS,
   isAbnormalFinishReason,
 } from '../runtime/core/plugins/finishReasonPlugin'
-import { subagentResultPath } from './skillCache'
 import { firstAssistantText } from './childModelClient'
 import type { DelegateAgentCallContext, SubagentNodeRecord } from './types'
 import type { DelegateAgentRuntimeState } from './runtimeState'
@@ -26,7 +25,7 @@ export async function assertNormalChildFinish(
   const fullText = finishReason === 'length' ? firstAssistantText(response) : ''
   let partialPath = ''
   if (fullText) {
-    const candidate = subagentResultPath(archiveBasePath, node.path).replace(/\.md$/, '.partial.md')
+    const candidate = runtime.archiveFormat.resultPath(archiveBasePath, node.path).replace(/\.md$/, '.partial.md')
     try {
       await runtime.archive.writeText(context, candidate, `${fullText.trim()}\n`)
       partialPath = candidate
