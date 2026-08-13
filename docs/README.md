@@ -40,7 +40,7 @@
 | [MCP 透明连接蓝图](mcp-transparent-connect-blueprint.md) | 已实施（D0–D4）：缓存清单注册为占位工具、按需透明连接、起进程确认与 reconcile 的复用规则、`connect_mcp_server` 的新分工与上下文预算；正文作为设计记录保留 |
 | [项目路线图](ROADMAP.md) | 阶段 0–4 已完成的交付与验收记录；后续仅在获得明确授权后推进 R5 协议实现、可选行为评测或新的路线图条目 |
 | [core 公开面收敛盘点](core-public-surface-audit.md) | 盘点阶段，无实现：`@web-agent/core` 是唯一带 `exports` 通配的包，实测 68 条深导入子路径（非测试 63 / 测试 37）全部构成公开承诺；含五类归类、8 条疑似内部泄漏点名、68→9 的白名单方案、barrel 与 exports 两步走迁移，以及 17 张卡的拆分建议；发包蓝图 G4 的前置 |
-| [core 公开面收敛 Issue 树](core-surface-issues.md) | 步骤 1 完成：九条 barrel + 全仓 codemod + 白名单门禁（7 规则/豁免表）已落地，附带 T 线八项超限文件拆分；余 S11（委派接缝整形，待拍板）与 S10（删通配，GATED 至首次发包批次） |
+| [core 公开面收敛 Issue 树](core-surface-issues.md) | 步骤 1 + S11 委派接缝整形完成：九条 barrel、白名单门禁、批次执行段下沉 core、packages/subagents 深导入归零、T 线八项超限拆分；仅余 S10（删通配，GATED 至首次发包批次） |
 | [插件生态蓝图](plugin-ecosystem-blueprint.md) | 设计阶段，无实现：把 assembly-time 插件产品化为 `.webAgent/plugins/` 动态加载的用户插件——加载协议与错误隔离、借鉴 MCP 起进程确认的信任模型、启停与 plugin id 归因、npm 分发前置；`timeline.persist` 阻塞于 R5；默认信任姿态、首期宿主与模型可见工具三项待用户拍板 |
 
 蓝图描述目标形态，不代表所有 API 都已交付。引用蓝图时需要同时核对实现和测试。

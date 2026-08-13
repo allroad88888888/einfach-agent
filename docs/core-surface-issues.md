@@ -193,7 +193,7 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
 - **侦察结论**：B（opaque handle）被否——公开面反而 +16 条且是内核结构换名，三处倒置
   （事件词汇分裂 / core 测试反向依赖 / Map 读写分居两包）一条不修；A 恢复"委派执行整块
   归一层"（Rust 侧实地核对的可迁移教训）。执行拆为 S11a–S11g。
-- **状态**：DOING（按子卡推进）
+- **状态**：DONE（a–g 全落，见各子卡；packages/subagents 对 core 深导入归零，三处倒置修复）
 
 ### S11a · firstAssistantText 归位 @web-agent/ai
 
@@ -203,7 +203,7 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
   `packages/subagents/src/{runtime,delegationDistillation}.ts` 改指 `@web-agent/ai`
 - **判据**：`pnpm exec vitest run packages/agent-ai packages/agent-core/src/subagents packages/subagents` 全绿；childModelClient 不再导出该函数
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE 1713f46
 
 ### S11b · 委派端口补三条
 
@@ -214,7 +214,7 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
   按新形状注入（指向既有实现）。只加端口不搬逻辑
 - **判据**：build + 相关 vitest；新端口签名不出现内核可变容器类型（逐条核对）
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE f1cee0a
 
 ### S11c · 蒸馏 chat 包装下沉 core
 
@@ -223,7 +223,7 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
   深导入变相对导入；删原文件
 - **判据**：相关 vitest 全绿；`runtime/finishReason` 观察项消失
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE 2b60ae8
 
 ### S11d · batch 执行段下沉 core（主刀）
 
@@ -233,7 +233,7 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
 - **判据**：8 份 `runtime.*.test.ts` + `archiveCapacity.test.ts` 全绿；新文件 ≤300；
   `packages/subagents` 对 childAgentLoop/delegationPolicy/concurrencyLimiter 的深导入归零
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE 665867a（观察项 55→50）
 
 ### S11e · runtime 工厂下沉与 barrel 收口
 
@@ -244,7 +244,7 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
 - **判据**：`runtime.modelCompat.test.ts` 三例全绿；
   `grep -r '@web-agent/core/subagents/' packages/subagents/src` 归零；build
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE 083d609（packages/subagents 深导入归零，观察项 51→48）
 
 ### S11f · 门禁豁免清零与模块图复核
 
@@ -253,7 +253,7 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
 - **判据**：门禁通过且观察项 -6；**全量 pnpm test + build**，重点复验 workspaceRead
   四处 vi.mock 与 SubagentTreePanel（barrel 值闭包 14→≈60 的 S2c 同款风险复验点）
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE 45b71e8（零消费导出删 5 条，S2c 风险终验全绿）
 
 ### S11g ·（可选）core 侧测试归位
 
@@ -262,7 +262,7 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
   斩断 core 测试 → `@web-agent/subagents` 反向依赖；真测装配的逐条说明保留
 - **判据**：`grep -r '@web-agent/subagents' packages/agent-core/src` 只剩带说明的装配测试
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE 1ee6553（13 归位 / 2 保留注明，113 例守恒）
 
 ### S10 · 删通配与 exports 定稿（GATED）
 
