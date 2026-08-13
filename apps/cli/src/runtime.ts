@@ -1,4 +1,4 @@
-import { configureObservability } from '@web-agent/core/observability/trace'
+import { configureObservability } from '@web-agent/core/observability'
 import { configureCommands } from '@web-agent/core/runtime/commands'
 import {
   configureDefaultDelegation,

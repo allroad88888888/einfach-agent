@@ -1,7 +1,7 @@
 import type {
   PerformanceDiagnosticLog,
   PerformanceDiagnosticSink,
-} from '@web-agent/core/observability/port'
+} from '@web-agent/core/observability'
 
 interface DiagnosticOutput {
   write(text: string): void
