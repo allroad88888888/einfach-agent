@@ -129,6 +129,26 @@ env -u DEEPSEEK_API_KEY -u GLM_API_KEY -u KIMI_API_KEY pnpm cli -v -p "用一句
 看到 `[plugins] acme.hello@1.0.0: enabled` 就说明插件已扫描、导入、branded 校验、安装全部
 通过；`[acme.hello] run started: ...` 是 `activate` 里的 hook 真的执行了。
 
+## 在桌面端跑同一个插件
+
+同一个目录、同一份 `plugin.json` 与入口文件，桌面宿主也能装：应用启动时按当前会话的 workspace
+扫描 `.webAgent/plugins/`（[`apps/web/src/plugins/initialize.ts`](../apps/web/src/plugins/initialize.ts)），
+不必先打开设置弹窗；面板（设置 → 插件）显示每个插件的状态、诊断，并逐个勾选它的模型可见工具。
+
+桌面与 CLI 只有「怎么求值入口」这一处不同，两条约束因此只对桌面成立：
+
+- **`@web-agent/core/plugin` 由宿主在求值前改写。** 桌面走「Rust 读文件 → blob URL → 动态 import」，
+  blob 模块没有 import map 可用来解析裸包名，所以宿主在求值前把这一个说明符改写成契约模块桥的
+  URL（[`contractImportRewrite.ts`](../apps/web/src/plugins/contractImportRewrite.ts) 与
+  [`contractModuleBridge.ts`](../apps/web/src/plugins/contractModuleBridge.ts)），插件拿到的是与应用
+  **同一份** `definePlugin`。好处是桌面上不依赖 pnpm 的 `node_modules` 链接；代价是：
+  - 只桥 `@web-agent/core/plugin` 这一个说明符，其它裸包名（含 `@web-agent/react-plugin`）在桌面
+    上仍然解析失败；
+  - 只认静态 `import ... from '@web-agent/core/plugin'`（含再导出）；写成
+    `await import('@web-agent/core/plugin')` 会被直接拒绝并给出诊断。
+- **入口必须是自包含的单文件 ESM。** blob URL 没有相对路径基准，入口里的 `import './other.js'`
+  在桌面上解析不到任何东西。CLI 侧的等价要求是「自带 Node 可直接消费的 ESM」。
+
 ## 发生了什么
 
 - `-v` 下 `[plugins]` 每行对应
@@ -139,27 +159,26 @@ env -u DEEPSEEK_API_KEY -u GLM_API_KEY -u KIMI_API_KEY pnpm cli -v -p "用一句
 
 ## 当前边界
 
-写这份文档时（P9 卡）的真实状态，不是设计意图：
+写这份文档时（P9 卡，桌面部分随 P10/P11 更新）的真实状态，不是设计意图：
 
-1. **模型可见工具默认不可见，且 CLI 目前没有任何打开它的入口。** 插件声明的模型可见工具默认
+1. **模型可见工具默认不可见，CLI 上没有任何打开它的入口。** 插件声明的模型可见工具默认
    全部不注册进模型清单（`origin: 'external'` 的工具一律按拍板 3 走闸门，见
-   [`pluginToolGate.ts`](../packages/agent-core/src/plugins/pluginToolGate.ts)）。桌面设置面板
-   本该提供逐工具勾选，view-state 与 service 层已经在
-   `apps/web/src/plugins/` 实现（P5/P6/P7 已交付），但**尚未挂进正在跑的桌面应用**——桌面宿主
-   接线是 P10，issue 树里仍是 `DOING`。也就是说，在 P10 落地前，任何宿主都无法把插件的模型
-   可见工具真正打开，`withheldTools` 会一直非空。
-2. **`entry.react` 今天不会生效。** CLI 没有 React root，只装 `entry.core`；如果插件只声明
-   `entry.react`、不声明 `entry.core`，CLI 会把它标成 `incompatible`
-   （诊断文案："未声明 core 入口，本加载器只装 core 侧入口"）。React renderer 入口要等 P10
-   把桌面扫描/加载接上、且 React root 侧完成对应安装面之后才会生效。
+   [`pluginToolGate.ts`](../packages/agent-core/src/plugins/pluginToolGate.ts)）。逐工具勾选只有
+   桌面设置面板提供（P5/P6/P7 的 view-state 与 service 层已随 P10 挂进正在跑的桌面应用）；
+   CLI 不解析勾选配置，所以在 CLI 上 `withheldTools` 会一直非空。
+2. **`entry.react` 今天不会生效。** 加载器只装 `entry.core`；如果插件只声明 `entry.react`、
+   不声明 `entry.core`，会被标成 `incompatible`（诊断文案："未声明 core 入口，本加载器只装
+   core 侧入口"）。React renderer 入口要等 React root 侧完成对应安装面（并把
+   `@web-agent/react-plugin` 也加进桌面的契约模块桥）之后才会生效。
 3. **浏览器预览宿主不支持用户插件。** 没有 workspace 文件系统可扫描，[蓝图 3.4
    节](plugin-ecosystem-blueprint.md#34-三宿主差异第一期不平均用力)已经明确排除，当前也没有
    为它实现任何读盘通道。
-4. **插件目录必须放在本仓库工作区内。** `import { definePlugin } from '@web-agent/core/plugin'`
-   靠的是 pnpm workspace 在仓库根 `node_modules/@web-agent/core` 建的符号链接——Node 的裸说明
-   符解析沿插件文件所在目录向上找 `node_modules`，只有插件目录落在仓库树内才能找到这条链接。
-   npm 分发被 [蓝图第 6 节](plugin-ecosystem-blueprint.md#6-分发) 的 G4（core 公开面收敛）阻塞，
-   还没开放，所以现在不能把插件目录放在一个完全独立、没装本仓库依赖的目录里。
+4. **在 CLI 上，插件目录必须放在本仓库工作区内。**
+   `import { definePlugin } from '@web-agent/core/plugin'` 在 CLI 侧靠的是 pnpm workspace 在仓库根
+   `node_modules/@web-agent/core` 建的符号链接——Node 的裸说明符解析沿插件文件所在目录向上找
+   `node_modules`，只有插件目录落在仓库树内才能找到这条链接。桌面端不受这条限制（宿主改写说明符，
+   见上面「在桌面端跑同一个插件」），但两个宿主都还没开放 npm 分发——它被
+   [蓝图第 6 节](plugin-ecosystem-blueprint.md#6-分发) 的 G4（core 公开面收敛）阻塞。
 
 ## 故障排查
 
@@ -169,6 +188,10 @@ env -u DEEPSEEK_API_KEY -u GLM_API_KEY -u KIMI_API_KEY pnpm cli -v -p "用一句
   CLI 只装 `entry.core`（当前边界第 2 条）。
 - 完全没有任何 `[plugins]` 输出：确认加了 `-v`；`.webAgent/plugins/` 目录不存在时静默返回空
   结果，不算错误，也不会打印任何诊断。
-- 报错 `Cannot find package '@web-agent/core'`：插件目录不在本仓库工作区内（当前边界第 4 条）。
+- 报错 `Cannot find package '@web-agent/core'`（CLI）：插件目录不在本仓库工作区内（当前边界第 4 条）。
+- 桌面面板上诊断提到 "只能改写静态 import 语句"：入口用 `await import('@web-agent/core/plugin')`
+  取契约模块了，改回顶层静态 `import ... from '@web-agent/core/plugin'`。
+- 桌面面板上诊断提到 `Failed to resolve module specifier`：入口 import 了桌面宿主没有桥接的裸包名
+  （只有 `@web-agent/core/plugin` 一个），或 import 了相对路径的第二个文件——入口必须自包含。
 - CLI 报错缺 DeepSeek Key：先看是不是 shell 里残留了失效的 `DEEPSEEK_API_KEY`，按前置条件里
   的 `env -u` 用法屏蔽它。

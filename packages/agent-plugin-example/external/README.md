@@ -8,3 +8,7 @@
 ```sh
 cp -r packages/agent-plugin-example/external .webAgent/plugins/hello-plugin
 ```
+
+同一份文件在桌面端也能装：入口写的是静态 `import { definePlugin } from '@web-agent/core/plugin'`，
+桌面宿主求值前会把这个说明符改写到自己的契约模块桥，因此不依赖 `node_modules`
+（见 quickstart 的「在桌面端跑同一个插件」）。

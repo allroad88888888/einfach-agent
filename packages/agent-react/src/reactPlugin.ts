@@ -5,7 +5,13 @@ import type {
   TimelineRenderer,
 } from './timelineRendererTypes'
 
-const reactPluginBrand = Symbol('web-agent.react-plugin')
+/**
+ * 与 core 品牌同规格的全局注册表 Symbol，理由见
+ * packages/agent-core/src/runtime/core/pluginContracts.ts 的 publicPluginBrand：
+ * 品牌是「防裸对象误装」的运行时判据，不是安全边界，因此跨模块实例可识别比不可伪造重要。
+ * 今天还没有宿主装 `entry.react`，先把两个品牌定成同一种形状，免得 react 入口接线时重演一遍。
+ */
+const reactPluginBrand: unique symbol = Symbol.for('web-agent.react-plugin')
 
 export type ReactPluginDisposer = () => void
 

@@ -21,6 +21,22 @@ describe('resolveCorePluginExport', () => {
     expect(result.ok && result.plugin).toBe(plugin)
   })
 
+  it('另一份 core 实例造的插件也认：品牌是全局注册表 Symbol，不是模块局部 Symbol', () => {
+    // 模拟插件经别的解析路径（CLI 的 node_modules、桌面的说明符改写、将来 npm 上装了第二份）
+    // 拿到另一份 definePlugin：实现不同，但打的是同一个 Symbol.for 品牌。
+    const foreign = Object.freeze({
+      install() {},
+      [Symbol.for('web-agent.public-plugin')]: true as const,
+    })
+    const result = resolveCorePluginExport({ default: foreign })
+    expect(result.ok).toBe(true)
+  })
+
+  it('definePlugin 打的就是那个全局品牌（改名会让上一条静默失效，这里钉住）', () => {
+    const plugin = definePlugin({ install() {} }) as unknown as Record<symbol, unknown>
+    expect(plugin[Symbol.for('web-agent.public-plugin')]).toBe(true)
+  })
+
   it('裸对象一律拒绝', () => {
     const result = resolveCorePluginExport({ default: { install() {} } })
     expect(result.ok).toBe(false)

@@ -3,7 +3,21 @@
 import type { Tool } from '../../tools/types'
 import type { PluginCommandFacade } from './pluginCommandFacade'
 
-const publicPluginBrand = Symbol('web-agent.public-plugin')
+/**
+ * 品牌用【全局注册表 Symbol】而不是模块局部 `Symbol()`。
+ *
+ * 理由：这道校验的目的是「防裸对象误装」——把一个手写的 `{ install(){} }` 或旧内部插件的函数
+ * 形状挡在 definePlugin 之外，不是安全边界。外部插件本就与宿主同权运行（蓝图 3.4：capabilities
+ * 是申报不是沙箱），伪造品牌得不到任何多余能力，所以「不可伪造」不值得用可识别性去换。
+ *
+ * 而模块局部 Symbol 会把校验变成「必须命中同一份模块实例」：
+ * - CLI：插件经 Node 的 node_modules 解析拿到 `@web-agent/core/plugin`，与 CLI 自己经别名加载的
+ *   那份未必是同一个实例；
+ * - 桌面：blob 求值的插件解析不了裸说明符，得由宿主在求值前重写到它自己的契约模块桥；
+ * - 将来 npm 分发：装两份 @web-agent/core 是常态。
+ * 这三条路径下 `Symbol.for` 天然可识别，`Symbol()` 则会让一个完全合规的插件莫名其妙过不了校验。
+ */
+const publicPluginBrand: unique symbol = Symbol.for('web-agent.public-plugin')
 
 /** 可安全观察的当前 run 投影；不包含会话 Store、错误内容或待确认载荷。 */
 export interface PluginRunSnapshot {

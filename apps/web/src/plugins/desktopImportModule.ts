@@ -16,16 +16,16 @@
 // `import './other.js'` 解析不到任何东西。同一约束在 CLI 侧表现为「必须自带 Node 可直接
 // 消费的 ESM」，两个宿主对插件作者的要求方向一致。
 //
-// ★ 已知缺口：裸包名 `import { definePlugin } from '@web-agent/core/plugin'` ★ ——
-//   浏览器只能经【页面的 import map】解析裸说明符，本仓库的页面（apps/web/index.html）
-//   还没有 import map，因此按 quickstart 那种写法写的外部插件在桌面上会停在
-//   「导入 … 失败 — Failed to resolve module specifier」。而且 definePlugin 的品牌是
-//   pluginContracts.ts 里的模块局部 Symbol()，import map 还必须指向【与应用同一份模块实例】
-//   才认得出来，否则照样过不了 branded 校验。怎么补（import map / 求值前重写说明符 /
-//   把品牌换成 Symbol.for）跨 P4 契约、P9 样例与本宿主三处，另开卡决定，本文件不擅自选一种。
+// 【裸说明符 `@web-agent/core/plugin`】（P11）浏览器只能经页面的 import map 解析裸说明符，
+// 而打包后的页面根本没有可指的 URL。所以求值前先把契约说明符改写成宿主自己的模块桥 URL
+// （contractModuleBridge.ts + contractImportRewrite.ts），插件因此拿到与应用【同一份】
+// definePlugin。品牌那半边由 pluginContracts.ts 的 Symbol.for 兜底，两者互不依赖：
+// 桥保证「解析得到」，全局 Symbol 保证「即使换了实例也认得出」。
 
 import type { PluginLoaderDeps } from '@web-agent/core/plugins/pluginLoaderTypes'
 import { readWorkspaceFile } from '@web-agent/core/runtime/workspaceRead'
+import { rewriteContractImports } from './contractImportRewrite'
+import { defaultContractModuleBridge, type ContractModuleResolver } from './contractModuleBridge'
 
 /** 单个插件入口最多读多少字节。远大于任何合理的打包产物，纯粹防病态输入。 */
 export const PLUGIN_ENTRY_READ_LIMIT = 2 * 1024 * 1024
@@ -36,6 +36,8 @@ export interface DesktopImportModuleOptions {
    * 留出这个缝只为测试：jsdom 不实现 blob URL 的 ESM 求值，真机路径无从在单测里跑。
    */
   evaluate?: (url: string) => Promise<unknown>
+  /** 覆盖契约模块桥（测试注入假命名空间）；缺省是全应用共用的默认桥。 */
+  contractBridge?: ContractModuleResolver
 }
 
 /**
@@ -44,6 +46,7 @@ export interface DesktopImportModuleOptions {
  * 失败一律抛出（loader 会把它降级成该插件的 failed + 诊断，不影响其余插件）：
  * - 读文件失败：原样带上 workspaceRead 的错误文本，保真到 diagnostics
  * - 读到上限被截断：截断后的字节求值出来的是半个模块，宁可不装
+ * - 契约说明符用了改写不了的形态（动态 import）：说清怎么改，不留到求值时才炸
  */
 export function createDesktopImportModule(
   workspaceRoot: string,
@@ -51,6 +54,8 @@ export function createDesktopImportModule(
 ): PluginLoaderDeps['importModule'] {
   // @vite-ignore：URL 在运行期才产生，Vite 无从静态分析这条动态 import。
   const evaluate = options.evaluate ?? ((url: string) => import(/* @vite-ignore */ url) as Promise<unknown>)
+  // 桥按需构造：没有插件要装时不该白造一个 blob 模块。
+  const contractBridge = () => options.contractBridge ?? defaultContractModuleBridge()
 
   return async (entryPath) => {
     const result = await readWorkspaceFile({
@@ -67,7 +72,10 @@ export function createDesktopImportModule(
       )
     }
 
-    const url = URL.createObjectURL(new Blob([result.data.content], { type: 'text/javascript' }))
+    // 改写在 blob 之前：blob 一旦造出来就是求值输入，说明符改不了了。
+    const { source } = rewriteContractImports(result.data.content, contractBridge())
+
+    const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }))
     try {
       return await evaluate(url)
     } finally {
