@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createDelegateAgentRuntime } from '@web-agent/subagents'
 import type { SubagentNodeRecord } from './types'
 import {
   childPath,
@@ -10,8 +9,9 @@ import {
   runtime,
   toolCall,
 } from './runtime.testHarness'
+import { createTestDelegationRuntime } from './runtime.ports.testFixtures'
 
-describe('createDelegateAgentRuntime · 危险工具能力与档位继承', () => {
+describe('createDelegationRuntime · 危险工具能力与档位继承', () => {
   it('requires a correctly scoped host capability before granting a dangerous tool', async () => {
     const runChildTool = vi.fn(async () => ({ ok: true as const, data: { ok: true } }))
     const callContext = context(new Map())
@@ -67,7 +67,7 @@ describe('createDelegateAgentRuntime · 危险工具能力与档位继承', () =
       toolNames: ['write_file', 'apply_patch'],
     }
     callContext.delegationCallId = 'delegate-1'
-    const stableRuntime = createDelegateAgentRuntime({
+    const stableRuntime = createTestDelegationRuntime({
       sessionId: 'session',
       runId: 'run-capability',
       settings: { vendor: 'deepseek', model: 'test-model' },
@@ -119,7 +119,7 @@ describe('createDelegateAgentRuntime · 危险工具能力与档位继承', () =
       toolNames: ['write_file'],
     }
     callContext.delegationCallId = 'delegate-change-sets'
-    const delegateRuntime = createDelegateAgentRuntime({
+    const delegateRuntime = createTestDelegationRuntime({
       sessionId: 'session',
       runId: 'run-change-sets',
       settings: { vendor: 'deepseek', model: 'test-model' },
@@ -143,7 +143,7 @@ describe('createDelegateAgentRuntime · 危险工具能力与档位继承', () =
   })
 
   it('rejects child capability widening before starting children', async () => {
-    const delegateRuntime = createDelegateAgentRuntime({
+    const delegateRuntime = createTestDelegationRuntime({
       sessionId: 'session',
       runId: 'run-capability-widen',
       settings: { vendor: 'deepseek', model: 'test-model' },
@@ -184,7 +184,7 @@ describe('createDelegateAgentRuntime · 危险工具能力与档位继承', () =
       }
       return response({ content: `${path} done` })
     }
-    const delegateRuntime = createDelegateAgentRuntime({
+    const delegateRuntime = createTestDelegationRuntime({
       sessionId: 'session',
       runId: 'run-nested-capability',
       settings: { vendor: 'deepseek', model: 'test-model' },

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { registerAgentsTools } from '@web-agent/tools-agents'
-import { createSubagentScheduler } from '@web-agent/subagents'
+import { createTestScheduler } from '../subagents/runtime.scheduler.testFixtures'
 import type { ExecutionHandle } from '../execution/types'
 import { sessionsAtom } from '../state/rootStore'
 import { setRun } from '../state/sessionWriters'
@@ -85,7 +85,7 @@ describe('delegation capability assembly', () => {
     const delegateAgents = vi.spyOn(runtime, 'delegateAgents')
     const createRuntime = vi.fn(async (): Promise<DelegationRuntime> => runtime)
     const delegation: DelegationRuntimeFactory = () => ({
-      scheduler: createSubagentScheduler(),
+      scheduler: createTestScheduler(),
       createRuntime,
     })
     const core = createCore({ delegation, registerTools: registerAgentsTools })

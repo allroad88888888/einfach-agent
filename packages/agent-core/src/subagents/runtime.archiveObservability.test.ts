@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { createDelegateAgentRuntime } from '@web-agent/subagents'
 import type { DelegateAgentCallContext } from './types'
 import {
   childPath,
@@ -9,7 +10,25 @@ import {
   runtime,
 } from './runtime.testHarness'
 
-describe('createDelegateAgentRuntime · 归档与缓存观测', () => {
+/**
+ * 本文件第二个 describe 的标的就是**产品装配后的归档 IO**（写失败传播、索引批量追加、
+ * 初始化失败后重试），实现在 `@web-agent/subagents` 的 SubagentArchiveIO / ArchiveWriter，
+ * 不是 core 内核——所以这里刻意保留对产品包的依赖，用真实装配出来的运行时。
+ * 换成 core 侧的假归档只会变成「测试在测假实现」。
+ */
+function assembledRuntime(fetchImpl: typeof fetch) {
+  return createDelegateAgentRuntime({
+    sessionId: 'session',
+    runId: `run-${Math.random()}`,
+    settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' },
+    runtimeIsTauri: true,
+    apiKey: 'test-key',
+    signal: new AbortController().signal,
+    fetchImpl,
+  })
+}
+
+describe('createDelegationRuntime · 子 run 缓存观测', () => {
   it('archives provider cache usage for child, evaluator, and distill calls', async () => {
     const usage = {
       prompt_tokens: 100,
@@ -78,9 +97,11 @@ describe('createDelegateAgentRuntime · 归档与缓存观测', () => {
 
     await delegateRuntime.dispose?.()
   })
+})
 
+describe('createDelegateAgentRuntime · 装配后的归档 IO', () => {
   it('throws when an injected archive writer reports ok:false', async () => {
-    const delegateRuntime = runtime(async () => response({ content: '# skill' }))
+    const delegateRuntime = assembledRuntime(async () => response({ content: '# skill' }))
     await expect(
       delegateRuntime.delegateAgents(
         { children: [{ objective: 'child' }] },
@@ -98,7 +119,7 @@ describe('createDelegateAgentRuntime · 归档与缓存观测', () => {
 
   it('batches high-frequency skill and agent index appends but not audit events', async () => {
     const writes: Array<{ path: string; content: string; mode?: string }> = []
-    const delegateRuntime = runtime(async (_url, init) => {
+    const delegateRuntime = assembledRuntime(async (_url, init) => {
       const body = requestBody(init)
       return body.tool_choice === 'none' ? response({ content: '# skill' }) : response({ content: 'done' })
     })
@@ -137,7 +158,7 @@ describe('createDelegateAgentRuntime · 归档与缓存观测', () => {
   it('retries archive initialization after the first write failure', async () => {
     let failedOnce = false
     let conversationWrites = 0
-    const delegateRuntime = runtime(async (_url, init) => {
+    const delegateRuntime = assembledRuntime(async (_url, init) => {
       const body = requestBody(init)
       return body.tool_choice === 'none' ? response({ content: '# skill' }) : response({ content: 'done' })
     })

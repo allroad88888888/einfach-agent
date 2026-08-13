@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { createDelegateAgentRuntime } from '@web-agent/subagents'
 import {
   context,
   messagesOf,
@@ -7,11 +6,12 @@ import {
   response,
   runtime,
 } from './runtime.testHarness'
+import { createTestDelegationRuntime } from './runtime.ports.testFixtures'
 
-describe('createDelegateAgentRuntime · 主 Agent 模型兼容迁移（发请求前）', () => {
+describe('createDelegationRuntime · 主 Agent 模型兼容迁移（发请求前）', () => {
   it('父会话带 deepseek-reasoner → 迁移后默认子 agent 请求体按路由使用 v4-pro 且 thinking enabled', async () => {
     // 子 agent 复用父会话 settings。父会话若带着已下线的模型名，扇出的每个子 agent 都会撞 400。
-    // createDelegateAgentRuntime 在入口整体迁移并收口主模型；未显式选择 Flash 的子任务默认使用 Pro。
+    // createDelegationRuntime 在入口整体迁移并收口主模型；未显式选择 Flash 的子任务默认使用 Pro。
     let childBody: Record<string, unknown> = {}
     const fetchImpl: typeof fetch = async (_url, init) => {
       const body = requestBody(init)
@@ -19,7 +19,7 @@ describe('createDelegateAgentRuntime · 主 Agent 模型兼容迁移（发请求
       childBody = body
       return response({ content: 'done' })
     }
-    const delegateRuntime = createDelegateAgentRuntime({
+    const delegateRuntime = createTestDelegationRuntime({
       sessionId: 'session',
       runId: 'run-mig',
       settings: { vendor: 'deepseek', model: 'deepseek-reasoner' },
@@ -39,7 +39,7 @@ describe('createDelegateAgentRuntime · 主 Agent 模型兼容迁移（发请求
   })
 })
 
-describe('createDelegateAgentRuntime · runLowCostExtraction', () => {
+describe('createDelegationRuntime · runLowCostExtraction', () => {
   // 回归护栏：曾经给内部 callModel 传死 maxModelCalls=1，而那个参数是「树累计上限」而非
   // 「本次花几次」。于是只要本 run 里跑过任何子 agent（含上一个 stage 的 evaluator），
   // modelCallsUsed 就已 ≥ 1，这里必抛 budget exhausted —— 调用方 best-effort 吞掉异常，
@@ -91,7 +91,7 @@ describe('createDelegateAgentRuntime · runLowCostExtraction', () => {
   // 后者会让宿主的能力探测恒真，把永久性不可用伪装成可重试的运行时失败。
   it('非 DeepSeek 双档模型时，整个方法不挂载', async () => {
     const fetchImpl: typeof fetch = async () => response({ role: 'assistant', content: 'done' })
-    const glm = createDelegateAgentRuntime({
+    const glm = createTestDelegationRuntime({
       sessionId: 'session',
       runId: 'run-glm',
       settings: { vendor: 'glm', model: 'glm-4.6' },

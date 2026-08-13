@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createDelegateAgentRuntime } from '@web-agent/subagents'
 import { createToolRegistry } from '../tools/toolRegistry'
 import {
   childPath,
@@ -11,8 +10,9 @@ import {
   runtime,
   toolResultFor,
 } from './runtime.testHarness'
+import { createTestDelegationRuntime } from './runtime.ports.testFixtures'
 
-describe('createDelegateAgentRuntime · 工具档位与注册表装载', () => {
+describe('createDelegationRuntime · 工具档位与注册表装载', () => {
   it('keeps child agents delegate-only by default and rejects workspace reads', async () => {
     const runChildTool = vi.fn(async () => ({ ok: true as const, data: { content: 'secret' } }))
     const fetchImpl: typeof fetch = async (_url, init) => {
@@ -312,7 +312,7 @@ describe('createDelegateAgentRuntime · 工具档位与注册表装载', () => {
     const runChildTool = vi.fn(async () => ({ ok: true as const, data: { source: 'host' } }))
     const callContext = context(new Map())
     callContext.runChildTool = runChildTool
-    const delegateRuntime = createDelegateAgentRuntime({
+    const delegateRuntime = createTestDelegationRuntime({
       sessionId: 'session',
       runId: 'run-subagent-autoload',
       settings: { vendor: 'deepseek', model: 'test-model' },
@@ -403,7 +403,7 @@ describe('createDelegateAgentRuntime · 工具档位与注册表装载', () => {
     }
     const callContext = context(new Map())
     callContext.runChildTool = runChildTool
-    const delegateRuntime = createDelegateAgentRuntime({
+    const delegateRuntime = createTestDelegationRuntime({
       sessionId: 'session',
       runId: 'run-isolated-registry',
       settings: { vendor: 'deepseek', model: 'test-model' },

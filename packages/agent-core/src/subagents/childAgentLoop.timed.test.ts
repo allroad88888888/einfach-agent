@@ -3,7 +3,7 @@ import type { ModelItem } from '@web-agent/ai'
 import { sessionsAtom } from '../state/rootStore'
 import { createCoreInstance } from '../runtime/core/coreInstance'
 import type { Tool } from '../tools/types'
-import { createDelegationAssembly, createDelegateAgentRuntime } from '@web-agent/subagents'
+import { createTestDelegationCapability, createTestDelegationRuntime } from './runtime.ports.testFixtures'
 import type { DelegateAgentCallContext } from './types'
 
 type TraceEntry = {
@@ -60,14 +60,14 @@ function childRuntime(input: {
   trace: TraceEntry[]
   signal?: AbortSignal
 }) {
-  const core = createCoreInstance({ delegation: createDelegationAssembly, registerTools: (registry) => {
+  const core = createCoreInstance({ delegation: createTestDelegationCapability, registerTools: (registry) => {
     registry.register(plainTool('delegate_agent'))
     input.tools.forEach((tool) => registry.register(tool))
   } })
   core.rootStore.setter(sessionsAtom, {
     session: { id: 'session', title: 'child timing', settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' }, createdAt: 0, updatedAt: 0 },
   })
-  return createDelegateAgentRuntime({
+  return createTestDelegationRuntime({
     sessionId: 'session', runId: input.runId, settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' },
     apiKey: 'test', signal: input.signal ?? new AbortController().signal, fetchImpl: input.fetchImpl,
     core, registry: core.tools, scheduler: core.delegation!.scheduler, runtimeIsTauri: input.runtimeIsTauri,

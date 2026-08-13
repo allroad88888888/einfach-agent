@@ -27,7 +27,7 @@ vi.mock('../persistenceBridge', () => ({
 import { createCore } from './createCore'
 import { defaultCore } from './coreInstance'
 import type { Tool } from '../../tools/types'
-import { createSubagentScheduler } from '@web-agent/subagents'
+import { createTestScheduler } from '../../subagents/runtime.scheduler.testFixtures'
 import type { DelegationCapability, DelegationRuntimeFactory } from '../delegationContract'
 import { configureCommands } from '../commands'
 import { runSession, runToolLoop } from '../modelRun'
@@ -125,10 +125,10 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
   })
 
   it('delegation factory 为每个 createCore 装配独立 capability，未注入与 null 都禁用', () => {
-    const created = [] as { scheduler: ReturnType<typeof createSubagentScheduler> }[]
+    const created = [] as { scheduler: ReturnType<typeof createTestScheduler> }[]
     const delegation: DelegationRuntimeFactory = () => {
       const capability: DelegationCapability = {
-        scheduler: createSubagentScheduler(),
+        scheduler: createTestScheduler(),
         async createRuntime() { return { async delegateAgents() { return { treeId: 'fake', conversationId: 'fake', runId: 'fake', parentPath: 'root', strategy: 'parallel_wait_all', status: 'done', summary: { total: 0, done: 0, failed: 0, cancelled: 0 }, cacheBasePath: '.cache', archiveBasePath: '.archive', eventLog: '.archive/events.jsonl', skillFiles: [], skillIds: [], children: [] } } } },
       }
       created.push(capability)

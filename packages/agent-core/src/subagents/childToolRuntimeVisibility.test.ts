@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createDelegateAgentRuntime } from '@web-agent/subagents'
 import type { Tool } from '../tools/types'
 import { createToolRegistry } from '../tools/toolRegistry'
 import type { DelegateAgentCallContext } from './types'
+import { createTestDelegationRuntime } from './runtime.ports.testFixtures'
 
 const VERIFICATION_TOOL = 'run_verification_command'
 
@@ -70,7 +70,7 @@ function createRuntime(runtimeIsTauri: boolean, fetchImpl: typeof fetch) {
   registry.register(fixtureTool('delegate_agent', 'internal'))
   registry.register(fixtureTool('read_file', 'server'))
   registry.register(fixtureTool(VERIFICATION_TOOL, 'server'))
-  return createDelegateAgentRuntime({
+  return createTestDelegationRuntime({
     sessionId: 'session',
     runId: `run-${Math.random()}`,
     settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' },

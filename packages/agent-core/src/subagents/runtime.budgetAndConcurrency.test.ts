@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createDelegateAgentRuntime } from '@web-agent/subagents'
 import type { SubagentNodeRecord } from './types'
 import {
   childPath,
@@ -11,8 +10,9 @@ import {
   runtime,
   toolCall,
 } from './runtime.testHarness'
+import { createTestDelegationRuntime } from './runtime.ports.testFixtures'
 
-describe('createDelegateAgentRuntime · 预算与并发', () => {
+describe('createDelegationRuntime · 预算与并发', () => {
   it('isolates authorization and tool profiles across concurrent root delegations', async () => {
     let activeRootBChildren = 0
     let peakRootBChildren = 0
@@ -36,7 +36,7 @@ describe('createDelegateAgentRuntime · 预算与并发', () => {
       return response({ content: `${root} done` })
     }
     const writes = new Map<string, string>()
-    const delegateRuntime = createDelegateAgentRuntime({
+    const delegateRuntime = createTestDelegationRuntime({
       sessionId: 'session',
       runId: 'run-root-isolation',
       settings: { vendor: 'deepseek', model: 'test-model' },

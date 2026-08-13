@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'vitest'
-import { createDelegateAgentRuntime } from '@web-agent/subagents'
 import type { SubagentNodeRecord } from './types'
 import {
   childPath,
@@ -12,8 +11,9 @@ import {
   runtime,
   toolResultFor,
 } from './runtime.testHarness'
+import { createTestDelegationRuntime } from './runtime.ports.testFixtures'
 
-describe('createDelegateAgentRuntime · 请求体构造与工具预载', () => {
+describe('createDelegationRuntime · 请求体构造与工具预载', () => {
   it('defaults an omitted direct-child model tier to Pro', async () => {
     let childModel = ''
     const fetchImpl: typeof fetch = async (_url, init) => {
@@ -42,7 +42,7 @@ describe('createDelegateAgentRuntime · 请求体构造与工具预载', () => {
       childModels.push(String(body.model))
       return response({ role: 'assistant', content: 'done' })
     }
-    const delegateRuntime = createDelegateAgentRuntime({
+    const delegateRuntime = createTestDelegationRuntime({
       sessionId: 'session',
       runId: `run-custom-${Math.random()}`,
       settings: { vendor: 'deepseek', model: 'private-deepseek-gateway-model' },

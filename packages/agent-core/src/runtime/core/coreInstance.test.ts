@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { createCoreInstance, defaultCore } from './coreInstance'
-import { createDelegationAssembly } from '@web-agent/subagents'
+import { createTestDelegationCapability } from '../../subagents/runtime.ports.testFixtures'
 import { createObservabilityPort, getDefaultObservabilityPort } from '../../observability/port'
 import { sessionsAtom, activeSessionIdAtom } from '../../state/rootAtoms'
 import type { Tool } from '../../tools/types'
@@ -129,8 +129,8 @@ describe('coreInstance —— CoreInstance 抽象与 defaultCore', () => {
     })
 
     it('delegation capability 隔离：同一 treeId 的预留节点不会串到另一 CoreInstance', () => {
-      const a = createCoreInstance({ delegation: createDelegationAssembly })
-      const b = createCoreInstance({ delegation: createDelegationAssembly })
+      const a = createCoreInstance({ delegation: createTestDelegationCapability })
+      const b = createCoreInstance({ delegation: createTestDelegationCapability })
 
       expect(a.delegation?.scheduler).not.toBe(b.delegation?.scheduler)
 

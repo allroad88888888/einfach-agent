@@ -1,33 +1,19 @@
 // 拆分自 modelRun.test.ts（T1）。原文件同名 describe 段落逐字迁移。
 
-import { describe, it, expect, afterEach, vi } from 'vitest'
+import { describe, it, expect, afterEach } from 'vitest'
 import { getSessionStore } from '../state/sessionStore'
 import { runAtom, checkpointsAtom } from '../state/sessionAtoms'
 import { patchRun } from '../state/sessionWriters'
 import { runSession, runToolLoop } from './modelRun'
 import { configureObservability, flushObservability } from '../observability/trace'
 import { configureDefaultDelegation } from './core/coreInstance'
-import { createDelegateAgentRuntime, createSubagentScheduler } from '@web-agent/subagents'
+import { createTestDelegationRuntime } from '../subagents/runtime.ports.testFixtures'
+import { createTestScheduler } from '../subagents/runtime.scheduler.testFixtures'
 import { resetModelRunTestState, seedSession, jsonResponse, captureTrace } from './modelRun.testHarness'
 
-const disposeControl = vi.hoisted(() => ({ error: undefined as Error | undefined }))
-vi.mock('@web-agent/subagents', async () => {
-  const actual = await vi.importActual<typeof import('@web-agent/subagents')>('@web-agent/subagents')
-  return {
-    ...actual,
-    createDelegateAgentRuntime: (opts: Parameters<typeof actual.createDelegateAgentRuntime>[0]) => {
-      const runtime = actual.createDelegateAgentRuntime(opts)
-      const failure = disposeControl.error
-      if (!failure) return runtime
-      return {
-        ...runtime,
-        dispose: async () => {
-          throw failure
-        },
-      }
-    },
-  }
-})
+// 标的是主循环 finally 里的 dispose 异常隔离，与委派实现无关：注入一个 core 侧的假委派能力，
+// 需要时把它的 dispose 换成必抛的版本即可，不必去 mock 产品包的工厂。
+const disposeControl = { error: undefined as Error | undefined }
 
 afterEach(() => {
   resetModelRunTestState()
@@ -36,11 +22,19 @@ afterEach(() => {
 
 function installDefaultDelegationForDisposeTest(): void {
   configureDefaultDelegation(() => {
-    const scheduler = createSubagentScheduler()
+    const scheduler = createTestScheduler()
     return {
       scheduler,
       async createRuntime(input) {
-        return createDelegateAgentRuntime({ ...input, scheduler })
+        const runtime = createTestDelegationRuntime({ ...input, scheduler })
+        const failure = disposeControl.error
+        if (!failure) return runtime
+        return {
+          ...runtime,
+          dispose: async () => {
+            throw failure
+          },
+        }
       },
     }
   })
