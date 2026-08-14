@@ -1,6 +1,6 @@
 # Core 中断恢复 Issue 树
 
-状态：**规划已冻结，W4 已完成，W5 已解锁**（R9a 已完成；R9 为 READY）。本文件是这项迁移的唯一执行账本；每张卡完成后由主会话
+状态：**规划已冻结，W5 已完成，W6 已启动**（R9/R9a 已完成；V1 正在全链路验证，V2 已就绪）。本文件是这项迁移的唯一执行账本；每张卡完成后由主会话
 更新状态和证据，执行 agent 不并发修改本文件。
 
 本文件替代提交 `8d70fcc` 中误设为「可逆历史 / redo」的树。那条方向不再执行。
@@ -221,14 +221,18 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 
 ### R9 · 公共恢复命令与新旧会话切换
 
-- **波次 / 依赖 / 状态**：W5 / R6、R7、R8、R9a / READY
-- **owner / 模型**：待派 / strong（核心集成）
+- **波次 / 依赖 / 状态**：W5 / R6、R7、R8、R9a / DONE
+- **owner / 模型**：已验收 / strong（核心集成）
 - **独占面**：run lifecycle command、core public facade、migration tests；只读调用已有恢复模块，
   不改 checkpoint undo command 或 persistence schema。
 - **目标**：提供可发现的 session 恢复/继续入口；新会话以 recovery record 为准，旧会话用现有
   checkpoint 只读 hydrate 后在首个稳定边界生成新 snapshot。
 - **非目标**：不新增 redo/timeline UI，不删除旧数据，不自动跳过 unknown outcome。
 - **验收**：混合新旧会话、多个 interrupted session、用户拒绝工具重试、继续子任务都有黑盒覆盖。
+- **证据**：`8fb6f43`；Core facade 与根出口提供按显式 session id 发现状态和定向继续，不改变 active
+  selection。命令在 bootstrap、timed hook 或模型请求前以 normal/timed outcome classifier 保守拒绝任何
+  不可证明安全的状态；仅可证明尚未执行的普通 tool call 才可进入既有恢复边界。独立复核与 focused
+  suites 通过（45/45），core build、根 `tsc --noEmit` 与 `git diff --check` 均通过。
 
 ### R9a · 宿主恢复 driver 组装
 
@@ -256,8 +260,8 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 
 ### V1 · 崩溃点全链路验证
 
-- **波次 / 依赖 / 状态**：W6 / R9 / BLOCKED
-- **owner / 模型**：待派 / independent-audit
+- **波次 / 依赖 / 状态**：W6 / R9 / ACTIVE
+- **owner / 模型**：进行中 / independent-audit
 - **独占面**：只新增独立 integration tests；不改生产实现或既有单元测试。
 - **目标**：以进程重建模拟每一 durable boundary 的中断，核验 allowlist atom、resume kind 和无重复副作用。
 - **验收**：对话、排队消息、问题已填答案、工具四阶段、计划、root/child task 均有正反例与 generation
@@ -265,7 +269,7 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 
 ### V2 · SQLite / IDB 原子性与产物验证
 
-- **波次 / 依赖 / 状态**：W6 / R9 / BLOCKED
+- **波次 / 依赖 / 状态**：W6 / R9 / READY
 - **owner / 模型**：待派 / independent-audit
 - **独占面**：只新增/调整黑盒验证和打包脚本；不改 recovery 生产模块。
 - **目标**：验证两个 driver 的提交可见性、落后写保护、跨版本读取和已发布 core 的恢复出口。
