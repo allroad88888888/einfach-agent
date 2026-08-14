@@ -10,7 +10,7 @@
 //   写进登记表之前先过一道**下线模型名迁移**（./modelMigration）：settings.model 是持久化字段，
 //   provider 下线旧模型名后，存量会话恢复出来一发请求就是 400；这里是唯一能一次覆盖全部存量会话的位置。
 //   容错（DK2）：driver 全 async、启动异步回填、失败不阻塞 app —— loadSessions 抛错整体放弃恢复
-//   （返回 false 让 main.tsx 去种子）；恢复过程中任何异常都吞掉、绝不上抛（沿用旧 hydrateFromStorage 语义）。
+//   （无 v1 恢复记录时返回 false 让 main.tsx 去种子）；恢复过程中任何异常都吞掉、绝不上抛（沿用旧 hydrateFromStorage 语义）。
 //   返回值 = 「是否恢复了会话」，供 main.tsx 决定要不要种子一个空会话（RF3：有数据就别再种子）。
 
 import type { Checkpoint } from '../checkpoint.type'
@@ -35,9 +35,15 @@ import {
 } from '../sessionAtoms'
 import { queuedUserMessagesAtom } from '../transientAtoms'
 import type { HistoryDriver } from './historyDriver'
+import type { RecoveryDriver } from './recoveryDriver'
 import { migrateSessionMeta } from './modelMigration'
 import { migratePlanSnapshot } from '../../planning/migrate'
 import { executionGraphAtom, reduceExecutionGraph } from '../../execution/graph'
+import {
+  normalizeRecoverySnapshotForHydration,
+  prepareRecoveryHydration,
+} from './recoveryHydration'
+import { applyRecoverySnapshot } from '../recoveryProjection'
 import {
   DEFAULT_WORKSPACE_NAME,
   deriveWorkspaceName,
@@ -114,14 +120,18 @@ export async function hydrate(deps: {
     loadWorkspaces?(): Promise<WorkspaceMeta[]>
   }
   history: HistoryDriver
+  /** 可选 v1 单代恢复记录；存在时优先于 legacy SessionMeta/checkpoint 动态内容。 */
+  recovery?: RecoveryDriver
 }): Promise<boolean> {
-  // 第一步：取会话列表。加载失败 → 放弃恢复、让 main.tsx 种子（容错，DK2）。
+  // 第一步：取会话列表。加载失败时可由 v1 的静态投影重建 root 登记（容错，DK2）。
   let sessions: SessionMeta[]
   let workspaces: WorkspaceMeta[] = []
   try {
     sessions = await deps.sessions.loadSessions()
   } catch {
-    return false
+    // v1 的静态 session 投影能独立重建 root 登记；仅在未配置恢复 driver 时保留旧的失败语义。
+    if (!deps.recovery) return false
+    sessions = []
   }
   try {
     workspaces = await deps.sessions.loadWorkspaces?.() ?? []
@@ -130,8 +140,10 @@ export async function hydrate(deps: {
     workspaces = []
   }
 
-  // 工作区本身也是可持久化实体；只有两者都为空才需要启动种子。
-  if (sessions.length === 0 && workspaces.length === 0) {
+  const recoveryPlan = await prepareRecoveryHydration(deps.recovery, sessions)
+
+  // 工作区本身也是可持久化实体；v1 也能补回 sessionsAtom 丢失的根会话登记。
+  if (recoveryPlan.sessionMetas.length === 0 && workspaces.length === 0) {
     return false
   }
 
@@ -151,7 +163,7 @@ export async function hydrate(deps: {
     //     而 saveSessions 是覆盖式落盘，与 persistenceBridge.persistSessions() 之间无顺序保证。
     //     若回写晚于「用户新建会话」落地，就会用不含新会话的旧列表整体覆盖掉它。
     const hydratedAt = Date.now()
-    const modelMigratedSessions = sessions.map((session) => {
+    const modelMigratedSessions = recoveryPlan.sessionMetas.map((session) => {
       const modelMigrated = migrateSessionMeta(session)
       if (!modelMigrated.executionGraph) return modelMigrated
       return {
@@ -186,6 +198,19 @@ export async function hydrate(deps: {
 
     // 逐会话回填其完整 checkpoint 序列 + 最新一轮 items/游标。
     for (const session of migrated.sessions) {
+      if (recoveryPlan.blockedSessionIds.has(session.id)) {
+        // 有记录但不能信任：绝不混入 SessionMeta.plan/executionGraph 或 checkpoint.recovery。
+        continue
+      }
+      const snapshot = recoveryPlan.snapshotsBySessionId.get(session.id)
+      if (snapshot) {
+        // 先归类进程遗留状态，再由 R2 在同一 Einfach flush 写入完整 allowlist 投影。
+        applyRecoverySnapshot(
+          getSessionStore(session.id).store,
+          normalizeRecoverySnapshotForHydration(snapshot),
+        )
+        continue
+      }
       if (session.plan) getSessionStore(session.id).store.setter(planAtom, migratePlanSnapshot(session.plan))
       if (session.executionGraph) {
         getSessionStore(session.id).store.setter(executionGraphAtom, session.executionGraph)
