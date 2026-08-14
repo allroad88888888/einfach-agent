@@ -155,7 +155,7 @@ describe('RecoverySnapshotV1', () => {
 
     expect(decodeRecoverySnapshot(valid)?.values.run?.toolCallOutcomes).toEqual(valid.values.run.toolCallOutcomes)
 
-    const malformed = structuredClone(valid) as LooseRecord
+    const malformed = structuredClone(valid) as unknown as LooseRecord
     ;((values(malformed).run as LooseRecord).toolCallOutcomes as LooseRecord)[''] = { state: 'outcomeKnown', updatedAt: 1 }
     expect(decodeRecoverySnapshot(malformed)).toBeUndefined()
   })
