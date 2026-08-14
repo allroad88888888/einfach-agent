@@ -17,6 +17,12 @@
 export type { SessionsPersistence } from './contract'
 export type { HistoryDriver } from './historyDriver'
 export { createMemoryHistoryDriver } from './memoryHistoryDriver'
+export type { RecoveryDriver, RecoverySaveResult } from './recoveryDriver'
+export {
+  createMemoryRecoveryDriver,
+  validateRecoverySnapshot,
+} from './recoveryDriver'
+export type { RecoverySnapshotV1 } from '../recoverySnapshot.type'
 export type {
   Checkpoint,
   CheckpointMeta,

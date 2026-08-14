@@ -68,6 +68,14 @@ export async function getDb(): Promise<Database> {
              PRIMARY KEY (session_id, turn_index)
            )`,
         )
+        await db.execute(
+          `CREATE TABLE IF NOT EXISTS recovery_snapshots (
+             session_id TEXT PRIMARY KEY,
+             generation INTEGER NOT NULL,
+             deleted INTEGER NOT NULL,
+             snapshot TEXT
+           )`,
+        )
         // 兼容旧桌面数据库：CREATE TABLE IF NOT EXISTS 不会给既有表补列。
         try {
           await db.execute('ALTER TABLE checkpoints ADD COLUMN plan TEXT')

@@ -1,6 +1,6 @@
 # Core 中断恢复 Issue 树
 
-状态：**规划已冻结，尚未开始实现**。本文件是这项迁移的唯一执行账本；每张卡完成后由主会话
+状态：**规划已冻结，W2 已完成，W3 进行中**。本文件是这项迁移的唯一执行账本；每张卡完成后由主会话
 更新状态和证据，执行 agent 不并发修改本文件。
 
 本文件替代提交 `8d70fcc` 中误设为「可逆历史 / redo」的树。那条方向不再执行。
@@ -134,8 +134,8 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 
 ### R3 · 单记录持久化 driver
 
-- **波次 / 依赖 / 状态**：W2 / R1 / BLOCKED
-- **owner / 模型**：待派 / strong（跨 driver schema）
+- **波次 / 依赖 / 状态**：W2 / R1 / DONE
+- **owner / 模型**：已验收 / strong（跨 driver schema）
 - **独占面**：新建 core recovery persistence contract、IDB/SQLite 的 recovery record 实现、迁移与测试；
   不改现有 checkpoint hydrate/命令。
 - **目标**：为每 session 原子存取一个完整 generation，并以条件写入拒绝陈旧 generation；读只接受带
@@ -144,6 +144,9 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
   IDB 的比较与 put 必须在同一 `readwrite` transaction，SQLite 禁止伪 transaction，使用一条条件 UPSERT。
 - **非目标**：不移除 checkpoint 表，不在此卡双写业务状态，不实现恢复 UI。
 - **验收**：IDB/SQLite 均验证断写只读到上一完整代、版本迁移、空/损坏降级；两个持久化包 build 绿。
+- **证据**：独立复核通过；恢复相关 7 个 Vitest 文件 50/50，core、IDB、SQLite build 均通过，
+  `git diff --check` 通过。IDB 在 v2 的同库 `recoverySnapshots` store 内以单个 readwrite transaction
+  比较并写入，SQLite 以单条条件 UPSERT 写入；两者均以 tombstone 阻止删除后的迟到写复活。
 
 ### R4 · generation 写入序列器与落盘边界
 
