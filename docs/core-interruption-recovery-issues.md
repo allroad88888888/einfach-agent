@@ -119,8 +119,8 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 
 ### R2 · atom 投影 allowlist 与原子 apply
 
-- **波次 / 依赖 / 状态**：W2 / R1 / BLOCKED
-- **owner / 模型**：待派 / strong（Einfach 状态边界）
+- **波次 / 依赖 / 状态**：W2 / R1 / DONE
+- **owner / 模型**：已验收 / strong（Einfach 状态边界）
 - **独占面**：新建 `src/state/recoveryProjection.ts`、`src/state/subagentContinuationAtoms.ts` 及测试；
   只读导入既有 session/transient atom，不改 hydrate、loop 或 driver。
 - **目标**：显式 capture 每个可恢复 atom，使用 Einfach 的批次能力 apply 一份完整 snapshot；禁止
@@ -128,6 +128,9 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
   `subagentContinuationsAtom` 是 child 逻辑续接描述的唯一 atom 真源，R8 只能读写它而不能另建副本。
 - **非目标**：不靠订阅隐式收集 atom，不保存 composer/UI 卡片，不写磁盘。
 - **验收**：每个 allowlist 字段逐值往返；漏字段测试失败；apply 观察不到半个世界；多 session 隔离。
+- **证据**：独立复核通过；`recoveryProjection.test.ts` 7/7、core build 与 `git diff --check` 通过；
+  projection/continuation atom/test 分别 111/7/285 行。原值和 clone 都经 codec 验证，函数/环引用
+  会在写入前 fail-closed。
 
 ### R3 · 单记录持久化 driver
 
