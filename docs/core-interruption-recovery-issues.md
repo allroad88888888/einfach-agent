@@ -121,10 +121,11 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 
 - **波次 / 依赖 / 状态**：W2 / R1 / BLOCKED
 - **owner / 模型**：待派 / strong（Einfach 状态边界）
-- **独占面**：新建 `src/state/recoveryProjection.ts` 及测试；只读导入现有 session/transient atom，
-  不改 hydrate、loop 或 driver。
+- **独占面**：新建 `src/state/recoveryProjection.ts`、`src/state/subagentContinuationAtoms.ts` 及测试；
+  只读导入既有 session/transient atom，不改 hydrate、loop 或 driver。
 - **目标**：显式 capture 每个可恢复 atom，使用 Einfach 的批次能力 apply 一份完整 snapshot；禁止
-  复制可推导值，并在 apply 后重建/清空仅进程内辅助对象。
+  复制可推导值，并在 apply 后重建/清空仅进程内辅助对象；新增的 session-scoped
+  `subagentContinuationsAtom` 是 child 逻辑续接描述的唯一 atom 真源，R8 只能读写它而不能另建副本。
 - **非目标**：不靠订阅隐式收集 atom，不保存 composer/UI 卡片，不写磁盘。
 - **验收**：每个 allowlist 字段逐值往返；漏字段测试失败；apply 观察不到半个世界；多 session 隔离。
 
@@ -137,6 +138,7 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 - **目标**：为每 session 原子存取一个完整 generation，并以条件写入拒绝陈旧 generation；读只接受带
   commit marker 的最高 generation，缺失记录按旧会话处理，损坏记录 fail-safe 且不删除用户 checkpoint；
   删除必须留下 generation fence/tombstone，令已在飞的旧写不能复活已删除会话。
+  IDB 的比较与 put 必须在同一 `readwrite` transaction，SQLite 禁止伪 transaction，使用一条条件 UPSERT。
 - **非目标**：不移除 checkpoint 表，不在此卡双写业务状态，不实现恢复 UI。
 - **验收**：IDB/SQLite 均验证断写只读到上一完整代、版本迁移、空/损坏降级；两个持久化包 build 绿。
 
@@ -196,6 +198,7 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 - **目标**：将 graph 从展示状态扩成可验证的 continuation descriptor：计划阶段、root task、child
   objective、输入快照、调度状态和 outcome policy 都能随同一 generation 恢复并重新调度；graph status
   本身不是 child 的可调度事实，descriptor 必须带 parent path、task spec、已知工具 outcome 与嵌套任务状态。
+  只读写 R2 的 `subagentContinuationsAtom`，不得新增平行 child 状态源。
 - **非目标**：不序列化子 agent 的 Promise/上下文窗口，不保证重复执行非幂等子任务。
 - **验收**：根任务、暂停计划、排队 child、运行 child 重启后都有确定归宿：可继续、等输入或待对账，
   不遗失也不静默重跑。
