@@ -1,6 +1,6 @@
 # Core 中断恢复 Issue 树
 
-状态：**规划已冻结，W3 已完成，W4 可开工**。本文件是这项迁移的唯一执行账本；每张卡完成后由主会话
+状态：**规划已冻结，W4 已完成，W5 已解锁**（R9a 已完成；R9 为 READY）。本文件是这项迁移的唯一执行账本；每张卡完成后由主会话
 更新状态和证据，执行 agent 不并发修改本文件。
 
 本文件替代提交 `8d70fcc` 中误设为「可逆历史 / redo」的树。那条方向不再执行。
@@ -86,9 +86,10 @@ R0 语义裁决与恢复状态盘点（DONE）
                ├─ V2 SQLite / IDB 原子性与产物验证
                └─ R10 移除双事实恢复路径
                   └─ V3 独立架构审计与交付
+         └─ R9a 宿主恢复 driver 组装
 ```
 
-波次：W0=`R0`；W1=`R1`；W2=`R2/R3`；W3=`R4/R5`；W4=`R6/R7/R8`；W5=`R9`；
+波次：W0=`R0`；W1=`R1`；W2=`R2/R3`；W3=`R4/R5`；W4=`R6/R7/R8`；W5=`R9/R9a`；
 W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner。
 
 ## 卡
@@ -185,43 +186,42 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 
 ### R6 · 模型循环与等待输入恢复
 
-- **波次 / 依赖 / 状态**：W4 / R4、R5 / BLOCKED
-- **owner / 模型**：待派 / strong（runtime integration）
-- **独占面**：model-run lifecycle、ask-user command、checkpoint flush 接线及测试；不改 tool executor、
-  plan/subagent runtime 或 persistence driver。
+- **波次 / 依赖 / 状态**：W4 / R4、R5 / DONE
+- **owner / 模型**：已验收 / strong（runtime integration）
+- **独占面**：`modelRunLifecycle.ts`、`cardCommands.ts` 和其 focused tests；不改 tool executor、plan/subagent runtime、persistence driver 或 run/tool-loop command。工具未知态的继续策略由 R7 提供专职 helper，本卡只在 model lifecycle 接入它。
 - **目标**：模型中断以最新 transcript 发起新请求；问题/审批卡和未提交答案原样显示并能消费，恢复后的
   每次状态迁移交给 writer 提交。
 - **非目标**：不声称续接旧 HTTP stream，不清空 pending payload 来伪造 running。
 - **验收**：模型请求前/流中/问题已填未交/审批等待四个重启点均可继续，且不会重复已固化 item。
+- **证据**：`9f6ceff`；模型入口在 durability outcome 为 `saved|undefined` 后才进入 loop，恢复只从已固化 transcript 发起新请求；工具恢复 helper 未就绪或持久化失败时不启动 LLM。问题答案在提交后经同一实例的 recovery bridge 固化，独立 focused 验收通过。
 
 ### R7 · 工具 outcome 与确认恢复
 
-- **波次 / 依赖 / 状态**：W4 / R4、R5 / BLOCKED
-- **owner / 模型**：待派 / strong（副作用边界）
-- **独占面**：tool loop interruption、tool confirmation command、其测试；不改 model/plan/subagent
-  continuation 或 driver。
+- **波次 / 依赖 / 状态**：W4 / R4、R5 / DONE
+- **owner / 模型**：已验收 / strong（副作用边界）
+- **独占面**：tool loop interruption、tool confirmation command、其测试，以及只为 `RunState` 唯一 tool outcome 事实而做的 core type/codec 窄扩展；不改 plan/subagent continuation 或 driver。跨到 model lifecycle 的恢复策略只能经专职 helper 由 R6 接入。
 - **目标**：为每个在飞 tool call 持久化 `notStarted | outcomeKnown | outcomeUnknown` 与恢复 policy；
   未知副作用停在可对账/确认状态，危险工具确认卡不丢失。
 - **非目标**：不自动重复外部调用，不把 unknown 伪造成失败/成功，也不实现外部幂等服务。
 - **验收**：派发前、执行中、结果落盘前、确认等待四个崩溃点均有测试；每种 policy 都有明确用户动作。
+- **证据**：`2bae275`、`9520767`；`RunState` 的 per-call outcome 是唯一事实，恢复和普通工具边界都在 `saved|undefined` durability fence 后才产生下一副作用；unknown 停在对账路径，已知 receipt 不重复执行，completed text checkpoint 会保留到下一模型回合。独立 focused 验收通过。
 
 ### R8 · 计划和 subagent 可续接描述
 
-- **波次 / 依赖 / 状态**：W4 / R4、R5 / BLOCKED
-- **owner / 模型**：待派 / strong（任务编排）
+- **波次 / 依赖 / 状态**：W4 / R4、R5 / DONE
+- **owner / 模型**：已验收 / strong（任务编排）
 - **独占面**：planning stage runtime、subagent runtime、execution graph 类型/测试；不改 model/tool
   loop 与 persistence driver。
-- **目标**：将 graph 从展示状态扩成可验证的 continuation descriptor：计划阶段、root task、child
-  objective、输入快照、调度状态和 outcome policy 都能随同一 generation 恢复并重新调度；graph status
-  本身不是 child 的可调度事实，descriptor 必须带 parent path、task spec、已知工具 outcome 与嵌套任务状态。
+- **目标**：将 graph 从展示状态扩成可验证的 continuation descriptor：计划阶段、root task、child objective、输入快照、调度状态和 outcome policy 都能随同一 generation 恢复并重新调度；graph status 本身不是 child 的可调度事实，descriptor 必须带 parent path、task spec、已知工具 outcome 与嵌套任务状态。
   只读写 R2 的 `subagentContinuationsAtom`，不得新增平行 child 状态源。
 - **非目标**：不序列化子 agent 的 Promise/上下文窗口，不保证重复执行非幂等子任务。
 - **验收**：根任务、暂停计划、排队 child、运行 child 重启后都有确定归宿：可继续、等输入或待对账，
   不遗失也不静默重跑。
+- **证据**：`53f9a32` 完成 strict continuation descriptor、唯一的 `subagentContinuationsAtom` 事实和进程内 token/durability fence，恢复记录不会直接进入 child runner，terminal descriptor 保留；`1371fde` 完成计划 mutator 的实例级 `saved|undefined` 围栏与 Promise 调用方迁移，拒绝持久化时不推进工具响应、审批或回滚。两部分均经独立验收。
 
 ### R9 · 公共恢复命令与新旧会话切换
 
-- **波次 / 依赖 / 状态**：W5 / R6、R7、R8 / BLOCKED
+- **波次 / 依赖 / 状态**：W5 / R6、R7、R8、R9a / READY
 - **owner / 模型**：待派 / strong（核心集成）
 - **独占面**：run lifecycle command、core public facade、migration tests；只读调用已有恢复模块，
   不改 checkpoint undo command 或 persistence schema。
@@ -229,6 +229,18 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
   checkpoint 只读 hydrate 后在首个稳定边界生成新 snapshot。
 - **非目标**：不新增 redo/timeline UI，不删除旧数据，不自动跳过 unknown outcome。
 - **验收**：混合新旧会话、多个 interrupted session、用户拒绝工具重试、继续子任务都有黑盒覆盖。
+
+### R9a · 宿主恢复 driver 组装
+
+- **波次 / 依赖 / 状态**：W5 / R4、R5 / DONE
+- **owner / 模型**：已验收 / strong（host integration）
+- **独占面**：web/桌面宿主启动组装与其 focused tests；只配置已有 recovery driver、session store locator 与关闭前 flush，不改 core recovery 语义或 driver schema。
+- **目标**：在真实宿主把 IDB/SQLite recovery driver 与 `configurePersistence` 接上，使 R6/R7/R8 的
+  `persistRecovery` 不再是未配置 no-op；关闭/重载前等待已排队的 `flushRecovery()`。
+- **非目标**：不改 checkpoint undo，不添加恢复 UI，不在宿主维护第二份业务状态。
+- **验收**：生产启动路径配置 recovery、session store locator 与 flush；冷启动 smoke 证明写入的 v1
+  snapshot 能被下一 Core 读回。
+- **证据**：`ec9cca2`；web/桌面启动以本实例 Core 配置 IDB/SQLite recovery driver 与 session-store locator，启动先 hydrate，browser pagehide 与 desktop close 都走 recovery flush lifecycle。宿主 focused 验收通过。
 
 ### R10 · 移除双事实恢复路径
 
