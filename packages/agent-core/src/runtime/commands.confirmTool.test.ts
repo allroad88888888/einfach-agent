@@ -94,6 +94,7 @@ describe('confirmTool（S4-B 危险工具确认恢复）', () => {
     expect(run?.status).toBe('running')
     expect(run?.pendingToolConfirmation).toBeUndefined()
 
+    await flush()
     expect(beginRun).toHaveBeenCalledWith(id)
     expect(runToolLoop).toHaveBeenCalledTimes(1)
     const call = vi.mocked(runToolLoop).mock.calls[0]
@@ -105,7 +106,6 @@ describe('confirmTool（S4-B 危险工具确认恢复）', () => {
       args: { path: 'a.txt', content: 'x' },
     })
 
-    await flush()
     expect(endRun).toHaveBeenCalledWith(id, expect.anything())
   })
 
@@ -115,7 +115,7 @@ describe('confirmTool（S4-B 危险工具确认恢复）', () => {
     expect(getSessionStore(id).store.getter(alwaysAllowedToolsAtom)).toContain('write_file')
   })
 
-  it('MCP 工具即使直接调用 confirmTool(true,true) 也不写入 session「一律允许」集合', () => {
+  it('MCP 工具即使直接调用 confirmTool(true,true) 也不写入 session「一律允许」集合', async () => {
     const id = seedConfirming('mcp-1')
     const store = getSessionStore(id).store
     const run = store.getter(runAtom)
@@ -130,6 +130,7 @@ describe('confirmTool（S4-B 危险工具确认恢复）', () => {
     })
 
     confirmTool(true, true)
+    await flush()
 
     expect(store.getter(alwaysAllowedToolsAtom)).not.toContain('mcp__playwright__browser_navigate')
     expect(runToolLoop).toHaveBeenCalledWith(
@@ -148,7 +149,7 @@ describe('confirmTool（S4-B 危险工具确认恢复）', () => {
   // F7：连接工具的风险由 serverId 决定（HTTP 只是一次网络请求，stdio 是在本机起子进程），
   // 而「一律允许」是按【工具名】记的。一旦它能被记住，用户对某一个服务点的那次同意，就变成
   // 了本会话内连接【任意】已配置服务的通行证。命令层必须在这里就不落库。
-  it('连接 MCP 服务的工具即使 confirmTool(true,true) 也不写入 session「一律允许」集合', () => {
+  it('连接 MCP 服务的工具即使 confirmTool(true,true) 也不写入 session「一律允许」集合', async () => {
     const id = seedConfirming('connect-1')
     const store = getSessionStore(id).store
     const run = store.getter(runAtom)
@@ -163,6 +164,7 @@ describe('confirmTool（S4-B 危险工具确认恢复）', () => {
     })
 
     confirmTool(true, true)
+    await flush()
 
     expect(store.getter(alwaysAllowedToolsAtom)).not.toContain(MCP_CONNECT_TOOL_NAME)
     expect(store.getter(alwaysAllowedToolsAtom)).toEqual([])
@@ -199,7 +201,7 @@ describe('confirmTool（S4-B 危险工具确认恢复）', () => {
     expect(store.getter(alwaysAllowedToolsAtom)).not.toContain('shell_macos')
   })
 
-  it('拒绝：回填该 tool_call 的 error result + 落回 running + runToolLoop 续跑（不带 resumeToolCall）', () => {
+  it('拒绝：回填该 tool_call 的 error result + 落回 running + runToolLoop 续跑（不带 resumeToolCall）', async () => {
     const id = seedConfirming('w1')
     const store = getSessionStore(id).store
 
@@ -213,6 +215,7 @@ describe('confirmTool（S4-B 危险工具确认恢复）', () => {
     expect(JSON.parse(last.content)).toEqual({ error: '用户拒绝执行该工具' })
 
     expect(store.getter(runAtom)?.status).toBe('running')
+    await flush()
     expect(runToolLoop).toHaveBeenCalledTimes(1)
     // 拒绝不执行工具 → 不带 resumeToolCall。
     expect(vi.mocked(runToolLoop).mock.calls[0][2].resumeToolCall).toBeUndefined()

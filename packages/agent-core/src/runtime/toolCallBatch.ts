@@ -11,12 +11,14 @@ import { tracePreview } from './shared/preview'
 import { executeToolCall, type ExecutableToolCall } from './toolCallExecutor'
 import { handleToolGate } from './toolCallGate'
 import { executePreparedToolCall, hasToolCallHooks, prepareToolCall } from './toolCallPluginHooks'
+import { persistToolCallExecutionFence } from './toolCallExecutionFence'
+import { requireRecoveryDurability } from './recoveryDurabilityBarrier'
 import type { ToolLoopBase } from './toolLoopContracts'
 import type { ModelTurnResult } from './modelTurnRequester'
 import { pendingDecisionOrigin, planApprovalPayload } from './toolLoopPlan'
 import { questionCount } from './toolLoopSupport'
 
-export type ToolBatchResult = 'continue' | 'paused' | 'stale' | 'stopped' | 'aborted'
+export type ToolBatchResult = 'continue' | 'paused' | 'stale' | 'stopped' | 'aborted' | 'interrupted'
 
 /**
  * 风险判定要用的运行时事实。两处 classifyToolRisk（并行准入预检与逐个分发）必须吃【同一份】
@@ -61,12 +63,17 @@ export async function runToolCallBatch(base: ToolLoopBase, input: ToolBatchInput
   }
   const parallelCalls = toolCalls.map(isParallel).filter((call): call is ExecutableToolCall => call !== undefined)
   if (!hasToolCallHooks(base) && parallelCalls.length === toolCalls.length && parallelCalls.length > 1) {
-    const results = await Promise.all(parallelCalls.map((call) => executeToolCall(base, call)))
+    if (!await persistToolCallExecutionFence(base, parallelCalls.map((call) => call.callId))) return 'interrupted'
     const state = statusAfterAwait()
     if (state) return state
+    const results = await Promise.all(parallelCalls.map((call) => executeToolCall(base, call)))
+    const stateAfterExecution = statusAfterAwait()
+    if (stateAfterExecution) return stateAfterExecution
     results.forEach((result, index) => { input.recordToolOutcome(parallelCalls[index].name, result); appendMappedToolResult(base.id, parallelCalls[index].callId, result, base.core, input.planStageId) })
     input.persistWorkingTurn()
-    return 'continue'
+    return await requireRecoveryDurability(base.id, base.runId, base.core, 'tool_batch_completed')
+      ? 'continue'
+      : 'interrupted'
   }
   for (const toolCall of toolCalls) {
     const name = toolCall.function.name
@@ -146,6 +153,9 @@ export async function runToolCallBatch(base: ToolLoopBase, input: ToolBatchInput
           }
       continue
     }
+    if (!await persistToolCallExecutionFence(base, [toolCall.id])) return 'interrupted'
+    const fenceState = statusAfterAwait()
+    if (fenceState) return fenceState
     const result = await executePreparedToolCall(base, prepared)
     const state = statusAfterAwait()
     if (state) return state
@@ -162,11 +172,15 @@ export async function runToolCallBatch(base: ToolLoopBase, input: ToolBatchInput
     base.trace.event('agent.waiting_confirmation', { toolName: confirmCall.toolName, callId: confirmCall.callId, args: confirmCall.args })
     patchRun(base.id, { status: 'waiting_confirmation', pendingToolConfirmation: confirmCall }, base.core)
     input.persistWorkingTurn()
-    return 'paused'
+    return await requireRecoveryDurability(base.id, base.runId, base.core, 'waiting_confirmation')
+      ? 'paused'
+      : 'interrupted'
   }
   if (pauseCall) return await pauseForUser(base, pauseCall, input.planStageId, input.persistWorkingTurn)
   input.persistWorkingTurn()
-  return 'continue'
+  return await requireRecoveryDurability(base.id, base.runId, base.core, 'tool_batch_completed')
+    ? 'continue'
+    : 'interrupted'
 }
 
 async function pauseForUser(base: ToolLoopBase, pauseCall: { callId: string; payload: unknown }, planStageId: string | undefined, persist: () => void): Promise<ToolBatchResult> {
@@ -180,5 +194,7 @@ async function pauseForUser(base: ToolLoopBase, pauseCall: { callId: string; pay
     patchRun(base.id, { status: 'waiting_user', pendingQuestion: pauseCall.payload, pendingUserDecision: { callId: pauseCall.callId, payload: pauseCall.payload, origin } }, base.core)
   }
   persist()
-  return 'paused'
+  return await requireRecoveryDurability(base.id, base.runId, base.core, 'waiting_user')
+    ? 'paused'
+    : 'interrupted'
 }

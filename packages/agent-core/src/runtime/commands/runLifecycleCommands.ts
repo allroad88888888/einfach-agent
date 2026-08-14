@@ -1,13 +1,12 @@
 import { activeSessionIdAtom, sessionsAtom } from '../../state/rootStore'
 import { runAtom } from '../../state/sessionAtoms'
 import { getPlan } from '../../state/planWriters'
-import { patchRun } from '../../state/sessionWriters'
+import { setRun } from '../../state/sessionWriters'
 import { clearQueuedUserMessages, enqueueUserMessage } from '../../state/transientAtoms'
 import { activeExecutionNodeIdsAtom, executionGraphAtom } from '../../execution/graph'
 import { getExecutionRuntime } from '../../execution/runtime'
 import { resumeInterruptedSession, resumePlanSession, runSession, persistCurrentRunRecovery } from '../modelRun'
 import { newId } from '../newId'
-import { closeUnresolvedToolCalls } from '../runCheckpoints'
 import type { CoreInstance } from '../core/coreInstance'
 import { cancelSessionSubmissions, scheduleSessionSubmission } from '../sessionSubmissionGate'
 import { executePreparedUserInput } from '../preparedUserInputTransaction'
@@ -20,7 +19,7 @@ import {
   type SendMessageResult,
 } from '../userInputPreparation'
 import { assertRunStatus, resolveApiKey, withRun } from './runCommands'
-import type { ModelSettings } from '../../state/core.type'
+import type { ModelSettings, RunState } from '../../state/core.type'
 import type { UserMessageContent } from '@web-agent/ai'
 import {
   captureUserContentReachability,
@@ -28,6 +27,8 @@ import {
 } from '../userContentDisposal'
 import { persistStoppedRunCheckpoint } from '../runCheckpoints'
 import { canonicalContextCacheValue } from '../contextCacheFingerprint'
+import { markUnresolvedToolCallsOutcomeUnknown } from '../toolCallOutcomeFacts'
+import { recoverInterruptedToolCalls } from '../interruptedToolCallRecovery'
 
 interface RunLifecycleDependencies {
   renameSession(id: string, title: string): void
@@ -58,7 +59,7 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
     const fetchImpl = core.config.fetchImpl
     const prepare = core.config.prepareUserInput ?? defaultPrepareUserInput
     return scheduleSessionSubmission(core, id, (submissionSequence, prepareSignal) => {
-      const commit = (content: UserMessageContent): SendMessageResult => {
+      const commit = async (content: UserMessageContent): Promise<SendMessageResult> => {
         if (!hasPreparedUserContent(content)) {
           return rejected('prepare_failed', 'Prepared user input is empty.')
         }
@@ -82,7 +83,7 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
         if (assertRunStatus(run, 'waiting_user', 'waiting_confirmation', 'waiting_plan_approval', 'interrupted')) {
           return rejected('run_blocked')
         }
-        closeUnresolvedToolCalls(id, core, '开始下一轮')
+        if (await recoverInterruptedToolCalls(id, core) !== 'ready') return rejected('run_blocked')
         if (currentMeta.title === dependencies.defaultSessionTitle) {
           const title = dependencies.deriveSessionTitle(content)
           if (title) dependencies.renameSession(id, title)
@@ -118,7 +119,7 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
     const active = store.getter(activeExecutionNodeIdsAtom)
       .some((executionId) => graph.nodes[executionId]?.runId === run.runId)
     if (active) return false
-    patchRun(id, { status: 'interrupted', pendingExecutionId: undefined }, core)
+    setRunWithoutPendingExecution(id, run, { status: 'interrupted' }, core)
     persistCurrentRunRecovery(id, core)
     return true
   }
@@ -157,10 +158,12 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
     )) return
     const meta = core.rootStore.getter(sessionsAtom)[id]
     const before = meta ? captureUserContentReachability(core, id) : undefined
-    closeUnresolvedToolCalls(id, core, '用户中断本轮')
+    markUnresolvedToolCallsOutcomeUnknown(id, core)
     // No queued input can have a live owner once this session's only run stops.
     clearQueuedUserMessages(id, core)
-    patchRun(id, { status: 'stopped', pendingExecutionId: undefined }, core)
+    const currentRun = store.getter(runAtom)
+    if (currentRun) setRunWithoutPendingExecution(id, currentRun, { status: 'stopped' }, core)
+    void core.persistence.persistRecovery(id, 'tool_calls_interrupted')
     persistStoppedRunCheckpoint(id, run.runId, core)
     const executionIds = new Set(run.pendingExecutionId ? [run.pendingExecutionId] : [])
     const graph = store.getter(executionGraphAtom)
@@ -180,4 +183,23 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
   }
 
   return { sendMessage, continueInterruptedRun, continuePlan, stopRun }
+}
+
+function setRunWithoutPendingExecution(
+  id: string,
+  run: RunState,
+  patch: Partial<RunState>,
+  core: CoreInstance,
+): void {
+  const { pendingExecutionId: _pendingExecutionId, ...snapshotSafeRun } = run
+  const next = withoutUndefined({ ...snapshotSafeRun, ...patch })
+  setRun(id, next, core)
+}
+
+function withoutUndefined(run: Partial<RunState>): RunState {
+  const next: Partial<RunState> = {}
+  for (const [key, value] of Object.entries(run)) {
+    if (value !== undefined) (next as Record<string, unknown>)[key] = value
+  }
+  return next as RunState
 }

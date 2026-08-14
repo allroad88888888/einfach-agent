@@ -2,23 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { itemsAtom, runAtom } from '../../state/sessionAtoms'
 import { createCore } from '../core/createCore'
 
-function jsonResponse(content: string): Response {
-  return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content } }] }), {
-    status: 200,
-    headers: { 'Content-Type': 'application/json' },
-  })
-}
-
-async function waitUntil(predicate: () => boolean, label: string): Promise<void> {
-  for (let i = 0; i < 50; i += 1) {
-    if (predicate()) return
-    await new Promise((resolve) => setTimeout(resolve, 0))
-  }
-  throw new Error(`timed out waiting for ${label}`)
-}
-
-describe('stopRun tool-call closure', () => {
-  it('closes uncompleted calls when the user stops the run', () => {
+describe('stopRun tool-call interruption', () => {
+  it('marks uncompleted calls outcomeUnknown without inventing a tool receipt', () => {
     const core = createCore()
     const id = core.newSession()
     const store = core.getSessionStore(id).store
@@ -45,23 +30,23 @@ describe('stopRun tool-call closure', () => {
 
     const pendingResults = store.getter(itemsAtom)
       .filter(({ item }) => item.role === 'tool' && item.tool_call_id === 'pending')
-    expect(pendingResults).toHaveLength(1)
-    expect(pendingResults[0]?.item).toMatchObject({
-      role: 'tool',
-      tool_call_id: 'pending',
-      content: expect.stringContaining('"interrupted":true'),
+    expect(pendingResults).toHaveLength(0)
+    expect(store.getter(runAtom)).toMatchObject({
+      status: 'stopped',
+      toolCallOutcomes: {
+        pending: { state: 'outcomeUnknown' },
+      },
     })
-    expect(store.getter(runAtom)).toMatchObject({ status: 'stopped' })
   })
 
-  it('repairs an older stopped run before the next model request', async () => {
+  it('requires reconciliation for an older stopped run with no durable call fact', async () => {
     let requestMessages: Array<Record<string, unknown>> = []
     const core = createCore({
       config: {
         modelCredentials: { deepseek: 'test-key' },
         fetchImpl: async (_url, init) => {
           requestMessages = (JSON.parse(String(init?.body)) as { messages: Array<Record<string, unknown>> }).messages
-          return jsonResponse('已恢复')
+          return new Response('unexpected model request', { status: 500 })
         },
       },
     })
@@ -85,14 +70,13 @@ describe('stopRun tool-call closure', () => {
     ])
     store.setter(runAtom, { runId: 'run-1', turnId: 'u1', status: 'stopped' })
 
-    core.sendMessage('继续')
-    await waitUntil(() => store.getter(runAtom)?.status === 'done', 'follow-up completion')
-    expect(requestMessages).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        role: 'tool',
-        tool_call_id: 'pending',
-        content: expect.stringContaining('"interrupted":true'),
-      }),
-    ]))
+    await expect(core.sendMessage('继续')).resolves.toMatchObject({
+      accepted: false,
+      reason: 'run_blocked',
+    })
+    expect(requestMessages).toEqual([])
+    expect(store.getter(itemsAtom)
+      .filter(({ item }) => item.role === 'tool' && item.tool_call_id === 'pending'))
+      .toHaveLength(0)
   })
 })

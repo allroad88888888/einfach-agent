@@ -15,7 +15,12 @@ import { currentPlanDefinition, currentPlanState, currentPlanStageId } from './t
 import { stopOverBudgetPlanStage } from './toolLoopPlanStageGuard'
 import { handleTextTurn } from './toolLoopTextTurn'
 import { safeErrorMessage } from './toolLoopSupport'
-import { closeUnresolvedToolCalls } from './runCheckpoints'
+import { requireRecoveryDurability } from './recoveryDurabilityBarrier'
+import {
+  markUnresolvedToolCallsOutcomeUnknown,
+  setToolCallOutcomeFacts,
+} from './toolCallOutcomeFacts'
+import { advanceTimedDispatchEpoch } from './timedDispatchEpoch'
 
 export type ToolLoopCycleResult = 'continue' | 'finished'
 
@@ -137,7 +142,7 @@ export async function runToolLoopCycle(input: {
   }
   const streamedItemId = modelTurn.streamWriter.finalize(modelTurn.message, modelTurn.toolCalls)
   if (!modelTurn.toolCalls.length) {
-    return handleTextTurn({
+    return await handleTextTurn({
       base,
       checkpoints,
       message: modelTurn.message,
@@ -153,11 +158,18 @@ export async function runToolLoopCycle(input: {
     appendItem(base.id, {
       id: newId(),
       createdAt: Date.now(),
-      planStageId,
+      ...(planStageId !== undefined ? { planStageId } : {}),
       item: assistantItemFromMessage(modelTurn.message, modelTurn.message?.content ?? null, modelTurn.toolCalls),
     }, base.core)
   }
+  setToolCallOutcomeFacts(base.id, modelTurn.toolCalls.map((call) => call.id), 'notStarted', base.core)
+  advanceTimedDispatchEpoch(base)
   checkpoints.persistWorkingTurn()
+  if (!await requireRecoveryDurability(base.id, base.runId, base.core, 'assistant_tool_calls_received')) {
+    checkpoints.commitStoppedTurn()
+    base.trace.finish('cancelled', 'agent.recovery_fence_failed', { reason: 'recovery_fence_failed' })
+    return 'finished'
+  }
   const batch = await runToolCallBatch(base, {
     result: modelTurn,
     planStageId,
@@ -171,14 +183,21 @@ export async function runToolLoopCycle(input: {
     base.trace.finish('cancelled', 'agent.stale_run', { reason: 'stale_run' })
     return 'finished'
   }
+  if (batch === 'interrupted') {
+    checkpoints.commitStoppedTurn()
+    base.trace.finish('cancelled', 'agent.recovery_fence_failed', { reason: 'recovery_fence_failed' })
+    return 'finished'
+  }
   if (batch === 'stopped') {
-    closeUnresolvedToolCalls(base.id, base.core, '本轮已停止')
+    markUnresolvedToolCallsOutcomeUnknown(base.id, base.core)
+    void base.core.persistence.persistRecovery(base.id, 'tool_calls_interrupted')
     checkpoints.commitStoppedTurn()
     base.trace.finish('cancelled', 'agent.stopped', { reason: 'run_not_running' })
     return 'finished'
   }
-  closeUnresolvedToolCalls(base.id, base.core, '本轮已中断')
+  markUnresolvedToolCallsOutcomeUnknown(base.id, base.core)
   patchRun(base.id, { status: 'stopped' }, base.core)
+  void base.core.persistence.persistRecovery(base.id, 'tool_calls_interrupted')
   checkpoints.commitStoppedTurn()
   base.trace.finish('cancelled', 'agent.stopped', { reason: 'aborted' })
   return 'finished'

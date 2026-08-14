@@ -1,6 +1,6 @@
 import { activeSessionIdAtom, sessionsAtom } from '../../state/rootStore'
 import { itemsAtom, runAtom } from '../../state/sessionAtoms'
-import { appendItem, patchRun } from '../../state/sessionWriters'
+import { setRun } from '../../state/sessionWriters'
 import {
   addAlwaysAllowedTool,
   clearPendingQuestionAnswers,
@@ -14,9 +14,10 @@ import type {
   SessionMeta,
 } from '../../state/core.type'
 import { runToolLoop } from '../modelRun'
-import { newId } from '../newId'
 import { canRememberToolApproval } from '../sessionApprovalMemory'
 import { toolProviderDisconnectedResult } from '../toolLoading'
+import { appendToolResult } from '../toolLoopSupport'
+import { requireRecoveryDurability } from '../recoveryDurabilityBarrier'
 import { checkPendingToolRegistration } from './pendingToolRegistration'
 import type { CoreInstance } from '../core/coreInstance'
 
@@ -56,14 +57,16 @@ function findAskUserToolCallId(items: ConversationItem[]): string | undefined {
   return undefined
 }
 
-export function resumePausedRun(
+export async function resumePausedRun(
   id: string,
   run: RunState,
   patch: Omit<Partial<RunState>, 'status'>,
   core: CoreInstance,
   options: { apiKey?: string, resumeToolCall?: PendingToolConfirmation } = {},
-): void {
-  patchRun(id, { ...patch, status: 'running' }, core)
+): Promise<void> {
+  const next = withoutUndefined({ ...run, ...patch, status: 'running' })
+  setRun(id, next, core)
+  if (!await requireRecoveryDurability(id, run.runId, core, 'paused_run_resumed')) return
   const apiKey = options.apiKey ?? resolveApiKey(core.rootStore.getter(sessionsAtom)[id], core)
   withRun(id, core, (signal) => runToolLoop(id, run.runId, {
     signal,
@@ -72,6 +75,10 @@ export function resumePausedRun(
     ...(options.resumeToolCall ? { resumeToolCall: options.resumeToolCall } : {}),
     core,
   }))
+}
+
+function withoutUndefined(run: RunState): RunState {
+  return Object.fromEntries(Object.entries(run).filter(([, value]) => value !== undefined)) as RunState
 }
 
 /** Builds paused-run continuation commands bound to one runtime core. */
@@ -86,7 +93,13 @@ export function createRunCommands(core: CoreInstance) {
     const toolCallId = pendingDecision?.callId
       ?? findAskUserToolCallId(core.getSessionStore(id).store.getter(itemsAtom))
     if (!toolCallId) {
-      patchRun(id, { status: 'running', pendingQuestion: undefined, pendingUserDecision: undefined }, core)
+      setRun(id, withoutUndefined({
+        ...run,
+        status: 'running',
+        pendingQuestion: undefined,
+        pendingUserDecision: undefined,
+      }), core)
+      void core.persistence.persistRecovery(id, 'paused_run_resumed')
       return
     }
 
@@ -96,13 +109,8 @@ export function createRunCommands(core: CoreInstance) {
       span: core.observability.getActiveSpan(core.observability.runTraceKey(id, run.runId)),
       attrs: { sessionId: id, runId: run.runId, callId: toolCallId, answers_count: Object.keys(answers).length },
     })
-    appendItem(id, {
-      id: newId(),
-      createdAt: Date.now(),
-      planStageId: pendingDecision?.origin.stageId,
-      item: { role: 'tool', tool_call_id: toolCallId, content: JSON.stringify({ answers }) },
-    }, core)
-    resumePausedRun(id, run, {
+    appendToolResult(id, toolCallId, JSON.stringify({ answers }), core, pendingDecision?.origin.stageId)
+    void resumePausedRun(id, run, {
       pendingQuestion: undefined,
       pendingUserDecision: undefined,
     }, core)
@@ -120,7 +128,8 @@ export function createRunCommands(core: CoreInstance) {
         span: core.observability.getActiveSpan(core.observability.runTraceKey(id, run.runId)),
         attrs: { sessionId: id, runId: run.runId },
       })
-      patchRun(id, { status: 'running', pendingToolConfirmation: undefined }, core)
+      setRun(id, withoutUndefined({ ...run, status: 'running', pendingToolConfirmation: undefined }), core)
+      void core.persistence.persistRecovery(id, 'paused_run_resumed')
       return
     }
 
@@ -155,16 +164,8 @@ export function createRunCommands(core: CoreInstance) {
     const apiKey = resolveApiKey(core.rootStore.getter(sessionsAtom)[id], core)
 
     if (!approved) {
-      appendItem(id, {
-        id: newId(),
-        createdAt: Date.now(),
-        item: {
-          role: 'tool',
-          tool_call_id: pending.callId,
-          content: JSON.stringify({ error: '用户拒绝执行该工具' }),
-        },
-      }, core)
-      resumePausedRun(id, run, { pendingToolConfirmation: undefined }, core, { apiKey })
+      appendToolResult(id, pending.callId, JSON.stringify({ error: '用户拒绝执行该工具' }), core)
+      void resumePausedRun(id, run, { pendingToolConfirmation: undefined }, core, { apiKey })
       return
     }
 
@@ -184,21 +185,13 @@ export function createRunCommands(core: CoreInstance) {
           epochId: registration.epochId,
         },
       })
-      appendItem(id, {
-        id: newId(),
-        createdAt: Date.now(),
-        item: {
-          role: 'tool',
-          tool_call_id: pending.callId,
-          content: JSON.stringify(toolProviderDisconnectedResult(pending.toolName)),
-        },
-      }, core)
-      resumePausedRun(id, run, { pendingToolConfirmation: undefined }, core, { apiKey })
+      appendToolResult(id, pending.callId, JSON.stringify(toolProviderDisconnectedResult(pending.toolName)), core)
+      void resumePausedRun(id, run, { pendingToolConfirmation: undefined }, core, { apiKey })
       return
     }
 
     if (rememberApproval) addAlwaysAllowedTool(id, pending.toolName, core)
-    resumePausedRun(id, run, { pendingToolConfirmation: undefined }, core, {
+    void resumePausedRun(id, run, { pendingToolConfirmation: undefined }, core, {
       apiKey,
       resumeToolCall: pending,
     })

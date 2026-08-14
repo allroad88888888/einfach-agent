@@ -119,6 +119,21 @@ export interface PendingUserDecision {
   origin: PendingUserDecisionOrigin
 }
 
+/** A durable fact about one assistant tool call in the current run. */
+export type ToolCallOutcomeState = 'notStarted' | 'outcomeKnown' | 'outcomeUnknown'
+
+/**
+ * The transcript carries tool payloads; this map only records whether their
+ * external outcome is safely known. It is the canonical recovery fact.
+ */
+export interface ToolCallOutcomeFact {
+  state: ToolCallOutcomeState
+  updatedAt: number
+}
+
+/** Identifies the logical model request currently fenced by timed tool calls. */
+export type TimedDispatchEpoch = number
+
 // 简介：当前 run 的运行事实。
 // 详情：finishReason 是上一轮响应的停止原因；pendingToolCalls 是 finish_reason==='tool_calls'
 // 时、已从响应里校验收窄出来的待执行调用（用请求侧必填版 ModelToolCall，因为执行需要 id/name/args 齐全）。
@@ -135,6 +150,10 @@ export interface RunState {
   pendingExecutionId?: string
   finishReason?: FinishReason
   pendingToolCalls?: ModelToolCall[]
+  /** Per-call recovery outcome facts for assistant tool calls in this run. */
+  toolCallOutcomes?: Record<string, ToolCallOutcomeFact>
+  /** Persisted logical request ordinal shared by timed tool phases. */
+  timedDispatchEpoch?: TimedDispatchEpoch
   error?: string
   // 累计已加载 schema 的 tool 名（TK3 lazy 加载闸门累计已载）。
   loadedTools?: string[]

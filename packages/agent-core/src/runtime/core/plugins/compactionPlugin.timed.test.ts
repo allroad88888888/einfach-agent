@@ -3,7 +3,7 @@ import { createStore } from '@einfach/core'
 import type { ModelItem } from '@web-agent/ai'
 
 import { sessionsAtom } from '../../../state/rootStore'
-import { itemsAtom } from '../../../state/sessionAtoms'
+import { itemsAtom, runAtom } from '../../../state/sessionAtoms'
 import type { ModelSettings, SessionMeta } from '../../../state/core.type'
 import type { Tool } from '../../../tools/types'
 import { runSession } from '../../runToolLoop'
@@ -196,5 +196,47 @@ describe('compactionPlugin 压缩时机', () => {
     expect(requestTimedIds).toContain(pre?.tool_call_id)
     expect(requestTimedIds).toContain(post?.tool_call_id)
     expect(requestTimedIds.indexOf(pre!.tool_call_id)).toBeLessThan(requestTimedIds.indexOf(post!.tool_call_id))
+  })
+
+  it('压缩前时机的恢复 fence 失败时不发模型请求', async () => {
+    const id = 'timed-compaction-fence-failure'
+    const execute = vi.fn(() => ({ ok: true as const }))
+    const fetchImpl = vi.fn(async () => textResponse('不应请求'))
+    const core = createCoreInstance({
+      plugins: [compactionPlugin],
+      registerTools(registry) {
+        registry.register(timedTool('before_compact', 'preCompact', execute))
+      },
+    })
+    core.rootStore.setter(sessionsAtom, {
+      [id]: {
+        id,
+        title: 'timed compaction fence failure',
+        settings: { vendor: 'deepseek', model: 'x', max_tokens: 63_500 },
+        createdAt: 0,
+        updatedAt: 0,
+      },
+    })
+    core.getSessionStore(id).store.setter(itemsAtom, overflowingMessages().map((item, index) => ({
+      id: `history-${index}`,
+      createdAt: index,
+      item,
+    })))
+    vi.spyOn(core.persistence, 'persistRecovery').mockImplementation(async (sessionId, reason) => (
+      reason === 'tool_call_execution_started'
+        ? { status: 'tombstoned', sessionId }
+        : { status: 'saved', sessionId, generation: 1, attempts: 1 }
+    ))
+
+    await runSession(id, '第三轮', {
+      signal: new AbortController().signal,
+      apiKey: 'k',
+      core,
+      fetchImpl,
+    })
+
+    expect(execute).not.toHaveBeenCalled()
+    expect(fetchImpl).not.toHaveBeenCalled()
+    expect(core.getSessionStore(id).store.getter(runAtom)?.status).toBe('interrupted')
   })
 })

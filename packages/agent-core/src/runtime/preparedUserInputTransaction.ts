@@ -5,7 +5,7 @@ import type {
 } from './userInputPreparation'
 import { preparationRejection } from './userInputPreparation'
 
-type CommitPreparedInput = (prepared: PreparedUserInput['content']) => SendMessageResult
+type CommitPreparedInput = (prepared: PreparedUserInput['content']) => SendMessageResult | Promise<SendMessageResult>
 
 function abortedResult(): SendMessageResult {
   return { accepted: false, status: 'rejected', reason: 'prepare_aborted' }
@@ -28,12 +28,12 @@ function rollbackThenReturn(
   return result
 }
 
-function settlePrepared(
+async function settlePrepared(
   prepared: PreparedUserInput,
   commit: CommitPreparedInput,
-): SendMessageResult | Promise<SendMessageResult> {
+): Promise<SendMessageResult> {
   try {
-    const result = commit(prepared.content)
+    const result = await commit(prepared.content)
     if (result.accepted) return result
     return rollbackThenReturn(prepared, result.reason, result)
   } catch (error) {
@@ -85,18 +85,18 @@ export function executePreparedUserInput(
   start: () => PreparedUserInput | Promise<PreparedUserInput>,
   signal: AbortSignal,
   commit: CommitPreparedInput,
-): SendMessageResult | Promise<SendMessageResult> {
-  if (signal.aborted) return abortedResult()
+): Promise<SendMessageResult> {
+  if (signal.aborted) return Promise.resolve(abortedResult())
   try {
     const preparation = start()
     if (preparation && typeof (preparation as PromiseLike<PreparedUserInput>).then === 'function') {
       return settleAsyncPreparation(preparation as PromiseLike<PreparedUserInput>, signal, commit)
     }
     if (signal.aborted) {
-      return rollbackThenReturn(preparation as PreparedUserInput, 'prepare_aborted', abortedResult())
+      return Promise.resolve(rollbackThenReturn(preparation as PreparedUserInput, 'prepare_aborted', abortedResult()))
     }
     return settlePrepared(preparation as PreparedUserInput, commit)
   } catch (error) {
-    return preparationRejection(error)
+    return Promise.resolve(preparationRejection(error))
   }
 }

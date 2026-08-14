@@ -126,6 +126,7 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
       const hasCompactionTimingTools =
         base.core.timedToolRegistrations('preCompact').length > 0 ||
         base.core.timedToolRegistrations('postCompact').length > 0
+      let timedDispatchBlocked = false
       const draft: CompactionRequestDraft = {
         messages: projectedMessages,
         tools,
@@ -136,14 +137,20 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
           ? {
               dispatchTimedItems: async (timing) => {
                 const before = sessionStore.getter(itemsAtom).length
-                await base.core.dispatchTimedTools({ sessionId: base.id, timing })
+                const result = await base.core.dispatchTimedTools({ sessionId: base.id, timing })
+                if (result.status === 'interrupted') {
+                  timedDispatchBlocked = true
+                  return []
+                }
                 return sessionStore.getter(itemsAtom).slice(before).map(({ item }) => item)
               },
             }
           : {}),
       }
       await base.hooks.transformContext?.(base.pluginContext, draft)
-      if (!base.control.isCurrent() || !base.control.isRunning() || base.opts.signal.aborted) return { inactive: true, streamWriter }
+      if (timedDispatchBlocked || !base.control.isCurrent() || !base.control.isRunning() || base.opts.signal.aborted) {
+        return { inactive: true, streamWriter }
+      }
       const afterTransform = snapshotContextRequestStage(draft.messages)
       try {
         await base.hooks.prepareRequest?.(base.pluginContext, draft)

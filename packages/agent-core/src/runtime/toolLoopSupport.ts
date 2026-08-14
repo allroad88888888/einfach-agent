@@ -6,6 +6,7 @@ import { newId } from './newId'
 import { isCurrentRun } from './shared/runGuards'
 import type { CoreInstance } from './core/coreInstance'
 import { runAtom } from '../state/sessionAtoms'
+import { setToolCallOutcomeFacts } from './toolCallOutcomeFacts'
 
 const SHELL_TOOLS_REQUIRING_COMMAND = new Set(['shell_macos', 'shell_linux', 'shell_powershell'])
 const ARGS_PREVIEW_LIMIT = 200
@@ -66,7 +67,14 @@ export function toolResultTrace(result: ToolResult, args?: unknown): {
 
 /** Appends one protocol-required tool result to the conversation transcript. */
 export function appendToolResult(id: string, toolCallId: string, content: string, core: CoreInstance, planStageId?: string): void {
-  appendItem(id, { id: newId(), createdAt: Date.now(), planStageId, item: { role: 'tool', tool_call_id: toolCallId, content } }, core)
+  appendItem(id, {
+    id: newId(),
+    createdAt: Date.now(),
+    ...(planStageId !== undefined ? { planStageId } : {}),
+    item: { role: 'tool', tool_call_id: toolCallId, content },
+  }, core)
+  setToolCallOutcomeFacts(id, [toolCallId], 'outcomeKnown', core)
+  void core.persistence.persistRecovery(id, 'tool_call_result_saved')
 }
 
 /** Serializes a runtime tool result in the same shape that the model API receives. */

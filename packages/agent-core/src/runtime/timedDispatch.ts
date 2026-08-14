@@ -5,7 +5,15 @@ import type { ToolRegistry } from '../tools/toolRegistry'
 import type { CoreInstance } from './core/coreInstance'
 import type { ToolLoopCheckpointWriter } from './toolLoopCheckpoint'
 import type { ToolLoopBase } from './toolLoopContracts'
-import { newId } from './newId'
+import { runAtom } from '../state/sessionAtoms'
+import { patchRun } from '../state/sessionWriters'
+import { persistToolCallExecutionFence } from './toolCallExecutionFence'
+import { requireRecoveryDurability } from './recoveryDurabilityBarrier'
+import { requiresTimedToolReconciliation } from './timedRecoveryFence'
+import { dispatchTimedToolRegistrations, type TimedToolDispatchAdapter, type TimedToolDispatchResult } from './timedDispatchLoop'
+import { ensureTimedDispatchEpoch } from './timedDispatchEpoch'
+
+export { dispatchTimedToolRegistrations, type TimedToolDispatchAdapter, type TimedToolDispatchResult } from './timedDispatchLoop'
 
 export interface TimedToolRegistration {
   name: string
@@ -16,25 +24,8 @@ export interface TimedToolRegistration {
 export interface TimedToolDispatchRequest {
   sessionId: string
   timing: ToolCallTiming
-}
-
-export interface TimedToolDispatchResult {
-  status: 'dispatched' | 'no_active_run' | 'inactive'
-  itemCount: number
-}
-
-/** Supplies a timeline-specific adapter while sharing timing-bucket dispatch semantics. */
-export interface TimedToolDispatchAdapter {
-  registrations: readonly TimedToolRegistration[]
-  isCurrent(): boolean
-  createCallId(name: string): string
-  canDispatch?(registration: TimedToolRegistration): boolean
-  isRecorded?(callId: string, registration: TimedToolRegistration): boolean
-  execute(registration: TimedToolRegistration, callId: string): Promise<ToolResult>
-  record(registration: TimedToolRegistration, callId: string, result: ToolResult): Promise<void> | void
-  isAbortError?(error: unknown): boolean
-  errorMessage?(error: unknown): string
-  onFailure?(input: { registration: TimedToolRegistration; callId: string; error: string }): void
+  /** Persisted logical-model-request ordinal supplied by the outer loop when needed. */
+  epoch?: number
 }
 
 interface TimedDispatchDependencies {
@@ -150,14 +141,28 @@ export function createTimedToolRegistry(registry: ToolRegistry): {
   }
 }
 
-function isDispatchCurrent(base: ToolLoopBase): boolean {
-  return base.control.isCurrent() && !base.opts.signal.aborted
+function isFinalTiming(timing: ToolCallTiming): boolean {
+  return timing === 'turnEnd' || timing === 'runEnd'
 }
 
-function timedCallId(base: ToolLoopBase, timing: ToolCallTiming, name: string): string {
+function isDispatchCurrent(base: ToolLoopBase, timing: ToolCallTiming): boolean {
+  if (!base.control.isCurrent() || base.opts.signal.aborted) return false
+  // A normal turn completes before its turnEnd/runEnd finally blocks. Those final
+  // hooks may therefore run after `running` becomes `done`, but never after a
+  // user stop or a recovery interruption.
+  if (isFinalTiming(timing)) {
+    const status = base.core.getSessionStore(base.id).store.getter(runAtom)?.status
+    return status !== 'stopped' && status !== 'interrupted'
+  }
+  return base.control.isRunning()
+}
+
+function timedCallId(base: ToolLoopBase, request: TimedToolDispatchRequest, name: string): string {
+  const { timing } = request
   if (timing === 'sessionStart') return `timed:${timing}:${name}`
   if (timing === 'runStart' || timing === 'runEnd') return `timed:${timing}:${base.runId}:${name}`
-  return `timed:${timing}:${base.runId}:${newId()}:${name}`
+  const epoch = request.epoch ?? ensureTimedDispatchEpoch(base)
+  return `timed:${timing}:${base.runId}:${epoch}:${name}`
 }
 
 function timedItemAlreadyRecorded(
@@ -170,8 +175,8 @@ function timedItemAlreadyRecorded(
   ))
 }
 
-function persistTimedItems(base: ToolLoopBase, checkpoints: ToolLoopCheckpointWriter): void {
-  if (!isDispatchCurrent(base)) return
+function persistTimedItems(base: ToolLoopBase, checkpoints: ToolLoopCheckpointWriter, timing: ToolCallTiming): void {
+  if (!isDispatchCurrent(base, timing)) return
   checkpoints.persistWorkingTurn()
 }
 
@@ -200,42 +205,6 @@ export async function classifyTimedToolRisk(input: {
   return riskForTimedTool(input, await loadTimedDispatchDependencies())
 }
 
-function fallbackErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-/**
- * Dispatches registrations in registration order and degrades individual failures into results.
- * Different timelines supply execution and persistence through the adapter rather than duplicating this loop.
- */
-export async function dispatchTimedToolRegistrations(
-  adapter: TimedToolDispatchAdapter,
-): Promise<TimedToolDispatchResult> {
-  if (!adapter.isCurrent()) return { status: 'inactive', itemCount: 0 }
-  let itemCount = 0
-  for (const registration of adapter.registrations) {
-    if (!adapter.isCurrent()) return { status: 'inactive', itemCount }
-    if (adapter.canDispatch && !adapter.canDispatch(registration)) continue
-    const callId = adapter.createCallId(registration.name)
-    if (adapter.isRecorded?.(callId, registration)) continue
-    let result: ToolResult
-    try {
-      result = await adapter.execute(registration, callId)
-    } catch (error) {
-      if (adapter.isAbortError?.(error) || !adapter.isCurrent()) {
-        return { status: 'inactive', itemCount }
-      }
-      const message = adapter.errorMessage?.(error) ?? fallbackErrorMessage(error)
-      adapter.onFailure?.({ registration, callId, error: message })
-      result = { ok: false, error: message }
-    }
-    if (!adapter.isCurrent()) return { status: 'inactive', itemCount }
-    await adapter.record(registration, callId, result)
-    itemCount += 1
-  }
-  return { status: 'dispatched', itemCount }
-}
-
 /** Dispatches one timing bucket through the normal executor, never through beforeToolCall confirmation hooks. */
 export async function dispatchTimedTools(input: {
   base: ToolLoopBase
@@ -243,22 +212,27 @@ export async function dispatchTimedTools(input: {
   request: TimedToolDispatchRequest
 }): Promise<TimedToolDispatchResult> {
   const { base, checkpoints, request } = input
-  if (request.sessionId !== base.id || !isDispatchCurrent(base)) {
+  if (request.sessionId !== base.id || !isDispatchCurrent(base, request.timing)) {
     return { status: 'inactive', itemCount: 0 }
   }
   const registrations = base.core.timedToolRegistrations(request.timing)
   if (registrations.length === 0) return { status: 'dispatched', itemCount: 0 }
   const dependencies = await loadTimedDispatchDependencies()
-  if (!isDispatchCurrent(base)) return { status: 'inactive', itemCount: 0 }
+  if (!isDispatchCurrent(base, request.timing)) return { status: 'inactive', itemCount: 0 }
 
   return dispatchTimedToolRegistrations({
     registrations,
-    isCurrent: () => isDispatchCurrent(base),
-    createCallId: (name) => timedCallId(base, request.timing, name),
-    isRecorded: (callId) => (
-      (request.timing === 'sessionStart' || request.timing === 'runStart' || request.timing === 'runEnd')
-      && timedItemAlreadyRecorded(base, callId, dependencies)
-    ),
+    isCurrent: () => isDispatchCurrent(base, request.timing),
+    createCallId: (name) => timedCallId(base, request, name),
+    requiresReconciliation: (registration, callId) => requiresTimedToolReconciliation({
+      base,
+      request,
+      name: registration.name,
+      callId,
+      isRecorded: (candidate) => timedItemAlreadyRecorded(base, candidate, dependencies),
+    }),
+    isRecorded: (callId) => timedItemAlreadyRecorded(base, callId, dependencies),
+    beforeExecute: async (_registration, callId) => persistToolCallExecutionFence(base, [callId]),
     execute: async ({ name, registrationVersion }, callId) => {
       const risk = riskForTimedTool({ core: base.core, sessionId: base.id, name }, dependencies)
       if (risk.level !== 'safe') {
@@ -276,8 +250,9 @@ export async function dispatchTimedTools(input: {
     },
     record: (_registration, callId, result) => {
       dependencies.appendMappedToolResult(base.id, callId, result, base.core)
-      persistTimedItems(base, checkpoints)
+      persistTimedItems(base, checkpoints, request.timing)
     },
+    afterRecord: async () => requireRecoveryDurability(base.id, base.runId, base.core, 'timed_tool_result_saved'),
     isAbortError: (error) => isAbortError(error),
     errorMessage: dependencies.safeErrorMessage,
     onFailure: ({ registration, callId, error }) => {

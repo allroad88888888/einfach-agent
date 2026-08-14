@@ -141,6 +141,25 @@ describe('RecoverySnapshotV1', () => {
     expect(decoded?.values.subagentContinuations[0]?.childId).toBe('child-1')
   })
 
+  it('只接受规范的每工具调用结果事实', () => {
+    const valid = snapshot()
+    valid.values.run = {
+      runId: 'run-1',
+      status: 'interrupted',
+      toolCallOutcomes: {
+        'call-1': { state: 'notStarted', updatedAt: 8 },
+        'call-2': { state: 'outcomeUnknown', updatedAt: 9 },
+        'call-3': { state: 'outcomeKnown', updatedAt: 10 },
+      },
+    }
+
+    expect(decodeRecoverySnapshot(valid)?.values.run?.toolCallOutcomes).toEqual(valid.values.run.toolCallOutcomes)
+
+    const malformed = structuredClone(valid) as LooseRecord
+    ;((values(malformed).run as LooseRecord).toolCallOutcomes as LooseRecord)[''] = { state: 'outcomeKnown', updatedAt: 1 }
+    expect(decodeRecoverySnapshot(malformed)).toBeUndefined()
+  })
+
   it('只允许 values.subagentContinuations 作为 child 续接真源', () => {
     const original = snapshot()
 

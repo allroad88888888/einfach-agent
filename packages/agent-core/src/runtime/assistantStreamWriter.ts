@@ -26,7 +26,13 @@ export function createAssistantStreamWriter(id: string, runId: string, signal: A
     return chars >= 48_000 ? STREAM_UPDATE_INTERVAL_MAX_MS : chars >= 16_000 ? 200 : STREAM_UPDATE_INTERVAL_MIN_MS
   }
   const currentConversationItem = (): ConversationItem | undefined => assistantItemId && assistantCreatedAt !== undefined
-    ? { id: assistantItemId, createdAt: assistantCreatedAt, pending: true, planStageId, item: assistantItemFromMessage(currentMessage(), content) }
+    ? {
+        id: assistantItemId,
+        createdAt: assistantCreatedAt,
+        pending: true,
+        ...(planStageId !== undefined ? { planStageId } : {}),
+        item: assistantItemFromMessage(currentMessage(), content),
+      }
     : undefined
   const cancelScheduledFlush = () => {
     if (flushTimer !== undefined) clearTimeout(flushTimer)

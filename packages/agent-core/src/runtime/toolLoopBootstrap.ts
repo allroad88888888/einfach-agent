@@ -136,8 +136,18 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
       isActive: () => control.isCurrent() && control.isRunning() && !opts.signal.aborted,
       dispatch: (request) => dispatchTimedTools({ base: boot.base, checkpoints, request }),
     })
-    await dispatchTimedTools({ base: boot.base, checkpoints, request: { sessionId: id, timing: 'sessionStart' } })
-    await dispatchTimedTools({ base: boot.base, checkpoints, request: { sessionId: id, timing: 'runStart' } })
+    const sessionStart = await dispatchTimedTools({ base: boot.base, checkpoints, request: { sessionId: id, timing: 'sessionStart' } })
+    if (sessionStart.status === 'interrupted') {
+      checkpoints.commitStoppedTurn()
+      trace.finish('cancelled', 'agent.recovery_fence_failed', { timing: 'sessionStart' })
+      return undefined
+    }
+    const runStart = await dispatchTimedTools({ base: boot.base, checkpoints, request: { sessionId: id, timing: 'runStart' } })
+    if (runStart.status === 'interrupted') {
+      checkpoints.commitStoppedTurn()
+      trace.finish('cancelled', 'agent.recovery_fence_failed', { timing: 'runStart' })
+      return undefined
+    }
     if (!control.isCurrent()) { trace.finish('cancelled', 'agent.stale_run', { reason: 'stale_run' }); return undefined }
     if (!control.isRunning()) { checkpoints.commitStoppedTurn(); trace.finish('cancelled', 'agent.stopped', { reason: 'run_not_running' }); return undefined }
     if (opts.signal.aborted) { patchRun(id, { status: 'stopped' }, core); checkpoints.commitStoppedTurn(); trace.finish('cancelled', 'agent.stopped', { reason: 'aborted' }); return undefined }

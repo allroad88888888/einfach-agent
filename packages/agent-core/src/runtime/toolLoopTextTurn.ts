@@ -8,9 +8,11 @@ import type { ToolFailureTracker } from './toolFailureTracker'
 import type { ToolLoopCheckpointWriter } from './toolLoopCheckpoint'
 import type { ToolLoopBase } from './toolLoopContracts'
 import { EXECUTING_PLAN_STATUSES, planContinuationNotice } from './toolLoopPlan'
+import { requireRecoveryDurability } from './recoveryDurabilityBarrier'
+import { advanceTimedDispatchEpoch } from './timedDispatchEpoch'
 
 /** Records a model text response and decides whether its loop should continue. */
-export function handleTextTurn(input: {
+export async function handleTextTurn(input: {
   base: ToolLoopBase
   checkpoints: ToolLoopCheckpointWriter
   message: ModelResponseMessage | undefined
@@ -18,7 +20,7 @@ export function handleTextTurn(input: {
   planStageId: string | undefined
   budget: LoopBudget
   failures: ToolFailureTracker
-}): boolean {
+}): Promise<boolean> {
   const { base, checkpoints, message, streamedItemId, planStageId, budget, failures } = input
   const content = message?.content
   if (!content || !content.trim()) {
@@ -31,10 +33,11 @@ export function handleTextTurn(input: {
     appendItem(base.id, {
       id: newId(),
       createdAt: Date.now(),
-      planStageId,
+      ...(planStageId !== undefined ? { planStageId } : {}),
       item: assistantItemFromMessage(message, content),
     }, base.core)
   }
+  advanceTimedDispatchEpoch(base)
   const plan = base.core.getSessionStore(base.id).store.getter(planAtom)
   if (plan && EXECUTING_PLAN_STATUSES.has(plan.status)) {
     base.state.consecutivePlanTextTurns += 1
@@ -50,7 +53,7 @@ export function handleTextTurn(input: {
         consecutive_text_turns: base.state.consecutivePlanTextTurns,
         error,
       })
-      return true
+      return await persistTextResponse(input, true)
     }
     base.state.planContinuation = planContinuationNotice(
       plan.id,
@@ -65,17 +68,29 @@ export function handleTextTurn(input: {
       submit_rejected: base.state.lastStageSubmitRejection !== undefined,
     })
     checkpoints.persistWorkingTurn()
-    return false
+    return await persistTextResponse(input, false)
   }
   const promoted = base.promoteQueuedInputs()
   if (promoted) {
     budget.includeQueuedInputs(promoted)
     failures.reset()
     checkpoints.persistWorkingTurn()
-    return false
+    return await persistTextResponse(input, false)
   }
   checkpoints.commitTurn()
   if (base.control.isRunning()) patchRun(base.id, { status: 'done', finishedAt: Date.now() }, base.core)
   base.trace.finish('ok', 'agent.done', { status: 'done' })
+  return await persistTextResponse(input, true)
+}
+
+async function persistTextResponse(
+  input: Parameters<typeof handleTextTurn>[0],
+  finished: boolean,
+): Promise<boolean> {
+  const { base, checkpoints } = input
+  checkpoints.persistWorkingTurn()
+  if (await requireRecoveryDurability(base.id, base.runId, base.core, 'model_text_response_saved')) return finished
+  checkpoints.commitStoppedTurn()
+  base.trace.finish('cancelled', 'agent.recovery_fence_failed', { reason: 'recovery_fence_failed' })
   return true
 }

@@ -175,11 +175,21 @@ function isPendingConfirmation(value: unknown): boolean {
     && optional(value, 'reason', isText) && optional(value, 'irreversible', (entry) => typeof entry === 'boolean')
 }
 
+function isToolCallOutcomes(value: unknown): boolean {
+  if (!isRecord(value)) return false
+  return Object.entries(value).every(([callId, fact]) => isText(callId) && callId.length > 0
+    && isRecord(fact) && hasOnlyKeys(fact, new Set(['state', 'updatedAt']))
+    && (fact.state === 'notStarted' || fact.state === 'outcomeKnown' || fact.state === 'outcomeUnknown')
+    && isNatural(fact.updatedAt))
+}
+
 function isRun(value: unknown): boolean {
   if (value === null) return true
   return isRecord(value) && !('pendingExecutionId' in value) && isText(value.runId) && runStatuses.has(value.status as string)
     && optional(value, 'startedAt', isNatural) && optional(value, 'finishedAt', isNatural) && optional(value, 'turnId', isText)
     && optional(value, 'finishReason', isText) && optional(value, 'pendingToolCalls', (entry) => Array.isArray(entry) && entry.every(isToolCall))
+    && optional(value, 'toolCallOutcomes', isToolCallOutcomes)
+    && optional(value, 'timedDispatchEpoch', isNatural)
     && optional(value, 'error', isText) && optional(value, 'loadedTools', isStringArray)
     && optional(value, 'pendingQuestion', isJsonValue) && optional(value, 'pendingUserDecision', isPendingDecision)
     && optional(value, 'pendingToolConfirmation', isPendingConfirmation)

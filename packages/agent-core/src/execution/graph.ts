@@ -52,12 +52,11 @@ export function reduceExecutionGraph(
       const node = nodes[id]
       if (!node || !ACTIVE_STATUSES.has(node.status)) continue
       changed = true
+      const { finishedAt: _finishedAt, error: _error, ...activeNode } = node
       nodes[id] = {
-        ...node,
+        ...activeNode,
         status: 'interrupted',
         updatedAt: event.at,
-        finishedAt: undefined,
-        error: undefined,
       }
     }
     return changed ? { ...graph, nodes } : graph
@@ -100,18 +99,24 @@ export function reduceExecutionGraph(
   const startedAt = event.status === 'running'
     ? current.startedAt ?? event.at
     : current.startedAt
+  const {
+    finishedAt: _finishedAt,
+    result: _result,
+    error: _error,
+    ...nodeWithoutOutcome
+  } = current
   return {
     ...graph,
     nodes: {
       ...graph.nodes,
       [current.id]: {
-        ...current,
+        ...nodeWithoutOutcome,
         status: event.status,
         updatedAt: event.at,
-        startedAt,
-        finishedAt: terminal ? event.at : undefined,
-        result: event.result,
-        error: event.error,
+        ...(startedAt === undefined ? {} : { startedAt }),
+        ...(terminal ? { finishedAt: event.at } : {}),
+        ...(event.result === undefined ? {} : { result: event.result }),
+        ...(event.error === undefined ? {} : { error: event.error }),
       },
     },
   }
@@ -135,7 +140,7 @@ export function createExecutionNode(input: {
     graphId: input.graphId,
     sessionId: input.sessionId,
     runId: input.runId,
-    parentId: input.parentId,
+    ...(input.parentId === undefined ? {} : { parentId: input.parentId }),
     dependsOn: input.dependsOn ?? [],
     type: input.type,
     status: 'queued',
