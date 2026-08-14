@@ -13,13 +13,22 @@
   "publishConfig": {
     "access": "public"
   },
-  "main": "./src/index.ts",
-  "module": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./archive/replay": "./src/archive/replay.ts",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./archive/replay": {
+      "types": "./dist/archive/replay.d.ts",
+      "default": "./dist/archive/replay.js"
+    },
     "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsup && tsc -p tsconfig.build.json && node ../../scripts/fix-dts-specifiers.mjs dist"
   },
   "dependencies": {
     "@einfach/core": "^0.2.18",

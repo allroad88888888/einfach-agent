@@ -14,17 +14,17 @@
 ```text
 V1 tsup 试点（agent-ai）   V2 ?raw 内联插件   V3 逐包构建接线
 V4 包元数据整备   V5 依赖修正侦察（G9/G10）   V6 subagents 死 subpath 砍除
-V7 产物冒烟门禁   V8 d.ts nodenext 解析修复
+V7 产物冒烟门禁   V8 d.ts nodenext 解析修复   V3a core 接线 → V3b 其余包接线
 D（G10 @tauri-apps 摘除，V5 侦察产出）：
   D1 本地宿主探测/惰性 invoke   D2 三处纯探测点脱钩   D3 workspaceDialog 惰性 open
   D4 迁移无计时 invoke×4       D5 迁移带计时 invoke×6   D6 依赖降 optional peer
-  D7 豁免表与注释合流收尾
+  D7 豁免表与注释合流收尾   D8 测试宿主模拟统一约定
 GATED  实际 publish + S10 + 包名换 scope（用户触发）
 ```
 
 并行规则：V1/V4/V6 无依赖可先行；V2 依赖 V1（复用其构建骨架）；V8 依赖 V1（修的是
-其声明产物）；V3 依赖 V1+V2+V8（骨架修完再复制 15 份）；V5 先侦察后动（已完成，产出
-D 线）；V7 依赖 V3。D 线内部：D1 先行；D2/D4/D5 依赖 D1 且改动面互不重叠可并行；
+其声明产物）；V3a 依赖 V1+V2+V8+D2–D5，V3b 依赖 V3a+D6（core package.json 串行）；V5 先侦察后动（已完成，产出
+D 线）；V7 依赖 V3b。D 线内部：D1 先行；D2/D4/D5 依赖 D1 且改动面互不重叠可并行；
 D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相交，可并行推进。
 
 ## 卡
@@ -51,17 +51,43 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
 - **判据**：`tools/skills` 产物 `dist/` 里无 `?raw` 说明符、skill 正文内联；Node 直接
   `import()` 产物可取到正文
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE 5af4549（正文逐字往返含非 ASCII；tools/skills 本卡只接 tsup，`.d.ts` 步
+  被 TS6059 挡住降级——根因与解法记在 V3a/V3b。probe tsconfig 误射 150 个 `.d.ts` 进源码树
+  的事故已自查清理，V8 归因 + 主会话纠偏闭环）
 
-### V3 · 逐包构建接线
+### V3a · core 构建接线（拓扑根）
 
-- **依赖**：V1、V2、V8（声明产物的 nodenext 修复要先进骨架，别复制 15 份坏的）
-- **改动面**：其余待发包（core、六域 + mcp、tools meta、react-plugin、subagents、
-  persistence-*、observability-*）复制 V1/V2 骨架接 build；`pnpm -r build` 串起来
+- **依赖**：V1、V2、V8、D2–D5（core 源码在 D 线在途时不接，避免对半成品跑构建门禁）
+- **改动面**：V2 实测发现：`tsc -p tsconfig.build.json` 在**任何有跨包 import 的包**上都会
+  因 `tsconfig.app.json` 的 `paths` 把 `@web-agent/*` 指向源码而 TS6059 全灭（agent-ai 试点
+  零跨包依赖属幸存者偏差）。解法（V2 记在 `tools/skills/tsconfig.build.json` 文件头）：
+  依赖包先出 dist 且 exports 改指 dist，本包 `tsconfig.build.json` 加 `"paths": {}` 让声明
+  emit 走 node_modules 吃依赖的 `.d.ts`（声明文件不参与 rootDir 判定）。core 是全仓拓扑根，
+  单独成卡：`packages/agent-core/` 的 `tsup.config.ts`（entry 与 9 条 subpath exports 逐条
+  对应）、`tsconfig.build.json`（`rootDir: "./src"` + `"paths": {}`）、`package.json` 的
+  exports 全部改成 `{types, default}` 指 dist、build script 接 fix-dts-specifiers；
+  顺手落 V8 建议的 preset 注释（`dts: false` 旁一句「必须接 fix-dts-specifiers，否则
+  node16/nodenext 消费方直接红」）
+- **判据**：`pnpm --filter @web-agent/core build` 绿且 dist 无 `dist/packages/...` 泄漏层级；
+  9 条 subpath 的 dist 产物与 exports 逐条对应；nodenext 探针对 core 至少一条 subpath 绿；
+  仓库内 `pnpm test` 相关面 + `pnpm build` + `node scripts/check-boundaries.js` 不回归
+- **模型**：opus
+- **状态**：DONE 5e50939（splitting 单例 A/B 实证；新增硬前提 preserveSymlinks（TS2742，pnpm symlink 环境）；`./*` 通配未动。遗留：上游 @einfach/core@0.2.19 自身非 nodenext-clean（8 条 TS2834），skipLibCheck:false 的消费方会红——修复在上游，发布批次前由用户定夺 patch/升级/README 说明）
+
+### V3b · 其余包构建接线
+
+- **依赖**：V3a、D6（core 的 package.json 两卡都要动，串行避免打架）
+- **改动面**：其余待发包（六域 + mcp、tools meta、react-plugin、subagents、persistence-*、
+  observability-*）复制骨架：`tsup.config.ts` + `tsconfig.build.json`（**必须** `rootDir:
+  "./src"` + `"paths": {}`，V8/V2 的两个硬前提）+ build script（含 fix-dts-specifiers）+
+  exports 改指 dist；tools/skills 补上被 V2 降级掉的 `.d.ts` 步。按 workspace 拓扑序
+  `pnpm -r build` 串起来
 - **判据**：`pnpm -r --filter './packages/**' --filter './tools/**' build` 全绿；
-  仓库内测试与 `pnpm build` 不回归
+  `scripts/subagent-replay*` 对 `@web-agent/subagents/archive/replay` 的消费在 exports
+  改 dist 后仍工作（`pnpm subagent:replay` 冒烟 + colocated 测试）；仓库内测试与
+  `pnpm build` 不回归
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### V4 · 包元数据整备（G11/G12/G13）
 
@@ -102,7 +128,7 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
 
 ### V7 · 产物冒烟门禁
 
-- **依赖**：V3
+- **依赖**：V3b
 - **改动面**：新脚本 `scripts/check-dist.js`（或等价）：对每个待发包 `npm pack` → 临时目录
   安装 → `import()` 冒烟——专抓 alias 短路下永不暴露的 G5/G6/G11 类问题；本地可跑，
   CI 接线写卡但不动 ci.yml（发布批次再接）
@@ -124,7 +150,7 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
   `tsc --noEmit`）从红变绿；`pnpm --filter @web-agent/ai build` 与 Node import 冒烟不回归；
   `pnpm exec vitest run packages/agent-ai` 绿
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE c56671e
 
 ## D 线 · G10：core 摘除 @tauri-apps 硬依赖（V5 侦察产出）
 
@@ -144,7 +170,7 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
 - **判据**：新文件测试绿；`grep -rn "@tauri-apps" packages/agent-core/src/runtime/hostTauri.ts`
   只有惰性 import 一处（含注释豁免说明）；`node scripts/check-boundaries.js` 通过
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE d3c3883
 
 ### D2 · 三处纯探测点脱钩
 
@@ -154,7 +180,7 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
   改用 `isTauriHost()` 即删掉静态边，零 async 变更
 - **判据**：三文件不再 import `@tauri-apps/api/core`；相关测试 + `pnpm build` 绿
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE 43688c4（波及面补修：apps/web 全量 665 用例扫过，仅 plugins/initialize.test.ts 受影响——两层宿主门各读各的开关；mcp 系列源文件未迁移 mock 仍有效。全量门禁 3098 用例零失败）
 
 ### D3 · workspaceDialog 惰性 open 与 smoke 探针升级
 
@@ -165,7 +191,7 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
   `pickWorkspaceDirectory` 才加载」
 - **判据**：smoke 测试新旧两侧都有效（含反证）；全仓 `@tauri-apps/plugin-dialog` 静态边归零
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE 7f351c2（变异反证实测有效；check-boundaries 对 typeof import 类型位置与动态 import 无差别计观察项，D7 顺带收口；WorkspaceRootField/WorkspaceSidebar 豁免理由文案已过时，同归 D7）
 
 ### D4 · 迁移无计时的 invoke 调用点
 
@@ -175,7 +201,7 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
 - **判据**：四文件静态边归零；`vi.mock('@tauri-apps/api/core')` 的既有测试文件**一行不改**
   仍绿（惰性 import 仍被 mock 拦截是 D 线的硬前提）；`pnpm build` 绿
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE 3910247（「既有 mock 测试一行不改」前提对 workspaceRead 的两个 colocated 测试不成立——isTauri mock 死亡墙（见 D5 状态注），按 D5 确立的 vi.mock(./hostTauri) 桥接修法增量适配，A/B 归因已做）
 
 ### D5 · 迁移带计时与其余 invoke 调用点
 
@@ -188,7 +214,21 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
 - **判据**：六文件静态边归零；计时语义有测试佐证（加载不计入 dispatch 计时）；
   既有 vi.mock 测试一行不改仍绿；`pnpm build` 绿
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE 84f3a2d（发现系统性前提失效：迁移后 vi.mock('@tauri-apps/api/core') 的 isTauri 分量成死代码——isTauriHost() 读 globalThis.isTauri 不经模块 mock。invoke 分量仍被动态 import 拦截有效。适配约定与清理立 D8）
+
+### D8 · 测试模拟 Tauri 宿主的统一约定与死 mock 清理
+
+- **依赖**：D2、D3、D4、D5
+- **改动面**：D2/D4/D5 为过判据各自在测试文件里贴了 `vi.mock('./hostTauri')` 桥或
+  `globalThis.isTauri` 开关（modelRun×2、workspaceRead×2、workspaceWrite、
+  shellCommand.backgroundKill、apps/web plugins 等）。收敛为一个共享测试 helper
+  （放测试脚手架，如 `runtime/hostTauri.testHarness.ts`，命名遵循 check-boundaries 的
+  testFilePattern），各测试文件改用它；同时清理已死的 `vi.mock('@tauri-apps/api/core')`
+  中 isTauri 分量（invoke 分量仍在用的保留）
+- **判据**：`grep -rn "globalThis.isTauri" --include='*.test.*' packages apps` 收敛到
+  helper 与 hostTauri 自己的测试；全量 `pnpm test` 绿；helper 文件不被边界扫描当生产代码
+- **模型**：sonnet
+- **状态**：DONE 6104e7e（helper 单函数 restore 设计；mcp 系两层 mock 各管各的保留；寄主 vi.mock 行按「invoke 分量在用即保留」保守处理）
 
 ### D6 · agent-core 依赖降 optional peer
 
@@ -200,7 +240,21 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
   只剩 `hostTauri.ts` 的惰性一处；摘包冒烟（模拟无 optional 依赖时 core 可 import、
   探测返回 false 不炸）；全量 `pnpm test` + `pnpm build` 绿
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE edbe6a8（G10 交付：dist 唯一 tauri 边为守卫后动态 import 裸说明符；摘包冒烟含「isTauri 强制真 + 依赖缺席」加压路径收敛为失败返回值；lockfile 零变更经强制重解析逐字节验证——pnpm 10 auto-install-peers 把 optional peer 并入解析集；apps 侧无搭便车（web 应用即仓库根包，已直接声明））
+
+### D9 · 发布声明产物摘除 @tauri-apps 类型引用
+
+- **依赖**：D6
+- **改动面**：D6 遗留——optional peer 缺席时，`dist/runtime/hostTauri.d.ts` 与
+  `dist/runtime/workspaceDialog.d.ts` 里的 `typeof import('@tauri-apps/…')` 对消费方 tsc
+  解析不到（运行时无碍已冒烟证实；消费方开 skipLibCheck 时也静默，但发布物类型面应自洁）。
+  把 `runtime/hostTauri.ts`、`runtime/workspaceDialog.ts` 源码里的类型位置引用换成本地
+  结构类型（invoke 需保留泛型形态 `<T>(cmd, args?, opts?) => Promise<T>`，调用点的
+  `invoke<unknown>` 不能破）；`.testHarness.ts` 不在发布物内，不动
+- **判据**：重建后 `grep -rn "@tauri-apps" packages/agent-core/dist --include='*.d.ts'`
+  零命中；hostTauri/workspaceDialog 相关测试与 smoke 探针一行不改仍绿；`pnpm build` 绿
+- **模型**：sonnet
+- **状态**：DONE 53ceef9（实测唯一泄漏点是 loadTauriInvoke 导出签名；另发现并处理「导出符号 JSDoc 写包名字面量会被 tsc 带进 d.ts」的次生泄漏。**违纪记档**：该 agent 用了 git stash 做基线对比（明令禁止）——已验无残留、无损伤（stash 表里两条均为本会话前的历史遗留，勿动），后续派活 prompt 需继续强调）
 
 ### D7 · 豁免表与模块图纪律注释合流收尾
 

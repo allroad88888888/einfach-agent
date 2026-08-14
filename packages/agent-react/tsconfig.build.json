@@ -1,0 +1,58 @@
+// 声明产物专用 tsconfig：只出 .d.ts，JS 由 tsup 出（见 tsup.config.ts 与根 tsup.preset.ts）。
+// V3b 逐包接线：骨架复制自 packages/agent-core/tsconfig.build.json，但两处按实测结果做了
+// 必要调整——`paths` 与 `exclude`，都不是照抄。
+//
+// **paths**：core 的 package.json 只给 9 条公开 subpath 配了 `{types, default}` 指向 dist，
+// 其余深路径靠 `"./*": "./src/*"` 兜底（S10 仍 GATED，未改）。这条通配把目标写成不带扩展名的
+// `./src/<segment>`，Node/TS 的 exports 通配解析要求目标字面存在（不会像相对导入那样自动试探
+// 扩展名），于是白名单外的深路径在真实 exports 解析下一律失败（`tsc --traceResolution` 实测
+// 复现）。清空继承来的 paths 后只补一条指向 core dist 的显式映射，绕开这条通配的缺口——
+// 代价是发布出去的 .d.ts 里裸说明符原样保留，真实 npm 消费方仍会撞上同一个 core 公开面缺口，
+// 修复归属 core 自己的收敛树，不是 V3b 的改动面。
+//
+// **exclude**：本包测试文件是 `.test.tsx`（React 组件测试），不是 `.test.ts`——只列 `.ts`
+// 后缀会漏掉它们，tsc 就会把测试代码（含 @testing-library/react 断言）一起拉进声明 emit。
+// 按 scripts/check-boundaries.js 的 testFilePattern 口径（`\.(?:test|testHarness|testFixtures)
+// \.(?:ts|tsx)$`）把 tsx 变体一并列出，语义仍是「保持排除面」。
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // 包平时的 tsconfig.json 是 noEmit 的纯类型门禁，这里翻开只为 emit 声明。
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    // 不出 declaration map：发布物 `files: ["dist"]` 不含 src，map 只会指向不存在的路径。
+    "declarationMap": false,
+    // 不能开 incremental/composite：tsup 的 clean 会先清空 dist，而 buildinfo 只看源码变没变，
+    // 于是「源码没改 + dist 被清空」会让 tsc 直接跳过 emit，产出一个没有 .d.ts 的 dist。
+    "incremental": false,
+    "composite": false,
+    // 清空继承来的 paths，只留一条显式补丁指向 core dist（理由见文件头）。前提是 core 已按
+    // 拓扑序先出 dist；core 还没构建时这里会变成一片 TS2307/TS6059。
+    "paths": {
+      "@web-agent/core": ["packages/agent-core/dist/index.d.ts"],
+      "@web-agent/core/*": ["packages/agent-core/dist/*"]
+    },
+    // pnpm 的 node_modules 是符号链接，TS 默认会 realpath 到 `node_modules/.pnpm/<pkg>@<ver>/...`；
+    // 给推断出来的类型起名时它就写不出可移植的说明符，报 TS2742。关掉 realpath 后，TS 认
+    // `node_modules/<dep>` 这条真实存在的依赖路径，声明里就是裸说明符。
+    // 只影响这份「声明 emit 专用」配置：日常类型门禁（tsconfig.json）、Vite/Vitest 都不读它。
+    "preserveSymlinks": true,
+    // 不可省：缺了 rootDir，TS 会把公共根推断到仓库根，产物变成 dist/packages/agent-react/...，
+    // 并把跨包源码一起漏进 dist，而 fix-dts-specifiers 对这种畸形 dist 不会报错（它只查说明符
+    // 解析得到与否），错误会一路静默到发布。
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  "include": ["src"],
+  // 测试与测试脚手架不进发布物（口径同 scripts/check-boundaries.js 的 testFilePattern，
+  // ts/tsx 两个后缀都要列——见文件头说明）。
+  "exclude": [
+    "src/**/*.test.ts",
+    "src/**/*.test.tsx",
+    "src/**/*.testFixtures.ts",
+    "src/**/*.testFixtures.tsx",
+    "src/**/*.testHarness.ts",
+    "src/**/*.testHarness.tsx"
+  ]
+}
