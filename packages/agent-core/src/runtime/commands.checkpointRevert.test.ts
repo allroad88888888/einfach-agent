@@ -196,7 +196,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     })
   }
 
-  it('rollbackPlanStage：命中回退点时停 run、恢复快照并同步落盘当轮 checkpoint', () => {
+  it('rollbackPlanStage：命中回退点时停 run、恢复快照并同步落盘当轮 checkpoint', async () => {
     const id = newSession()
     const store = getSessionStore(id).store
     seedPlanStage(id)
@@ -217,7 +217,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
       createdAt: 7,
     })
 
-    rollbackPlanStage('plan-rollback', getPlan(id)!.revision, 'build')
+    await rollbackPlanStage('plan-rollback', getPlan(id)!.revision, 'build')
 
     expect(abortRun).toHaveBeenCalledWith(id)
     expect(revertToPlanStageCheckpoint).toHaveBeenCalledWith(id, 'build', defaultCore)
@@ -228,7 +228,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(store.getter(withdrawnTurnNoticeAtom)?.text).toContain('已回退到该阶段开始前')
   })
 
-  it('rollbackPlanStage：没有回退点的旧会话降级成前向重置，不动对话', () => {
+  it('rollbackPlanStage：没有回退点的旧会话降级成前向重置，不动对话', async () => {
     const id = newSession()
     const store = getSessionStore(id).store
     seedPlanStage(id)
@@ -236,7 +236,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     store.setter(itemsAtom, items)
     vi.mocked(revertToPlanStageCheckpoint).mockReturnValue(undefined)
 
-    rollbackPlanStage('plan-rollback', getPlan(id)!.revision, 'build')
+    await rollbackPlanStage('plan-rollback', getPlan(id)!.revision, 'build')
 
     expect(store.getter(itemsAtom)).toBe(items)
     // 前向重置：阶段被重新打开，计划 revision 前进。
@@ -245,17 +245,17 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(store.getter(withdrawnTurnNoticeAtom)).toBeUndefined()
   })
 
-  it('rollbackPlanStage：revision 不匹配（并发推进）→ 整体 no-op', () => {
+  it('rollbackPlanStage：revision 不匹配（并发推进）→ 整体 no-op', async () => {
     const id = newSession()
     seedPlanStage(id)
 
-    rollbackPlanStage('plan-rollback', 999, 'build')
+    await rollbackPlanStage('plan-rollback', 999, 'build')
 
     expect(revertToPlanStageCheckpoint).not.toHaveBeenCalled()
     expect(abortRun).not.toHaveBeenCalledWith(id)
   })
 
-  it('rollbackPlanStage：尚未开始的阶段 → 整体 no-op', () => {
+  it('rollbackPlanStage：尚未开始的阶段 → 整体 no-op', async () => {
     const id = newSession()
     setPlan(id, {
       id: 'plan-rollback', title: '计划', objective: 'o', status: 'active', revision: 4,
@@ -266,7 +266,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
       }],
     })
 
-    rollbackPlanStage('plan-rollback', getPlan(id)!.revision, 'build')
+    await rollbackPlanStage('plan-rollback', getPlan(id)!.revision, 'build')
 
     expect(revertToPlanStageCheckpoint).not.toHaveBeenCalled()
   })

@@ -21,7 +21,7 @@ export interface ReplOptions {
 
 interface WaitingCommands {
   answerQuestion(questionId: string, answer: string): void
-  approvePlan(approved: boolean): void
+  approvePlan(approved: boolean): Promise<boolean>
   confirmTool(approved: boolean): void
   resumeWithAnswers(): void
 }
@@ -77,7 +77,7 @@ export async function resumeWaitingRun(
     return true
   }
   const answer = await reader.question('> ')
-  if (run.status === 'waiting_plan_approval') commands.approvePlan(isYes(answer))
+  if (run.status === 'waiting_plan_approval') await commands.approvePlan(isYes(answer))
   else commands.confirmTool(isYes(answer))
   return true
 }

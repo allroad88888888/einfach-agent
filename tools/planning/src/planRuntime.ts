@@ -64,7 +64,7 @@ export class PlanRuntime implements PlanRuntimeContract {
     return this.store.get()
   }
 
-  create(input: CreatePlanInput): PlanMutationResult {
+  async create(input: CreatePlanInput): Promise<PlanMutationResult> {
     if (!input.title.trim() || !input.objective.trim()) return fail('plan title and objective are required')
     const invalid = validateStages(input.stages)
     if (invalid) return fail(invalid)
@@ -88,14 +88,13 @@ export class PlanRuntime implements PlanRuntimeContract {
         dependencies: stage.dependencies ?? [],
         status: 'pending',
         evidence: [],
-        evaluations: [],
       })),
     }
-    this.store.set(plan)
+    await this.store.set(plan)
     return { ok: true, plan }
   }
 
-  approve(planId: string, revision: number, approved: boolean): PlanMutationResult {
+  async approve(planId: string, revision: number, approved: boolean): Promise<PlanMutationResult> {
     const current = this.store.get()
     const error = this.guard(current, planId, revision)
     if (error) return fail(error)
@@ -103,7 +102,7 @@ export class PlanRuntime implements PlanRuntimeContract {
     return this.write({ ...current!, status: approved ? 'approved' : 'cancelled' })
   }
 
-  execute(planId: string, revision: number): PlanMutationResult {
+  async execute(planId: string, revision: number): Promise<PlanMutationResult> {
     const current = this.store.get()
     const error = this.guard(current, planId, revision)
     if (error) return fail(error)
@@ -118,7 +117,7 @@ export class PlanRuntime implements PlanRuntimeContract {
     })
   }
 
-  update(input: UpdatePlanInput): PlanMutationResult {
+  async update(input: UpdatePlanInput): Promise<PlanMutationResult> {
     const current = this.store.get()
     const error = this.guard(current, input.planId, input.revision)
     if (error) return fail(error)
@@ -147,7 +146,7 @@ export class PlanRuntime implements PlanRuntimeContract {
    * summary 与 evidence 是强制留痕：阶段完成没有第三方判定，产出至少要留下可回看的记录，
    * 否则计划面板上只剩一串「已完成」，无从判断当时到底做了什么。
    */
-  submitStageResult(input: SubmitStageResultInput): PlanMutationResult {
+  async submitStageResult(input: SubmitStageResultInput): Promise<PlanMutationResult> {
     const current = this.store.get()
     const error = this.guard(current, input.planId, input.revision)
     if (error) return fail(error)
@@ -160,13 +159,16 @@ export class PlanRuntime implements PlanRuntimeContract {
     const evidence = input.evidence.map((item) => item.trim()).filter(Boolean)
     if (!evidence.length) return fail('stage result requires evidence')
 
-    let stages = current!.stages.map((stage) => stage.id === input.stageId ? {
-      ...stage,
-      status: 'completed' as const,
-      evidence: [...stage.evidence, ...evidence],
-      blockReason: undefined,
-      result: { summary, evidence, submittedAt: this.now() },
-    } : stage)
+    let stages = current!.stages.map((stage) => {
+      if (stage.id !== input.stageId) return stage
+      const { blockReason: _blockReason, ...completedStage } = stage
+      return {
+        ...completedStage,
+        status: 'completed' as const,
+        evidence: [...stage.evidence, ...evidence],
+        result: { summary, evidence, submittedAt: this.now() },
+      }
+    })
     const terminal = stages.every((stage) => stage.status === 'completed' || stage.status === 'skipped')
     if (!terminal) {
       const next = nextReadyStage(stages)
@@ -181,7 +183,7 @@ export class PlanRuntime implements PlanRuntimeContract {
    * 已完成的前置阶段保持不变；被回滚的阶段会丢弃旧的执行证据和产出记录，
    * 由宿主在下一次 continuePlan 时从目标阶段重新执行。
    */
-  rollbackStage(planId: string, revision: number, stageId: string): PlanMutationResult {
+  async rollbackStage(planId: string, revision: number, stageId: string): Promise<PlanMutationResult> {
     const current = this.store.get()
     const error = this.guard(current, planId, revision)
     if (error) return fail(error)
@@ -209,12 +211,11 @@ export class PlanRuntime implements PlanRuntimeContract {
       status: 'active',
       stages: current!.stages.map((stage) => {
         if (!rolledBack.has(stage.id)) return stage
+        const { result: _result, blockReason: _blockReason, ...reopenedStage } = stage
         return {
-          ...stage,
+          ...reopenedStage,
           status: stage.id === stageId ? 'in_progress' : 'pending',
           evidence: [],
-          result: undefined,
-          blockReason: undefined,
         }
       }),
     })
@@ -227,9 +228,9 @@ export class PlanRuntime implements PlanRuntimeContract {
     return undefined
   }
 
-  private write(plan: PlanSnapshot): PlanMutationResult {
+  private async write(plan: PlanSnapshot): Promise<PlanMutationResult> {
     const next = { ...plan, revision: plan.revision + 1, updatedAt: this.now() }
-    this.store.set(next)
+    await this.store.set(next)
     return { ok: true, plan: next }
   }
 }

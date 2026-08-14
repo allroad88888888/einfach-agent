@@ -15,7 +15,7 @@ export const executePlanTool: Tool = {
     required: ['planId', 'revision'],
     additionalProperties: false,
   },
-  execute(args, ctx) {
+  async execute(args, ctx) {
     if (!ctx.executePlan) {
       return { ok: false, error: 'execute_plan unavailable', code: 'PLAN_UNAVAILABLE', retryable: false }
     }
@@ -33,7 +33,7 @@ export const executePlanTool: Tool = {
       }
     }
     try {
-      const result = ctx.executePlan(planId, revision as number)
+      const result = await ctx.executePlan(planId, revision as number)
       return result.ok
         ? { ok: true, data: result.plan }
         : { ok: false, error: result.error, code: 'PLAN_EXECUTE_REJECTED', retryable: false }
@@ -41,7 +41,7 @@ export const executePlanTool: Tool = {
       return {
         ok: false,
         error: `execute_plan failed: ${error instanceof Error ? error.message : String(error)}`,
-        code: 'PLAN_EXECUTE_FAILED',
+        code: 'PLAN_INVALID_INPUT',
         retryable: false,
       }
     }

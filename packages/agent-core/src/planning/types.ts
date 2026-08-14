@@ -79,17 +79,18 @@ export type PlanMutationResult =
 
 export interface PlanRuntimeStore {
   get(): PlanSnapshot | undefined
-  set(plan: PlanSnapshot | undefined): void
+  /** Resolves only after this snapshot has crossed the host recovery boundary. */
+  set(plan: PlanSnapshot | undefined): Promise<void>
 }
 
 export interface PlanRuntime {
   get(): PlanSnapshot | undefined
-  create(input: CreatePlanInput): PlanMutationResult
-  approve(planId: string, revision: number, approved: boolean): PlanMutationResult
-  execute(planId: string, revision: number): PlanMutationResult
-  update(input: UpdatePlanInput): PlanMutationResult
-  submitStageResult(input: SubmitStageResultInput): PlanMutationResult
-  rollbackStage(planId: string, revision: number, stageId: string): PlanMutationResult
+  create(input: CreatePlanInput): Promise<PlanMutationResult>
+  approve(planId: string, revision: number, approved: boolean): Promise<PlanMutationResult>
+  execute(planId: string, revision: number): Promise<PlanMutationResult>
+  update(input: UpdatePlanInput): Promise<PlanMutationResult>
+  submitStageResult(input: SubmitStageResultInput): Promise<PlanMutationResult>
+  rollbackStage(planId: string, revision: number, stageId: string): Promise<PlanMutationResult>
 }
 
 export type PlanRuntimeFactory = (store: PlanRuntimeStore) => PlanRuntime

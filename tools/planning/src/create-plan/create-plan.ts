@@ -37,13 +37,13 @@ export const createPlanTool: Tool = {
     required: ['title', 'objective', 'stages'],
     additionalProperties: false,
   },
-  execute(args, ctx) {
+  async execute(args, ctx) {
     if (!ctx.createPlan) {
       return { ok: false, error: 'create_plan unavailable', code: 'PLAN_UNAVAILABLE', retryable: false }
     }
     let result
     try {
-      result = ctx.createPlan(args as unknown as CreatePlanInput)
+      result = await ctx.createPlan(args as unknown as CreatePlanInput)
     } catch (error) {
       return {
         ok: false,

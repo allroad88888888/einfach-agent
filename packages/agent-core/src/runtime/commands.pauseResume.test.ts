@@ -94,6 +94,7 @@ describe('resumeWithAnswers（T-7 ask_user 暂停恢复）', () => {
     const store = getSessionStore(id).store
 
     resumeWithAnswers()
+    await flush()
 
     // 回填了 tool_call_id==='tc1' 的 ToolItem，content 里带 answers。
     const items = store.getter(itemsAtom)
@@ -212,7 +213,7 @@ describe('approvePlan（计划审批暂停恢复）', () => {
     })
     vi.clearAllMocks()
 
-    approvePlan(true)
+    await approvePlan(true)
 
     const last = store.getter(itemsAtom).at(-1)?.item
     expect(last).toMatchObject({ role: 'tool', tool_call_id: 'plan-call' })

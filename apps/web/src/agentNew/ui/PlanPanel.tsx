@@ -34,6 +34,11 @@ const planStatusText = {
   completed: '已完成', failed: '未通过', cancelled: '已取消',
 } as const
 
+// 计划命令会以 false 报告可恢复失败；这里额外吸收违反该契约的 rejection，不能让点击事件产生全局未处理拒绝。
+function containPlanCommand(command: Promise<boolean>): void {
+  void Promise.resolve(command).catch(() => false)
+}
+
 export function PlanPanel() {
   const plan = useAtomValue(planAtom)
   const planStagePoints = useAtomValue(planStageCheckpointsAtom)
@@ -176,7 +181,7 @@ export function PlanPanel() {
                         : '回滚该阶段及其后续依赖阶段（该阶段没有回退点，对话不会被撤回）'}
                     onClick={(event) => {
                       event.stopPropagation()
-                      rollbackPlanStage(plan.id, plan.revision, stage.id)
+                      void containPlanCommand(rollbackPlanStage(plan.id, plan.revision, stage.id))
                     }}
                   >
                     回滚
@@ -233,8 +238,8 @@ export function PlanPanel() {
             <footer className="agentnew-plan-approval">
               <span>请确认这份计划后再开始执行。</span>
               <div>
-                <button type="button" className="agentnew-confirm-reject" onClick={() => approvePlan(false)}>拒绝</button>
-                <button type="button" className="agentnew-confirm-approve" onClick={() => approvePlan(true)}>批准并继续</button>
+                <button type="button" className="agentnew-confirm-reject" onClick={() => void containPlanCommand(approvePlan(false))}>拒绝</button>
+                <button type="button" className="agentnew-confirm-approve" onClick={() => void containPlanCommand(approvePlan(true))}>批准并继续</button>
               </div>
             </footer>
           )}

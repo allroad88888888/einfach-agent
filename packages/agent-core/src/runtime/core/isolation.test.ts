@@ -391,13 +391,13 @@ describe('双实例隔离证明（createCore × 真主循环 × 假 fetch）', (
     expect(defaultPersistence.saveSessions).not.toHaveBeenCalled()
   })
 
-  it('approvePlan 只读取并更新绑定实例的同 id 计划，不串到 defaultCore', () => {
+  it('approvePlan 只读取并更新绑定实例的同 id 计划，不串到 defaultCore', async () => {
     const planRuntime = ((store: PlanRuntimeStore) => ({
       get: store.get,
-      approve: (_planId: string, revision: number, approved: boolean) => {
+      approve: async (_planId: string, revision: number, approved: boolean) => {
         const plan = store.get()!
         const next = { ...plan, status: approved ? 'approved' as const : 'cancelled' as const, revision: revision + 1 }
-        store.set(next)
+        await store.set(next)
         return { ok: true as const, plan: next }
       },
     })) as unknown as PlanRuntimeFactory
@@ -415,7 +415,7 @@ describe('双实例隔离证明（createCore × 真主循环 × 假 fetch）', (
       pendingPlanApproval: { callId: 'plan-call', planId: 'plan-approval', revision: 3 },
     })
 
-    A.approvePlan(true)
+    await A.approvePlan(true)
 
     expect(getPlan('s', A)).toMatchObject({ title: 'A plan', status: 'approved', revision: 4 })
     expect(getPlan('s', defaultCore)).toMatchObject({ title: 'default plan', status: 'awaiting_approval', revision: 3 })

@@ -22,13 +22,13 @@ export const submitStageResultTool: Tool = {
     required: ['planId', 'revision', 'stageId', 'summary', 'evidence'],
     additionalProperties: false,
   },
-  execute(args, ctx) {
+  async execute(args, ctx) {
     if (!ctx.submitStageResult) {
       return { ok: false, error: 'submit_stage_result unavailable', code: 'PLAN_UNAVAILABLE', retryable: false }
     }
     let result
     try {
-      result = ctx.submitStageResult(args as unknown as SubmitStageResultInput)
+      result = await ctx.submitStageResult(args as unknown as SubmitStageResultInput)
     } catch (error) {
       return {
         ok: false,

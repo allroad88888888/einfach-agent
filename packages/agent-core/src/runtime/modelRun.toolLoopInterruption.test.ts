@@ -180,14 +180,14 @@ describe('runSession（多轮 lazy-tool 循环，T-6）工具轮中断与并发'
   it('create_plan required：进入专用计划审批状态，模型不能自行继续', async () => {
     defaultCore.planRuntime = ((store: PlanRuntimeStore) => ({
       get: store.get,
-      create: (input: CreatePlanInput) => {
+      create: async (input: CreatePlanInput) => {
         const now = Date.now()
         const plan = {
           schemaVersion: 4 as const, id: 'plan-wait', title: input.title, objective: input.objective,
           status: 'awaiting_approval' as const, revision: 1, requiresApproval: true, createdAt: now, updatedAt: now,
           stages: input.stages.map((stage) => ({ ...stage, deliverables: stage.deliverables ?? [], dependencies: stage.dependencies ?? [], status: 'pending' as const, evidence: [] })),
         }
-        store.set(plan)
+        await store.set(plan)
         return { ok: true as const, plan }
       },
     })) as unknown as PlanRuntimeFactory

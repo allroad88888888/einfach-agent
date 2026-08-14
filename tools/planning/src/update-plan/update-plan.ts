@@ -23,12 +23,12 @@ export const updatePlanTool: Tool = {
     required: ['planId', 'revision', 'stageId', 'status'],
     additionalProperties: false,
   },
-  execute(args, ctx) {
+  async execute(args, ctx) {
     if (!ctx.updatePlan) {
       return { ok: false, error: 'update_plan unavailable', code: 'PLAN_UNAVAILABLE', retryable: false }
     }
     try {
-      const result = ctx.updatePlan(args as unknown as UpdatePlanInput)
+      const result = await ctx.updatePlan(args as unknown as UpdatePlanInput)
       return result.ok
         ? { ok: true, data: result.plan }
         : { ok: false, error: result.error, code: 'PLAN_UPDATE_REJECTED', retryable: false }

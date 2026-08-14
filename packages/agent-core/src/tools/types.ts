@@ -195,10 +195,10 @@ export interface ToolContext {
   cancelExecution?(executionId: string): boolean
   /** 结构化计划能力。状态由宿主的 PlanRuntime 管理，工具不得直接访问 atom/store。 */
   getPlan?(): PlanSnapshot | undefined
-  createPlan?(input: CreatePlanInput): PlanMutationResult
-  executePlan?(planId: string, revision: number): PlanMutationResult
-  updatePlan?(input: UpdatePlanInput): PlanMutationResult
-  submitStageResult?(input: SubmitStageResultInput): PlanMutationResult
+  createPlan?(input: CreatePlanInput): Promise<PlanMutationResult>
+  executePlan?(planId: string, revision: number): Promise<PlanMutationResult>
+  updatePlan?(input: UpdatePlanInput): Promise<PlanMutationResult>
+  submitStageResult?(input: SubmitStageResultInput): Promise<PlanMutationResult>
   /** 执行桌面 shell command。工具只经 ctx 调用，Tauri invoke 细节集中在 runtime 桥接层。 */
   runShell(input: ShellCommandInput): Promise<ShellCommandResult>
   /** 读取文本文件；Auto 会话可读取 workspace 外路径。具体 Tauri invoke 细节集中在 runtime 桥接层。 */

@@ -127,7 +127,7 @@ describe('ctx 副作用 + stale 守卫', () => {
     expect(ctx.saveArtifact({ filename: 'a.txt', content: 'x' })).toEqual({ error: 'stale' })
   })
 
-  it('被顶掉的旧 run 不能提交阶段结果；计划状态保持不变', () => {
+  it('被顶掉的旧 run 不能提交阶段结果；计划状态保持不变', async () => {
     seedRunningSession('s1', 'new-run')
     setPlan('s1', {
       id: 'plan-1',
@@ -150,29 +150,29 @@ describe('ctx 副作用 + stale 守卫', () => {
     })
     const stale = ctxFor('submit_stage_result', 's1', 'old-run')
 
-    expect(() => stale.submitStageResult?.({
+    await expect(stale.submitStageResult!({
       planId: 'plan-1',
       revision: 3,
       stageId: 'build',
       summary: '已实现',
       evidence: ['tests'],
-    })).toThrow('stale')
+    })).rejects.toThrow('stale')
     expect(getPlan('s1')).toMatchObject({ revision: 3, stages: [{ status: 'in_progress' }] })
   })
 })
 
 describe('ctx 计划实例归属', () => {
-  it('custom core 创建和读取计划不落入 defaultCore', () => {
+  it('custom core 创建和读取计划不落入 defaultCore', async () => {
     const core = createCoreInstance({
       planRuntime: ((store: PlanRuntimeStore) => ({
         get: store.get,
-        create: (input: CreatePlanInput) => {
+        create: async (input: CreatePlanInput) => {
           const plan = {
             id: 'plan-1', title: input.title, objective: input.objective, status: 'approved' as const,
             revision: 1, requiresApproval: false, createdAt: 0, updatedAt: 0,
             stages: input.stages.map((stage) => ({ ...stage, deliverables: stage.deliverables ?? [], dependencies: stage.dependencies ?? [], status: 'pending' as const, evidence: [] })),
           }
-          store.set(plan)
+          await store.set(plan)
           return { ok: true as const, plan }
         },
       })) as unknown as PlanRuntimeFactory,
@@ -182,11 +182,11 @@ describe('ctx 计划实例归属', () => {
       sessionId: 's1', runId: 'r', signal: new AbortController().signal, callId: 'call1', toolName: 'create_plan', core,
     })
 
-    expect(ctx.createPlan!({
+    await expect(ctx.createPlan!({
       title: '自定义实例计划',
       objective: '验证计划归属',
       stages: [{ id: 'stage-1', title: '验证', objective: '写入 custom core' }],
-    })).toMatchObject({ ok: true })
+    })).resolves.toMatchObject({ ok: true })
     expect(getPlan('s1', core)).toMatchObject({ title: '自定义实例计划' })
     expect(ctx.getPlan!()).toMatchObject({ title: '自定义实例计划' })
     expect(getPlan('s1')).toBeUndefined()

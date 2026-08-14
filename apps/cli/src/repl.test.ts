@@ -21,7 +21,7 @@ describe('resumeWaitingRun', () => {
 
     await expect(resumeWaitingRun(run, readerWith(['是']), { write: (line) => output.push(line) }, {
       answerQuestion: (id, answer) => calls.push(`${id}:${answer}`),
-      approvePlan: () => {}, confirmTool: () => {}, resumeWithAnswers: () => calls.push('resume'),
+      approvePlan: async () => true, confirmTool: () => {}, resumeWithAnswers: () => calls.push('resume'),
     })).resolves.toBe(true)
     expect(output).toEqual(['[ask] 继续吗？\n'])
     expect(calls).toEqual(['answer:是', 'resume'])
@@ -35,11 +35,37 @@ describe('resumeWaitingRun', () => {
 
     const commands = {
       answerQuestion: () => {}, resumeWithAnswers: () => {},
-      approvePlan: (approved: boolean) => calls.push(`plan:${approved}`),
+      approvePlan: async (approved: boolean) => {
+        calls.push(`plan:${approved}`)
+        return true
+      },
       confirmTool: (approved: boolean) => calls.push(`tool:${approved}`),
     }
     await expect(resumeWaitingRun(plan, readerWith(['y']), output, commands)).resolves.toBe(true)
     await expect(resumeWaitingRun(tool, readerWith(['n']), output, commands)).resolves.toBe(true)
     expect(calls).toEqual(['plan:true', 'tool:false'])
+  })
+
+  it('等待计划审批命令完成后才结束恢复流程', async () => {
+    const run: RunState = {
+      runId: 'plan',
+      status: 'waiting_plan_approval',
+      pendingPlanApproval: { callId: 'c', planId: 'p', revision: 1 },
+    }
+    let resolveApproval: (value: boolean) => void = () => undefined
+    const approval = new Promise<boolean>((resolve) => { resolveApproval = resolve })
+    const pending = resumeWaitingRun(run, readerWith(['y']), { write: () => {} }, {
+      answerQuestion: () => {},
+      approvePlan: () => approval,
+      confirmTool: () => {},
+      resumeWithAnswers: () => {},
+    })
+    let completed = false
+    void pending.then(() => { completed = true })
+
+    await Promise.resolve()
+    expect(completed).toBe(false)
+    resolveApproval(true)
+    await expect(pending).resolves.toBe(true)
   })
 })

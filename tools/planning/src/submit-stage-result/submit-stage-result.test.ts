@@ -18,15 +18,15 @@ function baseContext(overrides: Partial<ToolContext>): ToolContext {
 }
 
 /** 默认两个阶段；singleStage 用于覆盖「最后一个阶段完成 → 计划完成」。 */
-function harness(singleStage = false) {
+async function harness(singleStage = false) {
   let plan: PlanSnapshot | undefined
   let now = 0
   const store = {
     get: () => plan,
-    set: (next: PlanSnapshot | undefined) => { plan = next },
+    set: async (next: PlanSnapshot | undefined) => { plan = next },
   }
   const planning = new PlanRuntime(store, () => ++now, () => 'plan-1')
-  const created = planning.create({
+  const created = await planning.create({
     title: 'Delivery',
     objective: 'Ship safely',
     stages: singleStage
@@ -37,7 +37,7 @@ function harness(singleStage = false) {
       ],
   })
   if (!created.ok) throw new Error(created.error)
-  const started = planning.execute(created.plan.id, created.plan.revision)
+  const started = await planning.execute(created.plan.id, created.plan.revision)
   if (!started.ok) throw new Error(started.error)
   return {
     planning,
@@ -48,7 +48,7 @@ function harness(singleStage = false) {
 }
 
 function submit(
-  instance: ReturnType<typeof harness>,
+  instance: Awaited<ReturnType<typeof harness>>,
   args: Partial<{ planId: string; revision: number; stageId: string; summary: string; evidence: string[] }> = {},
 ) {
   return submitStageResultTool.execute({
@@ -65,7 +65,7 @@ function submit(
 
 describe('submit_stage_result tool', () => {
   it('完成当前阶段并激活下一个依赖就绪阶段', async () => {
-    const instance = harness()
+    const instance = await harness()
 
     const result = await submit(instance)
 
@@ -78,7 +78,7 @@ describe('submit_stage_result tool', () => {
   })
 
   it('最后一个阶段完成后计划直接完成', async () => {
-    const instance = harness(true)
+    const instance = await harness(true)
 
     const result = await submit(instance)
 
@@ -87,7 +87,7 @@ describe('submit_stage_result tool', () => {
   })
 
   it('summary 或 evidence 为空时拒绝提交，阶段保持 in_progress', async () => {
-    const instance = harness()
+    const instance = await harness()
 
     expect(await submit(instance, { summary: '   ' })).toMatchObject({
       ok: false,
@@ -102,7 +102,7 @@ describe('submit_stage_result tool', () => {
   })
 
   it('revision 过期时 fail-closed，不推进计划', async () => {
-    const instance = harness()
+    const instance = await harness()
 
     const result = await submit(instance, { revision: instance.revision + 1 })
 
@@ -115,7 +115,7 @@ describe('submit_stage_result tool', () => {
   })
 
   it('不能提交未在执行中的阶段', async () => {
-    const instance = harness()
+    const instance = await harness()
 
     const result = await submit(instance, { stageId: 'release' })
 
