@@ -16,7 +16,11 @@ import type { SessionsPersistence } from '../state/persistence/contract'
 import type { HistoryDriver } from '../state/persistence/historyDriver'
 import type { RecoveryDriver } from '../state/persistence/recoveryDriver'
 import type { ObservabilityPort } from '../observability/port'
-import { createRecoveryWriter, type RecoveryWriter } from './recoveryWriter'
+import {
+  createRecoveryWriter,
+  type RecoveryWriter,
+  type RecoveryWriteOutcome,
+} from './recoveryWriter'
 import { createWriteQueue } from './writeQueue'
 import {
   writeCheckpoint,
@@ -50,7 +54,7 @@ export interface PersistenceBridge {
   persistTruncate(id: string, turnIndex: number): void
   persistDeleteSession(id: string): void
   /** Explicit recovery boundary; no atom subscription is installed by this bridge. */
-  persistRecovery(id: string, reason?: string): void
+  persistRecovery(id: string, reason?: string): Promise<RecoveryWriteOutcome | undefined>
   /** Waits for recovery writes queued before this call, for orderly shutdown or dispose. */
   flushRecovery(): Promise<void>
 }
@@ -145,12 +149,12 @@ export function createPersistenceBridge(rootStore: Store, observability: Observa
     if (recoveryWriter) void recoveryWriter.deleteSession(id)
   }
 
-  function persistRecovery(id: string, reason?: string): void {
+  function persistRecovery(id: string, reason?: string): Promise<RecoveryWriteOutcome | undefined> {
     const writer = recoveryWriter
-    if (!writer) return
+    if (!writer) return Promise.resolve(undefined)
     const store = recoveryStore?.(id)
-    if (!store) return
-    void writer.persist(store, id, reason)
+    if (!store) return Promise.resolve(undefined)
+    return writer.persist(store, id, reason)
   }
 
   function flushRecovery(): Promise<void> {
@@ -227,8 +231,8 @@ export function persistDeleteSession(id: string): void {
   defaultBridgeRef.current?.persistDeleteSession(id)
 }
 
-export function persistRecovery(id: string, reason?: string): void {
-  defaultBridgeRef.current?.persistRecovery(id, reason)
+export function persistRecovery(id: string, reason?: string): Promise<RecoveryWriteOutcome | undefined> {
+  return defaultBridgeRef.current?.persistRecovery(id, reason) ?? Promise.resolve(undefined)
 }
 
 /** Waits for recovery writes already queued on the default Core instance. */

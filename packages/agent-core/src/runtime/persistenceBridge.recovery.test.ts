@@ -16,6 +16,7 @@ import {
   configurePersistence,
   createPersistenceBridge,
   hydratePersistence,
+  persistRecovery as persistDefaultRecovery,
   resetPersistence,
 } from './persistenceBridge'
 
@@ -74,14 +75,20 @@ afterEach(() => {
 })
 
 describe('persistenceBridge recovery facade', () => {
+  it('returns undefined from the unconfigured default facade', async () => {
+    resetPersistence()
+
+    await expect(persistDefaultRecovery('s1')).resolves.toBeUndefined()
+  })
+
   it('is a no-op until both recovery driver and extant-session locator are configured', async () => {
     const rootStore = rootStoreFor()
     const recovery = createMemoryRecoveryDriver()
     const bridge = createPersistenceBridge(rootStore, createObservabilityPort())
 
-    bridge.persistRecovery('s1')
+    await expect(bridge.persistRecovery('s1')).resolves.toBeUndefined()
     bridge.configure({ recovery })
-    bridge.persistRecovery('s1')
+    await expect(bridge.persistRecovery('s1')).resolves.toBeUndefined()
 
     await expect(recovery.loadLatest('s1')).resolves.toBeUndefined()
   })
@@ -94,8 +101,13 @@ describe('persistenceBridge recovery facade', () => {
     bridge.configure({ recovery, recoveryStore: (id) => id === 's1' ? sessionStore : undefined })
 
     await expect(recovery.loadLatest('s1')).resolves.toBeUndefined()
-    bridge.persistRecovery('missing-session')
-    bridge.persistRecovery('s1', 'turn.complete')
+    await expect(bridge.persistRecovery('missing-session')).resolves.toBeUndefined()
+    await expect(bridge.persistRecovery('s1', 'turn.complete')).resolves.toEqual({
+      status: 'saved',
+      sessionId: 's1',
+      generation: 1,
+      attempts: 1,
+    })
 
     await waitForSnapshot(recovery)
     await expect(recovery.loadLatest('s1')).resolves.toMatchObject({
@@ -129,6 +141,25 @@ describe('persistenceBridge recovery facade', () => {
       await expect(recovery.loadLatest('s1')).resolves.toBeUndefined()
     })
     expect(saveLatest).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns the recovery writer error outcome without hiding a driver failure', async () => {
+    const error = new Error('driver unavailable')
+    const rootStore = rootStoreFor()
+    const sessionStore = sessionStoreFor()
+    const base = createMemoryRecoveryDriver()
+    const recovery: RecoveryDriver = {
+      ...base,
+      saveLatest: async () => { throw error },
+    }
+    const bridge = createPersistenceBridge(rootStore, createObservabilityPort())
+    bridge.configure({ recovery, recoveryStore: () => sessionStore })
+
+    await expect(bridge.persistRecovery('s1')).resolves.toEqual({
+      status: 'error',
+      sessionId: 's1',
+      error,
+    })
   })
 
   it('flushRecovery waits for the recovery write already queued by its facade', async () => {
