@@ -1,6 +1,6 @@
 # Core 中断恢复 Issue 树
 
-状态：**规划已冻结，W2 已完成，W3 进行中**。本文件是这项迁移的唯一执行账本；每张卡完成后由主会话
+状态：**规划已冻结，W3 已完成，W4 可开工**。本文件是这项迁移的唯一执行账本；每张卡完成后由主会话
 更新状态和证据，执行 agent 不并发修改本文件。
 
 本文件替代提交 `8d70fcc` 中误设为「可逆历史 / redo」的树。那条方向不再执行。
@@ -51,7 +51,7 @@ redo、历史 cursor、追加日志或将 atom 身份持久化。
 ## 目标分层
 
 ```text
-业务 atom ── capture allowlist ──> RecoverySnapshot { generation, values（含 continuation metadata） }
+业务 atom ── capture allowlist ──> RecoverySnapshot { static session, generation, values（含 continuation metadata） }
      ^                                      │
      │                              single-record durable commit
      └── atomic apply + derived recompute ──┘
@@ -108,14 +108,16 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 - **owner / 模型**：R1-contract / strong（数据契约）
 - **独占面**：新建 `packages/agent-core/src/state/recoverySnapshot.type.ts`、`recoverySnapshot.codec.ts` 及
   colocated 测试；只允许最小 type barrel 出口，不改 runtime/persistence。
-- **目标**：定义 JSON-safe `RecoverySnapshotV1`、sessionId、generation、commit marker、逻辑字段名与
-  codec 升级入口；覆盖 conversation、context、plan、plan stages、run、queue、问题答案、execution graph
-  及子 agent continuation metadata。
+- **目标**：定义 JSON-safe `RecoverySnapshotV1`、sessionId、generation、commit marker、静态 session
+  入口元数据与 codec 升级入口；静态元数据明确排除动态 `plan`/`executionGraph`，其余值覆盖
+  conversation、context、plan、plan stages、run、queue、问题答案、execution graph 及子 agent continuation
+  metadata。
 - **非目标**：不捕获 Store/atom identity，不决定存储表，不接线读取或写入。
 - **验收**：schema round-trip、未知未来版本 fail-closed、旧空记录可识别；字段审计证明没有 derived/UI
   值；聚焦 vitest、core build、`wc -l` 和 `git diff --check` 均绿。
-- **证据**：独立复核通过；`recoverySnapshot.type.test.ts` 17/17，`pnpm --filter @web-agent/core build`
-  通过；type/codec/test 分别 85/240/178 行，`git diff --check` 通过。
+- **证据**：独立复核通过；静态元数据要求 session identity 匹配并拒绝动态 plan/graph，聚焦契约与投影
+  用例 32/32，`pnpm --filter @web-agent/core build` 通过；type/codec/projection 分别 105/264/132 行，
+  `git diff --check` 通过。
 
 ### R2 · atom 投影 allowlist 与原子 apply
 
@@ -150,20 +152,25 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 
 ### R4 · generation 写入序列器与落盘边界
 
-- **波次 / 依赖 / 状态**：W3 / R2、R3 / BLOCKED
-- **owner / 模型**：待派 / strong（并发持久化）
+- **波次 / 依赖 / 状态**：W3 / R2、R3 / DONE
+- **owner / 模型**：已验收 / strong（并发持久化）
 - **独占面**：新建 `src/runtime/recoveryWriter.ts` 与测试；只为接线新增最小 recovery facade，不改
   hydrate 或具体 continuation。
-- **目标**：每 session 串行 capture→commit，generation 单调且最后一次成功写不能被过时任务覆盖；定义
-  事务边界：用户提交、assistant/tool item 固化、工具派发前后、等待态、计划阶段、队列和子任务调度。
-  capture 必须在一个 atom 批次/一致 epoch 内完成 JSON-safe clone，异步排队后不得再读取活 atom。
-- **非目标**：不每个 streaming token 强制同步写，不自行解释如何 resume。
-- **验收**：乱序 Promise、连续写入、失败重试、dispose 时 flush 均有测试；每个已列边界都有调用证据。
+- **目标**：每 session 串行 capture→commit，generation 单调且最后一次成功写不能被过时任务覆盖；提供明确的
+  `persistRecovery` 边界 API 与 `flushRecovery` 关闭 API。capture 必须在一个 atom 批次/一致 epoch 内完成
+  JSON-safe clone，异步排队后不得再读取活 atom；R6/R7/R8 各自负责在用户提交、item 固化、工具派发、等待态、
+  计划阶段、队列和子任务调度的实际边界调用它。
+- **非目标**：不每个 streaming token 强制同步写，不自行解释如何 resume，不安装泛化 atom subscription。
+- **验收**：乱序 Promise、连续写入、失败后继续、删除 fence、dispose 前 `flushRecovery` 均有测试；driver
+  failure 必须通过 outcome 与 observability diagnostic 暴露。
+- **证据**：独立复核通过；writer/bridge 4 个 Vitest 文件 30/30，联合恢复测试 63/63，core build 通过。
+  `recoveryWriter.ts` 229 行、bridge 237 行；`flushRecovery()` 只等待调用瞬间已入队的写入，未配置时是已解决
+  Promise，删除以 durable tombstone 防迟到写复活。
 
 ### R5 · hydrate 与 interruption 分类
 
-- **波次 / 依赖 / 状态**：W3 / R2、R3 / BLOCKED
-- **owner / 模型**：待派 / strong（恢复入口）
+- **波次 / 依赖 / 状态**：W3 / R2、R3 / DONE
+- **owner / 模型**：已验收 / strong（恢复入口）
 - **独占面**：`state/persistence/hydrate.ts`、其测试和新的恢复分类模块；不得改 model loop、tool
   executor 或 checkpoint undo writer。
 - **目标**：优先读取单代 snapshot，在一次 batch apply 后将真正 live 的运行状态转为 `interrupted`；
@@ -172,6 +179,9 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
   legacy checkpoint/session meta；只有完全缺失 v1 才允许 legacy fallback。
 - **非目标**：不自动执行模型/工具，不以 SessionMeta 的旧 graph 覆盖新 snapshot。
 - **验收**：冷启动、旧 checkpoint fallback、torn legacy pair、各 run status 和已填写答案都有恢复测试。
+- **证据**：独立只读验收通过；有效 v1 apply 后立即跳过 legacy，损坏 v1 挡住 legacy 且 root 仅保留静态
+  session meta，sessions 列表读取失败仍可由 v1 重建。`recoveryHydration.test.ts` 与 `hydrate.test.ts`
+  12/12，联合恢复测试 63/63，core build 通过；分类模块 164 行、hydrate 273 行。
 
 ### R6 · 模型循环与等待输入恢复
 
