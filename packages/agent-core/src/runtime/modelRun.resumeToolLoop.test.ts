@@ -15,7 +15,7 @@ afterEach(() => {
 })
 
 describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
-  it('重启中断恢复：沿用原 run/checkpoint，孤儿写工具按 unknown 闭合且不自动重放', async () => {
+  it('重启中断恢复：unknown 工具结果保持 interrupted，且不重放或请求模型', async () => {
     seedSession('restart-resume', { vendor: 'deepseek', model: 'x' })
     const store = getSessionStore('restart-resume').store
     const interruptedItems = [
@@ -55,11 +55,13 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
       runId: 'original-run',
       turnId: 'u1',
       status: 'interrupted',
+      toolCallOutcomes: {
+        'write-1': { state: 'outcomeUnknown', updatedAt: 3 },
+      },
     })
-    let requestMessages: Array<{ role: string; tool_call_id?: string; content?: string }> = []
-    const fetchImpl: typeof fetch = async (_url, init) => {
-      const body = JSON.parse(String(init?.body)) as { messages: typeof requestMessages }
-      requestMessages = body.messages
+    let requestCount = 0
+    const fetchImpl: typeof fetch = async () => {
+      requestCount += 1
       return jsonResponse('已检查并继续完成')
     }
 
@@ -72,36 +74,19 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
     expect(store.getter(runAtom)).toMatchObject({
       runId: 'original-run',
       turnId: 'u1',
-      status: 'done',
+      status: 'interrupted',
+      toolCallOutcomes: {
+        'write-1': { state: 'outcomeUnknown' },
+      },
     })
-    expect(store.getter(itemsAtom).map(({ item }) => item.role)).toEqual([
-      'user',
-      'assistant',
-      'tool',
-      'tool',
-      'assistant',
-    ])
-    const interruptedToolResult = store.getter(itemsAtom)[2].item
-    if (interruptedToolResult.role !== 'tool') throw new Error('意外的条目形状')
-    expect(interruptedToolResult.tool_call_id).toBe('write-1')
-    expect(JSON.parse(interruptedToolResult.content)).toMatchObject({
-      interrupted: true,
-      result: 'unknown',
-    })
-    expect(requestMessages).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        role: 'tool',
-        tool_call_id: 'write-1',
-        content: expect.stringContaining('"interrupted":true'),
-      }),
-    ]))
+    expect(store.getter(itemsAtom).map(({ item }) => item.role)).toEqual(['user', 'assistant'])
+    expect(requestCount).toBe(0)
     const checkpoints = store.getter(checkpointsAtom)
     expect(checkpoints).toHaveLength(1)
     expect(checkpoints[0]).toMatchObject({
       turnIndex: 0,
-      label: '修改文件',
-      kind: 'completed',
-      recovery: undefined,
+      label: '[执行中] 修改文件',
+      recovery: { run: { runId: 'original-run', status: 'interrupted' } },
     })
   })
 
@@ -178,6 +163,28 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
     ]
     const currentItems = [
       { id: 'current-user', createdAt: 2, item: { role: 'user' as const, content: '新任务' } },
+      {
+        id: 'current-assistant',
+        createdAt: 3,
+        item: {
+          role: 'assistant' as const,
+          content: null,
+          tool_calls: [{
+            id: 'reconciled-tool',
+            type: 'function' as const,
+            function: { name: 'read_file', arguments: JSON.stringify({ path: 'a.txt' }) },
+          }],
+        },
+      },
+      {
+        id: 'reconciled-tool-result',
+        createdAt: 4,
+        item: {
+          role: 'tool' as const,
+          tool_call_id: 'reconciled-tool',
+          content: JSON.stringify({ ok: true }),
+        },
+      },
     ]
     store.setter(itemsAtom, currentItems)
     store.setter(checkpointsAtom, [
@@ -205,6 +212,9 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
       runId: 'structured-run',
       turnId: 'current-user',
       status: 'interrupted',
+      toolCallOutcomes: {
+        'reconciled-tool': { state: 'outcomeKnown', updatedAt: 4 },
+      },
     })
 
     await resumeInterruptedSession('mixed-checkpoint-resume', {
@@ -213,6 +223,7 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
       fetchImpl: async () => jsonResponse('新任务已完成'),
     })
 
+    expect(store.getter(runAtom)).toMatchObject({ runId: 'structured-run', status: 'done' })
     const checkpoints = store.getter(checkpointsAtom)
     expect(checkpoints).toHaveLength(2)
     expect(checkpoints[0]).toMatchObject({
@@ -226,7 +237,6 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
       kind: 'completed',
       recovery: undefined,
     })
-    expect(store.getter(runAtom)).toMatchObject({ runId: 'structured-run', status: 'done' })
   })
 
   it('直接跑 runToolLoop：seed items + setRun 后跑到 done，不 append user', async () => {

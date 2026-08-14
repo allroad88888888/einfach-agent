@@ -88,7 +88,6 @@ async function persistTextResponse(
   finished: boolean,
 ): Promise<boolean> {
   const { base, checkpoints } = input
-  checkpoints.persistWorkingTurn()
   if (await requireRecoveryDurability(base.id, base.runId, base.core, 'model_text_response_saved')) return finished
   checkpoints.commitStoppedTurn()
   base.trace.finish('cancelled', 'agent.recovery_fence_failed', { reason: 'recovery_fence_failed' })
