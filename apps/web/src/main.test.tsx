@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
+const defaultPersistenceFacade = vi.hoisted(() => ({
+  configure: vi.fn(),
+  hydrate: vi.fn(async () => false),
+}))
+
 // C1：main.tsx 必须在启动时装配 MCP 运行时（initializeMcpSettings + hydrateMcpSettings），
 // 不能像之前那样只在 SettingsDialog 的 useEffect 里触发——那样用户不点开设置，
 // autoConnect 的 MCP 服务永远连不上。本测试直接 import 真实的 './main' 入口，
@@ -13,8 +18,8 @@ vi.mock('@web-agent/core/runtime/commands', () => ({
   newSession: vi.fn(),
 }))
 vi.mock('@web-agent/core/runtime/persistenceBridge', () => ({
-  configurePersistence: vi.fn(),
-  hydratePersistence: vi.fn(async () => false),
+  configurePersistence: defaultPersistenceFacade.configure,
+  hydratePersistence: defaultPersistenceFacade.hydrate,
 }))
 vi.mock('@web-agent/core/observability/trace', () => ({
   configureObservability: vi.fn(),
@@ -22,6 +27,7 @@ vi.mock('@web-agent/core/observability/trace', () => ({
 vi.mock('@web-agent/persistence-idb', () => ({
   createIndexedDbHistoryDriver: vi.fn(() => ({})),
   createIndexedDbSessionsPersistence: vi.fn(() => ({})),
+  createIndexedDbRecoveryDriver: vi.fn(() => ({})),
 }))
 vi.mock('@web-agent/observability-idb', () => ({
   createIndexedDbLogDriver: vi.fn(() => ({})),
@@ -78,12 +84,25 @@ describe('main entry: MCP 启动装配（C1）', () => {
     const { isMcpSettingsConfigured } = await import('./mcp/commands')
     const { mcpHydrationAtom } = await import('./mcp/state')
     const { rootStore } = await import('@web-agent/core/state/rootStore')
+    const { defaultCore } = await import('@web-agent/core')
+    const configurePersistence = vi.spyOn(defaultCore.persistence, 'configure')
+    const hydratePersistence = vi.spyOn(defaultCore.persistence, 'hydrate').mockResolvedValue(false)
 
     expect(isMcpSettingsConfigured()).toBe(false)
     expect(rootStore.getter(mcpHydrationAtom).status).toBe('idle')
 
     // 真正的入口文件：本测试从未 import 任何 SettingsDialog/SettingsCenter 模块。
     await import('./main')
+
+    expect(configurePersistence).toHaveBeenCalledOnce()
+    expect(hydratePersistence).toHaveBeenCalledOnce()
+    expect(defaultPersistenceFacade.configure).not.toHaveBeenCalled()
+    expect(defaultPersistenceFacade.hydrate).not.toHaveBeenCalled()
+    const dependencies = configurePersistence.mock.calls[0]?.[0]
+    const unknownSessionId = 'host-recovery-must-not-create-a-session'
+    expect(defaultCore.findSessionStore(unknownSessionId)).toBeUndefined()
+    expect(dependencies?.recoveryStore?.(unknownSessionId)).toBeUndefined()
+    expect(defaultCore.findSessionStore(unknownSessionId)).toBeUndefined()
 
     // initializeMcpSettings() 是同步调用，import 完成时必须已经生效。
     expect(isMcpSettingsConfigured()).toBe(true)

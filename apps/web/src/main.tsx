@@ -3,15 +3,12 @@ import { createRoot } from 'react-dom/client'
 import { Provider } from '@einfach/react'
 import {
   activeSessionMetaAtom,
-  rootStore,
   configureCommands,
   newSession,
   defaultCore,
   configureDefaultDelegation,
   configureDefaultProjectSkillsProvider,
   configureDefaultSkillsRegistry,
-  configurePersistence,
-  hydratePersistence,
 } from '@web-agent/core'
 import { registerStandardTools } from '@web-agent/tools'
 import { buildProjectSkillsProvider, builtInSkillsRegistry } from '@web-agent/tools-skills'
@@ -25,10 +22,6 @@ import {
   configureObservability,
   configureTraceLogReader as configureTraceLogReaderFactory,
 } from '@web-agent/core/observability'
-import {
-  createIndexedDbHistoryDriver,
-  createIndexedDbSessionsPersistence,
-} from '@web-agent/persistence-idb'
 import { createIndexedDbLogDriver, createIndexedDbLogReader } from '@web-agent/observability-idb'
 import { isTauri } from '@tauri-apps/api/core'
 import { AppShell } from './agentNew/ui/AppShell'
@@ -57,15 +50,22 @@ import {
   reportReactCommit,
   startUiPerformanceDiagnostics,
 } from './performanceDiagnostics'
+import { createHostPersistenceDrivers } from './persistence/persistenceDrivers'
+import {
+  installBrowserRecoveryFlush,
+  installDesktopRecoveryFlush,
+} from './persistence/recoveryFlushLifecycle'
 import './styles/global.css'
 import './agentNew/ui/agentnew.css'
 
 // 【登记反转 · TS1】defaultCore 造出来是无工具的——app 在此把标准工具装进它的 registry。
 // core 不再硬编码工具，装什么由消费方（这里是 app）决定。
-registerStandardTools(defaultCore.tools)
+const core = defaultCore
+
+registerStandardTools(core.tools)
 configureDefaultSkillsRegistry(builtInSkillsRegistry)
 configureDefaultProjectSkillsProvider(buildProjectSkillsProvider())
-defaultCore.planRuntime = createDefaultPlanRuntime
+core.planRuntime = createDefaultPlanRuntime
 configureDefaultDelegation(createDelegationAssembly)
 
 // MCP 运行时必须在启动时装配，不能等用户点开设置弹窗才 mount（那样 autoConnect 形同虚设）。
@@ -106,19 +106,15 @@ configureModelCredentialHost(
   tauriHost ? createTauriModelCredentialHost() : createUnavailableModelCredentialHost(),
 )
 
-// 持久化 driver：桌面壳（Tauri）用 SQLite，浏览器用 IndexedDB（TaK1，上层逻辑不变）。
-// 读回与写盘必须用同一对实例——这条现在由 persistenceBridge 结构性保证：configurePersistence
-// 注入的那对 driver 就是 hydratePersistence 读回时用的那对。sqlite 实现**动态 import**
-// —— 只在 Tauri 下加载，浏览器 bundle 不含它（代码分割 + 避免非 Tauri 环境引 plugin-sql）。
-async function resolvePersistence() {
+// 桌面关窗有 Tauri 的可 await 拦截；浏览器 pagehide 只能尽力排空已有写队列。
+// 两边都只持有这个宿主自己的 Core instance，绝不触默认 facade 的持久化桥。
+async function installRecoveryFlushLifecycle(): Promise<void> {
   if (tauriHost) {
-    const { createSqlitePersistence } = await import('@web-agent/persistence-sqlite')
-    return createSqlitePersistence()
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
+    await installDesktopRecoveryFlush(core, getCurrentWindow())
+    return
   }
-  return {
-    history: createIndexedDbHistoryDriver(),
-    sessions: createIndexedDbSessionsPersistence(),
-  }
+  installBrowserRecoveryFlush(core)
 }
 
 function configureObservabilityDriver(): void {
@@ -156,7 +152,7 @@ function currentView(): string | null {
 function renderRoot(children: React.ReactNode): void {
   createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <Provider store={rootStore}>
+      <Provider store={core.rootStore}>
         {children}
       </Provider>
     </React.StrictMode>,
@@ -191,17 +187,20 @@ function renderWindowScrollDemo(): void {
 async function bootstrapApplication(): Promise<StartupCredentialTargetResolution> {
   const settingsHydration = hydrateAppSettings()
   try {
-    const { history, sessions } = await resolvePersistence()
-    configurePersistence({ history, sessions })
+    core.persistence.configure({
+      ...await createHostPersistenceDrivers(tauriHost),
+      recoveryStore: (sessionId) => core.findSessionStore(sessionId)?.store,
+    })
+    await installRecoveryFlushLifecycle()
     configureObservabilityDriver()
     configureTraceLogReaderHost()
-    const restored = await hydratePersistence()
+    const restored = await core.persistence.hydrate()
     if (!restored) newSession()
   } catch {
     newSession()
   }
   await settingsHydration
-  return resolveStartupCredentialTarget(rootStore.getter(activeSessionMetaAtom)?.settings)
+  return resolveStartupCredentialTarget(core.rootStore.getter(activeSessionMetaAtom)?.settings)
 }
 
 if (currentView() === 'window-scroll-demo') {
