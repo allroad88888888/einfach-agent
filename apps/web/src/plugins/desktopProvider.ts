@@ -21,6 +21,7 @@ import {
   scanPlugins,
   type PluginScanBridge,
   type ScannedPlugin,
+  buildProjectSkillsWorkspaceBridge,
   defaultCore,
 } from '@web-agent/core'
 import { createDesktopImportModule } from './desktopImportModule'
@@ -70,14 +71,11 @@ export function createDesktopPluginSettingsProvider(
 ): PluginSettingsProvider {
   const { workspaceRoot } = options
 
-  // 桥模块保持 dynamic import：projectSkillsProvider.ts 就是这么做的（把 Tauri 文件 API
-  // 推迟到首次扫描），静态 import 会把它拽回主 chunk，白白让浏览器预览也背上这段代码。
+  // 桥创建保持到首次扫描；桥内部的宿主调用仍在 Tauri 守卫后惰性加载。
   let bridgePromise: Promise<PluginScanBridge | undefined> | undefined
   const resolveBridge = async (): Promise<PluginScanBridge> => {
     if (options.bridge) return options.bridge
-    bridgePromise ??= import('@web-agent/core/runtime/projectSkillsBridge').then(
-      ({ buildProjectSkillsWorkspaceBridge }) => buildProjectSkillsWorkspaceBridge(),
-    )
+    bridgePromise ??= Promise.resolve(buildProjectSkillsWorkspaceBridge())
     const bridge = await bridgePromise
     // 只在非 Tauri 宿主发生（那时 buildProjectSkillsWorkspaceBridge 返回 undefined）。
     // 装配层不会在浏览器预览里造本 provider，走到这里说明装配被绕过了，如实报错。

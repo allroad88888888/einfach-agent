@@ -10,7 +10,7 @@
 //   1. 有**非测试**消费方在 `apps/web` / `apps/cli` 里真实用到；或
 //   2. 它是上面某个已导出值的参数/返回类型——这种类型早已被那个值结构性承诺，单独藏起来只会
 //      让宿主没法给变量写类型（`CoreInstance`、`RuntimeConfig`、`PersistenceDependencies`、
-//      `AskUserQuestionPayload` 四条走的是这一条）。
+//      `PickWorkspaceDirectoryResult` 三条走的是这一条）。
 //   零消费方的导出一律不收：公开面按真实用量划线，不预支承诺（同 S2a）。
 //
 // atoms 的红线（CLAUDE.md「UI 只允许读取 atom、调用 commands」）：
@@ -20,9 +20,9 @@
 //   零消费方，只出现在测试里，正是红线生效的证据。改状态请走 `configureCommands` 以下的命令面。
 //
 // 模块图纪律（S2c 3911c9d 的教训：barrel 的静态导链会在 `vi.mock` 生效前把重实现灌进模块图）：
-//   · 本 barrel **不新增**任何 `@tauri-apps` 静态边。`runtime/workspaceDialog` 因此被排除——见下方
-//     排除清单，它是全仓唯一一条 `@tauri-apps/plugin-dialog` 边，收进来等于让每个 `import '@web-agent/core'`
-//     的模块（含 Node 里的 `apps/cli`）都去加载一个只为「选目录」存在的桌面弹窗包。
+//   · 本 barrel **不新增**任何 `@tauri-apps` 静态边。D3 已把 `runtime/workspaceDialog` 的插件加载
+//     收进 `pickWorkspaceDirectory()` 的 Tauri 守卫之后，因此它可安全作为宿主 API 收进根面；冒烟
+//     `index.smoke.test.ts` 断言 root import 本身不会加载 `@tauri-apps/plugin-dialog`。
 //   · 既有事实（不是本卡引入的）：`./runtime/commands` 的静态图本来就经 `modelRun → runToolLoop`
 //     摸到 `@tauri-apps/api/core`（11 个 `runtime/workspace*`、`shellCommand`、`modelTurnPrefix`）。
 //     命令面是宿主 API 的主体、且全是同步函数，无法照 `state/stateViewPort` 那样延迟获取；这条边归
@@ -38,11 +38,6 @@
 //     归属」取后者；`apps/web`/`apps/cli` 的观测装配走 `@web-agent/core/observability`。
 //   · `tools/registry` 的 `toolRegistry` 单例 —— 盘点 §3.1 点名的**重复通路**：它就是
 //     `defaultCore.tools`（tools/registry.ts:17）。白名单只留一条，宿主改用 `defaultCore.tools`。
-//   · `runtime/workspaceDialog`（`canPickWorkspaceDirectory` / `pickWorkspaceDirectory`）—— 见上面的
-//     模块图纪律。延迟 import 救不了它：`canPickWorkspaceDirectory` 是同步的（`WorkspaceRootField`
-//     在 render 里直接判），只能整模块留在深路径 `@web-agent/core/runtime/workspaceDialog` 上。
-//     **给 S9 的口子**：这条要么进白名单当第 10 条 subpath，要么由后续卡把模块拆成
-//     「同步能力探测（只需 api/core）+ 惰性 `open()`」两半再并进 `.`；门禁前必须有结论。
 //   · `skills/projectSkillPreferences` —— 归 `./skills`，且是另一条工作线在途的模块（S4 卡同款警戒），
 //     本卡不表态。
 //   · core 内部实现（`state/sessionWriters`、`state/sessionStore`、`runtime/core/pluginHost`、
@@ -61,6 +56,7 @@ export {
   configureDefaultSkillsRegistry,
   configureDefaultDelegation,
 } from './runtime/core/coreInstance'
+export { buildProjectSkillsWorkspaceBridge } from './runtime/projectSkillsBridge'
 export type {
   // defaultCore 的类型
   CoreInstance,
@@ -160,13 +156,10 @@ export type {
 export type { PluginApiVersionRange } from './plugins/manifestTypes' // apps/cli: plugins.ts；apps/web: plugins/desktopProvider
 
 // ---------------------------------------------------------------------------
-// 交互协议与预算（./runtime/askUserQuestion、./runtime/contextBudget）
+// 工作区目录选择与上下文预算（./runtime/workspaceDialog、./runtime/contextBudget）
 // ---------------------------------------------------------------------------
-export { normalizeAskUserQuestionPayload } from './runtime/askUserQuestion' // apps/cli: repl；apps/web: AskUserQuestionCard
-export type {
-  AskUserQuestionItem, // apps/web: AskUserQuestionCard
-  AskUserQuestionPayload, // normalizeAskUserQuestionPayload 的返回类型
-} from './runtime/askUserQuestion'
+export { canPickWorkspaceDirectory, pickWorkspaceDirectory } from './runtime/workspaceDialog'
+export type { PickWorkspaceDirectoryResult } from './runtime/workspaceDialog'
 export {
   // apps/web: ContextStats.tsx —— S7a 从 compactionPlugin 换出来的正式通路（E1 记债，§3.5）
   COST_SOFT_CAP_TOKENS,

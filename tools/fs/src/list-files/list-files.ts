@@ -1,9 +1,11 @@
-import type { Tool, ToolContext, ToolResult } from '@web-agent/core/tools'
 import type {
+  Tool,
+  ToolContext,
+  ToolResult,
   ListWorkspaceFilesInput,
   ListWorkspaceFilesResult,
   WorkspaceRuntimeResult,
-} from '@web-agent/core/runtime/workspaceRead'
+} from '@web-agent/core/tools'
 import guide from './list-files.md?raw'
 
 const DEFAULT_MAX_ENTRIES = 200

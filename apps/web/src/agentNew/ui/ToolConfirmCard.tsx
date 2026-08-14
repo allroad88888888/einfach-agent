@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import { useAtomValue } from '@einfach/react'
 import { runAtom, confirmTool } from '@web-agent/core'
-import { isMcpTool } from '@web-agent/core/runtime/dangerousTools'
+import { isMcpTool } from '@web-agent/core/tools'
 
 const PREVIEW_MAX = 240
 

@@ -1,9 +1,11 @@
-import type { Tool, ToolContext, ToolResult } from '@web-agent/core/tools'
 import type {
+  Tool,
+  ToolContext,
+  ToolResult,
   ReadWorkspaceFileInput,
   ReadWorkspaceFileResult,
   WorkspaceRuntimeResult,
-} from '@web-agent/core/runtime/workspaceRead'
+} from '@web-agent/core/tools'
 import guide from './read-file.md?raw'
 
 const DEFAULT_MAX_BYTES = 20_000

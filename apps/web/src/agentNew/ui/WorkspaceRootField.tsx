@@ -6,8 +6,12 @@
 import { useMemo } from 'react'
 import { atom } from '@einfach/core'
 import { useAtom, useAtomValue } from '@einfach/react'
-import { activeWorkspaceMetaAtom, setWorkspaceRoot } from '@web-agent/core'
-import { canPickWorkspaceDirectory, pickWorkspaceDirectory } from '@web-agent/core/runtime/workspaceDialog'
+import {
+  activeWorkspaceMetaAtom,
+  canPickWorkspaceDirectory,
+  pickWorkspaceDirectory,
+  setWorkspaceRoot,
+} from '@web-agent/core'
 
 const workspacePickerStateAtom = atom<{ isPicking: boolean; error: string | null }>({
   isPicking: false,

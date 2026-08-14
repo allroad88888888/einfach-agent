@@ -36,10 +36,10 @@ describe('@web-agent/core 根 barrel', () => {
     expect(loads.dialog).toBe(0)
   })
 
-  it('深路径 import runtime/workspaceDialog 同样不加载 @tauri-apps/plugin-dialog', async () => {
+  it('根 barrel 的 workspaceDialog 导出同样不加载 @tauri-apps/plugin-dialog', async () => {
     // D3 交付的新性质：连模块本体求值都不碰 plugin-dialog，且非 Tauri 宿主下调用也走守卫早返回，
     // 加载点在守卫之后——这两步过后探针必须还是 0。
-    const { canPickWorkspaceDirectory, pickWorkspaceDirectory } = await import('./runtime/workspaceDialog')
+    const { canPickWorkspaceDirectory, pickWorkspaceDirectory } = rootBarrel
     expect(loads.dialog).toBe(0)
 
     expect(canPickWorkspaceDirectory()).toBe(false)
@@ -52,7 +52,7 @@ describe('@web-agent/core 根 barrel', () => {
 
   it('探针有效：Tauri 宿主下真的调用 pickWorkspaceDirectory() 才触发加载', async () => {
     // 反证上两条不是恒 0 的空断言——同一个探针在真的走到 open() 那步时必须跳到 1。
-    const { pickWorkspaceDirectory } = await import('./runtime/workspaceDialog')
+    const { pickWorkspaceDirectory } = rootBarrel
     globalWithIsTauri.isTauri = true
 
     await expect(pickWorkspaceDirectory()).resolves.toEqual({ ok: true, path: '/mock/workspace' })
@@ -71,7 +71,9 @@ describe('@web-agent/core 根 barrel', () => {
       'hydratePersistence',
       'scanPlugins',
       'loadScannedPlugins',
-      'normalizeAskUserQuestionPayload',
+      'buildProjectSkillsWorkspaceBridge',
+      'canPickWorkspaceDirectory',
+      'pickWorkspaceDirectory',
       'contextInputBudgetTokens',
       'rootStore',
       'itemsAtom',
@@ -86,8 +88,6 @@ describe('@web-agent/core 根 barrel', () => {
   it('不导出 writer、重复通路与仅测试导出', () => {
     for (const name of [
       'toolRegistry', // 重复通路：等于 defaultCore.tools（盘点 §3.1）
-      'pickWorkspaceDirectory', // 连 @tauri-apps/plugin-dialog，留在深路径
-      'canPickWorkspaceDirectory',
       'setAssistantStream', // transientAtoms 的 mutation —— UI 只读 atom 红线
       'setContextStats',
       'upsertToolActivity',

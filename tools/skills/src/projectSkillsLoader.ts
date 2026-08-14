@@ -6,7 +6,7 @@
 //
 // 类型与桥接口定义在 core 的契约层；本模块只承载扫描实现。
 
-import type { ProjectSkillsLoaderBridge } from '@web-agent/core/runtime/core/coreInstance'
+import type { ProjectSkillsLoaderBridge } from '@web-agent/core'
 import type {
   ProjectSkillsSnapshot,
   ProjectSkillEntry,

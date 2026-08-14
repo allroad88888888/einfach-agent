@@ -2,17 +2,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { renderWithStore } from '../../test/renderWithStore'
-import { activeWorkspaceIdAtom, rootStore, workspacesAtom, setWorkspaceRoot } from '@web-agent/core'
-import { pickWorkspaceDirectory } from '@web-agent/core/runtime/workspaceDialog'
+import { activeWorkspaceIdAtom, pickWorkspaceDirectory, rootStore, workspacesAtom, setWorkspaceRoot } from '@web-agent/core'
 import { WorkspaceRootField } from './WorkspaceRootField'
 
-vi.mock('@web-agent/core/runtime/commands', () => ({
-  setWorkspaceRoot: vi.fn(),
-}))
-
-vi.mock('@web-agent/core/runtime/workspaceDialog', () => ({
+vi.mock('@web-agent/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@web-agent/core')>()),
   canPickWorkspaceDirectory: vi.fn(() => true),
   pickWorkspaceDirectory: vi.fn(async () => ({ ok: true, path: '/picked/workspace' })),
+  setWorkspaceRoot: vi.fn(),
 }))
 
 function seedActiveSession(): void {

@@ -18,7 +18,10 @@ import {
 } from '@web-agent/core'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
 
-vi.mock('@web-agent/core/runtime/commands', () => ({
+vi.mock('@web-agent/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@web-agent/core')>()),
+  canPickWorkspaceDirectory: vi.fn(() => false),
+  pickWorkspaceDirectory: vi.fn(),
   newWorkspace: vi.fn(),
   renameWorkspace: vi.fn(),
   selectWorkspace: vi.fn(),
@@ -29,11 +32,6 @@ vi.mock('@web-agent/core/runtime/commands', () => ({
   removeSession: vi.fn(),
   renameSession: vi.fn(),
   setWorkspaceRoot: vi.fn(),
-}))
-
-vi.mock('@web-agent/core/runtime/workspaceDialog', () => ({
-  canPickWorkspaceDirectory: vi.fn(() => false),
-  pickWorkspaceDirectory: vi.fn(),
 }))
 
 function seed(): void {

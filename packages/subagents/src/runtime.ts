@@ -8,7 +8,7 @@ import {
   type SubagentTierRouting,
 } from '@web-agent/core/subagents'
 import { recordCompletedSpan } from '@web-agent/core/observability'
-import type { ModelSettings } from '@web-agent/core/state/core.type'
+import type { ModelSettings } from '@web-agent/core'
 import { SubagentArchiveIO } from './archive/archiveIO'
 import type { SubagentArchiveWriterContext } from './archive/archiveWriter'
 import { distillDelegateSkills } from './archive/distill'

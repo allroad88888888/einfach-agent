@@ -34,8 +34,9 @@
 import type {
   McpConnectTargetProbe,
   McpToolLaunchTargetProbe,
-} from '@web-agent/core/runtime/dangerousTools'
-import type { UnconnectedToolProviderProbe, ToolRegistry } from '@web-agent/core/tools'
+  UnconnectedToolProviderProbe,
+  ToolRegistry,
+} from '@web-agent/core/tools'
 import {
   createMcpPlaceholderSync,
   registerMcpTools,

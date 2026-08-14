@@ -1,8 +1,9 @@
-import type { Tool, ToolContext } from '@web-agent/core/tools'
 import type {
+  Tool,
+  ToolContext,
   WorkspaceRevertInput,
   WorkspaceRevertResult,
-} from '@web-agent/core/runtime/workspaceChange'
+} from '@web-agent/core/tools'
 import guide from './revert-workspace-change.md?raw'
 
 type RevertWorkspaceChange = (

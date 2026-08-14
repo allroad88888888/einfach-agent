@@ -36,7 +36,7 @@
 | G7 | `?raw` 的类型声明只有一份且靠手工 include | [`raw-modules.d.ts`](../../tools/skills/src/raw-modules.d.ts) 被 `apps/cli/tsconfig.json` 显式 include | 内联后该 ambient 声明不再进入发布产物，仅留仓库内开发用 |
 | G8 | React peer 声明不完整 | `@web-agent/react-plugin` 已声明 `react` peer，但写成 `workspace:*` 的 `@web-agent/core` peer 会被 pnpm 改写成**精确版本** | peer 改用 `workspace:^`，发布时得到 `^0.1.0` 而非死锁 `0.1.0` |
 | G9 | 未声明依赖 | `packages/subagents` 有 10+ 文件 `import { atom } from '@einfach/core'`，但其 `dependencies` 只列了两个 `@web-agent/*` | 补 `@einfach/core` 到 dependencies；发布前跑一次 undeclared-deps 检查 |
-| G10 | core 硬依赖 Tauri | `@web-agent/core` 把 `@tauri-apps/api` 列为 `dependencies`，被 `workspaceRead`/`workspaceWrite`/`workspaceRg` 等直接 import | 改为 optional peer（`peerDependenciesMeta.optional`），否则纯 Web/Node 消费方被迫装 Tauri |
+| G10 | ~~core 硬依赖 Tauri~~（已解决） | `@web-agent/core` 已将 Tauri 依赖改为 optional peer；宿主调用经守卫后的惰性加载 | 保持 `peerDependenciesMeta.optional` 与无 Tauri 的 Node/Web 冒烟，避免重新引入静态硬依赖 |
 | G11 | 无 `files` 字段 | 所有包都没有 | 加 `"files": ["dist"]`，否则 `*.test.ts` 与 `.md` 源料一并进 tarball |
 | G12 | 无 `license` / `repository` / `README` | 仓库根**连 LICENSE 文件都没有**；只有 `agent-plugin-example` 有 README | 阻塞于"未决·License"（A5）；每个发布包补最小 README + `repository.directory` |
 | G13 | 无 `publishConfig` | 所有包都没有 | scoped 包默认私有，必须加 `"publishConfig": {"access": "public"}` |

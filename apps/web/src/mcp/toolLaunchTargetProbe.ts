@@ -22,7 +22,7 @@
 import type {
   McpConnectTargetProbe,
   McpToolLaunchTargetProbe,
-} from '@web-agent/core/runtime/dangerousTools'
+} from '@web-agent/core/tools'
 import type { McpPlaceholderClaims } from '@web-agent/tools-mcp'
 
 export interface McpToolLaunchTargetProbeSource {

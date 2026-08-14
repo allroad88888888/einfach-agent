@@ -10,6 +10,9 @@
 //                            registrar 的入参类型。
 //   · ./schemaResult      —— schema 懒加载/未连接 provider 的结果构造入口，`apps/web` 的 MCP
 //                            探针在用（C 类）。
+//   · ./runtime bridge    —— 工具包唯一可触及宿主能力的契约：workspace 读写/搜索、平台、风险
+//                            判级与 ask-user payload。workspace bridge 在调用时才加载，避免普通
+//                            工具注册预加载宿主模块。
 //
 // 不收：
 //   · tools/registry.ts 的 `toolRegistry` 单例——A 类，是 `runtime/core/coreInstance` 的重复通路
@@ -49,3 +52,72 @@ export {
   toolSchemaAutoloadedResult,
   toolSchemaLoadedResult,
 } from './schemaResult'
+
+export {
+  DANGEROUS_TOOLS,
+  MCP_CONNECT_TOOL_NAME,
+  classifyToolRisk,
+  isDangerousTool,
+  isDelegatableDangerousTool,
+  isMcpTool,
+} from '../runtime/dangerousTools'
+export type {
+  McpConnectTarget,
+  McpConnectTargetProbe,
+  McpToolLaunchTargetProbe,
+  ToolRisk,
+  ToolRiskAssessment,
+  ToolRiskContext,
+} from '../runtime/dangerousTools'
+
+export {
+  applyWorkspacePatch,
+  DEFAULT_RG_CONTEXT_LINES,
+  DEFAULT_RG_MAX_MATCHES,
+  listWorkspaceFiles,
+  MAX_RG_CONTEXT_LINES,
+  MAX_RG_MATCHES,
+  normalizeChangeSummary,
+  readWorkspaceFile,
+  readWorkspaceRunIndexPage,
+  revertWorkspaceChange,
+  rgSearchWorkspace,
+  searchWorkspaceFiles,
+} from './workspaceBridge'
+export type {
+  ListWorkspaceFilesInput,
+  ListWorkspaceFilesResult,
+  ReadWorkspaceFileInput,
+  ReadWorkspaceFileResult,
+  ReadWorkspaceRunIndexPageInput,
+  ReadWorkspaceRunIndexPageResult,
+  RgSearchInput,
+  RgSearchMatch,
+  RgSearchResult,
+  SearchWorkspaceFilesInput,
+  SearchWorkspaceFilesResult,
+  WorkspaceChangeConflict,
+  WorkspaceChangeContext,
+  WorkspaceChangeSummary,
+  WorkspaceFileEntry,
+  WorkspaceJsonlLine,
+  WorkspacePatchFileChange,
+  WorkspacePatchInput,
+  WorkspacePatchOperation,
+  WorkspacePatchRejected,
+  WorkspacePatchResult,
+  WorkspaceRevertInput,
+  WorkspaceRevertResult,
+  WorkspaceRuntimeResult,
+  WorkspaceSearchMatch,
+} from './workspaceBridge'
+
+export { detectHostPlatform } from '../runtime/hostPlatform'
+
+export { normalizeAskUserQuestionPayload } from '../runtime/askUserQuestion'
+export type {
+  AskUserQuestionContext,
+  AskUserQuestionItem,
+  AskUserQuestionPayload,
+  AskUserQuestionType,
+} from '../runtime/askUserQuestion'

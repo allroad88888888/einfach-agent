@@ -1,9 +1,10 @@
-import type { Tool, ToolContext } from '@web-agent/core/tools'
 import type {
+  Tool,
+  ToolContext,
   ListWorkspaceFilesResult,
   ReadWorkspaceFileResult,
   WorkspaceRuntimeResult,
-} from '@web-agent/core/runtime/workspaceRead'
+} from '@web-agent/core/tools'
 import guide from './find-test-lint-commands.md?raw'
 
 const MAX_ENTRIES = 2_000

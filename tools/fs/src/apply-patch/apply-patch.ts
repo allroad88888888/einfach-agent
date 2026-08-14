@@ -1,9 +1,10 @@
-import type { Tool, ToolContext } from '@web-agent/core/tools'
 import type {
+  Tool,
+  ToolContext,
   WorkspacePatchInput,
   WorkspacePatchOperation,
   WorkspacePatchResult,
-} from '@web-agent/core/runtime/workspacePatch'
+} from '@web-agent/core/tools'
 import guide from './apply-patch.md?raw'
 
 const inputSchema = {

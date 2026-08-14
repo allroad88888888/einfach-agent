@@ -87,7 +87,8 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
   改 dist 后仍工作（`pnpm subagent:replay` 冒烟 + colocated 测试）；仓库内测试与
   `pnpm build` 不回归
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE a8f263f（17 个 packages/tools 构建全绿；archive/replay 以真实归档 fixture
+  直接消费 dist exports 通过。V7 继续用 pack 后安装覆盖真实 Node 消费面）
 
 ### V4 · 包元数据整备（G11/G12/G13）
 
@@ -268,4 +269,5 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
 - **判据**：`node scripts/check-boundaries.js` 通过且豁免表条数下降；受影响包邻接测试 +
   `pnpm build` + `node scripts/check-docs.js` 绿
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE（豁免表从 9 条归为 2 条测试边界例外；生产调用统一走根面或
+  `@web-agent/core/tools`，根 barrel/Tauri smoke、邻接测试、17 包构建、`pnpm build`、文档与边界门禁均绿）

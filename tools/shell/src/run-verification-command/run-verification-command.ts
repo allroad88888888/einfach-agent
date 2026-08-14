@@ -3,8 +3,7 @@
 // 仅验证子 agent 的 workspace_verify profile 会暴露本工具；命令本身不受发现结果限制，
 // 因此可执行项目自己的验收脚本。副作用仍只经 ctx.runShell，与 shell_* 共用同一条
 // workspace confinement / 超时 / 截断通道。
-import type { Tool } from '@web-agent/core/tools'
-import { detectHostPlatform } from '@web-agent/core/runtime/hostPlatform'
+import { detectHostPlatform, type Tool } from '@web-agent/core/tools'
 import { shellCommandToolResult } from '../command-result'
 import guide from './run-verification-command.md?raw'
 

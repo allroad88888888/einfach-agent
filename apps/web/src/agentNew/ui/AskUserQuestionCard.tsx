@@ -14,11 +14,10 @@ import {
   runAtom,
   pendingQuestionAnswersAtom,
   type AskUserAnswerValue,
-  normalizeAskUserQuestionPayload,
-  type AskUserQuestionItem,
   answerQuestion,
   resumeWithAnswers,
 } from '@web-agent/core'
+import { normalizeAskUserQuestionPayload, type AskUserQuestionItem } from '@web-agent/core/tools'
 
 export function AskUserQuestionCard({ surface = 'conversation' }: { surface?: 'conversation' | 'plan' }) {
   const run = useAtomValue(runAtom)

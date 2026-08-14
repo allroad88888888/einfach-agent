@@ -13,11 +13,9 @@ import {
   selectWorkspace,
   toggleWorkspaceExpanded,
   toggleWorkspaceSettings,
-} from '@web-agent/core'
-import {
   canPickWorkspaceDirectory,
   pickWorkspaceDirectory,
-} from '@web-agent/core/runtime/workspaceDialog'
+} from '@web-agent/core'
 import { SessionList } from './SessionList'
 import { WorkspaceRootField } from './WorkspaceRootField'
 

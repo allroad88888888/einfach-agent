@@ -77,52 +77,14 @@ const coreSubpathAllowList = [
 // 消费方路径前缀（仓库相对、`/` 分隔）——豁免按「哪条 subpath × 谁在用」发放，换个消费方仍会红。
 const coreSubpathExemptions = [
   {
-    subpaths: ['runtime/workspaceDialog'],
-    consumers: ['apps/web/src/agentNew/ui/'],
-    reason: '全仓唯一 @tauri-apps/plugin-dialog 边，根 barrel 按模块图纪律拒收；拆分卡（同步能力探测 + 惰性 open）未排',
-  },
-  {
-    subpaths: ['runtime/dangerousTools'],
-    consumers: ['apps/web/src/agentNew/ui/', 'apps/web/src/mcp/', 'tools/mcp/src/'],
-    reason: '危险工具判级：函数本体无 barrel 归属（既非工具契约也非宿主装配面），待后续归属卡',
-  },
-  {
-    subpaths: ['runtime/projectSkillsBridge'],
-    consumers: ['apps/web/src/plugins/', 'tools/skills/src/'],
-    reason: '宿主读盘桥：同样无 barrel 归属，待后续归属卡',
-  },
-  {
     subpaths: ['runtime/workspaceRead'],
     consumers: ['apps/web/src/plugins/'],
-    reason: '同上无归属，且是 desktopImportModule 测试的 vi.mock 目标，换 barrel 会让 mock 失效',
-  },
-  {
-    subpaths: [
-      'runtime/workspaceRead', 'runtime/workspaceRg', 'runtime/workspacePatch',
-      'runtime/workspaceChange', 'runtime/hostPlatform',
-    ],
-    consumers: ['tools/fs/src/', 'tools/shell/src/'],
-    reason: 'workspace/host 桥；S1a 判定不进 ./tools——barrel 静态导链会在 vi.mock 提升前把 @tauri-apps 灌进模块图（S2c 3911c9d 的教训）',
-  },
-  {
-    subpaths: ['runtime/askUserQuestion'],
-    consumers: ['tools/interaction/src/'],
-    reason: '只有根 barrel `.` 覆盖它，而工具域按 `.` 的头注不走根 barrel；正式通路待归属卡',
-  },
-  {
-    subpaths: ['runtime/core/coreInstance'],
-    consumers: ['tools/skills/src/'],
-    reason: '同上无正式通路；且工具域直接摸 defaultCore 本身就是结构债（工具应经 ToolContext 取能力），待归属卡',
+    reason: 'desktopImportModule 测试的精确 vi.mock 目标；改成 barrel 会使该局部 mock 失效，生产读取面不借此深路径',
   },
   {
     subpaths: ['runtime/core/coreInstance', 'state/rootStore'],
     consumers: ['apps/web/src/test/setup.ts'],
     reason: 'vitest setupFile 不能走根 barrel——barrel 会在各测试文件 vi.mock 提升前把 runtime/commands 整条静态导链灌进模块缓存（S5b 记档，文件内有【setupFile 纪律】注释）',
-  },
-  {
-    subpaths: ['state/core.type'],
-    consumers: ['packages/persistence-idb/src/', 'packages/persistence-sqlite/src/', 'packages/subagents/src/'],
-    reason: 'S3b 26dd539 留档：SessionMeta/ModelSettings 被 S5a 收进根 barrel `.`，但 `.` 是宿主装配面、能力包不走它，这三处暂无正式通路',
   },
 ]
 

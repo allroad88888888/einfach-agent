@@ -1,10 +1,13 @@
-import type { Tool, ToolContext, ToolResult } from '@web-agent/core/tools'
 import type {
+  Tool,
+  ToolContext,
+  ToolResult,
   SearchWorkspaceFilesInput,
   SearchWorkspaceFilesResult,
   WorkspaceRuntimeResult,
-} from '@web-agent/core/runtime/workspaceRead'
-import type { RgSearchInput, RgSearchResult } from '@web-agent/core/runtime/workspaceRg'
+  RgSearchInput,
+  RgSearchResult,
+} from '@web-agent/core/tools'
 import guide from './search-files.md?raw'
 
 const DEFAULT_MAX_MATCHES = 100

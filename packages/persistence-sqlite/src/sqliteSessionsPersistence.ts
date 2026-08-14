@@ -9,7 +9,7 @@
 //
 // db 连接（getDb，含 PRAGMA 调优与建表）与 sqliteHistoryDriver.ts 共享，定义在 sqliteShared.ts。
 
-import type { SessionMeta, WorkspaceMeta } from '@web-agent/core/state/core.type'
+import type { SessionMeta, WorkspaceMeta } from '@web-agent/core'
 import type { SessionsPersistence } from '@web-agent/core/state/persistence'
 import { beginPerformanceDiagnostic, performanceNow } from '@web-agent/core/observability'
 import { getDb } from './sqliteShared'
