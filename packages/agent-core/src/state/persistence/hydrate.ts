@@ -13,17 +13,18 @@
 //   （无 v1 恢复记录时返回 false 让 main.tsx 去种子）；恢复过程中任何异常都吞掉、绝不上抛（沿用旧 hydrateFromStorage 语义）。
 //   返回值 = 「是否恢复了会话」，供 main.tsx 决定要不要种子一个空会话（RF3：有数据就别再种子）。
 
+import type { Store } from '@einfach/core'
 import type { Checkpoint } from '../checkpoint.type'
 import type { SessionMeta, WorkspaceMeta } from '../core.type'
 import {
-  rootStore,
+  rootStore as defaultRootStore,
   workspacesAtom,
   activeWorkspaceIdAtom,
   expandedWorkspaceIdsAtom,
   sessionsAtom,
   activeSessionIdAtom,
 } from '../rootStore'
-import { getSessionStore } from '../sessionStore'
+import { getSessionStore as getDefaultSessionStore } from '../sessionStore'
 import {
   checkpointsAtom,
   contextCheckpointAtom,
@@ -110,11 +111,7 @@ function attachSessionsToWorkspaces(
   return { sessions: migratedSessions, workspaces: Object.values(byId) }
 }
 
-// 简介：从持久化恢复会话列表与每会话历史，回填内存 store；返回是否恢复了任何会话。
-// 详情：deps 注入 sessions（会话列表持久化，只读 loadSessions）+ history（HistoryDriver），
-//   便于测试用内存实现。空/失败一律返回 false（让上层种子）；成功回填返回 true。
-//   本函数【只读不写】盘——下线模型名迁移也只改内存，理由见下面 migrateSessionMeta 处的注释。
-export async function hydrate(deps: {
+export type HydrationDependencies = {
   sessions: {
     loadSessions(): Promise<SessionMeta[]>
     loadWorkspaces?(): Promise<WorkspaceMeta[]>
@@ -122,7 +119,22 @@ export async function hydrate(deps: {
   history: HistoryDriver
   /** 可选 v1 单代恢复记录；存在时优先于 legacy SessionMeta/checkpoint 动态内容。 */
   recovery?: RecoveryDriver
-}): Promise<boolean> {
+}
+
+export type PersistenceHydrationTarget = {
+  rootStore: Store
+  getSessionStore(sessionId: string): Store
+}
+
+// 简介：从持久化恢复会话列表与每会话历史，回填内存 store；返回是否恢复了任何会话。
+// 详情：deps 注入 sessions（会话列表持久化，只读 loadSessions）+ history（HistoryDriver），
+//   便于测试用内存实现。空/失败一律返回 false（让上层种子）；成功回填返回 true。
+//   本函数【只读不写】盘——下线模型名迁移也只改内存，理由见下面 migrateSessionMeta 处的注释。
+export async function hydrateForCore(
+  target: PersistenceHydrationTarget,
+  deps: HydrationDependencies,
+): Promise<boolean> {
+  const rootStore = target.rootStore
   // 第一步：取会话列表。加载失败时可由 v1 的静态投影重建 root 登记（容错，DK2）。
   let sessions: SessionMeta[]
   let workspaces: WorkspaceMeta[] = []
@@ -206,14 +218,14 @@ export async function hydrate(deps: {
       if (snapshot) {
         // 先归类进程遗留状态，再由 R2 在同一 Einfach flush 写入完整 allowlist 投影。
         applyRecoverySnapshot(
-          getSessionStore(session.id).store,
+          target.getSessionStore(session.id),
           normalizeRecoverySnapshotForHydration(snapshot),
         )
         continue
       }
-      if (session.plan) getSessionStore(session.id).store.setter(planAtom, migratePlanSnapshot(session.plan))
+      if (session.plan) target.getSessionStore(session.id).setter(planAtom, migratePlanSnapshot(session.plan))
       if (session.executionGraph) {
-        getSessionStore(session.id).store.setter(executionGraphAtom, session.executionGraph)
+        target.getSessionStore(session.id).setter(executionGraphAtom, session.executionGraph)
       }
       const metas = await deps.history.listCheckpoints(session.id)
       if (metas.length === 0) {
@@ -235,7 +247,7 @@ export async function hydrate(deps: {
       // 最新一轮 = turnIndex 最大的那条（不假设 metas 已按 turnIndex 排序）。
       const latest = checkpoints.reduce((a, b) => (b.turnIndex > a.turnIndex ? b : a))
 
-      const store = getSessionStore(session.id).store
+      const store = target.getSessionStore(session.id)
       store.setter(checkpointsAtom, checkpoints)
       store.setter(itemsAtom, latest.items)
       store.setter(contextCheckpointAtom, latest.contextCheckpoint)
@@ -270,4 +282,15 @@ export async function hydrate(deps: {
     // 恢复中途异常：sessions 已确认非空，仍算「有会话、别种子」→ 返回 true（DK2 不阻塞、不上抛）。
     return true
   }
+}
+
+/** Compatibility adapter for callers that still hydrate the default Core instance. */
+export function hydrate(deps: HydrationDependencies): Promise<boolean> {
+  return hydrateForCore(
+    {
+      rootStore: defaultRootStore,
+      getSessionStore: (sessionId) => getDefaultSessionStore(sessionId).store,
+    },
+    deps,
+  )
 }

@@ -68,6 +68,8 @@ export interface CoreInstance {
   readonly observability: ObservabilityPort
   // 该实例的根 store：sessionsAtom/activeSessionIdAtom 的值域（会话列表 + 当前会话 id）。
   readonly rootStore: Store
+  /** 仅查询当前实例中已存在的会话 store，绝不因查找分配新 store。 */
+  findSessionStore(id: string): SessionStore | undefined
   // 该实例私有的 per-session store 缓存：取或建（幂等，同 id 同实例）。
   getSessionStore(id: string): SessionStore
   // 直接建新实例并写入缓存（同 id 覆盖，drop 后重建走这条）。
@@ -135,7 +137,6 @@ export function createCoreInstance(opts?: {
   // 1) 根 store：该实例的会话列表值域。
   const rootStore = createStore()
   const observability = opts?.observability ?? getDefaultObservabilityPort()
-  const persistence = createPersistenceBridge(rootStore, observability)
 
   // 2) per-session store 缓存：本实例私有 Map（逻辑照搬原 sessionStore.ts，Map 从模块级变实例字段）。
   const sessionStores = new Map<string, SessionStore>()
@@ -155,6 +156,16 @@ export function createCoreInstance(opts?: {
     }
     return createSessionStore(id)
   }
+
+  function findSessionStore(id: string): SessionStore | undefined {
+    return sessionStores.get(id)
+  }
+
+  const persistence = createPersistenceBridge(
+    rootStore,
+    observability,
+    (sessionId) => getSessionStore(sessionId).store,
+  )
 
   function dropSessionStore(id: string): void {
     sessionStores.delete(id)
@@ -223,6 +234,7 @@ export function createCoreInstance(opts?: {
   return {
     observability,
     rootStore,
+    findSessionStore,
     getSessionStore,
     createSessionStore,
     dropSessionStore,

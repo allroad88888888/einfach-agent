@@ -57,10 +57,16 @@ export interface PersistenceBridge {
   persistRecovery(id: string, reason?: string): Promise<RecoveryWriteOutcome | undefined>
   /** Waits for recovery writes queued before this call, for orderly shutdown or dispose. */
   flushRecovery(): Promise<void>
+  /** Hydrates this Core instance's stores from its configured persistence drivers. */
+  hydrate(): Promise<boolean>
 }
 
 /** Creates the persistence resources owned by one CoreInstance. */
-export function createPersistenceBridge(rootStore: Store, observability: ObservabilityPort): PersistenceBridge {
+export function createPersistenceBridge(
+  rootStore: Store,
+  observability: ObservabilityPort,
+  hydrateStore?: (sessionId: string) => Store,
+): PersistenceBridge {
   let history: HistoryDriver | undefined
   let sessions: SessionsPersistence | undefined
   let recovery: RecoveryDriver | undefined
@@ -161,6 +167,17 @@ export function createPersistenceBridge(rootStore: Store, observability: Observa
     return recoveryWriter?.flush() ?? Promise.resolve()
   }
 
+  async function hydrate(): Promise<boolean> {
+    const { history, sessions, recovery } = dependencies()
+    if (!history || !sessions || !hydrateStore) return false
+
+    const { hydrateForCore } = await import('../state/persistence/hydrate')
+    return hydrateForCore(
+      { rootStore, getSessionStore: hydrateStore },
+      { history, sessions, recovery },
+    )
+  }
+
   return {
     configure,
     dependencies,
@@ -172,6 +189,7 @@ export function createPersistenceBridge(rootStore: Store, observability: Observa
     persistDeleteSession,
     persistRecovery,
     flushRecovery,
+    hydrate,
   }
 }
 
@@ -192,19 +210,15 @@ export function configurePersistence(deps: PersistenceDependencies): void {
 // 详情：这是持久化的【读】那一半，与写钩子同属本桥 —— 收在这里，宿主就不必再深挖
 //   state/persistence/hydrate（盘点 E4），也不会出现「hydrate 与 configurePersistence 用了
 //   两对不同实例」这种只靠注释维持的隐性约定：driver 从本桥自己的 dependencies() 取。
-//   · 只服务默认实例：state/persistence/hydrate 回填的是 defaultCore 的 root/session store
-//     （它 import 的是 state/rootStore 这个 defaultCore 视图），因此本函数与其他兼容导出一样
-//     绑定 defaultCore，没有做成 per-instance 方法——那会对 createCore() 的隔离实例说谎。
+//   · 默认 facade 委托 defaultCore 自己的 bridge；其它 Core 应直接调用 core.persistence.hydrate()。
+//     每一个 bridge 闭包绑定自己的 rootStore 和会话 store locator，不会触及 defaultCore。
 //   · hydrate 走【动态 import】：静态 import 会连出
 //     persistenceBridge → hydrate → state/rootStore → core/coreInstance → persistenceBridge
 //     这个初始化期循环（coreInstance 模块顶层就调 setDefaultPersistenceBridge，撞上本模块
 //     defaultBridgeRef 的 TDZ）。推到调用时刻加载即可绕开，且它本就在启动关键路径上。
 //   · driver 未配置 → 直接 false（与 hydrate 自身「失败不阻塞启动」的容错契约一致）。
-export async function hydratePersistence(): Promise<boolean> {
-  const { history, sessions, recovery } = defaultBridgeRef.current?.dependencies() ?? {}
-  if (!history || !sessions) return false
-  const { hydrate } = await import('../state/persistence/hydrate')
-  return hydrate({ history, sessions, recovery })
+export function hydratePersistence(): Promise<boolean> {
+  return defaultBridgeRef.current?.hydrate() ?? Promise.resolve(false)
 }
 
 export function resetPersistence(): void {
