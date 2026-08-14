@@ -2,8 +2,9 @@
 // ---------------------------------------------------------------------------
 // 背景：持久化件（IndexedDB HistoryDriver / sessions 存储 / hydrate）已齐，但 runtime 里
 //   没有落盘调用。本文只做「接线」：把 commands / modelRun 的写事件转成 driver 调用。
-//   · DK2 fire-and-forget：写盘绝不卡 UI —— 每个钩子都同步返回 void，内部 `void ...catch(()=>{})`
-//     把落盘扔进微任务队列、吞掉任何错误（对齐 driver 自身的 best-effort 降级契约）。
+//   · history / sessions 遵循 DK2 fire-and-forget：写盘绝不卡 UI，队列内部自行处理其 best-effort 失败。
+//   · recovery 例外：仍由显式 facade 异步触发，但 RecoveryWriter 以 outcome 与 observability diagnostic
+//     公开 driver 失败，不能把它表述成统一吞掉。
 //   · driver 注入（兼顾可测）：main.tsx 启动时 configurePersistence 注入真 driver 实例；
 //     未配置（undefined）时全部 no-op、不抛 —— 因此 commands/modelRun 的既有单测无需配置即保持绿。
 //   本文不 import UI；每个 CoreInstance 把自己的 rootStore 注入一个 bridge 实例。
@@ -13,7 +14,9 @@ import { sessionsAtom, workspacesAtom } from '../state/rootAtoms'
 import type { Checkpoint } from '../state/checkpoint.type'
 import type { SessionsPersistence } from '../state/persistence/contract'
 import type { HistoryDriver } from '../state/persistence/historyDriver'
+import type { RecoveryDriver } from '../state/persistence/recoveryDriver'
 import type { ObservabilityPort } from '../observability/port'
+import { createRecoveryWriter, type RecoveryWriter } from './recoveryWriter'
 import { createWriteQueue } from './writeQueue'
 import {
   writeCheckpoint,
@@ -31,6 +34,9 @@ export type { PersistenceDiagnosticContext } from './persistenceWriteOperations'
 export interface PersistenceDependencies {
   history?: HistoryDriver
   sessions?: SessionsPersistence
+  recovery?: RecoveryDriver
+  /** Must only return an extant session store; recovery persistence never creates a session. */
+  recoveryStore?: (sessionId: string) => Store | undefined
 }
 
 export interface PersistenceBridge {
@@ -43,12 +49,19 @@ export interface PersistenceBridge {
   persistCheckpoint(id: string, checkpoint: Checkpoint): void
   persistTruncate(id: string, turnIndex: number): void
   persistDeleteSession(id: string): void
+  /** Explicit recovery boundary; no atom subscription is installed by this bridge. */
+  persistRecovery(id: string, reason?: string): void
+  /** Waits for recovery writes queued before this call, for orderly shutdown or dispose. */
+  flushRecovery(): Promise<void>
 }
 
 /** Creates the persistence resources owned by one CoreInstance. */
 export function createPersistenceBridge(rootStore: Store, observability: ObservabilityPort): PersistenceBridge {
   let history: HistoryDriver | undefined
   let sessions: SessionsPersistence | undefined
+  let recovery: RecoveryDriver | undefined
+  let recoveryStore: ((sessionId: string) => Store | undefined) | undefined
+  let recoveryWriter: RecoveryWriter | undefined
   const sessionsWriteQueue = createWriteQueue('latest')
   const workspacesWriteQueue = createWriteQueue('serial')
   const historyWriteQueue = createWriteQueue('serial')
@@ -56,15 +69,27 @@ export function createPersistenceBridge(rootStore: Store, observability: Observa
   function configure(deps: PersistenceDependencies): void {
     if (deps.history !== undefined) history = deps.history
     if (deps.sessions !== undefined) sessions = deps.sessions
+    if (deps.recovery !== undefined) recovery = deps.recovery
+    if (deps.recoveryStore !== undefined) recoveryStore = deps.recoveryStore
+    if (deps.recovery !== undefined || deps.recoveryStore !== undefined) {
+      recoveryWriter?.reset()
+      recoveryWriter = recovery && recoveryStore
+        ? createRecoveryWriter({ rootStore, recovery, observability })
+        : undefined
+    }
   }
 
   function dependencies(): PersistenceDependencies {
-    return { history, sessions }
+    return { history, sessions, recovery, recoveryStore }
   }
 
   function reset(): void {
     history = undefined
     sessions = undefined
+    recovery = undefined
+    recoveryStore = undefined
+    recoveryWriter?.reset()
+    recoveryWriter = undefined
     sessionsWriteQueue.reset()
     workspacesWriteQueue.reset()
     historyWriteQueue.reset()
@@ -116,8 +141,20 @@ export function createPersistenceBridge(rootStore: Store, observability: Observa
   // 简介：清空某会话的全部持久化历史（removeSession 之后调用）。
   function persistDeleteSession(id: string): void {
     const driver = history
-    if (!driver) return
-    historyWriteQueue.enqueue(id, () => driver.deleteSession(id))
+    if (driver) historyWriteQueue.enqueue(id, () => driver.deleteSession(id))
+    if (recoveryWriter) void recoveryWriter.deleteSession(id)
+  }
+
+  function persistRecovery(id: string, reason?: string): void {
+    const writer = recoveryWriter
+    if (!writer) return
+    const store = recoveryStore?.(id)
+    if (!store) return
+    void writer.persist(store, id, reason)
+  }
+
+  function flushRecovery(): Promise<void> {
+    return recoveryWriter?.flush() ?? Promise.resolve()
   }
 
   return {
@@ -129,6 +166,8 @@ export function createPersistenceBridge(rootStore: Store, observability: Observa
     persistCheckpoint,
     persistTruncate,
     persistDeleteSession,
+    persistRecovery,
+    flushRecovery,
   }
 }
 
@@ -158,10 +197,10 @@ export function configurePersistence(deps: PersistenceDependencies): void {
 //     defaultBridgeRef 的 TDZ）。推到调用时刻加载即可绕开，且它本就在启动关键路径上。
 //   · driver 未配置 → 直接 false（与 hydrate 自身「失败不阻塞启动」的容错契约一致）。
 export async function hydratePersistence(): Promise<boolean> {
-  const { history, sessions } = defaultBridgeRef.current?.dependencies() ?? {}
+  const { history, sessions, recovery } = defaultBridgeRef.current?.dependencies() ?? {}
   if (!history || !sessions) return false
   const { hydrate } = await import('../state/persistence/hydrate')
-  return hydrate({ history, sessions })
+  return hydrate({ history, sessions, recovery })
 }
 
 export function resetPersistence(): void {
@@ -186,4 +225,13 @@ export function persistTruncate(id: string, turnIndex: number): void {
 
 export function persistDeleteSession(id: string): void {
   defaultBridgeRef.current?.persistDeleteSession(id)
+}
+
+export function persistRecovery(id: string, reason?: string): void {
+  defaultBridgeRef.current?.persistRecovery(id, reason)
+}
+
+/** Waits for recovery writes already queued on the default Core instance. */
+export function flushRecovery(): Promise<void> {
+  return defaultBridgeRef.current?.flushRecovery() ?? Promise.resolve()
 }
