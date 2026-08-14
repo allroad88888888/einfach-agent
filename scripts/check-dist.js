@@ -160,6 +160,15 @@ async function verifyBrokenExportIsRejected(consumerDirectory, packageName) {
   }
 }
 
+async function verifyUnlistedCoreSubpathIsRejected(consumerDirectory, packages) {
+  const corePackage = packages.find((item) => item.manifest.name === '@web-agent/core')
+  if (!corePackage) throw new Error('check:dist requires @web-agent/core')
+
+  const specifier = `${corePackage.manifest.name}/__not_exported__`
+  const script = `import(${JSON.stringify(specifier)}).then(() => process.exitCode = 1).catch((error) => { if (error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') throw error })`
+  await command(process.execPath, ['--input-type=module', '--eval', script], consumerDirectory)
+}
+
 async function main() {
   const packages = await releasePackages()
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'web-agent-dist-'))
@@ -172,7 +181,8 @@ async function main() {
     await verifyRuntimeImports(consumerDirectory, specifiers)
     await verifyNodeNextDeclarations(consumerDirectory, specifiers)
     await verifyBrokenExportIsRejected(consumerDirectory, repackedPackages[0].manifest.name)
-    console.log(`check-dist passed: ${repackedPackages.length} packed packages, ${specifiers.length} public ESM entry points, NodeNext declarations, and negative exports check`)
+    await verifyUnlistedCoreSubpathIsRejected(consumerDirectory, repackedPackages)
+    console.log(`check-dist passed: ${repackedPackages.length} packed packages, ${specifiers.length} public ESM entry points, NodeNext declarations, and negative exports checks`)
   } finally {
     if (process.env.KEEP_DIST_CHECK !== '1') await rm(temporaryRoot, { recursive: true, force: true })
     else console.log(`check-dist temporary files kept at ${temporaryRoot}`)
