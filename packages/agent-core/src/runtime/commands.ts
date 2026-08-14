@@ -6,6 +6,7 @@ import { createCardCommands } from './commands/cardCommands'
 import { createCheckpointCommands } from './commands/checkpointCommands'
 import { createPlanCommands } from './commands/planCommands'
 import { createProjectSkillsCommands } from './commands/projectSkillsCommands'
+import { createRecoveryCommands } from './commands/recoveryCommands'
 import { createRunCommands } from './commands/runCommands'
 import { createRunLifecycleCommands } from './commands/runLifecycleCommands'
 import { createSessionCommands, DEFAULT_SESSION_TITLE, deriveSessionTitle } from './commands/sessionCommands'
@@ -31,6 +32,7 @@ export type {
   UserContentDisposalContext,
   UserContentDisposalReason,
 } from './userContentDisposal'
+export type { ContinueRecoveredSessionResult, SessionRecoveryStatus } from './commands/recoveryCommands'
 
 /** Updates runtime configuration for the default command instance. */
 export function configureCommands(config: Partial<RuntimeConfig>): void {
@@ -47,6 +49,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
     defaultSessionTitle: DEFAULT_SESSION_TITLE,
     deriveSessionTitle,
   })
+  const recovery = createRecoveryCommands(core)
   const pausedRun = createRunCommands(core)
   const checkpoint = createCheckpointCommands(core, runLifecycle.stopRun)
   const plan = createPlanCommands(core, runLifecycle.stopRun)
@@ -58,6 +61,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
     ...session,
     ...sessionScope,
     ...runLifecycle,
+    ...recovery,
     ...pausedRun,
     ...checkpoint,
     ...plan,
@@ -87,6 +91,9 @@ export const {
   setApprovalMode,
   sendMessage,
   continueInterruptedRun,
+  getSessionRecoveryStatus,
+  listSessionRecoveryStatuses,
+  continueRecoveredSession,
   continuePlan,
   stopRun,
   resumeWithAnswers,

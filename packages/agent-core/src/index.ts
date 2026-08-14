@@ -91,6 +91,9 @@ export {
   // run 生命周期
   sendMessage,
   continueInterruptedRun,
+  getSessionRecoveryStatus,
+  listSessionRecoveryStatuses,
+  continueRecoveredSession,
   stopRun,
   setApprovalMode,
   resumeWithAnswers,
@@ -124,6 +127,8 @@ export {
 export type {
   // apps/web: modelInput/prepareProviderUserInput.ts
   UserInputPreparer,
+  ContinueRecoveredSessionResult,
+  SessionRecoveryStatus,
 } from './runtime/commands'
 
 // ---------------------------------------------------------------------------
