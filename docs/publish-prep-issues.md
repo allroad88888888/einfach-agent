@@ -137,7 +137,9 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
   含 `moduleResolution: nodenext` 下的类型解析探针（V1 发现 `.d.ts` 内是无扩展名相对
   说明符，V8 修复后此探针是防回归门禁）
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE（`pnpm check:dist` 对 16 个 `files: ["dist"]` 包执行 pack → 解包暂存
+  workspace 依赖为等价发布 semver → 再 pack → 临时 npm consumer 安装；25 个显式公开 ESM
+  entry points 与 NodeNext 声明解析通过，并在临时安装物上清空一个 `exports` 后验证负例必败）
 
 ### V8 · d.ts nodenext 解析修复
 
