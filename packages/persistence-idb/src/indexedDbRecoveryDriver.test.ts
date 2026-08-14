@@ -12,6 +12,13 @@ function snapshot(generation: number, sessionId = 's1'): RecoverySnapshotV1 {
     capturedAt: generation,
     generation,
     commitMarker: 'complete',
+    session: {
+      id: sessionId,
+      title: 'Recovery test',
+      settings: { vendor: 'deepseek', model: 'test' },
+      createdAt: 0,
+      updatedAt: 0,
+    },
     values: {
       conversation: { items: [], contextCheckpoint: null },
       plan: { current: null, stageCheckpoints: [] },

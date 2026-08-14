@@ -2,6 +2,7 @@ import { createStore, type Store } from '@einfach/core'
 import { describe, expect, it } from 'vitest'
 import { executionGraphAtom, executionEventsAtom } from '../execution/graph'
 import type { ExecutionGraphSnapshot } from '../execution/types'
+import { sessionsAtom } from './rootAtoms'
 import { applyRecoverySnapshot, captureRecoverySnapshot } from './recoveryProjection'
 import type { RecoverySnapshotV1 } from './recoverySnapshot.type'
 import {
@@ -25,6 +26,13 @@ import {
 import { subagentContinuationsAtom } from './subagentContinuationAtoms'
 
 const sessionId = 'session-recovery'
+const recoverySession = {
+  id: sessionId,
+  title: 'Recovery session',
+  settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' },
+  createdAt: 1,
+  updatedAt: 2,
+}
 
 function plan(id = 'plan-1') {
   return {
@@ -127,7 +135,9 @@ function seedDurableState(store: Store): void {
 }
 
 function capture(store: Store): RecoverySnapshotV1 {
-  return captureRecoverySnapshot(store, { sessionId, generation: 7, capturedAt: 99 })
+  const rootStore = createStore()
+  rootStore.setter(sessionsAtom, { [sessionId]: recoverySession })
+  return captureRecoverySnapshot(store, { rootStore, sessionId, generation: 7, capturedAt: 99 })
 }
 
 describe('recoveryProjection', () => {
@@ -139,6 +149,7 @@ describe('recoveryProjection', () => {
     const snapshot = capture(source)
     applyRecoverySnapshot(target, snapshot)
 
+    expect(snapshot.session).toEqual(recoverySession)
     expect(snapshot.values.run).not.toHaveProperty('pendingExecutionId')
     expect(target.getter(itemsAtom)).toEqual(snapshot.values.conversation.items)
     expect(target.getter(contextCheckpointAtom)).toEqual(snapshot.values.conversation.contextCheckpoint)

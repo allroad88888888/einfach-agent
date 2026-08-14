@@ -7,7 +7,7 @@ import type { ExecutionGraphSnapshot } from '../execution/types'
 import type { PlanSnapshot } from '../planning/types'
 import type { PlanStageCheckpoint } from './checkpoint.type'
 import type { ContextCheckpoint } from './contextCheckpoint.type'
-import type { ConversationItem, RunState } from './core.type'
+import type { ConversationItem, RunState, SessionMeta } from './core.type'
 import type { AskUserAnswerValue, QueuedUserMessage } from './sessionTransientPayloads'
 
 /** 首个恢复快照 codec 的版本；未知版本必须 fail-closed。 */
@@ -22,6 +22,24 @@ export type JsonValue = null | boolean | number | string | JsonValue[] | { [key:
 export type RecoverableRunState = Omit<RunState, 'pendingExecutionId'> & {
   pendingExecutionId?: never
 }
+
+/**
+ * 恢复时登记回 root sessionsAtom 的静态会话元数据。
+ *
+ * `plan` 与 `executionGraph` 的唯一真源是下方 `values` 的 session-store 投影，故这里刻意不复制。
+ */
+export type RecoverySessionMetaV1 = Pick<
+  SessionMeta,
+  | 'id'
+  | 'title'
+  | 'settings'
+  | 'createdAt'
+  | 'updatedAt'
+  | 'workspaceId'
+  | 'workspaceRoot'
+  | 'toolApprovalMode'
+  | 'loadedTools'
+>
 
 export type SubagentContinuationState =
   | 'queued'
@@ -81,5 +99,7 @@ export interface RecoverySnapshotV1 {
   capturedAt: number
   generation: number
   commitMarker: typeof RECOVERY_SNAPSHOT_COMMIT_MARKER
+  /** root sessionsAtom 的静态登记项；必须与 sessionId 同属一个会话。 */
+  session: RecoverySessionMetaV1
   values: RecoveryAtomProjectionV1
 }

@@ -40,6 +40,24 @@ function snapshot(): RecoverySnapshotV1 {
     capturedAt: 6,
     generation: 7,
     commitMarker: RECOVERY_SNAPSHOT_COMMIT_MARKER,
+    session: {
+      id: 'session-1',
+      title: '恢复中的会话',
+      settings: {
+        vendor: 'deepseek',
+        model: 'deepseek-v4-pro',
+        thinking: true,
+        temperature: 0.3,
+        max_tokens: 4_000,
+        vendorSettings: { region: 'cn' },
+      },
+      createdAt: 1,
+      updatedAt: 5,
+      workspaceId: 'workspace-1',
+      workspaceRoot: '/workspace',
+      toolApprovalMode: 'auto',
+      loadedTools: ['read_file'],
+    },
     values: {
       conversation: {
         items: [{
@@ -118,6 +136,7 @@ describe('RecoverySnapshotV1', () => {
     const decoded = decodeRecoverySnapshot(JSON.parse(text))
 
     expect(decoded).toEqual(original)
+    expect(decoded?.session).toEqual(original.session)
     expect(decoded?.values.pendingQuestionAnswers).toEqual({ q1: ['继续', '保留子 agent'] })
     expect(decoded?.values.subagentContinuations[0]?.childId).toBe('child-1')
   })
@@ -134,6 +153,11 @@ describe('RecoverySnapshotV1', () => {
     ['旧空记录', {}],
     ['generation 不是非负安全整数', { ...snapshot(), generation: -1 }],
     ['缺失完整提交 marker', { ...snapshot(), commitMarker: 'writing' }],
+    ['缺失根会话静态投影', (() => {
+      const raw = snapshot() as unknown as LooseRecord
+      delete raw.session
+      return raw
+    })()],
   ])('拒绝%s', (_label, malformed) => {
     expect(decodeRecoverySnapshot(malformed)).toBeUndefined()
   })
@@ -158,6 +182,12 @@ describe('RecoverySnapshotV1', () => {
       const continuations = values(raw).subagentContinuations as LooseRecord[]
       continuations.push({ ...continuations[0], state: 'queued' })
     }],
+    ['session id 不匹配', (raw: LooseRecord) => { (raw.session as LooseRecord).id = 'session-2' }],
+    ['不完整 session settings', (raw: LooseRecord) => { delete ((raw.session as LooseRecord).settings as LooseRecord).model }],
+    ['session 混入动态 plan', (raw: LooseRecord) => { (raw.session as LooseRecord).plan = samplePlan() }],
+    ['session 混入动态 executionGraph', (raw: LooseRecord) => {
+      ;(raw.session as LooseRecord).executionGraph = values(raw).executionGraph
+    }],
   ])('拒绝%s', (_label, change) => {
     expect(decodeRecoverySnapshot(changed(change))).toBeUndefined()
   })
@@ -170,9 +200,19 @@ describe('RecoverySnapshotV1', () => {
       spec.self = spec
       ;(values(raw).subagentContinuations as LooseRecord[])[0].spec = spec
     })
+    const sessionFunction = changed((raw) => {
+      ;((raw.session as LooseRecord).settings as LooseRecord).vendorSettings = { normalize: () => undefined }
+    })
+    const sessionCycle = changed((raw) => {
+      const vendorSettings: LooseRecord = {}
+      vendorSettings.self = vendorSettings
+      ;((raw.session as LooseRecord).settings as LooseRecord).vendorSettings = vendorSettings
+    })
 
     expect(decodeRecoverySnapshot(liveHandle)).toBeUndefined()
     expect(decodeRecoverySnapshot(functionPayload)).toBeUndefined()
     expect(decodeRecoverySnapshot(cyclicPayload)).toBeUndefined()
+    expect(decodeRecoverySnapshot(sessionFunction)).toBeUndefined()
+    expect(decodeRecoverySnapshot(sessionCycle)).toBeUndefined()
   })
 })

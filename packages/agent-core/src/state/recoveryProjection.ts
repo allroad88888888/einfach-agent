@@ -8,6 +8,7 @@ import {
   RECOVERY_SNAPSHOT_SCHEMA_VERSION,
   type RecoverableRunState,
   type RecoveryAtomProjectionV1,
+  type RecoverySessionMetaV1,
   type RecoverySnapshotV1,
 } from './recoverySnapshot.type'
 import {
@@ -22,9 +23,12 @@ import {
   queuedUserMessagesAtom,
 } from './sessionTransientAtoms'
 import { subagentContinuationsAtom } from './subagentContinuationAtoms'
-import type { RunState } from './core.type'
+import { sessionsAtom } from './rootAtoms'
+import type { RunState, SessionMeta } from './core.type'
 
 export interface RecoverySnapshotCaptureOptions {
+  /** session 内容所在 store 之外的唯一 root 会话登记表。 */
+  rootStore: Store
   sessionId: string
   generation: number
   capturedAt?: number
@@ -50,6 +54,20 @@ function withoutPendingExecutionId(run: RunState | undefined): RecoverableRunSta
   return recoverableRun as RecoverableRunState
 }
 
+function projectStaticSessionMeta(session: SessionMeta): RecoverySessionMetaV1 {
+  return {
+    id: session.id,
+    title: session.title,
+    settings: session.settings,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    ...(session.workspaceId === undefined ? {} : { workspaceId: session.workspaceId }),
+    ...(session.workspaceRoot === undefined ? {} : { workspaceRoot: session.workspaceRoot }),
+    ...(session.toolApprovalMode === undefined ? {} : { toolApprovalMode: session.toolApprovalMode }),
+    ...(session.loadedTools === undefined ? {} : { loadedTools: session.loadedTools }),
+  }
+}
+
 /**
  * 同步读取 allowlist 的同一 JS 执行 epoch；读取结束前没有 await 或外部排队点。
  * JSON clone 隔离持久化 writer 与 atom 中可变引用，再用既有 codec 关闭验证边界。
@@ -59,12 +77,15 @@ export function captureRecoverySnapshot(
   options: RecoverySnapshotCaptureOptions,
 ): RecoverySnapshotV1 {
   const run = store.getter(runAtom)
+  const session = options.rootStore.getter(sessionsAtom)[options.sessionId]
+  if (!session) throw new Error(`Cannot capture recovery for an unregistered session: ${options.sessionId}`)
   const candidate = {
     schemaVersion: RECOVERY_SNAPSHOT_SCHEMA_VERSION,
     sessionId: options.sessionId,
     capturedAt: options.capturedAt ?? Date.now(),
     generation: options.generation,
     commitMarker: RECOVERY_SNAPSHOT_COMMIT_MARKER,
+    session: projectStaticSessionMeta(session),
     values: {
       conversation: {
         items: store.getter(itemsAtom),

@@ -14,6 +14,8 @@ const runStatuses = new Set(['idle', 'running', 'awaiting_tool', 'waiting_user',
 const nodeTypes = new Set(['agent-batch', 'agent', 'model', 'tool', 'plan-stage', 'evaluator', 'join'])
 const nodeStatuses = new Set(['queued', 'ready', 'running', 'waiting-children', 'waiting-user', 'interrupted', 'succeeded', 'failed', 'cancelled'])
 const childStates = new Set<SubagentContinuationState>(['queued', 'interrupted', 'waiting_user', 'waiting_confirmation', 'waiting_plan_approval', 'outcome_unknown'])
+const sessionKeys = new Set(['id', 'title', 'settings', 'createdAt', 'updatedAt', 'workspaceId', 'workspaceRoot', 'toolApprovalMode', 'loadedTools'])
+const modelSettingsKeys = new Set(['vendor', 'model', 'thinking', 'temperature', 'max_tokens', 'vendorSettings'])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -68,6 +70,28 @@ function isStringArray(value: unknown): value is string[] {
 
 function optional(value: Record<string, unknown>, key: string, check: (entry: unknown) => boolean): boolean {
   return !(key in value) || check(value[key])
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
+  return Object.keys(value).every((key) => allowed.has(key))
+}
+
+function isModelSettings(value: unknown): boolean {
+  return isRecord(value) && hasOnlyKeys(value, modelSettingsKeys)
+    && isText(value.vendor) && isText(value.model)
+    && optional(value, 'thinking', (entry) => typeof entry === 'boolean')
+    && optional(value, 'temperature', isFiniteJsonNumber)
+    && optional(value, 'max_tokens', isFiniteJsonNumber)
+    && optional(value, 'vendorSettings', isRecord)
+}
+
+function isSession(value: unknown, sessionId: string): boolean {
+  return isRecord(value) && hasOnlyKeys(value, sessionKeys) && value.id === sessionId
+    && isText(value.title) && isModelSettings(value.settings)
+    && isNatural(value.createdAt) && isNatural(value.updatedAt)
+    && optional(value, 'workspaceId', isText) && optional(value, 'workspaceRoot', isText)
+    && optional(value, 'toolApprovalMode', (entry) => entry === 'confirm' || entry === 'auto')
+    && optional(value, 'loadedTools', isStringArray)
 }
 
 function isUserContent(value: unknown): boolean {
@@ -235,6 +259,6 @@ export function decodeRecoverySnapshot(value: unknown): RecoverySnapshotV1 | und
   if (!isJsonValue(value) || !isRecord(value) || 'continuation' in value
     || value.schemaVersion !== RECOVERY_SNAPSHOT_SCHEMA_VERSION || !isText(sessionId) || sessionId.length === 0
     || !isNatural(value.capturedAt) || !isNatural(value.generation) || value.commitMarker !== RECOVERY_SNAPSHOT_COMMIT_MARKER
-    || !hasProjection(value.values, sessionId)) return undefined
+    || !isSession(value.session, sessionId) || !hasProjection(value.values, sessionId)) return undefined
   return value as unknown as RecoverySnapshotV1
 }
