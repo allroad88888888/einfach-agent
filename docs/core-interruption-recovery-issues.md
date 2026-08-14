@@ -51,7 +51,7 @@ redo、历史 cursor、追加日志或将 atom 身份持久化。
 ## 目标分层
 
 ```text
-业务 atom ── capture allowlist ──> RecoverySnapshot { generation, values, continuation }
+业务 atom ── capture allowlist ──> RecoverySnapshot { generation, values（含 continuation metadata） }
      ^                                      │
      │                              single-record durable commit
      └── atomic apply + derived recompute ──┘
@@ -104,16 +104,18 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 
 ### R1 · 版本化 RecoverySnapshot 契约
 
-- **波次 / 依赖 / 状态**：W1 / R0 / READY
-- **owner / 模型**：待派 / strong（数据契约）
-- **独占面**：新建 `packages/agent-core/src/state/recoverySnapshot.type.ts` 及 colocated 测试；只允许
-  最小 type barrel 出口，不改 runtime/persistence。
-- **目标**：定义 JSON-safe `RecoverySnapshotV1`、generation、commit marker、逻辑字段名与 codec
-  升级入口；覆盖 conversation、context、plan、plan stages、run、queue、问题答案、execution graph
-  和 continuation metadata。
+- **波次 / 依赖 / 状态**：W1 / R0 / DONE
+- **owner / 模型**：R1-contract / strong（数据契约）
+- **独占面**：新建 `packages/agent-core/src/state/recoverySnapshot.type.ts`、`recoverySnapshot.codec.ts` 及
+  colocated 测试；只允许最小 type barrel 出口，不改 runtime/persistence。
+- **目标**：定义 JSON-safe `RecoverySnapshotV1`、sessionId、generation、commit marker、逻辑字段名与
+  codec 升级入口；覆盖 conversation、context、plan、plan stages、run、queue、问题答案、execution graph
+  及子 agent continuation metadata。
 - **非目标**：不捕获 Store/atom identity，不决定存储表，不接线读取或写入。
 - **验收**：schema round-trip、未知未来版本 fail-closed、旧空记录可识别；字段审计证明没有 derived/UI
   值；聚焦 vitest、core build、`wc -l` 和 `git diff --check` 均绿。
+- **证据**：独立复核通过；`recoverySnapshot.type.test.ts` 17/17，`pnpm --filter @web-agent/core build`
+  通过；type/codec/test 分别 85/240/178 行，`git diff --check` 通过。
 
 ### R2 · atom 投影 allowlist 与原子 apply
 
@@ -132,8 +134,9 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 - **owner / 模型**：待派 / strong（跨 driver schema）
 - **独占面**：新建 core recovery persistence contract、IDB/SQLite 的 recovery record 实现、迁移与测试；
   不改现有 checkpoint hydrate/命令。
-- **目标**：为每 session 原子存取一个完整 generation；读只接受带 commit marker 的最高 generation，
-  缺失记录按旧会话处理，损坏记录 fail-safe 且不删除用户 checkpoint。
+- **目标**：为每 session 原子存取一个完整 generation，并以条件写入拒绝陈旧 generation；读只接受带
+  commit marker 的最高 generation，缺失记录按旧会话处理，损坏记录 fail-safe 且不删除用户 checkpoint；
+  删除必须留下 generation fence/tombstone，令已在飞的旧写不能复活已删除会话。
 - **非目标**：不移除 checkpoint 表，不在此卡双写业务状态，不实现恢复 UI。
 - **验收**：IDB/SQLite 均验证断写只读到上一完整代、版本迁移、空/损坏降级；两个持久化包 build 绿。
 
@@ -145,6 +148,7 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
   hydrate 或具体 continuation。
 - **目标**：每 session 串行 capture→commit，generation 单调且最后一次成功写不能被过时任务覆盖；定义
   事务边界：用户提交、assistant/tool item 固化、工具派发前后、等待态、计划阶段、队列和子任务调度。
+  capture 必须在一个 atom 批次/一致 epoch 内完成 JSON-safe clone，异步排队后不得再读取活 atom。
 - **非目标**：不每个 streaming token 强制同步写，不自行解释如何 resume。
 - **验收**：乱序 Promise、连续写入、失败重试、dispose 时 flush 均有测试；每个已列边界都有调用证据。
 
@@ -156,6 +160,8 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
   executor 或 checkpoint undo writer。
 - **目标**：优先读取单代 snapshot，在一次 batch apply 后将真正 live 的运行状态转为 `interrupted`；
   `waiting_user`、`waiting_confirmation`、`waiting_plan_approval` 原样保留，graph 与 run 同代恢复。
+  有效 v1 record 只能由这一份 record hydrate；已存在但损坏的 v1 是 recovery failure，严禁退回并拼接
+  legacy checkpoint/session meta；只有完全缺失 v1 才允许 legacy fallback。
 - **非目标**：不自动执行模型/工具，不以 SessionMeta 的旧 graph 覆盖新 snapshot。
 - **验收**：冷启动、旧 checkpoint fallback、torn legacy pair、各 run status 和已填写答案都有恢复测试。
 
@@ -188,7 +194,8 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 - **独占面**：planning stage runtime、subagent runtime、execution graph 类型/测试；不改 model/tool
   loop 与 persistence driver。
 - **目标**：将 graph 从展示状态扩成可验证的 continuation descriptor：计划阶段、root task、child
-  objective、输入快照、调度状态和 outcome policy 都能随同一 generation 恢复并重新调度。
+  objective、输入快照、调度状态和 outcome policy 都能随同一 generation 恢复并重新调度；graph status
+  本身不是 child 的可调度事实，descriptor 必须带 parent path、task spec、已知工具 outcome 与嵌套任务状态。
 - **非目标**：不序列化子 agent 的 Promise/上下文窗口，不保证重复执行非幂等子任务。
 - **验收**：根任务、暂停计划、排队 child、运行 child 重启后都有确定归宿：可继续、等输入或待对账，
   不遗失也不静默重跑。
