@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ModelItem } from '@web-agent/ai'
 import { sessionsAtom } from '../state/rootStore'
+import { subagentContinuationsAtom } from '../state/subagentContinuationAtoms'
 import { createCoreInstance } from '../runtime/core/coreInstance'
 import type { Tool } from '../tools/types'
 import { createTestDelegationCapability, createTestDelegationRuntime } from './runtime.ports.testFixtures'
@@ -67,12 +68,13 @@ function childRuntime(input: {
   core.rootStore.setter(sessionsAtom, {
     session: { id: 'session', title: 'child timing', settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' }, createdAt: 0, updatedAt: 0 },
   })
-  return createTestDelegationRuntime({
+  const runtime = createTestDelegationRuntime({
     sessionId: 'session', runId: input.runId, settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' },
     apiKey: 'test', signal: input.signal ?? new AbortController().signal, fetchImpl: input.fetchImpl,
     core, registry: core.tools, scheduler: core.delegation!.scheduler, runtimeIsTauri: input.runtimeIsTauri,
     onTraceItem: ({ agentPath, item }) => input.trace.push({ agentPath, item }),
   })
+  return { core, runtime }
 }
 
 describe('child Agent 到点工具', () => {
@@ -80,7 +82,7 @@ describe('child Agent 到点工具', () => {
     const order: string[] = []
     const trace: TraceEntry[] = []
     const requests: Record<string, unknown>[] = []
-    const runtime = childRuntime({
+    const { runtime } = childRuntime({
       runId: 'run-start',
       tools: [
         timingTool('read_file', 'subagentStart'),
@@ -127,7 +129,7 @@ describe('child Agent 到点工具', () => {
   it('子模型异常时仍在 finally 分派 subagentEnd', async () => {
     const trace: TraceEntry[] = []
     const calls: string[] = []
-    const runtime = childRuntime({
+    const { runtime } = childRuntime({
       runId: 'run-failed', tools: [timingTool('read_file', 'subagentStart'), timingTool('rg_search', 'subagentEnd')],
       runtimeIsTauri: true, trace,
       fetchImpl: async (_url, init) => isChildRequest(body(init))
@@ -152,7 +154,7 @@ describe('child Agent 到点工具', () => {
     const run = async (runtimeIsTauri: boolean) => {
       const trace: TraceEntry[] = []
       const bridge = vi.fn(async () => ({ ok: true as const }))
-      const runtime = childRuntime({
+      const { runtime } = childRuntime({
         runId: `run-server-${runtimeIsTauri}`, tools: [timingTool('run_verification_command', 'subagentStart', 'server')],
         runtimeIsTauri, trace, fetchImpl: async (_url, init) => isChildRequest(body(init)) ? response('done') : response('# distilled skill'),
       })
@@ -173,7 +175,7 @@ describe('child Agent 到点工具', () => {
     const abort = new AbortController()
     const trace: TraceEntry[] = []
     const bridge = vi.fn(async () => ({ ok: true as const }))
-    const runtime = childRuntime({
+    const { runtime } = childRuntime({
       runId: 'run-cancelled', tools: [timingTool('read_file', 'subagentStart'), timingTool('rg_search', 'subagentEnd')],
       runtimeIsTauri: true, trace, signal: abort.signal,
       fetchImpl: async (_url, init) => {
@@ -197,7 +199,7 @@ describe('child Agent 到点工具', () => {
   it('危险的 child 到点工具只归档拒绝结果，不触发 child bridge', async () => {
     const trace: TraceEntry[] = []
     const bridge = vi.fn(async () => ({ ok: true as const }))
-    const runtime = childRuntime({
+    const { runtime } = childRuntime({
       runId: 'run-risk', tools: [timingTool('shell_linux', 'subagentStart')], runtimeIsTauri: true, trace,
       fetchImpl: async (_url, init) => isChildRequest(body(init)) ? response('done') : response('# distilled skill'),
     })
@@ -214,6 +216,38 @@ describe('child Agent 到点工具', () => {
     expect(result.children[0]?.status).toBe('done')
     expect(bridge).not.toHaveBeenCalled()
     expect(trace.find(({ item }) => item.tool_call_id?.endsWith(':shell_linux'))?.item.content).toContain('风险等级 dangerous')
+    await runtime.dispose?.()
+  })
+
+  const legacyChildKinds: Array<[kind: string, tools: Tool[]]> = [
+    ['normal', []],
+    ['timed', [timingTool('read_file', 'subagentStart')]],
+  ]
+
+  it.each(legacyChildKinds)('旧 host 无 caller id 时 %s child 可运行并持久化稳定 id', async (kind, tools) => {
+    const runId = `run-legacy-${kind}`
+    const trace: TraceEntry[] = []
+    const { core, runtime } = childRuntime({
+      runId,
+      tools,
+      runtimeIsTauri: true,
+      trace,
+      fetchImpl: async (_url, init) => isChildRequest(body(init)) ? response('done') : response('# distilled skill'),
+    })
+
+    const result = await runtime.delegateAgents(
+      { toolProfile: 'workspace_read', children: [{ objective: 'continue safely' }] },
+      context(async () => ({ ok: true })),
+    )
+
+    expect(result.children[0]?.status).toBe('done')
+    const node = core.delegation!.scheduler.snapshot(runId).find(({ path }) => path === 'root-01')
+    const [continuation] = core.getSessionStore('session').store.getter(subagentContinuationsAtom)
+    expect(node?.delegationCallId).toBe(`legacy:${runId}:1`)
+    expect(continuation).toMatchObject({
+      state: 'interrupted',
+      spec: { parent: { delegationCallId: node?.delegationCallId } },
+    })
     await runtime.dispose?.()
   })
 })

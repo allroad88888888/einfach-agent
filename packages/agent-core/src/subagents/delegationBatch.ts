@@ -1,6 +1,13 @@
 import { createConcurrencyLimiter } from '../runtime/concurrencyLimiter'
 import { runChildAgent } from './childAgentLoop'
 import { createChildModelCaller } from './childModelClient'
+import {
+  persistChildExecutionFence,
+  persistQueuedChildContinuations,
+  persistTerminalChildBatch,
+  type QueuedChildContinuationBatch,
+} from './continuationLifecycle'
+import { createDelegationCallIdResolver } from './delegationCallId'
 import { resolveDelegationRequestPolicy } from './delegationPolicy'
 import type { DelegateAgents } from './delegationRuntimePorts'
 import { routeChildModel } from './modelSelection'
@@ -46,6 +53,7 @@ function batchStatus(
 export function createDelegateAgents(runtime: DelegateAgentRuntimeState): DelegateAgents {
   const callModel = createChildModelCaller(runtime)
   const distillChat = createSkillDistillChat(callModel)
+  const resolveDelegationCallId = createDelegationCallIdResolver(runtime.opts.runId)
   const delegateAgents: DelegateAgents = async (rawInput, context) => {
     const policy = resolveDelegationRequestPolicy(runtime, rawInput, context)
     const {
@@ -96,12 +104,13 @@ export function createDelegateAgents(runtime: DelegateAgentRuntimeState): Delega
       await recordReservationFailure(runtime, context, archiveBasePath, parentPath, isRootCall, state, error)
       throw error
     }
+    const delegationCallId = resolveDelegationCallId(context)
     let reserved
     try {
       reserved = runtime.scheduler.reserveChildren({
         treeId: runtime.opts.runId,
         sessionId: runtime.opts.sessionId,
-        delegationCallId: context.delegationCallId,
+        delegationCallId,
         parentPath,
         inheritedSkillFiles,
         inheritedSkillIds,
@@ -124,6 +133,20 @@ export function createDelegateAgents(runtime: DelegateAgentRuntimeState): Delega
       state.confirmedToolsByPath.set(node.path, spec.confirmedTools ?? requestedConfirmedTools)
       runtime.delegationStateByChildPath.set(node.path, state)
     })
+    let queuedBatch: QueuedChildContinuationBatch | undefined
+    if (runtime.opts.core) {
+      try {
+        queuedBatch = await persistQueuedChildContinuations({
+          core: runtime.opts.core,
+          sessionId: runtime.opts.sessionId,
+          nodes: reserved,
+          specs: input.children,
+        })
+      } catch (error) {
+        state.totalNodesUsed -= input.children.length
+        throw error
+      }
+    }
     const parent = runtime.scheduler.snapshot(runtime.opts.runId).find((node) => node.path === parentPath)
     const parentDispatchIndex = parent ? Math.max(1, parent.dispatchCounter) : 1
     await runtime.archive.recordEvent(context, archiveBasePath, 'children_reserved', parentPath, {
@@ -146,8 +169,19 @@ export function createDelegateAgents(runtime: DelegateAgentRuntimeState): Delega
       inheritedSkillFiles,
       inheritedSkillIds,
     })
-    const children = await createConcurrencyLimiter(budget.maxConcurrent).runAll(reserved.map((node, index) => () =>
-      runChildAgent({
+    const children = await createConcurrencyLimiter(budget.maxConcurrent).runAll(reserved.map((node, index) => async () => {
+      if (runtime.opts.core) {
+        if (!queuedBatch) {
+          throw new Error(`child continuation batch is missing: ${node.id}`)
+        }
+        await persistChildExecutionFence({
+          core: runtime.opts.core,
+          sessionId: runtime.opts.sessionId,
+          childId: node.id,
+          queuedBatch,
+        })
+      }
+      return runChildAgent({
         runtime, callModel, delegateAgents,
         node: { ...node, inheritedSkillFiles: [...inheritedSkillFiles, distilled.coreSkill.path], inheritedSkillIds: [...inheritedSkillIds, distilled.coreSkill.skillId] },
         spec: input.children[index], context, archiveBasePath,
@@ -155,8 +189,8 @@ export function createDelegateAgents(runtime: DelegateAgentRuntimeState): Delega
         delegationState: state, budget: state.budgetByPath.get(node.path) ?? budget,
         toolProfile: state.toolProfileByPath.get(node.path) ?? requestedToolProfile,
         confirmedTools: state.confirmedToolsByPath.get(node.path) ?? [],
-      }),
-    ))
+      })
+    }))
     const changeSets: ChildChangeSet[] = []
     children.forEach((child) => collectChangeSets({ changeSets: child.changeSets ?? [] }, changeSets))
     changeSets.sort((left, right) => (runtime.changeSetOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (runtime.changeSetOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER))
@@ -243,6 +277,14 @@ async function distillBatchSkills(
       context, archiveBasePath, 'child_finished', child.path,
       { status: child.status, objective: child.objective, summary: child.summary, skillFiles: child.skillFiles, skillIds: child.skillIds, error: child.error },
     )))
+    if (runtime.opts.core) {
+      await persistTerminalChildBatch({
+        core: runtime.opts.core,
+        sessionId: runtime.opts.sessionId,
+        runId: runtime.opts.runId,
+        children,
+      })
+    }
     try {
       await runtime.archive.persistTreeSnapshot(context, archiveBasePath, runtime.scheduler.snapshot(runtime.opts.runId))
       await runtime.archive.writeRunArchiveRecord(context, archiveBasePath, 'delegated', parentPath === ROOT_AGENT_PATH)

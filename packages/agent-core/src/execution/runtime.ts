@@ -1,6 +1,5 @@
 import type { CoreInstance } from '../runtime/core/coreInstance'
 import { newId } from '../runtime/newId'
-import { sessionsAtom } from '../state/rootStore'
 import type { SubagentNodeRecord } from '../runtime/delegationContract'
 import {
   createExecutionNode,
@@ -92,20 +91,6 @@ export function getExecutionRuntime(core: CoreInstance): ExecutionRuntime {
     const store = core.getSessionStore(sessionId).store
     store.setter(executionGraphAtom, (graph) => reduceExecutionGraph(graph, event))
     store.setter(executionEventsAtom, (events) => [...events, event])
-    const graph = store.getter(executionGraphAtom)
-    core.rootStore.setter(sessionsAtom, (previous) => {
-      const session = previous[sessionId]
-      if (!session) return previous
-      return {
-        ...previous,
-        [sessionId]: {
-          ...session,
-          executionGraph: graph,
-          updatedAt: Date.now(),
-        },
-      }
-    })
-    core.persistence.persistSessions()
   }
 
   const runtime: ExecutionRuntime = {

@@ -7,6 +7,7 @@ import {
 } from '../runtime/timedDispatch'
 import type { ToolResult } from '../tools/types'
 import { loadVisibleChildTool } from './childToolVisibility'
+import { persistTerminalChildResults } from './continuationLifecycle'
 import type { ChildAgentResult } from './types'
 import type {
   DelegateAgentCallContext,
@@ -165,6 +166,21 @@ export async function finalizeChildResult(input: {
       modelTier: input.modelTier, route_reason: input.routeReason, fallback_count: input.fallbackCount,
     },
   )
+  if (runtime.opts.core) {
+    await persistTerminalChildResults({
+      core: runtime.opts.core,
+      sessionId: runtime.opts.sessionId,
+      children: [{
+        childId: node.id,
+        kind: status,
+        summary,
+        resultArchivePath: resultFile,
+        skillFiles,
+        skillIds,
+        changeSets: input.changeSets,
+      }],
+    })
+  }
   return createChildResult(status, {
     path: node.path, objective: spec.objective, summary, skillFiles, skillIds, changeSets: input.changeSets,
   }, {

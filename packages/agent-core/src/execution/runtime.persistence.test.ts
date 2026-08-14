@@ -4,6 +4,7 @@ import { configurePersistence, resetPersistence } from '../runtime/persistenceBr
 import { sessionsAtom } from '../state/rootStore'
 import type { SessionsPersistence } from '../state/persistence/contract'
 import type { SessionMeta, WorkspaceMeta } from '../state/core.type'
+import { executionGraphAtom } from './graph'
 import { getExecutionRuntime } from './runtime'
 
 function createSessionsPersistence() {
@@ -31,7 +32,7 @@ afterEach(() => {
 })
 
 describe('execution runtime persistence isolation', () => {
-  it('persists an isolated core execution graph through that core bridge, never defaultCore', async () => {
+  it('keeps an isolated core execution graph session-local and never writes it through sessions persistence', async () => {
     const defaultSessions = createSessionsPersistence()
     const aSessions = createSessionsPersistence()
     configurePersistence({ sessions: defaultSessions })
@@ -51,17 +52,12 @@ describe('execution runtime persistence isolation', () => {
       task: async () => 'done',
     })
 
-    expect(aSessions.saveSessions).toHaveBeenLastCalledWith([
-      expect.objectContaining({
-        id: 'instance-a',
-        executionGraph: expect.objectContaining({
-          order: ['node-a'],
-          nodes: expect.objectContaining({
-            'node-a': expect.objectContaining({ status: 'succeeded' }),
-          }),
-        }),
-      }),
-    ])
+    expect(A.getSessionStore('instance-a').store.getter(executionGraphAtom)).toMatchObject({
+      order: ['node-a'],
+      nodes: { 'node-a': { status: 'succeeded' } },
+    })
+    expect(A.rootStore.getter(sessionsAtom)['instance-a']).not.toHaveProperty('executionGraph')
+    expect(aSessions.saveSessions).not.toHaveBeenCalled()
     expect(defaultSessions.saveSessions).not.toHaveBeenCalled()
   })
 })
