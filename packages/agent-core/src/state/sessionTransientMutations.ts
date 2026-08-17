@@ -17,6 +17,10 @@ import {
 } from './sessionTransientAtoms'
 import type { ContextStatsSnapshot } from './contextStats'
 import { SESSION_SLOTS } from './sessionSlots'
+import {
+  appendPendingArtifactLogged,
+  removePendingArtifactLogged,
+} from './pendingArtifactsLog'
 import { writeSlot } from './sessionSlotWrite'
 import type {
   AssistantStreamState,
@@ -41,7 +45,9 @@ export function addPendingArtifact(
   core: CoreInstance = defaultCore,
 ): void {
   if (sessionMissing(id, core)) return
-  writeSlot(core.getSessionStore(id), SESSION_SLOTS.pendingArtifacts.key, pendingArtifactsAtom, (prev) => [...prev, artifact])
+  // 走增量记账：产物条目装的是完整文件正文，整值记账会把已攒下的全部正文存进日志两遍
+  // （理由见 state/pendingArtifactsLog.ts）。
+  appendPendingArtifactLogged(core.getSessionStore(id), artifact)
 }
 
 export function removePendingArtifact(
@@ -50,9 +56,7 @@ export function removePendingArtifact(
   core: CoreInstance = defaultCore,
 ): void {
   if (sessionMissing(id, core)) return
-  writeSlot(core.getSessionStore(id), SESSION_SLOTS.pendingArtifacts.key, pendingArtifactsAtom, (prev) =>
-    prev.filter((artifact) => artifact.id !== artifactId),
-  )
+  removePendingArtifactLogged(core.getSessionStore(id), artifactId)
 }
 
 export function addBrowserCard(id: string, card: BrowserCard, core: CoreInstance = defaultCore): void {

@@ -21,6 +21,7 @@
 import { isSourceAtom, type AtomEntity, type History, type Setter } from '@einfach/core'
 import { EMPTY_EXECUTION_GRAPH, executionGraphAtom } from '../execution/graph'
 import { registerExecutionGraphAppliers } from './executionGraphSlotLog'
+import { registerPendingArtifactsAppliers } from './pendingArtifactsLog'
 import { registerItemsLogAppliers } from './sessionItemsLog'
 import {
   contextCheckpointAtom,
@@ -101,7 +102,9 @@ export const SESSION_SLOTS = {
   planStageCheckpoints: slot('planStageCheckpoints', planStageCheckpointsAtom, []),
   queuedUserMessages: slot('queuedUserMessages', queuedUserMessagesAtom, []),
   pendingQuestionAnswers: slot('pendingQuestionAnswers', pendingQuestionAnswersAtom, {}),
-  pendingArtifacts: slot('pendingArtifacts', pendingArtifactsAtom, []),
+  pendingArtifacts: slot(
+    'pendingArtifacts', pendingArtifactsAtom, [], registerPendingArtifactsAppliers,
+  ),
   composerDraft: slot('composerDraft', composerDraftAtom, ''),
   executionGraph: slot(
     'executionGraph', executionGraphAtom, EMPTY_EXECUTION_GRAPH, registerExecutionGraphAppliers,
