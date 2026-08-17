@@ -280,6 +280,19 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 - **目标**：逐条检查红线、allowlist 完整性、单一事实、外部副作用策略和文件职责，而不只看测试。
 - **验收 / 证据**：无 redo/history cursor/atom identity 持久化；无恢复双写；新增/大改文件符合行数约束；独立审计与所有交付门禁通过。
 
+## 收口后的已知语义与遗留
+
+1. **无有效 V1 的会话开屏是空对话。** 这是红线 7 的有意 fail-closed，不是缺陷：hydrate 只投影 V1，
+   checkpoint 只留 undo/history。波及面限于 V1 落地前建的会话与 V1 损坏的会话；`apps/cli` 只配内存
+   history、不走 hydrate，不受影响。已裁决直接丢弃这类存量数据，不做兼容回填。
+   连带后果：`currentTurnIndexAtom` 停在最后一轮而 `itemsAtom` 为空，下一次 `commitCheckpoint` 会在
+   turnIndex+1 落一条只含新内容的 checkpoint，该会话的 checkpoint 序列出现 items 断层。同样按丢弃处理。
+   将来若要回填，唯一安全的来源是最后一个 `kind === 'completed'` 的 checkpoint：`working` / `stopped`
+   的 items 可能含未配对 tool_use，载入后下一轮模型请求会被供应商直接拒绝。
+
+2. **SQLite 老库仍保留已废弃的 `checkpoints.recovery` 列。** R10 移除了它的建表、读、写与 ALTER 迁移，
+   但不 drop 存量列。它不再被任何代码读写，留着无害；不提供清理迁移。
+
 ## 统一交付门禁
 
 每张生产卡至少给出聚焦 `vitest`、`pnpm --filter @web-agent/core build`、新增/大改文件的 `wc -l`
