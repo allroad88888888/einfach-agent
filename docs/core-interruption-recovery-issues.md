@@ -47,6 +47,20 @@ redo、历史 cursor、追加日志或将 atom 身份持久化。
    RecoverySnapshot V1；缺失、损坏或不可读 V1 的会话只能保留静态登记和已净化的 checkpoint history，不能恢复或调度运行态。
 8. 新增/大改普通文件不超过 300 行；单一强内聚恢复状态机可放宽至 500 行，卡中须说明理由并执行 `wc -l`。
 9. 不使用 `git stash`、不碰本卡外文件、不 broad-stage；每卡只暂存其明确列出的路径。
+10. **唯一副本必须进 allowlist。** 判据不是「这个 atom 看起来像不像运行态」，而是：**这份内容除了它自己
+    还活在哪里？** 只要一段用户或模型产生的内容在 transcript、checkpoint、settings、磁盘里都没有第二份，
+    它就不是 transient，不许以「UI 态」「临时卡片」为由排除在 V1 之外。
+    - 反例一：`pendingArtifacts` 曾被当作 UI 卡片，而 `save_file` 只把 artifactId 和字节数回给模型，
+      `content` 从不进 transcript——重启即永久丢失，模型却以为暂存成功（R12）。
+    - 反例二：`composerDraft` 平时确实只是草稿，但回退/撤回会把用户原话从 items 截断再放回输入框，
+      那一刻它成为唯一副本（R13）。**同一个 atom 的性质会随命令改变，按最坏那条路径判定。**
+    - 有意排除必须给出「凭什么能重建」的具体机制并写进注释，二选一：可从别处**算回来**
+      （如 `contextStats` 下次调用重算、`currentTurnIndex` = checkpoints 的 max turnIndex），
+      或有**明确的补偿设计**（如 `browser-action` 直接要求模型把卡片内容写进最终回复）。
+      「刷新即恢复安全默认」也是正当理由（如 `alwaysAllowedTools` 的危险工具授权不跨重启）。
+      说不出机制 = 缺口，不是设计。
+    - 新增任何写入 session store 的 atom 时，必须在本红线的三类归宿里选一类并说明；
+      新增会产出内容的工具时，必须说明该内容在 transcript 里有没有副本。
 
 ## 目标分层
 
@@ -302,6 +316,36 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
   `node scripts/check-docs.js` 与 `git diff --check` 均通过。`timedDispatch.ts` 267 → 190 行，
   新模块 91 行。定位方式为在 `8d70fcc`→`fd9dac4` 之间逐点重跑那两个测试文件。
 
+### R12 · 待保存产物入 allowlist
+
+- **波次 / 依赖 / 状态**：W9 / R2、R10 / DONE
+- **owner / 模型**：主会话 / strong（数据契约）
+- **独占面**：`recoverySnapshot.type.ts`、`recoverySnapshot.codec.ts`、`recoveryProjection.ts` 与恢复
+  fixture；不改工具实现、命令或 driver schema。
+- **背景**：`save_file` 回给模型的结果只有 `{accepted, artifactId, bytes}`，`content` 从不进 transcript，
+  `pendingArtifactsAtom` 是它唯一的副本。它此前被当作 UI 卡片排除在 V1 之外，重启即永久丢失，
+  而模型认为暂存成功。
+- **目标**：`pendingArtifacts` 进 V1 allowlist，codec 校验 id 唯一、`content` 为字符串、不含未知字段。
+- **非目标**：不改 `save_file` 的 5 MB 上限，不为产物另建表——快照本来就带完整 `items`，产物不改变量级。
+- **验收 / 证据**：`23f24bd`；产物内容跨 apply 往返，缺失字段/重复 id/非字符串 content/未知字段四类
+  codec 用例 fail-closed。投影测试按值语义与边界拆成两个文件加一份共享 fixture，均在 300 行内。
+  注意 `*.fixtures.ts` **不在** `check:boundaries` 的测试豁免里，按生产源扫描——本卡的 fixture 因此
+  改用中性厂商名（codec 只要求 `vendor` 是字符串），不能照抄测试里的真实厂商名。
+
+### R13 · 撤回的用户原话不随重启丢失
+
+- **波次 / 依赖 / 状态**：W9 / R12 / DONE
+- **owner / 模型**：主会话 / strong（用户内容边界）
+- **独占面**：同 R12 三个文件，外加 `recoveryProcess.integration.test.ts`；不改 checkpoint 命令本身。
+- **背景**：`checkpointCommands.ts:93` 与 `:135` 在回退/撤回时把用户原话从 `items` 截断后放回输入框，
+  同一条命令随即提交 `persistRecovery`。落盘的那一代带的是已截断的 items，而 `composerDraft` 不在
+  allowlist——重启后两处都没有，是纯粹的用户数据丢失。
+- **目标**：`composerDraft` 进 allowlist。两个撤回路径的 `setComposerDraft` 本就排在 `persistRecovery`
+  之前，命令代码无需改动即被覆盖。
+- **非目标**：不恢复撤回轮的图片等附件——放回输入框的历来只有 `userMessageText` 的纯文本。
+- **验收 / 证据**：跨 Core 集成用例证明撤回后新进程仍能拿回原话；摘掉 capture 一行该用例即红，
+  确认它咬住实现而非空转。
+
 ## 收口后的已知语义与遗留
 
 1. **无有效 V1 的会话开屏是空对话。** 这是红线 7 的有意 fail-closed，不是缺陷：hydrate 只投影 V1，
@@ -333,3 +377,7 @@ pnpm check:dist
 `pnpm test` 是**全仓库**跑，不接受用 `vitest run <目录>` 的聚焦子集顶替：R11 那条环只在
 `apps/web` 的装配测试里暴露，core 与 persistence 的聚焦 suite 全绿也照样漏掉它。给"切换后门禁
 通过"的结论前，必须贴全量 `pnpm test` 的 Test Files / Tests 行。
+
+把门禁串成 `cmd | tail` 或 `cmd | grep` 时，管道的退出码是**最后一段**的，前面的失败会被吞掉，
+`&&` 照样往下走——R12/R13 那轮就这样在 `边界检查失败` 之后仍打印了 ALL_GATES_OK。串门禁必须
+`set -o pipefail`，或者分开跑各自看退出码；只凭末尾那行 OK 判定通过是无效证据。
