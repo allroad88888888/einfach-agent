@@ -17,7 +17,7 @@ function resumablePlan(status: 'approved' | 'active' = 'active'): PlanSnapshot {
   }
 }
 
-function interruptedToolCall(core: ReturnType<typeof createCore>, id: string, outcome?: 'notStarted' | 'outcomeKnown' | 'outcomeUnknown') {
+function interruptedToolCall(core: ReturnType<typeof createCore>, id: string, outcome?: 'notStarted' | 'outcomeKnown' | 'outcomeUnknown', toolName = 'shell_macos') {
   const store = core.getSessionStore(id).store
   store.setter(itemsAtom, [
     { id: 'user-1', createdAt: 1, item: { role: 'user' as const, content: 'resume' } },
@@ -25,7 +25,7 @@ function interruptedToolCall(core: ReturnType<typeof createCore>, id: string, ou
       id: 'assistant-1', createdAt: 2,
       item: {
         role: 'assistant' as const, content: null,
-        tool_calls: [{ id: 'call-1', type: 'function' as const, function: { name: 'shell_macos', arguments: '{}' } }],
+        tool_calls: [{ id: 'call-1', type: 'function' as const, function: { name: toolName, arguments: '{}' } }],
       },
     },
   ])
@@ -89,6 +89,27 @@ describe('session recovery discovery', () => {
 
     expect(core.getSessionRecoveryStatus(id)).toEqual({
       status: 'recoverable', sessionId: id, continuation: 'interrupted_run', runId: 'run-1',
+    })
+  })
+
+  it('keeps an unknown outcome recoverable when the interrupted tool is read-only', () => {
+    const core = createCore()
+    const id = core.newSession()
+    interruptedToolCall(core, id, 'outcomeUnknown', 'read_file')
+
+    // 一次被打断的读取不该拖垮整个会话的可恢复性：重发它不改变外部世界。
+    expect(core.getSessionRecoveryStatus(id)).toEqual({
+      status: 'recoverable', sessionId: id, continuation: 'interrupted_run', runId: 'run-1',
+    })
+  })
+
+  it('still blocks an unknown outcome when the interrupted tool has side effects', () => {
+    const core = createCore()
+    const id = core.newSession()
+    interruptedToolCall(core, id, 'outcomeUnknown', 'write_file')
+
+    expect(core.getSessionRecoveryStatus(id)).toEqual({
+      status: 'reconciliation_required', sessionId: id, reason: 'tool_outcome',
     })
   })
 

@@ -5,6 +5,7 @@ import type { PlanStatus } from '../../planning/types'
 import type { RunStatus } from '../../state/core.type'
 import { resumeInterruptedSession, resumePlanSession } from '../modelRun'
 import { unresolvedToolCalls } from '../toolCallOutcomeFacts'
+import { isPureTool } from '../toolReversibility'
 import type { CoreInstance } from '../core/coreInstance'
 import { resolveApiKey, withRun } from './runCommands'
 
@@ -135,7 +136,8 @@ function requiresToolReconciliation(sessionId: string, core: CoreInstance): bool
 
   const items = store.getter(itemsAtom)
   const currentItems = items.slice(currentRunStart(items, run.turnId))
-  const declared = new Set<string>()
+  // callId → 工具名：outcomeUnknown 的取舍要看该工具能否安全重发（见 toolReversibility）。
+  const declared = new Map<string, string>()
   const receipts = new Set<string>()
   const timedReceipts = new Set<string>()
   for (const { item } of items) {
@@ -145,7 +147,7 @@ function requiresToolReconciliation(sessionId: string, core: CoreInstance): bool
   }
   for (const { item } of currentItems) {
     if (item.role === 'assistant') {
-      for (const call of item.tool_calls ?? []) declared.add(call.id)
+      for (const call of item.tool_calls ?? []) declared.set(call.id, call.function.name)
     } else if (item.role === 'tool') {
       receipts.add(item.tool_call_id)
     }
@@ -163,16 +165,24 @@ function requiresToolReconciliation(sessionId: string, core: CoreInstance): bool
       continue
     }
     if (!declared.has(callId)) return true
-    if (outcome.state === 'outcomeUnknown') return true
     if (outcome.state === 'notStarted') {
+      // 没跑过就不该有收据；有收据说明事实与 transcript 打架。
       if (receipts.has(callId)) return true
       continue
     }
+    if (outcome.state === 'outcomeUnknown') {
+      // 只读工具的未知结果由 recoverInterruptedToolCalls 写一条可重取收据后放行，
+      // 所以此刻没有收据是正常的 —— 不能落到下面「结果已知必须有收据」那一条。
+      if (!isPureTool(declared.get(callId) ?? '')) return true
+      continue
+    }
+    // outcomeKnown：结果已知就必须有收据，只读也不豁免。
     if (!receipts.has(callId)) return true
   }
 
-  return unresolvedToolCalls(sessionId, core)
-    .some((call) => run.toolCallOutcomes?.[call.callId]?.state !== 'notStarted')
+  return unresolvedToolCalls(sessionId, core).some((call) => (
+    run.toolCallOutcomes?.[call.callId]?.state !== 'notStarted' && !isPureTool(call.name)
+  ))
 }
 
 function currentRunStart(items: readonly { id: string; item: { role: string } }[], turnId: string | undefined): number {

@@ -9,7 +9,7 @@ import { recoverInterruptedToolCalls } from './interruptedToolCallRecovery'
 const sessionId = 'interrupted-tools'
 const callId = 'call-1'
 
-function setup(state?: ToolCallOutcomeState) {
+function setup(state?: ToolCallOutcomeState, toolName = 'shell_macos') {
   const core = createCoreInstance()
   core.rootStore.setter(sessionsAtom, {
     [sessionId]: {
@@ -34,7 +34,7 @@ function setup(state?: ToolCallOutcomeState) {
       item: {
         role: 'assistant',
         content: null,
-        tool_calls: [{ id: callId, type: 'function', function: { name: 'shell_macos', arguments: '{"command":"pwd"}' } }],
+        tool_calls: [{ id: callId, type: 'function', function: { name: toolName, arguments: '{}' } }],
       },
     },
   ])
@@ -77,8 +77,34 @@ describe('recoverInterruptedToolCalls', () => {
     expect(latest?.values.conversation.items.every((entry) => !Object.hasOwn(entry, 'planStageId'))).toBe(true)
   })
 
+  it('settles an unknown outcome for a pure tool with a retryable receipt instead of blocking', async () => {
+    const { core, recovery, store } = setup('outcomeUnknown', 'read_file')
+
+    await expect(recoverInterruptedToolCalls(sessionId, core)).resolves.toBe('ready')
+
+    expect(toolReceipts(core)).toHaveLength(1)
+    // 收据必须与 not_started 可区分：模型要知道「没跑过」和「跑没跑过不知道、但可重取」不是一回事。
+    expect(toolReceipts(core)[0]?.item).toMatchObject({
+      role: 'tool',
+      tool_call_id: callId,
+      content: expect.stringContaining('"result":"unknown_pure_retryable"'),
+    })
+    expect(store.getter(runAtom)?.toolCallOutcomes?.[callId]?.state).toBe('outcomeKnown')
+    await expect(recovery.loadLatest(sessionId)).resolves.toMatchObject({
+      values: { run: { toolCallOutcomes: { [callId]: { state: 'outcomeKnown' } } } },
+    })
+  })
+
+  it('still requires reconciliation when a pure tool reports a known outcome without its receipt', async () => {
+    const { core } = setup('outcomeKnown', 'read_file')
+
+    // 只读不能豁免「结果已知却没有收据」——那是 transcript 与事实不一致，与可重复性无关。
+    await expect(recoverInterruptedToolCalls(sessionId, core)).resolves.toBe('reconciliation_required')
+    expect(toolReceipts(core)).toHaveLength(0)
+  })
+
   it.each([
-    ['an unknown outcome', 'outcomeUnknown' as const],
+    ['an unknown outcome of a tool with side effects', 'outcomeUnknown' as const],
     ['a known outcome without its receipt', 'outcomeKnown' as const],
     ['a missing outcome fact', undefined],
   ])('requires reconciliation for %s', async (_label, state) => {
