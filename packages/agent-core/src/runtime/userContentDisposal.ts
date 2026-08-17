@@ -51,9 +51,6 @@ export function captureUserContentReachability(
   visitItems(store.getter(itemsAtom))
   for (const checkpoint of store.getter(checkpointsAtom)) {
     visitItems(checkpoint.items)
-    for (const queued of checkpoint.recovery?.queuedUserMessages ?? []) {
-      addContent(reachable, queued.content)
-    }
   }
   for (const queued of store.getter(queuedUserMessagesAtom)) {
     addContent(reachable, queued.content)

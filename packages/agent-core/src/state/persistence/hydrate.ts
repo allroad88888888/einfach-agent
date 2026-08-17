@@ -1,12 +1,13 @@
-// D-3 · 启动 hydrate —— 从持久化恢复「会话列表 + 每会话 checkpoints/items」（§4 D-3 / DK1 / DK2）。
+// D-3 · 启动 hydrate —— 从持久化恢复「会话列表 + 每会话 checkpoint 历史」（§4 D-3 / DK1 / DK2）。
 // ---------------------------------------------------------------------------
 // 背景：DK1 持久化范围 = 会话列表（SessionMeta，走 sessions 存储）+ 每会话 checkpoints（走 HistoryDriver）。
 //   启动时把两者读回内存 store：
 //     · rootStore.sessionsAtom      ← 全部 SessionMeta（会话是否存在的权威登记表）
 //     · rootStore.activeSessionId   ← updatedAt 最新的那个会话（默认落在最近用过的会话）
-//     · 各会话 store.checkpointsAtom ← 该会话完整 Checkpoint 序列
-//     · 各会话 store.itemsAtom       ← 最新一轮 checkpoint 的 items（刷新即恢复对话历史，DK1）
-//     · 各会话 store.currentTurnIndex← 最新一轮 turnIndex（回退游标停在末轮）
+//     · 各会话 store.checkpointsAtom ← 该会话完整 Checkpoint 序列（仅 undo/history）
+//     · v1 RecoverySnapshot           ← 唯一完整运行态来源
+//     · v1 缺失、损坏或不可读时不恢复运行态
+//   Checkpoint 仅保留给 undo/history；它绝不参与运行态投影。损坏/不可读 v1 一律 fail-closed。
 //   写进登记表之前先过一道**下线模型名迁移**（./modelMigration）：settings.model 是持久化字段，
 //   provider 下线旧模型名后，存量会话恢复出来一发请求就是 400；这里是唯一能一次覆盖全部存量会话的位置。
 //   容错（DK2）：driver 全 async、启动异步回填、失败不阻塞 app —— loadSessions 抛错整体放弃恢复
@@ -27,24 +28,16 @@ import {
 import { getSessionStore as getDefaultSessionStore } from '../sessionStore'
 import {
   checkpointsAtom,
-  contextCheckpointAtom,
   currentTurnIndexAtom,
-  itemsAtom,
-  planAtom,
-  planStageCheckpointsAtom,
-  runAtom,
 } from '../sessionAtoms'
-import { queuedUserMessagesAtom } from '../transientAtoms'
 import type { HistoryDriver } from './historyDriver'
 import type { RecoveryDriver } from './recoveryDriver'
 import { migrateSessionMeta } from './modelMigration'
-import { migratePlanSnapshot } from '../../planning/migrate'
-import { executionGraphAtom, reduceExecutionGraph } from '../../execution/graph'
 import {
   normalizeRecoverySnapshotForHydration,
   prepareRecoveryHydration,
 } from './recoveryHydration'
-import { applyRecoverySnapshot } from '../recoveryProjection'
+import { applyRecoverySnapshot, clearRecoveryProjection } from '../recoveryProjection'
 import {
   DEFAULT_WORKSPACE_NAME,
   deriveWorkspaceName,
@@ -111,13 +104,33 @@ function attachSessionsToWorkspaces(
   return { sessions: migratedSessions, workspaces: Object.values(byId) }
 }
 
+/** Keeps the undo/history record while discarding every unknown persisted field. */
+function sanitizeCheckpointHistory(checkpoint: Checkpoint): Checkpoint {
+  const history: Checkpoint = {
+    turnIndex: checkpoint.turnIndex,
+    label: checkpoint.label,
+    createdAt: checkpoint.createdAt,
+    items: checkpoint.items,
+  }
+  if (checkpoint.kind !== undefined) history.kind = checkpoint.kind
+  if (checkpoint.finishReason !== undefined) history.finishReason = checkpoint.finishReason
+  if (checkpoint.plan !== undefined) history.plan = checkpoint.plan
+  if (checkpoint.planStageCheckpoints !== undefined) {
+    history.planStageCheckpoints = checkpoint.planStageCheckpoints
+  }
+  if (checkpoint.contextCheckpoint !== undefined) {
+    history.contextCheckpoint = checkpoint.contextCheckpoint
+  }
+  return history
+}
+
 export type HydrationDependencies = {
   sessions: {
     loadSessions(): Promise<SessionMeta[]>
     loadWorkspaces?(): Promise<WorkspaceMeta[]>
   }
   history: HistoryDriver
-  /** 可选 v1 单代恢复记录；存在时优先于 legacy SessionMeta/checkpoint 动态内容。 */
+  /** 可选 v1 单代恢复记录；它是唯一可恢复的运行态来源。 */
   recovery?: RecoveryDriver
 }
 
@@ -174,18 +187,7 @@ export async function hydrateForCore(
     //   · 顺带消掉一类竞态：回写只能是 fire-and-forget（hydrate 的容错契约是「失败不阻塞启动」），
     //     而 saveSessions 是覆盖式落盘，与 persistenceBridge.persistSessions() 之间无顺序保证。
     //     若回写晚于「用户新建会话」落地，就会用不含新会话的旧列表整体覆盖掉它。
-    const hydratedAt = Date.now()
-    const modelMigratedSessions = recoveryPlan.sessionMetas.map((session) => {
-      const modelMigrated = migrateSessionMeta(session)
-      if (!modelMigrated.executionGraph) return modelMigrated
-      return {
-        ...modelMigrated,
-        executionGraph: reduceExecutionGraph(
-          modelMigrated.executionGraph,
-          { type: 'graph.hydrated', at: hydratedAt },
-        ),
-      }
-    })
+    const modelMigratedSessions = recoveryPlan.sessionMetas.map(migrateSessionMeta)
     const migrated = attachSessionsToWorkspaces(modelMigratedSessions, workspaces)
     const workspaceRecord = Object.fromEntries(
       migrated.workspaces.map((workspace) => [workspace.id, workspace]),
@@ -208,73 +210,43 @@ export async function hydrateForCore(
     // active = updatedAt 最新（降序取头个）；不原地改入参，故先 [...] 拷贝再排序。
     rootStore.setter(activeSessionIdAtom, latestSession?.id ?? '')
 
-    // 逐会话回填其完整 checkpoint 序列 + 最新一轮 items/游标。
+    // V1 is the only live projection. Without a valid v1, clear every recovery
+    // atom before retaining the independent checkpoint history for undo only.
     for (const session of migrated.sessions) {
-      if (recoveryPlan.blockedSessionIds.has(session.id)) {
-        // 有记录但不能信任：绝不混入 SessionMeta.plan/executionGraph 或 checkpoint.recovery。
-        continue
-      }
+      const store = target.getSessionStore(session.id)
       const snapshot = recoveryPlan.snapshotsBySessionId.get(session.id)
+      // Hydrate can reuse a Core. Replace checkpoint history even when the
+      // driver has no records, so a previously selected undo point cannot
+      // survive under a different persisted session image.
+      store.setter(checkpointsAtom, [])
+      store.setter(currentTurnIndexAtom, -1)
       if (snapshot) {
         // 先归类进程遗留状态，再由 R2 在同一 Einfach flush 写入完整 allowlist 投影。
         applyRecoverySnapshot(
-          target.getSessionStore(session.id),
+          store,
           normalizeRecoverySnapshotForHydration(snapshot),
         )
-        continue
-      }
-      if (session.plan) target.getSessionStore(session.id).setter(planAtom, migratePlanSnapshot(session.plan))
-      if (session.executionGraph) {
-        target.getSessionStore(session.id).setter(executionGraphAtom, session.executionGraph)
+      } else {
+        // hydrateForCore can target a reused Core. Until a single checkpoint
+        // proves otherwise, no-v1 and invalid-v1 sessions are fail-closed.
+        clearRecoveryProjection(store)
       }
       const metas = await deps.history.listCheckpoints(session.id)
-      if (metas.length === 0) {
-        continue
-      }
 
-      // 按每条 meta 的 turnIndex 取回含 items 的完整 Checkpoint（loadCheckpoint 可能返回 undefined，滤掉）。
-      const checkpoints: Checkpoint[] = []
+      // Checkpoint records never own runtime recovery. Keep only their declared
+      // history fields before they reach session atoms.
+      const rawCheckpoints: Checkpoint[] = []
       for (const meta of metas) {
         const cp = await deps.history.loadCheckpoint(session.id, meta.turnIndex)
-        if (cp) {
-          checkpoints.push(cp)
-        }
+        if (cp) rawCheckpoints.push(cp)
       }
-      if (checkpoints.length === 0) {
-        continue
-      }
+      store.setter(checkpointsAtom, rawCheckpoints.map(sanitizeCheckpointHistory))
+      const latestTurnIndex = rawCheckpoints.reduce(
+        (latest, checkpoint) => Math.max(latest, checkpoint.turnIndex),
+        -1,
+      )
+      store.setter(currentTurnIndexAtom, latestTurnIndex)
 
-      // 最新一轮 = turnIndex 最大的那条（不假设 metas 已按 turnIndex 排序）。
-      const latest = checkpoints.reduce((a, b) => (b.turnIndex > a.turnIndex ? b : a))
-
-      const store = target.getSessionStore(session.id)
-      store.setter(checkpointsAtom, checkpoints)
-      store.setter(itemsAtom, latest.items)
-      store.setter(contextCheckpointAtom, latest.contextCheckpoint)
-      store.setter(currentTurnIndexAtom, latest.turnIndex)
-      // 阶段回退点跟随最新一轮恢复：它记录的 itemCount 对应的正是这份 items。
-      store.setter(planStageCheckpointsAtom, latest.planStageCheckpoints ?? [])
-      const recovery = latest.recovery
-      if (recovery) {
-        const status = recovery.run.status
-        if (status === 'running' || status === 'awaiting_tool' || status === 'interrupted') {
-          // 进程重启后旧请求和 execution 都已不存在，不能谎称仍在运行。保留同一 runId/turnId，
-          // 由显式“继续执行”入口复用当前工作 checkpoint；旧 executionId 不可再消费。
-          store.setter(runAtom, {
-            ...recovery.run,
-            status: 'interrupted',
-            pendingExecutionId: undefined,
-          })
-        } else if (
-          status === 'waiting_user'
-          || status === 'waiting_confirmation'
-          || status === 'waiting_plan_approval'
-        ) {
-          // 这三种状态没有飞行中的副作用，相关 pending payload 可以直接恢复，原 UI 卡片继续消费。
-          store.setter(runAtom, recovery.run)
-        }
-        store.setter(queuedUserMessagesAtom, recovery.queuedUserMessages ?? [])
-      }
     }
 
     return true

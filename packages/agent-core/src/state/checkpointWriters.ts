@@ -31,12 +31,10 @@ import type {
   Checkpoint,
   CheckpointState,
   PlanStageCheckpoint,
-  RunRecoverySnapshot,
 } from './checkpoint.type'
 import type { ConversationItem } from './core.type'
 import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
 import type { PlanSnapshot } from '../planning/types'
-import { persistSessions } from '../runtime/persistenceBridge'
 
 // ghost guard：会话未在 core.rootStore 登记 → 后续写入应 no-op（C7）。
 // 直接查登记表；不经 core.getSessionStore（后者未命中会创建 store，会复活幽灵会话）。
@@ -44,7 +42,7 @@ function sessionMissing(id: string, core: CoreInstance): boolean {
   return !core.rootStore.getter(sessionsAtom)[id]
 }
 
-// checkpoint 恢复必须同时更新 planAtom 和 SessionMeta.plan：前者驱动当前 UI，后者负责刷新后 hydrate。
+// checkpoint 恢复只更新运行时 atom；动态状态的唯一持久化来源是 recovery v1。
 // 阶段回退点跟随同一份快照回退：它记录的 itemCount 指向被恢复的那段 items，
 // 若留着回退点不动，轮级回退后它们会指向已经被截断掉的位置。
 function restorePlan(
@@ -55,16 +53,6 @@ function restorePlan(
 ): void {
   core.getSessionStore(id).store.setter(planAtom, plan)
   core.getSessionStore(id).store.setter(planStageCheckpointsAtom, stagePoints ?? [])
-  core.rootStore.setter(sessionsAtom, (previous) => {
-    const session = previous[id]
-    if (!session) return previous
-    return {
-      ...previous,
-      [id]: { ...session, plan, updatedAt: Date.now() },
-    }
-  })
-  // persistenceBridge 绑定的是 defaultCore 的 rootStore；隔离 core 不写入默认实例的持久化层。
-  if (core === defaultCore) persistSessions()
 }
 
 // 没有阶段回退点的会话（绝大多数普通对话）不必给每条 checkpoint 都塞一个空数组。
@@ -83,7 +71,6 @@ export function commitCheckpoint(
   id: string,
   label: string,
   core: CoreInstance = defaultCore,
-  recovery?: RunRecoverySnapshot,
   checkpointState: CheckpointState = { kind: 'completed' },
 ): void {
   if (sessionMissing(id, core)) return
@@ -100,7 +87,6 @@ export function commitCheckpoint(
     kind: checkpointState.kind,
     finishReason: checkpointState.finishReason,
     plan,
-    recovery,
     planStageCheckpoints: stageCheckpointsSnapshot(store.getter(planStageCheckpointsAtom)),
     contextCheckpoint: store.getter(contextCheckpointAtom),
   }
@@ -117,7 +103,6 @@ export function updateCheckpoint(
   turnIndex: number,
   label: string,
   core: CoreInstance = defaultCore,
-  recovery?: RunRecoverySnapshot,
   checkpointState?: CheckpointState,
 ): void {
   if (sessionMissing(id, core)) return
@@ -135,7 +120,6 @@ export function updateCheckpoint(
     items: store.getter(itemsAtom),
     ...(state ? { kind: state.kind, finishReason: state.finishReason } : {}),
     plan: store.getter(planAtom),
-    recovery,
     planStageCheckpoints: stageCheckpointsSnapshot(store.getter(planStageCheckpointsAtom)),
     contextCheckpoint: store.getter(contextCheckpointAtom),
   }

@@ -1,4 +1,4 @@
-// v1 恢复优先编排：只能选择完整投影或 legacy，绝不拼接二者。
+// v1 恢复编排：checkpoint 只保留 undo/history，绝不拼接成运行态。
 
 import { beforeEach, describe, expect, it } from 'vitest'
 
@@ -9,12 +9,17 @@ import { rootStore, resetRootStore, sessionsAtom } from '../rootStore'
 import { getSessionStore, resetSessionStores } from '../sessionStore'
 import {
   checkpointsAtom,
+  contextCheckpointAtom,
+  currentTurnIndexAtom,
   itemsAtom,
   planAtom,
+  planStageCheckpointsAtom,
   runAtom,
 } from '../sessionAtoms'
+import { subagentContinuationsAtom } from '../subagentContinuationAtoms'
 import { pendingQuestionAnswersAtom, queuedUserMessagesAtom } from '../transientAtoms'
 import type { RecoverySnapshotV1 } from '../recoverySnapshot.type'
+import { applyRecoverySnapshot } from '../recoveryProjection'
 import { createMemoryHistoryDriver } from './memoryHistoryDriver'
 import type { RecoveryDriver } from './recoveryDriver'
 import { hydrate } from './hydrate'
@@ -22,7 +27,7 @@ import { normalizeRecoverySnapshotForHydration } from './recoveryHydration'
 
 type RecoveryRunStatus = NonNullable<RecoverySnapshotV1['values']['run']>['status']
 
-function session(id = 's1', title = 'Legacy'): SessionMeta {
+function session(id = 's1', title = 'Session'): SessionMeta {
   return {
     id,
     title,
@@ -50,14 +55,13 @@ function plan(id: string) {
   }
 }
 
-function graph(sessionId: string, id: string) {
+function graph(sessionId: string, id: string, status: 'interrupted' | 'running' = 'interrupted') {
   return {
     version: 1 as const,
     nodes: {
       [id]: {
         id, graphId: 'graph-1', sessionId, runId: 'run-1', dependsOn: [], type: 'agent' as const,
-        status: 'interrupted' as const, label: 'child', attempt: 1, generation: 1, effectKeys: [],
-        createdAt: 1, updatedAt: 2,
+        status, label: 'child', attempt: 1, generation: 1, effectKeys: [], createdAt: 1, updatedAt: 2,
       },
     },
     order: [id],
@@ -75,25 +79,33 @@ function snapshot(id = 's1', status: RecoveryRunStatus = 'running'): RecoverySna
     values: {
       conversation: {
         items: [{ id: 'snapshot-item', createdAt: 3, item: { role: 'user', content: 'v1 truth' } }],
-        contextCheckpoint: null,
+        contextCheckpoint: {
+          schemaVersion: 1, summary: 'durable context', coveredItemIds: ['snapshot-item'],
+          createdAt: 3, sourceEstimatedTokens: 4,
+        },
       },
-      plan: { current: plan('snapshot-plan'), stageCheckpoints: [] },
+      plan: {
+        current: plan('snapshot-plan'),
+        stageCheckpoints: [{ stageId: 'stage-1', plan: plan('before-stage'), itemCount: 0, createdAt: 2 }],
+      },
       run: { runId: 'snapshot-run', status, pendingQuestion: { question: 'continue?' } },
       queuedUserMessages: [{ id: 'queue-1', createdAt: 4, content: 'queued v1', targetRunId: 'snapshot-run' }],
       pendingQuestionAnswers: { ask: ['yes', 'later'] },
       executionGraph: graph(id, 'snapshot-node'),
-      subagentContinuations: [],
+      subagentContinuations: [{
+        schemaVersion: 1, childId: 'child-1', parentRunId: 'snapshot-run', parentNodeId: 'snapshot-node',
+        state: 'waiting_user', spec: { task: 'resume only from v1' },
+      }],
     },
   }
 }
 
-function checkpoint(content: string, recovery?: Checkpoint['recovery']): Checkpoint {
+function checkpoint(content: string): Checkpoint {
   return {
     turnIndex: 0,
-    label: 'legacy checkpoint',
+    label: 'checkpoint',
     createdAt: 3,
-    items: [{ id: 'legacy-item', createdAt: 3, item: { role: 'user', content } }],
-    recovery,
+    items: [{ id: 'checkpoint-item', createdAt: 3, item: { role: 'user', content } }],
   }
 }
 
@@ -116,22 +128,18 @@ beforeEach(() => {
 })
 
 describe('hydrate · v1 recovery priority', () => {
-  it('uses the complete v1 projection instead of combining legacy dynamic data', async () => {
+  it('keeps v1 live atoms authoritative while retaining sanitized checkpoint history', async () => {
     const history = createMemoryHistoryDriver()
-    const legacy = { ...session(), plan: plan('legacy-plan'), executionGraph: graph('s1', 'legacy-node') }
-    await history.saveCheckpoint('s1', checkpoint('legacy truth', {
-      run: { runId: 'legacy-run', status: 'waiting_user' },
-      queuedUserMessages: [{ id: 'legacy-q', createdAt: 4, content: 'legacy queue', targetRunId: 'legacy-run' }],
-    }))
+    await history.saveCheckpoint('s1', checkpoint('checkpoint history'))
     const record = snapshot()
 
     await expect(hydrate({
-      sessions: { loadSessions: async () => [legacy] }, history,
+      sessions: { loadSessions: async () => [session()] }, history,
       recovery: recoveryDriver({ s1: record }),
     })).resolves.toBe(true)
 
     const store = getSessionStore('s1').store
-    expect(store.getter(checkpointsAtom)).toEqual([])
+    expect(store.getter(checkpointsAtom)).toEqual([checkpoint('checkpoint history')])
     expect(store.getter(itemsAtom)).toEqual(record.values.conversation.items)
     expect(store.getter(planAtom)).toEqual(record.values.plan.current)
     expect(store.getter(executionGraphAtom)).toEqual(record.values.executionGraph)
@@ -139,71 +147,94 @@ describe('hydrate · v1 recovery priority', () => {
     expect(store.getter(queuedUserMessagesAtom)).toEqual(record.values.queuedUserMessages)
     expect(store.getter(pendingQuestionAnswersAtom)).toEqual(record.values.pendingQuestionAnswers)
     expect(rootStore.getter(sessionsAtom).s1).toMatchObject(record.session)
-    expect(rootStore.getter(sessionsAtom).s1).not.toHaveProperty('plan')
-    expect(rootStore.getter(sessionsAtom).s1).not.toHaveProperty('executionGraph')
   })
 
-  it('blocks corrupt v1 without falling back to legacy dynamic state', async () => {
+  it('keeps corrupt v1 static-only while retaining sanitized checkpoint history', async () => {
     const history = createMemoryHistoryDriver()
-    const legacy = { ...session(), plan: plan('legacy-plan'), executionGraph: graph('s1', 'legacy-node') }
-    await history.saveCheckpoint('s1', checkpoint('legacy truth', { run: { runId: 'legacy-run', status: 'waiting_user' } }))
+    await history.saveCheckpoint('s1', checkpoint('checkpoint history'))
+    // hydrateForCore also serves a reused Core. Seed every v1-owned field and
+    // stale history to prove an invalid v1 cannot leave either projection live.
+    const staleStore = getSessionStore('s1').store
+    applyRecoverySnapshot(staleStore, snapshot('s1', 'interrupted'))
+    staleStore.setter(checkpointsAtom, [checkpoint('stale in-memory history')])
+    staleStore.setter(currentTurnIndexAtom, 9)
 
     await expect(hydrate({
-      sessions: { loadSessions: async () => [legacy] }, history,
+      sessions: { loadSessions: async () => [session()] }, history,
       recovery: recoveryDriver({ s1: { schemaVersion: 1, sessionId: 's1' } }),
     })).resolves.toBe(true)
 
     const store = getSessionStore('s1').store
+    expect(store.getter(checkpointsAtom)).toEqual([checkpoint('checkpoint history')])
     expect(store.getter(itemsAtom)).toEqual([])
+    expect(store.getter(contextCheckpointAtom)).toBeUndefined()
     expect(store.getter(planAtom)).toBeUndefined()
+    expect(store.getter(planStageCheckpointsAtom)).toEqual([])
     expect(store.getter(executionGraphAtom)).toEqual(EMPTY_EXECUTION_GRAPH)
     expect(store.getter(runAtom)).toBeUndefined()
-    expect(store.getter(checkpointsAtom)).toEqual([])
-    expect(rootStore.getter(sessionsAtom).s1).not.toHaveProperty('plan')
-    expect(rootStore.getter(sessionsAtom).s1).not.toHaveProperty('executionGraph')
+    expect(store.getter(queuedUserMessagesAtom)).toEqual([])
+    expect(store.getter(pendingQuestionAnswersAtom)).toEqual({})
+    expect(store.getter(subagentContinuationsAtom)).toEqual([])
+    expect(store.getter(currentTurnIndexAtom)).toBe(0)
   })
 
-  it('uses legacy recovery only when v1 is absent', async () => {
+  it('keeps absent-v1 checkpoint history out of live recovery', async () => {
     const history = createMemoryHistoryDriver()
-    const legacy = { ...session(), plan: plan('legacy-plan'), executionGraph: graph('s1', 'legacy-node') }
-    const recovery = { run: { runId: 'legacy-run', status: 'waiting_user' as const, pendingQuestion: { q: 'legacy?' } } }
-    await history.saveCheckpoint('s1', checkpoint('legacy truth', recovery))
+    await history.saveCheckpoint('s1', checkpoint('checkpoint history'))
 
-    await hydrate({ sessions: { loadSessions: async () => [legacy] }, history, recovery: recoveryDriver() })
+    await expect(hydrate({
+      sessions: { loadSessions: async () => [session()] }, history, recovery: recoveryDriver(),
+    })).resolves.toBe(true)
 
     const store = getSessionStore('s1').store
-    expect(store.getter(itemsAtom)).toEqual(checkpoint('legacy truth').items)
-    expect(store.getter(planAtom)).toMatchObject({ id: 'legacy-plan' })
-    expect(store.getter(executionGraphAtom)).toEqual(legacy.executionGraph)
-    expect(store.getter(runAtom)).toEqual(recovery.run)
-    expect(store.getter(checkpointsAtom)).toHaveLength(1)
+    expect(store.getter(checkpointsAtom)).toEqual([checkpoint('checkpoint history')])
+    expect(store.getter(itemsAtom)).toEqual([])
+    expect(store.getter(runAtom)).toBeUndefined()
+    expect(store.getter(queuedUserMessagesAtom)).toEqual([])
+    expect(store.getter(executionGraphAtom)).toEqual(EMPTY_EXECUTION_GRAPH)
+    expect(store.getter(pendingQuestionAnswersAtom)).toEqual({})
+    expect(store.getter(subagentContinuationsAtom)).toEqual([])
+    expect(store.getter(currentTurnIndexAtom)).toBe(0)
   })
 
-  it('normalizes only process-live run statuses and retains waiting payloads exactly', () => {
-    for (const status of ['running', 'awaiting_tool', 'interrupted'] as const) {
-      const normalized = normalizeRecoverySnapshotForHydration(snapshot('s1', status))
-      expect(normalized.values.run).toMatchObject({ status: 'interrupted', pendingQuestion: { question: 'continue?' } })
-      expect(normalized.values.run).not.toHaveProperty('pendingExecutionId')
-    }
-    for (const status of ['waiting_user', 'waiting_confirmation', 'waiting_plan_approval'] as const) {
-      const source = snapshot('s1', status)
-      expect(normalizeRecoverySnapshotForHydration(source)).toBe(source)
-    }
+  it('clears stale checkpoint history and cursor when a reused Core has no saved checkpoints', async () => {
+    const store = getSessionStore('s1').store
+    store.setter(checkpointsAtom, [checkpoint('stale in-memory history')])
+    store.setter(currentTurnIndexAtom, 7)
+
+    await expect(hydrate({
+      sessions: { loadSessions: async () => [session()] },
+      history: createMemoryHistoryDriver(), recovery: recoveryDriver(),
+    })).resolves.toBe(true)
+
+    expect(store.getter(checkpointsAtom)).toEqual([])
+    expect(store.getter(currentTurnIndexAtom)).toBe(-1)
   })
 
-  it('reconstructs a root session from v1 when the session list is missing or unreadable', async () => {
+  it('interrupts all process-live v1 run and graph states', () => {
+    const normalized = normalizeRecoverySnapshotForHydration(snapshot('s1', 'running'))
+
+    expect(normalized.values.run).toMatchObject({ status: 'interrupted', pendingQuestion: { question: 'continue?' } })
+    expect(normalized.values.run).not.toHaveProperty('pendingExecutionId')
+    expect(normalized.values.executionGraph.nodes['snapshot-node']?.status).toBe('interrupted')
+
+    const activeGraph = snapshot('s1', 'waiting_user')
+    activeGraph.values.executionGraph = graph('s1', 'snapshot-node', 'running')
+    expect(normalizeRecoverySnapshotForHydration(activeGraph).values.executionGraph.nodes['snapshot-node']?.status)
+      .toBe('interrupted')
+  })
+
+  it('reconstructs a root session from v1 when the session list is unreadable', async () => {
     const history = createMemoryHistoryDriver()
     const record = snapshot('orphan', 'waiting_confirmation')
 
     await expect(hydrate({
-      sessions: { loadSessions: async () => { throw new Error('legacy list unavailable') } }, history,
+      sessions: { loadSessions: async () => { throw new Error('session list unavailable') } }, history,
       recovery: recoveryDriver({}, [record]),
     })).resolves.toBe(true)
 
     const store = getSessionStore('orphan').store
     expect(rootStore.getter(sessionsAtom).orphan).toMatchObject(record.session)
-    expect(rootStore.getter(sessionsAtom).orphan).not.toHaveProperty('plan')
-    expect(rootStore.getter(sessionsAtom).orphan).not.toHaveProperty('executionGraph')
     expect(store.getter(itemsAtom)).toEqual(record.values.conversation.items)
     expect(store.getter(planAtom)).toEqual(record.values.plan.current)
     expect(store.getter(pendingQuestionAnswersAtom)).toEqual(record.values.pendingQuestionAnswers)

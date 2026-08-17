@@ -77,6 +77,22 @@ describe('persistenceBridge（D-4 fire-and-forget 接线）', () => {
     expect(sessions.saveSessions).toHaveBeenCalledWith([meta])
   })
 
+  it('persistSessions：静态投影会阻止未知运行时字段再次写回 session 元数据', () => {
+    const sessions = mockSessions()
+    configurePersistence({ sessions })
+    const rawMeta = {
+      ...meta,
+      obsoleteRuntimeState: { id: 'torn-state', status: 'active' },
+    } as unknown as SessionMeta
+    rootStore.setter(sessionsAtom, { s1: rawMeta })
+
+    persistSessions()
+
+    const saved = vi.mocked(sessions.saveSessions).mock.calls[0]?.[0]
+    expect(saved).toEqual([meta])
+    expect(saved?.[0]).not.toHaveProperty('obsoleteRuntimeState')
+  })
+
   it('persistSessions：把 plan 操作关联 ID 传给支持诊断的 driver', () => {
     const sessions = mockSessions()
     configurePersistence({ sessions })

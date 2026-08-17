@@ -5,7 +5,6 @@ import type { SessionMeta } from '../state/core.type'
 import { resetRootStore } from '../state/rootStore'
 import { getSessionStore, resetSessionStores } from '../state/sessionStore'
 import { checkpointsAtom, itemsAtom } from '../state/sessionAtoms'
-import { queuedUserMessagesAtom } from '../state/transientAtoms'
 import { hydrate } from '../state/persistence/hydrate'
 import { createMemoryHistoryDriver } from '../state/persistence/memoryHistoryDriver'
 
@@ -34,7 +33,7 @@ beforeEach(resetState)
 afterEach(resetState)
 
 describe('structured user content hydration', () => {
-  it('restores structured live, checkpoint, and recovery-queue content exactly', async () => {
+  it('restores structured checkpoint content without promoting it to live recovery state', async () => {
     const session: SessionMeta = {
       id: 'structured-hydrate',
       title: 'structured',
@@ -52,16 +51,6 @@ describe('structured user content hydration', () => {
         createdAt: 1,
         item: { role: 'user', content: structuredContent },
       }],
-      recovery: {
-        run: { runId: 'structured-run', status: 'running', turnId: 'user-image' },
-        queuedUserMessages: [{
-          id: 'queued-image',
-          createdAt: 3,
-          content: structuredContent,
-          targetRunId: 'structured-run',
-          submissionSequence: 2,
-        }],
-      },
     }
     const history = createMemoryHistoryDriver()
     await history.saveCheckpoint(session.id, checkpoint)
@@ -72,14 +61,10 @@ describe('structured user content hydration', () => {
     })).resolves.toBe(true)
 
     const store = getSessionStore(session.id).store
-    expect(store.getter(itemsAtom)[0].item).toEqual({ role: 'user', content: structuredContent })
+    expect(store.getter(itemsAtom)).toEqual([])
     expect(store.getter(checkpointsAtom)[0].items[0].item).toEqual({
       role: 'user',
       content: structuredContent,
-    })
-    expect(store.getter(queuedUserMessagesAtom)[0]).toMatchObject({
-      content: structuredContent,
-      submissionSequence: 2,
     })
   })
 })

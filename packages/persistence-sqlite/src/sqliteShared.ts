@@ -62,7 +62,6 @@ export async function getDb(): Promise<Database> {
              created_at INTEGER NOT NULL,
              items TEXT NOT NULL,
              plan TEXT,
-             recovery TEXT,
              plan_stage_checkpoints TEXT,
              context_checkpoint TEXT,
              PRIMARY KEY (session_id, turn_index)
@@ -81,11 +80,6 @@ export async function getDb(): Promise<Database> {
           await db.execute('ALTER TABLE checkpoints ADD COLUMN plan TEXT')
         } catch {
           // 新库已经包含 plan，或旧库迁移已完成；两种情况都可继续。
-        }
-        try {
-          await db.execute('ALTER TABLE checkpoints ADD COLUMN recovery TEXT')
-        } catch {
-          // 新库已经包含 recovery，或旧库迁移已完成；两种情况都可继续。
         }
         try {
           await db.execute('ALTER TABLE checkpoints ADD COLUMN plan_stage_checkpoints TEXT')

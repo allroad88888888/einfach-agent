@@ -1,7 +1,7 @@
 // RecoverySnapshotV1 与 session store allowlist 的单向投影。
 
 import { atom, type Store } from '@einfach/core'
-import { executionGraphAtom } from '../execution/graph'
+import { EMPTY_EXECUTION_GRAPH, executionGraphAtom } from '../execution/graph'
 import { decodeRecoverySnapshot } from './recoverySnapshot.codec'
 import {
   RECOVERY_SNAPSHOT_COMMIT_MARKER,
@@ -13,6 +13,7 @@ import {
 } from './recoverySnapshot.type'
 import {
   contextCheckpointAtom,
+  currentTurnIndexAtom,
   itemsAtom,
   planAtom,
   planStageCheckpointsAtom,
@@ -25,6 +26,7 @@ import {
 import { subagentContinuationsAtom } from './subagentContinuationAtoms'
 import { sessionsAtom } from './rootAtoms'
 import type { RunState, SessionMeta } from './core.type'
+import { projectStaticSessionMeta as projectSessionMeta } from './sessionMetaProjection'
 
 export interface RecoverySnapshotCaptureOptions {
   /** session 内容所在 store 之外的唯一 root 会话登记表。 */
@@ -55,17 +57,7 @@ function withoutPendingExecutionId(run: RunState | undefined): RecoverableRunSta
 }
 
 function projectStaticSessionMeta(session: SessionMeta): RecoverySessionMetaV1 {
-  return {
-    id: session.id,
-    title: session.title,
-    settings: session.settings,
-    createdAt: session.createdAt,
-    updatedAt: session.updatedAt,
-    ...(session.workspaceId === undefined ? {} : { workspaceId: session.workspaceId }),
-    ...(session.workspaceRoot === undefined ? {} : { workspaceRoot: session.workspaceRoot }),
-    ...(session.toolApprovalMode === undefined ? {} : { toolApprovalMode: session.toolApprovalMode }),
-    ...(session.loadedTools === undefined ? {} : { loadedTools: session.loadedTools }),
-  }
+  return projectSessionMeta(session)
 }
 
 /**
@@ -122,6 +114,24 @@ const applyRecoveryProjectionAtom = atom<null, [RecoveryAtomProjectionV1], void>
   },
 )
 
+// Hydration may reuse an existing session store. Clear only the fields that a
+// v1 record is allowed to own; checkpoint history and UI-only state stay put.
+const clearRecoveryProjectionAtom = atom<null, [], void>(
+  null,
+  (_get, set) => {
+    set(itemsAtom, [])
+    set(contextCheckpointAtom, undefined)
+    set(planAtom, undefined)
+    set(planStageCheckpointsAtom, [])
+    set(runAtom, undefined)
+    set(queuedUserMessagesAtom, [])
+    set(pendingQuestionAnswersAtom, {})
+    set(executionGraphAtom, EMPTY_EXECUTION_GRAPH)
+    set(subagentContinuationsAtom, [])
+    set(currentTurnIndexAtom, -1)
+  },
+)
+
 /**
  * Atomically applies only durable recovery values. Derived and UI/process-local atoms are left
  * intact; their owners rebuild or clear them at their own lifecycle boundary.
@@ -129,4 +139,9 @@ const applyRecoveryProjectionAtom = atom<null, [RecoveryAtomProjectionV1], void>
 export function applyRecoverySnapshot(store: Store, value: RecoverySnapshotV1): void {
   const snapshot = cloneValidatedSnapshot(value, 'Cannot apply an invalid RecoverySnapshotV1')
   store.setter(applyRecoveryProjectionAtom, snapshot.values)
+}
+
+/** Clears the v1-owned live projection without touching checkpoint history. */
+export function clearRecoveryProjection(store: Store): void {
+  store.setter(clearRecoveryProjectionAtom)
 }

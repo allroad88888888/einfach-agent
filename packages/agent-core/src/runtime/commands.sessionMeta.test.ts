@@ -8,7 +8,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 // —— mock runtime 依赖：只验证编排，不跑真实 model / abort / checkpoint。——
 vi.mock('./modelRun', () => ({
   runSession: vi.fn(() => Promise.resolve()),
-  persistCurrentRunRecovery: vi.fn(),
   resumeInterruptedSession: vi.fn(() => Promise.resolve()),
   resumePlanSession: vi.fn(() => Promise.resolve()),
   runToolLoop: vi.fn(() => Promise.resolve()),
@@ -29,6 +28,7 @@ vi.mock('./persistenceBridge', () => ({
 }))
 
 import { rootStore, workspacesAtom, activeWorkspaceIdAtom, sessionsAtom, activeSessionIdAtom } from '../state/rootStore'
+import { runAtom } from '../state/sessionAtoms'
 import { getSessionStore } from '../state/sessionStore'
 import { getPendingQuestionAnswers, addPendingArtifact, pendingArtifactsAtom } from '../state/transientAtoms'
 import { runSession } from './modelRun'
@@ -53,6 +53,21 @@ afterEach(() => {
 describe('answerQuestion / discardArtifact（P8-c 卡片交互命令）', () => {
   it('answerQuestion：写进当前 active 会话的 pendingQuestionAnswers', () => {
     const id = newSession() // newSession 已设为 active
+    const pendingQuestion = {
+      id: 'ask-q',
+      questions: [{ id: 'q', text: 'Continue?', type: 'text' as const }],
+    }
+    getSessionStore(id).store.setter(runAtom, {
+      runId: 'waiting-run',
+      status: 'waiting_user',
+      pendingQuestion,
+      pendingUserDecision: {
+        callId: 'ask-q',
+        payload: pendingQuestion,
+        origin: { surface: 'conversation' },
+      },
+    })
+
     answerQuestion('q', 'v')
     expect(getPendingQuestionAnswers(id)).toEqual({ q: 'v' })
   })
@@ -195,12 +210,12 @@ describe('renameSession（TT3 会话改名命令）', () => {
 })
 
 describe('sendMessage 自动标题（TT1）', () => {
-  it('标题仍为默认值 → 用本条输入派生标题（run 照常启动）', () => {
+  it('标题仍为默认值 → 用本条输入派生标题（run 照常启动）', async () => {
     configureCommands({ modelCredentials: { deepseek: 'k' } })
     const id = newSession()
     expect(rootStore.getter(sessionsAtom)[id].title).toBe(DEFAULT_SESSION_TITLE)
 
-    sendMessage('  帮我   查天气  ')
+    await sendMessage('  帮我   查天气  ')
 
     expect(rootStore.getter(sessionsAtom)[id].title).toBe('帮我 查天气')
     expect(runSession).toHaveBeenCalledTimes(1)
@@ -215,14 +230,14 @@ describe('sendMessage 自动标题（TT1）', () => {
     expect(rootStore.getter(sessionsAtom)[id].title).toBe('我的会话')
   })
 
-  it('第二条消息不再改（首条已把标题改成非默认）', () => {
+  it('第二条消息不再改（首条已把标题改成非默认）', async () => {
     configureCommands({ modelCredentials: { deepseek: 'k' } })
     const id = newSession()
 
-    sendMessage('第一条消息')
+    await sendMessage('第一条消息')
     expect(rootStore.getter(sessionsAtom)[id].title).toBe('第一条消息')
 
-    sendMessage('第二条完全不同的消息')
+    await sendMessage('第二条完全不同的消息')
     expect(rootStore.getter(sessionsAtom)[id].title).toBe('第一条消息')
   })
 })

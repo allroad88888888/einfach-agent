@@ -30,7 +30,7 @@ export const checkpointsAtom = atom<Checkpoint[]>([])
 // 详情：值随 store 隔离——每个 session store 各持一份 number，非分桶。
 export const currentTurnIndexAtom = atom<number>(-1)
 
-// 当前会话的结构化执行计划。它是运行时与 UI 的唯一内存状态源；SessionMeta.plan 仅是持久化副本。
+// 当前会话的结构化执行计划。它是运行时与 UI 的唯一内存状态源；持久化只进入 recovery v1。
 export const planAtom = atom<PlanSnapshot | undefined>(undefined)
 
 // 简介：当前会话的计划阶段回退点序列（按打点先后排列）。

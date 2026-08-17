@@ -113,12 +113,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）工具轮中断与并发'
     expect(checkpoints[0]).toMatchObject({
       label: 'hi',
       kind: 'working',
-      recovery: {
-        run: {
-          status: 'waiting_user',
-          pendingQuestion: payload,
-        },
-      },
     })
   })
 

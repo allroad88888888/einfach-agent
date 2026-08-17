@@ -10,7 +10,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // —— mock runtime 依赖：只验证编排，不跑真实 model / abort / checkpoint。——
 vi.mock('./modelRun', () => ({
   runSession: vi.fn(() => Promise.resolve()),
-  persistCurrentRunRecovery: vi.fn(),
   resumeInterruptedSession: vi.fn(() => Promise.resolve()),
   resumePlanSession: vi.fn(() => Promise.resolve()),
   runToolLoop: vi.fn(() => Promise.resolve()),
@@ -64,10 +63,10 @@ describe('config 通电 + core 穿线（第 2/3 期实例化）', () => {
     expect(ref.modelCredentials.deepseek).toBe('in-place') // 字段已被就地改写
   })
 
-  it('默认命令把 defaultCore 作为 core 传进 runSession（穿线口径：core 放 opts 内、不改参数位）', () => {
+  it('默认命令把 defaultCore 作为 core 传进 runSession（穿线口径：core 放 opts 内、不改参数位）', async () => {
     configureCommands({ modelCredentials: { deepseek: 'k' } })
     newSession()
-    sendMessage('hi')
+    await sendMessage('hi')
     // 既有断言（call[2].apiKey）不受影响，core 只是 opts 里新增的一个字段。
     expect(vi.mocked(runSession).mock.calls[0][2].core).toBe(defaultCore)
   })
@@ -115,13 +114,13 @@ describe('createCommands 工厂（第 3 期 · 可绑定任意 core）', () => {
     expect(rootStore.getter(sessionsAtom)[id]).toBeUndefined()
   })
 
-  it('createCommands(iso).sendMessage 以 iso 作 core、取 iso.config.apiKey、只调 iso.abort（不碰 defaultCore.abort）', () => {
+  it('createCommands(iso).sendMessage 以 iso 作 core、取 iso.config.apiKey、只调 iso.abort（不碰 defaultCore.abort）', async () => {
     const iso = createCoreInstance({ config: { modelCredentials: { deepseek: 'iso-key' } } })
     const beginIso = vi.spyOn(iso.abort, 'beginRun').mockImplementation(() => new AbortController().signal)
     const cmds = createCommands(iso)
 
     const id = cmds.newSession() // deepseek 默认
-    cmds.sendMessage('hi')
+    await cmds.sendMessage('hi')
 
     // 起 run 走 iso 自己的 abort；beforeEach 建于 defaultCore.abort 的 beginRun spy 不被调。
     expect(beginIso).toHaveBeenCalledWith(id)

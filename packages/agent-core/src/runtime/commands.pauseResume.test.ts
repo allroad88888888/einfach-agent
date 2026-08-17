@@ -10,7 +10,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // runToolLoop 也 mock（resumeWithAnswers 复用它续跑，只断言被调用、不真跑 model）。
 vi.mock('./modelRun', () => ({
   runSession: vi.fn(() => Promise.resolve()),
-  persistCurrentRunRecovery: vi.fn(),
   resumeInterruptedSession: vi.fn(() => Promise.resolve()),
   resumePlanSession: vi.fn(() => Promise.resolve()),
   runToolLoop: vi.fn(() => Promise.resolve()),

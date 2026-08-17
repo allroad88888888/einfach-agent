@@ -115,10 +115,6 @@ describe('provider-neutral user content disposal', () => {
         createdAt: 1,
         items: firstTurn,
         kind: 'working',
-        recovery: {
-          run: { runId: 'obsolete', status: 'running', turnId: 'u0' },
-          queuedUserMessages: [queued('q1', queuedOnly, 'obsolete')],
-        },
       },
       { turnIndex: 1, label: 'second', createdAt: 2, items: secondTurn },
     ])
@@ -131,7 +127,6 @@ describe('provider-neutral user content disposal', () => {
     expect(store.getter(runAtom)).toBeUndefined()
     expect(store.getter(queuedUserMessagesAtom)).toEqual([])
     expect(store.getter(checkpointsAtom)[0]).toMatchObject({ kind: 'stopped' })
-    expect(store.getter(checkpointsAtom)[0].recovery).toBeUndefined()
     expect(persistTruncate).toHaveBeenCalledWith(id, 0)
     expect(disposeUserContent).toHaveBeenCalledOnce()
     expect(disposeUserContent).toHaveBeenCalledWith(
@@ -210,10 +205,6 @@ describe('provider-neutral user content disposal', () => {
       createdAt: 2,
       items: liveItems,
       kind: 'working',
-      recovery: {
-        run: { runId: 'run-1', status: 'running', turnId: 'u0' },
-        queuedUserMessages: [stoppedQueue, otherQueue],
-      },
     }])
     const persistCheckpoint = vi.spyOn(core.persistence, 'persistCheckpoint')
 
@@ -222,11 +213,10 @@ describe('provider-neutral user content disposal', () => {
     expect(store.getter(runAtom)).toMatchObject({ runId: 'run-1', status: 'stopped' })
     expect(store.getter(queuedUserMessagesAtom)).toEqual([])
     expect(store.getter(checkpointsAtom)[0]).toMatchObject({ kind: 'stopped' })
-    expect(store.getter(checkpointsAtom)[0].recovery).toBeUndefined()
     expect(persistCheckpoint).toHaveBeenCalledOnce()
     expect(persistCheckpoint).toHaveBeenCalledWith(
       id,
-      expect.objectContaining({ kind: 'stopped', recovery: undefined }),
+      expect.objectContaining({ kind: 'stopped' }),
     )
     expect(disposeUserContent).toHaveBeenCalledOnce()
     expect(disposeUserContent).toHaveBeenCalledWith(
@@ -247,17 +237,13 @@ describe('provider-neutral user content disposal', () => {
       createdAt: 2,
       items: [],
       kind: 'working',
-      recovery: {
-        run: { runId: 'run-paused', status: 'waiting_confirmation' },
-        queuedUserMessages: [pausedQueue],
-      },
     }])
 
     core.stopRun()
 
     expect(store.getter(runAtom)).toMatchObject({ runId: 'run-paused', status: 'stopped' })
     expect(store.getter(queuedUserMessagesAtom)).toEqual([])
-    expect(store.getter(checkpointsAtom)[0]).toMatchObject({ kind: 'stopped', recovery: undefined })
+    expect(store.getter(checkpointsAtom)[0]).toMatchObject({ kind: 'stopped' })
     expect(disposeUserContent).toHaveBeenCalledWith(
       [pausedQueue.content],
       [],

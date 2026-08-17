@@ -2,8 +2,6 @@ import { appendItem } from '../state/sessionWriters'
 import { readCheckpointState } from '../state/checkpointKind'
 import { updateCheckpoint } from '../state/checkpointWriters'
 import { checkpointsAtom, runAtom, itemsAtom } from '../state/sessionAtoms'
-import { queuedUserMessagesAtom } from '../state/transientAtoms'
-import type { RunRecoverySnapshot } from '../state/checkpoint.type'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
 import { newId } from './newId'
 import { userMessageLabel } from '@web-agent/ai'
@@ -33,45 +31,6 @@ export function latestUserInput(sessionId: string, core: CoreInstance): string {
   return first?.role === 'user' ? userMessageLabel(first.content) : ''
 }
 
-/** Captures only recoverable run state; transient execution ids are never persisted. */
-export function currentRunRecoverySnapshot(
-  sessionId: string,
-  runId: string,
-  core: CoreInstance,
-): RunRecoverySnapshot | undefined {
-  const store = core.getSessionStore(sessionId).store
-  const run = store.getter(runAtom)
-  if (
-    run?.runId !== runId
-    || !['running', 'awaiting_tool', 'waiting_user', 'waiting_confirmation', 'waiting_plan_approval'].includes(run.status)
-  ) return undefined
-  return {
-    run: { ...run, pendingExecutionId: undefined },
-    queuedUserMessages: store.getter(queuedUserMessagesAtom),
-  }
-}
-
-/** Updates the working checkpoint when a queued message changes recoverable state. */
-export function persistCurrentRunRecovery(
-  sessionId: string,
-  core: CoreInstance = defaultCore,
-): void {
-  const store = core.getSessionStore(sessionId).store
-  const run = store.getter(runAtom)
-  if (!run) return
-  const recovery = currentRunRecoverySnapshot(sessionId, run.runId, core)
-  if (!recovery) return
-  const checkpoints = store.getter(checkpointsAtom)
-  const latest = checkpoints[checkpoints.length - 1]
-  if (
-    !latest || readCheckpointState(latest).kind !== 'working'
-    || latest.recovery?.run.runId !== run.runId
-  ) return
-  updateCheckpoint(sessionId, latest.turnIndex, latest.label, core, recovery, { kind: 'working' })
-  const updated = store.getter(checkpointsAtom)[latest.turnIndex]
-  if (updated) core.persistence.persistCheckpoint(sessionId, updated)
-}
-
 /** Finalizes the matching working checkpoint so a stopped run cannot revive on hydrate. */
 export function persistStoppedRunCheckpoint(
   sessionId: string,
@@ -79,19 +38,20 @@ export function persistStoppedRunCheckpoint(
   core: CoreInstance = defaultCore,
 ): void {
   const store = core.getSessionStore(sessionId).store
+  const run = store.getter(runAtom)
   const checkpoints = store.getter(checkpointsAtom)
   const latest = checkpoints[checkpoints.length - 1]
   if (
-    !latest
+    run?.runId !== runId
+    || run.status !== 'stopped'
+    || !latest
     || readCheckpointState(latest).kind !== 'working'
-    || latest.recovery?.run.runId !== runId
   ) return
   updateCheckpoint(
     sessionId,
     latest.turnIndex,
     `[已停止] ${latest.label.replace(/^\[执行中\]\s*/, '')}`,
     core,
-    undefined,
     { kind: 'stopped' },
   )
   const updated = store.getter(checkpointsAtom)[latest.turnIndex]

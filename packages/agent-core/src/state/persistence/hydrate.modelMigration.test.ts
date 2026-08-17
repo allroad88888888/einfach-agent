@@ -15,7 +15,7 @@ import {
   resetRootStore,
 } from '../rootStore'
 import { getSessionStore, resetSessionStores } from '../sessionStore'
-import { itemsAtom } from '../sessionAtoms'
+import { checkpointsAtom, itemsAtom } from '../sessionAtoms'
 import { createMemoryHistoryDriver } from './memoryHistoryDriver'
 import { hydrate } from './hydrate'
 
@@ -197,8 +197,10 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
 
     // 内存里已兼容为 Flash，行为不受影响。
     expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-v4-flash')
-    // 后续 checkpoint 回填照常。
-    expect(getSessionStore('old').store.getter(itemsAtom)).toEqual(cp(0, 'hello').items)
+    // R10: 无 v1 恢复快照的存量 checkpoint 仅作为撤销历史保留，绝不投影为可继续的动态态。
+    const sessionStore = getSessionStore('old').store
+    expect(sessionStore.getter(itemsAtom)).toEqual([])
+    expect(sessionStore.getter(checkpointsAtom)).toEqual([cp(0, 'hello')])
   })
 
   it('只读 deps（没有 saveSessions）也能正常迁移，不抛', async () => {

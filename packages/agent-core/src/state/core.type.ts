@@ -203,9 +203,4 @@ export interface SessionMeta {
   // 会话级持久化的 lazy-tool LRU（仅保存工具名，不保存可能过期的 schema）。
   // 新 run / 应用重启后会从当前 registry 重新加载这些工具的最新 schema。
   loadedTools?: string[]
-  // 当前结构化计划的持久化副本；hydrate 时恢复进该会话的 planAtom。
-  plan?: import('../planning/types').PlanSnapshot
-  // 后台 agent/tool/plan 节点的可恢复执行图。Promise、AbortController 等
-  // 进程内资源不持久化；hydrate 会把未终结节点统一转成 interrupted。
-  executionGraph?: import('../execution/types').ExecutionGraphSnapshot
 }

@@ -10,7 +10,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // —— mock runtime 依赖：只验证编排，不跑真实 model / abort / checkpoint。——
 vi.mock('./modelRun', () => ({
   runSession: vi.fn(() => Promise.resolve()),
-  persistCurrentRunRecovery: vi.fn(),
   resumeInterruptedSession: vi.fn(() => Promise.resolve()),
   resumePlanSession: vi.fn(() => Promise.resolve()),
   runToolLoop: vi.fn(() => Promise.resolve()),

@@ -40,9 +40,8 @@ describe('recoveryProjection static session capture', () => {
     const firstStatic = session('session-first')
     const first = {
       ...firstStatic,
-      plan: {} as SessionMeta['plan'],
-      executionGraph: {} as SessionMeta['executionGraph'],
-    }
+      plan: {}, executionGraph: {},
+    } as SessionMeta
     const second = session('session-second')
     const rootStore = rootStoreWith(first, second)
 

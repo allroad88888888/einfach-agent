@@ -10,7 +10,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // —— mock runtime 依赖：只验证编排，不跑真实 model / abort / checkpoint。——
 vi.mock('./modelRun', () => ({
   runSession: vi.fn(() => Promise.resolve()),
-  persistCurrentRunRecovery: vi.fn(),
   resumeInterruptedSession: vi.fn(() => Promise.resolve()),
   resumePlanSession: vi.fn(() => Promise.resolve()),
   runToolLoop: vi.fn(() => Promise.resolve()),
@@ -207,7 +206,6 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
         label: '[执行中] 轮1',
         createdAt: 5,
         items: [],
-        recovery: { run: { runId: 'r1', status: 'awaiting_tool' } },
       },
     ])
     vi.mocked(revertToPlanStageCheckpoint).mockReturnValue({
@@ -222,9 +220,8 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(abortRun).toHaveBeenCalledWith(id)
     expect(revertToPlanStageCheckpoint).toHaveBeenCalledWith(id, 'build', defaultCore)
     expect(store.getter(runAtom)).toBeUndefined()
-    // 内存回退了、当轮 checkpoint 不同步的话，刷新就把被丢弃的阶段执行复活了。
-    // 第 5 参 undefined = 清掉旧 run 的 recovery，避免刷新后被 hydrate 复活成可「继续执行」的 interrupted run。
-    expect(updateCheckpoint).toHaveBeenCalledWith(id, 0, '[执行中] 轮1', defaultCore, undefined)
+    // 内存回退了、当轮 checkpoint 不同步的话，历史仍会显示被丢弃的执行状态。
+    expect(updateCheckpoint).toHaveBeenCalledWith(id, 0, '[已停止] 轮1', defaultCore, { kind: 'stopped' })
     expect(store.getter(withdrawnTurnNoticeAtom)?.text).toContain('已回退到该阶段开始前')
   })
 

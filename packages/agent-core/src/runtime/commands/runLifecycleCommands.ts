@@ -5,7 +5,7 @@ import { setRun } from '../../state/sessionWriters'
 import { clearQueuedUserMessages, enqueueUserMessage } from '../../state/transientAtoms'
 import { activeExecutionNodeIdsAtom, executionGraphAtom } from '../../execution/graph'
 import { getExecutionRuntime } from '../../execution/runtime'
-import { resumeInterruptedSession, resumePlanSession, runSession, persistCurrentRunRecovery } from '../modelRun'
+import { resumeInterruptedSession, resumePlanSession, runSession } from '../modelRun'
 import { newId } from '../newId'
 import type { CoreInstance } from '../core/coreInstance'
 import { cancelSessionSubmissions, scheduleSessionSubmission } from '../sessionSubmissionGate'
@@ -77,7 +77,7 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
             targetRunId: run.runId,
             submissionSequence,
           }, core)
-          persistCurrentRunRecovery(id, core)
+          void core.persistence.persistRecovery(id, 'queued_user_message')
           return { accepted: true, status: 'queued', sessionId: id, submissionSequence }
         }
         if (assertRunStatus(run, 'waiting_user', 'waiting_confirmation', 'waiting_plan_approval', 'interrupted')) {
@@ -120,7 +120,7 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
       .some((executionId) => graph.nodes[executionId]?.runId === run.runId)
     if (active) return false
     setRunWithoutPendingExecution(id, run, { status: 'interrupted' }, core)
-    persistCurrentRunRecovery(id, core)
+    void core.persistence.persistRecovery(id, 'orphaned_awaiting_tool')
     return true
   }
 

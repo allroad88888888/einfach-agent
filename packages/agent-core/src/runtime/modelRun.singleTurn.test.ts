@@ -7,7 +7,7 @@ import { getSessionStore } from '../state/sessionStore'
 import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
 import { setRun } from '../state/sessionWriters'
 import { runtimeTranscriptEventsAtom, contextStatsAtom, queuedUserMessagesAtom, enqueueUserMessage } from '../state/transientAtoms'
-import { persistCurrentRunRecovery, runSession } from './modelRun'
+import { runSession } from './modelRun'
 import { createCoreInstance } from './core/coreInstance'
 import { registerStandardTools } from '@web-agent/tools'
 import { resetModelRunTestState, captureCheckpointPersistence, seedSession, jsonResponse, toolCallsResponse, clone, waitUntil } from './modelRun.testHarness'
@@ -96,8 +96,7 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
       content: '再补充第二件事',
       targetRunId: runId!,
     })
-    persistCurrentRunRecovery('queued-final')
-    expect(store.getter(checkpointsAtom)[0].recovery?.queuedUserMessages).toEqual([
+    expect(store.getter(queuedUserMessagesAtom)).toEqual([
       expect.objectContaining({
         id: 'queued-user-1',
         content: '再补充第二件事',
@@ -326,10 +325,10 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
     // 不写空 assistant 条目（只留 user 一条）。
     const items = getSessionStore('s6').store.getter(itemsAtom)
     expect(items.some((it) => it.item.role === 'assistant')).toBe(false)
-    // 用户消息已在请求前写进同一工作 checkpoint；error 会清掉 recovery，刷新后不会误报可继续。
+    // 用户消息已在请求前写进同一工作 checkpoint；运行态只由 v1 recovery 管理。
     const checkpoints = getSessionStore('s6').store.getter(checkpointsAtom)
     expect(checkpoints).toHaveLength(1)
-    expect(checkpoints[0]).toMatchObject({ label: 'hi', kind: 'working', recovery: undefined })
+    expect(checkpoints[0]).toMatchObject({ label: 'hi', kind: 'working' })
   })
 
   it('stale-run：本次 run 被新 run 顶掉后，迟到的写回不污染新 run', async () => {

@@ -18,8 +18,6 @@ import { createAssistantStreamWriter } from './assistantStreamWriter'
 import { ensureTimedDispatchEpoch } from './timedDispatchEpoch'
 import { requiresRunTimedToolReconciliation } from './timedRecoveryFence'
 
-export { persistCurrentRunRecovery } from './runCheckpoints'
-
 /** Starts a new public model-run lifecycle. */
 export async function runSession(id: string, input: UserMessageContent, opts: ModelRunOptions): Promise<void> {
   await startModelRun(id, input, opts, runToolLoop)

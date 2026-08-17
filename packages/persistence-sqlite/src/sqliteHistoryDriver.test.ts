@@ -12,7 +12,6 @@ interface CheckpointRow {
   created_at: number
   items: string
   plan: string | null
-  recovery: string | null
   plan_stage_checkpoints: string | null
   context_checkpoint: string | null
 }
@@ -20,6 +19,7 @@ interface CheckpointRow {
 function createFakeDatabase() {
   const checkpoints: CheckpointRow[] = []
   return {
+    checkpoints,
     execute: vi.fn(async (sql: string, params: unknown[] = []) => {
       if (sql.includes('CREATE TABLE') || sql.includes('ALTER TABLE')) return { rowsAffected: 0 }
       if (sql.includes('INSERT OR REPLACE INTO checkpoints')) {
@@ -32,7 +32,6 @@ function createFakeDatabase() {
           created_at,
           items,
           plan,
-          recovery,
           plan_stage_checkpoints,
           context_checkpoint,
         ] = params as [
@@ -46,7 +45,6 @@ function createFakeDatabase() {
           string | null,
           string | null,
           string | null,
-          string | null,
         ]
         const row = {
           session_id,
@@ -57,7 +55,6 @@ function createFakeDatabase() {
           created_at,
           items,
           plan,
-          recovery,
           plan_stage_checkpoints,
           context_checkpoint,
         }
@@ -140,19 +137,40 @@ describe('sqliteHistoryDriver', () => {
       id: 'p1', title: '计划', objective: '验证计划快照', status: 'active', revision: 1,
       requiresApproval: false, createdAt: 1, updatedAt: 1, stages: [],
     }
-    saved.recovery = {
-      run: { runId: 'running-before-restart', turnId: 'i0', status: 'running' },
-    }
-
     await history.saveCheckpoint('s1', saved)
     await history.saveCheckpoint('s1', checkpoint(1))
 
     expect((await history.listCheckpoints('s1')).map(({ turnIndex }) => turnIndex)).toEqual([0, 1])
     const loaded = await history.loadCheckpoint('s1', 0)
     expect(loaded).toMatchObject({
-      label: 't0', kind: 'working', items: saved.items, plan: saved.plan, recovery: saved.recovery,
+      label: 't0', kind: 'working', items: saved.items, plan: saved.plan,
     })
     expect(await history.loadCheckpoint('s1', 99)).toBeUndefined()
+  })
+
+  it('ignores the retained legacy recovery column and never writes it', async () => {
+    fakeDatabase.checkpoints.push({
+      session_id: 's1', turn_index: 0, label: 'legacy', kind: null, finish_reason: null,
+      created_at: 1, items: '[]', plan: null, plan_stage_checkpoints: null, context_checkpoint: null,
+      recovery: JSON.stringify({ run: { status: 'running' } }),
+    } as CheckpointRow)
+    const { history } = createSqlitePersistence()
+
+    const loaded = await history.loadCheckpoint('s1', 0)
+    expect(loaded).toEqual({
+      turnIndex: 0, label: 'legacy', createdAt: 1, items: [],
+    })
+    expect(loaded).not.toHaveProperty('recovery')
+
+    await history.saveCheckpoint('s1', checkpoint(1))
+    const readSql = fakeDatabase.select.mock.calls.find(
+      ([sql]) => String(sql).includes('FROM checkpoints') && String(sql).includes('turn_index = $2'),
+    )?.[0]
+    const writeSql = fakeDatabase.execute.mock.calls.find(
+      ([sql]) => String(sql).includes('INSERT OR REPLACE INTO checkpoints'),
+    )?.[0]
+    expect(readSql).not.toContain('recovery')
+    expect(writeSql).not.toContain('recovery')
   })
 
   it('truncates a session without affecting other sessions', async () => {

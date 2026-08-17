@@ -100,7 +100,7 @@ describe('checkpointWriters', () => {
     seedS1()
     const store = getSessionStore('s1').store
     store.setter(itemsAtom, [item1])
-    commitCheckpoint('s1', '轮1', undefined, undefined, { kind: 'working' })
+    commitCheckpoint('s1', '轮1', undefined, { kind: 'working' })
     const createdAt = store.getter(checkpointsAtom)[0].createdAt
 
     const latest = [item1, item2]
@@ -122,7 +122,7 @@ describe('checkpointWriters', () => {
     store.setter(itemsAtom, [item1])
     store.setter(planAtom, firstPlan)
 
-    commitCheckpoint('s1', '轮1', undefined, undefined, { kind: 'working' })
+    commitCheckpoint('s1', '轮1', undefined, { kind: 'working' })
     expect(store.getter(checkpointsAtom)[0].plan).toBe(firstPlan)
 
     store.setter(planAtom, latestPlan)
@@ -155,7 +155,7 @@ describe('checkpointWriters', () => {
     expect(store.getter(currentTurnIndexAtom)).toBe(0)
   })
 
-  it('jumpToCheckpoint 同时恢复目标轮的 planAtom 与 SessionMeta.plan', () => {
+  it('jumpToCheckpoint 只恢复目标轮的 planAtom，不写 SessionMeta 动态镜像', () => {
     seedS1()
     const store = getSessionStore('s1').store
     const firstPlan = plan('p1', 1)
@@ -170,7 +170,7 @@ describe('checkpointWriters', () => {
     jumpToCheckpoint('s1', 0)
 
     expect(store.getter(planAtom)).toBe(firstPlan)
-    expect(rootStore.getter(sessionsAtom).s1.plan).toBe(firstPlan)
+    expect(rootStore.getter(sessionsAtom).s1).toEqual(s1Meta)
   })
 
   it('恢复后 itemsAtom 是新引用（不可变替换，C4）', () => {
@@ -271,7 +271,6 @@ describe('checkpointWriters', () => {
     expect(store.getter(checkpointsAtom)).toHaveLength(1)
     expect(store.getter(currentTurnIndexAtom)).toBe(0)
     expect(store.getter(planAtom)).toBe(firstPlan)
-    expect(rootStore.getter(sessionsAtom).s1.plan).toBe(firstPlan)
   })
 
   it('rewindBeforeCheckpoint 撤回首轮时清空 planning 状态', () => {
@@ -284,7 +283,6 @@ describe('checkpointWriters', () => {
     rewindBeforeCheckpoint('s1', 0)
 
     expect(store.getter(planAtom)).toBeUndefined()
-    expect(rootStore.getter(sessionsAtom).s1.plan).toBeUndefined()
   })
 
   it('未登记会话（rootStore 无）→ commit/jump/rewind 均 no-op，不复活幽灵会话（C7）', () => {
@@ -397,14 +395,12 @@ describe('revertToPlanStageCheckpoint', () => {
 
     // 快照本身是 r5，当前是 r9 → 恢复后必须是 r10，而不是退回 r5。
     expect(store.getter(planAtom)?.revision).toBe(10)
-    expect(rootStore.getter(sessionsAtom).s1.plan?.revision).toBe(10)
   })
 
-  it('SessionMeta.plan 同步恢复，保证刷新后 hydrate 拿到的是回退后的计划', () => {
+  it('阶段回退不向 SessionMeta 回写动态计划', () => {
     seedStagePoint()
     revertToPlanStageCheckpoint('s1', 'st1')
-    // plan() 用 revision 同时填 createdAt，故 createdAt=2 唯一标识「st1 开始前」那份快照。
-    expect(rootStore.getter(sessionsAtom).s1.plan?.createdAt).toBe(2)
+    expect(rootStore.getter(sessionsAtom).s1).toEqual(s1Meta)
   })
 
   it('阶段没有回退点时整体 no-op 并返回 undefined', () => {

@@ -22,11 +22,6 @@ export function writeSessions(
   coalescedCalls: number,
   observability: ObservabilityPort,
 ): Promise<void> {
-  const planCount = snapshot.reduce((count, session) => count + (session.plan ? 1 : 0), 0)
-  const executionNodeCount = snapshot.reduce(
-    (count, session) => count + (session.executionGraph?.order.length ?? 0),
-    0,
-  )
   const operation = observability.beginPerformanceDiagnostic(
     'persistence.sessions.write',
     {
@@ -34,8 +29,6 @@ export function writeSessions(
       queueDepthAtEnqueue,
       coalescedCalls,
       sessionCount: snapshot.length,
-      planCount,
-      executionNodeCount,
     },
     { slowMs: 100, operationId: context.operationId },
   )

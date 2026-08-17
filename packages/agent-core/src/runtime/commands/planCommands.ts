@@ -161,7 +161,7 @@ export function createPlanCommands(core: CoreInstance, stopRun: () => void) {
     pruneRuntimeTranscriptEventsAfter(id, point.createdAt, core)
     const working = store.getter(checkpointsAtom).at(-1)
     if (working) {
-      updateCheckpoint(id, working.turnIndex, working.label, core, undefined)
+      updateCheckpoint(id, working.turnIndex, working.label, core)
       const updated = store.getter(checkpointsAtom)[working.turnIndex]
       if (updated) core.persistence.persistCheckpoint(id, updated)
     }

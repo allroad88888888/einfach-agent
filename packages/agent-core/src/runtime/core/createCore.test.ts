@@ -201,7 +201,7 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
     const beginDefault = vi.spyOn(defaultCore.abort, 'beginRun')
 
     const idA = a.newSession() // deepseek 默认，成为 a 的 active
-    a.sendMessage('hi')
+    await a.sendMessage('hi')
 
     // runSession 被调用一次，core===a、apiKey 取自 a.config（不是 b、不是 defaultCore）。
     expect(runSession).toHaveBeenCalledTimes(1)
@@ -261,7 +261,7 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
     })
   }
 
-  it('命令写路径隔离：confirmTool(拒绝) 的 error tool result 只落自己会话 store，另一实例 + defaultCore 的同 id 会话为空', () => {
+  it('命令写路径隔离：confirmTool(拒绝) 的 error tool result 只落自己会话 store，另一实例 + defaultCore 的同 id 会话为空', async () => {
     const a = createCore({ config: { modelCredentials: { deepseek: 'KA' } } })
     const b = createCore({ config: { modelCredentials: { deepseek: 'KB' } } })
     const id = 'shared-sess'
@@ -271,6 +271,7 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
     b.rootStore.setter(sessionsAtom, (prev) => ({ ...prev, [id]: metaOf(id) }))
 
     a.confirmTool(false)
+    await flush()
 
     // a 的会话 store 追加了 error tool result、run 落回 running。
     const aItems = a.getSessionStore(id).store.getter(itemsAtom)

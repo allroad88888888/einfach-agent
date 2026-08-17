@@ -47,14 +47,7 @@ export const sqliteSessions: SessionsPersistence = {
   async saveSessions(sessions, diagnosticOperationId) {
     const operation = beginPerformanceDiagnostic(
       'persistence.sqlite.sessions',
-      {
-        sessionCount: sessions.length,
-        planCount: sessions.reduce((count, session) => count + (session.plan ? 1 : 0), 0),
-        executionNodeCount: sessions.reduce(
-          (count, session) => count + (session.executionGraph?.order.length ?? 0),
-          0,
-        ),
-      },
+      { sessionCount: sessions.length },
       { slowMs: 100, operationId: diagnosticOperationId },
     )
     let dbReadyMs = 0

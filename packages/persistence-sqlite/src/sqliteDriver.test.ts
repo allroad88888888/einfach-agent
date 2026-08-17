@@ -168,3 +168,16 @@ describe('sqliteDriver — PRAGMA 连接调优', () => {
     expect((await sessions.loadSessions()).map((s) => s.id)).toEqual(['a'])
   })
 })
+
+describe('sqliteDriver — legacy checkpoint recovery column', () => {
+  it('does not create or migrate the discarded recovery column', async () => {
+    const { sessions } = createSqlitePersistence()
+    await sessions.loadSessions()
+
+    const statements = fakeDb.execute.mock.calls.map(([sql]) => String(sql))
+    const checkpointSchema = statements.find((sql) => sql.includes('CREATE TABLE IF NOT EXISTS checkpoints'))
+    expect(checkpointSchema).not.toContain('recovery TEXT')
+    expect(statements).not.toContain('ALTER TABLE checkpoints ADD COLUMN recovery TEXT')
+    expect(statements.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS recovery_snapshots'))).toBe(true)
+  })
+})

@@ -52,7 +52,6 @@ export function createCheckpointCommands(core: CoreInstance, stopRun: () => void
         ? `[已停止] ${checkpoint.label.replace(/^\[执行中\]\s*/, '')}`
         : checkpoint.label,
       core,
-      undefined,
       stoppedWorkingCheckpoint ? { kind: 'stopped' } : state,
     )
     const updatedCheckpoint = core.getSessionStore(id).store.getter(checkpointsAtom)[turnIndex]
@@ -60,6 +59,8 @@ export function createCheckpointCommands(core: CoreInstance, stopRun: () => void
     pruneBrowserCardsAfter(id, checkpoints[turnIndex].createdAt, core)
     pruneRuntimeTranscriptEventsAfter(id, checkpoints[turnIndex].createdAt, core)
     persistCheckpointTruncation(core, id, turnIndex)
+    // Keep recovery v1 at this explicit undo boundary; otherwise restart can resurrect newer state.
+    void core.persistence.persistRecovery(id, 'checkpoint.reverted')
     disposeUserContentAfterMutation(core, before, {
       sessionId: id,
       reason: 'history_truncated',
@@ -99,6 +100,7 @@ export function createCheckpointCommands(core: CoreInstance, stopRun: () => void
         : '已回退到该轮之前，原输入已放回输入框。',
     }, core)
     persistCheckpointTruncation(core, id, turnIndex - 1)
+    void core.persistence.persistRecovery(id, 'checkpoint.draft_reverted')
     disposeUserContentAfterMutation(core, before, {
       sessionId: id,
       reason: 'history_truncated',
@@ -139,6 +141,7 @@ export function createCheckpointCommands(core: CoreInstance, stopRun: () => void
         ? '已撤回本轮对话并放回输入框；本轮已触发过工具，外部副作用不会被自动撤销。'
         : '已撤回本轮对话并放回输入框。',
     }, core)
+    void core.persistence.persistRecovery(id, 'checkpoint.withdrawn')
     disposeUserContentAfterMutation(core, before, {
       sessionId: id,
       reason: 'history_truncated',

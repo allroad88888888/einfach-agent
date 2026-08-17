@@ -9,7 +9,7 @@ import { createMemoryHistoryDriver } from '../state/persistence/memoryHistoryDri
 import { createMemoryRecoveryDriver, type RecoveryDriver } from '../state/persistence/recoveryDriver'
 import type { RecoverySnapshotV1 } from '../state/recoverySnapshot.type'
 import { activeSessionIdAtom, sessionsAtom } from '../state/rootAtoms'
-import { itemsAtom, planAtom, runAtom } from '../state/sessionAtoms'
+import { checkpointsAtom, itemsAtom, planAtom, runAtom } from '../state/sessionAtoms'
 import { createCore } from './core/createCore'
 
 type Core = ReturnType<typeof createCore>
@@ -68,10 +68,9 @@ function graph(sessionId: string, id: string) {
 function interruptedCheckpoint(content: string): Checkpoint {
   return {
     turnIndex: 0,
-    label: 'interrupted legacy run',
+    label: 'checkpoint',
     createdAt: 1,
     items: [{ id: 'user-1', createdAt: 1, item: { role: 'user', content } }],
-    recovery: { run: { runId: 'legacy-run', status: 'interrupted', turnId: 'user-1' } },
   }
 }
 
@@ -125,7 +124,7 @@ describe('recovery process reconstruction', () => {
     await vi.waitFor(() => expect(requests.count).toBe(1))
   })
 
-  it('uses a valid v1 projection instead of conflicting legacy plan and execution graph', async () => {
+  it('restores live atoms only from a valid v1 projection', async () => {
     const sessions = memorySessions()
     const recovery = createMemoryRecoveryDriver()
     const coreA = createCore()
@@ -139,8 +138,7 @@ describe('recovery process reconstruction', () => {
     await coreA.persistence.persistRecovery(id)
     await coreA.persistence.flushRecovery()
 
-    const meta = coreA.rootStore.getter(sessionsAtom)[id]!
-    await sessions.saveSessions([{ ...meta, plan: plan('legacy-plan'), executionGraph: graph(id, 'legacy-node') }])
+    await persistSessions(coreA, sessions)
     const coreB = createCore()
     configure(coreB, sessions, recovery)
     await expect(coreB.persistence.hydrate()).resolves.toBe(true)
@@ -150,15 +148,15 @@ describe('recovery process reconstruction', () => {
     expect(hydrated.getter(executionGraphAtom).order).toEqual(['v1-node'])
   })
 
-  it('does not write v1 for legacy hydrate, then promotes it at the first successful continuation', async () => {
-    const id = 'legacy-only'
+  it('keeps a no-v1 session static with undo history and no recovery dispatch', async () => {
+    const id = 'no-v1'
     const sessions = memorySessions([{
-      id, title: 'Legacy only', settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' }, createdAt: 1, updatedAt: 2,
+      id, title: 'No v1', settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' }, createdAt: 1, updatedAt: 2,
     }])
     const recovery = createMemoryRecoveryDriver()
     const history = createMemoryHistoryDriver()
-    const legacy = interruptedCheckpoint('legacy truth')
-    await history.saveCheckpoint(id, legacy)
+    const checkpoint = interruptedCheckpoint('undo history')
+    await history.saveCheckpoint(id, checkpoint)
     const requests = { count: 0 }
     const coreB = respondingCore(requests)
     coreB.persistence.configure({
@@ -168,24 +166,23 @@ describe('recovery process reconstruction', () => {
     await expect(coreB.persistence.hydrate()).resolves.toBe(true)
     await expect(recovery.loadLatest(id)).resolves.toBeUndefined()
     const restored = coreB.getSessionStore(id).store
-    expect(restored.getter(itemsAtom)).toEqual(legacy.items)
-    expect(restored.getter(runAtom)).toEqual(legacy.recovery?.run)
+    expect(restored.getter(checkpointsAtom)).toEqual([checkpoint])
+    expect(restored.getter(itemsAtom)).toEqual([])
+    expect(restored.getter(runAtom)).toBeUndefined()
     expect(coreB.continueRecoveredSession(id)).toEqual({
-      status: 'continued', sessionId: id, continuation: 'interrupted_run',
+      status: 'unavailable', sessionId: id, reason: 'nonrecoverable',
     })
-    await vi.waitFor(() => expect(requests.count).toBe(1))
-    await coreB.persistence.flushRecovery()
-    await expect(recovery.loadLatest(id)).resolves.toMatchObject({ sessionId: id, schemaVersion: 1 })
+    expect(requests.count).toBe(0)
   })
 
-  it('blocks legacy fallback and request dispatch when the v1 record is corrupt', async () => {
+  it('keeps a corrupt-v1 session static with undo history and no recovery dispatch', async () => {
     const id = 'corrupt-v1'
     const sessions = memorySessions([{
       id, title: 'Corrupt v1', settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' }, createdAt: 1, updatedAt: 2,
-      plan: plan('legacy-plan'), executionGraph: graph(id, 'legacy-node'),
     }])
     const history = createMemoryHistoryDriver()
-    await history.saveCheckpoint(id, interruptedCheckpoint('legacy must stay blocked'))
+    const checkpoint = interruptedCheckpoint('undo history')
+    await history.saveCheckpoint(id, checkpoint)
     const corrupt: RecoveryDriver = {
       async listLatest() { return [{ sessionId: id, schemaVersion: 1 }] as RecoverySnapshotV1[] },
       async loadLatest() { return { sessionId: id, schemaVersion: 1 } as RecoverySnapshotV1 },
@@ -200,6 +197,7 @@ describe('recovery process reconstruction', () => {
 
     await expect(coreB.persistence.hydrate()).resolves.toBe(true)
     const hydrated = coreB.getSessionStore(id).store
+    expect(hydrated.getter(checkpointsAtom)).toEqual([checkpoint])
     expect(hydrated.getter(itemsAtom)).toEqual([])
     expect(hydrated.getter(planAtom)).toBeUndefined()
     expect(hydrated.getter(runAtom)).toBeUndefined()

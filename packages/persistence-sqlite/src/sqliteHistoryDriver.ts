@@ -2,9 +2,9 @@
 // 与 IndexedDB 版契约对齐：全 async、best-effort —— 底层报错时读退化为 []/undefined、写静默返回，
 // 绝不抛（对齐 indexedDbDriver / sessionsPersistence 的降级语义，DK2）。
 //
-// 表结构（items/plan/recovery 等存 JSON 文本）：
+// 表结构（items/plan 等存 JSON 文本）：
 //   checkpoints(session_id TEXT, turn_index INTEGER, label TEXT, kind TEXT, finish_reason TEXT,
-//               created_at INTEGER, items TEXT, plan TEXT, recovery TEXT,
+//               created_at INTEGER, items TEXT, plan TEXT,
 //               plan_stage_checkpoints TEXT, context_checkpoint TEXT,
 //               PRIMARY KEY(session_id, turn_index))
 //
@@ -27,7 +27,6 @@ interface CheckpointRow {
   created_at: number
   items: string
   plan?: string | null
-  recovery?: string | null
   plan_stage_checkpoints?: string | null
   context_checkpoint?: string | null
 }
@@ -50,7 +49,7 @@ export const sqliteHistoryDriver: HistoryDriver = {
     try {
       const db = await getDb()
       const rows = await db.select<CheckpointRow[]>(
-        'SELECT turn_index, label, kind, finish_reason, created_at, items, plan, recovery, plan_stage_checkpoints, context_checkpoint FROM checkpoints WHERE session_id = $1 AND turn_index = $2',
+        'SELECT turn_index, label, kind, finish_reason, created_at, items, plan, plan_stage_checkpoints, context_checkpoint FROM checkpoints WHERE session_id = $1 AND turn_index = $2',
         [sessionId, turnIndex],
       )
       const row = rows[0]
@@ -63,7 +62,6 @@ export const sqliteHistoryDriver: HistoryDriver = {
         createdAt: row.created_at,
         items: JSON.parse(row.items),
         plan: row.plan ? JSON.parse(row.plan) : undefined,
-        recovery: row.recovery ? JSON.parse(row.recovery) : undefined,
         planStageCheckpoints: row.plan_stage_checkpoints
           ? JSON.parse(row.plan_stage_checkpoints)
           : undefined,
@@ -83,7 +81,6 @@ export const sqliteHistoryDriver: HistoryDriver = {
         itemCount: checkpoint.items.length,
         hasPlan: checkpoint.plan !== undefined,
         planStageCount: checkpoint.plan?.stages.length ?? 0,
-        hasRecovery: checkpoint.recovery !== undefined,
       },
       { slowMs: 100 },
     )
@@ -92,7 +89,6 @@ export const sqliteHistoryDriver: HistoryDriver = {
     let executeMs = 0
     let itemJsonChars = 0
     let planJsonChars = 0
-    let recoveryJsonChars = 0
     try {
       let phaseStartedAt = performanceNow()
       const db = await getDb()
@@ -100,7 +96,6 @@ export const sqliteHistoryDriver: HistoryDriver = {
       phaseStartedAt = performanceNow()
       const itemsJson = JSON.stringify(checkpoint.items)
       const planJson = checkpoint.plan === undefined ? null : JSON.stringify(checkpoint.plan)
-      const recoveryJson = checkpoint.recovery === undefined ? null : JSON.stringify(checkpoint.recovery)
       const planStageCheckpointsJson = checkpoint.planStageCheckpoints === undefined
         ? null
         : JSON.stringify(checkpoint.planStageCheckpoints)
@@ -110,11 +105,10 @@ export const sqliteHistoryDriver: HistoryDriver = {
       serializeMs = performanceNow() - phaseStartedAt
       itemJsonChars = itemsJson.length
       planJsonChars = planJson?.length ?? 0
-      recoveryJsonChars = recoveryJson?.length ?? 0
       phaseStartedAt = performanceNow()
       await db.execute(
-        `INSERT OR REPLACE INTO checkpoints (session_id, turn_index, label, kind, finish_reason, created_at, items, plan, recovery, plan_stage_checkpoints, context_checkpoint)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        `INSERT OR REPLACE INTO checkpoints (session_id, turn_index, label, kind, finish_reason, created_at, items, plan, plan_stage_checkpoints, context_checkpoint)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           sessionId,
           checkpoint.turnIndex,
@@ -124,7 +118,6 @@ export const sqliteHistoryDriver: HistoryDriver = {
           checkpoint.createdAt,
           itemsJson,
           planJson,
-          recoveryJson,
           planStageCheckpointsJson,
           contextCheckpointJson,
         ],
@@ -136,12 +129,11 @@ export const sqliteHistoryDriver: HistoryDriver = {
         executeMs,
         itemJsonChars,
         planJsonChars,
-        recoveryJsonChars,
       })
     } catch (error) {
       operation.finish(
         'error',
-        { dbReadyMs, serializeMs, executeMs, itemJsonChars, planJsonChars, recoveryJsonChars },
+        { dbReadyMs, serializeMs, executeMs, itemJsonChars, planJsonChars },
         error,
       )
       // best-effort：落盘失败不抛（DK2）。

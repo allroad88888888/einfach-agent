@@ -6,7 +6,6 @@
  * own modules.
  */
 export {
-  persistCurrentRunRecovery,
   resumeInterruptedSession,
   resumePlanSession,
   runSession,

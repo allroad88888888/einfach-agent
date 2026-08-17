@@ -10,7 +10,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // —— mock runtime 依赖：只验证编排，不跑真实 model / abort / checkpoint。——
 vi.mock('./modelRun', () => ({
   runSession: vi.fn(() => Promise.resolve()),
-  persistCurrentRunRecovery: vi.fn(),
   resumeInterruptedSession: vi.fn(() => Promise.resolve()),
   resumePlanSession: vi.fn(() => Promise.resolve()),
   runToolLoop: vi.fn(() => Promise.resolve()),
@@ -42,8 +41,7 @@ import {
 import { getSessionStore } from '../state/sessionStore'
 import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { queuedUserMessagesAtom } from '../state/transientAtoms'
-import { persistCurrentRunRecovery, resumeInterruptedSession, runSession } from './modelRun'
-import { defaultCore } from './core/coreInstance'
+import { resumeInterruptedSession, runSession } from './modelRun'
 import {
   persistSessions,
   persistWorkspaces,
@@ -198,7 +196,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     configureCommands({ modelCredentials: { deepseek: 'k' } })
     const id = newSession() // deepseek 默认
 
-    sendMessage('hi')
+    await sendMessage('hi')
 
     expect(beginRun).toHaveBeenCalledWith(id)
     expect(runSession).toHaveBeenCalledTimes(1)
@@ -211,11 +209,11 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(endRun).toHaveBeenCalledWith(id, expect.anything())
   })
 
-  it('sendMessage：vendor=glm → 取 modelCredentials.glm', () => {
+  it('sendMessage：vendor=glm → 取 modelCredentials.glm', async () => {
     configureCommands({ modelCredentials: { deepseek: 'dk', glm: 'gk' } })
     newSession({ settings: { vendor: 'glm', model: 'glm-x' } })
 
-    sendMessage('hi')
+    await sendMessage('hi')
     expect(vi.mocked(runSession).mock.calls[0][2].apiKey).toBe('gk')
   })
 
@@ -231,23 +229,20 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(runSession).not.toHaveBeenCalled()
   })
 
-  it('sendMessage：running/awaiting_tool 时绑定当前 run 进入 FIFO 队列，不另起 run', () => {
+  it('sendMessage：running/awaiting_tool 时绑定当前 run 进入 FIFO 队列，不另起 run', async () => {
     configureCommands({ modelCredentials: { deepseek: 'k' } })
     const id = newSession()
     const store = getSessionStore(id).store
     store.setter(runAtom, { runId: 'r', status: 'running' })
 
-    sendMessage(' 第一条 ')
+    await sendMessage(' 第一条 ')
     store.setter(runAtom, { runId: 'r', status: 'awaiting_tool' })
-    sendMessage('第二条')
+    await sendMessage('第二条')
 
     expect(store.getter(queuedUserMessagesAtom)).toEqual([
       expect.objectContaining({ content: '第一条', targetRunId: 'r' }),
       expect.objectContaining({ content: '第二条', targetRunId: 'r' }),
     ])
-    expect(persistCurrentRunRecovery).toHaveBeenCalledTimes(2)
-    expect(persistCurrentRunRecovery).toHaveBeenNthCalledWith(1, id, defaultCore)
-    expect(persistCurrentRunRecovery).toHaveBeenNthCalledWith(2, id, defaultCore)
     expect(runSession).not.toHaveBeenCalled()
     expect(beginRun).not.toHaveBeenCalled()
   })

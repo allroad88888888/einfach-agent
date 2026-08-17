@@ -43,13 +43,6 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
       label: '[执行中] 修改文件',
       createdAt: 3,
       items: interruptedItems,
-      recovery: {
-        run: {
-          runId: 'original-run',
-          turnId: 'u1',
-          status: 'interrupted',
-        },
-      },
     }])
     setRun('restart-resume', {
       runId: 'original-run',
@@ -86,7 +79,6 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
     expect(checkpoints[0]).toMatchObject({
       turnIndex: 0,
       label: '[执行中] 修改文件',
-      recovery: { run: { runId: 'original-run', status: 'interrupted' } },
     })
   })
 
@@ -193,9 +185,6 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
         label: '[执行中] 旧任务',
         createdAt: 1,
         items: legacyItems,
-        recovery: {
-          run: { runId: 'legacy-run', turnId: 'legacy-user', status: 'interrupted' },
-        },
       },
       {
         turnIndex: 1,
@@ -203,9 +192,6 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
         kind: 'working',
         createdAt: 2,
         items: currentItems,
-        recovery: {
-          run: { runId: 'structured-run', turnId: 'current-user', status: 'interrupted' },
-        },
       },
     ])
     setRun('mixed-checkpoint-resume', {
@@ -228,14 +214,12 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
     expect(checkpoints).toHaveLength(2)
     expect(checkpoints[0]).toMatchObject({
       label: '[执行中] 旧任务',
-      recovery: { run: { runId: 'legacy-run' } },
     })
     expect(checkpoints[0]).not.toHaveProperty('kind')
     expect(checkpoints[1]).toMatchObject({
       turnIndex: 1,
       label: '新任务',
       kind: 'completed',
-      recovery: undefined,
     })
   })
 

@@ -259,10 +259,11 @@ describe('runSession（多轮 lazy-tool 循环，T-6）计划轮次预算', () =
       planStageId: 'stage-current',
       item: { content: '总结：整个任务已完成' },
     })
-    expect(assistantItems.find((item) => item.item.content === '计划已通过验收并完成')).toMatchObject({
-      planStageId: undefined,
+    const planCompletion = assistantItems.find((item) => item.item.content === '计划已通过验收并完成')
+    expect(planCompletion).toMatchObject({
       item: { content: '计划已通过验收并完成' },
     })
+    expect(planCompletion).not.toHaveProperty('planStageId')
     const checkpoints = store.getter(checkpointsAtom)
     expect(checkpoints).toHaveLength(1)
     expect(checkpoints[0].label).toBe('执行完整计划')

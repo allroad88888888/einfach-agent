@@ -15,6 +15,7 @@ import type { Checkpoint } from '../state/checkpoint.type'
 import type { SessionsPersistence } from '../state/persistence/contract'
 import type { HistoryDriver } from '../state/persistence/historyDriver'
 import type { RecoveryDriver } from '../state/persistence/recoveryDriver'
+import { projectStaticSessionMeta } from '../state/sessionMetaProjection'
 import type { ObservabilityPort } from '../observability/port'
 import {
   createRecoveryWriter,
@@ -113,7 +114,7 @@ export function createPersistenceBridge(
     // Capture the newest full snapshot, but keep at most one pending overwrite.
     // Execution nodes can emit queued → running → terminal in a few milliseconds;
     // serializing every 1MB+ intermediate snapshot makes the UI appear frozen.
-    const snapshot = Object.values(rootStore.getter(sessionsAtom))
+    const snapshot = Object.values(rootStore.getter(sessionsAtom)).map(projectStaticSessionMeta)
     const queuedAt = observability.performanceNow()
     sessionsWriteQueue.enqueue('sessions', ({ queueDepthAtEnqueue, coalescedCalls }) =>
       writeSessions(driver, snapshot, context, queuedAt, queueDepthAtEnqueue, coalescedCalls, observability),

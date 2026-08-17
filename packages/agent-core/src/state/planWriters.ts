@@ -72,23 +72,7 @@ export function setPlan(sessionId: string, plan: PlanSnapshot | undefined, core:
     recordStageCheckpoints(sessionId, previousPlan, plan, core)
   }
   const sessionAtomUpdateMs = performanceNow() - atomStartedAt
-  const rootStartedAt = performanceNow()
-  core.rootStore.setter(sessionsAtom, (previous) => {
-    const session = previous[sessionId]
-    if (!session) return previous
-    return { ...previous, [sessionId]: { ...session, plan, updatedAt: Date.now() } }
-  })
-  const rootMetadataUpdateMs = performanceNow() - rootStartedAt
-  const persistenceDispatchStartedAt = performanceNow()
-  core.persistence.persistSessions({
-    operationId: operation.operationId,
-    reason: 'plan.update',
-    sessionId,
-    runId,
-  })
   operation.finish('ok', {
     sessionAtomUpdateMs,
-    rootMetadataUpdateMs,
-    persistenceDispatchMs: performanceNow() - persistenceDispatchStartedAt,
   })
 }

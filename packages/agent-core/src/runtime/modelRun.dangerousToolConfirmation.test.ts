@@ -125,16 +125,6 @@ describe('危险工具确认门（S4-B）', () => {
     expect(checkpoints[0]).toMatchObject({
       label: 'hi',
       kind: 'working',
-      recovery: {
-        run: {
-          status: 'waiting_confirmation',
-          pendingToolConfirmation: {
-            callId: 'w1',
-            toolName: 'write_file',
-            args,
-          },
-        },
-      },
     })
   })
 
