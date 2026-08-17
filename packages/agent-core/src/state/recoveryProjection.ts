@@ -3,6 +3,7 @@
 import { atom, type Store } from '@einfach/core'
 import { EMPTY_EXECUTION_GRAPH, executionGraphAtom } from '../execution/graph'
 import { decodeRecoverySnapshot } from './recoverySnapshot.codec'
+import { SESSION_SLOTS, SESSION_SLOT_KEYS } from './sessionSlots'
 import {
   RECOVERY_SNAPSHOT_COMMIT_MARKER,
   RECOVERY_SNAPSHOT_SCHEMA_VERSION,
@@ -119,22 +120,15 @@ const applyRecoveryProjectionAtom = atom<null, [RecoveryAtomProjectionV1], void>
   },
 )
 
-// Hydration may reuse an existing session store. Clear only the fields that a
-// v1 record is allowed to own; checkpoint history and UI-only state stay put.
+// Hydration may reuse an existing session store, so every v1-owned slot must be
+// pushed back to its default; UI-only and derived atoms stay put.
+//
+// 遍历 SESSION_SLOTS 而不是手写一串 set：手写那份是「加了 atom 忘了补一行」的经典漏点，
+// 而漏掉的槽位会带着上一个会话的值活下来，且不报错。
 const clearRecoveryProjectionAtom = atom<null, [], void>(
   null,
   (_get, set) => {
-    set(itemsAtom, [])
-    set(contextCheckpointAtom, undefined)
-    set(planAtom, undefined)
-    set(planStageCheckpointsAtom, [])
-    set(runAtom, undefined)
-    set(queuedUserMessagesAtom, [])
-    set(pendingQuestionAnswersAtom, {})
-    set(pendingArtifactsAtom, [])
-    set(composerDraftAtom, '')
-    set(executionGraphAtom, EMPTY_EXECUTION_GRAPH)
-    set(subagentContinuationsAtom, [])
+    for (const key of SESSION_SLOT_KEYS) SESSION_SLOTS[key].clear(set)
   },
 )
 
