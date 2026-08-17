@@ -4,8 +4,6 @@ import type { ConversationItem } from './core.type'
 import {
   itemsAtom,
   runAtom,
-  checkpointsAtom,
-  currentTurnIndexAtom,
 } from './sessionAtoms'
 
 // 核心断言：会话内 atom 是「共享单例 key」，值随 store 隔离（C3）。
@@ -35,7 +33,5 @@ describe('sessionAtoms', () => {
 
     expect(b.getter(itemsAtom)).toEqual([])
     expect(b.getter(runAtom)).toBeUndefined()
-    expect(b.getter(checkpointsAtom)).toEqual([])
-    expect(b.getter(currentTurnIndexAtom)).toBe(-1)
   })
 })

@@ -3,7 +3,7 @@ import {
   type UserMessageContent,
 } from '@web-agent/ai'
 import { sessionsAtom } from '../state/rootAtoms'
-import { checkpointsAtom, itemsAtom } from '../state/sessionAtoms'
+import { itemsAtom } from '../state/sessionAtoms'
 import { queuedUserMessagesAtom } from '../state/sessionTransientAtoms'
 import type { ConversationItem, ModelSettings } from '../state/core.type'
 import type { CoreInstance } from './core/coreInstance'
@@ -35,7 +35,7 @@ function addContent(
   if (!reachable.has(version)) reachable.set(version, content)
 }
 
-/** Captures every user content still reachable from live, queued, or checkpoint state. */
+/** Captures every user content still reachable from live or queued state. */
 export function captureUserContentReachability(
   core: CoreInstance,
   sessionId: string,
@@ -49,9 +49,6 @@ export function captureUserContentReachability(
     }
   }
   visitItems(store.getter(itemsAtom))
-  for (const checkpoint of store.getter(checkpointsAtom)) {
-    visitItems(checkpoint.items)
-  }
   for (const queued of store.getter(queuedUserMessagesAtom)) {
     addContent(reachable, queued.content)
   }

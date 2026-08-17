@@ -2,7 +2,7 @@
 
 import { describe, it, expect, afterEach } from 'vitest'
 import { getSessionStore } from '../state/sessionStore'
-import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
+import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { runSession } from './modelRun'
 import { resetModelRunTestState, seedSession, jsonResponse, seqFetch, sseBlock, sseResponse, waitUntil } from './modelRun.testHarness'
 
@@ -22,7 +22,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）流式响应', () => {
     expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
     expect(items[2].item).toEqual({ role: 'assistant', content: '直接答' })
     expect(store.getter(runAtom)?.status).toBe('done')
-    expect(store.getter(checkpointsAtom)).toHaveLength(1)
   })
 
   it('流式文本：收到 delta 先写 pending assistant，结束后同一条消息变完整并 done', async () => {
@@ -66,7 +65,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）流式响应', () => {
     expect(done).toHaveLength(3)
     expect(done[2]).toMatchObject({ id: assistantId, pending: false, item: { role: 'assistant', content: '你好' } })
     expect(getSessionStore('stream-text').store.getter(runAtom)?.status).toBe('done')
-    expect(getSessionStore('stream-text').store.getter(checkpointsAtom)).toHaveLength(1)
   })
 
   it('流式 reasoning：正文开始前就写 pending assistant，结束后保留完整思考', async () => {

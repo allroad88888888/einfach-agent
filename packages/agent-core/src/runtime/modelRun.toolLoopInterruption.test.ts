@@ -3,7 +3,7 @@
 
 import { describe, it, expect, afterEach } from 'vitest'
 import { getSessionStore } from '../state/sessionStore'
-import { itemsAtom, runAtom, checkpointsAtom, planAtom } from '../state/sessionAtoms'
+import { itemsAtom, runAtom, planAtom } from '../state/sessionAtoms'
 import { executionGraphAtom } from '../execution/graph'
 import { setRun } from '../state/sessionWriters'
 import { toolActivityAtom } from '../state/transientAtoms'
@@ -76,7 +76,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）工具轮中断与并发'
     })
     expect(schemaEvent?.attrs?.argsPreview).toContain('需要搜索')
     expect(schemaEvent?.attrs?.resultPreview).toContain('skill_search')
-    expect(trace.events.some((event) => event.name === 'checkpoint.commit')).toBe(true)
     expect(JSON.stringify(toolSpan?.attrs?.args)).not.toContain('chart')
   })
 
@@ -108,12 +107,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）工具轮中断与并发'
     const items = getSessionStore('t3').store.getter(itemsAtom)
     expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant', 'tool', 'assistant'])
     // 暂停状态和未闭合 ask tool_call 一起覆盖进同一工作 checkpoint，刷新后卡片仍可回答。
-    const checkpoints = getSessionStore('t3').store.getter(checkpointsAtom)
-    expect(checkpoints).toHaveLength(1)
-    expect(checkpoints[0]).toMatchObject({
-      label: 'hi',
-      kind: 'working',
-    })
   })
 
   it('已有 ask_user 答案后，新的 ask call 仍可再次中断同一个 run', async () => {

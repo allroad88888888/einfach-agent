@@ -1,13 +1,13 @@
-// D-3 · 启动 hydrate —— 从持久化恢复「会话列表 + 每会话 checkpoint 历史」（§4 D-3 / DK1 / DK2）。
+// D-3 · 启动 hydrate —— 从持久化恢复「会话列表 + 每会话运行态」（§4 D-3 / DK1 / DK2）。
 // ---------------------------------------------------------------------------
-// 背景：DK1 持久化范围 = 会话列表（SessionMeta，走 sessions 存储）+ 每会话 checkpoints（走 HistoryDriver）。
+// 背景：持久化范围 = 会话列表（SessionMeta，走 sessions 存储）+ 每会话 RecoverySnapshotV1。
 //   启动时把两者读回内存 store：
 //     · rootStore.sessionsAtom      ← 全部 SessionMeta（会话是否存在的权威登记表）
 //     · rootStore.activeSessionId   ← updatedAt 最新的那个会话（默认落在最近用过的会话）
-//     · 各会话 store.checkpointsAtom ← 该会话完整 Checkpoint 序列（仅 undo/history）
-//     · v1 RecoverySnapshot           ← 唯一完整运行态来源
+//     · v1 RecoverySnapshot         ← 唯一完整运行态来源
 //     · v1 缺失、损坏或不可读时不恢复运行态
-//   Checkpoint 仅保留给 undo/history；它绝不参与运行态投影。损坏/不可读 v1 一律 fail-closed。
+//   轮级 undo 历史已随 checkpoint 一并删除（迁往 einfach 事务日志），此处不再读第二种记录。
+//   损坏/不可读 v1 一律 fail-closed。
 //   写进登记表之前先过一道**下线模型名迁移**（./modelMigration）：settings.model 是持久化字段，
 //   provider 下线旧模型名后，存量会话恢复出来一发请求就是 400；这里是唯一能一次覆盖全部存量会话的位置。
 //   容错（DK2）：driver 全 async、启动异步回填、失败不阻塞 app —— loadSessions 抛错整体放弃恢复
@@ -15,7 +15,6 @@
 //   返回值 = 「是否恢复了会话」，供 main.tsx 决定要不要种子一个空会话（RF3：有数据就别再种子）。
 
 import type { Store } from '@einfach/core'
-import type { Checkpoint } from '../checkpoint.type'
 import type { SessionMeta, WorkspaceMeta } from '../core.type'
 import {
   rootStore as defaultRootStore,
@@ -27,10 +26,7 @@ import {
 } from '../rootStore'
 import { getSessionStore as getDefaultSessionStore } from '../sessionStore'
 import {
-  checkpointsAtom,
-  currentTurnIndexAtom,
 } from '../sessionAtoms'
-import type { HistoryDriver } from './historyDriver'
 import type { RecoveryDriver } from './recoveryDriver'
 import { migrateSessionMeta } from './modelMigration'
 import {
@@ -104,32 +100,11 @@ function attachSessionsToWorkspaces(
   return { sessions: migratedSessions, workspaces: Object.values(byId) }
 }
 
-/** Keeps the undo/history record while discarding every unknown persisted field. */
-function sanitizeCheckpointHistory(checkpoint: Checkpoint): Checkpoint {
-  const history: Checkpoint = {
-    turnIndex: checkpoint.turnIndex,
-    label: checkpoint.label,
-    createdAt: checkpoint.createdAt,
-    items: checkpoint.items,
-  }
-  if (checkpoint.kind !== undefined) history.kind = checkpoint.kind
-  if (checkpoint.finishReason !== undefined) history.finishReason = checkpoint.finishReason
-  if (checkpoint.plan !== undefined) history.plan = checkpoint.plan
-  if (checkpoint.planStageCheckpoints !== undefined) {
-    history.planStageCheckpoints = checkpoint.planStageCheckpoints
-  }
-  if (checkpoint.contextCheckpoint !== undefined) {
-    history.contextCheckpoint = checkpoint.contextCheckpoint
-  }
-  return history
-}
-
 export type HydrationDependencies = {
   sessions: {
     loadSessions(): Promise<SessionMeta[]>
     loadWorkspaces?(): Promise<WorkspaceMeta[]>
   }
-  history: HistoryDriver
   /** 可选 v1 单代恢复记录；它是唯一可恢复的运行态来源。 */
   recovery?: RecoveryDriver
 }
@@ -139,9 +114,8 @@ export type PersistenceHydrationTarget = {
   getSessionStore(sessionId: string): Store
 }
 
-// 简介：从持久化恢复会话列表与每会话历史，回填内存 store；返回是否恢复了任何会话。
-// 详情：deps 注入 sessions（会话列表持久化，只读 loadSessions）+ history（HistoryDriver），
-//   便于测试用内存实现。空/失败一律返回 false（让上层种子）；成功回填返回 true。
+// 简介：从持久化恢复会话列表与每会话运行态，回填内存 store；返回是否恢复了任何会话。
+// 详情：deps 注入 sessions（会话列表持久化，只读 loadSessions），便于测试用内存实现。空/失败一律返回 false（让上层种子）；成功回填返回 true。
 //   本函数【只读不写】盘——下线模型名迁移也只改内存，理由见下面 migrateSessionMeta 处的注释。
 export async function hydrateForCore(
   target: PersistenceHydrationTarget,
@@ -210,16 +184,10 @@ export async function hydrateForCore(
     // active = updatedAt 最新（降序取头个）；不原地改入参，故先 [...] 拷贝再排序。
     rootStore.setter(activeSessionIdAtom, latestSession?.id ?? '')
 
-    // V1 is the only live projection. Without a valid v1, clear every recovery
-    // atom before retaining the independent checkpoint history for undo only.
+    // V1 is the only live projection. Without a valid v1, clear every recovery atom.
     for (const session of migrated.sessions) {
       const store = target.getSessionStore(session.id)
       const snapshot = recoveryPlan.snapshotsBySessionId.get(session.id)
-      // Hydrate can reuse a Core. Replace checkpoint history even when the
-      // driver has no records, so a previously selected undo point cannot
-      // survive under a different persisted session image.
-      store.setter(checkpointsAtom, [])
-      store.setter(currentTurnIndexAtom, -1)
       if (snapshot) {
         // 先归类进程遗留状态，再由 R2 在同一 Einfach flush 写入完整 allowlist 投影。
         applyRecoverySnapshot(
@@ -227,26 +195,10 @@ export async function hydrateForCore(
           normalizeRecoverySnapshotForHydration(snapshot),
         )
       } else {
-        // hydrateForCore can target a reused Core. Until a single checkpoint
-        // proves otherwise, no-v1 and invalid-v1 sessions are fail-closed.
+        // hydrateForCore can target a reused Core, so a stale projection must not
+        // survive: no-v1 and invalid-v1 sessions are fail-closed.
         clearRecoveryProjection(store)
       }
-      const metas = await deps.history.listCheckpoints(session.id)
-
-      // Checkpoint records never own runtime recovery. Keep only their declared
-      // history fields before they reach session atoms.
-      const rawCheckpoints: Checkpoint[] = []
-      for (const meta of metas) {
-        const cp = await deps.history.loadCheckpoint(session.id, meta.turnIndex)
-        if (cp) rawCheckpoints.push(cp)
-      }
-      store.setter(checkpointsAtom, rawCheckpoints.map(sanitizeCheckpointHistory))
-      const latestTurnIndex = rawCheckpoints.reduce(
-        (latest, checkpoint) => Math.max(latest, checkpoint.turnIndex),
-        -1,
-      )
-      store.setter(currentTurnIndexAtom, latestTurnIndex)
-
     }
 
     return true

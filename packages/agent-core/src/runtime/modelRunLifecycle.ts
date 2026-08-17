@@ -1,7 +1,7 @@
 import { sessionsAtom } from '../state/rootStore'
 import { planAtom, runAtom } from '../state/sessionAtoms'
 import { appendItem, setRun } from '../state/sessionWriters'
-import { currentTurnItems } from './runCheckpoints'
+import { currentTurnItems } from './activeTurnItems'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
 import { recoverInterruptedToolCalls } from './interruptedToolCallRecovery'
 import { newId } from './newId'

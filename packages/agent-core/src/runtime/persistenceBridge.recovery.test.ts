@@ -54,7 +54,6 @@ function historyDriver() {
   return {
     listCheckpoints: async () => [],
     loadCheckpoint: async () => undefined,
-    saveCheckpoint: async () => {},
     truncateAfter: async () => {},
     deleteSession: async () => {},
   }
@@ -122,12 +121,10 @@ describe('persistenceBridge recovery facade', () => {
     const base = createMemoryRecoveryDriver()
     const saveLatest = vi.fn(base.saveLatest)
     const recovery: RecoveryDriver = { ...base, saveLatest }
-    const deleteSession = vi.fn(async () => {})
     const bridge = createPersistenceBridge(rootStore, createObservabilityPort())
     bridge.configure({
       recovery,
       recoveryStore: () => sessionStore,
-      history: { ...historyDriver(), deleteSession },
     })
 
     bridge.persistRecovery('s1')
@@ -136,7 +133,6 @@ describe('persistenceBridge recovery facade', () => {
 
     bridge.persistDeleteSession('s1')
     bridge.persistRecovery('s1')
-    await vi.waitFor(() => expect(deleteSession).toHaveBeenCalledWith('s1'))
     await vi.waitFor(async () => {
       await expect(recovery.loadLatest('s1')).resolves.toBeUndefined()
     })
@@ -203,7 +199,6 @@ describe('persistenceBridge recovery facade', () => {
     )
     configurePersistence({
       recovery,
-      history: historyDriver(),
       sessions: sessionsDriver(),
     })
 

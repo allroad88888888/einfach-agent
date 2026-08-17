@@ -1,15 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { executionGraphAtom } from '../execution/graph'
-import type { Checkpoint } from '../state/checkpoint.type'
 import type { SessionMeta } from '../state/core.type'
 import { setPlan } from '../state/planWriters'
 import type { SessionsPersistence } from '../state/persistence/contract'
-import { createMemoryHistoryDriver } from '../state/persistence/memoryHistoryDriver'
 import { createMemoryRecoveryDriver, type RecoveryDriver } from '../state/persistence/recoveryDriver'
 import type { RecoverySnapshotV1 } from '../state/recoverySnapshot.type'
 import { activeSessionIdAtom, sessionsAtom } from '../state/rootAtoms'
-import { checkpointsAtom, itemsAtom, planAtom, runAtom } from '../state/sessionAtoms'
+import { itemsAtom, planAtom, runAtom } from '../state/sessionAtoms'
 import { composerDraftAtom } from '../state/sessionTransientAtoms'
 import { createCore } from './core/createCore'
 
@@ -28,7 +26,6 @@ function memorySessions(initial: SessionMeta[] = []): SessionsPersistence {
 function configure(core: Core, sessions: SessionsPersistence, recovery: RecoveryDriver): void {
   core.persistence.configure({
     sessions,
-    history: createMemoryHistoryDriver(),
     recovery,
     recoveryStore: (id) => core.findSessionStore(id)?.store,
   })
@@ -63,15 +60,6 @@ function graph(sessionId: string, id: string) {
       },
     },
     order: [id],
-  }
-}
-
-function interruptedCheckpoint(content: string): Checkpoint {
-  return {
-    turnIndex: 0,
-    label: 'checkpoint',
-    createdAt: 1,
-    items: [{ id: 'user-1', createdAt: 1, item: { role: 'user', content } }],
   }
 }
 
@@ -151,49 +139,21 @@ describe('recovery process reconstruction', () => {
 
   // 撤回把用户原话从 items 截断、放回输入框。那一刻 composer 是它唯一的副本，
   // 同一条命令提交的 generation 必须带上它，否则重启就是纯粹的用户数据丢失。
-  it('carries a withdrawn turn\'s user words across a process boundary', async () => {
-    const sessions = memorySessions()
-    const recovery = createMemoryRecoveryDriver()
-    const coreA = createCore()
-    configure(coreA, sessions, recovery)
-    const id = coreA.newSession({ settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' } })
-    const source = coreA.getSessionStore(id).store
-    source.setter(itemsAtom, [{ id: 'user-1', createdAt: 1, item: { role: 'user', content: '别丢了这句话' } }])
-    source.setter(runAtom, { runId: 'run-1', status: 'stopped', turnId: 'user-1' })
-
-    coreA.withdrawCurrentTurnToDraft()
-    expect(source.getter(itemsAtom)).toEqual([])
-    expect(source.getter(composerDraftAtom)).toBe('别丢了这句话')
-    await coreA.persistence.flushRecovery()
-    await persistSessions(coreA, sessions)
-
-    const coreB = createCore()
-    configure(coreB, sessions, recovery)
-    await expect(coreB.persistence.hydrate()).resolves.toBe(true)
-    const restored = coreB.getSessionStore(id).store
-    expect(restored.getter(itemsAtom)).toEqual([])
-    expect(restored.getter(composerDraftAtom)).toBe('别丢了这句话')
-  })
-
   it('keeps a no-v1 session static with undo history and no recovery dispatch', async () => {
     const id = 'no-v1'
     const sessions = memorySessions([{
       id, title: 'No v1', settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' }, createdAt: 1, updatedAt: 2,
     }])
     const recovery = createMemoryRecoveryDriver()
-    const history = createMemoryHistoryDriver()
-    const checkpoint = interruptedCheckpoint('undo history')
-    await history.saveCheckpoint(id, checkpoint)
     const requests = { count: 0 }
     const coreB = respondingCore(requests)
     coreB.persistence.configure({
-      sessions, history, recovery, recoveryStore: (sessionId) => coreB.findSessionStore(sessionId)?.store,
+      sessions, recovery, recoveryStore: (sessionId) => coreB.findSessionStore(sessionId)?.store,
     })
 
     await expect(coreB.persistence.hydrate()).resolves.toBe(true)
     await expect(recovery.loadLatest(id)).resolves.toBeUndefined()
     const restored = coreB.getSessionStore(id).store
-    expect(restored.getter(checkpointsAtom)).toEqual([checkpoint])
     expect(restored.getter(itemsAtom)).toEqual([])
     expect(restored.getter(runAtom)).toBeUndefined()
     expect(coreB.continueRecoveredSession(id)).toEqual({
@@ -207,9 +167,6 @@ describe('recovery process reconstruction', () => {
     const sessions = memorySessions([{
       id, title: 'Corrupt v1', settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' }, createdAt: 1, updatedAt: 2,
     }])
-    const history = createMemoryHistoryDriver()
-    const checkpoint = interruptedCheckpoint('undo history')
-    await history.saveCheckpoint(id, checkpoint)
     const corrupt: RecoveryDriver = {
       async listLatest() { return [{ sessionId: id, schemaVersion: 1 }] as RecoverySnapshotV1[] },
       async loadLatest() { return { sessionId: id, schemaVersion: 1 } as RecoverySnapshotV1 },
@@ -219,12 +176,11 @@ describe('recovery process reconstruction', () => {
     const requests = { count: 0 }
     const coreB = respondingCore(requests)
     coreB.persistence.configure({
-      sessions, history, recovery: corrupt, recoveryStore: (sessionId) => coreB.findSessionStore(sessionId)?.store,
+      sessions, recovery: corrupt, recoveryStore: (sessionId) => coreB.findSessionStore(sessionId)?.store,
     })
 
     await expect(coreB.persistence.hydrate()).resolves.toBe(true)
     const hydrated = coreB.getSessionStore(id).store
-    expect(hydrated.getter(checkpointsAtom)).toEqual([checkpoint])
     expect(hydrated.getter(itemsAtom)).toEqual([])
     expect(hydrated.getter(planAtom)).toBeUndefined()
     expect(hydrated.getter(runAtom)).toBeUndefined()

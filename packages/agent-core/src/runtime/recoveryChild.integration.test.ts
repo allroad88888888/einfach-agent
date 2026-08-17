@@ -9,7 +9,6 @@ import { createTestDelegationCapability } from '../subagents/runtime.ports.testF
 import type { DelegateAgentChildSpec, SubagentNodeRecord } from '../subagents/types'
 import type { SessionMeta } from '../state/core.type'
 import type { SessionsPersistence } from '../state/persistence/contract'
-import { createMemoryHistoryDriver } from '../state/persistence/memoryHistoryDriver'
 import { createMemoryRecoveryDriver, type RecoveryDriver } from '../state/persistence/recoveryDriver'
 import type { SubagentContinuationV1 } from '../state/recoverySnapshot.type'
 import { sessionsAtom } from '../state/rootAtoms'
@@ -33,7 +32,6 @@ function memorySessions(): SessionsPersistence {
 function wirePersistence(core: Core, sessions: SessionsPersistence, recovery: RecoveryDriver): void {
   core.persistence.configure({
     sessions,
-    history: createMemoryHistoryDriver(),
     recovery,
     recoveryStore: (id) => core.findSessionStore(id)?.store,
   })

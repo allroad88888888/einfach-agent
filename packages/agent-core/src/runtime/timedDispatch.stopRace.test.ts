@@ -72,7 +72,6 @@ describe('timed dispatch stop admission', () => {
     try {
       const dispatch = dispatchTimedTools({
         base: boot.base,
-        checkpoints: boot.checkpoints,
         request: { sessionId: id, timing: 'turnStart' },
       })
       await fenceReached

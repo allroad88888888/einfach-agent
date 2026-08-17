@@ -3,10 +3,10 @@
 
 import { describe, it, expect, afterEach } from 'vitest'
 import { getSessionStore } from '../state/sessionStore'
-import { itemsAtom, runAtom, checkpointsAtom, planAtom } from '../state/sessionAtoms'
+import { itemsAtom, runAtom, planAtom } from '../state/sessionAtoms'
 import { toolRegistry } from '../tools/registry'
 import { resumePlanSession, runSession } from './modelRun'
-import { resetModelRunTestState, captureCheckpointPersistence, seedSession, jsonResponse, toolCallsResponse, seqFetch } from './modelRun.testHarness'
+import { resetModelRunTestState, seedSession, jsonResponse, toolCallsResponse, seqFetch } from './modelRun.testHarness'
 
 afterEach(() => {
   resetModelRunTestState()
@@ -14,7 +14,6 @@ afterEach(() => {
 
 describe('runSession（多轮 lazy-tool 循环，T-6）计划轮次预算', () => {
   it('普通运行：模型不停请求 schema → 666 轮后 error，但整轮仍落 checkpoint', async () => {
-    const persistence = captureCheckpointPersistence()
     seedSession('t4', { vendor: 'deepseek', model: 'x' })
     let count = 0
     let checkpointCalls = 0
@@ -41,9 +40,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）计划轮次预算', () =
     expect(checkpointCalls).toBeGreaterThan(0)
     // ★ 回归：跑满 666 轮时 itemsAtom 里已堆了大量 assistant/tool 条目，整轮不落盘代价最大 ——
     //   刷新后连用户那条 user 消息都没了。
-    expect(store.getter(checkpointsAtom)).toHaveLength(1)
-    expect(persistence.saved.length).toBeGreaterThan(1)
-    expect(persistence.saved.at(-1)?.checkpoint.items[0].item).toEqual({ role: 'user', content: 'hi' })
     // 666 轮在全量并发下会明显放大 worker 竞争，保留足够余量避免误判超时。
   }, 30_000)
 
@@ -101,7 +97,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）计划轮次预算', () =
   }, 15_000)
 
   it('计划恢复：沿原用户轮次直接续跑，不追加新的 user item', async () => {
-    const persistence = captureCheckpointPersistence()
     seedSession('plan-resume', { vendor: 'deepseek', model: 'x' })
     const store = getSessionStore('plan-resume').store
     const now = Date.now()
@@ -110,12 +105,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）计划轮次预算', () =
       { id: 'saved-progress', createdAt: 2, item: { role: 'assistant', content: '已完成部分工作。' } },
     ] as const
     store.setter(itemsAtom, [...savedItems])
-    store.setter(checkpointsAtom, [{
-      turnIndex: 0,
-      label: '[执行中] 完成这个多步骤任务',
-      createdAt: 2,
-      items: [...savedItems],
-    }])
     store.setter(planAtom, {
       schemaVersion: 4,
       id: 'plan-resume-1',
@@ -164,13 +153,9 @@ describe('runSession（多轮 lazy-tool 循环，T-6）计划轮次预算', () =
     expect(store.getter(itemsAtom).filter((item) => item.item.role === 'user')).toHaveLength(1)
     expect(store.getter(itemsAtom).at(-1)?.item).toEqual({ role: 'assistant', content: '剩余工作已完成。' })
     expect(store.getter(runAtom)?.status).toBe('done')
-    expect(store.getter(checkpointsAtom)).toHaveLength(1)
-    expect(store.getter(checkpointsAtom)[0].label).toBe('完成这个多步骤任务')
-    expect(persistence.saved.at(-1)?.checkpoint.turnIndex).toBe(0)
   })
 
   it('计划仍在执行时，文本总结只算阶段说明并继续运行，不能提前结束', async () => {
-    const persistence = captureCheckpointPersistence()
     seedSession('plan-premature-final', { vendor: 'deepseek', model: 'x' })
     const store = getSessionStore('plan-premature-final').store
     const now = Date.now()
@@ -264,26 +249,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）计划轮次预算', () =
       item: { content: '计划已通过验收并完成' },
     })
     expect(planCompletion).not.toHaveProperty('planStageId')
-    const checkpoints = store.getter(checkpointsAtom)
-    expect(checkpoints).toHaveLength(1)
-    expect(checkpoints[0].label).toBe('执行完整计划')
-    expect(persistence.saved.length).toBeGreaterThan(1)
-    expect(persistence.saved[0].checkpoint).toMatchObject({
-      turnIndex: 0,
-      label: '执行完整计划',
-      kind: 'working',
-    })
-    expect(persistence.saved.some(({ checkpoint }) =>
-      checkpoint.items.some((item) =>
-        item.planStageId === 'stage-current'
-        && item.item.role === 'assistant'
-        && item.item.content === '总结：整个任务已完成'
-      )
-    )).toBe(true)
-    expect(persistence.saved.at(-1)?.checkpoint).toMatchObject({
-      turnIndex: 0,
-      label: '执行完整计划',
-    })
   })
 
   it('计划连续两轮只返回文本、不调用工具时停止自动续跑', async () => {

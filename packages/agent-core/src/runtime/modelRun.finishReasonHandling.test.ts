@@ -2,11 +2,11 @@
 
 import { describe, it, expect, afterEach } from 'vitest'
 import { getSessionStore } from '../state/sessionStore'
-import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
+import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { setRun } from '../state/sessionWriters'
 import { runSession } from './modelRun'
 import { configureObservability, flushObservability } from '../observability/trace'
-import { resetModelRunTestState, captureCheckpointPersistence, seedSession, jsonResponse, finishReasonResponse, rawToolCallsResponse, seqFetch, captureTrace, sseResponse } from './modelRun.testHarness'
+import { resetModelRunTestState, seedSession, jsonResponse, finishReasonResponse, rawToolCallsResponse, seqFetch, captureTrace, sseResponse } from './modelRun.testHarness'
 
 afterEach(() => {
   resetModelRunTestState()
@@ -17,7 +17,6 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 describe('finish_reason 异常分流', () => {
   it("length 且无 tool_calls：保留半截回复 + status=error，且整轮照常 commit 并落盘", async () => {
-    const persistence = captureCheckpointPersistence()
     seedSession('fr1', { vendor: 'deepseek', model: 'x' })
     const { fetchImpl, count } = seqFetch([() => finishReasonResponse('length', '半截答案')])
 
@@ -33,13 +32,7 @@ describe('finish_reason 异常分流', () => {
     const run = store.getter(runAtom)
     expect(run?.status).toBe('error')
     expect(run?.error).toContain('finish_reason=length')
-    // ★ 回归（MAJOR）：itemsAtom 不持久化，落盘的唯一入口就是 commitCheckpoint + persistCheckpoint。
     //   这一轮若不落盘，用户刷新后不只半截答案没了，连他自己发的那条 user 消息也一起消失。
-    expect(store.getter(checkpointsAtom)).toHaveLength(1)
-    expect(store.getter(checkpointsAtom)[0].items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
-    expect(persistence.saved).toHaveLength(3)
-    expect(persistence.saved.at(-1)?.sessionId).toBe('fr1')
-    expect(persistence.saved.at(-1)?.checkpoint.items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
     // 状态仍是 error（落盘不代表这轮算成功），也不再发第二次请求。
     expect(count()).toBe(1)
   })
@@ -159,7 +152,6 @@ describe('finish_reason 异常分流', () => {
   })
 
   it('content_filter 补条目：刷新（落盘）和下一轮重发给模型都看得见「这里被拦截过」', async () => {
-    const persistence = captureCheckpointPersistence()
     seedSession('fr-cf-mark', { vendor: 'deepseek', model: 'x' })
     const bodies: Array<{ messages: Array<Record<string, unknown>> }> = []
     let calls = 0
@@ -172,17 +164,7 @@ describe('finish_reason 异常分流', () => {
     await runSession('fr-cf-mark', '敏感问题', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
 
     const store = getSessionStore('fr-cf-mark').store
-    // ★ 回归 a：checkpoint（落盘的唯一真相源）里必须带着这条「仅含标注」的 assistant 条目，
     //   同时把异常状态写进结构化字段——否则刷新后聊天区看起来这轮什么都没发生。
-    const checkpoint = store.getter(checkpointsAtom)[0]
-    expect(checkpoint).toMatchObject({ label: '敏感问题', kind: 'abnormal', finishReason: 'content_filter' })
-    const committedAssistant = checkpoint.items[2].item
-    if (committedAssistant.role !== 'assistant') throw new Error('意外的条目形状')
-    expect(String(committedAssistant.content)).toContain('content_filter')
-    expect(persistence.saved).toHaveLength(3)
-    const savedAssistant = persistence.saved.at(-1)!.checkpoint.items[2].item
-    if (savedAssistant.role !== 'assistant') throw new Error('意外的条目形状')
-    expect(String(savedAssistant.content)).toContain('content_filter')
 
     // ★ 回归 b（更要紧）：下一轮重发给模型的历史里必须能看见这条标注，模型才知道
     //   「上一轮被内容安全策略拦截了」，而不是把两条 user 消息中间的空白当成什么都没发生过。
@@ -223,60 +205,5 @@ describe('finish_reason 异常分流', () => {
     expect(trace.events.some((event) => event.name === 'tool.args_invalid')).toBe(true)
   })
 
-  it('截断标记进持久化：正文带系统标注 + checkpoint 结构化状态，且重发给模型时仍看得见', async () => {
-    const persistence = captureCheckpointPersistence()
-    seedSession('fr-mark', { vendor: 'deepseek', model: 'x' })
-    const bodies: Array<{ messages: Array<Record<string, unknown>> }> = []
-    let calls = 0
-    const fetchImpl: typeof fetch = async (_url, init) => {
-      bodies.push(JSON.parse(init!.body as string))
-      calls += 1
-      return calls === 1 ? finishReasonResponse('length', '第一步先算出 42') : jsonResponse('续上')
-    }
 
-    await runSession('fr-mark', '算个数', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
-
-    const store = getSessionStore('fr-mark').store
-    // ★ 回归 a（MAJOR）：承载 finishError 的 runAtom 不持久化，截断状态必须落在【持久化数据】上，
-    //   否则刷新之后这半截回答与一条正常回复完全同形，CheckpointBar 上也分不出好坏。
-    const checkpoint = store.getter(checkpointsAtom)[0]
-    expect(checkpoint).toMatchObject({ label: '算个数', kind: 'abnormal', finishReason: 'length' })
-    const committedAssistant = checkpoint.items[2].item
-    if (committedAssistant.role !== 'assistant') throw new Error('意外的条目形状')
-    expect(String(committedAssistant.content)).toContain('第一步先算出 42')
-    expect(String(committedAssistant.content)).toContain('finish_reason=length')
-    // 落盘的那一份（刷新后唯一的真相源）必须同样带着标注与结构化状态。
-    expect(persistence.saved).toHaveLength(3)
-    expect(persistence.saved.at(-1)?.checkpoint).toMatchObject({
-      label: '算个数',
-      kind: 'abnormal',
-      finishReason: 'length',
-    })
-    const savedAssistant = persistence.saved.at(-1)!.checkpoint.items[2].item
-    if (savedAssistant.role !== 'assistant') throw new Error('意外的条目形状')
-    expect(String(savedAssistant.content)).toContain('finish_reason=length')
-
-    // ★ 回归 b（更要紧）：这条半截文本会作为历史在之后每一轮被重发给模型。模型必须看得出
-    //   「上文这里被截断过」，否则会把半截推理当成已成立的结论继续往下走。
-    await runSession('fr-mark', '继续', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
-    const resent = bodies[bodies.length - 1].messages
-    const resentAssistant = resent.find(
-      (message) => message.role === 'assistant' && String(message.content).includes('第一步先算出 42'),
-    )
-    expect(resentAssistant).toBeDefined()
-    expect(String(resentAssistant?.content)).toContain('finish_reason=length')
-    // 标注只是【追加】—— 模型原话一字不改地留在前面。
-    expect(String(resentAssistant?.content).startsWith('第一步先算出 42')).toBe(true)
-  })
-
-  it('正常轮不被标记污染：assistant 正文一字不加，checkpoint label 也不带前缀', async () => {
-    seedSession('fr-clean', { vendor: 'deepseek', model: 'x' })
-    const fetchImpl: typeof fetch = async () => jsonResponse('完整答案')
-
-    await runSession('fr-clean', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
-
-    const store = getSessionStore('fr-clean').store
-    expect(store.getter(itemsAtom)[2].item).toEqual({ role: 'assistant', content: '完整答案' })
-    expect(store.getter(checkpointsAtom)[0].label).toBe('hi')
-  })
 })

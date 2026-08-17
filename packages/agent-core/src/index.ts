@@ -99,10 +99,6 @@ export {
   resumeWithAnswers,
   confirmTool,
   answerQuestion,
-  // 检查点与回退
-  revertToTurn,
-  revertTurnToDraft,
-  withdrawCurrentTurnToDraft,
   // 计划
   approvePlan,
   continuePlan,
@@ -213,10 +209,8 @@ export {
 // 会话内只读 atom（./state/sessionAtoms）—— 取值范围由 sessionAtomScope 绑定的 store 决定
 // ---------------------------------------------------------------------------
 export {
-  itemsAtom, // MessageList、Composer、CheckpointBar、HistoryImageCompatibilityGuard…
+  itemsAtom, // MessageList、Composer、HistoryImageCompatibilityGuard…
   runAtom,
-  checkpointsAtom,
-  currentTurnIndexAtom,
   planAtom,
   planStageCheckpointsAtom, // apps/web: CompletedPlanRecord
 } from './state/sessionAtoms'

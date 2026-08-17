@@ -3,7 +3,6 @@
 
 import { defaultCore, type CoreInstance, type RuntimeConfig } from './core/coreInstance'
 import { createCardCommands } from './commands/cardCommands'
-import { createCheckpointCommands } from './commands/checkpointCommands'
 import { createPlanCommands } from './commands/planCommands'
 import { createProjectSkillsCommands } from './commands/projectSkillsCommands'
 import { createRecoveryCommands } from './commands/recoveryCommands'
@@ -51,7 +50,6 @@ export function createCommands(core: CoreInstance = defaultCore) {
   })
   const recovery = createRecoveryCommands(core)
   const pausedRun = createRunCommands(core)
-  const checkpoint = createCheckpointCommands(core, runLifecycle.stopRun)
   const plan = createPlanCommands(core, runLifecycle.stopRun)
   const cards = createCardCommands(core)
   const projectSkills = createProjectSkillsCommands(core)
@@ -63,7 +61,6 @@ export function createCommands(core: CoreInstance = defaultCore) {
     ...runLifecycle,
     ...recovery,
     ...pausedRun,
-    ...checkpoint,
     ...plan,
     ...cards,
     ...projectSkills,
@@ -98,9 +95,6 @@ export const {
   stopRun,
   resumeWithAnswers,
   confirmTool,
-  revertToTurn,
-  revertTurnToDraft,
-  withdrawCurrentTurnToDraft,
   approvePlan,
   rollbackPlanStage,
   answerQuestion,

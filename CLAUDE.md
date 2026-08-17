@@ -65,12 +65,12 @@ Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter，
 - `packages/agent-ai/`：DeepSeek/GLM/Kimi 请求、流式响应、provider 私有图片准备、adapter 重试
   和 vendor 能力描述表。
 - `packages/agent-core/`：装配式 Agent Runtime 内核：工具契约/registry、loop、插件、观测与持久化
-  contract、checkpoint 与 atoms；不含具体工具域或宿主 driver。
+  contract、恢复快照与 atoms；不含具体工具域或宿主 driver。
 - `packages/agent-react/`（`@web-agent/react-plugin`）：React 侧插件安装面与 timeline renderer
   registry；core 不依赖 React。
 - `packages/agent-plugin-example/`：插件契约的可运行样例，改插件 API 时同步更新。
 - `packages/subagents/`：委派调度、批次编排、归档治理与子 Agent 视图 state。
-- `packages/persistence-{idb,sqlite}/`：IndexedDB / SQLite 会话与历史持久化 driver。
+- `packages/persistence-{idb,sqlite}/`：IndexedDB / SQLite 会话与恢复快照持久化 driver。
 - `packages/observability-{idb,sqlite}/`：IndexedDB / SQLite trace driver 与 reader。
 - `apps/web/src/traceViewer/`：React TraceViewer 与其 view state。
 - `tools/{shell,fs,interaction,planning,skills,agents}/`：六个标准工具域；skills 的 loader、registry
@@ -101,11 +101,10 @@ driver 由宿主配置 bridge。默认实例本身不自动安装工具，应用
 `registerStandardTools`。
 
 - root store 只放跨会话状态：会话元数据与当前会话 ID。
-- 每个 session 有独立 Einfach store，保存 items、run、checkpoint、plan 和瞬态 UI 状态。
+- 每个 session 有独立 Einfach store，保存 items、run、plan 和瞬态 UI 状态。
 - UI 只允许读取 atom、调用 `runtime/commands.ts` 暴露的命令。
 - UI 不直接调用 writer、不 setter 业务 atom、不持有 runtime store。
 - writer 和 await 后回写必须保留 ghost guard、runId stale guard 与 AbortSignal 检查。
-- checkpoint 保存 items 的不可变快照，不能用原地修改破坏历史。
 
 ## 运行链路
 
@@ -118,10 +117,10 @@ driver 由宿主配置 bridge。默认实例本身不自动安装工具，应用
    时机为 session/run/turn、压缩和子 Agent 的开始/结束，`<domain>:<event>` 由宿主经受限 API 分派。
 5. 模型可见工具经 registry 校验后，通过受限 `ToolContext` 执行；普通结果回填并继续循环，ask-user、
    计划审批或危险工具确认会暂停。
-6. 完成后提交 checkpoint，并通过 persistence bridge 落盘。
+6. 完成后经 persistence bridge 落盘 `RecoverySnapshotV1` 与会话元数据。
 
 供应商私有请求和重试留在 `packages/agent-ai/`；子 Agent 已按单体循环、批次编排和辅助职责拆分。
-主循环已按 lifecycle、bootstrap、循环周期、checkpoint、模型请求和工具执行拆分；`modelRun.ts`
+主循环已按 lifecycle、bootstrap、循环周期、模型请求和工具执行拆分；`modelRun.ts`
 只保留稳定导出，`runToolLoop.ts` 负责循环编排。
 
 压缩、finish reason、loop guard、迁移这些横切行为是 `runtime/core/plugins/` 里的**插件**，

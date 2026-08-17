@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 import type { PlanSnapshot, PlanStatus } from '../planning/types'
 import type { SessionMeta } from '../state/core.type'
 import type { SessionsPersistence } from '../state/persistence/contract'
-import { createMemoryHistoryDriver } from '../state/persistence/memoryHistoryDriver'
 import { createMemoryRecoveryDriver, type RecoveryDriver } from '../state/persistence/recoveryDriver'
 import { sessionsAtom } from '../state/rootAtoms'
 import { itemsAtom, planAtom, runAtom } from '../state/sessionAtoms'
@@ -31,7 +30,6 @@ function sessionMeta(id: string): SessionMeta {
 
 function configureRecovery(core: CoreInstance, recovery: RecoveryDriver): void {
   core.persistence.configure({
-    history: createMemoryHistoryDriver(),
     sessions: emptySessionsDriver(),
     recovery,
     recoveryStore: (id) => core.findSessionStore(id)?.store,

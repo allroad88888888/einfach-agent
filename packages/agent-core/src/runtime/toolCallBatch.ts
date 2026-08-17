@@ -40,7 +40,6 @@ export interface ToolBatchInput {
   result: ModelTurnResult
   planStageId?: string
   finishReason: string | null | undefined
-  persistWorkingTurn(): void
   recordToolOutcome(name: string, result: Awaited<ReturnType<typeof executeToolCall>>): void
 }
 
@@ -70,7 +69,6 @@ export async function runToolCallBatch(base: ToolLoopBase, input: ToolBatchInput
     const stateAfterExecution = statusAfterAwait()
     if (stateAfterExecution) return stateAfterExecution
     results.forEach((result, index) => { input.recordToolOutcome(parallelCalls[index].name, result); appendMappedToolResult(base.id, parallelCalls[index].callId, result, base.core, input.planStageId) })
-    input.persistWorkingTurn()
     return await requireRecoveryDurability(base.id, base.runId, base.core, 'tool_batch_completed')
       ? 'continue'
       : 'interrupted'
@@ -171,19 +169,17 @@ export async function runToolCallBatch(base: ToolLoopBase, input: ToolBatchInput
   if (confirmCall) {
     base.trace.event('agent.waiting_confirmation', { toolName: confirmCall.toolName, callId: confirmCall.callId, args: confirmCall.args })
     patchRun(base.id, { status: 'waiting_confirmation', pendingToolConfirmation: confirmCall }, base.core)
-    input.persistWorkingTurn()
     return await requireRecoveryDurability(base.id, base.runId, base.core, 'waiting_confirmation')
       ? 'paused'
       : 'interrupted'
   }
-  if (pauseCall) return await pauseForUser(base, pauseCall, input.planStageId, input.persistWorkingTurn)
-  input.persistWorkingTurn()
+  if (pauseCall) return await pauseForUser(base, pauseCall, input.planStageId)
   return await requireRecoveryDurability(base.id, base.runId, base.core, 'tool_batch_completed')
     ? 'continue'
     : 'interrupted'
 }
 
-async function pauseForUser(base: ToolLoopBase, pauseCall: { callId: string; payload: unknown }, planStageId: string | undefined, persist: () => void): Promise<ToolBatchResult> {
+async function pauseForUser(base: ToolLoopBase, pauseCall: { callId: string; payload: unknown }, planStageId: string | undefined): Promise<ToolBatchResult> {
   const approval = planApprovalPayload(pauseCall.payload)
   if (approval) {
     base.trace.event('agent.waiting_plan_approval', { callId: pauseCall.callId, ...approval })
@@ -193,7 +189,6 @@ async function pauseForUser(base: ToolLoopBase, pauseCall: { callId: string; pay
     base.trace.event('agent.waiting_user', { callId: pauseCall.callId, question_count: questionCount(pauseCall.payload), decision_surface: origin.surface, decision_phase: origin.phase, plan_id: origin.planId, plan_stage_id: origin.stageId })
     patchRun(base.id, { status: 'waiting_user', pendingQuestion: pauseCall.payload, pendingUserDecision: { callId: pauseCall.callId, payload: pauseCall.payload, origin } }, base.core)
   }
-  persist()
   return await requireRecoveryDurability(base.id, base.runId, base.core, 'waiting_user')
     ? 'paused'
     : 'interrupted'

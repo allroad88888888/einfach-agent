@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { UserMessageContent } from '@web-agent/ai'
-import { checkpointsAtom, itemsAtom, runAtom } from '../state/sessionAtoms'
+import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { queuedUserMessagesAtom } from '../state/sessionTransientAtoms'
 import { sessionsAtom } from '../state/rootAtoms'
 import type { ConversationItem } from '../state/core.type'
@@ -58,12 +58,6 @@ describe('provider-neutral user content disposal', () => {
       const first = imageContent('ref-first', 'first')
       const second = imageContent('ref-second', 'second')
       store.setter(itemsAtom, [user('u1', first, 1)])
-      store.setter(checkpointsAtom, [{
-        turnIndex: 0,
-        label: 'first',
-        createdAt: 2,
-        items: [user('u1-copy', first, 1)],
-      }])
       store.setter(queuedUserMessagesAtom, [queued('q1', second, 'run-1')])
 
       expect(() => core.removeSession(id)).not.toThrow()
@@ -99,97 +93,6 @@ describe('provider-neutral user content disposal', () => {
     )
   })
 
-  it('revertToTurn disposes only content lost from history and all abandoned queues', () => {
-    const { core, id, store, disposeUserContent } = setup()
-    const persistTruncate = vi.spyOn(core.persistence, 'persistTruncate')
-    const retained = imageContent('ref-retained', 'retained')
-    const discarded = imageContent('ref-discarded', 'discarded')
-    const queuedOnly = imageContent('ref-queued', 'queued')
-    const firstTurn = [user('u0', retained, 1)]
-    const secondTurn = [...firstTurn, user('u1', discarded, 2)]
-    store.setter(itemsAtom, secondTurn)
-    store.setter(checkpointsAtom, [
-      {
-        turnIndex: 0,
-        label: '[执行中] first',
-        createdAt: 1,
-        items: firstTurn,
-        kind: 'working',
-      },
-      { turnIndex: 1, label: 'second', createdAt: 2, items: secondTurn },
-    ])
-    store.setter(runAtom, { runId: 'obsolete', status: 'running', turnId: 'u0' })
-    store.setter(queuedUserMessagesAtom, [queued('q1', queuedOnly, 'obsolete')])
-
-    core.revertToTurn(0)
-
-    expect(store.getter(itemsAtom)).toEqual(firstTurn)
-    expect(store.getter(runAtom)).toBeUndefined()
-    expect(store.getter(queuedUserMessagesAtom)).toEqual([])
-    expect(store.getter(checkpointsAtom)[0]).toMatchObject({ kind: 'stopped' })
-    expect(persistTruncate).toHaveBeenCalledWith(id, 0)
-    expect(disposeUserContent).toHaveBeenCalledOnce()
-    expect(disposeUserContent).toHaveBeenCalledWith(
-      [discarded, queuedOnly],
-      [retained],
-      expect.objectContaining({ sessionId: id, reason: 'history_truncated' }),
-    )
-  })
-
-  it('revertTurnToDraft releases the edited turn and its mismatched queue', () => {
-    const { core, id, store, disposeUserContent } = setup()
-    const retained = imageContent('ref-before', 'before')
-    const edited = imageContent('ref-edit', 'edit this')
-    const abandoned = imageContent('ref-abandoned', 'abandoned')
-    const firstTurn = [user('u0', retained, 1)]
-    const secondTurn = [...firstTurn, user('u1', edited, 10)]
-    store.setter(itemsAtom, secondTurn)
-    store.setter(checkpointsAtom, [
-      { turnIndex: 0, label: 'before', createdAt: 2, items: firstTurn },
-      { turnIndex: 1, label: 'edit', createdAt: 11, items: secondTurn },
-    ])
-    store.setter(runAtom, { runId: 'done-run', status: 'done' })
-    store.setter(queuedUserMessagesAtom, [queued('q1', abandoned, 'old-run')])
-
-    core.revertTurnToDraft(1)
-
-    expect(store.getter(itemsAtom)).toEqual(firstTurn)
-    expect(store.getter(queuedUserMessagesAtom)).toEqual([])
-    expect(disposeUserContent).toHaveBeenCalledOnce()
-    expect(disposeUserContent).toHaveBeenCalledWith(
-      [edited, abandoned],
-      [retained],
-      expect.objectContaining({ reason: 'history_truncated' }),
-    )
-  })
-
-  it('withdraw delegates checkpoint cleanup once and clears the checkpoint run queue', () => {
-    const { core, store, disposeUserContent } = setup()
-    const retained = imageContent('ref-old', 'old')
-    const withdrawn = imageContent('ref-withdrawn', 'withdrawn')
-    const queueContent = imageContent('ref-queue', 'queue')
-    const firstTurn = [user('u0', retained, 1)]
-    const stoppedTurn = [...firstTurn, user('u1', withdrawn, 10)]
-    store.setter(itemsAtom, stoppedTurn)
-    store.setter(checkpointsAtom, [
-      { turnIndex: 0, label: 'old', createdAt: 2, items: firstTurn },
-      { turnIndex: 1, label: 'stopped', createdAt: 11, items: stoppedTurn },
-    ])
-    store.setter(runAtom, { runId: 'stopped-run', status: 'stopped' })
-    store.setter(queuedUserMessagesAtom, [queued('q1', queueContent, 'stopped-run')])
-
-    core.withdrawCurrentTurnToDraft()
-
-    expect(store.getter(itemsAtom)).toEqual(firstTurn)
-    expect(store.getter(queuedUserMessagesAtom)).toEqual([])
-    expect(disposeUserContent).toHaveBeenCalledOnce()
-    expect(disposeUserContent).toHaveBeenCalledWith(
-      [withdrawn, queueContent],
-      [retained],
-      expect.objectContaining({ reason: 'history_truncated' }),
-    )
-  })
-
   it('stopRun drops every now-ownerless queue and prevents working recovery resurrection', () => {
     const { core, id, store, disposeUserContent } = setup()
     const retained = imageContent('ref-live', 'live')
@@ -199,25 +102,11 @@ describe('provider-neutral user content disposal', () => {
     store.setter(itemsAtom, liveItems)
     store.setter(runAtom, { runId: 'run-1', status: 'running', turnId: 'u0' })
     store.setter(queuedUserMessagesAtom, [stoppedQueue, otherQueue])
-    store.setter(checkpointsAtom, [{
-      turnIndex: 0,
-      label: 'working',
-      createdAt: 2,
-      items: liveItems,
-      kind: 'working',
-    }])
-    const persistCheckpoint = vi.spyOn(core.persistence, 'persistCheckpoint')
 
     core.stopRun()
 
     expect(store.getter(runAtom)).toMatchObject({ runId: 'run-1', status: 'stopped' })
     expect(store.getter(queuedUserMessagesAtom)).toEqual([])
-    expect(store.getter(checkpointsAtom)[0]).toMatchObject({ kind: 'stopped' })
-    expect(persistCheckpoint).toHaveBeenCalledOnce()
-    expect(persistCheckpoint).toHaveBeenCalledWith(
-      id,
-      expect.objectContaining({ kind: 'stopped' }),
-    )
     expect(disposeUserContent).toHaveBeenCalledOnce()
     expect(disposeUserContent).toHaveBeenCalledWith(
       [stoppedQueue.content, otherQueue.content],
@@ -231,19 +120,11 @@ describe('provider-neutral user content disposal', () => {
     const pausedQueue = queued('q-paused', imageContent('ref-paused', 'paused'), 'run-paused')
     store.setter(runAtom, { runId: 'run-paused', status: 'waiting_confirmation' })
     store.setter(queuedUserMessagesAtom, [pausedQueue])
-    store.setter(checkpointsAtom, [{
-      turnIndex: 0,
-      label: '[执行中] paused',
-      createdAt: 2,
-      items: [],
-      kind: 'working',
-    }])
 
     core.stopRun()
 
     expect(store.getter(runAtom)).toMatchObject({ runId: 'run-paused', status: 'stopped' })
     expect(store.getter(queuedUserMessagesAtom)).toEqual([])
-    expect(store.getter(checkpointsAtom)[0]).toMatchObject({ kind: 'stopped' })
     expect(disposeUserContent).toHaveBeenCalledWith(
       [pausedQueue.content],
       [],

@@ -3,7 +3,7 @@
 
 import { describe, it, expect, afterEach } from 'vitest'
 import { getSessionStore } from '../state/sessionStore'
-import { itemsAtom, runAtom, checkpointsAtom, planAtom } from '../state/sessionAtoms'
+import { itemsAtom, runAtom, planAtom } from '../state/sessionAtoms'
 import { patchRun } from '../state/sessionWriters'
 import { resumePlanSession, runSession } from './modelRun'
 import { configureObservability, flushObservability } from '../observability/trace'
@@ -145,8 +145,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）循环安全网', () => {
     expect(requestCount).toBe(1)
     expect(store.getter(runAtom)).toMatchObject({ runId, status: 'stopped' })
     expect(store.getter(itemsAtom).map(({ item }) => item.role)).toEqual(['user', 'tool'])
-    expect(store.getter(checkpointsAtom)).toHaveLength(1)
-    expect(store.getter(checkpointsAtom)[0]).toMatchObject({ label: '[已停止] 继续执行', kind: 'stopped' })
   })
 
   it('重复 tool-only 调用：第 3 次相同工具签名提前 loop_detected', async () => {
@@ -188,15 +186,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）循环安全网', () => {
       ),
     ).toBe(true)
     // ★ 回归：loop_detected 同样已往 itemsAtom 写过条目 —— 不落 checkpoint 整轮刷新即蒸发。
-    expect(store.getter(checkpointsAtom)).toHaveLength(1)
-    expect(store.getter(checkpointsAtom)[0].items.map((it) => it.item.role)).toEqual([
-      'user',
-      'tool',
-      'assistant',
-      'tool',
-      'assistant',
-      'tool',
-    ])
   })
 
   it('多轮里 esc：中途 abort（signal 已断）→ 下一轮写回前守卫成 stopped', async () => {
@@ -217,9 +206,5 @@ describe('runSession（多轮 lazy-tool 循环，T-6）循环安全网', () => {
     const items = getSessionStore('t5').store.getter(itemsAtom)
     // 迟到的最终 assistant 未写回。
     expect(items.some((it) => it.item.role === 'assistant' && 'content' in it.item && it.item.content === '迟到的答案')).toBe(false)
-    const checkpoints = getSessionStore('t5').store.getter(checkpointsAtom)
-    expect(checkpoints).toHaveLength(1)
-    expect(checkpoints[0].items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant', 'tool'])
-    expect(checkpoints[0]).toMatchObject({ label: '[已停止] hi', kind: 'stopped' })
   })
 })

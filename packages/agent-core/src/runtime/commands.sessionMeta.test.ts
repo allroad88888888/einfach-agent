@@ -14,7 +14,6 @@ vi.mock('./modelRun', () => ({
 }))
 vi.mock('../state/checkpointWriters', () => ({
   jumpToCheckpoint: vi.fn(),
-  rewindBeforeCheckpoint: vi.fn(),
   revertToPlanStageCheckpoint: vi.fn(),
   updateCheckpoint: vi.fn(),
 }))
@@ -23,8 +22,6 @@ vi.mock('./persistenceBridge', () => ({
   persistSessions: vi.fn(),
   persistWorkspaces: vi.fn(),
   persistDeleteSession: vi.fn(),
-  persistTruncate: vi.fn(),
-  persistCheckpoint: vi.fn(),
 }))
 
 import { rootStore, workspacesAtom, activeWorkspaceIdAtom, sessionsAtom, activeSessionIdAtom } from '../state/rootStore'

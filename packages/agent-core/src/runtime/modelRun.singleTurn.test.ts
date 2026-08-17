@@ -4,13 +4,13 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { rootStore, sessionsAtom, workspacesAtom } from '../state/rootStore'
 import { getSessionStore } from '../state/sessionStore'
-import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
+import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { setRun } from '../state/sessionWriters'
 import { runtimeTranscriptEventsAtom, contextStatsAtom, queuedUserMessagesAtom, enqueueUserMessage } from '../state/transientAtoms'
 import { runSession } from './modelRun'
 import { createCoreInstance } from './core/coreInstance'
 import { registerStandardTools } from '@web-agent/tools'
-import { resetModelRunTestState, captureCheckpointPersistence, seedSession, jsonResponse, toolCallsResponse, clone, waitUntil } from './modelRun.testHarness'
+import { resetModelRunTestState, seedSession, jsonResponse, toolCallsResponse, clone, waitUntil } from './modelRun.testHarness'
 
 afterEach(() => {
   resetModelRunTestState()
@@ -63,7 +63,6 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
     expect(items[2].item).toEqual({ role: 'assistant', content: '你好' })
 
     expect(getSessionStore('s1').store.getter(runAtom)?.status).toBe('done')
-    expect(getSessionStore('s1').store.getter(checkpointsAtom)).toHaveLength(1)
   })
 
   it('模型请求期间追加输入：当前回复落库后按 FIFO 注入同一 run 的下一轮', async () => {
@@ -129,7 +128,6 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
       'user',
     ])
     expect(store.getter(queuedUserMessagesAtom)).toEqual([])
-    expect(store.getter(checkpointsAtom)).toHaveLength(1)
   })
 
   it('工具调用期间追加输入：等待完整 tool result 后再注入，协议顺序不被打断', async () => {
@@ -192,7 +190,6 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
 
   it('abort：fetchImpl 抛 AbortError → run.status=stopped，不抛崩', async () => {
     seedSession('s2', { vendor: 'deepseek', model: 'x' })
-    const persistence = captureCheckpointPersistence()
     const fetchImpl: typeof fetch = async () => {
       throw new DOMException('aborted', 'AbortError')
     }
@@ -209,13 +206,6 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
     // user 与 sessionStart 清单已写入；assistant 未写回。
     expect(getSessionStore('s2').store.getter(itemsAtom)).toHaveLength(2)
     // stopped 轮也必须形成可撤回快照；否则刷新会丢 user，继续对话后该消息也没有气泡回退入口。
-    const checkpoints = getSessionStore('s2').store.getter(checkpointsAtom)
-    expect(checkpoints).toHaveLength(1)
-    expect(checkpoints[0]).toMatchObject({ label: '[已停止] hi', kind: 'stopped' })
-    expect(persistence.saved.at(-1)).toMatchObject({
-      sessionId: 's2',
-      checkpoint: { turnIndex: 0, label: '[已停止] hi', kind: 'stopped' },
-    })
     expect(getSessionStore('s2').store.getter(contextStatsAtom)?.cache?.metricsStatus).toBe('cancelled')
     expect(getSessionStore('s2').store.getter(contextStatsAtom)?.usage).toBeUndefined()
   })
@@ -326,9 +316,6 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
     const items = getSessionStore('s6').store.getter(itemsAtom)
     expect(items.some((it) => it.item.role === 'assistant')).toBe(false)
     // 用户消息已在请求前写进同一工作 checkpoint；运行态只由 v1 recovery 管理。
-    const checkpoints = getSessionStore('s6').store.getter(checkpointsAtom)
-    expect(checkpoints).toHaveLength(1)
-    expect(checkpoints[0]).toMatchObject({ label: 'hi', kind: 'working' })
   })
 
   it('stale-run：本次 run 被新 run 顶掉后，迟到的写回不污染新 run', async () => {
@@ -393,7 +380,6 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
     })
     await waitUntil(() => ensureSpy.mock.calls.length === 1, 'project skills scan')
     const itemsBeforeReplacement = clone(store.getter(itemsAtom))
-    const checkpointsBeforeReplacement = clone(store.getter(checkpointsAtom))
     const eventsBeforeReplacement = clone(store.getter(runtimeTranscriptEventsAtom))
 
     setRun(id, { runId: 'replacement-run', status: 'running', loadedTools: ['replacement-tool'] }, core)
@@ -407,7 +393,6 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
       loadedTools: ['replacement-tool'],
     })
     expect(store.getter(itemsAtom)).toEqual(itemsBeforeReplacement)
-    expect(store.getter(checkpointsAtom)).toEqual(checkpointsBeforeReplacement)
     expect(store.getter(runtimeTranscriptEventsAtom)).toEqual(eventsBeforeReplacement)
   })
 
@@ -433,9 +418,5 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
     const items = getSessionStore('s1').store.getter(itemsAtom)
     expect(items.some((it) => it.item.role === 'assistant' && it.item.content === '迟到的回复')).toBe(false)
     // stopped 轮仍形成可撤回 checkpoint，但不写回迟到的 assistant。
-    const checkpoints = getSessionStore('s1').store.getter(checkpointsAtom)
-    expect(checkpoints).toHaveLength(1)
-    expect(checkpoints[0].items.map((it) => it.item.role)).toEqual(['user', 'tool'])
-    expect(checkpoints[0]).toMatchObject({ label: '[已停止] hi', kind: 'stopped' })
   })
 })

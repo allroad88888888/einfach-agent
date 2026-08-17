@@ -17,7 +17,6 @@ import {
   sendMessage,
   setApprovalMode,
   stopRun,
-  withdrawCurrentTurnToDraft,
 } from '@web-agent/core'
 import {
   addComposerImageAttachmentsAtom,
@@ -196,9 +195,6 @@ export function Composer({
       {stopped ? (
         <div className="agentnew-withdraw-bar">
           <span>已停止</span>
-          <button type="button" className="agentnew-withdraw-button" onClick={withdrawCurrentTurnToDraft}>
-            撤回并编辑
-          </button>
         </div>
       ) : null}
       {interrupted ? (

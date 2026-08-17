@@ -13,7 +13,6 @@ import {
 } from './recoverySnapshot.type'
 import {
   contextCheckpointAtom,
-  currentTurnIndexAtom,
   itemsAtom,
   planAtom,
   planStageCheckpointsAtom,
@@ -136,7 +135,6 @@ const clearRecoveryProjectionAtom = atom<null, [], void>(
     set(composerDraftAtom, '')
     set(executionGraphAtom, EMPTY_EXECUTION_GRAPH)
     set(subagentContinuationsAtom, [])
-    set(currentTurnIndexAtom, -1)
   },
 )
 

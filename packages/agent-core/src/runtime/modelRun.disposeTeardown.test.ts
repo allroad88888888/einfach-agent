@@ -2,7 +2,7 @@
 
 import { describe, it, expect, afterEach } from 'vitest'
 import { getSessionStore } from '../state/sessionStore'
-import { runAtom, checkpointsAtom } from '../state/sessionAtoms'
+import { runAtom } from '../state/sessionAtoms'
 import { patchRun } from '../state/sessionWriters'
 import { runSession, runToolLoop } from './modelRun'
 import { configureObservability, flushObservability } from '../observability/trace'
@@ -61,7 +61,6 @@ describe('收尾 dispose 的异常隔离', () => {
 
     const store = getSessionStore('dp1').store
     expect(store.getter(runAtom)?.status).toBe('done')
-    expect(store.getter(checkpointsAtom)).toHaveLength(1)
     // 吞掉不等于假装没发生：留一条 trace。
     const disposeEvent = trace.events.find((event) => event.name === 'agent.dispose_failed')
     expect(disposeEvent).toBeDefined()

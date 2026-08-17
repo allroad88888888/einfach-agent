@@ -11,7 +11,6 @@ import {
   sendMessage,
   setApprovalMode,
   stopRun,
-  withdrawCurrentTurnToDraft,
 } from '@web-agent/core'
 import { Composer } from './Composer'
 
@@ -23,7 +22,6 @@ vi.mock('@web-agent/core/runtime/commands', () => ({
   sendMessage: vi.fn(() => ({ accepted: true })),
   setApprovalMode: vi.fn(),
   stopRun: vi.fn(),
-  withdrawCurrentTurnToDraft: vi.fn(),
 }))
 
 describe('Composer', () => {
@@ -230,17 +228,6 @@ describe('Composer', () => {
     fireEvent.keyDown(window, { key: 'Escape' })
 
     expect(stopRun).toHaveBeenCalledTimes(1)
-  })
-
-  it('stopped 态：显示撤回并编辑入口，点击调用 withdrawCurrentTurnToDraft', () => {
-    const store = createStore()
-    store.setter(runAtom, { runId: 'r', status: 'stopped' })
-    renderWithStore(<Composer />, { store })
-
-    expect(screen.getByText('已停止')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '撤回并编辑' }))
-
-    expect(withdrawCurrentTurnToDraft).toHaveBeenCalledTimes(1)
   })
 
   it('interrupted 态：锁定普通输入并提供继续执行入口', () => {

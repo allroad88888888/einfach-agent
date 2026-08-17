@@ -37,7 +37,7 @@ export async function resumePlanSession(id: string, opts: ModelRunOptions & { ru
 export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptions): Promise<void> {
   const boot = await bootstrapToolLoop(id, runId, opts)
   if (!boot) return
-  const { base, checkpoints, releaseTimedToolDispatcher } = boot
+  const { base, releaseTimedToolDispatcher } = boot
   const persistInterruptedToolCalls = () => {
     markUnresolvedToolCallsOutcomeUnknown(id, base.core)
     void base.core.persistence.persistRecovery(id, 'tool_calls_interrupted')
@@ -51,7 +51,6 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
     if (!base.control.isRunning()) {
       streamWriter?.finishPending()
       persistInterruptedToolCalls()
-      checkpoints.commitStoppedTurn()
       base.trace.finish('cancelled', 'agent.stopped', { reason: 'run_not_running' })
       return true
     }
@@ -60,7 +59,6 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
       persistInterruptedToolCalls()
       patchRun(id, { status: 'stopped' }, base.core)
       void base.core.persistence.persistRecovery(id, 'tool_calls_interrupted')
-      checkpoints.commitStoppedTurn()
       base.trace.finish('cancelled', 'agent.stopped', { reason: 'aborted' })
       return true
     }
@@ -68,7 +66,6 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
   }
   try {
     if (requiresRunTimedToolReconciliation(base)) {
-      checkpoints.commitStoppedTurn()
       base.trace.finish('cancelled', 'agent.recovery_reconciliation_required', {
         reason: 'unresolved_timed_tool',
       })
@@ -121,7 +118,6 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
           requestEpoch = ensureTimedDispatchEpoch(base)
           const timed = await dispatchTimedTools({
             base,
-            checkpoints,
             request: { sessionId: id, timing: 'turnStart', epoch: requestEpoch },
           })
           if (timed.status === 'interrupted') return inactive()
@@ -132,14 +128,13 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
       }
       let cycleResult
       try {
-        cycleResult = await runToolLoopCycle({ base, checkpoints, requester, budget, failures, turn, endInactive })
+        cycleResult = await runToolLoopCycle({ base, requester, budget, failures, turn, endInactive })
       } finally {
         if (requestedModelTurn) {
           const status = base.core.getSessionStore(id).store.getter(runAtom)?.status
           if (status !== 'interrupted') {
             const timed = await dispatchTimedTools({
               base,
-              checkpoints,
               request: { sessionId: id, timing: 'turnEnd', epoch: requestEpoch },
             })
             turnEndInterrupted = timed.status === 'interrupted'
@@ -149,7 +144,7 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
       if (turnEndInterrupted) return
       if (cycleResult === 'finished') return
     }
-    checkpoints.commitTurn()
+    base.core.persistence.persistSessions()
     const error = `主 Agent 超过最大模型轮次（${budget.limit()}）`
     if (base.control.isRunning()) patchRun(id, { status: 'error', error }, base.core)
     base.trace.finish('error', 'agent.max_turns', { max_turns: budget.limit(), error })
@@ -160,7 +155,6 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
         patchRun(id, { status: 'stopped' }, base.core)
         void base.core.persistence.persistRecovery(id, 'tool_calls_interrupted')
       }
-      checkpoints.commitStoppedTurn()
       base.trace.finish('cancelled', 'agent.stopped', { reason: 'abort_error' }, error)
     } else {
       if (base.control.isRunning()) {
@@ -168,14 +162,13 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
         patchRun(id, { status: 'error', error: safeErrorMessage(error) }, base.core)
         void base.core.persistence.persistRecovery(id, 'tool_loop_error')
       }
-      checkpoints.persistWorkingTurn()
       base.trace.finish('error', 'agent.error', { error: safeErrorMessage(error) }, error)
     }
   } finally {
     try {
       const status = base.core.getSessionStore(id).store.getter(runAtom)?.status
       if (status !== 'interrupted') {
-        await dispatchTimedTools({ base, checkpoints, request: { sessionId: id, timing: 'runEnd' } })
+        await dispatchTimedTools({ base, request: { sessionId: id, timing: 'runEnd' } })
       }
     }
     catch (error) { base.core.observability.addEvent('agent.timed_dispatch_failed', { traceId: base.trace.span.traceId, attrs: { sessionId: id, runId, turnId: base.turnId, timing: 'runEnd', error: safeErrorMessage(error) } }) }

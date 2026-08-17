@@ -46,6 +46,7 @@ function createAtomicSqlite() {
         }
         return { rowsAffected: 1 }
       }
+      if (sql.startsWith('DROP TABLE')) return { rowsAffected: 0 }
       throw new Error(`Unexpected SQLite statement: ${sql}`)
     }),
     select: vi.fn(async (sql: string, params: unknown[] = []) => {

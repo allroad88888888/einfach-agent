@@ -5,7 +5,7 @@
 
 import type { ExecutionGraphSnapshot } from '../execution/types'
 import type { PlanSnapshot } from '../planning/types'
-import type { PlanStageCheckpoint } from './checkpoint.type'
+import type { PlanStageCheckpoint } from './planStageCheckpoint.type'
 import type { ContextCheckpoint } from './contextCheckpoint.type'
 import type { ConversationItem, RunState, SessionMeta } from './core.type'
 import type { AskUserAnswerValue, PendingArtifact, QueuedUserMessage } from './sessionTransientPayloads'

@@ -1,11 +1,9 @@
 import {
-  createIndexedDbHistoryDriver,
   createIndexedDbRecoveryDriver,
   createIndexedDbSessionsPersistence,
 } from '@web-agent/persistence-idb'
 
 export type HostPersistenceDrivers = {
-  history: ReturnType<typeof createIndexedDbHistoryDriver>
   sessions: ReturnType<typeof createIndexedDbSessionsPersistence>
   recovery: ReturnType<typeof createIndexedDbRecoveryDriver>
 }
@@ -20,7 +18,6 @@ export async function createHostPersistenceDrivers(
   }
 
   return {
-    history: createIndexedDbHistoryDriver(),
     sessions: createIndexedDbSessionsPersistence(),
     recovery: createIndexedDbRecoveryDriver(),
   }

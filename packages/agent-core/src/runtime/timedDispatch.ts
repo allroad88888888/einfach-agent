@@ -3,7 +3,6 @@ import type { ToolCallTiming } from '../tools/toolCallTiming'
 import type { Tool, ToolResult } from '../tools/types'
 import type { ToolRegistry } from '../tools/toolRegistry'
 import type { CoreInstance } from './core/coreInstance'
-import type { ToolLoopCheckpointWriter } from './toolLoopCheckpoint'
 import type { ToolLoopBase } from './toolLoopContracts'
 import { runAtom } from '../state/sessionAtoms'
 import { patchRun } from '../state/sessionWriters'
@@ -98,11 +97,6 @@ function timedItemAlreadyRecorded(
   ))
 }
 
-function persistTimedItems(base: ToolLoopBase, checkpoints: ToolLoopCheckpointWriter, timing: ToolCallTiming): void {
-  if (!isDispatchCurrent(base, timing)) return
-  checkpoints.persistWorkingTurn()
-}
-
 function riskForTimedTool(
   input: { core: CoreInstance; sessionId: string; name: string },
   dependencies: TimedDispatchDependencies,
@@ -131,10 +125,9 @@ export async function classifyTimedToolRisk(input: {
 /** Dispatches one timing bucket through the normal executor, never through beforeToolCall confirmation hooks. */
 export async function dispatchTimedTools(input: {
   base: ToolLoopBase
-  checkpoints: ToolLoopCheckpointWriter
   request: TimedToolDispatchRequest
 }): Promise<TimedToolDispatchResult> {
-  const { base, checkpoints, request } = input
+  const { base, request } = input
   if (request.sessionId !== base.id || !isDispatchCurrent(base, request.timing)) {
     return { status: 'inactive', itemCount: 0 }
   }
@@ -173,7 +166,6 @@ export async function dispatchTimedTools(input: {
     },
     record: (_registration, callId, result) => {
       dependencies.appendMappedToolResult(base.id, callId, result, base.core)
-      persistTimedItems(base, checkpoints, request.timing)
     },
     afterRecord: async () => requireRecoveryDurability(base.id, base.runId, base.core, 'timed_tool_result_saved'),
     isAbortError: (error) => isAbortError(error),

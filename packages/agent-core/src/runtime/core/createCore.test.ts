@@ -21,7 +21,6 @@ vi.mock('../persistenceBridge', () => ({
   persistSessions: vi.fn(),
   persistWorkspaces: vi.fn(),
   persistDeleteSession: vi.fn(),
-  persistTruncate: vi.fn(),
 }))
 
 import { createCore } from './createCore'
@@ -101,11 +100,8 @@ describe('createCore —— 隔离实例 + 绑定命令（第 3 期收口）', (
       'approvePlan',
       'answerQuestion',
       'discardArtifact',
-      'revertToTurn',
-      'revertTurnToDraft',
       'setWorkspaceRoot',
       'renameSession',
-      'withdrawCurrentTurnToDraft',
     ] as const
     for (const name of commandNames) {
       expect(typeof core[name]).toBe('function')

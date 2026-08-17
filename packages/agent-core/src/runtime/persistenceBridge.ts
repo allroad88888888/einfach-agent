@@ -1,6 +1,6 @@
 // D-4 · 持久化接线桥 —— runtime 写路径 ↔ 持久化 driver 之间的 fire-and-forget 钩子（§4 D-4 / §1 DK2）。
 // ---------------------------------------------------------------------------
-// 背景：持久化件（IndexedDB HistoryDriver / sessions 存储 / hydrate）已齐，但 runtime 里
+// 背景：持久化件（sessions 存储 / recovery driver / hydrate）已齐，但 runtime 里
 //   没有落盘调用。本文只做「接线」：把 commands / modelRun 的写事件转成 driver 调用。
 //   · history / sessions 遵循 DK2 fire-and-forget：写盘绝不卡 UI，队列内部自行处理其 best-effort 失败。
 //   · recovery 例外：仍由显式 facade 异步触发，但 RecoveryWriter 以 outcome 与 observability diagnostic
@@ -11,9 +11,7 @@
 
 import type { Store } from '@einfach/core'
 import { sessionsAtom, workspacesAtom } from '../state/rootAtoms'
-import type { Checkpoint } from '../state/checkpoint.type'
 import type { SessionsPersistence } from '../state/persistence/contract'
-import type { HistoryDriver } from '../state/persistence/historyDriver'
 import type { RecoveryDriver } from '../state/persistence/recoveryDriver'
 import { projectStaticSessionMeta } from '../state/sessionMetaProjection'
 import type { ObservabilityPort } from '../observability/port'
@@ -24,7 +22,6 @@ import {
 } from './recoveryWriter'
 import { createWriteQueue } from './writeQueue'
 import {
-  writeCheckpoint,
   writeSessions,
   writeWorkspaces,
   type PersistenceDiagnosticContext,
@@ -37,7 +34,6 @@ export type { PersistenceDiagnosticContext } from './persistenceWriteOperations'
 // ===========================================================================
 
 export interface PersistenceDependencies {
-  history?: HistoryDriver
   sessions?: SessionsPersistence
   recovery?: RecoveryDriver
   /** Must only return an extant session store; recovery persistence never creates a session. */
@@ -51,8 +47,6 @@ export interface PersistenceBridge {
   reset(): void
   persistSessions(context?: PersistenceDiagnosticContext): void
   persistWorkspaces(): void
-  persistCheckpoint(id: string, checkpoint: Checkpoint): void
-  persistTruncate(id: string, turnIndex: number): void
   persistDeleteSession(id: string): void
   /** Explicit recovery boundary; no atom subscription is installed by this bridge. */
   persistRecovery(id: string, reason?: string): Promise<RecoveryWriteOutcome | undefined>
@@ -68,17 +62,14 @@ export function createPersistenceBridge(
   observability: ObservabilityPort,
   hydrateStore?: (sessionId: string) => Store,
 ): PersistenceBridge {
-  let history: HistoryDriver | undefined
   let sessions: SessionsPersistence | undefined
   let recovery: RecoveryDriver | undefined
   let recoveryStore: ((sessionId: string) => Store | undefined) | undefined
   let recoveryWriter: RecoveryWriter | undefined
   const sessionsWriteQueue = createWriteQueue('latest')
   const workspacesWriteQueue = createWriteQueue('serial')
-  const historyWriteQueue = createWriteQueue('serial')
 
   function configure(deps: PersistenceDependencies): void {
-    if (deps.history !== undefined) history = deps.history
     if (deps.sessions !== undefined) sessions = deps.sessions
     if (deps.recovery !== undefined) recovery = deps.recovery
     if (deps.recoveryStore !== undefined) recoveryStore = deps.recoveryStore
@@ -91,11 +82,10 @@ export function createPersistenceBridge(
   }
 
   function dependencies(): PersistenceDependencies {
-    return { history, sessions, recovery, recoveryStore }
+    return { sessions, recovery, recoveryStore }
   }
 
   function reset(): void {
-    history = undefined
     sessions = undefined
     recovery = undefined
     recoveryStore = undefined
@@ -103,7 +93,6 @@ export function createPersistenceBridge(
     recoveryWriter = undefined
     sessionsWriteQueue.reset()
     workspacesWriteQueue.reset()
-    historyWriteQueue.reset()
   }
 
   // 简介：把当前会话列表覆盖式落盘（会话增删改后调用）。
@@ -132,27 +121,8 @@ export function createPersistenceBridge(
     )
   }
 
-  // 简介：把某会话刚提交的一轮 checkpoint 落盘（commitCheckpoint 之后调用）。
-  function persistCheckpoint(id: string, checkpoint: Checkpoint): void {
-    const driver = history
-    if (!driver) return
-    const queuedAt = observability.performanceNow()
-    historyWriteQueue.enqueue(id, ({ queueDepthAtEnqueue }) =>
-      writeCheckpoint(driver, id, checkpoint, queuedAt, queueDepthAtEnqueue, observability),
-    )
-  }
-
-  // 简介：截断某会话中 turnIndex 之后的持久化 checkpoint（回退 jumpToCheckpoint 之后调用）。
-  function persistTruncate(id: string, turnIndex: number): void {
-    const driver = history
-    if (!driver) return
-    historyWriteQueue.enqueue(id, () => driver.truncateAfter(id, turnIndex))
-  }
-
-  // 简介：清空某会话的全部持久化历史（removeSession 之后调用）。
+  // 简介：清空某会话的全部持久化恢复记录（removeSession 之后调用）。
   function persistDeleteSession(id: string): void {
-    const driver = history
-    if (driver) historyWriteQueue.enqueue(id, () => driver.deleteSession(id))
     if (recoveryWriter) void recoveryWriter.deleteSession(id)
   }
 
@@ -169,13 +139,13 @@ export function createPersistenceBridge(
   }
 
   async function hydrate(): Promise<boolean> {
-    const { history, sessions, recovery } = dependencies()
-    if (!history || !sessions || !hydrateStore) return false
+    const { sessions, recovery } = dependencies()
+    if (!sessions || !hydrateStore) return false
 
     const { hydrateForCore } = await import('../state/persistence/hydrate')
     return hydrateForCore(
       { rootStore, getSessionStore: hydrateStore },
-      { history, sessions, recovery },
+      { sessions, recovery },
     )
   }
 
@@ -185,8 +155,6 @@ export function createPersistenceBridge(
     reset,
     persistSessions,
     persistWorkspaces,
-    persistCheckpoint,
-    persistTruncate,
     persistDeleteSession,
     persistRecovery,
     flushRecovery,
@@ -232,14 +200,6 @@ export function persistSessions(context: PersistenceDiagnosticContext = {}): voi
 
 export function persistWorkspaces(): void {
   defaultBridgeRef.current?.persistWorkspaces()
-}
-
-export function persistCheckpoint(id: string, checkpoint: Checkpoint): void {
-  defaultBridgeRef.current?.persistCheckpoint(id, checkpoint)
-}
-
-export function persistTruncate(id: string, turnIndex: number): void {
-  defaultBridgeRef.current?.persistTruncate(id, turnIndex)
 }
 
 export function persistDeleteSession(id: string): void {

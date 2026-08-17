@@ -6,7 +6,6 @@
 //   runSession/runToolLoop（编排层隔离）。本份【不 mock 任何 runtime】——store / 主循环 / 命令
 //   全用真的，唯一替身是 core.config.fetchImpl 注入的假 fetch（喂固定模型响应）。于是断言覆盖的
 //   是「主循环状态流」这一层：一轮真实对话从 sendMessage 起、经真 runToolLoop 多轮编排、writers 落回
-//   itemsAtom/runAtom/checkpointsAtom 的全过程，是否严格落在各自实例的 store 上、绝不外溢。
 //
 // 对撞手法（捕获串台回归的关键）：★ 两套实例【故意登记同一个 session id "s"】★。若它们哪天漏穿一处
 //   core、共享了任何 store（rootStore / per-session store / abort），同 id 会立刻串台 —— 本测即红：
@@ -26,14 +25,13 @@ import { createCore } from './createCore'
 import { defaultCore, type CoreInstance } from './coreInstance'
 import type { Tool } from '../../tools/types'
 import { sessionsAtom, activeSessionIdAtom } from '../../state/rootStore'
-import { itemsAtom, runAtom, checkpointsAtom } from '../../state/sessionAtoms'
+import { itemsAtom, runAtom } from '../../state/sessionAtoms'
 import { getPlan, setPlan } from '../../state/planWriters'
 import { configurePersistence, resetPersistence } from '../persistenceBridge'
 import { resetObservability } from '../../observability/trace'
 import type { ConversationItem, SessionMeta } from '../../state/core.type'
 import type { PlanSnapshot } from '../../planning/types'
 import type { SessionsPersistence } from '../../state/persistence/contract'
-import type { HistoryDriver } from '../../state/persistence/historyDriver'
 import type { PlanRuntimeFactory } from '../../planning/runtime'
 import type { PlanRuntimeStore } from '../../planning/types'
 
@@ -71,23 +69,14 @@ function makeTool(name: string): Tool {
 }
 
 function persistenceSpies() {
-  const saveCheckpoint = vi.fn(async () => {})
   const saveSessions = vi.fn(async (_sessions: SessionMeta[]) => {})
   return {
-    history: {
-      listCheckpoints: vi.fn(async () => []),
-      loadCheckpoint: vi.fn(async () => undefined),
-      saveCheckpoint,
-      truncateAfter: vi.fn(async () => {}),
-      deleteSession: vi.fn(async () => {}),
-    } satisfies HistoryDriver,
     sessions: {
       saveSessions,
       loadSessions: vi.fn(async () => []),
       saveWorkspaces: vi.fn(async () => {}),
       loadWorkspaces: vi.fn(async () => []),
     } satisfies SessionsPersistence,
-    saveCheckpoint,
     saveSessions,
   }
 }
@@ -214,15 +203,6 @@ describe('双实例隔离证明（createCore × 真主循环 × 假 fetch）', (
     expect(aRun?.runId).toBeTruthy()
     expect(aRun?.runId).not.toBe(bRun?.runId)
 
-    // —— checkpoints 隔离：各 1 条，各自快照只含自己那轮 ——
-    const aCk = A.getSessionStore('s').store.getter(checkpointsAtom)
-    const bCk = B.getSessionStore('s').store.getter(checkpointsAtom)
-    expect(aCk).toHaveLength(1)
-    expect(bCk).toHaveLength(1)
-    expect(roles(aCk[0].items)).toEqual(['user', 'assistant'])
-    expect(textOf(aCk[0].items.at(-1))).toBe('A-reply')
-    expect(textOf(bCk[0].items.at(-1))).toBe('B-reply')
-
     // —— apiKey 隔离（一路穿到线上 Authorization）：A 只用 KA、B 只用 KB ——
     expect(a.auths).toEqual(['Bearer KA'])
     expect(b.auths).toEqual(['Bearer KB'])
@@ -231,7 +211,6 @@ describe('双实例隔离证明（createCore × 真主循环 × 假 fetch）', (
     expect(defaultCore.rootStore.getter(sessionsAtom).s).toBeUndefined()
     expect(defaultCore.getSessionStore('s').store.getter(itemsAtom)).toEqual([])
     expect(defaultCore.getSessionStore('s').store.getter(runAtom)).toBeUndefined()
-    expect(defaultCore.getSessionStore('s').store.getter(checkpointsAtom)).toEqual([])
   })
 
   it('abort 隔离：A 起 run 只动 A 自己的 abort，B 与 defaultCore 的 abort 全程不被触碰', async () => {
@@ -345,24 +324,6 @@ describe('双实例隔离证明（createCore × 真主循环 × 假 fetch）', (
     // A 的订阅只收到 A 的增量（user+assistant），B 的只收到 B 的 —— 一条都不串。
     expect(seenA).toEqual(['A-question', 'A-reply'])
     expect(seenB).toEqual(['B-question', 'B-reply'])
-  })
-
-  it('persistence checkpoint 按实例隔离：A 的 turn snapshot 不会写入 defaultCore driver', async () => {
-    const defaultPersistence = persistenceSpies()
-    const aPersistence = persistenceSpies()
-    configurePersistence({ history: defaultPersistence.history })
-    const A = createCore({ config: { modelCredentials: { deepseek: 'KA' }, fetchImpl: replyFetch('A-reply').fetchImpl } })
-    A.persistence.configure({ history: aPersistence.history })
-    seedSession(A, 's', 'A-session')
-
-    A.sendMessage('A-question')
-    await waitUntil(() => A.getSessionStore('s').store.getter(runAtom)?.status === 'done', 'A done')
-
-    expect(aPersistence.saveCheckpoint).toHaveBeenCalledWith(
-      's',
-      expect.objectContaining({ items: expect.any(Array) }),
-    )
-    expect(defaultPersistence.saveCheckpoint).not.toHaveBeenCalled()
   })
 
   it('persistence sessions 按实例隔离：A/B 的 commit snapshots 只写各自 driver，defaultCore 零污染', async () => {

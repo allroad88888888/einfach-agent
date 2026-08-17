@@ -6,8 +6,6 @@ import { describe, expect, it } from 'vitest'
 import { executionEventsAtom } from '../execution/graph'
 import { applyRecoverySnapshot } from './recoveryProjection'
 import {
-  checkpointsAtom,
-  currentTurnIndexAtom,
   itemsAtom,
   planAtom,
   runAtom,
@@ -47,8 +45,6 @@ describe('recoveryProjection boundaries', () => {
     const source = createStore()
     const target = createStore()
     seedDurableState(source)
-    target.setter(checkpointsAtom, [{ turnIndex: 1, label: 'keep', createdAt: 1, items: [] }])
-    target.setter(currentTurnIndexAtom, 1)
     target.setter(browserCardsAtom, [{ id: 'card-1', createdAt: 1, title: 'keep card' }])
     target.setter(assistantStreamAtom, {
       runId: 'ui-run',
@@ -60,8 +56,6 @@ describe('recoveryProjection boundaries', () => {
 
     applyRecoverySnapshot(target, capture(source))
 
-    expect(target.getter(checkpointsAtom)).toHaveLength(1)
-    expect(target.getter(currentTurnIndexAtom)).toBe(1)
     expect(target.getter(browserCardsAtom)).toHaveLength(1)
     expect(target.getter(assistantStreamAtom)?.runId).toBe('ui-run')
     expect(target.getter(toolActivityAtom)).toEqual([{ callId: 'tool-1', toolName: 'write_file', text: 'running' }])

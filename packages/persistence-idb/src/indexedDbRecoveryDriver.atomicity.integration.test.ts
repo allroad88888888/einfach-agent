@@ -4,8 +4,7 @@ import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import type { Checkpoint, RecoverySnapshotV1 } from '@web-agent/core/state/persistence'
-import { createIndexedDbHistoryDriver } from './indexedDbDriver'
+import type { RecoverySnapshotV1 } from '@web-agent/core/state/persistence'
 import { createIndexedDbRecoveryDriver } from './indexedDbRecoveryDriver'
 
 function recoverySnapshot(generation: number, sessionId = 'session-1'): RecoverySnapshotV1 {
@@ -33,39 +32,6 @@ function recoverySnapshot(generation: number, sessionId = 'session-1'): Recovery
       executionGraph: { version: 1, nodes: {}, order: [] },
       subagentContinuations: [],
     },
-  }
-}
-
-const legacyCheckpoint: Checkpoint = {
-  turnIndex: 3,
-  label: 'checkpoint before upgrade',
-  createdAt: 12,
-  items: [{ id: 'item-1', createdAt: 12, item: { role: 'user', content: 'preserve me' } }],
-}
-
-async function createVersionOneHistoryDatabase(dbName: string): Promise<void> {
-  const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(dbName, 1)
-    request.onupgradeneeded = () => {
-      request.result.createObjectStore('checkpoints', { keyPath: ['sessionId', 'turnIndex'] })
-    }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const transaction = db.transaction('checkpoints', 'readwrite')
-      transaction.objectStore('checkpoints').put({
-        sessionId: 'legacy-session',
-        turnIndex: legacyCheckpoint.turnIndex,
-        checkpoint: legacyCheckpoint,
-      })
-      transaction.oncomplete = () => resolve()
-      transaction.onerror = () => reject(transaction.error)
-      transaction.onabort = () => reject(transaction.error)
-    })
-  } finally {
-    db.close()
   }
 }
 
@@ -115,16 +81,4 @@ describe('IndexedDB recovery driver atomicity', () => {
     await expect(lateWriter.listLatest()).resolves.toEqual([])
   })
 
-  it('upgrades a v1 history database without losing checkpoints and exposes v2 recovery records', async () => {
-    const dbName = 'history-v1-to-v2-recovery'
-    await createVersionOneHistoryDatabase(dbName)
-
-    const recovery = createIndexedDbRecoveryDriver(dbName)
-    const snapshot = recoverySnapshot(1, 'recovered-session')
-    await recovery.saveLatest(snapshot.sessionId, snapshot)
-
-    await expect(createIndexedDbHistoryDriver(dbName).loadCheckpoint('legacy-session', 3))
-      .resolves.toEqual(legacyCheckpoint)
-    await expect(createIndexedDbRecoveryDriver(dbName).loadLatest(snapshot.sessionId)).resolves.toEqual(snapshot)
-  })
 })

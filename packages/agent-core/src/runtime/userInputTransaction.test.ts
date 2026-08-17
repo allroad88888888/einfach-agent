@@ -11,13 +11,11 @@ vi.mock('./persistenceBridge', () => ({
   persistSessions: vi.fn(),
   persistWorkspaces: vi.fn(),
   persistDeleteSession: vi.fn(),
-  persistTruncate: vi.fn(),
-  persistCheckpoint: vi.fn(),
 }))
 
 import { createCore } from './core/createCore'
 import { runSession } from './modelRun'
-import { checkpointsAtom, itemsAtom, runAtom } from '../state/sessionAtoms'
+import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { sessionsAtom } from '../state/rootStore'
 import { queuedUserMessagesAtom } from '../state/transientAtoms'
 import type {
@@ -107,7 +105,6 @@ describe('sendMessage prepared input transaction', () => {
     })
     expect(store.getter(itemsAtom)).toEqual([])
     expect(store.getter(runAtom)).toBeUndefined()
-    expect(store.getter(checkpointsAtom)).toEqual([])
 
     const firstContent = prepared('ms://secret-first', 'first')
     first.resolve({ content: firstContent })
@@ -157,7 +154,6 @@ describe('sendMessage prepared input transaction', () => {
     expect(rollback).toHaveBeenCalledWith('settings_changed')
     expect(store.getter(itemsAtom)).toEqual([])
     expect(store.getter(runAtom)).toBeUndefined()
-    expect(store.getter(checkpointsAtom)).toEqual([])
     expect(runSession).not.toHaveBeenCalled()
   })
 
@@ -210,7 +206,6 @@ describe('sendMessage prepared input transaction', () => {
     })
     expect(store.getter(itemsAtom)).toEqual([])
     expect(store.getter(runAtom)).toBeUndefined()
-    expect(store.getter(checkpointsAtom)).toEqual([])
   })
 
   it('stopRun aborts active and not-yet-started preparation, then rolls back a late result', async () => {

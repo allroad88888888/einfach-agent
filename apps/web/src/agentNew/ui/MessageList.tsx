@@ -18,8 +18,6 @@ import {
   type ReactNode,
 } from 'react'
 import {
-  revertTurnToDraft,
-  checkpointsAtom,
   itemsAtom,
   planAtom,
   runAtom,
@@ -53,7 +51,6 @@ export function MessageList() {
   const run = useAtomValue(runAtom)
   const plan = useAtomValue(planAtom)
   const assistantStream = useAtomValue(assistantStreamAtom)
-  const checkpoints = useAtomValue(checkpointsAtom)
   const cards = useAtomValue(browserCardsAtom)
   const runtimeEvents = useAtomValue(runtimeTranscriptEventsAtom)
   const [expandedGroups, setExpandedGroups] = useAtom(expandedTranscriptGroupsAtom)
@@ -67,19 +64,6 @@ export function MessageList() {
     () => streamedItemId ? items.filter((item) => item.id !== streamedItemId) : items,
     [items, streamedItemId],
   )
-
-  const checkpointTurnByUserItemId = useMemo(() => {
-    const turns = new Map<string, number>()
-    for (const checkpoint of checkpoints) {
-      for (let index = checkpoint.items.length - 1; index >= 0; index -= 1) {
-        const checkpointItem = checkpoint.items[index]
-        if (checkpointItem.item.role !== 'user') continue
-        turns.set(checkpointItem.id, checkpoint.turnIndex)
-        break
-      }
-    }
-    return turns
-  }, [checkpoints])
 
   const historicalEntries = useMemo<TimelineRenderEntry[]>(() => {
     const merged = projectTimelineItems({
@@ -194,24 +178,9 @@ export function MessageList() {
           } else {
             const ci = entry.conversationItem
             const isUser = ci.item.role === 'user'
-            const checkpointTurn = isUser
-              ? checkpointTurnByUserItemId.get(ci.id)
-              : undefined
             content = isUser ? (
               <div className="agentnew-user-message">
                 {renderedItem}
-                {checkpointTurn !== undefined ? (
-                  <button
-                    type="button"
-                    className="agentnew-message-revert"
-                    aria-label={`回退到第 ${checkpointTurn + 1} 轮之前`}
-                    title="撤回此消息及之后的对话，并将原输入放回输入框"
-                    onClick={() => revertTurnToDraft(checkpointTurn)}
-                  >
-                    <span aria-hidden="true">↶</span>
-                    回退
-                  </button>
-                ) : null}
               </div>
             ) : renderedItem
           }

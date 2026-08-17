@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SessionMeta } from '../../state/core.type'
 import type { SessionsPersistence } from '../../state/persistence/contract'
-import { createMemoryHistoryDriver } from '../../state/persistence/memoryHistoryDriver'
 import { createMemoryRecoveryDriver } from '../../state/persistence/recoveryDriver'
 import { sessionsAtom } from '../../state/rootAtoms'
 import { itemsAtom } from '../../state/sessionAtoms'
@@ -27,7 +26,6 @@ function emptySessionsDriver(): SessionsPersistence {
 
 describe('CoreInstance persistence hydration', () => {
   it('hydrates Core B from Core A recovery without allocating an unknown session or touching defaultCore', async () => {
-    const history = createMemoryHistoryDriver()
     const recovery = createMemoryRecoveryDriver()
     const sessions = emptySessionsDriver()
     const coreA = createCoreInstance()
@@ -38,7 +36,6 @@ describe('CoreInstance persistence hydration', () => {
       item: { role: 'user', content: 'resume this exact turn' },
     }])
     coreA.persistence.configure({
-      history,
       sessions,
       recovery,
       recoveryStore: (id) => coreA.findSessionStore(id)?.store,
@@ -52,7 +49,6 @@ describe('CoreInstance persistence hydration', () => {
 
     const coreB = createCoreInstance()
     coreB.persistence.configure({
-      history,
       sessions,
       recovery,
       recoveryStore: (id) => coreB.findSessionStore(id)?.store,

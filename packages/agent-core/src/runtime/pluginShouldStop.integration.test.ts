@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { activeSessionIdAtom, sessionsAtom } from '../state/rootStore'
-import { checkpointsAtom, runAtom } from '../state/sessionAtoms'
-import { readCheckpointState } from '../state/checkpointKind'
+import { runAtom } from '../state/sessionAtoms'
 import { configureObservability, flushObservability, resetObservability } from '../observability/trace'
 import type { TraceDriver, TraceEvent, TraceSpan } from '../observability/types'
 import type { Tool } from '../tools/types'
@@ -100,7 +99,6 @@ describe('shouldStop production integration', () => {
       const store = core.getSessionStore(id).store
       expect(execute).not.toHaveBeenCalled()
       expect(store.getter(runAtom)).toMatchObject({ status: 'stopped', error: stopDecision.reason })
-      expect(readCheckpointState(store.getter(checkpointsAtom)[0])).toEqual({ kind: 'stopped', finishReason: undefined })
       expect(trace.events.some((event) => event.name === 'agent.plugin_should_stop')).toBe(true)
     } finally {
       core.plugins.dispose()
@@ -136,10 +134,6 @@ describe('shouldStop production integration', () => {
       expect(store.getter(runAtom)).toMatchObject({
         status: 'error',
         error: 'Invalid shouldStop decision: boolean results are not supported',
-      })
-      expect(readCheckpointState(store.getter(checkpointsAtom)[0])).toEqual({
-        kind: 'abnormal',
-        finishReason: 'plugin_should_stop_failed',
       })
       expect(trace.events.some((event) => event.name === 'agent.plugin_should_stop_failed')).toBe(true)
     } finally {

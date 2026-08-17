@@ -4,7 +4,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { rootStore, sessionsAtom } from '../state/rootStore'
 import { getSessionStore } from '../state/sessionStore'
-import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
+import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { setRun } from '../state/sessionWriters'
 import { toolRegistry } from '../tools/registry'
 import type { ModelFunctionTool } from '@web-agent/ai'
@@ -60,7 +60,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）懒加载工具 schema', 
     expect(store.getter(runAtom)?.loadedTools).toContain('skill_search')
     expect(store.getter(runAtom)?.status).toBe('done')
     expect((items[4].item as { content?: string }).content).toBe('最终答案')
-    expect(store.getter(checkpointsAtom)).toHaveLength(1)
   })
 
   it('新 run 从历史恢复已加载 schema：首个请求放顶层 tools，并保留 loader 历史', async () => {

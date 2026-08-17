@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { checkpointsAtom, itemsAtom, runAtom } from '../state/sessionAtoms'
+import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { sessionsAtom } from '../state/rootStore'
 import type { Tool } from '../tools/types'
 import type { ToolCallTiming } from '../tools/toolCallTiming'
@@ -79,7 +79,6 @@ describe('到点工具分派', () => {
     const broken = core.getSessionStore(id).store.getter(itemsAtom).find(({ item }) => item.role === 'tool' && item.tool_call_id === ids[3])?.item
     expect(broken?.role === 'tool' ? JSON.parse(broken.content) : undefined).toEqual({ error: '到点失败' })
     const items = core.getSessionStore(id).store.getter(itemsAtom)
-    expect(core.getSessionStore(id).store.getter(checkpointsAtom).at(-1)?.items).toEqual(items)
   })
 
   it('sessionStart 根据既有 timeline 只执行一次，run 边界每个 run 各执行一次', async () => {

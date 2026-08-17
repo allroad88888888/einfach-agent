@@ -3,11 +3,9 @@ import { fireEvent, screen } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
 import {
-  checkpointsAtom,
   itemsAtom,
   runAtom,
   type ConversationItem,
-  revertTurnToDraft,
 } from '@web-agent/core'
 import { MessageList } from './MessageList'
 
@@ -27,47 +25,6 @@ function expectThinkingProcessExpanded() {
 describe('MessageList', () => {
   afterEach(() => {
     vi.clearAllMocks()
-  })
-
-  it('在已形成 checkpoint 的用户消息下显示回退按钮，并回退到对应轮次', () => {
-    const store = createStore()
-    const firstTurn: ConversationItem[] = [
-      { id: 'u1', createdAt: 0, item: { role: 'user', content: '第一问' } },
-      { id: 'a1', createdAt: 1, item: { role: 'assistant', content: '第一答' } },
-    ]
-    const secondTurn: ConversationItem[] = [
-      ...firstTurn,
-      { id: 'u2', createdAt: 2, item: { role: 'user', content: '第二问' } },
-      { id: 'a2', createdAt: 3, item: { role: 'assistant', content: '第二答' } },
-    ]
-    store.setter(itemsAtom, secondTurn)
-    store.setter(checkpointsAtom, [
-      { turnIndex: 0, label: '第一问', createdAt: 1, items: firstTurn },
-      { turnIndex: 1, label: '第二问', createdAt: 3, items: secondTurn },
-    ])
-
-    renderWithStore(<MessageList />, { store })
-
-    const firstRevert = screen.getByRole('button', { name: '回退到第 1 轮之前' })
-    const secondRevert = screen.getByRole('button', { name: '回退到第 2 轮之前' })
-    expect(firstRevert).toBeInTheDocument()
-    expect(secondRevert).toBeInTheDocument()
-    expect(screen.getAllByText('回退')).toHaveLength(2)
-
-    fireEvent.click(firstRevert)
-    expect(revertTurnToDraft).toHaveBeenCalledTimes(1)
-    expect(revertTurnToDraft).toHaveBeenCalledWith(0)
-  })
-
-  it('尚未形成 checkpoint 的用户消息不显示无效回退按钮', () => {
-    const store = createStore()
-    store.setter(itemsAtom, [
-      { id: 'u-pending', createdAt: 0, item: { role: 'user', content: '处理中' } },
-    ])
-
-    renderWithStore(<MessageList />, { store })
-
-    expect(screen.queryByRole('button', { name: /回退到第/ })).toBeNull()
   })
 
   it('渲染右侧 user、assistant markdown，并把 tool result 收进默认展开的思考过程', async () => {

@@ -11,7 +11,6 @@ vi.mock('@web-agent/core/runtime/commands', () => ({
   sendMessage: vi.fn(),
   setApprovalMode: vi.fn(),
   stopRun: vi.fn(),
-  withdrawCurrentTurnToDraft: vi.fn(),
 }))
 
 const accepted = { accepted: true, status: 'started', sessionId: 's', submissionSequence: 1 }

@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import type { ModelItem, UserMessageContent } from '@web-agent/ai'
 import { sessionsAtom } from '../state/rootStore'
-import { checkpointsAtom, itemsAtom } from '../state/sessionAtoms'
+import { itemsAtom } from '../state/sessionAtoms'
 import type { ConversationItem, SessionMeta } from '../state/core.type'
-import { commitCheckpoint, jumpToCheckpoint } from '../state/checkpointWriters'
 import { compactContext } from './contextCompaction'
 import { createCoreInstance } from './core/coreInstance'
 import { llmRequestTracePreview } from './runLoopTelemetry'
@@ -59,29 +58,4 @@ describe('structured user content retention', () => {
     expect(latest).toEqual({ role: 'user', content: structuredContent })
   })
 
-  it('round-trips structured content through checkpoint commit and rewind', () => {
-    const core = createCoreInstance()
-    const session: SessionMeta = {
-      id: 'structured-session',
-      title: 'structured',
-      settings: { vendor: 'kimi', model: 'kimi-k2.6', thinking: true },
-      createdAt: 1,
-      updatedAt: 1,
-    }
-    core.rootStore.setter(sessionsAtom, { [session.id]: session })
-    const store = core.getSessionStore(session.id).store
-    const first = [conversationItem('image-turn', structuredContent)]
-    store.setter(itemsAtom, first)
-    commitCheckpoint(session.id, '图片轮次', core)
-    store.setter(itemsAtom, [...first, conversationItem('later-turn', 'later')])
-    commitCheckpoint(session.id, '后续轮次', core)
-
-    jumpToCheckpoint(session.id, 0, core)
-
-    expect(store.getter(itemsAtom)).toEqual(first)
-    expect(store.getter(checkpointsAtom)[0].items[0].item).toEqual({
-      role: 'user',
-      content: structuredContent,
-    })
-  })
 })

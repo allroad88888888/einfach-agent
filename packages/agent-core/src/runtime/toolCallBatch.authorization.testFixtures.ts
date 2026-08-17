@@ -114,7 +114,6 @@ export async function runCall(
       exposedRegistrationVersions: new Map([[name, core.tools.registrationVersion(name)]]),
     } as unknown as ModelTurnResult,
     finishReason: 'tool_calls',
-    persistWorkingTurn: vi.fn(),
     recordToolOutcome: vi.fn(),
   })
 

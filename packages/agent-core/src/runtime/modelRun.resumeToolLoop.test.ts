@@ -3,7 +3,7 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { rootStore, sessionsAtom, workspacesAtom } from '../state/rootStore'
 import { getSessionStore } from '../state/sessionStore'
-import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
+import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { setRun } from '../state/sessionWriters'
 import { resumeInterruptedSession, runToolLoop } from './modelRun'
 import { createCoreInstance } from './core/coreInstance'
@@ -38,12 +38,6 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
       },
     ]
     store.setter(itemsAtom, interruptedItems)
-    store.setter(checkpointsAtom, [{
-      turnIndex: 0,
-      label: '[执行中] 修改文件',
-      createdAt: 3,
-      items: interruptedItems,
-    }])
     setRun('restart-resume', {
       runId: 'original-run',
       turnId: 'u1',
@@ -74,12 +68,6 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
     })
     expect(store.getter(itemsAtom).map(({ item }) => item.role)).toEqual(['user', 'assistant'])
     expect(requestCount).toBe(0)
-    const checkpoints = store.getter(checkpointsAtom)
-    expect(checkpoints).toHaveLength(1)
-    expect(checkpoints[0]).toMatchObject({
-      turnIndex: 0,
-      label: '[执行中] 修改文件',
-    })
   })
 
   it('恢复已有 sessionStart skills 清单时不重复 ensure 或写入 timed item', async () => {
@@ -179,21 +167,6 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
       },
     ]
     store.setter(itemsAtom, currentItems)
-    store.setter(checkpointsAtom, [
-      {
-        turnIndex: 0,
-        label: '[执行中] 旧任务',
-        createdAt: 1,
-        items: legacyItems,
-      },
-      {
-        turnIndex: 1,
-        label: '新任务',
-        kind: 'working',
-        createdAt: 2,
-        items: currentItems,
-      },
-    ])
     setRun('mixed-checkpoint-resume', {
       runId: 'structured-run',
       turnId: 'current-user',
@@ -210,17 +183,6 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
     })
 
     expect(store.getter(runAtom)).toMatchObject({ runId: 'structured-run', status: 'done' })
-    const checkpoints = store.getter(checkpointsAtom)
-    expect(checkpoints).toHaveLength(2)
-    expect(checkpoints[0]).toMatchObject({
-      label: '[执行中] 旧任务',
-    })
-    expect(checkpoints[0]).not.toHaveProperty('kind')
-    expect(checkpoints[1]).toMatchObject({
-      turnIndex: 1,
-      label: '新任务',
-      kind: 'completed',
-    })
   })
 
   it('直接跑 runToolLoop：seed items + setRun 后跑到 done，不 append user', async () => {
@@ -243,6 +205,5 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
     expect(items[2].item).toEqual({ role: 'assistant', content: '答案' })
     expect(store.getter(runAtom)?.status).toBe('done')
     // 一轮收尾 = 一个 checkpoint。
-    expect(store.getter(checkpointsAtom)).toHaveLength(1)
   })
 })

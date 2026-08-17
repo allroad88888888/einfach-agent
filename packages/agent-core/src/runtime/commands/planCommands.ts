@@ -1,9 +1,9 @@
 import { activeSessionIdAtom, sessionsAtom } from '../../state/rootStore'
-import { checkpointsAtom, itemsAtom, runAtom } from '../../state/sessionAtoms'
+import { itemsAtom, runAtom } from '../../state/sessionAtoms'
 import { getPlan, setPlan } from '../../state/planWriters'
 import { appendItem, setRun } from '../../state/sessionWriters'
 import { pruneBrowserCardsAfter, pruneRuntimeTranscriptEventsAfter, setWithdrawnTurnNotice } from '../../state/transientAtoms'
-import { revertToPlanStageCheckpoint, updateCheckpoint } from '../../state/checkpointWriters'
+import { revertToPlanStageCheckpoint } from '../../state/planStageRewind'
 import type { RunState } from '../../state/core.type'
 import type { CoreInstance } from '../core/coreInstance'
 import { newId } from '../newId'
@@ -159,12 +159,6 @@ export function createPlanCommands(core: CoreInstance, stopRun: () => void) {
     }
     pruneBrowserCardsAfter(id, point.createdAt, core)
     pruneRuntimeTranscriptEventsAfter(id, point.createdAt, core)
-    const working = store.getter(checkpointsAtom).at(-1)
-    if (working) {
-      updateCheckpoint(id, working.turnIndex, working.label, core)
-      const updated = store.getter(checkpointsAtom)[working.turnIndex]
-      if (updated) core.persistence.persistCheckpoint(id, updated)
-    }
     const sideEffects = currentTurnHasSideEffects(discardedItems.slice(point.itemCount))
     setWithdrawnTurnNotice(id, {
       id: newId(), createdAt: Date.now(), sideEffects,

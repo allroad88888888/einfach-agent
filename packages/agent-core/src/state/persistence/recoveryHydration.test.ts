@@ -1,16 +1,13 @@
-// v1 恢复编排：checkpoint 只保留 undo/history，绝不拼接成运行态。
+// v1 恢复编排：RecoverySnapshotV1 是唯一运行态来源，损坏或缺失一律 fail-closed。
 
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import type { Checkpoint } from '../checkpoint.type'
 import type { SessionMeta } from '../core.type'
 import { executionGraphAtom, EMPTY_EXECUTION_GRAPH } from '../../execution/graph'
 import { rootStore, resetRootStore, sessionsAtom } from '../rootStore'
 import { getSessionStore, resetSessionStores } from '../sessionStore'
 import {
-  checkpointsAtom,
   contextCheckpointAtom,
-  currentTurnIndexAtom,
   itemsAtom,
   planAtom,
   planStageCheckpointsAtom,
@@ -20,7 +17,6 @@ import { subagentContinuationsAtom } from '../subagentContinuationAtoms'
 import { pendingQuestionAnswersAtom, queuedUserMessagesAtom } from '../transientAtoms'
 import type { RecoverySnapshotV1 } from '../recoverySnapshot.type'
 import { applyRecoverySnapshot } from '../recoveryProjection'
-import { createMemoryHistoryDriver } from './memoryHistoryDriver'
 import type { RecoveryDriver } from './recoveryDriver'
 import { hydrate } from './hydrate'
 import { normalizeRecoverySnapshotForHydration } from './recoveryHydration'
@@ -102,15 +98,6 @@ function snapshot(id = 's1', status: RecoveryRunStatus = 'running'): RecoverySna
   }
 }
 
-function checkpoint(content: string): Checkpoint {
-  return {
-    turnIndex: 0,
-    label: 'checkpoint',
-    createdAt: 3,
-    items: [{ id: 'checkpoint-item', createdAt: 3, item: { role: 'user', content } }],
-  }
-}
-
 function recoveryDriver(rows: Record<string, unknown> = {}, listed: unknown[] = []): RecoveryDriver {
   return {
     async listLatest() { return listed as RecoverySnapshotV1[] },
@@ -130,18 +117,15 @@ beforeEach(() => {
 })
 
 describe('hydrate · v1 recovery priority', () => {
-  it('keeps v1 live atoms authoritative while retaining sanitized checkpoint history', async () => {
-    const history = createMemoryHistoryDriver()
-    await history.saveCheckpoint('s1', checkpoint('checkpoint history'))
+  it('keeps v1 live atoms authoritative', async () => {
     const record = snapshot()
 
     await expect(hydrate({
-      sessions: { loadSessions: async () => [session()] }, history,
+      sessions: { loadSessions: async () => [session()] },
       recovery: recoveryDriver({ s1: record }),
     })).resolves.toBe(true)
 
     const store = getSessionStore('s1').store
-    expect(store.getter(checkpointsAtom)).toEqual([checkpoint('checkpoint history')])
     expect(store.getter(itemsAtom)).toEqual(record.values.conversation.items)
     expect(store.getter(planAtom)).toEqual(record.values.plan.current)
     expect(store.getter(executionGraphAtom)).toEqual(record.values.executionGraph)
@@ -151,23 +135,18 @@ describe('hydrate · v1 recovery priority', () => {
     expect(rootStore.getter(sessionsAtom).s1).toMatchObject(record.session)
   })
 
-  it('keeps corrupt v1 static-only while retaining sanitized checkpoint history', async () => {
-    const history = createMemoryHistoryDriver()
-    await history.saveCheckpoint('s1', checkpoint('checkpoint history'))
-    // hydrateForCore also serves a reused Core. Seed every v1-owned field and
-    // stale history to prove an invalid v1 cannot leave either projection live.
+  it('keeps corrupt v1 static-only', async () => {
+    // hydrateForCore also serves a reused Core. Seed every v1-owned field to
+    // prove an invalid v1 cannot leave a stale projection live.
     const staleStore = getSessionStore('s1').store
     applyRecoverySnapshot(staleStore, snapshot('s1', 'interrupted'))
-    staleStore.setter(checkpointsAtom, [checkpoint('stale in-memory history')])
-    staleStore.setter(currentTurnIndexAtom, 9)
 
     await expect(hydrate({
-      sessions: { loadSessions: async () => [session()] }, history,
+      sessions: { loadSessions: async () => [session()] },
       recovery: recoveryDriver({ s1: { schemaVersion: 1, sessionId: 's1' } }),
     })).resolves.toBe(true)
 
     const store = getSessionStore('s1').store
-    expect(store.getter(checkpointsAtom)).toEqual([checkpoint('checkpoint history')])
     expect(store.getter(itemsAtom)).toEqual([])
     expect(store.getter(contextCheckpointAtom)).toBeUndefined()
     expect(store.getter(planAtom)).toBeUndefined()
@@ -177,40 +156,6 @@ describe('hydrate · v1 recovery priority', () => {
     expect(store.getter(queuedUserMessagesAtom)).toEqual([])
     expect(store.getter(pendingQuestionAnswersAtom)).toEqual({})
     expect(store.getter(subagentContinuationsAtom)).toEqual([])
-    expect(store.getter(currentTurnIndexAtom)).toBe(0)
-  })
-
-  it('keeps absent-v1 checkpoint history out of live recovery', async () => {
-    const history = createMemoryHistoryDriver()
-    await history.saveCheckpoint('s1', checkpoint('checkpoint history'))
-
-    await expect(hydrate({
-      sessions: { loadSessions: async () => [session()] }, history, recovery: recoveryDriver(),
-    })).resolves.toBe(true)
-
-    const store = getSessionStore('s1').store
-    expect(store.getter(checkpointsAtom)).toEqual([checkpoint('checkpoint history')])
-    expect(store.getter(itemsAtom)).toEqual([])
-    expect(store.getter(runAtom)).toBeUndefined()
-    expect(store.getter(queuedUserMessagesAtom)).toEqual([])
-    expect(store.getter(executionGraphAtom)).toEqual(EMPTY_EXECUTION_GRAPH)
-    expect(store.getter(pendingQuestionAnswersAtom)).toEqual({})
-    expect(store.getter(subagentContinuationsAtom)).toEqual([])
-    expect(store.getter(currentTurnIndexAtom)).toBe(0)
-  })
-
-  it('clears stale checkpoint history and cursor when a reused Core has no saved checkpoints', async () => {
-    const store = getSessionStore('s1').store
-    store.setter(checkpointsAtom, [checkpoint('stale in-memory history')])
-    store.setter(currentTurnIndexAtom, 7)
-
-    await expect(hydrate({
-      sessions: { loadSessions: async () => [session()] },
-      history: createMemoryHistoryDriver(), recovery: recoveryDriver(),
-    })).resolves.toBe(true)
-
-    expect(store.getter(checkpointsAtom)).toEqual([])
-    expect(store.getter(currentTurnIndexAtom)).toBe(-1)
   })
 
   it('interrupts all process-live v1 run and graph states', () => {
@@ -227,11 +172,10 @@ describe('hydrate · v1 recovery priority', () => {
   })
 
   it('reconstructs a root session from v1 when the session list is unreadable', async () => {
-    const history = createMemoryHistoryDriver()
     const record = snapshot('orphan', 'waiting_confirmation')
 
     await expect(hydrate({
-      sessions: { loadSessions: async () => { throw new Error('session list unavailable') } }, history,
+      sessions: { loadSessions: async () => { throw new Error('session list unavailable') } },
       recovery: recoveryDriver({}, [record]),
     })).resolves.toBe(true)
 

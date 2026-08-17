@@ -3,7 +3,7 @@
 import { describe, beforeEach, it, expect, afterEach, vi } from 'vitest'
 import { rootStore, sessionsAtom } from '../state/rootStore'
 import { getSessionStore } from '../state/sessionStore'
-import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
+import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { setRun } from '../state/sessionWriters'
 import { alwaysAllowedToolsAtom } from '../state/transientAtoms'
 import { toolRegistry } from '../tools/registry'
@@ -120,12 +120,6 @@ describe('危险工具确认门（S4-B）', () => {
     expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant', 'tool', 'assistant'])
     expect(items.some((it) => it.item.role === 'tool' && it.item.tool_call_id === 'w1')).toBe(false)
     // 确认状态和未执行的危险 tool_call 一起覆盖进工作 checkpoint，刷新后仍由用户决定。
-    const checkpoints = store.getter(checkpointsAtom)
-    expect(checkpoints).toHaveLength(1)
-    expect(checkpoints[0]).toMatchObject({
-      label: 'hi',
-      kind: 'working',
-    })
   })
 
   it('只读 server 工具（read_file）：不触发确认，正常执行并续跑到 done', async () => {
@@ -328,7 +322,6 @@ describe('危险工具确认门（S4-B）', () => {
     if (toolItem.role !== 'tool') throw new Error('意外的条目形状')
     expect(toolItem.tool_call_id).toBe('w1')
     expect(store.getter(runAtom)?.status).toBe('done')
-    expect(store.getter(checkpointsAtom)).toHaveLength(1)
   })
 
   it('MCP 工具等待确认后同名重注册：用户批准也不得执行新实例', async () => {

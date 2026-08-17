@@ -7,7 +7,6 @@ import {
   configurePersistence,
   defaultCore,
 } from '@web-agent/core'
-import { createMemoryHistoryDriver } from '@web-agent/core/state/persistence'
 import { createDelegationAssembly } from '@web-agent/subagents'
 import { registerStandardTools } from '@web-agent/tools'
 import { createDefaultPlanRuntime } from '@web-agent/tools-planning'
@@ -65,7 +64,6 @@ export async function assembleCliRuntime(options: AssembleCliRuntimeOptions): Pr
   configureDefaultProjectSkillsProvider((workspaceRoot) => scanProjectSkills(workspaceRoot, bridge))
   defaultCore.planRuntime = createDefaultPlanRuntime
   configureDefaultDelegation(createDelegationAssembly)
-  configurePersistence({ history: createMemoryHistoryDriver() })
   configureTraceOutput(options.verbose)
   configureOpenAiCompatBaseUrl(options.credentials)
   configureCommands({

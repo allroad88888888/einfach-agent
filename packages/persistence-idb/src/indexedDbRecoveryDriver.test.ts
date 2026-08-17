@@ -82,7 +82,7 @@ describe('createIndexedDbRecoveryDriver', () => {
     globalThis.indexedDB = new IDBFactory()
   })
 
-  it('v1 升级到 v2 时保留 checkpoints，并在 transaction complete 后让新实例看见快照', async () => {
+  it('v1 升级到 v3 时丢弃遗留 checkpoints store，并在 transaction complete 后让新实例看见快照', async () => {
     const dbName = 'v1-upgrade'
     await createV1Database(dbName)
     const first = createIndexedDbRecoveryDriver(dbName)
@@ -90,14 +90,9 @@ describe('createIndexedDbRecoveryDriver', () => {
 
     await expect(first.saveLatest('s1', saved)).resolves.toEqual({ status: 'saved', generation: 2 })
     const db = await open(dbName)
-    expect(db.version).toBe(2)
-    expect([...db.objectStoreNames]).toEqual(['checkpoints', 'recoverySnapshots'])
-    await expect(new Promise<unknown>((resolve, reject) => {
-      const tx = db.transaction('checkpoints', 'readonly')
-      const request = tx.objectStore('checkpoints').get(['old', 0])
-      request.onsuccess = () => resolve(request.result)
-      request.onerror = () => reject(request.error)
-    })).resolves.toEqual({ sessionId: 'old', turnIndex: 0, checkpoint: { turnIndex: 0 } })
+    expect(db.version).toBe(3)
+    // 轮级 undo 迁往 einfach 事务日志后，checkpoints store 无人读写，升级即删除。
+    expect([...db.objectStoreNames]).toEqual(['recoverySnapshots'])
     db.close()
 
     const second = createIndexedDbRecoveryDriver(dbName)

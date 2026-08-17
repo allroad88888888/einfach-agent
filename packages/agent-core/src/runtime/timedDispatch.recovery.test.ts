@@ -218,7 +218,6 @@ describe('timed dispatch recovery fences', () => {
     try {
       await expect(dispatchTimedTools({
         base: boot.base,
-        checkpoints: boot.checkpoints,
         request: { sessionId: id, timing: 'turnStart' },
       })).resolves.toEqual({ status: 'dispatched', itemCount: 0 })
       expect(execute).not.toHaveBeenCalled()
@@ -263,7 +262,6 @@ describe('timed dispatch recovery fences', () => {
     try {
       await expect(dispatchTimedTools({
         base: boot.base,
-        checkpoints: boot.checkpoints,
         request: { sessionId: id, timing: 'turnStart' },
       })).resolves.toMatchObject({ status: 'interrupted' })
       expect(execute).not.toHaveBeenCalled()

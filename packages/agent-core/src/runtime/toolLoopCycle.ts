@@ -9,7 +9,6 @@ import { newId } from './newId'
 import { assistantItemFromMessage } from './shared/preview'
 import { runToolCallBatch } from './toolCallBatch'
 import type { ToolFailureTracker } from './toolFailureTracker'
-import type { ToolLoopCheckpointWriter } from './toolLoopCheckpoint'
 import type { ToolLoopBase } from './toolLoopContracts'
 import { currentPlanDefinition, currentPlanState, currentPlanStageId } from './toolLoopPlan'
 import { stopOverBudgetPlanStage } from './toolLoopPlanStageGuard'
@@ -31,14 +30,13 @@ export interface ToolLoopTerminator {
 /** Runs a complete model-response cycle inside the outer loop state machine. */
 export async function runToolLoopCycle(input: {
   base: ToolLoopBase
-  checkpoints: ToolLoopCheckpointWriter
   requester: ModelTurnRequester
   budget: LoopBudget
   failures: ToolFailureTracker
   turn: number
   endInactive: ToolLoopTerminator
 }): Promise<ToolLoopCycleResult> {
-  const { base, checkpoints, requester, budget, failures, turn, endInactive } = input
+  const { base, requester, budget, failures, turn, endInactive } = input
   if (endInactive()) return 'finished'
   const promoted = base.promoteQueuedInputs()
   if (promoted) {
@@ -47,7 +45,7 @@ export async function runToolLoopCycle(input: {
   }
   budget.syncPlanFloor()
   const planStageId = currentPlanStageId(base.id, base.core)
-  if (planStageId && stopOverBudgetPlanStage(base, checkpoints.persistWorkingTurn, planStageId)) return 'finished'
+  if (planStageId && stopOverBudgetPlanStage(base, planStageId)) return 'finished'
   const failureNotice = failures.consume()
   if (failureNotice) base.trace.event('agent.tool_failure_notice', { tools: failureNotice.tools })
   const planDefinition = currentPlanDefinition(base.id, base.core)
@@ -101,7 +99,7 @@ export async function runToolLoopCycle(input: {
   if (endInactive(modelTurn.streamWriter)) return 'finished'
   if (decision?.stop) {
     if (abnormal) {
-      checkpoints.commitTurn({ kind: 'abnormal', finishReason: abnormal })
+      base.core.persistence.persistSessions()
       if (base.control.isCurrent()) patchRun(base.id, { status: decision.runStatus, error: decision.reason }, base.core)
       base.trace.finish('error', decision.traceEventName, {
         finish_reason: finishReason,
@@ -111,7 +109,7 @@ export async function runToolLoopCycle(input: {
       })
     } else {
       modelTurn.streamWriter.finishPending()
-      checkpoints.commitTurn()
+      base.core.persistence.persistSessions()
       if (base.control.isCurrent()) patchRun(base.id, { status: decision.runStatus, error: decision.reason }, base.core)
       base.trace.finish('error', decision.traceEventName, decision.traceAttrs)
     }
@@ -124,7 +122,7 @@ export async function runToolLoopCycle(input: {
     const message = safeErrorMessage(error)
     modelTurn.streamWriter.finishPending()
     if (base.control.isCurrent()) patchRun(base.id, { status: 'error', error: message }, base.core)
-    checkpoints.commitTurn({ kind: 'abnormal', finishReason: 'plugin_should_stop_failed' })
+    base.core.persistence.persistSessions()
     base.trace.finish('error', 'agent.plugin_should_stop_failed', { error: message }, error)
     return 'finished'
   }
@@ -132,7 +130,6 @@ export async function runToolLoopCycle(input: {
   if (pluginStop) {
     modelTurn.streamWriter.finishPending()
     if (base.control.isCurrent()) patchRun(base.id, { status: pluginStop.runStatus, error: pluginStop.reason }, base.core)
-    checkpoints.commitStoppedTurn()
     base.trace.finish('cancelled', 'agent.plugin_should_stop', {
       reason: pluginStop.reason,
       run_status: pluginStop.runStatus,
@@ -144,7 +141,6 @@ export async function runToolLoopCycle(input: {
   if (!modelTurn.toolCalls.length) {
     return await handleTextTurn({
       base,
-      checkpoints,
       message: modelTurn.message,
       streamedItemId,
       planStageId,
@@ -164,9 +160,7 @@ export async function runToolLoopCycle(input: {
   }
   setToolCallOutcomeFacts(base.id, modelTurn.toolCalls.map((call) => call.id), 'notStarted', base.core)
   advanceTimedDispatchEpoch(base)
-  checkpoints.persistWorkingTurn()
   if (!await requireRecoveryDurability(base.id, base.runId, base.core, 'assistant_tool_calls_received')) {
-    checkpoints.commitStoppedTurn()
     base.trace.finish('cancelled', 'agent.recovery_fence_failed', { reason: 'recovery_fence_failed' })
     return 'finished'
   }
@@ -174,7 +168,6 @@ export async function runToolLoopCycle(input: {
     result: modelTurn,
     planStageId,
     finishReason,
-    persistWorkingTurn: checkpoints.persistWorkingTurn,
     recordToolOutcome: failures.record,
   })
   if (batch === 'continue') return 'continue'
@@ -184,21 +177,18 @@ export async function runToolLoopCycle(input: {
     return 'finished'
   }
   if (batch === 'interrupted') {
-    checkpoints.commitStoppedTurn()
     base.trace.finish('cancelled', 'agent.recovery_fence_failed', { reason: 'recovery_fence_failed' })
     return 'finished'
   }
   if (batch === 'stopped') {
     markUnresolvedToolCallsOutcomeUnknown(base.id, base.core)
     void base.core.persistence.persistRecovery(base.id, 'tool_calls_interrupted')
-    checkpoints.commitStoppedTurn()
     base.trace.finish('cancelled', 'agent.stopped', { reason: 'run_not_running' })
     return 'finished'
   }
   markUnresolvedToolCallsOutcomeUnknown(base.id, base.core)
   patchRun(base.id, { status: 'stopped' }, base.core)
   void base.core.persistence.persistRecovery(base.id, 'tool_calls_interrupted')
-  checkpoints.commitStoppedTurn()
   base.trace.finish('cancelled', 'agent.stopped', { reason: 'aborted' })
   return 'finished'
 }

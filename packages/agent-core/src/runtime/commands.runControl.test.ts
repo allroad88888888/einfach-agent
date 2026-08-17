@@ -16,7 +16,6 @@ vi.mock('./modelRun', () => ({
 }))
 vi.mock('../state/checkpointWriters', () => ({
   jumpToCheckpoint: vi.fn(),
-  rewindBeforeCheckpoint: vi.fn(),
   revertToPlanStageCheckpoint: vi.fn(),
   updateCheckpoint: vi.fn(),
 }))
@@ -25,8 +24,6 @@ vi.mock('./persistenceBridge', () => ({
   persistSessions: vi.fn(),
   persistWorkspaces: vi.fn(),
   persistDeleteSession: vi.fn(),
-  persistTruncate: vi.fn(),
-  persistCheckpoint: vi.fn(),
 }))
 
 import { getSessionStore } from '../state/sessionStore'
@@ -38,7 +35,7 @@ import {
   composerDraftAtom,
   withdrawnTurnNoticeAtom,
 } from '../state/transientAtoms'
-import { itemsAtom, runAtom, checkpointsAtom } from '../state/sessionAtoms'
+import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import type { ConversationItem } from '../state/core.type'
 import { setPlan, getPlan } from '../state/planWriters'
 import { resumeInterruptedSession, resumePlanSession, runSession } from './modelRun'
@@ -50,9 +47,7 @@ import { createDefaultPlanRuntime } from '@web-agent/tools-planning'
 defaultCore.planRuntime = createDefaultPlanRuntime
 import { getExecutionRuntime } from '../execution/runtime'
 import { executionGraphAtom } from '../execution/graph'
-import { rewindBeforeCheckpoint } from '../state/checkpointWriters'
-import { persistTruncate } from './persistenceBridge'
-import { configureCommands, createCommands, newSession, continuePlan, stopRun, withdrawCurrentTurnToDraft } from './commands'
+import { configureCommands, createCommands, newSession, continuePlan, stopRun } from './commands'
 import { flush, spyOnDefaultAbort, type AbortSpies } from './commands.testHarness'
 
 let beginRun: AbortSpies['beginRun']
@@ -243,102 +238,4 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(abortRun).not.toHaveBeenCalled()
   })
 
-  it('withdrawCurrentTurnToDraft：stopped 后撤回当前未完成轮，用户输入回填草稿并剪掉本轮临时 UI', () => {
-    const id = newSession()
-    const store = getSessionStore(id).store
-    store.setter(itemsAtom, [
-      { id: 'u0', createdAt: 1, item: { role: 'user', content: '上一轮' } },
-      { id: 'a0', createdAt: 2, item: { role: 'assistant', content: '上一轮回答' } },
-      { id: 'u1', createdAt: 10, item: { role: 'user', content: '当前输入' } },
-      { id: 'a1', createdAt: 11, item: { role: 'assistant', content: '半截回答' } },
-    ])
-    store.setter(runAtom, { runId: 'r', status: 'stopped' })
-    store.setter(browserCardsAtom, [
-      { id: 'old-card', createdAt: 3, title: '旧卡' },
-      { id: 'new-card', createdAt: 11, title: '新卡' },
-    ])
-    store.setter(runtimeTranscriptEventsAtom, [
-      { id: 'old-event', createdAt: 3, kind: 'system_injection', title: '旧注入' },
-      { id: 'new-event', createdAt: 10, kind: 'tool_manifest', title: '新注入' },
-    ])
-
-    withdrawCurrentTurnToDraft()
-
-    expect(abortRun).toHaveBeenCalledWith(id)
-    expect(store.getter(itemsAtom).map((it) => it.id)).toEqual(['u0', 'a0'])
-    expect(store.getter(runAtom)).toBeUndefined()
-    expect(store.getter(composerDraftAtom)).toBe('当前输入')
-    expect(store.getter(browserCardsAtom).map((card) => card.id)).toEqual(['old-card'])
-    expect(store.getter(runtimeTranscriptEventsAtom).map((event) => event.id)).toEqual(['old-event'])
-    expect(store.getter(withdrawnTurnNoticeAtom)).toMatchObject({
-      text: '已撤回本轮对话并放回输入框。',
-      sideEffects: false,
-    })
-  })
-
-  it('withdrawCurrentTurnToDraft：本轮出现执行类工具时提示外部副作用不会自动撤销', () => {
-    const id = newSession()
-    const store = getSessionStore(id).store
-    store.setter(itemsAtom, [
-      { id: 'u1', createdAt: 10, item: { role: 'user', content: '跑一下 pwd' } },
-      {
-        id: 'a1',
-        createdAt: 11,
-        item: {
-          role: 'assistant',
-          content: null,
-          tool_calls: [
-            { id: 'tc1', type: 'function', function: { name: 'shell_macos', arguments: '{"command":"pwd"}' } },
-          ],
-        },
-      },
-      { id: 't1', createdAt: 12, item: { role: 'tool', tool_call_id: 'tc1', content: '{"stdout":"/tmp"}' } },
-    ])
-    store.setter(runAtom, { runId: 'r', status: 'stopped' })
-
-    withdrawCurrentTurnToDraft()
-
-    expect(store.getter(itemsAtom)).toEqual([])
-    expect(store.getter(composerDraftAtom)).toBe('跑一下 pwd')
-    expect(store.getter(withdrawnTurnNoticeAtom)).toMatchObject({ sideEffects: true })
-    expect(store.getter(withdrawnTurnNoticeAtom)?.text).toContain('外部副作用')
-  })
-
-  it('withdrawCurrentTurnToDraft：stopped checkpoint 走标准回退并同步截断持久化历史', () => {
-    const id = newSession()
-    const store = getSessionStore(id).store
-    const items: ConversationItem[] = [
-      { id: 'u0', createdAt: 1, item: { role: 'user', content: '上一轮' } },
-      { id: 'a0', createdAt: 2, item: { role: 'assistant', content: '上一轮回答' } },
-      { id: 'u1', createdAt: 10, item: { role: 'user', content: '当前输入' } },
-      { id: 'a1', createdAt: 11, item: { role: 'assistant', content: '半截回答' } },
-    ]
-    store.setter(itemsAtom, items)
-    store.setter(checkpointsAtom, [
-      { turnIndex: 0, label: '上一轮', createdAt: 2, items: items.slice(0, 2) },
-      { turnIndex: 1, label: '[已停止] 当前输入', createdAt: 11, items },
-    ])
-    store.setter(runAtom, { runId: 'r', status: 'stopped' })
-
-    withdrawCurrentTurnToDraft()
-
-    expect(rewindBeforeCheckpoint).toHaveBeenCalledWith(id, 1, defaultCore)
-    expect(store.getter(runAtom)).toBeUndefined()
-    expect(store.getter(composerDraftAtom)).toBe('当前输入')
-    expect(persistTruncate).toHaveBeenCalledWith(id, 0)
-  })
-
-  it('withdrawCurrentTurnToDraft：非 stopped 状态 no-op', () => {
-    const id = newSession()
-    const store = getSessionStore(id).store
-    const items: ConversationItem[] = [{ id: 'u1', createdAt: 1, item: { role: 'user', content: 'hi' } }]
-    store.setter(itemsAtom, items)
-    store.setter(runAtom, { runId: 'r', status: 'running' })
-
-    withdrawCurrentTurnToDraft()
-
-    expect(store.getter(itemsAtom)).toBe(items)
-    expect(store.getter(composerDraftAtom)).toBe('')
-    expect(abortRun).not.toHaveBeenCalledWith(id)
-  })
 })

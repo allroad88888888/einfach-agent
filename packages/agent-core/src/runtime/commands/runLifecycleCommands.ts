@@ -25,7 +25,6 @@ import {
   captureUserContentReachability,
   disposeUserContentAfterMutation,
 } from '../userContentDisposal'
-import { persistStoppedRunCheckpoint } from '../runCheckpoints'
 import { canonicalContextCacheValue } from '../contextCacheFingerprint'
 import { markUnresolvedToolCallsOutcomeUnknown } from '../toolCallOutcomeFacts'
 import { recoverInterruptedToolCalls } from '../interruptedToolCallRecovery'
@@ -164,7 +163,6 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
     const currentRun = store.getter(runAtom)
     if (currentRun) setRunWithoutPendingExecution(id, currentRun, { status: 'stopped' }, core)
     void core.persistence.persistRecovery(id, 'tool_calls_interrupted')
-    persistStoppedRunCheckpoint(id, run.runId, core)
     const executionIds = new Set(run.pendingExecutionId ? [run.pendingExecutionId] : [])
     const graph = store.getter(executionGraphAtom)
     for (const executionId of store.getter(activeExecutionNodeIdsAtom)) {

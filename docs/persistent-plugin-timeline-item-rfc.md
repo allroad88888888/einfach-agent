@@ -2,6 +2,13 @@
 
 状态：提议中（R5 产物）；尚未批准，**不对应任何已开放的写入 API 或持久化格式变更**。
 更新时间：2026-08-03。
+
+> **§5 的前提已失效（2026-08-17）。** 本 RFC 写作时的会话持久化容器是轮级 `Checkpoint` 与
+> `HistoryDriver`；两者已随用户 undo 迁往 einfach 的事务日志（`createHistory`）而整体删除。
+> 当前唯一的会话持久化容器是 `RecoverySnapshotV1`，回退语义也不再是
+> `jumpToCheckpoint` / `rewindBeforeCheckpoint`。**§5「Checkpoint、存储驱动与回退」在实现前
+> 必须按新容器重新推导**，其中提到的表结构迁移、working checkpoint 更新与分支语义均不再适用。
+> §1–§4 的 item 形状、资源上限与校验约束不依赖容器，仍然有效。
 关联：[插件 UI Renderer 协议](plugin-renderer-protocol-blueprint.md)、[核心运行时流程](core-runtime-flow.md)、[树形子 Agent Runtime](tree-subagent-runtime.md)。
 
 ## 1. 问题与边界
@@ -119,10 +126,10 @@ interface Checkpoint {
 - 迁移必须可重复、可从“没有新列”的数据库启动，且 migration、写入与 checkpoint 元数据更新的
   失败语义可测试。不得以破坏性重建表、静默删历史或整库重写作为升级条件。
 
-目前的 [`Checkpoint`](../packages/agent-core/src/state/checkpoint.type.ts)、
-[`HistoryDriver`](../packages/agent-core/src/state/persistence/historyDriver.ts) 和
-[`hydrate`](../packages/agent-core/src/state/persistence/hydrate.ts) 都还没有这一字段；本节是未来
-变更的约束，不表示它已经实现。
+本节写作时依赖的 `Checkpoint` 与 `HistoryDriver` 已被删除（见文首说明）；
+[`hydrate`](../packages/agent-core/src/state/persistence/hydrate.ts) 今天只投影
+[`RecoverySnapshotV1`](../packages/agent-core/src/state/recoverySnapshot.type.ts)，
+也没有这一字段。本节是未来变更的约束，且需先按新容器重新推导。
 
 ## 6. Archive 与导入导出
 

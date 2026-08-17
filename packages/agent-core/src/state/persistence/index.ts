@@ -15,17 +15,9 @@
 //   `@web-agent/persistence-idb`（与 createIndexedDbHistoryDriver 同包），core 只留 contract。
 
 export type { SessionsPersistence } from './contract'
-export type { HistoryDriver } from './historyDriver'
-export { createMemoryHistoryDriver } from './memoryHistoryDriver'
 export type { RecoveryDriver, RecoverySaveResult } from './recoveryDriver'
 export {
   createMemoryRecoveryDriver,
   validateRecoverySnapshot,
 } from './recoveryDriver'
 export type { RecoverySnapshotV1 } from '../recoverySnapshot.type'
-export type {
-  Checkpoint,
-  CheckpointMeta,
-  CheckpointKind,
-  CheckpointFinishReason,
-} from '../checkpoint.type'

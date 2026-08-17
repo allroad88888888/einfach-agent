@@ -4,8 +4,7 @@
 import { rootStore, sessionsAtom } from '../state/rootStore'
 import type { ModelSettings } from '../state/core.type'
 import type { ModelUsage } from '@web-agent/ai'
-import { configurePersistence, resetPersistence } from './persistenceBridge'
-import type { Checkpoint } from '../state/checkpoint.type'
+import { resetPersistence } from './persistenceBridge'
 import { resetObservability } from '../observability/trace'
 import type { TraceDriver, TraceEvent, TraceSpan } from '../observability/types'
 import { configureDefaultDelegation, defaultCore } from './core/coreInstance'
@@ -18,28 +17,6 @@ export function resetModelRunTestState(): void {
   resetPersistence()
   defaultCore.planRuntime = undefined
   configureDefaultDelegation(null)
-}
-
-// 只记录 saveCheckpoint 的假 HistoryDriver —— 用来证明「落盘」真的发生了，
-// 而不只是 checkpointsAtom 里多了一条（itemsAtom 不持久化，刷新后全靠落盘的 checkpoint）。
-export function captureCheckpointPersistence(): { saved: Array<{ sessionId: string; checkpoint: Checkpoint }> } {
-  const saved: Array<{ sessionId: string; checkpoint: Checkpoint }> = []
-  configurePersistence({
-    history: {
-      async listCheckpoints() {
-        return []
-      },
-      async loadCheckpoint() {
-        return undefined
-      },
-      async saveCheckpoint(sessionId, checkpoint) {
-        saved.push({ sessionId, checkpoint })
-      },
-      async truncateAfter() {},
-      async deleteSession() {},
-    },
-  })
-  return { saved }
 }
 
 // 在 rootStore 登记一个会话（ghost guard 的权威事实）。

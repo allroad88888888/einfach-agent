@@ -7,7 +7,6 @@ import {
   createMemoryRecoveryDriver,
   type RecoveryDriver,
 } from '../state/persistence/recoveryDriver'
-import { createMemoryHistoryDriver } from '../state/persistence/memoryHistoryDriver'
 import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import type { Tool } from '../tools/types'
 import { createCore } from './core/createCore'
@@ -42,11 +41,9 @@ function emptySessions(): SessionsPersistence {
 function wirePersistence(
   core: TestCore,
   recovery: RecoveryDriver,
-  history = createMemoryHistoryDriver(),
   sessions = emptySessions(),
 ): void {
   core.persistence.configure({
-    history,
     sessions,
     recovery,
     recoveryStore: (sessionId) => core.findSessionStore(sessionId)?.store,
@@ -117,17 +114,16 @@ function recoveringCore(requests: { count: number }) {
 
 async function persistThenHydrate(outcome: Outcome, requests: { count: number }) {
   const recovery = createMemoryRecoveryDriver()
-  const history = createMemoryHistoryDriver()
   const sessions = emptySessions()
   const origin = createCore()
   const sessionId = origin.newSession({ settings: { vendor: 'deepseek', model: 'test-model' } })
   seedInterrupted(origin, sessionId, outcome)
-  wirePersistence(origin, recovery, history, sessions)
+  wirePersistence(origin, recovery, sessions)
   await origin.persistence.persistRecovery(sessionId)
   await origin.persistence.flushRecovery()
 
   const restored = recoveringCore(requests)
-  wirePersistence(restored, recovery, history, sessions)
+  wirePersistence(restored, recovery, sessions)
   await restored.persistence.hydrate()
   restored.selectSession(sessionId)
   return { recovery, restored, sessionId }
@@ -198,19 +194,18 @@ describe('recovery tool side-effect safety', () => {
 
   it('rejecting a recovered confirmation never executes the dangerous tool', async () => {
     const recovery = createMemoryRecoveryDriver()
-    const history = createMemoryHistoryDriver()
     const sessions = emptySessions()
     const origin = createCore()
     const sessionId = origin.newSession({ settings: { vendor: 'deepseek', model: 'test-model' } })
     seedConfirmation(origin, sessionId)
-    wirePersistence(origin, recovery, history, sessions)
+    wirePersistence(origin, recovery, sessions)
     await origin.persistence.persistRecovery(sessionId)
 
     const requests = { count: 0 }
     const execute = vi.fn(() => ({ ok: true as const, data: { written: true } }))
     const restored = recoveringCore(requests)
     restored.tools.register(dangerousTool(execute))
-    wirePersistence(restored, recovery, history, sessions)
+    wirePersistence(restored, recovery, sessions)
     await restored.persistence.hydrate()
     restored.selectSession(sessionId)
     restored.confirmTool(false)

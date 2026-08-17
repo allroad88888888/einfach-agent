@@ -6,7 +6,6 @@
 
 import { describe, expect, it } from 'vitest'
 
-import type { Checkpoint } from '../checkpoint.type'
 import type { ModelSettings, SessionMeta } from '../core.type'
 import {
   rootStore,
@@ -15,19 +14,8 @@ import {
   resetRootStore,
 } from '../rootStore'
 import { getSessionStore, resetSessionStores } from '../sessionStore'
-import { checkpointsAtom, itemsAtom } from '../sessionAtoms'
-import { createMemoryHistoryDriver } from './memoryHistoryDriver'
+import { itemsAtom } from '../sessionAtoms'
 import { hydrate } from './hydrate'
-
-// 造一轮 checkpoint：turnIndex + 一条 user item（内容含标记便于断言）。
-function cp(turnIndex: number, content: string): Checkpoint {
-  return {
-    turnIndex,
-    label: `t${turnIndex}`,
-    createdAt: turnIndex,
-    items: [{ id: `${content}-${turnIndex}`, createdAt: turnIndex, item: { role: 'user', content } }],
-  }
-}
 
 // 造一个只指定模型名（及可选 thinking）的存量会话。
 function legacySession(id: string, model: string, thinking?: boolean): SessionMeta {
@@ -53,10 +41,9 @@ function legacyReasoningSession(id: string, reasoningEffort: unknown): SessionMe
 
 describe('hydrate · 主 Agent 模型兼容迁移', () => {
   it('存量 deepseek-chat 会话 → 恢复后是 Flash + 非思考模式', async () => {
-    const history = createMemoryHistoryDriver()
     const sessions = { loadSessions: async () => [legacySession('old', 'deepseek-chat')] }
 
-    await hydrate({ sessions, history })
+    await hydrate({ sessions })
 
     const restored = rootStore.getter(sessionsAtom).old
     expect(restored.settings.model).toBe('deepseek-v4-flash')
@@ -64,10 +51,9 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
   })
 
   it('存量 deepseek-reasoner 会话 → 恢复后是 Flash + 思考模式', async () => {
-    const history = createMemoryHistoryDriver()
     const sessions = { loadSessions: async () => [legacySession('old', 'deepseek-reasoner')] }
 
-    await hydrate({ sessions, history })
+    await hydrate({ sessions })
 
     const restored = rootStore.getter(sessionsAtom).old
     expect(restored.settings.model).toBe('deepseek-v4-flash')
@@ -75,11 +61,10 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
   })
 
   it('用户已显式设置的 thinking 不被迁移覆盖', async () => {
-    const history = createMemoryHistoryDriver()
     // 显式关了思考的 deepseek-reasoner 会话：模型名要迁，thinking=false 是用户的选择，得留着。
     const sessions = { loadSessions: async () => [legacySession('old', 'deepseek-reasoner', false)] }
 
-    await hydrate({ sessions, history })
+    await hydrate({ sessions })
 
     const restored = rootStore.getter(sessionsAtom).old
     expect(restored.settings.model).toBe('deepseek-v4-flash')
@@ -87,13 +72,12 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
   })
 
   it('已是 Flash、Pro 或未知模型名的会话原样保留', async () => {
-    const history = createMemoryHistoryDriver()
     const flash = legacySession('flash', 'deepseek-v4-flash')
     const fresh = legacySession('fresh', 'deepseek-v4-pro')
     const custom = legacySession('custom', 'my-private-finetune')
     const sessions = { loadSessions: async () => [flash, fresh, custom] }
 
-    await hydrate({ sessions, history })
+    await hydrate({ sessions })
 
     const restored = rootStore.getter(sessionsAtom)
     expect(restored.flash).toMatchObject(flash)
@@ -107,12 +91,11 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
     ['medium', 'high'],
     ['xhigh', 'max'],
   ])('历史 DeepSeek reasoning_effort=%s → 恢复后为 %s', async (before, after) => {
-    const history = createMemoryHistoryDriver()
     const sessions = {
       loadSessions: async () => [legacyReasoningSession('legacy-effort', before)],
     }
 
-    await hydrate({ sessions, history })
+    await hydrate({ sessions })
 
     const restored = rootStore.getter(sessionsAtom)['legacy-effort'].settings
     // 老数据把 reasoning_effort 平铺在顶层，读回后应收进供应商附加设置袋。
@@ -121,7 +104,6 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
   })
 
   it('未知持久化 reasoning_effort 不透传：DeepSeek 删除非法值，GLM 合法 low 保留', async () => {
-    const history = createMemoryHistoryDriver()
     const invalidDeepSeek = legacyReasoningSession('invalid-effort', { unexpected: true })
     const glm: SessionMeta = {
       ...legacySession('glm-effort', 'glm-5'),
@@ -133,7 +115,7 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
     }
     const sessions = { loadSessions: async () => [invalidDeepSeek, glm] }
 
-    await hydrate({ sessions, history })
+    await hydrate({ sessions })
 
     const restored = rootStore.getter(sessionsAtom)
     expect(restored['invalid-effort'].settings).not.toHaveProperty('reasoning_effort')
@@ -143,9 +125,8 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
   })
 
   it('迁移幂等：把迁移后的结果再 hydrate 一次，结果不变', async () => {
-    const history = createMemoryHistoryDriver()
     const first = { loadSessions: async () => [legacySession('old', 'deepseek-chat')] }
-    await hydrate({ sessions: first, history })
+    await hydrate({ sessions: first })
     const once = rootStore.getter(sessionsAtom).old
 
     resetRootStore()
@@ -153,19 +134,18 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
 
     // 第二次启动读到的就是上次迁移后的会话。
     const second = { loadSessions: async () => [once] }
-    await hydrate({ sessions: second, history })
+    await hydrate({ sessions: second })
 
     expect(rootStore.getter(sessionsAtom).old).toEqual(once)
   })
 
   it('迁移不改 updatedAt —— active 会话的选取不被兼容迁移带偏', async () => {
-    const history = createMemoryHistoryDriver()
     // 老会话用旧模型名但 updatedAt 更小；迁移若顶掉 updatedAt 就会把 active 抢过去。
     const old = legacySession('old', 'deepseek-chat')
     const recent = { ...legacySession('recent', 'deepseek-v4-pro'), updatedAt: 999 }
     const sessions = { loadSessions: async () => [old, recent] }
 
-    await hydrate({ sessions, history })
+    await hydrate({ sessions })
 
     expect(rootStore.getter(sessionsAtom).old.updatedAt).toBe(100)
     expect(rootStore.getter(activeSessionIdAtom)).toBe('recent')
@@ -180,8 +160,6 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
   //      覆盖式落盘，与 persistenceBridge.persistSessions() 之间无顺序保证：若它晚于
   //      「用户新建会话」落地，就会用不含新会话的旧列表把那个新会话整体覆盖掉。
   it('迁移不回写盘：hydrate 全程只读，deps 里连 saveSessions 都不需要', async () => {
-    const history = createMemoryHistoryDriver()
-    await history.saveCheckpoint('old', cp(0, 'hello'))
     // 故意挂一个「一旦被调用就让测试失败」的 saveSessions —— 它不在 hydrate 的 deps 类型里，
     // 但运行时若有人偷偷调了它，这里会立刻炸出来。
     const sessions = {
@@ -191,7 +169,7 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
       },
     }
 
-    await expect(hydrate({ sessions, history })).resolves.toBe(true)
+    await expect(hydrate({ sessions })).resolves.toBe(true)
     // 让出微任务：即便有人用 fire-and-forget 偷写，也能在这之后暴露出来。
     await Promise.resolve()
 
@@ -200,26 +178,23 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
     // R10: 无 v1 恢复快照的存量 checkpoint 仅作为撤销历史保留，绝不投影为可继续的动态态。
     const sessionStore = getSessionStore('old').store
     expect(sessionStore.getter(itemsAtom)).toEqual([])
-    expect(sessionStore.getter(checkpointsAtom)).toEqual([cp(0, 'hello')])
   })
 
   it('只读 deps（没有 saveSessions）也能正常迁移，不抛', async () => {
-    const history = createMemoryHistoryDriver()
     const sessions = { loadSessions: async () => [legacySession('old', 'deepseek-chat')] }
 
-    await expect(hydrate({ sessions, history })).resolves.toBe(true)
+    await expect(hydrate({ sessions })).resolves.toBe(true)
     expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-v4-flash')
   })
 
   it('重启幂等：盘上仍是旧名，第二次启动照样迁得对（这正是不回写的前提）', async () => {
-    const history = createMemoryHistoryDriver()
     // 盘上数据【始终】是旧名——模拟「不回写」之后的真实盘面。
     const sessions = { loadSessions: async () => [legacySession('old', 'deepseek-chat')] }
 
-    await hydrate({ sessions, history })
+    await hydrate({ sessions })
     expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-v4-flash')
 
-    await hydrate({ sessions, history })
+    await hydrate({ sessions })
     expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-v4-flash')
     expect(rootStore.getter(sessionsAtom).old.settings.thinking).toBe(false)
   })

@@ -9,7 +9,6 @@ import {
   sessionsAtom,
   activeSessionIdAtom,
   defaultCore,
-  checkpointsAtom,
   planAtom,
   runAtom,
   contextStatsAtom,
@@ -43,8 +42,6 @@ vi.mock('@web-agent/core/runtime/commands', async () => {
     removeSession: vi.fn(),
     sendMessage: vi.fn(),
     stopRun: vi.fn(),
-    revertToTurn: vi.fn(),
-    revertTurnToDraft: vi.fn(),
     answerQuestion: vi.fn(),
     resumeWithAnswers: vi.fn(),
     discardArtifact: vi.fn(),
@@ -54,7 +51,6 @@ vi.mock('@web-agent/core/runtime/commands', async () => {
     approvePlan: vi.fn(),
     continuePlan: vi.fn(),
     setApprovalMode: vi.fn(),
-    withdrawCurrentTurnToDraft: vi.fn(),
   }
 })
 
@@ -193,19 +189,6 @@ describe('AppShell', () => {
     expect(container.querySelector('[aria-label="待保存文件"]')).not.toBeNull()
     expect(screen.getByText('plan.md')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /保存/ })).toBeInTheDocument()
-  })
-
-  it('会话有 checkpoint：不展示 checkpoint bar、用户原文或轮次', () => {
-    seedActiveSession('s1')
-    defaultCore.getSessionStore('s1').store.setter(checkpointsAtom, [
-      { turnIndex: 0, label: '用户输入的原文', createdAt: 1, items: [] },
-    ])
-
-    const { container } = renderWithStore(<AppShell />, { store: rootStore })
-
-    expect(container.querySelector('.agentnew-checkpoint-bar')).toBeNull()
-    expect(screen.queryByText('用户输入的原文')).toBeNull()
-    expect(screen.queryByText('第 1 轮')).toBeNull()
   })
 
   it('会话有 context stats：右栏输入区上方挂出上下文统计', () => {

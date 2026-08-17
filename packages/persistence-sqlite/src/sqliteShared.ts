@@ -53,21 +53,6 @@ export async function getDb(): Promise<Database> {
         phaseStartedAt = performanceNow()
         await db.execute('CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, meta TEXT NOT NULL)')
         await db.execute(
-          `CREATE TABLE IF NOT EXISTS checkpoints (
-             session_id TEXT NOT NULL,
-             turn_index INTEGER NOT NULL,
-             label TEXT NOT NULL,
-             kind TEXT,
-             finish_reason TEXT,
-             created_at INTEGER NOT NULL,
-             items TEXT NOT NULL,
-             plan TEXT,
-             plan_stage_checkpoints TEXT,
-             context_checkpoint TEXT,
-             PRIMARY KEY (session_id, turn_index)
-           )`,
-        )
-        await db.execute(
           `CREATE TABLE IF NOT EXISTS recovery_snapshots (
              session_id TEXT PRIMARY KEY,
              generation INTEGER NOT NULL,
@@ -75,32 +60,8 @@ export async function getDb(): Promise<Database> {
              snapshot TEXT
            )`,
         )
-        // 兼容旧桌面数据库：CREATE TABLE IF NOT EXISTS 不会给既有表补列。
-        try {
-          await db.execute('ALTER TABLE checkpoints ADD COLUMN plan TEXT')
-        } catch {
-          // 新库已经包含 plan，或旧库迁移已完成；两种情况都可继续。
-        }
-        try {
-          await db.execute('ALTER TABLE checkpoints ADD COLUMN plan_stage_checkpoints TEXT')
-        } catch {
-          // 新库已经包含 plan_stage_checkpoints，或旧库迁移已完成；两种情况都可继续。
-        }
-        try {
-          await db.execute('ALTER TABLE checkpoints ADD COLUMN context_checkpoint TEXT')
-        } catch {
-          // 新库已经包含 context_checkpoint，或旧库迁移已完成；两种情况都可继续。
-        }
-        try {
-          await db.execute('ALTER TABLE checkpoints ADD COLUMN kind TEXT')
-        } catch {
-          // 新库已经包含 kind，或旧库迁移已完成；两种情况都可继续。
-        }
-        try {
-          await db.execute('ALTER TABLE checkpoints ADD COLUMN finish_reason TEXT')
-        } catch {
-          // 新库已经包含 finish_reason，或旧库迁移已完成；两种情况都可继续。
-        }
+        // 轮级 undo 迁往 einfach 事务日志后，checkpoints 表已无人读写：直接丢弃。
+        await db.execute('DROP TABLE IF EXISTS checkpoints')
         schemaMs = performanceNow() - phaseStartedAt
         operation.finish('ok', {
           loadMs,
