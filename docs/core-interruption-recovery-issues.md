@@ -280,6 +280,28 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 - **目标**：逐条检查红线、allowlist 完整性、单一事实、外部副作用策略和文件职责，而不只看测试。
 - **验收 / 证据**：无 redo/history cursor/atom identity 持久化；无恢复双写；新增/大改文件符合行数约束；独立审计与所有交付门禁通过。
 
+### R11 · 修复 R7 引入的 coreInstance 初始化环
+
+- **波次 / 依赖 / 状态**：W9 / R7 / DONE
+- **owner / 模型**：主会话 / strong（模块边界）
+- **独占面**：新建 `src/runtime/timedToolRegistry.ts`；`timedDispatch.ts` 转出注册簿，`coreInstance.ts`
+  改引叶子模块。不改定时派发语义、恢复围栏或 `rootStore` 的顶层求值形态。
+- **背景**：R7（`2bae275`）给 `timedDispatch.ts` 加了 `sessionAtoms` / `sessionWriters` /
+  `toolCallExecutionFence` 三条静态导入，闭合了
+  `coreInstance → timedDispatch → state/sessionWriters → state/rootStore → coreInstance`。
+  `rootStore.ts` 在模块顶层求值 `defaultCore.rootStore`，环内它读到 `undefined` 并抛
+  `TypeError`。该文件原本以动态 import（`loadTimedDispatchDependencies`）避开这条环，R7 的静态
+  导入破了这个纪律。
+- **影响**：`apps/web` 两个用 `vi.resetModules()` 的宿主装配测试自 `2bae275` 起持续失败（5 个用例），
+  且 R7–V3 每张卡的证据都只跑了聚焦 suite 与 `pnpm build`，从未执行统一门禁要求的全量 `pnpm test`，
+  因此那段时间的“门禁通过”结论对本条不成立。
+- **目标**：把 `createTimedToolRegistry` 抽成只依赖 `tools/*` 类型的叶子模块，`coreInstance` 对
+  `timedDispatch` 只保留 `import type`（编译期擦除，不产生运行时边）。
+- **验收 / 证据**：修复前全量 `pnpm test` 为 2 files / 5 tests 失败，修复后 423 files（3 skipped）/
+  3300 tests 全绿；`pnpm build`、`pnpm check:boundaries`（569 文件）、`pnpm check:dist`、
+  `node scripts/check-docs.js` 与 `git diff --check` 均通过。`timedDispatch.ts` 267 → 190 行，
+  新模块 91 行。定位方式为在 `8d70fcc`→`fd9dac4` 之间逐点重跑那两个测试文件。
+
 ## 收口后的已知语义与遗留
 
 1. **无有效 V1 的会话开屏是空对话。** 这是红线 7 的有意 fail-closed，不是缺陷：hydrate 只投影 V1，
@@ -307,3 +329,7 @@ pnpm check:dist
 
 发现新的持久业务 atom、未定义 outcome policy 的外部 effect，或绕过 R4 的直接写入时，必须停止扩张
 改动面，把事实追加到本树并由主会话拆出独占补卡后再继续。
+
+`pnpm test` 是**全仓库**跑，不接受用 `vitest run <目录>` 的聚焦子集顶替：R11 那条环只在
+`apps/web` 的装配测试里暴露，core 与 persistence 的聚焦 suite 全绿也照样漏掉它。给"切换后门禁
+通过"的结论前，必须贴全量 `pnpm test` 的 Test Files / Tests 行。
