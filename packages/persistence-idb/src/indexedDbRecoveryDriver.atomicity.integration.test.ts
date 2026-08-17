@@ -28,6 +28,7 @@ function recoverySnapshot(generation: number, sessionId = 'session-1'): Recovery
       run: null,
       queuedUserMessages: [],
       pendingQuestionAnswers: {},
+      pendingArtifacts: [],
       executionGraph: { version: 1, nodes: {}, order: [] },
       subagentContinuations: [],
     },

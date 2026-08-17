@@ -15,6 +15,7 @@ const nodeTypes = new Set(['agent-batch', 'agent', 'model', 'tool', 'plan-stage'
 const nodeStatuses = new Set(['queued', 'ready', 'running', 'waiting-children', 'waiting-user', 'interrupted', 'succeeded', 'failed', 'cancelled'])
 const childStates = new Set<SubagentContinuationState>(['queued', 'interrupted', 'waiting_user', 'waiting_confirmation', 'waiting_plan_approval', 'outcome_unknown'])
 const sessionKeys = new Set(['id', 'title', 'settings', 'createdAt', 'updatedAt', 'workspaceId', 'workspaceRoot', 'toolApprovalMode', 'loadedTools'])
+const pendingArtifactKeys = new Set(['id', 'filename', 'content', 'mimeType'])
 const modelSettingsKeys = new Set(['vendor', 'model', 'thinking', 'temperature', 'max_tokens', 'vendorSettings'])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -201,6 +202,18 @@ function isQueuedMessage(value: unknown): boolean {
     && isText(value.targetRunId) && optional(value, 'submissionSequence', isNatural)
 }
 
+function isPendingArtifacts(value: unknown): boolean {
+  if (!Array.isArray(value)) return false
+  const ids = new Set<string>()
+  return value.every((entry) => {
+    if (!isRecord(entry) || !hasOnlyKeys(entry, pendingArtifactKeys)) return false
+    if (!isText(entry.id) || entry.id.length === 0 || ids.has(entry.id)) return false
+    ids.add(entry.id)
+    return isText(entry.filename) && entry.filename.length > 0
+      && isText(entry.content) && optional(entry, 'mimeType', isText)
+  })
+}
+
 function isAnswers(value: unknown): boolean {
   return isRecord(value) && Object.values(value).every((answer) => typeof answer === 'boolean' || isText(answer) || isStringArray(answer))
 }
@@ -254,6 +267,7 @@ function hasProjection(value: unknown, sessionId: string): boolean {
     || !('contextCheckpoint' in value.conversation) || !isRecord(value.plan) || !('current' in value.plan)
     || !Array.isArray(value.plan.stageCheckpoints) || !('run' in value) || !Array.isArray(value.queuedUserMessages)
     || !isAnswers(value.pendingQuestionAnswers) || !isGraph(value.executionGraph, sessionId)
+    || !isPendingArtifacts(value.pendingArtifacts)
     || !Array.isArray(value.subagentContinuations)) return false
   return value.conversation.items.every(isConversationItem)
     && (value.conversation.contextCheckpoint === null || isContextCheckpoint(value.conversation.contextCheckpoint))

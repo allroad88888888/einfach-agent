@@ -20,6 +20,7 @@ import {
   runAtom,
 } from './sessionAtoms'
 import {
+  pendingArtifactsAtom,
   pendingQuestionAnswersAtom,
   queuedUserMessagesAtom,
 } from './sessionTransientAtoms'
@@ -90,6 +91,7 @@ export function captureRecoverySnapshot(
       run: withoutPendingExecutionId(run),
       queuedUserMessages: store.getter(queuedUserMessagesAtom),
       pendingQuestionAnswers: store.getter(pendingQuestionAnswersAtom),
+      pendingArtifacts: store.getter(pendingArtifactsAtom),
       executionGraph: store.getter(executionGraphAtom),
       subagentContinuations: store.getter(subagentContinuationsAtom),
     },
@@ -109,6 +111,7 @@ const applyRecoveryProjectionAtom = atom<null, [RecoveryAtomProjectionV1], void>
     set(runAtom, values.run ?? undefined)
     set(queuedUserMessagesAtom, values.queuedUserMessages)
     set(pendingQuestionAnswersAtom, values.pendingQuestionAnswers)
+    set(pendingArtifactsAtom, values.pendingArtifacts)
     set(executionGraphAtom, values.executionGraph)
     set(subagentContinuationsAtom, values.subagentContinuations)
   },
@@ -126,6 +129,7 @@ const clearRecoveryProjectionAtom = atom<null, [], void>(
     set(runAtom, undefined)
     set(queuedUserMessagesAtom, [])
     set(pendingQuestionAnswersAtom, {})
+    set(pendingArtifactsAtom, [])
     set(executionGraphAtom, EMPTY_EXECUTION_GRAPH)
     set(subagentContinuationsAtom, [])
     set(currentTurnIndexAtom, -1)

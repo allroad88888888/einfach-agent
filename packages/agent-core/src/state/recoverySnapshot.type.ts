@@ -8,7 +8,7 @@ import type { PlanSnapshot } from '../planning/types'
 import type { PlanStageCheckpoint } from './checkpoint.type'
 import type { ContextCheckpoint } from './contextCheckpoint.type'
 import type { ConversationItem, RunState, SessionMeta } from './core.type'
-import type { AskUserAnswerValue, QueuedUserMessage } from './sessionTransientPayloads'
+import type { AskUserAnswerValue, PendingArtifact, QueuedUserMessage } from './sessionTransientPayloads'
 
 /** 首个恢复快照 codec 的版本；未知版本必须 fail-closed。 */
 export const RECOVERY_SNAPSHOT_SCHEMA_VERSION = 1 as const
@@ -80,6 +80,11 @@ export interface RecoveryAtomProjectionV1 {
   run: RecoverableRunState | null
   queuedUserMessages: QueuedUserMessage[]
   pendingQuestionAnswers: Record<string, AskUserAnswerValue>
+  /**
+   * 等待用户保存的模型产物。它必须入快照：save_file 回给模型的结果只有 artifactId 与字节数，
+   * `content` 不进 transcript，所以这个 atom 是它唯一的副本，丢了就再也算不回来。
+   */
+  pendingArtifacts: PendingArtifact[]
   executionGraph: ExecutionGraphSnapshot
   /** 本 schema 唯一的 child 续接真源；空数组表示没有 child。 */
   subagentContinuations: SubagentContinuationV1[]

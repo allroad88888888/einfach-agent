@@ -25,6 +25,7 @@ function snapshot(generation: number, sessionId = 's1'): RecoverySnapshotV1 {
       run: null,
       queuedUserMessages: [],
       pendingQuestionAnswers: {},
+      pendingArtifacts: [],
       executionGraph: { version: 1, nodes: {}, order: [] },
       subagentContinuations: [],
     },

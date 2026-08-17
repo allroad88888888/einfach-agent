@@ -86,6 +86,7 @@ function snapshot(): RecoverySnapshotV1 {
       },
       queuedUserMessages: [{ id: 'queue-1', createdAt: 4, content: '补充', targetRunId: 'run-1' }],
       pendingQuestionAnswers: { q1: ['继续', '保留子 agent'] },
+      pendingArtifacts: [{ id: 'artifact-1', filename: '报告.md', content: '# 待保存', mimeType: 'text/markdown' }],
       executionGraph: {
         version: 1,
         nodes: {
@@ -186,6 +187,13 @@ describe('RecoverySnapshotV1', () => {
     ['不合法 conversation ModelItem', (raw: LooseRecord) => { ((values(raw).conversation as LooseRecord).items as LooseRecord[])[0].item = { role: 'user', content: 9 } }],
     ['不合法 pending question answer', (raw: LooseRecord) => { values(raw).pendingQuestionAnswers = { q1: [1] } }],
     ['不合法 queued message 内容', (raw: LooseRecord) => { (values(raw).queuedUserMessages as LooseRecord[])[0].content = [{ type: 'text', text: 9 }] }],
+    ['缺失 pendingArtifacts', (raw: LooseRecord) => { delete values(raw).pendingArtifacts }],
+    ['artifact 内容不是字符串', (raw: LooseRecord) => { (values(raw).pendingArtifacts as LooseRecord[])[0].content = 9 }],
+    ['artifact id 重复', (raw: LooseRecord) => {
+      const artifacts = values(raw).pendingArtifacts as LooseRecord[]
+      artifacts.push({ ...artifacts[0] })
+    }],
+    ['artifact 混入未知字段', (raw: LooseRecord) => { (values(raw).pendingArtifacts as LooseRecord[])[0].blobHandle = 'process-only' }],
     ['不合法 run status', (raw: LooseRecord) => { (values(raw).run as LooseRecord).status = 'unknown' }],
     ['不合法 graph node shell', (raw: LooseRecord) => {
       const nodes = (values(raw).executionGraph as LooseRecord).nodes as LooseRecord
