@@ -116,12 +116,23 @@ driver 由宿主配置 bridge。默认实例本身不自动安装工具，应用
   atom 常驻订阅和基线值，成本 O(被追踪 atom 数)，在 family 场景下不成立。绕过它的写入不进日志，
   undo 越过时该 atom 停在新值、其余全部回滚，状态自相矛盾且只在 undo/崩溃恢复时才浮出来。
   作用域不含 `apps/web` 的 mcp/settings/plugins 与 `packages/subagents` 的视图 atom——它们不是会话状态。
+- **进日志的值不许随累积状态长大**。整值记账（`writeSlot` 存 `(before, after)` 两份完整槽位值）
+  只适用于有界的槽位。对随对话/会话增长、且条目自带载荷的槽位，开销是 `cap × 累积长度`——**二次**。
+  内存里看不出来（新旧数组共享条目引用），但 JSON / structuredClone 不认共享引用、会把每个都
+  展开成完整副本，**落盘那一步才兑现**：实测 `items` 一份 0.32 MB 的对话要写 33 MB。
+  这类槽位改走增量 op（`state/listSlotLog.ts` 的 append/patch/remove、`executionGraphSlotLog.ts`
+  的节点粒度），并配一条「同一次写入在长短两种累积量下的 ops 载荷逐字节相等」的测试。
 
-上面最后两条由 `pnpm check:state`（`scripts/check-state-invariants.js`）逐行判定，CI 里排在
-`check:boundaries` 之后。规则 2 只管**会话 atom**（会进 per-session 事务日志的那些）；root store
-的跨会话登记表、应用层与子 Agent 视图 atom 都在管辖之外。脚本里两张表分工不同：**所有者模块**
-是按设计拥有某个 atom 写入权的模块（如执行图 reducer、子 Agent continuation 写入器），
-**欠债表**是该收口而未收口的，当前为空。
+上面最后三条由 `pnpm check:state`（`scripts/check-state-invariants.js`）逐行判定前两条，CI 里排在
+`check:boundaries` 之后（第三条靠 colocated 测试，不是脚本）。规则 2 只管**会话 atom**（会进
+per-session 事务日志的那些）；root store 的跨会话登记表、应用层与子 Agent 视图 atom 都在管辖之外。
+脚本里两张表分工不同：**所有者模块**是按设计拥有某个 atom 写入权的模块，**欠债表**是该收口而未
+收口的，当前两张都只剩必要项。
+
+所有者模块表有一条硬约束，脚本会判：**它不能豁免 `SESSION_SLOTS` 里的 atom**。曾经
+`executionGraphAtom` 与 `subagentContinuationsAtom` 登记在里面，理由写的是「接事务日志时它们就是
+被 transaction 包住的那一层」——接上之后没人回来兑现，于是那两个槽位从未入账，撤销一轮只退了
+一部分状态。现在槽位名从 `state/sessionSlots.ts` 源码抽出来机械比对，命中即 error。
 
 ## 运行链路
 
@@ -152,6 +163,11 @@ registrar 为准**（`tools/<domain>/src/index.ts`），文档里的数量容易
 
 - Web：会话/历史和 trace 使用 IndexedDB。
 - Tauri：会话/历史和 trace 使用 SQLite，文件/shell/Git 通过 Rust command 执行。
+- 每个会话落两份记录：`RecoverySnapshotV1`（运行态的唯一真相）与撤销日志（`HistoryLogDriver`）。
+  **两者必须成对**：日志在快照落盘成功的同一时刻整份刷出，并存下那次快照的 `generation`；
+  读回时 `generation` 不一致就整份丢弃日志（撤销不可用，状态仍对）。刻意不用 einfach 的
+  `HistoryPersistPort` 增量镜像——它逐笔跟随内存，而快照只在耐久性栅栏落盘，两者时点不一致时
+  undo 会把更早状态的 `before` 写进当前世界。理由详见 `state/persistence/historyLogDriver.ts`。
 - `server` 工具在非 Tauri 环境中不会暴露给模型。
 - `.webAgent-archive/` 保存子 Agent 长期归档与索引，不应提交到 Git。
 - workspace 里的 `.webAgent/skills/` 与 `.claude/skills/` 是项目 Skills 目录，会被 project skills
