@@ -9,11 +9,11 @@ importers:
   .:
     dependencies:
       '@einfach/core':
-        specifier: ^0.2.18
-        version: 0.2.19
+        specifier: ^0.4.0
+        version: 0.4.0
       '@einfach/react':
-        specifier: ^0.3.25
-        version: 0.3.26(react@18.3.1)
+        specifier: ^0.4.0
+        version: 0.4.0(react@18.3.1)
       '@tauri-apps/api':
         specifier: ^2.11.1
         version: 2.11.1
@@ -145,8 +145,8 @@ importers:
   packages/agent-core:
     dependencies:
       '@einfach/core':
-        specifier: ^0.2.18
-        version: 0.2.19
+        specifier: ^0.4.0
+        version: 0.4.0
       '@tauri-apps/api':
         specifier: ^2.11.1
         version: 2.11.1
@@ -247,8 +247,8 @@ importers:
   packages/subagents:
     dependencies:
       '@einfach/core':
-        specifier: ^0.2.18
-        version: 0.2.19
+        specifier: ^0.4.0
+        version: 0.4.0
       '@web-agent/ai':
         specifier: workspace:*
         version: link:../agent-ai
@@ -504,12 +504,12 @@ packages:
     resolution: {integrity: sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA==}
     engines: {node: '>=20.19.0'}
 
-  '@einfach/core@0.2.19':
-    resolution: {integrity: sha512-6AYuHYDUCCWd3/Feo7uBqrVNgjOB7XGKVfvefCsF03OBZiZQUA5Wlp41Pr2hxM7Mb1OVknK7o4CVnjzh6YdI9w==}
+  '@einfach/core@0.4.0':
+    resolution: {integrity: sha512-6e01mejaOY/EsIJSbu7e7zzBaF5oBpl5o7Zzx8TVMsRwKWqrMkj1bnVXg/8gdBCVgeekeQphl3Wpd3snfY7lCw==}
     engines: {node: '>=14.18.0'}
 
-  '@einfach/react@0.3.26':
-    resolution: {integrity: sha512-qLqDkZpxBD0Ph0Vsx47mxVJVJS+bH+6hakSnFKzSCPcn/UQ/P5FgmdeKw8qG48zvwLeXjsR3jgRGNZcmTNa0fw==}
+  '@einfach/react@0.4.0':
+    resolution: {integrity: sha512-HUXVgJH9TxVuxEPpbk3RgAD+6O9RG8Cs48DS4M82u32plRTLqyPsi/OkWdXqsQCC87Xe404lXB/z0PLr8vPR3Q==}
     engines: {node: '>=14.18.0'}
     peerDependencies:
       react: '>=16.8 <20'
@@ -2718,11 +2718,11 @@ snapshots:
 
   '@csstools/css-tokenizer@4.0.0': {}
 
-  '@einfach/core@0.2.19': {}
+  '@einfach/core@0.4.0': {}
 
-  '@einfach/react@0.3.26(react@18.3.1)':
+  '@einfach/react@0.4.0(react@18.3.1)':
     dependencies:
-      '@einfach/core': 0.2.19
+      '@einfach/core': 0.4.0
       react: 18.3.1
 
   '@esbuild/aix-ppc64@0.27.7':

@@ -21,8 +21,8 @@
     "tauri": "cd apps/desktop && tauri"
   },
   "dependencies": {
-    "@einfach/core": "^0.2.18",
-    "@einfach/react": "^0.3.25",
+    "@einfach/core": "^0.4.0",
+    "@einfach/react": "^0.4.0",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@tauri-apps/plugin-sql": "^2.4.0",

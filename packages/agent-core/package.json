@@ -60,7 +60,7 @@
   },
   "dependencies": {
     "@web-agent/ai": "workspace:*",
-    "@einfach/core": "^0.2.18"
+    "@einfach/core": "^0.4.0"
   },
   "peerDependencies": {
     "@tauri-apps/api": "^2.11.1",
