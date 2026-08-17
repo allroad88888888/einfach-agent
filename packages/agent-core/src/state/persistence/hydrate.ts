@@ -17,6 +17,7 @@
 import type { History, Store } from '@einfach/core'
 import type { SessionMeta, WorkspaceMeta } from '../core.type'
 import type { HistoryLogDriver } from './historyLogDriver'
+import { restoreUndoBarrier } from '../undoBarrier'
 import {
   rootStore as defaultRootStore,
   workspacesAtom,
@@ -131,13 +132,17 @@ export type PersistenceHydrationTarget = {
 async function hydrateSessionHistoryLog(input: {
   driver: HistoryLogDriver
   history: History
+  store: Store
   sessionId: string
   snapshotGeneration: number
 }): Promise<void> {
   try {
     const log = await input.driver.load(input.sessionId)
     if (!log || log.generation !== input.snapshotGeneration) return
-    input.history.hydrate({ entries: log.entries, cursor: log.cursor })
+    if (!input.history.hydrate({ entries: log.entries, cursor: log.cursor })) return
+    // 屏障必须跟着这本账一起铺回来，否则刷新之后撤销就能越过一个已发生的不可逆删除。
+    // 放在 hydrate 成功之后：账没铺上就没有需要保护的东西。
+    restoreUndoBarrier({ store: input.store, history: input.history }, log.barrierTxId)
   } catch {
     // 读不出来 / 形状不对：不恢复撤销历史即可，状态那边已经铺好了。
   }
@@ -231,6 +236,7 @@ export async function hydrateForCore(
           historyRestores.push(hydrateSessionHistoryLog({
             driver: deps.historyLog,
             history,
+            store,
             sessionId: session.id,
             snapshotGeneration: snapshot.generation,
           }))

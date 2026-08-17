@@ -61,3 +61,19 @@ export const withdrawnTurnNoticeAtom = atom<WithdrawnTurnNotice | undefined>(und
 
 // 本 session「一律允许」的危险工具名集合；临时 UI 态，刷新即恢复每次确认的安全默认。
 export const alwaysAllowedToolsAtom = atom<string[]>([])
+
+/**
+ * 撤销屏障：这条账目及更早的都**不许再撤销**，因为越过它会复活已被不可逆释放掉的内容。
+ *
+ * 立屏障的时机是「发生了跨进程边界的不可逆动作」—— 当前只有一处：用户显式停止 run 时，
+ * `disposeUserContentAfterMutation` 会真的去删 provider 侧的上传。删掉之后再撤销
+ * 就会把排队消息恢复成指向已删除上传的坏引用，而删除是收不回来的。
+ *
+ * 存的是账目的 `txId` 而不是下标：cap 溢出会整体左移下标，而 txId 不会变。屏障那条被 cap
+ * 逐出之后，剩下的条目全都比它新，于是撤销全部放行 —— 这正是对的。
+ *
+ * **刻意不在 SESSION_SLOTS 里**：它不能被撤销，否则撤一步就把自己的守卫撤掉了。它也不进恢复
+ * 快照，而是跟着撤销日志一起落盘（`PersistedHistoryLog.barrierTxId`）—— 屏障与它保护的那本账
+ * 必须同生同死，分开存就会出现「账在、屏障没了」。
+ */
+export const undoBarrierTxIdAtom = atom<string | undefined>(undefined)

@@ -163,7 +163,13 @@ registrar 为准**（`tools/<domain>/src/index.ts`），文档里的数量容易
 
 - Web：会话/历史和 trace 使用 IndexedDB。
 - Tauri：会话/历史和 trace 使用 SQLite，文件/shell/Git 通过 Rust command 执行。
-- 每个会话落两份记录：`RecoverySnapshotV1`（运行态的唯一真相）与撤销日志（`HistoryLogDriver`）。
+- **不可逆动作在撤销账本上留屏障**。事务日志能还原的只有状态；跨进程边界发出去的动作还原不了
+  （当前只有一处：显式停止 run 时经宿主 disposer 真删 provider 侧的上传）。真的发出过释放时
+  `markUndoBarrier` 在当前最新账目上立屏障，越过它的撤销一律拒绝而不是「看起来成功了」。
+  撤销自身**永不释放**（withhold）：状态马上要回滚，本来就没有东西真的变成不可达。判据见
+  `state/undoBarrier.ts`。
+- 每个会话落两份记录：`RecoverySnapshotV1`（运行态的唯一真相）与撤销日志（`HistoryLogDriver`），
+  屏障跟着日志走（`PersistedHistoryLog.barrierTxId`）—— 分开存会出现「账在、屏障没了」。
   **两者必须成对**：日志在快照落盘成功的同一时刻整份刷出，并存下那次快照的 `generation`；
   读回时 `generation` 不一致就整份丢弃日志（撤销不可用，状态仍对）。刻意不用 einfach 的
   `HistoryPersistPort` 增量镜像——它逐笔跟随内存，而快照只在耐久性栅栏落盘，两者时点不一致时

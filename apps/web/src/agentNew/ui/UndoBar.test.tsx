@@ -56,16 +56,15 @@ describe('UndoBar', () => {
     expect(itemIds(id)).toEqual(['u1', 'u1-a'])
   })
 
-  it('run 在飞时两个按钮都禁用并说明原因', () => {
+  it('run 在飞时按钮照常可点，但先说清会停止运行', () => {
     const id = newSession({ settings: { vendor: 'test', model: 'test-model' } })
     seedTurn(id, 'u1', '第一问')
     setRun(id, { runId: 'run-live', status: 'running', turnId: 'u2' })
     renderBar(id)
 
-    // 禁用态与命令的拒绝判定必须同源，否则会出现「按钮能点、命令却拒绝」。
-    expect(screen.getByRole('button', { name: '撤销上一轮' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: '重做' })).toBeDisabled()
-    expect(screen.getByText('正在运行，先停止再撤销')).toBeInTheDocument()
+    // 命令会替用户把 run 停掉，所以这里不该禁用 —— 但「会停止运行」不能是暗箱动作。
+    expect(screen.getByRole('button', { name: '撤销上一轮' })).toBeEnabled()
+    expect(screen.getByText('会先停止当前运行')).toBeInTheDocument()
   })
 
   it('撤销到底之后撤销按钮自己变灰，重做仍可用', async () => {

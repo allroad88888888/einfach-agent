@@ -54,7 +54,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
   const pausedRun = createRunCommands(core)
   const plan = createPlanCommands(core, runLifecycle.stopRun)
   const cards = createCardCommands(core)
-  const history = createHistoryCommands(core)
+  const history = createHistoryCommands(core, runLifecycle.stopRun)
   const projectSkills = createProjectSkillsCommands(core)
   const subagentView = createSubagentViewCommands(core)
   return {

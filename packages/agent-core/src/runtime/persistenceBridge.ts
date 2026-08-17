@@ -17,6 +17,7 @@ import {
   toPersistableHistoryLog,
   type HistoryLogDriver,
 } from '../state/persistence/historyLogDriver'
+import { readUndoBarrier } from '../state/undoBarrier'
 import { projectStaticSessionMeta } from '../state/sessionMetaProjection'
 import type { ObservabilityPort } from '../observability/port'
 import {
@@ -162,7 +163,14 @@ export function createPersistenceBridge(
     const driver = historyLog
     const history = historyFor?.(id)
     if (!driver || !history) return
-    const log = toPersistableHistoryLog(outcome.generation, history.getState())
+    // 屏障与账本同时刷出：分开存会出现「账在、屏障没了」，刷新后撤销就能越过一个已发生的
+    // 不可逆删除（见 state/undoBarrier.ts）。
+    const store = recoveryStore?.(id)
+    const log = toPersistableHistoryLog(
+      outcome.generation,
+      history.getState(),
+      store ? readUndoBarrier({ store, history }) : undefined,
+    )
     // 不可序列化 = 某个槽位的记账载荷里塞了类实例/闭包。丢掉这一份而不是写半份进去。
     if (!log) return
     void driver.save(id, log).catch(() => undefined)

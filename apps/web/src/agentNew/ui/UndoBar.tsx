@@ -14,14 +14,17 @@
 import { useAtomValue } from '@einfach/react'
 import { redoTurn, sessionUndoAvailabilityAtom, undoTurn } from '@web-agent/core'
 
-/** 有账可退但当下不许退时，告诉用户该先做什么。 */
+/** 有账可退但**永久**不许退时，告诉用户为什么。 */
 const BLOCKED_HINT = {
-  run_in_flight: '正在运行，先停止再撤销',
+  // 更早那一段引用的上传已被真正删除，撤销回去只会得到坏引用。
+  irreversible_barrier: '更早的内容已释放，无法继续撤销',
 } as const
 
 export function UndoBar({ sessionId }: { sessionId: string }) {
   const availability = useAtomValue(sessionUndoAvailabilityAtom(sessionId))
   const hint = availability.blocked ? BLOCKED_HINT[availability.blocked] : undefined
+  // run 在飞时按钮照常可点 —— 命令会替用户停掉它。但必须先说出来，别让「停止」变成暗箱动作。
+  const stopNotice = availability.willStopRun ? '会先停止当前运行' : undefined
 
   // 一条账都没有（新会话、或已退到底又没得重做）→ 整体不显示，别在界面上摆两个永远灰着的按钮。
   if (!availability.canUndo && !availability.canRedo && !hint) return null
@@ -32,7 +35,7 @@ export function UndoBar({ sessionId }: { sessionId: string }) {
         type="button"
         className="agentnew-undo-item"
         disabled={!availability.canUndo}
-        title={hint ?? '把最近一轮对话整体退回'}
+        title={hint ?? stopNotice ?? '把最近一轮对话整体退回'}
         onClick={() => { undoTurn() }}
       >
         撤销上一轮
@@ -41,12 +44,14 @@ export function UndoBar({ sessionId }: { sessionId: string }) {
         type="button"
         className="agentnew-undo-item"
         disabled={!availability.canRedo}
-        title={hint ?? '把刚撤销的那一轮重做回来'}
+        title={hint ?? stopNotice ?? '把刚撤销的那一轮重做回来'}
         onClick={() => { redoTurn() }}
       >
         重做
       </button>
-      {hint ? <span className="agentnew-undo-hint">{hint}</span> : null}
+      {hint ?? stopNotice ? (
+        <span className="agentnew-undo-hint">{hint ?? stopNotice}</span>
+      ) : null}
     </div>
   )
 }

@@ -25,6 +25,7 @@ import {
   captureUserContentReachability,
   disposeUserContentAfterMutation,
 } from '../userContentDisposal'
+import { markUndoBarrier } from '../../state/undoBarrier'
 import { canonicalContextCacheValue } from '../contextCacheFingerprint'
 import { markUnresolvedToolCallsOutcomeUnknown } from '../toolCallOutcomeFacts'
 import { recoverInterruptedToolCalls } from '../interruptedToolCallRecovery'
@@ -139,7 +140,13 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
     withRun(id, core, (signal) => resumePlanSession(id, { signal, apiKey, fetchImpl: core.config.fetchImpl, core }))
   }
 
-  function stopRun(): void {
+  /**
+   * @param options.disposeUserContent 默认 true（用户显式停止 = 主动接受释放）。
+   *   撤销走的那条路传 false：状态马上要回滚，本来就没有东西真的变成不可达，而释放是跨进程
+   *   边界的不可逆动作（真去删 provider 侧的上传），发出去就收不回来。详见 state/undoBarrier.ts。
+   */
+  function stopRun(options?: { disposeUserContent?: boolean }): void {
+    const disposeContent = options?.disposeUserContent ?? true
     const id = core.rootStore.getter(activeSessionIdAtom)
     if (!id) return
     cancelSessionSubmissions(core, id)
@@ -156,7 +163,7 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
       'interrupted',
     )) return
     const meta = core.rootStore.getter(sessionsAtom)[id]
-    const before = meta ? captureUserContentReachability(core, id) : undefined
+    const before = meta && disposeContent ? captureUserContentReachability(core, id) : undefined
     markUnresolvedToolCallsOutcomeUnknown(id, core)
     // No queued input can have a live owner once this session's only run stops.
     clearQueuedUserMessages(id, core)
@@ -172,11 +179,16 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
     const executionRuntime = getExecutionRuntime(core)
     for (const executionId of executionIds) executionRuntime.cancel(id, executionId)
     if (meta && before) {
-      disposeUserContentAfterMutation(core, before, {
+      const emitted = disposeUserContentAfterMutation(core, before, {
         sessionId: id,
         reason: 'run_stopped',
         settings: { ...meta.settings },
       })
+      // 只有真的发出了释放才立屏障：释放跨进程边界、收不回来，越过它的撤销会把排队消息恢复成
+      // 指向已删除上传的坏引用（状态回来了，它引用的东西没回来）。什么都没发出去就别封撤销。
+      // 屏障落在当前最新账目上 —— 上面那些让内容变成不可达的写入（清空排队消息就是其中一步）
+      // 都得被盖住，否则它们自己被撤销回来，坏引用照样出现。
+      if (emitted) markUndoBarrier(core.getSessionStore(id))
     }
   }
 

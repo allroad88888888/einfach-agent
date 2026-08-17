@@ -12,7 +12,9 @@
 
 import { atom, createHistory, type Atom, type History, type Store } from '@einfach/core'
 import { runAtom } from './sessionAtoms'
+import { undoBarrierTxIdAtom } from './sessionTransientAtoms'
 import { SESSION_SLOTS, SESSION_SLOT_KEYS } from './sessionSlots'
+import { undoCrossesBarrier } from './undoBarrier'
 
 /**
  * run 正在推进、随时会在 await 之后回写状态的状态集。
@@ -26,8 +28,18 @@ export const IN_FLIGHT_RUN_STATUSES: ReadonlySet<string> = new Set(['running', '
 export interface UndoAvailability {
   canUndo: boolean
   canRedo: boolean
-  /** 有账可退但当下不许退时给出原因；纯粹「没有账可退」不算原因。 */
-  blocked?: 'run_in_flight'
+  /**
+   * 有账可退但**永久**不许退时给出原因；纯粹「没有账可退」不算原因。
+   *
+   * 只有一种：越过屏障会复活已被删除的上传（见 state/undoBarrier.ts）。它只挡撤销、不挡重做 ——
+   * 重做是往新的方向走，不会越过屏障。
+   *
+   * run 在飞**不是** blocked：命令会替用户把 run 停掉再撤销，所以那时按钮照常可点，
+   * 只是要在文案上说清「这一下会停止当前运行」—— 见 `willStopRun`。
+   */
+  blocked?: 'irreversible_barrier'
+  /** 此刻按下撤销/重做会顺手停掉正在运行的 run，UI 该把这件事说出来。 */
+  willStopRun: boolean
 }
 
 /** 一本会话日志，外加 UI 绑定用的可用态。 */
@@ -50,12 +62,14 @@ export function createSessionHistory(store: Store): SessionHistory {
     const stack = get(history.stackAtom)
     const status = get(runAtom)?.status
     const inFlight = status !== undefined && IN_FLIGHT_RUN_STATUSES.has(status)
+    const atBarrier = undoCrossesBarrier(stack, get(undoBarrierTxIdAtom))
     const hasUndo = stack.cursor > 0
     const hasRedo = stack.cursor < stack.entries.length
     return {
-      canUndo: hasUndo && !inFlight,
-      canRedo: hasRedo && !inFlight,
-      ...(inFlight && (hasUndo || hasRedo) ? { blocked: 'run_in_flight' as const } : {}),
+      canUndo: hasUndo && !atBarrier,
+      canRedo: hasRedo,
+      ...(atBarrier ? { blocked: 'irreversible_barrier' as const } : {}),
+      willStopRun: inFlight && (hasUndo || hasRedo),
     }
   })
   undoAvailabilityAtom.debugLabel = 'session.undoAvailability'

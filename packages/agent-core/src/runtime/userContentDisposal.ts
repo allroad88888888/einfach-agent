@@ -68,32 +68,41 @@ export function captureAllUserContentReachability(
   return reachable
 }
 
-/** Releases newly unreachable provider content without affecting the local mutation. */
+/**
+ * Releases newly unreachable provider content without affecting the local mutation.
+ *
+ * 返回「是否真的把内容交给了 disposer」。调用方靠它判断有没有发生**跨进程边界的不可逆动作**：
+ * 没配 disposer、或没有任何内容变成不可达，都属于什么也没发出去，此时不该在撤销账本上立屏障
+ * （见 state/undoBarrier.ts）—— 否则每次停止 run 都会白白封掉更早的撤销。
+ */
 export function disposeUnreachableUserContent(
   core: CoreInstance,
   before: UserContentReachability,
   after: UserContentReachability,
   context: UserContentDisposalContext,
-): void {
+): boolean {
   const dispose = core.config.disposeUserContent
-  if (!dispose) return
+  if (!dispose) return false
   const discarded = Array.from(before)
     .filter(([version]) => !after.has(version))
     .map(([, content]) => content)
-  if (discarded.length === 0) return
+  if (discarded.length === 0) return false
   try {
     void Promise.resolve(dispose(discarded, Array.from(after.values()), context)).catch(() => {})
   } catch {
     // Remote cleanup is best-effort and must not roll back a completed local mutation.
   }
+  // 已经交出去了：即便远端删除失败，也必须按「发生过」处理 —— 我们无从知道它删没删。
+  return true
 }
 
+/** @returns 是否真的发出了释放（供调用方决定要不要立撤销屏障）。 */
 export function disposeUserContentAfterMutation(
   core: CoreInstance,
   before: UserContentReachability,
   context: UserContentDisposalContext,
-): void {
-  disposeUnreachableUserContent(
+): boolean {
+  return disposeUnreachableUserContent(
     core,
     before,
     captureAllUserContentReachability(core),

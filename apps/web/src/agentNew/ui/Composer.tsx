@@ -280,7 +280,9 @@ export function Composer({
           <button
             type="button"
             className="agentnew-composer-send agentnew-composer-stop"
-            onClick={stopRun}
+            // 包一层而不是直接传 stopRun：它现在收一个 options 对象，直接传会把 MouseEvent
+            // 当选项塞进去（`event.disposeUserContent` 是 undefined，行为上恰好没变，但纯属巧合）。
+            onClick={() => { stopRun() }}
           >
             停止
           </button>

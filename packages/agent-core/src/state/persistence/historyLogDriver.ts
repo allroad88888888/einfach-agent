@@ -34,6 +34,13 @@ export interface PersistedHistoryLog {
   generation: number
   entries: HistoryEntry[]
   cursor: number
+  /**
+   * 撤销屏障（见 state/undoBarrier.ts）：这条账目及更早的都不许再撤销。
+   *
+   * 跟着日志一起落盘、而不是进恢复快照：屏障与它保护的那本账必须同生同死。分开存就会出现
+   * 「账在、屏障没了」—— 刷新之后撤销就能越过一个已经发生的不可逆删除。
+   */
+  barrierTxId?: string
 }
 
 /** 每个 session 一条、可覆盖的事务日志；与恢复快照配对，不独立成为真相。 */
@@ -57,11 +64,13 @@ export interface HistoryLogDriver {
 export function toPersistableHistoryLog(
   generation: number,
   state: HistoryStackState,
+  barrierTxId?: string,
 ): PersistedHistoryLog | undefined {
   const candidate: PersistedHistoryLog = {
     generation,
     entries: [...state.entries],
     cursor: state.cursor,
+    ...(barrierTxId === undefined ? {} : { barrierTxId }),
   }
   try {
     const json = JSON.stringify(candidate)

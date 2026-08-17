@@ -5,6 +5,7 @@ import { createMemoryRecoveryDriver } from './recoveryDriver'
 import { createMemoryHistoryLogDriver, type HistoryLogDriver } from './historyLogDriver'
 import { itemsAtom } from '../sessionAtoms'
 import { appendItem, setRun } from '../sessionWriters'
+import { enqueueUserMessage } from '../transientAtoms'
 import type { SessionsPersistence } from './contract'
 import type { SessionMeta, WorkspaceMeta } from '../core.type'
 
@@ -62,7 +63,7 @@ describe('撤销日志的落盘往返', () => {
     // 账本活过来了：条目在，游标在末尾。
     expect(session.history.getState().entries.length).toBeGreaterThan(0)
 
-    // run 在恢复归类里已从 running 落成中断态，所以此刻允许撤销（在飞的 run 会被拒）。
+    // run 在恢复归类里已从 running 落成中断态，所以这一次不涉及「先停 run」那条路。
     // 三次写入（setRun / append u1 / append a1）共享轮标签 t1，所以一次 undoTurn 退掉整轮。
     const undone = revived.undoTurn()
     expect(undone.ok).toBe(true)
@@ -110,6 +111,36 @@ describe('撤销日志的落盘往返', () => {
     expect(await revived.persistence.hydrate()).toBe(true)
     expect(revived.getSessionStore(id).store.getter(itemsAtom)).toHaveLength(2)
     expect(revived.getSessionStore(id).history.getState().entries).toHaveLength(0)
+  })
+
+  it('撤销屏障跟着日志一起活过刷新', async () => {
+    const sessions = memorySessions()
+    const recovery = createMemoryRecoveryDriver()
+    const historyLog = createMemoryHistoryLogDriver()
+
+    // 先造一个真实的不可逆释放：排队消息在停止时被清空，其内容变成不可达 → 被释放 → 立屏障。
+    const core = hostedCore(sessions, recovery, historyLog)
+    core.config.disposeUserContent = () => {}
+    const id = core.newSession({ settings: { vendor: 'test', model: 'test-model' } })
+    core.selectSession(id)
+    setRun(id, { runId: 'run-1', status: 'running', turnId: 't1' }, core)
+    appendItem(id, { id: 'u1', createdAt: 1, item: { role: 'user', content: '第一问' } }, core)
+    enqueueUserMessage(id, {
+      id: 'q1', createdAt: 2, content: '排队里的话', targetRunId: 'run-1', submissionSequence: 1,
+    }, core)
+    core.stopRun()
+    expect(core.undoTurn()).toMatchObject({ ok: false, refusal: 'irreversible_barrier' })
+
+    core.persistence.persistSessions()
+    expect((await core.persistence.persistRecovery(id, 'test'))?.status).toBe('saved')
+    await core.persistence.flushRecovery()
+    expect((await historyLog.load(id))?.barrierTxId).toBeDefined()
+
+    const revived = hostedCore(sessions, recovery, historyLog)
+    expect(await revived.persistence.hydrate()).toBe(true)
+
+    // 屏障若不跟着落盘，刷新之后撤销就能越过一个已经发生的删除 —— 状态回来了、上传没回来。
+    expect(revived.undoTurn()).toMatchObject({ ok: false, refusal: 'irreversible_barrier' })
   })
 
   it('删除会话会把它的日志一起清掉', async () => {

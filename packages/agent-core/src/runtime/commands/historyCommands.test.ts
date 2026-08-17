@@ -68,15 +68,33 @@ describe('undoTurn / redoTurn', () => {
     expect(core.getSessionStore(id).store.getter(composerDraftAtom)).toBe('草稿一')
   })
 
-  it('refuses while the run is still in flight', () => {
+  it('run 还在飞时先把它停掉，再撤销', () => {
     const { core, id } = seeded()
     turn(core, id, 'u1', '第一问')
     setRun(id, { runId: 'run-live', status: 'running', turnId: 'u2' }, core)
 
-    // 在飞的 run 会在 await 之后继续写这个 store；此刻回滚会让已回滚的世界再被写入。
-    // 放开成「撤销时自动停 run」需要先补 epoch 守卫，不在本命令里偷偷做。
-    expect(core.undoTurn()).toEqual({ ok: false, refusal: 'run_in_flight', entries: 0 })
-    expect(core.getSessionStore(id).store.getter(itemsAtom)).toHaveLength(2)
+    // 不再拒绝：用户按撤销就是要那一轮消失，让他先手动点停止只是多一步。
+    // 安全性不靠 epoch —— `run` 本身入账，撤销会把 runId 一起退回去，
+    // 于是所有 await 后的回写点在 isCurrentRun 上就判为过期。
+    const undone = core.undoTurn()
+    expect(undone.ok).toBe(true)
+    expect(undone.stoppedRun).toBe(true)
+    expect(core.getSessionStore(id).store.getter(runAtom)?.runId).not.toBe('run-live')
+  })
+
+  it('停 run 走的是不释放用户内容那条路', () => {
+    const disposed: unknown[][] = []
+    const core = createCore()
+    core.config.disposeUserContent = (discarded) => { disposed.push([...discarded]) }
+    const id = core.newSession({ settings: { vendor: 'test', model: 'test-model' } })
+    core.selectSession(id)
+    turn(core, id, 'u1', '第一问')
+    setRun(id, { runId: 'run-live', status: 'running', turnId: 'u2' }, core)
+
+    core.undoTurn()
+
+    // 释放是跨进程边界、收不回来的动作；状态马上要回滚，本来就没有东西真的变成不可达。
+    expect(disposed).toEqual([])
   })
 
   it('reports an empty log instead of pretending it worked', () => {
