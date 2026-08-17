@@ -27,7 +27,8 @@ export const sessionId = 'session-recovery'
 export const recoverySession = {
   id: sessionId,
   title: 'Recovery session',
-  settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' },
+  // 中性厂商名：本文件不是 *.test.ts，受 core 厂商名红线约束，而 codec 只要求 vendor 是字符串。
+  settings: { vendor: 'test-vendor', model: 'test-model' },
   createdAt: 1,
   updatedAt: 2,
 }

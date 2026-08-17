@@ -87,6 +87,7 @@ function snapshot(): RecoverySnapshotV1 {
       queuedUserMessages: [{ id: 'queue-1', createdAt: 4, content: '补充', targetRunId: 'run-1' }],
       pendingQuestionAnswers: { q1: ['继续', '保留子 agent'] },
       pendingArtifacts: [{ id: 'artifact-1', filename: '报告.md', content: '# 待保存', mimeType: 'text/markdown' }],
+      composerDraft: '草稿原话',
       executionGraph: {
         version: 1,
         nodes: {

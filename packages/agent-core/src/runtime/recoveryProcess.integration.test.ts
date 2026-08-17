@@ -10,6 +10,7 @@ import { createMemoryRecoveryDriver, type RecoveryDriver } from '../state/persis
 import type { RecoverySnapshotV1 } from '../state/recoverySnapshot.type'
 import { activeSessionIdAtom, sessionsAtom } from '../state/rootAtoms'
 import { checkpointsAtom, itemsAtom, planAtom, runAtom } from '../state/sessionAtoms'
+import { composerDraftAtom } from '../state/sessionTransientAtoms'
 import { createCore } from './core/createCore'
 
 type Core = ReturnType<typeof createCore>
@@ -146,6 +147,32 @@ describe('recovery process reconstruction', () => {
     expect(hydrated.getter(itemsAtom)[0]?.item).toMatchObject({ content: 'v1 truth' })
     expect(hydrated.getter(planAtom)?.id).toBe('v1-plan')
     expect(hydrated.getter(executionGraphAtom).order).toEqual(['v1-node'])
+  })
+
+  // 撤回把用户原话从 items 截断、放回输入框。那一刻 composer 是它唯一的副本，
+  // 同一条命令提交的 generation 必须带上它，否则重启就是纯粹的用户数据丢失。
+  it('carries a withdrawn turn\'s user words across a process boundary', async () => {
+    const sessions = memorySessions()
+    const recovery = createMemoryRecoveryDriver()
+    const coreA = createCore()
+    configure(coreA, sessions, recovery)
+    const id = coreA.newSession({ settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' } })
+    const source = coreA.getSessionStore(id).store
+    source.setter(itemsAtom, [{ id: 'user-1', createdAt: 1, item: { role: 'user', content: '别丢了这句话' } }])
+    source.setter(runAtom, { runId: 'run-1', status: 'stopped', turnId: 'user-1' })
+
+    coreA.withdrawCurrentTurnToDraft()
+    expect(source.getter(itemsAtom)).toEqual([])
+    expect(source.getter(composerDraftAtom)).toBe('别丢了这句话')
+    await coreA.persistence.flushRecovery()
+    await persistSessions(coreA, sessions)
+
+    const coreB = createCore()
+    configure(coreB, sessions, recovery)
+    await expect(coreB.persistence.hydrate()).resolves.toBe(true)
+    const restored = coreB.getSessionStore(id).store
+    expect(restored.getter(itemsAtom)).toEqual([])
+    expect(restored.getter(composerDraftAtom)).toBe('别丢了这句话')
   })
 
   it('keeps a no-v1 session static with undo history and no recovery dispatch', async () => {

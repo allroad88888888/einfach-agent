@@ -13,6 +13,7 @@ import {
   runAtom,
 } from './sessionAtoms'
 import {
+  composerDraftAtom,
   pendingArtifactsAtom,
   pendingQuestionAnswersAtom,
   queuedUserMessagesAtom,
@@ -57,6 +58,19 @@ describe('recoveryProjection values', () => {
       content: '# 只活在这个 atom 里的产物内容',
       mimeType: 'text/markdown',
     }])
+  })
+
+  // 回退/撤回把用户原话从 items 截断后放回输入框，此刻 composer 是它唯一的副本。
+  it('restores an unsent composer draft that history truncation left as the only copy', () => {
+    const source = createStore()
+    const target = createStore()
+    seedDurableState(source)
+
+    const snapshot = capture(source)
+    applyRecoverySnapshot(target, snapshot)
+
+    expect(snapshot.values.composerDraft).toBe('withdrawn user words')
+    expect(target.getter(composerDraftAtom)).toBe('withdrawn user words')
   })
 
   it('uses null for absent durable atom values and restores them as undefined', () => {

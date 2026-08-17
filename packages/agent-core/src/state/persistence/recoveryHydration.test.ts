@@ -92,6 +92,7 @@ function snapshot(id = 's1', status: RecoveryRunStatus = 'running'): RecoverySna
       queuedUserMessages: [{ id: 'queue-1', createdAt: 4, content: 'queued v1', targetRunId: 'snapshot-run' }],
       pendingQuestionAnswers: { ask: ['yes', 'later'] },
       pendingArtifacts: [{ id: 'artifact-1', filename: 'pending.md', content: 'only copy' }],
+      composerDraft: 'restored draft',
       executionGraph: graph(id, 'snapshot-node'),
       subagentContinuations: [{
         schemaVersion: 1, childId: 'child-1', parentRunId: 'snapshot-run', parentNodeId: 'snapshot-node',

@@ -77,6 +77,7 @@ function snapshot(generation: number, sessionId = 's1'): RecoverySnapshotV1 {
       queuedUserMessages: [],
       pendingQuestionAnswers: {},
       pendingArtifacts: [],
+      composerDraft: '',
       executionGraph: { version: 1, nodes: {}, order: [] },
       subagentContinuations: [],
     },

@@ -16,7 +16,6 @@ import {
   alwaysAllowedToolsAtom,
   assistantStreamAtom,
   browserCardsAtom,
-  composerDraftAtom,
   pendingQuestionAnswersAtom,
   toolActivityAtom,
 } from './sessionTransientAtoms'
@@ -55,7 +54,6 @@ describe('recoveryProjection boundaries', () => {
       runId: 'ui-run',
       item: { id: 'stream-1', createdAt: 1, item: { role: 'assistant', content: 'keep stream' } },
     })
-    target.setter(composerDraftAtom, 'unsent draft')
     target.setter(toolActivityAtom, [{ callId: 'tool-1', toolName: 'write_file', text: 'running' }])
     target.setter(alwaysAllowedToolsAtom, ['write_file'])
     target.setter(executionEventsAtom, [{ type: 'graph.hydrated', at: 1 }])
@@ -66,7 +64,6 @@ describe('recoveryProjection boundaries', () => {
     expect(target.getter(currentTurnIndexAtom)).toBe(1)
     expect(target.getter(browserCardsAtom)).toHaveLength(1)
     expect(target.getter(assistantStreamAtom)?.runId).toBe('ui-run')
-    expect(target.getter(composerDraftAtom)).toBe('unsent draft')
     expect(target.getter(toolActivityAtom)).toEqual([{ callId: 'tool-1', toolName: 'write_file', text: 'running' }])
     expect(target.getter(alwaysAllowedToolsAtom)).toEqual(['write_file'])
     expect(target.getter(executionEventsAtom)).toEqual([{ type: 'graph.hydrated', at: 1 }])
