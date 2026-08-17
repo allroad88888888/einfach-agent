@@ -16,6 +16,8 @@ import {
   withdrawnTurnNoticeAtom,
 } from './sessionTransientAtoms'
 import type { ContextStatsSnapshot } from './contextStats'
+import { SESSION_SLOTS } from './sessionSlots'
+import { writeSlot } from './sessionSlotWrite'
 import type {
   AssistantStreamState,
   AskUserAnswerValue,
@@ -39,7 +41,7 @@ export function addPendingArtifact(
   core: CoreInstance = defaultCore,
 ): void {
   if (sessionMissing(id, core)) return
-  core.getSessionStore(id).store.setter(pendingArtifactsAtom, (prev) => [...prev, artifact])
+  writeSlot(core.getSessionStore(id), SESSION_SLOTS.pendingArtifacts.key, pendingArtifactsAtom, (prev) => [...prev, artifact])
 }
 
 export function removePendingArtifact(
@@ -48,7 +50,7 @@ export function removePendingArtifact(
   core: CoreInstance = defaultCore,
 ): void {
   if (sessionMissing(id, core)) return
-  core.getSessionStore(id).store.setter(pendingArtifactsAtom, (prev) =>
+  writeSlot(core.getSessionStore(id), SESSION_SLOTS.pendingArtifacts.key, pendingArtifactsAtom, (prev) =>
     prev.filter((artifact) => artifact.id !== artifactId),
   )
 }
@@ -76,7 +78,7 @@ export function setPendingQuestionAnswer(
   core: CoreInstance = defaultCore,
 ): void {
   if (sessionMissing(id, core)) return
-  core.getSessionStore(id).store.setter(pendingQuestionAnswersAtom, (prev) => ({
+  writeSlot(core.getSessionStore(id), SESSION_SLOTS.pendingQuestionAnswers.key, pendingQuestionAnswersAtom, (prev) => ({
     ...prev,
     [questionId]: value,
   }))
@@ -174,7 +176,7 @@ export function setContextStats(
 
 export function setComposerDraft(id: string, draft: string, core: CoreInstance = defaultCore): void {
   if (sessionMissing(id, core)) return
-  core.getSessionStore(id).store.setter(composerDraftAtom, draft)
+  writeSlot(core.getSessionStore(id), SESSION_SLOTS.composerDraft.key, composerDraftAtom, draft)
 }
 
 export function enqueueUserMessage(
@@ -183,7 +185,7 @@ export function enqueueUserMessage(
   core: CoreInstance = defaultCore,
 ): void {
   if (sessionMissing(id, core)) return
-  core.getSessionStore(id).store.setter(queuedUserMessagesAtom, (prev) => [...prev, message])
+  writeSlot(core.getSessionStore(id), SESSION_SLOTS.queuedUserMessages.key, queuedUserMessagesAtom, (prev) => [...prev, message])
 }
 
 export function takeQueuedUserMessages(
@@ -192,7 +194,8 @@ export function takeQueuedUserMessages(
   core: CoreInstance = defaultCore,
 ): QueuedUserMessage[] {
   if (sessionMissing(id, core)) return []
-  const store = core.getSessionStore(id).store
+  const session = core.getSessionStore(id)
+  const store = session.store
   const queued = store.getter(queuedUserMessagesAtom)
   const taken = queued.filter((message) => message.targetRunId === runId)
   if (taken.length > 0) {
@@ -209,9 +212,10 @@ export function clearQueuedUserMessages(
   core: CoreInstance = defaultCore,
 ): QueuedUserMessage[] {
   if (sessionMissing(id, core)) return []
-  const store = core.getSessionStore(id).store
+  const session = core.getSessionStore(id)
+  const store = session.store
   const queued = store.getter(queuedUserMessagesAtom)
-  if (queued.length > 0) store.setter(queuedUserMessagesAtom, [])
+  if (queued.length > 0) writeSlot(session, SESSION_SLOTS.queuedUserMessages.key, queuedUserMessagesAtom, [])
   return queued
 }
 
@@ -226,7 +230,7 @@ export function setWithdrawnTurnNotice(
 
 export function clearPendingQuestionAnswers(id: string, core: CoreInstance = defaultCore): void {
   if (sessionMissing(id, core)) return
-  core.getSessionStore(id).store.setter(pendingQuestionAnswersAtom, {})
+  writeSlot(core.getSessionStore(id), SESSION_SLOTS.pendingQuestionAnswers.key, pendingQuestionAnswersAtom, {})
 }
 
 export function addAlwaysAllowedTool(

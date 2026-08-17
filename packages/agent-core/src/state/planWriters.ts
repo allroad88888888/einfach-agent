@@ -2,6 +2,8 @@ import type { PlanSnapshot } from '../planning/types'
 import { sessionsAtom } from './rootAtoms'
 import { itemsAtom, planAtom, planStageCheckpointsAtom, runAtom } from './sessionAtoms'
 import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
+import { SESSION_SLOTS } from './sessionSlots'
+import { writeSlot } from './sessionSlotWrite'
 import {
   beginPerformanceDiagnostic,
   performanceNow,
@@ -30,7 +32,8 @@ function recordStageCheckpoints(
   ))
   if (started.length === 0) return
 
-  const sessionStore = core.getSessionStore(sessionId).store
+  const session = core.getSessionStore(sessionId)
+  const sessionStore = session.store
   const existing = sessionStore.getter(planStageCheckpointsAtom)
   const fresh = started
     .filter((stage) => !existing.some((point) => point.stageId === stage.id))
@@ -41,12 +44,13 @@ function recordStageCheckpoints(
       createdAt: Date.now(),
     }))
   if (fresh.length === 0) return
-  sessionStore.setter(planStageCheckpointsAtom, [...existing, ...fresh])
+  writeSlot(session, SESSION_SLOTS.planStageCheckpoints.key, planStageCheckpointsAtom, [...existing, ...fresh])
 }
 
 export function setPlan(sessionId: string, plan: PlanSnapshot | undefined, core: CoreInstance = defaultCore): void {
   if (!core.rootStore.getter(sessionsAtom)[sessionId]) return
-  const sessionStore = core.getSessionStore(sessionId).store
+  const session = core.getSessionStore(sessionId)
+  const sessionStore = session.store
   const runId = sessionStore.getter(runAtom)?.runId
   const operation = beginPerformanceDiagnostic(
     'plan.commit',
@@ -62,11 +66,11 @@ export function setPlan(sessionId: string, plan: PlanSnapshot | undefined, core:
   )
   const atomStartedAt = performanceNow()
   const previousPlan = sessionStore.getter(planAtom)
-  sessionStore.setter(planAtom, plan)
+  writeSlot(session, SESSION_SLOTS.plan.key, planAtom, plan)
   // 计划被清空或整体换成另一份计划时，旧回退点里的 items 长度不再对应任何可回退的位置。
   if (!plan || !previousPlan || previousPlan.id !== plan.id) {
     if (sessionStore.getter(planStageCheckpointsAtom).length > 0) {
-      sessionStore.setter(planStageCheckpointsAtom, [])
+      writeSlot(session, SESSION_SLOTS.planStageCheckpoints.key, planStageCheckpointsAtom, [])
     }
   } else {
     recordStageCheckpoints(sessionId, previousPlan, plan, core)

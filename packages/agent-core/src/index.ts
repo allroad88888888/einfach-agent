@@ -103,6 +103,11 @@ export {
   approvePlan,
   continuePlan,
   rollbackPlanStage,
+  // 撤销 / 重做（会话事务日志）：undoTurn 是 UI 默认粒度，*Entry 是开发者粒度
+  undoTurn,
+  redoTurn,
+  undoEntry,
+  redoEntry,
   // 卡片与项目 Skills
   discardArtifact,
   refreshProjectSkills,
@@ -125,6 +130,8 @@ export type {
   UserInputPreparer,
   ContinueRecoveredSessionResult,
   SessionRecoveryStatus,
+  HistoryCommandRefusal,
+  HistoryCommandResult,
 } from './runtime/commands'
 
 // ---------------------------------------------------------------------------

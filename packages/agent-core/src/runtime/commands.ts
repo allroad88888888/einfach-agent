@@ -3,6 +3,7 @@
 
 import { defaultCore, type CoreInstance, type RuntimeConfig } from './core/coreInstance'
 import { createCardCommands } from './commands/cardCommands'
+import { createHistoryCommands } from './commands/historyCommands'
 import { createPlanCommands } from './commands/planCommands'
 import { createProjectSkillsCommands } from './commands/projectSkillsCommands'
 import { createRecoveryCommands } from './commands/recoveryCommands'
@@ -32,6 +33,7 @@ export type {
   UserContentDisposalReason,
 } from './userContentDisposal'
 export type { ContinueRecoveredSessionResult, SessionRecoveryStatus } from './commands/recoveryCommands'
+export type { HistoryCommandRefusal, HistoryCommandResult } from './commands/historyCommands'
 
 /** Updates runtime configuration for the default command instance. */
 export function configureCommands(config: Partial<RuntimeConfig>): void {
@@ -52,6 +54,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
   const pausedRun = createRunCommands(core)
   const plan = createPlanCommands(core, runLifecycle.stopRun)
   const cards = createCardCommands(core)
+  const history = createHistoryCommands(core)
   const projectSkills = createProjectSkillsCommands(core)
   const subagentView = createSubagentViewCommands(core)
   return {
@@ -63,6 +66,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
     ...pausedRun,
     ...plan,
     ...cards,
+    ...history,
     ...projectSkills,
     ...subagentView,
   }
@@ -99,6 +103,10 @@ export const {
   rollbackPlanStage,
   answerQuestion,
   discardArtifact,
+  undoTurn,
+  redoTurn,
+  undoEntry,
+  redoEntry,
   refreshProjectSkills,
   selectSubagentNode,
   selectGlobalSubagentRun,

@@ -101,7 +101,7 @@ export function updateItem(
   if (sessionMissing(id, core)) {
     return
   }
-  core.getSessionStore(id).store.setter(itemsAtom, (prev) =>
+  writeSlot(core.getSessionStore(id), SESSION_SLOTS.items.key, itemsAtom, (prev) =>
     prev.map((it) => (it.id === itemId ? { ...it, ...patch } : it)),
   )
   touchSession(id, core)
@@ -115,7 +115,7 @@ export function setItems(id: string, items: ConversationItem[], core: CoreInstan
   if (sessionMissing(id, core)) {
     return
   }
-  core.getSessionStore(id).store.setter(itemsAtom, items)
+  writeSlot(core.getSessionStore(id), SESSION_SLOTS.items.key, itemsAtom, items)
   touchSession(id, core)
 }
 
@@ -126,7 +126,7 @@ export function setRun(id: string, run: RunState | undefined, core: CoreInstance
   if (sessionMissing(id, core)) {
     return
   }
-  core.getSessionStore(id).store.setter(runAtom, run)
+  writeSlot(core.getSessionStore(id), SESSION_SLOTS.run.key, runAtom, run, run?.turnId)
 }
 
 /**
@@ -137,12 +137,13 @@ export function patchRun(id: string, patch: Partial<RunState>, core: CoreInstanc
   if (sessionMissing(id, core)) {
     return
   }
-  const store = core.getSessionStore(id).store
+  const session = core.getSessionStore(id)
+  const store = session.store
   const cur = store.getter(runAtom)
   if (!cur) {
     return
   }
-  store.setter(runAtom, { ...cur, ...patch })
+  writeSlot(session, SESSION_SLOTS.run.key, runAtom, { ...cur, ...patch })
 }
 
 /**

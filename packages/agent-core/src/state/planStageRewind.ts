@@ -18,6 +18,8 @@ import type { PlanStageCheckpoint } from './planStageCheckpoint.type'
 import type { ConversationItem } from './core.type'
 import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
 import type { PlanSnapshot } from '../planning/types'
+import { SESSION_SLOTS } from './sessionSlots'
+import { writeSlot } from './sessionSlotWrite'
 
 // ghost guard：会话未在 core.rootStore 登记 → 后续写入应 no-op（C7）。
 // 直接查登记表；不经 core.getSessionStore（后者未命中会创建 store，会复活幽灵会话）。
@@ -33,8 +35,9 @@ function restorePlan(
   stagePoints: PlanStageCheckpoint[] | undefined,
   core: CoreInstance,
 ): void {
-  core.getSessionStore(id).store.setter(planAtom, plan)
-  core.getSessionStore(id).store.setter(planStageCheckpointsAtom, stagePoints ?? [])
+  const session = core.getSessionStore(id)
+  writeSlot(session, SESSION_SLOTS.plan.key, planAtom, plan)
+  writeSlot(session, SESSION_SLOTS.planStageCheckpoints.key, planStageCheckpointsAtom, stagePoints ?? [])
 }
 
 /**
@@ -83,7 +86,8 @@ export function revertToPlanStageCheckpoint(
   core: CoreInstance = defaultCore,
 ): PlanStageCheckpoint | undefined {
   if (sessionMissing(id, core)) return undefined
-  const store = core.getSessionStore(id).store
+  const session = core.getSessionStore(id)
+  const store = session.store
   const points = store.getter(planStageCheckpointsAtom)
   const index = points.findIndex((point) => point.stageId === stageId)
   const point = points[index]
@@ -95,9 +99,9 @@ export function revertToPlanStageCheckpoint(
 
   // itemCount 是打点时的全局下标；slice 越界时自然退化成「保持原样」。
   // 截断后再抹掉尾部未闭合的 tool_calls（见上方注释）。
-  store.setter(itemsAtom, dropUnclosedToolCalls(store.getter(itemsAtom).slice(0, point.itemCount)))
+  writeSlot(session, SESSION_SLOTS.items.key, itemsAtom, dropUnclosedToolCalls(store.getter(itemsAtom).slice(0, point.itemCount)))
   // 阶段回退丢弃了摘要所覆盖的尾部消息；让下一次请求从保留的原始历史重新生成摘要。
-  store.setter(contextCheckpointAtom, undefined)
+  writeSlot(session, SESSION_SLOTS.contextCheckpoint.key, contextCheckpointAtom, undefined)
   restorePlan(
     id,
     { ...point.plan, revision: current.revision + 1, updatedAt: Date.now() },

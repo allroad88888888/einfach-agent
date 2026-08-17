@@ -13,9 +13,18 @@
 //   · 命令层用一个 `transaction(label, ...)` 包住若干写入器 = 合并成一步 undo。
 // 写入器因此不必知道自己是否处在更大的事务里。
 //
-// 值没真变的写入不会占一步 undo：`commit()` 会把 `Object.is(before, after)` 的 op 过滤掉。
+// 值没真变的写入整体短路：不开事务、不写 store、不记账（`commit()` 本来也会过滤掉这种 op）。
+//
+// ## 条目为什么按「轮」打标签
+//
+// `transaction()` 是**同步**的：`fn()` 一返回就提交。而一轮对话是异步的（模型请求、工具执行都在
+// await 之后），所以「一整轮 = 一个 transaction」在机制上做不到 —— 后续写入会落在提交之后。
+// 可行的是让同一轮产生的条目带**同一个标签**，撤销时连续弹到标签变化为止。
+// 标签取 `RunState.turnId`：它已经是本轮的锚点、已经在恢复快照里，不必另造一套编号。
+// 于是粒度是两层且都白拿：弹到标签变化 = 退一整轮（UI 默认），弹一条 = 开发者级。
 
 import type { AtomEntity, History, Store } from '@einfach/core'
+import { runAtom } from './sessionAtoms'
 
 /**
  * 一次带记账的槽位写入所需的最小上下文：状态放哪、账记哪本。
@@ -42,15 +51,36 @@ export function writeSlot<State>(
   key: string,
   atom: AtomEntity<State>,
   next: State | ((previous: State) => State),
+  /**
+   * 覆盖本次写入的轮标签。默认读写入**之前**的 `runAtom.turnId`，这对绝大多数写入都对；
+   * 唯独「创建/切换 run」那一次要显式传即将写入的 turnId，否则它会被归到上一轮去。
+   */
+  turnLabel?: string,
 ): void {
-  target.history.transaction(() => {
-    // getter 为 promise atom 返回条件类型；槽位 atom 一律是 JSON 安全值、绝不持 promise
-    // （恢复 codec 就按这条校验），故这里收窄成 State。
-    const before = target.store.getter(atom) as State
-    const after = typeof next === 'function'
-      ? (next as (previous: State) => State)(before)
-      : next
-    target.store.setter(atom, () => after)
-    target.history.record({ key, before, after })
-  })
+  // 值没真变就整体短路：不开事务、不写 store、不记账。
+  // einfach 的 commit() 本来也会把 Object.is(before, after) 的 op 过滤掉，所以行为一致；
+  // 差别在于这里连 transaction + publish 都省了 —— 主循环里「把状态设成它已经是的值」很常见
+  // （patchRun 的状态转移尤其如此），每次都走一遍提交会把日志开销放大到无谓的地步。
+  // getter 为 promise atom 返回条件类型；槽位 atom 一律是 JSON 安全值、绝不持 promise
+  // （恢复 codec 就按这条校验），故这里收窄成 State。
+  const current = target.store.getter(atom) as State
+  const resolved = typeof next === 'function'
+    ? (next as (previous: State) => State)(current)
+    : next
+  if (Object.is(current, resolved)) return
+
+  const label = turnLabel ?? currentTurnLabel(target.store)
+  // 不能写成 transaction(label ?? '')：einfach 会把空串当成一个真标签存下来，而
+  // 「没有标签」与「标签是空串」在「弹到标签变化为止」的判定里是两回事。
+  const write = () => {
+    target.store.setter(atom, () => resolved)
+    target.history.record({ key, before: current, after: resolved })
+  }
+  if (label === undefined) target.history.transaction(write)
+  else target.history.transaction(label, write)
+}
+
+/** 本会话当前所处的轮标签；尚无 run 时返回 undefined（此类写入各自成一条）。 */
+export function currentTurnLabel(store: Store): string | undefined {
+  return store.getter(runAtom)?.turnId
 }
