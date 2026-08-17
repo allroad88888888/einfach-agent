@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it } from 'vitest'
 
 import type { RecoverySnapshotV1 } from '@web-agent/core/state/persistence'
 import { createIndexedDbRecoveryDriver } from './indexedDbRecoveryDriver'
+import { HISTORY_DB_VERSION } from './indexedDbDatabase'
 
 function snapshot(generation: number, sessionId = 's1'): RecoverySnapshotV1 {
   return {
@@ -82,7 +83,7 @@ describe('createIndexedDbRecoveryDriver', () => {
     globalThis.indexedDB = new IDBFactory()
   })
 
-  it('v1 升级到 v3 时丢弃遗留 checkpoints store，并在 transaction complete 后让新实例看见快照', async () => {
+  it('v1 升级到当前版本时丢弃遗留 checkpoints store，并在 transaction complete 后让新实例看见快照', async () => {
     const dbName = 'v1-upgrade'
     await createV1Database(dbName)
     const first = createIndexedDbRecoveryDriver(dbName)
@@ -90,9 +91,10 @@ describe('createIndexedDbRecoveryDriver', () => {
 
     await expect(first.saveLatest('s1', saved)).resolves.toEqual({ status: 'saved', generation: 2 })
     const db = await open(dbName)
-    expect(db.version).toBe(3)
-    // 轮级 undo 迁往 einfach 事务日志后，checkpoints store 无人读写，升级即删除。
-    expect([...db.objectStoreNames]).toEqual(['recoverySnapshots'])
+    expect(db.version).toBe(HISTORY_DB_VERSION)
+    // 轮级 undo 迁往 einfach 事务日志后，checkpoints store 无人读写，升级即删除；
+    // 同时 v4 建出事务日志 store（撤销要活过刷新）。
+    expect([...db.objectStoreNames].sort()).toEqual(['historyLog', 'recoverySnapshots'])
     db.close()
 
     const second = createIndexedDbRecoveryDriver(dbName)

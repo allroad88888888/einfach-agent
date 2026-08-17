@@ -190,6 +190,8 @@ async function bootstrapApplication(): Promise<StartupCredentialTargetResolution
     core.persistence.configure({
       ...await createHostPersistenceDrivers(tauriHost),
       recoveryStore: (sessionId) => core.findSessionStore(sessionId)?.store,
+      // 与 recoveryStore 同一条纪律：只交出已存在的会话，落盘绝不复活幽灵会话。
+      historyFor: (sessionId) => core.findSessionStore(sessionId)?.history,
     })
     await installRecoveryFlushLifecycle()
     configureObservabilityDriver()

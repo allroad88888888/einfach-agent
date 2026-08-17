@@ -25,9 +25,9 @@ vi.mock('@web-agent/core/observability/trace', () => ({
   configureObservability: vi.fn(),
 }))
 vi.mock('@web-agent/persistence-idb', () => ({
-  createIndexedDbHistoryDriver: vi.fn(() => ({})),
   createIndexedDbSessionsPersistence: vi.fn(() => ({})),
   createIndexedDbRecoveryDriver: vi.fn(() => ({})),
+  createIndexedDbHistoryLogDriver: vi.fn(() => ({})),
 }))
 vi.mock('@web-agent/observability-idb', () => ({
   createIndexedDbLogDriver: vi.fn(() => ({})),

@@ -60,6 +60,15 @@ export async function getDb(): Promise<Database> {
              snapshot TEXT
            )`,
         )
+        // 事务日志：每个 session 一行、整份覆盖。generation 单独成列而不是只埋在 payload 里，
+        // 因为读回时的第一件事就是拿它和恢复快照比对；不匹配就不必反序列化 payload。
+        await db.execute(
+          `CREATE TABLE IF NOT EXISTS history_log (
+             session_id TEXT PRIMARY KEY,
+             generation INTEGER NOT NULL,
+             payload TEXT NOT NULL
+           )`,
+        )
         // 轮级 undo 迁往 einfach 事务日志后，checkpoints 表已无人读写：直接丢弃。
         await db.execute('DROP TABLE IF EXISTS checkpoints')
         schemaMs = performanceNow() - phaseStartedAt

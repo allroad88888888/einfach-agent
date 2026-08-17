@@ -177,7 +177,7 @@ export function createCoreInstance(opts?: {
   const persistence = createPersistenceBridge(
     rootStore,
     observability,
-    (sessionId) => getSessionStore(sessionId).store,
+    (sessionId) => getSessionStore(sessionId),
   )
 
   function dropSessionStore(id: string): void {
