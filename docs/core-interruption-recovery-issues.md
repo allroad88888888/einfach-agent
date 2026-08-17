@@ -43,8 +43,11 @@ redo、历史 cursor、追加日志或将 atom 身份持久化。
 5. 持久化写入按 session 串行且 generation 单调；旧的异步写绝不能覆盖较新的成功提交。
 6. 恢复前在飞运行统一转成可解释的 interruption state；仅在 resume policy 明确安全时自动继续，外部副作用
    未知时必须停在可确认/可对账状态。
-7. 切换后 checkpoint 只保留用户 undo/history，SessionMeta 只保存静态元数据。hydrate 只接受已校验的
-   RecoverySnapshot V1；缺失、损坏或不可读 V1 的会话只能保留静态登记和已净化的 checkpoint history，不能恢复或调度运行态。
+7. SessionMeta 只保存静态元数据。hydrate 只接受已校验的 RecoverySnapshot V1；缺失、损坏或不可读 V1
+   的会话只能保留静态登记，不能恢复或调度运行态。
+   - **原文前半已随实现失效（2026-08-17）**：本条曾写「checkpoint 只保留用户 undo/history」，
+     而轮级 checkpoint 已随用户 undo 迁往 einfach 事务日志（`createHistory`）而整体删除。
+     现在 hydrate 没有第二种记录可退，本条的 fail-closed 因此**比立条时更强**。
 8. 新增/大改普通文件不超过 300 行；单一强内聚恢复状态机可放宽至 500 行，卡中须说明理由并执行 `wc -l`。
 9. 不使用 `git stash`、不碰本卡外文件、不 broad-stage；每卡只暂存其明确列出的路径。
 10. **唯一副本必须进 allowlist。** 判据不是「这个 atom 看起来像不像运行态」，而是：**这份内容除了它自己
@@ -61,6 +64,11 @@ redo、历史 cursor、追加日志或将 atom 身份持久化。
       说不出机制 = 缺口，不是设计。
     - 新增任何写入 session store 的 atom 时，必须在本红线的三类归宿里选一类并说明；
       新增会产出内容的工具时，必须说明该内容在 transcript 里有没有副本。
+    - **退场条件**：本红线存在的根因是 capture allowlist 由人手工维护（红线 4），所以「漏没漏」
+      只能靠判断。接入 einfach 事务日志后，`isSourceAtom`（`@einfach/core` 0.4.0）能机械区分
+      源子 atom 与派生/命令 atom，快照改为「全部 primitive 槽位的穷举」，漏项会在编译期或门禁上
+      当场炸——那时本红线**结构上不再需要**，可以删。**在那之前不许提前删**：R12（`pendingArtifacts`）
+      和 R13（`composerDraft`）就是它抓出来的两个真实缺口。
 
 ## 目标分层
 

@@ -17,6 +17,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `node scripts/check-docs.js`：Markdown 门禁——相对链接必须真实存在，且禁止引用迁移前的旧源码
   路径（规则见脚本里的 `legacySourcePathPattern`，连在文档里写出那个字面量都会失败）。
   改任何 `.md` 都要跑，CI 里它排在测试之前。
+- `pnpm check:state`：状态机制不变量门禁——derived 必须纯、core 会话状态写入必须收口在
+  `state/` 或 `runtime/commands/`（判据与豁免表见 §状态与 UI 边界）。改 atom、writer 或
+  新增写入点时要跑。`pnpm check:boundaries` 管的是**包之间**的边界，两者职责不同。
 - `pnpm cli -p "<prompt>"`：headless CLI 宿主跑一轮真实 run（读 `~/.webAgent/config.json`
   或环境变量取模型 Key；`--help` 看全部选项）；无 `-p` 进入 REPL。
 - `pnpm tauri dev` / `pnpm tauri build`：桌面端开发与打包。
@@ -24,7 +27,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 子 Agent 治理：`pnpm subagent:replay` / `subagent:capacity` / `subagent:archive:retention` /
   `subagent:index:compact` / `subagent:skills`。
 
-CI（`.github/workflows/ci.yml`）跑两条：`check-docs → check-boundaries → pnpm test → pnpm build`，
+CI（`.github/workflows/ci.yml`）跑两条：`check-docs → check-boundaries → check-state → pnpm test → pnpm build`，
 以及三平台的 `cargo test` + `pnpm tauri build --no-bundle --ci`。
 
 ## 构建与解析模型
@@ -105,6 +108,18 @@ driver 由宿主配置 bridge。默认实例本身不自动安装工具，应用
 - UI 只允许读取 atom、调用 `runtime/commands.ts` 暴露的命令。
 - UI 不直接调用 writer、不 setter 业务 atom、不持有 runtime store。
 - writer 和 await 后回写必须保留 ghost guard、runId stale guard 与 AbortSignal 检查。
+- **derived 的 read fn 必须是纯函数**：禁读时钟、随机数、全局可变量，禁做 IO，输入只能来自 `get`。
+  恢复是「从快照重放」，重放要能得出同样的结果；违反后 undo 重算出的派生值与原来不一致，
+  且**全程不报错**。需要「当前时间」时把它做成 primitive atom，由 command 层在写入时取值。
+- **core 会话状态的写入必须收口**在 `state/`（writer）或 `runtime/commands/`。
+  事务日志需要每次写入都留下 `(key, prev, next)`，而显式声明是唯一可行解——自动捕获要给每个被追踪
+  atom 常驻订阅和基线值，成本 O(被追踪 atom 数)，在 family 场景下不成立。绕过它的写入不进日志，
+  undo 越过时该 atom 停在新值、其余全部回滚，状态自相矛盾且只在 undo/崩溃恢复时才浮出来。
+  作用域不含 `apps/web` 的 mcp/settings/plugins 与 `packages/subagents` 的视图 atom——它们不是会话状态。
+
+上面最后两条由 `pnpm check:state`（`scripts/check-state-invariants.js`）逐行判定，CI 里排在
+`check:boundaries` 之后。豁免表记录了今天尚未收口的 7 个写入点及各自理由，它的作用是
+**冻结现状、阻止新增**，不代表那些写法没问题。
 
 ## 运行链路
 

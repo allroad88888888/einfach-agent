@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "check:boundaries": "node scripts/check-boundaries.js",
+    "check:state": "node scripts/check-state-invariants.js",
     "check:dist": "node scripts/check-dist.js",
     "subagent:replay": "node scripts/subagent-replay-report.js",
     "subagent:capacity": "vitest run packages/subagents/src/archive/archiveCapacity.test.ts",

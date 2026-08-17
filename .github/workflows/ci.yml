@@ -26,6 +26,8 @@ jobs:
         run: node scripts/check-docs.js
       - name: Check assembly boundaries
         run: node scripts/check-boundaries.js
+      - name: Check state invariants
+        run: node scripts/check-state-invariants.js
       - run: pnpm test
       - run: pnpm build
 
