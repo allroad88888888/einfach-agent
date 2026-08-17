@@ -69,13 +69,27 @@ export function writeSlot<State>(
     : next
   if (Object.is(current, resolved)) return
 
+  inTurnTransaction(target, () => {
+    target.store.setter(atom, () => resolved)
+    target.history.record({ key, before: current, after: resolved })
+  }, turnLabel)
+}
+
+/**
+ * 把一次写入 + 记账包进带轮标签的事务。
+ *
+ * 单独抽出来是因为「记什么」有多种形状：整值槽位记 `(before, after)` 两份完整值，而
+ * 增量记账（见 sessionItemsLog.ts）只记被动的那一条。两者共享的恰恰只有这里的标签取值
+ * 与事务边界，抄第二遍就会漂移。
+ */
+export function inTurnTransaction(
+  target: SlotWriteTarget,
+  write: () => void,
+  turnLabel?: string,
+): void {
   const label = turnLabel ?? currentTurnLabel(target.store)
   // 不能写成 transaction(label ?? '')：einfach 会把空串当成一个真标签存下来，而
   // 「没有标签」与「标签是空串」在「弹到标签变化为止」的判定里是两回事。
-  const write = () => {
-    target.store.setter(atom, () => resolved)
-    target.history.record({ key, before: current, after: resolved })
-  }
   if (label === undefined) target.history.transaction(write)
   else target.history.transaction(label, write)
 }

@@ -22,6 +22,7 @@
 //   原样带下去，不让它偷偷退回默认实例。
 
 import { SESSION_SLOTS } from './sessionSlots'
+import { appendItemLogged, patchItemLogged } from './sessionItemsLog'
 import { writeSlot, type SlotWriteTarget } from './sessionSlotWrite'
 import { sessionsAtom } from './rootStore'
 import { contextCheckpointAtom, itemsAtom, runAtom } from './sessionAtoms'
@@ -60,7 +61,9 @@ export function touchSession(id: string, core: CoreInstance = defaultCore): void
  * 需要那两件事的调用方走 `appendItem(id, item, core)`。
  */
 export function appendItemToSession(target: SlotWriteTarget, item: ConversationItem): void {
-  writeSlot(target, SESSION_SLOTS.items.key, itemsAtom, (prev) => [...prev, item])
+  // 走增量记账而不是 writeSlot：整值记账会把整条对话数组存进日志两遍，落盘时膨胀百倍
+  // （理由与实测见 sessionItemsLog.ts）。
+  appendItemLogged(target, item)
 }
 
 /**
@@ -101,9 +104,7 @@ export function updateItem(
   if (sessionMissing(id, core)) {
     return
   }
-  writeSlot(core.getSessionStore(id), SESSION_SLOTS.items.key, itemsAtom, (prev) =>
-    prev.map((it) => (it.id === itemId ? { ...it, ...patch } : it)),
-  )
+  patchItemLogged(core.getSessionStore(id), itemId, patch)
   touchSession(id, core)
 }
 

@@ -20,6 +20,7 @@
 
 import { isSourceAtom, type AtomEntity, type History, type Setter } from '@einfach/core'
 import { EMPTY_EXECUTION_GRAPH, executionGraphAtom } from '../execution/graph'
+import { registerItemsLogAppliers } from './sessionItemsLog'
 import {
   contextCheckpointAtom,
   itemsAtom,
@@ -63,12 +64,25 @@ export interface SessionSlot {
   registerApplier(history: History): void
 }
 
-function slot<State>(key: string, atom: AtomEntity<State>, cleared: State): SessionSlot {
+/**
+ * @param extra 该槽位除整值还原之外的额外还原方式。目前只有 `items` 用到：它随对话无界增长，
+ * 按整值记账会让日志开销变成 `cap × 对话长度`（二次），所以热路径改走增量 op
+ * （见 sessionItemsLog.ts）。整值 applier 仍然保留，罕见的整体替换还靠它。
+ */
+function slot<State>(
+  key: string,
+  atom: AtomEntity<State>,
+  cleared: State,
+  extra?: (history: History) => void,
+): SessionSlot {
   return {
     key,
     atom: atom as AtomEntity<unknown>,
     clear: (set) => set(atom, cleared),
-    registerApplier: (history) => history.registerAtomApplier<State>(key, () => atom),
+    registerApplier: (history) => {
+      history.registerAtomApplier<State>(key, () => atom)
+      extra?.(history)
+    },
   }
 }
 
@@ -79,7 +93,7 @@ function slot<State>(key: string, atom: AtomEntity<State>, cleared: State): Sess
  * 所以改名等于改格式。atom 实例是进程内对象，绝不落盘。
  */
 export const SESSION_SLOTS = {
-  items: slot('items', itemsAtom, []),
+  items: slot('items', itemsAtom, [], registerItemsLogAppliers),
   contextCheckpoint: slot('contextCheckpoint', contextCheckpointAtom, undefined),
   run: slot('run', runAtom, undefined),
   plan: slot('plan', planAtom, undefined),
