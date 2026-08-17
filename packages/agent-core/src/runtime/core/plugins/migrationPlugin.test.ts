@@ -17,7 +17,7 @@
 //   「本不该写却写了 / 本该写却没写」的变异。
 
 import { describe, expect, it } from 'vitest'
-import { createStore, type Store } from '@einfach/core'
+import { createHistory, createStore, type Store } from '@einfach/core'
 
 import { sessionsAtom } from '../../../state/rootStore'
 import { runAtom } from '../../../state/sessionAtoms'
@@ -25,6 +25,7 @@ import type { ModelSettings, SessionMeta } from '../../../state/core.type'
 import { makeCoreCtx, type CoreCtx } from '../coreCtx'
 import { assemblePlugins } from '../pluginApi'
 import { applyMigration, migrationPlugin } from './migrationPlugin'
+import { createSessionHistory } from '../../../state/sessionHistory'
 
 // 完整 SessionMeta（非 `as unknown as` 简写）——要断言 updatedAt / id / title / createdAt 逐字不变。
 function metaWith(settings: ModelSettings, over: Partial<SessionMeta> = {}): SessionMeta {
@@ -55,7 +56,7 @@ function makeCtx(opts: {
     runId: ctxRunId,
     signal: new AbortController().signal,
     store,
-    root,
+    root, history: createSessionHistory(store),
     traceEvent: () => {},
   })
   return { ctx, root }
@@ -221,7 +222,7 @@ describe('applyMigration（不经插件装配，直接调用本体）', () => {
       runId: 'r1',
       signal: new AbortController().signal,
       store,
-      root,
+      root, history: createSessionHistory(store),
       traceEvent: () => {},
     })
 

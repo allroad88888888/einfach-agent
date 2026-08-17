@@ -51,7 +51,7 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
   let releaseTimedToolDispatcher: (() => void) | undefined
   try {
     const hooks = pluginRun.hooks
-    await hooks.onRunStart?.(makeCoreCtx({ sessionId: id, runId, signal: opts.signal, store: core.getSessionStore(id).store, root: core.rootStore, traceEvent: () => {} }))
+    await hooks.onRunStart?.(makeCoreCtx({ sessionId: id, runId, signal: opts.signal, store: core.getSessionStore(id).store, root: core.rootStore, history: core.getSessionStore(id).history, traceEvent: () => {} }))
     const session = core.rootStore.getter(sessionsAtom)[id]
     const turnId = opts.turnId ?? core.getSessionStore(id).store.getter(runAtom)?.turnId ?? currentTurnItems(id, core)[0]?.id ?? newId()
     if (core.getSessionStore(id).store.getter(runAtom) && !core.getSessionStore(id).store.getter(runAtom)?.turnId) patchRun(id, { turnId }, core)
@@ -92,7 +92,7 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
     for (const name of [...(session.loadedTools ?? []), ...loadedToolNamesFromHistory(stored.getter(itemsAtom).map((item) => item.item)), ...(stored.getter(runAtom)?.loadedTools ?? [])]) if (name) { restored.delete(name); restored.add(name) }
     let visible = [] as ToolLoopBase['state']['visible']
     for (const name of restored) visible = ensureToolLoaded(id, visible, name, core, maxTurnToolsForVendor(session.settings.vendor) - 1, undefined, toolEpoch)
-    const pluginContext = makeCoreCtx({ sessionId: id, runId, signal: opts.signal, store: stored, root: core.rootStore, traceEvent: trace.event })
+    const pluginContext = makeCoreCtx({ sessionId: id, runId, signal: opts.signal, store: stored, root: core.rootStore, history: core.getSessionStore(id).history, traceEvent: trace.event })
     const boot = {
       base: {
         id, runId, opts, core, toolEpoch, turnId,

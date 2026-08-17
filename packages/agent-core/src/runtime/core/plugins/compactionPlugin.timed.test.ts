@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createStore } from '@einfach/core'
+import { createHistory, createStore } from '@einfach/core'
 import type { ModelItem } from '@web-agent/ai'
 
 import { sessionsAtom } from '../../../state/rootStore'
@@ -9,6 +9,7 @@ import type { Tool } from '../../../tools/types'
 import { runSession } from '../../runToolLoop'
 import { makeCoreCtx } from '../coreCtx'
 import { createCoreInstance } from '../coreInstance'
+import { createSessionHistory } from '../../../state/sessionHistory'
 import {
   applyCompaction,
   compactionPlugin,
@@ -29,7 +30,7 @@ function contextFor(settings: ModelSettings) {
     runId: 'r1',
     signal: new AbortController().signal,
     store: createStore(),
-    root,
+    root, history: createSessionHistory(createStore()),
     traceEvent: vi.fn(),
   })
 }

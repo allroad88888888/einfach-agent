@@ -1,4 +1,4 @@
-import { createStore } from '@einfach/core'
+import { createHistory, createStore } from '@einfach/core'
 import { describe, expect, it, vi } from 'vitest'
 import { runAtom } from '../../state/sessionAtoms'
 import { createToolRegistry } from '../../tools/toolRegistry'
@@ -8,9 +8,10 @@ import { createCoreInstance } from './coreInstance'
 import { createPluginHost, type CorePlugin } from './pluginHost'
 import { definePlugin } from './pluginContracts'
 import type { PluginApi } from './pluginApi'
+import { createSessionHistory } from '../../state/sessionHistory'
 
 function traceCtx(store: ReturnType<typeof createStore>, traceEvent = vi.fn()) {
-  return makeCoreCtx({
+  return makeCoreCtx({ history: createSessionHistory(store),
     sessionId: 's', runId: 'r', signal: new AbortController().signal, store, root: store, traceEvent,
   })
 }

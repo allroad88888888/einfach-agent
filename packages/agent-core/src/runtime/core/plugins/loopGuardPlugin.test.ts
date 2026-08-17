@@ -21,13 +21,14 @@
 //   · createLoopGuardDetector 里的两份状态提到模块级（伪单例）→ per-run 隔离断言变红。
 
 import { describe, expect, it } from 'vitest'
-import { createStore } from '@einfach/core'
+import { createHistory, createStore } from '@einfach/core'
 
 import type { ModelToolCall } from '@web-agent/ai'
 import { truncatePayload } from '../../../observability/redact'
 import { makeCoreCtx, type CoreCtx } from '../coreCtx'
 import type { TurnEndDecision, TurnEndEvent, TurnEndStopDecision } from '../loopHooks'
 import { assemblePlugins } from '../pluginApi'
+import { createSessionHistory } from '../../../state/sessionHistory'
 import {
   createLoopGuardDetector,
   loopGuardPlugin,
@@ -44,7 +45,7 @@ function fakeCtx(): CoreCtx {
     runId: 'r1',
     signal: new AbortController().signal,
     store: createStore(),
-    root: createStore(),
+    root: createStore(), history: createSessionHistory(createStore()),
     traceEvent: () => {},
   })
 }

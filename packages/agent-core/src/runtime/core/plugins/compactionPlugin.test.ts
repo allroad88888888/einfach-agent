@@ -13,7 +13,7 @@
 // "压了反而变胖"会拒绝生效、假绿——上一轮踩过的坑（见 summarizeToolResultContent 的头尾覆盖判定）。
 
 import { describe, expect, it, vi } from 'vitest'
-import { createStore } from '@einfach/core'
+import { createHistory, createStore } from '@einfach/core'
 
 import { contextWindowTokens, type AssistantItem, type ModelItem, type ToolItem, type UserItem } from '@web-agent/ai'
 import { sessionsAtom } from '../../../state/rootStore'
@@ -21,6 +21,7 @@ import type { ModelSettings, SessionMeta } from '../../../state/core.type'
 import { estimateTokensFromText } from '../../contextCompaction'
 import { makeCoreCtx, type CoreCtx } from '../coreCtx'
 import { assemblePlugins } from '../pluginApi'
+import { createSessionHistory } from '../../../state/sessionHistory'
 import {
   applyCompaction,
   compactionPlugin,
@@ -41,7 +42,7 @@ function fakeMeta(settings: ModelSettings): SessionMeta {
 function fakeCtx(settings: ModelSettings | undefined, traceEvent = vi.fn()): { ctx: CoreCtx; traceEvent: ReturnType<typeof vi.fn> } {
   const root = createStore()
   if (settings) root.setter(sessionsAtom, { s1: fakeMeta(settings) })
-  const ctx = makeCoreCtx({
+  const ctx = makeCoreCtx({ history: createSessionHistory(createStore()),
     sessionId: 's1',
     runId: 'r1',
     signal: new AbortController().signal,

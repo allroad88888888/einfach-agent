@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createStore } from '@einfach/core'
+import { createHistory, createStore } from '@einfach/core'
 
 import { sessionsAtom } from '../../state/rootStore'
 import { runAtom } from '../../state/sessionAtoms'
 import type { SessionMeta } from '../../state/core.type'
 import { makeCoreCtx } from './coreCtx'
 import { isCurrentRun } from '../shared/runGuards'
+import { createSessionHistory } from '../../state/sessionHistory'
 
 // isCurrentRun 只查会话登记的「存在性」与 run 的 runId，故最小可信 meta 即可（只需真值）。
 function fakeMeta(id: string): SessionMeta {
@@ -74,7 +75,7 @@ describe('makeCoreCtx（PX1 组装器）', () => {
     const root = createStore()
     const store = createStore()
     const signal = new AbortController().signal
-    const ctx = makeCoreCtx({ sessionId: 's1', runId: 'r1', signal, root, store, traceEvent: () => {} })
+    const ctx = makeCoreCtx({ sessionId: 's1', runId: 'r1', signal, root, store, history: createSessionHistory(store), traceEvent: () => {} })
 
     expect(ctx.sessionId).toBe('s1')
     expect(ctx.runId).toBe('r1')
@@ -91,7 +92,7 @@ describe('makeCoreCtx（PX1 组装器）', () => {
       runId: 'r1',
       signal: new AbortController().signal,
       root,
-      store,
+      store, history: createSessionHistory(store),
       traceEvent: () => {},
     })
     root.setter(sessionsAtom, { s1: fakeMeta('s1') })
@@ -110,7 +111,7 @@ describe('makeCoreCtx（PX1 组装器）', () => {
       runId: 'r1',
       signal: new AbortController().signal,
       root,
-      store,
+      store, history: createSessionHistory(store),
       traceEvent: () => {},
     })
     root.setter(sessionsAtom, { s1: fakeMeta('s1') })
@@ -120,7 +121,7 @@ describe('makeCoreCtx（PX1 组装器）', () => {
 
   it('traceEvent 原样透传注入的回调（name/attrs 逐字），且保留函数身份', () => {
     const traceEvent = vi.fn()
-    const ctx = makeCoreCtx({
+    const ctx = makeCoreCtx({ history: createSessionHistory(createStore()),
       sessionId: 's1',
       runId: 'r1',
       signal: new AbortController().signal,

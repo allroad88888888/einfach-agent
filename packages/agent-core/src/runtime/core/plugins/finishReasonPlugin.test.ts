@@ -17,7 +17,7 @@
 //   「decision toEqual {stop:true,...}」与「装配后复合 onTurnEnd 返回 decision」两处会立刻变红。
 
 import { describe, expect, it, vi } from 'vitest'
-import { createStore, type Store } from '@einfach/core'
+import { createHistory, createStore, type Store } from '@einfach/core'
 
 import type { AssistantItem, ModelResponseMessage } from '@web-agent/ai'
 import { sessionsAtom } from '../../../state/rootStore'
@@ -26,6 +26,7 @@ import type { SessionMeta } from '../../../state/core.type'
 import { makeCoreCtx, type CoreCtx } from '../coreCtx'
 import { assemblePlugins } from '../pluginApi'
 import type { TurnEndDecision, TurnEndEvent } from '../loopHooks'
+import { createSessionHistory } from '../../../state/sessionHistory'
 import {
   applyFinishReason,
   finishReasonPlugin,
@@ -53,7 +54,7 @@ function makeCtx(opts: { current?: boolean } = {}): { ctx: CoreCtx; store: Store
     runId: 'r1',
     signal: new AbortController().signal,
     store,
-    root,
+    root, history: createSessionHistory(store),
     traceEvent: vi.fn(),
   })
   return { ctx, store }

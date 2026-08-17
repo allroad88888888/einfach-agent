@@ -20,7 +20,7 @@ import type { ToolLoopBase } from './toolLoopContracts'
 import { ROOT_AGENT_PATH } from '../subagents/path'
 import { modelAdapterSettings, modelReasoningEffort, modelSamplingSettings } from './modelSettingsProjection'
 import { projectTimedToolResultOrphans } from './timedToolResultProjection'
-import { setContextCheckpointOnStore } from '../state/sessionWriters'
+import { setContextCheckpointOnSession } from '../state/sessionWriters'
 
 export interface ModelTurnResult {
   response: ModelChatResponse
@@ -75,14 +75,16 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
         const version = tool.registrationVersion ?? base.toolEpoch.registrationVersion(tool.name)
         if (version !== undefined) exposedRegistrationVersions.set(tool.name, version)
       }
-      const sessionStore = base.core.getSessionStore(base.id).store
+      // session 整体（含事务日志）用于写入器；sessionStore 仍是只读取值的近路。
+      const session = base.core.getSessionStore(base.id)
+      const sessionStore = session.store
       const history = sessionStore.getter(itemsAtom)
       const historyItems = history.map((item) => item.item)
       const rawMessages: ModelItem[] = [...base.stablePrefix.items, ...historyItems, ...controls]
       const requestAssembly = snapshotContextRequestAssembly({ rawMessages, stablePrefixItems: base.stablePrefix.items.length, historyItems: historyItems.length, controls, controlSources, tools })
       let projection = projectContextCheckpoint(history, sessionStore.getter(contextCheckpointAtom))
       if (projection.invalidCheckpoint) {
-        setContextCheckpointOnStore(sessionStore, undefined)
+        setContextCheckpointOnSession(session, undefined)
         base.trace.event('llm.context_checkpoint_invalidated', { reason: 'covered_history_changed' })
       }
       const inputBudgetTokens = contextInputBudgetTokens(base.settings.vendor, base.settings.model, sampling.maxTokens)
@@ -107,7 +109,7 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
           if (!base.control.isCurrent() || !base.control.isRunning() || base.opts.signal.aborted) {
             return { inactive: true, streamWriter }
           }
-          setContextCheckpointOnStore(sessionStore, checkpoint)
+          setContextCheckpointOnSession(session, checkpoint)
           projection = projectContextCheckpoint(history, checkpoint)
           projectedMessages = [...base.stablePrefix.items, ...projection.messages, ...controls]
           if (contextNeedsDistillation(projectedMessages, tools, inputBudgetTokens)) {

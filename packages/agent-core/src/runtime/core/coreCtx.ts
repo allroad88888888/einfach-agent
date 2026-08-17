@@ -7,7 +7,7 @@
 // 本文只定义句柄形状 + 组装器，绝不 import observability 具体实现 —— traceEvent 由构造时注入
 // （modelRun 那侧把它现有的 traceEvent 闭包传进来），让 core 与埋点实现解耦、便于测试注入假的。
 
-import type { Store } from '@einfach/core'
+import type { History, Store } from '@einfach/core'
 import { isCurrentRun } from '../shared/runGuards'
 
 // 简介：trace 出口回调的形状。
@@ -27,6 +27,11 @@ export interface CoreCtx {
   readonly store: Store
   // 跨会话顶层 store（rootStore）：sessionsAtom / activeSessionIdAtom。
   readonly root: Store
+  /**
+   * 本会话的事务日志。带上它，`ctx` 就结构性满足 `SlotWriteTarget`，插件可以直接调
+   * `state/` 的写入器而把这一笔记进 undo 日志 —— 而不是拿 `ctx.store` 裸写、绕过记账。
+   */
+  readonly history: History
   /** ghost + stale-run 双查。只有「await 之后再写」的异步插件需要调；循环内 hook 由 loop 守卫覆盖。 */
   isCurrent(): boolean
   /** 发一条 trace 事件（压缩等插件要发和现在逐字一样的 llm.* 事件）。实现由构造时注入。 */
@@ -42,6 +47,7 @@ export interface MakeCoreCtxDeps {
   signal: AbortSignal
   store: Store
   root: Store
+  history: History
   traceEvent: TraceEventFn
 }
 
@@ -55,6 +61,7 @@ export function makeCoreCtx(deps: MakeCoreCtxDeps): CoreCtx {
     signal: deps.signal,
     store: deps.store,
     root: deps.root,
+    history: deps.history,
     isCurrent: (): boolean =>
       isCurrentRun({
         root: deps.root,

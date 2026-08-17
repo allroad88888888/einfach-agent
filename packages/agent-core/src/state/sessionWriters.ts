@@ -9,7 +9,7 @@
 // 所有更新都是不可变的（替换数组/对象，C4）：恢复快照与将来的事务日志都靠这一点。
 //
 // 【store-scoped 变体】少数调用方只有一个 `Store`、拿不到 `CoreInstance`（`CoreCtx` 就是这样：
-//   它按契约只给 store/root，不给 core）。它们需要 `*OnStore` 形式的写入器：同样的不可变写，
+//   它按契约只给 store/root，不给 core）。它们需要 `*OnSession` 形式的写入器：同样的不可变写，
 //   但**不做 ghost guard、不 touchSession** —— 那两件事需要 rootStore，由 (id, core) 变体负责。
 //   接入 einfach 事务日志后，`createHistory(store)` 本身就是 per-store 的，这一族正是被
 //   `transaction()` 包住的那一层，所以形状先按 store 对齐。
@@ -21,7 +21,8 @@
 //   调用点行为逐字不变】。内部调用本文件别的写入器（touchSession / patchRun）一律把收到的 core
 //   原样带下去，不让它偷偷退回默认实例。
 
-import type { Store } from '@einfach/core'
+import { SESSION_SLOTS } from './sessionSlots'
+import { writeSlot, type SlotWriteTarget } from './sessionSlotWrite'
 import { sessionsAtom } from './rootStore'
 import { contextCheckpointAtom, itemsAtom, runAtom } from './sessionAtoms'
 import type { ContextCheckpoint } from './contextCheckpoint.type'
@@ -52,24 +53,27 @@ export function touchSession(id: string, core: CoreInstance = defaultCore): void
 }
 
 /**
- * 往给定会话 store 的对话历史尾部追加一条 item（不可变，产生新数组）。
+ * 往给定会话的对话历史尾部追加一条 item（不可变，产生新数组）。
  *
  * 不做 ghost guard、不 touchSession —— 调用方只有 store、够不到 rootStore。存在性由调用方
  * 自己的守卫覆盖（插件路径上是 `ctx.isCurrent()`，它同时查 ghost 与 stale run）。
  * 需要那两件事的调用方走 `appendItem(id, item, core)`。
  */
-export function appendItemToStore(store: Store, item: ConversationItem): void {
-  store.setter(itemsAtom, (prev) => [...prev, item])
+export function appendItemToSession(target: SlotWriteTarget, item: ConversationItem): void {
+  writeSlot(target, SESSION_SLOTS.items.key, itemsAtom, (prev) => [...prev, item])
 }
 
 /**
- * 写入（或用 `undefined` 清空）该会话 store 的上下文压缩摘要。
+ * 写入（或用 `undefined` 清空）该会话的上下文压缩摘要。
  *
- * 与 appendItemToStore 同族：只有 store 的调用方用它，不做 ghost guard / touchSession。
+ * 与 appendItemToSession 同族：不做 ghost guard / touchSession。
  * 摘要只影响请求投影，不替换 itemsAtom 里可审计的原始消息。
  */
-export function setContextCheckpointOnStore(store: Store, checkpoint: ContextCheckpoint | undefined): void {
-  store.setter(contextCheckpointAtom, checkpoint)
+export function setContextCheckpointOnSession(
+  target: SlotWriteTarget,
+  checkpoint: ContextCheckpoint | undefined,
+): void {
+  writeSlot(target, SESSION_SLOTS.contextCheckpoint.key, contextCheckpointAtom, checkpoint)
 }
 
 /**
@@ -80,7 +84,7 @@ export function appendItem(id: string, item: ConversationItem, core: CoreInstanc
   if (sessionMissing(id, core)) {
     return
   }
-  appendItemToStore(core.getSessionStore(id).store, item)
+  appendItemToSession(core.getSessionStore(id), item)
   touchSession(id, core)
 }
 

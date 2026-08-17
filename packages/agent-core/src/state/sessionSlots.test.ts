@@ -21,6 +21,14 @@ describe('SESSION_SLOTS', () => {
     expect(isSourceAtom(SESSION_SLOTS.items.atom)).toBe(true)
   })
 
+  it("keeps each slot's logical key equal to its field name", () => {
+    // key 会进落盘记录（快照字段 / op.key），字段名是代码里的引用方式。两者一旦漂移，
+    // 事务日志里的 op 就找不到对应 applier，而且是运行期才炸。
+    for (const key of SESSION_SLOT_KEYS) {
+      expect(SESSION_SLOTS[key].key).toBe(key)
+    }
+  })
+
   it('exposes every key in a stable order', () => {
     expect(SESSION_SLOT_KEYS).toEqual([...SESSION_SLOT_KEYS].sort())
     expect(new Set(SESSION_SLOT_KEYS).size).toBe(SESSION_SLOT_KEYS.length)

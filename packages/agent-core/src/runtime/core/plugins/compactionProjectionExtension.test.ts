@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createStore } from '@einfach/core'
+import { createHistory, createStore } from '@einfach/core'
 import type { ModelItem } from '@web-agent/ai'
 
 import { sessionsAtom } from '../../../state/rootStore'
@@ -7,6 +7,7 @@ import type { ModelSettings, SessionMeta } from '../../../state/core.type'
 import { makeCoreCtx } from '../coreCtx'
 import { assemblePlugins } from '../pluginApi'
 import { compactionPlugin, type CompactionRequestDraft } from './compactionPlugin'
+import { createSessionHistory } from '../../../state/sessionHistory'
 
 function fakeMeta(settings: ModelSettings): SessionMeta {
   return { settings } as unknown as SessionMeta
@@ -18,7 +19,7 @@ function fakeContext(settings: ModelSettings) {
   root.setter(sessionsAtom, { s1: fakeMeta(settings) })
   return {
     traceEvent,
-    ctx: makeCoreCtx({
+    ctx: makeCoreCtx({ history: createSessionHistory(createStore()),
       sessionId: 's1',
       runId: 'r1',
       signal: new AbortController().signal,

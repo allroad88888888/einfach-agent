@@ -33,6 +33,8 @@ import { makeCoreCtx } from './coreCtx'
 import { subscribeAgentEvents, type AgentEvent } from './events'
 import type { RequestDraft } from './loopHooks'
 import { assemblePlugins, type AgentPlugin } from './pluginApi'
+import { createHistory } from '@einfach/core'
+import { createSessionHistory } from '../../state/sessionHistory'
 
 // 每个用例自 seed；共享 store 由测试 setup 在每个用例后复位（同 events.test）。
 
@@ -158,7 +160,7 @@ describe('无头消费者（headless consumer）—— 消费方可替换的终�
       runId,
       signal: new AbortController().signal,
       store,
-      root: rootStore,
+      root: rootStore, history: createSessionHistory(store),
       traceEvent: () => {},
     })
     const draft: RequestDraft = { messages: [] }

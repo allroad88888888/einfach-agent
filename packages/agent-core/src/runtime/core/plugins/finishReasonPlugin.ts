@@ -49,7 +49,7 @@ import {
 } from '../../finishReason'
 import type { AgentPlugin } from '../pluginApi'
 import { assistantItemFromMessage } from '../../shared/preview'
-import { appendItemToStore } from '../../../state/sessionWriters'
+import { appendItemToSession } from '../../../state/sessionWriters'
 
 // 简介：finish_reason 三态收尾本体——从 modelRun.ts 的 runToolLoop 内联代码逐字搬来（异常分流那段）。
 // 详情：非异常三态 → 返回 undefined（不干预，loop 继续）。length+有 tool_calls 是可恢复截断
@@ -79,15 +79,15 @@ export function applyFinishReason(
     const noticeContent = assistantHasContent
       ? `${msg?.content ?? ''}${finishNotice}`
       : FINISH_REASON_STANDALONE_NOTICES[finishReason]
-    // 走 state/ 的 store-scoped writer：CoreCtx 按契约只给 store、不给 CoreInstance，所以
-    // 调不到 appendItem(id, item, core)。会话存在性由上面的 ctx.isCurrent() 覆盖，
-    // 那两件 (id, core) 变体才做的事（ghost guard / touchSession）在此不需要。
+    // 走 state/ 的写入器：ctx 结构性满足 SlotWriteTarget，这一笔因此记进本会话的事务日志。
+    // 调不到 appendItem(id, item, core) 是因为 CoreCtx 按契约不给 CoreInstance；
+    // 会话存在性由上面的 ctx.isCurrent() 覆盖，ghost guard / touchSession 在此不需要。
     const noticeItem: ConversationItem = {
       id: newId(),
       createdAt: Date.now(),
       item: assistantItemFromMessage(msg, noticeContent),
     }
-    appendItemToStore(ctx.store, noticeItem)
+    appendItemToSession(ctx, noticeItem)
   }
 
   // 条目内容插件写完，run 收尾（commit checkpoint 落盘 + patchRun status:'error' + 退出）交给

@@ -18,7 +18,7 @@
 // 派生 atom（真相在上游）与命令 atom（write 是动作而非赋值）写回都会出错，而且是静默出错。
 // 这条由本文件模块级的 `findNonSourceSessionSlots()` 调用在加载时机械保证，不靠 review。
 
-import { isSourceAtom, type AtomEntity, type Setter } from '@einfach/core'
+import { isSourceAtom, type AtomEntity, type History, type Setter } from '@einfach/core'
 import { EMPTY_EXECUTION_GRAPH, executionGraphAtom } from '../execution/graph'
 import {
   contextCheckpointAtom,
@@ -48,16 +48,27 @@ import { subagentContinuationsAtom } from './subagentContinuationAtoms'
  * 记录的会话必须把每个槽位显式推回默认值，否则上一份投影会残留下来，而且不报错。
  */
 export interface SessionSlot {
-  /** 仅用于身份判定（源子 atom 校验），不用于读写 —— 读写一律走本槽位自带的动作。 */
+  /** 落盘用的逻辑名，同时是事务日志里 op.key 的取值。 */
+  readonly key: string
+  /** 仅用于身份判定（源子 atom 校验）与读取，不用于写 —— 写一律走本槽位自带的动作。 */
   readonly atom: AtomEntity<unknown>
   /** 把该槽位写回「这个会话什么都没发生过」时的值。 */
   clear(set: Setter): void
+  /**
+   * 把本槽位的还原方式登记进一本事务日志。
+   *
+   * 用 `registerAtomApplier` 而不是手写 applier：einfach 那个糖会先校验 resolve 出来的确实是
+   * 源子 atom，再把历史值原样写回去。同一个 key 重复注册会抛错，所以每本日志只登记一次。
+   */
+  registerApplier(history: History): void
 }
 
-function slot<State>(atom: AtomEntity<State>, cleared: State): SessionSlot {
+function slot<State>(key: string, atom: AtomEntity<State>, cleared: State): SessionSlot {
   return {
+    key,
     atom: atom as AtomEntity<unknown>,
     clear: (set) => set(atom, cleared),
+    registerApplier: (history) => history.registerAtomApplier<State>(key, () => atom),
   }
 }
 
@@ -68,17 +79,17 @@ function slot<State>(atom: AtomEntity<State>, cleared: State): SessionSlot {
  * 所以改名等于改格式。atom 实例是进程内对象，绝不落盘。
  */
 export const SESSION_SLOTS = {
-  items: slot(itemsAtom, []),
-  contextCheckpoint: slot(contextCheckpointAtom, undefined),
-  run: slot(runAtom, undefined),
-  plan: slot(planAtom, undefined),
-  planStageCheckpoints: slot(planStageCheckpointsAtom, []),
-  queuedUserMessages: slot(queuedUserMessagesAtom, []),
-  pendingQuestionAnswers: slot(pendingQuestionAnswersAtom, {}),
-  pendingArtifacts: slot(pendingArtifactsAtom, []),
-  composerDraft: slot(composerDraftAtom, ''),
-  executionGraph: slot(executionGraphAtom, EMPTY_EXECUTION_GRAPH),
-  subagentContinuations: slot(subagentContinuationsAtom, []),
+  items: slot('items', itemsAtom, []),
+  contextCheckpoint: slot('contextCheckpoint', contextCheckpointAtom, undefined),
+  run: slot('run', runAtom, undefined),
+  plan: slot('plan', planAtom, undefined),
+  planStageCheckpoints: slot('planStageCheckpoints', planStageCheckpointsAtom, []),
+  queuedUserMessages: slot('queuedUserMessages', queuedUserMessagesAtom, []),
+  pendingQuestionAnswers: slot('pendingQuestionAnswers', pendingQuestionAnswersAtom, {}),
+  pendingArtifacts: slot('pendingArtifacts', pendingArtifactsAtom, []),
+  composerDraft: slot('composerDraft', composerDraftAtom, ''),
+  executionGraph: slot('executionGraph', executionGraphAtom, EMPTY_EXECUTION_GRAPH),
+  subagentContinuations: slot('subagentContinuations', subagentContinuationsAtom, []),
 } as const
 
 export type SessionSlotKey = keyof typeof SESSION_SLOTS
