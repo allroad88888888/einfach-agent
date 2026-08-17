@@ -14,12 +14,9 @@ import { dispatchTimedToolRegistrations, type TimedToolDispatchAdapter, type Tim
 import { ensureTimedDispatchEpoch } from './timedDispatchEpoch'
 
 export { dispatchTimedToolRegistrations, type TimedToolDispatchAdapter, type TimedToolDispatchResult } from './timedDispatchLoop'
-
-export interface TimedToolRegistration {
-  name: string
-  registrationVersion: number
-  runtime: Tool['runtime']
-}
+// 注册簿住在 ./timedToolRegistry：coreInstance 必须能拿到它而不静态引入本模块的 state 依赖。
+// 这里原样转出，既有 `from './timedDispatch'` 的导入方无需改动。
+export { createTimedToolRegistry, type TimedToolRegistration } from './timedToolRegistry'
 
 export interface TimedToolDispatchRequest {
   sessionId: string
@@ -64,80 +61,6 @@ async function loadTimedDispatchDependencies(): Promise<TimedDispatchDependencie
     executeToolCall: toolCallExecutor.executeToolCall,
     appendMappedToolResult: toolLoopSupport.appendMappedToolResult,
     safeErrorMessage: toolLoopSupport.safeErrorMessage,
-  }
-}
-
-/** Keeps each callTiming bucket in the registry's insertion order without exposing timed tools to models. */
-export function createTimedToolRegistry(registry: ToolRegistry): {
-  tools: ToolRegistry
-  registrations(timing: ToolCallTiming): readonly TimedToolRegistration[]
-} {
-  const timedNames = new Map<ToolCallTiming, string[]>()
-  const timingByName = new Map<string, ToolCallTiming>()
-  const runtimeByName = new Map<string, Tool['runtime']>()
-  const registrationOrder = new Map<string, number>()
-  let nextRegistrationOrder = 0
-
-  function removeTimedName(name: string, timing: ToolCallTiming | undefined): void {
-    if (!timing) return
-    const names = timedNames.get(timing)
-    if (!names) return
-    const index = names.indexOf(name)
-    if (index >= 0) names.splice(index, 1)
-    if (names.length === 0) timedNames.delete(timing)
-  }
-
-  function addTimedName(name: string, timing: ToolCallTiming | undefined): void {
-    if (!timing) return
-    const names = timedNames.get(timing) ?? []
-    const order = registrationOrder.get(name)!
-    const index = names.findIndex((candidate) => registrationOrder.get(candidate)! > order)
-    if (index < 0) names.push(name)
-    else names.splice(index, 0, name)
-    timedNames.set(timing, names)
-  }
-
-  const tools: ToolRegistry = {
-    ...registry,
-    register(tool: Tool) {
-      const existed = registry.has(tool.name)
-      const previousTiming = registry.callTiming(tool.name)
-      registry.register(tool)
-      const timing = registry.callTiming(tool.name)
-      if (!existed) registrationOrder.set(tool.name, nextRegistrationOrder++)
-      if (timing) runtimeByName.set(tool.name, tool.runtime)
-      else runtimeByName.delete(tool.name)
-      if (previousTiming === timing) return
-      removeTimedName(tool.name, previousTiming)
-      if (timing) timingByName.set(tool.name, timing)
-      else timingByName.delete(tool.name)
-      addTimedName(tool.name, timing)
-    },
-    unregister(name, expected) {
-      const timing = timingByName.get(name)
-      const removed = registry.unregister(name, expected)
-      if (!removed) return false
-      removeTimedName(name, timing)
-      timingByName.delete(name)
-      runtimeByName.delete(name)
-      registrationOrder.delete(name)
-      return true
-    },
-  }
-
-  return {
-    tools,
-    registrations(timing) {
-      const names = timedNames.get(timing)
-      if (!names) return []
-      return names.flatMap((name) => {
-        const registrationVersion = tools.registrationVersion(name)
-        const runtime = runtimeByName.get(name)
-        return registrationVersion === undefined || !runtime || tools.callTiming(name) !== timing
-          ? []
-          : [{ name, registrationVersion, runtime }]
-      })
-    },
   }
 }
 

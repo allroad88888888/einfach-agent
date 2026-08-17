@@ -14,11 +14,13 @@
 //   宿主能力（项目 skills 扫描等）同理经 opts 注入（B1）。
 import { createStore, type Store } from '@einfach/core'
 import { createToolRegistry, type ToolRegistry } from '../../tools/toolRegistry'
-import {
-  createTimedToolRegistry,
-  type TimedToolDispatchRequest,
-  type TimedToolDispatchResult,
-  type TimedToolRegistration,
+// 注册簿走叶子模块、派发面只取类型：静态 import 一旦落到 ../timedDispatch，就会闭合
+// coreInstance → timedDispatch → state/sessionWriters → state/rootStore → coreInstance，
+// 而 rootStore 在模块顶层读 `defaultCore.rootStore`，环里读到的是 undefined。
+import { createTimedToolRegistry, type TimedToolRegistration } from '../timedToolRegistry'
+import type {
+  TimedToolDispatchRequest,
+  TimedToolDispatchResult,
 } from '../timedDispatch'
 import { createToolEpochStore, type ToolEpochStore } from '../toolEpochStore'
 import type { DelegationCapability, DelegationRuntimeFactory } from '../delegationContract'
