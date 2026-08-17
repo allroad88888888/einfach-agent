@@ -88,6 +88,7 @@ export {
   renameSession,
   // 会话 atom 作用域：S7b（E7）为 <ActiveSessionProvider> 补的受限只读通路，不给 store 生命周期
   sessionAtomScope,
+  sessionUndoAvailabilityAtom,
   // run 生命周期
   sendMessage,
   continueInterruptedRun,

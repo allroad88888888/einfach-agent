@@ -6,7 +6,7 @@
  *   SessionList      → .agentnew-session-list / -session-item(.active) / -session-title / -session-rename-input / -session-remove(.confirming)
  *   ActiveSessionProvider → .agentnew-empty
  *   MessageList      → .agentnew-message-list / .agentnew-msg(.--assistant) / .agentnew-user-message / .agentnew-message-revert / .agentnew-message-empty
- *   CheckpointBar    → .agentnew-checkpoint-bar / .agentnew-checkpoint-item(.active)
+ *   UndoBar          → .agentnew-undo-bar / .agentnew-undo-item / .agentnew-undo-hint
  *   Composer         → .agentnew-composer / -composer-input / -composer-send
  */
 

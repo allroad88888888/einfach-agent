@@ -19,10 +19,9 @@
 import type { History } from '@einfach/core'
 import { activeSessionIdAtom } from '../../state/rootStore'
 import { runAtom } from '../../state/sessionAtoms'
+// 「在飞」的判定与 UI 可用态派生共用同一份状态集，避免按钮能点而命令拒绝。
+import { IN_FLIGHT_RUN_STATUSES } from '../../state/sessionHistory'
 import type { CoreInstance } from '../core/coreInstance'
-
-/** run 正在推进、随时会在 await 之后回写的状态。 */
-const IN_FLIGHT_RUN_STATUSES = new Set(['running', 'awaiting_tool'])
 
 export type HistoryCommandRefusal = 'no_session' | 'run_in_flight' | 'nothing_to_apply'
 

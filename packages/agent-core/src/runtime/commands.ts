@@ -88,6 +88,7 @@ export const {
   selectSession,
   removeSession,
   sessionAtomScope,
+  sessionUndoAvailabilityAtom,
   setWorkspaceRoot,
   setApprovalMode,
   sendMessage,

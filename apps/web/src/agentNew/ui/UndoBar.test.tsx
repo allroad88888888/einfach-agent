@@ -1,0 +1,81 @@
+import { describe, expect, it } from 'vitest'
+import { screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { itemsAtom, newSession, sessionAtomScope } from '@web-agent/core'
+// 深路径进真实写入器：账本条目只能由 state/ 的写入器产生，而写入器不在 core 的公开面上
+// （公开面只给 UI「读 atom + 调命令」）。测试要的是真账目，不是伪造的 atom 值。
+import { appendItem, setRun } from '@web-agent/core/state/sessionWriters'
+import { renderWithStore } from '../../test/renderWithStore'
+import { UndoBar } from './UndoBar'
+
+/** 走真实写入器跑一整轮，产生的账目全部带同一个轮标签。 */
+function seedTurn(id: string, turnId: string, text: string) {
+  setRun(id, { runId: `run-${turnId}`, status: 'running', turnId })
+  appendItem(id, { id: turnId, createdAt: 1, item: { role: 'user', content: text } })
+  appendItem(id, { id: `${turnId}-a`, createdAt: 2, item: { role: 'assistant', content: '答' } })
+  setRun(id, { runId: `run-${turnId}`, status: 'done', turnId })
+}
+
+function renderBar(id: string) {
+  return renderWithStore(<UndoBar sessionId={id} />, { store: sessionAtomScope(id) })
+}
+
+function itemIds(id: string): string[] {
+  return sessionAtomScope(id).getter(itemsAtom).map((entry) => entry.id)
+}
+
+describe('UndoBar', () => {
+  it('一条账都没有时整体不显示', () => {
+    const id = newSession({ settings: { vendor: 'test', model: 'test-model' } })
+    renderBar(id)
+
+    expect(screen.queryByRole('button', { name: '撤销上一轮' })).toBeNull()
+  })
+
+  it('点撤销把最近一轮整体退回', async () => {
+    const id = newSession({ settings: { vendor: 'test', model: 'test-model' } })
+    seedTurn(id, 'u1', '第一问')
+    seedTurn(id, 'u2', '第二问')
+    renderBar(id)
+
+    await userEvent.click(screen.getByRole('button', { name: '撤销上一轮' }))
+
+    // 只退一轮，第一轮必须完整留下。
+    expect(itemIds(id)).toEqual(['u1', 'u1-a'])
+  })
+
+  it('重做把刚撤销的那一轮放回来', async () => {
+    const id = newSession({ settings: { vendor: 'test', model: 'test-model' } })
+    seedTurn(id, 'u1', '第一问')
+    renderBar(id)
+
+    await userEvent.click(screen.getByRole('button', { name: '撤销上一轮' }))
+    expect(itemIds(id)).toEqual([])
+
+    await userEvent.click(screen.getByRole('button', { name: '重做' }))
+    expect(itemIds(id)).toEqual(['u1', 'u1-a'])
+  })
+
+  it('run 在飞时两个按钮都禁用并说明原因', () => {
+    const id = newSession({ settings: { vendor: 'test', model: 'test-model' } })
+    seedTurn(id, 'u1', '第一问')
+    setRun(id, { runId: 'run-live', status: 'running', turnId: 'u2' })
+    renderBar(id)
+
+    // 禁用态与命令的拒绝判定必须同源，否则会出现「按钮能点、命令却拒绝」。
+    expect(screen.getByRole('button', { name: '撤销上一轮' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '重做' })).toBeDisabled()
+    expect(screen.getByText('正在运行，先停止再撤销')).toBeInTheDocument()
+  })
+
+  it('撤销到底之后撤销按钮自己变灰，重做仍可用', async () => {
+    const id = newSession({ settings: { vendor: 'test', model: 'test-model' } })
+    seedTurn(id, 'u1', '第一问')
+    renderBar(id)
+
+    await userEvent.click(screen.getByRole('button', { name: '撤销上一轮' }))
+
+    expect(screen.getByRole('button', { name: '撤销上一轮' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: '重做' })).toBeEnabled()
+  })
+})

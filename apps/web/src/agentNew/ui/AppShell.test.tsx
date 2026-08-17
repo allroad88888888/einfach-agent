@@ -31,6 +31,12 @@ vi.mock('@web-agent/core/runtime/commands', async () => {
   const { defaultCore: realDefaultCore } = await import('@web-agent/core/runtime/core/coreInstance')
   return {
     sessionAtomScope: (id: string) => realDefaultCore.getSessionStore(id).store,
+    // 与 sessionAtomScope 同理必须是真实实现：UndoBar 也挂在右栏，它读的是那个会话自己的
+    // 派生 atom，假 atom 会让按钮的可用态与本用例 seed 的状态脱钩。
+    sessionUndoAvailabilityAtom: (id: string) =>
+      realDefaultCore.getSessionStore(id).history.undoAvailabilityAtom,
+    undoTurn: vi.fn(),
+    redoTurn: vi.fn(),
     configureCommands: vi.fn(),
     newWorkspace: vi.fn(),
     renameWorkspace: vi.fn(),

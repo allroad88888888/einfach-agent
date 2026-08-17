@@ -15,7 +15,8 @@
 //   会把实例缓存进根 store，一旦某会话的 store 被丢弃重建（drop 后再 get），缓存值就是失效实例；
 //   函数每次渲染现取，与改造前 `getSessionStore(id)` 的语义逐字一致，不引入新的失效窗口。
 
-import type { Store } from '@einfach/core'
+import type { Atom, Store } from '@einfach/core'
+import type { UndoAvailability } from '../../state/sessionHistory'
 import type { CoreInstance } from '../core/coreInstance'
 
 /** Builds the read-only session scope accessor consumed by UI providers. */
@@ -28,5 +29,13 @@ export function createSessionScopeCommands(core: CoreInstance) {
     return core.getSessionStore(sessionId).store
   }
 
-  return { sessionAtomScope }
+  // 简介：取某会话「撤销/重做此刻可不可用」的派生 atom，供 UI 绑按钮的 disabled 与提示。
+  // 详情：只交出这一个**只读 atom**，不交出 History 本体 —— 后者带 undo/redo/record/transaction，
+  //   等于把改状态和记账的权限递给渲染层。要撤销仍必须走 undoTurn / redoTurn 命令。
+  //   与 sessionAtomScope 同样是函数而非派生 atom：会话 store 被丢弃重建后，缓存的实例就失效了。
+  function sessionUndoAvailabilityAtom(sessionId: string): Atom<UndoAvailability> {
+    return core.getSessionStore(sessionId).history.undoAvailabilityAtom
+  }
+
+  return { sessionAtomScope, sessionUndoAvailabilityAtom }
 }

@@ -12,7 +12,7 @@
 //   defaultCore 造出来是【无工具】的；app（main.tsx）与测试（test/setup.ts）各调一次
 //   registerStandardTools(defaultCore.tools) 恢复"默认 21 工具"。于是 core 变无主张（可嵌任意工具集），
 //   宿主能力（项目 skills 扫描等）同理经 opts 注入（B1）。
-import { createStore, type History, type Store } from '@einfach/core'
+import { createStore, type Store } from '@einfach/core'
 import { createToolRegistry, type ToolRegistry } from '../../tools/toolRegistry'
 // 注册簿走叶子模块、派发面只取类型：静态 import 一旦落到 ../timedDispatch，就会闭合
 // coreInstance → timedDispatch → state/sessionWriters → state/rootStore → coreInstance，
@@ -40,7 +40,7 @@ import { createRuntimeConfig, type RuntimeConfig } from './runtimeConfig'
 import type { PlanRuntimeFactory } from '../../planning/runtime'
 import { getDefaultObservabilityPort, type ObservabilityPort } from '../../observability/port'
 import { createAbortRegistry, type AbortRegistryLike } from './abortRegistryStore'
-import { createSessionHistory } from '../../state/sessionHistory'
+import { createSessionHistory, type SessionHistory } from '../../state/sessionHistory'
 
 export type { RuntimeConfig } from './runtimeConfig'
 
@@ -54,8 +54,10 @@ export interface SessionStore {
    * 每个会话一本：`createHistory(store)` 是 per-store 的，而本仓「一个会话一个 store」，
    * 两者边界天然对齐。建 store 时就把 SESSION_SLOTS 的 applier 全部登记好 —— `record()`
    * 遇到未注册的 key 会失败，所以登记必须早于任何写入。
+   *
+   * 类型是 `SessionHistory` 而非裸 `History`：多带一个 UI 绑按钮用的可用态派生 atom。
    */
-  history: History
+  history: SessionHistory
 }
 
 interface ActiveTimedToolDispatcher {
