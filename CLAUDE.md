@@ -111,15 +111,17 @@ driver 由宿主配置 bridge。默认实例本身不自动安装工具，应用
 - **derived 的 read fn 必须是纯函数**：禁读时钟、随机数、全局可变量，禁做 IO，输入只能来自 `get`。
   恢复是「从快照重放」，重放要能得出同样的结果；违反后 undo 重算出的派生值与原来不一致，
   且**全程不报错**。需要「当前时间」时把它做成 primitive atom，由 command 层在写入时取值。
-- **core 会话状态的写入必须收口**在 `state/`（writer）或 `runtime/commands/`。
+- **会话 atom 的写入必须收口**在 `state/`（writer）、`runtime/commands/`，或登记为所有者模块。
   事务日志需要每次写入都留下 `(key, prev, next)`，而显式声明是唯一可行解——自动捕获要给每个被追踪
   atom 常驻订阅和基线值，成本 O(被追踪 atom 数)，在 family 场景下不成立。绕过它的写入不进日志，
   undo 越过时该 atom 停在新值、其余全部回滚，状态自相矛盾且只在 undo/崩溃恢复时才浮出来。
   作用域不含 `apps/web` 的 mcp/settings/plugins 与 `packages/subagents` 的视图 atom——它们不是会话状态。
 
 上面最后两条由 `pnpm check:state`（`scripts/check-state-invariants.js`）逐行判定，CI 里排在
-`check:boundaries` 之后。豁免表记录了今天尚未收口的 7 个写入点及各自理由，它的作用是
-**冻结现状、阻止新增**，不代表那些写法没问题。
+`check:boundaries` 之后。规则 2 只管**会话 atom**（会进 per-session 事务日志的那些）；root store
+的跨会话登记表、应用层与子 Agent 视图 atom 都在管辖之外。脚本里两张表分工不同：**所有者模块**
+是按设计拥有某个 atom 写入权的模块（如执行图 reducer、子 Agent continuation 写入器），
+**欠债表**是该收口而未收口的，当前为空。
 
 ## 运行链路
 

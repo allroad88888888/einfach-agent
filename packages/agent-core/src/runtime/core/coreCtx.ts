@@ -22,7 +22,8 @@ export interface CoreCtx {
   readonly runId: string
   readonly signal: AbortSignal
   // einfach 会话 store（getSessionStore(id).store）：getter/setter 覆盖会话原子
-  // （itemsAtom / runAtom / checkpointsAtom / ...）。
+  // （itemsAtom / runAtom / planAtom / ...）。**只有仓内 AgentPlugin 能拿到本句柄**：
+  // 公开插件经 @web-agent/core/plugin 只有 PluginRunApi.commands，没有 store。
   readonly store: Store
   // 跨会话顶层 store（rootStore）：sessionsAtom / activeSessionIdAtom。
   readonly root: Store

@@ -49,6 +49,7 @@ import {
 } from '../../finishReason'
 import type { AgentPlugin } from '../pluginApi'
 import { assistantItemFromMessage } from '../../shared/preview'
+import { appendItemToStore } from '../../../state/sessionWriters'
 
 // 简介：finish_reason 三态收尾本体——从 modelRun.ts 的 runToolLoop 内联代码逐字搬来（异常分流那段）。
 // 详情：非异常三态 → 返回 undefined（不干预，loop 继续）。length+有 tool_calls 是可恢复截断
@@ -78,14 +79,15 @@ export function applyFinishReason(
     const noticeContent = assistantHasContent
       ? `${msg?.content ?? ''}${finishNotice}`
       : FINISH_REASON_STANDALONE_NOTICES[finishReason]
-    // PX4 裸 setter：不可变追加（[...prev, item]，与 appendItem 同形），不经 guarded-writer。
-    // 会话存在性由上面的 ctx.isCurrent() 覆盖（旧 appendItem 的 ghost guard 在此为冗余）。
+    // 走 state/ 的 store-scoped writer：CoreCtx 按契约只给 store、不给 CoreInstance，所以
+    // 调不到 appendItem(id, item, core)。会话存在性由上面的 ctx.isCurrent() 覆盖，
+    // 那两件 (id, core) 变体才做的事（ghost guard / touchSession）在此不需要。
     const noticeItem: ConversationItem = {
       id: newId(),
       createdAt: Date.now(),
       item: assistantItemFromMessage(msg, noticeContent),
     }
-    ctx.store.setter(itemsAtom, (prev) => [...prev, noticeItem])
+    appendItemToStore(ctx.store, noticeItem)
   }
 
   // 条目内容插件写完，run 收尾（commit checkpoint 落盘 + patchRun status:'error' + 退出）交给

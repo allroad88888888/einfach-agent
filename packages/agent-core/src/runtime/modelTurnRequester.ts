@@ -20,6 +20,7 @@ import type { ToolLoopBase } from './toolLoopContracts'
 import { ROOT_AGENT_PATH } from '../subagents/path'
 import { modelAdapterSettings, modelReasoningEffort, modelSamplingSettings } from './modelSettingsProjection'
 import { projectTimedToolResultOrphans } from './timedToolResultProjection'
+import { setContextCheckpointOnStore } from '../state/sessionWriters'
 
 export interface ModelTurnResult {
   response: ModelChatResponse
@@ -81,7 +82,7 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
       const requestAssembly = snapshotContextRequestAssembly({ rawMessages, stablePrefixItems: base.stablePrefix.items.length, historyItems: historyItems.length, controls, controlSources, tools })
       let projection = projectContextCheckpoint(history, sessionStore.getter(contextCheckpointAtom))
       if (projection.invalidCheckpoint) {
-        sessionStore.setter(contextCheckpointAtom, undefined)
+        setContextCheckpointOnStore(sessionStore, undefined)
         base.trace.event('llm.context_checkpoint_invalidated', { reason: 'covered_history_changed' })
       }
       const inputBudgetTokens = contextInputBudgetTokens(base.settings.vendor, base.settings.model, sampling.maxTokens)
@@ -106,7 +107,7 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
           if (!base.control.isCurrent() || !base.control.isRunning() || base.opts.signal.aborted) {
             return { inactive: true, streamWriter }
           }
-          sessionStore.setter(contextCheckpointAtom, checkpoint)
+          setContextCheckpointOnStore(sessionStore, checkpoint)
           projection = projectContextCheckpoint(history, checkpoint)
           projectedMessages = [...base.stablePrefix.items, ...projection.messages, ...controls]
           if (contextNeedsDistillation(projectedMessages, tools, inputBudgetTokens)) {

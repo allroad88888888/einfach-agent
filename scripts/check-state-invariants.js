@@ -7,10 +7,12 @@
 // 只收能被 grep 判定的两条。需要判断的部分（这个 atom 该 primitive 还是 derived、
 // 某处写入该不该进 command 层）靠 review 与 CLAUDE.md §状态与 UI 边界。
 //
-// 【本门禁看不到的缺口】`runtime/core/coreCtx.ts` 的头部注释写着「写：ctx.store.setter(atom, next)
-//   **裸给**」——插件上下文按设计把裸 setter 交给插件。仓内插件（如 finishReasonPlugin）会被规则 2
-//   扫到，但**仓外插件不在扫描范围**，所以这不是一个站点而是一扇门。接入事务日志前必须把它换成
-//   受事务包裹的写入面，否则每个第三方插件的写都绕过 undo 日志。
+// 【关于插件的写入面】`CoreCtx.store` 是裸 `Store`（`coreCtx.ts` 头部写着「裸给」），但它**只对
+//   仓内插件开放**：带 `LoopHooks` 的 `AgentPlugin` / `PluginApi` 住在 `runtime/core/pluginApi.ts`，
+//   既不在 core 公开面白名单九条里，也不被 `plugin.ts` / `index.ts` 导出。公开插件经
+//   `@web-agent/core/plugin` 只拿到 `PluginRunApi = { commands, observeRun, onAfterToolCall }`
+//   —— 没有 store，写一律走 commands。所以插件写入面**已经收口**，仓内那几个（如
+//   finishReasonPlugin）在本门禁扫描范围内，见豁免表。
 
 import { readdir, readFile } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
@@ -34,48 +36,44 @@ const impureCallPattern = /\b(?:Date\.now|Math\.random|performance\.now|crypto\.
 const derivedOpenPattern = /\batom\s*\(\s*\(\s*get\b/
 
 // ---------------------------------------------------------------------------
-// 规则 2 · core 会话状态的写入必须收口在 writer / command 层
+// 规则 2 · 会话状态的写入必须落在它的所有者模块里
 // ---------------------------------------------------------------------------
-// 为什么：undo 需要每次写入都留下 (key, prev, next)，而显式声明是唯一可行解——自动捕获
+// 为什么：事务日志需要每次写入都留下 (key, prev, next)，而显式声明是唯一可行解——自动捕获
 //   要给每个被追踪 atom 常驻订阅和基线值，成本 O(被追踪 atom 数)，在 family 场景下不成立。
-// 违反后：这次写入不进事务日志。undo 越过它时该 atom 停在新值上、其余全部回滚 —— 状态自相矛盾。
-// 作用域刻意只到 packages/agent-core/src：apps/web 的 mcp/settings/plugins 与 packages/subagents
-//   的视图 atom 不是会话状态、不进恢复快照，也不该进 undo 日志，属于本规则之外。
+// 违反后：这次写入不进事务日志。undo 越过它时该 atom 停在新值、其余全部回滚 —— 状态自相矛盾，
+//   且只在 undo 或崩溃恢复时才以静默错值浮出来。
+//
+// **只管会话 atom**，判据是「这个 atom 会不会进 per-session 的事务日志」：
+//   · 管：`state/sessionAtoms`、`state/sessionTransientAtoms`、`state/subagentContinuationAtoms`、
+//     `execution/graph` 里的会话级 atom —— 它们是一个会话的内容。
+//   · 不管：root store 的 `sessionsAtom` / `workspacesAtom` / `projectSkillsAtom` 等跨会话登记表。
+//     它们不是会话内容，undo 一个会话不该动到会话列表，因此不需要事务包裹。
+//   · 不管：`apps/web` 的 mcp/settings/plugins 与 `packages/subagents` 的视图 atom（同上，且不进快照）。
+// 早一版规则按「文件里出现 .setter(」一刀切，把 root 写入误算成欠债；判据改成「这一行写的是哪个
+// atom」之后，欠债清单才是 L1 真正要收口的那几处。
 const writeScopeDirectory = 'packages/agent-core/src'
-const writeAllowedPrefixes = ['state/', 'runtime/commands/']
+const sessionAtomModulePattern = /(?:state\/session(?:Atoms|TransientAtoms)|state\/subagentContinuationAtoms|execution\/graph)/
 const setterPattern = /\.setter\s*\(/
-// 白名单外的既有命中：命中时降级为观察项而不是 fail，且必须写明原因与归属。
-// 这张表是「冻结今天的集合、阻止新增」，不是「这些写法没问题」——它们恰恰是 L1 要收口的对象。
-const writeExemptions = [
-  {
-    path: 'runtime/modelTurnRequester.ts',
-    reason: 'contextCheckpointAtom（在 V1 快照里）由压缩流程就地写；L1 收口时改走 writer',
-  },
+// 会话 atom 的写入被允许出现的位置：写入器层与命令层。
+const writeAllowedPrefixes = ['state/', 'runtime/commands/']
+// **所有者模块**：某个会话 atom 的写入天然属于它，搬进 state/ 反而倒置分层。
+// 与豁免表的区别是这些不是欠债 —— 接事务日志时它们就是被 transaction 包住的那一层。
+const writeOwnerModules = [
   {
     path: 'execution/runtime.ts',
-    reason: 'executionGraphAtom / executionEventsAtom（前者在 V1 快照里）由执行图 reducer 就地写；同上',
-  },
-  {
-    path: 'runtime/core/plugins/finishReasonPlugin.ts',
-    reason: 'itemsAtom（在 V1 快照里）追加提示条目；插件写入面的收口见 coreCtx 那条',
+    reason: 'executionGraphAtom / executionEventsAtom 的 reducer 与所有者；执行图归 execution/，不归 state/',
   },
   {
     path: 'subagents/continuationStore.ts',
-    reason: 'subagentContinuationsAtom（在 V1 快照里）由子 run 机制就地写；同上',
-  },
-  {
-    path: 'runtime/toolLoading.ts',
-    reason: 'sessionsAtom 是 ghost guard 的权威登记表，非会话内容；不进 undo 日志',
-  },
-  {
-    path: 'runtime/core/plugins/migrationPlugin.ts',
-    reason: '同上：迁移改写 SessionMeta 静态字段',
-  },
-  {
-    path: 'runtime/core/projectSkillsStore.ts',
-    reason: 'projectSkillsAtom 是跨会话的 root 状态，不是会话内容',
+    reason: 'subagentContinuationsAtom 的唯一写入器，含 descriptor/fence/terminal 全部转移语义',
   },
 ]
+// **欠债**：不是写入器却就地写会话 atom，应当收口。命中降级为观察项，但不代表没问题。
+// 当前为空 —— L1 第一片已把三处收口：`finishReasonPlugin` 与 `modelTurnRequester` 改走
+// `state/sessionWriters` 的 store-scoped 写入器（`appendItemToStore` /
+// `setContextCheckpointOnStore`）。留着这张表是因为下一处欠债需要一个有名字的去处，
+// 而不是被顺手登记成「所有者模块」。
+const writeExemptions = []
 
 async function typescriptFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true })
@@ -134,20 +132,48 @@ async function checkWriteChokepoint(files, errors, observations) {
     const scoped = relative(scopeRoot, path).split(sep).join('/')
     if (scoped.startsWith('..')) continue
     if (writeAllowedPrefixes.some((prefix) => scoped.startsWith(prefix))) continue
-    const lines = (await readFile(path, 'utf8')).split('\n')
+    const source = await readFile(path, 'utf8')
+    const lines = source.split('\n')
+
+    // 本文件从会话 atom 模块 import 进来的标识符 —— 只有写这些才算命中。
+    const sessionAtoms = new Set()
+    for (const [, names, specifier] of source.matchAll(
+      /import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g,
+    )) {
+      // 相对说明符先解析成仓相对路径：`execution/runtime.ts` 里的 './graph' 就是
+      // `execution/graph`，直接对字面量做匹配会漏掉整个同目录 import 家族。
+      const resolved = specifier.startsWith('.')
+        ? relative(scopeRoot, resolve(dirname(path), specifier)).split(sep).join('/')
+        : specifier
+      if (!sessionAtomModulePattern.test(resolved)) continue
+      for (const raw of names.split(',')) {
+        const name = raw.replace(/\btype\b/, '').trim().split(/\s+as\s+/).pop()?.trim()
+        if (name) sessionAtoms.add(name)
+      }
+    }
+    if (sessionAtoms.size === 0) continue
+
     const hits = lines
       .map((line, index) => ({ line, index }))
-      .filter(({ line }) => setterPattern.test(line) && !/^\s*(?:\/\/|\*)/.test(line))
+      .filter(({ line }) => (
+        setterPattern.test(line)
+        && !/^\s*(?:\/\/|\*)/.test(line)
+        && [...sessionAtoms].some((name) => new RegExp(`\\.setter\\s*\\(\\s*${name}\\b`).test(line))
+      ))
     if (hits.length === 0) continue
+
+    const owner = writeOwnerModules.find((item) => item.path === scoped)
     const exemption = writeExemptions.find((item) => item.path === scoped)
     for (const { index } of hits) {
       const location = `${relativePath(path)}:${index + 1}`
-      if (exemption) {
-        observations.push(`${location} 观察项：core 状态写入未收口 —— 豁免原因：${exemption.reason}`)
+      if (owner) {
+        observations.push(`${location} 所有者模块（按设计，非欠债）：${owner.reason}`)
+      } else if (exemption) {
+        observations.push(`${location} 待收口（L1 欠债）：${exemption.reason}`)
       } else {
         errors.push(
-          `${location} core 状态写入必须收口在 ${writeAllowedPrefixes.join(' 或 ')}`
-          + '（新增写入点请走 writer/command 层；确有理由请在 check-state-invariants.js 的豁免表里写明）',
+          `${location} 会话 atom 的写入必须落在 ${writeAllowedPrefixes.join(' 或 ')}`
+          + '，或在 check-state-invariants.js 的所有者模块表里登记；新增写入点请走 writer/command 层',
         )
       }
     }
@@ -166,7 +192,7 @@ async function main() {
   await checkWriteChokepoint(allFiles, errors, observations)
 
   if (observations.length > 0) {
-    console.log(`状态不变量观察项（${observations.length} 处，均在豁免表内）：`)
+    console.log(`状态不变量观察项（${observations.length} 处，均已登记）：`)
     for (const observation of observations) console.log(`- ${observation}`)
   }
   if (errors.length > 0) {
@@ -177,8 +203,8 @@ async function main() {
   }
   console.log(`状态不变量检查通过（扫描 ${allFiles.length} 个非测试 TS/TSX 文件，生效 2 条规则）。`)
   console.log('规则 1：derived 的 read fn 禁读时钟/随机数——否则重放得不到同样结果，且静默。')
-  console.log(`规则 2：${writeScopeDirectory} 里的 .setter( 只允许出现在 ${writeAllowedPrefixes.join(' / ')}；`)
-  console.log('作用域不含 apps/web 的 mcp/settings/plugins 与 packages/subagents 的视图 atom——它们不是会话状态。')
+  console.log(`规则 2：${writeScopeDirectory} 里对**会话 atom** 的写入只允许出现在 ${writeAllowedPrefixes.join(' / ')}，`)
+  console.log('或所有者模块表里登记过的模块。root store 的跨会话登记表与应用层 atom 不在管辖范围。')
 }
 
 main().catch((error) => {
