@@ -57,15 +57,17 @@ const setterPattern = /\.setter\s*\(/
 // 会话 atom 的写入被允许出现的位置：写入器层与命令层。
 const writeAllowedPrefixes = ['state/', 'runtime/commands/']
 // **所有者模块**：某个会话 atom 的写入天然属于它，搬进 state/ 反而倒置分层。
-// 与豁免表的区别是这些不是欠债 —— 接事务日志时它们就是被 transaction 包住的那一层。
+//
+// 这张表**只能容纳不进账本的 atom**。它原先登记的两项都是槽位（`executionGraphAtom`、
+// `subagentContinuationsAtom`），登记理由写的是「接事务日志时它们就是被 transaction 包住的那一层」——
+// 而事实是接上之后它们仍在用裸 `store.setter`，于是那两个槽位从未入账：撤销一轮会把
+// items/run/plan 退回去，执行图与子 Agent continuation 停在新值上，状态自相矛盾且只在 undo 时浮出来。
+// 两处已改走 `writeSlot`。**新增登记前先问一句：这个 atom 在 SESSION_SLOTS 里吗？在，就不该进这张表。**
 const writeOwnerModules = [
   {
     path: 'execution/runtime.ts',
-    reason: 'executionGraphAtom / executionEventsAtom 的 reducer 与所有者；执行图归 execution/，不归 state/',
-  },
-  {
-    path: 'subagents/continuationStore.ts',
-    reason: 'subagentContinuationsAtom 的唯一写入器，含 descriptor/fence/terminal 全部转移语义',
+    reason: 'executionEventsAtom 的唯一写入者，而它不是槽位（不进快照、不进账本、当前全仓无读取方）；'
+      + 'executionGraphAtom 已改走 state/ 的 writeSlot，不再靠本表豁免',
   },
 ]
 // **欠债**：不是写入器却就地写会话 atom，应当收口。命中降级为观察项，但不代表没问题。
@@ -126,8 +128,27 @@ async function checkDerivedPurity(files, errors) {
   }
 }
 
+/**
+ * SESSION_SLOTS 里登记的 atom 标识符。
+ *
+ * 从源码抽而不是 import：本脚本由 node 直跑，import TS 要先编译。找不到任何一项就抛 ——
+ * 那说明槽位表的结构变了、这条规则已经失效，静默放过比不检查更糟。
+ */
+async function slotAtomNames() {
+  const source = await readFile(
+    resolve(repositoryRoot, writeScopeDirectory, 'state/sessionSlots.ts'), 'utf8',
+  )
+  const names = new Set()
+  for (const [, name] of source.matchAll(/\bslot\(\s*'[^']*'\s*,\s*([A-Za-z_$][\w$]*)/g)) names.add(name)
+  if (names.size === 0) {
+    throw new Error('未能从 state/sessionSlots.ts 抽出槽位 atom —— 槽位表结构已变，请同步本脚本的抽取式')
+  }
+  return names
+}
+
 async function checkWriteChokepoint(files, errors, observations) {
   const scopeRoot = resolve(repositoryRoot, writeScopeDirectory)
+  const slotAtoms = await slotAtomNames()
   for (const path of files) {
     const scoped = relative(scopeRoot, path).split(sep).join('/')
     if (scoped.startsWith('..')) continue
@@ -153,20 +174,30 @@ async function checkWriteChokepoint(files, errors, observations) {
     }
     if (sessionAtoms.size === 0) continue
 
+    // 记下命中的是哪个 atom：所有者模块表只能豁免「不进账本」的 atom，判定要用到名字。
     const hits = lines
       .map((line, index) => ({ line, index }))
-      .filter(({ line }) => (
-        setterPattern.test(line)
-        && !/^\s*(?:\/\/|\*)/.test(line)
-        && [...sessionAtoms].some((name) => new RegExp(`\\.setter\\s*\\(\\s*${name}\\b`).test(line))
-      ))
+      .filter(({ line }) => setterPattern.test(line) && !/^\s*(?:\/\/|\*)/.test(line))
+      .map(({ line, index }) => ({
+        index,
+        atom: [...sessionAtoms].find((name) => new RegExp(`\\.setter\\s*\\(\\s*${name}\\b`).test(line)),
+      }))
+      .filter(({ atom }) => atom !== undefined)
     if (hits.length === 0) continue
 
     const owner = writeOwnerModules.find((item) => item.path === scoped)
     const exemption = writeExemptions.find((item) => item.path === scoped)
-    for (const { index } of hits) {
+    for (const { index, atom } of hits) {
       const location = `${relativePath(path)}:${index + 1}`
-      if (owner) {
+      if (owner && slotAtoms.has(atom)) {
+        // 所有者模块表挡不住这一类：槽位不记账 = undo 把它留在新值上、其余槽位已回滚，
+        // 状态自相矛盾且全程不报错。这条正是 executionGraphAtom / subagentContinuationsAtom
+        // 真实发生过的漏账（两者当时都登记在所有者模块表里）。
+        errors.push(
+          `${location} ${atom} 在 SESSION_SLOTS 里 —— 槽位写入必须经 state/ 的 writeSlot 记账，`
+          + '不能靠所有者模块表豁免：不入事务日志的槽位会在 undo 后停在新值上，而其余槽位已回滚',
+        )
+      } else if (owner) {
         observations.push(`${location} 所有者模块（按设计，非欠债）：${owner.reason}`)
       } else if (exemption) {
         observations.push(`${location} 待收口（L1 欠债）：${exemption.reason}`)

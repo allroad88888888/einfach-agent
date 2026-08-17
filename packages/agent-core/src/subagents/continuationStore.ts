@@ -1,4 +1,6 @@
 import type { CoreInstance } from '../runtime/core/coreInstance'
+import { SESSION_SLOTS } from '../state/sessionSlots'
+import { writeSlot } from '../state/sessionSlotWrite'
 import { subagentContinuationsAtom } from '../state/subagentContinuationAtoms'
 import type { SubagentContinuationV1 } from '../state/recoverySnapshot.type'
 import {
@@ -41,7 +43,8 @@ export function queueChildContinuations(input: {
 }): QueuedChildContinuationBatch {
   if (input.nodes.length !== input.specs.length) throw new Error('child continuation node/spec mismatch')
   if (input.nodes.length === 0) return createQueuedBatch([])
-  const store = input.core.getSessionStore(input.sessionId).store
+  const session = input.core.getSessionStore(input.sessionId)
+  const store = session.store
   const current = store.getter(subagentContinuationsAtom)
   const childIds = input.nodes.map((node) => node.id)
   if (new Set(childIds).size !== childIds.length || current.some((item) => childIds.includes(item.childId))) {
@@ -65,7 +68,7 @@ export function queueChildContinuations(input: {
     state: 'queued',
     spec: childContinuationDescriptorJson(createChildContinuationDescriptor(node, input.specs[index]!)),
   }))
-  store.setter(subagentContinuationsAtom, (previous) => {
+  writeSlot(session, SESSION_SLOTS.subagentContinuations.key, subagentContinuationsAtom, (previous) => {
     const linked = parentNodeId
       ? previous.map((item) => item.childId === parentNodeId
         ? updateDescriptor(item, (descriptor) => appendNestedChildIds(descriptor, childIds))
@@ -84,14 +87,16 @@ export function fenceChildContinuation(input: {
   queuedBatch: QueuedChildContinuationBatch
 }): boolean {
   if (!input.queuedBatch.consume(input.childId)) return false
-  const store = input.core.getSessionStore(input.sessionId).store
+  const session = input.core.getSessionStore(input.sessionId)
+  const store = session.store
   const current = store.getter(subagentContinuationsAtom)
   const continuation = current.find((item) => item.childId === input.childId)
   const descriptor = continuation ? readChildContinuationDescriptor(continuation) : undefined
   if (!continuation || !descriptor || descriptor.lifecycle !== 'active' || continuation.state !== 'queued') return false
-  store.setter(subagentContinuationsAtom, (previous) => previous.map((item) => item.childId === input.childId
-    ? { ...item, state: 'outcome_unknown', spec: childContinuationDescriptorJson(fenceChildContinuationDescriptor(descriptor)) }
-    : item))
+  writeSlot(session, SESSION_SLOTS.subagentContinuations.key, subagentContinuationsAtom, (previous) =>
+    previous.map((item) => item.childId === input.childId
+      ? { ...item, state: 'outcome_unknown', spec: childContinuationDescriptorJson(fenceChildContinuationDescriptor(descriptor)) }
+      : item))
   return true
 }
 
@@ -107,20 +112,22 @@ export function markChildContinuationTerminal(input: {
   skillIds: string[]
   changeSets: Array<{ id: string; reversible: boolean }>
 }): void {
-  const store = input.core.getSessionStore(input.sessionId).store
+  const session = input.core.getSessionStore(input.sessionId)
+  const store = session.store
   const current = store.getter(subagentContinuationsAtom)
   const continuation = current.find((item) => item.childId === input.childId)
   const descriptor = continuation && readChildContinuationDescriptor(continuation)
   if (!continuation || !descriptor || descriptor.lifecycle !== 'active') {
     throw new Error('active child continuation is missing')
   }
-  store.setter(subagentContinuationsAtom, (previous) => previous.map((item) => item.childId === input.childId
-    ? {
-        ...item,
-        state: 'interrupted',
-        spec: childContinuationDescriptorJson(terminalChildContinuationDescriptor({ descriptor, ...input })),
-      }
-    : item))
+  writeSlot(session, SESSION_SLOTS.subagentContinuations.key, subagentContinuationsAtom, (previous) =>
+    previous.map((item) => item.childId === input.childId
+      ? {
+          ...item,
+          state: 'interrupted',
+          spec: childContinuationDescriptorJson(terminalChildContinuationDescriptor({ descriptor, ...input })),
+        }
+      : item))
 }
 
 function updateDescriptor(
