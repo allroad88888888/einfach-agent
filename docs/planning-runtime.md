@@ -21,7 +21,7 @@ Planning 是独立的执行阶段，不是 assistant 回复中的临时 Markdown
 
 ## 状态与持久化
 
-计划的运行时唯一状态源是每会话 Einfach `planAtom`。`SessionMeta.plan` 是落盘副本，启动 hydrate 时先迁移到 v4，再恢复到 `planAtom`；旧版 completed 计划保持完成，不会被追溯降级。
+计划的运行时唯一状态源是每会话 Einfach `planAtom`。它只随完整 RecoverySnapshot V1 持久化和 hydrate；SessionMeta 只保存静态会话元数据。没有有效 V1 时，hydrate 只加载 checkpoint 的 undo/history，不恢复 `planAtom`。
 
 v4 移除了宿主评估：`acceptanceCriteria`、逐条判定、`evaluating` 状态和「待用户验收」都不再存在。迁移时评估结论被丢弃，最后一次提交的摘要与证据折叠进 `stage.result` 保留；中断在评估中的阶段回落 `in_progress`（当时没有人确认它做完了，判完成会把未验证的工作永久标成已完成）。
 

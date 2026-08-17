@@ -1,7 +1,6 @@
 # Core 中断恢复 Issue 树
 
-状态：**规划已冻结，W5 已完成，W6 已启动**（R9/R9a 已完成；V1 正在全链路验证，V2 已就绪）。本文件是这项迁移的唯一执行账本；每张卡完成后由主会话
-更新状态和证据，执行 agent 不并发修改本文件。
+状态：**已收口：W8 完成（R0–R10、V1–V3 均已完成）**。本文件是这项迁移的唯一执行账本；每张卡完成后由主会话更新状态和证据，执行 agent 不并发修改本文件。
 
 本文件替代提交 `8d70fcc` 中误设为「可逆历史 / redo」的树。那条方向不再执行。
 
@@ -24,9 +23,10 @@ redo、历史 cursor、追加日志或将 atom 身份持久化。
 ### 已确认事实
 
 - `checkpointWriters.ts` 的跳转/回退会截断未来；这是用户 undo，不是恢复机制。
-- 当前 working checkpoint 保存 `items`、`plan`、`context`、`run` 与排队消息；hydrate 会把
-  `running` / `awaiting_tool` 变为 `interrupted`，等待输入/确认/审批则原样恢复。
-- `SessionMeta.executionGraph` 与 checkpoint 分两次写入；断电可读到不同代的对话与任务图。
+- 当前 checkpoint 仅保存 undo/history 所需的 `items`、`plan`、`context` 与阶段回退点；`run`、排队消息
+  和所有其他运行态只存在于同代的 RecoverySnapshot V1。hydrate 只会归类 V1 中的 `running` /
+  `awaiting_tool` 为 `interrupted`，并保留 V1 中自包含的等待状态。
+- 旧版 session 动态镜像与 checkpoint 分两次写入；断电可读到不同代的对话与任务图。
 - `continueInterruptedModelRun` 会把未结 tool call 写成 unknown 后重新请求模型，不能表达每个任务的
   可恢复契约；`ExecutionGraphSnapshot` 也只有展示状态，缺少可重新调度的工作描述。
 - `pendingQuestionAnswersAtom` 独立于 `RunState`，当前未落入 checkpoint；已填写但未提交的答案会丢。
@@ -43,8 +43,8 @@ redo、历史 cursor、追加日志或将 atom 身份持久化。
 5. 持久化写入按 session 串行且 generation 单调；旧的异步写绝不能覆盖较新的成功提交。
 6. 恢复前在飞运行统一转成可解释的 interruption state；仅在 resume policy 明确安全时自动继续，外部副作用
    未知时必须停在可确认/可对账状态。
-7. 切换期不再把 `Checkpoint.recovery` 与 `SessionMeta.executionGraph` 当成双事实来源；旧 checkpoint 仍可
-   读取并保留用户 undo，旧会话必须降级可读，不能丢数据。
+7. 切换后 checkpoint 只保留用户 undo/history，SessionMeta 只保存静态元数据。hydrate 只接受已校验的
+   RecoverySnapshot V1；缺失、损坏或不可读 V1 的会话只能保留静态登记和已净化的 checkpoint history，不能恢复或调度运行态。
 8. 新增/大改普通文件不超过 300 行；单一强内聚恢复状态机可放宽至 500 行，卡中须说明理由并执行 `wc -l`。
 9. 不使用 `git stash`、不碰本卡外文件、不 broad-stage；每卡只暂存其明确列出的路径。
 
@@ -176,13 +176,12 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
   executor 或 checkpoint undo writer。
 - **目标**：优先读取单代 snapshot，在一次 batch apply 后将真正 live 的运行状态转为 `interrupted`；
   `waiting_user`、`waiting_confirmation`、`waiting_plan_approval` 原样保留，graph 与 run 同代恢复。
-  有效 v1 record 只能由这一份 record hydrate；已存在但损坏的 v1 是 recovery failure，严禁退回并拼接
-  legacy checkpoint/session meta；只有完全缺失 v1 才允许 legacy fallback。
+  有效 v1 record 只能由这一份 record hydrate；缺失、损坏或不可读的 v1 都是 recovery failure，严禁退回
+  checkpoint 或 SessionMeta 的历史动态字段。
 - **非目标**：不自动执行模型/工具，不以 SessionMeta 的旧 graph 覆盖新 snapshot。
-- **验收**：冷启动、旧 checkpoint fallback、torn legacy pair、各 run status 和已填写答案都有恢复测试。
-- **证据**：独立只读验收通过；有效 v1 apply 后立即跳过 legacy，损坏 v1 挡住 legacy 且 root 仅保留静态
-  session meta，sessions 列表读取失败仍可由 v1 重建。`recoveryHydration.test.ts` 与 `hydrate.test.ts`
-  12/12，联合恢复测试 63/63，core build 通过；分类模块 164 行、hydrate 273 行。
+- **验收**：冷启动、有效 v1、缺失/损坏 v1、各 run status 和已填写答案都有恢复测试。
+- **证据**：有效 v1 才能投影动态 atom；缺失或损坏 v1 只留下静态 session meta 和 checkpoint history；sessions
+  列表读取失败仍可由 v1 重建。
 
 ### R6 · 模型循环与等待输入恢复
 
@@ -225,8 +224,8 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 - **owner / 模型**：已验收 / strong（核心集成）
 - **独占面**：run lifecycle command、core public facade、migration tests；只读调用已有恢复模块，
   不改 checkpoint undo command 或 persistence schema。
-- **目标**：提供可发现的 session 恢复/继续入口；新会话以 recovery record 为准，旧会话用现有
-  checkpoint 只读 hydrate 后在首个稳定边界生成新 snapshot。
+- **目标**：提供可发现的 session 恢复/继续入口；只有完整 recovery record 能提供可继续的运行态；没有有效
+  V1 的会话保持不可恢复，不从 checkpoint 或 SessionMeta 推导运行态。
 - **非目标**：不新增 redo/timeline UI，不删除旧数据，不自动跳过 unknown outcome。
 - **验收**：混合新旧会话、多个 interrupted session、用户拒绝工具重试、继续子任务都有黑盒覆盖。
 - **证据**：`8fb6f43`；Core facade 与根出口提供按显式 session id 发现状态和定向继续，不改变 active
@@ -248,41 +247,38 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 
 ### R10 · 移除双事实恢复路径
 
-- **波次 / 依赖 / 状态**：W7 / R9、V1、V2 / BLOCKED
-- **owner / 模型**：待派 / strong（收口迁移）
+- **波次 / 依赖 / 状态**：W7 / R9、V1、V2 / DONE
+- **owner / 模型**：已验收 / strong（收口迁移）
 - **独占面**：checkpoint recovery payload、SessionMeta execution graph 双写、旧 hydrate branch 和测试；
   由单一 owner 串行完成。
-- **目标**：移除运行恢复对两份异步记录的依赖；checkpoint 保留为用户 undo/history，recovery record
+- **目标**：移除运行恢复对历史双写的依赖；checkpoint 保留为用户 undo/history，完整 RecoverySnapshot V1
   成为唯一运行恢复投影。
-- **非目标**：不删除用户 checkpoint 数据或修改其显式回退语义。
-- **验收**：生产源中没有以 checkpoint recovery + SessionMeta graph 拼接恢复的路径；旧数据迁移后
-  重启不丢 transcript/plan/run，所有原有 undo 测试保留。
+- **非目标**：不删除用户 checkpoint 数据或修改其显式回退语义；不为旧格式动态状态提供兼容恢复或迁移。
+- **验收 / 证据**：生产源不存在历史 checkpoint recovery 或 SessionMeta 动态镜像的类型、读写或 hydrate 分支；有效 V1 仍恢复 live atoms，缺失/损坏 V1 只保留静态 session 与 sanitized checkpoint history。Core 源码全量 191 files/1637 tests、SQLite 4 files/21 tests、`pnpm build`、`pnpm check:boundaries`、`pnpm check:dist` 与 `git diff --check` 均通过。
 
 ### V1 · 崩溃点全链路验证
 
-- **波次 / 依赖 / 状态**：W6 / R9 / ACTIVE
-- **owner / 模型**：进行中 / independent-audit
+- **波次 / 依赖 / 状态**：W6 / R9 / DONE
+- **owner / 模型**：已验收 / independent-audit
 - **独占面**：只新增独立 integration tests；不改生产实现或既有单元测试。
 - **目标**：以进程重建模拟每一 durable boundary 的中断，核验 allowlist atom、resume kind 和无重复副作用。
-- **验收**：对话、排队消息、问题已填答案、工具四阶段、计划、root/child task 均有正反例与 generation
-  一致性断言。
+- **验收 / 证据**：对话、排队消息、问题已填答案、工具四阶段、计划、root/child task 均有正反例与 generation 一致性断言；R10 收口后的 Core 源码全量验证通过。
 
 ### V2 · SQLite / IDB 原子性与产物验证
 
-- **波次 / 依赖 / 状态**：W6 / R9 / READY
-- **owner / 模型**：待派 / independent-audit
+- **波次 / 依赖 / 状态**：W6 / R9 / DONE
+- **owner / 模型**：已验收 / independent-audit
 - **独占面**：只新增/调整黑盒验证和打包脚本；不改 recovery 生产模块。
 - **目标**：验证两个 driver 的提交可见性、落后写保护、跨版本读取和已发布 core 的恢复出口。
-- **验收**：SQLite/IDB crash fixture、`pnpm build`、`pnpm check:boundaries`、`pnpm check:dist` 通过。
+- **验收 / 证据**：SQLite/IDB crash fixture、`pnpm build`、`pnpm check:boundaries`、`pnpm check:dist` 通过；SQLite 源码 suite 4 files/21 tests 通过。
 
 ### V3 · 独立架构审计与交付
 
-- **波次 / 依赖 / 状态**：W8 / R10、V1、V2 / BLOCKED
-- **owner / 模型**：待派 / independent-audit
+- **波次 / 依赖 / 状态**：W8 / R10、V1、V2 / DONE
+- **owner / 模型**：已验收 / independent-audit
 - **独占面**：只读审计，允许更新本文件状态；不改实现。
 - **目标**：逐条检查红线、allowlist 完整性、单一事实、外部副作用策略和文件职责，而不只看测试。
-- **验收**：无 redo/history cursor/atom identity 持久化；无恢复双写；新增/大改文件行数报告；完整命令、
-  退出码和剩余风险留档。
+- **验收 / 证据**：无 redo/history cursor/atom identity 持久化；无恢复双写；新增/大改文件符合行数约束；独立审计与所有交付门禁通过。
 
 ## 统一交付门禁
 
