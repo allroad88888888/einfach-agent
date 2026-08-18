@@ -17,8 +17,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `node scripts/check-docs.js`：Markdown 门禁——相对链接必须真实存在，且禁止引用迁移前的旧源码
   路径（规则见脚本里的 `legacySourcePathPattern`，连在文档里写出那个字面量都会失败）。
   改任何 `.md` 都要跑，CI 里它排在测试之前。
-- `pnpm check:state`：状态机制不变量门禁——derived 必须纯、core 会话状态写入必须收口在
-  `state/` 或 `runtime/commands/`（判据与豁免表见 §状态与 UI 边界）。改 atom、writer 或
+- `pnpm check:state`：状态机制不变量门禁——derived 必须纯、**全仓**会话状态写入必须收口在
+  core 的 `state/` 或 `runtime/commands/`（判据与豁免表见 §状态与 UI 边界）。改 atom、writer 或
   新增写入点时要跑。`pnpm check:boundaries` 管的是**包之间**的边界，两者职责不同。
 - `pnpm cli -p "<prompt>"`：headless CLI 宿主跑一轮真实 run（读 `~/.webAgent/config.json`
   或环境变量取模型 Key；`--help` 看全部选项）；无 `-p` 进入 REPL。
@@ -111,11 +111,18 @@ driver 由宿主配置 bridge。默认实例本身不自动安装工具，应用
 - **derived 的 read fn 必须是纯函数**：禁读时钟、随机数、全局可变量，禁做 IO，输入只能来自 `get`。
   恢复是「从快照重放」，重放要能得出同样的结果；违反后 undo 重算出的派生值与原来不一致，
   且**全程不报错**。需要「当前时间」时把它做成 primitive atom，由 command 层在写入时取值。
-- **会话 atom 的写入必须收口**在 `state/`（writer）、`runtime/commands/`，或登记为所有者模块。
+- **会话 atom 的写入必须收口**在 core 的 `state/`（writer）与 `runtime/commands/`，或登记为所有者模块。
   事务日志需要每次写入都留下 `(key, prev, next)`，而显式声明是唯一可行解——自动捕获要给每个被追踪
   atom 常驻订阅和基线值，成本 O(被追踪 atom 数)，在 family 场景下不成立。绕过它的写入不进日志，
   undo 越过时该 atom 停在新值、其余全部回滚，状态自相矛盾且只在 undo/崩溃恢复时才浮出来。
-  作用域不含 `apps/web` 的 mcp/settings/plugins 与 `packages/subagents` 的视图 atom——它们不是会话状态。
+  **这条管整个仓库，不只是 core**：门禁早一版只扫 `packages/agent-core/src`，于是渲染层可以直接写
+  入账槽位而无人知晓（实测 `Composer` 就在用 `useSetAtom(composerDraftAtom)` 绕过收口点）。
+  UI 要改会话状态只能走 commands。作用域仍不含 `apps/web` 的 mcp/settings/plugins 与
+  `packages/subagents` 的视图 atom——它们不是会话状态。
+- **槽位有两种**：进快照且入账的，与**只进快照**的。目前只有 `composerDraft` 属于后者——它必须
+  进快照（刷新不能丢用户打了一半的字），但写入是逐击键的，记账会让敲一百个字就填满 undo 的 cap、
+  把真实轮次账目全挤出去。也不做「只在清空时记账」的折中：那样撤销一轮会把旧草稿盖回输入框，
+  静默吞掉用户刚写的话。
 - **进日志的值不许随累积状态长大**。整值记账（`writeSlot` 存 `(before, after)` 两份完整槽位值）
   只适用于有界的槽位。对随对话/会话增长、且条目自带载荷的槽位，开销是 `cap × 累积长度`——**二次**。
   内存里看不出来（新旧数组共享条目引用），但 JSON / structuredClone 不认共享引用、会把每个都

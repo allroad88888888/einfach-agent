@@ -111,6 +111,7 @@ export {
   redoEntry,
   // 卡片与项目 Skills
   discardArtifact,
+  setComposerDraft,
   refreshProjectSkills,
   // 子 Agent 视图（apps/web: SubagentTreePanel、SubagentSkillGovernancePanel）
   selectSubagentNode,

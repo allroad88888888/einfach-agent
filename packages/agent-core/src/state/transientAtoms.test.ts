@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createStore } from '@einfach/core'
 
+import { createCore } from '../runtime/core/createCore'
 import { rootStore, sessionsAtom } from './rootStore'
 import { getSessionStore } from './sessionStore'
 import { createCoreInstance } from '../runtime/core/coreInstance'
@@ -365,6 +366,21 @@ describe('composerDraft / withdrawnTurnNotice', () => {
 
     expect(getSessionStore('s1').store.getter(composerDraftAtom)).toBe('hello')
     expect(getSessionStore('s2').store.getter(composerDraftAtom)).toBe('')
+  })
+
+  it('草稿写入不记账 —— 逐击键会填满 undo 的 cap', () => {
+    const core = createCore()
+    const id = core.newSession({ settings: { vendor: 'test', model: 'test-model' } })
+    core.selectSession(id)
+    const history = core.getSessionStore(id).history
+
+    for (let index = 0; index < 30; index += 1) setComposerDraft(id, 'a'.repeat(index + 1), core)
+
+    // composerDraft 是 SESSION_SLOTS 成员（必须进恢复快照），但**只进快照、不入账**：
+    // 它的写入是逐击键的，记账会让敲一百个字就把 cap 填满、真实轮次账目全被挤出去。
+    // 这条钉住那个区分；改回 writeSlot 会立刻红。
+    expect(history.getState().entries).toHaveLength(0)
+    expect(core.getSessionStore(id).store.getter(composerDraftAtom)).toBe('a'.repeat(30))
   })
 
   it('setWithdrawnTurnNotice 写入/清除撤回提示', () => {

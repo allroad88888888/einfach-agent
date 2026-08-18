@@ -11,6 +11,9 @@ import { useAtomValue, useSetAtom } from '@einfach/react'
 import {
   runAtom,
   composerDraftAtom,
+  // 走命令而不是 useSetAtom(composerDraftAtom)：会话 atom 的写入必须收口在 core 的
+  // writer/command 层，渲染层直接写会绕过收口点（门禁 check:state 现在全仓都判这条）。
+  setComposerDraft,
   queuedUserMessagesAtom,
   withdrawnTurnNoticeAtom,
   continueInterruptedRun,
@@ -53,7 +56,6 @@ export function Composer({
   const queuedMessages = useAtomValue(queuedUserMessagesAtom)
   const notice = useAtomValue(withdrawnTurnNoticeAtom)
   const attachments = useAtomValue(composerImageAttachmentAtom)
-  const setDraft = useSetAtom(composerDraftAtom)
   const setNotice = useSetAtom(withdrawnTurnNoticeAtom)
   const addImages = useSetAtom(addComposerImageAttachmentsAtom)
   const clearImages = useSetAtom(clearComposerImageAttachmentsAtom)
@@ -88,7 +90,7 @@ export function Composer({
       const outcome = composerSubmissionOutcome(value)
       if (hasImages) settleImageSubmission({ revision: attachments.revision, ...outcome })
       if (outcome.accepted) {
-        setDraft('')
+        setComposerDraft('')
         setNotice(undefined)
       }
     }
@@ -116,7 +118,7 @@ export function Composer({
   }
 
   const updateDraft = (value: string) => {
-    setDraft(value)
+    setComposerDraft(value)
     if (notice) setNotice(undefined)
   }
 
@@ -134,7 +136,7 @@ export function Composer({
         target instanceof HTMLTextAreaElement && target.classList.contains('agentnew-composer-input')
       if (inComposerInput && !running) {
         event.preventDefault()
-        setDraft('')
+        setComposerDraft('')
         clearImages()
         if (notice) setNotice(undefined)
         return
@@ -143,7 +145,7 @@ export function Composer({
     }
     window.addEventListener('keydown', handleGlobalKeyDown)
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [clearImages, notice, running, setDraft, setNotice])
+  }, [clearImages, notice, running, setNotice])
 
   // 焦点变化时 textarea 可能收不到 keyup；在 window 兜底解锁下一次快捷键按压。
   useEffect(() => {

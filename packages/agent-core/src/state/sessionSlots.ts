@@ -105,6 +105,10 @@ export const SESSION_SLOTS = {
   pendingArtifacts: slot(
     'pendingArtifacts', pendingArtifactsAtom, [], registerPendingArtifactsAppliers,
   ),
+  // **只进快照、不入账**（本表唯一一个）。它必须进快照 —— 刷新不能把用户打了一半的字丢了；
+  // 但它的写入是逐击键的，记账会让敲一百个字就填满 cap、把真实轮次账目全挤出去。
+  // 判据与「为什么不做只在清空时记账的折中」见 sessionTransientMutations.ts 的 setComposerDraft。
+  // applier 仍然登记：将来若真有一处需要按轮记账地写草稿，机制是现成的。
   composerDraft: slot('composerDraft', composerDraftAtom, ''),
   executionGraph: slot(
     'executionGraph', executionGraphAtom, EMPTY_EXECUTION_GRAPH, registerExecutionGraphAppliers,

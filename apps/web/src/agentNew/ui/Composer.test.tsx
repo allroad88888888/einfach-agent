@@ -1,6 +1,7 @@
+import type { ReactElement } from 'react'
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
-import { createStore } from '@einfach/core'
+import { createStore, type Store } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
 import {
   runAtom,
@@ -17,12 +18,29 @@ import { Composer } from './Composer'
 // P-U4 Composer：右栏输入框。契约 U1 —— UI 只读 atom（runAtom）+ 调命令
 // （sendMessage / stopRun）。这里把命令整模块 mock，断言「按了什么就调了什么」，
 // 不触碰真正的 runtime / store setter。
-vi.mock('@web-agent/core/runtime/commands', () => ({
-  continueInterruptedRun: vi.fn(),
-  sendMessage: vi.fn(() => ({ accepted: true })),
-  setApprovalMode: vi.fn(),
-  stopRun: vi.fn(),
-}))
+// 草稿从「UI 直接 setter atom」改成走命令之后，mock 必须真的写回本用例那个 store ——
+// 输入框是受控的（值来自 composerDraftAtom），mock 成空函数的话打字根本不生效。
+// 真实命令写的是 defaultCore 的活动会话 store，与本用例的隔离 store 天生对不上，所以只能在这里桥接。
+const draftTarget = vi.hoisted(() => ({ store: undefined as Store | undefined }))
+
+vi.mock('@web-agent/core/runtime/commands', async () => {
+  const { composerDraftAtom } = await import('@web-agent/core/state/sessionTransientAtoms')
+  return {
+    continueInterruptedRun: vi.fn(),
+    sendMessage: vi.fn(() => ({ accepted: true })),
+    setApprovalMode: vi.fn(),
+    stopRun: vi.fn(),
+    setComposerDraft: vi.fn((draft: string) => {
+      draftTarget.store?.setter(composerDraftAtom, draft)
+    }),
+  }
+})
+
+/** 渲染并把本用例的 store 交给草稿命令的 mock。 */
+function renderComposer(ui: ReactElement, options: { store: Store }) {
+  draftTarget.store = options.store
+  return renderWithStore(ui, options)
+}
 
 describe('Composer', () => {
   afterEach(() => {
@@ -31,7 +49,7 @@ describe('Composer', () => {
 
   it('输入并点「发送」：sendMessage 收到 trim 后的草稿，输入框随后清空', () => {
     const store = createStore()
-    renderWithStore(<Composer />, { store })
+    renderComposer(<Composer />, { store })
 
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     fireEvent.change(textarea, { target: { value: 'hi' } })
@@ -43,7 +61,7 @@ describe('Composer', () => {
   })
 
   it('Enter（非 shift）发送；Shift+Enter 不发送', () => {
-    renderWithStore(<Composer />, { store: createStore() })
+    renderComposer(<Composer />, { store: createStore() })
 
     const textarea = screen.getByRole('textbox')
     fireEvent.change(textarea, { target: { value: 'go' } })
@@ -56,7 +74,7 @@ describe('Composer', () => {
   })
 
   it('输入框聚焦时按 Shift+Tab 切换模式，单次按压只触发一次', () => {
-    const { rerender } = renderWithStore(<Composer approvalMode="confirm" />, { store: createStore() })
+    const { rerender } = renderComposer(<Composer approvalMode="confirm" />, { store: createStore() })
     const textarea = screen.getByRole('textbox')
 
     fireEvent.keyDown(textarea, { key: 'Tab', shiftKey: true })
@@ -71,7 +89,7 @@ describe('Composer', () => {
   })
 
   it('显示当前授权模式，点击也能切换', () => {
-    renderWithStore(<Composer approvalMode="auto" />, { store: createStore() })
+    renderComposer(<Composer approvalMode="auto" />, { store: createStore() })
 
     expect(screen.getByText(/授权：Auto/)).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /授权模式：Auto/ }))
@@ -79,7 +97,7 @@ describe('Composer', () => {
   })
 
   it('IME 组合输入中的 Enter 不发送；组合结束后 Enter 才发送', () => {
-    renderWithStore(<Composer />, { store: createStore() })
+    renderComposer(<Composer />, { store: createStore() })
 
     const textarea = screen.getByRole('textbox')
     fireEvent.change(textarea, { target: { value: 'rust' } })
@@ -94,7 +112,7 @@ describe('Composer', () => {
   })
 
   it('native isComposing / keyCode=229 的 Enter 不发送（IME 兼容）', () => {
-    renderWithStore(<Composer />, { store: createStore() })
+    renderComposer(<Composer />, { store: createStore() })
 
     const textarea = screen.getByRole('textbox')
     fireEvent.change(textarea, { target: { value: '中文' } })
@@ -106,7 +124,7 @@ describe('Composer', () => {
   })
 
   it('空草稿：发送按钮 disabled', () => {
-    renderWithStore(<Composer />, { store: createStore() })
+    renderComposer(<Composer />, { store: createStore() })
 
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
   })
@@ -114,7 +132,7 @@ describe('Composer', () => {
   it('busy 态：仍可输入并加入队列，同时可单独停止', () => {
     const store = createStore()
     store.setter(runAtom, { runId: 'r', status: 'running' })
-    renderWithStore(<Composer />, { store })
+    renderComposer(<Composer />, { store })
 
     const textarea = screen.getByRole('textbox')
     expect(textarea).not.toBeDisabled()
@@ -135,7 +153,7 @@ describe('Composer', () => {
       status: 'awaiting_tool',
       pendingExecutionId: 'execution-1',
     })
-    renderWithStore(<Composer />, { store })
+    renderComposer(<Composer />, { store })
 
     expect(screen.getByRole('textbox')).not.toBeDisabled()
     expect(screen.getByRole('button', { name: '加入队列' })).toBeDisabled()
@@ -151,7 +169,7 @@ describe('Composer', () => {
       { id: 'q1', createdAt: 1, content: '第一条', targetRunId: 'r' },
       { id: 'q2', createdAt: 2, content: '第二条', targetRunId: 'r' },
     ])
-    renderWithStore(<Composer />, { store })
+    renderComposer(<Composer />, { store })
 
     expect(screen.getByRole('status')).toHaveTextContent('已排队 2 条')
   })
@@ -163,7 +181,7 @@ describe('Composer', () => {
       status: 'error',
       error: 'Chat completion returned 401: Authentication Fails',
     })
-    renderWithStore(<Composer />, { store })
+    renderComposer(<Composer />, { store })
 
     const alert = screen.getByRole('alert')
     expect(alert).toHaveTextContent('请求失败')
@@ -175,14 +193,14 @@ describe('Composer', () => {
   it('error 态：非鉴权错误直接显示原始错误信息', () => {
     const store = createStore()
     store.setter(runAtom, { runId: 'r', status: 'error', error: '模型返回空回复' })
-    renderWithStore(<Composer />, { store })
+    renderComposer(<Composer />, { store })
 
     expect(screen.getByRole('alert')).toHaveTextContent('模型返回空回复')
   })
 
   it('输入框内 Esc：空闲时清空草稿，不触发 stopRun', () => {
     const store = createStore()
-    renderWithStore(<Composer />, { store })
+    renderComposer(<Composer />, { store })
 
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     fireEvent.change(textarea, { target: { value: 'draft' } })
@@ -199,7 +217,7 @@ describe('Composer', () => {
     // 等 ask_user 回答时不能发新消息顶掉暂停中的 run（应走问题卡片的「继续」）。
     const store = createStore()
     store.setter(runAtom, { runId: 'r', status: 'waiting_user' })
-    renderWithStore(<Composer />, { store })
+    renderComposer(<Composer />, { store })
 
     expect(screen.getByRole('textbox')).toBeDisabled()
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
@@ -213,7 +231,7 @@ describe('Composer', () => {
     // 等危险工具确认时不能发新消息顶掉暂停中的 run（应走确认卡片的「允许/拒绝」）。
     const store = createStore()
     store.setter(runAtom, { runId: 'r', status: 'waiting_confirmation' })
-    renderWithStore(<Composer />, { store })
+    renderComposer(<Composer />, { store })
 
     expect(screen.getByRole('textbox')).toBeDisabled()
     expect(screen.getByRole('button', { name: '发送' })).toBeDisabled()
@@ -223,7 +241,7 @@ describe('Composer', () => {
   })
 
   it('全局 Esc → stopRun（U7 中断）', () => {
-    renderWithStore(<Composer />, { store: createStore() })
+    renderComposer(<Composer />, { store: createStore() })
 
     fireEvent.keyDown(window, { key: 'Escape' })
 
@@ -233,7 +251,7 @@ describe('Composer', () => {
   it('interrupted 态：锁定普通输入并提供继续执行入口', () => {
     const store = createStore()
     store.setter(runAtom, { runId: 'r', status: 'interrupted', turnId: 'u1' })
-    renderWithStore(<Composer />, { store })
+    renderComposer(<Composer />, { store })
 
     expect(screen.getByRole('textbox')).toBeDisabled()
     expect(screen.getByText('应用重启中断了任务')).toBeInTheDocument()
@@ -251,7 +269,7 @@ describe('Composer', () => {
       text: '已撤回本轮对话并放回输入框。',
       sideEffects: false,
     })
-    renderWithStore(<Composer />, { store })
+    renderComposer(<Composer />, { store })
 
     expect(screen.getByText('已撤回本轮对话并放回输入框。')).toBeInTheDocument()
     fireEvent.change(screen.getByRole('textbox'), { target: { value: 'edit' } })

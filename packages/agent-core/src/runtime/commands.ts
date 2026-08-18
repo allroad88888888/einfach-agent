@@ -104,6 +104,7 @@ export const {
   rollbackPlanStage,
   answerQuestion,
   discardArtifact,
+  setComposerDraft,
   undoTurn,
   redoTurn,
   undoEntry,

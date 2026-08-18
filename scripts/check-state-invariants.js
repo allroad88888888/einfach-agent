@@ -51,11 +51,25 @@ const derivedOpenPattern = /\batom\s*\(\s*\(\s*get\b/
 //   · 不管：`apps/web` 的 mcp/settings/plugins 与 `packages/subagents` 的视图 atom（同上，且不进快照）。
 // 早一版规则按「文件里出现 .setter(」一刀切，把 root 写入误算成欠债；判据改成「这一行写的是哪个
 // atom」之后，欠债清单才是 L1 真正要收口的那几处。
-const writeScopeDirectory = 'packages/agent-core/src'
+// 作用域是**整个仓库**，不只是 core。早一版只扫 `packages/agent-core/src`，于是应用层可以直接写
+// 入账槽位而门禁一无所知 —— 实测 `apps/web` 的 Composer 就在用 `useSetAtom(composerDraftAtom)`
+// 绕过收口点。规则本身声称的是「会话 atom 的写入必须收口」，那它就不能只在 core 里生效。
+const writeScopeDirectory = '.'
 const sessionAtomModulePattern = /(?:state\/session(?:Atoms|TransientAtoms)|state\/subagentContinuationAtoms|execution\/graph)/
-const setterPattern = /\.setter\s*\(/
-// 会话 atom 的写入被允许出现的位置：写入器层与命令层。
-const writeAllowedPrefixes = ['state/', 'runtime/commands/']
+// 三种写入形态。React 那两个是新加的：UI 不用 `store.setter`，它 `useSetAtom(atom)` 拿到 setter
+// 再调，只认 `.setter(` 的判据对渲染层完全失明 —— 而渲染层恰恰是最该被这条规则管住的地方。
+const writePatterns = [
+  { label: '.setter(', pattern: (name) => new RegExp(`\\.setter\\s*\\(\\s*${name}\\b`) },
+  { label: 'useSetAtom(', pattern: (name) => new RegExp(`\\buseSetAtom\\s*\\(\\s*${name}\\b`) },
+  { label: 'useAtom(', pattern: (name) => new RegExp(`\\buseAtom\\s*\\(\\s*${name}\\b`) },
+]
+const anyWritePattern = /\.setter\s*\(|\buseSetAtom\s*\(|\buseAtom\s*\(/
+// 会话 atom 的写入被允许出现的位置：core 的写入器层与命令层。仓库其它任何地方都不许直接写 ——
+// 应用层要改会话状态只能走 commands。
+const writeAllowedPrefixes = [
+  'packages/agent-core/src/state/',
+  'packages/agent-core/src/runtime/commands/',
+]
 // **所有者模块**：某个会话 atom 的写入天然属于它，搬进 state/ 反而倒置分层。
 //
 // 这张表**只能容纳不进账本的 atom**。它原先登记的两项都是槽位（`executionGraphAtom`、
@@ -65,7 +79,7 @@ const writeAllowedPrefixes = ['state/', 'runtime/commands/']
 // 两处已改走 `writeSlot`。**新增登记前先问一句：这个 atom 在 SESSION_SLOTS 里吗？在，就不该进这张表。**
 const writeOwnerModules = [
   {
-    path: 'execution/runtime.ts',
+    path: 'packages/agent-core/src/execution/runtime.ts',
     reason: 'executionEventsAtom 的唯一写入者，而它不是槽位（不进快照、不进账本、当前全仓无读取方）；'
       + 'executionGraphAtom 已改走 state/ 的 writeSlot，不再靠本表豁免',
   },
@@ -136,7 +150,7 @@ async function checkDerivedPurity(files, errors) {
  */
 async function slotAtomNames() {
   const source = await readFile(
-    resolve(repositoryRoot, writeScopeDirectory, 'state/sessionSlots.ts'), 'utf8',
+    resolve(repositoryRoot, 'packages/agent-core/src/state/sessionSlots.ts'), 'utf8',
   )
   const names = new Set()
   for (const [, name] of source.matchAll(/\bslot\(\s*'[^']*'\s*,\s*([A-Za-z_$][\w$]*)/g)) names.add(name)
@@ -156,45 +170,54 @@ async function checkWriteChokepoint(files, errors, observations) {
     const source = await readFile(path, 'utf8')
     const lines = source.split('\n')
 
-    // 本文件从会话 atom 模块 import 进来的标识符 —— 只有写这些才算命中。
+    // 本文件 import 进来的、属于会话状态的标识符 —— 只有写这些才算命中。两个来源：
+    //   · 按**模块**认：core 内部从会话 atom 模块 import 的一切（含非槽位的会话 atom）。
+    //   · 按**名字**认：SESSION_SLOTS 里的槽位 atom，不管从哪条路径 import 进来的。
+    // 后者是为了看穿 barrel：core 之外的文件从 `@web-agent/core` 拿 atom，模块路径里根本没有
+    // `state/sessionAtoms` 这种字样，只按模块认就等于对整个应用层失明。
     const sessionAtoms = new Set()
     for (const [, names, specifier] of source.matchAll(
       /import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g,
     )) {
       // 相对说明符先解析成仓相对路径：`execution/runtime.ts` 里的 './graph' 就是
-      // `execution/graph`，直接对字面量做匹配会漏掉整个同目录 import 家族。
+      // `packages/agent-core/src/execution/graph`，直接对字面量做匹配会漏掉整个同目录 import 家族。
       const resolved = specifier.startsWith('.')
         ? relative(scopeRoot, resolve(dirname(path), specifier)).split(sep).join('/')
         : specifier
-      if (!sessionAtomModulePattern.test(resolved)) continue
+      const byModule = sessionAtomModulePattern.test(resolved)
       for (const raw of names.split(',')) {
         const name = raw.replace(/\btype\b/, '').trim().split(/\s+as\s+/).pop()?.trim()
-        if (name) sessionAtoms.add(name)
+        if (!name) continue
+        if (byModule || slotAtoms.has(name)) sessionAtoms.add(name)
       }
     }
     if (sessionAtoms.size === 0) continue
 
-    // 记下命中的是哪个 atom：所有者模块表只能豁免「不进账本」的 atom，判定要用到名字。
-    const hits = lines
-      .map((line, index) => ({ line, index }))
-      .filter(({ line }) => setterPattern.test(line) && !/^\s*(?:\/\/|\*)/.test(line))
-      .map(({ line, index }) => ({
-        index,
-        atom: [...sessionAtoms].find((name) => new RegExp(`\\.setter\\s*\\(\\s*${name}\\b`).test(line)),
-      }))
-      .filter(({ atom }) => atom !== undefined)
+    // 记下命中的是哪个 atom、以哪种形态写的：所有者模块表只能豁免「不进账本」的 atom，
+    // 而报错信息里带上形态（`useSetAtom(` 之类）能让人一眼看到该改哪一行。
+    const hits = []
+    for (const [index, line] of lines.entries()) {
+      if (!anyWritePattern.test(line) || /^\s*(?:\/\/|\*)/.test(line)) continue
+      for (const { label, pattern } of writePatterns) {
+        const atom = [...sessionAtoms].find((name) => pattern(name).test(line))
+        if (atom) {
+          hits.push({ index, atom, label })
+          break
+        }
+      }
+    }
     if (hits.length === 0) continue
 
     const owner = writeOwnerModules.find((item) => item.path === scoped)
     const exemption = writeExemptions.find((item) => item.path === scoped)
-    for (const { index, atom } of hits) {
+    for (const { index, atom, label } of hits) {
       const location = `${relativePath(path)}:${index + 1}`
       if (owner && slotAtoms.has(atom)) {
         // 所有者模块表挡不住这一类：槽位不记账 = undo 把它留在新值上、其余槽位已回滚，
         // 状态自相矛盾且全程不报错。这条正是 executionGraphAtom / subagentContinuationsAtom
         // 真实发生过的漏账（两者当时都登记在所有者模块表里）。
         errors.push(
-          `${location} ${atom} 在 SESSION_SLOTS 里 —— 槽位写入必须经 state/ 的 writeSlot 记账，`
+          `${location} ${label}${atom} 在 SESSION_SLOTS 里 —— 槽位写入必须经 state/ 的 writeSlot 记账，`
           + '不能靠所有者模块表豁免：不入事务日志的槽位会在 undo 后停在新值上，而其余槽位已回滚',
         )
       } else if (owner) {
@@ -203,7 +226,7 @@ async function checkWriteChokepoint(files, errors, observations) {
         observations.push(`${location} 待收口（L1 欠债）：${exemption.reason}`)
       } else {
         errors.push(
-          `${location} 会话 atom 的写入必须落在 ${writeAllowedPrefixes.join(' 或 ')}`
+          `${location} ${label}${atom} —— 会话 atom 的写入必须落在 ${writeAllowedPrefixes.join(' 或 ')}`
           + '，或在 check-state-invariants.js 的所有者模块表里登记；新增写入点请走 writer/command 层',
         )
       }
@@ -234,7 +257,7 @@ async function main() {
   }
   console.log(`状态不变量检查通过（扫描 ${allFiles.length} 个非测试 TS/TSX 文件，生效 2 条规则）。`)
   console.log('规则 1：derived 的 read fn 禁读时钟/随机数——否则重放得不到同样结果，且静默。')
-  console.log(`规则 2：${writeScopeDirectory} 里对**会话 atom** 的写入只允许出现在 ${writeAllowedPrefixes.join(' / ')}，`)
+  console.log(`规则 2：全仓对**会话 atom** 的写入只允许出现在 ${writeAllowedPrefixes.join(' / ')}，`)
   console.log('或所有者模块表里登记过的模块。root store 的跨会话登记表与应用层 atom 不在管辖范围。')
 }
 

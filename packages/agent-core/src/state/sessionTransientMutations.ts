@@ -178,9 +178,22 @@ export function setContextStats(
   core.getSessionStore(id).store.setter(contextStatsAtom, stats)
 }
 
+/**
+ * 写输入框草稿。**刻意不记账**，尽管 composerDraft 是 SESSION_SLOTS 里的槽位。
+ *
+ * 槽位身份要的是「进恢复快照」（刷新不能把用户打了一半的字丢了）；而它**不该**是一个可撤销的步骤：
+ * 这个写入是逐击键触发的，每次都记一条账的话，敲一百个字就把 cap（默认 100）填满，
+ * 真实的轮次账目全被挤出去 —— 撤销功能等于被输入框废掉。
+ *
+ * 也不做「只在清空时记账」的折中：那样撤销一轮会把当时的草稿盖回输入框，而用户可能已经在里面
+ * 打了新的东西，等于静默吞掉他刚写的话。宁可撤销完全不碰草稿。
+ *
+ * 于是 SESSION_SLOTS 有两种成员：进快照且入账的，与**只进快照**的。目前只有草稿属于后者，
+ * 判据写在 sessionSlots.ts。
+ */
 export function setComposerDraft(id: string, draft: string, core: CoreInstance = defaultCore): void {
   if (sessionMissing(id, core)) return
-  writeSlot(core.getSessionStore(id), SESSION_SLOTS.composerDraft.key, composerDraftAtom, draft)
+  core.getSessionStore(id).store.setter(composerDraftAtom, draft)
 }
 
 export function enqueueUserMessage(

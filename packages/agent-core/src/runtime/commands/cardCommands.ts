@@ -1,5 +1,9 @@
 import { activeSessionIdAtom, sessionsAtom } from '../../state/rootStore'
-import { removePendingArtifact, setPendingQuestionAnswer } from '../../state/transientAtoms'
+import {
+  removePendingArtifact,
+  setComposerDraft as writeComposerDraft,
+  setPendingQuestionAnswer,
+} from '../../state/transientAtoms'
 import type { AskUserAnswerValue } from '../../state/transientAtoms'
 import type { CoreInstance } from '../core/coreInstance'
 
@@ -16,5 +20,15 @@ export function createCardCommands(core: CoreInstance) {
     removePendingArtifact(sessionId, artifactId, core)
   }
 
-  return { answerQuestion, discardArtifact }
+  // 简介：写当前会话的输入框草稿。
+  // 详情：UI 以前直接 `useSetAtom(composerDraftAtom)`，绕过了「会话 atom 写入必须收口」——
+  //   而门禁当时只扫 core，看不见渲染层。开这条命令是为了让 UI 有一条正当通路。
+  //   草稿刻意不记账（逐击键会填满 undo 的 cap），理由见 state/sessionTransientMutations.ts。
+  function setComposerDraft(draft: string): void {
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+    writeComposerDraft(id, draft, core)
+  }
+
+  return { answerQuestion, discardArtifact, setComposerDraft }
 }

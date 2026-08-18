@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { createCore } from '../core/createCore'
 import { itemsAtom, runAtom } from '../../state/sessionAtoms'
-import { composerDraftAtom } from '../../state/sessionTransientAtoms'
+import { pendingArtifactsAtom } from '../../state/sessionTransientAtoms'
 import { appendItem, patchRun, setRun } from '../../state/sessionWriters'
-import { setComposerDraft } from '../../state/transientAtoms'
+import { addPendingArtifact } from '../../state/transientAtoms'
 
 type Core = ReturnType<typeof createCore>
 
@@ -60,12 +60,14 @@ describe('undoTurn / redoTurn', () => {
 
   it('treats an unlabelled write as its own step so unrelated edits survive', () => {
     const { core, id } = seeded()
-    // 尚无 run 时的输入框草稿不属于任何一轮；成组回滚会把不相关的编辑一起吃掉。
-    setComposerDraft(id, '草稿一', core)
-    setComposerDraft(id, '草稿一二', core)
+    // 尚无 run 时产生的账目不属于任何一轮；成组回滚会把不相关的编辑一起吃掉，所以只弹一条。
+    // 用产物而不是输入框草稿：草稿刻意不记账（逐击键会填满 cap，见 sessionTransientMutations.ts）。
+    addPendingArtifact(id, { id: 'a1', filename: 'a.txt', content: '甲' }, core)
+    addPendingArtifact(id, { id: 'a2', filename: 'b.txt', content: '乙' }, core)
 
     expect(core.undoTurn()).toEqual({ ok: true, entries: 1 })
-    expect(core.getSessionStore(id).store.getter(composerDraftAtom)).toBe('草稿一')
+    expect(core.getSessionStore(id).store.getter(pendingArtifactsAtom).map((entry) => entry.id))
+      .toEqual(['a1'])
   })
 
   it('run 还在飞时先把它停掉，再撤销', () => {

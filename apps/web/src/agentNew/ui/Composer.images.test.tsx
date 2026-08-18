@@ -1,17 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { createStore } from '@einfach/core'
+import { createStore, type Store } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
 import { sendMessage, runAtom } from '@web-agent/core'
 import { composerImageAttachmentAtom } from './composerImageAttachmentState'
 import { Composer } from './Composer'
 
-vi.mock('@web-agent/core/runtime/commands', () => ({
-  continueInterruptedRun: vi.fn(),
-  sendMessage: vi.fn(),
-  setApprovalMode: vi.fn(),
-  stopRun: vi.fn(),
-}))
+// 见 Composer.test.tsx 同处注释：受控输入框要求草稿命令的 mock 真的写回本用例的 store。
+const draftTarget = vi.hoisted(() => ({ store: undefined as Store | undefined }))
+
+vi.mock('@web-agent/core/runtime/commands', async () => {
+  const { composerDraftAtom } = await import('@web-agent/core/state/sessionTransientAtoms')
+  return {
+    continueInterruptedRun: vi.fn(),
+    sendMessage: vi.fn(),
+    setApprovalMode: vi.fn(),
+    stopRun: vi.fn(),
+    setComposerDraft: vi.fn((draft: string) => {
+      draftTarget.store?.setter(composerDraftAtom, draft)
+    }),
+  }
+})
 
 const accepted = { accepted: true, status: 'started', sessionId: 's', submissionSequence: 1 }
 
@@ -20,6 +29,7 @@ function photo(name = 'photo.png') {
 }
 
 function renderComposer(store = createStore()) {
+  draftTarget.store = store
   return renderWithStore(<Composer vendor="kimi" model="kimi-k2.6" />, { store })
 }
 
