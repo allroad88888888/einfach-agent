@@ -130,11 +130,21 @@ driver 由宿主配置 bridge。默认实例本身不自动安装工具，应用
   这类槽位改走增量 op（`state/listSlotLog.ts` 的 append/patch/remove、`executionGraphSlotLog.ts`
   的节点粒度），并配一条「同一次写入在长短两种累积量下的 ops 载荷逐字节相等」的测试。
 
-上面最后三条由 `pnpm check:state`（`scripts/check-state-invariants.js`）逐行判定前两条，CI 里排在
-`check:boundaries` 之后（第三条靠 colocated 测试，不是脚本）。规则 2 只管**会话 atom**（会进
-per-session 事务日志的那些）；root store 的跨会话登记表、应用层与子 Agent 视图 atom 都在管辖之外。
-脚本里两张表分工不同：**所有者模块**是按设计拥有某个 atom 写入权的模块，**欠债表**是该收口而未
-收口的，当前两张都只剩必要项。
+上面最后三条都由 `pnpm check:state` 机械判定，CI 里排在 `check:boundaries` 之后。入口是
+`scripts/check-state-invariants.js`（只做装配），三条判据各住 `scripts/state-invariants/` 下一个
+模块，**表和理由都在那里，不在入口**：`derivedPurity.js` / `writeChokepoint.js` /
+`slotJournalShape.js`。
+
+前两条逐行扫源码；第三条走**穷举分类**——`SESSION_SLOTS` 的每个 key 必须恰好落在
+`slotJournalShape.js` 的 `deltaJournaled`（走增量 op）/ `boundedWholeValue`（整值记账，每项须写明
+凭什么不随累积状态长大）/ `snapshotOnly`（进快照不入账）之一，漏分类、陈旧条目、一键两表都是
+error；登记为增量的还会回到 `sessionSlots.ts` 源码确认那次 `slot(...)` 真的传了第 4 个参数
+（registrar），免得「表说走增量、实际仍是整值」这种漂移静默复发。载荷体量本身仍靠 colocated 测试盯
+（「同一次写入在长短两种累积量下的 ops 载荷逐字节相等」）。
+
+规则 2 只管**会话 atom**（会进 per-session 事务日志的那些）；root store 的跨会话登记表、应用层与
+子 Agent 视图 atom 都在管辖之外。`writeChokepoint.js` 里两张表分工不同：**所有者模块**是按设计拥有
+某个 atom 写入权的模块，**欠债表**是该收口而未收口的，当前两张都是空的。
 
 所有者模块表有一条硬约束，脚本会判：**它不能豁免 `SESSION_SLOTS` 里的 atom**。曾经
 `executionGraphAtom` 与 `subagentContinuationsAtom` 登记在里面，理由写的是「接事务日志时它们就是

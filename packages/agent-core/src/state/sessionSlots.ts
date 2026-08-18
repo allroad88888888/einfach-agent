@@ -95,6 +95,10 @@ function slot<State>(
  *
  * key 是**逻辑名**，不是 atom 的变量名：它会进落盘记录（恢复快照字段、事务日志的 op.key），
  * 所以改名等于改格式。atom 实例是进程内对象，绝不落盘。
+ *
+ * 新增一项还要去 `scripts/state-invariants/slotJournalShape.js` 里给它选一种记账形态（增量 op /
+ * 有界整值 / 只进快照）—— 不选就过不了 `pnpm check:state`：整值记账一个随对话增长的槽位是二次
+ * 开销，而这笔账只在落盘那一步兑现，内存里看不出来。
  */
 export const SESSION_SLOTS = {
   items: slot('items', itemsAtom, [], registerItemsLogAppliers),
