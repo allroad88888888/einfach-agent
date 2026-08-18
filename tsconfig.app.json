@@ -24,6 +24,7 @@
       "@web-agent/ai": ["packages/agent-ai/src/index.ts"],
       "@web-agent/core": ["packages/agent-core/src/index.ts"],
       "@web-agent/core/*": ["packages/agent-core/src/*"],
+      "@web-agent/host-node": ["packages/host-node/src"],
       "@web-agent/observability-idb": ["packages/observability-idb/src"],
       "@web-agent/observability-sqlite": ["packages/observability-sqlite/src"],
       "@web-agent/persistence-idb": ["packages/persistence-idb/src"],

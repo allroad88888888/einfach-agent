@@ -255,6 +255,9 @@ export default defineConfig(({ command, mode }) => {
         'react-dom': fromRoot('./node_modules/react-dom'),
         '@web-agent/ai': fromRoot('./packages/agent-ai/src/index.ts'),
         '@web-agent/core': fromRoot('./packages/agent-core/src'),
+        // Node 宿主能力包。只被 apps/server、apps/cli 与未来的 sidecar 装配层引用，Web 产物里
+        // 不该出现——留 alias 是为了 Vitest（root 是仓库根，要解析本包自己的测试）与类型一致。
+        '@web-agent/host-node': fromRoot('./packages/host-node/src'),
         '@web-agent/observability-idb': fromRoot('./packages/observability-idb/src'),
         '@web-agent/observability-sqlite': fromRoot('./packages/observability-sqlite/src'),
         '@web-agent/persistence-idb': fromRoot('./packages/persistence-idb/src'),

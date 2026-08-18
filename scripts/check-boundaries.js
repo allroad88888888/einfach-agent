@@ -28,6 +28,9 @@ const coreRules = [
     packages: [
       '@web-agent/subagents', '@web-agent/persistence-idb', '@web-agent/persistence-sqlite',
       '@web-agent/observability-idb', '@web-agent/observability-sqlite',
+      // host-node 是 core 命令桥的一种实现。core 反过来引它 = 把「宿主是什么」重新焊回 core，
+      // 正是 H 线（configureHostInvoke）拆掉的那件事。
+      '@web-agent/host-node',
     ],
   },
   { name: 'core 禁入 Tauri SQL 插件', packages: ['@tauri-apps/plugin-sql'] },
@@ -37,7 +40,7 @@ const capabilityRule = {
   matches: (value) => value === '@web-agent/tools' || value.startsWith('@web-agent/tools-'),
 }
 const dialogObservation = { name: '观察项：core 使用 Tauri dialog 插件', packages: ['@tauri-apps/plugin-dialog'] }
-const capabilityPackages = ['subagents', 'persistence-idb', 'persistence-sqlite', 'observability-idb', 'observability-sqlite']
+const capabilityPackages = ['subagents', 'persistence-idb', 'persistence-sqlite', 'observability-idb', 'observability-sqlite', 'host-node']
 const workspaceGroups = ['apps', 'packages', 'tools']
 
 // M4：core 厂商名红线，对齐 einfach-agent-rust 红线 12（core 零厂商判断）。与上面的 import 扫描不同，
