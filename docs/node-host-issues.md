@@ -772,7 +772,33 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   跨进程锁文件（`create_new` 抢占、token、心跳、stale 超时接管）。
   必须有「两个并发写同一路径被串行化」的测试。跑该目录 vitest
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `3d71aea`。4 个源文件 + 4 份测试 / 57 例。
+  **进程内锁在 Node 里同样必要**，理由说得很准：单线程消掉的是数据竞争，消不掉**跨 await 的
+  交错**。临界区是「读 before → 比 hash → 记回滚日志 → atomicWrite」，中间至少两次让出；
+  A 在读 before 处让出、B 整段跑完把文件换了，A 恢复后拿**自己那次读到的** before 去比乐观守卫
+  ——比的是过期快照当然通过——然后整份覆盖。**守卫存在的意义就是拦「你读完之后有人改过」，
+  没有锁时它恰恰只会拿自己的旧读数自证清白。**
+  API 收成 `run(key, operation)` 而非照搬 Rust 的「返回一把锁自己 lock」：Rust 靠 guard 的 Drop
+  释放，JS 没有 Drop，`acquire`/`release` 写在两处时任何一条 early return 都能让那个路径永久死锁。
+  `holders` **在排队时就加**（等待者也算持有者），否则扫除会删掉一条还有人排队的条目、
+  后来者新建空队列就并行了。
+  **stale 接管用改名而非直接 unlink**：两个等待者同时判陈旧时直接删会让 B 删掉 A 刚建好的锁；
+  改名目的地带各自 token 必不同名，rename 成功的才算接管。释放时先比对 token 再删。
+  **测试设计里有一条对照组**，值得后续卡照抄：主断言是「加锁后临界区 peak === 1」，但那可能
+  只是因为临界区根本不让出——所以同文件里放了一条不上锁跑同一段临界区、断言 `peak === 2` 的
+  对照组，外加一条「不同路径 peak === 2」钉粒度（退化成一条全局队列时前面几条依然全绿，
+  只有它会红）。另做了 5 项变异验证，逐项列出哪些测试变红。
+  **一处技术主张经主会话实测不成立**（做法对、理由错，代码未改）：它称「测试环境是 jsdom，
+  全局 `setInterval` 返回的 number 上没有 `unref`，真调是当场 TypeError」，实测本仓库的
+  vitest + jsdom 下全局 `setInterval` 返回的是 `object/Timeout/unref=function`。从 `node:timers`
+  显式导入这个做法仍然正确——它不依赖环境全局是什么，换 happy-dom 或真浏览器环境就会坏。
+  **一处它自己标注「测试盯不住」的改动**：锁年龄算成 `Date.now() - Math.floor(mtimeMs)`，
+  因为两个读数精度不同（`Date.now()` 只有毫秒、`mtimeMs` 带纳秒小数），直接相减会得到
+  「未来的 mtime」。实测去掉 floor 跑 5 遍仍全绿——20ms 轮询盖住了它——所以理由只能写在注释里。
+  **一处 Rust 文案未移植**：`failed to initialize archive lock heartbeat` 对应 Rust 的
+  `file.try_clone()` 失败，而 Node 侧初始写与心跳共用同一个 `FileHandle`、没有 clone 这一步，
+  留着就是一句永不出现的文案。其余四句逐字保留。
+  **给 W7 的交接**：`release()` 必须由调用方在 `finally` 里调（JS 没有 Drop），是那一层的责任。
 
 ### W7 · 文件写：乐观守卫与主流水线
 
