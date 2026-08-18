@@ -139,6 +139,8 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
 | --- | --- | --- |
 | 10 | `vite.config.ts:58` 的 `defaultTraceDbPath()` | Linux 分支写的是 `process.env.XDG_DATA_HOME ?? path.join(homedir(), '.local', 'share')`，而 `dirs` crate 的判据是 `env::var_os("XDG_DATA_HOME").and_then(dirs_sys::is_absolute_path)`——**必须是绝对路径才采用**。且 `??` 只挡 `null`/`undefined`，**空串会被当有值**，`path.join('', …)` 变成跟着进程 cwd 走的相对路径。 |
 
+| 11 | `workspace_patch_path.rs:101` 与 `workspace_path_ops.rs:224` | 这两处的展示路径**无条件** `.replace('\\', "/")`，而 `workspace_write_target_path.rs` / `workspace_read_paths.rs` 的 `path_to_slash_string` 是 `if MAIN_SEPARATOR == '/' { 原样 }`——**同一仓库里两种做法**。unix 上 `\` 是合法文件名字符，于是真名 `a\b.txt` 的文件在读/写侧原样保留、在 patch 与 path_ops 侧变成 `a/b.txt`；而 patch 那个结果会**写进变更日志**，回滚时按另一个路径去找。W12 发现，主会话已复核四处实现。 |
+
 **⚠️ 跨宿主隐患（T 线套壳前必须解决）**：`workspaceRoot` 在变更日志里存的是 canonicalize 后的
 绝对路径、回滚时逐字比对。Rust 的 `fs::canonicalize` 在 Windows 上给 verbatim 前缀
 （`\\?\C:\…`），Node 的 `realpath` 给 `C:\…`——**套壳后同一个 workspace 会被判成
@@ -849,7 +851,27 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **改动面**：`packages/host-node/src/workspace/patch/path*`、`stage*`
 - **判据**：对齐 `workspace_patch_path.rs` + `workspace_patch_stage.rs`。跑该目录 vitest
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `9939a68`。7 个源文件 + 7 份测试 / 85 例。
+  **纠正卡面一个预设**：「目标必须已存在吗」**不在路径层判**——路径解析对四个变体完全一样，
+  存在性要求全在暂存规则里按 `FileState` 判。
+  四个 operation 变体已逐个核对（`type` 取值 snake_case、载荷字段 camelCase，两层不同款）：
+  `add_file`(path, content | executable)、`delete_file`(path | oldContent, expectedContentHash)、
+  `replace`(path, oldText, newText | expectedReplacements)、
+  `overwrite_file`(path, content | oldContent, expectedContentHash, executable)。
+  **两处直译就会静默改写用户内容**（主会话已复现）：
+  ① `replace` 必须用 `split().join()` 而**不是** `replaceAll`——后者会把 newText 里的
+  `$&` / `$1` / `$'` 当替换模式展开。实测模型想写 `"price is $& and $1"`，`replaceAll` 给出
+  `"price is FOO and $1"`（`$&` 被展开成匹配到的原文），**正文被静默篡改**。
+  ② `changed_paths` 的排序是 Rust `sort_by_key(String)` = **UTF-8 字节序**，而 JS 默认 `sort()`
+  是 UTF-16 码元序，遇增补平面字符顺序相反（实测 `["😀.txt","\ufffd.txt"]` vs
+  `["\ufffd.txt","😀.txt"]`）。用 `Buffer.compare`。
+  **stage 的中间态**：`Map<绝对路径, {initial, current, executable}>`，`initial` **整批只读一次**
+  （第二次读会看见批内前面操作以为改过的内容，而磁盘并没变，`initial` 就不再是回滚依据）；
+  操作只改 `current`、磁盘一字不动，所以「任一失败整体不写」是**根本没进落盘那步**而不是回滚。
+  真回滚只发生在落盘中途失败（磁盘满/权限），靠 `initial` 逆序还原——那是 W13 的事。
+  **越界但合理**：卡面把 `limits*` 划给 W13，但 stage 每个分支第一步就要用那三个校验器，
+  故一并实现；`guard.ts` 与 `operation.ts` 树里没被任何卡认领，也一并落了。
+  给 W13 的接口面与「校验入参 → 解析路径 → 读磁盘 → 算新状态」的顺序契约已在报告里交代。
 
 ### W13 · patch：应用流水线与限额
 
