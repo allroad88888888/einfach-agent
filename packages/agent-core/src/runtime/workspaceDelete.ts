@@ -39,7 +39,7 @@ function failed(input: WorkspaceDeleteInput, error: string): WorkspaceDeleteResu
 
 export async function deleteWorkspacePath(input: WorkspaceDeleteInput): Promise<WorkspaceDeleteResult> {
   if (!hasHostBridge()) {
-    return failed(input, 'Workspace deletion is only available in the Tauri desktop runtime')
+    return failed(input, '删除 workspace 路径：当前宿主未提供命令桥')
   }
   try {
     const invoke = await loadHostInvoke()

@@ -53,7 +53,7 @@ export async function revertWorkspaceChange(
   input: WorkspaceRevertInput,
 ): Promise<WorkspaceRevertResult> {
   if (!hasHostBridge()) {
-    return failed('Workspace rollback is only available in the Tauri desktop runtime')
+    return failed('回滚 workspace 变更：当前宿主未提供命令桥')
   }
   try {
     const invoke = await loadHostInvoke()

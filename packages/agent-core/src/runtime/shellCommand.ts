@@ -111,7 +111,7 @@ export async function runShellCommand(input: ShellCommandInput): Promise<ShellCo
   const startedAt = now()
 
   if (!hasHostBridge()) {
-    return failedResult(input, startedAt, 'Shell command execution is only available in the Tauri desktop runtime')
+    return failedResult(input, startedAt, '执行 shell 命令：当前宿主未提供命令桥')
   }
 
   try {

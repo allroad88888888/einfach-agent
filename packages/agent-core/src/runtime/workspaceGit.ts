@@ -114,7 +114,7 @@ function normalizeResult(raw: unknown): WorkspaceDiffResult {
 
 export async function getWorkspaceDiff(input: WorkspaceDiffInput = {}): Promise<WorkspaceDiffResult> {
   if (!hasHostBridge()) {
-    return failedResult('Workspace git diff is only available in the Tauri desktop runtime')
+    return failedResult('获取 workspace git diff：当前宿主未提供命令桥')
   }
 
   try {

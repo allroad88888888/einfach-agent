@@ -45,7 +45,7 @@ describe('@web-agent/core 根 barrel', () => {
     expect(canPickWorkspaceDirectory()).toBe(false)
     await expect(pickWorkspaceDirectory()).resolves.toEqual({
       ok: false,
-      error: 'Directory picker is only available in the Tauri desktop runtime',
+      error: '选择 workspace 目录：当前宿主未提供命令桥',
     })
     expect(loads.dialog).toBe(0)
   })

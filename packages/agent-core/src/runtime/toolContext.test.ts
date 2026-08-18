@@ -213,7 +213,7 @@ describe('ctx.runShell 桥接', () => {
       timedOut: false,
       truncated: false,
     })
-    expect(result.stderr).toContain('Tauri desktop runtime')
+    expect(result.stderr).toContain('当前宿主未提供')
     expect(result.durationMs).toBeGreaterThanOrEqual(0)
   })
 
@@ -267,7 +267,7 @@ describe('ctx.runWorkspaceTask 桥接', () => {
       command: [],
       kind: 'test',
     })
-    expect(result.stderr).toContain('Tauri desktop runtime')
+    expect(result.stderr).toContain('当前宿主未提供')
     expect(result.durationMs).toBeGreaterThanOrEqual(0)
   })
 })

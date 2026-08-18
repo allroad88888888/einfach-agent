@@ -216,7 +216,7 @@ export async function writeWorkspaceFile(
   observability: ObservabilityPort = getDefaultObservabilityPort(),
 ): Promise<WorkspaceWriteResult> {
   if (!hasHostBridge()) {
-    return failedResult(input, 'Workspace file writing is only available in the Tauri desktop runtime')
+    return failedResult(input, '写入 workspace 文件：当前宿主未提供命令桥')
   }
 
   // 惰性加载必须在下面的 dispatchStartedAt 采样之前完成：首次 import @tauri-apps/api/core 有几 ms

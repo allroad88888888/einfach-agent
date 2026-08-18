@@ -108,7 +108,7 @@ export async function runWorkspaceTask(input: WorkspaceTaskInput): Promise<Works
   const startedAt = now()
 
   if (!hasHostBridge()) {
-    return failedResult(input, startedAt, 'run_workspace_task is only available in the Tauri desktop runtime')
+    return failedResult(input, startedAt, 'run_workspace_task：当前宿主未提供命令桥')
   }
 
   try {

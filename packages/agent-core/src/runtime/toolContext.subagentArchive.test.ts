@@ -136,13 +136,13 @@ describe('toolContext 子 Agent 归档写入', () => {
         ok: false,
         bytesWritten: 0,
         appended: false,
-        error: 'Workspace file writing is only available in the Tauri desktop runtime',
+        error: '写入 workspace 文件：当前宿主未提供命令桥',
       }),
     )
     const attempt = contextWriting({ path: '.archive/events.jsonl', content: '{}\n', mode: 'append' })
 
     await expect(delegate(attempt.runtime)).rejects.toThrow(
-      'Subagent archive write failed (append) for ".archive/events.jsonl": Workspace file writing is only available in the Tauri desktop runtime',
+      'Subagent archive write failed (append) for ".archive/events.jsonl": 写入 workspace 文件：当前宿主未提供命令桥',
     )
     expect(writeWorkspaceFile).toHaveBeenCalledOnce()
   })
@@ -153,7 +153,7 @@ describe('toolContext 子 Agent 归档写入', () => {
         ok: false,
         bytesWritten: 0,
         overwritten: false,
-        error: 'Workspace file writing is only available in the Tauri desktop runtime',
+        error: '写入 workspace 文件：当前宿主未提供命令桥',
       }),
     )
     const attempt = contextWriting({ path: '.archive/evaluator.json', content: '{}', mode: 'overwrite' })
@@ -162,7 +162,7 @@ describe('toolContext 子 Agent 归档写入', () => {
     expect(attempt.result()).toMatchObject({
       ok: true,
       skipped: true,
-      warning: expect.stringContaining('Workspace file writing is only available'),
+      warning: expect.stringContaining('当前宿主未提供命令桥'),
     })
     expect(writeWorkspaceFile).toHaveBeenCalledOnce()
   })

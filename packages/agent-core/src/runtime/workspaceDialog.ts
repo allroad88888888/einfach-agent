@@ -71,7 +71,7 @@ export function canPickWorkspaceDirectory(): boolean {
 
 export async function pickWorkspaceDirectory(defaultPath?: string): Promise<PickWorkspaceDirectoryResult> {
   if (!isTauriHost()) {
-    return { ok: false, error: 'Directory picker is only available in the Tauri desktop runtime' }
+    return { ok: false, error: '选择 workspace 目录：当前宿主未提供命令桥' }
   }
 
   try {

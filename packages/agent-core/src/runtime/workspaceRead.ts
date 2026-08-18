@@ -343,7 +343,7 @@ export async function readWorkspaceFile(
   input: ReadWorkspaceFileInput,
 ): Promise<WorkspaceRuntimeResult<ReadWorkspaceFileResult>> {
   if (!hasHostBridge()) {
-    return fail('read_workspace_file is only available in the Tauri desktop runtime')
+    return fail('read_workspace_file：当前宿主未提供命令桥')
   }
 
   try {
@@ -359,7 +359,7 @@ export async function readWorkspaceRunIndexPage(
   input: ReadWorkspaceRunIndexPageInput,
 ): Promise<WorkspaceRuntimeResult<ReadWorkspaceRunIndexPageResult>> {
   if (!hasHostBridge()) {
-    return fail('read_workspace_run_index_page is only available in the Tauri desktop runtime')
+    return fail('read_workspace_run_index_page：当前宿主未提供命令桥')
   }
 
   try {
@@ -375,7 +375,7 @@ export async function listWorkspaceFiles(
   input: ListWorkspaceFilesInput,
 ): Promise<WorkspaceRuntimeResult<ListWorkspaceFilesResult>> {
   if (!hasHostBridge()) {
-    return fail('list_workspace_files is only available in the Tauri desktop runtime')
+    return fail('list_workspace_files：当前宿主未提供命令桥')
   }
 
   try {
@@ -391,7 +391,7 @@ export async function searchWorkspaceFiles(
   input: SearchWorkspaceFilesInput,
 ): Promise<WorkspaceRuntimeResult<SearchWorkspaceFilesResult>> {
   if (!hasHostBridge()) {
-    return fail('search_workspace_files is only available in the Tauri desktop runtime')
+    return fail('search_workspace_files：当前宿主未提供命令桥')
   }
 
   try {

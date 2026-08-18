@@ -204,7 +204,7 @@ export async function applyWorkspacePatch(
   if (!hasHostBridge()) {
     return failedResult(
       input,
-      'Workspace patching is only available in the Tauri desktop runtime',
+      '应用 workspace 补丁：当前宿主未提供命令桥',
     )
   }
 

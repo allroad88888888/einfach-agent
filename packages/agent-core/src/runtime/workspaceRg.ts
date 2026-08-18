@@ -141,7 +141,7 @@ function normalizeResult(raw: unknown): RgSearchResult {
 
 export async function rgSearchWorkspace(input: RgSearchInput): Promise<RgSearchResult> {
   if (!hasHostBridge()) {
-    return failedResult('rg_search is only available in the Tauri desktop runtime')
+    return failedResult('rg_search：当前宿主未提供命令桥')
   }
 
   try {

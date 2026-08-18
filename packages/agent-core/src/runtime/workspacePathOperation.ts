@@ -38,7 +38,7 @@ async function operate(
     reversible: false,
     error,
   })
-  if (!hasHostBridge()) return failed(`Workspace ${operation} is only available in the Tauri desktop runtime`)
+  if (!hasHostBridge()) return failed(`Workspace ${operation}：当前宿主未提供命令桥`)
   try {
     const invoke = await loadHostInvoke()
     const raw = await invoke<unknown>(`${operation}_workspace_path`, {
