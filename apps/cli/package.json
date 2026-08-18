@@ -7,6 +7,7 @@
   "dependencies": {
     "@web-agent/ai": "workspace:*",
     "@web-agent/core": "workspace:*",
+    "@web-agent/host-node": "workspace:*",
     "@web-agent/subagents": "workspace:*",
     "@web-agent/tools": "workspace:*",
     "@web-agent/tools-planning": "workspace:*",

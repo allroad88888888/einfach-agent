@@ -123,6 +123,9 @@ importers:
       '@web-agent/core':
         specifier: workspace:*
         version: link:../../packages/agent-core
+      '@web-agent/host-node':
+        specifier: workspace:*
+        version: link:../../packages/host-node
       '@web-agent/subagents':
         specifier: workspace:*
         version: link:../../packages/subagents
