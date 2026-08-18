@@ -639,7 +639,25 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   `totalBytes` / `nextOffset` 语义逐字段一致；**`contentHash` 只在 offset 0 的首片返回，
   且截断时也返回**，8 MB 以上不返回。跑该目录 vitest
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `cde7899`。6 个文件 / 36 例。
+  **哈希做了跨语言实跑对拍**：临时建了个只依赖 `sha2 = "0.10"`（与 `apps/desktop/Cargo.toml` 同版）
+  的 crate 逐字抄 `content_sha256`，对四个样本与 Node 的 `createHash('sha256').digest('hex')`
+  逐字符比对、全等，期望值钉进测试并注明来源（不是「跑一遍 Node 记下来」）。主会话复核了三个值，
+  其中 `"abc"` 那条是 FIPS 180-4 公开向量。编码另有三处闭合背书：两个 guard 只收
+  `sha256:<64 lowercase hex>`，core 的 `normalizeReadResult` 用同款正则过滤，而 `{:x}` 是小写 hex。
+  **一个会静默错位的坑：`TextDecoder` 必须显式 `ignoreBOM: true`。** Node 默认把开头的 U+FEFF
+  当 BOM 吃掉，而 Rust 的 `from_utf8` 原样保留——不设这个选项，带 BOM 的文件在 Node 侧少 3 字节，
+  `bytes` / `nextOffset` 整体错位、续读从错误位置开始，**全程不报错**。而且选项名是反的
+  （`true` = 不把 BOM 当特殊字符），极易写反。主会话实测确认：默认解出 2 字符，
+  `ignoreBOM: true` 解出 3 字符。
+  分页无损这条地基没有只靠读代码：`decodeUtf8` 做了 **4060 个样本的差分测试**，
+  Rust `from_utf8` 与 Node 流式 `TextDecoder` 的分类与 `valid_up_to` 全等。
+  **`nextOffset` 到文件尾时是「键不存在」**，不是 `undefined` 也不是 0；它与 `truncated` 共用
+  `offset + bytes < totalBytes` 这一个判据，所以「最后一段正好读满 `maxBytes`」时 `truncated`
+  仍为 false——它判的是「还剩没剩」，不是「这次有没有触上限」。
+  **一处照搬但值得两边一起改的**：错误消息里用绝对路径（Rust 的 `display_path`），而返回值的
+  `path` 是根相对——一次读失败会把宿主机绝对路径写进模型可见的错误文本。属跨语言对拍
+  （W16/W17）该拿的决定，本卡未单方面改。
 
 ### W2 · 文件读：行寻址
 
