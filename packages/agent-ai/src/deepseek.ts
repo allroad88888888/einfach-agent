@@ -24,6 +24,20 @@ export const DEEPSEEK_FLASH_MODEL = 'deepseek-v4-flash'
 export const DEFAULT_DEEPSEEK_MODEL = DEEPSEEK_PRO_MODEL
 export const MAX_DEEPSEEK_USER_ID_LENGTH = 512
 
+/**
+ * 模型名 → 面向用户的展示名。
+ *
+ * **和常量放在同一个文件里，是为了让「改默认档」不可能只改一半。** 之前设置面板把展示名写死成
+ * "DeepSeek V4 Flash" 摆在 `DEFAULT_DEEPSEEK_MODEL` 旁边，而 f838544 把默认换成 Pro 时只动了
+ * 这个常量和一条测试 —— 面板于是长期显示 `deepseek-v4-pro` 配 "DeepSeek V4 Flash"，
+ * 同一张卡自相矛盾，而且没有任何门禁能发现（那是一句中文字面量）。
+ * 现在展示名从模型名查表得来，换默认值时文案自动跟着走。
+ */
+export const DEEPSEEK_MODEL_LABELS: Readonly<Record<string, string>> = {
+  [DEEPSEEK_PRO_MODEL]: 'DeepSeek V4 Pro',
+  [DEEPSEEK_FLASH_MODEL]: 'DeepSeek V4 Flash',
+}
+
 // 简介：校验 DeepSeek 官方 user_id 线协议约束。
 // 详情：不 trim、不截断——任何超长或带其它字符的值都整体拒绝，避免把邮箱、文件路径等
 // 隐私数据“修剪”成另一个仍会被发送的标识。调用方应只传本地生成的不透明随机 ID。

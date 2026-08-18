@@ -1,11 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEEPSEEK_FLASH_MODEL,
+  DEEPSEEK_MODEL_LABELS,
+  DEEPSEEK_PRO_MODEL,
+  DEFAULT_DEEPSEEK_MODEL,
   MAX_DEEPSEEK_USER_ID_LENGTH,
   callDeepSeek,
   normalizeDeepSeekUserId,
   streamDeepSeek,
   type DeepSeekChatRequest,
 } from './deepseek'
+import { DEEPSEEK_VENDOR_ID, defaultProviderRegistry } from './builtinProviders'
 
 const BASE_URL = 'https://deepseek.example/v1'
 
@@ -325,5 +330,30 @@ describe('DeepSeek V4 请求协议', () => {
     expect(captured).toHaveLength(2)
     expect(captured[0]).not.toHaveProperty('user_id')
     expect(captured[1]).not.toHaveProperty('user_id')
+  })
+})
+
+describe('DEEPSEEK_MODEL_LABELS', () => {
+  // 这三条盯的是同一种漂移：常量改了、写死在别处的中文没跟着改。
+  // f838544 把 DEFAULT_DEEPSEEK_MODEL 从 Flash 换成 Pro 时只动了常量和一条测试，
+  // 设置面板那句写死的 "DeepSeek V4 Flash" 就这么和 `deepseek-v4-pro` 并排显示了很久 ——
+  // 中文字面量没有任何门禁能判，只能靠「展示名从模型名查表来」这个结构 + 下面的覆盖断言。
+  it('覆盖 deepseek 能力表里的每一个模型', () => {
+    const models = Object.keys(defaultProviderRegistry.describe(DEEPSEEK_VENDOR_ID).models)
+
+    expect(models.length).toBeGreaterThan(0)
+    for (const model of models) expect(DEEPSEEK_MODEL_LABELS[model]).toBeTypeOf('string')
+  })
+
+  it('覆盖当前默认档与两个子 Agent 档位', () => {
+    expect(DEEPSEEK_MODEL_LABELS[DEFAULT_DEEPSEEK_MODEL]).toBeTypeOf('string')
+    expect(DEEPSEEK_MODEL_LABELS[DEEPSEEK_PRO_MODEL]).toBe('DeepSeek V4 Pro')
+    expect(DEEPSEEK_MODEL_LABELS[DEEPSEEK_FLASH_MODEL]).toBe('DeepSeek V4 Flash')
+  })
+
+  it('不含能力表里已经没有的模型名 —— 陈旧条目会让人以为那个档还在', () => {
+    const models = new Set(Object.keys(defaultProviderRegistry.describe(DEEPSEEK_VENDOR_ID).models))
+
+    for (const labelled of Object.keys(DEEPSEEK_MODEL_LABELS)) expect(models.has(labelled)).toBe(true)
   })
 })
