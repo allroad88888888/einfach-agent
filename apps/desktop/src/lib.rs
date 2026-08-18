@@ -10,6 +10,7 @@ mod model_proxy_envelope;
 mod model_proxy_http;
 mod model_request_registry;
 mod shell;
+mod user_paths;
 mod web_agent_config_store;
 mod web_agent_config_write;
 mod workspace_change_journal;
@@ -66,6 +67,7 @@ pub fn run() {
             workspace_path_ops::move_workspace_path,
             workspace_write::write_workspace_file,
             workspace_git::get_workspace_diff,
+            user_paths::get_user_home_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
