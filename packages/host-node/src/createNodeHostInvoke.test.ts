@@ -69,6 +69,10 @@ describe('createNodeHostInvoke', () => {
       // 这条会随后续卡逐步变长——落地一个域就把它的命令名加进来，别把断言改成宽松匹配。
       // 顺序跟随 NODE_HOST_COMMAND_NAMES 的遍历序（即 commandNames.ts 的域顺序），不是登记顺序。
       expect(implemented).toEqual([
+        'read_workspace_file',
+        'read_workspace_run_index_page',
+        'list_workspace_files',
+        'search_workspace_files',
         'revert_workspace_change',
         'get_workspace_diff',
         'rg_search_workspace',
