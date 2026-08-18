@@ -918,7 +918,34 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `_batch.rs` + `_revert.rs` + `_path_ops.rs`：`dryRun` 语义、批次内顺序、
   部分失败的报告形态。跑该目录 vitest
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `8a9a36e`（registrar 接线 `a4dcb9f`）。17 个源文件 + 9 份测试 / 62 例，
+  change 域合计 160 例。全树最大的一张卡。
+  **`dryRun` 是「预演」不是「只校验」**：跑完整的四类冲突检测，只在最后一步分岔；
+  `restoredFiles` 与真跑**逐字相同**（有测试直接对比两次结果的该字段）。批量的 dryRun 还会跑完整
+  的逆序模拟，所以「单条预演冲突、整批预演通过」这种情况能正确报出来。
+  **批次顺序不信入参**：按 `createdAt` 升序稳定排序后逆序执行。测法值得记——**故意用错误的
+  入参顺序** `['ord-2','ord-1']` 退同一文件的两次连续改动，断言最终内容是 `a-1`；顺序若跟着
+  入参走会停在 `a-2`（先退老的写回 a-1，再退新的又写回 a-2）**且全程 `ok: true`**，
+  正是「说成功了其实写坏了」的形态。
+  **三种失败报告形状不同**：预检冲突（`conflicts` 非空、`error` 为 null，一条盘都不碰）／
+  执行中途漂移（`error` 非空、`conflicts` 为空，且已做过的每一步按组倒序补回去）／
+  批量中途失败（逐条 `reapplyChangeSet` 回去，两个字段都空）。失败条目**一律不 `updateStatus`**
+  ——`writeEntry(status:'reverted')` 是执行的最后一步，任何失败都在它之前返回，状态停在 `applied`、
+  整批还能重试。有测试断言失败后磁盘内容与 `entry.status` 双双回到「没退过」。
+  **Windows canonicalize 前缀判定为 T 线的事**（理由写在 `revertChangeSet.ts` 文件头，不是默默忽略）：
+  ① 单边归一化只修一半——Node 认了 Rust 写的账、Rust 仍不认 Node 写的账，症状从「全都撤不了」
+  变成「有时撤得了」，更难查；② 病根在写入侧不在比较侧，正确修法是统一写进日志的形态；
+  ③ 现状 Node 自洽、POSIX 两边一致，风险窗口只存在于「Rust 写、Node 读」的过渡期，而那个过渡期
+  就是 T 线本身。
+  **照搬并记录三条**：`readSnapshot` 在执行循环里失败**不补偿**（`_revert.rs:127` 的 `?`）——
+  前几个文件已还原、条目状态未改、调用方收到异常而非回执，窗口极窄但是「回滚了一半」的真实路径；
+  `created-N.payload` 成功回滚后永久留在日志目录、无回收路径（它是批量补偿的唯一依据）；
+  `content: null` 的歧义（清单第 3 条）在 `snapshotIo.ts` 头写明这一层分辨不出「真的不存在」
+  与「条目被截断」。
+  Node 侧三处实现选择（可观测行为与 Rust 一致）：目录项排序走 `Buffer.compare` 的 UTF-8 字节序
+  （Rust 排的是 `OsString`）；解码 `{ fatal: true, ignoreBOM: true }`（默认会剥 BOM，
+  于是带 BOM 的文件 hash 与 Rust 对不上、回滚被误判成冲突）；`chmod` 传完整 `st_mode` 不做
+  `& 0o777`（掩掉会静默丢失 setuid/sticky）。
 
 ### W16 · Rust↔TS 对拍 fixture：patch 与 change journal
 
