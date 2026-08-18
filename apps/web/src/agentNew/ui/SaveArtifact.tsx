@@ -11,7 +11,7 @@
 // close 不掩盖 write 错、AbortError=用户取消（保留产物、提示「已取消保存」）。
 
 import { useState } from 'react'
-import { useAtomValue } from '@einfach/react'
+import { useAgentAtomValue } from '@web-agent/react-plugin'
 import {
   pendingArtifactsAtom,
   type PendingArtifact,
@@ -143,8 +143,8 @@ function ArtifactRow({ artifact }: { artifact: PendingArtifact }) {
 }
 
 export function SaveArtifact() {
-  // U3：在当前会话 store 的 Provider 下读 —— 拿到的是该会话的待保存产物。
-  const artifacts = useAtomValue(pendingArtifactsAtom)
+  // U3：经 agent store 读 —— 拿到的是该会话的待保存产物。
+  const artifacts = useAgentAtomValue(pendingArtifactsAtom)
   if (!artifacts.length) return null
 
   return (

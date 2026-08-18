@@ -59,7 +59,7 @@ describe('AskUserQuestionCard', () => {
     expect(conversation.container.querySelector('.agentnew-ask')).toBeNull()
     conversation.unmount()
 
-    const plan = renderWithStore(<AskUserQuestionCard surface="plan" />, { store })
+    const plan = renderWithStore(<AskUserQuestionCard surface="plan" />, { agentStore: store })
     expect(plan.container.querySelector('.agentnew-ask.is-plan-embedded')).not.toBeNull()
     expect(screen.getByText('计划等待决策')).toBeInTheDocument()
   })
@@ -75,7 +75,7 @@ describe('AskUserQuestionCard', () => {
       },
     })
 
-    renderWithStore(<AskUserQuestionCard />, { store })
+    renderWithStore(<AskUserQuestionCard />, { agentStore: store })
 
     // 标题 + 题面文本渲染出来
     expect(screen.getByText('请补充信息')).toBeInTheDocument()
@@ -111,7 +111,7 @@ describe('AskUserQuestionCard', () => {
       },
     })
 
-    renderWithStore(<AskUserQuestionCard />, { store })
+    renderWithStore(<AskUserQuestionCard />, { agentStore: store })
 
     fireEvent.click(screen.getByRole('button', { name: '是' }))
     expect(answerQuestion).toHaveBeenLastCalledWith('ok', true)
@@ -133,7 +133,7 @@ describe('AskUserQuestionCard', () => {
       },
     })
 
-    renderWithStore(<AskUserQuestionCard />, { store })
+    renderWithStore(<AskUserQuestionCard />, { agentStore: store })
 
     // 单选：点「甲」→ 传字符串
     fireEvent.click(screen.getByRole('button', { name: '甲' }))

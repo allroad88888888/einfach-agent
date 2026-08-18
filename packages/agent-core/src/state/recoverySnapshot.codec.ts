@@ -267,7 +267,7 @@ function hasProjection(value: unknown, sessionId: string): boolean {
     || !('contextCheckpoint' in value.conversation) || !isRecord(value.plan) || !('current' in value.plan)
     || !Array.isArray(value.plan.stageCheckpoints) || !('run' in value) || !Array.isArray(value.queuedUserMessages)
     || !isAnswers(value.pendingQuestionAnswers) || !isGraph(value.executionGraph, sessionId)
-    || !isPendingArtifacts(value.pendingArtifacts) || !isText(value.composerDraft)
+    || !isPendingArtifacts(value.pendingArtifacts)
     || !Array.isArray(value.subagentContinuations)) return false
   return value.conversation.items.every(isConversationItem)
     && (value.conversation.contextCheckpoint === null || isContextCheckpoint(value.conversation.contextCheckpoint))

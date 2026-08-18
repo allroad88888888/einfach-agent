@@ -5,7 +5,6 @@ import { createStore, type Store } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
 import {
   runAtom,
-  composerDraftAtom,
   queuedUserMessagesAtom,
   withdrawnTurnNoticeAtom,
   continueInterruptedRun,
@@ -13,33 +12,34 @@ import {
   setApprovalMode,
   stopRun,
 } from '@web-agent/core'
+import { composerDraftAtom } from './composerDraftState'
 import { Composer } from './Composer'
 
 // P-U4 Composer：右栏输入框。契约 U1 —— UI 只读 atom（runAtom）+ 调命令
 // （sendMessage / stopRun）。这里把命令整模块 mock，断言「按了什么就调了什么」，
 // 不触碰真正的 runtime / store setter。
-// 草稿从「UI 直接 setter atom」改成走命令之后，mock 必须真的写回本用例那个 store ——
-// 输入框是受控的（值来自 composerDraftAtom），mock 成空函数的话打字根本不生效。
-// 真实命令写的是 defaultCore 的活动会话 store，与本用例的隔离 store 天生对不上，所以只能在这里桥接。
-const draftTarget = vi.hoisted(() => ({ store: undefined as Store | undefined }))
+// 草稿不再需要桥接：它是 UI store 里的普通 atom，组件直接写，mock 与它无关。
+// 撤回提示仍然要 —— 它是会话 atom，清除走 dismissWithdrawnTurnNotice 命令，而真实命令写的是
+// defaultCore 活动会话的 store，与本用例的隔离 store 天生对不上，所以在这里桥接回来。
+const noticeTarget = vi.hoisted(() => ({ store: undefined as Store | undefined }))
 
 vi.mock('@web-agent/core/runtime/commands', async () => {
-  const { composerDraftAtom } = await import('@web-agent/core/state/sessionTransientAtoms')
+  const { withdrawnTurnNoticeAtom } = await import('@web-agent/core/state/sessionTransientAtoms')
   return {
     continueInterruptedRun: vi.fn(),
     sendMessage: vi.fn(() => ({ accepted: true })),
     setApprovalMode: vi.fn(),
     stopRun: vi.fn(),
-    setComposerDraft: vi.fn((draft: string) => {
-      draftTarget.store?.setter(composerDraftAtom, draft)
+    dismissWithdrawnTurnNotice: vi.fn(() => {
+      noticeTarget.store?.setter(withdrawnTurnNoticeAtom, undefined)
     }),
   }
 })
 
-/** 渲染并把本用例的 store 交给草稿命令的 mock。 */
+/** 渲染并把本用例的 agent store 交给撤回提示命令的 mock。 */
 function renderComposer(ui: ReactElement, options: { store: Store }) {
-  draftTarget.store = options.store
-  return renderWithStore(ui, options)
+  noticeTarget.store = options.store
+  return renderWithStore(ui, { agentStore: options.store })
 }
 
 describe('Composer', () => {
@@ -49,7 +49,7 @@ describe('Composer', () => {
 
   it('输入并点「发送」：sendMessage 收到 trim 后的草稿，输入框随后清空', () => {
     const store = createStore()
-    renderComposer(<Composer />, { store })
+    const { store: uiStore } = renderComposer(<Composer />, { store })
 
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     fireEvent.change(textarea, { target: { value: 'hi' } })
@@ -57,7 +57,7 @@ describe('Composer', () => {
 
     expect(sendMessage).toHaveBeenCalledWith('hi')
     expect(textarea.value).toBe('')
-    expect(store.getter(composerDraftAtom)).toBe('')
+    expect(uiStore.getter(composerDraftAtom)).toBe('')
   })
 
   it('Enter（非 shift）发送；Shift+Enter 不发送', () => {
@@ -200,7 +200,7 @@ describe('Composer', () => {
 
   it('输入框内 Esc：空闲时清空草稿，不触发 stopRun', () => {
     const store = createStore()
-    renderComposer(<Composer />, { store })
+    const { store: uiStore } = renderComposer(<Composer />, { store })
 
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement
     fireEvent.change(textarea, { target: { value: 'draft' } })
@@ -209,7 +209,7 @@ describe('Composer', () => {
     fireEvent.keyDown(textarea, { key: 'Escape' })
 
     expect(textarea.value).toBe('')
-    expect(store.getter(composerDraftAtom)).toBe('')
+    expect(uiStore.getter(composerDraftAtom)).toBe('')
     expect(stopRun).not.toHaveBeenCalled()
   })
 

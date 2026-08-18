@@ -1,12 +1,18 @@
-// 最近一次 LLM 请求的上下文统计（临时 UI 态，不进 messages/checkpoint）。
+// 最近一次 LLM 请求的上下文统计（会话瞬态，不进 messages/checkpoint）。
 // ---------------------------------------------------------------------------
-// 读写 contextStatsAtom：发送前显示估算 tokens；响应后若 provider 返回 usage，则显示真实 usage。
+// 读 contextStatsAtom（agent store）：发送前显示估算 tokens；响应后若 provider 返回 usage，
+// 则显示真实 usage。
+//
+// 「本次运行累计命中」只能由本组件补：它要异步读观测库，core 发请求那一刻拿不到。补的动作走
+// applyRecoveredCacheTotals 命令 —— 以前这里是 `useAtom(contextStatsAtom)` 就地写，那是渲染层
+// 直接写会话 atom，绕过收口点；stale guard 现在在写入器里，见 state/sessionTransientMutations.ts。
 
-import { useAtom } from '@einfach/react'
 import { useEffect } from 'react'
+import { useAgentAtomValue } from '@web-agent/react-plugin'
 import { recoverCacheTotalsFromTrace } from '@web-agent/core/observability'
 import {
   COST_SOFT_CAP_TOKENS,
+  applyRecoveredCacheTotals,
   contextInputBudgetTokens,
   contextStatsAtom,
   type ContextStatsSnapshot,
@@ -78,7 +84,7 @@ function longSessionWarning(stats: ContextStatsSnapshot): string | undefined {
 }
 
 export function ContextStats() {
-  const [stats, setStats] = useAtom(contextStatsAtom)
+  const stats = useAgentAtomValue(contextStatsAtom)
   const cacheTotalsRunId = stats?.cacheTotals?.runId
 
   useEffect(() => {
@@ -87,15 +93,11 @@ export function ContextStats() {
     void recoverCacheTotalsFromTrace(stats.runId)
       .then((cacheTotals) => {
         if (!current || !cacheTotals) return
-        setStats((previous) => (
-          previous?.runId === stats.runId && previous.cacheTotals?.runId !== stats.runId
-            ? { ...previous, cacheTotals }
-            : previous
-        ))
+        applyRecoveredCacheTotals(stats.runId, cacheTotals)
       })
       .catch(() => {})
     return () => { current = false }
-  }, [cacheTotalsRunId, setStats, stats?.cacheTotals, stats?.runId])
+  }, [cacheTotalsRunId, stats?.cacheTotals, stats?.runId])
 
   if (!stats) return null
 

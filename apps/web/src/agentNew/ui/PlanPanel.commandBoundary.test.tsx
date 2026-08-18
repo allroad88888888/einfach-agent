@@ -55,7 +55,7 @@ describe('PlanPanel 命令 Promise 边界', () => {
       .mockRejectedValueOnce(new Error('reject approval'))
       .mockRejectedValueOnce(new Error('approve rejection'))
 
-    renderWithStore(<PlanPanel />, { store })
+    renderWithStore(<PlanPanel />, { agentStore: store })
     fireEvent.click(screen.getByRole('button', { name: '拒绝' }))
     fireEvent.click(screen.getByRole('button', { name: '批准并继续' }))
     await settleCommandRejections()
@@ -79,7 +79,7 @@ describe('PlanPanel 命令 Promise 边界', () => {
     window.addEventListener('unhandledrejection', onUnhandled)
     vi.mocked(rollbackPlanStage).mockRejectedValueOnce(new Error('rollback rejection'))
 
-    renderWithStore(<PlanPanel />, { store })
+    renderWithStore(<PlanPanel />, { agentStore: store })
     fireEvent.click(screen.getByRole('button', { name: '回滚' }))
     await settleCommandRejections()
 

@@ -2,8 +2,8 @@
 // 读 itemsAtom + browserCardsAtom + runtimeTranscriptEventsAtom，把助手回复、工具调用/结果、
 // 运行时注入事件与浏览器卡片按时间合并渲染。
 // ---------------------------------------------------------------------------
-// 契约（U1）：业务数据只读 atom；思考组展开与消息窗口属于会话内 UI 状态，
-// 直接写对应 atom。用户消息的回退入口只调用命令，不碰 store / writer。
+// 契约（U1）：会话状态经 useAgentAtomValue 只读（值在 agent store）；思考组展开与消息窗口是
+// 渲染态，住 UI store，直接写。用户消息的回退入口只调用命令，不碰 store / writer。
 // 可见性规则：
 //   · user：渲染为右侧消息气泡；
 //   · assistant：reasoning_content 归入思考过程；最终 content 渲染文本气泡；
@@ -12,24 +12,25 @@
 //   · runtime transcript event / 工具执行：连续项合并为默认展开的思考过程；
 //   · system ConversationItem：仍然不渲染，避免把异常入库的 system 当成正常 transcript。
 
-import { useAtom, useAtomValue } from '@einfach/react'
+import { useAtom } from '@einfach/react'
 import {
   useMemo,
   type ReactNode,
 } from 'react'
+import { useAgentAtomValue } from '@web-agent/react-plugin'
 import {
   itemsAtom,
   planAtom,
   runAtom,
   assistantStreamAtom,
   browserCardsAtom,
-  expandedTranscriptGroupsAtom,
   runtimeTranscriptEventsAtom,
 } from '@web-agent/core'
 import {
   isTimelineThinkingItem,
   projectTimelineItems,
 } from '@web-agent/core/timeline'
+import { expandedTranscriptGroupsAtom } from './transcriptViewState'
 import {
   messageWindowAtom,
 } from './messageWindowModel'
@@ -47,12 +48,12 @@ import { SlidingWindowRow, useSlidingWindow } from './useSlidingWindow'
 import { useWebTimelineRendererRegistry } from './WebTimelineRendererRegistryProvider'
 
 export function MessageList() {
-  const items = useAtomValue(itemsAtom)
-  const run = useAtomValue(runAtom)
-  const plan = useAtomValue(planAtom)
-  const assistantStream = useAtomValue(assistantStreamAtom)
-  const cards = useAtomValue(browserCardsAtom)
-  const runtimeEvents = useAtomValue(runtimeTranscriptEventsAtom)
+  const items = useAgentAtomValue(itemsAtom)
+  const run = useAgentAtomValue(runAtom)
+  const plan = useAgentAtomValue(planAtom)
+  const assistantStream = useAgentAtomValue(assistantStreamAtom)
+  const cards = useAgentAtomValue(browserCardsAtom)
+  const runtimeEvents = useAgentAtomValue(runtimeTranscriptEventsAtom)
   const [expandedGroups, setExpandedGroups] = useAtom(expandedTranscriptGroupsAtom)
   const [storedWindow, setMessageWindow] = useAtom(messageWindowAtom)
   const timelineRendererRegistry = useWebTimelineRendererRegistry()

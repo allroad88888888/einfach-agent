@@ -38,7 +38,7 @@ describe('history image compatibility guard', () => {
           <button type="button">发送</button>
         </HistoryImageCompatibilityGuard>
       </HistoryImageCompatibilityProvider>,
-      { store: storeWithImage() },
+      { agentStore: storeWithImage() },
     )
 
     expect(screen.getByRole('alert')).toHaveTextContent('当前模型无法继续使用对话中的 1 张历史图片')
@@ -55,7 +55,7 @@ describe('history image compatibility guard', () => {
           <button type="button">发送</button>
         </HistoryImageCompatibilityGuard>
       </HistoryImageCompatibilityProvider>,
-      { store: storeWithImage() },
+      { agentStore: storeWithImage() },
     )
 
     expect(screen.getByRole('button', { name: '发送' })).toBeInTheDocument()

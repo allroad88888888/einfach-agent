@@ -1,4 +1,4 @@
-import { useAtomValue } from '@einfach/react'
+import { useAgentAtomValue } from '@web-agent/react-plugin'
 import type { ModelToolCall, ToolItem } from '@web-agent/ai'
 import {
   subagentTreesAtom,
@@ -249,7 +249,7 @@ function SubagentNodeTrace({
 }
 
 export function SubagentRunInline({ callId }: { callId: string }) {
-  const trees = useAtomValue(subagentTreesAtom)
+  const trees = useAgentAtomValue(subagentTreesAtom)
   return (
     <InlineDelegate
       ancestorCallIds={new Set()}

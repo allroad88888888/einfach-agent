@@ -37,7 +37,7 @@ describe('MessageList', () => {
     ]
     store.setter(itemsAtom, items)
 
-    renderWithStore(<MessageList />, { store })
+    renderWithStore(<MessageList />, { agentStore: store })
 
     const user = screen.getByText('你好').closest('.agentnew-msg')
     expect(user).toHaveClass('agentnew-msg--user')
@@ -61,7 +61,7 @@ describe('MessageList', () => {
     const store = createStore()
     store.setter(itemsAtom, [])
 
-    const { container } = renderWithStore(<MessageList />, { store })
+    const { container } = renderWithStore(<MessageList />, { agentStore: store })
 
     expect(container.querySelector('.agentnew-message-empty')).not.toBeNull()
     expect(screen.getByText('开始对话吧')).toBeInTheDocument()
@@ -79,7 +79,7 @@ describe('MessageList', () => {
     ]
     store.setter(itemsAtom, items)
 
-    const { container } = renderWithStore(<MessageList />, { store })
+    const { container } = renderWithStore(<MessageList />, { agentStore: store })
 
     // 只剩一个 assistant 气泡（有文本那个）
     expect(container.querySelectorAll('.agentnew-msg--assistant')).toHaveLength(1)
@@ -107,7 +107,7 @@ describe('MessageList', () => {
     ]
     store.setter(itemsAtom, items)
 
-    const { container } = renderWithStore(<MessageList />, { store })
+    const { container } = renderWithStore(<MessageList />, { agentStore: store })
 
     expect(container.querySelectorAll('.agentnew-msg--assistant')).toHaveLength(0)
     expectThinkingProcessExpanded()
@@ -129,7 +129,7 @@ describe('MessageList', () => {
       },
     ])
 
-    const { container } = renderWithStore(<MessageList />, { store })
+    const { container } = renderWithStore(<MessageList />, { agentStore: store })
 
     expectThinkingProcessExpanded()
     expect(screen.getByText('模型思考')).toBeInTheDocument()
@@ -160,7 +160,7 @@ describe('MessageList', () => {
       },
     ])
 
-    const { container } = renderWithStore(<MessageList />, { store })
+    const { container } = renderWithStore(<MessageList />, { agentStore: store })
 
     expectThinkingProcessExpanded()
     expect(screen.getByText('需要先读取工具定义。')).toBeInTheDocument()
@@ -176,7 +176,7 @@ describe('MessageList', () => {
     ]
     store.setter(itemsAtom, items)
 
-    const { container } = renderWithStore(<MessageList />, { store })
+    const { container } = renderWithStore(<MessageList />, { agentStore: store })
 
     const bubbles = container.querySelectorAll('.agentnew-msg--assistant')
     expect(bubbles).toHaveLength(2)
@@ -200,7 +200,7 @@ describe('MessageList', () => {
       startedAt,
     })
 
-    renderWithStore(<MessageList />, { store })
+    renderWithStore(<MessageList />, { agentStore: store })
 
     const status = screen.getByLabelText('对话正在进行，已用时 3m 40s')
     expect(status).toHaveTextContent('Working for 3m 40s')
@@ -220,7 +220,7 @@ describe('MessageList', () => {
       finishedAt: 221_000,
     })
 
-    renderWithStore(<MessageList />, { store })
+    renderWithStore(<MessageList />, { agentStore: store })
 
     const status = screen.getByLabelText('对话已结束，用时 3m 40s')
     expect(status).toHaveTextContent('Brewed for 3m 40s')

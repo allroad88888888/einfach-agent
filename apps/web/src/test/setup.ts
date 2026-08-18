@@ -8,6 +8,7 @@ import { resetRootStore } from '@web-agent/core/state/rootStore'
 // 真实实现（表现为「not a spy」）。故 defaultCore 保持深路径。
 import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
 import { registerStandardTools } from '@web-agent/tools'
+import { resetSessionUiStores } from '../agentNew/ui/sessionUiStores'
 
 // 【登记反转 · TS1】defaultCore 造出来无工具（core 不再硬编码标准工具）。测试大量断言
 // defaultCore.tools 已带 21 个标准工具——在此（每个测试文件加载前跑一次，register 幂等）统一注册进
@@ -30,6 +31,9 @@ afterEach(() => {
   // Vitest isolates every test file in its own worker. These default-core stores only need
   // cleanup between cases inside that worker; they are never used to serialize test files.
   defaultCore.resetSessionStores()
+  // UI store 与 agent store 是两套按会话缓存的实例，用例之间都得清 —— 只清一半的话，
+  // 上一个用例的展开态/草稿会跟着同名会话活到下一个用例里。
+  resetSessionUiStores()
   resetRootStore()
   vi.unstubAllEnvs()
 })

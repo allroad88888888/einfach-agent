@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import { act, screen } from '@testing-library/react'
-import { useAtomValue } from '@einfach/react'
+import { atom } from '@einfach/core'
+import { useAtom } from '@einfach/react'
+import { useAgentAtomValue } from '@web-agent/react-plugin'
 import { renderWithStore } from '../../test/renderWithStore'
 import {
   rootStore,
@@ -10,15 +12,30 @@ import {
   type ConversationItem,
 } from '@web-agent/core'
 import { ActiveSessionProvider } from './ActiveSessionProvider'
+import { getSessionUiStore } from './sessionUiStores'
 
-// RUI1 spike：验证「einfach <Provider> 嵌套 + key 切 store」这套地基是否工作。
-// 关键断言：切根 rootStore 的 activeSessionIdAtom 后，右栏 Provider 换成新会话 store，
-// 子组件（Probe，读 itemsAtom）读到的是「新会话 store 的值」——这就是整个 UI 层的地基。
+// RUI1 spike：验证「两层 Provider + key 切 store」这套地基是否工作。
+// 关键断言有两条：
+//   · 切根 rootStore 的 activeSessionIdAtom 后，agent store 换成新会话的，子组件读到新值；
+//   · 渲染态写在 UI store 里，**不会**落进 agent store —— 这是拆分的全部意义所在，
+//     而它错了不报错（只是某个 atom 悄悄多存了一份），所以必须有一条测试钉住。
 
-// probe 子组件：读当前所在 Provider（会话 store）的 itemsAtom 长度。
+// probe 子组件：读当前会话 agent store 的 itemsAtom 长度。
 function Probe() {
-  const items = useAtomValue(itemsAtom)
+  const items = useAgentAtomValue(itemsAtom)
   return <div data-testid="probe">{items.length}</div>
+}
+
+// 一个纯渲染态 atom：挂载即写，用来验证它落在 UI store 而不是 agent store。
+const viewProbeAtom = atom('未写入')
+
+function ViewProbe() {
+  const [value, setValue] = useAtom(viewProbeAtom)
+  return (
+    <button type="button" data-testid="view-probe" onClick={() => setValue('渲染态')}>
+      {value}
+    </button>
+  )
 }
 
 const oneItem: ConversationItem = {
@@ -28,7 +45,7 @@ const oneItem: ConversationItem = {
 }
 
 describe('ActiveSessionProvider (RUI1)', () => {
-  it('切 activeSessionId → key 切 store，子组件读到新会话 store 的值；无会话时空占位', () => {
+  it('切 activeSessionId → 换 agent store，子组件读到新会话的值；无会话时空占位', () => {
     // 准备两个会话的独立 store，各写不同长度的 items。
     defaultCore.getSessionStore('a').store.setter(itemsAtom, [oneItem])
     defaultCore.getSessionStore('b').store.setter(itemsAtom, [oneItem, { ...oneItem, id: 'i2' }])
@@ -44,7 +61,7 @@ describe('ActiveSessionProvider (RUI1)', () => {
     // 会话 a：itemsAtom 长度 1
     expect(screen.getByTestId('probe')).toHaveTextContent('1')
 
-    // 切到会话 b → RUI1：key 切 store 生效，probe 读到 b 会话 store 的值（长度 2）
+    // 切到会话 b → key 切 store 生效，probe 读到 b 会话的值（长度 2）
     act(() => {
       rootStore.setter(activeSessionIdAtom, 'b')
     })
@@ -56,5 +73,46 @@ describe('ActiveSessionProvider (RUI1)', () => {
     })
     expect(screen.queryByTestId('probe')).toBeNull()
     expect(screen.getByText(/还没有会话/)).toBeInTheDocument()
+  })
+
+  it('渲染态写进该会话的 UI store，agent store 一个字都不多存', () => {
+    rootStore.setter(activeSessionIdAtom, 'a')
+
+    renderWithStore(
+      <ActiveSessionProvider>
+        <ViewProbe />
+      </ActiveSessionProvider>,
+      { store: rootStore },
+    )
+
+    act(() => {
+      screen.getByTestId('view-probe').click()
+    })
+
+    expect(getSessionUiStore('a').getter(viewProbeAtom)).toBe('渲染态')
+    // 拆分前这一行会是 '渲染态' —— 渲染层随手 useAtom 的东西物理上就落在会话 store 里。
+    expect(defaultCore.getSessionStore('a').store.getter(viewProbeAtom)).toBe('未写入')
+  })
+
+  it('每会话一个 UI store：切走再切回来，渲染态还在，且不串会话', () => {
+    rootStore.setter(activeSessionIdAtom, 'a')
+    const { rerender } = renderWithStore(
+      <ActiveSessionProvider>
+        <ViewProbe />
+      </ActiveSessionProvider>,
+      { store: rootStore },
+    )
+    act(() => { screen.getByTestId('view-probe').click() })
+
+    act(() => { rootStore.setter(activeSessionIdAtom, 'b') })
+    expect(screen.getByTestId('view-probe')).toHaveTextContent('未写入')
+
+    act(() => { rootStore.setter(activeSessionIdAtom, 'a') })
+    rerender(
+      <ActiveSessionProvider>
+        <ViewProbe />
+      </ActiveSessionProvider>,
+    )
+    expect(screen.getByTestId('view-probe')).toHaveTextContent('渲染态')
   })
 })

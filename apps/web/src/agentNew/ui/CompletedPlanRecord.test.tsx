@@ -13,7 +13,7 @@ describe('CompletedPlanRecord', () => {
       requiresApproval: false, createdAt: 1, updatedAt: 2, stages: [],
     })
 
-    const { container } = renderWithStore(<CompletedPlanRecord />, { store })
+    const { container } = renderWithStore(<CompletedPlanRecord />, { agentStore: store })
 
     expect(container).toBeEmptyDOMElement()
   })
@@ -30,7 +30,7 @@ describe('CompletedPlanRecord', () => {
       }],
     })
 
-    renderWithStore(<CompletedPlanRecord />, { store })
+    renderWithStore(<CompletedPlanRecord />, { agentStore: store })
 
     expect(screen.getByText('计划记录')).toBeInTheDocument()
     expect(screen.getByText('1/1 阶段完成')).toBeInTheDocument()

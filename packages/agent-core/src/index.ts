@@ -110,8 +110,9 @@ export {
   undoEntry,
   redoEntry,
   // 卡片与项目 Skills
+  applyRecoveredCacheTotals,
   discardArtifact,
-  setComposerDraft,
+  dismissWithdrawnTurnNotice,
   refreshProjectSkills,
   // 子 Agent 视图（apps/web: SubagentTreePanel、SubagentSkillGovernancePanel）
   selectSubagentNode,
@@ -230,14 +231,9 @@ export {
 export {
   assistantStreamAtom, // MessageList、Composer、ToolActivity
   browserCardsAtom, // BrowserActionCard
-  completedPlanRecordExpandedAtom, // CompletedPlanRecord
-  composerDraftAtom, // Composer
   contextStatsAtom, // ContextStats
-  expandedPlanStagesAtom, // PlanPanel、CompletedPlanRecord
-  expandedTranscriptGroupsAtom, // MessageList
   pendingArtifactsAtom, // SaveArtifact
   pendingQuestionAnswersAtom, // AskUserQuestionCard
-  planPanelExpandedAtom, // PlanPanel
   queuedUserMessagesAtom, // Composer
   runtimeTranscriptEventsAtom, // MessageList
   toolActivityAtom, // ToolActivity

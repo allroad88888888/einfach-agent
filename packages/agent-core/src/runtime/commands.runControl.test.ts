@@ -32,7 +32,6 @@ import {
   browserCardsAtom,
   addRuntimeTranscriptEvent,
   runtimeTranscriptEventsAtom,
-  composerDraftAtom,
   withdrawnTurnNoticeAtom,
 } from '../state/transientAtoms'
 import { itemsAtom, runAtom } from '../state/sessionAtoms'

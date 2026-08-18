@@ -5,7 +5,6 @@ import {
   alwaysAllowedToolsAtom,
   assistantStreamAtom,
   browserCardsAtom,
-  composerDraftAtom,
   contextStatsAtom,
   pendingArtifactsAtom,
   pendingQuestionAnswersAtom,
@@ -15,7 +14,7 @@ import {
   transcriptInjectionFingerprintsAtom,
   withdrawnTurnNoticeAtom,
 } from './sessionTransientAtoms'
-import type { ContextStatsSnapshot } from './contextStats'
+import type { ContextCacheTotals, ContextStatsSnapshot } from './contextStats'
 import { SESSION_SLOTS } from './sessionSlots'
 import {
   appendPendingArtifactLogged,
@@ -179,21 +178,26 @@ export function setContextStats(
 }
 
 /**
- * 写输入框草稿。**刻意不记账**，尽管 composerDraft 是 SESSION_SLOTS 里的槽位。
+ * 把「从 trace 里补算出来的本次 run 累计缓存命中」并回当前统计。
  *
- * 槽位身份要的是「进恢复快照」（刷新不能把用户打了一半的字丢了）；而它**不该**是一个可撤销的步骤：
- * 这个写入是逐击键触发的，每次都记一条账的话，敲一百个字就把 cap（默认 100）填满，
- * 真实的轮次账目全被挤出去 —— 撤销功能等于被输入框废掉。
+ * 存在的理由是 UI 拿不到这个数：`recoverCacheTotalsFromTrace` 是异步读观测库，只有渲染层会在
+ * 看到 `cacheTotals.runId` 落后于当前 run 时去补。以前 `ContextStats.tsx` 直接
+ * `useAtom(contextStatsAtom)` 就地写——那是渲染层写会话 atom，绕过收口点，而当时的门禁看不见
+ * （它只按名字认槽位，contextStats 不是槽位，又是从 barrel import 的）。
  *
- * 也不做「只在清空时记账」的折中：那样撤销一轮会把当时的草稿盖回输入框，而用户可能已经在里面
- * 打了新的东西，等于静默吞掉他刚写的话。宁可撤销完全不碰草稿。
- *
- * 于是 SESSION_SLOTS 有两种成员：进快照且入账的，与**只进快照**的。目前只有草稿属于后者，
- * 判据写在 sessionSlots.ts。
+ * 两道 stale guard 逐字沿用组件里原来的判断：run 已经翻篇（`runId` 不符）、或这份累计已经补过
+ * （`cacheTotals.runId` 已是当前 run），都原样返回，不写。
  */
-export function setComposerDraft(id: string, draft: string, core: CoreInstance = defaultCore): void {
+export function mergeContextStatsCacheTotals(
+  id: string,
+  runId: string,
+  cacheTotals: ContextCacheTotals,
+  core: CoreInstance = defaultCore,
+): void {
   if (sessionMissing(id, core)) return
-  core.getSessionStore(id).store.setter(composerDraftAtom, draft)
+  core.getSessionStore(id).store.setter(contextStatsAtom, (prev) => (
+    prev?.runId === runId && prev.cacheTotals?.runId !== runId ? { ...prev, cacheTotals } : prev
+  ))
 }
 
 export function enqueueUserMessage(

@@ -6,7 +6,7 @@
 // pendingToolConfirmation.args 是模型给的原样参数（unknown），预览前防御式提取（command/path），并安全截断。
 
 import { useState } from 'react'
-import { useAtomValue } from '@einfach/react'
+import { useAgentAtomValue } from '@web-agent/react-plugin'
 import { runAtom, confirmTool } from '@web-agent/core'
 import { isMcpTool } from '@web-agent/core/tools'
 
@@ -50,7 +50,7 @@ function describeArgs(args: unknown): string {
 }
 
 export function ToolConfirmCard() {
-  const run = useAtomValue(runAtom)
+  const run = useAgentAtomValue(runAtom)
 
   // 仅当当前会话 run 停在 waiting_confirmation 且挂着 pendingToolConfirmation 才渲染，否则不占位。
   if (run?.status !== 'waiting_confirmation' || !run.pendingToolConfirmation) return null

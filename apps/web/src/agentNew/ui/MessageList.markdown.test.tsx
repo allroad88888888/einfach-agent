@@ -13,7 +13,7 @@ function renderAssistantMessage(content: string) {
     item: { role: 'assistant', content },
   }]
   store.setter(itemsAtom, items)
-  return renderWithStore(<MessageList />, { store })
+  return renderWithStore(<MessageList />, { agentStore: store })
 }
 
 /** Covers the deferred GFM renderer used by MessageList assistant rows. */

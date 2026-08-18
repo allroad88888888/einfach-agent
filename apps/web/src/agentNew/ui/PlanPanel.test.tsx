@@ -43,7 +43,7 @@ describe('PlanPanel', () => {
       },
     })
 
-    const { container } = renderWithStore(<PlanPanel />, { store })
+    const { container } = renderWithStore(<PlanPanel />, { agentStore: store })
 
     const plan = container.querySelector('.agentnew-plan.is-drafting')
     const ask = plan?.querySelector('.agentnew-ask.is-plan-embedded')
@@ -80,7 +80,7 @@ describe('PlanPanel', () => {
       },
     })
 
-    const { container } = renderWithStore(<PlanPanel />, { store })
+    const { container } = renderWithStore(<PlanPanel />, { agentStore: store })
 
     const details = screen.getByText('实现', { selector: 'summary strong' }).closest('details')
     expect(details).toHaveAttribute('open')
@@ -100,7 +100,7 @@ describe('PlanPanel', () => {
       ],
     })
     store.setter(runAtom, { runId: 'r1', status: 'waiting_plan_approval', pendingPlanApproval: { callId: 'c1', planId: 'p1', revision: 1 } })
-    renderWithStore(<PlanPanel />, { store })
+    renderWithStore(<PlanPanel />, { agentStore: store })
     expect(screen.getByText('实现', { selector: 'summary strong' })).toBeInTheDocument()
     expect(screen.getByText('验证', { selector: 'summary strong' })).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '批准并继续' }))
@@ -118,7 +118,7 @@ describe('PlanPanel', () => {
         result: { summary: '实现完成', evidence: ['3 tests passed'], submittedAt: 2 },
       }],
     })
-    renderWithStore(<PlanPanel />, { store })
+    renderWithStore(<PlanPanel />, { agentStore: store })
     expect(screen.queryByText('实现完成')).toBeNull()
     fireEvent.click(screen.getByText('实现', { selector: 'summary strong' }).closest('summary')!)
     expect(screen.getByText('实现完成')).toBeInTheDocument()
@@ -136,7 +136,7 @@ describe('PlanPanel', () => {
         blockReason: '上游接口尚未提供',
       }],
     })
-    renderWithStore(<PlanPanel />, { store })
+    renderWithStore(<PlanPanel />, { agentStore: store })
     fireEvent.click(screen.getByText('实现', { selector: 'summary strong' }).closest('summary')!)
     expect(screen.getByText('已阻塞')).toBeInTheDocument()
     expect(screen.getByText('阻塞：上游接口尚未提供')).toBeInTheDocument()
@@ -159,7 +159,7 @@ describe('PlanPanel', () => {
       ],
     })
 
-    renderWithStore(<PlanPanel />, { store })
+    renderWithStore(<PlanPanel />, { agentStore: store })
 
     const designTitle = screen.getByText('设计', { selector: 'summary strong' })
     const designDetails = designTitle.closest('details')
@@ -188,7 +188,7 @@ describe('PlanPanel', () => {
       ],
     })
 
-    renderWithStore(<PlanPanel />, { store })
+    renderWithStore(<PlanPanel />, { agentStore: store })
 
     const designSummary = screen.getByText('设计', { selector: 'summary strong' }).closest('summary')!
     expect(designSummary).toHaveTextContent('回滚已完成')
@@ -211,7 +211,7 @@ describe('PlanPanel', () => {
       }],
     })
 
-    renderWithStore(<PlanPanel />, { store })
+    renderWithStore(<PlanPanel />, { agentStore: store })
 
     expect(screen.getByText('实现', { selector: 'summary strong' })).toBeInTheDocument()
     const toggle = screen.getByRole('button', { name: '收起计划详情' })
@@ -233,7 +233,7 @@ describe('PlanPanel', () => {
       }],
     })
 
-    renderWithStore(<PlanPanel />, { store })
+    renderWithStore(<PlanPanel />, { agentStore: store })
 
     expect(screen.getAllByText('待继续')).toHaveLength(2)
     expect(screen.getByText('当前没有 Agent 在运行。', { exact: false })).toBeInTheDocument()
@@ -253,7 +253,7 @@ describe('PlanPanel', () => {
     })
     store.setter(runAtom, { runId: 'r-running', status: 'running' })
 
-    renderWithStore(<PlanPanel />, { store })
+    renderWithStore(<PlanPanel />, { agentStore: store })
 
     expect(screen.getByText('执行中')).toBeInTheDocument()
     expect(screen.getByText('进行中')).toBeInTheDocument()
@@ -273,7 +273,7 @@ describe('PlanPanel', () => {
     })
     store.setter(runAtom, { runId: 'orphaned-run', status: 'awaiting_tool' })
 
-    renderWithStore(<PlanPanel />, { store })
+    renderWithStore(<PlanPanel />, { agentStore: store })
 
     expect(screen.getAllByText('待继续')).toHaveLength(2)
     fireEvent.click(screen.getByRole('button', { name: '继续执行' }))
@@ -327,7 +327,7 @@ describe('PlanPanel', () => {
       },
     ])
 
-    renderWithStore(<PlanPanel />, { store })
+    renderWithStore(<PlanPanel />, { agentStore: store })
 
     const details = screen.getByText('检索代码', { selector: 'summary strong' }).closest('details')
     expect(details).toHaveTextContent('执行记录')
@@ -360,7 +360,8 @@ describe('PlanPanel', () => {
       },
     })))
 
-    const { container } = renderWithStore(<PlanPanel />, { store })
+    // 阶段执行轨迹的滑动窗口是渲染态，住 UI store；计划与 items 在 agentStore。
+    const { container, store: uiStore } = renderWithStore(<PlanPanel />, { agentStore: store })
     const traceWindow = container.querySelector<HTMLElement>(
       '.agentnew-plan-stage-trace-window',
     )
@@ -378,7 +379,7 @@ describe('PlanPanel', () => {
     traceWindow!.scrollTop = 0
     fireEvent.scroll(traceWindow!)
 
-    expect(store.getter(planTraceWindowsAtom)['p-window:execute']).toMatchObject({
+    expect(uiStore.getter(planTraceWindowsAtom)['p-window:execute']).toMatchObject({
       start: 500 - MESSAGE_WINDOW_SIZE - MESSAGE_WINDOW_STEP,
       end: 500 - MESSAGE_WINDOW_STEP,
       direction: 'backward',
@@ -402,7 +403,7 @@ describe('PlanPanel', () => {
       }],
     })
 
-    renderWithStore(<PlanPanel />, { store })
+    renderWithStore(<PlanPanel />, { agentStore: store })
 
     const summary = screen.getByText('验证', { selector: 'summary strong' }).closest('summary')!
     expect(summary).toHaveTextContent('已阻塞')

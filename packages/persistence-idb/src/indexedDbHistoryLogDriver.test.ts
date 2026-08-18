@@ -12,7 +12,7 @@ function log(generation: number, entryCount = 1): PersistedHistoryLog {
     entries: Array.from({ length: entryCount }, (_, index) => ({
       txId: `tx-${index + 1}`,
       label: 't1',
-      ops: [{ key: 'composerDraft', before: '', after: `草稿${index}` }],
+      ops: [{ key: 'fixtureSlot', before: '', after: `值${index}` }],
     })),
     cursor: entryCount,
   }
@@ -31,7 +31,7 @@ describe('IndexedDB 事务日志 driver', () => {
     expect(loaded?.generation).toBe(7)
     expect(loaded?.cursor).toBe(3)
     expect(loaded?.entries).toHaveLength(3)
-    expect(loaded?.entries[0]?.ops[0]).toMatchObject({ key: 'composerDraft', after: '草稿0' })
+    expect(loaded?.entries[0]?.ops[0]).toMatchObject({ key: 'fixtureSlot', after: '值0' })
   })
 
   it('同一 session 整份覆盖，不追加', async () => {

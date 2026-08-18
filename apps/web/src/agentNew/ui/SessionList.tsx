@@ -18,6 +18,7 @@ import {
   removeSession,
   renameSession,
 } from '@web-agent/core'
+import { dropSessionUiStore } from './sessionUiStores'
 
 // TU2：删除确认态的自动复位时限。
 const CONFIRM_TIMEOUT_MS = 3000
@@ -62,9 +63,11 @@ export function SessionList({ workspaceId }: { workspaceId?: string }) {
 
   const handleRemoveClick = (id: string) => {
     if (confirmingId === id) {
-      // 二击：真删 —— 仍走 removeSession 命令（U1 边界不变）。
+      // 二击：真删 —— 会话内容仍走 removeSession 命令（U1 边界不变）；
+      // 该会话的渲染态住 UI store，core 不认识它，得由这一层自己丢。
       resetConfirm()
       removeSession(id)
+      dropSessionUiStore(id)
       return
     }
     // 首击（或另一行确认态中点了本行）：本行进入确认态，重开 3s 超时。

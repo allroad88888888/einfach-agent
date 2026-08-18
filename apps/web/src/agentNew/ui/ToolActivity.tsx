@@ -3,11 +3,11 @@
 // 契约（U1）：只读 atom（toolActivityAtom）+ 不 setter/不碰 store/不调命令。
 // 显示「哪个工具调用正在干啥」——harness 经 ctx.progress 写入、工具跑完清掉；空则不渲染。
 
-import { useAtomValue } from '@einfach/react'
+import { useAgentAtomValue } from '@web-agent/react-plugin'
 import { toolActivityAtom } from '@web-agent/core'
 
 export function ToolActivity() {
-  const activities = useAtomValue(toolActivityAtom)
+  const activities = useAgentAtomValue(toolActivityAtom)
   if (activities.length === 0) return null
 
   return (

@@ -52,13 +52,11 @@ const boundedWholeValueSlots = [
 ]
 // 进快照、但**不入账**的槽位：它不产生日志载荷，所以不受本规则约束，但仍要显式分类，
 // 免得「没入账」和「忘了分类」看起来一模一样。
-const snapshotOnlySlots = [
-  {
-    key: 'composerDraft',
-    reason: '逐击键写入，记账会让敲一百个字就填满 undo 的 cap、把真实轮次账目挤出去；'
-      + '判据与「为什么不做只在清空时记账的折中」见 state/sessionTransientMutations.ts 的 setComposerDraft',
-  },
-]
+//
+// **当前为空。** 唯一的成员曾是 `composerDraft`，它随 UI store 拆分离开了会话状态（草稿不再进
+// 恢复快照，刷新即丢，是明确裁决）。空表照旧留着：下一个「必须进快照但按轮记账没意义」的槽位
+// 需要一个有名字的去处，没有它，它唯一的落法就是编一句理由塞进 boundedWholeValue。
+const snapshotOnlySlots = []
 
 /**
  * 规则 3 的判定：槽位表与三张分类表必须逐项对齐，且 `deltaJournaled` 的每一项在源码里确有 registrar。

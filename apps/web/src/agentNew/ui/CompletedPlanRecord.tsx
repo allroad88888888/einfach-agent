@@ -1,9 +1,11 @@
-import { useAtom, useAtomValue } from '@einfach/react'
-import { planAtom, completedPlanRecordExpandedAtom, expandedPlanStagesAtom } from '@web-agent/core'
+import { useAtom } from '@einfach/react'
+import { useAgentAtomValue } from '@web-agent/react-plugin'
+import { planAtom } from '@web-agent/core'
+import { completedPlanRecordExpandedAtom, expandedPlanStagesAtom } from './planViewState'
 
 /** Renders a completed plan as a compact, expandable transcript record. */
 export function CompletedPlanRecord() {
-  const plan = useAtomValue(planAtom)
+  const plan = useAgentAtomValue(planAtom)
   const [recordExpanded, setRecordExpanded] = useAtom(completedPlanRecordExpandedAtom)
   const [expandedStages, setExpandedStages] = useAtom(expandedPlanStagesAtom)
 

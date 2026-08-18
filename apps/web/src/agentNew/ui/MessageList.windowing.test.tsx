@@ -24,7 +24,7 @@ describe('MessageList windowing', () => {
     const store = createStore()
     store.setter(itemsAtom, longConversation())
 
-    const { container } = renderWithStore(<MessageList />, { store })
+    const { container } = renderWithStore(<MessageList />, { agentStore: store })
 
     const mountedRows = container.querySelectorAll('.agentnew-window-row')
     expect(container.querySelector('.agentnew-virtual-sizer')).toBeNull()
@@ -37,7 +37,8 @@ describe('MessageList windowing', () => {
     const store = createStore()
     store.setter(itemsAtom, longConversation())
 
-    const { container } = renderWithStore(<MessageList />, { store })
+    // 滑动窗口是渲染态，住 UI store —— 会话内容在 agentStore，两者刻意不是同一个。
+    const { container, store: uiStore } = renderWithStore(<MessageList />, { agentStore: store })
     const list = container.querySelector<HTMLElement>('.agentnew-message-list')
     expect(list).not.toBeNull()
     Object.defineProperties(list!, {
@@ -47,7 +48,7 @@ describe('MessageList windowing', () => {
     list!.scrollTop = 0
     fireEvent.scroll(list!)
 
-    expect(store.getter(messageWindowAtom)).toMatchObject({
+    expect(uiStore.getter(messageWindowAtom)).toMatchObject({
       start: 500 - MESSAGE_WINDOW_SIZE - MESSAGE_WINDOW_STEP,
       end: 500 - MESSAGE_WINDOW_STEP,
       direction: 'backward',

@@ -65,7 +65,7 @@ describe('SaveArtifact', () => {
     const store = createStore()
     seedArtifact(store)
 
-    renderWithStore(<SaveArtifact />, { store })
+    renderWithStore(<SaveArtifact />, { agentStore: store })
 
     expect(screen.getByText('plan.md')).toBeInTheDocument()
     expect(screen.getByText('6 字符')).toBeInTheDocument()
@@ -75,7 +75,7 @@ describe('SaveArtifact', () => {
   it('空 pendingArtifacts：渲染为空（返回 null）', () => {
     const store = createStore()
     // 不 seed 任何 artifact。
-    const { container } = renderWithStore(<SaveArtifact />, { store })
+    const { container } = renderWithStore(<SaveArtifact />, { agentStore: store })
 
     expect(container.querySelector('[aria-label="待保存文件"]')).toBeNull()
     expect(screen.queryByRole('button', { name: /保存/ })).toBeNull()
@@ -104,7 +104,7 @@ describe('SaveArtifact', () => {
     ;(window as unknown as Record<string, unknown>).showSaveFilePicker = showSaveFilePicker
 
     const artifact = seedArtifact(store)
-    renderWithStore(<SaveArtifact />, { store })
+    renderWithStore(<SaveArtifact />, { agentStore: store })
 
     await user.click(screen.getByRole('button', { name: /保存/ }))
 
@@ -125,7 +125,7 @@ describe('SaveArtifact', () => {
     ;(window as unknown as Record<string, unknown>).showSaveFilePicker = showSaveFilePicker
 
     seedArtifact(store)
-    renderWithStore(<SaveArtifact />, { store })
+    renderWithStore(<SaveArtifact />, { agentStore: store })
 
     await user.click(screen.getByRole('button', { name: /保存/ }))
 
@@ -153,7 +153,7 @@ describe('SaveArtifact', () => {
     ;(window as unknown as Record<string, unknown>).showSaveFilePicker = vi.fn(async () => handle)
 
     seedArtifact(store)
-    renderWithStore(<SaveArtifact />, { store })
+    renderWithStore(<SaveArtifact />, { agentStore: store })
 
     await user.click(screen.getByRole('button', { name: /保存/ }))
 
@@ -187,7 +187,7 @@ describe('SaveArtifact', () => {
     })
 
     const artifact = seedArtifact(store)
-    renderWithStore(<SaveArtifact />, { store })
+    renderWithStore(<SaveArtifact />, { agentStore: store })
 
     await user.click(screen.getByRole('button', { name: /保存/ }))
 
@@ -213,7 +213,7 @@ describe('SaveArtifact', () => {
     )
 
     const artifact = seedArtifact(store)
-    renderWithStore(<SaveArtifact />, { store })
+    renderWithStore(<SaveArtifact />, { agentStore: store })
 
     await user.click(screen.getByRole('button', { name: /保存/ }))
 

@@ -15,7 +15,6 @@ import {
   runAtom,
 } from './sessionAtoms'
 import {
-  composerDraftAtom,
   pendingArtifactsAtom,
   pendingQuestionAnswersAtom,
   queuedUserMessagesAtom,
@@ -128,7 +127,6 @@ export function seedDurableState(store: Store): void {
     content: '# 只活在这个 atom 里的产物内容',
     mimeType: 'text/markdown',
   }])
-  store.setter(composerDraftAtom, 'withdrawn user words')
   store.setter(executionGraphAtom, graph())
   store.setter(subagentContinuationsAtom, [{
     schemaVersion: 1,

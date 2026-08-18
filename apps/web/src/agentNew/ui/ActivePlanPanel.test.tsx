@@ -13,7 +13,7 @@ describe('ActivePlanPanel', () => {
       requiresApproval: false, createdAt: 1, updatedAt: 2, stages: [],
     })
 
-    const { container } = renderWithStore(<ActivePlanPanel />, { store })
+    const { container } = renderWithStore(<ActivePlanPanel />, { agentStore: store })
 
     expect(container).toBeEmptyDOMElement()
   })
@@ -29,7 +29,7 @@ describe('ActivePlanPanel', () => {
       }],
     })
 
-    renderWithStore(<ActivePlanPanel />, { store })
+    renderWithStore(<ActivePlanPanel />, { agentStore: store })
 
     expect(screen.getByRole('heading', { name: '正在执行' })).toBeInTheDocument()
   })

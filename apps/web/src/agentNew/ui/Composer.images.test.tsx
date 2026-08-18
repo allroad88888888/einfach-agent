@@ -6,21 +6,13 @@ import { sendMessage, runAtom } from '@web-agent/core'
 import { composerImageAttachmentAtom } from './composerImageAttachmentState'
 import { Composer } from './Composer'
 
-// 见 Composer.test.tsx 同处注释：受控输入框要求草稿命令的 mock 真的写回本用例的 store。
-const draftTarget = vi.hoisted(() => ({ store: undefined as Store | undefined }))
-
-vi.mock('@web-agent/core/runtime/commands', async () => {
-  const { composerDraftAtom } = await import('@web-agent/core/state/sessionTransientAtoms')
-  return {
-    continueInterruptedRun: vi.fn(),
-    sendMessage: vi.fn(),
-    setApprovalMode: vi.fn(),
-    stopRun: vi.fn(),
-    setComposerDraft: vi.fn((draft: string) => {
-      draftTarget.store?.setter(composerDraftAtom, draft)
-    }),
-  }
-})
+vi.mock('@web-agent/core/runtime/commands', () => ({
+  continueInterruptedRun: vi.fn(),
+  sendMessage: vi.fn(),
+  setApprovalMode: vi.fn(),
+  stopRun: vi.fn(),
+  dismissWithdrawnTurnNotice: vi.fn(),
+}))
 
 const accepted = { accepted: true, status: 'started', sessionId: 's', submissionSequence: 1 }
 
@@ -28,9 +20,9 @@ function photo(name = 'photo.png') {
   return new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], name, { type: 'image/png' })
 }
 
-function renderComposer(store = createStore()) {
-  draftTarget.store = store
-  return renderWithStore(<Composer vendor="kimi" model="kimi-k2.6" />, { store })
+/** 附件草稿住 UI store，本文件的被测 store 就是它；agent store 只在需要 run 时显式给。 */
+function renderComposer(store = createStore(), agentStore = createStore()) {
+  return renderWithStore(<Composer vendor="kimi" model="kimi-k2.6" />, { store, agentStore })
 }
 
 async function attach(file = photo()) {
@@ -207,11 +199,11 @@ describe('Composer image attachments', () => {
   })
 
   it('锁定时阻止文件 drop 的浏览器默认行为但不接收附件', () => {
-    const store = createStore()
-    store.setter(runAtom, { runId: 'r', status: 'waiting_user' })
+    const agentStore = createStore()
+    agentStore.setter(runAtom, { runId: 'r', status: 'waiting_user' })
     const { container } = renderWithStore(
       <Composer vendor="kimi" model="kimi-k2.6" />,
-      { store },
+      { agentStore },
     )
     const composer = container.querySelector('.agentnew-composer')
     if (!composer) throw new Error('missing composer')

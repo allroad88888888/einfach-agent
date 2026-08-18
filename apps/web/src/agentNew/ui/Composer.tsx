@@ -1,26 +1,26 @@
-// P-U4 Composer：右栏输入框，挂在「当前会话 store」的 Provider 下。
+// P-U4 Composer：右栏输入框。
 // ---------------------------------------------------------------------------
 // 当前 UI/runtime 契约：
-//   · U1 runtime/UI 隔离：本组件只做两件事 —— 读 atom（runAtom 判忙碌）+ 调命令
-//     （sendMessage / stopRun / withdrawCurrentTurnToDraft）。草稿是会话内 transient UI 态。
-//   · U7 esc 中断：运行中 Escape → stopRun；输入框空闲 Escape → 清空当前会话草稿。
-// 草稿是会话内 transient atom，不持久化、不进 model messages。
+//   · U1 runtime/UI 隔离：会话状态（run / 排队消息 / 撤回提示）经 useAgentAtomValue 只读，
+//     要改只调命令（sendMessage / stopRun / dismissWithdrawnTurnNotice）。
+//   · U7 esc 中断：运行中 Escape → stopRun；输入框空闲 Escape → 清空草稿。
+// **草稿住 UI store**（composerDraftState.ts）：纯渲染态，刷新即丢，不进恢复快照 ——
+// 它曾是槽位，理由是「回退会把用户原话放回输入框」，而那个机制在实现里不存在，详见该文件。
 
 import { useEffect, useRef } from 'react'
 import { useAtomValue, useSetAtom } from '@einfach/react'
+import { useAgentAtomValue } from '@web-agent/react-plugin'
 import {
   runAtom,
-  composerDraftAtom,
-  // 走命令而不是 useSetAtom(composerDraftAtom)：会话 atom 的写入必须收口在 core 的
-  // writer/command 层，渲染层直接写会绕过收口点（门禁 check:state 现在全仓都判这条）。
-  setComposerDraft,
   queuedUserMessagesAtom,
   withdrawnTurnNoticeAtom,
   continueInterruptedRun,
+  dismissWithdrawnTurnNotice,
   sendMessage,
   setApprovalMode,
   stopRun,
 } from '@web-agent/core'
+import { composerDraftAtom } from './composerDraftState'
 import {
   addComposerImageAttachmentsAtom,
   beginComposerImageSubmissionAtom,
@@ -51,12 +51,12 @@ export function Composer({
 }) {
   const composingRef = useRef(false)
   const modeShortcutLatchedRef = useRef(false)
-  const run = useAtomValue(runAtom)
+  const run = useAgentAtomValue(runAtom)
+  const queuedMessages = useAgentAtomValue(queuedUserMessagesAtom)
+  const notice = useAgentAtomValue(withdrawnTurnNoticeAtom)
   const draft = useAtomValue(composerDraftAtom)
-  const queuedMessages = useAtomValue(queuedUserMessagesAtom)
-  const notice = useAtomValue(withdrawnTurnNoticeAtom)
   const attachments = useAtomValue(composerImageAttachmentAtom)
-  const setNotice = useSetAtom(withdrawnTurnNoticeAtom)
+  const setDraft = useSetAtom(composerDraftAtom)
   const addImages = useSetAtom(addComposerImageAttachmentsAtom)
   const clearImages = useSetAtom(clearComposerImageAttachmentsAtom)
   const beginImageSubmission = useSetAtom(beginComposerImageSubmissionAtom)
@@ -90,8 +90,8 @@ export function Composer({
       const outcome = composerSubmissionOutcome(value)
       if (hasImages) settleImageSubmission({ revision: attachments.revision, ...outcome })
       if (outcome.accepted) {
-        setComposerDraft('')
-        setNotice(undefined)
+        setDraft('')
+        dismissWithdrawnTurnNotice()
       }
     }
     const input = !hasImages
@@ -118,8 +118,8 @@ export function Composer({
   }
 
   const updateDraft = (value: string) => {
-    setComposerDraft(value)
-    if (notice) setNotice(undefined)
+    setDraft(value)
+    if (notice) dismissWithdrawnTurnNotice()
   }
 
   const toggleApprovalMode = () => {
@@ -136,16 +136,16 @@ export function Composer({
         target instanceof HTMLTextAreaElement && target.classList.contains('agentnew-composer-input')
       if (inComposerInput && !running) {
         event.preventDefault()
-        setComposerDraft('')
+        setDraft('')
         clearImages()
-        if (notice) setNotice(undefined)
+        if (notice) dismissWithdrawnTurnNotice()
         return
       }
       stopRun()
     }
     window.addEventListener('keydown', handleGlobalKeyDown)
     return () => window.removeEventListener('keydown', handleGlobalKeyDown)
-  }, [clearImages, notice, running, setNotice])
+  }, [clearImages, notice, running, setDraft])
 
   // 焦点变化时 textarea 可能收不到 keyup；在 window 兜底解锁下一次快捷键按压。
   useEffect(() => {

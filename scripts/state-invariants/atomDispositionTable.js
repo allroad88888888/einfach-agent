@@ -22,7 +22,6 @@ export const slotAtoms = [
   'queuedUserMessagesAtom',
   'pendingQuestionAnswersAtom',
   'pendingArtifactsAtom',
-  'composerDraftAtom',
   'executionGraphAtom',
   'subagentContinuationsAtom',
 ]
@@ -103,26 +102,11 @@ export const safeDefaultAtoms = [
       + '重注一遍，injectStablePrefixTranscript 的 doc 注释写明这就是期待行为'
       + '（a fresh UI transcript always gets its first set）',
   },
-  {
-    atom: 'expandedTranscriptGroupsAtom',
-    reason: '「思考过程」分组的展开/折叠偏好，只由 apps/web/src/agentNew/ui/MessageList.tsx 读写；'
-      + '不含任何内容，刷新回默认视图',
-  },
-  {
-    atom: 'expandedPlanStagesAtom',
-    reason: '计划阶段详情的展开偏好，只由 apps/web/src/agentNew/ui 的 PlanPanel.tsx / '
-      + 'CompletedPlanRecord.tsx 读写；不含任何内容',
-  },
-  {
-    atom: 'planPanelExpandedAtom',
-    reason: '计划面板整体的展开偏好，只由 apps/web/src/agentNew/ui/PlanPanel.tsx 读写；不含任何内容',
-  },
-  {
-    atom: 'completedPlanRecordExpandedAtom',
-    reason: '已完成计划记录的展开偏好，只由 apps/web/src/agentNew/ui/CompletedPlanRecord.tsx 读写；'
-      + '不含任何内容',
-  },
 ]
+// 这张表曾经还有四条「展开/折叠偏好」（transcript 分组、计划阶段、计划面板、已完成计划记录），
+// 理由清一色是「不含任何内容，刷新回默认视图」—— 那不是归宿，那是**它们根本不该在 core 里**。
+// 它们已随 UI store 拆分搬进 apps/web，规则 4 的枚举面不再看见它们。判据从此是物理的：
+// 会话状态住 agent store，渲染态住 UI store，不需要一条条写理由解释「这个其实是界面的」。
 
 // (6) knownLoss —— 已知缺口、接受丢失。每条必须写明：丢的是什么、为什么现在接受、将来怎么修。
 // 当前为空。**空不等于不需要这张表**：它是给「已裁决先不修」一个有名字的去处，没有它，

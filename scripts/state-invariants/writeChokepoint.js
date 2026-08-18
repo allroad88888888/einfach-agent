@@ -27,6 +27,7 @@
 
 import { readFile } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
+import { sessionAtomDeclarations } from './sessionAtomSource.js'
 import { slotAtomNames } from './slotSource.js'
 import { relativePath } from './sourceFiles.js'
 
@@ -69,6 +70,10 @@ const writeExemptions = []
 async function checkWriteChokepoint({ repositoryRoot, files, errors, observations }) {
   const scopeRoot = resolve(repositoryRoot, writeScopeDirectory)
   const slotAtoms = await slotAtomNames(repositoryRoot)
+  // 按名字认的是**会话 atom 全集**，不是只有槽位。早一版只认槽位，于是应用层从 barrel 拿到
+  // 非槽位的会话 atom（`withdrawnTurnNoticeAtom`、`contextStatsAtom`）直接 useSetAtom 就地写，
+  // 门禁一无所知 —— 而规则本身声称的是「会话 atom 的写入必须收口」，不是「槽位的写入」。
+  const sessionAtomNames = new Set((await sessionAtomDeclarations(repositoryRoot)).map((item) => item.name))
   for (const path of files) {
     const scoped = relative(scopeRoot, path).split(sep).join('/')
     if (scoped.startsWith('..')) continue
@@ -78,7 +83,7 @@ async function checkWriteChokepoint({ repositoryRoot, files, errors, observation
 
     // 本文件 import 进来的、属于会话状态的标识符 —— 只有写这些才算命中。两个来源：
     //   · 按**模块**认：core 内部从会话 atom 模块 import 的一切（含非槽位的会话 atom）。
-    //   · 按**名字**认：SESSION_SLOTS 里的槽位 atom，不管从哪条路径 import 进来的。
+    //   · 按**名字**认：规则 4 枚举的会话 atom 全集，不管从哪条路径 import 进来的。
     // 后者是为了看穿 barrel：core 之外的文件从 `@web-agent/core` 拿 atom，模块路径里根本没有
     // `state/sessionAtoms` 这种字样，只按模块认就等于对整个应用层失明。
     const sessionAtoms = new Set()
@@ -94,7 +99,7 @@ async function checkWriteChokepoint({ repositoryRoot, files, errors, observation
       for (const raw of names.split(',')) {
         const name = raw.replace(/\btype\b/, '').trim().split(/\s+as\s+/).pop()?.trim()
         if (!name) continue
-        if (byModule || slotAtoms.has(name)) sessionAtoms.add(name)
+        if (byModule || sessionAtomNames.has(name)) sessionAtoms.add(name)
       }
     }
     if (sessionAtoms.size === 0) continue

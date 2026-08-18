@@ -20,7 +20,6 @@ import {
   runAtom,
 } from './sessionAtoms'
 import {
-  composerDraftAtom,
   pendingArtifactsAtom,
   pendingQuestionAnswersAtom,
   queuedUserMessagesAtom,
@@ -93,7 +92,6 @@ export function captureRecoverySnapshot(
       queuedUserMessages: store.getter(queuedUserMessagesAtom),
       pendingQuestionAnswers: store.getter(pendingQuestionAnswersAtom),
       pendingArtifacts: store.getter(pendingArtifactsAtom),
-      composerDraft: store.getter(composerDraftAtom),
       executionGraph: store.getter(executionGraphAtom),
       subagentContinuations: store.getter(subagentContinuationsAtom),
     },
@@ -114,7 +112,6 @@ const applyRecoveryProjectionAtom = atom<null, [RecoveryAtomProjectionV1], void>
     set(queuedUserMessagesAtom, values.queuedUserMessages)
     set(pendingQuestionAnswersAtom, values.pendingQuestionAnswers)
     set(pendingArtifactsAtom, values.pendingArtifacts)
-    set(composerDraftAtom, values.composerDraft)
     set(executionGraphAtom, values.executionGraph)
     set(subagentContinuationsAtom, values.subagentContinuations)
   },

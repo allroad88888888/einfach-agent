@@ -36,7 +36,7 @@ describe('ToolConfirmCard', () => {
       pendingToolConfirmation: { callId: 'c1', toolName: 'shell_macos', args: { command: 'rm -rf build' } },
     })
 
-    renderWithStore(<ToolConfirmCard />, { store })
+    renderWithStore(<ToolConfirmCard />, { agentStore: store })
 
     // 工具名 + command 预览渲染出来。
     expect(screen.getByText('shell_macos')).toBeInTheDocument()
@@ -57,7 +57,7 @@ describe('ToolConfirmCard', () => {
       pendingToolConfirmation: { callId: 'c1', toolName: 'write_file', args: { path: 'a.txt', content: 'x' } },
     })
 
-    renderWithStore(<ToolConfirmCard />, { store })
+    renderWithStore(<ToolConfirmCard />, { agentStore: store })
 
     // write_file 预览取 path。
     expect(screen.getByText('a.txt')).toBeInTheDocument()
@@ -80,7 +80,7 @@ describe('ToolConfirmCard', () => {
       },
     })
 
-    renderWithStore(<ToolConfirmCard />, { store })
+    renderWithStore(<ToolConfirmCard />, { agentStore: store })
 
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
     expect(screen.queryByText('本 session 一律允许该工具')).not.toBeInTheDocument()
@@ -101,7 +101,7 @@ describe('ToolConfirmCard', () => {
         reason: '检测到可能删除大范围文件的递归强制删除命令',
       },
     })
-    renderWithStore(<ToolConfirmCard />, { store })
+    renderWithStore(<ToolConfirmCard />, { agentStore: store })
 
     expect(screen.getByText('极高风险操作')).toBeInTheDocument()
     expect(screen.getByText('检测到可能删除大范围文件的递归强制删除命令')).toBeInTheDocument()
@@ -124,7 +124,7 @@ describe('ToolConfirmCard', () => {
         reason: '命令行 rm 会永久删除文件，无法通过回退工具恢复',
       },
     })
-    renderWithStore(<ToolConfirmCard />, { store })
+    renderWithStore(<ToolConfirmCard />, { agentStore: store })
 
     expect(screen.getByText('命令行 rm 会永久删除文件，无法通过回退工具恢复')).toBeInTheDocument()
     expect(screen.queryByRole('checkbox')).toBeNull()
@@ -140,7 +140,7 @@ describe('ToolConfirmCard', () => {
       pendingToolConfirmation: { callId: 'c1', toolName: 'write_file', args: { path: 'a.txt', content: 'x' } },
     })
 
-    renderWithStore(<ToolConfirmCard />, { store })
+    renderWithStore(<ToolConfirmCard />, { agentStore: store })
 
     // 第一次确认：勾选「一律允许」。
     fireEvent.click(screen.getByRole('checkbox'))

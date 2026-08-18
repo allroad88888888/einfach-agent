@@ -83,7 +83,6 @@ function snapshot(generation: number, sessionId = 'atomic-session'): RecoverySna
       queuedUserMessages: [],
       pendingQuestionAnswers: {},
       pendingArtifacts: [],
-      composerDraft: '',
       executionGraph: { version: 1, nodes: {}, order: [] },
       subagentContinuations: [],
     },

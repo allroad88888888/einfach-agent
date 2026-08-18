@@ -55,8 +55,13 @@ redo、历史 cursor、追加日志或将 atom 身份持久化。
     它就不是 transient，不许以「UI 态」「临时卡片」为由排除在 V1 之外。
     - 反例一：`pendingArtifacts` 曾被当作 UI 卡片，而 `save_file` 只把 artifactId 和字节数回给模型，
       `content` 从不进 transcript——重启即永久丢失，模型却以为暂存成功（R12）。
-    - 反例二：`composerDraft` 平时确实只是草稿，但回退/撤回会把用户原话从 items 截断再放回输入框，
-      那一刻它成为唯一副本（R13）。**同一个 atom 的性质会随命令改变，按最坏那条路径判定。**
+    - 反例二（**已退场，2026-08-18**）：`composerDraft` 当年按「回退/撤回会把用户原话从 items 截断
+      再放回输入框，那一刻它成为唯一副本」进表（R13）。原则本身仍然成立 ——
+      **同一个 atom 的性质会随命令改变，按最坏那条路径判定**；但这个实例已经不成立：
+      `rollbackPlanStage` 现在只截断 items 并立一条提示，**从不回写草稿**，那条最坏路径在实现里
+      不存在了。草稿已随 UI store 拆分离开会话状态（刷新即丢，明确裁决）。
+      教训是对称的：**理由所依赖的机制被删掉时，靠它进表的那一项也得跟着复核**，否则表里会长期
+      挂着一条谁也验证不了的论证。
     - 有意排除必须给出「凭什么能重建」的具体机制并写进注释，二选一：可从别处**算回来**
       （如 `contextStats` 下次调用重算、`currentTurnIndex` = checkpoints 的 max turnIndex），
       或有**明确的补偿设计**（如 `browser-action` 直接要求模型把卡片内容写进最终回复）。
@@ -74,12 +79,17 @@ redo、历史 cursor、追加日志或将 atom 身份持久化。
         `CORE_NON_SESSION_ATOM_FILES` 里写明凭什么不是会话状态。新开一个 `state/fooAtom.ts` 而不
         登记会直接 error —— 否则红线 10 这种静默缺席只是换个层级原样复发。
       - **「有没有漏登记」不再是判断；「归哪一类」仍然是判断**：门禁查得了登记自不自洽，查不了
-        一条理由是真是假。R12（`pendingArtifacts`）与 R13（`composerDraft`）当年正是靠这层判断抓出来的。
-    - **治理边界按「是不是会话状态」划，不按「值落在哪个 store」划。** 这一条容易搞反：
-      `ActiveSessionProvider` 把整棵右栏挂在会话 store 上（`sessionAtomScope(id)` 返回的就是
-      `getSessionStore(id).store`），所以渲染层随手 `useAtom` 的折叠态、消息窗口、图片附件，
-      物理上**都**落在会话 store 里。那不构成把它们纳入恢复契约的理由 —— 判据仍是「这份内容除了
-      它自己还活在哪里」。`apps/web` 的 UI 态因此有意不在规则 4 的枚举面内。
+        一条理由是真是假。R12（`pendingArtifacts`）与 R13（`composerDraft`）当年正是靠这层判断抓出来的
+        —— 而 R13 后来被证明理由已随实现失效（见上面「反例二」），门禁同样查不出这一类过期。
+    - **治理边界按「是不是会话状态」划。** 拆出 UI store 之前这条容易搞反：`ActiveSessionProvider`
+      把整棵右栏挂在会话 store 上，渲染层随手 `useAtom` 的折叠态、消息窗口、图片附件物理上**都**
+      落在会话 store 里，而那从不构成把它们纳入恢复契约的理由 —— 判据一直是「这份内容除了它自己
+      还活在哪里」。
+    - **2026-08-18 起两者重合**：会话状态住 core 的 agent store，渲染态住 `apps/web` 的 UI store
+      （`agentNew/ui/sessionUiStores.ts`），"是不是会话状态"由它住哪个 store 回答。规则 4 的
+      `safeDefault` 因此从 7 条掉到 3 条 —— 掉的四条全是展开/折叠偏好，理由清一色「不含任何内容」，
+      那不是归宿，是它们本就不该在 core 里。新增的**规则 5** 挡住这次拆分带来的新静默失败：
+      core 之外用裸 `useAtomValue` 读会话 atom，读的是 UI store，拿到默认值且不报错。
 
 ## 目标分层
 
@@ -353,7 +363,13 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 
 ### R13 · 撤回的用户原话不随重启丢失
 
-- **波次 / 依赖 / 状态**：W9 / R12 / DONE
+> **已退场（2026-08-18）**：本卡的前提是「两个撤回路径把用户原话放回输入框」。那两处
+> `setComposerDraft` 后来随 checkpoint 命令改造消失了，而本卡的成果（`composerDraft` 进 allowlist）
+> 没人回来复核，于是槽位表里长期挂着一条实现已不支持的理由。现在 `composerDraft` 已随 UI store
+> 拆分整个离开会话状态：草稿刷新即丢是明确裁决，`SESSION_SLOTS` 与 `RecoveryAtomProjectionV1`
+> 都不再有它。下面保留原文作为记录。
+
+- **波次 / 依赖 / 状态**：W9 / R12 / DONE（前提已失效，见上）
 - **owner / 模型**：主会话 / strong（用户内容边界）
 - **独占面**：同 R12 三个文件，外加 `recoveryProcess.integration.test.ts`；不改 checkpoint 命令本身。
 - **背景**：`checkpointCommands.ts:93` 与 `:135` 在回退/撤回时把用户原话从 `items` 截断后放回输入框，

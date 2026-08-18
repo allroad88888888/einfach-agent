@@ -57,7 +57,7 @@ function log(generation: number, entryCount = 1): PersistedHistoryLog {
     entries: Array.from({ length: entryCount }, (_, index) => ({
       txId: `tx-${index + 1}`,
       label: 't1',
-      ops: [{ key: 'composerDraft', before: '', after: `草稿${index}` }],
+      ops: [{ key: 'fixtureSlot', before: '', after: `值${index}` }],
     })),
     cursor: entryCount,
   }

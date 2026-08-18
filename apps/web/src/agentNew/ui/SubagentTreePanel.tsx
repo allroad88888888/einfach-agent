@@ -1,4 +1,4 @@
-import { useAtomValue } from '@einfach/react'
+import { useAgentAtomValue } from '@web-agent/react-plugin'
 import { useEffect } from 'react'
 import {
   archiveSubagentTreesAtom,
@@ -31,13 +31,13 @@ function SubagentTreePanelContent({
   liveTrees: SubagentTree[]
   workspaceRoot?: string
 }) {
-  const globalRuns = useAtomValue(globalSubagentRunsAtom)
-  const globalSelection = useAtomValue(selectedGlobalSubagentRunAtom)
-  const archiveTrees = useAtomValue(archiveSubagentTreesAtom)
-  const archiveLoads = useAtomValue(subagentArchiveLoadsAtom)
-  const preview = useAtomValue(subagentArchivePreviewAtom)
-  const trace = useAtomValue(subagentTraceAtom)
-  const selected = useAtomValue(selectedSubagentNodeAtom)
+  const globalRuns = useAgentAtomValue(globalSubagentRunsAtom)
+  const globalSelection = useAgentAtomValue(selectedGlobalSubagentRunAtom)
+  const archiveTrees = useAgentAtomValue(archiveSubagentTreesAtom)
+  const archiveLoads = useAgentAtomValue(subagentArchiveLoadsAtom)
+  const preview = useAgentAtomValue(subagentArchivePreviewAtom)
+  const trace = useAgentAtomValue(subagentTraceAtom)
+  const selected = useAgentAtomValue(selectedSubagentNodeAtom)
   const selectedGlobalRun = globalRuns.status === 'ready' && globalSelection &&
     globalRuns.workspaceRoot === workspaceRoot &&
     globalSelection.workspaceRoot === workspaceRoot
@@ -272,7 +272,7 @@ function SubagentTreePanelContent({
 }
 
 export function SubagentTreePanel({ workspaceRoot }: { workspaceRoot?: string }) {
-  const liveTrees = useAtomValue(subagentTreesAtom)
+  const liveTrees = useAgentAtomValue(subagentTreesAtom)
 
   if (liveTrees.length === 0) return null
 

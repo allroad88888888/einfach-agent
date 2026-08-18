@@ -1,4 +1,5 @@
 import { Provider } from '@einfach/react'
+import { AgentStoreProvider } from '@web-agent/react-plugin'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -50,7 +51,13 @@ function renderPanel(workspaceRoot: string) {
   defaultCore.rootStore.setter(activeSessionIdAtom, sessionId)
   const store = defaultCore.createSessionStore(sessionId).store
   store.setter(itemsAtom, items)
-  return render(<Provider store={store}><SubagentTreePanel workspaceRoot={workspaceRoot} /></Provider>)
+  // 子 Agent 视图 atom 从 executionGraph/items 派生，整族住 agent store —— 两层都绑同一个
+  // 会话 store，与 ActiveSessionProvider 生产装配一致（那里 UI store 是另一个实例）。
+  return render(
+    <Provider store={store}>
+      <AgentStoreProvider store={store}><SubagentTreePanel workspaceRoot={workspaceRoot} /></AgentStoreProvider>
+    </Provider>,
+  )
 }
 
 describe('SubagentTreePanel workspace history', () => {

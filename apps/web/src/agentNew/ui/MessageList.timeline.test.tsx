@@ -16,7 +16,7 @@ describe('MessageList timeline rows', () => {
     const cards: BrowserCard[] = [{ id: 'c1', createdAt: 2, title: '卡A' }]
     store.setter(browserCardsAtom, cards)
 
-    renderWithStore(<MessageList />, { store })
+    renderWithStore(<MessageList />, { agentStore: store })
 
     expect(screen.getByText('问').closest('.agentnew-msg')).toHaveClass('agentnew-msg--user')
     const card = screen.getByText('卡A')
@@ -30,7 +30,7 @@ describe('MessageList timeline rows', () => {
       { id: 'b-item', createdAt: 5, item: { role: 'user', content: '条目B' } },
     ])
 
-    const { container } = renderWithStore(<MessageList />, { store })
+    const { container } = renderWithStore(<MessageList />, { agentStore: store })
 
     expect(container.querySelector('.agentnew-message-empty')).toBeNull()
     expect(screen.getByText('条目B').closest('.agentnew-msg')).toHaveClass('agentnew-msg--user')
@@ -55,7 +55,7 @@ describe('MessageList timeline rows', () => {
       requiresApproval: false, createdAt: 3, updatedAt: 4, stages: [],
     })
 
-    renderWithStore(<MessageList />, { store })
+    renderWithStore(<MessageList />, { agentStore: store })
 
     const creation = screen.getByText('工具 create_plan').closest('.agentnew-tool-execution-group')
     const record = screen.getByText('计划记录').closest('.agentnew-plan')

@@ -8,7 +8,6 @@ import { createMemoryRecoveryDriver, type RecoveryDriver } from '../state/persis
 import type { RecoverySnapshotV1 } from '../state/recoverySnapshot.type'
 import { activeSessionIdAtom, sessionsAtom } from '../state/rootAtoms'
 import { itemsAtom, planAtom, runAtom } from '../state/sessionAtoms'
-import { composerDraftAtom } from '../state/sessionTransientAtoms'
 import { createCore } from './core/createCore'
 
 type Core = ReturnType<typeof createCore>

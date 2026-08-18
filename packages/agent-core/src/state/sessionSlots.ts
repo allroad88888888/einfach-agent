@@ -7,8 +7,11 @@
 //
 // 判据不是「这个 atom 看起来像不像运行态」，而是**这份内容除了它自己还活在哪里**。
 // 只要一段用户或模型产生的内容在别处没有第二份，它就必须在这张表里。反例见红线 10：
-// `pendingArtifacts` 的正文只活在 atom 里（`save_file` 只回 id 与字节数），
-// `composerDraft` 在回退/撤回那一刻成为用户原话的唯一副本。
+// `pendingArtifacts` 的正文只活在 atom 里（`save_file` 只回 id 与字节数）。
+//
+// 判据只认**内容**，不认「用户打过字」。输入框草稿曾经在这张表里，理由写的是「回退/撤回会把
+// 用户原话从 items 截断再放回输入框，那一刻它是唯一副本」——而 `rollbackPlanStage` 实际只截断
+// items 并立一条提示，从不回写草稿，那个机制在代码里根本不存在。草稿已随 UI store 拆分离开 core。
 //
 // **不在表里的会话 atom 必须能重建**，三类归宿之一：能从别处算回来（`contextStats` 下次调用重算）、
 // 有明确的补偿设计（`browser-action` 要求模型把卡片内容写进最终回复）、或刷新即恢复安全默认
@@ -32,7 +35,6 @@ import {
   runAtom,
 } from './sessionAtoms'
 import {
-  composerDraftAtom,
   pendingArtifactsAtom,
   pendingQuestionAnswersAtom,
   queuedUserMessagesAtom,
@@ -115,11 +117,6 @@ export const SESSION_SLOTS = {
   pendingArtifacts: slot(
     'pendingArtifacts', pendingArtifactsAtom, [], registerPendingArtifactsAppliers,
   ),
-  // **只进快照、不入账**（本表唯一一个）。它必须进快照 —— 刷新不能把用户打了一半的字丢了；
-  // 但它的写入是逐击键的，记账会让敲一百个字就填满 cap、把真实轮次账目全挤出去。
-  // 判据与「为什么不做只在清空时记账的折中」见 sessionTransientMutations.ts 的 setComposerDraft。
-  // applier 仍然登记：将来若真有一处需要按轮记账地写草稿，机制是现成的。
-  composerDraft: slot('composerDraft', composerDraftAtom, ''),
   executionGraph: slot(
     'executionGraph', executionGraphAtom, EMPTY_EXECUTION_GRAPH, registerExecutionGraphAppliers,
   ),

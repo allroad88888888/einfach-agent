@@ -32,7 +32,7 @@ const baseStats: ContextStatsSnapshot = {
 
 describe('ContextStats', () => {
   it('无统计时不渲染', () => {
-    const { container } = renderWithStore(<ContextStats />, { store: createStore() })
+    const { container } = renderWithStore(<ContextStats />, { agentStore: createStore() })
     expect(container.firstChild).toBeNull()
   })
 
@@ -40,7 +40,7 @@ describe('ContextStats', () => {
     const store = createStore()
     store.setter(contextStatsAtom, baseStats)
 
-    renderWithStore(<ContextStats />, { store })
+    renderWithStore(<ContextStats />, { agentStore: store })
 
     expect(screen.getByLabelText('上下文统计')).toBeInTheDocument()
     expect(screen.getByText('上下文 25%')).toBeInTheDocument()
@@ -60,7 +60,7 @@ describe('ContextStats', () => {
       estimatedTokensBeforeCompaction: 240_000,
     })
 
-    renderWithStore(<ContextStats />, { store })
+    renderWithStore(<ContextStats />, { agentStore: store })
 
     expect(screen.getByText('上下文 25% · 建议新开会话')).toBeInTheDocument()
     expect(
@@ -75,7 +75,7 @@ describe('ContextStats', () => {
       usage: { promptTokens: 120, completionTokens: 30, totalTokens: 150 },
     })
 
-    renderWithStore(<ContextStats />, { store })
+    renderWithStore(<ContextStats />, { agentStore: store })
 
     expect(screen.getByText('上下文 0%')).toBeInTheDocument()
     expect(screen.getByText('120 / 176,000 tokens (0%)')).toBeInTheDocument()
@@ -116,7 +116,7 @@ describe('ContextStats', () => {
       },
     })
 
-    renderWithStore(<ContextStats />, { store })
+    renderWithStore(<ContextStats />, { agentStore: store })
 
     expect(screen.getByText('run cache 67%')).toBeInTheDocument()
     expect(screen.getByText('hit 80 / miss 40 (unknown) / rate 67%')).toBeInTheDocument()
@@ -151,7 +151,7 @@ describe('ContextStats', () => {
       },
     })
 
-    renderWithStore(<ContextStats />, { store })
+    renderWithStore(<ContextStats />, { agentStore: store })
 
     expect(screen.getByText('Provider 未返回缓存指标')).toBeInTheDocument()
     expect(screen.queryByText('cache 0%')).toBeNull()
@@ -184,7 +184,7 @@ describe('ContextStats', () => {
         },
       })
 
-      renderWithStore(<ContextStats />, { store })
+      renderWithStore(<ContextStats />, { agentStore: store })
 
       expect(
         screen.getByText(`hit 80 / miss 40 (${cacheMissSource}) / rate 67%`),
@@ -219,7 +219,7 @@ describe('ContextStats', () => {
       },
     })
 
-    renderWithStore(<ContextStats />, { store })
+    renderWithStore(<ContextStats />, { agentStore: store })
 
     expect(screen.getByText(expected)).toBeInTheDocument()
   })

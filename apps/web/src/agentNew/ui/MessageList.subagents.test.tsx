@@ -50,7 +50,7 @@ describe('MessageList subagent trace', () => {
       },
     })
 
-    renderWithStore(<MessageList />, { store })
+    renderWithStore(<MessageList />, { agentStore: store })
 
     expectThinkingProcessExpanded()
     const delegateEntry = screen.getByText('调用工具 delegate_agent').closest('.agentnew-debug-entry')

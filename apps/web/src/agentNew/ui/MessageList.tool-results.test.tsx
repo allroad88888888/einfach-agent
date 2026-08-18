@@ -27,7 +27,7 @@ describe('MessageList tool results', () => {
     ]
     store.setter(itemsAtom, items)
 
-    renderWithStore(<MessageList />, { store })
+    renderWithStore(<MessageList />, { agentStore: store })
 
     expectThinkingProcessExpanded()
     const execution = screen.getByText('工具 skill_read').closest('.agentnew-debug-entry')
@@ -57,7 +57,7 @@ describe('MessageList tool results', () => {
     ]
     store.setter(itemsAtom, items)
 
-    renderWithStore(<MessageList />, { store })
+    renderWithStore(<MessageList />, { agentStore: store })
 
     expectThinkingProcessExpanded()
     const errorEntry = screen.getByText('工具失败 save_file').closest('.agentnew-debug-entry')
@@ -81,7 +81,7 @@ describe('MessageList tool results', () => {
       item: { role: 'tool', tool_call_id: 'tc-success', content: '{"ok":true,"error":false,"warning":false}' },
     }])
 
-    const { container } = renderWithStore(<MessageList />, { store })
+    const { container } = renderWithStore(<MessageList />, { agentStore: store })
 
     expectThinkingProcessExpanded()
     expect(screen.getByText('工具 tc-success')).toBeInTheDocument()
@@ -96,7 +96,7 @@ describe('MessageList tool results', () => {
       summary: '已加载 skills：web-chat-agent', detail: '完整 system prompt',
     }])
 
-    renderWithStore(<MessageList />, { store })
+    renderWithStore(<MessageList />, { agentStore: store })
 
     expectThinkingProcessExpanded()
     expect(screen.getByText('注入')).toBeInTheDocument()

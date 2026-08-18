@@ -9,7 +9,7 @@
 // 防御式收敛（§5 R1，绝不抛）。移植自旧 src/chat/AskUserQuestionCard.tsx，但换掉
 // @ai-components 控件（text 用原生 textarea）与 store 参数（改调命令）。
 
-import { useAtomValue } from '@einfach/react'
+import { useAgentAtomValue } from '@web-agent/react-plugin'
 import {
   runAtom,
   pendingQuestionAnswersAtom,
@@ -20,8 +20,8 @@ import {
 import { normalizeAskUserQuestionPayload, type AskUserQuestionItem } from '@web-agent/core/tools'
 
 export function AskUserQuestionCard({ surface = 'conversation' }: { surface?: 'conversation' | 'plan' }) {
-  const run = useAtomValue(runAtom)
-  const answers = useAtomValue(pendingQuestionAnswersAtom)
+  const run = useAgentAtomValue(runAtom)
+  const answers = useAgentAtomValue(pendingQuestionAnswersAtom)
 
   // 仅当当前会话 run 停在 waiting_user 且挂着 pendingQuestion 才渲染，否则不占位。
   if (run?.status !== 'waiting_user' || !run.pendingQuestion) return null

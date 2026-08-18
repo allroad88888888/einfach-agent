@@ -85,11 +85,6 @@ export interface RecoveryAtomProjectionV1 {
    * `content` 不进 transcript，所以这个 atom 是它唯一的副本，丢了就再也算不回来。
    */
   pendingArtifacts: PendingArtifact[]
-  /**
-   * 未发送的输入框文本。回退/撤回会把用户原话从 items 截断并放回输入框，那一刻它就是这段
-   * 用户内容的唯一副本；同一条命令随后提交的 generation 必须带上它。
-   */
-  composerDraft: string
   executionGraph: ExecutionGraphSnapshot
   /** 本 schema 唯一的 child 续接真源；空数组表示没有 child。 */
   subagentContinuations: SubagentContinuationV1[]

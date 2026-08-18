@@ -9,7 +9,7 @@ describe('ToolActivity', () => {
   afterEach(() => {})
 
   it('空进度 → 渲染为空（null）', () => {
-    const { container } = renderWithStore(<ToolActivity />, { store: createStore() })
+    const { container } = renderWithStore(<ToolActivity />, { agentStore: createStore() })
     expect(container.firstChild).toBeNull()
   })
 
@@ -19,7 +19,7 @@ describe('ToolActivity', () => {
       { callId: 'c1', toolName: 'skill_search', text: '正在搜索…' },
       { callId: 'c2', toolName: 'save_file', text: '写入中' },
     ])
-    renderWithStore(<ToolActivity />, { store })
+    renderWithStore(<ToolActivity />, { agentStore: store })
 
     expect(screen.getByText('skill_search')).toBeInTheDocument()
     expect(screen.getByText('正在搜索…')).toBeInTheDocument()

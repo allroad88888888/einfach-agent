@@ -1,5 +1,6 @@
-import { useAtom, useAtomValue } from '@einfach/react'
+import { useAtom } from '@einfach/react'
 import { useMemo } from 'react'
+import { useAgentAtomValue } from '@web-agent/react-plugin'
 import {
   itemsAtom,
   planAtom,
@@ -8,12 +9,11 @@ import {
   activeExecutionNodeIdsAtom,
   executionGraphAtom,
   assistantStreamAtom,
-  expandedPlanStagesAtom,
-  planPanelExpandedAtom,
   approvePlan,
   continuePlan,
   rollbackPlanStage,
 } from '@web-agent/core'
+import { expandedPlanStagesAtom, planPanelExpandedAtom } from './planViewState'
 import type { PlanStageStatus } from '@web-agent/core/planning'
 import { performanceNow, recordPerformanceDiagnostic } from '@web-agent/core/observability'
 import { projectPlanStageTimelineItems } from '@web-agent/core/timeline'
@@ -40,13 +40,13 @@ function containPlanCommand(command: Promise<boolean>): void {
 }
 
 export function PlanPanel() {
-  const plan = useAtomValue(planAtom)
-  const planStagePoints = useAtomValue(planStageCheckpointsAtom)
-  const run = useAtomValue(runAtom)
-  const executionGraph = useAtomValue(executionGraphAtom)
-  const activeExecutionNodeIds = useAtomValue(activeExecutionNodeIdsAtom)
-  const items = useAtomValue(itemsAtom)
-  const assistantStream = useAtomValue(assistantStreamAtom)
+  const plan = useAgentAtomValue(planAtom)
+  const planStagePoints = useAgentAtomValue(planStageCheckpointsAtom)
+  const run = useAgentAtomValue(runAtom)
+  const executionGraph = useAgentAtomValue(executionGraphAtom)
+  const activeExecutionNodeIds = useAgentAtomValue(activeExecutionNodeIdsAtom)
+  const items = useAgentAtomValue(itemsAtom)
+  const assistantStream = useAgentAtomValue(assistantStreamAtom)
   const [expandedStages, setExpandedStages] = useAtom(expandedPlanStagesAtom)
   const [planPanelExpanded, setPlanPanelExpanded] = useAtom(planPanelExpandedAtom)
   const streamedItemId = assistantStream?.item.id

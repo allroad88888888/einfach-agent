@@ -10,7 +10,6 @@ import {
   browserCardsAtom,
   pendingQuestionAnswersAtom,
   alwaysAllowedToolsAtom,
-  composerDraftAtom,
   queuedUserMessagesAtom,
   withdrawnTurnNoticeAtom,
   contextStatsAtom,
@@ -24,11 +23,11 @@ import {
   clearPendingQuestionAnswers,
   addAlwaysAllowedTool,
   isToolAlwaysAllowed,
-  setComposerDraft,
   enqueueUserMessage,
   takeQueuedUserMessages,
   setWithdrawnTurnNotice,
   setContextStats,
+  mergeContextStatsCacheTotals,
   setAssistantStream,
   clearAssistantStream,
   getTranscriptInjectionFingerprints,
@@ -105,7 +104,6 @@ describe('transientAtoms —— 共享单例 key 值随 store 隔离（不分桶
     expect(b.getter(pendingArtifactsAtom)).toEqual([])
     expect(b.getter(browserCardsAtom)).toEqual([])
     expect(b.getter(pendingQuestionAnswersAtom)).toEqual({})
-    expect(b.getter(composerDraftAtom)).toBe('')
     expect(b.getter(queuedUserMessagesAtom)).toEqual([])
     expect(b.getter(withdrawnTurnNoticeAtom)).toBeUndefined()
     expect(b.getter(contextStatsAtom)).toBeUndefined()
@@ -355,34 +353,7 @@ describe('alwaysAllowedTools（S4-B 本 session 一律允许的危险工具）',
   })
 })
 
-describe('composerDraft / withdrawnTurnNotice', () => {
-  it('setComposerDraft 写入当前会话草稿，值随 store 隔离', () => {
-    rootStore.setter(sessionsAtom, {
-      s1: { id: 's1', title: 't', settings: { vendor: 'deepseek', model: 'x' }, createdAt: 0, updatedAt: 0 },
-      s2: { id: 's2', title: 't', settings: { vendor: 'deepseek', model: 'x' }, createdAt: 0, updatedAt: 0 },
-    })
-
-    setComposerDraft('s1', 'hello')
-
-    expect(getSessionStore('s1').store.getter(composerDraftAtom)).toBe('hello')
-    expect(getSessionStore('s2').store.getter(composerDraftAtom)).toBe('')
-  })
-
-  it('草稿写入不记账 —— 逐击键会填满 undo 的 cap', () => {
-    const core = createCore()
-    const id = core.newSession({ settings: { vendor: 'test', model: 'test-model' } })
-    core.selectSession(id)
-    const history = core.getSessionStore(id).history
-
-    for (let index = 0; index < 30; index += 1) setComposerDraft(id, 'a'.repeat(index + 1), core)
-
-    // composerDraft 是 SESSION_SLOTS 成员（必须进恢复快照），但**只进快照、不入账**：
-    // 它的写入是逐击键的，记账会让敲一百个字就把 cap 填满、真实轮次账目全被挤出去。
-    // 这条钉住那个区分；改回 writeSlot 会立刻红。
-    expect(history.getState().entries).toHaveLength(0)
-    expect(core.getSessionStore(id).store.getter(composerDraftAtom)).toBe('a'.repeat(30))
-  })
-
+describe('withdrawnTurnNotice', () => {
   it('setWithdrawnTurnNotice 写入/清除撤回提示', () => {
     seedSession()
     const notice = { id: 'n1', createdAt: 1, text: '已撤回', sideEffects: true }
@@ -394,11 +365,9 @@ describe('composerDraft / withdrawnTurnNotice', () => {
     expect(getSessionStore('s1').store.getter(withdrawnTurnNoticeAtom)).toBeUndefined()
   })
 
-  it('未登记会话 → draft/notice writer no-op', () => {
-    setComposerDraft('sX', 'ghost')
+  it('未登记会话 → notice writer no-op', () => {
     setWithdrawnTurnNotice('sX', { id: 'n', createdAt: 1, text: 'x', sideEffects: false })
 
-    expect(getSessionStore('sX').store.getter(composerDraftAtom)).toBe('')
     expect(getSessionStore('sX').store.getter(withdrawnTurnNoticeAtom)).toBeUndefined()
   })
 })
@@ -436,6 +405,37 @@ describe('contextStatsAtom', () => {
 
     setContextStats('s1', undefined)
     expect(getSessionStore('s1').store.getter(contextStatsAtom)).toBeUndefined()
+  })
+
+  // 这三条钉住 mergeContextStatsCacheTotals 的两道 stale guard。它是**渲染层唯一能写的那个数**
+  // （run 内累计缓存命中要异步读观测库，core 发请求时拿不到），所以守卫写错了没人替它兜底。
+  it('mergeContextStatsCacheTotals 把补算出来的累计并回当前 run 的统计', () => {
+    seedSession()
+    setContextStats('s1', sampleStats)
+
+    mergeContextStatsCacheTotals('s1', 'r1', { runId: 'r1', measuredRequests: 2, hitTokens: 80, missTokens: 40 })
+
+    expect(getSessionStore('s1').store.getter(contextStatsAtom)?.cacheTotals)
+      .toEqual({ runId: 'r1', measuredRequests: 2, hitTokens: 80, missTokens: 40 })
+  })
+
+  it('run 已经翻篇就不写 —— 异步补算回来时当前统计可能已经是下一轮的', () => {
+    seedSession()
+    setContextStats('s1', { ...sampleStats, runId: 'r2' })
+
+    mergeContextStatsCacheTotals('s1', 'r1', { runId: 'r1', measuredRequests: 2, hitTokens: 80, missTokens: 40 })
+
+    expect(getSessionStore('s1').store.getter(contextStatsAtom)?.cacheTotals).toBeUndefined()
+  })
+
+  it('同一 run 的累计已经补过就不重复写 —— 否则 effect 会自己把自己叫醒', () => {
+    seedSession()
+    const settled = { runId: 'r1', measuredRequests: 9, hitTokens: 900, missTokens: 90 }
+    setContextStats('s1', { ...sampleStats, cacheTotals: settled })
+
+    mergeContextStatsCacheTotals('s1', 'r1', { runId: 'r1', measuredRequests: 1, hitTokens: 1, missTokens: 1 })
+
+    expect(getSessionStore('s1').store.getter(contextStatsAtom)?.cacheTotals).toBe(settled)
   })
 
   it('未登记会话 → setContextStats no-op', () => {

@@ -13,6 +13,11 @@ import type {
 } from './sessionTransientPayloads'
 
 // 每个 atom 都是 session store 内的共享 key；值由各 session store 隔离，绝不按 sessionId 分桶。
+//
+// **这里只放会话状态**，判据是「刷新后必须还原，或 core 运行时读写」。纯渲染态（展开/折叠、
+// 草稿、滚动窗口）住在 apps/web 的 UI store 里，core 不认识它们——那些曾经在本文件里，
+// 每一个都得在 `atomDispositionTable.js` 占一条「不含任何内容，刷新回默认视图」的登记，
+// 把治理表撑成噪音。边界现在是**物理的**：不在 agent store 里就不归 core 管。
 
 // 当前会话的待保存文件产物。
 export const pendingArtifactsAtom = atom<PendingArtifact[]>([])
@@ -56,23 +61,8 @@ export const assistantStreamAtom = atom<AssistantStreamState | undefined>(undefi
 // 当前会话注入卡片的去重指纹；只服务 runtime 判重，不进 checkpoint、不持久化。
 export const transcriptInjectionFingerprintsAtom = atom<TranscriptInjectionFingerprints>({})
 
-// 当前会话「思考过程」分组的显式展开选择（group key → 是否展开）。
-export const expandedTranscriptGroupsAtom = atom<Record<string, boolean>>({})
-
-// 当前会话计划阶段详情的显式展开选择（stage id → 是否展开）。
-export const expandedPlanStagesAtom = atom<Record<string, boolean>>({})
-
-// 当前会话计划面板整体是否展开。
-export const planPanelExpandedAtom = atom(true)
-
-// 当前会话已完成计划记录是否展开；记录随消息列表滚动，不占用执行操作区。
-export const completedPlanRecordExpandedAtom = atom(false)
-
 // 当前会话最近一次 LLM 调用的上下文统计；不进 messages、不持久化、不回发给 model。
 export const contextStatsAtom = atom<ContextStatsSnapshot | undefined>(undefined)
-
-// 当前会话 Composer 草稿。
-export const composerDraftAtom = atom<string>('')
 
 // 当前会话等待注入正在运行 run 的用户输入（FIFO）。
 export const queuedUserMessagesAtom = atom<QueuedUserMessage[]>([])

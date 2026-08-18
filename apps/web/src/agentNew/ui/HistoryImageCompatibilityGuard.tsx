@@ -1,12 +1,12 @@
 import { useMemo, type ReactNode } from 'react'
-import { useAtomValue } from '@einfach/react'
+import { useAgentAtomValue } from '@web-agent/react-plugin'
 import { projectHistoryImage, type UserImageContentBlock } from '@web-agent/ai'
 import { itemsAtom } from '@web-agent/core'
 import { useHistoryImageTarget } from './HistoryImageCompatibilityContext'
 import './HistoryImageCompatibilityGuard.css'
 
 export function HistoryImageCompatibilityGuard({ children }: { children: ReactNode }) {
-  const items = useAtomValue(itemsAtom)
+  const items = useAgentAtomValue(itemsAtom)
   const target = useHistoryImageTarget()
   const incompatibleCount = useMemo(() => {
     let count = 0
