@@ -1,4 +1,4 @@
-import { isTauriHost, loadTauriInvoke } from './hostTauri'
+import { hasHostBridge, loadHostInvoke } from './hostBridge'
 
 export const DEFAULT_RG_MAX_MATCHES = 200
 export const MAX_RG_MATCHES = 1_000
@@ -140,12 +140,12 @@ function normalizeResult(raw: unknown): RgSearchResult {
 }
 
 export async function rgSearchWorkspace(input: RgSearchInput): Promise<RgSearchResult> {
-  if (!isTauriHost()) {
+  if (!hasHostBridge()) {
     return failedResult('rg_search is only available in the Tauri desktop runtime')
   }
 
   try {
-    const invoke = await loadTauriInvoke()
+    const invoke = await loadHostInvoke()
     const raw = await invoke<unknown>('rg_search_workspace', toTauriInput(input))
     return normalizeResult(raw)
   } catch (error) {

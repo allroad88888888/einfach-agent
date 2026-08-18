@@ -1,4 +1,4 @@
-import { isTauriHost, loadTauriInvoke } from './hostTauri'
+import { hasHostBridge, loadHostInvoke } from './hostBridge'
 
 export interface ReadWorkspaceFileInput {
   path: string
@@ -342,12 +342,12 @@ function normalizeSearchResult(raw: unknown): WorkspaceRuntimeResult<SearchWorks
 export async function readWorkspaceFile(
   input: ReadWorkspaceFileInput,
 ): Promise<WorkspaceRuntimeResult<ReadWorkspaceFileResult>> {
-  if (!isTauriHost()) {
+  if (!hasHostBridge()) {
     return fail('read_workspace_file is only available in the Tauri desktop runtime')
   }
 
   try {
-    const invoke = await loadTauriInvoke()
+    const invoke = await loadHostInvoke()
     const raw = await invoke<unknown>('read_workspace_file', toTauriReadInput(input))
     return normalizeReadResult(raw)
   } catch (error) {
@@ -358,12 +358,12 @@ export async function readWorkspaceFile(
 export async function readWorkspaceRunIndexPage(
   input: ReadWorkspaceRunIndexPageInput,
 ): Promise<WorkspaceRuntimeResult<ReadWorkspaceRunIndexPageResult>> {
-  if (!isTauriHost()) {
+  if (!hasHostBridge()) {
     return fail('read_workspace_run_index_page is only available in the Tauri desktop runtime')
   }
 
   try {
-    const invoke = await loadTauriInvoke()
+    const invoke = await loadHostInvoke()
     const raw = await invoke<unknown>('read_workspace_run_index_page', toTauriRunIndexPageInput(input))
     return normalizeRunIndexPageResult(raw)
   } catch (error) {
@@ -374,12 +374,12 @@ export async function readWorkspaceRunIndexPage(
 export async function listWorkspaceFiles(
   input: ListWorkspaceFilesInput,
 ): Promise<WorkspaceRuntimeResult<ListWorkspaceFilesResult>> {
-  if (!isTauriHost()) {
+  if (!hasHostBridge()) {
     return fail('list_workspace_files is only available in the Tauri desktop runtime')
   }
 
   try {
-    const invoke = await loadTauriInvoke()
+    const invoke = await loadHostInvoke()
     const raw = await invoke<unknown>('list_workspace_files', toTauriListInput(input))
     return normalizeListResult(raw)
   } catch (error) {
@@ -390,12 +390,12 @@ export async function listWorkspaceFiles(
 export async function searchWorkspaceFiles(
   input: SearchWorkspaceFilesInput,
 ): Promise<WorkspaceRuntimeResult<SearchWorkspaceFilesResult>> {
-  if (!isTauriHost()) {
+  if (!hasHostBridge()) {
     return fail('search_workspace_files is only available in the Tauri desktop runtime')
   }
 
   try {
-    const invoke = await loadTauriInvoke()
+    const invoke = await loadHostInvoke()
     const raw = await invoke<unknown>('search_workspace_files', toTauriSearchInput(input))
     return normalizeSearchResult(raw)
   } catch (error) {
