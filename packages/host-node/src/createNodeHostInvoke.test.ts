@@ -1,4 +1,6 @@
-import { homedir } from 'node:os'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createNodeHostInvoke, NodeHostCommandError } from './createNodeHostInvoke'
 import { NODE_HOST_COMMAND_NAMES } from './commandNames'
@@ -47,19 +49,30 @@ describe('createNodeHostInvoke', () => {
     expect((error as NodeHostCommandError).message).toContain('未登记')
   })
 
-  it('全集里除 get_user_home_dir 外全部尚未实现（本卡的施工进度）', async () => {
-    const invoke = createNodeHostInvoke()
-    const implemented: string[] = []
-    for (const command of NODE_HOST_COMMAND_NAMES) {
-      const reason = await invoke(command, {}).then(
-        () => 'ok' as const,
-        (error: unknown) =>
-          error instanceof NodeHostCommandError ? error.reason : ('threw' as const),
-      )
-      if (reason !== 'unimplemented') implemented.push(command)
+  it('当前只有 config 域三条命令已实现（本线的施工进度）', async () => {
+    // 隔离到临时主目录 + 临时配置目录：这条用例会真的调用 `mcp_config_read`，不隔离的话它会去
+    // 读、并可能迁移运行测试那个人的 `~/.webAgent/config.json`。
+    const home = await mkdtemp(join(tmpdir(), 'web-agent-host-invoke-'))
+    const savedOverride = process.env.WEB_AGENT_CONFIG_DIR
+    process.env.WEB_AGENT_CONFIG_DIR = join(home, 'config')
+    try {
+      const invoke = createNodeHostInvoke({ homeDir: home })
+      const implemented: string[] = []
+      for (const command of NODE_HOST_COMMAND_NAMES) {
+        const reason = await invoke(command, {}).then(
+          () => 'ok' as const,
+          (error: unknown) =>
+            error instanceof NodeHostCommandError ? error.reason : ('threw' as const),
+        )
+        if (reason !== 'unimplemented') implemented.push(command)
+      }
+      // 这条会随后续卡逐步变长——落地一个域就把它的命令名加进来，别把断言改成宽松匹配。
+      expect(implemented).toEqual(['mcp_config_read', 'mcp_config_write', 'get_user_home_dir'])
+    } finally {
+      if (savedOverride === undefined) delete process.env.WEB_AGENT_CONFIG_DIR
+      else process.env.WEB_AGENT_CONFIG_DIR = savedOverride
+      await rm(home, { recursive: true, force: true })
     }
-    // 这条会随后续 24 张卡逐步变长——落地一个域就把它的命令名加进来，别把断言改成宽松匹配。
-    expect(implemented).toEqual(['get_user_home_dir'])
   })
 
   it('失败一律是 rejection，不是同步抛出', () => {

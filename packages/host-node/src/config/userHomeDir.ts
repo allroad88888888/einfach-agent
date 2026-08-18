@@ -10,28 +10,13 @@
 // 哪台机器的——浏览器接 Node 后端时，前端自己根本不知道该指哪里。所以本卡明确拒绝把主目录
 // 塞进 `/api/health` 之类的握手响应：那会让同一个事实有两个来源，而两者漂移时的症状只是
 // 「用户级 skills 扫不到」，不报错、也不指向病因。
+//
+// 解析逻辑本身住 homeDirectory.ts：`~/.webAgent/config.json` 的路径解析要用同一个值，
+// 而「同一个事实两处各算一遍」正是上一段拒绝的那件事。
 
-import { homedir } from 'node:os'
+import { resolveHomeDirectory } from './homeDirectory'
 import type { NodeHostInvokeOptions } from '../hostOptions'
 
-/** 去掉结尾斜杠（保留根 `/`）。口径与 core 的 runtime/userSkillsRoot.ts 一致。 */
-function stripTrailingSlash(path: string): string {
-  return path.length > 1 ? path.replace(/[/\\]+$/, '') : path
-}
-
-/**
- * 解析主目录。
- *
- * 抛错而不是返回空串：`os.homedir()` 在极少数环境（无 HOME、无 passwd 条目）下会给出空值，
- * 而空串一旦被当成路径根用下去，后续拼接全部指向文件系统根且不会报错。调用方
- * （runtime/userSkillsRoot.ts）自己就把异常降级成「本宿主没有主目录可扫」，所以在这里明确
- * 失败没有任何副作用，反而保住了病因。
- */
 export function createUserHomeDirHandler(options: NodeHostInvokeOptions) {
-  return async (): Promise<string> => {
-    const configured = options.homeDir?.trim()
-    const resolved = stripTrailingSlash(configured || homedir().trim())
-    if (!resolved) throw new Error('Node 宿主无法定位用户主目录（os.homedir() 返回空值）')
-    return resolved
-  }
+  return async (): Promise<string> => resolveHomeDirectory(options)
 }
