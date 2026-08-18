@@ -1,4 +1,4 @@
-import { isTauriHost, loadTauriInvoke } from './hostTauri'
+import { hasHostBridge, loadHostInvoke } from './hostBridge'
 
 export interface WorkspaceChangeContext {
   changeId: string
@@ -52,11 +52,11 @@ function failed(error: string): WorkspaceRevertResult {
 export async function revertWorkspaceChange(
   input: WorkspaceRevertInput,
 ): Promise<WorkspaceRevertResult> {
-  if (!isTauriHost()) {
+  if (!hasHostBridge()) {
     return failed('Workspace rollback is only available in the Tauri desktop runtime')
   }
   try {
-    const invoke = await loadTauriInvoke()
+    const invoke = await loadHostInvoke()
     const raw = await invoke<unknown>('revert_workspace_change', {
       change_set_id: input.changeSetId,
       change_set_ids: input.changeSetIds,

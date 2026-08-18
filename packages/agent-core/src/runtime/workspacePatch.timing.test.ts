@@ -3,14 +3,14 @@
 // 必须在 dispatchStartedAt 采样之前完成，否则首次调用会把模块加载耗时伪装成 IPC 派发慢。
 import { describe, expect, it, vi } from 'vitest'
 
-// clock 是虚拟时钟：只有 loadTauriInvoke 推进它，invoke 派发本身零成本。
+// clock 是虚拟时钟：只有 loadHostInvoke 推进它，invoke 派发本身零成本。
 // 用真实墙钟做阈值断言在并行负载下会抖，虚拟时钟让「加载耗时是否落进计时窗口」变成确定性事实。
 const host = vi.hoisted(() => ({ loadCostMs: 0, invoke: vi.fn() }))
 const clock = vi.hoisted(() => ({ now: 0 }))
 
-vi.mock('./hostTauri', () => ({
-  isTauriHost: () => true,
-  loadTauriInvoke: async () => {
+vi.mock('./hostBridge', () => ({
+  hasHostBridge: () => true,
+  loadHostInvoke: async () => {
     clock.now += host.loadCostMs
     await Promise.resolve() // import() 是异步的，保留一次微任务跨越
     return host.invoke
@@ -55,7 +55,7 @@ describe('applyWorkspacePatch 的 invokeDispatchMs 计时语义', () => {
 
     expect(result.ok).toBe(true)
     // samples[0] 就是 dispatchStartedAt：计时窗口打开时加载代价已经全额记在时钟上，
-    // 证明 loadTauriInvoke 落在采样之前。若把加载挪进 try 里，这里会变成 0、下面会变成 20。
+    // 证明 loadHostInvoke 落在采样之前。若把加载挪进 try 里，这里会变成 0、下面会变成 20。
     expect(samples[0]).toBe(LOAD_COST_MS)
     expect(finishAttrs?.invokeDispatchMs).toBe(0)
     expect(finishAttrs?.invokeDispatchMs as number).toBeLessThan(LOAD_COST_MS)

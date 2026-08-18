@@ -1,4 +1,4 @@
-import { isTauriHost, loadTauriInvoke } from './hostTauri'
+import { hasHostBridge, loadHostInvoke } from './hostBridge'
 import {
   normalizeChangeSummary,
   type WorkspaceChangeContext,
@@ -38,9 +38,9 @@ async function operate(
     reversible: false,
     error,
   })
-  if (!isTauriHost()) return failed(`Workspace ${operation} is only available in the Tauri desktop runtime`)
+  if (!hasHostBridge()) return failed(`Workspace ${operation} is only available in the Tauri desktop runtime`)
   try {
-    const invoke = await loadTauriInvoke()
+    const invoke = await loadHostInvoke()
     const raw = await invoke<unknown>(`${operation}_workspace_path`, {
       source: input.source,
       destination: input.destination,

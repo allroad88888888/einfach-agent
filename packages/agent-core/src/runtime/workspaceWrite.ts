@@ -1,4 +1,4 @@
-import { isTauriHost, loadTauriInvoke } from './hostTauri'
+import { hasHostBridge, loadHostInvoke } from './hostBridge'
 import {
   normalizeChangeSummary,
   type WorkspaceChangeContext,
@@ -215,7 +215,7 @@ export async function writeWorkspaceFile(
   input: WorkspaceWriteInput,
   observability: ObservabilityPort = getDefaultObservabilityPort(),
 ): Promise<WorkspaceWriteResult> {
-  if (!isTauriHost()) {
+  if (!hasHostBridge()) {
     return failedResult(input, 'Workspace file writing is only available in the Tauri desktop runtime')
   }
 
@@ -223,9 +223,9 @@ export async function writeWorkspaceFile(
   // 开销（每个模块实例只发生一次），若落在计时区间里，invokeDispatchMs 报的就不再是「IPC 派发有多慢」
   // 而是「模块加载有多慢」。加载失败复用 invoke 失败的同一条错误出口，返回契约不变——此处尚未
   // beginPerformanceDiagnostic，所以没有需要 finish 的 operation。
-  let invoke: Awaited<ReturnType<typeof loadTauriInvoke>>
+  let invoke: Awaited<ReturnType<typeof loadHostInvoke>>
   try {
-    invoke = await loadTauriInvoke()
+    invoke = await loadHostInvoke()
   } catch (error) {
     return failedResult(input, `write_workspace_file failed: ${messageFromError(error)}`)
   }
