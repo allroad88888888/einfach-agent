@@ -108,6 +108,42 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
 同文件 `coreRules` 的「core 禁入能力包」清单也加了 `@web-agent/host-node`——core 反过来引它
 就等于把「宿主是什么」重新焊回 core，正是 H 线拆掉的那件事。）
 
+### 移植中发现的 Rust 侧问题（汇总，W16/W17 对拍前必读）
+
+等价移植的纪律是**照搬 + 记录，不在移植卡里单方面改** ——错误文案与行为是两个宿主的对外契约，
+改一个字就是制造分叉。但照搬不等于认可，下面这些是移植时实际发现的、Rust 侧本身就不对或值得
+两边一起改的地方。**对拍撞上时该改哪一边，逐条已有判断。**
+
+已在 Node 侧修掉（可观测输出仍逐字相同）：
+
+| # | 位置 | 问题 |
+| --- | --- | --- |
+| 1 | `workspace_common.rs:143` | 每个读取块单独 `from_utf8_lossy`，多字节字符被块边界劈开时两半各变成 `�`；中文输出跨块就坏字。Node 用 `StringDecoder` 跨块保留不完整序列。**对拍撞上时改 Rust。** |
+| 2 | `workspace_change_journal.rs` 的 `write_entry` | `fs::write` + `rename`，**没有 fsync**。而这份文件是「这次改动可撤销」的唯一凭据，掉电后目录项指向空洞内容 = 那次改动永久撤不回来且不报错。Node 走 `atomicWrite`（含 fsync）。 |
+
+照搬未改，但已标记：
+
+| # | 位置 | 问题 |
+| --- | --- | --- |
+| 3 | `workspace_change_journal_types.rs` 的 `FileSnapshot` | `content: Option<String>`，而 serde 对 `Option<T>` 的缺失字段有特判（直接 `visit_none()`）——一份**被截断的条目不会解析失败**，而是被当成 `content: null`，回滚时那等于「文件原本不存在」，于是**删掉用户的文件**。收严会拒掉桌面端写的合法条目，要修该两边一起加 `exists === (content !== null)` 的自洽校验。 |
+| 4 | `workspace_write_before.rs:44` | 文案 `existing file exceeds reversible {MAX_BYTES} byte limit` 里的 "reversible" 与它实际用的常量对不上（`MAX_BYTES` 是 8 MiB 硬顶，`REVERSIBLE_MAX_BYTES` 才是 1 MiB）。 |
+| 5 | `workspace_read*` 的错误消息 | 用**绝对路径**（`display_path`），而返回值里的 `path` 是根相对——一次读失败会把宿主机绝对路径写进模型可见的错误文本。 |
+| 6 | `workspace_git.rs` 的 `parse_changed_files` | 不解 git 的 C-style quoted path，`core.quotePath` 开着时非 ASCII 文件名会是 `"\303\251.txt"`。 |
+| 7 | `workspace_git_exec.rs` | `status --short` / `--stat` / `--name-only` **不设输出上限**（只有 diff 正文有 cap）。巨型仓库的 `status --short` 会整份进内存和返回值。 |
+| 8 | `runtime/shellCommand.ts` 的 `normalizeResult` | 超时命令的 `exit_code: null` 被整形成 `-1` 并追加 `run_shell_command returned a response without a valid exit code`——对模型来说「超时被杀」被说成「桥返回了非法响应」。改动要 core + Rust 一起动。 |
+| 9 | `workspace_rg.rs` | 不传 `path` 时 target 是 `.`，rg 于是给每个结果路径加 `./` 前缀，而 `normalize_display_path` 只剥绝对路径。 |
+
+顺带发现的 TS 侧 bug（不在本树范围，未改）：
+
+| # | 位置 | 问题 |
+| --- | --- | --- |
+| 10 | `vite.config.ts:58` 的 `defaultTraceDbPath()` | Linux 分支写的是 `process.env.XDG_DATA_HOME ?? path.join(homedir(), '.local', 'share')`，而 `dirs` crate 的判据是 `env::var_os("XDG_DATA_HOME").and_then(dirs_sys::is_absolute_path)`——**必须是绝对路径才采用**。且 `??` 只挡 `null`/`undefined`，**空串会被当有值**，`path.join('', …)` 变成跟着进程 cwd 走的相对路径。 |
+
+**⚠️ 跨宿主隐患（T 线套壳前必须解决）**：`workspaceRoot` 在变更日志里存的是 canonicalize 后的
+绝对路径、回滚时逐字比对。Rust 的 `fs::canonicalize` 在 Windows 上给 verbatim 前缀
+（`\\?\C:\…`），Node 的 `realpath` 给 `C:\…`——**套壳后同一个 workspace 会被判成
+`workspace_mismatch`，回滚全部失败**。POSIX 上两者一致，所以 W14/W15 都没动。
+
 ### host-node 施工须知（N1 交回，N/W/S 全线共同依据）
 
 **落地一域 = 建目录 + 写 registrar + 在 `createRoutes` 加一行展开。** 样板是
@@ -786,7 +822,26 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   Tauri 的 `app_data_dir()/workspace-changes` 同款路径，使套壳后与桌面版共用同一份日志。
   跑该目录 vitest
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `be30709`。6 个测试文件 / 74 例，最大 221 行。
+  journal 目录**逐层查证**而非照记忆写：tauri `path/desktop.rs:247` → `dirs::data_dir()` →
+  `dirs-6.0.0/src/{mac,win,lin}.rs` → `dirs-sys` 的 `home_dir()`。三平台推导做成纯函数并
+  **按目标平台选 `path.win32` / `path.posix`**——否则在 macOS 上测 Windows 分支会拼出正斜杠，
+  测试钉住一个生产里不存在的形状。
+  **三条为对拍钉死的约定**（各有测试）：可空字段一律 `T | null` 而非 `T?`（`JSON.stringify`
+  会把 `undefined` 的键整个丢掉，Node 写的条目比 Tauri 写的少几个键且不报错）；对象字面量的
+  书写顺序 = Rust 字段声明顺序（serde 按声明序、`JSON.stringify` 按插入序，对齐了才逐字节相同）；
+  hash 走 UTF-8 字节。
+  `createdAt` 用 `performance.timeOrigin + performance.now()` 而非 `Date.now()`：批量回滚按它排序
+  （`_batch.rs:45` 写着「Journal creation order is authoritative」），毫秒精度会让同一毫秒内的
+  两条账并列。
+  **复用了 `atomicWrite`**（与 N7 不冲突：N7 不能复用是因为权限语义相反，日志这边没有那个冲突），
+  并借此白拿三样，其中一样是**修 Rust 的欠账**——Rust 的 `write_entry` 是 `fs::write` + `rename`、
+  没有 fsync，而这份文件是「这次改动可撤销」的唯一凭据，掉电后目录项指向空洞内容 = 那次改动
+  永久撤不回来且不报错。所有可观测输出逐字相同。
+  **⚠️ 留给 W15 判的跨宿主隐患**：`workspaceRoot` 存的是 canonicalize 后的绝对路径、回滚时逐字
+  比对。Rust 的 `fs::canonicalize` 在 Windows 上给 verbatim 前缀（`\\?\C:\…`），Node 的
+  `realpath` 给 `C:\…`——**套壳后同一个 workspace 会被判成 `workspace_mismatch`**。
+  POSIX 上两者一致，所以本卡没动。
 
 ### W15 · change journal：批次与 revert
 
