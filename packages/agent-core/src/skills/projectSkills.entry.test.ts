@@ -16,6 +16,8 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'deploy-flow',
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
       filePath: '.webAgent/skills/deploy-flow/SKILL.md',
       frontmatterRaw: validFrontmatter(),
       resourceFiles: [],
@@ -39,6 +41,8 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'my-dir',
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
       filePath: '.webAgent/skills/my-dir/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
@@ -56,6 +60,8 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'bad-dir',
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
       filePath: '.webAgent/skills/bad-dir/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
@@ -75,6 +81,8 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'Bad Dir!',
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
       filePath: '.webAgent/skills/Bad Dir!/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
@@ -91,6 +99,8 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'no-desc',
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
       filePath: '.webAgent/skills/no-desc/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
@@ -103,6 +113,8 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'no-fm',
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
       filePath: '.webAgent/skills/no-fm/SKILL.md',
       frontmatterRaw: '# 直接就是 markdown 正文',
       resourceFiles: [],
@@ -121,6 +133,8 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'empty-desc',
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
       filePath: '.webAgent/skills/empty-desc/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
@@ -139,6 +153,8 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'long-desc',
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
       filePath: '.webAgent/skills/long-desc/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
@@ -160,6 +176,8 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'clean',
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
       filePath: '.webAgent/skills/clean/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
@@ -173,6 +191,8 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'with-resources',
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
       filePath: '.webAgent/skills/with-resources/SKILL.md',
       frontmatterRaw: validFrontmatter('with-resources'),
       resourceFiles: [
@@ -195,6 +215,8 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'many',
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
       filePath: '.webAgent/skills/many/SKILL.md',
       frontmatterRaw: validFrontmatter('many'),
       resourceFiles: files,
@@ -208,6 +230,8 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'legacy',
       origin: 'claude',
+      scope: 'project',
+      rootPath: '/workspace',
       filePath: '.claude/skills/legacy/SKILL.md',
       frontmatterRaw: validFrontmatter('legacy'),
       resourceFiles: [],
@@ -226,6 +250,8 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'test',
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
       filePath: '.webAgent/skills/test/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],
@@ -245,6 +271,8 @@ describe('buildProjectSkillEntry', () => {
     const result = buildProjectSkillEntry({
       dirName: 'test',
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
       filePath: '.webAgent/skills/test/SKILL.md',
       frontmatterRaw: raw,
       resourceFiles: [],

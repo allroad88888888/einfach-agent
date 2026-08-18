@@ -66,6 +66,8 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
         filePath: '.agents/skills/release-check/SKILL.md',
         resources: {},
         origin: 'agent' as const,
+        scope: 'project' as const,
+        rootPath: '/workspace',
       }],
       diagnostics: [],
     }

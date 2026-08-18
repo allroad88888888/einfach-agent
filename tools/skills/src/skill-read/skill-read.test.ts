@@ -146,7 +146,7 @@ describe('tools/skill-read/skill-read', () => {
 // 项目 skills（project/ 前缀）—— docs/project-skills-blueprint.md 阶段 C
 // ===========================================================================
 
-/** 造一个带项目 skills 能力的 ctx；readWorkspaceFile 返回真实的 {ok,data} 桥形状。 */
+/** 造一个带扫描 skills 能力的 ctx；readWorkspaceFile 返回真实的 {ok,data} 桥形状。 */
 function makeProjectCtx(opts?: {
   files?: Record<string, string>
   readFails?: string
@@ -155,6 +155,8 @@ function makeProjectCtx(opts?: {
     '.webAgent/skills/deploy-flow/SKILL.md':
       '---\nname: deploy-flow\ndescription: 何时用：发布相关\n---\n\n正文第一行\n正文第二行\n',
     '.webAgent/skills/deploy-flow/references/checklist.md': '# checklist\n- 一\n- 二\n',
+    '.claude/skills/notes/SKILL.md':
+      '---\nname: notes\ndescription: 主目录笔记\n---\n\n主目录正文\n',
   }
   const ctx = makeCtx() as ToolContext & Record<string, unknown>
   ctx.readWorkspaceFile = vi.fn(async ({ path }: { path: string }) => {
@@ -166,14 +168,25 @@ function makeProjectCtx(opts?: {
   ctx.skills = {
     list: () => [
       { name: 'project/deploy-flow', description: '何时用：发布相关', triggers: [] },
+      { name: 'user/notes', description: '主目录笔记', triggers: [] },
     ],
-    resolveProjectPath: (name: string) =>
-      name === 'project/deploy-flow'
-        ? {
-            filePath: '.webAgent/skills/deploy-flow/SKILL.md',
-            resources: { 'references/checklist.md': '.webAgent/skills/deploy-flow/references/checklist.md' },
-          }
-        : undefined,
+    resolveScannedSkill: (name: string) => {
+      if (name === 'project/deploy-flow') {
+        return {
+          filePath: '.webAgent/skills/deploy-flow/SKILL.md',
+          resources: { 'references/checklist.md': '.webAgent/skills/deploy-flow/references/checklist.md' },
+          rootPath: '/workspace',
+        }
+      }
+      if (name === 'user/notes') {
+        return {
+          filePath: '.claude/skills/notes/SKILL.md',
+          resources: {} as Record<string, string>,
+          rootPath: '/home/me',
+        }
+      }
+      return undefined
+    },
   }
   return ctx
 }
@@ -243,5 +256,39 @@ describe('tools/skill-read/skill-read · 项目 skills', () => {
     const result = await skillReadTool.execute({ name: 'project/deploy-flow' }, makeCtx())
     expect(result).toMatchObject({ ok: false })
     expect((result as { code: string }).code).toBe('SKILL_NOT_FOUND')
+  })
+
+  it('user/* 用主目录当读取根 —— 缺省会被注入会话 workspace，那条路径必然越界', async () => {
+    const ctx = makeProjectCtx()
+    const result = await skillReadTool.execute({ name: 'user/notes' }, ctx)
+
+    expect(result).toMatchObject({ ok: true })
+    expect((result as { data: { skill: { content: string } } }).data.skill.content).toBe('主目录正文\n')
+    expect(ctx.readWorkspaceFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: '.claude/skills/notes/SKILL.md',
+        workspaceRoot: '/home/me',
+      }),
+    )
+  })
+
+  it('project/* 读取仍显式带会话 workspace 根，与主目录那条走同一套坐标', async () => {
+    const ctx = makeProjectCtx()
+    await skillReadTool.execute({ name: 'project/deploy-flow' }, ctx)
+    expect(ctx.readWorkspaceFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: '.webAgent/skills/deploy-flow/SKILL.md',
+        workspaceRoot: '/workspace',
+      }),
+    )
+  })
+
+  it('未知 user/* → 提示里列出的是全部扫描 skills，不只项目那批', async () => {
+    const result = await skillReadTool.execute({ name: 'user/nope' }, makeProjectCtx())
+    expect(result).toMatchObject({ ok: false })
+    const failure = result as { code: string; hint?: string }
+    expect(failure.code).toBe('SKILL_NOT_FOUND')
+    expect(failure.hint).toContain('user/notes')
+    expect(failure.hint).toContain('project/deploy-flow')
   })
 })

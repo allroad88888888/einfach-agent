@@ -67,11 +67,11 @@ describe('ToolContext projectSkills', () => {
       entries: [
         {
           name: 'project/release-check', description: '发布检查', triggers: [],
-          filePath: '.webAgent/skills/release-check/SKILL.md', resources: {}, origin: 'agent',
+          filePath: '.webAgent/skills/release-check/SKILL.md', resources: {}, origin: 'agent', scope: 'project' as const, rootPath: '/workspace',
         },
         {
           name: 'project/legacy-guide', description: '遗留指南', triggers: [],
-          filePath: '.claude/skills/legacy-guide/SKILL.md', resources: {}, origin: 'claude',
+          filePath: '.claude/skills/legacy-guide/SKILL.md', resources: {}, origin: 'claude', scope: 'project' as const, rootPath: '/workspace',
         },
       ],
       diagnostics: [],
@@ -92,10 +92,47 @@ describe('ToolContext projectSkills', () => {
     const skills = ctx.skills!
     expect(skills.list().map((skill) => skill.name)).not.toContain('project/release-check')
     expect(skills.list().map((skill) => skill.name)).toContain('project/legacy-guide')
-    expect(skills.resolveProjectPath('project/release-check')).toBeUndefined()
-    expect(skills.resolveProjectPath('project/legacy-guide')).toEqual({
+    expect(skills.resolveScannedSkill('project/release-check')).toBeUndefined()
+    expect(skills.resolveScannedSkill('project/legacy-guide')).toEqual({
       filePath: '.claude/skills/legacy-guide/SKILL.md',
       resources: {},
+      rootPath: '/workspace',
+    })
+  })
+
+  it('读取根跟着条目走：主目录条目与被链接进来的条目各用自己的根，都不是会话 workspace', async () => {
+    const snapshot: ProjectSkillsSnapshot = {
+      workspaceRoot: '/workspace/skills',
+      userSkillsRoot: '/home/me',
+      entries: [
+        {
+          name: 'user/deploy', description: '部署', triggers: [],
+          filePath: '.claude/skills/deploy/SKILL.md', resources: {}, origin: 'claude',
+          scope: 'user', rootPath: '/home/me',
+        },
+        {
+          // 符号链接进来的 skill：根是它自己那个目录，既不在 workspace 里也不在主目录里。
+          name: 'user/linked', description: '被链接的', triggers: [],
+          filePath: 'SKILL.md', resources: {}, origin: 'claude',
+          scope: 'user', rootPath: '/elsewhere/repo/skills/linked',
+        },
+      ],
+      diagnostics: [],
+    }
+    const core = createCoreInstance({ projectSkillsProvider: vi.fn(async () => snapshot) })
+    seedSession(core, 'with-user-skill', snapshot.workspaceRoot, 'workspace-1')
+    await contextFor(core, 'with-user-skill').projectSkills!.ensure()
+    const skills = contextFor(core, 'with-user-skill').skills!
+
+    expect(skills.resolveScannedSkill('user/deploy')).toEqual({
+      filePath: '.claude/skills/deploy/SKILL.md',
+      resources: {},
+      rootPath: '/home/me',
+    })
+    expect(skills.resolveScannedSkill('user/linked')).toEqual({
+      filePath: 'SKILL.md',
+      resources: {},
+      rootPath: '/elsewhere/repo/skills/linked',
     })
   })
 })

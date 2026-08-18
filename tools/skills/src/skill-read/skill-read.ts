@@ -4,7 +4,7 @@
 import type { Tool } from '@web-agent/core/tools'
 import guide from './skill-read.md?raw' // skill 正文（同目录 .md）
 import { readSkill, readSkillResource, searchSkills } from '../registry'
-import { splitFrontmatter } from '@web-agent/core/skills'
+import { skillScopeFromName, splitFrontmatter } from '@web-agent/core/skills'
 
 const inputSchema = {
   type: 'object',
@@ -77,26 +77,28 @@ export const skillReadTool: Tool = {
       }
     }
 
-    // --- project/ 前缀：正文与资源都在 workspace 文件系统里，按需读（L2/L3 不进 prompt）---
-    if (name.startsWith('project/')) {
-      const entry = ctx.skills?.resolveProjectPath(name)
+    // --- project/ 与 user/ 前缀：正文与资源都在文件系统里，按需读（L2/L3 不进 prompt）---
+    if (skillScopeFromName(name)) {
+      const entry = ctx.skills?.resolveScannedSkill(name)
       if (!entry) {
-        const available = ctx.skills?.list().filter((skill) => skill.name.startsWith('project/')).map((skill) => skill.name) ?? []
+        const available = ctx.skills?.list()
+          .filter((skill) => skillScopeFromName(skill.name))
+          .map((skill) => skill.name) ?? []
         return {
           ok: false,
-          error: `project skill not found: ${name}`,
+          error: `scanned skill not found: ${name}`,
           code: 'SKILL_NOT_FOUND',
           retryable: false,
           hint: available.length > 0
-            ? `Available project skills: ${available.join(', ')}`
-            : 'No project skills loaded for this workspace.',
+            ? `Available scanned skills: ${available.join(', ')}`
+            : 'No workspace or user skills loaded for this session.',
           details: { availableProjectSkills: available },
         }
       }
       if (!ctx.readWorkspaceFile) {
         return {
           ok: false,
-          error: 'project skills require workspace file access, which is unavailable in this environment',
+          error: 'scanned skills require workspace file access, which is unavailable in this environment',
           code: 'NOT_AVAILABLE',
           retryable: false,
         }
@@ -123,11 +125,17 @@ export const skillReadTool: Tool = {
 
       let raw: unknown
       try {
-        raw = await ctx.readWorkspaceFile({ path: targetPath, maxBytes: PROJECT_READ_MAX_BYTES })
+        // rootPath 必须显式传：`user/` 的路径相对主目录，缺省时 runtime 会注入会话 workspace，
+        // 那条路径当场越界。`project/` 传的就是会话 workspace 本身，行为与之前逐字相同。
+        raw = await ctx.readWorkspaceFile({
+          path: targetPath,
+          maxBytes: PROJECT_READ_MAX_BYTES,
+          workspaceRoot: entry.rootPath,
+        })
       } catch (err) {
         return {
           ok: false,
-          error: `failed to read project skill file: ${err instanceof Error ? err.message : String(err)}`,
+          error: `failed to read skill file: ${err instanceof Error ? err.message : String(err)}`,
           code: 'READ_FAILED',
           retryable: true,
         }

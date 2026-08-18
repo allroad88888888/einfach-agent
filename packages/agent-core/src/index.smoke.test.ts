@@ -72,6 +72,7 @@ describe('@web-agent/core 根 barrel', () => {
       'scanPlugins',
       'loadScannedPlugins',
       'buildProjectSkillsWorkspaceBridge',
+      'resolveUserSkillsRoot',
       'canPickWorkspaceDirectory',
       'pickWorkspaceDirectory',
       'contextInputBudgetTokens',

@@ -11,11 +11,11 @@ const snapshot: ProjectSkillsSnapshot = {
   entries: [
     {
       name: 'project/release-check', description: '发布检查', triggers: [],
-      filePath: '.webAgent/skills/release-check/SKILL.md', resources: {}, origin: 'agent',
+      filePath: '.webAgent/skills/release-check/SKILL.md', resources: {}, origin: 'agent', scope: 'project' as const, rootPath: '/workspace',
     },
     {
       name: 'project/legacy-guide', description: '遗留指南', triggers: [],
-      filePath: '.claude/skills/legacy-guide/SKILL.md', resources: {}, origin: 'claude',
+      filePath: '.claude/skills/legacy-guide/SKILL.md', resources: {}, origin: 'claude', scope: 'project' as const, rootPath: '/workspace',
     },
   ],
   diagnostics: ['scanner notice'],
@@ -31,6 +31,15 @@ describe('project skill preferences', () => {
       first: ['project/alpha'],
       second: ['project/zebra'],
     })
+  })
+
+  it('accepts user/ names too — 主目录 skill 一样能停用，且仍按 workspace 分别记', () => {
+    expect(normalizeDisabledProjectSkills({
+      'workspace-1': ['user/notes', 'user/Bad Name', 'other/x'],
+    })).toEqual({ 'workspace-1': ['user/notes'] })
+
+    expect(setProjectSkillEnabled({}, 'workspace-1', 'user/notes', false))
+      .toEqual({ 'workspace-1': ['user/notes'] })
   })
 
   it('stores only disabled names, so removing the last name restores the default enabled state', () => {

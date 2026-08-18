@@ -259,18 +259,26 @@ export interface ToolContext {
   saveArtifact(file: { filename: string; content: string; mimeType?: string }):
     | { artifactId: string }
     | { error: string }
-  /** Skill 注册表只读入口（内置 + 项目）。工具缺失 ctx 时回退模块级内置 registry。 */
+  /** Skill 注册表只读入口（内置 + 扫描来的）。工具缺失 ctx 时回退模块级内置 registry。 */
   skills?: {
-    /** 合并内置 + 项目 Skills 的清单。 */
+    /** 合并内置 + 扫描（`project/` 与 `user/`）Skills 的清单。 */
     list(): SkillSummary[]
     /**
-     * 解析 `project/` 前缀 skill 的 workspace 路径；不是 `project/` 或未命中返回 undefined。
+     * 解析扫描来的 skill（`project/` 或 `user/` 前缀）的读取坐标；内置名或未命中返回 undefined。
      *
-     * `resources` 是扫描期发现的「资源键 → workspace 路径」白名单：调用方只能拿键去查表，
+     * `resources` 是扫描期发现的「资源键 → 根内相对路径」白名单：调用方只能拿键去查表，
      * 绝不能用模型给的字符串拼路径（这是 L3 资源没有穿越面的原因，Rust 侧的 workspace
      * confinement 只是兜底）。
+     *
+     * `rootPath` 是这两条路径相对的根：`project/` 是会话 workspace，`user/` 是主目录。
+     * **读取时必须原样传给桥**——用会话 workspace 去读主目录里的 SKILL.md 会被 confinement
+     * 挡下，而那时报的是「路径越界」，看上去像权限配置问题，跟真实原因（根取错了）无关。
      */
-    resolveProjectPath(name: string): { filePath: string; resources: Record<string, string> } | undefined
+    resolveScannedSkill(name: string): {
+      filePath: string
+      resources: Record<string, string>
+      rootPath: string
+    } | undefined
   }
   projectSkills?: { ensure(): Promise<import('../skills/projectSkills').ProjectSkillsSnapshot> }
 }

@@ -10,7 +10,9 @@ export type DisabledProjectSkillsByWorkspace = Record<string, readonly string[]>
 const MAX_WORKSPACE_PREFERENCES = 128
 const MAX_DISABLED_SKILLS_PER_WORKSPACE = 32
 const MAX_WORKSPACE_ID_LENGTH = 128
-const PROJECT_SKILL_NAME = /^project\/[a-z0-9][a-z0-9-]{0,63}$/
+// 两个作用域的名字都能被停用：`user/` 的偏好同样按 workspaceId 保存——同一台机器上，
+// 一个主目录 skill 可能只在某个项目里碍事，全局一刀切反而更难用。
+const PROJECT_SKILL_NAME = /^(?:project|user)\/[a-z0-9][a-z0-9-]{0,63}$/
 
 function isWorkspaceId(value: string): boolean {
   return value.length > 0 && value.length <= MAX_WORKSPACE_ID_LENGTH

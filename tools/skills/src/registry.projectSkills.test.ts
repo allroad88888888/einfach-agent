@@ -43,6 +43,8 @@ describe('buildSkillManifestText 项目段', () => {
       filePath: '.webAgent/skills/deploy-flow/SKILL.md',
       resources: {},
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
     }
     const manifest = buildSkillManifestText(makeSnapshot([entry]))
     expect(manifest).toContain('以下由当前 workspace 提供')
@@ -60,6 +62,8 @@ describe('buildSkillManifestText 项目段', () => {
       filePath: '.webAgent/skills/test/SKILL.md',
       resources: {},
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
     }
     const manifest = buildSkillManifestText(makeSnapshot([entry]))
     const projectIndex = manifest.indexOf('以下由当前 workspace 提供')
@@ -76,6 +80,8 @@ describe('buildSkillManifestText 项目段', () => {
         filePath: '.webAgent/skills/zebra/SKILL.md',
         resources: {},
         origin: 'agent',
+        scope: 'project',
+        rootPath: '/workspace',
       },
       {
         name: 'project/alpha',
@@ -84,6 +90,8 @@ describe('buildSkillManifestText 项目段', () => {
         filePath: '.webAgent/skills/alpha/SKILL.md',
         resources: {},
         origin: 'agent',
+        scope: 'project',
+        rootPath: '/workspace',
       },
     ]
     const manifest = buildSkillManifestText(makeSnapshot(entries))
@@ -103,6 +111,8 @@ describe('buildSkillManifestText 项目段', () => {
       filePath: '.webAgent/skills/test/SKILL.md',
       resources: {},
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
     }
     const snapshot = makeSnapshot([entry])
     expect(buildSkillManifestText(snapshot)).toBe(buildSkillManifestText(snapshot))

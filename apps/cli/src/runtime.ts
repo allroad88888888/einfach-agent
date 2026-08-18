@@ -1,3 +1,4 @@
+import { homedir } from 'node:os'
 import { configureObservability } from '@web-agent/core/observability'
 import {
   configureCommands,
@@ -61,7 +62,11 @@ export async function assembleCliRuntime(options: AssembleCliRuntimeOptions): Pr
   registerStandardTools(defaultCore.tools)
   configureDefaultSkillsRegistry(builtInSkillsRegistry)
   const bridge = buildNodeProjectSkillsBridge()
-  configureDefaultProjectSkillsProvider((workspaceRoot) => scanProjectSkills(workspaceRoot, bridge))
+  // 主目录直接从 node:os 取，不走 core 的 resolveUserSkillsRoot（那条是 Tauri 专用通路）。
+  const userSkillsRoot = homedir() || undefined
+  configureDefaultProjectSkillsProvider(
+    (workspaceRoot) => scanProjectSkills(workspaceRoot, bridge, { userSkillsRoot }),
+  )
   defaultCore.planRuntime = createDefaultPlanRuntime
   configureDefaultDelegation(createDelegationAssembly)
   configureTraceOutput(options.verbose)

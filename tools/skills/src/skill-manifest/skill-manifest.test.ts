@@ -57,6 +57,8 @@ describe('tools/skill-manifest/skill-manifest', () => {
         filePath: '.webAgent/skills/deploy-flow/SKILL.md',
         resources: {},
         origin: 'agent',
+        scope: 'project',
+        rootPath: '/workspace',
       }],
       diagnostics: [],
     }

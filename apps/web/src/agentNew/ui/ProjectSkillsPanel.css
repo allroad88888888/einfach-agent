@@ -34,6 +34,24 @@
   margin-top: 10px;
 }
 
+.project-skills-group-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-top: 16px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.project-skills-group-hint {
+  overflow: hidden;
+  font-weight: 400;
+  font-size: 11px;
+  color: #8290a6;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .project-skill-card {
   padding: 14px 15px;
   border: 1px solid #e1e6ef;

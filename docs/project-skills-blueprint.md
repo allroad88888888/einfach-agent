@@ -49,6 +49,8 @@ skills 目录」占位项的展开，接续其阶段 1–3 已落地的成果，
   `resources` Record 键语义逐字一致。
 - 扫描根：`.webAgent/skills/` 与 `.claude/skills/`（后者是兼容路径，只读，不写）。
 - 深度：skill 目录只认扫描根的**直接子目录**；资源可再嵌套。
+- **同样这两个目录会在用户主目录下再扫一遍**（`~/.webAgent/skills/`、`~/.claude/skills/`），
+  见下方「作用域」。
 
 ## 命名空间：项目 skill 一律带 `project/` 前缀
 
@@ -64,27 +66,55 @@ skills 目录」占位项的展开，接续其阶段 1–3 已落地的成果，
 `.webAgent/skills/x` 与 `.claude/skills/x` 撞名时 **`.webAgent` 胜**（自家约定优先），
 落选者不进清单，并记一条可观测告警。
 
+## 作用域：工作区 `project/` 与用户主目录 `user/`
+
+同一套目录约定在**两个根**下各生效一次：
+
+| 作用域 | 扫描根 | 名字前缀 | 路径相对 |
+| --- | --- | --- | --- |
+| `project` | `<workspace>/.webAgent/skills`、`<workspace>/.claude/skills` | `project/` | 会话 `workspaceRoot` |
+| `user` | `~/.webAgent/skills`、`~/.claude/skills` | `user/` | 快照的 `userSkillsRoot` |
+
+- **两个作用域各占一个前缀，因此永不撞名**：工作区与主目录里同名的 `deploy` 是清单里
+  两条并存的项（`project/deploy` 与 `user/deploy`），用户也能分别停用。撞名裁决只发生在
+  同一作用域的 `.webAgent` 与 `.claude` 之间，规则不变。
+- **上限按作用域各算一份**（各 32 个）：主目录堆满不该把工作区自己的 skill 挤掉。
+- **主目录那两路把主目录当根传给桥**，路径依然是根内相对路径，因此不需要任何「允许越界读」
+  的权限；`skill_read` 读取时按 `scope` 取对应的根（`ctx.skills.resolveScannedSkill` 返回
+  `rootPath`）。用会话 workspace 去读主目录的文件会被 confinement 挡下，报的还是
+  「路径越界」——看上去像权限问题，与真实原因（根取错）无关。
+- **主目录恰好就是当前工作区时只扫一遍**：同一批文件不该以两个名字各占一份清单预算。
+- 主目录由宿主给：Tauri 走 `@tauri-apps/api/path` 的 `homeDir()`
+  （`runtime/userSkillsRoot.ts`，失败降级 undefined），CLI 走 `node:os` 的 `homedir()`，
+  浏览器没有 → 只扫工作区。
+- 清单里两个作用域**分两段**（「以下由当前 workspace 提供」/「以下由本机用户目录提供」）：
+  来源不同、可信度也不同，合成一段会让模型无从分辨。
+
 ## 数据模型
 
 ```ts
 /** 扫描产出的快照条目：只含元数据与路径，不含正文。 */
 interface ProjectSkillEntry {
-  /** 清单与 skill_read 使用的名字，恒为 `project/<dir-name>`。 */
+  /** 清单与 skill_read 使用的名字，恒为 `<scope>/<dir-name>`。 */
   name: string
   /** frontmatter description，单行化并截断后的结果；缺失则该 skill 被丢弃。 */
   description: string
   /** frontmatter triggers（可选），仅供 skill_search 检索，不参与请求组装。 */
   triggers: string[]
-  /** SKILL.md 相对 workspaceRoot 的路径。 */
+  /** SKILL.md 相对**本条目所属扫描根**的路径（见「作用域」）。 */
   filePath: string
-  /** 资源键（相对 skill 目录）→ 相对 workspaceRoot 的路径。白名单，见「安全边界」。 */
+  /** 资源键（相对 skill 目录）→ 相对同一扫描根的路径。白名单，见「安全边界」。 */
   resources: Record<string, string>
   /** 'agent' | 'claude'，用于告警与 UI 展示。 */
   origin: 'agent' | 'claude'
+  /** 'project' | 'user'，决定名字前缀与 filePath 相对的根。 */
+  scope: 'project' | 'user'
 }
 
 interface ProjectSkillsSnapshot {
   workspaceRoot: string
+  /** 用户级扫描根（通常是主目录）；没扫用户目录时缺省，快照里也不会有 user 条目。 */
+  userSkillsRoot?: string
   entries: ProjectSkillEntry[]
   /** 扫描期的降级信息（读失败、超限截断、撞名落选），供 UI 与 trace 展示，不进 prompt。 */
   diagnostics: string[]
@@ -155,18 +185,20 @@ triggers: [deploy, 发布, 上线]
 ```ts
 // ToolContext 新增只读能力（buildToolContext 从 core + sessionId 注入）
 skills?: {
-  list(): SkillSummary[]                                   // 内置 + 项目（快照）
+  list(): SkillSummary[]                                   // 内置 + 扫描（快照）
   read(name: string): LoadedSkill | undefined              // 内置：同步命中正文
-  resolveProjectPath(name: string, resource?: string): string | undefined
+  // 阶段 F 起：`user/` 也走这里，且返回该条目自己的读取根
+  resolveScannedSkill(name: string):
+    { filePath: string; resources: Record<string, string>; rootPath: string } | undefined
 }
 ```
 
 - `skill_search`：改读 `ctx.skills.list()`，评分逻辑不变；ctx 缺失时回退模块级内置 registry，
   现有测试逐字不变。
-- `skill_read(name)`：`project/` 前缀 → `resolveProjectPath` 拿到 `SKILL.md` 路径 →
-  `ctx.readWorkspaceFile` 读取 → **剥掉 frontmatter** 返回正文 + `resources` 目录；
-  非项目名走今天的同步分支。`execute` 改 async（`Tool.execute` 本就允许返回 Promise，
-  `tools/types.ts:280`）。
+- `skill_read(name)`：`project/` 或 `user/` 前缀 → `resolveScannedSkill` 拿到 `SKILL.md` 路径与
+  `rootPath` → `ctx.readWorkspaceFile`（把 `rootPath` 作为 `workspaceRoot` 原样传下去）读取 →
+  **剥掉 frontmatter** 返回正文 + `resources` 目录；内置名走今天的同步分支。`execute` 改 async
+  （`Tool.execute` 本就允许返回 Promise）。
 - `skill_read(name, resource)`：资源键必须在快照白名单内精确命中，命中后才用其**扫描时记录的
   路径**去读——不接受模型给出的任意路径。
 
@@ -265,6 +297,50 @@ L1 清单 → L2 正文 → L3 资源全链路，`diagnostics` 干净。两条 R
 
 边界记录：子 agent 的工具白名单（`subagents/toolProfile.ts`）不含 `skill_read` / `skill_search`，
 子 agent 不参与 skills 机制，因此无需为其注入项目清单。
+
+### 阶段 F — 用户级 skills（2026-08-18 落地）
+
+阶段 A–D 只扫工作区，于是 `~/.claude/skills` 里的 skill 一个都进不来——那是多数人真正
+积累 skill 的地方。本阶段把同一套目录约定在主目录下再跑一遍，落点见上方「作用域」。
+
+改动面：`skills/projectSkills.ts` 出 `scope` 与 `scanRootLabel`（诊断里 `~/` 前缀是区分
+两个同名目录的唯一线索）；快照合成从 `projectSkills.ts` 拆到
+`skills/projectSkillsSnapshot.ts`（多扫描根合并是另一件事，且原文件已 400+ 行）；
+`ToolContext.skills.resolveProjectPath` 更名 `resolveScannedSkill` 并返回 `rootPath`；
+停用偏好正则放宽到两个前缀；主目录解析新增 `runtime/userSkillsRoot.ts`（Tauri）与 CLI 的
+`homedir()`。
+
+既有边界没变：路径同样只从扫描快照取（模型永不参与拼路径），读取一律以「该条目自己的根」
+为界、不开 `allowExternalPaths`。
+
+#### 被符号链接进来的 skill 目录
+
+`~/.claude/skills/<name> -> 别处` 是 dotfiles 共享 skill 的常见写法（本机 20 个用户 skill 里
+5 个如此）。桥的两条真实行为使它原本**静默缺席**，都已固化成跨语言契约测试
+（`apps/desktop/src/workspace_read_confinement_tests.rs` 的两个 `linked_skill_dir_*`）：
+
+1. confine 模式下，目标在根外的 symlink 条目**整条不出现在列表里**；
+2. 列目录**不递归进 symlink**，即使目标就在根内。
+
+于是 loader 用 `allowExternalPaths: true` **仅列出**两个 skills 目录（多出来的只有「symlink
+条目本身可见」这一件事），再把每个 symlink **当它自己的 workspace root** 传回桥——canonicalize
+后就是目标目录，目录内文件是根内相对路径，读取不需要任何越界许可。条目因此自带 `rootPath`，
+而不是按 scope 去快照上取：被链接进来的那个根既不是 workspace 也不是主目录。
+
+链接指向的目录里没有顶层 `SKILL.md` 时静默跳过（不一定是 skill）；断链、读失败会留诊断——
+本机实测 4 个断链因此**第一次变得可见**，此前它们和「没放过这个 skill」无法区分。
+
+CLI 的 Node 桥同步了这两条语义（列出但不跟进 symlink、允许把 symlink 当根），否则同一台机器上
+CLI 会比桌面少几个 skill 且无从解释。CLI 宿主的**已知限制**仍在：它没有本机文件读取通路
+（`readWorkspaceFile` 只在 Tauri 下可用），所以 CLI 里 L1 清单会列出 `user/*` 与 `project/*`，
+但 `skill_read` 读不到正文。这不是本阶段引入的——项目 skills 一直如此，README 也已写明
+「CLI 宿主无本机文件工具」。
+
+#### 真实数据验证
+
+以本机 `~/.claude/skills`（20 个目录，其中 5 个符号链接、4 个已断链）+ 本仓库两个项目目录扫描：
+20 条进快照（4 条 `project/` + 16 条 `user/`，含唯一一个活链接 `user/einfach-core-engine`，
+其 `rootPath` 指向链接目标目录），4 条断链各留一条诊断，其余诊断全是既有的 description 超长提示。
 
 ### 阶段 E —（可选）行为 eval
 

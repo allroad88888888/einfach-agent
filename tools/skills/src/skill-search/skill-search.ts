@@ -3,6 +3,7 @@
 import type { Tool } from '@web-agent/core/tools'
 import guide from './skill-search.md?raw' // skill 正文（同目录 .md）
 import { searchSkills } from '../registry'
+import { skillScopeFromName } from '@web-agent/core/skills'
 
 const DEFAULT_LIMIT = 10
 const MAX_LIMIT = 50
@@ -39,9 +40,10 @@ export const skillSearchTool: Tool = {
       ? Math.max(1, Math.min(MAX_LIMIT, input.limit))
       : DEFAULT_LIMIT
 
-    // 项目 skills 经 ctx 注入后与内置条目一起参与【同一次】评分排序（评分规则只在 registry
-    // 里存一份）。ctx 无 skills 能力（旧宿主/单测桩）时退化成纯内置，行为与本能力上线前一致。
-    const projectSkills = ctx.skills?.list().filter((skill) => skill.name.startsWith('project/')) ?? []
+    // 扫描来的 skills（工作区 `project/` 与主目录 `user/`）经 ctx 注入后与内置条目一起参与
+    // 【同一次】评分排序（评分规则只在 registry 里存一份）。ctx 无 skills 能力（旧宿主/单测桩）
+    // 时退化成纯内置，行为与本能力上线前一致。
+    const projectSkills = ctx.skills?.list().filter((skill) => skillScopeFromName(skill.name)) ?? []
     const matches = searchSkills(query, projectSkills)
     return {
       ok: true,

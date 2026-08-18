@@ -86,7 +86,7 @@ describe('tools/skill-search/skill-search · 项目 skills', () => {
       list: () => [
         { name: 'project/deploy-flow', description: '何时用：发布与上线排查', triggers: ['deploy', '发布'] },
       ],
-      resolveProjectPath: () => undefined,
+      resolveScannedSkill: () => undefined,
     }
     return ctx
   }

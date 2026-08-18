@@ -263,6 +263,15 @@ registrar 为准**（`tools/<domain>/src/index.ts`），文档里的数量容易
 - workspace 里的 `.webAgent/skills/` 与 `.claude/skills/` 是项目 Skills 目录，会被 project skills
   loader 自动扫描进 L1 清单；它们不是用户配置目录。本仓库自己就有这两个目录，改它们等于改运行时
   行为，不只是改编辑器配置。
+- **同样这两个目录在用户主目录下也会被扫**（`~/.webAgent/skills/`、`~/.claude/skills/`），进清单时
+  前缀是 `user/` 而不是 `project/`。两个作用域各占一个前缀、各算一份 32 个上限，撞名裁决只在同一
+  作用域内发生。每条条目**自带 `rootPath`**（它的路径相对哪个根），读取必须原样把它传给桥——拿会话
+  workspace 去读主目录的文件会被 confinement 挡下，而报错文案指向「路径越界」，与真实原因无关。
+  第三种根来自**被符号链接进来的 skill 目录**：桥既不递归进 symlink、也会在 confine 模式下把根外
+  链接整条滤掉，所以 loader 只用越界许可**列出**那两个目录，再把每个链接当它自己的根去读
+  （`linkedSkillDirScan`，Rust 契约测试 `linked_skill_dir_*` 钉住）。主目录由宿主给：Tauri 是
+  `runtime/userSkillsRoot.ts`，CLI 是 `node:os` 的 `homedir()`，浏览器没有。详见
+  [docs/project-skills-blueprint.md](docs/project-skills-blueprint.md) 的「作用域」。
 
 ## 测试与修改约定
 

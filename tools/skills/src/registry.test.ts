@@ -165,6 +165,8 @@ describe('buildSkillManifestText · 项目段（docs/project-skills-blueprint.md
         filePath: '.webAgent/skills/deploy-flow/SKILL.md',
         resources: {},
         origin: 'agent' as const,
+        scope: 'project' as const,
+        rootPath: '/workspace',
       },
     ],
     diagnostics: [],
@@ -186,6 +188,54 @@ describe('buildSkillManifestText · 项目段（docs/project-skills-blueprint.md
 
   it('同一快照重复调用逐字相同（稳定前缀的字节稳定契约）', () => {
     expect(buildSkillManifestText(snapshot)).toBe(buildSkillManifestText(snapshot))
+  })
+
+  it('用户目录 skills 单起一段：来源不同，可信度判断不能靠模型猜', () => {
+    const mixed = {
+      ...snapshot,
+      userSkillsRoot: '/Users/me',
+      entries: [
+        ...snapshot.entries,
+        {
+          name: 'user/notes',
+          description: '主目录笔记',
+          triggers: [],
+          filePath: '.claude/skills/notes/SKILL.md',
+          resources: {},
+          origin: 'claude' as const,
+          scope: 'user' as const,
+          rootPath: '/Users/me',
+        },
+      ],
+    }
+    const text = buildSkillManifestText(mixed)
+
+    expect(text).toContain('以下由当前 workspace 提供')
+    expect(text).toContain('以下由本机用户目录提供')
+    expect(text.indexOf('· project/deploy-flow')).toBeLessThan(text.indexOf('以下由本机用户目录提供'))
+    expect(text.indexOf('以下由本机用户目录提供')).toBeLessThan(text.indexOf('· user/notes'))
+  })
+
+  it('只有用户目录 skills 时不会留下一段空的 workspace 标题', () => {
+    const userOnly = {
+      workspaceRoot: '/w',
+      userSkillsRoot: '/Users/me',
+      diagnostics: [],
+      entries: [{
+        name: 'user/notes',
+        description: '主目录笔记',
+        triggers: [],
+        filePath: '.claude/skills/notes/SKILL.md',
+        resources: {},
+        origin: 'claude' as const,
+        scope: 'user' as const,
+        rootPath: '/Users/me',
+      }],
+    }
+    const text = buildSkillManifestText(userOnly)
+
+    expect(text).not.toContain('以下由当前 workspace 提供')
+    expect(text).toContain('· user/notes — 主目录笔记')
   })
 })
 

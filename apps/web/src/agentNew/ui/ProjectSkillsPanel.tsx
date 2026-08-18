@@ -13,6 +13,7 @@ import {
   resolveSessionWorkspaceRoot,
 } from '@web-agent/core'
 import type { ProjectSkillEntry, ProjectSkillsSnapshot } from '@web-agent/core/skills'
+import { scanRootLabel } from '@web-agent/core/skills'
 import {
   refreshProjectSkillsFromSettings,
   updateProjectSkillEnabled,
@@ -54,7 +55,8 @@ function SkillEntry({
   workspaceId: string
 }) {
   const resourceCount = Object.keys(entry.resources).length
-  const originLabel = entry.origin === 'agent' ? '.webAgent' : '.claude'
+  // 工作区与主目录下是同名的两个目录，来源标注不带 `~/` 就分不清这条是哪一份文件。
+  const originLabel = scanRootLabel(entry.scope, entry.origin)
   const action = enabled ? '停用' : '启用'
 
   return (
@@ -67,8 +69,8 @@ function SkillEntry({
               <i aria-hidden="true" />{enabled ? '已启用' : '已停用'}
             </span>
           </div>
-          <span className="project-skill-origin" title={`来源目录：${originLabel}/skills/`}>
-            {originLabel}/skills/
+          <span className="project-skill-origin" title={`来源目录：${originLabel}/`}>
+            {originLabel}/
           </span>
         </div>
         <button
@@ -90,7 +92,41 @@ function SkillEntry({
   )
 }
 
-/** Manages discovered project skills for the workspace bound to the active conversation. */
+function SkillGroup({
+  title,
+  hint,
+  entries,
+  disabledNames,
+  workspaceId,
+}: {
+  title: string
+  hint: string
+  entries: ProjectSkillEntry[]
+  disabledNames: Set<string>
+  workspaceId: string
+}) {
+  if (entries.length === 0) return null
+  return (
+    <>
+      <p className="project-skills-group-title">
+        {title}
+        <span className="project-skills-group-hint" title={hint}>{hint}</span>
+      </p>
+      <div className="project-skills-list">
+        {entries.map((entry) => (
+          <SkillEntry
+            key={entry.name}
+            entry={entry}
+            enabled={!disabledNames.has(entry.name)}
+            workspaceId={workspaceId}
+          />
+        ))}
+      </div>
+    </>
+  )
+}
+
+/** Manages discovered workspace and user skills for the workspace bound to the active conversation. */
 export function ProjectSkillsPanel() {
   const { workspaceId, workspaceRoot, snapshot } = useProjectSkillsState()
   const disabledProjectSkills = useRootAtomValue(disabledProjectSkillsByWorkspaceAtom)
@@ -118,7 +154,7 @@ export function ProjectSkillsPanel() {
       <div className="agentnew-settings-panel-head project-skills-head">
         <div>
           <h3 id="project-skills-title">项目 Skills</h3>
-          <p>控制当前工作区中哪些项目技能可供 Agent 使用。</p>
+          <p>控制当前工作区里哪些技能可供 Agent 使用——包括工作区自带的与本机用户目录下的。</p>
         </div>
         <button
           type="button"
@@ -135,7 +171,7 @@ export function ProjectSkillsPanel() {
       </p>
       <p className="project-skills-help">
         所有发现的技能默认启用。停用后，后续读取会立即受限；新对话不会再列出该技能。
-        此选择仅保存在当前设备。
+        此选择仅保存在当前设备，且按工作区分别记——停用一个用户目录技能只影响当前工作区。
       </p>
 
       {snapshot && entries.length > 0 ? (
@@ -162,26 +198,32 @@ export function ProjectSkillsPanel() {
 
       {!snapshot ? (
         <div className="project-skills-empty">
-          尚未扫描。发送一条消息或点「刷新」后，会加载{' '}
-          <code>.webAgent/skills/</code> 与 <code>.claude/skills/</code> 下的 Skills。
+          尚未扫描。发送一条消息或点「刷新」后，会加载工作区与用户主目录下{' '}
+          <code>.webAgent/skills/</code> 与 <code>.claude/skills/</code> 里的 Skills。
         </div>
       ) : entries.length === 0 ? (
         <div className="project-skills-empty">
-          当前 workspace 未发现项目 Skills。在{' '}
+          未发现任何 Skills。在工作区或主目录的{' '}
           <code>.webAgent/skills/&lt;name&gt;/SKILL.md</code> 或{' '}
           <code>.claude/skills/&lt;name&gt;/SKILL.md</code> 中放置带 frontmatter 的 skill 文件即可自动加载。
         </div>
       ) : (
-        <div className="project-skills-list">
-          {entries.map((entry) => (
-            <SkillEntry
-              key={entry.name}
-              entry={entry}
-              enabled={!disabledNames.has(entry.name)}
-              workspaceId={workspaceId}
-            />
-          ))}
-        </div>
+        <>
+          <SkillGroup
+            title="工作区"
+            hint={workspaceRoot}
+            entries={entries.filter((entry) => entry.scope === 'project')}
+            disabledNames={disabledNames}
+            workspaceId={workspaceId}
+          />
+          <SkillGroup
+            title="用户目录"
+            hint={snapshot?.userSkillsRoot ?? '~'}
+            entries={entries.filter((entry) => entry.scope === 'user')}
+            disabledNames={disabledNames}
+            workspaceId={workspaceId}
+          />
+        </>
       )}
     </section>
   )

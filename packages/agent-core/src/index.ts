@@ -57,6 +57,8 @@ export {
   configureDefaultDelegation,
 } from './runtime/core/coreInstance'
 export { buildProjectSkillsWorkspaceBridge } from './runtime/projectSkillsBridge'
+// tools-skills 的 provider：扫用户目录前先问宿主要主目录（非 Tauri 返回 undefined）
+export { resolveUserSkillsRoot } from './runtime/userSkillsRoot'
 export type {
   // defaultCore 的类型
   CoreInstance,

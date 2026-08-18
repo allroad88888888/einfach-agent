@@ -13,22 +13,29 @@ export {
 
 export {
   buildProjectSkillEntry,
-  emptyProjectSkillsSnapshot,
   FRONTMATTER_READ_LIMIT,
   MAX_DESCRIPTION_CHARS,
   MAX_PROJECT_RESOURCES_PER_SKILL,
-  MAX_PROJECT_SKILLS,
   parseFrontmatter,
   PROJECT_RESOURCE_EXTENSIONS,
-  resolveProjectSkills,
   sanitizeDescription,
   sanitizeName,
+  scanRootLabel,
+  skillScopeFromName,
   splitFrontmatter,
   type ProjectSkillEntry,
   type ProjectSkillFrontmatter,
   type ProjectSkillOrigin,
+  type ProjectSkillScope,
   type ProjectSkillsSnapshot,
 } from './projectSkills'
+
+export {
+  emptyProjectSkillsSnapshot,
+  MAX_PROJECT_SKILLS,
+  resolveProjectSkills,
+  type ProjectSkillScanResult,
+} from './projectSkillsSnapshot'
 
 export {
   // apps/web: settings/{persistence,config} —— 读回持久化偏好时的规范化入口

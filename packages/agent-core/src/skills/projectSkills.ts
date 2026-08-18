@@ -1,18 +1,16 @@
-// skills/projectSkills.ts —— 项目内 Skills 自动加载的纯函数层（零 IO，全单测）
+// skills/projectSkills.ts —— 一个 SKILL.md 变成一条清单条目的纯函数层（零 IO，全单测）
 // ---------------------------------------------------------------------------
 // 本模块是 project-skills-blueprint.md 阶段 A 的产物：frontmatter 解析、
-// name/description 卫生化、条目构建、撞名裁决、上限截断、diagnostics 生成。
-// 全部是「输入 = 文件清单 + 文本，输出 = 快照」的纯函数，可全量单测。
+// name/description 卫生化、单条条目构建与它自己的 diagnostics。
+// 全部是「输入 = 一个文件的文本 + 它的路径，输出 = 一条条目」的纯函数，可全量单测。
 //
-// 调用方（projectSkillsLoader.ts / modelRun）负责 IO；本模块不 import 任何
+// 多个扫描根合并成一份快照（撞名裁决、上限截断、诊断合并）住 projectSkillsSnapshot.ts；
+// 调用方（projectSkillsLoader.ts / modelRun）负责 IO。本模块不 import 任何
 // runtime/state/UI，也不依赖 workspace 桥。
 
 // ===========================================================================
 // 常量
 // ===========================================================================
-
-/** 单 workspace 最多加载的项目 skill 数；超出按名字字节序截断。 */
-export const MAX_PROJECT_SKILLS = 32
 
 /** 单 skill 最多资源数；超出忽略并记 diagnostics。 */
 export const MAX_PROJECT_RESOURCES_PER_SKILL = 32
@@ -48,27 +46,74 @@ const VALID_NAME = /^[a-z0-9][a-z0-9-]{0,63}$/
 export type ProjectSkillOrigin = 'agent' | 'claude'
 
 /**
+ * skill 的作用域：扫描根是工作区还是用户主目录。
+ *
+ * 两个作用域各占一个**名字前缀**（`project/` 与 `user/`），因此永不撞名：同名的
+ * `.claude/skills/deploy` 在工作区里是 `project/deploy`、在主目录里是 `user/deploy`，
+ * 模型看到的是两条清单项，用户也能分别停用。撞名裁决只发生在同一作用域的两个目录之间。
+ */
+export type ProjectSkillScope = 'project' | 'user'
+
+/**
+ * 扫描根的显示名，用于 diagnostics 与 UI。
+ *
+ * user 作用域带 `~/` 前缀：两个作用域扫的是同名的两个目录，诊断里不带前缀就会出现
+ * 「`.claude/skills/foo`: 缺少 description」这种指不出到底是哪一份文件的消息。
+ */
+export function scanRootLabel(scope: ProjectSkillScope, origin: ProjectSkillOrigin): string {
+  const directory = origin === 'agent' ? '.webAgent/skills' : '.claude/skills'
+  return scope === 'user' ? `~/${directory}` : directory
+}
+
+/**
+ * 从 skill 名反推作用域；内置 skill（无前缀）返回 undefined。
+ *
+ * 「这个名字是不是扫描来的」是 skill_read / skill_search / 停用偏好共用的判据，各写一份
+ * `startsWith('project/')` 就会在加第二个前缀时漏掉某一处——加 `user/` 那次正是这样发现的。
+ */
+export function skillScopeFromName(name: string): ProjectSkillScope | undefined {
+  if (name.startsWith('project/')) return 'project'
+  if (name.startsWith('user/')) return 'user'
+  return undefined
+}
+
+/**
  * 扫描产出的快照条目：只含元数据与路径，不含正文。
  * 清单与 skill_read 都基于此结构。
  */
 export interface ProjectSkillEntry {
-  /** 清单与 skill_read 使用的名字，恒为 `project/<dir-name>`。 */
+  /** 清单与 skill_read 使用的名字，恒为 `<scope>/<dir-name>`。 */
   name: string
   /** frontmatter description，单行化并截断后的结果。 */
   description: string
   /** frontmatter triggers（可选），仅供 skill_search 检索。 */
   triggers: string[]
-  /** SKILL.md 相对 workspaceRoot 的路径。 */
+  /**
+   * 本条目路径相对的**绝对**根：工作区 skill 是 workspaceRoot，主目录 skill 是主目录，
+   * 被符号链接进来的 skill 是**它自己那个目录**（见 loader 的 linkedSkillDir）。
+   *
+   * 每条条目自带根、而不是「按 scope 去快照上取」，是因为第三种情况根本不在快照的两个根里；
+   * 一个双向规则（缺省时按 scope 回退）迟早会在加第四种来源时被漏掉一处。
+   */
+  rootPath: string
+  /** SKILL.md 相对 `rootPath` 的路径。 */
   filePath: string
-  /** 资源键（相对 skill 目录）→ 相对 workspaceRoot 的路径。白名单过滤后的结果。 */
+  /** 资源键（相对 skill 目录）→ 相对同一个 `rootPath` 的路径。白名单过滤后的结果。 */
   resources: Record<string, string>
   /** 'agent' | 'claude'，用于告警与 UI 展示。 */
   origin: ProjectSkillOrigin
+  /** 'project' | 'user'，决定名字前缀与 filePath 相对的根。 */
+  scope: ProjectSkillScope
 }
 
 /** 一次扫描产出的完整快照。 */
 export interface ProjectSkillsSnapshot {
   workspaceRoot: string
+  /**
+   * 用户级 skills 的扫描根（通常是主目录）。宿主拿不到主目录（浏览器）或没扫用户目录时缺省，
+   * 此时快照里不会有 `user/` 条目。
+   */
+  userSkillsRoot?: string
   entries: ProjectSkillEntry[]
   /** 扫描期的降级信息（读失败、超限截断、撞名落选），供 UI 与 trace 展示，不进 prompt。 */
   diagnostics: string[]
@@ -280,21 +325,26 @@ export function sanitizeDescription(description: string): { value: string; trunc
 export function buildProjectSkillEntry(opts: {
   dirName: string
   origin: ProjectSkillOrigin
+  /** 决定名字前缀；由扫描方按扫描根显式给出，没有默认值。 */
+  scope: ProjectSkillScope
+  /** 本条目路径相对的绝对根，见 ProjectSkillEntry.rootPath。 */
+  rootPath: string
   filePath: string
   frontmatterRaw: string
-  /** workspacePath 是相对 workspaceRoot 的路径（桥要求的形式），不是文件系统绝对路径。 */
+  /** workspacePath 是相对 rootPath 的路径（桥要求的形式），不是文件系统绝对路径。 */
   resourceFiles: Array<{ relativePath: string; workspacePath: string }>
 }): { entry?: ProjectSkillEntry; diagnostics: string[] } {
-  const { dirName, origin, filePath, frontmatterRaw, resourceFiles } = opts
+  const { dirName, origin, scope, rootPath, filePath, frontmatterRaw, resourceFiles } = opts
   const diagnostics: string[] = []
+  const label = `${scanRootLabel(scope, origin)}/${dirName}`
 
   const fm = parseFrontmatter(frontmatterRaw)
 
   for (const unknownKey of fm.unknownKeys) {
     if (unknownKey.startsWith('(malformed')) {
-      diagnostics.push(`${origin}/skills/${dirName}: ${unknownKey}`)
+      diagnostics.push(`${label}: ${unknownKey}`)
     } else {
-      diagnostics.push(`${origin}/skills/${dirName}: 忽略未知 frontmatter 键 "${unknownKey}"`)
+      diagnostics.push(`${label}: 忽略未知 frontmatter 键 "${unknownKey}"`)
     }
   }
 
@@ -302,7 +352,7 @@ export function buildProjectSkillEntry(opts: {
   const safeName = sanitizeName(rawName)
   if (!safeName) {
     diagnostics.push(
-      `${origin}/skills/${dirName}: name "${rawName}" 不符合规范 ` +
+      `${label}: name "${rawName}" 不符合规范 ` +
       `[a-z0-9][a-z0-9-]{0,63}，已跳过`,
     )
     return { diagnostics }
@@ -311,7 +361,7 @@ export function buildProjectSkillEntry(opts: {
   const rawDesc = fm.description
   if (!rawDesc) {
     diagnostics.push(
-      `${origin}/skills/${dirName}: 缺少 description（frontmatter 中未提供或为空），已跳过`,
+      `${label}: 缺少 description（frontmatter 中未提供或为空），已跳过`,
     )
     return { diagnostics }
   }
@@ -319,14 +369,14 @@ export function buildProjectSkillEntry(opts: {
   const safeDesc = sanitizeDescription(rawDesc)
   if (!safeDesc) {
     diagnostics.push(
-      `${origin}/skills/${dirName}: description 卫生化后为空，已跳过`,
+      `${label}: description 卫生化后为空，已跳过`,
     )
     return { diagnostics }
   }
   if (safeDesc.truncated) {
     // 可操作的反馈：清单是模型选 skill 的唯一依据，被截掉的那半句作者自己最清楚怎么压缩。
     diagnostics.push(
-      `${origin}/skills/${dirName}: description 超过 ${MAX_DESCRIPTION_CHARS} 字符已截断，`
+      `${label}: description 超过 ${MAX_DESCRIPTION_CHARS} 字符已截断，`
       + '超出部分不会进入 skill 清单，建议改写得更短',
     )
   }
@@ -335,7 +385,7 @@ export function buildProjectSkillEntry(opts: {
   for (const file of resourceFiles) {
     if (Object.keys(resources).length >= MAX_PROJECT_RESOURCES_PER_SKILL) {
       diagnostics.push(
-        `${origin}/skills/${dirName}: 资源数已超过上限 ${MAX_PROJECT_RESOURCES_PER_SKILL}，` +
+        `${label}: 资源数已超过上限 ${MAX_PROJECT_RESOURCES_PER_SKILL}，` +
         `忽略 ${file.relativePath}`,
       )
       continue
@@ -344,7 +394,7 @@ export function buildProjectSkillEntry(opts: {
     if (!ext || !PROJECT_RESOURCE_EXTENSIONS.has(ext)) {
       if (ext) {
         diagnostics.push(
-          `${origin}/skills/${dirName}: 忽略非白名单资源 "${file.relativePath}"（扩展名 ${ext}）`,
+          `${label}: 忽略非白名单资源 "${file.relativePath}"（扩展名 ${ext}）`,
         )
       }
       continue
@@ -354,68 +404,17 @@ export function buildProjectSkillEntry(opts: {
 
   return {
     entry: {
-      name: `project/${safeName}`,
+      name: `${scope}/${safeName}`,
       description: safeDesc.value,
       triggers: fm.triggers ?? [],
+      rootPath,
       filePath,
       resources,
       origin,
+      scope,
     },
     diagnostics,
   }
 }
 
-// ===========================================================================
-// 快照解析：撞名裁决 + 上限截断
-// ===========================================================================
-
-export function resolveProjectSkills(opts: {
-  workspaceRoot: string
-  agentEntries: ProjectSkillEntry[]
-  agentDiagnostics: string[]
-  claudeEntries: ProjectSkillEntry[]
-  claudeDiagnostics: string[]
-}): ProjectSkillsSnapshot {
-  const {
-    workspaceRoot,
-    agentEntries,
-    agentDiagnostics,
-    claudeEntries,
-    claudeDiagnostics,
-  } = opts
-
-  const diagnostics = [...agentDiagnostics, ...claudeDiagnostics]
-
-  const agentNames = new Set(agentEntries.map((e) => e.name))
-  const dedupedClaude: ProjectSkillEntry[] = []
-  for (const entry of claudeEntries) {
-    if (agentNames.has(entry.name)) {
-      diagnostics.push(
-        `claude/skills/${entry.name.slice('project/'.length)}: 与 .webAgent 同名，.webAgent 胜，已跳过`,
-      )
-    } else {
-      dedupedClaude.push(entry)
-    }
-  }
-
-  const merged = [...agentEntries, ...dedupedClaude].sort((a, b) => {
-    if (a.name < b.name) return -1
-    if (a.name > b.name) return 1
-    return 0
-  })
-
-  const entries = merged.slice(0, MAX_PROJECT_SKILLS)
-  if (merged.length > MAX_PROJECT_SKILLS) {
-    const overflow = merged.slice(MAX_PROJECT_SKILLS)
-    diagnostics.push(
-      `项目 skills 总数 ${merged.length} 超过上限 ${MAX_PROJECT_SKILLS}，` +
-      `以下 skill 已被截断：${overflow.map((e) => e.name).join(', ')}`,
-    )
-  }
-
-  return { workspaceRoot, entries, diagnostics }
-}
-
-export function emptyProjectSkillsSnapshot(workspaceRoot: string): ProjectSkillsSnapshot {
-  return { workspaceRoot, entries: [], diagnostics: [] }
-}
+// 快照合成（多个扫描根 → 一份快照）住 projectSkillsSnapshot.ts。

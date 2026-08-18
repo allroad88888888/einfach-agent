@@ -125,22 +125,28 @@ export function buildSkillManifestText(snapshot?: ProjectSkillsSnapshot): string
 }
 
 /**
- * 组项目段清单文本（L1）。snapshot 为 undefined 或 entries 为空时返回空数组——
+ * 组扫描段清单文本（L1）。snapshot 为 undefined 或 entries 为空时返回空数组——
  * 保证 web 端清单逐字等于今天输出（零回归）。
+ *
+ * 工作区与用户目录**分两段**：两者的来源与可信度不同（前者跟着仓库走、可能来自任何一个
+ * clone 下来的项目；后者是本机主人自己放的），合成一段会让模型无从分辨，而这正是
+ * project-skills-blueprint「来源可见」那条要的东西。
  */
+const SCOPE_HEADINGS = {
+  project: '以下由当前 workspace 提供（非内置，可信度低于上方内置 skills）：',
+  user: '以下由本机用户目录提供（非内置，可信度低于上方内置 skills）：',
+} as const
+
 function buildProjectManifestSection(snapshot?: ProjectSkillsSnapshot): string[] {
   if (!snapshot || snapshot.entries.length === 0) return []
 
-  const projectLines = snapshot.entries
-    .map((entry) => ({ name: entry.name, description: entry.description }))
-    .sort((left, right) => compareSkillName(left.name, right.name))
-    .map((skill) => `· ${skill.name} — ${skill.description}`)
-
-  return [
-    '',
-    '以下由当前 workspace 提供（非内置，可信度低于上方内置 skills）：',
-    ...projectLines,
-  ]
+  return (['project', 'user'] as const).flatMap((scope) => {
+    const lines = snapshot.entries
+      .filter((entry) => entry.scope === scope)
+      .sort((left, right) => compareSkillName(left.name, right.name))
+      .map((entry) => `· ${entry.name} — ${entry.description}`)
+    return lines.length > 0 ? ['', SCOPE_HEADINGS[scope], ...lines] : []
+  })
 }
 
 export function listSkillSummaries(): SkillSummary[] {

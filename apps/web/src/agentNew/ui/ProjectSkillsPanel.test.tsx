@@ -90,6 +90,8 @@ describe('ProjectSkillsPanel', () => {
       filePath: '.webAgent/skills/release-check/SKILL.md',
       resources: {},
       origin: 'agent',
+      scope: 'project',
+      rootPath: '/workspace',
     }]))
     rootStore.setter(disabledProjectSkillsByWorkspaceAtom, {
       'workspace-1': ['project/release-check'],
@@ -108,5 +110,43 @@ describe('ProjectSkillsPanel', () => {
     )
     await user.click(screen.getByRole('button', { name: '刷新' }))
     expect(refreshProjectSkillsFromSettings).toHaveBeenCalledOnce()
+  })
+
+  it('工作区与用户目录分两组，来源标注带 ~/ 以区分同名目录', () => {
+    seedPanel({
+      workspaceRoot,
+      userSkillsRoot: '/Users/me',
+      diagnostics: [],
+      entries: [
+        {
+          name: 'project/release-check',
+          description: '发布检查',
+          triggers: [],
+          filePath: '.claude/skills/release-check/SKILL.md',
+          resources: {},
+          origin: 'claude',
+          scope: 'project',
+          rootPath: '/workspace',
+        },
+        {
+          name: 'user/notes',
+          description: '主目录笔记',
+          triggers: [],
+          filePath: '.claude/skills/notes/SKILL.md',
+          resources: {},
+          origin: 'claude',
+          scope: 'user',
+          rootPath: '/Users/me',
+        },
+      ],
+    })
+    renderWithStore(<ProjectSkillsPanel />)
+
+    expect(screen.getByText('工作区')).toBeInTheDocument()
+    expect(screen.getByText('用户目录')).toBeInTheDocument()
+    expect(screen.getByText('/Users/me')).toBeInTheDocument()
+    // 两条都来自 .claude/skills，只有 `~/` 能把它们区分开
+    expect(screen.getByText('.claude/skills/')).toBeInTheDocument()
+    expect(screen.getByText('~/.claude/skills/')).toBeInTheDocument()
   })
 })

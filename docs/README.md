@@ -30,7 +30,7 @@
 | [插件 UI Renderer 协议蓝图](plugin-renderer-protocol-blueprint.md) | P2.5 的 R1–R4 已完成（`846743a`、`a2b8d97`、`66072f3`、`79bde78`）：Core 导出无 React 的时间线投影，React 包提供 root 隔离 registry 与受限 UI 插件安装面，Web 保留既有交互；R5 的 [持久化 item RFC](persistent-plugin-timeline-item-rfc.md) 已起草，待协议批准 |
 | [自定义持久化 Timeline Item RFC](persistent-plugin-timeline-item-rfc.md) | R5 设计门槛：版本化 envelope、checkpoint/SQLite/IndexedDB 兼容、archive 隔离、最小写入权限与 Web/CLI/server 安全降级；尚未开放实现 |
 | [Skills 树形结构与稳定前缀清单](skills-tree-blueprint.md) | 阶段 1–3 已实施：L3 资源树、B04/B05 行为门禁通过、全量清单进稳定前缀、harness 预筛已退役；阶段 4 拆出为下一行 |
-| [项目内 Skills 自动加载（`.webAgent/`）](project-skills-blueprint.md) | 阶段 A–D 已实施：workspace 的 `.webAgent/skills` 与 `.claude/skills` 自动进 L1 清单，正文与资源经 `skill_read` 按需读；阶段 E（行为 eval）可选未做 |
+| [项目内 Skills 自动加载（`.webAgent/`）](project-skills-blueprint.md) | 阶段 A–D、F 已实施：workspace 与用户主目录下的 `.webAgent/skills` 与 `.claude/skills` 自动进 L1 清单（前缀 `project/` 与 `user/`），正文与资源经 `skill_read` 按需读；阶段 E（行为 eval）可选未做 |
 | [图片输入协议 RFC](image-input-rfc.md) | Provider-neutral 图片内容、adapter 所有权、提交事务、持久化降级与宿主安全边界；已实现，真实 Key 联调前门禁关闭 |
 | [Kimi Provider 接入蓝图](kimi-provider-integration-blueprint.md) | Kimi（实际 API ID `kimi-k2.6`）接入的本地树形 Issue、依赖批次、逐项执行模型与开放门禁；代码完成、50B 静态审查完成，最终验收随 50A 阻塞，当前 NO-GO |
 | [启动模型密钥门禁 Issue](startup-model-credential-gate-blueprint.md) | 已完成：进入桌面主界面前按恢复会话的模型检查默认 `~/.webAgent/config.json`；默认新文件缺失时安全复制旧配置，缺失目标 Key 则用不可跳过的输入门禁阻塞工作区，并记录逐 leaf 模型分配、验证证据与独立审查结论 |
@@ -42,6 +42,7 @@
 | [core 公开面收敛盘点](core-public-surface-audit.md) | 盘点阶段，无实现：`@web-agent/core` 是唯一带 `exports` 通配的包，实测 68 条深导入子路径（非测试 63 / 测试 37）全部构成公开承诺；含五类归类、8 条疑似内部泄漏点名、68→9 的白名单方案、barrel 与 exports 两步走迁移，以及 17 张卡的拆分建议；发包蓝图 G4 的前置 |
 | [core 公开面收敛 Issue 树](core-surface-issues.md) | 步骤 1 + S11 委派接缝整形完成：九条 barrel、白名单门禁、批次执行段下沉 core、packages/subagents 深导入归零、T 线八项超限拆分；仅余 S10（删通配，GATED 至首次发包批次） |
 | [npm 发包准备 Issue 树](publish-prep-issues.md) | 执行中：E2 蓝图 G1–G13 的准备段（构建产物 / ?raw 内联 / 元数据 / 依赖修正 / 产物冒烟）；不含任何 publish 动作，发布键与 S10 由用户触发 |
+| [Node 宿主与 Web 自托管 Issue 树](node-host-issues.md) | 未开工：把浏览器版做成能力完整的本地自托管应用——core 的 Tauri invoke 抽成可注入 host bridge，能力实现收敛为一份 `packages/host-node`（约 4700 行 TS），经 `apps/server` 服务浏览器与 CLI，Tauri 最终退成 sidecar 套壳，npm 分发不需要任何签名证书；60 卡分十条线，MVP 路径 44 卡，三项未决待拍板 |
 | [插件生态蓝图](plugin-ecosystem-blueprint.md) | 设计阶段，无实现：把 assembly-time 插件产品化为 `.webAgent/plugins/` 动态加载的用户插件——加载协议与错误隔离、借鉴 MCP 起进程确认的信任模型、启停与 plugin id 归因、npm 分发前置；`timeline.persist` 阻塞于 R5；默认信任姿态、首期宿主与模型可见工具三项待用户拍板 |
 
 蓝图描述目标形态，不代表所有 API 都已交付。引用蓝图时需要同时核对实现和测试。

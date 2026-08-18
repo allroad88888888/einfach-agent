@@ -5,7 +5,8 @@
 // 未注入 provider ＝ 该环境永远没有项目 skills，空快照即正确答案。
 
 import type { Store } from '@einfach/core'
-import { emptyProjectSkillsSnapshot, type ProjectSkillsSnapshot } from '../../skills/projectSkills'
+import type { ProjectSkillsSnapshot } from '../../skills/projectSkills'
+import { emptyProjectSkillsSnapshot } from '../../skills/projectSkillsSnapshot'
 import { projectSkillsAtom } from '../../state/rootAtoms'
 
 /**
