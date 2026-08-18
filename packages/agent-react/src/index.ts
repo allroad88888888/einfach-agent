@@ -1,6 +1,13 @@
 // @web-agent/react-plugin 的唯一公开入口。
 
-export { AgentStoreProvider, useAgentAtomValue, useAgentStore } from './agentStore'
+export {
+  AgentStoreProvider,
+  RootStoreProvider,
+  useAgentAtomValue,
+  useAgentStore,
+  useRootAtomValue,
+  useRootStore,
+} from './coreStoreBindings'
 export { UnknownTimelineItem, type UnknownTimelineItemProps } from './UnknownTimelineItem'
 export {
   defineReactPlugin,

@@ -1,10 +1,10 @@
 import { useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { useAtom, useAtomValue } from '@einfach/react'
+import { useAtom } from '@einfach/react'
+import { useRootAtomValue } from '@web-agent/react-plugin'
 import {
   activeWorkspaceIdAtom,
   expandedWorkspaceIdsAtom,
-  workspaceRenameStateAtom,
   workspaceSettingsOpenIdsAtom,
   workspacesAtom,
   newSession,
@@ -16,14 +16,15 @@ import {
   canPickWorkspaceDirectory,
   pickWorkspaceDirectory,
 } from '@web-agent/core'
+import { workspaceRenameStateAtom } from './workspaceViewState'
 import { SessionList } from './SessionList'
 import { WorkspaceRootField } from './WorkspaceRootField'
 
 export function WorkspaceSidebar() {
-  const workspaces = useAtomValue(workspacesAtom)
-  const activeWorkspaceId = useAtomValue(activeWorkspaceIdAtom)
-  const expandedWorkspaceIds = useAtomValue(expandedWorkspaceIdsAtom)
-  const workspaceSettingsOpenIds = useAtomValue(workspaceSettingsOpenIdsAtom)
+  const workspaces = useRootAtomValue(workspacesAtom)
+  const activeWorkspaceId = useRootAtomValue(activeWorkspaceIdAtom)
+  const expandedWorkspaceIds = useRootAtomValue(expandedWorkspaceIdsAtom)
+  const workspaceSettingsOpenIds = useRootAtomValue(workspaceSettingsOpenIdsAtom)
   const [renameState, setRenameState] = useAtom(workspaceRenameStateAtom)
   const renameSettledRef = useRef(false)
   const ordered = Object.values(workspaces).sort(

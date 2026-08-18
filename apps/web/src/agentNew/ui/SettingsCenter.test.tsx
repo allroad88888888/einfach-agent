@@ -1,3 +1,4 @@
+import { uiStore } from '../../uiStore'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -72,8 +73,8 @@ function credentialHost(kimiKey = '', failKimiStatus = false): {
 
 describe('SettingsCenter', () => {
   beforeEach(() => {
-    resetMcpSettingsState(rootStore)
-    resetAppSettingsState(rootStore)
+    resetMcpSettingsState(uiStore)
+    resetAppSettingsState(uiStore)
     configureCommands({
       customInstructions: '',
       modelCredentials: { deepseek: 'desktop-managed-credential' },
@@ -83,14 +84,14 @@ describe('SettingsCenter', () => {
   })
 
   afterEach(() => {
-    resetMcpSettingsState(rootStore)
-    resetAppSettingsState(rootStore)
+    resetMcpSettingsState(uiStore)
+    resetAppSettingsState(uiStore)
     configureModelCredentialHost(createUnavailableModelCredentialHost())
   })
 
   it('traps dialog focus and exposes the settings tabs', async () => {
     const user = userEvent.setup()
-    renderWithStore(<SettingsCenter />, { store: rootStore })
+    renderWithStore(<SettingsCenter />, { store: uiStore })
     const launchButton = screen.getByRole('button', { name: '打开设置' })
     await user.click(launchButton)
 
@@ -110,7 +111,7 @@ describe('SettingsCenter', () => {
     vi.stubEnv('VITE_KIMI_IMAGE_INPUT_ENABLED', 'true')
     const storage = createMemoryAppSettingsStorage()
     configureAppSettingsStorage(storage)
-    renderWithStore(<SettingsCenter />, { store: rootStore })
+    renderWithStore(<SettingsCenter />, { store: uiStore })
     await user.click(screen.getByRole('button', { name: '打开设置' }))
     await user.click(screen.getByRole('button', { name: '模型' }))
 
@@ -140,7 +141,7 @@ describe('SettingsCenter', () => {
     const user = userEvent.setup()
     configureModelCredentialHost(credentialHost('kimi-test-key').host)
     vi.stubEnv('VITE_KIMI_IMAGE_INPUT_ENABLED', 'false')
-    renderWithStore(<SettingsCenter />, { store: rootStore })
+    renderWithStore(<SettingsCenter />, { store: uiStore })
     await user.click(screen.getByRole('button', { name: '打开设置' }))
     await user.click(screen.getByRole('button', { name: '模型' }))
 
@@ -152,7 +153,7 @@ describe('SettingsCenter', () => {
     const user = userEvent.setup()
     configureModelCredentialHost(credentialHost().host)
     vi.stubEnv('VITE_KIMI_IMAGE_INPUT_ENABLED', 'true')
-    renderWithStore(<SettingsCenter />, { store: rootStore })
+    renderWithStore(<SettingsCenter />, { store: uiStore })
     await user.click(screen.getByRole('button', { name: '打开设置' }))
     await user.click(screen.getByRole('button', { name: '模型' }))
 
@@ -164,7 +165,7 @@ describe('SettingsCenter', () => {
     const user = userEvent.setup()
     configureModelCredentialHost(createUnavailableModelCredentialHost())
     vi.stubEnv('VITE_KIMI_IMAGE_INPUT_ENABLED', 'true')
-    renderWithStore(<SettingsCenter />, { store: rootStore })
+    renderWithStore(<SettingsCenter />, { store: uiStore })
     await user.click(screen.getByRole('button', { name: '打开设置' }))
     await user.click(screen.getByRole('button', { name: '模型' }))
 
@@ -176,7 +177,7 @@ describe('SettingsCenter', () => {
     const user = userEvent.setup()
     configureModelCredentialHost(credentialHost('', true).host)
     vi.stubEnv('VITE_KIMI_IMAGE_INPUT_ENABLED', 'true')
-    renderWithStore(<SettingsCenter />, { store: rootStore })
+    renderWithStore(<SettingsCenter />, { store: uiStore })
     await user.click(screen.getByRole('button', { name: '打开设置' }))
     await user.click(screen.getByRole('button', { name: '模型' }))
 
@@ -192,7 +193,7 @@ describe('SettingsCenter', () => {
     const user = userEvent.setup()
     configureModelCredentialHost(credentialHost('kimi-test-key').host)
     vi.stubEnv('VITE_KIMI_IMAGE_INPUT_ENABLED', 'true')
-    renderWithStore(<SettingsCenter />, { store: rootStore })
+    renderWithStore(<SettingsCenter />, { store: uiStore })
     await user.click(screen.getByRole('button', { name: '打开设置' }))
     await user.click(screen.getByRole('button', { name: '模型' }))
     const createButton = screen.getByRole('button', { name: '新建 Kimi 图片对话' })

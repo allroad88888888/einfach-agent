@@ -1,3 +1,4 @@
+import { uiStore } from '../../uiStore'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -11,11 +12,11 @@ import { PluginSettingsPanel } from './PluginSettingsPanel'
 
 describe('PluginSettingsPanel', () => {
   beforeEach(() => {
-    resetPluginSettingsState(rootStore)
+    resetPluginSettingsState(uiStore)
   })
 
   afterEach(() => {
-    resetPluginSettingsState(rootStore)
+    resetPluginSettingsState(uiStore)
   })
 
   it('renders all five status badges with their diagnostics reachable', async () => {
@@ -67,7 +68,7 @@ describe('PluginSettingsPanel', () => {
       toggleStorage: createMemoryPluginToggleStorage({ disabled: { 'com.example.disabled': true } }),
     })
 
-    renderWithStore(<PluginSettingsPanel />, { store: rootStore })
+    renderWithStore(<PluginSettingsPanel />, { store: uiStore })
 
     expect(await screen.findByRole('article', { name: '插件 已启用插件' })).toHaveTextContent('已启用')
     expect(screen.getByRole('article', { name: '插件 已停用插件' })).toHaveTextContent('已停用')
@@ -98,7 +99,7 @@ describe('PluginSettingsPanel', () => {
     })
     const toggleStorage = createMemoryPluginToggleStorage()
     configurePluginSettings({ provider, toggleStorage })
-    renderWithStore(<PluginSettingsPanel />, { store: rootStore })
+    renderWithStore(<PluginSettingsPanel />, { store: uiStore })
 
     const card = await screen.findByRole('article', { name: '插件 可切换插件' })
     await user.click(within(card).getByRole('button', { name: '停用' }))
@@ -127,7 +128,7 @@ describe('PluginSettingsPanel', () => {
       ],
     })
     configurePluginSettings({ provider })
-    renderWithStore(<PluginSettingsPanel />, { store: rootStore })
+    renderWithStore(<PluginSettingsPanel />, { store: uiStore })
 
     const card = await screen.findByRole('article', { name: '插件 坏插件' })
     const details = card.querySelector('details')
@@ -157,7 +158,7 @@ describe('PluginSettingsPanel', () => {
     })
     const toggleStorage = createMemoryPluginToggleStorage()
     configurePluginSettings({ provider, toggleStorage })
-    renderWithStore(<PluginSettingsPanel />, { store: rootStore })
+    renderWithStore(<PluginSettingsPanel />, { store: uiStore })
 
     const card = await screen.findByRole('article', { name: '插件 带工具插件' })
     expect(card).toHaveTextContent('勾选后此工具将进入模型上下文与执行路径')
@@ -199,7 +200,7 @@ describe('PluginSettingsPanel', () => {
       provider,
       toggleStorage: createMemoryPluginToggleStorage({ disabled: { 'com.example.off': true } }),
     })
-    renderWithStore(<PluginSettingsPanel />, { store: rootStore })
+    renderWithStore(<PluginSettingsPanel />, { store: uiStore })
 
     const card = await screen.findByRole('article', { name: '插件 停用插件' })
     expect(within(card).getByRole('checkbox', { name: 'plugin_tool_a' })).toBeDisabled()
@@ -209,7 +210,7 @@ describe('PluginSettingsPanel', () => {
     const provider = new FakePluginSettingsProvider({ capabilities: { supported: false } })
     configurePluginSettings({ provider })
 
-    renderWithStore(<PluginSettingsPanel />, { store: rootStore })
+    renderWithStore(<PluginSettingsPanel />, { store: uiStore })
 
     expect(await screen.findByText('当前宿主不支持用户插件')).toBeInTheDocument()
     expect(screen.queryByRole('article')).toBeNull()
@@ -219,7 +220,7 @@ describe('PluginSettingsPanel', () => {
     const provider = new FakePluginSettingsProvider({ plugins: [] })
     configurePluginSettings({ provider })
 
-    renderWithStore(<PluginSettingsPanel />, { store: rootStore })
+    renderWithStore(<PluginSettingsPanel />, { store: uiStore })
 
     expect(await screen.findByText('还没有插件')).toBeInTheDocument()
   })

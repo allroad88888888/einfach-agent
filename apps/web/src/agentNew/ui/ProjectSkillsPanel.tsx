@@ -4,6 +4,7 @@
 // 目录后丢失选择，也避免把本机设置写进项目内的 SKILL.md。
 
 import { useAtomValue } from '@einfach/react'
+import { useRootAtomValue } from '@web-agent/react-plugin'
 import {
   activeSessionMetaAtom,
   disabledProjectSkillsByWorkspaceAtom,
@@ -29,9 +30,9 @@ type ProjectSkillsState = {
 }
 
 function useProjectSkillsState(): ProjectSkillsState {
-  const activeSession = useAtomValue(activeSessionMetaAtom)
-  const workspaces = useAtomValue(workspacesAtom)
-  const projectSkills = useAtomValue(projectSkillsAtom)
+  const activeSession = useRootAtomValue(activeSessionMetaAtom)
+  const workspaces = useRootAtomValue(workspacesAtom)
+  const projectSkills = useRootAtomValue(projectSkillsAtom)
   if (!activeSession) return {}
 
   const workspaceRoot = resolveSessionWorkspaceRoot(activeSession, workspaces)
@@ -92,7 +93,7 @@ function SkillEntry({
 /** Manages discovered project skills for the workspace bound to the active conversation. */
 export function ProjectSkillsPanel() {
   const { workspaceId, workspaceRoot, snapshot } = useProjectSkillsState()
-  const disabledProjectSkills = useAtomValue(disabledProjectSkillsByWorkspaceAtom)
+  const disabledProjectSkills = useRootAtomValue(disabledProjectSkillsByWorkspaceAtom)
   const refreshing = useAtomValue(projectSkillsRefreshingAtom)
   const preferenceStatus = useAtomValue(projectSkillsPreferenceStatusAtom)
 

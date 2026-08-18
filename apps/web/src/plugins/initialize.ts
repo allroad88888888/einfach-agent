@@ -27,6 +27,10 @@ import type { PluginToggleStorage } from './types'
  * （runtime/toolContext.ts 与 ProjectSkillsPanel 都用 resolveSessionWorkspaceRoot），
  * 不用 activeWorkspaceRootAtom——那是侧栏选中的工作区，与「这次 run 在哪跑」可以不一致，
  * 而插件装进的是跑 run 的那个 core。
+ *
+ * 它 **只能在 core 的 root store 里求值**：两个依赖都是 root atom，而 einfach 的 derived 只在
+ * 一个 store 里取 get。放到界面 store 上求，两个依赖都会读到默认值 —— 恒返回 undefined，
+ * 于是插件永远扫不到目录，且不报错。
  */
 const pluginWorkspaceRootAtom = atom((get): string | undefined =>
   resolveSessionWorkspaceRoot(get(activeSessionMetaAtom), get(workspacesAtom)),

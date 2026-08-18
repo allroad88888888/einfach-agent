@@ -1,8 +1,14 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
 import { atom, createStore } from '@einfach/core'
-import { Provider } from '@einfach/react'
-import { AgentStoreProvider, useAgentAtomValue, useAgentStore } from './agentStore'
+import { Provider, useAtomValue } from '@einfach/react'
+import {
+  AgentStoreProvider,
+  RootStoreProvider,
+  useAgentAtomValue,
+  useAgentStore,
+  useRootAtomValue,
+} from './coreStoreBindings'
 
 const probeAtom = atom('默认值')
 
@@ -12,7 +18,7 @@ function Probe() {
 
 afterEach(cleanup)
 
-describe('agent store 绑定', () => {
+describe('core store 绑定', () => {
   it('读的是 AgentStoreProvider 给的 store，不是 einfach 的环境 store', () => {
     const uiStore = createStore()
     const agentStore = createStore()
@@ -47,6 +53,39 @@ describe('agent store 绑定', () => {
 
     window.removeEventListener('error', swallow)
     consoleError.mockRestore()
+  })
+
+  it('三层同时在场时各读各的：界面 / root / agent 互不串', () => {
+    const uiStore = createStore()
+    const rootStore = createStore()
+    const agentStore = createStore()
+    uiStore.setter(probeAtom, '界面 store 的值')
+    rootStore.setter(probeAtom, 'root store 的值')
+    agentStore.setter(probeAtom, 'agent store 的值')
+
+    function ThreeWayProbe() {
+      return (
+        <>
+          <span data-testid="ui">{useAtomValue(probeAtom)}</span>
+          <span data-testid="root">{useRootAtomValue(probeAtom)}</span>
+          <span data-testid="agent">{useAgentAtomValue(probeAtom)}</span>
+        </>
+      )
+    }
+
+    render(
+      <Provider store={uiStore}>
+        <RootStoreProvider store={rootStore}>
+          <AgentStoreProvider store={agentStore}>
+            <ThreeWayProbe />
+          </AgentStoreProvider>
+        </RootStoreProvider>
+      </Provider>,
+    )
+
+    expect(screen.getByTestId('ui')).toHaveTextContent('界面 store 的值')
+    expect(screen.getByTestId('root')).toHaveTextContent('root store 的值')
+    expect(screen.getByTestId('agent')).toHaveTextContent('agent store 的值')
   })
 
   it('useAgentStore 交出的就是绑进去的那个实例', () => {

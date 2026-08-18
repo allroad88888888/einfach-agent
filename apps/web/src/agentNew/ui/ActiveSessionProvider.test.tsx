@@ -12,13 +12,14 @@ import {
   type ConversationItem,
 } from '@web-agent/core'
 import { ActiveSessionProvider } from './ActiveSessionProvider'
-import { getSessionUiStore } from './sessionUiStores'
+import { composerDraftAtom } from './composerDraftState'
 
-// RUI1 spike：验证「两层 Provider + key 切 store」这套地基是否工作。
-// 关键断言有两条：
+// RUI1 spike：验证「界面一个 store + agent store 按会话切」这套地基是否工作。
+// 关键断言三条：
 //   · 切根 rootStore 的 activeSessionIdAtom 后，agent store 换成新会话的，子组件读到新值；
-//   · 渲染态写在 UI store 里，**不会**落进 agent store —— 这是拆分的全部意义所在，
-//     而它错了不报错（只是某个 atom 悄悄多存了一份），所以必须有一条测试钉住。
+//   · 渲染态写在界面 store 里，**不会**落进 agent store —— 这是拆分的全部意义所在，
+//     而它错了不报错（只是某个 atom 悄悄多存了一份），所以必须有一条测试钉住；
+//   · 界面 store 不按会话分桶，所以「正在输入的东西」必须在切会话时被显式清掉。
 
 // probe 子组件：读当前会话 agent store 的 itemsAtom 长度。
 function Probe() {
@@ -26,7 +27,7 @@ function Probe() {
   return <div data-testid="probe">{items.length}</div>
 }
 
-// 一个纯渲染态 atom：挂载即写，用来验证它落在 UI store 而不是 agent store。
+// 一个纯渲染态 atom：挂载即可写，用来验证它落在界面 store 而不是 agent store。
 const viewProbeAtom = atom('未写入')
 
 function ViewProbe() {
@@ -55,7 +56,6 @@ describe('ActiveSessionProvider (RUI1)', () => {
       <ActiveSessionProvider>
         <Probe />
       </ActiveSessionProvider>,
-      { store: rootStore },
     )
 
     // 会话 a：itemsAtom 长度 1
@@ -75,44 +75,39 @@ describe('ActiveSessionProvider (RUI1)', () => {
     expect(screen.getByText(/还没有会话/)).toBeInTheDocument()
   })
 
-  it('渲染态写进该会话的 UI store，agent store 一个字都不多存', () => {
+  it('渲染态写进界面 store，agent store 一个字都不多存', () => {
     rootStore.setter(activeSessionIdAtom, 'a')
 
-    renderWithStore(
+    const { store } = renderWithStore(
       <ActiveSessionProvider>
         <ViewProbe />
       </ActiveSessionProvider>,
-      { store: rootStore },
     )
 
     act(() => {
       screen.getByTestId('view-probe').click()
     })
 
-    expect(getSessionUiStore('a').getter(viewProbeAtom)).toBe('渲染态')
+    expect(store.getter(viewProbeAtom)).toBe('渲染态')
     // 拆分前这一行会是 '渲染态' —— 渲染层随手 useAtom 的东西物理上就落在会话 store 里。
     expect(defaultCore.getSessionStore('a').store.getter(viewProbeAtom)).toBe('未写入')
   })
 
-  it('每会话一个 UI store：切走再切回来，渲染态还在，且不串会话', () => {
+  it('切会话清掉「正在输入的东西」—— 界面只有一个 store，不清就会串到下一个会话', () => {
     rootStore.setter(activeSessionIdAtom, 'a')
-    const { rerender } = renderWithStore(
+    const { store } = renderWithStore(
       <ActiveSessionProvider>
-        <ViewProbe />
-      </ActiveSessionProvider>,
-      { store: rootStore },
-    )
-    act(() => { screen.getByTestId('view-probe').click() })
-
-    act(() => { rootStore.setter(activeSessionIdAtom, 'b') })
-    expect(screen.getByTestId('view-probe')).toHaveTextContent('未写入')
-
-    act(() => { rootStore.setter(activeSessionIdAtom, 'a') })
-    rerender(
-      <ActiveSessionProvider>
-        <ViewProbe />
+        <Probe />
       </ActiveSessionProvider>,
     )
-    expect(screen.getByTestId('view-probe')).toHaveTextContent('渲染态')
+    act(() => {
+      store.setter(composerDraftAtom, '在会话 a 打了一半的字')
+    })
+
+    act(() => {
+      rootStore.setter(activeSessionIdAtom, 'b')
+    })
+
+    expect(store.getter(composerDraftAtom)).toBe('')
   })
 })

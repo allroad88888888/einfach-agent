@@ -1,3 +1,4 @@
+import { uiStore } from '../../uiStore'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -23,21 +24,21 @@ HTMLDialogElement.prototype.close = vi.fn(function close(this: HTMLDialogElement
 
 describe('SettingsCenter MCP panel', () => {
   beforeEach(() => {
-    resetMcpSettingsState(rootStore)
-    resetAppSettingsState(rootStore)
+    resetMcpSettingsState(uiStore)
+    resetAppSettingsState(uiStore)
     configureAppSettingsStorage(createMemoryAppSettingsStorage())
     configureModelCredentialHost(createUnavailableModelCredentialHost())
     configureMcpSettings({ manager: new UiMcpManager(), storage: createMemoryMcpConfigStorage() })
   })
 
   afterEach(() => {
-    resetMcpSettingsState(rootStore)
-    resetAppSettingsState(rootStore)
+    resetMcpSettingsState(uiStore)
+    resetAppSettingsState(uiStore)
   })
 
   it('warns about temporary browser storage and disables stdio selection', async () => {
     const user = userEvent.setup()
-    renderWithStore(<SettingsCenter />, { store: rootStore })
+    renderWithStore(<SettingsCenter />, { store: uiStore })
     await user.click(screen.getByRole('button', { name: '打开设置' }))
     expect(await screen.findByRole('status', { name: 'MCP 存储状态' })).toHaveTextContent('临时存储模式')
     await user.click(screen.getByRole('button', { name: '+ 添加服务' }))
@@ -49,7 +50,7 @@ describe('SettingsCenter MCP panel', () => {
     const manager = new UiMcpManager()
     const connect = vi.spyOn(manager, 'connect')
     configureMcpSettings({ manager, storage: createMemoryMcpConfigStorage() })
-    renderWithStore(<SettingsCenter />, { store: rootStore })
+    renderWithStore(<SettingsCenter />, { store: uiStore })
     await user.click(screen.getByRole('button', { name: '打开设置' }))
     await user.click(await screen.findByRole('button', { name: '+ 添加服务' }))
     await user.click(screen.getByRole('button', { name: 'JSON 导入' }))
@@ -71,7 +72,7 @@ describe('SettingsCenter MCP panel', () => {
       storage: createMemoryMcpConfigStorage(),
       capabilities: { stdio: true },
     })
-    renderWithStore(<SettingsCenter />, { store: rootStore })
+    renderWithStore(<SettingsCenter />, { store: uiStore })
     await user.click(screen.getByRole('button', { name: '打开设置' }))
     await user.click(await screen.findByRole('button', { name: '+ 添加服务' }))
     await user.type(screen.getByLabelText('服务名称'), '本地浏览器')
@@ -110,7 +111,7 @@ describe('SettingsCenter MCP panel', () => {
       storage: createMemoryMcpConfigStorage(),
       capabilities: { stdio: true },
     })
-    renderWithStore(<SettingsCenter />, { store: rootStore })
+    renderWithStore(<SettingsCenter />, { store: uiStore })
     await user.click(screen.getByRole('button', { name: '打开设置' }))
     await user.click(await screen.findByRole('button', { name: '+ 添加服务' }))
 
@@ -133,7 +134,7 @@ describe('SettingsCenter MCP panel', () => {
       storage: createMemoryMcpConfigStorage(),
       capabilities: { stdio: true, credentials: true },
     })
-    renderWithStore(<SettingsCenter />, { store: rootStore })
+    renderWithStore(<SettingsCenter />, { store: uiStore })
     await user.click(screen.getByRole('button', { name: '打开设置' }))
     await user.click(await screen.findByRole('button', { name: '+ 添加服务' }))
     await user.type(screen.getByLabelText('服务名称'), '带凭据的服务')
@@ -160,7 +161,7 @@ describe('SettingsCenter MCP panel', () => {
       storage: createMemoryMcpConfigStorage(),
       capabilities: { stdio: true, credentials: true },
     })
-    renderWithStore(<SettingsCenter />, { store: rootStore })
+    renderWithStore(<SettingsCenter />, { store: uiStore })
     await user.click(screen.getByRole('button', { name: '打开设置' }))
     await user.click(await screen.findByRole('button', { name: '+ 添加服务' }))
     await user.type(screen.getByLabelText('服务名称'), '带凭据的本地服务')
@@ -186,7 +187,7 @@ describe('SettingsCenter MCP panel', () => {
       storage: createMemoryMcpConfigStorage(),
       capabilities: { stdio: true, credentials: true },
     })
-    renderWithStore(<SettingsCenter />, { store: rootStore })
+    renderWithStore(<SettingsCenter />, { store: uiStore })
     await user.click(screen.getByRole('button', { name: '打开设置' }))
     await user.click(await screen.findByRole('button', { name: '+ 添加服务' }))
     await user.type(screen.getByLabelText('服务名称'), '格式错误')
@@ -199,7 +200,7 @@ describe('SettingsCenter MCP panel', () => {
 
   it('adds an HTTP server and keeps invalid JSON editable', async () => {
     const user = userEvent.setup()
-    renderWithStore(<SettingsCenter />, { store: rootStore })
+    renderWithStore(<SettingsCenter />, { store: uiStore })
     await user.click(screen.getByRole('button', { name: '打开设置' }))
     await user.click(await screen.findByRole('button', { name: '+ 添加服务' }))
     await user.type(screen.getByLabelText('服务名称'), '团队知识库')

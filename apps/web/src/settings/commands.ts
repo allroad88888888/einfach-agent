@@ -1,3 +1,4 @@
+import { uiStore } from '../uiStore'
 import { configureCommands, disabledProjectSkillsByWorkspaceAtom, rootStore } from '@web-agent/core'
 import { MAX_CUSTOM_INSTRUCTIONS_LENGTH, type AppSettings } from './config'
 import { hydrateModelCredentials } from './modelCredentialCommands'
@@ -47,33 +48,34 @@ export function configureAppSettingsStorage(
 }
 
 export async function hydrateAppSettings(): Promise<void> {
-  const current = rootStore.getter(customInstructionsStatusAtom)
+  const current = uiStore.getter(customInstructionsStatusAtom)
   if (current.status !== 'idle') return
 
-  rootStore.setter(customInstructionsStatusAtom, { status: 'loading' })
+  uiStore.setter(customInstructionsStatusAtom, { status: 'loading' })
   try {
     const settings = activeStorage.load()
     const customInstructions = settings.agent.customInstructions
-    rootStore.setter(appSettingsAtom, settings)
-    rootStore.setter(
+    uiStore.setter(appSettingsAtom, settings)
+    uiStore.setter(
       disabledProjectSkillsByWorkspaceAtom,
       settings.agent.disabledProjectSkills,
     )
-    rootStore.setter(customInstructionsDraftAtom, customInstructions)
+    uiStore.setter(customInstructionsDraftAtom, customInstructions)
     configureCommands({
       customInstructions,
       modelUserId: settings.installationId,
     })
-    rootStore.setter(customInstructionsStatusAtom, { status: 'ready' })
+    uiStore.setter(customInstructionsStatusAtom, { status: 'ready' })
   } catch (error) {
-    rootStore.setter(customInstructionsAtom, '')
-    rootStore.setter(customInstructionsDraftAtom, '')
+    uiStore.setter(customInstructionsAtom, '')
+    uiStore.setter(customInstructionsDraftAtom, '')
+    // 这一个是 **core 的 root atom**（工作区级 Skills 禁用偏好，进持久化），不是界面态。
     rootStore.setter(disabledProjectSkillsByWorkspaceAtom, {})
     configureCommands({
       customInstructions: '',
       modelUserId: undefined,
     })
-    rootStore.setter(customInstructionsStatusAtom, {
+    uiStore.setter(customInstructionsStatusAtom, {
       status: 'error',
       error: errorMessage(error),
     })
@@ -85,21 +87,21 @@ export async function hydrateAppSettings(): Promise<void> {
 /** Persists a complete non-secret settings snapshot before publishing it to the UI. */
 export function saveAppSettings(settings: AppSettings): void {
   activeStorage.save(settings)
-  rootStore.setter(appSettingsAtom, settings)
+  uiStore.setter(appSettingsAtom, settings)
 }
 
 export function updateCustomInstructionsDraft(value: string): void {
-  rootStore.setter(
+  uiStore.setter(
     customInstructionsDraftAtom,
     value.slice(0, MAX_CUSTOM_INSTRUCTIONS_LENGTH),
   )
-  rootStore.setter(customInstructionsStatusAtom, { status: 'ready' })
+  uiStore.setter(customInstructionsStatusAtom, { status: 'ready' })
 }
 
 export function saveCustomInstructions(): boolean {
-  const value = rootStore.getter(customInstructionsDraftAtom).trim()
+  const value = uiStore.getter(customInstructionsDraftAtom).trim()
   try {
-    const settings = rootStore.getter(appSettingsAtom)
+    const settings = uiStore.getter(appSettingsAtom)
     activeStorage.save({
       ...settings,
       agent: {
@@ -107,13 +109,13 @@ export function saveCustomInstructions(): boolean {
         customInstructions: value,
       },
     })
-    rootStore.setter(customInstructionsAtom, value)
-    rootStore.setter(customInstructionsDraftAtom, value)
+    uiStore.setter(customInstructionsAtom, value)
+    uiStore.setter(customInstructionsDraftAtom, value)
     configureCommands({ customInstructions: value })
-    rootStore.setter(customInstructionsStatusAtom, { status: 'saved' })
+    uiStore.setter(customInstructionsStatusAtom, { status: 'saved' })
     return true
   } catch (error) {
-    rootStore.setter(customInstructionsStatusAtom, {
+    uiStore.setter(customInstructionsStatusAtom, {
       status: 'error',
       error: errorMessage(error),
     })

@@ -1,6 +1,7 @@
+import { uiStore } from '../uiStore'
 // 项目 Skills 设置面板的命令面：工作区级启停偏好与重新扫描。
 // ---------------------------------------------------------------------------
-// UI 不直接写 atom 或存储；这里先落盘，再把同一偏好发布给 runtime root store，确保下一次
+// UI 不直接写 atom 或存储；这里先落盘，再把同一偏好发布给 core 的 root store，确保下一次
 // skill_manifest、skill_search 与 skill_read 读取的都是用户刚刚选择的集合。
 
 import {
@@ -29,7 +30,7 @@ export function updateProjectSkillEnabled(
   enabled: boolean,
 ): boolean {
   try {
-    const settings = rootStore.getter(appSettingsAtom)
+    const settings = uiStore.getter(appSettingsAtom)
     const disabledProjectSkills = setProjectSkillEnabled(
       settings.agent.disabledProjectSkills,
       workspaceId,
@@ -40,11 +41,13 @@ export function updateProjectSkillEnabled(
       ...settings,
       agent: { ...settings.agent, disabledProjectSkills },
     })
+    // 发布给 runtime 的是 **core 的 root store** —— 这条偏好要被 skill_manifest / skill_search
+    // 读到，不是界面态；面板自己的状态（保存中/刷新中）才在界面 store 里。
     rootStore.setter(disabledProjectSkillsByWorkspaceAtom, disabledProjectSkills)
-    rootStore.setter(projectSkillsPreferenceStatusAtom, { status: 'saved' })
+    uiStore.setter(projectSkillsPreferenceStatusAtom, { status: 'saved' })
     return true
   } catch (error) {
-    rootStore.setter(projectSkillsPreferenceStatusAtom, {
+    uiStore.setter(projectSkillsPreferenceStatusAtom, {
       status: 'error',
       error: errorMessage(error),
     })
@@ -54,16 +57,16 @@ export function updateProjectSkillEnabled(
 
 /** Re-scans the active workspace while exposing a single shared loading state to the panel. */
 export async function refreshProjectSkillsFromSettings(): Promise<void> {
-  if (rootStore.getter(projectSkillsRefreshingAtom)) return
-  rootStore.setter(projectSkillsRefreshingAtom, true)
+  if (uiStore.getter(projectSkillsRefreshingAtom)) return
+  uiStore.setter(projectSkillsRefreshingAtom, true)
   try {
     await refreshProjectSkills()
   } catch (error) {
-    rootStore.setter(projectSkillsPreferenceStatusAtom, {
+    uiStore.setter(projectSkillsPreferenceStatusAtom, {
       status: 'error',
       error: errorMessage(error),
     })
   } finally {
-    rootStore.setter(projectSkillsRefreshingAtom, false)
+    uiStore.setter(projectSkillsRefreshingAtom, false)
   }
 }

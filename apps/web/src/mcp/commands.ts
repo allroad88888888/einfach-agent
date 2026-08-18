@@ -1,4 +1,4 @@
-import { rootStore } from '@web-agent/core'
+import { uiStore } from '../uiStore'
 import { createBrowserMcpConfigStorage, type McpConfigStorage } from './persistence'
 import { createMcpSettingsService, type McpSettingsManager, type McpSettingsService } from './service'
 import {
@@ -42,7 +42,7 @@ const unconfiguredManager: McpSettingsManager = {
 }
 
 let activeService: McpSettingsService = createMcpSettingsService({
-  store: rootStore,
+  store: uiStore,
   manager: unconfiguredManager,
   storage: createBrowserMcpConfigStorage(),
 })
@@ -76,9 +76,9 @@ export function configureMcpSettings({
     stdio: capabilities?.stdio === true,
     credentials: capabilities?.credentials === true,
   }
-  rootStore.setter(mcpSettingsCapabilitiesAtom, resolvedCapabilities)
+  uiStore.setter(mcpSettingsCapabilitiesAtom, resolvedCapabilities)
   activeService = createMcpSettingsService({
-    store: rootStore,
+    store: uiStore,
     manager,
     storage,
     ...(toolNameCacheStorage ? { toolNameCacheStorage } : {}),
@@ -119,34 +119,34 @@ export function hydrateMcpSettings(): Promise<void> {
 }
 
 export function openMcpAddForm(): void {
-  rootStore.setter(mcpFormErrorAtom, undefined)
-  rootStore.setter(mcpImportStatusAtom, undefined)
-  rootStore.setter(mcpAddModeAtom, 'form')
-  rootStore.setter(mcpDraftAtom, { ...EMPTY_MCP_DRAFT })
-  rootStore.setter(mcpJsonDraftAtom, DEFAULT_MCP_JSON_DRAFT)
-  rootStore.setter(mcpAddFormOpenAtom, true)
+  uiStore.setter(mcpFormErrorAtom, undefined)
+  uiStore.setter(mcpImportStatusAtom, undefined)
+  uiStore.setter(mcpAddModeAtom, 'form')
+  uiStore.setter(mcpDraftAtom, { ...EMPTY_MCP_DRAFT })
+  uiStore.setter(mcpJsonDraftAtom, DEFAULT_MCP_JSON_DRAFT)
+  uiStore.setter(mcpAddFormOpenAtom, true)
 }
 
 export function closeMcpAddForm(): void {
-  rootStore.setter(mcpFormErrorAtom, undefined)
-  rootStore.setter(mcpAddFormOpenAtom, false)
+  uiStore.setter(mcpFormErrorAtom, undefined)
+  uiStore.setter(mcpAddFormOpenAtom, false)
 }
 
 export function updateMcpDraft(patch: Partial<McpAddServerDraft>): void {
-  rootStore.setter(mcpDraftAtom, (previous) => ({ ...previous, ...patch }))
-  rootStore.setter(mcpFormErrorAtom, undefined)
-  rootStore.setter(mcpImportStatusAtom, undefined)
+  uiStore.setter(mcpDraftAtom, (previous) => ({ ...previous, ...patch }))
+  uiStore.setter(mcpFormErrorAtom, undefined)
+  uiStore.setter(mcpImportStatusAtom, undefined)
 }
 
 export function selectMcpAddMode(mode: McpAddMode): void {
-  rootStore.setter(mcpAddModeAtom, mode)
-  rootStore.setter(mcpFormErrorAtom, undefined)
+  uiStore.setter(mcpAddModeAtom, mode)
+  uiStore.setter(mcpFormErrorAtom, undefined)
 }
 
 export function updateMcpJsonDraft(value: string): void {
-  rootStore.setter(mcpJsonDraftAtom, value)
-  rootStore.setter(mcpFormErrorAtom, undefined)
-  rootStore.setter(mcpImportStatusAtom, undefined)
+  uiStore.setter(mcpJsonDraftAtom, value)
+  uiStore.setter(mcpFormErrorAtom, undefined)
+  uiStore.setter(mcpImportStatusAtom, undefined)
 }
 
 export function submitMcpDraft(): Promise<boolean> {
@@ -154,7 +154,7 @@ export function submitMcpDraft(): Promise<boolean> {
 }
 
 export function submitMcpJsonDraft(): Promise<boolean> {
-  return activeService.importJson(rootStore.getter(mcpJsonDraftAtom))
+  return activeService.importJson(uiStore.getter(mcpJsonDraftAtom))
 }
 
 export function reconnectMcpServer(id: string): Promise<void> {

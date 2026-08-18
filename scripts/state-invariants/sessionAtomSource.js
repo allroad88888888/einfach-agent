@@ -102,9 +102,26 @@ export async function coreAtomFilesWithDeclarations(repositoryRoot, files) {
   return owning
 }
 
+/**
+ * core 的 root atom（跨会话登记表）名单。
+ *
+ * 与会话 atom 分开导出，因为两者的**读法**不同：root atom 走 `useRootAtomValue`，会话 atom 走
+ * `useAgentAtomValue`。规则 5 两边都要判 —— 界面拿到环境 store 之后，core 的任何一个 atom
+ * 用裸 hook 读都会落到界面 store 上、拿到默认值，root 与 session 一视同仁。
+ */
+export const ROOT_ATOM_FILE = 'packages/agent-core/src/state/rootAtoms.ts'
+
+export async function rootAtomDeclarations(repositoryRoot) {
+  return atomDeclarationsIn(repositoryRoot, [ROOT_ATOM_FILE])
+}
+
 export async function sessionAtomDeclarations(repositoryRoot) {
+  return atomDeclarationsIn(repositoryRoot, SESSION_ATOM_FILES)
+}
+
+async function atomDeclarationsIn(repositoryRoot, sourceFiles) {
   const declarations = []
-  for (const file of SESSION_ATOM_FILES) {
+  for (const file of sourceFiles) {
     const source = await readFile(resolve(repositoryRoot, file), 'utf8')
     let found = 0
     for (const match of source.matchAll(declarationPattern)) {

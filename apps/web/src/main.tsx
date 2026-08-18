@@ -1,6 +1,8 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { Provider } from '@einfach/react'
+import { RootStoreProvider } from '@web-agent/react-plugin'
+import { uiStore } from './uiStore'
 import {
   activeSessionMetaAtom,
   configureCommands,
@@ -149,11 +151,17 @@ function currentView(): string | null {
   return new URLSearchParams(window.location.search).get('view')
 }
 
+// 环境 store 给**界面**（一个，全局唯一）；core 的两个 store 各走自己的 Provider。
+// 方向是刻意的，见 packages/agent-react/src/coreStoreBindings.tsx 的文件头：漏改一处时
+// 「core atom 读到默认值」当场可见，反过来「界面 atom 落进 core 的 store」毫无症状。
+// per-session 的 agent store 由 ActiveSessionProvider 在右栏按会话绑。
 function renderRoot(children: React.ReactNode): void {
   createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
-      <Provider store={core.rootStore}>
-        {children}
+      <Provider store={uiStore}>
+        <RootStoreProvider store={core.rootStore}>
+          {children}
+        </RootStoreProvider>
       </Provider>
     </React.StrictMode>,
   )

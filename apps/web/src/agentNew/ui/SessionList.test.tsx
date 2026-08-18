@@ -36,7 +36,7 @@ describe('SessionList (P-U2)', () => {
 
   it('渲染所有会话标题', () => {
     seed()
-    renderWithStore(<SessionList />, { store: rootStore })
+    renderWithStore(<SessionList />)
 
     expect(screen.getByText('会话一')).toBeInTheDocument()
     expect(screen.getByText('会话二')).toBeInTheDocument()
@@ -44,7 +44,7 @@ describe('SessionList (P-U2)', () => {
 
   it('点会话标题 → 以其 id 调 selectSession', () => {
     seed()
-    renderWithStore(<SessionList />, { store: rootStore })
+    renderWithStore(<SessionList />)
 
     fireEvent.click(screen.getByText('会话二'))
     expect(selectSession).toHaveBeenCalledWith('s2')
@@ -52,7 +52,7 @@ describe('SessionList (P-U2)', () => {
 
   it('删除按钮两步确认后 → 以其 id 调 removeSession（TU2 起单击不再直删）', () => {
     seed()
-    renderWithStore(<SessionList />, { store: rootStore })
+    renderWithStore(<SessionList />)
 
     const item = screen.getByText('会话二').closest('.agentnew-session-item') as HTMLElement
     fireEvent.click(within(item).getByLabelText('删除'))
@@ -62,7 +62,7 @@ describe('SessionList (P-U2)', () => {
 
   it('当前 active 会话（s1）带 active class', () => {
     seed()
-    const { container } = renderWithStore(<SessionList />, { store: rootStore })
+    const { container } = renderWithStore(<SessionList />)
 
     const active = container.querySelector('.agentnew-session-item.active')
     expect(active).not.toBeNull()
@@ -72,7 +72,7 @@ describe('SessionList (P-U2)', () => {
   // —— TT4：双击行内改名 ————————————————————————————————————————————————
   it('双击标题 → 换渲染 input，初值为原 title', () => {
     seed()
-    renderWithStore(<SessionList />, { store: rootStore })
+    renderWithStore(<SessionList />)
 
     fireEvent.doubleClick(screen.getByText('会话一'))
 
@@ -83,7 +83,7 @@ describe('SessionList (P-U2)', () => {
 
   it('改值 + Enter → 以新值调 renameSession 并退出编辑（随后 blur 不重复提交）', () => {
     seed()
-    renderWithStore(<SessionList />, { store: rootStore })
+    renderWithStore(<SessionList />)
 
     fireEvent.doubleClick(screen.getByText('会话一'))
     const input = screen.getByDisplayValue('会话一')
@@ -102,7 +102,7 @@ describe('SessionList (P-U2)', () => {
 
   it('Esc → 退出编辑且不调 renameSession（随后 blur 也不提交）', () => {
     seed()
-    renderWithStore(<SessionList />, { store: rootStore })
+    renderWithStore(<SessionList />)
 
     fireEvent.doubleClick(screen.getByText('会话一'))
     const input = screen.getByDisplayValue('会话一')
@@ -119,7 +119,7 @@ describe('SessionList (P-U2)', () => {
 
   it('失焦（blur）→ 提交一次并退出编辑', () => {
     seed()
-    renderWithStore(<SessionList />, { store: rootStore })
+    renderWithStore(<SessionList />)
 
     fireEvent.doubleClick(screen.getByText('会话二'))
     const input = screen.getByDisplayValue('会话二')
@@ -133,7 +133,7 @@ describe('SessionList (P-U2)', () => {
 
   it('IME 组合中的 Enter（isComposing）→ 不提交不退出；组合结束后 Enter 才提交（codex P2）', () => {
     seed()
-    renderWithStore(<SessionList />, { store: rootStore })
+    renderWithStore(<SessionList />)
 
     fireEvent.doubleClick(screen.getByText('会话一'))
     const input = screen.getByDisplayValue('会话一')
@@ -169,7 +169,7 @@ describe('SessionList (P-U2)', () => {
 
   it('按 updatedAt 倒序渲染（createdAt 顺序不作数）', () => {
     seedForOrdering()
-    const { container } = renderWithStore(<SessionList />, { store: rootStore })
+    const { container } = renderWithStore(<SessionList />)
 
     expect(titlesInOrder(container)).toEqual(['会话B', '会话A', '会话C'])
   })
@@ -180,7 +180,7 @@ describe('SessionList (P-U2)', () => {
       sb: { id: 'sb', title: '会话B', settings: { vendor: 'deepseek', model: 'x' }, createdAt: 2, updatedAt: 50 },
     })
     rootStore.setter(activeSessionIdAtom, 'sa')
-    const { container } = renderWithStore(<SessionList />, { store: rootStore })
+    const { container } = renderWithStore(<SessionList />)
 
     expect(titlesInOrder(container)).toEqual(['会话B', '会话A'])
   })
@@ -193,7 +193,7 @@ describe('SessionList (P-U2)', () => {
 
   it('首击 × → 不删，按钮进入确认态（aria-label「确认删除」+ .confirming）', () => {
     seed()
-    renderWithStore(<SessionList />, { store: rootStore })
+    renderWithStore(<SessionList />)
 
     const item = rowOf('会话二')
     fireEvent.click(within(item).getByLabelText('删除'))
@@ -205,7 +205,7 @@ describe('SessionList (P-U2)', () => {
 
   it('确认态再击 → 以其 id 调 removeSession 一次', () => {
     seed()
-    renderWithStore(<SessionList />, { store: rootStore })
+    renderWithStore(<SessionList />)
 
     const item = rowOf('会话二')
     fireEvent.click(within(item).getByLabelText('删除'))
@@ -217,7 +217,7 @@ describe('SessionList (P-U2)', () => {
 
   it('确认态下鼠标移出该行 → 复位；此后再点只是重新进入确认态、不删', () => {
     seed()
-    renderWithStore(<SessionList />, { store: rootStore })
+    renderWithStore(<SessionList />)
 
     const item = rowOf('会话二')
     fireEvent.click(within(item).getByLabelText('删除'))
@@ -237,7 +237,7 @@ describe('SessionList (P-U2)', () => {
     vi.useFakeTimers()
     try {
       seed()
-      renderWithStore(<SessionList />, { store: rootStore })
+      renderWithStore(<SessionList />)
 
       const item = rowOf('会话二')
       fireEvent.click(within(item).getByLabelText('删除'))
@@ -260,7 +260,7 @@ describe('SessionList (P-U2)', () => {
     vi.useFakeTimers()
     try {
       seed()
-      renderWithStore(<SessionList />, { store: rootStore })
+      renderWithStore(<SessionList />)
 
       const item1 = rowOf('会话一')
       const item2 = rowOf('会话二')
@@ -295,7 +295,7 @@ describe('SessionList (P-U2)', () => {
 
   it('确认态的行开始改名编辑 → 确认态复位（避免视觉打架）', () => {
     seed()
-    renderWithStore(<SessionList />, { store: rootStore })
+    renderWithStore(<SessionList />)
 
     const item = rowOf('会话一')
     fireEvent.click(within(item).getByLabelText('删除'))

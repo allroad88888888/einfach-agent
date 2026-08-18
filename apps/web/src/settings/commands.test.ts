@@ -1,3 +1,4 @@
+import { uiStore } from '../uiStore'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { configureCommands, defaultCore, rootStore } from '@web-agent/core'
 import {
@@ -64,7 +65,7 @@ const KIMI_CN_TARGET = { provider: 'kimi', scope: 'cn' } as const
 
 describe('app settings commands', () => {
   beforeEach(() => {
-    resetAppSettingsState(rootStore)
+    resetAppSettingsState(uiStore)
     configureCommands({
       customInstructions: '',
       modelCredentials: { deepseek: 'desktop-managed-credential' },
@@ -73,7 +74,7 @@ describe('app settings commands', () => {
   })
 
   afterEach(() => {
-    resetAppSettingsState(rootStore)
+    resetAppSettingsState(uiStore)
     configureModelCredentialHost(createUnavailableModelCredentialHost())
   })
 
@@ -92,7 +93,7 @@ describe('app settings commands', () => {
 
     await hydrateAppSettings()
 
-    expect(rootStore.getter(customInstructionsStatusAtom)).toMatchObject({
+    expect(uiStore.getter(customInstructionsStatusAtom)).toMatchObject({
       status: 'error',
       error: '无法安全清理旧版模型凭据，请清除应用网站数据后重试',
     })
@@ -109,22 +110,22 @@ describe('app settings commands', () => {
     await expect(saveKimiApiKey()).resolves.toBe(true)
     expect(fake.saved(DEEPSEEK_TARGET)).toBe('deepseek-test-key')
     expect(fake.saved(KIMI_CN_TARGET)).toBe('kimi-test-key')
-    expect(rootStore.getter(deepSeekCredential.draft)).toBe('')
-    expect(rootStore.getter(kimiCredential.draft)).toBe('')
-    expect(rootStore.getter(deepSeekCredential.status)).toMatchObject({
+    expect(uiStore.getter(deepSeekCredential.draft)).toBe('')
+    expect(uiStore.getter(kimiCredential.draft)).toBe('')
+    expect(uiStore.getter(deepSeekCredential.status)).toMatchObject({
       status: 'saved', configured: true, source: 'config',
     })
-    expect(rootStore.getter(kimiCredential.status)).toMatchObject({
+    expect(uiStore.getter(kimiCredential.status)).toMatchObject({
       status: 'saved', configured: true, source: 'config',
     })
-    expect(JSON.stringify(rootStore.getter(appSettingsAtom))).not.toContain('test-key')
+    expect(JSON.stringify(uiStore.getter(appSettingsAtom))).not.toContain('test-key')
 
     await expect(deleteDeepSeekApiKey()).resolves.toBe(true)
     await expect(deleteKimiApiKey()).resolves.toBe(true)
     expect(fake.saved(DEEPSEEK_TARGET)).toBe('')
     expect(fake.saved(KIMI_CN_TARGET)).toBe('')
-    expect(rootStore.getter(deepSeekCredential.status)).toMatchObject({ configured: false })
-    expect(rootStore.getter(kimiCredential.status)).toMatchObject({ configured: false })
+    expect(uiStore.getter(deepSeekCredential.status)).toMatchObject({ configured: false })
+    expect(uiStore.getter(kimiCredential.status)).toMatchObject({ configured: false })
   })
 
   it('preserves the draft when the saved credential cannot be verified', async () => {
@@ -138,8 +139,8 @@ describe('app settings commands', () => {
 
     await expect(saveDeepSeekApiKey()).resolves.toBe(false)
 
-    expect(rootStore.getter(deepSeekCredential.draft)).toBe('deepseek-unverified-key')
-    expect(rootStore.getter(deepSeekCredential.status)).toMatchObject({
+    expect(uiStore.getter(deepSeekCredential.draft)).toBe('deepseek-unverified-key')
+    expect(uiStore.getter(deepSeekCredential.status)).toMatchObject({
       status: 'error',
       configured: false,
       source: 'missing',
@@ -162,9 +163,9 @@ describe('app settings commands', () => {
 
     await expect(saveDeepSeekApiKey()).resolves.toBe(false)
 
-    const status = rootStore.getter(deepSeekCredential.status)
+    const status = uiStore.getter(deepSeekCredential.status)
     expect(statusCalls).toBe(0)
-    expect(rootStore.getter(deepSeekCredential.draft)).toBe('deepseek-save-secret')
+    expect(uiStore.getter(deepSeekCredential.draft)).toBe('deepseek-save-secret')
     expect(status).toMatchObject({
       status: 'error',
       configured: false,
@@ -189,9 +190,9 @@ describe('app settings commands', () => {
 
     await expect(saveDeepSeekApiKey()).resolves.toBe(false)
 
-    const status = rootStore.getter(deepSeekCredential.status)
+    const status = uiStore.getter(deepSeekCredential.status)
     expect(statusCalls).toBe(1)
-    expect(rootStore.getter(deepSeekCredential.draft)).toBe('deepseek-verification-secret')
+    expect(uiStore.getter(deepSeekCredential.draft)).toBe('deepseek-verification-secret')
     expect(status).toMatchObject({
       status: 'error',
       configured: false,
@@ -219,7 +220,7 @@ describe('app settings commands', () => {
 
     await hydrateModelCredentials()
 
-    const entries = rootStore.getter(modelCredentialEntriesAtom)
+    const entries = uiStore.getter(modelCredentialEntriesAtom)
     expect(entries['deepseek-default'].state).toEqual({
       status: 'error',
       error: '无法读取 DeepSeek API Key 状态，请重试。',

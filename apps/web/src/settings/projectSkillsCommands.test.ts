@@ -1,3 +1,4 @@
+import { uiStore } from '../uiStore'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { disabledProjectSkillsByWorkspaceAtom, rootStore } from '@web-agent/core'
 import { configureAppSettingsStorage } from './commands'
@@ -10,16 +11,16 @@ import { projectSkillsPreferenceStatusAtom } from './projectSkillsState'
 
 describe('project skills settings commands', () => {
   beforeEach(() => {
-    resetAppSettingsState(rootStore)
+    resetAppSettingsState(uiStore)
     configureAppSettingsStorage(createMemoryAppSettingsStorage())
   })
 
   afterEach(() => {
-    resetAppSettingsState(rootStore)
+    resetAppSettingsState(uiStore)
   })
 
   it('persists a workspace-local disable choice before publishing it to runtime state', () => {
-    const storage = createMemoryAppSettingsStorage(rootStore.getter(appSettingsAtom))
+    const storage = createMemoryAppSettingsStorage(uiStore.getter(appSettingsAtom))
     configureAppSettingsStorage(storage)
 
     expect(updateProjectSkillEnabled('workspace-1', 'project/release-check', false)).toBe(true)
@@ -29,18 +30,18 @@ describe('project skills settings commands', () => {
     expect(rootStore.getter(disabledProjectSkillsByWorkspaceAtom)).toEqual({
       'workspace-1': ['project/release-check'],
     })
-    expect(rootStore.getter(projectSkillsPreferenceStatusAtom)).toEqual({ status: 'saved' })
+    expect(uiStore.getter(projectSkillsPreferenceStatusAtom)).toEqual({ status: 'saved' })
   })
 
   it('keeps runtime preferences unchanged when persistence fails', () => {
     configureAppSettingsStorage({
-      load: () => rootStore.getter(appSettingsAtom),
+      load: () => uiStore.getter(appSettingsAtom),
       save: () => { throw new Error('storage unavailable') },
     })
 
     expect(updateProjectSkillEnabled('workspace-1', 'project/release-check', false)).toBe(false)
     expect(rootStore.getter(disabledProjectSkillsByWorkspaceAtom)).toEqual({})
-    expect(rootStore.getter(projectSkillsPreferenceStatusAtom)).toEqual({
+    expect(uiStore.getter(projectSkillsPreferenceStatusAtom)).toEqual({
       status: 'error', error: 'storage unavailable',
     })
   })

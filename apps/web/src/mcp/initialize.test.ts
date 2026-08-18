@@ -1,3 +1,4 @@
+import { uiStore } from '../uiStore'
 // 冷启动这条真链路：磁盘上的工具名缓存 → 进程内快照 → 模型看得见的三处 + 设置面板（B5/D2/D3a）。
 //
 // toolProbeWiring.test.ts 证明的是「组装函数把线接对了」，本文件证明的是「生产装配真的调了它，
@@ -227,14 +228,14 @@ describe('MCP 冷启动装配 · 缓存一路走到模型与界面（B5）', () 
 
     expect(classifyToolRisk('mcp__imported__run', {}, { mcpToolLaunchTarget }).requiresConfirmation)
       .toBe(true)
-    const imported = rootStore.getter(mcpServerConfigsAtom).find((entry) => entry.id === 'imported')
+    const imported = uiStore.getter(mcpServerConfigsAtom).find((entry) => entry.id === 'imported')
     expect(imported?.transport).toBe('stdio')
     expect(imported && 'launchConsent' in imported ? imported.launchConsent : undefined)
       .toBeUndefined()
   })
 
   it('设置面板：未连接的服务带着上次已知清单进服务视图', () => {
-    const server = rootStore.getter(mcpServersAtom).find((entry) => entry.id === 'docs')
+    const server = uiStore.getter(mcpServersAtom).find((entry) => entry.id === 'docs')
 
     expect(server?.status).toBe('disconnected')
     // 当前连接的工具数仍是 0（它确实没连上），历史挂在另一个字段上，两者不混。

@@ -68,17 +68,17 @@ describe('ProjectSkillsPanel', () => {
   })
 
   it('在所有项目 Skills 空状态中显示 .webAgent/skills，且不显示旧路径', () => {
-    const unbound = renderWithStore(<ProjectSkillsPanel />, { store: rootStore })
+    const unbound = renderWithStore(<ProjectSkillsPanel />)
     expect(unbound.container).toHaveTextContent('.webAgent/skills/')
     unbound.unmount()
 
     seedPanel()
-    const unscanned = renderWithStore(<ProjectSkillsPanel />, { store: rootStore })
+    const unscanned = renderWithStore(<ProjectSkillsPanel />)
     expect(unscanned.container).toHaveTextContent('.webAgent/skills/')
     unscanned.unmount()
 
     seedPanel(projectSkillSnapshot([]))
-    const empty = renderWithStore(<ProjectSkillsPanel />, { store: rootStore })
+    const empty = renderWithStore(<ProjectSkillsPanel />)
     expect(empty.container).toHaveTextContent('.webAgent/skills/<name>/SKILL.md')
   })
 
@@ -95,7 +95,7 @@ describe('ProjectSkillsPanel', () => {
       'workspace-1': ['project/release-check'],
     })
     const user = userEvent.setup()
-    renderWithStore(<ProjectSkillsPanel />, { store: rootStore })
+    renderWithStore(<ProjectSkillsPanel />)
 
     expect(screen.getByText('.webAgent/skills/')).toHaveAttribute('title', '来源目录：.webAgent/skills/')
     expect(screen.getByText('已停用')).toBeInTheDocument()

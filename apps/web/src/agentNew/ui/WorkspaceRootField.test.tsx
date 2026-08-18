@@ -32,7 +32,7 @@ describe('WorkspaceRootField', () => {
 
   it('选择目录后写入当前一级工作区', async () => {
     seedActiveSession()
-    renderWithStore(<WorkspaceRootField />, { store: rootStore })
+    renderWithStore(<WorkspaceRootField />)
 
     expect(screen.getByLabelText('工作区目录')).toHaveValue('/current/workspace')
     await userEvent.click(screen.getByRole('button', { name: '选择' }))

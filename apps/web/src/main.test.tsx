@@ -1,3 +1,4 @@
+import { uiStore } from './uiStore'
 import { describe, expect, it, vi } from 'vitest'
 
 const defaultPersistenceFacade = vi.hoisted(() => ({
@@ -83,13 +84,12 @@ describe('main entry: MCP 启动装配（C1）', () => {
 
     const { isMcpSettingsConfigured } = await import('./mcp/commands')
     const { mcpHydrationAtom } = await import('./mcp/state')
-    const { rootStore } = await import('@web-agent/core/state/rootStore')
     const { defaultCore } = await import('@web-agent/core')
     const configurePersistence = vi.spyOn(defaultCore.persistence, 'configure')
     const hydratePersistence = vi.spyOn(defaultCore.persistence, 'hydrate').mockResolvedValue(false)
 
     expect(isMcpSettingsConfigured()).toBe(false)
-    expect(rootStore.getter(mcpHydrationAtom).status).toBe('idle')
+    expect(uiStore.getter(mcpHydrationAtom).status).toBe('idle')
 
     // 真正的入口文件：本测试从未 import 任何 SettingsDialog/SettingsCenter 模块。
     await import('./main')
@@ -110,9 +110,9 @@ describe('main entry: MCP 启动装配（C1）', () => {
     // hydrateMcpSettings() 故意不被 main.tsx await（不阻塞首屏渲染），
     // 但既然它已经被触发，等待一次微任务后应当离开初始的 idle 状态。
     await vi.waitFor(() => {
-      expect(rootStore.getter(mcpHydrationAtom).status).not.toBe('idle')
+      expect(uiStore.getter(mcpHydrationAtom).status).not.toBe('idle')
     })
-    expect(rootStore.getter(mcpHydrationAtom).status).toBe('ready')
+    expect(uiStore.getter(mcpHydrationAtom).status).toBe('ready')
   })
 
   // 依赖上一个用例先跑：main.tsx 顶层已经装配过一次。C2 把 SettingsDialog 里重复的
@@ -125,18 +125,16 @@ describe('main entry: MCP 启动装配（C1）', () => {
     const { initializeMcpSettings } = await import('./mcp/initialize')
     const { hydrateMcpSettings, isMcpSettingsConfigured } = await import('./mcp/commands')
     const { mcpHydrationAtom } = await import('./mcp/state')
-    const { rootStore } = await import('@web-agent/core/state/rootStore')
-
     expect(isMcpSettingsConfigured()).toBe(true)
-    expect(rootStore.getter(mcpHydrationAtom).status).toBe('ready')
+    expect(uiStore.getter(mcpHydrationAtom).status).toBe('ready')
 
     initializeMcpSettings()
     void hydrateMcpSettings()
 
     // 幂等：guard 挡住了重新 configureMcpSettings，状态没有被打回 loading/idle。
-    expect(rootStore.getter(mcpHydrationAtom).status).toBe('ready')
+    expect(uiStore.getter(mcpHydrationAtom).status).toBe('ready')
     await expect(hydrateMcpSettings()).resolves.toBeUndefined()
-    expect(rootStore.getter(mcpHydrationAtom).status).toBe('ready')
+    expect(uiStore.getter(mcpHydrationAtom).status).toBe('ready')
   })
 
   // P10：插件运行时同样在 main.tsx 启动时装配（理由与 MCP 一致——插件注册的是 hook 与工具，
@@ -147,13 +145,11 @@ describe('main entry: MCP 启动装配（C1）', () => {
   it('浏览器预览宿主：插件面保持 unsupported 默认，不接任何真实加载面（P10）', async () => {
     const { isPluginSettingsConfigured } = await import('./plugins/commands')
     const { pluginHydrationAtom, pluginSettingsCapabilitiesAtom } = await import('./plugins/state')
-    const { rootStore } = await import('@web-agent/core/state/rootStore')
-
     expect(isPluginSettingsConfigured()).toBe(false)
     // main.tsx 同样不 await 这次 hydrate（不阻塞首屏），但它确实被触发了。
     await vi.waitFor(() => {
-      expect(rootStore.getter(pluginHydrationAtom).status).toBe('ready')
+      expect(uiStore.getter(pluginHydrationAtom).status).toBe('ready')
     })
-    expect(rootStore.getter(pluginSettingsCapabilitiesAtom)).toEqual({ supported: false })
+    expect(uiStore.getter(pluginSettingsCapabilitiesAtom)).toEqual({ supported: false })
   })
 })

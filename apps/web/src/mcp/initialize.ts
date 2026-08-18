@@ -1,5 +1,6 @@
+import { uiStore } from '../uiStore'
 import { isTauri } from '@tauri-apps/api/core'
-import { defaultCore, rootStore, configureCommands } from '@web-agent/core'
+import { defaultCore, configureCommands } from '@web-agent/core'
 import {
   createMcpClientManager,
   createMcpConnectorRouter,
@@ -33,7 +34,7 @@ import { wireMcpToolProbes } from './toolProbeWiring'
  * 任何一步答不上来都返回 false：宁可多问一次，不能静默起一次进程。
  */
 function isMcpLaunchConsented(serverId: string, commandLine: string): boolean {
-  const config = rootStore.getter(mcpServerConfigsAtom).find((entry) => entry.id === serverId)
+  const config = uiStore.getter(mcpServerConfigsAtom).find((entry) => entry.id === serverId)
   if (!config || config.transport !== 'stdio') return false
   if (stdioCommandLine(config) !== commandLine) return false
   return mayLaunchMcpServer(config)

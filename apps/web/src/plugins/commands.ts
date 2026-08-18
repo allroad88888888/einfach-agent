@@ -1,3 +1,4 @@
+import { uiStore } from '../uiStore'
 // apps/web/src/plugins/commands.ts —— 插件设置面板的公开命令面
 // ---------------------------------------------------------------------------
 // UI 只允许调这里导出的函数，不直接碰 service/atom 写入（对齐 apps/web/src/mcp/commands.ts
@@ -5,7 +6,6 @@
 // 是 P10 的卡，在那之前任何宿主（包括还没跑 configurePluginSettings 的浏览器预览）看到的都是
 // 明确的"不支持"空态，而不是一个假装能用但什么都不做的面板。
 
-import { rootStore } from '@web-agent/core'
 import { createPluginSettingsService, type PluginSettingsService } from './service'
 import { createLocalStoragePluginToggleStorage } from './toggleStorage'
 import type { PluginSettingsProvider, PluginToggleStorage } from './types'
@@ -19,7 +19,7 @@ const unsupportedProvider: PluginSettingsProvider = {
 }
 
 let activeService: PluginSettingsService = createPluginSettingsService({
-  store: rootStore,
+  store: uiStore,
   provider: unsupportedProvider,
   toggleStorage: createLocalStoragePluginToggleStorage(),
 })
@@ -37,7 +37,7 @@ export function configurePluginSettings({
 }: ConfigurePluginSettingsOptions): void {
   activeService.dispose()
   configured = true
-  activeService = createPluginSettingsService({ store: rootStore, provider, toggleStorage })
+  activeService = createPluginSettingsService({ store: uiStore, provider, toggleStorage })
 }
 
 /** 供测试/诊断判断"是否已有宿主接线"，语义与 isMcpSettingsConfigured 对应。 */

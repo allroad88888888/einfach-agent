@@ -18,10 +18,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   路径（规则见脚本里的 `legacySourcePathPattern`，连在文档里写出那个字面量都会失败）。
   改任何 `.md` 都要跑，CI 里它排在测试之前。
 - `pnpm check:state`：状态机制不变量门禁（五条）——derived 必须纯、**全仓**会话状态写入必须收口在
-  core 的 `state/` 或 `runtime/commands/`、每个会话 atom 都得有归宿、core 之外读会话 atom 必须经
-  `useAgentAtomValue`（判据与各张表见 §状态与 UI 边界）。改 atom、writer、新增写入点或在组件里
-  读会话 atom 时要跑——**新增会话 atom 不登记归宿会静默不进快照；用错 store 读会静默拿到默认值**。
-  `pnpm check:boundaries` 管的是**包之间**的边界，两者职责不同。
+  core 的 `state/` 或 `runtime/commands/`、每个会话 atom 都得有归宿、core 之外读 core 的 atom 必须经
+  `useRootAtomValue` / `useAgentAtomValue`（判据与各张表见 §状态与 UI 边界）。改 atom、writer、
+  新增写入点或在组件里读 core 的 atom 时要跑——**新增会话 atom 不登记归宿会静默不进快照；
+  用错 store 读会静默拿到默认值**。`pnpm check:boundaries` 管的是**包之间**的边界，两者职责不同。
 - `pnpm cli -p "<prompt>"`：headless CLI 宿主跑一轮真实 run（读 `~/.webAgent/config.json`
   或环境变量取模型 Key；`--help` 看全部选项）；无 `-p` 进入 REPL。
 - `pnpm tauri dev` / `pnpm tauri build`：桌面端开发与打包。
@@ -43,7 +43,10 @@ Vitest 的 root 是仓库根（不是 Vite 的 `apps/web` root），jsdom + `app
 `isolate: true`：每个测试文件独立 worker，setup 在 worker 内注册标准工具，并只在用例之间重置
 `defaultCore` 的 root/session store。测试文件是并行的，以 `vite.config.ts` 为准
 （`README.md` 里"测试按串行模式运行"的说法已过时）。组件测试用
-`apps/web/src/test/renderWithStore.tsx` 的隔离 store；IndexedDB 测试用 `fake-indexeddb`。
+`apps/web/src/test/renderWithStore.tsx`：它按生产装配绑三层 store（`store` = 界面、`rootStore` =
+core 跨会话、`agentStore` = 会话），三个默认是三个**不同**实例——共用的话「组件从错的那一层读」
+在测试里恰好也能跑通，而生产里读到的是默认值。依赖模块级单例命令（settings / mcp / plugins）的
+用例要显式传 `{ store: uiStore }`。IndexedDB 测试用 `fake-indexeddb`。
 
 ## 模型凭证与传输
 
@@ -61,7 +64,8 @@ Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter，
 
 ## 当前结构
 
-- `apps/web/src/main.tsx`：默认应用装配；注册标准工具、配置模型传输、选择持久化和观测 driver。
+- `apps/web/src/main.tsx`：默认应用装配；注册标准工具、配置模型传输、选择持久化和观测 driver，
+  并在应用根绑定**界面 store**（`apps/web/src/uiStore.ts`）与 core 的 root store。
 - `apps/web/src/agentNew/ui/`：React UI，包含会话、消息、计划、确认、子 Agent 树和输入区。
 - `apps/web/src/mcp/`：MCP 应用层（配置、持久化、连接编排、工具清单缓存、stdio 起进程确认、
   Tauri stdio connector）。**在 `main.tsx` 里随应用启动装配**，不是等设置弹窗打开才装——
@@ -72,8 +76,8 @@ Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter，
 - `packages/agent-core/`：装配式 Agent Runtime 内核：工具契约/registry、loop、插件、观测与持久化
   contract、恢复快照与 atoms；不含具体工具域或宿主 driver。
 - `packages/agent-react/`（`@web-agent/react-plugin`）：React 侧插件安装面、timeline renderer
-  registry，以及 **agent store 的 React 绑定**（`AgentStoreProvider` / `useAgentAtomValue`，
-  会话状态与渲染态分住两个 store 的那条缝）；core 不依赖 React。
+  registry，以及 **core 两个 store 的 React 绑定**（`RootStoreProvider` / `AgentStoreProvider` 与
+  `useRootAtomValue` / `useAgentAtomValue`，界面与 agent 分住不同 store 的那条缝）；core 不依赖 React。
 - `packages/agent-plugin-example/`：插件契约的可运行样例，改插件 API 时同步更新。
 - `packages/subagents/`：委派调度、批次编排、归档治理与子 Agent 视图 state。
 - `packages/persistence-{idb,sqlite}/`：IndexedDB / SQLite 会话与恢复快照持久化 driver。
@@ -106,18 +110,26 @@ abort registry、运行时配置、plugin host、观测 port 与 persistence bri
 driver 由宿主配置 bridge。默认实例本身不自动安装工具，应用和测试入口负责调用
 `registerStandardTools`。
 
-- root store 只放跨会话状态：会话元数据与当前会话 ID。
-- **每个 session 有两个 store**：core 拥有的 **agent store**（items、run、plan、执行图等会话状态，
-  进恢复快照与事务日志），与 `apps/web` 拥有的 **UI store**（展开/折叠、滑动窗口、输入框草稿、
-  图片附件；`agentNew/ui/sessionUiStores.ts` 按会话缓存，刷新即丢）。判据是「刷新后必须还原，
-  或 core 运行时读写」；两者现在**物理分开**，所以「是不是会话状态」这个问题由它住哪个 store 回答。
-- **einfach 只有一个 `StoreContext`**，`<Provider store>` 嵌套只能覆盖不能并存。环境 store 给的是
-  **UI store**，agent store 走 `@web-agent/react-plugin` 的 `useAgentAtomValue`。这个分工是刻意的：
-  漏改一处的后果是「core atom 从 UI store 读到默认值」，消息列表当场空掉、dev 里一眼可见；
-  反过来（环境给 agent store）漏改一处毫无症状，等于没拆。见 `packages/agent-react/src/agentStore.tsx`。
-- `@web-agent/subagents` 的视图 atom **整族住 agent store**：`subagentTreesAtom` 从
-  `executionGraphAtom` / `itemsAtom` 派生，而 einfach 的 derived 只能在**一个** store 里求值，
-  于是同一张派生图上的选择态、归档态也只能跟着走；它们的写入命令本来也写 `getSessionStore(id).store`。
+- **界面一个 store，agent 那边是 core 自己的两个**：
+  - **界面 store**（`apps/web/src/uiStore.ts`，全局唯一，不按会话分桶）—— 设置面板、MCP、插件、
+    trace viewer、工作区重命名草稿、消息滑动窗口、展开折叠、输入框草稿与图片附件。刷新即丢。
+  - **core 的 root store** —— 只放跨会话状态：工作区、会话元数据、当前会话 ID。
+  - **core 的 per-session agent store** —— items、run、plan、执行图等会话状态，进恢复快照与事务日志。
+- **einfach 只有一个 `StoreContext`**，`<Provider store>` 嵌套只能覆盖不能并存。所以**环境 store
+  给界面**（`main.tsx` 应用根绑一次），core 的两个各走自己的 Provider（`RootStoreProvider` /
+  `AgentStoreProvider`），读用 `useRootAtomValue` / `useAgentAtomValue`
+  （`packages/agent-react/src/coreStoreBindings.tsx`）。方向是刻意的：漏改一处的后果是
+  「core atom 从界面 store 读到默认值」，会话列表/消息列表当场空掉、dev 里一眼可见；反过来
+  （环境给 core）漏改一处是「新写的界面 atom 落进 core 的 store」，行为与拆分前一模一样、
+  毫无症状，等于没拆。**响亮地失败优于静默地正确。**
+- **derived 不能跨 store**：einfach 的派生只在一个 store 里取 `get`，所以一张派生图上的所有 atom
+  必须同住一处。两个实例：`@web-agent/subagents` 的视图 atom 整族住 agent store
+  （`subagentTreesAtom` 从 `executionGraphAtom` / `itemsAtom` 派生，写入命令本来也写
+  `getSessionStore(id).store`）；`plugins/initialize.ts` 的 `pluginWorkspaceRootAtom` 从两个 root atom
+  派生，只能在 core 的 root store 上求值。放错 store 不报错，只是恒读到默认值。
+- **界面 store 不按会话分桶**，所以「用户正在输入的东西」必须在切会话时显式清掉，否则会话 A 打
+  一半的字会跟着切到 B（`agentNew/ui/sessionScopedViewState.ts`，由 `ActiveSessionProvider` 调用）。
+  刻意不做成按 sessionId 分桶的 atom family —— 那等于把「每会话一个 store」换个写法再做一遍。
 - UI 只允许读取 atom、调用 `runtime/commands.ts` 暴露的命令。
 - UI 不直接调用 writer、不 setter 业务 atom、不持有 runtime store。
 - writer 和 await 后回写必须保留 ghost guard、runId stale guard 与 AbortSignal 检查。
@@ -158,9 +170,11 @@ CI 里排在 `check:boundaries` 之后。入口是 `scripts/check-state-invarian
 `writeChokepoint.js` / `slotJournalShape.js` / `atomDisposition.js`（规则 4 的登记表另住
 `atomDispositionTable.js`：判定与账分开，改 atom 的人只需要读表）/ `agentStoreBinding.js`。
 
-**规则 5**：core 之外，任何从 `@web-agent/core` import 进来、且在规则 4 枚举面里的 atom，都不许出现在
-裸 `useAtomValue` / `useAtom` / `useSetAtom` 里——那读的是环境 store（UI store），拿到的是该 atom 的
-**默认值**，组件照常渲染一份空状态、不抛异常。读一律经 `useAgentAtomValue`，写一律走命令。
+**规则 5**：core 之外，任何从 `@web-agent/core` import 进来、且在 core 的 atom 枚举面里的标识符
+（规则 4 的会话 atom 全集 + `rootAtoms.ts` 的跨会话登记表），都不许出现在裸 `useAtomValue` /
+`useAtom` / `useSetAtom` 里——那读的是环境 store（界面 store），拿到的是该 atom 的**默认值**，
+组件照常渲染一份空状态、不抛异常。会话的读 `useAgentAtomValue`、跨会话的读 `useRootAtomValue`，
+写一律走命令。
 
 前两条逐行扫源码；第三条走**穷举分类**——`SESSION_SLOTS` 的每个 key 必须恰好落在
 `slotJournalShape.js` 的 `deltaJournaled`（走增量 op）/ `boundedWholeValue`（整值记账，每项须写明
@@ -183,14 +197,17 @@ error；`slot` 与 `SESSION_SLOTS` 是**双向**比对（表说是槽位而槽�
 （当前三条：root store 的跨会话表、`sessionHistory` 的派生只读视图、`recoveryProjection` 的两个
 命令 atom）。新开一个 `state/fooAtom.ts` 而不登记直接 error——否则「静默缺席」只是换个层级复发。
 
-**治理边界按「是不是会话状态」划。** 拆出 UI store 之前这条容易搞反：`ActiveSessionProvider` 把整棵
-右栏挂在会话 store 上，渲染层随手 `useAtom` 的折叠态、消息窗口、图片附件物理上**都**落在会话 store
-里，而那从不构成把它们纳入恢复契约的理由——判据一直是「这份内容除了它自己还活在哪里」。
+**治理边界按「是不是会话状态」划。** 拆分之前这条容易搞反，因为界面根本没有自己的 store：
+`main.tsx` 拿 `core.rootStore` 当环境 store，于是 mcp/settings/plugins/traceViewer 那几十个 atom 物理上
+住在 core 的跨会话登记表里；右栏又被切到会话 store，于是消息窗口、草稿、图片附件住在**会话** store 里。
+两处都是「渲染层随手 `useAtom`，值落在 core 的某个 store 上」，而那从不构成把它们纳入恢复契约的
+理由——判据一直是「这份内容除了它自己还活在哪里」。
 
-拆分之后两者**重合**了：会话状态住 agent store，渲染态住 UI store，"是不是会话状态"由它住哪个
-store 回答，不再需要一张手工表解释「这个其实是界面的」。规则 4 的 `safeDefault` 因此从 7 条掉到 3 条
-（掉的四条全是展开/折叠偏好，理由清一色「不含任何内容」——那不是归宿，是它们本就不该在 core 里）。
-`apps/web` 的 UI atom 仍不在规则 4 的枚举面内，现在的理由是物理的：它们不在 agent store 里。
+拆分之后判据与 store 归属**重合**了：界面的住界面 store，core 的住 core 的 store，"这是不是会话状态"
+由它住哪个 store 回答，不再需要一张手工表解释「这个其实是界面的」。规则 4 的 `safeDefault` 因此从
+7 条掉到 3 条（掉的四条全是展开/折叠偏好，理由清一色「不含任何内容」——那不是归宿，是它们本就
+不该在 core 里），`workspaceRenameStateAtom` 也从 `rootAtoms.ts` 搬进了 `apps/web`。
+`apps/web` 的 atom 仍不在规则 4 的枚举面内，现在的理由是物理的：它们不在 core 的任何一个 store 里。
 
 规则 2 只管**会话 atom**（会进 per-session 事务日志的那些）；root store 的跨会话登记表、应用层与
 子 Agent 视图 atom 都在管辖之外。`writeChokepoint.js` 里两张表分工不同：**所有者模块**是按设计拥有

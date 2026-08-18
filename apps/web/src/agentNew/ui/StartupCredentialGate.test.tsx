@@ -1,3 +1,4 @@
+import { uiStore } from '../../uiStore'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -40,17 +41,18 @@ function renderGate(enabled = true) {
     <StartupCredentialGate enabled={enabled} target={deepSeekTarget}>
       <p>workspace</p>
     </StartupCredentialGate>,
-    { store: rootStore },
+    // 应用层命令（hydrateModelCredentials…）写的是模块级单例 uiStore，渲染必须绑同一个。
+    { store: uiStore },
   )
 }
 
 describe('StartupCredentialGate', () => {
   beforeEach(() => {
-    resetAppSettingsState(rootStore)
+    resetAppSettingsState(uiStore)
   })
 
   afterEach(() => {
-    resetAppSettingsState(rootStore)
+    resetAppSettingsState(uiStore)
     configureModelCredentialHost(createUnavailableModelCredentialHost())
   })
 

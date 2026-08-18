@@ -91,7 +91,7 @@ describe('AppShell', () => {
   })
 
   it('无工作区：左栏提供「新建工作区」，右栏保持空会话占位', () => {
-    renderWithStore(<AppShell />, { store: rootStore })
+    renderWithStore(<AppShell />)
 
     expect(screen.getByRole('button', { name: '新建工作区' })).toBeInTheDocument()
     expect(screen.getByText('新建工作区后即可创建对话')).toBeInTheDocument()
@@ -107,7 +107,7 @@ describe('AppShell', () => {
   it('有激活会话：右栏切到会话 store → Composer 输入框在 + MessageList 空占位「开始对话吧」在', () => {
     seedActiveSession('s1')
 
-    const { container } = renderWithStore(<AppShell />, { store: rootStore })
+    const { container } = renderWithStore(<AppShell />)
 
     // 左栏 SessionList 仍在。
     expect(screen.getByRole('button', { name: /新建对话/ })).toBeInTheDocument()
@@ -136,7 +136,7 @@ describe('AppShell', () => {
       },
     })
 
-    const { container } = renderWithStore(<AppShell />, { store: rootStore })
+    const { container } = renderWithStore(<AppShell />)
 
     // AskUserQuestionCard 显形 = 挂载点存在于右栏 Provider 下。
     const ask = container.querySelector('.agentnew-ask')
@@ -176,7 +176,7 @@ describe('AppShell', () => {
       },
     })
 
-    const { container } = renderWithStore(<AppShell />, { store: rootStore })
+    const { container } = renderWithStore(<AppShell />)
 
     expect(container.querySelectorAll('.agentnew-ask')).toHaveLength(1)
     expect(container.querySelector('.agentnew-plan-stage-body .agentnew-ask')).not.toBeNull()
@@ -189,7 +189,7 @@ describe('AppShell', () => {
       { id: 'a1', filename: 'plan.md', content: '# Plan', mimeType: 'text/markdown' },
     ])
 
-    const { container } = renderWithStore(<AppShell />, { store: rootStore })
+    const { container } = renderWithStore(<AppShell />)
 
     // SaveArtifact 显形 = 挂载点存在于右栏 Provider 下。
     expect(container.querySelector('[aria-label="待保存文件"]')).not.toBeNull()
@@ -223,7 +223,7 @@ describe('AppShell', () => {
       toolNames: ['request_tool_schema'],
     })
 
-    const { container } = renderWithStore(<AppShell />, { store: rootStore })
+    const { container } = renderWithStore(<AppShell />)
 
     const stats = container.querySelector('.agentnew-context-stats')
     const composer = container.querySelector('.agentnew-composer')

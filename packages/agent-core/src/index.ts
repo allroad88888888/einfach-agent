@@ -205,7 +205,6 @@ export {
   activeWorkspaceRootAtom,
   expandedWorkspaceIdsAtom,
   workspaceSettingsOpenIdsAtom,
-  workspaceRenameStateAtom,
   // 项目 Skills 快照与禁用清单（读面；写走 refreshProjectSkills / settings 命令）
   projectSkillsAtom,
   disabledProjectSkillsByWorkspaceAtom,

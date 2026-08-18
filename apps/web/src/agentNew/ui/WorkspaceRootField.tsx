@@ -5,7 +5,8 @@
 //   下），故能读到 rootStore 的工作区元信息。无 active 工作区时不渲染。
 import { useMemo } from 'react'
 import { atom } from '@einfach/core'
-import { useAtom, useAtomValue } from '@einfach/react'
+import { useAtom } from '@einfach/react'
+import { useRootAtomValue } from '@web-agent/react-plugin'
 import {
   activeWorkspaceMetaAtom,
   canPickWorkspaceDirectory,
@@ -19,7 +20,7 @@ const workspacePickerStateAtom = atom<{ isPicking: boolean; error: string | null
 })
 
 export function WorkspaceRootField() {
-  const workspace = useAtomValue(activeWorkspaceMetaAtom)
+  const workspace = useRootAtomValue(activeWorkspaceMetaAtom)
   const [pickerState, setPickerState] = useAtom(workspacePickerStateAtom)
   const canPick = useMemo(() => canPickWorkspaceDirectory(), [])
   if (!workspace) return null

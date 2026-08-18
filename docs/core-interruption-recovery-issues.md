@@ -85,11 +85,11 @@ redo、历史 cursor、追加日志或将 atom 身份持久化。
       把整棵右栏挂在会话 store 上，渲染层随手 `useAtom` 的折叠态、消息窗口、图片附件物理上**都**
       落在会话 store 里，而那从不构成把它们纳入恢复契约的理由 —— 判据一直是「这份内容除了它自己
       还活在哪里」。
-    - **2026-08-18 起两者重合**：会话状态住 core 的 agent store，渲染态住 `apps/web` 的 UI store
-      （`agentNew/ui/sessionUiStores.ts`），"是不是会话状态"由它住哪个 store 回答。规则 4 的
+    - **2026-08-18 起两者重合**：界面自己持有**一个** store（`apps/web/src/uiStore.ts`），core 保留
+      root store 与 per-session agent store，"是不是会话状态"由它住哪个 store 回答。规则 4 的
       `safeDefault` 因此从 7 条掉到 3 条 —— 掉的四条全是展开/折叠偏好，理由清一色「不含任何内容」，
       那不是归宿，是它们本就不该在 core 里。新增的**规则 5** 挡住这次拆分带来的新静默失败：
-      core 之外用裸 `useAtomValue` 读会话 atom，读的是 UI store，拿到默认值且不报错。
+      core 之外用裸 `useAtomValue` 读 core 的 atom，读的是界面 store，拿到默认值且不报错。
 
 ## 目标分层
 

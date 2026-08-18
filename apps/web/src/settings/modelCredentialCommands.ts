@@ -1,4 +1,4 @@
-import { rootStore } from '@web-agent/core'
+import { uiStore } from '../uiStore'
 import {
   createUnavailableModelCredentialHost,
   MODEL_CREDENTIALS,
@@ -36,19 +36,19 @@ function descriptor(id: ModelCredentialId) {
 
 export function configureModelCredentialHost(host: ModelCredentialHost): void {
   activeHost = host
-  rootStore.setter(modelCredentialHostAvailableAtom, host.available)
+  uiStore.setter(modelCredentialHostAvailableAtom, host.available)
 }
 
 export async function hydrateModelCredentials(): Promise<void> {
   await Promise.all(MODEL_CREDENTIALS.map(async ({ id, label, target }) => {
-    setModelCredentialStatus(rootStore, id, {
+    setModelCredentialStatus(uiStore, id, {
       status: 'loading', configured: false, source: 'missing',
     })
     try {
       const credential = await activeHost.status(target)
-      setModelCredentialStatus(rootStore, id, { status: 'ready', ...credential })
+      setModelCredentialStatus(uiStore, id, { status: 'ready', ...credential })
     } catch {
-      setModelCredentialStatus(rootStore, id, {
+      setModelCredentialStatus(uiStore, id, {
         status: 'error',
         error: hydrationStatusError(label),
         configured: false,
@@ -59,9 +59,9 @@ export async function hydrateModelCredentials(): Promise<void> {
 }
 
 export function updateModelCredentialDraft(id: ModelCredentialId, value: string): void {
-  setModelCredentialDraft(rootStore, id, value)
-  const state = rootStore.getter(modelCredentialEntriesAtom)[id].state
-  setModelCredentialStatus(rootStore, id, {
+  setModelCredentialDraft(uiStore, id, value)
+  const state = uiStore.getter(modelCredentialEntriesAtom)[id].state
+  setModelCredentialStatus(uiStore, id, {
     status: 'ready',
     configured: state.configured,
     source: state.source,
@@ -70,9 +70,9 @@ export function updateModelCredentialDraft(id: ModelCredentialId, value: string)
 
 export async function saveModelCredential(id: ModelCredentialId): Promise<boolean> {
   const { label, target } = descriptor(id)
-  const value = rootStore.getter(modelCredentialEntriesAtom)[id].draft.trim()
+  const value = uiStore.getter(modelCredentialEntriesAtom)[id].draft.trim()
   if (!value) {
-    setModelCredentialStatus(rootStore, id, {
+    setModelCredentialStatus(uiStore, id, {
       status: 'error',
       error: `请输入 ${label} API Key。`,
       configured: false,
@@ -80,14 +80,14 @@ export async function saveModelCredential(id: ModelCredentialId): Promise<boolea
     })
     return false
   }
-  setModelCredentialStatus(rootStore, id, {
+  setModelCredentialStatus(uiStore, id, {
     status: 'loading', configured: false, source: 'missing',
   })
   try {
     await activeHost.save(target, value)
     const credential = await activeHost.status(target)
     if (!credential.configured) {
-      setModelCredentialStatus(rootStore, id, {
+      setModelCredentialStatus(uiStore, id, {
         status: 'error',
         error: saveVerificationError(label),
         configured: false,
@@ -95,11 +95,11 @@ export async function saveModelCredential(id: ModelCredentialId): Promise<boolea
       })
       return false
     }
-    setModelCredentialDraft(rootStore, id, '')
-    setModelCredentialStatus(rootStore, id, { status: 'saved', ...credential })
+    setModelCredentialDraft(uiStore, id, '')
+    setModelCredentialStatus(uiStore, id, { status: 'saved', ...credential })
     return true
   } catch {
-    setModelCredentialStatus(rootStore, id, {
+    setModelCredentialStatus(uiStore, id, {
       status: 'error',
       error: saveVerificationError(label),
       configured: false,
@@ -111,16 +111,16 @@ export async function saveModelCredential(id: ModelCredentialId): Promise<boolea
 
 export async function deleteModelCredential(id: ModelCredentialId): Promise<boolean> {
   const { target } = descriptor(id)
-  setModelCredentialStatus(rootStore, id, {
+  setModelCredentialStatus(uiStore, id, {
     status: 'loading', configured: false, source: 'missing',
   })
   try {
     const credential = await activeHost.delete(target)
-    setModelCredentialDraft(rootStore, id, '')
-    setModelCredentialStatus(rootStore, id, { status: 'saved', ...credential })
+    setModelCredentialDraft(uiStore, id, '')
+    setModelCredentialStatus(uiStore, id, { status: 'saved', ...credential })
     return true
   } catch (error) {
-    setModelCredentialStatus(rootStore, id, {
+    setModelCredentialStatus(uiStore, id, {
       status: 'error',
       error: errorMessage(error),
       configured: false,

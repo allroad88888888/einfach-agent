@@ -1,15 +1,15 @@
-import { rootStore } from '@web-agent/core'
+import { uiStore } from '../uiStore'
 import { settingsCenterOpenAtom, settingsCenterTabAtom, type SettingsCenterTab } from './settingsCenterState'
 
 export function openSettingsCenter(tab: SettingsCenterTab = 'mcp'): void {
-  rootStore.setter(settingsCenterTabAtom, tab)
-  rootStore.setter(settingsCenterOpenAtom, true)
+  uiStore.setter(settingsCenterTabAtom, tab)
+  uiStore.setter(settingsCenterOpenAtom, true)
 }
 
 export function closeSettingsCenter(): void {
-  rootStore.setter(settingsCenterOpenAtom, false)
+  uiStore.setter(settingsCenterOpenAtom, false)
 }
 
 export function selectSettingsTab(tab: SettingsCenterTab): void {
-  rootStore.setter(settingsCenterTabAtom, tab)
+  uiStore.setter(settingsCenterTabAtom, tab)
 }

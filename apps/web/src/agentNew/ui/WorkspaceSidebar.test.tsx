@@ -81,7 +81,7 @@ describe('WorkspaceSidebar', () => {
 
   it('按“工作区 → 对话”渲染；折叠的工作区不展示其对话', () => {
     seed()
-    renderWithStore(<WorkspaceSidebar />, { store: rootStore })
+    renderWithStore(<WorkspaceSidebar />)
 
     expect(screen.getByText('项目一')).toBeInTheDocument()
     expect(screen.getByText('项目二')).toBeInTheDocument()
@@ -93,7 +93,7 @@ describe('WorkspaceSidebar', () => {
 
   it('工作区标题右侧的新建按钮固定归属该工作区', () => {
     seed()
-    renderWithStore(<WorkspaceSidebar />, { store: rootStore })
+    renderWithStore(<WorkspaceSidebar />)
 
     fireEvent.click(screen.getByRole('button', { name: '在 项目一 中新建对话' }))
     expect(newSession).toHaveBeenCalledWith({ workspaceId: 'w1' })
@@ -101,7 +101,7 @@ describe('WorkspaceSidebar', () => {
 
   it('可新建、切换和折叠展开工作区', () => {
     seed()
-    renderWithStore(<WorkspaceSidebar />, { store: rootStore })
+    renderWithStore(<WorkspaceSidebar />)
 
     fireEvent.click(screen.getByRole('button', { name: '新建工作区' }))
     expect(newWorkspace).toHaveBeenCalledWith()
@@ -117,7 +117,7 @@ describe('WorkspaceSidebar', () => {
 
   it('标题双击进入行内编辑，Enter 提交工作区名称', () => {
     seed()
-    renderWithStore(<WorkspaceSidebar />, { store: rootStore })
+    renderWithStore(<WorkspaceSidebar />)
 
     fireEvent.doubleClick(screen.getByRole('button', { name: '项目一' }))
     const input = screen.getByRole('textbox', { name: '重命名工作区' })
@@ -130,7 +130,7 @@ describe('WorkspaceSidebar', () => {
 
   it('标题右侧设置按钮打开居中设置弹层，目录默认不常驻列表', () => {
     seed()
-    const firstRender = renderWithStore(<WorkspaceSidebar />, { store: rootStore })
+    const firstRender = renderWithStore(<WorkspaceSidebar />)
 
     expect(screen.queryByLabelText('工作区目录')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '设置 项目一' }))
@@ -138,7 +138,7 @@ describe('WorkspaceSidebar', () => {
     firstRender.unmount()
 
     rootStore.setter(workspaceSettingsOpenIdsAtom, { w1: true })
-    renderWithStore(<WorkspaceSidebar />, { store: rootStore })
+    renderWithStore(<WorkspaceSidebar />)
     expect(screen.getByRole('dialog', { name: '项目一' })).toBeInTheDocument()
     expect(screen.getByText(/后续工作区级功能也会集中放在这里/)).toBeInTheDocument()
     expect(screen.getByLabelText('工作区目录')).toHaveValue('/workspace/one')

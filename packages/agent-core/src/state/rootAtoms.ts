@@ -27,8 +27,6 @@ export const expandedWorkspaceIdsAtom = atom<Record<string, boolean>>({})
 // 每个工作区的设置面板开关；属于瞬态 UI 状态，不随 WorkspaceMeta 持久化。
 export const workspaceSettingsOpenIdsAtom = atom<Record<string, boolean>>({})
 
-// 工作区标题行内编辑草稿。目标 id 与草稿必须同步切换，作为一个紧耦合编辑事务保存。
-export const workspaceRenameStateAtom = atom<{ id: string; draft: string } | null>(null)
 
 // 项目 Skills 快照，按 workspaceRoot 分桶（不是按 sessionId —— 同一 workspace 的多个会话共享
 // 同一份扫描结果，见 docs/project-skills-blueprint.md「加载时机与缓存」）。这是 workspace 级

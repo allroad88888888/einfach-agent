@@ -71,6 +71,9 @@ async function freshHost(tauriHost: boolean) {
   const { hydratePluginSettings, isPluginSettingsConfigured } = await import('./commands')
   const { pluginHydrationAtom, pluginSettingsCapabilitiesAtom } = await import('./state')
   const { createMemoryPluginToggleStorage } = await import('./toggleStorage')
+  // uiStore 也得从**重置后的模块图**里拿：vi.resetModules() 之后 ./commands 拿到的是新的那份，
+  // 文件顶层静态 import 进来的是旧那份，两者不是同一个 store —— 断言会读到永远的默认值。
+  const { uiStore } = await import('../uiStore')
   const { activeSessionIdAtom, rootStore, sessionsAtom, workspacesAtom } =
     await import('@web-agent/core/state/rootStore')
 
@@ -80,8 +83,8 @@ async function freshHost(tauriHost: boolean) {
     hydrate: hydratePluginSettings,
     isConfigured: isPluginSettingsConfigured,
     invokeMock,
-    hydration: () => rootStore.getter(pluginHydrationAtom),
-    capabilities: () => rootStore.getter(pluginSettingsCapabilitiesAtom),
+    hydration: () => uiStore.getter(pluginHydrationAtom),
+    capabilities: () => uiStore.getter(pluginSettingsCapabilitiesAtom),
     /** 每次 list_workspace_files 是冲哪个 workspace root 发的：重扫与否全看这条序列。 */
     listedRoots: (): unknown[] =>
       invokeMock.mock.calls

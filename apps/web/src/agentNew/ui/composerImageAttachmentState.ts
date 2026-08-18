@@ -27,9 +27,9 @@ export interface ImageDimensions {
 /**
  * 输入框里待发送的图片附件。
  *
- * **归宿：knownLoss —— 已知缺口，当前接受丢失。** 它写的是**会话 store**（`Composer` 挂在
- * `ActiveSessionProvider` 的 `<Provider store={sessionAtomScope(id)}>` 下），却不进恢复快照；
- * 同一个输入框里的文字草稿是进的（`SESSION_SLOTS.composerDraft`）。
+ * 它住**界面 store**（`apps/web/src/uiStore.ts`），刷新即丢，切会话由
+ * `sessionScopedViewState.ts` 清掉。同一个输入框里的文字草稿同样如此 —— 两者都不进恢复快照，
+ * 这是明确裁决，不是遗漏。下面这段记录的是「就算将来想让它进快照，也不能直接补一行槽位」。
  *
  * **丢的是什么**：只有**粘贴来源**的图。三条入口里，拖拽（`Composer.tsx` 的 `onDrop`）和
  * 选文件（`ComposerAttachmentTray` 的 `<input type="file">`）拿到的 `File` 在磁盘上有第二份，
@@ -43,8 +43,8 @@ export interface ImageDimensions {
  * 快照里只存那个引用 —— 那是另一件事，不是往槽位表里补一行。
  *
  * **为什么现在接受**：丢失窗口只有「粘贴完还没发送」这一小段，且用户当场看得见附件没了
- * （不是静默错值）；代价与上面那套暂存机制不相称。裁决记录在恢复树红线 10，
- * 门禁条目在 `scripts/state-invariants/atomDispositionTable.js` 的外部会话 atom 表。
+ * （不是静默错值）；代价与上面那套暂存机制不相称。它不在门禁的枚举面里，理由是物理的 ——
+ * 它不在 core 的任何一个 store 里。
  */
 export const composerImageAttachmentAtom = atom<ComposerImageAttachmentState>({
   images: [],
