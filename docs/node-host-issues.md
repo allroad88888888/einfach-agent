@@ -733,7 +733,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `workspace_read_list.rs` + `workspace_read_search.rs`：`recursive` /
   `maxEntries` / `includeHidden`；**不递归进 symlink**。跑该目录 vitest
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### W4 · run index 分页读
 
@@ -742,7 +742,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `workspace_read_run_index.rs`：JSONL 游标分页、`snapshot` 标识、`hasMore`。
   跑该目录 vitest
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### W5 · 文件写：目标路径解析与限额
 
@@ -809,7 +809,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `workspace_write_guard.rs` + `workspace_write_pipeline.rs`：
   read-verify-write，`contentHash` 不匹配时拒绝覆盖并返回可操作错误。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### W8 · 文件写：base64 二进制写入
 
@@ -880,7 +880,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `workspace_patch_pipeline.rs` + `workspace_patch_fs.rs` +
   `workspace_patch_limits.rs`：全部 hunk 成功才落盘，任一失败整体不写。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### W14 · change journal：类型与写入
 
@@ -918,7 +918,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `_batch.rs` + `_revert.rs` + `_path_ops.rs`：`dryRun` 语义、批次内顺序、
   部分失败的报告形态。跑该目录 vitest
 - **模型**：opus
-- **状态**：DONE `8a9a36e`（registrar 接线 `a4dcb9f`）。17 个源文件 + 9 份测试 / 62 例，
+- **状态**：DONE `8a9a36e`（registrar 接线 `0762d59`）。17 个源文件 + 9 份测试 / 62 例，
   change 域合计 160 例。全树最大的一张卡。
   **`dryRun` 是「预演」不是「只校验」**：跑完整的四类冲突检测，只在最后一步分岔；
   `restoredFiles` 与真跑**逐字相同**（有测试直接对比两次结果的该字段）。批量的 dryRun 还会跑完整
