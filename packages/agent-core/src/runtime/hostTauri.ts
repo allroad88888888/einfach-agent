@@ -59,16 +59,3 @@ const loadTauriCore = () => (tauriCoreModule ??= import('@tauri-apps/api/core'))
 export async function loadTauriInvoke(): Promise<TauriInvokeFn> {
   return (await loadTauriCore()).invoke
 }
-
-/** 上游 path 模块 `homeDir` 的本地结构类型（同 TauriInvokeFn 的理由：类型位置不写包名）。 */
-export type TauriHomeDirFn = () => Promise<string>
-
-// 用户主目录只有 path 模块能给（没有对应的 Rust command，也不该为它新开一个）。缓存与惰性
-// 加载的理由逐字同 loadTauriCore：这里是本包第二条、也是最后一条 @tauri-apps 运行时边。
-let tauriPathModule: Promise<{ homeDir: TauriHomeDirFn }> | undefined
-
-const loadTauriPath = () => (tauriPathModule ??= import('@tauri-apps/api/path'))
-
-export async function loadTauriHomeDir(): Promise<TauriHomeDirFn> {
-  return (await loadTauriPath()).homeDir
-}
