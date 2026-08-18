@@ -20,7 +20,7 @@ core (TS，不变) ──▶  ├─ CLI ───────── 进程内 �
 ## 树概览
 
 ```text
-H  core host bridge 抽象        H1 → H1b → H2/H3/H4/H4b → H5 → H6
+H  core host bridge 抽象        H1 → H1b → H2/H3/H4/H4b → H4c/H4d/H4e → H5 → H6
 N  host-node 薄包装区           N1 → N2 → N3/N4/N5/N6/N7 → N8 ★CLI 完整
 W  host-node 真逻辑区           W1..W15 → W16/W17 对拍
 S  server HTTP 外壳             S1 → S2/S3 → S4
@@ -36,8 +36,9 @@ T  Tauri 退成套壳               T1 → T2 → T3 → T4
 **MVP 路径 = H + N + W1–W15 + S + B + M**（约 46 卡）。到 M5 浏览器版即可用；
 C/P/D/T 是增强与收尾，可后置。
 
-全树 62 卡（H 线在执行中由 6 张增至 8 张：H1 验收时发现三卡共享测试脚手架、且 H4 里混着
-一张性质完全不同的总闸卡，分别拆出 H1b 与 H4b）。
+全树 65 卡（H 线在执行中由 6 张增至 11 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
+H4b 从 H4 里拆出的总闸、H4c 验收漏扫 apps 面留下的回归、H4d 拆树后新增文件带来的缺口、
+H4e 总闸改名的下游收尾）。
 
 ## 并行规则
 
@@ -142,7 +143,10 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
   vi.mock hoisting 限制的说明。**旧工厂保留不动**：H2/H3/H4 逐卡切换，全切完才零消费方，
   由 H6 一并删。跑 `pnpm exec vitest run packages/agent-core/src/runtime`
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE `66b9872`。纯新增 39 行、零删除，旧工厂原样。新工厂的返回类型用 hostBridge 的
+  `HostInvoke` 而非借桌面包的 invoke 类型；注释里为解释「特意没用那个类型」提及了包名，
+  经核实 `.testHarness.ts` 不进发布物、`packages/agent-core/dist` 的 `.d.ts` 里该字符串仍零命中，
+  D9 纪律未破。
 
 ### H2 · workspace 读侧四模块改走 host bridge
 
@@ -153,7 +157,11 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
   invoke 的 command 名与参数**逐字不变**。四个文件内 `hostTauri` 的 import 归零。
   跑 `pnpm exec vitest run packages/agent-core/src/runtime/workspaceRead` 与同目录 Rg/Git/Task 用例
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `fc69162`。18 增 18 删的纯 identifier 替换，command 名与错误文案零命中 diff。
+  Rg/Git/Task 三个模块没有 colocated 测试，读侧只有 workspaceRead 那两个桥测试切了工厂。
+  **顺带记一个存量问题**：`workspaceRead.ts` 404 行，超 300 上限。本卡是等量替换未改变行数，
+  按「路过存量超限文件小改只指出不重构」的规矩没动它。它主要是类型定义 + 参数转换的薄转发层，
+  真正的拆分时机在 W1–W4 落地后（那时这个文件的定位会变），不单开卡。
 
 ### H3 · workspace 写侧五模块改走 host bridge
 
@@ -164,7 +172,11 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
   跑 `pnpm exec vitest run packages/agent-core/src/runtime/workspaceWrite.test.ts` 与
   `workspacePatch.timing.test.ts`
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `c4c8ded`。17 增 17 删纯 identifier 替换，observability 参数链与
+  `dispatchStartedAt` / `invokeDispatchMs` 计时未进 diff。跟随改了一处类型标注
+  `Awaited<ReturnType<typeof loadTauriInvoke>>` → `…loadHostInvoke>>`。
+  `workspacePathOperation.ts` 的守卫与文案写在同一行，整行必然进 diff 但文案两侧逐字相同。
+  Delete / PathOperation / Change 三个模块全仓无 colocated 测试（已 grep 函数名确认）。
 
 ### H4 · shell 与 projectSkillsBridge 改走 host bridge
 
@@ -176,7 +188,9 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
   `workspaceDialog.ts` 始终不在范围（它用的是 `@tauri-apps/plugin-dialog` 而非 core invoke，
   归未决项 U-1）。跑 `pnpm exec vitest run packages/agent-core/src/runtime/shellCommand`
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE `f6e3b9b`。5 增 5 删。`projectSkillsBridge.ts` 的用法与 shellCommand 不同：
+  它**只用守卫、不取 invoke**——实际 IO 委托给 `listWorkspaceFiles` / `readWorkspaceFile`
+  （H2 改动面），所以那边只换了 `hasHostBridge()` 一处。
 
 ### H4b · 工具可见性总闸从「是不是 Tauri」改成「有没有桥」
 
@@ -196,8 +210,60 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
   **连带影响要在卡上写明结论**：`tools/mcp/src/placeholderTool.ts` 的注释说明 MCP stdio 占位
   工具正是靠这个过滤在浏览器下隐藏，闸门翻开后 C 线完成前它会可见但不可用——是接受这个窗口期
   还是加一层更细的能力粒度，本卡给出判断并记录。
-  跑 `pnpm exec vitest run packages/agent-core` 全量 + `pnpm build`
+  跑改动面相关测试；**全量与 `pnpm build` 由主会话验收时统一跑**——本卡与 H2/H3/H4 并行，
+  工作树上有它们的中间态，全量失败会归因不清，且并发 build 会争 `dist/`。
 - **模型**：opus
+- **状态**：DONE `1f12abb`。参数名定为 `hostHasLocalCapabilities`：带 `host` 前缀避免在
+  `isToolVisible(runtime, X)` 里被误读成「这个工具有本机能力」；用「能力」而非「桥」是因为
+  桥只是当前实现手段，把手段写进语义参数名等于把刚拆开的耦合换个名字焊回去。
+  **单源已独立复核**：`modelTurnPrefix.ts:64` 是唯一源头，三条流（清单文本、tools 数组、
+  `toolCallGate` 的执行期拒绝）加子 Agent 那份全部由它喂。子 agent 另做了反向对照——
+  把桩改成 false 后 15 例倒 7 例，且倒的正是依赖 server 工具可见性的那些，证明桩承重不是摆设。
+  **共享脚手架被迫分家**（卡面没预见）：`stubHostBridgeFlag` 必须对 `./hostBridge` 做值导入，
+  而 `hostTauri.testHarness.ts` 被四个 `vi.mock('./hostBridge')` 的桥测试 import，
+  vi.mock 提升到 import 之前 → 值导入撞进被 mock 模块的 TDZ（实测 4 个文件报
+  `Cannot access '__vi_import_0__' before initialization`）。故新开 `hostBridge.testHarness.ts`，
+  原脚手架对 hostBridge 只留 `import type`。两边都留了注释记这个坑。
+  超出卡面改了 3 行（`toolLoopBootstrap.ts` ×2、`transcriptInjection.test.ts` ×1），是字段改名的
+  必然连带。
+
+### H4c · 修 apps/web 插件测试的宿主桩（H2/H4 回归）
+
+- **依赖**：H4b
+- **改动面**：`apps/web/src/plugins/initialize.test.ts`
+- **判据**：**来源：H2/H4 的回归，主会话验收时漏扫 apps 面，由 H4b 的子 agent 在裸 HEAD
+  `c4c8ded` 复跑时发现。** `projectSkillsBridge.ts` 的判据换成 `hasHostBridge()` 之后，
+  该测试仍用 `stubTauriHostFlag` 切 `globalThis.isTauri`，两个用例失败。改用 H4b 新增的
+  `stubHostBridgeFlag`（`packages/agent-core/src/runtime/hostBridge.testHarness.ts`）。
+  跑 `pnpm exec vitest run apps/web` 全绿
+- **模型**：sonnet
+- **状态**：DOING
+
+### H4d · userSkillsRoot 改走 host bridge
+
+- **依赖**：H1
+- **改动面**：`packages/agent-core/src/runtime/userSkillsRoot.ts` 及其测试
+- **判据**：**来源：主会话验收 H4b 时 grep 全仓 `isTauriHost()` 发现的树缺口。**
+  这个文件是 user skills 那条线（`3896115`）新加的，拆树时还不存在，所以「13 个文件」的清单漏了它。
+  它决定能不能读用户主目录下的 skills（`~/.webAgent/skills`、`~/.claude/skills`），
+  Node 后端下同样该走桥。注意它返回的是**路径**不是 invoke 结果，改完要确认路径来源在无 Tauri
+  宿主下怎么给——这处可能不是纯替换，先读懂 `resolveUserSkillsRoot` 当前怎么拿到主目录。
+  跑 `pnpm exec vitest run packages/agent-core/src/runtime/userSkillsRoot.test.ts` +
+  `pnpm exec vitest run tools/skills`
+- **模型**：opus
+- **状态**：DOING
+
+### H4e · 收掉 `runtimeIsTauri` 这个旧名字
+
+- **依赖**：H4b
+- **改动面**：`ToolLoopBase.runtimeIsTauri`、`SubagentRuntimeOpts.runtimeIsTauri` 及其全部消费方
+  （`toolLoopBootstrap` / `modelTurnRequester` / `toolCallGate` / `childAgentLoop` /
+  `childAgentToolCalls` / `childToolVisibility` / `childResult` 等，15+ 文件及测试）
+- **判据**：**来源：H4b 的建议。** H4b 只改到卡面四个文件之内，接缝停在
+  `runtimeIsTauri: stablePrefix.hostHasLocalCapabilities`——旧名字被喂新语义这件事在源码里
+  看得见（两处都写了注释），不是静默的，所以不阻塞任何卡。本卡把名字收干净。
+  纯改名，跑 `pnpm exec vitest run packages/agent-core` 全量
+- **模型**：sonnet
 - **状态**：TODO
 
 ### H5 · Tauri 装配层注入 invoke loader
@@ -543,7 +609,12 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
 
 - **依赖**：B1、B2、H5
 - **改动面**：`apps/web/src/main.tsx`（当前 224 行）、新增 `apps/web/src/host/` 下的装配模块
-- **判据**：三宿主各自的 invoke / 持久化 / 观测 driver 选择收口到 `host/`；
+- **判据**：**另有一条 H4b 交回的待办必须在本卡收掉**：`modelTurnSystemItems.ts` 的
+  `buildEnvironmentItem` 在宿主有本机能力时写死「宿主：Tauri 桌面端（可用本机文件、shell 与
+  Git 工具）」。今天只有 Tauri 一种 server 宿主，这句逐字成立；server 宿主一落地，浏览器用户
+  就会被告知自己在 Tauri 桌面端，而这段文本是喂给**模型**的——模型会按错误的宿主假设行事。
+  改成按能力而非按宿主品牌措辞（`modelTurnPrefix.ts` 的调用处已留注释指向这里）。
+  三宿主各自的 invoke / 持久化 / 观测 driver 选择收口到 `host/`；
   `wc -l apps/web/src/main.tsx` ≤ 300。**不许为凑行数把强内聚的装配序列打碎**——
   按「宿主」这一个职责切。跑 `pnpm exec vitest run apps/web` + `pnpm build`
 - **模型**：opus
