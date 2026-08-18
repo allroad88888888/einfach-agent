@@ -20,7 +20,7 @@ core (TS，不变) ──▶  ├─ CLI ───────── 进程内 �
 ## 树概览
 
 ```text
-H  core host bridge 抽象        H1 → H2/H3/H4 → H5 → H6
+H  core host bridge 抽象        H1 → H1b → H2/H3/H4/H4b → H5 → H6
 N  host-node 薄包装区           N1 → N2 → N3/N4/N5/N6/N7 → N8 ★CLI 完整
 W  host-node 真逻辑区           W1..W15 → W16/W17 对拍
 S  server HTTP 外壳             S1 → S2/S3 → S4
@@ -33,8 +33,11 @@ T  Tauri 退成套壳               T1 → T2 → T3 → T4
 未决                           目录选择器 / 对拍覆盖下限 / 多 workspace 切换
 ```
 
-**MVP 路径 = H + N + W1–W15 + S + B + M**（约 44 卡）。到 M5 浏览器版即可用；
+**MVP 路径 = H + N + W1–W15 + S + B + M**（约 46 卡）。到 M5 浏览器版即可用；
 C/P/D/T 是增强与收尾，可后置。
+
+全树 62 卡（H 线在执行中由 6 张增至 8 张：H1 验收时发现三卡共享测试脚手架、且 H4 里混着
+一张性质完全不同的总闸卡，分别拆出 H1b 与 H4b）。
 
 ## 并行规则
 
@@ -109,7 +112,9 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
 ### H1 · 把 invoke 抽成可注入的 host bridge 契约
 
 - **依赖**：—
-- **改动面**：新建 `packages/agent-core/src/runtime/hostBridge.ts` 与 `hostBridge.test.ts`
+- **改动面**：新建 `packages/agent-core/src/runtime/hostBridge.ts` 与 `hostBridge.test.ts`；
+  `packages/agent-core/src/index.ts` 导出（装配层调不到的 `configureHostInvoke` 等于没交付，
+  可达性属于本卡契约的一部分）
 - **判据**：导出 `HostInvoke` 类型、`configureHostInvoke(loader)`、`hasHostBridge()`、
   `loadHostInvoke()`。**注入的是 loader（`() => Promise<HostInvoke>`）不是已解析的 invoke**——
   装配层拿 invoke 本身是异步的，注入已解析值会让「工具在注入完成前执行」变成一个时序竞态。
@@ -117,43 +122,87 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
   （照抄 `hostTauri.ts` 的 `??=` 理由：并发首次调用时 Vitest mocker 有一路会拿到未替换的真模块）。
   跑 `pnpm exec vitest run packages/agent-core/src/runtime/hostBridge.test.ts`
 - **模型**：opus
+- **状态**：DONE `5136364`。两处实现决策记在源码注释里：① loader 失败**不进缓存**（清回
+  `undefined` 让下次重试，清理前比对 promise 身份，避免旧 loader 慢一步失败时清掉新桥的缓存）
+  ——这与 `hostTauri.ts` 无条件缓存 rejection 的行为有意不同，那边是存量，本卡不顺手改；
+  ② 未登记时以 **rejection** 失败而非同步 throw，因为本函数对外承诺返回 Promise，
+  同步抛出会绕过 `.catch` 链变成未捕获错误。barrel 只收 `configureHostInvoke` + `HostInvoke`
+  类型，`hasHostBridge` / `loadHostInvoke` 的消费方全在 core 内部。
+
+### H1b · 共享测试脚手架加 hostBridge 版 mock 工厂
+
+- **依赖**：H1
+- **改动面**：`packages/agent-core/src/runtime/hostTauri.testHarness.ts`
+- **判据**：**本卡因验收 H1 时发现三卡共享改动面而新增。** `hostTauri.testHarness.ts` 导出的
+  `hostTauriBridgeMock` 被 `workspaceRead.contentHash` / `workspaceRead.runIndexPage`（H2）、
+  `workspaceWrite`（H3）、`shellCommand.backgroundKill`（H4）四个桥测试共用——H2/H3/H4 若各自
+  去加 hostBridge 版工厂，三个 agent 会同时改这一个文件。本卡先行把冲突面摘出来。
+  加 `hostBridgeMock(loadHostInvoke)` 供 `vi.mock('./hostBridge')` 用，形状对齐现有
+  `hostTauriBridgeMock`（`hasHostBridge` 恒真 + 调用方给的 loader），沿用文件里那段关于
+  vi.mock hoisting 限制的说明。**旧工厂保留不动**：H2/H3/H4 逐卡切换，全切完才零消费方，
+  由 H6 一并删。跑 `pnpm exec vitest run packages/agent-core/src/runtime`
+- **模型**：sonnet
 - **状态**：TODO
 
 ### H2 · workspace 读侧四模块改走 host bridge
 
-- **依赖**：H1
+- **依赖**：H1b
 - **改动面**：`packages/agent-core/src/runtime/` 的 `workspaceRead.ts`（5 处）、`workspaceRg.ts`、
   `workspaceGit.ts`、`workspaceTask.ts`
 - **判据**：`isTauriHost()` → `hasHostBridge()`、`loadTauriInvoke()` → `loadHostInvoke()`，
   invoke 的 command 名与参数**逐字不变**。四个文件内 `hostTauri` 的 import 归零。
   跑 `pnpm exec vitest run packages/agent-core/src/runtime/workspaceRead` 与同目录 Rg/Git/Task 用例
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### H3 · workspace 写侧五模块改走 host bridge
 
-- **依赖**：H1
+- **依赖**：H1b
 - **改动面**：`packages/agent-core/src/runtime/` 的 `workspaceWrite.ts`、`workspacePatch.ts`、
   `workspaceDelete.ts`、`workspacePathOperation.ts`、`workspaceChange.ts`
 - **判据**：同 H2；额外确认 `workspacePatch.ts` / `workspaceWrite.ts` 传给 observability 的参数未动。
   跑 `pnpm exec vitest run packages/agent-core/src/runtime/workspaceWrite.test.ts` 与
   `workspacePatch.timing.test.ts`
 - **模型**：sonnet
+- **状态**：DOING
+
+### H4 · shell 与 projectSkillsBridge 改走 host bridge
+
+- **依赖**：H1b
+- **改动面**：`packages/agent-core/src/runtime/` 的 `shellCommand.ts`、`projectSkillsBridge.ts`
+  及其 colocated 测试
+- **判据**：同 H2。两处**范围收窄**（原卡面写的是三个模块）：`modelTurnPrefix.ts` 拆去 H4b，
+  因为它那处 `isTauriHost()` 不是早退守卫而是工具可见性总闸，改动性质完全不同；
+  `workspaceDialog.ts` 始终不在范围（它用的是 `@tauri-apps/plugin-dialog` 而非 core invoke，
+  归未决项 U-1）。跑 `pnpm exec vitest run packages/agent-core/src/runtime/shellCommand`
+- **模型**：sonnet
 - **状态**：TODO
 
-### H4 · shell 与其余两模块改走 host bridge
+### H4b · 工具可见性总闸从「是不是 Tauri」改成「有没有桥」
 
-- **依赖**：H1
-- **改动面**：`packages/agent-core/src/runtime/` 的 `shellCommand.ts`、`projectSkillsBridge.ts`、
-  `modelTurnPrefix.ts`
-- **判据**：同 H2。`workspaceDialog.ts` **不在本卡范围**（它用的是 `@tauri-apps/plugin-dialog`
-  而非 core invoke，归未决项）。跑 `pnpm exec vitest run packages/agent-core/src/runtime/shellCommand`
-- **模型**：sonnet
+- **依赖**：H1b
+- **改动面**：`packages/agent-core/src/runtime/` 的 `modelTurnPrefix.ts`、`turnToolVisibility.ts`、
+  `toolManifest.ts`、`turnToolSet.ts`，以及 `modelRun.requestProjection.test.ts`、
+  `modelRun.dangerousToolConfirmation.test.ts`
+- **判据**：**本卡因验收 H1 时发现 H4 卡面定性错误而拆出，是整棵树的总闸。**
+  `turnToolVisibility.ts:31` 的 `isToolVisible(runtime, isTauri) => runtime !== 'server' || isTauri`
+  决定**模型能不能看到文件与 shell 工具**——`runtime: 'server'` 不是某个叫 server 的工具，
+  而是「需要本机能力」这一整类。这个 flag 从 `modelTurnPrefix.ts:45` 的 `isTauriHost()` 出发，
+  经 `buildToolManifestText` / `buildTurnTools` 流到 `availableToolSummaries` 与 `isToolVisible`，
+  沿途参数名一律叫 `isTauri`。**后端做得再全，这个 flag 不翻，Web 版就是空的。**
+  本卡把源头换成 `hasHostBridge()` 并把沿途参数改名（`isTauri` → 表达「有本机能力」的名字），
+  两个 modelRun 测试里的 `stubTauriHostFlag(true)` 相应换成登记一个假 loader——
+  `hasHostBridge()` 看的是 loader 是否登记，不再看 `globalThis.isTauri`，不换则测试失去意义。
+  **连带影响要在卡上写明结论**：`tools/mcp/src/placeholderTool.ts` 的注释说明 MCP stdio 占位
+  工具正是靠这个过滤在浏览器下隐藏，闸门翻开后 C 线完成前它会可见但不可用——是接受这个窗口期
+  还是加一层更细的能力粒度，本卡给出判断并记录。
+  跑 `pnpm exec vitest run packages/agent-core` 全量 + `pnpm build`
+- **模型**：opus
 - **状态**：TODO
 
 ### H5 · Tauri 装配层注入 invoke loader
 
-- **依赖**：H2、H3、H4
+- **依赖**：H2、H3、H4、H4b
 - **改动面**：`apps/web/src/main.tsx`（tauri 分支）、`apps/web/src/test/setup.ts`（测试宿主注入）
 - **判据**：桌面宿主下 `configureHostInvoke(() => loadTauriInvoke())` 在
   `registerStandardTools` 之后、任何工具可能执行之前完成。**这卡是 H 线的试金石**：
@@ -164,11 +213,12 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
 
 ### H6 · 宿主不可用文案去 Tauri 化
 
-- **依赖**：H2、H3、H4
-- **改动面**：H2–H4 涉及的 12 个文件里的 fail 文案
+- **依赖**：H2、H3、H4、H4b
+- **改动面**：H2–H4 涉及的 11 个文件里的 fail 文案；`hostTauri.testHarness.ts`（删旧工厂）
 - **判据**：`grep -rn "only available in the Tauri desktop runtime" packages/agent-core/src` 归零，
   替换为「当前宿主未提供 workspace 桥」（用户可见文案保持中文）。
-  跑 `pnpm exec vitest run packages/agent-core/src/runtime` 并更新命中该文案的断言
+  同时删掉 H1b 保留的 `hostTauriBridgeMock`——H2/H3/H4 切完后它已零消费方，
+  先 grep 确认再删。跑 `pnpm exec vitest run packages/agent-core/src/runtime` 并更新命中该文案的断言
 - **模型**：sonnet
 - **状态**：TODO
 
