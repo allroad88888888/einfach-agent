@@ -104,7 +104,60 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
 套壳后的桌面版若不做 P 线会丢掉 SQLite。
 
 **门禁三处要随新包同步**：`vite.config.ts` 的 `resolve.alias`、`tsconfig.app.json` 的 `paths`、
-`scripts/check-boundaries.js` 的 `capabilityPackages` 数组。
+`scripts/check-boundaries.js` 的 `capabilityPackages` 数组。（N1 落地时实际改了**四**处：
+同文件 `coreRules` 的「core 禁入能力包」清单也加了 `@web-agent/host-node`——core 反过来引它
+就等于把「宿主是什么」重新焊回 core，正是 H 线拆掉的那件事。）
+
+### host-node 施工须知（N1 交回，N/W/S 全线共同依据）
+
+**落地一域 = 建目录 + 写 registrar + 在 `createRoutes` 加一行展开。** 样板是
+`packages/host-node/src/config/`：handler 是工厂形态（收 options 返回 handler），`index.ts` 是域
+registrar（`create<Domain>Routes(options) => NodeHostRouteTable`）。**不要在 `createNodeHostInvoke.ts`
+里直接写 handler**，28 条摊进去必顶破 300 行。
+
+**没实现的命令不要写恒抛错的占位 handler。** 路由表是 `Partial`，缺席就是「键不存在」；写占位会让
+分发层把它认成「已实现但坏了」。分发层区分两种失败：`unimplemented`（在命令全集里但本次装配没有
+实现）与 `unknown-command`（不在全集内），S 线可按 `reason` 字段映射 501 / 404——**用字段而不是
+`instanceof`**，错误要跨 HTTP 序列化。失败一律是 rejection 不是同步抛出。
+
+**入参大小写不是「全都 snake_case」，是两层各有各的规则**（N1 逐条核对过 28 条）：
+① 14 条带 `rename_all = "snake_case"`（全部 workspace/* 与 shell），顶层键是 snake_case，
+core 的 `toTauriInput` / `toTauriReadInput` 已经转好，**路由表拿到的就是 snake_case，不要再转**；
+② 另 14 条没有该属性，走 Tauri 默认转换，其中参数多为单词或无参、大小写无差别，**唯二例外**是
+`cancel_model_provider_request` / `cancel_model_chat_completions` 的 `requestId`（camelCase）；
+③ **嵌套载荷一律 camelCase，与命令的 rename_all 无关**——最坑的是 `write_workspace_file`：
+顶层键 `change_context` 是 snake_case，值里却是 `changeId` / `sessionId` / `runId` / `toolCallId`
+（`workspaceWrite.ts:102` 实证）；`apply_workspace_patch` 的 `operations[]` 更混，判别键 `type`
+取值是 snake_case（`add_file` / `overwrite_file`），字段却是 camelCase（`oldText` / `newText`）。
+
+**handler 收到的是 `Record<string, unknown>`，必须自己收窄。** `commandArgs.ts` 是收窄的**目标形状**，
+不是替代品——同一张表要挂在 HTTP 后面，那条路上载荷是外部输入。
+
+**判参数存在只能看值，不能用 `'key' in args`。** core 的 `toTauriInput` 整份对象字面量返回，
+可选项无值时**键存在且为 undefined**；进程内注入（CLI / sidecar）原样到达，走 HTTP 时
+`JSON.stringify` 会把它丢掉。同一份入参在两种传输下键集合不同，用 `in` 会写出
+「本地能跑、上 server 就变」的 bug。
+
+**两条反向通道不在 `(cmd, args) => Promise<T>` 的形状里**：`model_provider_request` /
+`model_chat_completions` 有第三个参数 `events: Channel<ModelProxyEvent>`（不是 JSON），
+`mcp_connect` 之后还有一路 Rust `emit` / 前端 `listen` 的 stdio 生命周期事件。它们归 `events/` 域
+（C2 卡），是独立设计而非某条命令的实现细节——**M 线与 C 线的命令实现要等 C2**。
+
+**`sqlite/` 域当前零命令**：桌面侧走 `@tauri-apps/plugin-sql`，不在本仓库的 `#[tauri::command]`
+列表里。P2 定下命令名后**必须回来登记进 `NODE_HOST_COMMANDS_BY_DOMAIN`**，否则分发层会以
+`unknown-command` 拒绝它。
+
+**`commandNames.test.ts` 逐字比对 `apps/desktop/src/lib.rs` 的 `generate_handler!` 登记列表**——
+Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「删掉一条命令」的探针验证它真会红，
+不是空跑）。另有一条 `implemented` 断言列出当前已实现的命令名，落地一个域就把命令名加进那个
+数组，**别把断言改成宽松匹配**。
+
+**跑单包 build 前先确保 core 已按拓扑序构建**：能力包的 `tsconfig.build.json` 指向 core 的 **dist**，
+而 core 的 dist 可能是陈旧的（N1 就撞上一份不含 H 线 `HostInvoke` 导出的旧产物，声明 emit 阶段
+报 TS2305）。这一条不在 CI 里，容易踩。
+
+**`model_chat_completions` / `cancel_model_chat_completions` 全仓零 TS 调用方**（Rust 侧给旧渲染层
+留的兼容命令），登记在册是因为 `lib.rs` 里确实有，实现优先级最低。
 
 ---
 
@@ -396,7 +449,11 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
   **明确不要**把主目录塞进 `/api/health` 让 B1 顺手取走——那会把权威重新劈成两处。**包不依赖 `@web-agent/core` 的运行时**
   （只 import type），不含任何 HTTP。跑 `node scripts/check-boundaries.js` + `pnpm build`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE `c9ff758`。900 行 src / 11 例。`NODE_HOST_COMMANDS_BY_DOMAIN` 的**键就是目录名**，
+  所以命令表同时是目录规格；命令名联合类型从表推导，不手写第二份。入参形状因 300 行上限拆成
+  `commandArgs.ts` + `commandPayloads.ts`，两者间有**双向编译期穷举断言**——命令集合与入参表任一头
+  漏一条，`pnpm build` 当场红。门禁生效性也被验证过：子 agent 临时放了个 import 工具域的探针文件，
+  确认 `能力包禁入工具域` 真的报错后删除。施工须知见上面「现状事实」新增的那一节。
 
 ### N2 · workspace 路径底座与 atomic write
 

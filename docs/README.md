@@ -42,7 +42,7 @@
 | [core 公开面收敛盘点](core-public-surface-audit.md) | 盘点阶段，无实现：`@web-agent/core` 是唯一带 `exports` 通配的包，实测 68 条深导入子路径（非测试 63 / 测试 37）全部构成公开承诺；含五类归类、8 条疑似内部泄漏点名、68→9 的白名单方案、barrel 与 exports 两步走迁移，以及 17 张卡的拆分建议；发包蓝图 G4 的前置 |
 | [core 公开面收敛 Issue 树](core-surface-issues.md) | 步骤 1 + S11 委派接缝整形完成：九条 barrel、白名单门禁、批次执行段下沉 core、packages/subagents 深导入归零、T 线八项超限拆分；仅余 S10（删通配，GATED 至首次发包批次） |
 | [npm 发包准备 Issue 树](publish-prep-issues.md) | 执行中：E2 蓝图 G1–G13 的准备段（构建产物 / ?raw 内联 / 元数据 / 依赖修正 / 产物冒烟）；不含任何 publish 动作，发布键与 S10 由用户触发 |
-| [Node 宿主与 Web 自托管 Issue 树](node-host-issues.md) | 执行中（**H 线 12/12 完成**）：把浏览器版做成能力完整的本地自托管应用——core 的 Tauri invoke 抽成可注入 host bridge，能力实现收敛为一份 `packages/host-node`（约 4700 行 TS），经 `apps/server` 服务浏览器与 CLI，Tauri 最终退成 sidecar 套壳，npm 分发不需要任何签名证书；66 卡分十条线，MVP 路径 50 卡，三项未决待拍板 |
+| [Node 宿主与 Web 自托管 Issue 树](node-host-issues.md) | 执行中（H 线 12/12 完成，N 线 1/8）：把浏览器版做成能力完整的本地自托管应用——core 的 Tauri invoke 抽成可注入 host bridge，能力实现收敛为一份 `packages/host-node`（约 4700 行 TS），经 `apps/server` 服务浏览器与 CLI，Tauri 最终退成 sidecar 套壳，npm 分发不需要任何签名证书；66 卡分十条线，MVP 路径 50 卡，三项未决待拍板 |
 | [插件生态蓝图](plugin-ecosystem-blueprint.md) | 设计阶段，无实现：把 assembly-time 插件产品化为 `.webAgent/plugins/` 动态加载的用户插件——加载协议与错误隔离、借鉴 MCP 起进程确认的信任模型、启停与 plugin id 归因、npm 分发前置；`timeline.persist` 阻塞于 R5；默认信任姿态、首期宿主与模型可见工具三项待用户拍板 |
 
 蓝图描述目标形态，不代表所有 API 都已交付。引用蓝图时需要同时核对实现和测试。
