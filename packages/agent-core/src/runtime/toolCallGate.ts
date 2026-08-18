@@ -111,11 +111,11 @@ export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolea
     isSynthesisTurn: false,
     isAllowedTool: (name) => {
       const schema = base.toolEpoch.loadSchema(name)
-      return schema?.runtime !== 'server' || base.runtimeIsTauri
+      return schema?.runtime !== 'server' || base.hostHasLocalCapabilities
     },
     loadSchema: (name) => {
       const schema = base.toolEpoch.loadSchema(name)
-      return schema && (schema.runtime !== 'server' || base.runtimeIsTauri) ? schema : undefined
+      return schema && (schema.runtime !== 'server' || base.hostHasLocalCapabilities) ? schema : undefined
     },
     expectedRegistrationVersion: input.expectedRegistrationVersion,
     registrationVersion: (name) => base.toolEpoch.registrationVersion(name),
@@ -157,7 +157,7 @@ export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolea
     if (schema) base.state.recentToolNames = touchRecentToolName(base.state.recentToolNames, toolName, base.maxTurnTools - 1)
     result = schema ? toolSchemaLoadedResult(schema) : { error: 'unknown' }
   } else {
-    const manifest = searchToolManifestPage({ query: typeof input.args.query === 'string' ? input.args.query : undefined, cursor: typeof input.args.cursor === 'string' ? input.args.cursor : undefined, limit: typeof input.args.limit === 'number' ? input.args.limit : undefined }, base.runtimeIsTauri, { registry: base.toolEpoch })
+    const manifest = searchToolManifestPage({ query: typeof input.args.query === 'string' ? input.args.query : undefined, cursor: typeof input.args.cursor === 'string' ? input.args.cursor : undefined, limit: typeof input.args.limit === 'number' ? input.args.limit : undefined }, base.hostHasLocalCapabilities, { registry: base.toolEpoch })
     found = manifest.kind === 'tool_manifest_page'
     result = manifest as unknown as Record<string, unknown>
   }

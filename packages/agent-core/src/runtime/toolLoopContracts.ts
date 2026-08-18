@@ -45,7 +45,7 @@ export interface ToolLoopBase {
   maxTurnTools: number
   settings: SessionMeta['settings']
   modelUserId?: string
-  runtimeIsTauri: boolean
+  hostHasLocalCapabilities: boolean
   stablePrefix: Awaited<ReturnType<typeof import('./modelTurnPrefix').buildStableModelPrefix>>
   trace: ToolLoopTrace
   control: ToolLoopControl

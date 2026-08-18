@@ -44,7 +44,7 @@ function isChildTimedToolVisible(
   // Timed tools intentionally have no model schema; retain the same Web host exclusion from child visibility.
   return loadVisibleChildTool(registration.name, runtime) !== undefined
     || registration.runtime !== 'server'
-    || runtime.opts.runtimeIsTauri === true
+    || runtime.opts.hostHasLocalCapabilities === true
 }
 
 /** Executes one child timing bucket through the child context and archives only its child-timeline result. */

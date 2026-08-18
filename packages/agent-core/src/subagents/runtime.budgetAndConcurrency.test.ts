@@ -40,7 +40,7 @@ describe('createDelegationRuntime · 预算与并发', () => {
       sessionId: 'session',
       runId: 'run-root-isolation',
       settings: { vendor: 'deepseek', model: 'test-model' },
-      runtimeIsTauri: true,
+      hostHasLocalCapabilities: true,
       apiKey: 'test-key',
       signal: new AbortController().signal,
       fetchImpl,

@@ -35,13 +35,13 @@ function serverTool(name: string): Tool {
 }
 
 interface BaseOptions {
-  runtimeIsTauri?: boolean
+  hostHasLocalCapabilities?: boolean
   registerTools?: (registry: ToolRegistry) => void
   config?: Partial<RuntimeConfig>
 }
 
 function makeBase(options: BaseOptions = {}): ToolLoopBase {
-  const { runtimeIsTauri = false, registerTools, config } = options
+  const { hostHasLocalCapabilities = false, registerTools, config } = options
   const core = createCoreInstance({ registerTools, config })
   core.rootStore.setter(sessionsAtom, {
     session: {
@@ -60,7 +60,7 @@ function makeBase(options: BaseOptions = {}): ToolLoopBase {
     toolEpoch: createToolEpoch(core.tools, { sessionId: 'session', runId: 'run' }),
     turnId: 'turn',
     maxTurnTools: 8,
-    runtimeIsTauri,
+    hostHasLocalCapabilities,
     trace: {
       span: {} as ToolLoopBase['trace']['span'],
       event: () => {},
@@ -75,9 +75,9 @@ function makeBase(options: BaseOptions = {}): ToolLoopBase {
   } as unknown as ToolLoopBase
 }
 
-function baseFor(runtimeIsTauri: boolean, name: string): ToolLoopBase {
+function baseFor(hostHasLocalCapabilities: boolean, name: string): ToolLoopBase {
   return makeBase({
-    runtimeIsTauri,
+    hostHasLocalCapabilities,
     registerTools: (registry) => registry.register(serverTool(name)),
   })
 }
@@ -197,7 +197,7 @@ describe('handleToolGate unconnected MCP provider', () => {
   it('never consults the probe for a tool this run already knows', () => {
     const unconnectedToolProvider = probeFor('git_diff_review')
     const base = makeBase({
-      runtimeIsTauri: true,
+      hostHasLocalCapabilities: true,
       registerTools: (registry) => registry.register(serverTool('git_diff_review')),
       config: { unconnectedToolProvider },
     })

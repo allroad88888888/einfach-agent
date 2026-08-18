@@ -181,7 +181,7 @@ export async function executeChildAgentToolCalls(
             cursor: typeof callArgs.cursor === 'string' ? callArgs.cursor : undefined,
             limit: typeof callArgs.limit === 'number' ? callArgs.limit : undefined,
           },
-          runtime.opts.runtimeIsTauri === true,
+          runtime.opts.hostHasLocalCapabilities === true,
           { registry: runtime.registry, allowedToolNames },
         )),
       )

@@ -21,7 +21,7 @@ function assembledRuntime(fetchImpl: typeof fetch) {
     sessionId: 'session',
     runId: `run-${Math.random()}`,
     settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' },
-    runtimeIsTauri: true,
+    hostHasLocalCapabilities: true,
     apiKey: 'test-key',
     signal: new AbortController().signal,
     fetchImpl,

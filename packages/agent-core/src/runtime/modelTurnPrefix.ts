@@ -27,10 +27,6 @@ export interface StableModelPrefix {
    * 【H4b：字段为什么不再叫 isTauri】它是整棵工具可见性树的总闸，此前取自 `isTauriHost()`，
    * 于是「有没有本机能力」被写死成了「是不是跑在 Tauri webview 里」；判据换成 `hasHostBridge()`
    * 之后名字必须跟着换，否则下游读到一个叫 isTauri 的字段却拿到别的语义。
-   *
-   * 下游 `ToolLoopBase.runtimeIsTauri` 与 `SubagentRuntimeOpts.runtimeIsTauri` 仍是旧名字，
-   * 值就是本字段（`toolLoopBootstrap.ts` 两处赋值）。那一层的改名波及十余个文件与其测试，留给
-   * 后续单独一卡；在此之前请按本字段的语义理解那两个名字。
    */
   hostHasLocalCapabilities: boolean
 }

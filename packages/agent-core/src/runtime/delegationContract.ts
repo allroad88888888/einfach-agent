@@ -74,7 +74,7 @@ export interface DelegationRuntimeInput {
   registry?: ToolRegistry
   customInstructions?: string
   environment?: string
-  runtimeIsTauri?: boolean
+  hostHasLocalCapabilities?: boolean
   /** 不透明调用方标识；core 只透传，是否上行由 provider adapter 决定。 */
   modelUserId?: string
   apiKey: string

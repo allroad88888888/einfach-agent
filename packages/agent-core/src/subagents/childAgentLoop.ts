@@ -210,7 +210,7 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
       loop.visible = refreshChildVisibleTools(loop.visible, runtime, maxTurnTools - 1)
       const tools = isSynthesisTurn
         ? []
-        : buildTurnTools(loop.visible, runtime.opts.runtimeIsTauri === true, {
+        : buildTurnTools(loop.visible, runtime.opts.hostHasLocalCapabilities === true, {
             allowedToolNames,
             registry: runtime.registry,
             vendor: modelSelection.settings.vendor,

@@ -8,7 +8,7 @@ export function loadVisibleChildTool(
   runtime: DelegateAgentRuntimeState,
 ): LoadedTool | undefined {
   const tool = runtime.registry.loadSchema(name)
-  return tool && (tool.runtime !== 'server' || runtime.opts.runtimeIsTauri === true) ? tool : undefined
+  return tool && (tool.runtime !== 'server' || runtime.opts.hostHasLocalCapabilities === true) ? tool : undefined
 }
 
 /** Adds or refreshes one schema in the bounded child-visible tool working set. */

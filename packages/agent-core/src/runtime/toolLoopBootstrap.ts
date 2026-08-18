@@ -83,7 +83,7 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
     const modelUserId = core.config.modelUserId
     const rootTranscript = () => formatSubagentTranscript([...stablePrefix.items, ...currentTurnItems(id, core).map((item) => item.item)])
     const delegateRuntime = await core.delegation?.createRuntime({
-      sessionId: id, runId, settings: session.settings, core, registry: core.tools, customInstructions: core.config.customInstructions, environment: stablePrefix.environment.content, runtimeIsTauri: stablePrefix.hostHasLocalCapabilities, modelUserId, apiKey: opts.apiKey, signal: opts.signal, fetchImpl: opts.fetchImpl,
+      sessionId: id, runId, settings: session.settings, core, registry: core.tools, customInstructions: core.config.customInstructions, environment: stablePrefix.environment.content, hostHasLocalCapabilities: stablePrefix.hostHasLocalCapabilities, modelUserId, apiKey: opts.apiKey, signal: opts.signal, fetchImpl: opts.fetchImpl,
       onNodeChange: (node) => getExecutionRuntime(core).syncAgentNode(node),
       onTraceItem: ({ agentPath, timestamp, turn, item }) => getExecutionRuntime(core).appendAgentTrace({ sessionId: id, treeId: runId, agentPath, record: { timestamp, turn, item } }),
     })
@@ -99,10 +99,7 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
         maxTurnTools: maxTurnToolsForVendor(session.settings.vendor),
         settings: session.settings,
         modelUserId,
-        // runtimeIsTauri 是旧名字，值就是 stablePrefix.hostHasLocalCapabilities（判据已从
-        // 「是不是 Tauri」改成「宿主有没有登记 host bridge」，见 modelTurnPrefix.ts）。
-        // 这一层连同 SubagentRuntimeOpts 的同名字段一起改名，留给后续单独一卡。
-        runtimeIsTauri: stablePrefix.hostHasLocalCapabilities,
+        hostHasLocalCapabilities: stablePrefix.hostHasLocalCapabilities,
         stablePrefix,
         trace,
         control,

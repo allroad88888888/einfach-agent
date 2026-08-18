@@ -56,7 +56,7 @@ function context(runChildTool: NonNullable<DelegateAgentCallContext['runChildToo
 function childRuntime(input: {
   runId: string
   tools: Tool[]
-  runtimeIsTauri?: boolean
+  hostHasLocalCapabilities?: boolean
   fetchImpl: typeof fetch
   trace: TraceEntry[]
   signal?: AbortSignal
@@ -71,7 +71,7 @@ function childRuntime(input: {
   const runtime = createTestDelegationRuntime({
     sessionId: 'session', runId: input.runId, settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' },
     apiKey: 'test', signal: input.signal ?? new AbortController().signal, fetchImpl: input.fetchImpl,
-    core, registry: core.tools, scheduler: core.delegation!.scheduler, runtimeIsTauri: input.runtimeIsTauri,
+    core, registry: core.tools, scheduler: core.delegation!.scheduler, hostHasLocalCapabilities: input.hostHasLocalCapabilities,
     onTraceItem: ({ agentPath, item }) => input.trace.push({ agentPath, item }),
   })
   return { core, runtime }
@@ -91,7 +91,7 @@ describe('child Agent 到点工具', () => {
         timingTool('run_verification_command', 'subagentStart'),
         timingTool('rg_search', 'subagentEnd'),
       ],
-      runtimeIsTauri: true,
+      hostHasLocalCapabilities: true,
       trace,
       fetchImpl: async (_url, init) => {
         const request = body(init)
@@ -131,7 +131,7 @@ describe('child Agent 到点工具', () => {
     const calls: string[] = []
     const { runtime } = childRuntime({
       runId: 'run-failed', tools: [timingTool('read_file', 'subagentStart'), timingTool('rg_search', 'subagentEnd')],
-      runtimeIsTauri: true, trace,
+      hostHasLocalCapabilities: true, trace,
       fetchImpl: async (_url, init) => isChildRequest(body(init))
         ? new Response('bad request', { status: 400 })
         : response('# distilled skill'),
@@ -151,12 +151,12 @@ describe('child Agent 到点工具', () => {
   })
 
   it('Web 对 server 到点工具失败关闭，Tauri 在允许 profile 内经 child bridge 执行', async () => {
-    const run = async (runtimeIsTauri: boolean) => {
+    const run = async (hostHasLocalCapabilities: boolean) => {
       const trace: TraceEntry[] = []
       const bridge = vi.fn(async () => ({ ok: true as const }))
       const { runtime } = childRuntime({
-        runId: `run-server-${runtimeIsTauri}`, tools: [timingTool('run_verification_command', 'subagentStart', 'server')],
-        runtimeIsTauri, trace, fetchImpl: async (_url, init) => isChildRequest(body(init)) ? response('done') : response('# distilled skill'),
+        runId: `run-server-${hostHasLocalCapabilities}`, tools: [timingTool('run_verification_command', 'subagentStart', 'server')],
+        hostHasLocalCapabilities, trace, fetchImpl: async (_url, init) => isChildRequest(body(init)) ? response('done') : response('# distilled skill'),
       })
       await runtime.delegateAgents({ toolProfile: 'workspace_verify', children: [{ objective: 'verify' }] }, context(bridge))
       await runtime.dispose?.()
@@ -177,7 +177,7 @@ describe('child Agent 到点工具', () => {
     const bridge = vi.fn(async () => ({ ok: true as const }))
     const { runtime } = childRuntime({
       runId: 'run-cancelled', tools: [timingTool('read_file', 'subagentStart'), timingTool('rg_search', 'subagentEnd')],
-      runtimeIsTauri: true, trace, signal: abort.signal,
+      hostHasLocalCapabilities: true, trace, signal: abort.signal,
       fetchImpl: async (_url, init) => {
         if (!isChildRequest(body(init))) return response('# distilled skill')
         abort.abort()
@@ -200,7 +200,7 @@ describe('child Agent 到点工具', () => {
     const trace: TraceEntry[] = []
     const bridge = vi.fn(async () => ({ ok: true as const }))
     const { runtime } = childRuntime({
-      runId: 'run-risk', tools: [timingTool('shell_linux', 'subagentStart')], runtimeIsTauri: true, trace,
+      runId: 'run-risk', tools: [timingTool('shell_linux', 'subagentStart')], hostHasLocalCapabilities: true, trace,
       fetchImpl: async (_url, init) => isChildRequest(body(init)) ? response('done') : response('# distilled skill'),
     })
 
@@ -230,7 +230,7 @@ describe('child Agent 到点工具', () => {
     const { core, runtime } = childRuntime({
       runId,
       tools,
-      runtimeIsTauri: true,
+      hostHasLocalCapabilities: true,
       trace,
       fetchImpl: async (_url, init) => isChildRequest(body(init)) ? response('done') : response('# distilled skill'),
     })

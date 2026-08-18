@@ -51,7 +51,7 @@ function createHarness(execute: Tool['execute']) {
     toolEpoch: createToolEpoch(core.tools, { sessionId: 'session', runId: 'run' }),
     opts: { apiKey: 'test-key', signal: new AbortController().signal },
     maxTurnTools: 8,
-    runtimeIsTauri: true,
+    hostHasLocalCapabilities: true,
     trace: { span: {} as never, event: vi.fn(), finish: vi.fn() },
     control: { isCurrent: () => true, isRunning: () => true },
     hooks: {},

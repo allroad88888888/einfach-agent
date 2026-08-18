@@ -67,7 +67,7 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
         base.trace.event('tool.plan_pinned_evicted', { tools: planPins.evicted.join(','), max_turn_tools: base.maxTurnTools })
       }
       base.state.planPinnedTools = planPins.pinned
-      const tools = buildTurnTools(base.state.visible, base.runtimeIsTauri, { registry: base.toolEpoch, vendor: base.settings.vendor, recentToolNames: base.state.recentToolNames })
+      const tools = buildTurnTools(base.state.visible, base.hostHasLocalCapabilities, { registry: base.toolEpoch, vendor: base.settings.vendor, recentToolNames: base.state.recentToolNames })
       const names = toolNames(tools)
       const exposedRegistrationVersions = new Map<string, number>()
       for (const tool of base.state.visible) {

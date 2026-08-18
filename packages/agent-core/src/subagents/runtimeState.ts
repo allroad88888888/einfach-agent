@@ -64,8 +64,8 @@ export interface CreateDelegateAgentRuntimeOptions extends DelegationRuntimePort
   customInstructions?: string
   /** Parent agent's resolved execution-environment prompt section. */
   environment?: string
-  /** Whether this delegate runtime runs inside the native Tauri host. Omitted is Web-safe. */
-  runtimeIsTauri?: boolean
+  /** Whether this delegate runtime has local host capabilities (file / shell / Git / rg). Omitted is Web-safe. */
+  hostHasLocalCapabilities?: boolean
   /** Stable, opaque caller identifier; each provider adapter decides whether to send it. */
   modelUserId?: string
   apiKey: string
@@ -150,7 +150,7 @@ export class DelegateAgentRuntimeState {
     this.tierRouting = rawOpts.tierRouting
     this.opts = {
       ...rawOpts,
-      runtimeIsTauri: rawOpts.runtimeIsTauri === true,
+      hostHasLocalCapabilities: rawOpts.hostHasLocalCapabilities === true,
       settings: this.migratedSettings,
       signal: this.runtimeController.signal,
     }

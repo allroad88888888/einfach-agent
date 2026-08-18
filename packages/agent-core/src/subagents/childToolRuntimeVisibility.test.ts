@@ -65,7 +65,7 @@ function context(runChildTool?: DelegateAgentCallContext['runChildTool']): Deleg
   }
 }
 
-function createRuntime(runtimeIsTauri: boolean, fetchImpl: typeof fetch) {
+function createRuntime(hostHasLocalCapabilities: boolean, fetchImpl: typeof fetch) {
   const registry = createToolRegistry()
   registry.register(fixtureTool('delegate_agent', 'internal'))
   registry.register(fixtureTool('read_file', 'server'))
@@ -79,17 +79,17 @@ function createRuntime(runtimeIsTauri: boolean, fetchImpl: typeof fetch) {
     fetchImpl,
     registry,
     // Browser child runtimes must never make server-backed schemas visible to their model loop.
-    runtimeIsTauri,
+    hostHasLocalCapabilities,
   })
 }
 
 async function runVerificationChild(
-  runtimeIsTauri: boolean,
+  hostHasLocalCapabilities: boolean,
   onChildRequest: (body: Record<string, unknown>, turn: number) => Response,
   runChildTool?: DelegateAgentCallContext['runChildTool'],
 ): Promise<void> {
   let childTurn = 0
-  const delegateRuntime = createRuntime(runtimeIsTauri, async (_url, init) => {
+  const delegateRuntime = createRuntime(hostHasLocalCapabilities, async (_url, init) => {
     const body = requestBody(init)
     if (!isChildRequest(body)) return response({ role: 'assistant', content: '# distilled skill' })
     childTurn += 1
