@@ -23,7 +23,7 @@ core (TS，不变) ──▶  ├─ CLI ───────── 进程内 �
 H  core host bridge 抽象        H1 → H1b → H2/H3/H4/H4b → H4c/H4d-1→H4d-2/H4e → H5 → H6
 N  host-node 薄包装区           N1 → N2 → N3/N4/N5/N6/N7 → N8 ★CLI 完整
 W  host-node 真逻辑区           W1..W15 → W16/W17 对拍
-S  server HTTP 外壳             S1 → S2/S3 → S4
+S  server HTTP 外壳             S1 → S2/S3/S5 → S4
 B  前端 server 宿主装配          B1 → B2 → B3 → B4 ★浏览器 fs/shell 可用
 M  模型代理                     M1 → M2/M4 → M3 → M5 ★浏览器完整对话
 C  MCP 与事件通道               C1/C2 → C3 → C4
@@ -36,7 +36,7 @@ T  Tauri 退成套壳               T1 → T2 → T3 → T4
 **MVP 路径 = H + N + W1–W15 + S + B + M**（约 46 卡）。到 M5 浏览器版即可用；
 C/P/D/T 是增强与收尾，可后置。
 
-全树 66 卡（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
+全树 67 卡（H 线在执行中由 6 张增至 12 张，S 线因 N3 交回的 platform 阻断项增至 5 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
 H4b 从 H4 里拆出的总闸、H4c 验收漏扫 apps 面留下的回归、H4d 拆树后新增文件带来的缺口、
 H4e 总闸改名的下游收尾）。
 
@@ -493,7 +493,23 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   逐字段对齐 core 的 `ShellCommandInput` / `ShellCommandResult`。
   跑 `pnpm exec vitest run packages/host-node/src/shell`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE `711e032`。9 个源文件 + 5 份测试 / 39 例。
+  **卡面前提被推翻且推翻得对**（主会话已复核）：我从文件名 `shell_wait.rs` 推断存在跨调用的
+  后台进程表，实际那 75 行只等**本次调用的直接子进程**退出、超时就杀，整个 `shell*.rs` 零跨调用
+  状态。所以 Node 侧同样零状态、不开 `hostOptions` 槽位。
+  stdout / stderr **都用 drain**（`shell_output.rs` 的 `read_capped_into` 到上限后继续 read 只丢内容，
+  两条流共用）——这不是可选项：管道缓冲只有几十 KB，读端一停写端就卡在 write 上，
+  「输出超上限」会变成「命令挂到超时被杀」，`exit_code` 从 0 变 null。有专测用例，换成 stop 立刻红。
+  **四处 Node 特有的必要偏离**：① 放弃读线程时 Rust 是丢 JoinHandle 让线程与 fd 一起泄漏，
+  Node 必须 `stream.destroy()`，否则活着的 Readable 会让 CLI 宿主拒绝退出；② `detached` 而非
+  `process_group(0)`（Node 只暴露前者，且 Windows 上语义完全不同，故只在非 win32 设）；
+  ③ **env 是合并不是替换**——Rust 的 `Command::envs()` 往继承环境里加，Node 的 `env` 选项整份替换，
+  照抄写法会让子进程丢掉 PATH，症状是「传了 env 就找不到任何可执行文件」；
+  ④ 存在性检查用异步 `stat` 而非 `existsSync`（这张表要挂在 HTTP 后面，同步 IO 会卡事件循环）。
+  **另记一笔既有的误导性文案**（桌面端今天就有，改动要 core + Rust 一起动）：超时命令的
+  `exit_code: null` 被 core 的 `normalizeResult` 整形成 `-1` 并追加
+  `run_shell_command returned a response without a valid exit code`——对模型来说「超时被杀」
+  被说成「桥返回了非法响应」。
 
 ### N4 · git diff
 
@@ -503,7 +519,17 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   （`workspace_git_args.rs` 与 `workspace_git_args_tests.rs`）——它挡的是经 diff 参数注入
   任意 git 子命令。跑 `pnpm exec vitest run packages/host-node/src/workspace/git`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE `773e0d4`。7 个源文件 + 5 份测试 / 71 例（用真 git 仓库，不 mock）。
+  **白名单是构造式不是过滤式**：argv 里每个 flag 都是源码字面量，调用方只能影响 `base` 与
+  `paths` 两个值。逐条拒绝各挡什么已写进注释，其中一条**是子 agent 自己补的**、Rust 注释里没有：
+  `base` 必须解析成 `^{commit}`——`git diff <x>` 里的 `<x>` 若不是 rev，git 会把它当 **pathspec**，
+  少了这步，一个恰好是仓库内路径的 base 会让「对比某提交」静默变成「只看某文件」。
+  它还诚实指出「base 含空白/控制字符」这条**在没有 shell 的前提下不是拆词防线**（`spawn` 不带
+  `shell`，argv 直接 execve），挡的是另外两件次要的事，但没有因此放宽它。
+  **env 三件套有行为验证而不只是断言配置存在**（主会话复核）：仓库 config 里配一个会 `touch`
+  标记文件的外部 diff driver，断言标记文件不存在、且 diff 内容仍是 git 自己算的那份。
+  路径 confinement 没有复用 common 的两个 `resolve*`（那两个产出绝对路径给系统调用，这里要的是
+  给 git 的相对 pathspec，且必须允许目标已被删除），照搬 `workspace_git_path.rs` 自己那套。
 
 ### N5 · rg 搜索
 
@@ -513,7 +539,18 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   `maxMatches` 上限与 truncated 标记、stderr 截断、`--max-filesize=1M`。rg 缺失时返回可读错误
   而非崩溃。跑 `pnpm exec vitest run packages/host-node/src/workspace/rg`
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE `9410ab5`。9 个源文件 + 5 份测试 / 54 例。六个常量逐值对齐（主会话复核），
+  `maxMatches` 与 `contextLines` 超限一律**钳到 MAX 不拒绝**，`maxMatches` 为 0 或缺席回落 DEFAULT
+  （0 不表示无限）。解析 `match` / `context` 事件，忽略 `begin` / `end` / `summary` 与解析不了的行
+  ——与 Rust 的 `_ => {}` 逐条一致。
+  **stdout 既不用 stop 也不用 drain**：走 readline 逐行解析并按 maxMatches 自行停止（Rust 的
+  `parse_rg_stdout` 同样没用那两个共享 helper）；只有 stderr 用 `readCappedDrain`，必须与 stdout
+  并发排空，否则 stderr 管道写满会把子进程堵死。
+  **rg 缺失的文案在 Rust 原文后追加了中文安装提示**（Rust 原文没有可抄的）——前缀逐字保留，
+  是增量信息不是改写，基于前缀的断言不受影响。
+  **一处继承自 Rust 的行为要让调用方知道**：不传 `path` 时 rg 的 target 是 `.`，于是它给每个
+  结果路径加 `./` 前缀（对真实 ripgrep 15.1.0 实测过），`normalize_display_path` 只剥绝对路径、
+  不剥这个前缀。不是 bug，但默认搜索的调用方要预期到。
 
 ### N6 · run workspace task
 
@@ -522,7 +559,16 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `apps/desktop/src/workspace_task.rs`（480 行）：按 kind 发现并执行
   测试/lint 命令、输出上限、退出码透传。跑 `pnpm exec vitest run packages/host-node/src/workspace/task`
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE `40cb560`。7 个文件 / 59 例。kind（test / build / lint / typecheck）映射到同名
+  `package.json` script，包管理器按 lockfile → `packageManager` 字段 → npm 逐级探测；
+  `cargo_check` 依次找根 `Cargo.toml` → `apps/desktop/` → `src-tauri/`。
+  **三个模块的 capped 读各不相同**（子 agent 先按 git 的类比假设 stdout 用 stop，自己 grep 后
+  推翻，主会话复核确认）：`workspace_task.rs` 两个流**都用 drain**、`workspace_git_exec.rs`
+  是 stdout=stop + stderr=drain、`workspace_rg.rs` 的 stdout 走逐行 JSON 解析不经 capped。
+  task 用 drain 是对的——chatty 的构建/测试工具 stdout 到上限后若停读会背压卡死，反而制造假超时。
+  **一处有意偏离**：Rust 的 timeout 分支用同步 `try_wait` 区分「kill 失败但进程其实已自然退出」
+  与「kill 失败且仍在跑」；Node 的事件式实现里这个竞态**结构上不存在**（自然退出先 resolve 并
+  `clearTimeout`，kill 分支只在进程确实还活着时才跑），故不复刻，理由写在 `taskProcess.ts` 文件头。
 
 ### N7 · 用户配置读写
 
@@ -763,6 +809,24 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：body 即 args JSON，逐字透传给 `createNodeHostInvoke` 的路由表；未知 command
   返回 404 而非 500。跑该目录 vitest
 - **模型**：sonnet
+- **状态**：TODO
+
+### S5 · shell 的 platform 该由宿主说了算，不是调用方探测
+
+- **依赖**：S1
+- **改动面**：`packages/agent-core/src/runtime/hostPlatform.ts` 与 `shellCommand.ts` 的调用链；
+  `apps/server` 的握手；`apps/web/src/host/`
+- **判据**：**来源：N3 交回时点名的阻断项，`run_shell_command` 在 server 宿主下会整个不可用。**
+  `platform` 由 core 的 `detectHostPlatform()` 在**调用方**探测后随命令传下去，宿主收到后校验
+  「与自己不符就拒绝执行」。Tauri 下前端与原生同机，这条恒成立；**浏览器 → Node server 这条路上
+  不成立**——用户在 macOS、服务端在 Linux，会稳定拿到 `platform mismatch: requested \`macos\`,
+  current \`linux\``，一条 shell 命令都跑不了。
+  那条校验本身挡的是真问题（模型按 A 平台组命令、宿主按 B 平台执行），**不能简单删掉**。
+  正解大概率是让 core 从宿主握手拿平台而不是本地探测——`/api/health` 或桥的一次初始化调用
+  回报宿主平台，core 用它组命令，于是「组命令」和「执行命令」用的是同一个事实。
+  本卡要给出设计并落地，判据是：server 宿主下 macOS 浏览器 + Linux 服务端能正常跑 shell 命令，
+  且「模型按错平台组命令」仍被挡住。
+- **模型**：opus
 - **状态**：TODO
 
 ### S4 · 启动 CLI：端口选择、URL 打印、打开浏览器
