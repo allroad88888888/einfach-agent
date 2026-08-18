@@ -11,22 +11,28 @@ import { runSession, runToolLoop } from './modelRun'
 import { configureObservability, flushObservability } from '../observability/trace'
 import { createCore } from './core/createCore'
 import { resetModelRunTestState, seedSession, jsonResponse, toolCallsResponse, seqFetch, captureTrace, waitUntil } from './modelRun.testHarness'
-import { stubTauriHostFlag } from './hostTauri.testHarness'
+import { stubHostBridgeFlag } from './hostBridge.testHarness'
 
-// modelTurnPrefix.ts 的工具发现读 isTauriHost()，直接读 globalThis.isTauri（见
-// runtime/hostTauri.ts），不经过 '@tauri-apps/api/core' 的 isTauri 导出——本文件曾经维护的
-// vi.mock('@tauri-apps/api/core', { isTauri: ... }) 分量已随 D2 迁移失效，随本卡（D8）删除，
-// 改用共享 helper 只切 globalThis.isTauri 这一个开关。
+// modelTurnPrefix.ts 的工具发现读 hasHostBridge()（见 runtime/hostBridge.ts），既不经过
+// '@tauri-apps/api/core' 的 isTauri 导出，也不再读 globalThis.isTauri：
+//   · vi.mock('@tauri-apps/api/core', { isTauri: ... }) 分量随 D2 迁移失效，已于 D8 删除；
+//   · globalThis.isTauri 分量（stubTauriHostFlag）随 H4b 把总闸从「是不是 Tauri」改判成
+//     「宿主有没有登记 host bridge」而失效——本文件整组用例都建立在「server 工具的 schema 对模型
+//     可见」之上，闸门关着时 request_tool_schema 加载不到 write_file/shell_macos，整组会从
+//     「测确认门」退化成「测未知工具的拒绝路径」。
+// 现在统一用 stubHostBridgeFlag 登记/清空 hostBridge 的 loader，它才是总闸真正读的东西。
 
 afterEach(() => {
   resetModelRunTestState()
-  stubTauriHostFlag(false)
+  stubHostBridgeFlag(false)
 })
 
 describe('危险工具确认门（S4-B）', () => {
   beforeEach(() => {
-    // 这一组验证桌面端 server 工具的参数校验与授权门；只有 Tauri 环境会向模型暴露这些 schema。
-    stubTauriHostFlag(true)
+    // 这一组验证 server 工具的参数校验与授权门；只有具备本机能力的宿主会向模型暴露这些 schema。
+    // 桩给的 invoke 必定 reject，因此真正被执行的 server 工具拿到的是失败结果——与改动前
+    // （jsdom 里没有宿主内部通道、真 invoke 直接抛）一致，本组断言只看确认门与 ToolItem 回填。
+    stubHostBridgeFlag(true)
   })
 
   it('危险 shell 参数缺 command：先 validation_failed 回填 tool error，不进入 waiting_confirmation', async () => {

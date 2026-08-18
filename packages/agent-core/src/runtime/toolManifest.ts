@@ -56,10 +56,10 @@ function normalizedManifestLimit(value: number | undefined): number {
  * 懒加载。description 折叠为空白稳定的单行，避免第三方工具的换行破坏清单边界。
  */
 export function buildToolManifestText(
-  isTauri: boolean,
+  hostHasLocalCapabilities: boolean,
   options?: BuildTurnToolsOptions,
 ): string {
-  const tools = availableToolSummaries(isTauri, options)
+  const tools = availableToolSummaries(hostHasLocalCapabilities, options)
   const lines = tools.map((tool) => {
     const description = tool.description.replace(/\s+/g, ' ').trim()
     return `· ${tool.name} [${tool.runtime}] — ${description}`
@@ -116,7 +116,7 @@ function manifestError(
  */
 export function searchToolManifestPage(
   input: ToolManifestSearchInput,
-  isTauri: boolean,
+  hostHasLocalCapabilities: boolean,
   options?: BuildTurnToolsOptions,
 ): ToolManifestResult {
   const query = input.query?.trim() ?? ''
@@ -131,7 +131,7 @@ export function searchToolManifestPage(
   }
 
   const terms = query.toLowerCase().split(/\s+/).filter(Boolean)
-  const matched = availableToolSummaries(isTauri, options).filter((tool) => {
+  const matched = availableToolSummaries(hostHasLocalCapabilities, options).filter((tool) => {
     if (terms.length === 0) return true
     const searchable = [
       tool.name,

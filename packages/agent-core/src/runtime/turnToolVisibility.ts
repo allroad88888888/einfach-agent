@@ -5,8 +5,8 @@ import type { ToolCatalog } from '../tools/toolCatalog'
 import type { ToolRuntime, ToolSummary } from '../tools/types'
 import { compareStableText } from './shared/stableTextOrder'
 
-// TP3 判据：server 工具依赖 Tauri 本机能力（shell/文件系统），web 下不可用 → 不暴露给 model。
-// manifest 分页与 visible 展开共用此谓词，保证「能发现的」与「能看见的」判据一致。
+// TP3 判据：server 工具依赖宿主的本机能力（shell / 文件系统 / Git / rg），宿主给不出这些能力时
+// 不暴露给 model。manifest 分页与 visible 展开共用此谓词，保证「能发现的」与「能看见的」判据一致。
 export interface BuildTurnToolsOptions {
   allowedToolNames?: readonly string[]
   // 【登记反转 · TS1 收口】manifest 搜索必须读绑定 core 的 registry，而非模块级
@@ -28,19 +28,42 @@ export function isToolAllowed(name: string, options?: BuildTurnToolsOptions): bo
   return !options?.allowedToolNames || options.allowedToolNames.includes(name)
 }
 
-export function isToolVisible(runtime: ToolRuntime, isTauri: boolean): boolean {
-  return runtime !== 'server' || isTauri
+/**
+ * 工具可见性的总闸。
+ *
+ * 【为什么参数不再叫 isTauri】（H4b）第二个参数一路上曾经全叫 `isTauri`，源头是
+ * `modelTurnPrefix.ts` 的 `isTauriHost()`——于是「宿主能不能执行 runtime='server' 的工具」被写死
+ * 成了「是不是跑在 Tauri webview 里」。这两件事从来就不是一回事：本机能力来自宿主提供的命令桥
+ * （见 hostBridge.ts），桥背后是 Tauri invoke、本地 Node 后端还是别的什么，与 core 无关。现在源头
+ * 改读 `hasHostBridge()`，参数名跟着改成「宿主有没有本机能力」这个它真正回答的问题——留着旧名字
+ * 的话，将来读到 `runtime !== 'server' || isTauri` 的人只会得到一个错误答案。
+ *
+ * 【MCP stdio 占位的窗口期】（H4b 结论，不在本卡实现）stdio MCP 的占位工具登记为
+ * runtime='server'（tools/mcp/src/placeholderTool.ts），此前正是靠这道闸在浏览器下被整类过滤掉。
+ * 闸门改判「有没有桥」之后，一个**非 Tauri 的 server 宿主**（本地 Node 后端，B 线）会让这些占位
+ * 变成可见，而 stdio 的 Node 实现要等 C 线才有——中间存在「可见但不可用」的窗口。判定为**可接受**：
+ *   · 今天为零风险：Tauri 下 hasHostBridge() ⟺ isTauriHost()，纯浏览器下没有桥，两种现存宿主的
+ *     行为与改动前逐字节相同；这个窗口只在一个尚不存在的宿主上才打开。
+ *   · 失败是有界且诚实的：占位的 execute 会走透明连接，连接器缺席时得到的是一条工具失败结果，
+ *     与「MCP 服务连不上」同类，占位 guide 本来就向模型交代了「这是未连接服务的历史条目」。
+ *   · 现在就切更细的粒度是投机：本地 Node 后端几乎必然能起子进程，那样 stdio 需要的能力与 shell
+ *     完全相同，细分维度会白做。真到了需要修的那天，正确位置也不在这里——「宿主有没有本机能力」
+ *     是本文件的判据，「这个占位现在该不该存在」是 placeholderSync 的判据（没有 stdio 连接器就
+ *     别同步 stdio 占位），把它塞进 ToolRuntime 会让两个判断挤在同一个维度上。
+ */
+export function isToolVisible(runtime: ToolRuntime, hostHasLocalCapabilities: boolean): boolean {
+  return runtime !== 'server' || hostHasLocalCapabilities
 }
 
 export function availableToolSummaries(
-  isTauri: boolean,
+  hostHasLocalCapabilities: boolean,
   options?: BuildTurnToolsOptions,
 ): ToolSummary[] {
   return (options?.registry ?? toolRegistry)
     .list()
     .filter((tool) =>
       tool.name !== 'request_tool_schema'
-      && isToolVisible(tool.runtime, isTauri)
+      && isToolVisible(tool.runtime, hostHasLocalCapabilities)
       && isToolAllowed(tool.name, options))
     .sort((left, right) =>
       compareStableText(left.name, right.name)

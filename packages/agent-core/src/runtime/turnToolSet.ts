@@ -51,7 +51,7 @@ export function touchRecentToolName(
  */
 export function selectTurnLoadedTools(
   visible: readonly LoadedTool[],
-  isTauri: boolean,
+  hostHasLocalCapabilities: boolean,
   options?: BuildTurnToolsOptions,
 ): LoadedTool[] {
   const capacity = normalizedMaxTurnTools(options?.maxTools, options?.vendor) - 1
@@ -61,7 +61,7 @@ export function selectTurnLoadedTools(
   for (const tool of visible) {
     if (
       tool.name !== 'request_tool_schema'
-      && isToolVisible(tool.runtime, isTauri)
+      && isToolVisible(tool.runtime, hostHasLocalCapabilities)
       && isToolAllowed(tool.name, options)
     ) {
       // 同名重复时采用最后一个快照；registry 重注册后的新 schema 通常位于列表尾部。
@@ -90,16 +90,19 @@ export function selectTurnLoadedTools(
 
 // 简介：组本轮暴露给 model 的 function 列表（TK3 + TP3）。
 // 详情：request_tool_schema 恒在场；其后最多 provider descriptor 上限减一的已加载 schema 的 visible tools。
-// 超预算时优先最近请求/后加载的工具，再按名称稳定输出。未加载的工具不进；server 工具在 web
-// 下（isTauri=false）既不能经 manifest 发现，也不进 visible（TP3，防御 web 混入的 server 工具）。
+// 超预算时优先最近请求/后加载的工具，再按名称稳定输出。未加载的工具不进；宿主给不出本机能力时
+// （hostHasLocalCapabilities=false）server 工具既不能经 manifest 发现，也不进 visible
+// （TP3，防御无本机能力的宿主混入 server 工具）。参数为什么不再叫 isTauri 见 turnToolVisibility.ts
+// 的 isToolVisible —— 这里只是同一个总闸的另一条流：清单文本走 toolManifest，实际传给模型的
+// tools 数组走这里，两条必须同判据。
 export function buildTurnTools(
   visible: LoadedTool[],
-  isTauri: boolean,
+  hostHasLocalCapabilities: boolean,
   options?: BuildTurnToolsOptions,
 ): ModelFunctionTool[] {
   return [
     requestSchemaTool(),
-    ...selectTurnLoadedTools(visible, isTauri, options)
+    ...selectTurnLoadedTools(visible, hostHasLocalCapabilities, options)
       .map((tool) => ({
         type: 'function' as const,
         function: {

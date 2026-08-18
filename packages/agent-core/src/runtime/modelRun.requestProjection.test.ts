@@ -1,5 +1,6 @@
 // 拆分自 modelRun.test.ts（T1）。P-R2 单轮 run 里「发给模型的请求长什么样」：
-// vendor/thinking 设置转发、L1 skills 清单、Tauri 工具发现、稳定前缀顺序、运行环境注入。
+// vendor/thinking 设置转发、L1 skills 清单、有本机能力时的 server 工具发现、稳定前缀顺序、
+// 运行环境注入。
 
 import { describe, it, expect, afterEach, vi } from 'vitest'
 import { rootStore, sessionsAtom, workspacesAtom } from '../state/rootStore'
@@ -13,16 +14,19 @@ import { runSession } from './modelRun'
 import { createCoreInstance } from './core/coreInstance'
 import { buildSkillManifestText, registerStandardTools } from '@web-agent/tools'
 import { resetModelRunTestState, seedSession, jsonResponse } from './modelRun.testHarness'
-import { stubTauriHostFlag } from './hostTauri.testHarness'
+import { stubHostBridgeFlag } from './hostBridge.testHarness'
 
-// modelTurnPrefix.ts 的工具发现读 isTauriHost()，直接读 globalThis.isTauri（见
-// runtime/hostTauri.ts），不经过 '@tauri-apps/api/core' 的 isTauri 导出——本文件曾经维护的
-// vi.mock('@tauri-apps/api/core', { isTauri: ... }) 分量已随 D2 迁移失效，随本卡（D8）删除，
-// 改用共享 helper 只切 globalThis.isTauri 这一个开关。
+// modelTurnPrefix.ts 的工具发现读 hasHostBridge()（见 runtime/hostBridge.ts），既不经过
+// '@tauri-apps/api/core' 的 isTauri 导出，也不再读 globalThis.isTauri：
+//   · vi.mock('@tauri-apps/api/core', { isTauri: ... }) 分量随 D2 迁移失效，已于 D8 删除；
+//   · globalThis.isTauri 分量（stubTauriHostFlag）随 H4b 把总闸从「是不是 Tauri」改判成
+//     「宿主有没有登记 host bridge」而失效——留着它用例仍会跑，但下面那两条“Tauri 下能发现
+//     shell_macos”的断言会静默变成“在没有本机能力的宿主上跑”，比失败更糟。
+// 现在统一用 stubHostBridgeFlag 登记/清空 hostBridge 的 loader，它才是总闸真正读的东西。
 
 afterEach(() => {
   resetModelRunTestState()
-  stubTauriHostFlag(false)
+  stubHostBridgeFlag(false)
 })
 
 describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造', () => {
@@ -155,8 +159,8 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
     )
   })
 
-  it('Tauri 首轮请求能发现 shell_macos，但未加载前仍不把它作为可调用 function 暴露', async () => {
-    stubTauriHostFlag(true)
+  it('有本机能力的宿主首轮请求能发现 shell_macos，但未加载前仍不把它作为可调用 function 暴露', async () => {
+    stubHostBridgeFlag(true)
     seedSession('inject-tauri-tools', { vendor: 'deepseek', model: 'm' })
     let captured: Record<string, unknown> = {}
     const fetchImpl: typeof fetch = (_url, init) => {
@@ -236,7 +240,9 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
     // 回归用例。缺这一段时的实测事故：DeepSeek 首轮直接对
     // /Users/<某人>/develop/android/... 发 read_file，报 WORKSPACE_READ_FAILED，
     // 模型是从错误文案里才第一次看到真实根目录，白烧三轮。
-    stubTauriHostFlag(true)
+    // 有本机能力才会走到「宿主：…（可用本机文件、shell 与 Git 工具）+ 当前工作区根目录」那一支；
+    // 无能力时运行环境段根本不报根目录，下面的断言就落空了。
+    stubHostBridgeFlag(true)
     const core = createCoreInstance()
     const id = 'env-workspace'
     core.rootStore.setter(workspacesAtom, {

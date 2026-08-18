@@ -17,7 +17,7 @@ function prefix(): StableModelPrefix {
     system,
     toolManifest,
     environment,
-    isTauri: false,
+    hostHasLocalCapabilities: false,
   }
 }
 

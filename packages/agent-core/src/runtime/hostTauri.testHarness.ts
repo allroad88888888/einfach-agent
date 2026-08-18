@@ -52,6 +52,15 @@ export function stubTauriHostFlag(enabled: boolean): () => void {
   }
 }
 
+// 「当前宿主有没有本机能力」的开关（H4b 的 stubHostBridgeFlag）**不在本文件**，住
+// hostBridge.testHarness.ts。原因是硬的、不是风格问题：那个 helper 必须真的调用
+// configureHostInvoke，也就是要对 './hostBridge' 做一次**值导入**；而本文件被
+// workspaceRead/workspaceWrite/workspacePatch/shellCommand 四个桥测试 import，它们又都
+// `vi.mock('./hostBridge', () => hostBridgeMock(...))`。vi.mock 被提升到所有 import 之前，
+// 于是本文件顶层的那次值导入会撞进被 mock 模块的 TDZ，四个文件全部报
+// 「Cannot access '__vi_import_0__' before initialization」（实测）。本文件对 './hostBridge'
+// 只能保持 `import type`——类型在编译期擦除，不产生运行时导入。
+
 /** loadTauriInvoke() 的返回类型——逐字对齐 hostTauri.ts 的签名，避免每个桥测试文件各写一份。 */
 type TauriInvoke = typeof import('@tauri-apps/api/core').invoke
 
