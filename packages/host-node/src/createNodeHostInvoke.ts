@@ -58,6 +58,7 @@ import type { HostInvoke } from '@web-agent/core'
 import { isNodeHostCommandName } from './commandNames'
 import { createConfigRoutes } from './config'
 import { createShellRoutes } from './shell'
+import { createChangeRoutes } from './workspace/change'
 import { createGitRoutes } from './workspace/git'
 import { createRgRoutes } from './workspace/rg'
 import { createTaskRoutes } from './workspace/task'
@@ -107,7 +108,11 @@ export class NodeHostCommandError extends Error {
  */
 function createRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
   return {
-    // 待落地：workspace/{read,write,patch,change,delete,pathOps}、mcp、model
+    // 待落地：workspace/{read,write,patch,delete,pathOps}、mcp、model
+    // read 域的 handler（W1 字节 / W2 行）已就绪但**先不接**：`read_workspace_file` 唯一该注册的是
+    // `read/linesDispatch.ts` 的 createReadWorkspaceFileHandler（它内部再分派到字节模式），
+    // 挂错成 bytesRead 那个的症状是行参数被静默忽略。等 W3/W4 落齐后随 read 域 registrar 一并接。
+    ...createChangeRoutes(options),
     ...createGitRoutes(options),
     ...createRgRoutes(options),
     ...createTaskRoutes(options),
