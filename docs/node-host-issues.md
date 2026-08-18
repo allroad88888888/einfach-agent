@@ -702,7 +702,27 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `workspace_read_lines.rs`：`startLine` / `lineCount` / `endLine` / `nextLine` /
   `totalLines`；`startLine` 与非零 `offset` 互斥的拒绝路径有测试。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE `65d781a`。4 个文件 / 71 例（read 域合计）。W1 的文件一字未动。
+  **⚠️ 接线时注意**：`read_workspace_file` 唯一该注册的是 `linesDispatch.ts` 的
+  `createReadWorkspaceFileHandler`，**不是** `bytesRead.ts` 的字节版——挂错的症状是行参数被**静默
+  忽略**（模型传 `startLine` 却拿到从头 20 KB，不报错）。
+  **分派判据**：`start_line` 与 `line_count` 两个都没给才走字节模式（任一个都触发行模式，
+  只给 `lineCount` 时起始行默认 1）；进了行模式后 `offset` **大于 0** 才算冲突——
+  **`offset: 0` 不算传了**（Rust 是 `offset.is_some_and(|v| v > 0)`）。
+  **一处 JS 直觉会写错的地方**：空文件是 **0 行**不是 1 行，而 `''.split('\n')` 给 `['']`（1 段）
+  ——照着写会让 `startLine: 1` 读空文件返回空内容，而 Rust 报
+  `startLine 1 exceeds the file's 0 line(s)`。子 agent 没用 `split`，另写 `lineBoundaries` 复刻
+  `str::split_inclusive('\n')`。主会话已复核这个差异真实存在。
+  行的其余定义：末行无换行仍算一行；`\r\n` 不额外成行、`\r` 留在所属行内容里；裸 `\r` 不是分隔符；
+  行尾原样保留（这是「读出来的内容能直接当 `apply_patch` 的 oldText」的前提）。
+  `nextLine` 与字节模式的 `nextOffset` **完全同款**：三字段共用 `servedAll` 一个判据，
+  只在还有剩余时才存在这个键。
+  行模式的 `contentHash` 只看 `startLine === 1`（截断时也给），没有字节模式那条「8 MB 以上不给」
+  的分支——因为定位第 N 行必须先看过前面所有字节，超 8 MB 在读之前就整体拒绝了。
+  **四处照搬并记录**：冲突文案与判据不贴合（只给 `lineCount` + 非零 offset 时报的是
+  "pass either offset or **startLine**"）；错误消息用绝对路径（清单第 5 条）；
+  `startLine` 越过末行是**硬错误**而字节模式 `offset == totalBytes` 返回空段，两者不对称；
+  行模式每次调用整文件读入并重新切行，顺着 `nextLine` 走完大文件是 O(n²)（有 8 MB 硬顶兜着）。
 
 ### W3 · 目录列举与文件名搜索
 
@@ -752,7 +772,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   跨进程锁文件（`create_new` 抢占、token、心跳、stale 超时接管）。
   必须有「两个并发写同一路径被串行化」的测试。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### W7 · 文件写：乐观守卫与主流水线
 
@@ -803,7 +823,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **改动面**：`packages/host-node/src/workspace/patch/path*`、`stage*`
 - **判据**：对齐 `workspace_patch_path.rs` + `workspace_patch_stage.rs`。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### W13 · patch：应用流水线与限额
 
@@ -850,7 +870,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `_batch.rs` + `_revert.rs` + `_path_ops.rs`：`dryRun` 语义、批次内顺序、
   部分失败的报告形态。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### W16 · Rust↔TS 对拍 fixture：patch 与 change journal
 
