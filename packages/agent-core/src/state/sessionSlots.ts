@@ -22,6 +22,7 @@ import { isSourceAtom, type AtomEntity, type History, type Setter } from '@einfa
 import { EMPTY_EXECUTION_GRAPH, executionGraphAtom } from '../execution/graph'
 import { registerExecutionGraphAppliers } from './executionGraphSlotLog'
 import { registerPendingArtifactsAppliers } from './pendingArtifactsLog'
+import { registerPlanStageCheckpointsAppliers } from './planStageCheckpointsLog'
 import { registerItemsLogAppliers } from './sessionItemsLog'
 import {
   contextCheckpointAtom,
@@ -37,6 +38,7 @@ import {
   queuedUserMessagesAtom,
 } from './sessionTransientAtoms'
 import { subagentContinuationsAtom } from './subagentContinuationAtoms'
+import { registerSubagentContinuationsAppliers } from './subagentContinuationsLog'
 
 /**
  * 一个槽位：它的 atom 身份，加上「把它推回默认值」这个动作。
@@ -99,7 +101,11 @@ export const SESSION_SLOTS = {
   contextCheckpoint: slot('contextCheckpoint', contextCheckpointAtom, undefined),
   run: slot('run', runAtom, undefined),
   plan: slot('plan', planAtom, undefined),
-  planStageCheckpoints: slot('planStageCheckpoints', planStageCheckpointsAtom, []),
+  // planStageCheckpoints 同理：每条装一整份 PlanSnapshot，热路径的追加走增量 op
+  // （见 planStageCheckpointsLog.ts）；整体清空/整体截断（计划切换、阶段回退）仍走整值 applier。
+  planStageCheckpoints: slot(
+    'planStageCheckpoints', planStageCheckpointsAtom, [], registerPlanStageCheckpointsAppliers,
+  ),
   queuedUserMessages: slot('queuedUserMessages', queuedUserMessagesAtom, []),
   pendingQuestionAnswers: slot('pendingQuestionAnswers', pendingQuestionAnswersAtom, {}),
   pendingArtifacts: slot(
@@ -113,7 +119,12 @@ export const SESSION_SLOTS = {
   executionGraph: slot(
     'executionGraph', executionGraphAtom, EMPTY_EXECUTION_GRAPH, registerExecutionGraphAppliers,
   ),
-  subagentContinuations: slot('subagentContinuations', subagentContinuationsAtom, []),
+  // subagentContinuations 同理：数组随子 agent 数量无界增长，每条带完整的续跑描述符，且是
+  // 高频写（每次子 agent 状态迁移都记一账）。热路径改走增量 op（见 subagentContinuationsLog.ts）；
+  // 整值 applier 仍然保留，罕见的整体替换（如 hydrate 清空）还靠它。
+  subagentContinuations: slot(
+    'subagentContinuations', subagentContinuationsAtom, [], registerSubagentContinuationsAppliers,
+  ),
 } as const
 
 export type SessionSlotKey = keyof typeof SESSION_SLOTS

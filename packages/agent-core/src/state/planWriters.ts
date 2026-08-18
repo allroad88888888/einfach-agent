@@ -4,6 +4,7 @@ import { itemsAtom, planAtom, planStageCheckpointsAtom, runAtom } from './sessio
 import { defaultCore, type CoreInstance } from '../runtime/core/coreInstance'
 import { SESSION_SLOTS } from './sessionSlots'
 import { writeSlot } from './sessionSlotWrite'
+import { appendPlanStageCheckpointLogged } from './planStageCheckpointsLog'
 import {
   beginPerformanceDiagnostic,
   performanceNow,
@@ -44,7 +45,12 @@ function recordStageCheckpoints(
       createdAt: Date.now(),
     }))
   if (fresh.length === 0) return
-  writeSlot(session, SESSION_SLOTS.planStageCheckpoints.key, planStageCheckpointsAtom, [...existing, ...fresh])
+  // 热路径：这里是 planStageCheckpoints 唯一的追加点，逐条走增量记账（见
+  // planStageCheckpointsLog.ts）——一次可能凑出多个新回退点，每条各自成一笔账，
+  // 账里不含 fresh 之外、已经攒下的那些阶段快照。
+  for (const point of fresh) {
+    appendPlanStageCheckpointLogged(session, point)
+  }
 }
 
 export function setPlan(sessionId: string, plan: PlanSnapshot | undefined, core: CoreInstance = defaultCore): void {

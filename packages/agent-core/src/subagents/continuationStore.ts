@@ -1,7 +1,10 @@
 import type { CoreInstance } from '../runtime/core/coreInstance'
-import { SESSION_SLOTS } from '../state/sessionSlots'
-import { writeSlot } from '../state/sessionSlotWrite'
+import { inTurnTransaction } from '../state/sessionSlotWrite'
 import { subagentContinuationsAtom } from '../state/subagentContinuationAtoms'
+import {
+  appendSubagentContinuationLogged,
+  patchSubagentContinuationLogged,
+} from '../state/subagentContinuationsLog'
 import type { SubagentContinuationV1 } from '../state/recoverySnapshot.type'
 import {
   appendNestedChildIds,
@@ -68,13 +71,19 @@ export function queueChildContinuations(input: {
     state: 'queued',
     spec: childContinuationDescriptorJson(createChildContinuationDescriptor(node, input.specs[index]!)),
   }))
-  writeSlot(session, SESSION_SLOTS.subagentContinuations.key, subagentContinuationsAtom, (previous) => {
-    const linked = parentNodeId
-      ? previous.map((item) => item.childId === parentNodeId
-        ? updateDescriptor(item, (descriptor) => appendNestedChildIds(descriptor, childIds))
-        : item)
-      : previous
-    return [...linked, ...queued]
+  // 一次 queueChildContinuations 调用 = 一步 undo：父节点的 patch 与全部新条目的 append
+  // 包进同一个事务，逆操作会按栈序整批退回，不会出现「撤销时只退回一半子任务」的半截状态。
+  inTurnTransaction(session, () => {
+    if (parentNodeId) {
+      const parent = current.find((item) => item.childId === parentNodeId)
+      // 上面已经校验过 parentNodeId 存在于 current，这里只是让 TS 知道；真正不存在时不会走到这。
+      if (!parent) throw new Error('parent child continuation is missing')
+      const linked = updateDescriptor(parent, (descriptor) => appendNestedChildIds(descriptor, childIds))
+      patchSubagentContinuationLogged(session, parentNodeId, { spec: linked.spec })
+    }
+    for (const item of queued) {
+      appendSubagentContinuationLogged(session, item)
+    }
   })
   return createQueuedBatch(childIds)
 }
@@ -93,10 +102,10 @@ export function fenceChildContinuation(input: {
   const continuation = current.find((item) => item.childId === input.childId)
   const descriptor = continuation ? readChildContinuationDescriptor(continuation) : undefined
   if (!continuation || !descriptor || descriptor.lifecycle !== 'active' || continuation.state !== 'queued') return false
-  writeSlot(session, SESSION_SLOTS.subagentContinuations.key, subagentContinuationsAtom, (previous) =>
-    previous.map((item) => item.childId === input.childId
-      ? { ...item, state: 'outcome_unknown', spec: childContinuationDescriptorJson(fenceChildContinuationDescriptor(descriptor)) }
-      : item))
+  patchSubagentContinuationLogged(session, input.childId, {
+    state: 'outcome_unknown',
+    spec: childContinuationDescriptorJson(fenceChildContinuationDescriptor(descriptor)),
+  })
   return true
 }
 
@@ -120,14 +129,12 @@ export function markChildContinuationTerminal(input: {
   if (!continuation || !descriptor || descriptor.lifecycle !== 'active') {
     throw new Error('active child continuation is missing')
   }
-  writeSlot(session, SESSION_SLOTS.subagentContinuations.key, subagentContinuationsAtom, (previous) =>
-    previous.map((item) => item.childId === input.childId
-      ? {
-          ...item,
-          state: 'interrupted',
-          spec: childContinuationDescriptorJson(terminalChildContinuationDescriptor({ descriptor, ...input })),
-        }
-      : item))
+  // 注意：这里是 patch，不是移除 —— 终态条目要保留到父聚合边界才清（见本文件同名测试用例
+  // 「retains terminal output ... until a later parent aggregation boundary」），移除逻辑还没实现。
+  patchSubagentContinuationLogged(session, input.childId, {
+    state: 'interrupted',
+    spec: childContinuationDescriptorJson(terminalChildContinuationDescriptor({ descriptor, ...input })),
+  })
 }
 
 function updateDescriptor(
