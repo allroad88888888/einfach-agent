@@ -237,7 +237,16 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
   `stubHostBridgeFlag`（`packages/agent-core/src/runtime/hostBridge.testHarness.ts`）。
   跑 `pnpm exec vitest run apps/web` 全绿
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `f0967e0`。apps/web 全量 98 文件 / 673 例全绿。**卡面给的修法是错的，实测推翻了**：
+  `stubHostBridgeFlag` 的 loader 故意解析出一个恒 reject 的 invoke，而本文件两条 Tauri 用例的断言
+  需要 `list_workspace_files` 真的带着正确参数打到 invoke mock 上——换上去后 hydration 停在
+  `status:'error'`、`listedRoots()` 恒空。最终改为直接 `configureHostInvoke` 登记一个转发到
+  文件既有 `invokeMock` 的 loader（即 H5 桌面装配在测试里的等价物）。
+  **另踩一个模块身份陷阱**（对 H4d-2 之后的所有测试卡都成立）：`configureHostInvoke` 改的是
+  `hostBridge.ts` 的模块级变量，而该文件的 `freshHost` 每次先 `vi.resetModules()`；顶层静态 import
+  拿到的是收集阶段那份**旧**模块实例，被测代码动态 import 拿到的是重置后的新实例，于是登记不生效、
+  现象与上面那条一模一样。解法同文件里已有的 `uiStore` 动态重导入模式：在 `resetModules()` 之后
+  再动态 import，用模块级可变引用接住供顶层 `afterEach` 复位。
 
 ### H4d · userSkillsRoot 改走 host bridge（已拆为 H4d-1 / H4d-2）
 
@@ -274,7 +283,11 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
   （既有测试都从 `from_home_directory` 绕开 AppHandle）。验收 =
   `cargo test --manifest-path apps/desktop/Cargo.toml` 仍绿 + `pnpm tauri build --no-bundle` 编译通过
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `925083c`。15 行，`lib.rs` 加两行。非 UTF-8 用
+  `into_os_string().into_string()` 而非 `to_string_lossy()`——后者会把不可转字符静默换成
+  U+FFFD，产出一个看似正常实则打不开的路径，故障现场离病因十万八千里。
+  没加 `rename_all`（除注入的 `AppHandle` 外无参数，跟随 `mcp_config_read` 的先例）。
+  161 个既有 Rust 测试仍绿；`generate_handler!` 是编译期宏，编译通过即验证了注册。
 
 ### H4d-2 · userSkillsRoot 改走桥，并删掉 core 的第二条 Tauri 运行时边
 
@@ -293,7 +306,13 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
   现有 5 个用例 1:1 平移。跑 `pnpm exec vitest run packages/agent-core/src/runtime/userSkillsRoot.test.ts`
   + `pnpm exec vitest run tools/skills packages/agent-core/src/skills`
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE `3d9a6ce`。死代码已删净（全仓 grep 零残留），**core 的 `@tauri-apps` 运行时边
+  从两条降到一条**——`hostTauri.ts` 只剩第 57 行那个 `import('@tauri-apps/api/core')`；
+  core 生产代码里另一条是 `workspaceDialog.ts:52` 的 plugin-dialog（未决项 U-1）。
+  **主会话验收时改了一处交回的测试**：「无桥」用例原写成「造一个会计数的 loader、特意不登记它、
+  断言 calls 为 0」，那是永真断言——loader 压根没登记，计数当然是 0，连守卫被整个删掉都发现不了
+  （守卫失效时会走到 `loadHostInvoke()` 拿 rejection 再被 catch 降级，计数同样是 0）。
+  不 mock hostBridge 就无法区分这两条路径，已改成只断言外部契约并把这个理由写进注释。
 
 ### H4e · 收掉 `runtimeIsTauri` 这个旧名字
 
@@ -306,7 +325,7 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
   看得见（两处都写了注释），不是静默的，所以不阻塞任何卡。本卡把名字收干净。
   纯改名，跑 `pnpm exec vitest run packages/agent-core` 全量
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### H5 · Tauri 装配层注入 invoke loader
 
@@ -317,18 +336,25 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
   跑 `pnpm exec vitest run packages/agent-core apps/web` 全绿 + `pnpm build`，
   桌面版行为与 H1 之前逐项一致
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### H6 · 宿主不可用文案去 Tauri 化
 
-- **依赖**：H2、H3、H4、H4b
-- **改动面**：H2–H4 涉及的 11 个文件里的 fail 文案；`hostTauri.testHarness.ts`（删旧工厂）
+- **依赖**：H2、H3、H4、H4b、H4c、H4d-2
+- **改动面**：11 个 runtime 模块里的 fail 文案（`shellCommand` / `workspaceChange` / `workspaceDelete` /
+  `workspacePatch` / `workspaceRg` / `workspaceTask` / `workspaceDialog` / `workspaceGit` /
+  `workspacePathOperation` / `workspaceRead` ×4 / `workspaceWrite`，共 15 处）；
+  **`toolContext.subagentArchive.test.ts`（3 处断言了这句文案）**；`hostTauri.testHarness.ts`（删死代码）
 - **判据**：`grep -rn "only available in the Tauri desktop runtime" packages/agent-core/src` 归零，
-  替换为「当前宿主未提供 workspace 桥」（用户可见文案保持中文）。
-  同时删掉 H1b 保留的 `hostTauriBridgeMock`——H2/H3/H4 切完后它已零消费方，
-  先 grep 确认再删。跑 `pnpm exec vitest run packages/agent-core/src/runtime` 并更新命中该文案的断言
+  替换为「当前宿主未提供 workspace 桥」（用户可见文案保持中文）。**`workspaceDialog.ts` 的那处也改**——
+  它虽然仍走 `@tauri-apps/plugin-dialog`（未决项 U-1），但文案描述的是「当前宿主没有这个能力」，
+  与桥无关，措辞该跟其余一致。
+  **两个测试脚手架导出已确认零消费方**（主会话验收 H4d-2 时 grep 过，剩余命中全是注释里的提及）：
+  `hostTauriBridgeMock` 直接删；`stubTauriHostFlag` 切的是 `globalThis.isTauri`，而 `isTauriHost()`
+  如今只剩 `workspaceDialog.ts` 一个消费方——**删还是留由本卡判断并写明理由**，留就要说清谁将来会用它。
+  跑 `pnpm exec vitest run packages/agent-core` 全量
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ---
 
