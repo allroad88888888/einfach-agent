@@ -604,11 +604,26 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：**本线试金石**。注意 CLI 至今没有桥（H5 交回时点名）——这**不是回归**（Node 里没有
   `globalThis.isTauri`，`isTauriHost()` 在 H1 之前也一直是 false），而是本卡要补的那个缺口本身：
   在此之前 CLI 的文件 / shell 工具对模型一直不可见。
-  `configureHostInvoke` 在 `registerStandardTools` 之后调用；
-  `pnpm cli -p "列出当前目录下的文件并读取 package.json"` 真的返回文件内容，而不是
-  「当前宿主未提供 workspace 桥」。跑 `pnpm exec vitest run apps/cli` + `pnpm build`
+  `configureHostInvoke` 在 `registerStandardTools` 之后调用。
+  **判据已按实际进度收窄**（原文要求验证「列文件 + 读 package.json」，但 read 域属 W1–W4、尚未落地）：
+  当前路由表已实现 shell / git / rg / task / config 五域，本卡验的是**接线本身**——
+  `hasHostBridge()` 在 CLI 启动后为 true、`run_shell_command` 能真的执行、
+  未实现的 `read_workspace_file` 报的是「Node 宿主尚未实现」而**不是**「当前宿主未提供命令桥」
+  （两者的区别正是这张卡的价值：桥接上了，只是某些域还没填）。
+  文件工具的端到端验证随 W 线完成后补一张验收卡。跑 `pnpm exec vitest run apps/cli` + `pnpm build`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE `8586159`。**N 线试金石通过。** 主会话独立端到端探针：装配桥之前
+  `runShellCommand` 答「当前宿主未提供命令桥」，`configureHostInvoke` 之后同一调用
+  `exitCode: 0` 且 stdout 含预期标记——core → 桥 → host-node → 真子进程这条链路打通。
+  子 agent 自己的验证也没偷懒：判据 3 不只断 `exitCode === 0`（normalize 的兜底路径也能凑出
+  体面的结果对象），而是让 shell **落一个只有真子进程做得出的痕迹**再用 `node:fs` 读回来，
+  顺带证了 cwd 送对了。
+  `homedir()` **保留在 CLI 侧并提升为进程内唯一权威**，经 `homeDir` 槽位注入给桥：CLI 自己就是
+  那台机器，主目录这个事实由它产出；反过来向桥要等于绕一圈问自己，还凭空多一个会漂移的权威。
+  **诚实标注的未验证项**：没有模型 Key、没跑真实一轮，「模型在 CLI 里看得见 shell 工具」是从
+  `hostHasLocalCapabilities = hasHostBridge()` 推出来的，不是端到端观测到的。
+  另：`apps/cli/package.json` 一改就必须同步 `pnpm-lock.yaml`（CI 的 desktop 作业用
+  `--frozen-lockfile`，web 作业不带该 flag 所以不会暴露）。
 
 ---
 
@@ -624,7 +639,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   `totalBytes` / `nextOffset` 语义逐字段一致；**`contentHash` 只在 offset 0 的首片返回，
   且截断时也返回**，8 MB 以上不返回。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### W2 · 文件读：行寻址
 
@@ -659,7 +674,21 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **改动面**：`packages/host-node/src/workspace/write/targetPath*`、`limits*`
 - **判据**：对齐 `workspace_write_target_path.rs` + `workspace_write_limits.rs`。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE `488fe5d`。targetPath **只有 49 行**——N2 已经把写入形态该做的四件事全移植进
+  `resolveWorkspaceTargetPath`（自己 trim 加空串拒、词法直接拒 `..`、最近已存在祖先 canonicalize
+  后比边界、**签名里根本没有** `allowExternalPaths`），本卡是把底座两块拼起来、不重抄判定，
+  逐条对应关系写在文件头免得后人以为漏了什么。
+  **判定时机**：写之前按**实测字节数**拒——既不是按声明的大小，也不是边写边数
+  （`workspace_write_pipeline.rs:133-159` 先把 content 解成完整 payload 再比上限），所以调用方
+  谎报大小无效，也不存在半截文件。且这个检查排在路径解析**之前**，因此超限失败的 `path` 字段
+  是**原始入参**而非 displayPath——W7 拼流水线时要保住这个顺序。
+  **一处直译就会错的地方**：可逆预算判定用 `Buffer.byteLength` 而非 `.length`，因为 Rust 的
+  `String::len()` 是字节数；直译成 `.length` 会让 1.2 MB 的中文正文被判成「没超 1 MiB、可逆」
+  再整份塞进变更日志。有专测钉住。
+  **发现 Rust 一处文案与常量对不上**：`workspace_write_before.rs:44` 的
+  `existing file exceeds reversible {MAX_BYTES} byte limit` 里 "reversible" 与它实际用的
+  `MAX_BYTES`（8 MiB 硬顶）不符，该是 `REVERSIBLE_MAX_BYTES`（1 MiB）。**照搬未改**——
+  错误文案是两个宿主的对外契约，改一个字就是制造分叉；要改该走 Rust 侧。
 
 ### W6 · 文件写：进程内与跨进程写锁
 
@@ -739,7 +768,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   Tauri 的 `app_data_dir()/workspace-changes` 同款路径，使套壳后与桌面版共用同一份日志。
   跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### W15 · change journal：批次与 revert
 
