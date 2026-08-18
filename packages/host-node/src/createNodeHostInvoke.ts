@@ -57,6 +57,10 @@
 import type { HostInvoke } from '@web-agent/core'
 import { isNodeHostCommandName } from './commandNames'
 import { createConfigRoutes } from './config'
+import { createShellRoutes } from './shell'
+import { createGitRoutes } from './workspace/git'
+import { createRgRoutes } from './workspace/rg'
+import { createTaskRoutes } from './workspace/task'
 import type { NodeHostInvokeOptions } from './hostOptions'
 import type { NodeHostRouteTable } from './routeTable'
 
@@ -103,7 +107,11 @@ export class NodeHostCommandError extends Error {
  */
 function createRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
   return {
-    // 待落地：workspace/{read,write,patch,change,delete,pathOps,git,rg,task}、shell、mcp、model
+    // 待落地：workspace/{read,write,patch,change,delete,pathOps}、mcp、model
+    ...createGitRoutes(options),
+    ...createRgRoutes(options),
+    ...createTaskRoutes(options),
+    ...createShellRoutes(options),
     ...createConfigRoutes(options),
   }
 }

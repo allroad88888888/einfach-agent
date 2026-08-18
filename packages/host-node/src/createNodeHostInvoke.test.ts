@@ -67,7 +67,16 @@ describe('createNodeHostInvoke', () => {
         if (reason !== 'unimplemented') implemented.push(command)
       }
       // 这条会随后续卡逐步变长——落地一个域就把它的命令名加进来，别把断言改成宽松匹配。
-      expect(implemented).toEqual(['mcp_config_read', 'mcp_config_write', 'get_user_home_dir'])
+      // 顺序跟随 NODE_HOST_COMMAND_NAMES 的遍历序（即 commandNames.ts 的域顺序），不是登记顺序。
+      expect(implemented).toEqual([
+        'get_workspace_diff',
+        'rg_search_workspace',
+        'run_workspace_task',
+        'run_shell_command',
+        'mcp_config_read',
+        'mcp_config_write',
+        'get_user_home_dir',
+      ])
     } finally {
       if (savedOverride === undefined) delete process.env.WEB_AGENT_CONFIG_DIR
       else process.env.WEB_AGENT_CONFIG_DIR = savedOverride

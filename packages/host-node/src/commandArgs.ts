@@ -167,7 +167,14 @@ export interface NodeHostCommandArgs {
 
   // ── shell ── Rust: shell.rs；TS: runtime/shellCommand.ts
   run_shell_command: {
-    /** 'darwin' | 'linux' | 'win32'——由 core 侧决定用哪种 shell 包装，不是由宿主自己探测。 */
+    /**
+     * `'macos' | 'linux' | 'windows'`——core 的 `ShellPlatform`（`tools/types.ts`），**不是**
+     * Node 的 `process.platform`（那套是 `darwin` / `win32`）。由 core 侧的 `detectHostPlatform()`
+     * 在**调用方**探测后传下来，不是宿主自己判断。
+     *
+     * 【N3 记的一处隐患】这个「调用方探测」的前提在 server 宿主下不成立：浏览器在 macOS、
+     * 服务端在 Linux 时，宿主会稳定回 `platform mismatch` 而一条命令都跑不了。见 S5 卡。
+     */
     platform: string
     command: string
     cwd?: string
