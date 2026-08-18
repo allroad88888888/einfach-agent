@@ -733,7 +733,22 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `workspace_read_list.rs` + `workspace_read_search.rs`：`recursive` /
   `maxEntries` / `includeHidden`；**不递归进 symlink**。跑该目录 vitest
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `180c89d`（与 W4 合成一枚——两卡并发追加了同两个共享文件，强行拆开会让某一枚
+  带上另一卡的常量）。read 域 registrar 与接线 `26b72a7`。
+  **symlink 有三种处理，不是一种**：realpath 成功且在根内 → **列出但不进去**（entry type 取自
+  `lstat`，对 symlink 恒非目录，所以 `recursive: true` 也不会递归进去）；**dangling symlink
+  整条不列**（canonicalize 失败）；目标越界的也整条不列（除非 `allowExternalPaths`）。
+  `maxEntries` 是**硬停**：检查排在隐藏/越界过滤之后、push 之前，所以被过滤掉的条目既不计数
+  也不触发 truncated；一旦触顶立即中止整个递归，不会读完当前目录。
+  `includeHidden` 判据是名字以 `.` 开头，**隐藏目录整个子树跳过**——里面的非隐藏文件也不可见，
+  因为那个目录压根没被进入。
+  搜索的「glob」**刻意不是 glob**：四个字面前缀分支（`*prefix` 剥一个前导 `*` 后缀匹配 /
+  `.ext` 后缀匹配 / `*` 在中间则**剥掉全部 `*` 做纯子串匹配、完全忽略位置** / 否则纯子串），
+  全程大小写敏感。
+  **两处照搬的、容易被误认成 bug 的行为**：① 目录读失败（如权限不足的子目录）中止**整条命令**
+  而不是跳过那个子树；② 搜索时单个文件打开/读取失败同样中止**整个搜索**——一个 `chmod 000`
+  的文件放在搜索根下的任何位置都会让整条搜索报错。这与「二进制/非 UTF-8 内容」不同，后者两边
+  都是逐文件软跳过。子 agent 专门写了测试钉住 ②，并在报告里点名以免评审时误判。
 
 ### W4 · run index 分页读
 
@@ -742,7 +757,23 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `workspace_read_run_index.rs`：JSONL 游标分页、`snapshot` 标识、`hasMore`。
   跑该目录 vitest
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `180c89d`（与 W3 合枚，见上）。17 例。
+  `snapshot` 形态是 `v1-<byteLen>-<16 hex>`，游标是不透明串 `{snapshot}:{before}`，`before` 是
+  行数组的 0 基开区间上界（**不是字节偏移也不是行号**），解析用 `lastIndexOf(':')` 对齐 Rust 的
+  `rsplit_once`。三种失败分开：语法非法 → `run index cursor is invalid` / `...version is
+  unsupported`；语法合法但 `before` 越界 → `run index cursor is out of range; refresh history`；
+  snapshot 不匹配 → `run index changed while paging; refresh history`。
+  `hasMore` 为 false 时结果**不带 `cursor` 键**（不是 `undefined`），有 `'cursor' in page === false`
+  的测试。
+  JSONL 行切分**没有复用 W2 的 `lineBoundaries`**：那个复刻的是 `split_inclusive('\n')`（保留换行、
+  给分块续读用），而 run index 要的是 `str::lines()` 语义（去掉换行、末尾 `\r` 也去、结尾换行
+  不制造幻影空行）。两者只在文件末尾处不同，所以各写一份是对的。
+  **一处有意的算法偏离**：没复刻 Rust 的 `DefaultHasher`（SipHash13），改用 sha256 前 16 hex。
+  子 agent 给的理由是「Node 从不验证 Rust 铸的 cursor」——**这个断言过强**，主会话修正为：
+  当前两个宿主的会话数据本就不共享（桌面 SQLite / Web IndexedDB），所以跨宿主 cursor 不会出现；
+  **即使 P 线把持久化收敛后真的出现**，失败形态也是 `run index changed while paging; refresh
+  history`，模型重新从头翻页，是设计好的降级路径而非数据损坏。结论可接受，但 **P3 落地时要回来
+  重新评估这处**。
 
 ### W5 · 文件写：目标路径解析与限额
 
@@ -1200,7 +1231,11 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 
 - **依赖**：P2、S3、B3
 - **改动面**：`apps/server/src/sqlRoute*`、`apps/web/src/persistence/persistenceDrivers.ts`
-- **判据**：`persistenceDrivers` 从二选一变三选一；server 宿主下会话落 SQLite 而非 IndexedDB。
+- **判据**：**先读 W4 卡面最后一段**——run index 的分页 cursor 里嵌了一个 snapshot 指纹，
+  Node 侧用 sha256 前 16 hex 而 Rust 用 SipHash13，两者不互认。当前两个宿主的会话数据不共享，
+  所以跨宿主 cursor 不会出现；本卡把持久化收敛到一起之后**这个前提就没了**，要重新评估
+  （失败形态是可恢复的「refresh history」，不是数据损坏，但值得有意识地决定而不是撞上）。
+  `persistenceDrivers` 从二选一变三选一；server 宿主下会话落 SQLite 而非 IndexedDB。
   跑 `pnpm exec vitest run apps/web/src/persistence apps/server`
 - **模型**：opus
 - **状态**：TODO
