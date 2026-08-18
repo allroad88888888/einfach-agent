@@ -10,6 +10,18 @@
 // 不在这里处理的东西：apps/web/src/mcp/** 里 vi.mock('@tauri-apps/api/core') 的 invoke/isTauri
 // 分量——那些文件的生产源码仍直接 `import { isTauri } from '@tauri-apps/api/core'`，没有迁到
 // isTauriHost()，两层 mock 各管各的，不属于本卡改动面。
+//
+// H1b 追加：hostBridge（新宿主注入点，见 ./hostBridge.ts）的同形工厂 hostBridgeMock。
+// workspaceRead.contentHash / workspaceRead.runIndexPage（H2）、workspaceWrite（H3）、
+// shellCommand.backgroundKill（H4）四个桥测试目前都 vi.mock('./hostTauri')；随各自那张卡把生产
+// 源码从 isTauriHost()/loadTauriInvoke() 切到 hasHostBridge()/loadHostInvoke() 后，测试也要跟着
+// 改成 vi.mock('./hostBridge')。三张卡若各自在自己的测试文件里新写一份工厂，会同时改这一个共享
+// 文件、互相冲突，所以本卡（H1b）先把工厂摘出来，四个消费方各自逐卡切换即可。旧的
+// hostTauriBridgeMock 原样保留、不删：切换期间两条通路并存（还没切的文件继续 mock ./hostTauri，
+// 切过的文件改 mock ./hostBridge），等 H2/H3/H4 全部切完、仓库里不再有人 import
+// hostTauriBridgeMock，才由 H6 一并删除旧工厂（连同上面第 2 条说明）。
+
+import type { HostInvoke } from './hostBridge'
 
 /** globalThis 上 isTauri 属性的最小类型——逐字对齐 hostTauri.ts 自己的写法。 */
 type GlobalWithIsTauri = typeof globalThis & { isTauri?: boolean }
@@ -62,4 +74,31 @@ export function hostTauriBridgeMock(
   loadTauriInvoke: () => Promise<TauriInvoke>,
 ): { isTauriHost: () => boolean; loadTauriInvoke: () => Promise<TauriInvoke> } {
   return { isTauriHost: () => true, loadTauriInvoke }
+}
+
+/**
+ * 给 `vi.mock('./hostBridge', factory)` 用的共享工厂——hostTauriBridgeMock 的 hostBridge 版，
+ * 形状严格对称：hasHostBridge 恒真（这几个桥测试只关心"已经有桥"这一种场景，测的是"拿到 invoke
+ * 之后怎么转换参数/结果"，不测 hasHostBridge() 这道守卫本身），loadHostInvoke 用调用方给的实现——
+ * 多数消费文件只需要 `async () => someInvokeStub`，具体形态由各自的测试自行决定，本函数不钉死。
+ *
+ * 返回类型用的是 hostBridge.ts 自己导出的 HostInvoke，**不是** `hostTauriBridgeMock` 那样借用
+ * `typeof import('@tauri-apps/api/core').invoke`——hostBridge 这条链路的一条纪律（见 hostBridge.ts
+ * 文件头注释）是全程不出现桌面那个上游包的名字，hostBridge.ts 本体已经不 import 它，这份测试脚手架
+ * 的类型标注也不该在这里悄悄把名字带回来。
+ *
+ * hoisting 限制与 hostTauriBridgeMock 完全一致（同一条 vitest 限制压在两个工厂身上，不是巧合）：
+ * 本函数必须在 vi.mock 的工厂箭头函数体内被调用——
+ * `vi.mock('./hostBridge', () => hostBridgeMock(loadHostInvoke))`——不能在模块顶层先求值结果再传
+ * 给 vi.mock（vi.mock 期待的是"工厂函数"本身，而不是工厂函数的返回值）。传入的 loadHostInvoke
+ * 参数可以安全引用同文件里 `vi.hoisted()` 声明的变量——那些变量正是为绕开 vi.mock 的 hoisting
+ * 限制而生的；不能引用同文件里普通 const/let 声明的模块顶层变量（会在 TDZ 报错，因为 vi.mock
+ * 调用本身被 vitest 提升到所有 import/变量声明之前）。本函数是从另一个模块 import 进来的绑定，
+ * 不受这条限制——hostTauriBridgeMock 已经在 workspaceRead.contentHash.test.ts 验证过这个形态可行，
+ * H2/H3/H4 切换到 hostBridge 版时可以照抄同一模式。
+ */
+export function hostBridgeMock(
+  loadHostInvoke: () => Promise<HostInvoke>,
+): { hasHostBridge: () => boolean; loadHostInvoke: () => Promise<HostInvoke> } {
+  return { hasHostBridge: () => true, loadHostInvoke }
 }
