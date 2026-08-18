@@ -6,7 +6,7 @@
 // web 端（非 Tauri）直接返回 undefined，不引入任何 workspace IO 依赖。
 
 import type { ProjectSkillsLoaderBridge } from './core/coreInstance'
-import { isTauriHost } from './hostTauri'
+import { hasHostBridge } from './hostBridge'
 import { listWorkspaceFiles, readWorkspaceFile } from './workspaceRead'
 
 /**
@@ -22,7 +22,7 @@ import { listWorkspaceFiles, readWorkspaceFile } from './workspaceRead'
  *   loader 依赖 error 文本判定「目录不存在 ＝ 正常无项目 skills」，所以保真是硬要求。
  */
 export function buildProjectSkillsWorkspaceBridge(): ProjectSkillsLoaderBridge | undefined {
-  if (!isTauriHost()) return undefined
+  if (!hasHostBridge()) return undefined
 
   const bridge: ProjectSkillsLoaderBridge = {
     async listFiles(dirPath, listOpts) {
