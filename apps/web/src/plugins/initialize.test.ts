@@ -9,7 +9,7 @@
 // 复用项目 skills 那条 Rust 通路正是本卡的做法，接错了这里就看不到 list_workspace_files。
 
 import type { SessionMeta, WorkspaceMeta } from '@web-agent/core'
-import { stubTauriHostFlag } from '@web-agent/core/runtime/hostTauri.testHarness'
+import type { HostInvoke } from '@web-agent/core/runtime/hostBridge'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 // 与真实模块一致的默认表现：isTauri() 答 false、invoke 不被意外调用。
@@ -18,21 +18,41 @@ vi.mock('@tauri-apps/api/core', () => ({
   isTauri: vi.fn(() => false),
 }))
 
-// D2（hostTauri 脱钩）后，desktopProvider.ts 装载的 buildProjectSkillsWorkspaceBridge
-// 改读 isTauriHost()，它绕开上面这层模块 mock、直接读 globalThis.isTauri（见
-// packages/agent-core/src/runtime/hostTauri.ts）。initializePluginSettings 自己的宿主门
-// （initialize.ts 里的 isTauri()）仍走上面的 mock，两层各读各的，所以 freshHost 必须把
-// 两个开关一起切，否则「Tauri 宿主」用例里 initialize.ts 判定为桌面、但 provider 内部的
-// workspace 文件桥仍判定为浏览器，扫不到任何插件目录。
+// H4c：desktopProvider.ts 装载的 buildProjectSkillsWorkspaceBridge 判据已经从 isTauriHost()
+// 换成 hasHostBridge()（见 packages/agent-core/src/runtime/projectSkillsBridge.ts），继续切
+// globalThis.isTauri 对它已经再无影响——那是 hasHostBridge() 换判据之前、这段注释原来描述的
+// 旧机制。initializePluginSettings 自己的宿主门（initialize.ts 里的 isTauri()）仍走上面这层
+// 模块 mock，两层各读各的，所以 freshHost 必须把两个开关一起切，否则「Tauri 宿主」用例里
+// initialize.ts 判定为桌面、但 provider 内部的 workspace 文件桥仍判定为「没有桥」，扫不到
+// 任何插件目录。
 //
-// globalThis.isTauri 这半个开关改用共享 helper（D8）：freshHost 运行期才知道要 stub 成什么值
-// （每个用例传不同的 tauriHost），所以不能用 stubTauriHostFlag 的"收集阶段便捷式"（不存在这种
-// 便捷式——afterEach 必须在收集阶段注册），而是把每次 stub 返回的 restore 存进这个可变引用，
-// 由下面这个模块顶层（收集阶段注册）的静态 afterEach 统一调用。
-let restoreTauriHostFlag: () => void = () => {}
+// hasHostBridge() 这半个开关**不能**改用 hostBridge.testHarness.ts 的 stubHostBridgeFlag：
+// 那个桩的 loader 故意解析出一个恒 reject 的 invoke（它自己的 JSDoc 写明「需要 invoke 真的
+// 返回数据的测试不该用本函数」），而本文件的断言恰恰要看 list_workspace_files 有没有真的带着
+// 正确参数打到下面这份 @tauri-apps/api/core 的 invoke mock 上、hydration 有没有真的到
+// status:'ready'——用 stubHostBridgeFlag 换掉之后实测两条「Tauri 宿主」用例会卡在
+// hydration.status:'error'（error 里能看到 stub 的 reject 文案），listedRoots() 永远是空数组，
+// invokeMock 一次都没被调用过。因此本文件直接调用 hostBridge.ts 导出的 configureHostInvoke，
+// 登记一个把调用转发给下面这份 invoke mock 的 loader——这正是 hostBridge.ts 文件头注释里
+// 「H5」那句「由桌面装配层把它的 loadTauriInvoke 包成一个 loader 注入进来」在测试里的等价物，
+// 只是转发目标换成了本文件自己的 mock。
+//
+// 这半个开关同样不能在文件顶层静态 import 后直接调用：configureHostInvoke 操作的是
+// hostBridge.ts 的模块级变量（hostInvokeLoader），而 freshHost 每次先 vi.resetModules()，
+// 随后 `await import('./initialize')` 拿到的 desktopProvider.ts → projectSkillsBridge.ts →
+// hostBridge.ts 是**重置后的新模块实例**；顶层静态 import 绑定的 configureHostInvoke 停留在
+// 收集阶段那份**旧**实例上，调用它只改得动旧实例的状态，desktopProvider.ts 读到的新实例仍是
+// 「没有桥」（与 uiStore 那条注释是同一类模块图不一致问题）。因此本文件不在顶层静态 import
+// configureHostInvoke，而是像下面 uiStore 那样，在 freshHost 内部 vi.resetModules() 之后
+// 再动态 import 一次，配合模块级可变引用接住这一代实例的 configureHostInvoke，供下面这个
+// 模块顶层（收集阶段注册）的静态 afterEach 统一复位成「没有桥」（afterEach 本身必须在收集
+// 阶段注册，不能等运行期才决定要不要挂）——写法上与旧版 stubTauriHostFlag 的「模块级可变引用
+// + 静态 afterEach」同构，只是接住的是 configureHostInvoke 函数引用本身。
+let currentConfigureHostInvoke: (loader: (() => Promise<HostInvoke>) | undefined) => void =
+  () => {}
 
 afterEach(() => {
-  restoreTauriHostFlag()
+  currentConfigureHostInvoke(undefined)
 })
 
 const WORKSPACE: WorkspaceMeta = {
@@ -61,11 +81,17 @@ async function freshHost(tauriHost: boolean) {
   isTauriMock.mockReset()
   invokeMock.mockReset()
   isTauriMock.mockReturnValue(tauriHost)
-  restoreTauriHostFlag = stubTauriHostFlag(tauriHost)
   invokeMock.mockImplementation(async (command: string) => {
     if (command === 'list_workspace_files') return { entries: [], truncated: false }
     return undefined
   })
+  // 必须从**重置后的模块图**动态 import：理由见上方文件头那段长注释。
+  const { configureHostInvoke } = await import('@web-agent/core/runtime/hostBridge')
+  currentConfigureHostInvoke = configureHostInvoke
+  // tauriHost 为 true：登记一个转发到上面这份 invoke mock 的 loader，hasHostBridge() 由此
+  // 答真，loadHostInvoke() 解析出的就是这份 mock 本身——workspaceRead 的四个调用点（H2）
+  // 已经切到这条新链路。tauriHost 为 false：登记 undefined，回到「没有桥」。
+  configureHostInvoke(tauriHost ? async () => invokeMock : undefined)
 
   const { initializePluginSettings } = await import('./initialize')
   const { hydratePluginSettings, isPluginSettingsConfigured } = await import('./commands')
