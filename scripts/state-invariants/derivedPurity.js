@@ -10,7 +10,9 @@ import { readFile } from 'node:fs/promises'
 import { relativePath } from './sourceFiles.js'
 
 const impureCallPattern = /\b(?:Date\.now|Math\.random|performance\.now|crypto\.randomUUID)\s*\(|\bnew\s+Date\s*\(/
-const derivedOpenPattern = /\batom\s*\(\s*\(\s*get\b/
+// 导出给规则 4 复用：那条规则要判「登记成 derived 的到底是不是 derived」，用的必须是同一个
+// 「什么算 derived」的判据 —— 两处各写一遍，其中一处迟早会在无人察觉时判空。
+export const derivedOpenPattern = /\batom\s*\(\s*\(\s*get\b/
 
 /** 从 derived 开括号处向后配平括号，返回该 atom 表达式覆盖的行区间。 */
 function derivedBodyRange(lines, startIndex) {

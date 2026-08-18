@@ -17,13 +17,34 @@ import type {
 // 当前会话的待保存文件产物。
 export const pendingArtifactsAtom = atom<PendingArtifact[]>([])
 
-// 当前会话的浏览器卡片。
+/**
+ * 当前会话的浏览器卡片。
+ *
+ * **归宿：compensated（有补偿设计）。** 红线 10 和 sessionSlots.ts 的文件头都拿这一条当样板，
+ * 但样板的落点长期没人指得出来 —— 补上：唯一的生产者是
+ * `tools/interaction/src/browser-action/browser-action.ts`，它不写 atom，只调 `ctx.renderCard`；
+ * 成功分支回给模型的工具结果里带着 `note: '卡片不持久化，请在最终回复里文字概括其内容'`。
+ * 那句 note 进 transcript，于是模型有义务把卡片正文复述进最终回复 —— 卡片本身丢了，内容还在
+ * `items` 里。**补偿在工具的返回值上，不在 core 里**：删掉那个 note，本条归宿当场失效。
+ */
 export const browserCardsAtom = atom<BrowserCard[]>([])
 
 // 当前会话的 AskUserQuestion 待提交答案（questionId → value）。
 export const pendingQuestionAnswersAtom = atom<Record<string, AskUserAnswerValue>>({})
 
-// 当前会话正在跑的工具进度（按 callId）。
+/**
+ * 当前会话正在跑的工具进度（按 callId）。
+ *
+ * **归宿：recomputable（能从别处算回来）。** 它装的不是任何人产出的内容，而是入参的格式化结果：
+ * 全部 24 处 `ctx.progress(...)` 调用要么传常量（`'应用文件 patch'`），要么传
+ * `runtime/toolContext/progressReporting.ts` 的 `shellProgressText` / `pathProgressText` /
+ * `taskProgressText` 对该次调用入参的格式化 —— 而入参本身在 `items` 的 tool_call 里，
+ * 工具结果另走 tool result 进 `items`。
+ *
+ * 它还活不过一次调用：`runtime/toolCallExecutor.ts` 的 `finally` 无条件 `removeToolActivity`。
+ * 所以崩溃时留在这里的至多是最后一批在飞调用的提示行，而那次 run 恢复后一律转 interrupted ——
+ * 把「正在读取文件…」原样恢复出来是**假的进行中**，比空着更坏。
+ */
 export const toolActivityAtom = atom<ToolActivity[]>([])
 
 // 当前会话的 runtime transcript 调试事件；不进 checkpoint，也不参与 model messages。
@@ -56,7 +77,21 @@ export const composerDraftAtom = atom<string>('')
 // 当前会话等待注入正在运行 run 的用户输入（FIFO）。
 export const queuedUserMessagesAtom = atom<QueuedUserMessage[]>([])
 
-// 撤回当前未完成轮后的提示。
+/**
+ * 撤回当前未完成轮后的提示。
+ *
+ * **归宿：safeDefault（刷新即恢复安全默认）。** 判据是红线 10 的那句「这份内容除了它自己还活在
+ * 哪里」——这里根本没有「内容」：唯一的生产者是 `runtime/commands/planCommands.ts` 的
+ * `rollbackPlanStage`，`text` 是它就地写死的两句常量，`sideEffects` 是 `currentTurnHasSideEffects(...)`
+ * 对被丢弃 items 的一次判定。既非用户原话也非模型产出，因此不适用「唯一副本必须进 allowlist」。
+ *
+ * **不要把它记成「可重算」**：`sideEffects` 算完之后同一条命令就把那批 items 截断掉了，事后无从
+ * 重算——归错类不报错，但下一个人会拿「连它都算可重算」去给真正算不回来的东西背书。
+ * 支撑它留在表外的是**生命周期**：这是一条一次性提示，`Composer.tsx` 在草稿一改动（`updateDraft`
+ * 挂在 textarea 的 `onChange` 上）、发送成功、或在输入框里按 Esc 时就 `setNotice(undefined)`。
+ * 崩溃后不显示，等同于用户随手敲一个字符后的状态；而且丢的是一句关于「已经做完的事」的通知，
+ * 不是内容本身——被撤回的对话由 `items` + `planStageCheckpoints` 两个槽位负责，不靠这条提示。
+ */
 export const withdrawnTurnNoticeAtom = atom<WithdrawnTurnNotice | undefined>(undefined)
 
 // 本 session「一律允许」的危险工具名集合；临时 UI 态，刷新即恢复每次确认的安全默认。

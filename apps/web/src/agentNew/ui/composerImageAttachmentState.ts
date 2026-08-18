@@ -24,6 +24,28 @@ export interface ImageDimensions {
   readonly height: number
 }
 
+/**
+ * 输入框里待发送的图片附件。
+ *
+ * **归宿：knownLoss —— 已知缺口，当前接受丢失。** 它写的是**会话 store**（`Composer` 挂在
+ * `ActiveSessionProvider` 的 `<Provider store={sessionAtomScope(id)}>` 下），却不进恢复快照；
+ * 同一个输入框里的文字草稿是进的（`SESSION_SLOTS.composerDraft`）。
+ *
+ * **丢的是什么**：只有**粘贴来源**的图。三条入口里，拖拽（`Composer.tsx` 的 `onDrop`）和
+ * 选文件（`ComposerAttachmentTray` 的 `<input type="file">`）拿到的 `File` 在磁盘上有第二份，
+ * 用户重选一次即可；而 `onPaste` 直接吃 `event.clipboardData.files`（截图粘贴就是这条路），
+ * 那些字节在磁盘、transcript、快照里**都没有第二份** —— 刷新或崩溃就是永久丢失。
+ *
+ * **为什么这不是「忘了登记」而是结构性障碍**：槽位值必须过得了快照投影那一步的 JSON round-trip
+ * （`state/recoveryProjection.ts` 的 `jsonClone` = `JSON.parse(JSON.stringify(...))`）。`File`
+ * 过不去，而且**不是抛错、是静默变成 `{}`**：字节没了，形状还在，恢复出来是一堆 0 字节的空附件，
+ * 比不恢复更坏。要真正修，得先把粘贴的字节落到一个可寻址的地方（磁盘暂存或 provider 上传），
+ * 快照里只存那个引用 —— 那是另一件事，不是往槽位表里补一行。
+ *
+ * **为什么现在接受**：丢失窗口只有「粘贴完还没发送」这一小段，且用户当场看得见附件没了
+ * （不是静默错值）；代价与上面那套暂存机制不相称。裁决记录在恢复树红线 10，
+ * 门禁条目在 `scripts/state-invariants/atomDispositionTable.js` 的外部会话 atom 表。
+ */
 export const composerImageAttachmentAtom = atom<ComposerImageAttachmentState>({
   images: [],
   operation: 'idle',

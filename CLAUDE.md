@@ -18,8 +18,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   路径（规则见脚本里的 `legacySourcePathPattern`，连在文档里写出那个字面量都会失败）。
   改任何 `.md` 都要跑，CI 里它排在测试之前。
 - `pnpm check:state`：状态机制不变量门禁——derived 必须纯、**全仓**会话状态写入必须收口在
-  core 的 `state/` 或 `runtime/commands/`（判据与豁免表见 §状态与 UI 边界）。改 atom、writer 或
-  新增写入点时要跑。`pnpm check:boundaries` 管的是**包之间**的边界，两者职责不同。
+  core 的 `state/` 或 `runtime/commands/`、每个会话 atom 都得有归宿（判据与各张表见 §状态与 UI
+  边界）。改 atom、writer 或新增写入点时要跑——**新增会话 atom 不登记归宿会静默不进快照**。`pnpm check:boundaries` 管的是**包之间**的边界，两者职责不同。
 - `pnpm cli -p "<prompt>"`：headless CLI 宿主跑一轮真实 run（读 `~/.webAgent/config.json`
   或环境变量取模型 Key；`--help` 看全部选项）；无 `-p` 进入 REPL。
 - `pnpm tauri dev` / `pnpm tauri build`：桌面端开发与打包。
@@ -129,11 +129,18 @@ driver 由宿主配置 bridge。默认实例本身不自动安装工具，应用
   展开成完整副本，**落盘那一步才兑现**：实测 `items` 一份 0.32 MB 的对话要写 33 MB。
   这类槽位改走增量 op（`state/listSlotLog.ts` 的 append/patch/remove、`executionGraphSlotLog.ts`
   的节点粒度），并配一条「同一次写入在长短两种累积量下的 ops 载荷逐字节相等」的测试。
+- **不在槽位表里的会话 atom 必须说得出凭什么能重建**。`SESSION_SLOTS` 是「一个会话的完整状态」的
+  穷举表，新增一个会话 atom 却不登记进去时，它只是不进快照、不进账，**静默缺席**——刷新后会话少
+  一块内容，而且不报错。三类正当归宿（恢复树红线 10）：能从别处**算回来**、有**明确的补偿设计**、
+  **刷新即恢复安全默认**；说不出机制 = 缺口，不是设计。门禁另收第四类 `knownLoss`（已知缺口、接受
+  丢失）——它不是第四种正当归宿，而是给「已裁决先不修」一个有名字的去处，否则唯一的落法就是编一句
+  理由塞进前三类。
 
-上面最后三条都由 `pnpm check:state` 机械判定，CI 里排在 `check:boundaries` 之后。入口是
-`scripts/check-state-invariants.js`（只做装配），三条判据各住 `scripts/state-invariants/` 下一个
+上面最后四条都由 `pnpm check:state` 机械判定，CI 里排在 `check:boundaries` 之后。入口是
+`scripts/check-state-invariants.js`（只做装配），四条判据各住 `scripts/state-invariants/` 下一个
 模块，**表和理由都在那里，不在入口**：`derivedPurity.js` / `writeChokepoint.js` /
-`slotJournalShape.js`。
+`slotJournalShape.js` / `atomDisposition.js`（规则 4 的登记表另住 `atomDispositionTable.js`：
+判定与账分开，改 atom 的人只需要读表）。
 
 前两条逐行扫源码；第三条走**穷举分类**——`SESSION_SLOTS` 的每个 key 必须恰好落在
 `slotJournalShape.js` 的 `deltaJournaled`（走增量 op）/ `boundedWholeValue`（整值记账，每项须写明
@@ -141,6 +148,21 @@ driver 由宿主配置 bridge。默认实例本身不自动安装工具，应用
 error；登记为增量的还会回到 `sessionSlots.ts` 源码确认那次 `slot(...)` 真的传了第 4 个参数
 （registrar），免得「表说走增量、实际仍是整值」这种漂移静默复发。载荷体量本身仍靠 colocated 测试盯
 （「同一次写入在长短两种累积量下的 ops 载荷逐字节相等」）。
+
+第四条把同一套穷举思路往外推一层：`state/sessionAtoms.ts`、`state/sessionTransientAtoms.ts`、
+`state/subagentContinuationAtoms.ts` 与 `execution/graph.ts` 里的**每一个 atom** 必须恰好落在
+`atomDispositionTable.js` 的 `slot` / `derived` / `recomputable` / `compensated` / `safeDefault` /
+`knownLoss` 之一，后四类每项还要写一句**指得出代码位置**的理由。未分类、陈旧条目、一 atom 两表都是
+error；`slot` 与 `SESSION_SLOTS` 是**双向**比对（表说是槽位而槽位表里没有、或反过来，都 error），
+`derived` 会回源码确认确实是 `atom((get) => …)` 形态——把 primitive 登记成 derived 是最省事的蒙混，
+而 primitive 有写入面、丢了就是真丢。规则 3 保的是「已在槽位表里的都被想过记账形态」，
+规则 4 保的是「该进槽位表的没漏」。
+
+规则 4 **只覆盖那四个模块**：定义在 core 之外却写进会话 store 的 atom 枚举不到，只能登记进一张手工
+的「外部会话 atom」表，门禁只保证在案条目不陈旧（文件还在、名字还在），保不了「有没有第三个没人
+登记的」。当前在案的一条是 `apps/web` 的 `composerImageAttachment`（粘贴来源的图没有第二份，
+`File` 又过不了快照投影的 JSON round-trip，已裁决 `knownLoss`）。这一片仍要靠判断，
+恢复树红线 10 因此**收窄保留**而不是删除。
 
 规则 2 只管**会话 atom**（会进 per-session 事务日志的那些）；root store 的跨会话登记表、应用层与
 子 Agent 视图 atom 都在管辖之外。`writeChokepoint.js` 里两张表分工不同：**所有者模块**是按设计拥有

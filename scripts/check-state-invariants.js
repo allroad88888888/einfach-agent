@@ -4,14 +4,15 @@
 // 与 check-boundaries.js 的分工：那个管**包之间的边界**（import 方向、厂商名、公开面白名单），
 // 本脚本管**状态机制本身**。两者都逐行扫源码，但判据与失效模式完全不同，故不合并。
 //
-// 只收能被机械判定的三条。需要判断的部分（这个 atom 该 primitive 还是 derived、
+// 只收能被机械判定的四条。需要判断的部分（这个 atom 该 primitive 还是 derived、
 // 某处写入该不该进 command 层）靠 review 与 CLAUDE.md §状态与 UI 边界。
 //
-// 本文件只负责装配：三条规则各住 `state-invariants/` 下的一个模块，判据、表与解释性注释都在
+// 本文件只负责装配：四条规则各住 `state-invariants/` 下的一个模块，判据、表与解释性注释都在
 // 那里。这里按序调用它们、汇总 errors/observations、打印结论并决定退出码。
 
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { atomDispositionRule } from './state-invariants/atomDisposition.js'
 import { derivedPurityRule } from './state-invariants/derivedPurity.js'
 import { slotJournalShapeRule } from './state-invariants/slotJournalShape.js'
 import { typescriptFiles } from './state-invariants/sourceFiles.js'
@@ -22,7 +23,7 @@ const rootArgument = process.argv.indexOf('--root')
 const repositoryRoot = rootArgument === -1 ? defaultRoot : resolve(process.argv[rootArgument + 1] ?? '')
 
 // 顺序即报错顺序，也是末尾规则说明的打印顺序。
-const rules = [derivedPurityRule, writeChokepointRule, slotJournalShapeRule]
+const rules = [derivedPurityRule, writeChokepointRule, slotJournalShapeRule, atomDispositionRule]
 
 async function main() {
   const allFiles = (await Promise.all([

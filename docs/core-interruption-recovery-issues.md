@@ -64,11 +64,24 @@ redo、历史 cursor、追加日志或将 atom 身份持久化。
       说不出机制 = 缺口，不是设计。
     - 新增任何写入 session store 的 atom 时，必须在本红线的三类归宿里选一类并说明；
       新增会产出内容的工具时，必须说明该内容在 transcript 里有没有副本。
-    - **退场条件**：本红线存在的根因是 capture allowlist 由人手工维护（红线 4），所以「漏没漏」
-      只能靠判断。接入 einfach 事务日志后，`isSourceAtom`（`@einfach/core` 0.4.0）能机械区分
-      源子 atom 与派生/命令 atom，快照改为「全部 primitive 槽位的穷举」，漏项会在编译期或门禁上
-      当场炸——那时本红线**结构上不再需要**，可以删。**在那之前不许提前删**：R12（`pendingArtifacts`）
-      和 R13（`composerDraft`）就是它抓出来的两个真实缺口。
+    - **本红线已被门禁接管一半（2026-08-18）**，原退场条件只兑现了一部分，因此**收窄而不删除**：
+      - **已接管**：`packages/agent-core/src/state/sessionAtoms.ts`、`sessionTransientAtoms.ts`、
+        `subagentContinuationAtoms.ts` 与 `execution/graph.ts` 这四个模块 —— `pnpm check:state`
+        的规则 4（`scripts/state-invariants/atomDisposition.js`）机械枚举其中每一个 atom，
+        必须恰好落在 slot / derived / recomputable / compensated / safeDefault / knownLoss 之一，
+        未分类、陈旧条目、一 atom 两表、与 `SESSION_SLOTS` 双向不一致、登记为 derived 而源码是
+        primitive，全部当场 error。这一片**不再需要靠判断**：漏登记会炸。
+      - **仍未接管（本红线现在只管这一块）**：定义在这四个模块**之外**、却写进会话 store 的 atom。
+        规则 4 枚举不到它们，只能靠一张手工的「外部会话 atom」表登记，而那张表保得了在案条目不陈旧、
+        保不了「有没有第三个没人登记的」。活证据是 `apps/web` 的 `composerImageAttachment`：
+        它挂在 `ActiveSessionProvider` 下、写的是会话 store，粘贴进来的图在磁盘/transcript/快照里
+        都没有第二份，而同一个输入框的文字草稿进快照 —— 已裁决接受丢失，记为 `knownLoss`。
+      - 判断的边界也随之变了：**「这个 atom 归哪一类」仍然是判断**（门禁只查有没有登记、登记得
+        自洽不自洽，查不了理由是真是假），**「有没有漏登记」在四个模块内已经不是判断**。
+    - **退场条件（收窄后）**：等到「会话 store 的写入面本身能被机械枚举」——不管 atom 定义在哪个包，
+      写进会话 store 就必然被门禁看见——本红线才结构上不再需要。**在那之前不许删**：
+      R12（`pendingArtifacts`）与 R13（`composerDraft`）是它抓出的两个真实缺口，
+      `composerImageAttachment` 是第三个，且是**在规则 4 之后仍要靠人发现**的那一类。
 
 ## 目标分层
 
