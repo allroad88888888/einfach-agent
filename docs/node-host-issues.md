@@ -20,7 +20,7 @@ core (TS，不变) ──▶  ├─ CLI ───────── 进程内 �
 ## 树概览
 
 ```text
-H  core host bridge 抽象        H1 → H1b → H2/H3/H4/H4b → H4c/H4d/H4e → H5 → H6
+H  core host bridge 抽象        H1 → H1b → H2/H3/H4/H4b → H4c/H4d-1→H4d-2/H4e → H5 → H6
 N  host-node 薄包装区           N1 → N2 → N3/N4/N5/N6/N7 → N8 ★CLI 完整
 W  host-node 真逻辑区           W1..W15 → W16/W17 对拍
 S  server HTTP 外壳             S1 → S2/S3 → S4
@@ -36,7 +36,7 @@ T  Tauri 退成套壳               T1 → T2 → T3 → T4
 **MVP 路径 = H + N + W1–W15 + S + B + M**（约 46 卡）。到 M5 浏览器版即可用；
 C/P/D/T 是增强与收尾，可后置。
 
-全树 65 卡（H 线在执行中由 6 张增至 11 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
+全树 66 卡（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
 H4b 从 H4 里拆出的总闸、H4c 验收漏扫 apps 面留下的回归、H4d 拆树后新增文件带来的缺口、
 H4e 总闸改名的下游收尾）。
 
@@ -239,19 +239,61 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
 - **模型**：sonnet
 - **状态**：DOING
 
-### H4d · userSkillsRoot 改走 host bridge
+### H4d · userSkillsRoot 改走 host bridge（已拆为 H4d-1 / H4d-2）
 
-- **依赖**：H1
-- **改动面**：`packages/agent-core/src/runtime/userSkillsRoot.ts` 及其测试
-- **判据**：**来源：主会话验收 H4b 时 grep 全仓 `isTauriHost()` 发现的树缺口。**
-  这个文件是 user skills 那条线（`3896115`）新加的，拆树时还不存在，所以「13 个文件」的清单漏了它。
-  它决定能不能读用户主目录下的 skills（`~/.webAgent/skills`、`~/.claude/skills`），
-  Node 后端下同样该走桥。注意它返回的是**路径**不是 invoke 结果，改完要确认路径来源在无 Tauri
-  宿主下怎么给——这处可能不是纯替换，先读懂 `resolveUserSkillsRoot` 当前怎么拿到主目录。
-  跑 `pnpm exec vitest run packages/agent-core/src/runtime/userSkillsRoot.test.ts` +
-  `pnpm exec vitest run tools/skills`
-- **模型**：opus
+**改写原因**：调研交回的结论是这张卡不能只改一个文件。`resolveUserSkillsRoot` 走的不是 invoke，
+而是 `hostTauri.ts:70` 那条 **core 的第二条 `@tauri-apps` 运行时边**（`import('@tauri-apps/api/path')`
+取 `homeDir()`），而 Rust 侧 27 个 command 里**没有**主目录命令。于是纯替换两种写法都错：
+保留 path 模块的话，登记了桥但没装 `@tauri-apps/api` 的 Node/浏览器宿主动态 import 失败 → 静默
+返回 undefined，等于没改；直接换成 invoke 的话，Rust 没这个命令，H5 一落地**桌面端的 user skills
+会静默消失**。三条事实已由主会话独立复核（`loadTauriHomeDir` 全仓单消费方、Rust 无该 command、
+返回值确实被当 confinement 根用）。
+
+**选型：新增桥命令 `get_user_home_dir`，不做 core 注入槽。** 决定性理由是这个值的用途——
+它随后被 `tools/skills/src/projectSkillsLoader.ts` 当作**桥调用的 confinement 根**传回去
+（`workspaceRoot: root.root` + `allowExternalPaths: true`）。它只在「桥背后那台机器的文件系统
+命名空间」里有意义：浏览器接 Node 后端时，主目录是**服务端**那台机器的，前端无从知道。
+让它和文件读取走同一个权威，「根是桥所在机器上的真实路径」才是结构性成立的。
+注入槽还有两个毛病：server 宿主下浏览器无论如何都得经 `/api/invoke/:command` 拿服务端主目录，
+命令消不掉，再加一个槽等于一件事两套机制；且槽的失败形态正是本仓库最忌讳的那种——某个宿主忘了
+注入则 user skills 静默缺席、不报错，而桥只有 `configureHostInvoke` 一个登记点，漏不掉。
+
+已否决的省事方案：在 H5 的 Tauri 装配层包一层 shim，把 `get_user_home_dir` 就地映射到
+`@tauri-apps/api/path`（省掉写 Rust）。它在 invoke 路由里塞一个按命令名的分支，路由表就不再是
+「有哪些命令」的唯一权威，且 T2 必须记得拆。宁可写 15 行 Rust，T3 跟着其余业务代码一起删。
+
+### H4d-1 · Rust 新增 `get_user_home_dir` 命令
+
+- **依赖**：—
+- **改动面**：新建 `apps/desktop/src/user_paths.rs`；`apps/desktop/src/lib.rs` 加一行 `mod` 与
+  一行 `generate_handler!` 条目
+- **判据**：`#[tauri::command] pub fn get_user_home_dir(app: AppHandle) -> Result<String, String>`，
+  走 `app.path().home_dir()`，失败文案照抄 `web_agent_config_store.rs:64` 的「无法定位用户主目录」，
+  非 UTF-8 路径单独报错。**返回原始字符串、不做尾斜杠归一**——归一留在 core 一份，三个宿主共用。
+  诚实记录：这是 AppHandle 的薄包装，与 `WebAgentConfigStore::from_app` 同形，**没有有意义的单测**
+  （既有测试都从 `from_home_directory` 绕开 AppHandle）。验收 =
+  `cargo test --manifest-path apps/desktop/Cargo.toml` 仍绿 + `pnpm tauri build --no-bundle` 编译通过
+- **模型**：sonnet
 - **状态**：DOING
+
+### H4d-2 · userSkillsRoot 改走桥，并删掉 core 的第二条 Tauri 运行时边
+
+- **依赖**：H4d-1（**反序会在 H5 落地时让桌面端 user skills 静默消失**）
+- **改动面**：`packages/agent-core/src/runtime/userSkillsRoot.ts` 及其测试；`hostTauri.ts`（删死代码）
+- **判据**：守卫换 `hasHostBridge()`，取值改 `await invoke<string>('get_user_home_dir')`，
+  **显式判 `typeof` 是字符串再 trim**（`invoke<T>` 不做校验）。`stripTrailingSlash` 与
+  「失败一律降级 undefined」两段语义和注释逐字保留，只把「homeDir 在不同 Tauri 版本上带不带尾斜杠
+  不一致」改成按宿主实现措辞。`hostTauri` import 归零后，`hostTauri.ts:63-74`
+  （`TauriHomeDirFn` / `tauriPathModule` / `loadTauriPath` / `loadTauriHomeDir`）零消费方 →
+  **一并删除**，core 的 `@tauri-apps` 运行时边从两条降到一条。
+  **测试改法写死在卡上**：不要用 `hostBridgeMock`（它把 `hasHostBridge` 钉死为 true，而本文件的
+  守卫正是被测对象），也不要用 `stubHostBridgeFlag`（它的桩 invoke 恒 reject，喂不出返回值用例）。
+  直接用真实 hostBridge 模块 + `configureHostInvoke(() => Promise.resolve(invokeStub))` /
+  `configureHostInvoke(undefined)` 切换，`afterEach` 复位，零 mock、无 TDZ 风险。
+  现有 5 个用例 1:1 平移。跑 `pnpm exec vitest run packages/agent-core/src/runtime/userSkillsRoot.test.ts`
+  + `pnpm exec vitest run tools/skills packages/agent-core/src/skills`
+- **模型**：sonnet
+- **状态**：TODO
 
 ### H4e · 收掉 `runtimeIsTauri` 这个旧名字
 
@@ -299,7 +341,9 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
   `src/commandNames.ts`）；同步 `vite.config.ts` 的 alias、`tsconfig.app.json` 的 paths、
   `scripts/check-boundaries.js` 的 `capabilityPackages`
 - **判据**：`createNodeHostInvoke(options): HostInvoke` 返回一个按 command 名分发的路由表，
-  未实现的命令返回明确的「未实现」而非静默失败。**包不依赖 `@web-agent/core` 的运行时**
+  未实现的命令返回明确的「未实现」而非静默失败。路由表里**先落一条 `get_user_home_dir`
+  → `os.homedir()`**（H4d 拆卡时并进来的，见 H4d-2；N7 读 `~/.webAgent/config.json` 也要用它）。
+  **明确不要**把主目录塞进 `/api/health` 让 B1 顺手取走——那会把权威重新劈成两处。**包不依赖 `@web-agent/core` 的运行时**
   （只 import type），不含任何 HTTP。跑 `node scripts/check-boundaries.js` + `pnpm build`
 - **模型**：opus
 - **状态**：TODO
