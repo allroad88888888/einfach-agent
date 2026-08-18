@@ -4,7 +4,6 @@ import { newId } from '../runtime/newId'
 import type { SubagentNodeRecord } from '../runtime/delegationContract'
 import {
   createExecutionNode,
-  executionEventsAtom,
   executionGraphAtom,
   reduceExecutionGraph,
 } from './graph'
@@ -94,10 +93,6 @@ export function getExecutionRuntime(core: CoreInstance): ExecutionRuntime {
     // items/run/plan 退回去、执行图停在新值上 —— 状态自相矛盾，且只在 undo 时才浮出来。
     // 走节点粒度的增量记账：节点带完整模型消息的 trace，整值记账是二次开销（见 state/executionGraphSlotLog.ts）。
     writeExecutionGraph(session, (graph) => reduceExecutionGraph(graph, event))
-    // executionEvents 不是槽位，也不记账：它当前**没有任何读取方**（除本行与定义处，全仓零引用），
-    // 是一条只写不读、且无上限的追加列表。既然没人读，undo 后它含有被回滚那段的事件也无人可误导；
-    // 但它本身是该清理的死重，不该靠「诊断流」这种说法留着 —— 单独一步处理。
-    session.store.setter(executionEventsAtom, (events) => [...events, event])
   }
 
   const runtime: ExecutionRuntime = {

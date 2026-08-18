@@ -13,7 +13,6 @@ export const EMPTY_EXECUTION_GRAPH: ExecutionGraphSnapshot = {
 }
 
 export const executionGraphAtom = atom<ExecutionGraphSnapshot>(EMPTY_EXECUTION_GRAPH)
-export const executionEventsAtom = atom<ExecutionEvent[]>([])
 
 const READY_DEPENDENCY_STATUSES = new Set<ExecutionNodeStatus>(['succeeded'])
 const ACTIVE_STATUSES = new Set<ExecutionNodeStatus>([

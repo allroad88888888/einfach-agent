@@ -3,7 +3,6 @@
 
 import { createStore } from '@einfach/core'
 import { describe, expect, it } from 'vitest'
-import { executionEventsAtom } from '../execution/graph'
 import { applyRecoverySnapshot } from './recoveryProjection'
 import {
   itemsAtom,
@@ -52,7 +51,6 @@ describe('recoveryProjection boundaries', () => {
     })
     target.setter(toolActivityAtom, [{ callId: 'tool-1', toolName: 'write_file', text: 'running' }])
     target.setter(alwaysAllowedToolsAtom, ['write_file'])
-    target.setter(executionEventsAtom, [{ type: 'graph.hydrated', at: 1 }])
 
     applyRecoverySnapshot(target, capture(source))
 
@@ -60,7 +58,6 @@ describe('recoveryProjection boundaries', () => {
     expect(target.getter(assistantStreamAtom)?.runId).toBe('ui-run')
     expect(target.getter(toolActivityAtom)).toEqual([{ callId: 'tool-1', toolName: 'write_file', text: 'running' }])
     expect(target.getter(alwaysAllowedToolsAtom)).toEqual(['write_file'])
-    expect(target.getter(executionEventsAtom)).toEqual([{ type: 'graph.hydrated', at: 1 }])
   })
 
   it('keeps recovery projection and its sole child continuation atom isolated per store', () => {
