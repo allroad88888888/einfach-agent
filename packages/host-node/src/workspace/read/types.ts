@@ -51,3 +51,67 @@ export interface ReadWorkspaceFileResult {
   /** 行定位模式：文件总行数。 */
   totalLines?: number
 }
+
+/** `read_workspace_run_index_page` 一页里的一条 JSONL 记录。 */
+export interface WorkspaceJsonlLine {
+  /** 1-based，指 run index 文件里的物理行号（空白行也占号）。 */
+  lineNumber: number
+  content: string
+}
+
+/**
+ * `read_workspace_run_index_page` 的返回值：从文件尾向前分页读 run index。
+ *
+ * `cursor` 用 `#[serde(skip_serializing_if = "Option::is_none")]` 的方式对应——没有更早内容
+ * 时这个键根本不出现，不是写成 `undefined`。
+ */
+export interface ReadWorkspaceRunIndexPageResult {
+  /** 固定为 RUNS_INDEX_PATH（根相对，正斜杠），不随请求变化。 */
+  path: string
+  /** 本页命中的非空白行，按文件里出现的顺序排列（新→旧，即行号递减）。 */
+  lines: WorkspaceJsonlLine[]
+  /** 还有更早内容时给出，原样作为下一次调用的 cursor 传回。 */
+  cursor?: string
+  /** 文件里是否还有更早的（未必非空白）内容。 */
+  hasMore: boolean
+  /** 本次读到的文件版本标识；下次分页时随 cursor 一起校验，文件变了就整体拒绝续读。 */
+  snapshot: string
+}
+
+/** `list_workspace_files` 里的一条目录条目。 */
+export interface WorkspaceFileEntry {
+  /** 根相对（Auto 会话读到根外时为绝对）的展示路径，正斜杠。 */
+  path: string
+  /** `'file' | 'directory' | 'symlink' | 'other'`。符号链接恒不跟随，类型来自 lstat。 */
+  type: string
+  /** 仅当 `type === 'file'` 时给出。 */
+  size?: number
+}
+
+/** `list_workspace_files` 的返回值。 */
+export interface ListWorkspaceFilesResult {
+  entries: WorkspaceFileEntry[]
+  /** 达到 maxEntries 提前停止遍历时为 true；隐藏/越界被跳过的条目不计入这个判据。 */
+  truncated: boolean
+}
+
+/** `search_workspace_files` 里的一条命中。 */
+export interface WorkspaceSearchMatch {
+  /** 根相对（Auto 会话读到根外时为绝对）的展示路径，正斜杠。 */
+  path: string
+  /** 命中行内容，按 Unicode 码点截到 MAX_SEARCH_LINE_CHARS。 */
+  line: string
+  /** 1-based。 */
+  lineNumber: number
+}
+
+/**
+ * `search_workspace_files` 的返回值。按**文件名**匹配（内容检索是另一条命令 `rg_search_workspace`）。
+ *
+ * `truncated` 由三条独立判据共同置位（任一为真即真）：命中数达 maxMatches、扫描条目数达
+ * MAX_SEARCH_SCANNED_ENTRIES、或某个文件内容超过 MAX_SEARCH_FILE_BYTES 被截断参与匹配。
+ */
+export interface SearchWorkspaceFilesResult {
+  matches: WorkspaceSearchMatch[]
+  truncated: boolean
+}

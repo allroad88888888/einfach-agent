@@ -29,6 +29,60 @@ export const MAX_HASH_BYTES = 8 * 1024 * 1024
  */
 export const MAX_TRACE_READ_BYTES = 2_000_000
 
+/** run index 分页：调用方没给 maxRecords 时一页的条数。 */
+export const DEFAULT_RUN_INDEX_PAGE_RECORDS = 50
+
+/** run index 分页：单页条数硬上限。 */
+export const MAX_RUN_INDEX_PAGE_RECORDS = 500
+
+/** run index 文件整体大小上限（16 MiB）；超过就整体拒绝，不做分段读取。 */
+export const MAX_RUN_INDEX_BYTES = 16 * 1024 * 1024
+
+/** 子 Agent 归档的 run 索引文件，workspace 根相对、固定路径（不是调用方可传的参数）。 */
+export const RUNS_INDEX_PATH = '.webAgent-archive/index/runs.jsonl'
+
+/** `list_workspace_files`：调用方没给 maxEntries 时的条目上限。 */
+export const DEFAULT_LIST_MAX_ENTRIES = 200
+
+/** `list_workspace_files`：单次调用条目数硬上限，调用方给再大也钳到这里。 */
+export const MAX_LIST_ENTRIES = 2_000
+
+/** `search_workspace_files`：调用方没给 maxMatches 时的命中上限。 */
+export const DEFAULT_SEARCH_MAX_MATCHES = 100
+
+/** `search_workspace_files`：单次调用命中数硬上限。 */
+export const MAX_SEARCH_MATCHES = 1_000
+
+/** 单个文件参与内容匹配的字节上限；超出部分不读，且整体结果记为 truncated。 */
+export const MAX_SEARCH_FILE_BYTES = 1_000_000
+
+/** 命中行回显的码点数上限（等价 Rust `chars()` 计数，不是 UTF-16 code unit）。 */
+export const MAX_SEARCH_LINE_CHARS = 1_000
+
+/**
+ * P2 遍历预算：query 少见/无匹配时 maxMatches 永远不会触发，会遍历整棵树（node_modules/target）
+ * 独占进程。跨整棵递归共享的已扫描目录条目计数，达到此上限即停并置 truncated。
+ */
+export const MAX_SEARCH_SCANNED_ENTRIES = 20_000
+
+/**
+ * P2 排除常见重目录：整个跳过、不递归进去。`.git` / `.next` 等隐藏目录本就被 `isHidden` 挡住，
+ * 这里再显式列一遍并覆盖 `node_modules` / `target` / `dist` 等非隐藏的重目录。
+ */
+export const EXCLUDED_DIR_NAMES: readonly string[] = [
+  '.git',
+  'node_modules',
+  'target',
+  'dist',
+  'build',
+  'out',
+  'vendor',
+  'coverage',
+  '.next',
+  '.turbo',
+  '.cache',
+]
+
 /**
  * 等价 Rust 的 `normalize_positive`：`Some(v) if v > 0 => v.min(max)`，否则回落默认值。
  *
