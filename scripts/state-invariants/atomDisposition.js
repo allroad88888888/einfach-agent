@@ -16,15 +16,17 @@
 // 有名字的去处：否则一个已裁决「先不修」的缺口唯一的落法就是编一句理由塞进前三类，
 // 那正是本规则要防的事。表里每条理由都要指得出代码位置——指不出来的理由等于没核实过。
 
-import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
-import { sessionAtomDeclarations, SESSION_ATOM_FILES } from './sessionAtomSource.js'
+import {
+  coreAtomFilesWithDeclarations,
+  CORE_NON_SESSION_ATOM_FILES,
+  sessionAtomDeclarations,
+  SESSION_ATOM_FILES,
+} from './sessionAtomSource.js'
 import { SLOTS_FILE, slotAtomNames } from './slotSource.js'
 import {
   compensatedAtoms,
   derivedAtoms,
   DISPOSITIONS,
-  externalSessionAtoms,
   knownLossAtoms,
   recomputableAtoms,
   safeDefaultAtoms,
@@ -98,32 +100,37 @@ function classifyDeclaredAtoms({ declared, slots, errors }) {
   return seen
 }
 
-/** 外部会话 atom 表：只判在案条目有没有陈旧，判不了「有没有第三个没人登记的」。 */
-async function checkExternalEntries({ repositoryRoot, declared, seen, errors }) {
-  for (const { atom, file, disposition, reason } of externalSessionAtoms) {
-    if (!DISPOSITIONS.includes(disposition)) {
-      errors.push(`${RULE_FILE} 的外部会话 atom ${atom} 归宿 ${disposition} 不是 ${DISPOSITIONS.join(' / ')} 之一`)
-    }
-    if (!reason) errors.push(`${RULE_FILE} 的外部会话 atom ${atom} 没写理由 —— 说不出机制 = 缺口，不是设计`)
-    if (seen.has(atom) || declared.has(atom)) {
+/**
+ * 枚举面自身不许悄悄过期：core 里每个含 atom 声明的文件，要么在枚举清单里、要么在
+ * 「不是会话状态」表里说明凭什么。
+ *
+ * 没有这一层，规则 4 只覆盖四个写死的文件名——新开一个 `state/fooAtom.ts` 而不登记，
+ * 它既不被枚举也不被排除，红线 10 那种静默缺席就换个层级原样复发。
+ */
+async function checkEnumerationCoverage({ repositoryRoot, files, errors }) {
+  const owning = await coreAtomFilesWithDeclarations(repositoryRoot, files)
+  const excluded = new Map(CORE_NON_SESSION_ATOM_FILES.map((item) => [item.file, item.reason]))
+  for (const file of owning) {
+    if (SESSION_ATOM_FILES.includes(file)) continue
+    if (excluded.has(file)) continue
+    errors.push(
+      `${file} 里声明了 atom，但它既不在 sessionAtomSource.js 的 SESSION_ATOM_FILES 里、`
+      + '也不在 CORE_NON_SESSION_ATOM_FILES 里 —— 规则 4 对这个文件整片失明。'
+      + '是会话状态就加进枚举清单，不是就写明凭什么不是',
+    )
+  }
+  for (const [file, reason] of excluded) {
+    if (!reason) errors.push(`sessionAtomSource.js 的 CORE_NON_SESSION_ATOM_FILES 条目 ${file} 没写理由`)
+    if (!owning.includes(file)) {
       errors.push(
-        `${RULE_FILE} 的外部会话 atom ${atom} 其实定义在 ${SESSION_ATOM_FILES.join(' / ')} 里`
-        + ' —— 它会被机械枚举到，请登记进对应的归宿表，别放进只判陈旧的外部表',
+        `sessionAtomSource.js 的 CORE_NON_SESSION_ATOM_FILES 里有 ${file}，但它已经不声明任何 atom`
+        + ' —— 陈旧条目，请删掉它',
       )
-      continue
-    }
-    const source = await readFile(resolve(repositoryRoot, file), 'utf8').catch(() => undefined)
-    if (source === undefined) {
-      errors.push(`${RULE_FILE} 的外部会话 atom ${atom} 指向 ${file}，该文件不存在 —— 陈旧条目，请更新或删除`)
-      continue
-    }
-    if (!new RegExp(`\\b${atom}\\b`).test(source)) {
-      errors.push(`${RULE_FILE} 的外部会话 atom ${atom} 指向 ${file}，但该文件里已无这个名字 —— 陈旧条目，请更新或删除`)
     }
   }
 }
 
-async function checkAtomDisposition({ repositoryRoot, errors }) {
+async function checkAtomDisposition({ repositoryRoot, files, errors }) {
   const declarations = await sessionAtomDeclarations(repositoryRoot)
   const declared = new Map(declarations.map((item) => [item.name, item]))
   const slots = await slotAtomNames(repositoryRoot)
@@ -138,15 +145,15 @@ async function checkAtomDisposition({ repositoryRoot, errors }) {
     )
   }
 
-  await checkExternalEntries({ repositoryRoot, declared, seen, errors })
+  await checkEnumerationCoverage({ repositoryRoot, files, errors })
 }
 
 export const atomDispositionRule = {
   summary: [
-    '规则 4：四个会话 atom 模块里的每个 atom 都有归宿'
+    '规则 4：会话 atom 模块里的每个 atom 都有归宿'
     + `（槽位 ${slotAtoms.length} / 派生 ${derivedAtoms.length} / 可重算 ${recomputableAtoms.length}`
     + ` / 有补偿 ${compensatedAtoms.length} / 安全默认 ${safeDefaultAtoms.length}`
-    + ` / 已知缺口 ${knownLossAtoms.length}），另有 ${externalSessionAtoms.length} 个在案的外部会话 atom。`,
+    + ` / 已知缺口 ${knownLossAtoms.length}），且 core 里含 atom 声明的文件不是被枚举就是被写明排除。`,
     '不在 SESSION_SLOTS 里就必须说得出凭什么能重建——漏登记的会话状态不报错，只是刷新后少一块。',
   ],
   run: checkAtomDisposition,

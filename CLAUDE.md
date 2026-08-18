@@ -158,11 +158,16 @@ error；`slot` 与 `SESSION_SLOTS` 是**双向**比对（表说是槽位而槽�
 而 primitive 有写入面、丢了就是真丢。规则 3 保的是「已在槽位表里的都被想过记账形态」，
 规则 4 保的是「该进槽位表的没漏」。
 
-规则 4 **只覆盖那四个模块**：定义在 core 之外却写进会话 store 的 atom 枚举不到，只能登记进一张手工
-的「外部会话 atom」表，门禁只保证在案条目不陈旧（文件还在、名字还在），保不了「有没有第三个没人
-登记的」。当前在案的一条是 `apps/web` 的 `composerImageAttachment`（粘贴来源的图没有第二份，
-`File` 又过不了快照投影的 JSON round-trip，已裁决 `knownLoss`）。这一片仍要靠判断，
-恢复树红线 10 因此**收窄保留**而不是删除。
+枚举面**自身**也不许悄悄过期：core 里任何含 atom 声明的文件，要么在 `sessionAtomSource.js` 的
+`SESSION_ATOM_FILES` 里，要么在 `CORE_NON_SESSION_ATOM_FILES` 里写明凭什么不是会话状态
+（当前三条：root store 的跨会话表、`sessionHistory` 的派生只读视图、`recoveryProjection` 的两个
+命令 atom）。新开一个 `state/fooAtom.ts` 而不登记直接 error——否则「静默缺席」只是换个层级复发。
+
+**治理边界按「是不是会话状态」划，不按「值落在哪个 store」划。** 这条容易搞反：
+`ActiveSessionProvider` 把整棵右栏挂在会话 store 上（`sessionAtomScope(id)` 返回的就是
+`getSessionStore(id).store`），所以渲染层随手 `useAtom` 的折叠态、消息窗口、图片附件，物理上
+**都**落在会话 store 里。那不构成把它们纳入恢复契约的理由——判据仍是「这份内容除了它自己还活在
+哪里」。`apps/web` 的 UI 态因此有意不在规则 4 的枚举面内。
 
 规则 2 只管**会话 atom**（会进 per-session 事务日志的那些）；root store 的跨会话登记表、应用层与
 子 Agent 视图 atom 都在管辖之外。`writeChokepoint.js` 里两张表分工不同：**所有者模块**是按设计拥有

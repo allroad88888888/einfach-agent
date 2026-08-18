@@ -64,24 +64,22 @@ redo、历史 cursor、追加日志或将 atom 身份持久化。
       说不出机制 = 缺口，不是设计。
     - 新增任何写入 session store 的 atom 时，必须在本红线的三类归宿里选一类并说明；
       新增会产出内容的工具时，必须说明该内容在 transcript 里有没有副本。
-    - **本红线已被门禁接管一半（2026-08-18）**，原退场条件只兑现了一部分，因此**收窄而不删除**：
-      - **已接管**：`packages/agent-core/src/state/sessionAtoms.ts`、`sessionTransientAtoms.ts`、
-        `subagentContinuationAtoms.ts` 与 `execution/graph.ts` 这四个模块 —— `pnpm check:state`
-        的规则 4（`scripts/state-invariants/atomDisposition.js`）机械枚举其中每一个 atom，
-        必须恰好落在 slot / derived / recomputable / compensated / safeDefault / knownLoss 之一，
-        未分类、陈旧条目、一 atom 两表、与 `SESSION_SLOTS` 双向不一致、登记为 derived 而源码是
-        primitive，全部当场 error。这一片**不再需要靠判断**：漏登记会炸。
-      - **仍未接管（本红线现在只管这一块）**：定义在这四个模块**之外**、却写进会话 store 的 atom。
-        规则 4 枚举不到它们，只能靠一张手工的「外部会话 atom」表登记，而那张表保得了在案条目不陈旧、
-        保不了「有没有第三个没人登记的」。活证据是 `apps/web` 的 `composerImageAttachment`：
-        它挂在 `ActiveSessionProvider` 下、写的是会话 store，粘贴进来的图在磁盘/transcript/快照里
-        都没有第二份，而同一个输入框的文字草稿进快照 —— 已裁决接受丢失，记为 `knownLoss`。
-      - 判断的边界也随之变了：**「这个 atom 归哪一类」仍然是判断**（门禁只查有没有登记、登记得
-        自洽不自洽，查不了理由是真是假），**「有没有漏登记」在四个模块内已经不是判断**。
-    - **退场条件（收窄后）**：等到「会话 store 的写入面本身能被机械枚举」——不管 atom 定义在哪个包，
-      写进会话 store 就必然被门禁看见——本红线才结构上不再需要。**在那之前不许删**：
-      R12（`pendingArtifacts`）与 R13（`composerDraft`）是它抓出的两个真实缺口，
-      `composerImageAttachment` 是第三个，且是**在规则 4 之后仍要靠人发现**的那一类。
+    - **退场条件已兑现（2026-08-18）**，本红线保留为判据说明与历史记录，不再是需要人肉守的规矩：
+      - `pnpm check:state` 的规则 4（`scripts/state-invariants/atomDisposition.js`）机械枚举
+        `state/sessionAtoms.ts`、`state/sessionTransientAtoms.ts`、`state/subagentContinuationAtoms.ts`
+        与 `execution/graph.ts` 里的每一个 atom，必须恰好落在
+        slot / derived / recomputable / compensated / safeDefault / knownLoss 之一。未分类、陈旧条目、
+        一 atom 两表、与 `SESSION_SLOTS` 双向不一致、登记为 derived 而源码是 primitive，全部当场 error。
+      - 枚举面**自身**也不许悄悄过期：core 里任何含 atom 声明的文件，要么在枚举清单里、要么在
+        `CORE_NON_SESSION_ATOM_FILES` 里写明凭什么不是会话状态。新开一个 `state/fooAtom.ts` 而不
+        登记会直接 error —— 否则红线 10 这种静默缺席只是换个层级原样复发。
+      - **「有没有漏登记」不再是判断；「归哪一类」仍然是判断**：门禁查得了登记自不自洽，查不了
+        一条理由是真是假。R12（`pendingArtifacts`）与 R13（`composerDraft`）当年正是靠这层判断抓出来的。
+    - **治理边界按「是不是会话状态」划，不按「值落在哪个 store」划。** 这一条容易搞反：
+      `ActiveSessionProvider` 把整棵右栏挂在会话 store 上（`sessionAtomScope(id)` 返回的就是
+      `getSessionStore(id).store`），所以渲染层随手 `useAtom` 的折叠态、消息窗口、图片附件，
+      物理上**都**落在会话 store 里。那不构成把它们纳入恢复契约的理由 —— 判据仍是「这份内容除了
+      它自己还活在哪里」。`apps/web` 的 UI 态因此有意不在规则 4 的枚举面内。
 
 ## 目标分层
 

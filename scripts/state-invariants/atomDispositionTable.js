@@ -125,27 +125,6 @@ export const safeDefaultAtoms = [
 ]
 
 // (6) knownLoss —— 已知缺口、接受丢失。每条必须写明：丢的是什么、为什么现在接受、将来怎么修。
-// 四个 core 模块里当前为空；唯一在案的缺口 composerImageAttachment 定义在 apps/web，见下面那张表。
-// **空不等于不需要这张表**：它是给「先不修」一个有名字的去处，没有它，缺口只能被塞进前三类。
+// 当前为空。**空不等于不需要这张表**：它是给「已裁决先不修」一个有名字的去处，没有它，
+// 一个缺口唯一的落法就是编一句理由塞进前三类，那正是本规则要防的事。
 export const knownLossAtoms = []
-
-/**
- * 外部会话 atom：定义在 core 之外、但写进**会话 store** 的 atom。
- *
- * 这张表必须是**显式**的：它们不在 SESSION_ATOM_FILES 里，规则 4 机械枚举不到，所以「漏登记」
- * 在这一片仍然不会炸——红线 10 因此不能删，只能收窄到这一片。本表只保证在案的条目不陈旧
- * （文件还在、atom 名还在文件里），保不了「有没有第三个没人登记的」。
- */
-export const externalSessionAtoms = [
-  {
-    atom: 'composerImageAttachmentAtom',
-    file: 'apps/web/src/agentNew/ui/composerImageAttachmentState.ts',
-    disposition: 'knownLoss',
-    reason: '装 File 对象、写会话 store（Composer 挂在 ActiveSessionProvider 下），却不进快照，'
-      + '而同一个输入框的文字草稿进。丢的只有**粘贴来源**的图（onPaste 直吃 clipboardData.files，'
-      + '磁盘上没有第二份；拖拽与选文件的有）。这不是漏登记而是结构性障碍：槽位值要过 '
-      + 'state/recoveryProjection.ts 的 jsonClone（JSON round-trip），File 过去会静默变成 {}，'
-      + '恢复出一堆 0 字节空附件比不恢复更坏。已裁决接受丢失，将来怎么修见该文件 '
-      + 'composerImageAttachmentAtom 的注释',
-  },
-]

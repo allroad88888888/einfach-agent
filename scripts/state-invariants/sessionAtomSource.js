@@ -7,21 +7,47 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { derivedOpenPattern } from './derivedPurity.js'
+import { relativePath } from './sourceFiles.js'
 
 /**
  * 枚举范围：会话状态实际增长的四个模块。
  *
- * 不扫全仓「所有 atom」：root store 的跨会话登记表、应用层与子 Agent 视图 atom 都不是会话内容，
- * 混进来会让规则 4 变成一张几十项的噪音表，然后没人再读它。新增会话状态基本都落在这四个文件里；
- * 真要在别处新开一个会话 atom 模块，就把它加进这张清单——**加清单本身是那次改动的一部分**。
- * 定义在 core 之外（如 `apps/web`）却写进会话 store 的 atom 不会被这里枚举到，
- * 它们走规则 4 的「外部会话 atom」显式表。
+ * 不扫全仓「所有 atom」：应用层与子 Agent 的视图 atom 不是会话内容，混进来会让规则 4 变成一张
+ * 几十项的噪音表，然后没人再读它。**治理边界按「是不是会话状态」划，不按「值落在哪个 store」划**
+ * ——`ActiveSessionProvider` 把整棵右栏挂在会话 store 上（`sessionAtomScope(id)` 返回的就是
+ * `getSessionStore(id).store`），所以渲染层随手 `useAtom` 的东西物理上也落在会话 store 里；
+ * 那不构成把 UI 折叠态纳入恢复契约的理由。
+ *
+ * 但「不扫全仓」不等于「这张清单可以悄悄过期」：core 里任何一个含 atom 声明的文件，
+ * 要么在这张清单里、要么在 CORE_NON_SESSION_ATOM_FILES 里说明它凭什么不是会话状态。
+ * 见下面的 `coreAtomFiles`。
  */
 export const SESSION_ATOM_FILES = [
   'packages/agent-core/src/state/sessionAtoms.ts',
   'packages/agent-core/src/state/sessionTransientAtoms.ts',
   'packages/agent-core/src/state/subagentContinuationAtoms.ts',
   'packages/agent-core/src/execution/graph.ts',
+]
+
+/**
+ * core 里含 atom 声明、但**不是**会话状态的文件。每项都要说清凭什么。
+ *
+ * 这张表存在的唯一理由是让上面那张清单不能悄悄过期：新开一个 `state/fooAtom.ts` 而不登记，
+ * 它就既不被枚举、也不被排除——那正是红线 10 要防的静默缺席，只是换了个层级复发。
+ */
+export const CORE_NON_SESSION_ATOM_FILES = [
+  {
+    file: 'packages/agent-core/src/state/rootAtoms.ts',
+    reason: 'root store 的跨会话登记表（工作区、会话元数据、当前会话 id），按定义不是某一个会话的内容',
+  },
+  {
+    file: 'packages/agent-core/src/state/sessionHistory.ts',
+    reason: 'createSessionHistory 闭包里的 undoAvailabilityAtom，是派生只读视图，没有写入面',
+  },
+  {
+    file: 'packages/agent-core/src/state/recoveryProjection.ts',
+    reason: 'apply/clear 两个命令 atom —— write 是动作而非赋值，本身不持有状态',
+  },
 ]
 
 const declarationPattern = /^[ \t]*(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*=\s*atom\b/gm
@@ -59,6 +85,23 @@ function callOpenIndex(source, from) {
  * 任何一个模块抽不出 atom 就抛：那说明该文件的写法变了、规则 4 已经对它失明，
  * 而静默判空比不检查更糟——门禁会继续报「通过」。
  */
+/**
+ * core 里所有含 atom 声明的文件（仓库相对路径）。
+ *
+ * 只认声明、不认引用：`import { runAtom }` 的地方遍地都是，那不代表那个文件拥有状态。
+ */
+export async function coreAtomFilesWithDeclarations(repositoryRoot, files) {
+  const owning = []
+  for (const path of files) {
+    const scoped = relativePath(repositoryRoot, path)
+    if (!scoped.startsWith('packages/agent-core/src/')) continue
+    const source = await readFile(path, 'utf8')
+    declarationPattern.lastIndex = 0
+    if (declarationPattern.test(source)) owning.push(scoped)
+  }
+  return owning
+}
+
 export async function sessionAtomDeclarations(repositoryRoot) {
   const declarations = []
   for (const file of SESSION_ATOM_FILES) {
