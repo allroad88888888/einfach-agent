@@ -141,6 +141,8 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
 
 | 11 | `workspace_patch_path.rs:101` 与 `workspace_path_ops.rs:224` | 这两处的展示路径**无条件** `.replace('\\', "/")`，而 `workspace_write_target_path.rs` / `workspace_read_paths.rs` 的 `path_to_slash_string` 是 `if MAIN_SEPARATOR == '/' { 原样 }`——**同一仓库里两种做法**。unix 上 `\` 是合法文件名字符，于是真名 `a\b.txt` 的文件在读/写侧原样保留、在 patch 与 path_ops 侧变成 `a/b.txt`；而 patch 那个结果会**写进变更日志**，回滚时按另一个路径去找。W12 发现，主会话已复核四处实现。 |
 
+| 12 | `workspace_write_result.rs` 的 `WorkspaceWriteResult` | 它是 `#[derive(Serialize)]` **没有 `rename_all`**，所以写入回执的顶层键是 snake_case（`bytes_written` / `change_set` / `dry_run`…），而 `workspace_read_types.rs` 与 `workspace_patch_result.rs` 都带 `rename_all = "camelCase"`——**同一仓库两种线上形状**。core 的 `normalizeResult` 两种都收，所以今天两边都跑得动，但 W16/W17 对拍会撞上。W7 发现，主会话已复核三个结构的 serde 属性。Node 侧照搬了 snake_case。 |
+
 **⚠️ 跨宿主隐患（T 线套壳前必须解决）**：`workspaceRoot` 在变更日志里存的是 canonicalize 后的
 绝对路径、回滚时逐字比对。Rust 的 `fs::canonicalize` 在 Windows 上给 verbatim 前缀
 （`\\?\C:\…`），Node 的 `realpath` 给 `C:\…`——**套壳后同一个 workspace 会被判成
@@ -840,7 +842,43 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `workspace_write_guard.rs` + `workspace_write_pipeline.rs`：
   read-verify-write，`contentHash` 不匹配时拒绝覆盖并返回可操作错误。跑该目录 vitest
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `30f95ff`。13 个源文件 + 10 份测试 / 121 例（write 域合计 178）。全树最大一张。
+  流水线 13 步的顺序表已在报告里逐条对齐 Rust，其中三条是**顺序本身就是契约**：
+  content 解成完整字节比上限**排在路径解析之前**（所以超限回执的 `path` 是原始入参，
+  有用例拿 `'./out.txt'` 钉住，把限额挪到后面当场红）；读 before **只读一次**、守卫/日志/摘要
+  三方共用；`prepareChangeSet` 记账在落盘之前。**失败要撤的动作只有一个**——已预留的变更集
+  （写盘或 executable 失败 → `discardPreparedChange`，dry run 同样丢）。
+  **守卫不匹配给的是结构化回执不是 rejection**：`expectedOldContent` 不匹配时带
+  `expected_bytes` / `current_bytes` / `first_mismatch_byte` / `expected_trailing_lf` /
+  `current_trailing_lf` 五个数字，**全按 UTF-8 字节算**——`.length` 直译会让中文内容报出实际值
+  1/3 的位置。`expectedContentHash` 不匹配则**不回传当前实际 hash**，照搬 Rust。
+  **子 agent 纠正了自己初稿的一处错误说法**：不是「先 chmod 等于什么都没做」，准确版本是
+  `create` 时文件还不存在会 ENOENT、`overwrite` 时先 chmod 反而会被 `atomicWrite` 原样继承——
+  所以「写完之后」是唯一对四种模式都成立的位置。
+  跨进程归档锁的 `release()` 包在临界区**外面**的 `finally` 里，异常/结构化拒绝/正常返回三条
+  路径都过。三次变异验证：去掉 `withPathLock` → 并发用例变成「两个守卫都通过」当场红；
+  限额挪到路径解析之后 → path 用例红；去掉写失败时的 discard → 孤儿账用例红。
+  **base64 的 seam 刻意留成结构化拒绝而不是用 `Buffer.from(x,'base64')` 顶**（W8 接手）：
+  后者对非法字符**静默跳过**，`"not base64!"` 会被解成垃圾字节写进磁盘，比拒绝糟。
+  **两处 Node 侧无对应出口**：`mark_change_applied` 失败 Rust 打 warn、Node 只能吞（回执仍 ok，
+  账停在 `prepared`，回滚照样认）；`WorkspaceWritePerf` 的分阶段耗时日志整段未移植。
+
+### W7b · 把 change summary 合并进 workspace/common
+
+- **依赖**：W7（`30f95ff`）、W13（`b169754`）
+- **改动面**：新建 `packages/host-node/src/workspace/common/changeSummary*`；删除
+  `workspace/write/changeSummary.ts` + `changeSummaryDiff.ts` 与 `workspace/patch/changeSummary.ts`
+  + `lineDiff.ts`；改两域的 import 与测试
+- **判据**：**来源：W7 与 W13 并行时各自实现了一份 `compute_change_summary`。** Rust 侧那个住在
+  `workspace_common.rs`、被 write 与 patch 共用（`workspace_patch_pipeline.rs:93`），两卡都不敢在
+  common 建同名文件（后落笔的会静默盖掉先落笔的），所以各留了一份。
+  **两份的行为已确认一致**（主会话复核）：W13 在对照 W7 时发现自己的 `splitLines` 无条件剥末尾
+  `\r` 是错的、已改成与 W7/Rust 同款（只剥真正位于换行符之前的）。合并时仍要**逐条对照再落笔**，
+  别默认哪份对——两份的导出面不对称（patch 版导出 `splitLines`，write 版是私有函数）。
+  合并后两域的测试都要仍然全绿，且 `computeChangeSummary` 的用例合并去重而不是删掉一半。
+  跑 `pnpm exec vitest run packages/host-node` + `node scripts/check-boundaries.js`
+- **模型**：sonnet
+- **状态**：TODO
 
 ### W8 · 文件写：base64 二进制写入
 
