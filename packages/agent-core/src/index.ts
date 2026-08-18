@@ -78,8 +78,11 @@ export type {
 // 而非 `runtime/core/coreInstance`（模块级单例，同 hostTauri 的形态），所以单开一段标题。
 //
 // 与「零消费方一律不收」的取舍：本卡（H1）交付时 `apps/web` / `apps/cli` 里还没有调用点，注入
-// 发生在 H5（桌面：`configureHostInvoke(() => loadTauriInvoke())`）与 B 线（浏览器：HTTP invoke）。
+// 发生在 H5（桌面）与 B 线（浏览器：HTTP invoke）。
 // 收进来是因为**可达性本身就是这条契约的内容** —— 装配层 import 不到的注入点等于没有注入点。
+// H5 交付的形态是 `configureHostInvoke(() => Promise.resolve(invoke))`，loader 由装配层自己持有
+// （apps/web/src/main.tsx）——而不是 H1 当初设想的 `() => loadTauriInvoke()`：后者要深导入
+// `runtime/hostTauri`，撞下面这条白名单本身。这恰好印证了只收 configureHostInvoke 的划法。
 //
 // 只收两个：`hasHostBridge` / `loadHostInvoke` 的消费方全在 core 内部（H2–H4 要改的那 13 个
 // runtime 模块），宿主不该也不需要自己去解析桥，按同一条「按真实用量划线」的规矩留在包内。

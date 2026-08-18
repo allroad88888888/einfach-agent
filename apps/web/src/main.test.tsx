@@ -152,4 +152,27 @@ describe('main entry: MCP 启动装配（C1）', () => {
     })
     expect(uiStore.getter(pluginSettingsCapabilitiesAtom)).toEqual({ supported: false })
   })
+
+  // H5：同一条纪律的第三处落点——浏览器预览**不登记宿主命令桥**。这边没有后端，登记等于骗 core
+  // 说有本机能力，模型会拿到一堆调用即失败的文件/shell/Git/rg 工具。桥一旦缺席，
+  // modelTurnPrefix 的总闸（hasHostBridge()）就把整类 runtime='server' 工具挡在清单外，
+  // 这正是 H1 之前浏览器侧的行为。桌面那一侧在 main.hostBridge.test.tsx。
+  // 依赖第一个用例先 import 过 './main'。
+  it('浏览器预览宿主：不登记宿主命令桥，server 工具整类不进模型清单（H5）', async () => {
+    const { hasHostBridge } = await import('@web-agent/core/runtime/hostBridge')
+    const { buildToolManifestText } = await import('@web-agent/core/runtime/toolManifest')
+    const { defaultCore } = await import('@web-agent/core')
+
+    expect(hasHostBridge()).toBe(false)
+
+    // 逐字复刻生产表达式：modelTurnPrefix.ts 就是拿 hasHostBridge() 当总闸喂给它。
+    const manifest = buildToolManifestText(hasHostBridge(), { registry: defaultCore.tools })
+    const serverTools = defaultCore.tools.list()
+      .filter((tool) => tool.runtime === 'server')
+      .map((tool) => tool.name)
+
+    // 断言清单非空本身就是断言的一部分：registry 空掉时下面的 for 会全空转而静默通过。
+    expect(serverTools.length).toBeGreaterThan(0)
+    for (const name of serverTools) expect(manifest).not.toContain(name)
+  })
 })

@@ -10,9 +10,16 @@
 //
 // 本文件是**宿主中立**的：整份源码里连桌面那个上游包的名字都不出现（连注释与类型位置也不出现，
 // 因为下面 HostInvokeLoader 的 JSDoc 会被 tsc 原样带进发布物 .d.ts —— hostTauri.ts D9 那条
-// 「.d.ts 里该字符串零命中」的纪律，在这里是更强的「本模块与那个包全无关系」）。那条动态 import
-// 仍只留在 hostTauri.ts 里，由桌面装配层把它的 loadTauriInvoke 包成一个 loader 注入进来（H5），
-// core 自身不再认识它。
+// 「.d.ts 里该字符串零命中」的纪律，在这里是更强的「本模块与那个包全无关系」）。
+//
+// H5 落地时改了一处：桌面装配层**没有**去包 hostTauri.ts 的 loadTauriInvoke，而是自己持有
+// 那个 loader（apps/web/src/main.tsx 里 configureHostInvoke 的唯一调用点）。原因是
+// loadTauriInvoke 不在 `@web-agent/core` 的公开面上，深导入 `runtime/hostTauri` 会撞
+// check-boundaries 的 core 公开面白名单（S9），而桌面装配层本来就直接依赖那个上游包、
+// 自己写一行 loader 不欠任何东西。这对本文件只有一个后果，且正是想要的那个：core 自身
+// 不再认识桌面宿主，一处也不。
+// 副作用是 loadTauriInvoke 目前**零生产消费方**（isTauriHost 仍被 workspaceDialog 用着），
+// 要不要连它一起删是 hostTauri.ts 自己的事，留给后续卡。
 
 /**
  * 宿主命令通道的调用签名。形状对齐现有全部调用点：它们一律写成

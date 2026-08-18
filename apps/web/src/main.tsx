@@ -11,6 +11,7 @@ import {
   configureDefaultDelegation,
   configureDefaultProjectSkillsProvider,
   configureDefaultSkillsRegistry,
+  configureHostInvoke,
 } from '@web-agent/core'
 import { registerStandardTools } from '@web-agent/tools'
 import { buildProjectSkillsProvider, builtInSkillsRegistry } from '@web-agent/tools-skills'
@@ -25,7 +26,11 @@ import {
   configureTraceLogReader as configureTraceLogReaderFactory,
 } from '@web-agent/core/observability'
 import { createIndexedDbLogDriver, createIndexedDbLogReader } from '@web-agent/observability-idb'
-import { isTauri } from '@tauri-apps/api/core'
+// invoke 与 isTauri 来自同一个模块，而 isTauri 本来就是静态 import——多取一个导出不会让浏览器
+// 产物多一个模块。下面那个 host bridge loader 因此刻意不写成 `import('@tauri-apps/api/core')`：
+// 本文件已经静态引了同一个说明符，动态形式在这里换不来任何惰性（模块早在静态图里），只会给
+// Rollup 那条既有的「dynamic import will not move module into another chunk」告警再添一个源头。
+import { invoke, isTauri } from '@tauri-apps/api/core'
 import { AppShell } from './agentNew/ui/AppShell'
 import { StartupCredentialGate } from './agentNew/ui/StartupCredentialGate'
 import { WebTimelineRendererRegistryProvider } from './agentNew/ui/WebTimelineRendererRegistryProvider'
@@ -64,7 +69,44 @@ import './agentNew/ui/agentnew.css'
 // core 不再硬编码工具，装什么由消费方（这里是 app）决定。
 const core = defaultCore
 
+// 宿主分流的唯一事实源。提到装配序列最前面是因为下面的 configureHostInvoke 要用它；
+// isTauri() 只读 globalThis.isTauri（纯全局量、零副作用、不加载任何模块），换个位置求值不花代价。
+const tauriHost = isTauri()
+
 registerStandardTools(core.tools)
+
+// 【H5】桌面宿主在这里把命令桥交给 core，生产代码里全仓只有这一处登记（apps/cli 至今没有桥，
+// 但它在 H1 之前也从来不满足 isTauriHost()——Node 里没有 globalThis.isTauri，行为未变）。
+// core 侧的 13 个 runtime 模块
+// （workspaceRead/Write/Patch/Delete/PathOperation/Rg/Git/Change/Task、shellCommand、
+// projectSkillsBridge、userSkillsRoot、modelTurnPrefix）已经不再问「是不是 Tauri」，只问
+// 「宿主登记过桥没有」（packages/agent-core/src/runtime/hostBridge.ts）。少了这一句，桌面端的
+// 文件 / shell / Git / rg 工具会整类对模型不可见（modelTurnPrefix 的 hostHasLocalCapabilities
+// 就是 hasHostBridge()），执行也一律早退——H 线前九张卡换判据时留下的正是这个缺口。
+//
+// 【为什么是这一行】它必须早于任何工具可能执行的时点，而本模块体到最后那句
+// `void bootstrapApplication()` 之前全程同步，所以放在第一个装配块里就先于**所有**异步续段：
+//   · 先于 bootstrapApplication() 里的 core.persistence.hydrate()——恢复出来的会话可能带着
+//     未完成的 run，那是工具真正可能执行的第一个时点；
+//   · 先于 initializePluginSettings() 那条 workspace root 订阅触发的插件扫描——
+//     desktopProvider 的 resolveBridge() 会求值一次 buildProjectSkillsWorkspaceBridge() 并把
+//     结果 `??=` 缓存住，那一刻没有桥的话，缓存下来的 undefined 会让插件面在整个进程生命周期里
+//     都报「当前宿主没有 workspace 文件系统通路」，而且不会自愈；
+//   · 也先于首屏渲染与 MCP 的 autoConnect。
+// 登记本身是同步的（configureHostInvoke 收的是 loader 而不是已解析的 invoke，理由见
+// hostBridge.ts 的 JSDoc），所以不存在「已登记但 hasHostBridge() 还答 false」的窗口。
+//
+// 【为什么不用 core 的 loadTauriInvoke()】它没有出现在 @web-agent/core 的公开面上，深导入
+// `@web-agent/core/runtime/hostTauri` 会撞 check-boundaries 的 core 公开面白名单（S9）；
+// 要不要把它放上公开面是 core 自己的决策，不该由本卡顺手做掉。装配层自己持有这个 loader 反而
+// 更贴 H 线的方向：桥背后是什么由宿主说了算，core 不必认识 Tauri。
+//
+// 【为什么浏览器分支不登记】浏览器预览没有后端，登记等于骗 core 说有本机能力，模型会看到一堆
+// 调用即失败的工具。给浏览器接本地 Node 后端是 B 线的事。
+if (tauriHost) {
+  configureHostInvoke(() => Promise.resolve(invoke))
+}
+
 configureDefaultSkillsRegistry(builtInSkillsRegistry)
 configureDefaultProjectSkillsProvider(buildProjectSkillsProvider())
 core.planRuntime = createDefaultPlanRuntime
@@ -80,8 +122,6 @@ void hydrateMcpSettings()
 // 启动这一刻 workspace 还没 hydrate 回来，真正的扫描由 initialize 内的 root 订阅触发。
 initializePluginSettings()
 void hydratePluginSettings()
-
-const tauriHost = isTauri()
 
 // API Key 不进入前端配置：桌面端走原生代理，开发浏览器走本地 Node 中继，静态产物拒绝模型请求。
 const desktopManagedCredentialMarker = 'desktop-managed-credential'
