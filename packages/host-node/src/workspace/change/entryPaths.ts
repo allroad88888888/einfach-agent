@@ -43,3 +43,16 @@ export function entryPath(directory: string, changeId: string): string {
 export function payloadPath(directory: string, changeId: string): string {
   return join(directory, `${changeId}.payload`)
 }
+
+/**
+ * 被 copy 新建出来的第 `index` 条路径在回滚时的暂存处：
+ * `<directory>/<changeId>.created-<index>.payload`。调用前必须已经 `validateChangeId`。
+ *
+ * 回滚一次 copy 的做法是把新建出来的东西**搬进**这里，而不是直接删——批量回滚中途失败要能
+ * 把它搬回去（见 reapplyChangeSet.ts）。代价是成功回滚后这份载荷会**永久留在日志目录里**，
+ * 没有回收路径。Rust 侧今天就是这样（`_revert.rs:166` 与 `_batch.rs:239` 拼的是同一个名字），
+ * 照搬——「删了就没法补偿」和「留着占地方」之间，前者是数据丢失，后者是垃圾。
+ */
+export function createdPayloadPath(directory: string, changeId: string, index: number): string {
+  return join(directory, `${changeId}.created-${index}.payload`)
+}
