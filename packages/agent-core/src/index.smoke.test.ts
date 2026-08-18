@@ -63,6 +63,7 @@ describe('@web-agent/core 根 barrel', () => {
     for (const name of [
       'defaultCore',
       'configureDefaultProjectSkillsProvider',
+      'configureHostInvoke',
       'configureCommands',
       'sendMessage',
       'sessionAtomScope',

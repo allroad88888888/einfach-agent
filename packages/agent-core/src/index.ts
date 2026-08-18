@@ -71,6 +71,23 @@ export type {
 } from './runtime/core/coreInstance'
 
 // ---------------------------------------------------------------------------
+// 宿主能力桥（./runtime/hostBridge）—— 与上一组同类：宿主在启动时注入的装配槽
+// ---------------------------------------------------------------------------
+// 归在装配槽这一组而不是另起门类：`configureHostInvoke` 与上面三个 `configureDefault*` 是同一种
+// 东西 —— core 留一个洞，宿主在启动时把自己的实现填进去。区别只是它住在 `runtime/hostBridge`
+// 而非 `runtime/core/coreInstance`（模块级单例，同 hostTauri 的形态），所以单开一段标题。
+//
+// 与「零消费方一律不收」的取舍：本卡（H1）交付时 `apps/web` / `apps/cli` 里还没有调用点，注入
+// 发生在 H5（桌面：`configureHostInvoke(() => loadTauriInvoke())`）与 B 线（浏览器：HTTP invoke）。
+// 收进来是因为**可达性本身就是这条契约的内容** —— 装配层 import 不到的注入点等于没有注入点。
+//
+// 只收两个：`hasHostBridge` / `loadHostInvoke` 的消费方全在 core 内部（H2–H4 要改的那 13 个
+// runtime 模块），宿主不该也不需要自己去解析桥，按同一条「按真实用量划线」的规矩留在包内。
+export { configureHostInvoke } from './runtime/hostBridge'
+// 宿主实现自己的桥时要照它写签名（packages/host-node 的路由表、浏览器侧的 HTTP invoke）
+export type { HostInvoke } from './runtime/hostBridge'
+
+// ---------------------------------------------------------------------------
 // 命令面（./runtime/commands）—— UI 唯一被允许的变更入口
 // ---------------------------------------------------------------------------
 export {
