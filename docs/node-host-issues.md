@@ -911,7 +911,33 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `workspace_patch_pipeline.rs` + `workspace_patch_fs.rs` +
   `workspace_patch_limits.rs`：全部 hunk 成功才落盘，任一失败整体不写。跑该目录 vitest
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `b169754`。8 个源文件 + 6 份测试 / 146 例。W12 的文件一字未改。
+  **「任一失败整体不写」的主力不在回滚，而在根本没进落盘那步**（W12 的暂存设计），
+  子 agent 用**退化探针表**证明测试不是摆设——四种退化各自让哪些用例变红：
+  `if (rejected.length > 0)` 改成 `if (false)` → 3 条红；删掉 rollback 调用 → 3 条红；
+  `applyExecutableBit` 挪到 `writeTextFile` 之前 → 2 条红；`commitChanges` 挪到
+  `prepareChangeSet` 之前 → 1 条红。
+  **失败注入不用 mock**，全是可控的真实文件系统状态：把目标路径的父段先建成**文件**
+  （`zz` 是文件 → `zz/x.txt` 暂存得过、`mkdir` 时才炸）。还原失败那条更绕一层且在流水线里可达：
+  `delete_file d` + `add_file d/x/y.txt` + `add_file zz/w.txt`——提交时删掉文件 `d`、`mkdir -p`
+  把 `d` 变成目录、第三条炸；还原时 `d` 的位置已是目录，`rename` 报 EISDIR，于是两句话都留下。
+  **还原是逆序的**（同一批里「先删文件 `d`、再在 `d/` 下建新文件」的还原必须先删 `d/x` 再写回 `d`），
+  还原自身失败**不遇错即停**、逐条收集后汇总成 `"{原始错误}; failed to rollback partially applied
+  patch: {逐条}"`（病因在前、磁盘现状在后）；全部还原成功时错误里不出现后半句。
+  **executable 先写后置**：`atomicWrite` 会把**原文件**权限回填到临时文件再 rename，先置执行位
+  会被那次回填整个盖掉。置位规则 `mode | ((mode & 0o444) >> 2)`（0644→0755、0600→**0700** 不是
+  0711），清位无条件 `& ~0o111`，Windows 上整个函数 no-op。
+  变更日志 `prepareChangeSet` 在 `commitChanges` **之前**；落盘失败 → `discardPreparedChange`
+  不留孤儿账；成功 → `markChangeApplied`，而**它失败不让整条命令失败**（文件已改完，报错会让
+  调用方以为没发生），照搬 Rust 的 `log::warn!` + 继续。
+  **子 agent 在与 W7 对照时发现并修了自己的一个真 bug**（主会话已复核实现与回归测试）：
+  `splitLines` 原来无条件剥末尾 `\r`，而 Rust 的 `str::lines()` 是先 `strip_suffix('\n')`、失败就
+  整段原样返回——**末行没有换行符时它结尾的 `\r` 属于内容**（`"a\r"` 是一行 `"a\r"`）。
+  无条件剥的后果是「以 `a\r` 结尾（无换行）」与「以 `a` 结尾」被判成同一份内容，
+  **一次真实改动从 diff 里消失**。
+  **一处判断不照搬**：`changes[]` 与日志入参里查不到暂存状态时它**抛错**，Rust 是 `filter_map`
+  静默跳过——那种状态构造上不可能，但真发生时静默跳过意味着「文件照样被落盘、却不进
+  `changedFiles` 也不进变更日志」= 一次撤不回来的改动且不报错。已在 `pipeline.ts` 注释点名。
 
 ### W14 · change journal：类型与写入
 
