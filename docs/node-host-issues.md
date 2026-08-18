@@ -466,7 +466,23 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   ③ 增量读到上限即停，不把大输出全缓冲进内存。
   跑 `pnpm exec vitest run packages/host-node/src/workspace/common`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE `04a8fa5`。8 个源文件 + 7 份 colocated 测试（61 例），最大 158 行。
+  Rust 侧那条 confinement 判定散在六份路径文件里各抄一遍，Node 收成一份，但**保留两种形态**
+  ——读取形态（目标必须已存在、靠 realpath 断案、有 `allowExternalPaths` 特权）与写入形态
+  （目标可能尚不存在、`../` 词法直接拒、回溯到最近已存在祖先再 canonicalize、**无**外部路径特权，
+  因为「读到根外只是看见，写到根外是改别人磁盘」）。
+  **两处技术发现已由主会话独立复现**：
+  ① **前缀陷阱**——Rust 的 `Path::starts_with` 是**按分量**比的，`/ws-evil` 天然不以 `/ws` 开头；
+  直译成 `startsWith` 就把这条性质丢了。判定一律在分隔符边界上比。
+  ② **Node 的 realpath 有两种语义**——`fs.realpathSync`（JS 实现）先按词法消 `..` 再走链接，
+  而 `fs/promises` 的 `realpath` 与 `realpathSync.native` 走 POSIX 语义（先解链接再吃 `..`），
+  **只有后者等价 Rust 的 `fs::canonicalize`**。实测同一个 `link/../real/inner.txt`：JS 版抛 ENOENT，
+  native 版解出真实文件。同理拼接不能用 `path.join` / `resolve`（它们会先消 `..`）。
+  **变异验证**：删掉 `inheritPermissions` 的 chmod → 两条权限用例失败；把边界判定换成裸
+  `startsWith` → 四条前缀用例失败。共 6 条定点失败后完整还原。
+  **一处有意偏离 Rust**（见 W16 卡面）：UTF-8 分块解码修掉了 Rust 的坏字 bug。
+  另有三处主动与 Rust 保持一致并写明理由：错误文案保留英文原文（两个宿主对同一次越界必须说
+  同一句话）、rename 后不 fsync 父目录（要加两边一起加）、边界比较不做大小写折叠（fail-closed）。
 
 ### N3 · shell 执行
 
@@ -518,7 +534,22 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   设置覆盖目录时不触发迁移。Unix 下配置目录权限 0700。
   跑 `pnpm exec vitest run packages/host-node/src/config`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE `c0b054d`。7 个文件 / 57 例。**凭证边界由主会话独立探针验证**：喂一份含
+  `modelCredentials.deepseek = "sk-…"` 的配置，`mcp_config_read` 的返回里既无该 Key 也无
+  `modelCredentials` 键名，而 `mcp` 段照常返回。设计理由也对——底座不认任何一段的内容，段视图
+  请求的段名恒为 `mcp`，凭证拿不到不是因为某处写了过滤，是它根本不在返回路径上。
+  `merge` 语义是**顶层浅合并 + null 删键**（两条互相排除的用例 + 变异测试钉住：改成整份替换
+  或去掉 null 分支都会转红）。迁移四分支里最漂亮的一条：设了 `WEB_AGENT_CONFIG_DIR` 时
+  `legacyPath` 恒为 `undefined`，**迁移在机制上不可能发生**，而不是靠某处记得写 if。
+  **五处没照搬 Rust，各有理由**：① 加一条全进程写入串行队列——Rust 的 `static CONFIG_LOCK`
+  只挡跨线程，Node 单线程但读—改—写中间隔着两次 await，两个并发 write 会各读旧值各写回；
+  ② 补丁里值为 `undefined` 的键当作没写（Rust 无此分支，因为 Tauri 收的是已反序列化的 `Value`）
+  ——不跳过就是「本地删得掉、上 server 删不掉」；③ 临时文件名用进程内自增序号（Node 无同口径
+  纳秒时钟，`Date.now()` 同毫秒两次写入会撞名）；④ 缺 `patch` 的报错是新写的（Rust 那层由 Tauri
+  反序列化挡住）；⑤ 只排顶层不递归排序（纯排版，为的是两个宿主轮流写同一份文件时不产生整份 diff）。
+  **不复用 N2 的 `atomicWrite`，理由成立**：Rust 侧同样是两份实现，权限语义相反——workspace 那份
+  显式**继承原文件权限**（否则覆盖会抹掉脚本可执行位），配置这份强制 0600 / 目录 0700。
+  合成一个带开关的函数等于让调用方每次现选一次安全级别，漏选那次不报错、只让凭证变成同机可读。
 
 ### N8 · CLI 注入进程内 host
 
@@ -677,7 +708,13 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 
 - **依赖**：W13、W15
 - **改动面**：新建 `packages/host-node/fixtures/`（共享 JSON）+ 两侧的 fixture 驱动测试
-- **判据**：**新范式卡，会被 W17 抄。** 从 Rust 的 `workspace_patch_*_tests.rs` 与
+- **判据**：**已知一处两边不该对齐的差异**（N2 交回，主会话已在 `workspace_common.rs:143` 证实）：
+  Rust 对每个读取块单独跑 `String::from_utf8_lossy`，多字节字符被块边界劈开时两半各自变成 `�`
+  ——中文输出只要跨块就会坏字。Node 侧用 `StringDecoder` 把块尾不完整的序列留到下一块，
+  对未被劈开的合法 UTF-8 两边逐字节相同，被劈开时 Node 给的是**正确**结果。
+  **本卡撞上这条时该改的是 Rust 侧**，不是把 Node 改回去凑对拍。理由记在
+  `packages/host-node/src/workspace/common/index.ts` 的文件头。
+  **新范式卡，会被 W17 抄。** 从 Rust 的 `workspace_patch_*_tests.rs` 与
   `workspace_change_journal_batch_tests.rs` 抽出输入/期望为语言无关的 JSON，
   Rust 与 TS 各写一个驱动器跑同一组。两侧全绿；故意改一处 TS 实现能让对拍变红
   （证明它真在比对，不是空跑）。跑 `pnpm exec vitest run packages/host-node` +
@@ -951,7 +988,9 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 ### D4 · README 与 docs 更新
 
 - **依赖**：M5
-- **改动面**：`README.md`、`README.zh-CN.md`、`docs/README.md`、`CLAUDE.md`
+- **改动面**：`README.md`、`README.zh-CN.md`、`docs/README.md`、`CLAUDE.md`、
+  **`docs/config-directory-override.md`**（N7 交回时点名：它现在只讲「桌面版」，而那套语义
+  ——默认路径、旧配置安全复制、`WEB_AGENT_CONFIG_DIR` 隔离与密钥边界——已在 Node 宿主上等价成立）
 - **判据**：对外长文写作卡。README 的「三个宿主」表述改为浏览器自托管 / CLI / 桌面套壳；
   删掉「浏览器预览下 Tauri 桥支持的工具不可用」这类已过期的说明；
   `CLAUDE.md` 的「持久化与运行环境」节同步。跑 `node scripts/check-docs.js`
