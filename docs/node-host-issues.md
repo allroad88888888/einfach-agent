@@ -324,8 +324,10 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
   `runtimeIsTauri: stablePrefix.hostHasLocalCapabilities`——旧名字被喂新语义这件事在源码里
   看得见（两处都写了注释），不是静默的，所以不阻塞任何卡。本卡把名字收干净。
   纯改名，跑 `pnpm exec vitest run packages/agent-core` 全量
+- **状态**：DONE `5f40682`。21 个文件、45 处命中，44 增 51 删——多删的 7 行正是两段「待办」注释。
+  diff 里除 identifier 外只有一行改动：`subagents/runtimeState.ts` 的字段注释原文写着
+  「runs inside the native Tauri host」，与新名字和新语义直接冲突，跟着改了。
 - **模型**：sonnet
-- **状态**：DOING
 
 ### H5 · Tauri 装配层注入 invoke loader
 
@@ -336,7 +338,22 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
   跑 `pnpm exec vitest run packages/agent-core apps/web` 全绿 + `pnpm build`，
   桌面版行为与 H1 之前逐项一致
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `2fde7cc`。登记点落在 `registerStandardTools` 之后的第一个装配块：模块体到末尾
+  `void bootstrapApplication()` 之前全程同步，因此先于**所有**异步续段。除了「恢复出来的会话可能
+  带着未完成 run」这个显而易见的时点，还有一个静默失败点值得记：`initializePluginSettings()` 那条
+  workspace root 订阅触发的插件扫描里，`desktopProvider.resolveBridge()` 会求值一次
+  `buildProjectSkillsWorkspaceBridge()` 并 `??=` **缓存**结果——那一刻没有桥的话，缓存下来的
+  `undefined` 会让插件面在整个进程生命周期里都报「当前宿主没有 workspace 文件系统通路」，且不自愈。
+  **不走 core 的 `loadTauriInvoke()`**：它不在 `@web-agent/core` 公开面上，深导入
+  `@web-agent/core/runtime/hostTauri` 会撞 `check-boundaries` 的公开面白名单（S9，硬 error 不是
+  观察项）；要不要放上公开面是 core 自己的决策。装配层自持 loader 反而更贴 H 线的方向。
+  `setup.ts` 未动，而且是**实验验证**过的决定：临时加一个全局桩桥后重跑，恰好只有本卡新增的两个
+  用例失败、其余零影响——全局桩既没必要，又会把本卡要证明的性质本身证伪。
+  **纠正一个数字**：`runtime: 'server'` 的生产工具是 **16 个**（`tools/fs` 10 + `tools/shell` 6），
+  不是先前记的 17——第 17 个 grep 命中是 `toolCallBatch.authorization.testFixtures.ts` 里的测试夹具。
+  已独立复核。
+  **未验证项（如实记录）**：没有真的启动桌面 app（`pnpm tauri dev`）。「桌面版行为与 H1 之前逐项
+  一致」建立在测试与代码推理上，不是跑过桌面二进制。
 
 ### H6 · 宿主不可用文案去 Tauri 化
 
@@ -354,7 +371,14 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
   如今只剩 `workspaceDialog.ts` 一个消费方——**删还是留由本卡判断并写明理由**，留就要说清谁将来会用它。
   跑 `pnpm exec vitest run packages/agent-core` 全量
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `9dc5707`。两个脚手架导出都删了（`stubTauriHostFlag` 的留白理由写进文件头：
+  `workspaceDialog.ts` 将来要补测试就沿用 `index.smoke.test.ts` 那套自包含写法，真出现多个消费方
+  再抽公共 helper），文件 114 → 62 行、只剩 `hostBridgeMock` 一个导出。另连带修了两个断言旧文案的
+  测试（`index.smoke.test.ts`、`toolContext.test.ts`，后者真实调用 `ctx.runShell` 未 mock）。
+  **主会话验收时统一了措辞**：交回时 14 处写「未提供 workspace 桥」、shellCommand 那处写
+  「未提供 shell 命令桥」——而桥只有一座（`hasHostBridge()`），两个名字会让模型以为
+  「shell 桥没了但 workspace 桥也许还在」，白跑一轮文件工具；且那座桥本来也不叫 workspace 桥，
+  它承载所有本机命令。已全部统一为「当前宿主未提供命令桥」。
 
 ---
 
@@ -443,7 +467,10 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
 
 - **依赖**：H5、N3、N4、N5、N6、N7
 - **改动面**：`apps/cli/src/runtime.ts`
-- **判据**：**本线试金石**。`configureHostInvoke` 在 `registerStandardTools` 之后调用；
+- **判据**：**本线试金石**。注意 CLI 至今没有桥（H5 交回时点名）——这**不是回归**（Node 里没有
+  `globalThis.isTauri`，`isTauriHost()` 在 H1 之前也一直是 false），而是本卡要补的那个缺口本身：
+  在此之前 CLI 的文件 / shell 工具对模型一直不可见。
+  `configureHostInvoke` 在 `registerStandardTools` 之后调用；
   `pnpm cli -p "列出当前目录下的文件并读取 package.json"` 真的返回文件内容，而不是
   「当前宿主未提供 workspace 桥」。跑 `pnpm exec vitest run apps/cli` + `pnpm build`
 - **模型**：opus
