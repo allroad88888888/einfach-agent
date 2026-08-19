@@ -1278,8 +1278,9 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 ### S5 · shell 的 platform 该由宿主说了算，不是调用方探测
 
 - **依赖**：S1
-- **改动面**：`packages/agent-core/src/runtime/hostPlatform.ts` 与 `shellCommand.ts` 的调用链；
-  `apps/server` 的握手；`apps/web/src/host/`
+- **改动面**：`packages/agent-core/src/runtime/hostPlatform.ts` 及其调用链；`apps/server/src/health.ts`
+  与 `createServer.ts` 的握手。**不含 `apps/web/src/host/`**——那个目录当前不存在（主会话已核实），
+  宿主探测三态化是 B1 的卡，本卡只把 core 与 server 两头做对。
 - **判据**：**来源：N3 交回时点名的阻断项，`run_shell_command` 在 server 宿主下会整个不可用。**
   `platform` 由 core 的 `detectHostPlatform()` 在**调用方**探测后随命令传下去，宿主收到后校验
   「与自己不符就拒绝执行」。Tauri 下前端与原生同机，这条恒成立；**浏览器 → Node server 这条路上
@@ -1290,17 +1291,32 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   回报宿主平台，core 用它组命令，于是「组命令」和「执行命令」用的是同一个事实。
   本卡要给出设计并落地，判据是：server 宿主下 macOS 浏览器 + Linux 服务端能正常跑 shell 命令，
   且「模型按错平台组命令」仍被挡住。
+  **时序约束（主会话核实后补）**：`detectHostPlatform()` 是**同步**的，调用点在
+  `modelTurnPrefix.ts:73`（组 system prompt 那一刻）与工具定义里；而握手是**异步**的。改成异步会
+  波及一大片同步调用链，所以本卡真正要解的是这个矛盾，不是「加个字段」。判据不是哪个优雅，是
+  **「忘了握手」的失败响不响亮**——静默回落到本地探测值的设计在 Tauri 下永远对、在 server 下永远错
+  且不报错，那是最坏的一类。
+  **两个消费者必须逐字一致**（`hostPlatform.ts` 文件头写明）：① shell 桥
+  （`tools/shell/.../run-verification-command.ts:74` 与 `runtime/shellCommand.ts` 的 `input.platform`）；
+  ② 注入给模型的运行环境段（`modelTurnPrefix.ts:73`）。漂移的后果是模型按 A 平台组命令、桥按 B 平台拒。
+  宿主侧的校验两份都在：`apps/desktop/src/shell_pipeline.rs:44` 与
+  `packages/host-node/src/shell/pipeline.ts:57`，文案逐字相同。
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### S4 · 启动 CLI：端口选择、URL 打印、打开浏览器
 
 - **依赖**：S2、S3
 - **改动面**：`apps/server/src/main.ts`、根 `package.json` 加脚本
 - **判据**：`pnpm server` 打印带 token 的完整 URL；端口被占时自动换端口而非崩溃；
-  `--no-open` 可关闭自动打开。跑该目录 vitest
+  `--no-open` 可关闭自动打开。跑该目录 vitest。
+  **token 由本卡生成**（`generateAuthToken()`），同时喂给 `createWebAgentServer({ token })` 和打印的
+  URL——不传不是「关闭认证」，`createServer.ts` 仍会随机生成一枚，后果是全部 401。
+  `EADDRINUSE` 是**异步 error 事件**不是同步抛出，try/catch 接不住。打开浏览器必须
+  `spawn(cmd, [url])` 而非拼 shell 字符串——URL 里有 token，拼进 shell 会让它进程列表可见且可注入；
+  打不开浏览器不得让服务崩溃（headless / SSH / 容器里没有浏览器）。
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ---
 
