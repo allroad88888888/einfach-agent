@@ -1,0 +1,213 @@
+{
+  "target": "revert_change_sets_blocking / revertChangeSets —— 多条账的批量回滚：初始文件树 + 账本 + 要退的 id → 完整回执 JSON + 最终树 + 各条目 status",
+  "cases": [
+    {
+      "name": "batch reverts multiple change sets and files in reverse order",
+      "source": "workspace_change_journal_batch_tests.rs::batch_reverts_multiple_change_sets_and_files_in_reverse_order",
+      "initialFiles": { "a.txt": "a-3", "b.txt": "b-2" },
+      "changeSets": [
+        {
+          "id": "batch-1",
+          "status": "applied",
+          "files": [
+            { "path": "a.txt", "before": "a-1", "after": "a-2" },
+            { "path": "b.txt", "before": "b-1", "after": "b-2" }
+          ]
+        },
+        {
+          "id": "batch-2",
+          "status": "applied",
+          "files": [{ "path": "a.txt", "before": "a-2", "after": "a-3" }]
+        }
+      ],
+      "revert": { "changeSetIds": ["batch-1", "batch-2"], "dryRun": false },
+      "expected": {
+        "result": {
+          "ok": true,
+          "status": "batch_reverted",
+          "restoredFiles": ["a.txt", "a.txt", "b.txt"],
+          "conflicts": [],
+          "error": null,
+          "revertedChangeSetIds": ["batch-2", "batch-1"]
+        },
+        "files": { "a.txt": "a-1", "b.txt": "b-1" },
+        "entries": { "batch-1": "reverted", "batch-2": "reverted" }
+      }
+    },
+    {
+      "name": "batch conflict preflight leaves every file untouched",
+      "source": "workspace_change_journal_batch_tests.rs::batch_conflict_preflight_leaves_every_file_untouched",
+      "initialFiles": { "a.txt": "a-2", "b.txt": "user-edit" },
+      "changeSets": [
+        {
+          "id": "batch-safe",
+          "status": "applied",
+          "files": [{ "path": "a.txt", "before": "a-1", "after": "a-2" }]
+        },
+        {
+          "id": "batch-conflict",
+          "status": "applied",
+          "files": [{ "path": "b.txt", "before": "b-1", "after": "b-2" }]
+        }
+      ],
+      "revert": { "changeSetIds": ["batch-safe", "batch-conflict"], "dryRun": false },
+      "expected": {
+        "result": {
+          "ok": false,
+          "status": "conflict",
+          "restoredFiles": [],
+          "conflicts": [
+            { "path": "b.txt", "reason": "state does not match change set batch-conflict" }
+          ],
+          "error": null,
+          "revertedChangeSetIds": []
+        },
+        "files": { "a.txt": "a-2", "b.txt": "user-edit" },
+        "entries": { "batch-safe": "applied", "batch-conflict": "applied" }
+      }
+    },
+    {
+      "name": "journal creation order beats the order the caller sent",
+      "initialFiles": { "a.txt": "a-2" },
+      "changeSets": [
+        {
+          "id": "ord-1",
+          "status": "applied",
+          "files": [{ "path": "a.txt", "before": "a-0", "after": "a-1" }]
+        },
+        {
+          "id": "ord-2",
+          "status": "applied",
+          "files": [{ "path": "a.txt", "before": "a-1", "after": "a-2" }]
+        }
+      ],
+      "revert": { "changeSetIds": ["ord-2", "ord-1"], "dryRun": false },
+      "expected": {
+        "result": {
+          "ok": true,
+          "status": "batch_reverted",
+          "restoredFiles": ["a.txt", "a.txt"],
+          "conflicts": [],
+          "error": null,
+          "revertedChangeSetIds": ["ord-2", "ord-1"]
+        },
+        "files": { "a.txt": "a-0" },
+        "entries": { "ord-1": "reverted", "ord-2": "reverted" }
+      }
+    },
+    {
+      "name": "dry run predicts the same restored files without touching anything",
+      "initialFiles": { "a.txt": "a-3", "b.txt": "b-2" },
+      "changeSets": [
+        {
+          "id": "batch-1",
+          "status": "applied",
+          "files": [
+            { "path": "a.txt", "before": "a-1", "after": "a-2" },
+            { "path": "b.txt", "before": "b-1", "after": "b-2" }
+          ]
+        },
+        {
+          "id": "batch-2",
+          "status": "applied",
+          "files": [{ "path": "a.txt", "before": "a-2", "after": "a-3" }]
+        }
+      ],
+      "revert": { "changeSetIds": ["batch-1", "batch-2"], "dryRun": true },
+      "expected": {
+        "result": {
+          "ok": true,
+          "status": "batch_ready",
+          "restoredFiles": ["a.txt", "a.txt", "b.txt"],
+          "conflicts": [],
+          "error": null,
+          "revertedChangeSetIds": []
+        },
+        "files": { "a.txt": "a-3", "b.txt": "b-2" },
+        "entries": { "batch-1": "applied", "batch-2": "applied" }
+      }
+    },
+    {
+      "name": "the same id twice is a caller error, not an idempotent revert",
+      "initialFiles": { "a.txt": "a-2" },
+      "changeSets": [
+        {
+          "id": "dup",
+          "status": "applied",
+          "files": [{ "path": "a.txt", "before": "a-1", "after": "a-2" }]
+        }
+      ],
+      "revert": { "changeSetIds": ["dup", "dup"], "dryRun": false },
+      "expected": {
+        "result": {
+          "ok": false,
+          "status": "failed",
+          "restoredFiles": [],
+          "conflicts": [],
+          "error": "duplicate change set id: dup",
+          "revertedChangeSetIds": []
+        },
+        "files": { "a.txt": "a-2" },
+        "entries": { "dup": "applied" }
+      }
+    },
+    {
+      "name": "an already reverted entry is skipped rather than reported",
+      "initialFiles": { "a.txt": "a-2", "b.txt": "b-2" },
+      "changeSets": [
+        {
+          "id": "done",
+          "status": "reverted",
+          "files": [{ "path": "a.txt", "before": "a-1", "after": "a-2" }]
+        },
+        {
+          "id": "live",
+          "status": "applied",
+          "files": [{ "path": "b.txt", "before": "b-1", "after": "b-2" }]
+        }
+      ],
+      "revert": { "changeSetIds": ["done", "live"], "dryRun": false },
+      "expected": {
+        "result": {
+          "ok": true,
+          "status": "batch_reverted",
+          "restoredFiles": ["b.txt"],
+          "conflicts": [],
+          "error": null,
+          "revertedChangeSetIds": ["live"]
+        },
+        "files": { "a.txt": "a-2", "b.txt": "b-1" },
+        "entries": { "done": "reverted", "live": "reverted" }
+      }
+    },
+    {
+      "name": "a change set that created a file is reverted by deleting it again",
+      "initialFiles": { "kept.txt": "k", "made.txt": "made" },
+      "changeSets": [
+        {
+          "id": "creation",
+          "status": "applied",
+          "files": [{ "path": "made.txt", "before": null, "after": "made" }]
+        },
+        {
+          "id": "edit",
+          "status": "applied",
+          "files": [{ "path": "kept.txt", "before": "j", "after": "k" }]
+        }
+      ],
+      "revert": { "changeSetIds": ["creation", "edit"], "dryRun": false },
+      "expected": {
+        "result": {
+          "ok": true,
+          "status": "batch_reverted",
+          "restoredFiles": ["kept.txt", "made.txt"],
+          "conflicts": [],
+          "error": null,
+          "revertedChangeSetIds": ["edit", "creation"]
+        },
+        "files": { "kept.txt": "j" },
+        "entries": { "creation": "reverted", "edit": "reverted" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,513 @@
+{
+  "target": "apply_workspace_patch_blocking_with_journal / applyPatch —— 整条补丁流水线：初始文件树 + 操作 → 完整回执 JSON + 落盘后的树",
+  "cases": [
+    {
+      "name": "result reports per-file change summaries",
+      "source": "workspace_patch_pipeline_tests.rs::result_reports_per_file_change_summaries",
+      "initialFiles": { "edit.txt": "keep\nold\n", "gone.txt": "bye\n" },
+      "operations": [
+        { "type": "add_file", "path": "fresh.txt", "content": "one\ntwo\n" },
+        { "type": "overwrite_file", "path": "edit.txt", "content": "keep\nnew\n", "oldContent": "keep\nold\n" },
+        { "type": "delete_file", "path": "gone.txt" }
+      ],
+      "dryRun": false,
+      "expected": {
+        "result": {
+          "ok": true,
+          "changedFiles": ["edit.txt", "fresh.txt", "gone.txt"],
+          "changes": [
+            {
+              "path": "edit.txt",
+              "created": false,
+              "deleted": false,
+              "changeSummary": {
+                "linesAdded": 1,
+                "linesRemoved": 1,
+                "beforeLines": 2,
+                "afterLines": 2,
+                "diff": "@@ -2,1 +2,1 @@\n-old\n+new",
+                "diffTruncated": false,
+                "approximate": false
+              }
+            },
+            {
+              "path": "fresh.txt",
+              "created": true,
+              "deleted": false,
+              "changeSummary": {
+                "linesAdded": 2,
+                "linesRemoved": 0,
+                "beforeLines": 0,
+                "afterLines": 2,
+                "diff": "@@ -1,0 +1,2 @@\n+one\n+two",
+                "diffTruncated": false,
+                "approximate": false
+              }
+            },
+            { "path": "gone.txt", "created": false, "deleted": true }
+          ],
+          "rejected": [],
+          "dryRun": false,
+          "wouldChange": true,
+          "summary": "applied patch: 3 file(s) changed",
+          "changeSet": null
+        },
+        "files": { "edit.txt": "keep\nnew\n", "fresh.txt": "one\ntwo\n" }
+      }
+    },
+    {
+      "name": "executable bit applies within the transaction",
+      "source": "workspace_patch_pipeline_tests.rs::executable_bit_applies_within_the_transaction",
+      "unixOnly": true,
+      "initialFiles": {},
+      "operations": [
+        { "type": "add_file", "path": "run.sh", "content": "#!/bin/sh\n", "executable": true }
+      ],
+      "dryRun": false,
+      "expected": {
+        "result": {
+          "ok": true,
+          "changedFiles": ["run.sh"],
+          "changes": [
+            {
+              "path": "run.sh",
+              "created": true,
+              "deleted": false,
+              "changeSummary": {
+                "linesAdded": 1,
+                "linesRemoved": 0,
+                "beforeLines": 0,
+                "afterLines": 1,
+                "diff": "@@ -1,0 +1,1 @@\n+#!/bin/sh",
+                "diffTruncated": false,
+                "approximate": false
+              }
+            }
+          ],
+          "rejected": [],
+          "dryRun": false,
+          "wouldChange": true,
+          "summary": "applied patch: 1 file(s) changed",
+          "changeSet": null
+        },
+        "files": { "run.sh": "#!/bin/sh\n" },
+        "executable": { "run.sh": true }
+      }
+    },
+    {
+      "name": "dry run reports summaries without writing",
+      "source": "workspace_patch_pipeline_tests.rs::dry_run_reports_summaries_without_writing",
+      "initialFiles": { "edit.txt": "old\n" },
+      "operations": [
+        { "type": "overwrite_file", "path": "edit.txt", "content": "new\n", "oldContent": "old\n" }
+      ],
+      "dryRun": true,
+      "expected": {
+        "result": {
+          "ok": true,
+          "changedFiles": ["edit.txt"],
+          "changes": [
+            {
+              "path": "edit.txt",
+              "created": false,
+              "deleted": false,
+              "changeSummary": {
+                "linesAdded": 1,
+                "linesRemoved": 1,
+                "beforeLines": 1,
+                "afterLines": 1,
+                "diff": "@@ -1,1 +1,1 @@\n-old\n+new",
+                "diffTruncated": false,
+                "approximate": false
+              }
+            }
+          ],
+          "rejected": [],
+          "dryRun": true,
+          "wouldChange": true,
+          "summary": "dry run: 1 file(s) would change",
+          "changeSet": null
+        },
+        "files": { "edit.txt": "old\n" }
+      }
+    },
+    {
+      "name": "replace edits the file on disk",
+      "source": "workspace_patch_pipeline_tests.rs::replace_edits_file_on_disk",
+      "initialFiles": { "code.txt": "const answer = 41;\n" },
+      "operations": [{ "type": "replace", "path": "code.txt", "oldText": "41", "newText": "42" }],
+      "dryRun": false,
+      "expected": {
+        "result": {
+          "ok": true,
+          "changedFiles": ["code.txt"],
+          "changes": [
+            {
+              "path": "code.txt",
+              "created": false,
+              "deleted": false,
+              "changeSummary": {
+                "linesAdded": 1,
+                "linesRemoved": 1,
+                "beforeLines": 1,
+                "afterLines": 1,
+                "diff": "@@ -1,1 +1,1 @@\n-const answer = 41;\n+const answer = 42;",
+                "diffTruncated": false,
+                "approximate": false
+              }
+            }
+          ],
+          "rejected": [],
+          "dryRun": false,
+          "wouldChange": true,
+          "summary": "applied patch: 1 file(s) changed",
+          "changeSet": null
+        },
+        "files": { "code.txt": "const answer = 42;\n" }
+      }
+    },
+    {
+      "name": "dry run does not touch disk",
+      "source": "workspace_patch_pipeline_tests.rs::dry_run_does_not_touch_disk",
+      "initialFiles": { "code.txt": "value = 1\n" },
+      "operations": [{ "type": "replace", "path": "code.txt", "oldText": "1", "newText": "2" }],
+      "dryRun": true,
+      "expected": {
+        "result": {
+          "ok": true,
+          "changedFiles": ["code.txt"],
+          "changes": [
+            {
+              "path": "code.txt",
+              "created": false,
+              "deleted": false,
+              "changeSummary": {
+                "linesAdded": 1,
+                "linesRemoved": 1,
+                "beforeLines": 1,
+                "afterLines": 1,
+                "diff": "@@ -1,1 +1,1 @@\n-value = 1\n+value = 2",
+                "diffTruncated": false,
+                "approximate": false
+              }
+            }
+          ],
+          "rejected": [],
+          "dryRun": true,
+          "wouldChange": true,
+          "summary": "dry run: 1 file(s) would change",
+          "changeSet": null
+        },
+        "files": { "code.txt": "value = 1\n" }
+      }
+    },
+    {
+      "name": "replace outside the workspace is rejected",
+      "source": "workspace_patch_pipeline_tests.rs::replace_outside_workspace_is_rejected",
+      "initialFiles": {},
+      "operations": [{ "type": "replace", "path": "../evil.txt", "oldText": "a", "newText": "b" }],
+      "dryRun": false,
+      "expected": {
+        "result": {
+          "ok": false,
+          "changedFiles": [],
+          "changes": [],
+          "rejected": [
+            {
+              "index": 0,
+              "operation": "replace",
+              "path": "../evil.txt",
+              "reason": "path must not contain `..` components"
+            }
+          ],
+          "dryRun": false,
+          "wouldChange": false,
+          "summary": "rejected 1 operation(s); no files changed",
+          "changeSet": null
+        },
+        "files": {}
+      }
+    },
+    {
+      "name": "a successful journaled patch returns the persisted change set",
+      "source": "workspace_patch_pipeline_tests.rs::successful_patch_returns_persisted_change_set",
+      "initialFiles": { "code.txt": "before" },
+      "operations": [
+        { "type": "replace", "path": "code.txt", "oldText": "before", "newText": "after" }
+      ],
+      "dryRun": false,
+      "changeContext": {
+        "changeId": "patch-change",
+        "sessionId": "session",
+        "runId": "run",
+        "toolCallId": "call"
+      },
+      "expected": {
+        "result": {
+          "ok": true,
+          "changedFiles": ["code.txt"],
+          "changes": [
+            {
+              "path": "code.txt",
+              "created": false,
+              "deleted": false,
+              "changeSummary": {
+                "linesAdded": 1,
+                "linesRemoved": 1,
+                "beforeLines": 1,
+                "afterLines": 1,
+                "diff": "@@ -1,1 +1,1 @@\n-before\n+after",
+                "diffTruncated": false,
+                "approximate": false
+              }
+            }
+          ],
+          "rejected": [],
+          "dryRun": false,
+          "wouldChange": true,
+          "summary": "applied patch: 1 file(s) changed",
+          "changeSet": { "id": "patch-change", "reversible": true }
+        },
+        "files": { "code.txt": "after" },
+        "journalEntries": { "patch-change": "applied" }
+      }
+    },
+    {
+      "name": "a patch with no net change writes nothing and journals nothing",
+      "initialFiles": { "same.txt": "x\n" },
+      "operations": [
+        { "type": "overwrite_file", "path": "same.txt", "content": "x\n", "oldContent": "x\n" }
+      ],
+      "dryRun": false,
+      "changeContext": {
+        "changeId": "noop-change",
+        "sessionId": "session",
+        "runId": "run",
+        "toolCallId": "call"
+      },
+      "expected": {
+        "result": {
+          "ok": true,
+          "changedFiles": [],
+          "changes": [],
+          "rejected": [],
+          "dryRun": false,
+          "wouldChange": false,
+          "summary": "applied patch: 0 file(s) changed",
+          "changeSet": null
+        },
+        "files": { "same.txt": "x\n" },
+        "journalEntries": { "noop-change": null }
+      }
+    },
+    {
+      "name": "overwrite accepts a content hash instead of the whole previous file",
+      "source": "workspace_patch_guard_tests.rs::overwrite_accepts_a_content_hash_instead_of_the_whole_previous_file",
+      "initialFiles": { "code.txt": "old\n" },
+      "operations": [
+        {
+          "type": "overwrite_file",
+          "path": "code.txt",
+          "content": "new\n",
+          "expectedContentHash": "sha256:01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee"
+        }
+      ],
+      "dryRun": false,
+      "expected": {
+        "result": {
+          "ok": true,
+          "changedFiles": ["code.txt"],
+          "changes": [
+            {
+              "path": "code.txt",
+              "created": false,
+              "deleted": false,
+              "changeSummary": {
+                "linesAdded": 1,
+                "linesRemoved": 1,
+                "beforeLines": 1,
+                "afterLines": 1,
+                "diff": "@@ -1,1 +1,1 @@\n-old\n+new",
+                "diffTruncated": false,
+                "approximate": false
+              }
+            }
+          ],
+          "rejected": [],
+          "dryRun": false,
+          "wouldChange": true,
+          "summary": "applied patch: 1 file(s) changed",
+          "changeSet": null
+        },
+        "files": { "code.txt": "new\n" }
+      }
+    },
+    {
+      "name": "a stale content hash is rejected and nothing lands on disk",
+      "source": "workspace_patch_guard_tests.rs::overwrite_rejects_a_stale_content_hash",
+      "initialFiles": { "code.txt": "current\n" },
+      "operations": [
+        {
+          "type": "overwrite_file",
+          "path": "code.txt",
+          "content": "new\n",
+          "expectedContentHash": "sha256:a9b004fb029473f2b5fc51a6ed7411ca8dd55e6bc3be897ff56da17b257ea535"
+        }
+      ],
+      "dryRun": false,
+      "expected": {
+        "result": {
+          "ok": false,
+          "changedFiles": [],
+          "changes": [],
+          "rejected": [
+            {
+              "index": 0,
+              "operation": "overwrite_file",
+              "path": "code.txt",
+              "reason": "expectedContentHash did not match current file content; re-read the file and retry with the new contentHash"
+            }
+          ],
+          "dryRun": false,
+          "wouldChange": false,
+          "summary": "rejected 1 operation(s); no files changed",
+          "changeSet": null
+        },
+        "files": { "code.txt": "current\n" }
+      }
+    },
+    {
+      "name": "one bad operation means the whole batch writes nothing",
+      "initialFiles": { "a.txt": "A\n" },
+      "operations": [
+        { "type": "overwrite_file", "path": "a.txt", "content": "AA\n", "oldContent": "A\n" },
+        { "type": "add_file", "path": "a.txt", "content": "nope" }
+      ],
+      "dryRun": false,
+      "expected": {
+        "result": {
+          "ok": false,
+          "changedFiles": [],
+          "changes": [],
+          "rejected": [
+            { "index": 1, "operation": "add_file", "path": "a.txt", "reason": "file already exists" }
+          ],
+          "dryRun": false,
+          "wouldChange": false,
+          "summary": "rejected 1 operation(s); no files changed",
+          "changeSet": null
+        },
+        "files": { "a.txt": "A\n" }
+      }
+    },
+    {
+      "name": "every operation is tried before the batch reports back",
+      "initialFiles": {},
+      "operations": [
+        { "type": "delete_file", "path": "missing.txt" },
+        { "type": "replace", "path": "missing2.txt", "oldText": "a", "newText": "b" },
+        { "type": "add_file", "path": "../x.txt", "content": "y" }
+      ],
+      "dryRun": false,
+      "expected": {
+        "result": {
+          "ok": false,
+          "changedFiles": [],
+          "changes": [],
+          "rejected": [
+            { "index": 0, "operation": "delete_file", "path": "missing.txt", "reason": "file does not exist" },
+            { "index": 1, "operation": "replace", "path": "missing2.txt", "reason": "file does not exist" },
+            {
+              "index": 2,
+              "operation": "add_file",
+              "path": "../x.txt",
+              "reason": "path must not contain `..` components"
+            }
+          ],
+          "dryRun": false,
+          "wouldChange": false,
+          "summary": "rejected 3 operation(s); no files changed",
+          "changeSet": null
+        },
+        "files": {}
+      }
+    },
+    {
+      "name": "text arguments are validated before the path is resolved",
+      "initialFiles": {},
+      "operations": [{ "type": "add_file", "path": "../evil.txt", "content": "a\u0000b" }],
+      "dryRun": false,
+      "expected": {
+        "result": {
+          "ok": false,
+          "changedFiles": [],
+          "changes": [],
+          "rejected": [
+            {
+              "index": 0,
+              "operation": "add_file",
+              "path": "../evil.txt",
+              "reason": "content appears to be binary"
+            }
+          ],
+          "dryRun": false,
+          "wouldChange": false,
+          "summary": "rejected 1 operation(s); no files changed",
+          "changeSet": null
+        },
+        "files": {}
+      }
+    },
+    {
+      "name": "changed paths are ordered by UTF-8 bytes, not by UTF-16 code units",
+      "initialFiles": {},
+      "operations": [
+        { "type": "add_file", "path": "😀.txt", "content": "a" },
+        { "type": "add_file", "path": "Ａ.txt", "content": "b" }
+      ],
+      "dryRun": false,
+      "expected": {
+        "result": {
+          "ok": true,
+          "changedFiles": ["Ａ.txt", "😀.txt"],
+          "changes": [
+            {
+              "path": "Ａ.txt",
+              "created": true,
+              "deleted": false,
+              "changeSummary": {
+                "linesAdded": 1,
+                "linesRemoved": 0,
+                "beforeLines": 0,
+                "afterLines": 1,
+                "diff": "@@ -1,0 +1,1 @@\n+b",
+                "diffTruncated": false,
+                "approximate": false
+              }
+            },
+            {
+              "path": "😀.txt",
+              "created": true,
+              "deleted": false,
+              "changeSummary": {
+                "linesAdded": 1,
+                "linesRemoved": 0,
+                "beforeLines": 0,
+                "afterLines": 1,
+                "diff": "@@ -1,0 +1,1 @@\n+a",
+                "diffTruncated": false,
+                "approximate": false
+              }
+            }
+          ],
+          "rejected": [],
+          "dryRun": false,
+          "wouldChange": true,
+          "summary": "applied patch: 2 file(s) changed",
+          "changeSet": null
+        },
+        "files": { "😀.txt": "a", "Ａ.txt": "b" }
+      }
+    }
+  ]
+}

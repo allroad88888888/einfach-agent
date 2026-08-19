@@ -252,3 +252,9 @@ fn reapply_change_set_blocking(
 #[cfg(test)]
 #[path = "workspace_change_journal_batch_tests.rs"]
 mod tests;
+
+// 跨语言对拍：喂 packages/host-node/fixtures/change-batch-revert.json。驱动器必须住在这里而不是
+// 顶层，`revert_change_sets_blocking` 与条目读写都是 pub(super)。
+#[cfg(test)]
+#[path = "workspace_change_journal_batch_parity_tests.rs"]
+mod parity_tests;

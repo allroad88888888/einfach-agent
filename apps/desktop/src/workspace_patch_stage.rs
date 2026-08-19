@@ -190,3 +190,9 @@ pub(super) fn changed_paths(root: &Path, files: &HashMap<PathBuf, FileState>) ->
 #[cfg(test)]
 #[path = "workspace_patch_stage_tests.rs"]
 mod tests;
+
+// 跨语言对拍：喂 packages/host-node/fixtures/patch-stage-rules.json。驱动器必须住在这里而不是
+// 顶层，`stage_operation` / `FileState` 都是 pub(super)。
+#[cfg(test)]
+#[path = "workspace_patch_stage_parity_tests.rs"]
+mod parity_tests;

@@ -24,6 +24,13 @@ mod workspace_rg;
 mod workspace_task;
 mod workspace_write;
 
+// Rust ↔ TS 对拍的共用支撑。fixture 是 packages/host-node/fixtures/ 下的语言无关 JSON，
+// 各组的驱动器挂在它需要的那个模块里（`*_parity_tests.rs`），说明见那个目录的 README.md。
+#[cfg(test)]
+mod parity_fixtures;
+#[cfg(test)]
+mod parity_workspace;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

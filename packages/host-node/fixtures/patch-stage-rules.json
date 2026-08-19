@@ -1,0 +1,327 @@
+{
+  "target": "stage_operation 的纯规则那半边 / validatePatchOperationInput + nextFileState —— 一个补丁操作作用在暂存状态上得到什么，或者报哪句话",
+  "cases": [
+    {
+      "name": "delete then add over a file that existed on disk is rejected",
+      "source": "workspace_patch_stage_tests.rs::delete_then_add_existing_file_is_rejected",
+      "path": "existing.txt",
+      "initial": { "initial": "on disk", "current": "on disk", "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "delete_file", "path": "existing.txt" },
+          "expect": { "state": { "initial": "on disk", "current": null, "executable": null } }
+        },
+        {
+          "operation": { "type": "add_file", "path": "existing.txt", "content": "replaced" },
+          "expect": { "error": "file already exists on disk; use overwrite_file to replace an existing file" }
+        }
+      ]
+    },
+    {
+      "name": "add delete add on a path that was never on disk is allowed",
+      "source": "workspace_patch_stage_tests.rs::add_delete_add_fresh_path_is_allowed",
+      "path": "fresh.txt",
+      "initial": { "initial": null, "current": null, "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "add_file", "path": "fresh.txt", "content": "first" },
+          "expect": { "state": { "initial": null, "current": "first", "executable": null } }
+        },
+        {
+          "operation": { "type": "delete_file", "path": "fresh.txt" },
+          "expect": { "state": { "initial": null, "current": null, "executable": null } }
+        },
+        {
+          "operation": { "type": "add_file", "path": "fresh.txt", "content": "second" },
+          "expect": { "state": { "initial": null, "current": "second", "executable": null } }
+        }
+      ]
+    },
+    {
+      "name": "adding twice in one batch says the file already exists",
+      "path": "fresh.txt",
+      "initial": { "initial": null, "current": null, "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "add_file", "path": "fresh.txt", "content": "one" },
+          "expect": { "state": { "initial": null, "current": "one", "executable": null } }
+        },
+        {
+          "operation": { "type": "add_file", "path": "fresh.txt", "content": "two" },
+          "expect": { "error": "file already exists" }
+        }
+      ]
+    },
+    {
+      "name": "deleting a path that is not there says the file does not exist",
+      "path": "missing.txt",
+      "initial": { "initial": null, "current": null, "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "delete_file", "path": "missing.txt" },
+          "expect": { "error": "file does not exist" }
+        }
+      ]
+    },
+    {
+      "name": "replacing inside a path that is not there says the file does not exist",
+      "path": "missing.txt",
+      "initial": { "initial": null, "current": null, "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "replace", "path": "missing.txt", "oldText": "a", "newText": "b" },
+          "expect": { "error": "file does not exist" }
+        }
+      ]
+    },
+    {
+      "name": "overlapping occurrences are counted left to right without overlap",
+      "path": "code.txt",
+      "initial": { "initial": "aaa", "current": "aaa", "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "replace", "path": "code.txt", "oldText": "aa", "newText": "X" },
+          "expect": { "state": { "initial": "aaa", "current": "Xa", "executable": null } }
+        }
+      ]
+    },
+    {
+      "name": "replacement count mismatch names both numbers",
+      "path": "code.txt",
+      "initial": { "initial": "a a a", "current": "a a a", "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "replace", "path": "code.txt", "oldText": "a", "newText": "b", "expectedReplacements": 2 },
+          "expect": { "error": "replacement count mismatch: expected 2, found 3" }
+        }
+      ]
+    },
+    {
+      "name": "expectedReplacements of zero is rejected before anything is read",
+      "path": "code.txt",
+      "initial": { "initial": null, "current": null, "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "replace", "path": "code.txt", "oldText": "a", "newText": "b", "expectedReplacements": 0 },
+          "expect": { "error": "expectedReplacements must be greater than 0" }
+        }
+      ]
+    },
+    {
+      "name": "oldText that never occurs is its own message",
+      "path": "code.txt",
+      "initial": { "initial": "hello", "current": "hello", "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "replace", "path": "code.txt", "oldText": "world", "newText": "b" },
+          "expect": { "error": "oldText was not found" }
+        }
+      ]
+    },
+    {
+      "name": "newText is inserted literally, dollar-ampersand is not a replacement pattern",
+      "path": "code.txt",
+      "initial": { "initial": "FOO", "current": "FOO", "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "replace", "path": "code.txt", "oldText": "FOO", "newText": "price is $& and $1" },
+          "expect": { "state": { "initial": "FOO", "current": "price is $& and $1", "executable": null } }
+        }
+      ]
+    },
+    {
+      "name": "empty oldText is rejected as empty, not as not-found",
+      "path": "code.txt",
+      "initial": { "initial": "hello", "current": "hello", "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "replace", "path": "code.txt", "oldText": "", "newText": "b" },
+          "expect": { "error": "oldText must be non-empty" }
+        }
+      ]
+    },
+    {
+      "name": "a NUL byte in content is called binary",
+      "path": "code.txt",
+      "initial": { "initial": null, "current": null, "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "add_file", "path": "code.txt", "content": "a\u0000b" },
+          "expect": { "error": "content appears to be binary" }
+        }
+      ]
+    },
+    {
+      "name": "the label in a binary rejection names the argument that carried it",
+      "path": "code.txt",
+      "initial": { "initial": "hello", "current": "hello", "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "delete_file", "path": "code.txt", "oldContent": "a\u0000b" },
+          "expect": { "error": "oldContent appears to be binary" }
+        }
+      ]
+    },
+    {
+      "name": "overwriting an existing file without either guard is refused",
+      "source": "workspace_patch_guard_tests.rs::overwrite_still_demands_proof_the_file_was_read",
+      "path": "code.txt",
+      "initial": { "initial": "old\n", "current": "old\n", "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "overwrite_file", "path": "code.txt", "content": "new\n" },
+          "expect": { "error": "oldContent or expectedContentHash is required when overwriting an existing file" }
+        }
+      ]
+    },
+    {
+      "name": "supplying both guards at once is refused",
+      "source": "workspace_patch_guard_tests.rs::guards_cannot_be_supplied_twice_over",
+      "path": "code.txt",
+      "initial": { "initial": "old\n", "current": "old\n", "executable": null },
+      "steps": [
+        {
+          "operation": {
+            "type": "overwrite_file",
+            "path": "code.txt",
+            "content": "new\n",
+            "oldContent": "old\n",
+            "expectedContentHash": "sha256:01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee"
+          },
+          "expect": { "error": "pass either oldContent or expectedContentHash, not both" }
+        }
+      ]
+    },
+    {
+      "name": "a stale oldContent is refused",
+      "path": "code.txt",
+      "initial": { "initial": "old\n", "current": "old\n", "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "overwrite_file", "path": "code.txt", "content": "new\n", "oldContent": "stale\n" },
+          "expect": { "error": "oldContent did not match current file content" }
+        }
+      ]
+    },
+    {
+      "name": "a hash that is not sha256 plus 64 lowercase hex is a format error",
+      "source": "workspace_patch_guard_tests.rs::malformed_content_hash_is_rejected",
+      "path": "code.txt",
+      "initial": { "initial": "old\n", "current": "old\n", "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "overwrite_file", "path": "code.txt", "content": "new\n", "expectedContentHash": "sha256:nope" },
+          "expect": { "error": "expectedContentHash must use sha256:<64 lowercase hex characters>" }
+        }
+      ]
+    },
+    {
+      "name": "a well formed but wrong hash tells the caller to re-read the file",
+      "path": "code.txt",
+      "initial": { "initial": "old\n", "current": "old\n", "executable": null },
+      "steps": [
+        {
+          "operation": {
+            "type": "overwrite_file",
+            "path": "code.txt",
+            "content": "new\n",
+            "expectedContentHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "expect": { "error": "expectedContentHash did not match current file content; re-read the file and retry with the new contentHash" }
+        }
+      ]
+    },
+    {
+      "name": "a matching hash is accepted in place of the whole previous file",
+      "source": "workspace_patch_guard_tests.rs::overwrite_accepts_a_content_hash_instead_of_the_whole_previous_file",
+      "path": "code.txt",
+      "initial": { "initial": "old\n", "current": "old\n", "executable": null },
+      "steps": [
+        {
+          "operation": {
+            "type": "overwrite_file",
+            "path": "code.txt",
+            "content": "new\n",
+            "expectedContentHash": "sha256:01d09d19c2139a46aebfb577780d123d7396e97201bc7ead210a2ebff8239dee"
+          },
+          "expect": { "state": { "initial": "old\n", "current": "new\n", "executable": null } }
+        }
+      ]
+    },
+    {
+      "name": "delete accepts a content hash guard too",
+      "path": "code.txt",
+      "initial": { "initial": "keep me", "current": "keep me", "executable": null },
+      "steps": [
+        {
+          "operation": {
+            "type": "delete_file",
+            "path": "code.txt",
+            "expectedContentHash": "sha256:8dfef3faa531cad70736cb40ad8932ffb50887f5a8fffd209193b545c4e354ae"
+          },
+          "expect": { "state": { "initial": "keep me", "current": null, "executable": null } }
+        }
+      ]
+    },
+    {
+      "name": "overwriting a path that is not on disk needs no guard",
+      "path": "fresh.txt",
+      "initial": { "initial": null, "current": null, "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "overwrite_file", "path": "fresh.txt", "content": "new" },
+          "expect": { "state": { "initial": null, "current": "new", "executable": null } }
+        }
+      ]
+    },
+    {
+      "name": "executable false means take the bit off, which is not the same as never mentioning it",
+      "path": "run.sh",
+      "initial": { "initial": null, "current": null, "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "add_file", "path": "run.sh", "content": "#!/bin/sh\n", "executable": true },
+          "expect": { "state": { "initial": null, "current": "#!/bin/sh\n", "executable": true } }
+        },
+        {
+          "operation": {
+            "type": "overwrite_file",
+            "path": "run.sh",
+            "content": "#!/bin/sh\necho\n",
+            "oldContent": "#!/bin/sh\n",
+            "executable": false
+          },
+          "expect": { "state": { "initial": null, "current": "#!/bin/sh\necho\n", "executable": false } }
+        },
+        {
+          "operation": {
+            "type": "overwrite_file",
+            "path": "run.sh",
+            "content": "plain\n",
+            "oldContent": "#!/bin/sh\necho\n"
+          },
+          "expect": { "state": { "initial": null, "current": "plain\n", "executable": false } }
+        }
+      ]
+    },
+    {
+      "name": "a rejected step leaves the staged state exactly where it was",
+      "path": "code.txt",
+      "initial": { "initial": "v1", "current": "v1", "executable": null },
+      "steps": [
+        {
+          "operation": { "type": "replace", "path": "code.txt", "oldText": "v1", "newText": "v2" },
+          "expect": { "state": { "initial": "v1", "current": "v2", "executable": null } }
+        },
+        {
+          "operation": { "type": "replace", "path": "code.txt", "oldText": "v1", "newText": "v3" },
+          "expect": { "error": "oldText was not found" }
+        },
+        {
+          "operation": { "type": "replace", "path": "code.txt", "oldText": "v2", "newText": "v3" },
+          "expect": { "state": { "initial": "v1", "current": "v3", "executable": null } }
+        }
+      ]
+    }
+  ]
+}

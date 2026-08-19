@@ -1,0 +1,128 @@
+{
+  "target": "compute_change_summary(before, after) / computeChangeSummary(before, after) —— 一次改动的行数增减与截断过的 unified diff",
+  "cases": [
+    {
+      "name": "new file counts every line as added",
+      "before": null,
+      "after": "one\ntwo\n",
+      "expected": {
+        "linesAdded": 2,
+        "linesRemoved": 0,
+        "beforeLines": 0,
+        "afterLines": 2,
+        "diff": "@@ -1,0 +1,2 @@\n+one\n+two",
+        "diffTruncated": false,
+        "approximate": false
+      }
+    },
+    {
+      "name": "unchanged head shifts the @@ start line",
+      "before": "keep\nold\n",
+      "after": "keep\nnew\n",
+      "expected": {
+        "linesAdded": 1,
+        "linesRemoved": 1,
+        "beforeLines": 2,
+        "afterLines": 2,
+        "diff": "@@ -2,1 +2,1 @@\n-old\n+new",
+        "diffTruncated": false,
+        "approximate": false
+      }
+    },
+    {
+      "name": "identical content reports no diff key at all",
+      "before": "same\n",
+      "after": "same\n",
+      "expected": {
+        "linesAdded": 0,
+        "linesRemoved": 0,
+        "beforeLines": 1,
+        "afterLines": 1,
+        "diffTruncated": false,
+        "approximate": false
+      }
+    },
+    {
+      "name": "empty file is zero lines, not one empty line",
+      "before": "",
+      "after": "",
+      "expected": {
+        "linesAdded": 0,
+        "linesRemoved": 0,
+        "beforeLines": 0,
+        "afterLines": 0,
+        "diffTruncated": false,
+        "approximate": false
+      }
+    },
+    {
+      "name": "crlf and lf spellings of the same content are not a change",
+      "before": "a\r\nb\r\n",
+      "after": "a\nb\n",
+      "expected": {
+        "linesAdded": 0,
+        "linesRemoved": 0,
+        "beforeLines": 2,
+        "afterLines": 2,
+        "diffTruncated": false,
+        "approximate": false
+      }
+    },
+    {
+      "name": "a trailing CR without a newline belongs to the line",
+      "before": "a\r",
+      "after": "a",
+      "expected": {
+        "linesAdded": 1,
+        "linesRemoved": 1,
+        "beforeLines": 1,
+        "afterLines": 1,
+        "diff": "@@ -1,1 +1,1 @@\n-a\r\n+a",
+        "diffTruncated": false,
+        "approximate": false
+      }
+    },
+    {
+      "name": "deleting an interior line trims both head and tail",
+      "before": "a\nb\nc\n",
+      "after": "a\nc\n",
+      "expected": {
+        "linesAdded": 0,
+        "linesRemoved": 1,
+        "beforeLines": 3,
+        "afterLines": 2,
+        "diff": "@@ -2,1 +2,0 @@\n-b",
+        "diffTruncated": false,
+        "approximate": false
+      }
+    },
+    {
+      "name": "a kept line inside the changed region renders as a context line and removals come first",
+      "before": "x\nA\nk\nB\ny\n",
+      "after": "x\nC\nk\nD\ny\n",
+      "expected": {
+        "linesAdded": 2,
+        "linesRemoved": 2,
+        "beforeLines": 5,
+        "afterLines": 5,
+        "diff": "@@ -2,3 +2,3 @@\n-A\n+C\n k\n-B\n+D",
+        "diffTruncated": false,
+        "approximate": false
+      }
+    },
+    {
+      "name": "more than 60 edits truncates the rendered diff and says how many are left",
+      "before": null,
+      "after": "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11\nl12\nl13\nl14\nl15\nl16\nl17\nl18\nl19\nl20\nl21\nl22\nl23\nl24\nl25\nl26\nl27\nl28\nl29\nl30\nl31\nl32\nl33\nl34\nl35\nl36\nl37\nl38\nl39\nl40\nl41\nl42\nl43\nl44\nl45\nl46\nl47\nl48\nl49\nl50\nl51\nl52\nl53\nl54\nl55\nl56\nl57\nl58\nl59\nl60\nl61\n",
+      "expected": {
+        "linesAdded": 61,
+        "linesRemoved": 0,
+        "beforeLines": 0,
+        "afterLines": 61,
+        "diff": "@@ -1,0 +1,61 @@\n+l1\n+l2\n+l3\n+l4\n+l5\n+l6\n+l7\n+l8\n+l9\n+l10\n+l11\n+l12\n+l13\n+l14\n+l15\n+l16\n+l17\n+l18\n+l19\n+l20\n+l21\n+l22\n+l23\n+l24\n+l25\n+l26\n+l27\n+l28\n+l29\n+l30\n+l31\n+l32\n+l33\n+l34\n+l35\n+l36\n+l37\n+l38\n+l39\n+l40\n+l41\n+l42\n+l43\n+l44\n+l45\n+l46\n+l47\n+l48\n+l49\n+l50\n+l51\n+l52\n+l53\n+l54\n+l55\n+l56\n+l57\n+l58\n+l59\n+l60\n... 1 more diff lines",
+        "diffTruncated": true,
+        "approximate": false
+      }
+    }
+  ]
+}

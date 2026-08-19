@@ -361,3 +361,9 @@ fn diff_lines<'a>(before: &[&'a str], after: &[&'a str]) -> Vec<(DiffTag, &'a st
     edits.extend(after[column..].iter().map(|line| (DiffTag::Add, *line)));
     edits
 }
+
+// 跨语言对拍：喂 packages/host-node/fixtures/change-summary.json。本文件此前没有 mod tests，
+// 所以这一组同时也是 compute_change_summary 在 Rust 侧的第一份测试。
+#[cfg(test)]
+#[path = "workspace_common_summary_parity_tests.rs"]
+mod summary_parity_tests;

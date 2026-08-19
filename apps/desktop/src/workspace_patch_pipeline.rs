@@ -158,3 +158,9 @@ pub(super) fn apply_workspace_patch_blocking_with_journal(
 #[cfg(test)]
 #[path = "workspace_patch_pipeline_tests.rs"]
 mod tests;
+
+// 跨语言对拍：喂 packages/host-node/fixtures/patch-pipeline.json。驱动器必须住在这里而不是顶层，
+// `apply_workspace_patch_blocking_with_journal` 是 pub(super)。
+#[cfg(test)]
+#[path = "workspace_patch_pipeline_parity_tests.rs"]
+mod parity_tests;
