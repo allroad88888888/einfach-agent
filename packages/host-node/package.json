@@ -1,7 +1,6 @@
 {
   "name": "@einfach-agent/host-node",
   "version": "0.1.0",
-  "private": true,
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -9,9 +8,13 @@
     "directory": "packages/host-node"
   },
   "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "files": ["dist"],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "main": "./dist/index.js",
   "module": "./dist/index.js",
@@ -27,10 +30,10 @@
     "build": "tsup && tsc -p tsconfig.build.json && node ../../scripts/fix-dts-specifiers.mjs dist"
   },
   "dependencies": {
-    "@einfach-agent/core": "workspace:*"
+    "@einfach-agent/core": "workspace:*",
+    "@types/node": "^24.10.1"
   },
   "devDependencies": {
-    "@types/node": "^24.10.1",
     "vitest": "^4.0.15"
   }
 }

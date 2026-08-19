@@ -1,7 +1,6 @@
 {
   "name": "@einfach-agent/core",
   "version": "0.1.0",
-  "private": true,
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -11,7 +10,8 @@
   "type": "module",
   "files": ["dist"],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "main": "./dist/index.js",
   "module": "./dist/index.js",

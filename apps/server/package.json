@@ -1,7 +1,6 @@
 {
   "name": "@einfach-agent/server",
   "version": "0.1.0",
-  "private": true,
   "description": "Self-hosted web host for the Einfach Agent runtime: one local HTTP server that serves the bundled web UI and executes shell, file and Git work on the machine it runs on.",
   "license": "MIT",
   "repository": {
@@ -10,11 +9,12 @@
     "directory": "apps/server"
   },
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "type": "module",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.13.0"
   },
   "main": "./dist/main.js",
   "bin": {
