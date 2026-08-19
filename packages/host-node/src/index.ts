@@ -88,3 +88,10 @@ export {
   SQLITE_CONNECTION_NAMES,
 } from './sqlite'
 export type { SqliteConnectionName, SqliteRoutesOptions } from './sqlite'
+
+// model 域失败的**判别面**（M6）。M2 要把「响应头之前的失败」分成 400/403/409/500/502/503，
+// 而唯一能长期站住的判据是 `reason` 字段——文案是给人看的、会被改措辞，按它 switch 等于给一份
+// 跨宿主对外契约立第二个权威（那正是 `NodeHostCommandErrorReason` 立下的规矩要避免的）。
+// 只出 reason 面，**不出文案表**：`MODEL_ERROR` 留在包内，外壳拿不到就不会拿它做分支。
+export { MODEL_REQUEST_ERROR_REASONS, readModelRequestErrorReason } from './model'
+export type { ModelRequestErrorReason } from './model'

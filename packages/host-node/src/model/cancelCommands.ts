@@ -14,6 +14,7 @@
 // abort 事件才到）。让它抛错只会把一次无害的迟到变成一条错误日志，而调用方对此无能为力。
 // 返回值 `false` 就是完整的答复：「找过了，没有这个在飞的请求」。
 
+import { ModelRequestError } from './errors'
 import {
   modelRequestRegistry,
   validateModelRequestId,
@@ -34,7 +35,12 @@ export function createCancelModelRequestHandler(
   return async (args) => {
     // 判存在只看值，不用 `'requestId' in args`：进程内注入时可选键可能「存在且为 undefined」，
     // 走 HTTP 时 JSON.stringify 又会把它丢掉，用 `in` 会写出两种传输下行为不同的检查。
-    if (args.requestId === undefined) throw new Error(`${commandName} 缺少 requestId 参数`)
+    // 与本域其余失败一样带上 `reason`：文案是给人看的，判别面是字段（见 errors.ts 文件头）。
+    // 这一条**没有** Rust 对应文案（Tauri 那边缺参数是反序列化层拒的），所以它不在 MODEL_ERROR 表里，
+    // 而分类与那张表里的收窄失败同类：调用方发错了参数。
+    if (args.requestId === undefined) {
+      throw new ModelRequestError('invalid-request', `${commandName} 缺少 requestId 参数`)
+    }
     // id 格式非法仍然抛（`模型请求 ID 无效`）：那是调用方写错了，与「这个 id 不在表里」不是一回事。
     // 收窄放在这里而不是靠 `String(...)` 强转：`String(123)` 会把一个数字 id 洗成合法字符串，
     // 于是「调用方类型发错了」变成一次查不到的取消，症状是取消按钮偶尔没反应。

@@ -72,7 +72,13 @@ export function createModelRoutes(options: NodeHostInvokeOptions): NodeHostRoute
 // 是本域与其余十几个域**唯一**的形状差别，理由见上面「本域路由表里为什么只有五条命令」。
 export { forwardProviderRequest } from './forwardRequest'
 export type { ForwardProviderRequestDeps, ForwardedModelResponse } from './forwardRequest'
-export { ModelProxyStreamError, ModelRequestCancelledError } from './errors'
+export { ModelProxyStreamError, ModelRequestCancelledError, ModelRequestError } from './errors'
+// 失败分类的**判别面**。M2 按它分状态码；它只看 `reason` 字段、不看类型身份，所以在 sidecar
+// 那条要序列化的路上仍然成立（理由与 `NodeHostCommandErrorReason` 逐字相同，见 errors.ts 文件头）。
+// 文案常量 `MODEL_ERROR` **刻意不出去**：它是给人看的对外契约，一旦出去就会有人拿它做 switch，
+// 而那正是这个 reason 面存在的理由。
+export { MODEL_REQUEST_ERROR_REASONS, readModelRequestErrorReason } from './errors'
+export type { ModelRequestErrorReason } from './errors'
 export { modelRequestRegistry, createModelRequestRegistry } from './requestRegistry'
 export type { ModelRequestRegistry } from './requestRegistry'
 export type { ModelFetch } from './upstreamRequest'

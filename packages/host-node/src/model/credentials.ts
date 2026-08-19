@@ -16,7 +16,7 @@
 //     也不带配置文件路径。
 //   · 不进日志——本域全域没有任何日志语句，这是有意的：一条 `console.debug(request)` 就够了。
 
-import { MODEL_ERROR, missingCredentialMessage } from './errors'
+import { missingCredentialError, modelRequestError } from './errors'
 import { readModelCredentialKey } from './credentialSection'
 import { providerAcceptsScope, providerDisplayName } from './provider'
 import type { ModelProviderName, ProviderScope } from './provider'
@@ -35,7 +35,7 @@ export function credentialConfigKey(
   provider: ModelProviderName,
   scope: ProviderScope,
 ): string {
-  if (!providerAcceptsScope(provider, scope)) throw new Error(MODEL_ERROR.scopeNotAllowed)
+  if (!providerAcceptsScope(provider, scope)) throw modelRequestError('scopeNotAllowed')
   return `${provider}:${scope}`
 }
 
@@ -77,7 +77,7 @@ export async function readActiveModelCredential(
 ): Promise<string> {
   const credential = await readConfiguredModelCredential(options, provider, scope)
   if (credential === undefined) {
-    throw new Error(missingCredentialMessage(providerDisplayName(provider)))
+    throw missingCredentialError(providerDisplayName(provider))
   }
   return credential
 }

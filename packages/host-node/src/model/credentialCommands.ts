@@ -28,7 +28,7 @@
 
 import { deleteModelCredentialKey, writeModelCredentialKey } from './credentialSection'
 import { credentialConfigKey, normalizeApiKey, readConfiguredModelCredential } from './credentials'
-import { MODEL_ERROR } from './errors'
+import { modelRequestError } from './errors'
 import { isModelProviderName, narrowProviderScope } from './provider'
 import { definedKeys, isJsonRecord } from './wireShape'
 import type { ModelProviderName, ProviderScope } from './provider'
@@ -54,7 +54,7 @@ interface CredentialTarget {
 const SET_INPUT_KEYS: readonly string[] = ['provider', 'scope', 'apiKey']
 
 function invalidRequest(): never {
-  throw new Error(MODEL_ERROR.invalidRequest)
+  throw modelRequestError('invalidRequest')
 }
 
 /**
@@ -129,7 +129,7 @@ export function createModelCredentialSetHandler(
     const { provider, scope, apiKey } = narrowSetInput(args.input)
     const configKey = credentialConfigKey(provider, scope)
     const normalized = normalizeApiKey(apiKey)
-    if (normalized === undefined) throw new Error(MODEL_ERROR.invalidApiKey)
+    if (normalized === undefined) throw modelRequestError('invalidApiKey')
     await writeModelCredentialKey(options, configKey, normalized)
     return readCredentialStatus(options, { provider, scope })
   }

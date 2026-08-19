@@ -18,7 +18,7 @@
 // （bodyKind 决定 requestBody.ts 走哪条校验）、响应上限多少（maxResponseBytes 是内存保护）。
 // 三个字段少写一个都不会编译失败，但会静默留一个没有上限的洞。
 
-import { MODEL_ERROR } from './errors'
+import { modelRequestError } from './errors'
 import { definedKeys, isJsonRecord } from './wireShape'
 import {
   isModelProviderName,
@@ -74,7 +74,7 @@ const TARGET_REQUIRED_KEYS: readonly string[] = ['provider', 'method', 'path']
 const TARGET_OPTIONAL_KEYS: readonly string[] = ['scope']
 
 function invalidRequest(): never {
-  throw new Error(MODEL_ERROR.invalidRequest)
+  throw modelRequestError('invalidRequest')
 }
 
 function narrowMethod(value: unknown): ProviderMethod {
@@ -213,5 +213,5 @@ export function resolveProviderTarget(target: ProviderTarget): ResolvedProviderT
     const entry = PROVIDER_ROUTES.find((candidate) => entryMatches(candidate, target))
     if (entry) return resolved(target, entry.origin, entry.bodyKind, entry.maxResponseBytes)
   }
-  throw new Error(MODEL_ERROR.targetNotAllowed)
+  throw modelRequestError('targetNotAllowed')
 }

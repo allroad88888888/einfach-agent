@@ -98,8 +98,11 @@ describe('请求体', () => {
   })
 })
 
+// M6：状态码按 host-node 挂在错误上的 `reason` 字段分（映射表住 modelRouteError.ts）。
+// 这几条走的是**真 HTTP**，钉的是「reason 一路从 host-node 的抛出点活到状态码」——
+// modelRouteError.test.ts 只钉映射表本身，证明不了中间那段。
 describe('响应头交出去之前的失败', () => {
-  it('信封里有多余字段 → 502 + 模型请求格式无效', async () => {
+  it('信封里有多余字段 → 400 + 模型请求格式无效', async () => {
     // 收窄是 M1 的事（`deny_unknown_fields`），本层一个字节都不解析——往 target 里塞一个 `url`
     // 必须被拒，否则这一层就是个开放代理。
     const fake = await okUpstream()
@@ -115,15 +118,15 @@ describe('响应头交出去之前的失败', () => {
         },
       })),
     })
-    expect(probe.status).toBe(502)
+    expect(probe.status).toBe(400)
     expect(JSON.parse(probe.body)).toEqual({
-      error: 'model_request_failed',
+      error: 'invalid_model_request',
       message: '模型请求格式无效',
     })
     expect(fake.received).toHaveLength(0)
   })
 
-  it('目标不在白名单 → 502 + 模型请求目标未获允许', async () => {
+  it('目标不在白名单 → 403 + 模型请求目标未获允许', async () => {
     const fake = await okUpstream()
     const port = await context.serve(fake)
     const probe = await sendModelRequest(port, {
@@ -131,24 +134,41 @@ describe('响应头交出去之前的失败', () => {
         target: { provider: 'deepseek', scope: 'default', method: 'POST', path: '/v1/anything' },
       })),
     })
-    expect(probe.status).toBe(502)
+    // 403 而不是 502：这是**策略拒绝**，上游根本没被碰过（下一行就是这句话的证据），
+    // 重试多少次都一样，调用方得换目标。
+    expect(probe.status).toBe(403)
     expect(JSON.parse(probe.body)).toEqual({
-      error: 'model_request_failed',
+      error: 'model_target_not_allowed',
       message: '模型请求目标未获允许',
     })
     expect(fake.received).toHaveLength(0)
   })
 
-  it('没配置 Key → 502 + 未配置 DeepSeek API Key，文案里没有键名也没有配置路径', async () => {
+  it('没配置 Key → 503 + 未配置 DeepSeek API Key，文案里没有键名也没有配置路径', async () => {
     await context.writeCredentials({})
     const port = await context.serve(await okUpstream())
     const probe = await sendModelRequest(port, { body: JSON.stringify(chatEnvelope('nokey-1')) })
-    expect(probe.status).toBe(502)
+    // 503 而不是 502：补上 Key 之后这条路就通了，是「暂时不可用」，不是上游挂了。
+    expect(probe.status).toBe(503)
     expect(JSON.parse(probe.body)).toEqual({
-      error: 'model_request_failed',
+      error: 'model_credential_missing',
       message: '未配置 DeepSeek API Key',
     })
     expect(probe.body).not.toContain(context.home)
+  })
+
+  it('宿主自己的 modelCredentials 段坏了 → 500，与「没配 Key」分得开', async () => {
+    // 这是**卡面四类之外**的一类：不是调用方的错（不能 4xx），也不是上游的错（不能 502），
+    // 而且重试无用——用户得去修那个文件。分类从 credentialSection.ts 的抛出点一路带到这里。
+    // 段里塞一个非字符串值是 Rust 侧同样会拒的形态（`BTreeMap<String, String>` 反序列化）。
+    await context.writeCredentials({ 'deepseek:default': 42 } as unknown as Record<string, string>)
+    const port = await context.serve(await okUpstream())
+    const probe = await sendModelRequest(port, { body: JSON.stringify(chatEnvelope('badcfg-1')) })
+    expect(probe.status).toBe(500)
+    expect(JSON.parse(probe.body)).toEqual({
+      error: 'model_credential_config_invalid',
+      message: '模型配置文件格式无效',
+    })
   })
 
   it('上游连不上 → 502 + 模型服务请求失败，返回体里没有 Key、没有 stack、没有上游 URL', async () => {

@@ -12,7 +12,7 @@
 // 而是在下游某个 match 里落进兜底分支——于是「拼错了 provider」和「这个组合不被允许」变成同一
 // 句话，排查时分不出是调用方写错还是策略拒绝。
 
-import { MODEL_ERROR } from './errors'
+import { modelRequestError } from './errors'
 
 /** Rust `ModelProvider`，serde `rename_all = "lowercase"`。 */
 export type ModelProviderName = 'deepseek' | 'glm' | 'kimi'
@@ -57,6 +57,6 @@ export function providerAcceptsScope(provider: ModelProviderName, scope: Provide
 /** 收窄一个来自外部输入的作用域值；缺席按 serde 的 `#[serde(default)]` 当 `default`。 */
 export function narrowProviderScope(value: unknown): ProviderScope {
   if (value === undefined) return 'default'
-  if (!isProviderScope(value)) throw new Error(MODEL_ERROR.invalidRequest)
+  if (!isProviderScope(value)) throw modelRequestError('invalidRequest')
   return value
 }

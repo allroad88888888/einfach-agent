@@ -22,7 +22,12 @@
 // 三者都会真的把 socket 断掉：`fetch` 的 signal 一 abort，undici 立刻销毁那条连接，上游侧观察到
 // 的是请求被中止，不是「读完了」。
 
-import { ModelProxyStreamError, ModelRequestCancelledError, MODEL_ERROR } from './errors'
+import {
+  MODEL_ERROR,
+  modelRequestError,
+  ModelProxyStreamError,
+  ModelRequestCancelledError,
+} from './errors'
 import { encodeMultipartBody } from './multipartEncoding'
 import type { PreparedProviderBody } from './requestBody'
 import type { ResolvedProviderTarget } from './providerRoute'
@@ -192,12 +197,12 @@ export async function sendUpstreamRequest(input: UpstreamRequestInput): Promise<
     if (signal.aborted) throw new ModelRequestCancelledError()
     // 这里刻意**不把 error 的内容带出去**：undici 的 cause 链里会出现请求的 URL 与头部摘要，
     // 而头部里有 Authorization。Rust 侧同样是 `map_err(|_| ...)` 丢掉原因。
-    throw new Error(MODEL_ERROR.upstreamFailed)
+    throw modelRequestError('upstreamFailed')
   }
   if (declaredResponseTooLarge(response, target.maxResponseBytes)) {
     await response.body?.cancel().catch(() => undefined)
     link.dispose()
-    throw new Error(MODEL_ERROR.responseTooLarge)
+    throw modelRequestError('responseTooLarge')
   }
   const state: BodyReadState = {}
   return {

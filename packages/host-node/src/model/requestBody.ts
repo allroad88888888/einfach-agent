@@ -13,7 +13,7 @@
 // 【检查顺序照搬，不"优化"】文本分片先累加再判、文件分片先按 base64 长度粗筛再解码——顺序变了
 // 会改变「哪一条限额先触发」，而两个宿主对同一份越界输入必须给同一个答案（对拍口径）。
 
-import { MODEL_ERROR } from './errors'
+import { modelRequestError } from './errors'
 import { hasExactKeys, isJsonRecord } from './wireShape'
 import type { ProviderBodyKind } from './providerRoute'
 
@@ -70,7 +70,7 @@ export type PreparedProviderBody =
   | { readonly kind: 'multipart'; readonly parts: readonly PreparedMultipartPart[] }
 
 function invalidBody(): never {
-  throw new Error(MODEL_ERROR.invalidRequest)
+  throw modelRequestError('invalidRequest')
 }
 
 function byteLength(value: string): number {

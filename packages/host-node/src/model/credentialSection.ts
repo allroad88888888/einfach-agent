@@ -15,7 +15,7 @@
 
 import { resolveConfigPathsFromOptions } from '../config/configPaths'
 import { createWebAgentConfigStore } from '../config/webAgentConfigStore'
-import { MODEL_ERROR } from './errors'
+import { modelRequestError } from './errors'
 import type { NodeHostInvokeOptions } from '../hostOptions'
 
 const MODEL_CREDENTIAL_SECTION = 'modelCredentials'
@@ -34,11 +34,11 @@ async function openStore(options: NodeHostInvokeOptions) {
 function decodeCredentials(section: unknown): Map<string, string> {
   if (section === undefined) return new Map()
   if (typeof section !== 'object' || section === null || Array.isArray(section)) {
-    throw new Error(MODEL_ERROR.invalidConfigFormat)
+    throw modelRequestError('invalidConfigFormat')
   }
   const entries = Object.entries(section as Record<string, unknown>)
   if (entries.some(([, value]) => typeof value !== 'string')) {
-    throw new Error(MODEL_ERROR.invalidConfigFormat)
+    throw modelRequestError('invalidConfigFormat')
   }
   return new Map(entries as [string, string][])
 }

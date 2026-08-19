@@ -16,7 +16,7 @@
 // method → path`。JSON.stringify 按插入序输出，于是同一份请求在两个宿主里量出来的字节数一致
 // （前端 providerWireEnvelope.ts 量的也是 JSON.stringify 的结果，本来就是这一套）。
 
-import { MODEL_ERROR } from './errors'
+import { modelRequestError } from './errors'
 import { narrowProviderRequestBody, type ProviderWireRequestBody } from './requestBody'
 import { narrowProviderTarget, type ProviderTarget } from './providerRoute'
 import { validateModelRequestId } from './requestRegistry'
@@ -44,10 +44,10 @@ export function narrowProviderRequestEnvelope(
   value: unknown,
   maxBytes: number = MAX_WIRE_REQUEST_BYTES,
 ): ProviderRequestEnvelope {
-  if (!isJsonRecord(value)) throw new Error(MODEL_ERROR.invalidRequest)
+  if (!isJsonRecord(value)) throw modelRequestError('invalidRequest')
   const raw = value
   for (const key of definedKeys(raw)) {
-    if (!ENVELOPE_KEYS.includes(key)) throw new Error(MODEL_ERROR.invalidRequest)
+    if (!ENVELOPE_KEYS.includes(key)) throw modelRequestError('invalidRequest')
   }
   // requestId 先判：它的错（`模型请求 ID 无效`）比「格式无效」具体，先量大小会把一个拼错的 ID
   // 说成整份请求格式有问题。Rust 的 validate 也是先 ID 后大小。
@@ -58,7 +58,7 @@ export function narrowProviderRequestEnvelope(
     requestId,
   }
   if (Buffer.byteLength(JSON.stringify(envelope), 'utf8') > maxBytes) {
-    throw new Error(MODEL_ERROR.invalidRequest)
+    throw modelRequestError('invalidRequest')
   }
   return envelope
 }

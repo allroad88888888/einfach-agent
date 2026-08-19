@@ -25,7 +25,7 @@
 // 用一个进程级实例是最简单的「同一张表」——requestId 全局唯一（前端用 UUID），共享不会撞。
 // 需要隔离的（测试）用 `createModelRequestRegistry()` 现造一个。
 
-import { MODEL_ERROR } from './errors'
+import { modelRequestError } from './errors'
 
 /** Rust `MAX_MODEL_REQUEST_ID_BYTES`。 */
 const MAX_REQUEST_ID_BYTES = 128
@@ -39,7 +39,7 @@ export function validateModelRequestId(requestId: unknown): string {
     || !REQUEST_ID_PATTERN.test(requestId)
     || Buffer.byteLength(requestId, 'utf8') > MAX_REQUEST_ID_BYTES
   ) {
-    throw new Error(MODEL_ERROR.invalidRequestId)
+    throw modelRequestError('invalidRequestId')
   }
   return requestId
 }
@@ -65,7 +65,7 @@ export function createModelRequestRegistry(): ModelRequestRegistry {
   return {
     register(requestId) {
       validateModelRequestId(requestId)
-      if (requests.has(requestId)) throw new Error(MODEL_ERROR.duplicateRequestId)
+      if (requests.has(requestId)) throw modelRequestError('duplicateRequestId')
       const controller = new AbortController()
       requests.set(requestId, controller)
       return controller
