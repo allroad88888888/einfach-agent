@@ -878,7 +878,15 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   合并后两域的测试都要仍然全绿，且 `computeChangeSummary` 的用例合并去重而不是删掉一半。
   跑 `pnpm exec vitest run packages/host-node` + `node scripts/check-boundaries.js`
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `dd3f2e4`。128 增 311 删（净减 183 行），git 识别出了文件移动。
+  **逐条对照的结论**：算法、常量（`DIFF_MAX_LINES=60`、`DIFF_LCS_BUDGET=800×800`）、渲染格式、
+  返回形状、**LCS 回溯取等号的方向**（`>=` → 优先记 remove）两份完全相同；唯一实质差异就是卡面
+  已知的 `splitLines` 尾部 `\r`，而提交时两份都已带修复，所以合并时行为已一致。
+  公开面取**并集**：`splitLines` 与 `DiffTag` 现在导出（此前只有 patch 版导出），理由写在
+  `lineDiff.ts` 头——`\r` 那个边界够微妙，值得能直接单测而不必绕经 `computeChangeSummary`。
+  测试 26 → 23，**去掉的 3 条是真重复**（941 = 944 − 3，账对得上），且每对重复都保留了断言更强的
+  那条：全对象 `toEqual` 的、检查确切渲染串的、断言更多字段的。两份各自独有的用例全部保留，
+  包括两条 LCS 预算超限用例（801 行与 1200 行断言的性质不同：删-加顺序 vs 截断长度与文案）。
 
 ### W8 · 文件写：base64 二进制写入
 
@@ -886,7 +894,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **改动面**：`packages/host-node/src/workspace/write/base64*`
 - **判据**：对齐 `workspace_write_base64.rs`：解码失败明确报错，不写出半个文件。跑该目录 vitest
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### W9 · 文件写：归档 compaction
 
@@ -894,7 +902,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **改动面**：`packages/host-node/src/workspace/write/compaction*`
 - **判据**：对齐 `workspace_write_compaction.rs`。跑该目录 vitest
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### W10 · 删除路径
 
