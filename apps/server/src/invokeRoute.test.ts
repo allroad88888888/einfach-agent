@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { HostInvoke } from '@web-agent/core'
-import { createNodeHostInvoke } from '@web-agent/host-node'
+import { createNodeHostInvoke, NodeHostCommandError } from '@web-agent/host-node'
 import { afterEach, describe, expect, it } from 'vitest'
 import { DEFAULT_MAX_INVOKE_BODY_BYTES } from './invokeRoute'
 import { sendInvokeRequest, startInvokeRouteTestServer, type InvokeRouteTestServer } from './invokeRoute.testHarness'
@@ -201,8 +201,15 @@ describe('createInvokeRouteHandler（真实 createNodeHostInvoke，端到端）'
     expect(JSON.parse(result.body)).toBe(homedir())
   })
 
-  it('已登记但未实现的命令回 501', async () => {
-    server = await startInvokeRouteTestServer({ invoke: createNodeHostInvoke() })
+  // **28 条命令在 M1/C1 之后全部落地**，所以经真实 `createNodeHostInvoke()` 已经构造不出
+  // `unimplemented`（原样本 `mcp_list_tools` 现在是实现了的）。501 这条映射仍要留着：路由表是
+  // `Partial`，将来 commandNames.ts 新增一条命令而域没跟上时，它就是唯一的报信人。
+  // 于是改用一个只会抛 `unimplemented` 的桩——测的本来也就是「reason → 状态码」这一层映射。
+  it('宿主报 unimplemented 时回 501', async () => {
+    const invoke = (async (command: string) => {
+      throw new NodeHostCommandError(command, 'unimplemented')
+    }) as HostInvoke
+    server = await startInvokeRouteTestServer({ invoke })
     const result = await sendInvokeRequest(
       server.port,
       'POST',
@@ -228,16 +235,18 @@ describe('createInvokeRouteHandler（真实 createNodeHostInvoke，端到端）'
     expect(direct.status).toBe(404)
     expect(JSON.parse(direct.body).error).toBe('unknown_command')
 
-    // %5F 解码一次得到 `_`，拼出 mcp_list_tools——证明解码在真实 HTTP 路径上也只做一次，
+    // %5F 解码一次得到 `_`，拼出 get_user_home_dir——证明解码在真实 HTTP 路径上也只做一次，
     // 且解码结果确实被拿去问 host-node（而不是原样比对百分号编码串）。
+    // 样本从 mcp_list_tools 换成 get_user_home_dir：C1 落地后前者已实现，200 与 501 都不再能
+    // 区分「解码对了」与「解码错了」——而 404 与 200 可以。
     const encoded = await sendInvokeRequest(
       server.port,
       'POST',
-      '/api/invoke/mcp%5Flist%5Ftools',
-      JSON.stringify({ serverId: 'x' }),
+      '/api/invoke/get%5Fuser%5Fhome%5Fdir',
+      '{}',
       JSON_HEADERS,
     )
-    expect(encoded.status).toBe(501) // 解码后是 mcp_list_tools：已登记但未实现，不是 404
+    expect(encoded.status).toBe(200) // 解码后是登记在册且已实现的命令，不是 404
   })
 
   it('mcp_config_read 隔离到临时主目录后能跑通（顺带证明 homeDir 装配槽生效）', async () => {
