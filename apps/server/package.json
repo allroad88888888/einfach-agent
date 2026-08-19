@@ -1,0 +1,10 @@
+{
+  "name": "@web-agent/server",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "devDependencies": {
+    "vitest": "^4.0.15"
+  }
+}
