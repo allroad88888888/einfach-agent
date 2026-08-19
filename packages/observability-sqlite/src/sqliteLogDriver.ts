@@ -1,134 +1,54 @@
-// Tauri SQLite trace driver：复用 sqlite:web-agent.db，本地 best-effort 写 span/event。
+// SQLite trace driver 的写入端：把一个 span / event 落成一条 upsert。
+// ---------------------------------------------------------------------------
+// 「执行面从哪来」在 sqliteLogTransport.ts，「表长什么样」在 sqliteLogSchema.ts；本文件只负责
+// 「一个 TraceSpan / TraceEvent 怎么变成一条 SQL」。
+//
+// 两个方法都是 best-effort：trace 落盘失败**不能**影响主流程（这与会话持久化的契约相反，也正是
+// 两者在 Node 宿主上分成两条逻辑连接的原因，见 host-node 的 sqlite/connectionNames.ts）。
 
-import Database from '@tauri-apps/plugin-sql'
 import type { TraceAttributes, TraceDriver, TraceEvent, TraceSpan } from '@einfach-agent/core/observability'
+import { getTraceDb } from './sqliteLogTransport'
 
-const DB_URL = 'sqlite:web-agent.db'
+const INSERT_SPAN = `INSERT OR REPLACE INTO trace_spans
+     (id, trace_id, session_id, run_id, turn_id, parent_span_id, name, kind, status, started_at, ended_at, duration_ms, attrs, error)
+   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`
 
-let dbPromise: Promise<Database> | undefined
+const INSERT_EVENT = `INSERT OR REPLACE INTO trace_events
+     (id, trace_id, session_id, run_id, turn_id, span_id, name, timestamp, attrs)
+   VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 
+/**
+ * 从 attrs 里取一个字符串值提到独立列。
+ *
+ * 非字符串一律当没有：这三列只用于索引与筛选，塞一个 `String(value)` 进去会让「按 sessionId 查」
+ * 命中一堆 `[object Object]`，而 attrs 里原样的那份仍在，读取端拿得到。
+ */
 function attrText(attrs: TraceAttributes | undefined, key: string): string | null {
   const value = attrs?.[key]
   return typeof value === 'string' ? value : null
-}
-
-async function bestEffortExecute(db: Database, sql: string): Promise<void> {
-  try {
-    await db.execute(sql)
-  } catch {
-    // 迁移/索引是 best-effort；重复列等错误不影响日志写入。
-  }
-}
-
-async function getDb(): Promise<Database> {
-  if (!dbPromise) {
-    dbPromise = (async () => {
-      const db = await Database.load(DB_URL)
-      try {
-        await db.select('PRAGMA journal_mode=WAL')
-        await db.select('PRAGMA busy_timeout=5000')
-        await db.select('PRAGMA synchronous=NORMAL')
-      } catch {
-        // PRAGMA 调优失败不阻塞日志表初始化。
-      }
-      await db.execute(
-        `CREATE TABLE IF NOT EXISTS trace_spans (
-           id TEXT PRIMARY KEY,
-           trace_id TEXT NOT NULL,
-           session_id TEXT,
-           run_id TEXT,
-           turn_id TEXT,
-           parent_span_id TEXT,
-           name TEXT NOT NULL,
-           kind TEXT NOT NULL,
-           status TEXT NOT NULL,
-           started_at INTEGER NOT NULL,
-           ended_at INTEGER,
-           duration_ms INTEGER,
-           attrs TEXT,
-           error TEXT
-         )`,
-      )
-      await db.execute(
-        `CREATE TABLE IF NOT EXISTS trace_events (
-           id TEXT PRIMARY KEY,
-           trace_id TEXT NOT NULL,
-           session_id TEXT,
-           run_id TEXT,
-           turn_id TEXT,
-           span_id TEXT,
-           name TEXT NOT NULL,
-           timestamp INTEGER NOT NULL,
-           attrs TEXT
-         )`,
-      )
-      await bestEffortExecute(db, 'ALTER TABLE trace_spans ADD COLUMN session_id TEXT')
-      await bestEffortExecute(db, 'ALTER TABLE trace_spans ADD COLUMN run_id TEXT')
-      await bestEffortExecute(db, 'ALTER TABLE trace_spans ADD COLUMN turn_id TEXT')
-      await bestEffortExecute(db, 'ALTER TABLE trace_events ADD COLUMN session_id TEXT')
-      await bestEffortExecute(db, 'ALTER TABLE trace_events ADD COLUMN run_id TEXT')
-      await bestEffortExecute(db, 'ALTER TABLE trace_events ADD COLUMN turn_id TEXT')
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_trace_spans_trace_id ON trace_spans(trace_id)')
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_trace_spans_session_started ON trace_spans(session_id, started_at)')
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_trace_spans_run_id ON trace_spans(run_id)')
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_trace_events_trace_id ON trace_events(trace_id)')
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_trace_events_session_timestamp ON trace_events(session_id, timestamp)')
-      await db.execute('CREATE INDEX IF NOT EXISTS idx_trace_events_run_id ON trace_events(run_id)')
-      // 上次应用进程若在执行中被强退，trace 的正常 endSpan 没机会写回，数据库会永久显示
-      // “running”。初始化发生在本进程第一条新 span 写入之前，因此只会收掉数据库里遗留的旧行。
-      const recoveredAt = Date.now()
-      try {
-        await db.execute(
-          `UPDATE trace_spans
-             SET status = 'cancelled',
-                 ended_at = $1,
-                 duration_ms = MAX(0, $1 - started_at),
-                 error = COALESCE(error, 'Recovered after application restart')
-           WHERE status = 'running'`,
-          [recoveredAt],
-        )
-      } catch {
-        // 恢复旧 trace 是 best-effort；失败不能阻塞新会话运行。
-      }
-      return db
-    })()
-    dbPromise.catch(() => {
-      dbPromise = undefined
-    })
-  }
-  return dbPromise
-}
-
-export function __resetSqliteLogForTest(): void {
-  dbPromise = undefined
 }
 
 export function createSqliteLogDriver(): TraceDriver {
   return {
     async writeSpan(span: TraceSpan): Promise<void> {
       try {
-        const db = await getDb()
-        await db.execute(
-          `INSERT OR REPLACE INTO trace_spans
-             (id, trace_id, session_id, run_id, turn_id, parent_span_id, name, kind, status, started_at, ended_at, duration_ms, attrs, error)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-          [
-            span.id,
-            span.traceId,
-            attrText(span.attrs, 'sessionId'),
-            attrText(span.attrs, 'runId'),
-            attrText(span.attrs, 'turnId'),
-            span.parentSpanId ?? null,
-            span.name,
-            span.kind,
-            span.status,
-            span.startedAt,
-            span.endedAt ?? null,
-            span.durationMs ?? null,
-            span.attrs ? JSON.stringify(span.attrs) : null,
-            span.error ?? null,
-          ],
-        )
+        const db = await getTraceDb()
+        await db.execute(INSERT_SPAN, [
+          span.id,
+          span.traceId,
+          attrText(span.attrs, 'sessionId'),
+          attrText(span.attrs, 'runId'),
+          attrText(span.attrs, 'turnId'),
+          span.parentSpanId ?? null,
+          span.name,
+          span.kind,
+          span.status,
+          span.startedAt,
+          span.endedAt ?? null,
+          span.durationMs ?? null,
+          span.attrs ? JSON.stringify(span.attrs) : null,
+          span.error ?? null,
+        ])
       } catch {
         // best-effort：日志失败不影响主流程。
       }
@@ -136,23 +56,18 @@ export function createSqliteLogDriver(): TraceDriver {
 
     async writeEvent(event: TraceEvent): Promise<void> {
       try {
-        const db = await getDb()
-        await db.execute(
-          `INSERT OR REPLACE INTO trace_events
-             (id, trace_id, session_id, run_id, turn_id, span_id, name, timestamp, attrs)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [
-            event.id,
-            event.traceId,
-            attrText(event.attrs, 'sessionId'),
-            attrText(event.attrs, 'runId'),
-            attrText(event.attrs, 'turnId'),
-            event.spanId ?? null,
-            event.name,
-            event.timestamp,
-            event.attrs ? JSON.stringify(event.attrs) : null,
-          ],
-        )
+        const db = await getTraceDb()
+        await db.execute(INSERT_EVENT, [
+          event.id,
+          event.traceId,
+          attrText(event.attrs, 'sessionId'),
+          attrText(event.attrs, 'runId'),
+          attrText(event.attrs, 'turnId'),
+          event.spanId ?? null,
+          event.name,
+          event.timestamp,
+          event.attrs ? JSON.stringify(event.attrs) : null,
+        ])
       } catch {
         // best-effort。
       }

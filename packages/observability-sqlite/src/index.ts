@@ -1,3 +1,4 @@
 export { createDevSqliteLogReader } from './devSqliteLogReader'
-export { __resetSqliteLogForTest, createSqliteLogDriver } from './sqliteLogDriver'
+export { createSqliteLogDriver } from './sqliteLogDriver'
 export { createSqliteLogReader } from './sqliteLogReader'
+export { __resetSqliteLogForTest, configureTraceSqlExecutor } from './sqliteLogTransport'

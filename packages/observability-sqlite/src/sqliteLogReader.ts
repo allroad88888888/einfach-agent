@@ -1,4 +1,16 @@
-import Database from '@tauri-apps/plugin-sql'
+// SQLite trace driver 的读取端：把两张表读回一份 TraceLogSnapshot（TraceViewer 的数据源）。
+// ---------------------------------------------------------------------------
+// P4 之后本文件不再认识任何具体 SQL 上游包：执行面由装配层经 `configureTraceSqlExecutor` 注入，
+// 这里只按 `SqlExecutor` 契约用它。于是同一份读取逻辑在桌面（Tauri SQL 插件）与 server 宿主
+// （HTTP 打到本机 Node 后端）上是同一段代码——「trace viewer 在 server 宿主下能读到 span」因此
+// 不靠这里多一条分支，靠的是执行面被换掉。
+//
+// 取的是 `loadTraceSqlExecutor()` 而**不是** `getTraceDb()`：后者会顺带建表并把遗留的 running
+// span 收为 cancelled，而打开 TraceViewer 是只读动作（理由见 sqliteLogTransport.ts 的文件头）。
+// 表还不存在时下面两条 SELECT 各自失败、各自收成空集，快照是空的但结构完整。
+
+import { loadTraceSqlExecutor } from './sqliteLogTransport'
+import type { SqlExecutor } from '@einfach-agent/core/state/persistence'
 import type {
   TraceLogReader,
   TraceLogSnapshot,
@@ -8,8 +20,6 @@ import type {
   TraceSpan,
   TraceStatus,
 } from '@einfach-agent/core/observability'
-
-const DB_URL = 'sqlite:web-agent.db'
 
 type SpanRow = {
   id: string
@@ -105,7 +115,7 @@ function mapEvent(row: EventRow): TraceEvent {
   }
 }
 
-async function readRows<T>(db: Database, sql: string): Promise<T[]> {
+async function readRows<T>(db: SqlExecutor, sql: string): Promise<T[]> {
   try {
     return await db.select<T[]>(sql)
   } catch {
@@ -117,7 +127,7 @@ export function createSqliteLogReader(): TraceLogReader {
   return {
     source: 'sqlite',
     async readAll(): Promise<TraceLogSnapshot> {
-      const db = await Database.load(DB_URL)
+      const db = await loadTraceSqlExecutor()
       const [spanRows, eventRows] = await Promise.all([
         readRows<SpanRow>(
           db,
