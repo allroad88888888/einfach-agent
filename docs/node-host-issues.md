@@ -1479,16 +1479,54 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   `wc -l apps/web/src/main.tsx` ≤ 300。**不许为凑行数把强内聚的装配序列打碎**——
   按「宿主」这一个职责切。跑 `pnpm exec vitest run apps/web` + `pnpm build`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE `f7ea8fa`。`main.tsx` 8 处 `tauriHost` 判断归零，收口到 `host/` 下五个模块
+  （命令桥 / 模型传输 / 凭据宿主 / 观测 driver / 恢复刷盘时机，各一句话职责）；
+  **`wc -l main.tsx` = 195**。搬走的注释一并搬走，一句没删。
+  **持久化没有搬进 `host/`，主会话认可**：那个分支**本来就不在 `main.tsx`**，而在
+  `persistence/persistenceDrivers.ts` 里；入参从 `tauriHost: boolean` 改成 `ResolvedHost`
+  并写明「有桥 ≠ 有 SQLite」（P 线之前 server 与 static 同待遇）。搬文件只改路径不改职责，
+  包一层 `hostPersistenceDrivers.ts` 是 3 行假拆。
+  **`buildEnvironmentItem` 改成按能力措辞**（H4b 的待办本卡收掉），入参改名
+  `hostHasLocalCapabilities`。有能力（Tauri 与 server **同一句话**）：
+  `本机能力：可用（文件、shell 与 Git 工具在宿主机器上执行）；宿主机器平台 ${platform}。`
+  ——「宿主机器」是刻意的措辞，它同时交代了 server 宿主唯一需要额外交代的事实：**执行工具的
+  那台机器不一定是用户面前这台**。平台为 `'unsupported'` 时追加一句「shell 类工具在本宿主上
+  一定失败，不要调用」——否则模型只看到一个陌生平台名，会在三个 shell 工具里反复撞
+  platform mismatch，而那句错误里没有任何「本宿主根本没有 shell」的信息。
+  **测试设计值得抄**：`main.serverHost.test.tsx` 的握手平台故意取 `'unsupported'`——
+  `detectLocalPlatform()` 返回类型是 `ShellPlatform`（`'macos'|'linux'|'windows'`），**永远产不出
+  这个值**，所以断言在任何机器上都只能由握手值满足；取 `'linux'` 的话 Linux CI 上即使偷用本地
+  探测也照样绿。主会话独立复核：把 server 分支改用 `detectLocalPlatform()`，该例当场转红。
+  **卡面「static = 模型请求被拒」不准确**（B3 纠正）：`pnpm dev` 的浏览器预览也是 static 态，
+  它走 dev 中继而非拒绝；拒绝只发生在构建产物上，判据是 `import.meta.env.DEV`，与宿主态正交。
+  存量超限文件：`modelTurn.test.ts` 现 872 行（改前已 846），实为四个无关主题挤一处，建议单开一卡拆。
 
 ### B4 · 端到端验收：浏览器里读写文件与跑 shell
 
 - **依赖**：B3、N8
-- **改动面**：无（验收卡）
+- **改动面**：无（验收卡）；**实际产出一枚缺陷修复 `148da1d`**
 - **判据**：**主会话亲自。** `pnpm serve` 后浏览器实际完成一轮：列目录 → 读文件 →
-  写文件 → 跑一条 shell 命令。截图或逐步记录留在 scratchpad
+  写文件 → 跑一条 shell 命令。截图或逐步记录留在 scratchpad。
+  **按能力链路验，不走模型链路**——M 线未落地，B3 也刻意让 server 宿主的模型能力维持不可用；
+  模型那一轮是 M5 的判据。
 - **模型**：—（主会话亲自）
-- **状态**：TODO
+- **状态**：DONE。真实 Chromium 打开 `pnpm serve` 打印的 URL，四步全通（均 HTTP 200）：
+  列目录见 `sample.txt` → 读文件拿到内容与 sha256 → 写文件回 `created:true` 并带行级 diff →
+  **shell 命令 `cat` 出了上一步刚写的那个文件**（`stdout:"B4 wrote this from the browser\nDarwin\n"`,
+  `exit_code:0`）。最后一步是最强的一环：它证明写与执行落在同一个真实文件系统上。
+  另从宿主侧独立复核了磁盘上确实多出那个 31 字节的文件。
+
+  **本卡抓到一个所有单元测试都看不见的真缺陷（已修 `148da1d`）**：
+  **token 在页面打开后一直留在地址栏**。`getServerInvokeToken()`（它顺带做「读走 query 里的
+  token → 存 sessionStorage → `replaceState` 抹掉 query」）**只在 `serverInvoke.ts` 的请求路径上
+  被调用**，于是「页面打开了、但一条命令都还没跑」的整段时间里 token 原样留在 URL 里——进浏览器
+  历史、进截图，页面若外链还会进 Referer，**而那正是要抹掉它的全部理由**。
+  单元测试看不见这条：它们直接调 `getServerInvokeToken()`，天然「调用过了」，看不见「谁在什么
+  时候调它」。修法是在 `registerHostCommandBridge` 的 server 分支装配那一刻就调一次；
+  回归用例落在装配层（`main.serverHost.test.tsx`），并顺带钉住「只抹 token 那一个参数，
+  `keep=1` 与 `#/frag` 都要保留」。复核：撤掉那一行调用，该例转红。
+  **这条正是「没有任何门禁跑真实二进制」那条结论的第一个兑现** ——4756 例单元测试全绿，
+  而真实浏览器里第一眼就看见 token 还在地址栏上。
 
 ---
 
