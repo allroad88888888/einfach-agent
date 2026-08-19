@@ -30,6 +30,17 @@ jobs:
         run: node scripts/check-state-invariants.js
       - run: pnpm test
       - run: pnpm build
+      # `pnpm build` 只出 apps/web 与 apps/server 的产物，**不构建 packages/* 与 tools/* 的 dist**，
+      # 而 npm tarball 里装的就是那些 dist。少了这两步，dist 陈旧化在 CI 里完全没有症状：
+      # 包 scope 改名那次，17 个包的 dist 一直留着旧名，直到 D1 在发布路径上手动跑
+      # check-dist.js 才暴露。放在 CI 而不是只放发布流水线，是因为陈旧化是**每个 PR** 都能引入的，
+      # 只在 tag 上拦等于让它在主干里躺到发版当天。
+      # **顺序不能倒**：apps/server 的 build 末尾要把 `apps/web/dist` 嵌进自己的 `dist/public`，
+      # 那份前端产物由上一步的 `vite build` 产出；反过来先跑 `pnpm -r build`，全新 checkout 上直接失败。
+      - name: Build the publishable package dists
+        run: pnpm -r build
+      - name: Check publishable dists
+        run: node scripts/check-dist.js
 
   desktop-native:
     name: Desktop native (${{ matrix.os }})

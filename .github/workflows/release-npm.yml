@@ -1,0 +1,274 @@
+name: Release npm
+
+# npm 分发线（D3）。发的是「浏览器自托管」那条产物——`@einfach-agent/server` 及其**运行期依赖
+# 闭包**——不涉及桌面安装包，也不发前端源码。
+#
+# 【它为什么存在：绕开那九个证书】
+# 桌面发布要 Apple Developer ID 与 Windows code-signing 证书（docs/release-signing.md 里的九个
+# Secret）。本流水线**一个签名 Secret 都不用**。它唯一需要的凭据是 registry 的发布 token
+# （`NPM_TOKEN`）——那是「往 registry 写」的权限，不是给二进制签名的证书，两者不是一回事。
+#
+# 【为什么门禁与发布挤在同一个 job 里】
+# 判据是「跑完整门禁才发布」。拆成 gate / publish 两个 job 就得在它们之间要么重建产物、要么传
+# artifact：前者白跑一遍，后者留下「门禁验的是 A、发出去的是 B」的缝。同一个 job 里门禁步骤
+# **物理上**排在 publish 前面，任何一条红了后面根本不会执行——这是那条判据最强的形式。
+#
+# 【本流水线不跑 cargo test / tauri build】
+# 发出去的四个包里没有一行 Rust，桌面侧由 ci.yml 与 release-desktop.yml 各自守着。
+
+on:
+  push:
+    tags:
+      # 与桌面的 `app-v*` 分开：两条发布线共用一个 tag 前缀的话，发 npm 会顺手触发一次桌面构建
+      # （并因为缺签名 Secret 而红），反之亦然。
+      - "npm-v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "只打包与验证，不真的发布到 registry"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: npm-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # 发布闭包 = server 包 + 它递归依赖的全部 workspace 包。**不要在这里手抄包名列表**：
+  # pnpm 的 `<pkg>...` 过滤器自己算，加删依赖时不会漂移。当前它算出四个：
+  # @einfach-agent/{server,core,ai,host-node}。
+  RELEASE_FILTER: "@einfach-agent/server..."
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          # 显式指向公共 registry，并让 setup-node 写一份带 `${NODE_AUTH_TOKEN}` 的 npmrc。
+          # 不写这一行的话，发布目标就取决于 runner 的默认配置——本地开发机上就见过 `pnpm publish`
+          # 默默指向一台公司内网 registry 的情况。
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve release mode
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          # tag 推送 = 真发布；手动触发默认 dry-run（卡面判据：首次以 dry-run 模式验证）。
+          if [[ "$EVENT_NAME" == "workflow_dispatch" && "$INPUT_DRY_RUN" == "true" ]]; then
+            echo "DRY_RUN=true" >> "$GITHUB_ENV"
+            echo "release mode: dry run (packs and verifies, publishes nothing)"
+          else
+            echo "DRY_RUN=false" >> "$GITHUB_ENV"
+            echo "release mode: publish"
+          fi
+
+      - name: Verify the release tag matches the server version
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          # 照 release-desktop.yml 的形状：tag 里的版本号必须和真正要发的那个包对得上，
+          # 免得「tag 写 0.2.0、发出去的是 0.1.0」。闭包里其余三个包**不要求**同版本——
+          # 它们各自的版本已经发过时 pnpm 会跳过，而 server 的 dependencies 指向的正是它们
+          # 各自的真实版本号（`workspace:*` 由 pnpm 在打包时改写）。
+          expected="npm-v$(node -p "require('./apps/server/package.json').version")"
+          if [[ "$TAG" != "$expected" ]]; then
+            echo "::error::expected tag $expected, got $TAG"
+            exit 1
+          fi
+          echo "tag $TAG matches apps/server version"
+
+      - name: Verify the publish credential
+        if: env.DRY_RUN != 'true'
+        shell: bash
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          # 早失败：门禁要跑好几分钟，凭据缺失没必要等到最后一步才发现。
+          # **这不是签名 Secret**——它是 registry 的写权限，本流水线不签任何东西。
+          if [[ -z "$NPM_TOKEN" ]]; then
+            echo "::error::missing required repository secret: NPM_TOKEN"
+            exit 1
+          fi
+          echo "NPM_TOKEN is present"
+
+      - run: pnpm install --frozen-lockfile
+
+      # 这一条**排在门禁之前**，因为它和代码质量无关，只回答「这个闭包现在能不能发」。
+      # 答案是「不能」时，让它在第一分钟红，而不是把整条门禁跑完再红。
+      - name: Verify the release closure is publishable
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 【为什么这一步不能用 `pnpm publish --dry-run` 代替】
+          # `private: true` 的检查在 libnpmpublish 的 publish() 第一行，而 npm 只在 `!dryRun` 时
+          # 才调它（npm/lib/commands/publish.js 末尾的 `if (!dryRun) await otplease(..., libpub(...))`）。
+          # 于是 **dry-run 对 private 结构性失明**：本卡实测，四个包全是 private 时
+          # `npm publish --dry-run` 与 `pnpm publish --dry-run` 照样 exit 0 并打印 `+ pkg@version`，
+          # 而真发布 exit 1 / EPRIVATE。
+          # 更糟的是 `pnpm -r publish`：它把 private 包当「本来就不该发的包」跳过，全部私有时打印
+          # “There are no new packages that should be published” 并 **exit 0**，一次 registry 都没碰。
+          # 所以这一条必须独立判，且 dry-run 与真发布**都**跑——否则「验证通过」等于什么都没验证。
+          pnpm -r --filter "$RELEASE_FILTER" list --depth -1 --json > "$RUNNER_TEMP/closure.json"
+          # 内联脚本一律**经环境变量**收参数，不用 argv：`node -` 读 stdin 时脚本自己占着 argv[1]，
+          # 位置参数从 argv[2] 起——与 `node -e` 差一位，这种偏移错在 CI 里才炸。
+          CLOSURE_JSON="$RUNNER_TEMP/closure.json" node - <<'NODE'
+          const { readFileSync } = require('node:fs')
+          const closure = JSON.parse(readFileSync(process.env.CLOSURE_JSON, 'utf8'))
+          for (const item of closure) {
+            console.log(`${item.name}@${item.version}${item.private ? '  <- private' : ''}`)
+          }
+          const blocked = closure.filter((item) => item.private).map((item) => item.name)
+          if (blocked.length === 0) {
+            console.log(`release closure is publishable: ${closure.length} packages`)
+            process.exit(0)
+          }
+          console.log(`::error::these packages carry "private": true and cannot be published: ${blocked.join(', ')}`)
+          console.log('Publishing the server package alone is not an option either: its dependencies')
+          console.log('resolve to the other packages in this closure, so a consumer running `npm i`')
+          console.log('would 404 on whichever of them is missing from the registry.')
+          process.exit(1)
+          NODE
+
+      # ---- 完整门禁：check-docs → check-boundaries → check-state → test → build ----
+      # 顺序与 CLAUDE.md／ci.yml 一致。tag 可以指向任何一个 commit，而 ci.yml 只在
+      # pull_request 上触发，所以这里必须**重跑一遍**而不是假定 CI 绿过。
+      - name: Check Markdown documentation
+        run: node scripts/check-docs.js
+      - name: Check assembly boundaries
+        run: node scripts/check-boundaries.js
+      - name: Check state invariants
+        run: node scripts/check-state-invariants.js
+      - run: pnpm test
+      - run: pnpm build
+      # `pnpm build` 不构建 packages/* 与 tools/* 的 dist，而 tarball 里装的就是 dist。
+      # **顺序不能倒**：apps/server 的 build 末尾要把 `apps/web/dist` 嵌进自己的 `dist/public`，
+      # 那份前端产物由根 `pnpm build` 的 `vite build` 产出——反过来先跑 `pnpm -r build`，
+      # 在全新 checkout 上会直接失败（本卡实测过）。
+      - name: Build the publishable package dists
+        run: pnpm -r build
+      - name: Check publishable dists
+        run: node scripts/check-dist.js
+
+      - name: Verify the packed closure installs and runs outside the repository
+        shell: bash
+        env:
+          TARBALL_DIR: ${{ runner.temp }}/release-tarballs
+        run: |
+          set -euo pipefail
+          # 判据「npm pack 产物在干净目录里能起」的机械化版本（D2 是手工做的）。
+          # 刻意用 **npm** install 而不是 pnpm：pnpm 的工作区符号链接会让「装上去能跑」这件事
+          # 在还没离开仓库时就成立，验不出真实用户那条路径。
+          repo="$PWD"
+          consumer="$RUNNER_TEMP/release-consumer"
+          mkdir -p "$TARBALL_DIR" "$consumer"
+
+          pnpm -r --filter "$RELEASE_FILTER" list --depth -1 --json > "$RUNNER_TEMP/closure.json"
+          CLOSURE_JSON="$RUNNER_TEMP/closure.json" node - > "$RUNNER_TEMP/closure.tsv" <<'NODE'
+          const { readFileSync } = require('node:fs')
+          for (const item of JSON.parse(readFileSync(process.env.CLOSURE_JSON, 'utf8'))) {
+            console.log(`${item.name}\t${item.version}\t${item.path}`)
+          }
+          NODE
+
+          # **必须是 pnpm pack**：`npm pack` 把 `workspace:*` 原样留在 dependencies 里，
+          # 那不是合法 semver，发出去的包装不上（D2 实测）。pnpm 会改写成真实版本号。
+          while IFS=$'\t' read -r name version path; do
+            ( cd "$path" && pnpm pack --pack-destination "$TARBALL_DIR" >/dev/null )
+          done < "$RUNNER_TEMP/closure.tsv"
+          ls -1 "$TARBALL_DIR"
+
+          CLOSURE_TSV="$RUNNER_TEMP/closure.tsv" CONSUMER_DIR="$consumer" node - <<'NODE'
+          const { readFileSync, readdirSync, writeFileSync } = require('node:fs')
+          const { CLOSURE_TSV: closurePath, TARBALL_DIR: tarballs, CONSUMER_DIR: consumer } = process.env
+          const rows = readFileSync(closurePath, 'utf8').trim().split('\n').map((line) => line.split('\t'))
+          const files = readdirSync(tarballs)
+          const dependencies = {}
+          for (const [name, version] of rows) {
+            const slug = `${name.replace('@', '').replace('/', '-')}-${version}.tgz`
+            if (!files.includes(slug)) throw new Error(`missing tarball for ${name}: expected ${slug}`)
+            dependencies[name] = `file:${tarballs}/${slug}`
+          }
+          const manifest = { name: 'einfach-agent-release-smoke', private: true, version: '0.0.0', dependencies }
+          writeFileSync(`${consumer}/package.json`, `${JSON.stringify(manifest, null, 2)}\n`)
+          NODE
+          cat "$consumer/package.json"
+
+          cd "$consumer"
+          npm install --ignore-scripts --no-audit --no-fund --no-package-lock
+
+          # 装出来的树里不许出现仓库工作树的路径——出现即说明产物在偷偷依赖 checkout。
+          if grep -rl "$repo" node_modules; then
+            echo "::error::the installed tree references the repository worktree"
+            exit 1
+          fi
+          echo "no reference to the repository worktree in node_modules"
+
+          # `--port 0` 让系统分配空闲端口，真实端口从启动横幅里读，不猜。
+          ./node_modules/.bin/einfach-agent --port 0 --no-open > "$RUNNER_TEMP/server.log" 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+
+          url=""
+          for _ in $(seq 1 60); do
+            url="$(sed -n 's|^ *\(http://127\.0\.0\.1:[0-9]*/[^ ]*\)$|\1|p' "$RUNNER_TEMP/server.log" | head -1)"
+            [ -n "$url" ] && break
+            sleep 0.5
+          done
+          cat "$RUNNER_TEMP/server.log"
+          if [ -z "$url" ]; then
+            echo "::error::the server never printed its URL"
+            exit 1
+          fi
+
+          origin="$(printf '%s' "$url" | sed -n 's|^\(http://127\.0\.0\.1:[0-9]*\).*|\1|p')"
+          health="$(curl -sS --fail "$origin/api/health")"
+          echo "health: $health"
+          printf '%s' "$health" | grep -q '"service":"einfach-agent"' || {
+            echo "::error::unexpected /api/health payload"
+            exit 1
+          }
+          curl -sS --fail "$origin/" | head -c 200 | grep -qi '<!doctype html' || {
+            echo "::error::the root path did not serve the embedded web build"
+            exit 1
+          }
+          echo "release smoke passed"
+
+      - name: Upload the packed tarballs
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-release-tarballs
+          path: ${{ runner.temp }}/release-tarballs/*.tgz
+          if-no-files-found: error
+
+      - name: Publish to npm
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          # `--no-git-checks` 是必需的，不是图省事：tag 上的 checkout 是 detached HEAD，
+          # pnpm 默认会因为「不在发布分支上」拒绝。仓库状态本身由前面整条门禁负责。
+          if [[ "$DRY_RUN" == "true" ]]; then
+            pnpm -r --filter "$RELEASE_FILTER" publish --dry-run --no-git-checks
+            echo "dry run: nothing was published (see the packed tarballs artifact)"
+            exit 0
+          fi
+          # 已经发过的版本会被 pnpm 跳过：闭包里只改了 server 时，另外三个包不必陪着涨版本号。
+          pnpm -r --filter "$RELEASE_FILTER" publish --no-git-checks
