@@ -1207,7 +1207,36 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   本卡要写明哪道挡哪种。另需自行裁决：health 是否豁免 token（B1 的宿主探测发生在拿到 token 之前，
   不豁免会把 server 宿主误判成 static）、无 `Origin` 头的请求怎么处置、`Host` 头校不校。
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `fd614b4`。4 源 + 6 测试 / 55 例。判定顺序 **对端地址 → Host → Origin → token**，
+  token 放最后是刻意的：跨站请求在拿到任何「token 对不对」的回音**之前**就被拒，那道门后不存在
+  可用来试探 token 的差异。**卡口在路径分派之前**，所以未认证的调用方连「有哪些接口存在」都问不出来
+  ——`/api/invok` 拿到的是 401 而不是 404。
+  **裁决一·health 豁免 token**（仍校验对端地址与 Origin/Host）：失败形态不对称——要 token 的话
+  B1 探测拿 401 → 落到 `static` → 模型看不到任何本机能力，且界面上不会有一句话提到令牌；豁免的话
+  探测恒成功、第一条真实 invoke 拿 401，B2 能说准话。**响亮地失败优于静默地正确。**
+  **裁决二·无 `Origin` 头放行**：判据不是「缺席可信」而是「缺席之后还剩什么」——唯一危险的缺席形态
+  （rebinding 下的同源 GET）已被 Host 挡住，于是它只降级成「token + Host」，与 curl 待遇一致。
+  `Origin: null`（沙箱 iframe / `file://` / 跨源重定向）判**跨源**而非缺席。
+  **裁决三·API 面只认 `Authorization: Bearer`，不认 `?token=`**：这白送第四道防线——跨源 JS 要设
+  自定义头必须先过 CORS 预检，而我们不回任何 `Access-Control-Allow-*`，浏览器**根本不会发出**那条
+  真实请求；`<form>` 压根设不了头。不用 Cookie：Cookie 不区分端口，同机任何跑在 127.0.0.1 上的
+  服务都能读写它。token 存 **sessionStorage** 不是 localStorage（后者跨重启存活，而 token 每次启动
+  换新 → 陈旧 token 401，症状离病因很远）。
+  **绑定地址是默认值不是执行**：即便被绑成 `0.0.0.0`，`/api/*` 仍只对回环开放（每条请求重判对端
+  地址），会暴露的只有静态产物。安全性不建立在「S4 记得传对地址」上。没有 `disableAuth` 开关，
+  不传 token 时仍随机生成一枚（后果是全部 401 这种响亮失败，不是静默放行）。
+  子 agent 做了 6 轮变异验证（删卡口→8 例红、删 Host 校验→4 例、Origin 判据反向→14 例、health 豁免
+  改前缀匹配→1 例、`isLoopbackAddress` 改 `startsWith`→1 例、token 比较去掉 SHA-256→4 例）。
+  主会话另起真 server 独立复核 13 种攻击形态，见 S3 卡的表。
+  **卡面「复用 `scripts/model-preview-relay.ts` 的 `isLoopbackAddress`」是错的，已改**：那个模块的
+  import 图经 `model-preview-relay-routes.ts` 直达 `ModelPreviewRelayCredentials`（三家模型 Key 的
+  路由），import 它 = 给一台随后要执行 `run_shell_command` 的 server 接上一条读模型 Key 的边，
+  正是本卡明令禁止的那类代码路径；顺带还会拉进 `vite` 与 `agent-ai`，而 `scripts/` 也不在
+  `tsconfig.app.json` 的 include 里。改为**判据逐字照抄 + 注释写明为什么不 import**。
+  已知收窄（照抄不改，fail-closed）：RFC 1122 的回环是整个 `127.0.0.0/8`，这份只认 `127.0.0.1`。
+  **开发期摩擦点**：`pnpm dev`（Vite 在 5173）里的页面调 server API 会因 Origin 端口不同被 403。
+  server 宿主的正确用法是 `pnpm build` 后 `pnpm server`。刻意没开 `additionalAllowedOrigins`
+  ——每个额外允许的 origin 都是一个洞；B 线若确实需要，那是单独一张卡。
 
 ### S3 · `/api/invoke/:command` 接 host-node 路由表
 
@@ -1219,7 +1248,32 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   ——同 host-node 那 9 个域「域只交 registrar」的既定协议。按 `reason` 字段映射
   `unknown-command` → 404、`unimplemented` → 501，**不要用 `instanceof`**（错误要跨 HTTP 序列化）。
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `50bd46f`（接线随 S2 的 `fd614b4`）。4 源 + 4 测试 + 1 脚手架。
+  状态码矩阵：405 非 POST／**415 Content-Type 不是 `application/json`**／400 `invalid_json`／
+  400 `invalid_body`（顶层非纯对象）／413 超 `maxBodyBytes`／404 `unknown-command`／
+  501 `unimplemented`／200 `result ?? null` 原样序列化（**不做任何大小写转换**，findings #12）。
+  **415 那道是 S2 交回时点出的免费防线**：`<form>` 只能发三种简单 content-type、**设不了
+  `application/json`**，于是表单 CSRF 连预检都过不去；且这一道**不依赖 `Origin` 头存在**
+  （S2 已裁决无 Origin 的请求放行）。S3 原本裁决不校验，据此改了。
+  **命令名解码失败回落未解码原串**而不是报错：合法命令名不含 `%`，回落串必然落空成
+  `unknown-command` → 404，于是「什么是合法命令」始终只有 host-node 一处权威，server 层不复制
+  一份校验逻辑。body 上限 32 MiB = 8 MiB（`workspace/write/limits.ts` 的 `MAX_BYTES`）× 1.33
+  （base64 膨胀）+ 批次余量，暴露为可选项而非写死。按**流式累积**判超限，不信 `Content-Length`；
+  超限后继续排空 data 事件但不再累积内存。用原始 `'data'/'end'/'error'` 监听器而非 `for-await`
+  ——后者 early break 会毁掉共享 socket，连回一条错误都做不到。
+  **主会话接线**（`requestRouter.ts` / `createServer.ts` / `package.json`）：`handleApi` 已改成
+  `async` 并在调用处 `await`——原先是同步定义、同步调用，挂上异步 handler 后 rejection 会绕过
+  外层 `try/catch` 变成未捕获错误而不是一条 500。`apps/server/package.json` 原本**没有
+  `dependencies` 字段**，补了 `@web-agent/core` 与 `@web-agent/host-node`（vitest 靠根
+  `vite.config.ts` 的 alias 能跑，真正 `node` 运行需要这两条）。
+  连带修正 `health.test.ts`：`/api/invoke/run_shell_command` 从「未知路径回 404」那张表里移出
+  ——接线后它是**真实存在**的接口，GET 拿到 405；单独钉住这条。
+  **主会话端到端复核**（起真 server，独立于两卡的脚手架，13 种形态）：无 token→401、错 token→401、
+  `?token=`→401（头-only 成立）、无 token 的 `/api/invok`→**401 而不是 404**（认证在分派之前，
+  未认证者问不出接口清单）、跨站 Origin→403、`Origin: null`→403、坏 Host（rebinding）→403、
+  表单 content-type→415、带 token→**200 且真的回了 `/Users/dol`**（HTTP → 认证 → invoke →
+  host-node → 系统调用整条链路打通）、未实现命令→501、不存在命令→404、health 无 token→200、
+  health 跨站→403。
 
 ### S5 · shell 的 platform 该由宿主说了算，不是调用方探测
 
