@@ -1613,7 +1613,34 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：新契约卡。`onHostEvent(name, handler): () => void`，覆盖
   `mcp-stdio-tools-changed` 与 `mcp-stdio-close`。CLI 进程内直接回调，无需序列化。跑该目录 vitest
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `8e42d3a`。8 文件 / 68 例。**契约（C3/C4/T 线照抄）**：
+  `createHostEventBus(options?) => HostEventBus`，`HostEventBus extends HostEventSource, HostEventSink`
+  ——`onHostEvent<Name>(name, handler): () => void` 与 `emitHostEvent<Name>(name, payload)`。
+  **是工厂，不是模块级单例 + `configure`**：`hostBridge.ts` 收 loader 是为了消灭「已登记但判据仍为假」
+  的窗口，这里更干脆——**根本没有「登记」这个动作**，对象存在即两半都可用；单例反而会把窗口请回来。
+  拆成 Source/Sink 两半但**一次创建**：可独立创建的话立刻会出现「发射方挂 A 汇、订阅方挂 B 汇」，
+  事件发得好好的就是没人收。
+  **载荷约束 = JSON 值且顶层是普通对象，编译期 + 运行期两层**，且**运行期那一遍在 CLI 那条路上也跑、
+  不是 dev-only**——判据里「无需序列化」说的是不该白白复制一份数据，本卡兑现的是「**CLI 不付序列化的
+  代价，但付序列化的约束**」；只在 dev 跑的话生产 CLI 会接受一个生产 SSE 会改写的值，分岔原封不动回来。
+  拦下的包括 `-0`、`Object.create(null)`、稀疏数组、挂了额外属性的数组、循环引用；菱形引用放行。
+  「验器规则 == JSON 保真行为」由测试钉住（用 `node:assert` 的 `deepStrictEqual`，因为 vitest 的
+  `toEqual` 认为 `{a:undefined}` 等于 `{}`，而那正是要抓的分岔）。
+  **事件名取收敛联合**：开放字符串下拼错名字编译通过、运行不报错，症状是「MCP 退出了但前端没反应」，
+  既不报错也不指向病因；收敛后同一行当场编译失败。另配运行期 `isHostEventName`（C3 从 SSE 帧读回的是
+  `string`）。四种行为：派发中途取消**本次即不再调用**（快照 + 每次调用前复查 `active`，两者缺一不可）、
+  handler 同步抛与 Promise reject 都 catch 后报给 `onHandlerError` 并继续（异步那条是「拖垮宿主」最现实
+  的路径——Node v15 起未处理 rejection 默认结束进程）、重复订阅记两条独立订阅、重复取消幂等。
+  主会话独立复核：把 Rust 侧 `mcp-stdio-close` 改成 `mcp-stdio-closed`，TS 的逐字对拍用例当场转红。
+  **三条给下游的更正**：① `tauriStdioConnector.ts:52` 把 close 的 `message` 声明成可选并备了兜底文案，
+  而 Rust 永远发这个字段——那是消费方防御不是契约，C4 可保留兜底但**别据此把类型改成可选**；
+  ② **`createNodeHostInvoke.ts` 的目录规划把「模型流式响应的 Channel」也划进 `events/`，那两件事不该
+  共用这个契约**——MCP 生命周期是全局广播、低频、fire-and-forget、无序无背压，模型流式是按请求的、
+  有序、高频、要背压和取消，塞进 `onHostEvent` 会把后者做成畸形；**M 线需要 `events/` 下另一个独立机制**
+  （大概是 per-request 的 stream/AsyncIterable），别以为等 C2 就够了；③ Rust 的 `McpLifecycleNotifier`
+  用两个 `AtomicBool` 保证 close 至多发一次、且 close 后不再发 tools_changed，**那是 C1 的账**——
+  本汇刻意不做去重（会话语义不属于事件面），C1 必须复刻否则 Node 侧会重复发 close。
+  发射是全局广播、刻意不按 serverId 路由，保持与 Rust `app.emit` 同形状，好让 C4 逐字照搬既有过滤。
 
 ### C3 · server 的 SSE 事件端点
 
@@ -1645,7 +1672,26 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   Tauri 装配注入插件实现，行为不变。跑 `pnpm exec vitest run packages/persistence-sqlite` +
   `node scripts/check-boundaries.js`（`core 禁入 Tauri SQL 插件` 那条仍须绿）
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `dae8669`。port 住 `packages/agent-core/src/state/persistence/sqlTransport.ts`：
+  `SqlExecutor { execute(sql, params?) / select<Rows>(sql, params?) }` + `SqlExecutorLoader`，
+  消费面 `configureSqlExecutor(loader)`。**放 core 是为了可达性**：四类消费方彼此无依赖，唯一都已
+  依赖的就是 core；放进任一消费方会逼出反向箭头，另起一个只装三个接口的包要在四处登记。
+  core 自己一处都不消费它。**收 loader 不收已就绪 executor**，逐字沿用 `hostBridge.ts` 的理由。
+  **卡面「`sqliteShared.ts` 的批量执行」这个前提不存在——主会话已核实，卡面写错了。** 那个文件里
+  全是逐条独立 `execute`/`select`；血泪注释说的是**相反**的事：历史问题正是「多次独立 `db.execute`
+  发 BEGIN/DELETE/INSERT/COMMIT，语句被路由到池里**不同连接**，事务根本不成立，还把写锁遗留在
+  某条连接上」，而修法**不是**打包成一批，是**彻底删掉跨语句事务**、让每次写入都是一条自包含的
+  原子语句。所以粒度取**单条**：把「一批语句」做成 port 的一等概念，恰恰是把「这几条落在同一条
+  连接上」这个假设重新引进来，而 port 给不出兑现它的手段（HTTP 那条路更给不出）。
+  两个方法按「语句有没有返回行」分而非按读写分——PRAGMA 会回一行当前值，必须走 `select`。
+  **关于门禁本身的两条事实**（值得记）：① 「core 禁入 Tauri SQL 插件」**只扫
+  `packages/agent-core/src`**，从来不扫 `persistence-sqlite`，所以本卡真正收紧的「driver 包不再
+  import 插件」**没有任何门禁看着**（要有得把它加进 `capabilityRule`，那会同时判红
+  observability-sqlite，属 P4）；② 判据是**精确字符串相等**，`@tauri-apps/plugin-sql/xxx` 子路径
+  写法能绕过去。主会话独立复核：在 `sqlTransport.ts` 顶部插一行该 import，门禁当场精确报出该文件
+  第 1 行，撤掉后恢复绿。
+  遗留：`packages/persistence-sqlite/package.json` 的 `@tauri-apps/plugin-sql` 依赖声明仍在（源码已无
+  import），摘它要同步刷 `pnpm-lock.yaml`，与并行卡冲突，留给 P4 一并处理。
 
 ### P2 · host-node 的 SQLite 执行
 
@@ -1689,7 +1735,22 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：`pnpm build` 后 server 包自带 `apps/web/dist`，单个 npm 包即可启动，
   不依赖仓库工作树。跑 `node scripts/check-dist.js`
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `31f54e7`。`apps/server` 加 `main` / `files:["dist"]` / `build: "tsup && node
+  scripts/embed-web-dist.mjs"`，根 `build` 末尾追加 `pnpm --filter @web-agent/server build`（顺序保证
+  `vite build` 先产出 `apps/web/dist` 再嵌）。产物 `dist/main.js` + `dist/public/`。
+  `DEFAULT_DIST_DIRECTORY` 改成**运行期探测**：先试 `dirname(import.meta.url)/public`（分发形态），
+  不存在回落 `../../web/dist`（开发形态）——靠「是否存在」而非路径巧合，两个候选本来就不会同时存在。
+  **卡面判据点名的 `check-dist.js` 其实扛不起本卡**（D1 纠正）：那个脚本只扫 `packages/*` 与 `tools/*`、
+  验的是「公开 `exports` 面能被真实消费方 import」，而 `apps/server` 没有 `exports`、是被直接执行的
+  进程。真正扛判据的是它自建的隔离验证：`npm pack` → 改写 `workspace:*` 为真实 version → 解到全新
+  目录 → **真实 `npm install`（不是 pnpm，排除工作区符号链接魔法）** → 在那里 `node dist/main.js`。
+  主会话独立复核：产物里 `grep` 仓库绝对路径**零命中**；从仓库外目录直接跑 `dist/main.js`，
+  `GET /` 吐出内嵌前端、`/api/health` 正常、带 token 的 invoke 回 `"/Users/dol"`；
+  `@web-agent/host-node` 正确 external（`@web-agent/core` 全是 `import type`，编译期已擦除）。
+  **顺带修掉一个既有缺口**：`check-dist.js` 第一次跑就红，因为 `tools-shell` 等包的 `dist` 是陈旧的
+  （还留着 S5 改名前的 `detectHostPlatform`）。它重建了全部 17 个包的 `dist`。**这个脚本不在
+  `.github/workflows/ci.yml` 里**，所以那份陈旧态一直没人发现——与主会话在 S4/S5 撞到的「陈旧 dist
+  遮蔽 src」是同一个根。D2/D3 值得把它加进 CI。
 
 ### D2 · npm 包元数据与 bin launcher
 
