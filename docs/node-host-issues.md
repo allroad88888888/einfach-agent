@@ -1302,7 +1302,38 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   宿主侧的校验两份都在：`apps/desktop/src/shell_pipeline.rs:44` 与
   `packages/host-node/src/shell/pipeline.ts:57`，文案逐字相同。
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `6238518`。**平台成了 `configureHostInvoke` 的必填字段**：
+  `configureHostInvoke({ loader, platform })`，桥与平台同一次调用生效、同一次调用作废。
+  **同步/异步的矛盾是把顺序反过来解的**——不让取值变异步，而让「拿到平台」成为登记桥的前置条件：
+  远端握手没回来就登记不了桥 → `hasHostBridge()` 为假 → 与静态预览行为一致（工具不进清单、执行早退）。
+  那个窗口不是被论证成不可达，是**结构上不存在**。
+  **「忘了握手」的失败形态是编译错误**（必填字段漏写连 `tsc -b` 都过不去），比任何运行期告警都响亮
+  ——这正是卡面判据要的。原 `detectHostPlatform` **被改名删掉**（现为私有的 `detectLocalPlatform`），
+  留着旧名当别名的话漏改的调用点会静默继续拿错值。
+  两个消费者取同一个值靠的是**取不到别的**：`declaredPlatform` 模块私有、唯一读出口 `hostPlatform()`、
+  写入面 `declareHostPlatform()` 不在任何公开面上且 core 内只有 `configureHostInvoke` 一处调用。
+  新增第四值 `HostPlatform = ShellPlatform | 'unsupported'`（FreeBSD/AIX 这类：文件能力照常、
+  shell 三选一没有对应项；没有这个值它就得谎报一个，而消费方会被迫自己发明回落值 = 权威又劈成两处）。
+  server 侧 `/api/health` 加 `platform`，取自 host-node 新导出的 `nodeHostPlatform()`——**就是 shell 域做
+  `platform mismatch` 判定时调的同一个函数**；`createServer.ts` 刻意**不开** `options.platform` 覆盖开关
+  （开了就等于允许装配层报一个跟真机器不同的平台）。
+  子 agent 做了 4 轮变异（整卡回退→6 例、只改消费者②→2 例且消费者①仍绿即两者分别被钉住、
+  删 `declareHostPlatform` 调用→6 例、握手硬编码 linux→1 例）。
+  **主会话端到端实测**（起真 server，curl 打）：`/api/health` 回
+  `{"service":"web-agent","host":"node-server","version":"0.1.0","platform":"macos"}`；
+  `get_user_home_dir` → `"/Users/dol"`；**`run_shell_command` 真的跑了** ——
+  `echo web-version-works && uname -s` → `stdout:"web-version-works\nDarwin\n"`, `exit_code:0`；
+  谎报 `platform:"windows"` 仍被
+  `` platform mismatch: requested `windows`, current `macos` `` 挡下。**判据两半都成立。**
+
+  **B 线照此接**（S5 交回，B1/B2/B3 照做）：① B1 用 health 成功 + `service`/`host` 判 server 宿主，
+  并把 `payload.platform` 带出来，**忽略未知字段**别写「字段集合恰好等于这几个」；② B2/B3 必须
+  `await` 完握手再 `configureHostInvoke({ loader: httpInvoke, platform })`，**不要 fallback**、
+  也不要照抄 `main.tsx` 那行 `detectLocalPlatform()`（那是同机宿主专用）；③ 时序上要把宿主解析放在
+  `bootstrapApplication()` **之前** await 掉而不是并行发起，否则恢复出来的未完成 run 可能在桥到位前
+  跑工具；④ `'unsupported'` 原样传，不要自己映射成三值之一；⑤ **B3 的老待办仍在**：
+  `buildEnvironmentItem` 的「宿主：Tauri 桌面端」文案写死，server 宿主一落地浏览器用户就会被
+  告知自己在 Tauri 桌面端。
 
 ### S4 · 启动 CLI：端口选择、URL 打印、打开浏览器
 
@@ -1316,7 +1347,47 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   `spawn(cmd, [url])` 而非拼 shell 字符串——URL 里有 token，拼进 shell 会让它进程列表可见且可注入；
   打不开浏览器不得让服务崩溃（headless / SSH / 容器里没有浏览器）。
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `f94927a`（脚本改名与解析修复随 `6238518`）。11 个文件，源码最大 85 行，
+  `main.ts` 只有 11 行；`main*` 下 39 例。
+  **判据里的 `pnpm server` 是错的，已全树改成 `pnpm serve`**：`server` 是 **pnpm 的保留子命令**
+  （它自己的 store server），裸跑 `pnpm server` 报
+  `ERR_PNPM_INVALID_SERVER_COMMAND  "server --help" is not a pnpm command`，只有 `pnpm run server`
+  能用。子 agent 发现了但没敢改脚本名（怕波及树与 S2 的文档），报告上来由主会话裁决改名——
+  留着 `server` 等于让用户永远记「这个要加 run、别的不用」。`serve` / `web` 都不被 pnpm 占用，取 `serve`。
+  实测确认过一件容易当假设的事：**`http.Server` 在 `EADDRINUSE` 之后能直接再 `listen`**，
+  不必新建实例。默认起始端口 4765（避开 Vite 的 5173/4173 与常见 3000/8000/8080），10 次重试；
+  非 `EADDRINUSE` 的错误码（`EACCES`/`EADDRNOTAVAIL`）立即重抛不重试——换端口修不好权限问题。
+  打开浏览器一律 `spawn(cmd, [url])`，URL 从不进 shell 字符串；失败只写一行 stderr 不让服务崩。
+  **自报的一处未验证**：Windows 分支 `cmd /c start "" <url>` + `windowsVerbatimArguments: true`
+  无法在本机验证，若 Windows 近期要紧需复核。
+
+### 新增·主会话验收 S4/S5 时发现的模块解析陷阱（B/D 线必读）
+
+**症状**：`pnpm build`、`pnpm test`（4676 例）、三条门禁**全绿**，而 `pnpm serve` 一跑就
+`SyntaxError: The requested module '@web-agent/host-node' does not provide an export named
+'nodeHostPlatform'`——那个导出明明就在 `packages/host-node/src/index.ts:33`。
+
+**成因**：同一个包名在两条解析路径上指向**不同的东西**。
+- vite / vitest / `tsc -b` 走 `vite.config.ts` 的 `resolve.alias` 与 `tsconfig.app.json` 的 `paths`，
+  直达 `src`（`CLAUDE.md` 写明的「workspace 包不单独编译」）。
+- 真正的进程（`tsx` 跑 `apps/server` / `apps/cli`）走 node 的 ESM 解析：`paths` 里
+  `"@web-agent/host-node": ["packages/host-node/src"]` 是**目录形式**，解析不到就**回落 node_modules**
+  → workspace 符号链接 → `package.json` 的 `exports` → `./dist/index.js`，**一份 8 月 18 日的陈旧构建**
+  （`dist/` 是 gitignore 的本地产物，只导出 5 个符号，没有当天新加的任何东西）。
+
+**修法**：把该条目改成**文件形式** `["packages/host-node/src/index.ts"]`，与紧邻的
+`"@web-agent/core": ["packages/agent-core/src/index.ts"]` 一致——后者一直是文件形式，所以
+`@web-agent/core` 从没犯过这个病。改完 `pnpm serve` 立刻跑通。
+
+**为什么之前没暴露**：host-node 是 N 线新加的包，而在 S4 之前**没有任何真实进程 import 它的新符号**
+——`apps/cli` 虽然也 import 了 `nodeHostPlatform`，但 `pnpm cli --help` 在触及那条 import 之前就退出了。
+
+**留给 B/D 线的两条**：
+1. **`paths` 里其余目录形式的条目是同一颗雷**（`observability-*`、`persistence-*`、`subagents` 等
+   当前都是目录形式）。它们今天只被 `apps/web` 经 vite 消费所以无恙；**哪天有 `tsx` 进程 import 它们，
+   同样会静默吃到陈旧 `dist`**。D 线定分发形态时要连这条一起решить。
+2. **没有任何门禁跑真实二进制。** 四千多例测试加三条门禁全绿，而 `pnpm serve` 起不来。
+   B4 / M5 那两张「端到端验收」卡是目前唯一会碰到真实进程的地方，**别把它们简化成跑测试**。
 
 ---
 
