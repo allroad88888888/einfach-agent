@@ -1152,9 +1152,14 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **依赖**：W16
 - **改动面**：`packages/host-node/fixtures/` 增量 + 两侧驱动器
 - **判据**：照 W16 的范式覆盖 `workspace_write_*_tests.rs` 与
-  `workspace_read_*_tests.rs` 的限额/边界用例。两侧全绿
+  `workspace_read_*_tests.rs` 的限额/边界用例。两侧全绿。
+  **`packages/host-node/fixtures/README.md` 是本卡的规格书**——本卡是它的第一个使用者，用起来
+  别扭的地方就是它的缺陷，顺手补。两个本卡特有的坑：① **写回执是 snake_case**
+  （`WorkspaceWriteResult` 没有 `rename_all`），而读/patch 是 camelCase，期望值按各自实际形状写
+  （findings #12，README 点名说主要影响本卡）；② **UTF-8 分块豁免正好落在读域**——fixture 一律
+  不构造「一次读取跨过块边界的多字节字符」，读域限额用例很容易无意中造出来。
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ---
 
@@ -1396,20 +1401,33 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 ### B1 · 宿主探测三态化
 
 - **依赖**：S1
-- **改动面**：新建 `apps/web/src/host/resolveHost.ts` 与其测试
+- **改动面**：新建 `apps/web/src/host/resolveHost.ts` 与其测试（该目录当前不存在，由本卡新建）
 - **判据**：返回 `'tauri' | 'server' | 'static'`。顺序：`isTauri()` → `GET /api/health` 成功 →
-  `static`。探测失败必须落到 `static` 而不是挂起首屏。跑该目录 vitest
+  `static`。探测失败必须落到 `static` 而不是挂起首屏。跑该目录 vitest。
+  **「失败」包含「永远不返回」**：端口上有东西在听但从不回包、被代理拦住、服务端启动中途卡死，
+  `fetch` 都会长时间挂着而不是报错，首屏就一直白着。**必须有超时**（`AbortController`），超时判
+  `static`。另：判据是 health 成功**且** `service === 'web-agent'` **且** `host === 'node-server'`
+  ——只判 200 不够，本机任何开发服务器都可能对该路径回 200。真·静态部署下 `/api/health` 多半被
+  SPA 回落成一整页 HTML，`response.json()` 会抛，别让它变成未捕获错误。
+  **不得跨 app import `apps/server` 的常量**（app 之间没有依赖边）。
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### B2 · httpInvoke 实现
 
 - **依赖**：B1、S3
 - **改动面**：新建 `apps/web/src/host/serverInvoke.ts` 与其测试
 - **判据**：签名与 `HostInvoke` 一致；token 从 URL query 取一次后从地址栏清掉
-  （避免进浏览器历史与 Referer）；HTTP 错误映射成与 Tauri invoke 同形状的 reject。跑该目录 vitest
+  （避免进浏览器历史与 Referer）；HTTP 错误映射成与 Tauri invoke 同形状的 reject。跑该目录 vitest。
+  **S2 的三条硬约束**：token 存 `sessionStorage` 不是 `localStorage`（后者跨重启存活而 token 每次
+  启动换新 → 陈旧 token 401，症状离病因很远）；每条请求走 `Authorization: Bearer`、**绝不退回
+  `?token=`**（服务端只认头不认 query；退回 query 会让跨站简单请求重新活过来）；**不用 Cookie**
+  （Cookie 不区分端口，同机任何跑在 127.0.0.1 上的服务都能读写）。
+  抹 query 要**保留 path / hash / 其余参数**，粗暴 `replaceState(null,'','/')` 会把带 hash 路由进来
+  的用户踢回首页。请求必须带 `content-type: application/json`，否则 415——那个头本身是一道 CSRF
+  防线（`<form>` 设不了它）。**不得跨 app import `apps/server` 的常量。**
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### B3 · main.tsx 按宿主分发并拆分到 300 行内
 
