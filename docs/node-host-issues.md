@@ -1126,7 +1126,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   （证明它真在比对，不是空跑）。跑 `pnpm exec vitest run packages/host-node` +
   `cargo test --manifest-path apps/desktop/Cargo.toml`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### W17 · 对拍 fixture 扩到写锁与读限额
 
@@ -1144,32 +1144,63 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 ### S1 · server 包骨架、health 与静态托管
 
 - **依赖**：N1
-- **改动面**：新建 `apps/server/`；同步 `vite.config.ts` alias 与 `tsconfig.app.json` paths
+- **改动面**：新建 `apps/server/`；`tsconfig.app.json` 的 **`include`**（**不是** alias / paths，理由见状态）
 - **判据**：`GET /api/health` 返回版本与宿主标识；`GET /*` 服务 `apps/web/dist`（缺失时给出
   可读提示而不是 404 裸页）。跑 `pnpm exec vitest run apps/server` + `node scripts/check-boundaries.js`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE `f761fa4`。17 个文件 / 34 例，`node:http` 零新依赖（这个进程随后要经 `/api/invoke`
+  执行 shell 与读写文件，依赖树里每多一个包都是同一份权限的分享者）。产物缺失回 **503** 不是 404：
+  缺的不是某个资源、是服务器没准备好，此刻 `/api/health` 仍 200，两者合起来说的是同一件事。
+  **卡面「改动面」那行原写「同步 `vite.config.ts` alias 与 `tsconfig.app.json` paths」，对 app 层不成立**
+  ——`apps/cli` 两处都没有条目，app 不按包名被 import。真正必须改的是 `tsconfig.app.json` 的
+  `include`。加 alias/paths 会凭空造出一条「可以 `import '@web-agent/server'`」的公开面。已改卡面。
+  **路径禁闭两道，各挡各的**：① 词法（`staticPath.ts`，纯函数）解码**恰好一次** → 按 `/` 和 `\` 切段
+  → 见 `..` 即拒；防二次编码的全部机制就是「只解一次」（`%252e%252e%252f` 解一次是字面文件名 →
+  404），且下游拿到的是**分段数组不是字符串**，结构上没有再解一次的入口。② 落盘 realpath 后用
+  `path.relative` 判包含（不是 `startsWith`——N2 记过 `/ws-evil` 的前缀陷阱），挡软链接。
+  主会话独立复核：起真 server + 根外放金丝雀文件，用 `http.request({path})` 逐字写请求行打 12 种
+  穿越形态（含大写 `%2E`、`%5c`、二次编码、`%00`、`%c0%af`、`%zz`），**无一泄露**。
+
+  **两条新范式事实（S4 / B 线同样成立，别重蹈）**：
+  · **`new URL('字面量', import.meta.url)` 在本仓库不能用**——Vite 的 assetImportMetaUrl 会把它当
+  资源引用静态改写，Vitest 下拿到的不是 `file:` URL，`fileURLToPath` 当场抛
+  `The URL must be of scheme file`。改用 `resolve(dirname(fileURLToPath(import.meta.url)), …)`。
+  · **`new URL(request.url, base).pathname` 会把穿越判定的权威劈成两处**。主会话实测确认：
+  `new URL('/%2e%2e/secret.txt', base).pathname === '/secret.txt'`——URL 规范把 `..` / `.%2e` /
+  `%2e.` / `%2e%2e` 四种都算 dot segment 就地消掉，而 `%2f` / `%5c` 又原样留着。不是漏洞（弹栈到
+  根就停），但一半攻击流量在到达判定层之前已被改写成合法路径，日志里表现为「客户端从没请求过的
+  路径 404 了」。故新增 `requestPathname.ts` 取原样路径。连带结论：**测这类用例不能用 `fetch`**
+  （它同样归一），脚手架用 `http.request({ path })` 把字符串逐字写进请求行。
+  `check-boundaries.js` **不需要为新包加条目**：`capabilityPackages` 只管 `packages/*`，apps 层由
+  `outsideCoreFiles()` 扫 `apps/*/src` 自动纳入。
 
 ### S2 · token 认证、Origin 校验与 loopback 绑定
 
 - **依赖**：S1
-- **改动面**：`apps/server/src/auth*`
+- **改动面**：`apps/server/src/auth*`，外加 `requestRouter.ts` 与 `createServer.ts` 的接线（本卡独占）
 - **判据**：**安全边界卡。** 默认只绑 `127.0.0.1`（复用
   `scripts/model-preview-relay.ts` 的 `isLoopbackAddress` 判据）；每次启动生成随机 token，
   `/api/*` 全部校验；校验 `Origin` 拒绝跨站。必须有测试证明：**无 token 的请求被拒**
   ——否则本机任何网页里的 JS 都能 POST 一条 `run_shell_command`。
   跑 `pnpm exec vitest run apps/server/src/auth`
+  **绑 127.0.0.1 只挡住局域网里的别人，挡不住本机浏览器里的任何一个标签页**：简单请求不触发预检、
+  `<form>` POST 连 CORS 都不涉及、DNS rebinding 还能让 Origin 变成攻击者自己的域名。三道各挡各的，
+  本卡要写明哪道挡哪种。另需自行裁决：health 是否豁免 token（B1 的宿主探测发生在拿到 token 之前，
+  不豁免会把 server 宿主误判成 static）、无 `Origin` 头的请求怎么处置、`Host` 头校不校。
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### S3 · `/api/invoke/:command` 接 host-node 路由表
 
 - **依赖**：S1、N1
 - **改动面**：`apps/server/src/invokeRoute*`
 - **判据**：body 即 args JSON，逐字透传给 `createNodeHostInvoke` 的路由表；未知 command
-  返回 404 而非 500。跑该目录 vitest
+  返回 404 而非 500。跑该目录 vitest。
+  **本卡只交 handler 工厂，不改 `requestRouter.ts`**（S2 独占那个文件），接线由主会话统一做
+  ——同 host-node 那 9 个域「域只交 registrar」的既定协议。按 `reason` 字段映射
+  `unknown-command` → 404、`unimplemented` → 501，**不要用 `instanceof`**（错误要跨 HTTP 序列化）。
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### S5 · shell 的 platform 该由宿主说了算，不是调用方探测
 
