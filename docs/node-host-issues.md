@@ -2269,7 +2269,19 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   **写完时它必须是红的**（当前产物就是坏的），并在报告里贴出它红在哪一条——**那是它有效的唯一证据**。
   D5a 落地后它转绿。
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `d9b87eb`（NUL 修正随 `1f6ac11`）。3 个脚本 / 549 行 + CI 一步 + 一条 `check:packed`。
+  **本卡交出的比卡面要求的强**：卡面写「一条真的落盘的 SQL」，本卡拆成两半——**4a** 经 HTTP
+  建表/写入/读回比对，**4b** 停服务后**由另一个进程用 `node:sqlite` 只读重开那个库文件复读同一行**
+  （并先验 SQLite 文件头魔数）。理由是「只有 4a 的话，同进程内存也能给出一样的答案，证明不了落盘」。
+  另做了第二条负对照：把 `apps/server/dist/main.js` 挪走再设 `PACKED_SERVER_SKIP_BUILD=1`，
+  当场失败并指出路径——**跳过构建不会静默验一份空气**。
+  **主会话独立复跑负对照**：只把产物里 `import("node:sqlite")` 改回 `import("sqlite")` 这 5 个字符，
+  判据 1/2/3 全过、判据 4 当场炸在那句 `Cannot find package 'sqlite'` 上；**真实退出码 1，还原后 0**
+  （特意不看管道后面的退出码——上一次随手 `| tail` 拿到的 `EXIT=0` 是 `tail` 的，而这条门禁存在的
+  全部意义就是它会红）。耗时：完整 15.7s，CI 形态复用已有构建只多约 3s。
+  **主会话发现并修掉一个它自己没看见的问题**：`check-packed-server.js` 里有一个**裸 NUL 字节**
+  ——它在 SQLite 魔数 `'SQLite format 3\0'` 里、语义完全正确，但写成了原始字节而非转义序列，
+  于是 git 把整个文件当二进制（`Bin 0 -> 11717 bytes`）、**diff 没法审**。改成 `\0` 转义后行为一字未变。
 
 ### D4a · `CLAUDE.md` 去桌面化
 
@@ -2287,7 +2299,18 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   **不要只做查找替换**：每一处都要回源码核对现状再写，写错的文档比没有文档更贵。
   判据：全文零 Tauri/桌面残留；`node scripts/check-docs.js` 绿；随手抽查三处回源码验证。
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `d31f9fd`（`check:packed` 那行随 `ea4079a`）。**它找出的失效比主会话给的清单多 8 处**，
+  其中三处是**缺失**而非陈旧：命令表里**压根没有 `pnpm serve`**（今天唯一能真跑起来的方式）；
+  `pnpm dev` 没说它**没有后端**（现在是实打实的陷阱：`/api/health` 404 → static → 本机工具整类
+  不进模型清单）；「当前结构」缺 `apps/server/` / `apps/cli/` / `packages/host-node/` /
+  `apps/web/src/host/`——**host-node 近两万行、是全仓唯一的宿主能力实现，此前一个字都没有**。
+  它还发现一个 T1 也没注意到的命名陷阱：**`runtime: 'server'`（工具要本机能力）与宿主态 `server`
+  （当前宿主是哪一态）现在同名但不是一回事**——删掉 tauri 之后才浮现。
+  措辞上做了个主会话认可的判断：**没有写出死符号 `isTauriHost()`**，改成「早先写的是某个具体宿主的
+  探测函数」——否则会有人去 grep 一个不存在的东西。教训保住，品牌残留没了。
+  主会话抽查两处回源码：`isToolVisible` 的判据、`pnpm serve` 未构建时回 503，均一致。
+  遗留：文件从 287 涨到 353 行，超了 300 行硬规则（在 500 的复杂文件上限内）。增量全是必要内容，
+  暂不拆——这个文件每次会话整份进上下文，拆成链接的后果是 Agent 很可能不去读那些链接。
 
 ### D4b · README 与 CONTRIBUTING 去桌面化
 
@@ -2304,7 +2327,15 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   也不要宣传发布到 npm：**用户已裁决「不发，仅本地跑」**（见「目标」段）。
   判据：`node scripts/check-docs.js` 绿；两份 README 逐节对齐。
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `26972b4`（CI 第七步随 `ea4079a`）。两份 README + CONTRIBUTING，+242 −130，逐节一一对应。
+  **它自己预告了一个协调缺口并被证实**：按 HEAD 写的 CI 六步，而并行的 D5b 落地后是七步——
+  主会话补齐（它的改动面里没有 CONTRIBUTING）。
+  **主会话照 README 逐字敲了一遍**：`pnpm pack --filter ×4` → `npm install *.tgz` →
+  `./node_modules/.bin/einfach-agent --no-open` → health 与 `sqlite_select` 都通。
+  （第一次主会话说早了一句「原样可跑」而那次 health 回的是空——服务还没起来；重验才算数。）
+  它另找出 6 处 T1 清单外的失效，其中两处是**说反了**：CLI「无本机文件工具」（`runtime.ts` 早已
+  登记 host-node 桥）、CLI「in-memory history driver」（现在一个 driver 都没配，会话只活到进程退出）。
+  Node 下限 `≥20.19 或 ≥22.12` 是从 Vite 的 `engines` 误抄的，真正卡住的是 `node:sqlite` 的 22.13。
 
 ### D4c · `docs/` 去桌面化与死链修复
 
@@ -2323,7 +2354,23 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   **那些对拍源现在不存在了**，注释要说清「移植自哪里、原件已随 T1 删除、以 Git 历史为准」。
   判据：`node scripts/check-docs.js` 绿。
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `26a4a2f` + `a6b8546` + `00f1d95`（分两批，中途被机器休眠打断一次，主会话从断点恢复）。
+  共 205 个文件，**非注释改动行数 = 0**（主会话用 diff 过滤验的）。
+  **`docs/release-signing.md` 的处置最值得记**：没删，改成标注明确的历史记录，理由是
+  **「保留本文不是为了留操作步骤，而是为了留代价」**——那张九个签名 Secret 的表是「为什么不做
+  桌面版」这个决定的全部依据，「删掉它，『不如干脆做个桌面版』这个念头就会被后人重新想一遍，
+  而重新想的人不会再看到这九行」。与本树裁剪卡片时的判据同源，是它自己推出来的。
+  `tools/mcp` 那 8 处是唯一「把已删文件当活着的契约对手方」的，本卡**重述了对手方是谁**
+  （`kind` 的来源改成 `packages/host-node/src/mcp/{childProcess,initialize,results,session}.ts`），
+  而不是加一句「已删除」了事；主会话核对过 `rpc_error` 的格式串两侧逐字相同。
+  **它做了一个重要的区分**：`workspace/task/resolveTask.ts` 里的 `apps/desktop/Cargo.toml`
+  **与本仓库已删的桌面端无关**——那是在**用户打开的 workspace** 里找 Cargo manifest 的探测顺序
+  （`apps/desktop` 与 `src-tauri` 都是 Tauri 项目惯用布局），并明写「别顺手删掉它，改顺序是一次
+  **行为改动**」。历史 issue 账本一律加抬头「按当时的事实保留不改」而非改写正文。
+  主会话收尾了它改动面外的 7 处，其中一条是**可执行的错误指令**：
+  `packages/agent-core/src/tools/TOOLS-SPEC.md` 里仍写着 `cargo test --manifest-path apps/desktop/Cargo.toml`
+  ——`check-docs` 不扫代码块内容，所以两轮都没被抓到。已改成 `pnpm exec vitest run packages/host-node`
+  + `pnpm check:packed`。
 
 ## T · Tauri 退成套壳
 
