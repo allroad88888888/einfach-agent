@@ -39,6 +39,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { configureHostInvoke, detectLocalPlatform } from '@web-agent/core'
 import type { ResolvedHost } from './resolveHost'
 import { httpInvoke } from './serverInvoke'
+import { getServerInvokeToken } from './serverInvokeToken'
 
 /**
  * 按解析出的宿主登记命令桥。
@@ -55,6 +56,14 @@ export function registerHostCommandBridge(host: ResolvedHost): void {
       configureHostInvoke({ loader: () => Promise.resolve(invoke), platform: detectLocalPlatform() })
       return
     case 'server':
+      // **必须在这里就把 token 收下来，不能等第一条请求。**
+      // `getServerInvokeToken()` 顺带做的事是「读走 query 里的 token → 存 sessionStorage →
+      // `history.replaceState` 把 token 从地址栏抹掉」，而它原本只在 serverInvoke 的请求路径上
+      // 被调用。于是「用户打开页面但一条命令都还没跑」的整段时间里，token 一直留在地址栏——
+      // 进浏览器历史、进截图、页面若外链还会进 Referer，而这恰恰是抹它的全部理由。
+      // 单元测试看不见这条：它们直接调 getServerInvokeToken()，天然"调用过了"。
+      // 由主会话 B4 在真实浏览器里发现（页面加载完 URL 里 token 仍在、sessionStorage 为空）。
+      getServerInvokeToken()
       configureHostInvoke({ loader: async () => httpInvoke, platform: host.platform })
       return
     case 'static':

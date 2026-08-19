@@ -9,7 +9,8 @@
 //   2. 平台取自握手、**原样**传给 core，没有被装配层映射成三选一；
 //   3. 桥先于 hydrate 到位（恢复出来的未完成 run 是工具可能执行的第一个时点）；
 //   4. 有桥之后 runtime='server' 的工具整类进入模型清单，而**模型凭据仍不可用**——
-//      server 版凭据宿主与模型代理是 M 线，本卡不许顺手接上。
+//      server 版凭据宿主与模型代理是 M 线，本卡不许顺手接上；
+//   5. **装配那一刻就把 token 从地址栏收走**，不等第一条请求（B4 在真实浏览器里发现的缺陷）。
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
@@ -85,8 +86,12 @@ vi.mock('./performanceDiagnostics', () => ({
 
 // 本文件不碰 globalThis.isTauri（jsdom 下天然为 false），但仍确认一次：server 宿主这条路上
 // 没有任何一步依赖它，宿主态完全由 resolveHost 说了算。
+/** 装配前先把 token 放进地址栏，模拟用户点开终端打印的那条链接。 */
+const TOKEN_IN_URL = 'b4-regression-token'
+
 beforeAll(() => {
   expect((globalThis as { isTauri?: boolean }).isTauri).toBeUndefined()
+  window.history.replaceState(null, '', `/?token=${TOKEN_IN_URL}&keep=1#/frag`)
 })
 
 afterAll(async () => {
@@ -147,5 +152,19 @@ describe('main entry · server 宿主的装配分流（B3）', () => {
     expect(createUnavailableModelCredentialHost).toHaveBeenCalled()
     expect(createTauriModelCredentialHost).not.toHaveBeenCalled()
     expect(createTauriModelFetch).not.toHaveBeenCalled()
+  })
+
+  // B4 在真实浏览器里发现的缺陷的回归用例：token 的收取原本只发生在 serverInvoke 的请求路径上，
+  // 于是「页面打开了、但一条命令都还没跑」的整段时间里 token 一直留在地址栏——进浏览器历史、
+  // 进截图，页面若外链还会进 Referer，而那正是要抹掉它的全部理由。
+  // **这条只能在装配层断言**：单元测试直接调 getServerInvokeToken() 时它天然"被调用过了"，
+  // 看不见「谁在什么时候调它」。
+  it('装配那一刻就把 token 从地址栏收走，不等第一条请求', () => {
+    expect(sessionStorage.getItem('web-agent:server-invoke-token')).toBe(TOKEN_IN_URL)
+    expect(window.location.search).not.toContain('token')
+    // 抹的只能是 token 那一个参数：粗暴 replaceState(null,'','/') 会把带 hash 路由或其它
+    // query 参数进来的用户踢回首页。
+    expect(window.location.search).toContain('keep=1')
+    expect(window.location.hash).toBe('#/frag')
   })
 })
