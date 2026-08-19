@@ -67,13 +67,17 @@ describe('取消真的中断上游', () => {
 })
 
 describe('两条 cancel 命令', () => {
-  it('registrar 只交出这两条', () => {
+  it('registrar 交出这两条与三条凭证命令，请求转发仍然缺席', () => {
     // 请求转发不在路由表里（它的响应是一条流，`/api/invoke/:command` 的返回值装不下），
     // 缺席 = 分发层报「尚未实现」，那是准确的答复。详见 index.ts 的文件头。
+    // 三条凭证命令（M4）没有反向通道，返回值就是一个 `{ configured, source }`，所以它们在表里。
     const table = createModelRoutes({})
     expect(Object.keys(table).sort()).toEqual([
       'cancel_model_chat_completions',
       'cancel_model_provider_request',
+      'model_credential_delete',
+      'model_credential_set',
+      'model_credential_status',
     ])
   })
 

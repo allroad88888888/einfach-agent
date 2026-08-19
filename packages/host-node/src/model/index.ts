@@ -11,11 +11,12 @@
 //   requestRegistry.ts    ← model_request_registry.rs 在飞请求表（取消的落点）
 //   credentialSection.ts  ← model_credential_config.rs `modelCredentials` 段视图
 //   credentials.ts        ← model_credentials.rs     (供应商,作用域)→配置键→明文 Key（读取半边）
+//   credentialCommands.ts ← model_credentials.rs     三条凭证命令（写入半边 + 入参收窄）
 //   upstreamRequest.ts    ← model_proxy_http.rs      真正那一次 HTTP 往返 + 流式透传
 //   forwardRequest.ts     ← model_proxy.rs           编排
 //   cancelCommands.ts     ← model_proxy.rs 的两条 cancel 命令
 //
-// ═══ 本域路由表里为什么只有两条命令 ═══
+// ═══ 本域路由表里为什么只有五条命令 ═══
 // commandNames.ts 给 model 域登记了七条。它们分三批，落在三张卡上：
 //
 //   ① `model_provider_request` / `model_chat_completions` —— **故意不在路由表里**。
@@ -33,31 +34,42 @@
 //   ② `cancel_model_provider_request` / `cancel_model_chat_completions` —— 就在下面。它们是
 //      「一次调用一个布尔值」，`HostInvoke` 的签名装得下。
 //
-//   ③ `model_credential_status` / `_set` / `_delete` —— **归 M4**（issue 树的改动面明写「host-node
-//      侧补这三个命令」）。本卡只落 Key 的**读取**半边，因为转发要用；写入半边连同三条命令由 M4
-//      加在 credentials.ts 已经导出的 `credentialConfigKey` / `normalizeApiKey` 之上。
-//      两张卡各写一份绑定表必然分叉，所以缝留在那两个导出上。
+//   ③ `model_credential_status` / `_set` / `_delete` —— 也在下面（M4 落的）。它们**没有**反向通道，
+//      返回值就是一个 `{ configured, source }`，`HostInvoke` 的签名装得下。写入半边建在 M1 留的
+//      那道缝上：credentialCommands.ts 复用 credentials.ts 导出的 `credentialConfigKey` /
+//      `normalizeApiKey`，绑定表全域只有那一份——两张卡各写一份必然分叉。
 //
 // ═══ 这一域的红线 ═══
-// 用户的模型 API Key 只在两处出现：`credentials.ts` 里从配置读出来的那个局部变量，和
-// `upstreamRequest.ts` 里的 Authorization 头。它不进返回值、不进错误文案、不进日志——本域**全域
-// 没有任何日志语句**，这是有意的。`forwardRequest.test.ts` 里有一条用例正面钉这件事。
+// 用户的模型 API Key 只在三处出现：`credentials.ts` 里从配置读出来的那个局部变量、
+// `upstreamRequest.ts` 里的 Authorization 头，以及 `model_credential_set` 那一次落盘的入参。
+// 它不进返回值、不进错误文案、不进日志——本域**全域没有任何日志语句**，这是有意的。
+// `forwardRequest.test.ts` 与 `credentialCommands.test.ts` 各有一条用例正面钉这件事。
 
 import { createCancelModelRequestHandler } from './cancelCommands'
+import {
+  createModelCredentialDeleteHandler,
+  createModelCredentialSetHandler,
+  createModelCredentialStatusHandler,
+} from './credentialCommands'
 import type { NodeHostInvokeOptions } from '../hostOptions'
 import type { NodeHostRouteTable } from '../routeTable'
 
-export function createModelRoutes(_options: NodeHostInvokeOptions): NodeHostRouteTable {
+export function createModelRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
   return {
     // 两条命令在 Rust 侧是逐字相同的两个函数，共用同一张在飞请求表。Node 侧同样：
     // 默认参数就是进程级共享的 `modelRequestRegistry`，而 `forwardProviderRequest` 用的也是它。
     cancel_model_provider_request: createCancelModelRequestHandler('cancel_model_provider_request'),
     cancel_model_chat_completions: createCancelModelRequestHandler('cancel_model_chat_completions'),
+    // 凭证三条要 `options`（配置文件路径从 homeDir 槽解析），取消两条不要——这是本域第一次用到
+    // 装配槽，参数名也因此从 `_options` 改回 `options`。
+    model_credential_status: createModelCredentialStatusHandler(options),
+    model_credential_set: createModelCredentialSetHandler(options),
+    model_credential_delete: createModelCredentialDeleteHandler(options),
   }
 }
 
 // M2（server 的流式模型端点）要用的东西从这里出去。`createNodeHostInvoke` 之外还有一条调用路径，
-// 是本域与其余十几个域**唯一**的形状差别，理由见上面「本域路由表里为什么只有两条命令」。
+// 是本域与其余十几个域**唯一**的形状差别，理由见上面「本域路由表里为什么只有五条命令」。
 export { forwardProviderRequest } from './forwardRequest'
 export type { ForwardProviderRequestDeps, ForwardedModelResponse } from './forwardRequest'
 export { ModelProxyStreamError, ModelRequestCancelledError } from './errors'

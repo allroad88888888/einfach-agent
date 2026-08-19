@@ -130,7 +130,7 @@ describe('main entry · server 宿主的装配分流（B3）', () => {
     expect(probe.atPersistenceHydrate).toBe(true)
   })
 
-  it('本机工具整类可见，而模型凭据仍走 unavailable（M 线未落地）', async () => {
+  it('本机工具整类可见，模型凭据走 server 版而不是桌面原生层', async () => {
     const { defaultCore } = await import('@web-agent/core')
     const { hasHostBridge } = await import('@web-agent/core/runtime/hostBridge')
     const { buildToolManifestText } = await import('@web-agent/core/runtime/toolManifest')
@@ -148,8 +148,11 @@ describe('main entry · server 宿主的装配分流（B3）', () => {
     expect(serverTools.length).toBeGreaterThan(0)
     for (const name of serverTools) expect(manifest).toContain(`· ${name} [server]`)
 
-    // 真实 Key 只由桌面原生层读：server 宿主既不接原生代理，也不接能写 Key 的凭据宿主。
-    expect(createUnavailableModelCredentialHost).toHaveBeenCalled()
+    // M4 之前 server 宿主与 static 同待遇（unavailable）。现在它有自己的凭据宿主，但**纪律没有
+    // 松动**：Key 仍由宿主读写，浏览器只是把它经 `/api/invoke/model_credential_*` 交给本机 Node
+    // 后端，三条命令的返回体只有 `{configured, source}`（M4 有正面用例钉死不回传 Key）。
+    // 这里钉的是「没有退回 unavailable，也没有误用桌面原生层那条通路」。
+    expect(createUnavailableModelCredentialHost).not.toHaveBeenCalled()
     expect(createTauriModelCredentialHost).not.toHaveBeenCalled()
     expect(createTauriModelFetch).not.toHaveBeenCalled()
   })

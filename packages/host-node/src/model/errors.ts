@@ -28,6 +28,13 @@ export const MODEL_ERROR = {
   upstreamFailed: '模型服务请求失败',
   /** model_credentials.rs 的 `credential_binding` */
   scopeNotAllowed: '模型凭证作用域未获允许',
+  /**
+   * model_credentials.rs 的 `model_credential_set`（`normalized_key` 返回 None）。
+   *
+   * 只说「格式无效」，**不回显那个值**、也不说它是空白还是超长——回显等于把用户刚敲进来的
+   * Key 原样写进一条会被记录、被展示的消息里。
+   */
+  invalidApiKey: '模型 API Key 格式无效',
   /** model_credential_config.rs 的 `decode_credentials` */
   invalidConfigFormat: '模型配置文件格式无效',
 } as const
