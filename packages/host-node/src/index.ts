@@ -41,3 +41,30 @@ export type {
   WorkspaceChangeContextArgs,
   WorkspacePatchOperationArgs,
 } from './commandPayloads'
+
+// events 域：宿主的**反向通道**。本域没有命令，不进路由表、不在 commandNames.ts 的 28 条里——
+// `HostInvoke` 的 `(cmd, args) => Promise<T>` 只能表达「我问、宿主答」，装不下宿主主动发生的事
+// （MCP 子进程自己退了、它的工具清单变了）。它是与 createNodeHostInvoke 并列的第二条导出面，
+// 设计理由见 src/events/index.ts。
+export {
+  createHostEventBus,
+  HOST_EVENT_NAMES,
+  HOST_EVENT_PAYLOAD_KEYS,
+  isHostEventName,
+} from './events'
+export type {
+  HostEventBus,
+  HostEventBusOptions,
+  HostEventErrorReporter,
+  HostEventHandler,
+  HostEventName,
+  HostEventPayload,
+  HostEventPayloadMap,
+  HostEventSink,
+  HostEventSource,
+  JsonPrimitive,
+  JsonRecord,
+  JsonValue,
+  McpStdioClosePayload,
+  McpStdioToolsChangedPayload,
+} from './events'
