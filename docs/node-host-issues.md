@@ -878,7 +878,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   合并后两域的测试都要仍然全绿，且 `computeChangeSummary` 的用例合并去重而不是删掉一半。
   跑 `pnpm exec vitest run packages/host-node` + `node scripts/check-boundaries.js`
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### W8 · 文件写：base64 二进制写入
 
@@ -903,7 +903,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `workspace_delete.rs`（461 行）。删除是不可逆动作，**必须先进 change journal
   再执行**，否则 `revert_workspace_change` 拿不回来。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### W11 · 复制与移动路径
 
@@ -912,7 +912,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `workspace_path_ops.rs`：源/目标双向 confinement、目标已存在的处理、
   进 change journal。跑该目录 vitest
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### W12 · patch：路径解析与 stage
 
