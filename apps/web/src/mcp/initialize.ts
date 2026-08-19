@@ -15,10 +15,12 @@ import {
 } from './commands'
 import { mcpServerConfigsAtom } from './state'
 import { mayLaunchMcpServer, stdioCommandLine } from './stdioLaunchConsent'
+import { createBrowserMcpConfigStorage, type McpConfigStorage } from './persistence'
 import { createServerMcpConfigStorage } from './serverMcpConfigStorage'
 import { createServerStdioMcpConnector } from './serverStdioConnector'
-import { createDesktopMcpConfigStorage } from './tauriMcpConfigStorage'
+import { createTauriMcpConfigStorage } from './tauriMcpConfigStorage'
 import { createTauriStdioMcpConnector } from './tauriStdioConnector'
+import { createToolNameCacheStorageForHost } from './toolNameCacheStorage'
 import type { ResolvedHost } from '../host/resolveHost'
 import { wireMcpToolProbes } from './toolProbeWiring'
 
@@ -43,11 +45,35 @@ function isMcpLaunchConsented(serverId: string, commandLine: string): boolean {
 }
 
 /**
+ * 服务配置落在哪：三态各走各的通道，判据只有递进来的这一个 `host`。
+ *
+ * 【为什么不再调 `createDesktopMcpConfigStorage()`】（C7）那个函数内部自己 `isTauri()` 又探
+ * 一次，于是装配点上仍然有第二处宿主探测。它今天答得对纯属巧合——`resolveHost()` 的 tauri
+ * 那一支读的正是同一个全局量；但只要判据分成两处，两处结论不同时就没有人会报错，只会静默
+ * 走岔。这里改成显式三分支，桌面/浏览器两条实现原样复用，行为逐态相同。
+ */
+function createConfigStorageForHost(host: ResolvedHost): McpConfigStorage {
+  switch (host.kind) {
+    case 'tauri':
+      return createTauriMcpConfigStorage()
+    case 'server':
+      return createServerMcpConfigStorage()
+    case 'static':
+      return createBrowserMcpConfigStorage()
+  }
+}
+
+/**
  * Installs the application MCP manager when the settings UI first needs it.
  *
  * 【为什么收 host 而不是自己 `isTauri()`】宿主态的唯一权威是 `resolveHost()`——server 宿主要经
  * `GET /api/health` 握手才认得出来，本地探测答不了。再探一次的后果不是报错，是两处结论不同时
  * 静默走岔：连接器按「不是桌面」不给 stdio，而配置存储按别的判据去写桌面配置文件。
+ *
+ * 【这条纪律管到叶子】（C7）「装配点不自己探」不等于「装配点调的东西不自己探」。服务配置与
+ * 工具名缓存这两份状态必须落到同一处，而它们此前各由一个内部 `isTauri()` 的工厂选通道——
+ * server 宿主下前者进 `~/.webAgent/config.json`、后者进浏览器 localStorage，分家且不报错。
+ * 现在两者都由本函数按同一个 `host` 分派，全流程只剩 `resolveHost()` 一处探测。
  */
 export function initializeMcpSettings(host: ResolvedHost): void {
   if (isMcpSettingsConfigured()) return
@@ -87,7 +113,9 @@ export function initializeMcpSettings(host: ResolvedHost): void {
   let syncPlaceholders: (() => void) | undefined
   configureMcpSettings({
     manager,
-    storage: serverHost ? createServerMcpConfigStorage() : createDesktopMcpConfigStorage(),
+    storage: createConfigStorageForHost(host),
+    // 工具名缓存与上面那份服务配置**同源同宿主**（C7）：同一个 `host` 决定两者，落在同一处。
+    toolNameCacheStorage: createToolNameCacheStorageForHost(host),
     onToolNameCacheChanged: () => syncPlaceholders?.(),
     // 这两个 flag 回答的是两个不同问题（C3，见 types.ts 的 McpSettingsCapabilities 注释）：
     // 能不能在本机起子进程 / 凭据能不能落盘。它们**恰好**在两个宿主上同时为真，不是同一件事——

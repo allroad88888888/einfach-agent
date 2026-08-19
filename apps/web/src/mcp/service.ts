@@ -14,7 +14,7 @@ import { createMcpServerConnector } from './serverConnector'
 import { createMcpServerOperationQueue } from './serverOperationQueue'
 import { mayLaunchMcpServer } from './stdioLaunchConsent'
 import {
-  createDesktopToolNameCacheStorage,
+  createBrowserToolNameCacheStorage,
   type McpToolNameCacheStorage,
 } from './toolNameCacheStorage'
 import { createMcpToolNameCacheProjection } from './toolNameCacheProjection'
@@ -49,7 +49,12 @@ export interface CreateMcpSettingsServiceOptions {
   store: Store
   manager: McpSettingsManager
   storage: McpConfigStorage
-  /** 安装探测写工具名清单缓存的通道；默认桌面优先，浏览器/测试自动降级。 */
+  /**
+   * 安装探测写工具名清单缓存的通道。**默认是浏览器那条，不是"按宿主挑一条"**（C7）：宿主态
+   * 的唯一权威是 `resolveHost()`，而 service 拿不到它，只有装配点递下来的东西
+   * （`initialize.ts` 的 `createToolNameCacheStorageForHost(host)`）。判据见
+   * service.defaultStorage.test.ts。
+   */
   toolNameCacheStorage?: McpToolNameCacheStorage
   capabilities?: Partial<McpSettingsCapabilities>
   createId?: () => string
@@ -97,7 +102,7 @@ export function createMcpSettingsService({
   store,
   manager,
   storage,
-  toolNameCacheStorage = createDesktopToolNameCacheStorage(),
+  toolNameCacheStorage = createBrowserToolNameCacheStorage(),
   capabilities: requestedCapabilities,
   createId = randomServerId,
   onToolNameCacheChanged,

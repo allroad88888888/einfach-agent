@@ -1,21 +1,13 @@
+// 工具名缓存的三条**本地**通道：内存（测试/降级）、任意 StorageLike、浏览器 localStorage。
+// 走配置文件的那两条（Tauri / server）以及"按宿主选哪一条"在 toolNameCacheStorage.host.test.ts。
+
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { invoke, isTauri } from '@tauri-apps/api/core'
 import { setToolNameCacheEntry, type McpToolNameCache } from './toolNameCache'
 import {
   createBrowserToolNameCacheStorage,
-  createDesktopToolNameCacheStorage,
   createMemoryToolNameCacheStorage,
-  createTauriToolNameCacheStorage,
   createToolNameCacheStorage,
 } from './toolNameCacheStorage'
-
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
-  isTauri: vi.fn(),
-}))
-
-const invokeMock = vi.mocked(invoke)
-const isTauriMock = vi.mocked(isTauri)
 
 function sampleCache(): McpToolNameCache {
   return setToolNameCacheEntry({}, 'server-a', {
@@ -114,102 +106,5 @@ describe('createBrowserToolNameCacheStorage', () => {
     } finally {
       if (descriptor) Object.defineProperty(window, 'localStorage', descriptor)
     }
-  })
-})
-
-describe('createTauriToolNameCacheStorage', () => {
-  beforeEach(() => {
-    invokeMock.mockReset()
-  })
-
-  it('reads the toolNameCache key out of the mcp config section', async () => {
-    invokeMock.mockResolvedValueOnce({ toolNameCache: sampleCache() })
-    const storage = createTauriToolNameCacheStorage()
-
-    const loaded = await storage.load()
-
-    expect(loaded).toEqual(sampleCache())
-    expect(invokeMock).toHaveBeenCalledWith('mcp_config_read')
-  })
-
-  it('treats a missing section or missing key as an empty cache', async () => {
-    invokeMock.mockResolvedValueOnce({})
-    const storage = createTauriToolNameCacheStorage()
-
-    expect(await storage.load()).toEqual({})
-  })
-
-  it('sanitizes whatever the config file reports the same way the in-memory path does', async () => {
-    invokeMock.mockResolvedValueOnce({
-      toolNameCache: {
-        'server-a': {
-          tools: [{ name: 'ok' }, { missing: 'name' }],
-          toolCount: 1,
-          cachedAt: 1,
-          probeStatus: 'success',
-        },
-        'server-b': { tools: [], toolCount: 0, cachedAt: 1, probeStatus: 'not-a-real-status' },
-      },
-    })
-    const storage = createTauriToolNameCacheStorage()
-
-    const loaded = await storage.load()
-
-    expect(loaded['server-a']?.tools).toEqual([{ name: 'ok', description: '' }])
-    expect(loaded['server-b']).toBeUndefined()
-  })
-
-  it('writes the sanitized cache under the toolNameCache key via mcp_config_write', async () => {
-    invokeMock.mockResolvedValueOnce(undefined)
-    const storage = createTauriToolNameCacheStorage()
-
-    await storage.save(sampleCache())
-
-    expect(invokeMock).toHaveBeenCalledWith('mcp_config_write', {
-      patch: { toolNameCache: sampleCache() },
-    })
-  })
-
-  it('degrades a failed read into a normalized error', async () => {
-    invokeMock.mockRejectedValueOnce('磁盘不可读')
-    const storage = createTauriToolNameCacheStorage()
-
-    await expect(storage.load()).rejects.toThrow('无法读取 MCP 工具名缓存：磁盘不可读')
-  })
-
-  it('degrades a failed write into a normalized error', async () => {
-    invokeMock.mockRejectedValueOnce('mcp 配置段格式无效')
-    const storage = createTauriToolNameCacheStorage()
-
-    await expect(storage.save(sampleCache())).rejects.toThrow(
-      '无法保存 MCP 工具名缓存：mcp 配置段格式无效',
-    )
-  })
-})
-
-describe('createDesktopToolNameCacheStorage', () => {
-  beforeEach(() => {
-    invokeMock.mockReset()
-    isTauriMock.mockReset()
-    window.localStorage.clear()
-  })
-
-  it('falls back to the browser implementation when no Tauri host is present', async () => {
-    isTauriMock.mockReturnValue(false)
-    const storage = createDesktopToolNameCacheStorage()
-
-    await storage.save(sampleCache())
-
-    expect(await storage.load()).toEqual(sampleCache())
-    expect(invokeMock).not.toHaveBeenCalled()
-  })
-
-  it('uses the Tauri config command channel when a Tauri host is present', async () => {
-    isTauriMock.mockReturnValue(true)
-    invokeMock.mockResolvedValueOnce({ toolNameCache: sampleCache() })
-    const storage = createDesktopToolNameCacheStorage()
-
-    expect(await storage.load()).toEqual(sampleCache())
-    expect(invokeMock).toHaveBeenCalledWith('mcp_config_read')
   })
 })
