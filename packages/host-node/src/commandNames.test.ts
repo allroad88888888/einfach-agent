@@ -35,15 +35,37 @@ function commandsRegisteredByDesktopHost(): string[] {
   return [...block.matchAll(/(\w+)::(\w+)\s*,/g)].map((match) => match[2])
 }
 
+// 没有 Rust 对应物的域：桌面侧的等价能力由 Tauri **插件**提供，从来不在 lib.rs 的
+// `generate_handler!` 里，所以它们不参与上面那份逐字比对。**排除的是整域、且要点名**——
+// 换成「放宽比对口径」（比如只查子集）的话，Rust 侧真的新增一条而这里没跟上时就再也没人报信，
+// 而那正是这份测试存在的唯一理由。
+const DOMAINS_WITHOUT_DESKTOP_COMMANDS = ['sqlite'] as const
+
+function commandsWithDesktopCounterpart(): string[] {
+  return Object.entries(NODE_HOST_COMMANDS_BY_DOMAIN)
+    .filter(([domain]) => !(DOMAINS_WITHOUT_DESKTOP_COMMANDS as readonly string[]).includes(domain))
+    .flatMap(([, commands]) => [...commands])
+}
+
 describe('命令全集', () => {
-  it('与桌面宿主登记的命令逐字一致', () => {
+  it('与桌面宿主登记的命令逐字一致（sqlite 域除外，它没有 Rust 对应物）', () => {
     const registered = commandsRegisteredByDesktopHost()
-    expect([...registered].sort()).toEqual([...NODE_HOST_COMMAND_NAMES].sort())
+    expect([...registered].sort()).toEqual([...commandsWithDesktopCounterpart()].sort())
   })
 
-  it('恰好 28 条，且没有重复', () => {
-    expect(NODE_HOST_COMMAND_NAMES).toHaveLength(28)
-    expect(new Set(NODE_HOST_COMMAND_NAMES).size).toBe(28)
+  it('sqlite 域是 Node 独有的两条，且确实不在桌面宿主的登记列表里', () => {
+    // 反向钉一次：万一哪天 Rust 侧真的加了同名命令，上一条用例只会说「多了两条」，
+    // 而病因（两个宿主对同一个名字各有一份实现）要靠这条说出来。
+    expect(NODE_HOST_COMMANDS_BY_DOMAIN.sqlite).toEqual(['sqlite_execute', 'sqlite_select'])
+    const registered = new Set(commandsRegisteredByDesktopHost())
+    for (const command of NODE_HOST_COMMANDS_BY_DOMAIN.sqlite) {
+      expect(registered.has(command)).toBe(false)
+    }
+  })
+
+  it('恰好 30 条（28 条对应 Rust 命令 + sqlite 域 2 条），且没有重复', () => {
+    expect(NODE_HOST_COMMAND_NAMES).toHaveLength(30)
+    expect(new Set(NODE_HOST_COMMAND_NAMES).size).toBe(30)
   })
 
   it('域之间不共享命令名——一条命令只能有一个实现目录', () => {

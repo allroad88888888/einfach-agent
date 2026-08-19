@@ -76,3 +76,15 @@ export type {
 export { forwardProviderRequest, modelRequestRegistry } from './model'
 export { ModelProxyStreamError, ModelRequestCancelledError } from './model'
 export type { ForwardedModelResponse } from './model'
+
+// sqlite 域：Node 侧的 SQL 执行面，实现 core 的 `SqlExecutor`（P1 的 port）。
+// **Rust 侧没有对应命令**——桌面走 `@tauri-apps/plugin-sql`，不在 `generate_handler!` 列表里，
+// 所以这两条命令名是 Node 侧新定的（见 commandNames.ts 的 `DOMAINS_WITHOUT_DESKTOP_COMMANDS`）。
+export {
+  closeSqliteConnections,
+  createNodeSqlExecutorLoader,
+  isSqliteConnectionName,
+  resolveSqliteDatabasePath,
+  SQLITE_CONNECTION_NAMES,
+} from './sqlite'
+export type { SqliteConnectionName, SqliteRoutesOptions } from './sqlite'

@@ -16,6 +16,13 @@
 // 或干脆无参，大小写无差别，**唯二的多词参数**是 `cancel_model_provider_request` 与
 // `cancel_model_chat_completions` 的 `requestId` —— 它们是 camelCase，是全表仅有的两个例外。
 //
+// **没有 Rust 对应物的命令一律 camelCase**（当前只有 sqlite 域两条）。上面那批 snake_case 顶层键
+// 不是本仓库的偏好，是 `rename_all = "snake_case"` 这个属性留下的痕迹——一条 Rust 侧根本不存在的
+// 命令没有那个约束，而整个仓库的嵌套载荷、TS 代码与 `SqlExecutor` 契约本身（`rowsAffected`）都是
+// camelCase。跟着 Rust 的痕迹走只会让「为什么这里是 snake_case」永远答不出理由。
+// （sqlite 那两条的三个键 `connection` / `sql` / `params` 恰好都是单词，大小写在它们身上看不出
+// 差别；这条规矩是写给后面往这一域加多词参数的人的。）
+//
 // 嵌套载荷（`input` 内部、`change_context` 内部、`operations[]` 元素内部）的字段名由 Rust 侧
 // struct 自己的 `#[serde(rename_all = "camelCase")]` 决定，**与命令的 rename_all 无关**，
 // 一律 camelCase。最容易踩的是 `write_workspace_file`：顶层键 `change_context` 是 snake_case，
@@ -36,6 +43,7 @@ import type {
   WorkspaceChangeContextArgs,
   WorkspacePatchOperationArgs,
 } from './commandPayloads'
+import type { SqliteConnectionName } from './sqlite/connectionNames'
 
 /**
  * 命令名 → 入参形状。`get_user_home_dir` / `mcp_config_read` 无参，写成 `undefined`：
@@ -262,6 +270,19 @@ export interface NodeHostCommandArgs {
    * 原因：那会让「主目录是什么」有两个权威，而两处漂移时只表现为 skills 扫不到。
    */
   get_user_home_dir: undefined
+
+  // ── sqlite ── **没有 Rust 对应物**（桌面侧走 @tauri-apps/plugin-sql 这个 Tauri 插件）。
+  //    契约来源：core 的 state/persistence/sqlTransport.ts（`SqlExecutor`）；调用方是
+  //    packages/persistence-sqlite（P3）与 packages/observability-sqlite（P4）。
+  //    两条按「语句有没有返回行」分而不是按读写分——PRAGMA 会回一行当前值，必须走 select。
+  //    `connection` 是逻辑连接名（同一个库文件上的两条独立连接，见 sqlite/connectionNames.ts）；
+  //    `params` 是**位置数组**，对应 `$1`、`$2` …（沿用 sqlx 编号，仓库现有 SQL 全是这一种），
+  //    个数必须与占位符对得上：少传在底层会被静默绑成 NULL，一次查询于是安静地返回空集。
+  //    刻意**没有** batch / 事务形态的兄弟命令，判据见 sqlite/statementShape.ts 的三条。
+  /** 执行一条不取行的语句，返回 `{ rowsAffected: number }`。 */
+  sqlite_execute: { connection: SqliteConnectionName; sql: string; params?: unknown[] }
+  /** 执行一条取行的语句（含 PRAGMA），返回行对象数组。 */
+  sqlite_select: { connection: SqliteConnectionName; sql: string; params?: unknown[] }
 }
 
 // 编译期穷举：本表与 commandNames.ts 的全集必须**双向**一致。

@@ -98,6 +98,8 @@ describe('createNodeHostInvoke', () => {
         'mcp_config_read',
         'mcp_config_write',
         'get_user_home_dir',
+        'sqlite_execute',
+        'sqlite_select',
       ])
     } finally {
       if (savedOverride === undefined) delete process.env.WEB_AGENT_CONFIG_DIR

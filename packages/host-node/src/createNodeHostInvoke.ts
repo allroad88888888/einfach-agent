@@ -62,6 +62,7 @@ import { createChangeRoutes } from './workspace/change'
 import { createDeleteRoutes } from './workspace/delete'
 import { createMcpRoutes } from './mcp'
 import { createModelRoutes } from './model'
+import { createSqliteRoutes } from './sqlite'
 import { createGitRoutes } from './workspace/git'
 import { createPatchRoutes } from './workspace/patch'
 import { createPathOpsRoutes } from './workspace/pathOps'
@@ -116,7 +117,8 @@ export class NodeHostCommandError extends Error {
 function createRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
   return {
     // model 域只挂两条 cancel——转发本身是流式，不走 `(cmd,args)=>Promise<T>`，由 M2 的 SSE
-    // 端点直接调 forwardProviderRequest（见 model/index.ts）。28 条命令至此全部落地。
+    // 端点直接调 forwardProviderRequest（见 model/index.ts）。sqlite 域是 Node 侧独有（Rust 走
+    // Tauri 插件，不在 `generate_handler!` 列表里），命令名由 P2 新定。30 条命令全部落地。
     ...createReadRoutes(options),
     ...createWriteRoutes(options),
     ...createPatchRoutes(options),
@@ -129,6 +131,7 @@ function createRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
     ...createShellRoutes(options),
     ...createMcpRoutes(options),
     ...createModelRoutes(options),
+    ...createSqliteRoutes(options),
     ...createConfigRoutes(options),
   }
 }

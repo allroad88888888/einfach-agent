@@ -10,6 +10,11 @@
 // 登记列表，防止两边悄悄漂移——Rust 侧新增一条而这里没登记，后果是 Node 宿主永远不知道该
 // 实现它，而症状只是某个功能「在浏览器版里没反应」。
 //
+// **`sqlite` 域是这条对照之外的**（P2 新增，全表因此是 30 条）：桌面侧的会话与 trace 持久化走
+// `@tauri-apps/plugin-sql`，那是 Tauri **插件**暴露的命令，从来不在 lib.rs 的 `generate_handler!`
+// 里。它们没有 Rust 对应物可比对，所以测试把这一域从两边比对里排除掉，而不是放宽比对口径——
+// 放宽之后 Rust 侧真的漂移了也不会有人知道。将来再有这类「Node 独有」的域，同样在测试里点名。
+//
 // 为什么名字要单独成一张穷举表，而不是散在各域实现里：
 //   · 分发要能区分「这条命令还没实现」和「这个名字根本不存在」。前者是施工进度，调用方等
 //     后续卡落地即可；后者是调用方拼错了名字或用了废弃名，永远等不到。只有一张穷举表能把
@@ -26,17 +31,13 @@
  * `src/workspace/read/`），所以这张表同时也是目录结构的规格说明；后续卡新建域目录时按这里的
  * 键来建，不要各自发挥。
  *
- * 有三个域在这张表里**没有命令**，因为它们不对应 `#[tauri::command]`，故不出现在下面：
+ * 有两个域在这张表里**没有命令**，因为它们不对应任何一次「问一句、答一个 JSON」的调用：
  *   · `workspace/common` —— 工作区禁闭（confinement）与变更日志（change journal）的共用实现，
  *     被 read/write/patch/delete/pathOps 等域共同依赖。它是零件，不是命令。
  *   · `events` —— 桌面侧的两种「反向通道」在 Node 宿主里的替身：`model_provider_request` /
  *     `model_chat_completions` 的 `events: Channel<...>` 入参，以及 `mcp_connect` 之后 Rust 侧
  *     用 `emit` 推、前端用 `@tauri-apps/api/event` 的 `listen` 收的 stdio 生命周期事件。
  *     两者都不是「一次调用一个 JSON 返回值」，`HostInvoke` 的签名装不下，需要独立的传输设计。
- *   · `sqlite` —— 桌面侧的会话/trace 持久化走 `@tauri-apps/plugin-sql`（`packages/
- *     persistence-sqlite`、`packages/observability-sqlite`），那是 Tauri **插件**暴露的命令，
- *     不在本仓库的 `#[tauri::command]` 列表里。Node 宿主要给出等价能力，命令名由那张卡自定，
- *     定下来后必须回来登记进本表。
  */
 export const NODE_HOST_COMMANDS_BY_DOMAIN = {
   // 工作区读取面。四条命令共用同一套路径禁闭（`workspace_root` + `allow_external_paths`）。
@@ -85,14 +86,22 @@ export const NODE_HOST_COMMANDS_BY_DOMAIN = {
   // 与 `mcp` 域的子进程管理是两件事（Rust 侧同样分成 mcp_config.rs 与 mcp.rs）。
   // get_user_home_dir 归这里：配置文件与用户级 skills 目录都以主目录为根。
   'config': ['mcp_config_read', 'mcp_config_write', 'get_user_home_dir'],
+  // **本仓库 `#[tauri::command]` 之外新增的一域**（P2）：桌面侧的会话与 trace 持久化走
+  // `@tauri-apps/plugin-sql`（`packages/persistence-sqlite`、`packages/observability-sqlite`），
+  // 那是 Tauri 插件暴露的命令。Node 宿主给出等价能力，命令名由 P2 自定并登记于此。
+  // 两条命令与 P1 的 `SqlExecutor` 一一对应，按「语句有没有返回行」分而不是按读写分——
+  // PRAGMA 会回一行当前值，因此走 `sqlite_select`。刻意**没有** `sqlite_execute_batch`：
+  // 一次调用 = 一条自包含语句，判据见 core 的 state/persistence/sqlTransport.ts 文件头。
+  'sqlite': ['sqlite_execute', 'sqlite_select'],
 } as const
 
 /** 域名 = `src/` 下的实现目录名。 */
 export type NodeHostCommandDomain = keyof typeof NODE_HOST_COMMANDS_BY_DOMAIN
 
 /**
- * 28 条命令名的字面量联合。**从表里推导而不是手写第二份**——手写会立刻出现「表里有、类型里
- * 没有」的第二权威，而两份表不一致时 TypeScript 一声不吭。
+ * 30 条命令名的字面量联合（28 条对应 Rust 命令 + sqlite 域 2 条）。**从表里推导而不是手写
+ * 第二份**——手写会立刻出现「表里有、类型里没有」的第二权威，而两份表不一致时 TypeScript
+ * 一声不吭。
  */
 export type NodeHostCommandName =
   (typeof NODE_HOST_COMMANDS_BY_DOMAIN)[NodeHostCommandDomain][number]
