@@ -26,7 +26,7 @@ W  host-node 真逻辑区           W1..W15 → W16/W17 对拍
 S  server HTTP 外壳             S1 → S2/S3/S5 → S4
 B  前端 server 宿主装配          B1 → B2 → B3 → B4 ★浏览器 fs/shell 可用
 M  模型代理                     M1 → M2/M4 → M3 → M5 ★浏览器完整对话
-C  MCP 与事件通道               C1/C2 → C3 → C4
+C  MCP 与事件通道               C1/C2 → C3 → C4 → C5
 P  持久化收敛                   P1 → P2 → P3 → P4
 D  分发                        D1 → D2 → D3 → D4
 T  Tauri 退成套壳               T1 → T2 → T3 → T4
@@ -36,7 +36,7 @@ T  Tauri 退成套壳               T1 → T2 → T3 → T4
 **MVP 路径 = H + N + W1–W15 + S + B + M**（约 46 卡）。到 M5 浏览器版即可用；
 C/P/D/T 是增强与收尾，可后置。
 
-全树 67 卡（H 线在执行中由 6 张增至 12 张，S 线因 N3 交回的 platform 阻断项增至 5 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
+全树 68 卡（H 线在执行中由 6 张增至 12 张，S 线因 N3 交回的 platform 阻断项增至 5 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
 H4b 从 H4 里拆出的总闸、H4c 验收漏扫 apps 面留下的回归、H4d 拆树后新增文件带来的缺口、
 H4e 总闸改名的下游收尾）。
 
@@ -138,6 +138,18 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
 | 14 | `workspace_write_compaction.rs` 的 `compact_subagent_index` | 重写每条记录走 `serde_json::to_string`，而 `Cargo.toml` 的 `serde_json` **没开 `preserve_order`**——`Value::Object` 底层是 `BTreeMap`，字段按 key 字节序**重排**，不保留原始书写顺序。压实因此会静默改写每一行的字段顺序（内容等价、字节不同）。Node 侧只能跟着排（`stableStringify`），否则对拍必炸。要修是给 Rust 开 `preserve_order`，但那会改变**所有** JSON 输出的字段序，波及面远超本树。W9 发现。 |
 | 16 | `workspace_read_bytes.rs` 的 `offset exceeds file size` | **Rust 侧零测试覆盖**——只有 TS 有 colocated 测试（`bytesRead.test.ts:107`）。W17 发现，未改（生产代码不在该卡改动面）。 |
 | 17 | 对拍口径·第三条排除规则 | 错误文案里嵌了 `display_path`（**解析后的绝对路径**）的用例**永远无法逐字对比**：两侧临时目录命名方案不相干（Rust `web_agent_parity_<pid>_<seq>`、Node `mkdtemp` 随机后缀）。与「OS 错误串」那条同类但不同源，已写进 `fixtures/README.md` 作第三条排除规则。W17 发现。 |
+| 18 | `model_proxy_http.rs` 的 `model_http_client()` | **每次请求都新建 `reqwest::Client`**。reqwest 官方明确要求复用——不复用等于没有连接池，每轮对话多一次 TLS 握手。Node 侧走 undici 全局 dispatcher 天然有池，两侧输出相同、延迟不同。M1 发现。 |
+| 19 | `model_proxy_http.rs` 的 `MODEL_REQUEST_TIMEOUT_SECONDS = 120` | 那是 reqwest 的 `Client::timeout`，语义覆盖**到响应体读完**。一次超过 120 秒的流式生成会被宿主掐断并报「模型响应中断」——对长思考模型不是理论问题。Rust 侧零测试覆盖。Node 照搬并补了两条测试分别钉「发请求阶段超时」与「读流阶段超时」。M1 发现。 |
+| 20 | `model_proxy_envelope.rs` 的 56 MiB 上限 | 它施加在 **Tauri IPC 反序列化之后**——载荷早就整个在内存里了，实际挡的是 base64 解码那步的放大，不是内存峰值。**HTTP 那条路上必须在读请求体时另加一道同样的截断**（已交接给 M2）。M1 发现。 |
+| 21 | `model_proxy_body.rs` 的 `valid_content_type` | `;` 不在允许字节集内且必须恰好两段，于是**带参数的 MIME 一律被拒**（`text/plain;charset=utf-8`）。而前端 `providerWireBody.ts` 直接用 `File.type`，浏览器在部分场景就会给出带参数的值——那种上传以「模型请求格式无效」被拒，文案完全指不出病因。M1 发现。 |
+| 22 | `model_proxy_http.rs` 的两处「响应过大」 | 上游**声明** content-length 超限 → 命令级 `Err`；流中**累计**超限 → `Error` 事件 + `Ok(())`。同一个原因两种失败形状，桌面端两条都落到同一个 `fail()` 所以看不出来。M2 映射状态码时必须分开处理（M1 已分：前者 reject、后者从流里抛）。M1 发现。 |
+| 23 | `model_proxy.rs` 的 `model_chat_completions` | 写死 `ProviderScope::Default`，而 Kimi 只接受 `Cn`——这条兼容命令**永远够不着 Kimi**。注释自称「给 DeepSeek 与 GLM 的兼容命令」，多半有意，但一条登记在册的命令只覆盖 2/3 供应商值得记一笔。M1 发现。 |
+| 24 | `mcp_process.rs` 的 `TailBuffer` | **只写不读的死累积器**（全仓只有 `new` 和 `push`），每会话白占 16 KiB。连带一个实质缺口：**子进程 stderr 被完全吞掉**——`npx` 报「找不到包」这类输出不在任何地方留痕，用户只看到 `MCP server closed stdout`。Node 侧只 drain 不留尾。C1 发现。 |
+| 25 | `mcp_process.rs:42`、`mcp_session.rs:274` | **Rust `Debug` 格式漏进用户可见文案**：`{:?}` 打印 `Option<i32>`，于是 close 事件的 message 是 `MCP server process exited (exit code Some(1))`，经 `tauriStdioConnector` 直接进失败提示。Node 照搬，要改两边一起改。C1 发现。 |
+| 26 | `mcp_session.rs:88` | initialize 校验用的是**常量**而不是这次实际请求的版本：收下 `requested_protocol_version` 只写进请求，校验响应时比 `DEFAULT_PROTOCOL_VERSION`。今天必然相等所以无害，但只要放行第二个版本，「请求 A、只接受 B」就会静默发生。C1 发现。 |
+| 27 | `mcp_manager.rs` 的 `used_session_tokens` | **只进不出、无淘汰**，硬顶 10 000，到顶的唯一出路是「重启应用」（错误文案自己这么写）。令牌是**每次连接尝试**消耗一个，含自动退避重连的每次失败（一轮 6 次 / 约 61 秒）。一个常驻进程挂着一台永远连不上的服务，约 **28 小时**就能烧光全局预算，之后**所有** MCP 服务都连不上。C1 发现，本轮最实质一条。 |
+| 28 | `mcp_validation.rs::validate_command` | 只判空、**不判 NUL**（同文件的 `normalize_identifier` 判了）。Rust 上无害，但 **Node 的 `spawn` 对 command/args/env/cwd 里的 NUL 是同步抛 `TypeError`**——不接住就没有 `kind`，失败分类器判**暂时失败**，一份永远起不来的配置被无限重连。Node 已映射成同一 kind；收严的正解是两边一起加 NUL 判据。C1 发现。 |
+| 29 | `mcp_manager.rs::list_tools` | 整趟超时在边界上给出误导文案：`checked_sub` 在 elapsed == timeout 时是 `ZERO`，于是报 ``timed out after 0 ms``，读起来像「你设了 0 超时」。Node 侧同形。C1 发现。 |
 | 15 | `workspace_write_compaction.rs:129` 的本地 `atomic_replace` | 它是 `fs::write` + `fs::rename`，**既不 fsync 也不回填权限位**（继承临时文件的 umask 权限），而同仓库 `workspace_common.rs` 的共享 `atomic_write` 两者都做——**同一仓库两份「原子替换」**。压实是整份重写索引，掉电后目录项指向空洞内容 = 归档索引报废。Node 侧按任务书指令统一走共享 `atomicWrite`（产出字节不变，只是落盘更耐久）。W9 发现。 |
 
 顺带发现的 TS 侧 bug（不在本树范围，未改）：
@@ -1553,7 +1565,30 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   （`model_provider_route.rs`），Key 只从 N7 的配置读、**永不出现在返回体里**；
   上游流式响应原样透传；请求取消能真的中断上游。跑该目录 vitest
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `8c0454d`。14 源 + 10 测试 / 67 例。**白名单五条与 `model_provider_route.rs`
+  同序同参**，`it.each` 逐行钉住；一并对齐 `valid_resource_id`、`valid_file_delete_path`、
+  `accepts_scope` 配对表与 `ProviderTarget` 的 `deny_unknown_fields`（往 target 塞 `url` 必须被拒）。
+  **没有新增任何端点。**
+  **Key 不外泄的测试先正面钉住「Key 确实发出去了」**（`authorization === Bearer <key>`），否则整条
+  用例可以靠「压根没读 Key」蒙混过关；再断言它不出现在成功返回体、上游 401 返回体、连不上时的
+  `message`/`stack`/`cause` 里。主会话独立复核：把 Key 拼进上游失败错误 → 该用例当场转红。
+  连不上时刻意丢掉原始 error——undici 的 cause 链带请求 URL 与头部摘要。本域**没有任何日志语句**。
+  **流式出口就是本卡**（不是卡面给的两条路之一）：`forwardProviderRequest` 返回
+  `{ status, contentType, body: AsyncGenerator<Uint8Array>, release() }`，逐块原样透传、不解析 SSE、
+  不按行切、不转字符串；**`model_provider_request` / `model_chat_completions` 故意不进路由表**
+  （写一个攒完再返回的 handler 才是错的，那个假象在开发机上看不出来），M2 直接调这个函数。
+  失败分界线是**响应头有没有交出去**：之前 → reject；之后 → 从 generator 抛。
+  **取消是在上游 socket 那头观察到的**：真 `node:http` 服务 + 真 `fetch`，服务端
+  `response.on('close')` 判 `!response.writableEnded`。主会话独立复核：摘掉 `signal` → 相关用例
+  全部超时转红。`requestId` 表的 `finish` 挂在**响应流收尾**而非函数返回时——函数拿到响应头就
+  返回了，流还在 M2 手里跑，那段时间取消必须还找得到它。
+  **卡面把 7 条 model 命令都算进本卡是错的**：M4 明写「host-node 侧补
+  `model_credential_status/set/delete` 三个命令」，M1 只做 Key 的读取半边（转发要用）并把绑定表
+  导出成缝——两张卡各写一份必然分叉。主会话已核对 M4 卡面，采纳。
+  `redirect` 用 `'manual'` 而非 `scripts/model-preview-relay.ts` 的 `'error'`：实测 undici 的
+  `'manual'` 把 302 原样交回，才等价 reqwest 的 `Policy::none()`（Rust 有专测断言拿到 302）。
+  multipart 刻意自己编码字节而不用 `FormData`——vitest 跑在 jsdom，`globalThis.FormData` 是 jsdom 的，
+  交给 undici 会被品牌检查判否、`String()` 成 `[object FormData]` 发出去，**本地全绿、上游收到垃圾**。
 
 ### M2 · server 的流式模型端点
 
@@ -1604,7 +1639,32 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   超时、进程退出清理。**协议编排不重写**——`tools/mcp` 里已有 5178 行 TS 实现，
   本卡只做传输层。跑该目录 vitest
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `bf71e9c`。20 源 + 6 测试 / 66 例，自写假 server（绝不跑第三方 MCP 实现），无残留子进程。
+  **卡面「`tools/mcp` 里已有 5178 行 TS 实现，本卡只做传输层」这个前提是错的——主会话已复核。**
+  `tools/mcp/src` 的非测试代码里 `jsonrpc` / `'tools/list'` / `'tools/call'` /
+  `notifications/initialized` **零命中**（那 1 万行是**管理器层**：工具适配、schema 校验、集合对账、
+  退避重连、失败分类、清单缓存）。**stdio 那条路的 wire 协议全仓只有 Rust 一份。** 所以「只搬字节」
+  在四条命令上落不下去——`mcp_connect` 的返回值**就是** initialize 的结果，没有更薄的形态。
+  C1 把「命令契约自带的那部分」（initialize 握手与能力协商、tools/list 分页与游标去重、
+  tools/call 参数组装、服务端 ping 应答、list_changed 识别）搬了过来，其余一个字没碰。
+  判据写在三处文件头，免得下一个人看到 `initialize` 就以为可以再抄一份。
+  **分帧刻意不用 `StringDecoder`**（与 `workspace/common/readCapped.ts` 不同）：分隔符是 `\n`(0x0A)，
+  而 UTF-8 多字节序列每个字节都 ≥0x80——按字节找分隔符、整行才 `toString('utf8')`，
+  字符被劈开是**结构上不可能**，不是「测过没问题」。主会话独立复核：丢掉跨 chunk 累积 → 6 例转红。
+  **Rust 从不发 SIGTERM**（卡面问「SIGTERM 后不退要不要 SIGKILL」是问偏了）：优雅步骤是**关 stdin**
+  （MCP stdio 里「请你退出」的规范信号），等 grace 后直接 `kill(-pid, SIGKILL)` 整组。已照搬。
+  **`unref` 是必需的**（child + 三条管道），Rust 里一个会话是 3 条线程而进程不等线程退出，
+  Node 里活着的 ChildProcess 与管道会把 event loop 钉死——靠探针实测，不靠测试（测试进程自己
+  不能退出来验证），已如实写进注释。
+  主会话接线时把 `emitHostEvent` / `registerHostDisposer` 两个槽从 `McpRoutesOptions` **上提到
+  `hostOptions.ts`**（C1 为避免四卡并行冲突刻意没动那个共用文件）。C1 只拿**发射面**不拿订阅面
+  ——传输层能订阅自己发的事件就等于给「事件回环驱动状态」留口子。
+  **接线连带**：28 条命令至此**全部落地**，于是经公开工厂已构造不出 `unimplemented`。
+  `createNodeHostInvoke.test.ts` 与 `apps/server/src/invokeRoute.test.ts` 里三条「拿某条未实现命令
+  当样本」的断言随之失效（后者是**包级测试全绿、全量套件才红**的典型，正是「改模块图要扫波及面」
+  那条规则要抓的），已按事实改写：501 那条改用只抛 `unimplemented` 的桩（路由表是 `Partial`，
+  将来新增命令而域没跟上时它仍是唯一报信人），百分号编码那条改用 `get_user_home_dir`
+  ——C1 落地后 200 与 501 已不能区分「解码对了」与「解码错了」，而 404 与 200 可以。
 
 ### C2 · host-node 事件面
 
@@ -1648,6 +1708,23 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **改动面**：`apps/server/src/eventsRoute*`
 - **判据**：`GET /api/events` 走 SSE；断线重连不丢事件语义要么保证、要么在卡上写明不保证
   并说明前端如何补偿。跑该目录 vitest
+- **模型**：opus
+- **状态**：TODO
+
+### C5 · 把 MCP 关停钩子挂进两个宿主的信号处理
+
+- **依赖**：C1
+- **改动面**：`apps/server/src/main*`（SIGTERM/SIGINT）、`apps/cli` 的关停路径
+- **判据**：**来源：C1 交回时点名的实测缺口。** Node 对**没有 listener 的 SIGTERM/SIGINT 走默认
+  处置，`process.on('exit')` 回调根本不执行**（C1 已用探针复现），于是 `SIGTERM` 停服会**漏下
+  MCP 子进程**——症状是用户机器上几天后堆着一批僵尸进程，而病因离它极远。
+  能力包**刻意不自己装信号处理器**：装 SIGINT 会改掉宿主语义（CLI REPL 的 Ctrl-C 是「中断本轮」
+  不是「退出」），这类隐式全局正是本仓库反复吃过亏的形态。所以 C1 交出了
+  `registerHostDisposer?: (dispose: () => Promise<void>) => void`（已上提到 `hostOptions.ts`），
+  由装配层挂进自己的信号处理。
+  本卡把它在两个宿主上挂上，并各配一条**真的发信号**的测试证明子进程确实被回收
+  （不是「调用了 dispose」，是 `pgrep` 找不到了）。注意 dispose 是异步的而信号处理里进程随时会走，
+  想清楚「等多久」以及等不到时的兜底。
 - **模型**：opus
 - **状态**：TODO
 
