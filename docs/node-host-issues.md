@@ -4,15 +4,32 @@
 
 把浏览器版从「残废预览」做成能力完整的本地自托管应用：后端**一份 Node/TS 能力实现**
 （`packages/host-node`），服务浏览器、CLI、以及最终退成套壳的 Tauri 三个前壳，经 npm 分发
-（`npx @einfach-agent/server`），**不需要任何代码签名证书**。
+**仅本地运行,不发布到任何 registry**（用户裁决,见下），因而也**不需要任何代码签名证书**。
 
-> **入口名的口径已修正（D3b 交回 + 主会话复核）。** 包名是 `@einfach-agent/server`、bin 名是
-> `einfach-agent`，两者不是一回事：**干净机器上 `npx einfach-agent` 解析的是非 scoped 的包
-> `einfach-agent`**，registry 上 404（主会话实测）。能跑通的是 `npx @einfach-agent/server`。
-> 早先记档里那句「`npx einfach-agent` 起服务，health / invoke 全通」并不假，但它跑在**已经把
-> tarball 装进 consumer 目录**之后——那时 bin 已在本地 `node_modules/.bin`，恰好掩盖了这个差别。
-> 顺带一条安全考量：`einfach-agent` 这个非 scoped 名**现在无人注册**，文档若长期宣传
-> `npx einfach-agent`，等于给抢注留了口子。要不要另发一个非 scoped 薄包做入口，归 D3c/D4 裁决。
+> ## 分发口径：**不发布，仅本地跑**（用户裁决）
+>
+> D3b 交回时点名三件「首发之前必须做」的事——创建 `@einfach-agent` npm org、加 `NPM_TOKEN`
+> Secret、定版本策略。**用户对三条的答复都是「不要发，仅本地跑」。** 于是：
+>
+> · **四个包的 `private: true` 已恢复**（`96e261d` 摘掉、本次改回）。它是防误发最硬的护栏，而
+>   风险是具体的：本机 `npm config get registry` 是一台**公司内网 registry 且 token 有效**，
+>   摘掉 private 之后一句裸 `pnpm -r publish` 就会把四个包以 public 身份外发（主会话实测过那行
+>   `Publishing to http://npmjs.deepfos.com/`）。
+> · `publishConfig.registry` 保留——冗余但零成本，且它是主会话实测过**连显式 CLI `--registry`
+>   都覆盖不掉**的真护栏；将来若改主意，目标已经是对的。
+> · `engines` 与 `@types/node` 的位置**都保留**：它们不是「为了发布」的元数据，本地
+>   `pnpm pack` → 仓库外 `npm install` 这条验证路径同样吃它们。
+> · **D3 的流水线保留但休眠**：只由 `npm-v*` tag 触发（不会有人推），且它自己的闭包前置判定
+>   在 `private: true` 下**必然 red** —— 这恰好是自我说明的信号，不是缺陷。
+> · **D3c（版本策略）作废**，见该卡状态段。
+>
+> **本地运行的入口**（主会话端到端验过）：`pnpm pack` 四个包 → 仓库外 `npm install *.tgz` →
+> `./node_modules/.bin/einfach-agent --no-open`，health / invoke / 前端产物全通。
+> 仓库内直接跑则是 `pnpm serve`。
+>
+> 顺带记一条已核实的事实（将来若改主意会用到）：包名是 `@einfach-agent/server`、bin 名是
+> `einfach-agent`，**两者不是一回事**——干净机器上 `npx einfach-agent` 解析的是非 scoped 的包
+> `einfach-agent`，registry 上 404（主会话实测）。能跑通的是 `npx @einfach-agent/server`。
 
 动机是分发成本：桌面版发布要 Apple Developer ID 与 Windows code-signing 证书
 （见 [release-signing.md](release-signing.md) 的九个 Secret）。Web 自托管绕开整条链路。
@@ -53,14 +70,15 @@ M3/C4/P3/D3 那一批验收又新增 5 张：C6、C7、D3b、D3c、B5，**全部
 **进度以状态行为唯一权威**，不要手抄一个数字在这里——它一定会过期。数法：
 
 ```sh
-for s in DONE DOING TODO; do
+for s in DONE DOING TODO DROPPED; do
   printf '%-6s %s\n' "$s" "$(grep -c "^- \*\*状态\*\*：$s" docs/node-host-issues.md)"
 done
 printf '合计   %s\n' "$(grep -c '^- \*\*状态\*\*：' docs/node-host-issues.md)"   # 必须等于卡片总数
 ```
 
-**三态只有 `TODO` / `DOING` / `DONE`,合计恒等于卡片总数**——这是最省事的自检:三者之和对不上,
-说明有卡多了或少了状态行。
+**状态只有 `TODO` / `DOING` / `DONE` / `DROPPED` 四种,合计恒等于卡片总数**——这是最省事的自检:
+四者之和对不上,说明有卡多了或少了状态行。`DROPPED` 是**裁决作废**（前提没了、或用户决定不做），
+它必须写清楚**凭什么作废**,而不是悄悄删卡——删掉的卡会被后人重新想一遍。
 
 行首那个 `^- ` 锚点不是装饰：状态行永远是一条列表项，而**正文里也会出现 `状态**：TODO` 这串字**
 （比如上面这段说明本身，以及卡面引用别的卡时）。少了锚点，说明文字会把自己算进待办数。
@@ -2044,7 +2062,25 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：照 P1–P3 的范式；trace viewer 在 server 宿主下能读到 span。
   跑 `pnpm exec vitest run packages/observability-sqlite`
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `ccf88cc`（装配接线由主会话做）。包侧 5 源 + 6 测试 / 40 例，14 条变异探针。
+  **卡面「改动面 `apps/server/src/`」不成立**：server 侧零改动——`sqlite_execute`/`sqlite_select`
+  已在 30 条命令全集里，`connection: 'observability'` 已在封闭词表里且有覆盖，P3 已把「端点在认证
+  之后」钉死。本卡拆成 transport（注入面）+ schema（DDL 收参数）两个文件而不是照抄 P1 的单个
+  `sqliteShared.ts`：读取端要「只解析、不建表」（打开 TraceViewer 是只读动作，让它顺手把遗留
+  running span 改写成 cancelled 是实打实的行为变更），写入端要「建过表」，两个 memo 必须同住一处
+  才能被 `configure` 一起作废。
+  **探针 N 是探针驱动加的测试**：包内没有任何一处从 barrel 取 `configureTraceSqlExecutor`（唯一
+  消费方在装配层），漏掉它 38 例一条不红、`tsc` 也过——于是补了 `index.test.ts` 钉住「恰好这五个导出」。
+  **「trace viewer 在 server 宿主下能读到 span」真跑通了**：临时探针起真 `startTestServer`，把浏览器侧的
+  `createServerSqlExecutor('observability')` 经 `POST /api/invoke/sqlite_*` 打到真 Node 后端 + 真
+  `node:sqlite`，driver 写下的 span 被 reader 原样读回。
+  **接线连带修掉了 B7 的第 ③ 条**：判据从「是不是 tauri」换成「这一态有没有 SQL 通路」（与
+  `persistenceDrivers.ts` 逐字同形）之后，`server + DEV` 两端都是 SQLite，不再写 IndexedDB 读桌面
+  SQLite。B5 随后把它那 4 条用例改成钉新行为，并把第 ④ 条改成**正面断言**当作 B7③ 的回归网。
+  主会话独立探针：删掉 `configureTraceSqlExecutor(loadExecutor)` 那一行 → **5 条红**
+  （P4 明说过这个中间态的症状是「trace 静默不落盘」，而 driver 是 best-effort、不会喊）。
+  **B7 的第 ② 条没被修掉**（`.catch(() => {})` 仍在），B5 在测试里钉了「现状档案」并注明
+  B7 落地时它必然转红——**做 B7 的人会在这一条上撞一次，撞到的正是他要改的那一格**。
 
 ---
 
@@ -2197,7 +2233,26 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   钉住今天的现实。
   判据：四个域各有一条用例断言业务失败带得出结构化标识；且 MCP 那条的 `kind` 端到端穿到客户端。
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `d6c30ab`。7 个文件，`invokeRouteError.ts` 25→113 成为**全部** invoke 失败的唯一映射表，
+  catch 不再重抛。**C4 建议的形状被本卡用证据推翻，主会话复核采纳**：host-node 349 个抛出点里
+  **309 是裸 `new Error`**（主会话独立复数：309 裸 Error / 28 McpCommandError / 23 model 系），
+  它们是等价移植 Rust `Result<T, String>` 的产物，**没有可转发的标识**。所以信封形状留用，
+  「`error` = 各域 kind」那一半改成「**转发**域自己的标识（mcp 的 `kind` / model 的 `reason`），
+  没有的落稳定兜底码 `command_failed`」——**本层转发标识，不生产标识**。
+  刻意没做按命令名推 `<domain>_command_failed`：调用方本来就知道自己调的哪条命令，前缀不带新信息，
+  却会造出一个 host-node 从未声明过的标识。
+  **主会话在真 server 上端到端验收**：探不存在的可选目录 → `502 {"error":"command_failed",…}`
+  （原为 `500 text/plain 服务端内部错误。`）；`mcp_list_tools` 失败 → `502 {"error":"invalid_input"}`
+  ——**kind 终于穿过 HTTP，C4 报的「永久失败被判成临时 → 无限退避重连」断根**；服务端 stderr
+  堆栈行数 **0**（M5 报的三份「预期外异常」噪声消失）。
+  **探针 A 暴露了一处只有跨端守卫才拦得住的东西**：把 `COMMAND_FAILURE_STATUS` 从 502 改掉只红 2 条，
+  关键那条是读 `apps/web/src/mcp/serverMcpCommands.ts` 源码文本比对的守卫——没有它，改这个数
+  **一条都不会红**（apps/web 的用例喂的是写死状态码的假 fetch）。手法照抄 M6 的文案守卫。
+  判别全部按字段：`reason` 用 `Object.hasOwn` 而非 `in`（`reason:'constructor'` 能冒充分发失败）；
+  `message` 按字段读而非 `instanceof Error`（`McpCommandError.toJSON()` 的产物是普通对象）。
+  **卡面「四个域」少算了**：经 `/api/invoke` 能触到的是 workspace/shell/mcp/config/sqlite **五个**。
+  **C8 没有被本卡消解**：浏览器控制台那行 `Failed to load resource` 任何非 2xx 都会打，
+  换 reason/换状态码一行都消不掉；本卡明确论证正解在「调用方别拿异常当探测手段」，且要 Rust 侧一起动。
 
 ### C8 · 可选目录探测在 server 宿主上变成噪声 500
 
@@ -2236,7 +2291,25 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   判据：D3 那条闭包前置判定转绿；`pnpm -r --filter "@einfach-agent/server..." publish --dry-run`
   列出 4 个包。**注意 dry-run 本身证明不了能发**（见 D3 状态段的两条实测），所以判据必须是前置判定。
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE（**部分回退**：`private` 那一半随用户裁决改回）。
+  本卡按判据摘掉了四个包的 `private: true`、并**自查出它自己引入的风险**：本机
+  `npm config get registry` 是 `http://npmjs.deepfos.com/`（公司内网、token 有效），仓库无 `.npmrc`，
+  于是摘掉之后一句裸 `pnpm -r publish` 会把四个包**以 public 身份外发到内网**（本卡实测拿到那行
+  `Publishing to http://npmjs.deepfos.com/`）。主会话据此要求补 `publishConfig.registry`，
+  **实测它连显式 CLI `--registry` 都覆盖不掉**——是真护栏不是默认值。
+  **随后用户裁决「不要发，仅本地跑」，`private: true` 已全部改回**（见「目标」段）。保留下来的是
+  三样与发布无关、对本地验证同样成立的东西：`publishConfig.registry`（冗余护栏）、
+  `packages/host-node` 的 `engines: >=22.13.0`、`@types/node` 从 devDependencies 移入 dependencies。
+  **`engines` 的下限本卡核实后从 D2 记的 `>=22.5.0` 提高了**：API 面确实只要 22.5.0，卡住下限的是
+  旗标——`connections.ts:48-50` 的错误文案原文就写着「需要 Node 22.13（或 23.4）以上」，而
+  `apps/server` 是 `node dist/main.js` 裸跑，没地方塞 `--experimental-sqlite`。主会话据此把
+  `apps/server` 的 `engines` 也从 `>=22.0.0` 提到 `>=22.13.0`——**传递依赖已经把技术下限钉死了，
+  声明一个更低的下限只会让 22.0–22.12 的用户装得上、第一次落盘就挂**。
+  `@types/node` 那条有实测复现 + 对照：消费方 `skipLibCheck: false` 下撞
+  `TS2503: Cannot find namespace 'NodeJS'`，移入 dependencies 后归零。**`check-dist` 抓不到它**
+  （`scripts/check-dist.js:141` 写死 `skipLibCheck: true`）→ 已立卡 **D3d**。
+  连带：`@types/node` 跨字段搬家让 `pnpm-lock.yaml` 陈旧、`--frozen-lockfile` 转红，
+  主会话按本卡给的最小改法修掉（净 diff 1 增 1 删）。
 
 ### D3c · 发布版本策略
 
@@ -2247,7 +2320,11 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   **且不报错**。要么 lockstep 涨版本，要么上 changesets。判据：构造「core 改了但没涨版本」的情形，
   流水线必须红。
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DROPPED（用户裁决「不要发，仅本地跑」）。本卡要解的「第二次发时 core 改了没涨版本会被静默
+  跳过」只在真发布时成立。D3b 顺带查到的一条隐藏输入一并记档，**将来若改主意必须重新捡起**：
+  `publishConfig.registry` 只管住 PUT 的目标，而 **pnpm 递归发布的「这个版本发过没有」预检走的是
+  另一条 registry 解析**（实测：显式 CLI `--registry` 在预检上赢）。两者不是同一个 registry 时，
+  pnpm 会拿 A 的版本表决定要不要往 B 发。
 
 ### B5 · 五个宿主分流模块补 colocated 测试
 

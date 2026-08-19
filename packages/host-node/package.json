@@ -1,6 +1,7 @@
 {
   "name": "@einfach-agent/host-node",
   "version": "0.1.0",
+  "private": true,
   "license": "MIT",
   "repository": {
     "type": "git",
