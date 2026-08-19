@@ -4,19 +4,26 @@
 // 落下去的后果是「`GET /api/invok`（少打一个 e）返回 200 和一整页 index.html」——调用方拿到的
 // 不是错误而是一份 HTML，JSON 解析报在离病因十万八千里的地方。API 面的未知路径一律回 404 JSON。
 //
-// 【留给 S2 / S3 的接缝】
+// 【认证卡口就在 handleApi 的第一行】
+// `/api/*` 的三道防线（回环对端地址 / Origin 与 Host / token）由 `authGuard.ts` 判定，本文件只负责
+// 把判定结果翻译成一条响应。**顺序不能动**：认证在路径分派**之前**，所以未通过认证的调用方连
+// 「有哪些接口存在」都问不出来——`/api/invok` 拿到的是 401 而不是 404。
+// 三道各挡什么攻击、health 为什么豁免 token、无 Origin 头为什么放行，全部写在 `authGuard.ts` 的文件头。
+//
+// 【留给 S3 的接缝】
 // - S3（`/api/invoke/:command`）：在 `handleApi` 里 health 之后加一条分支即可，静态那侧不用动。
 //   host-node 的失败带 `reason` 字段（`unimplemented` / `unknown-command`），按它映射 501 / 404，
-//   不要用 `instanceof`——错误要跨 HTTP 序列化。
-// - S2（token 认证与 Origin 校验）：卡口在 `handleApi` 的入口处，即「进 API 面的唯一一道门」。
-//   有一个 S2 必须自己裁决、本卡不替它决定的点：**health 要不要一起校验**。B1 拿它做宿主探测，
-//   而探测发生在拿到 token 之前；若 health 也要 token，B1 的探测会失败并把 server 宿主误判成
-//   static 宿主。两种解法（health 豁免 / B1 带着 token 探测）各有取舍，S2 与 B1 一起定。
-// - 静态那侧**不需要**认证：它发的是用户自己 build 出来的公开前端产物，且 B2 要从页面里拿 token。
-//   真正危险的是 `/api/*`（一条 `run_shell_command` 就是任意代码执行），S2 的重点在那儿。
+//   不要用 `instanceof`——错误要跨 HTTP 序列化。**认证已在入口处理完，分支里不要再判一遍。**
+// - 顺带一条免费防线：invoke 可以要求 `content-type: application/json`。跨站 `<form>` 只能发那三种
+//   简单 content-type，设不了 JSON，于是连预检都过不去；而设自定义 content-type 的 fetch 必须先过
+//   CORS 预检，我们不回任何 `Access-Control-Allow-*`，浏览器根本不会发出那条真实请求。
+// - 静态那侧**不需要**认证：它发的是用户自己 build 出来的公开前端产物，且 B2 要从页面的 URL query
+//   里拿 token。真正危险的是 `/api/*`（一条 `run_shell_command` 就是任意代码执行）。
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import { authorizeApiRequest, readApiRequestFacts, type ApiAuthConfig } from './authGuard'
 import { createHealthPayload, HEALTH_PATH, type HealthFacts } from './health'
+import { isInvokeRoutePath, type InvokeRouteHandler } from './invokeRoute'
 import { replyJson, replyText, type ReplyOptions } from './httpReply'
 import { requestPathname } from './requestPathname'
 import { handleStaticRequest } from './staticFiles'
@@ -26,6 +33,13 @@ export interface RequestRouterOptions {
   readonly distDirectory: string
   /** health 载荷所需的事实，由装配层注入（理由见 health.ts）。 */
   readonly health: HealthFacts
+  /** `/api/*` 的认证配置。**没有「关掉认证」这个选项**——见 createServer.ts 的 `token`。 */
+  readonly auth: ApiAuthConfig
+  /**
+   * `/api/invoke/:command` 的 handler，由装配层建好传进来（`createInvokeRouteHandler`）。
+   * 本文件不负责构造它——命令路由表是 host-node 的事，路由分派才是这里的事。
+   */
+  readonly invokeRoute: InvokeRouteHandler
   /** 未预期异常的去处；默认写 stderr。测试传自己的收集器，免得日志把用例输出淹了。 */
   readonly onInternalError?: (error: unknown) => void
 }
@@ -47,13 +61,26 @@ function replyApiError(
   replyJson(response, statusCode, { error, message }, options)
 }
 
-function handleApi(
+// **必须是 async 并在调用处 await**：invoke 分支要读 body、要 await 命令执行，不 await 的话它的
+// rejection 会绕过下面那个 try/catch 变成未捕获错误，而不是被收成一条 500。
+async function handleApi(
   request: IncomingMessage,
   response: ServerResponse,
   pathname: string,
   options: RequestRouterOptions,
   replyOptions: ReplyOptions,
-): void {
+): Promise<void> {
+  const decision = authorizeApiRequest(readApiRequestFacts(request, pathname), options.auth)
+  if (decision.kind === 'deny') {
+    for (const [name, value] of Object.entries(decision.headers ?? {})) response.setHeader(name, value)
+    replyApiError(response, decision.status, decision.error, decision.message, replyOptions)
+    return
+  }
+  // 认证已在上面处理完，分支里不要再判一遍。
+  if (isInvokeRoutePath(pathname)) {
+    await options.invokeRoute(request, response, pathname)
+    return
+  }
   if (pathname !== HEALTH_PATH) {
     replyApiError(response, 404, 'unknown_endpoint', '未知的接口路径。', replyOptions)
     return
@@ -74,7 +101,7 @@ export function createRequestRouter(options: RequestRouterOptions): RequestRoute
     const replyOptions: ReplyOptions = { includeBody: request.method !== 'HEAD' }
     try {
       if (isApiPath(pathname)) {
-        handleApi(request, response, pathname, options, replyOptions)
+        await handleApi(request, response, pathname, options, replyOptions)
         return
       }
       await handleStaticRequest(request, response, pathname, options.distDirectory)

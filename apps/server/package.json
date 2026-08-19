@@ -4,6 +4,10 @@
   "private": true,
   "license": "MIT",
   "type": "module",
+  "dependencies": {
+    "@web-agent/core": "workspace:*",
+    "@web-agent/host-node": "workspace:*"
+  },
   "devDependencies": {
     "vitest": "^4.0.15"
   }
