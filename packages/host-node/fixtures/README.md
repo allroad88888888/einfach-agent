@@ -1,11 +1,19 @@
-# Rust ↔ TS 对拍 fixture
+# 行为 fixture（原 Rust ↔ TS 对拍）
 
-这个目录里的 JSON 是**语言无关的输入/期望**，由两侧各自的驱动器读取并跑同一组用例：
+> **⚠️ 只剩一侧了。** 这套 fixture 立起来时有两个驱动器：TS 一个、Rust 一个，同一组输入喂进去
+> 两边输出必须逐字段相同。**Rust 那一侧随 T1（提交 `e52c31d`）连同整个 `apps/desktop/` 删除了**，
+> 只能从 Git 历史读；`cargo test … parity` 这条命令不再存在。
+>
+> 于是这些 JSON 今天的身份变了：它们不再是「两个实现之间的对拍」，而是**从已删除的 Rust 实现里
+> 抽取出来、被冻结下来的期望值**——一组"当年那份实现在这些输入上给的就是这个"的行为快照。
+> 这仍然是它们最大的价值：Node 侧任何一次重构改变了其中一条，都会当场红，而那条红意味着
+> **行为偏离了移植来源**，不是「换了个写法」。所以下面所有关于"两侧""对拍口径"的说法，
+> 一律读作**为什么当初把期望值写成这个形状**，不要照着去找那个 Rust 驱动器。
 
 | 侧 | 驱动器 | 怎么跑 |
 | --- | --- | --- |
 | TypeScript | `../src/parity/*.parity.test.ts` | `pnpm exec vitest run packages/host-node` |
-| Rust | `apps/desktop/src/*_parity_tests.rs` | `cargo test --manifest-path apps/desktop/Cargo.toml parity` |
+| ~~Rust~~ | ~~`apps/desktop/src/*_parity_tests.rs`~~ | **已随 T1 删除** |
 
 ## 为什么要有它
 
@@ -13,12 +21,12 @@ W 线把 `apps/desktop/src/workspace_*.rs` 等价移植成了 `packages/host-nod
 W16 之前**只由移植者的人工比对保证**——两边的测试各写各的，没有任何机制保证它们在测同一件事。
 这些 fixture 就是那个机制：一组输入喂进去，两边的输出必须逐字段相同。
 
-所以 fixture 的价值排序是 **能抓到两边行为分岔 > 覆盖率 > 好看**。一组喂进去两边输出必然相同
+所以 fixture 的价值排序是 **能抓到行为分岔 > 覆盖率 > 好看**。一组喂进去必然通过
 的用例（比如只断言 `ok === true`）是空跑，不要加。
 
-## 比对口径
+## 比对口径（当初为什么这样写期望值）
 
-- **比对的是解析后的结构，不是字符串。** `apps/desktop/Cargo.toml` 的 `serde_json` 没开
+- **比对的是解析后的结构，不是字符串。** 桌面侧 `Cargo.toml` 的 `serde_json` 没开
   `preserve_order`，`Value::Object` 底层是 `BTreeMap`，重新序列化时字段按 key 字节序重排；
   JS 的 `JSON.parse` → `JSON.stringify` 保留插入序。**键顺序不算差异**。
 - **键的有无算差异。** Rust 的 `skip_serializing_if = "Option::is_none"` 会让那个键整个消失
@@ -28,11 +36,11 @@ W16 之前**只由移植者的人工比对保证**——两边的测试各写各
 - **同一仓库两种线上形状，不要统一。** `workspace_write_result.rs` 的 `WorkspaceWriteResult`
   没有 `rename_all`，顶层键是 snake_case；`workspace_read_types.rs` / `workspace_patch_result.rs`
   带 `rename_all = "camelCase"`。期望值按各自实际形状写（这条主要影响 W17）。
-- **错误文案里带 OS 错误串的用例不能对拍。** Rust 的 `io::Error` 是
+- **错误文案里带 OS 错误串的用例当年不能对拍。** Rust 的 `io::Error` 是
   `No such file or directory (os error 2)`，Node 的是 `ENOENT: no such file or directory, open '…'`
   ——同一件事两句话，**这是两个运行时的差异不是移植 bug**。凡是期望值里会出现这一段的场景
-  （读不到条目、父目录是文件、权限不足）一律不进 fixture，靠两侧各自的 colocated 测试盯。
-- **错误文案里带 resolved 绝对路径的用例也不能对拍（W17 新发现）。** `workspace_read_paths.rs`
+  （读不到条目、父目录是文件、权限不足）一律不进 fixture，靠 colocated 测试盯（Node 侧的还在）。
+- **错误文案里带 resolved 绝对路径的用例也不能进（W17 新发现）。** `workspace_read_paths.rs`
   的 `display_path` 在越界类错误里报的是 `canonicalize` 之后的**绝对路径**，不是 workspace
   相对路径；而两侧驱动器建临时 workspace 用的命名方案完全不同（Rust 是
   `web_agent_parity_<pid>_<seq>`，Node 是 `mkdtemp` 的随机后缀），没有任何机制能让它们生成
@@ -45,17 +53,18 @@ W16 之前**只由移植者的人工比对保证**——两边的测试各写各
 
 ## 一处**故意不对齐**的差异（已知豁免）
 
-`apps/desktop/src/workspace_common.rs:143` 对每个读取块单独跑 `String::from_utf8_lossy`，
-多字节字符被块边界劈开时两半各自变成 `U+FFFD`——中文输出只要跨块就坏字。Node 侧用
-`StringDecoder` 把块尾不完整序列留到下一块，被劈开时给的是**正确**结果
+`apps/desktop/src/workspace_common.rs:143`（已随 T1 删除）对每个读取块单独跑
+`String::from_utf8_lossy`，多字节字符被块边界劈开时两半各自变成 `U+FFFD`——中文输出只要跨块就
+坏字。Node 侧用 `StringDecoder` 把块尾不完整序列留到下一块，被劈开时给的是**正确**结果
 （理由记在 `../src/workspace/common/index.ts` 的文件头）。
 
-**该改的是 Rust 侧，不是把 Node 改回去凑对拍。** 所以本目录的 fixture 一律不构造「一次读取跨过
-块边界的多字节字符」，撞上就是撞上了这条豁免，不是移植 bug。
+当年的裁决是「该改的是 Rust 侧，不是把 Node 改回去凑对拍」，所以本目录的 fixture 一律不构造
+「一次读取跨过块边界的多字节字符」。**Rust 侧已经不存在了，这条豁免因此永久成立**：
+这个空缺不必再补，Node 的行为就是正确行为。
 
 ## 六组 fixture
 
-| 文件 | 形态 | 盯的是什么 | Rust 素材 |
+| 文件 | 形态 | 盯的是什么 | 期望值抽自（已删的 Rust 测试） |
 | --- | --- | --- | --- |
 | `change-summary.json` | 纯函数 | `compute_change_summary` / `computeChangeSummary`：头尾裁剪、`@@` 行号、LCS 取等方向、`str::lines()` 语义、截断 | 无（Rust 侧这个函数原本零测试） |
 | `patch-stage-rules.json` | 纯规则 | 一个补丁操作作用在暂存状态上的结果与错误文案 | `workspace_patch_stage_tests.rs` |
@@ -64,9 +73,9 @@ W16 之前**只由移植者的人工比对保证**——两边的测试各写各
 | `write-limits.json` | 带 IO | 单次写入的大小上限、可逆预算与守卫：dry run、显式 maxBytes 拒绝、create/upsert 撞见守卫、`expectedOldContent` / `expectedContentHash` 不匹配 | `workspace_write_pipeline_tests.rs`、`workspace_write_guard.rs` |
 | `read-limits.json` | 带 IO | 字节偏移与行定位共用的读取入口：多字节字符边界无损分页、截断标记、maxBytes 按整行截断、offset/startLine 冲突判定 | `workspace_read_bytes_tests.rs`、`workspace_read_lines_tests.rs` |
 
-带 IO 的四组**两侧各自建临时目录**，fixture 只描述「初始文件树 + 操作 + 期望结果」；临时目录
-本身不进 fixture。纯的两组一个目录都不建（Rust 的 `stage_operation` 要一个存在的 root 做路径
-解析，驱动器建一个空目录并**预置暂存表**，磁盘全程不被读写）。
+带 IO 的四组**由驱动器自己建临时目录**，fixture 只描述「初始文件树 + 操作 + 期望结果」；临时
+目录本身不进 fixture。纯的两组一个目录都不建（`stageOperation` 要一个存在的 root 做路径解析，
+驱动器建一个空目录并**预置暂存表**，磁盘全程不被读写）。
 
 `write-limits.json` 与前两组带 IO 的 fixture 有一处结构性差异：`write_workspace_file` 只碰**一个**
 目标路径，没有「写完之后树里多一个文件」的穷举风险，所以它不做整棵树扫描，`expected` 只有
@@ -229,18 +238,10 @@ reversible`，六个字节就能触发，不需要造大文件。
 2. `../src/parity/write<Aspect>.parity.test.ts`——TS 驱动器。加载走
    `parityFixtures.testHarness.ts` 的 `loadParityFixture('write-<aspect>.json')`，比对走同文件的
    `toComparableJson`。
-3. `apps/desktop/src/workspace_write_<aspect>_parity_tests.rs`——Rust 驱动器。加载走
-   `crate::parity_fixtures` 的 `load_fixture("write-<aspect>.json")`。
-4. 在被测模块里挂一行
-   `#[cfg(test)] #[path = "workspace_write_<aspect>_parity_tests.rs"] mod parity_tests;`
-   ——**驱动器要住在被测函数所在模块的后代里**，否则拿不到它。多数情况下那个函数是
-   `pub(super)`（W16 两组都是），但不总是：`read_workspace_file_blocking_at_lines`
-   （W17 的 read-limits 用它）是彻底私有的 `fn`，没有任何 `pub` 修饰——Rust 的私有性是
-   「本模块 + 全部后代模块」，所以驱动器只要直接挂在**它所在的那个模块**（这里是
-   `workspace_read.rs` 本身，不是 `lines` 或 `bytes` 子模块）就够，不需要把函数改成
-   `pub(super)`。挂错子模块（比如挂进 `lines`）会因为看不到 `workspace_read.rs` 的私有 fn
-   而编译失败，报错信息会直接指向缺失的符号，照着挂对位置即可。
-5. 本文件的「六组 fixture」表加一行，并按需加一段 schema 说明。
+3. 本文件的「六组 fixture」表加一行，并按需加一段 schema 说明。
+
+（原来这里还有第 3、4 步：写 Rust 驱动器、把它挂进被测模块。那两步随 T1 一起没了——
+今天只有一个驱动器。）
 
 ## 目前没覆盖的（诚实记录）
 
@@ -256,9 +257,9 @@ reversible`，六个字节就能触发，不需要造大文件。
   本身——两侧的常量是否真的相等，只能靠读源码对照或专门造大文件验证，本目录的 fixture 范式
   不适合它们。两侧各有 colocated 测试锁住数值。
 - **符号链接相关的拒绝**（`symlink paths are not supported`）。schema 里还没有「初始软链」这一
-  项，加它要同时动两个驱动器。
+  项；当年的成本是"要同时动两个驱动器"，今天只剩一个，这条便宜了。
 - **`workspace_mismatch`**、**批量的 path-delete 重叠守卫**：前者要第二个 workspace root，
   后者要能在 fixture 里登记 `movedPaths` / `createdPaths`。
 - **越界类错误文案里的绝对路径**（W17 新增的一类，见「比对口径」第五条）：`offset 超出文件
-  大小`、`startLine 超出总行数`这两条 Rust 侧目前连 colocated 测试都没有——Node 侧有
-  （`bytesRead.test.ts`），Rust 没有，是一处两侧覆盖不对称，已记进 issue 树的 findings 表。
+  大小`、`startLine 超出总行数`。当年记的是「Rust 侧连 colocated 测试都没有」这处覆盖不对称；
+  Rust 侧已删，不对称随之消失，Node 侧的 `bytesRead.test.ts` 就是唯一也是足够的覆盖。

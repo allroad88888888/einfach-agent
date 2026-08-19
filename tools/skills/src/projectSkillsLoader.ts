@@ -120,9 +120,11 @@ function collectScanRoots(workspaceRoot: string, userSkillsRoot?: string): ScanR
  * diagnostics，设置面板会对每个正常仓库常驻两条「扫描反馈」——用户看到的全是噪声，真出问题时
  * 反而淹没在里面。加上用户目录那两路后，这条更要紧：多数人只有 `~/.claude/skills` 一个。
  *
- * 判据取自 apps/desktop/src/workspace_read.rs 的错误文案（`path ... is not accessible: ...`，
- * 底层 io::Error 会带 "No such file or directory"）。Rust 侧改文案时这里最坏退化成「多记一条
- * 诊断」，不会造成功能损坏——所以用字符串判定是可接受的，不值得为它加一个跨端的错误码协议。
+ * 判据取自桥的错误文案（`path ... is not accessible: ...`，底层 IO 错误会带
+ * "No such file or directory"）。写这条时的出处是 `apps/desktop/src/workspace_read.rs`；
+ * 桌面端已随 T1 删除，今天发这句话的是
+ * `packages/host-node/src/workspace/read/listFiles.ts` 的同款文案。桥侧改文案时这里最坏退化成
+ * 「多记一条诊断」，不会造成功能损坏——所以用字符串判定是可接受的，不值得为它加一个错误码协议。
  */
 function isMissingDirectoryError(message: string): boolean {
   const normalized = message.toLowerCase()
@@ -154,7 +156,8 @@ async function scanRoot(
       maxEntries: MAX_SCAN_ENTRIES,
       workspaceRoot: root.root,
       // ★ 这里的越界许可只作用于「列出这一个 skills 目录」★ —— 桥在 confine 模式下会把
-      // 目标在根外的 symlink 条目整条滤掉（契约测试 linked_skill_dir_is_invisible_…），
+      // 目标在根外的 symlink 条目整条滤掉（原契约测试 linked_skill_dir_is_invisible_…，随 T1
+      // 与桌面端一并删除；今天由 host-node 的 listFiles.test.ts 覆盖，见 linkedSkillDirScan 文件头），
       // 于是 `.claude/skills/x -> 别处` 这种 dotfiles 写法会**静默缺席**。放开后多出来的
       // 只有「symlink 条目本身可见」：桥依然不递归进 symlink，后续读取各自以那个目录为根、
       // 不带任何越界许可（见 linkedSkillDirScan）。

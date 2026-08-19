@@ -5,7 +5,7 @@
 
 ## 背景：三个事实
 
-1. **实测缓存数据**（Tauri SQLite trace，185 轮会话）：`cache_epoch` 每轮 +1，原因清一色
+1. **实测缓存数据**（SQLite trace，185 轮会话；取数时的宿主是已删除的桌面端，trace schema 未变）：`cache_epoch` 每轮 +1，原因清一色
    `history_inserted_before_dynamic_tail`。skillContext 每个 run 按最新输入重新匹配、注入在
    动态尾巴，每轮全额 cache miss。customInstructions 已迁入稳定前缀（modelRun.ts
    `stablePrefix`），尾巴里剩下的常驻项只有 skillContext——它是 epoch 无法稳定的最后一个
@@ -99,14 +99,14 @@ interface SkillSource {
   动态尾巴中 skillContext 移除——此后尾巴仅剩事件驱动项（planContext / continuationNotice /
   toolFailureNotice），**多数轮次尾巴为空，`cache_epoch` 在纯追加对话中不再每轮 +1**；
 - contextCache 观测：skillManifest 并入 systemFingerprint 输入；
-- 适配 modelRun / modelTurn / contextCache 测试；trace 验收：Tauri 实测一个多轮会话，
+- 适配 modelRun / modelTurn / contextCache 测试；trace 验收：真机实测一个多轮会话，
   确认 epoch 仅在事件驱动注入轮次变化。
 
 ### 阶段 4 — 项目内 skills 自动加载（`.webAgent/`）
 
 workspace 自带的 skill 目录（`SKILL.md` + 资源文件）自动进 L1 清单，正文与资源沿用本蓝图的
 L2/L3 协议。已展开为独立蓝图：[`project-skills-blueprint.md`](project-skills-blueprint.md)。
-注：无需新增 Rust command——`list_workspace_files` / `read_workspace_file` 已带 workspace
+注：无需新增宿主命令——`list_workspace_files` / `read_workspace_file` 已带 workspace
 confinement 与 `workspaceRoot` 注入。
 
 ## 风险与对策
@@ -132,7 +132,7 @@ confinement 与 `workspaceRoot` 注入。
 1. `pnpm exec vitest run packages/agent-core/ evals/deepseek-agent/ tools/skills/` 全绿；
 2. `pnpm build` 通过；
 3. 阶段 2 产出 eval 数据表并回写本蓝图「门禁结论」；
-4. 阶段 3 附 Tauri 实测 trace（epoch 稳定性）作为完成证据。
+4. 阶段 3 附真机实测 trace（epoch 稳定性）作为完成证据。
 
 ## 门禁结论（随实施回填）
 

@@ -1,4 +1,4 @@
-# 一个内核，三个宿主：装配式 Agent Runtime 设计
+# 一个内核，两个宿主：装配式 Agent Runtime 设计
 
 写给两类人：想自己搭一个 agent runtime 的，和正在选型 agent 框架的。
 
@@ -12,15 +12,16 @@
 
 问题在第二个宿主。
 
-- 想把浏览器里的 IndexedDB 换成桌面端的 SQLite → 得改 core，因为 core 直接 import 了 driver。
+- 想把浏览器里的 IndexedDB 换成后端的 SQLite → 得改 core，因为 core 直接 import 了 driver。
 - 想长一个 headless CLI → 得绕开 core 里那些 React/DOM 的引用。
 - 想裁掉一半工具做个嵌入式小 agent → 做不到，工具是 core 硬编码的。
 - 想在同一个进程里跑两个互不干扰的实例 → core 里全是模块级单例。
 
 判断一个 core 干不干净，最快的办法不是读它的架构文档，是读它的 `package.json` 和 import 列表。
-本项目 `packages/agent-core/package.json` 的 `dependencies` 只有四项：`@einfach-agent/ai`（模型请求）、
-`@einfach/core`（状态引擎）、`@tauri-apps/api`、`@tauri-apps/plugin-dialog`。没有 React，
-没有任何工具包，没有任何存储/观测实现包。
+本项目 `packages/agent-core/package.json` 的 `dependencies` 只有两项：`@einfach-agent/ai`（模型请求）
+与 `@einfach/core`（状态引擎）。没有 React，没有任何工具包，没有任何存储/观测实现包，也没有任何
+宿主 SDK——最后这条是后来才做到的：写这篇时它还挂着 `@tauri-apps/api` 与 `@tauri-apps/plugin-dialog`
+两项，见第七节取舍 5。
 
 ## 二、设计原则：内核只留四样东西
 
@@ -100,9 +101,9 @@ driver 未配置时全部 no-op——所以 runtime 的单测不配任何存储�
 config 全是这次调用私有的闭包，两次 `createCore()` 互不影响（`coreInstance.test.ts` /
 `createCore.test.ts` 守着这条）。
 
-## 四、证据二：三个宿主，同一个内核
+## 四、证据二：两个宿主，同一个内核
 
-**浏览器 / 桌面 UI**：`apps/web/src/main.tsx`，装配代码在文件顶部：
+**浏览器**：`apps/web/src/main.tsx`，装配代码在文件顶部：
 
 ```tsx
 registerStandardTools(toolRegistry)
@@ -130,18 +131,21 @@ export function assembleCliRuntime(options: AssembleCliRuntimeOptions): void {
 
 两段的前几行几乎逐字相同。差别全部落在**宿主特有的那几样**上：
 
-| 槽位 | Web / 桌面 | CLI |
+| 槽位 | 浏览器 | CLI |
 | --- | --- | --- |
-| Skills 扫描 | 浏览器/Tauri 文件桥 | Node 文件桥 |
-| 会话与历史 | IndexedDB / SQLite | 内存 driver |
-| 观测 driver | IndexedDB / SQLite | verbose 时写 stderr |
-| 模型传输 | Tauri 原生代理 / dev 中继 / 拒绝 | `globalThis.fetch` |
-| 凭据 | 桌面受管标记，Key 不进前端 | 环境变量或配置文件 |
+| Skills 扫描 | 经宿主命令桥打到本机后端 | Node 文件桥（进程内） |
+| 会话与历史 | 有后端时 SQLite，纯静态时 IndexedDB | 内存 driver |
+| 观测 driver | 同上 | verbose 时写 stderr |
+| 模型传输 | `POST /api/model` 经本机后端代理 | `globalThis.fetch` |
+| 凭据 | 宿主受管标记，Key 不进前端 | 环境变量或配置文件 |
 
-**桌面端**没有第三份装配：`apps/desktop/tauri.conf.json` 的 `frontendDist` 指向 `../web/dist`，
-直接复用 Web 的产物，只多一层 Rust 桥（`apps/desktop/src/` 下的 `shell.rs`、`mcp.rs`、
-`model_proxy.rs`、`web_agent_config_store.rs` 等）负责 shell、MCP stdio、模型代理和凭据读取。
-所以"三个宿主"实际是**两份 TS 装配 + 一层原生实现**。
+两个宿主的**本机能力只有一份实现**：`packages/host-node`（文件、shell、MCP stdio、模型代理、
+SQL）。CLI 进程内直调它，浏览器经 `apps/server` 打 `POST /api/invoke/:command`。所以"两个宿主"
+实际是**两份 TS 装配 + 一份能力实现**。
+
+（写这篇时还有第三个宿主：一个 Tauri 桌面壳，复用 Web 产物 + 一层 Rust 桥。那层 Rust 是同一批
+能力的**第二份**实现，共 16535 行；后来整条删掉了，能力实现收敛成上面这一份。这个删除本身就是
+本文论点的最强证据：换掉一个宿主没有动 core 一行。）
 
 CLI 那 60 行，是这套设计最直接的收益证明：跑 headless 不需要动 core 一行。
 
@@ -153,7 +157,8 @@ CLI 那 60 行，是这套设计最直接的收益证明：跑 headless 不需�
 const coreRules = [
   { name: 'core 禁入 React', packages: ['react', '@einfach/react'] },
   { name: 'core 禁入工具域', matches: (v) => v === '@einfach-agent/tools' || v.startsWith('@einfach-agent/tools-') },
-  { name: 'core 禁入能力包', packages: [/* subagents、persistence-*、observability-* */] },
+  // 能力包里也包含 host-node：core 反过来引它，等于把「宿主是什么」重新焊回 core
+  { name: 'core 禁入能力包', packages: [/* subagents、persistence-*、observability-*、host-node */] },
   { name: 'core 禁入 Tauri SQL 插件', packages: ['@tauri-apps/plugin-sql'] },
 ]
 const capabilityRule = {
@@ -162,15 +167,17 @@ const capabilityRule = {
 }
 ```
 
-前四条扫 `packages/agent-core/src`，第五条扫五个能力包。当前输出：
+前四条扫 `packages/agent-core/src`，第五条扫各能力包；后来又加了两条（core 厂商名红线、
+core 公开面白名单），共 7 条。当前输出的结尾行：
 
 ```text
-边界观察项：
-- packages/agent-core/src/runtime/workspaceDialog.ts:2 观察项：core 使用 Tauri dialog 插件
-边界检查通过（扫描 225 个非测试 TS/TSX 文件，生效 5 条规则）。
+边界检查通过（扫描 831 个非测试 TS/TSX 文件，生效 7 条规则）。
 ```
 
-它在 CI 里排在测试前面：`check-docs → check-boundaries → pnpm test → pnpm build`。
+最后那条 Tauri 规则今天已经**没有对象**了——桌面壳删掉之后全仓零 `@tauri-apps` 依赖。
+留着它是刻意的：门禁最便宜的用法就是把「已经决定不要的东西」钉住，免得它某天被顺手引回来。
+
+它在 CI 里排在测试前面：`check-docs → check-boundaries → check-state → pnpm test → pnpm build`。
 "core 不依赖 React"这句话，因此是**可执行的**，不是一句愿望。
 
 依赖方向一句话：
@@ -188,8 +195,8 @@ const capabilityRule = {
 两个接口定在 core，实现分别在 `@einfach-agent/persistence-idb` 和 `@einfach-agent/persistence-sqlite`。
 装配层一个三元表达式就切换完了，而且 SQLite 那份是**动态 import** 的——浏览器 bundle 里根本不含它。
 
-**换观测。** 同一套：`configureObservability({ driver })`。Web 用 IndexedDB，桌面用 SQLite，
-CLI 直接把 span/event 名字写进 stderr——CLI 那个 driver 是 8 行内联对象。
+**换观测。** 同一套：`configureObservability({ driver })`。有 SQL 通路时用 SQLite，纯静态用
+IndexedDB，CLI 直接把 span/event 名字写进 stderr——CLI 那个 driver 是 8 行内联对象。
 
 **长出新宿主。** 前面那 60 行。
 
@@ -215,8 +222,11 @@ CLI 直接把 span/event 名字写进 stderr——CLI 那个 driver 是 8 行内
    不解析行内注释和跨行语句。动态拼接的模块名它抓不住。它挡的是"随手 import 了一个不该 import 的包"
    这种日常失误，不是对抗性绕过。
 
-5. **core 还留着一处宿主依赖。** `workspaceDialog.ts` 直接 import 了 `@tauri-apps/plugin-dialog`。
-   它现在是"观察项"——会打印、但不 fail CI。这是已知欠账，不是设计意图。
+5. **~~core 还留着一处宿主依赖~~（写这篇时的欠账，后来还清了）。** 当时
+   `workspaceDialog.ts` 直接 import 了 `@tauri-apps/plugin-dialog`，脚本里是一条"观察项"——会打印、
+   但不 fail CI。后来那个文件随桌面壳一并删除，core 今天对任何宿主 SDK 零依赖。
+   留着这条是因为它示范了这套机制的实际用法：**已知欠账要在门禁里留一条会说话的记录**，
+   而不是等某天有人想起来。
 
 6. **抽象本身有认知成本。** "工具在哪注册的""这个 hook 谁挂的"这类问题，在装配式结构里要多跳一层
    才能回答。对只有一个宿主、且未来也只会有一个宿主的项目，这层抽象大概率不划算。

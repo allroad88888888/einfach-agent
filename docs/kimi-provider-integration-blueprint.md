@@ -4,6 +4,12 @@
 更新时间：2026-08-05。
 关联：[图片输入协议 RFC](image-input-rfc.md)、[模型适配器兼容性契约](model-adapter-compatibility.md)。
 
+> **宿主已换过一次（2026-08-19，T1）。** 下面第 4–6 节的 Issue 表是 2026-08-05 的**执行记录**，
+> 其中 KIMI-10D / 50A / 50B 说的「Tauri」「Rust route 白名单」「Rust lib.rs」指的是当时的桌面宿主。
+> 桌面端已随 [Node 宿主树](node-host-issues.md) 的 T1 整条删除，那份安全传输等价移植进了
+> `packages/host-node/src/model/`，由 `apps/server` 的模型路由对外。**卡面按当时的事实保留不改**
+> （Rust 原件从 Git 历史读）；仍然有效的**设计边界与开放门槛**已按今天的宿主重写，见第 1 节与第 7 节。
+
 ## 1. 目标形态
 
 用户需求中的“Kimi3”按产品代号保留；截至 2026-08-05，官方模型列表没有 `kimi-k3` API ID，
@@ -19,10 +25,12 @@ Kimi adapter 独占以下知识：
 - `kimi-k2.6` 的 model-level 图片 capability、`thinking` 与消息历史规则。
 - 文件失效、账号/region 不兼容、部分上传失败时的错误与清理语义。
 
-Tauri 只实现 [图片输入协议 RFC](image-input-rfc.md#3-职责边界) 中的通用安全传输，不新增
+宿主只实现 [图片输入协议 RFC](image-input-rfc.md#3-职责边界) 中的通用安全传输，不新增
 `upload_kimi_image`、`model_image_upload` 等供应商业务命令。宿主只按
 `provider/scope/method/path` 执行精确安全白名单；请求路径的业务含义、multipart 字段与响应解析仍由
-adapter 独占。
+adapter 独占。（这条边界写下时的宿主是 Tauri 的 Rust 代理；桌面端已随 T1 删除，今天承接它的是
+[`packages/host-node/src/model/`](../packages/host-node/src/model/) 与 `apps/server` 的模型路由，
+边界本身没变。）
 
 ## 2. 已验证的 Kimi 契约
 
@@ -138,7 +146,8 @@ KIMI-IMG  Kimi（kimi-k2.6）+ 图片输入交付                [gpt-5.6-sol]  
 
 1. 真实 `cn` Key 完成 files + chat 同 region 验证；global 未验证时不展示。
 2. 图片上传失败、取消、会话删除与模型切换均不会污染历史或泄漏引用。
-3. Rust route 白名单、无重定向、凭证隔离、正文限额与日志脱敏审查通过。
+3. 宿主 route 白名单（今天是 `packages/host-node/src/model/providerRoute.ts`）、无重定向、凭证隔离、
+   正文限额与日志脱敏审查通过。
 4. DeepSeek/GLM 的纯文本、工具调用、缓存 usage 与重试基线无回归。
 5. 新建/大改文件符合单一职责与行数硬规则，文档链接检查通过。
 
@@ -154,5 +163,7 @@ adapter 的上传 origin 也固定为官方中国区端点，不接受调用方�
 已实现的边界可从 [Kimi adapter](../packages/agent-ai/src/kimiFiles.ts)、
 [Core 提交事务](../packages/agent-core/src/runtime/preparedUserInputTransaction.ts)、
 [Web 通用传输](../apps/web/src/modelTransport/providerWireEnvelope.ts) 与
-[Rust 通用传输](../apps/desktop/src/model_proxy_envelope.rs) 回读。远端文件清理是 adapter 所有的
+[Node 宿主通用传输](../packages/host-node/src/model/requestEnvelope.ts) 回读。
+（最后一处原本是 Rust 的 `model_proxy_envelope.rs`；桌面端已随 T1 整条删除，那份实现等价移植成了
+上面这个 Node 文件，Rust 原件只能从 Git 历史读。）远端文件清理是 adapter 所有的
 best-effort 行为；应用崩溃、凭证更换或供应商删除失败仍可能留下孤儿文件，开放前需在真实联调中记录和接受该剩余风险。

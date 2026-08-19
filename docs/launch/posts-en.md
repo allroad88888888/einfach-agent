@@ -20,16 +20,16 @@
 **标题候选**（HN 上限 80 字符，括号内为实测字符数，破折号是 en dash 各计 1 字符）：
 
 1. `Show HN: Einfach Agent – an agent kernel you assemble, not a finished app`（73）**← 推荐**
-2. `Show HN: Einfach Agent – one agent kernel, three hosts, DeepSeek/GLM adapters`（77）
-3. `Show HN: Einfach Agent – an assembled agent runtime for browser, desktop and CLI`（80）
+2. `Show HN: Einfach Agent – one agent kernel, two hosts, DeepSeek/GLM adapters`（75）
+3. `Show HN: Einfach Agent – an assembled agent runtime for a self-hosted web app and a CLI`（87，超限）
 
 推荐 1：一句话划清「内核不是成品」，正好是本项目与 Cline/OpenCode 那类成品编码 Agent 的分界，也预先
-挡掉"又一个 agent 客户端"的第一印象；且 73 字符留了改词余地。候选 3 卡在 80 上限，改一个字就超。
+挡掉"又一个 agent 客户端"的第一印象；且 73 字符留了改词余地。候选 3 已超 80 上限，要用得先砍词。
 
 **正文**：
 
-I have been building a desktop coding agent for a while, and I kept running into the same thing:
-every time I wanted a second host — first a browser preview, later a headless CLI — the runtime came
+I have been building a coding agent for a while, and I kept running into the same thing:
+every time I wanted a second host — first a desktop shell, later a headless CLI — the runtime came
 along as a copy. Most agent projects I looked at ship a loop that is welded to one storage backend,
 one UI and one tool set. You can fork it, but you cannot take the loop and leave the rest.
 
@@ -47,8 +47,10 @@ Three parts I think are worth a look:
 fails if the core ever pulls in React, a tool domain package, or a capability package. It runs before
 the tests in CI, so that arrow is checked rather than merely documented.
 
-**One kernel, three hosts.** Browser preview, Tauri desktop and a headless CLI run the same loop, the
-same tool contract and the same plugin chain. The CLI assembly layer is 60 lines
+**One kernel, two hosts.** A self-hosted browser app (static frontend plus a local Node backend) and a
+headless CLI run the same loop, the same tool contract and the same plugin chain. Native capability —
+files, shell, MCP stdio, the model proxy — has exactly one implementation (`packages/host-node`); the CLI
+calls it in-process and the browser reaches it over `POST /api/invoke/:command`. The CLI assembly layer is 60 lines
 (`apps/cli/src/runtime.ts`): in-memory history driver, traces to stderr, Node `fetch`. Everything
 else in that host is terminal shell. It paid for itself immediately — its first real run returned a
 400 from DeepSeek for a bug that had been sitting on main with the test suite green, because the
@@ -153,15 +155,15 @@ into the generic abstraction; the long version is `docs/launch/articles/deepseek
 agent runtime kernel. The core holds the tool contract and registry, the main loop, plugin hooks and the
 state/persistence/observability interfaces; tools, trace sink, persistence driver, skills, plan runtime and
 sub-agent delegation are injected as slots, and `scripts/check-boundaries.js` fails CI if the core ever
-imports React or a tool domain package. One kernel assembles three hosts: browser preview, Tauri desktop,
-headless CLI. DeepSeek and GLM are first-class — hand-written adapters, no aggregation layer, so the traps
+imports React or a tool domain package. One kernel assembles two hosts: a self-hosted browser app and a
+headless CLI, sharing one native-capability implementation. DeepSeek and GLM are first-class — hand-written adapters, no aggregation layer, so the traps
 above and GLM's thinking / `reasoning_effort` handling are ours to maintain.
 
 Caveats, since this subreddit will find them anyway:
 
 - **No local model support.** No Ollama, no llama.cpp, no OpenAI-compatible `base_url` fallback. If you run
   local weights, this repo is protocol notes and a runtime to read, not something to plug into.
-- Nothing is on npm: packages are `private: true` with `exports` pointing at uncompiled `src/*.ts`. Clone it.
+- Nothing is on npm, and nothing is planned to be: packages stay `private: true`. Run it locally (`pnpm serve`, or `pnpm pack` and install the tarballs elsewhere), or clone it.
 - Docs and UI copy are Chinese-first; `README.md` is the English entry point.
 - Three adapters, two on by default (DeepSeek, GLM). Kimi is implemented but gated off until it is verified
   against a real key. No OpenAI, Anthropic or Gemini.

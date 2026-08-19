@@ -29,13 +29,14 @@
 //      是 `<root>/real/a.txt`。照搬 Rust。
 //   5. **错误文案两套**：空路径是 `path must be a non-empty string`（写入侧
 //      `path (non-empty string) is required`）、越界是 `path is outside the workspace root`
-//      （写入侧 `path must stay within the workspace root`）。同一件事两句话，是 Rust 侧既有的
-//      分叉，两个宿主必须同款，所以照搬。
+//      （写入侧 `path must stay within the workspace root`）。同一件事两句话，是移植来源里就有的
+//      分叉，照搬未改；它们是模型可见的文案，统一是一次独立的行为改动。
 //
 // 【错误文案里的路径为什么不过 `toSlashPath`】
-// Rust 用 `to_string_lossy()` / `Path::display()`，Windows 上给的就是反斜杠。这里原样插值，
-// 于是两个宿主在两个平台上都给同一句话。（这些消息里是**绝对路径**，会把宿主机目录结构写进
-// 模型可见的错误文本——那是 Rust 侧既有的问题 #5，属对拍该拿的决定，本卡未单方面改。）
+// 移植来源用 `to_string_lossy()` / `Path::display()`，Windows 上给的就是反斜杠，这里原样插值。
+// （这些消息里是**绝对路径**，会把宿主机目录结构写进模型可见的错误文本——那是移植来源里就有的
+// 问题 #5。当年记的是「留给对拍拿决定」，Rust 侧已随 T1 删除，**没有对拍会来拿这个决定了**：
+// 它现在是一条无主的既有缺陷，要改就得单开一卡，别指望它自己被顺带解决。）
 
 import { lstat, realpath, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'

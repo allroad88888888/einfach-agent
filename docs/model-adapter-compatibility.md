@@ -8,10 +8,10 @@
 
 | Vendor | 默认模型 | 状态 | 凭证与调用边界 |
 | --- | --- | --- | --- |
-| `deepseek` | `deepseek-v4-flash` | 支持 | 仅桌面原生层持有 Key 并请求供应商；可传不透明 `user_id` |
-| `glm` | `glm-5.2` | 支持 | 仅桌面原生层持有 Key 并请求供应商；不发送 `user_id` |
+| `deepseek` | `deepseek-v4-flash` | 支持 | 仅本机 Node 后端持有 Key 并请求供应商；可传不透明 `user_id` |
+| `glm` | `glm-5.2` | 支持 | 仅本机 Node 后端持有 Key 并请求供应商；不发送 `user_id` |
 | `kimi` | — | 未接入 | 不应仅凭另一项目的 provider 代码新增为可选项 |
-| `openai-compat` | 无（协议不含厂商模型，由调用方指定） | 支持（仅 CLI） | CLI 进程直接从环境变量/配置文件读取 Key 与 baseUrl 并请求；桌面 `ModelProvider` 枚举未收录，UI 选不了；Web 未接入 |
+| `openai-compat` | 无（协议不含厂商模型，由调用方指定） | 支持（仅 CLI） | CLI 进程直接从环境变量/配置文件读取 Key 与 baseUrl 并请求；宿主侧 `ModelProviderName`（`packages/host-node/src/model/provider.ts`）未收录，浏览器 UI 选不了 |
 
 静态 Web 没有可信模型代理，不能直接请求任一供应商。核心运行时只能构造公共的
 `ChatRequestBase`；供应商特有的请求净化、流式 usage 处理和终止语义属于
@@ -50,7 +50,7 @@ provider 的 `encode` / `decode` 边界，而非散落在 Agent 主循环。这�
 
 1. 在 `agent-ai` 增加独立 adapter，并以测试覆盖请求编码、流式 usage、错误和工具调用历史。
 2. 扩展受歧义辨别的模型设置、会话持久化迁移和 UI 选择项，不能以字符串旁路类型系统。
-3. 在桌面原生层增加 Key 存储和受限请求代理；Web 继续不持有 Key。
+3. 在本机 Node 后端增加 Key 存储和受限请求代理；前端继续不持有 Key。
 4. 明确缓存 usage、thinking、`tool_choice` 和模型容量错误的降级语义，并在真实目标模型上回归。
 5. 更新用户文档与模型选择测试，确认默认值和已有会话不会被错误迁移。
 
@@ -84,10 +84,12 @@ provider 的 `encode` / `decode` 边界，而非散落在 Agent 主循环。这�
 2. 模型设置/会话持久化/UI 选择项——**部分满足**：`ModelAdapterSettings` 已加
    `{ vendor: 'openai-compat'; baseUrl?: string }` 分支（`modelAdapter.ts`），但目前没有
    会话级 UI 选择入口，也没有持久化迁移需要处理（尚无历史会话用过这个 vendor）。
-3. 桌面原生层 Key 存储与受限请求代理——**不满足**：`apps/desktop/src/model_credentials.rs`
-   的 `ModelProvider` 枚举只收录 `Deepseek` / `Glm` / `Kimi`。openai-compat 目前只能经 CLI
-   使用——CLI 是本机 Node 进程，直接从环境变量或 `~/.webAgent/config.json` 读取 Key 与
-   baseUrl 并请求，不经过桌面原生代理，威胁模型与桌面/Web 不同。
+3. 本机 Node 后端的 Key 存储与受限请求代理——**不满足**：
+   `packages/host-node/src/model/provider.ts` 的 `ModelProviderName` 只收录
+   `deepseek` / `glm` / `kimi`（前端那一半是 `apps/web/src/settings/modelCredentialHost.ts`，
+   同样三条）。openai-compat 目前只能经 CLI 使用——CLI 直接从环境变量或
+   `~/.webAgent/config.json` 读取 Key 与 baseUrl 并请求，**不经过受限代理的白名单与限额**，
+   威胁模型与浏览器那条路不同。
 4. 缓存 usage / thinking / `tool_choice` / 容量错误的降级语义——**不适用**：这正是
    openai-compat 刻意不做的部分（见「无厂商净化」），任何该类语义留给具体接入的端点或
    未来的专属 adapter 负责，不在这一层伪装成通用行为。
@@ -96,5 +98,5 @@ provider 的 `encode` / `decode` 边界，而非散落在 Agent 主循环。这�
    CLI 侧凭据解析由 `apps/cli/src/credentials.test.ts` 覆盖。
 
 **结论**：openai-compat 是一个刻意最小化的协议逃生舱，服务"没有专属 adapter 但兼容标准
-OpenAI 协议"的端点；它已作为可选 vendor 在 registry 与 CLI 落地，但还不是桌面用户能选的
+OpenAI 协议"的端点；它已作为可选 vendor 在 registry 与 CLI 落地，但还不是浏览器用户能选的
 选项，也不承诺任何厂商级降级语义。

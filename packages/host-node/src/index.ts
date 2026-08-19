@@ -13,6 +13,17 @@
 //
 // core 收的是 loader 而不是已解析的 invoke，理由见 runtime/hostBridge.ts：登记要同步生效，
 // 否则 `hasHostBridge()` 会有一段为 false 的窗口，工具在那段时间跑会报「宿主不支持」。
+//
+// ═══ 关于本包注释里那一百多处 `apps/desktop/src/*.rs` ═══
+// **那些文件已经不存在了。** 本包的绝大部分实现是 W 线从桌面端的 Rust 宿主**等价移植**过来的，
+// 每个文件头都标着它移植自哪一份 Rust 源码；桌面端随 T1（提交 `e52c31d`）整条删除，那 16535 行
+// Rust 只能从 Git 历史读。
+//
+// 所以这些引用**一律读作「移植出处」，不是「去那里对一下」**：本包今天是这批能力在本仓库的
+// **唯一**实现，没有第二侧可比。凡是注释里写着「以 Rust 为准」「该改的是 Rust 侧」「Rust 侧改名
+// 这里会当场红」的地方，都已经就地改正——若还剩下没改到的，按本段处理，不要照着去找那个文件。
+// 移植时刻意保留的形状（snake_case 的结果键、错误文案里的英文原文、常量数值）仍然照搬未改：
+// 它们当年的理由是跨语言对拍，今天的理由是**这就是这条命令的对外契约**，前端与 core 按它写死。
 
 export { createNodeHostInvoke, NodeHostCommandError } from './createNodeHostInvoke'
 export type { NodeHostCommandErrorReason } from './createNodeHostInvoke'
@@ -78,8 +89,8 @@ export { ModelProxyStreamError, ModelRequestCancelledError } from './model'
 export type { ForwardedModelResponse } from './model'
 
 // sqlite 域：Node 侧的 SQL 执行面，实现 core 的 `SqlExecutor`（P1 的 port）。
-// **Rust 侧没有对应命令**——桌面走 `@tauri-apps/plugin-sql`，不在 `generate_handler!` 列表里，
-// 所以这两条命令名是 Node 侧新定的（见 commandNames.ts 的 `DOMAINS_WITHOUT_DESKTOP_COMMANDS`）。
+// **这两条命令名是 Node 侧新定的**，没有移植来源：桌面端的等价能力由 Tauri 的 SQL **插件**提供，
+// 从来不在它的命令表里（见 commandNames.ts 的 `DOMAINS_WITHOUT_DESKTOP_COMMANDS`）。
 export {
   closeSqliteConnections,
   createNodeSqlExecutorLoader,

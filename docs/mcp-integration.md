@@ -1,9 +1,9 @@
 # MCP 集成
 
 本文描述 Einfach Agent 当前的 MCP（Model Context Protocol）接入边界、生命周期与安全约束。实现由三层
-组成：`tools/mcp`（协议客户端、连接管理、失败分类与远端工具适配）、`apps/desktop/src/mcp.rs`
-（Tauri 桌面端的 stdio 子进程与 JSON-RPC 会话）、`apps/web/src/mcp`（装配、配置持久化、工具清单
-缓存、起进程确认与设置中心状态）。UI 只读取 Einfach atom 并调用命令，不直接访问 registry 或传输层。
+组成：`tools/mcp`（协议客户端、连接管理、失败分类与远端工具适配）、`packages/host-node/src/mcp/`
+（本机 stdio 子进程与 JSON-RPC 会话，浏览器经 `apps/server` 打到它、CLI 进程内直调）、
+`apps/web/src/mcp`（装配、配置持久化、工具清单缓存、起进程确认与设置中心状态）。UI 只读取 Einfach atom 并调用命令，不直接访问 registry 或传输层。
 
 MCP 运行时在**应用启动时**装配，不再等用户点开设置弹窗：`apps/web/src/main.tsx` 同步调用
 `initializeMcpSettings()` 建立连接器路由与进程级管理器，再以 `void hydrateMcpSettings()` 在后台恢复
@@ -14,8 +14,8 @@ MCP 运行时在**应用启动时**装配，不再等用户点开设置弹窗：
 
 | 能力 | Streamable HTTP | stdio |
 | --- | --- | --- |
-| 运行环境 | 浏览器与 Tauri；浏览器仍受服务端 CORS 约束 | 仅 Tauri |
-| 会话持有者 | 官方 TypeScript SDK | Rust/Tauri 后端 |
+| 运行环境 | 任何宿主；浏览器仍受服务端 CORS 约束 | 需要能起本机子进程的宿主：`pnpm serve` 那一态与 CLI；纯静态产物不支持 |
+| 会话持有者 | 官方 TypeScript SDK | Node 宿主（`packages/host-node/src/mcp/`） |
 | 协议版本 | 由 SDK 协商 | 只接受 `2025-11-25` |
 | `tools/list` / `tools/call` | 支持 | 支持 |
 | `tools/list_changed` | 收到通知后重新对账 | 收到通知后重新对账 |
@@ -29,7 +29,7 @@ MCP 运行时在**应用启动时**装配，不再等用户点开设置弹窗：
 
 凭据支持已落地但边界很窄：streamable-http 走 `headers`、stdio 走 `env`，两者都经
 `credentialFields.ts` 的 `sanitizeMcpHeaders` / `sanitizeMcpEnv` 校验形状（键字符集、条数与长度上限、
-控制字符），不做秘密扫描。凭据唯一落点是桌面配置文件 `~/.webAgent/config.json`——不是加密保险库，是
+控制字符），不做秘密扫描。凭据唯一落点是本机配置文件 `~/.webAgent/config.json`（由本机 Node 后端读写）——不是加密保险库，是
 明文落盘；`localStorage` 宿主在读写两端都会剥离这两个字段（见 `persistence.ts`），因此浏览器上无法
 安全保存凭据，JSON 导入与设置表单在浏览器宿主会明确报错或禁用（`McpSettingsCapabilities.credentials`），
 不会静默丢字段。URL 字段本身仍然拒绝带查询参数或用户名密码——凭据必须走 `headers`，不能编码进地址；
@@ -37,7 +37,7 @@ MCP 运行时在**应用启动时**装配，不再等用户点开设置弹窗：
 
 MCP 本身不等于 tools：协议把 `tools`、`resources`、`prompts` 定义为不同的服务端 primitive，分别在
 `initialize` 的 capabilities 中协商。本项目刻意只实现 tools，不能把 resources 或 prompts 伪装成
-工具，也不能在没有声明 tools capability 时继续连接。桌面 stdio 客户端只支持 `2025-11-25`：服务端
+工具，也不能在没有声明 tools capability 时继续连接。stdio 客户端只支持 `2025-11-25`：服务端
 必须选择这一版本、返回 object 型 `capabilities`、声明 object 型 `capabilities.tools`，并给出非空的
 `serverInfo` 名称与版本，任一不符都会断开并卸载工具，不做降级协商。每个 `tools/list` 项都必须提供
 根 `type: "object"` 的 `inputSchema`，缺失或根类型不符会被拒绝，不会补成一个看似可调用的空 schema；
@@ -112,13 +112,13 @@ registry 却仍可调用的幽灵工具。每次 stdio 连接还会生成独立�
 
 每一次连接、对账或异常关闭的失败都被分成两类：**暂时**（`reconnecting`，值得重试）与**永久**（`error`，
 重试不会自愈，需要人工改配置、环境或服务端实现）。分类只服从一条规则：**永久结论只能来自对端不参与
-撰写的信号**——桌面 stdio 桥的结构化失败 kind、HTTP 响应状态码、本包自己抛出的确定字符串；远端
+撰写的信号**——stdio 桥的结构化失败 kind、HTTP 响应状态码、本包自己抛出的确定字符串；远端
 JSON-RPC 错误文本、HTTP 响应体、SDK 措辞至多只能选择原因标签，一律落到暂时失败。这个不对称是刻意的：
 把暂时失败判成永久会停掉全部重试并需要人工介入，而对端只要在一次普通 500 里回一句「invalid token」
 或「exceeded 5 tools」就能随意触发它；反过来把永久失败判成暂时，只是多花掉有限几次退避尝试，预算
 用尽后同一个失败照样浮出来。
 
-- 桌面桥的 kind 经不可枚举属性跨界传递，绝不进 UI 文本。只有「OS 拒绝启动配置的命令」与「对端破坏
+- stdio 桥的 kind 经不可枚举属性跨界传递，绝不进 UI 文本。只有「OS 拒绝启动配置的命令」与「对端破坏
   了 MCP 契约」两种判永久；子进程已经起来之后的宿主侧装配失败仍可重试；内联了对端原文的 kind 被
   标记为「对端撰写」，直接跳过全部消息匹配规则。
 - HTTP 状态码由传输层观测而非服务端撰写：401/403 判永久（认证失败），其余 4xx（除 408、429）判
@@ -187,7 +187,7 @@ registry 是进程级共享且随时可变的，而 MCP 的通知与断线会立
 探测完成后立即断开——留着连接就等于绕过按需分层，模型会直接看见并调用这些工具。断开、连接失败、退避
 重连**一律不动缓存**：「现在没连着」绝不是「这个服务没有工具」。
 
-**落点**是桌面端 `~/.webAgent/config.json` 的 `mcp.toolNameCache` 段（目录 0700、文件 0600、原子写，
+**落点**是本机 `~/.webAgent/config.json` 的 `mcp.toolNameCache` 段（目录 0700、文件 0600、原子写，
 按顶层键合并，不影响同段其它键），浏览器与测试退回 localStorage 或内存。**只存工具名与短描述，绝不存
 `inputSchema`**：schema 属于按需加载那一层且要求工具已注册，缓存它会诱使模型直接调用未连接的工具，
 破坏惰性加载的分层。**上限**（这份数据最终整体进模型上下文）：单服务 200 条工具、单条描述 160 字符、
@@ -213,9 +213,9 @@ registry 是进程级共享且随时可变的，而 MCP 的通知与断线会立
 `headers`；stdio 配置保存服务名、命令、参数、工作目录、可选的环境变量 `env` 与起进程确认记录；两者
 都带 `autoConnect`。连接状态、错误、远端工具定义和活动 client 不持久化。
 
-桌面端服务配置写 `~/.webAgent/config.json` 的 `mcp.servers` 段（目录 0700、文件 0600、原子写，
+有后端的宿主把服务配置写 `~/.webAgent/config.json` 的 `mcp.servers` 段（目录 0700、文件 0600、原子写，
 按顶层键合并，与工具清单缓存共享同一份配置文件但各占一个键）；浏览器宿主仍写 `localStorage`（键
-`web-agent.mcp-servers.v1`）。桌面端首次读盘时，若配置文件里还没有 `servers` 键，会把 `localStorage`
+`web-agent.mcp-servers.v1`）。有后端的宿主首次读盘时，若配置文件里还没有 `servers` 键，会把 `localStorage`
 里的存量配置一次性搬进配置文件（幂等：搬过之后配置文件有了 `servers` 键就不再触发；空数组不触发，
 因为那等于凭空替用户宣布「配置文件已是权威」）；迁移时显式剥离 `headers` / `env` 字段——
 `localStorage` 按设计不该出现凭据，出现了也只可能来自不可信来源；旧 `localStorage` 数据本身不清空，
@@ -236,18 +236,18 @@ registry 是进程级共享且随时可变的，而 MCP 的通知与断线会立
   `headers`、`type`、`transport`；单服务格式另外要求 `name`。`command` 自动推断为 stdio，`url`
   自动推断为 Streamable HTTP，可选的 `type` / `transport` 只能显式声明与推断相同的传输方式。`env` /
   `headers` 经 `sanitizeMcpEnv` / `sanitizeMcpHeaders` 校验形状，且只有宿主支持落盘凭据
-  （`McpSettingsCapabilities.credentials`，当前仅桌面）时才放行——浏览器宿主看到这两个字段直接报错，
+  （`McpSettingsCapabilities.credentials`，只在有本机后端的那一态为真）时才放行——纯静态宿主看到这两个字段直接报错，
   要求删除后再导入，不静默丢弃也不悄悄接受了却存不住。仍严格拒绝 `token` 及其他未支持字段；导入项
   一律以 `autoConnect: false` 落盘。
 - 导入落盘后会在后台**逐个探测**（不并发，避免一次打满远端与本地连接），把工具清单收进缓存并在状态行
   上报进度与汇总；探测结论不影响导入成功与否，失败的配置照样保留。未确认命令行的 stdio 导入项只排一条
   确认请求、不进探测循环——让后台顺序循环停下来等人点确认，会把排在后面的 HTTP 探测一起卡住。浏览器
-  可以保存 stdio 配置但无法启动它；浏览器与桌面端是两套独立存储，彼此不自动同步，唯一的单向例外是
-  「配置与持久化」一节所述的桌面端首次冷启动迁移。
+  可以保存 stdio 配置但无法启动它；`localStorage` 与配置文件是两套独立存储，彼此不自动同步，唯一的单向例外是
+  「配置与持久化」一节所述的首次冷启动迁移。
 
 ## 安全边界
 
-MCP 服务是应用之外的信任域。**起进程确认（用户路径）**：桌面端 stdio 服务在本机第一次执行某条命令行
+MCP 服务是应用之外的信任域。**起进程确认（用户路径）**：stdio 服务在本机第一次执行某条命令行
 之前，必须由用户看着「将执行 `<command> <args>`」点确认。确认**绑命令行，不绑服务**——记录的是
 command、args、cwd 的规范化 JSON 元组指纹，配了 `env` 时作为第四项一并纳入（没有 `env` 的存量配置
 指纹逐字节不变，这次升级不会把老确认集体作废）；任何一项被改过（将来的编辑界面，或者用户手改配置）
@@ -285,8 +285,8 @@ command、args、cwd 的规范化 JSON 元组指纹，配了 `env` 时作为第�
 - 第三方 `description`、schema 和工具名只用于模型提示，不作为授权依据；注销与连接异常会立即卸载
   工具，避免继续调用失效或来源已变化的能力。
 - Streamable HTTP 在 SDK 解析前限制响应体：非 SSE 整体、SSE 单事件各最多 4 MiB，声明长度与实际分块
-  流量都会校验。子进程 stderr 被持续消费（防止管道写满阻塞子进程）但只留在 Rust 侧的尾缓冲里，不混入
-  JSON-RPC stdout，也不序列化进 Tauri 返回值、前端错误或模型上下文；stdio 请求有超时，退出时执行会话
+  流量都会校验。子进程 stderr 被持续消费（防止管道写满阻塞子进程）但只留在宿主侧的尾缓冲里，不混入
+  JSON-RPC stdout，也不序列化进命令返回值、前端错误或模型上下文；stdio 请求有超时，退出时执行会话
   清理与子进程终止。
 
 后续如果引入服务级信任、只读工具或跨会话的「始终允许」，必须基于可审计的服务身份、能力快照和细粒度
@@ -331,7 +331,7 @@ Streamable HTTP 走 `headers`、stdio 走 `env`（见「支持范围」与「配
 
 **6. MCP 配置本体是否迁出 localStorage。** 工具清单缓存当时已经进了 `~/.webAgent/config.json`，而
 服务列表仍在 `web-agent.mcp-servers.v1`，形成两处存储；写配置文件的通道已经实现但装配点尚未接线。
-**决策：做，作为凭据支持的前置条件，已实施。** 桌面端服务配置现已写 `~/.webAgent/config.json`，
+**决策：做，作为凭据支持的前置条件，已实施。** 有本机后端时服务配置现已写 `~/.webAgent/config.json`，
 存量迁移沿用模型 Key 的口径：目标位置没有数据时才复制，旧数据保留（见「配置与持久化」）。
 
 另有一项经评估后**决定不做**：在首个 run 组装工具清单之前等待首次连接 settle。当初立项是为了消除

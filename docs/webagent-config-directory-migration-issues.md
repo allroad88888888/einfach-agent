@@ -4,6 +4,11 @@
 创建日期：2026-08-11  
 协调者：gpt-5.6-sol（high）
 
+> **本文是一份完成后的执行账本，卡面按当时的事实保留不改。** 其中提到的桌面端
+> （`apps/desktop/`、Rust 源文件、`cargo test`）已随 [Node 宿主树](node-host-issues.md) 的 T1
+> 整条删除（提交 `e52c31d`），只能从 Git 历史读；同一批能力今天由 `packages/host-node` 承接。
+> **判据本身仍然成立**，换的只是承接者。
+
 ## 目标与边界
 
 将未设置目录覆盖时的桌面用户配置位置由 `~/.web-agent/config.json` 改为

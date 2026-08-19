@@ -1,24 +1,26 @@
 // 两个事件的载荷形状 —— 类型面与运行期键表
 // ---------------------------------------------------------------------------
-// 上游权威是桌面宿主 `apps/desktop/src/mcp_lifecycle.rs`：
+// **本文件今天就是这两个载荷形状的权威。** 它移植自桌面宿主的 `apps/desktop/src/mcp_lifecycle.rs`
+// （那份 Rust 已随 T1 删除，只能从 Git 历史读），原件长这样：
 //
 //   #[derive(Serialize)] #[serde(rename_all = "camelCase")]
 //   struct McpLifecycleEventPayload { server_id: String, session_token: String }        // tools-changed
 //   struct McpCloseEventPayload     { server_id: String, session_token: String, message: String }
 //
 // 所以线上的键是 **camelCase**（`serverId` / `sessionToken` / `message`），三个字段都是**必填**
-// 字符串。这一点值得点名，因为消费侧的 `apps/web/src/mcp/tauriStdioConnector.ts` 把 close 的
-// `message` 声明成了 `message?: string` 并备了一句兜底文案——那是**消费方的防御**，不是契约。
-// 契约以发射方为准：Node 侧发 close 必须带 message。C4 抄那个 connector 时可以保留它的兜底
-// （多一层防御不亏），但别据此把这里改成可选：可选字段值为 `undefined` 时，进程内那条路上
+// 字符串。这一点值得点名，因为消费侧（当年是 `tauriStdioConnector.ts`，今天是
+// `apps/web/src/mcp/serverHostEventStream.ts`）把 close 的 `message` 声明成了 `message?: string`
+// 并备了一句兜底文案——那是**消费方的防御**，不是契约。契约以发射方为准：发 close 必须带 message。
+// 消费方保留它的兜底不亏，但别据此把这里改成可选：可选字段值为 `undefined` 时，进程内那条路上
 // 键存在而过了 JSON 键消失，正是 `jsonPayload.ts` 开头那张表里的第一行。
 //
 // 【为什么载荷里带 sessionToken，以及为什么本域不做按 server 的路由】
-// Rust 侧是 `app.emit(...)`——**全局广播**，每个连接的 listener 都会收到所有 server 的事件，
-// 由 `tauriStdioConnector.ts` 的 `isLifecycleEventForSession` 按 `(serverId, sessionToken)` 自己过滤。
-// 本域刻意保持同一形状：不提供「只订阅某个 serverId」的入口。理由是 C4 要写的是
-// `tauriStdioConnector.ts` 的同接口替身，两侧过滤逻辑必须能逐字照搬；这里多一层路由，
-// C4 就得为两种宿主写两套过滤，而那正是会漂移的地方。sessionToken 的作用也在这里：
+// 原件是 `app.emit(...)`——**全局广播**，每个连接的 listener 都会收到所有 server 的事件，由消费方
+// 的 `isLifecycleEventForSession` 按 `(serverId, sessionToken)` 自己过滤。本域刻意保持同一形状：
+// 不提供「只订阅某个 serverId」的入口。理由是 C4 要写的是那个 connector 的同接口替身，过滤逻辑
+// 必须能逐字照搬；这里多一层路由，就得为两种宿主写两套过滤，而那正是会漂移的地方。
+// （桌面端已退出，这条形状因此不再有"两侧"要对齐；保留它是因为消费方的过滤代码就是照它写的，
+// 单方面收窄等于让一份已经稳定的契约无故变形。）sessionToken 的作用也在这里：
 // 同一个 serverId 重连后是新会话，旧连接的 listener 必须能认出「这条事件不是我的」。
 
 import type { JsonRecord } from './jsonPayload'
@@ -57,14 +59,15 @@ export interface HostEventPayloadMap extends Record<HostEventName, JsonRecord> {
 export type HostEventPayload<Name extends HostEventName = HostEventName> = HostEventPayloadMap[Name]
 
 /**
- * 载荷字段的**运行期**形态。存在的唯一理由是让 `hostEventNames.test.ts` 能拿它去和
- * `mcp_lifecycle.rs` 的 struct 字段逐字对拍——类型在运行期没有影子，对拍需要一份可读的值。
+ * 载荷字段的**运行期**形态。当初存在的理由是让 `hostEventNames.test.ts` 能拿它去和
+ * `mcp_lifecycle.rs` 的 struct 字段逐字对拍；那份 Rust 已随 T1 删除，对拍没有第二侧了。
+ * 它**仍然留着**，因为运行期的下游还在用（SSE 编解码要枚举键），且类型在运行期没有影子。
  * 口径同 `commandNames.ts` 的 `NODE_HOST_COMMAND_NAMES`。
  *
  * 两道约束一起把「表与类型漂移」堵死，缺一不可：
  *   · 下面的 `satisfies`：表里写了类型上不存在的键 → 在字面量那一行报错（子集方向）。
  *   · 再下面的 `_payloadKeysAreExhaustive`：类型里加了字段而表没跟上 → 报错（超集方向）。
- * 只有 `satisfies` 时，新加的字段会静默不进对拍——那字段就永远不会被和 Rust 比对。
+ * 只有 `satisfies` 时，新加的字段会静默不进这张表——于是它永远不会出现在跨传输的键枚举里。
  */
 export const HOST_EVENT_PAYLOAD_KEYS = {
   'mcp-stdio-tools-changed': ['serverId', 'sessionToken'],

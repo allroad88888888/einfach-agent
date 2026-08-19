@@ -129,25 +129,27 @@ env -u DEEPSEEK_API_KEY -u GLM_API_KEY -u KIMI_API_KEY pnpm cli -v -p "用一句
 看到 `[plugins] acme.hello@1.0.0: enabled` 就说明插件已扫描、导入、branded 校验、安装全部
 通过；`[acme.hello] run started: ...` 是 `activate` 里的 hook 真的执行了。
 
-## 在桌面端跑同一个插件
+## 在浏览器里跑同一个插件
 
-同一个目录、同一份 `plugin.json` 与入口文件，桌面宿主也能装：应用启动时按当前会话的 workspace
-扫描 `.webAgent/plugins/`（[`apps/web/src/plugins/initialize.ts`](../apps/web/src/plugins/initialize.ts)），
+同一个目录、同一份 `plugin.json` 与入口文件，浏览器宿主（`pnpm serve` 起的「浏览器 + 本机 Node
+后端」那一态）也能装：应用启动时按当前会话的 workspace 扫描 `.webAgent/plugins/`
+（[`apps/web/src/plugins/initialize.ts`](../apps/web/src/plugins/initialize.ts)），
 不必先打开设置弹窗；面板（设置 → 插件）显示每个插件的状态、诊断，并逐个勾选它的模型可见工具。
 
-桌面与 CLI 只有「怎么求值入口」这一处不同，两条约束因此只对桌面成立：
+浏览器与 CLI 只有「怎么求值入口」这一处不同，两条约束因此只对浏览器成立：
 
-- **`@einfach-agent/core/plugin` 由宿主在求值前改写。** 桌面走「Rust 读文件 → blob URL → 动态 import」，
+- **`@einfach-agent/core/plugin` 由宿主在求值前改写。** 浏览器走「经宿主命令桥读文件 → blob URL
+  → 动态 import」（[`pluginImportModule.ts`](../apps/web/src/plugins/pluginImportModule.ts)），
   blob 模块没有 import map 可用来解析裸包名，所以宿主在求值前把这一个说明符改写成契约模块桥的
   URL（[`contractImportRewrite.ts`](../apps/web/src/plugins/contractImportRewrite.ts) 与
   [`contractModuleBridge.ts`](../apps/web/src/plugins/contractModuleBridge.ts)），插件拿到的是与应用
-  **同一份** `definePlugin`。好处是桌面上不依赖 pnpm 的 `node_modules` 链接；代价是：
-  - 只桥 `@einfach-agent/core/plugin` 这一个说明符，其它裸包名（含 `@einfach-agent/react-plugin`）在桌面
-    上仍然解析失败；
+  **同一份** `definePlugin`。好处是浏览器上不依赖 pnpm 的 `node_modules` 链接；代价是：
+  - 只桥 `@einfach-agent/core/plugin` 这一个说明符，其它裸包名（含 `@einfach-agent/react-plugin`）在
+    浏览器上仍然解析失败；
   - 只认静态 `import ... from '@einfach-agent/core/plugin'`（含再导出）；写成
     `await import('@einfach-agent/core/plugin')` 会被直接拒绝并给出诊断。
 - **入口必须是自包含的单文件 ESM。** blob URL 没有相对路径基准，入口里的 `import './other.js'`
-  在桌面上解析不到任何东西。CLI 侧的等价要求是「自带 Node 可直接消费的 ESM」。
+  在浏览器上解析不到任何东西。CLI 侧的等价要求是「自带 Node 可直接消费的 ESM」。
 
 ## 发生了什么
 
@@ -159,26 +161,31 @@ env -u DEEPSEEK_API_KEY -u GLM_API_KEY -u KIMI_API_KEY pnpm cli -v -p "用一句
 
 ## 当前边界
 
-写这份文档时（P9 卡，桌面部分随 P10/P11 更新）的真实状态，不是设计意图：
+写这份文档时（P9 卡，浏览器部分随 P10/P11 更新，宿主口径随 T1 更新）的真实状态，不是设计意图：
 
 1. **模型可见工具默认不可见，CLI 上没有任何打开它的入口。** 插件声明的模型可见工具默认
    全部不注册进模型清单（`origin: 'external'` 的工具一律按拍板 3 走闸门，见
    [`pluginToolGate.ts`](../packages/agent-core/src/plugins/pluginToolGate.ts)）。逐工具勾选只有
-   桌面设置面板提供（P5/P6/P7 的 view-state 与 service 层已随 P10 挂进正在跑的桌面应用）；
+   浏览器的设置面板提供（P5/P6/P7 的 view-state 与 service 层已随 P10 挂进正在跑的应用）；
    CLI 不解析勾选配置，所以在 CLI 上 `withheldTools` 会一直非空。
 2. **`entry.react` 今天不会生效。** 加载器只装 `entry.core`；如果插件只声明 `entry.react`、
    不声明 `entry.core`，会被标成 `incompatible`（诊断文案："未声明 core 入口，本加载器只装
    core 侧入口"）。React renderer 入口要等 React root 侧完成对应安装面（并把
-   `@einfach-agent/react-plugin` 也加进桌面的契约模块桥）之后才会生效。
-3. **浏览器预览宿主不支持用户插件。** 没有 workspace 文件系统可扫描，[蓝图 3.4
-   节](plugin-ecosystem-blueprint.md#34-三宿主差异第一期不平均用力)已经明确排除，当前也没有
-   为它实现任何读盘通道。
+   `@einfach-agent/react-plugin` 也加进浏览器的契约模块桥）之后才会生效。
+3. **纯静态产物不支持用户插件。** 判据不是「是不是浏览器」而是**有没有登记宿主命令桥**：
+   `static` 那一态没有桥，扫不到任何 workspace 文件，装配层据此整个跳过
+   （`initialize.ts` 的 `host.kind !== 'server'` 早退），设置面板如实回答「当前宿主不支持用户插件」。
+   配了本机 Node 后端的浏览器（`pnpm serve`）**是支持的**——[蓝图 3.4
+   节](plugin-ecosystem-blueprint.md#34-宿主差异第一期不平均用力)当年按「浏览器没有文件系统」
+   排除它，那个前提已随 Node 宿主线失效。
 4. **在 CLI 上，插件目录必须放在本仓库工作区内。**
    `import { definePlugin } from '@einfach-agent/core/plugin'` 在 CLI 侧靠的是 pnpm workspace 在仓库根
    `node_modules/@einfach-agent/core` 建的符号链接——Node 的裸说明符解析沿插件文件所在目录向上找
-   `node_modules`，只有插件目录落在仓库树内才能找到这条链接。桌面端不受这条限制（宿主改写说明符，
-   见上面「在桌面端跑同一个插件」），但两个宿主都还没开放 npm 分发——它被
-   [蓝图第 6 节](plugin-ecosystem-blueprint.md#6-分发) 的 G4（core 公开面收敛）阻塞。
+   `node_modules`，只有插件目录落在仓库树内才能找到这条链接。浏览器宿主不受这条限制（宿主改写
+   说明符，见上面「在浏览器里跑同一个插件」），但两个宿主都还没开放 npm 分发——它被
+   [蓝图第 6 节](plugin-ecosystem-blueprint.md#6-分发) 的 G4（core 公开面收敛）阻塞，
+   而分发本身也已被「不发布、仅本地跑」的裁决按下（见
+   [Node 宿主树](node-host-issues.md) 的「分发口径」段）。
 
 ## 故障排查
 
@@ -189,9 +196,9 @@ env -u DEEPSEEK_API_KEY -u GLM_API_KEY -u KIMI_API_KEY pnpm cli -v -p "用一句
 - 完全没有任何 `[plugins]` 输出：确认加了 `-v`；`.webAgent/plugins/` 目录不存在时静默返回空
   结果，不算错误，也不会打印任何诊断。
 - 报错 `Cannot find package '@einfach-agent/core'`（CLI）：插件目录不在本仓库工作区内（当前边界第 4 条）。
-- 桌面面板上诊断提到 "只能改写静态 import 语句"：入口用 `await import('@einfach-agent/core/plugin')`
+- 设置面板上诊断提到 "只能改写静态 import 语句"：入口用 `await import('@einfach-agent/core/plugin')`
   取契约模块了，改回顶层静态 `import ... from '@einfach-agent/core/plugin'`。
-- 桌面面板上诊断提到 `Failed to resolve module specifier`：入口 import 了桌面宿主没有桥接的裸包名
+- 设置面板上诊断提到 `Failed to resolve module specifier`：入口 import 了浏览器宿主没有桥接的裸包名
   （只有 `@einfach-agent/core/plugin` 一个），或 import 了相对路径的第二个文件——入口必须自包含。
 - CLI 报错缺 DeepSeek Key：先看是不是 shell 里残留了失效的 `DEEPSEEK_API_KEY`，按前置条件里
   的 `env -u` 用法屏蔽它。

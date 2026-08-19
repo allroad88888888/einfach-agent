@@ -97,15 +97,18 @@ async function confineNearestExistingAncestor(root: string, target: string): Pro
 }
 
 /**
- * 展示用的根相对路径。**故意**无条件 `.replace('\\', '/')`——对齐 Rust
- * `workspace_path_ops.rs:220` 的 `relative()`，这是 `docs/node-host-issues.md` 记录过的 Rust 侧
+ * 展示用的根相对路径。**故意**无条件 `.replace('\\', '/')`——移植时对齐的是 Rust
+ * `workspace_path_ops.rs:220` 的 `relative()`，这是 `docs/node-host-issues.md` 记录过的既有
  * 问题（第 11 条）：unix 上 `\` 是合法文件名字符，真名 `a\b.txt` 会被这里显示成 `a/b.txt`。
- * **照搬未改**：门禁与对拍撞上时该改的是 Rust。真正正确的版本是 common 的 `relativeToRoot`
- * （`if MAIN_SEPARATOR == '/' { 原样 }`），读写两侧用的是那个。
+ * **移植时照搬未改，理由当时是「不单方面改一份跨宿主契约」。那个理由已经过期**：Rust 侧随 T1
+ * 删除，这里是唯一实现，要修就是改这一行、不必再等谁。**但它仍未修**——它是模型可见的展示
+ * 字符串，改了会让含 `\` 的路径在回执里换个样子，属于独立的行为改动，不该顺手混进文档卡。
+ * 真正正确的版本是 common 的 `relativeToRoot`（`if MAIN_SEPARATOR == '/' { 原样 }`），
+ * 读写两侧用的是那个。
  *
- * 不落在 root 内时原样返回**整个绝对路径**（同样做无条件反斜杠替换）——等价 Rust 的
+ * 不落在 root 内时原样返回**整个绝对路径**（同样做无条件反斜杠替换）——等价原件的
  * `strip_prefix(root).unwrap_or(path)`；这里的调用方永远先经过 resolveSource/resolveDestination
- * 确认过包含关系，这一分支只是为了行为上与 Rust 逐字对齐，不是防御性代码。
+ * 确认过包含关系，这一分支只是移植时为了逐字对齐留下的，不是防御性代码。
  */
 export function relativeDisplay(root: string, absolutePath: string): string {
   if (!isWithinRoot(root, absolutePath)) return absolutePath.replace(/\\/g, '/')

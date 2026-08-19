@@ -1,34 +1,40 @@
 // 库文件在这台机器上的哪个位置
 // ---------------------------------------------------------------------------
-// 桌面侧写的是 `sqlite:web-agent.db`——一个**相对路径**，由 Tauri SQL 插件解析到应用数据目录
-// （`com.webagent.app/web-agent.db`）。「用哪个库文件」这个决定天然属于宿主（P1 把它从 driver
-// 包搬到装配层的理由也在此），所以 Node 宿主要自己给出同一个绝对路径。
+// 桌面宿主当年写的是 `sqlite:web-agent.db`——一个**相对路径**，由 Tauri SQL 插件解析到应用数据
+// 目录（`com.webagent.app/web-agent.db`）。「用哪个库文件」这个决定天然属于宿主（P1 把它从 driver
+// 包搬到装配层的理由也在此），所以 Node 宿主要自己给出一个绝对路径。
 //
-// ═══ 为什么要和桌面版**同一个文件** ═══
-// P2 的判据是「使两个宿主看到同一份会话」：套壳（T 线）之前的窗口期里，同一台机器上桌面版与
-// 浏览器自托管版会交替使用，会话落在两个文件里 = 用户看到两份互不相干的历史，而这不会报错。
-// 所以这里复刻的是 Tauri `app_data_dir()` 的算法（即 Rust `dirs` crate 的 `data_dir()` + 应用
-// 标识符），不是另起一套。
+// ═══ 这个位置为什么长这样（以及那个理由今天已经失效） ═══
+// P2 当时的判据是「使两个宿主看到同一份会话」：同一台机器上桌面版与浏览器自托管版会交替使用，
+// 会话落在两个文件里 = 用户看到两份互不相干的历史，而这不会报错。所以下面复刻的是 Tauri
+// `app_data_dir()` 的算法（Rust `dirs` crate 的 `data_dir()` + 应用标识符），不是另起一套。
+//
+// **桌面端已随 T1 删除，不再有"另一个宿主"要对齐。** 这里保持不动，理由换成两条，都仍然成立：
+//   · 浏览器自托管与 CLI 是**两个进程**，它们必须落在同一个文件上，否则「CLI 跑的会话在界面里
+//     看不到」——这正是 P2 想避免的症状，只是主角换了一对。
+//   · 本机上已经存在的库文件就在那个路径下。挪位置等于让存量会话静默消失。
+// 换句话说：路径的**形式**是历史包袱（`com.webagent.app` 是当年 Tauri 的 identifier），
+// 但换它是一次数据迁移，不是改一个常量。
 //
 // ═══ 为什么**不**跟随 `WEB_AGENT_CONFIG_DIR` ═══
 // 那个环境变量的语义是「选配置目录」（CLAUDE.md 明说：只选目录、不接受也不返回模型 Key），
-// 它在 Rust 侧同样只作用于 `web_agent_config_store`，对 SQL 插件的库路径**没有**影响。让它顺带
-// 搬走库文件，等于让「多实例隔离配置」这一个开关在两个宿主上做不同的事——桌面版的库仍在应用
-// 数据目录，Node 版的跑到了配置目录，于是上面那条「同一份会话」的判据恰好在最需要它的场景
-// （用户开了隔离配置）失效。要换库文件请用下面的 `databasePath` 装配槽，那是显式的。
+// 让它顺带搬走库文件，等于让「多实例隔离配置」这一个开关做两件事——而上面那条「浏览器与 CLI
+// 落在同一个文件上」的判据会恰好在最需要它的场景（用户给两个进程设了不同的配置目录）失效。
+// 要换库文件请用下面的 `databasePath` 装配槽，那是显式的。
 //
 // 主目录**不在这里重新解析**：`../config/homeDirectory.ts` 已经是本包「用户主目录是什么」的
 // 唯一权威（装配槽 `homeDir` 优先、回落 `os.homedir()`、空值当场抛错）。再写一遍
-// `options.homeDir ?? homedir()` 不会编译失败，但漂移时的症状是「浏览器版读到的会话跟桌面版
-// 不是同一份」，且全程不报错。
+// `options.homeDir ?? homedir()` 不会编译失败，但漂移时的症状是「浏览器版读到的会话跟 CLI
+// 写的不是同一份」，且全程不报错。
 
 import { isAbsolute, join, posix, win32 } from 'node:path'
 import { resolveHomeDirectory } from '../config/homeDirectory'
 import type { NodeHostInvokeOptions } from '../hostOptions'
 
-/** Tauri 的 `identifier`（`apps/desktop/tauri.conf.json`）。应用数据目录以它命名。 */
+/** 应用数据目录名。取自桌面端 `apps/desktop/tauri.conf.json` 的 `identifier`；那个文件已随 T1
+ *  删除，这个字符串因此**只由本文件决定**——它同时是存量库文件的实际位置，改它要做数据迁移。 */
 const APPLICATION_IDENTIFIER = 'com.webagent.app'
-/** 库文件名。与桌面侧 `Database.load('sqlite:web-agent.db')` 的相对路径逐字相同。 */
+/** 库文件名。沿用桌面侧 `Database.load('sqlite:web-agent.db')` 的相对路径，同上：改它要迁数据。 */
 const DATABASE_FILE = 'web-agent.db'
 
 /**
@@ -38,7 +44,7 @@ const DATABASE_FILE = 'web-agent.db'
  */
 export interface SqliteRoutesOptions extends NodeHostInvokeOptions {
   /**
-   * 库文件的**绝对路径**。不传 → 解析到桌面版同一个位置（见本文件头）。
+   * 库文件的**绝对路径**。不传 → 解析到本机默认位置（见本文件头）。
    *
    * 留这个槽有两个真实用途，都不是「能自己算出来的东西」：
    *   · server 宿主可能跑在容器/服务账号下，数据要落在挂载卷而不是 HOME 里；

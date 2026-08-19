@@ -12,8 +12,9 @@
  * 记一笔可回滚的账；不带就是不可回滚的直接写。
  *
  * **字段是 camelCase**，尽管承载它的顶层参数名 `change_context` 是 snake_case——这是全表最容易
- * 踩的一处。权威：apps/desktop/src/workspace_change_journal_types.rs 的
- * `WorkspaceChangeContext`（struct 上带 `rename_all = "camelCase"`）。
+ * 踩的一处。形状移植自 apps/desktop/src/workspace_change_journal_types.rs 的
+ * `WorkspaceChangeContext`（struct 上带 `rename_all = "camelCase"`）；那份 Rust 已随 T1 删除，
+ * **本声明今天就是这个载荷的权威**，调用方（core 的 `toTauriInput`）按它写死。
  */
 export interface WorkspaceChangeContextArgs {
   changeId: string
@@ -28,7 +29,8 @@ export interface WorkspaceChangeContextArgs {
  * 判别键是 `type`，取值是 **snake_case**（Rust 侧 `#[serde(tag = "type", rename_all =
  * "snake_case")]`），而各变体的字段是 **camelCase**（逐字段 `#[serde(rename = "...")]`）——
  * 同一个对象里两种命名风格并存，不是笔误，照抄就对。
- * 权威：apps/desktop/src/workspace_patch_operation.rs。
+ * 形状移植自 apps/desktop/src/workspace_patch_operation.rs（已随 T1 删除，见 Git 历史）；
+ * **本声明今天就是权威**。
  */
 export type WorkspacePatchOperationArgs =
   | { type: 'add_file'; path: string; content: string; executable?: boolean }

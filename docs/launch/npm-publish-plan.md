@@ -4,6 +4,14 @@
 > `"private": true`，没有任何包发布过 npm**，也没有发布流水线。下文描述的是"将来要发包时怎么做"
 > 的目标形态，任何一条都不代表 API 已交付。真正按下发布键的动作由维护者手工执行。
 
+> **后续裁决把这条路按下了（2026-08，[Node 宿主树](../node-host-issues.md) 的「分发口径」段）：
+> 不发布，仅本地跑。** 包的 `private: true` 是刻意恢复的防误发护栏；D3 交付的
+> [`release-npm.yml`](../../.github/workflows/release-npm.yml) 保留但休眠（只由 `npm-v*` tag 触发，
+> 且在 `private: true` 下前置判定必然失败）。本地分发路径是 `pnpm pack` → 仓库外
+> `npm install *.tgz`，不经任何 registry。下文第 6、7 节因此**只作为将来改主意时的设计存档**，
+> 不是待办。另外：**桌面端已随 T1 整条删除**，凡本文提到 `apps/desktop`、桌面 tag `app-v*`、
+> `desktop-native` job 之处，那些东西今天都不存在。
+
 > **命名占位说明**：npm scope 取决于尚未拍板的"未决·命名"（见
 > 推广发布 issue 树（已完成，全文随 Git 历史归档）），本文一律用 `<scope>` 占位，例如 `<scope>/core`。
 > 现有包名前缀 `@einfach-agent/` 只是 workspace 内部标识，**不预设**它就是最终 npm scope。
@@ -36,7 +44,7 @@
 | G7 | `?raw` 的类型声明只有一份且靠手工 include | [`raw-modules.d.ts`](../../tools/skills/src/raw-modules.d.ts) 被 `apps/cli/tsconfig.json` 显式 include | 内联后该 ambient 声明不再进入发布产物，仅留仓库内开发用 |
 | G8 | React peer 声明不完整 | `@einfach-agent/react-plugin` 已声明 `react` peer，但写成 `workspace:*` 的 `@einfach-agent/core` peer 会被 pnpm 改写成**精确版本** | peer 改用 `workspace:^`，发布时得到 `^0.1.0` 而非死锁 `0.1.0` |
 | G9 | 未声明依赖 | `packages/subagents` 有 10+ 文件 `import { atom } from '@einfach/core'`，但其 `dependencies` 只列了两个 `@einfach-agent/*` | 补 `@einfach/core` 到 dependencies；发布前跑一次 undeclared-deps 检查 |
-| G10 | ~~core 硬依赖 Tauri~~（已解决） | `@einfach-agent/core` 已将 Tauri 依赖改为 optional peer；宿主调用经守卫后的惰性加载 | 保持 `peerDependenciesMeta.optional` 与无 Tauri 的 Node/Web 冒烟，避免重新引入静态硬依赖 |
+| G10 | ~~core 硬依赖 Tauri~~（已消失） | 先由发包准备树的 D 线降成 optional peer，再随 T1 删桌面端整条消失：`@tauri-apps` 今天在全仓 `package.json` 零声明、生产源码零 import | 无需再做；`scripts/check-boundaries.js` 留了两条防复发规则 |
 | G11 | 无 `files` 字段 | 所有包都没有 | 加 `"files": ["dist"]`，否则 `*.test.ts` 与 `.md` 源料一并进 tarball |
 | G12 | 无 `license` / `repository` / `README` | 仓库根**连 LICENSE 文件都没有**；只有 `agent-plugin-example` 有 README | 阻塞于"未决·License"（A5）；每个发布包补最小 README + `repository.directory` |
 | G13 | 无 `publishConfig` | 所有包都没有 | scoped 包默认私有，必须加 `"publishConfig": {"access": "public"}` |
@@ -91,7 +99,8 @@ Node CLI 宿主靠 [`raw-module-loader.mjs`](../../apps/cli/src/raw-module-loade
 以下包**不进 npm**，靠保留 `"private": true` 自动排除（`pnpm publish -r` 跳过 private 包，不需要额外过滤）：
 
 - `apps/cli`（`@einfach-agent/cli`）——宿主应用，不是库。
-- `apps/web`、`apps/desktop`——两者**连 `package.json` 都没有**，本就不构成 workspace 包。
+- `apps/web`——**连 `package.json` 都没有**，本就不构成 workspace 包。
+  （本文写作时同一行还列着 `apps/desktop`；桌面端已随 T1 删除。）
 - `packages/agent-plugin-example`（`@einfach-agent/plugin-example`）——插件契约的可运行样例，
   其价值在于随仓库演进，发到 npm 反而会产生"版本落后的示例"这一负资产。
 
@@ -116,8 +125,9 @@ Node CLI 宿主靠 [`raw-module-loader.mjs`](../../apps/cli/src/raw-module-loade
 
 将来新增 publish workflow 时的约定（**本蓝图不创建该文件**）：
 
-- **触发器与桌面发布分开**：桌面走 `app-v*` tag（见 [Desktop 发布与签名](../release-signing.md)），
-  npm 包用独立前缀如 `pkg-v*`，避免一个 tag 同时点燃两条产线。
+- **触发器用独立前缀**：写这一条时是为了与桌面发布的 `app-v*` tag 分开（那条线连同它要的九个
+  签名 Secret 已经不存在了，见[桌面发布与签名（历史记录）](../release-signing.md)）。
+  D3 最终落地的 [`release-npm.yml`](../../.github/workflows/release-npm.yml) 用的是 `npm-v*`。
 - **provenance**：`permissions` 需要 `id-token: write` + `contents: read`，
   发布用 `pnpm publish -r --access public --no-git-checks --provenance --tag next`。
   provenance 让 npm 页面显示可验证的构建来源，对一个新开源项目是低成本的信任增量。
@@ -127,7 +137,8 @@ Node CLI 宿主靠 [`raw-module-loader.mjs`](../../apps/cli/src/raw-module-loade
   再加一条现在还不存在的**产物冒烟**：对每个待发包 `npm pack`，在临时目录里从 tarball 安装并
   `node --input-type=module -e "import('<scope>/core')"`。这一步专门用来抓 G5、G6、G11 这类
   "仓库内一切正常、装出来就炸"的问题——它们在 alias 环境下**永远不会暴露**。
-- `--frozen-lockfile` 安装，与 ci.yml 的 `desktop-native` job 口径一致。
+- `--frozen-lockfile` 安装，与 ci.yml 的 `web` job 口径一致（本文写作时对齐的是那时还在的
+  `desktop-native` job，它已随桌面端一并退出 CI）。
 
 ## 8. 执行前的阻塞项
 

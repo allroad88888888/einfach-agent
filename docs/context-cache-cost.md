@@ -115,11 +115,15 @@ run 失效 43 次。每个 run 改后只压首轮，可消除 36.7M / 39.5M = **
 改动落地后**尚未有真实运行数据**（改动完成于当天 21:20 之后，此后未跑过 app）。下次使用后按
 以下步骤确认。
 
-Tauri 端 trace 落在 SQLite（macOS 路径如下，其他平台取对应的 Tauri app data dir）：
+有本机后端时（`pnpm serve` 与 CLI）trace 落在 SQLite。库路径由
+`packages/host-node/src/sqlite/databasePath.ts` 解析，macOS 上是：
 
 ```
 ~/Library/Application Support/com.webagent.app/web-agent.db
 ```
+
+其他平台取对应的应用数据目录。**它不跟随 `WEB_AGENT_CONFIG_DIR`**（那个变量只选配置目录）。
+纯静态产物没有 SQL 通路，trace 落 IndexedDB，本节的 SQL 用不上。
 
 ⚠️ app 运行中该库有活动 WAL，不能只复制主库文件；用 SQLite 的 backup API 取一致性只读副本，
 不要直接查询或修改活动库：
@@ -133,12 +137,12 @@ sqlite3 -readonly "$TRACE_COPY"
 ```
 
 第三行只变更副本的 journal mode，使它能被只读打开。最后一行会进入副本的 SQLite shell；粘贴
-下面的 SQL，并将 `<start_ms>/<end_ms>` 换成当前桌面构建的采样窗口。
+下面的 SQL，并将 `<start_ms>/<end_ms>` 换成本次采样的窗口。
 
 ```sql
 -- ① 完成请求上的复用与供应商命中：只统计能与 status='ok' 的 llm.chat
 --    以 (run_id, llm_turn) 关联的 context 事件；避免取消或失败请求污染结论。
---    把 <start_ms>/<end_ms> 替换为当前桌面构建采样的 [start, end) 毫秒范围。
+--    把 <start_ms>/<end_ms> 替换为本次采样的 [start, end) 毫秒范围。
 WITH completed AS (
   SELECT run_id,
          CAST(json_extract(attrs, '$.llm_turn') AS INTEGER) AS llm_turn,

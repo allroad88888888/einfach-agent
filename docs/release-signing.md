@@ -1,14 +1,18 @@
-# Desktop 发布与签名
+# 桌面发布与签名（历史记录，已无实现）
 
-桌面版发布由 [release-desktop.yml](../.github/workflows/release-desktop.yml) 执行。只有推送与
-`apps/desktop/tauri.conf.json` 版本一致的 `app-v<version>` tag 才会启动，例如当前版本的
-`app-v0.1.0`。发布流程会先校验所有签名 Secret，再构建 Linux x64、Windows x64、macOS
-Apple Silicon 和 macOS Intel 产物。
+> **本文描述的东西已经不存在了。** 桌面端（`apps/desktop/`）与它的发布流水线
+> `release-desktop.yml` 已随 [Node 宿主树](node-host-issues.md) 的 T1 一并删除，仓库里今天没有
+> 任何一处消费下面这九个 Secret，也没有任何 tag 会触发桌面构建。
+>
+> **保留本文不是为了留操作步骤，而是为了留代价。** 下面这张表是「为什么不做桌面版」这个决定的
+> 全部依据：发一个原生窗口要 Apple Developer ID 与 Windows code-signing 两套证书，而绕开这条链路
+> 正是把宿主改成「浏览器 + 本机 Node 后端」的**唯一动机**（见 Node 宿主树的「目标」段）。
+> 删掉这张表，「不如干脆做个桌面版」这个念头就会被后人重新想一遍，而重新想的人不会再看到这九行。
+>
+> 今天的发布口径与本文无关：用户已裁决**不发布、仅本地跑**，四个包保持 `private: true`，
+> `release-npm.yml` 只由 `npm-v*` tag 触发且处于休眠；它**一个签名 Secret 都不用**。
 
-所有产物上传到同一个 GitHub Draft Release。流水线不会自动发布 Draft；发布负责人必须在
-GitHub 复核产物、签名和 release notes 后手动发布。
-
-## 所需 Repository Secrets
+## 当时的九个 Repository Secrets
 
 | Secret | 用途 |
 | --- | --- |
@@ -22,15 +26,17 @@ GitHub 复核产物、签名和 release notes 后手动发布。
 | `WINDOWS_CERTIFICATE` | Base64 编码的 Windows code-signing `.pfx` 文件。 |
 | `WINDOWS_CERTIFICATE_PASSWORD` | `.pfx` 导出密码。 |
 
-Secret 缺失或 tag 与 Tauri 版本不一致时，工作流会在创建任何发布产物前失败。证书只在对应
-runner 的临时 keychain 或用户证书存储中导入，步骤结束后删除临时文件。
+七条给 macOS（签名 + 公证两件事，各要一套凭据），两条给 Windows。**它们全部是「向平台证明这个
+二进制是谁做的」**，与「有没有权限往某个 registry 写」不是一回事——后者只要一个 token，前者要
+向 Apple 与证书颁发机构分别付费并维持有效期。
 
-## 发布步骤
+## 当时的流程（供理解那张表的语境）
 
-1. 更新 `package.json` 和 `apps/desktop/tauri.conf.json` 的版本，并先通过 CI。
-2. 在待发布提交创建并推送 `app-v<version>` tag。
-3. 等待 `Release desktop` 的四个原生构建完成，并在 Draft Release 检查所有安装包。
-4. 确认 macOS notarization 和 Windows 签名有效后，手动发布 Draft Release。
+桌面发布只由推送 `app-v<version>` tag 触发，且 tag 必须与 `apps/desktop/tauri.conf.json` 的版本
+一致。流水线先校验九个 Secret 全部存在，再构建 Linux x64、Windows x64、macOS Apple Silicon 与
+macOS Intel 四份产物，上传到同一个 GitHub Draft Release；Draft 不自动发布，由发布负责人复核产物、
+签名与 release notes 之后手动发。Secret 缺失或 tag 与版本不一致时，工作流在产出任何安装包之前
+就失败。
 
-Linux 安装包由原生 Linux runner 可复现构建；Windows 与 macOS 由各自平台的系统证书工具
-签名。不要把任何证书、密码或模型凭证写入仓库、Tauri 配置或构建环境文件。
+真正的实现细节（工作流 YAML、证书导入与清理步骤、四平台矩阵）不在本文重述——它们随
+`release-desktop.yml` 一起留在 Git 历史里，删除提交是 `e52c31d`。

@@ -152,7 +152,8 @@ describe('projectSkillsLoader', () => {
   })
 
   it('符号链接进来的 skill 目录当独立根再扫一次，条目的根就是那个目录', async () => {
-    // 桥的真实语义（apps/desktop 的 linked_skill_dir_* 契约测试）：symlink 条目本身出现在列表里、
+    // 桥的真实语义（原 apps/desktop 的 linked_skill_dir_* 契约测试，已随 T1 删除；今天由
+    // packages/host-node 的 listFiles.test.ts 覆盖）：symlink 条目本身出现在列表里、
     // 但不递归进去；把它自己当 root 传回来时，目录内文件是根相对路径。
     const bridge: ProjectSkillsLoaderBridge = {
       async listFiles(path, options) {

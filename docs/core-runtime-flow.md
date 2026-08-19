@@ -148,12 +148,15 @@ AbortController。可持久化的是 execution graph 快照，不是这些进程
 
 ## 持久化与观测
 
-- Web：IndexedDB history/session driver 和 IndexedDB trace driver。
-- Tauri：SQLite history/session driver 和 SQLite trace driver。
+- `static`（纯静态产物，没有后端）：IndexedDB history/session driver 和 IndexedDB trace driver。
+- `server`（浏览器 + 本机 Node 后端）：SQLite history/session driver 和 SQLite trace driver，
+  SQL 经 `POST /api/invoke/sqlite_*` 打到后端；判据是「这一态有没有 SQL 通路」，
+  写入端与读取端必须同判据（见 `apps/web/src/host/hostObservability.ts`）。
 - `runAtom` 中的临时暂停状态不作为可靠恢复协议。
 - 会话元数据持久化 plan 和 execution graph；history driver 持久化 checkpoint 及其 items。
 - hydrate 会把持久化图中未终结的执行节点标记为 `interrupted`，不会尝试恢复旧 Promise。
-- `?view=traces` 进入 trace viewer；开发环境还可经 Vite 的 SQLite trace 读取端点查看桌面数据。
+- `?view=traces` 进入 trace viewer；`pnpm dev` 起的纯前端预览（`static` + DEV）写 IndexedDB，
+  但读取仍经 Vite 中继读本机那份 SQLite，好让同机调试看得见 `pnpm serve` / CLI 写下的 trace。
 
 ## 代码入口
 
@@ -178,12 +181,12 @@ AbortController。可持久化的是 execution graph 快照，不是这些进程
 | 默认 Plan Runtime | `tools/planning/src/planRuntime.ts` |
 | 子 Agent 产品能力 | `packages/subagents/src/` |
 | React TraceViewer | `apps/web/src/traceViewer/` |
-| Tauri bridge | `apps/desktop/src/lib.rs` |
+| 宿主能力实现（fs/shell/MCP/模型代理/SQL） | `packages/host-node/src/` |
+| HTTP 外壳（`/api/invoke`、`/api/model`、`/api/events`） | `apps/server/src/` |
 
 ## 本地验证
 
 ```bash
 pnpm test
 pnpm build
-cargo test --manifest-path apps/desktop/Cargo.toml
 ```

@@ -276,6 +276,12 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
 
 ## T · 超限文件拆分（执行中反复标记的存量债，与 S 线并行）
 
+> **T8、T11–T14 拆的是桌面端的 Rust 文件，那些文件今天已经不在了。** 桌面端
+> （`apps/desktop/`）随 [Node 宿主树](node-host-issues.md) 的 T1 整条删除，`cargo test` 也已退出
+> CI。下面五张卡的卡面**按当时的事实保留不改**——它们是执行记录，不是待办；`apps/desktop/src/*.rs`
+> 与那条 cargo 命令只能从 Git 历史读（删除提交 `e52c31d`）。同一批 Rust 逻辑的今天版本在
+> `packages/host-node/src/`，由 W 线等价移植。
+
 ### T1 · 拆 modelRun.test.ts（4145 行）
 
 - **依赖**：—

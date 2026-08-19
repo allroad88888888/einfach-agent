@@ -1,11 +1,15 @@
 # 用 CLI 宿主 dogfood，十分钟抓出一个线上 400
 
-> 一个桌面 Agent 项目的真实事故复盘：为了让编码 agent 能自己跑真实 run，我们加了个 headless
+> 一个 Agent 项目的真实事故复盘：为了让编码 agent 能自己跑真实 run，我们加了个 headless
 > CLI 宿主。它上线后的**第一次**真实调用就 400 了——而那条 bug 已经躺在主干上，单测全绿。
+>
+> **时间点说明**：事故发生时项目的第二个宿主是一个 Tauri 桌面壳，下文的"桌面端"指的是它。
+> 那个壳后来整条删掉了，今天的第二个宿主是「浏览器 + 本机 Node 后端」的自托管形态。
+> 这不影响本文的任何结论——恰恰相反，能把一个宿主整条换掉而不动内核，正是文末那段的论据。
 
 ## 一、问题不在 bug，在"只有人肉能触发模型调用"
 
-这个项目是一个装配式 Agent Runtime：一套可插拔内核，上面挂 Web 预览和 Tauri 桌面两个宿主。
+这个项目是一个装配式 Agent Runtime：一套可插拔内核，当时上面挂着 Web 预览和 Tauri 桌面两个宿主。
 工具、插件、观测、持久化都能换实现，单测覆盖也不算薄。但它有个很尴尬的结构性缺陷：
 **模型调用只有点 UI 才能触发**。
 
@@ -34,7 +38,7 @@ export function assembleCliRuntime(options: AssembleCliRuntimeOptions): void {
   configureDefaultProjectSkillsProvider((root) => scanProjectSkills(root, bridge))
   defaultCore.planRuntime = createDefaultPlanRuntime
   configureDefaultDelegation(createDelegationAssembly)
-  configurePersistence({ history: createMemoryHistoryDriver() })   // 浏览器用 IndexedDB，桌面用 SQLite
+  configurePersistence({ history: createMemoryHistoryDriver() })   // 另一个宿主用 IndexedDB / SQLite
   configureTraceOutput(options.verbose)                            // trace 打到 stderr
   configureCommands({ modelCredentials: { deepseek: ... }, fetchImpl: globalThis.fetch })
 }
@@ -174,7 +178,7 @@ expect(result.request_shapes[1]?.assistant_tool_call).toEqual({
 
 装配式内核把这件事变成了：写一个装配层，注入这个环境该用的驱动（历史用内存、trace 打 stderr、
 `fetch` 用 Node 的），剩下全部复用。60 行装配，加一层终端外壳。**而且因为跑的是同一个内核，CLI
-里抓到的 bug 就是桌面端的 bug**——这次这条 400 正是如此。
+里抓到的 bug 就是另一个宿主的 bug**——这次这条 400 正是如此。
 
 如果你也在做 agent/LLM 应用，值得问自己一句：现在从一个念头到一次真实的模型往返，你要花几步？
 把这个数字压到 1，你会开始发现一批"单测永远绿、线上永远错"的东西。

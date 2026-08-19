@@ -11,7 +11,7 @@
 > **建议发布时间段**：工作日 10:00–11:30，或 21:00–23:00（V2EX 晚间在线密度更高）。
 > **配图建议**：`docs/launch/assets/cli-demo.gif`（开头故事的直接证据，一张就够；V2EX 帖子图多显营销）。
 
-**标题**：自己写的 Agent 内核：一个 core 跑 Web/桌面/CLI，求拍砖
+**标题**：自己写的 Agent 内核：一个 core 跑浏览器自托管和 CLI，求拍砖
 
 **正文**：
 
@@ -24,7 +24,7 @@ The reasoning_content in the thinking mode must be passed back to the API.
 ```
 
 不是超时也不是限流，是协议层被服务端直接拒。而且它不是 CLI 专属：任何新会话的第一次模型请求都会踩，
-桌面端一样踩。主干上躺着一个"新会话必 400"的硬故障，单测全绿——因为单测是照官方文档写的，
+另一个宿主一样踩。主干上躺着一个"新会话必 400"的硬故障，单测全绿——因为单测是照官方文档写的，
 文档说没开 thinking 就不该带 `reasoning_content`，而服务端已经把老别名统一路由到了 V4 thinking 家族。
 修在 adapter 里，从抓到到收尾十来分钟。
 
@@ -35,7 +35,7 @@ The reasoning_content in the thinking mode must be passed back to the API.
 计划运行时、子 Agent 委派。不注入就是没有，不会静默降级到某个内置默认实现。`createCore()` 造出的
 实例私有持有 store、工具 registry、插件宿主，同一进程里跑两份互不干扰。
 
-同一个内核现在装配出三个宿主：Web 预览、Tauri 桌面端、headless CLI。CLI 的装配层 60 行
+同一个内核现在装配出两个宿主：浏览器（配一个本机 Node 后端自托管）与 headless CLI。CLI 的装配层 60 行
 （`apps/cli/src/runtime.ts`），其余全是终端外壳。依赖方向 `agent-ai ← agent-core ← tools-* ← app`
 不靠自觉：`scripts/check-boundaries.js` 在 CI 里排在测试前面，按行扫 import，core 一旦引入 React、
 任何工具域包或持久化/观测能力包就直接 fail。
@@ -46,8 +46,8 @@ GLM 的 thinking / `reasoning_effort`、各家 cache usage 字段归一，都是
 现在的弱项，先自己说，省得你们挖：
 
 - 生态为零。没有插件市场，没有社区 provider 包，没有问答社区，出问题只能读源码。
-- 包全部 `private`，**没发 npm**，`exports` 直接指向未编译的 `src/*.ts`，靠仓库自己的 Vite alias
-  和 tsconfig paths 解析——离开这个 workspace 不成立。想用只能 clone 整个仓库。
+- 包全部 `private`，**没发 npm**，也不打算发（本地跑：`pnpm pack` → 仓库外 `npm install *.tgz`）。
+  想按依赖用只能 clone 整个仓库。
 - 自研 adapter 只有 3 家，默认构建下真能用的是 DeepSeek 和 GLM 两家（Kimi 代码写完了，但入口挂在构建开关下，
   真实 Key 端到端验收前默认关着）。没有 OpenAI / Anthropic / Gemini，没有 Ollama，也没有 base_url 兜底。
 - 文档全中文，没有英文 README，界面文案也是中文。
@@ -70,7 +70,7 @@ https://github.com/allroad88888888/einfach-agent
 > **配图建议**：封面用 `docs/launch/assets/cli-demo.gif` 抽帧或 `docs/launch/assets/session-streaming.png`；
 > 正文内配 `docs/launch/assets/plan-approval.png`（计划审批）与 `docs/launch/assets/ask-user-decision.png`（危险工具确认）。
 
-**标题**：装配式 Agent Runtime 内核：一个 core 三个宿主，和 DeepSeek 那条必现的 400
+**标题**：装配式 Agent Runtime 内核：一个 core 两个宿主，和 DeepSeek 那条必现的 400
 
 **正文**：
 
@@ -106,21 +106,21 @@ export function assembleCliRuntime(options: AssembleCliRuntimeOptions): void {
   configureDefaultProjectSkillsProvider((root) => scanProjectSkills(root, bridge))
   defaultCore.planRuntime = createDefaultPlanRuntime
   configureDefaultDelegation(createDelegationAssembly)
-  configurePersistence({ history: createMemoryHistoryDriver() })   // 浏览器用 IndexedDB，桌面用 SQLite
+  configurePersistence({ history: createMemoryHistoryDriver() })   // 配了本机后端用 SQLite，纯静态用 IndexedDB
   configureTraceOutput(options.verbose)                            // trace 打到 stderr
   configureCommands({ modelCredentials: { deepseek: /* ... */ }, fetchImpl: globalThis.fetch })
 }
 ```
 
 `apps/web/src/main.tsx` 的前几行几乎逐字相同，差别只落在宿主特有的那几样：Skills 文件桥、会话/历史 driver、
-观测 driver、模型传输、凭据来源。桌面端没有第三份 TS 装配——Tauri 的 `frontendDist` 直接复用 Web 产物，
-只多一层 Rust 桥负责 shell、MCP stdio、模型代理和凭据读取，所以"三个宿主"实际是**两份 TS 装配 + 一层原生实现**。
+观测 driver、模型传输、凭据来源。两个宿主的**本机能力只有一份实现**（`packages/host-node`）：CLI 进程内直调，
+浏览器经 `apps/server` 打 `POST /api/invoke/:command`。所以"两个宿主"实际是**两份 TS 装配 + 一份能力实现**。
 
 ### 证据二：边界由 CI 强制
 
 架构约定写在文档里，三个月后必然被破。`scripts/check-boundaries.js` 把规则做成门禁：core 禁入 React、
 禁入任何 `@einfach-agent/tools-*`、禁入持久化/观测/子 Agent 能力包、禁入 Tauri SQL 插件；能力包禁入工具域。
-它在 CI 里排在测试之前（`check-docs → check-boundaries → pnpm test → pnpm build`），
+它在 CI 里排在测试之前（`check-docs → check-boundaries → check-state → pnpm test → pnpm build`），
 所以"core 不依赖 React"这句话是可执行的，不是愿望。
 
 ### 坑：单测不但没抓到，还把错的断言成了对的
@@ -178,7 +178,7 @@ function prepareDeepSeekThinkingMessages(messages) {
 
 仓库（MIT）：https://github.com/allroad88888888/einfach-agent
 
-仓库 `docs/launch/articles/` 下还有五篇更细的：《一个内核，三个宿主：装配式 Agent Runtime 设计》
+仓库 `docs/launch/articles/` 下还有五篇更细的：《一个内核，两个宿主：装配式 Agent Runtime 设计》
 《给工具加生命周期：CallTiming 机制》《子 Agent 治理：replay、容量与归档》
 《用 CLI 宿主 dogfood，十分钟抓出一个线上 400》《DeepSeek V4 thinking 协议踩坑实录》。
 
@@ -194,7 +194,7 @@ function prepareDeepSeekThinkingMessages(messages) {
 给自己的 Agent 加了个 CLI 宿主，跑通后第一条命令就 400——DeepSeek 把老别名路由到了 thinking
 家族，少回传一个字段就拒，而单测全绿：它是照文档写的。
 
-顺手开源了 Einfach Agent：装配式 Agent Runtime 内核，一个 core 装配出 Web / 桌面 / CLI 三宿主，
-工具、存储、观测、子 Agent 全是槽位注入，DeepSeek 与 GLM 一等公民，MIT。生态为零，还没发 npm。
+顺手开源了 Einfach Agent：装配式 Agent Runtime 内核，一个 core 装配出「浏览器自托管 + CLI」两宿主，
+工具、存储、观测、子 Agent 全是槽位注入，DeepSeek 与 GLM 一等公民，MIT。生态为零，没发 npm（本地跑）。
 
 https://github.com/allroad88888888/einfach-agent

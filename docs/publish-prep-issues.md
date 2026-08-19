@@ -157,6 +157,13 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
 
 ## D 线 · G10：core 摘除 @tauri-apps 硬依赖（V5 侦察产出）
 
+> **这条线的目标物后来被整个删掉了。** 本线九张卡把 core 对 `@tauri-apps` 的硬依赖降成惰性
+> optional peer；再往后，[Node 宿主树](node-host-issues.md) 的 T1 把桌面端连同 `runtime/hostTauri.ts`
+> 与 `runtime/workspaceDialog.ts` **整体删除**，`@tauri-apps` 今天在全仓 `package.json` 里零声明、
+> 生产源码里零 import。下面的卡面按当时的事实保留不改（它们是执行记录），但读的时候要知道：
+> 卡里提到的那些文件与依赖**已经不存在**，只能从 Git 历史读。`scripts/check-boundaries.js` 里
+> 剩下的两条 `@tauri-apps` 规则是 T1 刻意留下的**防复发**规则，不是还有人在用。
+
 背景事实（V5 侦察，已主会话复核）：core 内 14 条 `@tauri-apps` 静态 import 边散在 13 个
 文件；`@tauri-apps/api/core` 的 `isTauri()` 实现只是 `!!(globalThis||window).isTauri`，
 零运行时依赖，可本地复刻——S5a 在 `index.ts` 留的「延迟 import 救不了（同步探测）」记档

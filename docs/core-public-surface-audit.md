@@ -97,9 +97,9 @@ done < /tmp/core-nontest.txt | sort -u \
 | `plugin` | 已是 curated 入口（[`plugin.ts`](../packages/agent-core/src/plugin.ts) 首行自称"唯一公开入口"） | `apps/web`、`packages/agent-plugin-example` |
 | `timeline` | 已是 curated 入口（[`timeline.ts`](../packages/agent-core/src/timeline.ts)，renderer-neutral 投影） | `apps/web`、`packages/agent-react` |
 
-这两条是**白名单该有的样子**，其余 66 条照它们改造即可。桌面契约模块桥当前**只桥
-`@einfach-agent/core/plugin` 一个说明符**（见 [插件上手](plugin-quickstart.md) 当前边界第 4 条），
-白名单调整时这条硬编码必须同步。
+这两条是**白名单该有的样子**，其余 66 条照它们改造即可。浏览器宿主的契约模块桥当前**只桥
+`@einfach-agent/core/plugin` 一个说明符**（`apps/web/src/plugins/contractModuleBridge.ts`，
+见 [插件上手](plugin-quickstart.md) 当前边界第 2/4 条），白名单调整时这条硬编码必须同步。
 
 ### 3.3 C · 能力包接缝（32）
 
@@ -135,8 +135,8 @@ S7b 之后 `state/sessionStore` 也落到这一类（E7 处置掉了它唯一的
 
 | subpath | 消费方（改前） | 处置 |
 | --- | --- | --- |
-| `runtime/core/pluginContracts` | `apps/web/src/plugins/desktopProvider.test.ts`、`apps/cli/src/plugins.test.ts`（fixture 字面量） | **已消**：`definePlugin` 本就在 `./plugin` 白名单里，两处改走 `@einfach-agent/core/plugin` |
-| `runtime/core/pluginHost` | `apps/web/src/plugins/{desktopProvider,desktopImportModule.bridge}.test.ts` | **已消**：两处内联 `createPluginHost(createToolRegistry(), [])` 换成 `createCore().plugins`（`createCore` 同样在 `./plugin` 白名单里，效果等价——都是一个空工具注册表上的隔离 `PluginHost`） |
+| `runtime/core/pluginContracts` | `apps/web/src/plugins/desktopProvider.test.ts`（T1 后更名 `workspacePluginProvider.test.ts`）、`apps/cli/src/plugins.test.ts`（fixture 字面量） | **已消**：`definePlugin` 本就在 `./plugin` 白名单里，两处改走 `@einfach-agent/core/plugin` |
+| `runtime/core/pluginHost` | `apps/web/src/plugins/{desktopProvider,desktopImportModule.bridge}.test.ts`（T1 后更名 `{workspacePluginProvider,pluginImportModule.bridge}.test.ts`） | **已消**：两处内联 `createPluginHost(createToolRegistry(), [])` 换成 `createCore().plugins`（`createCore` 同样在 `./plugin` 白名单里，效果等价——都是一个空工具注册表上的隔离 `PluginHost`） |
 | `runtime/skillGovernance` | `packages/subagents/src/state/subagentSkillGovernanceAtoms.test.ts` | **已消**：`prepareSubagentSkillGovernance` 本就经 `subagentStatePort.prepareSkillGovernance` 挂在 `./subagents` 白名单里（见 `state/stateViewPort.ts`），测试改走它 |
 | `state/sessionWriters` | `apps/cli/src/event-renderer.test.ts` | **已消**：测试实际验证的是 `subscribeCliRenderer` 对 `itemsAtom` 变化的反应，不是写入器本身；换成两个文件内 helper，直接对 `defaultCore.getSessionStore(id).store` 做 `itemsAtom` 的不可变更新（`defaultCore`/`itemsAtom` 都已在白名单），不复现 `touchSession` 副作用（本文件断言从不依赖它） |
 | `tools/schemaValidate` | `tools/fs/src/apply-patch/apply-patch.schema.test.ts` | **改不动，留作 S9 豁免候选**：`validateAgainstSchema` 在 core 内部同样零非测试消费方（S1a 已判 D 类、明确排除出 `./tools`），补白名单属于新开公开 API，超出"只改测试文件"的边界；搬回 core 包内会反向撤销 TSPLIT TS2 的既有决定（该测试当初就是为了不让 core 的通用 schema 测试反向依赖具体工具才搬来 `tools/fs` 的）。现状：`check-boundaries.js` 的 `typescriptFiles()` 本就跳过 `*.test.ts`，S9 若延续这个既有惯例，这条深导入天然不会被判红——留给 S9 落地时核实 |
@@ -211,8 +211,10 @@ S7a/S7b 落地后 8 条全部有结论：E1、E2、E4、E5、E7 换正式通路�
 
 D 类 5 条与 E 类 8 条**不进白名单**（E 类按 3.5 逐条处置后消失）。
 
-**为什么 `.` 不吞掉全部**：宿主 barrel 会连着 `runtime/workspaceDialog` 拉进
-`@tauri-apps/plugin-dialog`（见 G10）。工具域与能力包走 4–9 就不必被迫经过 Tauri 代码路径。
+**为什么 `.` 不吞掉全部**：盘点时的具体理由是宿主 barrel 会连着 `runtime/workspaceDialog` 拉进
+`@tauri-apps/plugin-dialog`（见 G10）——**那个文件与那个依赖今天都不存在了**（T1 删除桌面端时
+一并去掉）。理由本身仍成立、只是换了对象：根 barrel 会把宿主接缝的整条静态导链拉进任何只想要
+一两个类型的消费方，工具域与能力包走 4–9 就不必被迫经过它。
 
 ## 5. 迁移策略：两步走（不是二选一）
 

@@ -3,8 +3,13 @@
 目标：让 agent 在绑定某个 workspace 后，**自动发现并加载该仓库自带的 skills**，与编译期内置
 skills 并列进入 L1 清单，正文与资源沿用既有 L2/L3 协议按需读取。
 
-本文是 [`skills-tree-blueprint.md`](skills-tree-blueprint.md)「阶段 4 — （可选）Tauri 文件系统
+本文是 [`skills-tree-blueprint.md`](skills-tree-blueprint.md)「阶段 4 — （可选）宿主文件系统
 skills 目录」占位项的展开，接续其阶段 1–3 已落地的成果，不重复其结论。
+
+> **宿主口径已更新（T1）。** 本文成文时读文件的宿主是 Tauri 桌面端，下文多处「Tauri」指的是它。
+> 桌面端已整条删除，今天承接同一条通路的是 `packages/host-node`（浏览器经 `apps/server`、
+> CLI 进程内直调）；判据也早已从「是不是 Tauri」换成 `hasHostBridge()`。**语义一条没变**，
+> 只有承接者换了；文中被这次更换推翻的具体结论都已就地改正。
 
 ## 背景：三个事实
 
@@ -13,7 +18,7 @@ skills 目录」占位项的展开，接续其阶段 1–3 已落地的成果，
    description / triggers / resources）写死在数组里。运行期**没有任何注册入口**，
    `buildSkillManifestText()` / `readSkill()` / `readSkillResource()` 全是同步纯查询。
    换言之：当前无论 workspace 里有什么，agent 都看不见。
-2. **文件系统地基已经齐全，无需新增 Rust command**。`list_workspace_files` 支持
+2. **文件系统地基已经齐全，无需新增宿主命令**。`list_workspace_files` 支持
    `recursive` 与 `includeHidden`（`.webAgent` 是隐藏目录，必须后者），`read_workspace_file`
    带 workspace confinement；两者都经 `toolContext/workspaceInputGuards.ts` 的 `withWorkspaceReadAccess` 注入会话
    绑定的 `workspaceRoot`（`resolveWorkspaceRoot`，session → workspace 解析已存在）。
@@ -84,9 +89,9 @@ skills 目录」占位项的展开，接续其阶段 1–3 已落地的成果，
   `rootPath`）。用会话 workspace 去读主目录的文件会被 confinement 挡下，报的还是
   「路径越界」——看上去像权限问题，与真实原因（根取错）无关。
 - **主目录恰好就是当前工作区时只扫一遍**：同一批文件不该以两个名字各占一份清单预算。
-- 主目录由宿主给：Tauri 走 `@tauri-apps/api/path` 的 `homeDir()`
-  （`runtime/userSkillsRoot.ts`，失败降级 undefined），CLI 走 `node:os` 的 `homedir()`，
-  浏览器没有 → 只扫工作区。
+- 主目录由宿主给：登记了命令桥的宿主走 `get_user_home_dir`（`runtime/userSkillsRoot.ts`，
+  失败降级 undefined），CLI 在装配层直接传 `node:os` 的 `homedir()`，
+  没有桥的宿主（纯静态产物）没有 → 只扫工作区。
 - 清单里两个作用域**分两段**（「以下由当前 workspace 提供」/「以下由本机用户目录提供」）：
   来源不同、可信度也不同，合成一段会让模型无从分辨。
 
@@ -159,7 +164,7 @@ triggers: [deploy, 发布, 上线]
   同步纯函数，只是多接一个快照入参。
 - **失效**：会话切换 workspace、用户在 UI 显式刷新。**第一期不做文件监听**——改了
   `.webAgent/skills` 要点一下刷新，或换会话。
-- **降级**：非 Tauri（web）没有文件系统 → 快照恒为空。**此时清单逐字等于今天的输出**
+- **降级**：没有登记宿主命令桥的宿主（纯静态产物）没有文件系统 → 快照恒为空。**此时清单逐字等于今天的输出**
   （项目段整体不出现，而不是出现一个空段），web 端零回归是硬要求。
   扫描失败（无 workspace、目录不存在、桥报错）同样降级为空快照 + `diagnostics`，
   **绝不让 run 失败**。
@@ -214,7 +219,7 @@ skills?: {
    非内置」）。模型据此知道这批条目的可信度低于内置。
 2. **注入卫生**（纯函数，可单测）：name 限定 `[a-z0-9-]{1,64}`，越界即丢弃；description
    剥离控制字符、折成单行、截断至 160 字符——防止伪造清单行、伪造段落分隔、撑爆前缀。
-3. **路径不由模型给**：L3 资源只读扫描期已发现的键，路径来自快照；叠加 Rust 侧既有的
+3. **路径不由模型给**：L3 资源只读扫描期已发现的键，路径来自快照；叠加宿主侧既有的
    workspace confinement 兜底。
 4. **治理上限**：单 workspace 最多 32 个 skill（超出按名字序截断并告警），单 skill 最多 32 个
    资源，单资源 64KB（复用 `truncateSkillResourceContent`），扫描 `maxEntries` 上限 2000。
@@ -238,7 +243,7 @@ skills?: {
 ### 阶段 B — 扫描与缓存
 
 - `skills/projectSkillsLoader.ts`：经 `listWorkspaceFiles`（`recursive: true, includeHidden: true`）
-  扫两个根 → 读各 `SKILL.md` 的前 4KB 取 frontmatter → 组快照；非 Tauri / 失败一律空快照。
+  扫两个根 → 读各 `SKILL.md` 的前 4KB 取 frontmatter → 组快照；无宿主桥 / 失败一律空快照。
 - `CoreInstance.projectSkills`：`Map<workspaceRoot, ProjectSkillsSnapshot>` + `ensure` / `refresh` / `clear`。
 - 测试用 fake 桥（不碰真实 fs），覆盖：命中缓存不重复 IO、读失败降级、无 workspace 降级。
 
@@ -280,10 +285,11 @@ IPC 往返）；`ensure` 增加 in-flight promise 去重（并发 run 只扫一�
 #### 真实数据验证（门禁 3/4）
 
 对本仓库真实扫描（`.webAgent/skills/demo` + 已存在的 `.claude/skills/codegraph`）跑通了
-L1 清单 → L2 正文 → L3 资源全链路，`diagnostics` 干净。两条 Rust 侧行为经
-`cargo test --manifest-path apps/desktop/Cargo.toml` 实测确认，并固化为**跨语言契约测试**
-（`workspace_read.rs` 的 `list_returns_workspace_relative_slash_paths_for_nested_skill_dirs`
-与 `list_missing_directory_errors_with_not_accessible_text`）：
+L1 清单 → L2 正文 → L3 资源全链路，`diagnostics` 干净。下面两条桥的行为当时经 Rust 侧
+契约测试实测确认（`workspace_read.rs` 的
+`list_returns_workspace_relative_slash_paths_for_nested_skill_dirs` 与
+`list_missing_directory_errors_with_not_accessible_text`；**那两个测试已随 T1 删除**，
+今天在 `packages/host-node/src/workspace/read/listFiles.test.ts` 覆盖同一批语义）：
 
 1. `list_workspace_files` 返回的 `path` 是 workspace 相对、正斜杠、无 `./` 前缀 ——
    loader 的四段判定依赖它。**漂移是静默的**：多一个前缀，项目 skills 会全部消失且不报错。
@@ -307,8 +313,8 @@ L1 清单 → L2 正文 → L3 资源全链路，`diagnostics` 干净。两条 R
 两个同名目录的唯一线索）；快照合成从 `projectSkills.ts` 拆到
 `skills/projectSkillsSnapshot.ts`（多扫描根合并是另一件事，且原文件已 400+ 行）；
 `ToolContext.skills.resolveProjectPath` 更名 `resolveScannedSkill` 并返回 `rootPath`；
-停用偏好正则放宽到两个前缀；主目录解析新增 `runtime/userSkillsRoot.ts`（Tauri）与 CLI 的
-`homedir()`。
+停用偏好正则放宽到两个前缀；主目录解析新增 `runtime/userSkillsRoot.ts`（走宿主桥的
+`get_user_home_dir`）与 CLI 装配层的 `homedir()`。
 
 既有边界没变：路径同样只从扫描快照取（模型永不参与拼路径），读取一律以「该条目自己的根」
 为界、不开 `allowExternalPaths`。
@@ -316,8 +322,11 @@ L1 清单 → L2 正文 → L3 资源全链路，`diagnostics` 干净。两条 R
 #### 被符号链接进来的 skill 目录
 
 `~/.claude/skills/<name> -> 别处` 是 dotfiles 共享 skill 的常见写法（本机 20 个用户 skill 里
-5 个如此）。桥的两条真实行为使它原本**静默缺席**，都已固化成跨语言契约测试
-（`apps/desktop/src/workspace_read_confinement_tests.rs` 的两个 `linked_skill_dir_*`）：
+5 个如此）。桥的两条真实行为使它原本**静默缺席**，当时固化成跨语言契约测试
+（`apps/desktop/src/workspace_read_confinement_tests.rs` 的两个 `linked_skill_dir_*`；
+**那个文件已随 T1 删除**，只能从 Git 历史读，同一批语义今天由
+`packages/host-node/src/workspace/read/listFiles.test.ts` 与
+`workspace/common/resolveWorkspaceRoot.test.ts` 覆盖）：
 
 1. confine 模式下，目标在根外的 symlink 条目**整条不出现在列表里**；
 2. 列目录**不递归进 symlink**，即使目标就在根内。
@@ -330,11 +339,13 @@ L1 清单 → L2 正文 → L3 资源全链路，`diagnostics` 干净。两条 R
 链接指向的目录里没有顶层 `SKILL.md` 时静默跳过（不一定是 skill）；断链、读失败会留诊断——
 本机实测 4 个断链因此**第一次变得可见**，此前它们和「没放过这个 skill」无法区分。
 
-CLI 的 Node 桥同步了这两条语义（列出但不跟进 symlink、允许把 symlink 当根），否则同一台机器上
-CLI 会比桌面少几个 skill 且无从解释。CLI 宿主的**已知限制**仍在：它没有本机文件读取通路
-（`readWorkspaceFile` 只在 Tauri 下可用），所以 CLI 里 L1 清单会列出 `user/*` 与 `project/*`，
-但 `skill_read` 读不到正文。这不是本阶段引入的——项目 skills 一直如此，README 也已写明
-「CLI 宿主无本机文件工具」。
+Node 桥同步了这两条语义（列出但不跟进 symlink、允许把 symlink 当根），否则同一台机器上两个
+宿主会看到不一样多的 skill 且无从解释——今天它是**唯一**的实现，两个宿主吃的是同一份。
+
+> **原文这里记着一条 CLI 的「已知限制」：`readWorkspaceFile` 只在 Tauri 下可用，所以 CLI 能列出
+> 清单却读不到正文。那条限制已经消失**——H 线把判据换成 `hasHostBridge()`，CLI 在
+> `apps/cli/src/runtime.ts` 里登记了进程内命令桥，`skill_read` 在 CLI 上能读到正文。
+> 今天读不到的只有没有桥的那一态（纯静态产物），而它连清单都是空的。
 
 #### 真实数据验证
 
@@ -363,6 +374,6 @@ CLI 会比桌面少几个 skill 且无从解释。CLI 宿主的**已知限制**�
 
 1. `pnpm exec vitest run packages/agent-core/ tools/skills/` 全绿；
 2. `pnpm build` 通过；
-3. **web 端清单字节零回归**：非 Tauri 下 `buildSkillManifestText()` 输出与实施前逐字相同；
-4. 阶段 C 后附 Tauri 实测：一个带 `.webAgent/skills` 的 workspace，确认清单出现项目段、
+3. **无桥宿主清单字节零回归**：没有宿主命令桥时 `buildSkillManifestText()` 输出与实施前逐字相同；
+4. 阶段 C 后附真机实测：一个带 `.webAgent/skills` 的 workspace，确认清单出现项目段、
    `skill_read` 能读到正文与 L3 资源、同 workspace 连续对话 `cache_epoch` 不变。

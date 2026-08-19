@@ -19,9 +19,12 @@
 // `Object.prototype` 上的键蒙混过去（同 `isNodeHostCommandName` 的记档）。
 
 /**
- * 宿主可以主动发出的全部事件。**唯一权威**，上游是桌面宿主
- * `apps/desktop/src/mcp_lifecycle.rs` 里的两个 `const … : &str`；
- * `hostEventNames.test.ts` 逐字对拍，Rust 侧改名而这里没跟上会当场红。
+ * 宿主可以主动发出的全部事件。**这份声明就是权威本身**——名字移植自桌面宿主
+ * `apps/desktop/src/mcp_lifecycle.rs` 里的两个 `const … : &str`，那份 Rust 已随 T1 删除
+ * （只能从 Git 历史读），对拍没有第二侧了。改这两个字面量的后果因此落在**下游**：
+ * `apps/web/src/mcp/serverHostEventStream.ts` 本地声明了同一组名字（跨 app 不 import），
+ * 改这里而不改那里，症状是「MCP 子进程退出了但前端没反应」——静默。理由见
+ * `hostEventNames.test.ts` 的文件头。
  *
  * 两条都是 MCP stdio 子进程的生命周期通知。它们**不是**某条命令的返回值：
  * 命令桥 `HostInvoke` 的签名是 `(cmd, args) => Promise<T>`，只能表达「我问、宿主答」，

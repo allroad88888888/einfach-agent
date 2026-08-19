@@ -138,8 +138,9 @@ pnpm subagent:index:compact -- --write # 原子替换
 ```
 
 同样默认只读；坏行中止全部写入而不是"跳过继续"；并且它**只处理 `index/*.jsonl`**，绝不读取或改写
-`events.jsonl`。桌面宿主里还有一份自动压缩（`apps/desktop/src/workspace_write.rs`）：索引超过
-128 KiB 触发、最多每 5 分钟一次、16 MiB 安全上限，与 CLI 共用同一套跨进程锁；CLI 用于手动兜底。
+`events.jsonl`。宿主侧还有一份自动压缩（`packages/host-node/src/workspace/write/compaction.ts`）：
+索引超过 128 KiB 触发、最多每 5 分钟一次、16 MiB 安全上限，与 CLI 共用同一套跨进程锁；
+CLI 用于手动兜底。
 
 ### 4.5 `pnpm subagent:skills`：蒸馏产物谁能转正
 
@@ -165,8 +166,8 @@ pnpm subagent:skills -- --archive sk_xxx --write
 
 归档解决"跑完之后还剩什么"，观测解决"跑的过程中发生了什么"，是分开的两套设施：
 
-- 主 run 的 trace 走可插拔观测 driver：Web 用 IndexedDB（`@einfach-agent/observability-idb`），
-  Tauri 用 SQLite（`@einfach-agent/observability-sqlite`），UI 侧是 `apps/web/src/traceViewer/`。
+- 主 run 的 trace 走可插拔观测 driver：有 SQL 通路时用 SQLite（`@einfach-agent/observability-sqlite`），
+  纯静态产物退到 IndexedDB（`@einfach-agent/observability-idb`），UI 侧是 `apps/web/src/traceViewer/`。
 - 子 agent 自己的模型对话落进归档的 `traces/<agentPath>.trace.jsonl`，UI 通过
   `packages/subagents/src/state/subagentTraceAtoms.ts` 按需读回——点开树上任意节点，看到的是它
   当时的完整来回，而不只是那句 summary。
@@ -180,7 +181,7 @@ pnpm subagent:skills -- --archive sk_xxx --write
 这套东西目前有四个明确的"还不是"：
 
 1. **五个脚本都是手动 CLI，不是自动后台任务。** 没有定时 GC、容量告警和自动转正；唯一自动化的是
-   桌面宿主里的索引压缩。归档涨到多大要人自己去看，retention 也要人自己去跑。
+   宿主侧那份索引压缩。归档涨到多大要人自己去看，retention 也要人自己去跑。
 2. **`subagent:capacity` 是回归测试，不是运维报表。** 它跑在内存 host 上，测序列化体积和并发上限
    这些确定性数字，不测真实磁盘 IO，也不反映你线上那个 workspace 现在多大。
 3. **retention 只回收派生文件。** 事件流永远保留，长期占用仍单调增长，只是增速被压下来了。

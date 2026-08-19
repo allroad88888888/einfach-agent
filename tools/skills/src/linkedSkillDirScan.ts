@@ -2,8 +2,12 @@
 // ---------------------------------------------------------------------------
 // 为什么要单独一条路径：`.claude/skills/<name>` 指向仓库外某处，是 dotfiles 共享 skill 的常见
 // 写法（本机 20 个用户 skill 里有 5 个是这样）。而桥的列目录既不递归进 symlink，也会在 confine
-// 模式下把「目标在根外」的条目整条滤掉——两条都由 apps/desktop 的
-// workspace_read_confinement_tests.rs 两个 linked_skill_dir_* 契约测试钉住。
+// 模式下把「目标在根外」的条目整条滤掉——这两条当年由 `apps/desktop/src/`
+// `workspace_read_confinement_tests.rs` 的两个 `linked_skill_dir_*` 契约测试钉住，
+// **那个文件已随 T1（提交 e52c31d）连同整个桌面端删除，只能从 Git 历史读**。
+// 今天钉住同一批语义的是唯一的宿主实现自己：`packages/host-node/src/workspace/read/`
+// `listFiles.test.ts`（symlink 列出但不进去、越界目标整条滤掉）与
+// `workspace/common/resolveWorkspaceRoot.test.ts`（软链根解成目标目录）。
 //
 // 于是 loader 用外部可见的列表拿到 symlink 条目本身，再把**它自己**当 workspace root 传回桥：
 // canonicalize 后就是目标目录，目录内文件是根内相对路径，读取无需任何越界权限。

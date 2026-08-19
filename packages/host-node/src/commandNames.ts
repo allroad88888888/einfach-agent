@@ -2,18 +2,17 @@
 // ---------------------------------------------------------------------------
 // 这张表是 N 线 25 张卡共用的施工图，也是「宿主一共有哪些命令」的**唯一权威**。
 //
-// 权威从哪来：`apps/desktop/src/lib.rs` 的
-// `invoke_handler(tauri::generate_handler![...])` 目前登记了 28 条 `#[tauri::command]`。
+// 这 28 条**从哪来**：立表时的上游是桌面宿主 `apps/desktop/src/lib.rs` 的
+// `invoke_handler(tauri::generate_handler![...])`，它登记了 28 条 `#[tauri::command]`；
 // core 里 13 个 runtime 模块经 `HostInvoke` 发出的命令名，加上 apps/web 的 mcp / model /
-// settings 装配层直接发出的命令名，合起来正好是这 28 条。换句话说：Node 宿主要做到「能力
-// 完整」，要兑现的就是这 28 条，一条不多、一条不少。commandNames.test.ts 逐字比对 lib.rs 的
-// 登记列表，防止两边悄悄漂移——Rust 侧新增一条而这里没登记，后果是 Node 宿主永远不知道该
-// 实现它，而症状只是某个功能「在浏览器版里没反应」。
+// settings 装配层直接发出的命令名，合起来正好是这 28 条。**那份 Rust 已随 T1 删除**（提交
+// `e52c31d`，只能从 Git 历史读），`commandNames.test.ts` 里逐字比对它的两条用例也一并删了——
+// 对拍没有第二侧可比。今天这张表就是权威本身，漂移的方向反过来了：下游是 apps/web 与 apps/cli，
+// 它们都从这里取名字，名字对不上是 `tsc -b` 的事。理由与替代物见 commandNames.test.ts 文件头。
 //
-// **`sqlite` 域是这条对照之外的**（P2 新增，全表因此是 30 条）：桌面侧的会话与 trace 持久化走
-// `@tauri-apps/plugin-sql`，那是 Tauri **插件**暴露的命令，从来不在 lib.rs 的 `generate_handler!`
-// 里。它们没有 Rust 对应物可比对，所以测试把这一域从两边比对里排除掉，而不是放宽比对口径——
-// 放宽之后 Rust 侧真的漂移了也不会有人知道。将来再有这类「Node 独有」的域，同样在测试里点名。
+// **`sqlite` 域从来不在那 28 条里**（P2 新增，全表因此是 30 条）：桌面侧的会话与 trace 持久化走
+// `@tauri-apps/plugin-sql`，那是 Tauri **插件**暴露的命令，不在 `generate_handler!` 里。这两条
+// 命令名是 Node 侧新定的，没有移植来源。
 //
 // 为什么名字要单独成一张穷举表，而不是散在各域实现里：
 //   · 分发要能区分「这条命令还没实现」和「这个名字根本不存在」。前者是施工进度，调用方等

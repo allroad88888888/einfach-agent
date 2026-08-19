@@ -1,6 +1,8 @@
 # 多实例配置目录
 
-桌面版可以通过 `WEB_AGENT_CONFIG_DIR` 为每个运行实例选择独立的配置目录。它只决定 `config.json` 的位置，不提供或读取模型 API Key。
+读写 `config.json` 的是**本机 Node 后端**（`pnpm serve` 起的服务，以及 CLI）。它们可以通过 `WEB_AGENT_CONFIG_DIR` 为每个运行实例选择独立的配置目录。该变量只决定 `config.json` 的位置，不提供也不读取模型 API Key。
+
+注意 SQLite 库文件**不跟随**这个变量（理由见 `packages/host-node/src/sqlite/databasePath.ts` 的文件头）——它隔离的是配置，不是会话数据。
 
 ## 路径规则
 
@@ -20,19 +22,21 @@
 在 macOS 或 Linux 的 zsh/bash 中，可以分别指定两个绝对目录启动：
 
 ```sh
-WEB_AGENT_CONFIG_DIR="$HOME/.webAgent-work" pnpm tauri dev
-WEB_AGENT_CONFIG_DIR="$HOME/.webAgent-personal" pnpm tauri dev
+WEB_AGENT_CONFIG_DIR="$HOME/.webAgent-work" pnpm serve
+WEB_AGENT_CONFIG_DIR="$HOME/.webAgent-personal" pnpm serve
 ```
+
+（CLI 同理：`WEB_AGENT_CONFIG_DIR=… pnpm cli -p "…"`。）
 
 也可以先在当前终端选择一套配置，再启动应用：
 
 ```sh
 export WEB_AGENT_CONFIG_DIR="$HOME/.webAgent-work"
-pnpm tauri dev
+pnpm serve
 ```
 
 切换实例时，请在启动命令中指定另一目录；不要把 `config.json` 文件路径本身赋给该变量。若要显式使用默认目录，可设为 `WEB_AGENT_CONFIG_DIR="$HOME/.webAgent"`。
 
 ## 密钥边界
 
-模型 API Key 不能从任何环境变量读取。仍须在桌面应用的模型凭据输入界面中填写；应用会把凭据保存到当前所选目录的 `config.json`。
+浏览器一侧，模型 API Key 不能从任何环境变量读取，仍须在模型凭据输入界面中填写，由本机后端保存到当前所选目录的 `config.json`；前端任何路径都读不回明文 Key。CLI 是个例外，它**可以**从环境变量取 Key（`DEEPSEEK_API_KEY` 等，见 `apps/cli/src/credentials.ts`）——那是一个本机进程直接持有凭据，与浏览器那条受限通路的威胁模型不同。

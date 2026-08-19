@@ -28,18 +28,23 @@ pnpm cli -p '用 skill_search 搜索和"计划 planning"相关的 skill，找到
 
 | # | 提示词方向 | 结果 | 弃用/采用原因 |
 | --- | --- | --- | --- |
-| 1 | 直接让模型读 `README.md` 开头总结项目 | 模型**拒绝执行**，声称自己没有文件读取工具 | 见下方"重要架构事实"：CLI 里 `read_file` 等 fs/shell 工具的 `runtime: 'server'`，非 Tauri 环境根本不会出现在模型可用工具里（`CLAUDE.md`："`server` 工具在非 Tauri 环境中不会暴露给模型"）。模型的拒绝是**正确行为**，但作为发布 demo 不好看 |
+| 1 | 直接让模型读 `README.md` 开头总结项目 | 模型**拒绝执行**，声称自己没有文件读取工具 | 见下方"重要架构事实"：当时 CLI 里 `read_file` 等 fs/shell 工具不会出现在模型可用工具里。模型的拒绝是**正确行为**，但作为发布 demo 不好看。**这条原因今天已不成立** |
 | 2 | 显式点名 `read_file` 工具读 `package.json` | 报 `tool not allowed for child agent: read_file`，模型如实拒绝 | 同上，进一步证实 fs 工具在 CLI 里不可用，排除这条路线 |
 | 3 | `skill_search` + `skill_read` 总结"工具懒加载"机制 | 成功：3 行工具调用 + 完整流式中文总结 | 内容合格，但回复里有一句"我通过 `skill_search` 找到了…"，而实际调用轨迹里模型是直接从 `skill_manifest` 摘要跳到 `skill_read`，并没有单独调用 `skill_search`——叙述和实际工具轨迹对不上，不选它 |
 | 4（**采用**） | `skill_search` + `skill_read` 总结"计划 planning"机制 | 成功：3 行工具调用 + 结构清晰的两段式中文总结（"是什么" + "什么时候用"），叙述不夸大工具使用 | 内容更贴近产品真实卖点（结构化计划工作流），叙述与工具轨迹一致，实测约 6–9 秒完成，适合控制在 60–90 秒的演示节奏里 |
 
-**重要架构事实（录制/改动前必须知道）**：CLI 是 Node 进程，但标准工具里 `runtime: 'server'` 的
-那部分（`tools/fs`、`tools/shell` 全部，见 [`tools/fs/src/read-file/read-file.ts`](../../tools/fs/src/read-file/read-file.ts)
-的注释）依赖 `ToolContext.readWorkspaceFile` 等 Tauri 原生桥接，**在非 Tauri 宿主（包括 CLI）里
-根本不进模型可见的工具清单**，见 `CLAUDE.md`"`server` 工具在非 Tauri 环境中不会暴露给模型"这句。
-所以 CLI demo 不能用"读文件"当卖点，只能用 `runtime: 'internal'` 的工具——`skill_manifest` /
-`skill_search` / `skill_read` / planning 五件套 / `delegate_agent` 等。选 planning 主题是因为它
-比"工具懒加载"更像一个终端用户会关心的产品能力。
+**重要架构事实（录制/改动前必须知道）——⚠️ 这条已经过期，但结论仍可用**：当时 CLI 上
+`runtime: 'server'` 的那批工具（`tools/fs`、`tools/shell` 全部）之所以不进模型可见清单，是因为
+判据写死成"是不是跑在 Tauri webview 里"，而 CLI 里那个全局量当然不存在——**不是能力所限**。
+今天判据已换成 `hasHostBridge()`（[`turnToolVisibility.ts`](../../packages/agent-core/src/runtime/turnToolVisibility.ts)
+与 [`modelTurnPrefix.ts`](../../packages/agent-core/src/runtime/modelTurnPrefix.ts)），CLI 在
+[`apps/cli/src/runtime.ts`](../../apps/cli/src/runtime.ts) 里登记了进程内命令桥，所以
+**`read_file` 等 fs/shell 工具在 CLI 上现在是可见可用的**。上表候选 1/2 的失败原因随之消失。
+
+结论仍然成立：本 demo 用的是 `runtime: 'internal'` 的工具——`skill_manifest` / `skill_search` /
+`skill_read` / planning 五件套 / `delegate_agent` 等。选 planning 主题是因为它比"读文件"或
+"工具懒加载"更像一个终端用户会关心的产品能力。**要改用读文件当卖点得重跑一遍取证**，
+上表那四行是当时的真实记录，不要拿它当今天的行为依据。
 
 ## 3. 逐步复录步骤
 
