@@ -127,7 +127,7 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
 | --- | --- | --- |
 | 3 | `workspace_change_journal_types.rs` 的 `FileSnapshot` | `content: Option<String>`，而 serde 对 `Option<T>` 的缺失字段有特判（直接 `visit_none()`）——一份**被截断的条目不会解析失败**，而是被当成 `content: null`，回滚时那等于「文件原本不存在」，于是**删掉用户的文件**。收严会拒掉桌面端写的合法条目，要修该两边一起加 `exists === (content !== null)` 的自洽校验。 |
 | 4 | `workspace_write_before.rs:44` | 文案 `existing file exceeds reversible {MAX_BYTES} byte limit` 里的 "reversible" 与它实际用的常量对不上（`MAX_BYTES` 是 8 MiB 硬顶，`REVERSIBLE_MAX_BYTES` 才是 1 MiB）。 |
-| 5 | `workspace_read*` 的错误消息 | 用**绝对路径**（`display_path`），而返回值里的 `path` 是根相对——一次读失败会把宿主机绝对路径写进模型可见的错误文本。 |
+| 5 | `workspace_read*` 与 `workspace_delete.rs` 的错误消息 | 用**绝对路径**（`display_path`），而返回值里的 `path` 是根相对——一次失败会把宿主机绝对路径写进模型可见的错误文本。W10 交回时点名：删除侧的软链拒绝文案同样如此（`` `/Users/…/workspace/linked` ``），且比读取侧更值得列，因为它出现在一次被拒绝的破坏性操作里。 |
 | 6 | `workspace_git.rs` 的 `parse_changed_files` | 不解 git 的 C-style quoted path，`core.quotePath` 开着时非 ASCII 文件名会是 `"\303\251.txt"`。 |
 | 7 | `workspace_git_exec.rs` | `status --short` / `--stat` / `--name-only` **不设输出上限**（只有 diff 正文有 cap）。巨型仓库的 `status --short` 会整份进内存和返回值。 |
 | 8 | `runtime/shellCommand.ts` 的 `normalizeResult` | 超时命令的 `exit_code: null` 被整形成 `-1` 并追加 `run_shell_command returned a response without a valid exit code`——对模型来说「超时被杀」被说成「桥返回了非法响应」。改动要 core + Rust 一起动。 |
@@ -142,6 +142,8 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
 | 11 | `workspace_patch_path.rs:101` 与 `workspace_path_ops.rs:224` | 这两处的展示路径**无条件** `.replace('\\', "/")`，而 `workspace_write_target_path.rs` / `workspace_read_paths.rs` 的 `path_to_slash_string` 是 `if MAIN_SEPARATOR == '/' { 原样 }`——**同一仓库里两种做法**。unix 上 `\` 是合法文件名字符，于是真名 `a\b.txt` 的文件在读/写侧原样保留、在 patch 与 path_ops 侧变成 `a/b.txt`；而 patch 那个结果会**写进变更日志**，回滚时按另一个路径去找。W12 发现，主会话已复核四处实现。 |
 
 | 12 | `workspace_write_result.rs` 的 `WorkspaceWriteResult` | 它是 `#[derive(Serialize)]` **没有 `rename_all`**，所以写入回执的顶层键是 snake_case（`bytes_written` / `change_set` / `dry_run`…），而 `workspace_read_types.rs` 与 `workspace_patch_result.rs` 都带 `rename_all = "camelCase"`——**同一仓库两种线上形状**。core 的 `normalizeResult` 两种都收，所以今天两边都跑得动，但 W16/W17 对拍会撞上。W7 发现，主会话已复核三个结构的 serde 属性。Node 侧照搬了 snake_case。 |
+
+| 13 | `workspace_delete.rs` 的 `path does not exist` | 这句话**在正常路径上永远不会出现**：`resolve_delete_path` 对**最后一段**也做 `symlink_metadata`，所以目标不存在时先失败成 `failed to resolve target path: No such file or directory (os error 2)`；caller 里那个 `ErrorKind::NotFound → "path does not exist"` 分支只在 TOCTOU 窗口里可达（同理 caller 的 `is_symlink()` 判断也不可达）。W10 照搬了（TOCTOU 下仍有意义）并把测试钉成「报的是解析失败」。**W16/W17 对拍时别指望能构造出这句话。** |
 
 **⚠️ 跨宿主隐患（T 线套壳前必须解决）**：`workspaceRoot` 在变更日志里存的是 canonicalize 后的
 绝对路径、回滚时逐字比对。Rust 的 `fs::canonicalize` 在 Windows 上给 verbatim 前缀
@@ -927,7 +929,24 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `workspace_delete.rs`（461 行）。删除是不可逆动作，**必须先进 change journal
   再执行**，否则 `revert_workspace_change` 拿不回来。跑该目录 vitest
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `b6be655`（registrar 接线 `ba3d939`，与 pathOps 同批）。9 个源文件 + 7 份测试 / 61 例。
+  **账里不存内容**：条目只记一条根相对路径（`movedPaths`），内容整份**复制**进
+  `<journal>/<changeId>.payload`（删目录时那是一棵完整目录树，含权限位）。
+  上限由递归预扫判：`MAX_ENTRIES = 20000`（含目录本身与全部子孙）、`MAX_BYTES = 512 MiB`
+  （**只累计文件**，目录项自身 size 不计），边界是 `>`。**超限是拒绝删除，不是标记不可逆**
+  ——10 万文件的目录在第 20001 个条目上就停手，一个字节不删、一条账不记。
+  **symlink：链接和目标都不删，整次拒绝**，三道防线（逐段 lstat 含最后一段 / pipeline 再判一次
+  只在 TOCTOU 窗口可达 / 递归预扫时树里任何一处软链拒整次）。**什么都不记**——拒绝全部发生在
+  `prepareDeletedPathChange` 之前，日志目录里连一条 prepared 都不会有。
+  **删除侧没有「不记账直接删」这个口子**（write 域有）：缺 `change_context` 直接 `ok:false`。
+  理由写在源码顶部——写入的最坏情况是旧内容没了而新内容还在，删除的最坏情况是那份内容
+  从世界上消失。
+  三条补偿路径已实现，但**后两条没有测试覆盖并已诚实标注**：要在两次系统调用之间注入失败，
+  没有 DI 就 induce 不出来（chmod 类做法在 root 容器里失效），Rust 侧同样没测。
+  **主动核对了 Rust 问题清单里哪些条适用于本域**（主会话复核）：第 11 条**不适用**——
+  `workspace_delete.rs:280` 的 `relative_path` 是**条件式**的（`if MAIN_SEPARATOR == '/'`），
+  与读写侧一致、与 patch/path_ops 那两处不一致，本域站读写侧；第 3 条无关（删除走
+  `movedPaths` + payload，全程不产生 `FileSnapshot`）。
 
 ### W11 · 复制与移动路径
 
