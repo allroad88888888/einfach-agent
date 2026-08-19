@@ -4,8 +4,10 @@ import { definePackageBuild } from '../../tsup.preset'
 export default definePackageBuild({
   // 本包只对外暴露一个 barrel（src/index.ts），exports 也只有 `.` 一条，故单 entry。
   entry: ['src/index.ts'],
-  // @tauri-apps/plugin-sql 与 @web-agent/core 都在本包 dependencies，tsup 自动 external。
-  // 前者是有意的硬依赖（本包按定义只在 Tauri 宿主下装配，V5 已定性不改为 optional peer）——
-  // 与 core 的 @tauri-apps/api/@tauri-apps/plugin-dialog 降级不是一回事，这里不跟着降。
+  // @web-agent/core 在本包 dependencies，tsup 自动 external。
+  // P1 之后本包**不再 import 任何具体 SQL 上游包**：SQL 执行面由装配层经 configureSqlExecutor
+  // 注入，`@tauri-apps/plugin-sql` 的唯一 import 点搬去了 apps/web/src/persistence/
+  // tauriSqlExecutor.ts。package.json 里那条 dependency 声明因此已是残留，待随一次 lockfile
+  // 刷新一并摘掉（单独改 package.json 会让 CI 的 pnpm install --frozen-lockfile 变红）。
   external: [],
 })

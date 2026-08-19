@@ -37,6 +37,8 @@ export const sqliteSessions: SessionsPersistence = {
   //   （真实日志：INSERT OR REPLACE INTO sessions … elapsed=5.21s rows_affected=0）。ROLLBACK 同理无效。
   //   改用**单条** upsert：SQLite 单语句本身即原子（要么整行写入、要么完全不写），无需任何事务包裹，
   //   失败时旧的 '__all__' 行原封不动、绝不出现半写或残留锁。
+  //   P1 之后执行面由装配层注入（SqlExecutor），这条更是硬前提：port 只承诺「执行一条语句」，
+  //   连接归属完全在实现里，调用方无从假设。判据见 core 的 state/persistence/sqlTransport.ts。
   //
   // legacy 死行清理（best-effort，无原子性要求）：仅当上次 load 读到旧的逐行格式时才发一条
   //   `DELETE FROM sessions WHERE id != '__all__'`。它与上面的 upsert 是**两条独立语句、不要求原子**：

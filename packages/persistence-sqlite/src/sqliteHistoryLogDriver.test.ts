@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { PersistedHistoryLog } from '@web-agent/core/state/persistence'
+import type { PersistedHistoryLog, SqlExecutor } from '@web-agent/core/state/persistence'
 
 interface HistoryLogRow {
   session_id: string
@@ -44,12 +44,9 @@ function createFakeDatabase() {
 let database = createFakeDatabase()
 let loadImplementation: () => Promise<unknown> = async () => database
 
-vi.mock('@tauri-apps/plugin-sql', () => ({
-  default: { load: () => loadImplementation() },
-}))
-
 import { __resetSqliteForTest } from './sqliteDriver'
 import { createSqliteHistoryLogDriver } from './sqliteHistoryLogDriver'
+import { configureSqlExecutor } from './sqliteShared'
 
 function log(generation: number, entryCount = 1): PersistedHistoryLog {
   return {
@@ -63,9 +60,12 @@ function log(generation: number, entryCount = 1): PersistedHistoryLog {
   }
 }
 
+// P1：fake DB 从 configureSqlExecutor 注入槽进来（本包不再 import 具体 SQL 上游包），
+// fake 与断言本身未动 —— 它的 execute/select 形状就是 `SqlExecutor` 契约。
 beforeEach(() => {
   database = createFakeDatabase()
   loadImplementation = async () => database
+  configureSqlExecutor(async () => (await loadImplementation()) as SqlExecutor)
   __resetSqliteForTest()
 })
 

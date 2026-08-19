@@ -1,15 +1,16 @@
-// Ta-2 · SQLite 持久化实现（tauri-plugin-sql）—— 桌面壳下替换 IndexedDB（§5 Ta-2 / C1 / TaK1）。
+// Ta-2 · SQLite 持久化实现 —— 桌面壳下替换 IndexedDB（§5 Ta-2 / C1 / TaK1）。
 // ---------------------------------------------------------------------------
-// 背景：持久化范围 = 会话列表（SessionMeta）+ 每会话 RecoverySnapshotV1。桌面（Tauri）下用 SQLite：
-//   前端经 @tauri-apps/plugin-sql 的 Database 执行 SQL，上层逻辑（persistenceBridge / hydrate）不变。
+// 背景：持久化范围 = 会话列表（SessionMeta）+ 每会话 RecoverySnapshotV1。用 SQLite 落盘：
+//   SQL 经装配层注入的 `SqlExecutor`（P1 的 port）执行，上层逻辑（persistenceBridge / hydrate）不变。
 //   · 与 IndexedDB 版契约对齐：全 async、best-effort —— 底层报错时读退化为 []、写静默返回，绝不抛
 //     （对齐 indexedDbDriver / sessionsPersistence 的降级语义，DK2）。
-//   · history + sessions 共享同一个 db 连接：getDb() 惰性 load 一次 + 建表（memoized）。
-//   · 只有 isTauri() 时才由 main.tsx 选用本实现；浏览器仍用 IndexedDB（本文件不做环境判定）。
+//   · history + sessions 共享同一个执行面：getDb() 惰性解析一次 + 建表（memoized）。
+//   · 本包**不做环境判定、也不认识任何具体 SQL 上游包**：由装配层决定这一态用不用 SQLite，并把
+//     对应的执行面 configureSqlExecutor 进来（桌面壳注入 Tauri SQL 插件）。
 //
 // 本文件按职责拆成三份（T5，单一职责）：
-//   · sqliteShared.ts：getDb() 惰性连接 + PRAGMA 调优（journal_mode=WAL / busy_timeout / synchronous）
-//     + 建表，history/sessions 共用同一连接。
+//   · sqliteShared.ts：执行面的注入槽（configureSqlExecutor）+ getDb() 惰性带起
+//     （PRAGMA 调优 journal_mode=WAL / busy_timeout / synchronous + 建表），history/sessions 共用。
 //   · sqliteSessionsPersistence.ts：sessions/workspaces 单行 blob 的 SessionsPersistence 实现。
 // 本文件是组合根：只拼出 createSqlitePersistence() 与测试用的 __resetSqliteForTest()，不含表结构
 // 或 SQL 细节——具体表结构、PRAGMA 动机见上述三个文件各自的头部注释。

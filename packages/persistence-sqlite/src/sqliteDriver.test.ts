@@ -1,9 +1,10 @@
-// Ta-2 SQLite driver 单测（红→绿）。@tauri-apps/plugin-sql 在 jsdom 里无真实运行时，
-// 故 mock 出一个「内存 fake DB」：按 SQL 子串分发到内存数组，验证 driver 的 SQL 构造 + 结果映射 +
-// best-effort 降级（底层抛错时读退化为 []/undefined、写静默返回，绝不抛）。
+// Ta-2 SQLite driver 单测（红→绿）。jsdom 里没有任何真实 SQL 运行时，故注入一个「内存 fake DB」
+// 当执行面：按 SQL 子串分发到内存数组，验证 driver 的 SQL 构造 + 结果映射 + best-effort 降级
+// （底层抛错时读退化为 []/undefined、写静默返回，绝不抛）。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionMeta } from '@web-agent/core/state/core.type'
+import type { SqlExecutor } from '@web-agent/core/state/persistence'
 
 // —— 内存 fake DB：按 SQL 子串识别 driver 发出的那几条语句 ——
 function makeFakeDb() {
@@ -56,15 +57,16 @@ function makeFakeDb() {
 let fakeDb = makeFakeDb()
 let loadImpl: () => Promise<unknown> = async () => fakeDb
 
-vi.mock('@tauri-apps/plugin-sql', () => ({
-  default: { load: (...args: unknown[]) => loadImpl() },
-}))
-
 import { createSqlitePersistence, __resetSqliteForTest } from './sqliteDriver'
+import { configureSqlExecutor } from './sqliteShared'
 
+// P1：本包不再 import 任何具体 SQL 上游包，fake DB 因此改从 configureSqlExecutor 这个注入槽进来，
+// 而不是 vi.mock 掉那个上游模块。fake 本身与断言一个字都没动 —— 它的 execute/select 形状就是
+// `SqlExecutor` 契约，之前能当 Database 使，现在能当执行面使。
 beforeEach(() => {
   fakeDb = makeFakeDb()
   loadImpl = async () => fakeDb
+  configureSqlExecutor(async () => (await loadImpl()) as SqlExecutor)
   __resetSqliteForTest()
 })
 afterEach(() => {
@@ -147,6 +149,17 @@ describe('sqliteDriver — sessions', () => {
     const { sessions } = createSqlitePersistence()
     await expect(sessions.saveSessions([meta('a')])).resolves.toBeUndefined()
     expect(await sessions.loadSessions()).toEqual([])
+  })
+
+  // P1：没登记执行面 = 装配错误。失败形状必须与上一条（宿主没有 SQL 运行时）逐字一致 ——
+  // 都是 getDb() 那个 promise reject，各 driver 的既有降级路径因此一行都不用改。
+  it('未登记执行面 → 与「底层抛错」同一条降级路径，且不返回任何兜底实现', async () => {
+    configureSqlExecutor(undefined)
+    const { sessions } = createSqlitePersistence()
+    await expect(sessions.saveSessions([meta('a')])).resolves.toBeUndefined()
+    expect(await sessions.loadSessions()).toEqual([])
+    expect(fakeDb.execute).not.toHaveBeenCalled()
+    expect(fakeDb.select).not.toHaveBeenCalled()
   })
 })
 

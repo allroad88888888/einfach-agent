@@ -2,6 +2,10 @@
 // ---------------------------------------------------------------------------
 // tauri-plugin-sql 背后是连接池，故这里刻意不用 BEGIN/COMMIT。条件 UPSERT 和 tombstone 各是一条
 // SQLite 原子语句；失败一律上抛，不能把中断恢复误降级为「没有快照」。
+//
+// P1 抽出 SqlExecutor port 之后这条前提只增不减：执行面由装配层注入，本文件更没有理由假设两次
+// 调用落在同一条连接上。port 因此只有「执行一条语句」而没有「执行一批语句」——把批量做成一等
+// 概念等于把这个假设重新引进来，判据见 core 的 state/persistence/sqlTransport.ts 文件头。
 
 import {
   type RecoveryDriver,

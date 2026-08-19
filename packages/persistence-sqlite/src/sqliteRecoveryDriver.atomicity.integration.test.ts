@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { RecoverySnapshotV1 } from '@web-agent/core/state/persistence'
+import type { RecoverySnapshotV1, SqlExecutor } from '@web-agent/core/state/persistence'
 
 interface RecoveryRow {
   session_id: string
@@ -92,16 +92,16 @@ function snapshot(generation: number, sessionId = 'atomic-session'): RecoverySna
 let sqlite = createAtomicSqlite()
 let loadDatabase: () => Promise<unknown> = async () => sqlite
 
-vi.mock('@tauri-apps/plugin-sql', () => ({
-  default: { load: () => loadDatabase() },
-}))
-
 import { __resetSqliteForTest } from './sqliteDriver'
 import { createSqliteRecoveryDriver } from './sqliteRecoveryDriver'
+import { configureSqlExecutor } from './sqliteShared'
 
+// P1：fake DB 从 configureSqlExecutor 注入槽进来（本包不再 import 具体 SQL 上游包），
+// fake 与断言本身未动 —— 它的 execute/select 形状就是 `SqlExecutor` 契约。
 beforeEach(() => {
   sqlite = createAtomicSqlite()
   loadDatabase = async () => sqlite
+  configureSqlExecutor(async () => (await loadDatabase()) as SqlExecutor)
   __resetSqliteForTest()
 })
 

@@ -28,3 +28,7 @@ export {
   createMemoryHistoryLogDriver,
   toPersistableHistoryLog,
 } from './historyLogDriver'
+// SQL 执行 port（P1）：纯类型、零实现、零宿主依赖，core 自己一处都不消费。收进本 barrel 的
+// 理由与上面两个内存 driver 同源——它是 driver 包之间的**公共词汇**，而 driver 包唯一都已经
+// 依赖的东西就是 core；判据与「为什么不放进任一消费方」写在 ./sqlTransport.ts 的文件头。
+export type { SqlExecuteResult, SqlExecutor, SqlExecutorLoader } from './sqlTransport'
