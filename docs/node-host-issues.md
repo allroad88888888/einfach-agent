@@ -53,7 +53,7 @@ B  前端 server 宿主装配          B1 → B2 → B3 → B4 ★浏览器 fs/s
 M  模型代理                     M1 → M2/M4 → M3 → M5 · M6 ★浏览器完整对话
 C  MCP 与事件通道               C1/C2 → C3 → C4 → C5 · C6 → C8 噪声 500 · C7 → C9 删自探测工厂 / B8 插件缺席
 P  持久化收敛                   P1 → P2 → P3 → P4
-D  分发                        D1 → D2 → D3 → D3b → D3c/D3d → D4
+D  分发                        D1 → D2 → D3 → D3b → D5a/D5b 产物真跑 · D4a/D4b/D4c 文档
 T  桌面端退出                   T1 删掉 apps/desktop（吸收 B8/C9）
 未决                           目录选择器 / 对拍覆盖下限 / 多 workspace 切换
 ```
@@ -67,7 +67,7 @@ T  桌面端退出                   T1 删掉 apps/desktop（吸收 B8/C9）
 > 被 DROPPED 的 7 张各自写清了凭什么作废，**事实都留在卡里**（不删卡——删掉的卡会被后人重新想
 > 一遍），将来真要做的人直接取用。判据是一句话：**「我注意到了」不等于「这得有人做」。**
 
-全树 **78 卡**（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
+全树 **82 卡**（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
 H4b 从 H4 里拆出的总闸、H4c 验收漏扫 apps 面留下的回归、H4d 拆树后新增文件带来的缺口、
 H4e 总闸改名的下游收尾；S 线因 N3 交回的 platform 阻断项增至 5 张；M 线因 M2 交回点名的取舍新增 M6；
 M3/C4/P3/D3 那一批验收又新增 5 张：C6、C7、D3b、D3c、B5，**全部来自子 agent 交回时点名或主会话
@@ -2212,19 +2212,103 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   dependencies，实测 `TS2503` 归零）；剩下的是上游 `@einfach/core@0.4.0` 的 59 条 NodeNext 错，
   那是上游的账，不该由本仓库的门禁扛。
 
-### D4 · README 与 docs 更新
+### D5a · 让打包产物保留 `node:` 前缀
 
-- **依赖**：M5
-- **改动面**：`README.md`、`README.zh-CN.md`、`docs/README.md`、`CLAUDE.md`、
-  **`docs/config-directory-override.md`**（N7 交回时点名：它现在只讲「桌面版」，而那套语义
-  ——默认路径、旧配置安全复制、`WEB_AGENT_CONFIG_DIR` 隔离与密钥边界——已在 Node 宿主上等价成立）
-- **判据**：对外长文写作卡。README 的「三个宿主」表述改为浏览器自托管 / CLI / 桌面套壳；
-  删掉「浏览器预览下 Tauri 桥支持的工具不可用」这类已过期的说明；
-  `CLAUDE.md` 的「持久化与运行环境」节同步。跑 `node scripts/check-docs.js`
+- **依赖**：无（存量缺陷）
+- **改动面**：`tsup.preset.ts`，很可能加一个 esbuild 插件（仓库已有 `tsup.rawPlugin.ts` 先例）
+- **判据**：**来源：主会话在真实浏览器里验收 T1 时发现，与 T1 无关。**
+  esbuild 打包时把 `node:` 前缀无条件剥掉：`import('node:sqlite')` → `import("sqlite")`。
+  其余内置**恰好都有裸名别名所以还能解析**，而 **`node:sqlite` 是只存在 `node:` 形式的内置**，
+  裸名 `sqlite` 在 registry 上是另一个包、本地不存在。于是打包产物里 SQL 整条挂掉：
+
+  ```
+  仓库内 pnpm serve（tsx 直跑源码）  → sqlite_select 回 [{"x":1}]        ✅
+  pnpm pack → 仓库外 npm install     → 502 command_failed
+      "Cannot find package 'sqlite' imported from …/host-node/dist/index.js"
+  ```
+
+  **主会话试过三条都没修好，别重试**：`platform: 'node'`、`target: 'node22'`、
+  `external: [/^node:/]`（单独与组合都试过），三次 dist 里都仍是 `import("sqlite")`。
+  判据：`pnpm -r build` 后 `grep 'import("sqlite")' packages/host-node/dist/index.js` 零命中，
+  且**所有** `node:` 内置在产物里都保留前缀；`check-dist` 与全量测试仍绿。
+  **不许改源码去绕开**（比如把说明符拼起来躲静态分析）——那会让静态分析失效，病根还在。
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
----
+### D5b · 加一条真跑打包产物的门禁
+
+- **依赖**：无（可与 D5a 并行；写完时它应当是**红的**，那正是它有效的证据）
+- **改动面**：`scripts/` 下一个新脚本 + `.github/workflows/ci.yml`
+- **判据**：**这条比 D5a 本身更重要。** D5a 那个缺陷没被拦住不是因为没有门禁，而是因为
+  **没有任何门禁跑真实产物的真实路径**：
+  · `check-dist` 装了 17 个包、验了 26 个公开 ESM 入口与 NodeNext 声明，**就是不跑那个二进制**；
+  · D2 的 smoke 跑的是 `health` + 一条 `get_user_home_dir`；主会话早先的隔离验证也是这两条；
+    T1 交回时跑的还是这两条——**都没碰 SQL**。
+  这是这棵树**第三次**撞见同一个模式（B4 的 token 抹除、D2 的 `workspace:*` 未改写，都是真跑才发现）。
+
+  门禁要做的事：`pnpm build` → `pnpm -r build` → `pnpm pack` 发布闭包 → **仓库外**临时目录
+  `npm install` → 起服务 → 至少验这几条：
+  ① `GET /api/health` 的 service 标识；② 无 token 时 401；③ 一条 `POST /api/invoke/*` 带 token 成功；
+  ④ **一条真的落盘的 SQL**——不是 `SELECT 1`（那不碰文件），要能证明数据真的进了 `web-agent.db`
+  并能读回来。⑤ 停服务后无残留进程。
+  **写完时它必须是红的**（当前产物就是坏的），并在报告里贴出它红在哪一条——**那是它有效的唯一证据**。
+  D5a 落地后它转绿。
+- **模型**：opus
+- **状态**：DOING
+
+### D4a · `CLAUDE.md` 去桌面化
+
+- **依赖**：T1
+- **改动面**：仓库根 `CLAUDE.md`
+- **判据**：**这是给仓库内编码 Agent 看的文件，说错了会直接误导下一个人。** T1 交回的失效清单
+  （行号以 T1 交回时为准，需自行核对）：`27`（`pnpm tauri dev/build`）、
+  `28`（`cargo test --manifest-path apps/desktop/Cargo.toml`）、`33`（CI 三平台 cargo + tauri build）、
+  `53`（「真实 Key 仅由桌面原生层…」→ 本机 Node 后端）、`58`（三种宿主的传输 → 两种）、
+  `62`（Tauri provider-neutral 传输）、`71`（Tauri stdio connector）、`73`（`apps/desktop/` 条目整条删）、
+  `249`（「Tauri：会话/历史和 trace 使用 SQLite…Rust command」）、
+  **`261`（「`server` 工具在非 Tauri 环境中不会暴露给模型」——T1 已核实这句在它之前就已经是假的：
+  H4b 把判据从 `isTauriHost()` 换成了 `hasHostBridge()`，正确说法是「没有登记宿主命令桥的宿主」）**、
+  `272`（「主目录由宿主给：Tauri 是 runtime/userSkillsRoot.ts」——文件还在，框架已死）。
+  **不要只做查找替换**：每一处都要回源码核对现状再写，写错的文档比没有文档更贵。
+  判据：全文零 Tauri/桌面残留；`node scripts/check-docs.js` 绿；随手抽查三处回源码验证。
+- **模型**：opus
+- **状态**：DOING
+
+### D4b · README 与 CONTRIBUTING 去桌面化
+
+- **依赖**：T1
+- **改动面**：`README.md`、`README.zh-CN.md`、`CONTRIBUTING.md`
+- **判据**：T1 交回的失效行号：`README.md` 7/20/27/30/39/40/81/85/91/93/95-96/100/106/115/119/137-139/160；
+  `README.zh-CN.md` 6/16/25/29/37/38/77/82/88/90/94/96/100/104/108/132-137/165/194-195/197；
+  `CONTRIBUTING.md` 13-17/29-30/56-59/63。
+  **两份 README 必须同步**（一份改了另一份没改，比两份都旧更糟）。
+  **启动方式的正确口径**（主会话实测过）：仓库内 `pnpm serve`；本地分发是
+  `pnpm pack` → 仓库外 `npm install *.tgz` → `./node_modules/.bin/einfach-agent`。
+  **不写 `npx einfach-agent`**——包名是 `@einfach-agent/server`、bin 名是 `einfach-agent`，
+  干净机器上 `npx einfach-agent` 解析的是非 scoped 的包，registry 上 404（主会话实测）。
+  也不要宣传发布到 npm：**用户已裁决「不发，仅本地跑」**（见「目标」段）。
+  判据：`node scripts/check-docs.js` 绿；两份 README 逐节对齐。
+- **模型**：opus
+- **状态**：DOING
+
+### D4c · `docs/` 去桌面化与死链修复
+
+- **依赖**：T1
+- **改动面**：`docs/` 下相关文件
+- **判据**：**`check-docs` 当前红在 4 条指向已删文件的相对链接上**：
+  `docs/kimi-provider-integration-blueprint.md:157` → `../apps/desktop/src/model_proxy_envelope.rs`；
+  `docs/launch/comparison.md:52` → `../../apps/desktop/`；
+  `docs/launch/repo-metadata.md:97` 与 `docs/release-signing.md:3` → `../../.github/workflows/release-desktop.yml`。
+  另外：**`docs/release-signing.md` 整份已孤立**（九个签名 Secret 没有消费者了）——
+  删掉还是改成「历史记录」由本卡判断并说明理由；`docs/core-runtime-flow.md:181,188` 与
+  `docs/core-surface-issues.md:346-351`（T8 拆 `apps/desktop/src/mcp.rs`）指向已删文件；
+  `docs/README.md` 的 `16`/`18`/`36`/`45`。
+  低优先但一并扫：`packages/host-node/fixtures/README.md:8,12,21,48,232` 与
+  `packages/host-node/src/**` 注释里把 `apps/desktop/src/*.rs` 当对拍权威的引用——
+  **那些对拍源现在不存在了**，注释要说清「移植自哪里、原件已随 T1 删除、以 Git 历史为准」。
+  判据：`node scripts/check-docs.js` 绿。
+- **模型**：opus
+- **状态**：DOING
 
 ## T · Tauri 退成套壳
 
@@ -2440,7 +2524,36 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   判据：全仓 `@tauri-apps` 零命中；`isTauri` 零命中；八条门禁全绿；`pnpm serve` 与本地
   pack→install 两条路径实跑通过。
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DONE `e52c31d`。**249 文件 / +679 −26714**（`apps/desktop/` 147 个 tracked 文件、22877 行，
+  其中 Rust 16535 行）。`release-desktop.yml` 一并删除，CI 的 `desktop-native` job 与三平台
+  `tauri build` 退出。宿主态从三态减到**两态**（server / static），`kind: 'tauri'` 支在
+  `resolveHost`、五个 `host*.ts`、`persistenceDrivers`、`toolNameCacheStorage`、`mcp/initialize`
+  里全部消失；`tauriSqlExecutor` / `tauriModelTransport` / `tauriStdioConnector` /
+  `tauriMcpConfigStorage` / `runtime/hostTauri` / `runtime/workspaceDialog` 整文件删除。
+  **全仓零 `@tauri-apps` import**（主会话用 `from|import|require` 正则复核，唯一命中是
+  `check-boundaries.test.js` 自己的 fixture 字符串）；剩余的 `isTauri` / `@tauri-apps` 文本命中
+  全在注释里，另两处是门禁自己的防复发规则（**刻意保留**）。
+  **测试 5366 → 5295（−71）逐条对得上账**：整文件删除 −47（6 个专测 tauri 态的文件），存活文件里
+  删除 −24，每一条都是 `{kind:'tauri'}` 分支断言 / `isTauri` 替身探针 / 读 Rust 源码的对拍。
+  两处对拍用例失去上游权威（`commandNames.test.ts` 读 `lib.rs`、`hostEventNames.test.ts` 读
+  `mcp_lifecycle.rs`），本卡**没有把命令名冻成字面量**（那是同一张表写两遍），改成钉自洽性。
+  **两处判断**：① `workspaceDialog` 整个删掉（含两处 UI 调用点）——它从来不是模型工具（`tools/`
+  零命中），删掉后 `canPickWorkspaceDirectory()` 恒 false，留着就是一个永远 disabled 的按钮、
+  一个永远渲染不出的错误 div 和一条永远走不到的分支，正是本卡禁止的形态；工作区路径的文本输入
+  （今天唯一能用的设置方式）原样保留。② `CLAUDE.md` 那句「`server` 工具在非 Tauri 环境中不会
+  暴露给模型」**在本卡之前就已经是假的**——H4b 把判据从 `isTauriHost()` 换成了 `hasHostBridge()`，
+  而 server 宿主是登记桥的；正确说法是「没有登记宿主命令桥的宿主（static）」。
+  **本卡推翻了主会话派工时的一处错误**：派工把 `plugins/desktopProvider` 列进「只为 tauri 存在」
+  要删的清单，而它是**唯一**的 plugin provider，其文件系统桥自 H4c 起判据就是 `hasHostBridge()`
+  ——删掉它等于删掉 B8 要恢复的那个功能。本卡保留并改名为 `workspacePluginProvider`。
+  （树里的 T1 卡面没有列它，只有派工提示词列了；主会话复核后采纳本卡的处置。）
+  **B8 随本卡落地**，且不是简单删掉那一行：改成收 `ResolvedHost` 并 `host.kind !== 'server'` 早退
+  ——只删判据会让 `static` 态也去装真 provider，而那时 `buildProjectSkillsWorkspaceBridge()` 返回
+  undefined，插件面会从诚实的「不支持用户插件」翻成一个扫描失败的错误态。
+  **主会话补跑了本卡未跑的两条判据**：本地 `pnpm pack` → 仓库外 `npm install` → 起服务（health /
+  invoke / 前端产物全通，tarball 里零 tauri 依赖），以及**真实浏览器**——后者当场发现一个
+  与本卡无关的存量缺陷，见 **D5**。
+  `check-docs` 红在 4 条指向已删文件的相对链接上（本卡按纪律没改文档），清单已交 D4。
 
 ## 未决
 
