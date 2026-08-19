@@ -11,15 +11,14 @@
 //   before.ts                         ← _before.rs
 //   guard.ts                          ← _guard.rs
 //   fsOps.ts                          ← _fs_ops.rs
+//   base64.ts                         ← _base64.rs（W8，严格 RFC 4648 解码）
 //   （changeSummary 现住 `../common`）  ← workspace_common.rs 的 compute_change_summary / diff_lines
 //   result.ts                         ← _result.rs
 //   pipelinePayload / Plan / Write /
 //     pipeline.ts                     ← _pipeline.rs（锁外编排 / 锁内临界区 / 纯判断 / 载荷）
 //   writeWorkspaceFileHandler.ts      ← workspace_write.rs 的命令体
 //
-// 尚未落地、各自有卡的两块：
-//   · **base64 二进制写入（W8）** —— `encoding: "base64"` 目前以结构化失败返回，位置与理由见
-//     pipelinePayload.ts。utf8 不受影响。
+// 尚未落地、有独立卡的一块：
 //   · **归档索引 compaction（W9）** —— 位置在 pipeline.ts 标注的那一处；缺它只影响子 Agent
 //     索引的体积，不影响写入正确性。
 

@@ -11,11 +11,24 @@ describe('buildPayload', () => {
     expect(payload.text).toBe('中文 abc')
   })
 
-  it('base64 目前以结构化拒绝返回（W8 未落地），且明说了可用的替代', () => {
-    // 这条会随 W8 一起改。留着它是为了让「悄悄退化成写垃圾字节」不可能发生——
-    // Buffer.from(x, 'base64') 对非法字符是静默跳过的。
-    expect(() => buildPayload('iVBORw0KGgo=', 'base64')).toThrow(WriteRejection)
-    expect(() => buildPayload('iVBORw0KGgo=', 'base64')).toThrow('base64')
+  it('base64 承载二进制：字节按 base64 解码，文本视图为 null（含 NUL，不是合法文本）', () => {
+    // PNG 文件头，含 0x00。
+    const payload = buildPayload('iVBORw0KGgoA/w==', 'base64')
+    expect(Buffer.from(payload.bytes).toString('hex')).toBe(
+      Buffer.from('iVBORw0KGgoA/w==', 'base64').toString('hex'),
+    )
+    expect(payload.text).toBeNull()
+  })
+
+  it('base64 承载文本：解出合法 UTF-8 且不含 NUL 时，文本视图原样保留，不会被误判成二进制', () => {
+    const payload = buildPayload('5Lit5paH', 'base64') // "中文"
+    expect(Buffer.from(payload.bytes).toString('utf8')).toBe('中文')
+    expect(payload.text).toBe('中文')
+  })
+
+  it('base64 非法输入按设计拒绝，而不是像 Buffer.from 那样静默解出垃圾字节', () => {
+    expect(() => buildPayload('not base64!', 'base64')).toThrow(WriteRejection)
+    expect(() => buildPayload('not base64!', 'base64')).toThrow('base64')
   })
 })
 

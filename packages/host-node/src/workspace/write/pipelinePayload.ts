@@ -12,13 +12,11 @@
 // 就仍按文本对待——否则一次「用 base64 传的中文」会白白失去回滚能力。判据与 Rust 逐字一致：
 // `String::from_utf8(...).ok().filter(|text| !text.contains('\0'))`。
 //
-// ⚠️ **base64 解码本身是 W8 的卡（`base64*`），本卡只留接口**。W8 落地时把下面那句拒绝换成
-// `decodeBase64(content)` 即可，周围的文本回收逻辑已经写好、不用动。之所以不顺手用
-// `Buffer.from(content, 'base64')` 顶一下：它对非法字符是**静默跳过**而不是报错，
-// `"not base64!"` 会被解成一串垃圾字节然后当成文件内容写进磁盘——那比拒绝糟得多。
+// base64 解码本身（严格 RFC 4648，非法输入报错而不是像 `Buffer.from` 那样静默吞掉垃圾字节）
+// 是 `base64.ts` 的职责，见那边的模块注释。
 
 import { Buffer } from 'node:buffer'
-import { rejectWrite } from './result'
+import { decodeBase64 } from './base64'
 import type { ContentEncoding } from './types'
 
 export interface WritePayload {
@@ -33,14 +31,12 @@ export function buildPayload(content: string, encoding: ContentEncoding): WriteP
   if (encoding === 'utf8') {
     return { bytes: Buffer.from(content, 'utf8'), text: content }
   }
-  return rejectWrite(
-    'encoding="base64" 尚未在 Node 宿主实现（见 workspace/write/pipelinePayload.ts 的 W8 接口说明）；' +
-      '改用 encoding="utf8" 可以写文本文件',
-  )
+  const bytes = decodeBase64(content)
+  return { bytes, text: recoverPayloadText(bytes) }
 }
 
 /**
- * 解码后的字节还能不能当文本看。**W8 接上 base64 解码后由它调用**——留在这里是因为「合法
+ * 解码后的字节还能不能当文本看。base64 路径解码成功后调用——留在这里是因为「合法
  * UTF-8 且不含 NUL 才算文本」这条判据属于 payload 的语义，不属于 base64 解码器。
  */
 export function recoverPayloadText(bytes: Uint8Array): string | null {
