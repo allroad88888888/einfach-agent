@@ -1594,6 +1594,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 
 - **依赖**：M1、S2
 - **改动面**：`apps/server/src/modelRoute*`
+- **状态**：DOING
 - **判据**：`POST /api/model/request` 直接返回流式 body（**不进 `/api/invoke/:command`
   的统一路由**）；客户端断开时上游请求被取消。跑该目录 vitest
 - **模型**：opus
@@ -1613,6 +1614,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **依赖**：M1、S3
 - **改动面**：新建 `apps/web/src/settings/serverModelCredentialHost.ts`；host-node 侧补
   `model_credential_status/set/delete` 三个命令
+- **状态**：DOING
 - **判据**：与 `createTauriModelCredentialHost()` 同接口；`status` 只回
   `{ configured, source }`，**任何路径都不回传 Key 本身**。跑该目录 vitest
 - **模型**：opus
@@ -1706,6 +1708,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 
 - **依赖**：C2、S2
 - **改动面**：`apps/server/src/eventsRoute*`
+- **状态**：DOING
 - **判据**：`GET /api/events` 走 SSE；断线重连不丢事件语义要么保证、要么在卡上写明不保证
   并说明前端如何补偿。跑该目录 vitest
 - **模型**：opus
@@ -1726,7 +1729,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   （不是「调用了 dispose」，是 `pgrep` 找不到了）。注意 dispose 是异步的而信号处理里进程随时会走，
   想清楚「等多久」以及等不到时的兜底。
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### C4 · 前端 server 版 MCP connector 与配置存储
 
@@ -1773,7 +1776,8 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 ### P2 · host-node 的 SQLite 执行
 
 - **依赖**：P1、N1
-- **改动面**：`packages/host-node/src/sqlite/`
+- **改动面**：`packages/host-node/src/sqlite/` + `commandNames.ts` / `commandArgs.ts` 登记
+- **状态**：DOING
 - **判据**：实现 P1 的 port；数据库路径与桌面版一致（`com.webagent.app/web-agent.db`），
   使两个宿主看到同一份会话。跑该目录 vitest
 - **模型**：opus
@@ -1833,6 +1837,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 
 - **依赖**：D1、S4
 - **改动面**：`apps/server/package.json`、`apps/server/bin/`
+- **状态**：DOING
 - **判据**：对外交付卡。`npm pack` 产物在**干净目录**里 `npx` 能起；
   `files` 字段不夹带源码与测试；Node 版本下限声明明确。
   跑 `npm pack --dry-run` 逐条核对文件清单
