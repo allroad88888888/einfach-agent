@@ -43,16 +43,25 @@ H4e 总闸改名的下游收尾；S 线因 N3 交回的 platform 阻断项增至
 **进度以状态行为唯一权威**，不要手抄一个数字在这里——它一定会过期。数法：
 
 ```sh
-grep -c '^- \*\*状态\*\*：DONE' docs/node-host-issues.md   # 已完成
-grep -c '^- \*\*状态\*\*：TODO' docs/node-host-issues.md   # 待办
+for s in DONE DOING TODO; do
+  printf '%-6s %s\n' "$s" "$(grep -c "^- \*\*状态\*\*：$s" docs/node-host-issues.md)"
+done
+printf '合计   %s\n' "$(grep -c '^- \*\*状态\*\*：' docs/node-host-issues.md)"   # 必须等于卡片总数
 ```
+
+**三态只有 `TODO` / `DOING` / `DONE`,合计恒等于卡片总数**——这是最省事的自检:三者之和对不上,
+说明有卡多了或少了状态行。
 
 行首那个 `^- ` 锚点不是装饰：状态行永远是一条列表项，而**正文里也会出现 `状态**：TODO` 这串字**
 （比如上面这段说明本身，以及卡面引用别的卡时）。少了锚点，说明文字会把自己算进待办数。
 
-**每张卡有且只有一条状态行。** 交回时是把 `- **状态**：TODO` 那一行**改写**成 `DONE <sha> …`，
-不是在 `判据` 上面新插一条 DONE 把 TODO 留在原地——留下的话两条同时被计数，TODO 数虚高，
-而且已完成的卡会重新出现在「下一步派谁」的候选里。M2/M4/C3/P2/D2 五张犯过这个错（已修）。
+**每张卡有且只有一条状态行,状态只能被「改写」,不能被「新增」。** 派工时把 `TODO` 改成
+`DOING`,交回时把 `DOING` 改成 `DONE <sha> …`——**始终是同一行**。
+
+这条是花了代价换来的:`112cf71` 标在途时是往卡里**插**了 `DOING` 行而没删原来的 `TODO`
+（7 增 2 删),交回时又只把 `DOING` 那行改成 `DONE`,于是 M2/M4/C3/P2/D2 五张各留下一条孤儿
+`TODO`。后果是**同一张卡同时被计入 DONE 和 TODO**,进度数字自相矛盾（报出过「58 DONE + 17 TODO」
+而全树只有 70 卡),已完成的卡还会重新出现在「下一步派谁」的候选里。五张已修。
 下面这条要**恒只输出 H4d 一张**（它已拆成 H4d-1/H4d-2，标题只作路标、不带状态行）：
 
 ```sh
@@ -1638,7 +1647,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：产出与 `createTauriModelFetch` 同形状的 fetch；`AbortSignal` 透传成 HTTP abort。
   **不复用 Channel 编解码**——HTTP 下 `createProviderFetch` 直接消费原生 `Response`。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### M4 · server 版模型凭据宿主
 
@@ -1674,7 +1683,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   字段不是 `instanceof`**），M2 那边按 `reason` 分状态码。
   判据：四类失败各有一条用例断言状态码；**且断言 `apps/server` 里没有任何一处比对中文错误文案**。
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### M5 · 端到端验收：浏览器里跑完一轮对话
 
@@ -1822,7 +1831,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：与 `tauriStdioConnector.ts` / `tauriMcpConfigStorage.ts` 同接口；
   `listen()` 换成 C3 的 SSE 订阅。跑 `pnpm exec vitest run apps/web/src/mcp`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ---
 
@@ -1904,7 +1913,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   `persistenceDrivers` 从二选一变三选一；server 宿主下会话落 SQLite 而非 IndexedDB。
   跑 `pnpm exec vitest run apps/web/src/persistence apps/server`
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### P4 · observability-sqlite 同款收敛
 
@@ -1990,7 +1999,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：tag 触发、跑完整门禁（check-docs → check-boundaries → check-state → test → build）
   才发布；**不需要任何签名 Secret**。首次以 dry-run 模式验证
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### D4 · README 与 docs 更新
 
