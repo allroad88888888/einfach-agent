@@ -136,6 +136,8 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
 | 12 | `workspace_write_result.rs` 的 `WorkspaceWriteResult` | 它是 `#[derive(Serialize)]` **没有 `rename_all`**，所以写入回执的顶层键是 snake_case（`bytes_written` / `change_set` / `dry_run`…），而 `workspace_read_types.rs` 与 `workspace_patch_result.rs` 都带 `rename_all = "camelCase"`——**同一仓库两种线上形状**。core 的 `normalizeResult` 两种都收，所以今天两边都跑得动，但 W16/W17 对拍会撞上。W7 发现，主会话已复核三个结构的 serde 属性。Node 侧照搬了 snake_case。 |
 | 13 | `workspace_delete.rs` 的 `path does not exist` | 这句话**在正常路径上永远不会出现**：`resolve_delete_path` 对**最后一段**也做 `symlink_metadata`，所以目标不存在时先失败成 `failed to resolve target path: No such file or directory (os error 2)`；caller 里那个 `ErrorKind::NotFound → "path does not exist"` 分支只在 TOCTOU 窗口里可达（同理 caller 的 `is_symlink()` 判断也不可达）。W10 照搬了（TOCTOU 下仍有意义）并把测试钉成「报的是解析失败」。**W16/W17 对拍时别指望能构造出这句话。** |
 | 14 | `workspace_write_compaction.rs` 的 `compact_subagent_index` | 重写每条记录走 `serde_json::to_string`，而 `Cargo.toml` 的 `serde_json` **没开 `preserve_order`**——`Value::Object` 底层是 `BTreeMap`，字段按 key 字节序**重排**，不保留原始书写顺序。压实因此会静默改写每一行的字段顺序（内容等价、字节不同）。Node 侧只能跟着排（`stableStringify`），否则对拍必炸。要修是给 Rust 开 `preserve_order`，但那会改变**所有** JSON 输出的字段序，波及面远超本树。W9 发现。 |
+| 16 | `workspace_read_bytes.rs` 的 `offset exceeds file size` | **Rust 侧零测试覆盖**——只有 TS 有 colocated 测试（`bytesRead.test.ts:107`）。W17 发现，未改（生产代码不在该卡改动面）。 |
+| 17 | 对拍口径·第三条排除规则 | 错误文案里嵌了 `display_path`（**解析后的绝对路径**）的用例**永远无法逐字对比**：两侧临时目录命名方案不相干（Rust `web_agent_parity_<pid>_<seq>`、Node `mkdtemp` 随机后缀）。与「OS 错误串」那条同类但不同源，已写进 `fixtures/README.md` 作第三条排除规则。W17 发现。 |
 | 15 | `workspace_write_compaction.rs:129` 的本地 `atomic_replace` | 它是 `fs::write` + `fs::rename`，**既不 fsync 也不回填权限位**（继承临时文件的 umask 权限），而同仓库 `workspace_common.rs` 的共享 `atomic_write` 两者都做——**同一仓库两份「原子替换」**。压实是整份重写索引，掉电后目录项指向空洞内容 = 归档索引报废。Node 侧按任务书指令统一走共享 `atomicWrite`（产出字节不变，只是落盘更耐久）。W9 发现。 |
 
 顺带发现的 TS 侧 bug（不在本树范围，未改）：
@@ -1159,7 +1161,18 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   （findings #12，README 点名说主要影响本卡）；② **UTF-8 分块豁免正好落在读域**——fixture 一律
   不构造「一次读取跨过块边界的多字节字符」，读域限额用例很容易无意中造出来。
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `b0b1dfa`。2 组 / 24 例（write-limits 9、read-limits 15）。
+  两处**刻意缩小**并说明了理由：真撞 `REVERSIBLE_MAX_BYTES` 要往 fixture 里塞约 1 MB 字面量，
+  改用「二进制内容经 base64 写入被标记不可逆」作廉价代理覆盖同一对字段；Rust 原测试的 20000 次
+  重复缩到 50 次，避免一份 ~380 KB 的 fixture。
+  主会话独立复核：改 `read-limits.json` 的一个期望值，**Rust 与 TS 同时转红**
+  （`1 / 15 例与 Rust 实现不一致` / `1 failed | 14 passed`）。
+  给 README 补了几处它自己用起来别扭的地方，其中一条是主会话没想到的：被测函数**不必是
+  `pub(super)`**，Rust 的可见性本来就延伸到后代模块（`read_workspace_file_blocking_at_lines`
+  就是全私有的）。**卡面标题「写锁与读限额」是错的**——仓库里根本没有专门的写锁 `_tests.rs`，
+  判据与文件 glob 指的都是写**限额/边界**；它按判据做，判断对。
+  留下两个 scratch 脚本产物（`binary.dat` / `medium.txt`，一个脚本漏传 `workspaceRoot` 默认到
+  `process.cwd()` 造成），按纪律没自删、报告上来由主会话核对后清理。
 
 ---
 
