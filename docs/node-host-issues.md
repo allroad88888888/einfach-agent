@@ -26,7 +26,7 @@ W  host-node 真逻辑区           W1..W15 → W16/W17 对拍
 S  server HTTP 外壳             S1 → S2/S3/S5 → S4
 B  前端 server 宿主装配          B1 → B2 → B3 → B4 ★浏览器 fs/shell 可用 · B5 分流模块补测
 M  模型代理                     M1 → M2/M4 → M3 → M5 · M6 ★浏览器完整对话
-C  MCP 与事件通道               C1/C2 → C3 → C4 → C5 · C6 失败标识 · C7 缓存宿主判据
+C  MCP 与事件通道               C1/C2 → C3 → C4 → C5 · C6 失败标识 → C8 噪声 500 · C7 缓存宿主判据
 P  持久化收敛                   P1 → P2 → P3 → P4
 D  分发                        D1 → D2 → D3 → D3b → D3c → D4
 T  Tauri 退成套壳               T1 → T2 → T3 → T4
@@ -36,7 +36,7 @@ T  Tauri 退成套壳               T1 → T2 → T3 → T4
 **MVP 路径 = H + N + W1–W15 + S + B + M**（约 46 卡）。到 M5 浏览器版即可用；
 C/P/D/T 是增强与收尾，可后置。
 
-全树 **75 卡**（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
+全树 **76 卡**（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
 H4b 从 H4 里拆出的总闸、H4c 验收漏扫 apps 面留下的回归、H4d 拆树后新增文件带来的缺口、
 H4e 总闸改名的下游收尾；S 线因 N3 交回的 platform 阻断项增至 5 张；M 线因 M2 交回点名的取舍新增 M6；
 M3/C4/P3/D3 那一批验收又新增 5 张：C6、C7、D3b、D3c、B5，**全部来自子 agent 交回时点名或主会话
@@ -1713,7 +1713,18 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：**主会话亲自。** 浏览器里完成一轮真实对话（含至少一次工具调用），
   流式输出可见、可中断。记录留在 scratchpad
 - **模型**：—（主会话亲自）
-- **状态**：TODO
+- **状态**：DONE（验收卡，主会话亲自，无代码改动）。真实 Chromium + `pnpm serve` + 真 DeepSeek，工作区是一个
+  **空的**临时目录。完整记录在 scratchpad 的 `m5-acceptance.md`。三条判据：
+  ① **一轮真实对话含两次真工具调用**——`list_files(.)` 列出真文件、`read_file(notes.txt)` 回真内容与
+  `contentHash`，模型逐字答对第二行，8 秒结束；注入的运行环境段是「本机能力可用，平台 macos」。
+  **浏览器 + 本机 Node 后端 = 完整能力，整棵树的目标在这一刻兑现。**
+  顺带在真浏览器里再证一次 B4：打开带 token 的链接后地址栏变成裸 `/`，token 在装配那一刻就被收走。
+  ② **流式可见**——每 400 ms 采样，字符数 2466 → 2986 单调增长，不是攒完再一次性显示。
+  ③ **可中断**——吐到 3379 字时点停止，此后 3 秒冻结在 3363 不动、停止按钮当场消失；
+  **且服务端侧确认是真取消**：中断后无新增异常，进程无残留对外 TCP 连接（`lsof` 滤掉本地回环后为空）。
+  **验收发现一条噪声缺陷，已立卡 C8**：新建工作区后每次先送三条 `500 @ /api/invoke/list_workspace_files`。
+  未验：只跑过 macOS + Chromium + DeepSeek 一家；MCP 在这轮没被触发，C4 的 server 版 stdio connector
+  仍未经真实对话路径验证；多标签页并发、断网重连未验。
 
 ---
 
@@ -1958,7 +1969,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：照 P1–P3 的范式；trace viewer 在 server 宿主下能读到 span。
   跑 `pnpm exec vitest run packages/observability-sqlite`
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ---
 
@@ -2090,6 +2101,32 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   钉住今天的现实。
   判据：四个域各有一条用例断言业务失败带得出结构化标识；且 MCP 那条的 `kind` 端到端穿到客户端。
 - **模型**：opus
+- **状态**：DOING
+
+### C8 · 可选目录探测在 server 宿主上变成噪声 500
+
+- **依赖**：C6
+- **改动面**：待定（`apps/server/src/invokeRoute*.ts`，或 `tools/skills/src/projectSkillsLoader.ts` 的探测方式）
+- **判据**：**来源：M5 验收，主会话在真浏览器里撞上并查实根因。**
+  新建一个工作区后发第一条消息，浏览器控制台当场三条
+  `500 @ /api/invoke/list_workspace_files`，服务端 stderr 三份完整堆栈
+  （`path '.claude/skills' / '.webAgent/skills' is not accessible … ENOENT`）。
+
+  三件事已经查实，**别再重查**：
+  · **不是移植缺陷**——`apps/desktop/src/workspace_read_paths.rs:33` 是同一句文案、同样在路径不存在
+    时报错，Node 与 Rust 行为一致；
+  · **功能上无影响**——`projectSkillsLoader.ts:164-169` 明写「目录不存在是常态（多数根都没有），
+    静默返回空」，M5 那轮对话里 `skill_manifest` 确实返回了完整清单；
+  · **问题在传输层**——桌面上「探测一个可选目录、没有」是一次被 loader 吞掉的 `invoke` reject；
+    到 server 宿主上同一件事变成三条 HTTP 500 + 三份被 `requestRouter.ts` 的 `reportError`
+    当作**预期外异常**记录的堆栈。
+
+  **为什么值得修**：噪声会淹没真正的 500，而那恰恰是 C6 要让 500 重新有意义的那件事。每开一个新
+  工作区就先送三条，久了没人再看控制台里的 500。
+  判据：新建空工作区后首轮对话，控制台零 500、服务端 stderr 零「预期外异常」，而**真正的**宿主
+  内部错误仍然照报。**不许为消噪声放宽路径禁闭**——`resolveExistingWorkspacePath` 抛错是正确行为，
+  `realpath` 失败与「越界」共用同一条出口是有意的。
+- **模型**：opus
 - **状态**：TODO
 
 ### D3b · 摘掉发布闭包的 `private: true`
@@ -2103,7 +2140,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   判据：D3 那条闭包前置判定转绿；`pnpm -r --filter "@einfach-agent/server..." publish --dry-run`
   列出 4 个包。**注意 dry-run 本身证明不了能发**（见 D3 状态段的两条实测），所以判据必须是前置判定。
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### D3c · 发布版本策略
 
@@ -2130,7 +2167,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   ② **`import.meta.env.DEV` 在 vitest 下默认为 `true`**（`hostObservability.ts:38` 也读它），
   不 `vi.stubEnv('DEV', …)` 就等于在测 dev 形态，而且它会绿。
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### C7 · 工具名缓存的宿主判据没跟上，与服务配置分家
 
@@ -2144,7 +2181,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   同一处二次探测也逼得测试必须把 `isTauri` 替身与 `host.kind` 手工对齐。
   判据：缓存与配置在三个宿主下落到同一处；装配点不再有第二处宿主探测。
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### T1 · Tauri 启动 sidecar Node 进程
 
