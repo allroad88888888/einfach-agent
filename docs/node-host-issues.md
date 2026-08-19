@@ -34,7 +34,7 @@ W  host-node 真逻辑区           W1..W15 → W16/W17 对拍
 S  server HTTP 外壳             S1 → S2/S3/S5 → S4
 B  前端 server 宿主装配          B1 → B2 → B3 → B4 ★浏览器 fs/shell 可用 · B5 补测 → B6 穷举守卫 / B7 trace 静默失效
 M  模型代理                     M1 → M2/M4 → M3 → M5 · M6 ★浏览器完整对话
-C  MCP 与事件通道               C1/C2 → C3 → C4 → C5 · C6 失败标识 → C8 噪声 500 · C7 缓存宿主判据
+C  MCP 与事件通道               C1/C2 → C3 → C4 → C5 · C6 → C8 噪声 500 · C7 → C9 删自探测工厂 / B8 插件缺席
 P  持久化收敛                   P1 → P2 → P3 → P4
 D  分发                        D1 → D2 → D3 → D3b → D3c/D3d → D4
 T  Tauri 退成套壳               T1 → T2 → T3 → T4
@@ -44,7 +44,7 @@ T  Tauri 退成套壳               T1 → T2 → T3 → T4
 **MVP 路径 = H + N + W1–W15 + S + B + M**（约 46 卡）。到 M5 浏览器版即可用；
 C/P/D/T 是增强与收尾，可后置。
 
-全树 **79 卡**（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
+全树 **81 卡**（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
 H4b 从 H4 里拆出的总闸、H4c 验收漏扫 apps 面留下的回归、H4d 拆树后新增文件带来的缺口、
 H4e 总闸改名的下游收尾；S 线因 N3 交回的 platform 阻断项增至 5 张；M 线因 M2 交回点名的取舍新增 M6；
 M3/C4/P3/D3 那一批验收又新增 5 张：C6、C7、D3b、D3c、B5，**全部来自子 agent 交回时点名或主会话
@@ -1918,6 +1918,38 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 
 ## P · 持久化收敛
 
+### B8 · server 宿主下用户插件整个特性静默缺席
+
+- **依赖**：C7
+- **改动面**：`apps/web/src/plugins/initialize.ts`、`apps/web/src/main.tsx`（传 `host`）
+- **判据**：**来源：C7 交回的「宿主二次探测」清单第 2 条，主会话复核。**
+  `apps/web/src/plugins/initialize.ts:74` 是 `if (!isTauri()) return`，由 `main.tsx:156` **无参**调用。
+  于是 server 宿主下用户插件**整个特性不存在**——不是报错，是安安静静地什么都没有。
+
+  **这不是能力所限。** 主会话核实：插件加载走 `readWorkspaceFile`，而它的判据是
+  `hasHostBridge()` / `loadHostInvoke()`（`packages/agent-core/src/runtime/workspaceRead.ts:342-350`）
+  ——H 线早就把它从「是不是 Tauri」换成「有没有桥」，而 `main.tsx:140` 的
+  `registerHostCommandBridge(host)` 在 server 宿主上是**登记了的**。挡住它的只有那一行 `isTauri()`。
+
+  顺带核对：`desktopProvider.ts:80` 那句注释「只在非 Tauri 宿主发生（那时
+  `buildProjectSkillsWorkspaceBridge` 返回 undefined）」在 H 线之后已经过期，一并核实修正。
+  判据：server 宿主下插件面可用；装配点收 `ResolvedHost`，`plugins/` 下不再有宿主二次探测。
+- **模型**：opus
+- **状态**：TODO
+
+### C9 · 删掉已无生产消费方的宿主自探测工厂
+
+- **依赖**：C7
+- **改动面**：`apps/web/src/mcp/tauriMcpConfigStorage.ts` 及其测试
+- **判据**：**来源：C7 交回的清单第 1 条。** `createDesktopMcpConfigStorage()`
+  （`tauriMcpConfigStorage.ts:93-96`，内部 `isTauri()`）在 C7 之后**生产消费方为零**，只剩它自己的
+  测试还在用。今天无后果，但它仍从 mcp 目录导出——**下一个接配置存储的人很可能直接伸手去拿**，
+  于是「装配点不再有第二处宿主探测」这条刚立起来的纪律被悄悄推翻。
+  判据：该函数删除；`apps/web` 全绿；全仓 `isTauri()` 的生产命中只剩 `resolveHost.ts` 一处
+  （B8 落地后）。
+- **模型**：sonnet
+- **状态**：TODO
+
 ### P1 · persistence-sqlite 抽 SQL 传输 port
 
 - **依赖**：—
@@ -2261,7 +2293,23 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   同一处二次探测也逼得测试必须把 `isTauri` 替身与 `host.kind` 手工对齐。
   判据：缓存与配置在三个宿主下落到同一处；装配点不再有第二处宿主探测。
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `2dc513f`。删掉 `createDesktopToolNameCacheStorage()` 那处 `isTauri()`，两条配置文件通道
+  （tauri/server，只差一次调用）抽成共享工厂，装配点两处存储由**同一个 `host`** 分派。
+  **卡面有一处不准，本卡推翻且主会话复核采纳**：卡面说「C4 把配置那一半收口之后」——**配置那一半
+  其实没收口**，`createDesktopMcpConfigStorage()`（`tauriMcpConfigStorage.ts:94`）内部**也自己
+  `isTauri()`**。所以「装配点不再有第二处宿主探测」这条判据只修缓存那一半达不到，本卡把配置那一半
+  也改成显式三分支（这动到了硬边界点名的那处，本卡说明了理由并给了回退路径，主会话核实后采纳）。
+  **探针 H 是「探针清单本身不够」的又一例**：把 `service.ts` 的默认值改回会 `isTauri()` 的旧写法，
+  `apps/web` **856 例一条不红**——因为装配点现在总会显式传 storage，默认值失去了所有生产消费方。
+  而那正是本卡要根除的形态（将来有人新加一条不传 storage 的路径，bug 原样复活）。本卡为此补了
+  `service.defaultStorage.test.ts`（`isTauri` 替身故意答 `true`，断言默认通道仍落 localStorage 且
+  `invoke`/`isTauri` 一次没被调用），补完后 H 转 7 红。主会话独立复跑确认。
+  **交回的「全仓宿主二次探测」清单**：① `createDesktopMcpConfigStorage()` 本卡后生产消费方为零，
+  建议删（→ 并入 C9 一并处理）；② `plugins/initialize.ts:74` → **B8**；③ `workspaceDialog.ts` 已被
+  U-1 覆盖（`@tauri-apps/plugin-dialog` 无浏览器等价物）。
+  未验：三个宿主都只在 jsdom + 替身下验证，「server 宿主下缓存真的落进 `~/.webAgent/config.json` 的
+  `mcp.toolNameCache`」只验到「发出了 `mcp_config_write {patch:{toolNameCache:…}}`」，没起真服务看文件。
+  `service.ts` 仍 426 行超限（存量，未拆）。
 
 ### T1 · Tauri 启动 sidecar Node 进程
 
