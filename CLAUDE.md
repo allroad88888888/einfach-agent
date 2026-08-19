@@ -31,13 +31,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `pnpm check:dist`：可发布包的 dist 门禁——把每个包 `pnpm pack` 进临时工程装一遍，dist 缺失、
   公开 ESM 入口解析不了、`.d.ts` 在 NodeNext 下不可用都会红。它验的是 `pnpm -r build` 的产物，
   **不是** `pnpm build` 的（后者只出 `apps/web` 与 `apps/server`）。
+- `pnpm check:packed`：**唯一一条真跑产物的门禁**——`pnpm pack` 发布闭包 → 仓库外 `npm install`
+  → 起那个二进制 → 验 health、无 token 401、一条带 token 的 invoke、**一条真的落盘的 SQL**，
+  最后停服务复查无残留。`check:dist` 验的是「装得上、导出面解析得了」，它验的是「跑起来真能干活」。
+  两者不可互替：`node:sqlite` 被打包器剥掉 `node:` 前缀那次，check-dist 全绿而产物里 SQL 整条挂掉
+  （会话与历史不落盘），就是这条门禁补的缺口。判据 4 刻意分两半——经 HTTP 写入读回，**再由另一个
+  进程重开那个库文件复读同一行**；只验前者的话，同进程内存也能给出一样的答案。
 - `pnpm cli -p "<prompt>"`：headless CLI 宿主跑一轮真实 run（读 `~/.webAgent/config.json`
   或环境变量取模型 Key；`--help` 看全部选项）；无 `-p` 进入 REPL。
 - 子 Agent 治理：`pnpm subagent:replay` / `subagent:capacity` / `subagent:archive:retention` /
   `subagent:index:compact` / `subagent:skills`。
 
 CI（`.github/workflows/ci.yml`）只有一条 job，顺序是 `check-docs → check-boundaries → check-state →
-pnpm test → pnpm build → pnpm -r build → check-dist`。最后两步排在 `pnpm build` **之后**且不能省：
+pnpm test → pnpm build → pnpm -r build → check-dist → check:packed`。后三步排在 `pnpm build` **之后**且不能省：
 `pnpm build` 不构建 `packages/*` 与 `tools/*` 的 dist，而 npm tarball 里装的就是那些 dist——少了它们，
 dist 陈旧化在 CI 里完全没有症状（包 scope 改名那次，17 个包的 dist 一直留着旧名直到发布路径上才暴露）。
 

@@ -63,13 +63,14 @@ workspace 包不单独编译，`vite.config.ts` 的 alias 和 `tsconfig.app.json
 
    ```bash
    pnpm -r build && node scripts/check-dist.js
+   pnpm check:packed
    ```
 
    **顺序不能倒**：`apps/server` 的 build 末尾要把 `apps/web/dist` 嵌进自己的 `dist/public`，
    而那份前端产物只有上一步 `pnpm build` 里的 `vite build` 才会产出。
 
 CI 跑的就是这一条线（单一 job，没有原生构建）：
-`check-docs → check-boundaries → check-state → pnpm test → pnpm build → pnpm -r build → check-dist`。
+`check-docs → check-boundaries → check-state → pnpm test → pnpm build → pnpm -r build → check-dist → check:packed`。
 步骤会随门禁增补而变，**以 `.github/workflows/ci.yml` 为准**。
 
 ## Commit 约定
