@@ -2,10 +2,25 @@
   "name": "@web-agent/server",
   "version": "0.1.0",
   "private": true,
+  "description": "Self-hosted web host for the Einfach Agent runtime: one local HTTP server that serves the bundled web UI and executes shell, file and Git work on the machine it runs on.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/allroad88888888/einfach-agent.git",
+    "directory": "apps/server"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
   "main": "./dist/main.js",
-  "files": ["dist"],
+  "bin": {
+    "web-agent": "./bin/web-agent.mjs"
+  },
+  "files": ["dist", "bin"],
   "scripts": {
     "build": "tsup && node scripts/embed-web-dist.mjs"
   },
