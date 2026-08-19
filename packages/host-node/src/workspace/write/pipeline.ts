@@ -29,6 +29,7 @@
 import { mkdir, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { errorText, resolveWorkspaceRoot } from '../common'
+import { maybeCompactSubagentIndex } from './compaction'
 import { acquireArchivePathLock } from './lockArchive'
 import { contentTooLargeMessage, normalizeMaxBytes } from './limitChecks'
 import { withPathLock } from './lockTable'
@@ -98,10 +99,15 @@ export async function writeWorkspaceFile(
       ? await acquireLock(target.absolutePath)
       : undefined
     try {
-      // ⚠️ 归档索引的自动压缩（Rust 的 `maybe_compact_subagent_index`，仅在
-      // `mode === 'append' && exclusivePathLock` 时跑）**是 W9 的卡**（`compaction*`），本卡不实现。
-      // 位置就是这里：在归档锁之内、进程内写锁之外。缺了它 Node 宿主下的子 Agent 索引不会被
-      // 自动收敛——只影响体积与读取耗时，不影响正确性，所以这里安静地少一步，而不是报错。
+      // 归档索引的自动压缩（Rust 的 `maybe_compact_subagent_index`）只在 `mode === 'append'` 且
+      // 拿到了跨进程归档锁时跑（见 compaction.ts / compactionRules.ts 的文件头）。位置在归档锁
+      // 之内、进程内写锁之外：compaction 改的是这次写入的同一个目标文件，需要跨进程互斥保护，
+      // 但不需要（也不该）拿目标文件的进程内写锁——那把锁留给下面的临界区。压实失败按设计拒绝
+      // 这次写入（`ok:false`，新内容不会被追加），对齐 Rust 把 `Err` 折成
+      // `Ok(error_result(...))` 的行为，不是安静跳过一步。
+      if (archiveLock !== undefined && mode === 'append') {
+        await compactArchiveIndex(target.absolutePath)
+      }
       return await withPathLock(target.absolutePath, () =>
         runWriteCriticalSection({
           target,
@@ -171,6 +177,15 @@ async function acquireLock(absolutePath: string): Promise<ArchivePathLock> {
     return await acquireArchivePathLock(absolutePath)
   } catch (error) {
     return rejectWrite(errorText(error))
+  }
+}
+
+/** `maybeCompactSubagentIndex` 抛的是普通 Error；折成结构化拒绝是这里的事（同 `acquireLock`）。 */
+async function compactArchiveIndex(absolutePath: string): Promise<void> {
+  try {
+    await maybeCompactSubagentIndex(absolutePath)
+  } catch (error) {
+    rejectWrite(errorText(error))
   }
 }
 
