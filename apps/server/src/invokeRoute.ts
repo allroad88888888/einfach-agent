@@ -12,17 +12,22 @@
 // 【处理顺序】方法 → Content-Type → 命令名解析（不会失败，只是取值）→ body 读取/解析 → invoke。
 // 方法与 Content-Type 是「这条路由本身接不接受这次请求」的判断，排在真正触达 host-node 之前。
 //
+// 【命令失败是一种答复，不是异常】（C6）
+// `invoke()` 的 rejection **一律**由 `invokeRouteError.ts` 翻成一条 `{ error, message }` 信封，
+// 不再重抛。桌面宿主上 invoke reject 出去的就是那句话本身，调用方（core 的十余处 catch）照着
+// 它决定下一步；这条路上重抛的后果是那句话与 MCP 的 `kind` 一起消失在一条 `text/plain` 的 500 里。
+// 于是外层那个 500 重新只有一个含义：**外壳自己坏了**——它不再被「某条命令按设计拒绝了」淹没。
+//
 // 【调用方注意：本 handler 是 async】`requestRouter.ts` 的 `handleApi` 今天是同步函数、被同步
 // 调用（不 await）——接线时必须把它改成 `async` 并在调用处 `await`，否则这里的 rejection 会变成
 // 未捕获的 promise rejection，而不是被现有的外层 try/catch 收成 500。
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { HostInvoke } from '@einfach-agent/core'
-import { NodeHostCommandError } from '@einfach-agent/host-node'
 import { replyJson } from './httpReply'
 import { hasJsonContentType, readInvokeRouteBody } from './invokeRouteBody'
 import { resolveInvokeCommandName } from './invokeRouteCommandName'
-import { mapNodeHostCommandError } from './invokeRouteError'
+import { mapInvokeRouteError } from './invokeRouteError'
 
 export { isInvokeRoutePath } from './invokeRouteCommandName'
 
@@ -87,21 +92,20 @@ export function createInvokeRouteHandler(options: InvokeRouteOptions): InvokeRou
     }
     const args = body.kind === 'object' ? body.value : {}
 
+    // try 里**只放 invoke 那一次调用**，回执的序列化留在外面：命令自身失败在这条路由上是一种
+    // 正常答复（见 invokeRouteError.ts 的文件头），而「回执序列化不出去」是外壳自己坏了，
+    // 该继续落进 `requestRouter.ts` 的外层 500。两件事挤在同一个 try 里就分不开了。
+    let result: unknown
     try {
-      const result = await options.invoke(command, args)
-      // `undefined` 不是合法 JSON，而部分命令确实无返回值；`null` 是它在 JSON 里最贴切的对应。
-      // 除此之外原样发出——host-node 的回执有的是 snake_case 有的是 camelCase（施工须知 #12），
-      // 这一层不做任何大小写转换。
-      replyJson(response, 200, result ?? null)
+      result = await options.invoke(command, args)
     } catch (error) {
-      if (error instanceof NodeHostCommandError) {
-        const mapped = mapNodeHostCommandError(error)
-        replyApiError(response, mapped.statusCode, mapped.error, mapped.message)
-        return
-      }
-      // 非路由分发失败（host-node 内部真的出 bug 了）：不在这里猜测怎么回复，重抛给
-      // `requestRouter.ts` 现有的外层 try/catch 统一收成 500——那正是它存在的理由。
-      throw error
+      const mapped = mapInvokeRouteError(error)
+      replyApiError(response, mapped.statusCode, mapped.error, mapped.message)
+      return
     }
+    // `undefined` 不是合法 JSON，而部分命令确实无返回值；`null` 是它在 JSON 里最贴切的对应。
+    // 除此之外原样发出——host-node 的回执有的是 snake_case 有的是 camelCase（施工须知 #12），
+    // 这一层不做任何大小写转换。
+    replyJson(response, 200, result ?? null)
   }
 }

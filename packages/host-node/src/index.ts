@@ -95,3 +95,10 @@ export type { SqliteConnectionName, SqliteRoutesOptions } from './sqlite'
 // 只出 reason 面，**不出文案表**：`MODEL_ERROR` 留在包内，外壳拿不到就不会拿它做分支。
 export { MODEL_REQUEST_ERROR_REASONS, readModelRequestErrorReason } from './model'
 export type { ModelRequestErrorReason } from './model'
+
+// mcp 域失败的**判别面**（C6）。与上面 model 域那条同款、同理由：`POST /api/invoke/:command`
+// 要把「命令自己失败了」翻成一条带结构化标识的响应，而 MCP 那一支的标识就是 `kind`
+// ——`tools/mcp` 的失败分类器对 stdio 桥只认它，一个字都不读 message。判别只看字段、不看类型
+// 身份，所以经 `toJSON()` 序列化之后仍然成立。同样**只出读取面**，`McpCommandError` 的构造与
+// 文案留在包内：外壳的活是转发这个标识，不是自己造一个。
+export { readMcpCommandErrorKind } from './mcp/errors'

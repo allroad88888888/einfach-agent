@@ -97,3 +97,23 @@ export function withServerId<T>(serverId: string, run: () => T): T {
 export function workerError(message: string): McpCommandError {
   return new McpCommandError('worker_failed', message)
 }
+
+/**
+ * 从一个来路不明的抛出物上读 `kind`。
+ *
+ * **只看字段，不看类型身份**——理由与 model 域的 `readModelRequestErrorReason` 逐字相同：
+ * 这条路上错误要跨 HTTP 序列化（`POST /api/invoke/:command` 那一头拿到的是 `toJSON()` 的产物，
+ * 一袋 JSON，原型没了）。宿主外壳（`apps/server` 的 invokeRouteError.ts）用它把 kind 放进失败
+ * 信封的 `error` 字段，客户端再交给 `tools/mcp` 的失败分类器。
+ *
+ * **取值刻意不收成闭合枚举**，与 model 域那边正相反：`kind` 在 Rust 侧就是一个开放 String
+ * （`apps/desktop/src/mcp_types.rs` 的 `pub kind: String`），消费方的契约也写明「只有列出的
+ * kind 是永久失败，其余一律落到可重试的默认」（`tools/mcp/src/failureClassification.ts`）。
+ * 在这里立一张白名单，等于让**没登记的新 kind 静默变成 undefined**——那正好把「新增一类永久
+ * 失败」变成「安静地无限重连」，而白名单漏一条不会有任何编译错误。
+ */
+export function readMcpCommandErrorKind(error: unknown): string | undefined {
+  if (typeof error !== 'object' || error === null) return undefined
+  const kind = (error as { kind?: unknown }).kind
+  return typeof kind === 'string' && kind.length > 0 ? kind : undefined
+}

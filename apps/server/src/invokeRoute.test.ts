@@ -152,10 +152,34 @@ describe('createInvokeRouteHandler（桩 invoke，测 handler 自身逻辑）', 
     expect(called).toBe(false)
   })
 
-  it('非 NodeHostCommandError 的异常重抛，由外层兜底收成 500', async () => {
+  // C6：invoke 的 rejection 不再重抛。外层那个 500 因此重新只有一个含义——**外壳自己坏了**。
+  // 各域业务失败的形态见 invokeRouteFailure.test.ts。
+  it('invoke 失败不再落进外层兜底，而是一条带信封的失败响应', async () => {
     const stub: HostInvoke = async () => {
-      throw new Error('意料之外的 bug')
+      throw new Error('这条命令按设计拒绝了')
     }
+    server = await startInvokeRouteTestServer({ invoke: stub })
+    const result = await sendInvokeRequest(
+      server.port,
+      'POST',
+      '/api/invoke/get_user_home_dir',
+      undefined,
+      JSON_HEADERS,
+    )
+    expect(result.status).not.toBe(500)
+    expect(result.headers['content-type']).toContain('application/json')
+    expect(JSON.parse(result.body)).toEqual({
+      error: 'command_failed',
+      message: '这条命令按设计拒绝了',
+    })
+  })
+
+  // 回执序列化不出去是**外壳自己坏了**，不是命令失败——它必须继续落进外层 500，否则
+  // 「命令按设计拒绝」与「这台 server 有 bug」在线上就再也分不开了。
+  it('回执序列化失败仍然落进外层 500', async () => {
+    const circular: Record<string, unknown> = {}
+    circular.self = circular
+    const stub: HostInvoke = async <T>() => circular as T
     server = await startInvokeRouteTestServer({ invoke: stub })
     const result = await sendInvokeRequest(
       server.port,
