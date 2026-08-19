@@ -60,6 +60,7 @@ import { createConfigRoutes } from './config'
 import { createShellRoutes } from './shell'
 import { createChangeRoutes } from './workspace/change'
 import { createDeleteRoutes } from './workspace/delete'
+import { createModelRoutes } from './model'
 import { createGitRoutes } from './workspace/git'
 import { createPatchRoutes } from './workspace/patch'
 import { createPathOpsRoutes } from './workspace/pathOps'
@@ -113,7 +114,8 @@ export class NodeHostCommandError extends Error {
  */
 function createRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
   return {
-    // 待落地：mcp、model
+    // 待落地：mcp（C1 在途）。model 域只挂两条 cancel——转发本身是流式，不走
+    // `(cmd,args)=>Promise<T>`，由 M2 的 SSE 端点直接调 forwardProviderRequest（见 model/index.ts）。
     ...createReadRoutes(options),
     ...createWriteRoutes(options),
     ...createPatchRoutes(options),
@@ -124,6 +126,7 @@ function createRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
     ...createRgRoutes(options),
     ...createTaskRoutes(options),
     ...createShellRoutes(options),
+    ...createModelRoutes(options),
     ...createConfigRoutes(options),
   }
 }

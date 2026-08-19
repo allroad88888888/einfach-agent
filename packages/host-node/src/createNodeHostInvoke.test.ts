@@ -86,6 +86,8 @@ describe('createNodeHostInvoke', () => {
         'rg_search_workspace',
         'run_workspace_task',
         'run_shell_command',
+        'cancel_model_provider_request',
+        'cancel_model_chat_completions',
         'mcp_config_read',
         'mcp_config_write',
         'get_user_home_dir',

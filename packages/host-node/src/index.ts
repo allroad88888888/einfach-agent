@@ -68,3 +68,11 @@ export type {
   McpStdioClosePayload,
   McpStdioToolsChangedPayload,
 } from './events'
+
+// model 域的**流式出口**：转发本身不进路由表。`HostInvoke` 的 `(cmd,args)=>Promise<T>` 装不下
+// 一个流，而同一张表还要被 `/api/invoke/:command` 的 JSON 信封包住；写一个「攒完再返回」的
+// handler 只会造出一个在开发机上看不出来的假象。所以 M2 的 SSE 端点直接调这个函数，
+// 路由表里只留两条 cancel。设计与失败分界线见 src/model/forwardRequest.ts 的文件头。
+export { forwardProviderRequest, modelRequestRegistry } from './model'
+export { ModelProxyStreamError, ModelRequestCancelledError } from './model'
+export type { ForwardedModelResponse } from './model'
