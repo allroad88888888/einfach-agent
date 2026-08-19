@@ -25,7 +25,7 @@ N  host-node 薄包装区           N1 → N2 → N3/N4/N5/N6/N7 → N8 ★CLI �
 W  host-node 真逻辑区           W1..W15 → W16/W17 对拍
 S  server HTTP 外壳             S1 → S2/S3/S5 → S4
 B  前端 server 宿主装配          B1 → B2 → B3 → B4 ★浏览器 fs/shell 可用
-M  模型代理                     M1 → M2/M4 → M3 → M5 ★浏览器完整对话
+M  模型代理                     M1 → M2/M4 → M3 → M5 · M6 ★浏览器完整对话
 C  MCP 与事件通道               C1/C2 → C3 → C4 → C5
 P  持久化收敛                   P1 → P2 → P3 → P4
 D  分发                        D1 → D2 → D3 → D4
@@ -36,7 +36,7 @@ T  Tauri 退成套壳               T1 → T2 → T3 → T4
 **MVP 路径 = H + N + W1–W15 + S + B + M**（约 46 卡）。到 M5 浏览器版即可用；
 C/P/D/T 是增强与收尾，可后置。
 
-全树 68 卡（H 线在执行中由 6 张增至 12 张，S 线因 N3 交回的 platform 阻断项增至 5 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
+全树 69 卡（H 线在执行中由 6 张增至 12 张，S 线因 N3 交回的 platform 阻断项增至 5 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
 H4b 从 H4 里拆出的总闸、H4c 验收漏扫 apps 面留下的回归、H4d 拆树后新增文件带来的缺口、
 H4e 总闸改名的下游收尾）。
 
@@ -1594,7 +1594,19 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 
 - **依赖**：M1、S2
 - **改动面**：`apps/server/src/modelRoute*`
-- **状态**：DOING
+- **状态**：DONE `9f94b20`（接线随 `54b0746`）。端点 `POST /api/model/request`，6 源 + 4 测试 / 26 例。
+  **卡面「错误路径与客户端断开路径都要走到 `release()`」漏了第五条路径——本卡实测逼出来的。**
+  「客户端在 `forwardProviderRequest` 返回**之前**就断开」这条路上**根本没有可 release 的对象**：
+  那时函数还悬在「等上游回响应头」上（M1 的 120 秒超时），而这恰恰是「模型正在思考、还没吐第一个
+  字」那几十秒——用户最可能关标签页的时刻。按卡面写法第一版测试**超时 15 秒**把它逼了出来。
+  修法是那一段唯一的把手：按 requestId 在**在飞请求表**上取消。主会话独立复核：去掉那一步，
+  3 例转红（含 15 秒超时那条）。
+  两种「响应过大」（findings #22）天然分开：**声明** content-length 超限 → 完整 502；
+  **流中累计**超限 → 200 已发出、只能断连。请求体上限 56 MiB，与 M1 的
+  `MAX_PROVIDER_WIRE_REQUEST_BYTES` **同值**，不留「HTTP 放行、M1 再拒」的灰带。
+  **一个已知取舍**：响应头之前的失败一律 502（message 用 M1 原文）。要细分成 400/403/503，
+  `apps/server` 只能照抄一份中文串来 switch——那是给跨宿主对外契约立第二个权威。正解见新卡 **M6**。
+  499 用 nginx 惯例而非 IANA 注册码：成功时本端点**原样透传上游状态码**，任何标准码都可能撞上。
 - **判据**：`POST /api/model/request` 直接返回流式 body（**不进 `/api/invoke/:command`
   的统一路由**）；客户端断开时上游请求被取消。跑该目录 vitest
 - **模型**：opus
@@ -1614,9 +1626,35 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **依赖**：M1、S3
 - **改动面**：新建 `apps/web/src/settings/serverModelCredentialHost.ts`；host-node 侧补
   `model_credential_status/set/delete` 三个命令
-- **状态**：DOING
+- **状态**：DONE `7b52c0d` + `3ee59ee`。三条命令落在 `packages/host-node/src/model/credentialCommands.ts`，
+  复用 M1 导出的绑定表缝（`credentialConfigKey` / `normalizeApiKey` / `readConfiguredModelCredential`）
+  ——两张卡各写一份绑定表必然分叉，而分叉的症状是「存进去了但读不出来」。写入走 N7 的
+  `updateSection`，**段更新不是整份覆盖**（有正面用例断言 `mcp` 段与其它顶层键不变）。
+  **Key 不外泄的测试先正面钉住 Key 真的被存进去了**，再断言三次返回体与四条失败路径都不含它。
+  主会话独立复核：让 `set` 回显 Key → 2 例转红。
+  **卡面自相矛盾，本卡的裁决主会话已核实采纳**：判据既说「`status` 只回 `{configured, source}`」
+  又说「对齐 `model_credentials.rs`」，而 Rust 的 `ModelCredentialStatus` 是**四个**字段。前端
+  `apps/web/src/settings/modelCredentialHost.ts:36` 的类型确实只有两个，多出的 `provider`/`scope`
+  是调用方自己传进去的回声、全仓无人读；而这条链路经 HTTP 暴露，能不出去的就不出去。取两字段。
+  接线连带：B3 的「模型凭据仍走 unavailable（M 线未落地）」前提失效，已改成钉「没退回 unavailable、
+  也没误用桌面原生层那条通路」。**纪律没有松动**——Key 仍由宿主读写，浏览器只是把它交给本机后端。
 - **判据**：与 `createTauriModelCredentialHost()` 同接口；`status` 只回
   `{ configured, source }`，**任何路径都不回传 Key 本身**。跑该目录 vitest
+- **模型**：opus
+- **状态**：TODO
+
+### M6 · 给模型转发的失败加 `reason`，让状态码分得开
+
+- **依赖**：M1、M2
+- **改动面**：`packages/host-node/src/model/errors.ts` 及其抛出点；`apps/server/src/modelRouteError.ts`
+- **判据**：**来源：M2 交回时点名的取舍。** M2 现在把「响应头之前的一切失败」一律映射成 **502**，
+  因为 M1 的 `MODEL_ERROR` 常量**不在 `@web-agent/host-node` 的包级公开面上**、那些错误也**没有
+  `reason` 字段**。要分开「格式无效→400 / 目标未获允许→403 / 没配 Key→503 / 上游真的挂了→502」，
+  `apps/server` 只能照抄一份中文串来 switch —— 那是给一份跨宿主对外契约立第二个权威，正是
+  `createNodeHostInvoke` 那条「判别用 `reason` 字段而不是文案」立下的规矩要避免的。
+  本卡给这些错误加上 `reason`（形状对齐 `NodeHostCommandErrorReason`：**跨 HTTP 要序列化，所以是
+  字段不是 `instanceof`**），M2 那边按 `reason` 分状态码。
+  判据：四类失败各有一条用例断言状态码；**且断言 `apps/server` 里没有任何一处比对中文错误文案**。
 - **模型**：opus
 - **状态**：TODO
 
@@ -1708,7 +1746,23 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 
 - **依赖**：C2、S2
 - **改动面**：`apps/server/src/eventsRoute*`
-- **状态**：DOING
+- **状态**：DONE `97c4a31`（接线随 `54b0746`）。端点 `GET /api/events`，10 文件。
+  **`EventSource` 设不了自定义头这个冲突：不退回 `?token=`，改成客户端用 `fetch` + `ReadableStream`。**
+  服务端因此一行特例都没开，`authGuard` 四道判定原样管辖。退回 query 会拆掉两样：①「必须带自定义
+  头」本身就是第四道防线（跨源 JS 设 `Authorization` 必须先过预检，而我们不回任何
+  `Access-Control-Allow-*`，浏览器**根本不发**那条真实请求）；② 这是条**长连接**，URL 会一直挂在
+  网络面板里，而 B2 刚做完「取一次就从地址栏擦掉」。**C4 照此实现**，`eventsRoute.testHarness.ts`
+  的 `createSseParser` 是给它的参考实现（三个坑已标好）。
+  **心跳发、15 秒、SSE 注释行**：第一价值不是保活是**让死亡可被察觉**——两个事件低频到可以数小时
+  无字节，被掐之后服务端看得到 `'close'`，客户端却只是「再也收不到」。定时器 `unref()`。
+  **重连明确不保证不丢**：不发 `id:`、不认 `Last-Event-ID`、不留重放缓冲。重放缓冲没有正确的大小，
+  且**重放语义本身是错的**——两个事件按 `(serverId, sessionToken)` 定位，断线后客户端要的是重新
+  确定真相而不是补时间线；重放一条旧 `close` 可能拆掉此后已重连好的会话。
+  **C4 的补偿动作（必须做）**：把「连上事件流」当成状态重新同步的触发点——每次(重)连成功后对每个
+  自认还活着的会话重拉 `mcp_list_tools`，拉不到的按已关闭处理；**每次**连上都做，包括第一次。
+  它自己指出一条测不出来的东西并另开假定时器用例：定时器 `unref()` 后
+  `process.getActiveResourcesInfo()` 按设计看不见它，于是「忘了 clearInterval」在真 server 用例里
+  是绿的——**没让一条名字好听但抓不住东西的用例留在那儿**。
 - **判据**：`GET /api/events` 走 SSE；断线重连不丢事件语义要么保证、要么在卡上写明不保证
   并说明前端如何补偿。跑该目录 vitest
 - **模型**：opus
@@ -1729,7 +1783,20 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   （不是「调用了 dispose」，是 `pgrep` 找不到了）。注意 dispose 是异步的而信号处理里进程随时会走，
   想清楚「等多久」以及等不到时的兜底。
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `54b0746`。两宿主各接 SIGTERM / SIGINT / SIGHUP，等 2000 ms，超时照样
+  `process.exit(128+signo)`——**刻意不用「摘 listener 再把信号发给自己」**：那样退出状态更像 shell
+  惯例，但恰好绕开 `'exit'` 回调，把 host-node `exitNet` 的同步整组 SIGKILL 兜底一起绕掉。
+  **卡面判据「pgrep 找不到了」本身证不了钩子接上了——本卡实测推翻。** 只要装了信号处理器并经
+  `process.exit` 退出，`exitNet` 的 `'exit'` 回调就会同步整组 SIGKILL，孙进程照样消失，**即使
+  `registerHostDisposer` 根本没传下去**（它删掉那个参数，只判 pgrep 的用例仍全绿）。所以两条测试
+  各加了一条**耗时**判据（退出必须晚于信号 300 ms，因为 `disposeAll` 要等满一个 500 ms grace）。
+  **结论：`registerHostDisposer` 买的是「优雅关闭」，「没有孤儿」由信号处理器 + exitNet 已经保证。**
+  **卡面「CLI REPL 的 Ctrl-C 是中断本轮」在当前代码里不成立**（pty 驱动真进程实测）：readline 在
+  TTY 上把 stdin 切进 raw mode、ISIG 关掉，`^C` 只是个 0x03 字节，**进程级 SIGINT 处理器一次都没被
+  调用**；现有语义是「关掉输入通道、REPL 带着一条错误收场」。
+  **一条会误导后来人的事实**：`tsx` 的 CLI wrapper 会 fork 子进程并接管信号，被试进程收到 SIGTERM
+  时 `'exit'` 照样执行 → **`pnpm serve` / `pnpm cli` 在开发机上根本复现不出漏子进程**，而打包后的
+  `dist/main.js`（plain node）复现得出。测试因此用 `node --import tsx`（只装 loader）。
 
 ### C4 · 前端 server 版 MCP connector 与配置存储
 
@@ -1777,7 +1844,34 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 
 - **依赖**：P1、N1
 - **改动面**：`packages/host-node/src/sqlite/` + `commandNames.ts` / `commandArgs.ts` 登记
-- **状态**：DOING
+- **状态**：DONE `e3d174f`。**驱动选 `node:sqlite`（Node 内置），零新增依赖**——`better-sqlite3` 一类
+  原生插件意味着「预编译二进制 OS×arch×ABI 矩阵，否则现场 node-gyp」，而 `npx web-agent` 正是整棵树
+  的动机，原生模块就是「一条命令跑起来」与「装不上时用户无从下手」的分界线；`sql.js`(wasm) 整库在
+  内存、落盘要整份写回，与「每次写入是一条自包含原子语句」的耐久性模型直接冲突。
+  全仓 `node:sqlite` 只有 `connections.ts` 一处 `import()`，低于版本门槛时翻成点名版本的中文错误
+  而不是静默降级。实测实验性警告每进程只打一行（按 feature 去重）。
+  **命令名 Node 侧新定**：`sqlite_execute` / `sqlite_select`（全表 28 → **30**），按「语句有没有返回行」
+  分而非按读写分。**卡面漏了一处改动面**：`commandNames.test.ts` 断言「恰好 28 条」并与 `lib.rs` 的
+  `generate_handler!` 逐字相等——处理不是放宽比对（放宽后 Rust 真漂移就没人报信），而是**点名排除整域**
+  `DOMAINS_WITHOUT_DESKTOP_COMMANDS = ['sqlite']`，另配一条反向用例钉「这两个名字确实不在 Rust 列表里」。
+  **它没有照字面复用 `configPaths.ts`，主会话复核后采纳**：那个文件解析的是**配置文件**路径且绑死
+  `WEB_AGENT_CONFIG_DIR`，而库文件是**应用数据**。跟随该环境变量会让同一个开关在两个宿主上做不同的
+  事——桌面版的库仍在应用数据目录、Node 版跑到配置目录，于是「两个宿主看到同一份会话」恰好在最需要
+  它的场景（用户开了隔离配置）失效。复用的是 N7 真正的权威 `config/homeDirectory.ts`，有专测钉
+  「**不**跟随 `WEB_AGENT_CONFIG_DIR`」。顺带修掉了 findings #10 的两个 bug（XDG 必须绝对 + 空串不算有值）。
+  **「没有顺手提供事务/批量」靠四道结构性判据**，不是自觉：公开面只有两个方法（有用例断言
+  `Object.keys` 恰好如此）／事务控制语句直接判非法（Node 侧单句柄上 `BEGIN…COMMIT` **真的会成立**，
+  放行 = 制造「本地能跑、换宿主就坏」，比两边一起坏更难查）／**多语句拒绝**／ATTACH·DETACH 拒。
+  **主会话独立复核了多语句那条**：`node:sqlite` 的 `prepare()` 对 `"INSERT a; INSERT b"` 既不报错也
+  不执行第二条，回执仍是 `{changes:1}` —— **成功回执配半份数据**，不拦就是静默丢一半。
+  另堵死两个 node:sqlite 陷阱：`$1` 位置绑定当场 `SQLITE_RANGE`（改具名对象）、漏传参数**静默绑成
+  NULL**（扫描器数出 `$N` 个数与 `params.length` 双向比对）；行是 null 原型对象，统一展平成普通对象
+  以免「本地能跑、上 server 就变」。
+  两条独立连接以 **(逻辑连接名, 解析后路径)** 为键，`SQLITE_CONNECTION_NAMES` 是**封闭词表**——名字
+  来自 HTTP 外部载荷，开放字符串会让拼错的名字静默开出第三条连接。小订正：桌面侧其实是**三**处
+  `Database.load`，后两处读写同一批表，收进一个 `observability` 名字。
+  **遗留提醒**：`commandArgs.ts` 现 295 行，**下一条往那张表里加命令的卡必然顶破 300**，需要真拆
+  （可用的拆法只有「把跨命令的线上规则单独成文」，按域拆会退化成 part1/part2）。
 - **判据**：实现 P1 的 port；数据库路径与桌面版一致（`com.webagent.app/web-agent.db`），
   使两个宿主看到同一份会话。跑该目录 vitest
 - **模型**：opus
@@ -1837,7 +1931,29 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 
 - **依赖**：D1、S4
 - **改动面**：`apps/server/package.json`、`apps/server/bin/`
-- **状态**：DOING
+- **状态**：DONE `3828602`。`bin: {"web-agent": "./bin/web-agent.mjs"}`（26 行转发 shim，带 shebang），
+  `files: ["dist","bin"]`，`engines: ">=22.0.0"`，保留 `private: true`。
+  **卡面「`private: true` 会让 `npm publish --dry-run` 直接拒绝」是错的——本卡读源码 + 实测推翻。**
+  `npm/lib/commands/publish.js:148` 是 `if (workspace && manifest.private)`，`workspace` 只在
+  `npm publish -ws` 时才有值，**从包目录直接 publish 根本不走那条检查**。所以「要判据就得摘 private」
+  这个取舍不存在，两者兼得。保留 private 的真理由：**依赖闭包全是私有包**（单独发 server，它的
+  `dependencies` 指向 registry 上不存在的 `@web-agent/core@0.1.0`，用户 `npm i` 当场 404），
+  发布是整闭包的决定、归 D3。
+  **一条发布路径上的硬伤（主会话已独立复核）**：`npm pack` 把 `workspace:*` **原样留着**，
+  `pnpm pack` 才改写成 `0.1.0`。**用 `npm publish` 发出去的包是装不上的**——`workspace:*` 不是合法
+  semver。D3 必须用 `pnpm publish`。
+  `engines` 的 `>=22` 是**支持策略下限不是技术下限**（技术下限约等于 18）：CI 两个 job 都是 22，
+  低于 22 从没跑过；且今天 Node 18 与 **20 均已 EOL**。README 里那句「≥20.19 或 ≥22.12」是
+  **Vite 7 的 `engines` 原样抄来的构建期约束**，发布出去的 server 包不跑 Vite，属误植。
+  **给 P2 的提醒**：若选 `node:sqlite`，下限要提到 `>=22.5.0`。
+  主会话独立复核：pnpm pack 四个包 → 仓库外 `npm install` → `./node_modules/.bin/web-agent` 起服务，
+  health / invoke / 内嵌前端全通，`node_modules` 里引用仓库路径的文件**零个**；tarball 22 文件、
+  零测试零源码。
+  **包名待用户拍板**：`@einfach` scope 在公共 npm 上归本仓库同一账号（`@einfach/core` 的 maintainer），
+  而 `@web-agent` 无证据已注册（**scope 没注册就发不出去**）；项目对外品牌是 Einfach Agent，与包名
+  已经对不上。三选项：A `@einfach/agent-server`、B 无 scope 的 `einfach-agent`（`npx` 体验最好、
+  名字空着）、C 维持现状（需先注册 org）。本卡按 C 落地保证能跑；改名波及 19 个包 + alias + paths +
+  门禁表，该单开一卡。
 - **判据**：对外交付卡。`npm pack` 产物在**干净目录**里 `npx` 能起；
   `files` 字段不夹带源码与测试；Node 版本下限声明明确。
   跑 `npm pack --dry-run` 逐条核对文件清单
