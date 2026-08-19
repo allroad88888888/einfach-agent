@@ -1553,7 +1553,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   （`model_provider_route.rs`），Key 只从 N7 的配置读、**永不出现在返回体里**；
   上游流式响应原样透传；请求取消能真的中断上游。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### M2 · server 的流式模型端点
 
@@ -1604,7 +1604,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   超时、进程退出清理。**协议编排不重写**——`tools/mcp` 里已有 5178 行 TS 实现，
   本卡只做传输层。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### C2 · host-node 事件面
 
@@ -1613,7 +1613,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：新契约卡。`onHostEvent(name, handler): () => void`，覆盖
   `mcp-stdio-tools-changed` 与 `mcp-stdio-close`。CLI 进程内直接回调，无需序列化。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### C3 · server 的 SSE 事件端点
 
@@ -1645,7 +1645,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   Tauri 装配注入插件实现，行为不变。跑 `pnpm exec vitest run packages/persistence-sqlite` +
   `node scripts/check-boundaries.js`（`core 禁入 Tauri SQL 插件` 那条仍须绿）
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DOING
 
 ### P2 · host-node 的 SQLite 执行
 
@@ -1689,7 +1689,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：`pnpm build` 后 server 包自带 `apps/web/dist`，单个 npm 包即可启动，
   不依赖仓库工作树。跑 `node scripts/check-dist.js`
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DOING
 
 ### D2 · npm 包元数据与 bin launcher
 
