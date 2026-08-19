@@ -32,7 +32,7 @@ H  core host bridge 抽象        H1 → H1b → H2/H3/H4/H4b → H4c/H4d-1→H4
 N  host-node 薄包装区           N1 → N2 → N3/N4/N5/N6/N7 → N8 ★CLI 完整
 W  host-node 真逻辑区           W1..W15 → W16/W17 对拍
 S  server HTTP 外壳             S1 → S2/S3/S5 → S4
-B  前端 server 宿主装配          B1 → B2 → B3 → B4 ★浏览器 fs/shell 可用 · B5 分流模块补测
+B  前端 server 宿主装配          B1 → B2 → B3 → B4 ★浏览器 fs/shell 可用 · B5 补测 → B6 穷举守卫 / B7 trace 静默失效
 M  模型代理                     M1 → M2/M4 → M3 → M5 · M6 ★浏览器完整对话
 C  MCP 与事件通道               C1/C2 → C3 → C4 → C5 · C6 失败标识 → C8 噪声 500 · C7 缓存宿主判据
 P  持久化收敛                   P1 → P2 → P3 → P4
@@ -44,7 +44,7 @@ T  Tauri 退成套壳               T1 → T2 → T3 → T4
 **MVP 路径 = H + N + W1–W15 + S + B + M**（约 46 卡）。到 M5 浏览器版即可用；
 C/P/D/T 是增强与收尾，可后置。
 
-全树 **77 卡**（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
+全树 **79 卡**（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
 H4b 从 H4 里拆出的总闸、H4c 验收漏扫 apps 面留下的回归、H4d 拆树后新增文件带来的缺口、
 H4e 总闸改名的下游收尾；S 线因 N3 交回的 platform 阻断项增至 5 张；M 线因 M2 交回点名的取舍新增 M6；
 M3/C4/P3/D3 那一批验收又新增 5 张：C6、C7、D3b、D3c、B5，**全部来自子 agent 交回时点名或主会话
@@ -1596,6 +1596,41 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 
 ## M · 模型代理
 
+### B6 · 宿主分流缺穷举守卫，加第四态时静默走错分支
+
+- **依赖**：B5
+- **改动面**：`apps/web/src/host/hostCommandBridge.ts` 及其余四个分流模块
+- **判据**：**来源：B5 只报不改，主会话独立探针复核。** 给 `ResolvedHost` 加一支
+  `{ kind: 'sidecar' }` 跑 `tsc -b`，`apps/web/src/host/host*.ts` **零编译错误**（基线 exit 0）。
+  后果按模块分轻重：`hostCommandBridge.ts` 的 `switch` 没有 `default`，第四态直接返回 undefined
+  → **不登记桥** → 文件/shell/Git/rg 工具整类对模型不可见、执行一律早退，**且不报错**——
+  这正是该文件注释里「少了这一句会怎样」描述的那个后果。其余四个是 if 链带兜底，第四态落进
+  unavailable / IndexedDB / 浏览器 pagehide，不至于失能但同样静默。
+  **这条直接压在 T2（桌面前端切到 server 宿主）头上**：那张卡要动的就是三态划分。
+  判据：加第四态时**每一个**分流模块都编译失败；`hostCommandBridge` 补 `default: assertNever(host)`。
+- **模型**：sonnet
+- **状态**：TODO
+
+### B7 · trace 装配的两个静默失效
+
+- **依赖**：B5、P4
+- **改动面**：`apps/web/src/host/hostObservability.ts`
+- **判据**：**来源：B5 只报不改，主会话逐条复核代码。** 两条独立缺陷，共性是「失效但不报错」：
+  · **driver 加载失败被整个吞掉且无回落**：`.catch(() => {})` 之后 `configureObservability` 一次都没被
+    调用，而 core 的 `enqueue()` 是 `if (!current) return`（`packages/agent-core/src/observability/trace.ts:56`）
+    ——**所有 span 直接丢弃**，无日志、无告警、无 IndexedDB 兜底。同处还有个更小的时序缺口：
+    写入端是 `void import(...)` 异步到位而 `configureHostObservability()` 同步返回，这中间完成的 span 一样丢。
+  · **`server + DEV` 写 X 读 Y**：写入端 driver 只认 tauri → server 落 IndexedDB；读取端的 DEV 判据
+    排在宿主判据之前 → server+DEV 走 `createDevSqliteLogReader`，读的是桌面那份 SQLite 文件。
+    **而该文件头声称的正是「两端在同一个函数里按同一个宿主判据选」**，这一格上那句话不成立。
+    对 `static + DEV` 这是有意设计（同机调试看桌面 trace，注释写明了）；M 线落地、server 宿主出现
+    之后它才变成一处真实的「写 X 读 Y」。与 C7 同类（宿主判据没跟上，两份状态分家）。
+  **排在 P4 之后**：P4 正在把 observability-sqlite 收敛到注入的 `SqlExecutor`，server 宿主届时会有
+  自己的 SQL 通路，第二条的正解可能随之改变。
+  B5 已在 `hostObservability.test.ts` 里**只钉住当前行为**并在注释里点名了这处张力。
+- **模型**：opus
+- **状态**：TODO
+
 ### M1 · host-node 的 provider 请求转发
 
 - **依赖**：N7
@@ -2196,7 +2231,23 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   ② **`import.meta.env.DEV` 在 vitest 下默认为 `true`**（`hostObservability.ts:38` 也读它），
   不 `vi.stubEnv('DEV', …)` 就等于在测 dev 形态，而且它会绿。
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `884d9eb`。4 份 colocated 测试 / 21 例，**生产代码零改动**（md5 逐一比对）。11 条变异探针全咬。
+  **本卡最有价值的是它按纪律「只报不改」挖出的 5 个生产问题**，主会话逐条复核，前三条已立卡：
+  ① **五个分流模块全无穷举守卫**——主会话独立探针：给 `ResolvedHost` 加第四态 `{ kind: 'sidecar' }`
+  跑 `tsc -b`，`apps/web/src/host/host*.ts` **零编译错误**（基线 exit 0，对照成立）。
+  `hostCommandBridge` 的 `switch` 没有 `default`，第四态直接返回 undefined → **不登记桥** →
+  文件/shell/Git/rg 工具整类对模型不可见、执行一律早退且不报错。→ **B6**
+  ② `hostObservability.ts` 的 `.catch(() => {})` 吞掉 SQLite driver 加载失败且无回落，
+  `configureObservability` 一次没被调用 → core 的 `enqueue()` 里 `if (!current) return`
+  （`observability/trace.ts:56`，主会话复核）**直接丢弃**所有 span，无日志无告警无兜底。→ **B7**
+  ③ **`server + DEV` 这一格写入端与读取端劈开了**：写 IndexedDB（driver 只认 tauri），
+  读走 `createDevSqliteLogReader`（DEV 判据排在宿主判据之前）→ TraceViewer 一条看不到。
+  而该文件头声称的正是「两端在同一个函数里按同一个宿主判据选」。与 C7 同类。→ **B7**
+  ④⑤ 次要：static 支不 `configureHostInvoke(undefined)`（运行时切宿主会留旧桥）；
+  两条 flush 安装器的解绑函数被丢弃（dev HMR 累积监听）。
+  顺序敏感点的钉法值得后人抄：`hostModelCredentialHost` **模块内部没有可钉的顺序**（三支互斥），
+  真正的敏感点是**跨模块**的——`hostModelTransport` 那条「server 排在 DEV 之前」的正确性依赖
+  本模块「没有 DEV 分支」，所以钉法是逐态钉「DEV 抢不走任何一态」。
 
 ### C7 · 工具名缓存的宿主判据没跟上，与服务配置分家
 
