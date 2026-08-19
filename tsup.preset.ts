@@ -69,6 +69,20 @@ export function definePackageBuild({
     dts: false,
     // 见 PackageBuildInput.splitting：默认关，多 entry + 共享可变状态的包按需开。
     splitting,
+    // **必须显式关掉**：tsup 默认 `removeNodeProtocol: true`，会挂一个内置 esbuild 插件把
+    // `node:xxx` 无条件重写成裸名 `xxx`（tsup/dist/index.js 的 `nodeProtocolPlugin`）。
+    // 那是给「产物要跑在不认 `node:` 的老 Node / 老打包器上」准备的，本仓库 engines 是
+    // `>=22.13.0`，不需要，而且它有一类致命后果：**只存在 `node:` 形式的内置模块会被剥成
+    // 一个不存在的包名**。`node:sqlite` 就是——剥成 `sqlite` 后 npm registry 上那是别人的包，
+    // 消费方 `Cannot find package 'sqlite'`，SQL 持久化整条挂掉（其余内置恰好都有裸名别名，
+    // 所以只有它显形）。
+    //
+    // 只能在这里关，不能靠 `platform` / `target` / `external: [/^node:/]` 绕：三者都是**交给
+    // esbuild 的**参数，而剥前缀发生在更早的 tsup 插件 `onResolve` 里；等 esbuild 的内置外部化
+    // 或 tsup 自己的 externalPlugin 看到这个说明符时，它已经叫 `sqlite` 了。也不能靠传一个
+    // 自己的 esbuild 插件覆盖：`esbuildPlugins` 被追加在 `nodeProtocolPlugin` **之后**，
+    // 同 filter 的 onResolve 按注册序先到先得，后来者根本不会被调用。
+    removeNodeProtocol: false,
     external,
     // `?raw` 内联对全仓生效：源码里的 `*.md?raw` 是 Vite 语法，产物必须已经把正文变成字符串，
     // 否则消费方的打包器/Node 会去找一个叫 `x.md?raw` 的文件。包自带插件排在它后面。
