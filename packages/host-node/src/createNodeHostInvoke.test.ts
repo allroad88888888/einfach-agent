@@ -52,7 +52,7 @@ describe('createNodeHostInvoke', () => {
     expect((error as NodeHostCommandError).message).toContain('未登记')
   })
 
-  it('当前只有 config 域三条命令已实现（本线的施工进度）', async () => {
+  it('当前已实现的命令集合（本线的施工进度）', async () => {
     // 隔离到临时主目录 + 临时配置目录：这条用例会真的调用 `mcp_config_read`，不隔离的话它会去
     // 读、并可能迁移运行测试那个人的 `~/.webAgent/config.json`。
     const home = await mkdtemp(join(tmpdir(), 'web-agent-host-invoke-'))
@@ -76,6 +76,8 @@ describe('createNodeHostInvoke', () => {
         'read_workspace_run_index_page',
         'list_workspace_files',
         'search_workspace_files',
+        'write_workspace_file',
+        'apply_workspace_patch',
         'revert_workspace_change',
         'delete_workspace_path',
         'copy_workspace_path',

@@ -16,11 +16,8 @@
 //   result.ts                         ← _result.rs
 //   pipelinePayload / Plan / Write /
 //     pipeline.ts                     ← _pipeline.rs（锁外编排 / 锁内临界区 / 纯判断 / 载荷）
+//   compaction*.ts                    ← _compaction.rs（W9，纯规则与 IO 分住两个文件）
 //   writeWorkspaceFileHandler.ts      ← workspace_write.rs 的命令体
-//
-// 尚未落地、有独立卡的一块：
-//   · **归档索引 compaction（W9）** —— 位置在 pipeline.ts 标注的那一处；缺它只影响子 Agent
-//     索引的体积，不影响写入正确性。
 
 import { createWriteWorkspaceFileHandler } from './writeWorkspaceFileHandler'
 import type { NodeHostInvokeOptions } from '../../hostOptions'

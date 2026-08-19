@@ -61,10 +61,12 @@ import { createShellRoutes } from './shell'
 import { createChangeRoutes } from './workspace/change'
 import { createDeleteRoutes } from './workspace/delete'
 import { createGitRoutes } from './workspace/git'
+import { createPatchRoutes } from './workspace/patch'
 import { createPathOpsRoutes } from './workspace/pathOps'
 import { createReadRoutes } from './workspace/read'
 import { createRgRoutes } from './workspace/rg'
 import { createTaskRoutes } from './workspace/task'
+import { createWriteRoutes } from './workspace/write'
 import type { NodeHostInvokeOptions } from './hostOptions'
 import type { NodeHostRouteTable } from './routeTable'
 
@@ -111,8 +113,10 @@ export class NodeHostCommandError extends Error {
  */
 function createRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
   return {
-    // 待落地：workspace/{write,patch}、mcp、model
+    // 待落地：mcp、model
     ...createReadRoutes(options),
+    ...createWriteRoutes(options),
+    ...createPatchRoutes(options),
     ...createChangeRoutes(options),
     ...createDeleteRoutes(options),
     ...createPathOpsRoutes(options),
