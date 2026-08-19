@@ -132,18 +132,17 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
 | 7 | `workspace_git_exec.rs` | `status --short` / `--stat` / `--name-only` **不设输出上限**（只有 diff 正文有 cap）。巨型仓库的 `status --short` 会整份进内存和返回值。 |
 | 8 | `runtime/shellCommand.ts` 的 `normalizeResult` | 超时命令的 `exit_code: null` 被整形成 `-1` 并追加 `run_shell_command returned a response without a valid exit code`——对模型来说「超时被杀」被说成「桥返回了非法响应」。改动要 core + Rust 一起动。 |
 | 9 | `workspace_rg.rs` | 不传 `path` 时 target 是 `.`，rg 于是给每个结果路径加 `./` 前缀，而 `normalize_display_path` 只剥绝对路径。 |
+| 11 | `workspace_patch_path.rs:101` 与 `workspace_path_ops.rs:224` | 这两处的展示路径**无条件** `.replace('\\', "/")`，而 `workspace_write_target_path.rs` / `workspace_read_paths.rs` 的 `path_to_slash_string` 是 `if MAIN_SEPARATOR == '/' { 原样 }`——**同一仓库里两种做法**。unix 上 `\` 是合法文件名字符，于是真名 `a\b.txt` 的文件在读/写侧原样保留、在 patch 与 path_ops 侧变成 `a/b.txt`；而 patch 那个结果会**写进变更日志**，回滚时按另一个路径去找。W12 发现，主会话已复核四处实现。 |
+| 12 | `workspace_write_result.rs` 的 `WorkspaceWriteResult` | 它是 `#[derive(Serialize)]` **没有 `rename_all`**，所以写入回执的顶层键是 snake_case（`bytes_written` / `change_set` / `dry_run`…），而 `workspace_read_types.rs` 与 `workspace_patch_result.rs` 都带 `rename_all = "camelCase"`——**同一仓库两种线上形状**。core 的 `normalizeResult` 两种都收，所以今天两边都跑得动，但 W16/W17 对拍会撞上。W7 发现，主会话已复核三个结构的 serde 属性。Node 侧照搬了 snake_case。 |
+| 13 | `workspace_delete.rs` 的 `path does not exist` | 这句话**在正常路径上永远不会出现**：`resolve_delete_path` 对**最后一段**也做 `symlink_metadata`，所以目标不存在时先失败成 `failed to resolve target path: No such file or directory (os error 2)`；caller 里那个 `ErrorKind::NotFound → "path does not exist"` 分支只在 TOCTOU 窗口里可达（同理 caller 的 `is_symlink()` 判断也不可达）。W10 照搬了（TOCTOU 下仍有意义）并把测试钉成「报的是解析失败」。**W16/W17 对拍时别指望能构造出这句话。** |
+| 14 | `workspace_write_compaction.rs` 的 `compact_subagent_index` | 重写每条记录走 `serde_json::to_string`，而 `Cargo.toml` 的 `serde_json` **没开 `preserve_order`**——`Value::Object` 底层是 `BTreeMap`，字段按 key 字节序**重排**，不保留原始书写顺序。压实因此会静默改写每一行的字段顺序（内容等价、字节不同）。Node 侧只能跟着排（`stableStringify`），否则对拍必炸。要修是给 Rust 开 `preserve_order`，但那会改变**所有** JSON 输出的字段序，波及面远超本树。W9 发现。 |
+| 15 | `workspace_write_compaction.rs:129` 的本地 `atomic_replace` | 它是 `fs::write` + `fs::rename`，**既不 fsync 也不回填权限位**（继承临时文件的 umask 权限），而同仓库 `workspace_common.rs` 的共享 `atomic_write` 两者都做——**同一仓库两份「原子替换」**。压实是整份重写索引，掉电后目录项指向空洞内容 = 归档索引报废。Node 侧按任务书指令统一走共享 `atomicWrite`（产出字节不变，只是落盘更耐久）。W9 发现。 |
 
 顺带发现的 TS 侧 bug（不在本树范围，未改）：
 
 | # | 位置 | 问题 |
 | --- | --- | --- |
 | 10 | `vite.config.ts:58` 的 `defaultTraceDbPath()` | Linux 分支写的是 `process.env.XDG_DATA_HOME ?? path.join(homedir(), '.local', 'share')`，而 `dirs` crate 的判据是 `env::var_os("XDG_DATA_HOME").and_then(dirs_sys::is_absolute_path)`——**必须是绝对路径才采用**。且 `??` 只挡 `null`/`undefined`，**空串会被当有值**，`path.join('', …)` 变成跟着进程 cwd 走的相对路径。 |
-
-| 11 | `workspace_patch_path.rs:101` 与 `workspace_path_ops.rs:224` | 这两处的展示路径**无条件** `.replace('\\', "/")`，而 `workspace_write_target_path.rs` / `workspace_read_paths.rs` 的 `path_to_slash_string` 是 `if MAIN_SEPARATOR == '/' { 原样 }`——**同一仓库里两种做法**。unix 上 `\` 是合法文件名字符，于是真名 `a\b.txt` 的文件在读/写侧原样保留、在 patch 与 path_ops 侧变成 `a/b.txt`；而 patch 那个结果会**写进变更日志**，回滚时按另一个路径去找。W12 发现，主会话已复核四处实现。 |
-
-| 12 | `workspace_write_result.rs` 的 `WorkspaceWriteResult` | 它是 `#[derive(Serialize)]` **没有 `rename_all`**，所以写入回执的顶层键是 snake_case（`bytes_written` / `change_set` / `dry_run`…），而 `workspace_read_types.rs` 与 `workspace_patch_result.rs` 都带 `rename_all = "camelCase"`——**同一仓库两种线上形状**。core 的 `normalizeResult` 两种都收，所以今天两边都跑得动，但 W16/W17 对拍会撞上。W7 发现，主会话已复核三个结构的 serde 属性。Node 侧照搬了 snake_case。 |
-
-| 13 | `workspace_delete.rs` 的 `path does not exist` | 这句话**在正常路径上永远不会出现**：`resolve_delete_path` 对**最后一段**也做 `symlink_metadata`，所以目标不存在时先失败成 `failed to resolve target path: No such file or directory (os error 2)`；caller 里那个 `ErrorKind::NotFound → "path does not exist"` 分支只在 TOCTOU 窗口里可达（同理 caller 的 `is_symlink()` 判断也不可达）。W10 照搬了（TOCTOU 下仍有意义）并把测试钉成「报的是解析失败」。**W16/W17 对拍时别指望能构造出这句话。** |
 
 **⚠️ 跨宿主隐患（T 线套壳前必须解决）**：`workspaceRoot` 在变更日志里存的是 canonicalize 后的
 绝对路径、回滚时逐字比对。Rust 的 `fs::canonicalize` 在 Windows 上给 verbatim 前缀
@@ -920,7 +919,16 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **改动面**：`packages/host-node/src/workspace/write/compaction*`
 - **判据**：对齐 `workspace_write_compaction.rs`。跑该目录 vitest
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `c219b7a`。纯逻辑（路径判定 / 节流判定 / JSONL 去重）与 IO 编排分两个文件，
+  是为了 W16/W17 能直接拿纯函数对表，不必为了对拍在磁盘上真建一份归档。
+  **卡面原话「压实失败大概率是安静跳过（压实是优化不是正确性）」是错的**，本卡实测推翻：
+  `maybe_compact_subagent_index` 的 `Err` 在 `workspace_write_pipeline.rs:206` 被折成
+  `Ok(error_result(...))`，与「守卫不匹配」「超限」走的是同一条结构化拒绝路径——**压实一失败，
+  这次 append 的新内容根本不会被追加**。我那句描述的其实是 seam 尚未实现时的后果（W7 留的
+  TODO 注释确实是安静少一步），不是压实实现后失败的行为。Node 侧照搬拒绝语义。
+  主会话独立复核：把 seam 那两行注释掉，`pipelineCompaction.test.ts` 3 例转红（含拒绝语义那条），
+  证明覆盖非空洞。Rust 的 `is_some_and(|age| age < THROTTLE)` 链在 mtime 位于未来时
+  `elapsed()` 返回 `Err` → `None` → **不节流**，与 `isCompactionThrottled` 的负年龄分支一致。
 
 ### W10 · 删除路径
 
