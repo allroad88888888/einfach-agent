@@ -920,7 +920,24 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：对齐 `workspace_path_ops.rs`：源/目标双向 confinement、目标已存在的处理、
   进 change journal。跑该目录 vitest
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `699c8e1`。5 个源文件 + 3 份测试 / 53 例。
+  **又一处 Rust 自成一体的路径解析**（主会话复核：`workspace_path_ops.rs` 只从 common import 了
+  `resolve_workspace_root`，`resolve_source`/`resolve_destination` 是它自己的局部函数）——
+  而且**比共享的两个形态更严**：它们**直接拒绝绝对路径与 `..`**，而共享的读/写形态是允许写、
+  再靠 realpath 断案。至此 Rust 侧已有三处自成一体的路径解析（write / patch / pathOps），
+  每处的严格程度都不同。
+  **目标已存在**：copy 与 move 判据相同，用 `symlink_metadata`（不跟随的 lstat）查原始拼接路径，
+  **dangling symlink 也算存在**；Rust 没有 force/overwrite 参数，故没加。
+  **EXDEV 不是特判**：Rust 的 `move_path` 不区分错误类型，**任何** `fs::rename` 失败都回落到
+  copy + delete-source，且 delete-source 再失败时清理掉已复制的那份。这段 W14 已经移植过
+  （`change/pathOpsMove.ts`），本卡直接复用。
+  **目录递归但日志只记一条**：不管子树多大，copy 记一条 `TrackedPath{path, fingerprint}`
+  （进 `createdPaths`）、move 记一条 `RelocatedPath{source, destination, fingerprint}`
+  （进 `relocatedPaths`），fingerprint 递归哈希整棵子树的结构与内容。
+  **`MovedPath` 与本卡无关**——它专属 `prepareDeletedPathChange`（W10 的可恢复删除载荷迁移）。
+  **发现一处结构上不可达的死分支**：`source === destination` 的早退检查——目标解析已要求不存在，
+  任何会 canonicalize 成已存在源的路径会先被「目标已存在」拦下。照搬保留（无害）。
+  第 11 条已知问题（展示路径无条件 `\` → `/`）在本模块照搬，并有专门的测试钉住。
 
 ### W12 · patch：路径解析与 stage
 
