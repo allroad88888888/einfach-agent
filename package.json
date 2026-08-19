@@ -8,7 +8,7 @@
     "cli": "tsx --tsconfig apps/cli/tsconfig.json apps/cli/src/main.ts",
     "serve": "tsx --tsconfig apps/server/tsconfig.json apps/server/src/main.ts",
     "dev": "vite --config vite.config.ts",
-    "build": "tsc -b && vite build --config vite.config.ts",
+    "build": "tsc -b && vite build --config vite.config.ts && pnpm --filter @web-agent/server build",
     "test": "vitest run",
     "test:watch": "vitest",
     "check:boundaries": "node scripts/check-boundaries.js",

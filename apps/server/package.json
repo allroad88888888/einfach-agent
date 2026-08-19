@@ -4,6 +4,11 @@
   "private": true,
   "license": "MIT",
   "type": "module",
+  "main": "./dist/main.js",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup && node scripts/embed-web-dist.mjs"
+  },
   "dependencies": {
     "@web-agent/core": "workspace:*",
     "@web-agent/host-node": "workspace:*"

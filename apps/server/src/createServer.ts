@@ -15,6 +15,7 @@
 // 回环开放——`authGuard.ts` 在每条请求上重新判一次对端地址。会被暴露出去的只有静态产物，
 // 那是用户自己 build 的公开文件。安全性不建立在「S4 记得传对地址」上。
 
+import { existsSync } from 'node:fs'
 import { createServer as createHttpServer, type Server } from 'node:http'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -24,13 +25,34 @@ import { createInvokeRouteHandler } from './invokeRoute'
 import { resolveServerVersion } from './packageVersion'
 import { createRequestRouter } from './requestRouter'
 
-// 相对本文件定位仓库里的前端产物：apps/server/src/ → apps/web/dist。
-// 分发形态（npm 包里产物放哪儿）由 D 线决定，届时装配层显式传 `distDirectory` 覆盖。
+// 【D1：默认前端产物目录，开发形态与分发形态都要对】
+// 本文件所在目录 `dirname(import.meta.url)` 在两种形态下指向不同的地方，但恰好都能用来找到
+// 正确的产物：
+// - **开发形态**：`pnpm serve` 用 tsx 直接跑 `apps/server/src/createServer.ts`（未打包），
+//   `here` = `apps/server/src`。这里没有内嵌产物，探测落空，回落到仓库路径
+//   `apps/server/src/../../web/dist` = `apps/web/dist`（vite build 的产出）。
+// - **分发形态**：`apps/server` 经 tsup 打包成单文件 `apps/server/dist/main.js`
+//   （构建收尾见 `scripts/embed-web-dist.mjs`，把 `apps/web/dist` 复制成同级的
+//   `apps/server/dist/public`）。esbuild 打包后所有内联模块共享同一个 `import.meta.url`
+//   ——就是这份产物自己的 URL——所以此时 `here` = `apps/server/dist`（不论这份 dist 躺在
+//   仓库里还是被 `npm pack` 安装进了别处的 `node_modules/@web-agent/server/dist`）。
+//   `here/public` 存在，直接用它，**不落到仓库路径**（那条路径在装进 node_modules 后并不存在，
+//   即便存在也可能是过期的另一次 build）。
 //
-// **不要写成 `new URL('../../web/dist', import.meta.url)`**：Vite 认得这个字面量形态并会把它
-// 当成资源引用静态改写掉（assetImportMetaUrl），于是 Vitest 下拿到的根本不是 file: URL，
+// 两条探测都是**运行期检查是否存在**，不是「猜哪种形态」；顺序上先试分发路径再落回开发路径，
+// 因为分发路径只可能在真正内嵌过产物时才存在，不会误判。
+//
+// **不要写成 `new URL('字面量', import.meta.url)`**：Vite 认得这个字面量形态并会把它当成资源
+// 引用静态改写掉（assetImportMetaUrl），于是 Vitest 下拿到的根本不是 file: URL，
 // `fileURLToPath` 当场抛 “The URL must be of scheme file”。先落到路径再拼，不碰那个模式。
-export const DEFAULT_DIST_DIRECTORY = resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist')
+function resolveDefaultDistDirectory(): string {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const packaged = resolve(here, 'public')
+  if (existsSync(packaged)) return packaged
+  return resolve(here, '../../web/dist')
+}
+
+export const DEFAULT_DIST_DIRECTORY = resolveDefaultDistDirectory()
 
 export interface WebAgentServerOptions {
   /** 前端构建产物目录，默认指向仓库里的 `apps/web/dist`。 */
