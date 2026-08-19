@@ -38,3 +38,17 @@ jobs:
         run: pnpm -r build
       - name: Check publishable dists
         run: node scripts/check-dist.js
+      # 上面那条**不跑那个二进制**：它装 17 个包、验 26 个公开 ESM 入口与 NodeNext 声明，全绿的
+      # 同时打包产物里 `import('node:sqlite')` 被 esbuild 剥成 `import("sqlite")`，装完之后 SQL
+      # 整条挂掉（D5a）。这一条补的就是那段缺口：pack 发布闭包 → **仓库外** npm install → 起服务
+      # → 打真实请求（health / 无 token 401 / 带 token 的 invoke / 一条真的落盘的 SQL / 停干净）。
+      # 它排在 check-dist **之后**：check-dist 更便宜，且「dist 陈旧」「导出面坏了」这两类病因它
+      # 指得更准；这一条是最后那张端到端的网，红了就说明「装到用户机器上跑不起来」。
+      # `PACKED_SERVER_SKIP_BUILD=1`：脚本默认自己跑 `pnpm build` 与 `pnpm -r build`（本地单跑时
+      # 要自足），而这两步上面已经各跑过一次，再跑一遍纯属白等。**它只能在已经跑过那两步的地方
+      # 设**——脚本会检查 `apps/server/dist/main.js` 在不在，不在就当场失败，不会静默验一份空气。
+      # 判据 4 的独立复读用 node:sqlite（Node ≥ 22.13），`node-version: 22` 解析到最新 22.x，够。
+      - name: Check the packed server actually runs
+        run: node scripts/check-packed-server.js
+        env:
+          PACKED_SERVER_SKIP_BUILD: "1"
