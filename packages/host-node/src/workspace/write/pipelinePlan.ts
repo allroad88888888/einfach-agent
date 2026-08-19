@@ -12,11 +12,11 @@
 //   5. 这次写入可不可逆（**不影响写不写**，只影响回执与要不要记账）
 
 import { afterExceedsReversibleBudget } from './limitChecks'
-import { computeChangeSummary } from './changeSummary'
+import { computeChangeSummary } from '../common'
 import { verifyExpectedContent } from './guard'
 import { rejectWrite } from './result'
 import type { BeforeContent } from './before'
-import type { FileChangeSummary } from './changeSummary'
+import type { FileChangeSummary } from '../common'
 import type { WriteMode } from './types'
 
 /** 折算掉 `upsert` 之后的三种实际写法。 */

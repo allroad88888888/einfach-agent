@@ -20,7 +20,7 @@
 // 两种答案。
 
 import type { WorkspaceChangeSummary } from '../change/types'
-import type { FileChangeSummary } from './changeSummary'
+import type { FileChangeSummary } from '../common'
 
 /** 一次写入的回执。失败也是它（`ok: false` + `error`），不是 rejection。 */
 export interface WorkspaceWriteResult {

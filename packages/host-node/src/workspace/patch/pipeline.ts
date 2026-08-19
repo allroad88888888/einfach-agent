@@ -2,7 +2,8 @@
 // ---------------------------------------------------------------------------
 // 等价移植 apps/desktop/src/workspace_patch_pipeline.rs 的
 // `apply_workspace_patch_blocking_with_journal`。本文件只做**编排**：每一步的规则各住一处
-// （operation / path / stage / limits / commit / changeSummary），这里负责把它们按 Rust 的顺序串起来。
+// （operation / path / stage / limits / commit，changeSummary 现住 `../common`），这里负责把它们
+// 按 Rust 的顺序串起来。
 //
 // ═══ 「全部成功才落盘，任一失败整体不写」在这条链上是怎么兑现的 ═══
 //   1. 逐条暂存。失败的记一条 `rejected[]` 并**继续暂存后面的**——Rust 是全部试完再汇总，模型
@@ -23,7 +24,7 @@
 
 import { changedPaths, stageOperation } from './stage'
 import { commitChanges } from './commit'
-import { computeChangeSummary } from './changeSummary'
+import { computeChangeSummary } from '../common'
 import { patchDisplayPath } from './path'
 import { readOptionalTextFile } from './fs'
 import { discardPreparedChange, markChangeApplied, prepareChangeSet } from '../change/prepare'

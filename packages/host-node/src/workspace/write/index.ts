@@ -11,7 +11,7 @@
 //   before.ts                         ← _before.rs
 //   guard.ts                          ← _guard.rs
 //   fsOps.ts                          ← _fs_ops.rs
-//   changeSummary*.ts                 ← workspace_common.rs 的 compute_change_summary / diff_lines
+//   （changeSummary 现住 `../common`）  ← workspace_common.rs 的 compute_change_summary / diff_lines
 //   result.ts                         ← _result.rs
 //   pipelinePayload / Plan / Write /
 //     pipeline.ts                     ← _pipeline.rs（锁外编排 / 锁内临界区 / 纯判断 / 载荷）

@@ -1,4 +1,4 @@
-// 行切分与 LCS 行级 diff
+// 行切分（Rust `str::lines()` 等价物）与 LCS 行级 diff
 // ---------------------------------------------------------------------------
 // 等价移植 apps/desktop/src/workspace_common.rs 的 `diff_lines` / `DiffTag`，外加 Rust
 // `str::lines()` 的语义（TS 没有等价物，`split('\n')` 直译会多出一行）。
@@ -9,16 +9,36 @@
 // 【为什么不用现成的 diff 库】
 // 对拍的判据是「与 Rust 那份实现逐字相同」，而不是「diff 得好看」。任何库都会在 Myers/直方图/
 // 补丁上下文这些地方给出不同但同样合理的结果，那时分不清是移植错了还是库不同。
+//
+// 单独成文件，是因为它与「一次写改了什么」是两件事：这里只回答「两个字符串数组之间最短的
+// 增删序列是什么」，不认行、不认文件、不认预算。预算判定（表大小是否吃得消）留在调用方——
+// 它超预算时的降级形态（整块替换 + `approximate`）属于摘要的语义，不属于 diff 算法。
+//
+// 表是 `rows × columns` 的一维数组（`Uint32Array`），与 Rust 的 `vec![0u32; rows * columns]`
+// 逐格对应。调用方保证 `before.length * after.length` 不超过预算，所以这里不再自保。
+//
+// 【这份文件为什么曾经在 workspace/write 与 workspace/patch 各有一份】
+// Rust 侧 `compute_change_summary` / `diff_lines` 住在 `workspace_common.rs`，被 `write_file` 与
+// `apply_patch` 共用（`workspace_patch_pipeline.rs:93` 调它）。Node 侧 W7（write 流水线）与 W13
+// （patch 流水线）并行施工时都需要它，但谁也不敢在 `workspace/common/` 建同名文件——并行时
+// 后落笔的会静默盖掉先落笔的，于是各自落在自己的域里（`workspace/write/changeSummaryDiff.ts`、
+// `workspace/patch/lineDiff.ts`）。两卡都提交后，主会话逐条对照两份实现并合并到这里：算法、
+// 常量、渲染格式、返回形状、LCS 回溯取等号的方向全部一致；唯一的实质分歧是 `splitLines` 对
+// **末行无换行符时结尾 `\r`** 的处理——patch 域那份一度无条件剥掉，已按 Rust（与 write 域那份
+// 一致）改正为「只剥真正位于换行符之前的 `\r`」，两卡提交时这条已经一致。公开面取了并集：
+// `splitLines` 与 `DiffTag` 都对外导出（patch 版本的做法，write 版本里 `splitLines` 是私有的）——
+// 末行 `\r` 这条边界值得被直接单测，不必每次都绕经 `computeChangeSummary`。
 
 /** 一条编辑的类型。marker 就是它在 unified diff 里的行首字符。 */
 export type DiffTag = 'keep' | 'add' | 'remove'
 
+/** 一条编辑。`keep` 也在序列里——渲染 diff 时它是上下文行（前缀空格）。 */
 export interface DiffEdit {
   tag: DiffTag
   line: string
 }
 
-/** 行首标记，与 Rust `DiffTag::marker()` 一一对应。 */
+/** 行首标记，与 Rust `DiffTag::marker()` 一一对应；也是它在统一 diff 里的前缀字符。 */
 export function diffMarker(tag: DiffTag): string {
   if (tag === 'add') return '+'
   if (tag === 'remove') return '-'
@@ -55,7 +75,10 @@ export function splitLines(value: string): string[] {
  * O(n·m) 的表，没有预算它会在大文件上直接吃光内存。
  *
  * 表从右下往左上填，回溯时从左上往右下走，与 Rust 逐格对应（**方向不能反**：反过来在存在多条
- * 等长 LCS 时会选中另一条，输出的 diff 仍然正确但与桌面端不逐字相同）。
+ * 等长 LCS 时会选中另一条，输出的 diff 仍然正确但与桌面端不逐字相同）。回溯相等时 `keep`，
+ * 否则**优先 remove**（`table[row+1][column] >= table[row][column+1]` 取等号时走删除）。这个
+ * 取等方向决定了「同一处改动是先删后增还是先增后删」，两边不一致的话 diff 文本会不同——而
+ * diff 文本是要给模型看的，且 W16 会逐字节对拍。
  */
 export function diffLines(before: readonly string[], after: readonly string[]): DiffEdit[] {
   const columns = after.length + 1

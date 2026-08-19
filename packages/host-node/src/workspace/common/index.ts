@@ -1,11 +1,14 @@
-// workspace 各域共用的零件：路径底座、原子写、带上限的增量读
+// workspace 各域共用的零件：路径底座、原子写、带上限的增量读、变更摘要与行级 diff
 // ---------------------------------------------------------------------------
 // **本目录不产出任何命令 handler**——它在 commandNames.ts 的 `NODE_HOST_COMMANDS_BY_DOMAIN`
 // 里是零命令的共用零件目录，理由与 Rust 侧 workspace_common.rs 的文件头一致：把跨模块共享的
 // 逻辑抽出来，免得 read/write/patch/delete/git 各写各的、逐渐漂移。Rust 侧原本就出现过同一条
 // confinement 判定在六个文件里各抄一遍的局面（workspace_read_paths / workspace_write_target_path
 // / workspace_patch_path / workspace_delete / workspace_path_ops / workspace_rg），Node 侧从第一天
-// 就只有一份。
+// 就只有一份——**唯一的例外是 `changeSummary.ts` / `lineDiff.ts`**：write（W7）与 patch（W13）
+// 两张卡并行开工时都需要 `compute_change_summary` / `diff_lines`，谁都不敢在本目录建同名文件
+// 抢跑（后落笔的会静默盖掉先落笔的），所以各自在自己的域里落了一份，等两卡都提交后才合并回
+// 这里；具体经过见那两个文件的文件头。
 //
 // 规格是 apps/desktop/src/workspace_common.rs 及上列那几份路径文件，**这是等价移植不是重新设计**。
 // 唯一有意偏离的一处记在这里，别让它散在代码里：
@@ -22,9 +25,13 @@
 // 一次越界必须说同一句话。
 
 export { atomicWrite } from './atomicWrite'
+export { computeChangeSummary } from './changeSummary'
+export type { FileChangeSummary } from './changeSummary'
 export { countCodePoints, takeCodePoints } from './codePoints'
 export { relativeToRoot, toSlashPath } from './displayPath'
 export { errorText } from './errorText'
+export { diffLines, diffMarker, splitLines } from './lineDiff'
+export type { DiffEdit, DiffTag } from './lineDiff'
 export {
   hasNulByte,
   hasParentSegment,

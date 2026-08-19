@@ -13,13 +13,14 @@
 //   stageRules.ts / stage.ts       ← _stage.rs：纯规则那半边 / 带 IO 那半边
 //   fs.ts                          ← _fs.rs：读旧文本、原子写、执行位、删
 //   commit.ts                      ← _commit.rs：落盘与中途失败的逆序还原
-//   changeSummary.ts / lineDiff.ts ← workspace_common.rs 的 compute_change_summary / diff_lines
+//   （changeSummary 现住 `../common`） ← workspace_common.rs 的 compute_change_summary / diff_lines
 //   result.ts                      ← _result.rs：回执形状
 //   pipeline.ts                    ← _pipeline.rs：主流程编排
 //   applyWorkspacePatchHandler.ts  ← workspace_patch.rs 的命令体
 //
-// 纯逻辑与 IO 分住不同文件（`stageRules` / `limits` / `guard` / `lineDiff` / `changeSummary` 一行 IO
-// 都没有），是为了 W16 的跨语言对拍能不建临时目录树就喂 fixture——patch 引擎是点名要对拍的两块之一。
+// 纯逻辑与 IO 分住不同文件（`stageRules` / `limits` / `guard` 及 `../common` 的 `lineDiff` /
+// `changeSummary` 一行 IO 都没有），是为了 W16 的跨语言对拍能不建临时目录树就喂 fixture——patch
+// 引擎是点名要对拍的两块之一。
 //
 // 本域**不占任何装配槽**：workspace root 每次调用自己给，变更日志目录由 `defaultJournalDirectory`
 // 从 `options` 推。参数照收 `NodeHostInvokeOptions` 是为了让所有域的 registrar 长同一个样子。

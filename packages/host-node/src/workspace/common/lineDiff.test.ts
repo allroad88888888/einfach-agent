@@ -25,6 +25,7 @@ describe('splitLines（Rust `str::lines()` 的等价物）', () => {
   it('末行没有换行符时，它结尾的 `\\r` 属于内容——不能剥', () => {
     // Rust 的实现是先 strip_suffix('\n')，失败就整段原样返回。无条件剥的后果是
     // 「以 a\r 结尾（无换行）」与「以 a 结尾」被判成同一份内容，一次真实改动从 diff 里消失。
+    // 这条是 patch 域（W13）与 write 域（W7）对照时发现的分歧点——W13 一度无条件剥掉，已改正。
     expect(splitLines('a\r')).toEqual(['a\r'])
     expect(splitLines('x\nb\r')).toEqual(['x', 'b\r'])
     expect(splitLines('\r')).toEqual(['\r'])

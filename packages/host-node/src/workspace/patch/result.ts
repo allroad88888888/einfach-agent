@@ -11,7 +11,7 @@
 // core 的 `normalizeResult` 两种都吃得下，但两个宿主对同一次调用应当给出同一份 JSON——套壳之后
 // 这是唯一能机械对拍的东西。
 
-import type { FileChangeSummary } from './changeSummary'
+import type { FileChangeSummary } from '../common'
 import type { WorkspaceChangeSummary } from '../change/types'
 
 /** 被拒的一条操作。`index` 是它在 `operations[]` 里的下标，模型据此知道是第几条不成立。 */
