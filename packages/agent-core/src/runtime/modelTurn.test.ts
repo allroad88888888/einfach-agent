@@ -103,7 +103,7 @@ describe('buildEnvironmentItem —— 运行环境锚点', () => {
   it('桌面端给出 workspace 根目录、平台与反臆造条款', () => {
     const item = buildEnvironmentItem({
       workspaceRoot: '/Volumes/work/ai/web-agent',
-      isTauri: true,
+      hostHasLocalCapabilities: true,
       platform: 'macos',
     })
 
@@ -115,7 +115,7 @@ describe('buildEnvironmentItem —— 运行环境锚点', () => {
   })
 
   it('未绑定 workspace 时明说「以工具返回路径为准」，不伪造一个根目录', () => {
-    const item = buildEnvironmentItem({ isTauri: true, platform: 'linux' })
+    const item = buildEnvironmentItem({ hostHasLocalCapabilities: true, platform: 'linux' })
 
     expect(item.content).toContain('未绑定工作区根目录')
     expect(item.content).toContain('先用一次目录列举取得实际根目录')
@@ -127,7 +127,7 @@ describe('buildEnvironmentItem —— 运行环境锚点', () => {
   it('web 宿主不谈 workspace 路径，只声明本机工具不可用', () => {
     const item = buildEnvironmentItem({
       workspaceRoot: '/Volumes/work/ai/web-agent',
-      isTauri: false,
+      hostHasLocalCapabilities: false,
       platform: 'macos',
     })
 
@@ -135,8 +135,35 @@ describe('buildEnvironmentItem —— 运行环境锚点', () => {
     expect(item.content).not.toContain('/Volumes/work/ai/web-agent')
   })
 
+  // B3：这段文本是喂给**模型**的，报宿主品牌就等于对另一种宿主撒谎——同一个
+  // hostHasLocalCapabilities=true 可能来自 Tauri 原生层，也可能来自浏览器接上的本地 Node
+  // 后端；同一个 false 可能是静态 Web 预览，也可能是还没接进程内 host 的 CLI。
+  it('两支都按能力措辞，不报宿主品牌（模型会按错误的宿主假设行事）', () => {
+    const withCapabilities = buildEnvironmentItem({
+      workspaceRoot: '/repo',
+      hostHasLocalCapabilities: true,
+      platform: 'linux',
+    })
+    const withoutCapabilities = buildEnvironmentItem({
+      hostHasLocalCapabilities: false,
+      platform: 'macos',
+    })
+
+    expect(withCapabilities.content).toContain('本机能力：可用')
+    // 执行工具的机器不一定是用户面前那台（浏览器 macOS → 服务端 Linux），平台说的是前者。
+    expect(withCapabilities.content).toContain('宿主机器平台 linux')
+    expect(withoutCapabilities.content).toContain('本机能力：不可用')
+    // 没有机器会执行命令，这里的平台只是用户设备的，措辞必须区分开。
+    expect(withoutCapabilities.content).toContain('用户设备平台 macos')
+
+    for (const brand of ['Tauri', '桌面端', '浏览器', 'Web 预览']) {
+      expect(withCapabilities.content).not.toContain(brand)
+      expect(withoutCapabilities.content).not.toContain(brand)
+    }
+  })
+
   it('同一输入逐字稳定——它待在稳定前缀里，字节抖动即每轮 cache miss', () => {
-    const input = { workspaceRoot: '/repo', isTauri: true, platform: 'macos' } as const
+    const input = { workspaceRoot: '/repo', hostHasLocalCapabilities: true, platform: 'macos' } as const
 
     expect(buildEnvironmentItem(input)).toEqual(buildEnvironmentItem(input))
     // 不含时间、轮次、计划状态等动态痕迹。

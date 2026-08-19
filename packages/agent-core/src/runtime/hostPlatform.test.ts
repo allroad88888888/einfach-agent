@@ -144,7 +144,7 @@ describe('macOS 浏览器 + Linux 服务端（S5 的主场景）', () => {
 
     // 消费者②：注入给模型的「运行环境」段。模型据这一行在三个 shell 工具里挑一个。
     const environment = await environmentText()
-    expect(environment).toContain('本机平台 linux')
+    expect(environment).toContain('宿主机器平台 linux')
     expect(environment).not.toContain('macos')
 
     // 消费者①：shell 桥的 platform 入参。宿主收到后与自己比对——通过即证明「组命令」和
@@ -201,7 +201,7 @@ describe('宿主平台不在三种 shell 之内时', () => {
 
     expect(hostPlatform()).toBe('unsupported')
     const environment = await environmentText()
-    expect(environment).toContain('本机平台 unsupported')
+    expect(environment).toContain('宿主机器平台 unsupported')
     expect(environment).toContain('shell 类工具在本宿主上一定失败')
   })
 })

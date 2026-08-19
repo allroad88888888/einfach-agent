@@ -14,6 +14,14 @@ const defaultPersistenceFacade = vi.hoisted(() => ({
 // mount 过，装配与 hydrate 依然会发生，且不阻塞首屏渲染（render 调用同步发出，
 // hydrate 不被 await）。
 
+// B3：宿主解析被钉死成 static（= 今天的浏览器预览/静态产物那一态）。两个理由：
+//   · 生产实现会真的 `fetch('/api/health')`，jsdom 下那是一次**真实**网络请求打到
+//     localhost——本机恰好有东西在听时结果还会变（B1 的文件头写明它刻意不碰全局 fetch，
+//     依赖一律由调用方注入，正是为了不让测试依赖机器状态）；
+//   · 本文件测的就是「没有本机能力的那一态」的装配结果，宿主态是前提不是被测对象。
+vi.mock('./host/resolveHost', () => ({
+  resolveHost: vi.fn(async () => ({ kind: 'static', reason: 'unreachable' })),
+}))
 vi.mock('@web-agent/core/runtime/commands', () => ({
   configureCommands: vi.fn(),
   newSession: vi.fn(),
@@ -92,7 +100,10 @@ describe('main entry: MCP 启动装配（C1）', () => {
     expect(uiStore.getter(mcpHydrationAtom).status).toBe('idle')
 
     // 真正的入口文件：本测试从未 import 任何 SettingsDialog/SettingsCenter 模块。
-    await import('./main')
+    // 入口是异步的（宿主解析先于一切装配，B3），`import()` 只等模块体求值完，
+    // 装配是否发生要等它导出的 started——不等的话下面每一条断言都跑在装配之前。
+    const { started } = await import('./main')
+    await started
 
     expect(configurePersistence).toHaveBeenCalledOnce()
     expect(hydratePersistence).toHaveBeenCalledOnce()

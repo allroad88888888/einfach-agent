@@ -240,7 +240,7 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
     // 回归用例。缺这一段时的实测事故：DeepSeek 首轮直接对
     // /Users/<某人>/develop/android/... 发 read_file，报 WORKSPACE_READ_FAILED，
     // 模型是从错误文案里才第一次看到真实根目录，白烧三轮。
-    // 有本机能力才会走到「宿主：…（可用本机文件、shell 与 Git 工具）+ 当前工作区根目录」那一支；
+    // 有本机能力才会走到「本机能力：可用 + 当前工作区根目录」那一支；
     // 无能力时运行环境段根本不报根目录，下面的断言就落空了。
     stubHostBridgeFlag(true)
     const core = createCoreInstance()

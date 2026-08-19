@@ -7,7 +7,7 @@
 //     全额 cache miss。现在改为 registry 的 buildSkillManifestText() 产出【全量】清单，
 //     与固定 system 同区进稳定前缀，由模型按 description 自判该读哪个；
 //     TK4 不变——进 prompt 的只有清单元数据，正文与资源仍必须经 skill_read。
-//   · buildEnvironmentItem —— 组「运行环境」段（workspace 根目录 / 宿主 / 平台 + 路径纪律）。
+//   · buildEnvironmentItem —— 组「运行环境」段（workspace 根目录 / 本机能力 / 平台 + 路径纪律）。
 //     它是稳定前缀里唯一按会话变化的一段，故排在其它前缀段【之后】。
 
 import type { HostPlatform } from './hostPlatform'
@@ -36,12 +36,23 @@ export function buildSystemItem(): SystemItem {
 export interface EnvironmentItemInput {
   /** 该会话绑定的 workspace 根目录（已归一化）；未绑定时为 undefined。 */
   workspaceRoot?: string
-  /** 宿主是否为 Tauri 桌面端：决定本机文件/shell 工具是否存在。 */
-  isTauri: boolean
+  /**
+   * 宿主有没有本机能力——文件 / shell / Git 工具能不能真的执行。
+   *
+   * 【B3：为什么不再叫 isTauri】它曾经既是入参名也是文案（「宿主：Tauri 桌面端」），等于把
+   * 「有没有本机能力」写成了「是不是某个牌子的宿主」。判据在 H4b 就已经换成
+   * `hasHostBridge()`：桥背后是 Tauri 原生层、本机 Node 后端还是别的什么，core 不关心。
+   * 名字与文案不跟着换的话，浏览器接上本地 Node 后端之后，模型会被告知自己在 Tauri 桌面端，
+   * 然后按一个错误的宿主假设行事——而这段文本是喂给模型的，它没有第二个信息源可以纠正。
+   */
+  hostHasLocalCapabilities: boolean
   /**
    * 宿主平台，取自 `hostPlatform()`（S5）——与 shell 桥实际收到的值**同一个来源**，
    * 不是各自探测。模型据这一行在 shell_macos / shell_linux / shell_powershell 里挑工具，
    * 所以它和桥拿到的值必须逐字一致，否则模型按 A 平台组命令、桥按 B 平台拒绝。
+   *
+   * 没有本机能力时它回落成本地探测值（`hostPlatform()` 的文件头写明），此刻没有任何机器会
+   * 执行命令，这个值只是「用户坐在哪种机器前」，文案里也据此措辞。
    */
   platform: HostPlatform
 }
@@ -58,13 +69,16 @@ export interface EnvironmentItemInput {
 export function buildEnvironmentItem(input: EnvironmentItemInput): SystemItem {
   const lines = ['运行环境：']
 
-  if (input.isTauri) {
-    lines.push(`- 宿主：Tauri 桌面端（可用本机文件、shell 与 Git 工具）；本机平台 ${input.platform}。`)
+  if (input.hostHasLocalCapabilities) {
+    // 【B3】按能力措辞，不报宿主品牌：同一句话要对桌面原生层和本机 Node 后端两种宿主都逐字成立。
+    // 「宿主机器」这个说法同时交代了一件 server 宿主下必须交代的事——执行工具的那台机器不一定
+    // 是用户面前这台，下面的工作区路径与平台说的都是前者。
+    lines.push(`- 本机能力：可用（文件、shell 与 Git 工具在宿主机器上执行）；宿主机器平台 ${input.platform}。`)
     // 宿主可以是三种 shell 都不支持的系统（FreeBSD / AIX…）：文件能力照常，shell 一定跑不了。
     // 不说这一句的话，模型只会看到一个陌生的平台名，然后在三个 shell 工具里随便挑一个反复撞
     // platform mismatch——那句错误里没有任何「本宿主根本没有 shell」的信息。
     if (input.platform === 'unsupported') {
-      lines.push('- 本机平台不属于 macos / linux / windows 三者之一：shell 类工具在本宿主上一定失败，不要调用它们，改用文件与 Git 工具完成任务。')
+      lines.push('- 宿主机器平台不属于 macos / linux / windows 三者之一：shell 类工具在本宿主上一定失败，不要调用它们，改用文件与 Git 工具完成任务。')
     }
     if (input.workspaceRoot) {
       lines.push(`- 当前工作区根目录：${input.workspaceRoot}`)
@@ -76,7 +90,10 @@ export function buildEnvironmentItem(input: EnvironmentItemInput): SystemItem {
     // 反臆造条款：模型编路径时往往同时编出「项目是什么」，所以这里同时禁掉「按记忆假设内容」。
     lines.push('- 你对这个工作区里有什么文件【一无所知】。不要凭记忆或猜测写出本段未给出的绝对路径，也不要假设某个文件存在；先用目录列举或搜索类工具确认，再读写。')
   } else {
-    lines.push(`- 宿主：浏览器（Web 预览）；本机平台 ${input.platform}。`)
+    // 同样不报品牌：没有本机能力的宿主今天有静态 Web 预览、也有还没接进程内 host 的 CLI，
+    // 说「浏览器（Web 预览）」对后者已经是错的。这里的平台是用户设备的，不是任何执行机器的
+    // ——没有机器会执行命令，所以明说它只作参考。
+    lines.push(`- 本机能力：不可用（本宿主没有接入任何能执行命令的机器）；用户设备平台 ${input.platform}，仅供参考。`)
     lines.push('- 本机文件、shell 与 Git 工具在本环境不可用，工具清单里也不会出现它们；不要声称自己读过或改过本机文件。')
   }
 

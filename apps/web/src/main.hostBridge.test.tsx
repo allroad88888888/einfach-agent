@@ -114,7 +114,11 @@ describe('main entry · 桌面宿主的命令桥登记（H5）', () => {
 
     expect(hasHostBridge()).toBe(false)
 
-    await import('./main')
+    // 入口是异步的（B3：宿主解析先于一切装配），`import()` 只等模块体求值完，登记是否发生
+    // 要等它导出的 started。这里**故意不用**真实的 resolveHost 之外的东西：桌面那一支
+    // 只读 globalThis.isTauri（上面 beforeAll 设的），一次网络都不会发。
+    const { started } = await import('./main')
+    await started
 
     expect(hasHostBridge()).toBe(true)
     // 桥背后必须是真的 Tauri invoke，不是某个「登记上了但解析不出东西」的空壳。

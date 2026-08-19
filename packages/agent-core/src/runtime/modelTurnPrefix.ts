@@ -66,10 +66,10 @@ export async function buildStableModelPrefix(
   const customInstructions = buildCustomInstructionsItem(core.config.customInstructions)
   const environment = buildEnvironmentItem({
     workspaceRoot,
-    // buildEnvironmentItem 的入参名与其文案（「宿主：Tauri 桌面端」）仍写死 Tauri：在只有
-    // Tauri 一种 server 宿主的今天它逐字成立，等 B 线的本地 Node 后端落地，那段文案要改成按
-    // 能力而非按宿主品牌措辞。改的是 modelTurnSystemItems.ts，不在本卡改动面。
-    isTauri: hostHasLocalCapabilities,
+    // 【B3】入参名与文案已随本机 Node 后端落地改成按能力措辞（曾经叫 isTauri、文案写死
+    // 「宿主：Tauri 桌面端」）：同一个 true 现在可能来自桌面原生层，也可能来自浏览器接上的
+    // 本地 Node 后端，报品牌就等于对其中一种宿主撒谎。详见 modelTurnSystemItems.ts。
+    hostHasLocalCapabilities,
     // 【S5】消费者②。这里读的是**宿主登记桥时声明的平台**，不是本地探测——浏览器（macOS）连
     // Node server（Linux）时，本地探测会让模型按 macos 组命令、桥按 linux 拒绝。消费者①是
     // shell 桥的 platform 入参（tools/shell 的 run_verification_command），两边读同一个
