@@ -4,7 +4,15 @@
 
 把浏览器版从「残废预览」做成能力完整的本地自托管应用：后端**一份 Node/TS 能力实现**
 （`packages/host-node`），服务浏览器、CLI、以及最终退成套壳的 Tauri 三个前壳，经 npm 分发
-（`npx einfach-agent`），**不需要任何代码签名证书**。
+（`npx @einfach-agent/server`），**不需要任何代码签名证书**。
+
+> **入口名的口径已修正（D3b 交回 + 主会话复核）。** 包名是 `@einfach-agent/server`、bin 名是
+> `einfach-agent`，两者不是一回事：**干净机器上 `npx einfach-agent` 解析的是非 scoped 的包
+> `einfach-agent`**，registry 上 404（主会话实测）。能跑通的是 `npx @einfach-agent/server`。
+> 早先记档里那句「`npx einfach-agent` 起服务，health / invoke 全通」并不假，但它跑在**已经把
+> tarball 装进 consumer 目录**之后——那时 bin 已在本地 `node_modules/.bin`，恰好掩盖了这个差别。
+> 顺带一条安全考量：`einfach-agent` 这个非 scoped 名**现在无人注册**，文档若长期宣传
+> `npx einfach-agent`，等于给抢注留了口子。要不要另发一个非 scoped 薄包做入口，归 D3c/D4 裁决。
 
 动机是分发成本：桌面版发布要 Apple Developer ID 与 Windows code-signing 证书
 （见 [release-signing.md](release-signing.md) 的九个 Secret）。Web 自托管绕开整条链路。
@@ -28,7 +36,7 @@ B  前端 server 宿主装配          B1 → B2 → B3 → B4 ★浏览器 fs/s
 M  模型代理                     M1 → M2/M4 → M3 → M5 · M6 ★浏览器完整对话
 C  MCP 与事件通道               C1/C2 → C3 → C4 → C5 · C6 失败标识 → C8 噪声 500 · C7 缓存宿主判据
 P  持久化收敛                   P1 → P2 → P3 → P4
-D  分发                        D1 → D2 → D3 → D3b → D3c → D4
+D  分发                        D1 → D2 → D3 → D3b → D3c/D3d → D4
 T  Tauri 退成套壳               T1 → T2 → T3 → T4
 未决                           目录选择器 / 对拍覆盖下限 / 多 workspace 切换
 ```
@@ -36,7 +44,7 @@ T  Tauri 退成套壳               T1 → T2 → T3 → T4
 **MVP 路径 = H + N + W1–W15 + S + B + M**（约 46 卡）。到 M5 浏览器版即可用；
 C/P/D/T 是增强与收尾，可后置。
 
-全树 **76 卡**（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
+全树 **77 卡**（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
 H4b 从 H4 里拆出的总闸、H4c 验收漏扫 apps 面留下的回归、H4d 拆树后新增文件带来的缺口、
 H4e 总闸改名的下游收尾；S 线因 N3 交回的 platform 阻断项增至 5 张；M 线因 M2 交回点名的取舍新增 M6；
 M3/C4/P3/D3 那一批验收又新增 5 张：C6、C7、D3b、D3c、B5，**全部来自子 agent 交回时点名或主会话
@@ -1909,7 +1917,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **依赖**：P1、N1
 - **改动面**：`packages/host-node/src/sqlite/` + `commandNames.ts` / `commandArgs.ts` 登记
 - **状态**：DONE `e3d174f`。**驱动选 `node:sqlite`（Node 内置），零新增依赖**——`better-sqlite3` 一类
-  原生插件意味着「预编译二进制 OS×arch×ABI 矩阵，否则现场 node-gyp」，而 `npx einfach-agent` 正是整棵树
+  原生插件意味着「预编译二进制 OS×arch×ABI 矩阵，否则现场 node-gyp」，而 `npx @einfach-agent/server` 正是整棵树
   的动机，原生模块就是「一条命令跑起来」与「装不上时用户无从下手」的分界线；`sql.js`(wasm) 整库在
   内存、落盘要整份写回，与「每次写入是一条自包含原子语句」的耐久性模型直接冲突。
   全仓 `node:sqlite` 只有 `connections.ts` 一处 `import()`，低于版本门槛时翻成点名版本的中文错误
@@ -2033,7 +2041,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   用户可见与握手标识一并改了：启动横幅、`SERVICE_IDENTIFIER`（server 与 B1 的客户端副本两侧同改
   ——B1 的文本对拍守卫当场咬住了单侧改动，正是它存在的意义）、MCP `clientInfo`。
   六条门禁全绿；主会话另做隔离验证：pnpm pack 四个包 → 仓库外 `npm install` →
-  **`npx einfach-agent` 起服务**，health / invoke 全通。
+  **`npx einfach-agent` 起服务**，health / invoke 全通（**注意**：这条跑在已把 tarball 装进 consumer 目录之后，bin 已在本地 `node_modules/.bin`；干净机器上的入口是 `npx @einfach-agent/server`，见「目标」段的修正）。
 - **判据**：对外交付卡。`npm pack` 产物在**干净目录**里 `npx` 能起；
   `files` 字段不夹带源码与测试；Node 版本下限声明明确。
   跑 `npm pack --dry-run` 逐条核对文件清单
@@ -2057,6 +2065,27 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   要嵌 `apps/web/dist`，那份产物只有根 `pnpm build` 的 `vite build` 才产出。故 `pnpm build → pnpm -r build
   → check-dist`，不可倒。`check-dist` 同时进 `ci.yml`（每个 PR）：陈旧化是每个 PR 都能引入的，
   只在 tag 上拦等于让它在主干里躺到发版当天。
+
+### D3d · `check-dist` 的 `skipLibCheck: true` 掩盖了消费方会撞的类型错
+
+- **依赖**：D3b
+- **改动面**：`scripts/check-dist.js`；处置上游类型错的方案待定
+- **判据**：**来源：D3b 实测（含对照实验），主会话采纳。**
+  `scripts/check-dist.js:141` 的 `verifyNodeNextDeclarations` 写死 `skipLibCheck: true`，于是**消费方
+  只要关掉 skipLibCheck 就会看到、而门禁永远看不到**的类型错被静默放过。D3b 把 tarball 装进干净目录、
+  `moduleResolution: NodeNext` + `strict` + `skipLibCheck: false` 实测到两类：
+  · `@einfach-agent/host-node` 的 `dist/sqlite/databasePath.d.ts` 报 `TS2503: Cannot find namespace 'NodeJS'`
+    ——根因是 `@types/node` 在 devDependencies 而公开 d.ts 用到了它（**这一条已在 D3b 里修掉**）；
+  · **存量、且不是本仓库引入的**：`@einfach-agent/core` 的 d.ts 报 51 条、上游 `@einfach/core@0.4.0`
+    自己报 8 条（`TS2834: Relative import paths need explicit file extensions … 'nodenext'`，出在
+    `node_modules/@einfach/core/@types/index.d.ts`），级联成 `Store` / `Atom` / `History` / `AtomEntity`
+    全部 `has no exported member`。仓库自身构建绿是因为它用的不是 NodeNext 解析。
+  **所以这张卡不能只是把 true 改成 false**——那会当场把上游那 59 条抖出来。要先定处置方案
+  （给上游提 issue / 本地 patch / 在门禁里把上游单独豁免但不豁免自家包）。
+  判据：门禁能抓到「自家包的 d.ts 在 NodeNext + 不跳过 libCheck 下不成立」，且上游的既有问题有
+  **具名的、写得出理由的**豁免，而不是靠一个全局 `skipLibCheck` 把两者一起盖住。
+- **模型**：opus
+- **状态**：TODO
 
 ### D4 · README 与 docs 更新
 
