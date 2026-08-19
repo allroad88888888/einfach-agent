@@ -23,22 +23,22 @@ describe('createNodeHostInvoke', () => {
     await expect(invoke<string>('get_user_home_dir')).resolves.toBe(homedir())
   })
 
-  // 样本命令要挑一条**当前还没实现**的：接线一个域就会让原样本变成「已实现」，这条随之变红。
-  // 原样本是 read_workspace_file，read 域接线（W1–W4）后失效，换成 mcp 域的一条。
-  // 下面那条穷举用例（`implemented` 数组）才是「哪些已实现」的权威，这里只验失败形态。
-  it('已登记但未实现的命令以 unimplemented 明确失败', async () => {
-    const invoke = createNodeHostInvoke()
-    const error = await invoke('mcp_list_tools', { serverId: 'x' }).then(
-      () => undefined,
-      (reason: unknown) => reason,
-    )
-    expect(error).toBeInstanceOf(NodeHostCommandError)
-    const commandError = error as NodeHostCommandError
-    expect(commandError.reason).toBe('unimplemented')
-    expect(commandError.command).toBe('mcp_list_tools')
+  // 这条用例的样本命令一直要挑「当前还没实现」的那一条，每接线一个域就得换一次
+  // （read_workspace_file → mcp_list_tools → …）。**M1/C1 落地后 28 条全部实现，
+  // 于是经公开工厂已经构造不出 `unimplemented`**——这正是本线做完的标志。
+  // 所以改成直接构造错误对象验失败形态：`unimplemented` 这条分支仍要留着，因为
+  // 路由表是 `Partial`，将来 commandNames.ts 新增一条命令而域没跟上时它就是唯一的报信人。
+  it('unimplemented 与 unknown-command 是两种失败，文案各自指向病因', () => {
+    const unimplemented = new NodeHostCommandError('some_future_command', 'unimplemented')
+    expect(unimplemented.reason).toBe('unimplemented')
+    expect(unimplemented.command).toBe('some_future_command')
     // 文案要能一眼看出病因是「宿主还没实现」，而不是「参数错了」或「文件不存在」。
-    expect(commandError.message).toContain('mcp_list_tools')
-    expect(commandError.message).toContain('尚未实现')
+    expect(unimplemented.message).toContain('some_future_command')
+    expect(unimplemented.message).toContain('尚未实现')
+
+    const unknown = new NodeHostCommandError('read_workspace_fil', 'unknown-command')
+    expect(unknown.reason).toBe('unknown-command')
+    expect(unknown.message).toContain('未登记')
   })
 
   it('不在全集里的命令以 unknown-command 失败，与「未实现」分开', async () => {
@@ -86,6 +86,10 @@ describe('createNodeHostInvoke', () => {
         'rg_search_workspace',
         'run_workspace_task',
         'run_shell_command',
+        'mcp_connect',
+        'mcp_list_tools',
+        'mcp_call_tool',
+        'mcp_disconnect',
         'cancel_model_provider_request',
         'cancel_model_chat_completions',
         'mcp_config_read',

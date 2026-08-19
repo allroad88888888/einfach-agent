@@ -13,9 +13,11 @@
 //   3. 槽位类型只用 Node 侧能独立表达的东西。要 `import type` core 的类型可以，但不许引入
 //      core 的运行时——本包在依赖树上是能力包，不是应用层。
 
+import type { McpHostEventEmitter } from './mcp/lifecycle'
+
 /**
- * 宿主装配槽。当前只有一个可选槽位；`createNodeHostInvoke` 的参数因此也是可选的，
- * `createNodeHostInvoke()` 与 `createNodeHostInvoke({})` 等价、都表示「全取默认」。
+ * 宿主装配槽。全部可选；`createNodeHostInvoke()` 与 `createNodeHostInvoke({})` 等价、
+ * 都表示「全取默认」。
  */
 export interface NodeHostInvokeOptions {
   /**
@@ -32,4 +34,29 @@ export interface NodeHostInvokeOptions {
    * 后续所有拼接都会指向文件系统根，且不会报错。
    */
   homeDir?: string
+
+  /**
+   * MCP 生命周期事件的出口（C1 发、C2 的事件汇收）。不传 → 事件丢弃，连接照常可用，
+   * 只是外界收不到「工具变了」「连接掉了」。
+   *
+   * 形状是 `(event: { name, payload }) => void`，而 `createHostEventBus()` 的汇是
+   * `emitHostEvent(name, payload)`——两者刻意不同名不同形：C1 的传输层**只该拿到发射面**，
+   * 拿到订阅面就等于给「事件回环驱动状态」留了口子。装配层写一行适配即可：
+   *
+   * ```ts
+   * const bus = createHostEventBus()
+   * createNodeHostInvoke({ emitHostEvent: (e) => { bus.emitHostEvent(e.name, e.payload) } })
+   * ```
+   */
+  emitHostEvent?: McpHostEventEmitter
+
+  /**
+   * 关停钩子：装配层拿到 `dispose` 后挂进**自己的**信号处理。不传 → 只剩进程 `exit` 那道兜底。
+   *
+   * **不传是有真实后果的**：Node 对没有 listener 的 SIGTERM/SIGINT 走默认处置，`'exit'` 回调
+   * 根本不执行（C1 已用探针实测），于是 `SIGTERM` 停服会**漏下 MCP 子进程**。能力包刻意不自己
+   * 装信号处理器——装 SIGINT 会改掉宿主语义（CLI REPL 的 Ctrl-C 是「中断本轮」不是「退出」），
+   * 而这类隐式全局正是本仓库反复吃过亏的形态。所以责任显式交给装配层。见树上 C5。
+   */
+  registerHostDisposer?: (dispose: () => Promise<void>) => void
 }
