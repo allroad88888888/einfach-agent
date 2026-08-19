@@ -1413,7 +1413,28 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   SPA 回落成一整页 HTML，`response.json()` 会抛，别让它变成未捕获错误。
   **不得跨 app import `apps/server` 的常量**（app 之间没有依赖边）。
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `f48ba15`。依赖其实是 **S1 + S5**（`platform` 带出来这件事完全来自 S5，原树只写了 S1）。
+  4 个文件 / 23 例。**返回可辨识联合而非裸字符串**：
+  `{kind:'tauri'} | {kind:'server', platform} | {kind:'static', reason}`。`platform` 只挂在 `server` 上
+  ——S5 把它做成 `configureHostInvoke` 的必填字段，做成联合之后「拿到 server 却没有 platform」
+  在类型上构不出来，B3 想漏得先过 `tsc -b`。`tauri` 刻意**不带** platform（桌面 webview 与原生同机，
+  权威是 core 的 `detectLocalPlatform()`，本模块没资格替它答）。
+  **超时 2000ms，且不只靠 `AbortController`**：额外加 `Promise.race`——只上 abort 的话「超时后一定
+  返回」就成了对 fetch 实现认不认那个 signal 的**假设**，而这个函数的全部职责恰恰是不让首屏挂在
+  假设上。有一条用例就是「fetch 完全不理会 abort」，删掉 race 它会永远挂着。
+  **跨 app 常量的漂移守卫**（本卡最值得抄的一手）：不能 import `apps/server`（app 之间没有依赖边，
+  且真 import 会把 `node:http` 那条链拖进浏览器产物），所以 `serverHealthContract.ts` 自己抄一份常量；
+  而抄一份的漂移症状恰好是**静默的**（server 宿主被判成 static）。于是测试用 `readFileSync` 把
+  `apps/server/src/health.ts` **当文本读**进来（读文件不是 import，不产生模块边、不进产物），
+  正则抽出常量字面量逐字对拍。**主会话独立复核：改服务端那个常量，网页端测试当场变红。**
+  四值域写成 `Record<HostPlatform, true>` 而非数组——core 哪天加第五个值是**本文件的编译错误**。
+  `version` 刻意不校验也不带出（用不到，要求它只增加漂移面）。
+  **自报的一处覆盖缺口（未粉饰）**：默认超时 2000→1000 的变异**不会红**，因为测试钉的是
+  `[1000, 5000]` 区间而非精确值——精确等值断言是变更探测器，调参只多改一行测试；真正不能越的是
+  两头。主会话认可这个取舍。改成 50 或 30000 会红。
+  真·静态部署的两种形态都覆盖了：`/api/health` 回 404 → `unhealthy`；被 SPA 回落成整页 HTML
+  → `response.json()` 抛 → `unrecognized`（**且不 reject**）。补一条卡面没说准的：404 其实更常见，
+  因为 Vite dev 的 SPA 回落要求 `accept: text/html` 而 `fetch` 默认发 `*/*`。
 
 ### B2 · httpInvoke 实现
 
@@ -1429,7 +1450,21 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   的用户踢回首页。请求必须带 `content-type: application/json`，否则 415——那个头本身是一道 CSRF
   防线（`<form>` 设不了它）。**不得跨 app import `apps/server` 的常量。**
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `6336a53`。2 源 + 2 测试 / 28 例。
+  **reject 的是裸字符串，不是 Error 也不是 `{error,message}` 对象。** 依据是实证而非风格：
+  Tauri 的 `run_shell_command` 签名是 `Result<_, String>`，invoke 把那个 `String` 原样抛出；而 core 里
+  有五处写的是 `String(error)`（`shellCommand.ts:38`、`toolLoopSupport.ts:29`、`timedDispatchLoop.ts:27`
+  等），**reject 一个对象会让一句准确中文变成 `[object Object]`**（主会话实测确认）。裸字符串是
+  两种 catch 写法下都拿到原文的唯一形状。
+  为同时满足「401 要可识别」，拆成两层：`invokeServerCommand` 不折叠、失败恒抛
+  `ServerInvokeError`（带 `status`/`code`）；`httpInvoke` 只是它的瘦包装，把错误折成 `.message`。
+  要判 401 就绕开 `httpInvoke` 直接调底层，或用 `isServerInvokeUnauthorized()`。
+  **query 与 sessionStorage 都有且不同时，query 赢**：token 每次启动换新，而 sessionStorage 跨刷新
+  存活，于是「地址栏换成了终端新打印的链接、sessionStorage 还留着上次启动的旧 token」是真实场景；
+  让旧值赢会让一个看起来该有效的新链接又拿到 401，且没有任何提示指向缓存。
+  **新标签页无 token 时仍把请求发出去**（只是不带头），让服务端 `authGuard.ts` 给出准确的 401
+  `missing_token`——不在客户端另编一句可能与服务端脱节的文案，同「命令名合法性只有 host-node
+  一处权威」是同一个理由。
 
 ### B3 · main.tsx 按宿主分发并拆分到 300 行内
 
