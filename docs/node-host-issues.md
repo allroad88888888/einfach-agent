@@ -1333,7 +1333,9 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 
   **B 线照此接**（S5 交回，B1/B2/B3 照做）：① B1 用 health 成功 + `service`/`host` 判 server 宿主，
   并把 `payload.platform` 带出来，**忽略未知字段**别写「字段集合恰好等于这几个」；② B2/B3 必须
-  `await` 完握手再 `configureHostInvoke({ loader: httpInvoke, platform })`，**不要 fallback**、
+  `await` 完握手再 `configureHostInvoke({ loader: async () => httpInvoke, platform })`——**注意是 loader
+  不是 invoke 本身**（`HostInvokeLoader = () => Promise<HostInvoke>`，直接传 `httpInvoke` 编译不过；
+  这条是 B2 交回时纠正的，主会话记录 S5 报告时抄错了形态）。**不要 fallback**、
   也不要照抄 `main.tsx` 那行 `detectLocalPlatform()`（那是同机宿主专用）；③ 时序上要把宿主解析放在
   `bootstrapApplication()` **之前** await 掉而不是并行发起，否则恢复出来的未完成 run 可能在桥到位前
   跑工具；④ `'unsupported'` 原样传，不要自己映射成三值之一；⑤ **B3 的老待办仍在**：
