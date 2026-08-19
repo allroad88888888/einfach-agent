@@ -4,7 +4,7 @@
 
 把浏览器版从「残废预览」做成能力完整的本地自托管应用：后端**一份 Node/TS 能力实现**
 （`packages/host-node`），服务浏览器、CLI、以及最终退成套壳的 Tauri 三个前壳，经 npm 分发
-（`npx web-agent`），**不需要任何代码签名证书**。
+（`npx einfach-agent`），**不需要任何代码签名证书**。
 
 动机是分发成本：桌面版发布要 Apple Developer ID 与 Windows code-signing 证书
 （见 [release-signing.md](release-signing.md) 的九个 Secret）。Web 自托管绕开整条链路。
@@ -36,9 +36,29 @@ T  Tauri 退成套壳               T1 → T2 → T3 → T4
 **MVP 路径 = H + N + W1–W15 + S + B + M**（约 46 卡）。到 M5 浏览器版即可用；
 C/P/D/T 是增强与收尾，可后置。
 
-全树 69 卡（H 线在执行中由 6 张增至 12 张，S 线因 N3 交回的 platform 阻断项增至 5 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
+全树 **70 卡**（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
 H4b 从 H4 里拆出的总闸、H4c 验收漏扫 apps 面留下的回归、H4d 拆树后新增文件带来的缺口、
-H4e 总闸改名的下游收尾）。
+H4e 总闸改名的下游收尾；S 线因 N3 交回的 platform 阻断项增至 5 张；M 线因 M2 交回点名的取舍新增 M6）。
+
+**进度以状态行为唯一权威**，不要手抄一个数字在这里——它一定会过期。数法：
+
+```sh
+grep -c '^- \*\*状态\*\*：DONE' docs/node-host-issues.md   # 已完成
+grep -c '^- \*\*状态\*\*：TODO' docs/node-host-issues.md   # 待办
+```
+
+行首那个 `^- ` 锚点不是装饰：状态行永远是一条列表项，而**正文里也会出现 `状态**：TODO` 这串字**
+（比如上面这段说明本身，以及卡面引用别的卡时）。少了锚点，说明文字会把自己算进待办数。
+
+**每张卡有且只有一条状态行。** 交回时是把 `- **状态**：TODO` 那一行**改写**成 `DONE <sha> …`，
+不是在 `判据` 上面新插一条 DONE 把 TODO 留在原地——留下的话两条同时被计数，TODO 数虚高，
+而且已完成的卡会重新出现在「下一步派谁」的候选里。M2/M4/C3/P2/D2 五张犯过这个错（已修）。
+下面这条要**恒只输出 H4d 一张**（它已拆成 H4d-1/H4d-2，标题只作路标、不带状态行）：
+
+```sh
+awk '/^### /{if(k&&n!=1)print n" 条: "c; c=$0; sub(/^### /,"",c); k=(c~/^[HNWSBMCPDT][0-9]/); n=0}
+     /^- \*\*状态\*\*：/{n++} END{if(k&&n!=1)print n" 条: "c}' docs/node-host-issues.md
+```
 
 ## 并行规则
 
@@ -1350,7 +1370,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   子 agent 做了 4 轮变异（整卡回退→6 例、只改消费者②→2 例且消费者①仍绿即两者分别被钉住、
   删 `declareHostPlatform` 调用→6 例、握手硬编码 linux→1 例）。
   **主会话端到端实测**（起真 server，curl 打）：`/api/health` 回
-  `{"service":"web-agent","host":"node-server","version":"0.1.0","platform":"macos"}`；
+  `{"service":"einfach-agent","host":"node-server","version":"0.1.0","platform":"macos"}`；
   `get_user_home_dir` → `"/Users/dol"`；**`run_shell_command` 真的跑了** ——
   `echo web-version-works && uname -s` → `stdout:"web-version-works\nDarwin\n"`, `exit_code:0`；
   谎报 `platform:"windows"` 仍被
@@ -1610,7 +1630,6 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：`POST /api/model/request` 直接返回流式 body（**不进 `/api/invoke/:command`
   的统一路由**）；客户端断开时上游请求被取消。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
 
 ### M3 · 前端 serverModelTransport
 
@@ -1641,7 +1660,6 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：与 `createTauriModelCredentialHost()` 同接口；`status` 只回
   `{ configured, source }`，**任何路径都不回传 Key 本身**。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
 
 ### M6 · 给模型转发的失败加 `reason`，让状态码分得开
 
@@ -1766,7 +1784,6 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：`GET /api/events` 走 SSE；断线重连不丢事件语义要么保证、要么在卡上写明不保证
   并说明前端如何补偿。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
 
 ### C5 · 把 MCP 关停钩子挂进两个宿主的信号处理
 
@@ -1845,7 +1862,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **依赖**：P1、N1
 - **改动面**：`packages/host-node/src/sqlite/` + `commandNames.ts` / `commandArgs.ts` 登记
 - **状态**：DONE `e3d174f`。**驱动选 `node:sqlite`（Node 内置），零新增依赖**——`better-sqlite3` 一类
-  原生插件意味着「预编译二进制 OS×arch×ABI 矩阵，否则现场 node-gyp」，而 `npx web-agent` 正是整棵树
+  原生插件意味着「预编译二进制 OS×arch×ABI 矩阵，否则现场 node-gyp」，而 `npx einfach-agent` 正是整棵树
   的动机，原生模块就是「一条命令跑起来」与「装不上时用户无从下手」的分界线；`sql.js`(wasm) 整库在
   内存、落盘要整份写回，与「每次写入是一条自包含原子语句」的耐久性模型直接冲突。
   全仓 `node:sqlite` 只有 `connections.ts` 一处 `import()`，低于版本门槛时翻成点名版本的中文错误
@@ -1875,7 +1892,6 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：实现 P1 的 port；数据库路径与桌面版一致（`com.webagent.app/web-agent.db`），
   使两个宿主看到同一份会话。跑该目录 vitest
 - **模型**：opus
-- **状态**：TODO
 
 ### P3 · server SQL 端点与前端接线
 
@@ -1931,7 +1947,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 
 - **依赖**：D1、S4
 - **改动面**：`apps/server/package.json`、`apps/server/bin/`
-- **状态**：DONE `3828602`。`bin: {"web-agent": "./bin/web-agent.mjs"}`（26 行转发 shim，带 shebang），
+- **状态**：DONE `3828602`。`bin`（26 行转发 shim，带 shebang；名字随 `f2077a4` 改为 `einfach-agent`），
   `files: ["dist","bin"]`，`engines: ">=22.0.0"`，保留 `private: true`。
   **卡面「`private: true` 会让 `npm publish --dry-run` 直接拒绝」是错的——本卡读源码 + 实测推翻。**
   `npm/lib/commands/publish.js:148` 是 `if (workspace && manifest.private)`，`workspace` 只在
@@ -1966,7 +1982,6 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   `files` 字段不夹带源码与测试；Node 版本下限声明明确。
   跑 `npm pack --dry-run` 逐条核对文件清单
 - **模型**：opus
-- **状态**：TODO
 
 ### D3 · 发布流水线
 
