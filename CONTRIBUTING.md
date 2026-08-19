@@ -6,15 +6,15 @@ commit 约定和代码红线。项目现状以根目录 [README.md](README.md) �
 
 ## 环境准备
 
-- Node.js ≥ 20.19，或 ≥ 22.12。
+- Node.js ≥ 22.13。下限是持久化卡的：它用内置的 `node:sqlite`，22.13 起才不需要
+  `--experimental-sqlite` 旗标（写在 `@einfach-agent/server` 与 `@einfach-agent/host-node` 的
+  `engines` 里）。
 - 包管理器固定使用 **pnpm**（仓库是 pnpm workspace，`packages/*` 和 `tools/*` 之间用
   `workspace:*` 互相引用）。**不要用 `npm install`**，它不认 `workspace:*`，会装出一份
   错误的依赖树。
-- Rust/Tauri 只有在需要跑桌面端（`pnpm tauri dev`/`pnpm tauri build`、
-  `cargo test --manifest-path apps/desktop/Cargo.toml`）时才需要：Rust stable ≥ 1.77.2，
-  以及对应平台的系统依赖（macOS 是 Xcode Command Line Tools，Windows 是 C++ Build Tools
-  和 WebView2 Runtime，Linux 是 WebKitGTK 等，详见 README 的「环境要求」一节）。只改
-  TypeScript/React 代码不需要装 Rust 工具链。
+- 全仓只有 TypeScript，不需要任何原生工具链：本机能力（文件 / shell / Git / ripgrep /
+  MCP stdio / SQLite）由 `packages/host-node` 一份 Node 实现提供，浏览器经 `apps/server` 的
+  HTTP 接它，CLI 在进程内直接挂它。
 
 ```bash
 pnpm install
@@ -23,11 +23,14 @@ pnpm install
 ## 开发流程
 
 ```bash
-# Web 预览（浏览器里跑同一套 React UI + Agent Runtime）
-pnpm dev
+# 完整形态：先构建一次前端，再起本机 Node 服务（它托管的就是 pnpm build 的产物）。
+# 脚本名是 serve 不是 server：`server` 是 pnpm 的保留子命令。
+pnpm build
+pnpm serve
 
-# 桌面端开发（需要 Rust 工具链）
-pnpm tauri dev
+# Web 开发预览：同一套 React UI + Agent Runtime，但没有后端，
+# 需要本机的工具（文件 / shell / Git / ripgrep）不会进模型清单。
+pnpm dev
 ```
 
 跑单个测试文件或按用例名过滤，比跑全量测试快很多，改动局部时优先用这个：
@@ -50,17 +53,24 @@ workspace 包不单独编译，`vite.config.ts` 的 alias 和 `tsconfig.app.json
    失败），规则见脚本内的 `legacySourcePathPattern`。
 2. `node scripts/check-boundaries.js` —— 校验 `packages/agent-core` 不反向依赖 React、工具域
    包或其他能力包，是 CI 里的第二道门禁。
-3. `pnpm test` —— Vitest 全量跑一遍。
-4. `pnpm build` —— `tsc -b` 类型检查加 Vite 生产构建。仓库**没有 lint 脚本**，这是唯一的
-   静态门禁，类型错误必须在这一步暴露。
-5. 改了 `apps/desktop/` 下的 Rust 代码，额外跑：
+3. `node scripts/check-state-invariants.js`（= `pnpm check:state`）—— 状态机制五条不变量。
+   改 atom、writer、新增会话状态写入点或在组件里读 core 的 atom 时必跑，判据见
+   [CLAUDE.md](CLAUDE.md) 的「状态与 UI 边界」一节。
+4. `pnpm test` —— Vitest 全量跑一遍。
+5. `pnpm build` —— `tsc -b` 类型检查加 Vite 生产构建（末尾还会构建 `apps/server`）。
+   仓库**没有 lint 脚本**，这是唯一的静态门禁，类型错误必须在这一步暴露。
+6. 改了任何会进 tarball 的包（`packages/*`、`tools/*`、`apps/server`），额外跑：
 
    ```bash
-   cargo test --manifest-path apps/desktop/Cargo.toml
+   pnpm -r build && node scripts/check-dist.js
    ```
 
-CI 实际跑的是 `check-docs → check-boundaries → pnpm test → pnpm build`，外加三平台的
-`cargo test` 和 `pnpm tauri build --no-bundle --ci`；本地至少把前四步过一遍再提 PR。
+   **顺序不能倒**：`apps/server` 的 build 末尾要把 `apps/web/dist` 嵌进自己的 `dist/public`，
+   而那份前端产物只有上一步 `pnpm build` 里的 `vite build` 才会产出。
+
+CI 跑的就是这一条线（单一 job，没有原生构建）：
+`check-docs → check-boundaries → check-state → pnpm test → pnpm build → pnpm -r build → check-dist`。
+步骤会随门禁增补而变，**以 `.github/workflows/ci.yml` 为准**。
 
 ## Commit 约定
 

@@ -4,8 +4,9 @@ English | [中文](README.zh-CN.md)
 
 **A developer framework for assembling agent runtimes.** The kernel ships mechanism, not implementations:
 tools, loop plugins, observability, persistence and sub-agent delegation are injected into named slots. One
-kernel drives three hosts — a browser preview, a Tauri desktop app, and a headless CLI. DeepSeek and GLM are
-wired in as first-class providers, not bolted on afterwards.
+kernel drives a self-hosted browser app backed by a local Node server, a static build with no local
+capabilities, and a headless CLI. DeepSeek and GLM are wired in as first-class providers, not bolted on
+afterwards.
 
 > *einfach* is German for "simple". The kernel keeps only what has to live in a kernel; everything else is swappable.
 
@@ -16,31 +17,48 @@ English entry point; the design articles linked at the bottom have not been tran
 
 ## Quickstart
 
-You need Node.js **≥ 20.19 or ≥ 22.12** and **pnpm** — the repo links its packages with `workspace:*`, so
-`npm install` resolves the wrong dependency tree. Desktop builds also need Rust stable ≥ 1.77.2, see
-[Requirements](#requirements).
+You need Node.js **≥ 22.13** and **pnpm** — the repo links its packages with `workspace:*`, so `npm install`
+resolves the wrong dependency tree. See [Requirements](#requirements).
 
 ```bash
 git clone https://github.com/allroad88888888/einfach-agent.git && cd einfach-agent
 pnpm install
 
-# Add a model key: write ~/.webAgent/config.json, or use the desktop settings page.
+# The complete product: build the frontend once, then start the local server.
+# It prints a URL carrying a one-time token and opens your browser on it.
+pnpm build
+pnpm serve
 
-pnpm dev            # browser preview
-pnpm tauri dev      # Tauri desktop, full capabilities
+# Enter a model key on the settings page the first time the app opens. The local
+# backend writes it to ~/.webAgent/config.json; the browser never holds the real key.
 
-# Or drive one real run from the terminal. The CLI host has no local file tools,
-# so this example works off the built-in skills.
+# Or drive one real run from the terminal. The CLI host has the same local file,
+# shell and Git tools, scoped to --workspace (default: the current directory).
 pnpm cli -p "Read the planning skill and summarize this project's plan mechanism in three sentences"
 ```
 
+The script is `pnpm serve`, not `pnpm server` — `server` is a reserved pnpm subcommand. It binds `127.0.0.1`
+on port 4765 (it walks forward if that one is taken), and `--no-open` skips launching the browser. The
+frontend it serves is the output of `pnpm build`; without that build it answers every page with a 503 that
+tells you to run it.
+
+`pnpm dev` starts the Vite preview instead — same UI, no backend, no local capabilities.
+
 ## What each host can do
 
-- **Tauri desktop** — the complete product: shell, workspace files, ripgrep, task execution, patches, Git diffs.
-- **Browser preview** — same React UI, same runtime; tools backed by the Tauri `server` bridge are unavailable
-  and disappear from the model's tool list automatically.
-- **Headless CLI** — real runs without a UI, for dogfooding, automation, and letting a coding agent test itself.
-  `-v` prints traces and timing diagnostics to stderr.
+- **Browser + local Node server** (`pnpm serve`) — the complete product: shell, workspace files, ripgrep, task
+  execution, patches, Git diffs, MCP stdio servers, SQLite sessions and traces. The frontend probes
+  `GET /api/health` at startup; a healthy answer puts it in the `server` host state, and every local capability
+  travels over `POST /api/invoke/:command` to `packages/host-node`.
+- **Static build** (`pnpm dev`, or any deployment with no backend) — same React UI and runtime, but the probe
+  fails, no command bridge is registered, and every tool that needs the machine (files, shell, Git, ripgrep)
+  disappears from the model's tool list instead of failing at call time. `pnpm dev` additionally gets model
+  access through the Vite development relay; a plain static deployment has no trusted proxy and cannot call
+  model services at all.
+- **Headless CLI** — real runs without a UI, for dogfooding, automation, and letting a coding agent test
+  itself. It loads the same `packages/host-node` capability implementation in-process, so its tools are the
+  local machine's; it configures no persistence, so a session lives only as long as the process. `-v` prints
+  traces and timing diagnostics to stderr.
 - **Models** — DeepSeek and GLM today, integrated directly rather than through an OpenAI-compatible shim. Kimi
   (`kimi-k2.6`, image input included) is implemented but gated off until it has been verified against a real
   key. OpenAI and Anthropic are not supported yet.
@@ -72,39 +90,52 @@ packages/agent-ai ← packages/agent-core ← {tools-*, capability packages} ←
 `node scripts/check-boundaries.js` runs before the tests in CI: it scans import statements and fails outright if
 the core ever pulls in React, a `@einfach-agent/tools-*` package, or any capability package.
 
-## One kernel, three hosts
+## One kernel, one capability implementation
 
-Three assembly entry points, each choosing its own implementations:
+Local capabilities are implemented **once**, in TypeScript, and reached over two different transports:
 
-- **Browser preview** — `apps/web/src/main.tsx`: standard tools, IndexedDB persistence and traces, the React UI,
-  and the MCP application layer.
-- **Tauri desktop** — reuses that same web assembly; the Rust bridge in `apps/desktop/` swaps in SQLite
-  persistence, real shell/file/Git access, and a native model proxy.
-- **Headless CLI** — `apps/cli/src/runtime.ts`: same standard tools, in-memory history driver, stderr traces, no React.
+```text
+              ┌─ browser ──── HTTP ────┐
+agent-core ──▶│                        ├──▶ packages/host-node ──▶ the machine
+              └─ CLI ─── in-process ───┘
+```
 
-![Plan approval on the desktop host](docs/launch/assets/plan-approval.png)
+The assembly entry points, each choosing its own implementations:
+
+- **Web assembly** — `apps/web/src/main.tsx`: standard tools, the React UI and the MCP application layer. It
+  resolves the host state once at startup and picks the command bridge, model transport, credential host,
+  persistence and trace drivers from it — SQLite over the server for the `server` state, IndexedDB for `static`.
+- **Local server** — `apps/server`: one Node HTTP process that serves the built frontend and routes
+  `/api/invoke/:command` into the host-node command table. It binds the loopback address, and every `/api/*`
+  call is checked against the peer address, the `Host`/`Origin` headers and the token printed at startup —
+  the health probe is the single token exemption, so that a page opened without one degrades loudly.
+- **Headless CLI** — `apps/cli/src/runtime.ts`: same standard tools, the same host-node bridge in-process,
+  stderr traces, no React.
+- **Capability implementation** — `packages/host-node`: all 30 host commands (workspace read/write/patch,
+  shell, Git, ripgrep, MCP stdio, SQLite, the model proxy and credential storage), shared by both hosts above.
+
+![Plan approval, waiting for the user's decision](docs/launch/assets/plan-approval.png)
 
 ## Requirements
 
-- Node.js ≥ 20.19, or ≥ 22.12
+- Node.js ≥ 22.13 — the persistence layer uses the built-in `node:sqlite`, which needs no flag from 22.13 on.
+  That bound is declared in the `engines` field of `@einfach-agent/server` and `@einfach-agent/host-node`.
 - pnpm (the repo uses `workspace:*`; do not install with npm)
-- For Tauri: Rust stable ≥ 1.77.2, plus platform dependencies — Xcode Command Line Tools on macOS, Microsoft
-  C++ Build Tools and the WebView2 Runtime on Windows, WebKitGTK and a build toolchain on Linux. See the
-  [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
-Tauri normally has to be built on the target OS (`.exe/.msi`, `.app/.dmg`, `.deb/.rpm/.AppImage`). Web output
-lands in `apps/web/dist/`, desktop bundles in `apps/desktop/target/release/bundle/`.
+Build output: the frontend lands in `apps/web/dist/`, and `apps/server` bundles itself into
+`apps/server/dist/main.js` with a copy of that frontend at `apps/server/dist/public/`, so the server package
+runs without the repository working tree.
 
 ## Configuring models
 
-The key variables in `.env.example` exist only for the local browser development relay. The desktop app never
-reads model keys from `.env.local` or the process environment — enter them on the settings page and they are
-written to `~/.webAgent/config.json`. If that file does not exist yet, the app safely copies an older
-`~/.web-agent/config.json`; the new path wins and the old file is kept. Keychain entries from older versions are
-not migrated. The CLI host reads the same file, or another path via `--config <file>`.
+The key variables in `.env.example` exist only for the local browser development relay used by `pnpm dev`. The
+running app never reads model keys from `.env.local` or the process environment — enter them on the settings
+page and the local Node backend writes them to `~/.webAgent/config.json`. If that file does not exist yet, the
+backend safely copies an older `~/.web-agent/config.json`; the new path wins and the old file is kept. The CLI
+host reads the same file, or another path via `--config <file>`.
 
-`WEB_AGENT_CONFIG_DIR` only selects the desktop configuration directory (for example `$HOME/.webAgent`). It is
-not a source of model keys, and setting it disables migration; see
+`WEB_AGENT_CONFIG_DIR` only selects the configuration directory (for example `$HOME/.webAgent`). It is not a
+source of model keys, and setting it disables migration; see
 [the configuration directory notes](docs/config-directory-override.md) for multi-instance setups and directory
 requirements.
 
@@ -112,31 +143,34 @@ New sessions default to DeepSeek, and the session's `vendor` setting decides whi
 The Kimi entry point is additionally gated by the public build flag `VITE_KIMI_IMAGE_INPUT_ENABLED`, which stays
 `false` until Kimi has been accepted end-to-end against a real China-region key.
 
-Keys are read by the native desktop layer only and injected into a restricted provider transport. They are never
-stored in browser localStorage or compiled into the frontend bundle. On Unix the config directory is created
-`0700` and the file `0600`, and an override directory must pass the same permission check. The file is
-plaintext, so do not commit, share or copy it anywhere untrusted. Kimi image uploads, `ms://` references and
-their cleanup semantics live in the Kimi adapter — Tauri only offers generic JSON/multipart transport within an
-endpoint allowlist. A static web build has no trusted proxy and cannot call model services at all.
+Keys are read by the local Node backend only and injected into a restricted provider transport. They are never
+stored in browser localStorage or compiled into the frontend bundle, and no response body ever carries one back
+to the browser. On Unix the config directory is created `0700` and the file `0600`, and an override directory
+must pass the same permission check. The file is plaintext, so do not commit, share or copy it anywhere
+untrusted. Kimi image uploads, `ms://` references and their cleanup semantics live in the Kimi adapter — the
+backend only offers generic JSON/multipart transport within an endpoint allowlist.
 
 ## Development commands
 
 ```bash
 pnpm install
 
-pnpm dev            # browser development preview
-pnpm build          # type check + production build
-pnpm test           # frontend tests
+pnpm dev            # browser preview, no local capabilities
+pnpm build          # type check + production build (frontend, then the server package)
+pnpm serve          # the self-hosted local server; needs a prior `pnpm build`
+pnpm test           # tests
 
 # Headless CLI host: -p runs once and exits, no -p opens a REPL, -h lists every option
 pnpm cli -p "<prompt>"
 
-node scripts/check-boundaries.js   # assembly boundary gate, runs before the tests in CI
-node scripts/check-docs.js         # documentation link gate, same
+# The three gates, in the order CI runs them, before `pnpm test` and `pnpm build`
+node scripts/check-docs.js               # documentation links
+node scripts/check-boundaries.js         # assembly boundaries
+node scripts/check-state-invariants.js   # state mechanism invariants
 
-pnpm tauri dev
-pnpm tauri build
-cargo test --manifest-path apps/desktop/Cargo.toml   # Rust bridge integration tests
+# CI then rebuilds every publishable dist and checks it, in this order — not the other way round,
+# because the server package embeds the frontend that `pnpm build` produced
+pnpm -r build && node scripts/check-dist.js
 
 # A single test file, or a single case by name
 pnpm exec vitest run packages/agent-core/src/runtime/modelRun.singleTurn.test.ts
@@ -150,18 +184,39 @@ Test files run in parallel, isolated by `isolate: true` in `vite.config.ts`: eac
 module-level singletons such as `defaultCore` exist once per worker and nothing leaks across files. A test that
 needs stronger isolation should call `createCore()` rather than fall back to serial execution.
 
+## Running it outside the repository
+
+The packages are **not published to any registry** — `private: true` on the four packages below is a deliberate
+guard, not an oversight. To run the app from outside the working tree, build the tarballs and install them:
+
+```bash
+pnpm build && pnpm -r build
+pnpm pack --pack-destination /tmp/einfach-agent \
+  --filter @einfach-agent/server --filter @einfach-agent/core \
+  --filter @einfach-agent/ai --filter @einfach-agent/host-node
+
+cd /tmp/einfach-agent && npm install *.tgz
+./node_modules/.bin/einfach-agent --no-open
+```
+
+Use `pnpm pack`, not `npm pack`: only pnpm rewrites the `workspace:*` ranges into real versions. The bin is
+named `einfach-agent` while the package is `@einfach-agent/server`, so `npx einfach-agent` would resolve to an
+unrelated, non-existent package — install the tarballs instead.
+
 ## Repository layout
 
 ```text
 .
 ├── apps/
 │   ├── web/                     # Vite entry, React assembly, UI, component tests
-│   ├── cli/                     # headless CLI host, for dogfooding and automation
-│   └── desktop/                 # Tauri 2 / Rust desktop bridge
+│   ├── server/                  # the local HTTP host: static frontend + /api/invoke + model proxy
+│   └── cli/                     # headless CLI host, for dogfooding and automation
 ├── packages/
 │   ├── agent-ai/                # DeepSeek / GLM / Kimi API adapters
 │   ├── agent-core/              # the kernel: state, runtime, tool contract, plugin/observability/persistence contracts
 │   ├── agent-react/             # React plugin surface and timeline renderer registry
+│   ├── agent-plugin-example/    # a runnable sample of the plugin contract
+│   ├── host-node/               # the Node capability implementation behind every host command
 │   ├── subagents/               # delegation scheduling, batching, archive governance, view state
 │   ├── persistence-{idb,sqlite}/    # session and history drivers
 │   └── observability-{idb,sqlite}/  # trace drivers and readers
@@ -179,7 +234,8 @@ they need; other consumers can register only the domains they want.
 
 ## Design deep dives
 
-Why the kernel looks the way it does, and which walls we walked into. These articles are in Chinese:
+Why the kernel looks the way it does, and which walls we walked into. These articles are in Chinese, and the
+oldest of them still describe the Tauri desktop host that has since been removed:
 
 - [One kernel, three hosts: designing an assembled agent runtime](docs/launch/articles/assembly-kernel.md) (Chinese)
 - [Giving tools a lifecycle: the CallTiming mechanism](docs/launch/articles/call-timing.md) (Chinese)
