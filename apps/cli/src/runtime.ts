@@ -1,5 +1,5 @@
 import { homedir } from 'node:os'
-import { configureObservability } from '@web-agent/core/observability'
+import { configureObservability } from '@einfach-agent/core/observability'
 import {
   configureCommands,
   configureDefaultDelegation,
@@ -8,17 +8,17 @@ import {
   configureHostInvoke,
   configurePersistence,
   defaultCore,
-} from '@web-agent/core'
-import { createNodeHostInvoke, nodeHostPlatform } from '@web-agent/host-node'
-import { createDelegationAssembly } from '@web-agent/subagents'
-import { registerStandardTools } from '@web-agent/tools'
-import { createDefaultPlanRuntime } from '@web-agent/tools-planning'
-import { builtInSkillsRegistry } from '@web-agent/tools-skills'
+} from '@einfach-agent/core'
+import { createNodeHostInvoke, nodeHostPlatform } from '@einfach-agent/host-node'
+import { createDelegationAssembly } from '@einfach-agent/subagents'
+import { registerStandardTools } from '@einfach-agent/tools'
+import { createDefaultPlanRuntime } from '@einfach-agent/tools-planning'
+import { builtInSkillsRegistry } from '@einfach-agent/tools-skills'
 import {
   OPENAI_COMPAT_VENDOR_ID,
   createOpenAiCompatAdapter,
   defaultProviderRegistry,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import { scanProjectSkills } from '../../../tools/skills/src/projectSkillsLoader'
 import type { ResolvedCredentials } from './credentials'
 import { createCliPerformanceDiagnosticSink } from './performance-output'

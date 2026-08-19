@@ -18,7 +18,7 @@
 - 想在同一个进程里跑两个互不干扰的实例 → core 里全是模块级单例。
 
 判断一个 core 干不干净，最快的办法不是读它的架构文档，是读它的 `package.json` 和 import 列表。
-本项目 `packages/agent-core/package.json` 的 `dependencies` 只有四项：`@web-agent/ai`（模型请求）、
+本项目 `packages/agent-core/package.json` 的 `dependencies` 只有四项：`@einfach-agent/ai`（模型请求）、
 `@einfach/core`（状态引擎）、`@tauri-apps/api`、`@tauri-apps/plugin-dialog`。没有 React，
 没有任何工具包，没有任何存储/观测实现包。
 
@@ -80,13 +80,13 @@ export function createCore(opts?: {
 `createCoreInstance`（`packages/agent-core/src/runtime/core/coreInstance.ts`）只造一个**空** registry，
 装什么由调用方决定。模块级的 `defaultCore` 造出来是没有工具的，应用和测试各自调一次
 `registerStandardTools(defaultCore.tools)` 才有标准工具集。这一步反转掉之后，core 到具体工具的
-唯一一条入边就断了——工具才拆得成 `@web-agent/tools-shell`、`tools-fs`、`tools-agents` 这些独立包，
+唯一一条入边就断了——工具才拆得成 `@einfach-agent/tools-shell`、`tools-fs`、`tools-agents` 这些独立包，
 嵌入方也才可能只装其中两个域。
 
 **`delegation`：子 agent 不是内核功能，是注入的能力 + 一组工具。**
 core 里只有 `DelegationCapability` / `SubagentScheduler` 这些 port 定义
-（`packages/agent-core/src/runtime/delegationContract.ts`），实现在 `@web-agent/subagents`，
-由装配层传 `createDelegationAssembly` 进来。模型侧的入口是 `@web-agent/tools-agents` 的四个工具：
+（`packages/agent-core/src/runtime/delegationContract.ts`），实现在 `@einfach-agent/subagents`，
+由装配层传 `createDelegationAssembly` 进来。模型侧的入口是 `@einfach-agent/tools-agents` 的四个工具：
 `delegate_agent` / `observe_agent` / `join_agent` / `cancel_agent`。
 换句话说，**子 agent 走的是和读文件同一条通路**——工具契约。没注入 delegation 的宿主，就是一个
 没有子 agent 的 agent，core 不需要为此有任何分支。
@@ -152,13 +152,13 @@ CLI 那 60 行，是这套设计最直接的收益证明：跑 headless 不需�
 ```js
 const coreRules = [
   { name: 'core 禁入 React', packages: ['react', '@einfach/react'] },
-  { name: 'core 禁入工具域', matches: (v) => v === '@web-agent/tools' || v.startsWith('@web-agent/tools-') },
+  { name: 'core 禁入工具域', matches: (v) => v === '@einfach-agent/tools' || v.startsWith('@einfach-agent/tools-') },
   { name: 'core 禁入能力包', packages: [/* subagents、persistence-*、observability-* */] },
   { name: 'core 禁入 Tauri SQL 插件', packages: ['@tauri-apps/plugin-sql'] },
 ]
 const capabilityRule = {
   name: '能力包禁入工具域',
-  matches: (v) => v === '@web-agent/tools' || v.startsWith('@web-agent/tools-'),
+  matches: (v) => v === '@einfach-agent/tools' || v.startsWith('@einfach-agent/tools-'),
 }
 ```
 
@@ -176,7 +176,7 @@ const capabilityRule = {
 依赖方向一句话：
 
 ```text
-@web-agent/ai  ←  @web-agent/core  ←  { @web-agent/tools-*、能力包 }  ←  app
+@einfach-agent/ai  ←  @einfach-agent/core  ←  { @einfach-agent/tools-*、能力包 }  ←  app
 ```
 
 箭头一律指向被依赖方，`agent-core` 不得反向依赖任何 `tools-*` 包，也不依赖 React。
@@ -185,7 +185,7 @@ const capabilityRule = {
 
 **换存储。** `HistoryDriver`（`listCheckpoints` / `loadCheckpoint` / `saveCheckpoint` / `truncateAfter`）
 和 `SessionsPersistence`（`saveSessions` / `loadSessions` / `saveWorkspaces` / `loadWorkspaces`）
-两个接口定在 core，实现分别在 `@web-agent/persistence-idb` 和 `@web-agent/persistence-sqlite`。
+两个接口定在 core，实现分别在 `@einfach-agent/persistence-idb` 和 `@einfach-agent/persistence-sqlite`。
 装配层一个三元表达式就切换完了，而且 SQLite 那份是**动态 import** 的——浏览器 bundle 里根本不含它。
 
 **换观测。** 同一套：`configureObservability({ driver })`。Web 用 IndexedDB，桌面用 SQLite，

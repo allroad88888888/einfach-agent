@@ -7,7 +7,7 @@ import type {
   WorkspaceRuntimeResult,
   RgSearchInput,
   RgSearchResult,
-} from '@web-agent/core/tools'
+} from '@einfach-agent/core/tools'
 import guide from './search-files.md?raw'
 
 const DEFAULT_MAX_MATCHES = 100

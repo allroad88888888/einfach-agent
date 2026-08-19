@@ -24,13 +24,13 @@ P2.5 的 UI 协议设计已完成，R1–R4 已按独立、可回退批次交付
   timeline item 投影、由 React 宿主按 root 维护的 renderer registry，以及 R1–R5 迁移顺序。
 - R1 已完成（`846743a`）：现有 `MessageList` 的纯时间线关联逻辑已提取为无 React 的 Core
   公共投影并补回归测试；同时完成投影消费、思考分组、阶段轨迹与虚拟视图模型的前置职责拆分。
-- R2 已完成（`a2b8d97`）：`@web-agent/react-plugin` 提供按 React root 隔离的 renderer
+- R2 已完成（`a2b8d97`）：`@einfach-agent/react-plugin` 提供按 React root 隔离的 renderer
   registry；内建 kind 不能覆盖、重复注册原子拒绝、失效 disposer 不会删除后续注册，unknown
   item 以安全纯文本 fallback 显示。
 - R3 已完成（`66072f3`）：App root 创建并共享 Web renderer registry，`MessageList` 通过
   dispatcher 呈现全部既有 Core timeline kind，同时保留思考分组、虚拟窗口、流式光标和用户回退。
-- R4 已完成（`79bde78`）：`@web-agent/react-plugin` 公开受限的 UI 插件安装面，宿主统一回滚和
-  释放 renderer 注册；`@web-agent/plugin-example` 以 Core 根入口与 `/react` 子入口配对示例。
+- R4 已完成（`79bde78`）：`@einfach-agent/react-plugin` 公开受限的 UI 插件安装面，宿主统一回滚和
+  释放 renderer 注册；`@einfach-agent/plugin-example` 以 Core 根入口与 `/react` 子入口配对示例。
 - R5 的 [自定义持久化 Timeline Item RFC](persistent-plugin-timeline-item-rfc.md) 已起草：它固定
   checkpoint 兼容、archive 隔离、最小权限和多 consumer 降级要求；协议批准前不改持久化格式，也不开放插件写入。
 

@@ -1,10 +1,10 @@
 // 将一个 Core 时间线条目委派给当前 React root 的 renderer，缺失时安全降级。
 
-import type { TimelineItem } from '@web-agent/core/timeline'
+import type { TimelineItem } from '@einfach-agent/core/timeline'
 import {
   UnknownTimelineItem,
   type TimelineRendererRegistry,
-} from '@web-agent/react-plugin'
+} from '@einfach-agent/react-plugin'
 
 export function TimelineItemView({
   item,

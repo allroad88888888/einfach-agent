@@ -1,4 +1,4 @@
-import { firstAssistantText } from '@web-agent/ai'
+import { firstAssistantText } from '@einfach-agent/ai'
 import {
   FINISH_REASON_ERRORS,
   isAbnormalFinishReason,

@@ -10,7 +10,7 @@ import {
   type ModelToolCall,
   type ModelUsage,
   type RetryConfig,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import {
   DEEPSEEK_TASK_RESULT_SCHEMA,
   DEEPSEEK_TASK_SUITE_VERSION,

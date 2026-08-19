@@ -3,9 +3,9 @@ import {
   DEEPSEEK_MODEL_LABELS,
   DEFAULT_DEEPSEEK_MODEL,
   DEFAULT_KIMI_MODEL,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import { useAtomValue } from '@einfach/react'
-import { newSession } from '@web-agent/core'
+import { newSession } from '@einfach-agent/core'
 import { isKimiImageInputEnabled } from '../../modelInput/kimiImageFeature'
 import { closeSettingsCenter } from '../../settings/commands'
 import { MODEL_CREDENTIALS } from '../../settings/modelCredentialHost'

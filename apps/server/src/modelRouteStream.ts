@@ -35,7 +35,7 @@
 // chunk 的边界原样保留，一个字节都不重新编码（SSE 的语义带在字节边界与空行上）。
 
 import type { ServerResponse } from 'node:http'
-import type { ForwardedModelResponse } from '@web-agent/host-node'
+import type { ForwardedModelResponse } from '@einfach-agent/host-node'
 
 export interface ClientWatch {
   /** 客户端是否在我们写完之前就断开了。 */

@@ -5,7 +5,7 @@
 // 这里不含任何判据，判据都在各自的 *.test.ts 里。
 
 import { vi } from 'vitest'
-import type { ModelFunctionTool, ModelToolCall } from '@web-agent/ai'
+import type { ModelFunctionTool, ModelToolCall } from '@einfach-agent/ai'
 import { sessionsAtom } from '../state/rootAtoms'
 import { runAtom } from '../state/sessionAtoms'
 import { alwaysAllowedToolsAtom } from '../state/transientAtoms'

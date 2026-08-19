@@ -29,7 +29,7 @@ registry。`PluginApi` 不新增 `registerRenderer`，Core 插件与 React UI �
 
 ### Core：稳定数据投影
 
-Core 公共入口 `@web-agent/core/timeline` 只导出纯 TypeScript 类型与纯函数。
+Core 公共入口 `@einfach-agent/core/timeline` 只导出纯 TypeScript 类型与纯函数。
 其输入是已有的会话项目和瞬态显示数据，输出为只读、按时间排序的 `TimelineItem[]`。v1 的
 联合类型应精确表达当前已存在的可展示项目：
 
@@ -64,7 +64,7 @@ id 与 sortKey 在同一投影内稳定。Core 不依赖 `react`、`react-dom` �
 ### React 宿主：renderer registry
 
 registry 放在独立的 React 包（建议 `packages/agent-react`，包名
-`@web-agent/react-plugin`），由每个 React root 创建并持有。它接受 Core 的
+`@einfach-agent/react-plugin`），由每个 React root 创建并持有。它接受 Core 的
 `TimelineItem`，将内建类型映射到宿主组件：
 
 ```ts
@@ -108,7 +108,7 @@ R4 的公开 API 以 `defineReactPlugin` 创建 branded、冻结的插件；其 
 失败会回滚已注册 renderer，卸载时会先执行插件 disposer，再反序释放全部 renderer token。因而
 插件没有 registry 的 `resolve` 能力，也不能遗留注册项。
 
-`@web-agent/plugin-example` 的根入口保留 Core-only 样板，`@web-agent/plugin-example/react`
+`@einfach-agent/plugin-example` 的根入口保留 Core-only 样板，`@einfach-agent/plugin-example/react`
 才导出配对 UI 插件。样板使用现有的 `reasoning` kind，所以只能由明确未锁定该 kind 的宿主安装；
 当前 Web App 已锁定全部六个内建 kind，不能以此覆盖其视觉。
 
@@ -129,7 +129,7 @@ schema/版本、大小限制、持久化与 archive 兼容策略、未知插件�
 | R1 | Core 纯 `timeline` 投影与单元测试 | 已完成（`846743a`）：不导入 React；项目关联、孤立 result、排序、不可变性与计划阶段投影均已覆盖 |
 | R2 | 独立 React registry 与默认 fallback | 已完成（`a2b8d97`）：root 隔离；构造期内建 kind 锁定、重复拒绝、token disposer 与安全纯文本 fallback 均有测试 |
 | R3 | 将 Web `MessageList` 拆成投影消费、思考分组、renderer 与虚拟列表 | 已完成（`66072f3`）：每个 App React root 持有独立 registry；六个既有 Core kind 复用原有消息、思考与浏览器卡片视觉；回退动作仍留在列表 shell，未知 runtime kind 仅作纯文本 fallback |
-| R4 | `@web-agent/react-plugin` 公开入口及非 React Core 样板配对示例 | 已完成（`79bde78`）：窄 `registerRenderer` 安装面、失败回滚与幂等卸载已测试；样板的 `/react` 子入口不导入 Core 内部模块，卸载后 renderer 无残留 |
+| R4 | `@einfach-agent/react-plugin` 公开入口及非 React Core 样板配对示例 | 已完成（`79bde78`）：窄 `registerRenderer` 安装面、失败回滚与幂等卸载已测试；样板的 `/react` 子入口不导入 Core 内部模块，卸载后 renderer 无残留 |
 | R5 | [自定义持久化 Timeline Item RFC](persistent-plugin-timeline-item-rfc.md) | RFC 已起草，schema、archive、权限和多 consumer 降级仍须获批准后才能实现 |
 
 每批先补失败测试，再以单独、可撤回的 commit 实现。R1 已只抽取目前 `MessageList` 已有的纯
@@ -149,5 +149,5 @@ schema/版本、大小限制、持久化与 archive 兼容策略、未知插件�
 ## 非目标
 
 - 不通过 renderer registry 绕过工具确认、文件/shell 权限或子 Agent 权限。
-- 不把 renderer 注册、React context 或 UI atom 加到 `@web-agent/core/plugin`。
+- 不把 renderer 注册、React context 或 UI atom 加到 `@einfach-agent/core/plugin`。
 - 不在本批修改模型请求、工具执行、会话持久化格式或 Web 的 server-tool 降级策略。

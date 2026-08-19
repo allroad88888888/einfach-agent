@@ -6,13 +6,13 @@
 import { useMemo } from 'react'
 import { atom } from '@einfach/core'
 import { useAtom } from '@einfach/react'
-import { useRootAtomValue } from '@web-agent/react-plugin'
+import { useRootAtomValue } from '@einfach-agent/react-plugin'
 import {
   activeWorkspaceMetaAtom,
   canPickWorkspaceDirectory,
   pickWorkspaceDirectory,
   setWorkspaceRoot,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 
 const workspacePickerStateAtom = atom<{ isPicking: boolean; error: string | null }>({
   isPicking: false,

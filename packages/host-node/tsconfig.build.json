@@ -18,8 +18,8 @@
     "incremental": false,
     "composite": false,
     "paths": {
-      "@web-agent/core": ["packages/agent-core/dist/index.d.ts"],
-      "@web-agent/core/*": ["packages/agent-core/dist/*"]
+      "@einfach-agent/core": ["packages/agent-core/dist/index.d.ts"],
+      "@einfach-agent/core/*": ["packages/agent-core/dist/*"]
     },
     "preserveSymlinks": true,
     "rootDir": "./src",

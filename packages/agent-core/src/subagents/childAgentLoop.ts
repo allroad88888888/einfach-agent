@@ -4,7 +4,7 @@ import {
   type ModelChatResponse,
   type ModelFunctionTool,
   type ModelItem,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import { buildTurnTools, narrowToolCalls } from '../runtime/modelTurn'
 import {
   callSelectedSubagentModel,

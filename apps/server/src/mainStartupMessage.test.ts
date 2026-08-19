@@ -7,7 +7,7 @@ describe('formatStartupMessage', () => {
   it('willOpen=true：逐字比对整段文案', () => {
     expect(formatStartupMessage({ url: URL, willOpen: true })).toBe(
       [
-        'web-agent 已启动：',
+        'einfach-agent 已启动：',
         `  ${URL}`,
         '',
         '地址末尾的 token 只在这一次页面加载时使用，请勿分享给他人或提交到代码仓库；',

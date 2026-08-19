@@ -70,7 +70,7 @@ packages/agent-ai ← packages/agent-core ← {tools-*, capability packages} ←
 ```
 
 `node scripts/check-boundaries.js` runs before the tests in CI: it scans import statements and fails outright if
-the core ever pulls in React, a `@web-agent/tools-*` package, or any capability package.
+the core ever pulls in React, a `@einfach-agent/tools-*` package, or any capability package.
 
 ## One kernel, three hosts
 

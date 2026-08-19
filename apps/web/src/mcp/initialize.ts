@@ -1,13 +1,13 @@
 import { uiStore } from '../uiStore'
 import { isTauri } from '@tauri-apps/api/core'
-import { defaultCore, configureCommands } from '@web-agent/core'
+import { defaultCore, configureCommands } from '@einfach-agent/core'
 import {
   createMcpClientManager,
   createMcpConnectorRouter,
   createMcpConnectTargetProbe,
   createMcpPlaceholderClaims,
   createStreamableHttpMcpConnector,
-} from '@web-agent/tools-mcp'
+} from '@einfach-agent/tools-mcp'
 import {
   configureMcpSettings,
   isMcpServerConnected,

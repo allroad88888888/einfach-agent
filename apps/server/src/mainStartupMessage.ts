@@ -13,7 +13,7 @@ export interface StartupMessageInput {
 
 export function formatStartupMessage(input: StartupMessageInput): string {
   const lines = [
-    'web-agent 已启动：',
+    'einfach-agent 已启动：',
     `  ${input.url}`,
     '',
     '地址末尾的 token 只在这一次页面加载时使用，请勿分享给他人或提交到代码仓库；',

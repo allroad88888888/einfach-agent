@@ -1,4 +1,4 @@
-import { isAbortError } from '@web-agent/ai'
+import { isAbortError } from '@einfach-agent/ai'
 import type { ToolCallTiming } from '../tools/toolCallTiming'
 import type { Tool, ToolResult } from '../tools/types'
 import type { ToolRegistry } from '../tools/toolRegistry'

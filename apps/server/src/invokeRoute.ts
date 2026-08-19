@@ -17,8 +17,8 @@
 // 未捕获的 promise rejection，而不是被现有的外层 try/catch 收成 500。
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { HostInvoke } from '@web-agent/core'
-import { NodeHostCommandError } from '@web-agent/host-node'
+import type { HostInvoke } from '@einfach-agent/core'
+import { NodeHostCommandError } from '@einfach-agent/host-node'
 import { replyJson } from './httpReply'
 import { hasJsonContentType, readInvokeRouteBody } from './invokeRouteBody'
 import { resolveInvokeCommandName } from './invokeRouteCommandName'

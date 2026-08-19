@@ -2,7 +2,7 @@
 
 import { useAtom } from '@einfach/react'
 import { useEffect } from 'react'
-import type { ConversationItem, RunState } from '@web-agent/core'
+import type { ConversationItem, RunState } from '@einfach-agent/core'
 import { messageElapsedClockAtom } from './messageWindowModel'
 
 function formatElapsedDuration(durationMs: number): string {

@@ -7,7 +7,7 @@ import {
   sanitizeCustomInstructions,
   type AppSettings,
 } from './config'
-import { normalizeDisabledProjectSkills } from '@web-agent/core/skills'
+import { normalizeDisabledProjectSkills } from '@einfach-agent/core/skills'
 
 export const APP_SETTINGS_STORAGE_KEY = 'web-agent.settings.v1'
 export const LEGACY_CUSTOM_INSTRUCTIONS_STORAGE_KEY = 'web-agent.custom-instructions.v1'

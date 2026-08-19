@@ -1,5 +1,5 @@
 {
-  "name": "@web-agent/plugin-example",
+  "name": "@einfach-agent/plugin-example",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
@@ -13,8 +13,8 @@
     "./package.json": "./package.json"
   },
   "peerDependencies": {
-    "@web-agent/core": "workspace:*",
-    "@web-agent/react-plugin": "workspace:*",
+    "@einfach-agent/core": "workspace:*",
+    "@einfach-agent/react-plugin": "workspace:*",
     "react": "^18.3.1"
   },
   "devDependencies": {

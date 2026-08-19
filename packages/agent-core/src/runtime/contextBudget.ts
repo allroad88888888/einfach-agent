@@ -1,4 +1,4 @@
-import { contextWindowTokens } from '@web-agent/ai'
+import { contextWindowTokens } from '@einfach-agent/ai'
 
 export const DEFAULT_RESERVED_OUTPUT_TOKENS = 8_000
 export const CONTEXT_SAFETY_MARGIN_RATIO = 0.08

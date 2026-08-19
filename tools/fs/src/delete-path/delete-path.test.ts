@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ToolContext } from '@web-agent/core/tools'
+import type { ToolContext } from '@einfach-agent/core/tools'
 import { deletePathTool } from './delete-path'
 
 function context(deleteWorkspacePath?: (input: unknown) => Promise<unknown>): ToolContext {

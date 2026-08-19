@@ -1,7 +1,7 @@
 // browser-action.test.ts —— 副作用工具单测（TOOLS-SPEC §11）。
 // 隔离红利：不需要 store，只 mock 一个 ctx，renderCard 用 vi.fn 可编程返回。
 import { describe, it, expect, vi } from 'vitest'
-import type { ToolContext } from '@web-agent/core/tools'
+import type { ToolContext } from '@einfach-agent/core/tools'
 import { BROWSER_CARD_BODY_MAX_CHARS, browserActionTool } from './browser-action'
 
 // 造一个 fake ctx：renderCard/saveArtifact 用 vi.fn，可按测试编程返回值。

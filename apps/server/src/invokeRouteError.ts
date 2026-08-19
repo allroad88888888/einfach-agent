@@ -9,7 +9,7 @@
 // `message` 直接复用 host-node 已经写好的中文文案，不再自己组一遍——两处各写一份中文文案，
 // 后续改一处就会和另一处漂移，而且 host-node 的文案已经把 command 名嵌进去了。
 
-import type { NodeHostCommandError } from '@web-agent/host-node'
+import type { NodeHostCommandError } from '@einfach-agent/host-node'
 
 export interface InvokeRouteErrorReply {
   readonly statusCode: number

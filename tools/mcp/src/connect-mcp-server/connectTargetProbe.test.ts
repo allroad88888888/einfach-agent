@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   MCP_CONNECT_TOOL_NAME as CORE_MCP_CONNECT_TOOL_NAME,
   classifyToolRisk,
-} from '@web-agent/core/runtime/dangerousTools'
+} from '@einfach-agent/core/runtime/dangerousTools'
 import type { McpServerConfig, McpServerSnapshot } from '../types'
 import { MCP_CONNECT_TOOL_NAME } from './connect-mcp-server'
 import { createMcpConnectTargetProbe } from './connectTargetProbe'

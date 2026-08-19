@@ -3,7 +3,7 @@
 // 目的只有一个：让同一份工具集在不同轮次、不同输入排列下产出【逐字一致】的请求前缀，
 // 供 provider 前缀缓存与 contextCache 归因使用。
 
-import type { ModelFunctionTool } from '@web-agent/ai'
+import type { ModelFunctionTool } from '@einfach-agent/ai'
 import { fnv1a32 } from './shared/hash'
 import { compareStableText } from './shared/stableTextOrder'
 

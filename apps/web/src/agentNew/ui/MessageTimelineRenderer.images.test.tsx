@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
-import type { TimelineMessageItem } from '@web-agent/core/timeline'
+import type { TimelineMessageItem } from '@einfach-agent/core/timeline'
 import { renderWithStore } from '../../test/renderWithStore'
 import { MessageTimelineRenderer } from './MessageTimelineRenderer'
 import { HistoryImageCompatibilityProvider } from './HistoryImageCompatibilityContext'

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import type { ShellCommandInput, ShellCommandResult, ToolContext } from '@web-agent/core/tools'
+import type { ShellCommandInput, ShellCommandResult, ToolContext } from '@einfach-agent/core/tools'
 import { shellPowershellTool } from './shell-powershell'
 
 function makeShellResult(

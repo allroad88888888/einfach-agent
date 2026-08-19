@@ -1,5 +1,5 @@
-import { createToolRegistry } from '@web-agent/core/tools'
-import type { Tool, ToolContext } from '@web-agent/core/tools'
+import { createToolRegistry } from '@einfach-agent/core/tools'
+import type { Tool, ToolContext } from '@einfach-agent/core/tools'
 import { describe, expect, it, vi } from 'vitest'
 import { McpClientManager } from './clientManager'
 import { MCP_SERVER_MAX_TOOLS } from './internal'

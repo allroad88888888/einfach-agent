@@ -1,4 +1,4 @@
-import type { Tool } from '@web-agent/core/tools'
+import type { Tool } from '@einfach-agent/core/tools'
 import guide from './join-agent.md?raw'
 
 const DEFAULT_TIMEOUT_MS = 30_000

@@ -11,7 +11,7 @@
 //     它是稳定前缀里唯一按会话变化的一段，故排在其它前缀段【之后】。
 
 import type { HostPlatform } from './hostPlatform'
-import type { SystemItem } from '@web-agent/ai'
+import type { SystemItem } from '@einfach-agent/ai'
 // 收尾自查 / 如实报告两条条款住在零依赖叶子模块：evals 的 prompt 行为 A/B 要 import 同一份
 // 字节做对照实验，而本文件（经装配的 skill registry + tools/registry 的 defaultCore）
 // 在那个 tsconfig 下既无法解析也不该被实例化。详见 selfReflectionPrompts.ts 顶部说明。

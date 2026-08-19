@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from 'vitest'
 import { screen } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
-import { toolActivityAtom } from '@web-agent/core'
+import { toolActivityAtom } from '@einfach-agent/core'
 import { ToolActivity } from './ToolActivity'
 
 describe('ToolActivity', () => {

@@ -13,7 +13,7 @@
 // 本文件是翻译（一个结局用什么措辞、什么 code、可不可重试）。两者分开，措辞才有一个能单独
 // 断言的单元——这和 connectFailureResult.ts 从 connect-mcp-server.ts 里拆出来是同一条理由。
 
-import type { ToolResult } from '@web-agent/core/tools'
+import type { ToolResult } from '@einfach-agent/core/tools'
 import { describeConnectedServer } from './connect-mcp-server/connectedServerResult'
 import { isRecord, truncate } from './internal'
 import type { McpServerSnapshot } from './types'

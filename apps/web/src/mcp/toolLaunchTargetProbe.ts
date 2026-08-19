@@ -22,8 +22,8 @@
 import type {
   McpConnectTargetProbe,
   McpToolLaunchTargetProbe,
-} from '@web-agent/core/tools'
-import type { McpPlaceholderClaims } from '@web-agent/tools-mcp'
+} from '@einfach-agent/core/tools'
+import type { McpPlaceholderClaims } from '@einfach-agent/tools-mcp'
 
 export interface McpToolLaunchTargetProbeSource {
   /** 占位登记表：注册名 → 现在占着它的那个占位归谁。必须是装配期那【同一个实例】。 */

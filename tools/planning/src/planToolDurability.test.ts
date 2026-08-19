@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { PlanMutationResult, PlanSnapshot } from '@web-agent/core/planning'
-import type { Tool, ToolContext } from '@web-agent/core/tools'
+import type { PlanMutationResult, PlanSnapshot } from '@einfach-agent/core/planning'
+import type { Tool, ToolContext } from '@einfach-agent/core/tools'
 import { createPlanTool } from './create-plan/create-plan'
 import { executePlanTool } from './execute-plan/execute-plan'
 import { submitStageResultTool } from './submit-stage-result/submit-stage-result'

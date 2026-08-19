@@ -56,7 +56,7 @@
 // C2 的文件头已经点名那件事需要 `events/` 下另一套机制（带背压与取消），不是本契约。
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { HOST_EVENT_NAMES, type HostEventSource } from '@web-agent/host-node'
+import { HOST_EVENT_NAMES, type HostEventSource } from '@einfach-agent/host-node'
 import { encodeSseComment, encodeSseFrame, EVENT_STREAM_CONTENT_TYPE } from './eventsRouteFrame'
 
 /** 见文件头「心跳」一节。 */

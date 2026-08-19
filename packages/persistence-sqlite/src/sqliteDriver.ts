@@ -15,7 +15,7 @@
 // 本文件是组合根：只拼出 createSqlitePersistence() 与测试用的 __resetSqliteForTest()，不含表结构
 // 或 SQL 细节——具体表结构、PRAGMA 动机见上述三个文件各自的头部注释。
 
-import type { SessionsPersistence } from '@web-agent/core/state/persistence'
+import type { SessionsPersistence } from '@einfach-agent/core/state/persistence'
 import { resetSqliteSessionsForTest, sqliteSessions } from './sqliteSessionsPersistence'
 import { resetSqliteConnectionForTest } from './sqliteShared'
 

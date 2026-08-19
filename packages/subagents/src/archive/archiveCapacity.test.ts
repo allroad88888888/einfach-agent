@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { createDelegateAgentRuntime, createSubagentScheduler } from '@web-agent/subagents'
+import { createDelegateAgentRuntime, createSubagentScheduler } from '@einfach-agent/subagents'
 import { SubagentArchiveIO } from './archiveIO'
 import {
   agentPathDepth,
   normalizeDelegateAgentInput,
   type DelegateAgentCallContext,
   type SubagentNodeRecord,
-} from '@web-agent/core/subagents'
+} from '@einfach-agent/core/subagents'
 import { measureSubagentArchiveCapacity, type SubagentArchiveCapacityMeasurement } from './archiveCapacity'
 
 const archiveBasePath = '.webAgent-archive/conversations/capacity-session/runs/capacity-run'

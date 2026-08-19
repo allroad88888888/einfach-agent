@@ -36,7 +36,7 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
   declaration tsconfig（`tsc --emitDeclarationOnly`）、`package.json` 增 build script 与
   dist 指向的 `exports`/`types`/`files`（保留 `private: true`）；根 `package.json` 若需
   devDependency tsup 一并加（`CI=true pnpm install < /dev/null` 落锁）
-- **判据**：`pnpm --filter @web-agent/ai build` 产出 `dist/index.js` + `.d.ts`；
+- **判据**：`pnpm --filter @einfach-agent/ai build` 产出 `dist/index.js` + `.d.ts`；
   `node -e "import('file:///…/dist/index.js')"` 可加载；仓库内 alias 消费不回归
   （`pnpm test` 相关面 + `pnpm build`）
 - **模型**：opus
@@ -59,7 +59,7 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
 
 - **依赖**：V1、V2、V8、D2–D5（core 源码在 D 线在途时不接，避免对半成品跑构建门禁）
 - **改动面**：V2 实测发现：`tsc -p tsconfig.build.json` 在**任何有跨包 import 的包**上都会
-  因 `tsconfig.app.json` 的 `paths` 把 `@web-agent/*` 指向源码而 TS6059 全灭（agent-ai 试点
+  因 `tsconfig.app.json` 的 `paths` 把 `@einfach-agent/*` 指向源码而 TS6059 全灭（agent-ai 试点
   零跨包依赖属幸存者偏差）。解法（V2 记在 `tools/skills/tsconfig.build.json` 文件头）：
   依赖包先出 dist 且 exports 改指 dist，本包 `tsconfig.build.json` 加 `"paths": {}` 让声明
   emit 走 node_modules 吃依赖的 `.d.ts`（声明文件不参与 rootDir 判定）。core 是全仓拓扑根，
@@ -68,7 +68,7 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
   exports 全部改成 `{types, default}` 指 dist、build script 接 fix-dts-specifiers；
   顺手落 V8 建议的 preset 注释（`dts: false` 旁一句「必须接 fix-dts-specifiers，否则
   node16/nodenext 消费方直接红」）
-- **判据**：`pnpm --filter @web-agent/core build` 绿且 dist 无 `dist/packages/...` 泄漏层级；
+- **判据**：`pnpm --filter @einfach-agent/core build` 绿且 dist 无 `dist/packages/...` 泄漏层级；
   9 条 subpath 的 dist 产物与 exports 逐条对应；nodenext 探针对 core 至少一条 subpath 绿；
   仓库内 `pnpm test` 相关面 + `pnpm build` + `node scripts/check-boundaries.js` 不回归
 - **模型**：opus
@@ -83,7 +83,7 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
   exports 改指 dist；tools/skills 补上被 V2 降级掉的 `.d.ts` 步。按 workspace 拓扑序
   `pnpm -r build` 串起来
 - **判据**：`pnpm -r --filter './packages/**' --filter './tools/**' build` 全绿；
-  `scripts/subagent-replay*` 对 `@web-agent/subagents/archive/replay` 的消费在 exports
+  `scripts/subagent-replay*` 对 `@einfach-agent/subagents/archive/replay` 的消费在 exports
   改 dist 后仍工作（`pnpm subagent:replay` 冒烟 + colocated 测试）；仓库内测试与
   `pnpm build` 不回归
 - **模型**：sonnet
@@ -122,7 +122,7 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
 - **依赖**：—
 - **改动面**：`packages/subagents/package.json` 的 9 条自有 subpath exports 中 8 条零消费
   （盘点搭便车发现，唯一在用的是 `./archive/replay`）——砍到只剩实际消费面
-- **判据**：`pnpm test` 相关面绿；`grep -rn "@web-agent/subagents/" apps packages tools scripts`
+- **判据**：`pnpm test` 相关面绿；`grep -rn "@einfach-agent/subagents/" apps packages tools scripts`
   与保留清单一致
 - **模型**：sonnet
 - **状态**：DONE a225ef9
@@ -150,7 +150,7 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
   落在 V1 骨架里让 V3 一并复制）；如实测有更优解（如单文件声明）需在卡上写明取舍。
   改动面：新脚本 + `packages/agent-ai/package.json` build script + 必要的骨架注释
 - **判据**：最小 nodenext 消费方探针（临时 tsconfig `module: nodenext` 对 dist 类型入口
-  `tsc --noEmit`）从红变绿；`pnpm --filter @web-agent/ai build` 与 Node import 冒烟不回归；
+  `tsc --noEmit`）从红变绿；`pnpm --filter @einfach-agent/ai build` 与 Node import 冒烟不回归；
   `pnpm exec vitest run packages/agent-ai` 绿
 - **模型**：opus
 - **状态**：DONE c56671e
@@ -272,4 +272,4 @@ D3 依赖 D2；D6 依赖 D2–D5；D7 依赖 D6。D 线与 V2/V8 改动面不相
   `pnpm build` + `node scripts/check-docs.js` 绿
 - **模型**：opus
 - **状态**：DONE（豁免表从 9 条归为 2 条测试边界例外；生产调用统一走根面或
-  `@web-agent/core/tools`，根 barrel/Tauri smoke、邻接测试、17 包构建、`pnpm build`、文档与边界门禁均绿）
+  `@einfach-agent/core/tools`，根 barrel/Tauri smoke、邻接测试、17 包构建、`pnpm build`、文档与边界门禁均绿）

@@ -1,7 +1,7 @@
 // 思考轨迹的单条呈现：推理、执行说明、运行时注入与工具调用/结果。
 
-import type { TimelineThinkingItem } from '@web-agent/core/timeline'
-import type { ModelToolCall, ToolItem } from '@web-agent/ai'
+import type { TimelineThinkingItem } from '@einfach-agent/core/timeline'
+import type { ModelToolCall, ToolItem } from '@einfach-agent/ai'
 import { MessageMarkdown } from './MessageMarkdown'
 import { SubagentRunInline } from './SubagentRunInline'
 

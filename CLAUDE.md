@@ -35,7 +35,7 @@ CI（`.github/workflows/ci.yml`）跑两条：`check-docs → check-boundaries �
 ## 构建与解析模型
 
 workspace 包**不单独编译**：`vite.config.ts` 的 `resolve.alias` 与 `tsconfig.app.json` 的
-`paths` 都把 `@web-agent/*` 直接指到各包的 `src`。改包无需 build，但新增/改名包时这两处
+`paths` 都把 `@einfach-agent/*` 直接指到各包的 `src`。改包无需 build，但新增/改名包时这两处
 alias 必须同步添加，否则类型或运行时会各错各的。`tsconfig.app.json` 的 `include` 覆盖
 `apps/web/src`、`packages/*/src`、`tools/*/src`。
 
@@ -75,7 +75,7 @@ Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter，
   和 vendor 能力描述表。
 - `packages/agent-core/`：装配式 Agent Runtime 内核：工具契约/registry、loop、插件、观测与持久化
   contract、恢复快照与 atoms；不含具体工具域或宿主 driver。
-- `packages/agent-react/`（`@web-agent/react-plugin`）：React 侧插件安装面、timeline renderer
+- `packages/agent-react/`（`@einfach-agent/react-plugin`）：React 侧插件安装面、timeline renderer
   registry，以及 **core 两个 store 的 React 绑定**（`RootStoreProvider` / `AgentStoreProvider` 与
   `useRootAtomValue` / `useAgentAtomValue`，界面与 agent 分住不同 store 的那条缝）；core 不依赖 React。
 - `packages/agent-plugin-example/`：插件契约的可运行样例，改插件 API 时同步更新。
@@ -85,7 +85,7 @@ Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter，
 - `apps/web/src/traceViewer/`：React TraceViewer 与其 view state。
 - `tools/{shell,fs,interaction,planning,skills,agents}/`：六个标准工具域；skills 的 loader、registry
   和内置内容在 `tools/skills`，默认 plan runtime 在 `tools/planning`。
-- `tools/standard/`（`@web-agent/tools`）：meta 聚合包，`registerStandardTools` 一次装齐六域。
+- `tools/standard/`（`@einfach-agent/tools`）：meta 聚合包，`registerStandardTools` 一次装齐六域。
 - `tools/mcp/`：第七个域，**不在**标准包里，由应用层按需装配。
 - `docs/`：当前说明与演进蓝图，入口是 `docs/README.md`。
 
@@ -123,7 +123,7 @@ driver 由宿主配置 bridge。默认实例本身不自动安装工具，应用
   （环境给 core）漏改一处是「新写的界面 atom 落进 core 的 store」，行为与拆分前一模一样、
   毫无症状，等于没拆。**响亮地失败优于静默地正确。**
 - **derived 不能跨 store**：einfach 的派生只在一个 store 里取 `get`，所以一张派生图上的所有 atom
-  必须同住一处。两个实例：`@web-agent/subagents` 的视图 atom 整族住 agent store
+  必须同住一处。两个实例：`@einfach-agent/subagents` 的视图 atom 整族住 agent store
   （`subagentTreesAtom` 从 `executionGraphAtom` / `itemsAtom` 派生，写入命令本来也写
   `getSessionStore(id).store`）；`plugins/initialize.ts` 的 `pluginWorkspaceRootAtom` 从两个 root atom
   派生，只能在 core 的 root store 上求值。放错 store 不报错，只是恒读到默认值。
@@ -170,7 +170,7 @@ CI 里排在 `check:boundaries` 之后。入口是 `scripts/check-state-invarian
 `writeChokepoint.js` / `slotJournalShape.js` / `atomDisposition.js`（规则 4 的登记表另住
 `atomDispositionTable.js`：判定与账分开，改 atom 的人只需要读表）/ `agentStoreBinding.js`。
 
-**规则 5**：core 之外，任何从 `@web-agent/core` import 进来、且在 core 的 atom 枚举面里的标识符
+**规则 5**：core 之外，任何从 `@einfach-agent/core` import 进来、且在 core 的 atom 枚举面里的标识符
 （规则 4 的会话 atom 全集 + `rootAtoms.ts` 的跨会话登记表），都不许出现在裸 `useAtomValue` /
 `useAtom` / `useSetAtom` 里——那读的是环境 store（界面 store），拿到的是该 atom 的**默认值**，
 组件照常渲染一份空状态、不抛异常。会话的读 `useAgentAtomValue`、跨会话的读 `useRootAtomValue`，

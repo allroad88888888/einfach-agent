@@ -1,5 +1,5 @@
 import { Provider } from '@einfach/react'
-import { AgentStoreProvider } from '@web-agent/react-plugin'
+import { AgentStoreProvider } from '@einfach-agent/react-plugin'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,11 +10,11 @@ import {
   activeSessionIdAtom,
   sessionsAtom,
   itemsAtom,
-} from '@web-agent/core'
-import { readWorkspaceFile, readWorkspaceRunIndexPage } from '@web-agent/core/runtime/workspaceRead'
+} from '@einfach-agent/core'
+import { readWorkspaceFile, readWorkspaceRunIndexPage } from '@einfach-agent/core/runtime/workspaceRead'
 import { SubagentTreePanel } from './SubagentTreePanel'
 
-vi.mock('@web-agent/core/runtime/workspaceRead', () => ({
+vi.mock('@einfach-agent/core/runtime/workspaceRead', () => ({
   readWorkspaceFile: vi.fn(),
   readWorkspaceRunIndexPage: vi.fn(),
 }))

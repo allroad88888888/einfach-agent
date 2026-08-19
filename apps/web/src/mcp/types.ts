@@ -1,4 +1,4 @@
-import type { McpServerStatus } from '@web-agent/tools-mcp'
+import type { McpServerStatus } from '@einfach-agent/tools-mcp'
 import type { McpLastKnownTools } from './toolNameCache'
 
 export type McpTransport = 'streamable-http' | 'stdio'

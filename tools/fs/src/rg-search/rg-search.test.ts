@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import type { RgSearchInput, RgSearchResult } from '@web-agent/core/runtime/workspaceRg'
-import type { ToolContext } from '@web-agent/core/tools'
+import type { RgSearchInput, RgSearchResult } from '@einfach-agent/core/runtime/workspaceRg'
+import type { ToolContext } from '@einfach-agent/core/tools'
 import { rgSearchTool } from './rg-search'
 
 type TestToolContext = ToolContext & {

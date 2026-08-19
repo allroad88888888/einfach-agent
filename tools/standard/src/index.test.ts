@@ -1,11 +1,11 @@
-// @web-agent/tools 的聚合完整性测试（TSPLIT TS2）。
+// @einfach-agent/tools 的聚合完整性测试（TSPLIT TS2）。
 // ---------------------------------------------------------------------------
 // 登记反转后，「标准工具集是否装齐、名字是否正确」这件事的归属从 core 移到这里 ——
 // core 只提供空注册表 + 抽象；本 meta 包负责把 6 域 31 工具聚合成 registerStandardTools。
 // 故这份断言留在 meta（而非 agent-core），agent-core 的测试对具体工具保持无知。
 
 import { describe, it, expect } from 'vitest'
-import { createToolRegistry } from '@web-agent/core/tools'
+import { createToolRegistry } from '@einfach-agent/core/tools'
 import { registerStandardTools } from './index'
 
 // 6 域 31 个标准工具的权威清单（顺序 = 注册顺序：shell → interaction → fs → planning → skills → agents）。
@@ -32,7 +32,7 @@ const REPLAY_UNSAFE_STANDARD_TOOLS = [
   'revert_workspace_change', 'delegate_agent',
 ] as const
 
-describe('@web-agent/tools —— 标准工具集聚合（TSPLIT TS2）', () => {
+describe('@einfach-agent/tools —— 标准工具集聚合（TSPLIT TS2）', () => {
   it('registerStandardTools 恰好装齐 31 个工具', () => {
     const reg = createToolRegistry()
     registerStandardTools(reg)

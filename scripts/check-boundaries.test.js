@@ -41,8 +41,8 @@ function run(root) {
 
 test('违规 import 会失败并报告文件、行号与规则名', async () => {
   const root = await fixture({
-    'packages/agent-core/src/core.ts': "import React from 'react'\nexport { tool } from '@web-agent/tools-mcp'\n",
-    'packages/subagents/src/runner.ts': "const load = () => import('@web-agent/tools')\n",
+    'packages/agent-core/src/core.ts': "import React from 'react'\nexport { tool } from '@einfach-agent/tools-mcp'\n",
+    'packages/subagents/src/runner.ts': "const load = () => import('@einfach-agent/tools')\n",
   })
   await assert.rejects(run(root), (error) => {
     assert.match(error.stderr, /packages\/agent-core\/src\/core.ts:1 core 禁入 React/)
@@ -55,7 +55,7 @@ test('违规 import 会失败并报告文件、行号与规则名', async () => 
 test('合法 import 与完整注释行会通过', async () => {
   const root = await fixture({
     'packages/agent-core/src/core.ts': "// import React from 'react'\nimport { invoke } from '@tauri-apps/api/core'\n",
-    'packages/persistence-idb/src/store.ts': "export { record } from '@web-agent/core'\n",
+    'packages/persistence-idb/src/store.ts': "export { record } from '@einfach-agent/core'\n",
   })
   const result = await run(root)
   assert.match(result.stdout, /边界检查通过（扫描 2 个非测试 TS\/TSX 文件，生效 7 条规则）。/)
@@ -65,10 +65,10 @@ test('合法 import 与完整注释行会通过', async () => {
 test('白名单九条 subpath 与根 barrel 放行，不产生观察项', async () => {
   const root = await fixture({
     'tools/fs/src/read.ts': [
-      "import type { Tool } from '@web-agent/core/tools'",
-      "import { itemsAtom } from '@web-agent/core'",
-      "import { emptySkillsRegistry } from '@web-agent/core/skills'",
-      "import type { HistoryDriver } from '@web-agent/core/state/persistence'",
+      "import type { Tool } from '@einfach-agent/core/tools'",
+      "import { itemsAtom } from '@einfach-agent/core'",
+      "import { emptySkillsRegistry } from '@einfach-agent/core/skills'",
+      "import type { HistoryDriver } from '@einfach-agent/core/state/persistence'",
       '',
     ].join('\n'),
   })
@@ -79,13 +79,13 @@ test('白名单九条 subpath 与根 barrel 放行，不产生观察项', async 
 
 test('白名单外且未列入豁免表的 subpath 会失败', async () => {
   const root = await fixture({
-    'tools/fs/src/read.ts': "import { rootStore } from '@web-agent/core/state/rootStore'\n",
+    'tools/fs/src/read.ts': "import { rootStore } from '@einfach-agent/core/state/rootStore'\n",
   })
   await assert.rejects(run(root), (error) => {
     assert.match(error.stderr, /边界检查失败：/)
     assert.match(
       error.stderr,
-      /tools\/fs\/src\/read\.ts:1 core 公开面白名单（@web-agent\/core\/state\/rootStore 不在白名单九条内）/,
+      /tools\/fs\/src\/read\.ts:1 core 公开面白名单（@einfach-agent\/core\/state\/rootStore 不在白名单九条内）/,
     )
     return true
   })
@@ -93,13 +93,13 @@ test('白名单外且未列入豁免表的 subpath 会失败', async () => {
 
 test('豁免表命中只报观察项、不会失败', async () => {
   const root = await fixture({
-    'apps/web/src/test/setup.ts': "import { resetRootStore } from '@web-agent/core/state/rootStore'\n",
+    'apps/web/src/test/setup.ts': "import { resetRootStore } from '@einfach-agent/core/state/rootStore'\n",
   })
   const result = await run(root)
   assert.match(result.stdout, /边界观察项：/)
   assert.match(
     result.stdout,
-    /apps\/web\/src\/test\/setup\.ts:1 观察项：core 公开面白名单（@web-agent\/core\/state\/rootStore）—— 豁免原因：vitest setupFile 不能走根 barrel/,
+    /apps\/web\/src\/test\/setup\.ts:1 观察项：core 公开面白名单（@einfach-agent\/core\/state\/rootStore）—— 豁免原因：vitest setupFile 不能走根 barrel/,
   )
   assert.match(result.stdout, /边界检查通过/)
 })
@@ -108,12 +108,12 @@ test('豁免按消费方发放：同一 subpath 换个消费方仍然失败', as
   // rootStore 只对 apps/web/src/test/setup.ts 发豁免；
   // 同一条 subpath 换到 apps/web 的其它目录仍然是白名单外命中。
   const root = await fixture({
-    'apps/web/src/borrow.ts': "import { resetRootStore } from '@web-agent/core/state/rootStore'\n",
+    'apps/web/src/borrow.ts': "import { resetRootStore } from '@einfach-agent/core/state/rootStore'\n",
   })
   await assert.rejects(run(root), (error) => {
     assert.match(
       error.stderr,
-      /apps\/web\/src\/borrow\.ts:1 core 公开面白名单（@web-agent\/core\/state\/rootStore 不在白名单九条内）/,
+      /apps\/web\/src\/borrow\.ts:1 core 公开面白名单（@einfach-agent\/core\/state\/rootStore 不在白名单九条内）/,
     )
     return true
   })
@@ -121,12 +121,12 @@ test('豁免按消费方发放：同一 subpath 换个消费方仍然失败', as
 
 test('跨行花括号 import 的收尾行同样会被判', async () => {
   const root = await fixture({
-    'tools/fs/src/read.ts': "import {\n  rootStore,\n} from '@web-agent/core/state/rootStore'\n",
+    'tools/fs/src/read.ts': "import {\n  rootStore,\n} from '@einfach-agent/core/state/rootStore'\n",
   })
   await assert.rejects(run(root), (error) => {
     assert.match(
       error.stderr,
-      /tools\/fs\/src\/read\.ts:3 core 公开面白名单（@web-agent\/core\/state\/rootStore 不在白名单九条内）/,
+      /tools\/fs\/src\/read\.ts:3 core 公开面白名单（@einfach-agent\/core\/state\/rootStore 不在白名单九条内）/,
     )
     return true
   })
@@ -134,7 +134,7 @@ test('跨行花括号 import 的收尾行同样会被判', async () => {
 
 test('core 自身的内部深导入不受白名单门禁约束', async () => {
   const root = await fixture({
-    'packages/agent-core/src/runtime/foo.ts': "import { rootStore } from '@web-agent/core/state/rootStore'\n",
+    'packages/agent-core/src/runtime/foo.ts': "import { rootStore } from '@einfach-agent/core/state/rootStore'\n",
   })
   const result = await run(root)
   assert.match(result.stdout, /边界检查通过/)
@@ -143,8 +143,8 @@ test('core 自身的内部深导入不受白名单门禁约束', async () => {
 
 test('测试与脚手架文件不进白名单门禁的扫描面', async () => {
   const root = await fixture({
-    'tools/fs/src/read.test.ts': "import { rootStore } from '@web-agent/core/state/rootStore'\n",
-    'tools/fs/src/read.testFixtures.ts': "import { rootStore } from '@web-agent/core/state/rootStore'\n",
+    'tools/fs/src/read.test.ts': "import { rootStore } from '@einfach-agent/core/state/rootStore'\n",
+    'tools/fs/src/read.testFixtures.ts': "import { rootStore } from '@einfach-agent/core/state/rootStore'\n",
   })
   const result = await run(root)
   assert.match(result.stdout, /边界检查通过/)

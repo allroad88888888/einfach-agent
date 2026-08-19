@@ -3,7 +3,7 @@
 // 这个模块故意不知道 CoreCtx、trace 和动态控制尾巴：调用方负责请求预算与可观测性；这里仅维护
 // 事实历史到请求投影的纯转换。拆出来避免 compactionPlugin 同时承担压缩编排和投影缓存两件事。
 
-import type { ModelItem } from '@web-agent/ai'
+import type { ModelItem } from '@einfach-agent/ai'
 import {
   compactContext,
   DEFAULT_KEEP_RECENT_TURNS,

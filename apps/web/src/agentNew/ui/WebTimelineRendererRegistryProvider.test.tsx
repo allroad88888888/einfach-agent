@@ -1,5 +1,5 @@
 import { render } from '@testing-library/react'
-import type { TimelineRendererRegistry } from '@web-agent/react-plugin'
+import type { TimelineRendererRegistry } from '@einfach-agent/react-plugin'
 import { describe, expect, it } from 'vitest'
 import {
   useWebTimelineRendererRegistry,

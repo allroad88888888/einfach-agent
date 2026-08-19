@@ -4,7 +4,7 @@ import {
   type HistoryImageProjection,
   type HistoryImageTarget,
   type UserImageContentBlock,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 
 const defaultTarget: HistoryImageTarget = { vendor: '', model: '' }
 const HistoryImageTargetContext = createContext<HistoryImageTarget>(defaultTarget)

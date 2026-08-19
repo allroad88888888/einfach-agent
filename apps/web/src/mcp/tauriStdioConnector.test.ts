@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
-import { classifyMcpFailure, readMcpFailureKind } from '@web-agent/tools-mcp'
+import { classifyMcpFailure, readMcpFailureKind } from '@einfach-agent/tools-mcp'
 import { createTauriStdioMcpConnector } from './tauriStdioConnector'
 
 vi.mock('@tauri-apps/api/core', () => ({

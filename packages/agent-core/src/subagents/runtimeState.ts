@@ -76,7 +76,7 @@ export interface CreateDelegateAgentRuntimeOptions extends DelegationRuntimePort
     agentPath: string
     timestamp: string
     turn: number
-    item: import('@web-agent/ai').ModelItem
+    item: import('@einfach-agent/ai').ModelItem
   }): void
 }
 

@@ -19,7 +19,7 @@ import { existsSync } from 'node:fs'
 import { createServer as createHttpServer, type Server } from 'node:http'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createHostEventBus, createNodeHostInvoke, nodeHostPlatform } from '@web-agent/host-node'
+import { createHostEventBus, createNodeHostInvoke, nodeHostPlatform } from '@einfach-agent/host-node'
 import { generateAuthToken } from './authToken'
 import { createEventsRouteHandler } from './eventsRoute'
 import { createInvokeRouteHandler } from './invokeRoute'
@@ -37,7 +37,7 @@ import { createRequestRouter } from './requestRouter'
 //   （构建收尾见 `scripts/embed-web-dist.mjs`，把 `apps/web/dist` 复制成同级的
 //   `apps/server/dist/public`）。esbuild 打包后所有内联模块共享同一个 `import.meta.url`
 //   ——就是这份产物自己的 URL——所以此时 `here` = `apps/server/dist`（不论这份 dist 躺在
-//   仓库里还是被 `npm pack` 安装进了别处的 `node_modules/@web-agent/server/dist`）。
+//   仓库里还是被 `npm pack` 安装进了别处的 `node_modules/@einfach-agent/server/dist`）。
 //   `here/public` 存在，直接用它，**不落到仓库路径**（那条路径在装进 node_modules 后并不存在，
 //   即便存在也可能是过期的另一次 build）。
 //

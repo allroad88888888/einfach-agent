@@ -1,6 +1,6 @@
 // profile / epoch 身份判定的测试;动态尾巴顶位与多因子归因见 contextCache.attribution.test.ts。
 import { describe, expect, it } from 'vitest'
-import type { ModelItem } from '@web-agent/ai'
+import type { ModelItem } from '@einfach-agent/ai'
 import {
   createContextCacheTracker,
   type ContextCacheLane,

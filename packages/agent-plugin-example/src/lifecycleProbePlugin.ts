@@ -1,4 +1,4 @@
-import { definePlugin, type Plugin, type PluginRunSnapshot, type Tool } from '@web-agent/core/plugin'
+import { definePlugin, type Plugin, type PluginRunSnapshot, type Tool } from '@einfach-agent/core/plugin'
 
 export const LIFECYCLE_PROBE_TOOL_NAME = 'lifecycle_probe'
 

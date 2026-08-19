@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import type { TimelineRendererRegistry } from '@web-agent/react-plugin'
+import type { TimelineRendererRegistry } from '@einfach-agent/react-plugin'
 import { createWebTimelineRendererRegistry } from './webTimelineRendererRegistry'
 
 const timelineRendererRegistryContext = createContext<TimelineRendererRegistry | null>(null)

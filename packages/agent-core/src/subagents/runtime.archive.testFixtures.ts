@@ -5,7 +5,7 @@
 // 本批」无从断言）、best-effort 系列不改写执行结局。产品归档的批量索引、初始化重试、目录布局
 // 与内容哈希不在这里复制——那些是 `packages/subagents` 的标的。
 
-import type { ModelItem } from '@web-agent/ai'
+import type { ModelItem } from '@einfach-agent/ai'
 import type { DelegationArchiveFormatPort, SubagentArchivePort } from './delegationRuntimePorts'
 import { formatSubagentTranscript } from '../runtime/subagentTranscript'
 import { ROOT_AGENT_PATH } from './path'

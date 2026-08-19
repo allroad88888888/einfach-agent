@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ModelItem, UserItem } from '@web-agent/ai'
+import type { ModelItem, UserItem } from '@einfach-agent/ai'
 import type { CoreCtx } from './coreCtx'
 import type {
   AfterToolCallEvent,

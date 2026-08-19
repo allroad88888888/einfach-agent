@@ -9,7 +9,7 @@
 //   组件"正常"渲染了一份空状态。dev 里肉眼可见，但 CI 里没人看，而单测如果两层绑了同一个
 //   store 就更看不出来（renderWithStore 的三个默认因此刻意是三个不同实例）。
 //
-// 判据只认**名字来自哪里**：从 `@web-agent/core`（含任何 subpath）import 进来、且在 core 的
+// 判据只认**名字来自哪里**：从 `@einfach-agent/core`（含任何 subpath）import 进来、且在 core 的
 // atom 枚举面（规则 4 的会话 atom 全集 + rootAtoms.ts 的跨会话登记表）里的标识符。
 // 不按模块路径认 —— 应用层拿到的是 barrel，路径里没有 `state/…` 字样。
 //
@@ -25,11 +25,11 @@ const scopeExcludedPrefix = 'packages/agent-core/src/'
 const bareReadPattern = /\b(useAtomValue|useAtom|useSetAtom)\s*\(\s*([A-Za-z_$][\w$]*)/g
 const importPattern = /import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*['"]([^'"]+)['"]/g
 
-/** 本文件从 @web-agent/core 家族 import 进来的标识符。 */
+/** 本文件从 @einfach-agent/core 家族 import 进来的标识符。 */
 function coreImportedNames(source) {
   const names = new Set()
   for (const [, clause, specifier] of source.matchAll(importPattern)) {
-    if (!specifier.startsWith('@web-agent/core')) continue
+    if (!specifier.startsWith('@einfach-agent/core')) continue
     for (const raw of clause.split(',')) {
       const name = raw.replace(/\btype\b/, '').trim().split(/\s+as\s+/).pop()?.trim()
       if (name) names.add(name)

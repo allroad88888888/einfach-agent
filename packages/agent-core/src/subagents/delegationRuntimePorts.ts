@@ -1,4 +1,4 @@
-import type { ModelItem } from '@web-agent/ai'
+import type { ModelItem } from '@einfach-agent/ai'
 import type { SubagentScheduler } from '../runtime/delegationContract'
 import type { ModelSettings } from '../state/core.type'
 import type { SubagentTierRouting } from './tierRouting'

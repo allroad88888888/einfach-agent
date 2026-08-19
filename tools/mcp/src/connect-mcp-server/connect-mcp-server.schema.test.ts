@@ -3,7 +3,7 @@
 // 这一层是新增的第一道闸——让模型在 schema 里就看见能选什么，并让 enum 之外的取值在
 // registry.run 的校验阶段出局，不进 execute。它【不替代】运行期的登记表准入：
 // 「schema 说可以、manager 说不认识」时仍必须被拒，那条契约在 injection.test.ts 里锁着。
-import { createToolRegistry } from '@web-agent/core/tools'
+import { createToolRegistry } from '@einfach-agent/core/tools'
 import { describe, expect, it, vi } from 'vitest'
 import { registerMcpTools } from '../index'
 import {

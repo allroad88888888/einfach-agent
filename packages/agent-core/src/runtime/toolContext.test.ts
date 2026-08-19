@@ -4,7 +4,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { rootStore, sessionsAtom } from '../state/rootStore'
 import { defaultCore } from './core/coreInstance'
-import { createDefaultPlanRuntime } from '@web-agent/tools-planning'
+import { createDefaultPlanRuntime } from '@einfach-agent/tools-planning'
 import type { CreatePlanInput, PlanRuntimeStore } from '../planning/types'
 import { getSessionStore } from '../state/sessionStore'
 import { setRun } from '../state/sessionWriters'

@@ -30,7 +30,7 @@
 import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import type { DatabaseSync } from 'node:sqlite'
-import type { SqlExecutor } from '@web-agent/core/state/persistence'
+import type { SqlExecutor } from '@einfach-agent/core/state/persistence'
 import { createSqliteExecutor } from './nodeSqliteExecutor'
 import type { SqliteConnectionName } from './connectionNames'
 

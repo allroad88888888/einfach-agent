@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { UserMessageContent } from '@web-agent/ai'
+import type { UserMessageContent } from '@einfach-agent/ai'
 import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { queuedUserMessagesAtom } from '../state/sessionTransientAtoms'
 import { sessionsAtom } from '../state/rootAtoms'

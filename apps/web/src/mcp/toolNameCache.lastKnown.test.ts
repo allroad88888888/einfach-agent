@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { makeMcpToolName } from '@web-agent/tools-mcp'
+import { makeMcpToolName } from '@einfach-agent/tools-mcp'
 import {
   MCP_TOOL_NAME_CACHE_MAX_TOOLS_PER_SERVER,
   findLastKnownToolProvider,

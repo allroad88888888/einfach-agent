@@ -10,20 +10,20 @@
 //
 // 类型与桥接口定义在 core 的契约层；本模块只承载扫描实现。
 
-import type { ProjectSkillsLoaderBridge } from '@web-agent/core'
+import type { ProjectSkillsLoaderBridge } from '@einfach-agent/core'
 import type {
   ProjectSkillsSnapshot,
   ProjectSkillEntry,
   ProjectSkillOrigin,
   ProjectSkillScanResult,
   ProjectSkillScope,
-} from '@web-agent/core/skills'
+} from '@einfach-agent/core/skills'
 import {
   buildProjectSkillEntry,
   resolveProjectSkills,
   scanRootLabel,
   FRONTMATTER_READ_LIMIT,
-} from '@web-agent/core/skills'
+} from '@einfach-agent/core/skills'
 import { scanLinkedSkillDir } from './linkedSkillDirScan'
 
 /** 每个扫描根下的两个目录；工作区与用户主目录各扫一遍这两个。 */

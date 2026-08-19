@@ -15,7 +15,7 @@
 //
 // 第三种做法（把契约抽成一个共享包）留给 D 线：它要新增包、加 alias/paths、过 check-boundaries，
 // 收益是省掉那条对拍测试，而当前只有三个常量，不值当。
-import type { HostPlatform } from '@web-agent/core'
+import type { HostPlatform } from '@einfach-agent/core'
 
 /** 与 `apps/server/src/health.ts` 的 `HEALTH_PATH` 对应。 */
 export const HEALTH_PATH = '/api/health'
@@ -27,7 +27,7 @@ export const HEALTH_PATH = '/api/health'
  * `/api/health` 回 200（这正是服务端那边加判别字段的理由）。误判成 server 宿主的后果不是少点
  * 功能，而是整个应用去打一个根本不存在的命令桥，每一条 invoke 都以看不懂的方式失败。
  */
-export const SERVICE_IDENTIFIER = 'web-agent'
+export const SERVICE_IDENTIFIER = 'einfach-agent'
 export const HOST_IDENTIFIER = 'node-server'
 
 // 四值域与 core 的 `HostPlatform` **是同一个**（服务端那份 `HealthPlatform` 也是）。

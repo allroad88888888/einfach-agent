@@ -48,7 +48,7 @@ describe('GET /api/health', () => {
     expect(response.headers['cache-control']).toBe('no-store')
     // 断言字段值而不是「字段集合恰好是这三个」：S5 可能往握手里加字段，加了不该让本例转红。
     expect(JSON.parse(response.body)).toMatchObject({
-      service: 'web-agent',
+      service: 'einfach-agent',
       host: 'node-server',
       version: '1.2.3',
     })

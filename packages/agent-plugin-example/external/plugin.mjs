@@ -8,7 +8,7 @@
 // 改写成契约模块桥的 URL（apps/web/src/plugins/contractImportRewrite.ts）。改成 await import(...)
 // 会在桌面上被直接拒绝。
 
-import { definePlugin } from '@web-agent/core/plugin'
+import { definePlugin } from '@einfach-agent/core/plugin'
 
 export default definePlugin({
   install(api) {

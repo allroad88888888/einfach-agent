@@ -1,5 +1,5 @@
 import type { Store } from '@einfach/core'
-import type { McpServerSnapshot, McpServerStatus } from '@web-agent/tools-mcp'
+import type { McpServerSnapshot, McpServerStatus } from '@einfach-agent/tools-mcp'
 import {
   mcpServerConfigsAtom,
   mcpServerOperationsAtom,

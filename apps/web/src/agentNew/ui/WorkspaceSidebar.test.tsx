@@ -15,11 +15,11 @@ import {
   selectWorkspace,
   toggleWorkspaceExpanded,
   toggleWorkspaceSettings,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
 
-vi.mock('@web-agent/core', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@web-agent/core')>()),
+vi.mock('@einfach-agent/core', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@einfach-agent/core')>()),
   canPickWorkspaceDirectory: vi.fn(() => false),
   pickWorkspaceDirectory: vi.fn(),
   newWorkspace: vi.fn(),

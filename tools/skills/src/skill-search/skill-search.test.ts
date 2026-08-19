@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { skillSearchTool } from './skill-search'
-import { createToolRegistry } from '@web-agent/core/tools'
-import type { ToolContext } from '@web-agent/core/tools'
+import { createToolRegistry } from '@einfach-agent/core/tools'
+import type { ToolContext } from '@einfach-agent/core/tools'
 
 // 最小 ctx：这些 internal 工具不该碰任何副作用面，但仍传全套满足签名。
 function makeCtx(): ToolContext {

@@ -20,7 +20,7 @@ import {
 } from '../userInputPreparation'
 import { assertRunStatus, resolveApiKey, withRun } from './runCommands'
 import type { ModelSettings, RunState } from '../../state/core.type'
-import type { UserMessageContent } from '@web-agent/ai'
+import type { UserMessageContent } from '@einfach-agent/ai'
 import {
   captureUserContentReachability,
   disposeUserContentAfterMutation,

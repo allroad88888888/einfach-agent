@@ -1,4 +1,4 @@
-// `@web-agent/core` 根 barrel —— 发包白名单第 1 条 `.` 的实体（卡 S5a）。
+// `@einfach-agent/core` 根 barrel —— 发包白名单第 1 条 `.` 的实体（卡 S5a）。
 // 判据见 docs/core-public-surface-audit.md §3.1 A 类「宿主装配 API」与 §4 白名单方案第 1 行。
 //
 // 定位：**宿主装配面**。消费方只有 `apps/web` 与 `apps/cli` 这两个把 Agent 装起来跑的宿主
@@ -35,7 +35,7 @@
 //     Skills → `./skills`；持久化 driver 契约 → `./persistence`。六域 barrel 各归各。
 //   · 观测（`observability/{port,trace,performanceDiagnostics,types,logReader,traceCacheTotals}`）
 //     → `./observability`。A 类清单里那 3 条观测路径与 §4 第 7 行重叠，按「一条 subpath 只有一个
-//     归属」取后者；`apps/web`/`apps/cli` 的观测装配走 `@web-agent/core/observability`。
+//     归属」取后者；`apps/web`/`apps/cli` 的观测装配走 `@einfach-agent/core/observability`。
 //   · `tools/registry` 的 `toolRegistry` 单例 —— 盘点 §3.1 点名的**重复通路**：它就是
 //     `defaultCore.tools`（tools/registry.ts:17）。白名单只留一条，宿主改用 `defaultCore.tools`。
 //   · `skills/projectSkillPreferences` —— 归 `./skills`，且是另一条工作线在途的模块（S4 卡同款警戒），
@@ -91,7 +91,7 @@ export { configureHostInvoke } from './runtime/hostBridge'
 export type { HostInvoke, HostBridgeRegistration } from './runtime/hostBridge'
 // S5：登记桥时必须一并声明宿主平台。**同机宿主**（Tauri webview 与原生同一台机器）用这个函数
 // 取值；远端宿主（浏览器 → Node server）必须从握手拿，用本地探测会稳定答错整整一个平台。
-// 读取面不在这里：两个消费者（shell 桥、注入模型的「运行环境」段）读的是 `@web-agent/core/tools`
+// 读取面不在这里：两个消费者（shell 桥、注入模型的「运行环境」段）读的是 `@einfach-agent/core/tools`
 // 的 `hostPlatform()`，宿主不需要也不该自己去读那个值。
 export { detectLocalPlatform } from './runtime/hostPlatform'
 export type { HostPlatform } from './runtime/hostPlatform'

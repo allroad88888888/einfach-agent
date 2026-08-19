@@ -1,4 +1,4 @@
-import { DEFAULT_MODEL_SETTINGS, userMessageLabel, type UserMessageContent } from '@web-agent/ai'
+import { DEFAULT_MODEL_SETTINGS, userMessageLabel, type UserMessageContent } from '@einfach-agent/ai'
 import { activeSessionIdAtom, activeWorkspaceIdAtom, expandedWorkspaceIdsAtom, sessionsAtom, workspacesAtom } from '../../state/rootStore'
 import type { ModelSettings, SessionMeta } from '../../state/core.type'
 import type { CoreInstance } from '../core/coreInstance'

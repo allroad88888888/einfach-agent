@@ -1,4 +1,4 @@
-import type { ModelItem } from '@web-agent/ai'
+import type { ModelItem } from '@einfach-agent/ai'
 import { defaultCore } from '../runtime/core/coreInstance'
 import {
   classifyTimedToolRisk,

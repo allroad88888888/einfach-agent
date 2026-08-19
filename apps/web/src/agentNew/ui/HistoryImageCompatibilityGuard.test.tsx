@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { createStore } from '@einfach/core'
-import { itemsAtom } from '@web-agent/core'
+import { itemsAtom } from '@einfach-agent/core'
 import { renderWithStore } from '../../test/renderWithStore'
 import { HistoryImageCompatibilityProvider } from './HistoryImageCompatibilityContext'
 import { HistoryImageCompatibilityGuard } from './HistoryImageCompatibilityGuard'

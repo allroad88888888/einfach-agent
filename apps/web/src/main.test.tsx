@@ -22,23 +22,23 @@ const defaultPersistenceFacade = vi.hoisted(() => ({
 vi.mock('./host/resolveHost', () => ({
   resolveHost: vi.fn(async () => ({ kind: 'static', reason: 'unreachable' })),
 }))
-vi.mock('@web-agent/core/runtime/commands', () => ({
+vi.mock('@einfach-agent/core/runtime/commands', () => ({
   configureCommands: vi.fn(),
   newSession: vi.fn(),
 }))
-vi.mock('@web-agent/core/runtime/persistenceBridge', () => ({
+vi.mock('@einfach-agent/core/runtime/persistenceBridge', () => ({
   configurePersistence: defaultPersistenceFacade.configure,
   hydratePersistence: defaultPersistenceFacade.hydrate,
 }))
-vi.mock('@web-agent/core/observability/trace', () => ({
+vi.mock('@einfach-agent/core/observability/trace', () => ({
   configureObservability: vi.fn(),
 }))
-vi.mock('@web-agent/persistence-idb', () => ({
+vi.mock('@einfach-agent/persistence-idb', () => ({
   createIndexedDbSessionsPersistence: vi.fn(() => ({})),
   createIndexedDbRecoveryDriver: vi.fn(() => ({})),
   createIndexedDbHistoryLogDriver: vi.fn(() => ({})),
 }))
-vi.mock('@web-agent/observability-idb', () => ({
+vi.mock('@einfach-agent/observability-idb', () => ({
   createIndexedDbLogDriver: vi.fn(() => ({})),
   createIndexedDbLogReader: vi.fn(() => ({})),
 }))
@@ -92,7 +92,7 @@ describe('main entry: MCP 启动装配（C1）', () => {
 
     const { isMcpSettingsConfigured } = await import('./mcp/commands')
     const { mcpHydrationAtom } = await import('./mcp/state')
-    const { defaultCore } = await import('@web-agent/core')
+    const { defaultCore } = await import('@einfach-agent/core')
     const configurePersistence = vi.spyOn(defaultCore.persistence, 'configure')
     const hydratePersistence = vi.spyOn(defaultCore.persistence, 'hydrate').mockResolvedValue(false)
 
@@ -170,9 +170,9 @@ describe('main entry: MCP 启动装配（C1）', () => {
   // 这正是 H1 之前浏览器侧的行为。桌面那一侧在 main.hostBridge.test.tsx。
   // 依赖第一个用例先 import 过 './main'。
   it('浏览器预览宿主：不登记宿主命令桥，server 工具整类不进模型清单（H5）', async () => {
-    const { hasHostBridge } = await import('@web-agent/core/runtime/hostBridge')
-    const { buildToolManifestText } = await import('@web-agent/core/runtime/toolManifest')
-    const { defaultCore } = await import('@web-agent/core')
+    const { hasHostBridge } = await import('@einfach-agent/core/runtime/hostBridge')
+    const { buildToolManifestText } = await import('@einfach-agent/core/runtime/toolManifest')
+    const { defaultCore } = await import('@einfach-agent/core')
 
     expect(hasHostBridge()).toBe(false)
 

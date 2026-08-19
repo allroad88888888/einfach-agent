@@ -8,7 +8,7 @@ import {
   rootStore,
   activeSessionIdAtom,
   discardArtifact,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { renderWithStore } from '../../test/renderWithStore'
 import { SaveArtifact } from './SaveArtifact'
 
@@ -16,7 +16,7 @@ import { SaveArtifact } from './SaveArtifact'
 // 契约 U1 —— UI 只读 atom + 调命令（discardArtifact），不 import writer removePendingArtifact。
 // 这里把命令整模块 mock，断言「保存成功后按 (归属会话id, artifactId) 调 discardArtifact」，
 // 不触碰真正的 transient writer。PF4：ownerSessionId 必须在点击那一刻从 rootStore 捕获。
-vi.mock('@web-agent/core/runtime/commands', () => ({
+vi.mock('@einfach-agent/core/runtime/commands', () => ({
   discardArtifact: vi.fn(),
 }))
 

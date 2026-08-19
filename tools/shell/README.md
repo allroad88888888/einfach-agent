@@ -1,4 +1,4 @@
-# @web-agent/tools-shell
+# @einfach-agent/tools-shell
 
 The shell tool domain: `shell_macos`, `shell_linux`, `shell_powershell`, task execution and
 verification commands, and Git diff review.

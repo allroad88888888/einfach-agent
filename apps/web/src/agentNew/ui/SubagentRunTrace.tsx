@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import type { ModelToolCall } from '@web-agent/ai'
-import type { SubagentTraceRecord } from '@web-agent/subagents'
+import type { ModelToolCall } from '@einfach-agent/ai'
+import type { SubagentTraceRecord } from '@einfach-agent/subagents'
 import { MessageMarkdown } from './MessageMarkdown'
 
 function prettyJson(value: string): string {

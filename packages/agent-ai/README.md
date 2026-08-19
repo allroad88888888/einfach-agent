@@ -1,4 +1,4 @@
-# @web-agent/ai
+# @einfach-agent/ai
 
 DeepSeek, GLM and Kimi API adapters — request building, streaming responses, provider-specific
 image preparation, adapter retries, and the vendor capability table.

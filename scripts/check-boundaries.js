@@ -17,27 +17,27 @@ const importPatterns = [
   /\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
   // 跨行 import/export 的收尾行（`} from '...'`）——整条语句里唯一带说明符的那一行，上面三条
   // 单行正则都够不着它。少了这条，任何写成多行花括号的深导入都能绕过 S9 的公开面白名单门禁
-  // （实测 core 之外的 `@web-agent/core/*` 深导入有近半是这种写法）。
+  // （实测 core 之外的 `@einfach-agent/core/*` 深导入有近半是这种写法）。
   /^\s*\}\s*from\s+['"]([^'"]+)['"]/g,
 ]
 const coreRules = [
   { name: 'core 禁入 React', packages: ['react', '@einfach/react'] },
-  { name: 'core 禁入工具域', matches: (value) => value === '@web-agent/tools' || value.startsWith('@web-agent/tools-') },
+  { name: 'core 禁入工具域', matches: (value) => value === '@einfach-agent/tools' || value.startsWith('@einfach-agent/tools-') },
   {
     name: 'core 禁入能力包',
     packages: [
-      '@web-agent/subagents', '@web-agent/persistence-idb', '@web-agent/persistence-sqlite',
-      '@web-agent/observability-idb', '@web-agent/observability-sqlite',
+      '@einfach-agent/subagents', '@einfach-agent/persistence-idb', '@einfach-agent/persistence-sqlite',
+      '@einfach-agent/observability-idb', '@einfach-agent/observability-sqlite',
       // host-node 是 core 命令桥的一种实现。core 反过来引它 = 把「宿主是什么」重新焊回 core，
       // 正是 H 线（configureHostInvoke）拆掉的那件事。
-      '@web-agent/host-node',
+      '@einfach-agent/host-node',
     ],
   },
   { name: 'core 禁入 Tauri SQL 插件', packages: ['@tauri-apps/plugin-sql'] },
 ]
 const capabilityRule = {
   name: '能力包禁入工具域',
-  matches: (value) => value === '@web-agent/tools' || value.startsWith('@web-agent/tools-'),
+  matches: (value) => value === '@einfach-agent/tools' || value.startsWith('@einfach-agent/tools-'),
 }
 const dialogObservation = { name: '观察项：core 使用 Tauri dialog 插件', packages: ['@tauri-apps/plugin-dialog'] }
 const capabilityPackages = ['subagents', 'persistence-idb', 'persistence-sqlite', 'observability-idb', 'observability-sqlite', 'host-node']
@@ -67,11 +67,11 @@ const vendorNameExemptions = [
 ]
 
 // S9：core 公开面白名单门禁。core 之外的包与 apps 只能经这九条入口进 core——根 barrel
-// `@web-agent/core` 本身（下面用 `subpath === ''` 表示）加八条 subpath。判据与逐条归属见
+// `@einfach-agent/core` 本身（下面用 `subpath === ''` 表示）加八条 subpath。判据与逐条归属见
 // docs/core-public-surface-audit.md §4，落地状态见 docs/core-surface-issues.md 的 S1–S8 卡。
 // **精确匹配，不是段前缀**：段前缀会让 `tools/registry`、`subagents/childAgentLoop` 这类深路径
 // 借白名单第一段蒙混过关，而它们恰恰是本规则要收敛的对象（前者已在本卡消掉，后者留豁免待 S11）。
-const corePackageName = '@web-agent/core'
+const corePackageName = '@einfach-agent/core'
 const coreSubpathRuleName = 'core 公开面白名单'
 const coreSubpathAllowList = [
   '', 'plugin', 'timeline', 'tools', 'subagents', 'state/persistence', 'observability', 'skills', 'planning',
@@ -224,7 +224,7 @@ async function main() {
   console.log(`边界检查通过（扫描 ${scanned} 个非测试 TS/TSX 文件，生效 ${coreRules.length + 3} 条规则）。`)
   console.log('说明：import 类规则仅跳过以 // 或 * 开头的整行注释，不解析行内注释；跨行语句只认 `} from \'…\'` 收尾行；')
   console.log('厂商名红线逐行做字面量扫描，含注释在内，因为注释里的厂商名同样是本规则要收敛的对象；')
-  console.log('公开面白名单对 @web-agent/core 的 subpath 做精确匹配，白名单外只有豁免表里的既有命中会降级为观察项。')
+  console.log('公开面白名单对 @einfach-agent/core 的 subpath 做精确匹配，白名单外只有豁免表里的既有命中会降级为观察项。')
 }
 
 main().catch((error) => {

@@ -1,5 +1,5 @@
 {
-  "name": "@web-agent/tools-mcp",
+  "name": "@einfach-agent/tools-mcp",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
-    "@web-agent/core": "workspace:*",
+    "@einfach-agent/core": "workspace:*",
     "zod": "^3.25.0"
   },
   "devDependencies": {

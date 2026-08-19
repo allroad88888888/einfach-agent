@@ -1,5 +1,5 @@
 import type { Store } from '@einfach/core'
-import type { McpClientManager } from '@web-agent/tools-mcp'
+import type { McpClientManager } from '@einfach-agent/tools-mcp'
 import { createMcpConfigWriteQueue } from './configWriteQueue'
 import { createMcpInstallFlow } from './installFlow'
 import { createMcpLaunchConsentController } from './launchConsentController'

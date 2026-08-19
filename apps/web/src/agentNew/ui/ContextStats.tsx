@@ -8,15 +8,15 @@
 // 直接写会话 atom，绕过收口点；stale guard 现在在写入器里，见 state/sessionTransientMutations.ts。
 
 import { useEffect } from 'react'
-import { useAgentAtomValue } from '@web-agent/react-plugin'
-import { recoverCacheTotalsFromTrace } from '@web-agent/core/observability'
+import { useAgentAtomValue } from '@einfach-agent/react-plugin'
+import { recoverCacheTotalsFromTrace } from '@einfach-agent/core/observability'
 import {
   COST_SOFT_CAP_TOKENS,
   applyRecoveredCacheTotals,
   contextInputBudgetTokens,
   contextStatsAtom,
   type ContextStatsSnapshot,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 
 const numberFormatter = new Intl.NumberFormat('en-US')
 

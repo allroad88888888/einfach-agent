@@ -8,7 +8,7 @@ import {
   activeSessionIdAtom,
   rootStore,
   sessionsAtom,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { renderWithStore } from '../../test/renderWithStore'
 import { configureMcpSettings } from '../../mcp/commands'
 import { createMemoryMcpConfigStorage } from '../../mcp/persistence'

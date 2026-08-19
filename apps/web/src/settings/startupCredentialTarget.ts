@@ -1,4 +1,4 @@
-import type { ModelSettings } from '@web-agent/core'
+import type { ModelSettings } from '@einfach-agent/core'
 import { kimiRegionSetting } from '../modelInput/kimiRegionSetting'
 import type { ModelCredentialId } from './modelCredentialHost'
 

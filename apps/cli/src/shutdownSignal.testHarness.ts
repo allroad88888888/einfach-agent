@@ -1,7 +1,7 @@
 // 「真的发信号」那条判据的被试进程：CLI 宿主 + 一个赖着不走的 MCP 子进程
 // ---------------------------------------------------------------------------
 // 由 `shutdownSignal.test.ts` 用 tsx 起成子进程（tsconfig 走 `apps/cli/tsconfig.json`，与
-// `pnpm cli` 同一套 paths 映射，确保 `@web-agent/host-node` 解析到 **src** 而不是可能过期的 dist）。
+// `pnpm cli` 同一套 paths 映射，确保 `@einfach-agent/host-node` 解析到 **src** 而不是可能过期的 dist）。
 // 这里刻意**不**引 vitest 的任何东西：它跑在一个普通的 Node 进程里，不是测试环境。
 //
 // 拿到的进程谱系是：vitest（祖父）→ 本进程（父）→ 假 MCP server（孙）。测试对着本进程发真信号，
@@ -14,7 +14,7 @@
 //   · C5_MARKER        —— 只出现在孙进程 argv 里的唯一标记
 //   · C5_SKIP_SHUTDOWN —— '1' 时**不装**信号处理，用作负对照
 
-import { createNodeHostInvoke } from '@web-agent/host-node'
+import { createNodeHostInvoke } from '@einfach-agent/host-node'
 import { installCliShutdown } from './shutdown'
 
 const marker = process.env.C5_MARKER ?? 'c5-missing-marker'

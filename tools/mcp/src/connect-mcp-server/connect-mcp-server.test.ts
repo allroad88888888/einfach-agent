@@ -1,6 +1,6 @@
 // connect_mcp_server 的功能契约与注册器契约。
 // 提示注入场景（拒绝 URL / 命令行 / 配置对象 / 未登记 id）在 connect-mcp-server.injection.test.ts。
-import { createToolRegistry } from '@web-agent/core/tools'
+import { createToolRegistry } from '@einfach-agent/core/tools'
 import { describe, expect, it, vi } from 'vitest'
 import { registerMcpTools } from '../index'
 import { MCP_TOOL_CALL_TIMEOUT_MS } from '../toolAdapter'

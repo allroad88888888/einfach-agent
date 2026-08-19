@@ -1,4 +1,4 @@
-import type { AssistantItem, ModelResponseMessage } from '@web-agent/ai'
+import type { AssistantItem, ModelResponseMessage } from '@einfach-agent/ai'
 import { getDefaultObservabilityPort } from '../../observability/port'
 
 /** Converts a value into a bounded trace representation. */

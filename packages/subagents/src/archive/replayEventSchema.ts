@@ -1,7 +1,7 @@
 import {
   type SubagentArchiveEvent,
   type SubagentArchiveEventType,
-} from '@web-agent/core/subagents'
+} from '@einfach-agent/core/subagents'
 import { parseJsonl, type JsonlParseResult } from './jsonl'
 
 // 与 types.ts 的 SubagentArchiveEventType 联合一一对应 —— 漏一个，该类事件就会被

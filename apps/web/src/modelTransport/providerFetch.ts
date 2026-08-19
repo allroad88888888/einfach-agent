@@ -5,7 +5,7 @@ import type {
   ProviderTarget,
   ProviderTransport,
   ProviderTransportInput,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import { providerRouteSpec, providerTargetForRequest } from './providerRoute'
 
 function requestMethod(input: RequestInfo | URL, init?: RequestInit): ProviderMethod {

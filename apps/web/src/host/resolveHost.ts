@@ -25,7 +25,7 @@
 // 得先过 `tsc -b` 那一关。`tauri` 这一态刻意**不带** platform：桌面端 webview 与原生同机，
 // 权威是 core 的 `detectLocalPlatform()`，本模块没有资格也没有必要替它答。
 import { isTauri } from '@tauri-apps/api/core'
-import type { HostPlatform } from '@web-agent/core'
+import type { HostPlatform } from '@einfach-agent/core'
 import { HEALTH_PATH, readServerPlatform } from './serverHealthContract'
 
 export type HostKind = 'tauri' | 'server' | 'static'

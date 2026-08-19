@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ModelProxyStreamError, ModelRequestCancelledError } from '@web-agent/host-node'
+import { ModelProxyStreamError, ModelRequestCancelledError } from '@einfach-agent/host-node'
 import { mapModelRouteError } from './modelRouteError'
 
 describe('响应头之前的失败怎么映射', () => {

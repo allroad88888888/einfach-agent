@@ -1,6 +1,6 @@
-// tools-fs —— @web-agent/tools-fs：fs 域内置工具的桶文件 + 注册器（TSPLIT TS2）。
-// 依赖：仅 @web-agent/core（工具抽象 ToolRegistry + 本域用到的 core 特性）。core 不反向依赖本包 —— 单向无环。
-import type { ToolRegistry } from '@web-agent/core/tools'
+// tools-fs —— @einfach-agent/tools-fs：fs 域内置工具的桶文件 + 注册器（TSPLIT TS2）。
+// 依赖：仅 @einfach-agent/core（工具抽象 ToolRegistry + 本域用到的 core 特性）。core 不反向依赖本包 —— 单向无环。
+import type { ToolRegistry } from '@einfach-agent/core/tools'
 import { readFileTool } from './read-file/read-file'
 import { listFilesTool } from './list-files/list-files'
 import { searchFilesTool } from './search-files/search-files'

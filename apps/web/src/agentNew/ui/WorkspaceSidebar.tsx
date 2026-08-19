@@ -1,7 +1,7 @@
 import { useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useAtom } from '@einfach/react'
-import { useRootAtomValue } from '@web-agent/react-plugin'
+import { useRootAtomValue } from '@einfach-agent/react-plugin'
 import {
   activeWorkspaceIdAtom,
   expandedWorkspaceIdsAtom,
@@ -15,7 +15,7 @@ import {
   toggleWorkspaceSettings,
   canPickWorkspaceDirectory,
   pickWorkspaceDirectory,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { workspaceRenameStateAtom } from './workspaceViewState'
 import { SessionList } from './SessionList'
 import { WorkspaceRootField } from './WorkspaceRootField'

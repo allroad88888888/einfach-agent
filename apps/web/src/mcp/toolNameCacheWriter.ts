@@ -18,7 +18,7 @@
 // 缓存写入留在 app 层：tools/mcp 与 packages/agent-core 都不碰磁盘，本文件只经由注入的
 // McpToolNameCacheStorage 读写；数据形状与三条上限见 toolNameCache.ts。
 
-import type { McpToolSnapshot } from '@web-agent/tools-mcp'
+import type { McpToolSnapshot } from '@einfach-agent/tools-mcp'
 import {
   removeToolNameCacheEntry,
   setToolNameCacheEntry,

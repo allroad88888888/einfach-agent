@@ -20,8 +20,8 @@
 // server 宿主要先握手才知道自己是 server、平台是什么，所以装配层的形状是「先 await
 // resolveHost()，再登记，再 bootstrap」，不能让这两件事并行发起。
 //
-// 【为什么不用 core 的 loadTauriInvoke()】它没有出现在 @web-agent/core 的公开面上，深导入
-// `@web-agent/core/runtime/hostTauri` 会撞 check-boundaries 的 core 公开面白名单（S9）。
+// 【为什么不用 core 的 loadTauriInvoke()】它没有出现在 @einfach-agent/core 的公开面上，深导入
+// `@einfach-agent/core/runtime/hostTauri` 会撞 check-boundaries 的 core 公开面白名单（S9）。
 // 装配层自己持有这个 loader 也更贴 H 线的方向：桥背后是什么由宿主说了算，core 不必认识 Tauri。
 //
 // 【为什么 static 不登记】静态产物没有后端，登记等于骗 core 说有本机能力，模型会看到一堆
@@ -36,7 +36,7 @@
 // 握手报回 `'unsupported'`（FreeBSD / AIX 这类）时原样传下去：core 认识第四个值，
 // 在这里替它映射成三选一等于谎报，而后果是每条 shell 命令都撞 platform mismatch。
 import { invoke } from '@tauri-apps/api/core'
-import { configureHostInvoke, detectLocalPlatform } from '@web-agent/core'
+import { configureHostInvoke, detectLocalPlatform } from '@einfach-agent/core'
 import type { ResolvedHost } from './resolveHost'
 import { httpInvoke } from './serverInvoke'
 import { getServerInvokeToken } from './serverInvokeToken'

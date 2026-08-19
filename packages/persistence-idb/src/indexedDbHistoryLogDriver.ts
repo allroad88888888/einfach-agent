@@ -7,7 +7,7 @@
 // 读回时不校验条目形状：einfach 的 `hydrate()` 自己会逐条浅校验、非法整条丢弃。
 // 这里只负责「取出来的东西长得像一份日志」，剩下的交给它。
 
-import type { HistoryLogDriver, PersistedHistoryLog } from '@web-agent/core/state/persistence'
+import type { HistoryLogDriver, PersistedHistoryLog } from '@einfach-agent/core/state/persistence'
 import {
   DEFAULT_HISTORY_DB_NAME,
   HISTORY_LOG_STORE_NAME,

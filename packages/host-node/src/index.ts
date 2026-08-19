@@ -1,4 +1,4 @@
-// @web-agent/host-node —— Node 侧的宿主能力实现（core 命令桥的一种）
+// @einfach-agent/host-node —— Node 侧的宿主能力实现（core 命令桥的一种）
 // ---------------------------------------------------------------------------
 // 公开面只有三组：装配入口、命令全集、类型契约。域实现（`config/` 及后续的 `workspace/`
 // `shell/` `mcp/` …）**不出现在这里**——它们是路由表的零件，对外只经
@@ -6,8 +6,8 @@
 //
 // 典型装配（宿主启动时一次，早于任何工具可能执行的时点）：
 //
-//   import { configureHostInvoke } from '@web-agent/core'
-//   import { createNodeHostInvoke } from '@web-agent/host-node'
+//   import { configureHostInvoke } from '@einfach-agent/core'
+//   import { createNodeHostInvoke } from '@einfach-agent/host-node'
 //   const invoke = createNodeHostInvoke({})
 //   configureHostInvoke(() => Promise.resolve(invoke))
 //

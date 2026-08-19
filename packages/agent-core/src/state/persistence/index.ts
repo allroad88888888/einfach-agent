@@ -1,4 +1,4 @@
-// `@web-agent/core/state/persistence` 的公开面 barrel —— 持久化 contract 面：driver 接口、
+// `@einfach-agent/core/state/persistence` 的公开面 barrel —— 持久化 contract 面：driver 接口、
 // 配套的 checkpoint 数据类型，以及契约自带的那个零依赖内存实现，供 persistence-idb /
 // persistence-sqlite 两个 driver 包与无盘宿主（apps/cli）消费。判据见
 // docs/core-public-surface-audit.md §3.3 C 类「持久化 driver」一行、§4 白名单方案第 6 条。
@@ -14,7 +14,7 @@
 // - ./hydrate（E4，S7a 已消）：持久化启动步骤的内部实现，宿主走 runtime/persistenceBridge
 //   的 hydratePersistence()，不该直接拼装 hydrate。
 // - ./sessionsPersistence（E5，S7b 已消）：那是 IndexedDB 实现，已搬去
-//   `@web-agent/persistence-idb`（与 createIndexedDbHistoryDriver 同包），core 只留 contract。
+//   `@einfach-agent/persistence-idb`（与 createIndexedDbHistoryDriver 同包），core 只留 contract。
 
 export type { SessionsPersistence } from './contract'
 export type { RecoveryDriver, RecoverySaveResult } from './recoveryDriver'

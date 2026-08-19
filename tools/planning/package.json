@@ -1,5 +1,5 @@
 {
-  "name": "@web-agent/tools-planning",
+  "name": "@einfach-agent/tools-planning",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
@@ -27,7 +27,7 @@
     "build": "tsup && tsc -p tsconfig.build.json && node ../../scripts/fix-dts-specifiers.mjs dist"
   },
   "dependencies": {
-    "@web-agent/core": "workspace:*"
+    "@einfach-agent/core": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^4.0.15"

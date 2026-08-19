@@ -144,7 +144,7 @@ manifest 哈希，因而自动触发重新确认。
 **阶段 1 · 本地目录**：用户手放或 clone 进 `.webAgent/plugins/`。这是第一期的唯一形态。
 
 **阶段 2 · npm 包**：阻塞于 [npm 发包方案蓝图](launch/npm-publish-plan.md)。插件必须
-`import '@web-agent/core/plugin'`（React 侧还要 `@web-agent/react-plugin`），而这两个包今天
+`import '@einfach-agent/core/plugin'`（React 侧还要 `@einfach-agent/react-plugin`），而这两个包今天
 `private: true` 且 `exports` 指向 `.ts` 源码（该蓝图的 G2/G3）。更关键的是 **G4——core 公开面
 尚未收敛**（仓库内实际深导入 61 个子路径），在它落地前对外承诺的插件 API 不可能稳定。因此
 npm 分发不进第一期。

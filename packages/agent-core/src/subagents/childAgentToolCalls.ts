@@ -1,4 +1,4 @@
-import type { ModelFunctionTool, ModelItem, ModelToolCall } from '@web-agent/ai'
+import type { ModelFunctionTool, ModelItem, ModelToolCall } from '@einfach-agent/ai'
 import {
   parseToolCallArgs,
   searchToolManifestPage,

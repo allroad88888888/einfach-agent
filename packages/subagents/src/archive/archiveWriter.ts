@@ -1,4 +1,4 @@
-import type { SubagentArchiveWriteMode } from '@web-agent/core/subagents'
+import type { SubagentArchiveWriteMode } from '@einfach-agent/core/subagents'
 
 export interface SubagentArchiveWriteInput {
   path: string

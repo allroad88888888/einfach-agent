@@ -9,9 +9,9 @@
 //
 // db 连接（getDb，含 PRAGMA 调优与建表）与 sqliteHistoryDriver.ts 共享，定义在 sqliteShared.ts。
 
-import type { SessionMeta, WorkspaceMeta } from '@web-agent/core'
-import type { SessionsPersistence } from '@web-agent/core/state/persistence'
-import { beginPerformanceDiagnostic, performanceNow } from '@web-agent/core/observability'
+import type { SessionMeta, WorkspaceMeta } from '@einfach-agent/core'
+import type { SessionsPersistence } from '@einfach-agent/core/state/persistence'
+import { beginPerformanceDiagnostic, performanceNow } from '@einfach-agent/core/observability'
 import { getDb } from './sqliteShared'
 
 // 会话列表单行 blob 的固定主键：整个 SessionMeta[] 序列化后存这一行的 meta 列。

@@ -2,7 +2,7 @@
 
 import type { ServerResponse } from 'node:http'
 import { describe, expect, it } from 'vitest'
-import { modelRequestRegistry } from '@web-agent/host-node'
+import { modelRequestRegistry } from '@einfach-agent/host-node'
 import {
   chatEnvelope,
   deleteEnvelope,

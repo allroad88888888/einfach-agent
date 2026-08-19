@@ -1,6 +1,6 @@
 // 从历史里的 schema 加载 call/result 恢复「已成功加载过的工具名」。
 
-import type { ModelItem } from '@web-agent/ai'
+import type { ModelItem } from '@einfach-agent/ai'
 import { TOOL_SCHEMA_AUTOLOADED_CODE } from '../tools/schemaResult'
 import { parseToolCallArgs } from './toolCallArgs'
 

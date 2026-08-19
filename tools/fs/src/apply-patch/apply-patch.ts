@@ -4,7 +4,7 @@ import type {
   WorkspacePatchInput,
   WorkspacePatchOperation,
   WorkspacePatchResult,
-} from '@web-agent/core/tools'
+} from '@einfach-agent/core/tools'
 import guide from './apply-patch.md?raw'
 
 const inputSchema = {

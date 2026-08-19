@@ -10,7 +10,7 @@ import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import type { SessionMeta, WorkspaceMeta } from '@web-agent/core/state/core.type'
+import type { SessionMeta, WorkspaceMeta } from '@einfach-agent/core/state/core.type'
 import { createIndexedDbSessionsPersistence } from './sessionsPersistence'
 
 // SessionMeta 样例：两个会话，settings 用最简 deepseek 形状。

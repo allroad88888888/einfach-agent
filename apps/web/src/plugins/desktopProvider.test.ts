@@ -4,8 +4,8 @@
 // loadScannedPlugins，只有「怎么读盘」「怎么求值」两处换成替身——blob 求值那半截在
 // desktopImportModule.test.ts，装配（谁在什么时候造 provider）在 initialize.test.ts。
 
-import { createCore, definePlugin } from '@web-agent/core/plugin'
-import type { PluginScanBridge } from '@web-agent/core'
+import { createCore, definePlugin } from '@einfach-agent/core/plugin'
+import type { PluginScanBridge } from '@einfach-agent/core'
 import { describe, expect, it, vi } from 'vitest'
 import { createDesktopPluginSettingsProvider } from './desktopProvider'
 

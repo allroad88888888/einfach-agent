@@ -7,7 +7,7 @@ import {
   selectedCandidateSkillIdAtom,
   skillGovernanceDialogAtom,
   type CandidateSkill,
-} from '@web-agent/subagents'
+} from '@einfach-agent/subagents'
 import {
   closeSkillGovernanceDialog,
   confirmSkillGovernance,
@@ -15,7 +15,7 @@ import {
   openSkillGovernanceDialog,
   selectCandidateSkill,
   setCandidateSkillFilter,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 
 function CandidateScore({ candidate }: { candidate: CandidateSkill }) {
   return (

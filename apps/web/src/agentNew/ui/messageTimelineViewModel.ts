@@ -4,8 +4,8 @@ import {
   isTimelineThinkingItem,
   type TimelineItem,
   type TimelineThinkingItem,
-} from '@web-agent/core/timeline'
-import type { PlanSnapshot } from '@web-agent/core/planning'
+} from '@einfach-agent/core/timeline'
+import type { PlanSnapshot } from '@einfach-agent/core/planning'
 
 export interface CompletedPlanRecordEntry {
   kind: 'completed-plan-record'

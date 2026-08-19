@@ -18,7 +18,7 @@ import {
   type PluginLoaderDeps,
   type PluginLoadResult,
   type PluginScanBridge,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { buildNodeProjectSkillsBridge, resolveWorkspacePath } from './workspace-files'
 
 /**

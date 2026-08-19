@@ -1,4 +1,4 @@
-# @web-agent/tools-agents
+# @einfach-agent/tools-agents
 
 The agents tool domain: delegating, observing, joining and cancelling sub-agent runs.
 

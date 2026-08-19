@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createDelegateAgentRuntime } from '@web-agent/subagents'
+import { createDelegateAgentRuntime } from '@einfach-agent/subagents'
 import type { DelegateAgentCallContext } from './types'
 import {
   childPath,
@@ -12,7 +12,7 @@ import {
 
 /**
  * 本文件第二个 describe 的标的就是**产品装配后的归档 IO**（写失败传播、索引批量追加、
- * 初始化失败后重试），实现在 `@web-agent/subagents` 的 SubagentArchiveIO / ArchiveWriter，
+ * 初始化失败后重试），实现在 `@einfach-agent/subagents` 的 SubagentArchiveIO / ArchiveWriter，
  * 不是 core 内核——所以这里刻意保留对产品包的依赖，用真实装配出来的运行时。
  * 换成 core 侧的假归档只会变成「测试在测假实现」。
  */

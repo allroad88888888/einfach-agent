@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ToolContext } from '@web-agent/core/tools'
+import type { ToolContext } from '@einfach-agent/core/tools'
 import type {
   ListWorkspaceFilesInput,
   ListWorkspaceFilesResult,
   ReadWorkspaceFileInput,
   ReadWorkspaceFileResult,
   WorkspaceRuntimeResult,
-} from '@web-agent/core/runtime/workspaceRead'
+} from '@einfach-agent/core/runtime/workspaceRead'
 import { findTestLintCommandsTool } from './find-test-lint-commands'
 
 type TestCtx = ToolContext & {

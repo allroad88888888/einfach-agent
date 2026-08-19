@@ -6,9 +6,9 @@
 // pendingToolConfirmation.args 是模型给的原样参数（unknown），预览前防御式提取（command/path），并安全截断。
 
 import { useState } from 'react'
-import { useAgentAtomValue } from '@web-agent/react-plugin'
-import { runAtom, confirmTool } from '@web-agent/core'
-import { isMcpTool } from '@web-agent/core/tools'
+import { useAgentAtomValue } from '@einfach-agent/react-plugin'
+import { runAtom, confirmTool } from '@einfach-agent/core'
+import { isMcpTool } from '@einfach-agent/core/tools'
 
 const PREVIEW_MAX = 240
 

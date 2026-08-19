@@ -1,5 +1,5 @@
-import { createIndexedDbLogReader } from '@web-agent/observability-idb'
-import type { TraceLogReader, TraceLogSnapshot } from '@web-agent/core/observability'
+import { createIndexedDbLogReader } from '@einfach-agent/observability-idb'
+import type { TraceLogReader, TraceLogSnapshot } from '@einfach-agent/core/observability'
 
 const DEV_TRACE_ENDPOINT = '/__web_agent_trace_logs'
 

@@ -11,7 +11,7 @@ import {
 } from './serverHealthContract'
 
 const healthyPayload = {
-  service: 'web-agent',
+  service: 'einfach-agent',
   host: 'node-server',
   version: '0.1.0',
   platform: 'linux',
@@ -54,7 +54,7 @@ describe('readServerPlatform', () => {
   it('非对象载荷一律不认', () => {
     expect(readServerPlatform(undefined)).toBeUndefined()
     expect(readServerPlatform(null)).toBeUndefined()
-    expect(readServerPlatform('web-agent')).toBeUndefined()
+    expect(readServerPlatform('einfach-agent')).toBeUndefined()
     expect(readServerPlatform([healthyPayload])).toBeUndefined()
   })
 })

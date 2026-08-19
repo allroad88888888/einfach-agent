@@ -13,13 +13,13 @@
 import {
   configureObservability,
   configureTraceLogReader as configureTraceLogReaderFactory,
-} from '@web-agent/core/observability'
-import { createIndexedDbLogDriver, createIndexedDbLogReader } from '@web-agent/observability-idb'
+} from '@einfach-agent/core/observability'
+import { createIndexedDbLogDriver, createIndexedDbLogReader } from '@einfach-agent/observability-idb'
 import type { ResolvedHost } from './resolveHost'
 
 function configureLogDriver(host: ResolvedHost): void {
   if (host.kind === 'tauri') {
-    void import('@web-agent/observability-sqlite')
+    void import('@einfach-agent/observability-sqlite')
       .then(({ createSqliteLogDriver }) => configureObservability({ driver: createSqliteLogDriver() }))
       .catch(() => {})
     return
@@ -30,14 +30,14 @@ function configureLogDriver(host: ResolvedHost): void {
 function configureLogReader(host: ResolvedHost): void {
   if (host.kind === 'tauri') {
     configureTraceLogReaderFactory(async () => {
-      const { createSqliteLogReader } = await import('@web-agent/observability-sqlite')
+      const { createSqliteLogReader } = await import('@einfach-agent/observability-sqlite')
       return createSqliteLogReader()
     })
     return
   }
   if (import.meta.env.DEV) {
     configureTraceLogReaderFactory(async () => {
-      const { createDevSqliteLogReader } = await import('@web-agent/observability-sqlite')
+      const { createDevSqliteLogReader } = await import('@einfach-agent/observability-sqlite')
       return createDevSqliteLogReader()
     })
     return

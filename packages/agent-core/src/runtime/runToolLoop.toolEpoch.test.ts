@@ -8,7 +8,7 @@
 //   · 下一个 run 才看到 registry 的新状态（固定是 per-run，不是永久冻结）。
 
 import { describe, expect, it } from 'vitest'
-import type { ModelFunctionTool, ModelItem } from '@web-agent/ai'
+import type { ModelFunctionTool, ModelItem } from '@einfach-agent/ai'
 import { sessionsAtom } from '../state/rootAtoms'
 import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { createCoreInstance } from './core/coreInstance'

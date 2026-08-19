@@ -4,7 +4,7 @@ import {
   type SubagentArchiveEvent,
   type SubagentArchiveEventType,
   type SubagentNodeRecord,
-} from '@web-agent/core/subagents'
+} from '@einfach-agent/core/subagents'
 import type { JsonlParseError as ParseError, JsonlParseResult } from './jsonl'
 
 export type { JsonlParseError as ParseError, JsonlParseResult } from './jsonl'

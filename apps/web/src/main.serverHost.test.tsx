@@ -42,12 +42,12 @@ vi.mock('./persistence/recoveryFlushLifecycle', () => ({
   installBrowserRecoveryFlush: vi.fn(),
   installDesktopRecoveryFlush: vi.fn(async () => undefined),
 }))
-vi.mock('@web-agent/core/runtime/commands', () => ({
+vi.mock('@einfach-agent/core/runtime/commands', () => ({
   configureCommands: vi.fn(),
   newSession: vi.fn(),
 }))
-vi.mock('@web-agent/core/observability/trace', () => ({ configureObservability: vi.fn() }))
-vi.mock('@web-agent/observability-idb', () => ({
+vi.mock('@einfach-agent/core/observability/trace', () => ({ configureObservability: vi.fn() }))
+vi.mock('@einfach-agent/observability-idb', () => ({
   createIndexedDbLogDriver: vi.fn(() => ({})),
   createIndexedDbLogReader: vi.fn(() => ({})),
 }))
@@ -96,7 +96,7 @@ beforeAll(() => {
 
 afterAll(async () => {
   // 桥与平台是模块级单例（同一次登记的两半），退出前一并推回去。
-  const { configureHostInvoke } = await import('@web-agent/core/runtime/hostBridge')
+  const { configureHostInvoke } = await import('@einfach-agent/core/runtime/hostBridge')
   configureHostInvoke(undefined)
 })
 
@@ -104,10 +104,10 @@ describe('main entry · server 宿主的装配分流（B3）', () => {
   it('登记 HTTP 桥、原样带上握手平台，且桥先于 hydrate 到位', async () => {
     document.body.innerHTML = '<div id="root"></div>'
 
-    const { hasHostBridge, loadHostInvoke } = await import('@web-agent/core/runtime/hostBridge')
-    const { hostPlatform } = await import('@web-agent/core/runtime/hostPlatform')
+    const { hasHostBridge, loadHostInvoke } = await import('@einfach-agent/core/runtime/hostBridge')
+    const { hostPlatform } = await import('@einfach-agent/core/runtime/hostPlatform')
     const { httpInvoke } = await import('./host/serverInvoke')
-    const { defaultCore } = await import('@web-agent/core')
+    const { defaultCore } = await import('@einfach-agent/core')
     probe.readBridge = hasHostBridge
 
     const hydrate = vi.spyOn(defaultCore.persistence, 'hydrate').mockImplementation(async () => {
@@ -131,9 +131,9 @@ describe('main entry · server 宿主的装配分流（B3）', () => {
   })
 
   it('本机工具整类可见，模型凭据走 server 版而不是桌面原生层', async () => {
-    const { defaultCore } = await import('@web-agent/core')
-    const { hasHostBridge } = await import('@web-agent/core/runtime/hostBridge')
-    const { buildToolManifestText } = await import('@web-agent/core/runtime/toolManifest')
+    const { defaultCore } = await import('@einfach-agent/core')
+    const { hasHostBridge } = await import('@einfach-agent/core/runtime/hostBridge')
+    const { buildToolManifestText } = await import('@einfach-agent/core/runtime/toolManifest')
     const {
       createTauriModelCredentialHost,
       createUnavailableModelCredentialHost,

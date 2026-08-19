@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-// 本文件的标的就是**产品装配**：前两条用例测 `@web-agent/subagents` 的调度器派发计数，
+// 本文件的标的就是**产品装配**：前两条用例测 `@einfach-agent/subagents` 的调度器派发计数，
 // 最后一条测 `subagentScheduler` 这个兼容代理确实转发到 defaultCore 上装配的那颗调度器。
 // 因此这里刻意保留对产品包的依赖——换成 core 侧的假调度器就没有任何东西被测到了。
-import { createDelegationAssembly, createSubagentScheduler } from '@web-agent/subagents'
+import { createDelegationAssembly, createSubagentScheduler } from '@einfach-agent/subagents'
 import { configureDefaultDelegation, defaultCore } from '../runtime/core/coreInstance'
 import { subagentScheduler } from './scheduler'
 

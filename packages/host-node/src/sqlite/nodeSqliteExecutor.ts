@@ -20,7 +20,7 @@
 // 默认值，带前缀的形式与那个开关无关。
 
 import type { DatabaseSync, SQLInputValue, StatementSync } from 'node:sqlite'
-import type { SqlExecuteResult, SqlExecutor } from '@web-agent/core/state/persistence'
+import type { SqlExecuteResult, SqlExecutor } from '@einfach-agent/core/state/persistence'
 import { inspectSingleStatement } from './statementShape'
 
 /**

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ModelItem } from '@web-agent/ai'
+import type { ModelItem } from '@einfach-agent/ai'
 import { compactContext, estimateItemsTokens } from './contextCompaction'
 
 function historyThatNeedsCompaction(): ModelItem[] {

@@ -11,7 +11,7 @@
 // 不在本文件（本文件只定义槽形状）。危险工具确认 / ask_user 暂停留到 Stage 2b，原样待在 loop 里。
 // 定义但不强制实现 —— assemblePlugins 会把每个槽按 fan-out 语义合成，loop 侧据「槽为 undefined」跳过。
 
-import type { ModelItem, ModelResponseMessage } from '@web-agent/ai'
+import type { ModelItem, ModelResponseMessage } from '@einfach-agent/ai'
 import { isAbnormalFinishReason, type AbnormalFinishReason } from '../finishReason'
 import type { TraceAttributes } from '../../observability/port'
 import type { CompletedToolResult, ToolResultPatch } from '../toolResultPatch'

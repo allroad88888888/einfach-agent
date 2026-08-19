@@ -1,8 +1,8 @@
-import { normalizeDeepSeekUserId } from '@web-agent/ai'
+import { normalizeDeepSeekUserId } from '@einfach-agent/ai'
 import {
   normalizeDisabledProjectSkills,
   type DisabledProjectSkillsByWorkspace,
-} from '@web-agent/core/skills'
+} from '@einfach-agent/core/skills'
 
 export const APP_SETTINGS_VERSION = 3 as const
 export const MAX_CUSTOM_INSTRUCTIONS_LENGTH = 12_000

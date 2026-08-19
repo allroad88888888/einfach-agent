@@ -261,7 +261,7 @@ describe('双实例隔离证明（createCore × 真主循环 × 假 fetch）', (
 
   it('tools 隔离：两实例 + defaultCore 是三个不同的 registry 实例，各自独立填充互不串台', () => {
     // 【登记反转 · TS1/TS2】core 不再硬编码工具——用 fake 验证 registry 隔离：A/B 各注入自己的 fake，
-    // defaultCore 由 test/setup.ts 装标准工具。标准工具集完整性由 @web-agent/tools 的 index.test 覆盖。
+    // defaultCore 由 test/setup.ts 装标准工具。标准工具集完整性由 @einfach-agent/tools 的 index.test 覆盖。
     const A = createCore({ registerTools: (r) => r.register(makeTool('only_a')) })
     const B = createCore({ registerTools: (r) => r.register(makeTool('only_b')) })
 

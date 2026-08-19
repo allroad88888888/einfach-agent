@@ -21,7 +21,7 @@
 // 【关于插件的写入面】`CoreCtx.store` 是裸 `Store`（`coreCtx.ts` 头部写着「裸给」），但它**只对
 //   仓内插件开放**：带 `LoopHooks` 的 `AgentPlugin` / `PluginApi` 住在 `runtime/core/pluginApi.ts`，
 //   既不在 core 公开面白名单九条里，也不被 `plugin.ts` / `index.ts` 导出。公开插件经
-//   `@web-agent/core/plugin` 只拿到 `PluginRunApi = { commands, observeRun, onAfterToolCall }`
+//   `@einfach-agent/core/plugin` 只拿到 `PluginRunApi = { commands, observeRun, onAfterToolCall }`
 //   —— 没有 store，写一律走 commands。所以插件写入面**已经收口**，仓内那几个（如
 //   finishReasonPlugin）在本门禁扫描范围内，见豁免表。
 
@@ -84,7 +84,7 @@ async function checkWriteChokepoint({ repositoryRoot, files, errors, observation
     // 本文件 import 进来的、属于会话状态的标识符 —— 只有写这些才算命中。两个来源：
     //   · 按**模块**认：core 内部从会话 atom 模块 import 的一切（含非槽位的会话 atom）。
     //   · 按**名字**认：规则 4 枚举的会话 atom 全集，不管从哪条路径 import 进来的。
-    // 后者是为了看穿 barrel：core 之外的文件从 `@web-agent/core` 拿 atom，模块路径里根本没有
+    // 后者是为了看穿 barrel：core 之外的文件从 `@einfach-agent/core` 拿 atom，模块路径里根本没有
     // `state/sessionAtoms` 这种字样，只按模块认就等于对整个应用层失明。
     const sessionAtoms = new Set()
     for (const [, names, specifier] of source.matchAll(

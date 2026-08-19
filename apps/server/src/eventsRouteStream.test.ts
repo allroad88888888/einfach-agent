@@ -14,7 +14,7 @@
 import { EventEmitter } from 'node:events'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createHostEventBus, HOST_EVENT_NAMES } from '@web-agent/host-node'
+import { createHostEventBus, HOST_EVENT_NAMES } from '@einfach-agent/host-node'
 import { createCountingSource } from './eventsRoute.testHarness'
 import { openEventStream } from './eventsRouteStream'
 

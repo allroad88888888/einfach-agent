@@ -7,7 +7,7 @@
 // 的 finish_reason 语义，属于 runtime 的中立事实，故落在这里，插件和 loop 一样只是消费方。
 // loopHooks 仍原样 re-export 判据，turn-end 契约对插件作者保持完整。
 
-import { finishReasonExtensionFor, finishReasonExtensions } from '@web-agent/ai'
+import { finishReasonExtensionFor, finishReasonExtensions } from '@einfach-agent/ai'
 
 export type AbnormalFinishReason = string
 

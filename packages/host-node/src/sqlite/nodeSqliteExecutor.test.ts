@@ -1,7 +1,7 @@
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { createSqliteExecutor } from './nodeSqliteExecutor'
-import type { SqlExecutor } from '@web-agent/core/state/persistence'
+import type { SqlExecutor } from '@einfach-agent/core/state/persistence'
 
 // 用 `:memory:` 而不是临时文件：本文件只验「一条语句怎么被执行」，落盘与连接复用是
 // connections.ts 的事。内存库同样是真的 SQLite，没有 mock 掉任何被测行为。

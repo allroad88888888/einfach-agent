@@ -8,7 +8,7 @@
 // 【为什么不直接把 manager 交给 core】manager 上有 connect(config) 这类能力面，把整只 manager
 //   递进 core 等于顺手把它暴露给风险判定之外的一切。探针只回答一个问题，且不回传任何连接配置
 //   （url / headers / env 可能含凭据），只回传本机会执行的命令行。
-import type { McpConnectTarget, McpConnectTargetProbe } from '@web-agent/core/tools'
+import type { McpConnectTarget, McpConnectTargetProbe } from '@einfach-agent/core/tools'
 import type { McpServerConfig } from '../types'
 import type { McpConnectManager } from './connect-mcp-server'
 

@@ -7,7 +7,7 @@
 //   反映此刻的服务状态。若在 createMcpConnectTool 里算成常量：用户刚在设置里装好的服务，要等到
 //   下一次 registerMcpTools 才会出现在描述里；而刚刚连上的服务会在描述里继续以「未连接」的身份
 //   重复它的历史清单，诱导模型再连一次。
-import type { ToolSkill } from '@web-agent/core/tools'
+import type { ToolSkill } from '@einfach-agent/core/tools'
 import guide from './connect-mcp-server.md?raw'
 import {
   collectLastKnownDigest,

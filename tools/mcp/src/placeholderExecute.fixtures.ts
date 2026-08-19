@@ -7,8 +7,8 @@
 //   · 连接成功的默认脚本会像真 manager 那样走完 reconcile（真实工具原地覆盖同名占位、占位登记
 //     释放、远端已消失的占位被注销），所以「委派到的是真实工具」不是靠断言凑出来的。
 
-import { createToolRegistry } from '@web-agent/core/tools'
-import type { Tool, ToolContext } from '@web-agent/core/tools'
+import { createToolRegistry } from '@einfach-agent/core/tools'
+import type { Tool, ToolContext } from '@einfach-agent/core/tools'
 import { vi } from 'vitest'
 import { createMcpPlaceholderClaims } from './placeholderClaims'
 import { createMcpPlaceholderExecutor } from './placeholderExecute'

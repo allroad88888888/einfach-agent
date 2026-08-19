@@ -9,7 +9,7 @@
 // 「transient 文件里的东西都不持久化」这条直觉在这里不成立。判据只有一条，见 sessionSlots.ts：
 // **这份内容除了它自己还活在哪里？** 按模块名分类必然分错。
 
-import type { UserMessageContent } from '@web-agent/ai'
+import type { UserMessageContent } from '@einfach-agent/ai'
 import type { ConversationItem } from './core.type'
 
 export interface PendingArtifact {

@@ -25,7 +25,7 @@
 // 四级跑完仍超预算 → 返回「已尽力」的合法序列并置 withinBudget:false，绝不为了凑数字去破坏
 // 协议或砍掉最后一条 user。调用方据此决定是否提示用户开新会话。
 
-import type { AssistantItem, ModelItem, ToolItem } from '@web-agent/ai'
+import type { AssistantItem, ModelItem, ToolItem } from '@einfach-agent/ai'
 import {
   estimateItemTokens,
   estimateItemsTokens,

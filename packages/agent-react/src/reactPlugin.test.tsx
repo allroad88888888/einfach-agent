@@ -1,4 +1,4 @@
-import type { TimelineReasoningItem } from '@web-agent/core/timeline'
+import type { TimelineReasoningItem } from '@einfach-agent/core/timeline'
 import { describe, expect, it } from 'vitest'
 import {
   createTimelineRendererRegistry,

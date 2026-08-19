@@ -4,7 +4,7 @@ import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import type { RecoverySnapshotV1 } from '@web-agent/core/state/persistence'
+import type { RecoverySnapshotV1 } from '@einfach-agent/core/state/persistence'
 import { createIndexedDbRecoveryDriver } from './indexedDbRecoveryDriver'
 
 function recoverySnapshot(generation: number, sessionId = 'session-1'): RecoverySnapshotV1 {

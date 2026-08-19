@@ -1,4 +1,4 @@
-import type { ModelItem } from '@web-agent/ai'
+import type { ModelItem } from '@einfach-agent/ai'
 import type { ContextCheckpoint } from '../state/contextCheckpoint.type'
 import type { ConversationItem } from '../state/core.type'
 import { contextCheckpointItem } from './contextDistillationPrompt'

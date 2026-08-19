@@ -1,8 +1,8 @@
 import { createStore } from '@einfach/core'
 import { describe, expect, it } from 'vitest'
-import type { ConversationItem } from '@web-agent/core/state/core.type'
-import { itemsAtom } from '@web-agent/core/state/sessionAtoms'
-import { executionGraphAtom } from '@web-agent/core/execution/graph'
+import type { ConversationItem } from '@einfach-agent/core/state/core.type'
+import { itemsAtom } from '@einfach-agent/core/state/sessionAtoms'
+import { executionGraphAtom } from '@einfach-agent/core/execution/graph'
 import {
   globalSubagentRunsAtom,
   loadGlobalSubagentRunsAtom,
@@ -25,7 +25,7 @@ import type {
   ReadWorkspaceFileResult,
   ReadWorkspaceRunIndexPageResult,
   WorkspaceRuntimeResult,
-} from '@web-agent/core/subagents'
+} from '@einfach-agent/core/subagents'
 
 function delegateItems(result?: unknown): ConversationItem[] {
   const items: ConversationItem[] = [

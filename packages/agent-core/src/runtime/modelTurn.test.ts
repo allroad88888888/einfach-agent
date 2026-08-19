@@ -7,7 +7,7 @@
 // 此环境 isTauri() 天然为 false，但这里直接传布尔参数，不依赖真实环境。
 
 import { describe, it, expect } from 'vitest'
-import { maxTurnToolsForVendor, type ModelFunctionTool, type ModelItem } from '@web-agent/ai'
+import { maxTurnToolsForVendor, type ModelFunctionTool, type ModelItem } from '@einfach-agent/ai'
 import {
   buildCustomInstructionsItem,
   buildEnvironmentItem,

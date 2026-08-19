@@ -5,7 +5,7 @@
 // 谁把插件源码里的裸说明符换成这个 URL 是 contractImportRewrite.ts 的事。
 //
 // 为什么需要它：浏览器只能经【页面的 import map】解析裸说明符，而桌面壳的页面是 Vite 打包产物，
-// 根本不存在「`@web-agent/core/plugin` 对应哪个 URL」这种东西——公开面被打进了应用 chunk，
+// 根本不存在「`@einfach-agent/core/plugin` 对应哪个 URL」这种东西——公开面被打进了应用 chunk，
 // 没有独立文件可指。所以宿主必须把手里的模块实例反向暴露成一个 URL，这是唯一不需要改打包
 // 形态的做法（另外两条候选：给页面注入 import map 仍要有 URL 可指、把契约代码复制进 blob 会
 // 造出第二份实例与第二套状态，都更差）。
@@ -14,7 +14,7 @@
 // 求值时把命名空间读走，之后插件拿到的都是普通模块绑定。这个全局不是新的信任面——插件与页面
 // 同权，本来就能直接触达 globalThis 上的一切（见 desktopImportModule.ts 顶部注释）。
 
-import * as corePluginContract from '@web-agent/core/plugin'
+import * as corePluginContract from '@einfach-agent/core/plugin'
 
 /** 交接用的全局键。带前后下划线以示「宿主内部实现细节，不是给插件读的公开面」。 */
 export const CONTRACT_MODULE_GLOBAL_KEY = '__webAgentPluginContractModules__'
@@ -33,13 +33,13 @@ export interface ContractModuleResolver {
 /**
  * 桌面宿主默认桥接的契约模块。
  *
- * 只有 `@web-agent/core/plugin` 一条：它是 core 的唯一公开入口（packages/agent-core/src/plugin.ts
- * 首行），也是 docs/plugin-quickstart.md 教插件作者写的唯一 import。`@web-agent/react-plugin`
+ * 只有 `@einfach-agent/core/plugin` 一条：它是 core 的唯一公开入口（packages/agent-core/src/plugin.ts
+ * 首行），也是 docs/plugin-quickstart.md 教插件作者写的唯一 import。`@einfach-agent/react-plugin`
  * 暂不在列——今天没有任何宿主装 `entry.react`（pluginLoader 只装 core 入口），先桥一个没人用的
  * 说明符等于在无从验证的路径上留代码；等 react 入口真接线时在这里加一行即可。
  */
 export const DEFAULT_CONTRACT_MODULES: Readonly<Record<string, object>> = Object.freeze({
-  '@web-agent/core/plugin': corePluginContract,
+  '@einfach-agent/core/plugin': corePluginContract,
 })
 
 let tokenSeq = 0

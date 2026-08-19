@@ -1,4 +1,4 @@
-import type { ModelItem, ModelToolCall } from '@web-agent/ai'
+import type { ModelItem, ModelToolCall } from '@einfach-agent/ai'
 
 const TIMED_TOOL_CALL_ID_PREFIX = 'timed:'
 const SYNTHETIC_TIMED_TOOL_NAME = 'timed_tool_result'

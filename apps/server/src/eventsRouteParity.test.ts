@@ -24,7 +24,7 @@ import {
   isHostEventName,
   type HostEventName,
   type HostEventPayload,
-} from '@web-agent/host-node'
+} from '@einfach-agent/host-node'
 import { openSseClient, startEventsRouteTestServer } from './eventsRoute.testHarness'
 
 /**

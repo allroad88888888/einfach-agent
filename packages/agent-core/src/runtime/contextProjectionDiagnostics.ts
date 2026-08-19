@@ -1,4 +1,4 @@
-import { userMessageVersion, type ModelItem } from '@web-agent/ai'
+import { userMessageVersion, type ModelItem } from '@einfach-agent/ai'
 import {
   canonicalContextCacheValue,
   contextCacheFingerprintText,

@@ -1,4 +1,4 @@
-import type { TraceLogReader, TraceLogSnapshot, TraceEvent, TraceSpan } from '@web-agent/core/observability'
+import type { TraceLogReader, TraceLogSnapshot, TraceEvent, TraceSpan } from '@einfach-agent/core/observability'
 
 const DEFAULT_DB_NAME = 'web-agent-observability'
 const SPANS_STORE = 'trace_spans'

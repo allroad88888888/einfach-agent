@@ -35,7 +35,7 @@ import { resolveSqliteDatabasePath } from './databasePath'
 import type { SqliteConnectionName } from './connectionNames'
 import type { SqliteRoutesOptions } from './databasePath'
 import type { NodeHostRouteTable } from '../routeTable'
-import type { SqlExecutor, SqlExecutorLoader } from '@web-agent/core/state/persistence'
+import type { SqlExecutor, SqlExecutorLoader } from '@einfach-agent/core/state/persistence'
 
 export function createSqliteRoutes(options: SqliteRoutesOptions = {}): NodeHostRouteTable {
   return {

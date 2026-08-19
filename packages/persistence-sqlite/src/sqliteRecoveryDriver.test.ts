@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { RecoverySnapshotV1, SqlExecutor } from '@web-agent/core/state/persistence'
+import type { RecoverySnapshotV1, SqlExecutor } from '@einfach-agent/core/state/persistence'
 
 interface RecoveryRow {
   session_id: string

@@ -8,10 +8,10 @@ import { uiStore } from '../uiStore'
 //
 // 存储后端的选择（B1：桌面 vs 浏览器）在 initialize.storage.test.ts，那是另一件事。
 
-import { defaultCore, rootStore } from '@web-agent/core'
-import { classifyToolRisk } from '@web-agent/core/runtime/dangerousTools'
+import { defaultCore, rootStore } from '@einfach-agent/core'
+import { classifyToolRisk } from '@einfach-agent/core/runtime/dangerousTools'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { MCP_CONNECT_TOOL_NAME } from '@web-agent/tools-mcp'
+import { MCP_CONNECT_TOOL_NAME } from '@einfach-agent/tools-mcp'
 import { hydrateMcpSettings } from './commands'
 import { initializeMcpSettings } from './initialize'
 import { MCP_SETTINGS_STORAGE_KEY } from './persistence'

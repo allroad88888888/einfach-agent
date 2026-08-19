@@ -13,7 +13,7 @@
     // 于是「源码没改 + dist 被清空」会让 tsc 直接跳过 emit，产出一个没有 .d.ts 的 dist。
     "incremental": false,
     "composite": false,
-    // **清空继承来的 paths**（tsconfig.app.json 把 `@web-agent/*` 指向各包**源码**）。
+    // **清空继承来的 paths**（tsconfig.app.json 把 `@einfach-agent/*` 指向各包**源码**）。
     // 不清空：依赖包的 .ts 源码会被拉进本 program，而 rootDir 要求可 emit 文件都在 src 下，
     // 每个跨包文件一条 TS6059，tsc 非零退出。清空后走 node_modules 解析，吃到的是依赖 dist 里的
     // .d.ts —— 声明文件不参与 rootDir 判定，所以不再冲突。

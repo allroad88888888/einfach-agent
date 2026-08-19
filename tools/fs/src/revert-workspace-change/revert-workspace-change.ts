@@ -3,7 +3,7 @@ import type {
   ToolContext,
   WorkspaceRevertInput,
   WorkspaceRevertResult,
-} from '@web-agent/core/tools'
+} from '@einfach-agent/core/tools'
 import guide from './revert-workspace-change.md?raw'
 
 type RevertWorkspaceChange = (

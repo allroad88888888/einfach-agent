@@ -3,7 +3,7 @@
 // core 只搬运 `vendorSettings` 这个供应商附加设置袋，不解释袋内任何 key：谁认识哪个字段，
 // 由 agent-ai 的 adapter 决定（见 packages/agent-ai/src/builtinProviders.ts）。
 
-import type { ChatRequestBase, ModelAdapterSettings } from '@web-agent/ai'
+import type { ChatRequestBase, ModelAdapterSettings } from '@einfach-agent/ai'
 import type { ModelSettings } from '../state/core.type'
 
 /** Projects the cross-vendor sampling parameters carried at the top level. */

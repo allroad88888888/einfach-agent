@@ -1,7 +1,7 @@
 import {
   parseAgentPath,
   type SubagentNodeRecord,
-} from '@web-agent/core/subagents'
+} from '@einfach-agent/core/subagents'
 import {
   parseJsonDocument,
   type JsonlParseError as ParseError,

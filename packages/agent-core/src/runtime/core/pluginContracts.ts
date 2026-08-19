@@ -11,10 +11,10 @@ import type { PluginCommandFacade } from './pluginCommandFacade'
  * 是申报不是沙箱），伪造品牌得不到任何多余能力，所以「不可伪造」不值得用可识别性去换。
  *
  * 而模块局部 Symbol 会把校验变成「必须命中同一份模块实例」：
- * - CLI：插件经 Node 的 node_modules 解析拿到 `@web-agent/core/plugin`，与 CLI 自己经别名加载的
+ * - CLI：插件经 Node 的 node_modules 解析拿到 `@einfach-agent/core/plugin`，与 CLI 自己经别名加载的
  *   那份未必是同一个实例；
  * - 桌面：blob 求值的插件解析不了裸说明符，得由宿主在求值前重写到它自己的契约模块桥；
- * - 将来 npm 分发：装两份 @web-agent/core 是常态。
+ * - 将来 npm 分发：装两份 @einfach-agent/core 是常态。
  * 这三条路径下 `Symbol.for` 天然可识别，`Symbol()` 则会让一个完全合规的插件莫名其妙过不了校验。
  */
 const publicPluginBrand: unique symbol = Symbol.for('web-agent.public-plugin')

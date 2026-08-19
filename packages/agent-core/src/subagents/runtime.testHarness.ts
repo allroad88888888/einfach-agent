@@ -4,7 +4,7 @@ import type { DelegateAgentCallContext } from './types'
 // 拆分说明：本文件是 runtime.test.ts 拆分后的公共夹具（只搬运、不改写），
 // 供 runtime.<职责>.test.ts 系列文件共用。不包含任何用例。
 // 被测对象由 core 自己的 `createDelegationRuntime` 加 `runtime.ports.testFixtures` 的假端口装出
-//（见该文件头注）：这些用例测的是 core 的子 run 内核，不该反向依赖 `@web-agent/subagents`。
+//（见该文件头注）：这些用例测的是 core 的子 run 内核，不该反向依赖 `@einfach-agent/subagents`。
 
 export function response(
   message: Record<string, unknown>,

@@ -6,7 +6,7 @@ import {
   type TraceDriver,
   type TraceEvent,
   type TraceSpan,
-} from '@web-agent/core/observability'
+} from '@einfach-agent/core/observability'
 import { startUiPerformanceDiagnostics } from './performanceDiagnostics'
 
 function mockDriver(): TraceDriver & { spans: TraceSpan[]; events: TraceEvent[] } {

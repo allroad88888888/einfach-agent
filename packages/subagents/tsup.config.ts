@@ -1,4 +1,4 @@
-// @web-agent/subagents 的构建入口——共享口径全在根 tsup.preset.ts 里。
+// @einfach-agent/subagents 的构建入口——共享口径全在根 tsup.preset.ts 里。
 import { definePackageBuild } from '../../tsup.preset'
 
 export default definePackageBuild({
@@ -16,6 +16,6 @@ export default definePackageBuild({
   // 故不用开 splitting。真正持有单例的 state/subagentViewAtoms 等文件只被 index.ts 一侧引用，
   // 不进 archive/replay 这条 entry，天然没有交集。证据见 V3b 验收报告。
   splitting: false,
-  // @einfach/core、@web-agent/ai、@web-agent/core 都在本包 dependencies，tsup 自动 external。
+  // @einfach/core、@einfach-agent/ai、@einfach-agent/core 都在本包 dependencies，tsup 自动 external。
   external: [],
 })

@@ -9,7 +9,7 @@ import {
   approvePlan,
   continuePlan,
   rollbackPlanStage,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { PlanPanel } from './PlanPanel'
 import {
   MESSAGE_WINDOW_SIZE,
@@ -17,7 +17,7 @@ import {
   planTraceWindowsAtom,
 } from './messageWindowModel'
 
-vi.mock('@web-agent/core/runtime/commands', () => ({
+vi.mock('@einfach-agent/core/runtime/commands', () => ({
   approvePlan: vi.fn(),
   continuePlan: vi.fn(),
   rollbackPlanStage: vi.fn(),

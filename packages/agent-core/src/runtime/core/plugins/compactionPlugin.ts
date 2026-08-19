@@ -37,12 +37,12 @@
 //
 // 移走的符号（原先定义在 modelRun.ts，现在从本文件 import）：
 //   DEFAULT_RESERVED_OUTPUT_TOKENS / CONTEXT_SAFETY_MARGIN_RATIO / COST_SOFT_CAP_TOKENS。
-//   provider 的上下文窗口查询来自 @web-agent/ai。compactContext / estimateTokensFromText / DEFAULT_KEEP_RECENT_TURNS
+//   provider 的上下文窗口查询来自 @einfach-agent/ai。compactContext / estimateTokensFromText / DEFAULT_KEEP_RECENT_TURNS
 //   仍在 runtime/contextCompaction.ts（未挪动，本文件只 import）——modelRun.ts 若还用
 //   estimateTokensFromText 算别的（buildContextStatsSnapshot 那份 role 统计）应继续从那边导入，
 //   但 compactContext / DEFAULT_KEEP_RECENT_TURNS 抽完后 modelRun.ts 不再需要直接导入。
 
-import { contextWindowTokens, type ModelFunctionTool, type ModelItem } from '@web-agent/ai'
+import { contextWindowTokens, type ModelFunctionTool, type ModelItem } from '@einfach-agent/ai'
 import { sessionsAtom } from '../../../state/rootStore'
 import {
   compactContext,
@@ -75,13 +75,13 @@ export { createCompactionProjectionCache, type CompactionProjectionCache } from 
 // 预算常量与 contextInputBudgetTokens 【不从本文件转出】（盘点 E1 的处置）：它们是
 // runtime/contextBudget.ts 的纯常量/纯函数，与「压缩插件」这个可替换实现无关。本文件曾把它们
 // 原样 re-export，结果 UI（ContextStats）顺着这条链把默认插件的文件路径当成了公开 API——换插件
-// 即破 UI。消费方一律直接 import '../../contextBudget'（core 内）或 `@web-agent/core/runtime/
+// 即破 UI。消费方一律直接 import '../../contextBudget'（core 内）或 `@einfach-agent/core/runtime/
 // contextBudget`（core 外）。
 
 // ---------------------------------------------------------------------------
 // 上下文压缩预算
 // ---------------------------------------------------------------------------
-// provider 的模型窗口与工具容量由 @web-agent/ai 的 vendor descriptor 统一维护；core 只消费
+// provider 的模型窗口与工具容量由 @einfach-agent/ai 的 vendor descriptor 统一维护；core 只消费
 // 保守查询结果，避免在执行层重复维护 provider 数据。
 // settings.max_tokens 未设时给输出预留的额度（provider 侧默认上限通常在这个量级）。
 // 额外安全余量比例：本地估算对 tool_calls 的 JSON 结构偏乐观，留一档避免「估着没超、实际超了」。

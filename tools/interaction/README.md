@@ -1,4 +1,4 @@
-# @web-agent/tools-interaction
+# @einfach-agent/tools-interaction
 
 The interaction tool domain: asking the user questions, browser-mediated actions, and saving
 files.

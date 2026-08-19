@@ -14,7 +14,7 @@ import {
   contextStatsAtom,
   pendingArtifactsAtom,
   type SessionMeta,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { resetMcpSettingsState } from '../../mcp/state'
 import { AppShell } from './AppShell'
 
@@ -27,8 +27,8 @@ import { AppShell } from './AppShell'
 // sessionAtomScope 是 ActiveSessionProvider 绑定会话作用域的只读通路（盘点 E7）——它必须是
 // 真实实现，否则右栏 Provider 拿不到本用例 seed 过的那个会话 store。工厂里用动态 import 取，
 // 避免依赖 vi.mock 提升后顶层 import 绑定的初始化时序。
-vi.mock('@web-agent/core/runtime/commands', async () => {
-  const { defaultCore: realDefaultCore } = await import('@web-agent/core/runtime/core/coreInstance')
+vi.mock('@einfach-agent/core/runtime/commands', async () => {
+  const { defaultCore: realDefaultCore } = await import('@einfach-agent/core/runtime/core/coreInstance')
   return {
     sessionAtomScope: (id: string) => realDefaultCore.getSessionStore(id).store,
     // 与 sessionAtomScope 同理必须是真实实现：UndoBar 也挂在右栏，它读的是那个会话自己的

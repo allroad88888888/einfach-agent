@@ -7,7 +7,7 @@
 // 读回侧整份丢弃（见 core 的 historyLogDriver.ts）。所以坏数据在这里一律降级为「没有日志」
 // 而不是上抛：撤销不可用是可接受的，把启动拖垮不是。恢复快照那侧相反，必须上抛。
 
-import type { HistoryLogDriver, PersistedHistoryLog } from '@web-agent/core/state/persistence'
+import type { HistoryLogDriver, PersistedHistoryLog } from '@einfach-agent/core/state/persistence'
 import { getDb } from './sqliteShared'
 
 interface HistoryLogRow {

@@ -6,10 +6,10 @@ import {
   itemsAtom,
   runAtom,
   type ConversationItem,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { MessageList } from './MessageList'
 
-vi.mock('@web-agent/core/runtime/commands', () => ({ revertTurnToDraft: vi.fn() }))
+vi.mock('@einfach-agent/core/runtime/commands', () => ({ revertTurnToDraft: vi.fn() }))
 
 function expectThinkingProcessExpanded() {
   const toggle = screen.getByRole('button', { name: /思考过程/ })

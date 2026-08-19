@@ -27,8 +27,8 @@
 
 export const HEALTH_PATH = '/api/health'
 
-/** 判别用的固定标识。`web-agent` 的 Node HTTP 外壳，与 Tauri 原生宿主、纯静态托管三选一。 */
-export const SERVICE_IDENTIFIER = 'web-agent'
+/** 判别用的固定标识。`einfach-agent` 的 Node HTTP 外壳，与 Tauri 原生宿主、纯静态托管三选一。 */
+export const SERVICE_IDENTIFIER = 'einfach-agent'
 // 刻意不叫 `server`：core 里 `runtime: 'server'` 已经表示「需要本机能力的那类工具」，
 // 同一个词在同一个仓库里指两件事迟早出事。这里说的是**哪一种宿主实现**。
 // B1 的三态 `'tauri' | 'server' | 'static'` 中的 `'server'`，判据就是看到这个值。
@@ -38,7 +38,7 @@ export const HOST_IDENTIFIER = 'node-server'
  * 服务端 shell 认得的平台。`'unsupported'` 是真实状态而不是错误码：FreeBSD / AIX 这类机器上
  * 文件能力照常可用，只有 shell 三选一没有对应项。少了这个值，这类服务端就得在三个里谎报一个，
  * 客户端随后每条命令都以 `platform mismatch` 失败，而失败文案里没有半点「本机根本没有 shell」
- * 的信息。core 的 `HostPlatform` 是同一个四值域（`@web-agent/core` 导出），B1 直接照它收。
+ * 的信息。core 的 `HostPlatform` 是同一个四值域（`@einfach-agent/core` 导出），B1 直接照它收。
  */
 export type HealthPlatform = 'macos' | 'linux' | 'windows' | 'unsupported'
 

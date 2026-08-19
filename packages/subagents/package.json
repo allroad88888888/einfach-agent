@@ -1,5 +1,5 @@
 {
-  "name": "@web-agent/subagents",
+  "name": "@einfach-agent/subagents",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
@@ -32,8 +32,8 @@
   },
   "dependencies": {
     "@einfach/core": "^0.4.0",
-    "@web-agent/ai": "workspace:*",
-    "@web-agent/core": "workspace:*"
+    "@einfach-agent/ai": "workspace:*",
+    "@einfach-agent/core": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^4.0.15"

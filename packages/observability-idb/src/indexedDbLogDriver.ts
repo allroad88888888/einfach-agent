@@ -1,6 +1,6 @@
 // 浏览器 IndexedDB trace driver：本地 best-effort 写 span/event。
 
-import type { TraceDriver, TraceEvent, TraceSpan } from '@web-agent/core/observability'
+import type { TraceDriver, TraceEvent, TraceSpan } from '@einfach-agent/core/observability'
 
 const DEFAULT_DB_NAME = 'web-agent-observability'
 const SPANS_STORE = 'trace_spans'

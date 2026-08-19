@@ -26,34 +26,34 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^5.1.1
         version: 5.2.0(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)(tsx@4.23.7))
-      '@web-agent/ai':
+      '@einfach-agent/ai':
         specifier: workspace:*
         version: link:packages/agent-ai
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:packages/agent-core
-      '@web-agent/observability-idb':
+      '@einfach-agent/observability-idb':
         specifier: workspace:*
         version: link:packages/observability-idb
-      '@web-agent/observability-sqlite':
+      '@einfach-agent/observability-sqlite':
         specifier: workspace:*
         version: link:packages/observability-sqlite
-      '@web-agent/persistence-idb':
+      '@einfach-agent/persistence-idb':
         specifier: workspace:*
         version: link:packages/persistence-idb
-      '@web-agent/persistence-sqlite':
+      '@einfach-agent/persistence-sqlite':
         specifier: workspace:*
         version: link:packages/persistence-sqlite
-      '@web-agent/react-plugin':
+      '@einfach-agent/react-plugin':
         specifier: workspace:*
         version: link:packages/agent-react
-      '@web-agent/subagents':
+      '@einfach-agent/subagents':
         specifier: workspace:*
         version: link:packages/subagents
-      '@web-agent/tools':
+      '@einfach-agent/tools':
         specifier: workspace:*
         version: link:tools/standard
-      '@web-agent/tools-mcp':
+      '@einfach-agent/tools-mcp':
         specifier: workspace:*
         version: link:tools/mcp
       react:
@@ -117,25 +117,25 @@ importers:
 
   apps/cli:
     dependencies:
-      '@web-agent/ai':
+      '@einfach-agent/ai':
         specifier: workspace:*
         version: link:../../packages/agent-ai
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../../packages/agent-core
-      '@web-agent/host-node':
+      '@einfach-agent/host-node':
         specifier: workspace:*
         version: link:../../packages/host-node
-      '@web-agent/subagents':
+      '@einfach-agent/subagents':
         specifier: workspace:*
         version: link:../../packages/subagents
-      '@web-agent/tools':
+      '@einfach-agent/tools':
         specifier: workspace:*
         version: link:../../tools/standard
-      '@web-agent/tools-planning':
+      '@einfach-agent/tools-planning':
         specifier: workspace:*
         version: link:../../tools/planning
-      '@web-agent/tools-skills':
+      '@einfach-agent/tools-skills':
         specifier: workspace:*
         version: link:../../tools/skills
     devDependencies:
@@ -145,10 +145,10 @@ importers:
 
   apps/server:
     dependencies:
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../../packages/agent-core
-      '@web-agent/host-node':
+      '@einfach-agent/host-node':
         specifier: workspace:*
         version: link:../../packages/host-node
     devDependencies:
@@ -169,7 +169,7 @@ importers:
       '@tauri-apps/plugin-dialog':
         specifier: ^2.7.1
         version: 2.7.2
-      '@web-agent/ai':
+      '@einfach-agent/ai':
         specifier: workspace:*
         version: link:../agent-ai
     devDependencies:
@@ -179,10 +179,10 @@ importers:
 
   packages/agent-plugin-example:
     dependencies:
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../agent-core
-      '@web-agent/react-plugin':
+      '@einfach-agent/react-plugin':
         specifier: workspace:*
         version: link:../agent-react
       react:
@@ -198,7 +198,7 @@ importers:
 
   packages/agent-react:
     dependencies:
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:^
         version: link:../agent-core
       react:
@@ -214,7 +214,7 @@ importers:
 
   packages/host-node:
     dependencies:
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../agent-core
     devDependencies:
@@ -227,7 +227,7 @@ importers:
 
   packages/observability-idb:
     dependencies:
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../agent-core
 
@@ -236,10 +236,10 @@ importers:
       '@tauri-apps/plugin-sql':
         specifier: ^2.4.0
         version: 2.4.0
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../agent-core
-      '@web-agent/observability-idb':
+      '@einfach-agent/observability-idb':
         specifier: workspace:*
         version: link:../observability-idb
     devDependencies:
@@ -249,7 +249,7 @@ importers:
 
   packages/persistence-idb:
     dependencies:
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../agent-core
     devDependencies:
@@ -265,7 +265,7 @@ importers:
       '@tauri-apps/plugin-sql':
         specifier: ^2.4.0
         version: 2.4.0
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../agent-core
     devDependencies:
@@ -278,10 +278,10 @@ importers:
       '@einfach/core':
         specifier: ^0.4.0
         version: 0.4.0
-      '@web-agent/ai':
+      '@einfach-agent/ai':
         specifier: workspace:*
         version: link:../agent-ai
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../agent-core
     devDependencies:
@@ -291,7 +291,7 @@ importers:
 
   tools/agents:
     dependencies:
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../../packages/agent-core
     devDependencies:
@@ -301,7 +301,7 @@ importers:
 
   tools/fs:
     dependencies:
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../../packages/agent-core
     devDependencies:
@@ -311,7 +311,7 @@ importers:
 
   tools/interaction:
     dependencies:
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../../packages/agent-core
     devDependencies:
@@ -324,7 +324,7 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@3.25.76)
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../../packages/agent-core
       zod:
@@ -337,7 +337,7 @@ importers:
 
   tools/planning:
     dependencies:
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../../packages/agent-core
     devDependencies:
@@ -347,7 +347,7 @@ importers:
 
   tools/shell:
     dependencies:
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../../packages/agent-core
     devDependencies:
@@ -357,7 +357,7 @@ importers:
 
   tools/skills:
     dependencies:
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../../packages/agent-core
     devDependencies:
@@ -367,25 +367,25 @@ importers:
 
   tools/standard:
     dependencies:
-      '@web-agent/core':
+      '@einfach-agent/core':
         specifier: workspace:*
         version: link:../../packages/agent-core
-      '@web-agent/tools-agents':
+      '@einfach-agent/tools-agents':
         specifier: workspace:*
         version: link:../agents
-      '@web-agent/tools-fs':
+      '@einfach-agent/tools-fs':
         specifier: workspace:*
         version: link:../fs
-      '@web-agent/tools-interaction':
+      '@einfach-agent/tools-interaction':
         specifier: workspace:*
         version: link:../interaction
-      '@web-agent/tools-planning':
+      '@einfach-agent/tools-planning':
         specifier: workspace:*
         version: link:../planning
-      '@web-agent/tools-shell':
+      '@einfach-agent/tools-shell':
         specifier: workspace:*
         version: link:../shell
-      '@web-agent/tools-skills':
+      '@einfach-agent/tools-skills':
         specifier: workspace:*
         version: link:../skills
     devDependencies:

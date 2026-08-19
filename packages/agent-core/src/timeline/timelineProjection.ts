@@ -1,4 +1,4 @@
-import type { ModelToolCall, ToolItem } from '@web-agent/ai'
+import type { ModelToolCall, ToolItem } from '@einfach-agent/ai'
 import type { ConversationItem } from '../state/core.type'
 import type { BrowserCard, RuntimeTranscriptEvent } from '../state/transientAtoms'
 

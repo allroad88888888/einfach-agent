@@ -2,12 +2,12 @@ import { describe, it, expect, afterEach, vi } from 'vitest'
 import { act, fireEvent, screen } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
-import { runAtom, confirmTool } from '@web-agent/core'
+import { runAtom, confirmTool } from '@einfach-agent/core'
 import { ToolConfirmCard } from './ToolConfirmCard'
 
 // S4-B ToolConfirmCard：危险工具确认卡片。契约 U1 —— 只读 atom（runAtom）+ 调命令（confirmTool）。
 // 命令整模块 mock，断言「按了什么就调了什么」，不触碰真正的 runtime / store writer。
-vi.mock('@web-agent/core/runtime/commands', () => ({
+vi.mock('@einfach-agent/core/runtime/commands', () => ({
   confirmTool: vi.fn(),
 }))
 

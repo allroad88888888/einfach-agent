@@ -1,4 +1,4 @@
-import type { McpServerConfig, McpServerSnapshot } from '@web-agent/tools-mcp'
+import type { McpServerConfig, McpServerSnapshot } from '@einfach-agent/tools-mcp'
 import type { McpSettingsManager } from '../../mcp/service'
 
 function connectedSnapshot(config: McpServerConfig): McpServerSnapshot {

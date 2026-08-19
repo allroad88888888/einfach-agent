@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
-import type { ToolContext } from '@web-agent/core/tools'
-import type { WorkspacePatchInput, WorkspacePatchResult } from '@web-agent/core/runtime/workspacePatch'
+import type { ToolContext } from '@einfach-agent/core/tools'
+import type { WorkspacePatchInput, WorkspacePatchResult } from '@einfach-agent/core/runtime/workspacePatch'
 import { applyPatchTool } from './apply-patch'
 
 type TestToolContext = ToolContext & {

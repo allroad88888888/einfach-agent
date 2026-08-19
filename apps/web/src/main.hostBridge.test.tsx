@@ -44,11 +44,11 @@ vi.mock('./persistence/recoveryFlushLifecycle', () => ({
   installBrowserRecoveryFlush: vi.fn(),
   installDesktopRecoveryFlush: vi.fn(async () => undefined),
 }))
-vi.mock('@web-agent/core/runtime/commands', () => ({
+vi.mock('@einfach-agent/core/runtime/commands', () => ({
   configureCommands: vi.fn(),
   newSession: vi.fn(),
 }))
-vi.mock('@web-agent/core/observability/trace', () => ({ configureObservability: vi.fn() }))
+vi.mock('@einfach-agent/core/observability/trace', () => ({ configureObservability: vi.fn() }))
 vi.mock('./agentNew/ui/AppShell', () => ({ AppShell: () => null }))
 vi.mock('./agentNew/ui/StartupCredentialGate', () => ({ StartupCredentialGate: () => null }))
 vi.mock('./agentNew/ui/WebTimelineRendererRegistryProvider', () => ({
@@ -94,7 +94,7 @@ afterAll(async () => {
   if (originalIsTauri) Object.defineProperty(globalThis, 'isTauri', originalIsTauri)
   else delete (globalThis as { isTauri?: boolean }).isTauri
   // hostBridge 的 loader 是模块级单例：本文件把它登记成了「有桥」，退出前推回去。
-  const { configureHostInvoke } = await import('@web-agent/core/runtime/hostBridge')
+  const { configureHostInvoke } = await import('@einfach-agent/core/runtime/hostBridge')
   configureHostInvoke(undefined)
 })
 
@@ -102,8 +102,8 @@ describe('main entry · 桌面宿主的命令桥登记（H5）', () => {
   it('登记了桥，解析出来的就是 Tauri 的 invoke，且每一步装配时桥都已经在', async () => {
     document.body.innerHTML = '<div id="root"></div>'
 
-    const { hasHostBridge, loadHostInvoke } = await import('@web-agent/core/runtime/hostBridge')
-    const { defaultCore } = await import('@web-agent/core')
+    const { hasHostBridge, loadHostInvoke } = await import('@einfach-agent/core/runtime/hostBridge')
+    const { defaultCore } = await import('@einfach-agent/core')
     probe.readBridge = hasHostBridge
 
     // hydrate 是「恢复出来的会话可能带着未完成的 run」的那一刻，也就是工具真正可能执行的最早时点。
@@ -135,9 +135,9 @@ describe('main entry · 桌面宿主的命令桥登记（H5）', () => {
   })
 
   it('有桥之后 runtime=server 的工具整类回到模型可见的清单里', async () => {
-    const { defaultCore } = await import('@web-agent/core')
-    const { hasHostBridge } = await import('@web-agent/core/runtime/hostBridge')
-    const { buildToolManifestText } = await import('@web-agent/core/runtime/toolManifest')
+    const { defaultCore } = await import('@einfach-agent/core')
+    const { hasHostBridge } = await import('@einfach-agent/core/runtime/hostBridge')
+    const { buildToolManifestText } = await import('@einfach-agent/core/runtime/toolManifest')
 
     // 逐字复刻生产表达式：modelTurnPrefix.ts 就是拿 hasHostBridge() 当总闸喂给它。
     const manifest = buildToolManifestText(hasHostBridge(), { registry: defaultCore.tools })

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HEALTH_PROBE_TIMEOUT_MS, resolveHost, type ResolveHostOptions } from './resolveHost'
 
 const healthyPayload = {
-  service: 'web-agent',
+  service: 'einfach-agent',
   host: 'node-server',
   version: '0.1.0',
   platform: 'linux',

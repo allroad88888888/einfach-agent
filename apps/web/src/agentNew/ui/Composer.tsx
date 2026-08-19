@@ -9,7 +9,7 @@
 
 import { useEffect, useRef } from 'react'
 import { useAtomValue, useSetAtom } from '@einfach/react'
-import { useAgentAtomValue } from '@web-agent/react-plugin'
+import { useAgentAtomValue } from '@einfach-agent/react-plugin'
 import {
   runAtom,
   queuedUserMessagesAtom,
@@ -19,7 +19,7 @@ import {
   sendMessage,
   setApprovalMode,
   stopRun,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { composerDraftAtom } from './composerDraftState'
 import {
   addComposerImageAttachmentsAtom,

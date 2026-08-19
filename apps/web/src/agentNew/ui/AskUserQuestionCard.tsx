@@ -9,15 +9,15 @@
 // 防御式收敛（§5 R1，绝不抛）。移植自旧 src/chat/AskUserQuestionCard.tsx，但换掉
 // @ai-components 控件（text 用原生 textarea）与 store 参数（改调命令）。
 
-import { useAgentAtomValue } from '@web-agent/react-plugin'
+import { useAgentAtomValue } from '@einfach-agent/react-plugin'
 import {
   runAtom,
   pendingQuestionAnswersAtom,
   type AskUserAnswerValue,
   answerQuestion,
   resumeWithAnswers,
-} from '@web-agent/core'
-import { normalizeAskUserQuestionPayload, type AskUserQuestionItem } from '@web-agent/core/tools'
+} from '@einfach-agent/core'
+import { normalizeAskUserQuestionPayload, type AskUserQuestionItem } from '@einfach-agent/core/tools'
 
 export function AskUserQuestionCard({ surface = 'conversation' }: { surface?: 'conversation' | 'plan' }) {
   const run = useAgentAtomValue(runAtom)

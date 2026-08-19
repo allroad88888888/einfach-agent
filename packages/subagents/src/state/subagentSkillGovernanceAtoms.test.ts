@@ -5,7 +5,7 @@ import {
   type ReadWorkspaceFileInput,
   type ReadWorkspaceFileResult,
   type WorkspaceRuntimeResult,
-} from '@web-agent/core/subagents'
+} from '@einfach-agent/core/subagents'
 import {
   candidateSkillsAtom,
   confirmSkillGovernanceAtom,

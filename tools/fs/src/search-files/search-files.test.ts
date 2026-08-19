@@ -1,11 +1,11 @@
 import { describe, it, expect, vi } from 'vitest'
-import type { ToolContext } from '@web-agent/core/tools'
+import type { ToolContext } from '@einfach-agent/core/tools'
 import type {
   SearchWorkspaceFilesInput,
   SearchWorkspaceFilesResult,
   WorkspaceRuntimeResult,
-} from '@web-agent/core/runtime/workspaceRead'
-import type { RgSearchInput, RgSearchResult } from '@web-agent/core/runtime/workspaceRg'
+} from '@einfach-agent/core/runtime/workspaceRead'
+import type { RgSearchInput, RgSearchResult } from '@einfach-agent/core/runtime/workspaceRg'
 import { searchFilesTool } from './search-files'
 
 type TestCtx = ToolContext & {

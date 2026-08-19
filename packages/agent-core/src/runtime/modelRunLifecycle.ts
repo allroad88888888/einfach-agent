@@ -7,7 +7,7 @@ import { recoverInterruptedToolCalls } from './interruptedToolCallRecovery'
 import { newId } from './newId'
 import type { PendingToolConfirmation, RunState } from '../state/core.type'
 import type { TraceSpan } from '../observability/port'
-import type { UserMessageContent } from '@web-agent/ai'
+import type { UserMessageContent } from '@einfach-agent/ai'
 
 export interface ModelRunOptions {
   signal: AbortSignal

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { McpServerConfig, McpServerSnapshot, McpToolSnapshot } from '@web-agent/tools-mcp'
+import type { McpServerConfig, McpServerSnapshot, McpToolSnapshot } from '@einfach-agent/tools-mcp'
 import { createMcpConnectedCacheRefresher } from './refreshOnConnect'
 import type { McpToolNameCache } from './toolNameCache'
 import {

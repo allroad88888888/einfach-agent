@@ -8,13 +8,13 @@
 // 于是 loader 用外部可见的列表拿到 symlink 条目本身，再把**它自己**当 workspace root 传回桥：
 // canonicalize 后就是目标目录，目录内文件是根内相对路径，读取无需任何越界权限。
 
-import type { ProjectSkillsLoaderBridge } from '@web-agent/core'
+import type { ProjectSkillsLoaderBridge } from '@einfach-agent/core'
 import type {
   ProjectSkillEntry,
   ProjectSkillOrigin,
   ProjectSkillScope,
-} from '@web-agent/core/skills'
-import { buildProjectSkillEntry } from '@web-agent/core/skills'
+} from '@einfach-agent/core/skills'
+import { buildProjectSkillEntry } from '@einfach-agent/core/skills'
 
 export interface LinkedSkillDirInput {
   scope: ProjectSkillScope

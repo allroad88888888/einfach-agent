@@ -33,7 +33,7 @@ import type { ConversationItem, RunState } from '../state/core.type'
 import { setPlan, getPlan } from '../state/planWriters'
 import { runToolLoop } from './modelRun'
 import { defaultCore } from './core/coreInstance'
-import { createDefaultPlanRuntime } from '@web-agent/tools-planning'
+import { createDefaultPlanRuntime } from '@einfach-agent/tools-planning'
 
 // C2 后 defaultCore 不再内置 plan runtime（实现在 tools-planning）；approvePlan 用例需要真实语义，
 // 按 main.tsx 的装配方式在本文件 worker 内注入（isolate:true，不外溢）。

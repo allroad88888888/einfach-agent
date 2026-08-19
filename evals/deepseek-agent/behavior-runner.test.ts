@@ -10,7 +10,7 @@ import {
   SELF_CHECK_CLAUSES,
   toolFailureStreakNotice,
   TOOL_FAILURE_STREAK_THRESHOLD,
-} from '@web-agent/core/runtime/selfReflectionPrompts'
+} from '@einfach-agent/core/runtime/selfReflectionPrompts'
 import {
   behaviorArmOrder,
   behaviorArmsForTask,

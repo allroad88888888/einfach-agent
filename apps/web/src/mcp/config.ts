@@ -1,4 +1,4 @@
-import type { McpServerConfig } from '@web-agent/tools-mcp'
+import type { McpServerConfig } from '@einfach-agent/tools-mcp'
 import {
   parseMcpEnvText,
   parseMcpHeadersText,

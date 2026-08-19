@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import type { PersistedHistoryLog } from '@web-agent/core/state/persistence'
+import type { PersistedHistoryLog } from '@einfach-agent/core/state/persistence'
 import { createIndexedDbHistoryLogDriver } from './indexedDbHistoryLogDriver'
 import { HISTORY_LOG_STORE_NAME, openIndexedDbHistoryDatabase } from './indexedDbDatabase'
 

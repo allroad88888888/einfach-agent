@@ -19,7 +19,7 @@
 // 阶段 4（project-skills-blueprint.md）：buildSkillManifestText 新增可选 snapshot 入参，
 // 无快照/空快照时输出与今天逐字相同（web 端回归护栏）。项目段由调用方传入，本模块只负责拼。
 
-import type { ProjectSkillsSnapshot, SkillSummary } from '@web-agent/core/skills'
+import type { ProjectSkillsSnapshot, SkillSummary } from '@einfach-agent/core/skills'
 import askUserQuestion from './ask-user-question.md?raw'
 import dataVisualization from './data-visualization.md?raw'
 import toolLoading from './tool-loading.md?raw'
@@ -27,7 +27,7 @@ import webChatAgent from './web-chat-agent.md?raw'
 import planning from './planning.md?raw'
 import planningEvaluationReference from './planning/references/evaluation.md?raw'
 
-export type { SkillSummary } from '@web-agent/core/skills'
+export type { SkillSummary } from '@einfach-agent/core/skills'
 
 export interface SkillSearchMatch extends SkillSummary {
   /** Deterministic relevance score; larger values sort first. */

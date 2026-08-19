@@ -8,7 +8,7 @@
 // 消息窗口、草稿、图片附件住在**会话** store 里。两处都是「渲染层随手 useAtom，值落在 core 的
 // 某个 store 上」——治理边界因此只能靠手工表维持。
 //
-// 现在界面自己持有一个 store，core 的两个 store 经 `@web-agent/react-plugin` 的
+// 现在界面自己持有一个 store，core 的两个 store 经 `@einfach-agent/react-plugin` 的
 // `useRootAtomValue` / `useAgentAtomValue` 读。**不按会话分桶**：界面就是一个，
 // 少数需要跟着会话清空的槽位见 `agentNew/ui/sessionScopedViewState.ts`。
 

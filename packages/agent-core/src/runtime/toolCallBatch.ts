@@ -1,4 +1,4 @@
-import { type ModelFunctionTool } from '@web-agent/ai'
+import { type ModelFunctionTool } from '@einfach-agent/ai'
 import { sessionsAtom, workspacesAtom } from '../state/rootStore'
 import { isToolAlwaysAllowed } from '../state/transientAtoms'
 import type { PendingToolConfirmation } from '../state/core.type'

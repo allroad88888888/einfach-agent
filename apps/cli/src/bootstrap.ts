@@ -15,7 +15,7 @@ import {
   setWorkspaceRoot,
   subscribeAgentEvents,
   type RunState,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 
 const output: TextOutput = { write: (text) => stdout.write(text) }
 

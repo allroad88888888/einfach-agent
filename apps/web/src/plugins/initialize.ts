@@ -17,7 +17,7 @@ import {
   rootStore,
   workspacesAtom,
   resolveSessionWorkspaceRoot,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { configurePluginSettings, hydratePluginSettings } from './commands'
 import { createDesktopPluginSettingsProvider } from './desktopProvider'
 import type { PluginToggleStorage } from './types'

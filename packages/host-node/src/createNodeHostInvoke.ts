@@ -54,7 +54,7 @@
 //
 // 目录本卡没有预先建空壳——git 不跟踪空目录，占位文件只是噪音。上面这棵树就是规格。
 
-import type { HostInvoke } from '@web-agent/core'
+import type { HostInvoke } from '@einfach-agent/core'
 import { isNodeHostCommandName } from './commandNames'
 import { createConfigRoutes } from './config'
 import { createShellRoutes } from './shell'

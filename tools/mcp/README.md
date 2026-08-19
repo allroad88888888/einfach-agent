@@ -1,4 +1,4 @@
-# @web-agent/tools-mcp
+# @einfach-agent/tools-mcp
 
 The MCP tool domain: connection management and remote tool adaptation for Model Context Protocol
 servers. Not part of the standard tool set — assembled by the host application on demand.

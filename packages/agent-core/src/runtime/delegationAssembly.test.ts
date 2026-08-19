@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { registerAgentsTools } from '@web-agent/tools-agents'
+import { registerAgentsTools } from '@einfach-agent/tools-agents'
 import { createTestScheduler } from '../subagents/runtime.scheduler.testFixtures'
 import type { ExecutionHandle } from '../execution/types'
 import { sessionsAtom } from '../state/rootStore'

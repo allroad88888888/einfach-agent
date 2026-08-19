@@ -1,5 +1,5 @@
 import { uiStore } from '../uiStore'
-import { configureCommands, disabledProjectSkillsByWorkspaceAtom, rootStore } from '@web-agent/core'
+import { configureCommands, disabledProjectSkillsByWorkspaceAtom, rootStore } from '@einfach-agent/core'
 import { MAX_CUSTOM_INSTRUCTIONS_LENGTH, type AppSettings } from './config'
 import { hydrateModelCredentials } from './modelCredentialCommands'
 import {

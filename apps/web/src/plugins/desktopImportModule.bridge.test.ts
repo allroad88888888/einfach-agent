@@ -5,8 +5,8 @@
 // 两种形状（`import {…} from 'blob:…'` / `export {…}` / `export default …`）的极小求值器——
 // 它不是 bundler，只是把「blob URL → 模块命名空间」这一步在 jsdom 里补上。
 
-import { loadScannedPlugins, scanPlugins, type PluginScanBridge } from '@web-agent/core'
-import { createCore } from '@web-agent/core/plugin'
+import { loadScannedPlugins, scanPlugins, type PluginScanBridge } from '@einfach-agent/core'
+import { createCore } from '@einfach-agent/core/plugin'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createContractModuleBridge } from './contractModuleBridge'
 import { createDesktopImportModule } from './desktopImportModule'
@@ -14,7 +14,7 @@ import { createDesktopImportModule } from './desktopImportModule'
 const { readWorkspaceFileMock } = vi.hoisted(() => ({ readWorkspaceFileMock: vi.fn() }))
 
 // 局部 mock：只替 readWorkspaceFile，其余原样保留——契约模块桥把整个 runtime 拉进了模块图。
-vi.mock('@web-agent/core/runtime/workspaceRead', async (importOriginal) => ({
+vi.mock('@einfach-agent/core/runtime/workspaceRead', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   readWorkspaceFile: readWorkspaceFileMock,
 }))
@@ -24,7 +24,7 @@ const PLUGINS_DIR = '.webAgent/plugins'
 const HOST_API_VERSION_RANGE = { min: '1.0.0', max: '1.0.0' } as const
 
 /** 与 docs/plugin-quickstart.md 第 3 步逐字同形：裸说明符 + definePlugin + registerTool。 */
-const PLUGIN_ENTRY = `import { definePlugin } from '@web-agent/core/plugin'
+const PLUGIN_ENTRY = `import { definePlugin } from '@einfach-agent/core/plugin'
 
 export default definePlugin({
   install(api) {
@@ -140,7 +140,7 @@ describe('桌面链路上的裸说明符插件', () => {
     vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
   })
 
-  it('走默认契约桥（= 应用自己的 @web-agent/core/plugin 实例）时 enabled，工具照常过闸门', async () => {
+  it('走默认契约桥（= 应用自己的 @einfach-agent/core/plugin 实例）时 enabled，工具照常过闸门', async () => {
     const result = await loadHelloPlugin()
 
     expect(result.plugins[0]).toMatchObject({
@@ -153,18 +153,18 @@ describe('桌面链路上的裸说明符插件', () => {
     // 造出来的两个 blob：先契约桥、后插件入口。插件那份里已经没有裸说明符了。
     const [bridgeUrl, entryUrl] = created
     const entrySource = await blobText(blobs.get(entryUrl) as Blob)
-    expect(entrySource).not.toContain('@web-agent/core/plugin')
+    expect(entrySource).not.toContain('@einfach-agent/core/plugin')
     expect(entrySource).toContain(bridgeUrl)
   })
 
   it('插件拿到的是另一份 core 副本的 definePlugin 时照样 enabled（品牌是全局注册表 Symbol）', async () => {
-    // 模拟「插件解析到了第二份 @web-agent/core」：definePlugin 是另一份实现，
+    // 模拟「插件解析到了第二份 @einfach-agent/core」：definePlugin 是另一份实现，
     // 但品牌 Symbol.for 落在同一个全局注册表里，所以宿主的 isPublicPlugin 仍认得出。
     const foreign = {
       definePlugin: (definition: object) =>
         Object.freeze({ ...definition, [Symbol.for('web-agent.public-plugin')]: true }),
     }
-    const bridge = createContractModuleBridge({ modules: { '@web-agent/core/plugin': foreign } })
+    const bridge = createContractModuleBridge({ modules: { '@einfach-agent/core/plugin': foreign } })
 
     const result = await loadHelloPlugin(bridge)
 
@@ -177,7 +177,7 @@ describe('桌面链路上的裸说明符插件', () => {
       ok: true,
       data: {
         path: `${PLUGINS_DIR}/hello/plugin.mjs`,
-        content: "const m = await import('@web-agent/core/plugin')\nexport default m.definePlugin({})",
+        content: "const m = await import('@einfach-agent/core/plugin')\nexport default m.definePlugin({})",
         truncated: false,
         bytes: 80,
       },

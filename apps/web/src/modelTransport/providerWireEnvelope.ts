@@ -3,7 +3,7 @@ import {
   isValidProviderRequestId,
   type ProviderTransportInput,
   type ProviderWireRequest,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import { encodeProviderWireBody } from './providerWireBody'
 
 const textEncoder = new TextEncoder()

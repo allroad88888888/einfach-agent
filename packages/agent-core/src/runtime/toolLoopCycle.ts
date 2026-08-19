@@ -1,4 +1,4 @@
-import type { ModelItem } from '@web-agent/ai'
+import type { ModelItem } from '@einfach-agent/ai'
 import { appendItem, patchRun } from '../state/sessionWriters'
 import { FINISH_REASON_ITEM_NOTICES } from './finishReason'
 import { getAbnormalFinishReason, type TurnEndEvent } from './core/loopHooks'

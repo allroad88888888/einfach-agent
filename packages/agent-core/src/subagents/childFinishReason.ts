@@ -1,4 +1,4 @@
-import { firstAssistantText, type ModelChatResponse } from '@web-agent/ai'
+import { firstAssistantText, type ModelChatResponse } from '@einfach-agent/ai'
 import { narrowToolCalls } from '../runtime/modelTurn'
 import {
   FINISH_REASON_ERRORS,

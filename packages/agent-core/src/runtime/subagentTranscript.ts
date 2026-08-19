@@ -1,4 +1,4 @@
-import { userMessageTracePreview, type ModelItem } from '@web-agent/ai'
+import { userMessageTracePreview, type ModelItem } from '@einfach-agent/ai'
 
 export function compactSubagentTranscript(value: string, limit: number): string {
   const trimmed = value.replace(/\s+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()

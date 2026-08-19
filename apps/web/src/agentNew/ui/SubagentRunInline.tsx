@@ -1,11 +1,11 @@
-import { useAgentAtomValue } from '@web-agent/react-plugin'
-import type { ModelToolCall, ToolItem } from '@web-agent/ai'
+import { useAgentAtomValue } from '@einfach-agent/react-plugin'
+import type { ModelToolCall, ToolItem } from '@einfach-agent/ai'
 import {
   subagentTreesAtom,
   type SubagentTraceRecord,
   type SubagentTreeView,
   type SubagentTreeViewNode,
-} from '@web-agent/subagents'
+} from '@einfach-agent/subagents'
 import { MessageMarkdown } from './MessageMarkdown'
 
 const STATUS_LABEL: Record<SubagentTreeViewNode['status'], string> = {

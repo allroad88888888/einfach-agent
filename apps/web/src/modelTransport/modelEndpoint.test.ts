@@ -3,7 +3,7 @@ import {
   GLM_BASE_URL,
   KIMI_CN_BASE_URL,
   KIMI_GLOBAL_BASE_URL,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import { describe, expect, it } from 'vitest'
 import { modelProviderForChatRequest } from './modelEndpoint'
 import { providerTargetForRequest } from './providerRoute'

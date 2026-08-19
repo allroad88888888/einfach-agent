@@ -3,7 +3,7 @@
 
 import { rootStore, sessionsAtom } from '../state/rootStore'
 import type { ModelSettings } from '../state/core.type'
-import type { ModelUsage } from '@web-agent/ai'
+import type { ModelUsage } from '@einfach-agent/ai'
 import { resetPersistence } from './persistenceBridge'
 import { resetObservability } from '../observability/trace'
 import type { TraceDriver, TraceEvent, TraceSpan } from '../observability/types'

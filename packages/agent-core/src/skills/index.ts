@@ -1,8 +1,8 @@
-// @web-agent/core/skills 的公开入口：内置 skills registry 契约 + 项目 Skills（L3）纯函数层。
+// @einfach-agent/core/skills 的公开入口：内置 skills registry 契约 + 项目 Skills（L3）纯函数层。
 //
 // projectSkillPreferences（工作区级禁用清单）在 S4 落卡时还是另一条工作线的在途模块，故当时
 // 未表态；该模块已落库（1908f87），S9 按「一条 subpath 只有一个归属」把它的公开面并进本 barrel：
-// `apps/web/src/settings/*` 三处消费方改走 `@web-agent/core/skills`，不再深导入。
+// `apps/web/src/settings/*` 三处消费方改走 `@einfach-agent/core/skills`，不再深导入。
 // `filterProjectSkillsSnapshot` 不收——它只有 core 内部（runtime/toolContext）一个消费方。
 
 export {

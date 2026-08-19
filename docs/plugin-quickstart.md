@@ -21,7 +21,7 @@
 ## 前置条件
 
 - 已经 `pnpm install` 过本仓库（插件的 `import` 依赖仓库自身的 pnpm 符号链接解析
-  `@web-agent/core`，见下方「当前边界」第 4 条——插件目录必须放在本仓库工作区内）。
+  `@einfach-agent/core`，见下方「当前边界」第 4 条——插件目录必须放在本仓库工作区内）。
 - `~/.webAgent/config.json` 里已经配置了一个模型 Key（CLI 默认用 DeepSeek，对应字段
   `modelCredentials["deepseek:default"]`；没有配置过参见根 `README.md`）。
 - 如果 shell 里残留了失效的 `DEEPSEEK_API_KEY`/`GLM_API_KEY`/`KIMI_API_KEY` 环境变量，运行
@@ -71,7 +71,7 @@ mkdir -p .webAgent/plugins/hello-plugin
 `package.json` 时被当成 CommonJS 解析）：
 
 ```js
-import { definePlugin } from '@web-agent/core/plugin'
+import { definePlugin } from '@einfach-agent/core/plugin'
 
 export default definePlugin({
   install(api) {
@@ -137,15 +137,15 @@ env -u DEEPSEEK_API_KEY -u GLM_API_KEY -u KIMI_API_KEY pnpm cli -v -p "用一句
 
 桌面与 CLI 只有「怎么求值入口」这一处不同，两条约束因此只对桌面成立：
 
-- **`@web-agent/core/plugin` 由宿主在求值前改写。** 桌面走「Rust 读文件 → blob URL → 动态 import」，
+- **`@einfach-agent/core/plugin` 由宿主在求值前改写。** 桌面走「Rust 读文件 → blob URL → 动态 import」，
   blob 模块没有 import map 可用来解析裸包名，所以宿主在求值前把这一个说明符改写成契约模块桥的
   URL（[`contractImportRewrite.ts`](../apps/web/src/plugins/contractImportRewrite.ts) 与
   [`contractModuleBridge.ts`](../apps/web/src/plugins/contractModuleBridge.ts)），插件拿到的是与应用
   **同一份** `definePlugin`。好处是桌面上不依赖 pnpm 的 `node_modules` 链接；代价是：
-  - 只桥 `@web-agent/core/plugin` 这一个说明符，其它裸包名（含 `@web-agent/react-plugin`）在桌面
+  - 只桥 `@einfach-agent/core/plugin` 这一个说明符，其它裸包名（含 `@einfach-agent/react-plugin`）在桌面
     上仍然解析失败；
-  - 只认静态 `import ... from '@web-agent/core/plugin'`（含再导出）；写成
-    `await import('@web-agent/core/plugin')` 会被直接拒绝并给出诊断。
+  - 只认静态 `import ... from '@einfach-agent/core/plugin'`（含再导出）；写成
+    `await import('@einfach-agent/core/plugin')` 会被直接拒绝并给出诊断。
 - **入口必须是自包含的单文件 ESM。** blob URL 没有相对路径基准，入口里的 `import './other.js'`
   在桌面上解析不到任何东西。CLI 侧的等价要求是「自带 Node 可直接消费的 ESM」。
 
@@ -169,13 +169,13 @@ env -u DEEPSEEK_API_KEY -u GLM_API_KEY -u KIMI_API_KEY pnpm cli -v -p "用一句
 2. **`entry.react` 今天不会生效。** 加载器只装 `entry.core`；如果插件只声明 `entry.react`、
    不声明 `entry.core`，会被标成 `incompatible`（诊断文案："未声明 core 入口，本加载器只装
    core 侧入口"）。React renderer 入口要等 React root 侧完成对应安装面（并把
-   `@web-agent/react-plugin` 也加进桌面的契约模块桥）之后才会生效。
+   `@einfach-agent/react-plugin` 也加进桌面的契约模块桥）之后才会生效。
 3. **浏览器预览宿主不支持用户插件。** 没有 workspace 文件系统可扫描，[蓝图 3.4
    节](plugin-ecosystem-blueprint.md#34-三宿主差异第一期不平均用力)已经明确排除，当前也没有
    为它实现任何读盘通道。
 4. **在 CLI 上，插件目录必须放在本仓库工作区内。**
-   `import { definePlugin } from '@web-agent/core/plugin'` 在 CLI 侧靠的是 pnpm workspace 在仓库根
-   `node_modules/@web-agent/core` 建的符号链接——Node 的裸说明符解析沿插件文件所在目录向上找
+   `import { definePlugin } from '@einfach-agent/core/plugin'` 在 CLI 侧靠的是 pnpm workspace 在仓库根
+   `node_modules/@einfach-agent/core` 建的符号链接——Node 的裸说明符解析沿插件文件所在目录向上找
    `node_modules`，只有插件目录落在仓库树内才能找到这条链接。桌面端不受这条限制（宿主改写说明符，
    见上面「在桌面端跑同一个插件」），但两个宿主都还没开放 npm 分发——它被
    [蓝图第 6 节](plugin-ecosystem-blueprint.md#6-分发) 的 G4（core 公开面收敛）阻塞。
@@ -188,10 +188,10 @@ env -u DEEPSEEK_API_KEY -u GLM_API_KEY -u KIMI_API_KEY pnpm cli -v -p "用一句
   CLI 只装 `entry.core`（当前边界第 2 条）。
 - 完全没有任何 `[plugins]` 输出：确认加了 `-v`；`.webAgent/plugins/` 目录不存在时静默返回空
   结果，不算错误，也不会打印任何诊断。
-- 报错 `Cannot find package '@web-agent/core'`（CLI）：插件目录不在本仓库工作区内（当前边界第 4 条）。
-- 桌面面板上诊断提到 "只能改写静态 import 语句"：入口用 `await import('@web-agent/core/plugin')`
-  取契约模块了，改回顶层静态 `import ... from '@web-agent/core/plugin'`。
+- 报错 `Cannot find package '@einfach-agent/core'`（CLI）：插件目录不在本仓库工作区内（当前边界第 4 条）。
+- 桌面面板上诊断提到 "只能改写静态 import 语句"：入口用 `await import('@einfach-agent/core/plugin')`
+  取契约模块了，改回顶层静态 `import ... from '@einfach-agent/core/plugin'`。
 - 桌面面板上诊断提到 `Failed to resolve module specifier`：入口 import 了桌面宿主没有桥接的裸包名
-  （只有 `@web-agent/core/plugin` 一个），或 import 了相对路径的第二个文件——入口必须自包含。
+  （只有 `@einfach-agent/core/plugin` 一个），或 import 了相对路径的第二个文件——入口必须自包含。
 - CLI 报错缺 DeepSeek Key：先看是不是 shell 里残留了失效的 `DEEPSEEK_API_KEY`，按前置条件里
   的 `env -u` 用法屏蔽它。

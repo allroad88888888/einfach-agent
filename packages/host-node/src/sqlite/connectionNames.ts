@@ -22,8 +22,8 @@ export const SQLITE_CONNECTION_NAMES = ['persistence', 'observability'] as const
 /**
  * 逻辑连接名。
  *
- * · `persistence` —— `@web-agent/persistence-sqlite`：sessions / recovery_snapshots / history_log。
- * · `observability` —— `@web-agent/observability-sqlite`：trace_spans / trace_events。
+ * · `persistence` —— `@einfach-agent/persistence-sqlite`：sessions / recovery_snapshots / history_log。
+ * · `observability` —— `@einfach-agent/observability-sqlite`：trace_spans / trace_events。
  *   该包的 driver 与 reader 是两个模块，但共用这一个名字：它们读写同一批表，分成两条连接
  *   除了多一个文件句柄没有任何区别（桌面侧分成两条是 `Database.load` 的调用点恰好有两处，
  *   不是设计）。

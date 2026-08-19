@@ -22,7 +22,7 @@
 // 本文件不 import 任何 atom / store，也不碰磁盘：写入走注入的 McpToolNameCacheWrite，
 // 与安装探测共用同一个写入点（toolNameCacheWriter.ts）。
 
-import type { McpServerSnapshot, McpToolSnapshot } from '@web-agent/tools-mcp'
+import type { McpServerSnapshot, McpToolSnapshot } from '@einfach-agent/tools-mcp'
 import { toCachedTools, type McpToolNameCacheWrite } from './toolNameCacheWriter'
 
 export interface McpConnectedCacheRefreshContext {

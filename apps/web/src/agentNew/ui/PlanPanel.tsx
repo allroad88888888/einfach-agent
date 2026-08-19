@@ -1,6 +1,6 @@
 import { useAtom } from '@einfach/react'
 import { useMemo } from 'react'
-import { useAgentAtomValue } from '@web-agent/react-plugin'
+import { useAgentAtomValue } from '@einfach-agent/react-plugin'
 import {
   itemsAtom,
   planAtom,
@@ -12,11 +12,11 @@ import {
   approvePlan,
   continuePlan,
   rollbackPlanStage,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { expandedPlanStagesAtom, planPanelExpandedAtom } from './planViewState'
-import type { PlanStageStatus } from '@web-agent/core/planning'
-import { performanceNow, recordPerformanceDiagnostic } from '@web-agent/core/observability'
-import { projectPlanStageTimelineItems } from '@web-agent/core/timeline'
+import type { PlanStageStatus } from '@einfach-agent/core/planning'
+import { performanceNow, recordPerformanceDiagnostic } from '@einfach-agent/core/observability'
+import { projectPlanStageTimelineItems } from '@einfach-agent/core/timeline'
 import { PlanStageExecutionTrace } from './PlanStageExecutionTrace'
 import { AskUserQuestionCard } from './AskUserQuestionCard'
 

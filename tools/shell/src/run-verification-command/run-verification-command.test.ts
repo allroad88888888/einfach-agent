@@ -1,6 +1,6 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { configureHostInvoke } from '@web-agent/core'
-import type { ShellCommandInput, ShellCommandResult, ToolContext } from '@web-agent/core/tools'
+import { configureHostInvoke } from '@einfach-agent/core'
+import type { ShellCommandInput, ShellCommandResult, ToolContext } from '@einfach-agent/core/tools'
 import { runVerificationCommandTool } from './run-verification-command'
 
 /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { PlanRuntime } from './planRuntime'
-import type { CreatePlanInput, PlanSnapshot } from '@web-agent/core/planning'
+import type { CreatePlanInput, PlanSnapshot } from '@einfach-agent/core/planning'
 
 function harness() {
   let plan: PlanSnapshot | undefined

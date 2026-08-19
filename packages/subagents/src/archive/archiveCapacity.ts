@@ -1,4 +1,4 @@
-import type { SubagentNodeRecord } from '@web-agent/core/subagents'
+import type { SubagentNodeRecord } from '@einfach-agent/core/subagents'
 
 export interface SubagentArchiveCapacityFile {
   path: string

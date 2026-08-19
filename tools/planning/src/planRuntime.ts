@@ -7,7 +7,7 @@ import type {
   PlanStage,
   SubmitStageResultInput,
   UpdatePlanInput,
-} from '@web-agent/core/planning'
+} from '@einfach-agent/core/planning'
 
 function fail(error: string): PlanMutationResult {
   return { ok: false, error }

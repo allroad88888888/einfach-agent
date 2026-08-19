@@ -1,4 +1,4 @@
-import { isAbortError, type UserMessageContent } from '@web-agent/ai'
+import { isAbortError, type UserMessageContent } from '@einfach-agent/ai'
 import { patchRun } from '../state/sessionWriters'
 import { createLoopBudget } from './loopBudget'
 import { createModelTurnRequester } from './modelTurnRequester'

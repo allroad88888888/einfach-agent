@@ -1,12 +1,12 @@
-# @web-agent/plugin-example
+# @einfach-agent/plugin-example
 
 Core 与 React UI 配对的外部插件样板。两个入口刻意分离：根入口只提供非 React 的
 Core 插件；`/react` 才提供 UI 插件。二者只使用各自包的公开 API，不导入 Core 的 store、atom、
 runtime 内部模块。
 
 ```ts
-import { createCore } from '@web-agent/core/plugin'
-import { createLifecycleProbePlugin } from '@web-agent/plugin-example'
+import { createCore } from '@einfach-agent/core/plugin'
+import { createLifecycleProbePlugin } from '@einfach-agent/plugin-example'
 
 const core = createCore({
   plugins: [createLifecycleProbePlugin({ stopOnRunStart: false })],
@@ -21,8 +21,8 @@ React UI 插件由 React root 的宿主单独安装；它拿不到 `CoreInstance
 import {
   createTimelineRendererRegistry,
   installReactPlugins,
-} from '@web-agent/react-plugin'
-import { createLifecycleProbeReactPlugin } from '@web-agent/plugin-example/react'
+} from '@einfach-agent/react-plugin'
+import { createLifecycleProbeReactPlugin } from '@einfach-agent/plugin-example/react'
 
 const registry = createTimelineRendererRegistry()
 const disposeReactPlugin = installReactPlugins(registry, [

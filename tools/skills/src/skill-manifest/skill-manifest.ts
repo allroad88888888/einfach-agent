@@ -1,6 +1,6 @@
 // tools/skills 的 sessionStart 工具：把已确保加载的内置与项目 skills 组成 L1 清单。
 // 清单读取只经 ToolContext 注入的实例槽，避免 tools 包反向依赖 core 的项目 skill loader。
-import type { Tool } from '@web-agent/core/tools'
+import type { Tool } from '@einfach-agent/core/tools'
 import { buildSkillManifestText } from '../registry'
 
 const inputSchema = {

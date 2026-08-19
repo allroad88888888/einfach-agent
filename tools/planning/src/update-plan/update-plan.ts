@@ -1,5 +1,5 @@
-import type { UpdatePlanInput } from '@web-agent/core/planning'
-import type { Tool } from '@web-agent/core/tools'
+import type { UpdatePlanInput } from '@einfach-agent/core/planning'
+import type { Tool } from '@einfach-agent/core/tools'
 import guide from './update-plan.md?raw'
 
 export const updatePlanTool: Tool = {

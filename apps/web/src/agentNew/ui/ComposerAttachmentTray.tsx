@@ -1,6 +1,6 @@
 import { useRef } from 'react'
 import { useAtomValue, useSetAtom } from '@einfach/react'
-import type { ImageInputCapability } from '@web-agent/ai'
+import type { ImageInputCapability } from '@einfach-agent/ai'
 import {
   composerImageAttachmentAtom,
   removeComposerImageAttachmentAtom,

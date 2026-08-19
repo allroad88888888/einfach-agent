@@ -2,7 +2,7 @@ import {
   DEEPSEEK_FLASH_MODEL,
   DEEPSEEK_PRO_MODEL,
   type DeepSeekReasoningEffort,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 
 export const DEEPSEEK_EVAL_MODELS = [
   DEEPSEEK_PRO_MODEL,

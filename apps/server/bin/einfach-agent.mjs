@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// `npx @web-agent/server` 的可执行入口。**只做一件事**：给 tsup 的产物套一层操作系统能 exec 的壳。
+// `npx @einfach-agent/server` 的可执行入口。**只做一件事**：给 tsup 的产物套一层操作系统能 exec 的壳。
 //
 // 为什么需要它：`dist/main.js` 是 tsup（esbuild）出的 bundle，**没有 shebang**（去看文件头，
 // 第一行是 `// src/createServer.ts`）。npm 安装 `bin` 时在 `node_modules/.bin/` 下建的是指向目标

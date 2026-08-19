@@ -1,4 +1,4 @@
-// @web-agent/core 的构建入口——共享口径全在根 tsup.preset.ts 里，这里只写 core 独有的两件事：
+// @einfach-agent/core 的构建入口——共享口径全在根 tsup.preset.ts 里，这里只写 core 独有的两件事：
 // ① 九条公开 subpath 的 entry 清单；② 多 entry 共享单例必须开的 splitting。
 import { definePackageBuild } from '../../tsup.preset'
 
@@ -24,7 +24,7 @@ export default definePackageBuild({
   // atom 家族）。关着 splitting 时每条 entry 会各自内联一份，消费方同时 import 两条 subpath
   // 就会拿到两个互不可见的 store —— 详见 tsup.preset.ts 的 splitting 注释。
   splitting: true,
-  // 四个运行时依赖里，@web-agent/ai 与 @einfach/core 在本包 dependencies，
+  // 四个运行时依赖里，@einfach-agent/ai 与 @einfach/core 在本包 dependencies，
   // @tauri-apps/api 与 @tauri-apps/plugin-dialog 是 optional peerDependencies（D6）——
   // tsup 的自动 external 同时覆盖 dependencies + peerDependencies，且按包名前缀匹配，
   // `@tauri-apps/api/core` 这种子路径形态一并覆盖，故这里留空。

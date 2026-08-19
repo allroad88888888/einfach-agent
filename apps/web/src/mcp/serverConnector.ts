@@ -10,7 +10,7 @@
 //      调用方在自己那一层会先拦一次并把确认请求摆给用户，但这里是最后一道——写错一个
 //      调用点也不会变成「无人过问地在用户机器上执行一条命令」。
 
-import type { McpClientManager } from '@web-agent/tools-mcp'
+import type { McpClientManager } from '@einfach-agent/tools-mcp'
 import { toManagerConfig } from './config'
 import type { McpRuntimeWriters } from './runtimeWriters'
 import { messageFromError } from './runtimeWriters'

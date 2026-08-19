@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { SubagentArchiveIO } from './archiveIO'
-import type { DelegateAgentCallContext, SubagentNodeRecord, SubagentSkillFile } from '@web-agent/core/subagents'
+import type { DelegateAgentCallContext, SubagentNodeRecord, SubagentSkillFile } from '@einfach-agent/core/subagents'
 
 const archiveBasePath = '.webAgent-archive/conversations/session/runs/run'
 

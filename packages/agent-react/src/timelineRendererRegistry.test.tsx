@@ -1,7 +1,7 @@
 import type {
   TimelineMessageItem,
   TimelineReasoningItem,
-} from '@web-agent/core/timeline'
+} from '@einfach-agent/core/timeline'
 import { describe, expect, it } from 'vitest'
 import {
   createTimelineRendererRegistry,

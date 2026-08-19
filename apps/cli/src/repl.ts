@@ -4,8 +4,8 @@ import {
   confirmTool,
   resumeWithAnswers,
   type RunState,
-} from '@web-agent/core'
-import { normalizeAskUserQuestionPayload } from '@web-agent/core/tools'
+} from '@einfach-agent/core'
+import { normalizeAskUserQuestionPayload } from '@einfach-agent/core/tools'
 import type { TextOutput } from './event-renderer'
 
 export interface ReadlineBridge {

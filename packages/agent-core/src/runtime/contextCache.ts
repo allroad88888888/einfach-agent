@@ -2,7 +2,7 @@ import type {
   ModelFunctionTool,
   ModelItem,
   ModelToolChoice,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import { toolSetSchemaFingerprint } from './modelTurn'
 import { contextCacheFingerprint } from './contextCacheFingerprint'
 import {

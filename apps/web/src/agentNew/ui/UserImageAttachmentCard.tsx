@@ -1,4 +1,4 @@
-import type { UserImageContentBlock } from '@web-agent/ai'
+import type { UserImageContentBlock } from '@einfach-agent/ai'
 import { useHistoryImageProjection } from './HistoryImageCompatibilityContext'
 import './UserImageAttachmentCard.css'
 

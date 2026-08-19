@@ -81,7 +81,7 @@ describe('coreInstance —— CoreInstance 抽象与 defaultCore', () => {
 
     it('tools 注册表隔离：往一个注册的工具不出现在另一个', () => {
       // 【登记反转 · TS1/TS2】core 不再硬编码工具——这里用 fake 工具证明「注册表互相隔离」这一 core 机制，
-      // 不牵涉具体标准工具（标准工具集完整性由 @web-agent/tools 的 index.test 覆盖）。
+      // 不牵涉具体标准工具（标准工具集完整性由 @einfach-agent/tools 的 index.test 覆盖）。
       const a = createCoreInstance({ registerTools: (r) => r.register(makeTool('common')) })
       const b = createCoreInstance({ registerTools: (r) => r.register(makeTool('common')) })
 
@@ -252,7 +252,7 @@ describe('coreInstance —— CoreInstance 抽象与 defaultCore', () => {
       expect(typeof defaultCore.rootStore.getter).toBe('function')
 
       // 【登记反转 · TS1/TS2】defaultCore 造出来无工具；测试环境由 test/setup.ts 全局
-      // registerStandardTools(toolRegistry) 装齐（标准工具集内容由 @web-agent/tools 的 index.test 覆盖）。
+      // registerStandardTools(toolRegistry) 装齐（标准工具集内容由 @einfach-agent/tools 的 index.test 覆盖）。
       // 这里只验证 defaultCore.tools 是一个可用注册表（不点名任何具体标准工具，保持 core 对工具无知）。
       expect(defaultCore.tools.list().length).toBeGreaterThan(0)
       expect(typeof defaultCore.tools.register).toBe('function')

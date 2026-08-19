@@ -9,7 +9,7 @@
 // tsup 的 `clean: true` 会先清空 `dist/`，先复制再跑 tsup 会把这份产物一并清掉。
 //
 // **必须排在 `vite build` 之后跑**：根 `pnpm build` 的脚本把 `vite build` 放在
-// `pnpm --filter @web-agent/server build` 之前，保证复制时 `apps/web/dist` 是这次 build
+// `pnpm --filter @einfach-agent/server build` 之前，保证复制时 `apps/web/dist` 是这次 build
 // 刚产出的那份，不是更早一次的陈旧产物。若单独在 `apps/server` 下跑 `pnpm build`
 // （不经根脚本），源目录多半还没生成——此时直接报错退出，而不是复制一份不存在或过期的东西。
 import { existsSync } from 'node:fs'

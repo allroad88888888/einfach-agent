@@ -1,4 +1,4 @@
-import { DEEPSEEK_BASE_URL, KIMI_CN_BASE_URL, KIMI_GLOBAL_BASE_URL } from '@web-agent/ai'
+import { DEEPSEEK_BASE_URL, KIMI_CN_BASE_URL, KIMI_GLOBAL_BASE_URL } from '@einfach-agent/ai'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createDevPreviewModelFetch } from './devPreviewModelTransport'
 

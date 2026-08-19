@@ -3,7 +3,7 @@ import type {
   McpServerConfig,
   McpServerSnapshot,
   McpServerStatus,
-} from '@web-agent/tools-mcp'
+} from '@einfach-agent/tools-mcp'
 import type { McpConfigStorage } from './persistence'
 import type { McpSettingsManager } from './service'
 import type { PersistedMcpServerConfig } from './types'

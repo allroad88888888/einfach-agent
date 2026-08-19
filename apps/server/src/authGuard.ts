@@ -35,7 +35,7 @@
 // - 若 health 豁免：探测恒成功 → 判定为 server 宿主 → 第一条真实 invoke 拿到 401，
 //   B2 可以把它渲染成一句准确的话（「缺少访问令牌，请用终端打印的完整链接打开页面」）。
 //   **响亮地失败优于静默地正确。**
-// 豁免泄露了什么：`{service:'web-agent', host:'node-server', version}`，即「这台机器上跑着
+// 豁免泄露了什么：`{service:'einfach-agent', host:'node-server', version}`，即「这台机器上跑着
 // web-agent 的哪一版」。泄露给谁：能连上回环的本机进程（它们能做的远不止读版本号），
 // 以及——注意——**不包括**跨源网页：我们对任何请求都不回 `Access-Control-Allow-*`，
 // 浏览器不会把响应体交给跨源脚本。而「这个端口上有东西在听」本来就靠 `no-cors` fetch 的

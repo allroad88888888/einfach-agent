@@ -3,7 +3,7 @@ import type {
   ProviderTransport,
   ProviderTransportInput,
   ProviderWireRequest,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import { createProviderFetch } from './providerFetch'
 import { encodeProviderWireRequest } from './providerWireEnvelope'
 

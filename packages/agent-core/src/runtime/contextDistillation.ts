@@ -1,4 +1,4 @@
-import { callModel, type ModelItem } from '@web-agent/ai'
+import { callModel, type ModelItem } from '@einfach-agent/ai'
 import type { ContextCheckpoint } from '../state/contextCheckpoint.type'
 import type { ModelSettings } from '../state/core.type'
 import { estimateItemsTokens, estimateTokensFromText } from './contextCompaction'

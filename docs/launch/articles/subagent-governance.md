@@ -165,8 +165,8 @@ pnpm subagent:skills -- --archive sk_xxx --write
 
 归档解决"跑完之后还剩什么"，观测解决"跑的过程中发生了什么"，是分开的两套设施：
 
-- 主 run 的 trace 走可插拔观测 driver：Web 用 IndexedDB（`@web-agent/observability-idb`），
-  Tauri 用 SQLite（`@web-agent/observability-sqlite`），UI 侧是 `apps/web/src/traceViewer/`。
+- 主 run 的 trace 走可插拔观测 driver：Web 用 IndexedDB（`@einfach-agent/observability-idb`），
+  Tauri 用 SQLite（`@einfach-agent/observability-sqlite`），UI 侧是 `apps/web/src/traceViewer/`。
 - 子 agent 自己的模型对话落进归档的 `traces/<agentPath>.trace.jsonl`，UI 通过
   `packages/subagents/src/state/subagentTraceAtoms.ts` 按需读回——点开树上任意节点，看到的是它
   当时的完整来回，而不只是那句 summary。

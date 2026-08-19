@@ -1,10 +1,10 @@
 import { describe, it, expect, vi } from 'vitest'
-import type { ToolContext } from '@web-agent/core/tools'
+import type { ToolContext } from '@einfach-agent/core/tools'
 import type {
   ReadWorkspaceFileInput,
   ReadWorkspaceFileResult,
   WorkspaceRuntimeResult,
-} from '@web-agent/core/runtime/workspaceRead'
+} from '@einfach-agent/core/runtime/workspaceRead'
 import { readFileTool } from './read-file'
 
 type TestCtx = ToolContext & {

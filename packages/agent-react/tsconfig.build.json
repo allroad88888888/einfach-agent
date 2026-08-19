@@ -30,8 +30,8 @@
     // 清空继承来的 paths，只留一条显式补丁指向 core dist（理由见文件头）。前提是 core 已按
     // 拓扑序先出 dist；core 还没构建时这里会变成一片 TS2307/TS6059。
     "paths": {
-      "@web-agent/core": ["packages/agent-core/dist/index.d.ts"],
-      "@web-agent/core/*": ["packages/agent-core/dist/*"]
+      "@einfach-agent/core": ["packages/agent-core/dist/index.d.ts"],
+      "@einfach-agent/core/*": ["packages/agent-core/dist/*"]
     },
     // pnpm 的 node_modules 是符号链接，TS 默认会 realpath 到 `node_modules/.pnpm/<pkg>@<ver>/...`；
     // 给推断出来的类型起名时它就写不出可移植的说明符，报 TS2742。关掉 realpath 后，TS 认

@@ -1,4 +1,4 @@
-# @web-agent/react-plugin
+# @einfach-agent/react-plugin
 
 The React-side plugin installation surface and the timeline renderer registry; the core kernel
 does not depend on React.

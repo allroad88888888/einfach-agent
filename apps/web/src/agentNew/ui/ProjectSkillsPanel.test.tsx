@@ -9,8 +9,8 @@ import {
   sessionsAtom,
   workspacesAtom,
   type SessionMeta,
-} from '@web-agent/core'
-import type { ProjectSkillsSnapshot } from '@web-agent/core/skills'
+} from '@einfach-agent/core'
+import type { ProjectSkillsSnapshot } from '@einfach-agent/core/skills'
 import { renderWithStore } from '../../test/renderWithStore'
 import { ProjectSkillsPanel } from './ProjectSkillsPanel'
 import {

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createCoreInstance,
   type ProjectSkillsLoaderBridge,
-} from '@web-agent/core/runtime/core/coreInstance'
+} from '@einfach-agent/core/runtime/core/coreInstance'
 import { scanProjectSkills } from './projectSkillsLoader'
 
 type FileEntry = { path: string; type: string }

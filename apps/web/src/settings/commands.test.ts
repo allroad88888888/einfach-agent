@@ -1,6 +1,6 @@
 import { uiStore } from '../uiStore'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { configureCommands, defaultCore, rootStore } from '@web-agent/core'
+import { configureCommands, defaultCore, rootStore } from '@einfach-agent/core'
 import {
   configureAppSettingsStorage,
   configureModelCredentialHost,

@@ -6,7 +6,7 @@
 // 装配代码本身没有任何异常。只有「同一个调用在装配前后给出两句不同的话」才证得了这件事。
 //
 // 【为什么深导入 runtime/shellCommand 与 runtime/workspaceRead】
-// `hasHostBridge` / `loadHostInvoke` 刻意不在 `@web-agent/core` 的公开面上（barrel 注释：
+// `hasHostBridge` / `loadHostInvoke` 刻意不在 `@einfach-agent/core` 的公开面上（barrel 注释：
 // 消费方全在 core 内部），所以宿主侧断言不到那个布尔量本身。这两个模块正是**守卫所在的那一层**：
 //   · 没有桥 → `'…：当前宿主未提供命令桥'`（早退分支，本卡之前 CLI 的常态）
 //   · 有桥、域没落地 → `'Node 宿主尚未实现命令「…」'`（路由表的明确失败）
@@ -18,10 +18,10 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { configureHostInvoke } from '@web-agent/core'
-import { runShellCommand } from '@web-agent/core/runtime/shellCommand'
-import { resolveUserSkillsRoot } from '@web-agent/core/runtime/userSkillsRoot'
-import { readWorkspaceFile } from '@web-agent/core/runtime/workspaceRead'
+import { configureHostInvoke } from '@einfach-agent/core'
+import { runShellCommand } from '@einfach-agent/core/runtime/shellCommand'
+import { resolveUserSkillsRoot } from '@einfach-agent/core/runtime/userSkillsRoot'
+import { readWorkspaceFile } from '@einfach-agent/core/runtime/workspaceRead'
 import { assembleCliRuntime } from './runtime'
 
 /** 与 host-node 的 currentPlatform() 同一张映射：平台不符时命令会在起 shell 之前就停住。 */

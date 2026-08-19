@@ -22,7 +22,7 @@ const globalWithIsTauri = globalThis as GlobalWithIsTauri
 const hadIsTauriProperty = Object.prototype.hasOwnProperty.call(globalThis, 'isTauri')
 const originalIsTauriValue = globalWithIsTauri.isTauri
 
-describe('@web-agent/core 根 barrel', () => {
+describe('@einfach-agent/core 根 barrel', () => {
   // 三条探针用例依赖 vitest 默认的声明顺序串行执行：前两条必须跑在本文件第一次调用
   // pickWorkspaceDirectory() 之前，否则 load-count 已被推到 1，断言失去意义。
   afterEach(() => {

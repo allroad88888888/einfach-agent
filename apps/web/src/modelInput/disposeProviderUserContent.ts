@@ -2,7 +2,7 @@ import {
   disposeKimiUserContent,
   type ModelAdapterSettings,
   type UserMessageContent,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 
 export interface ProviderContentDisposalDependencies {
   apiKey: string

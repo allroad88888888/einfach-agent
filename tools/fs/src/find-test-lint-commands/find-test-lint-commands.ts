@@ -4,7 +4,7 @@ import type {
   ListWorkspaceFilesResult,
   ReadWorkspaceFileResult,
   WorkspaceRuntimeResult,
-} from '@web-agent/core/tools'
+} from '@einfach-agent/core/tools'
 import guide from './find-test-lint-commands.md?raw'
 
 const MAX_ENTRIES = 2_000

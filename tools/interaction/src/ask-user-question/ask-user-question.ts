@@ -1,7 +1,7 @@
 // tools/ask-user-question/ask-user-question.ts —— 暂停 run，向用户提出结构化问题收集缺失决策（TOOLS-SPEC §7/§9/§10）。
 // runtime 'internal'。关键契约：合法 questions → 返回 { pause: args }，由 harness 置 waiting_user 并暂停 run。
 // 绝不 import 任何 state/store/atom —— 暂停/回填全由 harness 循环侧处理，本工具只做参数校验。
-import { normalizeAskUserQuestionPayload, type Tool } from '@web-agent/core/tools'
+import { normalizeAskUserQuestionPayload, type Tool } from '@einfach-agent/core/tools'
 import guide from './ask-user-question.md?raw' // skill 正文（同目录 .md）
 
 // inputSchema —— 【刻意宽松】：本工具的唯一真相是 runtime/askUserQuestion.ts 的

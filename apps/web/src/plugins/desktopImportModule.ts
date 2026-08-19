@@ -16,14 +16,14 @@
 // `import './other.js'` 解析不到任何东西。同一约束在 CLI 侧表现为「必须自带 Node 可直接
 // 消费的 ESM」，两个宿主对插件作者的要求方向一致。
 //
-// 【裸说明符 `@web-agent/core/plugin`】（P11）浏览器只能经页面的 import map 解析裸说明符，
+// 【裸说明符 `@einfach-agent/core/plugin`】（P11）浏览器只能经页面的 import map 解析裸说明符，
 // 而打包后的页面根本没有可指的 URL。所以求值前先把契约说明符改写成宿主自己的模块桥 URL
 // （contractModuleBridge.ts + contractImportRewrite.ts），插件因此拿到与应用【同一份】
 // definePlugin。品牌那半边由 pluginContracts.ts 的 Symbol.for 兜底，两者互不依赖：
 // 桥保证「解析得到」，全局 Symbol 保证「即使换了实例也认得出」。
 
-import type { PluginLoaderDeps } from '@web-agent/core'
-import { readWorkspaceFile } from '@web-agent/core/runtime/workspaceRead'
+import type { PluginLoaderDeps } from '@einfach-agent/core'
+import { readWorkspaceFile } from '@einfach-agent/core/runtime/workspaceRead'
 import { rewriteContractImports } from './contractImportRewrite'
 import { defaultContractModuleBridge, type ContractModuleResolver } from './contractModuleBridge'
 

@@ -17,7 +17,7 @@ import {
   useMemo,
   type ReactNode,
 } from 'react'
-import { useAgentAtomValue } from '@web-agent/react-plugin'
+import { useAgentAtomValue } from '@einfach-agent/react-plugin'
 import {
   itemsAtom,
   planAtom,
@@ -25,11 +25,11 @@ import {
   assistantStreamAtom,
   browserCardsAtom,
   runtimeTranscriptEventsAtom,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import {
   isTimelineThinkingItem,
   projectTimelineItems,
-} from '@web-agent/core/timeline'
+} from '@einfach-agent/core/timeline'
 import { expandedTranscriptGroupsAtom } from './transcriptViewState'
 import {
   messageWindowAtom,

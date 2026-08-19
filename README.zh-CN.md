@@ -67,7 +67,7 @@ packages/agent-ai ← packages/agent-core ← {tools-*、能力包} ← app
 ```
 
 `node scripts/check-boundaries.js` 在 CI 里排在测试之前，静态扫描 import 语句，一旦 core 引入
-React、任何 `@web-agent/tools-*` 或持久化/观测/子 Agent 能力包就直接失败。
+React、任何 `@einfach-agent/tools-*` 或持久化/观测/子 Agent 能力包就直接失败。
 
 ## 一个内核，三个宿主
 

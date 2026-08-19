@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ModelItem, UserMessageContent } from '@web-agent/ai'
+import type { ModelItem, UserMessageContent } from '@einfach-agent/ai'
 import { sessionsAtom } from '../state/rootStore'
 import { itemsAtom } from '../state/sessionAtoms'
 import type { ConversationItem, SessionMeta } from '../state/core.type'

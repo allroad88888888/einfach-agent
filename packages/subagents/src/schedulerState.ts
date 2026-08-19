@@ -7,7 +7,7 @@ import {
   type SubagentNodeRecord,
   type SubagentPath,
   type SubagentScheduler,
-} from '@web-agent/core/subagents'
+} from '@einfach-agent/core/subagents'
 
 interface TreeState {
   treeId: string

@@ -10,14 +10,14 @@
 //   再击才调 removeSession；失焦 / 鼠标移出该行 / 3s 超时复位；开始改名编辑也复位确认态。
 
 import { useEffect, useRef, useState } from 'react'
-import { useRootAtomValue } from '@web-agent/react-plugin'
+import { useRootAtomValue } from '@einfach-agent/react-plugin'
 import {
   sessionsAtom,
   activeSessionIdAtom,
   selectSession,
   removeSession,
   renameSession,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 
 // TU2：删除确认态的自动复位时限。
 const CONFIRM_TIMEOUT_MS = 3000

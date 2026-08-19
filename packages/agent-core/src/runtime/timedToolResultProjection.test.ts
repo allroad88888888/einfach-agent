@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ModelItem } from '@web-agent/ai'
+import type { ModelItem } from '@einfach-agent/ai'
 import { itemsAtom } from '../state/sessionAtoms'
 import { sessionsAtom } from '../state/rootStore'
 import type { Tool } from '../tools/types'

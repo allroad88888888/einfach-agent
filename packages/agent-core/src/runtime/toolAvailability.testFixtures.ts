@@ -3,7 +3,7 @@
 // 单一职责：把「造一个带动态工具的 core、用假 fetch 跑一个 run、再从请求体和消息历史里
 // 取回可断言的事实」这套样板集中在一处。这里不含任何判据，判据都在各自的 *.test.ts 里。
 
-import type { ModelFunctionTool, ModelItem } from '@web-agent/ai'
+import type { ModelFunctionTool, ModelItem } from '@einfach-agent/ai'
 import { sessionsAtom } from '../state/rootAtoms'
 import { itemsAtom } from '../state/sessionAtoms'
 import { createCoreInstance } from './core/coreInstance'

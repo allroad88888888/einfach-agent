@@ -12,7 +12,7 @@
 //
 // 【为什么其余全部塌成 502，而不是逐条分类】
 // M1 的 `MODEL_ERROR`（`模型请求格式无效` / `模型请求目标未获允许` / `模型服务请求失败` /
-// `未配置 X API Key` …）是一组常量文案，但它**没有出现在 `@web-agent/host-node` 的公开面上**，
+// `未配置 X API Key` …）是一组常量文案，但它**没有出现在 `@einfach-agent/host-node` 的公开面上**，
 // 也没有给这些错误挂 `reason` 字段。可选项只有两个：在 apps/server 里照抄一份中文串来做
 // switch——那等于给一份对外契约立第二个权威，两边一改就漂移；或者承认这一层分不出来。
 // 选后者：**状态码粗、message 准**。`message` 是 M1 已经写好的那句中文，直接透传，不再自己组
@@ -26,7 +26,7 @@
 // 摘要，而头部里有 Authorization。本层照同一条纪律：只取 `message` 这个字符串，
 // **不取 `stack`、不取 `cause`、不 JSON 化 error 对象**，也不写任何日志。
 
-import { ModelRequestCancelledError } from '@web-agent/host-node'
+import { ModelRequestCancelledError } from '@einfach-agent/host-node'
 
 export interface ModelRouteErrorReply {
   readonly statusCode: number

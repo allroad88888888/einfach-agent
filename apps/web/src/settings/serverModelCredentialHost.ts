@@ -16,7 +16,7 @@
 // `credentialCommands.ts` 正面钉住了这条）。前端这一层因此没有任何「读回 Key」的能力，
 // 不是靠某处过滤，是那条命令压根不返回。
 import { httpInvoke } from '../host/serverInvoke'
-import type { HostInvoke } from '@web-agent/core'
+import type { HostInvoke } from '@einfach-agent/core'
 import type {
   ModelCredentialHost,
   ModelCredentialStatus,

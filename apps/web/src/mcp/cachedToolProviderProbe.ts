@@ -15,7 +15,7 @@
 //   toCachedTools），模型点名用的也是它，两边同一个字符串，逐字比较即可。这里一度注入
 //   makeMcpToolName 再拼一次，拼出 mcp__s__mcp__s__t，与模型给的名字永不相等——本探针
 //   因此在生产环境从未答出过一次。
-import type { UnconnectedToolProvider, UnconnectedToolProviderProbe } from '@web-agent/core/tools'
+import type { UnconnectedToolProvider, UnconnectedToolProviderProbe } from '@einfach-agent/core/tools'
 import { findLastKnownToolProvider, type McpToolNameCache } from './toolNameCache'
 
 export interface CachedToolProviderProbeSource {

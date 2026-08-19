@@ -11,7 +11,7 @@ import {
   type ModelToolCall,
   type ModelUsage,
   type RetryConfig,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import type { DeepSeekEvalCase } from './matrix'
 
 const ADD_TOOL: ModelFunctionTool = {

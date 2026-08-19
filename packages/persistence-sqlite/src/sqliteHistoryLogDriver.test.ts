@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { PersistedHistoryLog, SqlExecutor } from '@web-agent/core/state/persistence'
+import type { PersistedHistoryLog, SqlExecutor } from '@einfach-agent/core/state/persistence'
 
 interface HistoryLogRow {
   session_id: string

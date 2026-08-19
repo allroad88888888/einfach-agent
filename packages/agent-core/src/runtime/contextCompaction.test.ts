@@ -2,7 +2,7 @@
 // 协议不变量比压缩率重要得多：压得不够只是慢，压出孤儿 tool 是整个 run 报错。
 
 import { describe, expect, it, vi } from 'vitest'
-import type { AssistantItem, ModelItem, ModelToolCall, SystemItem, ToolItem, UserItem } from '@web-agent/ai'
+import type { AssistantItem, ModelItem, ModelToolCall, SystemItem, ToolItem, UserItem } from '@einfach-agent/ai'
 import {
   COMPACTED_TOOL_RESULT_MARKER,
   compactContext,

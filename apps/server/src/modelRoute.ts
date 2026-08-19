@@ -43,7 +43,7 @@
 //     同一张表）。少了它，上游那次生成会一直跑到 120 秒超时才停。
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { forwardProviderRequest, modelRequestRegistry } from '@web-agent/host-node'
+import { forwardProviderRequest, modelRequestRegistry } from '@einfach-agent/host-node'
 import { replyJson } from './httpReply'
 import {
   DEFAULT_MAX_MODEL_BODY_BYTES,
@@ -65,8 +65,8 @@ export { isModelRoutePath, MODEL_ROUTE_PATH } from './modelRoutePath'
  * `forwardProviderRequest` 的第二个参数（宿主装配槽 + 测试注入的 fetch / 在飞请求表）。
  *
  * 从函数签名上取而不是 `import type { ForwardProviderRequestDeps }`：那个名字今天没有出现在
- * `@web-agent/host-node` 的**包级**公开面上（只从 `src/model/index.ts` 出去），而深路径 import
- * 在 `tsconfig.app.json` 里解析不了（`@web-agent/host-node` 只映射到 barrel）。
+ * `@einfach-agent/host-node` 的**包级**公开面上（只从 `src/model/index.ts` 出去），而深路径 import
+ * 在 `tsconfig.app.json` 里解析不了（`@einfach-agent/host-node` 只映射到 barrel）。
  * 这么取的好处是它跟着 M1 的签名走，M1 改了这里是编译错误而不是悄悄漂移。
  */
 export type ModelForwardDeps = Parameters<typeof forwardProviderRequest>[1]

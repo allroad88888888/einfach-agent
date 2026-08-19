@@ -8,7 +8,7 @@ import {
   type RecoverySaveResult,
   type RecoverySnapshotV1,
   validateRecoverySnapshot,
-} from '@web-agent/core/state/persistence'
+} from '@einfach-agent/core/state/persistence'
 import {
   DEFAULT_HISTORY_DB_NAME,
   RECOVERY_SNAPSHOT_STORE_NAME,

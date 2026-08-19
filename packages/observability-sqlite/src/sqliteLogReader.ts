@@ -7,7 +7,7 @@ import type {
   TraceEvent,
   TraceSpan,
   TraceStatus,
-} from '@web-agent/core/observability'
+} from '@einfach-agent/core/observability'
 
 const DB_URL = 'sqlite:web-agent.db'
 

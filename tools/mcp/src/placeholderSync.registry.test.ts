@@ -4,7 +4,7 @@
 // （真实工具接管过这个名字就绝不可能被误伤）、跨服务撞名先到先得且留痕不静默。
 // desired 规则与四个重算时机在 placeholderSync.test.ts。
 
-import { createToolRegistry } from '@web-agent/core/tools'
+import { createToolRegistry } from '@einfach-agent/core/tools'
 import { describe, expect, it } from 'vitest'
 import { createMcpPlaceholderClaims } from './placeholderClaims'
 import { createMcpPlaceholderSync, type McpPlaceholderSkip } from './placeholderSync'

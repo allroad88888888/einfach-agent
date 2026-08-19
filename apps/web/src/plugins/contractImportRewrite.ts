@@ -1,6 +1,6 @@
 // apps/web/src/plugins/contractImportRewrite.ts —— 求值前把契约裸说明符改写成可解析 URL
 // ---------------------------------------------------------------------------
-// 只负责一件事：在插件源码里，把宿主认识的裸说明符（当前只有 `@web-agent/core/plugin`）
+// 只负责一件事：在插件源码里，把宿主认识的裸说明符（当前只有 `@einfach-agent/core/plugin`）
 // 出现在【静态 import/export 语句】里的那一处，替换成契约模块桥给的 URL；其余一概不碰。
 //
 // 这不是 bundler，也不打算长成 bundler：

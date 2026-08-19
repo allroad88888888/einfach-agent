@@ -5,7 +5,7 @@ import type {
   TimelineRuntimeEventItem,
   TimelineThinkingMessageItem,
   TimelineToolExecutionItem,
-} from '@web-agent/core/timeline'
+} from '@einfach-agent/core/timeline'
 import { ThinkingStep } from './ThoughtTraceEntries'
 
 export function ReasoningTimelineRenderer({ item }: { readonly item: TimelineReasoningItem }) {

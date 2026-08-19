@@ -1,4 +1,4 @@
-import { maxTurnToolsForVendor } from '@web-agent/ai'
+import { maxTurnToolsForVendor } from '@einfach-agent/ai'
 import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { activeSessionIdAtom, sessionsAtom } from '../state/rootStore'
 import { appendItem, patchRun } from '../state/sessionWriters'

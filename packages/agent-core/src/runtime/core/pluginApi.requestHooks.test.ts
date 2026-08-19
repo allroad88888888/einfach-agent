@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { userMessageText, type ModelItem, type UserItem } from '@web-agent/ai'
+import { userMessageText, type ModelItem, type UserItem } from '@einfach-agent/ai'
 import type { CoreCtx } from './coreCtx'
 import type { RequestDraft } from './loopHooks'
 import { assemblePlugins, type AgentPlugin } from './pluginApi'

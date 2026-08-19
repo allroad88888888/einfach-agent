@@ -1,4 +1,4 @@
-import type { ModelFunctionTool } from '@web-agent/ai'
+import type { ModelFunctionTool } from '@einfach-agent/ai'
 import type { LoadedTool } from '../tools/types'
 import { toolSchemaAutoloadedResult } from '../tools/schemaResult'
 import { toolRegistrationChangedResult } from './toolLoading'

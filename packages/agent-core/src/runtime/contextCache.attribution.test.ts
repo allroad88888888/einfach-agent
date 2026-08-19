@@ -1,6 +1,6 @@
 // 动态尾巴顶位、压缩态归因与多因子 epochCauses 的测试;profile/epoch 身份见 contextCache.test.ts。
 import { describe, expect, it } from 'vitest'
-import type { ModelItem } from '@web-agent/ai'
+import type { ModelItem } from '@einfach-agent/ai'
 import { createContextCacheTracker } from './contextCache'
 import { input, system, tool, user, skill } from './contextCache.testFixtures'
 

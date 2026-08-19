@@ -1,4 +1,4 @@
-import { NodeHostCommandError } from '@web-agent/host-node'
+import { NodeHostCommandError } from '@einfach-agent/host-node'
 import { describe, expect, it } from 'vitest'
 import { mapNodeHostCommandError } from './invokeRouteError'
 

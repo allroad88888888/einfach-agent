@@ -1,4 +1,4 @@
-import type { ModelChatResponse } from '@web-agent/ai'
+import type { ModelChatResponse } from '@einfach-agent/ai'
 import type { ModelSettings } from '../state/core.type'
 import {
   routeSubagentModel,

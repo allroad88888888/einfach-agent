@@ -4,9 +4,9 @@ import {
   flushObservability,
   recordCompletedSpan,
   resetObservability,
-} from '@web-agent/core/observability/trace'
-import type { TraceDriver, TraceEvent, TraceSpan } from '@web-agent/core/observability/types'
-import { createCoreInstance } from '@web-agent/core/runtime/core/coreInstance'
+} from '@einfach-agent/core/observability/trace'
+import type { TraceDriver, TraceEvent, TraceSpan } from '@einfach-agent/core/observability/types'
+import { createCoreInstance } from '@einfach-agent/core/runtime/core/coreInstance'
 import { SubagentArchiveWriter, type SubagentArchiveWriteInput } from './archiveWriter'
 
 function writerContext(queueKey: object = {}): { queueKey: object } {

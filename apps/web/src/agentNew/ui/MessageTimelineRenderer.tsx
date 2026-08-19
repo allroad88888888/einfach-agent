@@ -1,7 +1,7 @@
 // Core message timeline item 的默认 Web 呈现；回退按钮由列表 shell 组合。
 
-import type { TimelineMessageItem } from '@web-agent/core/timeline'
-import { userMessageText, type UserImageContentBlock } from '@web-agent/ai'
+import type { TimelineMessageItem } from '@einfach-agent/core/timeline'
+import { userMessageText, type UserImageContentBlock } from '@einfach-agent/ai'
 import { MessageMarkdown } from './MessageMarkdown'
 import { UserImageAttachmentCard } from './UserImageAttachmentCard'
 

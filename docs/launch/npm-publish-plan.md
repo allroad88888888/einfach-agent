@@ -6,7 +6,7 @@
 
 > **命名占位说明**：npm scope 取决于尚未拍板的"未决·命名"（见
 > 推广发布 issue 树（已完成，全文随 Git 历史归档）），本文一律用 `<scope>` 占位，例如 `<scope>/core`。
-> 现有包名前缀 `@web-agent/` 只是 workspace 内部标识，**不预设**它就是最终 npm scope。
+> 现有包名前缀 `@einfach-agent/` 只是 workspace 内部标识，**不预设**它就是最终 npm scope。
 
 事实核对基准：[`vite.config.ts`](../../vite.config.ts)、[`tsconfig.app.json`](../../tsconfig.app.json)、
 各包 `package.json` 与 [`CLAUDE.md`](../../CLAUDE.md)。
@@ -14,7 +14,7 @@
 ## 1. 现状：workspace 包不单独编译
 
 仓库刻意让所有包**不产出构建产物**：[`vite.config.ts`](../../vite.config.ts) 的 `resolve.alias`
-与 [`tsconfig.app.json`](../../tsconfig.app.json) 的 `paths` 把每个 `@web-agent/*` 直接指向该包的
+与 [`tsconfig.app.json`](../../tsconfig.app.json) 的 `paths` 把每个 `@einfach-agent/*` 直接指向该包的
 `src`。改包无需 build，`tsc -b` 也是 `noEmit` 的纯类型门禁。这对仓库内开发是优点，对发包是**起点为零**：
 
 - 没有 `dist/`，没有 `.d.ts`，没有构建脚本；
@@ -28,15 +28,15 @@
 | # | 差距 | 证据 | 解法 |
 | --- | --- | --- | --- |
 | G1 | 无构建产物 | 无任何包有 build 脚本或 `dist/` | 引入统一构建（见第 3 节），产物落 `dist/` |
-| G2 | `exports` 指向 `.ts` | 如 `@web-agent/ai` 的 `"." : "./src/index.ts"` | 改指 `./dist/index.js` + `types` 指 `./dist/index.d.ts` |
+| G2 | `exports` 指向 `.ts` | 如 `@einfach-agent/ai` 的 `"." : "./src/index.ts"` | 改指 `./dist/index.js` + `types` 指 `./dist/index.d.ts` |
 | G3 | 全部 `private: true` | 18 个包无一例外 | 待发布包去掉该字段；不发布包**保留**（第 5 节） |
-| G4 | `@web-agent/core` 没有 barrel | 其 `exports` 只有 `"./*": "./src/*"`，仓库内实际深导入 **61 个不同子路径** | 发包前必须收敛公开面：加 `src/index.ts` barrel + 显式 subpath 白名单，其余转内部 |
-| G5 | `./*` 通配产出无扩展名路径 | `@web-agent/core/runtime/commands` → `./src/runtime/commands`，Node ESM 不做扩展名补全 | 构建后 exports 映射到带 `.js` 的具体文件；不能沿用裸通配 |
+| G4 | `@einfach-agent/core` 没有 barrel | 其 `exports` 只有 `"./*": "./src/*"`，仓库内实际深导入 **61 个不同子路径** | 发包前必须收敛公开面：加 `src/index.ts` barrel + 显式 subpath 白名单，其余转内部 |
+| G5 | `./*` 通配产出无扩展名路径 | `@einfach-agent/core/runtime/commands` → `./src/runtime/commands`，Node ESM 不做扩展名补全 | 构建后 exports 映射到带 `.js` 的具体文件；不能沿用裸通配 |
 | G6 | `?raw` 导入 | 6 个工具域共 **39 个 `.md` 同目录正文**以 Vite 的 `?raw` 引入 | 构建期把 `.md` 内联成字符串常量（见下） |
 | G7 | `?raw` 的类型声明只有一份且靠手工 include | [`raw-modules.d.ts`](../../tools/skills/src/raw-modules.d.ts) 被 `apps/cli/tsconfig.json` 显式 include | 内联后该 ambient 声明不再进入发布产物，仅留仓库内开发用 |
-| G8 | React peer 声明不完整 | `@web-agent/react-plugin` 已声明 `react` peer，但写成 `workspace:*` 的 `@web-agent/core` peer 会被 pnpm 改写成**精确版本** | peer 改用 `workspace:^`，发布时得到 `^0.1.0` 而非死锁 `0.1.0` |
-| G9 | 未声明依赖 | `packages/subagents` 有 10+ 文件 `import { atom } from '@einfach/core'`，但其 `dependencies` 只列了两个 `@web-agent/*` | 补 `@einfach/core` 到 dependencies；发布前跑一次 undeclared-deps 检查 |
-| G10 | ~~core 硬依赖 Tauri~~（已解决） | `@web-agent/core` 已将 Tauri 依赖改为 optional peer；宿主调用经守卫后的惰性加载 | 保持 `peerDependenciesMeta.optional` 与无 Tauri 的 Node/Web 冒烟，避免重新引入静态硬依赖 |
+| G8 | React peer 声明不完整 | `@einfach-agent/react-plugin` 已声明 `react` peer，但写成 `workspace:*` 的 `@einfach-agent/core` peer 会被 pnpm 改写成**精确版本** | peer 改用 `workspace:^`，发布时得到 `^0.1.0` 而非死锁 `0.1.0` |
+| G9 | 未声明依赖 | `packages/subagents` 有 10+ 文件 `import { atom } from '@einfach/core'`，但其 `dependencies` 只列了两个 `@einfach-agent/*` | 补 `@einfach/core` 到 dependencies；发布前跑一次 undeclared-deps 检查 |
+| G10 | ~~core 硬依赖 Tauri~~（已解决） | `@einfach-agent/core` 已将 Tauri 依赖改为 optional peer；宿主调用经守卫后的惰性加载 | 保持 `peerDependenciesMeta.optional` 与无 Tauri 的 Node/Web 冒烟，避免重新引入静态硬依赖 |
 | G11 | 无 `files` 字段 | 所有包都没有 | 加 `"files": ["dist"]`，否则 `*.test.ts` 与 `.md` 源料一并进 tarball |
 | G12 | 无 `license` / `repository` / `README` | 仓库根**连 LICENSE 文件都没有**；只有 `agent-plugin-example` 有 README | 阻塞于"未决·License"（A5）；每个发布包补最小 README + `repository.directory` |
 | G13 | 无 `publishConfig` | 所有包都没有 | scoped 包默认私有，必须加 `"publishConfig": {"access": "public"}` |
@@ -65,7 +65,7 @@ Node CLI 宿主靠 [`raw-module-loader.mjs`](../../apps/cli/src/raw-module-loade
 一个专用 Node loader 才能跑 CLI，指望外部使用者复现这套是不现实的。仅在"内部 alpha 内网分发"时可作临时手段，
 不作为公开发布形态。
 
-**tsup 的风险与缓解**：`tsup --dts` 走的是 rollup 系声明打包，`@web-agent/core` 类型面大、跨子模块引用多，
+**tsup 的风险与缓解**：`tsup --dts` 走的是 rollup 系声明打包，`@einfach-agent/core` 类型面大、跨子模块引用多，
 容易慢或在循环类型上失败。因此**不用 tsup 出类型**：JS 交给 tsup（`format: ['esm']`，仓库全线 `"type": "module"`，
 无 CJS 消费需求），`.d.ts` 交给一份带 `declaration: true` + `emitDeclarationOnly` 的独立 tsconfig。
 两者产物合并进同一个 `dist/`，职责清晰且各自可单独排障。
@@ -90,9 +90,9 @@ Node CLI 宿主靠 [`raw-module-loader.mjs`](../../apps/cli/src/raw-module-loade
 
 以下包**不进 npm**，靠保留 `"private": true` 自动排除（`pnpm publish -r` 跳过 private 包，不需要额外过滤）：
 
-- `apps/cli`（`@web-agent/cli`）——宿主应用，不是库。
+- `apps/cli`（`@einfach-agent/cli`）——宿主应用，不是库。
 - `apps/web`、`apps/desktop`——两者**连 `package.json` 都没有**，本就不构成 workspace 包。
-- `packages/agent-plugin-example`（`@web-agent/plugin-example`）——插件契约的可运行样例，
+- `packages/agent-plugin-example`（`@einfach-agent/plugin-example`）——插件契约的可运行样例，
   其价值在于随仓库演进，发到 npm 反而会产生"版本落后的示例"这一负资产。
 
 ## 6. 版本与 dist-tag 策略

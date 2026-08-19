@@ -15,8 +15,8 @@
 // 回答的是「占位被调用时发生什么」（一次调用的编排）。两者唯一的交集是同步器要把执行器交给
 // 它造出来的每一个占位。
 
-import type { ToolRegistry } from '@web-agent/core/tools'
-import type { ToolContext, ToolResult } from '@web-agent/core/tools'
+import type { ToolRegistry } from '@einfach-agent/core/tools'
+import type { ToolContext, ToolResult } from '@einfach-agent/core/tools'
 import type { McpClientManager } from './clientManager'
 import { MCP_CONNECT_TIMEOUT_MS } from './connect-mcp-server/connect-mcp-server'
 import {

@@ -1,7 +1,7 @@
 import {
   imageInputCapability,
   type ImageInputCapability,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 
 const KIMI_IMAGE_GATE_REASON = 'Kimi 图片输入尚未开放。'
 

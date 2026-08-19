@@ -6,9 +6,9 @@ import {
   type DelegationRuntimePorts,
   type SubagentScheduler,
   type SubagentTierRouting,
-} from '@web-agent/core/subagents'
-import { recordCompletedSpan } from '@web-agent/core/observability'
-import type { ModelSettings } from '@web-agent/core'
+} from '@einfach-agent/core/subagents'
+import { recordCompletedSpan } from '@einfach-agent/core/observability'
+import type { ModelSettings } from '@einfach-agent/core'
 import { SubagentArchiveIO } from './archive/archiveIO'
 import type { SubagentArchiveWriterContext } from './archive/archiveWriter'
 import { distillDelegateSkills } from './archive/distill'

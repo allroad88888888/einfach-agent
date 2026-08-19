@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import type { ToolContext } from '@web-agent/core/tools'
+import type { ToolContext } from '@einfach-agent/core/tools'
 import { gitDiffReviewTool } from './git-diff-review'
 
 interface WorkspaceDiffInput {

@@ -22,8 +22,8 @@
 // 同一份数据），依赖方向是 tools-* ← app。本域不认识磁盘，只认这个函数签名，形状与既有的
 // lastKnownTools 探针一致。
 
-import type { ToolRegistry } from '@web-agent/core/tools'
-import type { Tool } from '@web-agent/core/tools'
+import type { ToolRegistry } from '@einfach-agent/core/tools'
+import type { Tool } from '@einfach-agent/core/tools'
 import type { McpClientManager } from './clientManager'
 import type {
   McpLastKnownToolEntry,

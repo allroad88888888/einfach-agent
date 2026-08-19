@@ -121,7 +121,7 @@ describe('health 豁免与静态面', () => {
     const port = await start()
     const response = await authProbe(port, '/api/health')
     expect(response.status).toBe(200)
-    expect(JSON.parse(response.body)).toMatchObject({ service: 'web-agent', host: 'node-server' })
+    expect(JSON.parse(response.body)).toMatchObject({ service: 'einfach-agent', host: 'node-server' })
   })
 
   it('health 豁免的只有 token：跨站 Origin 仍然 403', async () => {

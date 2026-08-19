@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ModelItem } from '@web-agent/ai'
+import type { ModelItem } from '@einfach-agent/ai'
 import { sessionsAtom } from '../state/rootStore'
 import { subagentContinuationsAtom } from '../state/subagentContinuationAtoms'
 import { createCoreInstance } from '../runtime/core/coreInstance'

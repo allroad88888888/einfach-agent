@@ -1,4 +1,4 @@
-import { isAbortError, type UserMessageContent } from '@web-agent/ai'
+import { isAbortError, type UserMessageContent } from '@einfach-agent/ai'
 import type { ModelSettings } from '../state/core.type'
 
 /** Host-owned image payload. Core deliberately never reads or persists `data`. */

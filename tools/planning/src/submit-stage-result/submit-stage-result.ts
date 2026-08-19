@@ -1,5 +1,5 @@
-import type { SubmitStageResultInput } from '@web-agent/core/planning'
-import type { Tool } from '@web-agent/core/tools'
+import type { SubmitStageResultInput } from '@einfach-agent/core/planning'
+import type { Tool } from '@einfach-agent/core/tools'
 import guide from './submit-stage-result.md?raw'
 
 export const submitStageResultTool: Tool = {

@@ -1,4 +1,4 @@
-import { isValidProviderRequestId, type ProviderWireRequest } from '@web-agent/ai'
+import { isValidProviderRequestId, type ProviderWireRequest } from '@einfach-agent/ai'
 import { describe, expect, it } from 'vitest'
 import {
   encodeProviderWireRequest,

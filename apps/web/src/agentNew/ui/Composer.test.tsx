@@ -11,7 +11,7 @@ import {
   sendMessage,
   setApprovalMode,
   stopRun,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { composerDraftAtom } from './composerDraftState'
 import { Composer } from './Composer'
 
@@ -23,8 +23,8 @@ import { Composer } from './Composer'
 // defaultCore 活动会话的 store，与本用例的隔离 store 天生对不上，所以在这里桥接回来。
 const noticeTarget = vi.hoisted(() => ({ store: undefined as Store | undefined }))
 
-vi.mock('@web-agent/core/runtime/commands', async () => {
-  const { withdrawnTurnNoticeAtom } = await import('@web-agent/core/state/sessionTransientAtoms')
+vi.mock('@einfach-agent/core/runtime/commands', async () => {
+  const { withdrawnTurnNoticeAtom } = await import('@einfach-agent/core/state/sessionTransientAtoms')
   return {
     continueInterruptedRun: vi.fn(),
     sendMessage: vi.fn(() => ({ accepted: true })),

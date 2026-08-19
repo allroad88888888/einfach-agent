@@ -1,6 +1,6 @@
 // Token estimates and the serialization-free fast-path bound for context compaction.
 
-import type { ModelItem } from '@web-agent/ai'
+import type { ModelItem } from '@einfach-agent/ai'
 import { stringForStats } from './shared/preview'
 
 export function estimateTokensFromText(text: string): number {

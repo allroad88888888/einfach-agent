@@ -1,4 +1,4 @@
-import type { ProviderTransport, ProviderTransportInput } from '@web-agent/ai'
+import type { ProviderTransport, ProviderTransportInput } from '@einfach-agent/ai'
 import { createProviderFetch } from './providerFetch'
 import { encodeProviderWireRequest } from './providerWireEnvelope'
 

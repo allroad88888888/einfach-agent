@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { RunState } from '@web-agent/core/state/core.type'
+import type { RunState } from '@einfach-agent/core/state/core.type'
 import { resumeWaitingRun, type ReadlineBridge } from './repl'
 
 function readerWith(answers: string[]): ReadlineBridge {

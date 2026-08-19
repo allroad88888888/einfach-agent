@@ -11,14 +11,14 @@
 // close 不掩盖 write 错、AbortError=用户取消（保留产物、提示「已取消保存」）。
 
 import { useState } from 'react'
-import { useAgentAtomValue } from '@web-agent/react-plugin'
+import { useAgentAtomValue } from '@einfach-agent/react-plugin'
 import {
   pendingArtifactsAtom,
   type PendingArtifact,
   rootStore,
   activeSessionIdAtom,
   discardArtifact,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 
 type SaveStatus = { kind: 'idle' | 'saving' | 'cancelled' | 'error'; message?: string }
 

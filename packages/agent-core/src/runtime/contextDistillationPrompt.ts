@@ -1,4 +1,4 @@
-import type { ModelItem } from '@web-agent/ai'
+import type { ModelItem } from '@einfach-agent/ai'
 
 export const CONTEXT_DISTILLATION_MAX_TOKENS = 8_192
 

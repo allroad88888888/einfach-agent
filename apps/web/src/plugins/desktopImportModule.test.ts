@@ -8,9 +8,9 @@ import { createDesktopImportModule, PLUGIN_ENTRY_READ_LIMIT } from './desktopImp
 
 const { readWorkspaceFileMock } = vi.hoisted(() => ({ readWorkspaceFileMock: vi.fn() }))
 
-// 局部 mock：契约模块桥会静态 import `@web-agent/core/plugin`（进而把整个 runtime 拉进
+// 局部 mock：契约模块桥会静态 import `@einfach-agent/core/plugin`（进而把整个 runtime 拉进
 // 模块图），整体替换 workspaceRead 会连带打断 runtime 里别的 import。
-vi.mock('@web-agent/core/runtime/workspaceRead', async (importOriginal) => ({
+vi.mock('@einfach-agent/core/runtime/workspaceRead', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   readWorkspaceFile: readWorkspaceFileMock,
 }))

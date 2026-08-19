@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import type { SubagentTreeView, SubagentTreeViewNode } from '@web-agent/subagents'
+import type { SubagentTreeView, SubagentTreeViewNode } from '@einfach-agent/subagents'
 
 const STATUS_LABEL: Record<SubagentTreeViewNode['status'], string> = {
   queued: '排队',

@@ -1,8 +1,8 @@
 import type { ReactElement, ReactNode } from 'react'
 import { Provider } from '@einfach/react'
 import { createStore, type Store } from '@einfach/core'
-import { AgentStoreProvider, RootStoreProvider } from '@web-agent/react-plugin'
-import { rootStore as coreRootStore } from '@web-agent/core'
+import { AgentStoreProvider, RootStoreProvider } from '@einfach-agent/react-plugin'
+import { rootStore as coreRootStore } from '@einfach-agent/core'
 import { render, type RenderOptions } from '@testing-library/react'
 import { WebTimelineRendererRegistryProvider } from '../agentNew/ui/WebTimelineRendererRegistryProvider'
 

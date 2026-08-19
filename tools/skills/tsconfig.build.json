@@ -3,7 +3,7 @@
 // 做了必要调整——不是照抄 `"paths": {}"`。
 //
 // **本包的 build script 曾经只跑 tsup，没接这一步**，因为跨包声明 emit 缺前置条件：
-// tsconfig.app.json 的 paths 把 `@web-agent/core/*` 指向 core 的**源码**，于是 core 的 .ts
+// tsconfig.app.json 的 paths 把 `@einfach-agent/core/*` 指向 core 的**源码**，于是 core 的 .ts
 // 全都进了本 program，而 `rootDir: ./src` 要求所有可 emit 文件都在 src 下 —— 每个 core 文件
 // 一条 TS6059，tsc 以非零码退出。前置条件已被 V3a 满足（core 已出 dist 且 exports 改指
 // dist），本文件现在补上这一步。
@@ -11,7 +11,7 @@
 // **paths 为什么不是空对象**：core 的 package.json 只给 9 条公开 subpath 配了
 // `{types, default}` 指向 dist，其余深路径靠 `"./*": "./src/*"` 兜底（S10 仍 GATED，未改）。
 // 这条通配把目标写成不带扩展名的 `./src/<segment>`，Node/TS 的 exports 通配解析要求目标字面
-// 存在，于是白名单外的深路径（本包用到 `@web-agent/core/runtime/core/coreInstance`）在真实
+// 存在，于是白名单外的深路径（本包用到 `@einfach-agent/core/runtime/core/coreInstance`）在真实
 // exports 解析下会失败（`tsc --traceResolution` 实测复现，非本包独有）。清空继承来的 paths
 // 后只补一条指向 core dist 的显式映射，绕开这条通配的缺口——代价是发布出去的 .d.ts 里裸
 // 说明符原样保留，真实 npm 消费方仍会撞上同一个 core 公开面缺口，修复归属 core 自己的收敛树。
@@ -31,8 +31,8 @@
     // 清空继承来的 paths，只留一条显式补丁指向 core dist（理由见文件头）。前提是 core 已按
     // 拓扑序先出 dist；core 还没构建时这里会变成一片 TS2307/TS6059。
     "paths": {
-      "@web-agent/core": ["packages/agent-core/dist/index.d.ts"],
-      "@web-agent/core/*": ["packages/agent-core/dist/*"]
+      "@einfach-agent/core": ["packages/agent-core/dist/index.d.ts"],
+      "@einfach-agent/core/*": ["packages/agent-core/dist/*"]
     },
     // pnpm 的 node_modules 是符号链接，TS 默认会 realpath 到 `node_modules/.pnpm/<pkg>@<ver>/...`；
     // 给推断出来的类型起名时它就写不出可移植的说明符，报 TS2742。关掉 realpath 后，TS 认

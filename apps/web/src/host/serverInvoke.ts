@@ -29,7 +29,7 @@
 // 中文文案的前提下判断"这是一次 401"，绕开 `httpInvoke` 直接调 `invokeServerCommand`
 // （或用 `isServerInvokeUnauthorized()`）就行；`httpInvoke` 自己这条路径上没有这个能力，
 // 也不该有——它的契约就是"跟 Tauri 一样吐一个字符串"。
-import type { HostInvoke } from '@web-agent/core'
+import type { HostInvoke } from '@einfach-agent/core'
 import { getServerInvokeToken, type ServerInvokeTokenEnvironment } from './serverInvokeToken'
 
 /**

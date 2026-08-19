@@ -160,7 +160,7 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 - **验收**：schema round-trip、未知未来版本 fail-closed、旧空记录可识别；字段审计证明没有 derived/UI
   值；聚焦 vitest、core build、`wc -l` 和 `git diff --check` 均绿。
 - **证据**：独立复核通过；静态元数据要求 session identity 匹配并拒绝动态 plan/graph，聚焦契约与投影
-  用例 32/32，`pnpm --filter @web-agent/core build` 通过；type/codec/projection 分别 105/264/132 行，
+  用例 32/32，`pnpm --filter @einfach-agent/core build` 通过；type/codec/projection 分别 105/264/132 行，
   `git diff --check` 通过。
 
 ### R2 · atom 投影 allowlist 与原子 apply
@@ -396,7 +396,7 @@ W6=`V1/V2`；W7=`R10`；W8=`V3`。同一现有文件只允许一个 active owner
 
 ## 统一交付门禁
 
-每张生产卡至少给出聚焦 `vitest`、`pnpm --filter @web-agent/core build`、新增/大改文件的 `wc -l`
+每张生产卡至少给出聚焦 `vitest`、`pnpm --filter @einfach-agent/core build`、新增/大改文件的 `wc -l`
 输出和 `git diff --check`。切换后必须额外通过：
 
 ```sh

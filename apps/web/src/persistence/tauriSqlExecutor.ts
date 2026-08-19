@@ -1,7 +1,7 @@
 // 桌面壳（Tauri）的 SQL 执行面 —— P1 抽出的 `SqlExecutor` port 在这一态的实现。
 // ---------------------------------------------------------------------------
 // 这是仓库持久化链路上**唯一**一处 import `@tauri-apps/plugin-sql` 的生产代码：
-// `@web-agent/persistence-sqlite` 只按契约用执行面，不再认识任何具体 SQL 上游包，于是同一份
+// `@einfach-agent/persistence-sqlite` 只按契约用执行面，不再认识任何具体 SQL 上游包，于是同一份
 // driver 逻辑能被后续宿主（Node 进程内 / server HTTP 端点）复用，各自在 persistence/ 下加一个
 // 兄弟文件即可。
 //
@@ -15,7 +15,7 @@
 // 无需包一层转接。
 
 import Database from '@tauri-apps/plugin-sql'
-import type { SqlExecutor } from '@web-agent/core/state/persistence'
+import type { SqlExecutor } from '@einfach-agent/core/state/persistence'
 
 // 相对路径：Tauri SQL 插件把它解析到桌面应用的数据目录下（com.webagent.app/web-agent.db）。
 // 这个「用哪个库文件」的决定天然属于宿主，P1 把它从 driver 包搬到装配层的原因也在此。

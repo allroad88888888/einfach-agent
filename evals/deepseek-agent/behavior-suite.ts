@@ -6,7 +6,7 @@
 //     自救），模型是原样重试，还是读错误提示改参数；行为门控，不看调用次数——第几次调用带
 //     上 cache: true 都立即成功，不会出现「第二次就自救却被计次门槛打回」的误判；
 //   · B02 如实报告：一个文档读不到，模型是如实标 missing，还是谎报 completed。
-// 条款与提醒文案都从 @web-agent/core/runtime/selfReflectionPrompts import —— 测的就是线上那串字节。
+// 条款与提醒文案都从 @einfach-agent/core/runtime/selfReflectionPrompts import —— 测的就是线上那串字节。
 //
 // B04/B05 是 docs/skills-tree-blueprint.md 阶段 2 的数据门禁，形状不同：不诱发失败，而是比
 // 【skill 清单怎么进 system】。arm 在本文件内手拼 system 模拟，不依赖蓝图阶段 1/3 的实现，
@@ -18,8 +18,8 @@
 //   都成功返回；标志串不可能从任务文本推出来；miss 类 case 的任务本身自足可完成，「不读」
 //   就是正确答案。
 
-import type { ModelFunctionTool } from '@web-agent/ai'
-import { SELF_CHECK_CLAUSES } from '@web-agent/core/runtime/selfReflectionPrompts'
+import type { ModelFunctionTool } from '@einfach-agent/ai'
+import { SELF_CHECK_CLAUSES } from '@einfach-agent/core/runtime/selfReflectionPrompts'
 
 // .3：新增 B04/B05（skill 清单形态）；B01/B02 的 fixture 与判据口径【不变】，结果与 .2 可比。
 // .2：B01 fixture 次数门控 → 行为门控、判据泛化（相邻比较）+ persisted_after_failure；

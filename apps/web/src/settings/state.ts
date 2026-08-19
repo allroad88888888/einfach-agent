@@ -1,6 +1,6 @@
 import type { Store } from '@einfach/core'
 import { atom } from '@einfach/react'
-import { disabledProjectSkillsByWorkspaceAtom } from '@web-agent/core'
+import { disabledProjectSkillsByWorkspaceAtom } from '@einfach-agent/core'
 import {
   createDefaultAppSettings,
   sanitizeCustomInstructions,

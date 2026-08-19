@@ -16,7 +16,7 @@ function packageDirectory(name) {
 }
 
 function packageId(name) {
-  return name.replace('@web-agent/', '').replaceAll('/', '-')
+  return name.replace('@einfach-agent/', '').replaceAll('/', '-')
 }
 
 async function command(file, args, cwd) {
@@ -161,8 +161,8 @@ async function verifyBrokenExportIsRejected(consumerDirectory, packageName) {
 }
 
 async function verifyUnlistedCoreSubpathIsRejected(consumerDirectory, packages) {
-  const corePackage = packages.find((item) => item.manifest.name === '@web-agent/core')
-  if (!corePackage) throw new Error('check:dist requires @web-agent/core')
+  const corePackage = packages.find((item) => item.manifest.name === '@einfach-agent/core')
+  if (!corePackage) throw new Error('check:dist requires @einfach-agent/core')
 
   const specifier = `${corePackage.manifest.name}/__not_exported__`
   const script = `import(${JSON.stringify(specifier)}).then(() => process.exitCode = 1).catch((error) => { if (error.code !== 'ERR_PACKAGE_PATH_NOT_EXPORTED') throw error })`

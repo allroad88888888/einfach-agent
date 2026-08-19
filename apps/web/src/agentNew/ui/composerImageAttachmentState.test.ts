@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createStore } from '@einfach/core'
-import type { ImageInputCapability } from '@web-agent/ai'
+import type { ImageInputCapability } from '@einfach-agent/ai'
 import {
   addComposerImageAttachmentsAtom,
   composerImageAttachmentAtom,

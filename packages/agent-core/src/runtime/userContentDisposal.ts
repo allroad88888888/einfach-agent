@@ -1,7 +1,7 @@
 import {
   userMessageVersion,
   type UserMessageContent,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import { sessionsAtom } from '../state/rootAtoms'
 import { itemsAtom } from '../state/sessionAtoms'
 import { queuedUserMessagesAtom } from '../state/sessionTransientAtoms'

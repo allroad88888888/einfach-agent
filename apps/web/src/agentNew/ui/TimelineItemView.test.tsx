@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
-import type { TimelineItem, TimelineMessageItem } from '@web-agent/core/timeline'
-import { createTimelineRendererRegistry } from '@web-agent/react-plugin'
+import type { TimelineItem, TimelineMessageItem } from '@einfach-agent/core/timeline'
+import { createTimelineRendererRegistry } from '@einfach-agent/react-plugin'
 import { describe, expect, it } from 'vitest'
 import { TimelineItemView } from './TimelineItemView'
 

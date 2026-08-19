@@ -1,4 +1,4 @@
-import type { ProviderTransportInput, ProviderTarget } from '@web-agent/ai'
+import type { ProviderTransportInput, ProviderTarget } from '@einfach-agent/ai'
 import { describe, expect, it } from 'vitest'
 import { encodeProviderWireBody } from './providerWireBody'
 

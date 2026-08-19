@@ -19,7 +19,7 @@
 import { once } from 'node:events'
 import { createServer, request as httpRequest, type IncomingHttpHeaders, type IncomingMessage } from 'node:http'
 import type { AddressInfo, Socket } from 'node:net'
-import type { HostEventBus, HostEventSource } from '@web-agent/host-node'
+import type { HostEventBus, HostEventSource } from '@einfach-agent/host-node'
 import { createEventsRouteHandler, EVENTS_ROUTE_PATH, isEventsRoutePath, type EventsRouteOptions } from './eventsRoute'
 import { requestPathname } from './requestPathname'
 

@@ -1,4 +1,4 @@
-# @web-agent/tools-skills
+# @einfach-agent/tools-skills
 
 The skills tool domain: the project skills loader, the built-in skill registry, and the skill
 search/read tools.

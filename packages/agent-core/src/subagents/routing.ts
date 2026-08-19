@@ -10,7 +10,7 @@ import type {
  * 归档 `route_reason` 的稳定聚合标识。
  *
  * 前两项曾把厂商名写死在取值里，去专名化后语义不变、只换了措辞。归档读回侧
- * （`@web-agent/subagents` 的 replay 与 CLI 复盘脚本）把该字段当不透明字符串透传，不做枚举
+ * （`@einfach-agent/subagents` 的 replay 与 CLI 复盘脚本）把该字段当不透明字符串透传，不做枚举
  * 校验，所以老归档照常回放；旧值到新值的对照与回放夹具见
  * `packages/subagents/src/archive/replayRouteReason.test.ts`，跨版本聚合时按该对照合并即可。
  */

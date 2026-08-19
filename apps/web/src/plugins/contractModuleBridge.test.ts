@@ -27,7 +27,7 @@ afterEach(() => {
 
 describe('buildContractModuleSource', () => {
   it('把每个导出名重新导出一遍，且从全局交接表里取命名空间', () => {
-    const source = buildContractModuleSource('@web-agent/core/plugin', 'tok#1', ['definePlugin', 'default'])
+    const source = buildContractModuleSource('@einfach-agent/core/plugin', 'tok#1', ['definePlugin', 'default'])
 
     expect(source).toContain(`globalThis[${JSON.stringify(CONTRACT_MODULE_GLOBAL_KEY)}]`)
     expect(source).toContain('const __x0 = ns["definePlugin"]')
@@ -36,7 +36,7 @@ describe('buildContractModuleSource', () => {
   })
 
   it('命名空间没挂上时抛出可读错误，而不是产出一个 undefined 到处传的模块', () => {
-    expect(buildContractModuleSource('@web-agent/core/plugin', 'tok#1', ['definePlugin']))
+    expect(buildContractModuleSource('@einfach-agent/core/plugin', 'tok#1', ['definePlugin']))
       .toContain('未在宿主注册')
   })
 
@@ -80,7 +80,7 @@ describe('createContractModuleBridge', () => {
   })
 
   it('默认只桥 core 公开入口，且它确实带着 definePlugin', () => {
-    expect(Object.keys(DEFAULT_CONTRACT_MODULES)).toEqual(['@web-agent/core/plugin'])
-    expect(DEFAULT_CONTRACT_MODULES['@web-agent/core/plugin']).toHaveProperty('definePlugin')
+    expect(Object.keys(DEFAULT_CONTRACT_MODULES)).toEqual(['@einfach-agent/core/plugin'])
+    expect(DEFAULT_CONTRACT_MODULES['@einfach-agent/core/plugin']).toHaveProperty('definePlugin')
   })
 })

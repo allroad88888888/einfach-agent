@@ -12,7 +12,7 @@
 // 发布物，源码与开发期解析口径不受影响。取舍记录见 docs/launch/npm-publish-plan.md。
 //
 // 硬约束：
-// - 只动**相对**说明符（`.` 开头）。裸包名（`react`、`@web-agent/ai`）一律不碰。
+// - 只动**相对**说明符（`.` 开头）。裸包名（`react`、`@einfach-agent/ai`）一律不碰。
 // - 补什么扩展名**按 dist 实际文件系统判断**，不做字符串拼接：
 //   `./x` 有同名 `x.d.ts` → `./x.js`；只有目录 `x/index.d.ts` → `./x/index.js`。
 //   （多层包如 agent-core 会出现目录形态，扁平包如 agent-ai 只有文件形态。）

@@ -1,5 +1,5 @@
-import type { CreatePlanInput } from '@web-agent/core/planning'
-import type { Tool } from '@web-agent/core/tools'
+import type { CreatePlanInput } from '@einfach-agent/core/planning'
+import type { Tool } from '@einfach-agent/core/tools'
 import guide from './create-plan.md?raw'
 
 const stageProperties = {

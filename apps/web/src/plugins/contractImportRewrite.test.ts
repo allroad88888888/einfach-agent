@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { rewriteContractImports } from './contractImportRewrite'
 import type { ContractModuleResolver } from './contractModuleBridge'
 
-const SPEC = '@web-agent/core/plugin'
+const SPEC = '@einfach-agent/core/plugin'
 const URL_ = 'blob:test/contract-0'
 
 function resolver(url = URL_): ContractModuleResolver {
@@ -17,7 +17,7 @@ function resolver(url = URL_): ContractModuleResolver {
 describe('rewriteContractImports', () => {
   it('quickstart 的写法：具名 import 换成桥 URL，行数与其余内容不变', () => {
     const source = [
-      "import { definePlugin } from '@web-agent/core/plugin'",
+      "import { definePlugin } from '@einfach-agent/core/plugin'",
       '',
       'export default definePlugin({ install() {} })',
     ].join('\n')
@@ -77,7 +77,7 @@ describe('rewriteContractImports', () => {
   })
 
   it('放过：宿主没注册的裸说明符原样保留，交给浏览器自己报解析失败', () => {
-    const source = "import { registerStandardTools } from '@web-agent/tools'"
+    const source = "import { registerStandardTools } from '@einfach-agent/tools'"
     const result = rewriteContractImports(source, resolver())
     expect(result.source).toBe(source)
     expect(result.rewritten).toEqual([])

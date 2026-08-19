@@ -28,7 +28,7 @@ R1–R4 的 renderer registry 只处理 Core 已定义的 `TimelineItem['kind']`
 
 ## 2. 术语与不变量
 
-- **Core item**：当前 `@web-agent/core/timeline` 导出的六种固定 `kind`，仍由 Core 定义与投影。
+- **Core item**：当前 `@einfach-agent/core/timeline` 导出的六种固定 `kind`，仍由 Core 定义与投影。
 - **插件持久化 item**：只读、不可变的 JSON 记录；它是 checkpoint 的扩展数据，不是
   `ConversationItem`，也不参与发送给模型的 messages。
 - **描述符（descriptor）**：已安装插件为某个 payload 类型声明的 schema 和限制；不是持久化 item
@@ -153,7 +153,7 @@ renderer，也不将 payload 输出到默认报告。
 
 ## 7. 权限与写入面
 
-R5 不向 `@web-agent/core/plugin` 添加任何方法。后续实现只有在宿主显式授予 manifest capability
+R5 不向 `@einfach-agent/core/plugin` 添加任何方法。后续实现只有在宿主显式授予 manifest capability
 `timeline.persist` 后，才可在受限 run API 中注入一个专用 `PluginTimelineWriter`。授予前宿主应向
 用户展示插件 identity、可持久化的 item identity 和上限，并按 workspace 保存该授权。
 

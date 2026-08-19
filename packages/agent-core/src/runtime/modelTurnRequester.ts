@@ -1,4 +1,4 @@
-import { normalizeCacheUsage, streamModel, type ModelChatResponse, type ModelFunctionTool, type ModelItem, type ModelRetryObserver } from '@web-agent/ai'
+import { normalizeCacheUsage, streamModel, type ModelChatResponse, type ModelFunctionTool, type ModelItem, type ModelRetryObserver } from '@einfach-agent/ai'
 import { contextCheckpointAtom, itemsAtom } from '../state/sessionAtoms'
 import { contextStatsAtom, setContextStats } from '../state/transientAtoms'
 import { buildTurnTools, narrowToolCalls, toolSetSchemaFingerprint } from './modelTurn'

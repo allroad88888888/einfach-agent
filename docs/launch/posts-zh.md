@@ -119,7 +119,7 @@ export function assembleCliRuntime(options: AssembleCliRuntimeOptions): void {
 ### 证据二：边界由 CI 强制
 
 架构约定写在文档里，三个月后必然被破。`scripts/check-boundaries.js` 把规则做成门禁：core 禁入 React、
-禁入任何 `@web-agent/tools-*`、禁入持久化/观测/子 Agent 能力包、禁入 Tauri SQL 插件；能力包禁入工具域。
+禁入任何 `@einfach-agent/tools-*`、禁入持久化/观测/子 Agent 能力包、禁入 Tauri SQL 插件；能力包禁入工具域。
 它在 CI 里排在测试之前（`check-docs → check-boundaries → pnpm test → pnpm build`），
 所以"core 不依赖 React"这句话是可执行的，不是愿望。
 

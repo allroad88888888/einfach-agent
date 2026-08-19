@@ -4,7 +4,7 @@ import {
   createTimelineRendererRegistry,
   type BuiltInTimelineRenderers,
   type TimelineRendererRegistry,
-} from '@web-agent/react-plugin'
+} from '@einfach-agent/react-plugin'
 import { BrowserCardTimelineRenderer } from './BrowserCardTimelineRenderer'
 import { MessageTimelineRenderer } from './MessageTimelineRenderer'
 import {

@@ -5,7 +5,7 @@
 // 「关闭前还能 await 一次」这个能力，所以判据就是宿主态本身。
 //
 // 两边都只持有传进来的这个 Core instance，绝不触默认 facade 的持久化桥。
-import type { CoreInstance } from '@web-agent/core'
+import type { CoreInstance } from '@einfach-agent/core'
 import type { ResolvedHost } from './resolveHost'
 import {
   installBrowserRecoveryFlush,

@@ -1,5 +1,5 @@
 {
-  "name": "@web-agent/server",
+  "name": "@einfach-agent/server",
   "version": "0.1.0",
   "private": true,
   "description": "Self-hosted web host for the Einfach Agent runtime: one local HTTP server that serves the bundled web UI and executes shell, file and Git work on the machine it runs on.",
@@ -18,15 +18,18 @@
   },
   "main": "./dist/main.js",
   "bin": {
-    "web-agent": "./bin/web-agent.mjs"
+    "einfach-agent": "./bin/einfach-agent.mjs"
   },
-  "files": ["dist", "bin"],
+  "files": [
+    "dist",
+    "bin"
+  ],
   "scripts": {
     "build": "tsup && node scripts/embed-web-dist.mjs"
   },
   "dependencies": {
-    "@web-agent/core": "workspace:*",
-    "@web-agent/host-node": "workspace:*"
+    "@einfach-agent/core": "workspace:*",
+    "@einfach-agent/host-node": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^4.0.15"

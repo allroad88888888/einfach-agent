@@ -1,5 +1,5 @@
-import type { AssistantItem, ToolItem } from '@web-agent/ai'
-import type { SubagentNodeStatus } from '@web-agent/core/subagents'
+import type { AssistantItem, ToolItem } from '@einfach-agent/ai'
+import type { SubagentNodeStatus } from '@einfach-agent/core/subagents'
 
 export type SubagentTreeViewStatus = SubagentNodeStatus | 'interrupted'
 

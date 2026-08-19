@@ -2,8 +2,8 @@ import {
   createIndexedDbHistoryLogDriver,
   createIndexedDbRecoveryDriver,
   createIndexedDbSessionsPersistence,
-} from '@web-agent/persistence-idb'
-import type { HistoryLogDriver } from '@web-agent/core/state/persistence'
+} from '@einfach-agent/persistence-idb'
+import type { HistoryLogDriver } from '@einfach-agent/core/state/persistence'
 import type { ResolvedHost } from '../host/resolveHost'
 
 export type HostPersistenceDrivers = {
@@ -29,7 +29,7 @@ export async function createHostPersistenceDrivers(
       createSqlitePersistence,
       createSqliteRecoveryDriver,
       createSqliteHistoryLogDriver,
-    } = await import('@web-agent/persistence-sqlite')
+    } = await import('@einfach-agent/persistence-sqlite')
     // P1：driver 包不认识任何具体 SQL 上游包，「怎么执行一条 SQL」由装配层注入。注入点必须与
     // 「这一态用 SQLite」的判断同处一地——分开写就会有「选了 SQLite 却没配执行面」的中间态。
     // 收的是 loader，所以这一行是同步生效的，桌面 SQL 插件要到第一次执行 SQL 时才被拉进模块图。

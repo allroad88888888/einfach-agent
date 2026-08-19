@@ -1,4 +1,4 @@
-import type { ModelResponseMessage } from '@web-agent/ai'
+import type { ModelResponseMessage } from '@einfach-agent/ai'
 import { planAtom } from '../state/sessionAtoms'
 import { appendItem, patchRun } from '../state/sessionWriters'
 import { assistantItemFromMessage } from './shared/preview'

@@ -1,4 +1,4 @@
-import type { Tool, ToolContext } from '@web-agent/core/tools'
+import type { Tool, ToolContext } from '@einfach-agent/core/tools'
 import guide from './path-operation.md?raw'
 
 type Operation = 'copy' | 'move'

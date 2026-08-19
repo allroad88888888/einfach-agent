@@ -10,7 +10,7 @@
 //   HTTP 服务就永远连不上了。
 //
 // execution 'serial'：连接会成批 register/unregister 全局 ToolRegistry，不能与同批工具并发交错。
-import type { Tool, ToolResult } from '@web-agent/core/tools'
+import type { Tool, ToolResult } from '@einfach-agent/core/tools'
 import type { McpClientManager } from '../clientManager'
 import { combineAbortSignals, isRecord, raceWithAbort, throwIfAborted, truncate } from '../internal'
 import { buildConnectFailureResult, buildConnectTimeoutResult } from './connectFailureResult'

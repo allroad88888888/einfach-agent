@@ -4,16 +4,16 @@
 // 目录后丢失选择，也避免把本机设置写进项目内的 SKILL.md。
 
 import { useAtomValue } from '@einfach/react'
-import { useRootAtomValue } from '@web-agent/react-plugin'
+import { useRootAtomValue } from '@einfach-agent/react-plugin'
 import {
   activeSessionMetaAtom,
   disabledProjectSkillsByWorkspaceAtom,
   projectSkillsAtom,
   workspacesAtom,
   resolveSessionWorkspaceRoot,
-} from '@web-agent/core'
-import type { ProjectSkillEntry, ProjectSkillsSnapshot } from '@web-agent/core/skills'
-import { scanRootLabel } from '@web-agent/core/skills'
+} from '@einfach-agent/core'
+import type { ProjectSkillEntry, ProjectSkillsSnapshot } from '@einfach-agent/core/skills'
+import { scanRootLabel } from '@einfach-agent/core/skills'
 import {
   refreshProjectSkillsFromSettings,
   updateProjectSkillEnabled,

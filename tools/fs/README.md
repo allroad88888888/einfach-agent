@@ -1,4 +1,4 @@
-# @web-agent/tools-fs
+# @einfach-agent/tools-fs
 
 The filesystem tool domain: reading, listing, searching, patching, writing, deleting and moving
 workspace files, plus workspace-change revert.

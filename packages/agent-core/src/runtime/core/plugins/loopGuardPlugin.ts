@@ -47,7 +47,7 @@
 //   （连同其内部 helper normalizeForSignature / isPlainRecord 一并迁来，作私有实现细节）。
 //   tracePreview 由 runtime/shared/preview 提供，避免插件与 modelRun 形成反向依赖。
 
-import type { ModelToolCall } from '@web-agent/ai'
+import type { ModelToolCall } from '@einfach-agent/ai'
 import type { TraceAttributes } from '../../../observability/port'
 import { parseToolCallArgs } from '../../modelTurn'
 import { tracePreview } from '../../shared/preview'

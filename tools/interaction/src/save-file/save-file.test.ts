@@ -1,7 +1,7 @@
 // save-file.test.ts —— 副作用工具单测（TOOLS-SPEC §11）。
 // 隔离红利：不需要 store，只 mock 一个 ctx，saveArtifact 用 vi.fn 可编程返回。
 import { describe, it, expect, vi } from 'vitest'
-import type { ToolContext } from '@web-agent/core/tools'
+import type { ToolContext } from '@einfach-agent/core/tools'
 import { SAVE_FILE_MAX_BYTES, saveFileTool } from './save-file'
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {

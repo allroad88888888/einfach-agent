@@ -4,7 +4,7 @@ import {
   itemsAtom,
   subscribeAgentEvents,
   type AgentEvent,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 
 export interface TextOutput {
   write(text: string): void

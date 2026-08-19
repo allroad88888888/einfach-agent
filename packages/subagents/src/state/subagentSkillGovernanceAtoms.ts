@@ -6,7 +6,7 @@ import {
   type SkillGovernanceAction,
   type SkillGovernanceOperation,
   type WorkspaceRuntimeResult,
-} from '@web-agent/core/subagents'
+} from '@einfach-agent/core/subagents'
 
 const SKILLS_INDEX_PATH = '.webAgent-archive/index/skills.jsonl'
 const SKILL_ID = /^sk_[a-zA-Z0-9_-]{1,92}$/

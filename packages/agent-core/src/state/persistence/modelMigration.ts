@@ -10,8 +10,8 @@
 //   每行必须注明 source（官方公告 URL）与 deprecatedAt（官方给的下线时刻），
 //   便于日后判断某行是否已经可以删除（存量会话都迁完之后这张表的行才是死代码）。
 
-import { DEEPSEEK_FLASH_MODEL } from '@web-agent/ai'
-import type { DeepSeekReasoningEffort } from '@web-agent/ai'
+import { DEEPSEEK_FLASH_MODEL } from '@einfach-agent/ai'
+import type { DeepSeekReasoningEffort } from '@einfach-agent/ai'
 import type { ModelSettings } from '../core.type'
 import { liftLegacyVendorSettings, withVendorSettings } from './settingsBagMigration'
 

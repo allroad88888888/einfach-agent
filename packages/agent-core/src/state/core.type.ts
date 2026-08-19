@@ -7,7 +7,7 @@
 //   · 一轮往返后处于什么状态     → RunState（从响应 finish_reason / tool_calls 推导）
 // 这里只定义数据形状；atom、会话 store 和持久化分别位于 state/runtime 对应模块。
 
-import type { ChatRequestBase, FinishReason, ModelItem, ModelToolCall } from '@web-agent/ai'
+import type { ChatRequestBase, FinishReason, ModelItem, ModelToolCall } from '@einfach-agent/ai'
 
 // ===========================================================================
 // 一、provider 身份 —— 一个不透明 id

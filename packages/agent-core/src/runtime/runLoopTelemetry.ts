@@ -5,7 +5,7 @@ import {
   type ModelChatResponse,
   type ModelFunctionTool,
   type ModelItem,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import type {
   ContextCacheTotals,
   ContextStatsSnapshot,

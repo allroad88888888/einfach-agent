@@ -1,7 +1,7 @@
 // connect_mcp_server 的安全契约：模型的输入里混着网页正文、文件内容、其它 MCP 工具的返回值，
 // 全是不可信数据。这里锁死的是——无论注入内容把连接目标写成什么形状（URL / 命令行 / 路径 /
 // 配置对象 / 换个字段名），都无法让工具连上一个未登记的服务。
-import { createToolRegistry } from '@web-agent/core/tools'
+import { createToolRegistry } from '@einfach-agent/core/tools'
 import { describe, expect, it } from 'vitest'
 import { registerMcpTools } from '../index'
 import {

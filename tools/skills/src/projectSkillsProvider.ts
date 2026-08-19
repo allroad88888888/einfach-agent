@@ -1,5 +1,5 @@
-import type { ProjectSkillsLoaderBridge, ProjectSkillsProvider } from '@web-agent/core'
-import { emptyProjectSkillsSnapshot } from '@web-agent/core/skills'
+import type { ProjectSkillsLoaderBridge, ProjectSkillsProvider } from '@einfach-agent/core'
+import { emptyProjectSkillsSnapshot } from '@einfach-agent/core/skills'
 import { scanProjectSkills } from './projectSkillsLoader'
 
 /**
@@ -17,14 +17,14 @@ export function buildProjectSkillsProvider(): ProjectSkillsProvider {
   let userSkillsRootPromise: Promise<string | undefined> | undefined
 
   const loadBridge = () => {
-    bridgePromise ??= import('@web-agent/core').then(
+    bridgePromise ??= import('@einfach-agent/core').then(
       ({ buildProjectSkillsWorkspaceBridge }) => buildProjectSkillsWorkspaceBridge(),
     )
     return bridgePromise
   }
 
   const loadUserSkillsRoot = () => {
-    userSkillsRootPromise ??= import('@web-agent/core').then(
+    userSkillsRootPromise ??= import('@einfach-agent/core').then(
       ({ resolveUserSkillsRoot }) => resolveUserSkillsRoot(),
     )
     return userSkillsRootPromise

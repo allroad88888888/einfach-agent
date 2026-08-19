@@ -5,7 +5,7 @@ import {
   type DelegateAgentStrategy,
   type SubagentNodeRecord,
   type SubagentSkillFile,
-} from '@web-agent/core/subagents'
+} from '@einfach-agent/core/subagents'
 import {
   subagentContentHash,
   subagentGlobalSkillPath,

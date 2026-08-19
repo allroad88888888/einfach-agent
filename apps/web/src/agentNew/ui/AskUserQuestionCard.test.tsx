@@ -7,13 +7,13 @@ import {
   pendingQuestionAnswersAtom,
   answerQuestion,
   resumeWithAnswers,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { AskUserQuestionCard } from './AskUserQuestionCard'
 
 // P8-d AskUserQuestionCard：暂停确认卡片。契约 U1 —— UI 只读 atom（runAtom /
 // pendingQuestionAnswersAtom）+ 调命令（answerQuestion / resumeWithAnswers）。
 // 这里把命令整模块 mock，断言「改了什么就调了什么」，不触碰真正的 runtime / store writer。
-vi.mock('@web-agent/core/runtime/commands', () => ({
+vi.mock('@einfach-agent/core/runtime/commands', () => ({
   answerQuestion: vi.fn(),
   resumeWithAnswers: vi.fn(),
 }))

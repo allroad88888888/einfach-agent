@@ -1,5 +1,5 @@
 {
-  "name": "@web-agent/persistence-sqlite",
+  "name": "@einfach-agent/persistence-sqlite",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
@@ -28,7 +28,7 @@
   },
   "dependencies": {
     "@tauri-apps/plugin-sql": "^2.4.0",
-    "@web-agent/core": "workspace:*"
+    "@einfach-agent/core": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^4.0.15"

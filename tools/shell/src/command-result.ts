@@ -1,4 +1,4 @@
-import type { ShellCommandResult, ToolResult } from '@web-agent/core/tools'
+import type { ShellCommandResult, ToolResult } from '@einfach-agent/core/tools'
 
 // 后台进程握着 stdout/stderr 会让调用无法返回，宿主为此杀掉了整个进程组。
 // 必须显式告诉模型：它用 `cmd &` 起的服务并没有活下来，后续步骤不能假设端口已就绪。

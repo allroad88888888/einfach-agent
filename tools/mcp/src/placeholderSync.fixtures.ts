@@ -1,8 +1,8 @@
 // 占位同步器两组用例共用的替身：活的登记表、缓存清单、以及把它们接起来的 setup。
 // 沿用 clientManager.reconnect.fixtures.ts 的做法——替身独立成文件，测试文件只留判据。
 
-import { createToolRegistry } from '@web-agent/core/tools'
-import type { Tool } from '@web-agent/core/tools'
+import { createToolRegistry } from '@einfach-agent/core/tools'
+import type { Tool } from '@einfach-agent/core/tools'
 import { vi } from 'vitest'
 import type { McpLastKnownToolList } from './connect-mcp-server/lastKnownTools'
 import { createMcpPlaceholderClaims } from './placeholderClaims'

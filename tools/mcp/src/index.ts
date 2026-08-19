@@ -1,11 +1,11 @@
-// tools-mcp —— @web-agent/tools-mcp：MCP 运行时（连接管理 + 远端工具适配）与 mcp 域内置工具的
-// 桶文件 + 注册器。依赖：仅 @web-agent/core 的工具抽象；core 不反向依赖本包 —— 单向无环。
+// tools-mcp —— @einfach-agent/tools-mcp：MCP 运行时（连接管理 + 远端工具适配）与 mcp 域内置工具的
+// 桶文件 + 注册器。依赖：仅 @einfach-agent/core 的工具抽象；core 不反向依赖本包 —— 单向无环。
 //
 // 与其它五个工具域的差别：本域的工具需要一个【活的运行时依赖】（进程级 McpClientManager），
 // 所以注册器是 register<Domain>Tools(registry, dependencies) —— registry 仍是第一个位置参数，
 // 注入项收在一个具名对象里（后续要加依赖时不破坏调用点）。宿主在装配期把依赖交进来，
 // 工具自身不 import 任何单例；这是本仓「工具需要运行时依赖」的范式写法。
-import type { ToolRegistry } from '@web-agent/core/tools'
+import type { ToolRegistry } from '@einfach-agent/core/tools'
 import {
   createMcpConnectTool,
   type McpConnectManager,

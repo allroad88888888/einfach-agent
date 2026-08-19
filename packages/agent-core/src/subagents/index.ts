@@ -1,9 +1,9 @@
-// subagents/index.ts —— 委派接缝公开面 barrel（issue 卡 S2a，白名单 subpath `@web-agent/core/subagents`）。
+// subagents/index.ts —— 委派接缝公开面 barrel（issue 卡 S2a，白名单 subpath `@einfach-agent/core/subagents`）。
 // 只做 re-export，不改任何被引用文件的实现（同 S1a `tools/index.ts` 的做法）。
 //
 // 收进来的判据（本卡采用，逐条 grep 核对过真实消费方）：
 //   一条导出进 barrel，当且仅当它的**签名只由委派协议的公开词汇构成**——`./types` 的协议类型、
-//   agent path、档位表、工具档位、端口接口，加上早已公开的 `@web-agent/ai` 与 `state/core.type`。
+//   agent path、档位表、工具档位、端口接口，加上早已公开的 `@einfach-agent/ai` 与 `state/core.type`。
 //   只要签名里出现 `DelegateAgentRuntimeState` / `DelegationCallState` / `TreeRuntimeBudget` 这类
 //   **core 子 run 的可变实现容器**，就判内部：把它们写进公开面等于把执行内核的内部结构一起冻成承诺。
 //   另：同一文件里当前零外部消费方的导出不收——公开面按真实消费方划线，不做 `export *`。

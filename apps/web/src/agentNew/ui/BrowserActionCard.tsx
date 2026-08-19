@@ -5,7 +5,7 @@
 //   · 渲染 title 作标题；
 //   · 有 body 时复用 MessageMarkdown 渲染正文，无 body 不渲染正文区。
 
-import type { BrowserCard } from '@web-agent/core'
+import type { BrowserCard } from '@einfach-agent/core'
 import { MessageMarkdown } from './MessageMarkdown'
 
 export function BrowserActionCard({ card }: { card: BrowserCard }) {

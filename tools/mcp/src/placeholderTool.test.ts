@@ -2,7 +2,7 @@
 // 透明连接 execute 的判据在 placeholderExecute.test.ts —— 本文件只钉「长什么样」，
 // 以及「execute 确实是一行委派」。
 
-import type { ToolContext, ToolResult } from '@web-agent/core/tools'
+import type { ToolContext, ToolResult } from '@einfach-agent/core/tools'
 import { describe, expect, it, vi } from 'vitest'
 import type { McpPlaceholderExecutor } from './placeholderExecute'
 import { createMcpPlaceholderTool } from './placeholderTool'

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ModelFunctionTool } from '@web-agent/ai'
+import type { ModelFunctionTool } from '@einfach-agent/ai'
 import type { LoadedTool } from '../tools/types'
 import { selectToolGate } from './toolGates'
 

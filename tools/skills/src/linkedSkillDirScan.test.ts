@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { ProjectSkillsLoaderBridge } from '@web-agent/core'
+import type { ProjectSkillsLoaderBridge } from '@einfach-agent/core'
 import { scanLinkedSkillDir } from './linkedSkillDirScan'
 
 const input = {

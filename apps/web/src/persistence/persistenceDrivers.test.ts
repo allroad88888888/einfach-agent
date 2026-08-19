@@ -23,12 +23,12 @@ const drivers = vi.hoisted(() => ({
   configureSqlExecutor: vi.fn(),
 }))
 
-vi.mock('@web-agent/persistence-idb', () => ({
+vi.mock('@einfach-agent/persistence-idb', () => ({
   createIndexedDbSessionsPersistence: drivers.createIndexedDbSessionsPersistence,
   createIndexedDbRecoveryDriver: drivers.createIndexedDbRecoveryDriver,
   createIndexedDbHistoryLogDriver: drivers.createIndexedDbHistoryLogDriver,
 }))
-vi.mock('@web-agent/persistence-sqlite', () => ({
+vi.mock('@einfach-agent/persistence-sqlite', () => ({
   createSqlitePersistence: drivers.createSqlitePersistence,
   createSqliteRecoveryDriver: drivers.createSqliteRecoveryDriver,
   createSqliteHistoryLogDriver: drivers.createSqliteHistoryLogDriver,

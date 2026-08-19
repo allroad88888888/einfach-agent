@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ToolContext } from '@web-agent/core/tools'
+import type { ToolContext } from '@einfach-agent/core/tools'
 import { cancelAgentTool } from './cancel-agent'
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {

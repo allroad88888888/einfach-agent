@@ -23,7 +23,7 @@
 import { describe, expect, it } from 'vitest'
 import { createHistory, createStore } from '@einfach/core'
 
-import type { ModelToolCall } from '@web-agent/ai'
+import type { ModelToolCall } from '@einfach-agent/ai'
 import { truncatePayload } from '../../../observability/redact'
 import { makeCoreCtx, type CoreCtx } from '../coreCtx'
 import type { TurnEndDecision, TurnEndEvent, TurnEndStopDecision } from '../loopHooks'

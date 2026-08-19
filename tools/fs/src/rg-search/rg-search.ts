@@ -7,7 +7,7 @@ import {
   type RgSearchResult,
   type Tool,
   type ToolContext,
-} from '@web-agent/core/tools'
+} from '@einfach-agent/core/tools'
 import guide from './rg-search.md?raw'
 
 type RgSearchWorkspace = (input: RgSearchInput) => Promise<RgSearchResult>

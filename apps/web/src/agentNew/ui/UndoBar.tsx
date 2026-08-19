@@ -12,7 +12,7 @@
 // 回填工具结果…），按条撤销对用户没有意义。逐条那档（undoEntry）留给开发者，不进 UI。
 
 import { useAtomValue } from '@einfach/react'
-import { redoTurn, sessionUndoAvailabilityAtom, undoTurn } from '@web-agent/core'
+import { redoTurn, sessionUndoAvailabilityAtom, undoTurn } from '@einfach-agent/core'
 
 /** 有账可退但**永久**不许退时，告诉用户为什么。 */
 const BLOCKED_HINT = {

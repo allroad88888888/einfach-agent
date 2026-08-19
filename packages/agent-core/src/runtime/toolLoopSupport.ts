@@ -1,4 +1,4 @@
-import { isAbortError } from '@web-agent/ai'
+import { isAbortError } from '@einfach-agent/ai'
 import type { ToolResult } from '../tools/types'
 import type { TraceAttributes, TraceStatus } from '../observability/port'
 import { appendItem } from '../state/sessionWriters'

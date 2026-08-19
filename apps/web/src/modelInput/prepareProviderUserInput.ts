@@ -3,8 +3,8 @@ import {
   resolveKimiRegion,
   type KimiLocalImage,
   type UserContentBlock,
-} from '@web-agent/ai'
-import type { UserInputPreparer } from '@web-agent/core'
+} from '@einfach-agent/ai'
+import type { UserInputPreparer } from '@einfach-agent/core'
 import { imageInputCapabilityForApp } from './kimiImageFeature'
 import { kimiRegionSetting } from './kimiRegionSetting'
 

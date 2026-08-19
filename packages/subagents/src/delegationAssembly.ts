@@ -1,4 +1,4 @@
-import type { DelegationRuntimeFactory } from '@web-agent/core/subagents'
+import type { DelegationRuntimeFactory } from '@einfach-agent/core/subagents'
 import { createDelegateAgentRuntime } from './runtime'
 import { createSubagentScheduler } from './schedulerState'
 

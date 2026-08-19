@@ -1,4 +1,4 @@
-import { registerSubagentViewCommandFacade } from '@web-agent/core/subagents'
+import { registerSubagentViewCommandFacade } from '@einfach-agent/core/subagents'
 import {
   loadSubagentArchiveAtom,
   loadSubagentArchivePreviewAtom,

@@ -1,13 +1,13 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup } from '@testing-library/react'
 import { afterEach, beforeEach, vi } from 'vitest'
-import { resetRootStore } from '@web-agent/core/state/rootStore'
+import { resetRootStore } from '@einfach-agent/core/state/rootStore'
 // 【setupFile 纪律】本文件是 vitest setupFile，在每个测试文件的 vi.mock 提升之前执行。
-// 这里**不能**改走根 barrel `@web-agent/core`：barrel 会把 runtime/commands 整条静态导链
-// 提前灌进模块缓存，导致测试里 vi.mock('@web-agent/core/runtime/commands') 拿到的是缓存的
+// 这里**不能**改走根 barrel `@einfach-agent/core`：barrel 会把 runtime/commands 整条静态导链
+// 提前灌进模块缓存，导致测试里 vi.mock('@einfach-agent/core/runtime/commands') 拿到的是缓存的
 // 真实实现（表现为「not a spy」）。故 defaultCore 保持深路径。
-import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
-import { registerStandardTools } from '@web-agent/tools'
+import { defaultCore } from '@einfach-agent/core/runtime/core/coreInstance'
+import { registerStandardTools } from '@einfach-agent/tools'
 
 // 【登记反转 · TS1】defaultCore 造出来无工具（core 不再硬编码标准工具）。测试大量断言
 // defaultCore.tools 已带 21 个标准工具——在此（每个测试文件加载前跑一次，register 幂等）统一注册进

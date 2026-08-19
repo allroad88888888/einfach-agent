@@ -8,8 +8,8 @@ import {
   refreshProjectSkills,
   disabledProjectSkillsByWorkspaceAtom,
   rootStore,
-} from '@web-agent/core'
-import { setProjectSkillEnabled } from '@web-agent/core/skills'
+} from '@einfach-agent/core'
+import { setProjectSkillEnabled } from '@einfach-agent/core/skills'
 import { appSettingsAtom } from './state'
 import { saveAppSettings } from './commands'
 import {

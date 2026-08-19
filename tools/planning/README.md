@@ -1,4 +1,4 @@
-# @web-agent/tools-planning
+# @einfach-agent/tools-planning
 
 The planning tool domain and its default plan runtime: creating, updating and executing
 structured plans.

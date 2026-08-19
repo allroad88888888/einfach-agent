@@ -1,6 +1,6 @@
 import { useAtom } from '@einfach/react'
-import { useAgentAtomValue } from '@web-agent/react-plugin'
-import { planAtom } from '@web-agent/core'
+import { useAgentAtomValue } from '@einfach-agent/react-plugin'
+import { planAtom } from '@einfach-agent/core'
 import { completedPlanRecordExpandedAtom, expandedPlanStagesAtom } from './planViewState'
 
 /** Renders a completed plan as a compact, expandable transcript record. */

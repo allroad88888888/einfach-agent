@@ -1,4 +1,4 @@
-import type { ProviderTarget } from '@web-agent/ai'
+import type { ProviderTarget } from '@einfach-agent/ai'
 import { providerTargetForRequest } from './providerRoute'
 
 export type ModelProvider = ProviderTarget['provider']

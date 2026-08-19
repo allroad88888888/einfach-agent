@@ -38,7 +38,7 @@ pnpm exec vitest run -t "ask_user"
 ```
 
 workspace 包不单独编译，`vite.config.ts` 的 alias 和 `tsconfig.app.json` 的 `paths` 直接把
-`@web-agent/*` 指到各包 `src`，改包代码无需先 build。但新增或改名一个包时，这两处 alias
+`@einfach-agent/*` 指到各包 `src`，改包代码无需先 build。但新增或改名一个包时，这两处 alias
 必须同步改，否则类型检查和运行时会分别报错，参见 CLAUDE.md「构建与解析模型」一节。
 
 ## 提交前门禁

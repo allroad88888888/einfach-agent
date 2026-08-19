@@ -17,7 +17,7 @@
 //
 // 装配（宿主启动时一次）：
 //
-//   import { createHostEventBus } from '@web-agent/host-node'
+//   import { createHostEventBus } from '@einfach-agent/host-node'
 //   const hostEvents = createHostEventBus({ onHandlerError })
 //   // 发射面交给 MCP 传输层（C1 会在 NodeHostInvokeOptions 上开这个槽）
 //   // 订阅面交给 CLI 的直接消费方 / apps/server 的 SSE 端点

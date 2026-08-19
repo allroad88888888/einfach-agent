@@ -1,5 +1,5 @@
 import { atom } from '@einfach/core'
-import type { AssistantItem, ToolItem } from '@web-agent/ai'
+import type { AssistantItem, ToolItem } from '@einfach-agent/ai'
 import { createLatestOnlyLoader } from './createLatestOnlyLoader'
 import { isMissingSubagentArchiveError } from './subagentArchiveErrors'
 import {

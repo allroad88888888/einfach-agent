@@ -3,7 +3,7 @@
 import {
   maxTurnToolsForVendor,
   type ModelFunctionTool,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import type { LoadedTool } from '../tools/types'
 import { compareStableText } from './shared/stableTextOrder'
 import { canonicalizeJsonSchema } from './toolSchemaCanonical'
@@ -18,7 +18,7 @@ import {
   type BuildTurnToolsOptions,
 } from './turnToolVisibility'
 
-// 每个 provider 的 function tools 容量由 @web-agent/ai 的 canonical vendor descriptor 提供。
+// 每个 provider 的 function tools 容量由 @einfach-agent/ai 的 canonical vendor descriptor 提供。
 // request_tool_schema 固定占一个槽位，maxTools 只能在该 provider 的上限内继续下调。
 function normalizedMaxTurnTools(value: number | undefined, vendor: string | undefined): number {
   const maximum = maxTurnToolsForVendor(vendor ?? '')

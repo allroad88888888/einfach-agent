@@ -17,8 +17,8 @@
 //   本包；core 从此只留 SessionsPersistence 契约，桌面壳那一半照旧在 persistence-sqlite。
 //   对称关系：history driver ↔ sessions persistence，两个载体各自成包。
 
-import type { SessionMeta, WorkspaceMeta } from '@web-agent/core'
-import type { SessionsPersistence } from '@web-agent/core/state/persistence'
+import type { SessionMeta, WorkspaceMeta } from '@einfach-agent/core'
+import type { SessionsPersistence } from '@einfach-agent/core/state/persistence'
 
 const DEFAULT_DB_NAME = 'web-agent-sessions'
 const SESSION_STORE_NAME = 'sessions'

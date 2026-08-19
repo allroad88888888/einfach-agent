@@ -8,8 +8,8 @@
 // 桌面这一路走真的 scanPlugins + 真的 projectSkillsBridge，只把 Tauri IPC 这一层换成替身——
 // 复用项目 skills 那条 Rust 通路正是本卡的做法，接错了这里就看不到 list_workspace_files。
 
-import type { SessionMeta, WorkspaceMeta } from '@web-agent/core'
-import type { HostInvoke } from '@web-agent/core/runtime/hostBridge'
+import type { SessionMeta, WorkspaceMeta } from '@einfach-agent/core'
+import type { HostInvoke } from '@einfach-agent/core/runtime/hostBridge'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 // 与真实模块一致的默认表现：isTauri() 答 false、invoke 不被意外调用。
@@ -87,7 +87,7 @@ async function freshHost(tauriHost: boolean) {
     return undefined
   })
   // 必须从**重置后的模块图**动态 import：理由见上方文件头那段长注释。
-  const { configureHostInvoke } = await import('@web-agent/core/runtime/hostBridge')
+  const { configureHostInvoke } = await import('@einfach-agent/core/runtime/hostBridge')
   currentConfigureHostInvoke = configureHostInvoke
   // tauriHost 为 true：登记一个转发到上面这份 invoke mock 的 loader，hasHostBridge() 由此
   // 答真，loadHostInvoke() 解析出的就是这份 mock 本身——workspaceRead 的四个调用点（H2）
@@ -102,7 +102,7 @@ async function freshHost(tauriHost: boolean) {
   // 文件顶层静态 import 进来的是旧那份，两者不是同一个 store —— 断言会读到永远的默认值。
   const { uiStore } = await import('../uiStore')
   const { activeSessionIdAtom, rootStore, sessionsAtom, workspacesAtom } =
-    await import('@web-agent/core/state/rootStore')
+    await import('@einfach-agent/core/state/rootStore')
 
   return {
     initialize: (): void =>

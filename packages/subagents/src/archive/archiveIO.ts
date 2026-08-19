@@ -1,4 +1,4 @@
-import type { ModelItem } from '@web-agent/ai'
+import type { ModelItem } from '@einfach-agent/ai'
 import { SubagentArchiveWriter, type SubagentArchiveWriterContext } from './archiveWriter'
 import {
   renderJsonDocument,
@@ -22,7 +22,7 @@ import {
   type SubagentArchiveWriteMode,
   type SubagentNodeRecord,
   type SubagentSkillFile,
-} from '@web-agent/core/subagents'
+} from '@einfach-agent/core/subagents'
 
 interface SubagentArchiveIOOptions {
   writerContext: SubagentArchiveWriterContext

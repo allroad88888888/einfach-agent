@@ -3,8 +3,8 @@
 // （底层抛错时读退化为 []/undefined、写静默返回，绝不抛）。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SessionMeta } from '@web-agent/core/state/core.type'
-import type { SqlExecutor } from '@web-agent/core/state/persistence'
+import type { SessionMeta } from '@einfach-agent/core/state/core.type'
+import type { SqlExecutor } from '@einfach-agent/core/state/persistence'
 
 // —— 内存 fake DB：按 SQL 子串识别 driver 发出的那几条语句 ——
 function makeFakeDb() {

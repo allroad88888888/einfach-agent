@@ -5,7 +5,7 @@ import {
   type ProviderMethod,
   type ProviderRequestBody,
   type ProviderTarget,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 
 export const PROVIDER_RESOURCE_ID_PATTERN = /^[A-Za-z0-9._-]{1,256}$/
 

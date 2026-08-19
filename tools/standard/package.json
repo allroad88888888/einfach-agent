@@ -1,5 +1,5 @@
 {
-  "name": "@web-agent/tools",
+  "name": "@einfach-agent/tools",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
@@ -27,13 +27,13 @@
     "build": "tsup && tsc -p tsconfig.build.json && node ../../scripts/fix-dts-specifiers.mjs dist"
   },
   "dependencies": {
-    "@web-agent/core": "workspace:*",
-    "@web-agent/tools-shell": "workspace:*",
-    "@web-agent/tools-interaction": "workspace:*",
-    "@web-agent/tools-fs": "workspace:*",
-    "@web-agent/tools-planning": "workspace:*",
-    "@web-agent/tools-skills": "workspace:*",
-    "@web-agent/tools-agents": "workspace:*"
+    "@einfach-agent/core": "workspace:*",
+    "@einfach-agent/tools-shell": "workspace:*",
+    "@einfach-agent/tools-interaction": "workspace:*",
+    "@einfach-agent/tools-fs": "workspace:*",
+    "@einfach-agent/tools-planning": "workspace:*",
+    "@einfach-agent/tools-skills": "workspace:*",
+    "@einfach-agent/tools-agents": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^4.0.15"

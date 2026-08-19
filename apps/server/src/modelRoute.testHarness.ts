@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 // 【为什么是「真服务 + 改指」而不是「造一个 Response 返回」】（与 M1 的
 // `upstreamServer.testHarness.ts` 同一套判据，那份在 packages/host-node 里，
-// `tsconfig.app.json` 只把 `@web-agent/host-node` 映射到 barrel，深路径 import 解析不了，
+// `tsconfig.app.json` 只把 `@einfach-agent/host-node` 映射到 barrel，深路径 import 解析不了，
 // 所以这里另写一份最小的）：
 //   · **本卡最要紧的用例是「客户端断开 → 上游真的被中断」**，而那只有真 socket 那一头看得见
 //     （`response.on('close')` 且 `writableEnded === false`）。造出来的 Response 证明不了。
@@ -28,7 +28,7 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, expect } from 'vitest'
-import { modelRequestRegistry } from '@web-agent/host-node'
+import { modelRequestRegistry } from '@einfach-agent/host-node'
 import { createModelRouteHandler } from './modelRoute'
 import { isModelRoutePath } from './modelRoutePath'
 import { requestPathname } from './requestPathname'

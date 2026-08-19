@@ -1,6 +1,6 @@
 # DeepSeek Agent eval
 
-这套 eval 直接复用 `@web-agent/ai` 的 DeepSeek adapter，分为四层：
+这套 eval 直接复用 `@einfach-agent/ai` 的 DeepSeek adapter，分为四层：
 
 1. 离线协议矩阵：不读取 API Key、不访问网络；
 2. 真实 API 协议 smoke：验证请求形状和工具续轮；
@@ -148,7 +148,7 @@ runner 先为每个任务执行 Pro 和 Flash；report 再按
 - **工具失败软提醒**：同一工具失败达 `TOOL_FAILURE_STREAK_THRESHOLD`（现为 1，即每次失败）后，
   下一轮请求临时注入一条 system 提醒；连续失败次数只用来切换列表行文案（单次 / 已连续 N 次）。
 
-两段文案都从 `@web-agent/core/runtime/selfReflectionPrompts` import —— 那是运行时与 eval
+两段文案都从 `@einfach-agent/core/runtime/selfReflectionPrompts` import —— 那是运行时与 eval
 共用的单一来源，所以这里测的就是线上真正发出去的那串字节，不是它的副本。
 
 **二、skill 清单形态（B04 / B05）**

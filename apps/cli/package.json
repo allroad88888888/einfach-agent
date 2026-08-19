@@ -1,17 +1,17 @@
 {
-  "name": "@web-agent/cli",
+  "name": "@einfach-agent/cli",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
   "type": "module",
   "dependencies": {
-    "@web-agent/ai": "workspace:*",
-    "@web-agent/core": "workspace:*",
-    "@web-agent/host-node": "workspace:*",
-    "@web-agent/subagents": "workspace:*",
-    "@web-agent/tools": "workspace:*",
-    "@web-agent/tools-planning": "workspace:*",
-    "@web-agent/tools-skills": "workspace:*"
+    "@einfach-agent/ai": "workspace:*",
+    "@einfach-agent/core": "workspace:*",
+    "@einfach-agent/host-node": "workspace:*",
+    "@einfach-agent/subagents": "workspace:*",
+    "@einfach-agent/tools": "workspace:*",
+    "@einfach-agent/tools-planning": "workspace:*",
+    "@einfach-agent/tools-skills": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^4.0.15"

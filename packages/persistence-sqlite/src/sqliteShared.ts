@@ -16,8 +16,8 @@
 //   这条前提也是 `SqlExecutor` 只有「执行一条语句」而没有「执行一批语句」的原因，见 core 的
 //   state/persistence/sqlTransport.ts 文件头。
 
-import type { SqlExecutor, SqlExecutorLoader } from '@web-agent/core/state/persistence'
-import { beginPerformanceDiagnostic, performanceNow } from '@web-agent/core/observability'
+import type { SqlExecutor, SqlExecutorLoader } from '@einfach-agent/core/state/persistence'
+import { beginPerformanceDiagnostic, performanceNow } from '@einfach-agent/core/observability'
 
 // 装配层登记的执行面 loader。未登记时 getDb() 以 rejection 失败（见下），各 driver 各自按既有
 // 契约降级：sessions 静默 best-effort，recovery / historyLog 上抛。

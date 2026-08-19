@@ -1,4 +1,4 @@
-import { useAgentAtomValue } from '@web-agent/react-plugin'
+import { useAgentAtomValue } from '@einfach-agent/react-plugin'
 import { useEffect } from 'react'
 import {
   archiveSubagentTreesAtom,
@@ -11,7 +11,7 @@ import {
   subagentTraceAtom,
   subagentTreesAtom,
   type SubagentTreeView as SubagentTree,
-} from '@web-agent/subagents'
+} from '@einfach-agent/subagents'
 import {
   loadGlobalSubagentRuns,
   loadSubagentArchive,
@@ -19,7 +19,7 @@ import {
   loadSubagentTrace,
   selectGlobalSubagentRun,
   selectSubagentNode,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { SubagentRunTrace } from './SubagentRunTrace'
 import { SubagentSkillGovernancePanel } from './SubagentSkillGovernancePanel'
 import { SubagentStatusBadge, SubagentTreeView } from './SubagentTreeView'

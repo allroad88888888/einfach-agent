@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { createStore, type Store } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
-import { sendMessage, runAtom } from '@web-agent/core'
+import { sendMessage, runAtom } from '@einfach-agent/core'
 import { composerImageAttachmentAtom } from './composerImageAttachmentState'
 import { Composer } from './Composer'
 
-vi.mock('@web-agent/core/runtime/commands', () => ({
+vi.mock('@einfach-agent/core/runtime/commands', () => ({
   continueInterruptedRun: vi.fn(),
   sendMessage: vi.fn(),
   setApprovalMode: vi.fn(),

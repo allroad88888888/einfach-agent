@@ -1,4 +1,4 @@
-# @web-agent/core
+# @einfach-agent/core
 
 The assembly kernel for agent runtimes: the tool contract and registry, the main loop, plugins,
 and the observability/persistence contracts, checkpoints and state atoms — no concrete tool

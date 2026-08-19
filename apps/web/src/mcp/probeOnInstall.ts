@@ -19,7 +19,7 @@
 import type {
   McpServerConfig,
   McpServerSnapshot,
-} from '@web-agent/tools-mcp'
+} from '@einfach-agent/tools-mcp'
 import { toManagerConfig } from './config'
 import { mayLaunchMcpServer } from './stdioLaunchConsent'
 import { toCachedTools, type McpToolNameCacheWrite } from './toolNameCacheWriter'

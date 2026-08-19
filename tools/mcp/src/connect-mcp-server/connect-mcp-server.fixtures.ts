@@ -1,6 +1,6 @@
 // connect_mcp_server 三个测试文件（功能契约 / 提示注入契约 / 上次已知清单）共用的替身。
 // 只在测试里被 import，不从域 barrel 导出。
-import type { ToolContext } from '@web-agent/core/tools'
+import type { ToolContext } from '@einfach-agent/core/tools'
 import { vi } from 'vitest'
 import type {
   McpOperationOptions,

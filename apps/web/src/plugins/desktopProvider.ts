@@ -23,7 +23,7 @@ import {
   type ScannedPlugin,
   buildProjectSkillsWorkspaceBridge,
   defaultCore,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { createDesktopImportModule } from './desktopImportModule'
 import type { LoadedPlugin, PluginSettingsProvider, PluginToolGate } from './types'
 

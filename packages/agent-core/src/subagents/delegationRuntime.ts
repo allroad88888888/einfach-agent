@@ -7,7 +7,7 @@
 // 留在包侧就只能靠深导入取用。下沉之后包侧只剩「构造 ports 对象」这一件事，
 // 本文件的对外签名则只由委派协议词汇构成，因此可以进 barrel。
 
-import { firstAssistantText } from '@web-agent/ai'
+import { firstAssistantText } from '@einfach-agent/ai'
 import type { DelegationRuntime, DelegationRuntimeInput } from '../runtime/delegationContract'
 import { createChildModelCaller } from './childModelClient'
 import { createDelegateAgents } from './delegationBatch'

@@ -1,5 +1,5 @@
 // contextCache 两个测试文件共享的输入构造(非测试文件,vitest 不收集)。
-import type { ModelFunctionTool, ModelItem } from '@web-agent/ai'
+import type { ModelFunctionTool, ModelItem } from '@einfach-agent/ai'
 import type { ObserveContextCacheInput } from './contextCache'
 
 export function tool(name: string): ModelFunctionTool {

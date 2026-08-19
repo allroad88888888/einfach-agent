@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { askUserQuestionTool } from './ask-user-question'
-import type { ToolContext } from '@web-agent/core/tools'
+import type { ToolContext } from '@einfach-agent/core/tools'
 
 function makeCtx(): ToolContext {
   return {

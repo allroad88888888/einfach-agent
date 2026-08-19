@@ -1,7 +1,7 @@
 import { workspacesAtom } from '../state/rootStore'
 import { resolveSessionWorkspaceRoot } from '../state/workspaceState'
 import type { SessionMeta } from '../state/core.type'
-import type { SystemItem } from '@web-agent/ai'
+import type { SystemItem } from '@einfach-agent/ai'
 import { hostPlatform } from './hostPlatform'
 import { hasHostBridge } from './hostBridge'
 import {

@@ -10,7 +10,7 @@ import {
   type McpRemoteTool,
   type McpServerConfig,
   type McpToolsChangedListener,
-} from '@web-agent/tools-mcp'
+} from '@einfach-agent/tools-mcp'
 
 const CONNECT_TIMEOUT_MS = 30_000
 const LIST_TIMEOUT_MS = 30_000
@@ -444,9 +444,9 @@ export class TauriStdioMcpConnector implements McpConnector {
             ...(config.env ? { env: { ...config.env } } : {}),
             requestTimeoutMs: CONNECT_TIMEOUT_MS,
             clientInfo: {
-              name: 'web-agent',
+              name: 'einfach-agent',
               version: '0.1.0',
-              title: 'Web Agent',
+              title: 'Einfach Agent',
             },
           },
         }),

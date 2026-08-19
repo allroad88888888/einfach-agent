@@ -15,7 +15,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createHistory, createStore } from '@einfach/core'
 
-import { contextWindowTokens, type AssistantItem, type ModelItem, type ToolItem, type UserItem } from '@web-agent/ai'
+import { contextWindowTokens, type AssistantItem, type ModelItem, type ToolItem, type UserItem } from '@einfach-agent/ai'
 import { sessionsAtom } from '../../../state/rootStore'
 import type { ModelSettings, SessionMeta } from '../../../state/core.type'
 import { estimateTokensFromText } from '../../contextCompaction'

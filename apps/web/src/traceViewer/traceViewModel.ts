@@ -4,7 +4,7 @@ import type {
   TraceStatus,
   SpanKind,
   TraceLogSnapshot,
-} from '@web-agent/core/observability'
+} from '@einfach-agent/core/observability'
 
 export type TraceLevelFilter = 'all' | TraceStatus
 export type TraceTypeFilter = 'all' | SpanKind | 'event'

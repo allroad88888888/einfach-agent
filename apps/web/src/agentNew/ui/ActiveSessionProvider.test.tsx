@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { act, screen } from '@testing-library/react'
 import { atom } from '@einfach/core'
 import { useAtom } from '@einfach/react'
-import { useAgentAtomValue } from '@web-agent/react-plugin'
+import { useAgentAtomValue } from '@einfach-agent/react-plugin'
 import { renderWithStore } from '../../test/renderWithStore'
 import {
   rootStore,
@@ -10,7 +10,7 @@ import {
   defaultCore,
   itemsAtom,
   type ConversationItem,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { ActiveSessionProvider } from './ActiveSessionProvider'
 import { composerDraftAtom } from './composerDraftState'
 

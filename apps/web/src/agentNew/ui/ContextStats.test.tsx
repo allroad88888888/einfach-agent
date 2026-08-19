@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
-import { contextStatsAtom, type ContextStatsSnapshot } from '@web-agent/core'
+import { contextStatsAtom, type ContextStatsSnapshot } from '@einfach-agent/core'
 import { ContextStats } from './ContextStats'
 
 const baseStats: ContextStatsSnapshot = {

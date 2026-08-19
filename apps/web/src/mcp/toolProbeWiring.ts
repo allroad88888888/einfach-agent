@@ -36,14 +36,14 @@ import type {
   McpToolLaunchTargetProbe,
   UnconnectedToolProviderProbe,
   ToolRegistry,
-} from '@web-agent/core/tools'
+} from '@einfach-agent/core/tools'
 import {
   createMcpPlaceholderSync,
   registerMcpTools,
   type McpClientManager,
   type McpConnectManager,
   type McpPlaceholderClaims,
-} from '@web-agent/tools-mcp'
+} from '@einfach-agent/tools-mcp'
 import { createCachedToolProviderProbe } from './cachedToolProviderProbe'
 import { createMcpToolLaunchTargetProbe } from './toolLaunchTargetProbe'
 import {

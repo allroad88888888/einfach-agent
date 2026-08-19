@@ -1,6 +1,6 @@
 // 把模型响应里的宽松 tool_calls 收窄成请求侧必填形状。
 
-import type { ModelResponseToolCall, ModelToolCall } from '@web-agent/ai'
+import type { ModelResponseToolCall, ModelToolCall } from '@einfach-agent/ai'
 import { newId } from './newId'
 
 // 简介：把响应里的宽松 tool_calls 收窄成请求侧必填的 ModelToolCall[]。

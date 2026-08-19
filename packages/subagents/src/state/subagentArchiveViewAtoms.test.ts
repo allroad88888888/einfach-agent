@@ -1,6 +1,6 @@
 import { createStore } from '@einfach/core'
 import { describe, expect, it } from 'vitest'
-import type { ReadWorkspaceFileInput, ReadWorkspaceFileResult, WorkspaceRuntimeResult } from '@web-agent/core/subagents'
+import type { ReadWorkspaceFileInput, ReadWorkspaceFileResult, WorkspaceRuntimeResult } from '@einfach-agent/core/subagents'
 import {
   loadSubagentArchiveAtom,
   loadSubagentArchivePreviewAtom,

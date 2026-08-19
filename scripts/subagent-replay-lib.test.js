@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { formatReplayReport, replaySubagentArchive, SUBAGENT_EVENT_TYPES } from './subagent-replay-lib.js'
 // 权威事件类型清单只有一份，在 subagents 包。本文件不再手抄一遍：抄写副本会和源头一起腐化，
 // 却测不出腐化本身。
-import { SUBAGENT_EVENT_TYPES as CANONICAL_EVENT_TYPES } from '@web-agent/subagents/archive/replay'
+import { SUBAGENT_EVENT_TYPES as CANONICAL_EVENT_TYPES } from '@einfach-agent/subagents/archive/replay'
 
 function event(overrides = {}) {
   return {

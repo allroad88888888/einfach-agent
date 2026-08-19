@@ -1,7 +1,7 @@
 import type {
   ProjectSkillEntry,
   ProjectSkillsSnapshot,
-} from '@web-agent/core/skills'
+} from '@einfach-agent/core/skills'
 import { describe, expect, it } from 'vitest'
 import { buildSkillManifestText } from './registry'
 

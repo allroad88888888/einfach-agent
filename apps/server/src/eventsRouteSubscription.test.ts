@@ -5,7 +5,7 @@
 // `createCountingSource` 记的活跃订阅数——它是这件事在外部唯一可观测的形态。
 
 import { describe, expect, it } from 'vitest'
-import { createHostEventBus, HOST_EVENT_NAMES, type NodeHostInvokeOptions } from '@web-agent/host-node'
+import { createHostEventBus, HOST_EVENT_NAMES, type NodeHostInvokeOptions } from '@einfach-agent/host-node'
 import {
   createCountingSource,
   openSseClient,

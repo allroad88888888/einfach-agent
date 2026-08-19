@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { TraceLogSnapshot } from '@web-agent/core/observability'
+import type { TraceLogSnapshot } from '@einfach-agent/core/observability'
 import { buildTraceView, buildTraceViewModel, filterTraceRuns, filterTraceTimeline } from './traceViewModel'
 
 function snapshot(): TraceLogSnapshot {

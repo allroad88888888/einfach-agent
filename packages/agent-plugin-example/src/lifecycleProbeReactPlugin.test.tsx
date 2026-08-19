@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import {
   createTimelineRendererRegistry,
   installReactPlugins,
-} from '@web-agent/react-plugin'
+} from '@einfach-agent/react-plugin'
 import { describe, expect, it } from 'vitest'
 import { createLifecycleProbeReactPlugin } from './react'
 

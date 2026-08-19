@@ -1,4 +1,4 @@
-// @web-agent/ai 的构建入口——发包骨架的试点包，共享口径全在根 tsup.preset.ts 里。
+// @einfach-agent/ai 的构建入口——发包骨架的试点包，共享口径全在根 tsup.preset.ts 里。
 import { definePackageBuild } from '../../tsup.preset'
 
 export default definePackageBuild({

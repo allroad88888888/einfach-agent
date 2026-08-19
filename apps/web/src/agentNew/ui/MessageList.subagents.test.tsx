@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
-import { itemsAtom, executionGraphAtom } from '@web-agent/core'
+import { itemsAtom, executionGraphAtom } from '@einfach-agent/core'
 import { MessageList } from './MessageList'
 
 function expectThinkingProcessExpanded() {

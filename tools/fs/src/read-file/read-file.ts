@@ -5,7 +5,7 @@ import type {
   ReadWorkspaceFileInput,
   ReadWorkspaceFileResult,
   WorkspaceRuntimeResult,
-} from '@web-agent/core/tools'
+} from '@einfach-agent/core/tools'
 import guide from './read-file.md?raw'
 
 const DEFAULT_MAX_BYTES = 20_000

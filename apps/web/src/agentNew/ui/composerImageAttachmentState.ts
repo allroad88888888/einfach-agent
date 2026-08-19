@@ -1,5 +1,5 @@
 import { atom } from '@einfach/react'
-import type { ImageInputCapability } from '@web-agent/ai'
+import type { ImageInputCapability } from '@einfach-agent/ai'
 import { isAnimatedImage } from './imageAnimationDetector'
 
 export interface ComposerImageAttachment {

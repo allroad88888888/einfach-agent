@@ -105,7 +105,7 @@ T 线之前 Rust 仍在，那段窗口期是唯一能双跑对拍的时机。
 
 **门禁三处要随新包同步**：`vite.config.ts` 的 `resolve.alias`、`tsconfig.app.json` 的 `paths`、
 `scripts/check-boundaries.js` 的 `capabilityPackages` 数组。（N1 落地时实际改了**四**处：
-同文件 `coreRules` 的「core 禁入能力包」清单也加了 `@web-agent/host-node`——core 反过来引它
+同文件 `coreRules` 的「core 禁入能力包」清单也加了 `@einfach-agent/host-node`——core 反过来引它
 就等于把「宿主是什么」重新焊回 core，正是 H 线拆掉的那件事。）
 
 ### 移植中发现的 Rust 侧问题（汇总，W16/W17 对拍前必读）
@@ -452,8 +452,8 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   workspace root 订阅触发的插件扫描里，`desktopProvider.resolveBridge()` 会求值一次
   `buildProjectSkillsWorkspaceBridge()` 并 `??=` **缓存**结果——那一刻没有桥的话，缓存下来的
   `undefined` 会让插件面在整个进程生命周期里都报「当前宿主没有 workspace 文件系统通路」，且不自愈。
-  **不走 core 的 `loadTauriInvoke()`**：它不在 `@web-agent/core` 公开面上，深导入
-  `@web-agent/core/runtime/hostTauri` 会撞 `check-boundaries` 的公开面白名单（S9，硬 error 不是
+  **不走 core 的 `loadTauriInvoke()`**：它不在 `@einfach-agent/core` 公开面上，深导入
+  `@einfach-agent/core/runtime/hostTauri` 会撞 `check-boundaries` 的公开面白名单（S9，硬 error 不是
   观察项）；要不要放上公开面是 core 自己的决策。装配层自持 loader 反而更贴 H 线的方向。
   `setup.ts` 未动，而且是**实验验证**过的决定：临时加一个全局桩桥后重跑，恰好只有本卡新增的两个
   用例失败、其余零影响——全局桩既没必要，又会把本卡要证明的性质本身证伪。
@@ -501,7 +501,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：`createNodeHostInvoke(options): HostInvoke` 返回一个按 command 名分发的路由表，
   未实现的命令返回明确的「未实现」而非静默失败。路由表里**先落一条 `get_user_home_dir`
   → `os.homedir()`**（H4d 拆卡时并进来的，见 H4d-2；N7 读 `~/.webAgent/config.json` 也要用它）。
-  **明确不要**把主目录塞进 `/api/health` 让 B1 顺手取走——那会把权威重新劈成两处。**包不依赖 `@web-agent/core` 的运行时**
+  **明确不要**把主目录塞进 `/api/health` 让 B1 顺手取走——那会把权威重新劈成两处。**包不依赖 `@einfach-agent/core` 的运行时**
   （只 import type），不含任何 HTTP。跑 `node scripts/check-boundaries.js` + `pnpm build`
 - **模型**：opus
 - **状态**：DONE `c9ff758`。900 行 src / 11 例。`NODE_HOST_COMMANDS_BY_DOMAIN` 的**键就是目录名**，
@@ -1202,7 +1202,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   缺的不是某个资源、是服务器没准备好，此刻 `/api/health` 仍 200，两者合起来说的是同一件事。
   **卡面「改动面」那行原写「同步 `vite.config.ts` alias 与 `tsconfig.app.json` paths」，对 app 层不成立**
   ——`apps/cli` 两处都没有条目，app 不按包名被 import。真正必须改的是 `tsconfig.app.json` 的
-  `include`。加 alias/paths 会凭空造出一条「可以 `import '@web-agent/server'`」的公开面。已改卡面。
+  `include`。加 alias/paths 会凭空造出一条「可以 `import '@einfach-agent/server'`」的公开面。已改卡面。
   **路径禁闭两道，各挡各的**：① 词法（`staticPath.ts`，纯函数）解码**恰好一次** → 按 `/` 和 `\` 切段
   → 见 `..` 即拒；防二次编码的全部机制就是「只解一次」（`%252e%252e%252f` 解一次是字面文件名 →
   404），且下游拿到的是**分段数组不是字符串**，结构上没有再解一次的入口。② 落盘 realpath 后用
@@ -1294,7 +1294,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   **主会话接线**（`requestRouter.ts` / `createServer.ts` / `package.json`）：`handleApi` 已改成
   `async` 并在调用处 `await`——原先是同步定义、同步调用，挂上异步 handler 后 rejection 会绕过
   外层 `try/catch` 变成未捕获错误而不是一条 500。`apps/server/package.json` 原本**没有
-  `dependencies` 字段**，补了 `@web-agent/core` 与 `@web-agent/host-node`（vitest 靠根
+  `dependencies` 字段**，补了 `@einfach-agent/core` 与 `@einfach-agent/host-node`（vitest 靠根
   `vite.config.ts` 的 alias 能跑，真正 `node` 运行需要这两条）。
   连带修正 `health.test.ts`：`/api/invoke/run_shell_command` 从「未知路径回 404」那张表里移出
   ——接线后它是**真实存在**的接口，GET 拿到 405；单独钉住这条。
@@ -1396,20 +1396,20 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 ### 新增·主会话验收 S4/S5 时发现的模块解析陷阱（B/D 线必读）
 
 **症状**：`pnpm build`、`pnpm test`（4676 例）、三条门禁**全绿**，而 `pnpm serve` 一跑就
-`SyntaxError: The requested module '@web-agent/host-node' does not provide an export named
+`SyntaxError: The requested module '@einfach-agent/host-node' does not provide an export named
 'nodeHostPlatform'`——那个导出明明就在 `packages/host-node/src/index.ts:33`。
 
 **成因**：同一个包名在两条解析路径上指向**不同的东西**。
 - vite / vitest / `tsc -b` 走 `vite.config.ts` 的 `resolve.alias` 与 `tsconfig.app.json` 的 `paths`，
   直达 `src`（`CLAUDE.md` 写明的「workspace 包不单独编译」）。
 - 真正的进程（`tsx` 跑 `apps/server` / `apps/cli`）走 node 的 ESM 解析：`paths` 里
-  `"@web-agent/host-node": ["packages/host-node/src"]` 是**目录形式**，解析不到就**回落 node_modules**
+  `"@einfach-agent/host-node": ["packages/host-node/src"]` 是**目录形式**，解析不到就**回落 node_modules**
   → workspace 符号链接 → `package.json` 的 `exports` → `./dist/index.js`，**一份 8 月 18 日的陈旧构建**
   （`dist/` 是 gitignore 的本地产物，只导出 5 个符号，没有当天新加的任何东西）。
 
 **修法**：把该条目改成**文件形式** `["packages/host-node/src/index.ts"]`，与紧邻的
-`"@web-agent/core": ["packages/agent-core/src/index.ts"]` 一致——后者一直是文件形式，所以
-`@web-agent/core` 从没犯过这个病。改完 `pnpm serve` 立刻跑通。
+`"@einfach-agent/core": ["packages/agent-core/src/index.ts"]` 一致——后者一直是文件形式，所以
+`@einfach-agent/core` 从没犯过这个病。改完 `pnpm serve` 立刻跑通。
 
 **为什么之前没暴露**：host-node 是 N 线新加的包，而在 S4 之前**没有任何真实进程 import 它的新符号**
 ——`apps/cli` 虽然也 import 了 `nodeHostPlatform`，但 `pnpm cli --help` 在触及那条 import 之前就退出了。
@@ -1648,7 +1648,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **依赖**：M1、M2
 - **改动面**：`packages/host-node/src/model/errors.ts` 及其抛出点；`apps/server/src/modelRouteError.ts`
 - **判据**：**来源：M2 交回时点名的取舍。** M2 现在把「响应头之前的一切失败」一律映射成 **502**，
-  因为 M1 的 `MODEL_ERROR` 常量**不在 `@web-agent/host-node` 的包级公开面上**、那些错误也**没有
+  因为 M1 的 `MODEL_ERROR` 常量**不在 `@einfach-agent/host-node` 的包级公开面上**、那些错误也**没有
   `reason` 字段**。要分开「格式无效→400 / 目标未获允许→403 / 没配 Key→503 / 上游真的挂了→502」，
   `apps/server` 只能照抄一份中文串来 switch —— 那是给一份跨宿主对外契约立第二个权威，正是
   `createNodeHostInvoke` 那条「判别用 `reason` 字段而不是文案」立下的规矩要避免的。
@@ -1911,7 +1911,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   不依赖仓库工作树。跑 `node scripts/check-dist.js`
 - **模型**：sonnet
 - **状态**：DONE `31f54e7`。`apps/server` 加 `main` / `files:["dist"]` / `build: "tsup && node
-  scripts/embed-web-dist.mjs"`，根 `build` 末尾追加 `pnpm --filter @web-agent/server build`（顺序保证
+  scripts/embed-web-dist.mjs"`，根 `build` 末尾追加 `pnpm --filter @einfach-agent/server build`（顺序保证
   `vite build` 先产出 `apps/web/dist` 再嵌）。产物 `dist/main.js` + `dist/public/`。
   `DEFAULT_DIST_DIRECTORY` 改成**运行期探测**：先试 `dirname(import.meta.url)/public`（分发形态），
   不存在回落 `../../web/dist`（开发形态）——靠「是否存在」而非路径巧合，两个候选本来就不会同时存在。
@@ -1921,7 +1921,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   目录 → **真实 `npm install`（不是 pnpm，排除工作区符号链接魔法）** → 在那里 `node dist/main.js`。
   主会话独立复核：产物里 `grep` 仓库绝对路径**零命中**；从仓库外目录直接跑 `dist/main.js`，
   `GET /` 吐出内嵌前端、`/api/health` 正常、带 token 的 invoke 回 `"/Users/dol"`；
-  `@web-agent/host-node` 正确 external（`@web-agent/core` 全是 `import type`，编译期已擦除）。
+  `@einfach-agent/host-node` 正确 external（`@einfach-agent/core` 全是 `import type`，编译期已擦除）。
   **顺带修掉一个既有缺口**：`check-dist.js` 第一次跑就红，因为 `tools-shell` 等包的 `dist` 是陈旧的
   （还留着 S5 改名前的 `detectHostPlatform`）。它重建了全部 17 个包的 `dist`。**这个脚本不在
   `.github/workflows/ci.yml` 里**，所以那份陈旧态一直没人发现——与主会话在 S4/S5 撞到的「陈旧 dist
@@ -1937,7 +1937,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   `npm/lib/commands/publish.js:148` 是 `if (workspace && manifest.private)`，`workspace` 只在
   `npm publish -ws` 时才有值，**从包目录直接 publish 根本不走那条检查**。所以「要判据就得摘 private」
   这个取舍不存在，两者兼得。保留 private 的真理由：**依赖闭包全是私有包**（单独发 server，它的
-  `dependencies` 指向 registry 上不存在的 `@web-agent/core@0.1.0`，用户 `npm i` 当场 404），
+  `dependencies` 指向 registry 上不存在的 `@einfach-agent/core@0.1.0`，用户 `npm i` 当场 404），
   发布是整闭包的决定、归 D3。
   **一条发布路径上的硬伤（主会话已独立复核）**：`npm pack` 把 `workspace:*` **原样留着**，
   `pnpm pack` 才改写成 `0.1.0`。**用 `npm publish` 发出去的包是装不上的**——`workspace:*` 不是合法

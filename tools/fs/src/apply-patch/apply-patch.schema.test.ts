@@ -1,10 +1,10 @@
 // apply-patch 的真实复杂 schema × core 校验器（validateAgainstSchema）——TSPLIT TS2 从 agent-core 迁入。
 // ---------------------------------------------------------------------------
 // apply-patch 的 inputSchema 是全工具里最复杂的（嵌套 oneOf + const 判别联合）。用它压测 core 的
-// validateAgainstSchema 最有代表性，故这组用例住在 apply-patch 这里（tools-fs），从 @web-agent/core
+// validateAgainstSchema 最有代表性，故这组用例住在 apply-patch 这里（tools-fs），从 @einfach-agent/core
 // 取校验器 —— 依赖方向 tools-fs → core，自然单向；agent-core 的 schemaValidate.test 从此不再引具体工具。
 import { describe, expect, it } from 'vitest'
-import { validateAgainstSchema, type JsonSchema } from '@web-agent/core/tools/schemaValidate'
+import { validateAgainstSchema, type JsonSchema } from '@einfach-agent/core/tools/schemaValidate'
 import { applyPatchTool } from './apply-patch'
 
 describe('validateAgainstSchema · apply-patch 真实的嵌套 oneOf + const 判别联合', () => {

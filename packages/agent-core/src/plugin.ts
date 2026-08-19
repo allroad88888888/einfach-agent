@@ -1,4 +1,4 @@
-// @web-agent/core/plugin 的唯一公开入口。
+// @einfach-agent/core/plugin 的唯一公开入口。
 
 export { createCore } from './runtime/core/createCore'
 export {

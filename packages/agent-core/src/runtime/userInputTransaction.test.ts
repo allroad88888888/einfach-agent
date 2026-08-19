@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { UserMessageContent } from '@web-agent/ai'
+import type { UserMessageContent } from '@einfach-agent/ai'
 
 vi.mock('./modelRun', () => ({
   runSession: vi.fn(() => Promise.resolve()),

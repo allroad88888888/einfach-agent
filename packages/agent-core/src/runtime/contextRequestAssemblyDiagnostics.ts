@@ -1,4 +1,4 @@
-import type { ModelFunctionTool, ModelItem } from '@web-agent/ai'
+import type { ModelFunctionTool, ModelItem } from '@einfach-agent/ai'
 import { contextCacheFingerprint } from './contextCacheFingerprint'
 import { describeContextProjection, type ContextProjectionItemDiagnostic } from './contextProjectionDiagnostics'
 

@@ -1,4 +1,4 @@
-// `@web-agent/core/observability` 的公开面 barrel —— 只收 ObservabilityPort 契约、
+// `@einfach-agent/core/observability` 的公开面 barrel —— 只收 ObservabilityPort 契约、
 // trace 线协议类型与 trace 配置入口等纯逻辑公开面，供 observability-idb /
 // observability-sqlite 两个 driver 包与需要读写 trace 的能力包消费。判据见
 // docs/core-public-surface-audit.md §3.3 C 类「观测 driver」一行、§4 白名单方案第 7 条。

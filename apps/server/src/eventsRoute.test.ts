@@ -2,7 +2,7 @@
 // 「事件订阅关系」那一半在 `eventsRouteSubscription.test.ts`，值的保真在 `eventsRouteParity.test.ts`。
 
 import { describe, expect, it } from 'vitest'
-import { createHostEventBus } from '@web-agent/host-node'
+import { createHostEventBus } from '@einfach-agent/host-node'
 import { EVENTS_ROUTE_PATH } from './eventsRoute'
 import { openSseClient, withEventsRouteServer } from './eventsRoute.testHarness'
 

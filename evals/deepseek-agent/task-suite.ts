@@ -3,13 +3,13 @@ import {
   DEEPSEEK_PRO_MODEL,
   type DeepSeekReasoningEffort,
   type ModelFunctionTool,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import {
   routeSubagentModel,
   type SubagentRouteDecision,
   type SubagentRouteFeatures,
-} from '@web-agent/core/subagents/routing'
-import { ROOT_AGENT_PATH } from '@web-agent/core/subagents/path'
+} from '@einfach-agent/core/subagents/routing'
+import { ROOT_AGENT_PATH } from '@einfach-agent/core/subagents/path'
 
 export const DEEPSEEK_TASK_SUITE_VERSION = '2026-07-24.3'
 export const DEEPSEEK_TASK_RESULT_SCHEMA = 'deepseek-task-ab/v2'

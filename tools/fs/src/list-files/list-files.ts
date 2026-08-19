@@ -5,7 +5,7 @@ import type {
   ListWorkspaceFilesInput,
   ListWorkspaceFilesResult,
   WorkspaceRuntimeResult,
-} from '@web-agent/core/tools'
+} from '@einfach-agent/core/tools'
 import guide from './list-files.md?raw'
 
 const DEFAULT_MAX_ENTRIES = 200

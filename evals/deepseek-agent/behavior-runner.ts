@@ -1,6 +1,6 @@
 // prompt 行为 A/B 的执行器 —— 同一个模型跑两种 prompt 变体，采集机器可判的行为指标。
 // ---------------------------------------------------------------------------
-// 形态刻意与 task-runner 保持一致：直接调 @web-agent/ai 的 DeepSeek adapter（不走 agent-core
+// 形态刻意与 task-runner 保持一致：直接调 @einfach-agent/ai 的 DeepSeek adapter（不走 agent-core
 // 的 runtime loop）、自己开工具续轮、把 http/token/重试指标一并采下来、结果按 JSONL 落盘。
 // 脱敏口径也一致：不记 prompt、不记模型输出正文，只记判据布尔值、数值指标和输出哈希。
 //
@@ -23,13 +23,13 @@ import {
   type ModelToolCall,
   type ModelUsage,
   type RetryConfig,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import {
   toolFailureStreakNotice,
   TOOL_FAILURE_ERROR_PREVIEW_LIMIT,
   TOOL_FAILURE_STREAK_THRESHOLD,
   type ToolFailureStreak,
-} from '@web-agent/core/runtime/selfReflectionPrompts'
+} from '@einfach-agent/core/runtime/selfReflectionPrompts'
 import {
   behaviorArmOrder,
   behaviorArmsForTask,

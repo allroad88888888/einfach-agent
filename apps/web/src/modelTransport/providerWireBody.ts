@@ -4,7 +4,7 @@ import {
   type ProviderTransportInput,
   type ProviderWireMultipartPart,
   type ProviderWireRequestBody,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import { providerRouteSpec } from './providerRoute'
 
 const textEncoder = new TextEncoder()

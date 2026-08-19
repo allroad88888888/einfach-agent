@@ -12,7 +12,7 @@ import {
   type RecoverySaveResult,
   type RecoverySnapshotV1,
   validateRecoverySnapshot,
-} from '@web-agent/core/state/persistence'
+} from '@einfach-agent/core/state/persistence'
 import { getDb } from './sqliteShared'
 
 interface RecoveryRow {

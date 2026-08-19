@@ -5,7 +5,7 @@ import {
   type ModelFunctionTool,
   type ModelItem,
   type ThinkingConfig,
-} from '@web-agent/ai'
+} from '@einfach-agent/ai'
 import type { ContextCacheLane } from '../runtime/contextCache'
 import { CONTEXT_SAFETY_MARGIN_RATIO, DEFAULT_RESERVED_OUTPUT_TOKENS } from '../runtime/contextBudget'
 import { contextNeedsDistillation } from '../runtime/contextDistillation'

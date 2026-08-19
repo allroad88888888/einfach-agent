@@ -49,7 +49,7 @@
 // 没有、也不该有一个「事件名要不要转义」的运行期分支。真要加第三个事件名，得先回
 // `hostEventNames.ts` 登记，那一步会被看见。
 
-import type { HostEventName } from '@web-agent/host-node'
+import type { HostEventName } from '@einfach-agent/host-node'
 
 /**
  * `charset=utf-8` 是冗余的（SSE 规范固定 UTF-8 解码），写出来是为了和 `httpReply.ts` 里

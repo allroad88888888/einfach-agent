@@ -9,7 +9,7 @@ import { REQUEST_TOOL_SCHEMA_NAME, selectToolGate } from './toolGates'
 import { appendToolResult } from './toolLoopSupport'
 import { tracePreview } from './shared/preview'
 import { ROOT_AGENT_PATH } from '../subagents/path'
-import type { ModelFunctionTool } from '@web-agent/ai'
+import type { ModelFunctionTool } from '@einfach-agent/ai'
 import type { ToolLoopBase } from './toolLoopContracts'
 
 export interface ToolGateInput {

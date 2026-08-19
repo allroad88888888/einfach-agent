@@ -1,7 +1,7 @@
 // 时间线 renderer 的类型映射：将 Core item kind 精确关联到它可接收的 React props。
 
 import type { ComponentType } from 'react'
-import type { TimelineItem } from '@web-agent/core/timeline'
+import type { TimelineItem } from '@einfach-agent/core/timeline'
 
 export type TimelineItemKind = TimelineItem['kind']
 

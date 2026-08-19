@@ -19,7 +19,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createHistory, createStore, type Store } from '@einfach/core'
 
-import type { AssistantItem, ModelResponseMessage } from '@web-agent/ai'
+import type { AssistantItem, ModelResponseMessage } from '@einfach-agent/ai'
 import { sessionsAtom } from '../../../state/rootStore'
 import { itemsAtom, runAtom } from '../../../state/sessionAtoms'
 import type { SessionMeta } from '../../../state/core.type'

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { itemsAtom, newSession, sessionAtomScope } from '@web-agent/core'
+import { itemsAtom, newSession, sessionAtomScope } from '@einfach-agent/core'
 // 深路径进真实写入器：账本条目只能由 state/ 的写入器产生，而写入器不在 core 的公开面上
 // （公开面只给 UI「读 atom + 调命令」）。测试要的是真账目，不是伪造的 atom 值。
-import { appendItem, setRun } from '@web-agent/core/state/sessionWriters'
+import { appendItem, setRun } from '@einfach-agent/core/state/sessionWriters'
 import { renderWithStore } from '../../test/renderWithStore'
 import { UndoBar } from './UndoBar'
 

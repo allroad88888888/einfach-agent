@@ -5,7 +5,7 @@
 // （F5 的要求就是"由分类器决定，不要自己再写一套判断"）。本文件只是把分类结果转成中文文案
 // 和工具协议字段，连接超时是另一条独立分支：超时不经过分类器，因为它不是"连接失败"，
 // 只是"这次没等到结果"，天然按可重试处理。
-import type { ToolResult } from '@web-agent/core/tools'
+import type { ToolResult } from '@einfach-agent/core/tools'
 import {
   classifyMcpFailure,
   type McpFailureClassification,

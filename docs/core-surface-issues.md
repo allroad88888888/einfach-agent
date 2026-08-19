@@ -1,6 +1,6 @@
 # core 公开面收敛 Issue 树（G4 实施）
 
-目标：按 [core 公开面盘点](core-public-surface-audit.md) 的方案把 `@web-agent/core` 的公开
+目标：按 [core 公开面盘点](core-public-surface-audit.md) 的方案把 `@einfach-agent/core` 的公开
 承诺面从 68 条深导入收敛到 9 条白名单 subpath。本树执行两步走的**步骤 1**（barrel +
 codemod + 门禁，保留 `./*` 通配、非 breaking）；步骤 2（S10 删通配）按盘点结论与首次
 npm 发包同批，本树只立卡不执行。
@@ -39,8 +39,8 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
 - **依赖**：—
 - **改动面**：`packages/agent-core/src/tools/index.ts`（新建 barrel，收 TOOLS-SPEC 公开面：
   types/registry/toolCatalog/toolCallTiming 等，甄别以盘点 A/C 类清单为准）；
-  `tools/shell`、`tools/fs`、`tools/interaction` 的 `@web-agent/core/tools/*` 与
-  `runtime/toolContext` 类深导入改走 `@web-agent/core/tools`
+  `tools/shell`、`tools/fs`、`tools/interaction` 的 `@einfach-agent/core/tools/*` 与
+  `runtime/toolContext` 类深导入改走 `@einfach-agent/core/tools`
 - **判据**：三域 `pnpm exec vitest run tools/shell tools/fs tools/interaction` 全绿；
   改写后深导入计数下降（贴 grep 前后对比）
 - **模型**：sonnet
@@ -69,7 +69,7 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
 ### S2b · 委派消费方改写
 
 - **依赖**：S2a
-- **改动面**：`packages/subagents`、`tools/agents` 的深导入改走 `@web-agent/core/subagents`
+- **改动面**：`packages/subagents`、`tools/agents` 的深导入改走 `@einfach-agent/core/subagents`
 - **判据**：`pnpm exec vitest run packages/subagents tools/agents` 全绿；`pnpm build`
 - **模型**：opus
 - **状态**：DONE 32ed5a5（剩余 5 条内部深导入待 S11 整形）
@@ -183,7 +183,7 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
 
 - **依赖**：S1–S8
 - **改动面**：`scripts/check-boundaries.js` + `.test.js`：core 之外的包 import
-  `@web-agent/core/<白名单外路径>` 即 fail
+  `@einfach-agent/core/<白名单外路径>` 即 fail
 - **判据**：当前仓库通过；测试覆盖命中与放行；`node scripts/check-boundaries.js`
 - **模型**：opus（例外档案判断量升级）
 - **状态**：DONE 4eee1e7（7 条规则 / 58 处观察项 11 条豁免；跨行 import 门禁漏洞一并修复）
@@ -195,12 +195,12 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
   归一层"（Rust 侧实地核对的可迁移教训）。执行拆为 S11a–S11g。
 - **状态**：DONE（a–g 全落，见各子卡；packages/subagents 对 core 深导入归零，三处倒置修复）
 
-### S11a · firstAssistantText 归位 @web-agent/ai
+### S11a · firstAssistantText 归位 @einfach-agent/ai
 
 - **依赖**：—
 - **改动面**：`packages/agent-ai/src/modelContent.ts` 增访问器并导出；core 的
   `subagents/{childModelClient,childAgentLoop,childFinishReason}` 与
-  `packages/subagents/src/{runtime,delegationDistillation}.ts` 改指 `@web-agent/ai`
+  `packages/subagents/src/{runtime,delegationDistillation}.ts` 改指 `@einfach-agent/ai`
 - **判据**：`pnpm exec vitest run packages/agent-ai packages/agent-core/src/subagents packages/subagents` 全绿；childModelClient 不再导出该函数
 - **模型**：sonnet
 - **状态**：DONE 1713f46
@@ -242,7 +242,7 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
   生命周期四件套与 `runLowCostExtraction` 经端口取厂商档设置）；`packages/subagents/src/runtime.ts`
   退化为端口装配，**保留既有工厂名与签名**；barrel 补导出
 - **判据**：`runtime.modelCompat.test.ts` 三例全绿；
-  `grep -r '@web-agent/core/subagents/' packages/subagents/src` 归零；build
+  `grep -r '@einfach-agent/core/subagents/' packages/subagents/src` 归零；build
 - **模型**：opus
 - **状态**：DONE 083d609（packages/subagents 深导入归零，观察项 51→48）
 
@@ -259,8 +259,8 @@ S10 删通配与 exports 定稿（GATED：首次 npm 发包批次）
 
 - **依赖**：S11f
 - **改动面**：`runtime.testHarness.ts` 等 11 份 core 测试改用 core 自己的工厂 + 假端口，
-  斩断 core 测试 → `@web-agent/subagents` 反向依赖；真测装配的逐条说明保留
-- **判据**：`grep -r '@web-agent/subagents' packages/agent-core/src` 只剩带说明的装配测试
+  斩断 core 测试 → `@einfach-agent/subagents` 反向依赖；真测装配的逐条说明保留
+- **判据**：`grep -r '@einfach-agent/subagents' packages/agent-core/src` 只剩带说明的装配测试
 - **模型**：opus
 - **状态**：DONE 1ee6553（13 归位 / 2 保留注明，113 例守恒）
 

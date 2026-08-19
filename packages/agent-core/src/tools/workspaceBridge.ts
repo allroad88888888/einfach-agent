@@ -57,7 +57,7 @@ export type {
   WorkspaceSearchMatch,
 }
 
-// Keep importing @web-agent/core/tools side-effect free: standard tool registration runs
+// Keep importing @einfach-agent/core/tools side-effect free: standard tool registration runs
 // before individual runtime tests install their exact hostTauri mocks.
 export async function readWorkspaceFile(
   input: ReadWorkspaceFileInput,

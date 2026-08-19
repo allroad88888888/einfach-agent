@@ -1,7 +1,7 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { Provider } from '@einfach/react'
-import { RootStoreProvider } from '@web-agent/react-plugin'
+import { RootStoreProvider } from '@einfach-agent/react-plugin'
 import { uiStore } from './uiStore'
 import {
   activeSessionMetaAtom,
@@ -11,15 +11,15 @@ import {
   configureDefaultDelegation,
   configureDefaultProjectSkillsProvider,
   configureDefaultSkillsRegistry,
-} from '@web-agent/core'
-import { registerStandardTools } from '@web-agent/tools'
-import { buildProjectSkillsProvider, builtInSkillsRegistry } from '@web-agent/tools-skills'
+} from '@einfach-agent/core'
+import { registerStandardTools } from '@einfach-agent/tools'
+import { buildProjectSkillsProvider, builtInSkillsRegistry } from '@einfach-agent/tools-skills'
 import { hydrateMcpSettings } from './mcp/commands'
 import { initializeMcpSettings } from './mcp/initialize'
 import { hydratePluginSettings } from './plugins/commands'
 import { initializePluginSettings } from './plugins/initialize'
-import { createDefaultPlanRuntime } from '@web-agent/tools-planning'
-import { createDelegationAssembly } from '@web-agent/subagents'
+import { createDefaultPlanRuntime } from '@einfach-agent/tools-planning'
+import { createDelegationAssembly } from '@einfach-agent/subagents'
 // 宿主分流的五个装配面各住一个模块（B3）：桥、模型传输、凭据宿主、观测 driver、刷盘时机。
 // 本文件只按解析出的那一态把它们装起来，不再自己判「是不是 Tauri」。
 import { resolveHost, type ResolvedHost } from './host/resolveHost'

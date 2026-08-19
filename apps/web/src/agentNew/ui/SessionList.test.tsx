@@ -8,14 +8,14 @@ import {
   selectSession,
   removeSession,
   renameSession,
-} from '@web-agent/core'
+} from '@einfach-agent/core'
 import { SessionList } from './SessionList'
 
 // P-U2 SessionList：左栏会话列表。契约 U1 —— UI 只读 atom（sessionsAtom /
 // activeSessionIdAtom）+ 调命令（selectSession / removeSession / renameSession），
 // 绝不碰 store setter / writers。故 commands 整个 mock 掉，
 // 只断言「点了什么 → 调了哪个命令」。
-vi.mock('@web-agent/core/runtime/commands', () => ({
+vi.mock('@einfach-agent/core/runtime/commands', () => ({
   selectSession: vi.fn(),
   removeSession: vi.fn(),
   renameSession: vi.fn(),

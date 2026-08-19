@@ -4,9 +4,9 @@
 // 「答出来之后要不要暂停」是 core 的策略，见 packages/agent-core 的
 // dangerousTools.mcpToolCall.test.ts。
 
-import type { McpConnectTargetProbe } from '@web-agent/core/runtime/dangerousTools'
-import { createMcpPlaceholderClaims } from '@web-agent/tools-mcp'
-import type { Tool } from '@web-agent/core/tools'
+import type { McpConnectTargetProbe } from '@einfach-agent/core/runtime/dangerousTools'
+import { createMcpPlaceholderClaims } from '@einfach-agent/tools-mcp'
+import type { Tool } from '@einfach-agent/core/tools'
 import { describe, expect, it, vi } from 'vitest'
 import { createMcpToolLaunchTargetProbe } from './toolLaunchTargetProbe'
 

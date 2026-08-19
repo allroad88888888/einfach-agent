@@ -1,4 +1,4 @@
-// @web-agent/core/timeline 的唯一公开入口：只提供 renderer-neutral 时间线投影。
+// @einfach-agent/core/timeline 的唯一公开入口：只提供 renderer-neutral 时间线投影。
 
 export {
   isTimelineThinkingItem,

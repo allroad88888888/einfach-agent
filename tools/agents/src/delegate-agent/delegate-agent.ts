@@ -1,6 +1,6 @@
 // tools/delegate-agent/delegate-agent.ts -- tree-shaped child-agent delegation.
-import type { Tool, ToolContext } from '@web-agent/core/tools'
-import { SUBAGENT_TOOL_PROFILES, normalizeDelegateAgentInput } from '@web-agent/core/subagents'
+import type { Tool, ToolContext } from '@einfach-agent/core/tools'
+import { SUBAGENT_TOOL_PROFILES, normalizeDelegateAgentInput } from '@einfach-agent/core/subagents'
 import guide from './delegate-agent.md?raw'
 
 const inputSchema = {

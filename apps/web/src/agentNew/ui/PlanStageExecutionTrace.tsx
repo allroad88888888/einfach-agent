@@ -2,7 +2,7 @@
 
 import { useAtom } from '@einfach/react'
 import { useCallback } from 'react'
-import type { TimelineThinkingItem } from '@web-agent/core/timeline'
+import type { TimelineThinkingItem } from '@einfach-agent/core/timeline'
 import { planTraceWindowsAtom } from './messageWindowModel'
 import { ThinkingStep } from './ThoughtTraceEntries'
 import { SlidingWindowRow, useSlidingWindow } from './useSlidingWindow'

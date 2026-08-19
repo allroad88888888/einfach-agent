@@ -1,4 +1,4 @@
-# `@web-agent/core` 公开面收敛盘点
+# `@einfach-agent/core` 公开面收敛盘点
 
 > **这是盘点 + 蓝图，不是当前实现。** 本文只枚举现状、归类并提出白名单方案，**没有改动任何
 > 源码或包配置**。文中的"建议 subpath"全部尚未存在，引用前必须核对实现。
@@ -7,7 +7,7 @@
 
 ## 1. 为什么只有 core 需要这张卡
 
-18 个 workspace 包里，**只有 `@web-agent/core` 的 `exports` 是通配 `"./*": "./src/*"`**，
+18 个 workspace 包里，**只有 `@einfach-agent/core` 的 `exports` 是通配 `"./*": "./src/*"`**，
 其余全部已经是"barrel + 零到少量显式 subpath"。核对命令：
 
 ```bash
@@ -25,27 +25,27 @@ done
 
 ```bash
 # 2.1 全量深导入按出现次数排序
-grep -rhoE "from '@web-agent/core/[^']+'" apps packages tools \
+grep -rhoE "from '@einfach-agent/core/[^']+'" apps packages tools \
   --include='*.ts' --include='*.tsx' | sort | uniq -c | sort -rn
 
 # 2.2 拆测试/非测试两个口径，并算去重后的子路径数
-grep -rlE "from '@web-agent/core/" apps packages tools --include='*.ts' --include='*.tsx' \
+grep -rlE "from '@einfach-agent/core/" apps packages tools --include='*.ts' --include='*.tsx' \
   > /tmp/core-importers.txt
 grep -vE '\.test\.(ts|tsx)$|/test/|/__tests__/|testUtils|\.mock\.' /tmp/core-importers.txt \
   > /tmp/core-nontest.txt
 grep -E '\.test\.(ts|tsx)$|/test/|/__tests__/|testUtils|\.mock\.' /tmp/core-importers.txt \
   > /tmp/core-test.txt
-xargs grep -hoE "from '@web-agent/core/[^']+'" < /tmp/core-nontest.txt \
+xargs grep -hoE "from '@einfach-agent/core/[^']+'" < /tmp/core-nontest.txt \
   | sed "s|from '||;s|'$||" | sort -u | tee /tmp/nt.txt | wc -l   # 63
-xargs grep -hoE "from '@web-agent/core/[^']+'" < /tmp/core-test.txt \
+xargs grep -hoE "from '@einfach-agent/core/[^']+'" < /tmp/core-test.txt \
   | sed "s|from '||;s|'$||" | sort -u | tee /tmp/t.txt | wc -l    # 37
 sort -u /tmp/nt.txt /tmp/t.txt | wc -l                            # 68
 comm -13 /tmp/nt.txt /tmp/t.txt                                   # 仅测试在用：5 条
 
 # 2.3 每条子路径的消费方（包级）
 while IFS= read -r f; do b=$(printf '%s' "$f" | cut -d/ -f1-2)
-  grep -hoE "from '@web-agent/core/[^']+'" "$f" \
-    | sed "s|from '@web-agent/core/||;s|'$||" \
+  grep -hoE "from '@einfach-agent/core/[^']+'" "$f" \
+    | sed "s|from '@einfach-agent/core/||;s|'$||" \
     | while IFS= read -r p; do printf '%s\t%s\n' "$p" "$b"; done
 done < /tmp/core-nontest.txt | sort -u \
   | awk -F'\t' '{a[$1]=a[$1]", "$2} END {for (k in a) printf "%-44s %s\n", k, substr(a[k],3)}' | sort
@@ -60,8 +60,8 @@ done < /tmp/core-nontest.txt | sort -u \
 
 > G4 原文写的是 61，本次实测 **68**。差额是这份蓝图写就之后新增的深导入——数字会继续漂，
 > 所以本文只承诺命令可复现，不承诺常数。另有 `scripts/` 里 1 处消费方
-> （`subagent-replay-lib.test.js` 用 `@web-agent/subagents/archive/replay`），不属 core。
-> 仓库内 **`from '@web-agent/core'` 裸 barrel 导入为 0**——因为 core 根本没有 barrel。
+> （`subagent-replay-lib.test.js` 用 `@einfach-agent/subagents/archive/replay`），不属 core。
+> 仓库内 **`from '@einfach-agent/core'` 裸 barrel 导入为 0**——因为 core 根本没有 barrel。
 
 ## 3. 归类（68 条，每条只落一类）
 
@@ -98,7 +98,7 @@ done < /tmp/core-nontest.txt | sort -u \
 | `timeline` | 已是 curated 入口（[`timeline.ts`](../packages/agent-core/src/timeline.ts)，renderer-neutral 投影） | `apps/web`、`packages/agent-react` |
 
 这两条是**白名单该有的样子**，其余 66 条照它们改造即可。桌面契约模块桥当前**只桥
-`@web-agent/core/plugin` 一个说明符**（见 [插件上手](plugin-quickstart.md) 当前边界第 4 条），
+`@einfach-agent/core/plugin` 一个说明符**（见 [插件上手](plugin-quickstart.md) 当前边界第 4 条），
 白名单调整时这条硬编码必须同步。
 
 ### 3.3 C · 能力包接缝（32）
@@ -135,7 +135,7 @@ S7b 之后 `state/sessionStore` 也落到这一类（E7 处置掉了它唯一的
 
 | subpath | 消费方（改前） | 处置 |
 | --- | --- | --- |
-| `runtime/core/pluginContracts` | `apps/web/src/plugins/desktopProvider.test.ts`、`apps/cli/src/plugins.test.ts`（fixture 字面量） | **已消**：`definePlugin` 本就在 `./plugin` 白名单里，两处改走 `@web-agent/core/plugin` |
+| `runtime/core/pluginContracts` | `apps/web/src/plugins/desktopProvider.test.ts`、`apps/cli/src/plugins.test.ts`（fixture 字面量） | **已消**：`definePlugin` 本就在 `./plugin` 白名单里，两处改走 `@einfach-agent/core/plugin` |
 | `runtime/core/pluginHost` | `apps/web/src/plugins/{desktopProvider,desktopImportModule.bridge}.test.ts` | **已消**：两处内联 `createPluginHost(createToolRegistry(), [])` 换成 `createCore().plugins`（`createCore` 同样在 `./plugin` 白名单里，效果等价——都是一个空工具注册表上的隔离 `PluginHost`） |
 | `runtime/skillGovernance` | `packages/subagents/src/state/subagentSkillGovernanceAtoms.test.ts` | **已消**：`prepareSubagentSkillGovernance` 本就经 `subagentStatePort.prepareSkillGovernance` 挂在 `./subagents` 白名单里（见 `state/stateViewPort.ts`），测试改走它 |
 | `state/sessionWriters` | `apps/cli/src/event-renderer.test.ts` | **已消**：测试实际验证的是 `subscribeCliRenderer` 对 `itemsAtom` 变化的反应，不是写入器本身；换成两个文件内 helper，直接对 `defaultCore.getSessionStore(id).store` 做 `itemsAtom` 的不可变更新（`defaultCore`/`itemsAtom` 都已在白名单），不复现 `touchSession` 副作用（本文件断言从不依赖它） |
@@ -157,7 +157,7 @@ D 类清单 S8 后剩 1 条（`tools/schemaValidate`，测试专用、不进白�
 | E2 | `runtime/core/plugins/finishReasonPlugin` | `packages/subagents/src/delegationDistillation.ts:4` | 同上；能力包依赖 core 的某个默认插件文件路径 | **已消（S7a）**：判据 + 三份文案抽到中立的 `runtime/finishReason`，插件与 loop 一样只当消费方 |
 | E3 | `observability/traceCacheTotals` | `apps/web/src/agentNew/ui/ContextStats.tsx:7` | 从 trace 反推缓存总量的补偿逻辑，是观测内部实现而非观测契约 | **补 barrel + 记债（S7a）**：无等价公开 API 可换，收进 `./observability`；债见下方 |
 | E4 | `state/persistence/hydrate` | `apps/web/src/main.tsx:23` | 持久化启动步骤；宿主已有 `runtime/persistenceBridge` 这条正式收口 | **已消（S7a）**：`persistenceBridge` 新增 `hydratePersistence()`，读回用桥自己那对 driver |
-| E5 | `state/persistence/sessionsPersistence` | `apps/web/src/main.tsx:27` | 同 E4，内部工厂被装配层直接拼 | **已消（S7b）**：那本就是个 IndexedDB 实现，搬去 `@web-agent/persistence-idb` 并更名 `createIndexedDbSessionsPersistence`（与 `createIndexedDbHistoryDriver` 同包同载体，对称于 sqlite 侧的 `createSqlitePersistence`）；core 只留 `SessionsPersistence` 契约 |
+| E5 | `state/persistence/sessionsPersistence` | `apps/web/src/main.tsx:27` | 同 E4，内部工厂被装配层直接拼 | **已消（S7b）**：那本就是个 IndexedDB 实现，搬去 `@einfach-agent/persistence-idb` 并更名 `createIndexedDbSessionsPersistence`（与 `createIndexedDbHistoryDriver` 同包同载体，对称于 sqlite 侧的 `createSqlitePersistence`）；core 只留 `SessionsPersistence` 契约 |
 | E6 | `state/persistence/memoryHistoryDriver` | `apps/cli/src/runtime.ts:10` | core 内的内存 driver 实现被 CLI 当产品依赖 | **补 barrel（S7b）**：判定它该算公开面——零宿主依赖（只 import 本目录两个类型）、语义就是"进程内 Map 不落盘"、是 `HistoryDriver` 契约的参考实现，且 `apps/cli` 是真实产品消费方。收进 `./persistence`，CLI 改走 barrel |
 | E7 | `state/sessionStore` | `apps/web/src/agentNew/ui/ActiveSessionProvider.tsx:15` | `getSessionStore` 把 runtime store 交给 UI，与 [`CLAUDE.md`](../CLAUDE.md) 的"UI 不持有 runtime store"直接冲突 | **已消（S7b）**：命令面补一条受限只读通路 `sessionAtomScope(id)`（[`runtime/commands/sessionScopeCommands.ts`](../packages/agent-core/src/runtime/commands/sessionScopeCommands.ts)）——只给"该会话的 atom 作用域"供 `<Provider>` 绑定，**不给** store 生命周期（建/丢/清仍归 `newSession`/`removeSession`）。没有补 barrel |
 | E8 | `subagents/concurrency` | `packages/subagents/src/delegationBatch.ts:1` | `createConcurrencyLimiter` 是通用并发原语，不属委派契约 | **归位（S7b）**：搬到 `runtime/concurrencyLimiter`，与同层的 `runtime/writeQueue`、`runtime/newId` 一样是零依赖原语；core 侧 `subagents/runtimeState` 与包侧 `delegationBatch` 都改指新路径，`subagents/` 目录不再混装通用工具。跨包深导入本身留给 S11（它本就把 concurrency 列在 `delegationBatch` 的 5 条里）。**已随 S11 清偿**：S11d 把批次执行段下沉回 core，包侧那个文件连同这条深导入一起消失，`createConcurrencyLimiter` 现在只有 core 内的相对消费方 |
@@ -182,7 +182,7 @@ S7a/S7b 落地后 8 条全部有结论：E1、E2、E4、E5、E7 换正式通路�
 **S7b 记的两笔债**（E5–E8 已处置，同样留下两处后续兑现）：
 
 - **E8 归位后跨包深导入还在** —— **已随 S11 清偿**。原状：`packages/subagents` 的批次执行段
-  深导入 `@web-agent/core/runtime/concurrencyLimiter`，路径诚实了（通用原语不再冒充委派契约），
+  深导入 `@einfach-agent/core/runtime/concurrencyLimiter`，路径诚实了（通用原语不再冒充委派契约），
   但白名单里仍没有这条——与 `runtime/finishReason` 同一处境。当时给的两条出路里，S11 走了第一条：
   S11d 把批次执行段下沉回 core（`subagents/delegationBatch.ts`），包侧那个文件随之消失，
   这条深导入的消费方自动归零，不必为它并 barrel，更不必单开第 10 条 subpath。
@@ -217,13 +217,13 @@ D 类 5 条与 E 类 8 条**不进白名单**（E 类按 3.5 逐条处置后消�
 ## 5. 迁移策略：两步走（不是二选一）
 
 **barrel 收口 vs exports 白名单不是替代关系**——[`vite.config.ts`](../vite.config.ts) 的
-`'@web-agent/core': .../packages/agent-core/src` 与 [`tsconfig.app.json`](../tsconfig.app.json)
-的 `"@web-agent/core/*"` 把 `exports` 整个短路了（G5 已述："`exports` 字段在仓库内从未被真正
+`'@einfach-agent/core': .../packages/agent-core/src` 与 [`tsconfig.app.json`](../tsconfig.app.json)
+的 `"@einfach-agent/core/*"` 把 `exports` 整个短路了（G5 已述："`exports` 字段在仓库内从未被真正
 走通过"）。只改 `exports` 不改源码，仓库内测不出来，发出去才炸。
 
 - **步骤 1（0.1.0 之前必须完成，仓库内非 breaking）**：新建 9 个 barrel，**保留** `./*` 通配，
   用 codemod 把 68 条深导入改写到 9 条，`check-boundaries.js` 加一条"白名单外的
-  `@web-agent/core/` 深导入 = fail"。此时旧路径仍能解析，回滚成本为零。
+  `@einfach-agent/core/` 深导入 = fail"。此时旧路径仍能解析，回滚成本为零。
 - **步骤 2（发 0.1.0 当次）**：删 `./*`，写 9 条显式映射（构建后按 G5 指向带 `.js` 的产物），
   同步收窄 vite alias 与 tsconfig paths。
 

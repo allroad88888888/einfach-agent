@@ -18,7 +18,7 @@ import type { LoadedTool, Tool } from '../tools/types'
 import { createCoreInstance, type CoreInstance } from './core/coreInstance'
 import { configurePersistence, resetPersistence } from './persistenceBridge'
 // 集成性质：本文件测的是「懒加载真实 save_file 工具」，故从 meta 包取标准工具装进独立 core（TS2）。
-import { registerStandardTools } from '@web-agent/tools'
+import { registerStandardTools } from '@einfach-agent/tools'
 import { appendVisibleTool, ensureToolLoaded, refreshVisibleTools } from './toolLoading'
 
 afterEach(() => {

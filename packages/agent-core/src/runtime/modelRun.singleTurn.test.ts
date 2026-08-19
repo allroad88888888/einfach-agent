@@ -9,7 +9,7 @@ import { setRun } from '../state/sessionWriters'
 import { runtimeTranscriptEventsAtom, contextStatsAtom, queuedUserMessagesAtom, enqueueUserMessage } from '../state/transientAtoms'
 import { runSession } from './modelRun'
 import { createCoreInstance } from './core/coreInstance'
-import { registerStandardTools } from '@web-agent/tools'
+import { registerStandardTools } from '@einfach-agent/tools'
 import { resetModelRunTestState, seedSession, jsonResponse, toolCallsResponse, clone, waitUntil } from './modelRun.testHarness'
 
 afterEach(() => {

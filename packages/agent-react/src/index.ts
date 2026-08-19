@@ -1,4 +1,4 @@
-// @web-agent/react-plugin 的唯一公开入口。
+// @einfach-agent/react-plugin 的唯一公开入口。
 
 export {
   AgentStoreProvider,

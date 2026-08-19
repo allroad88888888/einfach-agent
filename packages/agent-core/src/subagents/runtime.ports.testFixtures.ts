@@ -2,9 +2,9 @@
 // ---------------------------------------------------------------------------
 // 子 run 内核测试的标的是 core 自己的机制（子循环、预算与并发、档位路由、归档事件投影），
 // 所以被测对象由 core 的 `createDelegationRuntime` + 本目录的假端口装出来，不再绕道
-// `@web-agent/subagents` 的产品工厂——那会让 core 的内核测试反向依赖上层能力包。
+// `@einfach-agent/subagents` 的产品工厂——那会让 core 的内核测试反向依赖上层能力包。
 
-import { DEEPSEEK_FLASH_MODEL, DEEPSEEK_PRO_MODEL } from '@web-agent/ai'
+import { DEEPSEEK_FLASH_MODEL, DEEPSEEK_PRO_MODEL } from '@einfach-agent/ai'
 import type {
   DelegationCapability,
   DelegationRuntime,

@@ -13,14 +13,14 @@
 // 即已知未收敛、暂缓的既有引用面），若沿用空 paths 会导致 `tsc -p tsconfig.build.json`
 // 对本包 100% 失败，`pnpm -r build` 无法全绿。
 // 解法：**清空继承来的 paths 后，只补一条指向 core dist 的显式映射**（而不是让它落回
-// node_modules 解析）——`@web-agent/core` 与 `@web-agent/core/*` 都直接指到
+// node_modules 解析）——`@einfach-agent/core` 与 `@einfach-agent/core/*` 都直接指到
 // `packages/agent-core/dist` 下的同名路径。dist 是 tsc 对 core `src` 全量做
 // `emitDeclarationOnly` 的产物（不受 tsup 九条 entry 限制，`src` 下每个非测试文件都有对应
 // `.d.ts`），所以这条映射能覆盖白名单内外的全部深路径，且解析目标是声明文件、不受 rootDir
 // 限制，不会重犯 TS6059。
 // **代价与边界**：这只解决了「本包自己声明 emit 时能找到 core 的类型」这一步（满足
 // `pnpm -r build` 判据）；它不改变**发布出去的 .d.ts 里那条裸说明符**——fix-dts-specifiers
-// 只改相对说明符，`@web-agent/core/state/core.type` 这类裸说明符原样保留。真实 npm 消费方
+// 只改相对说明符，`@einfach-agent/core/state/core.type` 这类裸说明符原样保留。真实 npm 消费方
 // 装包后用自己的 node_modules 解析这条说明符，仍会撞上 core 的 `./*` 通配同一个问题——这是
 // core 公开面还没收敛到「深路径全部落地为具名 subpath」的已知缺口（S10 GATED、S9 白名单里
 // 也记着这些具体引用点），修复归属 core 自己的公开面收敛树，不是 V3b 的改动面。
@@ -37,14 +37,14 @@
     // 于是「源码没改 + dist 被清空」会让 tsc 直接跳过 emit，产出一个没有 .d.ts 的 dist。
     "incremental": false,
     "composite": false,
-    // 清空继承来的 paths（tsconfig.app.json 把 `@web-agent/*` 指向各包**源码**），只留一条
-    // 显式补丁：`@web-agent/core`/`@web-agent/core/*` 直接指向 core 的 dist 声明产物。
+    // 清空继承来的 paths（tsconfig.app.json 把 `@einfach-agent/*` 指向各包**源码**），只留一条
+    // 显式补丁：`@einfach-agent/core`/`@einfach-agent/core/*` 直接指向 core 的 dist 声明产物。
     // 理由见文件头长注释——core 的 package.json exports 通配对深路径不可靠，直接点 dist
     // 比"清空后指望 node_modules 解析"更稳。**前提同样是 core 已按拓扑序先出 dist**；
     // core 还没构建时这里会变成一片 TS2307/TS6059。
     "paths": {
-      "@web-agent/core": ["packages/agent-core/dist/index.d.ts"],
-      "@web-agent/core/*": ["packages/agent-core/dist/*"]
+      "@einfach-agent/core": ["packages/agent-core/dist/index.d.ts"],
+      "@einfach-agent/core/*": ["packages/agent-core/dist/*"]
     },
     // pnpm 的 node_modules 是符号链接，TS 默认会 realpath 到 `node_modules/.pnpm/<pkg>@<ver>/...`；
     // 给推断出来的类型起名时它就写不出可移植的说明符，报 TS2742

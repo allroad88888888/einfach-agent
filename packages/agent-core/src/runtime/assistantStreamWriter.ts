@@ -1,4 +1,4 @@
-import type { AssistantItem, ModelResponseMessage, ModelStreamDelta } from '@web-agent/ai'
+import type { AssistantItem, ModelResponseMessage, ModelStreamDelta } from '@einfach-agent/ai'
 import { appendItem, updateItem } from '../state/sessionWriters'
 import { clearAssistantStream, setAssistantStream } from '../state/transientAtoms'
 import type { ConversationItem } from '../state/core.type'

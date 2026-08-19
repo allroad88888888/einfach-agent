@@ -7,7 +7,7 @@ import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { setRun } from '../state/sessionWriters'
 import { resumeInterruptedSession, runToolLoop } from './modelRun'
 import { createCoreInstance } from './core/coreInstance'
-import { registerStandardTools } from '@web-agent/tools'
+import { registerStandardTools } from '@einfach-agent/tools'
 import { resetModelRunTestState, seedSession, jsonResponse } from './modelRun.testHarness'
 
 afterEach(() => {

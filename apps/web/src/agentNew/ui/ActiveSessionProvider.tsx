@@ -13,14 +13,14 @@
 
 import { useEffect, type ReactNode } from 'react'
 import { useStore } from '@einfach/react'
-import { AgentStoreProvider, useRootAtomValue } from '@web-agent/react-plugin'
+import { AgentStoreProvider, useRootAtomValue } from '@einfach-agent/react-plugin'
 import {
   activeSessionIdAtom,
   activeSessionMetaAtom,
   activeWorkspaceRootAtom,
   sessionAtomScope,
-} from '@web-agent/core'
-import type { KimiRegion } from '@web-agent/ai'
+} from '@einfach-agent/core'
+import type { KimiRegion } from '@einfach-agent/ai'
 import { kimiRegionSetting } from '../../modelInput/kimiRegionSetting'
 import { resetSessionScopedViewState } from './sessionScopedViewState'
 

@@ -1,4 +1,4 @@
-import type { ModelChatResponse } from '@web-agent/ai'
+import type { ModelChatResponse } from '@einfach-agent/ai'
 
 function summaryText(content: unknown): string | undefined {
   if (typeof content !== 'string') return undefined

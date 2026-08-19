@@ -1,4 +1,4 @@
-import type { Tool } from '@web-agent/core/tools'
+import type { Tool } from '@einfach-agent/core/tools'
 import guide from './execute-plan.md?raw'
 
 export const executePlanTool: Tool = {

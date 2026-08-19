@@ -1,4 +1,4 @@
-# @web-agent/subagents
+# @einfach-agent/subagents
 
 Sub-agent delegation scheduling, batch orchestration, archive governance, and sub-agent tree
 view state.

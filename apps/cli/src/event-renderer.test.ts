@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { newSession, removeSession } from '@web-agent/core/runtime/commands'
-import { defaultCore } from '@web-agent/core/runtime/core/coreInstance'
-import { itemsAtom } from '@web-agent/core/state/sessionAtoms'
-import { setAssistantStream } from '@web-agent/core/state/transientAtoms'
-import type { ConversationItem } from '@web-agent/core/state/core.type'
+import { newSession, removeSession } from '@einfach-agent/core/runtime/commands'
+import { defaultCore } from '@einfach-agent/core/runtime/core/coreInstance'
+import { itemsAtom } from '@einfach-agent/core/state/sessionAtoms'
+import { setAssistantStream } from '@einfach-agent/core/state/transientAtoms'
+import type { ConversationItem } from '@einfach-agent/core/state/core.type'
 import { subscribeCliRenderer } from './event-renderer'
 
 const sessionIds: string[] = []

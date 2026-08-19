@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { UserImageContentBlock, UserMessageContent } from '@web-agent/ai'
+import type { UserImageContentBlock, UserMessageContent } from '@einfach-agent/ai'
 import { disposeProviderUserContent } from './disposeProviderUserContent'
 
 const kimiImage: UserImageContentBlock = {

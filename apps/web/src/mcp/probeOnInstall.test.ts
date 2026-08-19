@@ -1,6 +1,6 @@
 import { createStore } from '@einfach/core'
 import { describe, expect, it, vi } from 'vitest'
-import type { McpServerConfig, McpServerSnapshot } from '@web-agent/tools-mcp'
+import type { McpServerConfig, McpServerSnapshot } from '@einfach-agent/tools-mcp'
 import { mcpPendingLaunchConsentsAtom } from './launchConsentState'
 import { createMemoryMcpConfigStorage } from './persistence'
 import { createMcpInstallProber } from './probeOnInstall'

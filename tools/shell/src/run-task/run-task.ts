@@ -5,7 +5,7 @@ import type {
   WorkspaceTaskInput,
   WorkspaceTaskKind,
   WorkspaceTaskResult,
-} from '@web-agent/core/tools'
+} from '@einfach-agent/core/tools'
 import guide from './run-task.md?raw'
 
 export type RunTaskKind = WorkspaceTaskKind

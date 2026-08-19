@@ -1,6 +1,6 @@
 import { uiStore } from '../uiStore'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { disabledProjectSkillsByWorkspaceAtom, rootStore } from '@web-agent/core'
+import { disabledProjectSkillsByWorkspaceAtom, rootStore } from '@einfach-agent/core'
 import { configureAppSettingsStorage } from './commands'
 import {
   updateProjectSkillEnabled,
