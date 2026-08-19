@@ -894,7 +894,23 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **改动面**：`packages/host-node/src/workspace/write/base64*`
 - **判据**：对齐 `workspace_write_base64.rs`：解码失败明确报错，不写出半个文件。跑该目录 vitest
 - **模型**：sonnet
-- **状态**：DOING
+- **状态**：DONE `911fa14`。2 个新文件 + 3 处改动，write 域 178 例。
+  **`Buffer.from(x, 'base64')` 的危害经主会话实测确认，比预想更糟**：
+  `Buffer.from("not base64!", "base64")` **不报错**，产出 6 个垃圾字节 `9e8b5b6ac7ba`。
+  模型若忘了编码直接传原文，这 6 字节就会被写进磁盘而回执说成功。
+  **做法是逐字状态机移植**，不是「regex 预校验 + Buffer.from」也不是「解码后 round-trip 比对」：
+  前者让校验规则与解码逻辑分成两套、会各自漂移；后者仍要先 `Buffer.from` 把垃圾解出来再发现
+  不一致。状态机单遍消费，非法符号（含落在非尾部的 `=`，如 `"Z=g="`）在**任何字节产出之前**
+  就抛，不存在能让非法字符抵达输出缓冲的代码路径。
+  alphabet 是标准 RFC 4648（`-`/`_` 按非法字符拒），padding **可选**但一旦出现则去空白后总长
+  必须是 4 的倍数、尾部 `=` 不超过两个；ASCII 空白先剥（含 `\x0C` 但**不含** `\v`，对齐 Rust 的
+  `is_ascii_whitespace`）。测试覆盖非法字符、URL-safe 字符、padding 位置错、padding 长度错、
+  截断输入、含空白的合法输入、空串（合法，解出零字节）。
+  **限额比的是解码后的字节数**（`payload.bytes.length`），且仍在路径解析之前——W7 那条
+  「超限时 `path` 是原始入参」的用例原封不动仍通过。
+  `recoverPayloadText` 在 base64 路径下的作用：解码后若字节恰好是合法 UTF-8 且无内嵌 NUL，
+  `text` 就是那段文本、变更日志照常记并能出行级 diff；否则 `text` 为 `null`，写入照样成功但
+  标记为不可逆、无 diff。
 
 ### W9 · 文件写：归档 compaction
 
