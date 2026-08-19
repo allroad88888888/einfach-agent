@@ -24,11 +24,11 @@ H  core host bridge 抽象        H1 → H1b → H2/H3/H4/H4b → H4c/H4d-1→H4
 N  host-node 薄包装区           N1 → N2 → N3/N4/N5/N6/N7 → N8 ★CLI 完整
 W  host-node 真逻辑区           W1..W15 → W16/W17 对拍
 S  server HTTP 外壳             S1 → S2/S3/S5 → S4
-B  前端 server 宿主装配          B1 → B2 → B3 → B4 ★浏览器 fs/shell 可用
+B  前端 server 宿主装配          B1 → B2 → B3 → B4 ★浏览器 fs/shell 可用 · B5 分流模块补测
 M  模型代理                     M1 → M2/M4 → M3 → M5 · M6 ★浏览器完整对话
-C  MCP 与事件通道               C1/C2 → C3 → C4 → C5
+C  MCP 与事件通道               C1/C2 → C3 → C4 → C5 · C6 失败标识 · C7 缓存宿主判据
 P  持久化收敛                   P1 → P2 → P3 → P4
-D  分发                        D1 → D2 → D3 → D4
+D  分发                        D1 → D2 → D3 → D3b → D3c → D4
 T  Tauri 退成套壳               T1 → T2 → T3 → T4
 未决                           目录选择器 / 对拍覆盖下限 / 多 workspace 切换
 ```
@@ -36,9 +36,11 @@ T  Tauri 退成套壳               T1 → T2 → T3 → T4
 **MVP 路径 = H + N + W1–W15 + S + B + M**（约 46 卡）。到 M5 浏览器版即可用；
 C/P/D/T 是增强与收尾，可后置。
 
-全树 **70 卡**（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
+全树 **75 卡**（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
 H4b 从 H4 里拆出的总闸、H4c 验收漏扫 apps 面留下的回归、H4d 拆树后新增文件带来的缺口、
-H4e 总闸改名的下游收尾；S 线因 N3 交回的 platform 阻断项增至 5 张；M 线因 M2 交回点名的取舍新增 M6）。
+H4e 总闸改名的下游收尾；S 线因 N3 交回的 platform 阻断项增至 5 张；M 线因 M2 交回点名的取舍新增 M6；
+M3/C4/P3/D3 那一批验收又新增 5 张：C6、C7、D3b、D3c、B5，**全部来自子 agent 交回时点名或主会话
+验收时的独立探针，没有一张是写卡时想出来的**）。
 
 **进度以状态行为唯一权威**，不要手抄一个数字在这里——它一定会过期。数法：
 
@@ -1647,7 +1649,17 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：产出与 `createTauriModelFetch` 同形状的 fetch；`AbortSignal` 透传成 HTTP abort。
   **不复用 Channel 编解码**——HTTP 下 `createProviderFetch` 直接消费原生 `Response`。跑该目录 vitest
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `adf8aa9`（接线由主会话做）。3 源+测试 / 21 例，11 条变异探针。**探针抓到它自己写的空跑断言**：
+  `expect(url).toBe(MODEL_ROUTE_PATH)` 两边同源，路径改了照样绿；已改逐字字面量，并**补了一条跨 app
+  文本对拍守卫**（照 `serverHealthContract.test.ts`，读 `apps/server/src/modelRoutePath.ts` 的源码正则比对）。
+  主会话独立复验：只改服务端正本 → 1 红，报错文本里是我改的那个值，证明真从正本抠值。
+  abort 用真 `node:http` + 真 `fetch` 起服务，**实测两个阶段（响应头之前 / 流到一半）服务端观察到的都是
+  `close && writableEnded === false`**，正是 M2 的触发条件，并有第三条负对照（正常收尾 `writableEnded === true`）
+  ——M2 文件头那句「AbortController 与 socket.destroy() 形态不一定一样」的存疑可以收紧。
+  接线排序**server 必须在 DEV 之前**：M4 的凭据宿主是 `tauri → server → unavailable` 无 DEV 分支，
+  让 DEV 赢会造出「Key 存进后端、请求发给 Vite 中继」且两边都不报错。主会话接线后发现
+  `host*.ts` 五个模块**全无 colocated 测试**，已补 `hostModelTransport.test.ts`（5 例）钉住三态与排序；
+  探针实证：只测两种正常形态时两个分支谁前谁后都不设防。
 
 ### M4 · server 版模型凭据宿主
 
@@ -1683,7 +1695,16 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   字段不是 `instanceof`**），M2 那边按 `reason` 分状态码。
   判据：四类失败各有一条用例断言状态码；**且断言 `apps/server` 里没有任何一处比对中文错误文案**。
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `9a9d76c`。7 类而非卡面的 4 类，多出的三类各有不能并桶的理由：`duplicate-request-id`→**409**
+  （上一次还活着，换 id 重发即可）、`credential-config-invalid`→**500**（宿主自己的 config 段坏了，
+  不是调用方也不是上游的错，重试无用）、`cancelled`→499（M2 已有）。**10 条中文文案一字未改**
+  （主会话复验：改前改后文案集合逐字节相同）；`MODEL_ERROR` 表**刻意没上公开面**——导出去等于邀请
+  别人拿文案 switch。barrel 7 增 0 删。文案守卫经主会话独立探针确认会咬（埋一处 `message === '…'` → 2 红）。
+  **卡面「响应头之前一律 502」不准确**：取消那一支本来就分开。连带效应：分开状态码后 400/403/409
+  不再被 `modelRetry` 重试（它只重试 429 与 5xx），确定性失败不再白跑三次退避。
+  **主会话提的嵌套信封方案被本卡否决且理由成立**：那两个字段叫 `provider_*`，塞本机分类进去是断言假事；
+  且非 2xx 的上游响应连 body 一起透传，真上游错误体走同一条白名单，在那行里分不开。
+  正解在 `Composer.tsx` 的 `formatRunError`（已按状态码翻译，今天只有 401 那条），是 apps/web 的改动面。
 
 ### M5 · 端到端验收：浏览器里跑完一轮对话
 
@@ -1831,7 +1852,13 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：与 `tauriStdioConnector.ts` / `tauriMcpConfigStorage.ts` 同接口；
   `listen()` 换成 C3 的 SSE 订阅。跑 `pnpm exec vitest run apps/web/src/mcp`
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `6a5e9ef`（接线由主会话做）。13 个新文件 / 53 例，既有文件零改动；接线后由本卡收尾被打破的
+  12 条既存用例并把 storage 从 2 例扩到 7 例。**变异探针 D 推翻了主会话给的探针清单**：主会话要求的三条
+  （storage / capabilities / serverHost 判据）全绿时，把 `...(serverHost ? { stdio: … })` 那一行整个删掉
+  **16 例一条都不红**——`capabilities.stdio` 仍为真、准入闸照常放行，一直到 `manager.connect` 才因 router
+  里没有 stdio 键而失败。本卡自行补了端到端用例（判据取「连接请求真的发出去了」而非「工厂被调用过」），
+  主会话独立复跑确认只有那条会红。事件走**一条共享 SSE** + 连接器内分发，过滤判据 `(serverId, sessionToken)`
+  逐字照搬（主会话探针：只看 serverId → 1 红）。
 
 ---
 
@@ -1913,7 +1940,16 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   `persistenceDrivers` 从二选一变三选一；server 宿主下会话落 SQLite 而非 IndexedDB。
   跑 `pnpm exec vitest run apps/web/src/persistence apps/server`
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `263a0b0`。**卡面「新建 `apps/server/src/sqlRoute*` 端点」不成立，本卡用证据推翻、主会话复核采纳**：
+  `sqlite_execute` / `sqlite_select` 已在 30 条命令全集里且已挂进 `createSqliteRoutes`，而认证在
+  `requestRouter.ts` 的 `handleApi` **第一行**、早于所有路由分支——`POST /api/invoke/sqlite_*` 天生就是那条
+  端点、天生在认证后面。再开一条 `/api/sql` 只会得到第二处认证接法、第二套 body 上限与失败信封、
+  第二处随命令表漂移。交付改为一份只有测试没有源码的回归网。**顺带挖出一个真缺口**：既有的
+  `authApi.test.ts` 只拿 `run_shell_command` 一条命令探认证，主会话独立复验——埋一个只针对 sqlite 的
+  认证后门，它 12/12 全绿，本卡新增的守卫 2 条转红。那扇门后面是完整的会话库。
+  W4 的跨宿主 cursor 指纹裁决为「不对齐，接受可恢复降级」，写在 `persistenceDrivers.ts` 那行代码旁边：
+  逐位对齐要在 Node 复刻 Rust 的 `DefaultHasher`，而它明文不保证跨版本稳定——**那是拿一个会响的失败
+  换一个不响的失败**。
 
 ### P4 · observability-sqlite 同款收敛
 
@@ -1999,7 +2035,17 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 - **判据**：tag 触发、跑完整门禁（check-docs → check-boundaries → check-state → test → build）
   才发布；**不需要任何签名 Secret**。首次以 dry-run 模式验证
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `3e5c8bb`。**判据不能完整达成，本卡如实交回而没有用 dry-run 蒙混**——发布闭包 4 个包全是
+  `private: true`，真发布一律 EPRIVATE。而蒙混恰恰是这张卡最危险的陷阱，主会话独立复验了两条：
+  ① `npm publish --dry-run` 对 private **结构性失明**（`npm/lib/commands/publish.js` 是
+  `if (!dryRun) await otplease(..., libpub(...))`，而 EPRIVATE 在 `libnpmpublish` 的 publish() 第一行）；
+  ② 更糟的是 `pnpm -r publish`：全私有时打印「There are no new packages that should be published」并
+  **exit 0**，主会话拿打不通的 registry（127.0.0.1:1）实跑，连 ECONNREFUSED 都没有——它压根没去连。
+  所以流水线里有一条**独立的前置判定**，dry-run 与真发布都跑（主会话验过它在当前仓库上确实 exit 1）。
+  **顺序陷阱（本卡负向实测）**：全新 checkout 上先跑 `pnpm -r build` 会失败——`apps/server` 的 build 末尾
+  要嵌 `apps/web/dist`，那份产物只有根 `pnpm build` 的 `vite build` 才产出。故 `pnpm build → pnpm -r build
+  → check-dist`，不可倒。`check-dist` 同时进 `ci.yml`（每个 PR）：陈旧化是每个 PR 都能引入的，
+  只在 tag 上拦等于让它在主干里躺到发版当天。
 
 ### D4 · README 与 docs 更新
 
@@ -2016,6 +2062,89 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 ---
 
 ## T · Tauri 退成套壳
+
+### C6 · `/api/invoke/:command` 的业务失败塌成不透明 500
+
+- **依赖**：C4、P3
+- **改动面**：`apps/server/src/invokeRoute.ts` 与 `invokeRouteError.ts`
+- **判据**：**来源：C4 与 P3 从两条独立路径撞上同一处，主会话在真 server 上端到端复现。**
+  `invokeRoute.ts` 的 catch 只认 `NodeHostCommandError`，其余异常一律重抛 → `requestRouter.ts`
+  收成 `text/plain` 的 500「服务端内部错误。」。实测（`pnpm serve`，带真 token）：
+
+  ```
+  POST /api/invoke/mcp_config_read   → 200  application/json  {}
+  POST /api/invoke/mcp_list_tools    → 500  text/plain 「服务端内部错误。」
+  服务端 stderr: McpCommandError … kind: 'invalid_input'
+  ```
+
+  **这不是文案难看，是一条判据被切断。** `tools/mcp` 的 `failureClassification.ts` 对 stdio 桥
+  **只认 `kind`**，且注释明写「Only kinds listed here are permanent; every other kind … falls to
+  the temporary default」。于是 kind 丢了之后，`command_spawn_failed`（Tauri 上是**永久**失败，
+  一条根本不存在的命令）在 server 宿主上被判成临时失败 → **无限退避重连**。
+  SQL 那侧的同一处表现是：语法错、游标非法这些准确中文全丢，客户端只能给
+  「本地服务返回了非预期的错误响应（HTTP 500）」，且它们还被当作预期外异常写进 server 的 stderr。
+  **修法要通用，不要给 MCP 开特例**——30 条命令都在这条路上。C4 建议 `McpCommandError` 映射成
+  `{ statusCode: 502, error: error.kind, message }`（信封的 `error` 字段本来就是「给程序看的稳定
+  标识」，与 `kind` 是同一个东西，不必给信封加字段）；但本卡要先判断这个形状对其余各域是否也成立。
+  客户端那一半 C4 已写好并测好，**服务端补上之前是安全降级**（拿不到 kind → 判可重试），有一条用例
+  钉住今天的现实。
+  判据：四个域各有一条用例断言业务失败带得出结构化标识；且 MCP 那条的 `kind` 端到端穿到客户端。
+- **模型**：opus
+- **状态**：TODO
+
+### D3b · 摘掉发布闭包的 `private: true`
+
+- **依赖**：D3
+- **改动面**：`apps/server`、`packages/agent-core`、`packages/agent-ai`、`packages/host-node` 四个
+  `package.json`
+- **判据**：**来源：D3 交回时点名的阻塞项。** 这四个包是 `pnpm -r --filter "@einfach-agent/server..."`
+  算出的运行期依赖闭包，全部 `private: true`，于是 D3 的流水线永远走不到 publish。
+  D2 当初保留 private 的理由是「闭包全私有，单发 server 会 404」——而四个一起发正是解法，**理由已消解**。
+  判据：D3 那条闭包前置判定转绿；`pnpm -r --filter "@einfach-agent/server..." publish --dry-run`
+  列出 4 个包。**注意 dry-run 本身证明不了能发**（见 D3 状态段的两条实测），所以判据必须是前置判定。
+- **模型**：opus
+- **状态**：TODO
+
+### D3c · 发布版本策略
+
+- **依赖**：D3b
+- **改动面**：四个包的 `version`，或引入 changesets
+- **判据**：**来源：D3 交回时点名。** 四个包现在都钉在 `0.1.0`。首发没问题；**第二次发**时若 core
+  改了却没涨版本号，`pnpm -r publish` 会跳过 core，发出去的 server 依赖的是 registry 上那份**旧** core，
+  **且不报错**。要么 lockstep 涨版本，要么上 changesets。判据：构造「core 改了但没涨版本」的情形，
+  流水线必须红。
+- **模型**：opus
+- **状态**：TODO
+
+### B5 · 五个宿主分流模块补 colocated 测试
+
+- **依赖**：M3、C4
+- **改动面**：`apps/web/src/host/` 下五份新测试
+- **判据**：**来源：主会话接线 M3 时发现。** `host/` 下九个模块里有五个没有 colocated 测试：
+  `hostCommandBridge` / `hostModelCredentialHost` / `hostModelTransport` / `hostObservability` /
+  `hostRecoveryFlush`。M3 已补掉 `hostModelTransport` 那一份，**其余四个仍是零覆盖**。
+  现有的只有三份装配测试的**间接**断言，而 `main.serverHost.test.tsx` 只断言了「桌面那条没被调用」，
+  **没有任何一条断言 server 宿主真的拿到了对的实现**——接错分支、顺序写反，104 例一条都不会红。
+  M3 交回的两条范式事实要照用：① **vitest 4 的 `restoreMocks: true` 不碰 `vi.fn()`**，只管
+  `vi.spyOn` 造的 spy，「某工厂一次都没被造出来」这类断言会跨用例串账，要显式 `vi.clearAllMocks()`；
+  ② **`import.meta.env.DEV` 在 vitest 下默认为 `true`**（`hostObservability.ts:38` 也读它），
+  不 `vi.stubEnv('DEV', …)` 就等于在测 dev 形态，而且它会绿。
+- **模型**：opus
+- **状态**：TODO
+
+### C7 · 工具名缓存的宿主判据没跟上，与服务配置分家
+
+- **依赖**：C4
+- **改动面**：`apps/web/src/mcp/toolNameCacheStorage.ts`、`service.ts`
+- **判据**：**来源：C4 交回时点名。** `createDesktopToolNameCacheStorage()`
+  （`toolNameCacheStorage.ts:139-140`）仍然自己 `isTauri()`，而它由 `service.ts:100` 作为默认值取用、
+  **根本收不到装配点传下来的宿主态**。后果：server 宿主下「服务配置」经 `/api/invoke/mcp_config_*`
+  进 `~/.webAgent/config.json`，而「工具名缓存」落浏览器 localStorage——**两份状态分家**。
+  不是回归（B5 之前也这样），但 C4 把配置那一半收口之后它变成一处真实的不一致。
+  同一处二次探测也逼得测试必须把 `isTauri` 替身与 `host.kind` 手工对齐。
+  判据：缓存与配置在三个宿主下落到同一处；装配点不再有第二处宿主探测。
+- **模型**：opus
+- **状态**：TODO
 
 ### T1 · Tauri 启动 sidecar Node 进程
 
