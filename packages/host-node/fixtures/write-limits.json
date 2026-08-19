@@ -1,0 +1,232 @@
+{
+  "target": "write_workspace_file_blocking_with_journal / writeWorkspaceFile —— 单次写入命中大小上限、可逆预算与守卫时的完整回执",
+  "cases": [
+    {
+      "name": "dry run reports the change without writing",
+      "source": "workspace_write_pipeline_tests.rs::dry_run_reports_the_change_without_writing",
+      "initialFiles": { "code.txt": "keep\nold\n" },
+      "request": { "path": "code.txt", "content": "keep\nnew\n", "mode": "overwrite", "dryRun": true },
+      "expected": {
+        "result": {
+          "ok": true,
+          "path": "code.txt",
+          "bytes_written": 0,
+          "created": false,
+          "overwritten": true,
+          "appended": false,
+          "error": null,
+          "change_set": null,
+          "change_summary": {
+            "linesAdded": 1,
+            "linesRemoved": 1,
+            "beforeLines": 2,
+            "afterLines": 2,
+            "diff": "@@ -2,1 +2,1 @@\n-old\n+new",
+            "diffTruncated": false,
+            "approximate": false
+          },
+          "reversible": true,
+          "dry_run": true,
+          "would_change": true
+        },
+        "fileContent": "keep\nold\n"
+      }
+    },
+    {
+      "name": "binary content decoded from base64 is written but marked non-reversible",
+      "source": "workspace_write_pipeline.rs 的 reversible_reason 分支 (_, None) —— 可逆预算之外的另一条 reversible:false 路径，不需要造大文件",
+      "initialFiles": {},
+      "request": { "path": "binary.dat", "content": "aGkAYnll", "mode": "create", "encoding": "base64" },
+      "expected": {
+        "result": {
+          "ok": true,
+          "path": "binary.dat",
+          "bytes_written": 6,
+          "created": true,
+          "overwritten": false,
+          "appended": false,
+          "error": null,
+          "change_set": null,
+          "change_summary": null,
+          "reversible": false,
+          "reversible_reason": "binary content is not reversible",
+          "dry_run": false,
+          "would_change": true
+        },
+        "fileContent": "hi\u0000bye"
+      }
+    },
+    {
+      "name": "overwrite on a missing file points at upsert",
+      "source": "workspace_write_pipeline_tests.rs::overwrite_on_missing_file_points_at_upsert",
+      "initialFiles": {},
+      "request": { "path": "absent.txt", "content": "x", "mode": "overwrite" },
+      "expected": {
+        "result": {
+          "ok": false,
+          "path": "absent.txt",
+          "bytes_written": 0,
+          "created": false,
+          "overwritten": false,
+          "appended": false,
+          "error": "cannot overwrite a file that does not exist; use mode \"upsert\" to create it when absent",
+          "change_set": null,
+          "change_summary": null,
+          "reversible": false,
+          "dry_run": false,
+          "would_change": false
+        },
+        "fileContent": null
+      }
+    },
+    {
+      "name": "explicit maxBytes rejects content over the declared limit",
+      "source": "workspace_write_pipeline.rs 的 content_too_large 分支 —— absent_max_bytes_allows_writes_past_the_old_default 的镜像用例，测的是显式给了更严上限时会被拒",
+      "initialFiles": {},
+      "request": { "path": "small.txt", "content": "hello world", "mode": "create", "maxBytes": 5 },
+      "expected": {
+        "result": {
+          "ok": false,
+          "path": "small.txt",
+          "bytes_written": 0,
+          "created": false,
+          "overwritten": false,
+          "appended": false,
+          "error": "content is too large: 11 bytes exceeds limit 5",
+          "change_set": null,
+          "change_summary": null,
+          "reversible": false,
+          "dry_run": false,
+          "would_change": false
+        },
+        "fileContent": null
+      }
+    },
+    {
+      "name": "create mode rejects an optimistic guard",
+      "source": "workspace_write_pipeline.rs：create + guard_requested 分支",
+      "initialFiles": {},
+      "request": { "path": "new.txt", "content": "hi", "mode": "create", "expectedOldContent": "anything" },
+      "expected": {
+        "result": {
+          "ok": false,
+          "path": "new.txt",
+          "bytes_written": 0,
+          "created": false,
+          "overwritten": false,
+          "appended": false,
+          "error": "optimistic guards are not valid with mode \"create\"; the file must not exist",
+          "change_set": null,
+          "change_summary": null,
+          "reversible": false,
+          "dry_run": false,
+          "would_change": false
+        },
+        "fileContent": null
+      }
+    },
+    {
+      "name": "both guards at once is rejected",
+      "source": "workspace_write_pipeline.rs：expected_old_content 与 expected_content_hash 同时给出的分支",
+      "initialFiles": { "file.txt": "a" },
+      "request": {
+        "path": "file.txt",
+        "content": "b",
+        "mode": "upsert",
+        "expectedOldContent": "a",
+        "expectedContentHash": "sha256:00000000000000000000000000000000000000000000000000000000000000"
+      },
+      "expected": {
+        "result": {
+          "ok": false,
+          "path": "file.txt",
+          "bytes_written": 0,
+          "created": false,
+          "overwritten": false,
+          "appended": false,
+          "error": "pass either expectedOldContent or expectedContentHash, not both",
+          "change_set": null,
+          "change_summary": null,
+          "reversible": false,
+          "dry_run": false,
+          "would_change": false
+        },
+        "fileContent": "a"
+      }
+    },
+    {
+      "name": "expectedOldContent mismatch reports a byte-level diagnostic",
+      "source": "workspace_write_guard.rs::expected_old_content_mismatch_reports_exact_difference_shape（守卫不匹配，走的是同一条 pipeline 而不是直接调 verify_expected_content）",
+      "initialFiles": { "existing.txt": "line\n\n" },
+      "request": { "path": "existing.txt", "content": "new", "mode": "overwrite", "expectedOldContent": "line\n" },
+      "expected": {
+        "result": {
+          "ok": false,
+          "path": "existing.txt",
+          "bytes_written": 0,
+          "created": false,
+          "overwritten": false,
+          "appended": false,
+          "error": "expectedOldContent does not match current file content (expected_bytes=5, current_bytes=6, first_mismatch_byte=5, expected_trailing_lf=1, current_trailing_lf=2). Re-read the complete, untruncated file and pass it exactly, including final newlines; do not pass a snippet",
+          "change_set": null,
+          "change_summary": null,
+          "reversible": false,
+          "dry_run": false,
+          "would_change": false
+        },
+        "fileContent": "line\n\n"
+      }
+    },
+    {
+      "name": "expectedContentHash mismatch points at a re-read",
+      "source": "workspace_write_guard.rs::expected_content_hash_accepts_current_and_rejects_stale_content（守卫不匹配，走 pipeline）",
+      "initialFiles": { "existing2.txt": "changed\n" },
+      "request": {
+        "path": "existing2.txt",
+        "content": "new",
+        "mode": "overwrite",
+        "expectedContentHash": "sha256:c3bfa3bd2c9400d2dcf415bd92693b6d56664b924c5f6ba1182893ecccda9d18"
+      },
+      "expected": {
+        "result": {
+          "ok": false,
+          "path": "existing2.txt",
+          "bytes_written": 0,
+          "created": false,
+          "overwritten": false,
+          "appended": false,
+          "error": "expectedContentHash does not match current file content; the file changed after read_file. Re-read it and retry with the new contentHash",
+          "change_set": null,
+          "change_summary": null,
+          "reversible": false,
+          "dry_run": false,
+          "would_change": false
+        },
+        "fileContent": "changed\n"
+      }
+    },
+    {
+      "name": "upsert with a guard on a missing file is rejected",
+      "source": "workspace_write_guard.rs::upsert_with_guard_refuses_to_create_a_missing_file（守卫不匹配，走 pipeline；精确文案见 workspace_write_pipeline.rs 的 else if guard_requested 分支，不是 verify_expected_content 的 file-does-not-exist 分支——那条从 upsert 撞缺失文件走不到）",
+      "initialFiles": {},
+      "request": { "path": "absent2.txt", "content": "x", "mode": "upsert", "expectedOldContent": "expected old" },
+      "expected": {
+        "result": {
+          "ok": false,
+          "path": "absent2.txt",
+          "bytes_written": 0,
+          "created": false,
+          "overwritten": false,
+          "appended": false,
+          "error": "optimistic guard was provided but the file does not exist; drop the guard to create it",
+          "change_set": null,
+          "change_summary": null,
+          "reversible": false,
+          "dry_run": false,
+          "would_change": false
+        },
+        "fileContent": null
+      }
+    }
+  ]
+}

@@ -25,6 +25,13 @@ mod walk;
 #[path = "workspace_read_test_support.rs"]
 mod test_support;
 
+// 跨语言对拍：喂 packages/host-node/fixtures/read-limits.json。驱动器必须住在这里而不是某个
+// 子模块，`read_workspace_file_blocking_at_lines` 是这个模块自己的私有 fn（两种寻址模式的分派
+// 入口），子模块看不到它。
+#[cfg(test)]
+#[path = "workspace_read_limits_parity_tests.rs"]
+mod parity_tests;
+
 use self::bytes::read_workspace_file_blocking_with_access_at;
 use self::lines::read_workspace_file_lines;
 use self::list::list_workspace_files_blocking_with_access;

@@ -32,6 +32,16 @@ W16 之前**只由移植者的人工比对保证**——两边的测试各写各
   `No such file or directory (os error 2)`，Node 的是 `ENOENT: no such file or directory, open '…'`
   ——同一件事两句话，**这是两个运行时的差异不是移植 bug**。凡是期望值里会出现这一段的场景
   （读不到条目、父目录是文件、权限不足）一律不进 fixture，靠两侧各自的 colocated 测试盯。
+- **错误文案里带 resolved 绝对路径的用例也不能对拍（W17 新发现）。** `workspace_read_paths.rs`
+  的 `display_path` 在越界类错误里报的是 `canonicalize` 之后的**绝对路径**，不是 workspace
+  相对路径；而两侧驱动器建临时 workspace 用的命名方案完全不同（Rust 是
+  `web_agent_parity_<pid>_<seq>`，Node 是 `mkdtemp` 的随机后缀），没有任何机制能让它们生成
+  同一个字符串。`offset 超出文件大小`（`workspace_read_bytes.rs`）、`startLine 超出总行数`
+  （`workspace_read_lines.rs`）这两类拒绝正是如此——**这不是移植 bug，是两侧临时目录路径
+  天生不同**，一律不进 fixture，靠两侧各自的 colocated 测试盯（Node 侧已有
+  `bytesRead.test.ts` 的等价用例，Rust 侧目前**没有**，见下面「目前没覆盖的」）。判断一条错误
+  文案能不能进 fixture，先看它是不是由 `display_path` / `relative_path` 拼出来的：后者是
+  workspace 相对路径，跨临时目录也稳定，能进；前者是绝对路径，不能进。
 
 ## 一处**故意不对齐**的差异（已知豁免）
 
@@ -43,7 +53,7 @@ W16 之前**只由移植者的人工比对保证**——两边的测试各写各
 **该改的是 Rust 侧，不是把 Node 改回去凑对拍。** 所以本目录的 fixture 一律不构造「一次读取跨过
 块边界的多字节字符」，撞上就是撞上了这条豁免，不是移植 bug。
 
-## 四组 fixture
+## 六组 fixture
 
 | 文件 | 形态 | 盯的是什么 | Rust 素材 |
 | --- | --- | --- | --- |
@@ -51,10 +61,17 @@ W16 之前**只由移植者的人工比对保证**——两边的测试各写各
 | `patch-stage-rules.json` | 纯规则 | 一个补丁操作作用在暂存状态上的结果与错误文案 | `workspace_patch_stage_tests.rs` |
 | `patch-pipeline.json` | 带 IO | 整条补丁流水线：初始文件树 + 操作 → 完整回执 JSON + 落盘后的树 | `workspace_patch_pipeline_tests.rs`、`workspace_patch_guard_tests.rs` |
 | `change-batch-revert.json` | 带 IO | 批量回滚：账本创建序、预检冲突、dryRun、重复 id、跳过已回滚 | `workspace_change_journal_batch_tests.rs` |
+| `write-limits.json` | 带 IO | 单次写入的大小上限、可逆预算与守卫：dry run、显式 maxBytes 拒绝、create/upsert 撞见守卫、`expectedOldContent` / `expectedContentHash` 不匹配 | `workspace_write_pipeline_tests.rs`、`workspace_write_guard.rs` |
+| `read-limits.json` | 带 IO | 字节偏移与行定位共用的读取入口：多字节字符边界无损分页、截断标记、maxBytes 按整行截断、offset/startLine 冲突判定 | `workspace_read_bytes_tests.rs`、`workspace_read_lines_tests.rs` |
 
-带 IO 的两组**两侧各自建临时目录**，fixture 只描述「初始文件树 + 操作 + 期望结果」；临时目录
+带 IO 的四组**两侧各自建临时目录**，fixture 只描述「初始文件树 + 操作 + 期望结果」；临时目录
 本身不进 fixture。纯的两组一个目录都不建（Rust 的 `stage_operation` 要一个存在的 root 做路径
 解析，驱动器建一个空目录并**预置暂存表**，磁盘全程不被读写）。
+
+`write-limits.json` 与前两组带 IO 的 fixture 有一处结构性差异：`write_workspace_file` 只碰**一个**
+目标路径，没有「写完之后树里多一个文件」的穷举风险，所以它不做整棵树扫描，`expected` 只有
+`result` 与可选的 `fileContent`（那一个目标文件跑完之后的内容，`null` = 不该存在）。
+`read-limits.json` 干脆不做任何落盘断言——读操作本来就不改磁盘。
 
 ## 各文件的 schema
 
@@ -148,6 +165,62 @@ workspace 的**兄弟目录**，不在这次枚举里。
 「一条走单条、多条走批量」分流——fixture 抽自 `workspace_change_journal_batch_tests.rs`，
 测的就是批量那条路。
 
+### `write-limits.json`
+
+```jsonc
+{
+  "name": "…",
+  "source": "workspace_write_pipeline_tests.rs::…",     // 可选，抽自哪个 Rust 测试
+  "initialFiles": { "existing.txt": "line\n\n" },        // 建 workspace 时先写下的文件
+  "request": {                                            // WriteWorkspaceFileRequest 的字段名（camelCase）
+    "path": "existing.txt", "content": "new", "mode": "overwrite",
+    "expectedOldContent": "line\n"                        // 其余字段（maxBytes/dryRun/encoding/…）按需给
+  },
+  "expected": {
+    "result": { /* WorkspaceWriteResult 的完整 JSON，顶层 snake_case */ },
+    "fileContent": "line\n\n"                             // 目标文件跑完之后的内容；null = 不该存在
+  }
+}
+```
+
+驱动器直接调 `write_workspace_file_blocking_with_journal` / `writeWorkspaceFile`（不经命令层的
+snake_case 入参收窄），`journal` 恒为空——本组不测变更日志，那是 `patch-pipeline.json` /
+`change-batch-revert.json` 的地盘。`request` 里没写的字段一律视为「没传」，两侧驱动器都用
+「键缺席 = None/undefined」这一条语义读取。
+
+**这一组是 `WorkspaceWriteResult` 顶层 snake_case、`change_summary` 内层却 camelCase 的
+第一个见证者**——同一份 JSON 里两种大小写混着来，照抄，不要统一（这是 findings #12，见仓库
+issue 树）。
+
+**内容大到需要几十 KB 以上文本才能触发的边界，本组一律不收**（与「目前没覆盖的」同一条
+理由）：`REVERSIBLE_MAX_BYTES`（1 MiB）与 `absent_max_bytes_allows_writes_past_the_old_default`
+需要的「明显大于任何合理默认值」的内容都是如此。`reversible: false` 这个字段改走一条更便宜的
+路径覆盖——base64 内容里带一个 `\0` 字节，`reversibleReason` 判成 `binary content is not
+reversible`，六个字节就能触发，不需要造大文件。
+
+### `read-limits.json`
+
+```jsonc
+{
+  "name": "…",
+  "source": "workspace_read_bytes_tests.rs::…",
+  "initialFiles": { "paged.txt": "ab你cd" },
+  "request": {                                    // read_workspace_file 顶层入参，snake_case
+    "path": "paged.txt", "max_bytes": 4, "offset": 0
+    // 行定位模式改给 start_line / line_count
+  },
+  "expected": {
+    "result": { /* ReadWorkspaceFileResult 的完整 JSON，camelCase */ }
+    // 或者恰好给这一个：
+    // "error": "…"        // 逐字比较，不是子串匹配
+  }
+}
+```
+
+驱动器调的是**顶层分派** `read_workspace_file_blocking_at_lines` / `readWorkspaceFile(args)`，
+不是直接调字节或行两个子实现——分派本身（两个行参数都缺席才走字节模式、`offset` 与
+`start_line` 冲突判定）也是要盯的行为。读操作不改磁盘，`expected` 没有落盘断言。
+
 ## 新增一组 fixture 要改哪几个文件
 
 以「给 `workspace_write` 加一组」为例（W17 就是这件事）：
@@ -160,17 +233,32 @@ workspace 的**兄弟目录**，不在这次枚举里。
    `crate::parity_fixtures` 的 `load_fixture("write-<aspect>.json")`。
 4. 在被测模块里挂一行
    `#[cfg(test)] #[path = "workspace_write_<aspect>_parity_tests.rs"] mod parity_tests;`
-   ——**驱动器要住在它需要的 `pub(super)` 项所在的那个模块里**，否则拿不到被测函数。
-5. 本文件的「四组 fixture」表加一行。
+   ——**驱动器要住在被测函数所在模块的后代里**，否则拿不到它。多数情况下那个函数是
+   `pub(super)`（W16 两组都是），但不总是：`read_workspace_file_blocking_at_lines`
+   （W17 的 read-limits 用它）是彻底私有的 `fn`，没有任何 `pub` 修饰——Rust 的私有性是
+   「本模块 + 全部后代模块」，所以驱动器只要直接挂在**它所在的那个模块**（这里是
+   `workspace_read.rs` 本身，不是 `lines` 或 `bytes` 子模块）就够，不需要把函数改成
+   `pub(super)`。挂错子模块（比如挂进 `lines`）会因为看不到 `workspace_read.rs` 的私有 fn
+   而编译失败，报错信息会直接指向缺失的符号，照着挂对位置即可。
+5. 本文件的「六组 fixture」表加一行，并按需加一段 schema 说明。
 
-## 目前没覆盖的（诚实记录，W17 的候选）
+## 目前没覆盖的（诚实记录）
 
 - **`approximate`（LCS 预算降级）**。触发条件是裁剪后的区间 `before × after > 800 × 800`，
   最省的构造也要 1600 行文本，写成 fixture 是两段约 10 KB 的机器生成字符串——放进来会让这份
   「照着能加」的范式变成没人看得懂的数据块。两侧各有 colocated 测试。
-- **1 MiB 文本上限**。同理：要撞上 `Buffer.byteLength` 与 `.length` 的分岔得喂一段 35 万字的
-  多字节文本。
+- **几十 KB 以上文本才能撞上的容量边界**（W17 复核后合并的一条，原「1 MiB 文本上限」在此并入）。
+  同一类理由覆盖三个具体常量：`REVERSIBLE_MAX_BYTES`（1 MiB，撞上要喂 100 万+ 字节）、
+  `MAX_HASH_BYTES`（8 MiB，`content_hash_is_skipped_past_the_writable_ceiling`）、
+  `MAX_READ_BYTES` 与 `MAX_TRACE_READ_BYTES` 的落差（200 KB vs 2 MB，
+  `trace_read_has_a_scoped_larger_ceiling`）。**`reversible: false` 这一个字段已经有更便宜的
+  覆盖**（见 `write-limits.json` 的 base64 + `\0` 用例），真正没覆盖的是这几个**具体数值**
+  本身——两侧的常量是否真的相等，只能靠读源码对照或专门造大文件验证，本目录的 fixture 范式
+  不适合它们。两侧各有 colocated 测试锁住数值。
 - **符号链接相关的拒绝**（`symlink paths are not supported`）。schema 里还没有「初始软链」这一
   项，加它要同时动两个驱动器。
 - **`workspace_mismatch`**、**批量的 path-delete 重叠守卫**：前者要第二个 workspace root，
   后者要能在 fixture 里登记 `movedPaths` / `createdPaths`。
+- **越界类错误文案里的绝对路径**（W17 新增的一类，见「比对口径」第五条）：`offset 超出文件
+  大小`、`startLine 超出总行数`这两条 Rust 侧目前连 colocated 测试都没有——Node 侧有
+  （`bytesRead.test.ts`），Rust 没有，是一处两侧覆盖不对称，已记进 issue 树的 findings 表。

@@ -24,6 +24,8 @@ const drivenFixtures = [
   'change-summary.json',
   'patch-pipeline.json',
   'patch-stage-rules.json',
+  'read-limits.json',
+  'write-limits.json',
 ]
 
 const fixturesDirectory = resolve(dirname(fileURLToPath(import.meta.url)), '../../fixtures')

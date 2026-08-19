@@ -412,3 +412,9 @@ pub(super) fn write_workspace_file_blocking_with_journal(
 #[cfg(test)]
 #[path = "workspace_write_pipeline_tests.rs"]
 mod tests;
+
+// 跨语言对拍：喂 packages/host-node/fixtures/write-limits.json。驱动器必须住在这里而不是顶层，
+// `write_workspace_file_blocking_with_journal` 是 pub(super)。
+#[cfg(test)]
+#[path = "workspace_write_pipeline_parity_tests.rs"]
+mod parity_tests;

@@ -1,0 +1,350 @@
+{
+  "target": "read_workspace_file_blocking_at_lines / readWorkspaceFile —— 字节偏移与行定位共用的读取入口，在容量上限、越界与截断标记上的行为",
+  "cases": [
+    {
+      "name": "byte paging backs off before splitting a multibyte character (opening chunk)",
+      "source": "workspace_read_bytes_tests.rs::read_file_supports_lossless_byte_offset_paging（第一段）",
+      "initialFiles": {
+        "paged.txt": "ab你cd"
+      },
+      "request": {
+        "path": "paged.txt",
+        "max_bytes": 4,
+        "offset": 0
+      },
+      "expected": {
+        "result": {
+          "path": "paged.txt",
+          "content": "ab",
+          "truncated": true,
+          "bytes": 2,
+          "offset": 0,
+          "totalBytes": 7,
+          "nextOffset": 2,
+          "contentHash": "sha256:561a2db4be952f22952b3dbc8805534d5fdd44cb6d12abd494f701b67af1b02f"
+        }
+      }
+    },
+    {
+      "name": "byte paging backs off before splitting a multibyte character (middle chunk)",
+      "source": "workspace_read_bytes_tests.rs::read_file_supports_lossless_byte_offset_paging（第二段，续读从上一段 nextOffset 开始）",
+      "initialFiles": {
+        "paged.txt": "ab你cd"
+      },
+      "request": {
+        "path": "paged.txt",
+        "max_bytes": 4,
+        "offset": 2
+      },
+      "expected": {
+        "result": {
+          "path": "paged.txt",
+          "content": "你c",
+          "truncated": true,
+          "bytes": 4,
+          "offset": 2,
+          "totalBytes": 7,
+          "nextOffset": 6
+        }
+      }
+    },
+    {
+      "name": "byte paging backs off before splitting a multibyte character (final chunk)",
+      "source": "workspace_read_bytes_tests.rs::read_file_supports_lossless_byte_offset_paging（第三段，读到文件尾）",
+      "initialFiles": {
+        "paged.txt": "ab你cd"
+      },
+      "request": {
+        "path": "paged.txt",
+        "max_bytes": 4,
+        "offset": 6
+      },
+      "expected": {
+        "result": {
+          "path": "paged.txt",
+          "content": "d",
+          "truncated": false,
+          "bytes": 1,
+          "offset": 6,
+          "totalBytes": 7
+        }
+      }
+    },
+    {
+      "name": "content hash is only offered on the opening chunk",
+      "source": "workspace_read_bytes_tests.rs::content_hash_is_only_offered_on_the_opening_chunk（只移植尾段：contentHash 缺席即通过，首段的存在性已由上面三例覆盖）",
+      "initialFiles": {
+        "paged2.txt": "0123456789"
+      },
+      "request": {
+        "path": "paged2.txt",
+        "max_bytes": 4,
+        "offset": 4
+      },
+      "expected": {
+        "result": {
+          "path": "paged2.txt",
+          "content": "4567",
+          "truncated": true,
+          "bytes": 4,
+          "offset": 4,
+          "totalBytes": 10,
+          "nextOffset": 8
+        }
+      }
+    },
+    {
+      "name": "opening chunk hash still equals the whole file even when the file spans several chunks",
+      "source": "workspace_read_bytes_tests.rs::opening_chunk_hash_round_trips_as_a_write_guard（等价缩小版：Rust 原用例的内容是 20000 次重复远超单次读取上限，为了不把巨块文本塞进 fixture，这里改用 50 次重复——只要总量大于 maxBytes 就足够验证「截断时仍给整文件哈希」，不需要真的撞上 200000 字节的通用读取上限，那条边界由 trace_read_has_a_scoped_larger_ceiling 覆盖，未收进本组，见 README「目前没覆盖的」）",
+      "initialFiles": {
+        "big.txt": "line one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\n"
+      },
+      "request": {
+        "path": "big.txt",
+        "max_bytes": 100
+      },
+      "expected": {
+        "result": {
+          "path": "big.txt",
+          "content": "line one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nline two\nline one\nl",
+          "truncated": true,
+          "bytes": 100,
+          "offset": 0,
+          "totalBytes": 900,
+          "nextOffset": 100,
+          "contentHash": "sha256:030db3862125a90f8ecbafd18741e2c3f37a6e4ba14d7a8f0cb092559cba8318"
+        }
+      }
+    },
+    {
+      "name": "byte mode is untouched by line addressing",
+      "source": "workspace_read_lines_tests.rs::byte_mode_is_untouched_by_line_addressing",
+      "initialFiles": {
+        "code.rs": "a\nb\nc\n"
+      },
+      "request": {
+        "path": "code.rs",
+        "max_bytes": 2,
+        "offset": 0
+      },
+      "expected": {
+        "result": {
+          "path": "code.rs",
+          "content": "a\n",
+          "truncated": true,
+          "bytes": 2,
+          "offset": 0,
+          "totalBytes": 6,
+          "nextOffset": 2,
+          "contentHash": "sha256:880553fca8fcea94e325ee2cfb48e5a985cc797f39a14cc6d3cedecfeb2ae4d2"
+        }
+      }
+    },
+    {
+      "name": "reads an addressed line range",
+      "source": "workspace_read_lines_tests.rs::reads_an_addressed_line_range",
+      "initialFiles": {
+        "code.rs": "one\ntwo\nthree\nfour\nfive\n"
+      },
+      "request": {
+        "path": "code.rs",
+        "start_line": 3,
+        "line_count": 2
+      },
+      "expected": {
+        "result": {
+          "path": "code.rs",
+          "content": "three\nfour\n",
+          "truncated": true,
+          "bytes": 11,
+          "offset": 8,
+          "totalBytes": 24,
+          "nextOffset": 19,
+          "startLine": 3,
+          "endLine": 4,
+          "nextLine": 5,
+          "totalLines": 5
+        }
+      }
+    },
+    {
+      "name": "line reads preserve CRLF so content stays usable as oldText",
+      "source": "workspace_read_lines_tests.rs::line_reads_preserve_crlf_so_content_stays_usable_as_old_text",
+      "initialFiles": {
+        "win.txt": "alpha\r\nbeta\r\ngamma\r\n"
+      },
+      "request": {
+        "path": "win.txt",
+        "start_line": 2,
+        "line_count": 1
+      },
+      "expected": {
+        "result": {
+          "path": "win.txt",
+          "content": "beta\r\n",
+          "truncated": true,
+          "bytes": 6,
+          "offset": 7,
+          "totalBytes": 20,
+          "nextOffset": 13,
+          "startLine": 2,
+          "endLine": 2,
+          "nextLine": 3,
+          "totalLines": 3
+        }
+      }
+    },
+    {
+      "name": "line count defaults to the rest of the file",
+      "source": "workspace_read_lines_tests.rs::line_count_defaults_to_the_rest_of_the_file",
+      "initialFiles": {
+        "code.rs": "a\nb\nc\n"
+      },
+      "request": {
+        "path": "code.rs",
+        "start_line": 2
+      },
+      "expected": {
+        "result": {
+          "path": "code.rs",
+          "content": "b\nc\n",
+          "truncated": false,
+          "bytes": 4,
+          "offset": 2,
+          "totalBytes": 6,
+          "startLine": 2,
+          "endLine": 3,
+          "totalLines": 3
+        }
+      }
+    },
+    {
+      "name": "max_bytes truncates line reads on whole lines",
+      "source": "workspace_read_lines_tests.rs::max_bytes_truncates_line_reads_on_whole_lines",
+      "initialFiles": {
+        "code.rs": "aaaa\nbbbb\ncccc\n"
+      },
+      "request": {
+        "path": "code.rs",
+        "start_line": 1,
+        "line_count": 3,
+        "max_bytes": 7
+      },
+      "expected": {
+        "result": {
+          "path": "code.rs",
+          "content": "aaaa\n",
+          "truncated": true,
+          "bytes": 5,
+          "offset": 0,
+          "totalBytes": 15,
+          "nextOffset": 5,
+          "startLine": 1,
+          "endLine": 1,
+          "nextLine": 2,
+          "totalLines": 3,
+          "contentHash": "sha256:b351e6014c0713eda511289d7af11a3c49f7162b471fb93adca869f37d6d4d15"
+        }
+      }
+    },
+    {
+      "name": "opening line read still carries the file hash",
+      "source": "workspace_read_lines_tests.rs::opening_line_read_still_carries_the_file_hash（首行）",
+      "initialFiles": {
+        "code.rs": "one\ntwo\nthree\n"
+      },
+      "request": {
+        "path": "code.rs",
+        "start_line": 1,
+        "line_count": 1
+      },
+      "expected": {
+        "result": {
+          "path": "code.rs",
+          "content": "one\n",
+          "truncated": true,
+          "bytes": 4,
+          "offset": 0,
+          "totalBytes": 14,
+          "nextOffset": 4,
+          "startLine": 1,
+          "endLine": 1,
+          "nextLine": 2,
+          "totalLines": 3,
+          "contentHash": "sha256:b6285c57e8797db5d4c51c80d6f11938afda9b11c6a003549709189e9b4b92a2"
+        }
+      }
+    },
+    {
+      "name": "a later line read does not repeat the file hash",
+      "source": "workspace_read_lines_tests.rs::opening_line_read_still_carries_the_file_hash（非首行）",
+      "initialFiles": {
+        "code.rs": "one\ntwo\nthree\n"
+      },
+      "request": {
+        "path": "code.rs",
+        "start_line": 2,
+        "line_count": 1
+      },
+      "expected": {
+        "result": {
+          "path": "code.rs",
+          "content": "two\n",
+          "truncated": true,
+          "bytes": 4,
+          "offset": 4,
+          "totalBytes": 14,
+          "nextOffset": 8,
+          "startLine": 2,
+          "endLine": 2,
+          "nextLine": 3,
+          "totalLines": 3
+        }
+      }
+    },
+    {
+      "name": "offset and startLine together is rejected",
+      "source": "workspace_read_lines_tests.rs::line_addressing_rejects_conflicting_or_out_of_range_input（both）",
+      "initialFiles": {
+        "code.rs": "a\nb\n"
+      },
+      "request": {
+        "path": "code.rs",
+        "offset": 2,
+        "start_line": 1
+      },
+      "expected": {
+        "error": "pass either offset or startLine, not both; use nextLine to continue a line read"
+      }
+    },
+    {
+      "name": "startLine 0 is rejected (1-based)",
+      "source": "workspace_read_lines_tests.rs::line_addressing_rejects_conflicting_or_out_of_range_input（zero）",
+      "initialFiles": {
+        "code.rs": "a\nb\n"
+      },
+      "request": {
+        "path": "code.rs",
+        "start_line": 0
+      },
+      "expected": {
+        "error": "startLine is 1-based; use 1 for the first line"
+      }
+    },
+    {
+      "name": "lineCount 0 is rejected",
+      "source": "workspace_read_lines_tests.rs::line_addressing_rejects_conflicting_or_out_of_range_input（empty_count）",
+      "initialFiles": {
+        "code.rs": "a\nb\n"
+      },
+      "request": {
+        "path": "code.rs",
+        "start_line": 1,
+        "line_count": 0
+      },
+      "expected": {
+        "error": "lineCount must be greater than 0"
+      }
+    }
+  ]
+}
