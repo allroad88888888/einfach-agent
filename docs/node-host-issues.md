@@ -1949,11 +1949,19 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   主会话独立复核：pnpm pack 四个包 → 仓库外 `npm install` → `./node_modules/.bin/web-agent` 起服务，
   health / invoke / 内嵌前端全通，`node_modules` 里引用仓库路径的文件**零个**；tarball 22 文件、
   零测试零源码。
-  **包名待用户拍板**：`@einfach` scope 在公共 npm 上归本仓库同一账号（`@einfach/core` 的 maintainer），
-  而 `@web-agent` 无证据已注册（**scope 没注册就发不出去**）；项目对外品牌是 Einfach Agent，与包名
-  已经对不上。三选项：A `@einfach/agent-server`、B 无 scope 的 `einfach-agent`（`npx` 体验最好、
-  名字空着）、C 维持现状（需先注册 org）。本卡按 C 落地保证能跑；改名波及 19 个包 + alias + paths +
-  门禁表，该单开一卡。
+  **包名已由用户拍板并落地（`f2077a4`）**：scope 从 `@web-agent` 改为 **`@einfach-agent`**，
+  bin 命令改为 **`einfach-agent`**。D2 查证到的决定性事实是 `@einfach` scope 在公共 npm 上归本仓库
+  同一账号（`@einfach/core` 的 maintainer 就是 `allroad88888888`），而 `@web-agent` 无证据已注册
+  ——**scope 没注册就发不出去**。
+  用 `@einfach-agent` 当 scope 而不是 `@einfach/agent-*`：**`@einfach/core` 与 `@einfach/react` 是本
+  仓库自己依赖的 einfach 状态库**，占用 `@einfach/core` 会直接撞车；换成独立 scope 后 20 个包全部
+  1:1 平移（子名一个没改），冲突面为零。
+  落地方式是一次精确替换 `@web-agent/` → `@einfach-agent/`（606 文件 / 1268 处）。**用户数据标识
+  一律未动**：`web-agent.db`、`~/.webAgent/`、IndexedDB 名与 storage key 改了会孤立既有本地数据。
+  用户可见与握手标识一并改了：启动横幅、`SERVICE_IDENTIFIER`（server 与 B1 的客户端副本两侧同改
+  ——B1 的文本对拍守卫当场咬住了单侧改动，正是它存在的意义）、MCP `clientInfo`。
+  六条门禁全绿；主会话另做隔离验证：pnpm pack 四个包 → 仓库外 `npm install` →
+  **`npx einfach-agent` 起服务**，health / invoke 全通。
 - **判据**：对外交付卡。`npm pack` 产物在**干净目录**里 `npx` 能起；
   `files` 字段不夹带源码与测试；Node 版本下限声明明确。
   跑 `npm pack --dry-run` 逐条核对文件清单
