@@ -54,14 +54,20 @@ M  模型代理                     M1 → M2/M4 → M3 → M5 · M6 ★浏览�
 C  MCP 与事件通道               C1/C2 → C3 → C4 → C5 · C6 → C8 噪声 500 · C7 → C9 删自探测工厂 / B8 插件缺席
 P  持久化收敛                   P1 → P2 → P3 → P4
 D  分发                        D1 → D2 → D3 → D3b → D3c/D3d → D4
-T  Tauri 退成套壳               T1 → T2 → T3 → T4
+T  桌面端退出                   T1 删掉 apps/desktop（吸收 B8/C9）
 未决                           目录选择器 / 对拍覆盖下限 / 多 workspace 切换
 ```
 
-**MVP 路径 = H + N + W1–W15 + S + B + M**（约 46 卡）。到 M5 浏览器版即可用；
-C/P/D/T 是增强与收尾，可后置。
+**MVP 路径 = H + N + W1–W15 + S + B + M**（约 46 卡）—— **已全部完成并经 M5 在真浏览器里验收**
+（真实对话 + 两次真工具调用 + 流式可见 + 可中断，记录见 scratchpad 的 `m5-acceptance.md`）。
 
-全树 **81 卡**（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
+> **范围裁剪（用户裁决）。** 树一度长到 81 卡，因为主会话**把每一条验收发现都立成了一张卡**——
+> 于是每做完 5 张就新增约 5 张，净剩恒在 11 张左右，看上去永远做不完。裁剪后剩 **2 张**：
+> `T1`（删掉 apps/desktop，吸收 B8/C9）与 `D4`（文档）。
+> 被 DROPPED 的 7 张各自写清了凭什么作废，**事实都留在卡里**（不删卡——删掉的卡会被后人重新想
+> 一遍），将来真要做的人直接取用。判据是一句话：**「我注意到了」不等于「这得有人做」。**
+
+全树 **78 卡**（H 线在执行中由 6 张增至 12 张，五张都是验收时才浮出来的：H1b 三卡共享测试脚手架、
 H4b 从 H4 里拆出的总闸、H4c 验收漏扫 apps 面留下的回归、H4d 拆树后新增文件带来的缺口、
 H4e 总闸改名的下游收尾；S 线因 N3 交回的 platform 阻断项增至 5 张；M 线因 M2 交回点名的取舍新增 M6；
 M3/C4/P3/D3 那一批验收又新增 5 张：C6、C7、D3b、D3c、B5，**全部来自子 agent 交回时点名或主会话
@@ -1627,7 +1633,10 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   **这条直接压在 T2（桌面前端切到 server 宿主）头上**：那张卡要动的就是三态划分。
   判据：加第四态时**每一个**分流模块都编译失败；`hostCommandBridge` 补 `default: assertNever(host)`。
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DROPPED（**范围裁剪，用户裁决「收口干完」**）。穷举守卫只在「新增一个宿主态」时才有价值，
+  而唯一会新增宿主态的卡是 T 线——T 线现在改成**删掉桌面端**，宿主从三态减到两态，方向相反。
+  B5 报的事实仍然成立（加第四态时 `host*.ts` 零编译错误，主会话探针复核过），记在这里供将来
+  真要加宿主态的人直接取用：`hostCommandBridge` 的 `switch` 缺 `default: assertNever(host)`。
 
 ### B7 · trace 装配的两个静默失效
 
@@ -1647,7 +1656,11 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   自己的 SQL 通路，第二条的正解可能随之改变。
   B5 已在 `hostObservability.test.ts` 里**只钉住当前行为**并在注释里点名了这处张力。
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DROPPED（**范围裁剪**）。两条都属实（`.catch(() => {})` 吞掉 driver 加载失败 → core 的
+  `enqueue()` 直接丢 span；`server + DEV` 曾经写 X 读 Y）。**第 ③ 条已被 P4 的接线连带修掉**，
+  B5 的用例已改成正面断言当回归网。剩下的第 ② 条影响的是 trace 这个**诊断**功能，坏了不影响用；
+  而 B5 已在 `hostObservability.test.ts` 里钉了「现状档案」并注明「B7 落地时它必然转红」——
+  **真要修的人会在那一条上撞一次，撞到的正是他要改的那一格**。不需要一张常驻的卡替他记着。
 
 ### M1 · host-node 的 provider 请求转发
 
@@ -1953,7 +1966,11 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   `buildProjectSkillsWorkspaceBridge` 返回 undefined）」在 H 线之后已经过期，一并核实修正。
   判据：server 宿主下插件面可用；装配点收 `ResolvedHost`，`plugins/` 下不再有宿主二次探测。
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DROPPED（**被 T1 吸收**）。事实属实且已复核：`plugins/initialize.ts:74` 的
+  `if (!isTauri()) return` 让 server 宿主下用户插件整个特性静默缺席，而这**不是能力所限**——
+  插件加载走 `readWorkspaceFile`，判据早在 H 线就换成 `hasHostBridge()`，server 宿主上桥是登记了的。
+  **修法随 T1 一起做**：桌面端删掉之后 `isTauri()` 这个判据本身消失，那一行只能去掉。
+  单独立卡会造成「先按三态修一遍、再随 T1 按两态改一遍」。
 
 ### C9 · 删掉已无生产消费方的宿主自探测工厂
 
@@ -1966,7 +1983,8 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   判据：该函数删除；`apps/web` 全绿；全仓 `isTauri()` 的生产命中只剩 `resolveHost.ts` 一处
   （B8 落地后）。
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DROPPED（**被 T1 吸收**）。`createDesktopMcpConfigStorage()` 已无生产消费方，但
+  **T1 会把整个 `tauriMcpConfigStorage.ts` 删掉**，这张卡的产出会被那次删除覆盖。
 
 ### P1 · persistence-sqlite 抽 SQL 传输 port
 
@@ -2188,7 +2206,11 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   判据：门禁能抓到「自家包的 d.ts 在 NodeNext + 不跳过 libCheck 下不成立」，且上游的既有问题有
   **具名的、写得出理由的**豁免，而不是靠一个全局 `skipLibCheck` 把两者一起盖住。
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DROPPED（**前提消失**：用户裁决「不发，仅本地跑」）。`check-dist` 的 `skipLibCheck: true`
+  掩盖消费方类型错这件事属实（D3b 有实测 + 对照），但它服务的是「别人 npm install 我们的包」这个
+  场景，而那个场景不存在了。**本卡真正要解的那条已经在 D3b 里解掉了**（`@types/node` 移入
+  dependencies，实测 `TS2503` 归零）；剩下的是上游 `@einfach/core@0.4.0` 的 59 条 NodeNext 错，
+  那是上游的账，不该由本仓库的门禁扛。
 
 ### D4 · README 与 docs 更新
 
@@ -2278,7 +2300,11 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   内部错误仍然照报。**不许为消噪声放宽路径禁闭**——`resolveExistingWorkspacePath` 抛错是正确行为，
   `realpath` 失败与「越界」共用同一条出口是有意的。
 - **模型**：opus
-- **状态**：TODO
+- **状态**：DROPPED（**范围裁剪**）。**服务端那一半已被 C6 修掉**：主会话在真 server 上复验，
+  探不存在的可选目录现在回 `502 {"error":"command_failed",…}`，服务端 stderr「预期外异常」堆栈
+  归零。剩下的只有浏览器控制台那行 `Failed to load resource`——**任何非 2xx 都会打，404 也打**，
+  换 reason、换状态码一行都消不掉。C6 论证过正解在「调用方别拿异常当探测手段」，且要 Rust 侧
+  一起动才不制造宿主差异；而 Rust 侧即将随 T1 整个删掉，这个前提也没了。不值一张卡。
 
 ### D3b · 摘掉发布闭包的 `private: true`
 
@@ -2388,43 +2414,33 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   `mcp.toolNameCache`」只验到「发出了 `mcp_config_write {patch:{toolNameCache:…}}`」，没起真服务看文件。
   `service.ts` 仍 426 行超限（存量，未拆）。
 
-### T1 · Tauri 启动 sidecar Node 进程
+### T1 · 删掉 `apps/desktop`，桌面端整条退出
 
 - **依赖**：M5
-- **改动面**：`apps/desktop/src/lib.rs`、`apps/desktop/tauri.conf.json`
-- **判据**：Tauri 启动时拉起 server 进程并等它 ready，退出时确保子进程被回收
-  （**不留孤儿进程**）。端口与 token 经内部通道传给前端。
-  跑 `cargo test --manifest-path apps/desktop/Cargo.toml`
+- **改动面**：删除 `apps/desktop/`；`.github/workflows/`（`desktop-native` job、`release-desktop.yml`）；
+  根 `package.json` 的 tauri 脚本与依赖；`apps/web` 里**只为 tauri 宿主存在**的那些文件与分支
+- **判据**：**取代原 T1→T2→T3→T4 四张（用户裁决）。** 原方案是「Tauri 起 sidecar Node 进程 →
+  前端切 server 宿主 → 删 Rust → 精简 CI」，四张卡换来「原生窗口 + 单一实现」。裁掉它的理由是
+  **那个原生窗口照样要签名才能分发，而绕开签名是这整棵树的唯一动机**——做出来的东西发不出去。
+  直接删则一张卡拿到同样的「单一实现」，还顺带让 `cargo test` 与三平台 `tauri build` 退出 CI。
+
+  **现在的实况是这棵树自己造出来的负债**：同一批 30 条命令有**两份完整实现同时活着**——
+  `apps/desktop/src/*.rs` 16535 行（其中 workspace/shell/mcp/model 相关 15393 行是真业务逻辑，
+  不是壳）与 `packages/host-node/src` 19535 行。W 线只做了移植，一行 Rust 都没删。
+
+  **本卡吸收了 B8 与 C9**：桌面端删掉之后 `isTauri()` 这个判据本身消失，
+  `plugins/initialize.ts:74` 的 `if (!isTauri()) return`（server 宿主下用户插件整个静默缺席，
+  **已复核不是能力所限**——插件走 `readWorkspaceFile`，判据早在 H 线换成 `hasHostBridge()`）
+  只能去掉；`tauriMcpConfigStorage.ts` 整个文件消失。
+
+  **不许留下不可达的死分支。** 宿主从三态减到两态（server / static）之后，
+  `ResolvedHost` 的 `kind: 'tauri'` 支、五个 `host*.ts` 里的 tauri 分支、
+  `tauriSqlExecutor` / `tauriModelTransport` / `tauriStdioConnector` / `tauriMcpConfigStorage`
+  这些**只为那一态存在**的模块都要一并删——留着就是把「两份实现」换个形式再留一遍。
+  判据：全仓 `@tauri-apps` 零命中；`isTauri` 零命中；八条门禁全绿；`pnpm serve` 与本地
+  pack→install 两条路径实跑通过。
 - **模型**：opus
 - **状态**：TODO
-
-### T2 · 桌面前端切到 server 宿主
-
-- **依赖**：T1、B3
-- **改动面**：`apps/web/src/host/resolveHost.ts` 及装配层
-- **判据**：Tauri 内也走 server 宿主的 invoke；`workspaceDialog` 仍走原生插件（见未决）。
-  跑 `pnpm exec vitest run apps/web` + `pnpm tauri dev` 手动确认
-- **模型**：opus
-- **状态**：TODO
-
-### T3 · 删除 Rust 业务代码，只留窗口壳
-
-- **依赖**：T2、W17
-- **改动面**：`apps/desktop/src/` 的 workspace / shell / mcp / model / config 全部模块
-- **判据**：**大删除卡，必须在 W16/W17 对拍全绿之后**。删完
-  `wc -l apps/desktop/src/*.rs` 应在数百行量级；`pnpm tauri build --no-bundle` 通过
-- **模型**：opus
-- **状态**：TODO
-
-### T4 · CI 精简
-
-- **依赖**：T3
-- **改动面**：`.github/workflows/ci.yml`
-- **判据**：三平台 `cargo test` 缩到窗口壳规模；总时长下降。跑 CI 一轮
-- **模型**：sonnet
-- **状态**：TODO
-
----
 
 ## 未决
 
