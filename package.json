@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "cli": "tsx --tsconfig apps/cli/tsconfig.json apps/cli/src/main.ts",
+    "serve": "tsx --tsconfig apps/server/tsconfig.json apps/server/src/main.ts",
     "dev": "vite --config vite.config.ts",
     "build": "tsc -b && vite build --config vite.config.ts",
     "test": "vitest run",
