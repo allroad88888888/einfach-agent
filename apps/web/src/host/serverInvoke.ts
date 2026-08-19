@@ -8,7 +8,8 @@
 //
 // 【reject 的形状：裸字符串，不是 Error，更不是 `{error, message}` 对象】
 // Tauri 的 invoke 失败时 reject 的是 Rust 侧 `Err(String)` 里那个裸字符串——实测过
-// `apps/desktop/src/shell.rs` 的 `run_shell_command` 签名是 `Result<ShellCommandResult, String>`，
+// 这条形状移植自桌面宿主的 `shell.rs`（已随 T1／提交 `e52c31d` 删除，只能从 Git 历史读）：
+// 它的 `run_shell_command` 签名是 `Result<ShellCommandResult, String>`，
 // `window.__TAURI_INTERNALS__.invoke` 原样把这个 String 抛给调用方，不包一层 Error、更不是一个
 // 结构化对象。core 里消费失败的地方（`packages/agent-core/src/runtime/` 下十余处 `catch (error)`，
 // 比如 `shellCommand.ts:122`、`workspaceRead.ts` 的四处、`workspaceWrite/Patch/Delete/Git/Task/

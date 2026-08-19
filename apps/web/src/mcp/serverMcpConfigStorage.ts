@@ -7,7 +7,8 @@
 //
 // 【真正的差别只有一处：传输】`invoke('mcp_config_read')` → `invokeServerCommand(...)`。
 // 命令名、参数名（`patch`）、返回形状完全相同：host-node 的 `config/mcpConfigCommands.ts`
-// 是 `apps/desktop/src/mcp_config.rs` 的等价移植，连「这两条命令没有 `rename_all`、所以
+// 是桌面宿主 `mcp_config.rs` 的等价移植（原件已随 T1／提交 `e52c31d` 删除，只能从 Git 历史读），
+// 连「这两条命令没有 `rename_all`、所以
 // `patch` 两种口径下同名」都逐条核对过（见那个文件的文件头）。
 //
 // 【为什么净化与限额仍在前端】`sanitizeConfigs` 是白名单 + 上限 + 去重，跑在**写之前**，

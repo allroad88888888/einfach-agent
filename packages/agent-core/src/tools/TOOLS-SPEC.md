@@ -183,10 +183,13 @@ pnpm exec vitest run packages/agent-core/src/tools
 pnpm build
 ```
 
-If the native bridge or a server tool changes, also run:
+If a `runtime: 'server'` tool changes, also run the host bridge's own suite and the
+packed-artifact gate — those tools execute through `packages/host-node`, and the
+gate is the only thing that runs the real binary:
 
 ```bash
-cargo test --manifest-path apps/desktop/Cargo.toml
+pnpm exec vitest run packages/host-node
+pnpm check:packed
 ```
 
 The implementation, tests, and generated application manifest are authoritative

@@ -2,7 +2,8 @@
 // ---------------------------------------------------------------------------
 // ★ 为什么收口成一处 ★ —— 这个值有两个消费者，且必须逐字一致：
 //   · shell 桥要求调用方传 platform，宿主侧会拒绝与自己不符的值
-//     （`apps/desktop/src/shell_pipeline.rs` 与 `packages/host-node/src/shell/pipeline.ts`
+//     （今天只有一个：`packages/host-node/src/shell/pipeline.ts`；另一侧是桌面宿主的
+//     `shell_pipeline.rs`，已随 T1（提交 `e52c31d`）删除
 //     各一份，文案同为 ``platform mismatch: requested `X`, current `Y` ``）；
 //   · 注入给模型的「运行环境」段也要报同一个平台，模型据它在 shell_macos / shell_linux /
 //     shell_powershell 三个工具里挑一个。

@@ -6,8 +6,8 @@
 // （configureHostInvoke 的 platform），再断言两个消费者拿到的都是 linux。
 //
 // 【为什么假宿主要自己抄一遍 platform mismatch】
-// 真正的校验住在两个宿主里（`apps/desktop/src/shell_pipeline.rs` 与
-// `packages/host-node/src/shell/pipeline.ts`），而 core 不许依赖它们中的任何一个（依赖方向
+// 真正的校验住在宿主那一侧（今天只有 `packages/host-node/src/shell/pipeline.ts`；早先还有一份
+// 桌面宿主的 `shell_pipeline.rs`，已随 T1（提交 `e52c31d`）删除），而 core 不许依赖它（依赖方向
 // agent-ai ← agent-core ← 能力包 ← app）。所以这里的假 invoke 逐字照抄那一条判据与文案：
 // 它同时钉住两件事——按宿主声明组的命令**过得去**，按别的平台组的命令**仍然被挡**。后者是本卡
 // 的另一半判据：那条校验挡的是真问题，S5 不许为了让 server 跑通而把它删掉。

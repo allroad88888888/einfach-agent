@@ -90,7 +90,7 @@ export function toError(value: unknown): Error {
 /**
  * 这次失败是否意味着「这条连接已经没了」。与 `tauriStdioConnector.ts` 的同名函数**逐字同表**
  * ——两个宿主的 kind 取值来自同一份 `McpCommandError`（host-node `mcp/errors.ts` 等价移植自
- * `apps/desktop/src/mcp_types.rs`），表分叉就等于同一次失败在两个宿主上有两种后果。
+ * 桌面宿主的 `mcp_types.rs`，已随 T1／提交 `e52c31d` 删除），表分叉就等于同一次失败在两个宿主上有两种后果。
  */
 export function isFatalConnectionError(value: unknown): boolean {
   const kind = mcpFailureKind(value)

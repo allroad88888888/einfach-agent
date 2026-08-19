@@ -25,7 +25,9 @@
 //
 // ═══ 事件名与载荷形状：本地声明，权威在别处 ═══
 // 权威是 `packages/host-node/src/events/hostEventNames.ts` 与 `hostEventPayloads.ts`
-// （它们自己再与 `apps/desktop/src/mcp_lifecycle.rs` 逐字对拍）。这里**不 import**
+// ——**它们就是权威本身**，没有第二侧可对拍：早先那一侧是桌面宿主的 `mcp_lifecycle.rs`，
+// 已随 T1（提交 `e52c31d`）连同整个 `apps/desktop/` 删除，只能从 Git 历史读。
+// 所以漂移的方向反过来了：本文件是**下游**，名字对不上只会在运行时安静地收不到事件。这里**不 import**
 // `@einfach-agent/host-node`：那个 barrel 会把整台 Node 宿主（`node:child_process`、
 // `node:fs`…）拖进浏览器产物，`vite.config.ts` 的 alias 注释写明了「Web 产物里不该出现」。
 // 同 `host/serverInvoke.ts` 本地声明 `INVOKE_ROUTE_PREFIX` 的理由：跨 app / 跨运行环境的常量
