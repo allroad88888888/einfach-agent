@@ -1,6 +1,6 @@
 // 多条账的批量回滚：整批预演 → 逆序执行 → 失败重放
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_batch.rs 的 `revert_change_sets_blocking`。
+// 等价移植 apps/desktop/src/workspace_change_journal_batch.rs（已随 T1 删除）的 `revert_change_sets_blocking`。
 //
 // ═══ 顺序：账本的创建顺序说了算 ═══
 // Rust 那句注释（`_batch.rs:45`）是 `Journal creation order is authoritative`：调用方**确实**会

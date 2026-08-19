@@ -1,6 +1,6 @@
 // 变更集的登记生命周期：预留 → 标记已应用 / 丢弃
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_prepare.rs。
+// 等价移植 apps/desktop/src/workspace_change_journal_prepare.rs（已随 T1 删除）。
 //
 // 三段式，顺序是本域全部安全性的来源：
 //

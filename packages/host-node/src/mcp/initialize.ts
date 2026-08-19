@@ -1,6 +1,6 @@
 // MCP 握手：initialize 请求、结果校验、notifications/initialized
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/mcp_session.rs 的 `McpSession::initialize`。
+// 等价移植 apps/desktop/src/mcp_session.rs（已随 T1 删除）的 `McpSession::initialize`。
 //
 // ═══ 为什么传输层里会有握手（这不是"重写协议编排"）═══
 // `mcp_connect` 这条命令的**返回值就是 initialize 的结果**（protocolVersion / capabilities /

@@ -1,6 +1,6 @@
 // 一条 JSON-RPC 消息该往哪去：响应回给等它的人，通知交给生命周期，请求当场回一句
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/mcp_protocol.rs 的 `handle_protocol_value` / `handle_server_request`
+// 等价移植 apps/desktop/src/mcp_protocol.rs（已随 T1 删除）的 `handle_protocol_value` / `handle_server_request`
 // / `parse_rpc_error`。本模块**不认识 MCP 的业务语义**（不知道什么是 tools/list、不解析工具），
 // 它只按 JSON-RPC 2.0 的形状分三类：响应、通知、请求。业务在 session.ts / toolOperations.ts。
 //

@@ -1,6 +1,6 @@
 // 建一条会话：起进程 + 把三条管道接上
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/mcp_session_spawn.rs 的装配段。Rust 那边接的是三条线程
+// 等价移植 apps/desktop/src/mcp_session_spawn.rs（已随 T1 删除）的装配段。Rust 那边接的是三条线程
 // （stderr / stdout / 进程监视），Node 这边接的是三组事件回调：
 //   stdout —— readProtocolStream，帧切分 + 分发 + EOF 报关闭
 //   stderr —— drainStderr，只为了不让管道写满把子进程堵死

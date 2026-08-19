@@ -1,7 +1,9 @@
-// 哈希的期望值不是「跑一遍 Node 记下来」的——它们是用 apps/desktop 同版 `sha2 = "0.10"` 的
+// 哈希的期望值不是「跑一遍 Node 记下来」的——它们是当年用桌面端（`apps/desktop`，已随 T1
+// 提交 `e52c31d` 整条删除）同版 `sha2 = "0.10"` 的
 // `format!("sha256:{:x}", Sha256::digest(bytes))` 实跑出来的输出，逐字符抄在这里。
-// 这四条锁的是**跨语言**一致：算法或编码漂移不会报错，只会让桌面端写的文件在 Node 宿主下过
-// 不了 write_file 的乐观并发检查（反之亦然）。`abc` 那条同时是 FIPS 180-4 的公开测试向量。
+// 那一侧不在了，这四条锁的东西**没有变弱**：它们现在锁的是「这份实现不许改算法或编码」——
+// contentHash 是落盘 `write_file` 乐观并发检查的键，漂移不会报错，只会让存量文件突然过不了检查。
+// `abc` 那条同时是 FIPS 180-4 的公开测试向量，与实现来源无关。
 import { describe, expect, it } from 'vitest'
 import { contentSha256, decodeUtf8, rejectBinaryBytes } from './content'
 

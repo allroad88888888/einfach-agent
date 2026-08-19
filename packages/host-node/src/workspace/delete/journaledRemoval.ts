@@ -1,6 +1,6 @@
 // 记账 → 备份 → 真删 → 结账，中间任何一步失败都把世界推回原样
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_delete.rs 从 `prepare_deleted_path_change` 到
+// 等价移植 apps/desktop/src/workspace_delete.rs（已随 T1 删除）从 `prepare_deleted_path_change` 到
 // `mark_change_applied` 的那一段。这是本卡的心脏：**删除是不可逆动作，账必须在动手之前记上**。
 //
 // ═══ 五步，顺序就是全部安全性 ═══

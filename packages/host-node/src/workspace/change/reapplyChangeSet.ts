@@ -1,6 +1,6 @@
 // 把一条已经退掉的账重新应用回去（批量回滚中途失败时的补偿）
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_batch.rs 的 `reapply_change_set_blocking`。
+// 等价移植 apps/desktop/src/workspace_change_journal_batch.rs（已随 T1 删除）的 `reapply_change_set_blocking`。
 //
 // 只有一个调用点：批量回滚退到第 k 条时失败，前面 k-1 条已经退掉了——那时整批必须回到「一条
 // 都没退」的样子，否则回执说「失败」而磁盘上是退了一半的状态，是这块最坏的结果。

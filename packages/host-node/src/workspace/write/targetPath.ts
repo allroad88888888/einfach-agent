@@ -1,6 +1,6 @@
 // 写入目标的解析：请求路径 → 落盘用的绝对路径 + 对外展示的根相对路径
 // ---------------------------------------------------------------------------
-// 对齐 apps/desktop/src/workspace_write_target_path.rs 整份（`resolve_workspace_path` +
+// 对齐 apps/desktop/src/workspace_write_target_path.rs（已随 T1 删除）整份（`resolve_workspace_path` +
 // `relative_path`）。Rust 那份是**自成一体**的：它没调 workspace_common，confinement 从头到尾
 // 自己写了一遍——那正是 Node 侧 common 目录开头点名的「同一条判定在六个文件里各抄一遍」之一。
 // 这里不重抄，用底座里已经等价移植好的两块拼出来，并把「Rust 写入侧比读取侧多做了什么」记在下面。

@@ -1,4 +1,4 @@
-// 字节分页与 contentHash 的端到端用例，对齐 apps/desktop/src/workspace_read_bytes_tests.rs。
+// 字节分页与 contentHash 的端到端用例，对齐 apps/desktop/src/workspace_read_bytes_tests.rs（已随 T1 删除）。
 // 一律经 handler 工厂调用——registrar 挂上去的就是它，绕过工厂直接测内部函数会漏掉「工厂
 // 没把 args 透传下去」这类错误。
 import { mkdir, writeFile } from 'node:fs/promises'

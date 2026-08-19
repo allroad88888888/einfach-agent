@@ -1,6 +1,6 @@
 // 进程内按目标路径的写入互斥
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_write_lock.rs 的 `path_lock`：一张
+// 等价移植 apps/desktop/src/workspace_write_lock.rs（已随 T1 删除）的 `path_lock`：一张
 // `PathBuf → Arc<Mutex<()>>` 的表，同一路径的并发写在本进程内排队；表超过阈值时扫掉没人持有
 // 的条目。跨进程的竞争（外部编辑器、另一个宿主进程）不归它管，那是 lockArchive.ts 的事。
 //

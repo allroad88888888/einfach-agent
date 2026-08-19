@@ -1,6 +1,6 @@
 // MCP 命令的结构化失败：一个既是 Error、又能原样序列化成 Rust 那份形状的东西
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/mcp_types.rs 的 `McpCommandError`。
+// 等价移植 apps/desktop/src/mcp_types.rs（已随 T1 删除）的 `McpCommandError`。
 //
 // **为什么必须带 `kind` 而不能只留一句话**：`tools/mcp` 的失败分类器
 // （failureClassification.ts）判「这次失败重试还有没有意义」时，对 stdio 桥**只认 kind**，
@@ -107,7 +107,7 @@ export function workerError(message: string): McpCommandError {
  * 信封的 `error` 字段，客户端再交给 `tools/mcp` 的失败分类器。
  *
  * **取值刻意不收成闭合枚举**，与 model 域那边正相反：`kind` 在 Rust 侧就是一个开放 String
- * （`apps/desktop/src/mcp_types.rs` 的 `pub kind: String`），消费方的契约也写明「只有列出的
+ * （`apps/desktop/src/mcp_types.rs`（已随 T1 删除）的 `pub kind: String`），消费方的契约也写明「只有列出的
  * kind 是永久失败，其余一律落到可重试的默认」（`tools/mcp/src/failureClassification.ts`）。
  * 在这里立一张白名单，等于让**没登记的新 kind 静默变成 undefined**——那正好把「新增一类永久
  * 失败」变成「安静地无限重连」，而白名单漏一条不会有任何编译错误。

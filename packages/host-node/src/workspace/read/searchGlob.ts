@@ -1,6 +1,6 @@
 // `search_workspace_files` 的文件名过滤：一个刻意简化的「glob」，不是真 glob
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_read_search.rs 的 `matches_glob`。**这不是** `*` / `?` /
+// 等价移植 apps/desktop/src/workspace_read_search.rs（已随 T1 删除）的 `matches_glob`。**这不是** `*` / `?` /
 // `[...]` 的完整 glob 语法，只是四个字面前缀分支；照抄不改，即使某些写法（比如 `**.ts`）不会
 // 按直觉工作——两个宿主必须对同一个 glob 给出同一个答案，标准更严格的实现反而是分裂。
 //

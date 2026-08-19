@@ -1,6 +1,6 @@
 // `delete_workspace_path` 的回执形状，与「结构化失败」这一个概念
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_delete.rs 的 `WorkspaceDeleteResult` 与 `error_result`。
+// 等价移植 apps/desktop/src/workspace_delete.rs（已随 T1 删除）的 `WorkspaceDeleteResult` 与 `error_result`。
 //
 // 【顶层键：`change_set` 是 snake_case】
 // 这个 struct 只有 `#[derive(Serialize)]`，**没有** `rename_all`，所以线上那份 JSON 的多词键就是

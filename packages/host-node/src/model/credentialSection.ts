@@ -1,6 +1,6 @@
 // `config.json` 的 `modelCredentials` 段视图
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/model_credential_config.rs 的 `ModelCredentialStore`。
+// 等价移植 apps/desktop/src/model_credential_config.rs（已随 T1 删除）的 `ModelCredentialStore`。
 //
 // 分层与 mcp 段完全一样，理由也一样（见 config/mcpConfigSection.ts 的文件头）：底座
 // （config/webAgentConfigStore.ts）只认「一份配置由若干具名段组成」，段视图只看得见自己那一段。

@@ -1,6 +1,6 @@
 // git 子命令 argv 的构造与请求参数归一化 —— 这就是那道「参数白名单」
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_git_args.rs（配套测试 workspace_git_args_tests.rs）。
+// 等价移植 apps/desktop/src/workspace_git_args.rs（配套测试 workspace_git_args_tests.rs）（已随 T1 删除）。
 // **照搬，不重新设计**：下面每一条拒绝都对应一条具体的注入/降级路径，逐条注在原处。
 //
 // ═══ 白名单是「构造式」的，不是「过滤式」的 ═══

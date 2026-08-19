@@ -1,6 +1,6 @@
 // diff pathspec 的 workspace 内 confine 校验与归一化
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_git_path.rs。产出是**根相对、正斜杠**的 pathspec 串，
+// 等价移植 apps/desktop/src/workspace_git_path.rs（已随 T1 删除）。产出是**根相对、正斜杠**的 pathspec 串，
 // 交给 gitArgs.ts 放在 `--` 之后；git 以 workspace root 为 cwd 运行，且带
 // `GIT_LITERAL_PATHSPECS=1`（pathspec 元字符不再展开，见 gitExec.ts）。
 //

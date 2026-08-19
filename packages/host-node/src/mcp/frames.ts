@@ -1,6 +1,6 @@
 // JSON-RPC 行帧的切分：把子进程 stdout 的字节块流切成一条条完整的消息
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/mcp_protocol.rs 的 `read_protocol_line` / `trim_line_ending`。
+// 等价移植 apps/desktop/src/mcp_protocol.rs（已随 T1 删除）的 `read_protocol_line` / `trim_line_ending`。
 //
 // ═══ 为什么这件事必须有独立实现，而不是 `data` 事件里 `JSON.parse(chunk)` ═══
 // 一次 `data` 事件与一条消息之间**没有任何对应关系**，两个方向都会错：

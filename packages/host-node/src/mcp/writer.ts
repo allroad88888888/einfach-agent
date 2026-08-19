@@ -1,6 +1,6 @@
 // 往子进程 stdin 写一行 JSON
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/mcp_protocol.rs 的 `write_json_line` 与 mcp_support.rs 的
+// 等价移植 apps/desktop/src/mcp_protocol.rs（已随 T1 删除）的 `write_json_line` 与 mcp_support.rs 的
 // `SharedWriter`（`Arc<Mutex<Option<ChildStdin>>>`）。那个 `Option` 是关键：会话关闭时把它
 // `take()` 掉，于是「stdin 已经关了」是一个可判定的状态，而不是「写下去然后收 EPIPE」。
 //

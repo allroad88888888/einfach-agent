@@ -1,6 +1,6 @@
 // `read_workspace_file` 的字节分段读取：offset/maxBytes 分页 + 整文件 contentHash
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_read_bytes.rs 的
+// 等价移植 apps/desktop/src/workspace_read_bytes.rs（已随 T1 删除）的
 // `read_workspace_file_blocking_with_access_at`。
 //
 // 【分页的四个字段怎么咬合】

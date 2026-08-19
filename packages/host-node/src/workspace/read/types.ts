@@ -1,6 +1,6 @@
 // workspace/read 域的返回形状
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_read_types.rs。字段名一律 camelCase，对齐 Rust 侧
+// 等价移植 apps/desktop/src/workspace_read_types.rs（已随 T1 删除）。字段名一律 camelCase，对齐 Rust 侧
 // `#[serde(rename_all = "camelCase")]`；可选字段带 `#[serde(skip_serializing_if = "Option::is_none")]`，
 // 也就是**值为 None 时那个键根本不出现**在 JSON 里——TS 这边对应「不写这个键」而不是
 // 「写成 undefined」。两者在 `JSON.stringify` 之后一样，在进程内注入（CLI / sidecar）时却不同：

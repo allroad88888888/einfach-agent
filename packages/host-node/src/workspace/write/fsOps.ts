@@ -1,6 +1,6 @@
 // 真正落盘的三个原语：新建、追加、可执行位
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_write_fs_ops.rs。覆盖不在这里——那一路走 N2 的
+// 等价移植 apps/desktop/src/workspace_write_fs_ops.rs（已随 T1 删除）。覆盖不在这里——那一路走 N2 的
 // `atomicWrite`（临时文件 → fsync → 回填原权限 → rename），本文件只放「不经临时文件」的两种。
 //
 // 【为什么 create 不走原子写】

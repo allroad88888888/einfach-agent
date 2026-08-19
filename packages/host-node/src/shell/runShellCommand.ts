@@ -1,7 +1,7 @@
 // `run_shell_command` 的命令入口：收窄线上入参，交给 pipeline
 // ---------------------------------------------------------------------------
 // 对应 Rust 的 `#[tauri::command(rename_all = "snake_case")] run_shell_command`
-// （apps/desktop/src/shell.rs）。那边「入参长这样」是由 serde 反序列化保证的，Node 这条路上
+// （apps/desktop/src/shell.rs（已随 T1 删除））。那边「入参长这样」是由 serde 反序列化保证的，Node 这条路上
 // 没有那一层：同一张路由表要挂在 `POST /api/invoke/:command` 后面，载荷是外部输入。
 // 所以本文件做的就是 serde 那件事——**类型不对就当场失败，而不是带着 undefined 往下走**。
 //

@@ -1,6 +1,6 @@
 // workspace 边界判定的纯逻辑：一个候选路径算不算「在 root 里面」
 // ---------------------------------------------------------------------------
-// 对齐 apps/desktop/src/ 的 Rust 实现——那边的边界判定散在 workspace_read_paths.rs /
+// 对齐 apps/desktop/src/（已随 T1 删除）的 Rust 实现——那边的边界判定散在 workspace_read_paths.rs /
 // workspace_write_target_path.rs / workspace_patch_path.rs / workspace_delete.rs 各处，
 // 但判据是同一条：`canonical.starts_with(root)`。Node 侧从一开始就把它收成一份。
 //

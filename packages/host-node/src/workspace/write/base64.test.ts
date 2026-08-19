@@ -4,6 +4,9 @@ import { decodeBase64 } from './base64'
 import { WriteRejection } from './result'
 
 describe('decodeBase64', () => {
+  // 用例名里的 `apps/desktop/src/workspace_write_base64.rs` 是本实现的移植来源，已随 T1
+  // （提交 `e52c31d`）连同整个桌面端删除，只能从 Git 历史读。向量本身是 RFC 4648 的公开测试
+  // 向量，不依赖任何一侧的实现，所以这条断言今天照样是它该有的判据。
   it('对齐 apps/desktop/src/workspace_write_base64.rs 的 RFC 4648 测试向量', () => {
     expect(decodeBase64('')).toEqual(new Uint8Array())
     expect(Buffer.from(decodeBase64('Zg=='))).toEqual(Buffer.from('f'))

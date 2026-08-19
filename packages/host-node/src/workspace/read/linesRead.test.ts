@@ -1,4 +1,4 @@
-// 行定位读取的端到端用例，对齐 apps/desktop/src/workspace_read_lines_tests.rs，并补上 Rust 侧
+// 行定位读取的端到端用例，对齐 apps/desktop/src/workspace_read_lines_tests.rs（已随 T1 删除），并补上 Rust 侧
 // 没有显式钉住、但两个宿主必须同款的边角：行的定义（末行无换行 / 空文件 / `\r\n` / 裸 `\r`）、
 // `offset` 与 `nextOffset` 在行模式下的取值、整文件二进制判定。
 // 一律经 `createReadWorkspaceFileHandler`（registrar 要挂的那个工厂）调用，绕过它会漏掉

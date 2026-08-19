@@ -1,6 +1,6 @@
 // `read_workspace_file` 的行定位读取：startLine / lineCount 返回**完整行**
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_read_lines.rs 的 `read_workspace_file_lines`。
+// 等价移植 apps/desktop/src/workspace_read_lines.rs（已随 T1 删除）的 `read_workspace_file_lines`。
 // 存在的理由（Rust 文件头原话）：模型手里的行号来自 rg_search / 编译错误 / diff，字节偏移接不上
 // 它们；这条路径让「读第 342 行附近」成为一次直接调用，而不是整段读回来自己数行。
 //

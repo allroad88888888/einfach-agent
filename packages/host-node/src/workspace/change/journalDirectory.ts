@@ -1,16 +1,20 @@
-// 变更日志目录：套壳之后必须和桌面版指向同一个地方
+// 变更日志目录：浏览器自托管与 CLI 必须指向同一个地方
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal.rs 的 `journal_dir`：
+// 等价移植 apps/desktop/src/workspace_change_journal.rs（已随 T1 删除）的 `journal_dir`：
 //
 //     app.path().app_data_dir()?.join("workspace-changes")
 //
-// **这条算错不会报错，只会让日志静默分家。** T 线要把 Tauri 退成套壳、共用同一个 Node 后端，
-// 那一刻两个宿主必须看到同一份日志；指向两个目录的症状是「桌面版做的改动在 Web 版里撤不了」，
-// 而 `revert_workspace_change` 收到的只是「读不到这个 change set」——看不出是路径问题。
+// **这条算错不会报错，只会让日志静默分家。** 写这段时要对齐的是桌面版；桌面端随 T1 整条删除
+// 之后，**判据没有消失、只是换了一对主角**：浏览器自托管与 CLI 是两个进程，它们必须看到同一份
+// 日志。指向两个目录的症状是「CLI 里做的改动在界面里撤不了」，而 `revert_workspace_change`
+// 收到的只是「读不到这个 change set」——看不出是路径问题。
+// 另外，本机上已经存在的日志就在这个目录下：挪位置等于让存量变更静默变得不可撤销。
 //
 // ═══ `app_data_dir()` 到底是什么（逐层查证，不是照记忆写）═══
 // tauri 2.11 `src/path/desktop.rs:247` → `dirs::data_dir()?.join(&config.identifier)`；
-// identifier 取自 apps/desktop/tauri.conf.json 的 `"identifier": "com.webagent.app"`。
+// identifier 当年取自 apps/desktop/tauri.conf.json 的 `"identifier": "com.webagent.app"`；那份
+// 配置已随 T1 删除，于是**这个字符串今天只由本文件决定**——它同时是存量日志的实际位置，改它
+// 要做数据迁移，不是改一个常量（同 sqlite/databasePath.ts 的记档）。
 // dirs 6.0 `src/{mac,win,lin}.rs` 的 `data_dir()`：
 //   · macOS  → `$HOME/Library/Application Support`（`mac.rs:7,12`，经 dirs-sys 的 home_dir，
 //              它优先读非空 `$HOME`，与 Node 的 `os.homedir()` 同口径）

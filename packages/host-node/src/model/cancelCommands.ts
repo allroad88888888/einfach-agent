@@ -1,6 +1,6 @@
 // `cancel_model_provider_request` / `cancel_model_chat_completions` 的 Node 实现
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/model_proxy.rs 的两条同名命令——它们在 Rust 侧是**逐字相同**的两个
+// 等价移植 apps/desktop/src/model_proxy.rs（已随 T1 删除）的两条同名命令——它们在 Rust 侧是**逐字相同**的两个
 // 函数（都只是 `cancellations.cancel(&request_id)`），Node 侧同样共用一个工厂，只有报参数缺失时
 // 的命令名不同。合并成一条命令是不行的：命令名是对外契约，旧渲染层发的是后一个名字。
 //

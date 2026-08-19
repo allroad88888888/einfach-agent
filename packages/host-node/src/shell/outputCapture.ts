@@ -1,6 +1,6 @@
 // 子进程一条输出管道的捕获：带上限、可随时放弃、放弃后仍交出已读到的部分
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/shell_output.rs（Rust 那边是「一个读线程 + Arc<Mutex<..>> 共享缓冲」）。
+// 等价移植 apps/desktop/src/shell_output.rs（Rust 那边是「一个读线程 + Arc<Mutex<..>> 共享缓冲」）（已随 T1 删除）。
 //
 // 【为什么 stdout 和 stderr 都用 readCappedDrain，没有一个用 readCappedStop】
 // Rust 的 `read_capped_into` 到上限之后**继续 read**、只是把内容丢掉（只记一笔 truncated），

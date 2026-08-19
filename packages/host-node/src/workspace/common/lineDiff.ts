@@ -1,6 +1,6 @@
 // 行切分（Rust `str::lines()` 等价物）与 LCS 行级 diff
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_common.rs 的 `diff_lines` / `DiffTag`，外加 Rust
+// 等价移植 apps/desktop/src/workspace_common.rs（已随 T1 删除）的 `diff_lines` / `DiffTag`，外加 Rust
 // `str::lines()` 的语义（TS 没有等价物，`split('\n')` 直译会多出一行）。
 //
 // **纯函数，一行 IO 都没有。** 这是 W16 跨语言对拍要拿的形状之一：同一对文本喂进去，两个宿主

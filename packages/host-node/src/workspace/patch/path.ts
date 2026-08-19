@@ -1,6 +1,6 @@
 // 补丁目标路径的解析：请求路径 → workspace 内的绝对路径
 // ---------------------------------------------------------------------------
-// 对齐 apps/desktop/src/workspace_patch_path.rs 整份（`resolve_workspace_path` +
+// 对齐 apps/desktop/src/workspace_patch_path.rs（已随 T1 删除）整份（`resolve_workspace_path` +
 // `ensure_parent_inside_root` + `display_path`）。Rust 那份和写入侧一样是**自成一体**的：
 // 不调 workspace_common，confinement 从头到尾自己抄了一遍——正是 common 目录开头点名的
 // 「同一条判定在六个文件里各抄一遍」之一。这里不重抄判定，用底座的**纯零件**

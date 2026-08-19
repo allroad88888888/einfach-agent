@@ -1,6 +1,6 @@
 // shell 命令执行的主流程：校验平台、起子进程、等待/超时、收尾输出
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/shell_pipeline.rs 的 `run_shell_command_blocking`。
+// 等价移植 apps/desktop/src/shell_pipeline.rs（已随 T1 删除）的 `run_shell_command_blocking`。
 //
 // 【失败分两种，别塌成一种】
 // 准备阶段的失败（平台不支持 / 平台不符 / 没有可用 shell / cwd 不可用 / shell 起不来）在

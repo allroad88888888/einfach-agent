@@ -1,6 +1,6 @@
 // 回滚结果的三种形状，以及「会被还原的路径清单」怎么取
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_types.rs 的 `error_result`，外加 Rust 侧
+// 等价移植 apps/desktop/src/workspace_change_journal_types.rs（已随 T1 删除）的 `error_result`，外加 Rust 侧
 // 在 revert.rs / batch.rs 里逐处内联写出的另外两种结果字面量。三种形状的差别是**语义级的**，
 // 收在一处才看得出来：
 //

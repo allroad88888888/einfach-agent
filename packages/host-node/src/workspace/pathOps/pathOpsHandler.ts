@@ -1,6 +1,6 @@
 // `copy_workspace_path` / `move_workspace_path` 的入参收窄与 handler 工厂
 // ---------------------------------------------------------------------------
-// 对应 apps/desktop/src/workspace_path_ops.rs 的两个命令体。两条命令的入参**完全一致**
+// 对应 apps/desktop/src/workspace_path_ops.rs（已随 T1 删除）的两个命令体。两条命令的入参**完全一致**
 // （`commandArgs.ts` 里 `move_workspace_path` 直接复用 `copy_workspace_path` 的类型），Rust 侧也是
 // 同一个 `operate()` 函数收两个不同的 `operation` 字符串，所以这里同样只写一套收窄逻辑，
 // 用 operation 参数化出两个 handler 工厂。

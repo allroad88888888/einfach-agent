@@ -5,7 +5,7 @@
 // ../../fixtures/README.md。
 //
 // ═══ 为什么比对的是结构而不是字符串 ═══
-// `apps/desktop/Cargo.toml` 的 `serde_json` 没开 `preserve_order`，`Value::Object` 底层是
+// `apps/desktop/Cargo.toml`（已随 T1 删除）的 `serde_json` 没开 `preserve_order`，`Value::Object` 底层是
 // `BTreeMap`，重新序列化时字段按 key 字节序**重排**；JS 的 `JSON.parse` → `JSON.stringify`
 // 保留插入序。两边逐字符比字符串必然假红，所以两侧都比**解析后的结构**——键顺序不算差异。
 //

@@ -1,6 +1,6 @@
 // 在飞的模型请求表：requestId → 这次请求的 AbortController
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/model_request_registry.rs 的 `ModelRequestCanceller`
+// 等价移植 apps/desktop/src/model_request_registry.rs（已随 T1 删除）的 `ModelRequestCanceller`
 // （`Mutex<HashMap<String, CancellationToken>>` → 一张 `Map` + AbortController；Node 单线程，
 // 不需要锁）。
 //

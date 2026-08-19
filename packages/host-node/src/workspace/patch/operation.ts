@@ -1,6 +1,6 @@
 // 把未经校验的入参收窄成补丁操作
 // ---------------------------------------------------------------------------
-// 对应 apps/desktop/src/workspace_patch_operation.rs 那个 `#[derive(Deserialize)]` 枚举——Rust
+// 对应 apps/desktop/src/workspace_patch_operation.rs（已随 T1 删除）那个 `#[derive(Deserialize)]` 枚举——Rust
 // 侧这一步是 serde 白干的，Node 侧没有那道关卡：路由表交给 handler 的是
 // `Record<string, unknown>`，而这条命令要挂在 HTTP 后面，载荷来自浏览器。
 //

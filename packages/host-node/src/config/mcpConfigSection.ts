@@ -1,6 +1,6 @@
 // `config.json` 的 `mcp` 段视图：读整段、按顶层键合并补丁
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/mcp_config.rs 的 `McpConfigStore`。Rust 侧的分层在 Node 侧原样保留：
+// 等价移植 apps/desktop/src/mcp_config.rs（已随 T1 删除）的 `McpConfigStore`。Rust 侧的分层在 Node 侧原样保留：
 // webAgentConfigStore.ts 是**底座**（认「一份配置由若干具名段组成」），本文件是它的**一个段视图**
 // （认 `mcp` 段里放的是 MCP 服务清单与工具名缓存）。命令名叫 mcp_config_*，读写的却是那份共用的
 // `~/.webAgent/config.json`——两层分开正是为了让这件事说得清：底座换段名就能给别的域复用，

@@ -1,6 +1,6 @@
 // `~/.webAgent/config.json` 的按段读写 + 旧路径迁移
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/web_agent_config_store.rs 的 `WebAgentConfigStore`。
+// 等价移植 apps/desktop/src/web_agent_config_store.rs（已随 T1 删除）的 `WebAgentConfigStore`。
 //
 // 文件的形状是「一个 version 加任意多个具名配置段」：`mcp`、`modelCredentials`、以后还会有别的。
 // 本层只认段，**不认任何一段的内容**——`mcp_config_read` 拿不到 `modelCredentials`，不是因为

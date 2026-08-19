@@ -1,6 +1,6 @@
 // copy / move 主流程：解析 → 记账 → 落盘 → 收尾
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_path_ops.rs 的 `operate()`。Rust 侧用一个字符串参数
+// 等价移植 apps/desktop/src/workspace_path_ops.rs（已随 T1 删除）的 `operate()`。Rust 侧用一个字符串参数
 // `operation: &str`（"copy" | "move"）在同一个函数体里分叉两条命令；Node 侧同样用一个联合类型
 // 参数保留这个共享结构——**这不是重新设计**，两条命令的入参、confinement、记账时机、失败收尾
 // 完全一致，只有"具体动哪个 fs 原语"这一处不同。

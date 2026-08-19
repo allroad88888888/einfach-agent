@@ -38,7 +38,7 @@ function request(
   }
 }
 
-// 镜像 apps/desktop/src/workspace_path_ops.rs 的两个 #[cfg(test)] 用例：copy 与 move 各自留下
+// 镜像 apps/desktop/src/workspace_path_ops.rs（已随 T1 删除）的两个 #[cfg(test)] 用例：copy 与 move 各自留下
 // 一条能被 `revert_workspace_change` 撤销的账。
 describe('operateWorkspacePath: copy', () => {
   it('复制文件并留下一条账；撤销后目标消失、源还在', async () => {

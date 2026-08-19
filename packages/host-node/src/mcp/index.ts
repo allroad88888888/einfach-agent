@@ -1,7 +1,7 @@
 // mcp 域的 registrar：MCP server 的 stdio 传输
 // ---------------------------------------------------------------------------
 // 本域按 commandNames.ts 负责四条：mcp_connect / mcp_list_tools / mcp_call_tool / mcp_disconnect。
-// 等价移植 apps/desktop/src/mcp*.rs（除 mcp_config.rs，那是 `~/.webAgent/config.json` 里 `mcp`
+// 等价移植 apps/desktop/src/mcp*.rs（已随 T1 删除；除 mcp_config.rs，那是 `~/.webAgent/config.json` 里 `mcp`
 // 段的读写，已在 config 域）。域内分层照搬 Rust 侧同一套：
 //
 //   limits.ts        ← 协议版本、超时、各种上限（唯一权威，与 Rust 逐值相同）

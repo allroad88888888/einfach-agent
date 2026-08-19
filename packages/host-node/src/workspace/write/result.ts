@@ -1,6 +1,6 @@
 // `write_workspace_file` 的回执形状，与「结构化失败」这一个概念
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_write_result.rs。
+// 等价移植 apps/desktop/src/workspace_write_result.rs（已随 T1 删除）。
 //
 // 【顶层键是 snake_case，这不是笔误】
 // `WorkspaceWriteResult` 在 Rust 侧只有 `#[derive(Serialize)]`，**没有** `rename_all`，所以线上

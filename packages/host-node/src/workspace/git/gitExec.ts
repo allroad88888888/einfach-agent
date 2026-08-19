@@ -1,6 +1,6 @@
 // 加固后的 `git` 子进程构造与执行：普通命令 + 带上限的流式 diff 读取
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_git_exec.rs。
+// 等价移植 apps/desktop/src/workspace_git_exec.rs（已随 T1 删除）。
 //
 // 两个执行入口共用**唯一一处** spawn 构造（`startGit`），理由与 Rust 侧的 `git_command` 逐字
 // 相同：hardening 一旦分散在两处 spawn 里，就会随着时间各走各的——而漂移出来的那一半是静默的，

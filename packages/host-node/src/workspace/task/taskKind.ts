@@ -1,6 +1,6 @@
 // 任务 kind：合法值、解析、kind → package.json script 名的映射
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_task.rs 的 `TaskKind`。
+// 等价移植 apps/desktop/src/workspace_task.rs（已随 T1 删除）的 `TaskKind`。
 //
 // 五个 kind 里 `cargo_check` 不走 package.json（它跑的是 `cargo check`），其余四个
 // kind 名恰好与它们要跑的 npm script 名相同（`test` → `test`，以此类推）——这不是巧合，

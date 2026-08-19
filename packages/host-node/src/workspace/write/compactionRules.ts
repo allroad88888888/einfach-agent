@@ -1,12 +1,12 @@
 // 归档索引压实的纯逻辑：路径判定、节流判定、JSONL 去重合并
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_write_compaction.rs 里不碰文件系统的那一半：
+// 等价移植 apps/desktop/src/workspace_write_compaction.rs（已随 T1 删除）里不碰文件系统的那一半：
 // `subagent_index_name`、节流判定、`compact_subagent_index`。IO（stat、读文件、重写、marker）
 // 在 compaction.ts——分开是因为 W16/W17 对拍要拿这几条纯函数直接和 Rust 输入输出对表，
 // 对拍不该顺带在磁盘上真建一份归档。
 //
 // 【JSON 重序列化为什么不能直接 JSON.stringify】
-// `apps/desktop/Cargo.toml` 的 `serde_json = "1.0"` 没开 `preserve_order` 特性，于是
+// `apps/desktop/Cargo.toml`（已随 T1 删除）的 `serde_json = "1.0"` 没开 `preserve_order` 特性，于是
 // `serde_json::Value::Object` 底层是 `BTreeMap<String, Value>`——重新序列化每条记录时，
 // 字段按 key 的字节序**重排**，不是原始书写顺序。JS 的 `JSON.parse` → `JSON.stringify` 默认
 // 保留插入序，如果直接用会让 Node 压实后的文件与 Rust 压实后的文件字段顺序不同（内容一样、

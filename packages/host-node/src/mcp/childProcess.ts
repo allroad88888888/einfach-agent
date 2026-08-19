@@ -1,6 +1,6 @@
 // MCP 子进程的拉起、强制终止与 stderr 排空
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/mcp_session_spawn.rs 的 spawn 段与 mcp_process.rs 的
+// 等价移植 apps/desktop/src/mcp_session_spawn.rs（已随 T1 删除）的 spawn 段与 mcp_process.rs 的
 // `kill_child` / `configure_child_process` / `drain_stderr` / `terminate_spawned_child`。
 //
 // ═══ 这是本域唯一的高危动作 ═══

@@ -1,4 +1,4 @@
-// write 域的数值预算：逐字照搬 apps/desktop/src/workspace_write_limits.rs，不自己定
+// write 域的数值预算：逐字照搬 apps/desktop/src/workspace_write_limits.rs（已随 T1 删除），不自己定
 // ---------------------------------------------------------------------------
 // 本文件只有常量表，没有判定——按这些常量做的判定在 limitChecks.ts。分开是因为这张表的读法是
 // 「与 Rust 那 20 行逐条对照」，而判定要读的是「什么时候、拿什么去比」，两件事。

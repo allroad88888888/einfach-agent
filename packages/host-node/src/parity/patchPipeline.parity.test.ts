@@ -1,7 +1,7 @@
 // 对拍驱动器：整条补丁流水线（带 IO）
 // ---------------------------------------------------------------------------
 // 喂 fixtures/patch-pipeline.json，对面是 Rust 的
-// apps/desktop/src/workspace_patch_pipeline_parity_tests.rs。
+// apps/desktop/src/workspace_patch_pipeline_parity_tests.rs（已随 T1 删除）。
 //
 // 每例各建一个临时 workspace：`<base>/workspace` 是 root，日志目录是它的**兄弟** `<base>/journal`
 // ——不是 `<root>/.journal`，否则日志文件会混进 `expected.files` 的穷举里。

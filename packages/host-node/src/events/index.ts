@@ -6,7 +6,7 @@
 // 为什么必须独立：命令桥 `HostInvoke` 的签名是 `(cmd, args) => Promise<T>`——只能表达
 // 「我问、宿主答」。而 MCP 子进程自己退出、它的工具清单变了，是**宿主主动发生**的事，
 // 那个形状装不下。桌面侧对应的是 Rust `app.emit` + 前端 `listen`
-// （`apps/desktop/src/mcp_lifecycle.rs` / `apps/web/src/mcp/tauriStdioConnector.ts`）。
+// （`apps/desktop/src/mcp_lifecycle.rs`（已随 T1 删除）/ `apps/web/src/mcp/tauriStdioConnector.ts`）。
 //
 // 三条下游线照抄本域的契约：
 //   · C1  MCP stdio 传输层持 `HostEventSink`，进程退出/清单变化时 `emitHostEvent`。

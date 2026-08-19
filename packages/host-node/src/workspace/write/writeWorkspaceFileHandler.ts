@@ -1,6 +1,6 @@
 // `write_workspace_file` 的入参收窄与 handler 工厂
 // ---------------------------------------------------------------------------
-// 对应 apps/desktop/src/workspace_write.rs 的命令体（serde 那一层 + `journal_dir` 的解析）。
+// 对应 apps/desktop/src/workspace_write.rs（已随 T1 删除）的命令体（serde 那一层 + `journal_dir` 的解析）。
 //
 // 【大小写：一个对象里两种规则】
 // 这条命令**带** `rename_all = "snake_case"`，所以顶层键是 `expected_old_content` /

@@ -1,7 +1,7 @@
 // 源与目标路径的解析：workspace_path_ops.rs 专属的一套禁闭规则
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_path_ops.rs 的 `clean_relative` / `resolve_source` /
-// `resolve_destination` / `relative`。
+// 等价移植 apps/desktop/src/workspace_path_ops.rs（已随 T1 删除）的 `clean_relative` /
+// `resolve_source` / `resolve_destination` / `relative`。
 //
 // 【为什么不能直接复用 common 的 resolveExistingWorkspacePath / resolveWorkspaceTargetPath】
 // 这四个函数是 workspace_path_ops.rs **自己定义**的本地函数，不是共享的 workspace_common.rs

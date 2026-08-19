@@ -1,6 +1,6 @@
 // `get_workspace_diff` 的主流程：解析参数 → 跑 status / stat / diff → 汇总结果
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_git_pipeline.rs。
+// 等价移植 apps/desktop/src/workspace_git_pipeline.rs（已随 T1 删除）。
 //
 // ═══ 两类失败必须分开 ═══
 //   · **结构化失败**（root 解析不了、pathspec 越界、base 不合法、git 说这里不是仓库）——

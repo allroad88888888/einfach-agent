@@ -1,6 +1,6 @@
 // `revert_workspace_change` 的入参收窄、单/批分派与 handler 工厂
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal.rs 的 `revert_workspace_change` 命令体。
+// 等价移植 apps/desktop/src/workspace_change_journal.rs（已随 T1 删除）的 `revert_workspace_change` 命令体。
 //
 // 【大小写】这条命令**带** `rename_all = "snake_case"`，顶层键就是 `change_set_id` /
 // `change_set_ids` / `dry_run` / `workspace_root`；core 的 `runtime/workspaceChange.ts` 已经按这个

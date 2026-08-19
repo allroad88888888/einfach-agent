@@ -1,6 +1,6 @@
 // `search_workspace_files`：按**文件名**过滤、按内容做子串匹配的关键字扫描
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_read_search.rs 的
+// 等价移植 apps/desktop/src/workspace_read_search.rs（已随 T1 删除）的
 // `search_workspace_files_blocking_with_access` + `collect_search_matches` + `maybe_search_file`。
 // 与 `rg_search_workspace`（workspace/rg 域）不同：这条命令不依赖外部 ripgrep 二进制，匹配是
 // 一条纯子串比较（`line.includes(query)`），**没有** `recursive` 参数——目录目标恒递归到底，

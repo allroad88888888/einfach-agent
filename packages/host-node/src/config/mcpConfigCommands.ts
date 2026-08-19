@@ -3,7 +3,7 @@
 // 这一层只做两件事：把装配槽 + 进程环境解析成本次要读写的路径，以及**收窄外部入参**。
 // 段语义在 mcpConfigSection.ts，文件读写在 webAgentConfigStore.ts。
 //
-// 入参名核对（Rust: apps/desktop/src/mcp_config.rs）：
+// 入参名核对（Rust: apps/desktop/src/mcp_config.rs（已随 T1 删除））：
 //   · `mcp_config_read(app)` —— 除 AppHandle 外无参，调用点是 `invoke('mcp_config_read')`。
 //   · `mcp_config_write(app, patch: Value)` —— 一个参数 `patch`。这两条命令**没有**
 //     `rename_all = "snake_case"`，走 Tauri 默认的 camelCase→snake_case 转换；`patch` 是单个

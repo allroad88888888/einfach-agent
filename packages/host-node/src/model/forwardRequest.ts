@@ -1,6 +1,6 @@
 // 一次受限模型请求的完整编排：收窄 → 查白名单 → 登记取消 → 备 body → 取 Key → 发出去
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/model_proxy.rs 的 `run_provider_request`（顺序逐句对齐）。
+// 等价移植 apps/desktop/src/model_proxy.rs（已随 T1 删除）的 `run_provider_request`（顺序逐句对齐）。
 //
 // ═══ 流最终怎么出去（本域最需要说清的一件事）═══
 // 桌面侧的 `model_provider_request` 有第三个参数 `events: Channel<ModelProxyEvent>`，响应体被切成

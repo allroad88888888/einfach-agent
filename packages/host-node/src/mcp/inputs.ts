@@ -1,7 +1,7 @@
 // 四条 mcp 命令的入参形状与收窄
 // ---------------------------------------------------------------------------
 // 形状以 `commandArgs.ts` 的 mcp 段为准（那是收窄的**目标**，不是收窄本身），键名与
-// apps/desktop/src/mcp_types.rs 的 `rename_all = "camelCase"` 逐字对齐。
+// apps/desktop/src/mcp_types.rs（已随 T1 删除）的 `rename_all = "camelCase"` 逐字对齐。
 //
 // 四条命令的实参都包在一层 `input` 里（Tauri 的 `input: McpConnectInput` 参数名），所以每个
 // handler 先剥这一层。**别把它抹平**：apps/web 的 connector 发的就是 `{ input: {...} }`，

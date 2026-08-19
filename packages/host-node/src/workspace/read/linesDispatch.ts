@@ -1,6 +1,6 @@
 // `read_workspace_file` 的命令入口：在字节分页与行定位之间选路
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_read.rs 的 `read_workspace_file_blocking_at_lines`。
+// 等价移植 apps/desktop/src/workspace_read.rs（已随 T1 删除）的 `read_workspace_file_blocking_at_lines`。
 // **这是 `read_workspace_file` 唯一该被注册的 handler**——两种寻址模式是同一条命令，
 // registrar 挂本文件的 `createReadWorkspaceFileHandler`，不要直接挂 bytesRead 的那个工厂
 // （那样行参数会被静默忽略：模型传 startLine 却拿到从头 20 KB，且全程不报错）。

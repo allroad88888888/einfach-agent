@@ -1,6 +1,6 @@
 // 读 stdout：字节 → 帧 → JSON → 分发，并在流走到头时报告传输关闭
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/mcp_protocol.rs 的 `read_protocol_stream`。Rust 那边是一条专属线程
+// 等价移植 apps/desktop/src/mcp_protocol.rs（已随 T1 删除）的 `read_protocol_stream`。Rust 那边是一条专属线程
 // 里的阻塞循环，Node 这边是三个事件回调——同一个状态机，只是驱动方式不同。
 //
 // 三条终止路径必须都接上，缺一条就是「连接其实已经死了，但在途请求要等到超时才知道」：

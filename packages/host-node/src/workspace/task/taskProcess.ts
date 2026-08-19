@@ -1,6 +1,6 @@
 // 起子进程、带超时地等它退出、杀超时进程
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_task.rs 的 `spawn_task` / `wait_for_child` / `kill_child`
+// 等价移植 apps/desktop/src/workspace_task.rs（已随 T1 删除）的 `spawn_task` / `wait_for_child` / `kill_child`
 // / `kill_process_group`。stdout/stderr 的**读**不在本文件——那是 readWorkspaceTaskOutput.ts
 // 的事，本文件只管进程生命周期。
 //

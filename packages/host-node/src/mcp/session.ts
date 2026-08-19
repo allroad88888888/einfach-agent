@@ -1,6 +1,6 @@
 // 一条 MCP stdio 会话：请求收发、传输关闭、进程收尾
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/mcp_session.rs 的 `McpSession`（`request` / `ensure_running` /
+// 等价移植 apps/desktop/src/mcp_session.rs（已随 T1 删除）的 `McpSession`（`request` / `ensure_running` /
 // `resolve_timeout` / `close`）与 mcp_process.rs 的 `watch_child_process`。
 //
 // 会话是本域唯一有状态的东西，四个标志各管一件事、**不能合并**：

@@ -1,6 +1,6 @@
 // workspace/task 域的 registrar：`run_workspace_task`
 // ---------------------------------------------------------------------------
-// 对齐 apps/desktop/src/workspace_task.rs（预置任务：按 kind 发现并跑构建/测试/lint 命令，
+// 对齐 apps/desktop/src/workspace_task.rs（已随 T1 删除；预置任务：按 kind 发现并跑构建/测试/lint 命令，
 // 与自由 shell 分开——不接受任意命令行）。域内分层：
 //   taskKind.ts                 ← 合法 kind、解析、kind → package.json script 名
 //   packageManager.ts           ← 包管理器探测（lockfile 优先，退回 package.json 字段，再退 npm）

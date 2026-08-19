@@ -1,7 +1,7 @@
 // kind → 具体要跑的命令行（`TaskSpec`）
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_task.rs 的 `resolve_task` / `resolve_cargo_check` /
-// `read_package_json` / `ensure_package_script`。
+// 等价移植 apps/desktop/src/workspace_task.rs（已随 T1 删除）的 `resolve_task` /
+// `resolve_cargo_check` / `read_package_json` / `ensure_package_script`。
 //
 // 两条路径：
 //   · 四个 package-script kind（test/build/lint/typecheck）—— 读 workspace root 下的
@@ -11,8 +11,13 @@
 //     必须强制正斜杠（传给 `cargo` 的命令行参数，不是给人看的展示路径，两者规则不同——
 //     展示路径走 common/displayPath.ts 的 `toSlashPath` 同一个函数，但用途不同，注意区分）。
 //
-// 找不到任何一种 Cargo.toml 时的报错文案、package.json 缺 script 时的报错文案，都逐字对齐
-// Rust（英文原文，两个宿主对同一次失败必须说同一句话）。
+// **这里的 `apps/desktop/Cargo.toml` 与本仓库已删除的那个桌面端无关**，别顺手删掉它：这三条
+// 是在**用户打开的 workspace** 里找 Cargo manifest 的探测顺序，`apps/desktop` 与 `src-tauri`
+// 都是 Tauri 项目的惯用布局。它移植自 Rust 侧同一份顺序，当时顺带也命中本仓库自己；今天本仓库
+// 命不中了，而对别人的 Tauri 仓库它照样有用。要改成别的顺序是一次**行为改动**，不是文档清理。
+//
+// 找不到任何一种 Cargo.toml 时的报错文案、package.json 缺 script 时的报错文案，都是从 Rust 侧
+// 逐字搬来的英文原文；今天它们是模型可见的对外契约，改文案会改变工具回执。
 
 import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'

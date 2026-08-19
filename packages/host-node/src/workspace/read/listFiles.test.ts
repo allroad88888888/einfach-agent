@@ -1,4 +1,4 @@
-// `list_workspace_files` 的端到端用例，对齐 apps/desktop/src/workspace_read_list_tests.rs，并补上
+// `list_workspace_files` 的端到端用例，对齐 apps/desktop/src/workspace_read_list_tests.rs（已随 T1 删除），并补上
 // Rust 侧没有显式钉住、但两个宿主必须同款的边角：symlink 列出但不进去（含断链/越界两种「整条
 // 不列」的情形）、maxEntries 命中即整体停止（不是「这次不多列了」）、includeHidden 对递归的影响、
 // 排序按文件名小写。一律经 `createListWorkspaceFilesHandler`（registrar 要挂的那个工厂）调用。

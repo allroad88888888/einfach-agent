@@ -1,6 +1,6 @@
 // `list_workspace_files`：目录条目列举与递归收集
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_read_list.rs 的
+// 等价移植 apps/desktop/src/workspace_read_list.rs（已随 T1 删除）的
 // `list_workspace_files_blocking_with_access` + `collect_entries` + `to_entry`。
 //
 // 【symlink：列出但不进去，前提是目标存在且（未开 allowExternalPaths 时）落在根内】

@@ -1,6 +1,6 @@
 // 宿主进程退出时的兜底：不让任何 MCP 子进程活过它的父亲
 // ---------------------------------------------------------------------------
-// 对应 apps/desktop/src/mcp_manager.rs 的 `impl Drop for McpManagerInner`（应用退出时 Tauri 的
+// 对应 apps/desktop/src/mcp_manager.rs（已随 T1 删除）的 `impl Drop for McpManagerInner`（应用退出时 Tauri 的
 // managed state 被 drop，逐个 close 会话）。Node 没有析构，只有 `process.on('exit')`。
 //
 // ═══ 为什么这道网是必需的 ═══

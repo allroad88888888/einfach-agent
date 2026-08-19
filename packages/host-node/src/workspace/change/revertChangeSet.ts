@@ -1,6 +1,6 @@
 // 单条账的回滚：先判能不能回，再决定是预演还是真回
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_revert.rs 的 `revert_change_set_blocking`
+// 等价移植 apps/desktop/src/workspace_change_journal_revert.rs（已随 T1 删除）的 `revert_change_set_blocking`
 // （顶层编排那半；预检在 revertPlan.ts，执行与补偿在 revertExecute.ts）。
 //
 // 关卡顺序是有讲究的，**每一关都在「碰盘」之前**：

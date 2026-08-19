@@ -1,6 +1,6 @@
 // 删除目标的路径解析：比读写两侧都严，因为删错了没有第二次机会
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_delete.rs 的 `resolve_delete_path`。
+// 等价移植 apps/desktop/src/workspace_delete.rs（已随 T1 删除）的 `resolve_delete_path`。
 //
 // **它不是 common 的 `resolveExistingWorkspacePath` 的调用方，也不该是。** 那个（读取形态）只做
 // 一次 `realpath` 再比边界：路径里有软链没关系，解开之后落在根内就放行——读一个经由软链看到的

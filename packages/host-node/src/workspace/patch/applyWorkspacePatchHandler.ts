@@ -1,6 +1,6 @@
 // `apply_workspace_patch` 的入参收窄与 handler 工厂
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_patch.rs 的命令体。Tauri 那边靠 serde 把参数反序列化成
+// 等价移植 apps/desktop/src/workspace_patch.rs（已随 T1 删除）的命令体。Tauri 那边靠 serde 把参数反序列化成
 // 强类型，这条路上没有那一层：路由表交给 handler 的是 `Record<string, unknown>`，而同一张表要挂在
 // `POST /api/invoke/:command` 后面，载荷来自浏览器。
 //

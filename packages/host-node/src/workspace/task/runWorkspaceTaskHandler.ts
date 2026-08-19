@@ -1,6 +1,6 @@
 // `run_workspace_task` 的 handler：入参收窄 → 解析 kind/root/task → 起子进程 → 收尾成结果
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_task.rs 的 `run_workspace_task_blocking`（顶层编排）、
+// 等价移植 apps/desktop/src/workspace_task.rs（已随 T1 删除）的 `run_workspace_task_blocking`（顶层编排）、
 // `ensure_workspace_dir`、`normalize_timeout_ms`、`normalize_max_output_chars`、`failed_result`。
 //
 // 【两种失败的分界，逐条对齐 Rust】

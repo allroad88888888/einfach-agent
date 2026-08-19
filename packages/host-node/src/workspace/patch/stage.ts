@@ -1,6 +1,6 @@
 // 把补丁操作暂存进内存文件表，并挑出真正发生变化的路径
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_patch_stage.rs 的 `stage_operation` / `load_state` /
+// 等价移植 apps/desktop/src/workspace_patch_stage.rs（已随 T1 删除）的 `stage_operation` / `load_state` /
 // `changed_paths`——**只留带 IO 的那半边**：解析路径、按需读一次磁盘、把纯规则算出来的新状态写回表。
 // 四个操作各自的规则在 stageRules.ts。
 //

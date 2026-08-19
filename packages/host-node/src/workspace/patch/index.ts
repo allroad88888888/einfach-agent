@@ -3,7 +3,7 @@
 // 每个域一个 registrar，形状固定：`create<Domain>Routes(options) => NodeHostRouteTable`
 // （样板见 src/config/index.ts）。本域只有一条命令，但它是全表最大的一条——四种操作、乐观守卫、
 // 限额、路径禁闭、变更日志、原子落盘与回滚全在里面，所以域内按 Rust 侧同一套分层摊开
-// （左边一列是 apps/desktop/src/ 里的对应文件）：
+// （左边一列是 apps/desktop/src/（已随 T1 删除）里的对应文件）：
 //
 //   types.ts                       ← 跨文件共享的形状（W12 定的接口面）
 //   operation.ts                   ← _operation.rs：入参收窄成四个变体

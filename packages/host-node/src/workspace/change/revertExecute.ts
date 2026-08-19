@@ -1,6 +1,6 @@
 // 单条账的真正执行：四段还原，任一段失败就把已经做过的全部补回去
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_revert.rs:125-218。**只在非 dryRun 时被调用**。
+// 等价移植 apps/desktop/src/workspace_change_journal_revert.rs:125-218（已随 T1 删除）。**只在非 dryRun 时被调用**。
 //
 // ═══ 为什么每一步都要再检查一次 ═══
 // 预检（revertPlan.ts）与执行之间隔着若干次 IO，用户/编辑器/另一个 agent 完全可能在这个窗口里

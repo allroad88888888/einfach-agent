@@ -1,5 +1,5 @@
 // 真 spawn 子进程的集成测试：不 mock，真的起 shell 跑 echo/pwd/sleep。
-// 对齐 apps/desktop/src/shell_pipeline_tests.rs 的五个用例，再补三条 Rust 侧没有断言、
+// 对齐 apps/desktop/src/shell_pipeline_tests.rs（已随 T1 删除）的五个用例，再补三条 Rust 侧没有断言、
 // 但 Node 侧最容易写错的（输出上限下子进程仍能正常退出、env 是合并不是替换、
 // 准备阶段失败时各字段回显到哪一步）。
 import { mkdtemp, realpath, rm, stat, writeFile } from 'node:fs/promises'

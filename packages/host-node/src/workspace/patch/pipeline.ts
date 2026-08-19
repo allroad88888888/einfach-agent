@@ -1,6 +1,6 @@
 // 补丁主流程：暂存 → 拒绝汇总 → 预留账 → 落盘 → 收尾
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_patch_pipeline.rs 的
+// 等价移植 apps/desktop/src/workspace_patch_pipeline.rs（已随 T1 删除）的
 // `apply_workspace_patch_blocking_with_journal`。本文件只做**编排**：每一步的规则各住一处
 // （operation / path / stage / limits / commit，changeSummary 现住 `../common`），这里负责把它们
 // 按 Rust 的顺序串起来。

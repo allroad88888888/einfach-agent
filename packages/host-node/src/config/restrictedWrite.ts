@@ -1,6 +1,6 @@
 // 配置文件的受限原子写：临时文件 → fsync → 收紧权限 → rename
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/web_agent_config_write.rs 的 `write_restricted_atomically`。
+// 等价移植 apps/desktop/src/web_agent_config_write.rs（已随 T1 删除）的 `write_restricted_atomically`。
 //
 // **不复用工作区那份 atomicWrite**（Rust 侧同样是两份实现：workspace_common::atomic_write 与
 // 本文件的对应物）。两者的权限语义是相反的：工作区那份要**继承原文件权限**，否则一次覆盖就把

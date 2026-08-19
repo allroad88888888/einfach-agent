@@ -1,6 +1,6 @@
 // 文件快照与磁盘之间的两个方向
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_snapshot.rs 的 `read_snapshot` /
+// 等价移植 apps/desktop/src/workspace_change_journal_snapshot.rs（已随 T1 删除）的 `read_snapshot` /
 // `write_snapshot`。纯逻辑那半（由内容构造快照、判两个快照是不是同一个状态）在 W14 的
 // fileSnapshot.ts，这里只负责碰盘的那半。
 //

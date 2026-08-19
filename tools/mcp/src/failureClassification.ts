@@ -40,17 +40,24 @@ const REASON_LABEL: Record<McpFailureReason, string> = {
 }
 
 /**
- * Property that carries the desktop stdio bridge's structured failure kind
- * (`McpCommandError.kind`, apps/desktop/src/mcp.rs) across the Tauri boundary.
+ * Property that carries the stdio bridge's structured failure kind
+ * (`McpCommandError.kind`) across the host boundary.
+ *
+ * The bridge is `packages/host-node/src/mcp/` — one Node implementation reached
+ * in-process by the CLI and over `POST /api/invoke/:command` by the browser.
+ * (It was `apps/desktop/src/mcp.rs` when this table was written; the desktop
+ * host was deleted whole in commit `e52c31d`, so that Rust is Git history only.
+ * The kinds and message formats below were ported verbatim and still match.)
  */
 const FAILURE_KIND_KEY = 'mcpFailureKind'
 
 /**
- * Records the desktop bridge's structured `McpCommandError.kind` on the Error
- * that crosses into TypeScript. Called by the host's stdio connector
- * (apps/web/src/mcp/tauriStdioConnector.ts) — this is the *declared* channel
- * that replaces matching on the bridge's human-readable message. The property
- * is non-enumerable so it never leaks into Error serialization or UI text.
+ * Records the bridge's structured `McpCommandError.kind` on the Error that
+ * crosses into this package. Called by the app's stdio connector
+ * (`apps/web/src/mcp/serverMcpCommands.ts`, which lifts it off the 502 envelope
+ * `/api/invoke/:command` returns) — this is the *declared* channel that
+ * replaces matching on the bridge's human-readable message. The property is
+ * non-enumerable so it never leaks into Error serialization or UI text.
  */
 export function attachMcpFailureKind<E extends Error>(
   error: E,
@@ -77,25 +84,31 @@ export function readMcpFailureKind(error: unknown): string | undefined {
  * Structured kinds that mean "retrying will never succeed on its own".
  *
  * Only kinds listed here are permanent; every other kind — including ones the
- * Rust side adds later — falls through to the remaining checks and then to the
+ * bridge adds later — falls through to the remaining checks and then to the
  * temporary default, so a new kind can never silently reclassify an existing
- * failure. Rewording the Rust message cannot downgrade a permanent failure
+ * failure. Rewording a bridge message cannot downgrade a permanent failure
  * either, because nothing here reads the message.
+ *
+ * The counterparty that mints these strings is
+ * `packages/host-node/src/mcp/` (`errors.ts` declares `McpCommandError.kind` as
+ * an open string on purpose; `childProcess.ts`, `session.ts`, `manager.ts`,
+ * `validation.ts`, `initialize.ts` and `results.ts` are where they are thrown).
  */
 const PERMANENT_FAILURE_KINDS: Readonly<Record<string, McpFailureReason | undefined>> = {
-  // apps/desktop/src/mcp.rs McpSession::spawn — the OS refused to start the
-  // configured command (missing binary / not executable / no permission).
-  // Deliberately distinct from `spawn_failed`, which is a host-side setup
-  // failure *after* the child started (pipe capture, helper threads) and
-  // stays retryable.
+  // packages/host-node/src/mcp/childProcess.ts — the OS refused to start the
+  // configured command (missing binary / not executable / no permission / a NUL
+  // byte in argv). Deliberately distinct from `spawn_failed`, which is a
+  // host-side setup failure *after* the child started (pipe capture) and stays
+  // retryable; that file's header states the same split from the other end.
   command_spawn_failed: 'command_unavailable',
-  // apps/desktop/src/mcp.rs — the peer broke the MCP contract: an unparseable
-  // tools/list / tools/call / initialize result, a repeated pagination cursor, a
-  // protocolVersion this client does not implement, a missing tools capability.
-  // None of those become valid by reconnecting. Judged structurally *because*
-  // the Rust message inlines the server's cursor and protocolVersion verbatim,
-  // so a server answering `protocolVersion: "must not be empty"` could otherwise
-  // pick its own reason out of PERMANENT_MESSAGE_RULES.
+  // packages/host-node/src/mcp/{initialize,results}.ts — the peer broke the MCP
+  // contract: an unparseable tools/list / tools/call / initialize result, a
+  // repeated pagination cursor, a protocolVersion this client does not
+  // implement, a missing tools capability. None of those become valid by
+  // reconnecting. Judged structurally *because* the bridge message inlines the
+  // server's cursor and protocolVersion verbatim, so a server answering
+  // `protocolVersion: "must not be empty"` could otherwise pick its own reason
+  // out of PERMANENT_MESSAGE_RULES.
   protocol_error: 'protocol_violation',
 }
 
@@ -104,15 +117,18 @@ const PERMANENT_FAILURE_KINDS: Readonly<Record<string, McpFailureReason | undefi
  * The text is the peer's, so no verdict may be inferred by matching it: these
  * skip PERMANENT_MESSAGE_RULES and fall to the temporary default.
  *
- * The rest of apps/desktop/src/mcp.rs is host-authored and stays matchable:
+ * Every other kind the bridge emits is host-authored and stays matchable:
  * `invalid_input` reports on our own config; `transport_closed`,
- * `transport_error`, `process_exited`, `process_error` and `spawn_failed` report
- * host/OS conditions (every RpcReply::Transport string is written by the bridge,
- * not received from the child); `timeout`, `already_connected`, `stale_session`,
- * `session_limit` and `not_connected` are fixed bridge strings.
+ * `transport_error`, `process_exited`, `spawn_failed` and `worker_failed` report
+ * host/OS conditions (the transport strings are written by the bridge, not
+ * received from the child); `timeout`, `already_connected`, `stale_session`,
+ * `session_limit` and `not_connected` are fixed bridge strings. That split is a
+ * property of the bridge, so it has to be re-checked against
+ * `packages/host-node/src/mcp/` whenever a kind is added there — not against
+ * the Rust original this table was written for, which no longer exists.
  */
 const PEER_AUTHORED_MESSAGE_KINDS: ReadonlySet<string> = new Set([
-  // apps/desktop/src/mcp.rs RpcReply::Error — the message reads
+  // packages/host-node/src/mcp/session.ts — the message reads
   // "MCP request `m` failed: {server error.message} ({code})", so everything
   // after the colon is written by the server being talked to. Left matchable, a
   // healthy server answering "must not be empty" or "exceeded 5 tools" would be
@@ -127,9 +143,9 @@ const PEER_AUTHORED_MESSAGE_KINDS: ReadonlySet<string> = new Set([
  * thrown inside this package, not third-party or cross-process text, so
  * matching on them is stable across releases.
  *
- * Two families are intentionally kept away from this table: the desktop stdio
- * bridge (classified through the structured kinds above) and anything whose
- * message the peer helped write (hasPeerAuthoredMessage / an HTTP status).
+ * Two families are intentionally kept away from this table: the stdio bridge
+ * (classified through the structured kinds above) and anything whose message
+ * the peer helped write (hasPeerAuthoredMessage / an HTTP status).
  */
 const PERMANENT_MESSAGE_RULES: ReadonlyArray<{
   reason: McpFailureReason

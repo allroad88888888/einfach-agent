@@ -1,6 +1,6 @@
 // change id 的合法性，以及它在日志目录里的两个文件名
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_store.rs 的 `validate_change_id` /
+// 等价移植 apps/desktop/src/workspace_change_journal_store.rs（已随 T1 删除）的 `validate_change_id` /
 // `entry_path` / `payload_path`。
 //
 // 校验和命名放同一个文件，是因为它们本来就是一件事：**change id 会被原样拼进文件路径**，那张

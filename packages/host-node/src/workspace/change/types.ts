@@ -1,6 +1,6 @@
 // 变更日志的数据模型：磁盘上那份条目 JSON 长什么样
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_types.rs。本文件**只有类型声明**——构造、
+// 等价移植 apps/desktop/src/workspace_change_journal_types.rs（已随 T1 删除）。本文件**只有类型声明**——构造、
 // 比较、解析各住一个文件（fileSnapshot.ts / buildChangeSet.ts / parseChangeSet.ts）。分开不是
 // 洁癖：W16/W17 要拿这块做跨语言对拍，而对拍要能「不建临时目录树就喂 fixture」，前提就是纯
 // 逻辑不和 IO 编排搅在一起。

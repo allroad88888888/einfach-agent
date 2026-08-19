@@ -1,6 +1,6 @@
 // 一条路径的内容+结构指纹
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_path_ops.rs 的 `path_fingerprint`。
+// 等价移植 apps/desktop/src/workspace_change_journal_path_ops.rs（已随 T1 删除）的 `path_fingerprint`。
 //
 // 用途只有一个：copy / move 登记时记下指纹，回滚前重算一次，对不上就说明这条路径在那次工具
 // 调用之后被人动过，于是拒绝回滚而不是覆盖用户的改动。所以指纹必须同时反映**内容**与**结构**

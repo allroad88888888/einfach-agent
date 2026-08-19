@@ -1,6 +1,6 @@
 // 严格 base64 解码：`encoding: "base64"` 的 content → 字节
 // ---------------------------------------------------------------------------
-// 逐字对齐 apps/desktop/src/workspace_write_base64.rs 的 `decode_base64`（标准 RFC 4648 alphabet，
+// 逐字对齐 apps/desktop/src/workspace_write_base64.rs（已随 T1 删除）的 `decode_base64`（标准 RFC 4648 alphabet，
 // `+` `/`，**不是** URL-safe 的 `-` `_`；padding 允许省略，但省略之后长度约束仍要满足）。
 //
 // ⚠️ **不能用 `Buffer.from(x, 'base64')` 顶**：它对非法字符是静默跳过，`"not base64!"` 会被解成

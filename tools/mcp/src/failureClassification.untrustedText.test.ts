@@ -52,8 +52,16 @@ describe('classifyMcpFailure / desktop bridge kinds', () => {
   // kind ONLY. Every message below — including one that would otherwise be read
   // as a temporary failure, one that would be read as a *different* permanent
   // failure, and an empty one — must yield the exact same classification, so
-  // rewording (or localizing) apps/desktop/src/mcp.rs cannot silently downgrade
-  // a permanent failure into an infinite reconnect loop.
+  // rewording (or localizing) a bridge message cannot silently downgrade a
+  // permanent failure into an infinite reconnect loop.
+  //
+  // The bridge writing those messages is now `packages/host-node/src/mcp/`
+  // (`childProcess.ts` for this kind). It was `apps/desktop/src/mcp.rs` when
+  // this test was written — hence the Rust wording in the samples below, which
+  // is kept deliberately: the whole point is that the text is irrelevant, so
+  // stale sample strings are the strongest form of the same assertion. The
+  // desktop host was deleted whole in commit `e52c31d`; that Rust is Git
+  // history only.
   it('classifies a stdio spawn failure from the kind alone, whatever the Rust message says', () => {
     const rewrittenRustMessages = [
       'failed to start MCP server `local-files`: No such file or directory (os error 2)',
@@ -78,8 +86,11 @@ describe('classifyMcpFailure / desktop bridge kinds', () => {
   })
 
   it('no longer infers a stdio spawn failure from message text without a kind', () => {
-    // The undeclared prose contract with apps/desktop/src/mcp.rs is gone on
-    // purpose: an error that never carried a kind is not a bridge spawn failure.
+    // The undeclared prose contract with the stdio bridge is gone on purpose:
+    // an error that never carried a kind is not a bridge spawn failure. (That
+    // prose used to come from `apps/desktop/src/mcp.rs`; today's bridge is
+    // `packages/host-node/src/mcp/childProcess.ts`, and the point stands
+    // regardless of which one wrote it.)
     expect(
       classifyMcpFailure(
         new Error('failed to start MCP server `local-files`: No such file or directory (os error 2)'),
@@ -145,10 +156,12 @@ describe('classifyMcpFailure / desktop bridge kinds', () => {
 
 describe('classifyMcpFailure / text the remote server controls', () => {
   it('never lets a remote JSON-RPC error message reach the permanent message rules', () => {
-    // apps/desktop/src/mcp.rs formats rpc_error as
+    // `packages/host-node/src/mcp/session.ts` formats rpc_error as
     // "MCP request `m` failed: {server error.message} ({code})", so everything
     // after the colon is the server's. A healthy server answering any of these
     // used to be declared permanently broken and never retried again.
+    // (That format was ported verbatim from `apps/desktop/src/mcp.rs`, deleted
+    // with the desktop host in `e52c31d`.)
     const remoteWordings = [
       'workspace must not be empty',
       'exceeded 5 tools',

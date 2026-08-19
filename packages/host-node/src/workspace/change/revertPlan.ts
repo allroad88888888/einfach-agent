@@ -1,6 +1,6 @@
 // 单条账的回滚预检：把记的相对路径解析出来，顺便看现场还是不是当初那个样子
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_revert.rs:42-90 那段（Rust 侧内联在
+// 等价移植 apps/desktop/src/workspace_change_journal_revert.rs:42-90（已随 T1 删除）那段（Rust 侧内联在
 // `revert_change_set_blocking` 里）。拆出来是因为 `dryRun` 与真跑**共用它**——预演之所以能
 // 「如实报告会发生什么」，正是因为它跑的是同一段冲突检测，不是另写一份宽松版。
 //

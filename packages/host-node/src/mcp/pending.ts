@@ -1,6 +1,6 @@
 // 在途 JSON-RPC 请求表：id → 「答案来了叫我」
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/mcp_support.rs 的 `PendingRequests` 与 mcp_protocol.rs 的
+// 等价移植 apps/desktop/src/mcp_support.rs（已随 T1 删除）的 `PendingRequests` 与 mcp_protocol.rs 的
 // `fail_pending`。Rust 用 `mpsc::sync_channel(1)` 一请求一条通道，Node 用一个 resolver 回调——
 // 同一件事：**响应是从另一条执行流回来的**（Rust 是 reader 线程，Node 是 stdout 的 'data' 回调），
 // 发请求的那一头必须能被它唤醒。

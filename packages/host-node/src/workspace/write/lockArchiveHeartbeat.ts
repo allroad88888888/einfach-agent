@@ -1,6 +1,6 @@
 // 归档写锁的心跳：定期刷新锁文件，并且绝不拖住进程退出
 // ---------------------------------------------------------------------------
-// 对齐 apps/desktop/src/workspace_write_lock.rs 里那个心跳线程：每 5 秒把 token 原样重写回锁文件
+// 对齐 apps/desktop/src/workspace_write_lock.rs（已随 T1 删除）里那个心跳线程：每 5 秒把 token 原样重写回锁文件
 // 开头（`seek(0)` + `write_all` + `flush`），写失败就自己结束、不重试也不上报。
 //
 // 心跳刷的其实是 **mtime**——接管判定看的就是它（lockArchiveRules 的 `isArchiveLockStale`）。

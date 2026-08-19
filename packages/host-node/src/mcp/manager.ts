@@ -1,6 +1,6 @@
 // 会话登记表：谁连着、谁在连、谁在关，以及四条命令的编排
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/mcp_manager.rs 的 `McpManager`。
+// 等价移植 apps/desktop/src/mcp_manager.rs（已随 T1 删除）的 `McpManager`。
 //
 // ═══ 三个集合 + 一个 tombstone，各挡一类竞态 ═══
 //   sessions          —— 连上了的。

@@ -1,7 +1,7 @@
 // 并发读子进程的 stdout 与 stderr——两路都是 drain 语义
 // ---------------------------------------------------------------------------
 // 等价移植 Rust 侧 `run_workspace_task_blocking` 的这两行（逐字核对过
-// apps/desktop/src/workspace_task.rs：文件顶部只 `use` 了 `read_capped_drain`，压根没有 import
+// apps/desktop/src/workspace_task.rs（已随 T1 删除）：文件顶部只 `use` 了 `read_capped_drain`，压根没有 import
 // `read_capped_stop`）：
 //   let stdout_handle = thread::spawn(move || read_capped_drain(stdout, max_output_chars));
 //   let stderr_handle = thread::spawn(move || read_capped_drain(stderr, max_output_chars));

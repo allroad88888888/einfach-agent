@@ -1,7 +1,7 @@
 // 对拍驱动器：一个补丁操作作用在暂存状态上的纯规则
 // ---------------------------------------------------------------------------
 // 喂 fixtures/patch-stage-rules.json，对面是 Rust 的
-// apps/desktop/src/workspace_patch_stage_parity_tests.rs。
+// apps/desktop/src/workspace_patch_stage_parity_tests.rs（已随 T1 删除）。
 //
 // TS 侧这一层是真的纯的（`validatePatchOperationInput` + `nextFileState` 都不碰磁盘）。Rust 侧
 // 没有对应的拆分，`stage_operation` 里连着路径解析与「第一次碰到就读一次磁盘」，所以那边的驱动器

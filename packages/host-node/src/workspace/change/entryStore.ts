@@ -1,6 +1,6 @@
 // 条目文件的读、写与状态更新
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_store.rs 的 `read_entry` / `write_entry` /
+// 等价移植 apps/desktop/src/workspace_change_journal_store.rs（已随 T1 删除）的 `read_entry` / `write_entry` /
 // `update_status`。本文件是本域**唯一**碰条目文件的地方；命名与收窄两件纯逻辑分别在
 // entryPaths.ts 与 parseChangeSet.ts。
 //

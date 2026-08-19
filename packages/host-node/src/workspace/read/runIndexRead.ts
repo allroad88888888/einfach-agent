@@ -1,6 +1,6 @@
 // `read_workspace_run_index_page`：子 Agent 归档 run index 的尾向前分页读
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_read_run_index.rs 的
+// 等价移植 apps/desktop/src/workspace_read_run_index.rs（已随 T1 删除）的
 // `read_workspace_run_index_page_blocking`。读的是固定路径 `.webAgent-archive/index/runs.jsonl`
 // （`RUNS_INDEX_PATH`，见 limits.ts）——这条命令**没有** `path` 入参，与 `read_workspace_file`
 // 不同，也因此没有 `allow_external_paths`：目标路径不是调用方给的，谈不上「允许读到根外」。

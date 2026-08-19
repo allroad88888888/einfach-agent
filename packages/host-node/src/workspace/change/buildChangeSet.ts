@@ -1,6 +1,6 @@
 // 由一次工具调用的事实组装出条目对象
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_prepare.rs 里三个 `prepare_*` 共用的那段
+// 等价移植 apps/desktop/src/workspace_change_journal_prepare.rs（已随 T1 删除）里三个 `prepare_*` 共用的那段
 // `WorkspaceChangeSet { ... }` 字面量。
 //
 // 单独成文件、且**收时钟作为入参**，是为了让它是纯函数：喂同样的输入必然得到同一份字节。

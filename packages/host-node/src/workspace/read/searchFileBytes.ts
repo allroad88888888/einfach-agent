@@ -1,6 +1,6 @@
 // `search_workspace_files` 的单文件有界读取：从头读到 limit+1 字节，供调用方判定是否截断
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_read_search.rs 的 `File::open` + `take(limit+1).read_to_end`
+// 等价移植 apps/desktop/src/workspace_read_search.rs（已随 T1 删除）的 `File::open` + `take(limit+1).read_to_end`
 // 那两步。开与读的失败各有各的错误文案（"failed to open" / "failed to read"），因此拆成 open +
 // 手动分块读，而不是用 `createReadStream` 一把梭——stream 把两种失败都压成同一个 'error' 事件，
 // 分不出是哪一步坏的。

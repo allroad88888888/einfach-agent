@@ -1,7 +1,7 @@
 // 对拍驱动器：变更日志的批量回滚（带 IO）
 // ---------------------------------------------------------------------------
 // 喂 fixtures/change-batch-revert.json，对面是 Rust 的
-// apps/desktop/src/workspace_change_journal_batch_parity_tests.rs。
+// apps/desktop/src/workspace_change_journal_batch_parity_tests.rs（已随 T1 删除）。
 //
 // 驱动器直接调**批量**入口 `revertChangeSets`，不经命令层「一条走单条、多条走批量」的分流——
 // fixture 抽自 workspace_change_journal_batch_tests.rs，测的就是批量那条路。

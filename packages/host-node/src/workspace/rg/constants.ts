@@ -1,4 +1,4 @@
-// rg 域的六个常量：逐字照搬 apps/desktop/src/workspace_rg.rs 顶部，不自己定
+// rg 域的六个常量：逐字照搬 apps/desktop/src/workspace_rg.rs（已随 T1 删除）顶部，不自己定
 // ---------------------------------------------------------------------------
 // 上限的钳制方向（读 Rust 侧 normalize_context_lines / normalize_max_matches 确认过）：
 //   · context_lines —— 调用方传超过 MAX_CONTEXT_LINES 的值时**钳到上限**（`.min(MAX)`），

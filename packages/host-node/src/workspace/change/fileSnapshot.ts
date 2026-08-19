@@ -1,6 +1,6 @@
 // 文件快照的构造与「还是不是原样」判定
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_types.rs 里 `impl FileSnapshot` 的两个方法。
+// 等价移植 apps/desktop/src/workspace_change_journal_types.rs（已随 T1 删除）里 `impl FileSnapshot` 的两个方法。
 // 纯函数，不碰文件系统——「把磁盘上的文件读成快照」是回滚侧（W15）的 IO，不在这里。
 //
 // 为什么要存 hash 而不是只存 content：回滚前要判断「这个文件自那次工具调用之后有没有被人改过」，

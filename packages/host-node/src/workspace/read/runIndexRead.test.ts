@@ -1,5 +1,5 @@
 // `read_workspace_run_index_page` 的端到端用例，对齐
-// apps/desktop/src/workspace_read_run_index_tests.rs。一律经 handler 工厂调用——理由同
+// apps/desktop/src/workspace_read_run_index_tests.rs（已随 T1 删除）。一律经 handler 工厂调用——理由同
 // bytesRead.test.ts：绕过工厂直接测内部函数会漏掉「工厂没把 args 透传下去」这类错误。
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'

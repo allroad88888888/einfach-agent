@@ -1,6 +1,6 @@
 // 把一条路径（文件或整棵目录树）复制到一个尚不存在的目标
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_path_ops.rs 的 `copy_path`。
+// 等价移植 apps/desktop/src/workspace_change_journal_path_ops.rs（已随 T1 删除）的 `copy_path`。
 //
 // 可恢复删除靠它：删之前先把内容整份复制进 `<changeId>.payload`，删掉的东西才有地方可回。
 // 所以这里的每一条拒绝都不是洁癖：

@@ -1,7 +1,7 @@
 // 对拍驱动器：改动摘要（纯函数）
 // ---------------------------------------------------------------------------
 // 喂 fixtures/change-summary.json，对面是 Rust 的
-// apps/desktop/src/workspace_common_summary_parity_tests.rs。
+// apps/desktop/src/workspace_common_summary_parity_tests.rs（已随 T1 删除）。
 //
 // 这一组是**唯一一组 Rust 侧原本零测试**的：`compute_change_summary` 住在 workspace_common.rs 里，
 // 那个文件没有 `mod tests`。所以本组既是对拍，也是它在 Rust 侧的第一份测试。

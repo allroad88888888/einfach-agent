@@ -1,6 +1,6 @@
 // 一个补丁操作的纯规则：入参怎么校验、暂存状态该变成什么
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_patch_stage.rs 里 `stage_operation` 的四个分支，**只留纯
+// 等价移植 apps/desktop/src/workspace_patch_stage.rs（已随 T1 删除）里 `stage_operation` 的四个分支，**只留纯
 // 的那部分**：不解析路径、不读磁盘、不认识暂存表。IO 那半边在 stage.ts。
 //
 // 拆这一刀是为了 W16 的跨语言对拍：Rust 的补丁语义能不能等价复现，判据是「同一个

@@ -1,6 +1,6 @@
 // 四条命令的返回形状，以及对端载荷的收窄
 // ---------------------------------------------------------------------------
-// 与 apps/desktop/src/mcp_types.rs 的 serde 输出逐字段对齐（`rename_all = "camelCase"`）。
+// 与 apps/desktop/src/mcp_types.rs（已随 T1 删除）的 serde 输出逐字段对齐（`rename_all = "camelCase"`）。
 // 形状必须一致到「键在不在」这一级：apps/web 的 connector 是同一份代码要接两个宿主，
 // 它读 `result.tools` / `result.truncated` / `result.content` / `result.structuredContent`。
 //

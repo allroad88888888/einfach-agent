@@ -1,6 +1,6 @@
 // 包管理器探测：先看 lockfile，再看 package.json 的 `packageManager` 字段，最后落 npm
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_task.rs 的 `detect_package_manager` 一族。
+// 等价移植 apps/desktop/src/workspace_task.rs（已随 T1 删除）的 `detect_package_manager` 一族。
 // 顺序是短路的（先赢先得），逐条对齐 Rust 的 `.or_else(...).unwrap_or(Npm)`：
 //   1. lockfile 存在与否——pnpm-lock.yaml / yarn.lock / bun.lock(b) / package-lock.json
 //      或 npm-shrinkwrap.json，按这个顺序探测；

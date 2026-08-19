@@ -1,6 +1,6 @@
 // 补丁文本输入的大小与二进制上限
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_patch_limits.rs 整份。纯函数，不碰文件系统。
+// 等价移植 apps/desktop/src/workspace_patch_limits.rs（已随 T1 删除）整份。纯函数，不碰文件系统。
 //
 // 这里只管**入参与算出来的结果文本**；「磁盘上那个文件多大」由 W13 的 fs 那层用同一个
 // `MAX_FILE_BYTES` 判（Rust 的 `read_optional_text_file` 就是这么用的），文案不同

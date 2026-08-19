@@ -1,6 +1,6 @@
 // tools/list 的翻页与 tools/call 的一次调用
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/mcp_manager.rs 的 `list_tools` / `call_tool`。
+// 等价移植 apps/desktop/src/mcp_manager.rs（已随 T1 删除）的 `list_tools` / `call_tool`。
 //
 // 这两段是 `mcp_list_tools` / `mcp_call_tool` 两条命令的**定义本身**——命令返回的就是
 // 「翻完页的工具全集」和「一次工具调用的结果」，没有更薄的实现形态。真正属于协议编排、

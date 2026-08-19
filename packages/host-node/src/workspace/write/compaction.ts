@@ -1,6 +1,6 @@
 // 归档索引自动压缩：IO 编排
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_write_compaction.rs 的 `maybe_compact_subagent_index`。
+// 等价移植 apps/desktop/src/workspace_write_compaction.rs（已随 T1 删除）的 `maybe_compact_subagent_index`。
 // 纯逻辑（路径判定、节流判定、JSONL 去重合并）在 compactionRules.ts；本文件只做磁盘交互：
 // 读大小、读/写 marker 的 mtime、读原文件、整份重写、刷新节流戳。
 //

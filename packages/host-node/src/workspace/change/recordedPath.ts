@@ -1,6 +1,6 @@
 // 把日志里记的相对路径在 workspace root 下受限还原成绝对路径
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_snapshot.rs 的 `resolve_recorded_path`。
+// 等价移植 apps/desktop/src/workspace_change_journal_snapshot.rs（已随 T1 删除）的 `resolve_recorded_path`。
 //
 // 日志条目里存的是 workspace 相对路径，回滚要写盘就得先变回绝对路径。这一步是回滚链路上**唯一**
 // 的路径禁闭点：条目文件本身是磁盘上的普通 JSON，被改过、被换过、被别的 workspace 的日志顶替过

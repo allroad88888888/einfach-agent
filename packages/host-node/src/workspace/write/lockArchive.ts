@@ -1,6 +1,6 @@
 // 跨进程的归档写锁：锁文件 + token + 心跳 + 陈旧接管
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_write_lock.rs 的 `ArchivePathLock`。
+// 等价移植 apps/desktop/src/workspace_write_lock.rs（已随 T1 删除）的 `ArchivePathLock`。
 //
 // 进程内那把锁（lockTable.ts）只管本进程；子 Agent 归档是**多个进程**往同一个 `.jsonl` 上追加
 // 的场景（桌面宿主、CLI 宿主、下一次 run），那条队列在别的进程里根本不存在。所以这一层把互斥

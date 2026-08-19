@@ -1,6 +1,6 @@
 // shell 子进程的启动：拼命令行、注入 env、按平台配置进程组
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/shell_spawn.rs。三处 Node 与 Rust 的默认值相反，逐条写在下面，
+// 等价移植 apps/desktop/src/shell_spawn.rs（已随 T1 删除）。三处 Node 与 Rust 的默认值相反，逐条写在下面，
 // 因为每一处照抄写法都会得到不同的行为。
 
 import { spawn, type ChildProcess } from 'node:child_process'

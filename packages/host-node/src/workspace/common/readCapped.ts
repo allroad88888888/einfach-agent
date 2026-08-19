@@ -1,6 +1,6 @@
 // 带上限的增量读：两个变体，差别是「到上限之后还读不读」
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_common.rs 的 `read_capped_stop` / `read_capped_drain`。
+// 等价移植 apps/desktop/src/workspace_common.rs（已随 T1 删除）的 `read_capped_stop` / `read_capped_drain`。
 //
 // 要点是**「带上限」不等于「读完再截断」**：`await text(stream)` 之后 `slice(0, cap)` 也能得到
 // 同样的返回值，但那时整份输出已经全在内存里了——一个 `git diff` 或跑飞的构建脚本能吐几百 MB，

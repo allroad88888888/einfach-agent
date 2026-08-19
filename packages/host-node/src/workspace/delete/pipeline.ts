@@ -1,6 +1,6 @@
 // 删除主流水线：解析 → 六道拒绝 → 记账删除
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_delete.rs 的 `delete_workspace_path_blocking`。
+// 等价移植 apps/desktop/src/workspace_delete.rs（已随 T1 删除）的 `delete_workspace_path_blocking`。
 // 记账与执行那一段在 journaledRemoval.ts；本文件只负责「该不该删」，一条都不碰盘地拒绝。
 //
 // ═══ 顺序（每一步的位置都决定同一个坏输入报哪句话，别按直觉重排）═══

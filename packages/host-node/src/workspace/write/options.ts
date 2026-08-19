@@ -1,6 +1,6 @@
 // 把字符串入参解析成写入选项（模式与编码）
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_write_options.rs 的 `parse_mode` / `parse_encoding`。
+// 等价移植 apps/desktop/src/workspace_write_options.rs（已随 T1 删除）的 `parse_mode` / `parse_encoding`。
 // 同文件里的 `normalize_max_bytes` 在 Node 侧归 W5 的 limitChecks.ts——那是「按限额做的判定」，
 // 与这里「把一个自由字符串收成闭合取值」不是一件事。
 //

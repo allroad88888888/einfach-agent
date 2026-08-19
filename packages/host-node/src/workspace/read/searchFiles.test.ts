@@ -1,4 +1,4 @@
-// `search_workspace_files` 的端到端用例，对齐 apps/desktop/src/workspace_read_search_tests.rs，
+// `search_workspace_files` 的端到端用例，对齐 apps/desktop/src/workspace_read_search_tests.rs（已随 T1 删除），
 // 并补上 Rust 侧没有显式钉住、但两个宿主必须同款的边角：glob 的四个字面分支、隐藏目录/重目录
 // 恒跳过（无 includeHidden 开关）、maxMatches 与扫描预算两条独立的 truncated 判据、二进制/非
 // UTF-8 内容软跳过、query 为空时报错。一律经 `createSearchWorkspaceFilesHandler` 调用。

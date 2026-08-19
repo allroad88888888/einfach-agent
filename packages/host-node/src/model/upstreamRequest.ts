@@ -1,6 +1,6 @@
 // 与上游供应商的一次 HTTP 往返：发出去、把响应头取回来、把响应体**原样**吐出来
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/model_proxy_http.rs。
+// 等价移植 apps/desktop/src/model_proxy_http.rs（已随 T1 删除）。
 //
 // ═══ 流是怎么出去的 ═══
 // 桌面侧把每个上游数据块包成 `ModelProxyEvent::Chunk` 塞进 Tauri 的 `Channel`——那是一条独立于

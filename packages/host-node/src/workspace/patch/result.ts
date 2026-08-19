@@ -1,6 +1,6 @@
 // `apply_workspace_patch` 回给调用方的结果形状
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_patch_result.rs。只有类型声明，构造在 pipeline.ts。
+// 等价移植 apps/desktop/src/workspace_patch_result.rs（已随 T1 删除）。只有类型声明，构造在 pipeline.ts。
 //
 // 【三个键的"空"各有各的写法，别统一】判据始终是「Rust 序列化出来有没有这个键」：
 //   · `changeSet` —— `Option<WorkspaceChangeSummary>` **没有** skip_serializing_if，没记账时

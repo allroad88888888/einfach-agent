@@ -1,6 +1,6 @@
 // 崩溃安全的整文件替换
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_common.rs 的 `atomic_write`。步骤一个都不能省：
+// 等价移植 apps/desktop/src/workspace_common.rs（已随 T1 删除）的 `atomic_write`。步骤一个都不能省：
 //
 //   同目录临时文件 → write → fsync → 继承原文件权限位 → rename 覆盖
 //

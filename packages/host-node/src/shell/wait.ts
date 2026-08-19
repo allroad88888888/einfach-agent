@@ -1,6 +1,6 @@
 // 等待子进程退出，超时则终止；终止统一走进程组（Unix），好覆盖它派生的后台进程
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/shell_wait.rs。Rust 那边是 10ms 一轮的 `try_wait()` 轮询，
+// 等价移植 apps/desktop/src/shell_wait.rs（已随 T1 删除）。Rust 那边是 10ms 一轮的 `try_wait()` 轮询，
 // Node 这边直接等 `'exit'` 事件——同一件事的两种写法，没有轮询间隔可移植。
 
 import type { ChildProcess } from 'node:child_process'

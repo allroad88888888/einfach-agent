@@ -1,6 +1,6 @@
 // 一次改动到底改了什么：行数增减 + 截断过的 unified diff
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_common.rs 的 `FileChangeSummary` / `compute_change_summary`。
+// 等价移植 apps/desktop/src/workspace_common.rs（已随 T1 删除）的 `FileChangeSummary` / `compute_change_summary`。
 // 目的是让模型**不必为了确认改动而把文件再读一遍**。Rust 侧这个函数被 `write_file` 与
 // `apply_patch` 共用（`workspace_patch_pipeline.rs:93` 调它），Node 侧同样被 write 与 patch
 // 两域共用。

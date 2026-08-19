@@ -1,6 +1,6 @@
 // `~/.webAgent/config.json` 的路径解析：默认路径、`WEB_AGENT_CONFIG_DIR` 覆盖、旧路径
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/web_agent_config_store.rs 的
+// 等价移植 apps/desktop/src/web_agent_config_store.rs（已随 T1 删除）的
 // `from_home_directory_with_config_directory` + `validate_existing_config_directory`。
 //
 // 这里只回答「这次操作该读写哪个文件」，不碰文件内容——**旧路径迁移是否可能发生**由本文件

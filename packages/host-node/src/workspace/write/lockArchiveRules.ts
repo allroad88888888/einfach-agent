@@ -1,6 +1,6 @@
 // 跨进程归档写锁的两条纯规则：锁文件叫什么、什么时候算陈旧
 // ---------------------------------------------------------------------------
-// 对齐 apps/desktop/src/workspace_write_lock.rs 的 `archive_lock_path` 与
+// 对齐 apps/desktop/src/workspace_write_lock.rs（已随 T1 删除）的 `archive_lock_path` 与
 // `archive_lock_is_stale`，外加 stale 接管时那次 `with_extension(format!("stale-{token}"))`。
 //
 // 单独一个文件是因为这三条**不碰文件系统**：入参是路径字符串和两个时间数，出参是路径字符串和

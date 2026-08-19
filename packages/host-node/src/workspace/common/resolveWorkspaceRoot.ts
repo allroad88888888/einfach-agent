@@ -1,6 +1,6 @@
 // 可信 workspace root 的解析
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_common.rs 的 `resolve_workspace_root`。
+// 等价移植 apps/desktop/src/workspace_common.rs（已随 T1 删除）的 `resolve_workspace_root`。
 //
 // 为什么不能裸用 process cwd（Rust 侧 P1 安全修复的原话）：宿主进程的 cwd 不可控——桌面 app 里
 // 可能是 `/`、app bundle 或 Tauri 工程目录；Node 侧更糟，server 宿主由 systemd/容器拉起时 cwd

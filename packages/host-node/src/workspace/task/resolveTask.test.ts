@@ -82,6 +82,9 @@ describe('resolveTask · cargo_check', () => {
     })
   })
 
+  // 下面两条里的 `apps/desktop` 是**被测 workspace 里的一个目录**，与本仓库随 T1 删掉的那个
+  // 桌面端无关——它是 resolveTask 探测 Cargo manifest 的第二顺位（Tauri 项目的惯用布局），
+  // 理由写在 resolveTask.ts 文件头。用例在临时目录里自己建这个路径，不读仓库。
   it('根目录没有但 apps/desktop/Cargo.toml 存在时带上 manifest-path（正斜杠）', async () => {
     await mkdir(join(root, 'apps', 'desktop'), { recursive: true })
     await writeFile(join(root, 'apps', 'desktop', 'Cargo.toml'), '[package]\nname = "x"\n')
@@ -100,6 +103,7 @@ describe('resolveTask · cargo_check', () => {
     })
   })
 
+  // 同上：这里的 `apps/desktop` 是被测临时 workspace 里现建的目录，不是本仓库的桌面端。
   it('根目录优先于 apps/desktop（两者都存在时选根目录、不带 manifest-path）', async () => {
     await writeFile(join(root, 'Cargo.toml'), '[package]\nname = "x"\n')
     await mkdir(join(root, 'apps', 'desktop'), { recursive: true })

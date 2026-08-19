@@ -1,6 +1,6 @@
 // (供应商, 作用域) → 配置键 → 明文 Key
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/model_credentials.rs 的**读取半边**（`credential_binding` /
+// 等价移植 apps/desktop/src/model_credentials.rs（已随 T1 删除）的**读取半边**（`credential_binding` /
 // `normalized_key` / `configured_model_credential` / `active_model_credential`）。
 //
 // 写入半边（`model_credential_status` / `_set` / `_delete` 三条命令）不在本卡：issue 树把它们

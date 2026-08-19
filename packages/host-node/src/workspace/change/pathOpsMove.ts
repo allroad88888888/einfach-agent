@@ -1,6 +1,6 @@
 // 把一条路径整个搬到另一处
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_change_journal_path_ops.rs 的 `move_path`。
+// 等价移植 apps/desktop/src/workspace_change_journal_path_ops.rs（已随 T1 删除）的 `move_path`。
 //
 // 回滚链路上四处都靠它：把可恢复删除的载荷搬回原位、把被 copy 出来的路径搬进载荷、把被 move
 // 走的路径搬回 source，以及这三者失败时的补偿搬回。

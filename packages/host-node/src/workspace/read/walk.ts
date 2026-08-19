@@ -1,6 +1,6 @@
 // 目录遍历时的条目枚举顺序与跳过规则
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_read_walk.rs。`list_workspace_files`（listFiles.ts）与
+// 等价移植 apps/desktop/src/workspace_read_walk.rs（已随 T1 删除）。`list_workspace_files`（listFiles.ts）与
 // `search_workspace_files`（searchFiles.ts）共用同一套「按什么顺序枚举、跳过哪些名字」的判据，
 // 因此单独收成一个文件而不是分别抄一遍。
 

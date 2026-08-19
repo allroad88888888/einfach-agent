@@ -1,6 +1,6 @@
 // `model_credential_status` / `_set` / `_delete` 三条命令
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/model_credentials.rs 的**写入半边**与那三个 `#[tauri::command]`。
+// 等价移植 apps/desktop/src/model_credentials.rs（已随 T1 删除）的**写入半边**与那三个 `#[tauri::command]`。
 // 读取半边（绑定表、归一化、「配置里有没有」）在 credentials.ts，本文件**复用**它导出的
 // `credentialConfigKey` / `normalizeApiKey` / `readConfiguredModelCredential`：
 // 「(供应商,作用域) → 配置键」这张表全包只有那一份。各写一份必然分叉，而分叉的症状是

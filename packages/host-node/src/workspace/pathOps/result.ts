@@ -1,6 +1,6 @@
 // `copy_workspace_path` / `move_workspace_path` 的回执形状
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_path_ops.rs 的 `WorkspacePathOperationResult`。这个 struct
+// 等价移植 apps/desktop/src/workspace_path_ops.rs（已随 T1 删除）的 `WorkspacePathOperationResult`。这个 struct
 // **带** `#[serde(rename_all = "camelCase")]`，且没有任何 `skip_serializing_if`，所以顶层键是
 // camelCase、`error` / `changeSet` 缺席时是显式 `null` 而不是键消失——与 write/result.ts 的
 // snake_case 回执（`WorkspaceWriteResult` 没有 `rename_all`）是两种线上形状，各自照抄各自的

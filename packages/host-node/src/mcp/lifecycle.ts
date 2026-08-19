@@ -1,6 +1,6 @@
 // 子进程生命周期事件：本卡只产事件，出口由 C2 提供
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/mcp_lifecycle.rs 的**通知器**部分。Rust 那边的出口是
+// 等价移植 apps/desktop/src/mcp_lifecycle.rs（已随 T1 删除）的**通知器**部分。Rust 那边的出口是
 // `AppHandle::emit`（Tauri 的 webview 事件总线），前端用 `listen()` 收
 // （apps/web/src/mcp/tauriStdioConnector.ts:217）。Node 侧没有那条总线，所以出口是注入的。
 //

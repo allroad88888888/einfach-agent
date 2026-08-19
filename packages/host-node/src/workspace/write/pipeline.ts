@@ -1,6 +1,6 @@
 // 写入主流水线：校验 → 解析 → 建父目录 → 取锁 → 临界区 → 收尾
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_write_pipeline.rs 的
+// 等价移植 apps/desktop/src/workspace_write_pipeline.rs（已随 T1 删除）的
 // `write_workspace_file_blocking_with_journal`。本文件只负责**锁外**的那一半；锁里的
 // 「读—验—记账—落盘」在 pipelineWrite.ts。
 //
