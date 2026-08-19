@@ -1126,7 +1126,26 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   （证明它真在比对，不是空跑）。跑 `pnpm exec vitest run packages/host-node` +
   `cargo test --manifest-path apps/desktop/Cargo.toml`
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `2036ec7`。4 组 fixture / 53 例（change-summary 9、patch-stage-rules 23、
+  patch-pipeline 14、change-batch-revert 7），两侧各一个驱动器；Rust 侧 4 个 `#[test]` 各遍历一组。
+  范式与 schema 写在 `packages/host-node/fixtures/README.md`（**W17 照这份加**）。
+  **对拍口径的三条判据**（W17 必读，都在 README 里）：① **比对解析后的结构不是字符串**——serde_json
+  无 `preserve_order`，键顺序不算差异；② **键的有无算差异**——Rust 的
+  `skip_serializing_if = "Option::is_none"` 让键整个消失，而无该属性的 `Option` 序列化成显式 `null`，
+  TS 侧先过一遍 `JSON.parse(JSON.stringify(v))` 让 `undefined` 键消失来对齐，「少写一个 `null`」才暴露得出来；
+  ③ **错误文案里带 OS 错误串的用例一律不进 fixture**——Rust 是 `No such file or directory (os error 2)`、
+  Node 是 `ENOENT: … open '…'`，那是两个运行时的差异不是移植 bug，靠两侧 colocated 测试盯。
+  UTF-8 分块那条豁免的落法：**不构造「一次读取跨过块边界的多字节字符」**，撞上就是撞上豁免。
+  主会话独立验收（本卡被中途打断，判据由主会话补跑）：① 变异 `changeSummary` 的 `@@` 起始行号
+  去掉 `+1`，**8 例转红**且横跨纯函数组与带 IO 的流水线组；② 更强的一次——直接把**共享 fixture**
+  的一个期望值改成 999，**Rust 与 TS 同时转红**（Rust 报 `1 / 9 例与 Rust 实现不一致` 并打印
+  actual/expected，TS 报 `1 failed | 8 passed`），证明两侧驱动器**确实在读同一份文件**、不是各跑各的。
+  `parity_fixtures.rs` 的 `load_cases` 对「读不到 / 不是合法 JSON / 没有 cases 数组 / 空数组」一律 panic
+  ——对拍没跑起来必须响亮失败，不能静默变成 0 例通过。
+  **新发现**：`compute_change_summary` 在 Rust 侧**原本零测试**（`workspace_common.rs` 没有 `mod tests`），
+  这组 fixture 既是对拍也是它的第一份测试。另：W16 独立撞上了 S1 记过的
+  `new URL('字面量', import.meta.url)` 被 Vite 改写那条坑——两张卡各自踩到一次，结论已写进
+  `parityFixtures.testHarness.ts` 注释。
 
 ### W17 · 对拍 fixture 扩到写锁与读限额
 
