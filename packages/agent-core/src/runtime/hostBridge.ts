@@ -20,6 +20,10 @@
 // 不再认识桌面宿主，一处也不。
 // 副作用是 loadTauriInvoke 目前**零生产消费方**（isTauriHost 仍被 workspaceDialog 用着），
 // 要不要连它一起删是 hostTauri.ts 自己的事，留给后续卡。
+//
+// S5 之后本模块多担一件事：桥登记时把宿主平台一并写进 `runtime/hostPlatform.ts` 的权威位。
+// 它不是「顺手放这儿」——平台必须与桥同生共死，而唯一知道桥何时生灭的就是这里。
+import { declareHostPlatform, type HostPlatform } from './hostPlatform'
 
 /**
  * 宿主命令通道的调用签名。形状对齐现有全部调用点：它们一律写成
@@ -46,6 +50,23 @@ export type HostInvoke = <T>(cmd: string, args?: Record<string, unknown>) => Pro
  */
 type HostInvokeLoader = () => Promise<HostInvoke>
 
+/**
+ * 一次桥登记 —— **loader 与平台是一对，不能分开登记**（S5）。
+ *
+ * 平台是必填字段，理由在 `runtime/hostPlatform.ts` 的文件头：那个值有两个消费者（shell 桥的
+ * `platform` 入参、注入给模型的「运行环境」段），而校验它的是**执行命令的那台机器**。把它挂在
+ * 桥的登记上，「组命令用的事实」与「执行命令的机器」就来自同一次声明、同一个持有者，且同时
+ * 生效、同时作废；漏写是编译错误而不是一个到运行期才现形的空值。
+ *
+ * 于是远端宿主（浏览器 → Node server）的握手顺序被**结构性地**定了下来：拿到平台之前登记不了
+ * 桥，登记不了桥就没有本机能力——那正是「握手是启动的一道门」。B 线接的时候不需要额外守卫。
+ */
+export interface HostBridgeRegistration {
+  readonly loader: HostInvokeLoader
+  /** 宿主自己是什么平台。同机宿主（Tauri）可用 `detectLocalPlatform()`，远端宿主必须取自握手。 */
+  readonly platform: HostPlatform
+}
+
 let hostInvokeLoader: HostInvokeLoader | undefined
 
 // 解析结果的 promise 缓存。必须缓存（下方 `??=`）的理由逐字同 hostTauri.ts 的 tauriCoreModule：
@@ -56,15 +77,19 @@ let hostInvokeLoader: HostInvokeLoader | undefined
 let hostInvokePromise: Promise<HostInvoke> | undefined
 
 /**
- * 登记（或重置）宿主 invoke 的 loader。宿主装配层在启动时调用一次，必须早于任何工具可能执行的
- * 时点；传 `undefined` 表示重置回「没有桥」（测试在用例之间还原现场，以及宿主主动退出桥的场景）。
+ * 登记（或重置）宿主命令桥。宿主装配层在启动时调用一次，必须早于任何工具可能执行的时点；
+ * 传 `undefined` 表示重置回「没有桥」（测试在用例之间还原现场，以及宿主主动退出桥的场景）。
+ *
+ * 收的是 `{ loader, platform }` 而不是裸 loader：见 `HostBridgeRegistration` 的说明。
  *
  * 登记会**作废已有的解析缓存**：不作废的话，测试里换宿主、或运行期切换桥，都会继续拿到上一个
  * loader 解析出来的 invoke —— 那是「configure 看起来成功了、实际没生效」的静默错误。
+ * 同理平台也随之改写/清空：桥换了而平台还停在上一任，就是「组命令按 A、执行在 B」本身。
  */
-export function configureHostInvoke(loader: HostInvokeLoader | undefined): void {
-  hostInvokeLoader = loader
+export function configureHostInvoke(registration: HostBridgeRegistration | undefined): void {
+  hostInvokeLoader = registration?.loader
   hostInvokePromise = undefined
+  declareHostPlatform(registration?.platform)
 }
 
 /**

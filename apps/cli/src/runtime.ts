@@ -9,7 +9,7 @@ import {
   configurePersistence,
   defaultCore,
 } from '@web-agent/core'
-import { createNodeHostInvoke } from '@web-agent/host-node'
+import { createNodeHostInvoke, nodeHostPlatform } from '@web-agent/host-node'
 import { createDelegationAssembly } from '@web-agent/subagents'
 import { registerStandardTools } from '@web-agent/tools'
 import { createDefaultPlanRuntime } from '@web-agent/tools-planning'
@@ -91,7 +91,10 @@ function configureCliHostBridge(homeDir: string): void {
   // homeDir 传空串等同于不传（hostOptions 的语义）：那时桥自己回落 os.homedir()，若仍解析不出
   // 主目录就在第一次调用时明确失败，而不是把空串当路径根拼下去。
   const invoke = createNodeHostInvoke({ homeDir })
-  configureHostInvoke(() => Promise.resolve(invoke))
+  // 【S5】平台与桥是同一次登记的两半。这里报的是 host-node 自己的 `nodeHostPlatform()`——
+  // 也就是 shell 域做 platform mismatch 判定时用的**同一个函数**，而不是 core 的本地探测：
+  // CLI 恰好同机，两者今天答案相同，但「同机」是巧合不是契约，按同一个权威取值才是。
+  configureHostInvoke({ loader: () => Promise.resolve(invoke), platform: nodeHostPlatform() })
 }
 
 /** Assembles the CLI shell around the unchanged default core instance. */

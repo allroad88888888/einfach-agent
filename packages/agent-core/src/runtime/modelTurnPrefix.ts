@@ -2,7 +2,7 @@ import { workspacesAtom } from '../state/rootStore'
 import { resolveSessionWorkspaceRoot } from '../state/workspaceState'
 import type { SessionMeta } from '../state/core.type'
 import type { SystemItem } from '@web-agent/ai'
-import { detectHostPlatform } from './hostPlatform'
+import { hostPlatform } from './hostPlatform'
 import { hasHostBridge } from './hostBridge'
 import {
   buildCustomInstructionsItem,
@@ -70,7 +70,11 @@ export async function buildStableModelPrefix(
     // Tauri 一种 server 宿主的今天它逐字成立，等 B 线的本地 Node 后端落地，那段文案要改成按
     // 能力而非按宿主品牌措辞。改的是 modelTurnSystemItems.ts，不在本卡改动面。
     isTauri: hostHasLocalCapabilities,
-    platform: detectHostPlatform(),
+    // 【S5】消费者②。这里读的是**宿主登记桥时声明的平台**，不是本地探测——浏览器（macOS）连
+    // Node server（Linux）时，本地探测会让模型按 macos 组命令、桥按 linux 拒绝。消费者①是
+    // shell 桥的 platform 入参（tools/shell 的 run_verification_command），两边读同一个
+    // hostPlatform()，而那个声明值除它之外没有第二条读出通路。
+    platform: hostPlatform(),
   })
   const items: SystemItem[] = [
     system,

@@ -1,6 +1,23 @@
-import { describe, it, expect, vi } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
+import { configureHostInvoke } from '@web-agent/core'
 import type { ShellCommandInput, ShellCommandResult, ToolContext } from '@web-agent/core/tools'
 import { runVerificationCommandTool } from './run-verification-command'
+
+/**
+ * 登记一座声明了 `platform` 的假宿主桥。本工具是 S5 说的**消费者①**：命令参数里没有平台信息，
+ * 它得自己说出目标平台，而宿主收到后会拒绝与自己不符的值。桥背后调不调得通与这里无关
+ * （ctx.runShell 由用例自己桩），要的只是「宿主声明了什么平台」这半边。
+ */
+function registerHostPlatform(platform: 'macos' | 'linux' | 'windows' | 'unsupported'): void {
+  configureHostInvoke({
+    loader: () => Promise.resolve((async () => undefined) as never),
+    platform,
+  })
+}
+
+afterEach(() => {
+  configureHostInvoke(undefined)
+})
 
 function makeShellResult(
   input: ShellCommandInput,
@@ -130,6 +147,32 @@ describe('run_verification_command tool', () => {
       error: 'boom',
       code: 'VERIFICATION_EXECUTION_ERROR',
       retryable: true,
+    })
+  })
+
+  it('平台取自宿主声明，不是本地探测（S5）', async () => {
+    // 场景：用户在 macOS 的浏览器里，服务端是 Linux。本地探测会答 macos，于是每条命令都撞
+    // `platform mismatch: requested \`macos\`, current \`linux\``——server 宿主下 shell 整个不可用。
+    // 这里断言桥收到的是**宿主声明的 linux**，与注入给模型的「运行环境」段读的是同一个函数。
+    registerHostPlatform('linux')
+    const { ctx, runShell } = makeCtx()
+
+    await runVerificationCommandTool.execute({ command: 'pnpm test' }, ctx)
+
+    expect(runShell).toHaveBeenCalledWith(expect.objectContaining({ platform: 'linux' }))
+  })
+
+  it('宿主平台不支持 shell 时根本不发命令，回既有的 shell unavailable 口径', async () => {
+    registerHostPlatform('unsupported')
+    const { ctx, runShell } = makeCtx()
+
+    const result = await runVerificationCommandTool.execute({ command: 'pnpm test' }, ctx)
+
+    expect(runShell).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      ok: false,
+      error: 'run_verification_command unavailable: shell unavailable in this runtime',
+      code: 'VERIFICATION_SHELL_UNAVAILABLE',
     })
   })
 

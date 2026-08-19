@@ -23,10 +23,22 @@ export function parsePlatform(platform: string): SupportedPlatform {
 }
 
 /**
+ * 本机平台，多一个 `'unsupported'`。这是**声明**用的形状：S5 之后它同时被握手
+ * （`apps/server` 的 `/api/health`）与 CLI 装配拿去告诉 core「这台机器是什么平台」，
+ * 一个开区间的 `string` 会让那两处各自去猜哪些值算合法。
+ */
+export type CurrentPlatform = SupportedPlatform | 'unsupported'
+
+/**
  * 本机平台。对齐 Rust 的 `current_platform()`：认不出的平台回 `"unsupported"`，
  * 于是任何 requested 都会与它不符，命令在 platform mismatch 那一步就停住。
+ *
+ * 【S5：它同时是握手回报的那个值】下面 `executeShellCommand` 拿它做 platform mismatch 的
+ * 判据，而 core 侧「告诉模型本机是什么平台」用的必须是**同一个函数的答案**，否则模型按 A 平台
+ * 组命令、这里按 B 平台拒绝。所以它被提到了包的公开面上（`src/index.ts` 的 `nodeHostPlatform`），
+ * 宿主装配层握手时直接报它，不另写一份 `process.platform` 映射。
  */
-export function currentPlatform(): string {
+export function currentPlatform(): CurrentPlatform {
   if (process.platform === 'darwin') return 'macos'
   if (process.platform === 'linux') return 'linux'
   if (process.platform === 'win32') return 'windows'

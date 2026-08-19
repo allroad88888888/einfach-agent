@@ -88,7 +88,13 @@ export type {
 // runtime 模块），宿主不该也不需要自己去解析桥，按同一条「按真实用量划线」的规矩留在包内。
 export { configureHostInvoke } from './runtime/hostBridge'
 // 宿主实现自己的桥时要照它写签名（packages/host-node 的路由表、浏览器侧的 HTTP invoke）
-export type { HostInvoke } from './runtime/hostBridge'
+export type { HostInvoke, HostBridgeRegistration } from './runtime/hostBridge'
+// S5：登记桥时必须一并声明宿主平台。**同机宿主**（Tauri webview 与原生同一台机器）用这个函数
+// 取值；远端宿主（浏览器 → Node server）必须从握手拿，用本地探测会稳定答错整整一个平台。
+// 读取面不在这里：两个消费者（shell 桥、注入模型的「运行环境」段）读的是 `@web-agent/core/tools`
+// 的 `hostPlatform()`，宿主不需要也不该自己去读那个值。
+export { detectLocalPlatform } from './runtime/hostPlatform'
+export type { HostPlatform } from './runtime/hostPlatform'
 
 // ---------------------------------------------------------------------------
 // 命令面（./runtime/commands）—— UI 唯一被允许的变更入口

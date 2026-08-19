@@ -21,10 +21,20 @@ async function start(version?: string): Promise<number> {
 
 describe('createHealthPayload', () => {
   it('只由注入的事实决定内容', () => {
-    expect(createHealthPayload({ version: '9.9.9' })).toEqual({
+    expect(createHealthPayload({ version: '9.9.9', platform: 'windows' })).toEqual({
       service: SERVICE_IDENTIFIER,
       host: HOST_IDENTIFIER,
       version: '9.9.9',
+      platform: 'windows',
+    })
+  })
+
+  // 'windows' 上面那条用的是**跑测试的机器绝不会是**的一个值：本模块若哪天自己去读
+  // process.platform 而不是用注入的事实，这条会当场转红，而注入 'darwin'/'linux' 时它
+  // 在本机恰好也能通过。
+  it('platform 是可声明的四值域，unsupported 原样透传', () => {
+    expect(createHealthPayload({ version: '0', platform: 'unsupported' })).toMatchObject({
+      platform: 'unsupported',
     })
   })
 })
@@ -43,6 +53,22 @@ describe('GET /api/health', () => {
       version: '1.2.3',
     })
   })
+
+  it('回报**执行 shell 的那台机器**的平台（S5 握手）', async () => {
+    // 期望值由本测试文件自己从 process.platform 独立算出，不 import 被测链路上的
+    // nodeHostPlatform()——否则这条断言会退化成与实现同源的重言式，握手接错了也照样绿。
+    // 本例走的是**不带 token** 的 probe（S2 已裁决 health 豁免 token），而那正是平台必须住在
+    // health 里的理由：core 要求「桥与平台同一次登记」，浏览器得先知道平台才登记得了桥，而
+    // token 是跟桥一起装配的——把平台改由某条 /api/invoke 回答就成了先有鸡还是先有蛋。
+    const expected =
+      process.platform === 'darwin' ? 'macos'
+      : process.platform === 'linux' ? 'linux'
+      : process.platform === 'win32' ? 'windows'
+      : 'unsupported'
+    const port = await start('1.2.3')
+    expect(JSON.parse((await probe(port, '/api/health')).body)).toMatchObject({ platform: expected })
+  })
+
 
   it('默认版本取自本包 package.json', async () => {
     const port = await start()

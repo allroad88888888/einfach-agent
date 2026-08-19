@@ -24,6 +24,15 @@ export {
 } from './commandNames'
 export type { NodeHostCommandDomain, NodeHostCommandName } from './commandNames'
 
+// 【S5：为什么这里多了一个「宿主事实」】上面那句「域实现不出现在这里」有一个例外，理由是
+// 权威而不是方便：core 侧要把「这台机器是什么平台」告诉模型（注入的「运行环境」段），而**校验**
+// 它的是 shell 域的 `platform mismatch`。这两处必须是同一个函数的答案，否则模型按 A 平台组命令、
+// 桥按 B 平台拒绝——浏览器（macOS）连本机 Node 服务（Linux）时这条必然发生，`run_shell_command`
+// 整个不可用。所以宿主装配层（`apps/server` 的握手、`apps/cli` 的桥登记）直接报这个值，
+// 而不是各自再写一份 `process.platform` 映射。
+export { currentPlatform as nodeHostPlatform } from './shell/platform'
+export type { CurrentPlatform as NodeHostPlatform } from './shell/platform'
+
 export type { NodeHostInvokeOptions } from './hostOptions'
 export type { NodeHostCommandHandler, NodeHostRouteTable } from './routeTable'
 export type { NodeHostCommandArgs } from './commandArgs'

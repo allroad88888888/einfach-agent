@@ -112,7 +112,10 @@ export type {
   WorkspaceSearchMatch,
 } from './workspaceBridge'
 
-export { detectHostPlatform } from '../runtime/hostPlatform'
+// 宿主平台的唯一读出通路（S5）。**不导出 detectLocalPlatform**：本地探测只在「调用方与执行
+// 命令的机器同机」时才等于宿主平台，那是宿主装配层的判断，不是工具层的；工具一律读 hostPlatform()。
+export { hostPlatform } from '../runtime/hostPlatform'
+export type { HostPlatform } from '../runtime/hostPlatform'
 
 export { normalizeAskUserQuestionPayload } from '../runtime/askUserQuestion'
 export type {

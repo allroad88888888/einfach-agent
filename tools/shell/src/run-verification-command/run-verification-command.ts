@@ -3,7 +3,7 @@
 // 仅验证子 agent 的 workspace_verify profile 会暴露本工具；命令本身不受发现结果限制，
 // 因此可执行项目自己的验收脚本。副作用仍只经 ctx.runShell，与 shell_* 共用同一条
 // workspace confinement / 超时 / 截断通道。
-import { detectHostPlatform, type Tool } from '@web-agent/core/tools'
+import { hostPlatform, type Tool } from '@web-agent/core/tools'
 import { shellCommandToolResult } from '../command-result'
 import guide from './run-verification-command.md?raw'
 
@@ -66,12 +66,28 @@ export const runVerificationCommandTool: Tool = {
       }
     }
 
+    // 宿主平台不在三种 shell 之内（FreeBSD / AIX…）：文件能力仍在，shell 一定失败。发出去只会
+    // 换回一句 platform mismatch，所以在这里就停，用的还是「本运行时没有 shell」这句既有口径，
+    // 不新造一种失败词汇。
+    const platform = hostPlatform()
+    if (platform === 'unsupported') {
+      return {
+        ok: false,
+        error: 'run_verification_command unavailable: shell unavailable in this runtime',
+        code: 'VERIFICATION_SHELL_UNAVAILABLE',
+        retryable: false,
+      }
+    }
+
     try {
       ctx.progress(`核验命令: ${command.slice(0, 120)}`)
       const result = await ctx.runShell({
-        // Rust 桥会拒绝与宿主不一致的 platform，命令参数本身没有平台信息，
-        // 所以从运行环境推断；与注入给模型的「运行环境」段共用同一个探测函数。
-        platform: detectHostPlatform(),
+        // 宿主桥会拒绝与自己不一致的 platform，而命令参数本身没有平台信息。
+        // 【S5】这里取的是**宿主登记桥时声明的平台**（hostPlatform()），不是本地探测：
+        // 浏览器（macOS）连 Node 服务端（Linux）时，本地探测会让每一条命令都撞
+        // `platform mismatch`。注入给模型的「运行环境」段读的是同一个函数——两个消费者共用
+        // 一个值不是靠约定，是那个声明值除 hostPlatform() 外没有第二条读出通路。
+        platform,
         command,
         timeoutMs: TIMEOUT_MS,
         maxOutputChars: MAX_OUTPUT_CHARS,

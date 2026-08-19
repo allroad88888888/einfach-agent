@@ -10,7 +10,7 @@
 //   · buildEnvironmentItem —— 组「运行环境」段（workspace 根目录 / 宿主 / 平台 + 路径纪律）。
 //     它是稳定前缀里唯一按会话变化的一段，故排在其它前缀段【之后】。
 
-import type { ShellPlatform } from '../tools/types'
+import type { HostPlatform } from './hostPlatform'
 import type { SystemItem } from '@web-agent/ai'
 // 收尾自查 / 如实报告两条条款住在零依赖叶子模块：evals 的 prompt 行为 A/B 要 import 同一份
 // 字节做对照实验，而本文件（经装配的 skill registry + tools/registry 的 defaultCore）
@@ -38,8 +38,12 @@ export interface EnvironmentItemInput {
   workspaceRoot?: string
   /** 宿主是否为 Tauri 桌面端：决定本机文件/shell 工具是否存在。 */
   isTauri: boolean
-  /** 本机平台，取自 detectHostPlatform()（与 shell 桥实际收到的值同源）。 */
-  platform: ShellPlatform
+  /**
+   * 宿主平台，取自 `hostPlatform()`（S5）——与 shell 桥实际收到的值**同一个来源**，
+   * 不是各自探测。模型据这一行在 shell_macos / shell_linux / shell_powershell 里挑工具，
+   * 所以它和桥拿到的值必须逐字一致，否则模型按 A 平台组命令、桥按 B 平台拒绝。
+   */
+  platform: HostPlatform
 }
 
 // 简介：组「运行环境」system 消息——告诉模型它在哪台机器、哪个工作区里干活。
@@ -56,6 +60,12 @@ export function buildEnvironmentItem(input: EnvironmentItemInput): SystemItem {
 
   if (input.isTauri) {
     lines.push(`- 宿主：Tauri 桌面端（可用本机文件、shell 与 Git 工具）；本机平台 ${input.platform}。`)
+    // 宿主可以是三种 shell 都不支持的系统（FreeBSD / AIX…）：文件能力照常，shell 一定跑不了。
+    // 不说这一句的话，模型只会看到一个陌生的平台名，然后在三个 shell 工具里随便挑一个反复撞
+    // platform mismatch——那句错误里没有任何「本宿主根本没有 shell」的信息。
+    if (input.platform === 'unsupported') {
+      lines.push('- 本机平台不属于 macos / linux / windows 三者之一：shell 类工具在本宿主上一定失败，不要调用它们，改用文件与 Git 工具完成任务。')
+    }
     if (input.workspaceRoot) {
       lines.push(`- 当前工作区根目录：${input.workspaceRoot}`)
       lines.push('- 文件与 shell 工具的相对路径都以该根目录为基准；除非明确需要访问外部路径，优先传相对路径。')

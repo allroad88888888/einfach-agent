@@ -18,7 +18,7 @@
 import { createServer as createHttpServer, type Server } from 'node:http'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createNodeHostInvoke } from '@web-agent/host-node'
+import { createNodeHostInvoke, nodeHostPlatform } from '@web-agent/host-node'
 import { generateAuthToken } from './authToken'
 import { createInvokeRouteHandler } from './invokeRoute'
 import { resolveServerVersion } from './packageVersion'
@@ -59,9 +59,16 @@ export function createWebAgentServer(options: WebAgentServerOptions = {}): Serve
   // 命令路由表建一次、被闭包捕获：host-node 那边本来就把「重新登记」当作作废旧桥的信号，
   // 每条请求现搭一张表既浪费也会让装配槽的语义变得可变。
   const invoke = createNodeHostInvoke({ homeDir: options.homeDir })
+  // 【S5：握手报的平台没有覆盖开关，这是有意的】
+  // 这个值必须是**执行 shell 命令的那台机器**的答案，而 `nodeHostPlatform()` 正是上面这张路由表
+  // 里 shell 域做 `platform mismatch` 判定时调的同一个函数（`packages/host-node`）。开一个
+  // `options.platform` 就等于允许装配层报一个与实际执行机器不同的平台，那恰好是本卡要消灭的
+  // 「把权威劈成两处」——客户端会照着假平台组命令，然后被真机器逐条拒绝。
+  // 要测「浏览器在 macOS、服务端在 Linux」不能靠篡改这里，那个场景在 core 侧构造
+  // （`packages/agent-core/src/runtime/hostPlatform.test.ts`）：本机探测答 macos、握手源答 linux。
   const router = createRequestRouter({
     distDirectory: options.distDirectory ?? DEFAULT_DIST_DIRECTORY,
-    health: { version: options.version ?? resolveServerVersion() },
+    health: { version: options.version ?? resolveServerVersion(), platform: nodeHostPlatform() },
     auth: { token: options.token ?? generateAuthToken() },
     invokeRoute: createInvokeRouteHandler({ invoke }),
     onInternalError: options.onInternalError,

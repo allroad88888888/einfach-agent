@@ -23,6 +23,12 @@ function makeLoader(label: string) {
   return { loader, state }
 }
 
+/**
+ * 登记一座桥。S5 之后 `configureHostInvoke` 收的是 `{ loader, platform }` 一对，而本文件断言的
+ * 全是 loader 那一半，所以平台给个固定值即可；平台侧的契约由 hostPlatform.test.ts 钉。
+ */
+const register = (loader: () => Promise<HostInvoke>) => configureHostInvoke({ loader, platform: 'linux' })
+
 beforeEach(() => {
   // 还原模块级单例：不还原的话前一条用例登记的 loader 会漏进下一条，
   // 「未登记」那组用例就会随执行顺序时绿时红。
@@ -45,11 +51,11 @@ describe('未登记 loader 时', () => {
   })
 })
 
-describe('configureHostInvoke(loader)', () => {
+describe('configureHostInvoke({ loader, platform })', () => {
   it('登记后 hasHostBridge() 立即为 true —— 同步可答，无需 await', () => {
     const { loader, state } = makeLoader('tauri')
 
-    configureHostInvoke(loader)
+    register(loader)
 
     // 这两条断言合起来才是「收 loader 而不是收已解析 invoke」的意义所在：登记这一步是同步的，
     // 调用点的 hasHostBridge() 早退分支在装配返回的那一刻就已经切换，中间没有「已登记但还答
@@ -59,7 +65,7 @@ describe('configureHostInvoke(loader)', () => {
   })
 
   it('传 undefined 重置回未登记', async () => {
-    configureHostInvoke(makeLoader('tauri').loader)
+    register(makeLoader('tauri').loader)
     expect(hasHostBridge()).toBe(true)
 
     configureHostInvoke(undefined)
@@ -71,7 +77,7 @@ describe('configureHostInvoke(loader)', () => {
 
 describe('loadHostInvoke() 的解析与缓存', () => {
   it('解析出的 invoke 可调用', async () => {
-    configureHostInvoke(makeLoader('tauri').loader)
+    register(makeLoader('tauri').loader)
 
     const invoke = await loadHostInvoke()
 
@@ -82,7 +88,7 @@ describe('loadHostInvoke() 的解析与缓存', () => {
 
   it('连续多次调用复用同一次解析（loader 只跑一次）', async () => {
     const { loader, state } = makeLoader('tauri')
-    configureHostInvoke(loader)
+    register(loader)
 
     const first = await loadHostInvoke()
     const second = await loadHostInvoke()
@@ -102,7 +108,7 @@ describe('loadHostInvoke() 的解析与缓存', () => {
       release = resolve
     })
     const state = { calls: 0 }
-    configureHostInvoke(async () => {
+    register(async () => {
       state.calls += 1
       await gate
       return makeInvoke('tauri')
@@ -122,7 +128,7 @@ describe('loadHostInvoke() 的解析与缓存', () => {
     // 缓存住 rejected promise 会把一次偶发失败固化成「桥永久坏掉」，而没有任何调用点会去重新
     // configure。这里第一次让 loader 抛，第二次让它成功，成功即证明失败没被缓存住。
     const state = { calls: 0 }
-    configureHostInvoke(async () => {
+    register(async () => {
       state.calls += 1
       if (state.calls === 1) throw new Error('boom')
       return makeInvoke('retry')
@@ -139,12 +145,12 @@ describe('loadHostInvoke() 的解析与缓存', () => {
 describe('重新 configureHostInvoke 时', () => {
   it('拿到新 invoke，旧缓存不复活', async () => {
     const firstLoader = makeLoader('first')
-    configureHostInvoke(firstLoader.loader)
+    register(firstLoader.loader)
     const before = await loadHostInvoke()
     await expect(before<string>('ping')).resolves.toBe('first:ping')
 
     const secondLoader = makeLoader('second')
-    configureHostInvoke(secondLoader.loader)
+    register(secondLoader.loader)
     const after = await loadHostInvoke()
 
     expect(after).not.toBe(before)
@@ -161,11 +167,11 @@ describe('重新 configureHostInvoke 时', () => {
     const slow = new Promise<HostInvoke>((_resolve, reject) => {
       fail = reject
     })
-    configureHostInvoke(() => slow)
+    register(() => slow)
     const stale = loadHostInvoke()
 
     const fresh = makeLoader('fresh')
-    configureHostInvoke(fresh.loader)
+    register(fresh.loader)
     const after = await loadHostInvoke() // 缓存此刻属于 fresh
     fail?.(new Error('stale loader died'))
     await expect(stale).rejects.toThrow('stale loader died')

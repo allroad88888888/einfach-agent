@@ -71,17 +71,22 @@ describe('assembleCliRuntime 的命令桥', () => {
     expect((await readFile(join(root, 'marker.txt'), 'utf8')).trim()).toBe('bridge-ok')
   }, 30_000)
 
-  it('尚未落地的 workspace 域报「Node 宿主尚未实现」，而不是「当前宿主未提供命令桥」', async () => {
+  it('读不存在的文件报的是真实的 ENOENT，不是「未提供命令桥」也不是「尚未实现」', async () => {
     const root = await assemble()
 
     const result = await readWorkspaceFile({ path: 'anything.txt', workspaceRoot: root })
 
-    // 两句话的区别正是这张卡的价值：桥接上了，只是 read/write/patch/change/delete/pathOps
-    // 六个域还归 W 线。真接反了（桥没登记）时第一条 expect 会挂在这句上。
+    // 这条钉的是**桥确实接上了、且 read 域确实落地了**。三种失败长得完全不同，混在一起就分不清：
+    //   · 「当前宿主未提供命令桥」= 桥压根没登记（本卡真接反时会是这句）；
+    //   · 「Node 宿主尚未实现命令」= 名字合法但该域还没落地（mcp / model 两域现在仍是这句）；
+    //   · ENOENT = 桥接上了、域也落地了，只是这个文件真的不存在——**唯一说明整条链路是通的**。
+    // 本用例早先断言的是第二句，那在 read 域接进路由表之前是对的；接线之后前提失效，
+    // 改成断言第三句（来源：主会话验收 S5 时发现）。
     expect(result.ok).toBe(false)
     if (result.ok) return
-    expect(result.error).toContain('Node 宿主尚未实现命令「read_workspace_file」')
+    expect(result.error).toContain('ENOENT')
     expect(result.error).not.toContain('当前宿主未提供命令桥')
+    expect(result.error).not.toContain('尚未实现')
   })
 
   it('主目录经 homeDir 槽位注入：桥答的 get_user_home_dir 就是 CLI 解析的那一个', async () => {

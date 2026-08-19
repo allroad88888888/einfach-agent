@@ -12,6 +12,7 @@ import {
   configureDefaultProjectSkillsProvider,
   configureDefaultSkillsRegistry,
   configureHostInvoke,
+  detectLocalPlatform,
 } from '@web-agent/core'
 import { registerStandardTools } from '@web-agent/tools'
 import { buildProjectSkillsProvider, builtInSkillsRegistry } from '@web-agent/tools-skills'
@@ -103,8 +104,14 @@ registerStandardTools(core.tools)
 //
 // 【为什么浏览器分支不登记】浏览器预览没有后端，登记等于骗 core 说有本机能力，模型会看到一堆
 // 调用即失败的工具。给浏览器接本地 Node 后端是 B 线的事。
+//
+// 【S5】登记桥时必须一并声明宿主平台，两者是同一次登记的两半（hostBridge.ts 的
+// HostBridgeRegistration）。桌面宿主可以用**本地探测**：webview 与原生跑在同一台机器上，
+// `navigator.userAgent` 说什么，执行 shell 的就是那台机器。这条前提在**浏览器 → Node server**
+// 上不成立（用户 macOS、服务端 Linux），B 线接 server 宿主时那个 platform 必须取自
+// `GET /api/health` 的握手，不能照抄这一行。
 if (tauriHost) {
-  configureHostInvoke(() => Promise.resolve(invoke))
+  configureHostInvoke({ loader: () => Promise.resolve(invoke), platform: detectLocalPlatform() })
 }
 
 configureDefaultSkillsRegistry(builtInSkillsRegistry)

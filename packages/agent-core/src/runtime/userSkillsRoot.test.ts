@@ -34,14 +34,14 @@ describe('resolveUserSkillsRoot', () => {
       expect(cmd).toBe('get_user_home_dir')
       return '/Users/me'
     }) as HostInvoke
-    configureHostInvoke(() => Promise.resolve(invoke))
+    configureHostInvoke({ loader: () => Promise.resolve(invoke), platform: 'linux' })
 
     await expect(resolveUserSkillsRoot()).resolves.toBe('/Users/me')
   })
 
   it('去掉尾斜杠：它会变成快照里的展示值与路径拼接的根，带不带斜杠不能随宿主实现漂移', async () => {
     const invoke = (async () => '/Users/me/') as HostInvoke
-    configureHostInvoke(() => Promise.resolve(invoke))
+    configureHostInvoke({ loader: () => Promise.resolve(invoke), platform: 'linux' })
 
     await expect(resolveUserSkillsRoot()).resolves.toBe('/Users/me')
   })
@@ -50,14 +50,14 @@ describe('resolveUserSkillsRoot', () => {
     const invoke = (async () => {
       throw new Error('no home')
     }) as HostInvoke
-    configureHostInvoke(() => Promise.resolve(invoke))
+    configureHostInvoke({ loader: () => Promise.resolve(invoke), platform: 'linux' })
 
     await expect(resolveUserSkillsRoot()).resolves.toBeUndefined()
   })
 
   it('invoke 返回空白串 → undefined（空根会让 `.claude/skills` 变成相对进程 cwd）', async () => {
     const invoke = (async () => '   ') as HostInvoke
-    configureHostInvoke(() => Promise.resolve(invoke))
+    configureHostInvoke({ loader: () => Promise.resolve(invoke), platform: 'linux' })
 
     await expect(resolveUserSkillsRoot()).resolves.toBeUndefined()
   })

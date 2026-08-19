@@ -1235,7 +1235,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   `tsconfig.app.json` 的 include 里。改为**判据逐字照抄 + 注释写明为什么不 import**。
   已知收窄（照抄不改，fail-closed）：RFC 1122 的回环是整个 `127.0.0.0/8`，这份只认 `127.0.0.1`。
   **开发期摩擦点**：`pnpm dev`（Vite 在 5173）里的页面调 server API 会因 Origin 端口不同被 403。
-  server 宿主的正确用法是 `pnpm build` 后 `pnpm server`。刻意没开 `additionalAllowedOrigins`
+  server 宿主的正确用法是 `pnpm build` 后 `pnpm serve`。刻意没开 `additionalAllowedOrigins`
   ——每个额外允许的 origin 都是一个洞；B 线若确实需要，那是单独一张卡。
 
 ### S3 · `/api/invoke/:command` 接 host-node 路由表
@@ -1308,7 +1308,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 
 - **依赖**：S2、S3
 - **改动面**：`apps/server/src/main.ts`、根 `package.json` 加脚本
-- **判据**：`pnpm server` 打印带 token 的完整 URL；端口被占时自动换端口而非崩溃；
+- **判据**：`pnpm serve` 打印带 token 的完整 URL；端口被占时自动换端口而非崩溃；
   `--no-open` 可关闭自动打开。跑该目录 vitest。
   **token 由本卡生成**（`generateAuthToken()`），同时喂给 `createWebAgentServer({ token })` 和打印的
   URL——不传不是「关闭认证」，`createServer.ts` 仍会随机生成一枚，后果是全部 401。
@@ -1359,7 +1359,7 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
 
 - **依赖**：B3、N8
 - **改动面**：无（验收卡）
-- **判据**：**主会话亲自。** `pnpm server` 后浏览器实际完成一轮：列目录 → 读文件 →
+- **判据**：**主会话亲自。** `pnpm serve` 后浏览器实际完成一轮：列目录 → 读文件 →
   写文件 → 跑一条 shell 命令。截图或逐步记录留在 scratchpad
 - **模型**：—（主会话亲自）
 - **状态**：TODO

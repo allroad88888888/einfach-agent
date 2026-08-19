@@ -48,8 +48,9 @@ vi.mock('@tauri-apps/api/core', () => ({
 // 模块顶层（收集阶段注册）的静态 afterEach 统一复位成「没有桥」（afterEach 本身必须在收集
 // 阶段注册，不能等运行期才决定要不要挂）——写法上与旧版 stubTauriHostFlag 的「模块级可变引用
 // + 静态 afterEach」同构，只是接住的是 configureHostInvoke 函数引用本身。
-let currentConfigureHostInvoke: (loader: (() => Promise<HostInvoke>) | undefined) => void =
-  () => {}
+let currentConfigureHostInvoke: (
+  registration: { loader: () => Promise<HostInvoke>; platform: 'macos' | 'linux' | 'windows' | 'unsupported' } | undefined,
+) => void = () => {}
 
 afterEach(() => {
   currentConfigureHostInvoke(undefined)
@@ -91,7 +92,7 @@ async function freshHost(tauriHost: boolean) {
   // tauriHost 为 true：登记一个转发到上面这份 invoke mock 的 loader，hasHostBridge() 由此
   // 答真，loadHostInvoke() 解析出的就是这份 mock 本身——workspaceRead 的四个调用点（H2）
   // 已经切到这条新链路。tauriHost 为 false：登记 undefined，回到「没有桥」。
-  configureHostInvoke(tauriHost ? async () => invokeMock : undefined)
+  configureHostInvoke(tauriHost ? { loader: async () => invokeMock, platform: 'macos' } : undefined)
 
   const { initializePluginSettings } = await import('./initialize')
   const { hydratePluginSettings, isPluginSettingsConfigured } = await import('./commands')

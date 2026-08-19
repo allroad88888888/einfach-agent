@@ -16,6 +16,7 @@
 //     返回数据的 invoke，给「拿到 invoke 之后怎么转参数/结果」的桥测试用。
 
 import { configureHostInvoke, type HostInvoke } from './hostBridge'
+import type { HostPlatform } from './hostPlatform'
 
 /**
  * 登记（enabled=true）或清空（false）一个桩 host bridge，等价于切换「当前宿主有没有本机能力」。
@@ -31,15 +32,20 @@ import { configureHostInvoke, type HostInvoke } from './hostBridge'
  * 一调用就抛；工具侧一律 catch 成失败结果。保持 reject，用例的可观察行为逐条不变。
  * 需要 invoke 真的返回数据的测试不该用本函数，用 hostBridgeMock。
  *
+ * 【platform 参数】S5 之后登记桥必须一并声明宿主平台（理由见 hostPlatform.ts）。这些用例断言的
+ * 是「有没有本机能力」，跟平台无关，所以给了默认值；要测「模型看到的平台 = 桥收到的平台」的用例
+ * 显式传它。默认取 `'linux'` 而不是本地探测：本地探测在 jsdom 里答 macos，那样默认值就会随
+ * **跑测试的机器**变化，一条「宿主说 linux」的断言在 CI 的 Linux runner 上会恰好也成立。
+ *
  * 【必须复位】loader 是 hostBridge 的模块级状态，会泄漏到同文件的后续用例，调用方要挂
  * `afterEach(() => stubHostBridgeFlag(false))`。
  */
-export function stubHostBridgeFlag(enabled: boolean): void {
+export function stubHostBridgeFlag(enabled: boolean, platform: HostPlatform = 'linux'): void {
   if (!enabled) {
     configureHostInvoke(undefined)
     return
   }
   const unavailableInvoke: HostInvoke = (cmd) =>
     Promise.reject(new Error(`host bridge stub: ${cmd} is not implemented in this test`))
-  configureHostInvoke(() => Promise.resolve(unavailableInvoke))
+  configureHostInvoke({ loader: () => Promise.resolve(unavailableInvoke), platform })
 }
