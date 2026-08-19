@@ -10,8 +10,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 这是 pnpm workspace，`packages/*` 和 `tools/*` 使用 `workspace:*`。不要使用 `npm install`。
 
 - `pnpm install`：安装并链接全部 workspace 包。
-- `pnpm dev`：启动 Vite Web 预览。
-- `pnpm build`：`tsc -b` 后构建 Vite。仓库没有 lint 脚本，这是唯一的静态门禁。
+- `pnpm dev`：Vite 前端预览。**它没有本机后端**——`/api/health` 404，宿主解析成 `static`，
+  文件/shell/Git 那一类工具整类不进模型清单。要真跑本机能力用 `pnpm serve`。
+- `pnpm serve`：起本机 Node 后端（`apps/server`，默认 `127.0.0.1:4765`，端口被占用时自动往后试；
+  `-- --help` 看全部选项），托管前端产物并在 `/api/*` 提供本机能力。**它服务的是构建产物**：
+  没先跑过 `pnpm build` 会得到一页 503 提示页，而不是旧界面。
+- `pnpm build`：`tsc -b` → `vite build` → `pnpm --filter @einfach-agent/server build`。
+  仓库没有 lint 脚本，`tsc -b` 是唯一的静态门禁。**这三步顺序不能倒**：server 的 build 收尾要把
+  `apps/web/dist` 复制进自己的 `dist/public`，那份前端产物由上一步产出，全新 checkout 上反过来直接失败。
 - `pnpm test` / `pnpm test:watch`：Vitest。
 - `pnpm exec vitest run <file>`：单文件；`pnpm exec vitest run -t "<name>"`：按用例名过滤。
 - `node scripts/check-docs.js`：Markdown 门禁——相对链接必须真实存在，且禁止引用迁移前的旧源码
@@ -22,22 +28,33 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   `useRootAtomValue` / `useAgentAtomValue`（判据与各张表见 §状态与 UI 边界）。改 atom、writer、
   新增写入点或在组件里读 core 的 atom 时要跑——**新增会话 atom 不登记归宿会静默不进快照；
   用错 store 读会静默拿到默认值**。`pnpm check:boundaries` 管的是**包之间**的边界，两者职责不同。
+- `pnpm check:dist`：可发布包的 dist 门禁——把每个包 `pnpm pack` 进临时工程装一遍，dist 缺失、
+  公开 ESM 入口解析不了、`.d.ts` 在 NodeNext 下不可用都会红。它验的是 `pnpm -r build` 的产物，
+  **不是** `pnpm build` 的（后者只出 `apps/web` 与 `apps/server`）。
 - `pnpm cli -p "<prompt>"`：headless CLI 宿主跑一轮真实 run（读 `~/.webAgent/config.json`
   或环境变量取模型 Key；`--help` 看全部选项）；无 `-p` 进入 REPL。
-- `pnpm tauri dev` / `pnpm tauri build`：桌面端开发与打包。
-- `cargo test --manifest-path apps/desktop/Cargo.toml`：Rust 桥测试。
 - 子 Agent 治理：`pnpm subagent:replay` / `subagent:capacity` / `subagent:archive:retention` /
   `subagent:index:compact` / `subagent:skills`。
 
-CI（`.github/workflows/ci.yml`）跑两条：`check-docs → check-boundaries → check-state → pnpm test → pnpm build`，
-以及三平台的 `cargo test` + `pnpm tauri build --no-bundle --ci`。
+CI（`.github/workflows/ci.yml`）只有一条 job，顺序是 `check-docs → check-boundaries → check-state →
+pnpm test → pnpm build → pnpm -r build → check-dist`。最后两步排在 `pnpm build` **之后**且不能省：
+`pnpm build` 不构建 `packages/*` 与 `tools/*` 的 dist，而 npm tarball 里装的就是那些 dist——少了它们，
+dist 陈旧化在 CI 里完全没有症状（包 scope 改名那次，17 个包的 dist 一直留着旧名直到发布路径上才暴露）。
+
+`.github/workflows/release-npm.yml` 是**休眠**的：只由 `npm-v*` tag 触发，而可发布包都是
+`private: true`（用户裁决「不发布，仅本地跑」），它的前置判定必然红。那是自我说明的信号，不是缺陷；
+别去"修"它。
 
 ## 构建与解析模型
 
 workspace 包**不单独编译**：`vite.config.ts` 的 `resolve.alias` 与 `tsconfig.app.json` 的
 `paths` 都把 `@einfach-agent/*` 直接指到各包的 `src`。改包无需 build，但新增/改名包时这两处
 alias 必须同步添加，否则类型或运行时会各错各的。`tsconfig.app.json` 的 `include` 覆盖
-`apps/web/src`、`packages/*/src`、`tools/*/src`。
+`apps/web/src`、`apps/cli/src`、`apps/server/src`、`packages/*/src`、`tools/*/src`。
+
+「不单独编译」只对**开发与测试**成立。本地分发装的是各包的 `dist/`（`pnpm -r build` 产出，
+`apps/server` 另有一步把 `apps/web/dist` 嵌进 `dist/public`），改了 src 而不重建 dist 在仓库内
+毫无症状——只在 `pnpm pack` 出去之后才兑现，所以有 `pnpm check:dist` 这道门。
 
 Vitest 的 root 是仓库根（不是 Vite 的 `apps/web` root），jsdom + `apps/web/src/test/setup.ts`，
 `isolate: true`：每个测试文件独立 worker，setup 在 worker 内注册标准工具，并只在用例之间重置
@@ -50,27 +67,55 @@ core 跨会话、`agentStore` = 会话），三个默认是三个**不同**实�
 
 ## 模型凭证与传输
 
-`apps/web/src/main.tsx` 只注入桌面受管凭证标记和受限模型传输。真实 Key 仅由桌面原生层从
-`~/.webAgent/config.json` 读取。默认新文件不存在时，原生层才安全复制旧
-`~/.web-agent/config.json`；新文件优先且旧文件保留。`WEB_AGENT_CONFIG_DIR` 只能选择配置目录，
-不能传入或读取模型 Key；设置覆盖目录时不触发迁移。
+**真实 Key 从不进前端。** `apps/web/src/main.tsx` 注进 core 的只是一个受管凭据标记
+（`hostManagedCredentialMarker`，字面量 `'desktop-managed-credential'`；名字里的 `desktop` 是历史，
+含义是「宿主受管」，core 把它当 apiKey 一路带到受管传输那一层，改字面量要连着断言它的测试一起改）。
+Key 由**本机 Node 后端**读写 `~/.webAgent/config.json`（host-node 的 config 域），浏览器经
+`/api/invoke/model_credential_*` 交给它，三条命令的返回体只有 `{ configured, source }`——
+**任何路径都不回传 Key 本身**。没有后端的 `static` 宿主拿到的是如实回答「存不了」的凭据宿主，
+设置面板据此把输入框整块收起来，而不是给一个存进去也发不出去的框。
 
-三种宿主的传输各不相同：Tauri 走原生代理，浏览器 dev 走 `scripts/model-preview-relay` 的本地
-Node 中继，静态产物直接拒绝模型请求。`scripts/public-model-credential-guard.ts` 在 Vite 配置
-阶段执行——任何 `VITE_*_API_KEY` 都会让 dev/build 直接失败，别试图用 `VITE_` 变量传密钥。
+配置文件的三条边界都在 host-node 的 `config/configPaths.ts`：旧 `~/.web-agent/config.json` 只在新
+文件不存在时被**复制**过来（写原文不重排键，旧文件不删不改）；`WEB_AGENT_CONFIG_DIR` 只能
+**选目录**，进不来也带不走一个 Key，且设了它就没有 `legacyPath`——迁移在机制上不可能发生，而不是
+靠某处记得写一句 if（覆盖目录的语义是「另一套独立配置」，悄悄继承主配置的凭证正是隔离要防的）；
+覆盖目录已存在时必须是 0700 的目录，不合格是受控失败且**不回落默认目录**，回落会让用户以为在用
+隔离配置、实际写的是主配置。
 
-Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter，Tauri 只保持 provider-neutral
-受限传输。
+**传输与凭据宿主必须由同一个判据选出来**，否则会走成「Key 存进了后端、请求发给了另一条通路」，
+而两边都不报错。判定是宿主两态外加一条**正交**的构建模式轴：`server` 宿主走 `apps/server` 的
+`POST /api/model/request`；否则 DEV 构建走 `scripts/model-preview-relay` 的 Vite 中继（它只认
+`DEEPSEEK_API_KEY` 这类环境变量）；再否则 fail-closed 直接拒绝模型请求。**`server` 必须判在 DEV
+之前**——凭据宿主那侧只有 `server → unavailable`，没有 DEV 分支。DEV 判的是构建模式而不是宿主，
+两者正交：`pnpm dev` 是 static 宿主 + 有中继，`pnpm serve` 是 server 宿主 + 没有中继。
+`scripts/public-model-credential-guard.ts` 在 Vite 配置阶段执行——任何 `VITE_*_API_KEY` 都会让
+dev/build 直接失败，别试图用 `VITE_` 变量传密钥。
+
+Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter；后端那一层只有一张按
+(供应商, 作用域, method, path) 精确匹配的端点白名单（host-node 的 `model/providerRoute.ts`），
+保持 provider-neutral 受限传输。
 
 ## 当前结构
 
 - `apps/web/src/main.tsx`：默认应用装配；注册标准工具、配置模型传输、选择持久化和观测 driver，
   并在应用根绑定**界面 store**（`apps/web/src/uiStore.ts`）与 core 的 root store。
 - `apps/web/src/agentNew/ui/`：React UI，包含会话、消息、计划、确认、子 Agent 树和输入区。
+- `apps/web/src/host/`：宿主分流的装配面——`resolveHost()`（唯一权威）与按它选出的桥、模型传输、
+  凭据宿主、观测 driver、刷盘时机。**装配点不自己探宿主**，重探一次的后果不是报错，是两处结论
+  不同时静默走岔。
 - `apps/web/src/mcp/`：MCP 应用层（配置、持久化、连接编排、工具清单缓存、stdio 起进程确认、
-  Tauri stdio connector）。**在 `main.tsx` 里随应用启动装配**，不是等设置弹窗打开才装——
+  server stdio connector）。**在 `main.tsx` 里随应用启动装配**，不是等设置弹窗打开才装——
   否则 `autoConnect` 形同虚设。详见 [docs/mcp-integration.md](docs/mcp-integration.md)。
-- `apps/desktop/`：Rust/Tauri 的 shell、workspace、Git、dialog、SQLite 与 MCP stdio 实现。
+- `apps/server/`：本机 Node 后端（`pnpm serve` / bin `einfach-agent`）：`/api/health` 握手、
+  `/api/invoke/:command` 命令面、`/api/model/request` 流式模型代理、`/api/events` 反向事件流
+  （SSE），以及前端产物的静态托管。`/api/*` 只有一道门，四道防线按序判：回环对端地址 → Host →
+  Origin → token，**默认拒绝**——这个 API 面暴露 `run_shell_command` / `write_workspace_file`，
+  拿到它等于在用户机器上任意代码执行。
+- `apps/cli/`：headless CLI 宿主，进程内直接登记同一份桥；主目录由它自己用 `node:os` 解析一次
+  并注入。
+- `packages/host-node/`：**唯一一份宿主能力实现**——workspace 读写/patch/change journal、shell、
+  Git、SQLite、MCP stdio、模型转发、`~/.webAgent/config.json`。浏览器经 HTTP、CLI 进程内，
+  两条路跑的是同一份代码。
 - `packages/agent-ai/`：DeepSeek/GLM/Kimi 请求、流式响应、provider 私有图片准备、adapter 重试
   和 vendor 能力描述表。
 - `packages/agent-core/`：装配式 Agent Runtime 内核：工具契约/registry、loop、插件、观测与持久化
@@ -95,7 +140,9 @@ Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter，
 agent-ai ← agent-core ← {tools-*、能力包} ← app
 ```
 
-`agent-core` 不得反向依赖任何具体 `tools-*` 包，也不依赖 React。
+`agent-core` 不得反向依赖任何具体 `tools-*` 包，也不依赖 React，**也不得依赖 `host-node`**——
+host-node 是命令桥的一种实现，core 反过来引它等于把「宿主是什么」重新焊回 core。
+这三条由 `pnpm check:boundaries` 判。
 
 `agent-core/src` 的分区：`runtime/`（主循环、命令与到点分派）、`runtime/core/`（`CoreInstance`、
 plugin host、loop hooks、默认插件）、`state/`（atom、writer、persistence contract）、`execution/`
@@ -245,8 +292,17 @@ registrar 为准**（`tools/<domain>/src/index.ts`），文档里的数量容易
 
 ## 持久化与运行环境
 
-- Web：会话/历史和 trace 使用 IndexedDB。
-- Tauri：会话/历史和 trace 使用 SQLite，文件/shell/Git 通过 Rust command 执行。
+**宿主只有两态**（`apps/web/src/host/resolveHost.ts`，判定靠 `GET /api/health` 握手，
+探测失败或超时一律落 `static`）：
+
+- `server` —— 浏览器 + 本机 Node 后端。会话/历史与 trace 都走 SQLite，执行面是
+  `POST /api/invoke/sqlite_*`，库文件由 host-node 的 `sqlite/databasePath.ts` 决定（与 CLI 共用
+  同一份）；文件/shell/Git 经 `POST /api/invoke/:command` 打到 host-node。
+- `static` —— 纯静态产物，没有后端。不登记命令桥，本机能力工具整类不可见；持久化只剩 IndexedDB。
+- 选 driver 的判据是「**这一态有没有 SQL 通路**」，不是「有没有本机能力桥」——持久化与观测两处
+  逐字相同的判断，写岔了会得到「写进 SQLite、从 IndexedDB 读」这种两头对不上的装配，它不报错，
+  只让 TraceViewer 恒空。唯一有意的不对称在 `static` + DEV：trace 写 IndexedDB 而读取走 Vite 中继
+  去读本机那份 SQLite，为的是同机调试时能看见 `pnpm serve` / CLI 写下的 trace。
 - **不可逆动作在撤销账本上留屏障**。事务日志能还原的只有状态；跨进程边界发出去的动作还原不了
   （当前只有一处：显式停止 run 时经宿主 disposer 真删 provider 侧的上传）。真的发出过释放时
   `markUndoBarrier` 在当前最新账目上立屏障，越过它的撤销一律拒绝而不是「看起来成功了」。
@@ -258,7 +314,13 @@ registrar 为准**（`tools/<domain>/src/index.ts`），文档里的数量容易
   读回时 `generation` 不一致就整份丢弃日志（撤销不可用，状态仍对）。刻意不用 einfach 的
   `HistoryPersistPort` 增量镜像——它逐笔跟随内存，而快照只在耐久性栅栏落盘，两者时点不一致时
   undo 会把更早状态的 `before` 写进当前世界。理由详见 `state/persistence/historyLogDriver.ts`。
-- `server` 工具在非 Tauri 环境中不会暴露给模型。
+- **`runtime: 'server'` 的工具只在登记过宿主命令桥的宿主下进模型清单**——今天等价于「`static`
+  态看不见它们」。判据是 `hasHostBridge()`（`modelTurnPrefix.ts` 取值，`turnToolVisibility.ts`
+  过滤；同一判据另见 `toolCallGate.ts` 与 `subagents/childToolVisibility.ts`）。**不许退回按宿主
+  品牌判**：这条判据早先写的是某个具体宿主的探测函数，于是「有没有本机能力」被焊死成了「是不是
+  跑在那一个宿主里」，新宿主接上桥也照样看不到工具。问「登记桥了没有」才是它真正要回答的问题。
+  注意 `runtime: 'server'` 与宿主态 `server` **同名但不是一回事**：前者说的是「这个工具要本机
+  能力」，后者说的是「当前宿主是哪一态」。
 - `.webAgent-archive/` 保存子 Agent 长期归档与索引，不应提交到 Git。
 - workspace 里的 `.webAgent/skills/` 与 `.claude/skills/` 是项目 Skills 目录，会被 project skills
   loader 自动扫描进 L1 清单；它们不是用户配置目录。本仓库自己就有这两个目录，改它们等于改运行时
@@ -269,8 +331,12 @@ registrar 为准**（`tools/<domain>/src/index.ts`），文档里的数量容易
   workspace 去读主目录的文件会被 confinement 挡下，而报错文案指向「路径越界」，与真实原因无关。
   第三种根来自**被符号链接进来的 skill 目录**：桥既不递归进 symlink、也会在 confine 模式下把根外
   链接整条滤掉，所以 loader 只用越界许可**列出**那两个目录，再把每个链接当它自己的根去读
-  （`linkedSkillDirScan`，Rust 契约测试 `linked_skill_dir_*` 钉住）。主目录由宿主给：Tauri 是
-  `runtime/userSkillsRoot.ts`，CLI 是 `node:os` 的 `homedir()`，浏览器没有。详见
+  （`linkedSkillDirScan`；桥这两条语义现由 host-node 的 `workspace/read/listFiles.test.ts` 与
+  `workspace/common/resolveWorkspaceRoot.test.ts` 钉住）。主目录由宿主给，两条路径不同：`server`
+  宿主经桥的 `get_user_home_dir` 问后端要（core 的 `runtime/userSkillsRoot.ts`），**CLI 不走这条**
+  ——它自己就是那台机器，`node:os` 的 `homedir()` 在装配层解析一次，既注入桥的 `homeDir` 槽也直接
+  当扫描根，反过来向桥要等于绕一圈问自己、还凭空多出一个会漂移的权威；`static` 没有桥，
+  拿到 undefined，只扫工作区。详见
   [docs/project-skills-blueprint.md](docs/project-skills-blueprint.md) 的「作用域」。
 
 ## 测试与修改约定

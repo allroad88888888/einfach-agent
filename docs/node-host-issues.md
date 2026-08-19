@@ -2233,7 +2233,22 @@ Rust 侧增删命令而这里没跟上，该测试当场红（主会话已用「
   且**所有** `node:` 内置在产物里都保留前缀；`check-dist` 与全量测试仍绿。
   **不许改源码去绕开**（比如把说明符拼起来躲静态分析）——那会让静态分析失效，病根还在。
 - **模型**：opus
-- **状态**：DOING
+- **状态**：DONE `aedf313`。**一行改动**（`tsup.preset.ts` 加 `removeNodeProtocol: false`）+ 13 行说明。
+  **本卡推翻了主会话的判断,主会话复核采纳**：根因**不是 esbuild**，而是 **tsup 自己的
+  `nodeProtocolPlugin`**——它是一个 `onResolve({filter: /^node:/})`，无条件 `path.slice(5)`
+  把前缀剥掉，由 tsup 的 `removeNodeProtocol` 选项控制而该选项**默认 true**（主会话复核过 tsup
+  源码，确认那个插件确实是无条件 slice）。独立 esbuild 不剥（本卡直接跑 esbuild 验过）。
+  **所以主会话试的三条注定无效、也不必再试**：`platform` / `target` / `external: [/^node:/]`
+  都是交给 **esbuild** 的参数，而剥前缀发生在更早的 tsup 插件 `onResolve` 里；等 esbuild 看到
+  这个说明符时它已经叫 `sqlite` 了。**自己写 esbuild 插件同样无效**：`esbuildPlugins` 被追加在
+  `nodeProtocolPlugin` **之后**，同 filter 的 `onResolve` 按注册序先到先得，后来者不会被调用。
+  效果不止 sqlite：全仓 69 个 dist js **裸名内置命中归零**（主会话独立扫过），`fs/promises` ×43、
+  `path` ×29、`crypto` ×7 等全部恢复 `node:` 前缀。
+  **本卡做了负对照**：在已安装的产物里只把 `import("node:sqlite")` 改回 `import("sqlite")`
+  这 5 个字符、其余一字不动，502 立刻复现——**因果钉死**。
+  主会话做了正向端到端复核（仓库外安装、隔离 HOME）：建表 → `INSERT … VALUES ($1)` →
+  `SELECT` 读回 `[{"v":"d5a-verified"}]`，`web-agent.db` 8192 字节真的落盘。
+  遗留：**这条没有回归测试守着**，删掉那一行不会有任何东西红——那正是 D5b 的活。
 
 ### D5b · 加一条真跑打包产物的门禁
 
