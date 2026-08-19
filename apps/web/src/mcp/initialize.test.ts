@@ -3,12 +3,13 @@ import { uiStore } from '../uiStore'
 //
 // toolProbeWiring.test.ts 证明的是「组装函数把线接对了」，本文件证明的是「生产装配真的调了它，
 // 而且取数口一路通到磁盘」——那几根线里任何一根被从 initialize.ts 里删掉，这里都会红。
-// 走的是真的 initializeMcpSettings()、真的 defaultCore.tools、真的 defaultCore.config、
+// 走的是真的 initializeMcpSettings(host)、真的 defaultCore.tools、真的 defaultCore.config、
 // 真的 localStorage 存储通道，只有 MCP 服务本身不存在（全程不连接）。
 //
 // 存储后端的选择（B1：桌面 vs 浏览器）在 initialize.storage.test.ts，那是另一件事。
 
 import { defaultCore, rootStore } from '@einfach-agent/core'
+import type { ResolvedHost } from '../host/resolveHost'
 import { classifyToolRisk } from '@einfach-agent/core/runtime/dangerousTools'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { MCP_CONNECT_TOOL_NAME } from '@einfach-agent/tools-mcp'
@@ -18,13 +19,20 @@ import { MCP_SETTINGS_STORAGE_KEY } from './persistence'
 import { mcpServerConfigsAtom, mcpServersAtom } from './state'
 import { stdioLaunchFingerprint } from './stdioLaunchConsent'
 
-// 本文件全程是浏览器宿主，但仍要把这个模块换成可控的替身：真实的 isTauri() 在 jsdom 里
-// 会去读 window 上的注入物，行为不该由环境决定。默认表现与真实模块一致——答 false、
-// invoke 不被调用。
+// 本文件全程是**没有本机能力的浏览器宿主**（`resolveHost()` 的 `static` 那一态），由下面这个
+// 常量显式声明并递给装配点——宿主态的权威只有 `resolveHost()` 一处，装配点不自己探。
+//
+// `@tauri-apps/api/core` 仍要换成可控的替身：`initialize.ts` 已经不调 `isTauri()` 了，但它选中的
+// `createDesktopMcpConfigStorage()`（以及 service 默认的 `createDesktopToolNameCacheStorage()`）
+// 内部**各自还再探一次**，而真实的 isTauri() 在 jsdom 里会去读 window 上的注入物——行为不该由
+// 环境决定。默认表现与真实模块一致：答 false、invoke 不被调用。
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
   isTauri: vi.fn(() => false),
 }))
+
+/** 本文件的宿主态：能打开页面，但没有任何本机能力。 */
+const BROWSER_HOST: ResolvedHost = { kind: 'static', reason: 'unreachable' }
 
 const CACHED_AT = Date.UTC(2026, 7, 10, 9, 30, 0)
 
@@ -108,7 +116,7 @@ describe('MCP 冷启动装配 · 缓存一路走到模型与界面（B5）', () 
     window.localStorage.clear()
     seedColdStart()
     // 装配是幂等的（isMcpSettingsConfigured 守卫），重复调用只有第一次生效。
-    initializeMcpSettings()
+    initializeMcpSettings(BROWSER_HOST)
     await hydrateMcpSettings()
   })
 

@@ -139,7 +139,11 @@ describe('main entry: MCP 启动装配（C1）', () => {
     expect(isMcpSettingsConfigured()).toBe(true)
     expect(uiStore.getter(mcpHydrationAtom).status).toBe('ready')
 
-    initializeMcpSettings()
+    // 传的宿主态与本文件 `resolveHost` 的替身一致。这里**必须显式传**——`initializeMcpSettings`
+    // 的签名在 C4 接线时从无参改成收 `ResolvedHost`（宿主态的唯一权威是 resolveHost，装配点不再
+    // 自己 `isTauri()`）。本条用例走的是幂等分支，运行时在 guard 处就 return、`host` 根本没被
+    // 求值，所以漏传时 **vitest 照样全绿，只有 `tsc -b` 会红**。
+    initializeMcpSettings({ kind: 'static', reason: 'unreachable' })
     void hydrateMcpSettings()
 
     // 幂等：guard 挡住了重新 configureMcpSettings，状态没有被打回 loading/idle。

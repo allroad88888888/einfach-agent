@@ -147,7 +147,7 @@ async function startApplication(): Promise<void> {
 
   // MCP 运行时必须在启动时装配，不能等用户点开设置弹窗才 mount（那样 autoConnect 形同虚设）。
   // hydrate 会去连网络服务，故意不 await：让它在后台跑，不阻塞首屏渲染。
-  initializeMcpSettings()
+  initializeMcpSettings(host)
   void hydrateMcpSettings()
 
   // 用户插件同理（P10）：桌面宿主在这里接上真实加载面并立即扫描一次，其余宿主什么都不装，

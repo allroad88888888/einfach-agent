@@ -1,5 +1,4 @@
 import { uiStore } from '../uiStore'
-import { isTauri } from '@tauri-apps/api/core'
 import { defaultCore, configureCommands } from '@einfach-agent/core'
 import {
   createMcpClientManager,
@@ -16,8 +15,11 @@ import {
 } from './commands'
 import { mcpServerConfigsAtom } from './state'
 import { mayLaunchMcpServer, stdioCommandLine } from './stdioLaunchConsent'
+import { createServerMcpConfigStorage } from './serverMcpConfigStorage'
+import { createServerStdioMcpConnector } from './serverStdioConnector'
 import { createDesktopMcpConfigStorage } from './tauriMcpConfigStorage'
 import { createTauriStdioMcpConnector } from './tauriStdioConnector'
+import type { ResolvedHost } from '../host/resolveHost'
 import { wireMcpToolProbes } from './toolProbeWiring'
 
 /**
@@ -40,14 +42,24 @@ function isMcpLaunchConsented(serverId: string, commandLine: string): boolean {
   return mayLaunchMcpServer(config)
 }
 
-/** Installs the application MCP manager when the settings UI first needs it. */
-export function initializeMcpSettings(): void {
+/**
+ * Installs the application MCP manager when the settings UI first needs it.
+ *
+ * 【为什么收 host 而不是自己 `isTauri()`】宿主态的唯一权威是 `resolveHost()`——server 宿主要经
+ * `GET /api/health` 握手才认得出来，本地探测答不了。再探一次的后果不是报错，是两处结论不同时
+ * 静默走岔：连接器按「不是桌面」不给 stdio，而配置存储按别的判据去写桌面配置文件。
+ */
+export function initializeMcpSettings(host: ResolvedHost): void {
   if (isMcpSettingsConfigured()) return
 
-  const tauriHost = isTauri()
+  const tauriHost = host.kind === 'tauri'
+  const serverHost = host.kind === 'server'
+  // stdio 两态各有自己的连接器：桌面经 Tauri 命令 + `listen()`，server 经
+  // `POST /api/invoke/mcp_*` + 一条共享 SSE。键相同，所以两者互斥、不会并存。
   const connector = createMcpConnectorRouter({
     'streamable-http': createStreamableHttpMcpConnector(),
     ...(tauriHost ? { stdio: createTauriStdioMcpConnector() } : {}),
+    ...(serverHost ? { stdio: createServerStdioMcpConnector() } : {}),
   })
   // 占位登记表（D2/D2a）：manager 的 reconcile 与占位同步器必须共用【同一个实例】——
   // reconcile 靠它放行「本服务占位正占着这个名字」，两边各造一份的话，每个有缓存清单的
@@ -75,13 +87,13 @@ export function initializeMcpSettings(): void {
   let syncPlaceholders: (() => void) | undefined
   configureMcpSettings({
     manager,
-    storage: createDesktopMcpConfigStorage(),
+    storage: serverHost ? createServerMcpConfigStorage() : createDesktopMcpConfigStorage(),
     onToolNameCacheChanged: () => syncPlaceholders?.(),
-    // credentials 与 stdio 现在都等于「是不是桌面」，但回答的是两个不同问题（C3，见
-    // types.ts 的 McpSettingsCapabilities 注释）——凭据能不能落盘，取决于桌面配置文件
-    // 是不是这个宿主唯一的持久化落点，与能不能起本机子进程是两条独立的准入线，只是当前
-    // 恰好同源于同一个 tauriHost 判断。
-    capabilities: { stdio: tauriHost, credentials: tauriHost },
+    // 这两个 flag 回答的是两个不同问题（C3，见 types.ts 的 McpSettingsCapabilities 注释）：
+    // 能不能在本机起子进程 / 凭据能不能落盘。它们**恰好**在两个宿主上同时为真，不是同一件事——
+    // server 宿主能起子进程是因为本机 Node 后端替它 spawn；凭据能落盘是因为那个后端读写的正是
+    // 同一份 `~/.webAgent/config.json`（host-node 的 config 域）。static 宿主两者皆无。
+    capabilities: { stdio: tauriHost || serverHost, credentials: tauriHost || serverHost },
   })
   // mcp 域工具需要注入这个进程级 manager —— 装配点就是唯一能同时拿到 registry 与 manager 的地方。
   // 顺带把工具名缓存喂给模型看得见的那两处（B5，规矩见 toolProbeWiring.ts）：两个读出口都从
