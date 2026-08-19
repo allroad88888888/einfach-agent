@@ -32,9 +32,11 @@ const credentials = { modelCredentials: {}, modelBaseUrls: {}, configPath: '/dev
 
 let workspaceRoot: string | undefined
 
-async function assemble(): Promise<string> {
+async function assemble(
+  extra: { registerHostDisposer?: (dispose: () => Promise<void>) => void } = {},
+): Promise<string> {
   workspaceRoot = await mkdtemp(join(tmpdir(), 'web-agent-cli-runtime-'))
-  await assembleCliRuntime({ credentials, verbose: false, workspaceRoot })
+  await assembleCliRuntime({ credentials, verbose: false, workspaceRoot, ...extra })
   return workspaceRoot
 }
 
@@ -99,5 +101,17 @@ describe('assembleCliRuntime 的命令桥', () => {
     const expected = home.length > 1 ? home.replace(/[/\\]+$/, '') : home
 
     expect(await resolveUserSkillsRoot()).toBe(expected)
+  })
+
+  it('关停钩子经槽位一路交到 host-node：装配当场就登记进来一个可调用的 dispose', async () => {
+    const registered: Array<() => Promise<void>> = []
+
+    await assemble({ registerHostDisposer: (dispose) => { registered.push(dispose) } })
+
+    // MCP 域的管理器随命令路由表一起创建，关停钩子在那一刻登记——所以"装配完还没登记"
+    // 就等于这条链断了（`bootstrap.ts` 拿到的钩子将永远不会关掉任何 MCP 子进程）。
+    expect(registered).toHaveLength(1)
+    // 没有会话时它是个平凡的 resolve，但必须真的能调：本进程的信号处理就直接调它。
+    await expect(registered[0]?.()).resolves.toBeUndefined()
   })
 })

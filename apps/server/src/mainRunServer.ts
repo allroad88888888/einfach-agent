@@ -18,6 +18,7 @@ import { DEFAULT_BIND_ADDRESS } from './authLoopback'
 import { openBrowser } from './mainBrowserLaunch'
 import { parseServerCliOptions, SERVER_CLI_USAGE } from './mainCliOptions'
 import { DEFAULT_START_PORT, listenWithPortRetry } from './mainListenRetry'
+import { installHostShutdown, type ShutdownSignalTarget } from './mainShutdown'
 import { formatStartupMessage } from './mainStartupMessage'
 
 /** IPv6 字面量在 URL 里必须加方括号（`::1` → `[::1]`），否则冒号会被解析成端口分隔符。 */
@@ -35,6 +36,12 @@ export interface RunServerCliOptions {
    * 不传时 `openBrowser` 落到真正的 `node:child_process.spawn`。
    */
   readonly openBrowserImpl?: typeof openBrowser
+  /**
+   * 信号处理的挂载目标，**测试必传**（同 `openBrowserImpl` 的纪律）：不传就真的挂到 `process`
+   * 上，一个测试文件里调几次就攒几组 listener，而它的退出动作会把 vitest 自己杀掉。
+   * 不传时落到真正的 `process`——默认必须是"真的会清理"，见 `mainShutdown.ts`。
+   */
+  readonly signals?: ShutdownSignalTarget
 }
 
 /**
@@ -55,9 +62,17 @@ export async function runServerCli(options: RunServerCliOptions = {}): Promise<S
     return undefined
   }
 
+  // 信号处理**先于 server 装配**：关停钩子的登记面要在 `createWebAgentServer` 里就位
+  // （它随后交给 host-node 的 `registerHostDisposer` 槽），而且此后任何一刻收到 SIGTERM
+  // 都已经有人接着。见 `mainShutdown.ts`。
+  const shutdown = installHostShutdown({
+    target: options.signals ?? process,
+    notice: (text) => { stdout.write(text) },
+  })
+
   // 每次启动生成一枚新 token，只喂给这两处：这里传给 server，下面拼进打印的 URL。
   const token = generateAuthToken()
-  const server = createWebAgentServer({ token })
+  const server = createWebAgentServer({ token, registerHostDisposer: shutdown.registerHostDisposer })
   const host = cli.host ?? DEFAULT_BIND_ADDRESS
   const port = await listenWithPortRetry(server, { host, startPort: cli.port ?? DEFAULT_START_PORT })
 

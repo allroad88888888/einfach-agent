@@ -29,6 +29,15 @@ interface AssembleCliRuntimeOptions {
   credentials: ResolvedCredentials
   verbose: boolean
   workspaceRoot: string
+  /**
+   * 关停钩子的登记面（`shutdown.ts` 的 `installCliShutdown().registerHostDisposer`），原样透传给
+   * host-node 的同名槽位。**不传是有后果的**：MCP 会话就只剩 host-node 那道 `process.on('exit')`
+   * 兜底，而信号走默认处置时那道兜底根本不执行，子进程会活下来。
+   *
+   * 留成可选是因为信号是**进程级**的，只有真正的进程入口（`bootstrap.ts` 的 `main`）该去碰它；
+   * 测试里装配运行时不该顺手改掉整个测试进程的信号行为。
+   */
+  registerHostDisposer?: (dispose: () => Promise<void>) => void
 }
 
 function configureTraceOutput(verbose: boolean): void {
@@ -85,12 +94,17 @@ function configureOpenAiCompatBaseUrl(credentials: ResolvedCredentials): void {
  * 那与登记桥之前的「当前宿主未提供命令桥」是两回事：桥接上了，只是某些域还没填；后者从此不会
  * 再出现在 CLI 上。
  */
-function configureCliHostBridge(homeDir: string): void {
+function configureCliHostBridge(
+  homeDir: string,
+  registerHostDisposer?: (dispose: () => Promise<void>) => void,
+): void {
   // 表在 create 时就定死（装配槽被闭包捕获），登记的却是 loader——core 的 hostBridge 收 loader
   // 是为了让登记同步生效，不留「已 configure 但 hasHostBridge() 还答 false」的窗口。
   // homeDir 传空串等同于不传（hostOptions 的语义）：那时桥自己回落 os.homedir()，若仍解析不出
   // 主目录就在第一次调用时明确失败，而不是把空串当路径根拼下去。
-  const invoke = createNodeHostInvoke({ homeDir })
+  // registerHostDisposer 必须在**建路由表的这一刻**就传进去：MCP 域的管理器随表一起创建，
+  // 关停钩子也在那一刻登记，之后没有第二次机会（见 host-node 的 `mcp/index.ts`）。
+  const invoke = createNodeHostInvoke({ homeDir, registerHostDisposer })
   // 【S5】平台与桥是同一次登记的两半。这里报的是 host-node 自己的 `nodeHostPlatform()`——
   // 也就是 shell 域做 platform mismatch 判定时用的**同一个函数**，而不是 core 的本地探测：
   // CLI 恰好同机，两者今天答案相同，但「同机」是巧合不是契约，按同一个权威取值才是。
@@ -105,7 +119,7 @@ export async function assembleCliRuntime(options: AssembleCliRuntimeOptions): Pr
   // 扫描根。两处各调一次 homedir() 不会报错，漂移时的症状是「skills 扫不到 / 配置读到另一个
   // 文件」——hostOptions.ts 的 homeDir 槽位正是为消掉这第二个权威而存在的。
   const homeDir = homedir().trim()
-  configureCliHostBridge(homeDir)
+  configureCliHostBridge(homeDir, options.registerHostDisposer)
   configureDefaultSkillsRegistry(builtInSkillsRegistry)
   const bridge = buildNodeProjectSkillsBridge()
   // 主目录直接从 node:os 取，不走 core 的 resolveUserSkillsRoot——但**理由已经不是**

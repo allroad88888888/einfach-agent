@@ -19,9 +19,11 @@ import { existsSync } from 'node:fs'
 import { createServer as createHttpServer, type Server } from 'node:http'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createNodeHostInvoke, nodeHostPlatform } from '@web-agent/host-node'
+import { createHostEventBus, createNodeHostInvoke, nodeHostPlatform } from '@web-agent/host-node'
 import { generateAuthToken } from './authToken'
+import { createEventsRouteHandler } from './eventsRoute'
 import { createInvokeRouteHandler } from './invokeRoute'
+import { createModelRouteHandler } from './modelRoute'
 import { resolveServerVersion } from './packageVersion'
 import { createRequestRouter } from './requestRouter'
 
@@ -73,6 +75,14 @@ export interface WebAgentServerOptions {
    * 不传时 host-node 回落到 `os.homedir()`。
    */
   readonly homeDir?: string
+  /**
+   * 关停钩子的登记面，原样透传给 host-node 的 `registerHostDisposer` 槽。
+   *
+   * **不传是有后果的**：MCP 会话就只剩 host-node 那道 `process.on('exit')` 兜底，而 `SIGTERM`
+   * 走默认处置时那道兜底根本不执行，子进程会活下来。S4（`mainRunServer.ts`）总是传，装载点在
+   * `mainShutdown.ts`；这里留成可选是因为测试里起的 server 不该去碰进程级信号。
+   */
+  readonly registerHostDisposer?: (dispose: () => Promise<void>) => void
   /** 未预期异常的去处；默认写 stderr。 */
   readonly onInternalError?: (error: unknown) => void
 }
@@ -80,7 +90,16 @@ export interface WebAgentServerOptions {
 export function createWebAgentServer(options: WebAgentServerOptions = {}): Server {
   // 命令路由表建一次、被闭包捕获：host-node 那边本来就把「重新登记」当作作废旧桥的信号，
   // 每条请求现搭一张表既浪费也会让装配槽的语义变得可变。
-  const invoke = createNodeHostInvoke({ homeDir: options.homeDir })
+  // 事件汇（C2）建在命令表**之前**：C1 的 MCP 传输层要在建表那一刻拿到发射面。
+  // 它只拿 `emitHostEvent`（发射面），拿不到订阅面——传输层能订阅自己发的事件就等于给
+  // 「事件回环驱动状态」留口子。C3 的 SSE 端点拿的是另一半（`HostEventSource`）。
+  // `onHandlerError` 与 `onInternalError` 形状相同（C2 刻意对齐的），直接传。
+  const hostEvents = createHostEventBus({ onHandlerError: options.onInternalError })
+  const invoke = createNodeHostInvoke({
+    homeDir: options.homeDir,
+    registerHostDisposer: options.registerHostDisposer,
+    emitHostEvent: (event) => { hostEvents.emitHostEvent(event.name, event.payload) },
+  })
   // 【S5：握手报的平台没有覆盖开关，这是有意的】
   // 这个值必须是**执行 shell 命令的那台机器**的答案，而 `nodeHostPlatform()` 正是上面这张路由表
   // 里 shell 域做 `platform mismatch` 判定时调的同一个函数（`packages/host-node`）。开一个
@@ -93,6 +112,8 @@ export function createWebAgentServer(options: WebAgentServerOptions = {}): Serve
     health: { version: options.version ?? resolveServerVersion(), platform: nodeHostPlatform() },
     auth: { token: options.token ?? generateAuthToken() },
     invokeRoute: createInvokeRouteHandler({ invoke }),
+    modelRoute: createModelRouteHandler({ forward: { options: { homeDir: options.homeDir } } }),
+    eventsRoute: createEventsRouteHandler({ events: hostEvents }),
     onInternalError: options.onInternalError,
   })
   // router 返回 Promise，而 `http.createServer` 的监听器是同步签名：这里显式 void 掉。

@@ -23,7 +23,10 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { authorizeApiRequest, readApiRequestFacts, type ApiAuthConfig } from './authGuard'
 import { createHealthPayload, HEALTH_PATH, type HealthFacts } from './health'
+import { isEventsRoutePath, type EventsRouteHandler } from './eventsRoute'
 import { isInvokeRoutePath, type InvokeRouteHandler } from './invokeRoute'
+import { isModelRoutePath } from './modelRoutePath'
+import type { ModelRouteHandler } from './modelRoute'
 import { replyJson, replyText, type ReplyOptions } from './httpReply'
 import { requestPathname } from './requestPathname'
 import { handleStaticRequest } from './staticFiles'
@@ -40,6 +43,16 @@ export interface RequestRouterOptions {
    * 本文件不负责构造它——命令路由表是 host-node 的事，路由分派才是这里的事。
    */
   readonly invokeRoute: InvokeRouteHandler
+  /**
+   * `/api/model/request` 的 handler（M2）。**不走 invoke 那条统一路由**——那条被 JSON 信封包住，
+   * 装不下一个流。转发本身在 host-node 的 `forwardProviderRequest`，这里只做 HTTP 那一层。
+   */
+  readonly modelRoute: ModelRouteHandler
+  /**
+   * `/api/events` 的 SSE handler（C3）。**同步返回、响应故意留着不关**——它是一条长连接，
+   * 生命周期由客户端断开与宿主事件驱动，不是一次请求-响应。
+   */
+  readonly eventsRoute: EventsRouteHandler
   /** 未预期异常的去处；默认写 stderr。测试传自己的收集器，免得日志把用例输出淹了。 */
   readonly onInternalError?: (error: unknown) => void
 }
@@ -76,9 +89,18 @@ async function handleApi(
     replyApiError(response, decision.status, decision.error, decision.message, replyOptions)
     return
   }
-  // 认证已在上面处理完，分支里不要再判一遍。
+  // 认证已在上面处理完，分支里不要再判一遍。三条 API 路径互不相交，先后无所谓。
   if (isInvokeRoutePath(pathname)) {
     await options.invokeRoute(request, response, pathname)
+    return
+  }
+  if (isModelRoutePath(pathname)) {
+    await options.modelRoute(request, response)
+    return
+  }
+  if (isEventsRoutePath(pathname)) {
+    // 不 await：SSE 是长连接，handler 同步装好订阅就返回，响应留着不关。
+    options.eventsRoute(request, response)
     return
   }
   if (pathname !== HEALTH_PATH) {

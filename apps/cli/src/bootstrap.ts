@@ -5,6 +5,7 @@ import { requireDeepSeekCredential, resolveModelCredentials } from './credential
 import { subscribeCliRenderer, type TextOutput } from './event-renderer'
 import { renderWaitingState, resumeWaitingRun, runRepl, type ReadlineBridge } from './repl'
 import { assembleCliRuntime } from './runtime'
+import { installCliShutdown } from './shutdown'
 import { resolveWorkspaceRoot } from './workspace-files'
 import {
   defaultCore,
@@ -68,7 +69,16 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   const credentials = await resolveModelCredentials({ configPath: options.configPath })
   requireDeepSeekCredential(credentials)
   const workspaceRoot = await resolveWorkspaceRoot(options.workspaceRoot)
-  await assembleCliRuntime({ credentials, verbose: options.verbose, workspaceRoot })
+  // 信号处理是**进程级**的，所以装在进程入口这一层而不是 `assembleCliRuntime` 里：后者在测试里
+  // 会被反复调用，把处理器装到真 `process` 上等于让测试进程的信号行为跟着装配走。
+  // 它必须先于装配，因为关停钩子要在建命令路由表的那一刻就登记进去。见 `shutdown.ts`。
+  const shutdown = installCliShutdown()
+  await assembleCliRuntime({
+    credentials,
+    verbose: options.verbose,
+    workspaceRoot,
+    registerHostDisposer: shutdown.registerHostDisposer,
+  })
   const sessionId = newSession()
   setWorkspaceRoot(workspaceRoot)
   const unsubscribeRenderer = subscribeCliRenderer(sessionId, output)
