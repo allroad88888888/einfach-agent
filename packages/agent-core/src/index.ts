@@ -20,13 +20,10 @@
 //   零消费方，只出现在测试里，正是红线生效的证据。改状态请走 `configureCommands` 以下的命令面。
 //
 // 模块图纪律（S2c 3911c9d 的教训：barrel 的静态导链会在 `vi.mock` 生效前把重实现灌进模块图）：
-//   · 本 barrel **不新增**任何 `@tauri-apps` 静态边。D3 已把 `runtime/workspaceDialog` 的插件加载
-//     收进 `pickWorkspaceDirectory()` 的 Tauri 守卫之后，因此它可安全作为宿主 API 收进根面；冒烟
-//     `index.smoke.test.ts` 断言 root import 本身不会加载 `@tauri-apps/plugin-dialog`。
-//   · 既有事实（不是本卡引入的）：`./runtime/commands` 的静态图本来就经 `modelRun → runToolLoop`
-//     摸到 `@tauri-apps/api/core`（11 个 `runtime/workspace*`、`shellCommand`、`modelTurnPrefix`）。
-//     命令面是宿主 API 的主体、且全是同步函数，无法照 `state/stateViewPort` 那样延迟获取；这条边归
-//     运行时自身，barrel 只是不把它变得更糟。守门的冒烟见 `index.smoke.test.ts`。
+//   · 本 barrel **不新增**任何宿主上游包的静态边。T1（桌面端退出）之后 core 一个宿主上游包都不
+//     认识：本机能力一律经 `runtime/hostBridge.ts` 收下的 loader 拿，桥背后是什么由装配层决定。
+//     所以这条纪律今天没有具体的被测对象，但它管的是**将来**——真要再引一个上游包时，静态边
+//     会连同这段说明一起回到审查视野。
 //
 // 排除清单（都有正式去处，不在 `.` 里重复开一条通路）：
 //   · 插件作者契约            → `./plugin`（`packages/agent-core/src/plugin.ts` 自称唯一公开入口）。
@@ -49,7 +46,7 @@
 // 运行时实例与装配槽（./runtime/core/coreInstance）
 // ---------------------------------------------------------------------------
 export {
-  // apps/cli: bootstrap/event-renderer/plugins/runtime；apps/web: main.tsx、plugins/desktopProvider
+  // apps/cli: bootstrap/event-renderer/plugins/runtime；apps/web: main.tsx、plugins/workspacePluginProvider
   defaultCore,
   // apps/cli: runtime.ts；apps/web: main.tsx —— 三个装配槽由宿主在启动时注入
   configureDefaultProjectSkillsProvider,
@@ -57,7 +54,7 @@ export {
   configureDefaultDelegation,
 } from './runtime/core/coreInstance'
 export { buildProjectSkillsWorkspaceBridge } from './runtime/projectSkillsBridge'
-// tools-skills 的 provider：扫用户目录前先问宿主要主目录（非 Tauri 返回 undefined）
+// tools-skills 的 provider：扫用户目录前先问宿主要主目录（宿主给不出时返回 undefined）
 export { resolveUserSkillsRoot } from './runtime/userSkillsRoot'
 export type {
   // defaultCore 的类型
@@ -75,22 +72,22 @@ export type {
 // ---------------------------------------------------------------------------
 // 归在装配槽这一组而不是另起门类：`configureHostInvoke` 与上面三个 `configureDefault*` 是同一种
 // 东西 —— core 留一个洞，宿主在启动时把自己的实现填进去。区别只是它住在 `runtime/hostBridge`
-// 而非 `runtime/core/coreInstance`（模块级单例，同 hostTauri 的形态），所以单开一段标题。
+// 而非 `runtime/core/coreInstance`（两者都是模块级单例），所以单开一段标题。
 //
 // 与「零消费方一律不收」的取舍：本卡（H1）交付时 `apps/web` / `apps/cli` 里还没有调用点，注入
 // 发生在 H5（桌面）与 B 线（浏览器：HTTP invoke）。
 // 收进来是因为**可达性本身就是这条契约的内容** —— 装配层 import 不到的注入点等于没有注入点。
-// H5 交付的形态是 `configureHostInvoke(() => Promise.resolve(invoke))`，loader 由装配层自己持有
-// （apps/web/src/main.tsx）——而不是 H1 当初设想的 `() => loadTauriInvoke()`：后者要深导入
-// `runtime/hostTauri`，撞下面这条白名单本身。这恰好印证了只收 configureHostInvoke 的划法。
+// 交付的形态是 `configureHostInvoke({ loader, platform })`，loader 由装配层自己持有
+// （apps/web/src/host/hostCommandBridge.ts、apps/cli/src/runtime.ts）——core 侧不提供任何具体
+// 宿主的 loader，否则装配层就得深导入一个 `runtime/host*` 子路径，撞下面这条白名单本身。
 //
 // 只收两个：`hasHostBridge` / `loadHostInvoke` 的消费方全在 core 内部（H2–H4 要改的那 13 个
 // runtime 模块），宿主不该也不需要自己去解析桥，按同一条「按真实用量划线」的规矩留在包内。
 export { configureHostInvoke } from './runtime/hostBridge'
 // 宿主实现自己的桥时要照它写签名（packages/host-node 的路由表、浏览器侧的 HTTP invoke）
 export type { HostInvoke, HostBridgeRegistration } from './runtime/hostBridge'
-// S5：登记桥时必须一并声明宿主平台。**同机宿主**（Tauri webview 与原生同一台机器）用这个函数
-// 取值；远端宿主（浏览器 → Node server）必须从握手拿，用本地探测会稳定答错整整一个平台。
+// S5：登记桥时必须一并声明宿主平台。**同机宿主**（CLI：解释器与被执行的命令同一台机器）用这个
+// 函数取值；远端宿主（浏览器 → Node server）必须从握手拿，用本地探测会稳定答错整整一个平台。
 // 读取面不在这里：两个消费者（shell 桥、注入模型的「运行环境」段）读的是 `@einfach-agent/core/tools`
 // 的 `hostPlatform()`，宿主不需要也不该自己去读那个值。
 export { detectLocalPlatform } from './runtime/hostPlatform'
@@ -183,22 +180,26 @@ export type { PersistenceDependencies } from './runtime/persistenceBridge' // co
 // ---------------------------------------------------------------------------
 // 插件加载面（./plugins/*）—— P 线宿主装配 API，盘点成文时尚不存在，按 §4 第 1 行归 `.`
 // ---------------------------------------------------------------------------
-export { scanPlugins } from './plugins/pluginScanner' // apps/cli: plugins.ts；apps/web: plugins/desktopProvider
+export { scanPlugins } from './plugins/pluginScanner' // apps/cli: plugins.ts；apps/web: plugins/workspacePluginProvider
 export type { PluginScanBridge, ScannedPlugin } from './plugins/pluginScanner'
 export { loadScannedPlugins } from './plugins/pluginLoader' // 同上
 export type {
   LoadedPlugin, // apps/web: plugins/types.ts
-  PluginInstallHost, // apps/web: plugins/desktopProvider
-  PluginLoaderDeps, // apps/cli: plugins.ts；apps/web: plugins/{desktopProvider,desktopImportModule}
+  PluginInstallHost, // apps/web: plugins/workspacePluginProvider
+  PluginLoaderDeps, // apps/cli: plugins.ts；apps/web: plugins/{workspacePluginProvider,pluginImportModule}
   PluginLoadResult,
 } from './plugins/pluginLoaderTypes'
-export type { PluginApiVersionRange } from './plugins/manifestTypes' // apps/cli: plugins.ts；apps/web: plugins/desktopProvider
+export type { PluginApiVersionRange } from './plugins/manifestTypes' // apps/cli: plugins.ts；apps/web: plugins/workspacePluginProvider
 
 // ---------------------------------------------------------------------------
-// 工作区目录选择与上下文预算（./runtime/workspaceDialog、./runtime/contextBudget）
+// 上下文预算（./runtime/contextBudget）
 // ---------------------------------------------------------------------------
-export { canPickWorkspaceDirectory, pickWorkspaceDirectory } from './runtime/workspaceDialog'
-export type { PickWorkspaceDirectoryResult } from './runtime/workspaceDialog'
+// 【T1 删掉了什么】这里曾经还导出 `canPickWorkspaceDirectory` / `pickWorkspaceDirectory`
+// （`runtime/workspaceDialog`）—— 原生目录选择框，唯一实现是桌面端的 dialog 插件。桌面端退出后
+// 它恒答「当前宿主未提供命令桥」，两个 UI 调用点因此改成只保留手工输入工作区路径。
+// 浏览器自托管下的目录选择是一件**尚未设计**的事（issue 树的未决项 U-1：server 端目录浏览 UI /
+// 输入框 + server 侧校验 / 读配置里的 workspace 列表），做的时候按那条路重新长出接口，
+// 不要复活这个只能答 false 的签名。
 export {
   // apps/web: ContextStats.tsx —— S7a 从 compactionPlugin 换出来的正式通路（E1 记债，§3.5）
   COST_SOFT_CAP_TOKENS,

@@ -3,17 +3,17 @@
 // 本模块是 project-skills-blueprint.md 阶段 C 的接入点：把 workspace 文件系统的
 // 已有机能（listWorkspaceFiles / readWorkspaceFile）包装成 loader bridge。
 //
-// web 端（非 Tauri）直接返回 undefined，不引入任何 workspace IO 依赖。
+// 宿主没有登记命令桥时（纯静态产物）直接返回 undefined，不引入任何 workspace IO 依赖。
 
 import type { ProjectSkillsLoaderBridge } from './core/coreInstance'
 import { hasHostBridge } from './hostBridge'
 import { listWorkspaceFiles, readWorkspaceFile } from './workspaceRead'
 
 /**
- * 在 Tauri 环境下构建一个 workspace bridge；web 环境返回 undefined。
+ * 宿主登记过命令桥时构建一个 workspace bridge；没有桥则返回 undefined。
  *
  * bridge 只是 workspace 读函数的轻量包装，不做额外守卫（workspace confinement
- * 由底层 Rust / workspaceRead 保证）。
+ * 由桥背后的宿主实现与 workspaceRead 共同保证）。
  *
  * ★ 失败一律 throw，且必须带上桥的原始 error ★ —— workspaceRead 的两个函数返回的是
  *   `{ok:false, error}` 而非抛异常。直接取 `.data` 会在失败时读到 undefined，抛出的

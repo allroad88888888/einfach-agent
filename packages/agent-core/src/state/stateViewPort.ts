@@ -13,7 +13,7 @@ import { itemsAtom } from './sessionAtoms'
 // workspaceRead 只做【调用时动态 import】，不能静态 import（同 persistenceBridge → hydrate 的处置）：
 // 本文件的值导出被 `subagents` barrel 再导出，而 barrel 又挂在 tools/agents → registerStandardTools
 // → `apps/web/src/test/setup.ts` 这条链上。静态边会在各测试文件的 vi.mock 生效前，把
-// workspaceRead 连同它顶层 import 的真 `@tauri-apps/api/core` 一起灌进 worker 模块图，
+// workspaceRead 连同它顶层 import 的真 hostBridge 一起灌进 worker 模块图，
 // 令 workspaceRead 系 mock 全部失效（setup.ts 里记的同款回归，S2b 又踩了一次）。
 // 端口只需要在调用时刻拿到实现，推迟加载即可；两个函数本来就是 async，不引入新的时序语义。
 // promise 必须缓存：同一 tick 里并发首次 import 同一模块时，Vitest 的 mocker 会有一路拿到未被

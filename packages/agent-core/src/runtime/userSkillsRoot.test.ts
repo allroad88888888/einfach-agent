@@ -2,7 +2,7 @@
 //
 // 桩手法：直接用真实的 hostBridge 模块（不 mock），用 configureHostInvoke 登记一个自制的 invoke
 // 桩来模拟"有桥"，用 configureHostInvoke(undefined) 模拟"无桥"。不用 hostBridgeMock
-// （hostTauri.testHarness.ts）——它把 hasHostBridge() 钉死为 true，而本文件的守卫正是被测对象，
+// （hostBridgeMock.testHarness.ts）——它把 hasHostBridge() 钉死为 true，而本文件的守卫正是被测对象，
 // 钉死了就测不到"无桥 → undefined"那条；也不用 stubHostBridgeFlag（hostBridge.testHarness.ts）
 // ——它的桩 invoke 恒 reject，喂不出"返回主目录""尾斜杠"这类需要真实返回值的用例。零 vi.mock，
 // 因此也没有对 './hostBridge' 值导入撞 TDZ 的风险（两份 testHarness 文件头记录的那个坑）。

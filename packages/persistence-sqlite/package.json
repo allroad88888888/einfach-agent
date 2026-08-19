@@ -27,7 +27,6 @@
     "build": "tsup && tsc -p tsconfig.build.json && node ../../scripts/fix-dts-specifiers.mjs dist"
   },
   "dependencies": {
-    "@tauri-apps/plugin-sql": "^2.4.0",
     "@einfach-agent/core": "workspace:*"
   },
   "devDependencies": {

@@ -1,5 +1,3 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
   NODE_HOST_COMMANDS_BY_DOMAIN,
@@ -7,63 +5,27 @@ import {
   isNodeHostCommandName,
 } from './commandNames'
 
-// 命令全集的**上游权威**：桌面宿主 `invoke_handler(tauri::generate_handler![...])` 的登记列表。
-// 本文件逐字比对两边，堵住「Rust 侧加了命令、Node 侧永远不知道该实现它」这种静默漂移——
-// 那种漂移的症状只是某个功能在浏览器版里没反应，既不报错也不指向病因。
-// 从 cwd 往上找 pnpm-workspace.yaml 定位仓库根。**不能用 `import.meta.url`**：Vitest 走 Vite
-// 的模块图，jsdom 环境下 `import.meta.url` 是 http:// 而不是 file://，`fileURLToPath` 当场抛
-// 「The URL must be of scheme file」。
-function repositoryRoot(): string {
-  let current = process.cwd()
-  while (!existsSync(join(current, 'pnpm-workspace.yaml'))) {
-    const parent = dirname(current)
-    expect(parent, '从 cwd 往上找不到 pnpm-workspace.yaml').not.toBe(current)
-    current = parent
-  }
-  return current
-}
-
-const desktopLibPath = resolve(repositoryRoot(), 'apps/desktop/src/lib.rs')
-
-function commandsRegisteredByDesktopHost(): string[] {
-  const source = readFileSync(desktopLibPath, 'utf8')
-  const start = source.indexOf('tauri::generate_handler![')
-  expect(start, 'apps/desktop/src/lib.rs 里找不到 generate_handler! 登记块').toBeGreaterThan(-1)
-  const end = source.indexOf(']', start)
-  const block = source.slice(start, end)
-  // 每条形如 `module_name::command_name,`，取第二段。
-  return [...block.matchAll(/(\w+)::(\w+)\s*,/g)].map((match) => match[2])
-}
-
-// 没有 Rust 对应物的域：桌面侧的等价能力由 Tauri **插件**提供，从来不在 lib.rs 的
-// `generate_handler!` 里，所以它们不参与上面那份逐字比对。**排除的是整域、且要点名**——
-// 换成「放宽比对口径」（比如只查子集）的话，Rust 侧真的新增一条而这里没跟上时就再也没人报信，
-// 而那正是这份测试存在的唯一理由。
-const DOMAINS_WITHOUT_DESKTOP_COMMANDS = ['sqlite'] as const
-
-function commandsWithDesktopCounterpart(): string[] {
-  return Object.entries(NODE_HOST_COMMANDS_BY_DOMAIN)
-    .filter(([domain]) => !(DOMAINS_WITHOUT_DESKTOP_COMMANDS as readonly string[]).includes(domain))
-    .flatMap(([, commands]) => [...commands])
-}
+// 【T1 删掉了两条对拍用例，理由与替代物】
+// 本文件此前的两条主力用例**读 `apps/desktop/src/lib.rs`**，把 Node 侧的命令全集与桌面宿主
+// `tauri::generate_handler![…]` 的登记列表逐字比对，堵的是「Rust 侧加了命令、Node 侧永远不知道
+// 该实现它」这种静默漂移。桌面端整条退出后那份上游权威不存在了，对拍没有第二侧可比。
+//
+// **没有拿别的东西替代它，是因为漂移的方向反过来了。** 这份命令全集今天的下游是
+// `apps/web`（`POST /api/invoke/:command`）与 `apps/cli`（进程内直调），两者都从
+// `NODE_HOST_COMMAND_NAMES` 取名字——名字对不上是 `tsc -b` 的事，不是运行期的事。把那 28 条抄成
+// 一份字面量放在这里只会变成「同一张表写两遍」，改一处忘另一处时它只会红得莫名其妙。
+//
+// 下面留着的四条钉的是表本身的自洽性（条数、无重复、域不共享、判定函数），它们与宿主是谁无关。
 
 describe('命令全集', () => {
-  it('与桌面宿主登记的命令逐字一致（sqlite 域除外，它没有 Rust 对应物）', () => {
-    const registered = commandsRegisteredByDesktopHost()
-    expect([...registered].sort()).toEqual([...commandsWithDesktopCounterpart()].sort())
-  })
-
-  it('sqlite 域是 Node 独有的两条，且确实不在桌面宿主的登记列表里', () => {
-    // 反向钉一次：万一哪天 Rust 侧真的加了同名命令，上一条用例只会说「多了两条」，
-    // 而病因（两个宿主对同一个名字各有一份实现）要靠这条说出来。
+  it('sqlite 域是 Node 独有的两条', () => {
+    // 【T1】此前这条还反向断言「这两条确实不在桌面宿主的登记列表里」——桌面侧的等价能力由
+    // Tauri **插件**提供，从来不在 `generate_handler!` 里。桌面端退出后反向那一半没有比对对象，
+    // 只留下「这个域就是这两条」这个仍然成立的事实。
     expect(NODE_HOST_COMMANDS_BY_DOMAIN.sqlite).toEqual(['sqlite_execute', 'sqlite_select'])
-    const registered = new Set(commandsRegisteredByDesktopHost())
-    for (const command of NODE_HOST_COMMANDS_BY_DOMAIN.sqlite) {
-      expect(registered.has(command)).toBe(false)
-    }
   })
 
-  it('恰好 30 条（28 条对应 Rust 命令 + sqlite 域 2 条），且没有重复', () => {
+  it('恰好 30 条（28 条宿主命令 + sqlite 域 2 条），且没有重复', () => {
     expect(NODE_HOST_COMMAND_NAMES).toHaveLength(30)
     expect(new Set(NODE_HOST_COMMAND_NAMES).size).toBe(30)
   })

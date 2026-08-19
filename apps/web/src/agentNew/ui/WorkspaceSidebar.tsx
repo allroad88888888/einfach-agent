@@ -13,8 +13,6 @@ import {
   selectWorkspace,
   toggleWorkspaceExpanded,
   toggleWorkspaceSettings,
-  canPickWorkspaceDirectory,
-  pickWorkspaceDirectory,
 } from '@einfach-agent/core'
 import { workspaceRenameStateAtom } from './workspaceViewState'
 import { SessionList } from './SessionList'
@@ -38,15 +36,9 @@ export function WorkspaceSidebar() {
       )
     : undefined
 
-  async function handleNewWorkspace(): Promise<void> {
-    if (!canPickWorkspaceDirectory()) {
-      newWorkspace()
-      return
-    }
-    const result = await pickWorkspaceDirectory()
-    if (result.ok && result.path) newWorkspace({ rootPath: result.path })
-  }
-
+  // 【T1】新建工作区不再先开原生目录选择框：那个实现只存在于桌面端，删掉之后守卫恒为 false，
+  // 整条「选完目录再建」的分支不可达。现在一律建一个空 root 的工作区，路径在设置弹层里手工填
+  // （WorkspaceRootField）。浏览器自托管下的目录选择见 issue 树未决项 U-1。
   function startRename(id: string, name: string): void {
     renameSettledRef.current = false
     setRenameState({ id, draft: name })
@@ -75,7 +67,7 @@ export function WorkspaceSidebar() {
             aria-label="新建工作区"
             title="新建工作区"
             onClick={() => {
-              void handleNewWorkspace()
+              newWorkspace()
             }}
           >
             +

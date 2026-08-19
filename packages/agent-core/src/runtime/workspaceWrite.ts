@@ -219,7 +219,7 @@ export async function writeWorkspaceFile(
     return failedResult(input, '写入 workspace 文件：当前宿主未提供命令桥')
   }
 
-  // 惰性加载必须在下面的 dispatchStartedAt 采样之前完成：首次 import @tauri-apps/api/core 有几 ms
+  // 惰性加载必须在下面的 dispatchStartedAt 采样之前完成：首次解析宿主 invoke 有几 ms
   // 开销（每个模块实例只发生一次），若落在计时区间里，invokeDispatchMs 报的就不再是「IPC 派发有多慢」
   // 而是「模块加载有多慢」。加载失败复用 invoke 失败的同一条错误出口，返回契约不变——此处尚未
   // beginPerformanceDiagnostic，所以没有需要 finish 的 operation。

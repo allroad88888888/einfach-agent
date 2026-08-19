@@ -12,7 +12,7 @@
 //
 // 传递方式：blob 的源码是字符串，闭包捞不到宿主对象，只能经 globalThis 交接。生成的模块在
 // 求值时把命名空间读走，之后插件拿到的都是普通模块绑定。这个全局不是新的信任面——插件与页面
-// 同权，本来就能直接触达 globalThis 上的一切（见 desktopImportModule.ts 顶部注释）。
+// 同权，本来就能直接触达 globalThis 上的一切（见 pluginImportModule.ts 顶部注释）。
 
 import * as corePluginContract from '@einfach-agent/core/plugin'
 

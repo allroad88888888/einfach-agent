@@ -6,8 +6,7 @@ export default definePackageBuild({
   entry: ['src/index.ts'],
   // @einfach-agent/core 在本包 dependencies，tsup 自动 external。
   // P1 之后本包**不再 import 任何具体 SQL 上游包**：SQL 执行面由装配层经 configureSqlExecutor
-  // 注入，`@tauri-apps/plugin-sql` 的唯一 import 点搬去了 apps/web/src/persistence/
-  // tauriSqlExecutor.ts。package.json 里那条 dependency 声明因此已是残留，待随一次 lockfile
-  // 刷新一并摘掉（单独改 package.json 会让 CI 的 pnpm install --frozen-lockfile 变红）。
+  // 注入（浏览器/CLI 两态都打到 `POST /api/invoke/sqlite_*`，见 apps/web/src/persistence/
+  // serverSqlExecutor.ts）。因此本包没有任何需要手动 external 的上游。
   external: [],
 })

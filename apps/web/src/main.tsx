@@ -21,7 +21,7 @@ import { initializePluginSettings } from './plugins/initialize'
 import { createDefaultPlanRuntime } from '@einfach-agent/tools-planning'
 import { createDelegationAssembly } from '@einfach-agent/subagents'
 // 宿主分流的五个装配面各住一个模块（B3）：桥、模型传输、凭据宿主、观测 driver、刷盘时机。
-// 本文件只按解析出的那一态把它们装起来，不再自己判「是不是 Tauri」。
+// 本文件只按解析出的那一态把它们装起来，从不自己探宿主。
 import { resolveHost, type ResolvedHost } from './host/resolveHost'
 import { registerHostCommandBridge } from './host/hostCommandBridge'
 import { createHostModelCredentialHost } from './host/hostModelCredentialHost'
@@ -57,7 +57,9 @@ const core = defaultCore
 
 // API Key 不进入前端配置：模型请求由 host/hostModelTransport.ts 选出的那条受管传输发出，
 // 前端只见这个标记，见不到真实 Key。
-const desktopManagedCredentialMarker = 'desktop-managed-credential'
+// 【为什么值本身不改】它是**协议字面量**：core 把它当 apiKey 一路带到受管传输那一层，改字符串
+// 等于改一条跨模块约定，与本卡（删桌面端）无关。名字里的 desktop 是历史，含义是「宿主受管」。
+const hostManagedCredentialMarker = 'desktop-managed-credential'
 
 function currentView(): string | null {
   return new URLSearchParams(window.location.search).get('view')
@@ -79,7 +81,7 @@ function renderRoot(children: React.ReactNode): void {
   )
 }
 
-// 门禁开不开的判据是「这个宿主能不能管模型凭据」，不是「这是不是桌面端」：门禁存在的全部理由
+// 门禁开不开的判据是「这个宿主能不能管模型凭据」，不是宿主的品牌：门禁存在的全部理由
 // 就是在渲染主工作区前确认受管凭据已配置，宿主管不了凭据时它没有可确认的东西。
 function renderApp(
   target: StartupCredentialTargetResolution,
@@ -108,7 +110,7 @@ function renderWindowScrollDemo(): void {
 }
 
 // hydrate 先于种子/渲染（RF3 / codex P1）：盘上有会话就恢复，没有才种子一个空会话，避免首次空屏。
-// 桌面端还必须等待凭据状态：AppShell 只在门禁确认目标 Key 已配置后才会挂载。
+// 能管凭据的宿主还必须等待凭据状态：AppShell 只在门禁确认目标 Key 已配置后才会挂载。
 async function bootstrapApplication(host: ResolvedHost): Promise<StartupCredentialTargetResolution> {
   const settingsHydration = hydrateAppSettings()
   try {
@@ -150,10 +152,12 @@ async function startApplication(): Promise<void> {
   initializeMcpSettings(host)
   void hydrateMcpSettings()
 
-  // 用户插件同理（P10）：桌面宿主在这里接上真实加载面并立即扫描一次，其余宿主什么都不装，
-  // 保持 plugins/commands.ts 里那个如实回答"当前宿主不支持用户插件"的默认 service（蓝图 3.4）。
+  // 用户插件同理（P10）：有本机能力的宿主在这里接上真实加载面并立即扫描一次，static 宿主什么都
+  // 不装，保持 plugins/commands.ts 里那个如实回答"当前宿主不支持用户插件"的默认 service（蓝图 3.4）。
   // 启动这一刻 workspace 还没 hydrate 回来，真正的扫描由 initialize 内的 root 订阅触发。
-  initializePluginSettings()
+  // **必须传 host**（T1 吸收 B8）：此前这里是无参调用、由 initialize 自己再探一次宿主品牌，
+  // 于是 server 宿主下用户插件整个特性静默缺席。判据只能有 resolveHost() 一处。
+  initializePluginSettings(host)
   void hydratePluginSettings()
 
   const credentialHost = createHostModelCredentialHost(host)
@@ -161,13 +165,13 @@ async function startApplication(): Promise<void> {
   // 凭据表按 MODEL_CREDENTIALS 的 provider 生成：新增一家 provider 只改那张描述表，
   // 不必在这里再列一遍厂商名（core 侧只按 vendor id 查表）。
   const managedModelCredentials = Object.fromEntries(
-    MODEL_CREDENTIALS.map(({ target }) => [target.provider, desktopManagedCredentialMarker]),
+    MODEL_CREDENTIALS.map(({ target }) => [target.provider, hostManagedCredentialMarker]),
   )
   configureCommands({
     modelCredentials: managedModelCredentials,
     prepareUserInput: prepareProviderUserInput,
     disposeUserContent: (discarded, retained, context) => disposeProviderUserContent(discarded, retained, context, {
-      apiKey: desktopManagedCredentialMarker,
+      apiKey: hostManagedCredentialMarker,
       fetchImpl: providerFetch,
     }),
     fetchImpl: providerFetch,

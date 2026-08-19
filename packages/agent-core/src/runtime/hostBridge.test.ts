@@ -1,7 +1,7 @@
 // hostBridge 的 colocated 测试（H1）。钉的是契约的四个面：登记（同步）、解析（惰性 + 缓存）、
 // 未登记时的明确失败、重新登记时缓存作废。
 //
-// 与 hostTauri.test.ts 的差别：那边用 `vi.mock` 工厂当「模块是否被加载」的探针，因为被测的是一次
+// 与已删除的 hostTauri.test.ts 的差别：那边用 `vi.mock` 工厂当「模块是否被加载」的探针，因为被测的是一次
 // 真实的动态 import；这里 loader 是调用方注入的普通函数，计数直接由 loader 自己维护即可，不需要
 // mocker 参与。反过来说，本文件的 beforeEach 必须把模块级单例还原干净 —— 同一个 worker 里所有
 // 用例共享 hostBridge.ts 的那一份 loader/promise 缓存。
@@ -100,7 +100,7 @@ describe('loadHostInvoke() 的解析与缓存', () => {
   })
 
   it('同 tick 并发首调也只解析一次', async () => {
-    // 这条是 `??=` 缓存存在的理由（hostTauri.ts 的同款记档：并发首次 import 时 Vitest 的 mocker
+    // 这条是 `??=` 缓存存在的理由（并发首次 import 时 Vitest 的 mocker
     // 有一路会拿到未替换的真模块）。用一个手动 defer 的 loader 把解析窗口撑开：三次调用都在
     // loader 还没 resolve 时发起，若缓存写在 await 之后就会漏成三次解析。
     let release: (() => void) | undefined

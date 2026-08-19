@@ -1,15 +1,6 @@
-import { invoke } from '@tauri-apps/api/core'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  createTauriModelCredentialHost,
-  MODEL_CREDENTIALS,
-  type ModelCredentialHost,
-} from './modelCredentialHost'
+import { describe, expect, it, vi } from 'vitest'
+import { MODEL_CREDENTIALS, type ModelCredentialHost } from './modelCredentialHost'
 import { createServerModelCredentialHost } from './serverModelCredentialHost'
-
-vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
-
-const invokeMock = vi.mocked(invoke)
 
 /** 一把已知 Key，「不外泄」的断言全拿它当探针。 */
 const API_KEY = 'sk-secret-server-credential-probe-0123456789'
@@ -38,25 +29,21 @@ async function exercise(host: ModelCredentialHost): Promise<void> {
   }
 }
 
-beforeEach(() => {
-  invokeMock.mockReset()
-  invokeMock.mockResolvedValue(STATUS)
-})
-
 describe('createServerModelCredentialHost', () => {
-  it('发出的命令名与入参与桌面版逐字相同', async () => {
-    const serverCalls: Call[] = []
-    await exercise(createServerModelCredentialHost(recordingInvoke(serverCalls)))
-    await exercise(createTauriModelCredentialHost())
+  // 【T1 改了判据】这一条此前是「与桌面版逐字相同」——拿 `createTauriModelCredentialHost()`
+  // 发出的调用当参照物。桌面端退出后参照物没了，而契约本身还在：另一端是 host-node 的
+  // `model/credentialCommands.ts`，命令名或入参形状差一个字，症状是「存不进去」而两边各自的
+  // 测试都还是绿的。所以参照物换成**写死的表**——它现在是这份契约在前端这一侧的唯一权威。
+  it('每个凭据目标都发出 status/set/delete 三条命令，命令名与入参形状写死', async () => {
+    const calls: Call[] = []
+    await exercise(createServerModelCredentialHost(recordingInvoke(calls)))
 
-    const tauriCalls: Call[] = invokeMock.mock.calls.map(([cmd, args]) => ({
-      cmd,
-      args: args as Record<string, unknown> | undefined,
-    }))
-    // 同接口不只是「方法名一样」：同一个设置面板会轮流打到两种宿主上，命令名或入参形状差一个
-    // 字，症状是「桌面版能存、浏览器里存不进去」，而两边各自的测试都还是绿的。
-    expect(serverCalls).toEqual(tauriCalls)
-    expect(serverCalls).toHaveLength(MODEL_CREDENTIALS.length * 3)
+    expect(calls).toEqual(MODEL_CREDENTIALS.flatMap(({ target: { provider, scope } }) => [
+      { cmd: 'model_credential_status', args: { provider, scope } },
+      { cmd: 'model_credential_set', args: { input: { provider, scope, apiKey: API_KEY } } },
+      { cmd: 'model_credential_delete', args: { provider, scope } },
+    ]))
+    expect(calls).toHaveLength(MODEL_CREDENTIALS.length * 3)
   })
 
   it('三条命令的形状：status/delete 传 provider+scope，set 包一层 input', async () => {
@@ -88,7 +75,7 @@ describe('createServerModelCredentialHost', () => {
   })
 
   it('失败原样抛出，不折成「未配置」', async () => {
-    // B2 的 reject 是**裸字符串**（与 Tauri invoke 逐字一致），不是 Error。
+    // B2 的 reject 是**裸字符串**，不是 Error。
     const host = createServerModelCredentialHost(async () => {
       throw '本地服务返回了非预期的错误响应（HTTP 401）。'
     })

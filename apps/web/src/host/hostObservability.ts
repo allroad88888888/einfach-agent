@@ -3,17 +3,17 @@
 // 拆开写会出现「写进 SQLite、从 IndexedDB 读」这种两头对不上的装配，而它不会报错，只会让
 // TraceViewer 恒空。所以两端在同一个函数里按同一个宿主判据选，调用方只看得到一个入口。
 //
-// 【P4 之后判据换了】以前是「是不是 tauri」——因为 trace 落 SQLite 要 `@tauri-apps/plugin-sql`，
-// 那是桌面原生通路。P4 把 observability-sqlite 收敛到注入的 `SqlExecutor` 之后，判据变成
-// **「这一态有没有 SQL 通路」**，与 `persistence/persistenceDrivers.ts` 逐字相同；server 宿主
-// 因此两端都走 SQLite（经 `POST /api/invoke/sqlite_*`），不再与 static 同待遇。
+// 【判据是「这一态有没有 SQL 通路」】P4 把 observability-sqlite 收敛到注入的 `SqlExecutor` 之后，
+// 判据与 `persistence/persistenceDrivers.ts` 逐字相同；server 宿主两端都走 SQLite
+// （经 `POST /api/invoke/sqlite_*`）。
 // 两处取的是**同一个库文件的两条逻辑连接**：persistence 写 sessions / recovery_snapshots /
 // history_log，本文件这条写 trace_spans / trace_events（词表见 host-node 的 sqlite/connectionNames.ts）。
 //
-// 【读取端那个 DEV 分支现在只对没有 SQL 通路的那一态生效】浏览器 dev 预览要能看桌面端写下的
-// trace（同机调试的主要用途），走 `createDevSqliteLogReader` 经 Vite dev 中继读同一份 SQLite 文件。
-// 这是**有意的「写 IndexedDB、读桌面 SQLite」**——它服务的是 static + DEV。
-// B5 报过：P4 之前 `server + DEV` 也会落进这个分支，于是 server 宿主写 IndexedDB 却读桌面那份
+// 【读取端那个 DEV 分支只对没有 SQL 通路的那一态生效】`pnpm dev` 起的纯前端预览没有后端，写入落
+// IndexedDB，但读取仍走 `createDevSqliteLogReader` 经 Vite dev 中继读本机那份 SQLite 文件——
+// 同机调试时要能看见 `pnpm serve` / CLI 写下的 trace。这是**有意的「写 IndexedDB、读 SQLite」**，
+// 它服务的是 static + DEV。
+// B5 报过：P4 之前 `server + DEV` 也会落进这个分支，于是 server 宿主写 IndexedDB 却读另一份
 // SQLite，TraceViewer 一条看不到；判据换成「有没有 SQL 通路」之后 server 走不到这里了。
 import {
   configureObservability,
@@ -32,9 +32,6 @@ import type { ResolvedHost } from './resolveHost'
  * （连接名词表见 host-node 的 sqlite/connectionNames.ts）。
  */
 function traceSqlExecutorLoader(host: ResolvedHost): SqlExecutorLoader | undefined {
-  if (host.kind === 'tauri') {
-    return async () => (await import('../persistence/tauriSqlExecutor')).loadTauriSqlExecutor()
-  }
   if (host.kind === 'server') {
     return async () => (await import('../persistence/serverSqlExecutor')).createServerSqlExecutor('observability')
   }

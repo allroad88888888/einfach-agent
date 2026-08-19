@@ -1,5 +1,3 @@
-import { invoke } from '@tauri-apps/api/core'
-
 export type CredentialSource = 'config' | 'missing'
 
 export type ModelCredentialTarget =
@@ -45,33 +43,21 @@ export interface ModelCredentialHost {
   delete(target: ModelCredentialTarget): Promise<ModelCredentialStatus>
 }
 
+/**
+ * 没有本机后端的那一态（纯静态产物）：如实说存不进去，而不是给一个存不进去的框。
+ * `available: false` 同时也是设置面板收起输入框、启动凭据门禁不开的判据。
+ *
+ * 【T1】文案从「只能在桌面应用配置文件中保存」改成按能力措辞：唯一能落盘的宿主现在是本机
+ * Node 后端（`serverModelCredentialHost.ts`），报一个已经不存在的产品名等于对用户撒谎。
+ */
 export function createUnavailableModelCredentialHost(): ModelCredentialHost {
   const unavailable = async (): Promise<ModelCredentialStatus> => {
-    throw new Error('模型密钥只能在桌面应用配置文件中保存。')
+    throw new Error('模型密钥只能由本机后端写入配置文件；当前页面没有连上本机后端。')
   }
   return {
     available: false,
     status: async () => ({ configured: false, source: 'missing' }),
     save: unavailable,
     delete: unavailable,
-  }
-}
-
-/** Uses desktop IPC commands whose responses never contain a credential value. */
-export function createTauriModelCredentialHost(): ModelCredentialHost {
-  return {
-    available: true,
-    status: ({ provider, scope }) => invoke<ModelCredentialStatus>(
-      'model_credential_status',
-      { provider, scope },
-    ),
-    save: ({ provider, scope }, apiKey) => invoke<ModelCredentialStatus>(
-      'model_credential_set',
-      { input: { provider, scope, apiKey } },
-    ),
-    delete: ({ provider, scope }) => invoke<ModelCredentialStatus>(
-      'model_credential_delete',
-      { provider, scope },
-    ),
   }
 }

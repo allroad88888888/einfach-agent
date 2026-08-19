@@ -138,7 +138,7 @@ describe('ServerStdioMcpConnector：命令与结果', () => {
     const { connector } = createConnectorUnderTest()
     const connection = await connector.connect(stdioConfig())
 
-    // 文案与 Tauri 版差一个词（那边写「桌面端」）：上限本身同值，但这条路上没有桌面端。
+    // 文案按本机后端措辞（历史上桌面版那条写的是「桌面端」）：上限本身同值。
     await expect(connection.listTools()).rejects.toThrow('超过本机服务分页上限')
   })
 

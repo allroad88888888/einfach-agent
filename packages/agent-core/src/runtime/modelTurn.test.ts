@@ -3,8 +3,8 @@
 // 契约（TP3）：runtime:'server' 工具依赖 Tauri 本机能力，web 下不进 manifest。
 //   · request_tool_schema 不内嵌无界 enum，目录改由有界的搜索/游标页返回；
 //   · visible 展开也按同一判据过滤：web 下即便某 server 工具混进 visible 也不发给 model。
-//   · request_tool_schema 元工具本身恒在场（两种 isTauri 都在返回列表首位）。
-// 此环境 isTauri() 天然为 false，但这里直接传布尔参数，不依赖真实环境。
+//   · request_tool_schema 元工具本身恒在场（宿主有没有本机能力，它都在返回列表首位）。
+// 此环境天然没有宿主命令桥，但这里直接传布尔参数，不依赖真实环境。
 
 import { describe, it, expect } from 'vitest'
 import { maxTurnToolsForVendor, type ModelFunctionTool, type ModelItem } from '@einfach-agent/ai'
@@ -219,9 +219,9 @@ describe('buildTurnTools —— TP3 server 工具按环境过滤', () => {
     expect(manifest).not.toContain('skill_search')
   })
 
-  it('request_tool_schema 元工具恒在场（两种 isTauri 都在返回列表首位）', () => {
-    for (const isTauri of [false, true]) {
-      const tools = buildTurnTools([], isTauri)
+  it('request_tool_schema 元工具恒在场（有没有本机能力都在返回列表首位）', () => {
+    for (const hostHasLocalCapabilities of [false, true]) {
+      const tools = buildTurnTools([], hostHasLocalCapabilities)
       expect(tools[0].function.name).toBe('request_tool_schema')
     }
   })

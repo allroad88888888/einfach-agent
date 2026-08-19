@@ -59,14 +59,10 @@ vi.mock('./settings/commands', () => ({
 }))
 vi.mock('./settings/modelCredentialHost', () => ({
   MODEL_CREDENTIALS: [],
-  createTauriModelCredentialHost: vi.fn(() => ({})),
   createUnavailableModelCredentialHost: vi.fn(() => ({})),
 }))
 vi.mock('./settings/startupCredentialTarget', () => ({
   resolveStartupCredentialTarget: vi.fn(() => ({ status: 'unavailable' })),
-}))
-vi.mock('./modelTransport/tauriModelTransport', () => ({
-  createTauriModelFetch: vi.fn(() => vi.fn()),
 }))
 vi.mock('./modelTransport/devPreviewModelTransport', () => ({
   createDevPreviewModelFetch: vi.fn(() => vi.fn()),
@@ -141,7 +137,7 @@ describe('main entry: MCP 启动装配（C1）', () => {
 
     // 传的宿主态与本文件 `resolveHost` 的替身一致。这里**必须显式传**——`initializeMcpSettings`
     // 的签名在 C4 接线时从无参改成收 `ResolvedHost`（宿主态的唯一权威是 resolveHost，装配点不再
-    // 自己 `isTauri()`）。本条用例走的是幂等分支，运行时在 guard 处就 return、`host` 根本没被
+    // 自己探）。本条用例走的是幂等分支，运行时在 guard 处就 return、`host` 根本没被
     // 求值，所以漏传时 **vitest 照样全绿，只有 `tsc -b` 会红**。
     initializeMcpSettings({ kind: 'static', reason: 'unreachable' })
     void hydrateMcpSettings()
@@ -153,11 +149,11 @@ describe('main entry: MCP 启动装配（C1）', () => {
   })
 
   // P10：插件运行时同样在 main.tsx 启动时装配（理由与 MCP 一致——插件注册的是 hook 与工具，
-  // 等用户点开设置面板才装等于"不打开设置就没有插件"）。但本测试文件跑在浏览器预览宿主下
-  // （jsdom 里 isTauri() 为 false），所以正确结果是**不装配**：面板照旧如实说"当前宿主不
-  // 支持用户插件"，绝不为浏览器造一条读盘通路（蓝图 3.4）。桌面那一侧在
-  // plugins/initialize.test.ts。依赖第一个用例先 import 过 './main'。
-  it('浏览器预览宿主：插件面保持 unsupported 默认，不接任何真实加载面（P10）', async () => {
+  // 等用户点开设置面板才装等于"不打开设置就没有插件"）。但本测试文件跑在 **static** 宿主下
+  // （上面的 resolveHost 替身钉死了），它没有宿主命令桥，所以正确结果是**不装配**：面板照旧
+  // 如实说"当前宿主不支持用户插件"，绝不为浏览器造一条读盘通路（蓝图 3.4）。
+  // 有桥那一侧（server）在 plugins/initialize.test.ts。依赖第一个用例先 import 过 './main'。
+  it('static 宿主：插件面保持 unsupported 默认，不接任何真实加载面（P10）', async () => {
     const { isPluginSettingsConfigured } = await import('./plugins/commands')
     const { pluginHydrationAtom, pluginSettingsCapabilitiesAtom } = await import('./plugins/state')
     expect(isPluginSettingsConfigured()).toBe(false)
@@ -168,12 +164,11 @@ describe('main entry: MCP 启动装配（C1）', () => {
     expect(uiStore.getter(pluginSettingsCapabilitiesAtom)).toEqual({ supported: false })
   })
 
-  // H5：同一条纪律的第三处落点——浏览器预览**不登记宿主命令桥**。这边没有后端，登记等于骗 core
+  // H5：同一条纪律的第三处落点——static 宿主**不登记宿主命令桥**。这边没有后端，登记等于骗 core
   // 说有本机能力，模型会拿到一堆调用即失败的文件/shell/Git/rg 工具。桥一旦缺席，
-  // modelTurnPrefix 的总闸（hasHostBridge()）就把整类 runtime='server' 工具挡在清单外，
-  // 这正是 H1 之前浏览器侧的行为。桌面那一侧在 main.hostBridge.test.tsx。
-  // 依赖第一个用例先 import 过 './main'。
-  it('浏览器预览宿主：不登记宿主命令桥，server 工具整类不进模型清单（H5）', async () => {
+  // modelTurnPrefix 的总闸（hasHostBridge()）就把整类 runtime='server' 工具挡在清单外。
+  // 有桥那一侧在 main.serverHost.test.tsx。依赖第一个用例先 import 过 './main'。
+  it('static 宿主：不登记宿主命令桥，server 工具整类不进模型清单（H5）', async () => {
     const { hasHostBridge } = await import('@einfach-agent/core/runtime/hostBridge')
     const { buildToolManifestText } = await import('@einfach-agent/core/runtime/toolManifest')
     const { defaultCore } = await import('@einfach-agent/core')

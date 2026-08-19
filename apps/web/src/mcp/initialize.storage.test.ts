@@ -1,8 +1,10 @@
-// 装配点选哪个存储后端：三态各走各的（B1 定的桌面 / 浏览器两态，C4 加上 server 那一态）。
+// 装配点选哪个存储后端：两态各走各的。
 //
-//   · `tauri`  —— `mcp_config_read` / `mcp_config_write`（Tauri 命令）
-//   · `server` —— 同一对命令名，但走 `POST /api/invoke/:command`（本机 Node 后端）
+//   · `server` —— `mcp_config_read` / `mcp_config_write`，走 `POST /api/invoke/:command`（本机 Node 后端）
 //   · `static` —— localStorage，没有任何本机能力
+//
+// 【T1 删掉了什么】此前还有第三态 `tauri`（同一对命令名，走桌面原生 invoke），它那条用例与
+// server 那条是**对称写**的。桌面端退出后对照组删掉，server 那条独立成立。
 //
 // 【为什么与 initialize.test.ts 分开】那边钉的是「缓存与占位一路走到模型面前」（B4/F4/F8/D3a），
 // 全程只有一个宿主；这边钉的是「装配那一刻宿主是哪一态，读写就落到哪」，每个用例都要换一次
@@ -10,15 +12,12 @@
 //
 // 【宿主态从哪来】`initializeMcpSettings(host)` 收 `ResolvedHost`，**不自己探**——权威只有
 // `resolveHost()` 一处（`main.tsx` 在 bootstrap 之前 await 掉它）。所以用例直接把想要的那一态
-// 递进去，不再靠摆布 `isTauri()` 来间接表达「现在是什么宿主」。
+// 递进去，不靠摆布任何全局量来间接表达「现在是什么宿主」。
 //
 // 【两份状态必须落到同一处 · C7】"服务配置"与"工具名缓存"是同一个宿主上的两份状态，所以每个
-// 用例都同时钉住两半。此前只钉了配置那一半，而缓存由 service 的默认值经
-// `createDesktopToolNameCacheStorage()` 自己 `isTauri()` 再探一次决定——server 宿主下它答 false，
-// 于是配置进了 `~/.webAgent/config.json`、缓存落进浏览器 localStorage，分家且不报错。
-//
-// 【`isTauri()` 一次都不该被调用】这是 C7 的结构性判据，比"缓存落对了"更早一层：宿主态的唯一
-// 权威是 `resolveHost()`，装配点及其调用到的每个工厂都只能用递进来的那个 `host`。
+// 用例都同时钉住两半。此前只钉了配置那一半，而缓存由 service 的默认值经一个内部自探宿主的工厂
+// 决定——server 宿主下它答"不是桌面"，于是配置进了 `~/.webAgent/config.json`、缓存落进浏览器
+// localStorage，分家且不报错。
 
 import { describe, expect, it, vi } from 'vitest'
 import { MCP_SETTINGS_STORAGE_KEY } from './persistence'
@@ -30,14 +29,7 @@ import {
   seedBrowserCache,
   SERVER_HOST,
   STATIC_HOST,
-  TAURI_HOST,
 } from './initialize.testHarness'
-
-// 用可控的替身，但保持与真实模块一致的默认表现：isTauri() 默认 false、invoke 不被意外调用。
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
-  isTauri: vi.fn(() => false),
-}))
 
 // server 那一态的传输面。只替 `invokeServerCommand`——`ServerInvokeError` 等其余导出保留真身。
 vi.mock('../host/serverInvoke', async (importOriginal) => {
@@ -46,58 +38,8 @@ vi.mock('../host/serverInvoke', async (importOriginal) => {
 })
 
 describe('装配点按宿主态选存储后端', () => {
-  it('Tauri 宿主下，服务配置的读写都经 mcp_config_read / mcp_config_write，不落 localStorage', async () => {
-    const { invokeMock, serverInvokeMock, isTauriMock } = await freshHost()
-
-    const remoteConfig = {
-      id: 'remote-desktop',
-      name: '桌面配置里的服务',
-      transport: 'streamable-http' as const,
-      url: 'https://desktop.example.test/mcp',
-      autoConnect: false,
-    }
-    // 未识别的命令一律答 undefined 而不是抛错：这条链路上还并行挂着工具名缓存的
-    // mcp_config_read/mcp_config_write（B5，走同一对 command），本用例只关心
-    // 服务配置这一路，不想因为没模到另一路而让 hydrate 整体失败。
-    invokeMock.mockImplementation(async (command: string) => {
-      if (command === 'mcp_config_read') {
-        return { servers: [remoteConfig], toolNameCache: cacheFor('remote-desktop') }
-      }
-      return undefined
-    })
-
-    window.localStorage.clear()
-    seedBrowserCache(DECOY)
-
-    const { initializeMcpSettings: initializeFresh } = await import('./initialize')
-    const { hydrateMcpSettings: hydrateFresh, removeMcpServer: removeFresh,
-      readMcpToolNameCache: readCacheFresh } = await import('./commands')
-
-    initializeFresh(TAURI_HOST)
-    await hydrateFresh()
-
-    expect(invokeMock).toHaveBeenCalledWith('mcp_config_read')
-    // 装配读到的服务确实来自 mcp_config_read，不是 localStorage 里的旧数据。
-    expect(window.localStorage.getItem(MCP_SETTINGS_STORAGE_KEY)).toBeNull()
-    // 缓存那一半读的是同一条通道：拿到的是配置文件里那条，不是 localStorage 里的诱饵。
-    expect(Object.keys(readCacheFresh())).toEqual(['remote-desktop'])
-    // 桌面态一次都不该碰 HTTP 那条路。
-    expect(serverInvokeMock).not.toHaveBeenCalled()
-
-    await removeFresh('remote-desktop')
-
-    const writeCalls = invokeMock.mock.calls.filter(([command]) => command === 'mcp_config_write')
-    expect(writeCalls).toContainEqual(['mcp_config_write', { patch: { servers: [] } }])
-    // 删除级联清缓存（A2）也落回同一条通道。
-    expect(writeCalls).toContainEqual(['mcp_config_write', { patch: { toolNameCache: {} } }])
-    // 全程没有一次写落到浏览器存储：配置那把键仍是空的，诱饵一个字节没动过。
-    expect(window.localStorage.getItem(MCP_SETTINGS_STORAGE_KEY)).toBeNull()
-    expect(readBrowserCache()).toEqual(cacheFor(DECOY))
-    expect(isTauriMock).not.toHaveBeenCalled()
-  })
-
-  it('server 宿主下，服务配置经 POST /api/invoke/mcp_config_*，既不落 localStorage 也不碰 Tauri', async () => {
-    const { invokeMock, serverInvokeMock, isTauriMock } = await freshHost()
+  it('server 宿主下，服务配置经 POST /api/invoke/mcp_config_*，不落 localStorage', async () => {
+    const { serverInvokeMock } = await freshHost()
 
     const remoteConfig = {
       id: 'remote-server',
@@ -106,7 +48,9 @@ describe('装配点按宿主态选存储后端', () => {
       url: 'https://server.example.test/mcp',
       autoConnect: false,
     }
-    // 与 Tauri 那条对称：只答服务配置这一路，其余命令给 undefined。
+    // 只答服务配置这一路，其余命令给 undefined：这条链路上还并行挂着工具名缓存的
+    // mcp_config_read/mcp_config_write（B5，走同一对 command），本用例只关心服务配置这一路，
+    // 不想因为没模到另一路而让 hydrate 整体失败。
     serverInvokeMock.mockImplementation(async (command: string) => {
       if (command === 'mcp_config_read') {
         return { servers: [remoteConfig], toolNameCache: cacheFor('remote-server') }
@@ -133,8 +77,6 @@ describe('装配点按宿主态选存储后端', () => {
     expect(window.localStorage.getItem(MCP_SETTINGS_STORAGE_KEY)).toBeNull()
     // C7 的正题：缓存与配置落在**同一处**。走岔的话这里读回来的会是 localStorage 里的诱饵。
     expect(Object.keys(readCacheFresh())).toEqual(['remote-server'])
-    // server 宿主里没有 Tauri 原生层：一次 invoke 都不该发生。
-    expect(invokeMock).not.toHaveBeenCalled()
 
     await removeFresh('remote-server')
 
@@ -149,8 +91,6 @@ describe('装配点按宿主态选存储后端', () => {
     ])
     expect(window.localStorage.getItem(MCP_SETTINGS_STORAGE_KEY)).toBeNull()
     expect(readBrowserCache()).toEqual(cacheFor(DECOY))
-    expect(invokeMock).not.toHaveBeenCalled()
-    expect(isTauriMock).not.toHaveBeenCalled()
   })
 
   /**
@@ -166,7 +106,7 @@ describe('装配点按宿主态选存储后端', () => {
    * 后者只证明写了那行代码，前者证明这条路走得通。
    */
   it('server 宿主下 stdio 连接经 POST /api/invoke/mcp_connect —— 装上的是 server 版 connector', async () => {
-    const { serverInvokeMock, invokeMock } = await freshHost()
+    const { serverInvokeMock } = await freshHost()
     // 事件流用的是全局 fetch（生产装配的 connector 不带 options）。给一个永不 resolve 的替身：
     // 本用例既不需要事件，也**绝不能**真的往 /api/events 发请求。
     vi.stubGlobal('fetch', vi.fn(() => new Promise<never>(() => {})))
@@ -210,8 +150,6 @@ describe('装配点按宿主态选存储后端', () => {
       })
       // 走通到底，不是只把请求发出去就算数。
       expect(isConnectedFresh('local-stdio')).toBe(true)
-      // 全程没有一次落到 Tauri 原生层。
-      expect(invokeMock).not.toHaveBeenCalled()
 
       await disconnectFresh('local-stdio')
     } finally {
@@ -219,13 +157,13 @@ describe('装配点按宿主态选存储后端', () => {
     }
   })
 
-  it('static 宿主下行为不变：装配仍走 localStorage 读写，两条命令通道都不碰', async () => {
-    const { invokeMock, serverInvokeMock, isTauriMock } = await freshHost()
+  it('static 宿主下行为不变：装配仍走 localStorage 读写，命令通道一次都不碰', async () => {
+    const { serverInvokeMock } = await freshHost()
 
     window.localStorage.clear()
     // 这一态里 localStorage 不是诱饵而是**唯一**的通道，缓存也一样。
     seedBrowserCache('browser-local')
-    // 与上面两个用例对称：直接在 localStorage 里放一份既有配置，证明装配读到的是
+    // 与上面那个用例对称：直接在 localStorage 里放一份既有配置，证明装配读到的是
     // 浏览器存储而不是任何一条命令通道。
     window.localStorage.setItem(MCP_SETTINGS_STORAGE_KEY, JSON.stringify({
       version: 1,
@@ -244,18 +182,15 @@ describe('装配点按宿主态选存储后端', () => {
 
     initializeFresh(STATIC_HOST)
     await hydrateFresh()
-    expect(invokeMock).not.toHaveBeenCalled()
     expect(serverInvokeMock).not.toHaveBeenCalled()
     expect(Object.keys(readCacheFresh())).toEqual(['browser-local'])
 
     await removeFresh('browser-local')
 
-    expect(invokeMock).not.toHaveBeenCalled()
     expect(serverInvokeMock).not.toHaveBeenCalled()
     const stored = JSON.parse(window.localStorage.getItem(MCP_SETTINGS_STORAGE_KEY) ?? '{}')
     expect(stored.servers).toEqual([])
     // 缓存那一半同样落回浏览器：级联清理写的是 localStorage，不是任何一条命令通道。
     expect(readBrowserCache()).toEqual({})
-    expect(isTauriMock).not.toHaveBeenCalled()
   })
 })

@@ -1,25 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { hostBridgeMock } from './hostTauri.testHarness'
+import { hostBridgeMock } from './hostBridgeMock.testHarness'
 
-// isTauri 分量已死：nothing 再从 '@tauri-apps/api/core' 读它（D8）。invoke 分量仍在用——
-// tauri.invoke 被下面的 './hostBridge' 桥 mock 直接引用，也被本文件的断言直接检查。
-const tauri = vi.hoisted(() => ({
+// 宿主 invoke 的替身：被下面的 './hostBridge' 桥 mock 直接引用，也被本文件的断言直接检查。
+const host = vi.hoisted(() => ({
   invoke: vi.fn(),
 }))
 
-vi.mock('@tauri-apps/api/core', () => tauri)
-
 // H3：workspaceWrite 改用 ./hostBridge 之后，宿主判定读的是 hasHostBridge()、invoke 走惰性
-// loadHostInvoke()，两者都不再经过上面那份模块 mock。这里把 hostBridge 一并 mock 掉：hasHostBridge
-// 恒真、loadHostInvoke 仍然吐同一个 tauri.invoke，既有用例的断言一字不动照旧成立。
+// loadHostInvoke()，两者都不再经过上面那个替身。这里把 hostBridge 一并 mock 掉：hasHostBridge
+// 恒真、loadHostInvoke 仍然吐同一个 host.invoke，既有用例的断言一字不动照旧成立。
 // clock 是计时用例的虚拟时钟——只有 loadHostInvoke 会推进它，用真实墙钟做阈值断言在并行负载下会抖。
-const host = vi.hoisted(() => ({ loadCostMs: 0 }))
+const loadTiming = vi.hoisted(() => ({ loadCostMs: 0 }))
 const clock = vi.hoisted(() => ({ now: 0 }))
 
 vi.mock('./hostBridge', () => hostBridgeMock(async () => {
-  clock.now += host.loadCostMs
+  clock.now += loadTiming.loadCostMs
   await Promise.resolve() // import() 是异步的，保留一次微任务跨越
-  return tauri.invoke
+  return host.invoke
 }))
 
 import { writeWorkspaceFile } from './workspaceWrite'
@@ -32,7 +29,7 @@ beforeEach(() => {
 describe('writeWorkspaceFile', () => {
   it('把 expectedContentHash 映射为 Tauri snake_case 参数', async () => {
     const expectedContentHash = `sha256:${'a'.repeat(64)}`
-    tauri.invoke.mockResolvedValue({
+    host.invoke.mockResolvedValue({
       ok: true,
       path: 'a.txt',
       bytes_written: 3,
@@ -50,7 +47,7 @@ describe('writeWorkspaceFile', () => {
       }),
     ).resolves.toMatchObject({ ok: true, overwritten: true })
 
-    expect(tauri.invoke).toHaveBeenCalledWith(
+    expect(host.invoke).toHaveBeenCalledWith(
       'write_workspace_file',
       expect.objectContaining({
         path: 'a.txt',
@@ -66,11 +63,11 @@ const LOAD_COST_MS = 20
 
 describe('writeWorkspaceFile 的 invokeDispatchMs 计时语义', () => {
   afterEach(() => {
-    host.loadCostMs = 0
+    loadTiming.loadCostMs = 0
   })
 
-  it('惰性加载 @tauri-apps/api/core 的耗时发生在计时起点之前，不计入 invokeDispatchMs', async () => {
-    host.loadCostMs = LOAD_COST_MS
+  it('惰性解析宿主 invoke 的耗时发生在计时起点之前，不计入 invokeDispatchMs', async () => {
+    loadTiming.loadCostMs = LOAD_COST_MS
     clock.now = 0
     const samples: number[] = []
     let finishAttrs: Record<string, unknown> | undefined
@@ -88,7 +85,7 @@ describe('writeWorkspaceFile 的 invokeDispatchMs 计时语义', () => {
         },
       }),
     } as unknown as ObservabilityPort
-    tauri.invoke.mockResolvedValue({ ok: true, path: 'a.txt', bytes_written: 1, created: true })
+    host.invoke.mockResolvedValue({ ok: true, path: 'a.txt', bytes_written: 1, created: true })
 
     await writeWorkspaceFile({ path: 'a.txt', content: 'x' }, observability)
 

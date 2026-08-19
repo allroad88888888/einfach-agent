@@ -58,7 +58,7 @@ export type {
 }
 
 // Keep importing @einfach-agent/core/tools side-effect free: standard tool registration runs
-// before individual runtime tests install their exact hostTauri mocks.
+// before individual runtime tests install their exact host bridge mocks.
 export async function readWorkspaceFile(
   input: ReadWorkspaceFileInput,
 ): Promise<WorkspaceRuntimeResult<ReadWorkspaceFileResult>> {

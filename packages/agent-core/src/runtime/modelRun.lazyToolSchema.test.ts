@@ -13,18 +13,8 @@ import { configureObservability, flushObservability } from '../observability/tra
 import { createCoreInstance } from './core/coreInstance'
 import { resetModelRunTestState, seedSession, jsonResponse, toolCallsResponse, seqFetch, captureTrace } from './modelRun.testHarness'
 
-const tauriControl = vi.hoisted(() => ({ enabled: false }))
-vi.mock('@tauri-apps/api/core', async () => {
-  const actual = await vi.importActual<typeof import('@tauri-apps/api/core')>('@tauri-apps/api/core')
-  return {
-    ...actual,
-    isTauri: () => tauriControl.enabled,
-  }
-})
-
 afterEach(() => {
   resetModelRunTestState()
-  tauriControl.enabled = false
 })
 
 describe('runSession（多轮 lazy-tool 循环，T-6）懒加载工具 schema', () => {
@@ -284,8 +274,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）懒加载工具 schema', 
   })
 
   it('TP3：web 下直接调用 server 工具仍然硬拒绝，不会被加载进 tools', async () => {
-    // 该工具在 web 下既不进工具摘要也不进 tools，模型调它就是真的调了一个当前环境不存在的能力。
-    tauriControl.enabled = false
+    // 该工具在没有宿主命令桥的环境下既不进工具摘要也不进 tools（本文件不登记桥），
+    // 模型调它就是真的调了一个当前环境不存在的能力。
     seedSession('lazy-server-tool', { vendor: 'deepseek', model: 'x' })
     const exposedPerRequest: string[][] = []
     const responses: Array<() => Response> = [

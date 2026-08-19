@@ -15,24 +15,14 @@ const respondWith = (
 
 const jsonResponse = (payload: unknown) => respondWith({ json: async () => payload })
 
-/** 生产默认值一律不参与：宿主判定与 fetch 都由用例给，缺一个就该在类型上被发现。 */
-const browserHost = (fetch: ResolveHostOptions['fetch']): ResolveHostOptions => ({
-  isTauriHost: () => false,
-  fetch,
-})
+/** 生产默认的 fetch 一律不参与：探测面由用例给，缺了就该在类型上被发现。 */
+const browserHost = (fetch: ResolveHostOptions['fetch']): ResolveHostOptions => ({ fetch })
 
 afterEach(() => {
   vi.useRealTimers()
 })
 
 describe('resolveHost', () => {
-  it('isTauri() 为真时直接判 tauri，一次网络都不发', async () => {
-    const fetch = jsonResponse(healthyPayload)
-    await expect(resolveHost({ isTauriHost: () => true, fetch })).resolves.toEqual({ kind: 'tauri' })
-    // Tauri 里这条 fetch 打的是 asset 协议：没人应答，等它是纯粹的首屏延迟。
-    expect(fetch).not.toHaveBeenCalled()
-  })
-
   it('握手成功时判 server，并把宿主声明的平台带出来', async () => {
     const fetch = jsonResponse(healthyPayload)
     await expect(resolveHost(browserHost(fetch))).resolves.toEqual({

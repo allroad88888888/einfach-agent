@@ -1,6 +1,6 @@
-// 三态各自选中哪一条模型传输，以及**分支的先后顺序**。
+// 两态各自选中哪一条模型传输，以及**分支的先后顺序**。
 // ---------------------------------------------------------------------------
-// 这个文件只回答一个问题：`createHostModelFetch` 挑了哪个工厂。所以四个工厂全部 mock 成哨兵，
+// 这个文件只回答一个问题：`createHostModelFetch` 挑了哪个工厂。所以三个工厂全部 mock 成哨兵，
 // 一次真实请求都不发——传输本身各有各的 colocated 测试，在这里再跑一遍只会把「选错了分支」
 // 和「传输本身坏了」两种失败混成一条红。
 //
@@ -10,7 +10,7 @@
 // 下 `/api/health` 404 → static + 有中继；`pnpm serve` 下 → server + 没中继——所以**只测这两种
 // 正常形态，两个分支谁在前谁在后都是绿的**，顺序完全不设防。
 // 真正把顺序钉住的是那个混合形态：`pnpm dev` 的前端 + 真 apps/server 后端。此时若 DEV 赢，
-// 凭据宿主（`hostModelCredentialHost.ts` 是 `tauri → server → unavailable`，**没有 DEV 分支**）
+// 凭据宿主（`hostModelCredentialHost.ts` 是 `server → unavailable`，**没有 DEV 分支**）
 // 会把 Key 经 `/api/invoke/model_credential_set` 存进后端配置文件，而请求发给只认
 // `DEEPSEEK_API_KEY` 等环境变量的 Vite 中继——存进去了但发不出去，两边都不报错。
 // 「凭据宿主与传输必须由同一个判据选出来」这句话，只有这条用例在兑现。
@@ -28,22 +28,17 @@ function sentinel(name: string): typeof fetch {
 }
 
 const FETCHES = {
-  tauri: sentinel('tauriModelFetch'),
   server: sentinel('serverModelFetch'),
   dev: sentinel('devPreviewModelFetch'),
   unavailable: sentinel('unavailableModelFetch'),
 }
 
 const mocks = vi.hoisted(() => ({
-  createTauriModelFetch: vi.fn(),
   createServerModelFetch: vi.fn(),
   createDevPreviewModelFetch: vi.fn(),
   createUnavailableModelFetch: vi.fn(),
 }))
 
-vi.mock('../modelTransport/tauriModelTransport', () => ({
-  createTauriModelFetch: mocks.createTauriModelFetch,
-}))
 vi.mock('../modelTransport/serverModelTransport', () => ({
   createServerModelFetch: mocks.createServerModelFetch,
 }))
@@ -70,17 +65,9 @@ describe('createHostModelFetch', () => {
     // 跨用例累积，于是「dev 中继一次都没被造出来」这类断言会读到上一条用例留下的账。
     // 实测：漏掉这一行时，最后一条用例报「expected vi.fn() to not be called, but been called 1 times」。
     vi.clearAllMocks()
-    mocks.createTauriModelFetch.mockReturnValue(FETCHES.tauri)
     mocks.createServerModelFetch.mockReturnValue(FETCHES.server)
     mocks.createDevPreviewModelFetch.mockReturnValue(FETCHES.dev)
     mocks.createUnavailableModelFetch.mockReturnValue(FETCHES.unavailable)
-  })
-
-  it('tauri 宿主走原生代理，且不受构建模式影响', () => {
-    setDev(true)
-    expect(createHostModelFetch({ kind: 'tauri' })).toBe(FETCHES.tauri)
-    expect(mocks.createDevPreviewModelFetch).not.toHaveBeenCalled()
-    expect(mocks.createServerModelFetch).not.toHaveBeenCalled()
   })
 
   it('server 宿主（pnpm serve / npx 的构建产物）走 HTTP 模型端点', () => {

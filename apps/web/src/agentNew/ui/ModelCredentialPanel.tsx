@@ -108,7 +108,7 @@ export function ModelCredentialPanel() {
       ) : null}
 
       <p className="agentnew-model-help">
-        仅桌面应用可保存密钥；静态 Web 部署不会直连模型服务。
+        密钥由本机后端保存（`pnpm serve` 或已安装的本地服务）；纯静态部署不会直连模型服务。
       </p>
       <p className="agentnew-model-security-note">
         密钥保存于 ~/.webAgent/config.json；前端不会持久化或读取已保存的值。

@@ -18,8 +18,6 @@ import { mayLaunchMcpServer, stdioCommandLine } from './stdioLaunchConsent'
 import { createBrowserMcpConfigStorage, type McpConfigStorage } from './persistence'
 import { createServerMcpConfigStorage } from './serverMcpConfigStorage'
 import { createServerStdioMcpConnector } from './serverStdioConnector'
-import { createTauriMcpConfigStorage } from './tauriMcpConfigStorage'
-import { createTauriStdioMcpConnector } from './tauriStdioConnector'
 import { createToolNameCacheStorageForHost } from './toolNameCacheStorage'
 import type { ResolvedHost } from '../host/resolveHost'
 import { wireMcpToolProbes } from './toolProbeWiring'
@@ -45,17 +43,14 @@ function isMcpLaunchConsented(serverId: string, commandLine: string): boolean {
 }
 
 /**
- * 服务配置落在哪：三态各走各的通道，判据只有递进来的这一个 `host`。
+ * 服务配置落在哪：两态各走各的通道，判据只有递进来的这一个 `host`。
  *
- * 【为什么不再调 `createDesktopMcpConfigStorage()`】（C7）那个函数内部自己 `isTauri()` 又探
- * 一次，于是装配点上仍然有第二处宿主探测。它今天答得对纯属巧合——`resolveHost()` 的 tauri
- * 那一支读的正是同一个全局量；但只要判据分成两处，两处结论不同时就没有人会报错，只会静默
- * 走岔。这里改成显式三分支，桌面/浏览器两条实现原样复用，行为逐态相同。
+ * 【为什么是显式分支，而不是让存储工厂自己探一次宿主】（C7）工厂内部再探一次的后果不是报错，
+ * 是两处结论不同时静默走岔：一份状态落进 `~/.webAgent/config.json`、另一份落进浏览器
+ * localStorage，两边都不吭声。宿主态的唯一权威是 `resolveHost()`，装配点按它一次分派到底。
  */
 function createConfigStorageForHost(host: ResolvedHost): McpConfigStorage {
   switch (host.kind) {
-    case 'tauri':
-      return createTauriMcpConfigStorage()
     case 'server':
       return createServerMcpConfigStorage()
     case 'static':
@@ -66,25 +61,23 @@ function createConfigStorageForHost(host: ResolvedHost): McpConfigStorage {
 /**
  * Installs the application MCP manager when the settings UI first needs it.
  *
- * 【为什么收 host 而不是自己 `isTauri()`】宿主态的唯一权威是 `resolveHost()`——server 宿主要经
+ * 【为什么收 host 而不是自己探一次】宿主态的唯一权威是 `resolveHost()`——server 宿主要经
  * `GET /api/health` 握手才认得出来，本地探测答不了。再探一次的后果不是报错，是两处结论不同时
- * 静默走岔：连接器按「不是桌面」不给 stdio，而配置存储按别的判据去写桌面配置文件。
+ * 静默走岔：连接器判定「没有本机能力」不给 stdio，而配置存储按别的判据去写本机配置文件。
  *
  * 【这条纪律管到叶子】（C7）「装配点不自己探」不等于「装配点调的东西不自己探」。服务配置与
- * 工具名缓存这两份状态必须落到同一处，而它们此前各由一个内部 `isTauri()` 的工厂选通道——
+ * 工具名缓存这两份状态必须落到同一处，而它们此前各由一个内部自探宿主的工厂选通道——
  * server 宿主下前者进 `~/.webAgent/config.json`、后者进浏览器 localStorage，分家且不报错。
  * 现在两者都由本函数按同一个 `host` 分派，全流程只剩 `resolveHost()` 一处探测。
  */
 export function initializeMcpSettings(host: ResolvedHost): void {
   if (isMcpSettingsConfigured()) return
 
-  const tauriHost = host.kind === 'tauri'
   const serverHost = host.kind === 'server'
-  // stdio 两态各有自己的连接器：桌面经 Tauri 命令 + `listen()`，server 经
-  // `POST /api/invoke/mcp_*` + 一条共享 SSE。键相同，所以两者互斥、不会并存。
+  // stdio 只有 server 这一态有连接器（经 `POST /api/invoke/mcp_*` + 一条共享 SSE）：
+  // static 宿主背后没有能起子进程的机器，不给这个键。
   const connector = createMcpConnectorRouter({
     'streamable-http': createStreamableHttpMcpConnector(),
-    ...(tauriHost ? { stdio: createTauriStdioMcpConnector() } : {}),
     ...(serverHost ? { stdio: createServerStdioMcpConnector() } : {}),
   })
   // 占位登记表（D2/D2a）：manager 的 reconcile 与占位同步器必须共用【同一个实例】——
@@ -118,10 +111,11 @@ export function initializeMcpSettings(host: ResolvedHost): void {
     toolNameCacheStorage: createToolNameCacheStorageForHost(host),
     onToolNameCacheChanged: () => syncPlaceholders?.(),
     // 这两个 flag 回答的是两个不同问题（C3，见 types.ts 的 McpSettingsCapabilities 注释）：
-    // 能不能在本机起子进程 / 凭据能不能落盘。它们**恰好**在两个宿主上同时为真，不是同一件事——
+    // 能不能在本机起子进程 / 凭据能不能落盘。它们**恰好**在 server 宿主上同时为真，不是同一件事——
     // server 宿主能起子进程是因为本机 Node 后端替它 spawn；凭据能落盘是因为那个后端读写的正是
     // 同一份 `~/.webAgent/config.json`（host-node 的 config 域）。static 宿主两者皆无。
-    capabilities: { stdio: tauriHost || serverHost, credentials: tauriHost || serverHost },
+    // 分开写而不是共用一个布尔：将来任一维度先动，改的是这里的一半，不是把两件事一起翻。
+    capabilities: { stdio: serverHost, credentials: serverHost },
   })
   // mcp 域工具需要注入这个进程级 manager —— 装配点就是唯一能同时拿到 registry 与 manager 的地方。
   // 顺带把工具名缓存喂给模型看得见的那两处（B5，规矩见 toolProbeWiring.ts）：两个读出口都从

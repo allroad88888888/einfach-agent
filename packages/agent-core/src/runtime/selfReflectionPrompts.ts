@@ -11,7 +11,7 @@
 //   · modelTurn.ts 会经装配的 skill registry 拉进 .md?raw 模块声明 —— evals 的独立 tsconfig
 //     （types 只有 node + vitest/globals，没有 vite/client）解析不了，直接 TS2307；它还会经
 //     tools/registry.ts 触发 defaultCore 实例化，只为读一句提示文案不该有这种副作用。
-//   · modelRun.ts 更重：@tauri-apps/api、持久化桥和全部 state atoms 都在它的模块图里。
+//   · modelRun.ts 更重：宿主命令桥、持久化桥和全部 state atoms 都在它的模块图里。
 //   本文件不 import 任何东西，所以谁 import 它都不成环，也不会拖进上述任何一样。
 
 /**

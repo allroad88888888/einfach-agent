@@ -1,7 +1,7 @@
 // 契约模块桥（P11）：宿主手里的模块实例 → 可被 blob 插件 import 的模块 URL。
 //
 // jsdom 不求值 blob 模块，所以这里钉的是「生成的源码长什么样、全局交接放没放对、同一说明符
-// 是不是只造一次」——真正跑一遍生成源码的用例在 desktopImportModule.bridge.test.ts。
+// 是不是只造一次」——真正跑一遍生成源码的用例在 pluginImportModule.bridge.test.ts。
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {

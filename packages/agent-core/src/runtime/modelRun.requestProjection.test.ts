@@ -16,12 +16,10 @@ import { buildSkillManifestText, registerStandardTools } from '@einfach-agent/to
 import { resetModelRunTestState, seedSession, jsonResponse } from './modelRun.testHarness'
 import { stubHostBridgeFlag } from './hostBridge.testHarness'
 
-// modelTurnPrefix.ts 的工具发现读 hasHostBridge()（见 runtime/hostBridge.ts），既不经过
-// '@tauri-apps/api/core' 的 isTauri 导出，也不再读 globalThis.isTauri：
-//   · vi.mock('@tauri-apps/api/core', { isTauri: ... }) 分量随 D2 迁移失效，已于 D8 删除；
-//   · globalThis.isTauri 分量（stubTauriHostFlag）随 H4b 把总闸从「是不是 Tauri」改判成
-//     「宿主有没有登记 host bridge」而失效——留着它用例仍会跑，但下面那两条“Tauri 下能发现
-//     shell_macos”的断言会静默变成“在没有本机能力的宿主上跑”，比失败更糟。
+// modelTurnPrefix.ts 的工具发现读 hasHostBridge()（见 runtime/hostBridge.ts）——**不是**「这是不是
+// 某个特定宿主」。H4b 把总闸从宿主品牌探测改判成「宿主有没有登记 host bridge」之后，任何按品牌
+// 摆布全局量的桩都会静默失效：用例仍会跑，但下面那些「本机能力在场时能发现 shell_macos」的断言
+// 会变成「在没有本机能力的宿主上跑」，比失败更糟。
 // 现在统一用 stubHostBridgeFlag 登记/清空 hostBridge 的 loader，它才是总闸真正读的东西。
 
 afterEach(() => {

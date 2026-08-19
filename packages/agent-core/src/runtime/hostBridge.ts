@@ -1,25 +1,19 @@
 // 宿主能力桥（host bridge）的注入点 —— H 线的根，H2–H5 会把 core 里 13 个 runtime 模块
 // （`workspaceRead/Write/Patch/Delete/PathOperation/Rg/Git/Change/Task`、`shellCommand`、
-// `projectSkillsBridge`、`modelTurnPrefix`、`workspaceDialog`）从 hostTauri 的两个导出换到这里。
+// `projectSkillsBridge`、`modelTurnPrefix`）从各自的宿主品牌探测换到这里。
 //
-// 换的是什么：那 13 个模块此前每处都写着
-//   `if (!isTauriHost()) return fail(...)` + `const invoke = await loadTauriInvoke()`，
-// 于是「当前宿主有没有文件与 shell 能力」被硬编码成了「是不是跑在 Tauri webview 里」。本文件把这两个
+// 换的是什么：那 13 个模块此前每处都自己探一次「是不是跑在桌面 webview 里」，再从那个宿主的上游
+// 包里取 invoke——于是「当前宿主有没有文件与 shell 能力」被硬编码成了一个宿主品牌。本文件把这两个
 // 问题拆开：core 只问「宿主登记过桥没有」（hasHostBridge）和「把桥拿来」（loadHostInvoke），至于桥
-// 背后是 Tauri invoke、HTTP 请求还是 Node 进程内直连，全由装配层用 configureHostInvoke 决定。
+// 背后是 HTTP 请求还是 Node 进程内直连，全由装配层用 configureHostInvoke 决定。
 //
-// 本文件是**宿主中立**的：整份源码里连桌面那个上游包的名字都不出现（连注释与类型位置也不出现，
-// 因为下面 HostInvokeLoader 的 JSDoc 会被 tsc 原样带进发布物 .d.ts —— hostTauri.ts D9 那条
-// 「.d.ts 里该字符串零命中」的纪律，在这里是更强的「本模块与那个包全无关系」）。
+// 本文件是**宿主中立**的：整份源码里连任何一个具体宿主上游包的名字都不出现（连注释与类型位置
+// 也不出现，因为下面 HostInvokeLoader 的 JSDoc 会被 tsc 原样带进发布物 .d.ts）。
 //
-// H5 落地时改了一处：桌面装配层**没有**去包 hostTauri.ts 的 loadTauriInvoke，而是自己持有
-// 那个 loader（apps/web/src/main.tsx 里 configureHostInvoke 的唯一调用点）。原因是
-// loadTauriInvoke 不在 `@einfach-agent/core` 的公开面上，深导入 `runtime/hostTauri` 会撞
-// check-boundaries 的 core 公开面白名单（S9），而桌面装配层本来就直接依赖那个上游包、
-// 自己写一行 loader 不欠任何东西。这对本文件只有一个后果，且正是想要的那个：core 自身
-// 不再认识桌面宿主，一处也不。
-// 副作用是 loadTauriInvoke 目前**零生产消费方**（isTauriHost 仍被 workspaceDialog 用着），
-// 要不要连它一起删是 hostTauri.ts 自己的事，留给后续卡。
+// 纪律的落法：**loader 由装配层自己持有**，core 一侧不提供任何具体宿主的 loader
+// （apps/web/src/host/hostCommandBridge.ts 与 apps/cli/src/runtime.ts 是仅有的两个调用点）。
+// 反过来做——core 里放一个 `loadXxxInvoke()` 供装配层深导入——会撞 check-boundaries 的 core
+// 公开面白名单（S9），而那次撞墙恰好是这条划法的证据：core 不该认识任何具体宿主，一处也不。
 //
 // S5 之后本模块多担一件事：桥登记时把宿主平台一并写进 `runtime/hostPlatform.ts` 的权威位。
 // 它不是「顺手放这儿」——平台必须与桥同生共死，而唯一知道桥何时生灭的就是这里。
@@ -30,10 +24,10 @@ import { declareHostPlatform, type HostPlatform } from './hostPlatform'
  * `invoke<unknown>('<command_name>', argsRecord)`，带类型实参、只传两个参数，从不传第三个
  * options ——**泛型形态必须保留**，非泛型的类型会让那些带类型实参的调用点全体报错。
  *
- * 参数按逆变检查，所以一个更宽的真实实现（比如上游 Tauri 的
+ * 参数按逆变检查，所以一个更宽的真实实现（比如某个宿主上游包的
  * `invoke<T>(cmd, args?: InvokeArgs, options?)`，其 args 是含 `Record<string, unknown>` 的联合）
  * 结构上兼容这个更窄的契约，装配层无需断言即可直接注入；反过来，Node/HTTP 侧新写的实现按这个
- * 签名实现就够，不必去兑现 Tauri 的联合参数。
+ * 签名实现就够，不必去兑现那种更宽的联合参数。
  */
 export type HostInvoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>
 
@@ -63,13 +57,13 @@ type HostInvokeLoader = () => Promise<HostInvoke>
  */
 export interface HostBridgeRegistration {
   readonly loader: HostInvokeLoader
-  /** 宿主自己是什么平台。同机宿主（Tauri）可用 `detectLocalPlatform()`，远端宿主必须取自握手。 */
+  /** 宿主自己是什么平台。同机宿主（CLI）可用 `detectLocalPlatform()`，远端宿主必须取自握手。 */
   readonly platform: HostPlatform
 }
 
 let hostInvokeLoader: HostInvokeLoader | undefined
 
-// 解析结果的 promise 缓存。必须缓存（下方 `??=`）的理由逐字同 hostTauri.ts 的 tauriCoreModule：
+// 解析结果的 promise 缓存。必须缓存（下方 `??=`）：
 // loader 内部通常是一次动态 import，同一 tick 内并发发起首次 import 时，Vitest 4 的 mocker 有一路
 // 可能拿到未被替换的真模块（实测 SubagentTreePanel 的 run 索引与 candidate skills 两条 effect 同时
 // 触发时命中，见 state/stateViewPort.ts 同款记档）；缓存后每个模块实例只解析一次，所有调用点

@@ -13,27 +13,21 @@ import type { ResolvedHost } from '../host/resolveHost'
 import type { McpToolNameCache } from './toolNameCache'
 import { MCP_TOOL_NAME_CACHE_STORAGE_KEY } from './toolNameCacheStorage'
 
-export const TAURI_HOST: ResolvedHost = { kind: 'tauri' }
 export const SERVER_HOST: ResolvedHost = { kind: 'server', platform: 'macos' }
 export const STATIC_HOST: ResolvedHost = { kind: 'static', reason: 'unreachable' }
 
 /**
- * 换一套全新模块实例，并把三个替身清干净（`resetModules` 不清替身的调用记录）。
+ * 换一套全新模块实例，并把替身清干净（`resetModules` 不清替身的调用记录）。
  *
- * 【为什么不再把 `isTauri` 与 `host.kind` 对齐】（C7）对齐这件事本身就是「装配路径上还有第二处
- * 宿主探测」的证据。现在装配点及其调用到的每个工厂都只认递进来的 `host`，所以用例反过来断言
- * `isTauriMock` 一次都没被调用过。
+ * 【T1】此前这里还交出一个 `isTauriMock`，用例靠「它一次都没被调用过」证明装配路径上没有第二处
+ * 宿主探测（C7）。桌面端退出后那个探测函数本身不存在了，这条判据由类型兑现：装配点及其调用到的
+ * 每个工厂都只收 `ResolvedHost`，想再探一次得先自己造一个探测器。
  */
 export async function freshHost() {
   vi.resetModules()
-  const tauriCore = await import('@tauri-apps/api/core')
-  const isTauriMock = vi.mocked(tauriCore.isTauri)
-  const invokeMock = vi.mocked(tauriCore.invoke)
   const serverInvokeMock = vi.mocked((await import('../host/serverInvoke')).invokeServerCommand)
-  isTauriMock.mockReset()
-  invokeMock.mockReset()
   serverInvokeMock.mockReset()
-  return { isTauriMock, invokeMock, serverInvokeMock }
+  return { serverInvokeMock }
 }
 
 /** 一条最小的缓存条目，只用来回答「这份缓存是从哪条通道读回来的」。 */
@@ -48,7 +42,7 @@ export function cacheFor(serverId: string): McpToolNameCache {
   }
 }
 
-/** 往浏览器 localStorage 里放一份缓存。tauri/server 用例拿它当**诱饵**：走岔就会读到它。 */
+/** 往浏览器 localStorage 里放一份缓存。server 用例拿它当**诱饵**：走岔就会读到它。 */
 export function seedBrowserCache(serverId: string): void {
   window.localStorage.setItem(
     MCP_TOOL_NAME_CACHE_STORAGE_KEY,

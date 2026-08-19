@@ -1,14 +1,14 @@
-// 当前宿主是三态中的哪一个 —— 应用装配的第一个岔路口，`main.tsx` 之后的每个 driver 选择都从它分叉。
+// 当前宿主是两态中的哪一个 —— 应用装配的第一个岔路口，`main.tsx` 之后的每个 driver 选择都从它分叉。
 //
-//   · `tauri`  —— 桌面端，本机能力经 Tauri 原生层的 invoke。
 //   · `server` —— 浏览器 + 本机 Node 后端（`apps/server`），本机能力经 HTTP 打到 `/api/invoke/:command`。
 //   · `static` —— 纯静态产物，**没有任何本机能力**：不登记桥，于是文件/shell/Git 工具整类不进模型
 //     清单、执行也一律早退（`hasHostBridge()` 是那个总闸），模型请求同样被拒。
 //
-// ★ 判定顺序：`isTauri()` → `GET /api/health` → `static` ★
-// `isTauri()` 排第一不只因为它便宜（只读 `globalThis.isTauri`，纯全局量、零副作用、不加载任何
-// 模块，所以同步可答、随便早求值），更因为 Tauri 里那条 fetch 打的是 asset 协议：没有人会应答，
-// 等它是纯粹的首屏延迟。桌面端因此**一次网络都不发**。
+// 【T1 之前还有第三态 `tauri`】桌面端曾排在判定顺序最前，靠读一个全局量同步答。
+// 桌面端整条退出后它连同那次探测一起删了——留一个恒为 false 的分支等于把「两份实现」换个形式再留
+// 一遍，而那正是删桌面端要消灭的东西。
+//
+// ★ 判定顺序：`GET /api/health` → `static` ★
 //
 // ★ 探测失败一律落 `static`，而「失败」包含「永远不返回」★
 // `fetch('/api/health')` 在这几种情况下会**长时间挂着而不是失败**：端口上有东西在听但从不回包、
@@ -18,17 +18,15 @@
 // 只上 AbortController 是不够的——「超时后一定返回」就成了对 fetch 实现的假设，而本函数的
 // 全部职责恰恰是不让首屏挂在这个假设上。
 //
-// ★ 返回的是对象而不是裸三态字符串 ★
+// ★ 返回的是对象而不是裸态字符串 ★
 // 因为 `server` 这一态**必须**带出握手报的平台：S5 把 platform 做成 `configureHostInvoke` 的必填
 // 字段，浏览器（macOS）连 Node 服务端（Linux）时，本地探测出来的平台是错的，一条 shell 命令都
 // 跑不了。做成可辨识联合之后，「拿到 server 却没有 platform」在类型上就构不出来——B3 想漏掉它
-// 得先过 `tsc -b` 那一关。`tauri` 这一态刻意**不带** platform：桌面端 webview 与原生同机，
-// 权威是 core 的 `detectLocalPlatform()`，本模块没有资格也没有必要替它答。
-import { isTauri } from '@tauri-apps/api/core'
+// 得先过 `tsc -b` 那一关。
 import type { HostPlatform } from '@einfach-agent/core'
 import { HEALTH_PATH, readServerPlatform } from './serverHealthContract'
 
-export type HostKind = 'tauri' | 'server' | 'static'
+export type HostKind = 'server' | 'static'
 
 /**
  * 落到 `static` 的原因。**纯诊断用**，B3 可以完全忽略它。
@@ -48,7 +46,6 @@ export type StaticHostReason =
   | 'unrecognized'
 
 export type ResolvedHost =
-  | { readonly kind: 'tauri' }
   | { readonly kind: 'server'; readonly platform: HostPlatform }
   | { readonly kind: 'static'; readonly reason: StaticHostReason }
 
@@ -92,7 +89,6 @@ type HealthProbeFetch = (
  * 说服力——下面那条「超时后 signal 真的 aborted」的断言，注入个假的就断言不出什么了。
  */
 export interface ResolveHostOptions {
-  readonly isTauriHost?: () => boolean
   readonly fetch?: HealthProbeFetch
   readonly timeoutMs?: number
 }
@@ -163,9 +159,6 @@ async function probeServerHost(
  * 恢复出来的会话可能带着未完成的 run，那是工具真正可能执行的第一个时点，桥必须先于它到位。
  */
 export async function resolveHost(options: ResolveHostOptions = {}): Promise<ResolvedHost> {
-  const isTauriHost = options.isTauriHost ?? isTauri
-  if (isTauriHost()) return { kind: 'tauri' }
-
   return probeServerHost(
     options.fetch ?? defaultProbeFetch,
     options.timeoutMs ?? HEALTH_PROBE_TIMEOUT_MS,

@@ -1,15 +1,14 @@
 // B3：server 宿主（浏览器 + 本机 Node 后端）下 main.tsx 的装配分流。
 // ---------------------------------------------------------------------------
 // 为什么又是单独一个文件：main.tsx 的入口副作用一个 worker 里只求值一次，一个文件只能扮演
-// 一种宿主。三态 = 三个文件（tauri 在 main.hostBridge.test.tsx，static 在 main.test.tsx），
-// 是 vitest 的模块语义决定的，不是重复。
+// 一种宿主。两态 = 两个文件（static 在 main.test.tsx），是 vitest 的模块语义决定的，不是重复。
+// 【T1】此前还有第三个文件 main.hostBridge.test.tsx（tauri 那一态），随桌面端一起删。
 //
 // 本文件回答四件事：
 //   1. 登记了桥，且桥背后是 HTTP invoke 本体（不是 Tauri 的 invoke，也不是空壳）；
 //   2. 平台取自握手、**原样**传给 core，没有被装配层映射成三选一；
 //   3. 桥先于 hydrate 到位（恢复出来的未完成 run 是工具可能执行的第一个时点）；
-//   4. 有桥之后 runtime='server' 的工具整类进入模型清单，而**模型凭据仍不可用**——
-//      server 版凭据宿主与模型代理是 M 线，本卡不许顺手接上；
+//   4. 有桥之后 runtime='server' 的工具整类进入模型清单，且模型凭据走 server 版而不是 unavailable；
 //   5. **装配那一刻就把 token 从地址栏收走**，不等第一条请求（B4 在真实浏览器里发现的缺陷）。
 
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -40,7 +39,6 @@ vi.mock('./persistence/persistenceDrivers', () => ({
 }))
 vi.mock('./persistence/recoveryFlushLifecycle', () => ({
   installBrowserRecoveryFlush: vi.fn(),
-  installDesktopRecoveryFlush: vi.fn(async () => undefined),
 }))
 vi.mock('@einfach-agent/core/runtime/commands', () => ({
   configureCommands: vi.fn(),
@@ -62,14 +60,10 @@ vi.mock('./settings/commands', () => ({
 }))
 vi.mock('./settings/modelCredentialHost', () => ({
   MODEL_CREDENTIALS: [],
-  createTauriModelCredentialHost: vi.fn(() => ({ available: true })),
   createUnavailableModelCredentialHost: vi.fn(() => ({ available: false })),
 }))
 vi.mock('./settings/startupCredentialTarget', () => ({
   resolveStartupCredentialTarget: vi.fn(() => ({ status: 'unavailable' })),
-}))
-vi.mock('./modelTransport/tauriModelTransport', () => ({
-  createTauriModelFetch: vi.fn(() => vi.fn()),
 }))
 vi.mock('./modelTransport/devPreviewModelTransport', () => ({
   createDevPreviewModelFetch: vi.fn(() => vi.fn()),
@@ -84,13 +78,10 @@ vi.mock('./performanceDiagnostics', () => ({
   startUiPerformanceDiagnostics: vi.fn(),
 }))
 
-// 本文件不碰 globalThis.isTauri（jsdom 下天然为 false），但仍确认一次：server 宿主这条路上
-// 没有任何一步依赖它，宿主态完全由 resolveHost 说了算。
 /** 装配前先把 token 放进地址栏，模拟用户点开终端打印的那条链接。 */
 const TOKEN_IN_URL = 'b4-regression-token'
 
 beforeAll(() => {
-  expect((globalThis as { isTauri?: boolean }).isTauri).toBeUndefined()
   window.history.replaceState(null, '', `/?token=${TOKEN_IN_URL}&keep=1#/frag`)
 })
 
@@ -130,15 +121,11 @@ describe('main entry · server 宿主的装配分流（B3）', () => {
     expect(probe.atPersistenceHydrate).toBe(true)
   })
 
-  it('本机工具整类可见，模型凭据走 server 版而不是桌面原生层', async () => {
+  it('本机工具整类可见，模型凭据走 server 版而不是 unavailable', async () => {
     const { defaultCore } = await import('@einfach-agent/core')
     const { hasHostBridge } = await import('@einfach-agent/core/runtime/hostBridge')
     const { buildToolManifestText } = await import('@einfach-agent/core/runtime/toolManifest')
-    const {
-      createTauriModelCredentialHost,
-      createUnavailableModelCredentialHost,
-    } = await import('./settings/modelCredentialHost')
-    const { createTauriModelFetch } = await import('./modelTransport/tauriModelTransport')
+    const { createUnavailableModelCredentialHost } = await import('./settings/modelCredentialHost')
 
     const manifest = buildToolManifestText(hasHostBridge(), { registry: defaultCore.tools })
     const serverTools = defaultCore.tools.list()
@@ -151,10 +138,8 @@ describe('main entry · server 宿主的装配分流（B3）', () => {
     // M4 之前 server 宿主与 static 同待遇（unavailable）。现在它有自己的凭据宿主，但**纪律没有
     // 松动**：Key 仍由宿主读写，浏览器只是把它经 `/api/invoke/model_credential_*` 交给本机 Node
     // 后端，三条命令的返回体只有 `{configured, source}`（M4 有正面用例钉死不回传 Key）。
-    // 这里钉的是「没有退回 unavailable，也没有误用桌面原生层那条通路」。
+    // 这里钉的是「没有退回 unavailable」。
     expect(createUnavailableModelCredentialHost).not.toHaveBeenCalled()
-    expect(createTauriModelCredentialHost).not.toHaveBeenCalled()
-    expect(createTauriModelFetch).not.toHaveBeenCalled()
   })
 
   // B4 在真实浏览器里发现的缺陷的回归用例：token 的收取原本只发生在 serverInvoke 的请求路径上，

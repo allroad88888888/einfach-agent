@@ -11,8 +11,8 @@
 // 归位说明（`runtime/`、`state/`、`execution/` 下的四条委派接缝为什么从这里出）：
 //   盘点 §4 的白名单只有 9 条 subpath，没有 `./runtime`、`./state`、`./execution`，且第 5 行明确
 //   把 `delegationContract`、`stateViewPort`、`execution/types` 算进 `./subagents` 的覆盖范围；
-//   根 barrel `.` 会连着 `runtime/workspaceDialog` 拖进 Tauri dialog 依赖（盘点 §4 注），能力包不该
-//   被迫走那条路径。因此这四条**源文件不搬家**（`delegationContract.ts` 留在 `runtime/`，core 主循环
+//   根 barrel `.` 当年会连着 `runtime/workspaceDialog` 拖进桌面 dialog 依赖（盘点 §4 注），能力包不该
+//   被迫走那条路径（那个模块已随 T1 桌面端退出一并删除，但「能力包只认 ./subagents」这条划法照旧）。因此这四条**源文件不搬家**（`delegationContract.ts` 留在 `runtime/`，core 主循环
 //   与 toolContext 就近相对引用），只在这里 re-export：包外只认 barrel，包内继续走相对路径。
 //
 // 不收（判为内部；S2b 不改这几条消费方，见卡内记录）：

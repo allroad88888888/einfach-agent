@@ -19,15 +19,11 @@
     "subagent:archive:retention": "node scripts/subagent-archive-retention.js",
     "subagent:index:compact": "node scripts/subagent-index-compact.js",
     "subagent:skills": "node scripts/subagent-skill-governance.js",
-    "preview": "vite preview --config vite.config.ts --host 0.0.0.0",
-    "tauri": "cd apps/desktop && tauri"
+    "preview": "vite preview --config vite.config.ts --host 0.0.0.0"
   },
   "dependencies": {
     "@einfach/core": "^0.4.0",
     "@einfach/react": "^0.4.0",
-    "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-dialog": "^2.7.1",
-    "@tauri-apps/plugin-sql": "^2.4.0",
     "@vitejs/plugin-react": "^5.1.1",
     "@einfach-agent/ai": "workspace:*",
     "@einfach-agent/core": "workspace:*",
@@ -46,7 +42,6 @@
     "vite": "^7.2.7"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",

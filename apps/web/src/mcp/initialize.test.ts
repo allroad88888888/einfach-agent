@@ -22,14 +22,8 @@ import { stdioLaunchFingerprint } from './stdioLaunchConsent'
 // 本文件全程是**没有本机能力的浏览器宿主**（`resolveHost()` 的 `static` 那一态），由下面这个
 // 常量显式声明并递给装配点——宿主态的权威只有 `resolveHost()` 一处，装配点不自己探。
 //
-// `@tauri-apps/api/core` 仍要换成可控的替身：C7 之后装配路径上**一处宿主探测都不剩**（配置与
-// 工具名缓存两份存储都由递进来的 `host` 分派），但 `initialize.ts` 的模块图里仍静态引着这个包，
-// 而真实的 `invoke` 在 jsdom 里会去够 window 上的注入物——行为不该由环境决定。默认表现与真实
-// 模块一致：`isTauri()` 答 false、`invoke` 不被调用。
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: vi.fn(),
-  isTauri: vi.fn(() => false),
-}))
+// 【T1】此前这里还要 mock 掉桌面上游包：`initialize.ts` 的模块图静态引着它，而真实的 invoke 在
+// jsdom 里会去够 window 上的注入物。桌面端退出后那条静态边不存在了，替身随之删掉。
 
 /** 本文件的宿主态：能打开页面，但没有任何本机能力。 */
 const BROWSER_HOST: ResolvedHost = { kind: 'static', reason: 'unreachable' }

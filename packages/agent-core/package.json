@@ -63,18 +63,6 @@
     "@einfach-agent/ai": "workspace:*",
     "@einfach/core": "^0.4.0"
   },
-  "peerDependencies": {
-    "@tauri-apps/api": "^2.11.1",
-    "@tauri-apps/plugin-dialog": "^2.7.1"
-  },
-  "peerDependenciesMeta": {
-    "@tauri-apps/api": {
-      "optional": true
-    },
-    "@tauri-apps/plugin-dialog": {
-      "optional": true
-    }
-  },
   "devDependencies": {
     "vitest": "^4.0.15"
   }

@@ -36,7 +36,7 @@ function snapshot(
   }
 }
 
-/** save 慢到横跨好几个 tick，模拟 Tauri IPC 往返打开的让出点；顺便数落盘次数。 */
+/** save 慢到横跨好几个 tick，模拟宿主 IPC 往返打开的让出点；顺便数落盘次数。 */
 function createCountingCacheStorage(initial: McpToolNameCache = {}): {
   storage: McpToolNameCacheStorage
   saved: McpToolNameCache[]

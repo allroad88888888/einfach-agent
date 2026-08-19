@@ -82,7 +82,7 @@ const coreSubpathExemptions = [
   {
     subpaths: ['runtime/workspaceRead'],
     consumers: ['apps/web/src/plugins/'],
-    reason: 'desktopImportModule 测试的精确 vi.mock 目标；改成 barrel 会使该局部 mock 失效，生产读取面不借此深路径',
+    reason: 'pluginImportModule 测试的精确 vi.mock 目标；改成 barrel 会使该局部 mock 失效，生产读取面不借此深路径',
   },
   {
     subpaths: ['runtime/core/coreInstance', 'state/rootStore'],

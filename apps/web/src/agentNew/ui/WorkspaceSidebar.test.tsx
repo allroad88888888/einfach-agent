@@ -20,8 +20,6 @@ import { WorkspaceSidebar } from './WorkspaceSidebar'
 
 vi.mock('@einfach-agent/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@einfach-agent/core')>()),
-  canPickWorkspaceDirectory: vi.fn(() => false),
-  pickWorkspaceDirectory: vi.fn(),
   newWorkspace: vi.fn(),
   renameWorkspace: vi.fn(),
   selectWorkspace: vi.fn(),

@@ -2,18 +2,16 @@
 // ---------------------------------------------------------------------------
 // 拆开写会出现「写进 SQLite、从 IndexedDB 读」这种两头对不上的装配，而它**不会报错**，只会让
 // TraceViewer 恒空。所以每条用例都同时断言两端，绝不只查一半。
-// 五个工厂 + 两条 SQL 执行面全部换成哨兵，本文件不开任何一个真实存储。
+// 五个工厂 + SQL 执行面全部换成哨兵，本文件不开任何一个真实存储。
 //
-// ★ P4 之后判据换了：从「是不是 tauri」换成「这一态有没有 SQL 通路」★
-// observability-sqlite 收敛到注入的 `SqlExecutor` 之后，server 宿主也有了 SQL 通路
-// （`POST /api/invoke/sqlite_*`），于是它**两端都走 SQLite**、不再与 static 同待遇。
-// 本文件 P4 之前的版本曾把「server 写 IndexedDB、读桌面那份 SQLite」当作**当前行为**钉住，并在
-// 注释里写明「不代表它是对的」——现在它变对了，那两条已改成正面断言（见下面 server 那两条）。
+// ★ 判据是「这一态有没有 SQL 通路」，不是宿主品牌 ★
+// observability-sqlite 收敛到注入的 `SqlExecutor` 之后，server 宿主有了 SQL 通路
+// （`POST /api/invoke/sqlite_*`），于是它**两端都走 SQLite**、不与 static 同待遇。
 //
 // ★ 顺序敏感点有两处 ★
-//   ① 读取端的 DEV 分支必须排在「有没有 SQL 通路」之后。有 SQL 通路的两态（tauri / server）
-//      在 `pnpm tauri dev`、`pnpm dev + 真后端` 这两种日常形态下 DEV **同时为真**，此刻若 DEV 赢，
-//      写入端仍是 SQLite 而读取端跑去经 Vite dev 中继读桌面那份库文件——两端劈开，且不报错。
+//   ① 读取端的 DEV 分支必须排在「有没有 SQL 通路」之后。`pnpm dev 的前端 + 真后端` 这个日常
+//      混合形态下 server 与 DEV **同时为真**，此刻若 DEV 赢，写入端仍是 SQLite 而读取端跑去经
+//      Vite dev 中继读本机那份库文件——两端劈开，且不报错。
 //      只测「构建产物形态」是钉不住它的：那时 DEV 为假，两个分支谁前谁后都绿。
 //   ② `configureTraceSqlExecutor(loadExecutor)` 必须与「这一态用 SQLite」的判断同处一地，
 //      且早于 driver 造出来。分开写就有「选了 SQLite 却没配执行面」的中间态，而 driver 是
@@ -31,7 +29,6 @@ const mocks = vi.hoisted(() => ({
   sqliteReader: { tag: 'sqlite-log-reader' },
   devSqliteReader: { tag: 'dev-sqlite-log-reader' },
   idbReader: { tag: 'indexeddb-log-reader' },
-  tauriExecutor: { tag: 'tauri-sql-executor' },
   serverExecutor: { tag: 'server-sql-executor' },
   configureObservability: vi.fn(),
   configureTraceLogReader: vi.fn(),
@@ -41,7 +38,6 @@ const mocks = vi.hoisted(() => ({
   createSqliteLogReader: vi.fn(),
   createDevSqliteLogReader: vi.fn(),
   createIndexedDbLogReader: vi.fn(),
-  loadTauriSqlExecutor: vi.fn(),
   createServerSqlExecutor: vi.fn(),
 }))
 
@@ -58,9 +54,6 @@ vi.mock('@einfach-agent/observability-sqlite', () => ({
   createSqliteLogDriver: mocks.createSqliteLogDriver,
   createSqliteLogReader: mocks.createSqliteLogReader,
   createDevSqliteLogReader: mocks.createDevSqliteLogReader,
-}))
-vi.mock('../persistence/tauriSqlExecutor', () => ({
-  loadTauriSqlExecutor: mocks.loadTauriSqlExecutor,
 }))
 vi.mock('../persistence/serverSqlExecutor', () => ({
   createServerSqlExecutor: mocks.createServerSqlExecutor,
@@ -108,36 +101,10 @@ describe('configureHostObservability', () => {
     mocks.createSqliteLogReader.mockReturnValue(mocks.sqliteReader)
     mocks.createDevSqliteLogReader.mockReturnValue(mocks.devSqliteReader)
     mocks.createIndexedDbLogReader.mockReturnValue(mocks.idbReader)
-    mocks.loadTauriSqlExecutor.mockResolvedValue(mocks.tauriExecutor)
     mocks.createServerSqlExecutor.mockReturnValue(mocks.serverExecutor)
   })
 
-  it('tauri + DEV 同时为真（pnpm tauri dev）时两端都是 SQLite，dev 中继抢不走读取端', async () => {
-    setDev(true)
-    configureHostObservability({ kind: 'tauri' })
-
-    expect(await resolvedDriver()).toBe(mocks.sqliteDriver)
-    expect(await resolvedReader()).toBe(mocks.sqliteReader)
-    expect(await injectedSqlExecutor()).toBe(mocks.tauriExecutor)
-    // 不只是「读取端对」：dev 中继那条连造都没造出来。
-    expect(mocks.createDevSqliteLogReader).not.toHaveBeenCalled()
-    // 写入端也不许顺带落一个 IndexedDB driver（SQLite 那支漏了 return 就会两个都配，后者赢）。
-    expect(mocks.createIndexedDbLogDriver).not.toHaveBeenCalled()
-    expect(mocks.createIndexedDbLogReader).not.toHaveBeenCalled()
-  })
-
-  it('tauri 的构建产物同样两端 SQLite，执行面是桌面原生那条', async () => {
-    setDev(false)
-    configureHostObservability({ kind: 'tauri' })
-
-    expect(await resolvedDriver()).toBe(mocks.sqliteDriver)
-    expect(await resolvedReader()).toBe(mocks.sqliteReader)
-    expect(await injectedSqlExecutor()).toBe(mocks.tauriExecutor)
-    expect(mocks.createServerSqlExecutor).not.toHaveBeenCalled()
-    expect(mocks.createIndexedDbLogDriver).not.toHaveBeenCalled()
-  })
-
-  it('server 宿主的构建产物两端都是 SQLite，执行面是打到本机后端的那条（P4：不再与 static 同待遇）', async () => {
+  it('server 宿主的构建产物两端都是 SQLite，执行面是打到本机后端的那条（不与 static 同待遇）', async () => {
     setDev(false)
     configureHostObservability(serverHost)
 
@@ -147,15 +114,14 @@ describe('configureHostObservability', () => {
     // 取的是 trace 那条**逻辑连接**，不是 persistence 那条：同一个库文件，两组表
     // （trace_spans / trace_events vs sessions / recovery_snapshots / history_log）。
     expect(mocks.createServerSqlExecutor).toHaveBeenCalledWith('observability')
-    // 桌面原生那条执行面在浏览器里根本不存在，碰一下就是错。
-    expect(mocks.loadTauriSqlExecutor).not.toHaveBeenCalled()
+    // 写入端也不许顺带落一个 IndexedDB driver（SQLite 那支漏了 return 就会两个都配，后者赢）。
     expect(mocks.createIndexedDbLogDriver).not.toHaveBeenCalled()
     expect(mocks.createIndexedDbLogReader).not.toHaveBeenCalled()
   })
 
   it('server + DEV 的混合会话两端仍是 SQLite，dev 中继抢不走读取端（顺序判据）', async () => {
     // 「`pnpm dev` 的前端 + 真 apps/server 后端」这个混合形态，是 P4 之前**两端被劈开**的那一格：
-    // 写进 IndexedDB、读桌面那份 SQLite，TraceViewer 一条都看不到，且不报错（B5 报出、立卡 B7）。
+    // 写进 IndexedDB、读 dev 中继那份 SQLite，TraceViewer 一条都看不到，且不报错（B5 报出、立卡 B7）。
     // 判据换成「有没有 SQL 通路」之后 server 走不到 DEV 那支了，本条就是它的回归网——
     // 谁把 DEV 判据挪回宿主判据之前，这里立刻转红。
     setDev(true)
@@ -173,7 +139,7 @@ describe('configureHostObservability', () => {
     // 「选了 SQLite 却没配执行面」的中间态，而 driver 是 best-effort、不会喊——
     // 症状是 trace 静默不落盘，谁都不会在第一现场发现。
     setDev(false)
-    configureHostObservability({ kind: 'tauri' })
+    configureHostObservability(serverHost)
     await resolvedDriver()
 
     expect(mocks.configureTraceSqlExecutor).toHaveBeenCalledOnce()
@@ -205,11 +171,11 @@ describe('configureHostObservability', () => {
     expect(mocks.createIndexedDbLogReader).not.toHaveBeenCalled()
   })
 
-  it('static + DEV 写 IndexedDB、读桌面那份 SQLite —— 这一格两端不同源是刻意的', async () => {
+  it('static + DEV 写 IndexedDB、读本机那份 SQLite —— 这一格两端不同源是刻意的', async () => {
     // **这一格与 server 那格曾经的「不同源」不是一回事。**
     // server 那格是缺陷：写进 IndexedDB 的 trace 自己读不回来，TraceViewer 对着本轮会话恒空。
     // 这一格是设计：`pnpm dev` 的浏览器预览没有任何 SQL 通路（写只能落 IndexedDB），而它的
-    // 主要用途恰恰是**同机调试**——看的是桌面端刚写下的那份 SQLite，不是自己这一轮的 trace。
+    // 主要用途恰恰是**同机调试**——看的是 `pnpm serve` / CLI 刚写下的那份 SQLite，不是自己这一轮的 trace。
     // 判据也因此与宿主态正交：判的是「这份产物是不是 dev 起的」，不是「宿主是哪一态」。
     setDev(true)
     configureHostObservability(staticHost)
@@ -234,7 +200,7 @@ describe('configureHostObservability', () => {
     try {
       const fresh = await import('./hostObservability')
       setDev(false)
-      expect(() => fresh.configureHostObservability({ kind: 'tauri' })).not.toThrow()
+      expect(() => fresh.configureHostObservability(serverHost)).not.toThrow()
 
       await expect(resolvedReader()).rejects.toThrow()
       await new Promise((resolve) => { setTimeout(resolve, 0) })

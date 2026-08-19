@@ -1,4 +1,4 @@
-// 三态各自往 core 的桥上登记了什么 —— **loader 与 platform 是同一次登记的两半**（S5）。
+// 两态各自往 core 的桥上登记了什么 —— **loader 与 platform 是同一次登记的两半**（S5）。
 // ---------------------------------------------------------------------------
 // 这个文件只回答一个问题：`registerHostCommandBridge` 把什么登记进了 `configureHostInvoke`。
 // 所以 `invoke` / `httpInvoke` 两个本体都换成哨兵（真被当命令通道调用就抛），传输本身各有各的
@@ -10,12 +10,11 @@
 // 代价是桥与平台都是**模块级单例**：每条用例前后都要推回 `configureHostInvoke(undefined)`，
 // 否则同一个 worker 里后续的用例会莫名其妙地拥有本机能力。
 //
-// ★ `detectLocalPlatform` 为什么必须替身 ★
-// 它返回的是**跑测试这台机器**的平台，于是「tauri 用本地探测」这条断言在 CI 的某个平台上会与
-// 「有人把 tauri 那支写死成某个字面量」这种错误撞成同一个绿。换成替身之后，钉住它的是
-// `toHaveBeenCalledOnce()`——写死字面量的话那次调用就不见了。反过来 server 那支钉的是
-// `not.toHaveBeenCalled()`：**两态的平台来源不能互抄**，浏览器（macOS）连 Node 服务端（Linux）时
-// 本地探测出来的值是错的，而错的后果是每条 shell 命令都撞 platform mismatch。
+// ★ `detectLocalPlatform` 为什么仍然替身、且断言「一次都没被调用」★
+// T1 之前它是桌面那一支的平台来源（webview 与原生同机，本地探测成立）。桌面端退出后**没有任何
+// 一态该用本地探测**：浏览器（macOS）连 Node 服务端（Linux）时它答的是前者，而校验它的是后者，
+// 错的后果是每条 shell 命令都撞 platform mismatch。所以这条断言不是残留，是防回归的那道闸——
+// 谁哪天图省事把它加回来，这里当场红。
 
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HostInvoke } from '@einfach-agent/core'
@@ -31,14 +30,12 @@ const mocks = vi.hoisted(() => {
     return impl
   }
   return {
-    tauriInvoke: sentinel('tauriInvoke'),
     httpInvoke: sentinel('httpInvoke'),
     detectLocalPlatform: vi.fn(),
     getServerInvokeToken: vi.fn(),
   }
 })
 
-vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.tauriInvoke }))
 vi.mock('./serverInvoke', () => ({ httpInvoke: mocks.httpInvoke }))
 vi.mock('./serverInvokeToken', () => ({ getServerInvokeToken: mocks.getServerInvokeToken }))
 // 只换掉本地平台探测，`configureHostInvoke` 保持真货（见文件头）。
@@ -56,7 +53,6 @@ const { hostPlatform } = await import('@einfach-agent/core/runtime/hostPlatform'
 /** 本地探测的返回值。取一个固定字面量，让断言与跑测试的机器无关。 */
 const LOCAL_PLATFORM = 'windows'
 
-const tauriHost: ResolvedHost = { kind: 'tauri' }
 const serverHost: ResolvedHost = { kind: 'server', platform: 'linux' }
 const staticHost: ResolvedHost = { kind: 'static', reason: 'unreachable' }
 
@@ -73,18 +69,6 @@ describe('registerHostCommandBridge', () => {
   afterAll(() => {
     // 留着桥的话，同一个 worker 里后面的用例会意外拥有本机能力。
     configureHostInvoke(undefined)
-  })
-
-  it('tauri 宿主登记原生 invoke，平台取自本地探测', async () => {
-    registerHostCommandBridge(tauriHost)
-
-    expect(hasHostBridge()).toBe(true)
-    await expect(loadHostInvoke()).resolves.toBe(mocks.tauriInvoke)
-    expect(hostPlatform()).toBe(LOCAL_PLATFORM)
-    // 写死字面量的话这次调用就不见了。
-    expect(mocks.detectLocalPlatform).toHaveBeenCalledOnce()
-    // 桌面端一次网络都不该发，token 那半是 server 专属的副作用。
-    expect(mocks.getServerInvokeToken).not.toHaveBeenCalled()
   })
 
   it('server 宿主登记 HTTP invoke，平台取自握手而不是本地探测', async () => {

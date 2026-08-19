@@ -52,7 +52,7 @@ export interface ContractImportRewriteResult {
 /**
  * 改写插件源码里对宿主契约模块的静态 import。
  *
- * 抛出（由 desktopImportModule 交给 loader 记成该插件的 failed 诊断）：
+ * 抛出（由 pluginImportModule 交给 loader 记成该插件的 failed 诊断）：
  * - 源码用动态 import() 或 import.meta.resolve() 引用契约说明符；
  * - 桥给出的 URL 形状不安全（防止把源码写坏，正常不会发生）。
  */

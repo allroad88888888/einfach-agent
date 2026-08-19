@@ -98,7 +98,7 @@ class FakeProbeManager implements McpSettingsManager {
   }
 }
 
-/** save 慢到能横跨好几个 tick，模拟 Tauri IPC 往返打开的让出点。 */
+/** save 慢到能横跨好几个 tick，模拟宿主 IPC 往返打开的让出点。 */
 function createSlowCacheStorage(): McpToolNameCacheStorage {
   const inner = createMemoryToolNameCacheStorage()
   return {

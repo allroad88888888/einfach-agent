@@ -31,19 +31,19 @@ export function isToolAllowed(name: string, options?: BuildTurnToolsOptions): bo
 /**
  * 工具可见性的总闸。
  *
- * 【为什么参数不再叫 isTauri】（H4b）第二个参数一路上曾经全叫 `isTauri`，源头是
- * `modelTurnPrefix.ts` 的 `isTauriHost()`——于是「宿主能不能执行 runtime='server' 的工具」被写死
- * 成了「是不是跑在 Tauri webview 里」。这两件事从来就不是一回事：本机能力来自宿主提供的命令桥
- * （见 hostBridge.ts），桥背后是 Tauri invoke、本地 Node 后端还是别的什么，与 core 无关。现在源头
- * 改读 `hasHostBridge()`，参数名跟着改成「宿主有没有本机能力」这个它真正回答的问题——留着旧名字
- * 的话，将来读到 `runtime !== 'server' || isTauri` 的人只会得到一个错误答案。
+ * 【为什么参数按能力措辞】（H4b）第二个参数一路上曾经按宿主品牌命名，源头是
+ * `modelTurnPrefix.ts` 里的一次品牌探测——于是「宿主能不能执行 runtime='server' 的工具」被写死
+ * 成了「是不是跑在某个特定 webview 里」。这两件事从来就不是一回事：本机能力来自宿主提供的命令桥
+ * （见 hostBridge.ts），桥背后是本地 Node 后端还是别的什么，与 core 无关。现在源头
+ * 改读 `hasHostBridge()`，参数名跟着改成「宿主有没有本机能力」这个它真正回答的问题——留着按品牌
+ * 命名的旧名字，将来读到 `runtime !== 'server' || <品牌>` 的人只会得到一个错误答案。
  *
  * 【MCP stdio 占位的窗口期】（H4b 结论，不在本卡实现）stdio MCP 的占位工具登记为
  * runtime='server'（tools/mcp/src/placeholderTool.ts），此前正是靠这道闸在浏览器下被整类过滤掉。
  * 闸门改判「有没有桥」之后，一个**非 Tauri 的 server 宿主**（本地 Node 后端，B 线）会让这些占位
  * 变成可见，而 stdio 的 Node 实现要等 C 线才有——中间存在「可见但不可用」的窗口。判定为**可接受**：
- *   · 今天为零风险：Tauri 下 hasHostBridge() ⟺ isTauriHost()，纯浏览器下没有桥，两种现存宿主的
- *     行为与改动前逐字节相同；这个窗口只在一个尚不存在的宿主上才打开。
+ *   · 写这段时为零风险：那时唯一有桥的宿主就是桌面端，纯浏览器下没有桥，两种现存宿主的
+ *     行为与改动前逐字节相同；这个窗口只在一个当时尚不存在的宿主上才打开。
  *   · 失败是有界且诚实的：占位的 execute 会走透明连接，连接器缺席时得到的是一条工具失败结果，
  *     与「MCP 服务连不上」同类，占位 guide 本来就向模型交代了「这是未连接服务的历史条目」。
  *   · 现在就切更细的粒度是投机：本地 Node 后端几乎必然能起子进程，那样 stdio 需要的能力与 shell

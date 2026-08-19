@@ -1,5 +1,5 @@
 // applyWorkspacePatch 的 invokeDispatchMs 计时语义（D5）。
-// 这条诊断度量的是「IPC 派发有多慢」；@tauri-apps/api/core 的首次惰性加载有几 ms 开销，
+// 这条诊断度量的是「IPC 派发有多慢」；宿主 invoke 的首次惰性解析有几 ms 开销，
 // 必须在 dispatchStartedAt 采样之前完成，否则首次调用会把模块加载耗时伪装成 IPC 派发慢。
 import { describe, expect, it, vi } from 'vitest'
 
@@ -39,7 +39,7 @@ function stubObservability(samples: number[], onFinish: (attrs?: Record<string, 
 }
 
 describe('applyWorkspacePatch 的 invokeDispatchMs 计时语义', () => {
-  it('惰性加载 @tauri-apps/api/core 的耗时发生在计时起点之前，不计入 invokeDispatchMs', async () => {
+  it('惰性解析宿主 invoke 的耗时发生在计时起点之前，不计入 invokeDispatchMs', async () => {
     host.loadCostMs = LOAD_COST_MS
     clock.now = 0
     const samples: number[] = []

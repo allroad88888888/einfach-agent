@@ -320,7 +320,7 @@ describe('MCP settings service', () => {
     // Regression test for a data-loss race: enqueueServerOperation only
     // serializes by serverId, so remove(A) and setAutoConnect(B) run
     // concurrently. storage.save() below models the yield point a real
-    // Tauri IPC round trip opens (every call takes several microtask ticks)
+    // a host IPC round trip opens (every call takes several microtask ticks)
     // -- comfortably longer than either operation's own synchronous
     // "read the atom, compute next" step, so both operations' reads land
     // before either one's write. A correct implementation must still queue
