@@ -74,6 +74,18 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：`grep -rn "delegateAgents" packages tools apps --include='*.ts'` 只剩 spawn 那条路；
   `pnpm exec vitest run tools/agents packages/agent-core` 绿；`node scripts/check-boundaries.js` 绿
 - **模型**：opus（收的是对外能力面）
+- **状态**：DONE 3fae178
+
+### A2b · 拆分逼近上限的 toolContext.workspaceRoot.test.ts
+
+- **依赖**：A2（DONE `3fae178`）
+- **改动面**：`packages/agent-core/src/runtime/toolContext.workspaceRoot.test.ts`（现 500 行）
+- **判据**：按两个 describe 拆成 `toolContext.workspaceRoot.test.ts`（workspaceRoot 透传）与
+  `toolContext.verifyProfile.test.ts`（workspace_verify 闸门）；两份都 ≤300 行；**用例总数不变**
+  （拆前 15 例）；`pnpm exec vitest run packages/agent-core/src/runtime` 绿
+- **模型**：sonnet
+- **来源**：A2 交回时指出——它的改动把该文件从 492 推到 500，正卡在「复杂文件 500 行」上限，
+  下一次改同一文件必然顶破
 - **状态**：TODO
 
 ### A3 · 删除 SubagentTreePanel 及其 5 个文件
