@@ -64,7 +64,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **模型**：sonnet
 - **C1 的交接提示**：`coreInstance.dispatchTimedTools`（受限分派入口）现在全仓没有内部调用方了，
   只剩宿主 `<domain>:<event>` 用途；`CompactionRequestDraft.dispatchTimedItems` 字段随插件一起删。
-- **状态**：TODO
+- **状态**：DONE 64d7df4
 
 ### A2 · 删除 delegate_agent 同步返回分支并收 ToolContext.delegateAgents
 
@@ -331,7 +331,12 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **改动面**：`docs/core-runtime-flow.md:52,105`、`docs/tree-subagent-runtime.md:144`、
   `docs/mcp-integration.md`、`docs/project-skills-blueprint.md`（`ensureProjectSkills` 已不存在）、
   `docs/skills-tree-blueprint.md`、`packages/agent-core/src/tools/TOOLS-SPEC.md`（注册点、31 的口径、
-  skills 域少列一个、Tauri 措辞）
+  skills 域少列一个、Tauri 措辞）；**另加**：`docs/context-caching.md`、`docs/context-cache-cost.md`、
+  `docs/launch/articles/assembly-kernel.md` 等处仍写着「压缩是插件」，而插件已随 A1 删除
+  （来源：A1 验收，源码零命中但 docs 有 19 处提及）
+- **判据补充**：`docs/` 里提及 compactionPlugin 的文件要**区分两类**——「描述当前实现」的必须改
+  （上面点名的三份），「记录历史」的（`core-surface-issues.md`、`structure-optimization-blueprint.md`、
+  `launch/posts-zh.md` 这类已完成的树与蓝图）**保持原样**，它们记的是当时的事实，不是当前的承诺
 - **判据**：逐条对上代码；`node scripts/check-docs.js` 绿
 - **模型**：sonnet
 - **状态**：TODO
