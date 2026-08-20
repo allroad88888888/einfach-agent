@@ -126,8 +126,9 @@ Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter；
 - `packages/host-node/`：**唯一一份宿主能力实现**——workspace 读写/patch/change journal、shell、
   Git、SQLite、MCP stdio、模型转发、`~/.webAgent/config.json`。浏览器经 HTTP、CLI 进程内，
   两条路跑的是同一份代码。
-- `packages/agent-ai/`：DeepSeek/GLM/Kimi 请求、流式响应、provider 私有图片准备、adapter 重试
-  和 vendor 能力描述表。
+- `packages/agent-ai/`：DeepSeek/GLM/Kimi/openai-compat 四家请求、流式响应、provider 私有图片
+  准备、adapter 重试和 vendor 能力描述表（`builtinProviders.ts` 的 `registerBuiltinProviders`）。
+  openai-compat 今天只有 CLI 在用（装配层按需烘焙 baseUrl），web 侧传输尚未接入。
 - `packages/agent-core/`：装配式 Agent Runtime 内核：工具契约/registry、loop、插件、观测与持久化
   contract、恢复快照与 atoms；不含具体工具域或宿主 driver。
 - `packages/agent-react/`（`@einfach-agent/react-plugin`）：React 侧插件安装面、timeline renderer
@@ -227,11 +228,15 @@ CI 里排在 `check:boundaries` 之后。入口是 `scripts/check-state-invarian
 `writeChokepoint.js` / `slotJournalShape.js` / `atomDisposition.js`（规则 4 的登记表另住
 `atomDispositionTable.js`：判定与账分开，改 atom 的人只需要读表）/ `agentStoreBinding.js`。
 
-**规则 5**：core 之外，任何从 `@einfach-agent/core` import 进来、且在 core 的 atom 枚举面里的标识符
-（规则 4 的会话 atom 全集 + `rootAtoms.ts` 的跨会话登记表），都不许出现在裸 `useAtomValue` /
-`useAtom` / `useSetAtom` 里——那读的是环境 store（界面 store），拿到的是该 atom 的**默认值**，
-组件照常渲染一份空状态、不抛异常。会话的读 `useAgentAtomValue`、跨会话的读 `useRootAtomValue`，
-写一律走命令。
+**规则 5**：判据已换过形状（B2，`1a15788`），不再按「名字在不在 core 的 atom 枚举面里」认——那一版
+漏掉两种逃逸：atom 工厂调用 `useAtomValue(sessionUndoAvailabilityAtom(id))`（名字是函数不是 atom
+声明，枚举抽不到）、以及 `@einfach-agent/subagents` 的整族会话 atom（旧判据只认
+`@einfach-agent/core` 一个来源）。现在的判据是**受治理的包 + 位置**：任何从受治理的包（core /
+subagents，见 `scripts/state-invariants/atomBindingTable.js` 的 `GOVERNED_PACKAGES`）import 进来的
+标识符，只要落在裸 `useAtomValue` / `useAtom` / `useSetAtom` 的**第一个实参位置**，就定罪——枚举
+（会话 atom 全集 + `rootAtoms.ts` 的跨会话登记表）只用来把报错说准（该换哪个 hook），**说不准也
+照样红**。违规读到的是环境 store（界面 store）里该 atom 的**默认值**，组件照常渲染一份空状态、
+不抛异常。会话的读 `useAgentAtomValue`、跨会话的读 `useRootAtomValue`，写一律走命令。
 
 前两条逐行扫源码；第三条走**穷举分类**——`SESSION_SLOTS` 的每个 key 必须恰好落在
 `slotJournalShape.js` 的 `deltaJournaled`（走增量 op）/ `boundedWholeValue`（整值记账，每项须写明
@@ -292,8 +297,12 @@ error；`slot` 与 `SESSION_SLOTS` 是**双向**比对（表说是槽位而槽�
 主循环已按 lifecycle、bootstrap、循环周期、模型请求和工具执行拆分；`modelRun.ts`
 只保留稳定导出，`runToolLoop.ts` 负责循环编排。
 
-压缩、finish reason、loop guard、迁移这些横切行为是 `runtime/core/plugins/` 里的**插件**，
-不是主循环里的分支。要改这类行为先看能不能落在插件 hook 上。
+finish reason、loop guard、迁移这些横切行为是 `runtime/core/plugins/` 里的**插件**（默认插件表
+`defaultPlugins.ts` 当前只有这三个：migration / loopGuard / finishReason）。**压缩不在其中**：
+`compactionPlugin` 已被整个删除（A1，`64d7df4`），真跑的是 `modelTurnRequester.ts` 内联的
+checkpoint 蒸馏（`dispatchCompactionTiming`），`preCompact`/`postCompact` 两个时机由请求组装层
+自己分派、不经插件（C1，`0cd3200`）。要改压缩行为去 `modelTurnRequester.ts`，改其余三项才看
+插件 hook。
 
 工具不得直接 import store/atom 来获得额外能力。文件、shell、计划、渲染、委派等副作用必须使用
 `ToolContext` 暴露的能力，确保 workspace confinement、权限确认、stale guard 和审计仍然生效。
@@ -306,13 +315,17 @@ registrar 为准**（`tools/<domain>/src/index.ts`），文档里的数量容易
 探测失败或超时一律落 `static`）：
 
 - `server` —— 浏览器 + 本机 Node 后端。会话/历史与 trace 都走 SQLite，执行面是
-  `POST /api/invoke/sqlite_*`，库文件由 host-node 的 `sqlite/databasePath.ts` 决定（与 CLI 共用
-  同一份）；文件/shell/Git 经 `POST /api/invoke/:command` 打到 host-node。
+  `POST /api/invoke/sqlite_*`，库文件由 host-node 的 `sqlite/databasePath.ts` 决定；文件/shell/Git
+  经 `POST /api/invoke/:command` 打到 host-node。**CLI 不持久化**——`apps/cli/src/runtime.ts` 只在
+  第 9 行 import 了 `configurePersistence`，从未调用，`apps/cli/package.json` 也没有任何
+  `persistence-*` 依赖；别以为它在悄悄共用这份库文件。
 - `static` —— 纯静态产物，没有后端。不登记命令桥，本机能力工具整类不可见；持久化只剩 IndexedDB。
 - 选 driver 的判据是「**这一态有没有 SQL 通路**」，不是「有没有本机能力桥」——持久化与观测两处
   逐字相同的判断，写岔了会得到「写进 SQLite、从 IndexedDB 读」这种两头对不上的装配，它不报错，
   只让 TraceViewer 恒空。唯一有意的不对称在 `static` + DEV：trace 写 IndexedDB 而读取走 Vite 中继
-  去读本机那份 SQLite，为的是同机调试时能看见 `pnpm serve` / CLI 写下的 trace。
+  去读本机那份 SQLite，为的是同机调试时能看见 `pnpm serve` 写下的 trace。**CLI 不在此列**——它的
+  trace driver 只在 `--verbose` 时把 span/event 打到 stderr（`apps/cli/src/runtime.ts` 的
+  `configureTraceOutput`），从不写库文件，没有东西可给这条中继读。
 - **不可逆动作在撤销账本上留屏障**。事务日志能还原的只有状态；跨进程边界发出去的动作还原不了
   （当前只有一处：显式停止 run 时经宿主 disposer 真删 provider 侧的上传）。真的发出过释放时
   `markUndoBarrier` 在当前最新账目上立屏障，越过它的撤销一律拒绝而不是「看起来成功了」。
@@ -353,7 +366,11 @@ registrar 为准**（`tools/<domain>/src/index.ts`），文档里的数量容易
 
 - TypeScript strict 开启；完成修改至少运行相关测试和 `pnpm build`。
 - runtime/state 修改优先补充 colocated `*.test.ts(x)`。
-- 模型 adapter 的"除 AbortError 外返回 fallback、不向 UI 抛出"是有意契约。
+- "除 AbortError 外不向 UI 抛出、落成 run 的 error 状态"是有意契约，但**兜底不在 adapter 里**——
+  DeepSeek/GLM/Kimi 的 adapter 一律直接抛错，真正兜底的是 `runToolLoop.ts:151-166` 的
+  try/catch：`isAbortError` 为真则 `patchRun(..., { status: 'stopped' })`，否则
+  `patchRun(..., { status: 'error', error: safeErrorMessage(error) })`。照着旧文档去 adapter 里找
+  那段兜底逻辑会找不到。
 - 新工具放到对应 `tools/<domain>/src/<tool-name>/`，同目录包含实现、说明和测试，
   再由域包 registrar 注册；只加文件不注册 = 模型看不到。
 - 用户可见的助手文案保持中文。
