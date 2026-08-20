@@ -372,10 +372,11 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **模型**：sonnet（若做）
 - **来源**：E2a 验收。它把这些判为「改名是另一个量级的重构，不属于清理注释」而保留，**判断正确**；
   但桌面壳已随 `e52c31d` 整条删除，这些名字今天指的是「经命令桥的宿主输入」，与 Tauri 无关。
-- **要负责人拍板**：改名会波及跨包的类型引用面（core 的公开面收敛 G4 也在管这块），且没有功能收益，
-  纯可读性。**不做也是合理选项**——那就该在 `types.ts` 的 canonical 定义处写一句「名字里的 Tauri
-  是历史，含义是宿主命令桥」，让下一个人不必猜。
-- **状态**：TODO（待拍板）
+- **裁决（2026-08-20，负责人）**：**放着**（不改名）。按卡面「不做」选项的约定补了一句 canonical
+  注释——落点不是设想的 `types.ts`（这批 `Tauri*Input` 是各文件的**模块局部**类型，没有共享定义处），
+  也不能放 `hostBridge.ts`（它头部明写「宿主中立，任何具体宿主的名字不出现」），最终放在
+  `workspaceWrite.ts` 的类型定义上方：grep "Tauri" 必命中该注释，读者从任何一处旧名都能找到解释。
+- **状态**：DONE ba94fad
 
 
 
@@ -475,6 +476,45 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
   插件改会话状态仍只能走 `PluginRunApi.commands`。**「读 atom 状态」若要给，是另一张卡**：einfach 的
   Store 读写同体，得先拆只读投影，且会显著扩大公开面、撞 G4 core 公开面收敛。写入面不建议开。
 - **状态**：DONE f8dcbb6（信任模型选 (b) 完全信任，设置页加了用户可见提示并有测试钉住；**没有**放开 store/root/history——见下）
+
+### F2b · 外部插件的会话状态读写面
+
+- **依赖**：F2（DONE f8dcbb6）
+- **来源**：F2 卡末尾挂起的追问「读 atom 状态若要给，是另一张卡」。负责人 2026-08-20 裁决：
+  **「给，读写同理」**——读给，写也给，与 A6「同等权利 / 插件一视同仁」同一姿态（A6 原答本来
+  就写了「都是atom的，应该都访问到atom状态，都能改」，F2 当时只落了 hook 对等，这张卡闭合另一半）。
+- **改动面**：`packages/agent-core/src/runtime/core/pluginContracts.ts`、`pluginHookContracts.ts`
+  （文件头「没有一起放开的那一半」整段要按新裁决改写）、`publicRunApi.ts`、
+  `packages/agent-core/src/plugin.ts` barrel；**写入实现的物理落点必须在 core 的 `state/` 或
+  `runtime/commands/`**（规则 2 的机械要求，不是姿态问题）。读写面的具体形状（string 键的槽位
+  facade / 导出 atom 引用 / 扩 commands）由执行者设计并写明取舍，但要顾及 G4 core 公开面收敛
+  ——新公开面走既有 barrel + 白名单门禁，不开新的深导入。
+- **安全兜底（裁决优先于 F2 的建议，但以下是机械不变量，必须保住并写进实现）**：
+  1. **插件写入必须入事务日志**——仍不交出裸 einfach `Store`。不是不信任插件（信任姿态已是
+     完全信任），是 `check:state` 规则 2 扫不到磁盘上的插件代码，绕过日志的写入让 undo 只回滚
+     一部分状态、且只在崩溃恢复时浮出来。仓内 UI 同样是完全信任的代码，照样只能走 commands
+     ——这是记账的机械要求，对谁都一样。
+  2. **delta 槽位（items / executionGraph）不得开整值写入**（规则 3 的二次膨胀）：对它们要么给
+     op 级 API、要么走既有命令，写明是哪种。
+  3. writer 纪律保留：ghost guard、runId stale guard、AbortSignal 检查（CLAUDE.md）。
+- **判据**：外部插件（definePlugin fixture）能经新面**读到**会话 atom 值与跨会话 root 值；能**写**
+  会话状态且写入在事务日志留下 `(key, prev, next)`——新增测试：插件写一笔 → undo → 值回到 prev；
+  既有「拿不到裸 store/root/history」的端到端断言**保留**（裸句柄仍不给，给的是受限读写面）；
+  `pnpm exec vitest run packages/agent-core` 绿；`pnpm check:state` 绿；
+  `node scripts/check-boundaries.js` 绿
+- **模型**：opus（新契约会被后续插件抄、安全边界、跨包公开面）
+- **状态**：TODO
+
+### F2c · 插件样例与文档跟上状态读写面
+
+- **依赖**：F2b
+- **改动面**：`packages/agent-plugin-example`（CLAUDE.md：改插件 API 时同步更新样例）、
+  `docs/plugin-quickstart.md`（「当前边界」段里「插件改会话状态只能走 commands」的表述要按新面更新）、
+  `docs/plugin-ecosystem-blueprint.md`（§9 裁决记录追加本条）
+- **判据**：样例用到新读写面且其测试绿；`node scripts/check-docs.js` 绿；
+  `pnpm exec vitest run packages/agent-plugin-example` 绿
+- **模型**：sonnet
+- **状态**：TODO
 
 ### F3 · sourceFiles 加黑白名单
 
