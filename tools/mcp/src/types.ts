@@ -24,6 +24,15 @@ export interface McpStdioServerConfig extends McpServerConfigBase {
 }
 
 export type McpServerConfig = McpStreamableHttpServerConfig | McpStdioServerConfig
+
+/**
+ * 「MCP 用哪种传输」的**唯一**定义面，全仓只此一处；应用层（apps/web/src/mcp）import 它，
+ * 不再自己写一份同名联合。
+ *
+ * 【为什么派生而不是手写字面量联合】它必须恒等于 McpServerConfig 的判别式：新增一种传输就是
+ * 往上面那个联合里加一个成员，派生写法让 McpTransport 自动跟上。手写一份的下场见这次统一
+ * 之前——域包与应用层各存一份，加传输时漏改一处不报错，症状是「配置存得下、就是连不上」。
+ */
 export type McpTransport = McpServerConfig['transport']
 
 export interface McpOperationOptions {

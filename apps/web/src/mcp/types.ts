@@ -1,7 +1,6 @@
-import type { McpServerStatus } from '@einfach-agent/tools-mcp'
+import type { McpServerStatus, McpTransport } from '@einfach-agent/tools-mcp'
 import type { McpLastKnownTools } from './toolNameCache'
 
-export type McpTransport = 'streamable-http' | 'stdio'
 export type McpPersistenceMode = 'persistent' | 'temporary'
 export type McpAddMode = 'form' | 'json'
 
@@ -75,6 +74,24 @@ export interface PersistedStdioMcpServer extends PersistedMcpServerBase {
 export type PersistedMcpServerConfig =
   | PersistedHttpMcpServer
   | PersistedStdioMcpServer
+
+/**
+ * 持久化形状与运行时形状**是两个类型**，但「有哪些传输」只有一份答案。
+ *
+ * 形状必须分开：这份是落盘白名单，多带 autoConnect / launchConsent 这类纯应用层记录，
+ * name 与 args 必填（表单已经补齐），而域包的 McpServerConfig 是协议侧的连接参数，
+ * launchConsent 之流不该出现在那里（转换见 config.ts 的 toManagerConfig）。
+ *
+ * 传输集合必须一致：下面这条断言在两个方向上都为空，域包新加一种传输而这里没跟上时，
+ * `Exclude<McpTransport, …>` 不再是 never，编译当场失败。没有它的话，McpAddServerDraft
+ * 的 transport 会自动放宽（它就是 McpTransport），表单能选中新传输，而
+ * buildPersistedMcpConfig 的 else 分支会把它当 stdio 存下去——一路不报错。
+ */
+type AssertNever<T extends never> = T
+type _McpTransportsFullyPersistable = AssertNever<
+  | Exclude<McpTransport, PersistedMcpServerConfig['transport']>
+  | Exclude<PersistedMcpServerConfig['transport'], McpTransport>
+>
 
 export interface McpAddServerDraft {
   name: string
