@@ -65,6 +65,11 @@ export interface WorkspaceWriteResult {
   wouldChange?: boolean
 }
 
+// ★ canonical 说明（E2c，负责人 2026-08-20 裁决「放着」）★ —— 本文件与同级
+// workspace{Read,Rg,Patch,Task,Git}.ts、shellCommand.ts 里的 `Tauri*Input` / `toTauriInput()`
+// 命名是历史：桌面壳已随 T1（e52c31d）整条删除，这些类型今天指的是「经宿主命令桥
+// （hostBridge.ts）下发的 snake_case wire 形状」，与任何具体宿主无关。不改名是裁决过的
+// ——纯可读性、无功能收益，且这批都是模块局部类型，留名比一次跨七个文件的机械改名便宜。
 type TauriWorkspaceWriteInput = {
   path: string
   content: string
