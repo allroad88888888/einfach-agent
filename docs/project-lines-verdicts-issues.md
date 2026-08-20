@@ -364,7 +364,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
   `launch/posts-zh.md` 这类已完成的树与蓝图）**保持原样**，它们记的是当时的事实，不是当前的承诺
 - **判据**：逐条对上代码；`node scripts/check-docs.js` 绿
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE b291b94（另判定 TOOLS-SPEC 的「31 工具 / skills 域 2 个」**当前已正确**，未改：`skill_manifest` 经 `a88ba16` 加入又经 C7 `d6a4359` 删除，数字被动复原；验收用 `tools/standard/src/index.test.ts:39` 的绿断言复核）
 
 ## F 分支 · 未决闭合后长出来的卡（2026-08-20）
 
