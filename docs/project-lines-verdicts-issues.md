@@ -82,7 +82,9 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：`grep -rn "SubagentTreePanel\|SubagentSkillGovernancePanel" apps` 零命中；
   `pnpm exec vitest run apps/web` 绿；`pnpm check:state` 绿
 - **模型**：sonnet
-- **状态**：DONE a16f0e8
+- **状态**：DONE a16f0e8（断链补修 `832a3de`）
+- **教训**：本卡判据漏了 `node scripts/check-docs.js`——**删源码文件会断别的 md 的相对链接**
+  （`docs/launch/comparison.md:79-80` 当场红，验收时才发现）。后续任何删文件的卡，判据里都要带上它。
 
 ### A3b · 清理随面板删除而死掉的 CSS 类
 
