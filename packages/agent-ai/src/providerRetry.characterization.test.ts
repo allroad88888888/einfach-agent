@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { streamDeepSeek } from './deepseek'
 import { streamGlm } from './glm'
+import { streamKimi } from './kimi'
+import { streamOpenAiCompat } from './openaiCompat'
 import type {
   ChatCallOptions,
   ChatRequestBase,
@@ -14,9 +16,31 @@ type StreamProvider = (
   handlers?: ChatStreamHandlers,
 ) => Promise<ModelChatResponse>
 
+// 四家共用同一条传输路径（modelHttp/modelSse/modelRetry），因此 503 重试与断流不重放这两条
+// 策略必须四家全跑；差异只在各自的 prepare*Request 私有净化，不影响这一层。
 const PROVIDERS: Array<{ name: string; stream: StreamProvider }> = [
   { name: 'DeepSeek', stream: streamDeepSeek },
   { name: 'GLM', stream: streamGlm },
+  { name: 'Kimi', stream: streamKimi },
+  { name: 'OpenAI-compat', stream: streamOpenAiCompat },
+]
+
+// 厂商级重试（容量终止后的额外重放）只有 DeepSeek 一家；GLM/Kimi/OpenAI-compat 都不继承它，
+// 这是已知且刻意的差异，用同一批用例断言住而不是跳过。
+const NON_DEEPSEEK_PROVIDERS: Array<{
+  name: string
+  stream: StreamProvider
+  model: string
+  baseUrl: string
+}> = [
+  { name: 'GLM', stream: streamGlm, model: 'glm-5.2', baseUrl: 'https://glm.example/v4' },
+  { name: 'Kimi', stream: streamKimi, model: 'kimi-k2.6', baseUrl: 'https://kimi.example/v1' },
+  {
+    name: 'OpenAI-compat',
+    stream: streamOpenAiCompat,
+    model: 'gateway-model',
+    baseUrl: 'https://gateway.example/v1',
+  },
 ]
 
 const REQUEST: ChatRequestBase = {
@@ -168,24 +192,27 @@ describe('provider retry characterization', () => {
     expect(response.choices?.[0]?.message?.content).toBe('recovered')
   })
 
-  it('GLM 不继承 DeepSeek 的容量 finish_reason 重试', async () => {
-    let calls = 0
+  it.each(NON_DEEPSEEK_PROVIDERS)(
+    '$name 不继承 DeepSeek 的容量 finish_reason 重试（厂商级重试只有 DeepSeek 一家）',
+    async ({ stream, model, baseUrl }) => {
+      let calls = 0
 
-    const response = await streamGlm(
-      { ...REQUEST, model: 'glm-5.2' },
-      {
-        apiKey: 'key',
-        baseUrl: 'https://glm.example/v4',
-        fetchImpl: async () => {
-          calls += 1
-          return capacityStream()
+      const response = await stream(
+        { ...REQUEST, model },
+        {
+          apiKey: 'key',
+          baseUrl,
+          fetchImpl: async () => {
+            calls += 1
+            return capacityStream()
+          },
+          retry: { maxRetries: 0 },
         },
-        retry: { maxRetries: 0 },
-      },
-    )
+      )
 
-    expect(calls).toBe(1)
-    expect(response.choices?.[0]?.finish_reason).toBe('insufficient_system_resource')
-    expect(response.choices?.[0]?.message?.content).toBeNull()
-  })
+      expect(calls).toBe(1)
+      expect(response.choices?.[0]?.finish_reason).toBe('insufficient_system_resource')
+      expect(response.choices?.[0]?.message?.content).toBeNull()
+    },
+  )
 })

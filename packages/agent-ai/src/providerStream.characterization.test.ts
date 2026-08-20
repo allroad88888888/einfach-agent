@@ -1,11 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import { streamDeepSeek } from './deepseek'
 import { streamGlm } from './glm'
+import { streamKimi } from './kimi'
+import { streamOpenAiCompat } from './openaiCompat'
 import {
   normalizeCacheUsage,
+  type ChatCallOptions,
+  type ChatRequestBase,
+  type ChatStreamHandlers,
+  type ModelChatResponse,
   type ModelStreamDelta,
   type ModelUsage,
 } from './modelApi'
+
+type StreamProvider = (
+  body: ChatRequestBase,
+  options: ChatCallOptions,
+  handlers?: ChatStreamHandlers,
+) => Promise<ModelChatResponse>
 
 function fragmentedSseResponse(chunks: unknown[]): Response {
   const source = [
@@ -90,56 +102,89 @@ describe('provider SSE 与 usage characterization', () => {
     })
   })
 
-  it('GLM 聚合文本，并接住 finish chunk 同包的 usage', async () => {
-    const usage: ModelUsage = {
-      prompt_tokens: 20,
-      completion_tokens: 2,
-      total_tokens: 22,
-      prompt_tokens_details: { cached_tokens: 8 },
-    }
-    const deltas: ModelStreamDelta[] = []
+  // DeepSeek 是唯一自带 prompt_cache_hit/miss_tokens 计数器的厂商（missSource: 'provider'，
+  // 见上一条用例）。GLM/Kimi/OpenAI-compat 都只在 usage 里带 OpenAI 标准的
+  // prompt_tokens_details.cached_tokens，缓存未命中量由 normalizeCacheUsage 从
+  // total - hit 派生（missSource: 'derived'）。三家共享同一条派生路径，这里用同一批用例
+  // 断言住这个已知差异，而不是只在 GLM 一家上验证、对 Kimi/OpenAI-compat 保持沉默。
+  const DERIVED_CACHE_PROVIDERS: Array<{
+    name: string
+    stream: StreamProvider
+    model: string
+    baseUrl: string
+    chunkId: string
+    cachedTokens: number
+  }> = [
+    {
+      name: 'GLM',
+      stream: streamGlm,
+      model: 'glm-5.2',
+      baseUrl: 'https://glm.example/v4',
+      chunkId: 'chatcmpl-glm',
+      cachedTokens: 8,
+    },
+    {
+      name: 'Kimi',
+      stream: streamKimi,
+      model: 'kimi-k2.6',
+      baseUrl: 'https://kimi.example/v1',
+      chunkId: 'chatcmpl-kimi',
+      cachedTokens: 10,
+    },
+    {
+      name: 'OpenAI-compat',
+      stream: streamOpenAiCompat,
+      model: 'gateway-model',
+      baseUrl: 'https://gateway.example/v1',
+      chunkId: 'chatcmpl-gateway',
+      cachedTokens: 16,
+    },
+  ]
 
-    const response = await streamGlm(
-      {
-        model: 'glm-5.2',
-        messages: [{ role: 'user', content: 'Answer' }],
-      },
-      {
-        apiKey: 'key',
-        baseUrl: 'https://glm.example/v4',
-        fetchImpl: async () => fragmentedSseResponse([
-          {
-            id: 'chatcmpl-glm',
-            model: 'glm-5.2-observed',
-            choices: [{ delta: { role: 'assistant', content: '结' } }],
-          },
-          { choices: [{ delta: { content: '果' } }] },
-          { choices: [{ delta: {}, finish_reason: 'stop' }], usage },
-        ]),
-        retry: { maxRetries: 0 },
-      },
-      { onDelta: (delta) => deltas.push(delta) },
-    )
+  it.each(DERIVED_CACHE_PROVIDERS)(
+    '$name 聚合分片文本，并从 cached_tokens 派生缓存命中（不像 DeepSeek 自带 hit/miss 计数器）',
+    async ({ stream, model, baseUrl, chunkId, cachedTokens }) => {
+      const promptTokens = cachedTokens * 3
+      const usage: ModelUsage = {
+        prompt_tokens: promptTokens,
+        completion_tokens: 2,
+        total_tokens: promptTokens + 2,
+        prompt_tokens_details: { cached_tokens: cachedTokens },
+      }
+      const deltas: ModelStreamDelta[] = []
 
-    expect(deltas).toEqual([
-      { role: 'assistant', content: '结' },
-      { content: '果' },
-      {},
-    ])
-    expect(response).toEqual({
-      id: 'chatcmpl-glm',
-      model: 'glm-5.2-observed',
-      usage,
-      choices: [{
-        finish_reason: 'stop',
-        message: { role: 'assistant', content: '结果' },
-      }],
-    })
-    expect(normalizeCacheUsage(response.usage)).toMatchObject({
-      hitTokens: 8,
-      missTokens: 12,
-      missSource: 'derived',
-      totalInputTokens: 20,
-    })
-  })
+      const response = await stream(
+        { model, messages: [{ role: 'user', content: 'Answer' }] },
+        {
+          apiKey: 'key',
+          baseUrl,
+          fetchImpl: async () => fragmentedSseResponse([
+            {
+              id: chunkId,
+              model: `${model}-observed`,
+              choices: [{ delta: { role: 'assistant', content: '结' } }],
+            },
+            { choices: [{ delta: { content: '果' } }] },
+            { choices: [{ delta: {}, finish_reason: 'stop' }], usage },
+          ]),
+          retry: { maxRetries: 0 },
+        },
+        { onDelta: (delta) => deltas.push(delta) },
+      )
+
+      expect(deltas).toEqual([
+        { role: 'assistant', content: '结' },
+        { content: '果' },
+        {},
+      ])
+      expect(response.choices?.[0]?.message?.content).toBe('结果')
+      expect(response.choices?.[0]?.finish_reason).toBe('stop')
+      expect(normalizeCacheUsage(response.usage)).toMatchObject({
+        hitTokens: cachedTokens,
+        missTokens: promptTokens - cachedTokens,
+        missSource: 'derived',
+        totalInputTokens: promptTokens,
+      })
+    },
+  )
 })

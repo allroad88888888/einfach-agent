@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { callDeepSeek, streamDeepSeek } from './deepseek'
 import { callGlm, streamGlm } from './glm'
+import { bodyOf, capture, jsonResponse, sseResponse } from './providerRequestCapture'
 import type { ChatRequestBase } from './modelApi'
 
 const TEXT_MESSAGES: ChatRequestBase['messages'] = [
@@ -13,55 +14,6 @@ const TEXT_MESSAGES: ChatRequestBase['messages'] = [
   },
   { role: 'user', content: 'Follow up' },
 ]
-
-function jsonResponse(): Response {
-  return new Response(
-    JSON.stringify({
-      choices: [{ finish_reason: 'stop', message: { role: 'assistant', content: 'ok' } }],
-    }),
-    { status: 200, headers: { 'Content-Type': 'application/json' } },
-  )
-}
-
-function sseResponse(): Response {
-  const source = [
-    'data: {"choices":[{"delta":{"role":"assistant","content":"ok"}}]}\n\n',
-    'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
-    'data: [DONE]\n\n',
-  ].join('')
-  const encoder = new TextEncoder()
-
-  return new Response(
-    new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(encoder.encode(source))
-        controller.close()
-      },
-    }),
-    { status: 200, headers: { 'Content-Type': 'text/event-stream' } },
-  )
-}
-
-function capture(response: () => Response): {
-  fetchImpl: typeof fetch
-  request(): { url: string; init: RequestInit }
-} {
-  let captured: { url: string; init: RequestInit } | undefined
-  return {
-    async fetchImpl(input, init) {
-      captured = { url: String(input), init: init ?? {} }
-      return response()
-    },
-    request() {
-      if (!captured) throw new Error('Expected a captured model request.')
-      return captured
-    },
-  }
-}
-
-function bodyOf(init: RequestInit): Record<string, unknown> {
-  return JSON.parse(String(init.body)) as Record<string, unknown>
-}
 
 describe('provider 纯文本请求 characterization', () => {
   it('DeepSeek 非流式请求保持字符串消息，并应用 thinking 请求净化', async () => {
