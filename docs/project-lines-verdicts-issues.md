@@ -211,7 +211,19 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：全仓只剩一处 `McpTransport` 联合定义（`grep -rn "type McpTransport"` 一条命中）；
   `pnpm exec vitest run tools/mcp apps/web/src/mcp` 绿；`node scripts/check-boundaries.js` 绿
 - **模型**：opus（跨包类型边界）
-- **状态**：TODO
+- **状态**：DONE 9d150ca（裁决细化：**只统一判别式，配置形状保持两份**，理由见交回；另加了一条双向覆盖的编译期断言，验收复现探针确认会炸）
+
+### C4b · MCP 传输分支改成穷举 switch
+
+- **依赖**：C4（DONE `9d150ca`）
+- **改动面**：`apps/web/src/mcp/config.ts` 里三处 `if (transport === 'streamable-http') … else …`
+- **判据**：三处改成 `never` 收尾的穷举 switch，加第三种传输时**编译期**必红；
+  `pnpm exec vitest run apps/web/src/mcp` 绿；`pnpm build` 绿
+- **模型**：sonnet
+- **来源**：C4 交回时指出——它加的双向断言只保证「持久化联合有对应成员」，**保不住那三处 if/else
+  真的分了新支**。没有这一步，加传输时表单能选中、`buildPersistedMcpConfig` 却会把它当 stdio 存下去，
+  全程不报错。
+- **注意**：`config.ts` 已 295 行，逼近 300 上限——改动若顶破就要连拆分一起做
 
 ### C5 · MCP 失败分类收敛到后端一份
 
