@@ -20,14 +20,15 @@ import { hydratePluginSettings } from './plugins/commands'
 import { initializePluginSettings } from './plugins/initialize'
 import { createDefaultPlanRuntime } from '@einfach-agent/tools-planning'
 import { createDelegationAssembly } from '@einfach-agent/subagents'
-// 宿主分流的五个装配面各住一个模块（B3）：桥、模型传输、凭据宿主、观测 driver、刷盘时机。
+// 宿主分流的四个装配面各住一个模块（B3）：桥、模型传输、凭据宿主、观测 driver。
 // 本文件只按解析出的那一态把它们装起来，从不自己探宿主。
+// 刷盘时机（A4）不在此列：两态都跑在浏览器里，`pagehide` 是两态唯一的通路，不存在第二支要分，
+// 所以不经过 host/ 的装配面，直接调 persistence/recoveryFlushLifecycle 的 installBrowserRecoveryFlush。
 import { resolveHost, type ResolvedHost } from './host/resolveHost'
 import { registerHostCommandBridge } from './host/hostCommandBridge'
 import { createHostModelCredentialHost } from './host/hostModelCredentialHost'
 import { createHostModelFetch } from './host/hostModelTransport'
 import { configureHostObservability } from './host/hostObservability'
-import { installHostRecoveryFlush } from './host/hostRecoveryFlush'
 import { AppShell } from './agentNew/ui/AppShell'
 import { StartupCredentialGate } from './agentNew/ui/StartupCredentialGate'
 import { WebTimelineRendererRegistryProvider } from './agentNew/ui/WebTimelineRendererRegistryProvider'
@@ -48,6 +49,7 @@ import {
   startUiPerformanceDiagnostics,
 } from './performanceDiagnostics'
 import { createHostPersistenceDrivers } from './persistence/persistenceDrivers'
+import { installBrowserRecoveryFlush } from './persistence/recoveryFlushLifecycle'
 import './styles/global.css'
 import './agentNew/ui/agentnew.css'
 
@@ -120,7 +122,7 @@ async function bootstrapApplication(host: ResolvedHost): Promise<StartupCredenti
       // 与 recoveryStore 同一条纪律：只交出已存在的会话，落盘绝不复活幽灵会话。
       historyFor: (sessionId) => core.findSessionStore(sessionId)?.history,
     })
-    await installHostRecoveryFlush(host, core)
+    installBrowserRecoveryFlush(core)
     configureHostObservability(host)
     const restored = await core.persistence.hydrate()
     if (!restored) newSession()
