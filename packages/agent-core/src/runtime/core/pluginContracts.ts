@@ -2,6 +2,7 @@
 
 import type { Tool } from '../../tools/types'
 import type { PluginCommandFacade } from './pluginCommandFacade'
+import type { PluginLoopHooks } from './pluginHookContracts'
 
 /**
  * 品牌用【全局注册表 Symbol】而不是模块局部 `Symbol()`。
@@ -68,10 +69,20 @@ export type AfterToolCallObserver = (
   event: CompletedToolCallEvent,
 ) => void | Promise<void>
 
-/** 每次 run 激活时提供给公开插件的受限能力。 */
+/**
+ * 每次 run 激活时提供给公开插件的能力。
+ *
+ * `hook` 与仓内 AgentPlugin 的注册面**同名同形、同一批 7 个槽**（负责人 2026-08-20 裁决
+ * 「给，同等权利」）：外部插件可以用 `beforeToolCall` 返回 `{ block: true }` 拦下工具执行，
+ * 也可以在 `transformContext` / `prepareRequest` 里改模型这一轮看到的上下文。这次放开的依据、
+ * 采取的信任姿态（装插件 = 完全信任）以及**没有**一起放开的写入面，见 pluginHookContracts.ts 文件头。
+ */
 export interface PluginRunApi {
   readonly commands: PluginCommandFacade
   observeRun(listener: RunObserver): void
+  /** 注册一个 loop hook。槽名与语义见 PluginLoopHooks。 */
+  hook<K extends keyof PluginLoopHooks>(name: K, fn: NonNullable<PluginLoopHooks[K]>): void
+  /** 只观察已完成工具调用的窄面；等价于不返回补丁的 `hook('afterToolCall', ...)`。 */
   onAfterToolCall(listener: AfterToolCallObserver): void
 }
 

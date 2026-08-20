@@ -23,7 +23,10 @@ export interface CoreCtx {
   readonly signal: AbortSignal
   // einfach 会话 store（getSessionStore(id).store）：getter/setter 覆盖会话原子
   // （itemsAtom / runAtom / planAtom / ...）。**只有仓内 AgentPlugin 能拿到本句柄**：
-  // 公开插件经 @einfach-agent/core/plugin 只有 PluginRunApi.commands，没有 store。
+  // 外部插件与仓内插件同拿 7 个 hook 槽（负责人 2026-08-20「给，同等权利」），但它们的 ctx 是
+  // publicRunApi.ts 投影出的 PluginHookContext——有 sessionId/runId/signal/isCurrent，没有
+  // store/root/history。会话 atom 的写入必须收口在 state/ 与 runtime/commands/（check:state 规则 2），
+  // 而磁盘上的插件代码门禁扫不到，理由见 pluginHookContracts.ts 文件头。
   readonly store: Store
   // 跨会话顶层 store（rootStore）：sessionsAtom / activeSessionIdAtom。
   readonly root: Store

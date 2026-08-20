@@ -44,7 +44,7 @@
 | [npm 发包准备 Issue 树](publish-prep-issues.md) | 执行中：E2 蓝图 G1–G13 的准备段（构建产物 / ?raw 内联 / 元数据 / 依赖修正 / 产物冒烟）；不含任何 publish 动作，发布键与 S10 由用户触发 |
 | [Node 宿主与 Web 自托管 Issue 树](node-host-issues.md) | 执行中（82 卡：71 DONE / 7 DROPPED / 4 DOING）：把浏览器版做成能力完整的本地自托管应用——core 的宿主 invoke 抽成可注入 host bridge，能力实现收敛为一份 `packages/host-node`，经 `apps/server` 服务浏览器与 CLI。**桌面端已整条删除**（T1，`e52c31d`），宿主从三态减到两态（`server` / `static`）；分发口径是用户裁决的「不发布，仅本地跑」，因而不需要任何签名证书。三项未决待拍板 |
 | [线裁决落地 Issue 树](project-lines-verdicts-issues.md) | 待执行（25 卡）：把 `.project-lines/` 里负责人确认的 24 条裁决落地——6 项删除、1 个真实 bug（撤销条恒不渲染）、1 条门禁扩判据、9 项契约/跨包收敛、4 项测试补齐、4 组文档对齐。**不含方向迁移**（agent 循环跑服务端已裁定，另开树）；七项未决单列 |
-| [插件生态蓝图](plugin-ecosystem-blueprint.md) | 设计阶段，无实现：把 assembly-time 插件产品化为 `.webAgent/plugins/` 动态加载的用户插件——加载协议与错误隔离、借鉴 MCP 起进程确认的信任模型、启停与 plugin id 归因、npm 分发前置；`timeline.persist` 阻塞于 R5；默认信任姿态、首期宿主与模型可见工具三项待用户拍板 |
+| [插件生态蓝图](plugin-ecosystem-blueprint.md) | 设计阶段，无实现：把 assembly-time 插件产品化为 `.webAgent/plugins/` 动态加载的用户插件——加载协议与错误隔离、借鉴 MCP 起进程确认的信任模型、启停与 plugin id 归因、npm 分发前置；`timeline.persist` 阻塞于 R5；默认信任姿态已拍板（装插件 = 完全信任，外部插件与仓内插件同拿 7 个 loop hook 槽），首期宿主与模型可见工具仍待用户拍板 |
 
 蓝图描述目标形态，不代表所有 API 都已交付。引用蓝图时需要同时核对实现和测试。
 

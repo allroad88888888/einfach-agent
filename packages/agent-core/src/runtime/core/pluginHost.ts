@@ -5,7 +5,8 @@ import type { Tool } from '../../tools/types'
 import type { ToolRegistry } from '../../tools/toolRegistry'
 import { assemblePlugins, type AgentPlugin, type AssembledPlugins, type PluginApi } from './pluginApi'
 import type { PluginCommandFacade } from './pluginCommandFacade'
-import { isPublicPlugin, type PluginInstallApi, type PluginRunApi, type PublicPlugin } from './pluginContracts'
+import { isPublicPlugin, type PluginInstallApi, type PublicPlugin } from './pluginContracts'
+import { publicRunApi } from './publicRunApi'
 import { wrapDynamicPluginActivate, type PluginIdentity } from './pluginCircuitBreaker'
 
 export type { PluginInstallApi } from './pluginContracts'
@@ -56,24 +57,6 @@ interface PluginRunActivation {
 }
 
 const unavailableCommands: PluginCommandFacade = Object.freeze({ stopCurrentRun: () => false })
-
-function publicRunApi(api: PluginApi): PluginRunApi {
-  return {
-    commands: api.commands,
-    observeRun: api.observeRun,
-    onAfterToolCall(listener) {
-      api.hook('afterToolCall', async (_ctx, event) => {
-        await listener(Object.freeze({
-          callId: event.callId,
-          toolName: event.toolName,
-          args: Object.freeze({ ...event.args }),
-          result: Object.freeze({ ...event.result }),
-        }))
-        return undefined
-      })
-    },
-  }
-}
 
 function adaptPlugin(plugin: PluginInput): CorePlugin {
   if (isPublicPlugin(plugin)) {

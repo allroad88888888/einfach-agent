@@ -214,6 +214,21 @@ describe('PluginSettingsPanel', () => {
 
     expect(await screen.findByText('当前宿主不支持用户插件')).toBeInTheDocument()
     expect(screen.queryByRole('article')).toBeNull()
+    // 装不了插件的宿主上不该吓唬人：信任提示只在真的能装的宿主上出现。
+    expect(screen.queryByText('装插件 = 完全信任')).toBeNull()
+  })
+
+  // 信任姿态（issue 卡 F2 选项 b）必须落在安装面上：插件与仓内插件同权，能否决工具调用、
+  // 能改模型看到的上下文。这条断言防的是"代码注释里写了、界面上没说"。
+  it('states on the install surface that installing a plugin means full trust', async () => {
+    configurePluginSettings({ provider: new FakePluginSettingsProvider({ plugins: [] }) })
+
+    renderWithStore(<PluginSettingsPanel />, { store: uiStore })
+
+    const notice = await screen.findByRole('note')
+    expect(within(notice).getByText('装插件 = 完全信任')).toBeInTheDocument()
+    expect(notice.textContent).toContain('shell 命令')
+    expect(notice.textContent).toContain('不是沙箱')
   })
 
   it('shows an empty state when the host supports plugins but none are found', async () => {

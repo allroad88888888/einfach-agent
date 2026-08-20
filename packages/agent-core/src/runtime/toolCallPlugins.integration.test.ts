@@ -4,6 +4,7 @@ import { sessionsAtom } from '../state/rootStore'
 import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { createCore } from './core/createCore'
 import type { CoreInstance } from './core/coreInstance'
+import { definePlugin } from './core/pluginContracts'
 import type { CorePlugin } from './core/pluginHost'
 import { runSession } from './modelRun'
 
@@ -147,6 +148,47 @@ describe('tool-call plugin production integration', () => {
         error: 'blocked by policy',
         code: 'plugin_blocked',
       })
+    } finally {
+      core.plugins.dispose()
+    }
+  })
+
+  // F2 卡的判据：外部（definePlugin 品牌）插件的 beforeToolCall 返回 {block:true} 必须**真的**
+  // 拦下执行——从前公开面只有 onAfterToolCall，返回值被丢弃，第三方只能观察不能否决。
+  it('lets an external definePlugin block a tool call end to end', async () => {
+    const name = '__external_blocked_shell__'
+    const execute = vi.fn(() => ({ ok: true as const, data: 'should not run' }))
+    let hookContext: Record<string, unknown> | undefined
+    const external = definePlugin({
+      activate: (api) => api.hook('beforeToolCall', (ctx, event) => {
+        hookContext = ctx as unknown as Record<string, unknown>
+        return event.toolName === name ? { block: true, reason: '第三方插件否决了这条命令' } : undefined
+      }),
+    })
+    const core = createCore({ plugins: [external], registerTools: (registry) => registry.register(testTool(name, execute)) })
+    seedSession(core, 'external-block')
+    let requests = 0
+    let thirdRequest = ''
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      requests += 1
+      if (requests === 1) return toolCallsResponse([{ name: 'request_tool_schema', args: { toolName: name }, id: 'load' }])
+      if (requests === 2) return toolCallsResponse([{ name, args: {}, id: 'external-call' }])
+      thirdRequest = String(init?.body)
+      return textResponse('recovered')
+    }
+
+    try {
+      await runSession('external-block', 'run', { signal: new AbortController().signal, apiKey: 'k', fetchImpl, core })
+
+      expect(execute).not.toHaveBeenCalled()
+      expect(toolResultPayload(thirdRequest, 'external-call')).toEqual({
+        error: '第三方插件否决了这条命令',
+        code: 'plugin_blocked',
+      })
+      // 真实 run 里也拿不到 store：能力放开的是拦截，不是绕过命令层的写入面。
+      expect(hookContext?.sessionId).toBe('external-block')
+      expect(hookContext?.store).toBeUndefined()
+      expect(hookContext?.history).toBeUndefined()
     } finally {
       core.plugins.dispose()
     }

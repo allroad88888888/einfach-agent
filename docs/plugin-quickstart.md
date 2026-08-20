@@ -109,6 +109,24 @@ export default definePlugin({
 可以观察已完成的工具调用，`api.commands` 暴露受限命令（当前只有
 `stopCurrentRun()`）。本例只用了 `observeRun` 来证明 hook 真的跑起来了。
 
+`api.hook(name, fn)` 则是**与仓内插件同一批的 7 个 loop hook 槽**
+（[`pluginHookContracts.ts`](../packages/agent-core/src/runtime/core/pluginHookContracts.ts)）：
+`onRunStart` / `transformContext` / `prepareRequest` / `beforeToolCall` / `afterToolCall` /
+`onTurnEnd` / `shouldStop`。这不是观察面——`beforeToolCall` 返回 `{ block: true, reason }`
+会**真的拦下**那次工具执行（模型收到一条 `code: 'plugin_blocked'` 的结果，工具的 `execute`
+不会被调用），`transformContext` / `prepareRequest` 拿到的 `draft.messages` 就是模型这一轮
+看到的东西，就地改即生效。相应的信任姿态见「当前边界」第 5 条。
+
+```js
+api.hook('beforeToolCall', (ctx, ev) => (
+  ev.toolName === 'shell' ? { block: true, reason: 'acme.hello 不允许这条命令' } : undefined
+))
+```
+
+hook 拿到的 `ctx` 是受限投影，只有 `sessionId` / `runId` / `signal` / `isCurrent()`：**没有**
+einfach 的 `Store`。会话状态的改动一律走 `api.commands`——会话 atom 的写入必须收口在 core 的
+命令层，而磁盘上的插件代码门禁扫不到，这条不随信任姿态一起放开。
+
 ## 第 4 步 —— 用 CLI 跑起来
 
 ```sh
@@ -186,6 +204,12 @@ env -u DEEPSEEK_API_KEY -u GLM_API_KEY -u KIMI_API_KEY pnpm cli -v -p "用一句
    [蓝图第 6 节](plugin-ecosystem-blueprint.md#6-分发) 的 G4（core 公开面收敛）阻塞，
    而分发本身也已被「不发布、仅本地跑」的裁决按下（见
    [Node 宿主树](node-host-issues.md) 的「分发口径」段）。
+5. **装插件 = 完全信任。** 负责人 2026-08-20 拍板：外部插件与仓内插件**同权**，拿同一批 7 个
+   loop hook 槽，因此一个插件可以否决任何一次工具调用（包括 shell 命令）、也可以改模型这一轮
+   看到的上下文。宿主**不做**逐插件确认门（不像 MCP 起进程那样弹确认），因为插件入口本就是宿主
+   `import()` 求值的同权代码——不经过任何 hook 也能直接 fetch、触达宿主命令桥，`plugin.json` 的
+   `capabilities` 是申报不是沙箱。用户的控制点是「装不装」与设置面板的逐插件启停。裁决记录见
+   [蓝图 4.3 节](plugin-ecosystem-blueprint.md#43-默认姿态--已拍板目录存在即信任)。
 
 ## 故障排查
 

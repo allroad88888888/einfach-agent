@@ -37,6 +37,18 @@ export function PluginSettingsPanel() {
         </div>
       </div>
 
+      {/* 信任姿态必须写在安装面上，不能只写在代码注释里（issue 卡 F2 选项 b）：插件拿到的是与
+          仓内插件同等的 7 个 loop hook 槽——能否决任何一次工具调用（含 shell 命令），也能改模型
+          这一轮看到的上下文。宿主不做沙箱，capabilities 只是申报。用户的控制点就是「装不装」
+          与下面每一行的启停。 */}
+      {capabilities.supported ? (
+        <p className="agentnew-plugin-trust" role="note">
+          <strong>装插件 = 完全信任</strong>：插件代码以与本应用相同的权限在本机运行，可以否决或
+          改写任何一次工具调用（包括 shell 命令），也可以改模型这一轮看到的上下文。清单里的
+          能力声明只是申报，不是沙箱。只安装你自己审阅过或信任来源的插件。
+        </p>
+      ) : null}
+
       {!capabilities.supported ? (
         <div className="agentnew-plugin-empty">
           <span aria-hidden="true">⧉</span>

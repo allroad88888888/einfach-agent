@@ -154,6 +154,22 @@
   font-size: 12px;
 }
 
+/* 信任提示：不是错误也不是普通说明，用琥珀色底衬把它和下面的插件行分开。 */
+.agentnew-plugin-trust {
+  margin: 10px 0 12px;
+  padding: 9px 11px;
+  border: 1px solid #fcd34d;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.agentnew-plugin-trust strong {
+  color: #78350f;
+}
+
 .agentnew-plugin-notice {
   margin: 10px 0;
   color: #64748b;
