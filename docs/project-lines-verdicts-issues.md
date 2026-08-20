@@ -122,7 +122,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **来源**：A3b 交回时指出——它清空了文件但没删，因为删文件要同步改 `agentnew.css`，超出该卡改动面
 - **已知债（不在本卡）**：`agentnew.subagent-trace.css` 清理后仍 399 行（原 478），存量超限，
   且混了「子 agent trace/inline 样式」与「消息气泡样式」两个不相关关注点，视情况另拆
-- **状态**：TODO
+- **状态**：DONE db8bc0e
 
 ### A4 · hostRecoveryFlush 收成直调
 
@@ -320,7 +320,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：注释里的域数与工具数与 `index.test.ts:12-41` 的清单逐一对上；
   `pnpm exec vitest run tools/standard` 绿
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE（仓库零改动）——核实后判定 `index.ts:4,6,30` 三处**已经正确**：独立数了六域 registrar（shell 6 / interaction 3 / fs 11 / planning 5 / skills 2 / agents 4 = 31），与 `index.test.ts:12-41` 的权威清单逐一对上。`skill_manifest` 被 C7 删掉后数字被动复原，没有过期措辞可改
 
 ### D4 · provider 共形测试扩到四家
 
