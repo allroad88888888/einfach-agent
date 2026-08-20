@@ -3,6 +3,8 @@
 // 把 workspace 桥整模块 mock 成「回显入参」的 spy，断言 ctx 的对应方法调用桥时，
 // 把该会话 SessionMeta.workspaceRoot 作为入参带上；未绑定则不带（Rust 走 git root 兜底）；
 // 调用方已显式带 root 则尊重调用方。独立文件 mock 桥，不影响 toolContext.test.ts（那边跑真桥）。
+// workspace_verify 档位的宿主侧闸门测试拆在同目录的 toolContext.verifyProfile.test.ts（A2b）；
+// 两个文件共享的 seedSession / runDelegation helper 住 toolContext.workspaceRoot.testHarness.ts。
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -40,9 +42,7 @@ vi.mock('./shellCommand', () => ({
   })),
 }))
 
-import { rootStore, sessionsAtom } from '../state/rootStore'
 import { getSessionStore } from '../state/sessionStore'
-import { setRun } from '../state/sessionWriters'
 import { buildToolContext } from './toolContext'
 import { readWorkspaceFile, listWorkspaceFiles, searchWorkspaceFiles } from './workspaceRead'
 import { rgSearchWorkspace } from './workspaceRg'
@@ -51,45 +51,16 @@ import { writeWorkspaceFile } from './workspaceWrite'
 import { getWorkspaceDiff } from './workspaceGit'
 import { runWorkspaceTask } from './workspaceTask'
 import { runShellCommand } from './shellCommand'
-import type { DelegateAgentInput, DelegateAgentRuntime } from '../subagents/types'
-import type { ToolContext } from '../tools/types'
 import { addAlwaysAllowedTool, alwaysAllowedToolsAtom } from '../state/transientAtoms'
-import { createCoreInstance, defaultCore } from './core/coreInstance'
+import { createCoreInstance } from './core/coreInstance'
+import { delegateRuntimeCapturing, seedSession, runDelegation } from './toolContext.workspaceRoot.testHarness'
 
 afterEach(() => {
   vi.clearAllMocks()
 })
 
-// 登记一个 running 会话（可选 workspaceRoot），让 ctx.assertFresh 通过。
-function seedSession(
-  id: string,
-  workspaceRoot?: string,
-  toolApprovalMode?: 'confirm' | 'auto',
-): void {
-  rootStore.setter(sessionsAtom, (prev) => ({
-    ...prev,
-    [id]: {
-      id,
-      title: 't',
-      settings: { vendor: 'deepseek', model: 'x' },
-      createdAt: 0,
-      updatedAt: 0,
-      workspaceRoot,
-      toolApprovalMode,
-    },
-  }))
-  setRun(id, { runId: 'r', status: 'running' })
-}
-
 function ctxFor(id: string) {
   return buildToolContext({ sessionId: id, runId: 'r', signal: new AbortController().signal, callId: 'c', toolName: 'x' })
-}
-
-// 委派只有 spawn 一条路（同步分支已删）：起执行节点再 join。内部抛错被节点收成 failed 而不再
-// 向调用方抛，所以必须看一眼状态，否则下面那些「捕获值」断言会对着 undefined 假绿。
-async function runDelegation(ctx: ToolContext, input: DelegateAgentInput): Promise<void> {
-  const handle = ctx.spawnAgents!(input)
-  await expect(ctx.joinExecution!(handle.executionId)).resolves.toMatchObject({ status: 'succeeded' })
 }
 
 describe('toolContext workspaceRoot 透传（S4-A）', () => {
@@ -97,34 +68,13 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     seedSession('child-tools', '/ws/root')
     let readResult: unknown
     let writeResult: unknown
-    const delegateRuntime: DelegateAgentRuntime = {
-      async delegateAgents(_input, callContext) {
-        readResult = await callContext.runChildTool?.('read_file', { path: 'a.txt' })
-        writeResult = await callContext.runChildTool?.('write_file', { path: 'a.txt', content: 'no' })
-        return {
-          treeId: 'r',
-          conversationId: 'child-tools',
-          runId: 'r',
-          parentPath: 'root',
-          strategy: 'parallel_wait_all',
-          status: 'done',
-          summary: { total: 0, done: 0, failed: 0, cancelled: 0 },
-          cacheBasePath: '.webAgent-archive/test',
-          archiveBasePath: '.webAgent-archive/test',
-          eventLog: '.webAgent-archive/test/events.jsonl',
-          skillFiles: [],
-          skillIds: [],
-          children: [],
-        }
-      },
-    }
+    const delegateRuntime = delegateRuntimeCapturing(async (callContext) => {
+      readResult = await callContext.runChildTool?.('read_file', { path: 'a.txt' })
+      writeResult = await callContext.runChildTool?.('write_file', { path: 'a.txt', content: 'no' })
+    }, 'child-tools')
     const ctx = buildToolContext({
-      sessionId: 'child-tools',
-      runId: 'r',
-      signal: new AbortController().signal,
-      callId: 'c',
-      toolName: 'delegate_agent',
-      delegateRuntime,
+      sessionId: 'child-tools', runId: 'r', signal: new AbortController().signal,
+      callId: 'c', toolName: 'delegate_agent', delegateRuntime,
     })
 
     await runDelegation(ctx, { children: [{ objective: 'inspect' }] })
@@ -140,16 +90,7 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
   it('子 agent 最终分发在当前 Core registry 内原子拒绝过期注册版本', async () => {
     const core = createCoreInstance()
     const sessionId = 'child-registration-version'
-    core.rootStore.setter(sessionsAtom, {
-      [sessionId]: {
-        id: sessionId,
-        title: 't',
-        settings: { vendor: 'deepseek', model: 'x' },
-        createdAt: 0,
-        updatedAt: 0,
-      },
-    })
-    setRun(sessionId, { runId: 'r', status: 'running' }, core)
+    seedSession(sessionId, undefined, undefined, core)
     const oldExecute = vi.fn(async () => ({ ok: true as const, data: { version: 'old' } }))
     const newExecute = vi.fn(async () => ({ ok: true as const, data: { version: 'new' } }))
     const tool = (execute: typeof oldExecute) => ({
@@ -166,39 +107,17 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     core.tools.register(tool(oldExecute))
     const expectedRegistrationVersion = core.tools.registrationVersion('read_file')
     let childResult: unknown
-    const delegateRuntime: DelegateAgentRuntime = {
-      async delegateAgents(_input, callContext) {
-        core.tools.register(tool(newExecute))
-        childResult = await callContext.runChildTool?.(
-          'read_file',
-          { path: 'a.txt' },
-          expectedRegistrationVersion,
-        )
-        return {
-          treeId: 'r',
-          conversationId: sessionId,
-          runId: 'r',
-          parentPath: 'root',
-          strategy: 'parallel_wait_all',
-          status: 'done',
-          summary: { total: 0, done: 0, failed: 0, cancelled: 0 },
-          cacheBasePath: '.webAgent-archive/test',
-          archiveBasePath: '.webAgent-archive/test',
-          eventLog: '.webAgent-archive/test/events.jsonl',
-          skillFiles: [],
-          skillIds: [],
-          children: [],
-        }
-      },
-    }
+    const delegateRuntime = delegateRuntimeCapturing(async (callContext) => {
+      core.tools.register(tool(newExecute))
+      childResult = await callContext.runChildTool?.(
+        'read_file',
+        { path: 'a.txt' },
+        expectedRegistrationVersion,
+      )
+    }, sessionId)
     const ctx = buildToolContext({
-      sessionId,
-      runId: 'r',
-      signal: new AbortController().signal,
-      callId: 'delegate-version',
-      toolName: 'delegate_agent',
-      delegateRuntime,
-      core,
+      sessionId, runId: 'r', signal: new AbortController().signal,
+      callId: 'delegate-version', toolName: 'delegate_agent', delegateRuntime, core,
     })
 
     await runDelegation(ctx, { children: [{ objective: 'inspect' }] })
@@ -220,20 +139,11 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     let capability: unknown
     let writeResult: unknown
     let patchResult: unknown
-    const delegateRuntime: DelegateAgentRuntime = {
-      async delegateAgents(_input, callContext) {
-        capability = callContext.dangerousToolCapability
-        writeResult = await callContext.runChildTool?.('write_file', { path: 'a.txt', content: 'yes' })
-        patchResult = await callContext.runChildTool?.('apply_patch', { operations: [] })
-        return {
-          treeId: 'r', conversationId: 'child-confirmed', runId: 'r', parentPath: 'root',
-          strategy: 'parallel_wait_all', status: 'done',
-          summary: { total: 0, done: 0, failed: 0, cancelled: 0 },
-          cacheBasePath: '.webAgent-archive/test', archiveBasePath: '.webAgent-archive/test',
-          eventLog: '.webAgent-archive/test/events.jsonl', skillFiles: [], skillIds: [], children: [],
-        }
-      },
-    }
+    const delegateRuntime = delegateRuntimeCapturing(async (callContext) => {
+      capability = callContext.dangerousToolCapability
+      writeResult = await callContext.runChildTool?.('write_file', { path: 'a.txt', content: 'yes' })
+      patchResult = await callContext.runChildTool?.('apply_patch', { operations: [] })
+    }, 'child-confirmed')
     const ctx = buildToolContext({
       sessionId: 'child-confirmed', runId: 'r', signal: new AbortController().signal,
       callId: 'delegate-call', toolName: 'delegate_agent',
@@ -259,19 +169,10 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     getSessionStore('child-mcp').store.setter(alwaysAllowedToolsAtom, [mcpTool])
     let capability: unknown
     let mcpResult: unknown
-    const delegateRuntime: DelegateAgentRuntime = {
-      async delegateAgents(_input, callContext) {
-        capability = callContext.dangerousToolCapability
-        mcpResult = await callContext.runChildTool?.(mcpTool, { url: 'https://example.com' })
-        return {
-          treeId: 'r', conversationId: 'child-mcp', runId: 'r', parentPath: 'root',
-          strategy: 'parallel_wait_all', status: 'done',
-          summary: { total: 0, done: 0, failed: 0, cancelled: 0 },
-          cacheBasePath: '.webAgent-archive/test', archiveBasePath: '.webAgent-archive/test',
-          eventLog: '.webAgent-archive/test/events.jsonl', skillFiles: [], skillIds: [], children: [],
-        }
-      },
-    }
+    const delegateRuntime = delegateRuntimeCapturing(async (callContext) => {
+      capability = callContext.dangerousToolCapability
+      mcpResult = await callContext.runChildTool?.(mcpTool, { url: 'https://example.com' })
+    }, 'child-mcp')
     const ctx = buildToolContext({
       sessionId: 'child-mcp', runId: 'r', signal: new AbortController().signal,
       callId: 'delegate-mcp', toolName: 'delegate_agent',
@@ -394,107 +295,5 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     seedSession('s5', '/session/root')
     await ctxFor('s5').runShell({ platform: 'macos', command: 'pwd', cwd: '  /caller/root  ' })
     expect(vi.mocked(runShellCommand).mock.calls[0][0]).toMatchObject({ cwd: '/caller/root' })
-  })
-})
-
-// workspace_verify 档位的宿主侧闸门。
-// ---------------------------------------------------------------------------
-// run_verification_command 仅经子 agent 工具桥暴露；主循环没有 workspace_verify 档位。
-describe('toolContext 验证命令执行（workspace_verify）', () => {
-  function delegateRuntimeCapturing(
-    run: (callContext: DelegateAgentRuntimeCallContext) => Promise<void>,
-    sessionId: string,
-  ): DelegateAgentRuntime {
-    return {
-      async delegateAgents(_input, callContext) {
-        await run(callContext)
-        return {
-          treeId: 'r',
-          conversationId: sessionId,
-          runId: 'r',
-          parentPath: 'root',
-          strategy: 'parallel_wait_all',
-          status: 'done',
-          summary: { total: 0, done: 0, failed: 0, cancelled: 0 },
-          cacheBasePath: '.webAgent-archive/test',
-          archiveBasePath: '.webAgent-archive/test',
-          eventLog: '.webAgent-archive/test/events.jsonl',
-          skillFiles: [],
-          skillIds: [],
-          children: [],
-        }
-      },
-    }
-  }
-
-  type DelegateAgentRuntimeCallContext = Parameters<DelegateAgentRuntime['delegateAgents']>[1]
-
-  it('workspace_verify 子 agent 可执行验收所需的 shell 命令', async () => {
-    seedSession('verify-allowed', '/ws/root')
-    let allowed: unknown
-    let additionalCommand: unknown
-    const ctx = buildToolContext({
-      sessionId: 'verify-allowed',
-      runId: 'r',
-      signal: new AbortController().signal,
-      callId: 'c',
-      toolName: 'submit_stage_result',
-      delegateRuntime: delegateRuntimeCapturing(async (callContext) => {
-        allowed = await callContext.runChildTool?.('run_verification_command', { command: 'pnpm test' })
-        additionalCommand = await callContext.runChildTool?.('run_verification_command', { command: 'pnpm test --bail' })
-      }, 'verify-allowed'),
-    })
-
-    await runDelegation(ctx, {
-      children: [{ objective: 'verify' }],
-      toolProfile: 'workspace_verify',
-    })
-
-    expect(allowed).toMatchObject({ ok: true })
-    expect(additionalCommand).toMatchObject({ ok: true })
-    expect(vi.mocked(runShellCommand)).toHaveBeenCalledTimes(2)
-    expect(vi.mocked(runShellCommand).mock.calls[0][0]).toMatchObject({
-      command: 'pnpm test',
-      cwd: '/ws/root',
-    })
-  })
-
-  it('workspace_read 子 agent 无法使用验证工具', async () => {
-    seedSession('verify-missing', '/ws/root')
-    let result: unknown
-    const ctx = buildToolContext({
-      sessionId: 'verify-missing',
-      runId: 'r',
-      signal: new AbortController().signal,
-      callId: 'c',
-      toolName: 'delegate_agent',
-      delegateRuntime: delegateRuntimeCapturing(async (callContext) => {
-        result = await callContext.runChildTool?.('run_verification_command', { command: 'pnpm test' })
-      }, 'verify-missing'),
-    })
-
-    await runDelegation(ctx, {
-      children: [{ objective: 'read' }],
-      toolProfile: 'workspace_read',
-    })
-
-    expect(result).toEqual({ ok: false, error: 'tool not allowed for child agent: run_verification_command' })
-    expect(vi.mocked(runShellCommand)).not.toHaveBeenCalled()
-  })
-
-  it('直接执行验证工具时不受命令白名单限制', async () => {
-    seedSession('verify-main-agent', '/ws/root')
-    const ctx = buildToolContext({
-      sessionId: 'verify-main-agent',
-      runId: 'r',
-      signal: new AbortController().signal,
-      callId: 'c',
-      toolName: 'run_verification_command',
-    })
-
-    const result = await defaultCore.tools.run('run_verification_command', { command: 'pnpm test' }, ctx)
-
-    expect(result).toMatchObject({ ok: true })
-    expect(vi.mocked(runShellCommand)).toHaveBeenCalledOnce()
   })
 })
