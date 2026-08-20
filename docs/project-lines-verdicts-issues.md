@@ -240,7 +240,15 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **两处行为变化（都往安全侧）**：`invalid_input` 改为结构化判永久（原来只有文案命中
   `/must not be empty/` 的那部分才永久）；带 kind 但没裁决的错误不再被文案匹配（原来未登记的 kind
   能靠 message 给自己挑一个永久结论）。
-- **状态**：DONE 2d8495c（验收变异：让裁决短路失效 → `untrustedText` 测试 5 条红，还原后 14 绿）
+- **变异验证时发现的结构事实**：只给运行时联合 `McpServerConfig` 加第三种传输时，只有前两处
+  （`validateMcpDraft:70`、`buildPersistedMcpConfig:124`）报 never；第三处 `toManagerConfig:222`
+  **对的是持久化联合** `PersistedMcpServerConfig['transport']`，要同步给持久化联合也加成员才报。
+  这恰好印证 C4 的判断——**两个形状本就是不同的东西**，而 C4 那条 `AssertNever` 双向断言先行
+  拦下了「只加一半」的不同步。三道保护各管一段，不重复。
+- **顶破 300 时按规则当场拆**：字段级校验原语（长度上限、控制字符检测、`normalizeText`/`isSafeId`/
+  `validateHttpUrl`/`parseArgsText`、args 里的凭据探测）搬进 `configFieldValidation.ts`（116 行），
+  `config.ts` 剩 226 行并 re-export `parseArgsText` 保住对外契约（调用方零改动）。
+- **状态**：DONE 1e1df1b
 
 ### C6 · openai-compat 补齐 web 侧受限传输与凭证面板
 
