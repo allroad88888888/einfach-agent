@@ -17,13 +17,18 @@ import {
   subagentEventsPath,
   subagentResultPath,
 } from './archive/skillCache'
-import { DEFAULT_SUBAGENT_TIER_ROUTING } from './defaultTierRouting'
+import { defaultSubagentTierRouting } from './defaultTierRouting'
 import { createSubagentScheduler } from './schedulerState'
 
 export type CreateDelegateAgentRuntimeOptions = DelegationRuntimeInput & {
   /** Standalone callers receive an isolated scheduler; assemblies pass their shared one. */
   scheduler?: SubagentScheduler
-  /** Overrides the shipped default Pro/Flash routing table (tests only; hosts get the default). */
+  /**
+   * Overrides the routing table (tests only; hosts get the shipped per-vendor default).
+   *
+   * 默认表按**会话 vendor**选，见 `defaultSubagentTierRouting`；这个覆盖口只在测试里用来注入
+   * 一张与会话 vendor 无关的表。
+   */
   tierRouting?: SubagentTierRouting
 }
 
@@ -44,7 +49,9 @@ function lowCostExtractionSettings(primary: ModelSettings, model: string, maxTok
 function delegationRuntimePorts(opts: CreateDelegateAgentRuntimeOptions): DelegationRuntimePorts {
   return {
     scheduler: opts.scheduler ?? createSubagentScheduler(),
-    tierRouting: opts.tierRouting ?? DEFAULT_SUBAGENT_TIER_ROUTING,
+    // 按会话 vendor 取默认表：GLM/Kimi 会话拿到自家的表，没有档位阵容的 provider 拿到
+    // 「不覆盖任何会话」的表（保守档 + 父模型），语义与拆表前一致。
+    tierRouting: opts.tierRouting ?? defaultSubagentTierRouting(opts.settings.vendor),
     archive: new SubagentArchiveIO({
       writerContext: archiveWriterContext(opts.core),
       sessionId: opts.sessionId,

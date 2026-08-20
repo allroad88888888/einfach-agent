@@ -10,10 +10,14 @@ import type { SubagentModelTier } from './types'
 /**
  * 一张档位路由表：把抽象档位映射到**同一家 provider** 的具体模型。
  *
- * 为什么 vendor 收在表级、而不是每个档位各带一个 vendor：`ModelSettings` 是按 vendor 判别的
- * 联合类型（各家有各自的 reasoning_effort / thinking 等特化字段），跨 vendor 换档位无法保留
- * 其余会话参数；档位切换在实现上只换 model 这一个字符串。要同时支持多家，就按会话 vendor
- * 选用不同的表，而不是把一张表拼成跨厂商的组合。
+ * 为什么 vendor 收在表级、而不是每个档位各带一个 vendor：档位切换在实现上只换 model 这一个
+ * 字符串，会话其余参数原样保留——而 `ModelSettings` 里除了通用的 thinking/temperature/
+ * max_tokens（各家接受度并不相同），还有 `vendorSettings` 这个只有本家 adapter 解释得了的
+ * 不透明袋（reasoning_effort、region……）。一张跨厂商拼起来的表会把 A 家的这些参数原封不动
+ * 送进 B 家的请求，静默失效或直接被拒；跨 vendor 换档保不住其余会话参数，说的就是这件事。
+ * 因此多家共存的正解是**按会话 vendor 选用不同的表**，而不是把一张表拼成跨厂商的组合。
+ * 装配层已按此实现：见 `packages/subagents/src/defaultTierRouting.ts` 的
+ * `defaultSubagentTierRouting`，换档因此永远关在同一家内部。
  */
 export interface SubagentTierRouting {
   /**
