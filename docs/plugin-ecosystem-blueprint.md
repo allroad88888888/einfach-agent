@@ -141,8 +141,10 @@ shell 命令），`transformContext` / `prepareRequest` 能改模型这一轮看
 - 契约层写明这是一次有意的信任裁决：[`pluginHookContracts.ts`](../packages/agent-core/src/runtime/core/pluginHookContracts.ts) 文件头；
 - 安装面直接对用户讲：设置页「插件」面板顶部的「装插件 = 完全信任」提示
   （[`PluginSettingsPanel.tsx`](../apps/web/src/agentNew/ui/PluginSettingsPanel.tsx)，有测试钉住）；
-- **没有**一起放开的是写入面：公开契约不给 einfach 的 `Store`，会话状态的改动仍只能走命令
-  （会话 atom 写入收口是 `pnpm check:state` 规则 2 机械判定的，而磁盘上的插件代码门禁扫不到）。
+- 状态读写面已随后续裁决放开（2026-08-20「给，读写同理」，见 §9 第 7 条）：读写经
+  `PluginHookContext.state` 的受限 facade，写入实现收口在 core 的写入器层、入事务日志；
+  **没有**放开的只有裸 einfach `Store`（会话 atom 写入收口是 `pnpm check:state` 规则 2
+  机械判定的，而磁盘上的插件代码门禁扫不到——收口是记账要求，不是信任姿态）。
 
 ## 5. 启停与可观测
 
@@ -229,5 +231,13 @@ npm 分发不进第一期。
    不承诺 API 稳定"的 alpha 形态。
 6. **`.webAgent/plugins/` 是否随 workspace 进 Git**：团队共享插件 = 团队共享任意代码执行。若
    允许，确认记录应按用户而非按 workspace 保存，否则一次 `git pull` 就能带进已被"确认过"的代码。
+7. ~~**外部插件的状态读写面**：hook 对等（第 1 条）只解决了「能不能拦」，没解决「能不能碰会话
+   状态」——第三方插件要不要也能读会话/跨会话状态、能不能改，还是仍然只留 `afterToolCall` 那类
+   观察权？~~ **已拍板（负责人 2026-08-20「给，读写同理」）：给受限读写面。** 会话/跨会话状态
+   可读（`PluginHookContext.state.readSession` / `readRoot`），会话状态可写（`appendItem` /
+   `setContextCheckpoint`，写入仍收口在 core 的写入器、入事务日志）；仍不给的只有裸 `Store`
+   ——理由是记账的机械要求（门禁扫不到磁盘上的插件代码），不是信任姿态的收紧。落地见 F2b/F2c
+   （`03686a5`），契约见
+   [`pluginStateContracts.ts`](../packages/agent-core/src/runtime/core/pluginStateContracts.ts)。
 
 以上任一项未拍板前，P2+ 实现卡不应开工。

@@ -123,9 +123,26 @@ api.hook('beforeToolCall', (ctx, ev) => (
 ))
 ```
 
-hook 拿到的 `ctx` 是受限投影，只有 `sessionId` / `runId` / `signal` / `isCurrent()`：**没有**
-einfach 的 `Store`。会话状态的改动一律走 `api.commands`——会话 atom 的写入必须收口在 core 的
-命令层，而磁盘上的插件代码门禁扫不到，这条不随信任姿态一起放开。
+hook 拿到的 `ctx` 除了 `sessionId` / `runId` / `signal` / `isCurrent()`，还带一个 `state`
+——会话与跨会话状态的受限读写面（F2b「给，读写同理」）：`readSession('items' | 'run' |
+'contextCheckpoint')` / `readRoot('activeSessionId' | 'activeWorkspaceRoot')` 读，`appendItem` /
+`setContextCheckpoint` 写。**仍然没有**的只有 einfach 的裸 `Store`：会话 atom 的写入必须收口在
+core 的写入器层，而磁盘上的插件代码门禁扫不到，`state` 的两条写入方法内部走的正是那层写入器
+——读写权对等地开放给外部插件，机制上的收口不随之放开。要停 run 之类控制 run 本身的动作，仍然
+走 `api.commands`。
+
+```js
+api.hook('onTurnEnd', (ctx) => {
+  const items = ctx.state.readSession('items')
+  const id = ctx.state.appendItem({
+    role: 'system',
+    content: `本轮结束，会话里已有 ${items.length} 条记录`,
+  })
+  // 门（ghost / stale run / abort）在调用时求值，不用先自查 isCurrent()；
+  // 但要检查返回值——undefined 就是被挡下，是正常分支，不是异常。
+  if (id === undefined) console.info('[acme.hello] 写入被挡下（run 已不是当前 run）')
+})
+```
 
 ## 第 4 步 —— 用 CLI 跑起来
 

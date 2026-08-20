@@ -43,3 +43,30 @@ createLifecycleProbePlugin({
   onDispose: () => console.info('plugin run disposed'),
 })
 ```
+
+## 会话状态读写面（`ctx.state`，F2b）
+
+外部插件在 hook 里能拿到 `PluginHookContext.state`，读会话/跨会话状态、写一笔（`appendItem`
+或 `setContextCheckpoint`），细节见 `packages/agent-core/src/runtime/core/pluginStateContracts.ts`。
+`createStateAwareProbePlugin` 是这条面的可运行样例：在 `onTurnEnd` 里用 `readSession('items')`
+读当前会话的条目数，再用 `appendItem` 追加一条记录它的 system 提示。
+
+```ts
+import { createStateAwareProbePlugin } from '@einfach-agent/plugin-example'
+
+const core = createCore({
+  plugins: [
+    createStateAwareProbePlugin({
+      // appendItem 返回新条目 id；被写入门（ghost / stale run / abort）挡下时返回 undefined ——
+      // 这是正常分支，不是异常，不需要包 try/catch。
+      onWriteOutcome: (id) => {
+        if (id === undefined) return
+        console.info('appended', id)
+      },
+    }),
+  ],
+})
+```
+
+推荐姿势：门在**调用时**求值，所以 await 之后回写不用先自查 `ctx.isCurrent()`；但调用方必须
+检查返回值——`undefined` / `false` 就是被挡下，照常处理，不要当成错误抛出去。
