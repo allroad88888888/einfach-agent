@@ -128,7 +128,10 @@ Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter；
   两条路跑的是同一份代码。
 - `packages/agent-ai/`：DeepSeek/GLM/Kimi/openai-compat 四家请求、流式响应、provider 私有图片
   准备、adapter 重试和 vendor 能力描述表（`builtinProviders.ts` 的 `registerBuiltinProviders`）。
-  openai-compat 今天只有 CLI 在用（装配层按需烘焙 baseUrl），web 侧传输尚未接入。
+  openai-compat 没有厂商官方接入点，它的 baseUrl **由用户显式登记**（`model_endpoint_*` 三条命令，
+  配置键 `openai-compat:default:baseUrl`，CLI 与 web 共用同一个键）：受限传输的白名单对它改判
+  **登记式 origin**——调用方仍然无法表达 origin（`ProviderTarget` 里没有那个键），宿主查自己的配置
+  得出，没登记就 fail closed；登记值须是 https 或指向回环的 http，不许内嵌凭据、不许带 query。
 - `packages/agent-core/`：装配式 Agent Runtime 内核：工具契约/registry、loop、插件、观测与持久化
   contract、恢复快照与 atoms；不含具体工具域或宿主 driver。
 - `packages/agent-react/`（`@einfach-agent/react-plugin`）：React 侧插件安装面、timeline renderer
