@@ -160,7 +160,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
   `useAtomValue(sessionUndoAvailabilityAtom(id))` 时门禁必须红（用 fixture，不动真实文件）；
   `pnpm test` 绿
 - **模型**：opus（新判据会被后续照抄）
-- **状态**：TODO
+- **状态**：DONE 1a15788
 
 ### C1 · 给 preCompact / postCompact 补不依赖插件的触发路径
 
@@ -290,7 +290,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 
 - **依赖**：A5、A6（它们各自删掉一个词条，避免抢同一文件）
 - **改动面**：`CLAUDE.md:125`（四家 provider）、`:291`（压缩不再是插件）、`:304-305`（与 CLI 共用
-  库文件不成立）、`:311`（CLI 不写 trace 库）、`:352`（fallback 落点是 runToolLoop）
+  库文件不成立）、`:311`（CLI 不写 trace 库）、`:352`（fallback 落点是 runToolLoop）、`:230`（规则 5 的判据已随 B2 从「名字在 core 的 atom 枚举面里」扩成「受治理包 import + 落在裸 hook 第一实参位」，现在的描述低估了它；来源：B2 交回）
 - **判据**：五处逐条改完；`node scripts/check-docs.js` 绿；改后的每句都能被一条 `grep` 证实
 - **模型**：sonnet
 - **状态**：TODO
