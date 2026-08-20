@@ -2,7 +2,7 @@ import { normalizeCacheUsage, streamModel, type ModelChatResponse, type ModelFun
 import { contextCheckpointAtom, itemsAtom } from '../state/sessionAtoms'
 import { contextStatsAtom, setContextStats } from '../state/transientAtoms'
 import { buildTurnTools, narrowToolCalls, toolSetSchemaFingerprint } from './modelTurn'
-import type { CompactionRequestDraft } from './core/plugins/compactionPlugin'
+import type { RequestDraft } from './core/loopHooks'
 import { contextInputBudgetTokens } from './contextBudget'
 import { createContextCheckpoint, contextNeedsDistillation } from './contextDistillation'
 import { projectContextCheckpoint } from './contextCheckpointProjection'
@@ -40,6 +40,31 @@ export type ModelTurnRequestOutcome = ModelTurnResult | {
 
 export interface ModelTurnRequester {
   request(turn: number, planStageId: string | undefined, controls: ModelItem[], controlSources?: RequestControlSource[]): Promise<ModelTurnRequestOutcome>
+}
+
+// 简介：RequestDraft 的私有扩展字段——本模块与 transformContext/prepareRequest 两个 LoopHooks 槽
+//   之间的协作契约（原属已删除的上下文压缩插件所在文件，随 A1 删除该插件一并迁来：这两个槽此刻
+//   默认没有注册方，字段的唯一生产者/消费者就是本文件；命名沿用旧名，因为它描述的仍是「组请求时
+//   ‘压缩相关的额外投影信息’该长什么样」这件事，只是不再有插件读它）。
+// 详情：LoopHooks 的 RequestDraft 只定义了 `messages`；tools/llmTurn/replayUnsafeToolNames/
+//   dynamicTailCount 是此处按需挂在 draft 上的瞬时数据，供未来实现这两个槽的插件按需
+//   `as CompactionRequestDraft` 读取——不污染 core 的公共契约。
+//   旧版还有 compaction/dispatchTimedItems/preCompactDispatched 三个字段，随那个插件一起作废：
+//   preCompact/postCompact 的分派已改由本文件的 dispatchCompactionTiming 直接完成（C1），
+//   不再需要经由 draft 传递给某个插件。
+export interface CompactionRequestDraft extends RequestDraft {
+  /** 本轮可见的工具 manifest（供估算 reservedTokens 类逻辑；不会被本模块修改）。省略按空数组算。 */
+  tools?: ModelFunctionTool[]
+  /** 本轮是 loop 里的第几轮（1-based）。只用于 trace 事件的 llm_turn 属性。 */
+  llmTurn?: number
+  /** 当前工具注册表中不可安全重放工具的名称快照。 */
+  replayUnsafeToolNames?: ReadonlySet<string>
+  /**
+   * messages 末尾属于【动态控制消息】的条数（plan 快照 / 续跑提醒 / 工具失败提醒）。
+   * 它们每轮可能整条替换，且位置随事实历史增长而后移——需要按前缀比较历史的消费方应先把
+   * 这部分摘掉，只对前面的事实历史生效，尾巴原样接回。省略按 0 算。
+   */
+  dynamicTailCount?: number
 }
 
 /** Builds current-request projections and sends one streaming model request. */
@@ -116,8 +141,9 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
           input_budget_tk: inputBudgetTokens,
         })
         // preCompact / postCompact 就在这里分派，且**不经插件**：这两个桶曾经的唯一触发方是
-        // compactionPlugin，而它从未被装配，于是两个时机在生产里从不触发。分派点挂在「真的要瘦身」
-        // 的那一刻——粗筛没超预算的空闲轮既不执行到点工具，也不改变投影坐标（沿用旧插件的边界）。
+        // 上下文压缩插件（已随 A1 删除），而它从未被装配，于是两个时机在生产里从不触发。分派点
+        // 挂在「真的要瘦身」的那一刻——粗筛没超预算的空闲轮既不执行到点工具，也不改变投影坐标
+        // （沿用旧插件的边界）。
         if (!await dispatchCompactionTiming('preCompact')) return { inactive: true, streamWriter }
         try {
           const checkpoint = await createContextCheckpoint({

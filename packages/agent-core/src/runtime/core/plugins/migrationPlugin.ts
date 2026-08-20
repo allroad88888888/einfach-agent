@@ -2,8 +2,8 @@
 // onRunStart 插件，并升级为【store 归一化】：让 sessionsAtom 成为「有效 settings」的唯一真相源。
 // ---------------------------------------------------------------------------
 // 契约：docs/core-plugin-extraction-blueprint.md §五（「模型名迁移 → migrationPlugin」那一行）+
-//   本轮已拍板的架构决定（store 归一化）。形状照 compactionPlugin.ts（逻辑本体抽成可独立单测的
-//   具名函数 applyMigration，插件只把它接进 onRunStart 槽）。
+//   本轮已拍板的架构决定（store 归一化）。形状照当年的上下文压缩插件（已随 A1 删除）：逻辑本体
+//   抽成可独立单测的具名函数 applyMigration，插件只把它接进 onRunStart 槽。
 //
 // 【最高铁律】纯结构搬迁，行为零变化。危险工具确认 / ask_user 暂停两条挂起/恢复流【一行未动】，
 //   仍在 modelRun.ts 的 loop 里，留 Stage 2b。
@@ -11,7 +11,8 @@
 // ── 背景：Stage 1 review 抓到的「分叉」 ──
 //   modelRun.ts 在 runToolLoop 顶部（ghost 守卫后）做 `const meta = migrateSessionMeta(rawMeta)`，
 //   产出一个【本地】迁移后 meta 但【不写回 store】。于是同一轮里读 store 的插件（如压缩插件）只能
-//   看到【未迁移】的 settings，被迫各自再 migrateModelSettings 一次（compactionPlugin 的「双迁」），
+//   看到【未迁移】的 settings，被迫各自再 migrateModelSettings 一次（当年的上下文压缩插件也有
+//   这个「双迁」问题），
 //   两侧靠「两个纯函数调同一份规则」勉强收敛——今天两条迁移都 1M→1M 掩盖了漂移，但未来不同窗口的
 //   下线就会真分叉。本插件把迁移【写回 store】：store 从此是迁移后的唯一真相，下游所有读 store 的
 //   插件天然拿到迁移后值，双迁可撤（撤除动作由集成 agent 做，见文件尾说明）。

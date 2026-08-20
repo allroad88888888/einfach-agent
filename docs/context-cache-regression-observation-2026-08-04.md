@@ -82,7 +82,8 @@
 
 ## 相关实现与资料
 
-- 增量投影扩展：[compactionProjectionCache.ts](../packages/agent-core/src/runtime/core/plugins/compactionProjectionCache.ts)
-- 压缩插件：[compactionPlugin.ts](../packages/agent-core/src/runtime/core/plugins/compactionPlugin.ts)
+- 增量投影扩展：`compactionProjectionCache.ts`（已随 issue A1 删除，压缩改走 durable context
+  checkpoint 路径，见 `packages/agent-core/src/runtime/contextDistillation.ts`）
+- 压缩插件：`compactionPlugin.ts`（已随 issue A1 删除，同上）
 - 缓存归因 tracker：[contextCache.ts](../packages/agent-core/src/runtime/contextCache.ts)
 - 历史成本与验证口径：[context-cache-cost.md](context-cache-cost.md)

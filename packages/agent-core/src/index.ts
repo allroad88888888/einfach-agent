@@ -201,7 +201,8 @@ export type { PluginApiVersionRange } from './plugins/manifestTypes' // apps/cli
 // 输入框 + server 侧校验 / 读配置里的 workspace 列表），做的时候按那条路重新长出接口，
 // 不要复活这个只能答 false 的签名。
 export {
-  // apps/web: ContextStats.tsx —— S7a 从 compactionPlugin 换出来的正式通路（E1 记债，§3.5）
+  // apps/web: ContextStats.tsx —— S7a 从当年的上下文压缩插件换出来的正式通路（E1 记债，§3.5；
+  // 该插件已随 A1 删除）
   COST_SOFT_CAP_TOKENS,
   contextInputBudgetTokens,
 } from './runtime/contextBudget'

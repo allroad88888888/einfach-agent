@@ -194,7 +194,8 @@ describe('migrationPlugin —— 下线模型名兼容迁移写回 sessionsAtom'
 })
 
 // applyMigration 本体的独立单测（不经 assemblePlugins/PluginApi 装配这层）——确保「插件注册」
-// 与「迁移逻辑」两层各自都可单独验证，与 compactionPlugin 的 applyCompaction 同款设计意图。
+// 与「迁移逻辑」两层各自都可单独验证，与当年上下文压缩插件（已随 A1 删除）的 applyCompaction
+// 同款设计意图。
 describe('applyMigration（不经插件装配，直接调用本体）', () => {
   it('与经 migrationPlugin 装配后的行为一致（deepseek-chat 迁移 + 写回）', () => {
     const { ctx, root } = makeCtx({ meta: metaWith({ vendor: 'deepseek', model: 'deepseek-chat' }) })

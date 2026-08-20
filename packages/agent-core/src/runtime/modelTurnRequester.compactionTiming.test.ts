@@ -1,5 +1,5 @@
 // preCompact / postCompact 的触发路径（C1）。
-// 这两个桶曾经的唯一触发方是 compactionPlugin，而它从未被装配进 defaultCorePlugins——
+// 这两个桶曾经的唯一触发方是上下文压缩插件（已随 A1 删除），而它从未被装配进 defaultCorePlugins——
 // 于是「九个核心时机」里这两个在生产里从不触发。现在分派点挂在 modelTurnRequester
 // 真正做 checkpoint 蒸馏的那一刻，前后各一次，且不经任何插件。
 
