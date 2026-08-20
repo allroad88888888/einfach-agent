@@ -11,7 +11,7 @@ afterEach(() => {
 })
 
 describe('runSession（多轮 lazy-tool 循环，T-6）流式响应', () => {
-  it('无业务工具单轮：保留 sessionStart 清单后完成（done、checkpoint 长 1）', async () => {
+  it('无业务工具单轮：直接完成（done、checkpoint 长 1）', async () => {
     seedSession('t0', { vendor: 'deepseek', model: 'x' })
     const fetchImpl: typeof fetch = async () => jsonResponse('直接答')
 
@@ -19,8 +19,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）流式响应', () => {
 
     const store = getSessionStore('t0').store
     const items = store.getter(itemsAtom)
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
-    expect(items[2].item).toEqual({ role: 'assistant', content: '直接答' })
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
+    expect(items[1].item).toEqual({ role: 'assistant', content: '直接答' })
     expect(store.getter(runAtom)?.status).toBe('done')
   })
 
@@ -53,8 +53,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）流式响应', () => {
     )
     const during = getSessionStore('stream-text').store.getter(itemsAtom)
     const assistantId = during.find((it) => it.item.role === 'assistant')?.id
-    expect(during.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
-    expect(during[2]).toMatchObject({ id: assistantId, pending: true, item: { role: 'assistant', content: '你' } })
+    expect(during.map((it) => it.item.role)).toEqual(['user', 'assistant'])
+    expect(during[1]).toMatchObject({ id: assistantId, pending: true, item: { role: 'assistant', content: '你' } })
 
     controller!.enqueue(encoder.encode(sseBlock({ choices: [{ delta: { content: '好' }, finish_reason: 'stop' }] })))
     controller!.enqueue(encoder.encode('data: [DONE]\n\n'))
@@ -62,8 +62,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）流式响应', () => {
     await runPromise
 
     const done = getSessionStore('stream-text').store.getter(itemsAtom)
-    expect(done).toHaveLength(3)
-    expect(done[2]).toMatchObject({ id: assistantId, pending: false, item: { role: 'assistant', content: '你好' } })
+    expect(done).toHaveLength(2)
+    expect(done[1]).toMatchObject({ id: assistantId, pending: false, item: { role: 'assistant', content: '你好' } })
     expect(getSessionStore('stream-text').store.getter(runAtom)?.status).toBe('done')
   })
 
@@ -98,7 +98,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）流式响应', () => {
     )
     const during = getSessionStore('stream-reasoning').store.getter(itemsAtom)
     const assistantId = during.find((it) => it.item.role === 'assistant')?.id
-    expect(during[2]).toMatchObject({
+    expect(during[1]).toMatchObject({
       id: assistantId,
       pending: true,
       item: { role: 'assistant', content: '', reasoning_content: '先分析' },
@@ -112,8 +112,8 @@ describe('runSession（多轮 lazy-tool 循环，T-6）流式响应', () => {
     await runPromise
 
     const done = getSessionStore('stream-reasoning').store.getter(itemsAtom)
-    expect(done).toHaveLength(3)
-    expect(done[2]).toMatchObject({
+    expect(done).toHaveLength(2)
+    expect(done[1]).toMatchObject({
       id: assistantId,
       pending: false,
       item: { role: 'assistant', content: '答案', reasoning_content: '先分析' },
@@ -169,9 +169,9 @@ describe('runSession（多轮 lazy-tool 循环，T-6）流式响应', () => {
 
     const store = getSessionStore('stream-tools').store
     const items = store.getter(itemsAtom)
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant', 'tool', 'assistant'])
-    const asstTc = items[2].item
-    const toolItem = items[3].item
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
+    const asstTc = items[1].item
+    const toolItem = items[2].item
     if (asstTc.role !== 'assistant' || toolItem.role !== 'tool') throw new Error('意外的条目形状')
     expect(asstTc.tool_calls?.[0].function.arguments).toBe('{"toolName":"skill_search","reason":"x"}')
     expect(toolItem.tool_call_id).toBe('tc1')

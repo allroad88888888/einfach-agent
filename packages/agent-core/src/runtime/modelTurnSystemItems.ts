@@ -6,13 +6,15 @@
 //     （lazy tools、禁止模拟工具调用、skill 正文经 skill_read、planning 三段式、计划审批）
 //     已按用户裁决整段移除。lazy tools 那一半仍有信息源：工具摘要段（toolManifest.ts）自己就写
 //     「仅用于发现，不代表参数 schema 已加载」并指向 request_tool_schema；其余几条不再进 prompt。
-//     ★ skill 名单不再由本文件产出 ★（阶段 3，docs/skills-tree-blueprint.md）：曾经的
+//     ★ skill 名单不由本文件产出 ★（阶段 3，docs/skills-tree-blueprint.md）：曾经的
 //     buildSkillContextItem 按本轮输入匹配 skill、把名单挂在历史尾部，导致每轮都被新历史顶位、
-//     全额 cache miss。现在改为 registry 的 buildSkillManifestText() 产出【全量】清单，
-//     与固定 system 同区进稳定前缀，由模型按 description 自判该读哪个；
+//     全额 cache miss。名单改由 registry 的 buildSkillManifestText() 产出【全量】清单，
+//     由 modelTurnPrefix 作为稳定前缀的一段组装，模型按 description 自判该读哪个；
 //     TK4 不变——进 prompt 的只有清单元数据，正文与资源仍必须经 skill_read。
+//     中途曾把它改成 sessionStart 到点工具、投影成历史里的 timed tool result（a88ba16），
+//     那等于把清单搬回历史尾巴、重演当年的持续 miss；C7 已把它迁回稳定前缀。
 //   · buildEnvironmentItem —— 组「运行环境」段（workspace 根目录 / 本机能力 / 平台 + 路径纪律）。
-//     它是稳定前缀里唯一按会话变化的一段，故排在其它前缀段【之后】。
+//     它和 skill 清单是稳定前缀里仅有的两段按 workspace 变化的内容，故一起排在其它前缀段【之后】。
 
 import type { HostPlatform } from './hostPlatform'
 import type { SystemItem } from '@einfach-agent/ai'
@@ -52,8 +54,8 @@ export interface EnvironmentItemInput {
 }
 
 // 简介：组「运行环境」system 消息——告诉模型它在哪台机器、哪个工作区里干活。
-// 详情：这是稳定前缀里【唯一按会话变化】的一段，因此调用方须把它排在其它前缀段之后
-//   （见 modelRun 的 stablePrefix 注释）。内容只依赖会话绑定的 workspace 与宿主环境，
+// 详情：这是稳定前缀里【最后】一段，因为它按会话绑定的 workspace 变化（另一段这样的是 skill
+//   清单，排在它之前，见 modelTurnPrefix 的顺序注释）。内容只依赖会话绑定的 workspace 与宿主环境，
 //   不含本轮输入、时间或计划状态，所以整个会话生命周期内逐字不变。
 // ★ 为什么必须有这一段 ★ —— 缺它时模型对「我在哪」零信息，只能猜；实测模型首轮
 //   直接编出一条训练数据里的绝对路径（/Users/<某人>/develop/...），read_file 报

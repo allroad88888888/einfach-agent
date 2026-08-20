@@ -9,7 +9,6 @@ describe('classifyToolReversibility', () => {
     'search_files',
     'rg_search',
     'get_plan',
-    'skill_manifest',
     'skill_search',
     'skill_read',
     'observe_agent',

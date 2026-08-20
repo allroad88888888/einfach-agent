@@ -58,9 +58,9 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
     })
 
     const items = getSessionStore('s1').store.getter(itemsAtom)
-    expect(items).toHaveLength(3)
+    expect(items).toHaveLength(2)
     expect(items[0].item).toEqual({ role: 'user', content: 'hi' })
-    expect(items[2].item).toEqual({ role: 'assistant', content: '你好' })
+    expect(items[1].item).toEqual({ role: 'assistant', content: '你好' })
 
     expect(getSessionStore('s1').store.getter(runAtom)?.status).toBe('done')
   })
@@ -110,20 +110,17 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
     expect(store.getter(runAtom)).toMatchObject({ runId, status: 'done' })
     expect(store.getter(itemsAtom).map(({ item }) => item.role)).toEqual([
       'user',
-      'tool',
       'assistant',
       'user',
       'assistant',
     ])
-    expect(store.getter(itemsAtom)[3]).toMatchObject({
+    expect(store.getter(itemsAtom)[2]).toMatchObject({
       id: 'queued-user-1',
       createdAt: queuedAt,
       item: { role: 'user', content: '再补充第二件事' },
     })
     expect(bodies[1].messages.filter(({ role }) => role !== 'system').map(({ role }) => role)).toEqual([
       'user',
-      'assistant',
-      'tool',
       'assistant',
       'user',
     ])
@@ -171,7 +168,6 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
     expect(requestCount).toBe(2)
     expect(store.getter(itemsAtom).map(({ item }) => item.role)).toEqual([
       'user',
-      'tool',
       'assistant',
       'tool',
       'user',
@@ -179,8 +175,6 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
     ])
     expect(bodies[1].messages.filter(({ role }) => role !== 'system').map(({ role }) => role)).toEqual([
       'user',
-      'assistant',
-      'tool',
       'assistant',
       'tool',
       'user',
@@ -203,8 +197,8 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
     ).resolves.toBeUndefined()
 
     expect(getSessionStore('s2').store.getter(runAtom)?.status).toBe('stopped')
-    // user 与 sessionStart 清单已写入；assistant 未写回。
-    expect(getSessionStore('s2').store.getter(itemsAtom)).toHaveLength(2)
+    // user 已写入；assistant 未写回。
+    expect(getSessionStore('s2').store.getter(itemsAtom)).toHaveLength(1)
     // stopped 轮也必须形成可撤回快照；否则刷新会丢 user，继续对话后该消息也没有气泡回退入口。
     expect(getSessionStore('s2').store.getter(contextStatsAtom)?.cache?.metricsStatus).toBe('cancelled')
     expect(getSessionStore('s2').store.getter(contextStatsAtom)?.usage).toBeUndefined()
@@ -234,7 +228,7 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
     expect(run?.status).toBe('stopped')
     // 不该被当成通用失败：不留英文异常文案。
     expect(run?.error).toBeUndefined()
-    expect(getSessionStore('s2b').store.getter(itemsAtom)).toHaveLength(2)
+    expect(getSessionStore('s2b').store.getter(itemsAtom)).toHaveLength(1)
   })
 
   it('其它错误：fetchImpl 抛普通 Error → run.status=error 且隐藏传输细节', async () => {
@@ -290,8 +284,8 @@ describe('runSession（P-R2 最小单轮 run / 基础生命周期）', () => {
     })
 
     const items = getSessionStore('s4').store.getter(itemsAtom)
-    expect(items).toHaveLength(3)
-    expect(items[2].item).toEqual({ role: 'assistant', content: 'hi from glm' })
+    expect(items).toHaveLength(2)
+    expect(items[1].item).toEqual({ role: 'assistant', content: 'hi from glm' })
     expect(getSessionStore('s4').store.getter(runAtom)?.status).toBe('done')
   })
 

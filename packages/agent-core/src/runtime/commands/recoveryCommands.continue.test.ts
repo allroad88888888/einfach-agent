@@ -159,7 +159,7 @@ describe('continueRecoveredSession', () => {
     const core = createCore()
     const id = core.newSession()
     const store = core.getSessionStore(id).store
-    const callId = 'timed:sessionStart:skill_manifest'
+    const callId = 'timed:sessionStart:session_brief'
     store.setter(itemsAtom, [
       { id: 'session-start-receipt', createdAt: 1, item: { role: 'tool' as const, tool_call_id: callId, content: '{}' } },
       { id: 'user-1', createdAt: 2, item: { role: 'user' as const, content: 'resume' } },

@@ -8,7 +8,7 @@
 // undefined，扫描方据此只扫工作区。CLI 宿主不走这里：它有 node:os，自己在装配层传 homedir()。
 //
 // 拿不到主目录一律降级成 undefined 而非抛出：用户级 skills 是增益，主目录解析失败不该让
-// 整个项目 skills 扫描（进而 sessionStart 的 skill_manifest）跟着失败。
+// 整个项目 skills 扫描（进而稳定前缀里的 L1 清单）跟着失败。
 
 import { hasHostBridge, loadHostInvoke } from './hostBridge'
 

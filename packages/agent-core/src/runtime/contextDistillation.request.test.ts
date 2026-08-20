@@ -15,7 +15,7 @@ describe('context distillation request', () => {
       stablePrefix: [{ role: 'system', content: 'Stable instructions.' }],
       transcript: [
         { role: 'user', content: 'Inspect the project.' },
-        { role: 'tool', tool_call_id: 'timed:sessionStart:skill_manifest', content: 'Skill manifest.' },
+        { role: 'tool', tool_call_id: 'timed:sessionStart:session_brief', content: 'Skill manifest.' },
         {
           role: 'assistant',
           content: null,
@@ -46,13 +46,13 @@ describe('context distillation request', () => {
     ]))
     const messages = body?.messages as Array<Record<string, unknown>>
     const timedResultIndex = messages.findIndex((message) => (
-      message.role === 'tool' && message.tool_call_id === 'timed:sessionStart:skill_manifest'
+      message.role === 'tool' && message.tool_call_id === 'timed:sessionStart:session_brief'
     ))
     expect(messages[timedResultIndex - 1]).toMatchObject({
       role: 'assistant',
       content: '',
       tool_calls: [{
-        id: 'timed:sessionStart:skill_manifest',
+        id: 'timed:sessionStart:session_brief',
         function: { name: 'timed_tool_result', arguments: '{}' },
       }],
     })

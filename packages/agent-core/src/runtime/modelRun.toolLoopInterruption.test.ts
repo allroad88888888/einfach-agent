@@ -105,7 +105,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）工具轮中断与并发'
     expect(count()).toBe(2)
     // schema call 已完整回填；ask_user 的 ToolItem 未回填（留给 resume）。
     const items = getSessionStore('t3').store.getter(itemsAtom)
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant', 'tool', 'assistant'])
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
     // 暂停状态和未闭合 ask tool_call 一起覆盖进同一工作 checkpoint，刷新后卡片仍可回答。
   })
 
@@ -205,7 +205,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）工具轮中断与并发'
     })
     expect(count()).toBe(2)
     expect(store.getter(itemsAtom).map((item) => item.item.role)).toEqual([
-      'user', 'tool', 'assistant', 'tool', 'assistant',
+      'user', 'assistant', 'tool', 'assistant',
     ])
   })
 
@@ -235,7 +235,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）工具轮中断与并发'
     const items = store.getter(itemsAtom)
     // 两次 request_tool_schema 均回填；ask_user 的 result 留给 resume。
     expect(items.map((it) => it.item.role)).toEqual([
-      'user', 'tool', 'assistant', 'tool', 'assistant', 'tool',
+      'user', 'assistant', 'tool', 'assistant', 'tool',
     ])
     const toolItem = items.find(
       (item) => item.item.role === 'tool' && item.item.tool_call_id === 'ts1',

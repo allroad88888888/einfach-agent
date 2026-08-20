@@ -61,7 +61,7 @@ describe('危险工具确认门（S4-B）', () => {
 
     const items = store.getter(itemsAtom)
     expect(items.map((it) => it.item.role)).toEqual([
-      'user', 'tool', 'assistant', 'tool', 'assistant', 'tool', 'assistant',
+      'user', 'assistant', 'tool', 'assistant', 'tool', 'assistant',
     ])
     const toolItem = items.find(
       (item) => item.item.role === 'tool' && item.item.tool_call_id === 'sh1',
@@ -120,7 +120,7 @@ describe('危险工具确认门（S4-B）', () => {
     expect(count()).toBe(2)
     // schema call 已回填；危险工具的 ToolItem 未回填（留给 confirmTool）。
     const items = store.getter(itemsAtom)
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant', 'tool', 'assistant'])
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
     expect(items.some((it) => it.item.role === 'tool' && it.item.tool_call_id === 'w1')).toBe(false)
     // 确认状态和未执行的危险 tool_call 一起覆盖进工作 checkpoint，刷新后仍由用户决定。
   })
@@ -282,7 +282,7 @@ describe('危险工具确认门（S4-B）', () => {
     const items = store.getter(itemsAtom)
     // 两次 request_tool_schema 均回填；write_file 的 result 留给确认恢复。
     expect(items.map((it) => it.item.role)).toEqual([
-      'user', 'tool', 'assistant', 'tool', 'assistant', 'tool',
+      'user', 'assistant', 'tool', 'assistant', 'tool',
     ])
     const toolItem = items.find(
       (item) => item.item.role === 'tool' && item.item.tool_call_id === 'ts1',
@@ -319,9 +319,9 @@ describe('危险工具确认门（S4-B）', () => {
     })
 
     const items = store.getter(itemsAtom)
-    // sessionStart 清单先于确认恢复工具执行：user → assistant(tool_calls) → timed 清单 → tool(w1 的 result) → assistant(final)。
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'tool', 'assistant'])
-    const toolItem = items[3].item
+    // 确认恢复：user → assistant(tool_calls) → tool(w1 的 result) → assistant(final)。
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
+    const toolItem = items[2].item
     if (toolItem.role !== 'tool') throw new Error('意外的条目形状')
     expect(toolItem.tool_call_id).toBe('w1')
     expect(store.getter(runAtom)?.status).toBe('done')

@@ -144,7 +144,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）循环安全网', () => {
 
     expect(requestCount).toBe(1)
     expect(store.getter(runAtom)).toMatchObject({ runId, status: 'stopped' })
-    expect(store.getter(itemsAtom).map(({ item }) => item.role)).toEqual(['user', 'tool'])
+    expect(store.getter(itemsAtom).map(({ item }) => item.role)).toEqual(['user'])
   })
 
   it('重复 tool-only 调用：第 3 次相同工具签名提前 loop_detected', async () => {
@@ -165,7 +165,6 @@ describe('runSession（多轮 lazy-tool 循环，T-6）循环安全网', () => {
     expect(count()).toBe(3)
     expect(store.getter(itemsAtom).map((it) => it.item.role)).toEqual([
       'user',
-      'tool',
       'assistant',
       'tool',
       'assistant',

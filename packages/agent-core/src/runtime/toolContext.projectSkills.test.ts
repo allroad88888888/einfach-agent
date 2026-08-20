@@ -39,29 +39,20 @@ function contextFor(core: ReturnType<typeof createCoreInstance>, sessionId: stri
   })
 }
 
-describe('ToolContext projectSkills', () => {
-  it('把构造期会话 workspaceRoot 绑定到实例 projectSkills.ensure', async () => {
-    const snapshot = { workspaceRoot: '/workspace/skills', entries: [], diagnostics: [] }
-    const provider = vi.fn(async () => snapshot)
-    const core = createCoreInstance({ projectSkillsProvider: provider })
-    seedSession(core, 'with-workspace', snapshot.workspaceRoot)
-
-    const ctx = contextFor(core, 'with-workspace')
-
-    expect(ctx.projectSkills).toBeDefined()
-    await expect(ctx.projectSkills!.ensure()).resolves.toEqual(snapshot)
-    expect(provider).toHaveBeenCalledOnce()
-    expect(provider).toHaveBeenCalledWith(snapshot.workspaceRoot)
-  })
-
-  it('未绑定 workspace 的会话不暴露项目 skills 扫描入口', () => {
+// ctx 上没有扫描入口：扫描只发生在组 L1 清单时（buildStableModelPrefix ensure 一次，见
+// modelTurnPrefix.test.ts），工具侧只读那一次留下的缓存。所以这些用例先手动 ensure 一次，
+// 再看 ctx 读到什么。
+describe('ToolContext 上的项目 skills', () => {
+  it('未绑定 workspace 的会话只看得到内置 skill', () => {
     const core = createCoreInstance()
     seedSession(core, 'without-workspace')
 
-    expect(contextFor(core, 'without-workspace').projectSkills).toBeUndefined()
+    const skills = contextFor(core, 'without-workspace').skills!
+    expect(skills.list().every((skill) => !skill.name.includes('/'))).toBe(true)
+    expect(skills.resolveScannedSkill('project/anything')).toBeUndefined()
   })
 
-  it('从清单、查找和 ensure 中一致排除当前 workspace 停用的项目 skill', async () => {
+  it('从清单与查找中一致排除当前 workspace 停用的项目 skill', async () => {
     const snapshot: ProjectSkillsSnapshot = {
       workspaceRoot: '/workspace/skills',
       entries: [
@@ -82,12 +73,7 @@ describe('ToolContext projectSkills', () => {
       'workspace-1': ['project/release-check'],
     })
 
-    const manifestContext = contextFor(core, 'with-disabled-skill')
-
-    await expect(manifestContext.projectSkills!.ensure()).resolves.toEqual({
-      ...snapshot,
-      entries: [snapshot.entries[1]],
-    })
+    await core.projectSkills.ensure(snapshot.workspaceRoot)
     const ctx = contextFor(core, 'with-disabled-skill')
     const skills = ctx.skills!
     expect(skills.list().map((skill) => skill.name)).not.toContain('project/release-check')
@@ -121,7 +107,7 @@ describe('ToolContext projectSkills', () => {
     }
     const core = createCoreInstance({ projectSkillsProvider: vi.fn(async () => snapshot) })
     seedSession(core, 'with-user-skill', snapshot.workspaceRoot, 'workspace-1')
-    await contextFor(core, 'with-user-skill').projectSkills!.ensure()
+    await core.projectSkills.ensure(snapshot.workspaceRoot)
     const skills = contextFor(core, 'with-user-skill').skills!
 
     expect(skills.resolveScannedSkill('user/deploy')).toEqual({

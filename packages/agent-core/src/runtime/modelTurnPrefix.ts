@@ -1,5 +1,6 @@
-import { workspacesAtom } from '../state/rootStore'
-import { resolveSessionWorkspaceRoot } from '../state/workspaceState'
+import { disabledProjectSkillsByWorkspaceAtom, workspacesAtom } from '../state/rootStore'
+import { filterProjectSkillsSnapshot } from '../skills/projectSkillPreferences'
+import { resolveSessionWorkspaceRoot, sessionDisabledProjectSkills } from '../state/workspaceState'
 import type { SessionMeta } from '../state/core.type'
 import type { SystemItem } from '@einfach-agent/ai'
 import { hostPlatform } from './hostPlatform'
@@ -18,6 +19,8 @@ export interface StableModelPrefix {
   content: string
   system: SystemItem
   environment: SystemItem
+  /** L1 skills 清单（只有元数据；正文与资源仍必须经 skill_read）。 */
+  skillManifest: SystemItem
   toolManifest: SystemItem
   customInstructions?: SystemItem
   workspaceRoot?: string
@@ -64,6 +67,16 @@ export async function buildStableModelPrefix(
     content: buildToolManifestText(hostHasLocalCapabilities, { registry: toolCatalog }),
   }
   const customInstructions = buildCustomInstructionsItem(core.config.customInstructions)
+  // 清单要能被模型看见就得先扫完：ensure 命中缓存时同步返回，同 workspace 的并发 run 共用一次扫描。
+  // 扫不出来（无 provider / 扫描器崩了）也不阻断 run——那时快照为空，清单只剩内置段。
+  const scannedSkills = workspaceRoot ? await core.projectSkills.ensure(workspaceRoot) : undefined
+  const skillManifest: SystemItem = {
+    role: 'system',
+    content: core.skillRegistry.buildManifestText(filterProjectSkillsSnapshot(
+      scannedSkills,
+      sessionDisabledProjectSkills(sessionMeta, core.rootStore.getter(disabledProjectSkillsByWorkspaceAtom)),
+    )),
+  }
   const environment = buildEnvironmentItem({
     workspaceRoot,
     // 【B3】入参名与文案已随本机 Node 后端落地改成按能力措辞（曾经按宿主品牌命名、文案写死
@@ -76,10 +89,16 @@ export async function buildStableModelPrefix(
     // hostPlatform()，而那个声明值除它之外没有第二条读出通路。
     platform: hostPlatform(),
   })
+  // 【C7】各段按「变更频率」排：固定 system → 工具摘要 → 自定义指令这三段与 workspace 无关、
+  // 所有会话逐字相同；skill 清单与运行环境都按 workspace 变，故一起垫底。清单排在环境之前：
+  // 没有项目 skills 的两个 workspace 连清单也逐字相同，divergence 推迟到最后一段。
+  // 清单必须待在这里而不是历史尾部：稳定前缀的字节变化被 contextCache 归因为 profile_changed
+  // （换 epoch、一次性全量 miss），落在 append-only 历史尾巴上的东西则每轮被新历史顶位、持续 miss。
   const items: SystemItem[] = [
     system,
     toolManifest,
     ...(customInstructions ? [customInstructions] : []),
+    skillManifest,
     environment,
   ]
 
@@ -88,6 +107,7 @@ export async function buildStableModelPrefix(
     content: items.map((item) => item.content).join('\n'),
     system,
     environment,
+    skillManifest,
     toolManifest,
     customInstructions,
     workspaceRoot,

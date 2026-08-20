@@ -17,7 +17,7 @@ afterEach(() => {
 
 describe('runSession（P-R2）注入卡片判重与 context 统计', () => {
   it('注入卡片改为按内容变化判重：同一会话连续两次 runSession 不重复记同一张卡', async () => {
-    // 本用例未注册 sessionStart 工具；稳定 system 注入的判重不依赖 skills。
+    // 本用例的 core 没装 skill registry，清单段落回退成一句「未装配」；判重逻辑与内容无关。
     const core = createCoreInstance({ config: { customInstructions: '保持简洁' } })
     const id = 'inject-dedup'
     core.rootStore.setter(sessionsAtom, {
@@ -33,7 +33,7 @@ describe('runSession（P-R2）注入卡片判重与 context 统计', () => {
     expect(events.filter((e) => e.title === '注入 system')).toHaveLength(1)
     expect(events.filter((e) => e.title === '注入运行环境')).toHaveLength(1)
     expect(events.filter((e) => e.title === '注入自定义指令')).toHaveLength(1)
-    expect(events.filter((e) => e.title === '注入 skill 清单')).toHaveLength(0)
+    expect(events.filter((e) => e.title === '注入 skill 清单')).toHaveLength(1)
     expect(events.filter((e) => e.title === '注入工具摘要清单')).toHaveLength(1)
     expect(events.filter((e) => e.title === '注入 tools')).toHaveLength(1)
     // 且不应出现任何「已更新」变体——内容确实没变。
@@ -161,10 +161,11 @@ describe('runSession（P-R2）注入卡片判重与 context 统计', () => {
       },
       finishReason: null,
     })
-    // 固定 system + 工具摘要 + 运行环境；L1 是历史中的 timed tool 与投影出的 assistant 配对。
-    expect(stats?.roles.system.count).toBe(3)
+    // 稳定前缀四段：固定 system + 工具摘要 + skill 清单 + 运行环境（本会话无自定义指令）。
+    expect(stats?.roles.system.count).toBe(4)
     expect(stats?.roles.user.count).toBe(1)
-    expect(stats?.roles.assistant.count).toBe(1)
+    // 统计的是**发出去的那一份请求**：首轮里除前缀只有一条 user，模型还没回话。
+    expect(stats?.roles.assistant.count).toBe(0)
     expect(stats?.toolNames).toContain('request_tool_schema')
     expect(stats?.estimatedTokens).toBeGreaterThan(0)
     expect(stats?.totalChars).toBe((stats?.messagesChars ?? 0) + (stats?.toolsChars ?? 0))

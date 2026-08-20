@@ -25,8 +25,8 @@ describe('finish_reason 异常分流', () => {
     const store = getSessionStore('fr1').store
     const items = store.getter(itemsAtom)
     // 半截内容必须留下 —— 用户得看得见模型说到哪被掐断的。
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
-    const assistantItem = items[2].item
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
+    const assistantItem = items[1].item
     if (assistantItem.role !== 'assistant') throw new Error('意外的条目形状')
     expect(assistantItem.content).toContain('半截答案')
     const run = store.getter(runAtom)
@@ -51,18 +51,18 @@ describe('finish_reason 异常分流', () => {
 
     const store = getSessionStore('fr-stream').store
     const items = store.getter(itemsAtom)
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
     // ★ 回归（MAJOR）：finishPending() 只写 { pending:false }、从不写 content，
     //   末尾那段文字只活在 streamWriter 闭包里 —— 界面会比实际收到的还少一截且毫无提示。
-    const streamedItem = items[2].item
+    const streamedItem = items[1].item
     if (streamedItem.role !== 'assistant') throw new Error('意外的条目形状')
     expect(streamedItem.content).toContain('前半段后半段')
     // 系统标注只能【追加】在完整正文之后，不能把流式对账出来的文本顶掉。
     expect(streamedItem.content?.startsWith('前半段后半段')).toBe(true)
-    expect(items[2].pending).toBe(false)
+    expect(items[1].pending).toBe(false)
     // 半截 assistant 条目绝不能带 tool_calls：本分支要 return、不执行工具，
     // 落下 tool_calls 就成了没有 result 的孤儿，下一轮重发直接被接口判非法。
-    expect('tool_calls' in items[2].item).toBe(false)
+    expect('tool_calls' in items[1].item).toBe(false)
     const run = store.getter(runAtom)
     expect(run?.status).toBe('error')
     expect(run?.error).toContain('finish_reason=length')
@@ -94,8 +94,8 @@ describe('finish_reason 异常分流', () => {
     //   同 length 一样必须有落点，否则刷新后聊天区一片空白，且下一轮重发历史时模型看不出
     //   这里发生过什么（见 modelRun.ts 该分支的长注释）。
     const items = store.getter(itemsAtom)
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
-    const assistantItem = items[2].item
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
+    const assistantItem = items[1].item
     if (assistantItem.role !== 'assistant') throw new Error('意外的条目形状')
     expect(assistantItem.content).toContain('content_filter')
     expect(assistantItem.content).toContain('系统标注')
@@ -192,8 +192,8 @@ describe('finish_reason 异常分流', () => {
     const store = getSessionStore('fr5').store
     const items = store.getter(itemsAtom)
     // 关键：assistant(tool_calls) 后必须有对应的 tool 结果，否则下一轮消息序列非法。
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant', 'tool', 'assistant'])
-    const toolItem = items[3].item
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
+    const toolItem = items[2].item
     if (toolItem.role !== 'tool') throw new Error('意外的条目形状')
     expect(toolItem.tool_call_id).toBe('cut1')
     const payload = JSON.parse(toolItem.content) as Record<string, unknown>

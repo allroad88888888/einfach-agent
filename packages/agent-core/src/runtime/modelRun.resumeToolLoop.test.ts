@@ -7,7 +7,7 @@ import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { setRun } from '../state/sessionWriters'
 import { resumeInterruptedSession, runToolLoop } from './modelRun'
 import { createCoreInstance } from './core/coreInstance'
-import { registerStandardTools } from '@einfach-agent/tools'
+import { builtInSkillsRegistry, registerStandardTools } from '@einfach-agent/tools'
 import { resetModelRunTestState, seedSession, jsonResponse } from './modelRun.testHarness'
 
 afterEach(() => {
@@ -70,10 +70,16 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
     expect(requestCount).toBe(0)
   })
 
-  it('恢复已有 sessionStart skills 清单时不重复 ensure 或写入 timed item', async () => {
+  it('恢复中断会话：L1 清单随重建的稳定前缀发出，历史里不留清单条目', async () => {
+    // C7 之前清单是 sessionStart 到点工具的产物，恢复时得靠 timed 收据判重才不写第二条；
+    // 迁回前缀后它根本不进历史——每次 run（含 resume）重建一次前缀，扫描走 workspace 级缓存。
     const workspaceRoot = '/workspace/resumed-skills'
     const projectSkillsProvider = vi.fn(async () => ({ workspaceRoot, entries: [], diagnostics: [] }))
-    const core = createCoreInstance({ registerTools: registerStandardTools, projectSkillsProvider })
+    const core = createCoreInstance({
+      registerTools: registerStandardTools,
+      projectSkillsProvider,
+      skillRegistry: builtInSkillsRegistry,
+    })
     const id = 'resume-existing-skill-manifest'
     core.rootStore.setter(workspacesAtom, {
       workspace: { id: 'workspace', name: '恢复工作区', rootPath: workspaceRoot, createdAt: 0, updatedAt: 0 },
@@ -91,15 +97,6 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
     const store = core.getSessionStore(id).store
     store.setter(itemsAtom, [
       { id: 'user', createdAt: 1, item: { role: 'user' as const, content: '继续执行' } },
-      {
-        id: 'existing-skill-manifest',
-        createdAt: 2,
-        item: {
-          role: 'tool' as const,
-          tool_call_id: 'timed:sessionStart:skill_manifest',
-          content: JSON.stringify('可用 skills：\n· planning — 何时用：任务跨多个阶段/模块'),
-        },
-      },
     ])
     setRun(id, { runId: 'interrupted-run', turnId: 'user', status: 'interrupted' }, core)
     let requestMessages: Array<{ role: string; tool_call_id?: string; content?: string }> = []
@@ -114,25 +111,13 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
       },
     })
 
-    expect(projectSkillsProvider).not.toHaveBeenCalled()
-    expect(store.getter(itemsAtom).filter(
-      ({ item }) => item.role === 'tool' && item.tool_call_id === 'timed:sessionStart:skill_manifest',
-    )).toHaveLength(1)
-    expect(requestMessages).toEqual(expect.arrayContaining([
-      expect.objectContaining({
-        role: 'assistant',
-        content: '',
-        tool_calls: [{
-          id: 'timed:sessionStart:skill_manifest',
-          type: 'function',
-          function: { name: 'timed_tool_result', arguments: '{}' },
-        }],
-      }),
-      expect.objectContaining({
-        role: 'tool',
-        tool_call_id: 'timed:sessionStart:skill_manifest',
-      }),
-    ]))
+    expect(projectSkillsProvider).toHaveBeenCalledExactlyOnceWith(workspaceRoot)
+    expect(store.getter(itemsAtom).every(({ item }) => item.role !== 'tool')).toBe(true)
+    const manifestMessages = requestMessages.filter(
+      (message) => message.role === 'system' && String(message.content).startsWith('可用 skills'),
+    )
+    expect(manifestMessages).toHaveLength(1)
+    expect(manifestMessages[0].content).toContain('· planning — 何时用：任务跨多个阶段/模块')
   })
 
   it('新旧工作 checkpoint 共存时，结构化最新记录续跑且不误改旧前缀记录', async () => {
@@ -200,9 +185,9 @@ describe('runToolLoop（resume 复用的循环入口，T-7）', () => {
     })
 
     const items = store.getter(itemsAtom)
-    // 复用已有 user；sessionStart 清单后才 append 最终 assistant。
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant'])
-    expect(items[2].item).toEqual({ role: 'assistant', content: '答案' })
+    // 复用已有 user，只 append 最终 assistant。
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant'])
+    expect(items[1].item).toEqual({ role: 'assistant', content: '答案' })
     expect(store.getter(runAtom)?.status).toBe('done')
     // 一轮收尾 = 一个 checkpoint。
   })

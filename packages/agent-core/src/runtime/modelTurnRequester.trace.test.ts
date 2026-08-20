@@ -83,8 +83,8 @@ describe('model turn trace correlation', () => {
       cache_assembly_control_tool_failure_notice_items: 0,
       cache_assembly_segment_mismatch: false,
       cache_assembly_transform_changed: false,
-      // timed tool result 的配对 assistant 只在最终请求投影中合成，prepareRequest 原稿不回写。
-      cache_assembly_prepare_changed: true,
+      // 本轮没有孤儿 timed tool result 要补配对，最终投影与 prepareRequest 原稿逐字相同。
+      cache_assembly_prepare_changed: false,
     })
     expect(request?.attrs).toMatchObject({
       runId: snapshot?.attrs?.runId,

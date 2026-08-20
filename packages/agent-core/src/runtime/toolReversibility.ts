@@ -47,8 +47,7 @@ const PURE_TOOLS: ReadonlySet<string> = new Set([
   'rg_search',
   // 计划只读
   'get_plan',
-  // skills 只读（清单 / 检索 / 正文）
-  'skill_manifest',
+  // skills 只读（检索 / 正文）
   'skill_search',
   'skill_read',
   // 读一个后台执行节点，不等待、不改状态

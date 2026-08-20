@@ -12,7 +12,7 @@ import { buildToolManifestText } from './modelTurn'
 import type { ModelFunctionTool } from '@einfach-agent/ai'
 import { runSession } from './modelRun'
 import { createCoreInstance } from './core/coreInstance'
-import { buildSkillManifestText, registerStandardTools } from '@einfach-agent/tools'
+import { buildSkillManifestText, builtInSkillsRegistry, registerStandardTools } from '@einfach-agent/tools'
 import { resetModelRunTestState, seedSession, jsonResponse } from './modelRun.testHarness'
 import { stubHostBridgeFlag } from './hostBridge.testHarness'
 
@@ -57,7 +57,7 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
     expect(restoredSettings.temperature).toBe(0.5)
   })
 
-  it('L1 清单以 sessionStart timed tool 可达模型，稳定前缀和转录不再注入 skills', async () => {
+  it('L1 清单是稳定前缀的一段：扫描一次、随请求逐轮发出，且不落进历史', async () => {
     const workspaceRoot = '/workspace/project-skills'
     const projectSkills = {
       workspaceRoot,
@@ -74,7 +74,13 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
       diagnostics: [],
     }
     const projectSkillsProvider = vi.fn(async () => projectSkills)
-    const core = createCoreInstance({ registerTools: registerStandardTools, projectSkillsProvider })
+    // 清单文本经注入槽拿：生产装配（main.tsx / apps/cli）也是 registerStandardTools +
+    // configureDefaultSkillsRegistry 两件事，只装工具不装 registry 时清单只有一句「未装配」。
+    const core = createCoreInstance({
+      registerTools: registerStandardTools,
+      projectSkillsProvider,
+      skillRegistry: builtInSkillsRegistry,
+    })
     const id = 'inject1'
     core.rootStore.setter(workspacesAtom, {
       workspace: { id: 'workspace', name: '项目 skills', rootPath: workspaceRoot, createdAt: 0, updatedAt: 0 },
@@ -104,48 +110,32 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
 
     const store = core.getSessionStore(id).store
     const items = store.getter(itemsAtom)
-    expect(items.some((it) => it.item.role === 'system')).toBe(false)
-    expect(items.map(({ item }) => item.role)).toEqual(['user', 'tool', 'assistant'])
-    const timedItem = items.find(
-      ({ item }) => item.role === 'tool' && item.tool_call_id === 'timed:sessionStart:skill_manifest',
-    )?.item
-    if (!timedItem || timedItem.role !== 'tool') throw new Error('缺少 sessionStart skills 清单')
+    // 清单在前缀里，历史里一条都不留——它曾短暂做过 sessionStart 到点工具、投影成一条 tool item
+    // 挂在首轮 user 之后（a88ba16），那正是 C7 迁回前缀要消灭的持续 cache miss。
+    expect(items.map(({ item }) => item.role)).toEqual(['user', 'assistant'])
+    expect(items.every(({ item }) => item.role !== 'system' && item.role !== 'tool')).toBe(true)
 
-    const messages = captured.messages as Array<{
-      role: string
-      content?: string | null
-      tool_call_id?: string
-      tool_calls?: Array<{ id: string; type: string; function: { name: string; arguments: string } }>
-    }>
-    expect(messages[0].role).toBe('system')
-    expect(messages[0].content).not.toContain('可用 skills')
+    const messages = captured.messages as Array<{ role: string; content?: string | null }>
+    expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'system', 'user'])
     expect(messages[0].content).toContain('收尾自查')
-    // stable prefix 只有固定 system、工具摘要和环境；L1 在首轮 user 之后以 timed result 到达模型。
-    expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'user', 'assistant', 'tool'])
+    expect(messages[0].content).not.toContain('可用 skills')
     expect(messages[1].content).toBe(buildToolManifestText(false, { registry: core.tools }))
     expect(messages[1].content).toContain('· skill_search [internal]')
     expect(messages[1].content).not.toContain('· shell_macos [server]')
-    expect(messages[2].content).toContain('运行环境：')
-    expect(messages[3]).toMatchObject({ role: 'user', content: 'hi' })
-    expect(messages[4]).toMatchObject({
-      role: 'assistant',
-      content: '',
-      tool_calls: [{
-        id: 'timed:sessionStart:skill_manifest',
-        type: 'function',
-        function: { name: 'timed_tool_result', arguments: '{}' },
-      }],
-    })
-    expect(messages[5]).toMatchObject({ role: 'tool', tool_call_id: 'timed:sessionStart:skill_manifest' })
-    const manifestText = JSON.parse(String(messages[5].content)) as string
+    const manifestText = String(messages[2].content)
     expect(manifestText).toBe(buildSkillManifestText(projectSkills))
-    expect(manifestText).toBe(JSON.parse(timedItem.content))
     expect(manifestText).toContain('· planning — 何时用：任务跨多个阶段/模块')
     expect(manifestText).toContain('· project/release-check — 何时用：发布前检查部署流程。')
+    expect(messages[3].content).toContain('运行环境：')
+    expect(messages[4]).toMatchObject({ role: 'user', content: 'hi' })
     expect(projectSkillsProvider).toHaveBeenCalledExactlyOnceWith(workspaceRoot)
 
     const events = store.getter(runtimeTranscriptEventsAtom)
-    expect(events.some((event) => event.title === '注入 skill 清单')).toBe(false)
+    expect(
+      events.some((event) => event.kind === 'system_injection'
+        && event.title === '注入 skill 清单'
+        && event.detail === manifestText),
+    ).toBe(true)
     expect(
       events.some((event) =>
         event.kind === 'system_injection'
@@ -181,9 +171,9 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
     expect(exposedToolNames).toEqual(['request_tool_schema'])
   })
 
-  it('稳定前缀四段有序：固定 system → 工具摘要 → 自定义指令 → 运行环境；L1 走历史 timed item', async () => {
-    // 清单由 sessionStart 工具写入历史，不再把 workspace skill 的变动纳入 stable prefix。其余低频
-    // 内容仍按变更频率固定，环境垫底以尽量让不同 workspace 共享此前缀。
+  it('稳定前缀五段有序：固定 system → 工具摘要 → 自定义指令 → skill 清单 → 运行环境', async () => {
+    // 按变更频率排：前三段与 workspace 无关、所有会话逐字相同；skill 清单与运行环境都按
+    // workspace 变，一起垫底，好让不同 workspace 尽量共享前面那段前缀。
     const core = createCoreInstance({
       config: { customInstructions: '  请始终使用中文回复\n' },
       registerTools: registerStandardTools,
@@ -213,20 +203,16 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
 
     const marker = '用户在设置中保存了以下长期自定义指令'
     const messages = captured.messages as Array<{ role: string; content?: string }>
-    // [固定 system, 工具摘要, 自定义指令, 运行环境, user, timed 配对 assistant, timed tool]。
-    expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'system', 'user', 'assistant', 'tool'])
+    // [固定 system, 工具摘要, 自定义指令, skill 清单, 运行环境, user]。
+    expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'system', 'system', 'user'])
     expect(messages[0].content).toContain('收尾自查')
     expect(messages[0].content).not.toContain(marker)
     expect(messages[1].content).toBe(buildToolManifestText(false, { registry: core.tools }))
     expect(messages[2].content).toContain(marker)
     expect(messages[2].content).toContain('请始终使用中文回复')
-    expect(messages[3].content).toContain('运行环境：')
-    expect(messages[4]).toMatchObject({ role: 'user', content: 'hi' })
-    expect(messages[5]).toMatchObject({
-      role: 'assistant',
-      tool_calls: [{ id: 'timed:sessionStart:skill_manifest' }],
-    })
-    expect(messages[6]).toMatchObject({ role: 'tool', tool_call_id: 'timed:sessionStart:skill_manifest' })
+    expect(messages[3].content).toContain('可用 skills')
+    expect(messages[4].content).toContain('运行环境：')
+    expect(messages[5]).toMatchObject({ role: 'user', content: 'hi' })
     // 自定义指令只此一份，且不在历史之后。
     expect(messages.filter((item) => item.content?.includes(marker))).toHaveLength(1)
 
@@ -265,12 +251,12 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
     await runSession(id, '了解下这个项目', { signal: new AbortController().signal, apiKey: 'k', fetchImpl, core })
 
     const messages = captured.messages as Array<{ role: string; content?: string }>
-    const environment = messages[2]
-    // 运行环境是稳定前缀最后一段。
+    const environment = messages[3]
+    // 运行环境是稳定前缀最后一段（前面依次是固定 system、工具摘要、skill 清单）。
     expect(environment?.role).toBe('system')
     expect(environment?.content).toContain('当前工作区根目录：/Volumes/work/ai/web-agent')
     expect(environment?.content).not.toContain('/Volumes/work/ai/web-agent/\n')
-    expect(messages[3]).toMatchObject({ role: 'user', content: '了解下这个项目' })
+    expect(messages[4]).toMatchObject({ role: 'user', content: '了解下这个项目' })
 
     const events = core.getSessionStore(id).store.getter(runtimeTranscriptEventsAtom)
     expect(

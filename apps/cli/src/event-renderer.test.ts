@@ -74,7 +74,7 @@ describe('subscribeCliRenderer', () => {
       item: {
         role: 'assistant',
         content: '',
-        tool_calls: [{ id: 'plain-call', type: 'function', function: { name: 'skill_manifest', arguments: '{}' } }],
+        tool_calls: [{ id: 'plain-call', type: 'function', function: { name: 'session_brief', arguments: '{}' } }],
       },
     })
     appendItem(sessionId, {
@@ -85,10 +85,10 @@ describe('subscribeCliRenderer', () => {
     appendItem(sessionId, {
       id: 'timed-result',
       createdAt: 3,
-      item: { role: 'tool', tool_call_id: 'timed:sessionStart:skill_manifest', content: '{}' },
+      item: { role: 'tool', tool_call_id: 'timed:sessionStart:session_brief', content: '{}' },
     })
     dispose()
 
-    expect(lines).toEqual(['[tool] skill_manifest → ok\n', '[tool] skill_manifest → ok\n'])
+    expect(lines).toEqual(['[tool] session_brief → ok\n', '[tool] session_brief → ok\n'])
   })
 })

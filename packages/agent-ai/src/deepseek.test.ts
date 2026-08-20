@@ -263,13 +263,13 @@ describe('DeepSeek V4 请求协议', () => {
         content: '',
         tool_calls: [
           {
-            id: 'timed:sessionStart:skill_manifest',
+            id: 'timed:sessionStart:session_brief',
             type: 'function',
             function: { name: 'timed_tool_result', arguments: '{}' },
           },
         ],
       },
-      { role: 'tool', tool_call_id: 'timed:sessionStart:skill_manifest', content: 'manifest' },
+      { role: 'tool', tool_call_id: 'timed:sessionStart:session_brief', content: 'manifest' },
     ]
 
     // 故意不带 thinking 字段：服务端把全部 deepseek 别名路由到 thinking 家族，

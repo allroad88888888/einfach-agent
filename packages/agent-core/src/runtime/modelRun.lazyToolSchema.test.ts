@@ -29,11 +29,11 @@ describe('runSession（多轮 lazy-tool 循环，T-6）懒加载工具 schema', 
 
     const store = getSessionStore('t1').store
     const items = store.getter(itemsAtom)
-    // user → timed 清单 → assistant(tool_calls) → tool(schema) → assistant(final)
-    expect(items.map((it) => it.item.role)).toEqual(['user', 'tool', 'assistant', 'tool', 'assistant'])
+    // user → assistant(tool_calls) → tool(schema) → assistant(final)
+    expect(items.map((it) => it.item.role)).toEqual(['user', 'assistant', 'tool', 'assistant'])
 
-    const asstTc = items[2].item
-    const toolItem = items[3].item
+    const asstTc = items[1].item
+    const toolItem = items[2].item
     if (asstTc.role !== 'assistant' || toolItem.role !== 'tool') throw new Error('意外的条目形状')
     expect(asstTc.tool_calls?.[0].function.name).toBe('request_tool_schema')
     // 缺省 id 由 runtime 自造并一致回填：assistant.tool_calls[0].id === tool.tool_call_id。
@@ -49,7 +49,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）懒加载工具 schema', 
 
     expect(store.getter(runAtom)?.loadedTools).toContain('skill_search')
     expect(store.getter(runAtom)?.status).toBe('done')
-    expect((items[4].item as { content?: string }).content).toBe('最终答案')
+    expect((items[3].item as { content?: string }).content).toBe('最终答案')
   })
 
   it('新 run 从历史恢复已加载 schema：首个请求放顶层 tools，并保留 loader 历史', async () => {
@@ -163,17 +163,16 @@ describe('runSession（多轮 lazy-tool 循环，T-6）懒加载工具 schema', 
     await runSession('t2', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
 
     const items = getSessionStore('t2').store.getter(itemsAtom)
-    // user → timed 清单 → asst(tc schema) → tool(schema) → asst(tc skill_search) → tool(results) → asst(final)
+    // user → asst(tc schema) → tool(schema) → asst(tc skill_search) → tool(results) → asst(final)
     expect(items.map((it) => it.item.role)).toEqual([
       'user',
-      'tool',
       'assistant',
       'tool',
       'assistant',
       'tool',
       'assistant',
     ])
-    const searchResult = items[5].item
+    const searchResult = items[4].item
     if (searchResult.role !== 'tool') throw new Error('意外的条目形状')
     expect(searchResult.content.includes('results')).toBe(true)
     expect(getSessionStore('t2').store.getter(runAtom)?.status).toBe('done')

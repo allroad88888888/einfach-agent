@@ -27,22 +27,24 @@ describe('createContextCacheTracker · 尾巴顶位与归因', () => {
     expect(second.epochReason).toBe(first.epochReason)
   })
 
-  it('sessionStart 清单以请求投影配对留在首轮历史，连续追加不回退缓存 profile/epoch', () => {
-    // L1 清单不再进 stable systemContent。timeline 只保存 sessionStart 的孤儿 tool result；请求
-    // 投影紧贴其前补 assistant tool_call，满足供应商的配对约束。首轮真实顺序是 user → 配对 → tool。
+  it('sessionStart 到点工具的结果以请求投影配对留在首轮历史，连续追加不回退缓存 profile/epoch', () => {
+    // timeline 只保存到点工具的孤儿 tool result；请求投影紧贴其前补 assistant tool_call，满足供应商
+    // 的配对约束。首轮真实顺序是 user → 配对 → tool。
+    // 注：skill 清单**不是**这类东西——它住稳定前缀（C7），清单变化归因见 modelTurnPrefix.test.ts。
+    // 这里的 session_brief 代表任何一个宿主注册的 sessionStart 工具。
     const timedCall: ModelItem = {
       role: 'assistant',
       content: '',
       tool_calls: [{
-        id: 'timed:sessionStart:skill_manifest',
+        id: 'timed:sessionStart:session_brief',
         type: 'function',
         function: { name: 'timed_tool_result', arguments: '{}' },
       }],
     }
     const manifest: ModelItem = {
       role: 'tool',
-      tool_call_id: 'timed:sessionStart:skill_manifest',
-      content: JSON.stringify('可用 skills：\n· planning — 何时用…'),
+      tool_call_id: 'timed:sessionStart:session_brief',
+      content: JSON.stringify('本次会话开始于 2026-08-20。'),
     }
     const systemContent = 'fixed system'
     const tracker = createContextCacheTracker()

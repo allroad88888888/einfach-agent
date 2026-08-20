@@ -2,7 +2,7 @@ import { uiStore } from '../uiStore'
 // 项目 Skills 设置面板的命令面：工作区级启停偏好与重新扫描。
 // ---------------------------------------------------------------------------
 // UI 不直接写 atom 或存储；这里先落盘，再把同一偏好发布给 core 的 root store，确保下一次
-// skill_manifest、skill_search 与 skill_read 读取的都是用户刚刚选择的集合。
+// L1 清单（稳定前缀里那段）、skill_search 与 skill_read 读到的都是用户刚刚选择的集合。
 
 import {
   refreshProjectSkills,
@@ -41,7 +41,7 @@ export function updateProjectSkillEnabled(
       ...settings,
       agent: { ...settings.agent, disabledProjectSkills },
     })
-    // 发布给 runtime 的是 **core 的 root store** —— 这条偏好要被 skill_manifest / skill_search
+    // 发布给 runtime 的是 **core 的 root store** —— 这条偏好要被 L1 清单 / skill_search
     // 读到，不是界面态；面板自己的状态（保存中/刷新中）才在界面 store 里。
     rootStore.setter(disabledProjectSkillsByWorkspaceAtom, disabledProjectSkills)
     uiStore.setter(projectSkillsPreferenceStatusAtom, { status: 'saved' })

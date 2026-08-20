@@ -38,7 +38,7 @@ describe('tool_call 参数解析', () => {
     // 坏参数绝不能被降级成 {} 后照常执行 —— 那等于拿默认参数干活。
     expect(executed).toBe(0)
     const items = getSessionStore('pa1').store.getter(itemsAtom)
-    const toolItem = items[3].item
+    const toolItem = items[2].item
     if (toolItem.role !== 'tool') throw new Error('意外的条目形状')
     const payload = JSON.parse(toolItem.content) as Record<string, unknown>
     expect(String(payload.error)).toContain('不是合法 JSON')
@@ -66,7 +66,7 @@ describe('tool_call 参数解析', () => {
     await runSession('pa2', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
 
     expect(executed).toBe(0)
-    const toolItem = getSessionStore('pa2').store.getter(itemsAtom)[3].item
+    const toolItem = getSessionStore('pa2').store.getter(itemsAtom)[2].item
     if (toolItem.role !== 'tool') throw new Error('意外的条目形状')
     expect(String((JSON.parse(toolItem.content) as Record<string, unknown>).error)).toContain('必须是 JSON 对象')
   })
