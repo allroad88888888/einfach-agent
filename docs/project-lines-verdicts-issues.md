@@ -406,7 +406,13 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
   `packages/agent-core/src/runtime/commands/historyCommands.ts:99`、四个插件的头注释（仍指 `modelRun.ts`）
 - **判据**：每条注释描述的事实能被一条 grep 证实；`pnpm test` 绿
 - **模型**：sonnet
-- **状态**：TODO
+- **推翻了原注释的一条说法**：`loopHooks.ts:171` 说「schema 校验 / 确认门 / 危险门挂 `beforeToolCall`」
+  ——**都不是**。`validateAgainstSchema` 跑在 `toolCallPluginHooks.ts:51` 的 `prepareToolCall` 里、
+  **早于** `:65` 的 hook 调用；确认门/危险门走的是 `toolCallBatch.ts:60` 的 `classifyToolRisk` +
+  `waiting_confirmation` 暂停，整个在插件系统之外。（验收已独立复核。）
+- **「四个插件」实际是 3 个**（compaction 已随 A1 删除）；`finishReasonPlugin.ts` 检查后**不用改**
+  ——它提到 `modelRun.ts` 的地方都是过去时的抽取历史（「原貌」「搬来」），不是现状声明。
+- **状态**：DONE 71a7c1d
 
 ### E4 · docs/ 六处与 TOOLS-SPEC 四处对齐
 
