@@ -59,7 +59,7 @@
 
 ## 标准之外
 ### 另一类（同目录、不同机制）
-- `subagents/tierRouting.ts` + `routing.ts` + `modelSelection.ts`——不是委派机制，是**可审计的模型档位路由**：`routeSubagentModel`（`routing.ts:65`）只吃结构化可观测特征、不做关键词分类，15 个 `route_reason` 是稳定聚合标识。core 只认 Pro/Flash 两个抽象档，具体模型由装配注入（`packages/subagents/src/defaultTierRouting.ts:12`，当前只有 deepseek 一张表）。
+- `subagents/tierRouting.ts` + `routing.ts` + `modelSelection.ts`——不是委派机制，是**可审计的模型档位路由**：`routeSubagentModel`（`routing.ts:65`）只吃结构化可观测特征、不做关键词分类，15 个 `route_reason` 是稳定聚合标识。core 只认 Pro/Flash 两个抽象档，具体模型由装配注入（`packages/subagents/src/defaultTierRoutingTable.ts`（原 `defaultTierRouting.ts:12` 的单表已随 C9 拆成逐 vendor 表 + 判定，见裁决 #4），当前只有 deepseek 一张表）。
 - `DelegationRuntime.runLowCostExtraction`（`delegationRuntime.ts:38`）——挂在委派运行时上，但**跟子 agent 无关**：唯一消费方是 `tools/fs/src/find-test-lint-commands/find-test-lint-commands.ts:278`。它借用的只是"能换到 flash 档发一次无工具请求"这件事。
 - `packages/subagents/src/state/` 的 19 个文件里，只有 `subagentViewAtoms.ts` 的三个 atom 是 live 视图；其余 `subagentArchive*` / `subagentRunHistory*` / `subagentTrace*` / `subagentSkillGovernance*` 读的是**磁盘归档**，是另一套（异步 loader + 文件指纹 cursor）机制。
 

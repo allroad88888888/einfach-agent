@@ -260,7 +260,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：GLM / Kimi 会话能取到各自的表（新增逐 vendor 测试），deepseek 行为逐字不变；
   `pnpm exec vitest run packages/subagents` 绿
 - **模型**：opus（新契约，会被后续 vendor 照抄）
-- **状态**：TODO
+- **状态**：DONE 6b1c81a（验收做了变异测试：表里塞一个不存在的模型名，4 条红含机械比对那条）
 
 ### D1 · 计划域三个工具补同目录测试
 
