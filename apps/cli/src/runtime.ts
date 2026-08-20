@@ -6,7 +6,6 @@ import {
   configureDefaultProjectSkillsProvider,
   configureDefaultSkillsRegistry,
   configureHostInvoke,
-  configurePersistence,
   defaultCore,
 } from '@einfach-agent/core'
 import { createNodeHostInvoke, nodeHostPlatform } from '@einfach-agent/host-node'
