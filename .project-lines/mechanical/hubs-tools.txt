@@ -1,0 +1,10 @@
+== hubs for tools/ (8 members; count = distinct members referenced)
+      8 vite.config.ts
+      3 apps/web/src/main.tsx
+      3 apps/cli/src/runtime.ts
+      3 apps/cli/package.json
+      2 scripts/check-boundaries.test.js
+-- members NOT referenced by top hubs:
+   vite.config.ts  lacks: <none>
+   apps/web/src/main.tsx  lacks: tools/agents tools/fs tools/interaction tools/mcp tools/shell 
+   apps/cli/src/runtime.ts  lacks: tools/agents tools/fs tools/interaction tools/mcp tools/shell 

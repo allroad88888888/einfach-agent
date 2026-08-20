@@ -1,0 +1,19 @@
+== churn for evals/ (13 files; commits per file)
+-- most changed:
+      4 evals/deepseek-agent/README.md
+      3 evals/deepseek-agent/task-suite.ts
+      3 evals/deepseek-agent/runner.ts
+      3 evals/deepseek-agent/matrix.ts
+      2 evals/deepseek-agent/task-runner.ts
+      2 evals/deepseek-agent/behavior-suite.ts
+      2 evals/deepseek-agent/behavior-runner.ts
+      1 evals/deepseek-agent/tsconfig.json
+-- least changed:
+      2 evals/deepseek-agent/behavior-suite.ts
+      2 evals/deepseek-agent/behavior-runner.ts
+      1 evals/deepseek-agent/tsconfig.json
+      1 evals/deepseek-agent/task-report.ts
+      1 evals/deepseek-agent/task-cost.ts
+      1 evals/deepseek-agent/report.ts
+      1 evals/deepseek-agent/behavior-report.ts
+      1 evals/deepseek-agent/.gitignore

@@ -1,0 +1,23 @@
+== family: packages/  members: 10
+-- top shapes (count · files):
+      1 fixtures/README.md fixtures/change-batch-revert.json fixtures/change-summary.json fixtures/patch-pipeline.json fixtures/patch-stage-rules.json fixtures/read-limits.json fixtures/write-limits.json package.json src/commandArgs.ts src/commandNames.test.ts src/commandNames.ts src/commandPayloads.ts src/createNodeHostInvoke.test.ts src/createNodeHostInvoke.ts src/hostOptions.ts src/index.ts src/routeTable.ts tsconfig.build.json tsconfig.json tsup.config.ts 
+      1 README.md package.json src/index.ts src/sqliteDriver.test.ts src/sqliteDriver.ts src/sqliteHistoryLogDriver.test.ts src/sqliteHistoryLogDriver.ts src/sqliteRecoveryDriver.atomicity.integration.test.ts src/sqliteRecoveryDriver.test.ts src/sqliteRecoveryDriver.ts src/sqliteSessionsPersistence.ts src/sqliteShared.ts tsconfig.build.json tsconfig.json tsup.config.ts 
+      1 README.md package.json src/index.ts src/indexedDbLogDriver.ts src/indexedDbLogReader.ts tsconfig.build.json tsconfig.json tsup.config.ts 
+      1 README.md package.json src/index.ts src/indexedDbDatabase.ts src/indexedDbHistoryLogDriver.test.ts src/indexedDbHistoryLogDriver.ts src/indexedDbRecoveryDriver.atomicity.integration.test.ts src/indexedDbRecoveryDriver.test.ts src/indexedDbRecoveryDriver.ts src/sessionsPersistence.test.ts src/sessionsPersistence.ts tsconfig.build.json tsconfig.json tsup.config.ts 
+      1 README.md package.json src/devSqliteLogReader.test.ts src/devSqliteLogReader.ts src/index.test.ts src/index.ts src/serverHostTrace.test.ts src/sqliteLog.testHarness.ts src/sqliteLogDriver.test.ts src/sqliteLogDriver.ts src/sqliteLogReader.test.ts src/sqliteLogReader.ts src/sqliteLogSchema.test.ts src/sqliteLogSchema.ts src/sqliteLogTransport.test.ts src/sqliteLogTransport.ts tsconfig.build.json tsconfig.json tsup.config.ts 
+-- core files (>=60% of members): README.md package.json src/index.ts tsconfig.build.json tsconfig.json tsup.config.ts 
+-- outliers (missing a core file):
+   packages/agent-plugin-example  missing: tsconfig.build.json tsup.config.ts
+   packages/host-node  missing: README.md
+
+== family: tools/  members: 8
+-- top shapes (count · files):
+      3 README.md package.json src/index.ts src/raw-modules.d.ts tsconfig.build.json tsconfig.json tsup.config.ts 
+      1 README.md package.json src/index.ts src/planRuntime.test.ts src/planRuntime.ts src/planToolDurability.test.ts src/raw-modules.d.ts tsconfig.build.json tsconfig.json tsup.config.ts 
+      1 README.md package.json src/index.test.ts src/index.ts tsconfig.build.json tsconfig.json tsup.config.ts 
+      1 README.md package.json src/command-result.test.ts src/command-result.ts src/file-write-guard.ts src/index.ts src/raw-modules.d.ts tsconfig.build.json tsconfig.json tsup.config.ts 
+      1 README.md package.json src/clientManager.keepalive.test.ts src/clientManager.reconnect.fixtures.ts src/clientManager.reconnect.test.ts src/clientManager.reconnectCancel.test.ts src/clientManager.register.test.ts src/clientManager.test.ts src/clientManager.ts src/connectorRouter.ts src/failureClassification.test.ts src/failureClassification.ts src/failureClassification.untrustedText.test.ts src/index.ts src/internal.test.ts src/internal.ts src/keepaliveMonitor.test.ts src/keepaliveMonitor.ts src/placeholderClaims.test.ts src/placeholderClaims.ts src/placeholderExecute.failure.test.ts src/placeholderExecute.fixtures.ts src/placeholderExecute.test.ts src/placeholderExecute.ts src/placeholderResult.ts src/placeholderSync.connect.test.ts src/placeholderSync.fixtures.ts src/placeholderSync.registry.test.ts src/placeholderSync.test.ts src/placeholderSync.ts src/placeholderTool.test.ts src/placeholderTool.ts src/raw-modules.d.ts src/reconnectSchedule.test.ts src/reconnectSchedule.ts src/serverConfig.ts src/serverQueue.test.ts src/serverQueue.ts src/serverRecords.ts src/streamableHttp.test.ts src/streamableHttp.ts src/toolAdapter.test.ts src/toolAdapter.ts src/toolMetadataText.ts src/toolReconciler.test.ts src/toolReconciler.ts src/types.ts tsconfig.build.json tsconfig.json tsup.config.ts 
+-- core files (>=60% of members): README.md package.json src/index.ts src/raw-modules.d.ts tsconfig.build.json tsconfig.json tsup.config.ts 
+-- outliers (missing a core file):
+   tools/standard  missing: src/raw-modules.d.ts
+

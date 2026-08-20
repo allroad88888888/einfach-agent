@@ -1,0 +1,7 @@
+== import direction, mode=import (files in ROW that import from COLUMN; tests/docs excluded)
+   apps →  packages(96)  tools(25)
+   evals →  packages(6)
+   packages →  tools(15)
+   scripts →  packages(3)
+   tools →  packages(62)
+-- identifiers per column: apps:4 packages:28 tools:22 

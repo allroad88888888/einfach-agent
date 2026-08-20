@@ -1,0 +1,22 @@
+== recipe for packages/ (from 3 cleanest birth commits)
+-- a2b8d97 (9 files) packages/agent-react: 2026-08-03 feat(react-plugin): add timeline renderer registry
+-- 2f58462 (11 files) packages/persistence-sqlite: 2026-08-12 refactor(persistence): extract sqlite driver into persistence-sqlite package
+     apps/web/src/main.tsx
+     docs/assembly-core-issues.md
+     package.json
+     tsconfig.app.json
+     vite.config.ts
+-- ff2982a (11 files) packages/persistence-idb: 2026-08-12 refactor(persistence): extract indexeddb driver into persistence-idb package
+     apps/web/src/main.test.tsx
+     apps/web/src/main.tsx
+     docs/assembly-core-issues.md
+     package.json
+     tsconfig.app.json
+     vite.config.ts
+-- in ALL 3 commits (the recipe):
+-- in >=2 commits (probably part of it):
+     apps/web/src/main.tsx
+     docs/assembly-core-issues.md
+     package.json
+     tsconfig.app.json
+     vite.config.ts

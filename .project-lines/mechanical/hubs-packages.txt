@@ -1,0 +1,10 @@
+== hubs for packages/ (10 members; count = distinct members referenced)
+      9 vite.config.ts
+      8 package.json
+      7 scripts/check-boundaries.js
+      4 apps/cli/src/runtime.ts
+      4 apps/cli/package.json
+-- members NOT referenced by top hubs:
+   vite.config.ts  lacks: packages/agent-plugin-example 
+   package.json  lacks: packages/agent-plugin-example packages/host-node 
+   scripts/check-boundaries.js  lacks: packages/agent-ai packages/agent-plugin-example packages/agent-react 

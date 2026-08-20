@@ -1,0 +1,9 @@
+== churn for research/ (3 files; commits per file)
+-- most changed:
+      1 research/deepseek/sync.sh
+      1 research/deepseek/README.md
+      1 research/deepseek/.gitignore
+-- least changed:
+      1 research/deepseek/sync.sh
+      1 research/deepseek/README.md
+      1 research/deepseek/.gitignore

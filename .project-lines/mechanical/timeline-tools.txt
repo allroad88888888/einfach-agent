@@ -1,0 +1,9 @@
+== timeline for tools/ (8 members; date member birth-commit)
+   2026-07-24 tools/agents 02609c4  <- founding
+   2026-07-24 tools/fs 02609c4  <- founding
+   2026-07-24 tools/interaction 02609c4  <- founding
+   2026-07-24 tools/mcp 6d99f0d
+   2026-07-24 tools/planning 02609c4
+   2026-07-24 tools/shell 02609c4  <- latest
+   2026-07-24 tools/skills 02609c4  <- latest
+   2026-07-24 tools/standard 02609c4  <- latest

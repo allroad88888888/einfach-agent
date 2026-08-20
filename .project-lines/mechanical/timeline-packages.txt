@@ -1,0 +1,11 @@
+== timeline for packages/ (10 members; date member birth-commit)
+   2026-07-23 packages/agent-ai fedeea4  <- founding
+   2026-07-23 packages/agent-core fedeea4  <- founding
+   2026-08-03 packages/agent-plugin-example 7d3f1be  <- founding
+   2026-08-03 packages/agent-react a2b8d97
+   2026-08-12 packages/persistence-idb ff2982a
+   2026-08-12 packages/persistence-sqlite 2f58462
+   2026-08-13 packages/observability-idb 37dec4d
+   2026-08-13 packages/observability-sqlite 37dec4d  <- latest
+   2026-08-13 packages/subagents adff099  <- latest
+   2026-08-18 packages/host-node c9ff758  <- latest

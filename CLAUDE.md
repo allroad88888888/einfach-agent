@@ -5,6 +5,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 本文件是仓库内编码 Agent 的快速工作约定。项目现状和启动方法以 `README.md` 为准，
 专题设计入口见 `docs/README.md`。
 
+**动手前先读 [.project-lines/SKILL.md](.project-lines/SKILL.md)**：那是从代码与 git 历史追出来的
+主线/分支线（东西放哪、数据怎么走、模仿哪个成员、哪些漂移别抄），索引一份、每条线一个文件。
+按索引只读相关的 1–2 条线，不要重扫仓库。负责人的裁决折回线文件，未确认的内容不驱动改动。
+
 ## 命令
 
 这是 pnpm workspace，`packages/*` 和 `tools/*` 使用 `workspace:*`。不要使用 `npm install`。

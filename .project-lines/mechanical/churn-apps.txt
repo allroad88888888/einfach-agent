@@ -1,0 +1,19 @@
+== churn for apps/ (247 files; commits per file)
+-- most changed:
+     35 apps/web/src/main.tsx
+     16 apps/web/src/mcp/initialize.ts
+     14 apps/cli/src/runtime.ts
+     13 apps/web/src/mcp/service.ts
+     12 apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+     11 apps/web/src/agentNew/ui/agentnew.css
+     11 apps/web/src/agentNew/ui/MessageList.tsx
+     11 apps/web/src/agentNew/ui/Composer.tsx
+-- least changed:
+      1 apps/server/src/authOrigin.ts
+      1 apps/server/src/authLoopback.ts
+      1 apps/server/bin/einfach-agent.mjs
+      1 apps/cli/tsconfig.json
+      1 apps/cli/src/shutdown.ts
+      1 apps/cli/src/raw-module-loader.mjs
+      1 apps/cli/src/main.ts
+      1 apps/cli/src/cli-options.ts
