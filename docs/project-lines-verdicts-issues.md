@@ -357,7 +357,27 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：`grep -rn "Tauri\|tauri" packages tools apps --include='*.ts' --include='*.rs'`
   只剩 mcp 那批（归 E2b）；`pnpm build` 绿
 - **模型**：sonnet
-- **状态**：TODO
+- **命中分类**：约 120 条 → 改 45 / 保留历史脚注 15 / 保留误命中 60。其中两处是**实质错误**而非
+  措辞陈旧：`apps/server/src/health.ts:34` 注释写死「B1 三态 `'tauri'|'server'|'static'`」而
+  `HostKind` 早已两态；`tools/fs/src/apply-patch/apply-patch.ts` 的 **模型可见 description** 里
+  「through the desktop runtime」——那句是**发给模型**的，不是注释。
+- **状态**：DONE 179e7a4
+
+### E2c · 带 Tauri 字样的代码标识符要不要改名
+
+- **依赖**：E2a（DONE `179e7a4`）
+- **改动面**：`packages/agent-core/src/runtime/workspace{Write,Read,Rg,Patch,Task,Git}.ts`、`shellCommand.ts`
+  等处的 `TauriWorkspaceWriteInput` / `toTauriInput()` 这类**类型名与函数名**（E2a 统计约 60 条误命中里的主体）
+- **判据**：待定——先决定改不改
+- **模型**：sonnet（若做）
+- **来源**：E2a 验收。它把这些判为「改名是另一个量级的重构，不属于清理注释」而保留，**判断正确**；
+  但桌面壳已随 `e52c31d` 整条删除，这些名字今天指的是「经命令桥的宿主输入」，与 Tauri 无关。
+- **要负责人拍板**：改名会波及跨包的类型引用面（core 的公开面收敛 G4 也在管这块），且没有功能收益，
+  纯可读性。**不做也是合理选项**——那就该在 `types.ts` 的 canonical 定义处写一句「名字里的 Tauri
+  是历史，含义是宿主命令桥」，让下一个人不必猜。
+- **状态**：TODO（待拍板）
+
+
 
 ### E2b · 清理 Tauri 残留注释（tools/mcp 的 12 个文件）
 
