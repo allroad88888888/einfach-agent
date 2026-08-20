@@ -309,7 +309,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：四家全跑；kimi 与 openai-compat 的**已知差异**在测试里显式声明而不是被跳过；
   `pnpm exec vitest run packages/agent-ai` 绿
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE 19ca72b（顶破 300 行时按规则连拆分一起做；验收变异：让 kimi 透传 temperature 后正好 1 条红）
 
 ### E1 · CLAUDE.md 五处修正
 
