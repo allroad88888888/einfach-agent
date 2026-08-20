@@ -141,7 +141,10 @@ UI 中的 Promote/Archive 确认只生成上述审计 CLI，并明确标记“�
 8. runtime 按 `maxConcurrent` 并发运行子 agent。
 9. 子 agent 默认只允许 `delegate_agent`，可继续分裂下一层；显式 `workspace_read` 时可使用受宿主守卫的只读 workspace 工具；`workspace_verify` 再加 `run_verification_command`，可执行验收所需的 shell 命令和项目脚本。
 10. 子 agent 结束后写 result、node、tree snapshot、events 和 indexes。
-11. 父 agent 收到 `DelegateAgentBatchResult`，包含 `archiveBasePath`、`eventLog`、`skillIds`、children 结果等。
+11. 子 agent 全部结束后执行节点标记完成，`DelegateAgentBatchResult`（含 `archiveBasePath`、`eventLog`、
+    `skillIds`、children 结果等）随之就绪；父 agent 并不在调用 `delegate_agent` 时同步收到它——第 2 步
+    拿到的只是执行句柄，批次结果要经 `observe_agent`/`join_agent`（对应 `ToolContext.observeExecution`/
+    `joinExecution`）或 `spawnAgents` 的 `onComplete` 回调取回。
 
 核心入口：
 

@@ -47,9 +47,11 @@ flowchart TD
   EXEC --> TCTX[受限 ToolContext]
   TCTX --> REG[ToolRegistry 校验并执行]
   REG -->|普通结果| BACKFILL[回填 tool item]
-  BACKFILL --> LOOP
+  BACKFILL --> CKPT_TOOL[提交 checkpoint 并持久化]
+  CKPT_TOOL --> LOOP
   REG -->|ask user / plan approval / confirm| WAIT[暂停 run]
-  DONE --> CHECKPOINT[提交 checkpoint 并持久化]
+  WAIT --> CKPT_WAIT[提交 checkpoint 并持久化]
+  DONE --> CKPT_DONE[提交 checkpoint 并持久化]
 ```
 
 `commands.ts` 是 UI 与运行时的命令边界。默认导出绑定 `defaultCore`；
@@ -103,7 +105,7 @@ Runtime 才会并发执行；每个调用无论串行或并发都会写入会话
 以下流程会把 run 留在可恢复状态：
 
 - `ask_user_question`：进入 `waiting_user`，UI 收集结构化答案后回填原 tool call。
-- 计划需要批准：计划进入 `awaiting_approval`，只有宿主命令可以批准或拒绝。
+- 计划需要批准：run 进入 `waiting_plan_approval`，只有宿主命令可以批准或拒绝。
 - 危险工具确认：UI 可以仅本次允许或加入会话级允许集合。
 
 暂停期间不能追加一条普通用户消息破坏 tool-call 序列。恢复命令复用原 runId 和未完成的

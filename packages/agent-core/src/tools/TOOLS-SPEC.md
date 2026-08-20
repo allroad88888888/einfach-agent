@@ -114,10 +114,14 @@ runtime.
 
 ## 4. Runtime availability
 
-- `internal`: pure runtime operations available in Web and Tauri.
-- `browser`: browser-mediated interactions available in Web and Tauri.
-- `server`: workspace and shell operations. They are hidden from the Web
-  manifest and enabled only when the native bridge is available.
+- `internal`: pure runtime operations, always visible regardless of host.
+- `browser`: browser-mediated interactions, always visible regardless of host.
+- `server`: workspace and shell operations. Visibility is decided by
+  capability, not by brand: hidden from the manifest unless the host has
+  registered a command bridge (`hasHostBridge()`) — Tauri's native bridge, a
+  browser session connected to the local Node backend (`packages/host-node`
+  via `apps/server`), and the CLI host all count; a static Web build with no
+  backend does not.
 
 Availability is decided before a manifest is sent to the model. A model should
 not see tools it cannot call in the current environment.
@@ -167,7 +171,11 @@ process isolation at the bridge boundary.
 4. Use only `ToolContext` capabilities for effects.
 5. Mark the tool parallel only when overlapping execution is safe; add stable
    effect keys when it touches a shared resource.
-6. Export it from its domain and register it in `tools/standard/src/index.ts`.
+6. Export it from its domain and register it in that domain's own
+   `tools/<domain>/src/index.ts` registrar (`register<Domain>Tools`).
+   `tools/standard/src/index.ts` is a meta package that only re-exports and
+   aggregates the six domain registrars via `registerStandardTools`; it does
+   not itself list individual tools.
 7. Test both success and rejected-input paths.
 
 Changing tool registration does not require changing the root application

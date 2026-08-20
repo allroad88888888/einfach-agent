@@ -91,10 +91,13 @@ interface SkillSource {
 
 ### 阶段 3 — 清单迁入稳定前缀（动请求形状，eval 通过后）
 
-- 组装：全量清单进稳定前缀，段序按变更频率排——`[system, skillManifest, customInstructions?]`
-  （清单运行期恒定、只随发版变，放在用户可变的自定义指令之前，改指令时清单段缓存仍命中）。
-  清单内容仅依赖 registry 注册态——注册变化（新增/删除 skill）触发 `profile_changed` 新 epoch，
-  与 customInstructions 同权衡（低频全量 miss 换每轮命中）；
+- 组装：全量清单进稳定前缀，段序按变更频率排。**实际落地（`buildStableModelPrefix`，
+  `packages/agent-core/src/runtime/modelTurnPrefix.ts`）是五段**：
+  `[system, toolManifest, customInstructions?, skillManifest, environment]`——固定 system 与
+  工具摘要在前，其次自定义指令，清单与运行环境按 workspace 变、垫底，清单排在环境之前。
+  清单内容仅依赖 registry 注册态与项目 skills 快照——注册变化（新增/删除 skill）或切
+  workspace 触发 `profile_changed` 新 epoch，与 customInstructions 同权衡（低频全量 miss
+  换每轮命中）；
 - `buildSkillContextItem` / `pickSkillsForInput` 退役（或降级为 UI 展示用途）；
   动态尾巴中 skillContext 移除——此后尾巴仅剩事件驱动项（planContext / continuationNotice /
   toolFailureNotice），**多数轮次尾巴为空，`cache_epoch` 在纯追加对话中不再每轮 +1**；

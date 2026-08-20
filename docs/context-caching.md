@@ -108,27 +108,35 @@ Context cache 不扩大模型窗口，也不替代 compaction。lazy tool schema
 
 ### 压缩投影复用
 
-`compactContext` 是纯函数，每轮拿当轮完整 items 从头重算。items 每轮追加，保护窗口与单元切分点
-随之整体后移，产出的投影逐字不同 —— 对 provider 的前缀缓存而言等于每轮换一个 prompt。实测
-（2026-07-27，512 次请求）：越过压缩线之后每个 `cache_epoch` 只剩 1 次请求、reason 恒为
-`compaction_projection_changed`，占当天全部请求的 45.3%；压缩线之前一个 epoch 能撑 28~92 次。
+早期实现用 `compactContext`（纯函数，按 turn/unit 边界切分、`keepRecentTurns` 保护最近若干轮
+原文）每轮从头重算整份投影；items 每轮追加，切分点随之整体后移，产出的投影逐字不同 —— 对
+provider 的前缀缓存而言等于每轮换一个 prompt。实测（2026-07-27，512 次请求）：越过压缩线之后
+每个 `cache_epoch` 只剩 1 次请求、reason 恒为 `compaction_projection_changed`，占当天全部请求的
+45.3%；压缩线之前一个 epoch 能撑 28~92 次。
 
-因此 `compactionPlugin` 记住上一次真压缩的产物及其输入快照，后续轮次在同时满足下面两条时直接
-复用该投影、把新增条目原样接在后面：
+**这条路径现在已经不跑了。** `compactContext` / `keepRecentTurns` 仍留在
+`packages/agent-core/src/runtime/contextCompaction.ts`，但生产请求不再调用它，唯一的调用方是
+它自己的单测。压缩不再是插件：`packages/agent-core/src/runtime/core/plugins/compactionPlugin.ts`
+连同它的复用缓存已随 A1 整个删除（提交 `64d7df4`），真正跑的是 `modelTurnRequester.ts` 的
+**内联 checkpoint 蒸馏**：
 
-- 本轮 items 是那份输入的 append-only 延长（逐条引用比较，checkpoint 回滚/revert 天然失配）；
-- 旧投影 + 新增原文仍在本轮预算内。
+- 每次请求先用 `projectContextCheckpoint`（`contextCheckpointProjection.ts`）尝试复用会话上一次
+  保存的 checkpoint：checkpoint 记录 `coveredItemIds`，逐条按 id 比对当前 history 的前缀——
+  精确匹配就复用摘要、把后面新增的条目原样接在后面；id 不匹配（checkpoint 回滚/revert 天然
+  失配）就判 `invalidCheckpoint` 并清空。
+- `contextNeedsDistillation` 判定投影后的请求是否仍超预算；超了才触发
+  `createContextCheckpoint`（`contextDistillation.ts`）——**让模型自己**把「稳定前缀 + 当前投影
+  （旧摘要或原文）」整段读一遍，产出一份新的 checkpoint 摘要文本，覆盖面是**这一刻的全部
+  history**（不再有 `keepRecentTurns` 那样固定保留最近 N 轮原文不摘要的窗口）。
+- 新 checkpoint 存进 `contextCheckpointAtom`（经 `setContextCheckpointOnSession`）。这是一个
+  **会话级、持久化的槽位**（`SESSION_SLOTS.contextCheckpoint`，进 `RecoverySnapshotV1`），不是
+  per-run 的插件闭包 —— 它跨 run 存活，直到被新 checkpoint 覆盖，或因历史不再前缀匹配而失效。
+- `preCompact` / `postCompact` 两个到点时机由 `modelTurnRequester.ts` 自己的
+  `dispatchCompactionTiming` 在蒸馏前后直接分派（C1，提交 `0cd3200`），不再经插件 hook 转发。
 
-外加一道 CC3 兜底：拼接结果里每条 `role:'tool'` 都必须能在其前面找到声明过该 `tool_call_id` 的
-assistant，否则放弃复用。三条中任意一条不成立就回落到完整压缩。
-
-这不违反上面「不得为提高命中率」的禁令：复用发出去的仍是完整 system + 压缩后的完整有效历史，
-旧投影本身即一次合法压缩的产物，新增部分是原文，没有只发后缀、也没有跳过压缩（预算每轮照查）。
-复用也不会让本该是原文的内容退化成摘要 —— 压缩当轮受 `keepRecentTurns` 保护的那几轮在旧投影里
-就是原文，此后新增的也都是原文，被摘要的只有当轮就该摘要的历史部分。
-
-缓存挂在插件闭包上，即 per-run（`runToolLoop` 每个 run 装配一次插件），run 结束随闭包释放。
-跨 run 重压一次是有意的：跨 run 必然有新用户输入，保护窗口本就该借机重新取景。
+这不违反上面「不得为提高命中率」的禁令：复用发出去的仍是完整 system + 有效历史投影（摘要 + 新增
+原文），旧 checkpoint 本身即一次合法蒸馏的产物，没有只发后缀、也没有跳过预算检查——是否需要新一
+轮蒸馏每次请求都重新经 `contextNeedsDistillation` 判定。
 
 ## 可观测性
 

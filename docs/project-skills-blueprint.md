@@ -159,9 +159,10 @@ triggers: [deploy, 发布, 上线]
   同 workspace 的多会话共享一份快照。存储挂 `CoreInstance`（`core.projectSkills`，与
   `core.tools` 同构），`createCore()` 的隔离性天然成立；**内置层保持模块级常量不动**
   （编译期恒定，无隔离问题）。
-- **触发点**：`modelRun` 组装稳定前缀之前 `await ensureProjectSkills(sessionId, core)`。
-  命中缓存时同步返回，只有首次绑定或显式刷新才走真实 IO；`buildSkillManifestText` 因此仍是
-  同步纯函数，只是多接一个快照入参。
+- **触发点**：`buildStableModelPrefix`（`packages/agent-core/src/runtime/modelTurnPrefix.ts`）
+  组装稳定前缀时 `await core.projectSkills.ensure(workspaceRoot)`。命中缓存时同步返回，只有
+  首次绑定或显式刷新才走真实 IO；`core.skillRegistry.buildManifestText()` 因此仍是同步纯函数，
+  只是多接一个快照入参。
 - **失效**：会话切换 workspace、用户在 UI 显式刷新。**第一期不做文件监听**——改了
   `.webAgent/skills` 要点一下刷新，或换会话。
 - **降级**：没有登记宿主命令桥的宿主（纯静态产物）没有文件系统 → 快照恒为空。**此时清单逐字等于今天的输出**
@@ -171,15 +172,17 @@ triggers: [deploy, 发布, 上线]
 
 ## 与稳定前缀 / 缓存 epoch 的关系
 
-项目段并入 `buildSkillManifestText()` 的输出，位置仍在 `stablePrefix` 的第二段
-（`modelRun.ts:1379` 附近），已被 `stablePrefixContent` 计入 `systemFingerprint`，
-因此无需改 contextCache：
+项目段并入 `core.skillRegistry.buildManifestText()` 的输出，位置在 `buildStableModelPrefix`
+（`packages/agent-core/src/runtime/modelTurnPrefix.ts`）组装的五段稳定前缀里的第四段——固定
+system → 工具摘要 → 自定义指令 → **skill 清单** → 运行环境，按变更频率排；已被
+`stablePrefixContent` 计入 `systemFingerprint`，因此无需改 contextCache：
 
 - 同一 workspace 内连续对话：快照不变 → 清单字节不变 → 缓存照常命中，**epoch 不动**。
 - 切 workspace / 刷新 / 仓库改了 skill：前缀字节变 → contextCache 归因 `profile_changed`
   并起新 epoch，一次性全量 miss。这与「用户改自定义指令」「工具注册态变化」是同一权衡，
   低频、可解释。
-- transcript 的「注入 skill 清单」卡片按内容指纹判重（`modelRun.ts:1431` 附近），
+- transcript 的「注入 skill 清单」卡片按内容指纹判重
+  （`packages/agent-core/src/runtime/transcriptInjection.ts` 的 `injectStablePrefixTranscript`），
   项目 skills 变化会自然记一张新卡，无需额外改动。
 
 ## 读取链路
@@ -227,8 +230,8 @@ skills?: {
    避免把二进制读进上下文。
 6. **可观测**：`diagnostics` 进 UI 与 trace，用户随时能看到「这个 workspace 往清单里加了什么」。
 
-若日后要收紧，最小改动是在 §加载时机的 `ensureProjectSkills` 前加一道 workspace 信任门，
-其余设计不动。
+若日后要收紧，最小改动是在 §加载时机的 `core.projectSkills.ensure` 调用前加一道 workspace
+信任门，其余设计不动。
 
 ## 实施阶段
 
@@ -249,7 +252,7 @@ skills?: {
 
 ### 阶段 C — 请求组装与读取链路
 
-- `modelRun` 组装前 `await ensureProjectSkills`，清单带上快照；
+- `buildStableModelPrefix` 组装前 `await core.projectSkills.ensure`，清单带上快照；
 - `ToolContext.skills` 注入 + `skill_read` / `skill_search` 改造（含 async 分支与白名单校验）；
 - 测试：项目 skill 进清单的快照断言、web 端清单零回归、`skill_read` 读项目正文/资源/
   非法资源键、`skill_read` 对未知 `project/*` 的错误引导。

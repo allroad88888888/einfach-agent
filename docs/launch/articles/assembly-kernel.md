@@ -54,9 +54,11 @@ export const defaultCorePlugins: readonly CorePlugin[] = [
 和调用方传进来的插件拼成一份，再 `assemblePlugins` 把同名槽 fan-out 成一个复合 hook 交给 loop。
 loop 侧只有"槽为 undefined 就跳过"这一个分支。
 
-同目录下还有 `compactionPlugin.ts`，挂 `transformContext` 槽。它现在**不在**默认集合里——
-上下文压缩改走了 durable context checkpoint 路径。这恰好是槽位设计的好处：一个横切行为进来又
-出去，主循环一行没动，`transformContext` 槽还在那儿等下一个插件。
+这个目录里曾经还有一个 `compactionPlugin.ts`，挂 `transformContext` 槽做上下文压缩。它已经**整个
+删除**（提交 `64d7df4`）——压缩改走了 `modelTurnRequester.ts` 里的**内联 checkpoint 蒸馏**：
+超预算时直接请求模型把当前投影蒸馏成一份摘要，存进会话级持久化的 `contextCheckpointAtom`，
+不再经过任何插件槽。这恰好是槽位设计的好处：一个横切行为进来又出去，主循环一行没动，
+`transformContext` 槽还在那儿空着，随时可以接下一个插件。
 
 ## 三、证据一：`createCore` 的槽位
 

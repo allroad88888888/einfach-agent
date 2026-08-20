@@ -97,14 +97,19 @@ epoch 20  compaction_projection_changed           1 次请求   175K
 ## 已实施：压缩投影复用
 
 契约与正确性论证写在 [Context Caching → 压缩投影复用](context-caching.md#压缩投影复用)，此处
-不重复。要点：一次真压缩的产物在后续 append-only 轮次里直接复用，三道刹车（append-only 引用
-校验 / 每轮预算复查 / CC3 tool 协议兜底）任意一条不成立就回落完整压缩；缓存 per-run。
+不重复。要点（**已更新为当前实现**：压缩不再是插件，下方实现清单已跟着 A1/C1 换成现在真跑的
+文件）：checkpoint 覆盖的历史前缀在后续 append-only 轮次里直接复用，append-only 引用校验（逐条
+按 id 比对）不成立就判定失效、重新蒸馏；checkpoint 存在会话级持久槽位里，不是 per-run 缓存。
 
 实现与测试：
 
-- `packages/agent-core/src/runtime/core/plugins/compactionPlugin.ts`
-- `packages/agent-core/src/runtime/core/plugins/compactionPlugin.test.ts`（复用命中、连续多轮、
-  revert、历史变短、预算撑爆、孤儿 tool、压完仍超不缓存、未压缩不缓存、不传 cache 逐轮重压）
+- `packages/agent-core/src/runtime/modelTurnRequester.ts`（内联蒸馏触发点、`dispatchCompactionTiming`）
+- `packages/agent-core/src/runtime/contextDistillation.ts`（`createContextCheckpoint` / `contextNeedsDistillation`）
+- `packages/agent-core/src/runtime/contextCheckpointProjection.ts`（`projectContextCheckpoint` 复用判定）
+- `packages/agent-core/src/state/sessionAtoms.ts`（`contextCheckpointAtom`，会话持久槽位）
+- `packages/agent-core/src/runtime/modelTurnRequester.compactionTiming.test.ts`、
+  `packages/agent-core/src/runtime/contextDistillation.request.test.ts`、
+  `packages/agent-core/src/runtime/modelRun.contextCheckpoint.test.ts`
 
 **预估收益（上界）**：232 次压缩失效只涉及 **16 个 run**，平均每 run 失效 14.5 次，最重的一个
 run 失效 43 次。每个 run 改后只压首轮，可消除 36.7M / 39.5M = **92.9%** 的失效量。按当天折算
