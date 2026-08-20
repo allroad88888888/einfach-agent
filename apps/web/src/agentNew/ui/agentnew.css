@@ -23,7 +23,6 @@
  */
 
 @import './agentnew.shell.css';
-@import './agentnew.subagent-tree.css';
 @import './agentnew.subagent-trace.css';
 @import './agentnew.turn-status.css';
 @import './agentnew.message-bubble.css';

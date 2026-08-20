@@ -1,5 +1,0 @@
-/* agentnew.subagent-tree.css —— 树形子 agent 面板：面板外壳 + 树形列表/节点行（T7 拆分自 agentnew.css） */
-/* A3（a16f0e8）删掉了树形面板本体（SubagentTreePanel 及其独占子组件），本文件原有的类
-   （.agentnew-subagent-panel / -tree / -node / .agentnew-skill-* 等）已随之全部失去使用者，
-   经 A3b 逐类 grep 确认零命中后清空。保留此空文件是因为 agentnew.css 仍 @import 它——
-   删除文件需要同步改 agentnew.css，超出 A3b 改动面，留给后续卡处理。 */
