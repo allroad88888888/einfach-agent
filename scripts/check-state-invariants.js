@@ -16,7 +16,7 @@ import { agentStoreBindingRule } from './state-invariants/agentStoreBinding.js'
 import { atomDispositionRule } from './state-invariants/atomDisposition.js'
 import { derivedPurityRule } from './state-invariants/derivedPurity.js'
 import { slotJournalShapeRule } from './state-invariants/slotJournalShape.js'
-import { typescriptFiles } from './state-invariants/sourceFiles.js'
+import { governedSourceFiles } from './state-invariants/sourceFiles.js'
 import { writeChokepointRule } from './state-invariants/writeChokepoint.js'
 
 const defaultRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -33,11 +33,8 @@ const rules = [
 ]
 
 async function main() {
-  const allFiles = (await Promise.all([
-    typescriptFiles(resolve(repositoryRoot, 'packages')),
-    typescriptFiles(resolve(repositoryRoot, 'tools')),
-    typescriptFiles(resolve(repositoryRoot, 'apps')),
-  ])).flat()
+  // 扫描面是白名单（每个工作区成员的 src/），口径与排除项见 state-invariants/sourceScopeTable.js。
+  const { files: allFiles, roots } = await governedSourceFiles(repositoryRoot)
   const errors = []
   const observations = []
   for (const rule of rules) await rule.run({ repositoryRoot, files: allFiles, errors, observations })
@@ -52,8 +49,10 @@ async function main() {
     process.exitCode = 1
     return
   }
+  // 根的条数一并打印：收窄扫描面是「让门禁变松而不报错」的最短路径，掉了一个根要在输出里可见。
   console.log(
-    `状态不变量检查通过（扫描 ${allFiles.length} 个非测试 TS/TSX 文件，生效 ${rules.length} 条规则）。`,
+    `状态不变量检查通过（扫描 ${roots.length} 个工作区 src/ 下的 ${allFiles.length} 个非测试 TS/TSX 文件，`
+    + `生效 ${rules.length} 条规则）。`,
   )
   for (const rule of rules) for (const line of rule.summary) console.log(line)
 }
