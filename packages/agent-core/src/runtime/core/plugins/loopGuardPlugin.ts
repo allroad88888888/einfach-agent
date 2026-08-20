@@ -46,56 +46,34 @@
 //   LOOP_DETECTION_THRESHOLD / LOOP_DETECTED_ERROR / toolCallSignature / normalizedArgsSignature
 //   （连同其内部 helper normalizeForSignature / isPlainRecord 一并迁来，作私有实现细节）。
 //   tracePreview 由 runtime/shared/preview 提供，避免插件与 modelRun 形成反向依赖。
+//
+// ── 判据外迁（F1）：签名规范化 + 跨轮计数 + 阈值已搬到 runtime/shared/toolRepetition ──
+//   子 run【整个不装插件】，却同样要说得出「它在重复什么」，故可复用的是判据、不是插件。
+//   本文件仍原样 re-export 那三个符号（阈值与两个签名函数），插件的对外面与行为一字未变：
+//   「哪几轮该数」（isToolOnlyTurn / 清零）与「数到了做什么」（stop + trace attrs）都还留在这里。
 
 import type { ModelToolCall } from '@einfach-agent/ai'
 import type { TraceAttributes } from '../../../observability/port'
-import { parseToolCallArgs } from '../../modelTurn'
 import { tracePreview } from '../../shared/preview'
+import {
+  createToolRepetitionTracker,
+  LOOP_DETECTION_THRESHOLD,
+  normalizedArgsSignature,
+  toolCallSignature,
+  type RepeatedToolCall,
+} from '../../shared/toolRepetition'
 import type { CoreCtx } from '../coreCtx'
 import type { TurnEndDecision, TurnEndEvent } from '../loopHooks'
 import type { AgentPlugin } from '../pluginApi'
 
 // ---------------------------------------------------------------------------
-// 常量（原样从 modelRun.ts 搬来，数值 / 文案一字未改）
+// 常量与签名（数值 / 文案一字未改；阈值与签名函数的定义已迁至 shared/toolRepetition）
 // ---------------------------------------------------------------------------
-// 同一工具签名跨轮重复达此次数即判成环、降级为 error（TK8 循环上限保护的一部分）。
-export const LOOP_DETECTION_THRESHOLD = 3
+// 仍从本文件导出：它们是这个插件的既有对外面，主 run 侧的调用点与用例都按这里的名字读。
+export { LOOP_DETECTION_THRESHOLD, normalizedArgsSignature, toolCallSignature }
 // 命中循环时既作 run 的 error、又进 trace attrs.error 的唯一文案（口径唯一）。
+// 只属于主 run：子 run 不因重复而终止，故这条文案不进共享判据。
 export const LOOP_DETECTED_ERROR = '检测到重复工具调用循环'
-
-// ---------------------------------------------------------------------------
-// 工具调用签名规范化（原样从 modelRun.ts 搬来）
-// ---------------------------------------------------------------------------
-// 对象键排序 + 递归规范化，使「同参不同键序」判成同一签名；数组保持原序（顺序是语义）。
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function normalizeForSignature(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map((item) => normalizeForSignature(item))
-  if (isPlainRecord(value)) {
-    return Object.fromEntries(
-      Object.keys(value)
-        .sort()
-        .map((key) => [key, normalizeForSignature(value[key])]),
-    )
-  }
-  return value
-}
-
-// 简介：把工具参数规范化成稳定字符串签名（键序无关、递归）。永不抛（降级用 String）。
-export function normalizedArgsSignature(args: unknown): string {
-  try {
-    return JSON.stringify(normalizeForSignature(args)) ?? ''
-  } catch {
-    return String(args)
-  }
-}
-
-// 简介：`工具名:规范化参数签名` —— 跨轮判重的键。
-export function toolCallSignature(toolName: string, args: unknown): string {
-  return `${toolName}:${normalizedArgsSignature(args)}`
-}
 
 // ---------------------------------------------------------------------------
 // 检测本体（跨轮累计状态放闭包，per-run 隔离）
@@ -105,13 +83,16 @@ export function toolCallSignature(toolName: string, args: unknown): string {
 //   assemblePlugins → 一次 plugin(api)）调它一次，故计数天然按 run 隔离，无需全局单例、无需手动清理。
 //   逐轮逻辑与 modelRun.ts 旧内联块逐字对齐（isToolOnlyTurn 判据、签名累加、seenThisTurn 同轮去重、
 //   命中阈值只记第一个、非纯工具轮清零两份状态）。命中即产出决策 + 全套 trace attrs。
+//   跨轮计数那一半现由 shared/toolRepetition 的 tracker 承担（同轮去重 / 只记第一个 / clear 都在
+//   里面），本函数保留的是主 run 独有的两件事：**哪几轮该数**（isToolOnlyTurn，否则清零）与
+//   **数到了做什么**（stop 决策 + trace attrs）。
 export function createLoopGuardDetector(): (
   ctx: CoreCtx,
   ev: TurnEndEvent,
 ) => TurnEndDecision | undefined {
   // ★ 闭包状态 = per-run 隔离的关键 ★：每个检测器实例独占这两份，互不串味。
   let consecutiveToolOnlyTurns = 0
-  const repeatedToolSignatures = new Map<string, number>()
+  const repetition = createToolRepetitionTracker(LOOP_DETECTION_THRESHOLD)
 
   // ctx 本插件用不到（检测只吃事件里的瞬时数据、不读/写 store）——onTurnEnd 是循环内同步点，
   // 收尾写回由 loop 守卫覆盖，无需 ctx.isCurrent 自查。签名保留 ctx 以对齐 hook 形状。
@@ -121,35 +102,13 @@ export function createLoopGuardDetector(): (
     const assistantHasContent = ev.assistantHasContent
     const isToolOnlyTurn =
       ev.finishReason === 'tool_calls' && toolCalls.length > 0 && !assistantHasContent
-    let loopDetected:
-      | { toolName: string; callId: string; args: Record<string, unknown>; repeatedCount: number }
-      | undefined
+    let loopDetected: RepeatedToolCall | undefined
     if (isToolOnlyTurn) {
       consecutiveToolOnlyTurns += 1
-      const seenThisTurn = new Set<string>()
-      for (const toolCall of toolCalls) {
-        const parsed = parseToolCallArgs(toolCall.function.arguments)
-        // 这里只算签名做循环检测，解析失败降级即可（绝不抛）：用原始字符串参与签名 ——
-        // 模型反复重发同一段坏 JSON 一样会被判成循环，而不同的坏 JSON 也不会被误并成一条。
-        const signature = parsed.ok
-          ? toolCallSignature(toolCall.function.name, parsed.args)
-          : `${toolCall.function.name}:raw:${parsed.raw}`
-        if (seenThisTurn.has(signature)) continue
-        seenThisTurn.add(signature)
-        const repeatedCount = (repeatedToolSignatures.get(signature) ?? 0) + 1
-        repeatedToolSignatures.set(signature, repeatedCount)
-        if (!loopDetected && repeatedCount >= LOOP_DETECTION_THRESHOLD) {
-          loopDetected = {
-            toolName: toolCall.function.name,
-            callId: toolCall.id,
-            args: parsed.args,
-            repeatedCount,
-          }
-        }
-      }
+      loopDetected = repetition.observeTurn(toolCalls)
     } else {
       consecutiveToolOnlyTurns = 0
-      repeatedToolSignatures.clear()
+      repetition.reset()
     }
 
     if (!loopDetected) return undefined

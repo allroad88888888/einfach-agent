@@ -17,6 +17,11 @@ import {
   type ChildAgentToolLoopState,
 } from './childAgentToolCalls'
 import { appendVisibleChildTool, loadVisibleChildTool } from './childToolVisibility'
+import {
+  childExhaustionSummary,
+  childMaxTurnsError,
+  createChildRepetitionWatch,
+} from './childLoopRepetition'
 import type { ChildModelCaller } from './childModelClient'
 import type { ChildContextCheckpoint } from './childContextCheckpoint'
 import { assertNormalChildFinish } from './childFinishReason'
@@ -112,6 +117,9 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
   loop.recentToolNames = loop.visible.map((tool) => tool.name).reverse()
   let contextCheckpoint: ChildContextCheckpoint | undefined
   const maxTurns = spec.maxTurns ?? DEFAULT_CHILD_MAX_TURNS
+  // 子 run 不装插件（没有 plugin host / hook 槽），故复用的是 loopGuard 的【判据】而非插件本身：
+  // 只观测、不改控制流，撞上限时用它回答「它在重复什么」。
+  const repetition = createChildRepetitionWatch()
   runtime.scheduler.markNode(runtime.opts.runId, node.path, 'running', {
     localSkillFiles: [localSkill.path],
     localSkillIds: [localSkill.skillId],
@@ -227,6 +235,7 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
       })
       const message = response.choices?.[0]?.message
       const toolCalls = narrowToolCalls(message?.tool_calls)
+      repetition.observeTurn(toolCalls)
       await runtime.archive.bestEffortRecordTraceItem(context, archiveBasePath, node.path, turn + 1, {
         role: 'assistant',
         content: typeof message?.content === 'string' ? message.content : null,
@@ -235,7 +244,9 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
       })
       await assertNormalChildFinish(response, archiveBasePath, node, runtime, context)
       if (toolCalls.length === 0) {
-        const summary = firstAssistantText(response) || '子 agent 未返回有效文本。'
+        const text = firstAssistantText(response) || '子 agent 未返回有效文本。'
+        // 只有强制合成轮才是「撞 maxTurns 收尾」；提前收敛的轮次不该被追加打转说明。
+        const summary = isSynthesisTurn ? childExhaustionSummary(text, repetition, maxTurns) : text
         return finalizeChildResult({
           runtime, context, archiveBasePath, node, spec, status: 'done', summary, skillFiles, skillIds,
           changeSets: loop.changeSets, modelTier: modelSelection.routeDecision.tier,
@@ -254,7 +265,7 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
         turnTools: tools, toolCalls, isSynthesisTurn, requestedRegistrationVersions,
       })
     }
-    throw new Error(`child agent exceeded maxTurns ${maxTurns}`)
+    throw childMaxTurnsError(repetition, maxTurns)
   } catch (error) {
     const message = toErrorMessage(error)
     const status = isAbortError(error, runtime.opts.signal) ? 'cancelled' : 'failed'
