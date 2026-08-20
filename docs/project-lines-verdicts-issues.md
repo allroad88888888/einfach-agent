@@ -1,5 +1,9 @@
 # 线裁决落地 Issue 树
 
+**✅ 已全部完成（2026-08-20）**：35 张卡（原始 25 + 过程中长出 10）全部 DONE/DROPPED，0 张在途。
+本文件即将随 Git 历史归档；未决分支里的「方向迁移」已在
+[`.project-lines/SKILL.md`](../.project-lines/SKILL.md) 顶部留档，届时另开树。
+
 目标：把 [`.project-lines/`](../.project-lines/SKILL.md) 里负责人 2026-08-20 确认的 24 条裁决
 全部落地——6 项删除、1 个真实 bug、1 条门禁扩判据、9 项契约/跨包收敛、4 项测试与声明补齐、
 4 组文档与注释对齐。裁决原文在各线文件末尾的「裁决」节，问题原文在
@@ -202,7 +206,11 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：主 run 遇 `insufficient_system_resource` 与子 run 走**同一条**升档判据（新增对拍测试）；
   `pnpm exec vitest run packages/agent-core packages/subagents` 绿；`node scripts/check-boundaries.js` 绿
 - **模型**：opus（跨包 API + 新契约）
-- **状态**：TODO
+- **状态**：DONE cbe85b7（判据全部兑现：共用判据落 `packages/agent-ai/src/modelCapacityEscalation.ts`，
+  对拍测试 `modelEscalation.parity.test.ts`，`insufficient_system_resource` 全仓只剩 agent-ai 一处认；
+  卡面的 `packages/subagents/src/modelSelection.ts` 路径已随委派接缝下沉 core 变为
+  `agent-core/src/subagents/modelSelection.ts`。**本卡提交时漏翻状态**，收尾盘点时补记——
+  预告里「31 结清 2 待拍板」实为 31 结清、1 待拍板、1 已做漏记）
 
 ### C4 · McpTransport 联合统一成一份
 
@@ -528,7 +536,13 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：样例用到新读写面且其测试绿；`node scripts/check-docs.js` 绿；
   `pnpm exec vitest run packages/agent-plugin-example` 绿
 - **模型**：sonnet
-- **状态**：TODO
+- **验收（主会话）**：样例 `createStateAwareProbePlugin` 形状是推荐姿势（检查返回值、被门挡下当
+  正常分支）；README 的 `createCore({ plugins })` 装配面独立核实为真（`coreInstance.ts:143`）。
+  两处当场修：生态蓝图 §4.3 那句「写入面没放开」与同文档新加的 §9 第 7 条正面矛盾（agent 按纪律
+  守住改动面没动它，判断正确，但同文档自相矛盾属行级缺陷，主会话当场改齐）；quickstart 示例里
+  「正常分支」却用 `console.error`，改 `console.info`。样例包 README 的改动 agent 报告里漏报，
+  内容合格，已一并接受。三条判据 + boundaries + build 亲手跑绿。
+- **状态**：DONE ba657be
 
 ### F3 · sourceFiles 加黑白名单
 
