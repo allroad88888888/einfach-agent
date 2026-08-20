@@ -142,7 +142,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
   `pnpm exec vitest run packages/subagents/src/archive` 仍绿（容量口径仍由该测试钉住）；
   `node scripts/check-docs.js` 绿
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE f531242（顺手改了 `docs/ROADMAP.md` 与 `docs/launch/articles/subagent-governance.md`——那篇发布文章把 capacity 当第五个治理脚本写了一整节）
 
 ### A6 · 删除 CLI 的悬空 configurePersistence import
 
