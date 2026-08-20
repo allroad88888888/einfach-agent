@@ -82,6 +82,18 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：`grep -rn "SubagentTreePanel\|SubagentSkillGovernancePanel" apps` 零命中；
   `pnpm exec vitest run apps/web` 绿；`pnpm check:state` 绿
 - **模型**：sonnet
+- **状态**：DONE a16f0e8
+
+### A3b · 清理随面板删除而死掉的 CSS 类
+
+- **依赖**：A3（DONE `a16f0e8`）
+- **改动面**：`apps/web/src/agentNew/ui/agentnew.subagent-tree.css`、`agentnew.subagent-trace.css`
+- **判据**：删掉只服务于已删面板的类（`.agentnew-subagent-panel`、`.agentnew-subagent-tree`、
+  `.agentnew-subagent-node`、`.agentnew-skill-governance`、`.agentnew-skill-dialog*` 等），
+  **保留** `SubagentRunInline` 仍在用的 `agentnew-subagent-inline*` / `agentnew-subagent-trace*` /
+  `agentnew-subagent-error`；每删一个类先 grep 确认零使用者；`pnpm exec vitest run apps/web` 绿；`pnpm build` 绿
+- **模型**：sonnet
+- **来源**：A3 验收时发现（面板删了但它的样式还在）
 - **状态**：TODO
 
 ### A4 · hostRecoveryFlush 收成直调
@@ -122,7 +134,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
   组件真的渲染出按钮」的断言（现有断言全绿也证明不了这件事）；`pnpm exec vitest run
   apps/web/src/agentNew/ui/UndoBar.test.tsx` 绿
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE 9243a67
 
 ### B2 · check:state 规则 5 扩到 atom 工厂与 subagents 包
 
@@ -142,7 +154,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：新增测试——注册到这两个桶的到点工具在 checkpoint 蒸馏前后**各触发一次**且被投影成
   timeline item；`pnpm exec vitest run packages/agent-core/src/runtime` 绿
 - **模型**：opus（时机契约，A1 依赖它）
-- **状态**：TODO
+- **状态**：DOING
 
 ### C2 · MCP 动态工具打 origin:'external'
 
@@ -151,7 +163,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：新增断言「MCP 造出的工具带 `origin:'external'`，且 `toolRegistry.ts:71-77` 的剥
   `callTiming` 分支对它真的生效」；`pnpm exec vitest run tools/mcp` 绿
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE 4b50e88
 
 ### C3 · 换模型 escalation 从 subagents 提到共用层
 
@@ -290,6 +302,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 
 - **依赖**：C1（loopHooks 的槽位描述会随它变）
 - **改动面**：`packages/agent-core/src/runtime/core/loopHooks.ts:7-11,171`、
+  `packages/agent-core/src/index.ts:142`、`runtime/hostBridge.ts:68`、`state/stateViewPort.ts:20`（这三处注释举例用的 `SubagentTreePanel` 已随 A3 删除，来源：A3 验收）、
   `scripts/state-invariants/sessionAtomSource.js:16-19`、
   `packages/agent-core/src/runtime/commands/historyCommands.ts:99`、四个插件的头注释（仍指 `modelRun.ts`）
 - **判据**：每条注释描述的事实能被一条 grep 证实；`pnpm test` 绿
@@ -312,14 +325,17 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **方向迁移：agent 循环跑服务端、前端纯展示。** 负责人 2026-08-20 已裁定方向，但范围是另一个
   数量级（core 从浏览器搬到 `apps/server`，`static` 态失效，idb driver 可能整条作废，三层 store
   重画）。**另开树**，不混进本树。
+  在浏览器内部运行的，保持在浏览器，这个是之前的成果。 我们最近几天是把rust版本，变为一个套壳的web，这个web只是界面渲染，实际运行在服务端的
 - **子 Agent 续跑语义**（questions A5）：负责人的意思读作「两个 disposition 是过度设计，真正要的
   是死循环可观测、可关掉、可重开」——待确认；且「关掉再重开」现在有没有尚未核实。
 - **beforeToolCall 给不给第三方插件**（questions A6）：已定「插件一视同仁」，但该 hook 能返回
   `{block:true}` 拦下工具调用，等于让第三方能否决 shell 命令、改模型看到的上下文。
-- **CLI 定位**（questions B1）：暂定「一次性工具」，方向迁移落地后重开。
+  同等权利
+- **CLI 定位**（questions B1）：暂定「一次性工具」，方向迁移落地后重开。 套壳服务端，光展示
 - **idb 先例**（questions B6）：`observability-sqlite` 依赖 `observability-idb` 算不算通用模式；
   与方向迁移一并定。
 - **`sourceFiles.js:13` 扫描面含 `dist/`**（questions D4）：答「不知道」，保持未决；下一条按行
   扫描的规则**不要**直接复用这份文件清单。
+  改sourceFiles。js。不要扫描到dist目录，可以加白名单或者黑名单
 - **合并时未提交的 6 条**（00-3、00-4、11-3、12-1、14-4、16-4）：判为不改变新代码去向而未上会，
   各自记在对应线文件的裁决节里。
