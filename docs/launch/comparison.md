@@ -76,8 +76,8 @@ CLI 进程内直调。
 - 结构化 trace：[`packages/agent-core/src/observability/types.ts`](../../packages/agent-core/src/observability/types.ts)
   （`SpanKind = agent | llm | tool | internal`）→ 落盘 driver → 内置查看器
   [`apps/web/src/traceViewer/TraceViewer.tsx`](../../apps/web/src/traceViewer/TraceViewer.tsx)
-- 子 Agent 视图：[`apps/web/src/agentNew/ui/SubagentTreePanel.tsx`](../../apps/web/src/agentNew/ui/SubagentTreePanel.tsx)、
-  [`apps/web/src/agentNew/ui/SubagentRunTrace.tsx`](../../apps/web/src/agentNew/ui/SubagentRunTrace.tsx)
+- 子 Agent 视图：[`apps/web/src/agentNew/ui/SubagentRunInline.tsx`](../../apps/web/src/agentNew/ui/SubagentRunInline.tsx)
+  （树与运行明细内联在消息流里；早先那套独立面板 `SubagentTreePanel` 从未挂载，已删除）
 - 协议细节自己扛：[`packages/agent-ai/src/deepseek.ts`](../../packages/agent-ai/src/deepseek.ts) 处理
   "工具调用续轮必须完整回传 `reasoning_content`、缺失即 400"这类只有直连才会撞上的约束；
   [`packages/agent-ai/src/glm.ts`](../../packages/agent-ai/src/glm.ts) 的 thinking / `reasoning_effort`；
