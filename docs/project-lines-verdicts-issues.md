@@ -110,7 +110,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
   `agentnew-subagent-error`；每删一个类先 grep 确认零使用者；`pnpm exec vitest run apps/web` 绿；`pnpm build` 绿
 - **模型**：sonnet
 - **来源**：A3 验收时发现（面板删了但它的样式还在）
-- **状态**：DONE 3e0dcf4（验收抽查了动态拼接类名这个 grep 盲区：三处拼接全落在保留的类上）
+- **状态**：DONE 838d3bf（验收抽查了动态拼接类名这个 grep 盲区：三处拼接全落在保留的类上）
 
 ### A3c · 删掉清空后的 tree.css 并摘掉它的 @import
 
