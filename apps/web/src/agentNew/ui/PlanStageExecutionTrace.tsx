@@ -4,8 +4,9 @@ import { useAtom } from '@einfach/react'
 import { useCallback } from 'react'
 import type { TimelineThinkingItem } from '@einfach-agent/core/timeline'
 import { planTraceWindowsAtom } from './messageWindowModel'
-import { ThinkingStep } from './ThoughtTraceEntries'
+import { TimelineItemView } from './TimelineItemView'
 import { SlidingWindowRow, useSlidingWindow } from './useSlidingWindow'
+import { useWebTimelineRendererRegistry } from './WebTimelineRendererRegistryProvider'
 
 export function PlanStageExecutionTrace({
   windowId,
@@ -16,6 +17,7 @@ export function PlanStageExecutionTrace({
   stageId: string
   entries?: TimelineThinkingItem[]
 }) {
+  const registry = useWebTimelineRendererRegistry()
   const [traceWindows, setTraceWindows] = useAtom(planTraceWindowsAtom)
   const storedWindow = traceWindows[windowId] ?? { start: 0, end: 0, direction: 'idle' }
   const setStoredWindow = useCallback((next: typeof storedWindow) => {
@@ -41,7 +43,7 @@ export function PlanStageExecutionTrace({
               register={registerRow}
               className="agentnew-plan-trace-row"
             >
-              <ThinkingStep entry={entry} />
+              <TimelineItemView item={entry} registry={registry} />
             </SlidingWindowRow>
           ))}
         </div>
