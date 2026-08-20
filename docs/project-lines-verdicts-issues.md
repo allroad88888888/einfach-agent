@@ -257,7 +257,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：三个工具各有同目录测试且覆盖各自的失败分支；
   `pnpm exec vitest run tools/planning` 绿
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE 903fc79（验收做了变异测试：拆掉 create-plan 的审批暂停分支后正好 1 条红）
 
 ### D2 · skill-manifest 补 .md 说明
 
