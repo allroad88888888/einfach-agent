@@ -83,7 +83,7 @@ skills 目录」占位项的展开，接续其阶段 1–3 已落地的成果，
 - **两个作用域各占一个前缀，因此永不撞名**：工作区与主目录里同名的 `deploy` 是清单里
   两条并存的项（`project/deploy` 与 `user/deploy`），用户也能分别停用。撞名裁决只发生在
   同一作用域的 `.webAgent` 与 `.claude` 之间，规则不变。
-- **上限按作用域各算一份**（各 32 个）：主目录堆满不该把工作区自己的 skill 挤掉。
+- **上限按作用域各算一份**（各 100 个，2026-08-20 由 32 上调，为后续做 skills 启停留量）：主目录堆满不该把工作区自己的 skill 挤掉。
 - **主目录那两路把主目录当根传给桥**，路径依然是根内相对路径，因此不需要任何「允许越界读」
   的权限；`skill_read` 读取时按 `scope` 取对应的根（`ctx.skills.resolveScannedSkill` 返回
   `rootPath`）。用会话 workspace 去读主目录的文件会被 confinement 挡下，报的还是
@@ -224,7 +224,7 @@ skills?: {
    剥离控制字符、折成单行、截断至 160 字符——防止伪造清单行、伪造段落分隔、撑爆前缀。
 3. **路径不由模型给**：L3 资源只读扫描期已发现的键，路径来自快照；叠加宿主侧既有的
    workspace confinement 兜底。
-4. **治理上限**：单 workspace 最多 32 个 skill（超出按名字序截断并告警），单 skill 最多 32 个
+4. **治理上限**：每作用域最多 100 个 skill（超出按名字序截断并告警），单 skill 最多 32 个
    资源，单资源 64KB（复用 `truncateSkillResourceContent`），扫描 `maxEntries` 上限 2000。
 5. **资源扩展名白名单**：`.md/.txt/.json/.yaml/.yml/.csv/.ts/.tsx/.js/.sql`，其余忽略，
    避免把二进制读进上下文。

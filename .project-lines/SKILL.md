@@ -32,7 +32,7 @@ description: "web-agent — 主线与分支线：东西放哪、数据怎么走�
   收尾检查 diff 仍在线上。
 - 局部任务不重扫仓库。只有负责人改了设计才改线。
 - 本目录**不是** `.claude/skills/`：那个路径整个被 `.gitignore:17` 忽略，且会被本仓库的 project
-  skills loader 扫进 L1 清单、占 32 个名额。线文件必须随代码进 git，所以住这里。
+  skills loader 扫进 L1 清单、占 100 个名额。线文件必须随代码进 git，所以住这里。
 
 ## 线
 
