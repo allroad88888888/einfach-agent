@@ -2,6 +2,7 @@ import type { ModelSettings } from '../../state/core.type'
 import type { UserInputPreparer } from '../userInputPreparation'
 import type { UserContentDisposer } from '../userContentDisposal'
 import type { McpConnectTargetProbe, McpToolLaunchTargetProbe } from '../dangerousTools'
+import type { ModelEscalationPolicy } from '../modelEscalation'
 import type { UnconnectedToolProviderProbe } from '../../tools/schemaResult'
 
 /** Runtime dependencies supplied by the host application. */
@@ -52,6 +53,13 @@ export interface RuntimeConfig {
    * 不接线时保持未知工具的原有回执，绝不凭空断言存在某个未连接的服务。
    */
   unconnectedToolProvider?: UnconnectedToolProviderProbe
+  /**
+   * 主 Agent 遇到「值得换模型再来一次」的判据时问谁。判据本身与子 Agent 共用
+   * （`@einfach-agent/ai` 的 modelCapacityEscalation），**换不换**才是这一项决定的。
+   * 不接线时主 Agent 一律不升档：用户在会话里选的就是这个模型，run 照旧显式失败
+   * （理由见 `runtime/modelEscalation.ts` 开头）。
+   */
+  modelEscalation?: ModelEscalationPolicy
 }
 
 export function createRuntimeConfig(overrides?: Partial<RuntimeConfig>): RuntimeConfig {

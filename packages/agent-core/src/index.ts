@@ -66,6 +66,9 @@ export type {
   // configureDefaultProjectSkillsProvider 的参数类型
   ProjectSkillsProvider,
 } from './runtime/core/coreInstance'
+// 主 Agent 换模型升档的策略槽（RuntimeConfig.modelEscalation 的类型）——判据与子 Agent 共用，
+// 换不换、换成什么由装配层决定；不接就不升档。
+export type { ModelEscalationPolicy, ModelEscalationRequest } from './runtime/modelEscalation'
 
 // ---------------------------------------------------------------------------
 // 宿主能力桥（./runtime/hostBridge）—— 与上一组同类：宿主在启动时注入的装配槽

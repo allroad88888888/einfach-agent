@@ -1,4 +1,4 @@
-import type { ModelChatResponse } from '@einfach-agent/ai'
+import { callWithModelEscalation, type ModelChatResponse } from '@einfach-agent/ai'
 import type { ModelSettings } from '../state/core.type'
 import {
   routeSubagentModel,
@@ -35,7 +35,12 @@ export interface SubagentModelEscalation {
   toRoute: SubagentRouteDecision
   toModel: string
   fallbackCount: number
-  trigger: 'insufficient_system_resource' | 'request_failed'
+  /**
+   * 触发这次升档的判据结果，由共用判据给出（`@einfach-agent/ai` 的 modelCapacityEscalation）：
+   * 容量耗尽时是那个 provider 自报的 finish_reason，请求整体失败时是 `request_failed`。
+   * core 不再枚举任何一家的私有终态，故这里是开放字符串而不是闭合 union。
+   */
+  trigger: string
   error?: string
 }
 
@@ -84,32 +89,10 @@ function toErrorMessage(error: unknown): string {
   return 'unknown error'
 }
 
-function isAbortError(error: unknown, signal: AbortSignal): boolean {
-  return signal.aborted || (error instanceof Error && error.name === 'AbortError')
-}
-
-function isDeterministicModelRequestError(error: unknown): boolean {
-  const match = /^Chat completion returned (\d{3})(?:\b|:)/.exec(toErrorMessage(error))
-  if (!match) return false
-  const status = Number(match[1])
-  return status === 400 || status === 401 || status === 402 || status === 422
-}
-
-function hasAssistantPayload(response: ModelChatResponse): boolean {
-  const message = response.choices?.[0]?.message
-  return (
-    (typeof message?.content === 'string' && message.content.length > 0)
-    || (typeof message?.reasoning_content === 'string' && message.reasoning_content.length > 0)
-    // Raw presence matters: malformed calls are attempted output and must never be replayed only
-    // because the runtime cannot dispatch them after narrowing.
-    || (Array.isArray(message?.tool_calls) && message.tool_calls.length > 0)
-  )
-}
-
 function escalateSelection(
   selection: SubagentModelSelection,
   input: SubagentModelSelectionInput,
-): SubagentModelEscalation {
+): Omit<SubagentModelEscalation, 'trigger'> {
   const fromRoute = selection.routeDecision
   const fromModel = selection.settings.model
   selection.fallbackCount = 1
@@ -131,50 +114,34 @@ function escalateSelection(
     toRoute: selection.routeDecision,
     toModel: selection.settings.model,
     fallbackCount: selection.fallbackCount,
-    trigger: 'request_failed',
   }
 }
 
+/**
+ * 按当前档位调用模型；「值不值得换模型再来一次」的**判据**共用
+ * `@einfach-agent/ai` 的 `callWithModelEscalation`（主 Agent 用的是同一条），
+ * 本函数只提供子 Agent 侧的**策略**：升档到哪个模型、什么前提下允许升。
+ */
 export async function callSelectedSubagentModel(
   args: CallSelectedSubagentModelArgs,
 ): Promise<ModelChatResponse> {
-  const invoke = () => args.invoke(args.selection.settings)
-  const escalateOnce = async (
-    trigger: SubagentModelEscalation['trigger'],
-    error?: unknown,
-  ): Promise<ModelChatResponse> => {
-    const escalation = escalateSelection(args.selection, args.input)
-    await args.onEscalated({
-      ...escalation,
-      trigger,
-      ...(error === undefined ? {} : { error: toErrorMessage(error) }),
-    })
-    return invoke()
-  }
-
-  try {
-    const response = await invoke()
-    const finishReason = response.choices?.[0]?.finish_reason
-    if (
-      args.selection.routeDecision.tier === 'flash'
-      && args.selection.fallbackCount === 0
-      && finishReason === 'insufficient_system_resource'
-      && !hasAssistantPayload(response)
-      && args.canEscalate()
-    ) {
-      return escalateOnce('insufficient_system_resource')
-    }
-    return response
-  } catch (error) {
-    if (
-      args.selection.routeDecision.tier !== 'flash'
-      || args.selection.fallbackCount > 0
-      || isAbortError(error, args.signal)
-      || isDeterministicModelRequestError(error)
-      || !args.canEscalate()
-    ) {
-      throw error
-    }
-    return escalateOnce('request_failed', error)
-  }
+  return callWithModelEscalation({
+    // 每次都重读 selection.settings：escalate 里换完档位，紧接着这次调用就用新模型。
+    invoke: () => args.invoke(args.selection.settings),
+    signal: args.signal,
+    escalate: async (trigger, error) => {
+      // 三条前提都是子 Agent 私有的策略，不属于判据：只有低价档值得升、每个子 Agent 至多升
+      // 一次，且这一轮必须还没有任何对外可见的动作（确认过的工具 / 改动集 / 已执行工具）——
+      // 否则重发会把已经发生过的事再做一遍。
+      if (args.selection.routeDecision.tier !== 'flash') return false
+      if (args.selection.fallbackCount > 0) return false
+      if (!args.canEscalate()) return false
+      await args.onEscalated({
+        ...escalateSelection(args.selection, args.input),
+        trigger,
+        ...(error === undefined ? {} : { error: toErrorMessage(error) }),
+      })
+      return true
+    },
+  })
 }

@@ -16,6 +16,7 @@ export function resetModelRunTestState(): void {
   resetObservability()
   resetPersistence()
   defaultCore.planRuntime = undefined
+  defaultCore.config.modelEscalation = undefined
   configureDefaultDelegation(null)
 }
 

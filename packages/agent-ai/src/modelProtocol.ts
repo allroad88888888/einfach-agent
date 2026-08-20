@@ -103,6 +103,12 @@ export interface ModelFinishReasonExtension {
   error: string
   itemNotice: string
   standaloneNotice: string
+  /**
+   * 这个终态是不是「服务端容量耗尽」——即换一个模型再发一次就可能成功，而不是请求本身有问题。
+   * 只有 provider 自己知道自家哪个 finish_reason 是这个意思，所以由注册表自报；消费方
+   * （`modelCapacityEscalation`）据此判断值不值得升档，不再比对任何一家的私有字面量。
+   */
+  capacityExhausted?: boolean
 }
 
 export interface ModelResponseToolCall {

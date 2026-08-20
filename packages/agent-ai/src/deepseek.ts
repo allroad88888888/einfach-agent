@@ -61,6 +61,9 @@ const INSUFFICIENT_RESOURCE_EXTENSION: ModelFinishReasonExtension = {
     '\n\n> ⚠️ 【系统标注】以上回复因模型服务容量不足而中断（finish_reason=insufficient_system_resource），内容不完整。',
   standaloneNotice:
     '> ⚠️ 【系统标注】本轮回复因模型服务容量不足而中断（finish_reason=insufficient_system_resource），未产生任何内容。',
+  // 同模型重试已在下面的 streamWithCapacityRetry 里做过一次；这一位是说给「换模型」那一层听的
+  // （modelCapacityEscalation）：本家这个终态属于容量耗尽，换个模型值得再试一次。
+  capacityExhausted: true,
 }
 
 /** Resolves DeepSeek-only terminal semantics without leaking them into the common protocol. */
