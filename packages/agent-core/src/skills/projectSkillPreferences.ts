@@ -8,7 +8,9 @@ import type { ProjectSkillsSnapshot } from './projectSkills'
 export type DisabledProjectSkillsByWorkspace = Record<string, readonly string[]>
 
 const MAX_WORKSPACE_PREFERENCES = 128
-const MAX_DISABLED_SKILLS_PER_WORKSPACE = 32
+// 跟着 MAX_PROJECT_SKILLS 走：能加载多少就得能关掉多少，否则「装了 100 个、只准关 32 个」这种
+// 组合会让启停偏好在最需要它的那种目录上失效（正是主目录堆满别的项目 skill 的场景）。
+const MAX_DISABLED_SKILLS_PER_WORKSPACE = 100
 const MAX_WORKSPACE_ID_LENGTH = 128
 // 两个作用域的名字都能被停用：`user/` 的偏好同样按 workspaceId 保存——同一台机器上，
 // 一个主目录 skill 可能只在某个项目里碍事，全局一刀切反而更难用。

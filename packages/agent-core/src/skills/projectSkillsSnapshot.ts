@@ -16,8 +16,14 @@ import {
  *
  * 上限**按作用域各算一份**：主目录里堆了几十个 skill 时，工作区自己的 skill 不该因此被挤掉——
  * 它们是两批互不相干的内容，共用一个计数只会让「项目 skill 忽然消失」这种故障以主目录为诱因。
+ *
+ * ★ 为什么是 100 而不是更小的数 ★ —— 这道闸防的是「一个失控目录把上下文撑爆」，不是替用户
+ * 挑 skill。进 L1 清单的只有名字与 description（正文与资源仍要 skill_read），一条约几十 token，
+ * 所以把闸放宽的代价是有界的。真正该管「这个 skill 在这个项目里用不用得上」的是工作区级的启停
+ * 偏好（projectSkillPreferences.ts + 设置面板的 ProjectSkillsPanel），那是用户的选择，不该由
+ * 一个截断常量替他做——而按字节序截断恰恰是最没有道理的一种替他做。
  */
-export const MAX_PROJECT_SKILLS = 32
+export const MAX_PROJECT_SKILLS = 100
 
 /** 一个扫描根（作用域 × 目录）的产出。 */
 export interface ProjectSkillScanResult {
