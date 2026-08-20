@@ -357,7 +357,17 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **改动面**：`tools/mcp/src/` 里以已删的 `tauriStdioConnector.ts` 为对照系的 12 个文件注释
 - **判据**：`grep -rn "tauri" tools/mcp` 零命中；`pnpm exec vitest run tools/mcp` 绿
 - **模型**：sonnet
-- **状态**：TODO
+- **教训（判据是我写窄的）**：卡面判据只写了 `grep "tauri"` 零命中，而本卡来源（16 线）说的是
+  「以已删的 `tauriStdioConnector.ts` 为**对照系**」——有些注释根本不含那个词。首轮按判据交付后
+  验收发现漏两处，判据扩成 `grep -rniE "tauri|桌面|desktop"` 才抓全。**下一张「清理某个已删事物的
+  残留引用」的卡，判据不能只写那个事物的名字。**
+- **实际残留数**：2 处（不是卡面抄来的 12）——C5 的 `2d8495c` 顺带清掉 1 处，本卡清 2 处；
+  其中 `serverConfig.ts:58` 是**实质错误**而非措辞陈旧：原文说 stdio「只有桌面端能执行」，
+  而今天 `server` 宿主（浏览器 + 本机 Node 后端）照样能跑，跑不了的是 `static`。
+- **保留 1 条**：`failureClassification.untrustedText.test.ts:159-160` 的历史溯源脚注
+  （"ported verbatim from `apps/desktop/src/mcp.rs`, deleted in `e52c31d`"）——过去时溯源，
+  不是拿已删组件当今天的对照系，与 E4 那条「记录历史 vs 描述当前」同一判据。
+- **状态**：DONE 1ac4d84
 
 ### E3 · core 内失效注释修正
 
