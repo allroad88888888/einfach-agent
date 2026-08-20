@@ -2,7 +2,8 @@
 // ---------------------------------------------------------------------------
 // 这两条机制的文案原本各自内联在使用点，改动时没有任何东西能证明「eval 里测的那句」和
 // 「线上真正发出去的那句」是同一串字节。集中到本文件后：
-//   · SELF_CHECK_CLAUSES —— buildSystemItem（modelTurn.ts）固定 system 的最后两条静态条款；
+//   · SELF_CHECK_CLAUSES —— buildSystemItem（modelTurnSystemItems.ts）固定 system 的静态条款；
+//     协议条款整段移除后，这两条就是那条 system 的全部内容；
 //   · toolFailureStreakNotice —— modelRun.ts 工具失败软提醒的一次性注入文案；
 //   · TOOL_FAILURE_STREAK_THRESHOLD / TOOL_FAILURE_ERROR_PREVIEW_LIMIT —— 触发阈值与错误摘要长度。
 // evals 目录下的 prompt 行为 A/B 套件直接 import 这里，保证测的就是线上文案。
@@ -15,7 +16,7 @@
 //   本文件不 import 任何东西，所以谁 import 它都不成环，也不会拖进上述任何一样。
 
 /**
- * 固定运行时 system 的收尾自查 / 如实报告条款（buildSystemItem 的 content 数组最后两项）。
+ * 固定运行时 system 的收尾自查 / 如实报告条款（协议条款移除后，即 buildSystemItem 的全部内容）。
  * 顺序与字节都是契约：改这里等于改线上 prompt。
  */
 export const SELF_CHECK_CLAUSES: readonly string[] = [

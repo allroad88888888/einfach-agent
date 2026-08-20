@@ -74,8 +74,8 @@ describe('system 前缀缓存边界', () => {
   it('固定 system 不依赖本轮输入，也不内联任何 skill 名单（清单由 registry 单独出）', () => {
     const fixed = buildSystemItem()
 
-    // 阶段 3：skill 名单不再由本模块按输入生成；system 里只留「正文经 skill_read」的协议条款。
-    expect(fixed.content).toContain('skill 正文不在此展示')
+    // 阶段 3：skill 名单不再由本模块按输入生成。协议条款（含「正文经 skill_read」那条）之后
+    // 又按用户裁决整段移除，固定 system 只剩自查条款；这里钉住的是「没有 skill 名单痕迹」与逐字稳定。
     expect(fixed.content).not.toContain('planning —')
     expect(fixed.content).not.toContain('可用 skills')
     expect(buildSystemItem()).toEqual(fixed)

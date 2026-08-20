@@ -1,7 +1,11 @@
-// 组请求稳定前缀里的各条 system 消息（固定协议 / 长期自定义指令 / 运行环境）—— 无副作用、无 store。
+// 组请求稳定前缀里的各条 system 消息（固定 system / 长期自定义指令 / 运行环境）—— 无副作用、无 store。
 // ---------------------------------------------------------------------------
-//   · buildSystemItem / buildCustomInstructionsItem —— 固定运行时协议与长期自定义指令，都放在
+//   · buildSystemItem / buildCustomInstructionsItem —— 固定 system 与长期自定义指令，都放在
 //     append-only 历史【之前】的稳定前缀里，不含本轮输入。
+//     ★ 固定 system 现在只有收尾自查 / 如实报告两条 ★ —— 曾经写在这里的六条协议条款
+//     （lazy tools、禁止模拟工具调用、skill 正文经 skill_read、planning 三段式、计划审批）
+//     已按用户裁决整段移除。lazy tools 那一半仍有信息源：工具摘要段（toolManifest.ts）自己就写
+//     「仅用于发现，不代表参数 schema 已加载」并指向 request_tool_schema；其余几条不再进 prompt。
 //     ★ skill 名单不再由本文件产出 ★（阶段 3，docs/skills-tree-blueprint.md）：曾经的
 //     buildSkillContextItem 按本轮输入匹配 skill、把名单挂在历史尾部，导致每轮都被新历史顶位、
 //     全额 cache miss。现在改为 registry 的 buildSkillManifestText() 产出【全量】清单，
@@ -17,20 +21,10 @@ import type { SystemItem } from '@einfach-agent/ai'
 // 在那个 tsconfig 下既无法解析也不该被实例化。详见 selfReflectionPrompts.ts 顶部说明。
 import { SELF_CHECK_CLAUSES } from './selfReflectionPrompts'
 
-// 简介：组固定的运行时 system 指令（不 appendItem，只用于请求）。
+// 简介：组固定的 system 指令（不 appendItem，只用于请求）——当前就是收尾自查 / 如实报告两条。
 // 详情：这里不能混入本轮输入、时间或计划状态，否则每轮都会从 token 0 打断 Provider 的前缀缓存。
 export function buildSystemItem(): SystemItem {
-  const content = [
-    '你运行在支持 lazy tools 的本地桌面 Agent Runtime 中，可以像普通 assistant 一样直接回复用户，也可以调用本机与工作区工具。',
-    '“工具清单”只是可发现的能力名称，不代表其参数 schema 已加载。除 request_tool_schema 外，只能调用当前请求中实际提供了完整 schema 的工具；需要其它能力时，若已知精确名称就传 toolName 加载，未知名称则省略 toolName 并用 query/cursor/limit 分页发现，再调用 request_tool_schema 读取参数名与约束，禁止凭工具名猜参数。',
-    '不要在普通文本里模拟工具调用或工具结果；工具名必须来自工具清单。',
-    'skill 正文不在此展示；需要其内容时，先用 request_tool_schema 加载 skill_read，再严格按返回 schema 调用 skill_read。',
-    '复杂、分阶段或执行中升级为多阶段的任务，应先按 lazy-tool 协议读取 planning skill，再按其中说明加载并使用 create_plan → execute_plan → submit_stage_result；submit_stage_result 会触发独立 evaluator，update_plan 只处理阻塞或跳过，不要自行判定完成。',
-    '需要审批的计划只能由宿主界面批准，模型不得自行批准或绕过 execute_plan。',
-    ...SELF_CHECK_CLAUSES,
-  ].join('\n')
-
-  return { role: 'system', content }
+  return { role: 'system', content: SELF_CHECK_CLAUSES.join('\n') }
 }
 
 export interface EnvironmentItemInput {

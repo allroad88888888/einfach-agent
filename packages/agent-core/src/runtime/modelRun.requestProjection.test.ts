@@ -119,7 +119,7 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
     }>
     expect(messages[0].role).toBe('system')
     expect(messages[0].content).not.toContain('可用 skills')
-    expect(messages[0].content).toContain('禁止凭工具名猜参数')
+    expect(messages[0].content).toContain('收尾自查')
     // stable prefix 只有固定 system、工具摘要和环境；L1 在首轮 user 之后以 timed result 到达模型。
     expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'user', 'assistant', 'tool'])
     expect(messages[1].content).toBe(buildToolManifestText(false, { registry: core.tools }))
@@ -215,7 +215,7 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
     const messages = captured.messages as Array<{ role: string; content?: string }>
     // [固定 system, 工具摘要, 自定义指令, 运行环境, user, timed 配对 assistant, timed tool]。
     expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'system', 'user', 'assistant', 'tool'])
-    expect(messages[0].content).toContain('禁止凭工具名猜参数')
+    expect(messages[0].content).toContain('收尾自查')
     expect(messages[0].content).not.toContain(marker)
     expect(messages[1].content).toBe(buildToolManifestText(false, { registry: core.tools }))
     expect(messages[2].content).toContain(marker)
