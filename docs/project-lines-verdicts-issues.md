@@ -62,6 +62,8 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：`grep -rn "compactionPlugin" packages apps tools --include='*.ts'` 零命中；
   `pnpm exec vitest run packages/agent-core` 绿；`pnpm build` 绿
 - **模型**：sonnet
+- **C1 的交接提示**：`coreInstance.dispatchTimedTools`（受限分派入口）现在全仓没有内部调用方了，
+  只剩宿主 `<domain>:<event>` 用途；`CompactionRequestDraft.dispatchTimedItems` 字段随插件一起删。
 - **状态**：TODO
 
 ### A2 · 删除 delegate_agent 同步返回分支并收 ToolContext.delegateAgents
@@ -105,7 +107,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：不再有只剩一支的 switch/if；`pnpm exec vitest run apps/web/src/main.test.tsx
   apps/web/src/main.serverHost.test.tsx` 绿
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE 6099aa5
 
 ### A5 · 删除 pnpm subagent:capacity 命令
 
@@ -156,7 +158,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：新增测试——注册到这两个桶的到点工具在 checkpoint 蒸馏前后**各触发一次**且被投影成
   timeline item；`pnpm exec vitest run packages/agent-core/src/runtime` 绿
 - **模型**：opus（时机契约，A1 依赖它）
-- **状态**：DOING
+- **状态**：DONE 0cd3200
 
 ### C2 · MCP 动态工具打 origin:'external'
 
