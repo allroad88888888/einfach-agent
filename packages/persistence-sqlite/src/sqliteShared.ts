@@ -4,7 +4,8 @@
 // 个执行面（getDb() 惰性解析一次 + 建表，memoized）。
 //
 // P1 之后本文件不再认识任何具体 SQL 上游包：执行面由宿主装配层经 configureSqlExecutor 注入
-// （桌面壳注入 Tauri SQL 插件，后续宿主注入各自的实现），本文件只按 `SqlExecutor` 契约用它。
+// （今天是 server 宿主，注入打到本机 Node 后端的 SQL 执行面；T1 之前还有桌面壳注入 Tauri SQL
+// 插件那一条，已随桌面端一起删除；后续宿主注入各自的实现），本文件只按 `SqlExecutor` 契约用它。
 //
 // 连接调优（PRAGMA，见 getDb）：journal_mode=WAL + busy_timeout=5000 + synchronous=NORMAL。
 //   动机（真实烟测日志）：底层是 sqlx **连接池**，历史实现用多次独立 db.execute

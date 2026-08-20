@@ -1,4 +1,7 @@
-// Ta-2 · SQLite 持久化实现 —— 桌面壳下替换 IndexedDB（§5 Ta-2 / C1 / TaK1）。
+// Ta-2 · SQLite 持久化实现 —— server 宿主（本机 Node 后端）下替换 IndexedDB（§5 Ta-2 / C1 / TaK1）。
+// 【T1 之后】原文写的是「桌面壳下替换」——彼时唯一用 SQLite 的宿主是桌面端（Tauri）。桌面端整条
+// 退出后，判据换成「这一态有没有 SQL 通路」：今天是 server 宿主经 host-node 打 SQL（见
+// apps/web/src/persistence/persistenceDrivers.ts），static 没有通路、仍留在 IndexedDB。
 // ---------------------------------------------------------------------------
 // 背景：持久化范围 = 会话列表（SessionMeta）+ 每会话 RecoverySnapshotV1。用 SQLite 落盘：
 //   SQL 经装配层注入的 `SqlExecutor`（P1 的 port）执行，上层逻辑（persistenceBridge / hydrate）不变。
@@ -6,7 +9,8 @@
 //     （对齐 indexedDbDriver / sessionsPersistence 的降级语义，DK2）。
 //   · history + sessions 共享同一个执行面：getDb() 惰性解析一次 + 建表（memoized）。
 //   · 本包**不做环境判定、也不认识任何具体 SQL 上游包**：由装配层决定这一态用不用 SQLite，并把
-//     对应的执行面 configureSqlExecutor 进来（桌面壳注入 Tauri SQL 插件）。
+//     对应的执行面 configureSqlExecutor 进来（今天是 server 宿主注入打到本机 Node 后端的 SQL
+//     执行面；T1 之前还有桌面壳注入 Tauri SQL 插件那一条，已随桌面端一起删除）。
 //
 // 本文件按职责拆成三份（T5，单一职责）：
 //   · sqliteShared.ts：执行面的注入槽（configureSqlExecutor）+ getDb() 惰性带起
@@ -19,7 +23,7 @@ import type { SessionsPersistence } from '@einfach-agent/core/state/persistence'
 import { resetSqliteSessionsForTest, sqliteSessions } from './sqliteSessionsPersistence'
 import { resetSqliteConnectionForTest } from './sqliteShared'
 
-// 简介：创建 SQLite 支撑的持久化器（sessions），供桌面壳（Tauri）下替换 IndexedDB。
+// 简介：创建 SQLite 支撑的持久化器（sessions），供 server 宿主（本机 Node 后端）下替换 IndexedDB。
 // 详情：方法签名与 SessionsPersistence 契约完全一致，故 persistenceBridge / hydrate / main.tsx
 //   只需按环境换注入实例，其余不动（TaK1）。
 export function createSqlitePersistence(): {

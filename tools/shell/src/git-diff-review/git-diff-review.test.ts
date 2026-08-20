@@ -166,7 +166,7 @@ describe('git_diff_review tool', () => {
 
   it('身份/runtime/schema/skill 元数据齐备', () => {
     expect(gitDiffReviewTool.name).toBe('git_diff_review')
-    expect(gitDiffReviewTool.runtime).toBe('server') // 依赖 Tauri Git（TP3）。
+    expect(gitDiffReviewTool.runtime).toBe('server') // 依赖宿主本机 Git（TP3）。
     expect(gitDiffReviewTool.inputSchema).toMatchObject({ type: 'object' })
     expect(gitDiffReviewTool.skill.content.length).toBeGreaterThan(0)
   })

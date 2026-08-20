@@ -2,15 +2,17 @@
 // ---------------------------------------------------------------------------
 // 本文件只回答「表结构与它的带起来顺序」，不回答「执行面从哪来」（那是 sqliteLogTransport.ts）。
 // 所以这里的每个函数都**收一个已就绪的 `SqlExecutor`**，自己不持有任何模块级状态——同一段
-// 建表逻辑因此在桌面（Tauri SQL 插件）、server（HTTP 打到本机 Node 后端）与进程内（CLI）三条
-// 执行面上逐字一致。
+// 建表逻辑因此在 server（HTTP 打到本机 Node 后端）与进程内（CLI）两条执行面上逐字一致（T1 之前
+// 还有桌面壳 Tauri SQL 插件那第三条执行面，已随桌面端一起删除）。
 //
 // ═══ 每一条都是**一条自包含语句** ═══
 // `SqlExecutor` 只承诺「收一条语句、把它执行掉」，没有批量、没有事务（判据全文见 core 的
 // state/persistence/sqlTransport.ts 文件头）。所以下面的 DDL 一条一个 `execute`，**不许**为了
 // 少几次往返把它们用分号拼起来：node:sqlite 的 `prepare("A; B").run()` 会回一个 `{changes:1}`
 // 的成功回执却只执行第一条（P2 实测），Node 宿主因此在执行前就把多语句判成非法输入
-// （host-node 的 statementShape.ts）。拼起来的后果是「桌面上跑得通、换 server 宿主整段建表失败」。
+// （host-node 的 statementShape.ts）。P2 当年拼起来的后果是「桌面壳（Tauri）跑得通、换 server
+// 宿主整段建表失败」——桌面端已随 T1 删除，但这条判据仍然成立：任何拼接写法都得先过 Node 宿主
+// 这道闸，闸门本身与桌面壳的存亡无关。
 //
 // ═══ 三段 best-effort，各自的理由不同 ═══
 // ① PRAGMA 调优：失败只是少了调优，读写不受影响。三条都可能**返回行**（journal_mode /
@@ -77,9 +79,10 @@ const CREATE_INDEX_STATEMENTS = [
  * 本函数只在**本进程第一条新 span 写入之前**跑一次（由 sqliteLogTransport.ts 的 memo 保证），
  * 因此只会收掉数据库里遗留的旧行。
  *
- * `$1` 在语句里出现两次而只传一个参数：这是**有意**的，两条执行面都兑现得了——桌面侧 sqlx 与
- * Node 侧的具名绑定都按「名字」而不是「位置」绑（host-node 的 nodeSqliteExecutor.ts 文件头点名
- * 了这条语句）。
+ * `$1` 在语句里出现两次而只传一个参数：这是**有意**的——node:sqlite 的具名绑定按「名字」而不是
+ * 「位置」绑，同一个 `$1` 只需给一次值（host-node 的 nodeSqliteExecutor.ts 文件头点名了这条语句）。
+ * T1 之前这条还要同时对齐桌面壳（Tauri）sqlx 的具名绑定；桌面端已随 T1 删除，写法本身不必再改，
+ * 只是「两条执行面都兑现得了」收窄成了「现在只有 node:sqlite 这一条」。
  */
 const RECOVER_RUNNING_SPANS = `UPDATE trace_spans
      SET status = 'cancelled',

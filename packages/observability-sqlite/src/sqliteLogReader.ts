@@ -1,9 +1,10 @@
 // SQLite trace driver 的读取端：把两张表读回一份 TraceLogSnapshot（TraceViewer 的数据源）。
 // ---------------------------------------------------------------------------
 // P4 之后本文件不再认识任何具体 SQL 上游包：执行面由装配层经 `configureTraceSqlExecutor` 注入，
-// 这里只按 `SqlExecutor` 契约用它。于是同一份读取逻辑在桌面（Tauri SQL 插件）与 server 宿主
-// （HTTP 打到本机 Node 后端）上是同一段代码——「trace viewer 在 server 宿主下能读到 span」因此
-// 不靠这里多一条分支，靠的是执行面被换掉。
+// 这里只按 `SqlExecutor` 契约用它。于是同一份读取逻辑在 server 宿主（HTTP 打到本机 Node 后端）与
+// CLI（进程内 node:sqlite 执行面）上是同一段代码——「trace viewer 在 server 宿主下能读到 span」
+// 因此不靠这里多一条分支，靠的是执行面被换掉。（T1 之前这里还有桌面壳注入 Tauri SQL 插件的第三条
+// 执行面，已随桌面端一起删除。）
 //
 // 取的是 `loadTraceSqlExecutor()` 而**不是** `getTraceDb()`：后者会顺带建表并把遗留的 running
 // span 收为 cancelled，而打开 TraceViewer 是只读动作（理由见 sqliteLogTransport.ts 的文件头）。

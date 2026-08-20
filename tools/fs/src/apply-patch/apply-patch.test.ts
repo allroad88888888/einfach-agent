@@ -285,7 +285,7 @@ describe('apply_patch tool', () => {
 
   it('身份/runtime/schema/skill 元数据齐备', () => {
     expect(applyPatchTool.name).toBe('apply_patch')
-    expect(applyPatchTool.runtime).toBe('server') // 依赖 Tauri 文件系统（TP3）。
+    expect(applyPatchTool.runtime).toBe('server') // 依赖宿主本机文件系统（TP3）。
     expect(applyPatchTool.inputSchema).toMatchObject({ required: ['operations'] })
     expect(applyPatchTool.skill.content.length).toBeGreaterThan(0)
   })

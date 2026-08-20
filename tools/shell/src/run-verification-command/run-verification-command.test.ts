@@ -87,7 +87,7 @@ describe('run_verification_command tool', () => {
     const runShell = vi.fn(async (input: ShellCommandInput) => makeShellResult(input, {
       shell: 'unavailable',
       exitCode: 1,
-      stderr: 'Shell command execution is only available in the Tauri desktop runtime',
+      stderr: 'Shell command execution requires a host bridge with local capabilities',
     }))
     const { ctx } = makeCtx({ runShell })
 

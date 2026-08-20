@@ -27,11 +27,12 @@
 
 export const HEALTH_PATH = '/api/health'
 
-/** 判别用的固定标识。`einfach-agent` 的 Node HTTP 外壳，与 Tauri 原生宿主、纯静态托管三选一。 */
+/** 判别用的固定标识。`einfach-agent` 的 Node HTTP 外壳，与纯静态托管二选一。 */
 export const SERVICE_IDENTIFIER = 'einfach-agent'
 // 刻意不叫 `server`：core 里 `runtime: 'server'` 已经表示「需要本机能力的那类工具」，
 // 同一个词在同一个仓库里指两件事迟早出事。这里说的是**哪一种宿主实现**。
-// B1 的三态 `'tauri' | 'server' | 'static'` 中的 `'server'`，判据就是看到这个值。
+// B1 的两态 `'server' | 'static'`（`resolveHost.ts` 的 `HostKind`）中的 `'server'`，判据就是看到
+// 这个值。T1 之前还有第三态 `'tauri'`（桌面壳原生宿主），已随桌面端一起删除。
 export const HOST_IDENTIFIER = 'node-server'
 
 /**

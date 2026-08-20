@@ -124,7 +124,7 @@ function hasWorkspaceWrite(ctx: ToolContext): ctx is WorkspaceWriteContext {
 
 export const writeFileTool: Tool = {
   name: 'write_file',
-  runtime: 'server', // 依赖 Tauri 文件系统（ctx.writeWorkspaceFile），web 下不进 manifest（TP3）。
+  runtime: 'server', // 依赖宿主本机文件系统（ctx.writeWorkspaceFile），没有本机能力桥（hasHostBridge()）时不进 manifest（TP3）。
   replayUnsafe: true,
   skill: {
     description: '在当前 workspace 内写入文件（文本或 base64 二进制）。',

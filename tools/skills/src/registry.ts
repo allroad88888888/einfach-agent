@@ -14,7 +14,8 @@
 // 阶段 1（docs/skills-tree-blueprint.md「数据模型」）：skill 除正文（L2）外可携带 L3 资源树。
 // web 端资源是编译期 `?raw` 打包出的 Record<string, string>——没有真实文件系统，键即完整逻辑
 // 相对路径，按 Record 精确匹配，不做任何路径解析/规范化（无穿越面，详见 readSkillResource
-// 注释）。Tauri 真实文件系统 skills 目录是阶段 4 的范畴，不在本文件内。
+// 注释）。宿主真实文件系统 skills 目录是阶段 4 的范畴（判据早从「是不是 Tauri」换成
+// hasHostBridge()，见 project-skills-blueprint.md 开头口径说明），不在本文件内。
 //
 // 阶段 4（project-skills-blueprint.md）：buildSkillManifestText 新增可选 snapshot 入参，
 // 无快照/空快照时输出与今天逐字相同（web 端回归护栏）。项目段由调用方传入，本模块只负责拼。
@@ -276,7 +277,8 @@ export type SkillResourceResult =
  * 符号链接语义）。这是有意设计：web 端资源在编译期由 `?raw` 打包进 Record<string, string>，
  * 不存在真实文件系统，因此天然没有路径穿越面；对键做「规范化」在这里没有安全含义，只会引入
  * 虚假的复杂度和不一致的匹配行为。真实文件系统语义（canonicalize + 根目录约束）留给阶段 4
- * （Tauri 文件系统 skills 目录），与本函数无关。
+ * （宿主文件系统 skills 目录；判据早已从「是不是 Tauri」换成 hasHostBridge()，见
+ * docs/project-skills-blueprint.md 开头的口径更新说明），与本函数无关。
  */
 export function readSkillResource(name: string, resourcePath: string): SkillResourceResult {
   const source = skillSources.find((skill) => skill.name === name)

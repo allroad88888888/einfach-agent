@@ -224,7 +224,7 @@ describe('search_files tool', () => {
 
   it('身份/runtime/schema/skill 元数据齐备', () => {
     expect(searchFilesTool.name).toBe('search_files')
-    expect(searchFilesTool.runtime).toBe('server') // 依赖 Tauri 文件系统（TP3）。
+    expect(searchFilesTool.runtime).toBe('server') // 依赖宿主本机文件系统（TP3）。
     expect(searchFilesTool.inputSchema).toMatchObject({ required: ['query'] })
     expect(searchFilesTool.skill.content.length).toBeGreaterThan(0)
   })

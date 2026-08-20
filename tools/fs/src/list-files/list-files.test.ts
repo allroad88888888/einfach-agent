@@ -141,7 +141,7 @@ describe('list_files tool', () => {
 
   it('身份/runtime/schema/skill 元数据齐备', () => {
     expect(listFilesTool.name).toBe('list_files')
-    expect(listFilesTool.runtime).toBe('server') // 依赖 Tauri 文件系统（TP3）。
+    expect(listFilesTool.runtime).toBe('server') // 依赖宿主本机文件系统（TP3）。
     expect(listFilesTool.inputSchema).toMatchObject({ properties: { maxEntries: { maximum: 2_000 } } })
     expect(listFilesTool.skill.content.length).toBeGreaterThan(0)
   })

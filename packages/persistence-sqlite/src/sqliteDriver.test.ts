@@ -144,7 +144,7 @@ describe('sqliteDriver — sessions', () => {
 
   it('best-effort：底层抛错 → loadSessions 退化为 []、saveSessions 不抛', async () => {
     loadImpl = async () => {
-      throw new Error('no tauri runtime')
+      throw new Error('no sqlite runtime')
     }
     const { sessions } = createSqlitePersistence()
     await expect(sessions.saveSessions([meta('a')])).resolves.toBeUndefined()

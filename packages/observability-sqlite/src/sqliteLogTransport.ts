@@ -1,8 +1,9 @@
 // 本包那条 SQL 执行面：装配层从哪注入它，以及惰性把它（和表结构）带起来
 // ---------------------------------------------------------------------------
 // P4 之后本包**不再认识任何具体 SQL 上游包**：执行面由宿主装配层经 `configureTraceSqlExecutor`
-// 注入，本包只按 P1 的 `SqlExecutor` 契约用它（桌面壳注入 Tauri SQL 插件、server 宿主注入打到
-// 本机 Node 后端的 HTTP 执行面、CLI 注入进程内的 node:sqlite 执行面）。范式与逐条理由同
+// 注入，本包只按 P1 的 `SqlExecutor` 契约用它（今天是 server 宿主注入打到本机 Node 后端的 HTTP
+// 执行面、CLI 注入进程内的 node:sqlite 执行面；T1 之前还有桌面壳注入 Tauri SQL 插件那一条，已随
+// 桌面端一起删除）。范式与逐条理由同
 // packages/persistence-sqlite/src/sqliteShared.ts（P1）与 core 的 state/persistence/sqlTransport.ts。
 //
 // ═══ 为什么注入面不叫 `configureSqlExecutor` ═══
@@ -16,9 +17,8 @@
 //   · `getTraceDb()`          —— 已建过表的执行面，给**写入端**（sqliteLogDriver.ts）。
 //   · `loadTraceSqlExecutor()` —— 只解析、不建表，给**读取端**（sqliteLogReader.ts）。
 // 读取端刻意不走建表那条路：那条路末尾有一句「把遗留的 running span 收为 cancelled」的 UPDATE，
-// 而打开 TraceViewer 是只读动作，让它顺手改写数据库是实打实的行为变更（桌面侧今天也不会——
-// reader 那边是另一次裸 `Database.load`，从不建表）。表还不存在时 SELECT 会失败，读取端按既有
-// best-effort 收成空集，与 P4 之前逐字一致。
+// 而打开 TraceViewer 是只读动作，让它顺手改写数据库是实打实的行为变更。表还不存在时 SELECT 会
+// 失败，读取端按既有 best-effort 收成空集，与 P4 之前逐字一致。
 //
 // ═══ 未注入时以 rejection 失败，不给兜底实现 ═══
 // 形状与「宿主没有 SQL 运行时」逐字一致：都是本 promise reject。于是 driver 那两条 `catch` 的

@@ -142,7 +142,7 @@ describe('shell_linux tool', () => {
 
   it('身份/runtime/schema/skill 元数据齐备', () => {
     expect(shellLinuxTool.name).toBe('shell_linux')
-    expect(shellLinuxTool.runtime).toBe('server') // 依赖 Tauri 本机 shell（TP3）。
+    expect(shellLinuxTool.runtime).toBe('server') // 依赖宿主本机 shell（TP3）。
     expect(shellLinuxTool.inputSchema).toMatchObject({ required: ['command'] })
     expect(shellLinuxTool.skill.content.length).toBeGreaterThan(0)
   })

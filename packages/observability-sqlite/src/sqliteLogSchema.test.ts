@@ -4,8 +4,9 @@ import { executedSql, indexOfExecuted, makeFakeExecutor, selectedSql } from './s
 
 describe('bringUpTraceSchema', () => {
   // P2 实测过的坑：node:sqlite 的 `prepare("A; B").run()` 回 `{changes:1}` 却只执行第一条。
-  // Node 宿主因此在执行前就把多语句判成非法输入，桌面侧却照跑——把 DDL 拼起来省往返的后果是
-  // 「桌面能跑、换 server 宿主整段建表失败」。这条判据把它钉死在包内。
+  // Node 宿主因此在执行前就把多语句判成非法输入，当年的桌面壳（Tauri）却照跑——把 DDL 拼起来
+  // 省往返的后果是「桌面能跑、换 server 宿主整段建表失败」。桌面端已随 T1 删除，但闸门本身与它
+  // 的存亡无关：这条判据把「不许分号拼接」钉死在包内，本测试守的正是这一条。
   it('每次调用都只带一条自包含语句（没有分号拼接）', async () => {
     const db = makeFakeExecutor()
     await bringUpTraceSchema(db)

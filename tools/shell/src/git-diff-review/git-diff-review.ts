@@ -163,7 +163,7 @@ function getWorkspaceDiffFromContext(ctx: ToolContext): GetWorkspaceDiff | undef
 export const gitDiffReviewTool: Tool = {
   name: 'git_diff_review',
   execution: { mode: 'parallel', effectKeys: ['workspace:read', 'git:read'] },
-  runtime: 'server', // 依赖 Tauri Git（ctx.getWorkspaceDiff），web 下不进 manifest（TP3）。
+  runtime: 'server', // 依赖宿主本机 Git（ctx.getWorkspaceDiff），没有本机能力桥（hasHostBridge()）时不进 manifest（TP3）。
   skill: {
     description: '只读检查当前 Git 工作区状态、变更文件、diff stat 和 diff 内容。',
     triggers: ['git', 'diff', 'review', '提交前检查', '变更检查'],

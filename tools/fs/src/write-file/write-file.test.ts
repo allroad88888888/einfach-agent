@@ -421,7 +421,7 @@ describe('write_file tool', () => {
 
   it('身份/runtime/schema/skill 元数据齐备', () => {
     expect(writeFileTool.name).toBe('write_file')
-    expect(writeFileTool.runtime).toBe('server') // 依赖 Tauri 文件系统（TP3）。
+    expect(writeFileTool.runtime).toBe('server') // 依赖宿主本机文件系统（TP3）。
     expect(writeFileTool.inputSchema).toMatchObject({
       required: ['path', 'content'],
       properties: {

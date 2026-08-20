@@ -9,8 +9,8 @@ import { scanProjectSkills } from './projectSkillsLoader'
  * runtime/commands，否则会让测试文件的精确 vi.mock 在提升前失效。
  *
  * 用户主目录同样惰性解析、且只解析一次：它在一次进程生命周期内不会变，而每次切换 workspace
- * 都会重新扫描——每次都去问一遍宿主纯属白费一次 IPC。解析失败/非 Tauri 时是 undefined，
- * 扫描方据此只扫工作区。
+ * 都会重新扫描——每次都去问一遍宿主纯属白费一次 IPC。解析失败/没有本机能力桥（`hasHostBridge()`
+ * 为假）时是 undefined，扫描方据此只扫工作区。
  */
 export function buildProjectSkillsProvider(): ProjectSkillsProvider {
   let bridgePromise: Promise<ProjectSkillsLoaderBridge | undefined> | undefined

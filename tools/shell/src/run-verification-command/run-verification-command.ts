@@ -37,7 +37,7 @@ function toErrorMessage(error: unknown): string {
 
 export const runVerificationCommandTool: Tool = {
   name: 'run_verification_command',
-  runtime: 'server', // 依赖 Tauri 本机 shell（ctx.runShell），web 下不进 manifest（TP3）。
+  runtime: 'server', // 依赖宿主本机 shell（ctx.runShell），没有本机能力桥（hasHostBridge()）时不进 manifest（TP3）。
   replayUnsafe: true,
   skill: {
     description: '执行验收所需的本机 shell 命令，为验收标准取得真实执行证据。',
@@ -92,7 +92,8 @@ export const runVerificationCommandTool: Tool = {
         timeoutMs: TIMEOUT_MS,
         maxOutputChars: MAX_OUTPUT_CHARS,
       })
-      // web（无 Tauri 桥）与桥调用失败都会回 shell:'unavailable'。那不是"命令失败"这条证据，
+      // 没有本机能力桥（static 宿主，hasHostBridge() 为假）与桥调用失败都会回 shell:'unavailable'。
+      // 那不是"命令失败"这条证据，
       // 必须显性区分：否则评估器会把"根本没跑成"读成"验收标准不成立"。
       if (result.shell === 'unavailable') {
         return {

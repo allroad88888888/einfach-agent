@@ -230,7 +230,7 @@ describe('shell_macos tool', () => {
 
   it('身份/runtime/schema/skill 元数据齐备', () => {
     expect(shellMacosTool.name).toBe('shell_macos')
-    expect(shellMacosTool.runtime).toBe('server') // 依赖 Tauri 本机 shell（TP3）。
+    expect(shellMacosTool.runtime).toBe('server') // 依赖宿主本机 shell（TP3）。
     expect(shellMacosTool.inputSchema).toMatchObject({ required: ['command'] })
     expect(shellMacosTool.skill.content.length).toBeGreaterThan(0)
   })

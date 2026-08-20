@@ -90,7 +90,7 @@ function getRgSearchFromContext(ctx: ToolContext): RgSearchWorkspace | undefined
 export const rgSearchTool: Tool = {
   name: 'rg_search',
   execution: { mode: 'parallel', effectKeys: ['workspace:read'] },
-  runtime: 'server', // 依赖 Tauri + ripgrep（ctx.rgSearchWorkspace），web 下不进 manifest（TP3）。
+  runtime: 'server', // 依赖宿主本机 ripgrep（ctx.rgSearchWorkspace），没有本机能力桥（hasHostBridge()）时不进 manifest（TP3）。
   skill: {
     description: '用 ripgrep 执行高性能代码搜索；Auto 模式也可搜索 workspace 外路径。',
     triggers: ['rg', 'ripgrep', 'grep', '搜索代码', '代码搜索'],

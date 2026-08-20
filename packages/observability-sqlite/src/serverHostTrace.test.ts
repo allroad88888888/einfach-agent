@@ -10,10 +10,12 @@
 // PRAGMA 走 select），本文件不重复；两者合起来才是整条链。
 //
 // ═══ 为什么这条测试不能用替身执行面代替 ═══
-// 替身什么 SQL 都收。而 server 宿主那条路上有一道桌面侧**没有**的闸门：host-node 在执行前会扫
-// 每条 SQL（`statementShape.ts`），多语句、事务控制语句、`$N` 个数与 params 对不上，一律当场
-// 拒绝。本包的建表、六条 ALTER、六条索引、那句 `$1` 出现两次的恢复 UPDATE，以及两条 INSERT，
-// 必须条条过得了这道闸——过不了的症状是「桌面上 trace 好好的，浏览器版一条 span 都没有」。
+// 替身什么 SQL 都收。而 server 宿主那条路上有一道 host-node 独有的闸门：执行前会扫每条 SQL
+// （`statementShape.ts`），多语句、事务控制语句、`$N` 个数与 params 对不上，一律当场拒绝。
+// 本包的建表、六条 ALTER、六条索引、那句 `$1` 出现两次的恢复 UPDATE，以及两条 INSERT，必须
+// 条条过得了这道闸——当年桌面壳（Tauri）的 sqlx 没有这道闸，过不了的症状就是「桌面上 trace 好好
+// 的，换 server 宿主一条 span 都建不出来」；桌面端已随 T1 删除，但这道闸依旧是唯一的真相来源，
+// 替身测不出闸门拒收，只有真执行面才能。
 //
 // ═══ 跨包 import 的说明 ═══
 // 本文件是**测试**，`@einfach-agent/host-node` 只在测试期出现（check-boundaries 的
@@ -102,8 +104,10 @@ describe('server 宿主的 trace 通路', () => {
       .resolves.toEqual([])
   })
 
-  // 桌面版把 trace 与会话写进同一个库文件；两个宿主要看到同一份数据，路径就得是同一个。
-  it('落在桌面版同一个库文件上', async () => {
+  // 浏览器（server 宿主）与 CLI 共用同一份库文件（判据同 persistenceDrivers.ts）：两条路径要看到
+  // 同一份 trace 数据，落地点就得是同一个。（当年桌面壳也遵循这条——把 trace 与会话写进同一个库
+  // 文件；桌面端已随 T1 删除，但「两条路径共享一份库文件」这条判据延续到了 server 与 CLI 之间。）
+  it('落在 server／CLI 共用的那个库文件上', async () => {
     await createSqliteLogDriver().writeSpan(SPAN)
     const db = await createNodeSqlExecutorLoader({ homeDir: home }, 'observability')()
 

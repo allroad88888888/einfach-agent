@@ -31,8 +31,8 @@ export function resetSqliteSessionsForTest(): void {
 export const sqliteSessions: SessionsPersistence = {
   // 单行 blob 落盘：把**整个** SessionMeta[] 序列化进固定 id='__all__' 的一行。
   //
-  // 为什么不再用 BEGIN/DELETE/INSERT/COMMIT 事务（关键修复）：tauri-plugin-sql 底层是 sqlx
-  //   连接池，每次 db.execute 可能落到**不同连接**上 —— BEGIN 与 COMMIT 不在同一连接，事务不成立，
+  // 为什么不再用 BEGIN/DELETE/INSERT/COMMIT 事务（关键修复）：早年桌面壳（Tauri，已随 T1／
+  //   e52c31d 删除）下 tauri-plugin-sql 底层是 sqlx 连接池，每次 db.execute 可能落到**不同连接**上 —— BEGIN 与 COMMIT 不在同一连接，事务不成立，
   //   还会把打开的写事务遗留在某条池化连接上长期持有写锁，别的写等到 busy_timeout 才超时
   //   （真实日志：INSERT OR REPLACE INTO sessions … elapsed=5.21s rows_affected=0）。ROLLBACK 同理无效。
   //   改用**单条** upsert：SQLite 单语句本身即原子（要么整行写入、要么完全不写），无需任何事务包裹，

@@ -21,7 +21,8 @@ import type { ToolCallTiming } from './toolCallTiming'
  * tool 的执行位置：
  *   · internal —— 纯内置逻辑，任意环境可用。
  *   · browser  —— 浏览器侧副作用（渲卡片 / 存产物）。
- *   · server   —— 依赖 Tauri 原生能力（本机 shell / 文件系统 / git）；web 下不可用、不进 manifest（TP3）。
+ *   · server   —— 依赖宿主本机能力桥（hasHostBridge()，今天是 server 宿主／本机 Node 后端；
+ *     T1 之前唯一来自已删除的桌面壳 Tauri）；没有桥时不可用、不进 manifest（TP3）。
  */
 export type ToolRuntime = 'internal' | 'browser' | 'server'
 
