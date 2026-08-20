@@ -183,9 +183,10 @@ export interface ToolContext {
     userPrompt: string
     maxOutputTokens?: number
   }): Promise<{ content: string; model: string }>
-  /** 启动树形 headless 子 agent；由 root runtime 注入，普通工具只能经该能力派活。 */
-  delegateAgents?(input: DelegateAgentInput): Promise<DelegateAgentBatchResult>
-  /** 非阻塞启动子 agent；立即返回可观察、可显式等待的执行句柄。 */
+  /**
+   * 启动树形 headless 子 agent；由 root runtime 注入，普通工具只能经该能力派活。
+   * 只有非阻塞这一条路：调用方拿到执行句柄，批次结果经 observe/join 取回。
+   */
   spawnAgents?(input: DelegateAgentInput, options?: SpawnAgentsOptions): ExecutionHandle
   /** 读取后台执行节点，不等待它完成。 */
   observeExecution?(executionId: string): ExecutionObservation

@@ -52,7 +52,7 @@ describe('delegation capability assembly', () => {
     seedRunningSession(core)
     const ctx = delegateContext(core)
 
-    expect(ctx.delegateAgents).toBeUndefined()
+    expect(ctx.spawnAgents).toBeUndefined()
     await expect(core.tools.run('delegate_agent', {
       children: [{ objective: '验证未注入能力' }],
     }, ctx)).resolves.toEqual({

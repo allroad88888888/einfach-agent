@@ -112,8 +112,6 @@ export function attachDelegationCapabilities(
     return callContext
   }
 
-  ctx.delegateAgents = (input) =>
-    delegateRuntime.delegateAgents(input, buildDelegateCallContext(input))
   // 只在 runtime 真的实现时才挂：否则 `typeof ctx.runLowCostExtraction === 'function'`
   // 恒真，工具那条「永久不可用」分支变成死代码，永久性失败会被报成可重试。
   if (delegateRuntime.runLowCostExtraction) {

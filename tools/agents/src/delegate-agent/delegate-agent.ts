@@ -89,11 +89,6 @@ function toErrorMessage(error: unknown): string {
   return 'delegate_agent failed'
 }
 
-function getDelegateAgents(ctx: ToolContext): ToolContext['delegateAgents'] {
-  const candidate = (ctx as { delegateAgents?: unknown }).delegateAgents
-  return typeof candidate === 'function' ? candidate.bind(ctx) : undefined
-}
-
 function getSpawnAgents(ctx: ToolContext): ToolContext['spawnAgents'] {
   const candidate = (ctx as { spawnAgents?: unknown }).spawnAgents
   return typeof candidate === 'function' ? candidate.bind(ctx) : undefined
@@ -146,8 +141,7 @@ export const delegateAgentTool: Tool = {
     }
 
     const spawnAgents = getSpawnAgents(ctx)
-    const delegateAgents = getDelegateAgents(ctx)
-    if (!spawnAgents && !delegateAgents) {
+    if (!spawnAgents) {
       return {
         ok: false,
         error: '子 Agent 委派能力不可用：当前运行环境未注入委派执行器。',
@@ -161,22 +155,8 @@ export const delegateAgentTool: Tool = {
       // Presence matters for inherited tree budgets/profiles: an omitted nested option inherits,
       // while an explicit option may only narrow. Do not materialize normalization defaults here.
       const input = inputPreservingOptionalPresence(args, normalized)
-      if (spawnAgents) {
-        return { ok: true, data: spawnAgents(input) }
-      }
-      const result = await delegateAgents!(input)
-      if (result.status === 'failed' || result.status === 'cancelled') {
-        return {
-          ok: false,
-          error: `delegated agent batch ${result.status}: ${result.summary.done}/${result.summary.total} completed`,
-          code: result.status === 'failed'
-            ? 'AGENT_DELEGATION_FAILED'
-            : 'AGENT_DELEGATION_CANCELLED',
-          retryable: false,
-          details: result,
-        }
-      }
-      return { ok: true, data: result }
+      // 只有非阻塞一条路：立刻返回执行句柄，批次结果经 observe/join 取回。
+      return { ok: true, data: spawnAgents(input) }
     } catch (error) {
       return {
         ok: false,

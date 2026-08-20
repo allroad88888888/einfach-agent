@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('./workspaceWrite', () => ({ writeWorkspaceFile: vi.fn() }))
 
+import type { ExecutionJoinResult } from '../execution/types'
 import { rootStore, sessionsAtom } from '../state/rootStore'
 import { setRun } from '../state/sessionWriters'
 import type {
@@ -76,10 +77,12 @@ function contextWriting(input: { path: string; content: string; mode?: SubagentA
   }
 }
 
+// 委派只有 spawn 一条路（同步等结果的分支已删），所以归档写入的异常不再从这里抛出，
+// 而是被执行节点收成 failed + error —— 断言跟着改成看 join 结果。
 async function delegate(
   runtime: DelegateAgentRuntime,
   opts: { signal?: AbortSignal; runId?: string; toolName?: string } = {},
-): Promise<void> {
+): Promise<ExecutionJoinResult> {
   seedRunningSession()
   const ctx = buildToolContext({
     sessionId: 's1',
@@ -89,7 +92,8 @@ async function delegate(
     toolName: opts.toolName ?? 'delegate_agent',
     delegateRuntime: runtime,
   })
-  await ctx.delegateAgents!({ children: [{ objective: 'write archive' }] })
+  const handle = ctx.spawnAgents!({ children: [{ objective: 'write archive' }] })
+  return ctx.joinExecution!(handle.executionId)
 }
 
 describe('toolContext 子 Agent 归档写入', () => {
@@ -102,7 +106,7 @@ describe('toolContext 子 Agent 归档写入', () => {
     })
     const first = contextWriting({ path: '.archive/tree.json', content: 'first' })
 
-    await delegate(first.runtime)
+    await expect(delegate(first.runtime)).resolves.toMatchObject({ status: 'succeeded' })
 
     expect(first.result()).toMatchObject({ ok: true, created: true })
     // 关键：首次落盘也只有一次写调用。旧实现要先 overwrite 失败再 create。
@@ -120,7 +124,7 @@ describe('toolContext 子 Agent 归档写入', () => {
 
     vi.mocked(writeWorkspaceFile).mockClear()
     const second = contextWriting({ path: '.archive/tree.json', content: 'second' })
-    await delegate(second.runtime)
+    await expect(delegate(second.runtime)).resolves.toMatchObject({ status: 'succeeded' })
 
     expect(second.result()).toMatchObject({ ok: true, overwritten: true })
     expect(writeWorkspaceFile).toHaveBeenCalledOnce()
@@ -141,9 +145,10 @@ describe('toolContext 子 Agent 归档写入', () => {
     )
     const attempt = contextWriting({ path: '.archive/events.jsonl', content: '{}\n', mode: 'append' })
 
-    await expect(delegate(attempt.runtime)).rejects.toThrow(
-      'Subagent archive write failed (append) for ".archive/events.jsonl": 写入 workspace 文件：当前宿主未提供命令桥',
-    )
+    await expect(delegate(attempt.runtime)).resolves.toMatchObject({
+      status: 'failed',
+      error: 'Subagent archive write failed (append) for ".archive/events.jsonl": 写入 workspace 文件：当前宿主未提供命令桥',
+    })
     expect(writeWorkspaceFile).toHaveBeenCalledOnce()
   })
 
@@ -158,7 +163,8 @@ describe('toolContext 子 Agent 归档写入', () => {
     )
     const attempt = contextWriting({ path: '.archive/evaluator.json', content: '{}', mode: 'overwrite' })
 
-    await expect(delegate(attempt.runtime, { toolName: 'submit_stage_result' })).resolves.toBeUndefined()
+    await expect(delegate(attempt.runtime, { toolName: 'submit_stage_result' }))
+      .resolves.toMatchObject({ status: 'succeeded' })
     expect(attempt.result()).toMatchObject({
       ok: true,
       skipped: true,
@@ -179,9 +185,10 @@ describe('toolContext 子 Agent 归档写入', () => {
     )
     const attempt = contextWriting({ path: '.archive/tree.json', content: '{}' })
 
-    await expect(delegate(attempt.runtime)).rejects.toThrow(
-      'Subagent archive write failed (upsert) for ".archive/tree.json": permission denied',
-    )
+    await expect(delegate(attempt.runtime)).resolves.toMatchObject({
+      status: 'failed',
+      error: 'Subagent archive write failed (upsert) for ".archive/tree.json": permission denied',
+    })
     expect(writeWorkspaceFile).toHaveBeenCalledOnce()
   })
 
@@ -191,7 +198,8 @@ describe('toolContext 子 Agent 归档写入', () => {
     controller.abort()
     const attempt = contextWriting({ path: '.archive/events.jsonl', content: '{}\n', mode: 'append' })
 
-    await expect(delegate(attempt.runtime, { signal: controller.signal })).resolves.toBeUndefined()
+    await expect(delegate(attempt.runtime, { signal: controller.signal }))
+      .resolves.toMatchObject({ status: 'succeeded' })
     expect(writeWorkspaceFile).toHaveBeenCalledOnce()
   })
 
@@ -199,7 +207,10 @@ describe('toolContext 子 Agent 归档写入', () => {
     vi.mocked(writeWorkspaceFile).mockImplementation(async (input) => writeResult(input))
     const attempt = contextWriting({ path: '.archive/events.jsonl', content: '{}\n', mode: 'append' })
 
-    await expect(delegate(attempt.runtime, { runId: 'old-run' })).rejects.toThrow('stale')
+    await expect(delegate(attempt.runtime, { runId: 'old-run' })).resolves.toMatchObject({
+      status: 'failed',
+      error: 'stale',
+    })
     expect(writeWorkspaceFile).not.toHaveBeenCalled()
   })
 })

@@ -44,7 +44,7 @@
 //     barrel 里等复核：S11f 逐条 grep 复核确认消费方
 //     只剩 core 内的相对导入（`delegationRuntime` / `modelSelection` / `delegationBatch` /
 //     `childAgentLoop` / `childAgentToolCalls` / `runtimeState` 与同目录测试），且都不是任何
-//     已导出签名的构成类型（`DelegationRuntime.delegateAgents`、`ToolContext.delegateAgents`
+//     已导出签名的构成类型（`DelegationRuntime.delegateAgents`、`ToolContext.spawnAgents`
 //     写的是内联方法签名，不引用 `DelegateAgents` 别名），故一并从公开面删除。
 //   · `types.ts` 里 `SubagentToolProfile`、`SubagentModelTier`、`SubagentTaskCategory`、
 //     `SubagentRiskLevel`、`SubagentSkillPromotion`、`SubagentSkillSource`、

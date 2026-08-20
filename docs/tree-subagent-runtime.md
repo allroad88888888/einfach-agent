@@ -128,7 +128,7 @@ UI 中的 Promote/Archive 确认只生成上述审计 CLI，并明确标记“�
 ## 派发流程
 
 1. root 模型通过 lazy tools 请求并调用 `delegate_agent`。
-2. `delegate_agent` 归一化输入，调用 `ToolContext.delegateAgents`。
+2. `delegate_agent` 归一化输入，调用 `ToolContext.spawnAgents`，立刻拿到执行句柄返回（批次结果经 observe/join 取回）。
 3. root `modelRun` 为当前 run 创建 `DelegateAgentRuntime`，透传模型设置、apiKey、signal、fetch。
 4. runtime 初始化 `.webAgent-archive/conversations/<conversationId>/runs/<runId>/`。
 5. scheduler 为同一批 children 同步预留 path。

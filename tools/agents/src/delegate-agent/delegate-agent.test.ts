@@ -73,26 +73,14 @@ describe('delegate_agent tool', () => {
     })
   })
 
-  it('normalizes input and delegates through ToolContext', async () => {
-    const delegateAgents = vi.fn(async (input) => ({
-      treeId: 'run',
-      conversationId: 's',
-      runId: 'run',
-      parentPath: 'root',
-      strategy: input.strategy ?? 'parallel_wait_all',
-      status: 'done' as const,
-      summary: { total: 0, done: 0, failed: 0, cancelled: 0 },
-      cacheBasePath: '.webAgent-archive/conversations/s/runs/run',
-      archiveBasePath: '.webAgent-archive/conversations/s/runs/run',
-      eventLog: '.webAgent-archive/conversations/s/runs/run/events.jsonl',
-      skillFiles: [],
-      skillIds: [],
-      budgetUsage: {
-        totalNodes: { used: 1, limit: 64 },
-        modelCalls: { used: 0, limit: 128 },
-      },
-      children: [],
-    }))
+  it('normalizes input and spawns through ToolContext, returning the handle immediately', async () => {
+    const handle = {
+      executionId: 'exec-1',
+      graphId: 'run',
+      nodeIds: ['exec-1'],
+      status: 'scheduled' as const,
+    }
+    const spawnAgents = vi.fn(() => handle)
     const progress = vi.fn()
     const result = await delegateAgentTool.execute(
       {
@@ -107,10 +95,10 @@ describe('delegate_agent tool', () => {
         maxConcurrent: 2,
         confirmedTools: ['write_file'],
       },
-      makeCtx({ delegateAgents, progress }),
+      makeCtx({ spawnAgents, progress }),
     )
 
-    expect(delegateAgents).toHaveBeenCalledWith({
+    expect(spawnAgents).toHaveBeenCalledWith({
       children: [{
         objective: 'inspect runtime',
         mode: 'explore',
@@ -123,35 +111,24 @@ describe('delegate_agent tool', () => {
       confirmedTools: ['write_file'],
     })
     expect(progress).toHaveBeenCalledWith('派发 1 个子 agent')
-    expect(result).toMatchObject({ ok: true })
+    expect(result).toEqual({ ok: true, data: handle })
   })
 
-  it('surfaces a terminal failed batch as an outer tool failure', async () => {
-    const delegateAgents = vi.fn(async () => ({
-      treeId: 'run',
-      conversationId: 's',
-      runId: 'run',
-      parentPath: 'root',
-      strategy: 'parallel_wait_all' as const,
-      status: 'failed' as const,
-      summary: { total: 1, done: 0, failed: 1, cancelled: 0 },
-      cacheBasePath: '.webAgent-archive/conversations/s/runs/run',
-      archiveBasePath: '.webAgent-archive/conversations/s/runs/run',
-      eventLog: '.webAgent-archive/conversations/s/runs/run/events.jsonl',
-      skillFiles: [],
-      skillIds: [],
-      children: [],
-    }))
+  it('surfaces a failure to spawn as an outer tool failure', async () => {
+    const spawnAgents = vi.fn(() => {
+      throw new Error('no execution runtime')
+    })
 
     const result = await delegateAgentTool.execute(
       { children: [{ objective: 'inspect something' }] },
-      makeCtx({ delegateAgents }),
+      makeCtx({ spawnAgents }),
     )
 
-    expect(result).toMatchObject({
+    expect(result).toEqual({
       ok: false,
+      error: 'no execution runtime',
       code: 'AGENT_DELEGATION_FAILED',
-      details: { status: 'failed' },
+      retryable: false,
     })
   })
 })

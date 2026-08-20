@@ -51,7 +51,8 @@ import { writeWorkspaceFile } from './workspaceWrite'
 import { getWorkspaceDiff } from './workspaceGit'
 import { runWorkspaceTask } from './workspaceTask'
 import { runShellCommand } from './shellCommand'
-import type { DelegateAgentRuntime } from '../subagents/types'
+import type { DelegateAgentInput, DelegateAgentRuntime } from '../subagents/types'
+import type { ToolContext } from '../tools/types'
 import { addAlwaysAllowedTool, alwaysAllowedToolsAtom } from '../state/transientAtoms'
 import { createCoreInstance, defaultCore } from './core/coreInstance'
 
@@ -82,6 +83,13 @@ function seedSession(
 
 function ctxFor(id: string) {
   return buildToolContext({ sessionId: id, runId: 'r', signal: new AbortController().signal, callId: 'c', toolName: 'x' })
+}
+
+// 委派只有 spawn 一条路（同步分支已删）：起执行节点再 join。内部抛错被节点收成 failed 而不再
+// 向调用方抛，所以必须看一眼状态，否则下面那些「捕获值」断言会对着 undefined 假绿。
+async function runDelegation(ctx: ToolContext, input: DelegateAgentInput): Promise<void> {
+  const handle = ctx.spawnAgents!(input)
+  await expect(ctx.joinExecution!(handle.executionId)).resolves.toMatchObject({ status: 'succeeded' })
 }
 
 describe('toolContext workspaceRoot 透传（S4-A）', () => {
@@ -119,7 +127,7 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
       delegateRuntime,
     })
 
-    await ctx.delegateAgents!({ children: [{ objective: 'inspect' }] })
+    await runDelegation(ctx, { children: [{ objective: 'inspect' }] })
 
     expect(readResult).toMatchObject({ ok: true })
     expect(vi.mocked(readWorkspaceFile)).toHaveBeenCalledWith(
@@ -193,7 +201,7 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
       core,
     })
 
-    await ctx.delegateAgents!({ children: [{ objective: 'inspect' }] })
+    await runDelegation(ctx, { children: [{ objective: 'inspect' }] })
 
     expect(childResult).toEqual({
       ok: false,
@@ -233,7 +241,7 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
       agentPath: 'root', delegateRuntime,
     })
 
-    await ctx.delegateAgents!({ children: [{ objective: 'write' }], confirmedTools: ['write_file'] })
+    await runDelegation(ctx, { children: [{ objective: 'write' }], confirmedTools: ['write_file'] })
 
     expect(capability).toEqual({
       sessionId: 'child-confirmed', runId: 'r', delegationCallId: 'delegate-call',
@@ -271,7 +279,7 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
       agentPath: 'root', delegateRuntime,
     })
 
-    await ctx.delegateAgents!({
+    await runDelegation(ctx, {
       children: [{ objective: 'browse' }],
       confirmedTools: [mcpTool],
     })
@@ -437,7 +445,7 @@ describe('toolContext 验证命令执行（workspace_verify）', () => {
       }, 'verify-allowed'),
     })
 
-    await ctx.delegateAgents!({
+    await runDelegation(ctx, {
       children: [{ objective: 'verify' }],
       toolProfile: 'workspace_verify',
     })
@@ -465,7 +473,7 @@ describe('toolContext 验证命令执行（workspace_verify）', () => {
       }, 'verify-missing'),
     })
 
-    await ctx.delegateAgents!({
+    await runDelegation(ctx, {
       children: [{ objective: 'read' }],
       toolProfile: 'workspace_read',
     })

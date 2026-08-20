@@ -139,7 +139,7 @@ interface LoopHooks {
 |---|---|---|
 | HTTP 重试 | 已在 `api/modelApi.ts` 的 `withRetry` | **不动**（ai 层，已就位） |
 | schema 校验 | 已在 `tools/registry.ts` 的 `run()` | 保留在 registry；也可暴露成 `beforeToolCall` 供插件叠加 |
-| subagent 分发 | 已经过 `delegate_agent` 工具 + `ToolContext.delegateAgents` | 收拢成 `subagentsPlugin`（工具 + 进程内树 + 树 renderer） |
+| subagent 分发 | 已经过 `delegate_agent` 工具 + `ToolContext.spawnAgents` | 收拢成 `subagentsPlugin`（工具 + 进程内树 + 树 renderer） |
 
 **还焊在 loop 里、要搬出来的：**
 
