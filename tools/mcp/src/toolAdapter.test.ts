@@ -1,3 +1,5 @@
+import { createToolRegistry } from '@einfach-agent/core/tools'
+import type { Tool } from '@einfach-agent/core/tools'
 import { describe, expect, it, vi } from 'vitest'
 import {
   MCP_DESCRIPTION_MAX_CHARS,
@@ -77,6 +79,9 @@ describe('MCP tool adapter', () => {
     )
     expect(registered.snapshot.title?.length).toBeLessThanOrEqual(128)
     expect(registered.tool.execution?.mode).toBe('serial')
+    // TOOLS-SPEC.md 点名 MCP 清单是「外部声明工具」的目标对象：这个标记是
+    // toolRegistry.ts 剥离到点工具的注册期保护唯一认得的信号。
+    expect(registered.tool.origin).toBe('external')
   })
 
   it('forwards arguments and a live AbortSignal, while keeping transport metadata out of model-visible data', async () => {
@@ -354,5 +359,43 @@ describe('MCP tool adapter', () => {
       ok: true,
       data: MCP_TOOL_RESULT_DROPPED_MARKER,
     })
+  })
+
+  it('lets toolRegistry strip a stray callTiming from an MCP-produced tool at registration', () => {
+    const registered = createMcpToolAdapter({
+      serverId: 'catalog',
+      connection: connection(),
+      runtime: 'internal',
+      remoteTool: {
+        name: 'lookup',
+        inputSchema: { type: 'object' },
+      },
+    })
+
+    // MCP 的清单协议里没有 callTiming 这个字段,adapter 也从不产生它——这里模拟「万一
+    // 某个远端或未来的动态提供方仍然带上了它」,验证 toolRegistry.ts:71-77 的剥除分支
+    // 对 MCP 造出的工具（真的带着这里刚验证过的 origin:'external'）真的生效,而不只是
+    // 对手写的 origin:'external' fixture 生效。
+    const declaredWithStrayCallTiming: Tool = {
+      ...registered.tool,
+      callTiming: 'runStart',
+    }
+    expect(declaredWithStrayCallTiming.origin).toBe('external')
+
+    const registry = createToolRegistry()
+    registry.register(declaredWithStrayCallTiming)
+
+    expect(registry.callTiming(declaredWithStrayCallTiming.name)).toBeUndefined()
+    expect(registry.diagnostics()).toEqual([
+      `外部工具 ${declaredWithStrayCallTiming.name} 的 callTiming 已在注册时剥除`,
+    ])
+    // 到点工具不进模型可见清单(isModelVisibleTool 只认 callTiming 是否非空);剥除
+    // 若真的生效,这个本该被到点机制私有调度的工具就会重新出现在模型可见清单里——
+    // 这是「字段真被剥了」与「字段只是从某处读不到了」之间唯一能外部观察到的差异。
+    expect(registry.list().map((tool) => tool.name)).toContain(
+      declaredWithStrayCallTiming.name,
+    )
+    // 剥除只发生在注册期生成的副本上,不会反向修改调用方仍持有的原始声明。
+    expect(declaredWithStrayCallTiming.callTiming).toBe('runStart')
   })
 })

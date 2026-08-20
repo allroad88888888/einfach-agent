@@ -393,6 +393,10 @@ export function createMcpToolAdapter({
       content: normalizedGuide(serverId, remoteTool),
     },
     inputSchema,
+    // MCP 清单是 TOOLS-SPEC.md 点名的「外部声明工具」——打上 origin:'external'，
+    // 让 toolRegistry.ts 的注册期保护对它生效：若某个 MCP 工具意外带了 callTiming
+    // （远端清单不该声明,但不能假设永远不会),注册时会被剥掉而不是静默进入到点执行路径。
+    origin: 'external',
     execution: {
       mode: declaredReadOnly ? 'parallel' : 'serial',
       effectKeys: [
