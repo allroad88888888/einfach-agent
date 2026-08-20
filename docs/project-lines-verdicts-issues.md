@@ -152,7 +152,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：`grep -n "configurePersistence" apps/cli/src/runtime.ts` 零命中；`pnpm build` 绿；
   `pnpm cli --help` 正常退出
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE 59a5d0d
 
 ### B1 · 修复 UndoBar 恒不渲染
 
