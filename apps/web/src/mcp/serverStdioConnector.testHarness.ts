@@ -50,17 +50,26 @@ export function commandInputs(
 }
 
 /**
- * 一次带结构化 kind 的命令失败。
+ * 一次带结构化标识的命令失败：`502` + `error` 字段就是 kind，`verdict` 是服务端给出的重试裁决
+ * （`apps/server/src/invokeRouteError.ts`）。两样东西分工不同，见 `serverMcpCommands.ts` 文件头
+ * ——kind 只用来判连接死活，重试与否只看裁决。
  *
- * **这是服务端补上 `McpCommandError` 映射之后的形状**：`502` + `error` 字段就是 kind
- * （理由见 `serverMcpCommands.ts` 文件头「kind 目前穿不过 HTTP」）。今天的服务端还会把它
- * 塌成一条 text/plain 的 500，那种形态由 `serverInvokeOpaqueFailure()` 单独造。
+ * `verdict` 传 `undefined` 就是「服务端这一档没给裁决」（版本更旧，或不是命令失败档）。
  */
-export function serverInvokeFailure(kind: string, message: string): ServerInvokeError {
-  return new ServerInvokeError({ status: MCP_COMMAND_FAILURE_STATUS, code: kind, message })
+export function serverInvokeFailure(
+  kind: string,
+  message: string,
+  verdict?: { readonly retryable: boolean, readonly reason: string },
+): ServerInvokeError {
+  return new ServerInvokeError({
+    status: MCP_COMMAND_FAILURE_STATUS,
+    code: kind,
+    message,
+    ...(verdict === undefined ? {} : { verdict }),
+  })
 }
 
-/** 今天真实发生的形态：`apps/server` 把 `McpCommandError` 重抛成一条不带信封的 500。 */
+/** 连信封都没有的形态：`apps/server` 把命令失败重抛成一条 text/plain 的 500。 */
 export function serverInvokeOpaqueFailure(): ServerInvokeError {
   return new ServerInvokeError({
     status: 500,

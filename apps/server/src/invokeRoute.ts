@@ -100,7 +100,14 @@ export function createInvokeRouteHandler(options: InvokeRouteOptions): InvokeRou
       result = await options.invoke(command, args)
     } catch (error) {
       const mapped = mapInvokeRouteError(error)
-      replyApiError(response, mapped.statusCode, mapped.error, mapped.message)
+      // 不走 `replyApiError`：这一档还可能多带一个 `verdict`（域给出的重试裁决，见
+      // invokeRouteError.ts 文件头）。没有裁决的域**键不出现**，而不是 `verdict: null`——
+      // 客户端按「有没有这个键」判断要不要采信，null 会逼它多认一种形状。
+      replyJson(response, mapped.statusCode, {
+        error: mapped.error,
+        message: mapped.message,
+        ...(mapped.verdict === undefined ? {} : { verdict: mapped.verdict }),
+      })
       return
     }
     // `undefined` 不是合法 JSON，而部分命令确实无返回值；`null` 是它在 JSON 里最贴切的对应。

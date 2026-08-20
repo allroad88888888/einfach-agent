@@ -54,20 +54,36 @@ describe('mapInvokeRouteError：分发失败', () => {
 })
 
 describe('mapInvokeRouteError：命令自身失败', () => {
-  it('MCP 失败带出 kind，状态码是命令失败档', () => {
+  it('MCP 失败带出 kind 与裁决，状态码是命令失败档', () => {
     const mapped = mapInvokeRouteError(
       mcpFailureWire('command_spawn_failed', 'no such file or directory'),
     )
     expect(mapped.statusCode).toBe(COMMAND_FAILURE_STATUS)
     expect(mapped.error).toBe('command_spawn_failed')
     expect(mapped.message).toBe('no such file or directory')
+    // 裁决由 host-node 判（输入只有 kind），本层只转发。客户端从此不再自己维护 kind 表。
+    expect(mapped.verdict).toEqual({ retryable: false, reason: 'command_unavailable' })
   })
 
-  // kind 是开放取值：host-node/Rust 新增一类失败时，本层必须原样转发而不是吞成 undefined
+  it('可重试的那一支同样带裁决，且不受 message 影响', () => {
+    // `rpc_error` 的 message 冒号之后整段是对端写的，怎么写都不许改变裁决。
+    expect(mapInvokeRouteError(mcpFailureWire('rpc_error', 'failed: exceeded 5 tools (-32000)')).verdict)
+      .toEqual({ retryable: true, reason: 'connection_disrupted' })
+  })
+
+  // kind 是开放取值：host-node 新增一类失败时，本层必须原样转发而不是吞成 undefined
   // ——那正好把「新增一类永久失败」变成「安静地无限重连」。
-  it('没见过的 kind 原样转发，不落兜底码', () => {
-    expect(mapInvokeRouteError(mcpFailureWire('a_brand_new_kind', 'x')).error)
-      .toBe('a_brand_new_kind')
+  it('没见过的 kind 原样转发，不落兜底码；但不替它编一个裁决', () => {
+    const mapped = mapInvokeRouteError(mcpFailureWire('a_brand_new_kind', 'x'))
+    expect(mapped.error).toBe('a_brand_new_kind')
+    // 本层不生产裁决：没登记的 kind 就是没裁决，客户端据此退到可重试的安全侧。
+    expect(mapped.verdict).toBeUndefined()
+  })
+
+  it('没有裁决的域不带这个字段（信封里键都不出现）', () => {
+    expect(mapInvokeRouteError(new Error('SQL 里有未闭合的块注释')).verdict).toBeUndefined()
+    expect(mapInvokeRouteError(new NodeHostCommandError('bogus_command', 'unknown-command')).verdict)
+      .toBeUndefined()
   })
 
   it('model 域的 reason 也带得出（同一条路由上不给某一个域开特例）', () => {

@@ -2,11 +2,12 @@
 // ---------------------------------------------------------------------------
 // 等价移植 apps/desktop/src/mcp_types.rs（已随 T1 删除）的 `McpCommandError`。
 //
-// **为什么必须带 `kind` 而不能只留一句话**：`tools/mcp` 的失败分类器
-// （failureClassification.ts）判「这次失败重试还有没有意义」时，对 stdio 桥**只认 kind**，
-// 一个字都不读 message——理由写在那个文件里：message 里嵌着对端撰写的文本，让它参与判定，
-// 一台 MCP server 随便回一句 "must not be empty" 就能把自己判成永久失败、停掉全部重试。
-// 所以 kind 是契约，message 不是。改 message 安全，改 kind 会静默改变重试行为。
+// **为什么必须带 `kind` 而不能只留一句话**：「这次失败重试还有没有意义」只认 kind，一个字都不读
+// message——message 里嵌着对端撰写的文本，让它参与判定，一台 MCP server 随便回一句
+// "must not be empty" 就能把自己判成永久失败、停掉全部重试。所以 kind 是契约，message 不是。
+// 改 message 安全，改 kind 会改变重试行为——但不会**静默**改变：kind 是闭合 union，裁决表
+// （`failureKinds.ts` 的 `KIND_VERDICT`）按它穷举，新增一个 kind 忘了登记当场编译错误。
+// 判定本身也留在那张表里，不再有第二份：客户端只读裁决、不自己判（见 `failureKinds.ts` 文件头）。
 //
 // **为什么既 extends Error 又有 toJSON**：Rust 侧 `Result<T, McpCommandError>` 的 Err 经 Tauri
 // 序列化成一个**普通对象**（不是 Error），前端 `tauriStdioConnector.ts` 直接读 `value.kind`。
@@ -19,9 +20,11 @@
 // 两条路上拿到的字段名与 Rust 逐字相同（camelCase，`serverId` / `rpcCode`），C4 的
 // serverStdioConnector 才能原样复用 tauriStdioConnector 的解析。
 
+import type { McpFailureKind } from './failureKinds'
+
 /** 序列化后的形状，与 Rust `McpCommandError` 的 serde 输出逐字段对齐。 */
 export interface McpCommandErrorJson {
-  kind: string
+  kind: McpFailureKind
   message: string
   serverId?: string
   rpcCode?: number
@@ -30,7 +33,7 @@ export interface McpCommandErrorJson {
 
 export class McpCommandError extends Error {
   override readonly name = 'McpCommandError'
-  readonly kind: string
+  readonly kind: McpFailureKind
   /** 归属的服务 ID。入参归一化失败时还不知道是哪个服务，此时缺席——Rust 同样。 */
   readonly serverId: string | undefined
   /** 仅 `rpc_error`：对端 JSON-RPC error 的 code。 */
@@ -39,7 +42,7 @@ export class McpCommandError extends Error {
   readonly data: unknown
 
   constructor(
-    kind: string,
+    kind: McpFailureKind,
     message: string,
     extra: { serverId?: string; rpcCode?: number; data?: unknown } = {},
   ) {
@@ -104,13 +107,12 @@ export function workerError(message: string): McpCommandError {
  * **只看字段，不看类型身份**——理由与 model 域的 `readModelRequestErrorReason` 逐字相同：
  * 这条路上错误要跨 HTTP 序列化（`POST /api/invoke/:command` 那一头拿到的是 `toJSON()` 的产物，
  * 一袋 JSON，原型没了）。宿主外壳（`apps/server` 的 invokeRouteError.ts）用它把 kind 放进失败
- * 信封的 `error` 字段，客户端再交给 `tools/mcp` 的失败分类器。
+ * 信封的 `error` 字段，客户端拿它判「这条连接是不是已经没了」（`isFatalConnectionError`）。
  *
- * **取值刻意不收成闭合枚举**，与 model 域那边正相反：`kind` 在 Rust 侧就是一个开放 String
- * （`apps/desktop/src/mcp_types.rs`（已随 T1 删除）的 `pub kind: String`），消费方的契约也写明「只有列出的
- * kind 是永久失败，其余一律落到可重试的默认」（`tools/mcp/src/failureClassification.ts`）。
- * 在这里立一张白名单，等于让**没登记的新 kind 静默变成 undefined**——那正好把「新增一类永久
- * 失败」变成「安静地无限重连」，而白名单漏一条不会有任何编译错误。
+ * **读取面刻意保持开放 string**，与同文件里闭合的**铸造**面（构造函数的 `McpFailureKind`）分工不同：
+ * 这里读的是一个来路不明的对象，可能来自版本不一致的另一侧。在读取面立一张白名单，等于让本进程
+ * 不认识的 kind 变成 `undefined` 之后**再也分不清**「它没带 kind」和「它带了一个我不认识的 kind」；
+ * 而真正需要防的「新增 kind 忘了登记裁决」由 `failureKinds.ts` 的穷举表在编译期挡住，不靠这里。
  */
 export function readMcpCommandErrorKind(error: unknown): string | undefined {
   if (typeof error !== 'object' || error === null) return undefined

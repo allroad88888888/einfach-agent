@@ -27,6 +27,7 @@ const JSON_HEADERS = { 'content-type': 'application/json' }
 interface FailureEnvelope {
   readonly error: string
   readonly message: string
+  readonly verdict?: { readonly retryable: boolean, readonly reason: string }
 }
 
 let home: string
@@ -71,12 +72,15 @@ async function failCommand(command: string, args: Record<string, unknown>): Prom
 
 describe('业务失败带得出结构化标识（四个域各一条）', () => {
   // mcp：唯一一个**标识本身是契约**的域。这条正是卡面复现的那一次调用。
-  it('mcp_list_tools 入参不合法 → 命令失败档 + McpCommandError.kind', async () => {
+  it('mcp_list_tools 入参不合法 → 命令失败档 + kind + 重试裁决', async () => {
     const failure = await failCommand('mcp_list_tools', {})
     expect(failure.status).toBe(COMMAND_FAILURE_STATUS)
     expect(failure.contentType).toContain('application/json')
     expect(failure.envelope.error).toBe('invalid_input')
     expect(failure.envelope.message.length).toBeGreaterThan(0)
+    // C5：裁决与 kind 一起过 HTTP。客户端（`tools/mcp` 的分类器）不再自己维护一张 kind 表，
+    // 所以这个字段真的到得了浏览器，是「后端新增 kind 客户端不用改」的前提。
+    expect(failure.envelope.verdict).toEqual({ retryable: false, reason: 'config_invalid' })
   })
 
   // sqlite：P3 点名的那一侧。没有 kind，但那句准确的中文必须原样到达。
@@ -88,6 +92,8 @@ describe('业务失败带得出结构化标识（四个域各一条）', () => {
     expect(failure.status).toBe(COMMAND_FAILURE_STATUS)
     expect(failure.envelope.error).toBe(UNCLASSIFIED_COMMAND_FAILURE)
     expect(failure.envelope.message).toBe('sqlite 命令的 sql 必须是非空字符串')
+    // 没给出裁决的域**键都不出现**，客户端据此退到可重试的安全侧。
+    expect(failure.envelope.verdict).toBeUndefined()
   })
 
   // workspace：主会话在真浏览器里撞到的那一类（可选目录探测，ENOENT）。

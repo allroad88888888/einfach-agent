@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { classifyMcpFailure, readMcpFailureKind } from '@einfach-agent/tools-mcp'
+import { classifyMcpFailure, readMcpFailureVerdict } from '@einfach-agent/tools-mcp'
 import { invokeServerCommand } from '../host/serverInvoke'
 import {
   commandInputs,
@@ -170,54 +170,93 @@ describe('ServerStdioMcpConnector：命令与结果', () => {
     await expect(connection.close()).resolves.toBeUndefined()
   })
 
-  it('把结构化 kind 透传给失败分类，不依赖服务端文案', async () => {
+  it('把服务端的裁决透传给失败分类，不依赖服务端文案', async () => {
     invokeMock.mockRejectedValueOnce(
-      serverInvokeFailure('command_spawn_failed', '这段文案随时可能被改写，分类不许依赖它'),
+      serverInvokeFailure('command_spawn_failed', '这段文案随时可能被改写，分类不许依赖它', {
+        retryable: false,
+        reason: 'command_unavailable',
+      }),
     )
 
     const { connector } = createConnectorUnderTest()
     const failure = await connector.connect(stdioConfig()).catch((error: unknown) => error)
 
-    expect(readMcpFailureKind(failure)).toBe('command_spawn_failed')
+    expect(readMcpFailureVerdict(failure)).toEqual({ retryable: false, reason: 'command_unavailable' })
     expect(classifyMcpFailure(failure)).toMatchObject({
       status: 'error',
       reason: 'command_unavailable',
     })
   })
 
-  it('传输类 kind 也透传出去，仍归类为可重试', async () => {
+  /**
+   * 判据的那一条：**后端新增/改名一个 kind，客户端一行都不用改。**
+   * 下面这个 kind 与这个 reason 在今天的 host-node 里都不存在；从前客户端有一张 kind 表，
+   * 没登记的 kind 会落到「可重试」，一个永远起不来的服务被无限重连。现在裁决随错误过来，
+   * 客户端照单全收。
+   */
+  it('服务端新加的 kind 无需客户端登记，裁决照样生效', async () => {
+    invokeMock.mockRejectedValueOnce(
+      serverInvokeFailure('a_kind_added_later', '一个今天还不存在的失败类型', {
+        retryable: false,
+        reason: 'a_reason_added_later',
+      }),
+    )
+
+    const { connector } = createConnectorUnderTest()
+    const failure = await connector.connect(stdioConfig()).catch((error: unknown) => error)
+
+    expect(classifyMcpFailure(failure)).toMatchObject({
+      status: 'error',
+      reason: 'a_reason_added_later',
+    })
+  })
+
+  it('传输类失败的裁决是可重试', async () => {
     mockSuccessfulConnect()
     invokeMock.mockRejectedValueOnce(
-      serverInvokeFailure('transport_closed', 'MCP server transport is closed'),
+      serverInvokeFailure('transport_closed', 'MCP server transport is closed', {
+        retryable: true,
+        reason: 'connection_disrupted',
+      }),
     )
 
     const { connector } = createConnectorUnderTest()
     const connection = await connector.connect(stdioConfig())
     const failure = await connection.listTools().catch((error: unknown) => error)
 
-    expect(readMcpFailureKind(failure)).toBe('transport_closed')
     expect(classifyMcpFailure(failure)).toMatchObject({ status: 'reconnecting' })
   })
 
   /**
-   * 今天服务端还没把 `McpCommandError` 映射成 502 + kind（见 `serverMcpCommands.ts` 文件头），
-   * 一次 MCP 失败落地成一条不带信封的 500。这条用例钉住**降级是安全的**：
-   *   · 拿不到 kind → 分类器退到「可重试」，不会把一次失败误判成永久失败；
+   * 服务端没给出裁决时（不是命令失败档，或版本更旧）落地成一条不带信封的 500。
+   * 这条用例钉住**降级是安全的**：
+   *   · 拿不到裁决 → 退到「可重试」，不会把一次失败误判成需要人工介入的永久失败；
+   *   · 仍然算「来自桥」，所以它的文案一条消息规则都不许命中（下面那句 `must not be empty`
+   *     在没有这层标记时会被判成永久的 config_invalid）；
    *   · **HTTP 状态绝不能漏给分类器**——`ServerInvokeError` 自带 `.status`，
    *     而 `classifyMcpFailure` 的 `readHttpStatus()` 会把错误对象上的 `status` 当成
    *     「MCP 传输观察到的 HTTP 状态」，401/403 直接判永久失败。
    */
-  it('服务端还没映射 kind 时安全降级，且不把 HTTP 状态漏给分类器', async () => {
+  it('服务端没给裁决时安全降级：可重试、文案不参与判定、HTTP 状态不外漏', async () => {
     mockSuccessfulConnect()
     invokeMock.mockRejectedValueOnce(serverInvokeOpaqueFailure())
+    invokeMock.mockRejectedValueOnce(
+      serverInvokeFailure('invalid_input', 'MCP server id must not be empty'),
+    )
 
     const { connector } = createConnectorUnderTest()
     const connection = await connector.connect(stdioConfig())
     const failure = await connection.listTools().catch((error: unknown) => error)
 
-    expect(readMcpFailureKind(failure)).toBeUndefined()
+    expect(readMcpFailureVerdict(failure)).toEqual({ retryable: true, reason: 'connection_disrupted' })
     expect(failure).not.toHaveProperty('status')
     expect(classifyMcpFailure(failure)).toMatchObject({
+      status: 'reconnecting',
+      reason: 'connection_disrupted',
+    })
+
+    const unverdicted = await connection.listTools().catch((error: unknown) => error)
+    expect(classifyMcpFailure(unverdicted)).toMatchObject({
       status: 'reconnecting',
       reason: 'connection_disrupted',
     })

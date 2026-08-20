@@ -9,7 +9,6 @@ import type { ToolResult } from '@einfach-agent/core/tools'
 import {
   classifyMcpFailure,
   type McpFailureClassification,
-  type McpFailureReason,
 } from '../failureClassification'
 import { errorMessage, truncate } from '../internal'
 import { MCP_ERROR_MAX_CHARS } from '../toolAdapter'
@@ -17,10 +16,11 @@ import type { McpTransport } from '../types'
 
 /**
  * 永久失败（status: 'error'）按 reason 给出具体该做什么，而不是一句「重试吧」。
- * 用 Partial 而不是穷举 Record：failureClassification.ts 未来新增 reason 时，这里静默退回
+ * 键写成开放 string 而不是穷举 Record：reason 现在可能是**后端带回来**的值
+ * （见 failureClassification.ts 的 McpFailureVerdict），这里认不出就静默退回
  * GENERIC_PERMANENT_CONNECT_HINT，不会因为漏了一支分支而编译失败或抛错。
  */
-const PERMANENT_CONNECT_HINT: Readonly<Partial<Record<McpFailureReason, string>>> = {
+const PERMANENT_CONNECT_HINT: Readonly<Record<string, string | undefined>> = {
   auth: '身份认证失败，重试不会自愈：请让用户检查该服务的密钥或凭据配置后再连接，不要原样重试。',
   config_invalid: '服务地址或配置无效，重试不会自愈：请让用户检查该服务的配置后再连接，不要原样重试。',
   command_unavailable:

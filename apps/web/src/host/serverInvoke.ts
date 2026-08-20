@@ -44,6 +44,7 @@ const INVOKE_ROUTE_PREFIX = '/api/invoke/'
 interface ServerInvokeErrorEnvelope {
   readonly error: string
   readonly message: string
+  readonly verdict?: unknown
 }
 
 function isErrorEnvelope(value: unknown): value is ServerInvokeErrorEnvelope {
@@ -55,6 +56,27 @@ function isErrorEnvelope(value: unknown): value is ServerInvokeErrorEnvelope {
   )
 }
 
+/**
+ * 域给出的重试裁决：「这次失败原样重试还有没有意义」，以及归因。
+ *
+ * 判定**只在服务端做**（今天只有 mcp 域给，判据是 host-node `mcp/failureKinds.ts` 的 kind 表），
+ * 这一层只负责把它从信封里取出来、并确认形状对得上。客户端不复制那张表：复制品靠人记得两边一起
+ * 改，漏一条的症状是没有症状——新失败类型静默落到「可重试」，一个永远起不来的服务被无限重连。
+ */
+export interface ServerCommandVerdict {
+  readonly retryable: boolean
+  readonly reason: string
+}
+
+/** 形状不对就当没有：宁可退到调用方的安全默认，也不把一袋来路不明的字段当成裁决。 */
+function readVerdict(value: unknown): ServerCommandVerdict | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const { retryable, reason } = value as { retryable?: unknown, reason?: unknown }
+  if (typeof retryable !== 'boolean') return undefined
+  if (typeof reason !== 'string' || reason.length === 0) return undefined
+  return { retryable, reason }
+}
+
 /** 未经字符串折叠的失败形态。 */
 export interface ServerInvokeFailure {
   /** HTTP 状态码；网络层失败（连不上、被中止）时没有响应，为 `undefined`。 */
@@ -63,18 +85,22 @@ export interface ServerInvokeFailure {
   readonly code: string | undefined
   /** 人能看懂的一句话；任何分支都保证有值。 */
   readonly message: string
+  /** 域给出的重试裁决；域没给、或形状不对时缺席。网络层失败同样缺席（压根没有信封）。 */
+  readonly verdict?: ServerCommandVerdict
 }
 
 /** 供想要结构化判断（比如"这是不是一次 401"）的调用方使用；`httpInvoke` 内部会把它折叠成字符串。 */
 export class ServerInvokeError extends Error {
   readonly status: number | undefined
   readonly code: string | undefined
+  readonly verdict: ServerCommandVerdict | undefined
 
   constructor(failure: ServerInvokeFailure) {
     super(failure.message)
     this.name = 'ServerInvokeError'
     this.status = failure.status
     this.code = failure.code
+    this.verdict = failure.verdict
   }
 }
 
@@ -129,7 +155,12 @@ async function readFailure(
   try {
     const body: unknown = await response.json()
     if (isErrorEnvelope(body)) {
-      return { status: response.status, code: body.error, message: body.message }
+      return {
+        status: response.status,
+        code: body.error,
+        message: body.message,
+        verdict: readVerdict(body.verdict),
+      }
     }
   } catch {
     // body 不是合法 JSON——不是这条路由本该有的形状，落到下面的通用兜底。

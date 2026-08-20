@@ -1,9 +1,19 @@
+// Classifies why an MCP connect/reconcile/close failure happened, independent of the
+// McpServerStatus it should produce. Kept separate from clientManager.ts so the mapping stays a
+// small, pure, unit-testable surface.
+//
+// What this file decides, and what it no longer decides: failures that reached us through the host
+// bridge arrive **already judged** (see attachMcpFailureVerdict) — the table keyed by the bridge's
+// failure kinds lives in `packages/host-node/src/mcp/failureKinds.ts`, on the side that mints those
+// kinds, and no copy of it is kept here. What is left is everything the bridge never sees: HTTP
+// statuses observed by the Streamable HTTP transport, SDK errors, and this package's own strings.
 import { toError, truncate } from './internal'
 
 /**
- * Classifies why an MCP connect/reconcile/close failure happened, independent
- * of the McpServerStatus it should produce. Kept separate from
- * clientManager.ts so the mapping stays a small, pure, unit-testable surface.
+ * The reasons this package labels a failure with. Not a closed contract with the host bridge: the
+ * bridge mints its own reason vocabulary (`packages/host-node/src/mcp/failureKinds.ts`) and a value
+ * missing from this union still keeps its verdict, it only falls back to a generic label. Keeping
+ * the union closed is what makes REASON_LABEL exhaustive for the reasons produced *here*.
  */
 export type McpFailureReason =
   | 'auth'
@@ -21,7 +31,8 @@ export interface McpFailureClassification {
    * 'reconnecting'：暂时失败（网络或传输层抖动、连接被对端关闭），可以重试。
    */
   status: 'error' | 'reconnecting'
-  reason: McpFailureReason
+  /** One of McpFailureReason, or a reason handed down by the bridge that this build does not know. */
+  reason: string
   /** 用户可见的中文说明：属于哪一类、具体原因是什么。 */
   message: string
 }
@@ -40,32 +51,49 @@ const REASON_LABEL: Record<McpFailureReason, string> = {
 }
 
 /**
- * Property that carries the stdio bridge's structured failure kind
- * (`McpCommandError.kind`) across the host boundary.
+ * Property that carries the host bridge's failure verdict across the boundary.
  *
- * The bridge is `packages/host-node/src/mcp/` — one Node implementation reached
- * in-process by the CLI and over `POST /api/invoke/:command` by the browser.
- * (It was `apps/desktop/src/mcp.rs` when this table was written; the desktop
- * host was deleted whole in commit `e52c31d`, so that Rust is Git history only.
- * The kinds and message formats below were ported verbatim and still match.)
+ * Non-enumerable so it never leaks into Error serialization or UI text.
  */
-const FAILURE_KIND_KEY = 'mcpFailureKind'
+const FAILURE_VERDICT_KEY = 'mcpFailureVerdict'
 
 /**
- * Records the bridge's structured `McpCommandError.kind` on the Error that
- * crosses into this package. Called by the app's stdio connector
- * (`apps/web/src/mcp/serverMcpCommands.ts`, which lifts it off the 502 envelope
- * `/api/invoke/:command` returns) — this is the *declared* channel that
- * replaces matching on the bridge's human-readable message. The property is
- * non-enumerable so it never leaks into Error serialization or UI text.
+ * A verdict handed down by the side that owns the failure: may retrying help, and why did it fail.
+ *
+ * `reason` is deliberately an open string, not this package's McpFailureReason union. It crossed a
+ * process boundary, so a build of this package can be older or newer than the bridge that minted
+ * it; an unrecognized reason keeps the verdict and only falls back to a generic label
+ * (see reasonLabel), which is a cosmetic loss rather than a retry-policy one.
  */
-export function attachMcpFailureKind<E extends Error>(
+export interface McpFailureVerdict {
+  /** False means retrying unchanged can never succeed: a human has to fix config/environment/server. */
+  readonly retryable: boolean
+  readonly reason: string
+}
+
+/**
+ * Records the bridge's verdict on the Error that crosses into this package. Called by the app's
+ * stdio connector (`apps/web/src/mcp/serverMcpCommands.ts`, which lifts it off the 502 envelope
+ * `/api/invoke/:command` returns).
+ *
+ * **This package no longer holds any table keyed by the bridge's failure kinds.** It used to, and
+ * that table had to be edited in lockstep with `packages/host-node/src/mcp/`; a permanent kind
+ * added there and missed here fell through to the retryable default, and a server that can never
+ * start got reconnected forever. The verdict now travels with the error, so adding or renaming a
+ * kind on the bridge needs no change in this file. The single table lives in
+ * `packages/host-node/src/mcp/failureKinds.ts`, where the kinds are minted.
+ *
+ * Attaching a verdict also *marks the error as the bridge's*: classifyMcpFailure() never matches
+ * the message of such an error, because that text was written either by the bridge or by the
+ * remote server — never by this package.
+ */
+export function attachMcpFailureVerdict<E extends Error>(
   error: E,
-  kind: string | undefined,
+  verdict: McpFailureVerdict | undefined,
 ): E {
-  if (typeof kind !== 'string' || kind.length === 0) return error
-  Object.defineProperty(error, FAILURE_KIND_KEY, {
-    value: kind,
+  if (verdict === undefined) return error
+  Object.defineProperty(error, FAILURE_VERDICT_KEY, {
+    value: { retryable: verdict.retryable, reason: verdict.reason },
     enumerable: false,
     writable: true,
     configurable: true,
@@ -73,68 +101,16 @@ export function attachMcpFailureKind<E extends Error>(
   return error
 }
 
-/** Reads back a kind recorded by attachMcpFailureKind(), if any. */
-export function readMcpFailureKind(error: unknown): string | undefined {
+/** Reads back a verdict recorded by attachMcpFailureVerdict(), if any. */
+export function readMcpFailureVerdict(error: unknown): McpFailureVerdict | undefined {
   if (typeof error !== 'object' || error === null) return undefined
-  const kind = (error as Record<string, unknown>)[FAILURE_KIND_KEY]
-  return typeof kind === 'string' && kind.length > 0 ? kind : undefined
+  const value = (error as Record<string, unknown>)[FAILURE_VERDICT_KEY]
+  if (typeof value !== 'object' || value === null) return undefined
+  const { retryable, reason } = value as { retryable?: unknown, reason?: unknown }
+  if (typeof retryable !== 'boolean') return undefined
+  if (typeof reason !== 'string' || reason.length === 0) return undefined
+  return { retryable, reason }
 }
-
-/**
- * Structured kinds that mean "retrying will never succeed on its own".
- *
- * Only kinds listed here are permanent; every other kind — including ones the
- * bridge adds later — falls through to the remaining checks and then to the
- * temporary default, so a new kind can never silently reclassify an existing
- * failure. Rewording a bridge message cannot downgrade a permanent failure
- * either, because nothing here reads the message.
- *
- * The counterparty that mints these strings is
- * `packages/host-node/src/mcp/` (`errors.ts` declares `McpCommandError.kind` as
- * an open string on purpose; `childProcess.ts`, `session.ts`, `manager.ts`,
- * `validation.ts`, `initialize.ts` and `results.ts` are where they are thrown).
- */
-const PERMANENT_FAILURE_KINDS: Readonly<Record<string, McpFailureReason | undefined>> = {
-  // packages/host-node/src/mcp/childProcess.ts — the OS refused to start the
-  // configured command (missing binary / not executable / no permission / a NUL
-  // byte in argv). Deliberately distinct from `spawn_failed`, which is a
-  // host-side setup failure *after* the child started (pipe capture) and stays
-  // retryable; that file's header states the same split from the other end.
-  command_spawn_failed: 'command_unavailable',
-  // packages/host-node/src/mcp/{initialize,results}.ts — the peer broke the MCP
-  // contract: an unparseable tools/list / tools/call / initialize result, a
-  // repeated pagination cursor, a protocolVersion this client does not
-  // implement, a missing tools capability. None of those become valid by
-  // reconnecting. Judged structurally *because* the bridge message inlines the
-  // server's cursor and protocolVersion verbatim, so a server answering
-  // `protocolVersion: "must not be empty"` could otherwise pick its own reason
-  // out of PERMANENT_MESSAGE_RULES.
-  protocol_error: 'protocol_violation',
-}
-
-/**
- * Structured kinds whose message quotes the remote MCP server word for word.
- * The text is the peer's, so no verdict may be inferred by matching it: these
- * skip PERMANENT_MESSAGE_RULES and fall to the temporary default.
- *
- * Every other kind the bridge emits is host-authored and stays matchable:
- * `invalid_input` reports on our own config; `transport_closed`,
- * `transport_error`, `process_exited`, `spawn_failed` and `worker_failed` report
- * host/OS conditions (the transport strings are written by the bridge, not
- * received from the child); `timeout`, `already_connected`, `stale_session`,
- * `session_limit` and `not_connected` are fixed bridge strings. That split is a
- * property of the bridge, so it has to be re-checked against
- * `packages/host-node/src/mcp/` whenever a kind is added there — not against
- * the Rust original this table was written for, which no longer exists.
- */
-const PEER_AUTHORED_MESSAGE_KINDS: ReadonlySet<string> = new Set([
-  // packages/host-node/src/mcp/session.ts — the message reads
-  // "MCP request `m` failed: {server error.message} ({code})", so everything
-  // after the colon is written by the server being talked to. Left matchable, a
-  // healthy server answering "must not be empty" or "exceeded 5 tools" would be
-  // declared permanently broken and never retried again.
-  'rpc_error',
-])
 
 /**
  * Permanent-failure message patterns sourced from this codebase's own thrown
@@ -143,9 +119,9 @@ const PEER_AUTHORED_MESSAGE_KINDS: ReadonlySet<string> = new Set([
  * thrown inside this package, not third-party or cross-process text, so
  * matching on them is stable across releases.
  *
- * Two families are intentionally kept away from this table: the stdio bridge
- * (classified through the structured kinds above) and anything whose message
- * the peer helped write (hasPeerAuthoredMessage / an HTTP status).
+ * Two families are intentionally kept away from this table: anything that reached us through the
+ * host bridge (it arrives with a verdict and is decided by it alone) and anything whose message
+ * the peer helped write (an SDK McpError, or an HTTP status).
  */
 const PERMANENT_MESSAGE_RULES: ReadonlyArray<{
   reason: McpFailureReason
@@ -201,13 +177,6 @@ function readHttpStatus(error: Error): number | undefined {
   return undefined
 }
 
-/** True when part of the failure message was written by the remote MCP server. */
-function hasPeerAuthoredMessage(error: Error): boolean {
-  const kind = readMcpFailureKind(error)
-  if (kind !== undefined && PEER_AUTHORED_MESSAGE_KINDS.has(kind)) return true
-  return isSdkMcpError(error)
-}
-
 /**
  * Third-party prose that *looks* like an auth rejection. Unlike
  * PERMANENT_MESSAGE_RULES this matches wording owned by remote servers and by
@@ -222,8 +191,17 @@ function isUnauthorizedMessage(message: string): boolean {
   )
 }
 
-function buildMessage(reason: McpFailureReason, detail: string, permanent: boolean): string {
-  const label = REASON_LABEL[reason]
+/**
+ * A reason may arrive from the bridge (see McpFailureVerdict), so it is not necessarily one this
+ * build knows a label for. An unlabelled reason keeps its verdict and only loses wording precision.
+ * Object.hasOwn, not `in`: a reason of 'constructor' would otherwise pick a label off the prototype.
+ */
+function reasonLabel(reason: string): string {
+  return Object.hasOwn(REASON_LABEL, reason) ? REASON_LABEL[reason as McpFailureReason] : '连接失败'
+}
+
+function buildMessage(reason: string, detail: string, permanent: boolean): string {
+  const label = reasonLabel(reason)
   const advice = permanent
     ? '需要人工介入才能恢复'
     // 不说「谁」在重试：同一条分类既喂给自动退避的 clientManager，也喂给不重试的连接工具。
@@ -234,11 +212,11 @@ function buildMessage(reason: McpFailureReason, detail: string, permanent: boole
   return `${label}，${advice}：${truncated}`
 }
 
-function permanent(reason: McpFailureReason, detail: string): McpFailureClassification {
+function permanent(reason: string, detail: string): McpFailureClassification {
   return { status: 'error', reason, message: buildMessage(reason, detail, true) }
 }
 
-function temporary(reason: McpFailureReason, detail: string): McpFailureClassification {
+function temporary(reason: string, detail: string): McpFailureClassification {
   return { status: 'reconnecting', reason, message: buildMessage(reason, detail, false) }
 }
 
@@ -246,11 +224,12 @@ function temporary(reason: McpFailureReason, detail: string): McpFailureClassifi
  * Maps an arbitrary connect/reconcile/close failure to a status + reason.
  *
  * The single rule behind the order below: **a permanent verdict may only come
- * from a signal the peer does not author.** Those are the desktop bridge's
- * structured kind, the HTTP response status, and this package's own thrown
- * messages. Everything else — remote JSON-RPC error text, HTTP response
- * bodies, SDK prose — can at most choose the reason label, and falls to the
- * temporary default.
+ * from a signal the peer does not author.** Those are the host bridge's verdict
+ * (decided in `packages/host-node/src/mcp/failureKinds.ts` from the kind that
+ * bridge minted itself, never from the failure message), the HTTP response
+ * status, and this package's own thrown messages. Everything else — remote
+ * JSON-RPC error text, HTTP response bodies, SDK prose — can at most choose the
+ * reason label, and falls to the temporary default.
  *
  * That asymmetry is deliberate, because the two mistakes do not cost the same
  * once the caller retries with capped exponential backoff:
@@ -268,12 +247,16 @@ export function classifyMcpFailure(error: unknown): McpFailureClassification {
   const caught = toError(error)
   const detail = caught.message
 
-  // Structured first: a typed kind from the desktop bridge outranks every
-  // heuristic below, and is the only thing the stdio path is judged on.
-  const kind = readMcpFailureKind(caught)
-  const kindReason = kind === undefined ? undefined : PERMANENT_FAILURE_KINDS[kind]
-  if (kindReason !== undefined) {
-    return permanent(kindReason, detail)
+  // Structured first, and final: the bridge already decided, on a signal the peer cannot write.
+  // Nothing below runs for such an error — in particular its message is never matched, because
+  // that text belongs to the bridge or to the remote server, not to this package.
+  const verdict = readMcpFailureVerdict(caught)
+  if (verdict !== undefined) {
+    if (!verdict.retryable) return permanent(verdict.reason, detail)
+    // Label only, exactly like the isUnauthorizedMessage() branch further down: over stdio there is
+    // no 401 to read, so this wording is the only auth hint there will ever be — and it may still
+    // only relabel a retryable failure, never overturn the bridge's verdict.
+    return temporary(isUnauthorizedMessage(detail) ? 'auth' : verdict.reason, detail)
   }
 
   // An HTTP status is observed by the transport, not written by the server, so
@@ -302,7 +285,8 @@ export function classifyMcpFailure(error: unknown): McpFailureClassification {
     return temporary('auth', detail)
   }
 
-  if (hasPeerAuthoredMessage(caught)) {
+  // The SDK's McpError wraps the remote's own error text; it may not reach the message rules.
+  if (isSdkMcpError(caught)) {
     return temporary('connection_disrupted', detail)
   }
 

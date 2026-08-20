@@ -7,8 +7,8 @@
 // 不属于本模块的第三类是「外壳自己坏了」——回执序列化不出去之类。那种由 `requestRouter.ts` 的
 // 外层 try/catch 收成 500，`invokeRoute.ts` 因此**只把 `invoke()` 那一次调用**放进 try 里。
 // 这条分界线是本模块存在的全部意义：改之前，命令自身失败也落进那个 500，于是
-//   ① MCP 的 `kind` 丢了——`tools/mcp` 的失败分类器对 stdio 桥只认 kind、一个字都不读 message，
-//      拿不到 kind 就落到「可重试」的默认，于是一条**根本不存在的命令**（`command_spawn_failed`，
+//   ① MCP 的结构化失败丢了——客户端对 stdio 桥只认结构化信号、一个字都不读 message，什么都
+//      拿不到就落到「可重试」的默认，于是一条**根本不存在的命令**（`command_spawn_failed`，
 //      在桌面宿主上是永久失败）在 server 宿主上被判成临时失败，无限退避重连；
 //   ② 各域写好的那句话也丢了——SQL 语法错、游标非法、路径越界，到客户端全变成一句
 //      「本地服务返回了非预期的错误响应（HTTP 500）」，而桌面宿主上它们是原样到达的。
@@ -32,6 +32,14 @@
 // 刻意**不**按命令名推一个 `<domain>_command_failed` 出来：调用方本来就知道自己调的是哪条命令，
 // 那个前缀不带新信息，却会造出一个 host-node 从未声明过的标识——本模块转发标识，不生产标识。
 //
+// 【`verdict` 字段：同一条纪律的第二样东西】（C5）
+// mcp 域还给出「这次失败原样重试还有没有意义」。判定留在 host-node（`mcp/failureKinds.ts`：输入
+// 只有 kind，一个字都不读 message，因为 message 里嵌着对端撰写的文本），本模块只把结论**原样**
+// 放进信封。客户端从此不再自己维护一张 kind → 永久/暂时 的表——那张表靠人记得两边一起改，漏一条
+// 的症状是没有症状：新 kind 落到「可重试」的默认，一个永远起不来的服务被无限退避重连。
+// 与 `error` 字段一样只转发不生产：没给出裁决的域（model / workspace / shell / config / sqlite）
+// 这个字段就不存在，客户端拿不到就退到可重试的安全侧。
+//
 // 【message 与 reason 一样按字段读】
 // `error instanceof Error` 在序列化之后不成立（`McpCommandError.toJSON()` 的产物是普通对象），
 // 而 message 恰恰是这类失败唯一保得住的人类可读信息。所以读 `.message` 字段而不是判类型，
@@ -40,7 +48,9 @@
 
 import {
   readMcpCommandErrorKind,
+  readMcpFailureVerdict,
   readModelRequestErrorReason,
+  type McpFailureVerdict,
   type NodeHostCommandErrorReason,
 } from '@einfach-agent/host-node'
 
@@ -48,6 +58,8 @@ export interface InvokeRouteErrorReply {
   readonly statusCode: number
   readonly error: string
   readonly message: string
+  /** 域给出的重试裁决；没有的域为 `undefined`，那时信封里不出现这个键。 */
+  readonly verdict?: McpFailureVerdict
 }
 
 /**
@@ -108,6 +120,13 @@ function errorMessage(error: unknown): string {
 export function mapInvokeRouteError(error: unknown): InvokeRouteErrorReply {
   const message = errorMessage(error)
   const dispatch = readDispatchReason(error)
+  // 分发失败不带裁决：命令根本没跑，「重试有没有意义」是命令自己才回答得了的问题。
   if (dispatch !== undefined) return { ...DISPATCH_REPLY[dispatch], message }
-  return { statusCode: COMMAND_FAILURE_STATUS, error: commandFailureCode(error), message }
+  const verdict = readMcpFailureVerdict(error)
+  return {
+    statusCode: COMMAND_FAILURE_STATUS,
+    error: commandFailureCode(error),
+    message,
+    ...(verdict === undefined ? {} : { verdict }),
+  }
 }

@@ -4,36 +4,30 @@
 // `invoke(cmd, { input })` → `invokeServerCommand(cmd, { input })`（`POST /api/invoke/:command`）。
 // 认证不自己发明：`host/serverInvoke.ts` 已经把 token 的取用与 `Authorization: Bearer` 收口了。
 //
-// ═══ 【交回时点名的缺口】`kind` 目前穿不过 HTTP ═══
+// ═══ 结构化失败怎么过 HTTP ═══
 //
-// `tools/mcp` 的失败分类器对 stdio 桥**只认 `kind`、一个字都不读 message**
-// （`failureClassification.ts` 文件头写明理由：message 里嵌着对端撰写的文本，让它参与判定，
-// 一台 MCP server 随便回一句 "must not be empty" 就能把自己判成永久失败）。
-// host-node 的 `McpCommandError` 为此专门实现了 `toJSON()`，其文件头写着
-// 「C4 的 serverStdioConnector 才能原样复用 tauriStdioConnector 的解析」。
+// 客户端判「这次 MCP 失败重试还有没有意义」时**一个字都不读 message**：message 里嵌着对端撰写的
+// 文本（`rpc_error` 那句话冒号之后整段是 MCP server 写的），让它参与判定，一台 server 随便回一句
+// "must not be empty" 就能把自己判成永久失败、停掉全部重连。
 //
-// **但那条路今天是断的**，已核到行：`apps/server/src/invokeRoute.ts` 的 catch 只认
-// `NodeHostCommandError`（→ 404 / 501），`McpCommandError` 不是它的实例，于是被 `throw error`
-// 重抛，落进 `requestRouter.ts` 的外层 catch，变成一条 **`text/plain` 的 500「服务端内部错误。」**
-// ——`kind` 没了，连 message 也没了。所以在服务端补上这一跳之前，本文件拿不到任何 kind，
-// 全部 MCP 失败都会被分类器判成「可重试」（`command_spawn_failed` 这种「命令根本不存在」
-// 也会被无限重连）。
-//
-// 本文件按**修好之后**的形状写：服务端把 `McpCommandError` 映射成
-// `{ statusCode: 502, error: <kind>, message: <message> }`，失败信封的 `error` 字段本来就是
-// 「给程序看的稳定标识」，与 `kind` 是同一个东西，不需要给信封加新字段，也不需要动
-// `ServerInvokeError`（`.status` + `.code` 已经够）。502 在 `/api/invoke/:command` 上没有别的
-// 用法（`modelRoute` 的 502 是另一条路由），所以「502 的 code 就是 kind」不会与任何东西撞。
-// 服务端没补上时，这里只是恒拿不到 kind，行为是安全降级而不是出错。
+// 判定本身在**服务端**（host-node 的 `mcp/failureKinds.ts`，输入只有它自己铸造的 `kind`）。
+// 客户端不复制那张表——复制品靠人记得两边一起改，漏一条的症状是没有症状：新 kind 落到「可重试」，
+// 一个永远起不来的服务被无限退避重连。所以这条路上过来两样东西，都在 502 的失败信封里：
+//   · `error` 字段 = `McpCommandError.kind`。本文件用它判「这条连接是不是已经没了」
+//     （`isFatalConnectionError` / `disconnect`），**不**用它判重试。
+//   · `verdict` 字段 = `{ retryable, reason }`，服务端给出的裁决，原样交给 `tools/mcp` 的分类器。
+// 服务端映射见 `apps/server/src/invokeRouteError.ts`（502 + 两个字段）。拿不到裁决时退到
+// 「可重试」这个安全侧：宁可多退避几次，也不把一次暂时失败判成需要人工介入的永久失败。
 //
 // ═══ 为什么失败一定要重新包一个平凡 `Error` ═══
 // `ServerInvokeError` 自带 `.status`。而分类器的 `readHttpStatus()` 会把错误对象上
 // `status` / `code` / `statusCode` 里 100–599 的整数**当成 MCP 传输观察到的 HTTP 状态**，
 // 401 / 403 直接判永久失败。把它原样漏进去，等于让「浏览器与本机服务之间的一次 401」冒充
-// 「MCP server 拒绝了我们的凭据」。所以这里一律换成裸 `Error` + 非枚举的 kind。
+// 「MCP server 拒绝了我们的凭据」。所以这里一律换成裸 `Error` + 非枚举的裁决。
 
 import {
-  attachMcpFailureKind,
+  attachMcpFailureVerdict,
+  type McpFailureVerdict,
   type McpRemoteTool,
 } from '@einfach-agent/tools-mcp'
 import { invokeServerCommand, ServerInvokeError } from '../host/serverInvoke'
@@ -49,11 +43,26 @@ export const CALL_TIMEOUT_MS = 60_000
  */
 export const MCP_COMMAND_FAILURE_STATUS = 502
 
-/** 从一次 HTTP 失败里取出结构化 kind；取不到就是 `undefined`（分类器会退到「可重试」）。 */
+/**
+ * 服务端没给出裁决时用的安全默认。
+ *
+ * 什么时候会没有：命令失败档之外的失败（401、404、外壳自己坏了的 500），以及服务端版本比客户端
+ * 旧的那一小段时间。两种错法的代价不对称——把暂时失败判成永久，重试全停、要人来解；把永久失败
+ * 判成暂时，只多花几次有上限的退避（1→2→4→8→16→30s 共六次），之后同一个失败照样浮上来。
+ */
+const UNVERDICTED: McpFailureVerdict = { retryable: true, reason: 'connection_disrupted' }
+
+/** 从一次 HTTP 失败里取出结构化 kind；取不到就是 `undefined`。**只用于判连接死活，不判重试。** */
 export function mcpFailureKind(value: unknown): string | undefined {
   if (!(value instanceof ServerInvokeError)) return undefined
   if (value.status !== MCP_COMMAND_FAILURE_STATUS) return undefined
   return value.code
+}
+
+/** 服务端给出的重试裁决；取不到就退到安全侧（见 `UNVERDICTED`）。 */
+export function mcpFailureVerdict(value: unknown): McpFailureVerdict {
+  if (!(value instanceof ServerInvokeError)) return UNVERDICTED
+  return value.verdict ?? UNVERDICTED
 }
 
 export function abortError(): DOMException {
@@ -74,13 +83,17 @@ function isAbortErrorLike(value: unknown): boolean {
 }
 
 /**
- * 把一次调用失败翻译成给 `tools/mcp` 看的 Error：**message 给人看，kind 才是契约**。
+ * 把一次调用失败翻译成给 `tools/mcp` 看的 Error：**message 给人看，裁决才是契约**。
  * 见文件头「为什么失败一定要重新包一个平凡 Error」。
+ *
+ * 裁决**恒挂**（拿不到就挂安全默认），而不是「有就挂、没有就不挂」：挂着这件事本身就是
+ * 「这条错误来自桥」的标记，`tools/mcp` 据此完全不去匹配它的 message——那段文本要么是桥写的，
+ * 要么是对端写的，都不是那个包自己的确定性字符串。
  */
 export function toError(value: unknown): Error {
   if (isAbortErrorLike(value)) return abortError()
   if (value instanceof ServerInvokeError) {
-    return attachMcpFailureKind(new Error(value.message), mcpFailureKind(value))
+    return attachMcpFailureVerdict(new Error(value.message), mcpFailureVerdict(value))
   }
   if (value instanceof Error) return value
   if (typeof value === 'string' && value.trim()) return new Error(value)

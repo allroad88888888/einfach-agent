@@ -1,22 +1,28 @@
 // One contract, pinned from every angle: **classifyMcpFailure must never derive
 // a permanent verdict from text written outside this package.** Foreign text
-// arrives from three places — the desktop Rust bridge (D5), the remote MCP
-// server relayed through it or through the SDK, and HTTP response bodies (D6) —
-// and each one gets reworded, localized, or chosen by someone who is not us.
+// arrives from three places — the host bridge, the remote MCP server relayed
+// through it or through the SDK, and HTTP response bodies (D6) — and each one
+// gets reworded, localized, or chosen by someone who is not us.
 //
 // The decision table for the signals we *do* own lives in
-// failureClassification.test.ts.
+// failureClassification.test.ts. The bridge's own half of the rule — that its
+// verdict is a function of the kind it minted and never of the message — is
+// pinned in packages/host-node/src/mcp/failureKinds.test.ts.
 import { describe, expect, it } from 'vitest'
 import {
-  attachMcpFailureKind,
+  attachMcpFailureVerdict,
   classifyMcpFailure,
-  readMcpFailureKind,
+  readMcpFailureVerdict,
+  type McpFailureVerdict,
 } from './failureClassification'
 
-/** Mirrors what tauriStdioConnector.ts builds out of a Rust McpCommandError. */
-function withKind(kind: string, message: string): Error {
-  return attachMcpFailureKind(new Error(message), kind)
+/** Mirrors what serverMcpCommands.ts builds out of the bridge's 502 envelope. */
+function withVerdict(verdict: McpFailureVerdict, message: string): Error {
+  return attachMcpFailureVerdict(new Error(message), verdict)
 }
+
+const PERMANENT_SPAWN: McpFailureVerdict = { retryable: false, reason: 'command_unavailable' }
+const RETRYABLE: McpFailureVerdict = { retryable: true, reason: 'connection_disrupted' }
 
 /** Mirrors the SDK's StreamableHTTPError, whose `code` is the response status. */
 function withHttpStatus(message: string, code: number): Error {
@@ -36,34 +42,29 @@ function asMcpError(message: string, code: number): Error {
   return error
 }
 
-describe('classifyMcpFailure / desktop bridge kinds', () => {
-  it('classifies the stdio spawn kind as permanent command_unavailable', () => {
+describe('classifyMcpFailure / verdicts handed down by the bridge', () => {
+  it('takes the bridge\'s permanent verdict and its reason', () => {
     expect(
       classifyMcpFailure(
-        withKind(
-          'command_spawn_failed',
+        withVerdict(
+          PERMANENT_SPAWN,
           'failed to start MCP server `local-files`: No such file or directory (os error 2)',
         ),
       ),
     ).toMatchObject({ status: 'error', reason: 'command_unavailable' })
   })
 
-  // This is the D5 guarantee: the stdio verdict is a function of the structured
-  // kind ONLY. Every message below — including one that would otherwise be read
-  // as a temporary failure, one that would be read as a *different* permanent
-  // failure, and an empty one — must yield the exact same classification, so
-  // rewording (or localizing) a bridge message cannot silently downgrade a
-  // permanent failure into an infinite reconnect loop.
+  // This is the D5 guarantee, restated for the shape it has now: the stdio verdict is a function of
+  // the *structured* signal ONLY. Every message below — including one that would otherwise be read
+  // as a temporary failure, one that would be read as a *different* permanent failure, and an empty
+  // one — must yield the exact same classification, so rewording (or localizing) a bridge message
+  // cannot silently downgrade a permanent failure into an infinite reconnect loop.
   //
-  // The bridge writing those messages is now `packages/host-node/src/mcp/`
-  // (`childProcess.ts` for this kind). It was `apps/desktop/src/mcp.rs` when
-  // this test was written — hence the Rust wording in the samples below, which
-  // is kept deliberately: the whole point is that the text is irrelevant, so
-  // stale sample strings are the strongest form of the same assertion. The
-  // desktop host was deleted whole in commit `e52c31d`; that Rust is Git
-  // history only.
-  it('classifies a stdio spawn failure from the kind alone, whatever the Rust message says', () => {
-    const rewrittenRustMessages = [
+  // The bridge writing those messages is `packages/host-node/src/mcp/` (`childProcess.ts` for this
+  // one). The Rust wording in the samples is kept deliberately — the whole point is that the text is
+  // irrelevant, so stale sample strings are the strongest form of the same assertion.
+  it('classifies a stdio spawn failure from the verdict alone, whatever the message says', () => {
+    const rewrittenMessages = [
       'failed to start MCP server `local-files`: No such file or directory (os error 2)',
       '无法启动 MCP 服务器 `local-files`：系统找不到指定的文件',
       'transport lost',
@@ -71,8 +72,8 @@ describe('classifyMcpFailure / desktop bridge kinds', () => {
       '',
     ]
 
-    const classifications = rewrittenRustMessages.map((message) =>
-      classifyMcpFailure(withKind('command_spawn_failed', message)),
+    const classifications = rewrittenMessages.map((message) =>
+      classifyMcpFailure(withVerdict(PERMANENT_SPAWN, message)),
     )
 
     for (const classification of classifications) {
@@ -85,12 +86,9 @@ describe('classifyMcpFailure / desktop bridge kinds', () => {
     expect(new Set(classifications.map((entry) => entry.reason)).size).toBe(1)
   })
 
-  it('no longer infers a stdio spawn failure from message text without a kind', () => {
-    // The undeclared prose contract with the stdio bridge is gone on purpose:
-    // an error that never carried a kind is not a bridge spawn failure. (That
-    // prose used to come from `apps/desktop/src/mcp.rs`; today's bridge is
-    // `packages/host-node/src/mcp/childProcess.ts`, and the point stands
-    // regardless of which one wrote it.)
+  it('no longer infers a stdio spawn failure from message text without a verdict', () => {
+    // The undeclared prose contract with the stdio bridge is gone on purpose: an error that never
+    // carried a structured signal is not a bridge spawn failure.
     expect(
       classifyMcpFailure(
         new Error('failed to start MCP server `local-files`: No such file or directory (os error 2)'),
@@ -102,55 +100,53 @@ describe('classifyMcpFailure / desktop bridge kinds', () => {
     })
   })
 
-  it('keeps post-spawn host setup failures (spawn_failed) temporary', () => {
-    // The child already started; failing to attach its pipes or reader threads
-    // is a host resource problem, not a broken command.
-    expect(
-      classifyMcpFailure(withKind('spawn_failed', 'failed to capture MCP server stdin')),
-    ).toMatchObject({ status: 'reconnecting', reason: 'connection_disrupted' })
-    expect(
-      classifyMcpFailure(withKind('spawn_failed', 'failed to start MCP protocol reader: EAGAIN')),
-    ).toMatchObject({ status: 'reconnecting', reason: 'connection_disrupted' })
-  })
-
-  it('classifies the protocol_error kind from the kind alone', () => {
-    // Its Rust message inlines the server's own cursor and protocolVersion, so
-    // the verdict has to be structural — the third message below would otherwise
-    // let the server hand itself a config_invalid reason via /must not be empty/.
+  it('a retryable verdict is never overturned by the message beside it', () => {
+    // The bridge said "retry may help". Every message here would hit a permanent rule further down
+    // if a verdict-carrying error were allowed to reach those rules — and each of them is text this
+    // package did not write: host prose in the first two, the remote server's own words (relayed by
+    // `session.ts` as "MCP request `m` failed: {server message}") in the last two.
     const messages = [
-      'invalid tools/list result: missing field `name`',
-      'tools/list returned the repeated cursor `abc`',
-      'MCP server selected unsupported protocolVersion `must not be empty`',
-      'initialize result capabilities must be an object',
-      '',
+      'failed to capture MCP server stdio',
+      'MCP server transport is closed',
+      'MCP request `tools/call` failed: workspace must not be empty (-32000)',
+      'MCP request `tools/list` failed: exceeded 5 tools (-32000)',
     ]
 
     for (const message of messages) {
-      expect(classifyMcpFailure(withKind('protocol_error', message))).toMatchObject({
-        status: 'error',
-        reason: 'protocol_violation',
+      expect(classifyMcpFailure(withVerdict(RETRYABLE, message))).toMatchObject({
+        status: 'reconnecting',
+        reason: 'connection_disrupted',
       })
     }
   })
 
-  it('lets unknown and transport kinds fall through to the existing rules', () => {
-    // A kind the Rust side adds later must not reclassify anything by itself,
-    // and host-authored bridge messages stay matchable.
+  // The whole point of moving the table to the bridge: **this file does not enumerate the bridge's
+  // failure kinds any more.** A kind added or renamed in `packages/host-node/src/mcp/` arrives here
+  // as a verdict, so it is honoured without editing a line of this package — including a reason
+  // string this build has never heard of, which keeps the verdict and only loses label precision.
+  it('honours a verdict whose reason this build does not know', () => {
+    const unknownReason = classifyMcpFailure(
+      withVerdict({ retryable: false, reason: 'a_reason_added_later' }, 'MCP server id must not be empty'),
+    )
+
+    expect(unknownReason).toMatchObject({ status: 'error', reason: 'a_reason_added_later' })
+    expect(unknownReason.message).toContain('需要人工介入才能恢复')
+    // …and the same unknown reason on the retryable side stays retryable, even though the message
+    // would otherwise match /must not be empty/ and be called permanently broken.
     expect(
-      classifyMcpFailure(withKind('a_kind_added_later', 'MCP server id must not be empty')),
-    ).toMatchObject({ status: 'error', reason: 'config_invalid' })
-    expect(
-      classifyMcpFailure(withKind('transport_closed', 'MCP server transport is closed')),
-    ).toMatchObject({ status: 'reconnecting', reason: 'connection_disrupted' })
+      classifyMcpFailure(
+        withVerdict({ retryable: true, reason: 'a_reason_added_later' }, 'MCP server id must not be empty'),
+      ),
+    ).toMatchObject({ status: 'reconnecting', reason: 'a_reason_added_later' })
   })
 
-  it('carries the kind as a non-enumerable field so it never leaks into logs', () => {
-    const error = withKind('command_spawn_failed', 'boom')
-    expect(readMcpFailureKind(error)).toBe('command_spawn_failed')
-    expect(Object.keys(error)).not.toContain('mcpFailureKind')
-    expect(JSON.stringify({ ...error })).not.toContain('command_spawn_failed')
-    expect(readMcpFailureKind(new Error('boom'))).toBeUndefined()
-    expect(readMcpFailureKind('not an error')).toBeUndefined()
+  it('carries the verdict as a non-enumerable field so it never leaks into logs', () => {
+    const error = withVerdict(PERMANENT_SPAWN, 'boom')
+    expect(readMcpFailureVerdict(error)).toEqual(PERMANENT_SPAWN)
+    expect(Object.keys(error)).not.toContain('mcpFailureVerdict')
+    expect(JSON.stringify({ ...error })).not.toContain('command_unavailable')
+    expect(readMcpFailureVerdict(new Error('boom'))).toBeUndefined()
+    expect(readMcpFailureVerdict('not an error')).toBeUndefined()
   })
 })
 
@@ -174,7 +170,7 @@ describe('classifyMcpFailure / text the remote server controls', () => {
     for (const wording of remoteWordings) {
       expect(
         classifyMcpFailure(
-          withKind('rpc_error', `MCP request \`tools/call\` failed: ${wording} (-32000)`),
+          withVerdict(RETRYABLE, `MCP request \`tools/call\` failed: ${wording} (-32000)`),
         ),
       ).toMatchObject({ status: 'reconnecting', reason: 'connection_disrupted' })
     }
@@ -259,7 +255,7 @@ describe('classifyMcpFailure / auth with and without a structured signal', () =>
       reason: 'auth',
     })
     expect(
-      classifyMcpFailure(withKind('rpc_error', 'MCP request `initialize` failed: invalid token (-32000)')),
+      classifyMcpFailure(withVerdict(RETRYABLE, 'MCP request `initialize` failed: invalid token (-32000)')),
     ).toMatchObject({ status: 'reconnecting', reason: 'auth' })
   })
 

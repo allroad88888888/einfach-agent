@@ -109,7 +109,12 @@ export type { ModelRequestErrorReason } from './model'
 
 // mcp 域失败的**判别面**（C6）。与上面 model 域那条同款、同理由：`POST /api/invoke/:command`
 // 要把「命令自己失败了」翻成一条带结构化标识的响应，而 MCP 那一支的标识就是 `kind`
-// ——`tools/mcp` 的失败分类器对 stdio 桥只认它，一个字都不读 message。判别只看字段、不看类型
-// 身份，所以经 `toJSON()` 序列化之后仍然成立。同样**只出读取面**，`McpCommandError` 的构造与
-// 文案留在包内：外壳的活是转发这个标识，不是自己造一个。
+// ——判别只看字段、不看类型身份，所以经 `toJSON()` 序列化之后仍然成立。同样**只出读取面**，
+// `McpCommandError` 的构造与文案留在包内：外壳的活是转发这个标识，不是自己造一个。
+//
+// `readMcpFailureVerdict` 是同一条路上的第二样东西：「这次失败原样重试还有没有意义」。它同样只
+// 由本包判（输入只有 kind，一个字都不读 message），外壳只负责把它放进失败信封带给客户端——
+// 客户端从此不再自己维护一张 kind 表。判据与铁律见 `mcp/failureKinds.ts` 文件头。
 export { readMcpCommandErrorKind } from './mcp/errors'
+export { readMcpFailureVerdict } from './mcp/failureKinds'
+export type { McpFailureReason, McpFailureVerdict } from './mcp/failureKinds'
