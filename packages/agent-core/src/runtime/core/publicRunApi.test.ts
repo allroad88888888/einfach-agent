@@ -1,11 +1,15 @@
 // 外部插件的 hook 面 = 仓内插件的 hook 面（F2 卡）。这里钉三件事：
 // 1) 7 个槽全都注册得上、且返回值真的透传到 loop（从前 afterToolCall 的返回值被写死成 undefined）；
 // 2) 槽名清单与 LoopHooks 逐字相等——外部面再缩水会当场红；
-// 3) hook 拿到的 ctx 是受限投影：没有 store / root / history（信任裁决没有放开写入面，
-//    理由见 pluginHookContracts.ts 文件头）。
+// 3) hook 拿到的 ctx 是受限投影：状态读写经 `state` 这个受限面给（F2b「给，读写同理」），
+//    而 store / root / history 三个裸句柄仍然不给（理由见 pluginHookContracts.ts 文件头）。
 
+import { createStore } from '@einfach/core'
 import { describe, expect, it } from 'vitest'
 
+import { itemsAtom, runAtom } from '../../state/sessionAtoms'
+import { activeSessionIdAtom, sessionsAtom } from '../../state/rootStore'
+import { createSessionHistory } from '../../state/sessionHistory'
 import { makeCoreCtx, type CoreCtx } from './coreCtx'
 import type { LoopHooks } from './loopHooks'
 import { assemblePlugins, type PluginApi } from './pluginApi'
@@ -95,14 +99,14 @@ describe('publicRunApi —— 外部插件的 7 个槽', () => {
     expect(draft.messages).toEqual([{ role: 'system', content: '第三方插件注入' }])
   })
 
-  it('hook 拿到的 ctx 不含 store / root / history，只有身份、signal 与 isCurrent', async () => {
+  it('hook 拿到的 ctx 不含 store / root / history，给出的是身份、signal、isCurrent 与受限的 state', async () => {
     let received: PluginHookContext | undefined
     const hooks = assemblePlugins([(api: PluginApi) => {
       publicRunApi(api).hook('onRunStart', (ctx) => { received = ctx })
     }])
     await hooks.onRunStart?.(coreCtx())
 
-    expect(Object.keys(received ?? {}).sort()).toEqual(['isCurrent', 'runId', 'sessionId', 'signal'])
+    expect(Object.keys(received ?? {}).sort()).toEqual(['isCurrent', 'runId', 'sessionId', 'signal', 'state'])
     const leaked = received as unknown as Record<string, unknown>
     expect(leaked.store).toBeUndefined()
     expect(leaked.root).toBeUndefined()
@@ -111,5 +115,69 @@ describe('publicRunApi —— 外部插件的 7 个槽', () => {
     expect(received?.runId).toBe('r1')
     expect(typeof received?.isCurrent).toBe('function')
     expect(Object.isFrozen(received)).toBe(true)
+  })
+})
+
+/** 真句柄：root 里登记了会话、会话 store 里有当前 run —— 这样 isCurrent() 才是真的在判。 */
+function liveCtx(sessionId = 's1', runId = 'r1') {
+  const store = createStore()
+  const root = createStore()
+  root.setter(sessionsAtom, {
+    [sessionId]: { id: sessionId, title: 't', settings: { vendor: 'v', model: 'm' }, createdAt: 0, updatedAt: 0 },
+  })
+  root.setter(activeSessionIdAtom, sessionId)
+  store.setter(runAtom, { runId, status: 'running', turnId: 'turn-1' })
+  const history = createSessionHistory(store)
+  const ctx = makeCoreCtx({ sessionId, runId, signal: new AbortController().signal, store, root, history, traceEvent: () => {} })
+  return { ctx, store, root, history }
+}
+
+describe('publicRunApi —— ctx.state（F2b 的状态读写面）', () => {
+  it('外部插件经 ctx.state 读得到会话 atom 值与跨会话 root 值', async () => {
+    const { ctx, store } = liveCtx()
+    store.setter(itemsAtom, [{ id: 'a', createdAt: 1, item: { role: 'user', content: '你好' } }])
+
+    let seen: { items: readonly { id: string }[]; activeSessionId: string } | undefined
+    const hooks = assemblePlugins([(api: PluginApi) => {
+      publicRunApi(api).hook('onRunStart', (hookCtx) => {
+        seen = {
+          items: hookCtx.state.readSession('items'),
+          activeSessionId: hookCtx.state.readRoot('activeSessionId'),
+        }
+      })
+    }])
+    await hooks.onRunStart?.(ctx)
+
+    expect(seen?.items.map((entry) => entry.id)).toEqual(['a'])
+    expect(seen?.activeSessionId).toBe('s1')
+  })
+
+  it('外部插件经 ctx.state 写会话状态，写入进事务日志、undo 回到 prev', async () => {
+    const { ctx, store, history } = liveCtx()
+
+    const hooks = assemblePlugins([(api: PluginApi) => {
+      publicRunApi(api).hook('onRunStart', (hookCtx) => {
+        hookCtx.state.appendItem({ role: 'system', content: '第三方插件写的一条' })
+      })
+    }])
+    await hooks.onRunStart?.(ctx)
+
+    expect(store.getter(itemsAtom)).toHaveLength(1)
+    expect(history.getState().entries).toHaveLength(1)
+    expect(history.undo()).toBe(true)
+    expect(store.getter(itemsAtom)).toEqual([])
+  })
+
+  it('run 换了人之后，插件手上那个 state 面写不进去（真 isCurrent 在判）', async () => {
+    const { ctx, store } = liveCtx()
+    let state: PluginHookContext['state'] | undefined
+    const hooks = assemblePlugins([(api: PluginApi) => {
+      publicRunApi(api).hook('onRunStart', (hookCtx) => { state = hookCtx.state })
+    }])
+    await hooks.onRunStart?.(ctx)
+
+    store.setter(runAtom, { runId: 'r2', status: 'running', turnId: 'turn-2' })
+    expect(state?.appendItem({ role: 'system', content: '迟到的回写' })).toBeUndefined()
+    expect(store.getter(itemsAtom)).toEqual([])
   })
 })

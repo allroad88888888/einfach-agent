@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Tool } from '../tools/types'
-import { sessionsAtom } from '../state/rootStore'
+import { activeSessionIdAtom, sessionsAtom } from '../state/rootStore'
 import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { createCore } from './core/createCore'
 import type { CoreInstance } from './core/coreInstance'
@@ -155,18 +155,27 @@ describe('tool-call plugin production integration', () => {
 
   // F2 卡的判据：外部（definePlugin 品牌）插件的 beforeToolCall 返回 {block:true} 必须**真的**
   // 拦下执行——从前公开面只有 onAfterToolCall，返回值被丢弃，第三方只能观察不能否决。
+  // F2b 追加：同一次真实 run 里，它经 ctx.state 读得到会话 atom 值与跨会话 root 值，
+  // 而 store / root / history 三个裸句柄仍然拿不到。
   it('lets an external definePlugin block a tool call end to end', async () => {
     const name = '__external_blocked_shell__'
     const execute = vi.fn(() => ({ ok: true as const, data: 'should not run' }))
     let hookContext: Record<string, unknown> | undefined
+    let stateRead: { runId?: string; items: number; activeSessionId: string } | undefined
     const external = definePlugin({
       activate: (api) => api.hook('beforeToolCall', (ctx, event) => {
         hookContext = ctx as unknown as Record<string, unknown>
+        stateRead = {
+          runId: ctx.state.readSession('run')?.runId,
+          items: ctx.state.readSession('items').length,
+          activeSessionId: ctx.state.readRoot('activeSessionId'),
+        }
         return event.toolName === name ? { block: true, reason: '第三方插件否决了这条命令' } : undefined
       }),
     })
     const core = createCore({ plugins: [external], registerTools: (registry) => registry.register(testTool(name, execute)) })
     seedSession(core, 'external-block')
+    core.rootStore.setter(activeSessionIdAtom, 'external-block')
     let requests = 0
     let thirdRequest = ''
     const fetchImpl: typeof fetch = async (_url, init) => {
@@ -185,10 +194,18 @@ describe('tool-call plugin production integration', () => {
         error: '第三方插件否决了这条命令',
         code: 'plugin_blocked',
       })
-      // 真实 run 里也拿不到 store：能力放开的是拦截，不是绕过命令层的写入面。
+      // 真实 run 里拿不到裸句柄：放开的是能力，不是 einfach 的 Store（记账要留住，见
+      // pluginHookContracts.ts 文件头）。
       expect(hookContext?.sessionId).toBe('external-block')
       expect(hookContext?.store).toBeUndefined()
+      expect(hookContext?.root).toBeUndefined()
       expect(hookContext?.history).toBeUndefined()
+      // 但受限的 state 面在真实 run 里确实读得到两个 store 的值（F2b）。
+      // 读到的 run 就是本次 hook 所属的那一个（runSession 自己铸 runId，不是传进去的会话入口名）。
+      expect(stateRead?.runId).toBe(hookContext?.runId)
+      expect(typeof stateRead?.runId).toBe('string')
+      expect(stateRead?.items).toBeGreaterThan(0)
+      expect(stateRead?.activeSessionId).toBe('external-block')
     } finally {
       core.plugins.dispose()
     }

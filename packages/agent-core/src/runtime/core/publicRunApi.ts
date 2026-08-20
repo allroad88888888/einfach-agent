@@ -1,25 +1,36 @@
 // 把仓内的装配期注册面 PluginApi 投影成外部插件看得见的 PluginRunApi。
 // ---------------------------------------------------------------------------
-// 只做一件事：**同一批 hook 槽的转接**——外部插件注册的 hook 拿到的是不含 Store 的
-// PluginHookContext，注册出去的是 loop 认识的 LoopHooks 实现，返回值原样透传（这是 F2 卡的要害：
-// 从前这里把 afterToolCall 的返回值写死成 undefined，外部插件只能观察不能干预）。
+// 做两件事，都是投影：
+//   1) **同一批 hook 槽的转接**——外部插件注册的 hook 拿到的是不含 Store 的 PluginHookContext，
+//      注册出去的是 loop 认识的 LoopHooks 实现，返回值原样透传（这是 F2 卡的要害：从前这里把
+//      afterToolCall 的返回值写死成 undefined，外部插件只能观察不能干预）；
+//   2) **把 CoreCtx 的两个 store 投影成受限的状态读写面**（F2b）——能力给，裸句柄不给。
 //
-// 信任裁决（负责人 2026-08-20「给，同等权利」）与「为什么不给 store」的完整理由写在
-// pluginHookContracts.ts 的文件头，不在这里复述。
+// 信任裁决（负责人 2026-08-20「给，同等权利」与「给，读写同理」）与「为什么不给裸 Store」的
+// 完整理由写在 pluginHookContracts.ts 的文件头，不在这里复述。
 
+import { createPluginStateAccess } from '../../state/pluginStateAccess'
 import type { CoreCtx } from './coreCtx'
 import type { LoopHooks } from './loopHooks'
 import type { PluginApi } from './pluginApi'
 import type { PluginHookContext, PluginLoopHooks } from './pluginHookContracts'
 import type { PluginRunApi } from './pluginContracts'
 
-/** 冻结的一次性投影：只带够做 stale 自查与跟随 abort 的字段，不带 store / root / history。 */
+/**
+ * 冻结的一次性投影：身份、signal、stale 自查，加上受限的状态读写面——**不带 store / root / history**。
+ *
+ * `state` 每次投影现建一份（四个闭包的冻结对象，与建 ctx 本身同一个量级），而不是挂到 CoreCtx 上缓存：
+ * 它把句柄闭进这一次 hook 调用的 ctx 里，插件拿到的写入面就不可能指向另一个会话的 store。
+ * 三道写入门（ghost / stale run / abort）在**调用时**才求值，所以插件把它收起来跨 await 用也不会
+ * 拿到一份已经过期的「放行」。实现与取舍见 state/pluginStateAccess.ts。
+ */
 function projectContext(ctx: CoreCtx): PluginHookContext {
   return Object.freeze({
     sessionId: ctx.sessionId,
     runId: ctx.runId,
     signal: ctx.signal,
     isCurrent: () => ctx.isCurrent(),
+    state: createPluginStateAccess(ctx),
   })
 }
 

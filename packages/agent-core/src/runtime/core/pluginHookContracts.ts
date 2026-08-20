@@ -24,13 +24,22 @@
 //      apps/web/src/agentNew/ui/PluginSettingsPanel.tsx 的信任提示、docs/plugin-quickstart.md
 //      的「当前边界」、docs/plugin-ecosystem-blueprint.md §9 第 1 条的裁决记录。
 //
-// ★ 没有一起放开的那一半（也是有意的）★
-// 本契约**不给 store / root / history**。会话 atom 的写入必须收口在 core 的 `state/` 与
-// `runtime/commands/`（CLAUDE.md 状态与 UI 边界规则 2，由 `pnpm check:state` 机械判定），而外部
-// 插件的代码在磁盘上、门禁扫不到它——把 einfach 的 Store 交出去就等于开一条门禁永远看不见的
-// 写入路径，绕过事务日志的写入会让 undo 只回滚一部分状态。插件要改会话状态走
-// PluginRunApi.commands（与工具「副作用必须走 ToolContext」同一条纪律）。
+// ★ 状态的读与写也一起放开了（F2b，负责人 2026-08-20「给，读写同理」）★
+// 早一版的这段写的是「本契约不给 store / root / history……写入面不建议开」。裁决之后事实变了：
+// 读会话与跨会话状态、改会话状态，外部插件都拿得到，入口是下面 PluginHookContext 的 `state`
+// （契约见 pluginStateContracts.ts，实现在 state/pluginStateAccess.ts）。
+//
+// **仍然不给的只有 einfach 的裸 `Store` 句柄**，而且理由与信任无关 —— 信任姿态已经是上面那句
+// 「装插件 = 完全信任」。理由是记账：会话 atom 的写入必须收口在 core 的 `state/` 与
+// `runtime/commands/`（CLAUDE.md 状态与 UI 边界规则 2，由 `pnpm check:state` 机械判定），而门禁
+// 扫的是仓库里的源码、扫不到磁盘上被动态加载的插件。把 Store 交出去就等于开一条门禁永远看不见
+// 的写入路径：绕过事务日志的写入会让 undo 只回滚一部分状态，越过它的那个 atom 停在新值上，
+// 而这件事只在 undo 或崩溃恢复时才以静默错值浮出来。仓内 UI 同样是完全信任的代码，照样只能走
+// commands —— 对谁都一样，这是机械要求，不是姿态。
+// 于是「给能力」与「留住记账」两件事都要，答案就是受限 facade：能力经 `state`（会话状态）与
+// `commands`（run 控制）给出，每一条的写入实现都物理落在 core 的写入器层，日志照记。
 
+import type { PluginStateAccess } from './pluginStateContracts'
 import type { ToolResultPatch } from '../toolResultPatch'
 import type {
   AfterToolCallEvent,
@@ -60,7 +69,8 @@ export type { ToolResultPatch } from '../toolResultPatch'
  * · sessionId / runId —— 归因与自查；
  * · signal —— 插件里的异步等待要能跟着 run 一起中止，否则停止 run 之后它还在跑；
  * · isCurrent() —— 与仓内插件同款的 ghost + stale-run 双查，await 之后再动手前必须调；
- * · 不给 store / root / history —— 见上面「没有一起放开的那一半」；
+ * · state —— 会话与跨会话状态的受限读写面（F2b）。不给 store / root / history 这三个裸句柄，
+ *   理由见上面那段：能力给了，记账不能丢；
  * · 不给 traceEvent —— 那会让第三方插件能伪造 core 自己的 `agent.plugin_*` 事件名，
  *   把「哪个插件干的」这条归因线搅浑，而它对本卡的能力面没有贡献。
  */
@@ -69,6 +79,17 @@ export interface PluginHookContext {
   readonly runId: string
   readonly signal: AbortSignal
   isCurrent(): boolean
+  /**
+   * 会话与跨会话状态的受限读写面。
+   *
+   * **挂在 ctx 上、不挂在 PluginRunApi 上**是刻意的：写入要过的三道门（ghost guard、runId stale
+   * guard、AbortSignal）恰好就是本 ctx 已经带着的那三样，挂在这里是复用它们，挂在 run 级 API 上
+   * 则要照着再造一份同款判据 —— 两份判据迟早漂移，而漂移的方向是「写入门变松」。
+   *
+   * 代价是它只在 hook 里拿得到：要在 `observeRun` 或 `activate` 里读状态，就在 `onRunStart` 里把
+   * ctx 收起来接着用（ctx 是冻结的、三道门在**调用时**才求值，所以拿着不会过期成假的放行）。
+   */
+  readonly state: PluginStateAccess
 }
 
 /**

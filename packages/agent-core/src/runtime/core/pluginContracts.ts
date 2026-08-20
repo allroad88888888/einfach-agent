@@ -74,8 +74,16 @@ export type AfterToolCallObserver = (
  *
  * `hook` 与仓内 AgentPlugin 的注册面**同名同形、同一批 7 个槽**（负责人 2026-08-20 裁决
  * 「给，同等权利」）：外部插件可以用 `beforeToolCall` 返回 `{ block: true }` 拦下工具执行，
- * 也可以在 `transformContext` / `prepareRequest` 里改模型这一轮看到的上下文。这次放开的依据、
- * 采取的信任姿态（装插件 = 完全信任）以及**没有**一起放开的写入面，见 pluginHookContracts.ts 文件头。
+ * 也可以在 `transformContext` / `prepareRequest` 里改模型这一轮看到的上下文。
+ *
+ * **状态的读与写不在这一层**：它挂在每个 hook 拿到的 `PluginHookContext.state` 上（F2b，
+ * 「给，读写同理」）。挂那里而不是挂这里，是因为写入要过的三道门（ghost guard、runId stale
+ * guard、AbortSignal）正是 ctx 已经带着的那三样；run 级 API 上没有它们，只能照着再造一份同款
+ * 判据，而两份判据迟早漂移。这一层留下的是**不需要那三道门**的能力：`commands` 是给宿主命令层
+ * 的委派（自带 run 作用域判定），`observeRun` 是纯观察。
+ *
+ * 放开的依据、信任姿态（装插件 = 完全信任）以及仍然不给裸 `Store` 的理由，见
+ * pluginHookContracts.ts 文件头。
  */
 export interface PluginRunApi {
   readonly commands: PluginCommandFacade

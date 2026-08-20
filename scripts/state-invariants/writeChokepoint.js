@@ -21,9 +21,12 @@
 // 【关于插件的写入面】`CoreCtx.store` 是裸 `Store`（`coreCtx.ts` 头部写着「裸给」），但它**只对
 //   仓内插件开放**：带 `LoopHooks` 的 `AgentPlugin` / `PluginApi` 住在 `runtime/core/pluginApi.ts`，
 //   既不在 core 公开面白名单九条里，也不被 `plugin.ts` / `index.ts` 导出。公开插件经
-//   `@einfach-agent/core/plugin` 只拿到 `PluginRunApi = { commands, observeRun, onAfterToolCall }`
-//   —— 没有 store，写一律走 commands。所以插件写入面**已经收口**，仓内那几个（如
-//   finishReasonPlugin）在本门禁扫描范围内，见豁免表。
+//   `@einfach-agent/core/plugin` 拿到的是受限投影：run 级的 `PluginRunApi`（commands / observeRun /
+//   hook / onAfterToolCall）与 hook 级的 `PluginHookContext`（身份 / signal / isCurrent / state）。
+//   `state` 是 F2b 放开的会话与跨会话状态读写面（负责人 2026-08-20「给，读写同理」）——它给的是
+//   能力，不是句柄：写入实现物理落在 `state/pluginStateAccess.ts`，转调 `writeSlot` /
+//   `appendItemLogged`，账照记。所以插件写入面**仍然是收口的**，唯一没收口的写法（拿裸 Store 自己
+//   setter）从来没出过公开面。仓内那几个（如 finishReasonPlugin）在本门禁扫描范围内，见豁免表。
 
 import { readFile } from 'node:fs/promises'
 import { dirname, relative, resolve, sep } from 'node:path'
