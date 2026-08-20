@@ -110,6 +110,18 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
   `agentnew-subagent-error`；每删一个类先 grep 确认零使用者；`pnpm exec vitest run apps/web` 绿；`pnpm build` 绿
 - **模型**：sonnet
 - **来源**：A3 验收时发现（面板删了但它的样式还在）
+- **状态**：DONE 3e0dcf4（验收抽查了动态拼接类名这个 grep 盲区：三处拼接全落在保留的类上）
+
+### A3c · 删掉清空后的 tree.css 并摘掉它的 @import
+
+- **依赖**：A3b
+- **改动面**：`apps/web/src/agentNew/ui/agentnew.subagent-tree.css`（删文件）、`agentnew.css:26` 的 `@import` 行
+- **判据**：文件删除且 `@import` 同步摘掉；`grep -rn "subagent-tree.css" apps` 零命中；
+  `pnpm exec vitest run apps/web` 绿；`pnpm build` 绿；`node scripts/check-docs.js` 绿
+- **模型**：sonnet
+- **来源**：A3b 交回时指出——它清空了文件但没删，因为删文件要同步改 `agentnew.css`，超出该卡改动面
+- **已知债（不在本卡）**：`agentnew.subagent-trace.css` 清理后仍 399 行（原 478），存量超限，
+  且混了「子 agent trace/inline 样式」与「消息气泡样式」两个不相关关注点，视情况另拆
 - **状态**：TODO
 
 ### A4 · hostRecoveryFlush 收成直调
