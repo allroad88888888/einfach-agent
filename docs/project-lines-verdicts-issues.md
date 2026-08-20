@@ -503,7 +503,21 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
   `pnpm exec vitest run packages/agent-core` 绿；`pnpm check:state` 绿；
   `node scripts/check-boundaries.js` 绿
 - **模型**：opus（新契约会被后续插件抄、安全边界、跨包公开面）
-- **状态**：TODO
+- **落地形状**：`PluginHookContext.state`（不挂 run 级 API——三道写入门恰好是 CoreCtx 已带的三样，
+  挂 ctx 复用、挂 run 级要再造一份迟早漂移的判据）；读 = string 键投影表（`readSession` 3 键 /
+  `readRoot` 2 键，不导出 atom 引用），写 = 两条具名方法（`appendItem` 只给 op 级、
+  `setContextCheckpoint` 有界整值），**读写形状刻意不对称**——统一的 `writeSession(key, value)`
+  会让「给 items 补整值 setter」看起来只是加一行，正是规则 3 要防的二次膨胀。实现落
+  `state/pluginStateAccess.ts`（规则 2 管辖内；不复用 sessionWriters 是因为它 import coreInstance
+  会成环，改用同层原语 `writeSlot` / `appendItemLogged` 并列）。`executionGraph` 不开写入面；
+  `plan`/`run` 状态机不开整值改写。
+- **验收（主会话）**：变异①把 `writeSlot` 换成裸 `store.setter`——这正是规则 2 在 `state/` 目录里
+  **拦不住**的写法——colocated 入账测试 1 red，证明真正的守卫（undo 回 prev 测试）咬得住；
+  变异②写入门放空 → 跨两份测试文件 4 red；恢复后全绿。四条判据亲手跑：core 1692 例绿、
+  check:state 832 文件绿、check-boundaries 846 文件绿、build 绿。接受两处改动面外注释同步
+  （coreCtx.ts / writeChokepoint.js，纯注释、内容属实）与 plugin barrel 上 `ModelItem` 的
+  type-only 再导出（agent-ai ← core 是既有依赖方向）。
+- **状态**：DONE 03686a5
 
 ### F2c · 插件样例与文档跟上状态读写面
 
