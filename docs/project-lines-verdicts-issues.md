@@ -239,7 +239,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：改走 registry 分派后渲染结果不变（快照或结构断言）；
   `pnpm exec vitest run apps/web/src/agentNew` 绿
 - **模型**：sonnet
-- **状态**：TODO
+- **状态**：DONE d8dd908
 
 ### C9 · 子 Agent 档位路由表按 vendor 选
 
