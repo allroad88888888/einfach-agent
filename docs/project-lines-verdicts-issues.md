@@ -242,7 +242,7 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **判据**：清单回到稳定前缀且 `buildManifestText` 被调用；新增测试证明清单变化被 contextCache
   归因为 `profile_changed`（不是尾巴动态变化）；`pnpm exec vitest run packages/agent-core tools/skills` 绿
 - **模型**：opus（缓存契约，改错会让每轮全额 miss）
-- **状态**：TODO
+- **状态**：DONE d6a4359（验收：全量 5299 绿 + 四门禁全过；变异测试摘掉清单段后 2 条红）
 
 ### C8 · 阶段轨迹并回 TimelineItemView
 
@@ -271,14 +271,15 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **模型**：sonnet
 - **状态**：DONE 903fc79（验收做了变异测试：拆掉 create-plan 的审批暂停分支后正好 1 条红）
 
-### D2 · skill-manifest 补 .md 说明
+### D2 · ~~skill-manifest 补 `.md` 说明~~ —— 前提失效，改写为已确认规则
 
-- **依赖**：—
-- **改动面**：`tools/skills/src/skill-manifest/skill-manifest.md`（新建）+ 工具声明引用它
-- **判据**：文件存在且被工具声明引用；`pnpm exec vitest run tools/skills` 绿；
-  `node scripts/check-docs.js` 绿
-- **模型**：sonnet
-- **状态**：TODO
+- **原卡**：给 `skill_manifest`（当时全仓唯一的到点工具）补 `.md`；负责人已答「照写」。
+- **前提失效**：C7（DONE `d6a4359`）把 skill 清单迁回稳定前缀时**删掉了 `skill_manifest` 工具本身**。
+  实测 `grep -rn callTiming tools/*/src` 现在只剩 C2 加的一句注释——**全仓已无任何到点工具**，
+  没有对象可补。
+- **裁决仍然有效，升格为规则**：新的到点工具要写 `.md`（`.md` 不只是发给模型的 guide，也是给人
+  读的说明）。已记入 `.project-lines/SKILL.md` 的「已确认的规则」。
+- **状态**：DROPPED（前提失效，不是放弃）
 
 ### D3 · tools/standard 计数注释与权威清单同步
 
