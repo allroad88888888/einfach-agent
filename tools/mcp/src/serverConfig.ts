@@ -55,7 +55,11 @@ export function validateConfig(config: McpServerConfig): void {
   throw new Error(`Unsupported MCP transport: ${String(exhaustive)}`)
 }
 
-/** stdio 服务跑在宿主进程里，只有桌面端能执行；HTTP 服务浏览器内即可调用。 */
+/**
+ * stdio 服务要跑在宿主进程里，只有登记了命令桥的 `server` 宿主能执行——浏览器经 HTTP 打到本机
+ * Node 后端（`packages/host-node`），CLI 进程内直调，两条路跑同一份代码；`static` 宿主没有后端、
+ * 不登记命令桥（`hasHostBridge()` 为假），stdio 无法执行。HTTP 服务两态都能直接调用，浏览器内即可。
+ */
 export function runtimeFor(config: McpServerConfig): ToolRuntime {
   return config.transport === 'stdio' ? 'server' : 'internal'
 }

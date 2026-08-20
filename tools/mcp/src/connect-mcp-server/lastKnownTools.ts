@@ -3,9 +3,9 @@
 // 【为什么是注入】清单缓存住在 app 层（apps/web/src/mcp/toolNameCache.ts）：它要落磁盘、要和设置
 //   面板共用同一份数据。依赖方向是 tools-* ← app，本包不能反向 import 它。切法沿用 F1 的注入式
 //   registrar 与 F3 的只读探针：宿主在装配期递进来一个【只读函数】，本域只认这个函数签名，不认
-//   它背后是 localStorage、Tauri 配置文件还是测试里的一个常量数组。类型在这里独立声明，与 app
-//   的 McpLastKnownTools 结构同形——结构类型让宿主可以直接把 listLastKnownTools(cache) 递进来，
-//   而两个包之间没有任何 import 关系。
+//   它背后是浏览器 localStorage、server 宿主经 HTTP 打到的 `~/.webAgent/config.json` 还是测试里的
+//   一个常量数组。类型在这里独立声明，与 app 的 McpLastKnownTools 结构同形——结构类型让宿主可以
+//   直接把 listLastKnownTools(cache) 递进来，而两个包之间没有任何 import 关系。
 //
 // 【为什么"连没连上"不走探针，而是问 manager】清单是历史，连接状态是此刻的事实，两者权威不同源。
 //   已连接服务的工具已经真真切切注册进 ToolRegistry 了，再把它的历史清单抄进工具描述纯属浪费
