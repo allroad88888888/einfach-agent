@@ -142,7 +142,10 @@ export {
   discardArtifact,
   dismissWithdrawnTurnNotice,
   refreshProjectSkills,
-  // 子 Agent 视图（apps/web: SubagentTreePanel、SubagentSkillGovernancePanel）
+  // 子 Agent 视图（全局 run 归档 / skill 治理弹窗；两块面板随 A3 退场，apps/web 目前没有 UI
+  // 消费者——状态与命令面仍在 packages/subagents 的 subagentViewAtoms / subagentArchiveAtoms /
+  // subagentSkillGovernanceAtoms 等文件里，由那边的测试与 stateViewPort.ts 的
+  // SubagentViewCommandFacade 继续练到）
   selectSubagentNode,
   selectGlobalSubagentRun,
   loadGlobalSubagentRuns,

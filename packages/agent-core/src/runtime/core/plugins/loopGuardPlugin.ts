@@ -5,14 +5,15 @@
 // 契约：docs/core-plugin-extraction-blueprint.md §四/§五（PX3 LoopHooks；「循环检测 →
 //   loopGuardPlugin → afterToolCall/onTurnEnd」那一行）。本轮只搬循环检测这一个关注点。
 //
-// 【绝对没碰】危险工具确认 / ask_user 暂停两条挂起/恢复流——它俩仍原样待在 modelRun.ts 的 loop
-//   里，留 Stage 2b，本文件一行都不涉及。finish_reason 三态是兄弟 agent 的插件——本文件也不碰，
-//   即便现状里 loop 检测与 finish_reason 共享 assistantHasContent 这个 turn-end 量（见下）。
+// 【绝对没碰】危险工具确认 / ask_user 暂停两条挂起/恢复流——它俩仍原样待在 toolCallBatch.ts 里
+//   （loop 的工具批次处理一环），留 Stage 2b，本文件一行都不涉及。finish_reason 三态是兄弟 agent
+//   的插件——本文件也不碰，即便现状里 loop 检测与 finish_reason 共享 assistantHasContent 这个
+//   turn-end 量（见下）。
 //
 // 【最高铁律】纯结构搬迁，行为零变化：阈值(3)、签名规范化算法、达阈值时的收尾（trace 事件名
 //   'agent.loop_detected' + 全套 attrs + run 状态 'error' + 错误串）都与搬迁前逐字一致。
 //
-// ── 现状（modelRun.ts runToolLoop 内，每轮 model 往返收尾处）──
+// ── 现状（toolLoopCycle.ts 的 runToolLoopCycle 内，每轮 model 往返收尾处）──
 //   跨轮维护两份累计状态：
 //     · consecutiveToolOnlyTurns —— 连续「纯工具轮」计数器（只用于 trace 的 consecutive_tool_turns）。
 //     · repeatedToolSignatures   —— Map<签名, 累计次数>，某签名累计到阈值(3) 即判成环。
@@ -23,13 +24,15 @@
 //   不建条目（api/modelApi.ts 注释），故这一路对 itemsAtom 零写入（回归测试钉死：命中轮无新
 //   assistant 条目）。所以本插件也【不需要】任何 ctx.store 写入——它只累计、判定、返回决策。
 //
-// ── 与 loop（modelRun.ts）的协作契约（集成时务必对齐）──
+// ── 与 loop（runToolLoop.ts 编排 + toolLoopCycle.ts 收尾；modelRun.ts 今天只剩稳定导出的外壳，
+//   不是实现所在地）的协作契约（集成时务必对齐）──
 //   LoopHooks 的 TurnEndEvent 是 loop 与插件共享的完整契约。本插件直接读取其中的
 //   assistantHasContent，不私有扩展事件或在 hook 边界断言。
 //     · assistantHasContent —— 旧代码里的
 //         `typeof msg?.content === 'string' && msg.content.trim().length > 0`。
-//       这是一份 loop 已算好、且与 finish_reason 分支【共享】的 turn-end 量（modelRun 里只算一次），
-//       故由 loop 一次算好、连同 finishReason/toolCalls 一起喂进来，避免两个插件各算一遍而漂移。
+//       这是一份 loop 已算好、且与 finish_reason 分支【共享】的 turn-end 量（toolLoopCycle.ts 里
+//       只算一次），故由 loop 一次算好、连同 finishReason/toolCalls 一起喂进来，避免两个插件各算
+//       一遍而漂移。
 //
 //   onTurnEnd 命中阈值时返回完整 TurnEndStopDecision（未命中返回 undefined = 不干预、loop 继续）。
 //   命中决策带：

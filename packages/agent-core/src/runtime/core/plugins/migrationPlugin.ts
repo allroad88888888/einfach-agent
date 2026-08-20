@@ -6,7 +6,8 @@
 //   抽成可独立单测的具名函数 applyMigration，插件只把它接进 onRunStart 槽。
 //
 // 【最高铁律】纯结构搬迁，行为零变化。危险工具确认 / ask_user 暂停两条挂起/恢复流【一行未动】，
-//   仍在 modelRun.ts 的 loop 里，留 Stage 2b。
+//   仍是 toolCallBatch.ts 里硬编码的风险判定 + 暂停流程（loop 的工具批次处理一环），没有走这套
+//   插件 hook，留 Stage 2b。
 //
 // ── 背景：Stage 1 review 抓到的「分叉」 ──
 //   modelRun.ts 在 runToolLoop 顶部（ghost 守卫后）做 `const meta = migrateSessionMeta(rawMeta)`，
@@ -17,10 +18,12 @@
 //   下线就会真分叉。本插件把迁移【写回 store】：store 从此是迁移后的唯一真相，下游所有读 store 的
 //   插件天然拿到迁移后值，双迁可撤（撤除动作由集成 agent 做，见文件尾说明）。
 //
-// ── 行为对齐现状 ──
-//   现在 modelRun 的「请求路径兜底」就是 migrateSessionMeta；本插件把它从「本地变量」升级成
-//   「写回 store」，语义等价 + 消除分叉。迁移规则（幂等 / 不误伤未知模型 / 不覆盖用户显式 thinking）
-//   全部原样继承 migrateSessionMeta，本文件一条规则都不重写。
+// ── 行为对齐现状（写于本插件落地那一刻，「现在」指落地前的 modelRun 请求路径）──
+//   落地前 modelRun 的「请求路径兜底」就是 migrateSessionMeta；本插件把它从「本地变量」升级成
+//   「写回 store」，语义等价 + 消除分叉，原来那处内联 fallback 随之删除——今天 runtime/ 下只剩
+//   本文件和 state/persistence/hydrate.ts（加载时的另一条迁移路径）还在调 migrateSessionMeta。
+//   迁移规则（幂等 / 不误伤未知模型 / 不覆盖用户显式 thinking）全部原样继承 migrateSessionMeta，
+//   本文件一条规则都不重写。
 
 import { sessionsAtom } from '../../../state/rootStore'
 import { migrateSessionMeta } from '../../../state/persistence/modelMigration'

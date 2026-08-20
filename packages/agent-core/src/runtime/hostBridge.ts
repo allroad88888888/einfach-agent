@@ -65,9 +65,10 @@ let hostInvokeLoader: HostInvokeLoader | undefined
 
 // 解析结果的 promise 缓存。必须缓存（下方 `??=`）：
 // loader 内部通常是一次动态 import，同一 tick 内并发发起首次 import 时，Vitest 4 的 mocker 有一路
-// 可能拿到未被替换的真模块（实测 SubagentTreePanel 的 run 索引与 candidate skills 两条 effect 同时
-// 触发时命中，见 state/stateViewPort.ts 同款记档）；缓存后每个模块实例只解析一次，所有调用点
-// 拿到的是同一个 invoke 引用。
+// 可能拿到未被替换的真模块（实测 loadGlobalSubagentRuns 的 run 索引读取与 loadCandidateSkills 的
+// 候选 skill 读取两次调用同 tick 并发触发时命中——两者都经 workspaceRead 转到这里，见
+// state/stateViewPort.ts 同款记档）；缓存后每个模块实例只解析一次，所有调用点拿到的是同一个
+// invoke 引用。
 let hostInvokePromise: Promise<HostInvoke> | undefined
 
 /**

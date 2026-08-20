@@ -14,9 +14,11 @@ import { relativePath } from './sourceFiles.js'
  *
  * 不扫全仓「所有 atom」：应用层与子 Agent 的视图 atom 不是会话内容，混进来会让规则 4 变成一张
  * 几十项的噪音表，然后没人再读它。**治理边界按「是不是会话状态」划，不按「值落在哪个 store」划**
- * ——`ActiveSessionProvider` 把整棵右栏挂在会话 store 上（`sessionAtomScope(id)` 返回的就是
- * `getSessionStore(id).store`），所以渲染层随手 `useAtom` 的东西物理上也落在会话 store 里；
- * 那不构成把 UI 折叠态纳入恢复契约的理由。
+ * ——UI store 拆分之后应用层 atom 已经不在 core 的任何一个 store 里了（住
+ * `apps/web/src/uiStore.ts`），但这条判据仍然成立：`@einfach-agent/subagents` 的视图 atom
+ * （`subagentTreesAtom` 等）依旧整族挂在 agent store 上——写入命令走的就是
+ * `runtime/commands/subagentViewCommands.ts` 里 `core.getSessionStore(id).store`，物理位置照样
+ * 对不上「是不是会话状态」；那不构成把它们纳入恢复契约的理由。
  *
  * 但「不扫全仓」不等于「这张清单可以悄悄过期」：core 里任何一个含 atom 声明的文件，
  * 要么在这张清单里、要么在 CORE_NON_SESSION_ATOM_FILES 里说明它凭什么不是会话状态。

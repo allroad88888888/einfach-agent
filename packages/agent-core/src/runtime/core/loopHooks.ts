@@ -4,11 +4,15 @@
 //   瞬时数据」。关键差异：这些槽里【看不到穿进来的状态】—— items/run/checkpoints/meta 全靠
 //   ctx.store.getter(...) / ctx.root.getter(...) 现取。这是「状态核心最强」的落地。
 //
-// Stage 1（立缝）只有 transformContext 被真正接进 loop（压缩挂它）；其余槽先把类型定死、留着
-// 后续搬。Stage 2a（本轮）在缝上【additive】加两样能力形状：onRunStart 槽（run 启动归一化）+
-// onTurnEnd 的 TurnEndDecision 终止返回（finish_reason 三态 / 循环检测用它「带状态终止 run」），
-// 供 modelRun 那侧把「模型迁移 / finish_reason / 循环检测」三个关注点搬成插件——loop 的实际接线
-// 不在本文件（本文件只定义槽形状）。危险工具确认 / ask_user 暂停留到 Stage 2b，原样待在 loop 里。
+// 现状（本次核实修正，替换掉过时的「只接一个槽、其余留着类型」描述）：下面 7 个槽已经 7/7 接进
+// 主循环。接线点按各自职责分散在专门文件里，不在本文件（本文件只定义槽形状）：
+// onRunStart → toolLoopBootstrap.ts；transformContext / prepareRequest → modelTurnRequester.ts；
+// beforeToolCall / afterToolCall → toolCallPluginHooks.ts（由 toolCallBatch.ts 在逐个工具调用时
+// 调用）；onTurnEnd / shouldStop → toolLoopCycle.ts。三个内建插件（migration / loopGuard /
+// finishReason，见 runtime/core/plugins/）各占其中一槽；外部插件经 publicRunApi.ts 的 hook() 拿到
+// 完全相同的 7 槽、返回值原样透传（F2，负责人「给，同等权利」）。危险工具确认 / ask_user 暂停两条
+// 挂起/恢复流仍是硬编码在 toolCallBatch.ts 里的风险判定 + 暂停流程，没有走这套插件 hook——下面
+// beforeToolCall 槽的注释单独说明这一点，别当成「确认/危险门就挂在这个槽上」。
 // 定义但不强制实现 —— assemblePlugins 会把每个槽按 fan-out 语义合成，loop 侧据「槽为 undefined」跳过。
 
 import type { ModelItem, ModelResponseMessage } from '@einfach-agent/ai'
@@ -168,7 +172,9 @@ export interface LoopHooks {
   transformContext?(ctx: CoreCtx, draft: RequestDraft): void | Promise<void>
   /** 发请求前再改一次投影（模型迁移挂这，Stage 2）。 */
   prepareRequest?(ctx: CoreCtx, draft: RequestDraft): void | Promise<void>
-  /** 工具执行前（schema 校验 / 确认门 / 危险门挂这，Stage 2）。返回 {block:true} 拦截。 */
+  /** 工具执行前的插件拦截点（Stage 2）。schema 校验发生在调用它之前的 prepareToolCall 里，
+   *  不算这个槽的插件；确认门 / 危险门是 toolCallBatch.ts 里独立于插件系统的风险判定 + 暂停
+   *  流程，同样不挂在这个槽上。返回 {block:true} 拦截。 */
   beforeToolCall?(
     ctx: CoreCtx,
     ev: BeforeToolCallEvent,

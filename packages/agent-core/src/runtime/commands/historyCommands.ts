@@ -96,8 +96,9 @@ function labelAtCursor(history: History): string | undefined {
 /**
  * 反复调 step，直到下一个目标的标签与首条不同。
  *
- * 无标签的条目（尚无 run 时产生，如输入框草稿）只弹一条：它们不属于任何一轮，
- * 成组回滚会把不相关的编辑一起吃掉。
+ * 无标签的条目（尚无 run 时产生，如新会话的第一条用户消息——modelRunLifecycle.ts 的
+ * startModelRun 里 appendItem 先于 setRun 写入 turnId，此时 currentTurnLabel 读不到 run）
+ * 只弹一条：它们不属于任何一轮，成组回滚会把不相关的编辑一起吃掉。
  */
 function applyWhileSameLabel(
   history: History,

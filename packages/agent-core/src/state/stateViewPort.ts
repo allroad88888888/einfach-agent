@@ -17,8 +17,9 @@ import { itemsAtom } from './sessionAtoms'
 // 令 workspaceRead 系 mock 全部失效（setup.ts 里记的同款回归，S2b 又踩了一次）。
 // 端口只需要在调用时刻拿到实现，推迟加载即可；两个函数本来就是 async，不引入新的时序语义。
 // promise 必须缓存：同一 tick 里并发首次 import 同一模块时，Vitest 的 mocker 会有一路拿到未被
-// 替换的真模块（实测 SubagentTreePanel 的 run 索引与 candidate skills 两条 effect 同时触发时命中），
-// 缓存后每个模块实例只发一次 import，解析结果对所有调用点一致。
+// 替换的真模块（实测 loadGlobalSubagentRuns 的 run 索引读取与 loadCandidateSkills 的候选 skill
+// 读取两次调用同 tick 并发触发时命中，见 runtime/hostBridge.ts 同款记档——两者都会转去调
+// loadHostInvoke），缓存后每个模块实例只发一次 import，解析结果对所有调用点一致。
 let workspaceReadModule: Promise<typeof import('../runtime/workspaceRead')> | undefined
 const loadWorkspaceRead = () => (workspaceReadModule ??= import('../runtime/workspaceRead'))
 
