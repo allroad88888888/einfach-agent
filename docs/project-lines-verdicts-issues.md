@@ -366,22 +366,64 @@ B2 依赖 B1 + A3（两个已知漏网都消掉，扩判据才不会一上来就
 - **模型**：sonnet
 - **状态**：TODO
 
+## F 分支 · 未决闭合后长出来的卡（2026-08-20）
+
+### F1 · 子 run 的死循环要说得出原因
+
+- **依赖**：—
+- **改动面**：`packages/agent-core/src/subagents/childAgentLoop.ts:200,257`（maxTurns 收尾处）、
+  循环检测判据的复用点（`runtime/core/plugins/loopGuardPlugin.ts` 的判据，注意子 run **不装插件**，
+  要复用的是判据不是插件）
+- **判据**：子 run 撞 `maxTurns` 收尾时，报告里要说得出**它在重复什么**（重复调用的工具名 +
+  重复轮数），而不只是 `exceeded maxTurns`；新增测试：造一个反复调同一工具同参数的子 run，
+  断言收尾文案含重复项；`pnpm exec vitest run packages/agent-core/src/subagents` 绿
+- **模型**：opus（判据复用要跨「插件 / 非插件」两种装配形态）
+- **来源**：questions A5 裁决。**核实结论**：「关掉再重开」已有（`cancel_agent` + 再次
+  `delegate_agent`），本卡**不做**那部分；缺的只有「输出原因」
+- **状态**：TODO
+
+### F2 · 外部插件 hook 面扩到与仓内插件同等
+
+- **依赖**：—
+- **改动面**：`packages/agent-core/src/plugins/pluginContracts.ts:72-76`（投影面）、
+  `runtime/core/pluginHost.ts:65-73`（当前丢弃返回值）
+- **判据**：外部插件能拿到 7 个槽（`onRunStart` / `transformContext` / `prepareRequest` /
+  `beforeToolCall` / `afterToolCall` / `onTurnEnd` / `shouldStop`），且 `beforeToolCall` 返回的
+  `{block:true}` **真的能拦下工具调用**（新增测试证明拦截生效，不是返回值被丢）；
+  `pnpm exec vitest run packages/agent-core` 绿；`node scripts/check-boundaries.js` 绿
+- **模型**：opus（**安全边界**）
+- **来源**：questions A6 裁决「给，同等权利」
+- **卡内必须一并交代**：拿到 `beforeToolCall` 的第三方插件能**否决 shell 命令、改模型看到的
+  上下文**。现有信任模型是「MCP 起进程要用户确认」，插件目前**没有**对应的确认面
+  （`docs/plugin-ecosystem-blueprint.md` 把「默认信任姿态」列为待拍板）。本卡要么复用起进程确认
+  那套，要么明确写出「装插件 = 完全信任」并让安装面说清楚——**不许默默放开**
+- **状态**：TODO
+
+### F3 · sourceFiles 加黑白名单
+
+- **依赖**：—
+- **改动面**：`scripts/state-invariants/sourceFiles.js:13`
+- **判据**：扫描面按黑白名单收敛，`dist/` 及编译产物 `.d.ts` 不再进扫描（实测当前 1453 个文件里
+  610 个是产物）；五条规则的扫描计数在门禁输出里如实反映；`pnpm check:state` 绿；
+  `pnpm exec vitest run scripts/state-invariants` 绿
+- **模型**：sonnet
+- **来源**：questions D-4 裁决
+- **注意**：规则 5（`agentStoreBinding.js`）刚由 B2 改成「受治理包 import + 裸 hook 第一实参位」，
+  它自带 fixture 测试；收窄扫描面后要确认那 9 条仍绿
+- **状态**：TODO
+
 ## 未决（不编号、不指派模型；决策没落地，依赖它的卡不开工）
 
 - **方向迁移：agent 循环跑服务端、前端纯展示。** 负责人 2026-08-20 已裁定方向，但范围是另一个
   数量级（core 从浏览器搬到 `apps/server`，`static` 态失效，idb driver 可能整条作废，三层 store
   重画）。**另开树**，不混进本树。
   在浏览器内部运行的，保持在浏览器，这个是之前的成果。 我们最近几天是把rust版本，变为一个套壳的web，这个web只是界面渲染，实际运行在服务端的
-- **子 Agent 续跑语义**（questions A5）：负责人的意思读作「两个 disposition 是过度设计，真正要的
-  是死循环可观测、可关掉、可重开」——待确认；且「关掉再重开」现在有没有尚未核实。
-- **beforeToolCall 给不给第三方插件**（questions A6）：已定「插件一视同仁」，但该 hook 能返回
-  `{block:true}` 拦下工具调用，等于让第三方能否决 shell 命令、改模型看到的上下文。
+- ~~**子 Agent 续跑语义**（questions A5）~~：已核实——「关掉再重开」已有（`cancel_agent` + 再次 `delegate_agent`）；缺的「输出原因」已开卡 **F1**。✅
+- ~~**beforeToolCall 给不给第三方插件**（questions A6）~~：负责人裁决**给，同等权利** → 已开卡 **F2**（安全边界，卡里要求一并交代信任模型）。✅
   同等权利
-- **CLI 定位**（questions B1）：暂定「一次性工具」，方向迁移落地后重开。 套壳服务端，光展示
-- **idb 先例**（questions B6）：`observability-sqlite` 依赖 `observability-idb` 算不算通用模式；
-  与方向迁移一并定。
-- **`sourceFiles.js:13` 扫描面含 `dist/`**（questions D4）：答「不知道」，保持未决；下一条按行
-  扫描的规则**不要**直接复用这份文件清单。
+- **CLI 定位**（questions B1）：负责人裁决「开 issue 任务树」——它与「agent 循环跑服务端」是同一件事的两面，归入**方向迁移树**的前置项（那棵树尚未开）。当前树的 A6 卡只删那行悬空 import，不动定位。 套壳服务端，光展示
+- ~~**idb 先例**（questions B6）~~：负责人裁决**保持现状**——先例不推广也不改。✅ 已闭合。
+- ~~**`sourceFiles.js:13` 扫描面含 `dist/`**（questions D-4）~~：负责人改判「加黑白名单」→ 已开卡 **F3**。✅
   改sourceFiles。js。不要扫描到dist目录，可以加白名单或者黑名单
 - **合并时未提交的 6 条**（00-3、00-4、11-3、12-1、14-4、16-4）：判为不改变新代码去向而未上会，
   各自记在对应线文件的裁决节里。
