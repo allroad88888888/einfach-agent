@@ -7,6 +7,7 @@ import {
   type AppSettings,
 } from './config'
 import { resetModelCredentialState } from './modelCredentialState'
+import { resetModelEndpointState } from './modelEndpointState'
 import { resetSettingsCenterState } from './settingsCenterState'
 import { resetProjectSkillsSettingsState } from './projectSkillsState'
 
@@ -18,6 +19,13 @@ export {
   type ModelCredentialEntries,
   type ModelCredentialState,
 } from './modelCredentialState'
+
+export {
+  modelEndpointEntryAtom,
+  modelEndpointHostAvailableAtom,
+  type ModelEndpointEntry,
+  type ModelEndpointFieldState,
+} from './modelEndpointState'
 
 export {
   settingsCenterOpenAtom,
@@ -69,6 +77,7 @@ export function resetAppSettingsState(store: Store): void {
   store.setter(disabledProjectSkillsByWorkspaceAtom, {})
   resetProjectSkillsSettingsState(store)
   resetModelCredentialState(store)
+  resetModelEndpointState(store)
   resetSettingsCenterState(store)
 }
 

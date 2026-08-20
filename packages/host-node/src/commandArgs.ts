@@ -44,13 +44,14 @@ import type {
   WorkspaceChangeContextArgs,
   WorkspacePatchOperationArgs,
 } from './commandPayloads'
+import type { ModelCommandArgs } from './model/commandArgs'
 import type { SqliteConnectionName } from './sqlite/connectionNames'
 
 /**
  * 命令名 → 入参形状。`get_user_home_dir` / `mcp_config_read` 无参，写成 `undefined`：
  * 它们的调用点是 `invoke('get_user_home_dir')`，第二个实参根本不传。
  */
-export interface NodeHostCommandArgs {
+export interface NodeHostCommandArgs extends ModelCommandArgs {
   // ── workspace/read ── Rust: workspace_read.rs（4 条全带 rename_all = snake_case）
   //    TS: agent-core/src/runtime/workspaceRead.ts 的 toTauriReadInput / …RunIndexPageInput /
   //    …ListInput / …SearchInput
@@ -233,27 +234,8 @@ export interface NodeHostCommandArgs {
     input: { serverId: string; sessionToken: string; gracePeriodMs?: number }
   }
 
-  // ── model ── Rust: model_proxy.rs / model_credentials.rs；
-  //    TS: apps/web/src/modelTransport/tauriModelTransport.ts、apps/web/src/settings/
-  //    modelCredentialHost.ts
-  /**
-   * 流式模型请求。桌面侧签名还有第三个参数 `events: Channel<ModelProxyEvent>`——那是 Tauri 的
-   * 反向通道，**不是 JSON 入参**，所以不在本类型里。Node 宿主怎么把响应流送回调用方是
-   * `events` 域要解决的事（HTTP 那条路上大概率是 SSE / chunked），`HostInvoke` 的
-   * `(cmd, args) => Promise<T>` 签名本身装不下它。
-   */
-  model_provider_request: { input: { target: unknown; body: unknown; requestId: string } }
-  /** 唯一的 camelCase 顶层参数之一（Rust 侧 `request_id`，命令没有 rename_all）。 */
-  cancel_model_provider_request: { requestId: string }
-  /** 旧渲染层兼容命令，当前无 TS 调用方；同样带 Channel 反向通道。 */
-  model_chat_completions: { input: { provider: string; body: string; requestId: string } }
-  /** 唯一的 camelCase 顶层参数之二。 */
-  cancel_model_chat_completions: { requestId: string }
-  /** `provider` 取 'deepseek' | 'glm' | 'kimi'，`scope` 取 'default' | 'cn'（Rust 侧 lowercase）。 */
-  model_credential_status: { provider: string; scope?: string }
-  /** 响应里**从不**回传 Key 值，只回 configured 与来源——这条契约在 Node 宿主也必须保住。 */
-  model_credential_set: { input: { provider: string; scope?: string; apiKey: string } }
-  model_credential_delete: { provider: string; scope?: string }
+  // ── model ── 十条命令的入参形状搬到了 `model/commandArgs.ts`（域的入参形状随域走，
+  //    见那个文件的文件头）。本表 extends 它，穷举断言照旧覆盖得到。
 
   // ── config ── Rust: mcp_config.rs / user_paths.rs；
   //    TS: apps/web/src/mcp/tauriMcpConfigStorage.ts、toolNameCacheStorage.ts、

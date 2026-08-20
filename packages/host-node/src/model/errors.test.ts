@@ -28,6 +28,7 @@ const EXPECTED: Record<ModelErrorKey, { message: string; reason: ModelRequestErr
   scopeNotAllowed: { message: '模型凭证作用域未获允许', reason: 'target-not-allowed' },
   invalidApiKey: { message: '模型 API Key 格式无效', reason: 'invalid-request' },
   invalidConfigFormat: { message: '模型配置文件格式无效', reason: 'credential-config-invalid' },
+  invalidBaseUrl: { message: '模型接入点地址未获允许', reason: 'target-not-allowed' },
 }
 
 describe('文案是跨宿主契约，逐字钉住', () => {

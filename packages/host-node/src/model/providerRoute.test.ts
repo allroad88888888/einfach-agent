@@ -1,9 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { narrowProviderTarget, resolveProviderTarget } from './providerRoute'
+import {
+  narrowProviderTarget,
+  resolveProviderTarget,
+  type RegisteredProviderOrigins,
+} from './providerRoute'
 
-function target(value: unknown) {
-  return resolveProviderTarget(narrowProviderTarget(value))
+/** 默认**什么都没登记**：登记式条目在这个前提下必须一律落空。 */
+function target(value: unknown, registered: RegisteredProviderOrigins = {}) {
+  return resolveProviderTarget(narrowProviderTarget(value), registered)
 }
+
+const OPENAI_COMPAT_CHAT = {
+  provider: 'openai-compat',
+  scope: 'default',
+  method: 'POST',
+  path: '/chat/completions',
+} as const
 
 describe('端点白名单', () => {
   // 与 model_provider_route.rs 的五个 match 臂逐条对照。这张表是本域安全性的全部，
@@ -68,6 +80,87 @@ describe('端点白名单', () => {
     expect(() =>
       target({ provider: 'deepseek', scope: 'default', method: 'DELETE', path: '/files/x' }),
     ).toThrow('模型请求目标未获允许')
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// openai-compat：origin 由用户登记，「精确匹配一个已知 origin」这个前提在它身上不成立。
+// 替代约束是「只放行那一条显式登记的、且过得了判据的地址」，这一组就是它的判据集。
+describe('登记式 origin（openai-compat）', () => {
+  it('登记过就按登记的那条拼 URL，路径仍是字面量全等的 chat 端点', () => {
+    expect(target(OPENAI_COMPAT_CHAT, { openAiCompat: 'https://gateway.example.com/v1' }))
+      .toEqual({
+        provider: 'openai-compat',
+        scope: 'default',
+        method: 'POST',
+        url: 'https://gateway.example.com/v1/chat/completions',
+        bodyKind: 'json',
+        maxResponseBytes: 32 * 1024 * 1024,
+      })
+  })
+
+  it('**没登记就是目标未获允许**——不存在「猜一个默认接入点」的分支', () => {
+    expect(() => target(OPENAI_COMPAT_CHAT)).toThrow('模型请求目标未获允许')
+    expect(() => target(OPENAI_COMPAT_CHAT, {})).toThrow('模型请求目标未获允许')
+    expect(() => target(OPENAI_COMPAT_CHAT, { openAiCompat: undefined }))
+      .toThrow('模型请求目标未获允许')
+  })
+
+  it('不传第二个参数默认就是「什么都没登记」，fail closed 而不是 fail open', () => {
+    // 忘了把配置里的登记传进来时，后果必须是打不出去，而不是打到某个默认地址。
+    expect(() => resolveProviderTarget(narrowProviderTarget(OPENAI_COMPAT_CHAT)))
+      .toThrow('模型请求目标未获允许')
+  })
+
+  it('登记值仍要当场过判据——白名单是最后一道，它不判就没人判了', () => {
+    // 这些值走 model_endpoint_set 时进不来，但配置文件是用户可以手改的，不是可信输入。
+    for (const smuggled of [
+      'http://evil.example.com/v1',
+      'https://user:pass@gateway.example.com/v1',
+      'https://gateway.example.com/v1?key=leak',
+      'file:///etc/passwd',
+      'not a url',
+      '',
+    ]) {
+      expect(() => target(OPENAI_COMPAT_CHAT, { openAiCompat: smuggled }))
+        .toThrow('模型请求目标未获允许')
+    }
+  })
+
+  it('回环上的明文 http 放行（自建网关的典型形态）', () => {
+    expect(target(OPENAI_COMPAT_CHAT, { openAiCompat: 'http://127.0.0.1:8080/v1' }).url)
+      .toBe('http://127.0.0.1:8080/v1/chat/completions')
+  })
+
+  it('登记的地址末尾斜杠不会拼出双斜杠', () => {
+    expect(target(OPENAI_COMPAT_CHAT, { openAiCompat: 'https://gateway.example.com/v1/' }).url)
+      .toBe('https://gateway.example.com/v1/chat/completions')
+  })
+
+  it('方法与路径这一维没有放宽：只有 POST /chat/completions', () => {
+    const registered = { openAiCompat: 'https://gateway.example.com/v1' }
+    for (const value of [
+      // 它的 adapter 不上传文件，因此没有 /files，也没有 DELETE。
+      { ...OPENAI_COMPAT_CHAT, path: '/files' },
+      { ...OPENAI_COMPAT_CHAT, method: 'DELETE', path: '/files/abc' },
+      { ...OPENAI_COMPAT_CHAT, path: '/embeddings' },
+      { ...OPENAI_COMPAT_CHAT, path: '/chat/completions/' },
+      { ...OPENAI_COMPAT_CHAT, path: '/chat/completions?stream=true' },
+      { ...OPENAI_COMPAT_CHAT, path: '/../../admin' },
+      // 作用域只有 default。
+      { ...OPENAI_COMPAT_CHAT, scope: 'cn' },
+    ]) {
+      expect(() => target(value, registered)).toThrow('模型请求目标未获允许')
+    }
+  })
+
+  it('登记一条 origin 不会把别家的端点也挪过去', () => {
+    // 登记值只喂给 openai-compat 那一条：前三家的 origin 是常量，登记再多也动不了它们。
+    const registered = { openAiCompat: 'https://gateway.example.com/v1' }
+    expect(target({ provider: 'deepseek', scope: 'default', method: 'POST', path: '/chat/completions' }, registered).url)
+      .toBe('https://api.deepseek.com/chat/completions')
+    expect(target({ provider: 'kimi', scope: 'cn', method: 'POST', path: '/files' }, registered).url)
+      .toBe('https://api.moonshot.cn/v1/files')
   })
 })
 

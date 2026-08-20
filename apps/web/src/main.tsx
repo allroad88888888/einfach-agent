@@ -27,6 +27,7 @@ import { createDelegationAssembly } from '@einfach-agent/subagents'
 import { resolveHost, type ResolvedHost } from './host/resolveHost'
 import { registerHostCommandBridge } from './host/hostCommandBridge'
 import { createHostModelCredentialHost } from './host/hostModelCredentialHost'
+import { createHostModelEndpointHost } from './host/hostModelEndpointHost'
 import { createHostModelFetch } from './host/hostModelTransport'
 import { configureHostObservability } from './host/hostObservability'
 import { AppShell } from './agentNew/ui/AppShell'
@@ -35,7 +36,9 @@ import { WebTimelineRendererRegistryProvider } from './agentNew/ui/WebTimelineRe
 import { WindowScrollDemo } from './demos/WindowScrollDemo'
 import {
   configureModelCredentialHost,
+  configureModelEndpointHost,
   hydrateAppSettings,
+  hydrateModelEndpoint,
 } from './settings/commands'
 import { MODEL_CREDENTIALS } from './settings/modelCredentialHost'
 import {
@@ -179,6 +182,12 @@ async function startApplication(): Promise<void> {
     fetchImpl: providerFetch,
   })
   configureModelCredentialHost(credentialHost)
+  // openai-compat 的接入点登记。**必须在这里装配**（与凭据宿主同一处、同一个宿主判据），
+  // 而不是等设置弹窗打开才装：登记决定 adapter 有没有 baseUrl，而模型请求可能在用户点开设置
+  // 之前就发生（hydrate 出来的未完成 run 会自己续上）。故意不 await——它是一次 HTTP 往返，
+  // 没登记时 openai-compat 本来就发不出请求，让它在后台跑不阻塞首屏。
+  configureModelEndpointHost(createHostModelEndpointHost(host))
+  void hydrateModelEndpoint()
 
   const view = currentView()
   if (view === 'window-scroll-demo') {

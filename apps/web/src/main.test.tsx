@@ -55,7 +55,9 @@ vi.mock('./agentNew/ui/WebTimelineRendererRegistryProvider', () => ({
 }))
 vi.mock('./settings/commands', () => ({
   configureModelCredentialHost: vi.fn(),
+  configureModelEndpointHost: vi.fn(),
   hydrateAppSettings: vi.fn(async () => undefined),
+  hydrateModelEndpoint: vi.fn(async () => undefined),
 }))
 vi.mock('./settings/modelCredentialHost', () => ({
   MODEL_CREDENTIALS: [],

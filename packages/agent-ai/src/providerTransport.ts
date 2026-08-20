@@ -25,10 +25,15 @@ export function isValidProviderRequestId(requestId: string): boolean {
     && requestId.length <= PROVIDER_TRANSPORT_LIMITS.maxRequestIdBytes
 }
 
+// openai-compat 与前三家的差别只在**宿主怎么查出 origin**，不在这张身份表上：调用方能表达的
+// 依旧只有 (provider, scope, method, path)，origin 一个字节都不来自这里。它的 origin 由宿主从
+// 自己的配置文件里读那一条**用户显式登记**的 base URL（host-node 的 openAiCompatEndpoint.ts），
+// 因此这里加一个身份并不扩大调用方的能力面——没登记过就是「目标未获允许」。
 type ProviderIdentity =
   | { provider: 'deepseek'; scope: 'default' }
   | { provider: 'glm'; scope: 'default' }
   | { provider: 'kimi'; scope: 'cn' }
+  | { provider: 'openai-compat'; scope: 'default' }
 
 /** Provider-owned method/path carried through a host-controlled provider origin. */
 export type ProviderTarget = ProviderIdentity & {

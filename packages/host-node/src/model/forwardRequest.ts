@@ -28,7 +28,9 @@ import { ModelRequestCancelledError } from './errors'
 import { narrowProviderRequestEnvelope } from './requestEnvelope'
 import { prepareProviderBody } from './requestBody'
 import { readActiveModelCredential } from './credentials'
+import { readRegisteredOpenAiCompatOrigin } from './openAiCompatEndpoint'
 import { resolveProviderTarget } from './providerRoute'
+import type { ProviderTarget, RegisteredProviderOrigins } from './providerRoute'
 import { modelRequestRegistry, type ModelRequestRegistry } from './requestRegistry'
 import { sendUpstreamRequest, type ModelFetch, type UpstreamResponse } from './upstreamRequest'
 import type { NodeHostInvokeOptions } from '../hostOptions'
@@ -65,6 +67,23 @@ export interface ForwardedModelResponse {
   release(): Promise<void>
 }
 
+/**
+ * 查出这次请求可能用得上的登记式 origin（当前只有 openai-compat 一条）。
+ *
+ * **按 provider 分支而不是无条件读**：前三家的 origin 是常量，为它们多读一次配置文件等于给
+ * 每一次 DeepSeek 请求加一次无用的磁盘 IO。分支写在这里而不是藏进 providerRoute，是因为
+ * 「白名单不碰文件系统」是那张表的硬约束（它必须能被内存里穷举验证），读盘只能发生在编排层。
+ *
+ * 读不到就交空表下去：`resolveProviderTarget` 会把它判成目标未获允许（fail closed）。
+ */
+async function registeredOrigins(
+  options: NodeHostInvokeOptions,
+  target: ProviderTarget,
+): Promise<RegisteredProviderOrigins> {
+  if (target.provider !== 'openai-compat') return {}
+  return { openAiCompat: await readRegisteredOpenAiCompatOrigin(options) }
+}
+
 /** 消费完就销账。`yield*` 会把调用方的提前退出原样转给上游流，让它也收尾。 */
 async function* trackedBody(
   upstream: UpstreamResponse,
@@ -94,7 +113,12 @@ export async function forwardProviderRequest(
   const registry = deps.registry ?? modelRequestRegistry
   const fetchImpl = deps.fetchImpl ?? ((url, init) => globalThis.fetch(url, init))
   const envelope = narrowProviderRequestEnvelope(input)
-  const target = resolveProviderTarget(envelope.target)
+  // 查表这一步现在可能先读一次配置（只有 openai-compat 会）。它仍然排在登记之前：目标不合法
+  // 时不该占用一个 requestId，而这一次读的是本机的一个小 JSON，不是网络往返。
+  const target = resolveProviderTarget(
+    envelope.target,
+    await registeredOrigins(deps.options, envelope.target),
+  )
   const controller = registry.register(envelope.requestId)
   let upstream: UpstreamResponse
   try {

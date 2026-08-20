@@ -4,6 +4,10 @@
 // （样板见 config/index.ts）。域内分层照搬 Rust 侧同一套：
 //   provider.ts           ← model_provider.rs        供应商/作用域枚举与配对表
 //   providerRoute.ts      ← model_provider_route.rs  **端点白名单**（本域安全性的全部）
+//   openAiCompatBaseUrl.ts   （无 Rust 出处）        登记式 origin 的判据（纯函数）
+//   openAiCompatEndpoint.ts  （无 Rust 出处）        登记的那条 base URL 在配置里的读/写/删
+//   endpointCommands.ts      （无 Rust 出处）        三条接入点登记命令
+//   commandArgs.ts           （无 Rust 出处）        本域十条命令的线上入参形状
 //   wireShape.ts          ← serde deny_unknown_fields 三处收窄共用的形状判据
 //   requestBody.ts        ← model_proxy_body.rs      请求体收窄与限额
 //   multipartEncoding.ts  ← reqwest::multipart       分片编码（Node 侧没有现成件）
@@ -16,8 +20,8 @@
 //   forwardRequest.ts     ← model_proxy.rs           编排
 //   cancelCommands.ts     ← model_proxy.rs 的两条 cancel 命令
 //
-// ═══ 本域路由表里为什么只有五条命令 ═══
-// commandNames.ts 给 model 域登记了七条。它们分三批，落在三张卡上：
+// ═══ 本域路由表里为什么只有八条命令 ═══
+// commandNames.ts 给 model 域登记了十条。它们分四批，落在四张卡上：
 //
 //   ① `model_provider_request` / `model_chat_completions` —— **故意不在路由表里**。
 //      它们的响应是一条流，而路由表 handler 的返回值要经 `POST /api/invoke/:command` 被
@@ -39,6 +43,11 @@
 //      那道缝上：credentialCommands.ts 复用 credentials.ts 导出的 `credentialConfigKey` /
 //      `normalizeApiKey`，绑定表全域只有那一份——两张卡各写一份必然分叉。
 //
+//   ④ `model_endpoint_status` / `_set` / `_delete` —— 也在下面（C6 落的），**无 Rust 出处**。
+//      openai-compat 是唯一一家没有厂商官方接入点的 provider，它的 baseUrl 由用户填，于是端点
+//      白名单需要一条「用户显式登记的那一个 origin」；这三条就是登记入口。它们与凭证三条形状
+//      相似但**不能合并**：凭证的返回体恒不含 Key，接入点的返回体必须回显地址，两条契约相反。
+//
 // ═══ 这一域的红线 ═══
 // 用户的模型 API Key 只在三处出现：`credentials.ts` 里从配置读出来的那个局部变量、
 // `upstreamRequest.ts` 里的 Authorization 头，以及 `model_credential_set` 那一次落盘的入参。
@@ -51,6 +60,11 @@ import {
   createModelCredentialSetHandler,
   createModelCredentialStatusHandler,
 } from './credentialCommands'
+import {
+  createModelEndpointDeleteHandler,
+  createModelEndpointSetHandler,
+  createModelEndpointStatusHandler,
+} from './endpointCommands'
 import type { NodeHostInvokeOptions } from '../hostOptions'
 import type { NodeHostRouteTable } from '../routeTable'
 
@@ -65,6 +79,10 @@ export function createModelRoutes(options: NodeHostInvokeOptions): NodeHostRoute
     model_credential_status: createModelCredentialStatusHandler(options),
     model_credential_set: createModelCredentialSetHandler(options),
     model_credential_delete: createModelCredentialDeleteHandler(options),
+    // 接入点登记三条（C6）。同样要 `options`——登记落在同一份 `~/.webAgent/config.json` 里。
+    model_endpoint_status: createModelEndpointStatusHandler(options),
+    model_endpoint_set: createModelEndpointSetHandler(options),
+    model_endpoint_delete: createModelEndpointDeleteHandler(options),
   }
 }
 
@@ -79,6 +97,11 @@ export { ModelProxyStreamError, ModelRequestCancelledError, ModelRequestError } 
 // 而那正是这个 reason 面存在的理由。
 export { MODEL_REQUEST_ERROR_REASONS, readModelRequestErrorReason } from './errors'
 export type { ModelRequestErrorReason } from './errors'
+// 【openai-compat 的判据刻意**不**从这里出去】apps/web 不能 import 本包（Node 侧能力包，
+// 会把 `node:fs` 之类拖进浏览器产物，见 apps/web/src/mcp/serverHostEventStream.ts 的文件头）。
+// 那一侧因此不持有判据的副本，也不需要——**判在这一侧就够了**：浏览器只把用户填的地址原样交给
+// `model_endpoint_set`，合不合规由本域回答；登记成功后它拿回的是**已归一化**的那条地址，
+// 拿它去认自己发出的请求。前端少一份判据 = 少一处会与后端分叉的地方。
 export { modelRequestRegistry, createModelRequestRegistry } from './requestRegistry'
 export type { ModelRequestRegistry } from './requestRegistry'
 export type { ModelFetch } from './upstreamRequest'

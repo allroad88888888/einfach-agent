@@ -14,6 +14,7 @@ import {
   modelCredentialHostAvailableAtom,
 } from '../../settings/state'
 import { ModelCredentialCard } from './ModelCredentialCard'
+import { ModelEndpointCard } from './ModelEndpointCard'
 
 function startKimiImageSession(): void {
   newSession({
@@ -88,6 +89,10 @@ export function ModelCredentialPanel() {
       )).map((credential) => (
         <ModelCredentialCard key={credential.id} credential={credential} />
       ))}
+
+      {/* openai-compat 比另外三家多一件事：它没有厂商官方接入点，地址得由用户登记。
+          这张卡紧跟在它那把 Key 后面——两者缺一它都跑不起来。 */}
+      {credentialHostAvailable ? <ModelEndpointCard /> : null}
 
       {kimiEntryVisible ? (
         <div className="agentnew-model-footer">

@@ -11,7 +11,7 @@
 | `deepseek` | `deepseek-v4-flash` | 支持 | 仅本机 Node 后端持有 Key 并请求供应商；可传不透明 `user_id` |
 | `glm` | `glm-5.2` | 支持 | 仅本机 Node 后端持有 Key 并请求供应商；不发送 `user_id` |
 | `kimi` | — | 未接入 | 不应仅凭另一项目的 provider 代码新增为可选项 |
-| `openai-compat` | 无（协议不含厂商模型，由调用方指定） | 支持（仅 CLI） | CLI 进程直接从环境变量/配置文件读取 Key 与 baseUrl 并请求；宿主侧 `ModelProviderName`（`packages/host-node/src/model/provider.ts`）未收录，浏览器 UI 选不了 |
+| `openai-compat` | 无（协议不含厂商模型，由调用方指定） | 支持 | 仅本机 Node 后端持有 Key 并请求；接入点由用户**显式登记**一条 base URL，端点白名单只放行那一条（见下） |
 
 静态 Web 没有可信模型代理，不能直接请求任一供应商。核心运行时只能构造公共的
 `ChatRequestBase`；供应商特有的请求净化、流式 usage 处理和终止语义属于
@@ -84,12 +84,27 @@ provider 的 `encode` / `decode` 边界，而非散落在 Agent 主循环。这�
 2. 模型设置/会话持久化/UI 选择项——**部分满足**：`ModelAdapterSettings` 已加
    `{ vendor: 'openai-compat'; baseUrl?: string }` 分支（`modelAdapter.ts`），但目前没有
    会话级 UI 选择入口，也没有持久化迁移需要处理（尚无历史会话用过这个 vendor）。
-3. 本机 Node 后端的 Key 存储与受限请求代理——**不满足**：
-   `packages/host-node/src/model/provider.ts` 的 `ModelProviderName` 只收录
-   `deepseek` / `glm` / `kimi`（前端那一半是 `apps/web/src/settings/modelCredentialHost.ts`，
-   同样三条）。openai-compat 目前只能经 CLI 使用——CLI 直接从环境变量或
-   `~/.webAgent/config.json` 读取 Key 与 baseUrl 并请求，**不经过受限代理的白名单与限额**，
-   威胁模型与浏览器那条路不同。
+3. 本机 Node 后端的 Key 存储与受限请求代理——**满足**：`ModelProviderName`
+   （`packages/host-node/src/model/provider.ts`）与前端那一半
+   （`apps/web/src/settings/modelCredentialHost.ts`）都已收录第四家，Key 与另外三家同格，
+   只由本机后端读写 `~/.webAgent/config.json`。
+
+   **端点白名单在它身上换了一种约束**，这是这一家与另外三家唯一的结构差异：前三家的 origin
+   是表里的常量，而 openai-compat 的 baseUrl 由用户填，"精确匹配一个已知 origin"无从谈起。
+   替代约束是**显式许可清单**——
+   - origin 仍然不来自调用方：信封里只有 `(provider, scope, method, path)`，宿主从
+     `~/.webAgent/config.json` 的 `openai-compat:default:baseUrl`（与 CLI 同一个键）读出那条
+     用户显式登记的地址；**没登记就是「目标未获允许」**，不存在默认接入点；
+   - 登记值本身要过一条结构判据（`packages/host-node/src/model/openAiCompatBaseUrl.ts`）：
+     https，或指向回环地址的 http（自建网关的典型形态；明文打到远端等于把 Key 交给链路），
+     不许内嵌用户名密码，不许带 query/fragment，长度有上限；
+   - 该判据在**写入时**与**每次上行前**各判一次——`config.json` 是用户可以手改的文件，
+     不是可信输入；
+   - 方法与路径这一维没有放宽：只有 `POST /chat/completions` 一条字面量全等，没有 `/files`、
+     没有 DELETE。
+
+   登记入口是 `model_endpoint_status` / `_set` / `_delete` 三条命令（浏览器侧在设置面板的
+   模型页）。它们与凭证三条**不合并**：凭证的返回体恒不含 Key，接入点的返回体必须回显地址。
 4. 缓存 usage / thinking / `tool_choice` / 容量错误的降级语义——**不适用**：这正是
    openai-compat 刻意不做的部分（见「无厂商净化」），任何该类语义留给具体接入的端点或
    未来的专属 adapter 负责，不在这一层伪装成通用行为。
@@ -97,6 +112,6 @@ provider 的 `encode` / `decode` 边界，而非散落在 Agent 主循环。这�
    [`docs/launch/comparison.md`](launch/comparison.md) 弱项 3 是这次更新的用户文档部分；
    CLI 侧凭据解析由 `apps/cli/src/credentials.test.ts` 覆盖。
 
-**结论**：openai-compat 是一个刻意最小化的协议逃生舱，服务"没有专属 adapter 但兼容标准
-OpenAI 协议"的端点；它已作为可选 vendor 在 registry 与 CLI 落地，但还不是浏览器用户能选的
-选项，也不承诺任何厂商级降级语义。
+**结论**：openai-compat 是正式的第四家 provider，不是逃生口——CLI 与浏览器两条路都经同一套
+凭证存储与受限传输，威胁模型与另外三家一致。它仍然刻意不承诺任何厂商级降级语义（见「无厂商
+净化」）：那部分留给具体接入的端点或未来的专属 adapter。

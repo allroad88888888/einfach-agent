@@ -49,6 +49,14 @@ export const MODEL_ERROR = {
   invalidApiKey: '模型 API Key 格式无效',
   /** model_credential_config.rs 的 `decode_credentials` */
   invalidConfigFormat: '模型配置文件格式无效',
+  /**
+   * **无 Rust 出处**：openai-compat 的登记接入点不满足 openAiCompatBaseUrl.ts 那条判据。
+   *
+   * 与 `targetNotAllowed` 分成两句话，是因为补救动作虽然同类（换个地址），但**该换哪个地址**
+   * 完全不同：前者是「这个端点组合不在白名单里」，后者是「你登记的那条 base URL 本身不合规」。
+   * 同样不回显那个地址——它由用户输入，回显等于把用户敲进来的东西原样写进一条会被展示的消息。
+   */
+  invalidBaseUrl: '模型接入点地址未获允许',
 } as const
 
 export type ModelErrorKey = keyof typeof MODEL_ERROR
@@ -97,6 +105,8 @@ const MODEL_ERROR_REASON: Record<ModelErrorKey, ModelRequestErrorReason> = {
   scopeNotAllowed: 'target-not-allowed',
   invalidApiKey: 'invalid-request',
   invalidConfigFormat: 'credential-config-invalid',
+  // 与 targetNotAllowed / scopeNotAllowed 同类：策略拒绝，重试无用，补救是换一个目标。
+  invalidBaseUrl: 'target-not-allowed',
 }
 
 /** 本域所有失败的基类：带文案，也带分类。 */

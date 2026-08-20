@@ -28,6 +28,14 @@ export {
 } from './modelCredentialCommands'
 
 export {
+  configureModelEndpointHost,
+  deleteModelEndpoint,
+  hydrateModelEndpoint,
+  saveModelEndpoint,
+  updateModelEndpointDraft,
+} from './modelEndpointCommands'
+
+export {
   closeSettingsCenter,
   openSettingsCenter,
   selectSettingsTab,

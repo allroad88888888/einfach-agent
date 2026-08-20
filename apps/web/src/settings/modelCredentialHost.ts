@@ -4,8 +4,13 @@ export type ModelCredentialTarget =
   | { provider: 'deepseek'; scope: 'default' }
   | { provider: 'glm'; scope: 'default' }
   | { provider: 'kimi'; scope: 'cn' }
+  | { provider: 'openai-compat'; scope: 'default' }
 
-export type ModelCredentialId = 'deepseek-default' | 'glm-default' | 'kimi-cn'
+export type ModelCredentialId =
+  | 'deepseek-default'
+  | 'glm-default'
+  | 'kimi-cn'
+  | 'openai-compat-default'
 
 export interface ModelCredentialDescriptor {
   id: ModelCredentialId
@@ -28,6 +33,15 @@ export const MODEL_CREDENTIALS: readonly ModelCredentialDescriptor[] = [
     id: 'kimi-cn',
     label: 'Kimi 中国区',
     target: { provider: 'kimi', scope: 'cn' },
+  },
+  // 第四家：标准 OpenAI 协议的兼容端点。它与前三家在**凭据**这一层完全同格（同样是一把 Key、
+  // 同样只由本机后端落盘），差别只在它还需要一条登记的接入点地址——那条走另一组命令，
+  // 见 modelEndpointHost.ts。展示名不叫「OpenAI」：挂在它后面的是用户自建网关或任意第三方
+  // 兼容服务，报一个厂商名会指向一个用户根本没在用的服务。
+  {
+    id: 'openai-compat-default',
+    label: 'OpenAI 兼容端点',
+    target: { provider: 'openai-compat', scope: 'default' },
   },
 ]
 

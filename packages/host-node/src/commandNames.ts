@@ -72,6 +72,9 @@ export const NODE_HOST_COMMANDS_BY_DOMAIN = {
   // Key 值，只含 configured 布尔与来源）。`model_chat_completions` /
   // `cancel_model_chat_completions` 是 Rust 侧给旧渲染层留的兼容命令，当前**没有任何 TS 调用
   // 方**（全仓 grep 为零）——登记在册是因为它们确实在 lib.rs 里，但实现优先级最低。
+  // 最后三条 `model_endpoint_*` **也不在那 28 条里**（同 sqlite 域，是本仓库新定的命令名）：
+  // 桌面宿主只认三家有官方接入点的 provider，没有「登记一个接入点」这件事。openai-compat 的
+  // baseUrl 由用户填，受限传输因此需要一个把它登记进 `config.json` 的入口，见 model/endpointCommands.ts。
   'model': [
     'model_provider_request',
     'cancel_model_provider_request',
@@ -80,6 +83,9 @@ export const NODE_HOST_COMMANDS_BY_DOMAIN = {
     'model_credential_status',
     'model_credential_set',
     'model_credential_delete',
+    'model_endpoint_status',
+    'model_endpoint_set',
+    'model_endpoint_delete',
   ],
   // `~/.webAgent/config.json` 与主目录解析。mcp_config_* 只是这份 JSON 里 `mcp` 段的读写，
   // 与 `mcp` 域的子进程管理是两件事（Rust 侧同样分成 mcp_config.rs 与 mcp.rs）。
