@@ -20,6 +20,7 @@ import type { ToolLoopBase } from './toolLoopContracts'
 import { ROOT_AGENT_PATH } from '../subagents/path'
 import { modelAdapterSettings, modelReasoningEffort, modelSamplingSettings } from './modelSettingsProjection'
 import { projectTimedToolResultOrphans } from './timedToolResultProjection'
+import { dispatchTimedTools } from './timedDispatch'
 import { setContextCheckpointOnSession } from '../state/sessionWriters'
 
 export interface ModelTurnResult {
@@ -78,7 +79,9 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
       // session 整体（含事务日志）用于写入器；sessionStore 仍是只读取值的近路。
       const session = base.core.getSessionStore(base.id)
       const sessionStore = session.store
-      const history = sessionStore.getter(itemsAtom)
+      // 到点分派会往 items 追加结果，history / projection / projectedMessages 三者随之重取，
+      // 故此处不是 const —— 唯一的改写方是下面的 dispatchCompactionTiming。
+      let history = sessionStore.getter(itemsAtom)
       const historyItems = history.map((item) => item.item)
       const rawMessages: ModelItem[] = [...base.stablePrefix.items, ...historyItems, ...controls]
       const requestAssembly = snapshotContextRequestAssembly({ rawMessages, stablePrefixItems: base.stablePrefix.items.length, historyItems: historyItems.length, controls, controlSources, tools })
@@ -89,12 +92,33 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
       }
       const inputBudgetTokens = contextInputBudgetTokens(base.settings.vendor, base.settings.model, sampling.maxTokens)
       let projectedMessages: ModelItem[] = [...base.stablePrefix.items, ...projection.messages, ...controls]
+      /**
+       * 分派一个压缩时机，并把新写进 items 的结果并进本次请求投影。
+       * 返回 false = 本 run 不该再继续（恢复栅栏中断 / 被停 / 已切走），调用方按 inactive 收尾。
+       */
+      const dispatchCompactionTiming = async (timing: 'preCompact' | 'postCompact'): Promise<boolean> => {
+        const dispatched = await dispatchTimedTools({ base, request: { sessionId: base.id, timing } })
+        if (dispatched.status === 'interrupted') return false
+        if (!base.control.isCurrent() || !base.control.isRunning() || base.opts.signal.aborted) return false
+        if (dispatched.itemCount === 0) return true
+        // 结果已由分派器写进 items（孤儿 tool item，协议配对由下面的 projectTimedToolResultOrphans 补）。
+        // 重取历史让它进入本次请求：preCompact 的产物因而一并进入待蒸馏的 transcript 与 coveredItemIds，
+        // postCompact 的产物落在 checkpoint 覆盖面之外、原样跟在摘要后面。
+        history = sessionStore.getter(itemsAtom)
+        projection = projectContextCheckpoint(history, projection.checkpoint)
+        projectedMessages = [...base.stablePrefix.items, ...projection.messages, ...controls]
+        return true
+      }
       if (contextNeedsDistillation(projectedMessages, tools, inputBudgetTokens)) {
         base.trace.event('llm.context_distillation_started', {
           llm_turn: turn + 1,
           source_messages_count: projection.messages.length,
           input_budget_tk: inputBudgetTokens,
         })
+        // preCompact / postCompact 就在这里分派，且**不经插件**：这两个桶曾经的唯一触发方是
+        // compactionPlugin，而它从未被装配，于是两个时机在生产里从不触发。分派点挂在「真的要瘦身」
+        // 的那一刻——粗筛没超预算的空闲轮既不执行到点工具，也不改变投影坐标（沿用旧插件的边界）。
+        if (!await dispatchCompactionTiming('preCompact')) return { inactive: true, streamWriter }
         try {
           const checkpoint = await createContextCheckpoint({
             stablePrefix: base.stablePrefix.items,
@@ -125,33 +149,19 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
           base.trace.event('llm.context_distillation_failed', { llm_turn: turn + 1, error: safeErrorMessage(error) })
           throw error
         }
+        // postCompact 在摘要写回之后跑，产物原样跟在摘要后面进本次请求。这几条不再回头重判预算：
+        // 为几条到点结果把整个 run 判死不划算（旧插件同样只在压缩判定那一次卡预算）。
+        if (!await dispatchCompactionTiming('postCompact')) return { inactive: true, streamWriter }
       }
-      const hasCompactionTimingTools =
-        base.core.timedToolRegistrations('preCompact').length > 0 ||
-        base.core.timedToolRegistrations('postCompact').length > 0
-      let timedDispatchBlocked = false
       const draft: CompactionRequestDraft = {
         messages: projectedMessages,
         tools,
         llmTurn: turn + 1,
         replayUnsafeToolNames: base.toolEpoch.replayUnsafeToolNames(),
         dynamicTailCount: controls.length,
-        ...(hasCompactionTimingTools
-          ? {
-              dispatchTimedItems: async (timing) => {
-                const before = sessionStore.getter(itemsAtom).length
-                const result = await base.core.dispatchTimedTools({ sessionId: base.id, timing })
-                if (result.status === 'interrupted') {
-                  timedDispatchBlocked = true
-                  return []
-                }
-                return sessionStore.getter(itemsAtom).slice(before).map(({ item }) => item)
-              },
-            }
-          : {}),
       }
       await base.hooks.transformContext?.(base.pluginContext, draft)
-      if (timedDispatchBlocked || !base.control.isCurrent() || !base.control.isRunning() || base.opts.signal.aborted) {
+      if (!base.control.isCurrent() || !base.control.isRunning() || base.opts.signal.aborted) {
         return { inactive: true, streamWriter }
       }
       const afterTransform = snapshotContextRequestStage(draft.messages)

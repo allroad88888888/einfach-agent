@@ -81,8 +81,8 @@ export type ToolCallTiming =
 | `runEnd` | run 收尾（`finally` 里，中止/报错也走） | `runtime/runToolLoop.ts` |
 | `turnStart` | 每次向模型发请求前 | `runtime/runToolLoop.ts` |
 | `turnEnd` | 该轮确实发过请求才触发 | `runtime/runToolLoop.ts` |
-| `preCompact` | 判定要压缩、动手之前 | `runtime/core/plugins/compactionPlugin.ts` |
-| `postCompact` | 压缩完成之后 | `runtime/core/plugins/compactionPlugin.ts` |
+| `preCompact` | 判定要做上下文蒸馏、动手之前 | `runtime/modelTurnRequester.ts` |
+| `postCompact` | checkpoint 摘要写回之后 | `runtime/modelTurnRequester.ts` |
 | `subagentStart` | 子 agent 循环开始 | `subagents/childAgentLoop.ts` |
 | `subagentEnd` | 子 agent 循环结束 | `subagents/childAgentLoop.ts` |
 
