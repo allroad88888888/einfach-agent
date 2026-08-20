@@ -43,8 +43,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   进程重开那个库文件复读同一行**；只验前者的话，同进程内存也能给出一样的答案。
 - `pnpm cli -p "<prompt>"`：headless CLI 宿主跑一轮真实 run（读 `~/.webAgent/config.json`
   或环境变量取模型 Key；`--help` 看全部选项）；无 `-p` 进入 REPL。
-- 子 Agent 治理：`pnpm subagent:replay` / `subagent:capacity` / `subagent:archive:retention` /
-  `subagent:index:compact` / `subagent:skills`。
+- 子 Agent 治理：`pnpm subagent:replay` / `subagent:archive:retention` / `subagent:index:compact` /
+  `subagent:skills`。
 
 CI（`.github/workflows/ci.yml`）只有一条 job，顺序是 `check-docs → check-boundaries → check-state →
 pnpm test → pnpm build → pnpm -r build → check-dist → check:packed`。后三步排在 `pnpm build` **之后**且不能省：

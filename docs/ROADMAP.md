@@ -70,7 +70,7 @@ P2.5 的 UI 协议设计已完成，R1–R4 已按独立、可回退批次交付
 
 ### 当前 archive 容量基准（archive v1）
 
-运行 `pnpm subagent:capacity` 会校验以下固定边界；设置
+运行 `pnpm exec vitest run packages/subagents/src/archive/archiveCapacity.test.ts` 会校验以下固定边界；设置
 `SUBAGENT_CAPACITY_REPORT=1` 并传入 Vitest 的 `--reporter=verbose --silent=false` 可输出原始计数。
 “内存”口径是调度器保留节点的 UTF-8 序列化载荷，避免受 GC 和 runner RSS 波动影响；磁盘口径是
 archive writer 实际交给宿主的 UTF-8 文件内容总量。

@@ -78,10 +78,11 @@ N 条模型调用、一棵可能递归展开的执行树、一批中间产物；
 的 call id 和父节点 path，四项独立校验；session 里"本次会话一律允许"的集合**不会**整体下放，
 只有本次调用显式列出、且 session 已确认的交集才签发。最终生效的工具名写进归档事件。
 
-## 四、五个运维问题，五个治理脚本
+## 四、五个运维问题，四个治理脚本
 
-让"资产"这个说法站得住的，是归档落地之后还有人管它。仓库根 `package.json` 里有五个
-`subagent:*` 脚本，每个解决一个具体的运维问题。
+让"资产"这个说法站得住的，是归档落地之后还有人管它。仓库根 `package.json` 里有四个
+`subagent:*` 脚本，另有一条容量基线不挂 pnpm 别名、直接跑 Vitest；五者合起来解决五个
+具体的运维问题。
 
 ### 4.1 `pnpm subagent:replay`：出事了从哪查
 
@@ -98,14 +99,16 @@ pnpm subagent:replay -- --conversation <conversationId> --run <runId> [--json]
 工具在数据本身有问题时崩掉，是最没用的时刻崩掉。回放逻辑在
 `packages/subagents/src/archive/replay.ts`，CLI 只是宿主之一。
 
-### 4.2 `pnpm subagent:capacity`：一棵满树到底多大
+### 4.2 容量基线：一棵满树到底多大
 
-这条脚本跑的是 `packages/subagents/src/archive/archiveCapacity.test.ts`——它是**容量基线回归
-测试**，不是运维报表。单独挂一个 script，是因为"归档会长多大"不能靠拍脑袋：一万条事件的长会话，
-归档仍然只有 4 个文件、事件计数 10001；打满 256 节点硬上限的树是 262 个文件，归档总字节数确实
-大于节点状态本身，差额就是审计成本；12 个 child 的批次，并发峰值被锁在 8。度量函数在
-`packages/subagents/src/archive/archiveCapacity.ts`，带 `SUBAGENT_CAPACITY_REPORT=1` 可以打出
-实测字节数。价值在于：改了归档格式、加了字段，容量影响会在 CI 上显形，而不是三个月后由磁盘告诉你。
+`packages/subagents/src/archive/archiveCapacity.test.ts` 是**容量基线回归测试**，不是运维脚本，
+所以不在上面那四个 pnpm 别名里，直接跑 `pnpm exec vitest run
+packages/subagents/src/archive/archiveCapacity.test.ts`。挂一条测试而不是拍脑袋，是因为"归档会
+长多大"必须有数：一万条事件的长会话，归档仍然只有 4 个文件、事件计数 10001；打满 256 节点硬上限
+的树是 262 个文件，归档总字节数确实大于节点状态本身，差额就是审计成本；12 个 child 的批次，并发
+峰值被锁在 8。度量函数在 `packages/subagents/src/archive/archiveCapacity.ts`，带
+`SUBAGENT_CAPACITY_REPORT=1` 可以打出实测字节数。价值在于：改了归档格式、加了字段，容量影响会在
+CI 上显形，而不是三个月后由磁盘告诉你。
 
 ### 4.3 `pnpm subagent:archive:retention`：归档无限增长
 
@@ -180,10 +183,10 @@ pnpm subagent:skills -- --archive sk_xxx --write
 
 这套东西目前有四个明确的"还不是"：
 
-1. **五个脚本都是手动 CLI，不是自动后台任务。** 没有定时 GC、容量告警和自动转正；唯一自动化的是
+1. **四个脚本都是手动 CLI，不是自动后台任务。** 没有定时 GC、容量告警和自动转正；唯一自动化的是
    宿主侧那份索引压缩。归档涨到多大要人自己去看，retention 也要人自己去跑。
-2. **`subagent:capacity` 是回归测试，不是运维报表。** 它跑在内存 host 上，测序列化体积和并发上限
-   这些确定性数字，不测真实磁盘 IO，也不反映你线上那个 workspace 现在多大。
+2. **容量基线是回归测试，不是运维报表。** 它跑在内存 host 上，测序列化体积和并发上限这些确定性
+   数字，不测真实磁盘 IO，也不反映你线上那个 workspace 现在多大。
 3. **retention 只回收派生文件。** 事件流永远保留，长期占用仍单调增长，只是增速被压下来了。
 4. **skill 转正必须人工。** 这是有意的，但也意味着 candidate 会持续堆积，需要有人定期看。
 

@@ -16,7 +16,6 @@
     "check:dist": "node scripts/check-dist.js",
     "check:packed": "node scripts/check-packed-server.js",
     "subagent:replay": "node scripts/subagent-replay-report.js",
-    "subagent:capacity": "vitest run packages/subagents/src/archive/archiveCapacity.test.ts",
     "subagent:archive:retention": "node scripts/subagent-archive-retention.js",
     "subagent:index:compact": "node scripts/subagent-index-compact.js",
     "subagent:skills": "node scripts/subagent-skill-governance.js",
