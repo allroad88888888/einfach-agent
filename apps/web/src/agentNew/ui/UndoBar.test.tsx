@@ -17,7 +17,9 @@ function seedTurn(id: string, turnId: string, text: string) {
 }
 
 function renderBar(id: string) {
-  return renderWithStore(<UndoBar sessionId={id} />, { store: sessionAtomScope(id) })
+  // sessionUndoAvailabilityAtom 是会话 atom，必须挂到 agentStore（AgentStoreProvider）—— 挂成
+  // 环境 store（`store`）会让组件的 useAgentAtomValue 读不到它，恰好复现过去的生产 bug。
+  return renderWithStore(<UndoBar sessionId={id} />, { agentStore: sessionAtomScope(id) })
 }
 
 function itemIds(id: string): string[] {
@@ -30,6 +32,18 @@ describe('UndoBar', () => {
     renderBar(id)
 
     expect(screen.queryByRole('button', { name: '撤销上一轮' })).toBeNull()
+  })
+
+  it('存在可撤销条目时组件真的渲染出撤销按钮', () => {
+    // 单独钉住「渲染」这件事本身：上面那条「无账不显示」测的是反面，其余几条只是顺手用
+    // getByRole 定位按钮去点击，都不是专门针对「有账时组件到底有没有出现在 DOM 里」的断言——
+    // 万一读的 store 挂错导致 availability 恒为默认值，这条会直接失败，而不是被别的用例掩盖。
+    const id = newSession({ settings: { vendor: 'test', model: 'test-model' } })
+    seedTurn(id, 'u1', '第一问')
+    renderBar(id)
+
+    expect(screen.getByRole('button', { name: '撤销上一轮' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '撤销上一轮' })).toBeEnabled()
   })
 
   it('点撤销把最近一轮整体退回', async () => {

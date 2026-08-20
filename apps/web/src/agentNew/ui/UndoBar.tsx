@@ -11,7 +11,7 @@
 // 粒度取「一整轮」而不是「一条」：一轮对话会产生十几条细粒度账目（追加用户消息、改 run 状态、
 // 回填工具结果…），按条撤销对用户没有意义。逐条那档（undoEntry）留给开发者，不进 UI。
 
-import { useAtomValue } from '@einfach/react'
+import { useAgentAtomValue } from '@einfach-agent/react-plugin'
 import { redoTurn, sessionUndoAvailabilityAtom, undoTurn } from '@einfach-agent/core'
 
 /** 有账可退但**永久**不许退时，告诉用户为什么。 */
@@ -21,7 +21,7 @@ const BLOCKED_HINT = {
 } as const
 
 export function UndoBar({ sessionId }: { sessionId: string }) {
-  const availability = useAtomValue(sessionUndoAvailabilityAtom(sessionId))
+  const availability = useAgentAtomValue(sessionUndoAvailabilityAtom(sessionId))
   const hint = availability.blocked ? BLOCKED_HINT[availability.blocked] : undefined
   // run 在飞时按钮照常可点 —— 命令会替用户停掉它。但必须先说出来，别让「停止」变成暗箱动作。
   const stopNotice = availability.willStopRun ? '会先停止当前运行' : undefined
