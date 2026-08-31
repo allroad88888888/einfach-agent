@@ -77,13 +77,19 @@ core 跨会话、`agentStore` = 会话），三个默认是三个**不同**实�
 
 ## 模型凭证与传输
 
-**真实 Key 从不进前端。** `apps/web/src/main.tsx` 注进 core 的只是一个受管凭据标记
+`server` 宿主的真实 Key 从不进前端。`apps/web/src/main.tsx` 注进 core 的只是受管凭据标记
 （`hostManagedCredentialMarker`，字面量 `'desktop-managed-credential'`；名字里的 `desktop` 是历史，
-含义是「宿主受管」，core 把它当 apiKey 一路带到受管传输那一层，改字面量要连着断言它的测试一起改）。
-Key 由**本机 Node 后端**读写 `~/.webAgent/config.json`（host-node 的 config 域），浏览器经
+含义是「宿主受管」）。Key 由**本机 Node 后端**读写 `~/.webAgent/config.json`，浏览器经
 `/api/invoke/model_credential_*` 交给它，三条命令的返回体只有 `{ configured, source }`——
-**任何路径都不回传 Key 本身**。没有后端的 `static` 宿主拿到的是如实回答「存不了」的凭据宿主，
-设置面板据此把输入框整块收起来，而不是给一个存进去也发不出去的框。
+**任何路径都不回传 Key 本身**。
+
+`static` 构建产物是明确的 BYOK 例外：用户主动填写的官方 provider Key 存在当前浏览器的
+`localStorage`，同时进 core 的内存运行时配置，并由浏览器直接请求 provider。不要把 Key 放进
+`VITE_*` 环境变量；`scripts/public-model-credential-guard.ts` 仍会拒绝这种构建。localStorage 中的
+Key 可被同源 XSS 或受信任的浏览器扩展读取，必须在设置 UI 中说明这个风险；它不是 server 凭据链路的
+先例，OpenAI 兼容端点继续只能由本机后端登记。static 首次启动会把版本 4 的
+`web-agent.settings.v1.providers.deepseek.apiKey` 迁入专用 BYOK 键；server 和 DEV 仍照既有规则清理
+这个旧浏览器凭据。
 
 配置文件的三条边界都在 host-node 的 `config/configPaths.ts`：旧 `~/.web-agent/config.json` 只在新
 文件不存在时被**复制**过来（写原文不重排键，旧文件不删不改）；`WEB_AGENT_CONFIG_DIR` 只能
@@ -94,10 +100,10 @@ Key 由**本机 Node 后端**读写 `~/.webAgent/config.json`（host-node 的 co
 
 **传输与凭据宿主必须由同一个判据选出来**，否则会走成「Key 存进了后端、请求发给了另一条通路」，
 而两边都不报错。判定是宿主两态外加一条**正交**的构建模式轴：`server` 宿主走 `apps/server` 的
-`POST /api/model/request`；否则 DEV 构建走 `scripts/model-preview-relay` 的 Vite 中继（它只认
-`DEEPSEEK_API_KEY` 这类环境变量）；再否则 fail-closed 直接拒绝模型请求。**`server` 必须判在 DEV
-之前**——凭据宿主那侧只有 `server → unavailable`，没有 DEV 分支。DEV 判的是构建模式而不是宿主，
-两者正交：`pnpm dev` 是 static 宿主 + 有中继，`pnpm serve` 是 server 宿主 + 没有中继。
+`POST /api/model/request` 和后端凭据；`static` + DEV 走 `scripts/model-preview-relay` 的 Vite 中继
+与环境变量；`static` 构建产物走浏览器 localStorage BYOK 与原生 `fetch` 直连。**`server` 必须判在
+DEV 之前**；DEV 判的是构建模式而不是宿主，`pnpm dev` 是 static 宿主 + 有中继，`pnpm serve` 是
+server 宿主 + 没有中继。
 `scripts/public-model-credential-guard.ts` 在 Vite 配置阶段执行——任何 `VITE_*_API_KEY` 都会让
 dev/build 直接失败，别试图用 `VITE_` 变量传密钥。
 
