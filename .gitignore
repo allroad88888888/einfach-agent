@@ -15,3 +15,5 @@ agentnew-*.png
 # 个人本地 Claude Code 配置（含机器特有的绝对路径），不入库
 .claude/settings.local.json
 .claude/
+apps/desktop/gen/
+apps/desktop/target/
