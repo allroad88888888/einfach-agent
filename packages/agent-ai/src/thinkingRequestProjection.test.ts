@@ -53,13 +53,6 @@ describe('Thinking request projection', () => {
     ['DeepSeek historical medium effort', 'deepseek', 'deepseek-v4-pro', 'enabled', 'medium', undefined],
     ['DeepSeek historical xhigh effort', 'deepseek', 'deepseek-v4-pro', 'enabled', 'xhigh', undefined],
     ['DeepSeek dirty effort', 'deepseek', 'deepseek-v4-pro', 'enabled', 'unknown', undefined],
-    ['GLM-5.2 valid low', 'glm', 'glm-5.2', 'enabled', 'low', 'low'],
-    ['GLM-5.2 valid medium', 'glm', 'glm-5.2', 'enabled', 'medium', 'medium'],
-    ['GLM-5.2 valid high', 'glm', 'glm-5.2', 'enabled', 'high', 'high'],
-    ['GLM-5.2 valid xhigh', 'glm', 'glm-5.2', 'enabled', 'xhigh', 'xhigh'],
-    ['GLM-5.2 valid max', 'glm', 'glm-5.2', 'enabled', 'max', 'max'],
-    ['GLM-5.2 dirty effort', 'glm', 'glm-5.2', 'enabled', 'none-other', undefined],
-    ['GLM toggle-only model', 'glm', 'glm-5.1', 'enabled', 'max', undefined],
   ] as const)(
     '%s sends only its documented reasoning effort',
     async (_name, vendor, model, thinking, effort, expectedEffort) => {
@@ -72,26 +65,13 @@ describe('Thinking request projection', () => {
     },
   )
 
-  it('normalizes GLM-5.2 minimal and none aliases to disabled without an effort', async () => {
-    for (const alias of ['minimal', 'none']) {
-      const captured = capture()
-      await callModel(modelRequest('glm', 'glm-5.2', 'enabled', alias), options(captured.fetchImpl))
-
-      expect(captured.body()).toMatchObject({ thinking: { type: 'disabled' } })
-      expect(captured.body()).not.toHaveProperty('reasoning_effort')
-    }
-  })
-
-  it.each([
-    ['DeepSeek', 'deepseek', 'deepseek-v4-pro', 'high'],
-    ['GLM-5.2', 'glm', 'glm-5.2', 'max'],
-  ] as const)('%s does not send effort until Thinking is enabled', async (_name, vendor, model, effort) => {
+  it('does not send DeepSeek effort until Thinking is enabled', async () => {
     const captured = capture()
     await callModel(
       {
-        model,
+        model: 'deepseek-v4-pro',
         messages: [{ role: 'user', content: 'hi' }],
-        settings: { vendor, reasoning_effort: effort },
+        settings: { vendor: 'deepseek', reasoning_effort: 'high' },
       },
       options(captured.fetchImpl),
     )
@@ -137,7 +117,7 @@ describe('Thinking request projection', () => {
 
   it('does not give unsupported models or an execution fallback DeepSeek Thinking fields', async () => {
     for (const [vendor, model] of [
-      ['glm', 'glm-4-long'],
+      ['glm', 'glm-5.2'],
       ['unknown-vendor', 'deepseek-v4-pro'],
     ]) {
       const captured = capture()

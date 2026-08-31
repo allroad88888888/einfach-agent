@@ -4,6 +4,7 @@ import {
   DEEPSEEK_VENDOR_ID,
   DEFAULT_GLM_MODEL,
   DEFAULT_KIMI_MODEL,
+  GLM_FLASH_MODEL,
   GLM_VENDOR_ID,
   KIMI_VENDOR_ID,
   OPENAI_COMPAT_VENDOR_ID,
@@ -46,7 +47,7 @@ describe('defaultSubagentTierRouting', () => {
   it('serves a GLM session its own table', () => {
     expect(defaultSubagentTierRouting(GLM_VENDOR_ID)).toEqual({
       vendor: 'glm',
-      models: { pro: DEFAULT_GLM_MODEL, flash: 'glm-5-turbo' },
+      models: { pro: DEFAULT_GLM_MODEL, flash: GLM_FLASH_MODEL },
     })
   })
 
@@ -97,7 +98,7 @@ describe('tier routing coverage seen from a delegate runtime', () => {
   it('covers a DeepSeek, GLM and Kimi session on their tier SKUs', async () => {
     expect(await hasLowCostExtraction({ vendor: 'deepseek', model: DEEPSEEK_PRO_MODEL })).toBe(true)
     expect(await hasLowCostExtraction({ vendor: 'glm', model: DEFAULT_GLM_MODEL })).toBe(true)
-    expect(await hasLowCostExtraction({ vendor: 'glm', model: 'glm-5-turbo' })).toBe(true)
+    expect(await hasLowCostExtraction({ vendor: 'glm', model: GLM_FLASH_MODEL })).toBe(true)
     expect(await hasLowCostExtraction({ vendor: 'kimi', model: DEFAULT_KIMI_MODEL })).toBe(true)
   })
 
@@ -107,12 +108,10 @@ describe('tier routing coverage seen from a delegate runtime', () => {
       model: 'whatever-the-gateway-serves',
     })).toBe(false)
     // 同一家 vendor、表外的模型名：档位表在，但不假定这个模型实现了同样的档位。
-    expect(await hasLowCostExtraction({ vendor: 'glm', model: 'glm-4.5-flash' })).toBe(false)
+    expect(await hasLowCostExtraction({ vendor: 'glm', model: 'glm-5-turbo' })).toBe(false)
   })
 
-  it('sends a GLM extraction to the GLM flash SKU without retaining unsupported effort', async () => {
-    // GLM Turbo 是 toggle-only：低价抽取明确关闭 thinking，不能把会话的 high effort
-    // 残留到请求里。
+  it('sends a GLM extraction to the Flash SKU with required Thinking restored', async () => {
     const bodies: string[] = []
     const runtime = createDelegateAgentRuntime({
       sessionId: 'session-glm',
@@ -139,14 +138,17 @@ describe('tier routing coverage seen from a delegate runtime', () => {
         systemPrompt: '抽取要点',
         userPrompt: '一段很长的原文',
       })
-      expect(result.model).toBe('glm-5-turbo')
+      expect(result.model).toBe(GLM_FLASH_MODEL)
     } finally {
       await runtime.dispose?.()
     }
 
     expect(bodies).toHaveLength(1)
     const request = JSON.parse(bodies[0]!) as Record<string, unknown>
-    expect(request.model).toBe('glm-5-turbo')
-    expect(request).not.toHaveProperty('reasoning_effort')
+    expect(request).toMatchObject({
+      model: GLM_FLASH_MODEL,
+      thinking: { type: 'enabled' },
+      reasoning_effort: 'high',
+    })
   })
 })

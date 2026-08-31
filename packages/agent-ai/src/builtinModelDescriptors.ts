@@ -18,7 +18,7 @@ export const KIMI_VENDOR_ID = 'kimi'
 export const OPENAI_COMPAT_VENDOR_ID = 'openai-compat'
 
 const DEEPSEEK_THINKING_SOURCE = 'https://api-docs.deepseek.com/guides/thinking_mode'
-const GLM_THINKING_SOURCE = 'https://docs.bigmodel.cn/cn/guide/capabilities/thinking'
+const GLM_THINKING_SOURCE = 'https://docs.bigmodel.cn/cn/guide/start/concept-param'
 const KIMI_THINKING_SOURCE =
   'https://moonshotai.github.io/kimi-code/en/configuration/config-files.html#thinking'
 
@@ -64,23 +64,12 @@ const DEEPSEEK_THINKING = freezeEffortCapability({
   effortMappings: { low: 'low', medium: 'high', high: 'high', xhigh: 'high', max: 'max' },
 })
 
-const GLM_5_2_THINKING = freezeEffortCapability({
+const GLM_5_3_THINKING = freezeEffortCapability({
   sourceUrl: GLM_THINKING_SOURCE,
   defaultEnabled: true,
-  efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
-  effortMappings: { low: 'high', medium: 'high', xhigh: 'max' },
-  disabledAliases: ['minimal', 'none'],
-})
-
-const GLM_TOGGLE_THINKING = freezeCapability({
-  kind: 'toggle',
-  sourceUrl: GLM_THINKING_SOURCE,
-  defaultEnabled: true,
-})
-
-const GLM_UNSUPPORTED_THINKING = freezeCapability({
-  kind: 'unsupported',
-  sourceUrl: GLM_THINKING_SOURCE,
+  required: true,
+  efforts: ['low', 'high', 'max'],
+  defaultEffort: 'max',
 })
 
 const KIMI_TOGGLE_THINKING = freezeCapability({
@@ -120,21 +109,9 @@ export const BUILTIN_VENDOR_DESCRIPTORS: Readonly<Record<string, VendorDescripto
       thinking: DEEPSEEK_THINKING,
     }),
   }),
-  [GLM_VENDOR_ID]: vendorDescriptor(128_000, {
-    'glm-5.2': textModel('GLM-5.2', 1_000_000, GLM_5_2_THINKING),
-    'glm-5.1': textModel('GLM-5.1', 200_000, GLM_TOGGLE_THINKING),
-    'glm-5': textModel('GLM-5', 200_000, GLM_TOGGLE_THINKING),
-    'glm-5-turbo': textModel('GLM-5-Turbo', 200_000, GLM_TOGGLE_THINKING),
-    'glm-4.7': textModel('GLM-4.7', 200_000, GLM_TOGGLE_THINKING),
-    'glm-4.7-flashx': textModel('GLM-4.7-FlashX', 200_000, GLM_TOGGLE_THINKING),
-    'glm-4.7-flash': textModel('GLM-4.7-Flash', 200_000, GLM_TOGGLE_THINKING),
-    'glm-4.6': textModel('GLM-4.6', 200_000, GLM_TOGGLE_THINKING),
-    'glm-4.5-air': textModel('GLM-4.5-Air', 128_000, GLM_TOGGLE_THINKING),
-    'glm-4.5-airx': textModel('GLM-4.5-AirX', 128_000, GLM_TOGGLE_THINKING),
-    'glm-4.5-flash': textModel('GLM-4.5-Flash', 128_000, GLM_TOGGLE_THINKING),
-    'glm-4-long': textModel('GLM-4-Long', 1_000_000, GLM_UNSUPPORTED_THINKING),
-    'glm-4-flashx-250414': textModel('GLM-4-FlashX-250414', 128_000, GLM_UNSUPPORTED_THINKING),
-    'glm-4-flash-250414': textModel('GLM-4-Flash-250414', 128_000, GLM_UNSUPPORTED_THINKING),
+  [GLM_VENDOR_ID]: vendorDescriptor(1_000_000, {
+    'glm-5.3': textModel('GLM-5.3', 1_000_000, GLM_5_3_THINKING),
+    'glm-5.3-flash': textModel('GLM-5.3-Flash', 1_000_000, GLM_5_3_THINKING),
   }),
   [KIMI_VENDOR_ID]: vendorDescriptor(131_072, {
     'kimi-k2.6': Object.freeze({

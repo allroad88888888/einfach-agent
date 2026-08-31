@@ -16,6 +16,7 @@ import {
   DEEPSEEK_VENDOR_ID,
   DEFAULT_GLM_MODEL,
   DEFAULT_KIMI_MODEL,
+  GLM_FLASH_MODEL,
   GLM_VENDOR_ID,
   KIMI_VENDOR_ID,
 } from '@einfach-agent/ai'
@@ -31,16 +32,9 @@ const DEEPSEEK_TIER_ROUTING: SubagentTierRouting = {
   },
 }
 
-// GLM 的低价快档。`@einfach-agent/ai` 只导出了默认模型常量（旗舰），这一档没有对应常量，
-// 因此在这里具名一次，别在下面的表里散写字面量。
-const GLM_FLASH_MODEL = 'glm-5-turbo'
-
-// GLM：Pro 取旗舰 glm-5.2，它同时是新会话的默认模型（`DEFAULT_GLM_MODEL`）——档位表只在会话
+// GLM：Pro 取旗舰 glm-5.3，它同时是新会话的默认模型（`DEFAULT_GLM_MODEL`）——档位表只在会话
 // 模型正好是表内 SKU 时才生效，Pro 不取默认模型的话，默认 GLM 会话根本进不了档位路由。
-// Flash 取同代的 glm-5-turbo：能力表的 glm-5 系里另外两条（glm-5.1 / glm-5）是旗舰的历史版本，
-// turbo 是唯一的低价快档，200k 上下文对低风险检索/抽取也绰绰有余。不选 glm-4.7-flash(x) 或
-// glm-4.5-flash 这些名字里带 flash 的，是因为那会让两档跨代配对——同一次委派里 Pro 与 Flash
-// 差一个世代时，两者的工具遵从度不可比，`route_reason` 的聚合也就失去意义。
+// Flash 取官方同代低价 SKU glm-5.3-flash；两者共享 1M 上下文与强制 Thinking 协议。
 const GLM_TIER_ROUTING: SubagentTierRouting = {
   vendor: GLM_VENDOR_ID,
   models: {

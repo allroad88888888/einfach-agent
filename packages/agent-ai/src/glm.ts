@@ -1,8 +1,8 @@
 // GLM（智谱）的接口调用。
 // ---------------------------------------------------------------------------
 // 共享线协议类型与底层 postChatCompletion 在 ./modelApi；这里只放 GLM 的请求特化
-// 与调用入口。GLM-5.2 是 OpenAI 兼容接口，支持 thinking / reasoning_effort /
-// function calling（见 docs.bigmodel.cn/cn/guide/models/text/glm-5.2）。
+// 与调用入口。GLM-5.3 系列是 OpenAI 兼容接口，支持 thinking /
+// reasoning_effort / function calling（见 docs.bigmodel.cn/cn/guide/models/text/glm-5.3）。
 
 import {
   postChatCompletion,
@@ -16,11 +16,13 @@ import { nonVisualMessages } from './nonVisualMessages'
 
 // 简介：GLM 接入点与默认模型。
 export const GLM_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4'
-export const DEFAULT_GLM_MODEL = 'glm-5.2'
+export const GLM_PRO_MODEL = 'glm-5.3'
+export const GLM_FLASH_MODEL = 'glm-5.3-flash'
+export const DEFAULT_GLM_MODEL = GLM_PRO_MODEL
 
 // 简介：GLM 的推理投入档位。
-// 详情：GLM-5.2 接受 low/medium/high/xhigh/max；其余模型不声明 effort。
-export type GlmReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+// 详情：GLM-5.3 与 GLM-5.3-Flash 只接受 low/high/max。
+export type GlmReasoningEffort = 'low' | 'high' | 'max'
 
 // 简介：发给 GLM 的请求体。
 // 详情：公共字段来自 ChatRequestBase，仅 reasoning_effort 取值域为 GLM 特化。

@@ -30,6 +30,7 @@ import {
   getModelThinkingCapability,
   isDisabledThinkingAlias,
   isSupportedThinkingEffort,
+  modelRequiresThinking,
   modelSupportsThinking,
   type ModelThinkingCapability,
   type ModelThinkingCapabilityRegistry,
@@ -139,17 +140,23 @@ function deepseekRequest(
 }
 
 // 简介：GLM 的请求投影。
-// 详情：只归一 reasoning_effort（取值域比 DeepSeek 多一档）；userId 不上行。
+// 详情：只归一 GLM-5.3 系列的 reasoning_effort；userId 不上行。
 function glmRequest(request: ProviderRequest<GlmProviderSettings>): GlmChatRequest {
-  const { reasoning_effort, ...body } = projectThinkingRequest(request, GLM_VENDOR_ID)
+  const capability = thinkingCapabilityFor(request, GLM_VENDOR_ID)
+  const projected = projectThinkingRequest(request, GLM_VENDOR_ID)
+  const required = modelRequiresThinking(capability)
+  const reasoningEffort = required
+    && isSupportedThinkingEffort(capability, request.settings.reasoning_effort)
+    ? request.settings.reasoning_effort
+    : projected.reasoning_effort
+  const { reasoning_effort: _projectedEffort, ...body } = projected
   return {
     ...body,
-    ...(reasoning_effort === 'low'
-      || reasoning_effort === 'medium'
-      || reasoning_effort === 'high'
-      || reasoning_effort === 'xhigh'
-      || reasoning_effort === 'max'
-      ? { reasoning_effort: reasoning_effort as GlmReasoningEffort }
+    ...(required ? { thinking: { type: 'enabled' } as const } : {}),
+    ...(reasoningEffort === 'low'
+      || reasoningEffort === 'high'
+      || reasoningEffort === 'max'
+      ? { reasoning_effort: reasoningEffort as GlmReasoningEffort }
       : {}),
   }
 }
