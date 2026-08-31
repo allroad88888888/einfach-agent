@@ -53,8 +53,9 @@ tells you to run it.
 - **Static build** (`pnpm dev`, or any deployment with no backend) — same React UI and runtime, but the probe
   fails, no command bridge is registered, and every tool that needs the machine (files, shell, Git, ripgrep)
   disappears from the model's tool list instead of failing at call time. `pnpm dev` additionally gets model
-  access through the Vite development relay; a plain static deployment has no trusted proxy and cannot call
-  model services at all.
+  access through the Vite development relay. A built static deployment uses explicit browser BYOK: the key is
+  stored in that browser's localStorage and requests go directly to the provider, so the provider must allow the
+  deployment origin with CORS.
 - **Headless CLI** — real runs without a UI, for dogfooding, automation, and letting a coding agent test
   itself. It loads the same `packages/host-node` capability implementation in-process, so its tools are the
   local machine's; it configures no persistence, so a session lives only as long as the process. `-v` prints
@@ -128,11 +129,11 @@ runs without the repository working tree.
 
 ## Configuring models
 
-The key variables in `.env.example` exist only for the local browser development relay used by `pnpm dev`. The
-running app never reads model keys from `.env.local` or the process environment — enter them on the settings
-page and the local Node backend writes them to `~/.webAgent/config.json`. If that file does not exist yet, the
-backend safely copies an older `~/.web-agent/config.json`; the new path wins and the old file is kept. The CLI
-host reads the same file, or another path via `--config <file>`.
+The key variables in `.env.example` exist only for the local browser development relay used by `pnpm dev`. A
+`pnpm serve` app sends keys to the local Node backend, which writes them to `~/.webAgent/config.json`. A built
+static deployment instead uses the key explicitly entered in its settings page. If the local config file does not
+exist yet, the backend safely copies an older `~/.web-agent/config.json`; the new path wins and the old file is
+kept. The CLI host reads the same file, or another path via `--config <file>`.
 
 `WEB_AGENT_CONFIG_DIR` only selects the configuration directory (for example `$HOME/.webAgent`). It is not a
 source of model keys, and setting it disables migration; see
@@ -143,12 +144,21 @@ New sessions default to DeepSeek, and the session's `vendor` setting decides whi
 The Kimi entry point is additionally gated by the public build flag `VITE_KIMI_IMAGE_INPUT_ENABLED`, which stays
 `false` until Kimi has been accepted end-to-end against a real China-region key.
 
-Keys are read by the local Node backend only and injected into a restricted provider transport. They are never
-stored in browser localStorage or compiled into the frontend bundle, and no response body ever carries one back
-to the browser. On Unix the config directory is created `0700` and the file `0600`, and an override directory
-must pass the same permission check. The file is plaintext, so do not commit, share or copy it anywhere
-untrusted. Kimi image uploads, `ms://` references and their cleanup semantics live in the Kimi adapter — the
-backend only offers generic JSON/multipart transport within an endpoint allowlist.
+`deepseek-v4-flash-vision-exp` supports image input. In Composer, JPEG, PNG and WebP attachments keep their
+original bytes and are temporarily uploaded through DeepSeek's [Files API](https://api-docs.deepseek.com/zh-cn/guides/files_api).
+The model-facing `view_image` tool defaults to `detail: 'low'`, which resizes a static image into a 512×512
+bounding box before upload. Use `detail: 'high'` for OCR, small text in screenshots, dense charts, or close visual
+comparison; it retains the original pixels. Files created for image observation are best-effort deleted after either
+completion or failure. See DeepSeek's [Vision guide](https://api-docs.deepseek.com/zh-cn/guides/vision) for the upstream
+image interface.
+
+Server-host keys are injected by the local Node backend into a restricted provider transport; no response body
+ever carries one back to the browser. Static BYOK keys are deliberately different: they are plaintext in browser
+localStorage and are sent directly to the selected official provider. Any same-origin script or trusted browser
+extension can read them, so use this only on a trusted deployment and clear site data to remove them. Keys are
+never compiled into the frontend bundle. On Unix the local config directory is created `0700` and the file `0600`.
+Kimi image uploads, `ms://` references and their cleanup semantics live in the Kimi adapter — the backend only
+offers generic JSON/multipart transport within an endpoint allowlist.
 
 ## Development commands
 

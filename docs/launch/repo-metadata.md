@@ -94,13 +94,14 @@ DeepSeek/GLM 模型；不提 Kimi——Kimi adapter 已实现但真实 Key 验�
 
 ### Release 展示建议
 
-当前仓库还没有推送过任何 tag（`git tag` 为空），GitHub 侧的 Releases 区会自动显示"暂无
-release"，**不需要手动处理**——而且**短期内也不会有**。原来那条会产出 GitHub Draft Release 的
-桌面流水线 `release-desktop.yml` 已随桌面端一并删除（理由与它当时要的九个签名 Secret 记在
-[桌面发布与签名（历史记录）](../release-signing.md)）。仓库里剩下的
-[`release-npm.yml`](../../.github/workflows/release-npm.yml) 只由 `npm-v*` tag 触发，且用户已裁决
-**不发布、仅本地跑**，包保持 `private: true`，它的前置判定必然失败。
-所以 Releases 区保持自动的空状态即可，无需在 About 设置里额外配置。
+当前 GitHub Releases 区没有产物，保持自动空状态即可，无需在 About 设置里额外配置。当前
+`release-desktop.yml` 仍存在：它为 Apple Silicon Tauri 薄壳在 PR、非 tag push 与手动触发时验证构建，
+在 `app-v<version>` tag 上可执行签名/notarization build；它不上传 artifact、不创建 GitHub Release、
+不发布也不 push。旧的四平台富 Rust 宿主自动 Draft Release 已删除，九-secret 账本见
+[桌面发布与签名](../release-signing.md)。
+
+[`release-npm.yml`](../../.github/workflows/release-npm.yml) 仍只由 `npm-v*` tag 触发，包保持
+`private: true`；它不产生 GitHub Release 产物。
 
 ### Packages 展示建议
 

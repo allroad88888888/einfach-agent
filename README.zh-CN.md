@@ -49,8 +49,9 @@ pnpm cli -p "搜索并读取 planning skill，用三句话总结这个项目的�
   `POST /api/invoke/:command` 打到 `packages/host-node`。
 - **纯静态产物**（`pnpm dev`，或任何没有后端的部署）：同一套 React UI 和 Agent Runtime，但探测
   失败、不登记命令桥，于是所有需要本机的工具（文件、shell、Git、ripgrep）**从模型可见清单里
-  整类消失**，而不是等调用时才失败。`pnpm dev` 另外还能经 Vite 开发中继发模型请求；真正的静态
-  部署没有可信代理，不能调用模型服务。
+  整类消失**，而不是等调用时才失败。`pnpm dev` 另外还能经 Vite 开发中继发模型请求；构建后的静态
+  部署使用明确的浏览器 BYOK：Key 保存在该浏览器 localStorage，直接请求 provider，provider 必须为
+  部署域名放行 CORS。
 - **headless CLI**：无 UI 驱动真实 run，用于 dogfood、自动化和编码 Agent 自测。它在进程内加载
   同一份 `packages/host-node` 能力实现，所以工具面对的就是本机；它不配置持久化，会话只活到进程
   退出为止。`-v` 把 trace 与性能诊断打到 stderr。
@@ -122,10 +123,10 @@ agent-core ──▶│                        ├──▶ packages/host-node �
 
 ## 配置模型
 
-`.env.example` 中的密钥变量仅供 `pnpm dev` 的本机 Web 开发中继使用；运行中的应用不会从
-`.env.local` 或进程环境读取模型密钥。请在设置页配置所需模型 Key，本机 Node 后端会把它写入
-`~/.webAgent/config.json`。新默认文件不存在时，后端才会安全复制旧 `~/.web-agent/config.json`；
-新文件优先，旧文件会保留。
+`.env.example` 中的密钥变量仅供 `pnpm dev` 的本机 Web 开发中继使用。`pnpm serve` 的应用会把设置页
+填写的模型 Key 交给本机 Node 后端，写入 `~/.webAgent/config.json`；构建后的静态部署则使用设置页明确
+填写的浏览器 BYOK。新默认文件不存在时，后端才会安全复制旧 `~/.web-agent/config.json`；新文件优先，
+旧文件会保留。
 
 CLI 宿主读同一份 `~/.webAgent/config.json`，也可用 `--config <文件>` 指定其他路径。
 
@@ -135,11 +136,18 @@ CLI 宿主读同一份 `~/.webAgent/config.json`，也可用 `--config <文件>`
 新会话默认使用 DeepSeek；会话设置中的 `vendor` 决定实际调用的 provider。Kimi 入口还受公开构建
 变量 `VITE_KIMI_IMAGE_INPUT_ENABLED` 控制，真实中国区 Key 端到端验收前必须保持 `false`。
 
-密钥只由本机 Node 后端读取并注入受限 provider 传输；它不会保存到浏览器 localStorage、不会编译进
-前端包，也没有任何一条响应会把 Key 回传给浏览器。Unix 平台的新建配置目录为 `0700`、配置文件为
-`0600`；既有覆盖目录必须通过私有权限检查。文件内容是明文，勿提交、共享或复制到不受信任的位置。
-Kimi 图片上传、`ms://` 引用与清理语义属于 Kimi adapter；后端只提供端点白名单内的通用
-JSON/multipart 传输。
+`deepseek-v4-flash-vision-exp` 支持图片输入。Composer 中的 JPEG、PNG、WebP 附件保留原始字节，经
+DeepSeek [Files API](https://api-docs.deepseek.com/zh-cn/guides/files_api) 临时上传。模型可调用的 `view_image`
+工具默认 `detail: 'low'`：上传前将静态图缩进 512×512 包围盒；OCR、截图小字、密集图表或精细视觉比较应
+使用 `detail: 'high'`，它保留原始像素。用于图片观察的文件会在完成或失败后尽力删除。上游图片接口见
+DeepSeek [Vision 指南](https://api-docs.deepseek.com/zh-cn/guides/vision)。
+
+server 宿主的密钥只由本机 Node 后端读取并注入受限 provider 传输，响应不会把它回传给浏览器。静态
+BYOK 刻意不同：Key 以明文留在浏览器 localStorage，浏览器直接把它发给所选官方 provider。同源 XSS
+或受信任的浏览器扩展都可能读取它，因此只在可信部署使用；清除网站数据即可删除。Key 绝不会编译进
+前端包。Unix 平台的新建配置目录为 `0700`、配置文件为 `0600`；既有覆盖目录必须通过私有权限检查。
+Kimi 图片上传、`ms://` 引用与清理语义属于 Kimi adapter；后端只提供端点白名单内的通用 JSON/multipart
+传输。
 
 ## 开发命令
 

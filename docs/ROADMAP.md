@@ -46,18 +46,22 @@ P2.5 的 UI 协议设计已完成，R1–R4 已按独立、可回退批次交付
 
 - 把模型凭证移出前端构建产物，改由可信宿主后端读写用户配置文件。（已完成：`c9f764d`，默认位置为 `~/.webAgent/config.json`；该新文件缺失时才安全复制旧 `~/.web-agent/config.json`，新文件优先且旧文件保留；受限模型代理已就位，纯静态产物拒绝直连模型。当时的后端是 Tauri 的 Rust 层，已随 T1 删除，今天是 `apps/server` + `packages/host-node`。）
 - 为 shell、文件写入、Git 和 child capability 增加跨平台权限回归矩阵。（已完成：`d89c1ea`。）
-- ~~建立 Windows、macOS、Linux 的目标平台构建与签名流程。~~（曾完成于 `e90ab14`，**后已整条作废**：
-  桌面端与 `release-desktop.yml` 随 T1 删除，用户裁决「不发布、仅本地跑」，签名证书链路不再需要。
-  当时的九个签名 Secret 记在[桌面发布与签名（历史记录）](release-signing.md)。）
+- ~~建立 Windows、macOS、Linux 的目标平台构建与签名流程。~~（曾完成于 `e90ab14`，随后随旧的富 Rust
+  宿主及其自动 Draft Release 一并删除；当时的九个签名 Secret 留在[桌面发布与签名](release-signing.md)
+  的历史账本中。）
+- 建立 Apple Silicon Tauri 薄壳的 CI 验证与签名/notarization build 路径。（已完成：唯一 target 为
+  `aarch64-apple-darwin`；壳只承载 Node sidecar。PR/非 tag 只验证构建，`app-v<version>` tag 可签名与
+  notarization；workflow 不 upload、publish 或 push。）
 - 明确 Web 预览只提供无 `server` 工具的降级能力，并增加能力探测测试。（已完成：`6b9b08b`。）
 
 验收标准：
 
 - 发布包和 Web 静态资源不包含生产 API Key。
 - 危险能力必须经过现有确认/授权边界，子 Agent 不能扩大父节点权限。
-- ~~每个平台都有可复现的构建产物和最小构建冒烟验证。~~（曾完成于 `f5e8f60`、`dae85ff` 与随后的
-  三平台原生 build smoke，**已随 T1 作废**：桌面端与三平台构建一并退出 CI。今天的等价物是
-  `pnpm check:dist` 与 `pnpm check:packed`（`pnpm pack` → 仓库外安装 → 真跑），只有一个平台的产物要冒烟。）
+- ~~每个平台都有可复现的构建产物和最小构建冒烟验证。~~（旧三平台 Rust 宿主 smoke 已随 T1 作废。）
+  当前桌面等价物是 Apple Silicon matrix 的 Node-sidecar staging、wrapper 检查与显式
+  `aarch64-apple-darwin` Tauri build；它不产生可下载的 CI artifact。`pnpm check:dist` 与
+  `pnpm check:packed` 继续覆盖 Web/Node 打包路径。
 
 ## 阶段 4：性能与长期运行
 

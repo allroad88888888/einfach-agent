@@ -1,42 +1,44 @@
-# 桌面发布与签名（历史记录，已无实现）
+# 桌面发布与签名
 
-> **本文描述的东西已经不存在了。** 桌面端（`apps/desktop/`）与它的发布流水线
-> `release-desktop.yml` 已随 [Node 宿主树](node-host-issues.md) 的 T1 一并删除，仓库里今天没有
-> 任何一处消费下面这九个 Secret，也没有任何 tag 会触发桌面构建。
->
-> **保留本文不是为了留操作步骤，而是为了留代价。** 下面这张表是「为什么不做桌面版」这个决定的
-> 全部依据：发一个原生窗口要 Apple Developer ID 与 Windows code-signing 两套证书，而绕开这条链路
-> 正是把宿主改成「浏览器 + 本机 Node 后端」的**唯一动机**（见 Node 宿主树的「目标」段）。
-> 删掉这张表，「不如干脆做个桌面版」这个念头就会被后人重新想一遍，而重新想的人不会再看到这九行。
->
-> 今天的发布口径与本文无关：用户已裁决**不发布、仅本地跑**，四个包保持 `private: true`，
-> `release-npm.yml` 只由 `npm-v*` tag 触发且处于休眠；它**一个签名 Secret 都不用**。
+当前桌面端是只承载 Node sidecar 的 Apple Silicon Tauri 薄壳，而不是旧的富 Rust 业务宿主。当前
+`release-desktop.yml` 在 pull request、非 tag push 与手动触发时只验证构建；`app-v<version>` tag 则先核对
+版本，再执行可签名、可 notarization 的 Apple Silicon 构建。当前 workflow 不上传 artifact、不创建 GitHub
+Release、不发布，也不 push；这些仍须另行授权。
 
-## 当时的九个 Repository Secrets
+## 当前 Apple Silicon 路径
+
+唯一 target 为 `aarch64-apple-darwin`。每个 CI job 安装相同 Rust target、构建共享 server/Node runtime、
+暂存对应 Node sidecar，并在打包前运行桌面 wrapper 检查。tag 必须精确等于
+`app-v<apps/desktop/tauri.conf.json.version>`。
+
+签名与 notarization 的 tag job 只检查以下 GitHub Actions secrets 是否非空，不会输出其值：
 
 | Secret | 用途 |
 | --- | --- |
-| `APPLE_CERTIFICATE` | Base64 编码的 Developer ID Application `.p12` 证书。 |
-| `APPLE_CERTIFICATE_PASSWORD` | 导出 `.p12` 时设置的密码。 |
-| `APPLE_SIGNING_IDENTITY` | macOS `security find-identity -v -p codesigning` 显示的 Developer ID identity。 |
-| `APPLE_ID` | 用于 notarization 的 Apple ID 邮箱。 |
-| `APPLE_PASSWORD` | 对应 Apple ID 的 app-specific password。 |
+| `APPLE_CERTIFICATE` | Developer ID Application 证书。 |
+| `APPLE_CERTIFICATE_PASSWORD` | 证书导出密码。 |
+| `APPLE_SIGNING_IDENTITY` | Developer ID codesigning identity。 |
+| `APPLE_ID` | notarization Apple ID。 |
+| `APPLE_PASSWORD` | Apple ID app-specific password。 |
 | `APPLE_TEAM_ID` | Apple Developer Team ID。 |
-| `KEYCHAIN_PASSWORD` | CI 临时 macOS keychain 的随机密码。 |
-| `WINDOWS_CERTIFICATE` | Base64 编码的 Windows code-signing `.pfx` 文件。 |
+
+这些凭据仅注入 tag 的前置检查及 Tauri build 步骤；PR 与非 tag 路径不接收它们。完整的运行矩阵见
+[桌面发布矩阵](desktop-release.md)。
+
+## 历史：已删除的四平台 Rust 宿主流程
+
+`e52c31d` 删除了旧的富 Rust 业务宿主及其自动 GitHub Draft Release 流程。那条历史流水线构建 Linux
+x64、Windows x64、macOS Apple Silicon 和 macOS Intel，使用下列九个 secrets，并上传到 Draft Release。
+它不是当前操作步骤；保留这份账本只为说明曾经的发布成本。
+
+| 历史 Secret | 用途 |
+| --- | --- |
+| `APPLE_CERTIFICATE` | Developer ID Application `.p12` 证书。 |
+| `APPLE_CERTIFICATE_PASSWORD` | `.p12` 导出密码。 |
+| `APPLE_SIGNING_IDENTITY` | macOS Developer ID identity。 |
+| `APPLE_ID` | notarization Apple ID。 |
+| `APPLE_PASSWORD` | Apple ID app-specific password。 |
+| `APPLE_TEAM_ID` | Apple Developer Team ID。 |
+| `KEYCHAIN_PASSWORD` | CI 临时 macOS keychain 密码。 |
+| `WINDOWS_CERTIFICATE` | Windows code-signing `.pfx`。 |
 | `WINDOWS_CERTIFICATE_PASSWORD` | `.pfx` 导出密码。 |
-
-七条给 macOS（签名 + 公证两件事，各要一套凭据），两条给 Windows。**它们全部是「向平台证明这个
-二进制是谁做的」**，与「有没有权限往某个 registry 写」不是一回事——后者只要一个 token，前者要
-向 Apple 与证书颁发机构分别付费并维持有效期。
-
-## 当时的流程（供理解那张表的语境）
-
-桌面发布只由推送 `app-v<version>` tag 触发，且 tag 必须与 `apps/desktop/tauri.conf.json` 的版本
-一致。流水线先校验九个 Secret 全部存在，再构建 Linux x64、Windows x64、macOS Apple Silicon 与
-macOS Intel 四份产物，上传到同一个 GitHub Draft Release；Draft 不自动发布，由发布负责人复核产物、
-签名与 release notes 之后手动发。Secret 缺失或 tag 与版本不一致时，工作流在产出任何安装包之前
-就失败。
-
-真正的实现细节（工作流 YAML、证书导入与清理步骤、四平台矩阵）不在本文重述——它们随
-`release-desktop.yml` 一起留在 Git 历史里，删除提交是 `e52c31d`。
