@@ -9,12 +9,12 @@ function jsonResponse(): Response {
 }
 
 describe('Kimi non-stream adapter', () => {
-  it('defaults to CN, preserves thinking, and omits fixed sampling fields', async () => {
+  it('defaults to CN, omits Thinking, and omits fixed sampling fields', async () => {
     let requestedUrl = ''
     let requestBody: Record<string, unknown> = {}
     await callKimi(
       {
-        model: 'kimi-k2.6',
+        model: 'kimi-k3',
         messages: [
           { role: 'user', content: 'question' },
           {
@@ -48,8 +48,7 @@ describe('Kimi non-stream adapter', () => {
 
     expect(requestedUrl).toBe('https://api.moonshot.cn/v1/chat/completions')
     expect(requestBody).toMatchObject({
-      model: 'kimi-k2.6',
-      thinking: { type: 'enabled' },
+      model: 'kimi-k3',
       messages: [
         { role: 'user', content: 'question' },
         { role: 'assistant', reasoning_content: 'reason' },
@@ -60,6 +59,7 @@ describe('Kimi non-stream adapter', () => {
     expect(requestBody).not.toHaveProperty('top_p')
     expect(requestBody).not.toHaveProperty('presence_penalty')
     expect(requestBody).not.toHaveProperty('frequency_penalty')
+    expect(requestBody).not.toHaveProperty('thinking')
     expect(requestBody).not.toHaveProperty('reasoning_effort')
   })
 
@@ -68,7 +68,7 @@ describe('Kimi non-stream adapter', () => {
     let requestBody: Record<string, unknown> = {}
     await callModel(
       {
-        model: 'kimi-k2.6',
+        model: 'kimi-k3',
         messages: [{ role: 'user', content: 'hello' }],
         thinking: { type: 'disabled' },
         settings: { vendor: 'kimi', region: 'global' },
@@ -84,7 +84,7 @@ describe('Kimi non-stream adapter', () => {
       },
     )
     expect(requestedUrl).toBe('https://api.moonshot.ai/v1/chat/completions')
-    expect(requestBody).toMatchObject({ thinking: { type: 'disabled' } })
+    expect(requestBody).not.toHaveProperty('thinking')
     expect(requestBody).not.toHaveProperty('reasoning_effort')
     expect(requestBody).not.toHaveProperty('user_id')
   })

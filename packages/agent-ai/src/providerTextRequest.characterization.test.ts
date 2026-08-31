@@ -61,7 +61,7 @@ describe('provider 纯文本请求 characterization', () => {
 
     await callGlm(
       {
-        model: 'glm-5.2',
+        model: 'glm-5.3',
         messages: TEXT_MESSAGES,
         thinking: { type: 'enabled' },
         reasoning_effort: 'max',
@@ -81,7 +81,7 @@ describe('provider 纯文本请求 characterization', () => {
     expect(request.url).toBe('https://glm.example/v4/chat/completions')
     expect(new Headers(request.init.headers).get('Authorization')).toBe('Bearer glm-secret')
     expect(bodyOf(request.init)).toEqual({
-      model: 'glm-5.2',
+      model: 'glm-5.3',
       messages: TEXT_MESSAGES,
       thinking: { type: 'enabled' },
       reasoning_effort: 'max',
@@ -121,7 +121,7 @@ describe('provider 纯文本请求 characterization', () => {
     const captured = capture(sseResponse)
 
     await streamGlm(
-      { model: 'glm-5.2', messages: TEXT_MESSAGES },
+      { model: 'glm-5.3', messages: TEXT_MESSAGES },
       {
         apiKey: 'key',
         baseUrl: 'https://glm.example/v4',
@@ -131,7 +131,7 @@ describe('provider 纯文本请求 characterization', () => {
     )
 
     expect(bodyOf(captured.request().init)).toEqual({
-      model: 'glm-5.2',
+      model: 'glm-5.3',
       messages: TEXT_MESSAGES,
       stream: true,
     })

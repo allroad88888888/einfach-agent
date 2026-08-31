@@ -32,7 +32,7 @@ function conversationItem(id: string, content: UserMessageContent): Conversation
 describe('structured user content retention', () => {
   it('redacts provider references from request traces', () => {
     const trace = llmRequestTracePreview({
-      model: 'kimi-k2.6',
+      model: 'kimi-k3',
       messages: [{ role: 'user', content: structuredContent }],
     })
 

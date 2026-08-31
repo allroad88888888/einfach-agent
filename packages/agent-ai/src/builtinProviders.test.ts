@@ -29,8 +29,8 @@ function jsonFetch(record: { url?: string; body?: Record<string, unknown> }): ty
 }
 
 describe('内置 provider 装配', () => {
-  it('DeepSeek reasoning_effort 只允许 high 与 max', () => {
-    expectTypeOf<DeepSeekReasoningEffort>().toEqualTypeOf<'high' | 'max'>()
+  it('DeepSeek reasoning_effort 只允许 low、high 与 max', () => {
+    expectTypeOf<DeepSeekReasoningEffort>().toEqualTypeOf<'low' | 'high' | 'max'>()
   })
 
   it('默认 registry 注册了四家', () => {
@@ -76,7 +76,7 @@ describe('内置 provider 装配', () => {
 
     await callModel(
       {
-        model: 'kimi-k2.6',
+        model: 'kimi-k3',
         messages: [{ role: 'user', content: 'hi' }],
         settings: { vendor: 'kimi', region: 'cn' },
         userId: 'wa_child_0123',
@@ -97,13 +97,13 @@ describe('内置 provider 装配', () => {
       userId: 'wa_child_0123', hasUserId: true,
     },
     {
-      vendor: GLM_VENDOR_ID, model: 'glm-5.2', url: GLM_BASE_URL,
+      vendor: GLM_VENDOR_ID, model: 'glm-5.3', url: GLM_BASE_URL,
       thinking: { type: 'enabled' as const },
       settings: { reasoning_effort: 'max' }, expected: { reasoning_effort: 'max' },
       userId: 'wa_child_0123', hasUserId: false,
     },
     {
-      vendor: KIMI_VENDOR_ID, model: 'kimi-k2.6', url: KIMI_CN_BASE_URL,
+      vendor: KIMI_VENDOR_ID, model: 'kimi-k3', url: KIMI_CN_BASE_URL,
       thinking: { type: 'enabled' as const },
       settings: { region: 'cn' }, expected: {}, userId: 'wa_child_0123', hasUserId: false,
     },

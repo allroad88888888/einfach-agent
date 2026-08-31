@@ -108,7 +108,7 @@ describe('tier routing coverage seen from a delegate runtime', () => {
       model: 'whatever-the-gateway-serves',
     })).toBe(false)
     // 同一家 vendor、表外的模型名：档位表在，但不假定这个模型实现了同样的档位。
-    expect(await hasLowCostExtraction({ vendor: 'glm', model: 'glm-5-turbo' })).toBe(false)
+    expect(await hasLowCostExtraction({ vendor: 'glm', model: 'future-model' })).toBe(false)
   })
 
   it('sends a GLM extraction to the Flash SKU with required Thinking restored', async () => {

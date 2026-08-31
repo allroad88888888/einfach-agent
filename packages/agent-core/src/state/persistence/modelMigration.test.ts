@@ -157,7 +157,7 @@ describe('migrateModelSettings', () => {
     } as unknown as ModelSettings
     const glm = {
       vendor: 'glm',
-      model: 'glm-5',
+      model: 'glm-5.3',
       reasoning_effort: 'low',
     } as unknown as ModelSettings
 
@@ -168,7 +168,7 @@ describe('migrateModelSettings', () => {
     // core 不认识别家的取值域：只把老字段搬进设置袋，不做任何归一化。
     expect(migrateModelSettings(glm)).toEqual({
       vendor: 'glm',
-      model: 'glm-5',
+      model: 'glm-5.3',
       vendorSettings: { reasoning_effort: 'low' },
     })
   })

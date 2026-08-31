@@ -38,8 +38,8 @@ function seedSessions() {
       vendorSettings: { reasoning_effort: 'high' },
     }),
     b: session('b', {
-      vendor: 'glm', model: 'glm-5.2', thinking: true,
-      vendorSettings: { reasoning_effort: 'medium' },
+      vendor: 'glm', model: 'glm-5.3', thinking: true,
+      vendorSettings: { reasoning_effort: 'high' },
     }),
   })
   rootStore.setter(activeSessionIdAtom, 'a')
@@ -76,27 +76,25 @@ describe('Composer model controls integration', () => {
       vendorSettings: { connectionId: 'team/profile' },
     })
     expect(rootStore.getter(sessionsAtom).b.settings).toEqual({
-      vendor: 'glm', model: 'glm-5.2', thinking: true,
-      vendorSettings: { reasoning_effort: 'medium' },
+      vendor: 'glm', model: 'glm-5.3', thinking: true,
+      vendorSettings: { reasoning_effort: 'high' },
     })
     expect(screen.getByRole('button', { name: '当前模型的 Thinking 能力未知' })).toBeDisabled()
 
     act(() => rootStore.setter(activeSessionIdAtom, 'b'))
-    expect((screen.getByRole('option', { name: 'GLM-5.2' }) as HTMLOptionElement).selected).toBe(true)
-    expect(screen.getByRole('radio', { name: 'Medium' })).toBeChecked()
-    fireEvent.click(screen.getByRole('button', { name: 'Thinking 已开启，点击关闭' }))
+    expect((screen.getByRole('option', { name: 'GLM-5.3' }) as HTMLOptionElement).selected).toBe(true)
+    expect(screen.getByRole('radio', { name: 'High' })).toBeChecked()
+    expect(screen.getByRole('button', { name: 'Thinking 始终开启' })).toBeDisabled()
 
-    expect(rootStore.getter(sessionsAtom).b.settings.thinking).toBe(false)
+    expect(rootStore.getter(sessionsAtom).b.settings.thinking).toBe(true)
     expect(rootStore.getter(sessionsAtom).a.settings.vendorSettings).toEqual({
       connectionId: 'team/profile',
     })
-    expect(persist).toHaveBeenCalledTimes(3)
+    expect(persist).toHaveBeenCalledTimes(2)
   })
 
-  it.each([
-    ['effort', { vendor: 'deepseek', model: 'deepseek-v4-pro' }],
-    ['toggle-only', { vendor: 'kimi', model: 'kimi-k2.6' }],
-  ] as const)('%s 模型缺省 thinking 使用 provider On，首次点击写 false', (_, settings) => {
+  it('DeepSeek 缺省 thinking 使用 provider On，首次点击写 false', () => {
+    const settings = { vendor: 'deepseek', model: 'deepseek-v4-pro' } as const
     rootStore.setter(sessionsAtom, { a: session('a', settings) })
     rootStore.setter(activeSessionIdAtom, 'a')
     const persist = vi.spyOn(defaultCore.persistence, 'persistSessions').mockImplementation(() => undefined)

@@ -70,7 +70,7 @@ function setup(prepareUserInput: UserInputPreparer) {
   })
   const id = core.newSession({
     title: 'existing',
-    settings: { vendor: 'kimi', model: 'kimi-k2.6', vendorSettings: { region: 'cn' }, thinking: true },
+    settings: { vendor: 'kimi', model: 'kimi-k3', vendorSettings: { region: 'cn' }, thinking: true },
   })
   return { core, id, store: core.getSessionStore(id).store }
 }
@@ -101,7 +101,7 @@ describe('sendMessage prepared input transaction', () => {
     expect(prepare.mock.calls[0][1]).toMatchObject({
       sessionId: id,
       apiKey: 'kimi-key',
-      settings: { vendor: 'kimi', model: 'kimi-k2.6', thinking: true },
+      settings: { vendor: 'kimi', model: 'kimi-k3', thinking: true },
     })
     expect(store.getter(itemsAtom)).toEqual([])
     expect(store.getter(runAtom)).toBeUndefined()
@@ -169,7 +169,7 @@ describe('sendMessage prepared input transaction', () => {
         settings: {
           thinking: true,
           vendorSettings: { region: 'cn' },
-          model: 'kimi-k2.6',
+          model: 'kimi-k3',
           vendor: 'kimi',
         },
       },

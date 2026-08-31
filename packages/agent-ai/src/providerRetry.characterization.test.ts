@@ -33,8 +33,8 @@ const NON_DEEPSEEK_PROVIDERS: Array<{
   model: string
   baseUrl: string
 }> = [
-  { name: 'GLM', stream: streamGlm, model: 'glm-5.2', baseUrl: 'https://glm.example/v4' },
-  { name: 'Kimi', stream: streamKimi, model: 'kimi-k2.6', baseUrl: 'https://kimi.example/v1' },
+  { name: 'GLM', stream: streamGlm, model: 'glm-5.3', baseUrl: 'https://glm.example/v4' },
+  { name: 'Kimi', stream: streamKimi, model: 'kimi-k3', baseUrl: 'https://kimi.example/v1' },
   {
     name: 'OpenAI-compat',
     stream: streamOpenAiCompat,

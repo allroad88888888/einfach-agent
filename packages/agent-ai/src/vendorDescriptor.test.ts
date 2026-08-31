@@ -8,7 +8,7 @@ import {
 describe('vendor descriptor', () => {
   it('uses exact model windows before its conservative vendor fallback', () => {
     expect(contextWindowTokens('deepseek', 'deepseek-v4-pro')).toBe(1_000_000)
-    expect(contextWindowTokens('glm', 'glm-4.5-flash')).toBe(128_000)
+    expect(contextWindowTokens('glm', 'glm-5.3-flash')).toBe(1_000_000)
     expect(contextWindowTokens('deepseek', 'private-model')).toBe(64_000)
   })
 

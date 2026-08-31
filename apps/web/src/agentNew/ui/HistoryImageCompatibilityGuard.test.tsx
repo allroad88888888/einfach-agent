@@ -33,7 +33,7 @@ function storeWithImage() {
 describe('history image compatibility guard', () => {
   it('blocks the composer surface with an explicit warning for incompatible history', () => {
     const { container } = renderWithStore(
-      <HistoryImageCompatibilityProvider vendor="glm" model="glm-4.7">
+      <HistoryImageCompatibilityProvider vendor="glm" model="glm-5.3">
         <HistoryImageCompatibilityGuard>
           <button type="button">发送</button>
         </HistoryImageCompatibilityGuard>

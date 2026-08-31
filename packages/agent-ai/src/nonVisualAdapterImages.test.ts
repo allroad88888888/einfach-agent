@@ -116,7 +116,7 @@ describe('non-visual adapter image fallback', () => {
     const capture = requestCapture(sseResponse())
 
     await streamGlm(
-      { model: 'glm-5.2', messages: MIXED_MESSAGES },
+      { model: 'glm-5.3', messages: MIXED_MESSAGES },
       { apiKey: 'key', fetchImpl: capture.fetchImpl, retry: { maxRetries: 0 } },
     )
 

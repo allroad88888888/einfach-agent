@@ -29,13 +29,13 @@ describe('model settings persistence integration', () => {
     })
     const siblingId = origin.newSession({
       title: 'sibling',
-      settings: { vendor: 'kimi', model: 'kimi-k2.6', thinking: false },
+      settings: { vendor: 'kimi', model: 'kimi-k3', thinking: true },
     })
     origin.selectSession(activeId)
 
     const nextSettings = {
       vendor: 'glm',
-      model: 'glm-5.2',
+      model: 'glm-5.3',
       thinking: true,
       temperature: 0.25,
       vendorSettings: {
@@ -53,6 +53,6 @@ describe('model settings persistence integration', () => {
     expect(revived.rootStore.getter(sessionsAtom)[activeId]?.settings)
       .toEqual(nextSettings)
     expect(revived.rootStore.getter(sessionsAtom)[siblingId]?.settings)
-      .toEqual({ vendor: 'kimi', model: 'kimi-k2.6', thinking: false })
+      .toEqual({ vendor: 'kimi', model: 'kimi-k3', thinking: true })
   })
 })

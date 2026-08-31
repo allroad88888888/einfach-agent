@@ -12,7 +12,7 @@ describe('liftLegacyVendorSettings', () => {
   it('把顶层的历史特化字段搬进设置袋，通用字段留在顶层', () => {
     const legacy = {
       vendor: 'kimi',
-      model: 'kimi-k2.6',
+      model: 'kimi-k3',
       thinking: true,
       temperature: 0.3,
       max_tokens: 128,
@@ -22,7 +22,7 @@ describe('liftLegacyVendorSettings', () => {
 
     expect(liftLegacyVendorSettings(legacy)).toEqual({
       vendor: 'kimi',
-      model: 'kimi-k2.6',
+      model: 'kimi-k3',
       thinking: true,
       temperature: 0.3,
       max_tokens: 128,
@@ -41,7 +41,7 @@ describe('liftLegacyVendorSettings', () => {
   })
 
   it('幂等：搬运结果再搬一次不变', () => {
-    const legacy = { vendor: 'kimi', model: 'kimi-k2.6', region: 'cn' } as unknown as ModelSettings
+    const legacy = { vendor: 'kimi', model: 'kimi-k3', region: 'cn' } as unknown as ModelSettings
     const once = liftLegacyVendorSettings(legacy)
 
     expect(liftLegacyVendorSettings(once)).toBe(once)
@@ -50,7 +50,7 @@ describe('liftLegacyVendorSettings', () => {
   it('同名字段以设置袋里的新值为准，顶层残留的老值丢弃', () => {
     const mixed = {
       vendor: 'kimi',
-      model: 'kimi-k2.6',
+      model: 'kimi-k3',
       region: 'global',
       vendorSettings: { region: 'cn' },
     } as unknown as ModelSettings
@@ -59,7 +59,7 @@ describe('liftLegacyVendorSettings', () => {
   })
 
   it('不原地改入参', () => {
-    const legacy = { vendor: 'kimi', model: 'kimi-k2.6', region: 'cn' } as unknown as ModelSettings
+    const legacy = { vendor: 'kimi', model: 'kimi-k3', region: 'cn' } as unknown as ModelSettings
 
     liftLegacyVendorSettings(legacy)
 
@@ -82,7 +82,7 @@ describe('withVendorSettings', () => {
   })
 
   it('袋子非空时替换整袋', () => {
-    const settings: ModelSettings = { vendor: 'glm', model: 'glm-5' }
+    const settings: ModelSettings = { vendor: 'glm', model: 'glm-5.3' }
 
     expect(withVendorSettings(settings, { reasoning_effort: 'low' }).vendorSettings)
       .toEqual({ reasoning_effort: 'low' })

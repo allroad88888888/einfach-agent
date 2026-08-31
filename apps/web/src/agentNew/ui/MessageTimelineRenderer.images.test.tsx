@@ -32,7 +32,7 @@ const item: TimelineMessageItem = {
 describe('MessageTimelineRenderer image history', () => {
   it('显示用户文本和可恢复的图片元数据，但不泄露 provider 引用', () => {
     renderWithStore(
-      <HistoryImageCompatibilityProvider vendor="kimi" model="kimi-k2.6" region="cn">
+      <HistoryImageCompatibilityProvider vendor="kimi" model="kimi-k3" region="cn">
         <MessageTimelineRenderer item={item} />
       </HistoryImageCompatibilityProvider>,
     )
@@ -44,7 +44,7 @@ describe('MessageTimelineRenderer image history', () => {
 
   it('为不兼容模型显示确定性占位，且不泄露 provider、scope 或 reference', () => {
     const { container } = renderWithStore(
-      <HistoryImageCompatibilityProvider vendor="deepseek" model="deepseek-chat">
+      <HistoryImageCompatibilityProvider vendor="deepseek" model="deepseek-v4-pro">
         <MessageTimelineRenderer item={item} />
       </HistoryImageCompatibilityProvider>,
     )

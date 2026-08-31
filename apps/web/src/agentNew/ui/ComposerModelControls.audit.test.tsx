@@ -27,7 +27,7 @@ describe('Composer model controls audit', () => {
 
   it.each([
     ['DeepSeek', 'deepseek', 'deepseek-v4-pro'],
-    ['GLM-5.2', 'glm', 'glm-5.2'],
+    ['GLM-5.3', 'glm', 'glm-5.3'],
   ] as const)('makes a %s effort selected from provider-default On effective', (_, vendor, model) => {
     const seeded = defaultSession(vendor, model)
     rootStore.setter(sessionsAtom, { [seeded.id]: seeded })
@@ -39,7 +39,7 @@ describe('Composer model controls audit', () => {
       { store: createStore() },
     )
 
-    expect(screen.getByRole('button', { name: 'Thinking 已开启，点击关闭' }))
+    expect(screen.getByRole('button', { name: vendor === 'glm' ? 'Thinking 始终开启' : 'Thinking 已开启，点击关闭' }))
       .toHaveAttribute('aria-pressed', 'true')
     fireEvent.click(screen.getByRole('radio', { name: 'Max' }))
 

@@ -37,36 +37,36 @@ describe('selectComposerModelSettings', () => {
     })
   })
 
-  it('drops an effort unsupported by the target GLM model while preserving shared settings', () => {
+  it('drops a cross-vendor effort while preserving shared settings for GLM', () => {
     const current: ModelSettings = {
       vendor: 'deepseek', model: 'deepseek-v4-pro', thinking: true, temperature: 0.4,
       vendorSettings: { reasoning_effort: 'high' },
     }
 
     expect(selectComposerModelSettings(current, {
-      vendor: 'glm', model: 'glm-5.1',
-    }, capability('glm', 'glm-5.1'))).toEqual({
-      vendor: 'glm', model: 'glm-5.1', thinking: true, temperature: 0.4,
+      vendor: 'glm', model: 'glm-5.3',
+    }, capability('glm', 'glm-5.3'))).toEqual({
+      vendor: 'glm', model: 'glm-5.3', thinking: true, temperature: 0.4,
     })
   })
 
   it('keeps Kimi region on a same-vendor selection without a target bag', () => {
     const current: ModelSettings = {
-      vendor: 'kimi', model: 'kimi-k2.6', thinking: true,
+      vendor: 'kimi', model: 'kimi-k3', thinking: true,
       vendorSettings: { region: 'global', reasoning_effort: 'high' },
     }
 
     expect(selectComposerModelSettings(current, {
-      vendor: 'kimi', model: 'kimi-k2.6',
-    }, capability('kimi', 'kimi-k2.6'))).toEqual({
-      vendor: 'kimi', model: 'kimi-k2.6', thinking: true,
-      vendorSettings: { region: 'global' },
+      vendor: 'kimi', model: 'kimi-k3',
+    }, capability('kimi', 'kimi-k3'))).toEqual({
+      vendor: 'kimi', model: 'kimi-k3', thinking: true,
+      vendorSettings: { region: 'global', reasoning_effort: 'high' },
     })
   })
 
   it('uses a profile target bag exactly and never carries another provider bag', () => {
     const current: ModelSettings = {
-      vendor: 'kimi', model: 'kimi-k2.6', thinking: true,
+      vendor: 'kimi', model: 'kimi-k3', thinking: true,
       vendorSettings: { region: 'cn', reasoning_effort: 'high' },
     }
 
@@ -133,15 +133,12 @@ describe('selectComposerModelSettings', () => {
     })
   })
 
-  it('clears Thinking, effort, and empty bags for unsupported and unknown targets', () => {
+  it('clears Thinking, effort, and empty bags for unknown targets', () => {
     const current: ModelSettings = {
-      vendor: 'glm', model: 'glm-5.2', thinking: true,
-      vendorSettings: { reasoning_effort: 'medium' },
+      vendor: 'glm', model: 'glm-5.3', thinking: true,
+      vendorSettings: { reasoning_effort: 'high' },
     }
 
-    expect(selectComposerModelSettings(current, {
-      vendor: 'glm', model: 'glm-4-long',
-    }, capability('glm', 'glm-4-long'))).toEqual({ vendor: 'glm', model: 'glm-4-long' })
     expect(selectComposerModelSettings(current, {
       vendor: 'other', model: 'unknown',
     }, capability('other', 'unknown'))).toEqual({ vendor: 'other', model: 'unknown' })
@@ -149,18 +146,16 @@ describe('selectComposerModelSettings', () => {
 })
 
 describe('Thinking setting transitions', () => {
-  const glm = capability('glm', 'glm-5.2')
+  const glm = capability('glm', 'glm-5.3')
 
-  it('preserves a valid effort through off then on without mutating the input', () => {
+  it('keeps required Thinking enabled without mutating the input', () => {
     const current: ModelSettings = {
-      vendor: 'glm', model: 'glm-5.2', thinking: true,
-      vendorSettings: { reasoning_effort: 'medium' },
+      vendor: 'glm', model: 'glm-5.3', thinking: true,
+      vendorSettings: { reasoning_effort: 'high' },
     }
     const original = structuredClone(current)
 
-    const off = setComposerThinkingEnabled(current, glm, false)
-    expect(off).toEqual({ ...current, thinking: false })
-    expect(setComposerThinkingEnabled(off, glm, true)).toEqual(current)
+    expect(setComposerThinkingEnabled(current, glm, false)).toEqual(current)
     expect(current).toEqual(original)
   })
 
@@ -176,20 +171,21 @@ describe('Thinking setting transitions', () => {
     })
     expect(setComposerThinkingEffort(current, deepseek, 'low')).toEqual({
       vendor: 'deepseek', model: 'deepseek-v4-pro', thinking: true,
+      vendorSettings: { reasoning_effort: 'low' },
     })
   })
 
   it('materializes only a legal concrete effort from a default-enabled implicit state', () => {
     const deepseek = capability('deepseek', 'deepseek-v4-pro')
     const implicit: ModelSettings = { vendor: 'deepseek', model: 'deepseek-v4-pro' }
-    const glm = capability('glm', 'glm-5.2')
-    const glmImplicit: ModelSettings = { vendor: 'glm', model: 'glm-5.2' }
+    const glm = capability('glm', 'glm-5.3')
+    const glmImplicit: ModelSettings = { vendor: 'glm', model: 'glm-5.3' }
 
     expect(setComposerThinkingEffort(implicit, deepseek, 'max')).toEqual({
       ...implicit, thinking: true, vendorSettings: { reasoning_effort: 'max' },
     })
-    expect(setComposerThinkingEffort(glmImplicit, glm, 'medium')).toEqual({
-      ...glmImplicit, thinking: true, vendorSettings: { reasoning_effort: 'medium' },
+    expect(setComposerThinkingEffort(glmImplicit, glm, 'high')).toEqual({
+      ...glmImplicit, thinking: true, vendorSettings: { reasoning_effort: 'high' },
     })
     expect(setComposerThinkingEffort({ ...implicit, thinking: false }, deepseek, 'max')).toEqual({
       ...implicit, thinking: false, vendorSettings: { reasoning_effort: 'max' },
@@ -200,23 +196,19 @@ describe('Thinking setting transitions', () => {
     expect(setComposerThinkingEffort({
       ...implicit, vendorSettings: { reasoning_effort: 'high' },
     }, deepseek, 'auto')).toEqual(implicit)
-    expect(setComposerThinkingEffort(implicit, deepseek, 'low')).toEqual(implicit)
+    expect(setComposerThinkingEffort(implicit, deepseek, 'low')).toEqual({
+      ...implicit, thinking: true, vendorSettings: { reasoning_effort: 'low' },
+    })
   })
 
-  it('does not create Thinking fields for toggle-only, unsupported, or unknown capabilities', () => {
+  it('does not create Thinking fields for an unknown capability', () => {
     const settings: ModelSettings = {
-      vendor: 'glm', model: 'glm-5.2', thinking: true,
+      vendor: 'glm', model: 'glm-5.3', thinking: true,
       vendorSettings: { reasoning_effort: 'high' },
     }
 
-    expect(setComposerThinkingEffort(settings, capability('kimi', 'kimi-k2.6'), 'high')).toEqual({
-      vendor: 'glm', model: 'glm-5.2', thinking: true,
-    })
-    expect(setComposerThinkingEnabled(settings, capability('glm', 'glm-4-long'), true)).toEqual({
-      vendor: 'glm', model: 'glm-5.2',
-    })
     expect(setComposerThinkingEnabled(settings, capability('other', 'unknown'), true)).toEqual({
-      vendor: 'glm', model: 'glm-5.2',
+      vendor: 'glm', model: 'glm-5.3',
     })
   })
 

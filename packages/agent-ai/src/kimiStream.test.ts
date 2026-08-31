@@ -19,7 +19,7 @@ describe('Kimi stream adapter', () => {
     let requestBody: Record<string, unknown> = {}
     const response = await streamModel(
       {
-        model: 'kimi-k2.6',
+        model: 'kimi-k3',
         messages: [{ role: 'user', content: 'find it' }],
         settings: { vendor: 'kimi' },
       },
@@ -31,7 +31,7 @@ describe('Kimi stream adapter', () => {
           return sseResponse([
             {
               id: 'kimi-1',
-              model: 'kimi-k2.6',
+              model: 'kimi-k3',
               choices: [{ delta: { role: 'assistant', reasoning_content: 'think' } }],
             },
             {

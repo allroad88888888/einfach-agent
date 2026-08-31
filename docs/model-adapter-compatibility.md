@@ -6,26 +6,29 @@
 
 ## 支持范围
 
-| Vendor | 默认模型 | 状态 | 凭证与调用边界 |
+| Vendor | 内置模型 | 状态 | 凭证与调用边界 |
 | --- | --- | --- | --- |
-| `deepseek` | `deepseek-v4-flash` | 支持 | 仅本机 Node 后端持有 Key 并请求供应商；可传不透明 `user_id` |
-| `glm` | `glm-5.2` | 支持 | 仅本机 Node 后端持有 Key 并请求供应商；不发送 `user_id` |
-| `kimi` | — | 未接入 | 不应仅凭另一项目的 provider 代码新增为可选项 |
+| `deepseek` | `deepseek-v4-pro`（默认）、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` | 支持 | 仅本机 Node 后端持有 Key 并请求供应商；可传不透明 `user_id`；Vision 保留已验证的图片输入 |
+| `glm` | `glm-5.3`（默认）、`glm-5.3-flash` | 支持 | 仅本机 Node 后端持有 Key 并请求供应商；不发送 `user_id`；图片输入尚未审计，不开放 |
+| `kimi` | `kimi-k3`（默认） | 支持 | 仅本机 Node 后端持有 Key 并请求供应商；中国区图片上传与 `ms://` 历史引用受 region/凭证 scope 约束 |
 | `openai-compat` | 无（协议不含厂商模型，由调用方指定） | 支持 | 仅本机 Node 后端持有 Key 并请求；接入点由用户**显式登记**一条 base URL，端点白名单只放行那一条（见下） |
 
 静态 Web 没有可信模型代理，不能直接请求任一供应商。核心运行时只能构造公共的
 `ChatRequestBase`；供应商特有的请求净化、流式 usage 处理和终止语义属于
 `packages/agent-ai` 的 adapter。
 
+内置目录恰好是上表六个模型。`Auto` 一律通过省略 `reasoning_effort` 表达，不能作为上游
+字面量发送；自定义 `openai-compat` profile 的能力保持未知，不继承官方模型能力。
+
 ## 已验证的请求差异
 
-| 项目 | DeepSeek V4 adapter | GLM adapter |
-| --- | --- | --- |
-| `reasoning_effort` | 只接受 `high`、`max` | 接受 `low`、`medium`、`high`、`max` |
-| `thinking: enabled` | 移除 `tool_choice` 与四个采样字段；将纯工具调用轮的空 `content` 规范为 `''` | 原样传递公共请求字段 |
-| `user_id` | 只接受长度 1–512 的 `[A-Za-z0-9_-]+` 本地不透明标识 | 不在请求中发送 |
-| 流式 usage | 未显式关闭时写入 `stream_options.include_usage: true` | 不额外写入该字段 |
-| 特有结束状态 | 将 `insufficient_system_resource` 转为可见的重试/中断语义 | 不注入 DeepSeek 特有状态 |
+| 项目 | DeepSeek V4 adapter | GLM-5.3 / 5.3-Flash adapter | Kimi K3 adapter |
+| --- | --- | --- | --- |
+| Thinking / `reasoning_effort` | 可开关；开启时只接受 `low`、`high`、`max` | Thinking 强制开启；只接受 `low`、`high`、`max`，请求始终发送 `thinking:{type:'enabled'}` | Thinking 强制开启；只接受 `low`、`high`、`max`，请求绝不发送 K2.x 的 `thinking` 字段 |
+| `thinking: enabled` | 移除 `tool_choice` 与四个采样字段；将纯工具调用轮的空 `content` 规范为 `''` | 原样传递公共请求字段，并强制 `thinking:{type:'enabled'}` | 剥离调用方残留的 `thinking`，保留合法 `reasoning_effort` |
+| `user_id` | 只接受长度 1–512 的 `[A-Za-z0-9_-]+` 本地不透明标识 | 不在请求中发送 | 不在请求中发送 |
+| 流式 usage | 未显式关闭时写入 `stream_options.include_usage: true` | 不额外写入该字段 | 未显式关闭时写入 `stream_options.include_usage: true` |
+| 特有结束状态 | 将 `insufficient_system_resource` 转为可见的重试/中断语义 | 不注入 DeepSeek 特有状态 | 不注入 DeepSeek 特有状态 |
 
 `tool_choice` 的公共类型仍允许 `auto`、`none`、`required` 和指定函数。当前主 Agent
 调用路径只发送 `auto`；子 Agent、摘要和低成本提取在无工具时可发送 `none`。因此，
@@ -41,8 +44,8 @@ provider 的 `encode` / `decode` 边界，而非散落在 Agent 主循环。这�
 采取禁用 thinking 或降级为 `required` 的策略。
 
 这些结论只能作为兼容风险提示，不能直接移植：两边的模型名称、API 版本、会话产品策略
-和凭证链路不同。本项目目前既没有 Kimi 的设置项，也没有其原生凭证存储、代理网络白名单、
-会话迁移和端到端测试；在这些边界齐备前，Kimi 不是一个可用 vendor。
+和凭证链路不同。本项目的 Kimi K3 已具备设置项、凭证存储、受限代理与图片链路测试；不得把
+该参考实现的 K2.x `thinking` 协议迁回当前 K3 adapter。
 
 ## 新增 vendor 的最小准入项
 

@@ -5,8 +5,8 @@ import { resolveStartupCredentialTarget } from './startupCredentialTarget'
 describe('resolveStartupCredentialTarget', () => {
   it.each([
     [undefined, 'deepseek-default'],
-    [{ vendor: 'deepseek', model: 'deepseek-chat' }, 'deepseek-default'],
-    [{ vendor: 'glm', model: 'glm-5.2' }, 'glm-default'],
+    [{ vendor: 'deepseek', model: 'deepseek-v4-pro' }, 'deepseek-default'],
+    [{ vendor: 'glm', model: 'glm-5.3' }, 'glm-default'],
     [{ vendor: 'kimi', model: 'kimi-k3' }, 'kimi-cn'],
     [{ vendor: 'kimi', model: 'kimi-k3', vendorSettings: { region: 'cn' } }, 'kimi-cn'],
   ] as const)('resolves %o to %s', (settings, id) => {

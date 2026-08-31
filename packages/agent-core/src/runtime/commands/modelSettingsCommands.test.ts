@@ -37,7 +37,7 @@ afterEach(() => {
 
 describe('modelSettingsCommands', () => {
   it('atomically replaces only the active session settings and persists the complete opaque bag', () => {
-    const sibling = session('second', { vendor: 'glm', model: 'glm-5.2' }, 20)
+    const sibling = session('second', { vendor: 'glm', model: 'glm-5.3' }, 20)
     const next: ModelSettings = {
       vendor: 'openai-compat',
       model: 'next-model',
@@ -103,7 +103,7 @@ describe('modelSettingsCommands', () => {
 
     for (const status of busyStatuses) {
       core.getSessionStore('first').store.setter(runAtom, { runId: `run-${status}`, status })
-      expect(commands.setActiveSessionModelSettings({ vendor: 'glm', model: 'glm-5.2' })).toBe('busy')
+      expect(commands.setActiveSessionModelSettings({ vendor: 'glm', model: 'glm-5.3' })).toBe('busy')
     }
 
     expect(core.rootStore.getter(sessionsAtom).first).toBe(existing)
@@ -115,7 +115,7 @@ describe('modelSettingsCommands', () => {
     core.rootStore.setter(sessionsAtom, { first: session('first', firstSettings) })
     core.rootStore.setter(activeSessionIdAtom, 'first')
 
-    expect(facade.setActiveSessionModelSettings({ vendor: 'glm', model: 'glm-5.2' })).toBe('updated')
+    expect(facade.setActiveSessionModelSettings({ vendor: 'glm', model: 'glm-5.3' })).toBe('updated')
     expect(persistSessions).toHaveBeenCalledOnce()
   })
 })

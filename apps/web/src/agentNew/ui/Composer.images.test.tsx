@@ -23,7 +23,7 @@ function photo(name = 'photo.png') {
 
 /** 附件草稿住 UI store，本文件的被测 store 就是它；agent store 只在需要 run 时显式给。 */
 function renderComposer(store = createStore(), agentStore = createStore()) {
-  return renderWithStore(<Composer vendor="kimi" model="kimi-k2.6" />, { store, agentStore })
+  return renderWithStore(<Composer vendor="kimi" model="kimi-k3" />, { store, agentStore })
 }
 
 async function attach(file = photo()) {
@@ -203,7 +203,7 @@ describe('Composer image attachments', () => {
     const agentStore = createStore()
     agentStore.setter(runAtom, { runId: 'r', status: 'waiting_user' })
     const { container } = renderWithStore(
-      <Composer vendor="kimi" model="kimi-k2.6" />,
+      <Composer vendor="kimi" model="kimi-k3" />,
       { agentStore },
     )
     const composer = container.querySelector('.agentnew-composer')
@@ -220,7 +220,7 @@ describe('Composer image attachments', () => {
       images: [], operation: 'validating', revision: 0,
     })
     const { container } = renderWithStore(
-      <Composer vendor="kimi" model="kimi-k2.6" />,
+      <Composer vendor="kimi" model="kimi-k3" />,
       { store },
     )
     const composer = container.querySelector('.agentnew-composer')

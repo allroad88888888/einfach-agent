@@ -240,6 +240,10 @@ msgid "stdio（仅桌面端）"
 msgstr "stdio (Desktop only)"
 
 #: apps/web/src/agentNew/ui/ComposerThinkingControl.tsx
+msgid "Thinking 始终开启"
+msgstr "Thinking is always on"
+
+#: apps/web/src/agentNew/ui/ComposerThinkingControl.tsx
 msgid "Thinking 已关闭，点击开启"
 msgstr "Thinking is off; select to turn on"
 

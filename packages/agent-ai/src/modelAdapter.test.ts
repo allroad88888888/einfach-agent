@@ -22,7 +22,7 @@ describe('模型 adapter 路由', () => {
 
     const response = await streamModel(
       {
-        model: 'glm-5.2',
+        model: 'glm-5.3',
         messages: [{ role: 'user', content: 'hi' }],
         settings: { vendor: 'glm' },
         userId: 'wa_private-user',

@@ -55,7 +55,7 @@ pnpm cli -p "搜索并读取 planning skill，用三句话总结这个项目的�
 - **headless CLI**：无 UI 驱动真实 run，用于 dogfood、自动化和编码 Agent 自测。它在进程内加载
   同一份 `packages/host-node` 能力实现，所以工具面对的就是本机；它不配置持久化，会话只活到进程
   退出为止。`-v` 把 trace 与性能诊断打到 stderr。
-- **模型接入**：当前支持 DeepSeek 与 GLM；Kimi `kimi-k2.6` 与图片输入已实现，但真实 Key 验收前
+- **模型接入**：当前支持 DeepSeek 与 GLM；Kimi `kimi-k3` 与图片输入已实现，但真实 Key 验收前
   保持开放门禁关闭。
 - **运行时能力**：多会话、checkpoint/revert、lazy tool schema、危险工具确认、结构化计划与评估、
   树形子 Agent、后台执行图、上下文压缩与 provider context cache 统计、持久化和 trace viewer。

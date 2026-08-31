@@ -11,12 +11,12 @@ const profiles = [
   },
   {
     id: 'looks-glm', kind: 'openai-compatible' as const,
-    label: 'GLM Official', model: 'glm-5.2',
+    label: 'GLM Official', model: 'glm-5.3',
     baseUrl: 'https://glm-gateway.example/v1',
   },
   {
     id: 'looks-kimi', kind: 'openai-compatible' as const,
-    label: 'Kimi', model: 'kimi-k2.6',
+    label: 'Kimi', model: 'kimi-k3',
     baseUrl: 'https://kimi-proxy.example/v1',
   },
 ]

@@ -87,9 +87,9 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
   })
 
   it.each([
-    ['low', 'high'],
+    ['low', 'low'],
     ['medium', 'high'],
-    ['xhigh', 'max'],
+    ['xhigh', 'high'],
   ])('历史 DeepSeek reasoning_effort=%s → 恢复后为 %s', async (before, after) => {
     const sessions = {
       loadSessions: async () => [legacyReasoningSession('legacy-effort', before)],
@@ -106,10 +106,10 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
   it('未知持久化 reasoning_effort 不透传：DeepSeek 删除非法值，GLM 合法 low 保留', async () => {
     const invalidDeepSeek = legacyReasoningSession('invalid-effort', { unexpected: true })
     const glm: SessionMeta = {
-      ...legacySession('glm-effort', 'glm-5'),
+      ...legacySession('glm-effort', 'glm-5.3'),
       settings: {
         vendor: 'glm',
-        model: 'glm-5',
+        model: 'glm-5.3',
         reasoning_effort: 'low',
       } as unknown as ModelSettings,
     }

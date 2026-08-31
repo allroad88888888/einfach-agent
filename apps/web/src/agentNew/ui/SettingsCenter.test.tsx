@@ -205,7 +205,7 @@ describe('SettingsCenter', () => {
       title: 'Kimi 图片对话',
       settings: {
         vendor: 'kimi',
-        model: 'kimi-k2.6',
+        model: 'kimi-k3',
         vendorSettings: { region: 'cn' },
       },
     })

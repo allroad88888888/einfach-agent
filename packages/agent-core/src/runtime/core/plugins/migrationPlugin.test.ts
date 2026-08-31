@@ -212,7 +212,7 @@ describe('applyMigration（不经插件装配，直接调用本体）', () => {
   it('只替换本会话、保留 sessionsAtom 里的其它会话', () => {
     const root = createStore()
     const store = createStore()
-    const other = metaWith({ vendor: 'glm', model: 'glm-5.2' }, { id: 's2', title: '别的会话' })
+    const other = metaWith({ vendor: 'glm', model: 'glm-5.3' }, { id: 's2', title: '别的会话' })
     root.setter(sessionsAtom, {
       s1: metaWith({ vendor: 'deepseek', model: 'deepseek-chat' }),
       s2: other,

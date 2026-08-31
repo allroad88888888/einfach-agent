@@ -49,7 +49,7 @@ describe('provider 请求形状 characterization：Kimi 与 OpenAI-compat 的已
 
       await callKimi(
         {
-          model: 'kimi-k2.6',
+          model: 'kimi-k3',
           messages,
           temperature: 0.3,
           top_p: 0.8,
@@ -70,7 +70,7 @@ describe('provider 请求形状 characterization：Kimi 与 OpenAI-compat 的已
       expect(new Headers(request.init.headers).get('Authorization')).toBe('Bearer kimi-secret')
       const body = bodyOf(request.init)
       expect(body).toEqual({
-        model: 'kimi-k2.6',
+        model: 'kimi-k3',
         max_tokens: 1024,
         messages: [
           { role: 'system', content: 'You are concise.' },
@@ -94,7 +94,7 @@ describe('provider 请求形状 characterization：Kimi 与 OpenAI-compat 的已
     const captured = capture(sseResponse)
 
     await streamKimi(
-      { model: 'kimi-k2.6', messages: [{ role: 'user', content: 'hi' }] },
+      { model: 'kimi-k3', messages: [{ role: 'user', content: 'hi' }] },
       {
         apiKey: 'key',
         baseUrl: 'https://kimi.example/v1',
@@ -104,7 +104,7 @@ describe('provider 请求形状 characterization：Kimi 与 OpenAI-compat 的已
     )
 
     expect(bodyOf(captured.request().init)).toEqual({
-      model: 'kimi-k2.6',
+      model: 'kimi-k3',
       messages: [{ role: 'user', content: 'hi' }],
       stream_options: { include_usage: true },
       stream: true,

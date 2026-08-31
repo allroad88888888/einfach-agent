@@ -61,7 +61,7 @@ tells you to run it.
   local machine's; it configures no persistence, so a session lives only as long as the process. `-v` prints
   traces and timing diagnostics to stderr.
 - **Models** — DeepSeek and GLM today, integrated directly rather than through an OpenAI-compatible shim. Kimi
-  (`kimi-k2.6`, image input included) is implemented but gated off until it has been verified against a real
+  (`kimi-k3`, image input included) is implemented but gated off until it has been verified against a real
   key. OpenAI and Anthropic are not supported yet.
 - **Runtime** — multi-session, checkpoint/revert, lazy tool schemas, confirmation for dangerous tools, structured
   plans, a tree of sub-agents, a background execution graph, context compaction with provider cache stats, traces.

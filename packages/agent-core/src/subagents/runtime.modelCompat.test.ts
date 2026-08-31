@@ -94,7 +94,7 @@ describe('createDelegationRuntime · runLowCostExtraction', () => {
     const glm = createTestDelegationRuntime({
       sessionId: 'session',
       runId: 'run-glm',
-      settings: { vendor: 'glm', model: 'glm-4.6' },
+      settings: { vendor: 'glm', model: 'glm-5.3' },
       apiKey: 'test-key',
       signal: new AbortController().signal,
       fetchImpl,

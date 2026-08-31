@@ -118,7 +118,7 @@ describe('provider SSE 与 usage characterization', () => {
     {
       name: 'GLM',
       stream: streamGlm,
-      model: 'glm-5.2',
+      model: 'glm-5.3',
       baseUrl: 'https://glm.example/v4',
       chunkId: 'chatcmpl-glm',
       cachedTokens: 8,
@@ -126,7 +126,7 @@ describe('provider SSE 与 usage characterization', () => {
     {
       name: 'Kimi',
       stream: streamKimi,
-      model: 'kimi-k2.6',
+      model: 'kimi-k3',
       baseUrl: 'https://kimi.example/v1',
       chunkId: 'chatcmpl-kimi',
       cachedTokens: 10,

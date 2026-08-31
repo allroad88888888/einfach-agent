@@ -71,7 +71,7 @@ DeepSeek/GLM 模型；不提 Kimi——Kimi adapter 已实现但真实 Key 验�
 | 17 | `observability` | trace viewer、CallTiming 投影是内核内建能力 |
 | 18 | `plugin-architecture` | 压缩、finish reason、loop guard 等横切行为均以插件 hook 实现 |
 | 19 | `pnpm-workspace` | 仓库以 pnpm workspace 组织多包，吸引 monorepo 关注者 |
-| 20 | `kimi` | Kimi adapter 已实现（`kimi-k2.6` 与图片输入），但真实 Key 验收前门禁关闭，故排最后仅做长尾覆盖 |
+| 20 | `kimi` | Kimi adapter 已实现（`kimi-k3` 与图片输入），但真实 Key 验收前门禁关闭，故排最后仅做长尾覆盖 |
 
 `kimi` 特别说明：与其余 topics 不同，它对应的能力目前对最终用户不可见（公开门禁关闭），列入
 候选仅因代码已交付、供仓库访客了解技术方向；若追求"topics 只反映已对外交付的能力"这一更严格

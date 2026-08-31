@@ -117,7 +117,7 @@ describe('Thinking request projection', () => {
 
   it('does not give unsupported models or an execution fallback DeepSeek Thinking fields', async () => {
     for (const [vendor, model] of [
-      ['glm', 'glm-5.2'],
+      ['glm', 'future-model'],
       ['unknown-vendor', 'deepseek-v4-pro'],
     ]) {
       const captured = capture()
