@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { screen } from '@testing-library/react'
 import type { BrowserCard } from '@einfach-agent/core'
+import { renderWithStore } from '../../test/renderWithStore'
 import { BrowserActionCard } from './BrowserActionCard'
 
 // P8-e BrowserActionCard：纯展示卡片（新 BrowserCard 只有 title + 可选 body）。
@@ -10,7 +11,7 @@ describe('BrowserActionCard', () => {
   it('无 body：渲染 title，不渲染正文区', () => {
     const card: BrowserCard = { id: 'c1', createdAt: 1, title: '标题X' }
 
-    const { container } = render(<BrowserActionCard card={card} />)
+    const { container } = renderWithStore(<BrowserActionCard card={card} />)
 
     // 标题在
     expect(screen.getByText('标题X')).toBeInTheDocument()
@@ -21,7 +22,7 @@ describe('BrowserActionCard', () => {
   it('有 body：markdown 渲染出正文文本', async () => {
     const card: BrowserCard = { id: 'c2', createdAt: 2, title: '标题Y', body: '**粗体**正文' }
 
-    const { container } = render(<BrowserActionCard card={card} />)
+    const { container } = renderWithStore(<BrowserActionCard card={card} />)
 
     // 标题在
     expect(screen.getByText('标题Y')).toBeInTheDocument()

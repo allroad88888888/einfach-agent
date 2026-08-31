@@ -1,6 +1,8 @@
-import { describe, it, expect, afterEach, vi } from 'vitest'
-import { screen } from '@testing-library/react'
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
+import { screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { renderWithStore } from '../../test/renderWithStore'
+import { activateLocale, AppI18nProvider } from '../../i18n'
 import {
   rootStore,
   workspacesAtom,
@@ -31,12 +33,7 @@ vi.mock('@einfach-agent/core/runtime/commands', async () => {
   const { defaultCore: realDefaultCore } = await import('@einfach-agent/core/runtime/core/coreInstance')
   return {
     sessionAtomScope: (id: string) => realDefaultCore.getSessionStore(id).store,
-    // 与 sessionAtomScope 同理必须是真实实现：UndoBar 也挂在右栏，它读的是那个会话自己的
-    // 派生 atom，假 atom 会让按钮的可用态与本用例 seed 的状态脱钩。
-    sessionUndoAvailabilityAtom: (id: string) =>
-      realDefaultCore.getSessionStore(id).history.undoAvailabilityAtom,
-    undoTurn: vi.fn(),
-    redoTurn: vi.fn(),
+    retractTurn: vi.fn(),
     configureCommands: vi.fn(),
     newWorkspace: vi.fn(),
     renameWorkspace: vi.fn(),
@@ -85,13 +82,25 @@ function seedActiveSession(id = 's1'): void {
   rootStore.setter(activeSessionIdAtom, id)
 }
 
+function renderShell() {
+  return renderWithStore(
+    <AppI18nProvider>
+      <AppShell />
+    </AppI18nProvider>,
+  )
+}
+
 describe('AppShell', () => {
+  beforeEach(async () => {
+    await activateLocale('zh-CN')
+  })
+
   afterEach(() => {
     resetMcpSettingsState(rootStore)
   })
 
   it('无工作区：左栏提供「新建工作区」，右栏保持空会话占位', () => {
-    renderWithStore(<AppShell />)
+    renderShell()
 
     expect(screen.getByRole('button', { name: '新建工作区' })).toBeInTheDocument()
     expect(screen.getByText('新建工作区后即可创建对话')).toBeInTheDocument()
@@ -104,13 +113,33 @@ describe('AppShell', () => {
     expect(screen.queryByRole('textbox')).toBeNull()
   })
 
+  it('主面板顶栏常驻最前方，切到 English 后 Shell 可访问名称同步更新', async () => {
+    const user = userEvent.setup()
+    renderShell()
+
+    const main = screen.getByRole('main', { name: '当前对话' })
+    const header = screen.getByLabelText('应用工具栏')
+    expect(main.firstElementChild).toBe(header)
+    expect(header).toContainElement(screen.getByRole('group', { name: '界面语言' }))
+
+    await user.click(screen.getByRole('button', { name: 'English' }))
+
+    await waitFor(() => {
+      expect(screen.getByRole('complementary', { name: 'Workspaces and conversations' })).toBeVisible()
+      expect(screen.getByRole('main', { name: 'Current conversation' })).toBeVisible()
+      expect(screen.getByLabelText('Application toolbar')).toBeVisible()
+      expect(screen.getByRole('group', { name: 'Language' })).toBeVisible()
+    })
+  })
+
   it('有激活会话：右栏切到会话 store → Composer 输入框在 + MessageList 空占位「开始对话吧」在', () => {
     seedActiveSession('s1')
 
-    const { container } = renderWithStore(<AppShell />)
+    const { container } = renderShell()
 
     // 左栏 SessionList 仍在。
     expect(screen.getByRole('button', { name: /新建对话/ })).toBeInTheDocument()
+    expect(screen.getByRole('group', { name: '界面语言' })).toBeVisible()
     // 右栏切到 s1 的会话 store：Composer 输入框在。
     expect(container.querySelector('.agentnew-composer-input')).not.toBeNull()
     // 工作区目录已移进标题右侧的设置面板，默认不占据对话列表空间。
@@ -136,7 +165,7 @@ describe('AppShell', () => {
       },
     })
 
-    const { container } = renderWithStore(<AppShell />)
+    const { container } = renderShell()
 
     // AskUserQuestionCard 显形 = 挂载点存在于右栏 Provider 下。
     const ask = container.querySelector('.agentnew-ask')
@@ -176,7 +205,7 @@ describe('AppShell', () => {
       },
     })
 
-    const { container } = renderWithStore(<AppShell />)
+    const { container } = renderShell()
 
     expect(container.querySelectorAll('.agentnew-ask')).toHaveLength(1)
     expect(container.querySelector('.agentnew-plan-stage-body .agentnew-ask')).not.toBeNull()
@@ -189,7 +218,7 @@ describe('AppShell', () => {
       { id: 'a1', filename: 'plan.md', content: '# Plan', mimeType: 'text/markdown' },
     ])
 
-    const { container } = renderWithStore(<AppShell />)
+    const { container } = renderShell()
 
     // SaveArtifact 显形 = 挂载点存在于右栏 Provider 下。
     expect(container.querySelector('[aria-label="待保存文件"]')).not.toBeNull()
@@ -223,7 +252,7 @@ describe('AppShell', () => {
       toolNames: ['request_tool_schema'],
     })
 
-    const { container } = renderWithStore(<AppShell />)
+    const { container } = renderShell()
 
     const stats = container.querySelector('.agentnew-context-stats')
     const composer = container.querySelector('.agentnew-composer')

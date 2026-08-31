@@ -11,6 +11,7 @@ import {
   customInstructionsAtom,
   customInstructionsDirtyAtom,
   customInstructionsDraftAtom,
+  defaultModelConnectionAtom,
   modelCredentialAtoms,
 } from './state'
 
@@ -40,6 +41,19 @@ describe('app settings state', () => {
       version: APP_SETTINGS_VERSION,
       installationId,
       agent: { customInstructions: '优先给出结论', disabledProjectSkills: {} },
+    })
+  })
+
+  it('projects the persisted default third-party connection', () => {
+    const store = createStore()
+    const settings = store.getter(appSettingsAtom)
+    store.setter(appSettingsAtom, {
+      ...settings,
+      defaultModelConnection: { id: 'gateway-a', model: 'deepseek-chat' },
+    })
+
+    expect(store.getter(defaultModelConnectionAtom)).toEqual({
+      id: 'gateway-a', model: 'deepseek-chat',
     })
   })
 

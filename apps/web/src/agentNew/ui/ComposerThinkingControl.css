@@ -1,0 +1,199 @@
+.agentnew-composer-status-line {
+  flex-wrap: wrap;
+}
+
+.agentnew-composer-thinking-control {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  color: #667085;
+}
+
+.agentnew-composer-thinking-toggle {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  align-items: center;
+  box-sizing: border-box;
+  height: 28px;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid #dfe3ec;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 20px;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+}
+
+.agentnew-composer-thinking-toggle:hover {
+  border-color: #c8cddd;
+  background: #ffffff;
+  color: #3f4859;
+}
+
+.agentnew-composer-thinking-toggle:disabled {
+  border-color: #dfe3ec;
+  background: #f3f4f7;
+  color: #747f91;
+  cursor: not-allowed;
+}
+
+.agentnew-composer-thinking-toggle:focus-visible {
+  outline: 2px solid #8b8bea;
+  outline-offset: 1px;
+}
+
+.agentnew-composer-thinking-toggle svg {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  fill: #949dac;
+  transition: fill 140ms ease;
+}
+
+.agentnew-composer-thinking-toggle-state {
+  min-width: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #e8ebf0;
+  color: #7b8493;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.agentnew-composer-thinking-toggle[aria-pressed='true'] svg {
+  fill: #7371d8;
+}
+
+.agentnew-composer-thinking-toggle[aria-pressed='true'] {
+  border-color: #cdcdf2;
+  background: #f7f6ff;
+  color: #4f4eb5;
+}
+
+.agentnew-composer-thinking-toggle[aria-pressed='true'] .agentnew-composer-thinking-toggle-state {
+  background: #e1e0fb;
+  color: #5553be;
+}
+
+.agentnew-composer-thinking-options {
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 1px;
+  box-sizing: border-box;
+  height: 28px;
+  padding: 3px;
+  border: 1px solid #dfe3ec;
+  border-radius: 8px;
+  background: #eef0f5;
+  transition: opacity 140ms ease;
+}
+
+.agentnew-composer-thinking-control:not(.is-enabled) .agentnew-composer-thinking-options {
+  opacity: 0.68;
+}
+
+.agentnew-composer-thinking-option {
+  position: relative;
+  min-width: 0;
+  padding: 0 4px;
+  border-radius: 5px;
+  color: #747f91;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+  cursor: pointer;
+  transition: background 140ms ease, box-shadow 140ms ease, color 140ms ease;
+}
+
+.agentnew-composer-thinking-option span {
+  display: block;
+  min-width: 30px;
+}
+
+.agentnew-composer-thinking-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.agentnew-composer-thinking-option:hover {
+  color: #343c4d;
+}
+
+.agentnew-composer-thinking-option:has(input:disabled) {
+  cursor: default;
+}
+
+.agentnew-composer-thinking-option:has(input:disabled):hover {
+  color: #747f91;
+}
+
+.agentnew-composer-thinking-option:has(input:checked) {
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(30, 41, 59, 0.13), 0 0 0 1px rgba(99, 102, 241, 0.08);
+  color: #4f46c7;
+}
+
+.agentnew-composer-thinking-option.is-low:has(input:checked) {
+  color: #18756b;
+}
+
+.agentnew-composer-thinking-option.is-high:has(input:checked) {
+  color: #a24c13;
+}
+
+.agentnew-composer-thinking-option:has(input:focus-visible) {
+  outline: 2px solid #8b8bea;
+  outline-offset: 1px;
+}
+
+@media (max-width: 720px) {
+  .agentnew-composer > .agentnew-composer-actions {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+    margin-top: 0;
+  }
+
+  .agentnew-composer-thinking-control {
+    order: -1;
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+
+  .agentnew-composer-thinking-options {
+    flex: 1 1 100%;
+  }
+
+  .agentnew-composer-thinking-option {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .agentnew-composer-thinking-option span {
+    min-width: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agentnew-composer-thinking-option,
+  .agentnew-composer-thinking-options,
+  .agentnew-composer-thinking-toggle svg {
+    transition: none;
+  }
+}

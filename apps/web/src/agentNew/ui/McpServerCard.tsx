@@ -1,5 +1,6 @@
 import type { McpLaunchConsentRequest } from '../../mcp/launchConsentState'
 import type { McpServerOperation, McpServerView } from '../../mcp/types'
+import { Trans, useLingui } from '@lingui/react/macro'
 import {
   disconnectMcpServer,
   reconnectMcpServer,
@@ -9,32 +10,7 @@ import {
 import { McpLaunchConsentPrompt } from './McpLaunchConsentPrompt'
 import { McpServerToolSummary } from './McpServerToolSummary'
 
-function statusLabel(server: McpServerView, operation?: McpServerOperation): string {
-  if (operation === 'disconnect') return '注销中'
-  if (operation === 'remove') return '删除中'
-  // connect/reconnect 正在跑：这是真的在发生的事，说"连接中/重连中"没问题。
-  if (operation === 'connect') return '连接中'
-  if (operation === 'reconnect') return '重连中'
-  const labels = {
-    disconnected: '未连接',
-    connecting: '连接中',
-    // 走到这里说明没有进行中的 connect/reconnect 操作：上一次尝试已经落定
-    // 在"暂时性失败"分类（见 tools/mcp/src/failureClassification.ts），
-    // 但当前没有任何重试在后台跑——自动退避重连是 D2 的范围，还没做。
-    // 用"不稳定"而不是"重连中"，避免让用户以为系统正在自动处理。
-    reconnecting: '连接不稳定',
-    connected: '已连接',
-    error: '需要处理',
-  }
-  return labels[server.status]
-}
-
-interface McpStatusNote {
-  /** 'retry'：暂时性问题，不需要用户改配置。'permanent'：需要人工介入。 */
-  tone: 'retry' | 'permanent'
-  heading: string
-  advice: string
-}
+type McpStatusNoteTone = 'retry' | 'permanent'
 
 /**
  * server.error 只会在"当前没有进行中的 connect/reconnect 尝试"时出现——
@@ -44,45 +20,15 @@ interface McpStatusNote {
  * 'reconnecting' 和失败后停留的 'reconnecting' 不需要在这里分开处理的原因：
  * 前者没有 error，走上面的 statusLabel busy 分支；后者才会走到这个函数。
  */
-function statusNote(server: McpServerView): McpStatusNote | undefined {
+function statusNoteTone(server: McpServerView): McpStatusNoteTone | undefined {
   if (!server.error) return undefined
-  if (server.status === 'error') {
-    return {
-      tone: 'permanent',
-      heading: '需要你处理',
-      advice: '请检查服务地址、启动命令、参数或访问凭据是否正确，修正后点击下方"重连"。',
-    }
-  }
+  if (server.status === 'error') return 'permanent'
   if (server.status === 'reconnecting') {
-    return {
-      tone: 'retry',
-      // 不写「不是配置问题」：认证失败现在也落在 reconnecting（凭证错与服务临时故障
-      // 在没有 401/403 时无法区分），断言它与配置无关会与下面的分类文案自相矛盾。
-      heading: '暂时中断，正在自动重连',
-      // D2 落地后这里确实有后台退避在跑（1s 起指数退避、封顶 30s、最多 6 次），
-      // 所以可以如实说；耗尽后状态会转成 'error'，走下面那一档。
-      advice: '正在按退避间隔自动重连，最多 6 次；不想等可以点击下方"重连"立即重试。',
-    }
+    // 不写「不是配置问题」：认证失败现在也落在 reconnecting（凭证错与服务临时故障
+    // 在没有 401/403 时无法区分），断言它与配置无关会与下面的分类文案自相矛盾。
+    return 'retry'
   }
   return undefined
-}
-
-/**
- * 自动连接开关的说明。
- *
- * stdio 也有这个开关（H2）：开关是【偏好】——要不要每次启动都连；确认是【授权】——
- * 这条命令行能不能在本机执行。两件事正交，所以没有理由因为「可能还没确认」就把偏好
- * 藏起来。打开它而命令行还没确认时不会静默起进程，只会在同一张卡片上问一次。
- */
-function autoConnectHint(server: McpServerView, temporaryStorage: boolean): string {
-  if (server.transport === 'stdio') {
-    return temporaryStorage
-      ? '开启后每次启动都会执行该命令；首次需确认命令行，偏好仅在本次会话有效'
-      : '开启后每次启动应用都会自动执行该命令；首次需确认命令行'
-  }
-  return temporaryStorage
-    ? '切换会立即连接或注销；偏好仅在本次会话有效'
-    : '切换会立即连接或注销，并保存为启动偏好'
 }
 
 /** Renders one persisted MCP server and its connection controls. */
@@ -103,9 +49,35 @@ export function McpServerCard({
   /** stdio 的当前命令行是否已被确认过；HTTP 恒为 true。 */
   launchConfirmed?: boolean
 }) {
+  const { t } = useLingui()
   const busy = operation !== undefined
   const transportUnavailable = server.transport === 'stdio' && !stdioAvailable
-  const note = statusNote(server)
+  const noteTone = statusNoteTone(server)
+  const label = operation === 'disconnect' ? t`注销中`
+    : operation === 'remove' ? t`删除中`
+      : operation === 'connect' ? t`连接中`
+        : operation === 'reconnect' ? t`重连中`
+          : {
+              disconnected: t`未连接`,
+              connecting: t`连接中`,
+              reconnecting: t`连接不稳定`,
+              connected: t`已连接`,
+              error: t`需要处理`,
+            }[server.status]
+  const note = noteTone ? {
+    tone: noteTone,
+    heading: noteTone === 'permanent' ? t`需要你处理` : t`暂时中断，正在自动重连`,
+    advice: noteTone === 'permanent'
+      ? t`请检查服务地址、启动命令、参数或访问凭据是否正确，修正后点击下方"重连"。`
+      : t`正在按退避间隔自动重连，最多 6 次；不想等可以点击下方"重连"立即重试。`,
+  } : undefined
+  const autoConnectHint = server.transport === 'stdio'
+    ? temporaryStorage
+      ? t`开启后每次启动都会执行该命令；首次需确认命令行，偏好仅在本次会话有效`
+      : t`开启后每次启动应用都会自动执行该命令；首次需确认命令行`
+    : temporaryStorage
+      ? t`切换会立即连接或注销；偏好仅在本次会话有效`
+      : t`切换会立即连接或注销，并保存为启动偏好`
   // 只在「停着、而且没有正在等确认的命令行」时解释为什么它没连上：已经摆出确认时不必
   // 重复一遍；正在跑时更不能说「尚未确认」——模型那条路径（F3 的工具确认）也能把 stdio
   // 连起来，那时进程确实在跑，只是设置里还没记下这条命令行的确认。
@@ -114,39 +86,39 @@ export function McpServerCard({
     && !launchRequest
     && server.status === 'disconnected'
   return (
-    <article className="agentnew-mcp-card" aria-label={`MCP 服务 ${server.name}`}>
+    <article className="agentnew-mcp-card" aria-label={t`MCP 服务 ${server.name}`}>
       <div className="agentnew-mcp-card-head">
         <div>
           <div className="agentnew-mcp-card-title">
             <strong>{server.name}</strong>
             <span className={`agentnew-mcp-status is-${server.status}`}>
               <i aria-hidden="true" />
-              {statusLabel(server, operation)}
+              {label}
             </span>
           </div>
           <span className="agentnew-mcp-transport">
             {server.transport === 'streamable-http'
               ? 'Streamable HTTP'
-              : `stdio${transportUnavailable ? ' · 仅桌面端' : ''}`}
+              : transportUnavailable ? t`stdio · 仅桌面端` : 'stdio'}
           </span>
         </div>
         {transportUnavailable ? (
           <div className="agentnew-mcp-manual-connect">
-            <strong>仅桌面端</strong>
-            <small>当前浏览器不可用；本地进程仅能在桌面端启动</small>
+            <strong><Trans>仅桌面端</Trans></strong>
+            <small><Trans>当前浏览器不可用；本地进程仅能在桌面端启动</Trans></small>
           </div>
         ) : (
           <label className="agentnew-mcp-auto-connect">
             <span>
-              <strong>自动连接</strong>
-              <small>{autoConnectHint(server, temporaryStorage)}</small>
+              <strong><Trans>自动连接</Trans></strong>
+              <small>{autoConnectHint}</small>
             </span>
             <input
               className="agentnew-settings-checkbox"
               type="checkbox"
               checked={server.autoConnect}
               disabled={busy}
-              aria-label={`${server.name} 自动连接`}
+              aria-label={t`${server.name} 自动连接`}
               onChange={(event) => {
                 void setMcpServerAutoConnect(server.id, event.target.checked)
               }}
@@ -156,21 +128,21 @@ export function McpServerCard({
       </div>
 
       <div className="agentnew-mcp-target">
-        <span>{server.transport === 'streamable-http' ? '地址' : '命令'}</span>
+        <span>{server.transport === 'streamable-http' ? t`地址` : t`命令`}</span>
         <code>{server.target}</code>
       </div>
       {server.args.length > 0 ? (
         <div className="agentnew-mcp-detail">
-          参数：{server.args.join(' · ')}
+          <Trans>参数：{server.args.join(' · ')}</Trans>
         </div>
       ) : null}
-      {server.cwd ? <div className="agentnew-mcp-detail">工作目录：{server.cwd}</div> : null}
+      {server.cwd ? <div className="agentnew-mcp-detail"><Trans>工作目录：{server.cwd}</Trans></div> : null}
       {launchRequest ? <McpLaunchConsentPrompt request={launchRequest} /> : null}
       {unconfirmedLaunch ? (
         <div className="agentnew-mcp-status-note is-retry" role="status">
-          <strong>启动命令尚未确认</strong>
-          <p>这个服务会在本机启动进程，第一次执行前需要你确认命令行。</p>
-          <p>点击下方「重连」查看将执行的命令并确认。</p>
+          <strong><Trans>启动命令尚未确认</Trans></strong>
+          <p><Trans>这个服务会在本机启动进程，第一次执行前需要你确认命令行。</Trans></p>
+          <p><Trans>点击下方「重连」查看将执行的命令并确认。</Trans></p>
         </div>
       ) : null}
       {note ? (
@@ -193,16 +165,16 @@ export function McpServerCard({
             disabled={busy || server.status === 'disconnected'}
             onClick={() => void disconnectMcpServer(server.id)}
           >
-            {operation === 'disconnect' ? '注销中' : '注销'}
+            {operation === 'disconnect' ? t`注销中` : t`注销`}
           </button>
           <button
             type="button"
             className="agentnew-settings-button is-small"
             disabled={busy || transportUnavailable}
-            title={transportUnavailable ? 'stdio MCP 仅可在桌面端连接' : undefined}
+            title={transportUnavailable ? t`stdio MCP 仅可在桌面端连接` : undefined}
             onClick={() => void reconnectMcpServer(server.id)}
           >
-            {operation === 'connect' || operation === 'reconnect' ? '重连中' : '重连'}
+            {operation === 'connect' || operation === 'reconnect' ? t`重连中` : t`重连`}
           </button>
           <button
             type="button"
@@ -210,7 +182,7 @@ export function McpServerCard({
             disabled={busy}
             onClick={() => void removeMcpServer(server.id)}
           >
-            {operation === 'remove' ? '删除中' : '删除'}
+            {operation === 'remove' ? t`删除中` : t`删除`}
           </button>
         </div>
       </div>

@@ -1,5 +1,6 @@
 import { useAgentAtomValue } from '@einfach-agent/react-plugin'
 import type { ModelToolCall, ToolItem } from '@einfach-agent/ai'
+import { Trans, useLingui } from '@lingui/react/macro'
 import {
   subagentTreesAtom,
   type SubagentTraceRecord,
@@ -8,14 +9,18 @@ import {
 } from '@einfach-agent/subagents'
 import { MessageMarkdown } from './MessageMarkdown'
 
-const STATUS_LABEL: Record<SubagentTreeViewNode['status'], string> = {
-  queued: '排队',
-  distilling: '提炼',
-  running: '运行中',
-  done: '完成',
-  failed: '失败',
-  cancelled: '已取消',
-  interrupted: '已中断',
+function SubagentStatus({ status }: { status: SubagentTreeViewNode['status'] }) {
+  const { t } = useLingui()
+  const labels: Record<SubagentTreeViewNode['status'], string> = {
+    queued: t`排队`,
+    distilling: t`提炼`,
+    running: t`运行中`,
+    done: t`完成`,
+    failed: t`失败`,
+    cancelled: t`已取消`,
+    interrupted: t`已中断`,
+  }
+  return labels[status]
 }
 
 function prettyJson(value: string): string {
@@ -56,9 +61,9 @@ function InlineDelegate({
   return (
     <details className="agentnew-subagent-inline" data-status={tree.status}>
       <summary>
-        <span>子 agent</span>
-        <strong>{visibleNodes.length} 个节点</strong>
-        <small>{STATUS_LABEL[tree.status]}</small>
+        <span><Trans>子 agent</Trans></span>
+        <strong><Trans>{visibleNodes.length} 个节点</Trans></strong>
+        <small><SubagentStatus status={tree.status} /></small>
         <i aria-hidden="true">⌄</i>
       </summary>
       <div className={`agentnew-subagent-inline-nodes${visibleNodes.length > 1 ? ' is-concurrent' : ''}`}>
@@ -92,20 +97,24 @@ function ToolCallTrace({
       <details className={`agentnew-subagent-trace-tool${tone ? ` is-${tone}` : ''}`}>
         <summary>
           <span>
-            {!result ? '工具调用' : tone === 'error' ? '工具失败' : tone === 'warning' ? '工具警告' : '工具'}
+            {!result
+              ? <Trans>工具调用</Trans>
+              : tone === 'error'
+                ? <Trans>工具失败</Trans>
+                : tone === 'warning' ? <Trans>工具警告</Trans> : <Trans>工具</Trans>}
           </span>
           <strong>{call.function.name}</strong>
-          <small>{result ? '完成' : '执行中'}</small>
+          <small>{result ? <Trans>完成</Trans> : <Trans>执行中</Trans>}</small>
           <i aria-hidden="true">⌄</i>
         </summary>
         <div className="agentnew-subagent-trace-tool-sections">
           <section>
-            <b>调用参数</b>
+            <b><Trans>调用参数</Trans></b>
             <pre>{prettyJson(call.function.arguments)}</pre>
           </section>
           <section>
-            <b>工具结果</b>
-            {result ? <pre>{prettyJson(result.content)}</pre> : <p>尚未返回结果。</p>}
+            <b><Trans>工具结果</Trans></b>
+            {result ? <pre>{prettyJson(result.content)}</pre> : <p><Trans>尚未返回结果。</Trans></p>}
           </section>
         </div>
       </details>
@@ -151,7 +160,11 @@ function TraceRecords({
               key={`${record.timestamp}:${index}`}
             >
               <summary>
-                <span>{tone === 'error' ? '工具失败' : tone === 'warning' ? '工具警告' : '工具结果'}</span>
+                <span>
+                  {tone === 'error'
+                    ? <Trans>工具失败</Trans>
+                    : tone === 'warning' ? <Trans>工具警告</Trans> : <Trans>工具结果</Trans>}
+                </span>
                 <strong>{toolNames.get(record.item.tool_call_id) ?? record.item.tool_call_id}</strong>
                 <i aria-hidden="true">⌄</i>
               </summary>
@@ -168,25 +181,25 @@ function TraceRecords({
             key={`${record.timestamp}:${index}`}
           >
             <summary>
-              <span>{isFinal ? '最终回复' : '模型 thinking'}</span>
-              {calls.length > 0 ? <small>{calls.length} 个工具调用</small> : null}
+              <span>{isFinal ? <Trans>最终回复</Trans> : <Trans>模型 thinking</Trans>}</span>
+              {calls.length > 0 ? <small><Trans>{calls.length} 个工具调用</Trans></small> : null}
               <i aria-hidden="true">⌄</i>
             </summary>
             <div className="agentnew-subagent-trace-body">
               {record.item.reasoning_content?.trim() ? (
                 <section>
-                  <b>思考过程</b>
+                  <b><Trans>思考过程</Trans></b>
                   <MessageMarkdown>{record.item.reasoning_content}</MessageMarkdown>
                 </section>
               ) : null}
               {record.item.content?.trim() ? (
                 <section>
-                  <b>{isFinal ? '回答' : '执行说明'}</b>
+                  <b>{isFinal ? <Trans>回答</Trans> : <Trans>执行说明</Trans>}</b>
                   <MessageMarkdown>{record.item.content}</MessageMarkdown>
                 </section>
               ) : null}
               {!record.item.reasoning_content?.trim() && !record.item.content?.trim() && calls.length > 0 ? (
-                <p className="agentnew-subagent-trace-empty">本次模型响应没有文字内容。</p>
+                <p className="agentnew-subagent-trace-empty"><Trans>本次模型响应没有文字内容。</Trans></p>
               ) : null}
               {calls.map((call) => (
                 <ToolCallTrace
@@ -218,7 +231,7 @@ function SubagentNodeTrace({
     <details className="agentnew-subagent-inline-node" data-status={node.status}>
       <summary>
         <span className="agentnew-subagent-inline-objective">{node.objective}</span>
-        <small>{STATUS_LABEL[node.status]}</small>
+        <small><SubagentStatus status={node.status} /></small>
         <i aria-hidden="true">⌄</i>
       </summary>
       <div className="agentnew-subagent-inline-node-body">
@@ -232,13 +245,13 @@ function SubagentNodeTrace({
         ) : (
           <p className="agentnew-subagent-trace-empty">
             {node.status === 'queued' || node.status === 'running' || node.status === 'distilling'
-              ? '等待此节点产生模型记录…'
-              : '此历史节点没有保存在会话状态中的模型记录。'}
+              ? <Trans>等待此节点产生模型记录…</Trans>
+              : <Trans>此历史节点没有保存在会话状态中的模型记录。</Trans>}
           </p>
         )}
         {node.resultFile || node.skillFiles.length > 0 ? (
           <details className="agentnew-subagent-inline-artifacts">
-            <summary>产物</summary>
+            <summary><Trans>产物</Trans></summary>
             {node.resultFile ? <code>{node.resultFile}</code> : null}
             {node.skillFiles.map((path) => <code key={path}>{path}</code>)}
           </details>

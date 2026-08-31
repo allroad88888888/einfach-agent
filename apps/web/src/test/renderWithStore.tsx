@@ -5,6 +5,16 @@ import { AgentStoreProvider, RootStoreProvider } from '@einfach-agent/react-plug
 import { rootStore as coreRootStore } from '@einfach-agent/core'
 import { render, type RenderOptions } from '@testing-library/react'
 import { WebTimelineRendererRegistryProvider } from '../agentNew/ui/WebTimelineRendererRegistryProvider'
+import { AppI18nProvider, appI18n, type AppLocale } from '../i18n'
+import { messages as chineseMessages } from '../i18n/locales/zh-CN/messages.po'
+import { hydrateLocalePreference } from '../i18n/localePreferenceAtom'
+
+function activeLocale(): AppLocale {
+  if (!appI18n.locale) {
+    appI18n.loadAndActivate({ locale: 'zh-CN', messages: chineseMessages })
+  }
+  return appI18n.locale as AppLocale
+}
 
 /**
  * 按生产装配的三层 store 渲染组件（见 main.tsx 与 ActiveSessionProvider）：
@@ -23,7 +33,9 @@ export function renderWithStore(
   ui: ReactElement,
   options: RenderOptions & { store?: Store, rootStore?: Store, agentStore?: Store } = {},
 ) {
+  const locale = activeLocale()
   const store = options.store ?? createStore()
+  hydrateLocalePreference(store, { getItem: () => locale, setItem: () => undefined })
   const rootStore = options.rootStore ?? coreRootStore
   const agentStore = options.agentStore ?? createStore()
   const {
@@ -36,11 +48,13 @@ export function renderWithStore(
   function Wrapper({ children }: { children: ReactNode }) {
     return (
       <Provider store={store}>
-        <RootStoreProvider store={rootStore}>
-          <AgentStoreProvider store={agentStore}>
-            <WebTimelineRendererRegistryProvider>{children}</WebTimelineRendererRegistryProvider>
-          </AgentStoreProvider>
-        </RootStoreProvider>
+        <AppI18nProvider>
+          <RootStoreProvider store={rootStore}>
+            <AgentStoreProvider store={agentStore}>
+              <WebTimelineRendererRegistryProvider>{children}</WebTimelineRendererRegistryProvider>
+            </AgentStoreProvider>
+          </RootStoreProvider>
+        </AppI18nProvider>
       </Provider>
     )
   }

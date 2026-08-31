@@ -71,6 +71,59 @@ describe('provider user input preparation', () => {
     expect(methods).toEqual(['POST', 'DELETE'])
   })
 
+  it('uploads original Composer images through the DeepSeek vision adapter', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (_input, init) => init?.method === 'DELETE'
+      ? new Response(null, { status: 204 })
+      : new Response(JSON.stringify({ id: 'file-api-one' }), { status: 200 }))
+    const file = new File(['original-png-data'], 'one.png', { type: 'image/png' })
+    const prepared = await prepareProviderUserInput(
+      {
+        text: '看看这张图',
+        images: [{
+          id: 'draft-1',
+          name: file.name,
+          mimeType: file.type,
+          byteSize: file.size,
+          width: 20,
+          height: 10,
+          data: file,
+        }],
+      },
+      {
+        sessionId: 'session-1',
+        settings: { vendor: 'deepseek', model: 'deepseek-v4-flash-vision-exp' },
+        apiKey: 'managed',
+        signal,
+        fetchImpl,
+      },
+    )
+
+    const [url, init] = fetchImpl.mock.calls[0]
+    const body = init?.body as FormData
+    expect(url).toBe('https://api.deepseek.com/files')
+    expect(init).toMatchObject({ method: 'POST', headers: { Authorization: 'Bearer managed' } })
+    expect(body.get('purpose')).toBe('user_data')
+    expect(body.get('file')).toBeInstanceOf(File)
+    expect(body.get('file')).toMatchObject({ name: file.name, size: file.size, type: file.type })
+    expect(prepared.content).toEqual([
+      { type: 'text', text: '看看这张图' },
+      expect.objectContaining({
+        type: 'image',
+        source: {
+          kind: 'provider-file',
+          provider: 'deepseek',
+          scope: 'deepseek:default',
+          reference: 'file-api-one',
+        },
+      }),
+    ])
+    await prepared.rollback?.('settings_changed')
+    expect(fetchImpl).toHaveBeenLastCalledWith(
+      'https://api.deepseek.com/files/file-api-one',
+      expect.objectContaining({ method: 'DELETE' }),
+    )
+  })
+
   it('rejects images for an unverified model before transport', async () => {
     const fetchImpl = vi.fn<typeof fetch>()
     const file = new File(['png-data'], 'one.png', { type: 'image/png' })

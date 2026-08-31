@@ -1,4 +1,4 @@
-/* agentnew.message-bubble.css —— assistant 气泡内 markdown 样式 + 撤销/重做条（T7 拆分自 agentnew.css） */
+/* agentnew.message-bubble.css —— assistant 气泡内 markdown 样式（T7 拆分自 agentnew.css） */
 
 /* ── assistant 气泡内 markdown 样式（轮次 3 · TM4） ─────────────── */
 /* 标题：气泡里不该巨大，逐级收敛 */
@@ -96,43 +96,6 @@
   text-align: left;
 }
 
-/* ── 撤销 / 重做条 ────────────────── */
-/* 取代原 .agentnew-checkpoint-* ——那套是轮级 checkpoint 的样式，组件已随 checkpoint 整体删除。 */
-.agentnew-undo-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  padding: 8px 20px;
-  border-top: 1px solid #e6eaf2;
-}
-
-.agentnew-undo-item {
-  padding: 4px 10px;
-  border: 1px solid #d4dbe8;
-  border-radius: 999px;
-  background: #ffffff;
-  color: #3a4458;
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.agentnew-undo-item:hover:not(:disabled) {
-  border-color: #a5a8f4;
-  background: #eef0fe;
-}
-
-.agentnew-undo-item:disabled {
-  color: #9aa3b5;
-  background: #f4f6fa;
-  cursor: not-allowed;
-}
-
-.agentnew-undo-hint {
-  color: #8a93a6;
-  font-size: 12px;
-}
-
 .agentnew-context-stats {
   margin: 0 20px 8px;
   border: 1px solid #dbe2ee;
@@ -189,4 +152,3 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-

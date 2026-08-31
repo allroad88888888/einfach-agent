@@ -5,13 +5,15 @@
 
 import { useAgentAtomValue } from '@einfach-agent/react-plugin'
 import { toolActivityAtom } from '@einfach-agent/core'
+import { useLingui } from '@lingui/react/macro'
 
 export function ToolActivity() {
+  const { t } = useLingui()
   const activities = useAgentAtomValue(toolActivityAtom)
   if (activities.length === 0) return null
 
   return (
-    <div className="agentnew-tool-activity" aria-label="工具进度" role="status">
+    <div className="agentnew-tool-activity" aria-label={t`工具进度`} role="status">
       {activities.map((activity) => (
         <div key={activity.callId} className="agentnew-tool-activity-row">
           <span className="agentnew-tool-activity-spinner" aria-hidden="true">

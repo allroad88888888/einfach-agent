@@ -9,6 +9,7 @@ import {
   activeSessionIdAtom,
   defaultCore,
   itemsAtom,
+  sessionsAtom,
   type ConversationItem,
 } from '@einfach-agent/core'
 import { ActiveSessionProvider } from './ActiveSessionProvider'
@@ -46,6 +47,30 @@ const oneItem: ConversationItem = {
 }
 
 describe('ActiveSessionProvider (RUI1)', () => {
+  it('把完整会话 ModelSettings 原样提供给子树', () => {
+    rootStore.setter(sessionsAtom, {
+      a: {
+        id: 'a', title: 'A', createdAt: 1, updatedAt: 1,
+        settings: {
+          vendor: 'openai-compat', model: 'reasoner', thinking: true, temperature: 0.4,
+          vendorSettings: { connectionId: 'profile-a', reasoning_effort: 'max', opaque: 'keep' },
+        },
+      },
+    })
+    rootStore.setter(activeSessionIdAtom, 'a')
+
+    renderWithStore(
+      <ActiveSessionProvider>{(session) => (
+        <output data-testid="settings">{JSON.stringify(session.settings)}</output>
+      )}</ActiveSessionProvider>,
+    )
+
+    expect(JSON.parse(screen.getByTestId('settings').textContent ?? '')).toEqual({
+      vendor: 'openai-compat', model: 'reasoner', thinking: true, temperature: 0.4,
+      vendorSettings: { connectionId: 'profile-a', reasoning_effort: 'max', opaque: 'keep' },
+    })
+  })
+
   it('切 activeSessionId → 换 agent store，子组件读到新会话的值；无会话时空占位', () => {
     // 准备两个会话的独立 store，各写不同长度的 items。
     defaultCore.getSessionStore('a').store.setter(itemsAtom, [oneItem])

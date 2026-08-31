@@ -128,6 +128,36 @@ describe('app settings commands', () => {
     expect(uiStore.getter(kimiCredential.status)).toMatchObject({ configured: false })
   })
 
+  it('copies a static browser BYOK key into only the in-memory model runtime config', async () => {
+    const values = {
+      deepseek: '', glm: '', kimi: '', 'openai-compat': '',
+    }
+    configureModelCredentialHost({
+      available: true,
+      status: async (target) => ({
+        configured: Boolean(values[target.provider]),
+        source: values[target.provider] ? 'browser' as const : 'missing' as const,
+      }),
+      save: async (target, value) => {
+        values[target.provider] = value
+        return { configured: true, source: 'browser' as const }
+      },
+      delete: async (target) => {
+        values[target.provider] = ''
+        return { configured: false, source: 'missing' as const }
+      },
+      modelCredentials: () => values,
+    })
+
+    updateDeepSeekApiKeyDraft('static-browser-key')
+    await expect(saveDeepSeekApiKey()).resolves.toBe(true)
+    expect(defaultCore.config.modelCredentials.deepseek).toBe('static-browser-key')
+    expect(JSON.stringify(uiStore.getter(appSettingsAtom))).not.toContain('static-browser-key')
+
+    await expect(deleteDeepSeekApiKey()).resolves.toBe(true)
+    expect(defaultCore.config.modelCredentials.deepseek).toBe('')
+  })
+
   it('preserves the draft when the saved credential cannot be verified', async () => {
     configureModelCredentialHost({
       available: true,

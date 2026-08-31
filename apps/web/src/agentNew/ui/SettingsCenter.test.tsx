@@ -117,7 +117,7 @@ describe('SettingsCenter', () => {
 
     const input = await screen.findByLabelText('DeepSeek API Key')
     await user.type(input, 'deepseek-test-key')
-    await user.click(screen.getByRole('button', { name: '保存 DeepSeek 到应用配置' }))
+    await user.click(screen.getByRole('button', { name: '保存 DeepSeek API Key' }))
 
     await waitFor(() => expect(fake.saved({
       provider: 'deepseek', scope: 'default',
@@ -126,7 +126,7 @@ describe('SettingsCenter', () => {
 
     const kimiInput = screen.getByLabelText('Kimi 中国区 API Key')
     await user.type(kimiInput, 'kimi-test-key')
-    await user.click(screen.getByRole('button', { name: '保存 Kimi 中国区 到应用配置' }))
+    await user.click(screen.getByRole('button', { name: '保存 Kimi 中国区 API Key' }))
     await waitFor(() => expect(fake.saved({
       provider: 'kimi', scope: 'cn',
     })).toBe('kimi-test-key'))
@@ -161,7 +161,7 @@ describe('SettingsCenter', () => {
     expect(screen.getByRole('button', { name: '新建 Kimi 图片对话' })).toBeDisabled()
   })
 
-  it('does not expose the Kimi image entry for an unavailable static Web host', async () => {
+  it('does not expose the Kimi image entry when the credential host is unavailable', async () => {
     const user = userEvent.setup()
     configureModelCredentialHost(createUnavailableModelCredentialHost())
     vi.stubEnv('VITE_KIMI_IMAGE_INPUT_ENABLED', 'true')

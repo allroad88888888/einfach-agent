@@ -7,9 +7,10 @@ import {
   DEEPSEEK_BASE_URL,
   OPENAI_COMPAT_VENDOR_ID,
   defaultProviderRegistry,
+  type ProviderTransportInput,
 } from '@einfach-agent/ai'
 import { applyOpenAiCompatEndpoint, openAiCompatOrigin } from './openAiCompatEndpoint'
-import { providerInputForFetch } from './providerFetch'
+import { createProviderFetch } from './providerFetch'
 import { providerTargetForRequest } from './providerRoute'
 
 const GATEWAY = 'https://gateway.example.com/v1'
@@ -71,10 +72,19 @@ describe('登记之后', () => {
     expect(seen).toEqual([`${GATEWAY}/chat/completions`])
   })
 
-  it('那条 URL 被认成 openai-compat 目标，且目标里**没有 origin 字段**', () => {
+  it('那条 URL 被认成 openai-compat 目标，且目标里**没有 origin 字段**', async () => {
     applyOpenAiCompatEndpoint(GATEWAY)
-
-    const target = providerTargetForRequest(`${GATEWAY}/chat/completions`)
+    const seen: ProviderTransportInput[] = []
+    await openAiCompatAdapter().call(request(), {
+      apiKey: 'k',
+      fetchImpl: createProviderFetch({
+        request: async (input) => {
+          seen.push(input)
+          return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }))
+        },
+      }),
+    })
+    const target = seen[0]?.target
 
     expect(target).toEqual({
       provider: 'openai-compat',
@@ -83,11 +93,8 @@ describe('登记之后', () => {
       path: '/chat/completions',
     })
     // 整条信封里不该出现登记的那个域名：origin 由后端查表得出，调用方连表达它的字段都没有。
-    const input = providerInputForFetch(`${GATEWAY}/chat/completions`, {
-      method: 'POST',
-      body: '{}',
-    })
-    expect(JSON.stringify(input.target)).not.toContain('gateway.example.com')
+    expect(JSON.stringify(seen[0])).not.toContain('gateway.example.com')
+    expect(JSON.stringify(seen[0])).not.toContain('X-Web-Agent')
   })
 
   it('只认 chat 端点：/files、DELETE、带 query 的路径一律不认', () => {

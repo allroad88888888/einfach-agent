@@ -1,6 +1,15 @@
 import { uiStore } from '../uiStore'
-import { configureCommands, disabledProjectSkillsByWorkspaceAtom, rootStore } from '@einfach-agent/core'
-import { MAX_CUSTOM_INSTRUCTIONS_LENGTH, type AppSettings } from './config'
+import {
+  configureCommands,
+  disabledProjectSkillsByWorkspaceAtom,
+  rootStore,
+} from '@einfach-agent/core'
+import {
+  MAX_CUSTOM_INSTRUCTIONS_LENGTH,
+  sanitizeDefaultModelConnection,
+  type AppSettings,
+  type DefaultModelConnection,
+} from './config'
 import { hydrateModelCredentials } from './modelCredentialCommands'
 import {
   createBrowserAppSettingsStorage,
@@ -12,6 +21,7 @@ import {
   customInstructionsDraftAtom,
   customInstructionsStatusAtom,
 } from './state'
+import { synchronizeDefaultModelConnectionRuntime } from './defaultModelConnectionRuntime'
 
 export {
   configureModelCredentialHost,
@@ -69,6 +79,7 @@ export async function hydrateAppSettings(): Promise<void> {
       settings.agent.disabledProjectSkills,
     )
     uiStore.setter(customInstructionsDraftAtom, customInstructions)
+    synchronizeDefaultModelConnectionRuntime()
     configureCommands({
       customInstructions,
       modelUserId: settings.installationId,
@@ -83,6 +94,7 @@ export async function hydrateAppSettings(): Promise<void> {
       customInstructions: '',
       modelUserId: undefined,
     })
+    synchronizeDefaultModelConnectionRuntime()
     uiStore.setter(customInstructionsStatusAtom, {
       status: 'error',
       error: errorMessage(error),
@@ -96,6 +108,35 @@ export async function hydrateAppSettings(): Promise<void> {
 export function saveAppSettings(settings: AppSettings): void {
   activeStorage.save(settings)
   uiStore.setter(appSettingsAtom, settings)
+}
+
+/** Selects a third-party connection for future `newSession()` calls only. */
+export function setDefaultModelConnection(connection: DefaultModelConnection): void {
+  const selected = sanitizeDefaultModelConnection(connection)
+  if (selected === undefined) throw new Error('默认模型连接格式无效')
+  const settings = uiStore.getter(appSettingsAtom)
+  saveAppSettings({ ...settings, defaultModelConnection: selected })
+  synchronizeDefaultModelConnectionRuntime()
+}
+
+/** Restores the built-in model default for future `newSession()` calls only. */
+export function clearDefaultModelConnection(): void {
+  const settings = uiStore.getter(appSettingsAtom)
+  if (settings.defaultModelConnection === undefined) {
+    synchronizeDefaultModelConnectionRuntime()
+    return
+  }
+  const { defaultModelConnection: _defaultModelConnection, ...withoutDefault } = settings
+  saveAppSettings(withoutDefault)
+  synchronizeDefaultModelConnectionRuntime()
+}
+
+/** Clears the selection only when a later profile deletion targets its stable ID. */
+export function clearDefaultModelConnectionIfMatching(id: string): boolean {
+  const selected = uiStore.getter(appSettingsAtom).defaultModelConnection
+  if (selected?.id !== id.trim()) return false
+  clearDefaultModelConnection()
+  return true
 }
 
 export function updateCustomInstructionsDraft(value: string): void {

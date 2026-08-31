@@ -3,16 +3,15 @@
 import { useAtom } from '@einfach/react'
 import { useEffect } from 'react'
 import type { ConversationItem, RunState } from '@einfach-agent/core'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { messageElapsedClockAtom } from './messageWindowModel'
 
-function formatElapsedDuration(durationMs: number): string {
+function elapsedDurationParts(durationMs: number): readonly [number, number, number] {
   const totalSeconds = Math.max(0, Math.floor(durationMs / 1_000))
   const hours = Math.floor(totalSeconds / 3_600)
   const minutes = Math.floor((totalSeconds % 3_600) / 60)
   const seconds = totalSeconds % 60
-  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`
-  if (minutes > 0) return `${minutes}m ${seconds}s`
-  return `${seconds}s`
+  return [hours, minutes, seconds]
 }
 
 function runStartIndex(items: ConversationItem[], turnId?: string): number {
@@ -27,6 +26,7 @@ function runStartIndex(items: ConversationItem[], turnId?: string): number {
 }
 
 export function RunDurationStatus({ items, run }: { items: ConversationItem[]; run?: RunState }) {
+  const { t } = useLingui()
   const [clock, setClock] = useAtom(messageElapsedClockAtom)
   const working = run?.status === 'running' || run?.status === 'awaiting_tool'
   useEffect(() => {
@@ -44,15 +44,20 @@ export function RunDurationStatus({ items, run }: { items: ConversationItem[]; r
   for (let index = startIndex; index < items.length; index += 1) endedAt = Math.max(endedAt, items[index].createdAt)
   endedAt = run.finishedAt ?? endedAt
   const durationMs = Math.max(0, (working ? clock : endedAt) - startedAt)
-  const duration = formatElapsedDuration(durationMs)
-  const label = working ? 'Working' : 'Brewed'
+  const [hours, minutes, seconds] = elapsedDurationParts(durationMs)
+  const duration = hours > 0
+    ? t`${hours}h ${minutes}m ${seconds}s`
+    : minutes > 0 ? t`${minutes}m ${seconds}s` : t`${seconds}s`
+  const label = working ? t`Working` : t`Brewed`
   return (
     <div
       className={`agentnew-run-duration${working ? ' is-working' : ' is-complete'}`}
-      aria-label={working ? `对话正在进行，已用时 ${duration}` : `对话已结束，用时 ${duration}`}
+      aria-label={working ? t`对话正在进行，已用时 ${duration}` : t`对话已结束，用时 ${duration}`}
     >
       <span className="agentnew-run-duration-mark" aria-hidden="true">{working ? null : '✓'}</span>
-      <span><strong>{label}</strong>{' for '}<time dateTime={`PT${Math.floor(durationMs / 1_000)}S`}>{duration}</time></span>
+      <span>
+        <Trans><strong>{label}</strong> for <time dateTime={`PT${Math.floor(durationMs / 1_000)}S`}>{duration}</time></Trans>
+      </span>
     </div>
   )
 }

@@ -1,0 +1,104 @@
+/* 官方模型凭据：折叠卡片与设置中心的表单、按钮共用相同的层级。 */
+.agentnew-model-provider-groups,
+.agentnew-model-provider-list,
+.agentnew-model-provider-groups > section {
+  display: grid;
+  gap: 10px;
+}
+
+.agentnew-model-provider-groups { gap: 18px; }
+
+.agentnew-model-provider-groups > section > h4 {
+  margin: 0;
+  color: #253047;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.agentnew-model-provider-card {
+  overflow: hidden;
+  border: 1px solid #e1e6ef;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(32, 43, 67, 0.03);
+}
+
+.agentnew-model-provider-card[open] { border-color: #d8dcff; }
+
+.agentnew-model-provider-card > summary {
+  display: flex;
+  align-items: center;
+  min-height: 47px;
+  padding: 0 16px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.agentnew-model-provider-card > summary::-webkit-details-marker { display: none; }
+.agentnew-model-provider-card > summary::after {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  margin-left: 10px;
+  border-right: 1.5px solid #64748b;
+  border-bottom: 1.5px solid #64748b;
+  content: '';
+  transform: rotate(45deg) translateY(-2px);
+}
+.agentnew-model-provider-card[open] > summary::after {
+  transform: rotate(225deg) translate(-2px, -1px);
+}
+.agentnew-model-provider-card > summary strong {
+  color: #253047;
+  font-size: 13px;
+}
+.agentnew-model-provider-card > summary > span {
+  margin-left: auto;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #5558c9;
+  background: #eef0fe;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
+.agentnew-model-provider-card > .agentnew-model-credential,
+.agentnew-model-provider-card > .agentnew-model-routing-note,
+.agentnew-model-provider-card > .agentnew-model-endpoint {
+  margin: 0;
+  padding: 0 16px 16px;
+  border-top: 1px solid #edf0f5;
+}
+
+.agentnew-model-provider-card > .agentnew-model-routing-note {
+  padding-top: 12px;
+}
+
+.agentnew-model-provider-card > .agentnew-model-credential {
+  padding-top: 13px;
+}
+
+.agentnew-model-provider-card > .agentnew-model-credential + .agentnew-model-credential,
+.agentnew-model-provider-card > .agentnew-model-credential + .agentnew-model-endpoint {
+  padding-top: 14px;
+}
+
+.agentnew-model-provider-card .agentnew-model-footer {
+  margin-top: 12px;
+}
+
+.agentnew-model-provider-card .agentnew-model-footer > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 560px) {
+  .agentnew-model-provider-card > summary { padding: 0 13px; }
+  .agentnew-model-provider-card > .agentnew-model-credential,
+  .agentnew-model-provider-card > .agentnew-model-routing-note,
+  .agentnew-model-provider-card > .agentnew-model-endpoint { padding-right: 13px; padding-left: 13px; }
+  .agentnew-model-provider-card .agentnew-model-footer { align-items: flex-start; flex-direction: column; }
+  .agentnew-model-provider-card .agentnew-model-footer > div { justify-content: flex-start; }
+}

@@ -1,4 +1,5 @@
 import { uiStore } from '../uiStore'
+import { configureCommands } from '@einfach-agent/core'
 import {
   createUnavailableModelCredentialHost,
   MODEL_CREDENTIALS,
@@ -13,6 +14,11 @@ import {
 } from './modelCredentialState'
 
 let activeHost = createUnavailableModelCredentialHost()
+
+function synchronizeBrowserCredentials(): void {
+  const credentials = activeHost.modelCredentials?.()
+  if (credentials) configureCommands({ modelCredentials: credentials })
+}
 
 function errorMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message
@@ -37,6 +43,7 @@ function descriptor(id: ModelCredentialId) {
 export function configureModelCredentialHost(host: ModelCredentialHost): void {
   activeHost = host
   uiStore.setter(modelCredentialHostAvailableAtom, host.available)
+  synchronizeBrowserCredentials()
 }
 
 export async function hydrateModelCredentials(): Promise<void> {
@@ -96,6 +103,7 @@ export async function saveModelCredential(id: ModelCredentialId): Promise<boolea
       return false
     }
     setModelCredentialDraft(uiStore, id, '')
+    synchronizeBrowserCredentials()
     setModelCredentialStatus(uiStore, id, { status: 'saved', ...credential })
     return true
   } catch {
@@ -117,6 +125,7 @@ export async function deleteModelCredential(id: ModelCredentialId): Promise<bool
   try {
     const credential = await activeHost.delete(target)
     setModelCredentialDraft(uiStore, id, '')
+    synchronizeBrowserCredentials()
     setModelCredentialStatus(uiStore, id, { status: 'saved', ...credential })
     return true
   } catch (error) {

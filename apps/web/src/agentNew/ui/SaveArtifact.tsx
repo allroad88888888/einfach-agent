@@ -11,6 +11,7 @@
 // close 不掩盖 write 错、AbortError=用户取消（保留产物、提示「已取消保存」）。
 
 import { useState } from 'react'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { useAgentAtomValue } from '@einfach-agent/react-plugin'
 import {
   pendingArtifactsAtom,
@@ -48,12 +49,12 @@ function extensionOf(filename: string): string {
   return dot >= 0 ? filename.slice(dot) : '.txt'
 }
 
-async function saveViaFilePicker(artifact: PendingArtifact): Promise<void> {
+async function saveViaFilePicker(artifact: PendingArtifact, fileDescription: string): Promise<void> {
   const picker = (window as unknown as SaveFilePickerWindow).showSaveFilePicker!
   const mimeType = artifact.mimeType || 'text/plain'
   const handle = await picker({
     suggestedName: artifact.filename,
-    types: [{ description: '文件', accept: { [mimeType]: [extensionOf(artifact.filename)] } }],
+    types: [{ description: fileDescription, accept: { [mimeType]: [extensionOf(artifact.filename)] } }],
   })
 
   // createWritable / write / close：始终关闭 writable 以免泄漏句柄；但 close() 若也抛错，
@@ -89,6 +90,7 @@ function saveViaBlobLink(artifact: PendingArtifact): void {
 }
 
 function ArtifactRow({ artifact }: { artifact: PendingArtifact }) {
+  const { t } = useLingui()
   const [status, setStatus] = useState<SaveStatus>({ kind: 'idle' })
 
   const handleSave = async () => {
@@ -99,7 +101,7 @@ function ArtifactRow({ artifact }: { artifact: PendingArtifact }) {
     try {
       // 特性检测 File System Access（按可调用检测）；缺失则优雅降级为 blob 下载链接。
       if (hasSaveFilePicker()) {
-        await saveViaFilePicker(artifact)
+        await saveViaFilePicker(artifact, t`文件`)
       } else {
         saveViaBlobLink(artifact)
       }
@@ -108,11 +110,11 @@ function ArtifactRow({ artifact }: { artifact: PendingArtifact }) {
     } catch (error) {
       if (isAbortError(error)) {
         // 用户在 picker 里取消——友好提示、不破坏、保留产物。
-        setStatus({ kind: 'cancelled', message: '已取消保存。' })
+        setStatus({ kind: 'cancelled', message: t`已取消保存。` })
         return
       }
       const message = error instanceof Error ? error.message : String(error)
-      setStatus({ kind: 'error', message: `保存失败：${message}` })
+      setStatus({ kind: 'error', message: t`保存失败：${message}` })
     }
   }
 
@@ -120,7 +122,7 @@ function ArtifactRow({ artifact }: { artifact: PendingArtifact }) {
     <div className="agentnew-save-artifact-row">
       <div className="agentnew-save-artifact-info">
         <span className="agentnew-save-artifact-name">{artifact.filename}</span>
-        <span className="agentnew-save-artifact-meta">{artifact.content.length} 字符</span>
+        <span className="agentnew-save-artifact-meta"><Trans>{artifact.content.length} 字符</Trans></span>
         {status.kind === 'cancelled' && (
           <span className="agentnew-save-artifact-hint">{status.message}</span>
         )}
@@ -136,20 +138,21 @@ function ArtifactRow({ artifact }: { artifact: PendingArtifact }) {
           void handleSave()
         }}
       >
-        💾 保存
+        💾 <Trans>保存</Trans>
       </button>
     </div>
   )
 }
 
 export function SaveArtifact() {
+  const { t } = useLingui()
   // U3：经 agent store 读 —— 拿到的是该会话的待保存产物。
   const artifacts = useAgentAtomValue(pendingArtifactsAtom)
   if (!artifacts.length) return null
 
   return (
-    <section className="agentnew-save-artifact" aria-label="待保存文件">
-      <div className="agentnew-save-artifact-title">待保存文件</div>
+    <section className="agentnew-save-artifact" aria-label={t`待保存文件`}>
+      <div className="agentnew-save-artifact-title"><Trans>待保存文件</Trans></div>
       {artifacts.map((artifact) => (
         <ArtifactRow key={artifact.id} artifact={artifact} />
       ))}

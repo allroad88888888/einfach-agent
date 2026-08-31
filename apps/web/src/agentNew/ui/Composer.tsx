@@ -8,6 +8,7 @@
 // 它曾是槽位，理由是「回退会把用户原话放回输入框」，而那个机制在实现里不存在，详见该文件。
 
 import { useEffect, useRef } from 'react'
+import { useLingui } from '@lingui/react/macro'
 import { useAtomValue, useSetAtom } from '@einfach/react'
 import { useAgentAtomValue } from '@einfach-agent/react-plugin'
 import {
@@ -30,15 +31,10 @@ import {
   settleComposerImageSubmissionAtom,
 } from './composerImageAttachmentState'
 import { ComposerAttachmentTray } from './ComposerAttachmentTray'
+import { ComposerControlBar } from './ComposerControlBar'
+import { useActiveSessionConfig } from './ActiveSessionProvider'
 import { composerSubmissionOutcome, isPromiseLike } from './composerSubmissionOutcome'
 import { imageInputCapabilityForApp } from '../../modelInput/kimiImageFeature'
-
-function formatRunError(error: string) {
-  if (/\b401\b|authentication fails|unauthorized|api[ _-]?key/i.test(error)) {
-    return '模型鉴权失败（401），请检查当前模型供应商的 API Key 是否有效。'
-  }
-  return error
-}
 
 export function Composer({
   approvalMode = 'confirm',
@@ -49,6 +45,9 @@ export function Composer({
   vendor?: string
   model?: string
 }) {
+  const { t } = useLingui()
+  const activeSession = useActiveSessionConfig()
+  const modelSettings = activeSession?.settings ?? { vendor, model }
   const composingRef = useRef(false)
   const modeShortcutLatchedRef = useRef(false)
   const run = useAgentAtomValue(runAtom)
@@ -73,9 +72,17 @@ export function Composer({
     || run?.status === 'waiting_confirmation'
     || run?.status === 'waiting_plan_approval'
   const locked = paused || interrupted
-  const imageCapability = imageInputCapabilityForApp(vendor, model)
+  const modelSettingsLocked = run !== undefined
+    && !['idle', 'done', 'stopped', 'error'].includes(run.status)
+  const imageCapability = imageInputCapabilityForApp(modelSettings.vendor, modelSettings.model)
   const preparingImages = attachments.operation !== 'idle'
   const editorDisabled = locked || preparingImages
+  const formatRunError = (error: string) => {
+    if (/\b401\b|authentication fails|unauthorized|api[ _-]?key/i.test(error)) {
+      return t`模型鉴权失败（401），请检查当前模型供应商的 API Key 是否有效。`
+    }
+    return error
+  }
 
   const send = () => {
     const text = draft.trim()
@@ -184,11 +191,11 @@ export function Composer({
       ) : null}
       {runError ? (
         <div className="agentnew-run-error" role="alert">
-          <strong>请求失败</strong>
+          <strong>{t`请求失败`}</strong>
           <span>{formatRunError(runError)}</span>
           {formatRunError(runError) !== runError ? (
             <details>
-              <summary>错误详情</summary>
+              <summary>{t`错误详情`}</summary>
               <code>{runError}</code>
             </details>
           ) : null}
@@ -196,39 +203,30 @@ export function Composer({
       ) : null}
       {stopped ? (
         <div className="agentnew-withdraw-bar">
-          <span>已停止</span>
+          <span>{t`已停止`}</span>
         </div>
       ) : null}
       {interrupted ? (
         <div className="agentnew-withdraw-bar">
-          <span>应用重启中断了任务</span>
+          <span>{t`应用重启中断了任务`}</span>
           <button type="button" className="agentnew-withdraw-button" onClick={continueInterruptedRun}>
-            继续执行
+            {t`继续执行`}
           </button>
         </div>
       ) : null}
       <div className="agentnew-composer-editor">
-        <div className="agentnew-composer-status-line">
-          <button
-            type="button"
-            className={`agentnew-composer-mode ${approvalMode === 'auto' ? 'is-auto' : ''}`}
-            aria-label={`授权模式：${approvalMode === 'auto' ? 'Auto' : '确认'}，Shift+Tab 切换`}
-            title="点击或按 Shift + Tab 切换授权模式"
-            onClick={toggleApprovalMode}
-          >
-            授权：{approvalMode === 'auto' ? 'Auto' : '确认'}
-            <span aria-hidden="true"> · ⇧Tab 切换</span>
-          </button>
-          {queuedMessages.length > 0 ? (
-            <span className="agentnew-composer-queue-status" role="status">
-              已排队 {queuedMessages.length} 条
-            </span>
-          ) : null}
-        </div>
+        <ComposerControlBar
+          approvalMode={approvalMode}
+          modelSettings={modelSettings}
+          sessionId={activeSession?.id}
+          modelSettingsDisabled={modelSettingsLocked}
+          queuedMessageCount={queuedMessages.length}
+          onToggleApprovalMode={toggleApprovalMode}
+        />
         <textarea
           id="agentnew-composer-input"
           name="message"
-          aria-label="消息"
+          aria-label={t`消息`}
           className="agentnew-composer-input"
           value={draft}
           disabled={editorDisabled}
@@ -276,7 +274,7 @@ export function Composer({
           onClick={send}
           disabled={(!draft.trim() && attachments.images.length === 0) || editorDisabled}
         >
-          {preparingImages ? '准备图片…' : running ? '加入队列' : '发送'}
+          {preparingImages ? t`准备图片…` : running ? t`加入队列` : t`发送`}
         </button>
         {running ? (
           <button
@@ -286,7 +284,7 @@ export function Composer({
             // 当选项塞进去（`event.disposeUserContent` 是 undefined，行为上恰好没变，但纯属巧合）。
             onClick={() => { stopRun() }}
           >
-            停止
+            {t`停止`}
           </button>
         ) : null}
       </div>

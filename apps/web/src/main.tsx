@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { Provider } from '@einfach/react'
 import { RootStoreProvider } from '@einfach-agent/react-plugin'
 import { uiStore } from './uiStore'
+import { AppI18nProvider } from './i18n/AppI18nProvider'
+import { initializeI18n } from './i18n/initializeI18n'
 import {
   activeSessionMetaAtom,
   configureCommands,
@@ -28,6 +30,7 @@ import { resolveHost, type ResolvedHost } from './host/resolveHost'
 import { registerHostCommandBridge } from './host/hostCommandBridge'
 import { createHostModelCredentialHost } from './host/hostModelCredentialHost'
 import { createHostModelEndpointHost } from './host/hostModelEndpointHost'
+import { createHostModelConnectionProfileHost } from './host/hostModelConnectionProfileHost'
 import { createHostModelFetch } from './host/hostModelTransport'
 import { configureHostObservability } from './host/hostObservability'
 import { AppShell } from './agentNew/ui/AppShell'
@@ -40,6 +43,10 @@ import {
   hydrateAppSettings,
   hydrateModelEndpoint,
 } from './settings/commands'
+import {
+  configureModelConnectionProfileHost,
+  hydrateModelConnectionProfiles,
+} from './settings/modelConnectionProfileCommands'
 import { MODEL_CREDENTIALS } from './settings/modelCredentialHost'
 import {
   resolveStartupCredentialTarget,
@@ -47,6 +54,7 @@ import {
 } from './settings/startupCredentialTarget'
 import { prepareProviderUserInput } from './modelInput/prepareProviderUserInput'
 import { disposeProviderUserContent } from './modelInput/disposeProviderUserContent'
+import { createDeepSeekImageViewer } from './vision/deepseekImageViewer'
 import {
   reportReactCommit,
   startUiPerformanceDiagnostics,
@@ -78,9 +86,11 @@ function renderRoot(children: React.ReactNode): void {
   createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <Provider store={uiStore}>
-        <RootStoreProvider store={core.rootStore}>
-          {children}
-        </RootStoreProvider>
+        <AppI18nProvider>
+          <RootStoreProvider store={core.rootStore}>
+            {children}
+          </RootStoreProvider>
+        </AppI18nProvider>
       </Provider>
     </React.StrictMode>,
   )
@@ -118,6 +128,7 @@ function renderWindowScrollDemo(): void {
 // 能管凭据的宿主还必须等待凭据状态：AppShell 只在门禁确认目标 Key 已配置后才会挂载。
 async function bootstrapApplication(host: ResolvedHost): Promise<StartupCredentialTargetResolution> {
   const settingsHydration = hydrateAppSettings()
+  const profileHydration = hydrateModelConnectionProfiles()
   try {
     core.persistence.configure({
       ...await createHostPersistenceDrivers(host),
@@ -127,18 +138,22 @@ async function bootstrapApplication(host: ResolvedHost): Promise<StartupCredenti
     })
     installBrowserRecoveryFlush(core)
     configureHostObservability(host)
+    // A restored run may use connectionId immediately, and a first new session may use the saved
+    // default. Both therefore wait until public profiles have populated the restricted registry.
+    await Promise.all([settingsHydration, profileHydration])
     const restored = await core.persistence.hydrate()
     if (!restored) newSession()
   } catch {
+    await Promise.allSettled([settingsHydration, profileHydration])
     newSession()
   }
-  await settingsHydration
   return resolveStartupCredentialTarget(core.rootStore.getter(activeSessionMetaAtom)?.settings)
 }
 
 // 装配序列。**顺序不是风格**：命令桥排第一（理由见 host/hostCommandBridge.ts 的文件头——
 // 它必须先于插件扫描与 hydrate 出来的未完成 run），其余各步的先后各自注释在旁。
 async function startApplication(): Promise<void> {
+  const i18nReady = initializeI18n(uiStore)
   // 宿主解析必须在这里 await 掉，不能与装配并行发起：server 宿主要先握手才知道自己是 server、
   // 平台是什么（S5 把 platform 做成登记桥的必填字段），而桥要先于任何工具可能执行的时点到位。
   // 本文件此前那句「登记必须先于所有异步续段」只在同机宿主下成立——远端宿主的握手本身就是
@@ -166,6 +181,7 @@ async function startApplication(): Promise<void> {
   void hydratePluginSettings()
 
   const credentialHost = createHostModelCredentialHost(host)
+  const connectionProfileHost = createHostModelConnectionProfileHost(host)
   const providerFetch = createHostModelFetch(host)
   // 凭据表按 MODEL_CREDENTIALS 的 provider 生成：新增一家 provider 只改那张描述表，
   // 不必在这里再列一遍厂商名（core 侧只按 vendor id 查表）。
@@ -180,8 +196,13 @@ async function startApplication(): Promise<void> {
       fetchImpl: providerFetch,
     }),
     fetchImpl: providerFetch,
+    viewImage: createDeepSeekImageViewer({
+      apiKey: hostManagedCredentialMarker,
+      fetchImpl: providerFetch,
+    }),
   })
   configureModelCredentialHost(credentialHost)
+  configureModelConnectionProfileHost(connectionProfileHost)
   // openai-compat 的接入点登记。**必须在这里装配**（与凭据宿主同一处、同一个宿主判据），
   // 而不是等设置弹窗打开才装：登记决定 adapter 有没有 baseUrl，而模型请求可能在用户点开设置
   // 之前就发生（hydrate 出来的未完成 run 会自己续上）。故意不 await——它是一次 HTTP 往返，
@@ -191,15 +212,18 @@ async function startApplication(): Promise<void> {
 
   const view = currentView()
   if (view === 'window-scroll-demo') {
+    await i18nReady
     renderWindowScrollDemo()
     return
   }
   if (view === 'traces') {
     configureHostObservability(host)
+    await i18nReady
     renderTraceViewer()
     return
   }
-  renderApp(await bootstrapApplication(host), credentialHost.available)
+  const [target] = await Promise.all([bootstrapApplication(host), i18nReady])
+  renderApp(target, credentialHost.available)
 }
 
 /**

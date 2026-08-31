@@ -16,6 +16,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 const probe = vi.hoisted(() => ({
   readBridge: undefined as (() => boolean) | undefined,
   atPersistenceHydrate: undefined as boolean | undefined,
+  profileHydrated: false,
+  profilesAtPersistenceHydrate: undefined as boolean | undefined,
 }))
 
 /**
@@ -59,6 +61,12 @@ vi.mock('./settings/commands', () => ({
   configureModelEndpointHost: vi.fn(),
   hydrateAppSettings: vi.fn(async () => undefined),
   hydrateModelEndpoint: vi.fn(async () => undefined),
+}))
+vi.mock('./settings/modelConnectionProfileCommands', () => ({
+  configureModelConnectionProfileHost: vi.fn(),
+  hydrateModelConnectionProfiles: vi.fn(async () => {
+    probe.profileHydrated = true
+  }),
 }))
 vi.mock('./settings/modelCredentialHost', () => ({
   MODEL_CREDENTIALS: [],
@@ -105,6 +113,7 @@ describe('main entry · server 宿主的装配分流（B3）', () => {
 
     const hydrate = vi.spyOn(defaultCore.persistence, 'hydrate').mockImplementation(async () => {
       probe.atPersistenceHydrate = hasHostBridge()
+      probe.profilesAtPersistenceHydrate = probe.profileHydrated
       return false
     })
 
@@ -121,6 +130,7 @@ describe('main entry · server 宿主的装配分流（B3）', () => {
 
     await vi.waitFor(() => { expect(hydrate).toHaveBeenCalledOnce() })
     expect(probe.atPersistenceHydrate).toBe(true)
+    expect(probe.profilesAtPersistenceHydrate).toBe(true)
   })
 
   it('本机工具整类可见，模型凭据走 server 版而不是 unavailable', async () => {

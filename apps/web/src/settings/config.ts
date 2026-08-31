@@ -4,7 +4,7 @@ import {
   type DisabledProjectSkillsByWorkspace,
 } from '@einfach-agent/core/skills'
 
-export const APP_SETTINGS_VERSION = 3 as const
+export const APP_SETTINGS_VERSION = 4 as const
 export const MAX_CUSTOM_INSTRUCTIONS_LENGTH = 12_000
 export const MAX_MODEL_API_KEY_LENGTH = 1_024
 export const INSTALLATION_ID_RANDOM_BYTES = 24
@@ -58,10 +58,18 @@ export function isInstallationId(value: unknown): value is string {
 export interface AppSettings {
   version: typeof APP_SETTINGS_VERSION
   installationId: string
+  /** The public identity of the third-party connection used for future sessions. */
+  defaultModelConnection?: DefaultModelConnection
   agent: {
     customInstructions: string
     disabledProjectSkills: DisabledProjectSkillsByWorkspace
   }
+}
+
+/** A persisted selection deliberately contains neither endpoint data nor credentials. */
+export interface DefaultModelConnection {
+  id: string
+  model: string
 }
 
 export function createDefaultAppSettings(
@@ -83,6 +91,29 @@ export function sanitizeCustomInstructions(value: unknown): string {
   return value.slice(0, MAX_CUSTOM_INSTRUCTIONS_LENGTH)
 }
 
+export function sanitizeDefaultModelConnection(
+  value: unknown,
+): DefaultModelConnection | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error('默认模型连接格式无效')
+  }
+  const { id, model } = value as Record<string, unknown>
+  if (typeof id !== 'string' || typeof model !== 'string') {
+    throw new Error('默认模型连接格式无效')
+  }
+  const normalizedId = id.trim()
+  const normalizedModel = model.trim()
+  if (!normalizedId || !normalizedModel) throw new Error('默认模型连接格式无效')
+  return { id: normalizedId, model: normalizedModel }
+}
+
+/** Limits browser BYOK values before they reach localStorage or the model runtime. */
+export function sanitizeModelApiKey(value: unknown): string {
+  if (typeof value !== 'string') throw new Error('浏览器模型密钥格式无效')
+  return value.slice(0, MAX_MODEL_API_KEY_LENGTH)
+}
+
 export function sanitizeAppSettings(value: unknown): AppSettings {
   if (
     typeof value !== 'object'
@@ -101,9 +132,13 @@ export function sanitizeAppSettings(value: unknown): AppSettings {
     throw new Error('应用设置格式无效')
   }
 
+  const defaultModelConnection = sanitizeDefaultModelConnection(
+    (value as { defaultModelConnection?: unknown }).defaultModelConnection,
+  )
   return {
     version: APP_SETTINGS_VERSION,
     installationId,
+    ...(defaultModelConnection === undefined ? {} : { defaultModelConnection }),
     agent: {
       customInstructions: sanitizeCustomInstructions(
         (agent as { customInstructions?: unknown }).customInstructions,

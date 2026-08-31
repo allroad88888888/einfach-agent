@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useAtomValue } from '@einfach/react'
+import { Trans, useLingui } from '@lingui/react/macro'
 import {
   hydrateModelCredentials,
   saveModelCredential,
@@ -15,12 +16,12 @@ function credentialFor(id: ModelCredentialDescriptor['id']): ModelCredentialDesc
   return MODEL_CREDENTIALS.find((credential) => credential.id === id)
 }
 
-function blockingDialog(children: ReactNode): ReactNode {
+function blockingDialog(children: ReactNode, ariaLabel: string): ReactNode {
   return (
     <main
       className="agentnew-startup-credential-gate"
       role="dialog"
-      aria-label="模型密钥门禁"
+      aria-label={ariaLabel}
       aria-modal="true"
     >
       <section className="agentnew-startup-credential-card">{children}</section>
@@ -28,7 +29,7 @@ function blockingDialog(children: ReactNode): ReactNode {
   )
 }
 
-/** Blocks the desktop workspace until its selected model has a configured credential. */
+/** Blocks the workspace until the selected model has a configured credential. */
 export function StartupCredentialGate({
   enabled,
   target,
@@ -38,17 +39,20 @@ export function StartupCredentialGate({
   target: StartupCredentialTargetResolution
   children: ReactNode
 }) {
+  const { t } = useLingui()
   const entries = useAtomValue(modelCredentialEntriesAtom)
+  const dialogAriaLabel = t`模型密钥门禁`
 
   if (!enabled) return children
 
   if (!target.ok) {
     return blockingDialog(
       <>
-        <h1>无法启动当前模型</h1>
-        <p>当前模型配置不支持桌面凭据管理。请切换到已支持的模型后重试。</p>
+        <h1><Trans>无法启动当前模型</Trans></h1>
+        <p><Trans>当前模型配置不支持凭据管理。请切换到已支持的模型后重试。</Trans></p>
         <p className="agentnew-startup-credential-error" role="alert">{target.error}</p>
       </>,
+      dialogAriaLabel,
     )
   }
 
@@ -56,9 +60,10 @@ export function StartupCredentialGate({
   if (!credential) {
     return blockingDialog(
       <>
-        <h1>无法启动当前模型</h1>
-        <p className="agentnew-startup-credential-error" role="alert">未找到当前模型的凭据配置。</p>
+        <h1><Trans>无法启动当前模型</Trans></h1>
+        <p className="agentnew-startup-credential-error" role="alert"><Trans>未找到当前模型的凭据配置。</Trans></p>
       </>,
+      dialogAriaLabel,
     )
   }
 
@@ -68,25 +73,27 @@ export function StartupCredentialGate({
   if (entry.state.status === 'idle' || entry.state.status === 'loading') {
     return blockingDialog(
       <>
-        <h1>正在检查模型密钥</h1>
-        <p>请稍候，正在读取 {credential.label} 的应用配置。</p>
+        <h1><Trans>正在检查模型密钥</Trans></h1>
+        <p><Trans>请稍候，正在读取 {credential.label} 的应用配置。</Trans></p>
       </>,
+      dialogAriaLabel,
     )
   }
 
   if (entry.state.status === 'error') {
     return blockingDialog(
       <>
-        <h1>无法读取模型密钥</h1>
+        <h1><Trans>无法读取模型密钥</Trans></h1>
         <p className="agentnew-startup-credential-error" role="alert">{entry.state.error}</p>
         <button
           type="button"
           className="agentnew-startup-credential-button"
           onClick={() => { void hydrateModelCredentials() }}
         >
-          重试检查
+          <Trans>重试检查</Trans>
         </button>
       </>,
+      dialogAriaLabel,
     )
   }
 
@@ -94,8 +101,8 @@ export function StartupCredentialGate({
   const dirty = entry.draft.trim().length > 0
   return blockingDialog(
     <>
-      <h1>请输入 {credential.label} API Key</h1>
-      <p>密钥只会保存到本机应用配置文件，不会显示或写入网页设置。</p>
+      <h1><Trans>请输入 {credential.label} API Key</Trans></h1>
+      <p><Trans>本机后端会保存到应用配置文件；静态部署会保存到当前浏览器的 localStorage 并直连模型服务。</Trans></p>
       <form
         className="agentnew-startup-credential-form"
         onSubmit={(event) => {
@@ -104,7 +111,7 @@ export function StartupCredentialGate({
         }}
       >
         <label htmlFor={inputId}>
-          {credential.label} API Key
+          <Trans>{credential.label} API Key</Trans>
           <input
             id={inputId}
             type="password"
@@ -113,7 +120,7 @@ export function StartupCredentialGate({
             autoFocus
             autoComplete="off"
             spellCheck={false}
-            placeholder={`输入 ${credential.label} API Key`}
+            placeholder={t`输入 ${credential.label} API Key`}
             onChange={(event) => updateModelCredentialDraft(credential.id, event.target.value)}
           />
         </label>
@@ -122,9 +129,10 @@ export function StartupCredentialGate({
           className="agentnew-startup-credential-button"
           disabled={!dirty}
         >
-          保存并进入
+          <Trans>保存并进入</Trans>
         </button>
       </form>
     </>,
+    dialogAriaLabel,
   )
 }

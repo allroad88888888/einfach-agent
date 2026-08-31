@@ -4,6 +4,7 @@
 // 只负责渲染这一组复选框并把勾选动作转给 plugins/commands.ts，不知道插件行的其余部分。
 
 import { useId } from 'react'
+import { Trans } from '@lingui/react/macro'
 import { setPluginToolEnabled } from '../../plugins/commands'
 import type { PluginRow } from '../../plugins/types'
 
@@ -25,8 +26,8 @@ export function PluginToolToggleList({
   return (
     <div className="agentnew-plugin-tools">
       <p className="agentnew-plugin-tools-hint">
-        模型可见工具（{row.withheldToolsCount}/{row.tools.length} 未启用）：
-        勾选后此工具将进入模型上下文与执行路径，请只勾选你信任的工具。
+        <Trans>模型可见工具（{row.withheldToolsCount}/{row.tools.length} 未启用）：
+        勾选后此工具将进入模型上下文与执行路径，请只勾选你信任的工具。</Trans>
       </p>
       <ul>
         {row.tools.map((tool) => {

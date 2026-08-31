@@ -5,6 +5,7 @@ import { renderWithStore } from '../../test/renderWithStore'
 import { sendMessage, runAtom } from '@einfach-agent/core'
 import { composerImageAttachmentAtom } from './composerImageAttachmentState'
 import { Composer } from './Composer'
+import { pngBytes } from '../../imageInput/staticImagePolicy.testFixtures'
 
 vi.mock('@einfach-agent/core/runtime/commands', () => ({
   continueInterruptedRun: vi.fn(),
@@ -17,7 +18,7 @@ vi.mock('@einfach-agent/core/runtime/commands', () => ({
 const accepted = { accepted: true, status: 'started', sessionId: 's', submissionSequence: 1 }
 
 function photo(name = 'photo.png') {
-  return new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], name, { type: 'image/png' })
+  return new File([new Uint8Array(pngBytes(20, 10))], name, { type: 'image/png' })
 }
 
 /** 附件草稿住 UI store，本文件的被测 store 就是它；agent store 只在需要 run 时显式给。 */

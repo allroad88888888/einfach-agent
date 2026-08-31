@@ -6,6 +6,7 @@
 // 布局用 className；样式在 agentnew.css（由 main.tsx 统一 import，本文件不 import）。
 
 import { Profiler } from 'react'
+import { useLingui } from '@lingui/react/macro'
 import { ActiveSessionProvider } from './ActiveSessionProvider'
 import { WorkspaceSidebar } from './WorkspaceSidebar'
 import { MessageList } from './MessageList'
@@ -14,22 +15,27 @@ import { SaveArtifact } from './SaveArtifact'
 import { AskUserQuestionCard } from './AskUserQuestionCard'
 import { ToolConfirmCard } from './ToolConfirmCard'
 import { ContextStats } from './ContextStats'
-import { UndoBar } from './UndoBar'
 import { Composer } from './Composer'
 import { ActivePlanPanel } from './ActivePlanPanel'
 import { SettingsCenter } from './SettingsCenter'
 import { reportReactCommit } from '../../performanceDiagnostics'
 import { HistoryImageCompatibilityProvider } from './HistoryImageCompatibilityContext'
 import { HistoryImageCompatibilityGuard } from './HistoryImageCompatibilityGuard'
+import { LanguageSwitcher } from './LanguageSwitcher'
 
 export function AppShell() {
+  const { t } = useLingui()
+
   return (
     <div className="agentnew-shell">
-      <aside className="agentnew-sidebar" aria-label="工作区与对话">
+      <aside className="agentnew-sidebar" aria-label={t`工作区与对话`}>
         <WorkspaceSidebar />
         <SettingsCenter />
       </aside>
-      <main className="agentnew-main" aria-label="当前对话">
+      <main className="agentnew-main" aria-label={t`当前对话`}>
+        <header className="agentnew-app-shell-header" aria-label={t`应用工具栏`}>
+          <LanguageSwitcher />
+        </header>
         <ActiveSessionProvider>{(session) => (
           <HistoryImageCompatibilityProvider
             vendor={session.vendor}
@@ -47,8 +53,6 @@ export function AppShell() {
           {/* 暂停卡片紧贴输入区上方（最显眼），排在 Composer 之前：ask_user 提问卡 + S4-B 危险工具确认卡。 */}
           <AskUserQuestionCard surface="conversation" />
           <ToolConfirmCard />
-          {/* 撤销条紧贴输入区上方：它是对「刚才那一轮」的操作，离输入区越近越顺手。 */}
-          <UndoBar sessionId={session.id} />
           <ContextStats />
           <HistoryImageCompatibilityGuard>
             <Composer

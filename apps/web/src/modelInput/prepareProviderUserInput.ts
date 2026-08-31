@@ -1,16 +1,11 @@
-import {
-  prepareKimiImageBatch,
-  resolveKimiRegion,
-  type KimiLocalImage,
-  type UserContentBlock,
-} from '@einfach-agent/ai'
+import type { UserContentBlock } from '@einfach-agent/ai'
 import type { UserInputPreparer } from '@einfach-agent/core'
 import { imageInputCapabilityForApp } from './kimiImageFeature'
-import { kimiRegionSetting } from './kimiRegionSetting'
+import { prepareProviderImageBatch, type ProviderLocalImage } from './providerImageBatch'
 
-function kimiImages(
+function providerImages(
   images: NonNullable<Parameters<UserInputPreparer>[0]['images']>,
-): KimiLocalImage[] {
+): ProviderLocalImage[] {
   return images.map((image) => {
     if (!(image.data instanceof Blob)) {
       throw new Error(`图片“${image.name}”没有可上传的本地数据。`)
@@ -33,14 +28,9 @@ export const prepareProviderUserInput: UserInputPreparer = async (input, context
   if (!input.images?.length) return { content: input.text }
   const capability = imageInputCapabilityForApp(context.settings.vendor, context.settings.model)
   if (capability.kind !== 'provider-upload') throw new Error(capability.reason)
-  if (context.settings.vendor !== 'kimi') {
-    throw new Error(`模型供应商 ${context.settings.vendor} 尚未配置图片准备 adapter。`)
-  }
-  const region = resolveKimiRegion(kimiRegionSetting(context.settings))
-  if (region !== 'cn') throw new Error('当前宿主尚未开放 Kimi 全球区图片传输。')
-  const batch = await prepareKimiImageBatch(kimiImages(input.images), {
+  const batch = await prepareProviderImageBatch(providerImages(input.images), {
+    settings: context.settings,
     apiKey: context.apiKey,
-    region,
     signal: context.signal,
     fetchImpl: context.fetchImpl,
   })

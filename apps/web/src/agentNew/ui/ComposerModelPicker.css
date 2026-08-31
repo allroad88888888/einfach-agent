@@ -1,0 +1,79 @@
+.agentnew-composer-model-picker {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 178px;
+  align-items: center;
+  max-width: 100%;
+  min-width: 142px;
+  height: 26px;
+  padding-left: 7px;
+  border: 1px solid #dfe3ec;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #68758a;
+}
+
+.agentnew-composer-model-picker:focus-within {
+  border-color: #a8aaee;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.12);
+}
+
+.agentnew-composer-model-picker.is-disabled {
+  background: #f3f4f7;
+  color: #7d8797;
+}
+
+.agentnew-composer-model-picker select {
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  padding: 0 25px 0 6px;
+  overflow: hidden;
+  border: 0;
+  outline: 0;
+  appearance: none;
+  background: transparent;
+  color: #424b5e;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 24px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.agentnew-composer-model-picker select:disabled {
+  color: #747f91;
+  cursor: not-allowed;
+}
+
+.agentnew-composer-model-glyph {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  fill: rgba(99, 102, 241, 0.08);
+  stroke: #6a68cf;
+  stroke-linejoin: round;
+  stroke-width: 1.25;
+}
+
+.agentnew-composer-model-chevron {
+  position: absolute;
+  right: 7px;
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+  fill: none;
+  stroke: #7c8798;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.4;
+}
+
+@media (max-width: 720px) {
+  .agentnew-composer-model-picker {
+    order: -2;
+    flex: 1 1 100%;
+  }
+}

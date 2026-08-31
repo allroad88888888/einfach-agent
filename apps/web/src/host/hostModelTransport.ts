@@ -1,9 +1,8 @@
 // 选出当前宿主发模型请求用的 fetch 实现。
 // ---------------------------------------------------------------------------
-// API Key 不进入前端配置：server 宿主走 `apps/server` 的流式模型端点（`POST /api/model/request`），
-// 开发浏览器走本地 Node 中继（Vite 插件 `scripts/model-preview-relay`），其余一律拒绝模型请求。
-// 真实 Key 只由**本机 Node 后端**从 `~/.webAgent/config.json` 读取，本层拿到的永远只是一个受管
-// 凭据标记。
+// server 宿主走 `apps/server` 的流式模型端点（`POST /api/model/request`）；开发浏览器继续走本地
+// Node 中继（Vite 插件 `scripts/model-preview-relay`）；静态构建则以用户主动保存的浏览器 BYOK
+// 直接请求 provider。`VITE_*_API_KEY` 仍被构建门禁拒绝，Key 不会编进产物。
 //
 // 【T1 删掉了什么】曾有第三条可信代理：桌面原生层。桌面端退出后只剩上面两条。
 //
@@ -20,11 +19,10 @@
 import type { ResolvedHost } from './resolveHost'
 import { createServerModelFetch } from '../modelTransport/serverModelTransport'
 import { createDevPreviewModelFetch } from '../modelTransport/devPreviewModelTransport'
-import { createUnavailableModelFetch } from '../modelTransport/unavailableModelTransport'
 
-/** 造当前宿主唯一被允许的那条模型传输；没有可信代理时返回 fail-closed 的实现。 */
+/** 造当前宿主唯一允许的模型传输。 */
 export function createHostModelFetch(host: ResolvedHost): typeof fetch {
   if (host.kind === 'server') return createServerModelFetch()
   if (import.meta.env.DEV) return createDevPreviewModelFetch()
-  return createUnavailableModelFetch()
+  return globalThis.fetch
 }

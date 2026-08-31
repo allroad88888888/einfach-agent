@@ -2,6 +2,7 @@
 
 import type { TimelineThinkingItem } from '@einfach-agent/core/timeline'
 import type { ModelToolCall, ToolItem } from '@einfach-agent/ai'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { MessageMarkdown } from './MessageMarkdown'
 import { SubagentRunInline } from './SubagentRunInline'
 
@@ -14,9 +15,15 @@ function compactText(value: string, limit = 160): string {
   return compact.length > limit ? `${compact.slice(0, limit)}...` : compact
 }
 
-function limitedDetail(value: string): string {
+function limitedDetail(value: string, truncatedLabel: string): string {
   if (value.length <= DETAIL_MAX_CHARS) return value
-  return `${value.slice(0, DETAIL_MAX_CHARS)}\n... 已截断 ${value.length - DETAIL_MAX_CHARS} 个字符`
+  return `${value.slice(0, DETAIL_MAX_CHARS)}\n... ${truncatedLabel}`
+}
+
+function LimitedDetail({ value }: { readonly value: string }) {
+  const { t } = useLingui()
+  const truncatedCount = value.length - DETAIL_MAX_CHARS
+  return limitedDetail(value, t`已截断 ${truncatedCount} 个字符`)
 }
 
 function parseJson(raw: string): unknown {
@@ -124,8 +131,8 @@ function DebugEntry({
       {summary ? <div className="agentnew-debug-summary">{summary}</div> : null}
       {detail ? (
         <details className="agentnew-debug-details">
-          <summary>详情</summary>
-          <pre>{limitedDetail(detail)}</pre>
+          <summary><Trans>详情</Trans></summary>
+          <pre><LimitedDetail value={detail} /></pre>
         </details>
       ) : null}
     </div>
@@ -141,16 +148,23 @@ function ToolExecutionEntry({
   result?: ToolItem
   toolName?: string
 }) {
+  const { t } = useLingui()
   const tone = result ? toolResultTone(result.content) : undefined
-  const name = call?.function.name ?? toolName ?? result?.tool_call_id ?? '未知工具'
-  const label = !result ? '执行中' : tone === 'error' ? '错误' : tone === 'warning' ? '警告' : '完成'
-  const title = !result
-    ? `调用工具 ${name}`
+  const name = call?.function.name ?? toolName ?? result?.tool_call_id ?? t`未知工具`
+  const label = !result
+    ? t`执行中`
     : tone === 'error'
-      ? `工具失败 ${name}`
+      ? t`错误`
       : tone === 'warning'
-        ? `工具警告 ${name}`
-        : `工具 ${name}`
+        ? t`警告`
+        : t`完成`
+  const title = !result
+    ? t`调用工具 ${name}`
+    : tone === 'error'
+      ? t`工具失败 ${name}`
+      : tone === 'warning'
+        ? t`工具警告 ${name}`
+        : t`工具 ${name}`
   const className = [
     'agentnew-debug-entry',
     'agentnew-debug-entry--tool-execution',
@@ -162,19 +176,19 @@ function ToolExecutionEntry({
         <span className="agentnew-debug-label">{label}</span>
         <span className="agentnew-debug-title">{title}</span>
       </div>
-      {call ? <div className="agentnew-debug-summary"><span>调用：</span>{toolCallSummary(call)}</div> : null}
+      {call ? <div className="agentnew-debug-summary"><span><Trans>调用：</Trans></span>{toolCallSummary(call)}</div> : null}
       {result ? (
-        <div className="agentnew-debug-summary"><span>结果：</span>{toolResultSummary(result.content)}</div>
+        <div className="agentnew-debug-summary"><span><Trans>结果：</Trans></span>{toolResultSummary(result.content)}</div>
       ) : (
-        <div className="agentnew-debug-summary agentnew-debug-summary--pending">等待工具返回…</div>
+        <div className="agentnew-debug-summary agentnew-debug-summary--pending"><Trans>等待工具返回…</Trans></div>
       )}
       <details className="agentnew-debug-details">
-        <summary>调用与结果</summary>
+        <summary><Trans>调用与结果</Trans></summary>
         <div className="agentnew-debug-detail-sections">
-          {call ? <section><b>调用参数</b><pre>{limitedDetail(jsonDetail(call.function.arguments))}</pre></section> : null}
+          {call ? <section><b><Trans>调用参数</Trans></b><pre><LimitedDetail value={jsonDetail(call.function.arguments)} /></pre></section> : null}
           <section>
-            <b>工具结果</b>
-            {result ? <pre>{limitedDetail(jsonDetail(result.content))}</pre> : <p>尚未返回结果。</p>}
+            <b><Trans>工具结果</Trans></b>
+            {result ? <pre><LimitedDetail value={jsonDetail(result.content)} /></pre> : <p><Trans>尚未返回结果。</Trans></p>}
           </section>
         </div>
       </details>
@@ -183,10 +197,12 @@ function ToolExecutionEntry({
 }
 
 export function ThinkingStep({ entry }: { entry: TimelineThinkingItem }) {
+  const { t } = useLingui()
+
   if (entry.kind === 'reasoning') {
     return (
       <div className="agentnew-thinking-text agentnew-thinking-text--reasoning">
-        <span className="agentnew-debug-label">模型思考</span>
+        <span className="agentnew-debug-label"><Trans>模型思考</Trans></span>
         <MessageMarkdown>{entry.content}</MessageMarkdown>
       </div>
     )
@@ -197,13 +213,13 @@ export function ThinkingStep({ entry }: { entry: TimelineThinkingItem }) {
       : ''
     return (
       <div className="agentnew-thinking-text">
-        <span className="agentnew-debug-label">执行说明</span>
+        <span className="agentnew-debug-label"><Trans>执行说明</Trans></span>
         <MessageMarkdown>{content}</MessageMarkdown>
       </div>
     )
   }
   if (entry.kind === 'runtime-event') {
-    return <DebugEntry variant="injection" label="注入" title={entry.event.title} summary={entry.event.summary} detail={entry.event.detail} />
+    return <DebugEntry variant="injection" label={t`注入`} title={entry.event.title} summary={entry.event.summary} detail={entry.event.detail} />
   }
   const isMultiple = entry.executions.length > 1
   return (

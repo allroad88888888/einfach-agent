@@ -6,11 +6,13 @@
 //   · 有 body 时复用 MessageMarkdown 渲染正文，无 body 不渲染正文区。
 
 import type { BrowserCard } from '@einfach-agent/core'
+import { useLingui } from '@lingui/react/macro'
 import { MessageMarkdown } from './MessageMarkdown'
 
 export function BrowserActionCard({ card }: { card: BrowserCard }) {
+  const { t } = useLingui()
   return (
-    <div className="agentnew-browser-card" aria-label="浏览器动作卡片">
+    <div className="agentnew-browser-card" aria-label={t`浏览器动作卡片`}>
       <div className="agentnew-browser-card-title">{card.title}</div>
       {card.body ? (
         <div className="agentnew-browser-card-body">

@@ -59,6 +59,10 @@ vi.mock('./settings/commands', () => ({
   hydrateAppSettings: vi.fn(async () => undefined),
   hydrateModelEndpoint: vi.fn(async () => undefined),
 }))
+vi.mock('./settings/modelConnectionProfileCommands', () => ({
+  configureModelConnectionProfileHost: vi.fn(),
+  hydrateModelConnectionProfiles: vi.fn(async () => undefined),
+}))
 vi.mock('./settings/modelCredentialHost', () => ({
   MODEL_CREDENTIALS: [],
   createUnavailableModelCredentialHost: vi.fn(() => ({})),

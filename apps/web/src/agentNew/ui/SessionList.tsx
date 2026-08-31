@@ -10,6 +10,7 @@
 //   再击才调 removeSession；失焦 / 鼠标移出该行 / 3s 超时复位；开始改名编辑也复位确认态。
 
 import { useEffect, useRef, useState } from 'react'
+import { useLingui } from '@lingui/react/macro'
 import { useRootAtomValue } from '@einfach-agent/react-plugin'
 import {
   sessionsAtom,
@@ -23,6 +24,7 @@ import {
 const CONFIRM_TIMEOUT_MS = 3000
 
 export function SessionList({ workspaceId }: { workspaceId?: string }) {
+  const { t } = useLingui()
   const sessions = useRootAtomValue(sessionsAtom)
   const activeId = useRootAtomValue(activeSessionIdAtom)
   // TU1：updatedAt 倒序 → 并列退 createdAt 倒序 → 再并列按 id 稳定（防同刻抖动）。
@@ -115,7 +117,7 @@ export function SessionList({ workspaceId }: { workspaceId?: string }) {
                 className="agentnew-session-rename-input"
                 value={draft}
                 autoFocus
-                aria-label="重命名会话"
+                aria-label={t`重命名会话`}
                 onFocus={(e) => e.target.select()}
                 onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => {
@@ -139,7 +141,7 @@ export function SessionList({ workspaceId }: { workspaceId?: string }) {
             <button
               type="button"
               className={`agentnew-session-remove${isConfirming ? ' confirming' : ''}`}
-              aria-label={isConfirming ? '确认删除' : '删除'}
+              aria-label={isConfirming ? t`确认删除` : t`删除`}
               onClick={() => handleRemoveClick(s.id)}
               // 按钮失焦 → 确认态复位（点了别处即视为放弃删除）。
               onBlur={() => {

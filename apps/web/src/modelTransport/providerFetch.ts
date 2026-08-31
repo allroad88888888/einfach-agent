@@ -1,10 +1,12 @@
-import type {
-  ProviderMultipartPart,
-  ProviderMethod,
-  ProviderRequestBody,
-  ProviderTarget,
-  ProviderTransport,
-  ProviderTransportInput,
+import {
+  createProviderTransportFetch,
+  type ProviderLocalRequestIdentity,
+  type ProviderMultipartPart,
+  type ProviderMethod,
+  type ProviderRequestBody,
+  type ProviderTarget,
+  type ProviderTransport,
+  type ProviderTransportInput,
 } from '@einfach-agent/ai'
 import { providerRouteSpec, providerTargetForRequest } from './providerRoute'
 
@@ -48,11 +50,17 @@ function requestBody(target: ProviderTarget, init?: RequestInit): ProviderReques
   return { kind: 'multipart', parts: multipartParts(init.body) }
 }
 
-export function providerInputForFetch(
+function providerInputForClosedFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
+  identity?: ProviderLocalRequestIdentity,
 ): ProviderTransportInput {
-  const target = providerTargetForRequest(input, requestMethod(input, init))
+  const target = providerTargetForRequest(
+    input,
+    requestMethod(input, init),
+    identity?.connectionId,
+    identity?.legacyOpenAiCompat === true,
+  )
   return {
     target,
     body: requestBody(target, init),
@@ -60,7 +68,16 @@ export function providerInputForFetch(
   }
 }
 
+export function providerInputForFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): ProviderTransportInput {
+  return providerInputForClosedFetch(input, init)
+}
+
 /** Keeps the existing fetch injection surface while delegating to the closed provider transport. */
 export function createProviderFetch(transport: ProviderTransport): typeof fetch {
-  return async (input, init) => transport.request(providerInputForFetch(input, init))
+  return createProviderTransportFetch((input, init, identity) => {
+    return transport.request(providerInputForClosedFetch(input, init, identity))
+  })
 }

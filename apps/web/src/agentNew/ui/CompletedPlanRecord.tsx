@@ -1,10 +1,12 @@
 import { useAtom } from '@einfach/react'
 import { useAgentAtomValue } from '@einfach-agent/react-plugin'
 import { planAtom } from '@einfach-agent/core'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { completedPlanRecordExpandedAtom, expandedPlanStagesAtom } from './planViewState'
 
 /** Renders a completed plan as a compact, expandable transcript record. */
 export function CompletedPlanRecord() {
+  const { t } = useLingui()
   const plan = useAgentAtomValue(planAtom)
   const [recordExpanded, setRecordExpanded] = useAtom(completedPlanRecordExpandedAtom)
   const [expandedStages, setExpandedStages] = useAtom(expandedPlanStagesAtom)
@@ -18,23 +20,23 @@ export function CompletedPlanRecord() {
     <section className="agentnew-plan" aria-labelledby={`${contentId}-title`}>
       <header className="agentnew-plan-header">
         <div>
-          <span className="agentnew-plan-eyebrow">计划记录</span>
+          <span className="agentnew-plan-eyebrow"><Trans>计划记录</Trans></span>
           <h2 id={`${contentId}-title`} className="agentnew-plan-title">{plan.title}</h2>
           {recordExpanded ? <p className="agentnew-plan-objective">{plan.objective}</p> : null}
         </div>
         <div className="agentnew-plan-header-actions">
           <span className="agentnew-plan-status is-completed">
-            {completedCount}/{plan.stages.length} 阶段完成
+            <Trans>{completedCount}/{plan.stages.length} 阶段完成</Trans>
           </span>
           <button
             type="button"
             className="agentnew-plan-toggle"
             aria-expanded={recordExpanded}
             aria-controls={contentId}
-            aria-label={recordExpanded ? '收起计划记录' : '查看计划记录'}
+            aria-label={recordExpanded ? t`收起计划记录` : t`查看计划记录`}
             onClick={() => setRecordExpanded((current) => !current)}
           >
-            {recordExpanded ? '收起' : '查看记录'}
+            {recordExpanded ? <Trans>收起</Trans> : <Trans>查看记录</Trans>}
           </button>
         </div>
       </header>
@@ -61,7 +63,7 @@ export function CompletedPlanRecord() {
                         }}
                       >
                         <strong>{stage.title}</strong>
-                        <span className="agentnew-plan-stage-status-actions"><span>已完成</span></span>
+                        <span className="agentnew-plan-stage-status-actions"><span><Trans>已完成</Trans></span></span>
                         <i aria-hidden="true">⌄</i>
                       </summary>
                       {stageExpanded ? (
@@ -69,19 +71,21 @@ export function CompletedPlanRecord() {
                           <p>{stage.objective}</p>
                           <div className="agentnew-plan-stage-meta">
                             <div>
-                              <strong>交付物</strong>
+                              <strong><Trans>交付物</Trans></strong>
                               {stage.deliverables.length > 0
                                 ? <ul>{stage.deliverables.map((item) => <li key={item}>{item}</li>)}</ul>
-                                : <span>未单独指定</span>}
+                                : <span><Trans>未单独指定</Trans></span>}
                             </div>
                           </div>
                           {stage.result ? (
-                            <div className="agentnew-plan-stage-result" aria-label={`${stage.title}阶段产出`}>
+                            <div className="agentnew-plan-stage-result" aria-label={t`${stage.title}阶段产出`}>
                               {stage.result.summary}
                             </div>
                           ) : null}
                           {stage.evidence.length > 0 ? (
-                            <div className="agentnew-plan-evidence">证据：{stage.evidence.join('；')}</div>
+                            <div className="agentnew-plan-evidence">
+                              <Trans>证据：{stage.evidence.join(t`；`)}</Trans>
+                            </div>
                           ) : null}
                         </div>
                       ) : null}

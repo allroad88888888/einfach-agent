@@ -12,12 +12,13 @@
 //   · runtime transcript event / 工具执行：连续项合并为默认展开的思考过程；
 //   · system ConversationItem：仍然不渲染，避免把异常入库的 system 当成正常 transcript。
 
-import { useAtom } from '@einfach/react'
+import { useAtom, useSetAtom } from '@einfach/react'
 import {
   useMemo,
   type ReactNode,
 } from 'react'
 import { useAgentAtomValue } from '@einfach-agent/react-plugin'
+import { Trans, useLingui } from '@lingui/react/macro'
 import {
   itemsAtom,
   planAtom,
@@ -25,12 +26,15 @@ import {
   assistantStreamAtom,
   browserCardsAtom,
   runtimeTranscriptEventsAtom,
+  retractTurn,
 } from '@einfach-agent/core'
+import { userMessageText } from '@einfach-agent/ai'
 import {
   isTimelineThinkingItem,
   projectTimelineItems,
 } from '@einfach-agent/core/timeline'
 import { expandedTranscriptGroupsAtom } from './transcriptViewState'
+import { composerDraftAtom } from './composerDraftState'
 import {
   messageWindowAtom,
 } from './messageWindowModel'
@@ -48,6 +52,7 @@ import { SlidingWindowRow, useSlidingWindow } from './useSlidingWindow'
 import { useWebTimelineRendererRegistry } from './WebTimelineRendererRegistryProvider'
 
 export function MessageList() {
+  const { t } = useLingui()
   const items = useAgentAtomValue(itemsAtom)
   const run = useAgentAtomValue(runAtom)
   const plan = useAgentAtomValue(planAtom)
@@ -56,6 +61,7 @@ export function MessageList() {
   const runtimeEvents = useAgentAtomValue(runtimeTranscriptEventsAtom)
   const [expandedGroups, setExpandedGroups] = useAtom(expandedTranscriptGroupsAtom)
   const [storedWindow, setMessageWindow] = useAtom(messageWindowAtom)
+  const setComposerDraft = useSetAtom(composerDraftAtom)
   const timelineRendererRegistry = useWebTimelineRendererRegistry()
   const streamedItemId = assistantStream?.item.id
 
@@ -120,7 +126,7 @@ export function MessageList() {
   if (virtualEntries.length === 0) {
     return (
       <div ref={listRef} className="agentnew-message-list">
-        <div className="agentnew-message-empty">开始对话吧</div>
+        <div className="agentnew-message-empty"><Trans>开始对话吧</Trans></div>
       </div>
     )
   }
@@ -137,7 +143,9 @@ export function MessageList() {
               <button
                 type="button"
                 className="agentnew-thinking-toggle"
-                aria-label={`${expanded ? '收起' : '展开'}思考过程，共 ${stepCount} 步`}
+                aria-label={expanded
+                  ? t`收起思考过程，共 ${stepCount} 步`
+                  : t`展开思考过程，共 ${stepCount} 步`}
                 aria-expanded={expanded}
                 onClick={() => setExpandedGroups((current) => ({
                   ...current,
@@ -147,11 +155,11 @@ export function MessageList() {
                 <span className="agentnew-thinking-summary-content">
                   <span className="agentnew-thinking-mark" aria-hidden="true">✦</span>
                   <span className="agentnew-thinking-heading">
-                    <strong>思考过程</strong>
-                    <small>{stepCount} 个步骤</small>
+                    <strong><Trans>思考过程</Trans></strong>
+                    <small><Trans>{stepCount} 个步骤</Trans></small>
                   </span>
                   <span className="agentnew-thinking-action" aria-hidden="true">
-                    {expanded ? '收起' : '展开'}
+                    {expanded ? <Trans>收起</Trans> : <Trans>展开</Trans>}
                   </span>
                   <svg
                     className="agentnew-thinking-chevron"
@@ -179,9 +187,27 @@ export function MessageList() {
           } else {
             const ci = entry.conversationItem
             const isUser = ci.item.role === 'user'
+            const userText = ci.item.role === 'user' ? userMessageText(ci.item.content) : ''
             content = isUser ? (
               <div className="agentnew-user-message">
                 {renderedItem}
+                <button
+                  type="button"
+                  className="agentnew-message-revert"
+                  aria-label={t`撤回本轮对话`}
+                  title={run?.status === 'running' || run?.status === 'awaiting_tool'
+                    ? t`停止当前运行并撤回此消息之后的对话`
+                    : t`撤回此消息及其后的对话`}
+                  onClick={() => {
+                    const result = retractTurn(ci.id)
+                    if (!result.ok) return
+                    setComposerDraft(userText)
+                    document.getElementById('agentnew-composer-input')?.focus()
+                  }}
+                >
+                  <span aria-hidden="true">↶</span>
+                  <Trans>撤回</Trans>
+                </button>
               </div>
             ) : renderedItem
           }

@@ -2,6 +2,7 @@
 
 import { useAtom } from '@einfach/react'
 import { useCallback } from 'react'
+import { useLingui } from '@lingui/react/macro'
 import type { TimelineThinkingItem } from '@einfach-agent/core/timeline'
 import { planTraceWindowsAtom } from './messageWindowModel'
 import { TimelineItemView } from './TimelineItemView'
@@ -17,6 +18,7 @@ export function PlanStageExecutionTrace({
   stageId: string
   entries?: TimelineThinkingItem[]
 }) {
+  const { t } = useLingui()
   const registry = useWebTimelineRendererRegistry()
   const [traceWindows, setTraceWindows] = useAtom(planTraceWindowsAtom)
   const storedWindow = traceWindows[windowId] ?? { start: 0, end: 0, direction: 'idle' }
@@ -32,8 +34,8 @@ export function PlanStageExecutionTrace({
   })
   const visibleEntries = entries.slice(traceWindow.start, traceWindow.end)
   return (
-    <section className="agentnew-plan-stage-trace" aria-label={`${stageId} 步骤执行记录`}>
-      <strong className="agentnew-plan-section-title">执行记录</strong>
+    <section className="agentnew-plan-stage-trace" aria-label={t`${stageId} 步骤执行记录`}>
+      <strong className="agentnew-plan-section-title">{t`执行记录`}</strong>
       {entries.length > 0 ? (
         <div ref={scrollRef} className="agentnew-thinking-steps agentnew-plan-stage-trace-window">
           {visibleEntries.map((entry) => (
@@ -47,7 +49,7 @@ export function PlanStageExecutionTrace({
             </SlidingWindowRow>
           ))}
         </div>
-      ) : <span className="agentnew-plan-stage-trace-empty">尚无模型思考或工具调用</span>}
+      ) : <span className="agentnew-plan-stage-trace-empty">{t`尚无模型思考或工具调用`}</span>}
     </section>
   )
 }

@@ -1,6 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen } from '@testing-library/react'
+import { I18nProvider } from '@lingui/react'
 import { renderWithStore } from '../../test/renderWithStore'
+import { activateLocale, appI18n } from '../../i18n'
 import {
   activeSessionIdAtom,
   activeWorkspaceIdAtom,
@@ -11,6 +13,7 @@ import {
   workspacesAtom,
   newSession,
   newWorkspace,
+  removeWorkspace,
   renameWorkspace,
   selectWorkspace,
   toggleWorkspaceExpanded,
@@ -21,6 +24,7 @@ import { WorkspaceSidebar } from './WorkspaceSidebar'
 vi.mock('@einfach-agent/core', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@einfach-agent/core')>()),
   newWorkspace: vi.fn(),
+  removeWorkspace: vi.fn(),
   renameWorkspace: vi.fn(),
   selectWorkspace: vi.fn(),
   toggleWorkspaceExpanded: vi.fn(),
@@ -72,14 +76,26 @@ function seed(): void {
   rootStore.setter(activeSessionIdAtom, 's1')
 }
 
+function renderSidebar() {
+  return renderWithStore(
+    <I18nProvider i18n={appI18n}>
+      <WorkspaceSidebar />
+    </I18nProvider>,
+  )
+}
+
 describe('WorkspaceSidebar', () => {
+  beforeEach(async () => {
+    await activateLocale('zh-CN')
+  })
+
   afterEach(() => {
     vi.clearAllMocks()
   })
 
   it('按“工作区 → 对话”渲染；折叠的工作区不展示其对话', () => {
     seed()
-    renderWithStore(<WorkspaceSidebar />)
+    renderSidebar()
 
     expect(screen.getByText('项目一')).toBeInTheDocument()
     expect(screen.getByText('项目二')).toBeInTheDocument()
@@ -91,15 +107,26 @@ describe('WorkspaceSidebar', () => {
 
   it('工作区标题右侧的新建按钮固定归属该工作区', () => {
     seed()
-    renderWithStore(<WorkspaceSidebar />)
+    renderSidebar()
 
     fireEvent.click(screen.getByRole('button', { name: '在 项目一 中新建对话' }))
     expect(newSession).toHaveBeenCalledWith({ workspaceId: 'w1' })
   })
 
+  it('悬停操作区的删除按钮移除对应工作区，不删除磁盘文件', () => {
+    seed()
+    renderSidebar()
+
+    const remove = screen.getByRole('button', { name: '删除 项目一' })
+    expect(remove).toHaveAttribute('title', '删除工作区（不会删除磁盘文件）')
+    expect(remove).toHaveTextContent('×')
+    fireEvent.click(remove)
+    expect(removeWorkspace).toHaveBeenCalledWith('w1')
+  })
+
   it('可新建、切换和折叠展开工作区', () => {
     seed()
-    renderWithStore(<WorkspaceSidebar />)
+    renderSidebar()
 
     fireEvent.click(screen.getByRole('button', { name: '新建工作区' }))
     expect(newWorkspace).toHaveBeenCalledWith()
@@ -115,7 +142,7 @@ describe('WorkspaceSidebar', () => {
 
   it('标题双击进入行内编辑，Enter 提交工作区名称', () => {
     seed()
-    renderWithStore(<WorkspaceSidebar />)
+    renderSidebar()
 
     fireEvent.doubleClick(screen.getByRole('button', { name: '项目一' }))
     const input = screen.getByRole('textbox', { name: '重命名工作区' })
@@ -128,7 +155,7 @@ describe('WorkspaceSidebar', () => {
 
   it('标题右侧设置按钮打开居中设置弹层，目录默认不常驻列表', () => {
     seed()
-    const firstRender = renderWithStore(<WorkspaceSidebar />)
+    const firstRender = renderSidebar()
 
     expect(screen.queryByLabelText('工作区目录')).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: '设置 项目一' }))
@@ -136,12 +163,31 @@ describe('WorkspaceSidebar', () => {
     firstRender.unmount()
 
     rootStore.setter(workspaceSettingsOpenIdsAtom, { w1: true })
-    renderWithStore(<WorkspaceSidebar />)
+    renderSidebar()
     expect(screen.getByRole('dialog', { name: '项目一' })).toBeInTheDocument()
     expect(screen.getByText(/后续工作区级功能也会集中放在这里/)).toBeInTheDocument()
     expect(screen.getByLabelText('工作区目录')).toHaveValue('/workspace/one')
 
     fireEvent.click(screen.getByRole('button', { name: '关闭工作区设置' }))
     expect(toggleWorkspaceSettings).toHaveBeenCalledWith('w1')
+  })
+
+  it('英语激活时翻译侧栏静态动作和设置内容，不改变工作区操作', async () => {
+    seed()
+    await activateLocale('en')
+    const firstRender = renderSidebar()
+
+    expect(screen.getByText('Workspaces')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Collapse 项目一' })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: 'Expand 项目二' })).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(screen.getByRole('button', { name: 'New conversation in 项目一' }))
+    expect(newSession).toHaveBeenCalledWith({ workspaceId: 'w1' })
+
+    firstRender.unmount()
+    rootStore.setter(workspaceSettingsOpenIdsAtom, { w1: true })
+    renderSidebar()
+    expect(screen.getByText('Workspace settings')).toBeInTheDocument()
+    expect(screen.getByText('General')).toBeInTheDocument()
+    expect(screen.getByText('Configure the directory used by this workspace. Future workspace-level features will also live here.')).toBeInTheDocument()
   })
 })

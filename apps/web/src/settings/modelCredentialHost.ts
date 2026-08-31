@@ -1,4 +1,4 @@
-export type CredentialSource = 'config' | 'missing'
+export type CredentialSource = 'browser' | 'config' | 'missing'
 
 export type ModelCredentialTarget =
   | { provider: 'deepseek'; scope: 'default' }
@@ -11,6 +11,8 @@ export type ModelCredentialId =
   | 'glm-default'
   | 'kimi-cn'
   | 'openai-compat-default'
+
+export type ModelCredentialValues = Record<ModelCredentialTarget['provider'], string>
 
 export interface ModelCredentialDescriptor {
   id: ModelCredentialId
@@ -55,6 +57,8 @@ export interface ModelCredentialHost {
   status(target: ModelCredentialTarget): Promise<ModelCredentialStatus>
   save(target: ModelCredentialTarget, apiKey: string): Promise<ModelCredentialStatus>
   delete(target: ModelCredentialTarget): Promise<ModelCredentialStatus>
+  /** Present only for static BYOK: values go to core's in-memory runtime config, never UI state. */
+  modelCredentials?(): ModelCredentialValues
 }
 
 /**

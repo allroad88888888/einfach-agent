@@ -1,4 +1,5 @@
 import type { UserImageContentBlock } from '@einfach-agent/ai'
+import { useLingui } from '@lingui/react/macro'
 import { useHistoryImageProjection } from './HistoryImageCompatibilityContext'
 import './UserImageAttachmentCard.css'
 
@@ -8,6 +9,7 @@ function formatBytes(bytes: number) {
 
 /** Renders persisted, trace-safe metadata only; provider file references stay hidden. */
 export function UserImageAttachmentCard({ image }: { readonly image: UserImageContentBlock }) {
+  const { t } = useLingui()
   const projection = useHistoryImageProjection(image)
   const metadata = projection.kind === 'consumable' ? projection.image : projection.metadata
   const dimensions = metadata.width && metadata.height
@@ -18,17 +20,17 @@ export function UserImageAttachmentCard({ image }: { readonly image: UserImageCo
       <div
         className="agentnew-user-image-card is-unavailable"
         role="group"
-        aria-label={`历史图片不可用：${metadata.name}`}
+        aria-label={t`历史图片不可用：${metadata.name}`}
       >
-        <span aria-hidden="true">图片不可用</span>
+        <span aria-hidden="true">{t`图片不可用`}</span>
         <strong>{metadata.name}</strong>
-        <span>当前模型无法使用这张历史图片</span>
+        <span>{t`当前模型无法使用这张历史图片`}</span>
       </div>
     )
   }
   return (
-    <div className="agentnew-user-image-card" role="group" aria-label={`已发送图片：${metadata.name}`}>
-      <span aria-hidden="true">图片</span>
+    <div className="agentnew-user-image-card" role="group" aria-label={t`已发送图片：${metadata.name}`}>
+      <span aria-hidden="true">{t`图片`}</span>
       <strong>{metadata.name}</strong>
       <span>{metadata.mimeType} · {formatBytes(metadata.byteSize)}{dimensions}</span>
     </div>

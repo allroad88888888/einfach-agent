@@ -7,9 +7,14 @@ import {
   runAtom,
   type ConversationItem,
 } from '@einfach-agent/core'
+import { composerDraftAtom } from './composerDraftState'
 import { MessageList } from './MessageList'
 
-vi.mock('@einfach-agent/core/runtime/commands', () => ({ revertTurnToDraft: vi.fn() }))
+const { retractTurnMock } = vi.hoisted(() => ({
+  retractTurnMock: vi.fn(() => ({ ok: true, entries: 1 })),
+}))
+
+vi.mock('@einfach-agent/core/runtime/commands', () => ({ retractTurn: retractTurnMock }))
 
 function expectThinkingProcessExpanded() {
   const toggle = screen.getByRole('button', { name: /思考过程/ })
@@ -55,6 +60,38 @@ describe('MessageList', () => {
     fireEvent.click(toggle)
     expect(toggle).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByText('工具 x')).toBeInTheDocument()
+  })
+
+  it('每条用户消息右下方都提供撤回入口', () => {
+    const store = createStore()
+    store.setter(itemsAtom, [
+      { id: 'u1', createdAt: 0, item: { role: 'user', content: '第一问' } },
+      { id: 'a1', createdAt: 1, item: { role: 'assistant', content: '第一答' } },
+      { id: 'u2', createdAt: 2, item: { role: 'user', content: '第二问' } },
+    ])
+
+    const { store: uiStore } = renderWithStore(<MessageList />, { agentStore: store })
+
+    const retracts = screen.getAllByRole('button', { name: '撤回本轮对话' })
+    expect(retracts).toHaveLength(2)
+    expect(retracts[0]?.closest('.agentnew-user-message')).toHaveTextContent('第一问')
+    expect(retracts[1]?.closest('.agentnew-user-message')).toHaveTextContent('第二问')
+    fireEvent.click(retracts[0]!)
+    expect(retractTurnMock).toHaveBeenCalledWith('u1')
+    expect(uiStore.getter(composerDraftAtom)).toBe('第一问')
+  })
+
+  it('撤回被拒绝时保留当前输入草稿', () => {
+    const store = createStore()
+    store.setter(itemsAtom, [{ id: 'u1', createdAt: 0, item: { role: 'user', content: '第一问' } }])
+    retractTurnMock.mockReturnValueOnce({ ok: false, entries: 0 })
+
+    const { store: uiStore } = renderWithStore(<MessageList />, { agentStore: store })
+    uiStore.setter(composerDraftAtom, '正在写的新内容')
+
+    fireEvent.click(screen.getByRole('button', { name: '撤回本轮对话' }))
+
+    expect(uiStore.getter(composerDraftAtom)).toBe('正在写的新内容')
   })
 
   it('空列表渲染占位', () => {

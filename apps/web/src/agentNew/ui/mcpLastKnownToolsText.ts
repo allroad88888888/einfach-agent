@@ -13,6 +13,9 @@
 // 呈现层不能又把它们合回去。
 
 import type { McpLastKnownTools } from '../../mcp/toolNameCache'
+import { msg } from '@lingui/core/macro'
+import { appI18n } from '../../i18n'
+import { translateMessage } from '../../i18n/translateMessage'
 
 const MINUTE_MS = 60_000
 const HOUR_MS = 60 * MINUTE_MS
@@ -36,19 +39,19 @@ function isUsableTimestamp(value: number): boolean {
  * 坏掉的东西，不如给一个不精确但不误导的说法。时间戳不可用时如实说「时间未知」，不猜。
  */
 export function formatProbedAt(cachedAt: number, now: number = Date.now()): string {
-  if (!isUsableTimestamp(cachedAt)) return '时间未知'
+  if (!isUsableTimestamp(cachedAt)) return translateMessage(msg`时间未知`)
   const elapsed = now - cachedAt
-  if (elapsed < MINUTE_MS) return '刚刚'
-  if (elapsed < HOUR_MS) return `${Math.floor(elapsed / MINUTE_MS)} 分钟前`
-  if (elapsed < DAY_MS) return `${Math.floor(elapsed / HOUR_MS)} 小时前`
-  if (elapsed < 30 * DAY_MS) return `${Math.floor(elapsed / DAY_MS)} 天前`
-  return new Date(cachedAt).toLocaleDateString('zh-CN')
+  if (elapsed < MINUTE_MS) return translateMessage(msg`刚刚`)
+  if (elapsed < HOUR_MS) return translateMessage(msg`${Math.floor(elapsed / MINUTE_MS)} 分钟前`)
+  if (elapsed < DAY_MS) return translateMessage(msg`${Math.floor(elapsed / HOUR_MS)} 小时前`)
+  if (elapsed < 30 * DAY_MS) return translateMessage(msg`${Math.floor(elapsed / DAY_MS)} 天前`)
+  return new Date(cachedAt).toLocaleDateString(appI18n.locale || 'zh-CN')
 }
 
 /** 鼠标悬停时给出的精确时刻；不可用时不给 title，而不是给一句假的。 */
 export function formatProbedAtExact(cachedAt: number): string | undefined {
   if (!isUsableTimestamp(cachedAt)) return undefined
-  return `探测于 ${new Date(cachedAt).toLocaleString('zh-CN')}`
+  return translateMessage(msg`探测于 ${new Date(cachedAt).toLocaleString(appI18n.locale || 'zh-CN')}`)
 }
 
 /**
@@ -57,9 +60,9 @@ export function formatProbedAtExact(cachedAt: number): string | undefined {
  * 从未探测过（lastKnown === undefined）与探测到 0 个工具是两句不同的话，见文件头。
  */
 export function describeLastKnownTools(lastKnown: McpLastKnownTools | undefined, now?: number): string {
-  if (!lastKnown) return '尚未探测过工具清单'
+  if (!lastKnown) return translateMessage(msg`尚未探测过工具清单`)
   const probedAt = formatProbedAt(lastKnown.cachedAt, now)
-  if (lastKnown.probeStatus !== 'success') return `上次探测未成功 · ${probedAt}`
-  if (lastKnown.toolCount === 0) return `上次探测到 0 个工具 · ${probedAt}`
-  return `上次可用工具 ${lastKnown.toolCount} 个 · ${probedAt}`
+  if (lastKnown.probeStatus !== 'success') return translateMessage(msg`上次探测未成功 · ${probedAt}`)
+  if (lastKnown.toolCount === 0) return translateMessage(msg`上次探测到 0 个工具 · ${probedAt}`)
+  return translateMessage(msg`上次可用工具 ${lastKnown.toolCount} 个 · ${probedAt}`)
 }

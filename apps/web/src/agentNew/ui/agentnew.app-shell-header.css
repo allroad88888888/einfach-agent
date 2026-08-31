@@ -1,0 +1,17 @@
+.agentnew-app-shell-header {
+  display: flex;
+  flex: 0 0 48px;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+  padding: 6px 16px;
+  border-bottom: 1px solid #e6eaf2;
+  background: #ffffff;
+}
+
+@media (max-width: 640px) {
+  .agentnew-app-shell-header {
+    padding-inline: 8px;
+  }
+}

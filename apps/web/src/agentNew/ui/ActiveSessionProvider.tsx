@@ -11,7 +11,8 @@
 // 换会话时清掉「当前正在输入的东西」：界面 store 不按会话分桶，不清的话在会话 A 打了一半的字
 // 会跟着切到会话 B，点发送就发错地方。哪几项、为什么不做成 atom family，见 sessionScopedViewState.ts。
 
-import { useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, type ReactNode } from 'react'
+import { Trans } from '@lingui/react/macro'
 import { useStore } from '@einfach/react'
 import { AgentStoreProvider, useRootAtomValue } from '@einfach-agent/react-plugin'
 import {
@@ -19,6 +20,7 @@ import {
   activeSessionMetaAtom,
   activeWorkspaceRootAtom,
   sessionAtomScope,
+  type ModelSettings,
 } from '@einfach-agent/core'
 import type { KimiRegion } from '@einfach-agent/ai'
 import { kimiRegionSetting } from '../../modelInput/kimiRegionSetting'
@@ -28,9 +30,17 @@ export interface ActiveSessionConfig {
   id: string
   workspaceRoot?: string
   approvalMode: 'confirm' | 'auto'
+  settings: ModelSettings
   vendor: string
   model: string
   region?: KimiRegion
+}
+
+const ActiveSessionContext = createContext<ActiveSessionConfig | undefined>(undefined)
+
+/** Reads the complete active-session configuration without creating a UI-owned copy. */
+export function useActiveSessionConfig(): ActiveSessionConfig | undefined {
+  return useContext(ActiveSessionContext)
 }
 
 export function ActiveSessionProvider({
@@ -48,22 +58,29 @@ export function ActiveSessionProvider({
   }, [id, uiStore])
 
   if (!id) {
-    return <div className="agentnew-empty">还没有会话，点“新建对话”开始</div>
+    return (
+      <div className="agentnew-empty">
+        <Trans>还没有会话，点“新建对话”开始</Trans>
+      </div>
+    )
+  }
+  const settings = meta?.settings ?? { vendor: '', model: '' }
+  const session: ActiveSessionConfig = {
+    id,
+    workspaceRoot,
+    approvalMode: meta?.toolApprovalMode ?? 'confirm',
+    settings,
+    vendor: settings.vendor,
+    model: settings.model,
+    region: kimiRegionSetting(settings),
   }
   // 只读通路：命令面只给「该会话的 atom 作用域」，不给 store 的生命周期（建/丢/清）——
   // 那些仍归 newSession / removeSession 命令（盘点 E7）。
   return (
-    <AgentStoreProvider store={sessionAtomScope(id)} key={id}>
-      {typeof children === 'function'
-        ? children({
-            id,
-            workspaceRoot,
-            approvalMode: meta?.toolApprovalMode ?? 'confirm',
-            vendor: meta?.settings.vendor ?? '',
-            model: meta?.settings.model ?? '',
-            region: kimiRegionSetting(meta?.settings),
-          })
-        : children}
-    </AgentStoreProvider>
+    <ActiveSessionContext.Provider value={session}>
+      <AgentStoreProvider store={sessionAtomScope(id)} key={id}>
+        {typeof children === 'function' ? children(session) : children}
+      </AgentStoreProvider>
+    </ActiveSessionContext.Provider>
   )
 }

@@ -9,11 +9,12 @@
 // 互斥，永不同时出现。
 
 import type { McpServerView } from '../../mcp/types'
+import { Trans } from '@lingui/react/macro'
 import { describeLastKnownTools, formatProbedAtExact } from './mcpLastKnownToolsText'
 
 export function McpServerToolSummary({ server }: { server: McpServerView }) {
   if (server.status === 'connected') {
-    return <span>{server.toolCount} 个工具</span>
+    return <span><Trans>{server.toolCount} 个工具</Trans></span>
   }
   const lastKnown = server.lastKnownTools
   return (

@@ -4,6 +4,7 @@ import { disabledProjectSkillsByWorkspaceAtom } from '@einfach-agent/core'
 import {
   createDefaultAppSettings,
   sanitizeCustomInstructions,
+  type DefaultModelConnection,
   type AppSettings,
 } from './config'
 import { resetModelCredentialState } from './modelCredentialState'
@@ -41,6 +42,11 @@ export type CustomInstructionsStatus = SettingsFieldStatus
 
 export const appSettingsAtom = atom<AppSettings>(createDefaultAppSettings())
 appSettingsAtom.debugLabel = 'appSettings'
+
+export const defaultModelConnectionAtom = atom<DefaultModelConnection | undefined>(
+  (get) => get(appSettingsAtom).defaultModelConnection,
+)
+defaultModelConnectionAtom.debugLabel = 'defaultModelConnection'
 
 export const customInstructionsAtom = atom(
   (get) => get(appSettingsAtom).agent.customInstructions,

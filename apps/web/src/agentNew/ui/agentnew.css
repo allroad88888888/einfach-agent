@@ -34,3 +34,7 @@
 @import './agentnew.settings-mcp.css';
 @import './agentnew.mcp-forms.css';
 @import './agentnew.settings-model.css';
+@import './agentnew.model-providers.css';
+@import './agentnew.model-connections.css';
+@import './agentnew.language-switcher.css';
+@import './agentnew.app-shell-header.css';

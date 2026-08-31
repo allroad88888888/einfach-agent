@@ -1,5 +1,6 @@
 import type { McpLaunchConsentRequest } from '../../mcp/launchConsentState'
 import { approveMcpServerLaunch, dismissMcpServerLaunch } from '../../mcp/commands'
+import { Trans, useLingui } from '@lingui/react/macro'
 
 /**
  * 起进程前的确认（H2）：在真的执行之前，把【完整命令行】原样摆出来。
@@ -10,43 +11,44 @@ import { approveMcpServerLaunch, dismissMcpServerLaunch } from '../../mcp/comman
  * 属于哪个服务」必须是看得见的，不能靠顺序猜。
  */
 export function McpLaunchConsentPrompt({ request }: { request: McpLaunchConsentRequest }) {
+  const { t } = useLingui()
   return (
     <div
       className="agentnew-mcp-launch-consent"
       role="alert"
-      aria-label={`确认启动 ${request.name}`}
+      aria-label={t`确认启动 ${request.name}`}
     >
-      <strong>需要确认：将在本机执行命令</strong>
-      <p>确认后会在你的电脑上执行：</p>
+      <strong><Trans>需要确认：将在本机执行命令</Trans></strong>
+      <p><Trans>确认后会在你的电脑上执行：</Trans></p>
       <code>{request.commandLine}</code>
-      {request.cwd ? <p>工作目录：{request.cwd}</p> : null}
+      {request.cwd ? <p><Trans>工作目录：{request.cwd}</Trans></p> : null}
       {/*
         环境变量只点名，不显示值：值是凭据，而这张卡片会被截屏。要判断的是「这条命令会不会
         被塞进额外的东西」，看见 LD_PRELOAD / NODE_OPTIONS 这样的键名就够了。
       */}
       {request.envNames?.length
-        ? <p>环境变量：{request.envNames.join('、')}（值已隐藏）</p>
+        ? <p><Trans>环境变量：{request.envNames.join(t`、`)}（值已隐藏）</Trans></p>
         : null}
       <p>
         {request.autoConnect
-          ? '这条命令现在会执行一次；之后每次启动应用都会自动执行，不再询问。'
-          : '这条命令现在会执行一次；之后开启「自动连接」时也不会再询问。'}
+          ? t`这条命令现在会执行一次；之后每次启动应用都会自动执行，不再询问。`
+          : t`这条命令现在会执行一次；之后开启「自动连接」时也不会再询问。`}
       </p>
-      <p>请先核对命令、参数、工作目录与环境变量；其中任何一项被改动后都需要重新确认。</p>
+      <p><Trans>请先核对命令、参数、工作目录与环境变量；其中任何一项被改动后都需要重新确认。</Trans></p>
       <div className="agentnew-mcp-actions">
         <button
           type="button"
           className="agentnew-settings-button is-small is-primary"
           onClick={() => void approveMcpServerLaunch(request.id)}
         >
-          确认并执行
+          <Trans>确认并执行</Trans>
         </button>
         <button
           type="button"
           className="agentnew-settings-button is-small"
           onClick={() => dismissMcpServerLaunch(request.id)}
         >
-          暂不执行
+          <Trans>暂不执行</Trans>
         </button>
       </div>
     </div>

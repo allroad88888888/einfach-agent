@@ -1,5 +1,6 @@
 import { useEffect, useRef, type RefObject } from 'react'
 import { useAtomValue } from '@einfach/react'
+import { Trans, useLingui } from '@lingui/react/macro'
 import {
   closeSettingsCenter,
   hydrateAppSettings,
@@ -21,15 +22,6 @@ import { ModelCredentialPanel } from './ModelCredentialPanel'
 import { PluginSettingsPanel } from './PluginSettingsPanel'
 import { ProjectSkillsPanel } from './ProjectSkillsPanel'
 
-const SETTINGS_TABS: ReadonlyArray<{ id: SettingsCenterTab; label: string }> = [
-  { id: 'mcp', label: 'MCP 服务' },
-  { id: 'model', label: '模型' },
-  { id: 'instructions', label: '自定义指令' },
-  { id: 'general', label: '通用' },
-  { id: 'skills', label: '项目 Skills' },
-  { id: 'plugins', label: '插件' },
-]
-
 const SETTINGS_FOCUSABLE_SELECTOR = [
   'a[href]',
   'button:not([disabled])',
@@ -48,6 +40,7 @@ function visibleFocusableElements(dialog: HTMLDialogElement): HTMLElement[] {
 }
 
 function CustomInstructionsPanel() {
+  const { t } = useLingui()
   const draft = useAtomValue(customInstructionsDraftAtom)
   const dirty = useAtomValue(customInstructionsDirtyAtom)
   const status = useAtomValue(customInstructionsStatusAtom)
@@ -60,13 +53,13 @@ function CustomInstructionsPanel() {
     >
       <div className="agentnew-settings-panel-head">
         <div>
-          <h3 id="agentnew-custom-instructions-title">自定义指令</h3>
-          <p>保存长期偏好，之后每次对话都会自动提供给 Agent。</p>
+          <h3 id="agentnew-custom-instructions-title"><Trans>自定义指令</Trans></h3>
+          <p><Trans>保存长期偏好，之后每次对话都会自动提供给 Agent。</Trans></p>
         </div>
       </div>
 
       <label className="agentnew-instructions-field" htmlFor="agentnew-custom-instructions">
-        <span>始终遵循的指令</span>
+        <span><Trans>始终遵循的指令</Trans></span>
         <textarea
           id="agentnew-custom-instructions"
           className="agentnew-settings-textarea agentnew-instructions-textarea"
@@ -74,15 +67,15 @@ function CustomInstructionsPanel() {
           rows={10}
           maxLength={MAX_CUSTOM_INSTRUCTIONS_LENGTH}
           disabled={loading}
-          placeholder="例如：请始终使用中文回复。"
+          placeholder={t`例如：请始终使用中文回复。`}
           aria-describedby="agentnew-custom-instructions-help"
           onChange={(event) => updateCustomInstructionsDraft(event.target.value)}
         />
       </label>
 
       <p id="agentnew-custom-instructions-help" className="agentnew-instructions-help">
-        该内容保存在当前设备，并作为 system 指令发送给主 Agent 和它委派的子 Agent。
-        请勿填写密码、令牌等敏感信息。
+        <Trans>该内容保存在当前设备，并作为 system 指令发送给主 Agent 和它委派的子 Agent。
+        请勿填写密码、令牌等敏感信息。</Trans>
       </p>
 
       <div className="agentnew-instructions-footer">
@@ -93,12 +86,12 @@ function CustomInstructionsPanel() {
           disabled={loading || !dirty}
           onClick={() => saveCustomInstructions()}
         >
-          保存指令
+          <Trans>保存指令</Trans>
         </button>
       </div>
 
       {status.status === 'saved' ? (
-        <p className="agentnew-instructions-status is-success" role="status">已保存</p>
+        <p className="agentnew-instructions-status is-success" role="status"><Trans>已保存</Trans></p>
       ) : null}
       {status.status === 'error' ? (
         <p className="agentnew-instructions-status is-error" role="alert">{status.error}</p>
@@ -111,20 +104,29 @@ function PlaceholderPanel() {
   return (
     <section className="agentnew-settings-panel agentnew-settings-placeholder">
       <span aria-hidden="true">⚙</span>
-      <h3>通用</h3>
-      <p>外观、通知与应用行为设置将在这里提供。</p>
-      <small>暂未开放</small>
+      <h3><Trans>通用</Trans></h3>
+      <p><Trans>外观、通知与应用行为设置将在这里提供。</Trans></p>
+      <small><Trans>暂未开放</Trans></small>
     </section>
   )
 }
 
 /** Renders and manages the on-demand settings dialog. */
 export function SettingsDialog({ launchButtonRef }: SettingsDialogProps) {
+  const { t } = useLingui()
   const open = useAtomValue(settingsCenterOpenAtom)
   const activeTab = useAtomValue(settingsCenterTabAtom)
   const closeButtonRef = useRef<HTMLButtonElement>(null)
   const dialogRef = useRef<HTMLDialogElement>(null)
   const wasOpenRef = useRef(false)
+  const settingsTabs: ReadonlyArray<{ id: SettingsCenterTab; label: string }> = [
+    { id: 'mcp', label: t`MCP 服务` },
+    { id: 'model', label: t`模型` },
+    { id: 'instructions', label: t`自定义指令` },
+    { id: 'general', label: t`通用` },
+    { id: 'skills', label: t`项目 Skills` },
+    { id: 'plugins', label: t`插件` },
+  ]
 
   useEffect(() => {
     void hydrateAppSettings()
@@ -190,20 +192,20 @@ export function SettingsDialog({ launchButtonRef }: SettingsDialogProps) {
       }}
     >
       <header className="agentnew-settings-modal-head">
-        <h2 id="agentnew-settings-title">设置</h2>
+        <h2 id="agentnew-settings-title"><Trans>设置</Trans></h2>
         <button
           ref={closeButtonRef}
           type="button"
           className="agentnew-settings-close"
-          aria-label="关闭设置"
+          aria-label={t`关闭设置`}
           onClick={() => closeSettingsCenter()}
         >
           ×
         </button>
       </header>
       <div className="agentnew-settings-layout">
-        <nav className="agentnew-settings-tabs" aria-label="设置分类">
-          {SETTINGS_TABS.map((tab) => (
+        <nav className="agentnew-settings-tabs" aria-label={t`设置分类`}>
+          {settingsTabs.map((tab) => (
             <button
               type="button"
               key={tab.id}

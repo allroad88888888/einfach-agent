@@ -6,6 +6,7 @@
 // （蓝图 3.4：浏览器预览没有 workspace 文件系统，不该装作能扫描插件）。
 
 import { useEffect } from 'react'
+import { Trans } from '@lingui/react/macro'
 import { useAtomValue } from '@einfach/react'
 import { hydratePluginSettings } from '../../plugins/commands'
 import {
@@ -32,8 +33,8 @@ export function PluginSettingsPanel() {
     <section className="agentnew-settings-panel" aria-labelledby="agentnew-plugin-settings-title">
       <div className="agentnew-settings-panel-head">
         <div>
-          <h3 id="agentnew-plugin-settings-title">插件</h3>
-          <p>管理从 <code>.webAgent/plugins/</code> 加载的第三方插件。</p>
+          <h3 id="agentnew-plugin-settings-title"><Trans>插件</Trans></h3>
+          <p><Trans>管理从 <code>.webAgent/plugins/</code> 加载的第三方插件。</Trans></p>
         </div>
       </div>
 
@@ -43,23 +44,23 @@ export function PluginSettingsPanel() {
           与下面每一行的启停。 */}
       {capabilities.supported ? (
         <p className="agentnew-plugin-trust" role="note">
-          <strong>装插件 = 完全信任</strong>：插件代码以与本应用相同的权限在本机运行，可以否决或
+          <Trans><strong>装插件 = 完全信任</strong>：插件代码以与本应用相同的权限在本机运行，可以否决或
           改写任何一次工具调用（包括 shell 命令），也可以改模型这一轮看到的上下文。清单里的
-          能力声明只是申报，不是沙箱。只安装你自己审阅过或信任来源的插件。
+          能力声明只是申报，不是沙箱。只安装你自己审阅过或信任来源的插件。</Trans>
         </p>
       ) : null}
 
       {!capabilities.supported ? (
         <div className="agentnew-plugin-empty">
           <span aria-hidden="true">⧉</span>
-          <strong>当前宿主不支持用户插件</strong>
+          <strong><Trans>当前宿主不支持用户插件</Trans></strong>
           <p>
-            用户插件目前仅在桌面端与 CLI 提供；浏览器预览没有 workspace 文件系统访问权限，
-            无法扫描 <code>.webAgent/plugins/</code>。
+            <Trans>用户插件目前仅在桌面端与 CLI 提供；浏览器预览没有 workspace 文件系统访问权限，
+            无法扫描 <code>.webAgent/plugins/</code>。</Trans>
           </p>
         </div>
       ) : hydration.status === 'loading' ? (
-        <p className="agentnew-plugin-notice" role="status">正在扫描插件…</p>
+        <p className="agentnew-plugin-notice" role="status"><Trans>正在扫描插件…</Trans></p>
       ) : hydration.status === 'error' ? (
         <p className="agentnew-plugin-error" role="alert">{hydration.error}</p>
       ) : rows.length > 0 ? (
@@ -71,9 +72,9 @@ export function PluginSettingsPanel() {
       ) : (
         <div className="agentnew-plugin-empty">
           <span aria-hidden="true">⧉</span>
-          <strong>还没有插件</strong>
+          <strong><Trans>还没有插件</Trans></strong>
           <p>
-            把插件目录放进 <code>.webAgent/plugins/</code> 后刷新设置即可看到。
+            <Trans>把插件目录放进 <code>.webAgent/plugins/</code> 后刷新设置即可看到。</Trans>
           </p>
         </div>
       )}

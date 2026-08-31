@@ -1,6 +1,6 @@
 // 两态各自选中哪一条模型传输，以及**分支的先后顺序**。
 // ---------------------------------------------------------------------------
-// 这个文件只回答一个问题：`createHostModelFetch` 挑了哪个工厂。所以三个工厂全部 mock 成哨兵，
+// 这个文件只回答一个问题：`createHostModelFetch` 挑了哪个传输。所以两条受管传输 mock 成哨兵，
 // 一次真实请求都不发——传输本身各有各的 colocated 测试，在这里再跑一遍只会把「选错了分支」
 // 和「传输本身坏了」两种失败混成一条红。
 //
@@ -30,13 +30,11 @@ function sentinel(name: string): typeof fetch {
 const FETCHES = {
   server: sentinel('serverModelFetch'),
   dev: sentinel('devPreviewModelFetch'),
-  unavailable: sentinel('unavailableModelFetch'),
 }
 
 const mocks = vi.hoisted(() => ({
   createServerModelFetch: vi.fn(),
   createDevPreviewModelFetch: vi.fn(),
-  createUnavailableModelFetch: vi.fn(),
 }))
 
 vi.mock('../modelTransport/serverModelTransport', () => ({
@@ -45,10 +43,6 @@ vi.mock('../modelTransport/serverModelTransport', () => ({
 vi.mock('../modelTransport/devPreviewModelTransport', () => ({
   createDevPreviewModelFetch: mocks.createDevPreviewModelFetch,
 }))
-vi.mock('../modelTransport/unavailableModelTransport', () => ({
-  createUnavailableModelFetch: mocks.createUnavailableModelFetch,
-}))
-
 const { createHostModelFetch } = await import('./hostModelTransport')
 
 const serverHost: ResolvedHost = { kind: 'server', platform: 'linux' }
@@ -67,13 +61,11 @@ describe('createHostModelFetch', () => {
     vi.clearAllMocks()
     mocks.createServerModelFetch.mockReturnValue(FETCHES.server)
     mocks.createDevPreviewModelFetch.mockReturnValue(FETCHES.dev)
-    mocks.createUnavailableModelFetch.mockReturnValue(FETCHES.unavailable)
   })
 
   it('server 宿主（pnpm serve / npx 的构建产物）走 HTTP 模型端点', () => {
     setDev(false)
     expect(createHostModelFetch(serverHost)).toBe(FETCHES.server)
-    expect(mocks.createUnavailableModelFetch).not.toHaveBeenCalled()
   })
 
   it('server 宿主 + DEV 同时为真时仍走 server，不落到 dev 中继（顺序判据）', () => {
@@ -86,12 +78,11 @@ describe('createHostModelFetch', () => {
   it('static 宿主在 pnpm dev 下走本地中继', () => {
     setDev(true)
     expect(createHostModelFetch(staticHost)).toBe(FETCHES.dev)
-    expect(mocks.createUnavailableModelFetch).not.toHaveBeenCalled()
   })
 
-  it('static 宿主在构建产物里 fail-closed，一律拒绝模型请求', () => {
+  it('static 构建产物以浏览器原生 fetch 直连用户选择的 provider', () => {
     setDev(false)
-    expect(createHostModelFetch(staticHost)).toBe(FETCHES.unavailable)
+    expect(createHostModelFetch(staticHost)).toBe(globalThis.fetch)
     expect(mocks.createDevPreviewModelFetch).not.toHaveBeenCalled()
   })
 })

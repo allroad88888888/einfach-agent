@@ -1,0 +1,2043 @@
+msgid ""
+msgstr ""
+"POT-Creation-Date: 2026-08-21 10:44+0800\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Generator: @lingui/cli\n"
+"Language: en\n"
+"Project-Id-Version: \n"
+"Report-Msgid-Bugs-To: \n"
+"PO-Revision-Date: \n"
+"Last-Translator: \n"
+"Language-Team: \n"
+"Plural-Forms: \n"
+
+#: apps/web/src/agentNew/ui/ComposerControlBar.tsx
+msgid " · ⇧Tab 切换"
+msgstr " · switch with ⇧Tab"
+
+#: apps/web/src/agentNew/ui/McpLaunchConsentPrompt.tsx
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+#: apps/web/src/agentNew/ui/ToolConfirmCard.tsx
+msgid "、"
+msgstr ", "
+
+#: apps/web/src/agentNew/ui/CompletedPlanRecord.tsx
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "；"
+msgstr "; "
+
+#. placeholder {0}: unsupported.name
+#: apps/web/src/agentNew/ui/composerImageAttachmentState.ts
+msgid "“{0}”不是当前模型支持的图片格式。"
+msgstr "“{0}” is not a supported image format for the current model."
+
+#. placeholder {0}: file.name
+#: apps/web/src/agentNew/ui/composerImageAttachmentState.ts
+msgid "“{0}”不是有效的图片文件。"
+msgstr "“{0}” is not a valid image file."
+
+#. placeholder {0}: file.name
+#: apps/web/src/agentNew/ui/composerImageAttachmentState.ts
+msgid "“{0}”是动图，请选择静态图片。"
+msgstr "“{0}” is animated. Choose a still image."
+
+#. placeholder {0}: oversized.name
+#. placeholder {1}: formatBytes(limits.maxBytesPerImage)
+#: apps/web/src/agentNew/ui/composerImageAttachmentState.ts
+msgid "“{0}”超过单张 {1} 限制。"
+msgstr "“{0}” exceeds the per-image limit of {1}."
+
+#. placeholder {0}: credential.label
+#: apps/web/src/agentNew/ui/ModelCredentialCard.tsx
+#: apps/web/src/agentNew/ui/StartupCredentialGate.tsx
+msgid "{0} API Key"
+msgstr "{0} API Key"
+
+#. placeholder {0}: server.toolCount
+#: apps/web/src/agentNew/ui/McpServerToolSummary.tsx
+msgid "{0} 个工具"
+msgstr "{0, plural, one {# tool} other {# tools}}"
+
+#. placeholder {0}: calls.length
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "{0} 个工具调用"
+msgstr "{0, plural, one {# tool call} other {# tool calls}}"
+
+#. placeholder {0}: profile.models.length
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "{0} 个模型"
+msgstr "{0, plural, one {# model} other {# models}}"
+
+#. placeholder {0}: visibleNodes.length
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "{0} 个节点"
+msgstr "{0, plural, one {# node} other {# nodes}}"
+
+#. placeholder {0}: Math.floor(elapsed / MINUTE_MS)
+#: apps/web/src/agentNew/ui/mcpLastKnownToolsText.ts
+msgid "{0} 分钟前"
+msgstr "{0} minutes ago"
+
+#. placeholder {0}: Math.floor(elapsed / DAY_MS)
+#: apps/web/src/agentNew/ui/mcpLastKnownToolsText.ts
+msgid "{0} 天前"
+msgstr "{0} days ago"
+
+#. placeholder {0}: artifact.content.length
+#: apps/web/src/agentNew/ui/SaveArtifact.tsx
+msgid "{0} 字符"
+msgstr "{0, plural, one {# character} other {# characters}}"
+
+#. placeholder {0}: credential.label
+#: apps/web/src/agentNew/ui/ModelCredentialCard.tsx
+msgid "{0} 密钥设置已保存"
+msgstr "{0} key settings saved"
+
+#. placeholder {0}: Math.floor(elapsed / HOUR_MS)
+#: apps/web/src/agentNew/ui/mcpLastKnownToolsText.ts
+msgid "{0} 小时前"
+msgstr "{0} hours ago"
+
+#. placeholder {0}: server.name
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "{0} 自动连接"
+msgstr "Auto-connect {0}"
+
+#. placeholder {0}: stage.title
+#: apps/web/src/agentNew/ui/CompletedPlanRecord.tsx
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "{0}阶段产出"
+msgstr "{0} stage deliverables"
+
+#. placeholder {0}: entry.name
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "{action} {0}"
+msgstr "{action} {0}"
+
+#. placeholder {0}: plan.stages.length
+#: apps/web/src/agentNew/ui/CompletedPlanRecord.tsx
+msgid "{completedCount}/{0} 阶段完成"
+msgstr "{0, plural, one {{completedCount}/# stage complete} other {{completedCount}/# stages complete}}"
+
+#: apps/web/src/agentNew/ui/RunDurationStatus.tsx
+msgid "{hours}h {minutes}m {seconds}s"
+msgstr "{hours}h {minutes}m {seconds}s"
+
+#: apps/web/src/agentNew/ui/RunDurationStatus.tsx
+msgid "{minutes}m {seconds}s"
+msgstr "{minutes}m {seconds}s"
+
+#: apps/web/src/agentNew/ui/RunDurationStatus.tsx
+msgid "{seconds}s"
+msgstr "{seconds}s"
+
+#: apps/web/src/agentNew/ui/PlanStageExecutionTrace.tsx
+msgid "{stageId} 步骤执行记录"
+msgstr "Execution log for {stageId}"
+
+#: apps/web/src/agentNew/ui/MessageList.tsx
+msgid "{stepCount} 个步骤"
+msgstr "{stepCount, plural, one {# step} other {# steps}}"
+
+#: apps/web/src/agentNew/ui/McpSettingsPanel.tsx
+msgid "+ 添加服务"
+msgstr "+ Add server"
+
+#: apps/web/src/agentNew/ui/RunDurationStatus.tsx
+msgid "<0>{label}</0> for <1>{duration}</1>"
+msgstr "<0>{label}</0> for <1>{duration}</1>"
+
+#: apps/web/src/agentNew/ui/ModelEndpointCard.tsx
+msgid "<0>OpenAI</0> 兼容端点接入点"
+msgstr "<0>OpenAI</0>-compatible endpoint"
+
+#: apps/web/src/agentNew/ui/PluginSettingsPanel.tsx
+msgid "<0>装插件 = 完全信任</0>：插件代码以与本应用相同的权限在本机运行，可以否决或 改写任何一次工具调用（包括 shell 命令），也可以改模型这一轮看到的上下文。清单里的 能力声明只是申报，不是沙箱。只安装你自己审阅过或信任来源的插件。"
+msgstr "<0>Installing a plugin means fully trusting it.</0> Plugin code runs locally with the same permissions as this app. It can block or alter any tool call, including shell commands, and change the context the model sees for this turn. Manifest capability declarations are claims, not a sandbox. Install only plugins you have reviewed or whose source you trust."
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "API Key 只用于保存和本次测试；保存成功后不会回显。编辑时留空表示保持已有 Key。"
+msgstr "The API key is used only for saving and this test. It is never shown again after saving. Leave it empty while editing to keep the existing key."
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "API Key：尚未配置"
+msgstr "API key: Not configured"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "API Key：已配置（不会显示）"
+msgstr "API key: Configured (hidden)"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "API Key（写入后不会显示）"
+msgstr "API key (never shown after saving)"
+
+#: apps/web/src/agentNew/ui/ComposerControlBar.tsx
+msgid "Auto"
+msgstr "Auto"
+
+#: apps/web/src/agentNew/ui/RunDurationStatus.tsx
+msgid "Brewed"
+msgstr "Brewed"
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "DeepSeek 无显式 cache_id；命中以本轮 Provider usage 为准"
+msgstr "DeepSeek does not expose cache_id; cache hits are based on the Provider usage for this run"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "JSON 导入"
+msgstr "Import JSON"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "Key 已配置"
+msgstr "Key configured"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "Key 未配置"
+msgstr "Key not configured"
+
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+msgid "Kimi 中国区"
+msgstr "Kimi China region"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "MCP JSON 配置"
+msgstr "MCP JSON configuration"
+
+#: apps/web/src/agentNew/ui/McpSettingsPanel.tsx
+msgid "MCP 存储状态"
+msgstr "MCP storage status"
+
+#: apps/web/src/agentNew/ui/McpSettingsPanel.tsx
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "MCP 服务"
+msgstr "MCP servers"
+
+#. placeholder {0}: server.name
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "MCP 服务 {0}"
+msgstr "MCP server {0}"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "OpenAI 兼容"
+msgstr "OpenAI compatible"
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "Provider 未返回缓存指标"
+msgstr "The Provider did not return cache metrics"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "stdio · 仅桌面端"
+msgstr "stdio · Desktop only"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "stdio MCP 仅可在桌面端连接"
+msgstr "stdio MCP connections are available only on desktop"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "stdio（仅桌面端）"
+msgstr "stdio (Desktop only)"
+
+#: apps/web/src/agentNew/ui/ComposerThinkingControl.tsx
+msgid "Thinking 已关闭，点击开启"
+msgstr "Thinking is off; select to turn on"
+
+#: apps/web/src/agentNew/ui/ComposerThinkingControl.tsx
+msgid "Thinking 已开启，点击关闭"
+msgstr "Thinking is on; select to turn off"
+
+#: apps/web/src/agentNew/ui/ComposerThinkingControl.tsx
+msgid "Thinking 设置"
+msgstr "Thinking settings"
+
+#: apps/web/src/agentNew/ui/RunDurationStatus.tsx
+msgid "Working"
+msgstr "Working"
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "上下文 {contextPercentage}%"
+msgstr "Context {contextPercentage}%"
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "上下文 {contextPercentage}% · 建议新开会话"
+msgstr "Context {contextPercentage}% · Start a new conversation"
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "上下文占用"
+msgstr "Context usage"
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "上下文统计"
+msgstr "Context statistics"
+
+#. placeholder {0}: lastKnown.toolCount
+#: apps/web/src/agentNew/ui/mcpLastKnownToolsText.ts
+msgid "上次可用工具 {0} 个 · {probedAt}"
+msgstr "Last available tools: {0} · {probedAt}"
+
+#: apps/web/src/agentNew/ui/mcpLastKnownToolsText.ts
+msgid "上次探测到 0 个工具 · {probedAt}"
+msgstr "Last probe found 0 tools · {probedAt}"
+
+#: apps/web/src/agentNew/ui/mcpLastKnownToolsText.ts
+msgid "上次探测未成功 · {probedAt}"
+msgstr "Last probe failed · {probedAt}"
+
+#: apps/web/src/agentNew/ui/McpSettingsPanel.tsx
+msgid "临时存储模式"
+msgstr "Temporary storage mode"
+
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+msgid "主 Agent 默认"
+msgstr "Primary Agent default"
+
+#: apps/web/src/agentNew/ui/ModelConnectionSourcePicker.tsx
+msgid "云端服务商"
+msgstr "Cloud providers"
+
+#: apps/web/src/agentNew/ui/CompletedPlanRecord.tsx
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "交付物"
+msgstr "Deliverables"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "产物"
+msgstr "Artifacts"
+
+#: apps/web/src/agentNew/ui/ModelCredentialGroups.tsx
+msgid "仅为已有配置保留。新的第三方或自建模型请使用下方的连接配置。"
+msgstr "Kept only for existing configurations. Use the connection settings below for new third-party or self-hosted models."
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "仅桌面端"
+msgstr "Desktop only"
+
+#: apps/web/src/agentNew/ui/ModelConnectionSourcePicker.tsx
+msgid "从预设开始"
+msgstr "Start from a preset"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "会在本机启动进程"
+msgstr "Starts a local process"
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "会话建议"
+msgstr "Session recommendation"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "传输方式"
+msgstr "Transport"
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "估算 tokens"
+msgstr "Estimated tokens"
+
+#: apps/web/src/agentNew/ui/ComposerThinkingControl.tsx
+msgid "使用模型默认档位"
+msgstr "Use the model default"
+
+#: apps/web/src/agentNew/ui/ModelConnectionModelPicker.tsx
+msgid "例如：deepseek-chat"
+msgstr "For example: deepseek-chat"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "例如：npx"
+msgstr "For example: npx"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "例如：团队知识库"
+msgstr "For example: Team knowledge base"
+
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "例如：请始终使用中文回复。"
+msgstr "For example: Always reply in Chinese."
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "依赖"
+msgstr "Dependencies"
+
+#: apps/web/src/agentNew/ui/SaveArtifact.tsx
+msgid "保存"
+msgstr "Save"
+
+#. placeholder {0}: credential.label
+#: apps/web/src/agentNew/ui/ModelCredentialCard.tsx
+msgid "保存 {0} API Key"
+msgstr "Save {0} API Key"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "保存中"
+msgstr "Saving"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "保存后会先请你确认将执行的命令；确认后立即执行，并在之后每次启动时自动执行。"
+msgstr "After saving, you will be asked to confirm the command to run. It runs immediately after confirmation, then automatically each time the app starts."
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "保存后会把完整命令行摆出来请你确认；未确认前不会执行任何命令。"
+msgstr "After saving, you will be shown the full command line for confirmation. Nothing runs until you confirm."
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "保存后自动连接"
+msgstr "Auto-connect after saving"
+
+#: apps/web/src/agentNew/ui/SaveArtifact.tsx
+msgid "保存失败：{message}"
+msgstr "Save failed: {message}"
+
+#: apps/web/src/agentNew/ui/StartupCredentialGate.tsx
+msgid "保存并进入"
+msgstr "Save and continue"
+
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "保存指令"
+msgstr "Save instructions"
+
+#: apps/web/src/agentNew/ui/ModelEndpointCard.tsx
+msgid "保存接入点到应用配置"
+msgstr "Save endpoint to app configuration"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "保存服务"
+msgstr "Save server"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "保存编辑"
+msgstr "Save changes"
+
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "保存长期偏好，之后每次对话都会自动提供给 Agent。"
+msgstr "Save long-term preferences that are included automatically in every conversation with the Agent."
+
+#: apps/web/src/agentNew/ui/Composer.tsx
+msgid "停止"
+msgstr "Stop"
+
+#: apps/web/src/agentNew/ui/MessageList.tsx
+msgid "停止当前运行并撤回此消息之后的对话"
+msgstr "Stop the current run and undo the conversation after this message"
+
+#: apps/web/src/agentNew/ui/PluginEntryCard.tsx
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "停用"
+msgstr "Disable"
+
+#: apps/web/src/agentNew/ui/PluginEntryCard.tsx
+msgid "停用中"
+msgstr "Disabling"
+
+#: apps/web/src/agentNew/ui/ToolConfirmCard.tsx
+msgid "允许"
+msgstr "Allow"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "先测试连接，再从返回结果中选择；也可以手动添加。"
+msgstr "Test the connection first, then select the returned models or add one manually."
+
+#: apps/web/src/agentNew/ui/WorkspaceSidebar.tsx
+msgid "关闭"
+msgstr "Close"
+
+#: apps/web/src/agentNew/ui/WorkspaceSidebar.tsx
+msgid "关闭工作区设置"
+msgstr "Close workspace settings"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "关闭编辑器"
+msgstr "Close editor"
+
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "关闭设置"
+msgstr "Close settings"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "兼容连接"
+msgstr "Compatible connections"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "兼容连接独立于官方模型适配层，不是官方 DeepSeek 直连；请求只会发送到此连接的地址。"
+msgstr "Compatible connections are independent of the official model integration; they are not direct official DeepSeek connections. Requests go only to this connection's address."
+
+#: apps/web/src/agentNew/ui/ModelCredentialGroups.tsx
+msgid "兼容连接迁移"
+msgstr "Compatible connection migration"
+
+#: apps/web/src/agentNew/ui/ComposerModelPicker.tsx
+msgid "内置模型"
+msgstr "Built-in models"
+
+#. placeholder {0}: limits.maxImages
+#: apps/web/src/agentNew/ui/composerImageAttachmentState.ts
+msgid "最多可附加 {0} 张图片。"
+msgstr "You can attach up to {0} images."
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "最终回复"
+msgstr "Final response"
+
+#: apps/web/src/agentNew/ui/Composer.tsx
+msgid "准备图片…"
+msgstr "Preparing image…"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "凭据字段仅桌面端支持"
+msgstr "Credential fields are supported on desktop only"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "切换会立即连接或注销，并保存为启动偏好"
+msgstr "Toggling connects or disconnects immediately and saves this as a startup preference"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "切换会立即连接或注销；偏好仅在本次会话有效"
+msgstr "Toggling connects or disconnects immediately; this preference applies only to the current session"
+
+#: apps/web/src/agentNew/ui/mcpLastKnownToolsText.ts
+msgid "刚刚"
+msgstr "Just now"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "创建连接"
+msgstr "Create connection"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+#: apps/web/src/agentNew/ui/SessionList.tsx
+msgid "删除"
+msgstr "Delete"
+
+#. placeholder {0}: workspace.name
+#: apps/web/src/agentNew/ui/WorkspaceSidebar.tsx
+msgid "删除 {0}"
+msgstr "Delete {0}"
+
+#. placeholder {0}: credential.label
+#: apps/web/src/agentNew/ui/ModelCredentialCard.tsx
+msgid "删除 {0} 已保存密钥"
+msgstr "Delete saved key for {0}"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "删除中"
+msgstr "Deleting"
+
+#: apps/web/src/agentNew/ui/WorkspaceSidebar.tsx
+msgid "删除工作区（不会删除磁盘文件）"
+msgstr "Delete workspace (files on disk will not be deleted)"
+
+#: apps/web/src/agentNew/ui/ModelEndpointCard.tsx
+msgid "删除已登记接入点"
+msgstr "Delete registered endpoint"
+
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "刷新"
+msgstr "Refresh"
+
+#: apps/web/src/agentNew/ui/Composer.tsx
+msgid "加入队列"
+msgstr "Add to queue"
+
+#: apps/web/src/agentNew/ui/PluginEntryCard.tsx
+msgid "加载失败"
+msgstr "Failed to load"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "协议"
+msgstr "Protocol"
+
+#: apps/web/src/agentNew/ui/ToolConfirmCard.tsx
+msgid "即将执行工具 <0>{toolName}</0>"
+msgstr "About to run tool <0>{toolName}</0>"
+
+#: apps/web/src/agentNew/ui/HistoryImageCompatibilityGuard.tsx
+msgid "历史图片不兼容，输入已禁用"
+msgstr "Historical images are incompatible; input is disabled"
+
+#. placeholder {0}: metadata.name
+#: apps/web/src/agentNew/ui/UserImageAttachmentCard.tsx
+msgid "历史图片不可用：{0}"
+msgstr "Historical image unavailable: {0}"
+
+#: apps/web/src/agentNew/ui/HistoryImageCompatibilityGuard.tsx
+msgid "历史图片与当前模型不兼容，暂时无法发送新消息"
+msgstr "Historical images are incompatible with the current model; new messages cannot be sent"
+
+#. placeholder {0}: server.args.join(' · ')
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "参数：{0}"
+msgstr "Arguments: {0}"
+
+#: apps/web/src/agentNew/ui/ModelConnectionModelPicker.tsx
+msgid "发现的模型"
+msgstr "Discovered models"
+
+#: apps/web/src/agentNew/ui/Composer.tsx
+msgid "发送"
+msgstr "Send"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "取消"
+msgstr "Cancel"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "可用模型"
+msgstr "Available models"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "名称"
+msgstr "Name"
+
+#: apps/web/src/agentNew/ui/AskUserQuestionCard.tsx
+msgid "否"
+msgstr "No"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "含 command 的 stdio 服务导入后保持未连接，每个服务的卡片上会请你确认将执行的命令。"
+msgstr "Imported stdio servers with a command remain disconnected. Each server card will ask you to confirm the command it will run."
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "含 command 的 stdio 配置可以保存，但浏览器无法启动；请在桌面端重新导入或配置后手动连接。"
+msgstr "stdio configurations with a command can be saved, but browsers cannot start them. Re-import or configure them on desktop, then connect manually."
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "启动参数"
+msgstr "Launch arguments"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "启动参数（每行一项）"
+msgstr "Launch arguments (one per line)"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "启动命令"
+msgstr "Launch command"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "启动命令尚未确认"
+msgstr "Launch command not yet confirmed"
+
+#: apps/web/src/agentNew/ui/PluginEntryCard.tsx
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "启用"
+msgstr "Enable"
+
+#: apps/web/src/agentNew/ui/PluginEntryCard.tsx
+msgid "启用中"
+msgstr "Enabling"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "命令"
+msgstr "Command"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "回到该阶段开始前：恢复当时的计划快照，并撤回该阶段之后的对话"
+msgstr "Return to before this stage: restore its plan snapshot and undo the conversation after it"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "回滚"
+msgstr "Roll back"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "回滚该阶段及其后续依赖阶段（该阶段没有回退点，对话不会被撤回）"
+msgstr "Roll back this stage and its dependent stages (this stage has no rollback point, so the conversation will remain)"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "回答"
+msgstr "Response"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "回答后会从当前位置继续生成同一份计划。"
+msgstr "After you answer, the same plan will continue generating from here."
+
+#: apps/web/src/agentNew/ui/UserImageAttachmentCard.tsx
+msgid "图片"
+msgstr "Image"
+
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+msgid "图片上传协议、文件引用与清理由 <0>Kimi</0> adapter 负责；静态部署会从浏览器直连 <1>Kimi</1>。"
+msgstr "The <0>Kimi</0> adapter handles image-upload protocol, file references, and cleanup. Static deployments connect directly to <1>Kimi</1> from the browser."
+
+#: apps/web/src/agentNew/ui/UserImageAttachmentCard.tsx
+msgid "图片不可用"
+msgstr "Image unavailable"
+
+#: apps/web/src/agentNew/ui/composerImageAttachmentState.ts
+msgid "图片尚未发送，请重试。"
+msgstr "The images were not sent. Try again."
+
+#. placeholder {0}: limits.maxWidth
+#. placeholder {1}: limits.maxHeight
+#: apps/web/src/agentNew/ui/composerImageAttachmentState.ts
+msgid "图片尺寸不能超过 {0} × {1}。"
+msgstr "Image dimensions cannot exceed {0} × {1}."
+
+#. placeholder {0}: formatBytes(limits.maxBatchBytes)
+#: apps/web/src/agentNew/ui/composerImageAttachmentState.ts
+msgid "图片总大小不能超过 {0}。"
+msgstr "Total image size cannot exceed {0}."
+
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+msgid "图片输入"
+msgstr "Image input"
+
+#. placeholder {0}: workspace.name
+#: apps/web/src/agentNew/ui/WorkspaceSidebar.tsx
+msgid "在 {0} 中新建对话"
+msgstr "New conversation in {0}"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "地址"
+msgstr "Address"
+
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "外观、通知与应用行为设置将在这里提供。"
+msgstr "Appearance, notifications, and app behavior settings will be available here."
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "失败"
+msgstr "Failed"
+
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "始终遵循的指令"
+msgstr "Instructions to always follow"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "子 agent"
+msgstr "Sub-agent"
+
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+msgid "子 Agent 省钱档"
+msgstr "Sub-agent budget tier"
+
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+msgid "子 Agent 默认与主 Agent 同档；只有低风险的检索、提取类任务才降到 <0>Flash</0>。 先前失败过、最终验收、动过需确认的工具、跨模块或高风险的任务一律留在 <1>Pro</1>。"
+msgstr "Sub-agents use the same tier as the primary Agent by default. Only low-risk search and extraction tasks use <0>Flash</0>. Previously failed tasks, final verification, tasks that used confirmation-required tools, and cross-module or high-risk work always stay on <1>Pro</1>."
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "完成"
+msgstr "Done"
+
+#: apps/web/src/agentNew/ui/ModelCredentialGroups.tsx
+msgid "官方模型"
+msgstr "Official models"
+
+#: apps/web/src/agentNew/ui/ModelCredentialGroups.tsx
+msgid "官方直连"
+msgstr "Official direct connection"
+
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+msgid "密钥保存于 <0>~/.webAgent/config.json</0>；前端不会持久化或读取已保存的值。"
+msgstr "Keys are stored in <0>~/.webAgent/config.json</0>; the frontend does not persist or read saved values."
+
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+msgid "密钥由本机后端保存（<0>pnpm serve</0> 或已安装的本地服务）。"
+msgstr "Keys are stored by the local backend (<0>pnpm serve</0> or an installed local service)."
+
+#: apps/web/src/agentNew/ui/RunDurationStatus.tsx
+msgid "对话已结束，用时 {duration}"
+msgstr "Conversation finished in {duration}"
+
+#: apps/web/src/agentNew/ui/RunDurationStatus.tsx
+msgid "对话正在进行，已用时 {duration}"
+msgstr "Conversation in progress for {duration}"
+
+#: apps/web/src/agentNew/ui/ModelConnectionSourcePicker.tsx
+msgid "导入 JSON"
+msgstr "Import JSON"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "导入中"
+msgstr "Importing"
+
+#: apps/web/src/agentNew/ui/ModelConnectionSourcePicker.tsx
+msgid "导入文件不能包含 API Key；导入后仍需填写连接 ID 和 Key 并保存。"
+msgstr "Imported files cannot contain an API key. Enter a connection ID and key after importing, then save."
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "导入配置"
+msgstr "Import configuration"
+
+#: apps/web/src/agentNew/ui/PlanStageExecutionTrace.tsx
+msgid "尚无模型思考或工具调用"
+msgstr "No model reasoning or tool calls yet"
+
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "尚未扫描。发送一条消息或点「刷新」后，会加载工作区与用户主目录下 <0>.webAgent/skills/</0> 与 <1>.claude/skills/</1> 里的 Skills。"
+msgstr "Not scanned yet. Send a message or select Refresh to load Skills from <0>.webAgent/skills/</0> and <1>.claude/skills/</1> in the workspace and user home directory."
+
+#: apps/web/src/agentNew/ui/mcpLastKnownToolsText.ts
+msgid "尚未探测过工具清单"
+msgstr "No tool list has been probed yet"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "尚未返回结果。"
+msgstr "No result yet."
+
+#: apps/web/src/agentNew/ui/MessageList.tsx
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "展开"
+msgstr "Expand"
+
+#. placeholder {0}: workspace.name
+#: apps/web/src/agentNew/ui/WorkspaceSidebar.tsx
+msgid "展开 {0}"
+msgstr "Expand {0}"
+
+#: apps/web/src/agentNew/ui/MessageList.tsx
+msgid "展开思考过程，共 {stepCount} 步"
+msgstr "Expand reasoning, {stepCount, plural, one {# step} other {# steps}}"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "展开计划详情"
+msgstr "Expand plan details"
+
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+#: apps/web/src/agentNew/ui/WorkspaceSidebar.tsx
+msgid "工作区"
+msgstr "Workspaces"
+
+#: apps/web/src/agentNew/ui/AppShell.tsx
+msgid "工作区与对话"
+msgstr "Workspaces and conversations"
+
+#: apps/web/src/agentNew/ui/WorkspaceRootField.tsx
+msgid "工作区目录"
+msgstr "Workspace directory"
+
+#: apps/web/src/agentNew/ui/WorkspaceRootField.tsx
+msgid "工作区绝对路径（留空则用 Git 根目录）"
+msgstr "Absolute workspace path (leave blank to use the Git root)"
+
+#: apps/web/src/agentNew/ui/WorkspaceSidebar.tsx
+msgid "工作区设置"
+msgstr "Workspace settings"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "工作目录"
+msgstr "Working directory"
+
+#. placeholder {0}: request.cwd
+#. placeholder {0}: server.cwd
+#: apps/web/src/agentNew/ui/McpLaunchConsentPrompt.tsx
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "工作目录：{0}"
+msgstr "Working directory: {0}"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "工作目录（可选）"
+msgstr "Working directory (optional)"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "工具"
+msgstr "Tool"
+
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "工具 {name}"
+msgstr "Tool {name}"
+
+#: apps/web/src/agentNew/ui/ToolConfirmCard.tsx
+msgid "工具参数预览"
+msgstr "Tool argument preview"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "工具失败"
+msgstr "Tool failed"
+
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "工具失败 {name}"
+msgstr "Tool failed: {name}"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "工具结果"
+msgstr "Tool result"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "工具调用"
+msgstr "Tool call"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "工具警告"
+msgstr "Tool warning"
+
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "工具警告 {name}"
+msgstr "Tool warning: {name}"
+
+#: apps/web/src/agentNew/ui/ToolActivity.tsx
+msgid "工具进度"
+msgstr "Tool progress"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "已中断"
+msgstr "Interrupted"
+
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "已保存"
+msgstr "Saved"
+
+#: apps/web/src/agentNew/ui/Composer.tsx
+msgid "已停止"
+msgstr "Stopped"
+
+#: apps/web/src/agentNew/ui/PluginEntryCard.tsx
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "已停用"
+msgstr "Disabled"
+
+#: apps/web/src/agentNew/ui/ModelConnectionModelPicker.tsx
+msgid "已发现"
+msgstr "Discovered"
+
+#. placeholder {0}: entries.length
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "已发现 {0} 个技能，{enabledCount} 个已启用"
+msgstr "{0, plural, one {# Skill found} other {# Skills found}}, {enabledCount, plural, one {# enabled} other {# enabled}}"
+
+#. placeholder {0}: metadata.name
+#: apps/web/src/agentNew/ui/UserImageAttachmentCard.tsx
+msgid "已发送图片：{0}"
+msgstr "Image sent: {0}"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "已取消"
+msgstr "Canceled"
+
+#: apps/web/src/agentNew/ui/SaveArtifact.tsx
+msgid "已取消保存。"
+msgstr "Save cancelled."
+
+#: apps/web/src/agentNew/ui/PluginEntryCard.tsx
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "已启用"
+msgstr "Enabled"
+
+#: apps/web/src/agentNew/ui/CompletedPlanRecord.tsx
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "已完成"
+msgstr "Completed"
+
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "已截断 {truncatedCount} 个字符"
+msgstr "Truncated {truncatedCount, plural, one {# character} other {# characters}}"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "已批准"
+msgstr "Approved"
+
+#: apps/web/src/agentNew/ui/ComposerControlBar.tsx
+msgid "已排队 {queuedMessageCount} 条"
+msgstr "{queuedMessageCount} queued"
+
+#. placeholder {0}: entry.state.baseUrl
+#: apps/web/src/agentNew/ui/ModelEndpointCard.tsx
+msgid "已登记：{0}"
+msgstr "Registered: {0}"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "已跳过"
+msgstr "Skipped"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "已连接"
+msgstr "Connected"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "已阻塞"
+msgstr "Blocked"
+
+#: apps/web/src/agentNew/ui/WorkspaceSidebar.tsx
+msgid "常规"
+msgstr "General"
+
+#: apps/web/src/agentNew/ui/AppShell.tsx
+msgid "应用工具栏"
+msgstr "Application toolbar"
+
+#: apps/web/src/agentNew/ui/ModelCredentialCard.tsx
+msgid "应用配置文件已配置"
+msgstr "Configured in the app configuration file"
+
+#: apps/web/src/agentNew/ui/Composer.tsx
+msgid "应用重启中断了任务"
+msgstr "The task was interrupted by an app restart"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "开启后会立即连接；配置和偏好仅在本次会话有效。"
+msgstr "When enabled, it connects immediately. The configuration and preference apply only to this session."
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "开启后保存即连接；开关变化也会立即连接或注销，并作为下次启动偏好。"
+msgstr "When enabled, it connects when saved. Toggling also connects or disconnects immediately and becomes the startup preference."
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "开启后每次启动应用都会自动执行该命令；首次需确认命令行"
+msgstr "When enabled, this command runs automatically whenever the app starts. Confirm the command line the first time."
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "开启后每次启动都会执行该命令；首次需确认命令行，偏好仅在本次会话有效"
+msgstr "When enabled, this command runs on every launch. Confirm the command line the first time; this preference applies only to the current session."
+
+#: apps/web/src/agentNew/ui/MessageList.tsx
+msgid "开始对话吧"
+msgstr "Start a conversation"
+
+#: apps/web/src/agentNew/ui/PluginSettingsPanel.tsx
+msgid "当前宿主不支持用户插件"
+msgstr "This host does not support user plugins"
+
+#: apps/web/src/agentNew/ui/AppShell.tsx
+msgid "当前对话"
+msgstr "Current conversation"
+
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "当前工作区：<0>{workspaceRoot}</0>"
+msgstr "Current workspace: <0>{workspaceRoot}</0>"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "当前是浏览器环境"
+msgstr "Browser environment"
+
+#: apps/web/src/agentNew/ui/ComposerModelPicker.tsx
+msgid "当前模型"
+msgstr "Current model"
+
+#: apps/web/src/agentNew/ui/ComposerThinkingControl.tsx
+msgid "当前模型不支持 Thinking"
+msgstr "The current model does not support Thinking"
+
+#: apps/web/src/agentNew/ui/ComposerAttachmentTray.tsx
+msgid "当前模型不支持图片输入"
+msgstr "The current model does not support image input"
+
+#: apps/web/src/agentNew/ui/UserImageAttachmentCard.tsx
+msgid "当前模型无法使用这张历史图片"
+msgstr "The current model cannot use this historical image"
+
+#: apps/web/src/agentNew/ui/HistoryImageCompatibilityGuard.tsx
+msgid "当前模型无法继续使用对话中的 {incompatibleCount} 张历史图片。请切换回兼容模型，或回退并移除相关图片后再发送。"
+msgstr "The current model cannot continue using {incompatibleCount, plural, one {# historical image} other {# historical images}} in this conversation. Switch back to a compatible model, or roll back, remove the images, and send again."
+
+#: apps/web/src/agentNew/ui/ComposerThinkingControl.tsx
+msgid "当前模型的 Thinking 能力未知"
+msgstr "The current model's Thinking capability is unknown"
+
+#: apps/web/src/agentNew/ui/StartupCredentialGate.tsx
+msgid "当前模型配置不支持凭据管理。请切换到已支持的模型后重试。"
+msgstr "The current model configuration does not support credential management. Switch to a supported model and try again."
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "当前浏览器不可用；本地进程仅能在桌面端启动"
+msgstr "Unavailable in this browser; local processes can start only on desktop"
+
+#: apps/web/src/agentNew/ui/SaveArtifact.tsx
+msgid "待保存文件"
+msgstr "Files to save"
+
+#: apps/web/src/agentNew/ui/ComposerAttachmentTray.tsx
+msgid "待发送图片"
+msgstr "Images to send"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "待开始"
+msgstr "Not started"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "待批准"
+msgstr "Awaiting approval"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "待继续"
+msgstr "Awaiting continuation"
+
+#: apps/web/src/agentNew/ui/AskUserQuestionCard.tsx
+msgid "必填"
+msgstr "Required"
+
+#: apps/web/src/agentNew/ui/MessageList.tsx
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "思考过程"
+msgstr "Reasoning"
+
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "所有发现的技能默认启用。停用后，后续读取会立即受限；新对话不会再列出该技能。 此选择仅保存在当前设备，且按工作区分别记——停用一个用户目录技能只影响当前工作区。"
+msgstr "All discovered Skills are enabled by default. After disabling one, later reads are restricted immediately and new conversations no longer list it. This choice is stored only on the current device and separately for each workspace—disabling a Skill from the user directory affects only this workspace."
+
+#: apps/web/src/agentNew/ui/ModelConnectionModelPicker.tsx
+msgid "手动模型 ID"
+msgstr "Manual model ID"
+
+#: apps/web/src/agentNew/ui/ModelConnectionModelPicker.tsx
+msgid "手动添加"
+msgstr "Added manually"
+
+#: apps/web/src/agentNew/ui/SettingsCenter.tsx
+msgid "打开设置"
+msgstr "Open settings"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "执行中"
+msgstr "Running"
+
+#. placeholder {0}: plan.revision
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "执行计划 · r{0}"
+msgstr "Execution plan · r{0}"
+
+#: apps/web/src/agentNew/ui/PlanStageExecutionTrace.tsx
+msgid "执行记录"
+msgstr "Execution log"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "执行说明"
+msgstr "Execution notes"
+
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "扫描中…"
+msgstr "Scanning…"
+
+#. placeholder {0}: diagnostics.length
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "扫描反馈（{0} 条）"
+msgstr "Scan messages ({0, plural, one {# item} other {# items}})"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "批准并继续"
+msgstr "Approve and continue"
+
+#: apps/web/src/agentNew/ui/PluginSettingsPanel.tsx
+msgid "把插件目录放进 <0>.webAgent/plugins/</0> 后刷新设置即可看到。"
+msgstr "Place a plugin directory in <0>.webAgent/plugins/</0>, then refresh Settings to see it."
+
+#. placeholder {0}: workspace.name
+#: apps/web/src/agentNew/ui/WorkspaceSidebar.tsx
+msgid "折叠 {0}"
+msgstr "Collapse {0}"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+#: apps/web/src/agentNew/ui/ToolConfirmCard.tsx
+msgid "拒绝"
+msgstr "Reject"
+
+#: apps/web/src/agentNew/ui/ComposerControlBar.tsx
+msgid "授权：{approvalModeLabel}"
+msgstr "Approval: {approvalModeLabel}"
+
+#: apps/web/src/agentNew/ui/ComposerControlBar.tsx
+msgid "授权模式：{approvalModeLabel}，Shift+Tab 切换"
+msgstr "Approval mode: {approvalModeLabel}; switch with Shift+Tab"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "排队"
+msgstr "Queued"
+
+#. placeholder {0}: new Date(cachedAt).toLocaleString(appI18n.locale || 'zh-CN')
+#: apps/web/src/agentNew/ui/mcpLastKnownToolsText.ts
+msgid "探测于 {0}"
+msgstr "Probed at {0}"
+
+#: apps/web/src/agentNew/ui/ModelEndpointCard.tsx
+msgid "接入点必须是 <0>https://</0> 地址，或指向本机回环地址（<1>localhost</1> / <2>127.x.x.x</2> / <3>[::1]</3>）的 <4>http://</4>； 不接受 query、fragment 与内嵌的用户名密码。"
+msgstr "The endpoint must use <0>https://</0>, or <4>http://</4> to a local loopback address (<1>localhost</1> / <2>127.x.x.x</2> / <3>[::1]</3>). Query strings, fragments, and embedded usernames or passwords are not accepted."
+
+#: apps/web/src/agentNew/ui/ModelEndpointCard.tsx
+msgid "接入点设置已保存"
+msgstr "Endpoint settings saved"
+
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "控制当前工作区里哪些技能可供 Agent 使用——包括工作区自带的与本机用户目录下的。"
+msgstr "Control which Skills are available to the Agent in this workspace, including those in the workspace and local user directory."
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "提炼"
+msgstr "Distilling"
+
+#: apps/web/src/agentNew/ui/PluginSettingsPanel.tsx
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "插件"
+msgstr "Plugins"
+
+#: apps/web/src/agentNew/ui/PluginEntryCard.tsx
+msgid "插件 {name}"
+msgstr "Plugin {name}"
+
+#: apps/web/src/agentNew/ui/MessageList.tsx
+msgid "撤回"
+msgstr "Undo"
+
+#: apps/web/src/agentNew/ui/MessageList.tsx
+msgid "撤回本轮对话"
+msgstr "Undo this turn"
+
+#: apps/web/src/agentNew/ui/MessageList.tsx
+msgid "撤回此消息及其后的对话"
+msgstr "Undo this message and the conversation after it"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "支持标准 <0>mcpServers</0> 对象，可一次导入多个服务。导入只保存配置，不会自动连接；不支持的字段会明确报错，不会静默丢弃。"
+msgstr "Supports the standard <0>mcpServers</0> object and can import multiple servers at once. Importing saves configuration only and does not connect automatically. Unsupported fields produce an explicit error instead of being silently dropped."
+
+#: apps/web/src/agentNew/ui/CompletedPlanRecord.tsx
+#: apps/web/src/agentNew/ui/MessageList.tsx
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "收起"
+msgstr "Collapse"
+
+#: apps/web/src/agentNew/ui/MessageList.tsx
+msgid "收起思考过程，共 {stepCount} 步"
+msgstr "Collapse reasoning, {stepCount, plural, one {# step} other {# steps}}"
+
+#: apps/web/src/agentNew/ui/McpSettingsPanel.tsx
+msgid "收起表单"
+msgstr "Hide form"
+
+#: apps/web/src/agentNew/ui/CompletedPlanRecord.tsx
+msgid "收起计划记录"
+msgstr "Collapse plan record"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "收起计划详情"
+msgstr "Collapse plan details"
+
+#: apps/web/src/agentNew/ui/SaveArtifact.tsx
+msgid "文件"
+msgstr "File"
+
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+msgid "文本任务默认使用 <0>DeepSeek</0>；带图片的任务由支持图片的模型处理。"
+msgstr "Text tasks use <0>DeepSeek</0> by default; tasks with images use an image-capable model."
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "新对话默认"
+msgstr "Default for new conversations"
+
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+msgid "新建 <0>Kimi</0> 图片对话"
+msgstr "New <0>Kimi</0> image conversation"
+
+#: apps/web/src/agentNew/ui/WorkspaceSidebar.tsx
+msgid "新建对话"
+msgstr "New conversation"
+
+#: apps/web/src/agentNew/ui/WorkspaceSidebar.tsx
+#: apps/web/src/test/renderWithStore.test.tsx
+msgid "新建工作区"
+msgstr "New workspace"
+
+#: apps/web/src/agentNew/ui/WorkspaceSidebar.tsx
+msgid "新建工作区后即可创建对话"
+msgstr "Create a workspace to start a conversation"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "新建模型连接"
+msgstr "New model connection"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "新建连接"
+msgstr "New connection"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "新连接"
+msgstr "New connection"
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "无"
+msgstr "None"
+
+#: apps/web/src/agentNew/ui/StartupCredentialGate.tsx
+msgid "无法启动当前模型"
+msgstr "Cannot start the current model"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileSettings.tsx
+msgid "无法导入连接清单，请检查 JSON 格式和内容。"
+msgstr "Cannot import the connection manifest. Check its JSON format and contents."
+
+#: apps/web/src/agentNew/ui/composerImageAttachmentState.ts
+msgid "无法读取图片。"
+msgstr "Could not read the image."
+
+#: apps/web/src/agentNew/ui/StartupCredentialGate.tsx
+msgid "无法读取模型密钥"
+msgstr "Cannot read model key"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileSettings.tsx
+msgid "无法读取连接清单。"
+msgstr "Cannot read the connection manifest."
+
+#: apps/web/src/agentNew/ui/ModelCredentialGroups.tsx
+msgid "旧版单连接（迁移用）"
+msgstr "Legacy single connection (for migration)"
+
+#: apps/web/src/agentNew/ui/mcpLastKnownToolsText.ts
+msgid "时间未知"
+msgstr "Time unknown"
+
+#: apps/web/src/agentNew/ui/AskUserQuestionCard.tsx
+msgid "是"
+msgstr "Yes"
+
+#: apps/web/src/agentNew/ui/McpLaunchConsentPrompt.tsx
+msgid "暂不执行"
+msgstr "Don't run now"
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "暂无"
+msgstr "Not available"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "暂时中断，正在自动重连"
+msgstr "Temporarily interrupted; reconnecting automatically"
+
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "暂未开放"
+msgstr "Not available yet"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "更新地址、可用模型或密钥。连接 ID 创建后保持不变。"
+msgstr "Update the address, available models, or key. The connection ID cannot change after creation."
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "服务名称"
+msgstr "Server name"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "服务地址"
+msgstr "Server address"
+
+#: apps/web/src/agentNew/ui/CompletedPlanRecord.tsx
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "未单独指定"
+msgstr "Not separately specified"
+
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "未发现任何 Skills。在工作区或主目录的 <0>.webAgent/skills/<name>/SKILL.md</0> 或 <1>.claude/skills/<name>/SKILL.md</1> 中放置带 frontmatter 的 skill 文件即可自动加载。"
+msgstr "No Skills found. Add a skill file with frontmatter to <0>.webAgent/skills/<name>/SKILL.md</0> or <1>.claude/skills/<name>/SKILL.md</1> in the workspace or home directory to load it automatically."
+
+#: apps/web/src/agentNew/ui/composerImageAttachmentState.ts
+msgid "未命名图片"
+msgstr "Untitled image"
+
+#: apps/web/src/agentNew/ui/StartupCredentialGate.tsx
+msgid "未找到当前模型的凭据配置。"
+msgstr "No credential configuration found for the current model."
+
+#: apps/web/src/agentNew/ui/ModelEndpointCard.tsx
+msgid "未登记接入点（登记之前不会向任何地址发出请求）"
+msgstr "No registered endpoint (no requests are sent to any address before registration)"
+
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "未知工具"
+msgstr "Unknown tool"
+
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "未绑定 workspace。绑定后，在桌面端可加载项目中的 <0>.webAgent/skills/</0> 与 <1>.claude/skills/</1>。"
+msgstr "No workspace is bound. Once bound, desktop can load <0>.webAgent/skills/</0> and <1>.claude/skills/</1> from the project."
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "未连接"
+msgstr "Disconnected"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "未通过"
+msgstr "Failed"
+
+#: apps/web/src/agentNew/ui/ModelCredentialCard.tsx
+msgid "未配置密钥"
+msgstr "No key configured"
+
+#: apps/web/src/agentNew/ui/ToolConfirmCard.tsx
+msgid "本 session 一律允许该工具"
+msgstr "Always allow this tool for this session"
+
+#: apps/web/src/agentNew/ui/ModelConnectionSourcePicker.tsx
+msgid "本地"
+msgstr "Local"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "本地服务需先确认命令"
+msgstr "Local servers require command confirmation first"
+
+#: apps/web/src/agentNew/ui/StartupCredentialGate.tsx
+msgid "本机后端会保存到应用配置文件；静态部署会保存到当前浏览器的 localStorage 并直连模型服务。"
+msgstr "The local backend saves it to the app configuration file. Static deployments save it in this browser's localStorage and connect directly to the model service."
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "本次可用输入额度（已扣除输出预留与安全余量）"
+msgstr "Available input budget for this run (after reserving output and safety headroom)"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "本次模型响应没有文字内容。"
+msgstr "This model response has no text content."
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "本次运行累计命中"
+msgstr "Total cache hits for this run"
+
+#. placeholder {0}: fmt(before)
+#. placeholder {1}: fmt(COST_SOFT_CAP_TOKENS)
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "本轮压缩前约 {0} tokens，已超过 {1} 的会话软上限；建议新开会话。"
+msgstr "Before compaction, this run had about {0} tokens, above the soft conversation limit of {1}. Start a new conversation."
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "本轮缓存命中"
+msgstr "Cache hits for this run"
+
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "来源目录：{originLabel}/"
+msgstr "Source directory: {originLabel}/"
+
+#: apps/web/src/agentNew/ui/ToolConfirmCard.tsx
+msgid "极高风险操作"
+msgstr "Very high-risk operation"
+
+#: apps/web/src/agentNew/ui/CompletedPlanRecord.tsx
+msgid "查看计划记录"
+msgstr "View plan record"
+
+#: apps/web/src/agentNew/ui/CompletedPlanRecord.tsx
+msgid "查看记录"
+msgstr "View record"
+
+#: apps/web/src/agentNew/ui/ComposerModelPicker.tsx
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+#: apps/web/src/agentNew/ui/ModelConnectionModelPicker.tsx
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "模型"
+msgstr "Models"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "模型 thinking"
+msgstr "Model thinking"
+
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+msgid "模型分工"
+msgstr "Model roles"
+
+#. placeholder {0}: row.withheldToolsCount
+#. placeholder {1}: row.tools.length
+#: apps/web/src/agentNew/ui/PluginToolToggleList.tsx
+msgid "模型可见工具（{0}/{1} 未启用）： 勾选后此工具将进入模型上下文与执行路径，请只勾选你信任的工具。"
+msgstr "Model-visible tools ({0} of {1, plural, one {# tool} other {# tools}} disabled): Selecting a tool adds it to the model context and execution path. Select only tools you trust."
+
+#: apps/web/src/agentNew/ui/StartupCredentialGate.tsx
+msgid "模型密钥门禁"
+msgstr "Model key gate"
+
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "模型思考"
+msgstr "Model reasoning"
+
+#: apps/web/src/agentNew/ui/Composer.tsx
+msgid "模型鉴权失败（401），请检查当前模型供应商的 API Key 是否有效。"
+msgstr "Model authentication failed (401). Check whether the current model provider's API key is valid."
+
+#: apps/web/src/agentNew/ui/ComposerAttachmentTray.tsx
+msgid "正在准备图片…"
+msgstr "Preparing image…"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "正在制定计划"
+msgstr "Planning"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "正在发现模型…"
+msgstr "Discovering models…"
+
+#: apps/web/src/agentNew/ui/McpSettingsPanel.tsx
+msgid "正在恢复 MCP 服务…"
+msgstr "Restoring MCP servers…"
+
+#: apps/web/src/agentNew/ui/WorkspaceRootField.tsx
+msgid "正在打开…"
+msgstr "Opening…"
+
+#: apps/web/src/agentNew/ui/PluginSettingsPanel.tsx
+msgid "正在扫描插件…"
+msgstr "Scanning plugins…"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "正在按退避间隔自动重连，最多 6 次；不想等可以点击下方\"重连\"立即重试。"
+msgstr "Reconnecting automatically with backoff, up to 6 times. Select \"Reconnect\" below to retry now."
+
+#: apps/web/src/agentNew/ui/ComposerAttachmentTray.tsx
+msgid "正在检查图片…"
+msgstr "Checking image…"
+
+#: apps/web/src/agentNew/ui/StartupCredentialGate.tsx
+msgid "正在检查模型密钥"
+msgstr "Checking model key"
+
+#: apps/web/src/agentNew/ui/MessageTimelineRenderer.tsx
+msgid "正在生成"
+msgstr "Generating"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "此历史节点没有保存在会话状态中的模型记录。"
+msgstr "This historical node has no model records saved in the session state."
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "每个连接独立保存地址和密钥，再明确选择其中的模型。"
+msgstr "Each connection stores its own address and key, so you can choose its model explicitly."
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "每行一项，格式为 键=值；用于向子进程传递凭据，不会出现在启动参数里。"
+msgstr "One per line in key=value format. Used to pass credentials to the subprocess; they are not included in the launch arguments."
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "每行一项，格式为 键=值；用于向服务端发送鉴权信息。"
+msgstr "One per line in key=value format. Used to send authentication information to the server."
+
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "注入"
+msgstr "Injected"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "注销"
+msgstr "Disconnect"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "注销中"
+msgstr "Disconnecting"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "测试连接"
+msgstr "Test connection"
+
+#: apps/web/src/agentNew/ui/ModelConnectionModelPicker.tsx
+msgid "测试连接后可从发现结果中选择模型，也可直接填写模型 ID。"
+msgstr "After testing the connection, choose from discovered models or enter a model ID directly."
+
+#: apps/web/src/agentNew/ui/BrowserActionCard.tsx
+msgid "浏览器动作卡片"
+msgstr "Browser action card"
+
+#: apps/web/src/agentNew/ui/McpSettingsPanel.tsx
+msgid "浏览器持久化存储不可用。MCP 配置仅保存在当前会话，刷新或关闭页面后会丢失。"
+msgstr "Browser persistent storage is unavailable. MCP configuration is kept only for this session and is lost when the page is refreshed or closed."
+
+#: apps/web/src/agentNew/ui/ModelCredentialCard.tsx
+msgid "浏览器本地存储已配置"
+msgstr "Configured in browser local storage"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "浏览器端仅支持 Streamable HTTP。"
+msgstr "Browsers support Streamable HTTP only."
+
+#: apps/web/src/agentNew/ui/Composer.tsx
+msgid "消息"
+msgstr "Message"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "添加 MCP 服务"
+msgstr "Add MCP server"
+
+#: apps/web/src/agentNew/ui/McpSettingsPanel.tsx
+msgid "添加 Streamable HTTP 服务开始使用外部工具，桌面端也可使用 stdio。"
+msgstr "Add a Streamable HTTP server to use external tools. Desktop also supports stdio."
+
+#: apps/web/src/agentNew/ui/McpSettingsPanel.tsx
+msgid "添加 Streamable HTTP 服务开始使用外部工具；stdio 仅在桌面端可用。"
+msgstr "Add a Streamable HTTP server to use external tools; stdio is available only on desktop."
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "添加兼容连接"
+msgstr "Add a compatible connection"
+
+#: apps/web/src/agentNew/ui/ComposerAttachmentTray.tsx
+msgid "添加图片"
+msgstr "Add image"
+
+#: apps/web/src/agentNew/ui/ComposerAttachmentTray.tsx
+msgid "添加图片（也可粘贴或拖放）"
+msgstr "Add image (or paste or drag and drop)"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "添加方式"
+msgstr "Add method"
+
+#: apps/web/src/agentNew/ui/ModelConnectionModelPicker.tsx
+msgid "添加模型"
+msgstr "Add model"
+
+#: apps/web/src/agentNew/ui/PluginEntryCard.tsx
+msgid "清单无效"
+msgstr "Invalid manifest"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "点击下方「重连」查看将执行的命令并确认。"
+msgstr "Select \"Reconnect\" below to review and confirm the command that will run."
+
+#: apps/web/src/agentNew/ui/ComposerControlBar.tsx
+msgid "点击或按 Shift + Tab 切换授权模式"
+msgstr "Click or press Shift + Tab to switch approval mode"
+
+#: apps/web/src/agentNew/ui/PluginEntryCard.tsx
+msgid "版本不兼容"
+msgstr "Incompatible version"
+
+#. placeholder {0}: request.envNames.join(t`、`)
+#: apps/web/src/agentNew/ui/McpLaunchConsentPrompt.tsx
+msgid "环境变量：{0}（值已隐藏）"
+msgstr "Environment variables: {0} (values hidden)"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "环境变量（可选）"
+msgstr "Environment variables (optional)"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "用于第三方托管、自建或本地部署的 <0>OpenAI</0> 兼容服务。"
+msgstr "For third-party hosted, self-hosted, or local <0>OpenAI</0>-compatible services."
+
+#: apps/web/src/agentNew/ui/PluginSettingsPanel.tsx
+msgid "用户插件目前仅在桌面端与 CLI 提供；浏览器预览没有 workspace 文件系统访问权限， 无法扫描 <0>.webAgent/plugins/</0>。"
+msgstr "User plugins are currently available only on desktop and in the CLI. Browser preview cannot access the workspace file system, so it cannot scan <0>.webAgent/plugins/</0>."
+
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "用户目录"
+msgstr "User directory"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "用此模型新建对话"
+msgstr "Start a new conversation with this model"
+
+#: apps/web/src/agentNew/ui/LanguageSwitcher.tsx
+msgid "界面语言"
+msgstr "Language"
+
+#: apps/web/src/agentNew/ui/ComposerControlBar.tsx
+msgid "确认"
+msgstr "Confirm"
+
+#: apps/web/src/agentNew/ui/SessionList.tsx
+msgid "确认删除"
+msgstr "Confirm deletion"
+
+#: apps/web/src/agentNew/ui/McpLaunchConsentPrompt.tsx
+msgid "确认后会在你的电脑上执行："
+msgstr "After confirmation, this will run on your computer:"
+
+#: apps/web/src/agentNew/ui/AskUserQuestionCard.tsx
+msgid "确认后继续运行"
+msgstr "Confirm to continue running"
+
+#. placeholder {0}: request.name
+#: apps/web/src/agentNew/ui/McpLaunchConsentPrompt.tsx
+msgid "确认启动 {0}"
+msgstr "Confirm launch of {0}"
+
+#: apps/web/src/agentNew/ui/McpLaunchConsentPrompt.tsx
+msgid "确认并执行"
+msgstr "Confirm and run"
+
+#: apps/web/src/agentNew/ui/AskUserQuestionCard.tsx
+msgid "确认问题"
+msgstr "Confirm question"
+
+#: apps/web/src/agentNew/ui/ComposerAttachmentTray.tsx
+#: apps/web/src/agentNew/ui/ModelConnectionModelPicker.tsx
+msgid "移除"
+msgstr "Remove"
+
+#. placeholder {0}: image.name
+#: apps/web/src/agentNew/ui/ComposerAttachmentTray.tsx
+msgid "移除图片：{0}"
+msgstr "Remove image: {0}"
+
+#. placeholder {0}: model.id
+#: apps/web/src/agentNew/ui/ModelConnectionModelPicker.tsx
+msgid "移除模型 {0}"
+msgstr "Remove model {0}"
+
+#: apps/web/src/agentNew/ui/ModelCredentialGroups.tsx
+msgid "第三方 / <0>OpenAI</0> 兼容"
+msgstr "Third-party / <0>OpenAI</0>-compatible"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "第三方 / OpenAI 兼容"
+msgstr "Third-party / OpenAI compatible"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "第三方模型连接"
+msgstr "Third-party model connections"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "等待决策"
+msgstr "Awaiting decision"
+
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "等待工具返回…"
+msgstr "Waiting for tool response…"
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "等待本轮 Provider usage"
+msgstr "Waiting for Provider usage for this run"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "等待此节点产生模型记录…"
+msgstr "Waiting for this node to produce model records…"
+
+#: apps/web/src/agentNew/ui/PluginSettingsPanel.tsx
+msgid "管理从 <0>.webAgent/plugins/</0> 加载的第三方插件。"
+msgstr "Manage third-party plugins loaded from <0>.webAgent/plugins/</0>."
+
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+msgid "纯静态部署会从浏览器直连 <0>DeepSeek</0>、<1>GLM</1> 或 <2>Kimi</2>。上游服务必须允许当前部署域名的 <3>CORS</3> 请求。"
+msgstr "Static deployments connect directly from the browser to <0>DeepSeek</0>, <1>GLM</1>, or <2>Kimi</2>. The upstream service must allow <3>CORS</3> requests from this deployment's domain."
+
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "结果："
+msgstr "Result:"
+
+#: apps/web/src/agentNew/ui/AskUserQuestionCard.tsx
+msgid "继续"
+msgstr "Continue"
+
+#: apps/web/src/agentNew/ui/Composer.tsx
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "继续执行"
+msgstr "Continue execution"
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "缓存口径"
+msgstr "Cache semantics"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "编辑兼容连接"
+msgstr "Edit compatible connection"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "编辑模型连接"
+msgstr "Edit model connection"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "编辑连接"
+msgstr "Edit connection"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "自动连接"
+msgstr "Auto-connect"
+
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "自定义指令"
+msgstr "Custom instructions"
+
+#: apps/web/src/agentNew/ui/ModelConnectionSourcePicker.tsx
+msgid "自部署"
+msgstr "Self-hosted"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "草稿"
+msgstr "Draft"
+
+#: apps/web/src/agentNew/ui/AskUserQuestionCard.tsx
+msgid "补充说明"
+msgstr "Additional notes"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "表单配置"
+msgstr "Form configuration"
+
+#: apps/web/src/agentNew/ui/AskUserQuestionCard.tsx
+msgid "计划等待决策"
+msgstr "Plan awaiting decision"
+
+#: apps/web/src/agentNew/ui/CompletedPlanRecord.tsx
+msgid "计划记录"
+msgstr "Plan record"
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "计算基数"
+msgstr "Calculation basis"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "设为新对话默认"
+msgstr "Set as default for new conversations"
+
+#: apps/web/src/agentNew/ui/SettingsCenter.tsx
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "设置"
+msgstr "Settings"
+
+#. placeholder {0}: workspace.name
+#: apps/web/src/agentNew/ui/WorkspaceSidebar.tsx
+msgid "设置 {0}"
+msgstr "Settings for {0}"
+
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "设置分类"
+msgstr "Settings categories"
+
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "设置已保存"
+msgstr "Settings saved"
+
+#. placeholder {0}: stage.evidence.join(t`；`)
+#: apps/web/src/agentNew/ui/CompletedPlanRecord.tsx
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "证据：{0}"
+msgstr "Evidence: {0}"
+
+#. placeholder {0}: row.diagnostics.length
+#: apps/web/src/agentNew/ui/PluginEntryCard.tsx
+msgid "诊断（{0} 条）"
+msgstr "Diagnostics ({0, plural, one {# item} other {# items}})"
+
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "该内容保存在当前设备，并作为 system 指令发送给主 Agent 和它委派的子 Agent。 请勿填写密码、令牌等敏感信息。"
+msgstr "This content is stored on this device and sent as a system instruction to the main Agent and its delegated subagents. Do not enter passwords, tokens, or other sensitive information."
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "该阶段尚未开始，无需回滚"
+msgstr "This stage has not started, so no rollback is needed"
+
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "详情"
+msgstr "Details"
+
+#: apps/web/src/agentNew/ui/AskUserQuestionCard.tsx
+msgid "请先完成必填项"
+msgstr "Complete the required fields first"
+
+#: apps/web/src/agentNew/ui/McpLaunchConsentPrompt.tsx
+msgid "请先核对命令、参数、工作目录与环境变量；其中任何一项被改动后都需要重新确认。"
+msgstr "Review the command, arguments, working directory, and environment variables first. Any change to them requires confirmation again."
+
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+msgid "请先配置 Kimi 中国区 API Key。"
+msgstr "Configure the Kimi China API Key first."
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "请检查服务地址、启动命令、参数或访问凭据是否正确，修正后点击下方\"重连\"。"
+msgstr "Check the server address, launch command, arguments, or access credentials, then select \"Reconnect\" below after correcting them."
+
+#: apps/web/src/agentNew/ui/Composer.tsx
+msgid "请求失败"
+msgstr "Request failed"
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "请求失败，未获得缓存指标"
+msgstr "Request failed; cache metrics are unavailable"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "请求头（可选）"
+msgstr "Request headers (optional)"
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "请求已取消，未获得缓存指标"
+msgstr "Request cancelled; cache metrics are unavailable"
+
+#: apps/web/src/agentNew/ui/ContextStats.tsx
+msgid "请求投影档案（本地）"
+msgstr "Request projection profile (local)"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "请确认这份计划后再开始执行。"
+msgstr "Confirm this plan before starting execution."
+
+#. placeholder {0}: credential.label
+#: apps/web/src/agentNew/ui/StartupCredentialGate.tsx
+msgid "请稍候，正在读取 {0} 的应用配置。"
+msgstr "Please wait while the app configuration for {0} is read."
+
+#. placeholder {0}: credential.label
+#: apps/web/src/agentNew/ui/StartupCredentialGate.tsx
+msgid "请输入 {0} API Key"
+msgstr "Enter {0} API Key"
+
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "调用："
+msgstr "Call:"
+
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "调用与结果"
+msgstr "Call and result"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "调用参数"
+msgstr "Call arguments"
+
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "调用工具 {name}"
+msgstr "Calling tool {name}"
+
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "警告"
+msgstr "Warning"
+
+#. placeholder {0}: credential.label
+#: apps/web/src/agentNew/ui/StartupCredentialGate.tsx
+msgid "输入 {0} API Key"
+msgstr "Enter {0} API Key"
+
+#. placeholder {0}: credential.label
+#: apps/web/src/agentNew/ui/ModelCredentialCard.tsx
+msgid "输入新的 {0} API Key"
+msgstr "Enter a new {0} API Key"
+
+#: apps/web/src/agentNew/ui/SubagentRunInline.tsx
+msgid "运行中"
+msgstr "Running"
+
+#: apps/web/src/agentNew/ui/AskUserQuestionCard.tsx
+msgid "运行已暂停"
+msgstr "Run paused"
+
+#: apps/web/src/agentNew/ui/McpSettingsPanel.tsx
+msgid "还没有 MCP 服务"
+msgstr "No MCP servers yet"
+
+#: apps/web/src/agentNew/ui/ActiveSessionProvider.tsx
+msgid "还没有会话，点“新建对话”开始"
+msgstr "No conversations yet. Click ‘New conversation’ to start."
+
+#: apps/web/src/agentNew/ui/PluginSettingsPanel.tsx
+msgid "还没有插件"
+msgstr "No plugins yet"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
+msgid "还没有第三方模型连接。"
+msgstr "No third-party model connections yet."
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "这个服务会在本机启动进程，第一次执行前需要你确认命令行。"
+msgstr "This server starts a local process. You must confirm its command line before it runs for the first time."
+
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+msgid "这是 <0>BYOK</0>：<1>Key</1> 以明文保存在此浏览器的 <2>localStorage</2>。任何能在本页面执行的脚本或受信任的浏览器扩展都可能读取它；仅在可信部署中使用，清除网站数据即可删除。"
+msgstr "This is <0>BYOK</0>: the <1>Key</1> is stored in plain text in this browser's <2>localStorage</2>. Any script that can run on this page, or a trusted browser extension, may be able to read it. Use this only in a trusted deployment; clearing site data removes it."
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "这是上次保存的计划进度，当前没有 Agent 在运行。"
+msgstr "This is the last saved plan progress. No agent is currently running."
+
+#: apps/web/src/agentNew/ui/McpLaunchConsentPrompt.tsx
+msgid "这条命令现在会执行一次；之后开启「自动连接」时也不会再询问。"
+msgstr "This command will run once now. Later, enabling Auto-connect will not ask again."
+
+#: apps/web/src/agentNew/ui/McpLaunchConsentPrompt.tsx
+msgid "这条命令现在会执行一次；之后每次启动应用都会自动执行，不再询问。"
+msgstr "This command will run once now. It will then run automatically whenever the app starts, without asking again."
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "进行中"
+msgstr "In progress"
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "连接 ID"
+msgstr "Connection ID"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "连接不稳定"
+msgstr "Connection unstable"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "连接中"
+msgstr "Connecting"
+
+#: apps/web/src/agentNew/ui/McpAddServerForm.tsx
+msgid "连接地址与启动参数会以明文保存，请勿在其中填写凭据；请求头 / 环境变量仅在桌面端可以填写，并只会保存到桌面本地配置文件。"
+msgstr "Connection addresses and launch arguments are stored in plain text, so do not enter credentials there. Request headers and environment variables can be entered only on desktop and are stored only in the local desktop configuration file."
+
+#: apps/web/src/agentNew/ui/McpSettingsPanel.tsx
+msgid "连接外部工具服务，并把远端工具安全地提供给当前 Agent。"
+msgstr "Connect external tool servers and safely make their remote tools available to the current Agent."
+
+#: apps/web/src/agentNew/ui/ModelConnectionProfileEditor.tsx
+msgid "连接配置"
+msgstr "Connection details"
+
+#: apps/web/src/agentNew/ui/WorkspaceRootField.tsx
+msgid "选择文件夹"
+msgstr "Choose folder"
+
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "通用"
+msgstr "General"
+
+#: apps/web/src/agentNew/ui/WorkspaceSidebar.tsx
+msgid "配置这个工作区使用的目录。后续工作区级功能也会集中放在这里。"
+msgstr "Configure the directory used by this workspace. Future workspace-level features will also live here."
+
+#: apps/web/src/agentNew/ui/SessionList.tsx
+msgid "重命名会话"
+msgstr "Rename conversation"
+
+#: apps/web/src/agentNew/ui/WorkspaceSidebar.tsx
+msgid "重命名工作区"
+msgstr "Rename workspace"
+
+#: apps/web/src/agentNew/ui/StartupCredentialGate.tsx
+msgid "重试检查"
+msgstr "Retry check"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "重连"
+msgstr "Reconnect"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "重连中"
+msgstr "Reconnecting"
+
+#: apps/web/src/agentNew/ui/ThoughtTraceEntries.tsx
+msgid "错误"
+msgstr "Error"
+
+#: apps/web/src/agentNew/ui/Composer.tsx
+msgid "错误详情"
+msgstr "Error details"
+
+#. placeholder {0}: stage.blockReason
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "阻塞：{0}"
+msgstr "Blocked: {0}"
+
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+msgid "附带 {resourceCount} 个资源文件"
+msgstr "Includes {resourceCount, plural, one {# resource file} other {# resource files}}"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "需要你处理"
+msgstr "Your action required"
+
+#: apps/web/src/agentNew/ui/PlanPanel.tsx
+msgid "需要你的决策"
+msgstr "Your decision is needed"
+
+#: apps/web/src/agentNew/ui/McpServerCard.tsx
+msgid "需要处理"
+msgstr "Action required"
+
+#: apps/web/src/agentNew/ui/AskUserQuestionCard.tsx
+#: apps/web/src/agentNew/ui/ToolConfirmCard.tsx
+msgid "需要确认"
+msgstr "Confirmation required"
+
+#: apps/web/src/agentNew/ui/McpLaunchConsentPrompt.tsx
+msgid "需要确认：将在本机执行命令"
+msgstr "Confirmation required: a command will run locally"
+
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+msgid "静态部署不提供第三方或自建 <0>OpenAI</0> 兼容连接：端点与密钥必须由本机后端按连接隔离保存。 官方模型仍可使用上方的浏览器 <1>BYOK</1>。"
+msgstr "Static deployments do not provide third-party or self-hosted <0>OpenAI</0>-compatible connections: endpoints and keys must be stored separately for each connection by the local backend. Official models can still use browser <1>BYOK</1> above."
+
+#: apps/web/src/agentNew/ui/ProjectSkillsPanel.tsx
+#: apps/web/src/agentNew/ui/SettingsDialog.tsx
+msgid "项目 Skills"
+msgstr "Project Skills"
+
+#: apps/web/src/agentNew/ui/ModelConnectionSourcePicker.tsx
+msgid "预设只会填入公开地址和名称；密钥始终由你在下方单独填写。"
+msgstr "Presets only fill public addresses and names; enter the key below separately."
+
+#: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
+msgid "首期仅开放已核对协议的中国区 <0>Kimi</0> 图片会话。"
+msgstr "The initial release supports only China-region <0>Kimi</0> image conversations with a verified protocol."

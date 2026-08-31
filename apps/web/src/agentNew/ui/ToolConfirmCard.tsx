@@ -6,6 +6,7 @@
 // pendingToolConfirmation.args 是模型给的原样参数（unknown），预览前防御式提取（command/path），并安全截断。
 
 import { useState } from 'react'
+import { Trans, useLingui } from '@lingui/react/macro'
 import { useAgentAtomValue } from '@einfach-agent/react-plugin'
 import { runAtom, confirmTool } from '@einfach-agent/core'
 import { isMcpTool } from '@einfach-agent/core/tools'
@@ -24,7 +25,7 @@ function truncate(text: string): string {
 }
 
 // 从原样 args 里防御式提取一段「人看得懂」的预览：shell → command；写/patch → path(s)；兜底 → JSON。
-function describeArgs(args: unknown): string {
+function describeArgs(args: unknown, pathSeparator: string): string {
   const record = asRecord(args)
   if (!record) return ''
 
@@ -39,7 +40,7 @@ function describeArgs(args: unknown): string {
     const paths = record.operations
       .map((op) => asRecord(op)?.path)
       .filter((path): path is string => typeof path === 'string' && path.trim().length > 0)
-    if (paths.length > 0) return truncate(paths.join('、'))
+    if (paths.length > 0) return truncate(paths.join(pathSeparator))
   }
 
   try {
@@ -83,22 +84,23 @@ function ConfirmCardBody({
   reason?: string
   irreversible?: boolean
 }) {
+  const { t } = useLingui()
   // 「本 session 一律允许该工具」勾选（纯本地 UI 态；确认「允许」时经命令写入瞬态集合）。
   const [always, setAlways] = useState(false)
-  const preview = describeArgs(args)
+  const preview = describeArgs(args, t`、`)
   const canRememberApproval = risk !== 'critical' && !irreversible && !isMcpTool(toolName)
 
   return (
     <section className="agentnew-confirm" aria-labelledby="agentnew-confirm-title">
       <header className="agentnew-confirm-header">
-        <span className="agentnew-confirm-eyebrow">{risk === 'critical' ? '极高风险操作' : '需要确认'}</span>
+        <span className="agentnew-confirm-eyebrow">{risk === 'critical' ? t`极高风险操作` : t`需要确认`}</span>
         <h2 id="agentnew-confirm-title" className="agentnew-confirm-title">
-          即将执行工具 <code className="agentnew-confirm-tool">{toolName}</code>
+          <Trans>即将执行工具 <code className="agentnew-confirm-tool">{toolName}</code></Trans>
         </h2>
       </header>
 
       {preview && (
-        <pre className="agentnew-confirm-preview" aria-label="工具参数预览">
+        <pre className="agentnew-confirm-preview" aria-label={t`工具参数预览`}>
           {preview}
         </pre>
       )}
@@ -111,7 +113,7 @@ function ConfirmCardBody({
           checked={always}
           onChange={(event) => setAlways(event.target.checked)}
         />
-        本 session 一律允许该工具
+        {t`本 session 一律允许该工具`}
       </label> : null}
 
       <footer className="agentnew-confirm-footer">
@@ -120,14 +122,14 @@ function ConfirmCardBody({
           className="agentnew-confirm-reject"
           onClick={() => confirmTool(false)}
         >
-          拒绝
+          {t`拒绝`}
         </button>
         <button
           type="button"
           className="agentnew-confirm-approve"
           onClick={() => confirmTool(true, canRememberApproval ? always : false)}
         >
-          允许
+          {t`允许`}
         </button>
       </footer>
     </section>

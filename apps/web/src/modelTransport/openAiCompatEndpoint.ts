@@ -4,7 +4,7 @@
 // 「一条 base URL 凭什么能用」由本机 Node 后端回答（`packages/host-node/src/model/
 // openAiCompatBaseUrl.ts`），本文件不持有那条判据的副本，也不该持有：
 //   · 真正决定上行到哪的是后端的端点白名单。浏览器发出去的目标里**没有 origin 字段**，
-//     它只能给 (provider, scope, method, path)，所以前端判得再严也改变不了目标，判得再松
+//     它只能给身份/方法/路径与可选 profile ID，所以前端判得再严也改变不了目标，判得再松
 //     也扩大不了目标。前端多一份判据只多一处会与后端分叉的地方，而分叉的症状是
 //     「面板说存好了、请求却被后端判成目标未获允许」。
 //   · 这里存的值来自 `model_endpoint_status` / `_set` 的返回体，**已经是后端归一化过的那条**。
@@ -24,12 +24,9 @@
 // 「登记」该有的语义。per-request 的 `settings.baseUrl` 仍然优先，覆盖能力没有被拿掉。
 
 import {
-  OPENAI_COMPAT_VENDOR_ID,
-  createOpenAiCompatAdapter,
-  defaultProviderRegistry,
-} from '@einfach-agent/ai'
-
-let registeredOrigin: string | undefined
+  openAiCompatLegacyOrigin,
+  setOpenAiCompatLegacyOrigin,
+} from './openAiCompatRegistry'
 
 /**
  * 当前登记的接入点；没登记时是 `undefined`。
@@ -39,7 +36,7 @@ let registeredOrigin: string | undefined
  * （`settings/modelEndpointState.ts`），两者由同一条命令一起更新。
  */
 export function openAiCompatOrigin(): string | undefined {
-  return registeredOrigin
+  return openAiCompatLegacyOrigin()
 }
 
 /**
@@ -50,9 +47,5 @@ export function openAiCompatOrigin(): string | undefined {
  * `missing_base_url` 拒绝——那正是撤销登记之后应该发生的事。
  */
 export function applyOpenAiCompatEndpoint(baseUrl: string | undefined): void {
-  registeredOrigin = baseUrl
-  defaultProviderRegistry.register(
-    OPENAI_COMPAT_VENDOR_ID,
-    createOpenAiCompatAdapter(baseUrl === undefined ? {} : { baseUrl }),
-  )
+  setOpenAiCompatLegacyOrigin(baseUrl)
 }

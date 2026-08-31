@@ -5,6 +5,12 @@ import {
   addComposerImageAttachmentsAtom,
   composerImageAttachmentAtom,
 } from './composerImageAttachmentState'
+import {
+  jpegBytes,
+  malformedReviewContainers,
+  pngBytes,
+  webpLosslessBytes,
+} from '../../imageInput/staticImagePolicy.testFixtures'
 
 const capability: ImageInputCapability = {
   kind: 'provider-upload',
@@ -12,32 +18,26 @@ const capability: ImageInputCapability = {
   limits: { maxImages: 8, maxBytesPerImage: 100, maxBatchBytes: 800, maxWidth: 100, maxHeight: 100 },
 }
 
-function png(name: string) {
-  return new File([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], name, { type: 'image/png' })
+function png(name: string, width = 10, height = 10) {
+  return new File([new Uint8Array(pngBytes(width, height))], name, { type: 'image/png' })
 }
 
 function animatedPng(name: string) {
-  return new File([new Uint8Array([
-    137, 80, 78, 71, 13, 10, 26, 10,
-    0, 0, 0, 0, 97, 99, 84, 76, 0, 0, 0, 0,
-  ])], name, { type: 'image/png' })
+  return new File([new Uint8Array(pngBytes(10, 10, true))], name, { type: 'image/png' })
 }
 
 function jpeg(name: string) {
-  return new File([new Uint8Array([255, 216, 255])], name, { type: 'image/jpeg' })
+  return new File([new Uint8Array(jpegBytes(10, 10))], name, { type: 'image/jpeg' })
 }
 
 function webp(name: string) {
-  return new File([new Uint8Array([
-    82, 73, 70, 70, 0, 0, 0, 0, 87, 69, 66, 80,
-  ])], name, { type: 'image/webp' })
+  return new File([new Uint8Array(webpLosslessBytes(10, 10))], name, { type: 'image/webp' })
 }
 
 describe('composer image attachment state', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('批量校验 8 张边界，拒绝第九张但保留已有草稿', async () => {
-    vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 10, height: 10, close: vi.fn() }))
     const store = createStore()
     await store.setter(addComposerImageAttachmentsAtom, {
       files: Array.from({ length: 8 }, (_, index) => png(`${index}.png`)),
@@ -54,7 +54,6 @@ describe('composer image attachment state', () => {
   })
 
   it('JPEG 和 WebP 的文件签名通过后可作为附件', async () => {
-    vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 10, height: 10, close: vi.fn() }))
     const store = createStore()
     await store.setter(addComposerImageAttachmentsAtom, {
       files: [jpeg('photo.jpg'), webp('photo.webp')],
@@ -82,10 +81,9 @@ describe('composer image attachment state', () => {
   })
 
   it('批次总量等于上限时接受，多一字节时拒绝', async () => {
-    vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 10, height: 10, close: vi.fn() }))
     const batchCapability: ImageInputCapability = {
       ...capability,
-      limits: { ...capability.limits, maxBatchBytes: 16 },
+      limits: { ...capability.limits, maxBatchBytes: png('measure.png').size * 2 },
     }
     const atLimitStore = createStore()
     await atLimitStore.setter(addComposerImageAttachmentsAtom, {
@@ -96,7 +94,8 @@ describe('composer image attachment state', () => {
 
     const overLimitStore = createStore()
     const nineBytes = new File([
-      new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0]),
+      new Uint8Array(pngBytes(10, 10)),
+      new Uint8Array([0]),
     ], 'nine-bytes.png', { type: 'image/png' })
     await overLimitStore.setter(addComposerImageAttachmentsAtom, {
       files: [png('first.png'), nineBytes],
@@ -132,9 +131,8 @@ describe('composer image attachment state', () => {
   })
 
   it('读取真实解码尺寸并拒绝超出模型上限的图片', async () => {
-    vi.stubGlobal('createImageBitmap', vi.fn().mockResolvedValue({ width: 101, height: 100, close: vi.fn() }))
     const store = createStore()
-    await store.setter(addComposerImageAttachmentsAtom, { files: [png('wide.png')], capability })
+    await store.setter(addComposerImageAttachmentsAtom, { files: [png('wide.png', 101, 100)], capability })
 
     expect(store.getter(composerImageAttachmentAtom)).toMatchObject({
       images: [],
@@ -143,14 +141,9 @@ describe('composer image attachment state', () => {
   })
 
   it('maxHeight 等于上限时接受，超出时拒绝并保留已有附件', async () => {
-    vi.stubGlobal('createImageBitmap', vi.fn(async (file: File) => ({
-      width: 100,
-      height: file.name === 'too-tall.png' ? 101 : 100,
-      close: vi.fn(),
-    })))
     const store = createStore()
-    await store.setter(addComposerImageAttachmentsAtom, { files: [png('at-limit.png')], capability })
-    await store.setter(addComposerImageAttachmentsAtom, { files: [png('too-tall.png')], capability })
+    await store.setter(addComposerImageAttachmentsAtom, { files: [png('at-limit.png', 100, 100)], capability })
+    await store.setter(addComposerImageAttachmentsAtom, { files: [png('too-tall.png', 100, 101)], capability })
 
     expect(store.getter(composerImageAttachmentAtom)).toMatchObject({
       images: [{ name: 'at-limit.png', height: 100 }],
@@ -165,6 +158,23 @@ describe('composer image attachment state', () => {
     expect(store.getter(composerImageAttachmentAtom)).toMatchObject({
       images: [],
       error: '“animated.png”是动图，请选择静态图片。',
+    })
+  })
+
+  it.each(malformedReviewContainers.filter(({ mimeType }) => mimeType !== 'image/webp'))('共享 policy 拒绝 $label', async ({
+    bytes,
+    mimeType,
+  }) => {
+    const store = createStore()
+    const name = mimeType === 'image/jpeg' ? 'broken.jpg' : 'broken.png'
+    await store.setter(addComposerImageAttachmentsAtom, {
+      files: [new File([new Uint8Array(bytes)], name, { type: mimeType })],
+      capability,
+    })
+
+    expect(store.getter(composerImageAttachmentAtom)).toMatchObject({
+      images: [],
+      error: `“${name}”不是有效的图片文件。`,
     })
   })
 })

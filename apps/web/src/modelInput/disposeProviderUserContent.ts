@@ -1,4 +1,5 @@
 import {
+  disposeDeepSeekProviderFiles,
   disposeKimiUserContent,
   type ModelAdapterSettings,
   type UserMessageContent,
@@ -23,5 +24,8 @@ export async function disposeProviderUserContent(
   // Dispatch by asking each registered adapter to inspect its own opaque source.
   // The session may have switched models since the content was uploaded, so its
   // current settings must not decide which provider owns the old reference.
-  await disposeKimiUserContent(discarded, retained, dependencies)
+  await Promise.all([
+    disposeKimiUserContent(discarded, retained, dependencies),
+    disposeDeepSeekProviderFiles(discarded, retained, dependencies),
+  ])
 }

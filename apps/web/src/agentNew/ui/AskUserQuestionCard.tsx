@@ -10,6 +10,7 @@
 // @ai-components 控件（text 用原生 textarea）与 store 参数（改调命令）。
 
 import { useAgentAtomValue } from '@einfach-agent/react-plugin'
+import { useLingui } from '@lingui/react/macro'
 import {
   runAtom,
   pendingQuestionAnswersAtom,
@@ -20,6 +21,7 @@ import {
 import { normalizeAskUserQuestionPayload, type AskUserQuestionItem } from '@einfach-agent/core/tools'
 
 export function AskUserQuestionCard({ surface = 'conversation' }: { surface?: 'conversation' | 'plan' }) {
+  const { t } = useLingui()
   const run = useAgentAtomValue(runAtom)
   const answers = useAgentAtomValue(pendingQuestionAnswersAtom)
 
@@ -38,13 +40,13 @@ export function AskUserQuestionCard({ surface = 'conversation' }: { surface?: 'c
   return (
     <section className={`agentnew-ask ${surface === 'plan' ? 'is-plan-embedded' : ''}`} aria-labelledby="agentnew-ask-title">
       <header className="agentnew-ask-header">
-        <span className="agentnew-ask-eyebrow">{surface === 'plan' ? '计划等待决策' : '运行已暂停'}</span>
+        <span className="agentnew-ask-eyebrow">{surface === 'plan' ? t`计划等待决策` : t`运行已暂停`}</span>
         <h2 id="agentnew-ask-title" className="agentnew-ask-title">
-          {payload.title ?? '需要确认'}
+          {payload.title ?? t`需要确认`}
         </h2>
       </header>
 
-      <div className="agentnew-ask-body" aria-label="确认问题">
+      <div className="agentnew-ask-body" aria-label={t`确认问题`}>
         {payload.questions.map((question, index) => (
           <QuestionInput
             key={question.id}
@@ -57,14 +59,14 @@ export function AskUserQuestionCard({ surface = 'conversation' }: { surface?: 'c
       </div>
 
       <footer className="agentnew-ask-footer">
-        <span className="agentnew-ask-hint">{canSubmit ? '确认后继续运行' : '请先完成必填项'}</span>
+        <span className="agentnew-ask-hint">{canSubmit ? t`确认后继续运行` : t`请先完成必填项`}</span>
         <button
           type="button"
           className="agentnew-ask-submit"
           disabled={!canSubmit}
           onClick={() => resumeWithAnswers()}
         >
-          继续
+          {t`继续`}
         </button>
       </footer>
     </section>
@@ -82,6 +84,7 @@ function QuestionInput({
   value: AskUserAnswerValue | undefined
   onChange: (value: AskUserAnswerValue) => void
 }) {
+  const { t } = useLingui()
   const answered = hasQuestionAnswer(value)
   const itemClassName = [
     'agentnew-ask-item',
@@ -96,13 +99,17 @@ function QuestionInput({
         <span className="agentnew-ask-index">{String(index + 1).padStart(2, '0')}</span>
         <span className="agentnew-ask-text">{question.text}</span>
         {question.required && (
-          <span className="agentnew-ask-required" aria-label="必填">
+          <span className="agentnew-ask-required" aria-label={t`必填`}>
             *
           </span>
         )}
       </div>
       <div className={`agentnew-ask-control agentnew-ask-control--${question.type}`}>
-        {renderQuestionControl(question, value, onChange)}
+        {renderQuestionControl(question, value, onChange, {
+          placeholder: t`补充说明`,
+          yes: t`是`,
+          no: t`否`,
+        })}
       </div>
     </div>
   )
@@ -113,13 +120,14 @@ function renderQuestionControl(
   question: AskUserQuestionItem,
   value: AskUserAnswerValue | undefined,
   onChange: (value: AskUserAnswerValue) => void,
+  labels: { placeholder: string; yes: string; no: string },
 ) {
   if (question.type === 'text') {
     return (
       <textarea
         className="agentnew-ask-textarea"
         aria-label={question.text}
-        placeholder="补充说明"
+        placeholder={labels.placeholder}
         value={typeof value === 'string' ? value : ''}
         onChange={(event) => onChange(event.target.value)}
       />
@@ -137,7 +145,7 @@ function renderQuestionControl(
             aria-pressed={value === option}
             onClick={() => onChange(option)}
           >
-            {option ? '是' : '否'}
+            {option ? labels.yes : labels.no}
           </button>
         ))}
       </div>

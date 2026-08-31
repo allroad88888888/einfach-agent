@@ -1,18 +1,11 @@
-// 两态各自拿到哪一个模型凭据宿主 —— 以及**构建模式一次都不许插手**。
+// 两态与构建模式共同决定哪一个模型凭据宿主。
 // ---------------------------------------------------------------------------
 // 两个工厂换成哨兵，一次真实凭据读写都不发：三条命令的行为有自己的 colocated 测试
 // （`settings/serverModelCredentialHost.test.ts`），在这里再跑一遍只会把「选错了宿主」和
 // 「命令本身坏了」混成一条红。
 //
-// ★ 本模块的顺序敏感点不在模块内部，在模块之间 ★
-// `host.kind` 是可辨识联合，两支互斥——**这个文件里没有内部顺序可钉**。真正会咬人的顺序在隔壁：
-// `hostModelTransport.ts` 里 server 与 `import.meta.env.DEV` 是两个正交判据、必须 server 在前，
-// 而那条注释给出的理由是「本模块是 `server → unavailable`，**没有 DEV 分支**」。也就是说，隔壁那条
-// 排序的正确性依赖本模块的一条性质——谁哪天在这里插一句
-// `if (import.meta.env.DEV) return createUnavailableModelCredentialHost()`，
-// 一个「`pnpm dev` 前端 + 真 apps/server 后端」的混合会话就会变成：Key 存不进去（本模块答
-// unavailable），请求却照发（传输答 server）。所以下面的用例把「DEV 抢不走任何一态」逐态钉死，
-// 那才是本文件对全局的贡献。
+// server 必须在 DEV 之前：混合会话仍然应使用本机后端。static + DEV 保留本地 relay 的环境变量
+// 流程，static 构建产物才启用浏览器 BYOK；两条与隔壁 `hostModelTransport.ts` 的分支一一对应。
 //
 // `import.meta.env.DEV` 在 vitest 下**默认为 true**，所以每条用例都显式声明自己要哪一种构建模式：
 // 不 stub 的用例测的其实是 dev 形态，而且它会绿。
@@ -31,8 +24,10 @@ const mocks = vi.hoisted(() => {
   }
   return {
     serverHostValue: sentinel('serverModelCredentialHost', true),
+    browserHostValue: sentinel('browserModelCredentialHost', true),
     unavailableHostValue: sentinel('unavailableModelCredentialHost', false),
     createServerModelCredentialHost: vi.fn(),
+    createBrowserModelCredentialHost: vi.fn(),
     createUnavailableModelCredentialHost: vi.fn(),
   }
 })
@@ -42,6 +37,9 @@ vi.mock('../settings/modelCredentialHost', () => ({
 }))
 vi.mock('../settings/serverModelCredentialHost', () => ({
   createServerModelCredentialHost: mocks.createServerModelCredentialHost,
+}))
+vi.mock('../settings/browserModelCredentialHost', () => ({
+  createBrowserModelCredentialHost: mocks.createBrowserModelCredentialHost,
 }))
 
 const { createHostModelCredentialHost } = await import('./hostModelCredentialHost')
@@ -60,6 +58,7 @@ describe('createHostModelCredentialHost', () => {
     // 「某工厂一次都没被造出来」这类断言会跨用例串账。
     vi.clearAllMocks()
     mocks.createServerModelCredentialHost.mockReturnValue(mocks.serverHostValue)
+    mocks.createBrowserModelCredentialHost.mockReturnValue(mocks.browserHostValue)
     mocks.createUnavailableModelCredentialHost.mockReturnValue(mocks.unavailableHostValue)
   })
 
@@ -74,17 +73,13 @@ describe('createHostModelCredentialHost', () => {
     expect(mocks.createUnavailableModelCredentialHost).not.toHaveBeenCalled()
   })
 
-  it('server 宿主 + DEV 同时为真时仍走 server —— 与模型传输由同一个判据选出', () => {
+  it('server 宿主 + DEV 同时为真时仍走 server', () => {
     setDev(true)
     expect(createHostModelCredentialHost(serverHost)).toBe(mocks.serverHostValue)
-    // 隔壁 `hostModelTransport.ts` 那条「server 必须排在 DEV 之前」的排序，
-    // 其正确性依赖的就是这一行：本模块**没有** DEV 分支。
     expect(mocks.createUnavailableModelCredentialHost).not.toHaveBeenCalled()
   })
 
-  it('static 宿主在 pnpm dev 下依然 unavailable —— DEV 不给它开凭据后门', () => {
-    // 模型传输在这一格是有 dev 中继的（`createDevPreviewModelFetch`），凭据宿主**没有**对应物：
-    // dev 中继只认 `DEEPSEEK_API_KEY` 这类环境变量，前端存不存 Key 与它无关。
+  it('static 宿主在 pnpm dev 下保持 unavailable，与环境变量中继配对', () => {
     setDev(true)
     const host = createHostModelCredentialHost(staticHost)
 
@@ -93,9 +88,9 @@ describe('createHostModelCredentialHost', () => {
     expect(mocks.createServerModelCredentialHost).not.toHaveBeenCalled()
   })
 
-  it('static 宿主在构建产物里同样 unavailable：背后没有能写文件的机器', () => {
+  it('static 构建产物使用浏览器 localStorage BYOK 宿主', () => {
     setDev(false)
-    expect(createHostModelCredentialHost(staticHost)).toBe(mocks.unavailableHostValue)
+    expect(createHostModelCredentialHost(staticHost)).toBe(mocks.browserHostValue)
     expect(mocks.createServerModelCredentialHost).not.toHaveBeenCalled()
   })
 })

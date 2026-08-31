@@ -5,6 +5,7 @@
 
 import { useAtomValue } from '@einfach/react'
 import { useRootAtomValue } from '@einfach-agent/react-plugin'
+import { Trans, useLingui } from '@lingui/react/macro'
 import {
   activeSessionMetaAtom,
   disabledProjectSkillsByWorkspaceAtom,
@@ -54,10 +55,11 @@ function SkillEntry({
   enabled: boolean
   workspaceId: string
 }) {
+  const { t } = useLingui()
   const resourceCount = Object.keys(entry.resources).length
   // 工作区与主目录下是同名的两个目录，来源标注不带 `~/` 就分不清这条是哪一份文件。
   const originLabel = scanRootLabel(entry.scope, entry.origin)
-  const action = enabled ? '停用' : '启用'
+  const action = enabled ? t`停用` : t`启用`
 
   return (
     <article className={`project-skill-card${enabled ? '' : ' is-disabled'}`}>
@@ -66,17 +68,17 @@ function SkillEntry({
           <div className="project-skill-card-title">
             <strong><code>{entry.name}</code></strong>
             <span className={`project-skill-status${enabled ? ' is-enabled' : ' is-disabled'}`}>
-              <i aria-hidden="true" />{enabled ? '已启用' : '已停用'}
+              <i aria-hidden="true" />{enabled ? t`已启用` : t`已停用`}
             </span>
           </div>
-          <span className="project-skill-origin" title={`来源目录：${originLabel}/`}>
+          <span className="project-skill-origin" title={t`来源目录：${originLabel}/`}>
             {originLabel}/
           </span>
         </div>
         <button
           type="button"
           className="agentnew-settings-button is-small"
-          aria-label={`${action} ${entry.name}`}
+          aria-label={t`${action} ${entry.name}`}
           aria-pressed={enabled}
           onClick={() => updateProjectSkillEnabled(workspaceId, entry.name, !enabled)}
         >
@@ -86,7 +88,7 @@ function SkillEntry({
 
       <p className="project-skill-description">{entry.description}</p>
       {resourceCount > 0 ? (
-        <p className="project-skill-resources">附带 {resourceCount} 个资源文件</p>
+        <p className="project-skill-resources"><Trans>附带 {resourceCount} 个资源文件</Trans></p>
       ) : null}
     </article>
   )
@@ -128,6 +130,7 @@ function SkillGroup({
 
 /** Manages discovered workspace and user skills for the workspace bound to the active conversation. */
 export function ProjectSkillsPanel() {
+  const { t } = useLingui()
   const { workspaceId, workspaceRoot, snapshot } = useProjectSkillsState()
   const disabledProjectSkills = useRootAtomValue(disabledProjectSkillsByWorkspaceAtom)
   const refreshing = useAtomValue(projectSkillsRefreshingAtom)
@@ -137,8 +140,8 @@ export function ProjectSkillsPanel() {
     return (
       <section className="agentnew-settings-panel project-skills-panel">
         <div className="project-skills-empty">
-          未绑定 workspace。绑定后，在桌面端可加载项目中的{' '}
-          <code>.webAgent/skills/</code> 与 <code>.claude/skills/</code>。
+          <Trans>未绑定 workspace。绑定后，在桌面端可加载项目中的{' '}
+          <code>.webAgent/skills/</code> 与 <code>.claude/skills/</code>。</Trans>
         </div>
       </section>
     )
@@ -153,8 +156,8 @@ export function ProjectSkillsPanel() {
     <section className="agentnew-settings-panel project-skills-panel" aria-labelledby="project-skills-title">
       <div className="agentnew-settings-panel-head project-skills-head">
         <div>
-          <h3 id="project-skills-title">项目 Skills</h3>
-          <p>控制当前工作区里哪些技能可供 Agent 使用——包括工作区自带的与本机用户目录下的。</p>
+          <h3 id="project-skills-title"><Trans>项目 Skills</Trans></h3>
+          <p><Trans>控制当前工作区里哪些技能可供 Agent 使用——包括工作区自带的与本机用户目录下的。</Trans></p>
         </div>
         <button
           type="button"
@@ -162,26 +165,26 @@ export function ProjectSkillsPanel() {
           disabled={refreshing}
           onClick={() => { void refreshProjectSkillsFromSettings() }}
         >
-          {refreshing ? '扫描中…' : '刷新'}
+          {refreshing ? t`扫描中…` : t`刷新`}
         </button>
       </div>
 
       <p className="project-skills-workspace" title={workspaceRoot}>
-        当前工作区：<code>{workspaceRoot}</code>
+        <Trans>当前工作区：<code>{workspaceRoot}</code></Trans>
       </p>
       <p className="project-skills-help">
-        所有发现的技能默认启用。停用后，后续读取会立即受限；新对话不会再列出该技能。
-        此选择仅保存在当前设备，且按工作区分别记——停用一个用户目录技能只影响当前工作区。
+        <Trans>所有发现的技能默认启用。停用后，后续读取会立即受限；新对话不会再列出该技能。
+        此选择仅保存在当前设备，且按工作区分别记——停用一个用户目录技能只影响当前工作区。</Trans>
       </p>
 
       {snapshot && entries.length > 0 ? (
         <p className="project-skills-summary" role="status">
-          已发现 {entries.length} 个技能，{enabledCount} 个已启用
+          <Trans>已发现 {entries.length} 个技能，{enabledCount} 个已启用</Trans>
         </p>
       ) : null}
 
       {preferenceStatus.status === 'saved' ? (
-        <p className="project-skills-notice is-success" role="status">设置已保存</p>
+        <p className="project-skills-notice is-success" role="status"><Trans>设置已保存</Trans></p>
       ) : null}
       {preferenceStatus.status === 'error' ? (
         <p className="project-skills-notice is-error" role="alert">{preferenceStatus.error}</p>
@@ -189,7 +192,7 @@ export function ProjectSkillsPanel() {
 
       {diagnostics.length > 0 ? (
         <details className="project-skills-diagnostics">
-          <summary>扫描反馈（{diagnostics.length} 条）</summary>
+          <summary><Trans>扫描反馈（{diagnostics.length} 条）</Trans></summary>
           <ul>
             {diagnostics.map((diagnostic, index) => <li key={index}>{diagnostic}</li>)}
           </ul>
@@ -198,26 +201,26 @@ export function ProjectSkillsPanel() {
 
       {!snapshot ? (
         <div className="project-skills-empty">
-          尚未扫描。发送一条消息或点「刷新」后，会加载工作区与用户主目录下{' '}
-          <code>.webAgent/skills/</code> 与 <code>.claude/skills/</code> 里的 Skills。
+          <Trans>尚未扫描。发送一条消息或点「刷新」后，会加载工作区与用户主目录下{' '}
+          <code>.webAgent/skills/</code> 与 <code>.claude/skills/</code> 里的 Skills。</Trans>
         </div>
       ) : entries.length === 0 ? (
         <div className="project-skills-empty">
-          未发现任何 Skills。在工作区或主目录的{' '}
+          <Trans>未发现任何 Skills。在工作区或主目录的{' '}
           <code>.webAgent/skills/&lt;name&gt;/SKILL.md</code> 或{' '}
-          <code>.claude/skills/&lt;name&gt;/SKILL.md</code> 中放置带 frontmatter 的 skill 文件即可自动加载。
+          <code>.claude/skills/&lt;name&gt;/SKILL.md</code> 中放置带 frontmatter 的 skill 文件即可自动加载。</Trans>
         </div>
       ) : (
         <>
           <SkillGroup
-            title="工作区"
+            title={t`工作区`}
             hint={workspaceRoot}
             entries={entries.filter((entry) => entry.scope === 'project')}
             disabledNames={disabledNames}
             workspaceId={workspaceId}
           />
           <SkillGroup
-            title="用户目录"
+            title={t`用户目录`}
             hint={snapshot?.userSkillsRoot ?? '~'}
             entries={entries.filter((entry) => entry.scope === 'user')}
             disabledNames={disabledNames}

@@ -120,6 +120,39 @@ describe('app settings persistence', () => {
     })
   })
 
+  it('migrates v3 settings without selecting a third-party connection', () => {
+    const { values, storage: storageLike } = mapStorage(new Map([[
+      APP_SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        version: 3,
+        installationId: TEST_INSTALLATION_ID,
+        agent: { customInstructions: '保持简洁', disabledProjectSkills: {} },
+      }),
+    ]]))
+    const storage = createAppSettingsStorage(storageLike)
+
+    expect(storage.load().defaultModelConnection).toBeUndefined()
+    expect(JSON.parse(values.get(APP_SETTINGS_STORAGE_KEY)!)).toMatchObject({
+      version: APP_SETTINGS_VERSION,
+    })
+  })
+
+  it('persists only a default connection ID and model', () => {
+    const { values, storage: storageLike } = mapStorage()
+    const storage = createAppSettingsStorage(storageLike)
+    const settings = createDefaultAppSettings()
+    settings.defaultModelConnection = { id: 'gateway-a', model: 'deepseek-chat' }
+
+    storage.save(settings)
+
+    const persisted = values.get(APP_SETTINGS_STORAGE_KEY)!
+    expect(JSON.parse(persisted).defaultModelConnection).toEqual({
+      id: 'gateway-a', model: 'deepseek-chat',
+    })
+    expect(persisted).not.toContain('baseUrl')
+    expect(persisted).not.toContain('apiKey')
+  })
+
   it('removes a legacy credential when its sanitized rewrite is blocked', () => {
     const legacyCredential = 'legacy-deepseek-key-that-must-disappear'
     const values = new Map([[

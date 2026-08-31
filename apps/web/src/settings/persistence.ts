@@ -27,6 +27,9 @@ function cloneSettings(settings: AppSettings): AppSettings {
   return {
     version: APP_SETTINGS_VERSION,
     installationId: settings.installationId,
+    ...(settings.defaultModelConnection === undefined
+      ? {}
+      : { defaultModelConnection: { ...settings.defaultModelConnection } }),
     agent: {
       customInstructions: settings.agent.customInstructions,
       disabledProjectSkills: normalizeDisabledProjectSkills(settings.agent.disabledProjectSkills),
@@ -81,7 +84,9 @@ function parseSettings(
       migratedLegacySettings: false,
     }
   }
-  if (record.version !== 1 && record.version !== 2) throw new Error('应用设置格式无效')
+  if (record.version !== 1 && record.version !== 2 && record.version !== 3) {
+    throw new Error('应用设置格式无效')
+  }
 
   const { settings, repairedInstallationId } = settingsWithInstallationId(record, installationIdFactory)
   return {
