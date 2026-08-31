@@ -4,6 +4,13 @@ import { defaultProviderRegistry, getModelThinkingCapability } from '@einfach-ag
 import { renderWithStore } from '../../test/renderWithStore'
 import { ComposerThinkingControl } from './ComposerThinkingControl'
 
+const REQUIRED_CAPABILITY = {
+  kind: 'effort',
+  sourceUrl: 'https://example.test/required-thinking',
+  efforts: ['low', 'high', 'max'],
+  required: true,
+} as const
+
 function capability(vendor: string, model: string) {
   return getModelThinkingCapability(defaultProviderRegistry, vendor, model)
 }
@@ -87,5 +94,26 @@ describe('ComposerThinkingControl', () => {
     expect(within(groups[0]).getAllByRole('radio').every((radio) => radio.hasAttribute('disabled'))).toBe(true)
     expect(within(groups[0]).getByRole('radio', { name: /High/ })).toHaveAttribute('name', 'session-a')
     expect(within(groups[1]).getByRole('radio', { name: /Max/ })).toHaveAttribute('name', 'session-b')
+  })
+
+  it('required capability 始终显示 On、不能关闭但仍可选择档位', () => {
+    const { props } = renderControl({
+      capability: REQUIRED_CAPABILITY,
+      enabled: false,
+      effort: 'low',
+    })
+
+    const toggle = screen.getByRole('button', { name: 'Thinking 始终开启' })
+    expect(toggle).toBeDisabled()
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(toggle).toHaveAttribute('title', 'Thinking 始终开启')
+    expect(toggle).toHaveTextContent('On')
+    expect(screen.getAllByRole('radio').map((radio) => radio.getAttribute('value'))).toEqual([
+      'auto', 'low', 'high', 'max',
+    ])
+    expect(screen.getByRole('radio', { name: 'Low' })).toBeEnabled()
+    fireEvent.click(screen.getByRole('radio', { name: 'Max' }))
+    expect(props.onEffortChange).toHaveBeenCalledWith('max')
+    expect(props.onToggle).not.toHaveBeenCalled()
   })
 })

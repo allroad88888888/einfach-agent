@@ -1,5 +1,6 @@
 import {
   isSupportedThinkingEffort,
+  modelRequiresThinking,
   modelSupportsThinking,
   type ModelThinkingCapability,
   type ModelThinkingEffort,
@@ -61,7 +62,8 @@ function normalizeThinkingSettings(
   if (!modelSupportsThinking(capability)) {
     return writeSettings(current, identity, undefined, normalizeEffort(vendorSettings, capability))
   }
-  return writeSettings(current, identity, current.thinking, normalizeEffort(vendorSettings, capability))
+  const thinking = modelRequiresThinking(capability) ? true : current.thinking
+  return writeSettings(current, identity, thinking, normalizeEffort(vendorSettings, capability))
 }
 
 function targetVendorSettings(
@@ -101,7 +103,8 @@ export function setComposerThinkingEnabled(
     return normalizeThinkingSettings(current, current, capability, current.vendorSettings)
   }
   const vendorSettings = normalizeEffort(current.vendorSettings, capability)
-  return writeSettings(current, current, enabled, vendorSettings)
+  const thinking = modelRequiresThinking(capability) ? true : enabled
+  return writeSettings(current, current, thinking, vendorSettings)
 }
 
 /** Selects a legal effort, where Auto is represented by an absent vendor setting. */
@@ -120,7 +123,9 @@ export function setComposerThinkingEffort(
     : isSupportedThinkingEffort(capability, effort)
       ? { ...withoutCurrentEffort, [REASONING_EFFORT]: effort }
       : withoutCurrentEffort
-  const thinking = current.thinking === undefined
+  const thinking = modelRequiresThinking(capability)
+    ? true
+    : current.thinking === undefined
     && capability.kind === 'effort'
     && capability.defaultEnabled === true
     && isSupportedThinkingEffort(capability, effort)

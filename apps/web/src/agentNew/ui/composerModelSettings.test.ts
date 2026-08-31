@@ -15,6 +15,13 @@ function capability(vendor: string, model: string): ModelThinkingCapability {
   return getModelThinkingCapability(defaultProviderRegistry, vendor, model)
 }
 
+const REQUIRED_CAPABILITY: ModelThinkingCapability = {
+  kind: 'effort',
+  sourceUrl: 'https://example.test/required-thinking',
+  efforts: ['low', 'high', 'max'],
+  required: true,
+}
+
 describe('selectComposerModelSettings', () => {
   it('preserves a DeepSeek effort supported by the selected DeepSeek model', () => {
     const current: ModelSettings = {
@@ -210,6 +217,32 @@ describe('Thinking setting transitions', () => {
     })
     expect(setComposerThinkingEnabled(settings, capability('other', 'unknown'), true)).toEqual({
       vendor: 'glm', model: 'glm-5.2',
+    })
+  })
+
+  it('keeps required Thinking enabled across model selection and programmatic updates', () => {
+    const selected = selectComposerModelSettings({
+      vendor: 'glm', model: 'optional-model', thinking: false,
+      vendorSettings: { reasoning_effort: 'high' },
+    }, {
+      vendor: 'glm', model: 'required-model',
+    }, REQUIRED_CAPABILITY)
+
+    expect(selected).toEqual({
+      vendor: 'glm', model: 'required-model', thinking: true,
+      vendorSettings: { reasoning_effort: 'high' },
+    })
+    expect(setComposerThinkingEnabled(selected, REQUIRED_CAPABILITY, false)).toEqual(selected)
+    expect(setComposerThinkingEffort({
+      vendor: 'glm', model: 'required-model', thinking: false,
+    }, REQUIRED_CAPABILITY, 'max')).toEqual({
+      vendor: 'glm', model: 'required-model', thinking: true,
+      vendorSettings: { reasoning_effort: 'max' },
+    })
+    expect(setComposerThinkingEffort({
+      vendor: 'glm', model: 'required-model', thinking: false,
+    }, REQUIRED_CAPABILITY, 'auto')).toEqual({
+      vendor: 'glm', model: 'required-model', thinking: true,
     })
   })
 })

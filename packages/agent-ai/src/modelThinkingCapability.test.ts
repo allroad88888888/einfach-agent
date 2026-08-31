@@ -4,6 +4,7 @@ import {
   getModelThinkingCapability,
   isDisabledThinkingAlias,
   isSupportedThinkingEffort,
+  modelRequiresThinking,
   modelSupportsThinking,
   thinkingEfforts,
 } from './modelThinkingCapability'
@@ -58,5 +59,22 @@ describe('model Thinking capability queries', () => {
     expect(isDisabledThinkingAlias(glm, 'minimal')).toBe(true)
     expect(isDisabledThinkingAlias(glm, 'none')).toBe(true)
     expect(thinkingEfforts(kimi)).toEqual([])
+  })
+
+  it('requires Thinking only when a supported capability explicitly declares it', () => {
+    const required = {
+      kind: 'effort',
+      sourceUrl: 'https://example.test/required-thinking',
+      efforts: ['low', 'high', 'max'],
+      required: true,
+    } as const
+    const optional = {
+      kind: 'toggle',
+      sourceUrl: 'https://example.test/optional-thinking',
+    } as const
+
+    expect(modelRequiresThinking(required)).toBe(true)
+    expect(modelRequiresThinking(optional)).toBe(false)
+    expect(modelRequiresThinking({ kind: 'unknown' })).toBe(false)
   })
 })

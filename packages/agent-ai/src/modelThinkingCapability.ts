@@ -7,15 +7,22 @@ interface DocumentedThinkingCapability {
   readonly defaultEnabled?: boolean
 }
 
+interface SupportedThinkingCapability {
+  /** Thinking is always on for this model and cannot be disabled. */
+  readonly required?: boolean
+}
+
 export interface UnsupportedThinkingCapability extends DocumentedThinkingCapability {
   readonly kind: 'unsupported'
 }
 
-export interface ToggleThinkingCapability extends DocumentedThinkingCapability {
+export interface ToggleThinkingCapability
+  extends DocumentedThinkingCapability, SupportedThinkingCapability {
   readonly kind: 'toggle'
 }
 
-export interface EffortThinkingCapability extends DocumentedThinkingCapability {
+export interface EffortThinkingCapability
+  extends DocumentedThinkingCapability, SupportedThinkingCapability {
   readonly kind: 'effort'
   /** Positive UI/wire values in their stable display order. `auto` is never a wire value. */
   readonly efforts: readonly ModelThinkingEffort[]
@@ -58,8 +65,14 @@ export function getModelThinkingCapability(
   return registry.describeModel(vendorId, modelId)?.thinking ?? UNKNOWN_THINKING_CAPABILITY
 }
 
-export function modelSupportsThinking(capability: ModelThinkingCapability): boolean {
+export function modelSupportsThinking(
+  capability: ModelThinkingCapability,
+): capability is ToggleThinkingCapability | EffortThinkingCapability {
   return capability.kind === 'toggle' || capability.kind === 'effort'
+}
+
+export function modelRequiresThinking(capability: ModelThinkingCapability): boolean {
+  return modelSupportsThinking(capability) && capability.required === true
 }
 
 export function thinkingEfforts(
