@@ -131,7 +131,7 @@ function deepseekRequest(
   const { reasoning_effort, ...body } = projectThinkingRequest(request, DEEPSEEK_VENDOR_ID)
   return {
     ...body,
-    ...(reasoning_effort === 'high' || reasoning_effort === 'max'
+    ...(reasoning_effort === 'low' || reasoning_effort === 'high' || reasoning_effort === 'max'
       ? { reasoning_effort: reasoning_effort as DeepSeekReasoningEffort }
       : {}),
     user_id: request.userId,

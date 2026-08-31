@@ -33,9 +33,9 @@ describe('normalizeDeepSeekReasoningEffort', () => {
   it.each([
     ['high', 'high'],
     ['max', 'max'],
-    ['low', 'high'],
+    ['low', 'low'],
     ['medium', 'high'],
-    ['xhigh', 'max'],
+    ['xhigh', 'high'],
   ])('%s → %s', (before, after) => {
     expect(normalizeDeepSeekReasoningEffort(before)).toBe(after)
   })
@@ -131,19 +131,21 @@ describe('migrateModelSettings', () => {
     } as unknown as ModelSettings)
 
     // 老形状（顶层平铺）读回后既要归一化取值，也要落进设置袋。
-    expect(migrateModelSettings(legacy('low'))).toEqual({
+    const low = migrateModelSettings(legacy('low'))
+    expect(low).toEqual({
       vendor: 'deepseek',
       model: 'deepseek-v4-flash',
       thinking: false,
-      vendorSettings: { reasoning_effort: 'high' },
+      vendorSettings: { reasoning_effort: 'low' },
     })
+    expect(migrateModelSettings(low)).toBe(low)
     expect(migrateModelSettings(legacy('medium'))).toMatchObject({
       model: 'deepseek-v4-flash',
       vendorSettings: { reasoning_effort: 'high' },
     })
     expect(migrateModelSettings(legacy('xhigh'))).toMatchObject({
       model: 'deepseek-v4-flash',
-      vendorSettings: { reasoning_effort: 'max' },
+      vendorSettings: { reasoning_effort: 'high' },
     })
   })
 

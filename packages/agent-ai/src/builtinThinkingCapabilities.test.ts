@@ -60,16 +60,17 @@ describe('built-in Thinking capability catalog', () => {
   })
 
   it.each(['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'])(
-    '%s exposes only High and Max',
+    '%s exposes only Low, High, and Max',
     (model) => {
     const capability = getModelThinkingCapability(defaultProviderRegistry, 'deepseek', model)
 
     expect(capability).toMatchObject({
       kind: 'effort',
-      efforts: ['high', 'max'],
+      efforts: ['low', 'high', 'max'],
+      effortMappings: { low: 'low', medium: 'high', high: 'high', xhigh: 'high', max: 'max' },
     })
     expect(capability.kind === 'effort' ? capability.efforts : []).not.toEqual(
-      expect.arrayContaining(['low', 'medium', 'xhigh']),
+      expect.arrayContaining(['medium', 'xhigh']),
     )
     expect(capability.kind === 'effort' && Object.isFrozen(capability.efforts)).toBe(true)
     expect(capability.kind === 'effort' ? capability.sourceUrl : '').toMatch(/^https:\/\//)

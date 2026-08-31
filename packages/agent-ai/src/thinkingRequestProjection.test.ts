@@ -45,11 +45,14 @@ function modelRequest(
 
 describe('Thinking request projection', () => {
   it.each([
+    ['DeepSeek valid low effort', 'deepseek', 'deepseek-v4-pro', 'enabled', 'low', 'low'],
     ['DeepSeek valid high effort', 'deepseek', 'deepseek-v4-pro', 'enabled', 'high', 'high'],
     ['DeepSeek valid effort', 'deepseek', 'deepseek-v4-pro', 'enabled', 'max', 'max'],
     ['DeepSeek Auto', 'deepseek', 'deepseek-v4-pro', 'enabled', undefined, undefined],
     ['DeepSeek disabled', 'deepseek', 'deepseek-v4-pro', 'disabled', 'max', undefined],
-    ['DeepSeek dirty effort', 'deepseek', 'deepseek-v4-pro', 'enabled', 'low', undefined],
+    ['DeepSeek historical medium effort', 'deepseek', 'deepseek-v4-pro', 'enabled', 'medium', undefined],
+    ['DeepSeek historical xhigh effort', 'deepseek', 'deepseek-v4-pro', 'enabled', 'xhigh', undefined],
+    ['DeepSeek dirty effort', 'deepseek', 'deepseek-v4-pro', 'enabled', 'unknown', undefined],
     ['GLM-5.2 valid low', 'glm', 'glm-5.2', 'enabled', 'low', 'low'],
     ['GLM-5.2 valid medium', 'glm', 'glm-5.2', 'enabled', 'medium', 'medium'],
     ['GLM-5.2 valid high', 'glm', 'glm-5.2', 'enabled', 'high', 'high'],

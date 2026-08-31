@@ -51,8 +51,8 @@ export function normalizeDeepSeekUserId(value: unknown): string | undefined {
 }
 
 // 简介：DeepSeek V4 的推理投入档位。
-// 详情：V4 只接受 high / max；旧的 low / medium 最终也只会被服务端映射成 high。
-export type DeepSeekReasoningEffort = 'high' | 'max'
+// 详情：V4 接受 low / high / max；历史 medium / xhigh 只在持久化恢复时归一化，不能上行。
+export type DeepSeekReasoningEffort = 'low' | 'high' | 'max'
 
 const MAX_INSUFFICIENT_RESOURCE_RETRIES = 1
 const INSUFFICIENT_RESOURCE_FINISH_REASON = 'insufficient_system_resource'

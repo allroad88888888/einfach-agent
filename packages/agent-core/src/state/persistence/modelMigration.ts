@@ -15,16 +15,15 @@ import type { DeepSeekReasoningEffort } from '@einfach-agent/ai'
 import type { ModelSettings } from '../core.type'
 import { liftLegacyVendorSettings, withVendorSettings } from './settingsBagMigration'
 
-// 简介：把持久化数据中的 DeepSeek reasoning_effort 收口到 V4 的 high|max。
-// 详情：V4 会把旧 SDK/旧 UI 的 low、medium 都视为 high，把 xhigh 视为 max。持久化 JSON
+// 简介：把持久化数据中的 DeepSeek reasoning_effort 收口到 V4 的 low|high|max。
+// 详情：V4 保留 low，把旧 SDK/旧 UI 的 medium、xhigh 归为 high。持久化 JSON
 //   没有运行时类型保证，故这里接 unknown；其它非法值直接丢弃，让 Provider 使用安全默认值，
 //   不能原样透传成 400。这个归一化只属于 DeepSeek，不改变 GLM 的 low|medium|high|max 域。
 export function normalizeDeepSeekReasoningEffort(
   value: unknown,
 ): DeepSeekReasoningEffort | undefined {
-  if (value === 'high' || value === 'max') return value
-  if (value === 'low' || value === 'medium') return 'high'
-  if (value === 'xhigh') return 'max'
+  if (value === 'low' || value === 'high' || value === 'max') return value
+  if (value === 'medium' || value === 'xhigh') return 'high'
   return undefined
 }
 

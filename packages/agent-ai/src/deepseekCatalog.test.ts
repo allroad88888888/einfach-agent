@@ -20,7 +20,7 @@ describe('DeepSeek model catalog', () => {
       displayName: 'DeepSeek V4 Flash Vision Experimental',
       contextWindowTokens: 1_000_000,
       imageInput: DEEPSEEK_VISION_IMAGE_INPUT,
-      thinking: { kind: 'effort', efforts: ['high', 'max'] },
+      thinking: { kind: 'effort', efforts: ['low', 'high', 'max'] },
     })
     expect(descriptor?.imageInput).toMatchObject({
       kind: 'provider-upload',

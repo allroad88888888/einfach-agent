@@ -60,8 +60,8 @@ function freezeCapability(
 const DEEPSEEK_THINKING = freezeEffortCapability({
   sourceUrl: DEEPSEEK_THINKING_SOURCE,
   defaultEnabled: true,
-  efforts: ['high', 'max'],
-  effortMappings: { low: 'high', medium: 'high', xhigh: 'max' },
+  efforts: ['low', 'high', 'max'],
+  effortMappings: { low: 'low', medium: 'high', high: 'high', xhigh: 'high', max: 'max' },
 })
 
 const GLM_5_2_THINKING = freezeEffortCapability({
