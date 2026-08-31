@@ -7,7 +7,9 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { defineConfig, loadEnv, type Plugin } from 'vite'
+import { configDefaults } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+import { lingui } from '@lingui/vite-plugin'
 import { createModelPreviewRelayPlugin } from './scripts/model-preview-relay'
 import { assertNoPublicModelCredentials } from './scripts/public-model-credential-guard'
 
@@ -223,7 +225,12 @@ export default defineConfig(({ command, mode }) => {
     // Web 源码已迁到 apps/web；环境变量仍统一放在仓库根目录，避免 Web/Tauri 各存一份密钥。
     envDir: fromRoot('./'),
     plugins: [
-      react(),
+      react({
+        babel: {
+          plugins: ['@lingui/babel-plugin-lingui-macro'],
+        },
+      }),
+      lingui(),
       traceLogDevPlugin(),
       ...(command === 'serve'
         ? [createModelPreviewRelayPlugin({
@@ -267,6 +274,7 @@ export default defineConfig(({ command, mode }) => {
         // 根级工具域包 + standard 聚合包：各解析到自己的 barrel。
         '@einfach-agent/tools-shell': fromRoot('./tools/shell/src/index.ts'),
         '@einfach-agent/tools-interaction': fromRoot('./tools/interaction/src/index.ts'),
+        '@einfach-agent/tools-vision': fromRoot('./tools/vision/src/index.ts'),
         '@einfach-agent/tools-fs': fromRoot('./tools/fs/src/index.ts'),
         '@einfach-agent/tools-planning': fromRoot('./tools/planning/src/index.ts'),
         '@einfach-agent/tools-skills': fromRoot('./tools/skills/src/index.ts'),
@@ -284,6 +292,7 @@ export default defineConfig(({ command, mode }) => {
       setupFiles: ['./apps/web/src/test/setup.ts'],
       css: true,
       restoreMocks: true,
+      exclude: [...configDefaults.exclude, 'apps/desktop/**/*.test.mjs', 'scripts/stage-desktop-node-runtime.test.mjs'],
       // 每个测试文件在独立 worker 中运行；setup 负责同一 worker 内的默认 store 清理。
       isolate: true,
     },

@@ -19,11 +19,17 @@
     "subagent:archive:retention": "node scripts/subagent-archive-retention.js",
     "subagent:index:compact": "node scripts/subagent-index-compact.js",
     "subagent:skills": "node scripts/subagent-skill-governance.js",
+    "lingui:extract": "lingui extract",
+    "lingui:compile": "lingui compile",
+    "desktop:dev": "tauri dev --no-watch --config apps/desktop/tauri.conf.json",
+    "desktop:build": "tauri build --config apps/desktop/tauri.conf.json --target aarch64-apple-darwin",
     "preview": "vite preview --config vite.config.ts --host 0.0.0.0"
   },
   "dependencies": {
     "@einfach/core": "^0.4.0",
     "@einfach/react": "^0.4.0",
+    "@lingui/core": "6.6.0",
+    "@lingui/react": "6.6.0",
     "@vitejs/plugin-react": "^5.1.1",
     "@einfach-agent/ai": "workspace:*",
     "@einfach-agent/core": "workspace:*",
@@ -42,6 +48,11 @@
     "vite": "^7.2.7"
   },
   "devDependencies": {
+    "@lingui/babel-plugin-lingui-macro": "6.6.0",
+    "@lingui/cli": "6.6.0",
+    "@lingui/format-po": "6.6.0",
+    "@lingui/vite-plugin": "6.6.0",
+    "@tauri-apps/cli": "2.11.4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
@@ -50,6 +61,7 @@
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",
     "fake-indexeddb": "^6.2.5",
+    "esbuild": "^0.28.1",
     "jsdom": "^27.3.0",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
