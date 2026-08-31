@@ -1,4 +1,4 @@
-import { KIMI_K2_6_IMAGE_INPUT } from './imageCapability'
+import { KIMI_K3_IMAGE_INPUT } from './imageCapability'
 import type { UserImageContentBlock } from './modelProtocol'
 import { isAbortError } from './modelRetry'
 import {
@@ -34,10 +34,10 @@ interface UploadedKimiImage {
 }
 
 function validateImages(images: readonly KimiLocalImage[]): void {
-  if (KIMI_K2_6_IMAGE_INPUT.kind !== 'provider-upload') {
+  if (KIMI_K3_IMAGE_INPUT.kind !== 'provider-upload') {
     throw new Error('Kimi image upload capability is unavailable.')
   }
-  const { accept, limits } = KIMI_K2_6_IMAGE_INPUT
+  const { accept, limits } = KIMI_K3_IMAGE_INPUT
   if (images.length > limits.maxImages) {
     throw new Error(`Kimi accepts at most ${limits.maxImages} images per message.`)
   }

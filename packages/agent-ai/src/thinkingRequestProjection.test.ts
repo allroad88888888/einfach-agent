@@ -128,12 +128,12 @@ describe('Thinking request projection', () => {
     }
   })
 
-  it('keeps Kimi thinking and its message encoding without inventing an effort', async () => {
+  it('projects Kimi K3 effort while deleting its obsolete Thinking object', async () => {
     const captured = capture()
-    await callModel(modelRequest('kimi', 'kimi-k2.6', 'enabled', 'max'), options(captured.fetchImpl))
+    await callModel(modelRequest('kimi', 'kimi-k3', 'disabled', 'max'), options(captured.fetchImpl))
 
-    expect(captured.body()).toMatchObject({ thinking: { type: 'enabled' } })
-    expect(captured.body()).not.toHaveProperty('reasoning_effort')
+    expect(captured.body()).not.toHaveProperty('thinking')
+    expect(captured.body()).toHaveProperty('reasoning_effort', 'max')
     expect(captured.body().messages).toEqual([{ role: 'user', content: 'hi' }])
   })
 

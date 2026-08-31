@@ -16,7 +16,12 @@ import {
   type DeepSeekReasoningEffort,
 } from './deepseek'
 import { callGlm, streamGlm, type GlmChatRequest, type GlmReasoningEffort } from './glm'
-import { callKimi, streamKimi, type KimiChatRequest } from './kimi'
+import {
+  callKimi,
+  streamKimi,
+  type KimiChatRequest,
+  type KimiReasoningEffort,
+} from './kimi'
 import type { KimiRegion } from './kimiRegion'
 import {
   callOpenAiCompat,
@@ -72,7 +77,7 @@ export const DEFAULT_MODEL_SETTINGS: { readonly vendor: string; readonly model: 
 type ThinkingProviderSettings = ProviderSettings & { reasoning_effort?: unknown }
 type DeepSeekProviderSettings = ThinkingProviderSettings
 type GlmProviderSettings = ThinkingProviderSettings
-type KimiProviderSettings = ProviderSettings & { region?: KimiRegion }
+type KimiProviderSettings = ThinkingProviderSettings & { region?: KimiRegion }
 type OpenAiCompatProviderSettings = ProviderSettings & { connectionId?: string }
 
 type ThinkingProjectedRequest = Omit<ChatRequestBase, 'thinking'> & {
@@ -162,10 +167,28 @@ function glmRequest(request: ProviderRequest<GlmProviderSettings>): GlmChatReque
 }
 
 // 简介：Kimi 的请求投影。
-// 详情：只归一 region（决定接入点与引用 scope）；userId 不上行。
+// 详情：K3 始终思考，只投影合法 effort；K2.x 的 thinking 字段在这里无条件删除。
 function kimiRequest(request: ProviderRequest<KimiProviderSettings>): KimiChatRequest {
-  const { reasoning_effort: _reasoningEffort, ...body } = projectThinkingRequest(request, KIMI_VENDOR_ID)
-  return { ...body, region: request.settings.region }
+  const capability = thinkingCapabilityFor(request, KIMI_VENDOR_ID)
+  const projected = projectThinkingRequest(request, KIMI_VENDOR_ID)
+  const {
+    thinking: _thinking,
+    reasoning_effort: _projectedEffort,
+    ...body
+  } = projected
+  const reasoningEffort = modelRequiresThinking(capability)
+    && isSupportedThinkingEffort(capability, request.settings.reasoning_effort)
+    ? request.settings.reasoning_effort
+    : undefined
+  return {
+    ...body,
+    region: request.settings.region,
+    ...(reasoningEffort === 'low'
+      || reasoningEffort === 'high'
+      || reasoningEffort === 'max'
+      ? { reasoning_effort: reasoningEffort as KimiReasoningEffort }
+      : {}),
+  }
 }
 
 // 简介：标准协议没有厂商私有字段可归一，请求体原样转发；userId 不上行。

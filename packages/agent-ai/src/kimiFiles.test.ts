@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  prepareKimiImageBatch,
   prepareKimiImages,
   type KimiLocalImage,
 } from './kimiFiles'
@@ -122,6 +123,28 @@ describe('Kimi image preparation', () => {
 
     await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
     expect(deleted).toEqual(['https://api.moonshot.cn/v1/files/finished-file'])
+  })
+
+  it('deletes a completed K3 batch at most once after explicit rollback', async () => {
+    const methods: string[] = []
+    const fetchImpl = vi.fn<typeof fetch>(async (_input, init) => {
+      methods.push(init?.method ?? 'POST')
+      return init?.method === 'DELETE'
+        ? new Response(null, { status: 204 })
+        : new Response(JSON.stringify({ id: 'k3-file' }), { status: 200 })
+    })
+    const batch = await prepareKimiImageBatch(
+      [image('one.png')],
+      { apiKey: 'key', region: 'cn', fetchImpl },
+    )
+
+    expect(batch.blocks[0]?.source).toMatchObject({
+      scope: 'kimi:cn', reference: 'ms://k3-file',
+    })
+    await batch.rollback()
+    await batch.rollback()
+
+    expect(methods).toEqual(['POST', 'DELETE'])
   })
 
   it('rejects invalid responses and batches before exposing any result', async () => {

@@ -30,8 +30,8 @@ describe('persisted history image compatibility', () => {
     })
   })
 
-  it('rejects a Kimi model without an exact verified image contract', () => {
-    expect(projectHistoryImage(image(), { vendor: 'kimi', model: 'kimi-k3' })).toMatchObject({
+  it('rejects an unknown Kimi model without an exact verified image contract', () => {
+    expect(projectHistoryImage(image(), { vendor: 'kimi', model: 'kimi-future' })).toMatchObject({
       kind: 'placeholder',
       reason: 'target_model_unsupported',
     })
@@ -39,16 +39,16 @@ describe('persisted history image compatibility', () => {
 
   it('rejects a provider file from a different Kimi region', () => {
     expect(projectHistoryImage(image('kimi:cn'), {
-      vendor: 'kimi', model: 'kimi-k2.6', region: 'global',
+      vendor: 'kimi', model: 'kimi-k3', region: 'global',
     })).toMatchObject({ kind: 'placeholder', reason: 'source_region_mismatch' })
   })
 
   it('accepts only a valid ms reference in the matching model region', () => {
     expect(projectHistoryImage(image(), {
-      vendor: 'kimi', model: 'kimi-k2.6', region: 'cn',
+      vendor: 'kimi', model: 'kimi-k3', region: 'cn',
     })).toMatchObject({ kind: 'consumable' })
     expect(projectHistoryImage(image('kimi:cn', 'https://example.com/private'), {
-      vendor: 'kimi', model: 'kimi-k2.6', region: 'cn',
+      vendor: 'kimi', model: 'kimi-k3', region: 'cn',
     })).toMatchObject({ kind: 'placeholder', reason: 'source_reference_invalid' })
   })
 

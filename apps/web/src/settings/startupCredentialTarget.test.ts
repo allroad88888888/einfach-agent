@@ -7,8 +7,8 @@ describe('resolveStartupCredentialTarget', () => {
     [undefined, 'deepseek-default'],
     [{ vendor: 'deepseek', model: 'deepseek-chat' }, 'deepseek-default'],
     [{ vendor: 'glm', model: 'glm-5.2' }, 'glm-default'],
-    [{ vendor: 'kimi', model: 'kimi-k2.6' }, 'kimi-cn'],
-    [{ vendor: 'kimi', model: 'kimi-k2.6', vendorSettings: { region: 'cn' } }, 'kimi-cn'],
+    [{ vendor: 'kimi', model: 'kimi-k3' }, 'kimi-cn'],
+    [{ vendor: 'kimi', model: 'kimi-k3', vendorSettings: { region: 'cn' } }, 'kimi-cn'],
   ] as const)('resolves %o to %s', (settings, id) => {
     expect(resolveStartupCredentialTarget(settings as ModelSettings | undefined)).toEqual({
       ok: true,
@@ -17,7 +17,7 @@ describe('resolveStartupCredentialTarget', () => {
   })
 
   it('keeps unsupported Kimi regions in a controlled failure state', () => {
-    const settings = { vendor: 'kimi', model: 'kimi-k2.6', vendorSettings: { region: 'global' } } as ModelSettings
+    const settings = { vendor: 'kimi', model: 'kimi-k3', vendorSettings: { region: 'global' } } as ModelSettings
 
     expect(resolveStartupCredentialTarget(settings)).toEqual({
       ok: false,

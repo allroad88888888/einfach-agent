@@ -19,7 +19,7 @@ export const UNSUPPORTED_IMAGE_INPUT: ImageInputCapability = {
   reason: 'This model has no verified image input protocol.',
 }
 
-export const KIMI_K2_6_IMAGE_INPUT: ImageInputCapability = {
+export const KIMI_K3_IMAGE_INPUT: ImageInputCapability = {
   kind: 'provider-upload',
   accept: ['image/jpeg', 'image/png', 'image/webp'],
   limits: {

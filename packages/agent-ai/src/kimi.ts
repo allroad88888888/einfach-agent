@@ -13,19 +13,26 @@ import {
   type KimiRegion,
 } from './kimiRegion'
 
+export type KimiReasoningEffort = 'low' | 'high' | 'max'
+
 export interface KimiChatRequest extends ChatRequestBase {
   region?: KimiRegion
+  reasoning_effort?: KimiReasoningEffort
   top_p?: number
   presence_penalty?: number
   frequency_penalty?: number
 }
 
-interface KimiWireChatRequest extends ChatRequestBase<KimiWireItem> {}
+interface KimiWireChatRequest extends Omit<ChatRequestBase<KimiWireItem>, 'thinking'> {
+  reasoning_effort?: KimiReasoningEffort
+}
 
 function prepareKimiRequest(body: KimiChatRequest): KimiWireChatRequest {
   const {
     messages,
     region,
+    thinking: _thinking,
+    reasoning_effort: rawReasoningEffort,
     temperature: _temperature,
     top_p: _topP,
     presence_penalty: _presencePenalty,
@@ -34,6 +41,11 @@ function prepareKimiRequest(body: KimiChatRequest): KimiWireChatRequest {
   } = body
   return {
     ...request,
+    ...(rawReasoningEffort === 'low'
+      || rawReasoningEffort === 'high'
+      || rawReasoningEffort === 'max'
+      ? { reasoning_effort: rawReasoningEffort }
+      : {}),
     messages: encodeKimiMessages(messages, resolveKimiRegion(region), body.model),
   }
 }

@@ -151,4 +151,42 @@ describe('tier routing coverage seen from a delegate runtime', () => {
       reasoning_effort: 'high',
     })
   })
+
+  it('sends a Kimi extraction to K3 without the retired Thinking object', async () => {
+    const bodies: string[] = []
+    const runtime = createDelegateAgentRuntime({
+      sessionId: 'session-kimi',
+      runId: 'run-kimi',
+      settings: {
+        vendor: 'kimi',
+        model: DEFAULT_KIMI_MODEL,
+        thinking: false,
+        vendorSettings: { region: 'cn', reasoning_effort: 'high' },
+      },
+      apiKey: 'test-key',
+      signal: new AbortController().signal,
+      fetchImpl: async (_input, init) => {
+        bodies.push(String(init?.body ?? ''))
+        return new Response(
+          JSON.stringify({ choices: [{ message: { content: '抽取结果' }, finish_reason: 'stop' }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        )
+      },
+    })
+
+    try {
+      const result = await runtime.runLowCostExtraction!({
+        systemPrompt: '抽取要点',
+        userPrompt: '一段很长的原文',
+      })
+      expect(result.model).toBe(DEFAULT_KIMI_MODEL)
+    } finally {
+      await runtime.dispose?.()
+    }
+
+    expect(bodies).toHaveLength(1)
+    const request = JSON.parse(bodies[0]!) as Record<string, unknown>
+    expect(request).toMatchObject({ model: 'kimi-k3', reasoning_effort: 'high' })
+    expect(request).not.toHaveProperty('thinking')
+  })
 })

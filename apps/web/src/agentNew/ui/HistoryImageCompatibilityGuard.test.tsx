@@ -50,7 +50,7 @@ describe('history image compatibility guard', () => {
 
   it('renders the normal composer surface for matching Kimi history', () => {
     renderWithStore(
-      <HistoryImageCompatibilityProvider vendor="kimi" model="kimi-k2.6" region="cn">
+      <HistoryImageCompatibilityProvider vendor="kimi" model="kimi-k3" region="cn">
         <HistoryImageCompatibilityGuard>
           <button type="button">发送</button>
         </HistoryImageCompatibilityGuard>

@@ -30,7 +30,7 @@ describe('Kimi message encoding', () => {
           { type: 'text', text: 'after' },
         ],
       },
-    ], 'cn', 'kimi-k2.6')
+    ], 'cn', 'kimi-k3')
 
     expect(encoded).toEqual([
       { role: 'user', content: 'plain text' },
@@ -48,7 +48,7 @@ describe('Kimi message encoding', () => {
   it('encodes an image-only user turn as a content array', () => {
     expect(encodeKimiMessages([
       { role: 'user', content: [image()] },
-    ], 'cn', 'kimi-k2.6')).toEqual([
+    ], 'cn', 'kimi-k3')).toEqual([
       {
         role: 'user',
         content: [{ type: 'image_url', image_url: { url: 'ms://file-one' } }],
@@ -70,7 +70,7 @@ describe('Kimi message encoding', () => {
       },
       { role: 'tool' as const, tool_call_id: 'call-1', content: 'result' },
     ]
-    expect(encodeKimiMessages(history, 'cn', 'kimi-k2.6')).toEqual(history)
+    expect(encodeKimiMessages(history, 'cn', 'kimi-k3')).toEqual(history)
   })
 
   it.each([
@@ -81,7 +81,7 @@ describe('Kimi message encoding', () => {
     expect(() => encodeKimiMessages(
       [{ role: 'user', content: [block] }],
       'cn',
-      'kimi-k2.6',
+      'kimi-k3',
     )).toThrow(error)
   })
 

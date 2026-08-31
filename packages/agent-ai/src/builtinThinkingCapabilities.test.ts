@@ -8,7 +8,7 @@ const EXPECTED_MODELS = [
   ['deepseek', 'deepseek-v4-flash-vision-exp', 'DeepSeek V4 Flash Vision Experimental'],
   ['glm', 'glm-5.3', 'GLM-5.3'],
   ['glm', 'glm-5.3-flash', 'GLM-5.3-Flash'],
-  ['kimi', 'kimi-k2.6', 'Kimi K2.6'],
+  ['kimi', 'kimi-k3', 'Kimi K3'],
 ] as const
 
 const SUPPORTED_MODELS = [
@@ -17,7 +17,7 @@ const SUPPORTED_MODELS = [
   ['deepseek', 'deepseek-v4-flash-vision-exp'],
   ['glm', 'glm-5.3'],
   ['glm', 'glm-5.3-flash'],
-  ['kimi', 'kimi-k2.6'],
+  ['kimi', 'kimi-k3'],
 ] as const
 
 describe('built-in Thinking capability catalog', () => {
@@ -79,12 +79,21 @@ describe('built-in Thinking capability catalog', () => {
     })
   })
 
-  it('keeps Kimi K2.6 toggle-only without a fabricated effort list', () => {
-    const capability = getModelThinkingCapability(defaultProviderRegistry, 'kimi', 'kimi-k2.6')
+  it('requires Kimi K3 Thinking with Low, High, Max, and a Max default', () => {
+    const capability = getModelThinkingCapability(defaultProviderRegistry, 'kimi', 'kimi-k3')
 
-    expect(capability).toMatchObject({ kind: 'toggle' })
-    expect(capability).not.toHaveProperty('efforts')
-    expect(capability).not.toHaveProperty('defaultEffort')
+    expect(defaultProviderRegistry.describe('kimi').contextWindowTokens).toBe(1_000_000)
+    expect(defaultProviderRegistry.describeModel('kimi', 'kimi-k3')).toMatchObject({
+      contextWindowTokens: 1_000_000,
+    })
+    expect(capability).toMatchObject({
+      kind: 'effort',
+      required: true,
+      efforts: ['low', 'high', 'max'],
+      defaultEffort: 'max',
+    })
+    expect(modelRequiresThinking(capability)).toBe(true)
+    expect(capability.kind === 'effort' && Object.isFrozen(capability.efforts)).toBe(true)
   })
 
   it('keeps unknown models without a declared Thinking default', () => {

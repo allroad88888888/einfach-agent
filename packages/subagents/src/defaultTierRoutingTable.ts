@@ -43,11 +43,9 @@ const GLM_TIER_ROUTING: SubagentTierRouting = {
   },
 }
 
-// Kimi：能力表里只有 kimi-k2.6 一个 SKU，所以两档同模型——这不是占位，是照实描述阵容。
-// 收益在「会话落进档位表覆盖范围」本身：`runLowCostExtraction` 只对覆盖范围内的会话挂载
-// （core 的 `delegationRuntime.ts` 里那个 `supportsSubagentTierRouting` 三元），挂上之后抽取
-// 请求走关闭思考的低价形态（Kimi 的会话不带 temperature/max_tokens，见 `runtime.ts` 的
-// `lowCostExtractionSettings`），省下的是思考 token 而不是单价。
+// Kimi：能力表里只有 kimi-k3 一个 SKU，所以两档同模型——这不是占位，是照实描述阵容。
+// 收益在「会话落进档位表覆盖范围」本身：`runLowCostExtraction` 只对表内会话挂载。
+// K3 始终思考，adapter 会忽略抽取路径留下的关闭值，不把 K2.x `thinking` 字段发给上游。
 // 代价只有一处、且有界：Flash 失败后的那一次 escalation 会换回同一个模型，退化成一次重试。
 const KIMI_TIER_ROUTING: SubagentTierRouting = {
   vendor: KIMI_VENDOR_ID,

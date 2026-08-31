@@ -6,7 +6,7 @@ import {
 
 describe('model-level image capability', () => {
   it('only enables exact models with verified image protocols', () => {
-    expect(imageInputCapability('kimi', 'kimi-k2.6')).toMatchObject({
+    expect(imageInputCapability('kimi', 'kimi-k3')).toMatchObject({
       kind: 'provider-upload',
       accept: ['image/jpeg', 'image/png', 'image/webp'],
       limits: { maxImages: 8, maxBytesPerImage: 20 * 1024 * 1024 },
@@ -20,8 +20,8 @@ describe('model-level image capability', () => {
       accept: ['image/jpeg', 'image/png', 'image/webp'],
       limits: { maxImages: 8, maxBytesPerImage: 20 * 1024 * 1024 },
     })
-    expect(vendorDescriptorFor('kimi').models['kimi-k2.6']).toMatchObject({
-      contextWindowTokens: 262_144,
+    expect(vendorDescriptorFor('kimi').models['kimi-k3']).toMatchObject({
+      contextWindowTokens: 1_000_000,
     })
   })
 
