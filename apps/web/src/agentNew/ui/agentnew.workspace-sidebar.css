@@ -1,0 +1,279 @@
+/* agentnew.workspace-sidebar.css —— 工作区与会话侧栏。 */
+
+.agentnew-sidebar {
+  position: sticky;
+  z-index: 10;
+  top: 0;
+  left: 0;
+  align-self: flex-start;
+  flex: 0 0 260px;
+  width: 260px;
+  height: 100%;
+  box-sizing: border-box;
+  border-right: 1px solid #e6eaf2;
+  overflow-y: auto;
+  padding: 12px;
+  background: #f7f9fc;
+}
+
+.agentnew-session-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agentnew-workspaces {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.agentnew-workspaces-heading,
+.agentnew-workspace-heading {
+  display: flex;
+  align-items: center;
+}
+
+.agentnew-workspaces-heading {
+  justify-content: space-between;
+  padding: 2px 4px 6px;
+  color: #667085;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.agentnew-new-workspace,
+.agentnew-workspace-toggle {
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  font: inherit;
+  cursor: pointer;
+}
+
+.agentnew-new-workspace {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  font-size: 19px;
+  line-height: 1;
+}
+
+.agentnew-new-workspace:hover,
+.agentnew-workspace-toggle:hover {
+  color: #4444bd;
+  background: #eef0fe;
+}
+
+.agentnew-workspaces-empty {
+  padding: 12px 8px;
+  color: #8892a4;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.agentnew-workspace {
+  border-radius: 9px;
+}
+
+.agentnew-workspace.active {
+  background: rgba(238, 240, 254, 0.45);
+}
+
+.agentnew-workspace-heading {
+  min-width: 0;
+  border-radius: 8px;
+}
+
+.agentnew-workspace-toggle {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 30px;
+  border-radius: 7px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.agentnew-workspace-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 7px 7px 2px;
+  border: 0;
+  background: transparent;
+  color: #344054;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.agentnew-workspace-rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 3px 4px 3px 0;
+  padding: 4px 7px;
+  border: 1px solid #a5a8f4;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #253047;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.12);
+}
+
+.agentnew-workspace-new-session,
+.agentnew-workspace-settings,
+.agentnew-workspace-remove {
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #7a8598;
+  opacity: 0;
+  pointer-events: none;
+  cursor: pointer;
+  transition: opacity 120ms ease;
+}
+
+.agentnew-workspace-heading:hover .agentnew-workspace-new-session,
+.agentnew-workspace-heading:hover .agentnew-workspace-settings,
+.agentnew-workspace-heading:hover .agentnew-workspace-remove,
+.agentnew-workspace-heading:focus-within .agentnew-workspace-new-session,
+.agentnew-workspace-heading:focus-within .agentnew-workspace-settings,
+.agentnew-workspace-heading:focus-within .agentnew-workspace-remove {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.agentnew-workspace-new-session {
+  font-size: 19px;
+  line-height: 1;
+}
+
+.agentnew-workspace-settings {
+  margin-right: 2px;
+  font-size: 13px;
+}
+
+.agentnew-workspace-remove {
+  width: 28px;
+  min-width: 0;
+  margin-right: 2px;
+  padding: 0;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.agentnew-workspace-new-session:hover,
+.agentnew-workspace-settings:hover,
+.agentnew-workspace-settings.active {
+  color: #4444bd;
+  background: #eef0fe;
+}
+
+.agentnew-workspace-remove:hover {
+  background: rgba(220, 70, 54, 0.12);
+  color: #dc4636;
+}
+
+.agentnew-workspace.active .agentnew-workspace-name {
+  color: #4444bd;
+}
+
+.agentnew-workspace-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 4px 8px 22px;
+}
+
+.agentnew-session-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 8px;
+}
+
+.agentnew-session-item.active {
+  background: #eef0fe;
+}
+
+.agentnew-session-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #3a4458;
+  font-size: 13px;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.agentnew-session-title:hover {
+  background: rgba(91, 91, 214, 0.06);
+}
+
+.agentnew-session-item.active .agentnew-session-title {
+  color: #4444bd;
+  font-weight: 600;
+}
+
+.agentnew-session-rename-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid #a5a8f4;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #3a4458;
+  font-size: 13px;
+  font-family: inherit;
+  line-height: inherit;
+  outline: none;
+}
+
+.agentnew-session-remove {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #6b7689;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.agentnew-session-remove:hover {
+  background: rgba(220, 70, 54, 0.12);
+  color: #dc4636;
+}
+
+.agentnew-session-remove.confirming {
+  background: #dc4636;
+  color: #ffffff;
+}
+
+.agentnew-session-remove.confirming:hover {
+  background: #c23b2c;
+  color: #ffffff;
+}

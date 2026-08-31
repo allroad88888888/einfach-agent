@@ -341,6 +341,13 @@
   font-size: 12px;
   line-height: 1.5;
   cursor: pointer;
+  opacity: 0;
+  transition: opacity 120ms ease, color 120ms ease, background 120ms ease;
+}
+
+.agentnew-user-message:hover .agentnew-message-revert,
+.agentnew-user-message:focus-within .agentnew-message-revert {
+  opacity: 1;
 }
 
 .agentnew-message-revert:hover {
@@ -349,8 +356,15 @@
 }
 
 .agentnew-message-revert:focus-visible {
+  opacity: 1;
   outline: 2px solid #8b83ea;
   outline-offset: 1px;
+}
+
+@media (hover: none) {
+  .agentnew-message-revert {
+    opacity: 1;
+  }
 }
 
 .agentnew-msg--assistant {

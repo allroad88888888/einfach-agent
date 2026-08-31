@@ -6,7 +6,6 @@
  *   SessionList      → .agentnew-session-list / -session-item(.active) / -session-title / -session-rename-input / -session-remove(.confirming)
  *   ActiveSessionProvider → .agentnew-empty
  *   MessageList      → .agentnew-message-list / .agentnew-msg(.--assistant) / .agentnew-user-message / .agentnew-message-revert / .agentnew-message-empty
- *   UndoBar          → .agentnew-undo-bar / .agentnew-undo-item / .agentnew-undo-hint
  *   Composer         → .agentnew-composer / -composer-input / -composer-send
  */
 
@@ -23,6 +22,7 @@
  */
 
 @import './agentnew.shell.css';
+@import './agentnew.workspace-sidebar.css';
 @import './agentnew.subagent-trace.css';
 @import './agentnew.turn-status.css';
 @import './agentnew.message-bubble.css';
