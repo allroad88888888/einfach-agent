@@ -39,8 +39,8 @@ jobs:
       - name: Build shared Web and server runtime
         run: pnpm build
 
-      - name: Build Node host runtime
-        run: pnpm --filter @einfach-agent/host-node build
+      - name: Build Node host runtime and workspace dependencies
+        run: pnpm --filter @einfach-agent/host-node... build
 
       - name: Stage target Node sidecar
         run: node scripts/stage-desktop-node-runtime.mjs --target ${{ matrix.target }}
