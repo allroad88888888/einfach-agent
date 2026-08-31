@@ -7,17 +7,23 @@ import {
   withRetry,
   type RetryConfig,
 } from './modelRetry'
+import {
+  associateProviderLocalIdentity,
+  isLegacyOpenAiCompat,
+} from './providerLocalTransport'
 
 export interface ChatCallOptions {
   apiKey: string
   baseUrl?: string
+  /** Local adapter-to-transport association; never encoded into an HTTP request. */
+  connectionId?: string
   signal?: AbortSignal
   fetchImpl?: typeof fetch
   retry?: RetryConfig
 }
 
 export function buildJsonRequestInit(body: unknown, options: ChatCallOptions): RequestInit {
-  return {
+  const init: RequestInit = {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -26,6 +32,11 @@ export function buildJsonRequestInit(body: unknown, options: ChatCallOptions): R
     body: JSON.stringify(body),
     signal: options.signal,
   }
+  associateProviderLocalIdentity(options.fetchImpl, init, {
+    connectionId: options.connectionId,
+    legacyOpenAiCompat: isLegacyOpenAiCompat(options) ? true : undefined,
+  })
+  return init
 }
 
 export function chatCompletionsUrl(baseUrl: string): string {

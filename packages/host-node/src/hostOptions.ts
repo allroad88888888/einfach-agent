@@ -14,12 +14,16 @@
 //      core 的运行时——本包在依赖树上是能力包，不是应用层。
 
 import type { McpHostEventEmitter } from './mcp/lifecycle'
+import type { WorkspaceDirectoryPicker } from './workspace/dialog/nativeDirectoryPicker'
 
 /**
  * 宿主装配槽。全部可选；`createNodeHostInvoke()` 与 `createNodeHostInvoke({})` 等价、
  * 都表示「全取默认」。
  */
 export interface NodeHostInvokeOptions {
+  /** User-initiated native folder chooser. Omit it to use macOS's system picker. */
+  openWorkspaceDirectory?: WorkspaceDirectoryPicker
+
   /**
    * 用户主目录的**绝对路径**。不传 → 用 `os.homedir()`。
    *

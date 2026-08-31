@@ -1,4 +1,4 @@
-// workspace/read 域的 registrar —— 四条读命令的落地点。
+// workspace/read 域的 registrar —— 五条读命令的落地点。
 //
 // **`read_workspace_file` 唯一该注册的是 `linesDispatch.ts` 的 `createReadWorkspaceFileHandler`。**
 // 这个域有两个签名相同、名字只差两个词的工厂：
@@ -16,10 +16,12 @@ import { createReadWorkspaceFileHandler } from './linesDispatch'
 import { createListWorkspaceFilesHandler } from './listFiles'
 import { createReadWorkspaceRunIndexPageHandler } from './runIndexRead'
 import { createSearchWorkspaceFilesHandler } from './searchFiles'
+import { createReadWorkspaceImageHandler } from '../workspace-image-read'
 
 export function createReadRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
   return {
     read_workspace_file: createReadWorkspaceFileHandler(options),
+    read_workspace_image: createReadWorkspaceImageHandler(options),
     read_workspace_run_index_page: createReadWorkspaceRunIndexPageHandler(options),
     list_workspace_files: createListWorkspaceFilesHandler(options),
     search_workspace_files: createSearchWorkspaceFilesHandler(options),

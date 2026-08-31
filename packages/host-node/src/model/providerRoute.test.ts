@@ -22,6 +22,8 @@ describe('端点白名单', () => {
   // 少一条是功能缺失，多一条是把 Key 的使用面扩大了。
   it.each([
     ['deepseek', 'default', 'POST', '/chat/completions', 'https://api.deepseek.com/chat/completions', 'json', 32 * 1024 * 1024],
+    ['deepseek', 'default', 'POST', '/files', 'https://api.deepseek.com/files', 'multipart', 4 * 1024 * 1024],
+    ['deepseek', 'default', 'DELETE', '/files/file-api-image_123.A-b', 'https://api.deepseek.com/files/file-api-image_123.A-b', 'none', 1024 * 1024],
     ['glm', 'default', 'POST', '/chat/completions', 'https://open.bigmodel.cn/api/paas/v4/chat/completions', 'json', 32 * 1024 * 1024],
     ['kimi', 'cn', 'POST', '/chat/completions', 'https://api.moonshot.cn/v1/chat/completions', 'json', 32 * 1024 * 1024],
     ['kimi', 'cn', 'POST', '/files', 'https://api.moonshot.cn/v1/files', 'multipart', 4 * 1024 * 1024],
@@ -76,10 +78,33 @@ describe('端点白名单', () => {
     ).toThrow('模型请求目标未获允许')
   })
 
-  it('DELETE 只对 Kimi 的文件端点开放', () => {
-    expect(() =>
-      target({ provider: 'deepseek', scope: 'default', method: 'DELETE', path: '/files/x' }),
-    ).toThrow('模型请求目标未获允许')
+  it('DeepSeek DELETE 只认 file-api- 前缀的单层资源 ID', () => {
+    const invalidPaths = [
+      '/files/file_123',
+      '/files/file-api-',
+      '/files/file-api-image?query=1',
+      '/files/file-api-image/child',
+      `/files/file-api-${'a'.repeat(248)}`,
+    ]
+    for (const path of invalidPaths) {
+      expect(() => target({
+        provider: 'deepseek', scope: 'default', method: 'DELETE', path,
+      })).toThrow('模型请求目标未获允许')
+    }
+    expect(target({
+      provider: 'deepseek', scope: 'default', method: 'DELETE',
+      path: `/files/file-api-${'a'.repeat(247)}`,
+    }).url).toBe(`https://api.deepseek.com/files/file-api-${'a'.repeat(247)}`)
+  })
+
+  it('文件端点不扩展到其他 provider 或方法', () => {
+    for (const value of [
+      { provider: 'glm', scope: 'default', method: 'POST', path: '/files' },
+      { provider: 'glm', scope: 'default', method: 'DELETE', path: '/files/file-api-x' },
+      { provider: 'deepseek', scope: 'default', method: 'POST', path: '/files/file-api-x' },
+    ]) {
+      expect(() => target(value)).toThrow('模型请求目标未获允许')
+    }
   })
 })
 
@@ -97,6 +122,14 @@ describe('登记式 origin（openai-compat）', () => {
         bodyKind: 'json',
         maxResponseBytes: 32 * 1024 * 1024,
       })
+  })
+
+  it('connectionId survives target narrowing but never supplies an origin', () => {
+    const narrowed = narrowProviderTarget({ ...OPENAI_COMPAT_CHAT, connectionId: 'profile-a' })
+    expect(narrowed.connectionId).toBe('profile-a')
+    expect(() => resolveProviderTarget(narrowed)).toThrow('模型请求目标未获允许')
+    expect(resolveProviderTarget(narrowed, { openAiCompat: 'https://profile.example/v1' }).url)
+      .toBe('https://profile.example/v1/chat/completions')
   })
 
   it('**没登记就是目标未获允许**——不存在「猜一个默认接入点」的分支', () => {
@@ -191,6 +224,11 @@ describe('target 的收窄', () => {
       { provider: 'openai', method: 'POST', path: '/chat/completions' },
       { provider: 'deepseek', method: 'PUT', path: '/chat/completions' },
       { provider: 'deepseek', scope: 'us', method: 'POST', path: '/chat/completions' },
+      { ...OPENAI_COMPAT_CHAT, connectionId: '' },
+      { ...OPENAI_COMPAT_CHAT, connectionId: 'UPPERCASE' },
+      { ...OPENAI_COMPAT_CHAT, connectionId: 42 },
+      { provider: 'deepseek', method: 'POST', path: '/chat/completions', connectionId: 'profile-a' },
+      { ...OPENAI_COMPAT_CHAT, connectionId: 'profile-a', headers: { authorization: 'secret' } },
     ]) {
       expect(() => narrowProviderTarget(value)).toThrow('模型请求格式无效')
     }

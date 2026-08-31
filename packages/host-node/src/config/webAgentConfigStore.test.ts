@@ -87,6 +87,55 @@ describe('配置段的读改写', () => {
     await expect(readFile(newPath(), 'utf8')).resolves.toBe('{"version":1,"mcp":{"servers":[]}}')
   })
 
+  it('一个事务同时提交明确声明的多个段', async () => {
+    await writeConfig(newPath(), '{"version":1,"alpha":{"count":1},"beta":{"count":2},"keep":true}')
+    const store = await defaultStore()
+
+    await store.updateSections(['alpha', 'beta'], (current) => new Map([
+      ['alpha', { count: (current.get('alpha') as { count: number }).count + 1 }],
+      ['beta', { count: (current.get('beta') as { count: number }).count + 1 }],
+    ]))
+
+    expect(JSON.parse(await readFile(newPath(), 'utf8'))).toEqual({
+      version: 1,
+      alpha: { count: 2 },
+      beta: { count: 3 },
+      keep: true,
+    })
+  })
+
+  it('多段事务不能改未声明段，失败时文件字节不变', async () => {
+    const original = '{"version":1,"alpha":1,"protected":2}'
+    await writeConfig(newPath(), original)
+    const store = await defaultStore()
+
+    await expect(store.updateSections(['alpha'], () => new Map([
+      ['alpha', 3],
+      ['protected', 4],
+    ]))).rejects.toThrow('配置事务试图更新未授权段')
+
+    await expect(readFile(newPath(), 'utf8')).resolves.toBe(original)
+  })
+
+  it('并发多段事务共用配置锁，不丢任何一次读改写', async () => {
+    await writeConfig(newPath(), '{"version":1,"alpha":0,"beta":0}')
+    const store = await defaultStore()
+
+    await Promise.all(Array.from({ length: 12 }, () => store.updateSections(
+      ['alpha', 'beta'],
+      (current) => new Map([
+        ['alpha', Number(current.get('alpha')) + 1],
+        ['beta', Number(current.get('beta')) + 1],
+      ]),
+    )))
+
+    expect(JSON.parse(await readFile(newPath(), 'utf8'))).toEqual({
+      version: 1,
+      alpha: 12,
+      beta: 12,
+    })
+  })
+
   it('损坏的配置文件读写都受控失败，且不被覆盖', async () => {
     await writeConfig(newPath(), '{ not json')
     const store = await defaultStore()

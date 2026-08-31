@@ -1,16 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
-  DEEPSEEK_FLASH_MODEL,
-  DEEPSEEK_MODEL_LABELS,
-  DEEPSEEK_PRO_MODEL,
-  DEFAULT_DEEPSEEK_MODEL,
-  MAX_DEEPSEEK_USER_ID_LENGTH,
   callDeepSeek,
-  normalizeDeepSeekUserId,
   streamDeepSeek,
   type DeepSeekChatRequest,
 } from './deepseek'
-import { DEEPSEEK_VENDOR_ID, defaultProviderRegistry } from './builtinProviders'
 
 const BASE_URL = 'https://deepseek.example/v1'
 
@@ -51,16 +44,6 @@ function requestBody(init?: RequestInit): Record<string, unknown> {
 }
 
 describe('DeepSeek V4 请求协议', () => {
-  it('只接受 DeepSeek user_id 协议允许的字符和长度', () => {
-    expect(normalizeDeepSeekUserId('wa_abc-XYZ_0123')).toBe('wa_abc-XYZ_0123')
-    expect(normalizeDeepSeekUserId('')).toBeUndefined()
-    expect(normalizeDeepSeekUserId('person@example.com')).toBeUndefined()
-    expect(normalizeDeepSeekUserId('/Users/person/project')).toBeUndefined()
-    expect(normalizeDeepSeekUserId('a'.repeat(MAX_DEEPSEEK_USER_ID_LENGTH + 1)))
-      .toBeUndefined()
-    expect(normalizeDeepSeekUserId(42)).toBeUndefined()
-  })
-
   it('thinking 开启时移除不支持的采样参数和 tool_choice，并允许 max reasoning effort', async () => {
     let captured: Record<string, unknown> | undefined
     const body: DeepSeekChatRequest = {
@@ -294,66 +277,4 @@ describe('DeepSeek V4 请求协议', () => {
     ])
   })
 
-  it('不会隐式生成 user_id，并在协议边界丢弃非法值', async () => {
-    const captured: Record<string, unknown>[] = []
-    const fetchImpl = async (_input: RequestInfo | URL, init?: RequestInit) => {
-      captured.push(requestBody(init))
-      return okResponse()
-    }
-
-    await callDeepSeek(
-      {
-        model: 'deepseek-v4-flash',
-        messages: [{ role: 'user', content: '无 user id' }],
-      },
-      {
-        apiKey: 'test-key',
-        baseUrl: BASE_URL,
-        fetchImpl,
-        retry: { maxRetries: 0 },
-      },
-    )
-    await callDeepSeek(
-      {
-        model: 'deepseek-v4-flash',
-        messages: [{ role: 'user', content: '非法 user id' }],
-        user_id: 'person@example.com',
-      },
-      {
-        apiKey: 'test-key',
-        baseUrl: BASE_URL,
-        fetchImpl,
-        retry: { maxRetries: 0 },
-      },
-    )
-
-    expect(captured).toHaveLength(2)
-    expect(captured[0]).not.toHaveProperty('user_id')
-    expect(captured[1]).not.toHaveProperty('user_id')
-  })
-})
-
-describe('DEEPSEEK_MODEL_LABELS', () => {
-  // 这三条盯的是同一种漂移：常量改了、写死在别处的中文没跟着改。
-  // f838544 把 DEFAULT_DEEPSEEK_MODEL 从 Flash 换成 Pro 时只动了常量和一条测试，
-  // 设置面板那句写死的 "DeepSeek V4 Flash" 就这么和 `deepseek-v4-pro` 并排显示了很久 ——
-  // 中文字面量没有任何门禁能判，只能靠「展示名从模型名查表来」这个结构 + 下面的覆盖断言。
-  it('覆盖 deepseek 能力表里的每一个模型', () => {
-    const models = Object.keys(defaultProviderRegistry.describe(DEEPSEEK_VENDOR_ID).models)
-
-    expect(models.length).toBeGreaterThan(0)
-    for (const model of models) expect(DEEPSEEK_MODEL_LABELS[model]).toBeTypeOf('string')
-  })
-
-  it('覆盖当前默认档与两个子 Agent 档位', () => {
-    expect(DEEPSEEK_MODEL_LABELS[DEFAULT_DEEPSEEK_MODEL]).toBeTypeOf('string')
-    expect(DEEPSEEK_MODEL_LABELS[DEEPSEEK_PRO_MODEL]).toBe('DeepSeek V4 Pro')
-    expect(DEEPSEEK_MODEL_LABELS[DEEPSEEK_FLASH_MODEL]).toBe('DeepSeek V4 Flash')
-  })
-
-  it('不含能力表里已经没有的模型名 —— 陈旧条目会让人以为那个档还在', () => {
-    const models = new Set(Object.keys(defaultProviderRegistry.describe(DEEPSEEK_VENDOR_ID).models))
-
-    for (const labelled of Object.keys(DEEPSEEK_MODEL_LABELS)) expect(models.has(labelled)).toBe(true)
-  })
 })

@@ -7,6 +7,7 @@
 //   openAiCompatBaseUrl.ts   （无 Rust 出处）        登记式 origin 的判据（纯函数）
 //   openAiCompatEndpoint.ts  （无 Rust 出处）        登记的那条 base URL 在配置里的读/写/删
 //   endpointCommands.ts      （无 Rust 出处）        三条接入点登记命令
+//   connectionProfile*.ts    （无 Rust 出处）        第三方连接元数据与安全 CRUD
 //   commandArgs.ts           （无 Rust 出处）        本域十条命令的线上入参形状
 //   wireShape.ts          ← serde deny_unknown_fields 三处收窄共用的形状判据
 //   requestBody.ts        ← model_proxy_body.rs      请求体收窄与限额
@@ -20,8 +21,8 @@
 //   forwardRequest.ts     ← model_proxy.rs           编排
 //   cancelCommands.ts     ← model_proxy.rs 的两条 cancel 命令
 //
-// ═══ 本域路由表里为什么只有八条命令 ═══
-// commandNames.ts 给 model 域登记了十条。它们分四批，落在四张卡上：
+// ═══ 本域路由表里为什么没有两条流式命令 ═══
+// commandNames.ts 给 model 域登记了十四条。它们分五批，落在不同能力面上：
 //
 //   ① `model_provider_request` / `model_chat_completions` —— **故意不在路由表里**。
 //      它们的响应是一条流，而路由表 handler 的返回值要经 `POST /api/invoke/:command` 被
@@ -48,11 +49,14 @@
 //      白名单需要一条「用户显式登记的那一个 origin」；这三条就是登记入口。它们与凭证三条形状
 //      相似但**不能合并**：凭证的返回体恒不含 Key，接入点的返回体必须回显地址，两条契约相反。
 //
+//   ⑤ `model_connection_profile_*` —— 独立第三方连接的公开元数据 CRUD。Key 只写凭据段，
+//      返回体只含 `credentialConfigured` 布尔值。
+//
 // ═══ 这一域的红线 ═══
-// 用户的模型 API Key 只在三处出现：`credentials.ts` 里从配置读出来的那个局部变量、
-// `upstreamRequest.ts` 里的 Authorization 头，以及 `model_credential_set` 那一次落盘的入参。
-// 它不进返回值、不进错误文案、不进日志——本域**全域没有任何日志语句**，这是有意的。
-// `forwardRequest.test.ts` 与 `credentialCommands.test.ts` 各有一条用例正面钉这件事。
+// 用户的模型 API Key 只沿凭据层进出：官方/legacy 路径在 `credentials.ts` 与
+// `model_credential_set`，profile 路径在 `connectionProfileCommands.ts`；最终上行只进
+// `upstreamRequest.ts` 的 Authorization 头。它不进返回值、不进错误文案、不进日志——本域
+// **全域没有任何日志语句**，这是有意的。对应命令测试都用已知 Key 作不外泄探针。
 
 import { createCancelModelRequestHandler } from './cancelCommands'
 import {
@@ -65,6 +69,13 @@ import {
   createModelEndpointSetHandler,
   createModelEndpointStatusHandler,
 } from './endpointCommands'
+import {
+  createConnectionProfileDeleteHandler,
+  createConnectionProfileListHandler,
+  createConnectionProfileProbeHandler,
+  createConnectionProfileReadHandler,
+  createConnectionProfileSaveHandler,
+} from './connectionProfileCommands'
 import type { NodeHostInvokeOptions } from '../hostOptions'
 import type { NodeHostRouteTable } from '../routeTable'
 
@@ -83,11 +94,16 @@ export function createModelRoutes(options: NodeHostInvokeOptions): NodeHostRoute
     model_endpoint_status: createModelEndpointStatusHandler(options),
     model_endpoint_set: createModelEndpointSetHandler(options),
     model_endpoint_delete: createModelEndpointDeleteHandler(options),
+    model_connection_profile_list: createConnectionProfileListHandler(options),
+    model_connection_profile_read: createConnectionProfileReadHandler(options),
+    model_connection_profile_save: createConnectionProfileSaveHandler(options),
+    model_connection_profile_delete: createConnectionProfileDeleteHandler(options),
+    model_connection_profile_probe: createConnectionProfileProbeHandler(),
   }
 }
 
 // M2（server 的流式模型端点）要用的东西从这里出去。`createNodeHostInvoke` 之外还有一条调用路径，
-// 是本域与其余十几个域**唯一**的形状差别，理由见上面「本域路由表里为什么只有五条命令」。
+// 是本域与其余十几个域**唯一**的形状差别，理由见上面「为什么没有两条流式命令」。
 export { forwardProviderRequest } from './forwardRequest'
 export type { ForwardProviderRequestDeps, ForwardedModelResponse } from './forwardRequest'
 export { ModelProxyStreamError, ModelRequestCancelledError, ModelRequestError } from './errors'
@@ -105,3 +121,10 @@ export type { ModelRequestErrorReason } from './errors'
 export { modelRequestRegistry, createModelRequestRegistry } from './requestRegistry'
 export type { ModelRequestRegistry } from './requestRegistry'
 export type { ModelFetch } from './upstreamRequest'
+export {
+  connectionProfileCredentialKey,
+  normalizeConnectionProfileId,
+} from './connectionProfile'
+export type { ModelConnectionProfile, StoredConnectionProfile } from './connectionProfile'
+export type { ModelConnectionProfileProbeResult } from './connectionProfileProbe'
+export { readStoredConnectionProfile } from './connectionProfileSection'

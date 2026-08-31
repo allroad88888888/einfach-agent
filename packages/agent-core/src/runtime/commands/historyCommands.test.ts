@@ -4,6 +4,7 @@ import { itemsAtom, runAtom } from '../../state/sessionAtoms'
 import { pendingArtifactsAtom } from '../../state/sessionTransientAtoms'
 import { appendItem, patchRun, setRun } from '../../state/sessionWriters'
 import { addPendingArtifact } from '../../state/transientAtoms'
+import { markUndoBarrier } from '../../state/undoBarrier'
 
 type Core = ReturnType<typeof createCore>
 
@@ -56,6 +57,32 @@ describe('undoTurn / redoTurn', () => {
     expect(core.getSessionStore(id).store.getter(itemsAtom).map((entry) => entry.id))
       .toEqual(['u1', 'u1-a'])
     expect(core.getSessionStore(id).store.getter(runAtom)?.turnId).toBe('u1')
+  })
+
+  it('retractTurn retracts the selected user message and every later turn', () => {
+    const { core, id } = seeded()
+    turn(core, id, 'u1', '第一问')
+    turn(core, id, 'u2', '第二问')
+    turn(core, id, 'u3', '第三问')
+
+    const result = core.retractTurn('u2')
+
+    expect(result.ok).toBe(true)
+    expect(result.entries).toBeGreaterThan(2)
+    expect(core.getSessionStore(id).store.getter(itemsAtom).map((entry) => entry.id))
+      .toEqual(['u1', 'u1-a'])
+  })
+
+  it('retractTurn refuses an old branch behind an irreversible barrier without partial rollback', () => {
+    const { core, id } = seeded()
+    turn(core, id, 'u1', '第一问')
+    turn(core, id, 'u2', '第二问')
+    const session = core.getSessionStore(id)
+    const before = session.store.getter(itemsAtom)
+    markUndoBarrier(session)
+
+    expect(core.retractTurn('u1')).toMatchObject({ ok: false, refusal: 'irreversible_barrier' })
+    expect(session.store.getter(itemsAtom)).toEqual(before)
   })
 
   it('treats an unlabelled write as its own step so unrelated edits survive', () => {

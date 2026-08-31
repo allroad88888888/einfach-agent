@@ -17,13 +17,10 @@
 //   · 不进日志——本域全域没有任何日志语句，这是有意的：一条 `console.debug(request)` 就够了。
 
 import { missingCredentialError, modelRequestError } from './errors'
-import { readModelCredentialKey } from './credentialSection'
+import { normalizeApiKey, readModelCredentialKey } from './credentialSection'
 import { providerAcceptsScope, providerDisplayName } from './provider'
 import type { ModelProviderName, ProviderScope } from './provider'
 import type { NodeHostInvokeOptions } from '../hostOptions'
-
-/** Rust `MAX_API_KEY_LENGTH`。 */
-const MAX_API_KEY_BYTES = 1_024
 
 /**
  * (供应商, 作用域) → `modelCredentials` 段里的键名。三对，与 Rust 的 match 一一对应。
@@ -46,14 +43,7 @@ export function credentialConfigKey(
  * 把它当成有效 Key 会让请求带着一个空 Bearer 打上去，换回一条供应商的 401，而用户看到的提示
  * 与「没配置」完全不同。
  */
-export function normalizeApiKey(value: string | undefined): string | undefined {
-  if (value === undefined) return undefined
-  const trimmed = value.trim()
-  if (trimmed.length === 0 || Buffer.byteLength(trimmed, 'utf8') > MAX_API_KEY_BYTES) {
-    return undefined
-  }
-  return trimmed
-}
+export { normalizeApiKey }
 
 /** Rust `configured_model_credential`：读配置里那一条，归一化之后还在就算配置了。 */
 export async function readConfiguredModelCredential(

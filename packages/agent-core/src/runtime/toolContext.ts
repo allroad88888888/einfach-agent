@@ -37,6 +37,7 @@ import { createProgressReporter } from './toolContext/progressReporting'
 import { createSkillsCapabilities } from './toolContext/skillsCapabilities'
 import { createStaleGuards } from './toolContext/staleGuards'
 import { createWorkspaceCapabilities } from './toolContext/workspaceCapabilities'
+import { createVisionCapabilities } from './toolContext/visionCapabilities'
 import {
   createWorkspaceInputGuards,
   resolveWorkspaceRoot,
@@ -102,6 +103,13 @@ export function buildToolContext(opts: {
   })
   const planCapabilities = createPlanCapabilities({ sessionId, core, guards })
   const skillsCapabilities = createSkillsCapabilities({ sessionId, core, workspaceRoot })
+  const workspaceCapabilities = createWorkspaceCapabilities({
+    toolName: opts.toolName,
+    core,
+    guards,
+    progress,
+    inputGuards,
+  })
 
   const ctx: ToolContext = {
     sessionId,
@@ -109,7 +117,14 @@ export function buildToolContext(opts: {
     progress,
     ...planCapabilities,
     ...skillsCapabilities,
-    ...createWorkspaceCapabilities({ toolName: opts.toolName, core, guards, progress, inputGuards }),
+    ...workspaceCapabilities,
+    ...createVisionCapabilities({
+      capability: core.config.viewImage,
+      signal,
+      readWorkspaceImage: workspaceCapabilities.readWorkspaceImage,
+      guards,
+      progress,
+    }),
     ...createOutputCapabilities({ sessionId, signal, currentRun: currentRunGuard, core }),
 
     async callTool(name, args): Promise<ToolResult> {

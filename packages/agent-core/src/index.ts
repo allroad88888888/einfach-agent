@@ -89,6 +89,9 @@ export type { ModelEscalationPolicy, ModelEscalationRequest } from './runtime/mo
 export { configureHostInvoke } from './runtime/hostBridge'
 // 宿主实现自己的桥时要照它写签名（packages/host-node 的路由表、浏览器侧的 HTTP invoke）
 export type { HostInvoke, HostBridgeRegistration } from './runtime/hostBridge'
+export { readWorkspaceImage } from './runtime/workspaceImageRead'
+export type { WorkspaceImageMimeType, WorkspaceImageReadInput, WorkspaceImageReadResult } from './runtime/workspaceImageRead'
+export type { ViewImageCapability, ViewImageCapabilityContext, ViewImageInput, ViewImageResult } from './tools/types'
 // S5：登记桥时必须一并声明宿主平台。**同机宿主**（CLI：解释器与被执行的命令同一台机器）用这个
 // 函数取值；远端宿主（浏览器 → Node server）必须从握手拿，用本地探测会稳定答错整整一个平台。
 // 读取面不在这里：两个消费者（shell 桥、注入模型的「运行环境」段）读的是 `@einfach-agent/core/tools`
@@ -108,12 +111,14 @@ export {
   toggleWorkspaceExpanded,
   toggleWorkspaceSettings,
   renameWorkspace,
+  removeWorkspace,
   setWorkspaceRoot,
   // 会话
   newSession,
   selectSession,
   removeSession,
   renameSession,
+  setActiveSessionModelSettings,
   // 会话 atom 作用域：S7b（E7）为 <ActiveSessionProvider> 补的受限只读通路，不给 store 生命周期
   sessionAtomScope,
   sessionUndoAvailabilityAtom,
@@ -132,7 +137,8 @@ export {
   approvePlan,
   continuePlan,
   rollbackPlanStage,
-  // 撤销 / 重做（会话事务日志）：undoTurn 是 UI 默认粒度，*Entry 是开发者粒度
+  // 对话撤回 / 撤销 / 重做（会话事务日志）：retractTurn 是用户消息入口，*Entry 是开发者粒度
+  retractTurn,
   undoTurn,
   redoTurn,
   undoEntry,
@@ -166,6 +172,7 @@ export type {
   SessionRecoveryStatus,
   HistoryCommandRefusal,
   HistoryCommandResult,
+  SetActiveSessionModelSettingsResult,
 } from './runtime/commands'
 
 // ---------------------------------------------------------------------------
@@ -200,18 +207,18 @@ export type { PluginApiVersionRange } from './plugins/manifestTypes' // apps/cli
 // ---------------------------------------------------------------------------
 // 上下文预算（./runtime/contextBudget）
 // ---------------------------------------------------------------------------
-// 【T1 删掉了什么】这里曾经还导出 `canPickWorkspaceDirectory` / `pickWorkspaceDirectory`
-// （`runtime/workspaceDialog`）—— 原生目录选择框，唯一实现是桌面端的 dialog 插件。桌面端退出后
-// 它恒答「当前宿主未提供命令桥」，两个 UI 调用点因此改成只保留手工输入工作区路径。
-// 浏览器自托管下的目录选择是一件**尚未设计**的事（issue 树的未决项 U-1：server 端目录浏览 UI /
-// 输入框 + server 侧校验 / 读配置里的 workspace 列表），做的时候按那条路重新长出接口，
-// 不要复活这个只能答 false 的签名。
+// 工作区目录选择也走已登记的宿主桥：Node 宿主负责打开操作系统选择器，core 只认结果。
 export {
   // apps/web: ContextStats.tsx —— S7a 从当年的上下文压缩插件换出来的正式通路（E1 记债，§3.5；
   // 该插件已随 A1 删除）
   COST_SOFT_CAP_TOKENS,
   contextInputBudgetTokens,
 } from './runtime/contextBudget'
+export {
+  canPickWorkspaceDirectory,
+  pickWorkspaceDirectory,
+} from './runtime/workspaceDirectoryPicker'
+export type { PickWorkspaceDirectoryResult } from './runtime/workspaceDirectoryPicker'
 
 // ---------------------------------------------------------------------------
 // 跨会话数据类型（./state/core.type）—— S3b 点名的 SessionMeta/WorkspaceMeta 在此

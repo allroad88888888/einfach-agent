@@ -2,6 +2,7 @@ import type { ProviderRequestBody, ProviderTarget } from '../packages/agent-ai/s
 import { RelayRequestError } from './model-preview-relay-error'
 
 export const PROVIDER_RESOURCE_ID_PATTERN = /^[A-Za-z0-9._-]{1,256}$/
+const DEEPSEEK_FILE_ID_PATTERN = /^file-api-[A-Za-z0-9._-]{1,247}$/
 
 export type ModelPreviewRelayCredentials = {
   deepseek?: string
@@ -35,9 +36,12 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
     && actual.every((key, index) => key === expected[index])
 }
 
-function safeFileDeletePath(path: unknown): path is string {
+function safeFileDeletePath(
+  path: unknown,
+  idPattern = PROVIDER_RESOURCE_ID_PATTERN,
+): path is string {
   if (typeof path !== 'string' || !path.startsWith('/files/')) return false
-  return PROVIDER_RESOURCE_ID_PATTERN.test(path.slice('/files/'.length))
+  return idPattern.test(path.slice('/files/'.length))
 }
 
 function resolved(
@@ -62,13 +66,26 @@ function resolved(
 /** Applies the relay's closed origin plus method/path transport policy. */
 export function resolveModelPreviewRoute(value: unknown): ModelPreviewRoute {
   const target = record(value)
-  if (target.provider === 'deepseek'
-    && target.scope === 'default'
-    && target.method === 'POST'
-    && target.path === '/chat/completions') {
-    return resolved(
-      target, 'https://api.deepseek.com/chat/completions', 'json', 'deepseek', CHAT_RESPONSE_LIMIT,
-    )
+  if (target.provider === 'deepseek' && target.scope === 'default') {
+    if (target.method === 'POST' && target.path === '/chat/completions') {
+      return resolved(
+        target, 'https://api.deepseek.com/chat/completions',
+        'json', 'deepseek', CHAT_RESPONSE_LIMIT,
+      )
+    }
+    if (target.method === 'POST' && target.path === '/files') {
+      return resolved(
+        target, 'https://api.deepseek.com/files',
+        'multipart', 'deepseek', FILE_RESPONSE_LIMIT,
+      )
+    }
+    if (target.method === 'DELETE'
+      && safeFileDeletePath(target.path, DEEPSEEK_FILE_ID_PATTERN)) {
+      return resolved(
+        target, `https://api.deepseek.com${target.path}`,
+        'none', 'deepseek', DELETE_RESPONSE_LIMIT,
+      )
+    }
   }
   if (target.provider === 'glm'
     && target.scope === 'default'

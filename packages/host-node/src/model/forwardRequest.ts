@@ -24,13 +24,17 @@
 // ——本函数拿到响应头就返回了，流还在调用方手里跑，那段时间里取消必须还找得到这次请求。
 // 拿到响应头之前的任何失败都在本文件里当场销账。调用方拿到响应后决定不要了，走 `release()`。
 
-import { ModelRequestCancelledError } from './errors'
+import { missingCredentialError, ModelRequestCancelledError } from './errors'
 import { narrowProviderRequestEnvelope } from './requestEnvelope'
 import { prepareProviderBody } from './requestBody'
 import { readActiveModelCredential } from './credentials'
-import { readRegisteredOpenAiCompatOrigin } from './openAiCompatEndpoint'
+import {
+  readConnectionProfileForwardBinding,
+  type ConnectionProfileForwardBinding,
+} from './connectionProfileForwardBinding'
+import { legacyRegisteredOriginsForTarget } from './legacyOpenAiCompatOrigin'
 import { resolveProviderTarget } from './providerRoute'
-import type { ProviderTarget, RegisteredProviderOrigins } from './providerRoute'
+import type { ProviderTarget } from './providerRoute'
 import { modelRequestRegistry, type ModelRequestRegistry } from './requestRegistry'
 import { sendUpstreamRequest, type ModelFetch, type UpstreamResponse } from './upstreamRequest'
 import type { NodeHostInvokeOptions } from '../hostOptions'
@@ -67,21 +71,25 @@ export interface ForwardedModelResponse {
   release(): Promise<void>
 }
 
-/**
- * 查出这次请求可能用得上的登记式 origin（当前只有 openai-compat 一条）。
- *
- * **按 provider 分支而不是无条件读**：前三家的 origin 是常量，为它们多读一次配置文件等于给
- * 每一次 DeepSeek 请求加一次无用的磁盘 IO。分支写在这里而不是藏进 providerRoute，是因为
- * 「白名单不碰文件系统」是那张表的硬约束（它必须能被内存里穷举验证），读盘只能发生在编排层。
- *
- * 读不到就交空表下去：`resolveProviderTarget` 会把它判成目标未获允许（fail closed）。
- */
-async function registeredOrigins(
+function isConnectionProfileTarget(target: ProviderTarget): target is ProviderTarget & {
+  readonly provider: 'openai-compat'
+  readonly connectionId: string
+} {
+  return target.provider === 'openai-compat' && target.connectionId !== undefined
+}
+
+/** Profile requests use their atomic binding; no-ID requests retain the legacy credential read. */
+async function readTargetCredential(
   options: NodeHostInvokeOptions,
   target: ProviderTarget,
-): Promise<RegisteredProviderOrigins> {
-  if (target.provider !== 'openai-compat') return {}
-  return { openAiCompat: await readRegisteredOpenAiCompatOrigin(options) }
+  profileBinding: ConnectionProfileForwardBinding | undefined,
+): Promise<string> {
+  if (!isConnectionProfileTarget(target)) {
+    return readActiveModelCredential(options, target.provider, target.scope)
+  }
+  const key = profileBinding?.apiKey
+  if (key === undefined) throw missingCredentialError('OpenAI 兼容端点')
+  return key
 }
 
 /** 消费完就销账。`yield*` 会把调用方的提前退出原样转给上游流，让它也收尾。 */
@@ -102,9 +110,9 @@ async function* trackedBody(
  *
  * `input` 是**外部输入**（HTTP 那条路上来自浏览器的 JSON），所以第一件事是收窄，不是取值。
  *
- * 各步的顺序照搬 Rust，不是可换的：先收窄信封（拿到 requestId 才能登记取消）、再查白名单
- * （目标不合法时不该占用一个 requestId）、再登记、再备 body（这一步可能很贵，登记在前才让它
- * 可取消）、最后才读 Key——**Key 是整条链上最晚出现、活得最短的东西**。
+ * 各步顺序是：先收窄信封，再解析宿主绑定并查白名单（目标不合法时不占 requestId），再登记、
+ * 备 body 与发送。官方和 legacy Key 仍最后读取；profile 的 Key 必须与 origin 同快照取得，因此
+ * 会短暂留在内部 binding，且只交给 Authorization 头。
  */
 export async function forwardProviderRequest(
   input: unknown,
@@ -113,11 +121,15 @@ export async function forwardProviderRequest(
   const registry = deps.registry ?? modelRequestRegistry
   const fetchImpl = deps.fetchImpl ?? ((url, init) => globalThis.fetch(url, init))
   const envelope = narrowProviderRequestEnvelope(input)
-  // 查表这一步现在可能先读一次配置（只有 openai-compat 会）。它仍然排在登记之前：目标不合法
-  // 时不该占用一个 requestId，而这一次读的是本机的一个小 JSON，不是网络往返。
+  // Profile 的 origin 与 Key 必须来自同一次受锁快照。Key 暂存在内部 binding，仍只会进入
+  // Authorization 头；URL 的最终许可仍只由下面的纯白名单 `resolveProviderTarget` 决定。
+  const profileBinding = isConnectionProfileTarget(envelope.target)
+    ? await readConnectionProfileForwardBinding(deps.options, envelope.target.connectionId)
+    : undefined
   const target = resolveProviderTarget(
     envelope.target,
-    await registeredOrigins(deps.options, envelope.target),
+    profileBinding?.registeredOrigins
+      ?? await legacyRegisteredOriginsForTarget(deps.options, envelope.target),
   )
   const controller = registry.register(envelope.requestId)
   let upstream: UpstreamResponse
@@ -126,7 +138,7 @@ export async function forwardProviderRequest(
     // 每个可能耗时的步骤之后补一次取消检查，对齐 Rust 的 `tokio::select!` 分支：取消发生在
     // 备 body 期间时，不该再去读一次 Key、也不该再发一次上游请求。
     if (controller.signal.aborted) throw new ModelRequestCancelledError()
-    const apiKey = await readActiveModelCredential(deps.options, target.provider, target.scope)
+    const apiKey = await readTargetCredential(deps.options, envelope.target, profileBinding)
     if (controller.signal.aborted) throw new ModelRequestCancelledError()
     upstream = await sendUpstreamRequest({
       target,

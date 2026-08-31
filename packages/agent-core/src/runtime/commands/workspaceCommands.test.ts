@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('../persistenceBridge', () => ({
   persistWorkspaces: vi.fn(),
+  persistSessions: vi.fn(),
+  persistDeleteSession: vi.fn(),
 }))
 
 import {
@@ -15,6 +17,7 @@ import {
 import type { SessionMeta } from '../../state/core.type'
 import { createCoreInstance, type CoreInstance } from '../core/coreInstance'
 import { persistWorkspaces } from '../persistenceBridge'
+import { createSessionCommands } from './sessionCommands'
 import { createWorkspaceCommands } from './workspaceCommands'
 
 let core: CoreInstance
@@ -22,7 +25,8 @@ let commands: ReturnType<typeof createWorkspaceCommands>
 
 beforeEach(() => {
   core = createCoreInstance()
-  commands = createWorkspaceCommands(core)
+  const session = createSessionCommands(core)
+  commands = createWorkspaceCommands(core, { removeSession: session.removeSession })
 })
 
 describe('workspaceCommands', () => {
@@ -76,5 +80,21 @@ describe('workspaceCommands', () => {
       rootPath: '/repo/demo',
     })
     expect(persistWorkspaces).toHaveBeenCalledTimes(2)
+  })
+
+  it('移除工作区会清理其中会话并切换到剩余工作区', () => {
+    const first = commands.newWorkspace({ name: '一号' })
+    const firstSession = createSessionCommands(core).newSession({ workspaceId: first })
+    const second = commands.newWorkspace({ name: '二号' })
+    const secondSession = createSessionCommands(core).newSession({ workspaceId: second })
+
+    commands.removeWorkspace(second)
+
+    expect(core.rootStore.getter(workspacesAtom)[second]).toBeUndefined()
+    expect(core.rootStore.getter(sessionsAtom)[secondSession]).toBeUndefined()
+    expect(core.rootStore.getter(workspacesAtom)[first]).toBeTruthy()
+    expect(core.rootStore.getter(sessionsAtom)[firstSession]).toBeTruthy()
+    expect(core.rootStore.getter(activeWorkspaceIdAtom)).toBe(first)
+    expect(core.rootStore.getter(activeSessionIdAtom)).toBe(firstSession)
   })
 })

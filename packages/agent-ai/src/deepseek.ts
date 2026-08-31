@@ -15,12 +15,14 @@ import {
   type ModelResponseMessage,
   type ModelStreamDelta,
 } from './modelApi'
+import { encodeDeepSeekMessages, type DeepSeekWireItem } from './deepseekMessages'
 import { nonVisualMessages } from './nonVisualMessages'
 
 // 简介：DeepSeek 接入点与默认模型。
 export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
 export const DEEPSEEK_PRO_MODEL = 'deepseek-v4-pro'
 export const DEEPSEEK_FLASH_MODEL = 'deepseek-v4-flash'
+export const DEEPSEEK_VISION_MODEL = 'deepseek-v4-flash-vision-exp'
 export const DEFAULT_DEEPSEEK_MODEL = DEEPSEEK_PRO_MODEL
 export const MAX_DEEPSEEK_USER_ID_LENGTH = 512
 
@@ -36,6 +38,7 @@ export const MAX_DEEPSEEK_USER_ID_LENGTH = 512
 export const DEEPSEEK_MODEL_LABELS: Readonly<Record<string, string>> = {
   [DEEPSEEK_PRO_MODEL]: 'DeepSeek V4 Pro',
   [DEEPSEEK_FLASH_MODEL]: 'DeepSeek V4 Flash',
+  [DEEPSEEK_VISION_MODEL]: 'DeepSeek V4 Flash Vision Experimental',
 }
 
 // 简介：校验 DeepSeek 官方 user_id 线协议约束。
@@ -87,6 +90,10 @@ export interface DeepSeekChatRequest extends ChatRequestBase {
   frequency_penalty?: number
 }
 
+interface DeepSeekWireChatRequest extends Omit<DeepSeekChatRequest, 'messages'> {
+  messages: DeepSeekWireItem[]
+}
+
 // 简介：规范化 DeepSeek V4 thinking 工具调用历史。
 // 详情：官方协议要求工具调用续轮完整回传 assistant 的 reasoning_content；同时工具调用
 // assistant 的 content 不能为 null。这里把纯工具调用轮的 null content 规范为空字符串，并给
@@ -109,7 +116,7 @@ function prepareDeepSeekThinkingMessages(
 // 简介：按 DeepSeek V4 thinking 协议净化请求。
 // 详情：thinking 开启时，DeepSeek 不支持四个采样参数，也不接受 tool_choice。调用方的
 // 会话设置仍需保留，因此这里只创建一个兼容的新对象，不修改传入 body。
-function prepareDeepSeekRequest(body: DeepSeekChatRequest): DeepSeekChatRequest {
+function prepareDeepSeekRequest(body: DeepSeekChatRequest): DeepSeekWireChatRequest {
   const {
     user_id: rawUserId,
     tool_choice: rawToolChoice,
@@ -122,7 +129,11 @@ function prepareDeepSeekRequest(body: DeepSeekChatRequest): DeepSeekChatRequest 
   // 工具调用轮归一化不看请求级 thinking 开关：DeepSeek 服务端已把 deepseek-chat 等别名
   // 路由到 thinking 家族（实测请求 deepseek-chat 返回 model=deepseek-v4-flash），请求未声明
   // thinking 时缺 reasoning_content 一样会 400；非 thinking 路径带空串字段已实测可过校验。
-  const messages = prepareDeepSeekThinkingMessages(nonVisualMessages(body.messages))
+  const normalizedMessages = prepareDeepSeekThinkingMessages(body.messages)
+  const messages: DeepSeekWireItem[] = body.model === DEEPSEEK_VISION_MODEL
+    ? encodeDeepSeekMessages(normalizedMessages, body.model)
+    // nonVisualMessages guarantees every structured user item becomes string content.
+    : nonVisualMessages(normalizedMessages) as DeepSeekWireItem[]
   const userId = normalizeDeepSeekUserId(rawUserId)
   const request = userId === undefined ? baseRequest : { ...baseRequest, user_id: userId }
 
@@ -144,7 +155,7 @@ function prepareDeepSeekRequest(body: DeepSeekChatRequest): DeepSeekChatRequest 
   }
 }
 
-function withStreamUsage(body: DeepSeekChatRequest): DeepSeekChatRequest {
+function withStreamUsage(body: DeepSeekWireChatRequest): DeepSeekWireChatRequest {
   return {
     ...body,
     stream_options: {

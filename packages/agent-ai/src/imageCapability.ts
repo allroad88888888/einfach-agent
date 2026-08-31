@@ -30,3 +30,15 @@ export const KIMI_K2_6_IMAGE_INPUT: ImageInputCapability = {
     maxHeight: 2160,
   },
 }
+
+export const DEEPSEEK_VISION_IMAGE_INPUT: ImageInputCapability = {
+  kind: 'provider-upload',
+  accept: ['image/jpeg', 'image/png', 'image/webp'],
+  limits: {
+    maxImages: 8,
+    maxBytesPerImage: 20 * 1024 * 1024,
+    maxBatchBytes: 40 * 1024 * 1024,
+    maxWidth: 4096,
+    maxHeight: 2160,
+  },
+}

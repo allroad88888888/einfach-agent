@@ -1,9 +1,8 @@
-// 内置四家 provider 的装配：把 deepseek/glm/kimi/openai-compat 连同各自能力描述装进默认 registry。
+// 内置四家 provider 的装配：把 deepseek/glm/kimi/openai-compat adapter 装进默认 registry。
 // ---------------------------------------------------------------------------
-// 参照 Rust 侧「装配层显式列举合法」：这里是 adapter 包内唯一允许出现厂商名与厂商能力数据
-// （上下文窗口、单轮工具上限、逐模型清单）的地方。每家的私有请求字段都在自己的 adapter 里
-// 从通用 ProviderSettings 投影出来，registry 与上层路由（modelAdapter）都不认识这些字段；
-// 能力描述同理只在这里出现，vendorDescriptor.ts 只经 registry 查询、不再持有厂商数据。
+// 逐模型 catalog 在 builtinModelDescriptors；这里仅把 catalog 与厂商请求投影组装成 adapter。
+// 每家的私有请求字段都在自己的 adapter 里从通用 ProviderSettings 投影出来，registry 与上层
+// 路由（modelAdapter）都不认识这些字段。
 // 默认 registry 的 fallback 是 deepseek —— 未注册的 vendorId 沿用历史行为按 DeepSeek 执行。
 // 新增 provider 只在本文件加一段 adapter + descriptor 并注册：ModelAdapterSettings 已经是
 // 「不透明 vendorId + 各家私有字段」的开放形状，没有需要同步扩的判别式，packages/agent-core
@@ -17,7 +16,6 @@ import {
   type DeepSeekReasoningEffort,
 } from './deepseek'
 import { callGlm, streamGlm, type GlmChatRequest, type GlmReasoningEffort } from './glm'
-import { KIMI_K2_6_IMAGE_INPUT, UNSUPPORTED_IMAGE_INPUT } from './imageCapability'
 import { callKimi, streamKimi, type KimiChatRequest } from './kimi'
 import type { KimiRegion } from './kimiRegion'
 import {
@@ -26,20 +24,40 @@ import {
   type OpenAiCompatChatRequest,
 } from './openaiCompat'
 import type { ChatCallOptions } from './modelApi'
+import type { ChatRequestBase, ThinkingConfig } from './modelProtocol'
+import {
+  UNKNOWN_THINKING_CAPABILITY,
+  getModelThinkingCapability,
+  isDisabledThinkingAlias,
+  isSupportedThinkingEffort,
+  modelSupportsThinking,
+  type ModelThinkingCapability,
+  type ModelThinkingCapabilityRegistry,
+  type ModelThinkingEffort,
+} from './modelThinkingCapability'
+import { markLegacyOpenAiCompat } from './providerLocalTransport'
+import {
+  DEEPSEEK_VENDOR_ID,
+  GLM_VENDOR_ID,
+  KIMI_VENDOR_ID,
+  OPENAI_COMPAT_VENDOR_ID,
+  BUILTIN_VENDOR_DESCRIPTORS,
+  builtinVendorDescriptor,
+} from './builtinModelDescriptors'
 import {
   createProviderRegistry,
-  type ModelDescriptor,
   type ProviderAdapter,
   type ProviderRegistry,
   type ProviderRequest,
   type ProviderSettings,
-  type VendorDescriptor,
 } from './providerRegistry'
 
-export const DEEPSEEK_VENDOR_ID = 'deepseek'
-export const GLM_VENDOR_ID = 'glm'
-export const KIMI_VENDOR_ID = 'kimi'
-export const OPENAI_COMPAT_VENDOR_ID = 'openai-compat'
+export {
+  DEEPSEEK_VENDOR_ID,
+  GLM_VENDOR_ID,
+  KIMI_VENDOR_ID,
+  OPENAI_COMPAT_VENDOR_ID,
+} from './builtinModelDescriptors'
 
 // 简介：内置装配的缺省会话模型（vendorId + 模型名）。
 // 详情：core 不认识任何厂商，因此「新会话默认用谁」这件事只能由认识厂商的一侧给出。
@@ -50,82 +68,72 @@ export const DEFAULT_MODEL_SETTINGS: { readonly vendor: string; readonly model: 
   model: DEFAULT_DEEPSEEK_MODEL,
 }
 
-// 简介：构造一个只有文本上下文窗口、不支持图片输入的模型描述。
-// 详情：多数模型没有经过验证的图片输入协议，用这个帮助函数省掉逐个模型重复
-// `imageInput: UNSUPPORTED_IMAGE_INPUT`。
-function textModel(contextWindowTokens: number): ModelDescriptor {
-  return { contextWindowTokens, imageInput: UNSUPPORTED_IMAGE_INPUT }
-}
-
-// 简介：DeepSeek 的能力描述。
-// 详情：只保留 V4 双模型；下线旧名 deepseek-chat / deepseek-reasoner 不再是合法选项，
-// 旧会话经 state/persistence/modelMigration.ts 的映射迁到 v4-flash。
-const deepseekDescriptor: VendorDescriptor = {
-  contextWindowTokens: 64_000,
-  maxTurnTools: 128,
-  models: {
-    'deepseek-v4-pro': textModel(1_000_000),
-    'deepseek-v4-flash': textModel(1_000_000),
-  },
-}
-
-// 简介：GLM 的能力描述。
-const glmDescriptor: VendorDescriptor = {
-  contextWindowTokens: 128_000,
-  maxTurnTools: 128,
-  models: {
-    'glm-5.2': textModel(1_000_000),
-    'glm-5.1': textModel(200_000),
-    'glm-5': textModel(200_000),
-    'glm-5-turbo': textModel(200_000),
-    'glm-4.7': textModel(200_000),
-    'glm-4.7-flashx': textModel(200_000),
-    'glm-4.7-flash': textModel(200_000),
-    'glm-4.6': textModel(200_000),
-    'glm-4.5-air': textModel(128_000),
-    'glm-4.5-airx': textModel(128_000),
-    'glm-4.5-flash': textModel(128_000),
-    'glm-4-long': textModel(1_000_000),
-    'glm-4-flashx-250414': textModel(128_000),
-    'glm-4-flash-250414': textModel(128_000),
-  },
-}
-
-// 简介：Kimi 的能力描述。
-const kimiDescriptor: VendorDescriptor = {
-  contextWindowTokens: 131_072,
-  maxTurnTools: 128,
-  models: {
-    'kimi-k2.6': {
-      contextWindowTokens: 262_144,
-      imageInput: KIMI_K2_6_IMAGE_INPUT,
-    },
-  },
-}
-
-// 简介：标准 OpenAI-compatible 协议的能力描述。
-// 详情：这是唯一一家没有具体产品背书的 vendor——任何声称兼容 OpenAI /chat/completions
-// 的端点都可能挂在这里，因此不编具体厂商才会有的数字：contextWindowTokens/maxTurnTools
-// 取与 registry 自身 FALLBACK_VENDOR_DESCRIPTOR 一致的保守值，models 留空（没有实测数据
-// 支撑任何一条逐模型覆盖）。接入某个具体服务后如果有了真实数据，再回来补 models。
-const openAiCompatDescriptor: VendorDescriptor = {
-  contextWindowTokens: 64_000,
-  maxTurnTools: 128,
-  models: {},
-}
-
-type DeepSeekProviderSettings = ProviderSettings & { reasoning_effort?: DeepSeekReasoningEffort }
-type GlmProviderSettings = ProviderSettings & { reasoning_effort?: GlmReasoningEffort }
+type ThinkingProviderSettings = ProviderSettings & { reasoning_effort?: unknown }
+type DeepSeekProviderSettings = ThinkingProviderSettings
+type GlmProviderSettings = ThinkingProviderSettings
 type KimiProviderSettings = ProviderSettings & { region?: KimiRegion }
+type OpenAiCompatProviderSettings = ProviderSettings & { connectionId?: string }
+
+type ThinkingProjectedRequest = Omit<ChatRequestBase, 'thinking'> & {
+  thinking?: ThinkingConfig
+  reasoning_effort?: ModelThinkingEffort
+}
+
+const BUILTIN_THINKING_CAPABILITIES: ModelThinkingCapabilityRegistry = {
+  describeModel(vendorId, modelId) {
+    return BUILTIN_VENDOR_DESCRIPTORS[vendorId]?.models[modelId]
+  },
+}
+
+function canonicalThinking(value: unknown): ThinkingConfig | undefined {
+  const type = value !== null && typeof value === 'object'
+    ? (value as { type?: unknown }).type
+    : undefined
+  return type === 'enabled' || type === 'disabled' ? { type } : undefined
+}
+
+/** Exact capability lookup: execution fallback must not inherit a vendor's private Thinking fields. */
+function thinkingCapabilityFor(
+  request: ProviderRequest<ProviderSettings>,
+  vendorId: string,
+): ModelThinkingCapability {
+  if (request.settings.vendor !== vendorId) return UNKNOWN_THINKING_CAPABILITY
+  return getModelThinkingCapability(BUILTIN_THINKING_CAPABILITIES, vendorId, request.body.model)
+}
+
+/** Projects only the documented Thinking fields for the request's exact vendor and model. */
+function projectThinkingRequest(
+  request: ProviderRequest<ThinkingProviderSettings>,
+  vendorId: string,
+): ThinkingProjectedRequest {
+  const capability = thinkingCapabilityFor(request, vendorId)
+  const body = request.body as ChatRequestBase & { reasoning_effort?: unknown }
+  const { thinking: rawThinking, reasoning_effort: _untrustedEffort, ...base } = body
+  const thinking = canonicalThinking(rawThinking)
+
+  if (!modelSupportsThinking(capability)) return base
+  if (capability.kind === 'toggle') return thinking === undefined ? base : { ...base, thinking }
+
+  const effort = request.settings.reasoning_effort
+  if (isDisabledThinkingAlias(capability, effort)) {
+    return { ...base, thinking: { type: 'disabled' } }
+  }
+  if (thinking?.type !== 'enabled') return thinking === undefined ? base : { ...base, thinking }
+  if (!isSupportedThinkingEffort(capability, effort)) return { ...base, thinking }
+  return { ...base, thinking, reasoning_effort: effort }
+}
 
 // 简介：DeepSeek 的请求投影。
 // 详情：DeepSeek 是唯一消费 userId 的厂商（上行为 user_id），并有自己的 reasoning_effort 取值域。
 function deepseekRequest(
   request: ProviderRequest<DeepSeekProviderSettings>,
 ): DeepSeekChatRequest {
+  const { reasoning_effort, ...body } = projectThinkingRequest(request, DEEPSEEK_VENDOR_ID)
   return {
-    ...request.body,
-    reasoning_effort: request.settings.reasoning_effort,
+    ...body,
+    ...(reasoning_effort === 'high' || reasoning_effort === 'max'
+      ? { reasoning_effort: reasoning_effort as DeepSeekReasoningEffort }
+      : {}),
     user_id: request.userId,
   }
 }
@@ -133,48 +141,72 @@ function deepseekRequest(
 // 简介：GLM 的请求投影。
 // 详情：只归一 reasoning_effort（取值域比 DeepSeek 多一档）；userId 不上行。
 function glmRequest(request: ProviderRequest<GlmProviderSettings>): GlmChatRequest {
-  return { ...request.body, reasoning_effort: request.settings.reasoning_effort }
+  const { reasoning_effort, ...body } = projectThinkingRequest(request, GLM_VENDOR_ID)
+  return {
+    ...body,
+    ...(reasoning_effort === 'low'
+      || reasoning_effort === 'medium'
+      || reasoning_effort === 'high'
+      || reasoning_effort === 'xhigh'
+      || reasoning_effort === 'max'
+      ? { reasoning_effort: reasoning_effort as GlmReasoningEffort }
+      : {}),
+  }
 }
 
 // 简介：Kimi 的请求投影。
 // 详情：只归一 region（决定接入点与引用 scope）；userId 不上行。
 function kimiRequest(request: ProviderRequest<KimiProviderSettings>): KimiChatRequest {
-  return { ...request.body, region: request.settings.region }
+  const { reasoning_effort: _reasoningEffort, ...body } = projectThinkingRequest(request, KIMI_VENDOR_ID)
+  return { ...body, region: request.settings.region }
 }
 
 // 简介：标准协议没有厂商私有字段可归一，请求体原样转发；userId 不上行。
-function openAiCompatRequest(request: ProviderRequest<ProviderSettings>): OpenAiCompatChatRequest {
-  return { ...request.body }
+function openAiCompatRequest(
+  request: ProviderRequest<OpenAiCompatProviderSettings>,
+): OpenAiCompatChatRequest {
+  const { reasoning_effort: _reasoningEffort, ...body } = projectThinkingRequest(
+    request,
+    OPENAI_COMPAT_VENDOR_ID,
+  )
+  return body
 }
 
-// 简介：装配层可选的默认接入点。
-// 详情：per-request 的 settings.baseUrl 优先于这里；两者都缺失时交给
-// callOpenAiCompat/streamOpenAiCompat 自己的 requireBaseUrl 报配置错误，不在这里重复校验。
+// 简介：装配层登记的 legacy 接入点。
+// 详情：会话里的 settings.baseUrl 不可信；无 connectionId 时只能使用这一条登记值。
 export interface OpenAiCompatAdapterConfig {
   baseUrl?: string
+  /** Resolves profile endpoints from the application's hydrated public registry. */
+  connectionBaseUrl?: (connectionId: string) => string | undefined
 }
 
-// 简介：解析这次调用实际要用的 ChatCallOptions.baseUrl。
-// 详情：优先级 settings.baseUrl（per-request 覆盖）> config.baseUrl（装配层注册时烘焙的
-// 默认接入点）> options.baseUrl（调用方直接传的，兜底给非 core 的直接调用方，比如测试）。
+// 简介：解析这次调用实际要用的 ChatCallOptions.baseUrl 与本地身份。
+// 详情：有 connectionId 时只查装配层的公开 profile registry；无 ID 时只用装配层登记的
+// legacy origin，并加上固定身份。会话设置与调用 options 都不能改写 endpoint。
 function resolveOpenAiCompatOptions(
-  request: ProviderRequest<ProviderSettings>,
+  request: ProviderRequest<OpenAiCompatProviderSettings>,
   options: ChatCallOptions,
   config: OpenAiCompatAdapterConfig,
 ): ChatCallOptions {
-  return { ...options, baseUrl: request.settings.baseUrl ?? config.baseUrl ?? options.baseUrl }
+  const connectionId = request.settings.connectionId
+  if (connectionId !== undefined) {
+    return {
+      ...options,
+      baseUrl: config.connectionBaseUrl?.(connectionId),
+      connectionId,
+    }
+  }
+  return markLegacyOpenAiCompat({ ...options, baseUrl: config.baseUrl })
 }
 
 // 简介：构造标准 OpenAI-compatible adapter。
-// 详情：baseUrl 没有厂商官方值可猜，因此拆成两层可配——装配层在注册时可以烘焙一个默认
-// 接入点（比如 CLI/桌面从环境变量解析出的自建网关地址），每次请求仍可用 settings.baseUrl
-// 覆盖它。默认注册（见 registerBuiltinProviders）不带任何默认值，两者都缺失时请求会带着
-// OpenAiCompatConfigError 拒绝，而不是发给未知主机。
+// 详情：baseUrl 没有厂商官方值可猜，因此只能由装配层烘焙登记值。默认注册
+// （见 registerBuiltinProviders）不带默认值；缺失时请求以 OpenAiCompatConfigError 拒绝。
 export function createOpenAiCompatAdapter(
   config: OpenAiCompatAdapterConfig = {},
 ): ProviderAdapter<ProviderSettings> {
   return {
-    descriptor: openAiCompatDescriptor,
+    descriptor: builtinVendorDescriptor(OPENAI_COMPAT_VENDOR_ID),
     call: (request, options) =>
       callOpenAiCompat(openAiCompatRequest(request), resolveOpenAiCompatOptions(request, options, config)),
     stream: (request, options, handlers) =>
@@ -187,20 +219,20 @@ export function createOpenAiCompatAdapter(
 }
 
 const deepseekAdapter: ProviderAdapter<DeepSeekProviderSettings> = {
-  descriptor: deepseekDescriptor,
+  descriptor: builtinVendorDescriptor(DEEPSEEK_VENDOR_ID),
   call: (request, options) => callDeepSeek(deepseekRequest(request), options),
   stream: (request, options, handlers, retryObserver) =>
     streamDeepSeek(deepseekRequest(request), options, handlers, retryObserver),
 }
 
 const glmAdapter: ProviderAdapter<GlmProviderSettings> = {
-  descriptor: glmDescriptor,
+  descriptor: builtinVendorDescriptor(GLM_VENDOR_ID),
   call: (request, options) => callGlm(glmRequest(request), options),
   stream: (request, options, handlers) => streamGlm(glmRequest(request), options, handlers),
 }
 
 const kimiAdapter: ProviderAdapter<KimiProviderSettings> = {
-  descriptor: kimiDescriptor,
+  descriptor: builtinVendorDescriptor(KIMI_VENDOR_ID),
   call: (request, options) => callKimi(kimiRequest(request), options),
   stream: (request, options, handlers) => streamKimi(kimiRequest(request), options, handlers),
 }

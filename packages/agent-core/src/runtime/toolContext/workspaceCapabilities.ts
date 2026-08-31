@@ -11,6 +11,7 @@ import {
   readWorkspaceFile,
   searchWorkspaceFiles,
 } from '../workspaceRead'
+import { readWorkspaceImage } from '../workspaceImageRead'
 import { rgSearchWorkspace } from '../workspaceRg'
 import { applyWorkspacePatch } from '../workspacePatch'
 import { writeWorkspaceFile } from '../workspaceWrite'
@@ -27,6 +28,7 @@ export type WorkspaceCapabilities = Pick<
   ToolContext,
   | 'runShell'
   | 'readWorkspaceFile'
+  | 'readWorkspaceImage'
   | 'listWorkspaceFiles'
   | 'searchWorkspaceFiles'
   | 'rgSearchWorkspace'
@@ -73,6 +75,15 @@ export function createWorkspaceCapabilities(deps: {
       const result = await readWorkspaceFile(withWorkspaceReadAccess(input))
       assertFresh()
       return result
+    },
+
+    async readWorkspaceImage(input) {
+      assertFresh()
+      progress(pathProgressText('读取图片', input.path))
+      const result = await readWorkspaceImage(withWorkspaceReadAccess(input))
+      assertFresh()
+      if (!result.ok) throw new Error(result.error)
+      return result.data
     },
 
     async listWorkspaceFiles(input) {

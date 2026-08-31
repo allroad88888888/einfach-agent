@@ -18,7 +18,17 @@ import { createWebAgentConfigStore } from '../config/webAgentConfigStore'
 import { modelRequestError } from './errors'
 import type { NodeHostInvokeOptions } from '../hostOptions'
 
-const MODEL_CREDENTIAL_SECTION = 'modelCredentials'
+export const MODEL_CREDENTIAL_SECTION = 'modelCredentials'
+const MAX_API_KEY_BYTES = 1_024
+
+export function normalizeApiKey(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined
+  const trimmed = value.trim()
+  if (trimmed.length === 0 || Buffer.byteLength(trimmed, 'utf8') > MAX_API_KEY_BYTES) {
+    return undefined
+  }
+  return trimmed
+}
 
 async function openStore(options: NodeHostInvokeOptions) {
   return createWebAgentConfigStore(await resolveConfigPathsFromOptions(options))
@@ -41,6 +51,40 @@ function decodeCredentials(section: unknown): Map<string, string> {
     throw modelRequestError('invalidConfigFormat')
   }
   return new Map(entries as [string, string][])
+}
+
+/**
+ * 从调用方已经持有的受锁配置快照读取一把 Key。
+ *
+ * 这是 profile forwarding binding 的窄缝：它让端点元数据与凭据能从同一次 `readSections`
+ * 得出，而不在凭据层之外复制整段解码规则。返回值仍是明文，只允许被归一化后送入上游
+ * Authorization 头；不得进入日志、错误或公开返回体。
+ */
+export function readModelCredentialSnapshotKey(
+  section: unknown,
+  configKey: string,
+): string | undefined {
+  return decodeCredentials(section).get(configKey)
+}
+
+/** 在多段事务中操作凭据；只暴露配置状态，不把已有明文 Key 交给事务协调层。 */
+export interface ModelCredentialSectionEditor {
+  configured(configKey: string): boolean
+  set(configKey: string, apiKey: string): void
+  delete(configKey: string): void
+  encode(): unknown
+}
+
+export function editModelCredentialSection(section: unknown): ModelCredentialSectionEditor {
+  const credentials = decodeCredentials(section)
+  return {
+    configured: (configKey) => normalizeApiKey(credentials.get(configKey)) !== undefined,
+    set: (configKey, apiKey) => credentials.set(configKey, apiKey),
+    delete: (configKey) => { credentials.delete(configKey) },
+    encode: () => Object.fromEntries(
+      [...credentials].sort(([left], [right]) => (left < right ? -1 : 1)),
+    ),
+  }
 }
 
 /**

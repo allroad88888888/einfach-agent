@@ -9,7 +9,7 @@ import { itemsAtom } from '../state/sessionAtoms'
 import { runtimeTranscriptEventsAtom } from '../state/transientAtoms'
 import { toolRegistry } from '../tools/registry'
 import { buildToolManifestText } from './modelTurn'
-import type { ModelFunctionTool } from '@einfach-agent/ai'
+import { DEFAULT_DEEPSEEK_MODEL, type ModelFunctionTool } from '@einfach-agent/ai'
 import { runSession } from './modelRun'
 import { createCoreInstance } from './core/coreInstance'
 import { buildSkillManifestText, builtInSkillsRegistry, registerStandardTools } from '@einfach-agent/tools'
@@ -31,7 +31,7 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
   it('DeepSeek thinking 请求保留会话设置，但只转发兼容的 thinking/reasoning_effort', async () => {
     seedSession('s5', {
       vendor: 'deepseek',
-      model: 'm',
+      model: DEFAULT_DEEPSEEK_MODEL,
       temperature: 0.5,
       thinking: true,
       // 特化字段走设置袋：core 只搬运，由 DeepSeek adapter 解释并上行。
@@ -49,7 +49,7 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
       fetchImpl,
     })
 
-    expect(captured.model).toBe('m')
+    expect(captured.model).toBe(DEFAULT_DEEPSEEK_MODEL)
     expect(captured).not.toHaveProperty('temperature')
     expect(captured.thinking).toEqual({ type: 'enabled' })
     expect(captured.reasoning_effort).toBe('high')

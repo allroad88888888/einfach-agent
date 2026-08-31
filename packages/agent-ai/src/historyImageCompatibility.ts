@@ -1,3 +1,5 @@
+import { DEEPSEEK_VISION_MODEL } from './deepseek'
+import { DEEPSEEK_FILE_SCOPE, isDeepSeekFileReference } from './deepseekMessages'
 import { DEFAULT_KIMI_MODEL, kimiReferenceScope } from './kimiRegion'
 import type { UserImageContentBlock } from './modelProtocol'
 
@@ -40,12 +42,10 @@ function placeholder(
   return { kind: 'placeholder', reason, metadata: { name, mimeType, byteSize, width, height } }
 }
 
-/** Projects persisted provider references against the exact active adapter contract. */
-export function projectHistoryImage(
+function projectKimiHistoryImage(
   image: UserImageContentBlock,
   target: HistoryImageTarget,
 ): HistoryImageProjection {
-  if (target.vendor !== 'kimi') return placeholder(image, 'target_provider_unsupported')
   if (target.model !== DEFAULT_KIMI_MODEL) return placeholder(image, 'target_model_unsupported')
   if (image.source.provider !== 'kimi') return placeholder(image, 'source_provider_mismatch')
   if (target.region && target.region !== 'cn' && target.region !== 'global') {
@@ -59,4 +59,43 @@ export function projectHistoryImage(
     return placeholder(image, 'source_reference_invalid')
   }
   return { kind: 'consumable', image }
+}
+
+function projectDeepSeekHistoryImage(
+  image: UserImageContentBlock,
+  target: HistoryImageTarget,
+): HistoryImageProjection {
+  if (target.model !== DEEPSEEK_VISION_MODEL) {
+    return placeholder(image, 'target_model_unsupported')
+  }
+  if (image.source.provider !== 'deepseek') {
+    return placeholder(image, 'source_provider_mismatch')
+  }
+  if (image.source.scope !== DEEPSEEK_FILE_SCOPE) {
+    return placeholder(image, 'source_region_mismatch')
+  }
+  if (!isDeepSeekFileReference(image.source.reference)) {
+    return placeholder(image, 'source_reference_invalid')
+  }
+  return { kind: 'consumable', image }
+}
+
+type HistoryImageProjector = (
+  image: UserImageContentBlock,
+  target: HistoryImageTarget,
+) => HistoryImageProjection
+
+const HISTORY_IMAGE_PROJECTORS: Readonly<Record<string, HistoryImageProjector>> = {
+  kimi: projectKimiHistoryImage,
+  deepseek: projectDeepSeekHistoryImage,
+}
+
+/** Projects persisted provider references against the exact active adapter contract. */
+export function projectHistoryImage(
+  image: UserImageContentBlock,
+  target: HistoryImageTarget,
+): HistoryImageProjection {
+  const project = HISTORY_IMAGE_PROJECTORS[target.vendor]
+  if (project === undefined) return placeholder(image, 'target_provider_unsupported')
+  return project(image, target)
 }

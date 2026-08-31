@@ -5,7 +5,7 @@ import {
 } from './vendorDescriptor'
 
 describe('model-level image capability', () => {
-  it('only enables the exact verified Kimi model', () => {
+  it('only enables exact models with verified image protocols', () => {
     expect(imageInputCapability('kimi', 'kimi-k2.6')).toMatchObject({
       kind: 'provider-upload',
       accept: ['image/jpeg', 'image/png', 'image/webp'],
@@ -14,6 +14,11 @@ describe('model-level image capability', () => {
     expect(imageInputCapability('kimi', 'future-kimi')).toMatchObject({ kind: 'unsupported' })
     expect(imageInputCapability('deepseek', 'deepseek-v4-pro')).toMatchObject({
       kind: 'unsupported',
+    })
+    expect(imageInputCapability('deepseek', 'deepseek-v4-flash-vision-exp')).toMatchObject({
+      kind: 'provider-upload',
+      accept: ['image/jpeg', 'image/png', 'image/webp'],
+      limits: { maxImages: 8, maxBytesPerImage: 20 * 1024 * 1024 },
     })
     expect(vendorDescriptorFor('kimi').models['kimi-k2.6']).toMatchObject({
       contextWindowTokens: 262_144,

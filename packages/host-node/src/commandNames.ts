@@ -10,7 +10,8 @@
 // 对拍没有第二侧可比。今天这张表就是权威本身，漂移的方向反过来了：下游是 apps/web 与 apps/cli，
 // 它们都从这里取名字，名字对不上是 `tsc -b` 的事。理由与替代物见 commandNames.test.ts 文件头。
 //
-// **`sqlite` 域从来不在那 28 条里**（P2 新增，全表因此是 30 条）：桌面侧的会话与 trace 持久化走
+// **`sqlite` 域从来不在那 28 条里**（P2 新增）；模型端点与连接 profile 又新增七条，
+// 工作区图片读取再新增一条受限命令，全表因此是 40 条。桌面侧的会话与 trace 持久化走
 // `@tauri-apps/plugin-sql`，那是 Tauri **插件**暴露的命令，不在 `generate_handler!` 里。这两条
 // 命令名是 Node 侧新定的，没有移植来源。
 //
@@ -39,9 +40,10 @@
  *     两者都不是「一次调用一个 JSON 返回值」，`HostInvoke` 的签名装不下，需要独立的传输设计。
  */
 export const NODE_HOST_COMMANDS_BY_DOMAIN = {
-  // 工作区读取面。四条命令共用同一套路径禁闭（`workspace_root` + `allow_external_paths`）。
+  // 工作区读取面。五条命令共用同一套路径禁闭（`workspace_root` + `allow_external_paths`）。
   'workspace/read': [
     'read_workspace_file',
+    'read_workspace_image',
     'read_workspace_run_index_page',
     'list_workspace_files',
     'search_workspace_files',
@@ -64,6 +66,8 @@ export const NODE_HOST_COMMANDS_BY_DOMAIN = {
   'workspace/rg': ['rg_search_workspace'],
   // 预置任务（构建/测试之类按 kind 派发的固定命令行），与自由 shell 分开。
   'workspace/task': ['run_workspace_task'],
+  // 用户主动触发的系统文件夹选择器；不读目录内容、不改变当前工作区，返回选择结果给前端决定是否写入。
+  'workspace/dialog': ['pick_workspace_directory'],
   'shell': ['run_shell_command'],
   // MCP stdio 子进程的生命周期与 JSON-RPC 转发。连上之后还有一路 emit/listen 事件，见上面
   // `events` 域的说明。
@@ -72,7 +76,8 @@ export const NODE_HOST_COMMANDS_BY_DOMAIN = {
   // Key 值，只含 configured 布尔与来源）。`model_chat_completions` /
   // `cancel_model_chat_completions` 是 Rust 侧给旧渲染层留的兼容命令，当前**没有任何 TS 调用
   // 方**（全仓 grep 为零）——登记在册是因为它们确实在 lib.rs 里，但实现优先级最低。
-  // 最后三条 `model_endpoint_*` **也不在那 28 条里**（同 sqlite 域，是本仓库新定的命令名）：
+  // 后七条 `model_endpoint_*` / `model_connection_profile_*` **也不在那 28 条里**（同 sqlite 域，
+  // 是本仓库新定的命令名）：
   // 桌面宿主只认三家有官方接入点的 provider，没有「登记一个接入点」这件事。openai-compat 的
   // baseUrl 由用户填，受限传输因此需要一个把它登记进 `config.json` 的入口，见 model/endpointCommands.ts。
   'model': [
@@ -86,6 +91,11 @@ export const NODE_HOST_COMMANDS_BY_DOMAIN = {
     'model_endpoint_status',
     'model_endpoint_set',
     'model_endpoint_delete',
+    'model_connection_profile_list',
+    'model_connection_profile_read',
+    'model_connection_profile_save',
+    'model_connection_profile_delete',
+    'model_connection_profile_probe',
   ],
   // `~/.webAgent/config.json` 与主目录解析。mcp_config_* 只是这份 JSON 里 `mcp` 段的读写，
   // 与 `mcp` 域的子进程管理是两件事（Rust 侧同样分成 mcp_config.rs 与 mcp.rs）。
@@ -104,7 +114,7 @@ export const NODE_HOST_COMMANDS_BY_DOMAIN = {
 export type NodeHostCommandDomain = keyof typeof NODE_HOST_COMMANDS_BY_DOMAIN
 
 /**
- * 30 条命令名的字面量联合（28 条对应 Rust 命令 + sqlite 域 2 条）。**从表里推导而不是手写
+ * 40 条命令名的字面量联合。**从表里推导而不是手写
  * 第二份**——手写会立刻出现「表里有、类型里没有」的第二权威，而两份表不一致时 TypeScript
  * 一声不吭。
  */

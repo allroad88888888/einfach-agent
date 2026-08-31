@@ -2,10 +2,11 @@
 // ---------------------------------------------------------------------------
 // 这一层只回答「谁来执行」与「这家能力如何」，本身不认识任何厂商：厂商私有的请求投影
 // （DeepSeek 的 reasoning_effort/user_id、GLM 的 reasoning_effort、Kimi 的 region 等）与
-// 能力描述（上下文窗口、单轮工具上限、逐模型能力）一律随 adapter 一起注册。内置三家的
-// 装配表在 ./builtinProviders，那里是包内唯一允许出现厂商名与厂商能力数据的地方。
+// 能力描述（上下文窗口、单轮工具上限、逐模型能力）一律随 adapter 一起注册。内置模型数据
+// 集中在 ./builtinModelDescriptors，adapter 装配集中在 ./builtinProviders。
 
 import type { ImageInputCapability } from './imageCapability'
+import type { ModelThinkingCapability } from './modelThinkingCapability'
 import type {
   ChatCallOptions,
   ChatRequestBase,
@@ -36,8 +37,16 @@ export interface ProviderRequest<TSettings extends ProviderSettings = ProviderSe
 
 // 简介：单个模型的能力描述，供 runtime 只读消费，不依赖任何厂商私有代码。
 export interface ModelDescriptor {
+  readonly displayName?: string
   readonly contextWindowTokens: number
   readonly imageInput: ImageInputCapability
+  readonly thinking?: ModelThinkingCapability
+}
+
+export type RegisteredModelDescriptor = Omit<ModelDescriptor, 'displayName'> & {
+  readonly vendor: string
+  readonly model: string
+  readonly displayName: string
 }
 
 // 简介：一家 provider 的能力描述。
@@ -94,6 +103,9 @@ export interface ProviderRegistry {
   // 详情：故意不复用 resolve() 的 fallbackVendorId 链——未注册的 vendorId 应该拿到与任何
   // 具体厂商无关的保守默认值，而不是被误判成拥有 fallback 厂商的具体模型清单。
   describe(vendorId: string): VendorDescriptor
+  // Exact lookup and enumeration never follow the execution fallback chain.
+  describeModel(vendorId: string, modelId: string): ModelDescriptor | undefined
+  listModels(): readonly RegisteredModelDescriptor[]
 }
 
 // 简介：创建一个独立的 provider registry。
@@ -115,6 +127,23 @@ export function createProviderRegistry(
     },
     describe(vendorId) {
       return adapters.get(vendorId)?.descriptor ?? FALLBACK_VENDOR_DESCRIPTOR
+    },
+    describeModel(vendorId, modelId) {
+      return adapters.get(vendorId)?.descriptor.models[modelId]
+    },
+    listModels() {
+      const models: RegisteredModelDescriptor[] = []
+      for (const [vendor, adapter] of adapters) {
+        for (const [model, descriptor] of Object.entries(adapter.descriptor.models)) {
+          models.push(Object.freeze({
+            ...descriptor,
+            vendor,
+            model,
+            displayName: descriptor.displayName ?? model,
+          }))
+        }
+      }
+      return Object.freeze(models)
     },
   }
 }

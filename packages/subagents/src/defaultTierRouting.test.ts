@@ -110,10 +110,9 @@ describe('tier routing coverage seen from a delegate runtime', () => {
     expect(await hasLowCostExtraction({ vendor: 'glm', model: 'glm-4.5-flash' })).toBe(false)
   })
 
-  it('sends a GLM extraction to the GLM flash SKU, keeping the vendor-only parameters', async () => {
-    // 这条是 `tierRouting.ts` 那份担心的可观测答案：换档只换 model 一个字符串，会话里
-    // 只有 GLM adapter 认识的 reasoning_effort 原样上行——因为取到的表就是 GLM 自己的表，
-    // 换档从未离开这一家。
+  it('sends a GLM extraction to the GLM flash SKU without retaining unsupported effort', async () => {
+    // GLM Turbo 是 toggle-only：低价抽取明确关闭 thinking，不能把会话的 high effort
+    // 残留到请求里。
     const bodies: string[] = []
     const runtime = createDelegateAgentRuntime({
       sessionId: 'session-glm',
@@ -148,6 +147,6 @@ describe('tier routing coverage seen from a delegate runtime', () => {
     expect(bodies).toHaveLength(1)
     const request = JSON.parse(bodies[0]!) as Record<string, unknown>
     expect(request.model).toBe('glm-5-turbo')
-    expect(request.reasoning_effort).toBe('high')
+    expect(request).not.toHaveProperty('reasoning_effort')
   })
 })

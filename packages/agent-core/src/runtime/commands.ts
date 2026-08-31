@@ -4,6 +4,7 @@
 import { defaultCore, type CoreInstance, type RuntimeConfig } from './core/coreInstance'
 import { createCardCommands } from './commands/cardCommands'
 import { createHistoryCommands } from './commands/historyCommands'
+import { createModelSettingsCommands } from './commands/modelSettingsCommands'
 import { createPlanCommands } from './commands/planCommands'
 import { createProjectSkillsCommands } from './commands/projectSkillsCommands'
 import { createRecoveryCommands } from './commands/recoveryCommands'
@@ -34,6 +35,7 @@ export type {
 } from './userContentDisposal'
 export type { ContinueRecoveredSessionResult, SessionRecoveryStatus } from './commands/recoveryCommands'
 export type { HistoryCommandRefusal, HistoryCommandResult } from './commands/historyCommands'
+export type { SetActiveSessionModelSettingsResult } from './commands/modelSettingsCommands'
 
 /** Updates runtime configuration for the default command instance. */
 export function configureCommands(config: Partial<RuntimeConfig>): void {
@@ -42,8 +44,8 @@ export function configureCommands(config: Partial<RuntimeConfig>): void {
 
 /** Builds the complete command surface bound to a single runtime core. */
 export function createCommands(core: CoreInstance = defaultCore) {
-  const workspace = createWorkspaceCommands(core)
   const session = createSessionCommands(core)
+  const workspace = createWorkspaceCommands(core, { removeSession: session.removeSession })
   const sessionScope = createSessionScopeCommands(core)
   const runLifecycle = createRunLifecycleCommands(core, {
     renameSession: session.renameSession,
@@ -55,6 +57,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
   const plan = createPlanCommands(core, runLifecycle.stopRun)
   const cards = createCardCommands(core)
   const history = createHistoryCommands(core, runLifecycle.stopRun)
+  const modelSettings = createModelSettingsCommands(core)
   const projectSkills = createProjectSkillsCommands(core)
   const subagentView = createSubagentViewCommands(core)
   return {
@@ -67,6 +70,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
     ...plan,
     ...cards,
     ...history,
+    ...modelSettings,
     ...projectSkills,
     ...subagentView,
   }
@@ -83,6 +87,7 @@ export const {
   toggleWorkspaceExpanded,
   toggleWorkspaceSettings,
   renameWorkspace,
+  removeWorkspace,
   renameSession,
   newSession,
   selectSession,
@@ -106,6 +111,8 @@ export const {
   applyRecoveredCacheTotals,
   discardArtifact,
   dismissWithdrawnTurnNotice,
+  retractTurn,
+  setActiveSessionModelSettings,
   undoTurn,
   redoTurn,
   undoEntry,

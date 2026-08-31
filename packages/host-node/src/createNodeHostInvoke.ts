@@ -18,7 +18,7 @@
 //
 //   src/
 //     createNodeHostInvoke.ts   ← 本文件：只做「合表 + 分发 + 明确失败」
-//     commandNames.ts           ← 28 条命令全集与分域（唯一权威）
+//     commandNames.ts           ← 命令全集与分域（唯一权威）
 //     commandArgs.ts            ← 每条命令的入参形状
 //     commandPayloads.ts        ← 入参里被多条命令共用的嵌套载荷
 //     hostOptions.ts            ← 装配槽（各域按需往里加）
@@ -49,7 +49,7 @@
 //
 // 每个域交出一个 registrar：`create<Domain>Routes(options) => NodeHostRouteTable`
 // （样板见 src/config/index.ts）。落地一域 = 建目录 + 写 registrar + 在下面 createRoutes 里加
-// 一行展开。**不要**在本文件里直接写 handler：28 条命令摊进来必然顶破 300 行，而且每加一条
+// 一行展开。**不要**在本文件里直接写 handler：全部命令摊进来必然顶破 300 行，而且每加一条
 // 都要动这个所有域共用的文件。
 //
 // 目录本卡没有预先建空壳——git 不跟踪空目录，占位文件只是噪音。上面这棵树就是规格。
@@ -60,6 +60,7 @@ import { createConfigRoutes } from './config'
 import { createShellRoutes } from './shell'
 import { createChangeRoutes } from './workspace/change'
 import { createDeleteRoutes } from './workspace/delete'
+import { createWorkspaceDialogRoutes } from './workspace/dialog'
 import { createMcpRoutes } from './mcp'
 import { createModelRoutes } from './model'
 import { createSqliteRoutes } from './sqlite'
@@ -76,7 +77,7 @@ import type { NodeHostRouteTable } from './routeTable'
 /**
  * 命令分发失败的原因。两者对调用方的含义**完全不同**，所以不能塌成一种：
  *   · `unimplemented` —— 名字合法，只是对应的域还没落地。调用方等后续卡即可，代码本身没错。
- *   · `unknown-command` —— 名字不在 28 条全集里。拼错了、用了废弃名，或 Rust 侧新增了命令而
+ *   · `unknown-command` —— 名字不在命令全集里。拼错了、用了废弃名，或新增命令而
  *     commandNames.ts 没跟上。这种永远等不到，必须改代码。
  *
  * S 线把它映射成 HTTP 状态码时按 `reason` 分：`unimplemented` → 501，`unknown-command` → 404。
@@ -118,7 +119,7 @@ function createRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
   return {
     // model 域只挂两条 cancel——转发本身是流式，不走 `(cmd,args)=>Promise<T>`，由 M2 的 SSE
     // 端点直接调 forwardProviderRequest（见 model/index.ts）。sqlite 域是 Node 侧独有（Rust 走
-    // Tauri 插件，不在 `generate_handler!` 列表里），命令名由 P2 新定。30 条命令全部落地。
+    // Tauri 插件，不在 `generate_handler!` 列表里），命令名由 P2 新定。登记命令全部落地。
     ...createReadRoutes(options),
     ...createWriteRoutes(options),
     ...createPatchRoutes(options),
@@ -128,6 +129,7 @@ function createRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
     ...createGitRoutes(options),
     ...createRgRoutes(options),
     ...createTaskRoutes(options),
+    ...createWorkspaceDialogRoutes(options),
     ...createShellRoutes(options),
     ...createMcpRoutes(options),
     ...createModelRoutes(options),

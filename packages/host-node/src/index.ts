@@ -47,6 +47,11 @@ export type { CurrentPlatform as NodeHostPlatform } from './shell/platform'
 export type { NodeHostInvokeOptions } from './hostOptions'
 export type { NodeHostCommandHandler, NodeHostRouteTable } from './routeTable'
 export type { NodeHostCommandArgs } from './commandArgs'
+export { MAX_WORKSPACE_IMAGE_BYTES } from './workspace/workspace-image-read'
+export type {
+  WorkspaceImageMimeType,
+  WorkspaceImageReadResult,
+} from './workspace/workspace-image-read'
 export type {
   McpImplementationInfoArgs,
   WorkspaceChangeContextArgs,

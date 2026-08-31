@@ -45,14 +45,19 @@ import type {
   WorkspacePatchOperationArgs,
 } from './commandPayloads'
 import type { ModelCommandArgs } from './model/commandArgs'
+import type { ConnectionProfileCommandArgs } from './model/connectionProfileCommandArgs'
 import type { SqliteConnectionName } from './sqlite/connectionNames'
 
 /**
- * 命令名 → 入参形状。`get_user_home_dir` / `mcp_config_read` 无参，写成 `undefined`：
+ * 命令名 → 入参形状。`get_user_home_dir` / `mcp_config_read` / `pick_workspace_directory` 无参，写成 `undefined`：
  * 它们的调用点是 `invoke('get_user_home_dir')`，第二个实参根本不传。
  */
-export interface NodeHostCommandArgs extends ModelCommandArgs {
-  // ── workspace/read ── Rust: workspace_read.rs（4 条全带 rename_all = snake_case）
+export interface NodeHostCommandArgs extends ModelCommandArgs, ConnectionProfileCommandArgs {
+  /** User-triggered host folder chooser. The response is `{ path: string | null }`. */
+  pick_workspace_directory: undefined
+  /** Discover public model IDs without reading or writing a stored connection credential. */
+  model_connection_profile_probe: { input: { baseUrl: string; apiKey?: string } }
+  // ── workspace/read ── 五条命令的顶层参数均使用 snake_case
   //    TS: agent-core/src/runtime/workspaceRead.ts 的 toTauriReadInput / …RunIndexPageInput /
   //    …ListInput / …SearchInput
   read_workspace_file: {
@@ -63,6 +68,12 @@ export interface NodeHostCommandArgs extends ModelCommandArgs {
     line_count?: number
     workspace_root?: string
     /** 唯一允许越出 workspace_root 的开关；用户级 skills 扫描靠它读主目录下的文件。 */
+    allow_external_paths?: boolean
+  }
+  read_workspace_image: {
+    path: string
+    max_bytes?: number
+    workspace_root?: string
     allow_external_paths?: boolean
   }
   read_workspace_run_index_page: {
@@ -234,8 +245,8 @@ export interface NodeHostCommandArgs extends ModelCommandArgs {
     input: { serverId: string; sessionToken: string; gracePeriodMs?: number }
   }
 
-  // ── model ── 十条命令的入参形状搬到了 `model/commandArgs.ts`（域的入参形状随域走，
-  //    见那个文件的文件头）。本表 extends 它，穷举断言照旧覆盖得到。
+  // ── model ── 原有十条命令在 `model/commandArgs.ts`；profile CRUD 在
+  //    `model/connectionProfileCommandArgs.ts`。本表 extends 两者，穷举断言照旧覆盖得到。
 
   // ── config ── Rust: mcp_config.rs / user_paths.rs；
   //    TS: apps/web/src/mcp/tauriMcpConfigStorage.ts、toolNameCacheStorage.ts、

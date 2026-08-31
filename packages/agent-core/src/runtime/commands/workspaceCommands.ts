@@ -21,6 +21,10 @@ export interface WorkspaceOptions {
   rootPath?: string
 }
 
+export interface WorkspaceCommandDependencies {
+  removeSession(id: string): void
+}
+
 export function createWorkspaceMeta(opts?: WorkspaceOptions): WorkspaceMeta {
   const id = newId()
   const now = Date.now()
@@ -35,7 +39,10 @@ export function createWorkspaceMeta(opts?: WorkspaceOptions): WorkspaceMeta {
 }
 
 /** Builds workspace CRUD commands bound to one runtime core. */
-export function createWorkspaceCommands(core: CoreInstance) {
+export function createWorkspaceCommands(
+  core: CoreInstance,
+  dependencies: WorkspaceCommandDependencies,
+) {
   function activateWorkspace(id: string): void {
     const workspace = core.rootStore.getter(workspacesAtom)[id]
     if (!workspace) return
@@ -105,6 +112,43 @@ export function createWorkspaceCommands(core: CoreInstance) {
     if (changed) persistWorkspaces()
   }
 
+  function removeWorkspace(id: string): void {
+    if (!core.rootStore.getter(workspacesAtom)[id]) return
+    Object.values(core.rootStore.getter(sessionsAtom))
+      .filter((session) => session.workspaceId === id)
+      .forEach((session) => dependencies.removeSession(session.id))
+
+    core.rootStore.setter(workspacesAtom, (prev) => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    core.rootStore.setter(expandedWorkspaceIdsAtom, (prev) => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    core.rootStore.setter(workspaceSettingsOpenIdsAtom, (prev) => {
+      const next = { ...prev }
+      delete next[id]
+      return next
+    })
+    if (core.rootStore.getter(activeWorkspaceIdAtom) === id) {
+      const nextWorkspace = Object.values(core.rootStore.getter(workspacesAtom))
+        .sort((a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt || a.id.localeCompare(b.id))[0]
+      core.rootStore.setter(activeWorkspaceIdAtom, nextWorkspace?.id ?? '')
+      core.rootStore.setter(activeSessionIdAtom, nextWorkspace
+        ? Object.values(core.rootStore.getter(sessionsAtom))
+          .filter((session) => session.workspaceId === nextWorkspace.id)
+          .sort((a, b) => b.updatedAt - a.updatedAt || b.createdAt - a.createdAt || a.id.localeCompare(b.id))[0]?.id ?? ''
+        : '')
+      if (nextWorkspace) {
+        core.rootStore.setter(expandedWorkspaceIdsAtom, (prev) => ({ ...prev, [nextWorkspace.id]: true }))
+      }
+    }
+    persistWorkspaces()
+  }
+
   function setWorkspaceRoot(root: string): void {
     const id = core.rootStore.getter(activeWorkspaceIdAtom)
     if (!id) return
@@ -135,6 +179,7 @@ export function createWorkspaceCommands(core: CoreInstance) {
     toggleWorkspaceExpanded,
     toggleWorkspaceSettings,
     renameWorkspace,
+    removeWorkspace,
     setWorkspaceRoot,
   }
 }

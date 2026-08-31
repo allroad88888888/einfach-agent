@@ -30,6 +30,7 @@
     "@einfach-agent/core": "workspace:*",
     "@einfach-agent/tools-shell": "workspace:*",
     "@einfach-agent/tools-interaction": "workspace:*",
+    "@einfach-agent/tools-vision": "workspace:*",
     "@einfach-agent/tools-fs": "workspace:*",
     "@einfach-agent/tools-planning": "workspace:*",
     "@einfach-agent/tools-skills": "workspace:*",

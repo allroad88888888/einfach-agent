@@ -5,8 +5,12 @@
 //   · modelApi —— 共享线协议类型 + 底层 postChatCompletion(/Stream) + 指数退避重试。
 //   · deepseek / glm —— 各 provider 的请求特化与调用入口。
 export * from './modelApi'
+export * from './builtinModelDescriptors'
 export * from './builtinProviders'
 export * from './deepseek'
+export * from './deepseekFileDisposal'
+export * from './deepseekFiles'
+export * from './deepseekMessages'
 export * from './finishReasonExtensions'
 export * from './glm'
 export * from './historyImageCompatibility'
@@ -19,6 +23,11 @@ export * from './kimiRegion'
 export * from './modelAdapter'
 export * from './modelCapacityEscalation'
 export * from './modelContent'
+export * from './modelThinkingCapability'
 export * from './providerRegistry'
+export {
+  createProviderTransportFetch,
+  type ProviderLocalRequestIdentity,
+} from './providerLocalTransport'
 export * from './providerTransport'
 export * from './vendorDescriptor'

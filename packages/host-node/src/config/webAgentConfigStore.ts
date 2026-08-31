@@ -24,7 +24,12 @@ interface WebAgentConfig {
 /** 配置段的读—改—写。回调返回 `undefined` 表示删除该段（JSON 里没有 undefined，语义不会撞）。 */
 export interface WebAgentConfigStore {
   readSection(section: string): Promise<unknown>
+  readSections(sections: readonly string[]): Promise<ReadonlyMap<string, unknown>>
   updateSection(section: string, update: (current: unknown) => unknown): Promise<void>
+  updateSections(
+    writableSections: readonly string[],
+    update: (current: ReadonlyMap<string, unknown>) => ReadonlyMap<string, unknown>,
+  ): Promise<void>
 }
 
 /**
@@ -48,24 +53,76 @@ function withConfigLock<T>(operation: () => Promise<T>): Promise<T> {
   return running
 }
 
+function writableSectionSet(sections: readonly string[]): ReadonlySet<string> {
+  if (sections.length === 0) throw new Error('配置事务至少需要一个可写段')
+  const allowed = new Set<string>()
+  for (const section of sections) {
+    if (
+      typeof section !== 'string'
+      || section.length === 0
+      || section.trim() !== section
+      || /[\u0000-\u001f\u007f]/u.test(section)
+      || section === 'version'
+    ) {
+      throw new Error('配置事务包含非法段名')
+    }
+    if (allowed.has(section)) throw new Error('配置事务包含重复段名')
+    allowed.add(section)
+  }
+  return allowed
+}
+
+function isolatedWritableSnapshot(
+  config: WebAgentConfig,
+  writableSections: readonly string[],
+): ReadonlyMap<string, unknown> {
+  return new Map(writableSections.map((section) => [
+    section,
+    structuredClone(config.sections.get(section)),
+  ]))
+}
+
 export function createWebAgentConfigStore(paths: ConfigPaths): WebAgentConfigStore {
+  const readSections = (sections: readonly string[]) => withConfigLock(async () => {
+    const config = await readConfig(paths)
+    return new Map(sections.map((section) => [section, config.sections.get(section)]))
+  })
+
+  const updateSections = (
+    writableSections: readonly string[],
+    update: (current: ReadonlyMap<string, unknown>) => ReadonlyMap<string, unknown>,
+  ) => {
+    // 先校验再进读路径：非法事务不能意外触发旧配置迁移，更不能产生任何落盘。
+    let allowed: ReadonlySet<string>
+    try {
+      allowed = writableSectionSet(writableSections)
+    } catch (error) {
+      return Promise.reject(error)
+    }
+    return withConfigLock(async () => {
+      const config = await readConfig(paths)
+      // 回调只能看到显式授权段；值也深隔离，绕过 Readonly 类型做原地修改不会污染待提交配置。
+      const patch = update(isolatedWritableSnapshot(config, writableSections))
+      const sections = new Map(config.sections)
+      for (const [section, next] of patch) {
+        if (!allowed.has(section)) throw new Error('配置事务试图更新未授权段')
+        if (next === undefined) sections.delete(section)
+        else sections.set(section, next)
+      }
+      const contents = serializeConfig({ version: config.version, sections })
+      await writeRestrictedAtomically(paths.path, contents)
+    })
+  }
+
   return {
     async readSection(section) {
       return withConfigLock(async () => (await readConfig(paths)).sections.get(section))
     },
+    readSections,
     async updateSection(section, update) {
-      return withConfigLock(async () => {
-        const config = await readConfig(paths)
-        // 回调抛错时**不写文件**：Rust 的 `update(...)?` 同样在写入之前短路。这条保证了
-        // 「补丁不合法」不会顺手把配置重排一遍。
-        const next = update(config.sections.get(section))
-        const sections = new Map(config.sections)
-        if (next === undefined) sections.delete(section)
-        else sections.set(section, next)
-        const contents = serializeConfig({ version: config.version, sections })
-        await writeRestrictedAtomically(paths.path, contents)
-      })
+      return updateSections([section], (current) => new Map([[section, update(current.get(section))]]))
     },
+    updateSections,
   }
 }
 

@@ -4,6 +4,7 @@ import type { UserContentDisposer } from '../userContentDisposal'
 import type { McpConnectTargetProbe, McpToolLaunchTargetProbe } from '../dangerousTools'
 import type { ModelEscalationPolicy } from '../modelEscalation'
 import type { UnconnectedToolProviderProbe } from '../../tools/schemaResult'
+import type { ViewImageCapability } from '../../tools/types'
 
 /** Runtime dependencies supplied by the host application. */
 export interface RuntimeConfig {
@@ -60,6 +61,8 @@ export interface RuntimeConfig {
    * （理由见 `runtime/modelEscalation.ts` 开头）。
    */
   modelEscalation?: ModelEscalationPolicy
+  /** Optional app-owned image inspection port; core only supplies guarded workspace access. */
+  viewImage?: ViewImageCapability
 }
 
 export function createRuntimeConfig(overrides?: Partial<RuntimeConfig>): RuntimeConfig {

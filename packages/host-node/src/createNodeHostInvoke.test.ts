@@ -59,7 +59,7 @@ describe('createNodeHostInvoke', () => {
     const savedOverride = process.env.WEB_AGENT_CONFIG_DIR
     process.env.WEB_AGENT_CONFIG_DIR = join(home, 'config')
     try {
-      const invoke = createNodeHostInvoke({ homeDir: home })
+      const invoke = createNodeHostInvoke({ homeDir: home, openWorkspaceDirectory: async () => undefined })
       const implemented: string[] = []
       for (const command of NODE_HOST_COMMAND_NAMES) {
         const reason = await invoke(command, {}).then(
@@ -73,6 +73,7 @@ describe('createNodeHostInvoke', () => {
       // 顺序跟随 NODE_HOST_COMMAND_NAMES 的遍历序（即 commandNames.ts 的域顺序），不是登记顺序。
       expect(implemented).toEqual([
         'read_workspace_file',
+        'read_workspace_image',
         'read_workspace_run_index_page',
         'list_workspace_files',
         'search_workspace_files',
@@ -85,6 +86,7 @@ describe('createNodeHostInvoke', () => {
         'get_workspace_diff',
         'rg_search_workspace',
         'run_workspace_task',
+        'pick_workspace_directory',
         'run_shell_command',
         'mcp_connect',
         'mcp_list_tools',
@@ -98,6 +100,11 @@ describe('createNodeHostInvoke', () => {
         'model_endpoint_status',
         'model_endpoint_set',
         'model_endpoint_delete',
+        'model_connection_profile_list',
+        'model_connection_profile_read',
+        'model_connection_profile_save',
+        'model_connection_profile_delete',
+        'model_connection_profile_probe',
         'mcp_config_read',
         'mcp_config_write',
         'get_user_home_dir',

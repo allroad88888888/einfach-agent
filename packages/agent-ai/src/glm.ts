@@ -19,8 +19,8 @@ export const GLM_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4'
 export const DEFAULT_GLM_MODEL = 'glm-5.2'
 
 // 简介：GLM 的推理投入档位。
-// 详情：比 DeepSeek 多一个 'max'（文档示例用到）—— 这是两家“参数不一样”之一。
-export type GlmReasoningEffort = 'low' | 'medium' | 'high' | 'max'
+// 详情：GLM-5.2 接受 low/medium/high/xhigh/max；其余模型不声明 effort。
+export type GlmReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
 // 简介：发给 GLM 的请求体。
 // 详情：公共字段来自 ChatRequestBase，仅 reasoning_effort 取值域为 GLM 特化。
