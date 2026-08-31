@@ -5,12 +5,12 @@
   "identifier": "com.webagent.app",
   "build": {
     "beforeDevCommand": {
-      "script": "pnpm build && pnpm --filter @einfach-agent/host-node build && node scripts/stage-desktop-node-runtime.mjs --target aarch64-apple-darwin",
+      "script": "pnpm build && pnpm --filter @einfach-agent/host-node... build && node scripts/stage-desktop-node-runtime.mjs --target aarch64-apple-darwin",
       "cwd": "../..",
       "wait": true
     },
     "beforeBuildCommand": {
-      "script": "pnpm build && pnpm --filter @einfach-agent/host-node build && node scripts/stage-desktop-node-runtime.mjs --target aarch64-apple-darwin",
+      "script": "pnpm build && pnpm --filter @einfach-agent/host-node... build && node scripts/stage-desktop-node-runtime.mjs --target aarch64-apple-darwin",
       "cwd": "../.."
     },
     "frontendDist": "../server/dist/public"

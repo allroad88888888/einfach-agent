@@ -45,9 +45,6 @@ jobs:
       - name: Stage target Node sidecar
         run: node scripts/stage-desktop-node-runtime.mjs --target ${{ matrix.target }}
 
-      - name: Check desktop wrapper before packaging
-        run: node scripts/check-desktop-wrapper.mjs
-
       - name: Verify release tag and signing prerequisites
         if: startsWith(github.ref, 'refs/tags/app-v')
         env:
@@ -79,3 +76,6 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: pnpm exec tauri build --config apps/desktop/tauri.conf.json --target ${{ matrix.target }}
+
+      - name: Check packaged desktop wrapper
+        run: node scripts/check-desktop-wrapper.mjs
