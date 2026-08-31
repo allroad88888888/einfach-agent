@@ -27,6 +27,12 @@ export const WORKSPACE_GROUPS = ['apps', 'packages', 'tools']
 // package.json（Vite app root，包身份在仓库根），按后者判会整个掉出扫描面。
 export const SOURCE_DIRECTORY = 'src'
 
+// 有 src/ 但不含 TS/TSX 生产源码的精确根。Tauri 的 Rust 薄壳不承载 Einfach atom 或 React
+// hook，状态门禁不该把 Rust 当 TypeScript 解析；一旦这里出现 TS/TSX，白名单外的第一道闸会失败。
+export const SOURCE_ROOTS_WITHOUT_TYPESCRIPT = {
+  'apps/desktop/src': 'Tauri thin shell is Rust-only; session state remains in the shared Node server and Web UI.',
+}
+
 // 例外表：确实没有 `src/` 的 pnpm 工作区成员（纯原生 / 纯配置的包）。**当前为空**。
 // 登记一条就等于承认「这个包不参与状态门禁」，要写清凭什么它不可能有会话状态。
 export const MEMBERS_WITHOUT_SOURCE_DIRECTORY = []

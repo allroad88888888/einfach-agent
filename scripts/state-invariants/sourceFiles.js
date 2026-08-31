@@ -26,6 +26,7 @@ import {
   EXCLUDED_FILE_SUFFIXES,
   MEMBERS_WITHOUT_SOURCE_DIRECTORY,
   SOURCE_DIRECTORY,
+  SOURCE_ROOTS_WITHOUT_TYPESCRIPT,
   SOURCE_FILE_BASENAMES_OUTSIDE_ROOTS,
   SOURCE_FILE_PATTERN,
   TEST_FILE_PATTERN,
@@ -76,8 +77,9 @@ export async function sourceRoots(repositoryRoot) {
   const missing = []
   for (const group of WORKSPACE_GROUPS) {
     for (const member of await memberDirectories(repositoryRoot, group)) {
-      if (await pathExists(resolve(repositoryRoot, member, SOURCE_DIRECTORY))) {
-        roots.push(`${member}/${SOURCE_DIRECTORY}`)
+      const sourceRoot = `${member}/${SOURCE_DIRECTORY}`
+      if (await pathExists(resolve(repositoryRoot, sourceRoot))) {
+        if (!Object.hasOwn(SOURCE_ROOTS_WITHOUT_TYPESCRIPT, sourceRoot)) roots.push(sourceRoot)
         continue
       }
       // 没有 src/ 又没有 package.json 的目录不是包（散放的资源、产物目录），不算漏；

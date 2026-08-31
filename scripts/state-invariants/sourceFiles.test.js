@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { expect, it as test } from 'vitest'
 import { governedSourceFiles, relativePath, sourceRoots } from './sourceFiles.js'
-import { SOURCE_DIRECTORY, WORKSPACE_GROUPS } from './sourceScopeTable.js'
+import { SOURCE_DIRECTORY, SOURCE_ROOTS_WITHOUT_TYPESCRIPT, WORKSPACE_GROUPS } from './sourceScopeTable.js'
 
 const repositoryRoot = process.cwd()
 
@@ -37,8 +37,8 @@ async function fixture(files) {
 
 test('关键文件仍在扫描面里（掉出去 = 对应规则静默失效）', async () => {
   const { paths } = await scan()
-  // UndoBar.tsx：规则 5 的真实事故现场，住在没有 package.json 的 apps/web 里。
-  expect(paths).toContain('apps/web/src/agentNew/ui/UndoBar.tsx')
+  // MessageList 读取多个会话 atom，能证明没有 package.json 的 apps/web 仍在 agent-store 规则扫描面内。
+  expect(paths).toContain('apps/web/src/agentNew/ui/MessageList.tsx')
   // sessionSlots.ts：规则 3 拿它核对「登记为增量的槽位真的传了 registrar」。
   expect(paths).toContain('packages/agent-core/src/state/sessionSlots.ts')
   // 规则 4 的枚举面本体。
@@ -54,6 +54,7 @@ test('三个分组各自都有文件进扫描面', async () => {
 
 test('每个带 src/ 的分组成员都进了白名单，且各自至少扫到一个文件', async () => {
   const { paths, roots } = await scan()
+  expect(Object.keys(SOURCE_ROOTS_WITHOUT_TYPESCRIPT)).toEqual(['apps/desktop/src'])
   // 独立重算一遍「该扫哪些根」：不复用被测模块的枚举，否则它漏了谁这里也跟着漏。
   const { readdir, stat } = await import('node:fs/promises')
   const expected = []
@@ -62,7 +63,7 @@ test('每个带 src/ 的分组成员都进了白名单，且各自至少扫到�
     for (const entry of entries.filter((item) => item.isDirectory()).sort((a, b) => a.name.localeCompare(b.name))) {
       const source = `${group}/${entry.name}/${SOURCE_DIRECTORY}`
       const found = await stat(resolve(repositoryRoot, source)).then(() => true, () => false)
-      if (found) expected.push(source)
+      if (found && !Object.hasOwn(SOURCE_ROOTS_WITHOUT_TYPESCRIPT, source)) expected.push(source)
     }
   }
   expect(roots).toEqual(expected)

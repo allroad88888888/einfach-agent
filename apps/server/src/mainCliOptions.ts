@@ -9,6 +9,8 @@ export interface ServerCliOptions {
   readonly help: boolean
   /** 启动完成后是否自动打开浏览器；`--no-open` 关掉它。 */
   readonly open: boolean
+  /** 监听成功后 stdout 是否只输出一行供父进程解析的 JSON。 */
+  readonly readyJson: boolean
   /** 绑定地址；不传时由调用方落到 `authLoopback.ts` 的 `DEFAULT_BIND_ADDRESS`。 */
   readonly host?: string
   /** 起始监听端口；不传时由调用方落到 `mainListenRetry.ts` 的 `DEFAULT_START_PORT`。 */
@@ -23,6 +25,7 @@ export const SERVER_CLI_USAGE = `用法：pnpm serve -- [选项]
       --host <地址>   绑定地址（默认 127.0.0.1，只对本机开放；/api/* 的认证与来源校验
                       与绑定地址无关，改这个值不会关掉任何一道防线）
       --no-open       启动后不自动打开浏览器
+      --ready-json    以单行 JSON 报告监听地址，并且不自动打开浏览器
   -h, --help          显示此帮助
 `
 
@@ -43,9 +46,10 @@ function parsePort(raw: string, option: string): number {
 
 /** 解析 argv，不做任何副作用；不合法的输入抛错，由调用方决定怎么回报。 */
 export function parseServerCliOptions(argv: readonly string[]): ServerCliOptions {
-  const options: { help: boolean; open: boolean; host?: string; port?: number } = {
+  const options: { help: boolean; open: boolean; readyJson: boolean; host?: string; port?: number } = {
     help: false,
     open: true,
+    readyJson: false,
   }
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -63,6 +67,10 @@ export function parseServerCliOptions(argv: readonly string[]): ServerCliOptions
         index += 1
         break
       case '--no-open':
+        options.open = false
+        break
+      case '--ready-json':
+        options.readyJson = true
         options.open = false
         break
       case '-h':

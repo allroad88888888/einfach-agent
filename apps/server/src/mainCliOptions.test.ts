@@ -3,11 +3,15 @@ import { parseServerCliOptions, SERVER_CLI_USAGE } from './mainCliOptions'
 
 describe('parseServerCliOptions', () => {
   it('默认：帮助关、自动打开浏览器开、host/port 都不传', () => {
-    expect(parseServerCliOptions([])).toEqual({ help: false, open: true })
+    expect(parseServerCliOptions([])).toEqual({ help: false, open: true, readyJson: false })
   })
 
   it('--no-open 关掉自动打开浏览器', () => {
     expect(parseServerCliOptions(['--no-open']).open).toBe(false)
+  })
+
+  it('--ready-json 开启机器可读输出并隐含 --no-open', () => {
+    expect(parseServerCliOptions(['--ready-json'])).toEqual({ help: false, open: false, readyJson: true })
   })
 
   it('--port 解析为数字', () => {
@@ -51,12 +55,12 @@ describe('parseServerCliOptions', () => {
   })
 
   it('单独的 -- 分隔符被忽略（pnpm run 会原样透传）', () => {
-    expect(parseServerCliOptions(['--', '--no-open'])).toEqual({ help: false, open: false })
+    expect(parseServerCliOptions(['--', '--no-open'])).toEqual({ help: false, open: false, readyJson: false })
   })
 
   it('多个选项可以组合，后出现的同名选项覆盖先出现的', () => {
     const options = parseServerCliOptions(['--port', '3000', '--host', 'localhost', '--no-open', '--port', '4000'])
-    expect(options).toEqual({ help: false, open: false, host: 'localhost', port: 4000 })
+    expect(options).toEqual({ help: false, open: false, readyJson: false, host: 'localhost', port: 4000 })
   })
 })
 
@@ -65,6 +69,7 @@ describe('SERVER_CLI_USAGE', () => {
     expect(SERVER_CLI_USAGE).toContain('--port')
     expect(SERVER_CLI_USAGE).toContain('--host')
     expect(SERVER_CLI_USAGE).toContain('--no-open')
+    expect(SERVER_CLI_USAGE).toContain('--ready-json')
     expect(SERVER_CLI_USAGE).toContain('--help')
     expect(SERVER_CLI_USAGE).toContain('4765')
     expect(SERVER_CLI_USAGE).toContain('127.0.0.1')

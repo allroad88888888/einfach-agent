@@ -1,0 +1,81 @@
+name: Desktop release matrix
+
+on:
+  pull_request:
+  push:
+    branches: ['**']
+    tags: ['app-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  macos-arm64:
+    name: macOS Apple Silicon (${{ matrix.target }})
+    runs-on: macos-14
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: pnpm
+
+      - name: Install matrix Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared Web and server runtime
+        run: pnpm build
+
+      - name: Build Node host runtime
+        run: pnpm --filter @einfach-agent/host-node build
+
+      - name: Stage target Node sidecar
+        run: node scripts/stage-desktop-node-runtime.mjs --target ${{ matrix.target }}
+
+      - name: Check desktop wrapper before packaging
+        run: node scripts/check-desktop-wrapper.mjs
+
+      - name: Verify release tag and signing prerequisites
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          expected_tag="app-v$(node -p "require('./apps/desktop/tauri.conf.json').version")"
+          test "$RELEASE_TAG" = "$expected_tag" || { echo "release tag must equal $expected_tag"; exit 1; }
+          for name in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_TEAM_ID; do
+            test -n "${!name}" || { echo "required signing or notarization secret is unset: $name"; exit 1; }
+          done
+
+      - name: Build verification bundle
+        if: "!startsWith(github.ref, 'refs/tags/app-v')"
+        run: pnpm exec tauri build --config apps/desktop/tauri.conf.json --target ${{ matrix.target }}
+
+      - name: Build signed and notarized release bundle
+        if: startsWith(github.ref, 'refs/tags/app-v')
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: pnpm exec tauri build --config apps/desktop/tauri.conf.json --target ${{ matrix.target }}

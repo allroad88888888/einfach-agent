@@ -1,0 +1,4 @@
+# Download cache and staged Node sidecars are generated locally.
+.cache/
+binaries/*
+!binaries/.gitkeep

@@ -1,0 +1,34 @@
+{
+  "$schema": "../../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Einfach Agent",
+  "version": "0.1.0",
+  "identifier": "com.webagent.app",
+  "build": {
+    "beforeDevCommand": {
+      "script": "pnpm build && pnpm --filter @einfach-agent/host-node build && node scripts/stage-desktop-node-runtime.mjs --target aarch64-apple-darwin",
+      "cwd": "../..",
+      "wait": true
+    },
+    "beforeBuildCommand": {
+      "script": "pnpm build && pnpm --filter @einfach-agent/host-node build && node scripts/stage-desktop-node-runtime.mjs --target aarch64-apple-darwin",
+      "cwd": "../.."
+    },
+    "frontendDist": "../server/dist/public"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app"],
+    "externalBin": ["binaries/einfach-agent-node"],
+    "resources": {
+      "../server/dist/": "server/",
+      "../../packages/host-node/dist/": "server/node_modules/@einfach-agent/host-node/dist/",
+      "../../packages/host-node/package.json": "server/node_modules/@einfach-agent/host-node/package.json"
+    }
+  }
+}

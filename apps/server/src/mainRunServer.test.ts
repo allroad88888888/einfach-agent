@@ -6,6 +6,7 @@ import type { Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SERVER_CLI_USAGE } from './mainCliOptions'
+import { SERVER_READY_KIND, SERVER_READY_VERSION } from './mainReadyFrame'
 import { runServerCli } from './mainRunServer'
 import type { ShutdownSignal, ShutdownSignalTarget } from './mainShutdown'
 
@@ -89,6 +90,42 @@ describe('runServerCli', () => {
     const [openedUrl] = openBrowserImpl.mock.calls[0] as [string, unknown]
     expect(stdout.text()).toContain(openedUrl)
     expect(stdout.text()).toContain('正在尝试自动打开浏览器……')
+  })
+
+  it('--ready-json：stdout 只有一帧 JSON、不开浏览器，关停诊断写到 stderr', async () => {
+    const stdout = collectWrites()
+    const stderr = collectWrites()
+    const openBrowserImpl = vi.fn()
+    const signals = fakeSignals()
+
+    const server = await runServerCli({
+      argv: ['--ready-json', '--host', '127.0.0.1', '--port', '0'],
+      stdout,
+      stderr,
+      openBrowserImpl,
+      signals,
+    })
+    if (server) servers.push(server)
+
+    const readyOutput = stdout.text()
+    const lines = readyOutput.split('\n')
+    expect(lines).toHaveLength(2)
+    expect(lines[1]).toBe('')
+
+    const frame = JSON.parse(lines[0] ?? '') as Record<string, unknown>
+    expect(Object.keys(frame)).toEqual(['kind', 'version', 'url'])
+    expect(frame.kind).toBe(SERVER_READY_KIND)
+    expect(frame.version).toBe(SERVER_READY_VERSION)
+    expect(typeof frame.url).toBe('string')
+    const readyUrl = new URL(String(frame.url))
+    expect(readyUrl.hostname).toBe('127.0.0.1')
+    expect(readyUrl.searchParams.has('token')).toBe(true)
+    expect(openBrowserImpl).not.toHaveBeenCalled()
+
+    signals.fire('SIGTERM')
+    await vi.waitFor(() => expect(signals.exitCodes()).toEqual([143]))
+    expect(stdout.text()).toBe(readyOutput)
+    expect(stderr.text()).toContain('正在停止（收到 SIGTERM）')
   })
 
   it('openBrowserImpl 失败时，onError 把提示写到 stderr，不影响 runServerCli 本身 resolve', async () => {

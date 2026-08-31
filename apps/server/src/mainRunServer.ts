@@ -18,6 +18,11 @@ import { DEFAULT_BIND_ADDRESS } from './authLoopback'
 import { openBrowser } from './mainBrowserLaunch'
 import { parseServerCliOptions, SERVER_CLI_USAGE } from './mainCliOptions'
 import { DEFAULT_START_PORT, listenWithPortRetry } from './mainListenRetry'
+import {
+  formatServerReadyFrame,
+  SERVER_READY_KIND,
+  SERVER_READY_VERSION,
+} from './mainReadyFrame'
 import { installHostShutdown, type ShutdownSignalTarget } from './mainShutdown'
 import { formatStartupMessage } from './mainStartupMessage'
 
@@ -67,7 +72,7 @@ export async function runServerCli(options: RunServerCliOptions = {}): Promise<S
   // 都已经有人接着。见 `mainShutdown.ts`。
   const shutdown = installHostShutdown({
     target: options.signals ?? process,
-    notice: (text) => { stdout.write(text) },
+    notice: (text) => { (cli.readyJson ? stderr : stdout).write(text) },
   })
 
   // 每次启动生成一枚新 token，只喂给这两处：这里传给 server，下面拼进打印的 URL。
@@ -77,7 +82,9 @@ export async function runServerCli(options: RunServerCliOptions = {}): Promise<S
   const port = await listenWithPortRetry(server, { host, startPort: cli.port ?? DEFAULT_START_PORT })
 
   const url = `http://${formatHostForUrl(host)}:${port}/?token=${token}`
-  stdout.write(formatStartupMessage({ url, willOpen: cli.open }))
+  stdout.write(cli.readyJson
+    ? formatServerReadyFrame({ kind: SERVER_READY_KIND, version: SERVER_READY_VERSION, url })
+    : formatStartupMessage({ url, willOpen: cli.open }))
 
   if (cli.open) {
     openBrowserImpl(url, {
