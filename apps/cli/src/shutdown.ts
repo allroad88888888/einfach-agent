@@ -87,6 +87,8 @@ export interface CliShutdown {
    * 信号到来时**并发**执行。
    */
   readonly registerHostDisposer: (dispose: () => Promise<void>) => void
+  /** Drains every registered disposer once; normal completion and signal shutdown share it. */
+  readonly drain: () => Promise<void>
 }
 
 /** 128 + 信号号，shell 的通用约定（SIGINT→130、SIGTERM→143、SIGHUP→129）。 */
@@ -104,17 +106,31 @@ export function installCliShutdown(options: CliShutdownOptions = {}): CliShutdow
   const notice = options.notice ?? ((text: string) => { process.stderr.write(text) })
   const disposers: Array<() => Promise<void>> = []
   let draining = false
+  let signalDraining = false
+  let drainPromise: Promise<void> | undefined
+
+  const drain = (): Promise<void> => {
+    if (drainPromise) return drainPromise
+    draining = true
+    drainPromise = Promise.allSettled(disposers.map(async (dispose) => dispose())).then((results) => {
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected')
+        .map((result) => result.reason)
+      if (failures.length === 1) throw failures[0]
+      if (failures.length > 1) throw new AggregateError(failures, 'CLI shutdown disposers failed')
+    })
+    return drainPromise
+  }
 
   const handleSignal = (signal: ShutdownSignal): void => {
     const code = exitCodeForSignal(signal)
-    if (draining) {
+    if (signalDraining) {
       // 这一行可能来不及刷出去（stderr 接管道时是异步写，exit 不保证 flush），
       // 所以它只是锦上添花，判据不建立在它身上。
       notice('再次收到停止信号，不再等待收尾，立即退出。\n')
       target.exit(code)
       return
     }
-    draining = true
+    signalDraining = true
     notice(`正在停止（收到 ${signal}）……最多等待 ${timeoutMs} 毫秒收尾。\n`)
 
     let exited = false
@@ -131,10 +147,10 @@ export function installCliShutdown(options: CliShutdownOptions = {}): CliShutdow
 
     // `allSettled`：某个 dispose 抛了不能拖住其余的，更不能变成未捕获 rejection——
     // Node v15 起未处理的 rejection 默认结束进程，那会在清理做完之前把进程掀翻。
-    void Promise.allSettled(disposers.map(async (dispose) => dispose())).then(() => {
-      clearTimeout(timer)
-      exitOnce()
-    })
+    void drain().then(
+      () => { clearTimeout(timer); exitOnce() },
+      () => { clearTimeout(timer); exitOnce() },
+    )
   }
 
   for (const signal of options.signals ?? SHUTDOWN_SIGNALS) {
@@ -142,6 +158,10 @@ export function installCliShutdown(options: CliShutdownOptions = {}): CliShutdow
   }
 
   return {
-    registerHostDisposer: (dispose) => { disposers.push(dispose) },
+    registerHostDisposer: (dispose) => {
+      if (draining) throw new Error('CLI shutdown is already draining; cannot register a disposer')
+      disposers.push(dispose)
+    },
+    drain,
   }
 }

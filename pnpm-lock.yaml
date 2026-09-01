@@ -138,6 +138,9 @@ importers:
       '@einfach-agent/host-node':
         specifier: workspace:*
         version: link:../../packages/host-node
+      '@einfach-agent/persistence-sqlite':
+        specifier: workspace:*
+        version: link:../../packages/persistence-sqlite
       '@einfach-agent/subagents':
         specifier: workspace:*
         version: link:../../packages/subagents

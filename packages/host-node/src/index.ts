@@ -45,6 +45,8 @@ export { currentPlatform as nodeHostPlatform } from './shell/platform'
 export type { CurrentPlatform as NodeHostPlatform } from './shell/platform'
 
 export type { NodeHostInvokeOptions } from './hostOptions'
+export { resolveAppDataDirectory } from './appDataPath'
+export type { AppDataDirectoryInput } from './appDataPath'
 export type { NodeHostCommandHandler, NodeHostRouteTable } from './routeTable'
 export type { NodeHostCommandArgs } from './commandArgs'
 export { MAX_WORKSPACE_IMAGE_BYTES } from './workspace/workspace-image-read'
@@ -104,6 +106,16 @@ export {
   SQLITE_CONNECTION_NAMES,
 } from './sqlite'
 export type { SqliteConnectionName, SqliteRoutesOptions } from './sqlite'
+
+export {
+  createNodeAgentRolloutDriver,
+  discoverCanonicalRolloutSources,
+  dropRolloutProjectionSchema,
+  preflightRolloutSources,
+} from './rollout'
+export type { NodeAgentRolloutDriverOptions } from './rollout'
+export { createNodeAgentHistoryProvider } from './history'
+export type { NodeAgentHistoryProviderOptions } from './history'
 
 // model 域失败的**判别面**（M6）。M2 要把「响应头之前的失败」分成 400/403/409/500/502/503，
 // 而唯一能长期站住的判据是 `reason` 字段——文案是给人看的、会被改措辞，按它 switch 等于给一份

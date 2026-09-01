@@ -4,13 +4,20 @@ import {
   createIndexedDbSessionsPersistence,
 } from '@einfach-agent/persistence-idb'
 import type { HistoryLogDriver, SqlExecutorLoader } from '@einfach-agent/core/state/persistence'
+import type { AgentHistoryCapabilityProvider, AgentRolloutDriver } from '@einfach-agent/core/history'
 import type { ResolvedHost } from '../host/resolveHost'
+import { createServerAgentRolloutDriver } from './serverAgentRolloutDriver'
+import { createServerAgentHistoryCapability } from './serverAgentHistoryCapability'
 
 export type HostPersistenceDrivers = {
   sessions: ReturnType<typeof createIndexedDbSessionsPersistence>
   recovery: ReturnType<typeof createIndexedDbRecoveryDriver>
   /** 撤销日志；与 recovery 成对刷盘，缺它则撤销不跨刷新（状态不受影响）。 */
   historyLog: HistoryLogDriver
+  /** Server-only append-only agent history; static browser persistence deliberately has no file driver. */
+  agentRollout?: AgentRolloutDriver
+  /** Server-only read capability; static bundles leave ToolContext history absent. */
+  agentHistory?: AgentHistoryCapabilityProvider
 }
 
 /**
@@ -32,6 +39,8 @@ async function createSqliteDrivers(loadExecutor: SqlExecutorLoader): Promise<Hos
     ...createSqlitePersistence(),
     recovery: createSqliteRecoveryDriver(),
     historyLog: createSqliteHistoryLogDriver(),
+    agentRollout: createServerAgentRolloutDriver(),
+    agentHistory: createServerAgentHistoryCapability(),
   }
 }
 

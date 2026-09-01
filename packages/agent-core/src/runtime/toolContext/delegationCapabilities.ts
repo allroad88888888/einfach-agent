@@ -15,6 +15,10 @@ import type {
 import { getExecutionRuntime } from '../../execution/runtime'
 import { ROOT_AGENT_PATH } from '../../subagents/path'
 import {
+  isSubagentHistoryTool,
+  subagentProfileAllowsHistory,
+} from '../../subagents/historyToolProfile'
+import {
   isSubagentVerificationTool,
   isSubagentWorkspaceReadTool,
 } from '../../subagents/toolProfile'
@@ -93,9 +97,11 @@ export function attachDelegationCapabilities(
         : writeSubagentTextFile,
       async runChildTool(name, args, expectedRegistrationVersion) {
         assertFresh()
+        const allowedReadOnlyTool = isSubagentWorkspaceReadTool(name)
+          && (!isSubagentHistoryTool(name) || subagentProfileAllowsHistory(input.toolProfile))
         const confirmedDangerousTool = dangerousToolCapability?.toolNames.includes(name) === true
         const allowedVerificationTool = input.toolProfile === 'workspace_verify' && isSubagentVerificationTool(name)
-        if (!isSubagentWorkspaceReadTool(name) && !confirmedDangerousTool && !allowedVerificationTool) {
+        if (!allowedReadOnlyTool && !confirmedDangerousTool && !allowedVerificationTool) {
           return { ok: false, error: `tool not allowed for child agent: ${name}` }
         }
         const result = await core.tools.run(

@@ -66,15 +66,15 @@ const vendorNameExemptions = [
   // 随之删除。
 ]
 
-// S9：core 公开面白名单门禁。core 之外的包与 apps 只能经这九条入口进 core——根 barrel
-// `@einfach-agent/core` 本身（下面用 `subpath === ''` 表示）加八条 subpath。判据与逐条归属见
+// S9：core 公开面白名单门禁。core 之外的包与 apps 只能经这十条入口进 core——根 barrel
+// `@einfach-agent/core` 本身（下面用 `subpath === ''` 表示）加九条 subpath。判据与逐条归属见
 // docs/core-public-surface-audit.md §4，落地状态见 docs/core-surface-issues.md 的 S1–S8 卡。
 // **精确匹配，不是段前缀**：段前缀会让 `tools/registry`、`subagents/childAgentLoop` 这类深路径
 // 借白名单第一段蒙混过关，而它们恰恰是本规则要收敛的对象（前者已在本卡消掉，后者留豁免待 S11）。
 const corePackageName = '@einfach-agent/core'
 const coreSubpathRuleName = 'core 公开面白名单'
 const coreSubpathAllowList = [
-  '', 'plugin', 'timeline', 'tools', 'subagents', 'state/persistence', 'observability', 'skills', 'planning',
+  '', 'plugin', 'timeline', 'tools', 'subagents', 'state/persistence', 'observability', 'skills', 'planning', 'history',
 ]
 // 白名单外的既有命中：命中时降级为观察项而不是 fail。每条写明原因与归属卡，`consumers` 是
 // 消费方路径前缀（仓库相对、`/` 分隔）——豁免按「哪条 subpath × 谁在用」发放，换个消费方仍会红。
@@ -161,7 +161,7 @@ async function checkCoreSubpaths(files, errors, observations) {
         const location = `${file}:${index + 1}`
         const exemption = coreSubpathExemptionFor(subpath, file)
         if (exemption) observations.push(`${location} 观察项：${coreSubpathRuleName}（${specifier}）—— 豁免原因：${exemption.reason}`)
-        else errors.push(`${location} ${coreSubpathRuleName}（${specifier} 不在白名单九条内）`)
+        else errors.push(`${location} ${coreSubpathRuleName}（${specifier} 不在白名单十条内）`)
       }
     }
   }

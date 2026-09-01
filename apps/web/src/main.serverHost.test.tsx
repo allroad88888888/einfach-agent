@@ -18,6 +18,13 @@ const probe = vi.hoisted(() => ({
   atPersistenceHydrate: undefined as boolean | undefined,
   profileHydrated: false,
   profilesAtPersistenceHydrate: undefined as boolean | undefined,
+  rolloutReconciled: false,
+  reconcileRollout: vi.fn(async () => {
+    probe.rolloutReconciled = true
+    return { histories: [{ historyId: 'server', recordsApplied: 0, nextByteOffset: 0,
+      warning: { kind: 'projection', code: 'LAG', message: 'projection delayed' } }] }
+  }),
+  agentHistory: { forContext: vi.fn() },
 }))
 
 /**
@@ -37,7 +44,10 @@ vi.mock('./mcp/commands', () => ({ hydrateMcpSettings: vi.fn(async () => undefin
 vi.mock('./plugins/initialize', () => ({ initializePluginSettings: vi.fn() }))
 vi.mock('./plugins/commands', () => ({ hydratePluginSettings: vi.fn(async () => undefined) }))
 vi.mock('./persistence/persistenceDrivers', () => ({
-  createHostPersistenceDrivers: vi.fn(async () => ({})),
+  createHostPersistenceDrivers: vi.fn(async () => ({
+    agentRollout: { reconcile: probe.reconcileRollout, append: vi.fn(), flush: vi.fn() },
+    agentHistory: probe.agentHistory,
+  })),
 }))
 vi.mock('./persistence/recoveryFlushLifecycle', () => ({
   installBrowserRecoveryFlush: vi.fn(),
@@ -114,6 +124,7 @@ describe('main entry · server 宿主的装配分流（B3）', () => {
     const hydrate = vi.spyOn(defaultCore.persistence, 'hydrate').mockImplementation(async () => {
       probe.atPersistenceHydrate = hasHostBridge()
       probe.profilesAtPersistenceHydrate = probe.profileHydrated
+      expect(probe.rolloutReconciled).toBe(true)
       return false
     })
 
@@ -131,6 +142,8 @@ describe('main entry · server 宿主的装配分流（B3）', () => {
     await vi.waitFor(() => { expect(hydrate).toHaveBeenCalledOnce() })
     expect(probe.atPersistenceHydrate).toBe(true)
     expect(probe.profilesAtPersistenceHydrate).toBe(true)
+    expect(probe.reconcileRollout).toHaveBeenCalledOnce()
+    expect(defaultCore.persistence.dependencies().agentHistory).toBe(probe.agentHistory)
   })
 
   it('本机工具整类可见，模型凭据走 server 版而不是 unavailable', async () => {

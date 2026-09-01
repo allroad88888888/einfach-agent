@@ -30,6 +30,7 @@ import {
   toErrorMessage,
 } from './runtimeState'
 import type { TreeRuntimeBudget } from './runtimeState'
+import type { ChildRolloutRecorder } from './childRolloutRecorder'
 
 const DELEGATE_TOOL_NAME = 'delegate_agent'
 const ARGS_PREVIEW_LIMIT = 200
@@ -63,6 +64,7 @@ export interface ExecuteChildAgentToolCallsInput {
   toolCalls: ModelToolCall[]
   isSynthesisTurn: boolean
   requestedRegistrationVersions: ReadonlyMap<string, number | undefined>
+  rolloutRecorder: ChildRolloutRecorder
 }
 
 function argsPreviewForModel(raw: string): string {
@@ -93,10 +95,12 @@ export async function executeChildAgentToolCalls(
     toolCalls,
     isSynthesisTurn,
     requestedRegistrationVersions,
+    rolloutRecorder,
   } = input
   const pushToolResult = async (toolCallId: string, content: string): Promise<void> => {
     const item: ModelItem = { role: 'tool', tool_call_id: toolCallId, content }
     loop.messages.push(item)
+    await rolloutRecorder.recordItem(item)
     await runtime.archive.bestEffortRecordTraceItem(
       context,
       archiveBasePath,

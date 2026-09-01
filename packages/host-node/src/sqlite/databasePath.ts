@@ -27,13 +27,11 @@
 // `options.homeDir ?? homedir()` 不会编译失败，但漂移时的症状是「浏览器版读到的会话跟 CLI
 // 写的不是同一份」，且全程不报错。
 
-import { isAbsolute, join, posix, win32 } from 'node:path'
+import { isAbsolute, join } from 'node:path'
+import { resolveAppDataDirectory } from '../appDataPath'
 import { resolveHomeDirectory } from '../config/homeDirectory'
 import type { NodeHostInvokeOptions } from '../hostOptions'
 
-/** 应用数据目录名。取自桌面端 `apps/desktop/tauri.conf.json` 的 `identifier`；那个文件已随 T1
- *  删除，这个字符串因此**只由本文件决定**——它同时是存量库文件的实际位置，改它要做数据迁移。 */
-const APPLICATION_IDENTIFIER = 'com.webagent.app'
 /** 库文件名。沿用桌面侧 `Database.load('sqlite:web-agent.db')` 的相对路径，同上：改它要迁数据。 */
 const DATABASE_FILE = 'web-agent.db'
 
@@ -57,43 +55,6 @@ export interface SqliteRoutesOptions extends NodeHostInvokeOptions {
 }
 
 /**
- * 应用数据目录的父目录（Rust `dirs::data_dir()` 的等价物）。
- *
- * 三个平台各自的判据逐条对齐 `dirs`：
- *   · macOS：`$HOME/Library/Application Support`（不看环境变量）。
- *   · Windows：`%APPDATA%`（漫游目录），缺失时回落 `$HOME/AppData/Roaming`。
- *   · 其余（Linux/BSD）：`$XDG_DATA_HOME`，**且必须是绝对路径**，否则 `$HOME/.local/share`。
- *
- * 「必须是绝对路径」不是多余的严格：`dirs` 的实现是
- * `env::var_os("XDG_DATA_HOME").and_then(dirs_sys::is_absolute_path)`，相对值会被它丢掉并回落。
- * 顺带这也挡住空串——空串不是绝对路径。仓库里另一份同款实现（`vite.config.ts` 的
- * `defaultTraceDbPath`）两条都漏了，写成 `process.env.XDG_DATA_HOME ?? …`：`??` 只挡
- * null/undefined，`XDG_DATA_HOME=` 会让 `path.join('', …)` 变成跟着进程 cwd 走的相对路径。
- * 那份是 dev-only 的 trace 读取脚本、不在本卡改动面（issue 树「顺带发现的 TS 侧 bug」#10）。
- *
- * 平台与环境**从参数进**而不是在函数体里读 `process`：这样三个分支都能被直接测到，不必去改
- * 全局的 `process.platform`（那种改法一旦某条用例中途抛错就会污染同一个 worker 里后面的用例）。
- * 路径语义（`isAbsolute` / `join`）也跟着参数走 `win32` / `posix` 两个具名实现，而不是
- * `node:path` 的默认导出——默认导出是**本机**平台的那一套，`C:\…` 在 macOS 上判不出绝对路径，
- * 于是「按参数选平台」会给出一个本机跑不到的分支结果。运行时传的是 `process.platform`，
- * 选出来的正是本机那一套，行为与直接用默认导出完全一致。
- */
-export function sqliteDataDirectory(
-  home: string,
-  platform: NodeJS.Platform,
-  env: NodeJS.ProcessEnv,
-): string {
-  const paths = platform === 'win32' ? win32 : posix
-  if (platform === 'darwin') return paths.join(home, 'Library', 'Application Support')
-  if (platform === 'win32') {
-    const roaming = env.APPDATA
-    return roaming && paths.isAbsolute(roaming) ? roaming : paths.join(home, 'AppData', 'Roaming')
-  }
-  const xdg = env.XDG_DATA_HOME
-  return xdg && paths.isAbsolute(xdg) ? xdg : paths.join(home, '.local', 'share')
-}
-
-/**
  * 本次装配该打开哪个库文件。返回绝对路径；父目录不保证存在（建目录是打开连接那一步的事）。
  */
 export function resolveSqliteDatabasePath(options: SqliteRoutesOptions): string {
@@ -104,10 +65,12 @@ export function resolveSqliteDatabasePath(options: SqliteRoutesOptions): string 
     }
     return configured
   }
-  const dataDirectory = sqliteDataDirectory(
-    resolveHomeDirectory(options),
-    process.platform,
-    process.env,
+  return join(
+    resolveAppDataDirectory({
+      homeDirectory: resolveHomeDirectory(options),
+      platform: process.platform,
+      env: process.env,
+    }),
+    DATABASE_FILE,
   )
-  return join(dataDirectory, APPLICATION_IDENTIFIER, DATABASE_FILE)
 }

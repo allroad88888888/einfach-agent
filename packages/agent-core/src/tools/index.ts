@@ -28,10 +28,8 @@ export type {
   ShellCommandInput,
   ShellCommandResult,
   ShellPlatform,
-  SpawnAgentsOptions,
   Tool,
   ToolCallTiming,
-  ToolContext,
   ToolResult,
   ToolRuntime,
   ToolSkill,
@@ -40,6 +38,8 @@ export type {
   WorkspaceTaskKind,
   WorkspaceTaskResult,
 } from './types'
+
+export type { SpawnAgentsOptions, ToolContext } from './context'
 
 export type { ToolRegistry } from './toolRegistry'
 export { createToolRegistry } from './toolRegistry'

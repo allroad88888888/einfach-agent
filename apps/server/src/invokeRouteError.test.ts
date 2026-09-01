@@ -4,6 +4,7 @@
 // 真实 `createNodeHostInvoke()` + 真实 HTTP，证明真类抛出的 kind 确实会走到这条映射上。
 
 import { NodeHostCommandError } from '@einfach-agent/host-node'
+import { AgentHistoryError } from '@einfach-agent/core/history'
 import { describe, expect, it } from 'vitest'
 import {
   COMMAND_FAILURE_STATUS,
@@ -54,6 +55,27 @@ describe('mapInvokeRouteError：分发失败', () => {
 })
 
 describe('mapInvokeRouteError：命令自身失败', () => {
+  it.each([
+    'AGENT_HISTORY_INVALID_CURSOR',
+    'AGENT_HISTORY_SOURCE_CORRUPT',
+  ] as const)('history 失败透传闭合 code：%s', (code) => {
+    const mapped = mapInvokeRouteError(new AgentHistoryError(code, 'history failed'))
+    expect(mapped).toEqual({
+      statusCode: COMMAND_FAILURE_STATUS,
+      error: code,
+      message: 'history failed',
+    })
+  })
+
+  it('序列化 history 形状仍透传合法 code，但未知 code 走通用兜底', () => {
+    expect(mapInvokeRouteError({
+      code: 'AGENT_HISTORY_ITEM_DELETED', message: 'deleted',
+    }).error).toBe('AGENT_HISTORY_ITEM_DELETED')
+    expect(mapInvokeRouteError({
+      code: 'AGENT_HISTORY_FUTURE_CODE', message: 'future',
+    }).error).toBe(UNCLASSIFIED_COMMAND_FAILURE)
+  })
+
   it('MCP 失败带出 kind 与裁决，状态码是命令失败档', () => {
     const mapped = mapInvokeRouteError(
       mcpFailureWire('command_spawn_failed', 'no such file or directory'),

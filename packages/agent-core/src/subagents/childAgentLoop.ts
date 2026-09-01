@@ -24,6 +24,7 @@ import {
 } from './childLoopRepetition'
 import type { ChildModelCaller } from './childModelClient'
 import type { ChildContextCheckpoint } from './childContextCheckpoint'
+import { createChildRolloutRecorder } from './childRolloutRecorder'
 import { assertNormalChildFinish } from './childFinishReason'
 import { dispatchChildTimedTools, finalizeChildResult } from './childResult'
 import type {
@@ -115,6 +116,12 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
     loop.visible,
   )
   loop.recentToolNames = loop.visible.map((tool) => tool.name).reverse()
+  const rolloutRecorder = createChildRolloutRecorder({
+    driver: runtime.opts.core?.persistence.dependencies().agentRollout,
+    conversationId: runtime.opts.sessionId,
+    runId: runtime.opts.runId,
+    agentPath: node.path,
+  })
   let contextCheckpoint: ChildContextCheckpoint | undefined
   const maxTurns = spec.maxTurns ?? DEFAULT_CHILD_MAX_TURNS
   // 子 run 不装插件（没有 plugin host / hook 槽），故复用的是 loopGuard 的【判据】而非插件本身：
@@ -204,6 +211,7 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
   })
 
   try {
+    await rolloutRecorder.recordInitial(loop.messages)
     await dispatchChildTiming('subagentStart', 0)
     for (let turn = 0; turn < maxTurns; turn += 1) {
       const isSynthesisTurn = turn === maxTurns - 1
@@ -215,6 +223,7 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
               : '工具调查到此结束。现在请直接输出最终结论，不要再调用工具。',
           }]
         : loop.messages
+      if (isSynthesisTurn) await rolloutRecorder.recordItem(turnMessages.at(-1)!)
       loop.visible = refreshChildVisibleTools(loop.visible, runtime, maxTurnTools - 1)
       const tools = isSynthesisTurn
         ? []
@@ -235,6 +244,13 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
       })
       const message = response.choices?.[0]?.message
       const toolCalls = narrowToolCalls(message?.tool_calls)
+      const assistantItem: ModelItem = {
+        role: 'assistant',
+        content: typeof message?.content === 'string' ? message.content : null,
+        reasoning_content: message?.reasoning_content ?? null,
+        tool_calls: toolCalls,
+      }
+      await rolloutRecorder.recordItem(assistantItem)
       repetition.observeTurn(toolCalls)
       await runtime.archive.bestEffortRecordTraceItem(context, archiveBasePath, node.path, turn + 1, {
         role: 'assistant',
@@ -247,28 +263,26 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
         const text = firstAssistantText(response) || '子 agent 未返回有效文本。'
         // 只有强制合成轮才是「撞 maxTurns 收尾」；提前收敛的轮次不该被追加打转说明。
         const summary = isSynthesisTurn ? childExhaustionSummary(text, repetition, maxTurns) : text
+        await rolloutRecorder.recordSuccess()
         return finalizeChildResult({
           runtime, context, archiveBasePath, node, spec, status: 'done', summary, skillFiles, skillIds,
           changeSets: loop.changeSets, modelTier: modelSelection.routeDecision.tier,
           routeReason: modelSelection.routeDecision.reason, fallbackCount: modelSelection.fallbackCount,
         })
       }
-      loop.messages.push({
-        role: 'assistant',
-        content: typeof message?.content === 'string' ? message.content : null,
-        reasoning_content: message?.reasoning_content ?? null,
-        tool_calls: toolCalls,
-      })
+      loop.messages.push(assistantItem)
       await executeChildAgentToolCalls({
         runtime, delegateAgents, loop, node, context, archiveBasePath, inheritedSkills, localSkill, skillFiles,
         skillIds, delegationState, budget, confirmedTools, allowedToolNames, maxTurnTools, turn: turn + 1,
         turnTools: tools, toolCalls, isSynthesisTurn, requestedRegistrationVersions,
+        rolloutRecorder,
       })
     }
     throw childMaxTurnsError(repetition, maxTurns)
   } catch (error) {
     const message = toErrorMessage(error)
     const status = isAbortError(error, runtime.opts.signal) ? 'cancelled' : 'failed'
+    await rolloutRecorder.settleFailure(status, message)
     return finalizeChildResult({
       runtime, context, archiveBasePath, node, spec, status, summary: message, skillFiles, skillIds,
       changeSets: loop.changeSets, modelTier: modelSelection.routeDecision.tier,

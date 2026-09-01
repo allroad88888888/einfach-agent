@@ -1,10 +1,15 @@
 // 每个 session 的恢复快照写入器：同步捕获、串行 CAS、删除 fence。
 
 import type { Store } from '@einfach/core'
+import type { AgentRolloutDriver } from '../history'
 import type { ObservabilityPort } from '../observability/port'
 import { captureRecoverySnapshot } from '../state/recoveryProjection'
 import type { RecoveryDriver } from '../state/persistence/recoveryDriver'
 import type { RecoverySnapshotV1 } from '../state/recoverySnapshot.type'
+import {
+  createAgentRolloutCoordinator,
+  type AgentRolloutCoordinator,
+} from './agentRolloutCoordinator'
 
 const MAX_STALE_RETRIES = 3
 
@@ -36,6 +41,7 @@ export interface RecoveryWriterOptions {
   rootStore: Store
   recovery: RecoveryDriver
   observability: RecoveryWriterObservability
+  agentRollout?: AgentRolloutDriver
 }
 
 interface SessionWriteState {
@@ -91,6 +97,10 @@ function enqueue<Outcome>(state: SessionWriteState, task: () => Promise<Outcome>
  */
 export function createRecoveryWriter(options: RecoveryWriterOptions): RecoveryWriter {
   const states = new Map<string, SessionWriteState>()
+  const newRolloutCoordinator = (): AgentRolloutCoordinator | undefined => options.agentRollout
+    ? createAgentRolloutCoordinator(options.agentRollout)
+    : undefined
+  let rolloutCoordinator = newRolloutCoordinator()
   let epoch = 0
 
   function stateFor(sessionId: string): SessionWriteState {
@@ -111,7 +121,22 @@ export function createRecoveryWriter(options: RecoveryWriterOptions): RecoveryWr
     captured: RecoverySnapshotV1,
     sessionId: string,
     captureEpoch: number,
+    captureCoordinator: AgentRolloutCoordinator | undefined,
   ): Promise<RecoveryWriteOutcome> {
+    if (!isCurrent(state, captureEpoch, epoch)) {
+      return state.tombstoned
+        ? { status: 'tombstoned', sessionId }
+        : { status: 'skipped', sessionId, reason: 'reset' }
+    }
+    // Rollout is the strong boundary: failures become an observable outcome and leave recovery untouched.
+    try {
+      await captureCoordinator?.capture(captured)
+    } catch (error) {
+      return { status: 'error', sessionId, error }
+    }
+    // A delete/reset may have raced the append; never retain that retired lifecycle as previous.
+    if (!isCurrent(state, captureEpoch, epoch)) captureCoordinator?.resetSession(sessionId)
+
     try {
       for (let attempt = 1; attempt <= MAX_STALE_RETRIES + 1; attempt += 1) {
         if (!isCurrent(state, captureEpoch, epoch)) {
@@ -187,7 +212,11 @@ export function createRecoveryWriter(options: RecoveryWriterOptions): RecoveryWr
     }
 
     const captureEpoch = epoch
-    return enqueue(state, () => saveCaptured(state, captured, sessionId, captureEpoch)).then((outcome) => {
+    const captureCoordinator = rolloutCoordinator
+    return enqueue(
+      state,
+      () => saveCaptured(state, captured, sessionId, captureEpoch, captureCoordinator),
+    ).then((outcome) => {
       finish(operation, outcome)
       return outcome
     })
@@ -196,6 +225,7 @@ export function createRecoveryWriter(options: RecoveryWriterOptions): RecoveryWr
   function deleteSession(sessionId: string): Promise<RecoveryDeleteOutcome> {
     const state = stateFor(sessionId)
     state.tombstoned = true
+    rolloutCoordinator?.resetSession(sessionId)
     const operation = options.observability.beginPerformanceDiagnostic(
       'persistence.recovery.delete',
       { sessionId },
@@ -224,6 +254,8 @@ export function createRecoveryWriter(options: RecoveryWriterOptions): RecoveryWr
     reset() {
       epoch += 1
       states.clear()
+      rolloutCoordinator?.reset()
+      rolloutCoordinator = newRolloutCoordinator()
     },
   }
 }

@@ -1,0 +1,8 @@
+export { createRolloutRoutes } from './commands'
+export { createNodeAgentRolloutDriver } from './service'
+export type { NodeAgentRolloutDriverOptions } from './service'
+export { dropRolloutProjectionSchema } from './projectionSchema'
+export { discoverCanonicalRolloutSources } from './sourceCatalog'
+export type { CanonicalRolloutSource } from './sourceCatalog'
+export { preflightRolloutSources } from './sourcePreflight'
+export type { RolloutSourcePreflightResult } from './sourcePreflight'

@@ -62,6 +62,43 @@ describe('installCliShutdown', () => {
     await vi.waitFor(() => expect(target.exitCodes).toEqual([143]))
   })
 
+  it('normal drain and signal shutdown share one idempotent pending disposal', async () => {
+    const target = fakeTarget()
+    const pending = deferredDispose()
+    const shutdown = installCliShutdown({ target, notice: () => {} })
+    shutdown.registerHostDisposer(pending.dispose)
+
+    const normalDrain = shutdown.drain()
+    target.fire('SIGTERM')
+    expect(pending.calls()).toBe(1)
+    expect(target.exitCodes).toEqual([])
+
+    pending.settle()
+    await normalDrain
+    await vi.waitFor(() => expect(target.exitCodes).toEqual([143]))
+  })
+
+  it('normal drain propagates one failure, stays rejected, and rejects late registration', async () => {
+    const shutdown = installCliShutdown({ target: fakeTarget(), notice: () => {} })
+    const failure = new Error('flush failed')
+    shutdown.registerHostDisposer(() => Promise.reject(failure))
+
+    await expect(shutdown.drain()).rejects.toBe(failure)
+    await expect(shutdown.drain()).rejects.toBe(failure)
+    expect(() => shutdown.registerHostDisposer(async () => undefined)).toThrow('already draining')
+  })
+
+  it('signal exits after a failed drain and multiple failures remain aggregated for normal callers', async () => {
+    const target = fakeTarget()
+    const shutdown = installCliShutdown({ target, notice: () => {} })
+    shutdown.registerHostDisposer(() => Promise.reject(new Error('one')))
+    shutdown.registerHostDisposer(() => Promise.reject(new Error('two')))
+
+    target.fire('SIGTERM')
+    await vi.waitFor(() => expect(target.exitCodes).toEqual([143]))
+    await expect(shutdown.drain()).rejects.toBeInstanceOf(AggregateError)
+  })
+
   it('dispose 拖过 timeout 或抛错：都照样退出', async () => {
     const target = fakeTarget()
     const stuck = deferredDispose()

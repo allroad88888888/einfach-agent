@@ -60,6 +60,7 @@ import {
   startUiPerformanceDiagnostics,
 } from './performanceDiagnostics'
 import { createHostPersistenceDrivers } from './persistence/persistenceDrivers'
+import { rejectSourceRolloutWarnings } from './persistence/serverAgentRolloutDriver'
 import { installBrowserRecoveryFlush } from './persistence/recoveryFlushLifecycle'
 import './styles/global.css'
 import './agentNew/ui/agentnew.css'
@@ -129,13 +130,18 @@ function renderWindowScrollDemo(): void {
 async function bootstrapApplication(host: ResolvedHost): Promise<StartupCredentialTargetResolution> {
   const settingsHydration = hydrateAppSettings()
   const profileHydration = hydrateModelConnectionProfiles()
+  const persistenceDrivers = await createHostPersistenceDrivers(host)
+  core.persistence.configure({
+    ...persistenceDrivers,
+    recoveryStore: (sessionId) => core.findSessionStore(sessionId)?.store,
+    // 与 recoveryStore 同一条纪律：只交出已存在的会话，落盘绝不复活幽灵会话。
+    historyFor: (sessionId) => core.findSessionStore(sessionId)?.history,
+  })
+  // This is deliberately outside the recovery fallback below. Source corruption must reject
+  // startup and prevent agent execution; a failed IndexedDB hydration may still seed a new session.
+  const reconcile = await persistenceDrivers.agentRollout?.reconcile()
+  if (reconcile) rejectSourceRolloutWarnings(reconcile)
   try {
-    core.persistence.configure({
-      ...await createHostPersistenceDrivers(host),
-      recoveryStore: (sessionId) => core.findSessionStore(sessionId)?.store,
-      // 与 recoveryStore 同一条纪律：只交出已存在的会话，落盘绝不复活幽灵会话。
-      historyFor: (sessionId) => core.findSessionStore(sessionId)?.history,
-    })
     installBrowserRecoveryFlush(core)
     configureHostObservability(host)
     // A restored run may use connectionId immediately, and a first new session may use the saved

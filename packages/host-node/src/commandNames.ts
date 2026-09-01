@@ -11,7 +11,8 @@
 // 它们都从这里取名字，名字对不上是 `tsc -b` 的事。理由与替代物见 commandNames.test.ts 文件头。
 //
 // **`sqlite` 域从来不在那 28 条里**（P2 新增）；模型端点与连接 profile 又新增七条，
-// 工作区图片读取再新增一条受限命令，全表因此是 40 条。桌面侧的会话与 trace 持久化走
+// 工作区图片读取再新增一条受限命令，形成此前的 40 条；rollout 域再新增两条原始历史
+// 追加、SQLite 投影重放与四条 history 查询命令，因此全表现在是 46 条。桌面侧的会话与 trace 持久化走
 // `@tauri-apps/plugin-sql`，那是 Tauri **插件**暴露的命令，不在 `generate_handler!` 里。这两条
 // 命令名是 Node 侧新定的，没有移植来源。
 //
@@ -108,13 +109,15 @@ export const NODE_HOST_COMMANDS_BY_DOMAIN = {
   // PRAGMA 会回一行当前值，因此走 `sqlite_select`。刻意**没有** `sqlite_execute_batch`：
   // 一次调用 = 一条自包含语句，判据见 core 的 state/persistence/sqlTransport.ts 文件头。
   'sqlite': ['sqlite_execute', 'sqlite_select'],
+  'rollout': ['agent_rollout_append', 'agent_rollout_reconcile'],
+  'history': ['agent_history_list', 'agent_history_list_items', 'agent_history_read_item', 'agent_history_search'],
 } as const
 
 /** 域名 = `src/` 下的实现目录名。 */
 export type NodeHostCommandDomain = keyof typeof NODE_HOST_COMMANDS_BY_DOMAIN
 
 /**
- * 40 条命令名的字面量联合。**从表里推导而不是手写
+ * 46 条命令名的字面量联合。**从表里推导而不是手写
  * 第二份**——手写会立刻出现「表里有、类型里没有」的第二权威，而两份表不一致时 TypeScript
  * 一声不吭。
  */

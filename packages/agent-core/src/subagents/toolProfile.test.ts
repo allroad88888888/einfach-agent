@@ -8,16 +8,23 @@ import {
   subagentAllowedTools,
 } from './toolProfile'
 import type { SubagentToolProfile } from './types'
+import {
+  SUBAGENT_HISTORY_TOOLS,
+  isSubagentHistoryTool,
+  subagentProfileAllowsHistory,
+} from './historyToolProfile'
 
 describe('subagent tool profiles', () => {
   it('三档全序：delegate_only ⊂ workspace_read ⊂ workspace_verify', () => {
     expect(SUBAGENT_TOOL_PROFILES).toEqual(['delegate_only', 'workspace_read', 'workspace_verify'])
-    expect(subagentAllowedTools('delegate_only')).toEqual(['delegate_agent'])
+    expect(subagentAllowedTools('delegate_only')).toEqual(['delegate_agent', ...SUBAGENT_HISTORY_TOOLS])
     expect(subagentAllowedTools('workspace_read')).toEqual([
-      'delegate_agent', 'read_file', 'list_files', 'search_files', 'rg_search',
+      'delegate_agent', ...SUBAGENT_HISTORY_TOOLS,
+      'read_file', 'list_files', 'search_files', 'rg_search',
     ])
     expect(subagentAllowedTools('workspace_verify')).toEqual([
-      'delegate_agent', 'read_file', 'list_files', 'search_files', 'rg_search',
+      'delegate_agent', ...SUBAGENT_HISTORY_TOOLS,
+      'read_file', 'list_files', 'search_files', 'rg_search',
       'run_verification_command',
     ])
   })
@@ -56,5 +63,10 @@ describe('subagent tool profiles', () => {
     expect(isSubagentVerificationTool('shell_macos')).toBe(false)
     expect(isSubagentWorkspaceReadTool('run_verification_command')).toBe(false)
     expect(isSubagentWorkspaceReadTool('read_file')).toBe(true)
+    expect(isSubagentHistoryTool('search_agent_histories')).toBe(true)
+    expect(isSubagentWorkspaceReadTool('search_agent_histories')).toBe(true)
+    expect(isSubagentHistoryTool('write_file')).toBe(false)
+    expect(subagentProfileAllowsHistory('workspace_verify')).toBe(true)
+    expect(subagentProfileAllowsHistory('write_all' as SubagentToolProfile)).toBe(false)
   })
 })

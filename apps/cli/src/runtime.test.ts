@@ -17,12 +17,16 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
-import { configureHostInvoke } from '@einfach-agent/core'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { configureHostInvoke, defaultCore, newSession } from '@einfach-agent/core'
+import { loadHostInvoke } from '@einfach-agent/core/runtime/hostBridge'
+import { closeSqliteConnections } from '@einfach-agent/host-node'
+import type { AgentRolloutDriver } from '@einfach-agent/core/history'
 import { runShellCommand } from '@einfach-agent/core/runtime/shellCommand'
 import { resolveUserSkillsRoot } from '@einfach-agent/core/runtime/userSkillsRoot'
 import { readWorkspaceFile } from '@einfach-agent/core/runtime/workspaceRead'
-import { assembleCliRuntime } from './runtime'
+import { startModelRun } from '@einfach-agent/core/runtime/modelRunLifecycle'
+import { assembleCliRuntime, type AssembleCliRuntimeOptions } from './runtime'
 
 /** 与 host-node 的 currentPlatform() 同一张映射：平台不符时命令会在起 shell 之前就停住。 */
 const platform =
@@ -31,12 +35,21 @@ const platform =
 const credentials = { modelCredentials: {}, modelBaseUrls: {}, configPath: '/dev/null' }
 
 let workspaceRoot: string | undefined
+let persistenceRoot: string | undefined
+let persistence: Awaited<ReturnType<typeof assembleCliRuntime>> | undefined
 
 async function assemble(
-  extra: { registerHostDisposer?: (dispose: () => Promise<void>) => void } = {},
+  extra: Pick<AssembleCliRuntimeOptions, 'registerHostDisposer' | 'agentRolloutDriver'> = {},
 ): Promise<string> {
   workspaceRoot = await mkdtemp(join(tmpdir(), 'web-agent-cli-runtime-'))
-  await assembleCliRuntime({ credentials, verbose: false, workspaceRoot, ...extra })
+  persistenceRoot = await mkdtemp(join(tmpdir(), 'web-agent-cli-persistence-'))
+  persistence = await assembleCliRuntime({
+    credentials,
+    verbose: false,
+    workspaceRoot,
+    databasePath: join(persistenceRoot, 'web-agent.db'),
+    ...extra,
+  })
   return workspaceRoot
 }
 
@@ -44,8 +57,14 @@ afterEach(async () => {
   // 桥是模块级单例：本文件登记的是**真**的进程内桥，不还原会让同 worker 里后续用例
   // 意外拥有本机能力（跑真命令、写真文件），失败时还查不出是谁给的。
   configureHostInvoke(undefined)
+  await persistence?.flush()
+  defaultCore.persistence.reset()
+  await closeSqliteConnections()
   if (workspaceRoot) await rm(workspaceRoot, { recursive: true, force: true })
+  if (persistenceRoot) await rm(persistenceRoot, { recursive: true, force: true })
   workspaceRoot = undefined
+  persistenceRoot = undefined
+  persistence = undefined
 })
 
 describe('assembleCliRuntime 的命令桥', () => {
@@ -110,8 +129,56 @@ describe('assembleCliRuntime 的命令桥', () => {
 
     // MCP 域的管理器随命令路由表一起创建，关停钩子在那一刻登记——所以"装配完还没登记"
     // 就等于这条链断了（`bootstrap.ts` 拿到的钩子将永远不会关掉任何 MCP 子进程）。
-    expect(registered).toHaveLength(1)
+    expect(registered).toHaveLength(2)
     // 没有会话时它是个平凡的 resolve，但必须真的能调：本进程的信号处理就直接调它。
-    await expect(registered[0]?.()).resolves.toBeUndefined()
+    await expect(Promise.all(registered.map(async (dispose) => dispose()))).resolves.toEqual([undefined, undefined])
+  })
+
+  it('reconciles before root persistence, a real model loop, and ordered persistence flush', async () => {
+    const order: string[] = []
+    const driver: AgentRolloutDriver = {
+      append: async () => { order.push('root-append'); return { records: [] } },
+      reconcile: async () => { order.push('reconcile'); return { histories: [] } },
+      flush: async () => { order.push('rollout-flush') },
+    }
+    const registered: Array<() => Promise<void>> = []
+
+    await assemble({ agentRolloutDriver: driver, registerHostDisposer: (dispose) => { registered.push(dispose) } })
+    const sessionId = newSession()
+    const flushRecovery = vi.spyOn(defaultCore.persistence, 'flushRecovery').mockImplementation(async () => {
+      order.push('recovery-flush')
+    })
+    await startModelRun(sessionId, 'runtime test', {
+      core: defaultCore, apiKey: 'test-key', signal: new AbortController().signal,
+    }, async () => { order.push('model-loop') })
+    expect(registered).toHaveLength(2)
+    await registered[0]!()
+    flushRecovery.mockRestore()
+
+    expect(order).toEqual(['reconcile', 'root-append', 'model-loop', 'recovery-flush', 'rollout-flush'])
+    expect(defaultCore.persistence.dependencies().agentRollout).toBe(driver)
+    expect(defaultCore.persistence.dependencies().agentHistory).toBe(persistence?.agentHistory)
+  })
+
+  it('lends one history provider identity to both core context and host routes', async () => {
+    const root = await assemble()
+    const provider = persistence!.agentHistory
+    const result = { histories: [], nextCursor: 'next', warnings: [] }
+    const listHistories = vi.fn(async () => result)
+    const forContext = vi.spyOn(provider, 'forContext').mockReturnValue({
+      listHistories,
+      listItems: vi.fn(),
+      readItem: vi.fn(),
+      search: vi.fn(),
+    } as never)
+    const invoke = await loadHostInvoke()
+
+    await expect(invoke('agent_history_list', {
+      input: { limit: 2 }, legacyWorkspaceRoot: root,
+    })).resolves.toBe(result)
+
+    expect(defaultCore.persistence.dependencies().agentHistory).toBe(provider)
+    expect(forContext).toHaveBeenCalledWith({ legacyWorkspaceRoot: root })
+    expect(listHistories).toHaveBeenCalledWith({ limit: 2 })
   })
 })

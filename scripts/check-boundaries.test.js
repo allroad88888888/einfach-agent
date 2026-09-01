@@ -62,13 +62,14 @@ test('合法 import 与完整注释行会通过', async () => {
   assert.doesNotMatch(result.stdout, /core 厂商名红线/)
 })
 
-test('白名单九条 subpath 与根 barrel 放行，不产生观察项', async () => {
+test('白名单十条入口（根 barrel + 九条 subpath）放行，不产生观察项', async () => {
   const root = await fixture({
     'tools/fs/src/read.ts': [
       "import type { Tool } from '@einfach-agent/core/tools'",
       "import { itemsAtom } from '@einfach-agent/core'",
       "import { emptySkillsRegistry } from '@einfach-agent/core/skills'",
       "import type { HistoryDriver } from '@einfach-agent/core/state/persistence'",
+      "import type { AgentRolloutDriver } from '@einfach-agent/core/history'",
       '',
     ].join('\n'),
   })
@@ -85,7 +86,7 @@ test('白名单外且未列入豁免表的 subpath 会失败', async () => {
     assert.match(error.stderr, /边界检查失败：/)
     assert.match(
       error.stderr,
-      /tools\/fs\/src\/read\.ts:1 core 公开面白名单（@einfach-agent\/core\/state\/rootStore 不在白名单九条内）/,
+      /tools\/fs\/src\/read\.ts:1 core 公开面白名单（@einfach-agent\/core\/state\/rootStore 不在白名单十条内）/,
     )
     return true
   })
@@ -113,7 +114,7 @@ test('豁免按消费方发放：同一 subpath 换个消费方仍然失败', as
   await assert.rejects(run(root), (error) => {
     assert.match(
       error.stderr,
-      /apps\/web\/src\/borrow\.ts:1 core 公开面白名单（@einfach-agent\/core\/state\/rootStore 不在白名单九条内）/,
+      /apps\/web\/src\/borrow\.ts:1 core 公开面白名单（@einfach-agent\/core\/state\/rootStore 不在白名单十条内）/,
     )
     return true
   })
@@ -126,7 +127,7 @@ test('跨行花括号 import 的收尾行同样会被判', async () => {
   await assert.rejects(run(root), (error) => {
     assert.match(
       error.stderr,
-      /tools\/fs\/src\/read\.ts:3 core 公开面白名单（@einfach-agent\/core\/state\/rootStore 不在白名单九条内）/,
+      /tools\/fs\/src\/read\.ts:3 core 公开面白名单（@einfach-agent\/core\/state\/rootStore 不在白名单十条内）/,
     )
     return true
   })

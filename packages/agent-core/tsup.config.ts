@@ -1,5 +1,5 @@
 // @einfach-agent/core 的构建入口——共享口径全在根 tsup.preset.ts 里，这里只写 core 独有的两件事：
-// ① 九条公开 subpath 的 entry 清单；② 多 entry 共享单例必须开的 splitting。
+// ① 十条公开 subpath 的 entry 清单；② 多 entry 共享单例必须开的 splitting。
 import { definePackageBuild } from '../../tsup.preset'
 
 export default definePackageBuild({
@@ -19,6 +19,7 @@ export default definePackageBuild({
     'observability/index': 'src/observability/index.ts',
     'skills/index': 'src/skills/index.ts',
     'planning/index': 'src/planning/index.ts',
+    'history/index': 'src/history/index.ts',
   },
   // 必须开：core 是多 entry 包，且这些 entry 共享模块级可变单例（rootStore、defaultCore、
   // atom 家族）。关着 splitting 时每条 entry 会各自内联一份，消费方同时 import 两条 subpath

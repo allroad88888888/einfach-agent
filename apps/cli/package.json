@@ -8,6 +8,7 @@
     "@einfach-agent/ai": "workspace:*",
     "@einfach-agent/core": "workspace:*",
     "@einfach-agent/host-node": "workspace:*",
+    "@einfach-agent/persistence-sqlite": "workspace:*",
     "@einfach-agent/subagents": "workspace:*",
     "@einfach-agent/tools": "workspace:*",
     "@einfach-agent/tools-planning": "workspace:*",

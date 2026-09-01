@@ -11,6 +11,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { rootStore, sessionsAtom, workspacesAtom } from '../state/rootStore'
 import type { SessionMeta, WorkspaceMeta } from '../state/core.type'
 import type { SessionsPersistence } from '../state/persistence/contract'
+import type { AgentHistoryCapabilityProvider } from '../history'
+import { createCoreInstance } from './core/coreInstance'
 import {
   configurePersistence,
   hydratePersistence,
@@ -163,5 +165,20 @@ describe('hydratePersistence（启动读回收口）', () => {
 
     await expect(hydratePersistence()).resolves.toBe(true)
     expect(rootStore.getter(sessionsAtom).s1?.id).toBe('s1')
+  })
+})
+
+describe('agent history persistence dependency', () => {
+  it('is isolated per core and removed by reset', () => {
+    const provider = { forContext: vi.fn() } as unknown as AgentHistoryCapabilityProvider
+    const first = createCoreInstance()
+    const second = createCoreInstance()
+
+    first.persistence.configure({ agentHistory: provider })
+
+    expect(first.persistence.dependencies().agentHistory).toBe(provider)
+    expect(second.persistence.dependencies().agentHistory).toBeUndefined()
+    first.persistence.reset()
+    expect(first.persistence.dependencies().agentHistory).toBeUndefined()
   })
 })

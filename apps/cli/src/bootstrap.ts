@@ -66,24 +66,25 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     return
   }
 
-  const credentials = await resolveModelCredentials({ configPath: options.configPath })
-  requireDeepSeekCredential(credentials)
-  const workspaceRoot = await resolveWorkspaceRoot(options.workspaceRoot)
   // 信号处理是**进程级**的，所以装在进程入口这一层而不是 `assembleCliRuntime` 里：后者在测试里
   // 会被反复调用，把处理器装到真 `process` 上等于让测试进程的信号行为跟着装配走。
   // 它必须先于装配，因为关停钩子要在建命令路由表的那一刻就登记进去。见 `shutdown.ts`。
   const shutdown = installCliShutdown()
-  await assembleCliRuntime({
-    credentials,
-    verbose: options.verbose,
-    workspaceRoot,
-    registerHostDisposer: shutdown.registerHostDisposer,
-  })
-  const sessionId = newSession()
-  setWorkspaceRoot(workspaceRoot)
-  const unsubscribeRenderer = subscribeCliRenderer(sessionId, output)
-
+  let unsubscribeRenderer: (() => void) | undefined
+  let primaryError: unknown
   try {
+    const credentials = await resolveModelCredentials({ configPath: options.configPath })
+    requireDeepSeekCredential(credentials)
+    const workspaceRoot = await resolveWorkspaceRoot(options.workspaceRoot)
+    await assembleCliRuntime({
+      credentials,
+      verbose: options.verbose,
+      workspaceRoot,
+      registerHostDisposer: shutdown.registerHostDisposer,
+    })
+    const sessionId = newSession()
+    setWorkspaceRoot(workspaceRoot)
+    unsubscribeRenderer = subscribeCliRenderer(sessionId, output)
     if (options.prompt !== undefined) {
       await runPrompt(sessionId, options.prompt)
       return
@@ -94,8 +95,21 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
       reader,
       runPrompt: (prompt, activeReader) => runPrompt(sessionId, prompt, activeReader),
     })
+  } catch (error) {
+    primaryError = error
+    throw error
   } finally {
-    unsubscribeRenderer()
+    unsubscribeRenderer?.()
+    try {
+      await shutdown.drain()
+    } catch (drainError) {
+      if (primaryError !== undefined) {
+        throw new AggregateError([primaryError, drainError], 'CLI startup or execution failed while draining', {
+          cause: primaryError,
+        })
+      }
+      throw drainError
+    }
   }
 }
 

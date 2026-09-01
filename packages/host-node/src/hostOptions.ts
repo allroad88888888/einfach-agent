@@ -15,12 +15,19 @@
 
 import type { McpHostEventEmitter } from './mcp/lifecycle'
 import type { WorkspaceDirectoryPicker } from './workspace/dialog/nativeDirectoryPicker'
+import type { AgentHistoryCapabilityProvider, AgentRolloutDriver } from '@einfach-agent/core/history'
 
 /**
  * 宿主装配槽。全部可选；`createNodeHostInvoke()` 与 `createNodeHostInvoke({})` 等价、
  * 都表示「全取默认」。
  */
 export interface NodeHostInvokeOptions {
+  /** Existing rollout driver shared with in-process core callers. Omit to create the Node default. */
+  agentRolloutDriver?: AgentRolloutDriver
+  /** `borrowed` keeps lifecycle ownership with the caller; defaults to host-owned. */
+  agentRolloutDriverLifecycle?: 'owned' | 'borrowed'
+  /** Existing history provider shared with direct core callers. */
+  agentHistoryProvider?: AgentHistoryCapabilityProvider
   /** User-initiated native folder chooser. Omit it to use macOS's system picker. */
   openWorkspaceDirectory?: WorkspaceDirectoryPicker
 

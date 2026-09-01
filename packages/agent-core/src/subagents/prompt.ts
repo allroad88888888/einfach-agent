@@ -30,14 +30,14 @@ function renderSkillsForPrompt(skills: SubagentSkillFile[]): string {
 function childToolProfilePromptLines(toolProfile: SubagentToolProfile): string[] {
   if (toolProfile === 'workspace_verify') {
     return [
-      '允许 delegate_agent、只读文件工具（路径权限继承会话授权模式），以及验证工具 run_verification_command；不得写文件。',
+      '允许 delegate_agent、本机 agent 历史只读工具、只读文件工具（路径权限继承会话授权模式），以及验证工具 run_verification_command；不得写文件。',
       'run_verification_command 可执行验收所需的 shell 命令及项目脚本。它的输出就是你的执行证据：用真实退出码与输出下判断，不要凭推测断言测试通过或失败。',
     ]
   }
   return [
     toolProfile === 'workspace_read'
-      ? '允许 delegate_agent 和只读文件工具（路径权限继承会话授权模式）；不得声称或尝试写文件、执行 shell。'
-      : '只允许 delegate_agent；不要模拟工具调用，不要声称已经改文件。',
+      ? '允许 delegate_agent、本机 agent 历史只读工具和只读文件工具（路径权限继承会话授权模式）；不得声称或尝试写文件、执行 shell。'
+      : '只允许 delegate_agent 和本机 agent 历史只读工具；不要模拟工具调用，不要声称已经改文件。',
   ]
 }
 

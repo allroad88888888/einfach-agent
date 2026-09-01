@@ -1,4 +1,5 @@
 import type { SubagentToolProfile } from './types'
+import { isSubagentHistoryTool, SUBAGENT_HISTORY_TOOLS } from './historyToolProfile'
 
 export const DEFAULT_SUBAGENT_TOOL_PROFILE: SubagentToolProfile = 'delegate_only'
 
@@ -33,9 +34,12 @@ const SUBAGENT_TOOL_PROFILE_RANK: Record<SubagentToolProfile, number> = {
 export function subagentAllowedTools(profile: SubagentToolProfile): readonly string[] {
   switch (profile) {
     case 'workspace_verify':
-      return ['delegate_agent', ...SUBAGENT_WORKSPACE_READ_TOOLS, SUBAGENT_VERIFICATION_TOOL]
+      return ['delegate_agent', ...SUBAGENT_HISTORY_TOOLS, ...SUBAGENT_WORKSPACE_READ_TOOLS,
+        SUBAGENT_VERIFICATION_TOOL]
     case 'workspace_read':
-      return ['delegate_agent', ...SUBAGENT_WORKSPACE_READ_TOOLS]
+      return ['delegate_agent', ...SUBAGENT_HISTORY_TOOLS, ...SUBAGENT_WORKSPACE_READ_TOOLS]
+    case 'delegate_only':
+      return ['delegate_agent', ...SUBAGENT_HISTORY_TOOLS]
     default:
       return ['delegate_agent']
   }
@@ -53,7 +57,10 @@ export function canNarrowSubagentToolProfile(
 }
 
 export function isSubagentWorkspaceReadTool(name: string): boolean {
-  return (SUBAGENT_WORKSPACE_READ_TOOLS as readonly string[]).includes(name)
+  // The execution loop historically calls this predicate for every read-only profile tool.
+  // History reads are profile-independent, but remain in this combined gate to keep that loop small.
+  return isSubagentHistoryTool(name)
+    || (SUBAGENT_WORKSPACE_READ_TOOLS as readonly string[]).includes(name)
 }
 
 export function isSubagentVerificationTool(name: string): boolean {

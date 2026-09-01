@@ -10,14 +10,11 @@
 //   本文不 import UI；每个 CoreInstance 把自己的 rootStore 注入一个 bridge 实例。
 
 import type { History, Store } from '@einfach/core'
+import type { AgentHistoryCapabilityProvider, AgentRolloutDriver } from '../history'
 import { sessionsAtom, workspacesAtom } from '../state/rootAtoms'
 import type { SessionsPersistence } from '../state/persistence/contract'
 import type { RecoveryDriver } from '../state/persistence/recoveryDriver'
-import {
-  toPersistableHistoryLog,
-  type HistoryLogDriver,
-} from '../state/persistence/historyLogDriver'
-import { readUndoBarrier } from '../state/undoBarrier'
+import type { HistoryLogDriver } from '../state/persistence/historyLogDriver'
 import { projectStaticSessionMeta } from '../state/sessionMetaProjection'
 import type { ObservabilityPort } from '../observability/port'
 import {
@@ -31,6 +28,7 @@ import {
   writeWorkspaces,
   type PersistenceDiagnosticContext,
 } from './persistenceWriteOperations'
+import { flushPersistedHistoryLog } from './persistedHistoryLogFlush'
 
 export type { PersistenceDiagnosticContext } from './persistenceWriteOperations'
 
@@ -47,6 +45,10 @@ export interface PersistenceDependencies {
   historyLog?: HistoryLogDriver
   /** 同 recoveryStore 的纪律：只允许返回已存在的会话日志，绝不因落盘而创建会话。 */
   historyFor?: (sessionId: string) => History | undefined
+  /** Optional append-only root history durability boundary. */
+  agentRollout?: AgentRolloutDriver
+  /** Optional host-owned read capability for local agent histories. */
+  agentHistory?: AgentHistoryCapabilityProvider
 }
 
 export interface PersistenceBridge {
@@ -82,6 +84,8 @@ export function createPersistenceBridge(
   let recoveryStore: ((sessionId: string) => Store | undefined) | undefined
   let historyLog: HistoryLogDriver | undefined
   let historyFor: ((sessionId: string) => History | undefined) | undefined
+  let agentRollout: AgentRolloutDriver | undefined
+  let agentHistory: AgentHistoryCapabilityProvider | undefined
   let recoveryWriter: RecoveryWriter | undefined
   const sessionsWriteQueue = createWriteQueue('latest')
   const workspacesWriteQueue = createWriteQueue('serial')
@@ -92,16 +96,18 @@ export function createPersistenceBridge(
     if (deps.recoveryStore !== undefined) recoveryStore = deps.recoveryStore
     if (deps.historyLog !== undefined) historyLog = deps.historyLog
     if (deps.historyFor !== undefined) historyFor = deps.historyFor
-    if (deps.recovery !== undefined || deps.recoveryStore !== undefined) {
+    if (deps.agentRollout !== undefined) agentRollout = deps.agentRollout
+    if (deps.agentHistory !== undefined) agentHistory = deps.agentHistory
+    if (deps.recovery !== undefined || deps.recoveryStore !== undefined || deps.agentRollout !== undefined) {
       recoveryWriter?.reset()
       recoveryWriter = recovery && recoveryStore
-        ? createRecoveryWriter({ rootStore, recovery, observability })
+        ? createRecoveryWriter({ rootStore, recovery, observability, agentRollout })
         : undefined
     }
   }
 
   function dependencies(): PersistenceDependencies {
-    return { sessions, recovery, recoveryStore, historyLog, historyFor }
+    return { sessions, recovery, recoveryStore, historyLog, historyFor, agentRollout, agentHistory }
   }
 
   function reset(): void {
@@ -110,6 +116,8 @@ export function createPersistenceBridge(
     recoveryStore = undefined
     historyLog = undefined
     historyFor = undefined
+    agentRollout = undefined
+    agentHistory = undefined
     recoveryWriter?.reset()
     recoveryWriter = undefined
     sessionsWriteQueue.reset()
@@ -149,40 +157,13 @@ export function createPersistenceBridge(
     if (historyLog) void historyLog.deleteSession(id).catch(() => undefined)
   }
 
-  /**
-   * 把某会话的撤销日志与刚落盘的那份快照配对存下。
-   *
-   * 只在快照真的写成功（`saved`）时才刷：`stale` / `tombstoned` / `error` 都意味着盘上的快照
-   * 不是这次这份，配上去的 generation 就是假的对应关系。读回时宁可发现 generation 不匹配而
-   * 丢掉整份日志（撤销不可用、状态仍对），也不要让一份错配的日志被当成可信的。
-   *
-   * fire-and-forget：日志不是真相，落盘失败不该影响栅栏的结论，也不该拖慢它。
-   */
-  function flushHistoryLog(outcome: RecoveryWriteOutcome | undefined, id: string): void {
-    if (outcome?.status !== 'saved') return
-    const driver = historyLog
-    const history = historyFor?.(id)
-    if (!driver || !history) return
-    // 屏障与账本同时刷出：分开存会出现「账在、屏障没了」，刷新后撤销就能越过一个已发生的
-    // 不可逆删除（见 state/undoBarrier.ts）。
-    const store = recoveryStore?.(id)
-    const log = toPersistableHistoryLog(
-      outcome.generation,
-      history.getState(),
-      store ? readUndoBarrier({ store, history }) : undefined,
-    )
-    // 不可序列化 = 某个槽位的记账载荷里塞了类实例/闭包。丢掉这一份而不是写半份进去。
-    if (!log) return
-    void driver.save(id, log).catch(() => undefined)
-  }
-
   function persistRecovery(id: string, reason?: string): Promise<RecoveryWriteOutcome | undefined> {
     const writer = recoveryWriter
     if (!writer) return Promise.resolve(undefined)
     const store = recoveryStore?.(id)
     if (!store) return Promise.resolve(undefined)
     return writer.persist(store, id, reason).then((outcome) => {
-      flushHistoryLog(outcome, id)
+      flushPersistedHistoryLog({ historyLog, historyFor, recoveryStore }, outcome, id)
       return outcome
     })
   }

@@ -25,13 +25,13 @@ describe('命令全集', () => {
     expect(NODE_HOST_COMMANDS_BY_DOMAIN.sqlite).toEqual(['sqlite_execute', 'sqlite_select'])
   })
 
-  it('恰好 40 条，且没有重复', () => {
-    // 后 10 条没有 Rust 对应物：sqlite 两条走的是 Tauri 插件而非 `generate_handler!`，
+  it('恰好 46 条，且没有重复', () => {
+    // 后 16 条没有 Rust 对应物：sqlite 两条走的是 Tauri 插件而非 `generate_handler!`，
     // model_endpoint 三条（C6）是 openai-compat 的登记接入点——桌面宿主只认有官方接入点的
     // provider，压根没有「登记一个接入点」这件事。
-    // profile 五条管理或探测独立第三方连接。
-    expect(NODE_HOST_COMMAND_NAMES).toHaveLength(40)
-    expect(new Set(NODE_HOST_COMMAND_NAMES).size).toBe(40)
+    // profile 五条管理或探测独立第三方连接；rollout 两条追加/重放原始历史；history四条只读查询。
+    expect(NODE_HOST_COMMAND_NAMES).toHaveLength(46)
+    expect(new Set(NODE_HOST_COMMAND_NAMES).size).toBe(46)
   })
 
   it('域之间不共享命令名——一条命令只能有一个实现目录', () => {

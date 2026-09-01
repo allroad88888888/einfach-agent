@@ -27,6 +27,7 @@
 // 各域实际有什么标识，本模块只转发、不发明：
 //   · mcp   → `McpCommandError.kind`（开放取值，见 host-node 的 `readMcpCommandErrorKind`）
 //   · model → `ModelRequestError.reason`（闭合枚举）
+//   · history → `AgentHistoryError.code`（闭合枚举，见 core 的 `isAgentHistoryErrorCode`）
 //   · workspace / shell / config / sqlite → **没有**。这三百多个抛出点是等价移植 Rust 侧
 //     `Err(String)` 的产物，那边同样只有一句话。所以它们统一落 `command_failed`。
 // 刻意**不**按命令名推一个 `<domain>_command_failed` 出来：调用方本来就知道自己调的是哪条命令，
@@ -37,7 +38,7 @@
 // 只有 kind，一个字都不读 message，因为 message 里嵌着对端撰写的文本），本模块只把结论**原样**
 // 放进信封。客户端从此不再自己维护一张 kind → 永久/暂时 的表——那张表靠人记得两边一起改，漏一条
 // 的症状是没有症状：新 kind 落到「可重试」的默认，一个永远起不来的服务被无限退避重连。
-// 与 `error` 字段一样只转发不生产：没给出裁决的域（model / workspace / shell / config / sqlite）
+// 与 `error` 字段一样只转发不生产：没给出裁决的域（model / history / workspace / shell / config / sqlite）
 // 这个字段就不存在，客户端拿不到就退到可重试的安全侧。
 //
 // 【message 与 reason 一样按字段读】
@@ -53,6 +54,7 @@ import {
   type McpFailureVerdict,
   type NodeHostCommandErrorReason,
 } from '@einfach-agent/host-node'
+import { isAgentHistoryErrorCode, type AgentHistoryErrorCode } from '@einfach-agent/core/history'
 
 export interface InvokeRouteErrorReply {
   readonly statusCode: number
@@ -98,12 +100,18 @@ function readDispatchReason(error: unknown): NodeHostCommandErrorReason | undefi
     : undefined
 }
 
+function readAgentHistoryErrorCode(error: unknown): AgentHistoryErrorCode | undefined {
+  if (typeof error !== 'object' || error === null) return undefined
+  const code = (error as { code?: unknown }).code
+  return isAgentHistoryErrorCode(code) ? code : undefined
+}
+
 /**
- * 域自己的标识，取不到就说取不到。两个读取面的取值集合互不相交（mcp 的 kind 全是下划线形，
- * model 的 reason 全是连字符形且是闭合枚举），先后无所谓。
+ * 域自己的标识，取不到就说取不到。读取面的合法取值集合互不相交，先后无所谓。
  */
 function commandFailureCode(error: unknown): string {
-  return readMcpCommandErrorKind(error)
+  return readAgentHistoryErrorCode(error)
+    ?? readMcpCommandErrorKind(error)
     ?? readModelRequestErrorReason(error)
     ?? UNCLASSIFIED_COMMAND_FAILURE
 }

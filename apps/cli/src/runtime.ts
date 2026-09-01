@@ -8,7 +8,7 @@ import {
   configureHostInvoke,
   defaultCore,
 } from '@einfach-agent/core'
-import { createNodeHostInvoke, nodeHostPlatform } from '@einfach-agent/host-node'
+import { createNodeHostInvoke, nodeHostPlatform, resolveSqliteDatabasePath } from '@einfach-agent/host-node'
 import { createDelegationAssembly } from '@einfach-agent/subagents'
 import { registerStandardTools } from '@einfach-agent/tools'
 import { createDefaultPlanRuntime } from '@einfach-agent/tools-planning'
@@ -23,8 +23,10 @@ import type { ResolvedCredentials } from './credentials'
 import { createCliPerformanceDiagnosticSink } from './performance-output'
 import { assembleCliPlugins } from './plugins'
 import { buildNodeProjectSkillsBridge } from './workspace-files'
+import { assembleCliPersistence, type CliPersistenceAssembly } from './persistence'
+import type { AgentRolloutDriver } from '@einfach-agent/core/history'
 
-interface AssembleCliRuntimeOptions {
+export interface AssembleCliRuntimeOptions {
   credentials: ResolvedCredentials
   verbose: boolean
   workspaceRoot: string
@@ -37,6 +39,10 @@ interface AssembleCliRuntimeOptions {
    * 测试里装配运行时不该顺手改掉整个测试进程的信号行为。
    */
   registerHostDisposer?: (dispose: () => Promise<void>) => void
+  /** Test-only absolute SQLite target; production retains the existing app-data default. */
+  databasePath?: string
+  /** Optional assembly seam for isolated lifecycle tests. */
+  agentRolloutDriver?: AgentRolloutDriver
 }
 
 function configureTraceOutput(verbose: boolean): void {
@@ -95,6 +101,8 @@ function configureOpenAiCompatBaseUrl(credentials: ResolvedCredentials): void {
  */
 function configureCliHostBridge(
   homeDir: string,
+  agentRolloutDriver: CliPersistenceAssembly['agentRollout'],
+  agentHistoryProvider: CliPersistenceAssembly['agentHistory'],
   registerHostDisposer?: (dispose: () => Promise<void>) => void,
 ): void {
   // 表在 create 时就定死（装配槽被闭包捕获），登记的却是 loader——core 的 hostBridge 收 loader
@@ -103,7 +111,10 @@ function configureCliHostBridge(
   // 主目录就在第一次调用时明确失败，而不是把空串当路径根拼下去。
   // registerHostDisposer 必须在**建路由表的这一刻**就传进去：MCP 域的管理器随表一起创建，
   // 关停钩子也在那一刻登记，之后没有第二次机会（见 host-node 的 `mcp/index.ts`）。
-  const invoke = createNodeHostInvoke({ homeDir, registerHostDisposer })
+  const invoke = createNodeHostInvoke({
+    homeDir, agentRolloutDriver, agentRolloutDriverLifecycle: 'borrowed', agentHistoryProvider,
+    registerHostDisposer,
+  })
   // 【S5】平台与桥是同一次登记的两半。这里报的是 host-node 自己的 `nodeHostPlatform()`——
   // 也就是 shell 域做 platform mismatch 判定时用的**同一个函数**，而不是 core 的本地探测：
   // CLI 恰好同机，两者今天答案相同，但「同机」是巧合不是契约，按同一个权威取值才是。
@@ -111,14 +122,29 @@ function configureCliHostBridge(
 }
 
 /** Assembles the CLI shell around the unchanged default core instance. */
-export async function assembleCliRuntime(options: AssembleCliRuntimeOptions): Promise<void> {
+export async function assembleCliRuntime(options: AssembleCliRuntimeOptions): Promise<CliPersistenceAssembly> {
   registerStandardTools(defaultCore.tools)
   // CLI 自己就是那台机器，主目录在本进程内**只解析一次**：同一个值既注入命令桥（它据此答
   // `get_user_home_dir`、并解析 `~/.webAgent/config.json` 的位置），也直接当用户级 skills 的
   // 扫描根。两处各调一次 homedir() 不会报错，漂移时的症状是「skills 扫不到 / 配置读到另一个
   // 文件」——hostOptions.ts 的 homeDir 槽位正是为消掉这第二个权威而存在的。
   const homeDir = homedir().trim()
-  configureCliHostBridge(homeDir, options.registerHostDisposer)
+  const databasePath = options.databasePath ?? resolveSqliteDatabasePath({ homeDir })
+  const persistence = await assembleCliPersistence(defaultCore, {
+    homeDir, databasePath, agentRolloutDriver: options.agentRolloutDriver,
+  })
+  // The only CLI-owned persistence disposer is ordered: root recovery tail before shared rollout
+  // driver drain. Host routes borrow this driver and therefore only register MCP cleanup.
+  options.registerHostDisposer?.(() => persistence.flush())
+  configureCliHostBridge(
+    homeDir,
+    persistence.agentRollout,
+    persistence.agentHistory,
+    options.registerHostDisposer,
+  )
+  // Reconcile is an execution fence: source corruption rejects startup; projection warnings return
+  // normally and are intentionally retained in the reconciliation result for future reporting.
+  await persistence.reconcile()
   configureDefaultSkillsRegistry(builtInSkillsRegistry)
   const bridge = buildNodeProjectSkillsBridge()
   // 主目录直接从 node:os 取，不走 core 的 resolveUserSkillsRoot——但**理由已经不是**
@@ -140,4 +166,5 @@ export async function assembleCliRuntime(options: AssembleCliRuntimeOptions): Pr
   // 标准工具与命令先装好，插件的 install 才有一个稳定的 registry 可注册；扫描/加载失败
   // 不阻塞启动（assembleCliPlugins 自身兜底），因此放在装配的最后一步即可。
   await assembleCliPlugins(options.workspaceRoot, options.verbose)
+  return persistence
 }

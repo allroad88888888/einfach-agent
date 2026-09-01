@@ -55,6 +55,7 @@
 // 目录本卡没有预先建空壳——git 不跟踪空目录，占位文件只是噪音。上面这棵树就是规格。
 
 import type { HostInvoke } from '@einfach-agent/core'
+import { dirname } from 'node:path'
 import { isNodeHostCommandName } from './commandNames'
 import { createConfigRoutes } from './config'
 import { createShellRoutes } from './shell'
@@ -64,6 +65,10 @@ import { createWorkspaceDialogRoutes } from './workspace/dialog'
 import { createMcpRoutes } from './mcp'
 import { createModelRoutes } from './model'
 import { createSqliteRoutes } from './sqlite'
+import { createRolloutRoutes, createNodeAgentRolloutDriver } from './rollout'
+import { createHistoryRecoveryReader, createHistoryRoutes, createNodeAgentHistoryProvider } from './history'
+import { loadSqliteExecutor } from './sqlite/connections'
+import { resolveSqliteDatabasePath, type SqliteRoutesOptions } from './sqlite/databasePath'
 import { createGitRoutes } from './workspace/git'
 import { createPatchRoutes } from './workspace/patch'
 import { createPathOpsRoutes } from './workspace/pathOps'
@@ -73,6 +78,19 @@ import { createTaskRoutes } from './workspace/task'
 import { createWriteRoutes } from './workspace/write'
 import type { NodeHostInvokeOptions } from './hostOptions'
 import type { NodeHostRouteTable } from './routeTable'
+import type { SqlExecutor } from '@einfach-agent/core/state/persistence'
+
+function createRolloutExecutor(options: SqliteRoutesOptions): SqlExecutor {
+  const databasePath = resolveSqliteDatabasePath(options)
+  return {
+    async execute(sql, params) {
+      return (await loadSqliteExecutor('persistence', databasePath)).execute(sql, params)
+    },
+    async select<T>(sql: string, params?: unknown[]): Promise<T> {
+      return (await loadSqliteExecutor('persistence', databasePath)).select<T>(sql, params)
+    },
+  }
+}
 
 /**
  * 命令分发失败的原因。两者对调用方的含义**完全不同**，所以不能塌成一种：
@@ -116,6 +134,21 @@ export class NodeHostCommandError extends Error {
  * `NODE_HOST_COMMANDS_BY_DOMAIN` 保证），但按 commandNames.ts 的域顺序排，两边好对照。
  */
 function createRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
+  if (options.agentRolloutDriverLifecycle === 'borrowed' && !options.agentRolloutDriver) {
+    throw new Error('borrowed rollout lifecycle requires an injected agentRolloutDriver')
+  }
+  const sqliteOptions = options as SqliteRoutesOptions
+  const databasePath = resolveSqliteDatabasePath(sqliteOptions)
+  const executor = createRolloutExecutor(sqliteOptions)
+  const rolloutDriver = options.agentRolloutDriver ?? createNodeAgentRolloutDriver({
+    appDataDirectory: dirname(databasePath), executor,
+  })
+  const historyProvider = options.agentHistoryProvider ?? createNodeAgentHistoryProvider({
+    executor, agentRollout: rolloutDriver, recovery: createHistoryRecoveryReader(executor),
+  })
+  if (options.agentRolloutDriverLifecycle !== 'borrowed') {
+    options.registerHostDisposer?.(() => rolloutDriver.flush())
+  }
   return {
     // model 域只挂两条 cancel——转发本身是流式，不走 `(cmd,args)=>Promise<T>`，由 M2 的 SSE
     // 端点直接调 forwardProviderRequest（见 model/index.ts）。sqlite 域是 Node 侧独有（Rust 走
@@ -134,6 +167,8 @@ function createRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
     ...createMcpRoutes(options),
     ...createModelRoutes(options),
     ...createSqliteRoutes(options),
+    ...createRolloutRoutes(rolloutDriver),
+    ...createHistoryRoutes(historyProvider),
     ...createConfigRoutes(options),
   }
 }

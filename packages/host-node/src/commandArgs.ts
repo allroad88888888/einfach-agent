@@ -47,6 +47,7 @@ import type {
 import type { ModelCommandArgs } from './model/commandArgs'
 import type { ConnectionProfileCommandArgs } from './model/connectionProfileCommandArgs'
 import type { SqliteConnectionName } from './sqlite/connectionNames'
+import type {} from './history/historyCommandArgs'
 
 /**
  * 命令名 → 入参形状。`get_user_home_dir` / `mcp_config_read` / `pick_workspace_directory` 无参，写成 `undefined`：

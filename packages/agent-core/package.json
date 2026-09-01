@@ -54,6 +54,10 @@
       "types": "./dist/planning/index.d.ts",
       "default": "./dist/planning/index.js"
     },
+    "./history": {
+      "types": "./dist/history/index.d.ts",
+      "default": "./dist/history/index.js"
+    },
     "./package.json": "./package.json"
   },
   "scripts": {

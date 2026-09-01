@@ -38,6 +38,7 @@ import { createSkillsCapabilities } from './toolContext/skillsCapabilities'
 import { createStaleGuards } from './toolContext/staleGuards'
 import { createWorkspaceCapabilities } from './toolContext/workspaceCapabilities'
 import { createVisionCapabilities } from './toolContext/visionCapabilities'
+import { createHistoryCapabilities } from './toolContext/historyCapabilities'
 import {
   createWorkspaceInputGuards,
   resolveWorkspaceRoot,
@@ -118,6 +119,7 @@ export function buildToolContext(opts: {
     ...planCapabilities,
     ...skillsCapabilities,
     ...workspaceCapabilities,
+    ...createHistoryCapabilities(core.persistence.dependencies().agentHistory, workspaceRoot),
     ...createVisionCapabilities({
       capability: core.config.viewImage,
       signal,

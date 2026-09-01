@@ -1,7 +1,8 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import type { AgentHistoryCapabilityProvider, AgentRolloutDriver } from '@einfach-agent/core/history'
 import { createNodeHostInvoke, NodeHostCommandError } from './createNodeHostInvoke'
 import { NODE_HOST_COMMAND_NAMES } from './commandNames'
 
@@ -110,6 +111,12 @@ describe('createNodeHostInvoke', () => {
         'get_user_home_dir',
         'sqlite_execute',
         'sqlite_select',
+        'agent_rollout_append',
+        'agent_rollout_reconcile',
+        'agent_history_list',
+        'agent_history_list_items',
+        'agent_history_read_item',
+        'agent_history_search',
       ])
     } finally {
       if (savedOverride === undefined) delete process.env.WEB_AGENT_CONFIG_DIR
@@ -130,5 +137,45 @@ describe('createNodeHostInvoke', () => {
     return pending.then(() => {
       expect(settled).toBeInstanceOf(NodeHostCommandError)
     })
+  })
+
+  it('registers one rollout flush disposer alongside the MCP disposer', async () => {
+    const disposers: Array<() => Promise<void>> = []
+    createNodeHostInvoke({ registerHostDisposer(dispose) { disposers.push(dispose) } })
+    expect(disposers).toHaveLength(2)
+    await expect(Promise.all(disposers.map((dispose) => dispose()))).resolves.toHaveLength(2)
+  })
+
+  it('uses one injected rollout driver for routes and its single flush disposer', async () => {
+    const driver: AgentRolloutDriver = {
+      append: vi.fn(async () => ({ records: [] })),
+      reconcile: vi.fn(async () => ({ histories: [] })),
+      flush: vi.fn(async () => undefined),
+    }
+    const disposers: Array<() => Promise<void>> = []
+    const invoke = createNodeHostInvoke({ agentRolloutDriver: driver,
+      registerHostDisposer(dispose) { disposers.push(dispose) } })
+    await expect(invoke('agent_rollout_reconcile', {})).resolves.toEqual({ histories: [] })
+    expect(driver.reconcile).toHaveBeenCalledOnce()
+    expect(disposers).toHaveLength(2)
+    await Promise.all(disposers.map((dispose) => dispose()))
+    expect(driver.flush).toHaveBeenCalledOnce()
+  })
+
+  it('rejects a borrowed rollout lifecycle without an injected driver', () => {
+    expect(() => createNodeHostInvoke({ agentRolloutDriverLifecycle: 'borrowed' }))
+      .toThrow('requires an injected')
+  })
+
+  it('uses a borrowed history provider identity for host routes', async () => {
+    const listHistories = vi.fn(async () => ({ histories: [], warnings: [] }))
+    const provider = { forContext: vi.fn(() => ({ listHistories, listItems: vi.fn(),
+      readItem: vi.fn(), search: vi.fn() })) } as unknown as AgentHistoryCapabilityProvider
+    const driver: AgentRolloutDriver = { append: vi.fn(), reconcile: vi.fn(), flush: vi.fn() }
+    const invoke = createNodeHostInvoke({ agentHistoryProvider: provider,
+      agentRolloutDriver: driver, agentRolloutDriverLifecycle: 'borrowed' })
+    await expect(invoke('agent_history_list', { input: {} })).resolves.toEqual({ histories: [], warnings: [] })
+    expect(provider.forContext).toHaveBeenCalledOnce()
+    expect(driver.reconcile).not.toHaveBeenCalled()
   })
 })

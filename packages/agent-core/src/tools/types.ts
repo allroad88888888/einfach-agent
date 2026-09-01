@@ -1,28 +1,9 @@
 // tools/types.ts —— 工具统一抽象的类型（见 TOOLS-SPEC.md §2）。
 // 零依赖：不 import runtime/state/UI，工具与工厂都只依赖本文件。
 
-import type { DelegateAgentBatchResult, DelegateAgentInput } from '../runtime/delegationContract'
-import type {
-  CreatePlanInput,
-  PlanMutationResult,
-  PlanSnapshot,
-  SubmitStageResultInput,
-  UpdatePlanInput,
-} from '../planning/types'
-import type {
-  ExecutionHandle,
-  ExecutionJoinResult,
-  ExecutionObservation,
-} from '../execution/types'
-import type { SkillSummary } from '../skills/contracts'
 import type { ShellCommandInput, ShellCommandResult } from './shellCommandTypes'
 import type { ToolCallTiming } from './toolCallTiming'
-import type {
-  ViewImageInput,
-  ViewImageResult,
-  WorkspaceImageReadInput,
-  WorkspaceImageReadResult,
-} from './visionToolTypes'
+import type { ToolContext } from './context'
 
 /**
  * tool 的执行位置：
@@ -115,20 +96,6 @@ export type ToolResult =
 
 export type WorkspaceTaskKind = 'test' | 'build' | 'lint' | 'typecheck' | 'cargo_check'
 
-export interface SpawnAgentsOptions {
-  /**
-   * Runs inside the background execution before its node becomes succeeded.
-   * This is used by orchestration tools to atomically apply a child result to
-   * their own state machine without making the parent model loop wait.
-   */
-  onComplete?(result: DelegateAgentBatchResult): unknown | Promise<unknown>
-  /**
-   * Best-effort compensation hook. The execution node still becomes failed
-   * after this hook returns.
-   */
-  onError?(error: unknown): void | Promise<void>
-}
-
 export interface WorkspaceTaskInput {
   kind: WorkspaceTaskKind
   timeoutMs?: number
@@ -149,130 +116,7 @@ export interface WorkspaceTaskResult {
   kind: WorkspaceTaskKind | string
 }
 
-/**
- * 工具拿到的唯一副作用面（白名单）。工具不 import 任何 atom/store —— 一切副作用都在这里，
- * 由 harness 实现 + 集中施加 ghost/stale 守卫。
- */
-export interface ToolContext {
-  readonly sessionId: string
-  readonly signal: AbortSignal
-  /** 显示「工具正在干啥」。harness 写会话 store 的瞬态 toolActivityAtom（含 isCurrent 守卫）。 */
-  progress(text: string): void
-  /** 工具互调：经工厂转发，harness 加防环/限深/signal 透传（见 §8）。 */
-  callTool(name: string, args: unknown): Promise<ToolResult>
-  /**
-   * Context-free, no-tools structured extraction on the provider's low-cost
-   * lane. It is intentionally unavailable to ordinary model prompts and does
-   * not create a child agent or inherit the conversation transcript.
-   */
-  runLowCostExtraction?(input: {
-    systemPrompt: string
-    userPrompt: string
-    maxOutputTokens?: number
-  }): Promise<{ content: string; model: string }>
-  /**
-   * 启动树形 headless 子 agent；由 root runtime 注入，普通工具只能经该能力派活。
-   * 只有非阻塞这一条路：调用方拿到执行句柄，批次结果经 observe/join 取回。
-   */
-  spawnAgents?(input: DelegateAgentInput, options?: SpawnAgentsOptions): ExecutionHandle
-  /** 读取后台执行节点，不等待它完成。 */
-  observeExecution?(executionId: string): ExecutionObservation
-  /** 显式等待后台执行节点。 */
-  joinExecution?(executionId: string, timeoutMs?: number): Promise<ExecutionJoinResult>
-  /** 取消一个后台执行节点。 */
-  cancelExecution?(executionId: string): boolean
-  /** 结构化计划能力。状态由宿主的 PlanRuntime 管理，工具不得直接访问 atom/store。 */
-  getPlan?(): PlanSnapshot | undefined
-  createPlan?(input: CreatePlanInput): Promise<PlanMutationResult>
-  executePlan?(planId: string, revision: number): Promise<PlanMutationResult>
-  updatePlan?(input: UpdatePlanInput): Promise<PlanMutationResult>
-  submitStageResult?(input: SubmitStageResultInput): Promise<PlanMutationResult>
-  /** 执行桌面 shell command。工具只经 ctx 调用，Tauri invoke 细节集中在 runtime 桥接层。 */
-  runShell(input: ShellCommandInput): Promise<ShellCommandResult>
-  /** 读取文本文件；Auto 会话可读取 workspace 外路径。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
-  readWorkspaceFile?(input: {
-    path: string
-    maxBytes?: number
-    offset?: number
-    workspaceRoot?: string
-    allowExternalPaths?: boolean
-  }): Promise<unknown>
-  /** Read a bounded JPEG/PNG/WebP image through the confined host command. */
-  readWorkspaceImage?(input: WorkspaceImageReadInput): Promise<WorkspaceImageReadResult>
-  /** Ask an app-owned isolated vision runtime to inspect one confined workspace image. */
-  viewImage?(input: ViewImageInput): Promise<ViewImageResult>
-  /** 列出文件；Auto 会话可读取 workspace 外路径。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
-  listWorkspaceFiles?(input: {
-    path?: string
-    recursive?: boolean
-    maxEntries?: number
-    includeHidden?: boolean
-    workspaceRoot?: string
-    allowExternalPaths?: boolean
-  }): Promise<unknown>
-  /** 搜索文本文件；Auto 会话可读取 workspace 外路径。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
-  searchWorkspaceFiles?(input: {
-    query: string
-    path?: string
-    glob?: string
-    maxMatches?: number
-    workspaceRoot?: string
-    allowExternalPaths?: boolean
-  }): Promise<unknown>
-  /** 用 ripgrep 搜索文件；Auto 会话可搜索 workspace 外路径。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
-  rgSearchWorkspace?(input: {
-    query: string
-    path?: string
-    regex?: boolean
-    caseSensitive?: boolean
-    globs?: string[]
-    contextLines?: number
-    maxMatches?: number
-    workspaceRoot?: string
-    allowExternalPaths?: boolean
-  }): Promise<unknown>
-  /** 应用结构化 workspace patch。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
-  applyWorkspacePatch?(input: unknown): Promise<unknown>
-  /** 写入 workspace 文本文件。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
-  writeWorkspaceFile?(input: unknown): Promise<unknown>
-  /** 可撤回地删除 workspace 内的一个文件或目录。 */
-  deleteWorkspacePath?(input: unknown): Promise<unknown>
-  copyWorkspacePath?(input: unknown): Promise<unknown>
-  moveWorkspacePath?(input: unknown): Promise<unknown>
-  /** 回退一次由文件变更工具生成的 change set。 */
-  revertWorkspaceChange?(input: unknown): Promise<unknown>
-  /** 读取 git status/diff。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
-  getWorkspaceDiff?(input?: unknown): Promise<unknown>
-  /** 运行预定义 workspace 验证任务。具体 Tauri invoke 细节集中在 runtime 桥接层。 */
-  runWorkspaceTask?(input: WorkspaceTaskInput): Promise<WorkspaceTaskResult>
-  /** 渲染信息卡片（browser_action 用）。harness → addBrowserCard + stale 守卫。 */
-  renderCard(card: { title: string; body?: string }): { cardId: string } | { error: string }
-  /** 暂存待保存文件产物（save_file 用）。harness → addPendingArtifact + stale 守卫。 */
-  saveArtifact(file: { filename: string; content: string; mimeType?: string }):
-    | { artifactId: string }
-    | { error: string }
-  /** Skill 注册表只读入口（内置 + 扫描来的）。工具缺失 ctx 时回退模块级内置 registry。 */
-  skills?: {
-    /** 合并内置 + 扫描（`project/` 与 `user/`）Skills 的清单。 */
-    list(): SkillSummary[]
-    /**
-     * 解析扫描来的 skill（`project/` 或 `user/` 前缀）的读取坐标；内置名或未命中返回 undefined。
-     *
-     * `resources` 是扫描期发现的「资源键 → 根内相对路径」白名单：调用方只能拿键去查表，
-     * 绝不能用模型给的字符串拼路径（这是 L3 资源没有穿越面的原因，Rust 侧的 workspace
-     * confinement 只是兜底）。
-     *
-     * `rootPath` 是这两条路径相对的根：`project/` 是会话 workspace，`user/` 是主目录。
-     * **读取时必须原样传给桥**——用会话 workspace 去读主目录里的 SKILL.md 会被 confinement
-     * 挡下，而那时报的是「路径越界」，看上去像权限配置问题，跟真实原因（根取错了）无关。
-     */
-    resolveScannedSkill(name: string): {
-      filePath: string
-      resources: Record<string, string>
-      rootPath: string
-    } | undefined
-  }
-}
+export type { ToolContext } from './context'
 
 /** 统一抽象：一个工具要具备的全部。execute 同步/异步都行（工厂 await 吸收）。 */
 export interface Tool {
