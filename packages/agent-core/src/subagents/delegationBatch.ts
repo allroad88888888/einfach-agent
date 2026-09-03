@@ -1,4 +1,5 @@
 import { createConcurrencyLimiter } from '../runtime/concurrencyLimiter'
+import { createChildFinishedArchivePayload } from './archiveEventPayload'
 import { runChildAgent } from './childAgentLoop'
 import { createChildModelCaller } from './childModelClient'
 import {
@@ -29,7 +30,6 @@ import type {
   DelegateAgentInput,
   SubagentNodeRecord,
 } from './types'
-
 function childSummary(children: readonly ChildAgentResult[]): DelegateAgentBatchResult['summary'] {
   return {
     total: children.length,
@@ -38,7 +38,6 @@ function childSummary(children: readonly ChildAgentResult[]): DelegateAgentBatch
     cancelled: children.filter((child) => child.status === 'cancelled').length,
   }
 }
-
 function batchStatus(
   strategy: DelegateAgentInput['strategy'],
   summary: DelegateAgentBatchResult['summary'],
@@ -275,7 +274,8 @@ async function distillBatchSkills(
     }
     await Promise.all(children.map((child) => runtime.archive.bestEffortRecordEvent(
       context, archiveBasePath, 'child_finished', child.path,
-      { status: child.status, objective: child.objective, summary: child.summary, skillFiles: child.skillFiles, skillIds: child.skillIds, error: child.error },
+      createChildFinishedArchivePayload({ status: child.status, objective: child.objective, summary: child.summary,
+        skillFiles: child.skillFiles, skillIds: child.skillIds, changeSets: child.changeSets ?? [], ...(child.error ? { error: child.error } : {}) }),
     )))
     if (runtime.opts.core) {
       await persistTerminalChildBatch({

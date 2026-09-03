@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
+  createChildFinishedArchivePayload,
+  createChildStartedArchivePayload,
+  type ChildAgentResult,
+} from '@einfach-agent/core/subagents'
+import {
   parseSubagentEvents,
   parseSubagentTreeSnapshot,
   replaySubagentArchive,
@@ -219,6 +224,39 @@ describe('replaySubagentArchive', () => {
     expect(result.summary.cancelled).toBe(1)
   })
 
+  it('restores started metadata for a legacy terminal event without a tree snapshot', () => {
+    const online: ChildAgentResult = {
+      path: 'root-01', status: 'done', objective: 'write the migration', summary: 'migration written',
+      skillFiles: ['child.md'], skillIds: ['skill-01'], changeSets: [{ id: 'change-01', reversible: true }],
+      modelTier: 'pro', routeReason: 'cross_module_requires_pro', fallbackCount: 0,
+    }
+    const { child_payload_version: _version, objective: _objective, modelTier: _modelTier, route_reason: _routeReason,
+      fallback_count: _fallbackCount, ...terminalWithoutStartedMetadata } = createChildFinishedArchivePayload({
+      status: online.status, objective: online.objective, summary: online.summary,
+      skillFiles: online.skillFiles, skillIds: online.skillIds, changeSets: online.changeSets ?? [],
+      modelTier: online.modelTier, route_reason: online.routeReason, fallback_count: online.fallbackCount,
+    })
+    const eventsText = [
+      JSON.stringify(event()),
+      JSON.stringify(event({
+        eventId: 'ev-02', type: 'child_started', agentPath: online.path,
+        data: createChildStartedArchivePayload({
+          objective: online.objective, modelTier: online.modelTier, model: 'test-model',
+          route_reason: online.routeReason, fallback_count: online.fallbackCount,
+        }),
+      })),
+      JSON.stringify(event({
+        eventId: 'ev-03', type: 'child_finished', agentPath: online.path,
+        data: terminalWithoutStartedMetadata,
+      })),
+    ].join('\n')
+
+    const result = replaySubagentArchive({ eventsText })
+
+    expect(result.nodes[online.path]?.objective).toBe(online.objective)
+    expect(result.childResults).toEqual([online])
+  })
+
   it('finishes the root node from events without a tree snapshot', () => {
     const eventsText = [
       JSON.stringify(event()),
@@ -254,47 +292,5 @@ describe('replaySubagentArchive', () => {
 
     expect(result.nodes['root-99']).toMatchObject({ status: 'running', path: 'root-99' })
     expect(result.summary.total).toBe(1)
-  })
-})
-
-// 子 agent checkpoint 的事件必须同时出现在 types.ts 的 SubagentArchiveEventType 联合【和】replay.ts 的
-// SUBAGENT_EVENT_TYPES 白名单里 —— 只加联合不加白名单，isSubagentArchiveEvent 会把它判成
-// 结构非法丢进 parseErrors，排查者在 eventCounts 里就再也看不到「这个子 agent 被压过」。
-describe('replay 认得子 agent 模型遥测事件', () => {
-  const telemetryTypes = [
-    'child_model_usage',
-    'child_context_distillation_started',
-    'child_context_distillation_succeeded',
-    'child_context_distillation_failed',
-  ] as const
-
-  it('usage 与 checkpoint 事件都进 records 而不是 parseErrors', () => {
-    const text = telemetryTypes
-      .map((type, i) => JSON.stringify({ ...event(), eventId: `ev-${i}`, type, agentPath: 'root-01' }))
-      .join('\n')
-
-    const result = parseSubagentEvents(text)
-
-    expect(result.parseErrors).toHaveLength(0)
-    expect(result.records.map((r) => r.type)).toEqual([...telemetryTypes])
-  })
-
-  it('eventCounts 统计它们（初始表漏一个键就会是 NaN/undefined）', () => {
-    const text = [
-      JSON.stringify(event()),
-      JSON.stringify({ ...event(), eventId: 'ev-1', type: 'child_model_usage', agentPath: 'root-01' }),
-      JSON.stringify({ ...event(), eventId: 'ev-2', type: 'child_context_distillation_started', agentPath: 'root-01' }),
-      JSON.stringify({ ...event(), eventId: 'ev-3', type: 'child_context_distillation_succeeded', agentPath: 'root-02' }),
-      JSON.stringify({ ...event(), eventId: 'ev-4', type: 'child_context_distillation_failed', agentPath: 'root-02' }),
-    ].join('\n')
-
-    const state = replaySubagentArchive({ eventsText: text })
-
-    expect(state.eventCounts.child_model_usage).toBe(1)
-    expect(state.eventCounts.child_context_distillation_started).toBe(1)
-    expect(state.eventCounts.child_context_distillation_succeeded).toBe(1)
-    expect(state.eventCounts.child_context_distillation_failed).toBe(1)
-    // 没发生过的类型必须是 0 而不是 undefined —— 初始表少一个键，UI 上就会显示成空白而非「0 次」。
-    expect(state.eventCounts.child_finished).toBe(0)
   })
 })

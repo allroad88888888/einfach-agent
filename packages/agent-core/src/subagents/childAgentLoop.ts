@@ -26,6 +26,7 @@ import type { ChildModelCaller } from './childModelClient'
 import type { ChildContextCheckpoint } from './childContextCheckpoint'
 import { createChildRolloutRecorder } from './childRolloutRecorder'
 import { assertNormalChildFinish } from './childFinishReason'
+import { createChildStartedArchivePayload } from './archiveEventPayload'
 import { dispatchChildTimedTools, finalizeChildResult } from './childResult'
 import type {
   ChildAgentResult,
@@ -133,7 +134,7 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
     inheritedSkillFiles: [...node.inheritedSkillFiles],
     inheritedSkillIds: [...node.inheritedSkillIds],
   })
-  await runtime.archive.recordEvent(context, archiveBasePath, 'child_started', node.path, {
+  await runtime.archive.recordEvent(context, archiveBasePath, 'child_started', node.path, createChildStartedArchivePayload({
     objective: spec.objective,
     mode: spec.mode,
     modelTier: modelSelection.routeDecision.tier,
@@ -145,7 +146,7 @@ export async function runChildAgent(input: RunChildAgentInput): Promise<ChildAge
     confirmedTools,
     skillId: localSkill.skillId,
     inheritedSkillIds: node.inheritedSkillIds,
-  })
+  }))
 
   const dispatchChildTiming = (timing: 'subagentStart' | 'subagentEnd', turn: number): Promise<void> => (
     dispatchChildTimedTools({

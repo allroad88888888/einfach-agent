@@ -84,6 +84,24 @@ export type {
 } from './types'
 
 // ---------------------------------------------------------------------------
+// 子结果归档事件契约——producer 与 replay 必须使用同一版本化投影
+// ---------------------------------------------------------------------------
+export {
+  CHILD_ARCHIVE_EVENT_PAYLOAD_VERSION,
+  createChildFinishedArchivePayload,
+  createChildStartedArchivePayload,
+  decodeChildFinishedArchivePayload,
+  decodeChildStartedArchivePayload,
+} from './archiveEventPayload'
+export type {
+  ChildArchiveChangeSet,
+  ChildFinishedArchivePayload,
+  ChildStartedArchivePayload,
+  DecodedChildFinishedArchivePayload,
+  DecodedChildStartedArchivePayload,
+} from './archiveEventPayload'
+
+// ---------------------------------------------------------------------------
 // agent path 寻址格式（`./path`）——归档、调度、树视图三方必须按同一格式解析
 // ---------------------------------------------------------------------------
 export {

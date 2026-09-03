@@ -1,5 +1,7 @@
 import {
   compareAgentPaths,
+  decodeChildFinishedArchivePayload,
+  decodeChildStartedArchivePayload,
   type ChildAgentResult,
   type SubagentArchiveEvent,
   type SubagentArchiveEventType,
@@ -19,7 +21,6 @@ import { SUBAGENT_EVENT_TYPES, parseSubagentEvents } from './replayEventSchema'
 import {
   appendUnique,
   asStringArray,
-  asStringOrUndefined,
   cloneNode,
   directChildIndex,
   incRecord,
@@ -65,6 +66,8 @@ export function replaySubagentArchive(input: {
   const firstTimestamp = inferTimestamp(first?.timestamp)
 
   const nodeMap: Record<string, SubagentNodeRecord> = {}
+  const snapshotObjectivePaths = new Set(treeResult.records.flatMap((record) => record.objectivePaths ?? []))
+  const startedPayloads = new Map<string, ReturnType<typeof decodeChildStartedArchivePayload>>()
   const childResults: ChildAgentResult[] = []
   // 从同一份白名单派生，避免在本文件里维护第二份 15 行的类型清单。
   const eventCounts = Object.fromEntries(
@@ -83,6 +86,16 @@ export function replaySubagentArchive(input: {
     const path = event.agentPath
     if (!path) continue
     const data = event.data ?? {}
+    const started = event.type === 'child_started' ? decodeChildStartedArchivePayload(data) : undefined
+    const finished = event.type === 'child_finished' ? decodeChildFinishedArchivePayload(data) : undefined
+    if ((event.type === 'child_started' || event.type === 'child_finished') && !started && !finished && hasPayloadVersion(data)) {
+      parseErrors.push({
+        line: 0,
+        raw: JSON.stringify(event),
+        error: payloadError(event.type, data.child_payload_version),
+      })
+      continue
+    }
     let node = nodeMap[path]
     if (!node) {
       node = newNode({ conversationId, runId, treeId, createdAt: firstTimestamp }, path)
@@ -119,15 +132,17 @@ export function replaySubagentArchive(input: {
     }
 
     if (event.type === 'child_started') {
+      if (started) startedPayloads.set(path, started)
       node.status = 'running'
+      if (!snapshotObjectivePaths.has(path) && started?.objective?.trim()) node.objective = started.objective.trim()
       const existingLocalSkillIds = asStringArray(data.skillIds)
       if (existingLocalSkillIds && existingLocalSkillIds.length > 0) {
         node.localSkillIds = [...existingLocalSkillIds]
       }
-      if (typeof data.skillId === 'string') {
-        node.localSkillIds = appendUnique(node.localSkillIds, data.skillId)
+      if (started?.skillId) {
+        node.localSkillIds = appendUnique(node.localSkillIds, started.skillId)
       }
-      if (Array.isArray(data.inheritedSkillIds)) node.inheritedSkillIds = [...(data.inheritedSkillIds as string[])]
+      if (started?.inheritedSkillIds) node.inheritedSkillIds = [...started.inheritedSkillIds]
       if (typeof data.path === 'string' && data.path.endsWith('.md')) {
         node.localSkillFiles = appendUnique(node.localSkillFiles, data.path)
       }
@@ -138,30 +153,26 @@ export function replaySubagentArchive(input: {
     }
 
     if (event.type === 'child_finished') {
-      node.status = data.status === 'failed'
-        ? 'failed'
-        : data.status === 'cancelled'
-          ? 'cancelled'
-          : 'done'
-      if (typeof data.objective === 'string' && data.objective.trim()) node.objective = data.objective.trim()
-      if (typeof data.resultFile === 'string') node.resultFile = data.resultFile
-      if (typeof data.error === 'string') node.error = data.error
-      if (Array.isArray(data.skillIds)) node.localSkillIds = [...(data.skillIds as string[])]
-      if (Array.isArray(data.skillFiles)) node.localSkillFiles = [...(data.skillFiles as string[])]
+      const started = startedPayloads.get(path)
+      node.status = finished?.status ?? 'done'
+      if (finished?.objective?.trim()) node.objective = finished.objective.trim()
+      if (finished?.resultFile) node.resultFile = finished.resultFile
+      if (finished?.error) node.error = finished.error
+      if (finished?.skillIds) node.localSkillIds = [...finished.skillIds]
+      if (finished?.skillFiles) node.localSkillFiles = [...finished.skillFiles]
 
       childResults.push({
         path: node.path,
         status: node.status === 'failed' ? 'failed' : node.status === 'cancelled' ? 'cancelled' : 'done',
-        objective: asStringOrUndefined(data.objective) || node.objective,
-        summary: asStringOrUndefined(data.summary) || `child ${node.path} completed`,
+        objective: finished?.objective || node.objective || started?.objective || `agent ${node.path}`,
+        summary: finished?.summary || `child ${node.path} completed`,
         resultFile: node.resultFile,
         skillFiles: [...node.localSkillFiles],
         skillIds: [...node.localSkillIds],
-        modelTier: data.modelTier === 'flash' ? 'flash' : data.modelTier === 'pro' ? 'pro' : undefined,
-        routeReason: asStringOrUndefined(data.route_reason),
-        fallbackCount: typeof data.fallback_count === 'number' && Number.isFinite(data.fallback_count)
-          ? Math.max(0, Math.floor(data.fallback_count))
-          : undefined,
+        ...(finished?.changeSets ? { changeSets: finished.changeSets } : {}),
+        modelTier: finished?.modelTier ?? started?.modelTier,
+        routeReason: finished?.routeReason ?? started?.routeReason,
+        fallbackCount: finished?.fallbackCount ?? started?.fallbackCount,
         error: node.error,
       })
       continue
@@ -224,4 +235,14 @@ export function replaySubagentArchive(input: {
     childResults,
     summary,
   }
+}
+
+function hasPayloadVersion(data: Record<string, unknown>): boolean {
+  return Object.prototype.hasOwnProperty.call(data, 'child_payload_version')
+}
+
+function payloadError(type: 'child_started' | 'child_finished', version: unknown): string {
+  return version === 1
+    ? `invalid v1 ${type} payload`
+    : `unsupported ${type} payload version ${JSON.stringify(version)}`
 }

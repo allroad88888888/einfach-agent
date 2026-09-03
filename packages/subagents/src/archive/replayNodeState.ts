@@ -13,6 +13,8 @@ export const ROOT_AGENT_PATH = 'root'
 
 export interface SubagentTreeSnapshot {
   nodes: SubagentNodeRecord[]
+  /** Paths whose snapshot contains an explicit objective, rather than a parser fallback. */
+  objectivePaths?: string[]
 }
 
 export function asStringArray(value: unknown): string[] | undefined {
@@ -157,6 +159,7 @@ export function parseSubagentTreeSnapshot(text: string): JsonlParseResult<Subage
   }
 
   const nodes: SubagentNodeRecord[] = []
+  const objectivePaths: string[] = []
   const parseErrors: ParseError[] = []
   maybeNodes.forEach((rawNode, index) => {
     if (!isRecord(rawNode)) {
@@ -177,7 +180,8 @@ export function parseSubagentTreeSnapshot(text: string): JsonlParseResult<Subage
       return
     }
     nodes.push(node)
+    if (asStringOrUndefined(rawNode.objective)?.trim()) objectivePaths.push(node.path)
   })
 
-  return { records: [{ nodes }], parseErrors }
+  return { records: [{ nodes, objectivePaths }], parseErrors }
 }

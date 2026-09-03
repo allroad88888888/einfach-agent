@@ -351,6 +351,10 @@ describe('createDelegationRuntime · 预算与并发', () => {
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line) as { type: string; data?: Record<string, unknown> })
+    expect(events.find((event) => event.type === 'child_finished')?.data).toMatchObject({
+      child_payload_version: 1, status: 'failed', changeSets: [],
+    })
+    expect(events.find((event) => event.type === 'child_finished')?.data).not.toHaveProperty('path')
     expect(events.find((event) => event.type === 'delegate_finished')?.data?.status).toBe('failed')
     const usageFailures = events.filter((event) => event.type === 'child_model_usage')
     expect(usageFailures.length).toBeGreaterThan(0)

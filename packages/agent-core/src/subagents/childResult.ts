@@ -6,6 +6,7 @@ import {
   type TimedToolRegistration,
 } from '../runtime/timedDispatch'
 import type { ToolResult } from '../tools/types'
+import { createChildFinishedArchivePayload } from './archiveEventPayload'
 import { loadVisibleChildTool } from './childToolVisibility'
 import { persistTerminalChildResults } from './continuationLifecycle'
 import type { ChildAgentResult } from './types'
@@ -160,11 +161,11 @@ export async function finalizeChildResult(input: {
     archiveBasePath,
     'child_finished',
     node.path,
-    {
-      status, objective: spec.objective, summary, ...(input.error ? { error: input.error } : {}),
-      ...(resultFile ? { resultFile } : {}), skillFiles, skillIds,
+    createChildFinishedArchivePayload({
+      status, objective: spec.objective, summary, skillFiles, skillIds, changeSets: input.changeSets,
+      ...(input.error ? { error: input.error } : {}), ...(resultFile ? { resultFile } : {}),
       modelTier: input.modelTier, route_reason: input.routeReason, fallback_count: input.fallbackCount,
-    },
+    }),
   )
   if (runtime.opts.core) {
     await persistTerminalChildResults({

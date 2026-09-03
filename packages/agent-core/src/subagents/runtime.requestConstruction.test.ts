@@ -249,6 +249,7 @@ describe('createDelegationRuntime · 请求体构造与工具预载', () => {
       summary: 'done',
     })
     expect(events.find((event) => event.type === 'child_finished')?.data?.skillFiles).toBeInstanceOf(Array)
+    expect(events.find((event) => event.type === 'child_finished')?.data?.changeSets).toEqual([])
     expect(events.find((event) => event.type === 'delegate_finished')?.data?.status).toBe('done')
     delegateRuntime.dispose?.()
   })
