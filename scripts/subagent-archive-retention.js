@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { appendFile, copyFile, lstat, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { acquireArchivePathLocks } from './subagent-archive-lock.js'
+import { resolveArchiveRunPath, safeArchiveSegment } from './subagent-archive-paths.js'
 import {
   createArchiveRetentionManifest,
   isDerivedArchivePath,
@@ -83,11 +84,6 @@ function helpText() {
   ].join('\n') + '\n'
 }
 
-function safeSegment(value) {
-  const safe = value.trim().replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 96)
-  return safe && safe !== '.' && safe !== '..' ? safe : 'unknown'
-}
-
 function isInside(parent, child) {
   const diff = relative(parent, child)
   return diff === '' || (!diff.startsWith('..') && !isAbsolute(diff))
@@ -123,7 +119,7 @@ function parseRunRecord(text, path) {
 }
 
 async function loadRun(archiveRoot, conversationId, runId) {
-  const runPath = resolve(archiveRoot, 'conversations', safeSegment(conversationId), 'runs', safeSegment(runId))
+  const runPath = resolveArchiveRunPath(archiveRoot, conversationId, runId)
   if (!(await pathType(runPath))?.isDirectory()) throw new Error(`run archive not found: ${conversationId}/${runId}`)
   const files = await collectFiles(runPath)
   const runFile = files.find((file) => file.relativePath === 'run.json')
@@ -131,7 +127,7 @@ async function loadRun(archiveRoot, conversationId, runId) {
   const record = parseRunRecord(await readFile(runFile.path, 'utf8'), runFile.path)
   const startedAt = Date.parse(record.startedAt)
   return {
-    conversationId: safeSegment(conversationId), runId: safeSegment(runId), runPath, record,
+    conversationId: safeArchiveSegment(conversationId), runId: safeArchiveSegment(runId), runPath, record,
     sortAt: Number.isFinite(startedAt) ? startedAt : (await stat(runPath)).mtimeMs,
     files, reclaimableBytes: files.filter((file) => isDerivedArchivePath(file.relativePath)).reduce((sum, file) => sum + file.bytes, 0),
   }

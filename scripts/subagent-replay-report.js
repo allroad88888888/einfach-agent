@@ -2,16 +2,8 @@
 
 import { readFile, writeFile } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
+import { resolveArchiveRunPaths } from './subagent-archive-paths.js'
 import { parseSubagentEvents, parseSubagentTreeSnapshot, replaySubagentArchive, formatReplayReport } from './subagent-replay-lib.js'
-
-function safeSegment(value) {
-  const safe = value
-    .trim()
-    .replace(/[^a-zA-Z0-9._-]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 96)
-  return safe || 'unknown'
-}
 
 function parseArgs(argv) {
   const args = argv.slice(2)
@@ -121,19 +113,7 @@ function printHelp() {
 }
 
 function resolveArchivePaths(opts) {
-  const archiveRoot = resolve(
-    opts.basePath,
-    '.webAgent-archive',
-    'conversations',
-    safeSegment(opts.conversationId),
-    'runs',
-    safeSegment(opts.runId),
-  )
-
-  return {
-    eventsPath: resolve(archiveRoot, 'events.jsonl'),
-    treePath: resolve(archiveRoot, 'tree.json'),
-  }
+  return resolveArchiveRunPaths(resolve(opts.basePath, '.webAgent-archive'), opts.conversationId, opts.runId)
 }
 
 function resolvePath(value, basePath) {

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { describe, expect, it } from 'vitest'
+import { resolveArchiveRunPath } from './subagent-archive-paths.js'
 import { createArchiveRetentionManifest, planArchiveRetention } from './subagent-archive-retention-lib.js'
 
 const execFileAsync = promisify(execFile)
@@ -98,5 +99,17 @@ describe('subagent archive retention', () => {
     expect(manifest.selectedRuns[0].files.map((file) => file.path)).toContain('events.jsonl')
     expect(await readFile(join(runRoot, 'events.jsonl'), 'utf8')).toBe(events)
     expect(await readFile(join(runRoot, 'tree.json'), 'utf8')).toBe(tree)
+  })
+
+  it('exports a run addressed through the shared safe archive mapping', async () => {
+    const { base, exportPath } = await fixture()
+    const runRoot = resolveArchiveRunPath(join(base, '.webAgent-archive'), '..', '.')
+    await mkdir(runRoot, { recursive: true })
+    await writeFile(join(runRoot, 'run.json'), '{"status":"delegated"}\n')
+    await writeFile(join(runRoot, 'events.jsonl'), '')
+
+    const result = await command(base, '--export', exportPath, '--conversation', '..', '--run', '.', '--write')
+
+    expect(result.stdout).toContain('exported=unknown/unknown')
   })
 })
