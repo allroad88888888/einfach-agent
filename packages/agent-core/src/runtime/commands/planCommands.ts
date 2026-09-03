@@ -1,6 +1,5 @@
-import { activeSessionIdAtom, sessionsAtom } from '../../state/rootStore'
+import { activeSessionIdAtom } from '../../state/rootStore'
 import { itemsAtom, runAtom } from '../../state/sessionAtoms'
-import { getPlan, setPlan } from '../../state/planWriters'
 import { appendItem, setRun } from '../../state/sessionWriters'
 import { pruneBrowserCardsAfter, pruneRuntimeTranscriptEventsAfter, setWithdrawnTurnNotice } from '../../state/transientAtoms'
 import { revertToPlanStageCheckpoint } from '../../state/planStageRewind'
@@ -9,69 +8,7 @@ import type { CoreInstance } from '../core/coreInstance'
 import { newId } from '../newId'
 import { assertRunStatus, resumePausedRun } from './runCommands'
 import { currentTurnHasSideEffects } from './turnSafety'
-
-function withoutUndefined(run: RunState): RunState {
-  return Object.fromEntries(Object.entries(run).filter(([, value]) => value !== undefined)) as RunState
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-function failPlanPersistence(
-  core: CoreInstance,
-  sessionId: string,
-  reason: string,
-  error: string,
-  fallbackRun?: RunState,
-): Error {
-  const run = core.findSessionStore(sessionId)?.store.getter(runAtom) ?? fallbackRun
-  if (run && core.rootStore.getter(sessionsAtom)[sessionId]) {
-    setRun(sessionId, withoutUndefined({
-      ...run,
-      status: 'interrupted',
-      error: `恢复快照未确认：${error}`,
-    }), core)
-  }
-  core.observability.addEvent('agent.plan_recovery_persistence_blocked', {
-    attrs: {
-      sessionId,
-      ...(run ? { runId: run.runId } : {}),
-      reason,
-      error,
-    },
-  })
-  return new Error(error)
-}
-
-async function persistPlanStage(
-  core: CoreInstance,
-  sessionId: string,
-  reason: string,
-  fallbackRun?: RunState,
-): Promise<void> {
-  let outcome
-  try {
-    outcome = await core.persistence.persistRecovery(sessionId, reason)
-  } catch (error) {
-    throw failPlanPersistence(core, sessionId, reason, errorMessage(error), fallbackRun)
-  }
-  if (outcome === undefined || outcome.status === 'saved') return
-  throw failPlanPersistence(core, sessionId, reason, `Recovery persistence returned ${outcome.status}.`, fallbackRun)
-}
-
-function planRuntimeFor(core: CoreInstance, sessionId: string, fallbackRun?: RunState) {
-  return core.planRuntime?.({
-    get: () => getPlan(sessionId, core),
-    set: async (plan) => {
-      if (!core.rootStore.getter(sessionsAtom)[sessionId]) {
-        throw failPlanPersistence(core, sessionId, 'plan.stage', 'Plan session is no longer available.', fallbackRun)
-      }
-      setPlan(sessionId, plan, core)
-      await persistPlanStage(core, sessionId, 'plan.stage', fallbackRun)
-    },
-  })
-}
+import { blockPlanPersistence, createPlanPersistenceAdapter } from '../planPersistence'
 
 function appendPlanRuntimeUnavailable(sessionId: string, core: CoreInstance, action: string): void {
   appendItem(sessionId, {
@@ -86,7 +23,7 @@ async function resumePlanApproval(id: string, run: RunState, core: CoreInstance)
     await resumePausedRun(id, run, { pendingPlanApproval: undefined }, core)
     return true
   } catch (error) {
-    failPlanPersistence(core, id, 'plan.approval_resume', errorMessage(error), run)
+    blockPlanPersistence(core, id, 'plan.approval_resume', error instanceof Error ? error.message : String(error), run)
     return false
   }
 }
@@ -99,7 +36,7 @@ export function createPlanCommands(core: CoreInstance, stopRun: () => void) {
     const run = core.getSessionStore(id).store.getter(runAtom)
     const pending = run?.pendingPlanApproval
     if (!assertRunStatus(run, 'waiting_plan_approval') || !pending) return false
-    const runtime = planRuntimeFor(core, id)
+    const runtime = createPlanPersistenceAdapter(core, id).planRuntime
     if (!runtime) {
       appendItem(id, {
         id: newId(),
@@ -128,7 +65,8 @@ export function createPlanCommands(core: CoreInstance, stopRun: () => void) {
   async function rollbackPlanStage(planId: string, revision: number, stageId: string): Promise<boolean> {
     const id = core.rootStore.getter(activeSessionIdAtom)
     if (!id) return false
-    const initialRuntime = planRuntimeFor(core, id)
+    const planPersistence = createPlanPersistenceAdapter(core, id)
+    const initialRuntime = planPersistence.planRuntime
     if (!initialRuntime) {
       appendPlanRuntimeUnavailable(id, core, '回退计划阶段')
       return false
@@ -144,7 +82,7 @@ export function createPlanCommands(core: CoreInstance, stopRun: () => void) {
     setRun(id, undefined, core)
     const point = revertToPlanStageCheckpoint(id, stageId, core)
     if (!point) {
-      const runtime = planRuntimeFor(core, id, stoppedRun)
+      const runtime = createPlanPersistenceAdapter(core, id, stoppedRun).planRuntime
       if (!runtime) return false
       try {
         return (await runtime.rollbackStage(planId, revision, stageId)).ok
@@ -153,7 +91,7 @@ export function createPlanCommands(core: CoreInstance, stopRun: () => void) {
       }
     }
     try {
-      await persistPlanStage(core, id, 'plan.stage_rollback', stoppedRun)
+      await planPersistence.persist('plan.stage_rollback', stoppedRun)
     } catch {
       return false
     }

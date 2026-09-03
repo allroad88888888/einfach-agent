@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { PlanMutationResult, PlanRuntimeFactory, PlanSnapshot } from '../../planning/types'
 import { activeSessionIdAtom, sessionsAtom } from '../../state/rootStore'
-import { itemsAtom, planAtom, runAtom } from '../../state/sessionAtoms'
+import { itemsAtom, planAtom, planStageCheckpointsAtom, runAtom } from '../../state/sessionAtoms'
 import { createCoreInstance } from '../core/coreInstance'
 import type { RecoveryWriteOutcome } from '../recoveryWriter'
 import { createPlanCommands } from './planCommands'
@@ -191,5 +191,32 @@ describe('planCommands 的 planRuntime 槽', () => {
     expect(continued).toBe(false)
     expect(core.getSessionStore(sessionId).store.getter(runAtom)).toMatchObject({ status: 'interrupted' })
     expect(event).toHaveBeenCalledWith('agent.plan_recovery_persistence_blocked', expect.anything())
+  })
+
+  it('checkpoint 回退复用首次 runtime adapter，并以已停止的运行报告持久化失败', async () => {
+    const factory = vi.fn(rollbackRuntime())
+    const core = createCoreInstance({ planRuntime: factory })
+    seed(core)
+    const checkpointPlan = activePlan()
+    checkpointPlan.revision = 0
+    checkpointPlan.stages[0] = { ...checkpointPlan.stages[0], status: 'pending', evidence: [] }
+    core.getSessionStore(sessionId).store.setter(planStageCheckpointsAtom, [{
+      stageId: 'stage-1', plan: checkpointPlan, itemCount: 0, createdAt: 1,
+    }])
+    const persist = vi.spyOn(core.persistence, 'persistRecovery').mockRejectedValue(new Error('disk unavailable'))
+    const event = vi.spyOn(core.observability, 'addEvent')
+
+    await expect(createPlanCommands(core, vi.fn()).rollbackPlanStage('plan-1', 1, 'stage-1')).resolves.toBe(false)
+
+    expect(factory).toHaveBeenCalledTimes(1)
+    expect(persist).toHaveBeenCalledWith(sessionId, 'plan.stage_rollback')
+    expect(core.getSessionStore(sessionId).store.getter(runAtom)).toMatchObject({
+      runId: 'run-1', status: 'interrupted', error: '恢复快照未确认：disk unavailable',
+    })
+    expect(event).toHaveBeenCalledWith('agent.plan_recovery_persistence_blocked', expect.objectContaining({
+      attrs: expect.objectContaining({
+        sessionId, runId: 'run-1', reason: 'plan.stage_rollback', error: 'disk unavailable',
+      }),
+    }))
   })
 })

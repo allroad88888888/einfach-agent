@@ -33,8 +33,8 @@
 | 004 | 所有归档 CLI 使用同一安全路径映射 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
 | 005 | history target 与查询枚举只有一个契约 owner | gpt-5.6-sol | pending | 2026-09-03 | |
 | 006 | 所有恢复判据使用同一当前轮边界 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
-| 007 | 命令与模型工具共享同一计划持久化屏障 | gpt-5.6-terra | running | 2026-09-03 | |
-| 008 | delegate_agent schema、解析与文档由同一能力集合驱动 | gpt-5.6-terra | pending | 2026-09-03 | |
+| 007 | 命令与模型工具共享同一计划持久化屏障 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
+| 008 | delegate_agent schema、解析与文档由同一能力集合驱动 | gpt-5.6-terra | running | 2026-09-03 | |
 | 009 | workspace mutation 类型与 change context 只有一个 owner | gpt-5.6-sol | pending | 2026-09-03 | |
 | 011 | history 通过 persistence facade 读取 recovery 数据 | gpt-5.6-terra | pending | 2026-09-03 | |
 | 012 | 三个平台 shell 工具共享同一执行内核 | gpt-5.6-terra | pending | 2026-09-03 | |
@@ -60,3 +60,8 @@
 - 2026-09-03：006 独立审查通过；编排者复跑 3 个文件、17 tests 通过。Minor：未消费的 `commands/turnSafety.ts` 另有同名不同语义函数，留到最终清理裁决。
 - 2026-09-03：006 已提交为 `7939d09`；依赖解锁，派发 007。
 - 2026-09-03：001 R1 复审通过；编排者复跑 7 个文件、30 tests 通过。指定 tsc 仅受范围外 md?raw 声明阻断，留待最终验证处理。
+- 2026-09-03：001 已提交为 `4b911d1`；依赖解锁，派发 008。
+- 裁决: 003 纳入 `packages/host-node/src/model/providerRoute.ts` — 它是 catalog route entry 的直接消费方，必须随共享类型接线 — 若不纳入，任务 files 与必要产品 diff 不一致。
+- 2026-09-03：007 首审 REJECTED：checkpoint rollback 重建 adapter，导致 `PlanRuntimeFactory` 多调用一次；进入 R1。
+- 2026-09-03：003 首审 REJECTED：共享 policy 新增了第二份官方 origin 硬编码；进入 R1，由 agent-ai 无环叶模块统一 owner。
+- 2026-09-03：007 R1 复审通过；编排者复跑 3 个文件、19 tests 通过，准予提交。
