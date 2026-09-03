@@ -6,7 +6,15 @@ import {
   terminalChildContinuationDescriptor,
 } from './continuationDescriptor'
 import { parseChildContinuation, readChildContinuationDescriptor } from './continuationDescriptorParser'
-import type { DelegateAgentChildSpec, SubagentNodeRecord } from './types'
+import { DELEGATABLE_DANGEROUS_TOOLS } from '../runtime/dangerousTools'
+import { SUBAGENT_TOOL_PROFILES } from './toolProfile'
+import {
+  SUBAGENT_MODEL_TIERS,
+  SUBAGENT_RISK_LEVELS,
+  SUBAGENT_TASK_CATEGORIES,
+  type DelegateAgentChildSpec,
+  type SubagentNodeRecord,
+} from './types'
 
 const task: DelegateAgentChildSpec = {
   objective: 'verify recovery behavior',
@@ -83,6 +91,45 @@ function terminalSpec(): Record<string, JsonValue> {
 }
 
 describe('child continuation descriptor recovery parser', () => {
+  const capabilityTasks: DelegateAgentChildSpec[] = [
+    ...SUBAGENT_MODEL_TIERS.map((modelTier) => ({ objective: task.objective, modelTier })),
+    ...SUBAGENT_TASK_CATEGORIES.map((taskCategory) => ({ objective: task.objective, taskCategory })),
+    ...SUBAGENT_RISK_LEVELS.map((riskLevel) => ({ objective: task.objective, riskLevel })),
+    ...SUBAGENT_TOOL_PROFILES.map((toolProfile) => ({ objective: task.objective, toolProfile })),
+    ...DELEGATABLE_DANGEROUS_TOOLS.map((confirmedTool) => ({
+      objective: task.objective,
+      confirmedTools: [confirmedTool],
+    })),
+  ]
+
+  it.each(capabilityTasks)('round-trips canonical capability values through recovery: %j', (inputTask) => {
+    const descriptor = createChildContinuationDescriptor(node(), inputTask)
+
+    expect(readChildContinuationDescriptor(continuation({ descriptor }))?.task).toEqual(inputTask)
+  })
+
+  const unknownCapabilityCases: Array<[field: string, value: JsonValue]> = [
+    ['modelTier', 'unknown_tier'],
+    ['taskCategory', 'unknown_category'],
+    ['riskLevel', 'unknown_risk'],
+    ['toolProfile', 'unknown_profile'],
+    ['confirmedTools', ['read_file']],
+  ]
+
+  it.each(unknownCapabilityCases)('fails closed for unknown %s capability values', (field, value) => {
+    const malformed = continuation()
+    malformed.spec = {
+      ...activeSpec(),
+      task: { objective: task.objective, [field]: value },
+    }
+
+    expect(readChildContinuationDescriptor(malformed)).toBeUndefined()
+    expect(parseChildContinuation(malformed)).toEqual({
+      kind: 'requires_reconciliation',
+      reason: 'invalid child descriptor',
+    })
+  })
+
   it('never marks restored queued or outcome-unknown work runnable', () => {
     expect(parseChildContinuation(continuation())).toEqual({
       kind: 'requires_reconciliation',

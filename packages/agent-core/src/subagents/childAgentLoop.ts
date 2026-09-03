@@ -6,6 +6,7 @@ import {
   type ModelItem,
 } from '@einfach-agent/ai'
 import { buildTurnTools, narrowToolCalls } from '../runtime/modelTurn'
+import type { DelegatableDangerousTool } from '../runtime/dangerousTools'
 import {
   callSelectedSubagentModel,
   createSubagentModelSelection,
@@ -59,7 +60,7 @@ export interface RunChildAgentInput {
   delegationState: DelegationCallState
   budget: TreeRuntimeBudget
   toolProfile: SubagentToolProfile
-  confirmedTools: readonly string[]
+  confirmedTools: readonly DelegatableDangerousTool[]
 }
 
 function refreshChildVisibleTools(

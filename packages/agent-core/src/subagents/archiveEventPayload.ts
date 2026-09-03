@@ -1,7 +1,19 @@
+import {
+  isDelegatableDangerousTool,
+  type DelegatableDangerousTool,
+} from '../runtime/dangerousTools'
+import {
+  SUBAGENT_MODEL_TIERS,
+  type SubagentModelTier,
+} from './types'
+import {
+  SUBAGENT_TOOL_PROFILES,
+  type SubagentToolProfile,
+} from './toolProfile'
+
 export const CHILD_ARCHIVE_EVENT_PAYLOAD_VERSION = 1 as const
 
 type ChildArchiveStatus = 'done' | 'failed' | 'cancelled'
-type ChildArchiveModelTier = 'flash' | 'pro'
 
 export interface ChildArchiveChangeSet {
   id: string
@@ -12,13 +24,13 @@ export interface ChildStartedArchivePayload extends Record<string, unknown> {
   child_payload_version: typeof CHILD_ARCHIVE_EVENT_PAYLOAD_VERSION
   objective: string
   mode?: string
-  modelTier?: ChildArchiveModelTier
+  modelTier?: SubagentModelTier
   model?: string
   route_reason?: string
   fallback_count?: number
   requiresTemporalNormalization?: boolean
-  toolProfile?: string
-  confirmedTools?: readonly string[]
+  toolProfile?: SubagentToolProfile
+  confirmedTools?: readonly DelegatableDangerousTool[]
   skillId?: string
   inheritedSkillIds?: readonly string[]
 }
@@ -26,13 +38,13 @@ export interface ChildStartedArchivePayload extends Record<string, unknown> {
 type ChildStartedArchivePayloadInput = {
   objective: string
   mode?: string
-  modelTier?: ChildArchiveModelTier
+  modelTier?: SubagentModelTier
   model?: string
   route_reason?: string
   fallback_count?: number
   requiresTemporalNormalization?: boolean
-  toolProfile?: string
-  confirmedTools?: readonly string[]
+  toolProfile?: SubagentToolProfile
+  confirmedTools?: readonly DelegatableDangerousTool[]
   skillId?: string
   inheritedSkillIds?: readonly string[]
 }
@@ -46,7 +58,7 @@ export interface ChildFinishedArchivePayload extends Record<string, unknown> {
   skillFiles: string[]
   skillIds: string[]
   changeSets: ChildArchiveChangeSet[]
-  modelTier?: ChildArchiveModelTier
+  modelTier?: SubagentModelTier
   route_reason?: string
   fallback_count?: number
   error?: string
@@ -60,7 +72,7 @@ type ChildFinishedArchivePayloadInput = {
   skillFiles: string[]
   skillIds: string[]
   changeSets: ChildArchiveChangeSet[]
-  modelTier?: ChildArchiveModelTier
+  modelTier?: SubagentModelTier
   route_reason?: string
   fallback_count?: number
   error?: string
@@ -68,9 +80,11 @@ type ChildFinishedArchivePayloadInput = {
 
 export interface DecodedChildStartedArchivePayload {
   objective?: string
-  modelTier?: ChildArchiveModelTier
+  modelTier?: SubagentModelTier
   routeReason?: string
   fallbackCount?: number
+  toolProfile?: SubagentToolProfile
+  confirmedTools?: DelegatableDangerousTool[]
   skillId?: string
   inheritedSkillIds?: string[]
 }
@@ -83,7 +97,7 @@ export interface DecodedChildFinishedArchivePayload {
   skillFiles?: string[]
   skillIds?: string[]
   changeSets?: ChildArchiveChangeSet[]
-  modelTier?: ChildArchiveModelTier
+  modelTier?: SubagentModelTier
   routeReason?: string
   fallbackCount?: number
   error?: string
@@ -125,8 +139,8 @@ export function decodeChildStartedArchivePayload(value: unknown): DecodedChildSt
     || !optional(data, 'route_reason', string)
     || !optional(data, 'fallback_count', validFallbackCount)
     || !optional(data, 'requiresTemporalNormalization', boolean)
-    || !optional(data, 'toolProfile', string)
-    || !optional(data, 'confirmedTools', validStringArray)
+    || !optional(data, 'toolProfile', validToolProfile)
+    || !optional(data, 'confirmedTools', validConfirmedTools)
     || !optional(data, 'skillId', string)
     || !optional(data, 'inheritedSkillIds', validStringArray)
   )) return undefined
@@ -135,6 +149,8 @@ export function decodeChildStartedArchivePayload(value: unknown): DecodedChildSt
     ...(modelTier(data.modelTier) ? { modelTier: modelTier(data.modelTier) } : {}),
     ...(string(data.route_reason) ? { routeReason: data.route_reason } : {}),
     ...(fallbackCount(data.fallback_count) !== undefined ? { fallbackCount: fallbackCount(data.fallback_count) } : {}),
+    ...(toolProfile(data.toolProfile) ? { toolProfile: toolProfile(data.toolProfile) } : {}),
+    ...(confirmedTools(data.confirmedTools) ? { confirmedTools: confirmedTools(data.confirmedTools) } : {}),
     ...(string(data.skillId) ? { skillId: data.skillId } : {}),
     ...(stringArray(data.inheritedSkillIds) ? { inheritedSkillIds: stringArray(data.inheritedSkillIds) } : {}),
   }
@@ -208,12 +224,32 @@ function status(value: unknown): ChildArchiveStatus | undefined {
   return value === 'done' || value === 'failed' || value === 'cancelled' ? value : undefined
 }
 
-function modelTier(value: unknown): ChildArchiveModelTier | undefined {
-  return value === 'flash' || value === 'pro' ? value : undefined
+function modelTier(value: unknown): SubagentModelTier | undefined {
+  return typeof value === 'string' && SUBAGENT_MODEL_TIERS.includes(value as SubagentModelTier)
+    ? value as SubagentModelTier
+    : undefined
 }
 
 function validModelTier(value: unknown): boolean {
   return modelTier(value) !== undefined
+}
+
+function toolProfile(value: unknown): SubagentToolProfile | undefined {
+  return typeof value === 'string' && SUBAGENT_TOOL_PROFILES.includes(value as SubagentToolProfile)
+    ? value as SubagentToolProfile
+    : undefined
+}
+
+function validToolProfile(value: unknown): boolean {
+  return toolProfile(value) !== undefined
+}
+
+function confirmedTools(value: unknown): DelegatableDangerousTool[] | undefined {
+  return Array.isArray(value) && value.every(isDelegatableDangerousTool) ? [...value] : undefined
+}
+
+function validConfirmedTools(value: unknown): boolean {
+  return confirmedTools(value) !== undefined
 }
 
 function fallbackCount(value: unknown): number | undefined {

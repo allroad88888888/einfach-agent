@@ -5,6 +5,7 @@ import type { ModelSettings } from '../state/core.type'
 import { toolRegistry } from '../tools/registry'
 import type { ToolRegistry } from '../tools/toolRegistry'
 import { createConcurrencyLimiter, type ConcurrencyLimiter } from '../runtime/concurrencyLimiter'
+import type { DelegatableDangerousTool } from '../runtime/dangerousTools'
 import { ROOT_AGENT_PATH } from './path'
 import type { SubagentTierRouting } from './tierRouting'
 import type { DelegateAgentBatchResult, DelegateAgentInput, SubagentNodeRecord, SubagentToolProfile } from './types'
@@ -38,7 +39,7 @@ export interface DelegationCallState {
   modelCallsUsed: number
   budgetByPath: Map<string, TreeRuntimeBudget>
   toolProfileByPath: Map<string, SubagentToolProfile>
-  confirmedToolsByPath: Map<string, readonly string[]>
+  confirmedToolsByPath: Map<string, readonly DelegatableDangerousTool[]>
 }
 
 export type ChildChangeSet = { id: string; reversible: boolean }

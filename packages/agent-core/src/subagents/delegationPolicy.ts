@@ -1,4 +1,7 @@
-import { isDelegatableDangerousTool } from '../runtime/dangerousTools'
+import {
+  isDelegatableDangerousTool,
+  type DelegatableDangerousTool,
+} from '../runtime/dangerousTools'
 import { normalizeDelegateAgentInput } from './input'
 import { ROOT_AGENT_PATH, agentPathDepth } from './path'
 import {
@@ -23,14 +26,17 @@ export interface DelegationRequestPolicy {
   state: DelegationCallState
   budget: TreeRuntimeBudget
   requestedToolProfile: SubagentToolProfile
-  requestedConfirmedTools: readonly string[]
+  requestedConfirmedTools: readonly DelegatableDangerousTool[]
 }
 
 function hasOwn(value: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key)
 }
 
-function isSubset(requested: readonly string[], ceiling: readonly string[]): boolean {
+function isSubset(
+  requested: readonly DelegatableDangerousTool[],
+  ceiling: readonly DelegatableDangerousTool[],
+): boolean {
   return requested.every((name) => ceiling.includes(name))
 }
 
@@ -90,15 +96,19 @@ export function resolveDelegationRequestPolicy(
 
   const pathConfirmedTools = state.confirmedToolsByPath.get(parentPath) ?? []
   const capability = context.dangerousToolCapability
+  const capabilityTools: readonly DelegatableDangerousTool[] | undefined =
+    capability?.toolNames.every(isDelegatableDangerousTool) ? capability.toolNames : undefined
   const capabilityIsScoped = capability
+    && capabilityTools
     && capability.sessionId === runtime.opts.sessionId
     && capability.runId === runtime.opts.runId
     && capability.parentPath === parentPath
     && typeof context.delegationCallId === 'string'
     && capability.delegationCallId === context.delegationCallId
-    && capability.toolNames.every(isDelegatableDangerousTool)
-    && (parentPath === ROOT_AGENT_PATH || isSubset(capability.toolNames, pathConfirmedTools))
-  const inheritedConfirmedTools = capabilityIsScoped ? Array.from(new Set(capability.toolNames)) : []
+    && (parentPath === ROOT_AGENT_PATH || isSubset(capabilityTools, pathConfirmedTools))
+  const inheritedConfirmedTools = capabilityIsScoped
+    ? Array.from(new Set(capabilityTools))
+    : []
   const requestedConfirmedTools = hasOwn(rawInput, 'confirmedTools') ? (input.confirmedTools ?? []) : []
   if (!isSubset(requestedConfirmedTools, inheritedConfirmedTools)) {
     throw new Error('invalid delegate_agent: confirmedTools cannot exceed the verified parent capability')

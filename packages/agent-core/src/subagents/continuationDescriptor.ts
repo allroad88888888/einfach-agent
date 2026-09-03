@@ -1,6 +1,14 @@
 import type { JsonValue } from '../state/recoverySnapshot.type'
+import type { DelegatableDangerousTool } from '../runtime/dangerousTools'
 import { ROOT_AGENT_PATH } from './path'
-import type { DelegateAgentChildSpec, SubagentNodeRecord } from './types'
+import type {
+  DelegateAgentChildSpec,
+  SubagentModelTier,
+  SubagentNodeRecord,
+  SubagentRiskLevel,
+  SubagentTaskCategory,
+  SubagentToolProfile,
+} from './types'
 
 type TerminalKind = 'done' | 'failed' | 'cancelled'
 
@@ -9,9 +17,9 @@ export interface ChildTaskSnapshot {
   objective: string
   mode?: string
   expectedOutput?: string
-  modelTier?: 'pro' | 'flash'
-  taskCategory?: 'retrieval' | 'extraction' | 'analysis' | 'implementation' | 'verification' | 'final_acceptance'
-  riskLevel?: 'low' | 'medium' | 'high'
+  modelTier?: SubagentModelTier
+  taskCategory?: SubagentTaskCategory
+  riskLevel?: SubagentRiskLevel
   crossModule?: boolean
   requiresTemporalNormalization?: boolean
   finalAcceptance?: boolean
@@ -19,8 +27,8 @@ export interface ChildTaskSnapshot {
   maxDepth?: number
   maxChildren?: number
   maxTurns?: number
-  toolProfile?: 'delegate_only' | 'workspace_read' | 'workspace_verify'
-  confirmedTools?: string[]
+  toolProfile?: SubagentToolProfile
+  confirmedTools?: DelegatableDangerousTool[]
 }
 
 export interface ChildContinuationDescriptor {

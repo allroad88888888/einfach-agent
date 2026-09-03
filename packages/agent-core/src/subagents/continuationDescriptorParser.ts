@@ -1,5 +1,15 @@
 import type { JsonValue, SubagentContinuationV1 } from '../state/recoverySnapshot.type'
+import {
+  isDelegatableDangerousTool,
+  type DelegatableDangerousTool,
+} from '../runtime/dangerousTools'
 import { ROOT_AGENT_PATH, isAgentPath, parentAgentPath } from './path'
+import { SUBAGENT_TOOL_PROFILES } from './toolProfile'
+import {
+  SUBAGENT_MODEL_TIERS,
+  SUBAGENT_RISK_LEVELS,
+  SUBAGENT_TASK_CATEGORIES,
+} from './types'
 import type {
   ChildContinuationDescriptor,
   ChildContinuationRecoveryDisposition,
@@ -69,11 +79,9 @@ function readTask(value: JsonValue | undefined): ChildTaskSnapshot | undefined {
   ]) || !nonEmpty(value.objective)) return undefined
   const mode = optionalString(value.mode)
   const expectedOutput = optionalString(value.expectedOutput)
-  const modelTier = optionalOneOf(value.modelTier, ['pro', 'flash'] as const)
-  const taskCategory = optionalOneOf(value.taskCategory, [
-    'retrieval', 'extraction', 'analysis', 'implementation', 'verification', 'final_acceptance',
-  ] as const)
-  const riskLevel = optionalOneOf(value.riskLevel, ['low', 'medium', 'high'] as const)
+  const modelTier = optionalOneOf(value.modelTier, SUBAGENT_MODEL_TIERS)
+  const taskCategory = optionalOneOf(value.taskCategory, SUBAGENT_TASK_CATEGORIES)
+  const riskLevel = optionalOneOf(value.riskLevel, SUBAGENT_RISK_LEVELS)
   const crossModule = optionalBoolean(value.crossModule)
   const requiresTemporalNormalization = optionalBoolean(value.requiresTemporalNormalization)
   const finalAcceptance = optionalBoolean(value.finalAcceptance)
@@ -81,8 +89,10 @@ function readTask(value: JsonValue | undefined): ChildTaskSnapshot | undefined {
   const maxDepth = optionalFinite(value.maxDepth)
   const maxChildren = optionalFinite(value.maxChildren)
   const maxTurns = optionalFinite(value.maxTurns)
-  const toolProfile = optionalOneOf(value.toolProfile, ['delegate_only', 'workspace_read', 'workspace_verify'] as const)
-  const confirmedTools = value.confirmedTools === undefined ? undefined : stringArray(value.confirmedTools)
+  const toolProfile = optionalOneOf(value.toolProfile, SUBAGENT_TOOL_PROFILES)
+  const confirmedTools = value.confirmedTools === undefined
+    ? undefined
+    : delegatableDangerousToolArray(value.confirmedTools)
   if ((value.mode !== undefined && mode === undefined) || (value.expectedOutput !== undefined && expectedOutput === undefined)
     || (value.modelTier !== undefined && modelTier === undefined) || (value.taskCategory !== undefined && taskCategory === undefined)
     || (value.riskLevel !== undefined && riskLevel === undefined) || (value.crossModule !== undefined && crossModule === undefined)
@@ -153,6 +163,17 @@ function record(value: JsonValue | undefined): value is Record<string, JsonValue
 
 function stringArray(value: JsonValue | undefined): string[] | undefined {
   return Array.isArray(value) && value.every((entry) => typeof entry === 'string') ? [...value] : undefined
+}
+
+function delegatableDangerousToolArray(
+  value: JsonValue | undefined,
+): DelegatableDangerousTool[] | undefined {
+  return Array.isArray(value)
+    && value.every((entry): entry is DelegatableDangerousTool => (
+      typeof entry === 'string' && isDelegatableDangerousTool(entry)
+    ))
+    ? [...value]
+    : undefined
 }
 
 function readChangeSets(value: JsonValue | undefined): Array<{ id: string; reversible: boolean }> | undefined {
