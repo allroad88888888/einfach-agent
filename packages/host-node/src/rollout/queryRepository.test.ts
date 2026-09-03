@@ -50,6 +50,8 @@ describe('rollout query repository', () => {
     expect((await repository.listHistories({ statuses: ['running'] })).histories.map(row => row.historyId))
       .toEqual(['root-history'])
     expect((await repository.listHistories({ target: root })).histories[0]?.itemCount).toBe(1)
+    expect((await repository.listHistories({ target: child })).histories.map(row => row.historyId))
+      .toEqual(['child-history'])
     run('INSERT INTO agent_rollout_events VALUES (?,?,?,?,?)', 'root-history', 1, 'run_state', 'later', '{}')
     await expect(repository.listHistories({ limit: 1, cursor: first.nextCursor })).rejects
       .toMatchObject({ code: 'AGENT_HISTORY_CURSOR_STALE' })

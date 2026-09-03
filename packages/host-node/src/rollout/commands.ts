@@ -1,5 +1,6 @@
 import {
   decodeAgentRolloutRecord,
+  sameAgentHistoryTarget,
   type AgentHistoryTarget,
   type AgentRolloutDriver,
   type AgentRolloutMutationV1,
@@ -52,12 +53,6 @@ function decodeMutation(value: unknown, index: number): AgentRolloutMutationV1 {
   return mutation
 }
 
-function sameTarget(left: AgentHistoryTarget, right: AgentHistoryTarget): boolean {
-  return left.kind === right.kind && left.conversationId === right.conversationId
-    && (left.kind === 'root' || (right.kind === 'child'
-      && left.runId === right.runId && left.agentPath === right.agentPath))
-}
-
 function validateAppend(args: Record<string, unknown>): AgentRolloutAppendCommandArgs {
   exactKeys(args, ['target', 'mutations'], 'agent_rollout_append')
   if (!Array.isArray(args.mutations) || args.mutations.length > MAX_ROLLOUT_APPEND_RECORDS) {
@@ -70,7 +65,9 @@ function validateAppend(args: Record<string, unknown>): AgentRolloutAppendComman
   const targetProbe = decodeMutation({ mutationType: 'session_meta', target: args.target,
     title: '', createdAt: 0, updatedAt: 0 }, mutations.length).target
   for (const mutation of mutations) {
-    if (!sameTarget(targetProbe, mutation.target)) throw new Error('mutation target does not match append target')
+    if (!sameAgentHistoryTarget(targetProbe, mutation.target)) {
+      throw new Error('mutation target does not match append target')
+    }
   }
   return { target: targetProbe, mutations }
 }

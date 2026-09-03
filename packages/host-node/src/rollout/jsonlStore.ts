@@ -5,6 +5,7 @@ import {
   decodeAgentRolloutRecord,
   encodeAgentRolloutRecord,
   AGENT_ROLLOUT_MAX_LINE_BYTES,
+  sameAgentHistoryTarget,
   type AgentHistoryTarget,
   type AgentRolloutAppendResult,
   type AgentRolloutMutationV1,
@@ -38,14 +39,6 @@ export type RolloutAppendPreparation = (
 export interface JsonlRolloutStoreOptions {
   readonly lock?: RolloutLockOptions
   readonly now?: () => Date
-}
-
-function sameTarget(left: AgentHistoryTarget, right: AgentHistoryTarget): boolean {
-  return left.kind === right.kind
-    && left.conversationId === right.conversationId
-    && (left.kind === 'root' || (right.kind === 'child'
-      && left.runId === right.runId
-      && left.agentPath === right.agentPath))
 }
 
 async function readLastRecord(filePath: string, historyId: string): Promise<AgentRolloutRecordV1 | undefined> {
@@ -91,7 +84,9 @@ function persistedRecords(
   now: () => Date,
 ): readonly AgentRolloutRecordV1[] {
   return mutations.map((mutation, offset) => {
-    if (!sameTarget(mutation.target, target)) throw new Error('rollout mutation target does not match append target')
+    if (!sameAgentHistoryTarget(mutation.target, target)) {
+      throw new Error('rollout mutation target does not match append target')
+    }
     return {
       ...mutation,
       schemaVersion: 1,

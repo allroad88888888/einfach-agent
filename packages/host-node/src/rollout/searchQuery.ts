@@ -2,11 +2,12 @@ import {
   AGENT_HISTORY_SEARCH_DEFAULT_LIMIT, AGENT_HISTORY_SEARCH_MAX_LIMIT,
   AGENT_HISTORY_SEARCH_SNIPPET_MAX_CHARS, AGENT_HISTORY_PAGE_MAX_CHARS, AgentHistoryError,
   agentHistoryItemPreview, agentHistoryItemRole, agentHistoryItemSearchText, decodeAgentHistoryModelItem,
-  type AgentHistorySearchHit, type AgentHistoryTarget,
+  type AgentHistorySearchHit,
   type SearchAgentHistoriesInput, type SearchAgentHistoriesResult,
 } from '@einfach-agent/core/history'
 import type { SqlExecutor } from '@einfach-agent/core/state/persistence'
 
+import { agentHistoryTargetSqlPredicate, decodeAgentHistoryTargetSqlRow } from './historyTargetSql'
 import { assertSearchCursor, encodeSearchCursor, normalizeSearchFilters,
   type SearchSnapshot } from './searchCursor'
 import { derivedSearchFailure, isDerivedSearchFailure, MixedSearchIndexSqlError } from './searchIndexFailure'
@@ -42,17 +43,6 @@ function string(value: unknown, name: string): string {
   if (typeof value !== 'string' || !value) throw new Error(`Corrupt search ${name}`)
   return value
 }
-function target(row: SearchRow): AgentHistoryTarget {
-  const conversationId = string(row.conversation_id, 'conversation id')
-  if (row.target_kind === 'root' && row.run_id === null && row.agent_path === null) {
-    return { kind: 'root', conversationId }
-  }
-  if (row.target_kind === 'child' && typeof row.run_id === 'string' && row.run_id
-    && typeof row.agent_path === 'string' && row.agent_path) {
-    return { kind: 'child', conversationId, runId: row.run_id, agentPath: row.agent_path }
-  }
-  throw new Error('Corrupt search target')
-}
 function prefix(text: string, maximum: number): string {
   let index = 0; let count = 0
   while (index < text.length && count < maximum) {
@@ -83,18 +73,10 @@ function decodeRow(row: SearchRow): DecodedSearchRow {
   const hit: AgentHistorySearchHit = { materialized: true, historyId, itemId, itemOrdinal, createdAt, role,
     preview: agentHistoryItemPreview(item),
     pending: row.pending === 1, planStageId: row.plan_stage_id === null ? null : string(row.plan_stage_id, 'plan stage'),
-    deleted: false, target: target(row), snippet: prefix(string(row.snippet, 'snippet'),
+    deleted: false, target: decodeAgentHistoryTargetSqlRow(row), snippet: prefix(string(row.snippet, 'snippet'),
       AGENT_HISTORY_SEARCH_SNIPPET_MAX_CHARS), rank }
   return { hit, key: { rank, updatedAt, historyId, itemOrdinal, itemId } }
 }
-function sameTargetSql(targetFilter: AgentHistoryTarget, start: number) {
-  return targetFilter.kind === 'root'
-    ? { sql: `c.target_kind=$${start} AND c.conversation_id=$${start + 1} AND c.run_id IS NULL AND c.agent_path IS NULL`,
-      params: ['root', targetFilter.conversationId] }
-    : { sql: `c.target_kind=$${start} AND c.conversation_id=$${start + 1} AND c.run_id=$${start + 2} AND c.agent_path=$${start + 3}`,
-      params: ['child', targetFilter.conversationId, targetFilter.runId, targetFilter.agentPath] }
-}
-
 export async function queryAgentHistorySearch(executor: SqlExecutor, input: SearchAgentHistoriesInput,
   snapshot: SearchSnapshot, baseWarnings: SearchAgentHistoriesResult['warnings'] = []): Promise<SearchAgentHistoriesResult> {
   const pageLimit = input.limit ?? AGENT_HISTORY_SEARCH_DEFAULT_LIMIT
@@ -104,7 +86,10 @@ export async function queryAgentHistorySearch(executor: SqlExecutor, input: Sear
   const filters = normalizeSearchFilters(input); const match = agentHistoryMatchExpression(filters.query)
   const cursor = assertSearchCursor(input.cursor, filters, snapshot)
   const params: unknown[] = [match]; const where = ['agent_history_search_fts MATCH $1', 'i.deleted=0']
-  if (filters.target) { const clause = sameTargetSql(filters.target, params.length + 1); where.push(clause.sql); params.push(...clause.params) }
+  if (filters.target) {
+    const clause = agentHistoryTargetSqlPredicate(filters.target, params.length + 1, 'c.')
+    where.push(clause.sql); params.push(...clause.params)
+  }
   if (filters.roles.length) {
     where.push(`f.role IN (${filters.roles.map((_, index) => `$${params.length + index + 1}`).join(',')})`)
     params.push(...filters.roles)

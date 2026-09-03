@@ -2,6 +2,7 @@ import type { ModelItem } from '@einfach-agent/ai'
 
 import {
   AGENT_HISTORY_ITEM_PREVIEW_MAX_CHARS,
+  AGENT_HISTORY_ITEM_ROLES,
   type AgentHistoryItemRole,
 } from './historyQuery'
 
@@ -69,7 +70,9 @@ function codePointPrefix(text: string, limit: number): string {
 function assertModelItem(value: unknown): asserts value is ModelItem {
   const item = record(value)
   if (!item) throw new Error('Invalid ModelItem JSON')
-  if (!['system', 'user', 'assistant', 'tool'].includes(String(item.role))) throw new Error('Invalid ModelItem role')
+  if (!AGENT_HISTORY_ITEM_ROLES.includes(item.role as AgentHistoryItemRole)) {
+    throw new Error('Invalid ModelItem role')
+  }
   if (item.role === 'assistant') {
     if (item.content !== null && typeof item.content !== 'string') throw new Error('Invalid assistant content')
     if (item.reasoning_content !== undefined && item.reasoning_content !== null

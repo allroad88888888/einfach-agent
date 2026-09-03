@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { assertSearchCursor, encodeSearchCursor, normalizeSearchFilters } from './searchCursor'
 
 const target = { kind: 'root', conversationId: 'conversation' } as const
+const child = { kind: 'child', conversationId: 'conversation',
+  runId: 'run', agentPath: '/root/research' } as const
 const snapshot = { eventCount: 4, watermark: 4 }
 const key = { rank: -1, updatedAt: 5, historyId: 'history', itemOrdinal: 2, itemId: 'item' }
 
@@ -12,6 +14,9 @@ describe('history search cursor', () => {
     const filters = normalizeSearchFilters({ query: ' query ', target, roles: ['user', 'assistant', 'user'] })
     const encoded = encodeSearchCursor({ filters, snapshot, key })
     expect(assertSearchCursor(encoded, filters, snapshot)?.key).toEqual(key)
+    const childFilters = normalizeSearchFilters({ query: 'query', target: child })
+    expect(assertSearchCursor(encodeSearchCursor({ filters: childFilters, snapshot, key }),
+      childFilters, snapshot)?.filters.target).toEqual(child)
   })
 
   it('rejects changed filters, stale snapshots, unknown fields, and noncanonical encoding', () => {

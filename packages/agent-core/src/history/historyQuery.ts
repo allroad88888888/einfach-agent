@@ -10,13 +10,25 @@ export const AGENT_HISTORY_READ_MAX_LIMIT = 20_000
 export const AGENT_HISTORY_SEARCH_QUERY_MAX_CHARS = 1_000
 export const AGENT_HISTORY_SEARCH_SNIPPET_MAX_CHARS = 1_000
 export const AGENT_HISTORY_PAGE_MAX_CHARS = 100_000
+export const AGENT_HISTORY_CURSOR_MAX_CHARS = 100_000
+export const AGENT_HISTORY_QUERY_TARGET_MAX_CHARS = 1_000
+export const AGENT_HISTORY_QUERY_ITEM_ID_MAX_CHARS = 10_000
 
 export type AgentHistoryCursor = string
-export type AgentHistoryStatus =
-  | 'idle' | 'running' | 'awaiting_tool' | 'waiting_user'
-  | 'waiting_confirmation' | 'waiting_plan_approval' | 'interrupted'
-  | 'done' | 'stopped' | 'error' | 'legacy'
-export type AgentHistoryItemRole = 'system' | 'user' | 'assistant' | 'tool'
+export const AGENT_RUN_STATUSES = [
+  'idle', 'running', 'awaiting_tool', 'waiting_user', 'waiting_confirmation',
+  'waiting_plan_approval', 'interrupted', 'done', 'stopped', 'error',
+] as const
+export type AgentRunStatus = (typeof AGENT_RUN_STATUSES)[number]
+
+export const AGENT_HISTORY_STATUSES = [
+  ...AGENT_RUN_STATUSES,
+  'legacy',
+] as const
+export type AgentHistoryStatus = (typeof AGENT_HISTORY_STATUSES)[number]
+
+export const AGENT_HISTORY_ITEM_ROLES = ['system', 'user', 'assistant', 'tool'] as const
+export type AgentHistoryItemRole = (typeof AGENT_HISTORY_ITEM_ROLES)[number]
 
 export type AgentHistoryWarningCode =
   | 'LEGACY_PARTIAL_HISTORY' | 'MALFORMED_LEGACY_RECORD'

@@ -1,4 +1,17 @@
-export type { AgentHistoryTarget } from './agentHistoryTarget'
+export {
+  agentHistoryTargetIdentity,
+  agentHistoryTargetJsonSchema,
+  agentHistoryTargetKey,
+  decodeAgentHistoryTarget,
+  decodeAgentHistoryTargetIdentity,
+  sameAgentHistoryTarget,
+} from './agentHistoryTarget'
+export type {
+  AgentHistoryTarget,
+  AgentHistoryTargetField,
+  AgentHistoryTargetIdentity,
+  AgentHistoryTargetStringDecoder,
+} from './agentHistoryTarget'
 export * from './historyItemText'
 export * from './historyQuery'
 export {

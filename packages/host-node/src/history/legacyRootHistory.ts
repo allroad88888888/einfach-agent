@@ -2,6 +2,8 @@ import {
   agentHistoryItemPreview,
   agentHistoryItemRole,
   agentHistoryItemSearchText,
+  agentHistoryTargetKey,
+  sameAgentHistoryTarget,
   type AgentHistorySummary,
   type AgentHistoryTarget,
   type AgentHistoryWarning,
@@ -36,12 +38,6 @@ export interface LegacyRootHistoryAdapter {
   search(query: string, target?: AgentHistoryTarget): Promise<LegacyHistorySearchResult>
 }
 
-function targetKey(target: AgentHistoryTarget): string {
-  return target.kind === 'root'
-    ? `root\0${target.conversationId}`
-    : `child\0${target.conversationId}\0${target.runId}\0${target.agentPath}`
-}
-
 function project(snapshot: RecoverySnapshotV1): LegacyRootRecord {
   const target = { kind: 'root', conversationId: snapshot.sessionId } as const
   const historyId = `legacy-root:${snapshot.sessionId}`
@@ -74,10 +70,6 @@ function project(snapshot: RecoverySnapshotV1): LegacyRootRecord {
   }
 }
 
-function sameTarget(left: AgentHistoryTarget, right: AgentHistoryTarget): boolean {
-  return targetKey(left) === targetKey(right)
-}
-
 export function createLegacyRootHistoryAdapter(recovery: Pick<RecoveryDriver, 'listLatest'>): LegacyRootHistoryAdapter {
   async function records(): Promise<LegacyRootRecord[]> {
     return (await recovery.listLatest()).map(project)
@@ -85,14 +77,14 @@ export function createLegacyRootHistoryAdapter(recovery: Pick<RecoveryDriver, 'l
 
   async function find(target: AgentHistoryTarget): Promise<LegacyRootRecord | undefined> {
     if (target.kind !== 'root') return undefined
-    return (await records()).find((record) => sameTarget(record.history.target, target))
+    return (await records()).find((record) => sameAgentHistoryTarget(record.history.target, target))
   }
 
   return {
     async listHistories(canonicalTargets = []) {
-      const canonical = new Set(canonicalTargets.map(targetKey))
+      const canonical = new Set(canonicalTargets.map(agentHistoryTargetKey))
       return (await records())
-        .filter((record) => !canonical.has(targetKey(record.history.target)))
+        .filter((record) => !canonical.has(agentHistoryTargetKey(record.history.target)))
         .sort((left, right) => right.history.updatedAt - left.history.updatedAt
           || left.history.historyId.localeCompare(right.history.historyId))
     },

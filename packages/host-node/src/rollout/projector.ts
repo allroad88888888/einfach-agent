@@ -3,6 +3,7 @@ import { open } from 'node:fs/promises'
 import {
   decodeAgentRolloutRecord,
   AGENT_ROLLOUT_MAX_LINE_BYTES,
+  sameAgentHistoryTarget,
   type AgentHistoryTarget,
   type AgentRolloutRecordV1,
   type AgentRolloutReconcileHistoryResult,
@@ -10,6 +11,7 @@ import {
 import type { SqlExecutor } from '@einfach-agent/core/state/persistence'
 
 import { ensureRolloutProjectionSchema } from './projectionSchema'
+import { decodeAgentHistoryTargetSqlRow, type AgentHistoryTargetSqlRow } from './historyTargetSql'
 
 export interface RolloutProjectorOptions {
   /** Test/fault-injection seam at the exact crash boundary. */
@@ -62,12 +64,8 @@ interface ProjectionStateRow {
   next_rollout_ordinal: number
 }
 
-interface CatalogIdentityRow {
+interface CatalogIdentityRow extends AgentHistoryTargetSqlRow {
   history_id: string
-  target_kind: 'root' | 'child'
-  conversation_id: string
-  run_id: string | null
-  agent_path: string | null
 }
 
 interface SourceIdentity {
@@ -180,15 +178,8 @@ function recordIdentity(record: AgentRolloutRecordV1): SourceIdentity {
   return { historyId: record.historyId, target: record.target }
 }
 
-function sameTarget(left: AgentHistoryTarget, right: AgentHistoryTarget): boolean {
-  return left.kind === right.kind
-    && left.conversationId === right.conversationId
-    && (left.kind === 'root' || (right.kind === 'child'
-      && left.runId === right.runId && left.agentPath === right.agentPath))
-}
-
 function assertIdentity(identity: SourceIdentity, record: AgentRolloutRecordV1, sourcePath: string, offset: number): void {
-  if (record.historyId !== identity.historyId || !sameTarget(record.target, identity.target)) {
+  if (record.historyId !== identity.historyId || !sameAgentHistoryTarget(record.target, identity.target)) {
     throw new Error(`rollout source identity changed at ${sourcePath}:${offset}`)
   }
 }
@@ -201,12 +192,9 @@ async function identityFor(executor: SqlExecutor, state: ProjectionStateRow | un
   )
   const row = rows[0]
   if (!row) throw new Error(`rollout projection state has no catalog identity: ${state.history_id}`)
-  const target: AgentHistoryTarget = row.target_kind === 'root'
-    ? { kind: 'root', conversationId: row.conversation_id }
-    : { kind: 'child', conversationId: row.conversation_id,
-      runId: row.run_id ?? '', agentPath: row.agent_path ?? '' }
-  if (target.kind === 'child' && (!row.run_id || !row.agent_path)) {
-    throw new Error(`rollout catalog has incomplete child identity: ${state.history_id}`)
+  let target: AgentHistoryTarget
+  try { target = decodeAgentHistoryTargetSqlRow(row) } catch (cause) {
+    throw new Error(`rollout catalog has invalid target identity: ${state.history_id}`, { cause })
   }
   return { historyId: state.history_id, target }
 }

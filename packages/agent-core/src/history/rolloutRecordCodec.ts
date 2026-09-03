@@ -1,7 +1,8 @@
 import type { ModelItem } from '@einfach-agent/ai'
 
-import type { AgentHistoryTarget } from './agentHistoryTarget'
-import type { AgentRolloutMutationV1, AgentRolloutRecordV1, AgentRunStatus } from './rolloutMutation'
+import { decodeAgentHistoryTarget, type AgentHistoryTarget } from './agentHistoryTarget'
+import { AGENT_RUN_STATUSES, type AgentRunStatus } from './historyQuery'
+import type { AgentRolloutMutationV1, AgentRolloutRecordV1 } from './rolloutMutation'
 
 export const AGENT_ROLLOUT_SCHEMA_VERSION = 1 as const
 export const AGENT_ROLLOUT_MAX_LINE_BYTES = 1024 * 1024
@@ -65,21 +66,12 @@ function nullableString(value: unknown, path: string): string | null {
 }
 
 function target(value: unknown, path: string): AgentHistoryTarget {
-  const candidate = object(value, path)
-  if (candidate.kind === 'root') {
-    exactKeys(candidate, path, ['kind', 'conversationId'])
-    return { kind: 'root', conversationId: string(candidate.conversationId, `${path}.conversationId`) }
+  try {
+    return decodeAgentHistoryTarget(value, (part, field) => string(part, `${path}.${field}`))
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Invalid agent rollout record')) throw error
+    return fail(path, error instanceof Error ? error.message : 'expected root or child')
   }
-  if (candidate.kind === 'child') {
-    exactKeys(candidate, path, ['kind', 'conversationId', 'runId', 'agentPath'])
-    return {
-      kind: 'child',
-      conversationId: string(candidate.conversationId, `${path}.conversationId`),
-      runId: string(candidate.runId, `${path}.runId`),
-      agentPath: string(candidate.agentPath, `${path}.agentPath`),
-    }
-  }
-  return fail(`${path}.kind`, 'expected root or child')
 }
 
 function boundedJson(value: unknown, path: string, depth = 0): void {
@@ -170,11 +162,6 @@ function modelItem(value: unknown, path: string): ModelItem {
   return value as ModelItem
 }
 
-const runStatuses: readonly AgentRunStatus[] = [
-  'idle', 'running', 'awaiting_tool', 'waiting_user', 'waiting_confirmation',
-  'waiting_plan_approval', 'interrupted', 'done', 'stopped', 'error',
-]
-
 function mutation(value: JsonObject): AgentRolloutMutationV1 {
   const base = ['mutationType', 'target'] as const
   const decodedTarget = target(value.target, '$.target')
@@ -212,7 +199,7 @@ function mutation(value: JsonObject): AgentRolloutMutationV1 {
       return { mutationType: 'item_deleted', target: decodedTarget, itemId: string(value.itemId, '$.itemId'), reason: string(value.reason, '$.reason') }
     case 'run_state': {
       exactKeys(value, '$', [...base, 'runId', 'turnId', 'status', 'error'])
-      if (!runStatuses.includes(value.status as AgentRunStatus)) fail('$.status', 'unknown run status')
+      if (!AGENT_RUN_STATUSES.includes(value.status as AgentRunStatus)) fail('$.status', 'unknown run status')
       return { mutationType: 'run_state', target: decodedTarget, runId: nullableString(value.runId, '$.runId'), turnId: nullableString(value.turnId, '$.turnId'), status: value.status as AgentRunStatus, error: nullableString(value.error, '$.error') }
     }
     default: return fail('$.mutationType', 'unknown mutation type')

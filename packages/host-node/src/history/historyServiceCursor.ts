@@ -1,4 +1,5 @@
-import { AgentHistoryError, type AgentHistoryTarget } from '@einfach-agent/core/history'
+import { AGENT_HISTORY_CURSOR_MAX_CHARS, AgentHistoryError, decodeAgentHistoryTarget,
+  type AgentHistoryTarget } from '@einfach-agent/core/history'
 
 export type LegacyCursorKind = 'list' | 'items' | 'search'
 export interface LegacyCursorFilters {
@@ -10,7 +11,11 @@ export interface LegacyCursorFilters {
 interface LegacyCursor { readonly v: 1; readonly kind: LegacyCursorKind; readonly filters: LegacyCursorFilters; readonly offset: number }
 
 function stable(value: LegacyCursorFilters): string {
-  return JSON.stringify({ ...value, ...(value.roles ? { roles: [...new Set(value.roles)].sort() } : {}) })
+  return JSON.stringify({
+    ...value,
+    target: decodeAgentHistoryTarget(value.target),
+    ...(value.roles ? { roles: [...new Set(value.roles)].sort() } : {}),
+  })
 }
 export function encodeHistoryServiceCursor(kind: LegacyCursorKind, filters: LegacyCursorFilters, offset: number): string {
   return Buffer.from(JSON.stringify({ v: 1, kind, filters: JSON.parse(stable(filters)), offset } satisfies LegacyCursor))
@@ -19,7 +24,9 @@ export function encodeHistoryServiceCursor(kind: LegacyCursorKind, filters: Lega
 export function decodeHistoryServiceCursor(cursor: string | undefined, kind: LegacyCursorKind,
   filters: LegacyCursorFilters): number {
   if (!cursor) return 0
-  if (cursor.length > 100_000) throw new AgentHistoryError('AGENT_HISTORY_INVALID_CURSOR', 'Legacy history cursor is too large')
+  if (cursor.length > AGENT_HISTORY_CURSOR_MAX_CHARS) {
+    throw new AgentHistoryError('AGENT_HISTORY_INVALID_CURSOR', 'Legacy history cursor is too large')
+  }
   try {
     if (Buffer.from(cursor, 'base64url').toString('base64url') !== cursor) throw new Error('non-canonical base64url')
     const value = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as Record<string, unknown>

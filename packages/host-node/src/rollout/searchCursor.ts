@@ -1,4 +1,5 @@
-import { AgentHistoryError, type AgentHistoryItemRole, type AgentHistoryTarget } from '@einfach-agent/core/history'
+import { AGENT_HISTORY_ITEM_ROLES, AgentHistoryError, decodeAgentHistoryTarget,
+  type AgentHistoryItemRole, type AgentHistoryTarget } from '@einfach-agent/core/history'
 
 export interface SearchCursorFilters {
   readonly query: string
@@ -13,7 +14,7 @@ export interface SearchSnapshot { readonly eventCount: number; readonly watermar
 interface SearchCursor { readonly v: 1; readonly kind: 'search'; readonly filters: SearchCursorFilters
   readonly snapshot: SearchSnapshot; readonly key: SearchCursorKey }
 
-const ROLES = new Set(['system', 'user', 'assistant', 'tool'])
+const ROLES = new Set<AgentHistoryItemRole>(AGENT_HISTORY_ITEM_ROLES)
 function invalid(message: string): never {
   throw new AgentHistoryError('AGENT_HISTORY_INVALID_CURSOR', message)
 }
@@ -29,17 +30,7 @@ function nonempty(value: unknown, message: string): string {
   return value
 }
 function target(value: unknown): AgentHistoryTarget {
-  const candidate = object(value)
-  if (candidate.kind === 'root') {
-    exact(candidate, ['kind', 'conversationId'])
-    return { kind: 'root', conversationId: nonempty(candidate.conversationId, 'Invalid root target') }
-  }
-  if (candidate.kind === 'child') {
-    exact(candidate, ['kind', 'conversationId', 'runId', 'agentPath'])
-    return { kind: 'child', conversationId: nonempty(candidate.conversationId, 'Invalid child target'),
-      runId: nonempty(candidate.runId, 'Invalid child target'), agentPath: nonempty(candidate.agentPath, 'Invalid child target') }
-  }
-  return invalid('Search cursor target kind is invalid')
+  try { return decodeAgentHistoryTarget(value) } catch { return invalid('Search cursor target is invalid') }
 }
 function safeNonnegative(value: unknown, message: string): number {
   if (!Number.isSafeInteger(value) || (value as number) < 0) invalid(message)

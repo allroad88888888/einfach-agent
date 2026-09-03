@@ -45,6 +45,13 @@ describe('rollout record codec', () => {
     }
   })
 
+  it('preserves rollout string bounds independently from query target schemas', () => {
+    const longTarget = { kind: 'root', conversationId: 'x'.repeat(1_001) } as const
+    const value = record({ mutationType: 'session_meta', target: longTarget,
+      title: 'long target', createdAt: 1, updatedAt: 1 })
+    expect(decodeAgentRolloutRecord(encodeAgentRolloutRecord(value)).target).toEqual(longTarget)
+  })
+
   it.each([
     ['unknown schema', { ...record(mutations[0]!), schemaVersion: 2 }, /schemaVersion/],
     ['negative ordinal', { ...record(mutations[0]!), rolloutOrdinal: -1 }, /rolloutOrdinal/],

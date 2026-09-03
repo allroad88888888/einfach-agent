@@ -1,5 +1,6 @@
 import {
-  AgentHistoryError, type AgentHistoryItemRole, type AgentHistoryStatus, type AgentHistoryTarget,
+  AGENT_HISTORY_ITEM_ROLES, AGENT_HISTORY_STATUSES, AgentHistoryError, decodeAgentHistoryTarget,
+  type AgentHistoryItemRole, type AgentHistoryStatus, type AgentHistoryTarget,
 } from '@einfach-agent/core/history'
 
 export type RolloutQueryCursor =
@@ -19,12 +20,6 @@ export interface ItemCursorFilters {
   readonly roles: readonly AgentHistoryItemRole[]
 }
 
-const STATUSES: readonly AgentHistoryStatus[] = [
-  'idle', 'running', 'awaiting_tool', 'waiting_user', 'waiting_confirmation',
-  'waiting_plan_approval', 'interrupted', 'done', 'stopped', 'error', 'legacy',
-]
-const ROLES: readonly AgentHistoryItemRole[] = ['system', 'user', 'assistant', 'tool']
-
 function invalid(message: string): never {
   throw new AgentHistoryError('AGENT_HISTORY_INVALID_CURSOR', message)
 }
@@ -39,18 +34,7 @@ function exactKeys(value: Record<string, unknown>, keys: readonly string[]): boo
 }
 
 function target(value: unknown): AgentHistoryTarget {
-  const row = record(value)
-  if (!row || typeof row.conversationId !== 'string' || row.conversationId.length === 0) invalid('Invalid cursor target')
-  if (row.kind === 'root' && exactKeys(row, ['kind', 'conversationId'])) {
-    return { kind: 'root', conversationId: row.conversationId as string }
-  }
-  if (row.kind === 'child' && exactKeys(row, ['kind', 'conversationId', 'runId', 'agentPath'])
-    && typeof row.runId === 'string' && row.runId.length > 0
-    && typeof row.agentPath === 'string' && row.agentPath.length > 0) {
-    return { kind: 'child', conversationId: row.conversationId as string,
-      runId: row.runId, agentPath: row.agentPath }
-  }
-  return invalid('Invalid cursor target')
+  try { return decodeAgentHistoryTarget(value) } catch { return invalid('Invalid cursor target') }
 }
 
 function safeInteger(value: unknown, label: string): number {
@@ -62,7 +46,7 @@ export function normalizeHistoryCursorFilters(input: {
   readonly target?: AgentHistoryTarget; readonly statuses?: readonly AgentHistoryStatus[]
 }): HistoryCursorFilters {
   const statuses = [...new Set(input.statuses ?? [])].sort()
-  if (!statuses.every(status => STATUSES.includes(status))) invalid('Invalid history status filter')
+  if (!statuses.every(status => AGENT_HISTORY_STATUSES.includes(status))) invalid('Invalid history status filter')
   return { ...(input.target ? { target: target(input.target) } : {}), statuses }
 }
 
@@ -70,7 +54,7 @@ export function normalizeItemCursorFilters(input: {
   readonly target: AgentHistoryTarget; readonly includeDeleted?: boolean; readonly roles?: readonly AgentHistoryItemRole[]
 }): ItemCursorFilters {
   const roles = [...new Set(input.roles ?? [])].sort()
-  if (!roles.every(role => ROLES.includes(role))) invalid('Invalid item role filter')
+  if (!roles.every(role => AGENT_HISTORY_ITEM_ROLES.includes(role))) invalid('Invalid item role filter')
   return { target: target(input.target), includeDeleted: input.includeDeleted === true, roles }
 }
 

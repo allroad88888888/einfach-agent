@@ -7,6 +7,8 @@ import {
 } from './queryCursor'
 
 const root = { kind: 'root', conversationId: 'conversation' } as const
+const child = { kind: 'child', conversationId: 'conversation',
+  runId: 'run', agentPath: '/root/research' } as const
 
 describe('rollout query cursor', () => {
   it('round trips normalized history and item keysets', () => {
@@ -22,6 +24,17 @@ describe('rollout query cursor', () => {
     expect(decodeRolloutQueryCursor(encodeRolloutQueryCursor(items))).toEqual({
       ...items, filters: { target: root, includeDeleted: false, roles: ['assistant', 'user'] },
     })
+  })
+
+  it('round trips child target identity in both cursor kinds', () => {
+    const histories = { kind: 'histories' as const,
+      filters: normalizeHistoryCursorFilters({ target: child }), snapshot: 4,
+      key: { updatedAt: 9, historyId: 'history' } }
+    const items = { kind: 'items' as const,
+      filters: normalizeItemCursorFilters({ target: child }), snapshot: 3,
+      key: { itemOrdinal: 2, itemId: 'item' } }
+    expect(decodeRolloutQueryCursor(encodeRolloutQueryCursor(histories))).toEqual(histories)
+    expect(decodeRolloutQueryCursor(encodeRolloutQueryCursor(items))).toEqual(items)
   })
 
   it('rejects unknown fields, malformed payloads, and query changes', () => {

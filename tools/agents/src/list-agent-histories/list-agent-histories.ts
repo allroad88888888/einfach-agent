@@ -1,25 +1,12 @@
-import { AgentHistoryError, type ListAgentHistoriesInput } from '@einfach-agent/core/history'
+import {
+  AGENT_HISTORY_CURSOR_MAX_CHARS, AGENT_HISTORY_LIST_MAX_LIMIT, AGENT_HISTORY_STATUSES,
+  AGENT_HISTORY_QUERY_TARGET_MAX_CHARS, AgentHistoryError, agentHistoryTargetJsonSchema,
+  type ListAgentHistoriesInput,
+} from '@einfach-agent/core/history'
 import type { Tool, ToolResult } from '@einfach-agent/core/tools'
 import guide from './list-agent-histories.md?raw'
 
-const targetSchema = {
-  oneOf: [
-    {
-      type: 'object', additionalProperties: false,
-      properties: { kind: { const: 'root' }, conversationId: { type: 'string', minLength: 1, maxLength: 1_000 } },
-      required: ['kind', 'conversationId'],
-    },
-    {
-      type: 'object', additionalProperties: false,
-      properties: {
-        kind: { const: 'child' }, conversationId: { type: 'string', minLength: 1, maxLength: 1_000 },
-        runId: { type: 'string', minLength: 1, maxLength: 1_000 },
-        agentPath: { type: 'string', minLength: 1, maxLength: 1_000 },
-      },
-      required: ['kind', 'conversationId', 'runId', 'agentPath'],
-    },
-  ],
-}
+const targetSchema = agentHistoryTargetJsonSchema(AGENT_HISTORY_QUERY_TARGET_MAX_CHARS)
 
 function failure(error: unknown): ToolResult {
   if (error instanceof AgentHistoryError) {
@@ -47,12 +34,11 @@ export const listAgentHistoriesTool: Tool = {
     properties: {
       target: targetSchema,
       statuses: {
-        type: 'array', maxItems: 11, uniqueItems: true,
-        items: { type: 'string', enum: ['idle', 'running', 'awaiting_tool', 'waiting_user',
-          'waiting_confirmation', 'waiting_plan_approval', 'interrupted', 'done', 'stopped', 'error', 'legacy'] },
+        type: 'array', maxItems: AGENT_HISTORY_STATUSES.length, uniqueItems: true,
+        items: { type: 'string', enum: AGENT_HISTORY_STATUSES },
       },
-      cursor: { type: 'string', minLength: 1, maxLength: 100_000 },
-      limit: { type: 'integer', minimum: 1, maximum: 100 },
+      cursor: { type: 'string', minLength: 1, maxLength: AGENT_HISTORY_CURSOR_MAX_CHARS },
+      limit: { type: 'integer', minimum: 1, maximum: AGENT_HISTORY_LIST_MAX_LIMIT },
     },
   },
   async execute(args, ctx) {

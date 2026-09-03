@@ -1,20 +1,12 @@
-import { AgentHistoryError, type ReadAgentHistoryItemInput } from '@einfach-agent/core/history'
+import {
+  AGENT_HISTORY_QUERY_ITEM_ID_MAX_CHARS, AGENT_HISTORY_QUERY_TARGET_MAX_CHARS,
+  AGENT_HISTORY_READ_MAX_LIMIT,
+  AgentHistoryError, agentHistoryTargetJsonSchema, type ReadAgentHistoryItemInput,
+} from '@einfach-agent/core/history'
 import type { Tool, ToolResult } from '@einfach-agent/core/tools'
 import guide from './read-agent-history-item.md?raw'
 
-const targetSchema = {
-  oneOf: [
-    { type: 'object', additionalProperties: false,
-      properties: { kind: { const: 'root' }, conversationId: { type: 'string', minLength: 1, maxLength: 1_000 } },
-      required: ['kind', 'conversationId'] },
-    { type: 'object', additionalProperties: false,
-      properties: {
-        kind: { const: 'child' }, conversationId: { type: 'string', minLength: 1, maxLength: 1_000 },
-        runId: { type: 'string', minLength: 1, maxLength: 1_000 },
-        agentPath: { type: 'string', minLength: 1, maxLength: 1_000 },
-      }, required: ['kind', 'conversationId', 'runId', 'agentPath'] },
-  ],
-}
+const targetSchema = agentHistoryTargetJsonSchema(AGENT_HISTORY_QUERY_TARGET_MAX_CHARS)
 
 function failure(error: unknown): ToolResult {
   return error instanceof AgentHistoryError
@@ -32,9 +24,9 @@ export const readAgentHistoryItemTool: Tool = {
     type: 'object', additionalProperties: false,
     properties: {
       target: targetSchema,
-      itemId: { type: 'string', minLength: 1, maxLength: 10_000 },
+      itemId: { type: 'string', minLength: 1, maxLength: AGENT_HISTORY_QUERY_ITEM_ID_MAX_CHARS },
       offset: { type: 'integer', minimum: 0 },
-      limit: { type: 'integer', minimum: 1, maximum: 20_000 },
+      limit: { type: 'integer', minimum: 1, maximum: AGENT_HISTORY_READ_MAX_LIMIT },
     },
     required: ['target', 'itemId'],
   },

@@ -1,7 +1,7 @@
 import {
   AGENT_HISTORY_LIST_DEFAULT_LIMIT, AGENT_HISTORY_LIST_MAX_LIMIT,
   AGENT_HISTORY_READ_DEFAULT_LIMIT, AGENT_HISTORY_READ_MAX_LIMIT,
-  AgentHistoryError, agentHistoryItemJson, agentHistoryItemPreview, agentHistoryItemRole,
+  AGENT_RUN_STATUSES, AgentHistoryError, agentHistoryItemJson, agentHistoryItemPreview, agentHistoryItemRole,
   decodeAgentHistoryModelItem, readAgentHistoryText,
   type AgentHistoryItemSummary, type AgentHistoryStatus, type AgentHistorySummary,
   type AgentHistoryTarget, type ListAgentHistoriesInput, type ListAgentHistoriesResult,
@@ -15,6 +15,7 @@ import {
   assertRolloutCursor, encodeRolloutQueryCursor, normalizeHistoryCursorFilters,
   normalizeItemCursorFilters, type ItemCursorFilters,
 } from './queryCursor'
+import { agentHistoryTargetSqlPredicate, decodeAgentHistoryTargetSqlRow } from './historyTargetSql'
 import { assertEmptyQueryPageFits, fitQueryPage } from './queryPageBudget'
 
 interface CatalogRow {
@@ -35,10 +36,6 @@ export interface RolloutQueryRepository {
   readItem(input: ReadAgentHistoryItemInput): Promise<ReadAgentHistoryItemResult>
 }
 
-const STATUS = new Set<AgentHistoryStatus>([
-  'idle', 'running', 'awaiting_tool', 'waiting_user', 'waiting_confirmation',
-  'waiting_plan_approval', 'interrupted', 'done', 'stopped', 'error',
-])
 const OUTPUT_WARNING = { code: 'OUTPUT_TRUNCATED' as const,
   message: 'History page was truncated to the maximum serialized output size' }
 const SCAN_WARNING = { code: 'OUTPUT_TRUNCATED' as const,
@@ -58,20 +55,16 @@ function flag(value: unknown, label: string): boolean {
   return value === 1
 }
 function targetFrom(row: CatalogRow): AgentHistoryTarget {
-  if (typeof row.conversation_id !== 'string' || row.conversation_id.length === 0) corrupt('Invalid catalog conversation identity')
-  if (row.target_kind === 'root' && row.run_id === null && row.agent_path === null) {
-    return { kind: 'root', conversationId: row.conversation_id }
+  try { return decodeAgentHistoryTargetSqlRow(row) } catch (cause) {
+    return corrupt('Invalid catalog target identity', { cause })
   }
-  if (row.target_kind === 'child' && typeof row.run_id === 'string' && row.run_id.length > 0
-    && typeof row.agent_path === 'string' && row.agent_path.length > 0) {
-    return { kind: 'child', conversationId: row.conversation_id, runId: row.run_id, agentPath: row.agent_path }
-  }
-  return corrupt('Invalid catalog target identity')
 }
 function summary(row: CatalogRow): AgentHistorySummary {
   if (typeof row.history_id !== 'string' || row.history_id.length === 0 || typeof row.title !== 'string') corrupt('Invalid catalog summary')
   const status = row.status === null ? 'idle' : row.status
-  if (typeof status !== 'string' || !STATUS.has(status as AgentHistoryStatus)) corrupt('Invalid canonical run status')
+  if (typeof status !== 'string' || !AGENT_RUN_STATUSES.some(allowed => allowed === status)) {
+    corrupt('Invalid canonical run status')
+  }
   integer(row.last_rollout_ordinal, 'last rollout ordinal')
   return { historyId: row.history_id, target: targetFrom(row), title: row.title,
     createdAt: integer(row.created_at, 'created at'), updatedAt: integer(row.updated_at, 'updated at'),
@@ -105,14 +98,6 @@ function limit(value: number | undefined, fallback: number, maximum: number): nu
   if (!Number.isSafeInteger(result) || result < 1 || result > maximum) throw new RangeError(`limit must be between 1 and ${maximum}`)
   return result
 }
-function sameTargetSql(target: AgentHistoryTarget, start: number): { sql: string; params: unknown[] } {
-  return target.kind === 'root'
-    ? { sql: `target_kind=$${start} AND conversation_id=$${start + 1} AND run_id IS NULL AND agent_path IS NULL`,
-      params: ['root', target.conversationId] }
-    : { sql: `target_kind=$${start} AND conversation_id=$${start + 1} AND run_id=$${start + 2} AND agent_path=$${start + 3}`,
-      params: ['child', target.conversationId, target.runId, target.agentPath] }
-}
-
 const CATALOG_SELECT = `SELECT c.*,
  (SELECT status FROM agent_rollout_turns t WHERE t.history_id=c.history_id ORDER BY last_change_ordinal DESC,turn_key DESC LIMIT 1) status,
  (SELECT COUNT(*) FROM agent_rollout_items i WHERE i.history_id=c.history_id AND deleted=0) item_count
@@ -132,7 +117,7 @@ export function createRolloutQueryRepository(executor: SqlExecutor): RolloutQuer
     return integer(rows[0]?.count, 'event snapshot')
   }
   async function catalogFor(target: AgentHistoryTarget): Promise<CatalogRow> {
-    const match = sameTargetSql(target, 1)
+    const match = agentHistoryTargetSqlPredicate(target, 1)
     const rows = await executor.select<CatalogRow[]>(`${CATALOG_SELECT} WHERE ${match.sql}`, match.params)
     if (rows.length === 0) throw new AgentHistoryError('AGENT_HISTORY_NOT_FOUND', 'History not found')
     if (rows.length !== 1) corrupt('Target resolves to multiple canonical histories')
@@ -166,7 +151,10 @@ export function createRolloutQueryRepository(executor: SqlExecutor): RolloutQuer
       const filters = normalizeHistoryCursorFilters(input); const snapshot = await eventSnapshot()
       const cursor = assertRolloutCursor(input.cursor, 'histories', filters, snapshot)
       const where: string[] = []; const params: unknown[] = []
-      if (filters.target) { const match = sameTargetSql(filters.target, 1); where.push(match.sql); params.push(...match.params) }
+      if (filters.target) {
+        const match = agentHistoryTargetSqlPredicate(filters.target, 1)
+        where.push(match.sql); params.push(...match.params)
+      }
       if (filters.statuses.length) {
         const slots = filters.statuses.map((_, index) => `$${params.length + index + 1}`)
         where.push(`COALESCE((SELECT status FROM agent_rollout_turns t WHERE t.history_id=c.history_id ORDER BY last_change_ordinal DESC,turn_key DESC LIMIT 1),'idle') IN (${slots})`)

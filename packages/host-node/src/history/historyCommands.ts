@@ -1,10 +1,15 @@
-import type { AgentHistoryCapabilityProvider, AgentHistoryItemRole, AgentHistoryStatus,
-  AgentHistoryTarget } from '@einfach-agent/core/history'
+import {
+  AGENT_HISTORY_CURSOR_MAX_CHARS, AGENT_HISTORY_ITEM_ROLES,
+  AGENT_HISTORY_LIST_MAX_LIMIT, AGENT_HISTORY_READ_MAX_LIMIT, AGENT_HISTORY_SEARCH_MAX_LIMIT,
+  AGENT_HISTORY_QUERY_ITEM_ID_MAX_CHARS, AGENT_HISTORY_QUERY_TARGET_MAX_CHARS,
+  AGENT_HISTORY_SEARCH_QUERY_MAX_CHARS, AGENT_HISTORY_STATUSES,
+  decodeAgentHistoryTarget,
+  type AgentHistoryCapabilityProvider, type AgentHistoryItemRole, type AgentHistoryStatus,
+} from '@einfach-agent/core/history'
 import type { NodeHostRouteTable } from '../routeTable'
 
-const ROLES = new Set<AgentHistoryItemRole>(['system', 'user', 'assistant', 'tool'])
-const STATUSES = new Set<AgentHistoryStatus>(['idle', 'running', 'awaiting_tool', 'waiting_user',
-  'waiting_confirmation', 'waiting_plan_approval', 'interrupted', 'done', 'stopped', 'error', 'legacy'])
+const ROLES = new Set<AgentHistoryItemRole>(AGENT_HISTORY_ITEM_ROLES)
+const STATUSES = new Set<AgentHistoryStatus>(AGENT_HISTORY_STATUSES)
 
 function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError(`${label} must be an object`)
@@ -23,18 +28,10 @@ function integer(value: unknown, label: string): number | undefined {
   if (!Number.isSafeInteger(value) || (value as number) < 0) throw new RangeError(`${label} is invalid`)
   return value as number
 }
-function target(value: unknown): AgentHistoryTarget {
-  const input = object(value, 'target')
-  if (input.kind === 'root') {
-    exact(input, ['kind', 'conversationId'], 'target')
-    return { kind: 'root', conversationId: string(input.conversationId, 'conversationId', 1_000) }
-  }
-  if (input.kind === 'child') {
-    exact(input, ['kind', 'conversationId', 'runId', 'agentPath'], 'target')
-    return { kind: 'child', conversationId: string(input.conversationId, 'conversationId', 1_000),
-      runId: string(input.runId, 'runId', 1_000), agentPath: string(input.agentPath, 'agentPath', 1_000) }
-  }
-  throw new TypeError('target kind is invalid')
+function target(value: unknown) {
+  return decodeAgentHistoryTarget(value, (part, field) => string(
+    part, field, AGENT_HISTORY_QUERY_TARGET_MAX_CHARS,
+  ))
 }
 function listOf<T extends string>(value: unknown, allowed: ReadonlySet<T>, label: string): readonly T[] | undefined {
   if (value === undefined) return undefined
@@ -50,10 +47,12 @@ function envelope(args: Record<string, unknown>): { input: Record<string, unknow
     : string(args.legacyWorkspaceRoot, 'legacyWorkspaceRoot', 10_000)
   return { input: object(args.input, 'input'), ...(locator ? { legacyWorkspaceRoot: locator } : {}) }
 }
-function common(input: Record<string, unknown>, maximum = 100) {
+function common(input: Record<string, unknown>, maximum = AGENT_HISTORY_LIST_MAX_LIMIT) {
   const limit = integer(input.limit, 'limit')
   if (limit !== undefined && (limit < 1 || limit > maximum)) throw new RangeError('limit is outside the command range')
-  return { ...(input.cursor === undefined ? {} : { cursor: string(input.cursor, 'cursor', 100_000) }),
+  return { ...(input.cursor === undefined ? {} : {
+    cursor: string(input.cursor, 'cursor', AGENT_HISTORY_CURSOR_MAX_CHARS),
+  }),
     ...(limit === undefined ? {} : { limit }) }
 }
 
@@ -81,9 +80,11 @@ export function createHistoryRoutes(provider: AgentHistoryCapabilityProvider): N
       const value = envelope(args); exact(value.input, ['target', 'itemId', 'offset', 'limit'], 'read input')
       const readLimit = integer(value.input.limit, 'limit')
       const offset = integer(value.input.offset, 'offset')
-      if (readLimit !== undefined && (readLimit < 1 || readLimit > 20_000)) throw new RangeError('limit is outside the command range')
+      if (readLimit !== undefined && (readLimit < 1 || readLimit > AGENT_HISTORY_READ_MAX_LIMIT)) {
+        throw new RangeError('limit is outside the command range')
+      }
       const input = { target: target(value.input.target),
-        itemId: string(value.input.itemId, 'itemId', 10_000),
+        itemId: string(value.input.itemId, 'itemId', AGENT_HISTORY_QUERY_ITEM_ID_MAX_CHARS),
         ...(offset === undefined ? {} : { offset }),
         ...(readLimit === undefined ? {} : { limit: readLimit }) }
       return capability(value).readItem(input)
@@ -93,8 +94,10 @@ export function createHistoryRoutes(provider: AgentHistoryCapabilityProvider): N
       const rawQuery = value.input.query
       if (typeof rawQuery !== 'string') throw new RangeError('query is invalid')
       const query = rawQuery.trim()
-      if ([...query].length < 1 || [...query].length > 1_000) throw new RangeError('query is invalid')
-      const input = { ...common(value.input, 50), query,
+      if ([...query].length < 1 || [...query].length > AGENT_HISTORY_SEARCH_QUERY_MAX_CHARS) {
+        throw new RangeError('query is invalid')
+      }
+      const input = { ...common(value.input, AGENT_HISTORY_SEARCH_MAX_LIMIT), query,
         ...(value.input.target === undefined ? {} : { target: target(value.input.target) }),
         ...(value.input.roles === undefined ? {} : { roles: listOf(value.input.roles, ROLES, 'roles') }) }
       return capability(value).search(input)

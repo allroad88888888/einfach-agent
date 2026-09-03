@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { AgentHistoryCapabilityProvider } from '@einfach-agent/core/history'
+import { AGENT_HISTORY_QUERY_TARGET_MAX_CHARS,
+  type AgentHistoryCapabilityProvider } from '@einfach-agent/core/history'
 import { createHistoryRoutes } from './historyCommands'
 
 function fixture() {
@@ -21,6 +22,8 @@ describe('history commands', () => {
   it.each([
     { input: {}, extra: true },
     { input: { target: { kind: 'root', conversationId: 'c', path: '/secret' } } },
+    { input: { target: { kind: 'root',
+      conversationId: 'c'.repeat(AGENT_HISTORY_QUERY_TARGET_MAX_CHARS + 1) } } },
     { input: { limit: 101 } },
   ])('rejects unknown, target and limit input before provider I/O', async (args) => {
     const { routes, provider } = fixture()

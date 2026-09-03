@@ -1,20 +1,12 @@
-import { AgentHistoryError, type ListAgentHistoryItemsInput } from '@einfach-agent/core/history'
+import {
+  AGENT_HISTORY_CURSOR_MAX_CHARS, AGENT_HISTORY_ITEM_ROLES, AGENT_HISTORY_LIST_MAX_LIMIT,
+  AGENT_HISTORY_QUERY_TARGET_MAX_CHARS, AgentHistoryError, agentHistoryTargetJsonSchema,
+  type ListAgentHistoryItemsInput,
+} from '@einfach-agent/core/history'
 import type { Tool, ToolResult } from '@einfach-agent/core/tools'
 import guide from './list-agent-history-items.md?raw'
 
-const targetSchema = {
-  oneOf: [
-    { type: 'object', additionalProperties: false,
-      properties: { kind: { const: 'root' }, conversationId: { type: 'string', minLength: 1, maxLength: 1_000 } },
-      required: ['kind', 'conversationId'] },
-    { type: 'object', additionalProperties: false,
-      properties: {
-        kind: { const: 'child' }, conversationId: { type: 'string', minLength: 1, maxLength: 1_000 },
-        runId: { type: 'string', minLength: 1, maxLength: 1_000 },
-        agentPath: { type: 'string', minLength: 1, maxLength: 1_000 },
-      }, required: ['kind', 'conversationId', 'runId', 'agentPath'] },
-  ],
-}
+const targetSchema = agentHistoryTargetJsonSchema(AGENT_HISTORY_QUERY_TARGET_MAX_CHARS)
 
 function failure(error: unknown): ToolResult {
   return error instanceof AgentHistoryError
@@ -32,11 +24,11 @@ export const listAgentHistoryItemsTool: Tool = {
     type: 'object', additionalProperties: false,
     properties: {
       target: targetSchema,
-      roles: { type: 'array', maxItems: 4, uniqueItems: true,
-        items: { type: 'string', enum: ['system', 'user', 'assistant', 'tool'] } },
+      roles: { type: 'array', maxItems: AGENT_HISTORY_ITEM_ROLES.length, uniqueItems: true,
+        items: { type: 'string', enum: AGENT_HISTORY_ITEM_ROLES } },
       includeDeleted: { type: 'boolean' },
-      cursor: { type: 'string', minLength: 1, maxLength: 100_000 },
-      limit: { type: 'integer', minimum: 1, maximum: 100 },
+      cursor: { type: 'string', minLength: 1, maxLength: AGENT_HISTORY_CURSOR_MAX_CHARS },
+      limit: { type: 'integer', minimum: 1, maximum: AGENT_HISTORY_LIST_MAX_LIMIT },
     },
     required: ['target'],
   },

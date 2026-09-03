@@ -2,7 +2,10 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import type { AgentHistoryTarget } from './agentHistoryTarget'
 import {
+  AGENT_HISTORY_CURSOR_MAX_CHARS,
+  AGENT_HISTORY_QUERY_ITEM_ID_MAX_CHARS,
   AGENT_HISTORY_ITEM_PREVIEW_MAX_CHARS,
+  AGENT_HISTORY_ITEM_ROLES,
   AGENT_HISTORY_LIST_DEFAULT_LIMIT,
   AGENT_HISTORY_LIST_MAX_LIMIT,
   AGENT_HISTORY_PAGE_MAX_CHARS,
@@ -12,6 +15,9 @@ import {
   AGENT_HISTORY_SEARCH_MAX_LIMIT,
   AGENT_HISTORY_SEARCH_QUERY_MAX_CHARS,
   AGENT_HISTORY_SEARCH_SNIPPET_MAX_CHARS,
+  AGENT_HISTORY_STATUSES,
+  AGENT_HISTORY_QUERY_TARGET_MAX_CHARS,
+  AGENT_RUN_STATUSES,
   AgentHistoryError,
   type AgentHistoryCapability,
   type AgentHistoryCapabilityProvider,
@@ -32,7 +38,22 @@ describe('history query contract', () => {
       AGENT_HISTORY_READ_MAX_LIMIT, AGENT_HISTORY_SEARCH_QUERY_MAX_CHARS,
       AGENT_HISTORY_SEARCH_SNIPPET_MAX_CHARS,
       AGENT_HISTORY_PAGE_MAX_CHARS,
-    ]).toEqual([20, 100, 20, 50, 2_000, 20_000, 20_000, 1_000, 1_000, 100_000])
+      AGENT_HISTORY_CURSOR_MAX_CHARS, AGENT_HISTORY_QUERY_TARGET_MAX_CHARS,
+      AGENT_HISTORY_QUERY_ITEM_ID_MAX_CHARS,
+    ]).toEqual([20, 100, 20, 50, 2_000, 20_000, 20_000, 1_000, 1_000,
+      100_000, 100_000, 1_000, 10_000])
+  })
+
+  it('publishes readonly status and role values used by runtime consumers', () => {
+    expect(AGENT_RUN_STATUSES).toEqual([
+      'idle', 'running', 'awaiting_tool', 'waiting_user', 'waiting_confirmation',
+      'waiting_plan_approval', 'interrupted', 'done', 'stopped', 'error',
+    ])
+    expect(AGENT_HISTORY_STATUSES).toEqual([
+      'idle', 'running', 'awaiting_tool', 'waiting_user', 'waiting_confirmation',
+      'waiting_plan_approval', 'interrupted', 'done', 'stopped', 'error', 'legacy',
+    ])
+    expect(AGENT_HISTORY_ITEM_ROLES).toEqual(['system', 'user', 'assistant', 'tool'])
   })
 
   it('models root, child, running, terminal, and legacy histories', () => {

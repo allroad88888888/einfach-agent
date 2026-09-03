@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { AgentHistoryError } from '@einfach-agent/core/history'
+import { AGENT_HISTORY_QUERY_TARGET_MAX_CHARS, AgentHistoryError } from '@einfach-agent/core/history'
 import type { ToolContext } from '@einfach-agent/core/tools'
 import { createToolRegistry } from '@einfach-agent/core/tools'
 import { listAgentHistoriesTool } from './list-agent-histories'
@@ -12,6 +12,16 @@ describe('list_agent_histories', () => {
     const listHistories = vi.fn()
     const result = await registry.run('list_agent_histories', {
       target: { kind: 'root', conversationId: 'c', runId: 'forbidden' }, extra: true,
+    }, ctx({ listHistories } as never))
+    expect(result).toMatchObject({ ok: false })
+    expect(listHistories).not.toHaveBeenCalled()
+  })
+
+  it('keeps the query target field bound at the tool envelope', async () => {
+    const registry = createToolRegistry(); registry.register(listAgentHistoriesTool)
+    const listHistories = vi.fn()
+    const result = await registry.run('list_agent_histories', {
+      target: { kind: 'root', conversationId: 'x'.repeat(AGENT_HISTORY_QUERY_TARGET_MAX_CHARS + 1) },
     }, ctx({ listHistories } as never))
     expect(result).toMatchObject({ ok: false })
     expect(listHistories).not.toHaveBeenCalled()

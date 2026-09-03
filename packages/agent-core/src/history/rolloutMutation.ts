@@ -1,18 +1,9 @@
 import type { ModelItem } from '@einfach-agent/ai'
 
 import type { AgentHistoryTarget } from './agentHistoryTarget'
+import type { AgentRunStatus } from './historyQuery'
 
-export type AgentRunStatus =
-  | 'idle'
-  | 'running'
-  | 'awaiting_tool'
-  | 'waiting_user'
-  | 'waiting_confirmation'
-  | 'waiting_plan_approval'
-  | 'interrupted'
-  | 'done'
-  | 'stopped'
-  | 'error'
+export type { AgentRunStatus } from './historyQuery'
 
 export interface AgentSessionMetaMutationV1 {
   readonly mutationType: 'session_meta'
