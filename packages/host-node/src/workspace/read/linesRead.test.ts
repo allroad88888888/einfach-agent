@@ -6,7 +6,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { contentSha256 } from './content'
+import { contentSha256 } from '../common/contentHash'
 import { MAX_HASH_BYTES, MAX_READ_BYTES } from './limits'
 import { createReadWorkspaceFileHandler } from './linesDispatch'
 import type { ReadWorkspaceFileResult } from './types'

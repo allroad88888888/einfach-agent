@@ -1,9 +1,8 @@
-import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
 import { verifyStagedGuard } from './guard'
+import { contentSha256 } from '../common/contentHash'
 
-const hashOf = (content: string) =>
-  `sha256:${createHash('sha256').update(content, 'utf8').digest('hex')}`
+const hashOf = (content: string) => contentSha256(Buffer.from(content, 'utf8'))
 
 describe('verifyStagedGuard', () => {
   it('两个都不给 = 不校验', () => {

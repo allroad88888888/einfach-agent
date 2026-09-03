@@ -9,11 +9,12 @@
 // 两种证明二选一：整份旧文本，或它的 sha256。hash 的存在理由是不必为了证明「我读过」而把
 // 整个文件再传一遍（read_workspace_file 返回的 `contentHash` 可以直接用在这里）。
 
+import { Buffer } from 'node:buffer'
 import {
   CONTENT_HASH_FORMAT_ERROR,
   contentSha256,
   hasValidContentHashFormat,
-} from '../change/contentHash'
+} from '../common/contentHash'
 
 /**
  * 校验一个乐观守卫。两个都不给 = 不校验（调用方自己决定这时候该不该拒——覆盖已存在文件时
@@ -36,7 +37,7 @@ export function verifyStagedGuard(
     if (!hasValidContentHashFormat(expectedContentHash)) {
       throw new Error(CONTENT_HASH_FORMAT_ERROR)
     }
-    if (contentSha256(current) !== expectedContentHash) {
+    if (contentSha256(Buffer.from(current, 'utf8')) !== expectedContentHash) {
       throw new Error(
         'expectedContentHash did not match current file content; re-read the file and retry with the new contentHash',
       )

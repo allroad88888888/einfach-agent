@@ -5,12 +5,12 @@ export const CONTENT_HASH_FORMAT_ERROR =
 
 const CONTENT_HASH_PATTERN = /^sha256:[0-9a-f]{64}$/
 
-/** A content hash is always a prefixed, lowercase SHA-256 digest. */
+/** A workspace content hash is always a prefixed, lowercase SHA-256 digest. */
 export function hasValidContentHashFormat(value: string): boolean {
   return CONTENT_HASH_PATTERN.test(value)
 }
 
-/** Hash text using the UTF-8 bytes used by every workspace mutation guard. */
-export function contentSha256(content: string): string {
-  return `sha256:${createHash('sha256').update(content, 'utf8').digest('hex')}`
+/** Hash the exact bytes guarded by the workspace optimistic-concurrency protocol. */
+export function contentSha256(bytes: Uint8Array): string {
+  return `sha256:${createHash('sha256').update(bytes).digest('hex')}`
 }

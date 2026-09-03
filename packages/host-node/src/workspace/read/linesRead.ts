@@ -42,7 +42,8 @@ import {
   resolveWorkspaceRoot,
   toSlashPath,
 } from '../common'
-import { contentSha256, decodeUtf8, rejectBinaryBytes } from './content'
+import { contentSha256 } from '../common/contentHash'
+import { decodeUtf8, rejectBinaryBytes } from './content'
 import {
   DEFAULT_READ_MAX_BYTES,
   MAX_HASH_BYTES,

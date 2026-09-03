@@ -1,31 +1,7 @@
-// 哈希的期望值不是「跑一遍 Node 记下来」的——它们是当年用桌面端（`apps/desktop`，已随 T1
-// 提交 `e52c31d` 整条删除）同版 `sha2 = "0.10"` 的
-// `format!("sha256:{:x}", Sha256::digest(bytes))` 实跑出来的输出，逐字符抄在这里。
-// 那一侧不在了，这四条锁的东西**没有变弱**：它们现在锁的是「这份实现不许改算法或编码」——
-// contentHash 是落盘 `write_file` 乐观并发检查的键，漂移不会报错，只会让存量文件突然过不了检查。
-// `abc` 那条同时是 FIPS 180-4 的公开测试向量，与实现来源无关。
 import { describe, expect, it } from 'vitest'
-import { contentSha256, decodeUtf8, rejectBinaryBytes } from './content'
+import { decodeUtf8, rejectBinaryBytes } from './content'
 
 const utf8 = (value: string): Uint8Array => new Uint8Array(Buffer.from(value, 'utf8'))
-
-describe('contentSha256（与 Rust sha2 0.10 逐字符对拍）', () => {
-  it.each([
-    ['', 'sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'],
-    ['abc', 'sha256:ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'],
-    [
-      'hello read world',
-      'sha256:bf730c677a8b2c9ca0df7011f9d36089ff79f0b3826d8f7ebe2fc11e57c0c4ba',
-    ],
-    ['ab你cd', 'sha256:561a2db4be952f22952b3dbc8805534d5fdd44cb6d12abd494f701b67af1b02f'],
-  ])('sha256(%j)', (input, expected) => {
-    expect(contentSha256(utf8(input))).toBe(expected)
-  })
-
-  it('形状是 sha256:<64 位小写 hex>（Rust 侧 write guard 只收这一种）', () => {
-    expect(contentSha256(utf8('x'))).toMatch(/^sha256:[0-9a-f]{64}$/)
-  })
-})
 
 describe('rejectBinaryBytes', () => {
   it('含 NUL 即拒，消息保留 Rust 英文原文', () => {

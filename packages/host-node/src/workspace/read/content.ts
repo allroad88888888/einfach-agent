@@ -1,17 +1,8 @@
-// 读到的字节流：二进制判定、UTF-8 解码、整文件哈希
+// 读到的字节流：二进制判定与 UTF-8 解码
 // ---------------------------------------------------------------------------
-// 等价移植 apps/desktop/src/workspace_read_content.rs（已随 T1 删除）的三个函数。字节模式（W1）与行模式（W2）
+// 等价移植 apps/desktop/src/workspace_read_content.rs（已随 T1 删除）的两个解码函数。字节模式（W1）与行模式（W2）
 // 共用；Rust 那份里还有一个 `cap_chars`，它是给搜索结果截行用的字符串工具、与「字节流」无关，
 // 落到 W3 时另找去处，不塞进这里。
-//
-// 【哈希：算法与编码是逐字节验证过的，不是照着注释猜的】
-// Rust 侧是 `sha2 = "0.10"` 的 `Sha256` + `format!("sha256:{:x}", …)`，即小写 hex；Node 侧是
-// `createHash('sha256').digest('hex')`，同样是小写 hex。两边用同一版 crate 实测过四个样本
-// （空串、`abc`、`hello read world`、含多字节字符的串），输出逐字符相同；`abc` 的结果正是
-// FIPS 180-4 的公开测试向量。样本连同期望值钉在 content.test.ts 里，改这里会当场红。
-// 这条不能靠推断：算错了不报错，只会让桌面端写的文件在 Node 宿主下过不了乐观并发检查
-// （write_file 的 expectedContentHash），反之亦然。编码格式另有 Rust 侧自己的校验器背书——
-// workspace_write_guard.rs 拒收一切不是 `sha256:<64 lowercase hex characters>` 的值。
 //
 // 【解码：TextDecoder 的两处默认值都必须显式改掉】
 // 目标语义是 Rust 的 `std::str::from_utf8` 三分支（全合法 / 尾部截断 / 真非法）：
@@ -25,13 +16,6 @@
 // 仍不完整就抛——等价 Rust 的 `err.error_len().is_none()`。这套等价关系跑过一次差分测试：
 // 4060 个样本（边界用例 + 伪随机字节串 + 一个多语言串的每一个截断点）两边分类与
 // `valid_up_to` 字节数全等。
-
-import { createHash } from 'node:crypto'
-
-/** `sha256:<64 位小写 hex>`。等价 Rust 的 `content_sha256`。 */
-export function contentSha256(bytes: Uint8Array): string {
-  return `sha256:${createHash('sha256').update(bytes).digest('hex')}`
-}
 
 /**
  * 含 NUL 字节即判定为二进制并拒读。等价 Rust 的 `reject_binary_bytes`。

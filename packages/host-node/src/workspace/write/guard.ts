@@ -26,7 +26,7 @@ import {
   CONTENT_HASH_FORMAT_ERROR,
   contentSha256,
   hasValidContentHashFormat,
-} from '../change/contentHash'
+} from '../common/contentHash'
 import { rejectWrite } from './result'
 import type { BeforeContent } from './before'
 
@@ -57,7 +57,7 @@ export function verifyExpectedContent(
   }
   if (expectedHash !== undefined) {
     if (!hasValidContentHashFormat(expectedHash)) rejectWrite(CONTENT_HASH_FORMAT_ERROR)
-    if (contentSha256(current) !== expectedHash) {
+    if (contentSha256(Buffer.from(current, 'utf8')) !== expectedHash) {
       rejectWrite(
         'expectedContentHash does not match current file content; the file changed after ' +
           'read_file. Re-read it and retry with the new contentHash',
