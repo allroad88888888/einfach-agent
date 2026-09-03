@@ -67,6 +67,22 @@ describe('encodeProviderWireBody', () => {
     })).rejects.toThrow('模型请求目标未获允许')
   })
 
+  it.each(['a\u0000.png', 'a\u001f.png', 'a\u007f.png', 'a\u0085.png'])(
+    'rejects C0/C1 file name %j before encoding',
+    async (fileName) => {
+      await expect(encodeProviderWireBody({
+        target: uploadTarget,
+        body: {
+          kind: 'multipart',
+          parts: [{
+            kind: 'file', name: 'file', fileName, contentType: 'image/png',
+            data: new Blob([Uint8Array.of(1)]),
+          }],
+        },
+      })).rejects.toThrow('模型请求格式无效')
+    },
+  )
+
   it('honors an already-aborted signal before reading blobs', async () => {
     const controller = new AbortController()
     controller.abort()

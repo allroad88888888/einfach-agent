@@ -6,7 +6,7 @@ export default definePackageBuild({
   // 域目录（config/、后续的 workspace/ shell/ mcp/ …）不开 subpath：它们是路由表的**装配零件**，
   // 对外只经 createNodeHostInvoke 这一个入口生效，单独暴露只会多出一条要维护的公开面。
   entry: ['src/index.ts'],
-  // 唯一声明依赖 @einfach-agent/core 已在本包 dependencies，tsup 自动 external（且本包只 import type
-  // 它，产物里连引用都不会有）。`node:*` 内置模块由 esbuild 的 node platform 默认 external。
+  // manifest 声明的 @einfach-agent/ai 与 @einfach-agent/core 依赖均由 tsup 自动 external；
+  // `node:*` 内置模块由 esbuild 的 node platform 默认 external。
   external: [],
 })

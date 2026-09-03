@@ -11,9 +11,8 @@
 // 不进入 wire。没有标记的请求只能按官方 origin 识别。
 
 import {
-  DEEPSEEK_BASE_URL,
-  GLM_BASE_URL,
-  KIMI_CN_BASE_URL,
+  findProviderRoutePolicy,
+  PROVIDER_OFFICIAL_ORIGINS,
   type ProviderMethod,
   type ProviderRequestBody,
   type ProviderTarget,
@@ -21,106 +20,35 @@ import {
 import { openAiCompatOrigin } from './openAiCompatEndpoint'
 import { openAiCompatConnection } from './openAiCompatRegistry'
 
-export const PROVIDER_RESOURCE_ID_PATTERN = /^[A-Za-z0-9._-]{1,256}$/
-const DEEPSEEK_FILE_ID_PATTERN = /^file-api-[A-Za-z0-9._-]{1,247}$/
-
 export type ProviderRouteSpec = {
   bodyKind: ProviderRequestBody['kind']
   url: string
   maxResponseBytes: number
 }
 
-const CHAT_RESPONSE_LIMIT = 32 * 1024 * 1024
-const FILE_RESPONSE_LIMIT = 4 * 1024 * 1024
-const DELETE_RESPONSE_LIMIT = 1024 * 1024
-
 function invalidTarget(): never {
   throw new Error('模型请求目标未获允许')
 }
 
-function safeFileDeletePath(path: string, idPattern = PROVIDER_RESOURCE_ID_PATTERN): boolean {
-  const prefix = '/files/'
-  return path.startsWith(prefix)
-    && idPattern.test(path.slice(prefix.length))
+function registeredOrigin(target: ProviderTarget): string | undefined {
+  if (target.provider !== 'openai-compat') return undefined
+  return target.connectionId === undefined
+    ? openAiCompatOrigin()
+    : openAiCompatConnection(target.connectionId)?.baseUrl
 }
 
 /** Resolves a generic target through the host's exact method/path security policy. */
 export function providerRouteSpec(target: ProviderTarget): ProviderRouteSpec {
-  if (target.provider === 'deepseek' && target.scope === 'default') {
-    if (target.method === 'POST' && target.path === '/chat/completions') {
-      return {
-        bodyKind: 'json',
-        url: `${DEEPSEEK_BASE_URL}${target.path}`,
-        maxResponseBytes: CHAT_RESPONSE_LIMIT,
-      }
-    }
-    if (target.method === 'POST' && target.path === '/files') {
-      return {
-        bodyKind: 'multipart',
-        url: `${DEEPSEEK_BASE_URL}${target.path}`,
-        maxResponseBytes: FILE_RESPONSE_LIMIT,
-      }
-    }
-    if (target.method === 'DELETE'
-      && safeFileDeletePath(target.path, DEEPSEEK_FILE_ID_PATTERN)) {
-      return {
-        bodyKind: 'none',
-        url: `${DEEPSEEK_BASE_URL}${target.path}`,
-        maxResponseBytes: DELETE_RESPONSE_LIMIT,
-      }
-    }
+  const policy = findProviderRoutePolicy(target)
+  if (policy === undefined) return invalidTarget()
+  // 登记式 origin 仍由宿主配置持有；共享 policy 只声明这条 route 的传输形状。
+  const origin = policy.officialOrigin ?? registeredOrigin(target)
+  if (origin === undefined) return invalidTarget()
+  return {
+    bodyKind: policy.bodyKind,
+    url: `${origin}${target.path}`,
+    maxResponseBytes: policy.maxResponseBytes,
   }
-  if (target.provider === 'glm'
-    && target.scope === 'default'
-    && target.method === 'POST'
-    && target.path === '/chat/completions') {
-    return {
-      bodyKind: 'json',
-      url: `${GLM_BASE_URL}${target.path}`,
-      maxResponseBytes: CHAT_RESPONSE_LIMIT,
-    }
-  }
-  if (target.provider === 'kimi' && target.scope === 'cn') {
-    if (target.method === 'POST' && target.path === '/chat/completions') {
-      return {
-        bodyKind: 'json',
-        url: `${KIMI_CN_BASE_URL}${target.path}`,
-        maxResponseBytes: CHAT_RESPONSE_LIMIT,
-      }
-    }
-    if (target.method === 'POST' && target.path === '/files') {
-      return {
-        bodyKind: 'multipart',
-        url: `${KIMI_CN_BASE_URL}${target.path}`,
-        maxResponseBytes: FILE_RESPONSE_LIMIT,
-      }
-    }
-    if (target.method === 'DELETE' && safeFileDeletePath(target.path)) {
-      return {
-        bodyKind: 'none',
-        url: `${KIMI_CN_BASE_URL}${target.path}`,
-        maxResponseBytes: DELETE_RESPONSE_LIMIT,
-      }
-    }
-  }
-  // 登记式 origin：只有 chat 端点这一条（它的 adapter 不上传文件，因此没有 /files 与 DELETE），
-  // 没登记时整条落空。这里的 `url` 只用于本地形状判断，真正上行的 URL 由后端拼。
-  if (target.provider === 'openai-compat'
-    && target.scope === 'default'
-    && target.method === 'POST'
-    && target.path === '/chat/completions') {
-    const origin = target.connectionId === undefined
-      ? openAiCompatOrigin()
-      : openAiCompatConnection(target.connectionId)?.baseUrl
-    if (origin !== undefined) {
-      return {
-        bodyKind: 'json',
-        url: `${origin}${target.path}`,
-        maxResponseBytes: CHAT_RESPONSE_LIMIT,
-      }
-    }
-  }
-  return invalidTarget()
 }
 
 function urlText(input: RequestInfo | URL): string {
@@ -140,10 +68,13 @@ type ProviderOriginBinding = {
  */
 function originBindings(): ProviderOriginBinding[] {
   return [
-    { origin: DEEPSEEK_BASE_URL, identity: { provider: 'deepseek', scope: 'default' } },
-    { origin: GLM_BASE_URL, identity: { provider: 'glm', scope: 'default' } },
-    { origin: KIMI_CN_BASE_URL, identity: { provider: 'kimi', scope: 'cn' } },
-  ]
+    PROVIDER_OFFICIAL_ORIGINS.deepseek,
+    PROVIDER_OFFICIAL_ORIGINS.glm,
+    PROVIDER_OFFICIAL_ORIGINS.kimi,
+  ].map(({ origin, provider, scope }) => ({
+    origin,
+    identity: { provider, scope },
+  }))
 }
 
 /** Converts only exact application endpoints into provider-owned method/path targets. */

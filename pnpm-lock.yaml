@@ -223,6 +223,9 @@ importers:
 
   packages/host-node:
     dependencies:
+      '@einfach-agent/ai':
+        specifier: workspace:*
+        version: link:../agent-ai
       '@einfach-agent/core':
         specifier: workspace:*
         version: link:../agent-core

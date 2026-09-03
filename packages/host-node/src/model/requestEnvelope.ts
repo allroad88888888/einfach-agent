@@ -16,14 +16,12 @@
 // method → path`。JSON.stringify 按插入序输出，于是同一份请求在两个宿主里量出来的字节数一致
 // （前端 providerWireEnvelope.ts 量的也是 JSON.stringify 的结果，本来就是这一套）。
 
+import { PROVIDER_TRANSPORT_LIMITS as LIMITS } from '@einfach-agent/ai'
 import { modelRequestError } from './errors'
 import { narrowProviderRequestBody, type ProviderWireRequestBody } from './requestBody'
 import { narrowProviderTarget, type ProviderTarget } from './providerRoute'
 import { validateModelRequestId } from './requestRegistry'
 import { definedKeys, isJsonRecord } from './wireShape'
-
-/** Rust `MAX_PROVIDER_WIRE_REQUEST_BYTES`。 */
-const MAX_WIRE_REQUEST_BYTES = 56 * 1024 * 1024
 
 /** Rust `ModelProviderRequestInput`（serde camelCase + deny_unknown_fields）。 */
 export interface ProviderRequestEnvelope {
@@ -42,7 +40,7 @@ const ENVELOPE_KEYS: readonly string[] = ['target', 'body', 'requestId']
  */
 export function narrowProviderRequestEnvelope(
   value: unknown,
-  maxBytes: number = MAX_WIRE_REQUEST_BYTES,
+  maxBytes: number = LIMITS.maxWireRequestBytes,
 ): ProviderRequestEnvelope {
   if (!isJsonRecord(value)) throw modelRequestError('invalidRequest')
   const raw = value

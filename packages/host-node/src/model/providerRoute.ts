@@ -2,6 +2,11 @@
 // The caller cannot supply an origin, credential, or header. Unknown fields are rejected before
 // the target is matched against the closed route catalog in providerRouteCatalog.ts.
 
+import {
+  providerRoutePolicyMatches,
+  type ProviderBodyKind,
+  type ProviderMethod,
+} from '@einfach-agent/ai'
 import { modelRequestError } from './errors'
 import { definedKeys, isJsonRecord } from './wireShape'
 import {
@@ -19,12 +24,7 @@ import {
 } from './provider'
 
 export type { RegisteredProviderOrigins } from './registeredProviderOrigin'
-
-/** Rust `ProviderMethod`，serde 显式 rename 成大写。 */
-export type ProviderMethod = 'POST' | 'DELETE'
-
-/** Rust `ProviderBodyKind`。决定 requestBody.ts 对这次请求体走哪条校验。 */
-export type ProviderBodyKind = 'none' | 'json' | 'multipart'
+export type { ProviderBodyKind, ProviderMethod } from '@einfach-agent/ai'
 
 /** 调用方能表达的全部内容。connectionId 只选 host profile；**没有 origin、Key 或 header**。 */
 export interface ProviderTarget {
@@ -110,12 +110,7 @@ function resolved(
 }
 
 function entryMatches(entry: ProviderRouteEntry, target: ProviderTarget): boolean {
-  return (
-    entry.provider === target.provider
-    && entry.scope === target.scope
-    && entry.method === target.method
-    && (typeof entry.path === 'string' ? entry.path === target.path : entry.path.test(target.path))
-  )
+  return providerRoutePolicyMatches(entry, target)
 }
 
 /**

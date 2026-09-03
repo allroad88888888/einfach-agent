@@ -1,6 +1,9 @@
 import {
   PROVIDER_TRANSPORT_LIMITS as LIMITS,
   isValidProviderRequestId,
+  isValidProviderContentType,
+  isValidProviderFileName,
+  isValidProviderPartName,
   type ProviderWireMultipartPart,
 } from '../packages/agent-ai/src/providerTransport'
 import { RelayRequestError } from './model-preview-relay-error'
@@ -9,8 +12,6 @@ import {
   type ModelPreviewRoute,
 } from './model-preview-relay-routes'
 
-const PART_NAME_PATTERN = /^[A-Za-z0-9_-]+$/
-const CONTENT_TYPE_PATTERN = /^[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+$/
 const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 
 export type RelayUpstreamRequest = {
@@ -44,8 +45,7 @@ function byteLength(value: string): number {
 
 function validatePartName(name: unknown): asserts name is string {
   if (typeof name !== 'string'
-    || !PART_NAME_PATTERN.test(name)
-    || byteLength(name) > LIMITS.maxPartNameBytes) invalidBody()
+    || !isValidProviderPartName(name)) invalidBody()
 }
 
 function decodeFilePart(value: Record<string, unknown>): {
@@ -55,12 +55,9 @@ function decodeFilePart(value: Record<string, unknown>): {
   requireExactKeys(value, ['bytesBase64', 'contentType', 'fileName', 'kind', 'name'])
   validatePartName(value.name)
   if (typeof value.fileName !== 'string'
-    || !value.fileName
-    || byteLength(value.fileName) > LIMITS.maxFileNameBytes
-    || /[\u0000-\u001f/\\]/.test(value.fileName)) invalidBody()
+    || !isValidProviderFileName(value.fileName)) invalidBody()
   if (typeof value.contentType !== 'string'
-    || byteLength(value.contentType) > LIMITS.maxContentTypeBytes
-    || !CONTENT_TYPE_PATTERN.test(value.contentType)) invalidBody()
+    || !isValidProviderContentType(value.contentType)) invalidBody()
   if (typeof value.bytesBase64 !== 'string'
     || value.bytesBase64.length === 0
     || value.bytesBase64.length % 4 !== 0

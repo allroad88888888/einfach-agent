@@ -23,7 +23,7 @@ describe('端点白名单', () => {
   it.each([
     ['deepseek', 'default', 'POST', '/chat/completions', 'https://api.deepseek.com/chat/completions', 'json', 32 * 1024 * 1024],
     ['deepseek', 'default', 'POST', '/files', 'https://api.deepseek.com/files', 'multipart', 4 * 1024 * 1024],
-    ['deepseek', 'default', 'DELETE', '/files/file-api-image_123.A-b', 'https://api.deepseek.com/files/file-api-image_123.A-b', 'none', 1024 * 1024],
+    ['deepseek', 'default', 'DELETE', '/files/file-api-image_123-A-b', 'https://api.deepseek.com/files/file-api-image_123-A-b', 'none', 1024 * 1024],
     ['glm', 'default', 'POST', '/chat/completions', 'https://open.bigmodel.cn/api/paas/v4/chat/completions', 'json', 32 * 1024 * 1024],
     ['kimi', 'cn', 'POST', '/chat/completions', 'https://api.moonshot.cn/v1/chat/completions', 'json', 32 * 1024 * 1024],
     ['kimi', 'cn', 'POST', '/files', 'https://api.moonshot.cn/v1/files', 'multipart', 4 * 1024 * 1024],
@@ -84,6 +84,7 @@ describe('端点白名单', () => {
       '/files/file-api-',
       '/files/file-api-image?query=1',
       '/files/file-api-image/child',
+      '/files/file-api-image.one',
       `/files/file-api-${'a'.repeat(248)}`,
     ]
     for (const path of invalidPaths) {

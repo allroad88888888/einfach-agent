@@ -2,10 +2,10 @@
 // 骨架与 packages/persistence-idb/tsconfig.build.json 一致，逐项理由见那份文件的长注释；
 // 这里只记本包**不同**或**特别容易踩**的两点：
 //
-// 1. `paths` 必须显式指向 core 的 **dist**，不能清空后指望 node_modules 解析。core 的
-//    package.json 对白名单外的深路径靠 `"./*": "./src/*"` 通配兜底，而该通配的目标不带扩展名、
-//    在磁盘上并不字面存在，真实 exports 解析下一律 TS2307。本包目前只 import 根 barrel 的
-//    `HostInvoke`，但这条映射照留——它同时是「core 必须先出 dist」的拓扑序声明。
+// 1. `paths` 显式指向 agent-ai/core 的 **dist**，声明 host-node 的包构建拓扑。core 的 package.json
+//    对白名单外的深路径靠 `"./*": "./src/*"` 通配兜底，而该通配目标不带扩展名、在磁盘上并不
+//    字面存在，真实 exports 解析下一律 TS2307；agent-ai 现在还提供本包运行时消费的 transport
+//    policy，因此两者都必须先产出声明文件。
 // 2. `preserveSymlinks` 不可省：pnpm 的 node_modules 是符号链接，TS 默认 realpath 后给推断类型
 //    起名会写出 `.pnpm/...` 路径并报 TS2742。
 {
@@ -18,6 +18,7 @@
     "incremental": false,
     "composite": false,
     "paths": {
+      "@einfach-agent/ai": ["packages/agent-ai/dist/index.d.ts"],
       "@einfach-agent/core": ["packages/agent-core/dist/index.d.ts"],
       "@einfach-agent/core/*": ["packages/agent-core/dist/*"]
     },

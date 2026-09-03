@@ -1,5 +1,8 @@
 import {
   PROVIDER_TRANSPORT_LIMITS as LIMITS,
+  isValidProviderContentType,
+  isValidProviderFileName,
+  isValidProviderPartName,
   type ProviderMultipartPart,
   type ProviderTransportInput,
   type ProviderWireMultipartPart,
@@ -8,8 +11,6 @@ import {
 import { providerRouteSpec } from './providerRoute'
 
 const textEncoder = new TextEncoder()
-const PART_NAME_PATTERN = /^[A-Za-z0-9_-]+$/
-const CONTENT_TYPE_PATTERN = /^[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+$/
 
 function byteLength(value: string): number {
   return textEncoder.encode(value).byteLength
@@ -25,16 +26,12 @@ function throwIfAborted(signal?: AbortSignal): void {
 }
 
 function validatePartName(name: string): void {
-  if (!PART_NAME_PATTERN.test(name) || byteLength(name) > LIMITS.maxPartNameBytes) invalidBody()
+  if (!isValidProviderPartName(name)) invalidBody()
 }
 
 function validateFileMetadata(part: Extract<ProviderMultipartPart, { kind: 'file' }>): void {
-  const fileNameBytes = byteLength(part.fileName)
-  if (!part.fileName
-    || fileNameBytes > LIMITS.maxFileNameBytes
-    || /[\u0000-\u001f/\\]/.test(part.fileName)) invalidBody()
-  if (byteLength(part.contentType) > LIMITS.maxContentTypeBytes
-    || !CONTENT_TYPE_PATTERN.test(part.contentType)) invalidBody()
+  if (!isValidProviderFileName(part.fileName)) invalidBody()
+  if (!isValidProviderContentType(part.contentType)) invalidBody()
 }
 
 function blobArrayBuffer(blob: Blob): Promise<ArrayBuffer> {

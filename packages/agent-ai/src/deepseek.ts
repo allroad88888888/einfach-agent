@@ -17,9 +17,10 @@ import {
 } from './modelApi'
 import { encodeDeepSeekMessages, type DeepSeekWireItem } from './deepseekMessages'
 import { nonVisualMessages } from './nonVisualMessages'
+import { DEEPSEEK_BASE_URL } from './providerOrigins'
 
 // 简介：DeepSeek 接入点与默认模型。
-export const DEEPSEEK_BASE_URL = 'https://api.deepseek.com'
+export { DEEPSEEK_BASE_URL } from './providerOrigins'
 export const DEEPSEEK_PRO_MODEL = 'deepseek-v4-pro'
 export const DEEPSEEK_FLASH_MODEL = 'deepseek-v4-flash'
 export const DEEPSEEK_VISION_MODEL = 'deepseek-v4-flash-vision-exp'

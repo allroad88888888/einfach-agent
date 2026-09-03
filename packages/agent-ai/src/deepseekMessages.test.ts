@@ -86,6 +86,7 @@ describe('DeepSeek message projection', () => {
     ['wrong scope', image({ scope: 'deepseek:other' }), /official API scope/],
     ['Kimi URI', image({ reference: 'ms:\/\/file-one' }), /file-api-\*/],
     ['path-like id', image({ reference: 'file-api-..\/secret' }), /file-api-\*/],
+    ['dotted id', image({ reference: 'file-api-image.one' }), /file-api-\*/],
   ])('rejects %s references', (_label, block, error) => {
     expect(() => encodeDeepSeekMessages(
       [{ role: 'user', content: [block] }],

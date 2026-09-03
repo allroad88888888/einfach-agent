@@ -31,6 +31,7 @@
     "build": "tsup && tsc -p tsconfig.build.json && node ../../scripts/fix-dts-specifiers.mjs dist"
   },
   "dependencies": {
+    "@einfach-agent/ai": "workspace:*",
     "@einfach-agent/core": "workspace:*",
     "@types/node": "^24.10.1"
   },

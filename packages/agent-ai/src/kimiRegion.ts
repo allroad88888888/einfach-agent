@@ -1,5 +1,6 @@
-export const KIMI_CN_BASE_URL = 'https://api.moonshot.cn/v1'
-export const KIMI_GLOBAL_BASE_URL = 'https://api.moonshot.ai/v1'
+import { KIMI_CN_BASE_URL, KIMI_GLOBAL_BASE_URL } from './providerOrigins'
+
+export { KIMI_CN_BASE_URL, KIMI_GLOBAL_BASE_URL } from './providerOrigins'
 export const KIMI_K3_MODEL = 'kimi-k3'
 export const DEFAULT_KIMI_MODEL = KIMI_K3_MODEL
 

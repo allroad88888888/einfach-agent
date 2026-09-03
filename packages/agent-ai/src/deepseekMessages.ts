@@ -3,6 +3,7 @@ import type {
   UserContentBlock,
   UserItem,
 } from './modelProtocol'
+import { isValidDeepSeekFileId } from './providerTransport'
 import { imageInputCapability } from './vendorDescriptor'
 
 export const DEEPSEEK_FILE_SCOPE = 'deepseek:default'
@@ -24,7 +25,7 @@ export interface DeepSeekUserItem extends Omit<UserItem, 'content'> {
 export type DeepSeekWireItem = Exclude<ModelItem, UserItem> | DeepSeekUserItem
 
 export function isDeepSeekFileReference(reference: string): boolean {
-  return /^file-api-[A-Za-z0-9][A-Za-z0-9_-]{0,246}$/.test(reference)
+  return isValidDeepSeekFileId(reference)
 }
 
 function encodeDeepSeekBlock(block: UserContentBlock, model: string): DeepSeekContentBlock {

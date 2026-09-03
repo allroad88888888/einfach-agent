@@ -26,6 +26,7 @@
 // 在这里先判一遍只会造出第二个权威，且两处对「什么叫格式无效」的说法迟早不一致。
 // 本模块只回答一个问题：这堆字节是不是合法 JSON。
 
+import { PROVIDER_TRANSPORT_LIMITS as LIMITS } from '@einfach-agent/ai'
 import type { IncomingMessage } from 'node:http'
 
 // Content-Type 白名单直接复用 invoke 路由那份**同一个函数**，不再抄一份。
@@ -36,10 +37,10 @@ import type { IncomingMessage } from 'node:http'
 export { hasJsonContentType } from './invokeRouteBody'
 
 /**
- * 请求体上限，默认 56 MiB —— 与 M1 `requestEnvelope.ts` 的 `MAX_PROVIDER_WIRE_REQUEST_BYTES`
- * 同一个数，理由见文件头。
+ * 请求体上限，默认 56 MiB —— 与 host request envelope 共同消费
+ * `PROVIDER_TRANSPORT_LIMITS.maxWireRequestBytes`，理由见文件头。
  */
-export const DEFAULT_MAX_MODEL_BODY_BYTES = 56 * 1024 * 1024
+export const DEFAULT_MAX_MODEL_BODY_BYTES = LIMITS.maxWireRequestBytes
 
 export type ModelRouteBodyResult =
   /** 解析出来的 JSON 值，**未收窄**——收窄是 M1 的事。 */

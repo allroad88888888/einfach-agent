@@ -81,14 +81,14 @@ describe('DeepSeek file routing', () => {
       maxResponseBytes: 4 * 1024 * 1024,
     })
     const deletion = providerTargetForRequest(
-      `${DEEPSEEK_BASE_URL}/files/file-api-image_123.A-b`, 'DELETE',
+      `${DEEPSEEK_BASE_URL}/files/file-api-image_123-A-b`, 'DELETE',
     )
     expect(deletion).toEqual({
       provider: 'deepseek', scope: 'default', method: 'DELETE',
-      path: '/files/file-api-image_123.A-b',
+      path: '/files/file-api-image_123-A-b',
     })
     expect(providerRouteSpec(deletion)).toEqual({
-      bodyKind: 'none', url: `${DEEPSEEK_BASE_URL}/files/file-api-image_123.A-b`,
+      bodyKind: 'none', url: `${DEEPSEEK_BASE_URL}/files/file-api-image_123-A-b`,
       maxResponseBytes: 1024 * 1024,
     })
   })
@@ -99,6 +99,7 @@ describe('DeepSeek file routing', () => {
     [`${DEEPSEEK_BASE_URL}/files/file-api-`, 'DELETE'],
     [`${DEEPSEEK_BASE_URL}/files/file-api-image/child`, 'DELETE'],
     [`${DEEPSEEK_BASE_URL}/files/file-api-image?query=1`, 'DELETE'],
+    [`${DEEPSEEK_BASE_URL}/files/file-api-image.one`, 'DELETE'],
     [`${DEEPSEEK_BASE_URL}/files/file-api-${'a'.repeat(248)}`, 'DELETE'],
     [`${DEEPSEEK_BASE_URL}/files/file-api-image`, 'POST'],
   ] as const)('rejects unsafe DeepSeek file route %s %s', (url, method) => {

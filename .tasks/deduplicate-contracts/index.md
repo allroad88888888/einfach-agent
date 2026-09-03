@@ -29,13 +29,13 @@
 |---|---|---|---|---|---|
 | 001 | 归档恢复保留完整子 Agent 结果 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
 | 002 | CLI 与宿主执行同一模型凭据和端点安全规则 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
-| 003 | 三种运行表面消费同一 provider transport policy | gpt-5.6-sol | running | 2026-09-03 | |
+| 003 | 三种运行表面消费同一 provider transport policy | gpt-5.6-sol | done | 2026-09-03 | 2026-09-03 |
 | 004 | 所有归档 CLI 使用同一安全路径映射 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
 | 005 | history target 与查询枚举只有一个契约 owner | gpt-5.6-sol | pending | 2026-09-03 | |
 | 006 | 所有恢复判据使用同一当前轮边界 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
 | 007 | 命令与模型工具共享同一计划持久化屏障 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
 | 008 | delegate_agent schema、解析与文档由同一能力集合驱动 | gpt-5.6-terra | running | 2026-09-03 | |
-| 009 | workspace mutation 类型与 change context 只有一个 owner | gpt-5.6-sol | pending | 2026-09-03 | |
+| 009 | workspace mutation 类型与 change context 只有一个 owner | gpt-5.6-sol | running | 2026-09-03 | |
 | 011 | history 通过 persistence facade 读取 recovery 数据 | gpt-5.6-terra | pending | 2026-09-03 | |
 | 012 | 三个平台 shell 工具共享同一执行内核 | gpt-5.6-terra | pending | 2026-09-03 | |
 | 013 | 剩余机械协议副本由各领域小模块接管 | gpt-5.6-sol | pending | 2026-09-03 | |
@@ -64,4 +64,7 @@
 - 裁决: 003 纳入 `packages/host-node/src/model/providerRoute.ts` — 它是 catalog route entry 的直接消费方，必须随共享类型接线 — 若不纳入，任务 files 与必要产品 diff 不一致。
 - 2026-09-03：007 首审 REJECTED：checkpoint rollback 重建 adapter，导致 `PlanRuntimeFactory` 多调用一次；进入 R1。
 - 2026-09-03：003 首审 REJECTED：共享 policy 新增了第二份官方 origin 硬编码；进入 R1，由 agent-ai 无环叶模块统一 owner。
+- 2026-09-03：008 首审 REJECTED：tool profile/confirmedTools 未真正类型派生，危险全集错误依赖可委派子集，guide 对 workspace_verify 不完整；进入 R1。
+- 2026-09-03：003 R1 复审通过；编排者复跑 8 个文件、95 tests 通过；修正任务卡 Web tsconfig 路径，准予提交。
 - 2026-09-03：007 R1 复审通过；编排者复跑 3 个文件、19 tests 通过，准予提交。
+- 2026-09-03：007 已提交为 `558de25`；派发无文件重叠的 009。

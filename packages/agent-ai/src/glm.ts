@@ -13,9 +13,10 @@ import {
   type ModelChatResponse,
 } from './modelApi'
 import { nonVisualMessages } from './nonVisualMessages'
+import { GLM_BASE_URL } from './providerOrigins'
 
 // 简介：GLM 接入点与默认模型。
-export const GLM_BASE_URL = 'https://open.bigmodel.cn/api/paas/v4'
+export { GLM_BASE_URL } from './providerOrigins'
 export const GLM_PRO_MODEL = 'glm-5.3'
 export const GLM_FLASH_MODEL = 'glm-5.3-flash'
 export const DEFAULT_GLM_MODEL = GLM_PRO_MODEL

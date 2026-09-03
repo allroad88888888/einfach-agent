@@ -13,25 +13,15 @@
 // 【检查顺序照搬，不"优化"】文本分片先累加再判、文件分片先按 base64 长度粗筛再解码——顺序变了
 // 会改变「哪一条限额先触发」，而两个宿主对同一份越界输入必须给同一个答案（对拍口径）。
 
+import {
+  PROVIDER_TRANSPORT_LIMITS as LIMITS,
+  isValidProviderContentType,
+  isValidProviderFileName,
+  isValidProviderPartName,
+  type ProviderBodyKind,
+} from '@einfach-agent/ai'
 import { modelRequestError } from './errors'
 import { hasExactKeys, isJsonRecord } from './wireShape'
-import type { ProviderBodyKind } from './providerRoute'
-
-const MAX_JSON_BYTES = 4 * 1024 * 1024
-const MAX_MULTIPART_PARTS = 16
-const MAX_MULTIPART_FILES = 8
-const MAX_FILE_BYTES = 20 * 1024 * 1024
-const MAX_FILE_BATCH_BYTES = 40 * 1024 * 1024
-const MAX_TEXT_BYTES = 64 * 1024
-const MAX_TEXT_BATCH_BYTES = 256 * 1024
-const MAX_PART_NAME_BYTES = 64
-const MAX_FILE_NAME_BYTES = 255
-const MAX_CONTENT_TYPE_BYTES = 128
-
-/** Rust `valid_part_name`：ASCII 字母数字与 `_` `-`。 */
-const PART_NAME_PATTERN = /^[A-Za-z0-9_-]+$/
-/** Rust `valid_content_type`：恰好两段，每段非空且只含 ASCII 字母数字与 `!#$&^_.+-`。 */
-const CONTENT_TYPE_PATTERN = /^[A-Za-z0-9!#$&^_.+-]+\/[A-Za-z0-9!#$&^_.+-]+$/
 /** 标准 base64（`base64::engine::general_purpose::STANDARD`）的字母表与补齐。 */
 const BASE64_PATTERN = /^[A-Za-z0-9+/]*={0,2}$/
 
@@ -85,38 +75,6 @@ function requireExactKeys(value: Record<string, unknown>, keys: readonly string[
 function requireString(value: unknown): string {
   if (typeof value !== 'string') invalidBody()
   return value
-}
-
-function validPartName(value: string): boolean {
-  return PART_NAME_PATTERN.test(value) && byteLength(value) <= MAX_PART_NAME_BYTES
-}
-
-/**
- * Rust `valid_file_name`：非空、≤255 字节、无控制字符、不含 `/` 与 `\`。
- *
- * 控制字符的范围按 Rust `char::is_control()`（Unicode 类别 Cc）：C0 段 U+0000–U+001F 与
- * C1 段 U+007F–U+009F。只挡 C0 不够——文件名会原样进 multipart 的
- * `Content-Disposition` 头，C1 里的字符在某些解析器上同样能撕开头部。
- *
- * 正则里一律写 `\u` 转义而不放字面控制字符：后者会让整份源文件被 grep
- * 当成二进制文件（实测：本文件里的任何符号都搜不到）。
- */
-const FILE_NAME_FORBIDDEN_PATTERN = /[\u0000-\u001f\u007f-\u009f/\\]/u
-
-function validFileName(value: string): boolean {
-  return (
-    value.length > 0
-    && byteLength(value) <= MAX_FILE_NAME_BYTES
-    && !FILE_NAME_FORBIDDEN_PATTERN.test(value)
-  )
-}
-
-function validContentType(value: string): boolean {
-  return (
-    value.length > 0
-    && byteLength(value) <= MAX_CONTENT_TYPE_BYTES
-    && CONTENT_TYPE_PATTERN.test(value)
-  )
 }
 
 /**
@@ -176,7 +134,7 @@ export function narrowProviderRequestBody(value: unknown): ProviderWireRequestBo
 function prepareMultipart(
   parts: readonly ProviderWireMultipartPart[],
 ): readonly PreparedMultipartPart[] {
-  if (parts.length === 0 || parts.length > MAX_MULTIPART_PARTS) invalidBody()
+  if (parts.length === 0 || parts.length > LIMITS.maxMultipartParts) invalidBody()
   const prepared: PreparedMultipartPart[] = []
   let fileCount = 0
   let fileBytes = 0
@@ -185,7 +143,9 @@ function prepareMultipart(
     if (part.kind === 'text') {
       const size = byteLength(part.value)
       textBytes += size
-      if (!validPartName(part.name) || size > MAX_TEXT_BYTES || textBytes > MAX_TEXT_BATCH_BYTES) {
+      if (!isValidProviderPartName(part.name)
+        || size > LIMITS.maxMultipartTextBytes
+        || textBytes > LIMITS.maxMultipartTextBatchBytes) {
         invalidBody()
       }
       prepared.push(part)
@@ -193,10 +153,10 @@ function prepareMultipart(
     }
     // base64 长度粗筛在**解码之前**：这才是那道真正挡住内存放大的门，解码之后再判就晚了。
     if (
-      !validPartName(part.name)
-      || !validFileName(part.fileName)
-      || !validContentType(part.contentType)
-      || part.bytesBase64.length > 4 * Math.ceil(MAX_FILE_BYTES / 3)
+      !isValidProviderPartName(part.name)
+      || !isValidProviderFileName(part.fileName)
+      || !isValidProviderContentType(part.contentType)
+      || part.bytesBase64.length > 4 * Math.ceil(LIMITS.maxMultipartFileBytes / 3)
     ) {
       invalidBody()
     }
@@ -205,9 +165,9 @@ function prepareMultipart(
     fileBytes += bytes.byteLength
     if (
       bytes.byteLength === 0
-      || bytes.byteLength > MAX_FILE_BYTES
-      || fileCount > MAX_MULTIPART_FILES
-      || fileBytes > MAX_FILE_BATCH_BYTES
+      || bytes.byteLength > LIMITS.maxMultipartFileBytes
+      || fileCount > LIMITS.maxMultipartFiles
+      || fileBytes > LIMITS.maxMultipartBatchBytes
     ) {
       invalidBody()
     }
@@ -236,7 +196,7 @@ export function prepareProviderBody(
   if (body.kind !== expected) invalidBody()
   if (body.kind === 'none') return { kind: 'none' }
   if (body.kind === 'json') {
-    if (byteLength(body.json) > MAX_JSON_BYTES) invalidBody()
+    if (byteLength(body.json) > LIMITS.maxJsonBytes) invalidBody()
     try {
       JSON.parse(body.json)
     } catch {
