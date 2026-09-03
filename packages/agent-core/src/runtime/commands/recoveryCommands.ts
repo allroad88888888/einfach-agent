@@ -4,6 +4,7 @@ import { itemsAtom, planAtom, runAtom } from '../../state/sessionAtoms'
 import type { PlanStatus } from '../../planning/types'
 import type { RunStatus } from '../../state/core.type'
 import { resumeInterruptedSession, resumePlanSession } from '../modelRun'
+import { currentTurnStartIndex } from '../activeTurnItems'
 import { unresolvedToolCalls } from '../toolCallOutcomeFacts'
 import { isPureTool } from '../toolReversibility'
 import type { CoreInstance } from '../core/coreInstance'
@@ -135,7 +136,7 @@ function requiresToolReconciliation(sessionId: string, core: CoreInstance): bool
   if (!store || !run) return false
 
   const items = store.getter(itemsAtom)
-  const currentItems = items.slice(currentRunStart(items, run.turnId))
+  const currentItems = items.slice(currentTurnStartIndex(items, run.turnId))
   // callId → 工具名：outcomeUnknown 的取舍要看该工具能否安全重发（见 toolReversibility）。
   const declared = new Map<string, string>()
   const receipts = new Set<string>()
@@ -183,17 +184,6 @@ function requiresToolReconciliation(sessionId: string, core: CoreInstance): bool
   return unresolvedToolCalls(sessionId, core).some((call) => (
     run.toolCallOutcomes?.[call.callId]?.state !== 'notStarted' && !isPureTool(call.name)
   ))
-}
-
-function currentRunStart(items: readonly { id: string; item: { role: string } }[], turnId: string | undefined): number {
-  if (turnId) {
-    const anchored = items.findIndex((entry) => entry.id === turnId)
-    if (anchored >= 0) return anchored
-  }
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    if (items[index].item.role === 'user') return index
-  }
-  return 0
 }
 
 function isTimedCallForRun(callId: string, runId: string): boolean {

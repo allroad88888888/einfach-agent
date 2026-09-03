@@ -32,7 +32,7 @@
 | 003 | 三种运行表面消费同一 provider transport policy | gpt-5.6-sol | running | 2026-09-03 | |
 | 004 | 所有归档 CLI 使用同一安全路径映射 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
 | 005 | history target 与查询枚举只有一个契约 owner | gpt-5.6-sol | pending | 2026-09-03 | |
-| 006 | 所有恢复判据使用同一当前轮边界 | gpt-5.6-terra | pending | 2026-09-03 | |
+| 006 | 所有恢复判据使用同一当前轮边界 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
 | 007 | 命令与模型工具共享同一计划持久化屏障 | gpt-5.6-terra | pending | 2026-09-03 | |
 | 008 | delegate_agent schema、解析与文档由同一能力集合驱动 | gpt-5.6-terra | pending | 2026-09-03 | |
 | 009 | workspace mutation 类型与 change context 只有一个 owner | gpt-5.6-sol | pending | 2026-09-03 | |
@@ -53,3 +53,8 @@
 - 2026-09-03：002 已提交为 `97a92e9`；依赖解锁，派发 003。
 - 2026-09-03：004 首审发现 Unicode 归档 ID 兼容回归，进入 R1；修复后等待复审。
 - 2026-09-03：004 R1 复审通过；编排者复跑 3 个文件、16 tests 通过，准予提交。
+- 2026-09-03：004 已提交为 `17113d9`；派发无文件重叠的 006，base `17113d9`。
+- 裁决: 003 纳入 `scripts/model-preview-relay-body.ts` 及测试 — 原目标明确要求 relay 消费共享 body/file-name 判据，这是实现既定验收而非扩 scope — 若不纳入，代价是保留已知 C1 分叉。
+- 2026-09-03：001 首审 REJECTED：未知 payload version 被恢复为 done、started metadata 覆盖 snapshot、缺真实 producer→replay 测试；进入 R1。
+- 裁决: 003 纳入 `packages/host-node/package.json` 与 `pnpm-lock.yaml` — host-node 已运行时消费 agent-ai，发布包必须显式声明 workspace 依赖 — 若不纳入，独立安装会缺模块。
+- 2026-09-03：006 独立审查通过；编排者复跑 3 个文件、17 tests 通过。Minor：未消费的 `commands/turnSafety.ts` 另有同名不同语义函数，留到最终清理裁决。

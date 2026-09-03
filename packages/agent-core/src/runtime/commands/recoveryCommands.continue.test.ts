@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { ConversationItem } from '../../state/core.type'
 
 vi.mock('../modelRun', () => ({
   runSession: vi.fn(() => Promise.resolve()),
@@ -48,6 +49,32 @@ function setInterruptedTimedOutcome(
       'timed:turnEnd:interrupted-run:timer': { state, updatedAt: 3 },
     },
   })
+}
+
+function setInterruptedTranscript(
+  core: ReturnType<typeof createCore>,
+  id: string,
+  items: ConversationItem[],
+  turnId?: string,
+): void {
+  const store = core.getSessionStore(id).store
+  store.setter(itemsAtom, items)
+  store.setter(runAtom, { runId: 'interrupted-run', status: 'interrupted', turnId })
+}
+
+function unpairedAssistantCall(id: string, callId: string): ConversationItem {
+  return {
+    id,
+    createdAt: 1,
+    item: {
+      role: 'assistant', content: null,
+      tool_calls: [{ id: callId, type: 'function', function: { name: 'write_file', arguments: '{}' } }],
+    },
+  }
+}
+
+function userItem(id: string): ConversationItem {
+  return { id, createdAt: 1, item: { role: 'user', content: id } }
 }
 
 describe('continueRecoveredSession', () => {
@@ -176,5 +203,35 @@ describe('continueRecoveredSession', () => {
       status: 'continued', sessionId: id, continuation: 'interrupted_run',
     })
     expect(resumeInterruptedSession).toHaveBeenCalledWith(id, expect.any(Object))
+  })
+
+  it('ignores stale unpaired calls before a present turn anchor', () => {
+    const core = createCore()
+    const id = core.newSession()
+    setInterruptedTranscript(core, id, [unpairedAssistantCall('stale-call', 'stale'), userItem('turn-anchor')], 'turn-anchor')
+
+    expect(core.getSessionRecoveryStatus(id)).toEqual({
+      status: 'recoverable', sessionId: id, continuation: 'interrupted_run', runId: 'interrupted-run',
+    })
+  })
+
+  it('uses the latest user item when the persisted turn anchor is absent', () => {
+    const core = createCore()
+    const id = core.newSession()
+    setInterruptedTranscript(core, id, [unpairedAssistantCall('stale-call', 'stale'), userItem('fallback-user')], 'missing-anchor')
+
+    expect(core.getSessionRecoveryStatus(id)).toEqual({
+      status: 'recoverable', sessionId: id, continuation: 'interrupted_run', runId: 'interrupted-run',
+    })
+  })
+
+  it('includes all calls when no turn anchor or user item exists', () => {
+    const core = createCore()
+    const id = core.newSession()
+    setInterruptedTranscript(core, id, [unpairedAssistantCall('unanchored-call', 'unanchored')])
+
+    expect(core.getSessionRecoveryStatus(id)).toEqual({
+      status: 'reconciliation_required', sessionId: id, reason: 'tool_outcome',
+    })
   })
 })

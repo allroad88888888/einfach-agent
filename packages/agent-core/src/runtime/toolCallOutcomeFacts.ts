@@ -1,6 +1,7 @@
 import type { ToolCallOutcomeState } from '../state/core.type'
 import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { patchRun } from '../state/sessionWriters'
+import { currentTurnStartIndex } from './activeTurnItems'
 import type { CoreInstance } from './core/coreInstance'
 
 export interface UnresolvedToolCall {
@@ -31,7 +32,7 @@ export function unresolvedToolCalls(sessionId: string, core: CoreInstance): Unre
   const store = core.getSessionStore(sessionId).store
   const items = store.getter(itemsAtom)
   const turnId = store.getter(runAtom)?.turnId
-  const start = turnStart(items, turnId)
+  const start = currentTurnStartIndex(items, turnId)
   const unresolved = new Map<string, UnresolvedToolCall>()
   for (const entry of items.slice(start)) {
     if (entry.item.role === 'assistant') {
@@ -50,15 +51,4 @@ export function markUnresolvedToolCallsOutcomeUnknown(sessionId: string, core: C
   const calls = unresolvedToolCalls(sessionId, core)
   setToolCallOutcomeFacts(sessionId, calls.map((call) => call.callId), 'outcomeUnknown', core)
   return calls
-}
-
-function turnStart(items: readonly { id: string; item: { role: string } }[], turnId: string | undefined): number {
-  if (turnId) {
-    const anchored = items.findIndex((entry) => entry.id === turnId)
-    if (anchored >= 0) return anchored
-  }
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    if (items[index].item.role === 'user') return index
-  }
-  return 0
 }
