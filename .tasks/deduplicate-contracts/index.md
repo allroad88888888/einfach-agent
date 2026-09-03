@@ -26,6 +26,10 @@
   - 014 行为与兼容性复审不发现阻断回归 (`leaf`，依赖：001–009,011–013)
   - 015 包边界与运行时集成复审不发现阻断缺口 (`leaf`，依赖：001–009,011–013)
   - 016 文件职责与测试证据复审不发现阻断债务 (`leaf`，依赖：001–009,011–013)
+  - 017 当前轮边界只保留一个可导入实现 (`leaf`，依赖：016)
+  - 018 子 Agent 能力值贯穿输入、恢复与归档协议 (`leaf`，依赖：016)
+  - 019 两条 server JSON 路由共享独立 Content-Type 判据 (`leaf`，依赖：016)
+  - 020 workspace 读写使用同一 content hash 原语 (`leaf`，依赖：016)
 
 ## 状态表
 | id | 任务 | model | status | created | done |
@@ -45,15 +49,19 @@
 | 014 | 行为与兼容性复审不发现阻断回归 | gpt-5.6-sol | done | 2026-09-03 | 2026-09-03 |
 | 015 | 包边界与运行时集成复审不发现阻断缺口 | gpt-5.6-sol | done | 2026-09-03 | 2026-09-03 |
 | 016 | 文件职责与测试证据复审不发现阻断债务 | gpt-5.6-sol | done | 2026-09-03 | 2026-09-03 |
+| 017 | 当前轮边界只保留一个可导入实现 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
+| 018 | 子 Agent 能力值贯穿输入、恢复与归档协议 | gpt-5.6-sol | done | 2026-09-03 | 2026-09-03 |
+| 019 | 两条 server JSON 路由共享独立 Content-Type 判据 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
+| 020 | workspace 读写使用同一 content hash 原语 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
 
 ## 遗留与发现
 - 原审查第 10 项保留现状，不在本任务树中实施。
 - 本次只处理审查报告列出的重复逻辑；其他存量超限文件不顺手重构。
-- 多 agent 复审 Important：`runtime/commands/turnSafety.ts` 仍导出一份与 canonical current-turn helper 语义不同的零消费实现；当前无行为回归，但仍是第二 owner。
-- 多 agent 复审 Important：continuation descriptor/parser 与 archive payload 仍分别硬编码 subagent model tier、task category、risk level 或 tool profile，能力集合尚未完全单点派生。
-- 多 agent 复审 Important：`apps/server/src/invokeRouteBody.ts` 同时承担 JSON Content-Type 安全判据与 invoke body 投影，未通过单一职责/引用聚类测试。
-- 多 agent 复审 Important：workspace read 与 mutation 分别实现相同 `sha256:<hex>` content hash，属于同一乐观并发协议的两个计算 owner。
-- 多 agent 复审 Minor：`confirmedTools` 公开 TypeScript 输入由 `string[]` 收窄，可能影响外部源码兼容；归档 producer 与 CLI 对 `.`/`..` 非常规 ID 映射不同；model body wrapper 缺直接映射测试；server 包边界测试不识别 CommonJS `require`，但当前源码为 ESM。
+- 多 agent 复审 Important（017 已关闭）：删除 stale current-turn helper，只保留 canonical owner。
+- 多 agent 复审 Important（018 已关闭）：subagent 能力值由公共 owner 贯穿输入、恢复与归档协议。
+- 多 agent 复审 Important（019 已关闭）：server JSON Content-Type 判据独立为单一 owner，两条路由直接消费。
+- 多 agent 复审 Important（020 已关闭）：workspace read 与 mutation 共用同一 content hash 原语。
+- 多 agent 复审 Minor（未处理）：`confirmedTools` 与 archive payload 的公开 TypeScript 输入收窄可能影响外部源码兼容；归档 producer 与 CLI 对 `.`/`..` 非常规 ID 映射不同；model body wrapper 缺直接映射测试；server 包边界测试不识别 CommonJS `require`；`write/guard.test.ts` 的固定向量位置注释与 020 implementation report 的一条 concern 已陈旧。
 - 行数遗留不变：`runtime/modelTurn.test.ts` 872 行、`subagents/runtime.budgetAndConcurrency.test.ts` 376 行，均为存量超限测试的小改，本轮复审不擅自拆。
 
 ## 决策与变更
@@ -104,3 +112,18 @@
 - 2026-09-03：014 行为/兼容性 APPROVED，无 Critical/Important，记录 3 个 Minor；独立定向验证合计 60 files / 499 tests 通过。
 - 2026-09-03：015 包边界/运行时集成 APPROVED，无发现；`check:dist`、packed-server 仓库外安装、临时 Web/Node 构建及 72 个定向测试通过。
 - 2026-09-03：016 文件职责/测试证据 REJECTED，发现 4 个 Important 与 2 个 Minor；编排者逐项回读源码确认事实成立，作为待处理发现记账，不在只读复审请求中擅自修复。
+- 裁决: 用户回复“开工”视为授权修复 016 的 4 个 Important，Minor 继续记账不动 — 对话直接承接上一轮四项阻断清单 — 若理解有误，代价是新增 4 个可独立回滚的本地提交。
+- 裁决: 017–020 每项各一个 commit — 延续用户要求的提交粒度且四项可独立回滚 — 代价是共享审查账本会随各任务分次提交。
+- 2026-09-03：018、019、020 files 不相交，先并行派发；017 等任一槽位释放即派发。
+- 2026-09-03：019 执行完成，释放槽位后立即派发 017；019 进入独立审查门。
+- 裁决: 018 增补 `subagents/runtimeState.ts`、`childAgentLoop.ts` — 二者是 confirmedTools 从规范化输入流向 archive producer 的必要类型通道 — 若不接线，公共类型收窄会在根 build 产生 TS2322。
+- 裁决: 018 再增补 `subagents/delegationPolicy.ts`、`delegationBatch.ts` — policy 输出与 state 写入是同一 confirmedTools 类型链的上游 — 若不接线，根 build 产生 TS2345。
+- 裁决: 020 的静态验收改为统计 `contentSha256` 定义，而非统计所有 SHA-256 调用 — workspace 另有格式和用途不同的 journal/path/run-index 指纹，属于不同协议 — 若强行共用会跨越抽象边界。
+- 2026-09-03：019 实现与独立审查 APPROVED；编排者复跑 4 files / 43 tests 通过，准予独立提交。
+- 2026-09-03：017 实现与独立审查 APPROVED；唯一 current-turn owner 与副作用测试证据成立，待编排者复验提交。
+- 2026-09-03：020 实现与独立审查 APPROVED；编排者复跑 6 files / 79 tests，确认 `contentSha256` 只有一个定义，准予独立提交。两处陈旧说明记为 Minor，不进修复循环。
+- 2026-09-03：019、017、020 已分别提交为 `1974e1f`、`23f5924`、`aea7d7d`，提交范围相互独立。
+- 2026-09-03：018 实现与独立审查 APPROVED；编排者复跑 5 files / 82 tests，公共能力值已贯穿 input→policy→state→child→continuation/archive，准予独立提交。
+- 2026-09-03：018 已提交为 `bfb7e85`；017–020 四项均保持一个独立产品提交。
+- 2026-09-03：编排者在四项提交后的 HEAD 运行 `pnpm build` 与 `pnpm test`；build 通过，全量 787 files / 6419 tests passed，3 files / 3 tests skipped，进入整树终审。
+- 2026-09-03：017–020 整树独立终审 APPROVED；四个 Important 全部关闭，无 Critical/Important，也未发现行为、legacy、fail-closed、依赖图、提交隔离或文件职责回归。
