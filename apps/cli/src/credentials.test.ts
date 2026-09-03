@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { normalizeApiKey } from '@einfach-agent/host-node'
 import { requireDeepSeekCredential, resolveModelCredentials } from './credentials'
 
 describe('resolveModelCredentials', () => {
@@ -87,5 +88,77 @@ describe('resolveModelCredentials', () => {
     })
 
     expect(credentials.modelBaseUrls['openai-compat']).toBeUndefined()
+  })
+
+  it('使用 host 的 API Key 归一化规则处理配置文件中的空白与超长值', async () => {
+    const overlong = 'k'.repeat(1_025)
+    const credentials = await resolveModelCredentials({
+      env: {},
+      configPath: '/tmp/config.json',
+      readConfigFile: async () => JSON.stringify({
+        modelCredentials: {
+          'deepseek:default': ' key ',
+          'glm:default': '   ',
+          'kimi:cn': overlong,
+        },
+      }),
+    })
+
+    expect(credentials.modelCredentials).toEqual({
+      deepseek: normalizeApiKey(' key '),
+    })
+    expect(credentials.modelCredentials.glm).toBe(normalizeApiKey('   '))
+    expect(credentials.modelCredentials.kimi).toBe(normalizeApiKey(overlong))
+  })
+
+  it('拒绝含非字符串成员的完整 modelCredentials 段', async () => {
+    await expect(resolveModelCredentials({
+      env: {},
+      configPath: '/tmp/config.json',
+      readConfigFile: async () => JSON.stringify({
+        modelCredentials: { 'deepseek:default': 'key', unrelated: 1 },
+      }),
+    })).rejects.toThrow('模型配置文件格式无效')
+  })
+
+  it.each([
+    ['https://gateway.example/v1/', 'https://gateway.example/v1'],
+    ['http://127.0.0.1:8080/v1/', 'http://127.0.0.1:8080/v1'],
+    ['http://localhost:11434/v1', 'http://localhost:11434/v1'],
+  ])('归一化接受安全的 openai-compat 环境接入点：%s', async (input, expected) => {
+    const credentials = await resolveModelCredentials({
+      env: { OPENAI_COMPAT_BASE_URL: input },
+      configPath: '/tmp/config.json',
+      readConfigFile: async () => JSON.stringify({}),
+    })
+
+    expect(credentials.modelBaseUrls['openai-compat']).toBe(expected)
+  })
+
+  it.each([
+    'http://gateway.example/v1',
+    'https://user:pass@gateway.example/v1',
+    'https://gateway.example/v1?key=secret',
+    'https://gateway.example/v1#fragment',
+  ])('拒绝不安全的 openai-compat 环境接入点：%s', async (input) => {
+    const credentials = await resolveModelCredentials({
+      env: { OPENAI_COMPAT_BASE_URL: input },
+      configPath: '/tmp/config.json',
+      readConfigFile: async () => JSON.stringify({}),
+    })
+
+    expect(credentials.modelBaseUrls['openai-compat']).toBeUndefined()
+  })
+
+  it('环境接入点优先于配置文件，并保留 host 的归一化结果', async () => {
+    const credentials = await resolveModelCredentials({
+      env: { OPENAI_COMPAT_BASE_URL: 'https://environment.example/v1/' },
+      configPath: '/tmp/config.json',
+      readConfigFile: async () => JSON.stringify({
+        modelCredentials: { 'openai-compat:default:baseUrl': 'https://config.example/v1' },
+      }),
+    })
+
+    expect(credentials.modelBaseUrls['openai-compat']).toBe('https://environment.example/v1')
   })
 })

@@ -94,6 +94,15 @@ export type {
 export { forwardProviderRequest, modelRequestRegistry } from './model'
 export { ModelProxyStreamError, ModelRequestCancelledError } from './model'
 export type { ForwardedModelResponse } from './model'
+// CLI 的只读模型配置契约：键绑定与段 codec 在 host-node 只有一个 owner；URL 判据同样复用。
+export {
+  credentialConfigKey,
+  normalizeApiKey,
+  normalizeOpenAiCompatBaseUrl,
+  OPENAI_COMPAT_BASE_URL_CONFIG_KEY,
+  readModelCredentialSnapshotKey,
+} from './model'
+export type { ModelProviderName, ProviderScope } from './model'
 
 // sqlite 域：Node 侧的 SQL 执行面，实现 core 的 `SqlExecutor`（P1 的 port）。
 // **这两条命令名是 Node 侧新定的**，没有移植来源：桌面端的等价能力由 Tauri 的 SQL **插件**提供，

@@ -121,6 +121,13 @@ export type { ModelRequestErrorReason } from './errors'
 export { modelRequestRegistry, createModelRequestRegistry } from './requestRegistry'
 export type { ModelRequestRegistry } from './requestRegistry'
 export type { ModelFetch } from './upstreamRequest'
+// CLI 读取 `~/.webAgent/config.json` 时只消费这一组纯读取契约：配置键的绑定、整段 codec，
+// 以及 openai-compat 的已登记接入点判据。它刻意不出写入函数，避免 CLI 多出一条修改宿主配置的面。
+export { credentialConfigKey, normalizeApiKey } from './credentials'
+export { readModelCredentialSnapshotKey } from './credentialSection'
+export { OPENAI_COMPAT_BASE_URL_CONFIG_KEY } from './openAiCompatEndpoint'
+export { normalizeOpenAiCompatBaseUrl } from './openAiCompatBaseUrl'
+export type { ModelProviderName, ProviderScope } from './provider'
 export {
   connectionProfileCredentialKey,
   normalizeConnectionProfileId,

@@ -1,30 +1,36 @@
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
+import {
+  credentialConfigKey,
+  normalizeApiKey,
+  normalizeOpenAiCompatBaseUrl,
+  OPENAI_COMPAT_BASE_URL_CONFIG_KEY,
+  readModelCredentialSnapshotKey,
+} from '@einfach-agent/host-node'
+import type { ModelProviderName, ProviderScope } from '@einfach-agent/host-node'
 
 /**
- * CLI 装配层显式登记的凭据来源：vendor id ← 环境变量 / 配置文件键。
+ * CLI 装配层显式登记的凭据来源：vendor id ← 环境变量；配置键由 host-node 的绑定表得出。
  * baseUrl 两个字段是可选的——只有没有厂商官方接入点的 vendor（目前只有 openai-compat）
  * 才需要；deepseek/glm/kimi 各自在 agent-ai adapter 里有域名常量，不必在这里配。
  */
 interface CredentialSource {
-  vendor: string
+  vendor: ModelProviderName
+  scope: ProviderScope
   environmentVariable: string
-  configKey: string
   baseUrlEnvironmentVariable?: string
-  baseUrlConfigKey?: string
 }
 
 const CREDENTIAL_SOURCES: readonly CredentialSource[] = [
-  { vendor: 'deepseek', environmentVariable: 'DEEPSEEK_API_KEY', configKey: 'deepseek:default' },
-  { vendor: 'glm', environmentVariable: 'GLM_API_KEY', configKey: 'glm:default' },
-  { vendor: 'kimi', environmentVariable: 'KIMI_API_KEY', configKey: 'kimi:cn' },
+  { vendor: 'deepseek', scope: 'default', environmentVariable: 'DEEPSEEK_API_KEY' },
+  { vendor: 'glm', scope: 'default', environmentVariable: 'GLM_API_KEY' },
+  { vendor: 'kimi', scope: 'cn', environmentVariable: 'KIMI_API_KEY' },
   {
     vendor: 'openai-compat',
+    scope: 'default',
     environmentVariable: 'OPENAI_COMPAT_API_KEY',
-    configKey: 'openai-compat:default',
     baseUrlEnvironmentVariable: 'OPENAI_COMPAT_BASE_URL',
-    baseUrlConfigKey: 'openai-compat:default:baseUrl',
   },
 ]
 
@@ -53,18 +59,17 @@ interface ResolveCredentialOptions {
 }
 
 interface CredentialConfig {
-  modelCredentials?: Record<string, unknown>
+  modelCredentials?: unknown
 }
 
 function valueFromConfig(config: CredentialConfig, key: string): string {
-  const value = config.modelCredentials?.[key]
-  return typeof value === 'string' ? value.trim() : ''
+  return normalizeApiKey(readModelCredentialSnapshotKey(config.modelCredentials, key)) ?? ''
 }
 
 function credentialsFromEnvironment(env: NodeJS.ProcessEnv): Record<string, string> {
   const credentials: Record<string, string> = {}
   for (const { vendor, environmentVariable } of CREDENTIAL_SOURCES) {
-    const value = env[environmentVariable]?.trim() ?? ''
+    const value = normalizeApiKey(env[environmentVariable]) ?? ''
     if (value) credentials[vendor] = value
   }
   return credentials
@@ -74,7 +79,7 @@ function baseUrlsFromEnvironment(env: NodeJS.ProcessEnv): Record<string, string>
   const baseUrls: Record<string, string> = {}
   for (const { vendor, baseUrlEnvironmentVariable } of CREDENTIAL_SOURCES) {
     if (!baseUrlEnvironmentVariable) continue
-    const value = env[baseUrlEnvironmentVariable]?.trim() ?? ''
+    const value = normalizeOpenAiCompatBaseUrl(env[baseUrlEnvironmentVariable] ?? '') ?? ''
     if (value) baseUrls[vendor] = value
   }
   return baseUrls
@@ -118,11 +123,15 @@ export async function resolveModelCredentials(
   const config = await readConfig(configPath, options.readConfigFile ?? readFile)
   const modelCredentials: Record<string, string> = {}
   const modelBaseUrls: Record<string, string> = { ...baseUrlsFromEnv }
-  for (const { vendor, configKey, baseUrlConfigKey } of CREDENTIAL_SOURCES) {
+  for (const source of CREDENTIAL_SOURCES) {
+    const { vendor } = source
+    const configKey = credentialConfigKey(source.vendor, source.scope)
     const value = fromEnvironment[vendor] || valueFromConfig(config, configKey)
     if (value) modelCredentials[vendor] = value
-    if (baseUrlConfigKey && !modelBaseUrls[vendor]) {
-      const baseUrl = valueFromConfig(config, baseUrlConfigKey)
+    if (vendor === 'openai-compat' && !modelBaseUrls[vendor]) {
+      const baseUrl = normalizeOpenAiCompatBaseUrl(
+        readModelCredentialSnapshotKey(config.modelCredentials, OPENAI_COMPAT_BASE_URL_CONFIG_KEY) ?? '',
+      )
       if (baseUrl) modelBaseUrls[vendor] = baseUrl
     }
   }
