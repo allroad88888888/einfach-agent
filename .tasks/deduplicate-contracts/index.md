@@ -23,6 +23,9 @@
   - 011 history 通过 persistence facade 读取 recovery 数据 (`leaf`，依赖：005)
   - 012 三个平台 shell 工具共享同一执行内核 (`leaf`，依赖：无)
   - 013 剩余机械协议副本由各领域小模块接管 (`leaf`，依赖：001,003,005,006,007,008,009,011,012)
+  - 014 行为与兼容性复审不发现阻断回归 (`leaf`，依赖：001–009,011–013)
+  - 015 包边界与运行时集成复审不发现阻断缺口 (`leaf`，依赖：001–009,011–013)
+  - 016 文件职责与测试证据复审不发现阻断债务 (`leaf`，依赖：001–009,011–013)
 
 ## 状态表
 | id | 任务 | model | status | created | done |
@@ -39,10 +42,19 @@
 | 011 | history 通过 persistence facade 读取 recovery 数据 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
 | 012 | 三个平台 shell 工具共享同一执行内核 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
 | 013 | 剩余机械协议副本由各领域小模块接管 | gpt-5.6-sol | done | 2026-09-03 | 2026-09-03 |
+| 014 | 行为与兼容性复审不发现阻断回归 | gpt-5.6-sol | done | 2026-09-03 | 2026-09-03 |
+| 015 | 包边界与运行时集成复审不发现阻断缺口 | gpt-5.6-sol | done | 2026-09-03 | 2026-09-03 |
+| 016 | 文件职责与测试证据复审不发现阻断债务 | gpt-5.6-sol | done | 2026-09-03 | 2026-09-03 |
 
 ## 遗留与发现
 - 原审查第 10 项保留现状，不在本任务树中实施。
 - 本次只处理审查报告列出的重复逻辑；其他存量超限文件不顺手重构。
+- 多 agent 复审 Important：`runtime/commands/turnSafety.ts` 仍导出一份与 canonical current-turn helper 语义不同的零消费实现；当前无行为回归，但仍是第二 owner。
+- 多 agent 复审 Important：continuation descriptor/parser 与 archive payload 仍分别硬编码 subagent model tier、task category、risk level 或 tool profile，能力集合尚未完全单点派生。
+- 多 agent 复审 Important：`apps/server/src/invokeRouteBody.ts` 同时承担 JSON Content-Type 安全判据与 invoke body 投影，未通过单一职责/引用聚类测试。
+- 多 agent 复审 Important：workspace read 与 mutation 分别实现相同 `sha256:<hex>` content hash，属于同一乐观并发协议的两个计算 owner。
+- 多 agent 复审 Minor：`confirmedTools` 公开 TypeScript 输入由 `string[]` 收窄，可能影响外部源码兼容；归档 producer 与 CLI 对 `.`/`..` 非常规 ID 映射不同；model body wrapper 缺直接映射测试；server 包边界测试不识别 CommonJS `require`，但当前源码为 ESM。
+- 行数遗留不变：`runtime/modelTurn.test.ts` 872 行、`subagents/runtime.budgetAndConcurrency.test.ts` 376 行，均为存量超限测试的小改，本轮复审不擅自拆。
 
 ## 决策与变更
 - 裁决: 用户的“其它的做、每做一次 commit 一次”视为对整棵树的执行确认 — 请求已明确给出范围和提交粒度 — 若理解有误，代价是产生多个可独立回滚的本地提交。
@@ -88,3 +100,7 @@
 - 2026-09-03：follow-up R1 独立复审通过：server manifest/lock importer 已同步，真实 tsup 边界测试确认 workspace 运行时依赖 externalize；Windows `.cmd` 启动问题改为当前 Node 直接执行 tsup JS CLI，无剩余阻断项。
 - 2026-09-03：编排者最终复跑新增边界测试 5/5、`pnpm build`、`pnpm test`；全量结果为 784 files / 6375 tests passed，3 files / 3 tests skipped。
 - 2026-09-03：整树终审 R2 APPROVED；12 个原编号提交与跳过第 10 项保持不变，provider policy 发布边界 follow-up 无 Critical/Important 遗留。
+- 裁决: 用户要求“另外多个 agent”复审，新增 014–016 三个只读复审叶并直接并行派发 — 三个风险视角可独立否决且不会产生产品文件冲突 — 代价是同一全量 diff 会被重复阅读。
+- 2026-09-03：014 行为/兼容性 APPROVED，无 Critical/Important，记录 3 个 Minor；独立定向验证合计 60 files / 499 tests 通过。
+- 2026-09-03：015 包边界/运行时集成 APPROVED，无发现；`check:dist`、packed-server 仓库外安装、临时 Web/Node 构建及 72 个定向测试通过。
+- 2026-09-03：016 文件职责/测试证据 REJECTED，发现 4 个 Important 与 2 个 Minor；编排者逐项回读源码确认事实成立，作为待处理发现记账，不在只读复审请求中擅自修复。
