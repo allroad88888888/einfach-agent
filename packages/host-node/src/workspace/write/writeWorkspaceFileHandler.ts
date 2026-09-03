@@ -19,12 +19,12 @@
 // 回执——这里照此办理（抛错）。与之相对，「路径为空」「模式拼错」这类**值**的问题走结构化
 // 回执，因为那是模型该看见并改正的东西。文案用中文：serde 的消息没有对应物，编不出来。
 
+import { decodeWorkspaceChangeContext } from '../change/decodeWorkspaceChangeContext'
 import { defaultJournalDirectory } from '../change/journalDirectory'
 import { writeWorkspaceFile } from './pipeline'
 import type { WriteWorkspaceFileRequest } from './pipeline'
 import type { NodeHostInvokeOptions } from '../../hostOptions'
 import type { NodeHostCommandHandler } from '../../routeTable'
-import type { WorkspaceChangeContext } from '../change/types'
 
 export function narrowWriteWorkspaceFileArgs(
   args: Record<string, unknown>,
@@ -42,7 +42,7 @@ export function narrowWriteWorkspaceFileArgs(
     encoding: optionalString(args.encoding, 'encoding'),
     executable: optionalBoolean(args.executable, 'executable'),
     dryRun: optionalBoolean(args.dry_run, 'dry_run'),
-    changeContext: optionalChangeContext(args.change_context),
+    changeContext: decodeWorkspaceChangeContext('write_workspace_file', args.change_context),
     // `diagnostic_operation_id` 刻意不收：它在 Rust 侧只进分阶段耗时日志，不影响写入语义，
     // 而 Node 宿主还没有那条日志出口（见 pipeline 的报告）。收进来却不用，反而像是漏了什么。
   }
@@ -87,19 +87,4 @@ function optionalNumber(value: unknown, key: string): number | undefined {
     throw new Error(`write_workspace_file 的 ${key} 必须是数字`)
   }
   return value
-}
-
-/** 四个字段全是必填字符串（Rust 的 `WorkspaceChangeContext` 没有一个 `Option`）。 */
-function optionalChangeContext(value: unknown): WorkspaceChangeContext | undefined {
-  if (isAbsent(value)) return undefined
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('write_workspace_file 的 change_context 必须是对象')
-  }
-  const record = value as Record<string, unknown>
-  return {
-    changeId: requiredString(record.changeId, 'change_context.changeId'),
-    sessionId: requiredString(record.sessionId, 'change_context.sessionId'),
-    runId: requiredString(record.runId, 'change_context.runId'),
-    toolCallId: requiredString(record.toolCallId, 'change_context.toolCallId'),
-  }
 }

@@ -22,10 +22,9 @@
 //     buildChangeSet.ts 里的对象字面量必须与本文件的声明顺序一致，两个宿主写出的条目才逐字节
 //     相同。这条不影响正确性，只影响对拍与 diff 可读性——但不写下来就没人会维持它。
 
-// change context 的形状**不在本文件声明**：它已经是 commandPayloads.ts 的公开面（写类命令的入参
-// 载荷），那里是唯一权威。这里只按 Rust 侧的名字把它接出来，免得同一个四字段结构在包里有两份
-// 各自演化的声明。
-export type { WorkspaceChangeContextArgs as WorkspaceChangeContext } from '../../commandPayloads'
+// change context 的形状**不在本文件声明**：core 的 runtime 输入是唯一权威，宿主只负责解码
+// 未信任的命令载荷。这里按 change 域的命名直接接出，不再经过 commandPayloads 维护第二个 owner。
+export type { WorkspaceChangeContext } from '@einfach-agent/core/tools'
 
 /** 条目的三种状态。Rust 侧枚举带 `rename_all = "snake_case"`，磁盘上就是这三个小写字面量。 */
 export type ChangeStatus = 'prepared' | 'applied' | 'reverted'

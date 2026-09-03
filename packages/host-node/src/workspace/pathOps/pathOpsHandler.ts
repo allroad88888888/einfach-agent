@@ -17,13 +17,13 @@
 // destination 相同""目标已存在"这类**值**的问题走结构化回执（`pipeline.ts`），因为那是模型该看见
 // 并改正的东西。
 
+import { decodeWorkspaceChangeContext } from '../change/decodeWorkspaceChangeContext'
 import { defaultJournalDirectory } from '../change/journalDirectory'
 import { operateWorkspacePath } from './pipeline'
 import type { WorkspacePathOperationRequest } from './pipeline'
 import type { WorkspacePathOperationName } from './result'
 import type { NodeHostInvokeOptions } from '../../hostOptions'
 import type { NodeHostCommandHandler } from '../../routeTable'
-import type { WorkspaceChangeContext } from '../change/types'
 
 export function narrowWorkspacePathOperationArgs(
   operation: WorkspacePathOperationName,
@@ -36,7 +36,7 @@ export function narrowWorkspacePathOperationArgs(
   }
   const workspaceRoot = optionalString(command, args.workspace_root, 'workspace_root')
   if (workspaceRoot !== undefined) request.workspaceRoot = workspaceRoot
-  const changeContext = optionalChangeContext(command, args.change_context)
+  const changeContext = decodeWorkspaceChangeContext(command, args.change_context)
   if (changeContext !== undefined) request.changeContext = changeContext
   return request
 }
@@ -83,31 +83,5 @@ function requiredString(command: string, value: unknown, key: string): string {
 function optionalString(command: string, value: unknown, key: string): string | undefined {
   if (isAbsent(value)) return undefined
   if (typeof value !== 'string') throw new Error(`${command} 的 ${key} 必须是字符串`)
-  return value
-}
-
-/** 四个字段全是必填字符串（Rust 的 `WorkspaceChangeContext` 没有一个 `Option`）。 */
-function optionalChangeContext(
-  command: string,
-  value: unknown,
-): WorkspaceChangeContext | undefined {
-  if (isAbsent(value)) return undefined
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error(`${command} 的 change_context 必须是对象`)
-  }
-  const raw = value as Record<string, unknown>
-  return {
-    changeId: requiredContextField(command, raw, 'changeId'),
-    sessionId: requiredContextField(command, raw, 'sessionId'),
-    runId: requiredContextField(command, raw, 'runId'),
-    toolCallId: requiredContextField(command, raw, 'toolCallId'),
-  }
-}
-
-function requiredContextField(command: string, raw: Record<string, unknown>, key: string): string {
-  const value = raw[key]
-  if (typeof value !== 'string') {
-    throw new Error(`${command} 的 change_context.${key} 必须是字符串`)
-  }
   return value
 }

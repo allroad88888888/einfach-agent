@@ -22,12 +22,13 @@
 // 就是比不上」，模型会反复重试同一个错值；报格式错至少说得清哪里不对。
 
 import { Buffer } from 'node:buffer'
-import { createHash } from 'node:crypto'
+import {
+  CONTENT_HASH_FORMAT_ERROR,
+  contentSha256,
+  hasValidContentHashFormat,
+} from '../change/contentHash'
 import { rejectWrite } from './result'
 import type { BeforeContent } from './before'
-
-const HASH_FORMAT_ERROR = 'expectedContentHash must use sha256:<64 lowercase hex characters>'
-const HEX_64 = /^[0-9a-f]{64}$/
 
 /**
  * 校验乐观守卫。两个都没给 = 不校验（要不要求给守卫是流水线按模式判的，不在这里）。
@@ -55,7 +56,7 @@ export function verifyExpectedContent(
     rejectWrite(mismatchMessage(expected, current))
   }
   if (expectedHash !== undefined) {
-    validateContentHash(expectedHash)
+    if (!hasValidContentHashFormat(expectedHash)) rejectWrite(CONTENT_HASH_FORMAT_ERROR)
     if (contentSha256(current) !== expectedHash) {
       rejectWrite(
         'expectedContentHash does not match current file content; the file changed after ' +
@@ -63,23 +64,6 @@ export function verifyExpectedContent(
       )
     }
   }
-}
-
-/**
- * 内容的 `sha256:<小写 hex>`，等价 Rust 的 `content_sha256`。
- *
- * 哈希的是**UTF-8 字节**（Rust 是 `current.as_bytes()`），`digest('hex')` 与 Rust 的 `{:x}` 同为
- * 小写 hex。read 域另有一份同样的实现（`read/content.ts`），Rust 侧也是各写各的
- * （`workspace_read_content.rs` 与 `workspace_write_guard.rs` 各有一个 `content_sha256`）；
- * 三行的哈希封装跨域 import 反而制造依赖，与 patch 域的 `guard.ts` 同款处理。
- */
-function contentSha256(content: string): string {
-  return `sha256:${createHash('sha256').update(content, 'utf8').digest('hex')}`
-}
-
-function validateContentHash(value: string): void {
-  if (!value.startsWith('sha256:')) rejectWrite(HASH_FORMAT_ERROR)
-  if (!HEX_64.test(value.slice('sha256:'.length))) rejectWrite(HASH_FORMAT_ERROR)
 }
 
 /**

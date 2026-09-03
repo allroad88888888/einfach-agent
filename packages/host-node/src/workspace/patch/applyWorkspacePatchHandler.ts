@@ -21,8 +21,9 @@
 // 真正的实现 `applyPatch` 把 directory 当参数收，测试指哪写哪。**只有带 `change_context` 时才用它**
 // ——不带就是一次不可回滚的直接写，与桌面端一致。
 
-import { applyPatch } from './pipeline'
+import { decodeWorkspaceChangeContext } from '../change/decodeWorkspaceChangeContext'
 import { defaultJournalDirectory } from '../change/journalDirectory'
+import { applyPatch } from './pipeline'
 import { parsePatchOperations } from './operation'
 import type { NodeHostCommandHandler } from '../../routeTable'
 import type { PatchJournalTarget } from './pipeline'
@@ -48,7 +49,7 @@ export function narrowApplyWorkspacePatchArgs(
   }
   const workspaceRoot = optionalString(args.workspace_root, 'workspace_root')
   if (workspaceRoot !== undefined) request.workspaceRoot = workspaceRoot
-  const changeContext = optionalChangeContext(args.change_context)
+  const changeContext = decodeWorkspaceChangeContext('apply_workspace_patch', args.change_context)
   if (changeContext !== undefined) request.changeContext = changeContext
   // `diagnostic_operation_id` 只喂 Rust 侧的 perf 日志，Node 宿主还没有那个出口（见 pipeline.ts）。
   // 收下不校验：为一个不影响任何行为的字段拒掉整条命令，代价与收益完全不成比例。
@@ -91,31 +92,5 @@ function optionalString(value: unknown, key: string): string | undefined {
 function optionalBoolean(value: unknown, key: string): boolean | undefined {
   if (isAbsent(value)) return undefined
   if (typeof value !== 'boolean') throw new Error(`apply_workspace_patch 的 ${key} 必须是布尔值`)
-  return value
-}
-
-/**
- * `change_context` 的四个字段**全都必填**（Rust 侧是无 `Option` 的 struct，缺一个 serde 直接拒）。
- * 缺一个就记不成一条完整的账，而那条账是「这次改动可撤销」的唯一凭据。
- */
-function optionalChangeContext(value: unknown): WorkspaceChangeContext | undefined {
-  if (isAbsent(value)) return undefined
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('apply_workspace_patch 的 change_context 必须是对象')
-  }
-  const raw = value as Record<string, unknown>
-  return {
-    changeId: requiredContextField(raw, 'changeId'),
-    sessionId: requiredContextField(raw, 'sessionId'),
-    runId: requiredContextField(raw, 'runId'),
-    toolCallId: requiredContextField(raw, 'toolCallId'),
-  }
-}
-
-function requiredContextField(raw: Record<string, unknown>, key: string): string {
-  const value = raw[key]
-  if (typeof value !== 'string') {
-    throw new Error(`apply_workspace_patch 的 change_context.${key} 必须是字符串`)
-  }
   return value
 }

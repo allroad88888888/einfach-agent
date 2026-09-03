@@ -18,12 +18,12 @@
 // 回执——这里照此办理（抛错）。与之相对，「路径为空」「目标是软链」这类**值**的问题走结构化
 // 回执，因为那是模型该看见并改正的东西。文案用中文：serde 的消息没有对应物，编不出来。
 
+import { decodeWorkspaceChangeContext } from '../change/decodeWorkspaceChangeContext'
 import { defaultJournalDirectory } from '../change/journalDirectory'
 import { deleteWorkspacePath } from './pipeline'
 import type { DeleteWorkspacePathRequest } from './pipeline'
 import type { NodeHostInvokeOptions } from '../../hostOptions'
 import type { NodeHostCommandHandler } from '../../routeTable'
-import type { WorkspaceChangeContext } from '../change/types'
 
 export function narrowDeleteWorkspacePathArgs(
   args: Record<string, unknown>,
@@ -32,7 +32,7 @@ export function narrowDeleteWorkspacePathArgs(
     path: requiredString(args.path, 'path'),
     recursive: optionalBoolean(args.recursive, 'recursive'),
     workspaceRoot: optionalString(args.workspace_root, 'workspace_root'),
-    changeContext: optionalChangeContext(args.change_context),
+    changeContext: decodeWorkspaceChangeContext('delete_workspace_path', args.change_context),
   }
 }
 
@@ -68,19 +68,4 @@ function optionalBoolean(value: unknown, key: string): boolean | undefined {
   if (isAbsent(value)) return undefined
   if (typeof value !== 'boolean') throw new Error(`delete_workspace_path 的 ${key} 必须是布尔值`)
   return value
-}
-
-/** 四个字段全是必填字符串（Rust 的 `WorkspaceChangeContext` 没有一个 `Option`）。 */
-function optionalChangeContext(value: unknown): WorkspaceChangeContext | undefined {
-  if (isAbsent(value)) return undefined
-  if (typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('delete_workspace_path 的 change_context 必须是对象')
-  }
-  const record = value as Record<string, unknown>
-  return {
-    changeId: requiredString(record.changeId, 'change_context.changeId'),
-    sessionId: requiredString(record.sessionId, 'change_context.sessionId'),
-    runId: requiredString(record.runId, 'change_context.runId'),
-    toolCallId: requiredString(record.toolCallId, 'change_context.toolCallId'),
-  }
 }
