@@ -12,7 +12,7 @@ const task: DelegateAgentChildSpec = {
   objective: 'verify recovery behavior',
   modelTier: 'pro',
   taskCategory: 'verification',
-  confirmedTools: ['read_file'],
+  confirmedTools: ['write_file'],
 }
 
 function node(path = 'root-01', parentPath = 'root'): SubagentNodeRecord {

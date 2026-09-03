@@ -8,10 +8,18 @@ import type {
   SubagentToolProfile,
 } from './types'
 import {
+  SUBAGENT_MODEL_TIERS,
+  SUBAGENT_RISK_LEVELS,
+  SUBAGENT_TASK_CATEGORIES,
+} from './types'
+import {
   DEFAULT_SUBAGENT_TOOL_PROFILE,
   SUBAGENT_TOOL_PROFILES,
 } from './toolProfile'
-import { isDelegatableDangerousTool } from '../runtime/dangerousTools'
+import {
+  isDelegatableDangerousTool,
+  type DelegatableDangerousTool,
+} from '../runtime/dangerousTools'
 
 const DEFAULT_MAX_CHILDREN = 6
 const HARD_MAX_CHILDREN = 12
@@ -50,6 +58,9 @@ function normalizeStrategy(value: unknown): DelegateAgentStrategy {
 
 // 从单一真源派生，避免新增档位后错误文案漏改。
 const TOOL_PROFILE_LIST = SUBAGENT_TOOL_PROFILES.join(', ')
+const MODEL_TIER_LIST = SUBAGENT_MODEL_TIERS.join(', ')
+const TASK_CATEGORY_LIST = SUBAGENT_TASK_CATEGORIES.join(', ')
+const RISK_LEVEL_LIST = SUBAGENT_RISK_LEVELS.join(', ')
 function normalizeToolProfile(value: unknown): SubagentToolProfile | undefined {
   return SUBAGENT_TOOL_PROFILES.includes(value as SubagentToolProfile)
     ? (value as SubagentToolProfile)
@@ -57,22 +68,21 @@ function normalizeToolProfile(value: unknown): SubagentToolProfile | undefined {
 }
 
 function normalizeModelTier(value: unknown): SubagentModelTier | undefined {
-  return value === 'pro' || value === 'flash' ? value : undefined
+  return SUBAGENT_MODEL_TIERS.includes(value as SubagentModelTier)
+    ? value as SubagentModelTier
+    : undefined
 }
 
 function normalizeTaskCategory(value: unknown): SubagentTaskCategory | undefined {
-  return value === 'retrieval'
-    || value === 'extraction'
-    || value === 'analysis'
-    || value === 'implementation'
-    || value === 'verification'
-    || value === 'final_acceptance'
-    ? value
+  return SUBAGENT_TASK_CATEGORIES.includes(value as SubagentTaskCategory)
+    ? value as SubagentTaskCategory
     : undefined
 }
 
 function normalizeRiskLevel(value: unknown): SubagentRiskLevel | undefined {
-  return value === 'low' || value === 'medium' || value === 'high' ? value : undefined
+  return SUBAGENT_RISK_LEVELS.includes(value as SubagentRiskLevel)
+    ? value as SubagentRiskLevel
+    : undefined
 }
 
 function optionalNonNegativeInt(value: unknown, max: number): number | undefined {
@@ -81,9 +91,9 @@ function optionalNonNegativeInt(value: unknown, max: number): number | undefined
   return Math.min(value, max)
 }
 
-function normalizeConfirmedTools(value: unknown): string[] | undefined {
+function normalizeConfirmedTools(value: unknown): DelegatableDangerousTool[] | undefined {
   if (!Array.isArray(value)) return undefined
-  const names: string[] = []
+  const names: DelegatableDangerousTool[] = []
   for (const item of value) {
     if (typeof item !== 'string' || !isDelegatableDangerousTool(item)) return undefined
     if (!names.includes(item)) names.push(item)
@@ -123,7 +133,7 @@ export function normalizeDelegateAgentInput(value: unknown):
     if (child.modelTier !== undefined) {
       const modelTier = normalizeModelTier(child.modelTier)
       if (!modelTier) {
-        return { ok: false, error: 'invalid delegate_agent: child modelTier must be pro or flash' }
+        return { ok: false, error: `invalid delegate_agent: child modelTier must be one of ${MODEL_TIER_LIST}` }
       }
       spec.modelTier = modelTier
     }
@@ -132,7 +142,7 @@ export function normalizeDelegateAgentInput(value: unknown):
       if (!taskCategory) {
         return {
           ok: false,
-          error: 'invalid delegate_agent: child taskCategory must be retrieval, extraction, analysis, implementation, verification, or final_acceptance',
+          error: `invalid delegate_agent: child taskCategory must be one of ${TASK_CATEGORY_LIST}`,
         }
       }
       spec.taskCategory = taskCategory
@@ -142,7 +152,7 @@ export function normalizeDelegateAgentInput(value: unknown):
       if (!riskLevel) {
         return {
           ok: false,
-          error: 'invalid delegate_agent: child riskLevel must be low, medium, or high',
+          error: `invalid delegate_agent: child riskLevel must be one of ${RISK_LEVEL_LIST}`,
         }
       }
       spec.riskLevel = riskLevel

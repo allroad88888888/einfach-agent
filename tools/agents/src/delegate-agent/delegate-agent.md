@@ -9,11 +9,9 @@ handle immediately; it does not wait for the child tree.
 - `children[].objective` (required): the concrete task for that child agent.
 - `children[].mode` (optional): short working style, such as `explore`, `review`, `design`, or `verify`.
 - `children[].expectedOutput` (optional): the shape of result the parent needs.
-- `children[].modelTier` (optional): parent preference. `pro` is always honored; `flash` is only
-  honored when the structured routing features below prove the task eligible.
-- `children[].taskCategory` (optional): one of `retrieval`, `extraction`, `analysis`,
-  `implementation`, `verification`, or `final_acceptance`.
-- `children[].riskLevel` (optional): `low`, `medium`, or `high`.
+- `children[].modelTier` (optional): parent preference. Allowed values: `pro`, `flash`. The runtime honors an explicit Pro preference and uses Flash only when the structured routing features below prove the task eligible.
+- `children[].taskCategory` (optional): allowed values: `retrieval`, `extraction`, `analysis`, `implementation`, `verification`, `final_acceptance`.
+- `children[].riskLevel` (optional): allowed values: `low`, `medium`, `high`.
 - `children[].crossModule` (optional): whether the task spans multiple modules.
 - `children[].requiresTemporalNormalization` (optional): whether the answer requires cross-time-zone
   conversion, temporal ordering/deduplication, or date/duration arithmetic. `true` routes to Pro.
@@ -21,10 +19,10 @@ handle immediately; it does not wait for the child tree.
 - `children[].priorFailureCount` (optional): observable failures for the same task in the current
   history. Any positive value routes to Pro.
 - `children[].maxTurns` (optional): per-child LLM turn budget.
-- `children[].toolProfile` (optional): narrows that child to `delegate_only` or `workspace_read`; it cannot widen the batch profile.
+- `children[].toolProfile` (optional): allowed values: `delegate_only`, `workspace_read`, `workspace_verify`. It cannot widen the batch profile.
 - `children[].confirmedTools` (optional): narrows the batch's host-confirmed dangerous-tool capability for that child.
-- `toolProfile` (optional): effective child-tool profile. Defaults to `delegate_only`; `workspace_read` additionally permits `read_file`, `list_files`, `search_files`, and `rg_search`.
-- `confirmedTools` (optional): dangerous tools explicitly requested for this exact delegation call. Omission means none; accepted names are `shell_macos`, `shell_linux`, `shell_powershell`, `write_file`, and `apply_patch`.
+- `toolProfile` (optional): effective child-tool profile. Allowed values: `delegate_only`, `workspace_read`, `workspace_verify`. It defaults to `delegate_only`. `workspace_read` additionally permits `read_file`, `list_files`, `search_files`, and `rg_search`; `workspace_verify` additionally permits `run_verification_command`.
+- `confirmedTools` (optional): dangerous tools explicitly requested for this exact delegation call. Omission means none. Accepted names: `shell_macos`, `shell_linux`, `shell_powershell`, `write_file`, `apply_patch`, `delete_path`, `copy_path`, `move_path`, `revert_workspace_change`.
 - `strategy` (optional):
   - `parallel_wait_all`（默认）：brief 蒸馏任一失败则不派发该批次；运行期混合成功/失败时批次状态为 `failed`。
   - `parallel_best_effort`：brief 失败使用降级 brief；运行期局部失败不抹掉成功结果，混合结果状态为 `partial`。
@@ -66,7 +64,7 @@ Budget exhaustion is explicit: the current delegation/model turn fails with a `s
 - Child agents inherit a distilled parent skill plus their task brief.
 - A child agent may call `delegate_agent` again when the task naturally splits further and depth budget remains.
 - Root depth/children/concurrency budgets are immutable upper bounds; descendants may narrow but never expand them.
-- Tool profiles follow the same monotonic rule: descendants inherit omission, may narrow `workspace_read` to `delegate_only`, and may never widen.
+- Tool profiles follow the same monotonic rule: descendants inherit omission, and may narrow `workspace_verify` → `workspace_read` → `delegate_only`, but may never widen.
 - Dangerous permissions are separate from profiles. The host issues a capability bound to the current session, run, tool-call id, and parent path. A request can only narrow that capability.
 
 ## Constraints

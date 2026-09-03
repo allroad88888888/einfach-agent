@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { ToolContext } from '@einfach-agent/core/tools'
-import { SUBAGENT_TOOL_PROFILES } from '@einfach-agent/core/subagents'
+import {
+  DELEGATABLE_DANGEROUS_TOOLS,
+  SUBAGENT_MODEL_TIERS,
+  SUBAGENT_RISK_LEVELS,
+  SUBAGENT_TASK_CATEGORIES,
+  SUBAGENT_TOOL_PROFILES,
+  SUBAGENT_VERIFICATION_TOOL,
+} from '@einfach-agent/core/subagents'
 import { delegateAgentTool } from './delegate-agent'
 
 function makeCtx(overrides: Partial<ToolContext> = {}): ToolContext {
@@ -38,9 +45,9 @@ describe('delegate_agent tool', () => {
         children: {
           items: {
             properties: {
-              modelTier: { enum: ['pro', 'flash'] },
-              taskCategory: { enum: ['retrieval', 'extraction', 'analysis', 'implementation', 'verification', 'final_acceptance'] },
-              riskLevel: { enum: ['low', 'medium', 'high'] },
+              modelTier: { enum: SUBAGENT_MODEL_TIERS },
+              taskCategory: { enum: SUBAGENT_TASK_CATEGORIES },
+              riskLevel: { enum: SUBAGENT_RISK_LEVELS },
               requiresTemporalNormalization: { type: 'boolean' },
               finalAcceptance: { type: 'boolean' },
               priorFailureCount: { minimum: 0 },
@@ -57,6 +64,56 @@ describe('delegate_agent tool', () => {
       }
     ).children.items.properties.toolProfile.enum
     expect(childProfile).toEqual(SUBAGENT_TOOL_PROFILES)
+  })
+
+  it('derives every schema enum from the public capability collections', () => {
+    const properties = delegateAgentTool.inputSchema.properties as unknown as {
+      children: {
+        items: {
+          properties: {
+            modelTier: { enum: readonly string[] }
+            taskCategory: { enum: readonly string[] }
+            riskLevel: { enum: readonly string[] }
+            confirmedTools: { items: { enum: readonly string[] } }
+          }
+        }
+      }
+      toolProfile: { enum: readonly string[] }
+      confirmedTools: { items: { enum: readonly string[] } }
+    }
+    const child = properties.children.items.properties
+
+    expect(child.modelTier.enum).toEqual(SUBAGENT_MODEL_TIERS)
+    expect(child.taskCategory.enum).toEqual(SUBAGENT_TASK_CATEGORIES)
+    expect(child.riskLevel.enum).toEqual(SUBAGENT_RISK_LEVELS)
+    expect(child.confirmedTools.items.enum).toEqual(DELEGATABLE_DANGEROUS_TOOLS)
+    expect(properties.toolProfile.enum).toEqual(SUBAGENT_TOOL_PROFILES)
+    expect(properties.confirmedTools.items.enum).toEqual(DELEGATABLE_DANGEROUS_TOOLS)
+  })
+
+  it('lists every capability value in the guide', () => {
+    const guide = delegateAgentTool.skill.content
+    const guideValues = (parameter: string, marker: string) => {
+      const line = guide.split('\n').find((candidate) => candidate.startsWith(`- \`${parameter}\``))
+      expect(line).toBeDefined()
+      const values = line!.split(marker)[1]?.split('.')[0]
+      expect(values).toBeDefined()
+      return Array.from(values!.matchAll(/`([^`]+)`/g), (match) => match[1])
+    }
+
+    expect(guideValues('children[].modelTier', 'Allowed values: ')).toEqual(SUBAGENT_MODEL_TIERS)
+    expect(guideValues('children[].taskCategory', 'allowed values: ')).toEqual(SUBAGENT_TASK_CATEGORIES)
+    expect(guideValues('children[].riskLevel', 'allowed values: ')).toEqual(SUBAGENT_RISK_LEVELS)
+    expect(guideValues('children[].toolProfile', 'allowed values: ')).toEqual(SUBAGENT_TOOL_PROFILES)
+    expect(guideValues('toolProfile', 'Allowed values: ')).toEqual(SUBAGENT_TOOL_PROFILES)
+    expect(guideValues('confirmedTools', 'Accepted names: ')).toEqual(DELEGATABLE_DANGEROUS_TOOLS)
+  })
+
+  it('documents the workspace_verify capability and full narrowing hierarchy', () => {
+    const guide = delegateAgentTool.skill.content
+
+    expect(guide).toContain(`\`workspace_verify\` additionally permits \`${SUBAGENT_VERIFICATION_TOOL}\``)
+    expect(guide).toContain('`workspace_verify` → `workspace_read` → `delegate_only`')
   })
 
   it('returns an explicit error when runtime capability is missing', async () => {

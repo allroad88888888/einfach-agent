@@ -1,4 +1,11 @@
 import { describe, expect, it } from 'vitest'
+import {
+  SUBAGENT_MODEL_TIERS,
+  SUBAGENT_RISK_LEVELS,
+  SUBAGENT_TASK_CATEGORIES,
+} from './types'
+import { SUBAGENT_TOOL_PROFILES } from './toolProfile'
+import { DELEGATABLE_DANGEROUS_TOOLS } from '../runtime/dangerousTools'
 import { normalizeDelegateAgentInput } from './input'
 
 describe('normalizeDelegateAgentInput', () => {
@@ -59,7 +66,32 @@ describe('normalizeDelegateAgentInput', () => {
       children: [{ objective: 'unknown tier', modelTier: 'auto' }],
     })).toEqual({
       ok: false,
-      error: 'invalid delegate_agent: child modelTier must be pro or flash',
+      error: 'invalid delegate_agent: child modelTier must be one of pro, flash',
+    })
+  })
+
+  it('accepts every value from each readonly delegation capability collection', () => {
+    for (const modelTier of SUBAGENT_MODEL_TIERS) {
+      expect(normalizeDelegateAgentInput({ children: [{ objective: 'x', modelTier }] })).toMatchObject({ ok: true })
+    }
+    for (const taskCategory of SUBAGENT_TASK_CATEGORIES) {
+      expect(normalizeDelegateAgentInput({ children: [{ objective: 'x', taskCategory }] })).toMatchObject({ ok: true })
+    }
+    for (const riskLevel of SUBAGENT_RISK_LEVELS) {
+      expect(normalizeDelegateAgentInput({ children: [{ objective: 'x', riskLevel }] })).toMatchObject({ ok: true })
+    }
+    for (const toolProfile of SUBAGENT_TOOL_PROFILES) {
+      expect(normalizeDelegateAgentInput({ children: [{ objective: 'x', toolProfile }] })).toMatchObject({ ok: true })
+    }
+    expect(normalizeDelegateAgentInput({
+      children: [{ objective: 'x', confirmedTools: DELEGATABLE_DANGEROUS_TOOLS }],
+      confirmedTools: DELEGATABLE_DANGEROUS_TOOLS,
+    })).toMatchObject({
+      ok: true,
+      input: {
+        children: [{ confirmedTools: DELEGATABLE_DANGEROUS_TOOLS }],
+        confirmedTools: DELEGATABLE_DANGEROUS_TOOLS,
+      },
     })
   })
 

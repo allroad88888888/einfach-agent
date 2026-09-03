@@ -1,6 +1,13 @@
 // tools/delegate-agent/delegate-agent.ts -- tree-shaped child-agent delegation.
 import type { Tool, ToolContext } from '@einfach-agent/core/tools'
-import { SUBAGENT_TOOL_PROFILES, normalizeDelegateAgentInput } from '@einfach-agent/core/subagents'
+import {
+  DELEGATABLE_DANGEROUS_TOOLS,
+  SUBAGENT_MODEL_TIERS,
+  SUBAGENT_RISK_LEVELS,
+  SUBAGENT_TASK_CATEGORIES,
+  SUBAGENT_TOOL_PROFILES,
+  normalizeDelegateAgentInput,
+} from '@einfach-agent/core/subagents'
 import guide from './delegate-agent.md?raw'
 
 const inputSchema = {
@@ -18,17 +25,17 @@ const inputSchema = {
           expectedOutput: { type: 'string' },
           modelTier: {
             type: 'string',
-            enum: ['pro', 'flash'],
+            enum: SUBAGENT_MODEL_TIERS,
             description: 'Parent model preference. The runtime may conservatively override flash; explicit pro is always honored.',
           },
           taskCategory: {
             type: 'string',
-            enum: ['retrieval', 'extraction', 'analysis', 'implementation', 'verification', 'final_acceptance'],
+            enum: SUBAGENT_TASK_CATEGORIES,
             description: 'Observable task category used by model routing. Only low-risk retrieval/extraction is Flash-eligible.',
           },
           riskLevel: {
             type: 'string',
-            enum: ['low', 'medium', 'high'],
+            enum: SUBAGENT_RISK_LEVELS,
             description: 'Risk derived from the bounded task scope and requested capabilities. Omission is treated conservatively.',
           },
           crossModule: { type: 'boolean', description: 'Whether the task spans multiple modules; true forces Pro.' },
@@ -50,7 +57,7 @@ const inputSchema = {
           confirmedTools: {
             type: 'array',
             uniqueItems: true,
-            items: { type: 'string', enum: ['shell_macos', 'shell_linux', 'shell_powershell', 'write_file', 'apply_patch', 'delete_path', 'copy_path', 'move_path', 'revert_workspace_change'] },
+            items: { type: 'string', enum: DELEGATABLE_DANGEROUS_TOOLS },
           },
         },
         required: ['objective'],
@@ -75,7 +82,7 @@ const inputSchema = {
     confirmedTools: {
       type: 'array',
       uniqueItems: true,
-      items: { type: 'string', enum: ['shell_macos', 'shell_linux', 'shell_powershell', 'write_file', 'apply_patch', 'delete_path', 'copy_path', 'move_path', 'revert_workspace_change'] },
+      items: { type: 'string', enum: DELEGATABLE_DANGEROUS_TOOLS },
       description: 'Dangerous tools requested from a host-issued capability scoped to this delegation. Omission means none.',
     },
   },

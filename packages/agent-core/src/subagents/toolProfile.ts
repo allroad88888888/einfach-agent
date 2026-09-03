@@ -1,13 +1,20 @@
-import type { SubagentToolProfile } from './types'
 import { isSubagentHistoryTool, SUBAGENT_HISTORY_TOOLS } from './historyToolProfile'
 
-export const DEFAULT_SUBAGENT_TOOL_PROFILE: SubagentToolProfile = 'delegate_only'
-
-export const SUBAGENT_TOOL_PROFILES: readonly SubagentToolProfile[] = [
+/**
+ * 子 agent 工具档位（全序能力阶梯）：
+ *   · delegate_only    —— 只能 delegate_agent。
+ *   · workspace_read   —— 追加只读文件工具。
+ *   · workspace_verify —— 再追加 run_verification_command，用于核验型子 agent 取得真实执行证据。
+ */
+export const SUBAGENT_TOOL_PROFILES = [
   'delegate_only',
   'workspace_read',
   'workspace_verify',
-]
+] as const
+
+export type SubagentToolProfile = (typeof SUBAGENT_TOOL_PROFILES)[number]
+
+export const DEFAULT_SUBAGENT_TOOL_PROFILE: SubagentToolProfile = 'delegate_only'
 
 export const SUBAGENT_WORKSPACE_READ_TOOLS = [
   'read_file',

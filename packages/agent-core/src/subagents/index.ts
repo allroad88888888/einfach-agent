@@ -46,8 +46,7 @@
 //     `childAgentLoop` / `childAgentToolCalls` / `runtimeState` 与同目录测试），且都不是任何
 //     已导出签名的构成类型（`DelegationRuntime.delegateAgents`、`ToolContext.spawnAgents`
 //     写的是内联方法签名，不引用 `DelegateAgents` 别名），故一并从公开面删除。
-//   · `types.ts` 里 `SubagentToolProfile`、`SubagentModelTier`、`SubagentTaskCategory`、
-//     `SubagentRiskLevel`、`SubagentSkillPromotion`、`SubagentSkillSource`、
+//   · `types.ts` 里 `SubagentSkillPromotion`、`SubagentSkillSource`、
 //     `SubagentDangerousToolCapability`、`DelegateAgentRuntime`、`SubagentRuntimeTranscript`
 //     —— 当前零外部具名消费方，需要时按上面的判据补，不预支公开承诺。
 
@@ -68,6 +67,10 @@ export type {
   DelegateAgentStrategy,
   // `DelegationRuntime.delegateAgents` 的入参类型（公开签名词汇）
   DelegateAgentInput,
+  SubagentModelTier,
+  SubagentRiskLevel,
+  SubagentTaskCategory,
+  SubagentToolProfile,
   // packages/subagents: archive/replay、archive/archiveIO
   SubagentArchiveEvent,
   SubagentArchiveEventType,
@@ -81,6 +84,11 @@ export type {
   SubagentPath,
   // packages/subagents: archive/{archiveIO,skillCache,distill}
   SubagentSkillFile,
+} from './types'
+export {
+  SUBAGENT_MODEL_TIERS,
+  SUBAGENT_RISK_LEVELS,
+  SUBAGENT_TASK_CATEGORIES,
 } from './types'
 
 // ---------------------------------------------------------------------------
@@ -133,11 +141,19 @@ export type {
 export {
   // tools/agents: delegate-agent（工具 schema 的 enum，与其测试）
   SUBAGENT_TOOL_PROFILES,
+  // tools/agents: delegate-agent guide（workspace_verify 的专属执行能力）
+  SUBAGENT_VERIFICATION_TOOL,
 } from './toolProfile'
 export {
   // tools/agents: delegate-agent；packages/subagents: archive/archiveCapacity.test
   normalizeDelegateAgentInput,
 } from './input'
+export {
+  DELEGATABLE_DANGEROUS_TOOLS,
+} from '../runtime/dangerousTools'
+export type {
+  DelegatableDangerousTool,
+} from '../runtime/dangerousTools'
 
 // ---------------------------------------------------------------------------
 // 注入端口（`./delegationRuntimePorts`）——装配层必须满足的六个端口（S11b 后：

@@ -1,13 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   SUBAGENT_TOOL_PROFILES,
+  type SubagentToolProfile,
   SUBAGENT_VERIFICATION_TOOL,
   canNarrowSubagentToolProfile,
   isSubagentVerificationTool,
   isSubagentWorkspaceReadTool,
   subagentAllowedTools,
 } from './toolProfile'
-import type { SubagentToolProfile } from './types'
 import {
   SUBAGENT_HISTORY_TOOLS,
   isSubagentHistoryTool,

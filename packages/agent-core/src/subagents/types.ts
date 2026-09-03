@@ -1,16 +1,29 @@
 import type { ModelItem } from '@einfach-agent/ai'
+import type { DelegatableDangerousTool } from '../runtime/dangerousTools'
+import type { SubagentToolProfile } from './toolProfile'
+
+export type { SubagentToolProfile } from './toolProfile'
 
 export type SubagentPath = string
 
 export type DelegateAgentStrategy = 'parallel_wait_all' | 'parallel_best_effort'
 export type DelegateAgentBatchStatus = 'done' | 'partial' | 'failed' | 'cancelled'
-/**
- * 子 agent 工具档位（全序能力阶梯，见 toolProfile.ts）：
- *   · delegate_only    —— 只能 delegate_agent。
- *   · workspace_read   —— 追加只读文件工具。
- *   · workspace_verify —— 再追加 run_verification_command，用于核验型子 agent 取得真实执行证据。
- */
-export type SubagentToolProfile = 'delegate_only' | 'workspace_read' | 'workspace_verify'
+export const SUBAGENT_MODEL_TIERS = ['pro', 'flash'] as const
+export type SubagentModelTier = (typeof SUBAGENT_MODEL_TIERS)[number]
+
+export const SUBAGENT_TASK_CATEGORIES = [
+  'retrieval',
+  'extraction',
+  'analysis',
+  'implementation',
+  'verification',
+  'final_acceptance',
+] as const
+export type SubagentTaskCategory = (typeof SUBAGENT_TASK_CATEGORIES)[number]
+
+export const SUBAGENT_RISK_LEVELS = ['low', 'medium', 'high'] as const
+export type SubagentRiskLevel = (typeof SUBAGENT_RISK_LEVELS)[number]
+
 export type SubagentArchiveWriteMode = 'create' | 'overwrite' | 'append' | 'upsert'
 export type SubagentSkillPromotion = 'ephemeral' | 'candidate' | 'promoted' | 'archived'
 
@@ -58,16 +71,6 @@ export type SubagentNodeStatus =
   | 'failed'
   | 'cancelled'
 
-export type SubagentModelTier = 'pro' | 'flash'
-export type SubagentTaskCategory =
-  | 'retrieval'
-  | 'extraction'
-  | 'analysis'
-  | 'implementation'
-  | 'verification'
-  | 'final_acceptance'
-export type SubagentRiskLevel = 'low' | 'medium' | 'high'
-
 export interface DelegateAgentChildSpec {
   objective: string
   mode?: string
@@ -90,7 +93,7 @@ export interface DelegateAgentChildSpec {
   maxChildren?: number
   maxTurns?: number
   toolProfile?: SubagentToolProfile
-  confirmedTools?: string[]
+  confirmedTools?: DelegatableDangerousTool[]
 }
 
 export interface DelegateAgentInput {
@@ -102,7 +105,7 @@ export interface DelegateAgentInput {
   maxTotalNodes?: number
   maxModelCalls?: number
   toolProfile?: SubagentToolProfile
-  confirmedTools?: string[]
+  confirmedTools?: DelegatableDangerousTool[]
 }
 
 export interface SubagentNodeRecord {

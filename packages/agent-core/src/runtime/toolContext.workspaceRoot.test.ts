@@ -182,7 +182,7 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
 
     await runDelegation(ctx, {
       children: [{ objective: 'browse' }],
-      confirmedTools: [mcpTool],
+      confirmedTools: [mcpTool] as unknown as import('./dangerousTools').DelegatableDangerousTool[],
     })
 
     expect(capability).toBeUndefined()

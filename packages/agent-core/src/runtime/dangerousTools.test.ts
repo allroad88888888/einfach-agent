@@ -1,9 +1,22 @@
 import { describe, expect, it } from 'vitest'
 import {
   classifyToolRisk,
+  DANGEROUS_TOOLS,
+  DELEGATABLE_DANGEROUS_TOOLS,
+  isDelegatableDangerousTool,
   MCP_CONNECT_TOOL_NAME,
   type McpConnectTargetProbe,
 } from './dangerousTools'
+
+describe('delegatable dangerous tools', () => {
+  it('are a policy subset of the root dangerous tool set', () => {
+    for (const name of DELEGATABLE_DANGEROUS_TOOLS) {
+      expect(DANGEROUS_TOOLS.has(name)).toBe(true)
+      expect(isDelegatableDangerousTool(name)).toBe(true)
+    }
+    expect(isDelegatableDangerousTool('mcp__unseen__run')).toBe(false)
+  })
+})
 
 describe('classifyToolRisk', () => {
   it.each([
@@ -203,7 +216,7 @@ describe('classifyToolRisk · connect_mcp_server 按 serverId 分级', () => {
     ).level).toBe('safe')
   })
 
-  it('连接工具不进 DANGEROUS_TOOLS：连接能力不可授权给子 agent', async () => {
+  it('connect 不在 delegatable subset，root 风险走参数级分流', async () => {
     const { isDelegatableDangerousTool } = await import('./dangerousTools')
     expect(isDelegatableDangerousTool(MCP_CONNECT_TOOL_NAME)).toBe(false)
   })

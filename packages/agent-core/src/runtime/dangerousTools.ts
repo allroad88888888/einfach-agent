@@ -14,8 +14,8 @@ import {
   criticalUnixDelete,
 } from './shellCommandRisk'
 
-// 危险（变更类）server 工具名集合。新增变更类工具时在这里补一行即可。
-export const DANGEROUS_TOOLS: ReadonlySet<string> = new Set([
+// 根 agent 的内建危险工具全集。MCP 另由动态前缀判定，不能进入子 agent 能力集合。
+const DANGEROUS_TOOL_NAMES = [
   'shell_macos',
   'shell_linux',
   'shell_powershell',
@@ -25,7 +25,27 @@ export const DANGEROUS_TOOLS: ReadonlySet<string> = new Set([
   'copy_path',
   'move_path',
   'revert_workspace_change',
-])
+] as const
+
+export type DangerousTool = (typeof DANGEROUS_TOOL_NAMES)[number]
+
+// 根级危险策略的 owner；未来 root-only 工具只加到 DANGEROUS_TOOL_NAMES，绝不自动可委派。
+export const DANGEROUS_TOOLS: ReadonlySet<string> = new Set(DANGEROUS_TOOL_NAMES)
+
+// 可授权给子 agent 的内建危险工具子集。MCP 工具始终停留在父级执行边界。
+export const DELEGATABLE_DANGEROUS_TOOLS = [
+  'shell_macos',
+  'shell_linux',
+  'shell_powershell',
+  'write_file',
+  'apply_patch',
+  'delete_path',
+  'copy_path',
+  'move_path',
+  'revert_workspace_change',
+] as const satisfies readonly DangerousTool[]
+
+export type DelegatableDangerousTool = (typeof DELEGATABLE_DANGEROUS_TOOLS)[number]
 
 // 简介：MCP 工具由外部服务动态提供，按危险工具处理。
 export function isMcpTool(name: string): boolean {
@@ -50,8 +70,8 @@ export function isDangerousTool(name: string): boolean {
 }
 
 // 简介：只有内建危险工具可被显式授权给子 agent；MCP 工具必须留在父级执行边界。
-export function isDelegatableDangerousTool(name: string): boolean {
-  return DANGEROUS_TOOLS.has(name)
+export function isDelegatableDangerousTool(name: string): name is DelegatableDangerousTool {
+  return (DELEGATABLE_DANGEROUS_TOOLS as readonly string[]).includes(name)
 }
 
 export type ToolRisk = 'safe' | 'dangerous' | 'critical'
@@ -235,7 +255,7 @@ export function classifyToolRisk(
 ): ToolRiskAssessment {
   // 连接工具没有静态等级：同一个工具、同一份参数形状，指向 stdio 就是本机起进程，
   // 指向 HTTP 就只是一次网络请求。所以它在 isDangerousTool 之前单独分流 ——
-  // 它不进 DANGEROUS_TOOLS（那个集合同时决定「可授权给子 agent」，连接能力必须留在父级）。
+  // 它不进可委派子集：连接能力必须留在父级，root 风险则由本参数级分流决定。
   if (name === MCP_CONNECT_TOOL_NAME) {
     return classifyMcpConnectRisk(args, context?.mcpConnectTarget)
   }
