@@ -47,9 +47,9 @@ import { forwardProviderRequest, modelRequestRegistry } from '@einfach-agent/hos
 import { replyJson } from './httpReply'
 import {
   DEFAULT_MAX_MODEL_BODY_BYTES,
-  hasJsonContentType,
   readModelRouteBody,
 } from './modelRouteBody'
+import { hasJsonContentType } from './jsonContentType'
 import { mapModelRouteError } from './modelRouteError'
 import {
   cancelInFlightModelRequest,

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events'
 import type { IncomingMessage } from 'node:http'
 import { describe, expect, it } from 'vitest'
-import { hasJsonContentType, readInvokeRouteBody } from './invokeRouteBody'
+import { readInvokeRouteBody } from './invokeRouteBody'
 
 /** 造一个足够假装成 IncomingMessage 的替身：真 EventEmitter + headers 属性。 */
 function fakeRequest(headers: Record<string, string> = {}): { request: IncomingMessage, emitter: EventEmitter } {
@@ -9,30 +9,6 @@ function fakeRequest(headers: Record<string, string> = {}): { request: IncomingM
   const request = Object.assign(emitter, { headers }) as unknown as IncomingMessage
   return { request, emitter }
 }
-
-describe('hasJsonContentType', () => {
-  it('接受 application/json，大小写不敏感', () => {
-    expect(hasJsonContentType(fakeRequest({ 'content-type': 'application/json' }).request)).toBe(true)
-    expect(hasJsonContentType(fakeRequest({ 'content-type': 'Application/JSON' }).request)).toBe(true)
-  })
-
-  it('接受带 charset 参数的形式', () => {
-    expect(hasJsonContentType(fakeRequest({ 'content-type': 'application/json; charset=utf-8' }).request)).toBe(
-      true,
-    )
-  })
-
-  it('拒绝表单能发出的三种类型与缺失头', () => {
-    expect(hasJsonContentType(fakeRequest({}).request)).toBe(false)
-    expect(hasJsonContentType(fakeRequest({ 'content-type': 'application/x-www-form-urlencoded' }).request)).toBe(
-      false,
-    )
-    expect(hasJsonContentType(fakeRequest({ 'content-type': 'multipart/form-data; boundary=x' }).request)).toBe(
-      false,
-    )
-    expect(hasJsonContentType(fakeRequest({ 'content-type': 'text/plain' }).request)).toBe(false)
-  })
-})
 
 describe('readInvokeRouteBody', () => {
   it('空 body 返回 empty', async () => {

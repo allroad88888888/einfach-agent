@@ -30,13 +30,6 @@ import { PROVIDER_TRANSPORT_LIMITS as LIMITS } from '@einfach-agent/ai'
 import type { IncomingMessage } from 'node:http'
 import { readBoundedJsonBody } from './boundedJsonBody'
 
-// Content-Type 白名单直接复用 invoke 路由那份**同一个函数**，不再抄一份。
-// 它挡的是表单 CSRF（浏览器的 `<form>` 只能发三种简单 content-type，设不出 application/json），
-// 是一道与 Origin 无关、机制性生效的独立防线——两条 API 路由必须逐字同款，而一条安全判据存在
-// 两份副本的唯一结局是某天只改了其中一份。抽成共享模块更好，但那要动 invokeRouteBody.ts，
-// 不在本卡改动面内（接线时一并做即可）。
-export { hasJsonContentType } from './invokeRouteBody'
-
 /**
  * 请求体上限，默认 56 MiB —— 与 host request envelope 共同消费
  * `PROVIDER_TRANSPORT_LIMITS.maxWireRequestBytes`，理由见文件头。

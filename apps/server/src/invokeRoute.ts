@@ -25,7 +25,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { HostInvoke } from '@einfach-agent/core'
 import { replyJson } from './httpReply'
-import { hasJsonContentType, readInvokeRouteBody } from './invokeRouteBody'
+import { hasJsonContentType } from './jsonContentType'
+import { readInvokeRouteBody } from './invokeRouteBody'
 import { resolveInvokeCommandName } from './invokeRouteCommandName'
 import { mapInvokeRouteError } from './invokeRouteError'
 
