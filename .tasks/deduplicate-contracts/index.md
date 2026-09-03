@@ -83,3 +83,8 @@
 - 2026-09-03：007 R1 复审通过；编排者复跑 3 个文件、19 tests 通过，准予提交。
 - 2026-09-03：007 已提交为 `558de25`；派发无文件重叠的 009。
 - 2026-09-03：013 独立审查通过；执行侧最终 `pnpm build`、`pnpm test` 全绿，编排者复跑 19 个关键文件、164 tests 通过，准予提交。
+- 2026-09-03：009、012、013 分别提交为 `f8605fe`、`c6182c5`、`67de8f5`；原编号 001–009、011–013 共 12 个实现提交完成，第 10 项保持未做。
+- 2026-09-03：整树首轮终审发现 `apps/server` 未声明直接运行时依赖 `@einfach-agent/ai`，共享 provider policy 会被静默内联；作为 003 的发布边界 follow-up 集中修复。
+- 2026-09-03：follow-up R1 独立复审通过：server manifest/lock importer 已同步，真实 tsup 边界测试确认 workspace 运行时依赖 externalize；Windows `.cmd` 启动问题改为当前 Node 直接执行 tsup JS CLI，无剩余阻断项。
+- 2026-09-03：编排者最终复跑新增边界测试 5/5、`pnpm build`、`pnpm test`；全量结果为 784 files / 6375 tests passed，3 files / 3 tests skipped。
+- 2026-09-03：整树终审 R2 APPROVED；12 个原编号提交与跳过第 10 项保持不变，provider policy 发布边界 follow-up 无 Critical/Important 遗留。

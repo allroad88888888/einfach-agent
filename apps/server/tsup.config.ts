@@ -12,7 +12,8 @@ export default definePackageBuild({
   // `createServer.ts` 的 `resolveDefaultDistDirectory()` 依赖：内联后模块内的
   // `import.meta.url` 统一指向这份产物自己（`dist/main.js`），而不是各自的源文件路径。
   entry: ['src/main.ts'],
-  // @einfach-agent/core、@einfach-agent/host-node 已在本包 package.json 的 dependencies 里，
-  // tsup 按 getProductionDeps 自动 external，这里留空。
+  // @einfach-agent/ai、@einfach-agent/core、@einfach-agent/host-node 已在本包 package.json 的
+  // dependencies 里，tsup 按 getProductionDeps 自动 external；packageBoundary.test.ts 会从源码
+  // 重打到临时目录，防止新增运行时 workspace import 被根工作区解析掩盖后静默内联。
   external: [],
 })

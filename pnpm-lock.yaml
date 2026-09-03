@@ -160,6 +160,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@einfach-agent/ai':
+        specifier: workspace:*
+        version: link:../../packages/agent-ai
       '@einfach-agent/core':
         specifier: workspace:*
         version: link:../../packages/agent-core

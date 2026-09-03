@@ -29,6 +29,7 @@
     "build": "tsup && node scripts/embed-web-dist.mjs"
   },
   "dependencies": {
+    "@einfach-agent/ai": "workspace:*",
     "@einfach-agent/core": "workspace:*",
     "@einfach-agent/host-node": "workspace:*"
   },
