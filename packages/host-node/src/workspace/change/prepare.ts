@@ -14,7 +14,8 @@
 //
 // 每个入口都先 `validateChangeId`，包括只拼路径不碰盘的 `changePayloadPath`——见 entryPaths.ts。
 
-import { rm, stat } from 'node:fs/promises'
+import { rm } from 'node:fs/promises'
+import { pathExists } from '../common/pathExists'
 import { buildChangeSet } from './buildChangeSet'
 import { entryPath, payloadPath, validateChangeId } from './entryPaths'
 import { updateStatus, writeEntry } from './entryStore'
@@ -154,16 +155,6 @@ async function register(
 async function rejectExistingEntry(directory: string, changeId: string): Promise<void> {
   if (await pathExists(entryPath(directory, changeId))) {
     throw new Error('workspace change id already exists')
-  }
-}
-
-/** Rust 的 `Path::exists()`：跟随符号链接，任何错误都算作「不存在」。 */
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch {
-    return false
   }
 }
 

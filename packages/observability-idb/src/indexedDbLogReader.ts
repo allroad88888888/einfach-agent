@@ -1,34 +1,10 @@
 import type { TraceLogReader, TraceLogSnapshot, TraceEvent, TraceSpan } from '@einfach-agent/core/observability'
-
-const DEFAULT_DB_NAME = 'web-agent-observability'
-const SPANS_STORE = 'trace_spans'
-const EVENTS_STORE = 'trace_events'
-
-function openDb(dbName: string): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    if (typeof indexedDB === 'undefined' || !indexedDB) {
-      reject(new Error('IndexedDB unavailable'))
-      return
-    }
-    const request = indexedDB.open(dbName, 1)
-    request.onupgradeneeded = () => {
-      const db = request.result
-      if (!db.objectStoreNames.contains(SPANS_STORE)) {
-        const store = db.createObjectStore(SPANS_STORE, { keyPath: 'id' })
-        store.createIndex('traceId', 'traceId')
-        store.createIndex('startedAt', 'startedAt')
-      }
-      if (!db.objectStoreNames.contains(EVENTS_STORE)) {
-        const store = db.createObjectStore(EVENTS_STORE, { keyPath: 'id' })
-        store.createIndex('traceId', 'traceId')
-        store.createIndex('timestamp', 'timestamp')
-      }
-    }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error ?? new Error('open failed'))
-    request.onblocked = () => reject(new Error('open blocked'))
-  })
-}
+import {
+  DEFAULT_LOG_DB_NAME,
+  EVENTS_STORE_NAME,
+  SPANS_STORE_NAME,
+  openIndexedDbLogDatabase,
+} from './indexedDbLogDatabase'
 
 function getAll<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
   return new Promise((resolve, reject) => {
@@ -45,15 +21,15 @@ function getAll<T>(db: IDBDatabase, storeName: string): Promise<T[]> {
   })
 }
 
-export function createIndexedDbLogReader(dbName: string = DEFAULT_DB_NAME): TraceLogReader {
+export function createIndexedDbLogReader(dbName: string = DEFAULT_LOG_DB_NAME): TraceLogReader {
   return {
     source: 'indexeddb',
     async readAll(): Promise<TraceLogSnapshot> {
-      const db = await openDb(dbName)
+      const db = await openIndexedDbLogDatabase(dbName)
       try {
         const [spans, events] = await Promise.all([
-          getAll<TraceSpan>(db, SPANS_STORE),
-          getAll<TraceEvent>(db, EVENTS_STORE),
+          getAll<TraceSpan>(db, SPANS_STORE_NAME),
+          getAll<TraceEvent>(db, EVENTS_STORE_NAME),
         ])
         return {
           source: 'indexeddb',

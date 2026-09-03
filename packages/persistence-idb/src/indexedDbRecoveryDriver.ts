@@ -14,6 +14,7 @@ import {
   RECOVERY_SNAPSHOT_STORE_NAME,
   openIndexedDbHistoryDatabase,
 } from './indexedDbDatabase'
+import { runIndexedDbTransaction } from './indexedDbTransaction'
 
 interface RecoveryRecord {
   sessionId: string
@@ -37,32 +38,9 @@ function decodeStoredRecord(value: unknown, sessionId: string): RecoveryRecord |
   return { sessionId, deleted: false, snapshot: validateRecoverySnapshot(value.snapshot, sessionId) }
 }
 
-function runTransaction<T>(
-  db: IDBDatabase,
-  mode: IDBTransactionMode,
-  operation: (store: IDBObjectStore, setResult: (result: T) => void, fail: (error: unknown) => void) => void,
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(RECOVERY_SNAPSHOT_STORE_NAME, mode)
-    let result: T | undefined
-    let failure: unknown
-    const fail = (error: unknown) => {
-      failure = error
-      try {
-        transaction.abort()
-      } catch {
-        // 已完成或已中止时，transaction 的事件仍会统一 reject。
-      }
-    }
-    transaction.oncomplete = () => resolve(result as T)
-    transaction.onerror = () => reject(failure ?? transaction.error ?? new Error('IndexedDB recovery transaction failed'))
-    transaction.onabort = () => reject(failure ?? transaction.error ?? new Error('IndexedDB recovery transaction aborted'))
-    try {
-      operation(transaction.objectStore(RECOVERY_SNAPSHOT_STORE_NAME), (value) => { result = value }, fail)
-    } catch (error) {
-      fail(error)
-    }
-  })
+const transactionErrors = {
+  failed: 'IndexedDB recovery transaction failed',
+  aborted: 'IndexedDB recovery transaction aborted',
 }
 
 function requestRecord(
@@ -89,7 +67,7 @@ export function createIndexedDbRecoveryDriver(
     async listLatest() {
       const db = await openIndexedDbHistoryDatabase(dbName)
       try {
-        return await runTransaction(db, 'readonly', (store, setResult, fail) => {
+        return await runIndexedDbTransaction(db, RECOVERY_SNAPSHOT_STORE_NAME, 'readonly', transactionErrors, (store, setResult, fail) => {
           const request = store.getAll()
           request.onsuccess = () => {
             try {
@@ -119,7 +97,7 @@ export function createIndexedDbRecoveryDriver(
       assertSessionId(sessionId)
       const db = await openIndexedDbHistoryDatabase(dbName)
       try {
-        return await runTransaction(db, 'readonly', (store, setResult, fail) => {
+        return await runIndexedDbTransaction(db, RECOVERY_SNAPSHOT_STORE_NAME, 'readonly', transactionErrors, (store, setResult, fail) => {
           requestRecord(store, sessionId, (record) => {
             setResult(record?.deleted ? undefined : record?.snapshot)
           }, fail)
@@ -134,7 +112,7 @@ export function createIndexedDbRecoveryDriver(
       const snapshot = validateRecoverySnapshot(candidate, sessionId)
       const db = await openIndexedDbHistoryDatabase(dbName)
       try {
-        return await runTransaction<RecoverySaveResult>(db, 'readwrite', (store, setResult, fail) => {
+        return await runIndexedDbTransaction<RecoverySaveResult>(db, RECOVERY_SNAPSHOT_STORE_NAME, 'readwrite', transactionErrors, (store, setResult, fail) => {
           requestRecord(store, sessionId, (current) => {
             if (current?.deleted) {
               setResult({ status: 'tombstoned' })
@@ -158,7 +136,7 @@ export function createIndexedDbRecoveryDriver(
       assertSessionId(sessionId)
       const db = await openIndexedDbHistoryDatabase(dbName)
       try {
-        await runTransaction<void>(db, 'readwrite', (store, setResult, fail) => {
+        await runIndexedDbTransaction<void>(db, RECOVERY_SNAPSHOT_STORE_NAME, 'readwrite', transactionErrors, (store, setResult, fail) => {
           const write = store.put({ sessionId, deleted: true } satisfies RecoveryRecord)
           write.onsuccess = () => setResult(undefined)
           write.onerror = () => fail(write.error ?? new Error('IndexedDB recovery tombstone failed'))

@@ -7,7 +7,7 @@
 // `remove()` 恒把 `workspaceRoot` 填成这次的临时根：**流水线不传 root 时会去跑 git rev-parse**，
 // 那会让测试落到本仓库的真实工作区上——而这是**删除**，第一个用例就会删掉仓库里的文件。
 
-import { lstat, readFile, readdir } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { createTempWorkspace } from '../common/tempWorkspace.testHarness'
 import { deleteWorkspacePath } from './pipeline'
@@ -62,10 +62,5 @@ export async function readEntry(
   return JSON.parse(raw) as WorkspaceChangeSet
 }
 
-/** **不跟随**软链的存在性判定——测软链用例时跟随了就永远看不见那条链本身。 */
-export async function pathExists(path: string): Promise<boolean> {
-  return lstat(path).then(
-    () => true,
-    () => false,
-  )
-}
+/** **不跟随**软链的测试别名；悬空软链也必须可见。 */
+export { symlinkExists as pathExists } from '../change/pathProbe'

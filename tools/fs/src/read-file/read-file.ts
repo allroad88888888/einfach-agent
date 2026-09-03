@@ -1,12 +1,14 @@
 import type {
   Tool,
   ToolContext,
-  ToolResult,
   ReadWorkspaceFileInput,
   ReadWorkspaceFileResult,
-  WorkspaceRuntimeResult,
 } from '@einfach-agent/core/tools'
 import guide from './read-file.md?raw'
+import {
+  type CompatibleWorkspaceResult,
+  workspaceResultToToolResult,
+} from '../workspaceResultEnvelope'
 
 const DEFAULT_MAX_BYTES = 20_000
 const MAX_BYTES = 200_000
@@ -38,10 +40,8 @@ const inputSchema = {
   additionalProperties: false,
 }
 
-type MaybeWorkspaceResult<T> = WorkspaceRuntimeResult<T> | T
-
 type WorkspaceReadContext = ToolContext & {
-  readWorkspaceFile(input: ReadWorkspaceFileInput): Promise<MaybeWorkspaceResult<ReadWorkspaceFileResult>>
+  readWorkspaceFile(input: ReadWorkspaceFileInput): Promise<CompatibleWorkspaceResult<ReadWorkspaceFileResult>>
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -77,29 +77,6 @@ function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message || error.name
   if (typeof error === 'string') return error
   return 'readWorkspaceFile failed'
-}
-
-function toToolResult<T>(result: MaybeWorkspaceResult<T>): ToolResult {
-  if (isStructuredResult(result)) {
-    return result.ok
-      ? { ok: true, data: result.data }
-      : {
-          ok: false,
-          error: result.error,
-          code: 'WORKSPACE_READ_FAILED',
-          retryable: false,
-        }
-  }
-  return { ok: true, data: result }
-}
-
-function isStructuredResult<T>(value: MaybeWorkspaceResult<T>): value is WorkspaceRuntimeResult<T> {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    typeof (value as { ok?: unknown }).ok === 'boolean'
-  )
 }
 
 export const readFileTool: Tool = {
@@ -168,7 +145,7 @@ export const readFileTool: Tool = {
       if (startLine !== undefined) request.startLine = startLine
       if (lineCount !== undefined) request.lineCount = lineCount
       const result = await readWorkspaceFile.call(ctx, request)
-      return toToolResult(result)
+      return workspaceResultToToolResult(result, 'WORKSPACE_READ_FAILED')
     } catch (error) {
       return {
         ok: false,

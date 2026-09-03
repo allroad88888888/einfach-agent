@@ -1,5 +1,6 @@
 import { isAbortError } from '@einfach-agent/ai'
 import type { ToolResult } from '../tools/types'
+import { serializeToolResultForModel } from '../tools/toolResultModelPayload'
 import type { TraceAttributes, TraceStatus } from '../observability/port'
 import { appendItem } from '../state/sessionWriters'
 import { newId } from './newId'
@@ -79,9 +80,11 @@ export function appendToolResult(id: string, toolCallId: string, content: string
 
 /** Serializes a runtime tool result in the same shape that the model API receives. */
 export function appendMappedToolResult(id: string, toolCallId: string, result: ToolResult, core: CoreInstance, planStageId?: string): void {
-  if ('pause' in result) appendToolResult(id, toolCallId, JSON.stringify({ error: 'unexpected pause' }), core, planStageId)
-  else if (result.ok) {
-    const data = result.data ?? { ok: true }
-    appendToolResult(id, toolCallId, JSON.stringify(result.warnings?.length ? { data, warnings: result.warnings } : data), core, planStageId)
-  } else appendToolResult(id, toolCallId, JSON.stringify({ error: result.error, ...(result.code ? { code: result.code } : {}), ...(result.hint ? { hint: result.hint } : {}), ...(result.retryable !== undefined ? { retryable: result.retryable } : {}), ...(result.details !== undefined ? { details: result.details } : {}) }), core, planStageId)
+  appendToolResult(
+    id,
+    toolCallId,
+    serializeToolResultForModel(result, 'unexpected pause'),
+    core,
+    planStageId,
+  )
 }

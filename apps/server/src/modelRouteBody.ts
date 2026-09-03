@@ -14,10 +14,10 @@
 // 本来能过。这是 fail-closed 的一侧，且没有任何正常客户端会那么发。
 // 它是**可选项**而不是写死的墙：装配层传 `maxBodyBytes` 就能覆盖。
 //
-// 【为什么不用 `for await...of` 读流】（与 invokeRouteBody.ts 同一个理由，这里再兑现一次）
+// 【为什么不用 `for await...of` 读流】（与 invokeRouteBody.ts 同一个理由，由共享 reader 兑现）
 // 对 Node 的 Readable 提前 `break` 会触发迭代器的 `.return()` 进而 `destroy()` 掉这条流，而
 // `IncomingMessage` 与 `ServerResponse` 共享同一条底层 socket——destroy 请求方等于把「回一条
-// 413」的那次响应也一起打断，调用方只会看到连接被重置。所以手写 `'data'/'end'/'error'`
+// 413」的那次响应也一起打断，调用方只会看到连接被重置。所以共享 reader 手写 `'data'/'end'/'error'`
 // 监听器：超限后**只停止累积**（内存不再增长），仍然把已经到达的字节消费掉，不去动 socket。
 //
 // 【与 invoke 路由的形状差异】那边解析完还要判「顶层是不是一袋键值」，因为它要把 args 逐字
@@ -28,6 +28,7 @@
 
 import { PROVIDER_TRANSPORT_LIMITS as LIMITS } from '@einfach-agent/ai'
 import type { IncomingMessage } from 'node:http'
+import { readBoundedJsonBody } from './boundedJsonBody'
 
 // Content-Type 白名单直接复用 invoke 路由那份**同一个函数**，不再抄一份。
 // 它挡的是表单 CSRF（浏览器的 `<form>` 只能发三种简单 content-type，设不出 application/json），
@@ -62,60 +63,8 @@ export function readModelRouteBody(
   request: IncomingMessage,
   maxBytes: number,
 ): Promise<ModelRouteBodyResult> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = []
-    let total = 0
-    let oversized = false
-    let settled = false
-
-    const cleanup = () => {
-      request.off('data', onData)
-      request.off('end', onEnd)
-      request.off('error', onError)
-    }
-
-    const finish = (result: ModelRouteBodyResult) => {
-      if (settled) return
-      settled = true
-      cleanup()
-      resolve(result)
-    }
-
-    const onData = (chunk: Buffer) => {
-      if (oversized) return // 继续排空剩余字节，只是不再攒——避免背压把发送方卡住。
-      total += chunk.byteLength
-      if (total > maxBytes) {
-        oversized = true
-        chunks.length = 0 // 已经确定要拒，之前攒的那部分尽早释放。
-        return
-      }
-      chunks.push(chunk)
-    }
-
-    const onEnd = () => {
-      if (oversized) {
-        finish({ kind: 'too-large' })
-        return
-      }
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-      } catch {
-        finish({ kind: 'invalid-json' })
-        return
-      }
-      finish({ kind: 'json', value: parsed })
-    }
-
-    const onError = (error: unknown) => {
-      if (settled) return
-      settled = true
-      cleanup()
-      reject(error instanceof Error ? error : new Error(String(error)))
-    }
-
-    request.on('data', onData)
-    request.on('end', onEnd)
-    request.on('error', onError)
+  return readBoundedJsonBody(request, maxBytes).then((result) => {
+    if (result.kind === 'empty') return { kind: 'invalid-json' }
+    return result
   })
 }

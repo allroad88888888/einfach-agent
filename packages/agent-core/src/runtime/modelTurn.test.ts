@@ -259,18 +259,18 @@ describe('buildTurnTools —— TP3 server 工具按环境过滤', () => {
     }
   })
 
-  it('Tauri(true)：manifest 页含 server 工具名', () => {
-    const page = searchToolManifestPage({ limit: MAX_TOOL_MANIFEST_PAGE_SIZE }, true)
-    expect(page.kind).toBe('tool_manifest_page')
-    if (page.kind !== 'tool_manifest_page') throw new Error(page.error)
-    const names = page.items.map((tool) => tool.name)
+  it('Tauri(true)：manifest 分页含 server 工具名并覆盖完整 registry', () => {
+    const names: string[] = []
+    let cursor: string | undefined
+    do {
+      const page = searchToolManifestPage({ cursor, limit: MAX_TOOL_MANIFEST_PAGE_SIZE }, true)
+      if (page.kind !== 'tool_manifest_page') throw new Error(page.error)
+      names.push(...page.items.map((tool) => tool.name))
+      cursor = page.nextCursor
+    } while (cursor)
     expect(names).toContain(SERVER_TOOL)
     expect(names).toContain(INTERNAL_TOOL)
-    // 当前内置 registry 小于单页上限，所有工具（含 server）都在第一页。
-    expect(page.total).toBeLessThanOrEqual(MAX_TOOL_MANIFEST_PAGE_SIZE)
-    for (const tool of toolRegistry.list()) {
-      expect(names).toContain(tool.name)
-    }
+    expect(names).toEqual(expect.arrayContaining(toolRegistry.list().map((tool) => tool.name)))
 
     // 最近真实运行中模型使用过这些英文查询；都应能发现当前平台 shell。
     for (const query of ['exec', 'terminal', 'run command']) {

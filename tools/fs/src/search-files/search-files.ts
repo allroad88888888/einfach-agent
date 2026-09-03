@@ -1,14 +1,16 @@
 import type {
   Tool,
   ToolContext,
-  ToolResult,
   SearchWorkspaceFilesInput,
   SearchWorkspaceFilesResult,
-  WorkspaceRuntimeResult,
   RgSearchInput,
   RgSearchResult,
 } from '@einfach-agent/core/tools'
 import guide from './search-files.md?raw'
+import {
+  type CompatibleWorkspaceResult,
+  workspaceResultToToolResult,
+} from '../workspaceResultEnvelope'
 
 const DEFAULT_MAX_MATCHES = 100
 const MAX_MATCHES = 1_000
@@ -25,10 +27,8 @@ const inputSchema = {
   additionalProperties: false,
 }
 
-type MaybeWorkspaceResult<T> = WorkspaceRuntimeResult<T> | T
-
 type WorkspaceSearchContext = ToolContext & {
-  searchWorkspaceFiles(input: SearchWorkspaceFilesInput): Promise<MaybeWorkspaceResult<SearchWorkspaceFilesResult>>
+  searchWorkspaceFiles(input: SearchWorkspaceFilesInput): Promise<CompatibleWorkspaceResult<SearchWorkspaceFilesResult>>
   rgSearchWorkspace?(input: RgSearchInput): Promise<RgSearchResult>
 }
 
@@ -49,29 +49,6 @@ function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message || error.name
   if (typeof error === 'string') return error
   return 'searchWorkspaceFiles failed'
-}
-
-function toToolResult<T>(result: MaybeWorkspaceResult<T>): ToolResult {
-  if (isStructuredResult(result)) {
-    return result.ok
-      ? { ok: true, data: result.data }
-      : {
-          ok: false,
-          error: result.error,
-          code: 'SEARCH_FILES_FAILED',
-          retryable: false,
-        }
-  }
-  return { ok: true, data: result }
-}
-
-function isStructuredResult<T>(value: MaybeWorkspaceResult<T>): value is WorkspaceRuntimeResult<T> {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    typeof (value as { ok?: unknown }).ok === 'boolean'
-  )
 }
 
 export const searchFilesTool: Tool = {
@@ -150,7 +127,7 @@ export const searchFilesTool: Tool = {
     try {
       if (typeof searchWorkspaceFiles === 'function') {
         const result = await searchWorkspaceFiles.call(ctx, { query, path, glob, maxMatches })
-        return toToolResult(result)
+        return workspaceResultToToolResult(result, 'SEARCH_FILES_FAILED')
       }
       return {
         ok: false,

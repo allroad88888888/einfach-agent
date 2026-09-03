@@ -38,7 +38,7 @@
 // 问题 #5。当年记的是「留给对拍拿决定」，Rust 侧已随 T1 删除，**没有对拍会来拿这个决定了**：
 // 它现在是一条无主的既有缺陷，要改就得单开一卡，别指望它自己被顺带解决。）
 
-import { lstat, realpath, stat } from 'node:fs/promises'
+import { lstat, realpath } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import {
   errorText,
@@ -49,6 +49,7 @@ import {
   normalizeLexically,
   relativeToRoot,
 } from '../common'
+import { pathExists } from '../common/pathExists'
 
 /** 越界的统一说法（与 Rust patch 侧逐字一致，**不是**写入侧那句）。 */
 const OUTSIDE_ROOT = 'path is outside the workspace root'
@@ -149,15 +150,5 @@ async function nearestExistingAncestor(path: string): Promise<string> {
       throw new Error(`no existing ancestor found for \`${path}\``)
     }
     current = dirname(current)
-  }
-}
-
-/** 等价 Rust 的 `Path::exists()`：跟随符号链接、出任何错都算「不存在」（断链因此算不存在）。 */
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch {
-    return false
   }
 }

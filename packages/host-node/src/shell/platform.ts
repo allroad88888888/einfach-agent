@@ -9,6 +9,7 @@
 
 import { realpath, stat } from 'node:fs/promises'
 import { errorText } from '../workspace/common'
+import { pathExists } from '../workspace/common/pathExists'
 import { ShellSetupError, type ShellSpec } from './types'
 
 /** core 的 `ShellPlatform`（tools/types.ts）三值域。这里不 import core 的类型：本包不依赖它的运行时，也没必要为一个三值 union 建依赖。 */
@@ -106,14 +107,5 @@ function currentDirectory(): string {
     return process.cwd()
   } catch (error) {
     throw new ShellSetupError(`failed to read current directory: ${errorText(error)}`)
-  }
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch {
-    return false
   }
 }

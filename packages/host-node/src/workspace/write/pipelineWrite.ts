@@ -26,8 +26,8 @@
 // 刚 chmod 上去的位会被原样继承下来。也就是说先做只在 overwrite 这一路碰巧对。
 // 「写完之后」是唯一对四种模式都成立的位置。
 
-import { stat } from 'node:fs/promises'
 import { atomicWrite, errorText } from '../common'
+import { pathExists } from '../common/pathExists'
 import { discardPreparedChange, markChangeApplied, prepareChangeSet } from '../change/prepare'
 import { applyExecutableBit, writeAppend, writeCreate } from './fsOps'
 import { beforeExisted, beforeText, readBeforeContent } from './before'
@@ -195,15 +195,5 @@ function buildResult(
     ...(facts.reason !== null ? { reversible_reason: facts.reason } : {}),
     dry_run: input.dryRun,
     would_change: outcome.wouldChange ?? true,
-  }
-}
-
-/** 等价 Rust 的 `Path::exists()`：跟随符号链接，任何错误都算「不存在」。 */
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch {
-    return false
   }
 }

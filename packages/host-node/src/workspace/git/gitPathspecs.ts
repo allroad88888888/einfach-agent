@@ -20,9 +20,10 @@
 //   · 两者最后都要拿「最近的已存在祖先」canonicalize 一次再比边界——这一步才拦得住 symlink
 //     逃逸（根内一个软链指向根外，词法上一个字都看不出来）。
 
-import { realpath, stat } from 'node:fs/promises'
+import { realpath } from 'node:fs/promises'
 import { dirname, join, parse, sep } from 'node:path'
 import { errorText, hasNulByte, isWithinRoot, toSlashPath } from '../common'
+import { pathExists } from '../common/pathExists'
 import { trimUnicodeWhitespace } from './unicodeWhitespace'
 
 /** unix 只认 `/`（字面 `\` 是合法文件名的一部分）；windows 两种都认。与 common 同款判据。 */
@@ -149,14 +150,4 @@ function lexicalNormalizeAbsolute(path: string): string {
   }
   // prefix 自带结尾分隔符（`/`、`C:\`），所以直接拼即可；segments 为空时结果就是文件系统根。
   return prefix + segments.join(sep)
-}
-
-/** 等价 Rust 的 `Path::exists()`：跟随符号链接、出任何错都算「不存在」。 */
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch {
-    return false
-  }
 }

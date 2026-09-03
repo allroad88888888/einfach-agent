@@ -1,11 +1,6 @@
-import type {
-  Tool,
-  ToolContext,
-  ListWorkspaceFilesResult,
-  ReadWorkspaceFileResult,
-  WorkspaceRuntimeResult,
-} from '@einfach-agent/core/tools'
+import type { Tool, ToolContext, ListWorkspaceFilesResult, ReadWorkspaceFileResult } from '@einfach-agent/core/tools'
 import guide from './find-test-lint-commands.md?raw'
+import { type CompatibleWorkspaceResult, unwrapWorkspaceResult } from '../workspaceResultEnvelope'
 
 const MAX_ENTRIES = 2_000
 const MAX_MANIFESTS = 16
@@ -31,20 +26,18 @@ const IGNORED_PATH_SEGMENTS = new Set([
   '.git', 'node_modules', 'vendor', 'dist', 'build', 'target', '.next', '.venv', 'venv',
 ])
 
-type MaybeWorkspaceResult<T> = WorkspaceRuntimeResult<T> | T
-
 interface WorkspaceDiscoveryContext extends ToolContext {
   listWorkspaceFiles(input: {
     path?: string
     recursive?: boolean
     maxEntries?: number
     includeHidden?: boolean
-  }): Promise<MaybeWorkspaceResult<ListWorkspaceFilesResult>>
+  }): Promise<CompatibleWorkspaceResult<ListWorkspaceFilesResult>>
   readWorkspaceFile(input: {
     path: string
     maxBytes?: number
     offset?: number
-  }): Promise<MaybeWorkspaceResult<ReadWorkspaceFileResult>>
+  }): Promise<CompatibleWorkspaceResult<ReadWorkspaceFileResult>>
 }
 
 type CommandKind = 'test' | 'lint'
@@ -72,11 +65,6 @@ Rules:
 4. If uncertain, omit the command and add a warning. Do not claim commands ran, succeeded, or are safe.
 5. Use each manifest's directory as cwd. Deduplicate equivalent commands. Keep at most 32 commands and 16 warnings.`
 
-function isStructuredResult<T>(value: MaybeWorkspaceResult<T>): value is WorkspaceRuntimeResult<T> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value)
-    && typeof (value as { ok?: unknown }).ok === 'boolean'
-}
-
 function asRecord(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -85,12 +73,6 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : typeof error === 'string' ? error : 'unknown error'
-}
-
-function unwrap<T>(value: MaybeWorkspaceResult<T>): T {
-  if (!isStructuredResult(value)) return value
-  if (value.ok) return value.data
-  throw new Error(value.error)
 }
 
 function normalizedPath(value: string): string {
@@ -232,7 +214,7 @@ export const findTestLintCommandsTool: Tool = {
 
     try {
       ctx.progress('识别项目 test/lint 命令')
-      const listing = unwrap(await discovery.listWorkspaceFiles.call(ctx, {
+      const listing = unwrapWorkspaceResult(await discovery.listWorkspaceFiles.call(ctx, {
         path: '.', recursive: true, maxEntries: MAX_ENTRIES, includeHidden: false,
       }))
       const candidates = listing.entries
@@ -260,7 +242,7 @@ export const findTestLintCommandsTool: Tool = {
         // 单文件上限收敛到「剩余聚合预算」，这样最后一个文件会被截断而不是把总量顶爆。
         const maxBytes = Math.min(MAX_BYTES_PER_MANIFEST, remainingBytes)
         try {
-          const file = unwrap(await discovery.readWorkspaceFile.call(ctx, { path, maxBytes, offset: 0 }))
+          const file = unwrapWorkspaceResult(await discovery.readWorkspaceFile.call(ctx, { path, maxBytes, offset: 0 }))
           manifests.push({ path, cwd: cwdFor(path), content: file.content, truncated: file.truncated })
           remainingBytes -= Number.isFinite(file.bytes) ? file.bytes : file.content.length
           if (file.truncated) warnings.push(`${path} was truncated at ${maxBytes} bytes`)

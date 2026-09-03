@@ -13,6 +13,7 @@ import {
   HISTORY_LOG_STORE_NAME,
   openIndexedDbHistoryDatabase,
 } from './indexedDbDatabase'
+import { runIndexedDbTransaction } from './indexedDbTransaction'
 
 interface HistoryLogRecord extends PersistedHistoryLog {
   sessionId: string
@@ -37,32 +38,9 @@ function decodeStoredLog(value: unknown, sessionId: string): PersistedHistoryLog
   }
 }
 
-function runTransaction<T>(
-  db: IDBDatabase,
-  mode: IDBTransactionMode,
-  operation: (store: IDBObjectStore, setResult: (result: T) => void, fail: (error: unknown) => void) => void,
-): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(HISTORY_LOG_STORE_NAME, mode)
-    let result: T | undefined
-    let failure: unknown
-    const fail = (error: unknown) => {
-      failure = error
-      try {
-        transaction.abort()
-      } catch {
-        // 已完成或已中止时，transaction 的事件仍会统一 reject。
-      }
-    }
-    transaction.oncomplete = () => resolve(result as T)
-    transaction.onerror = () => reject(failure ?? transaction.error ?? new Error('IndexedDB history log transaction failed'))
-    transaction.onabort = () => reject(failure ?? transaction.error ?? new Error('IndexedDB history log transaction aborted'))
-    try {
-      operation(transaction.objectStore(HISTORY_LOG_STORE_NAME), (value) => { result = value }, fail)
-    } catch (error) {
-      fail(error)
-    }
-  })
+const transactionErrors = {
+  failed: 'IndexedDB history log transaction failed',
+  aborted: 'IndexedDB history log transaction aborted',
 }
 
 export function createIndexedDbHistoryLogDriver(
@@ -73,7 +51,7 @@ export function createIndexedDbHistoryLogDriver(
       assertSessionId(sessionId)
       const db = await openIndexedDbHistoryDatabase(dbName)
       try {
-        return await runTransaction<PersistedHistoryLog | undefined>(db, 'readonly', (store, setResult, fail) => {
+        return await runIndexedDbTransaction<PersistedHistoryLog | undefined>(db, HISTORY_LOG_STORE_NAME, 'readonly', transactionErrors, (store, setResult, fail) => {
           const request = store.get(sessionId)
           request.onsuccess = () => setResult(decodeStoredLog(request.result, sessionId))
           request.onerror = () => fail(request.error ?? new Error('IndexedDB history log read failed'))
@@ -87,7 +65,7 @@ export function createIndexedDbHistoryLogDriver(
       assertSessionId(sessionId)
       const db = await openIndexedDbHistoryDatabase(dbName)
       try {
-        await runTransaction<void>(db, 'readwrite', (store, setResult, fail) => {
+        await runIndexedDbTransaction<void>(db, HISTORY_LOG_STORE_NAME, 'readwrite', transactionErrors, (store, setResult, fail) => {
           const write = store.put({ sessionId, ...log } satisfies HistoryLogRecord)
           write.onsuccess = () => setResult(undefined)
           write.onerror = () => fail(write.error ?? new Error('IndexedDB history log write failed'))
@@ -101,7 +79,7 @@ export function createIndexedDbHistoryLogDriver(
       assertSessionId(sessionId)
       const db = await openIndexedDbHistoryDatabase(dbName)
       try {
-        await runTransaction<void>(db, 'readwrite', (store, setResult, fail) => {
+        await runIndexedDbTransaction<void>(db, HISTORY_LOG_STORE_NAME, 'readwrite', transactionErrors, (store, setResult, fail) => {
           const write = store.delete(sessionId)
           write.onsuccess = () => setResult(undefined)
           write.onerror = () => fail(write.error ?? new Error('IndexedDB history log delete failed'))

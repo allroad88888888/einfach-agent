@@ -26,9 +26,10 @@
 //     它包在临界区**外面**：抛异常、按设计拒绝、正常返回三条路径都会经过那个 finally。
 //     漏掉的后果不是本进程死锁，而是磁盘上留一个锁文件，别的进程要等 30 秒陈旧超时才敢接管。
 
-import { mkdir, stat } from 'node:fs/promises'
+import { mkdir } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { errorText, resolveWorkspaceRoot } from '../common'
+import { pathExists } from '../common/pathExists'
 import { maybeCompactSubagentIndex } from './compaction'
 import { acquireArchivePathLock } from './lockArchive'
 import { contentTooLargeMessage, normalizeMaxBytes } from './limitChecks'
@@ -186,14 +187,5 @@ async function compactArchiveIndex(absolutePath: string): Promise<void> {
     await maybeCompactSubagentIndex(absolutePath)
   } catch (error) {
     rejectWrite(errorText(error))
-  }
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch {
-    return false
   }
 }

@@ -6,6 +6,7 @@ import {
   type TimedToolRegistration,
 } from '../runtime/timedDispatch'
 import type { ToolResult } from '../tools/types'
+import { serializeToolResultForModel } from '../tools/toolResultModelPayload'
 import { createChildFinishedArchivePayload } from './archiveEventPayload'
 import { loadVisibleChildTool } from './childToolVisibility'
 import { persistTerminalChildResults } from './continuationLifecycle'
@@ -110,21 +111,7 @@ export function childTimedToolTraceItem(callId: string, result: ToolResult): Mod
   return {
     role: 'tool',
     tool_call_id: callId,
-    content: JSON.stringify(
-      'pause' in result
-        ? { error: 'child tools cannot pause' }
-        : result.ok
-          ? result.warnings?.length
-            ? { data: result.data ?? { ok: true }, warnings: result.warnings }
-            : (result.data ?? { ok: true })
-          : {
-              error: result.error,
-              ...(result.code ? { code: result.code } : {}),
-              ...(result.hint ? { hint: result.hint } : {}),
-              ...(result.retryable !== undefined ? { retryable: result.retryable } : {}),
-              ...(result.details !== undefined ? { details: result.details } : {}),
-            },
-    ),
+    content: serializeToolResultForModel(result, 'child tools cannot pause'),
   }
 }
 

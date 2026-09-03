@@ -16,10 +16,11 @@
 //   · symlink 逃逸（根内一个软链指向根外）—— 词法检查一个字都看不出来，只有 realpath 解开
 //     链接后比边界才拦得住。这就是「判定必须基于解析后的真实路径」的全部理由。
 
-import { realpath, stat } from 'node:fs/promises'
+import { realpath } from 'node:fs/promises'
 import { basename, dirname, sep } from 'node:path'
 import { errorText } from './errorText'
 import { toSlashPath } from './displayPath'
+import { pathExists } from './pathExists'
 import {
   hasNulByte,
   hasParentSegment,
@@ -134,19 +135,6 @@ async function resolveExistingAncestor(root: string, target: string): Promise<st
   // 拼成了别的分支时才有意义，但这一步 Rust 也保留着，照做不额外花钱）。
   if (!isWithinRoot(root, resolved)) throw new Error(OUTSIDE_WORKSPACE)
   return resolved
-}
-
-/**
- * 目标是否存在。等价 Rust 的 `Path::exists()`：跟随符号链接、出任何错都算「不存在」。
- * 因此**断链**（软链指向不存在的目标）在这里同样算不存在，两个宿主一致。
- */
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch {
-    return false
-  }
 }
 
 async function canonicalize(path: string, failureMessage: string): Promise<string> {

@@ -7,7 +7,10 @@
 //   · 一轮往返后处于什么状态     → RunState（从响应 finish_reason / tool_calls 推导）
 // 这里只定义数据形状；atom、会话 store 和持久化分别位于 state/runtime 对应模块。
 
-import type { ChatRequestBase, FinishReason, ModelItem, ModelToolCall } from '@einfach-agent/ai'
+import type { FinishReason, ModelItem, ModelToolCall } from '@einfach-agent/ai'
+import type { ModelSettings, ModelVendor } from './modelSettingsSchema'
+
+export type { ModelSettings, ModelVendor } from './modelSettingsSchema'
 
 // ===========================================================================
 // 一、provider 身份 —— 一个不透明 id
@@ -17,8 +20,6 @@ import type { ChatRequestBase, FinishReason, ModelItem, ModelToolCall } from '@e
 // 详情：**不透明约定** —— 取值由装配层与 agent-ai 的 provider registry 商定，core 只做相等
 // 比较与查表（凭据、能力描述、档位路由表都按它索引），既不枚举合法取值，也不为任何具体取值
 // 写分支。新增一家 provider 不需要改动 packages/agent-core 的任何一行。
-export type ModelVendor = string
-
 // ===========================================================================
 // 二、会话级模型设置 —— 通用字段 + 供应商附加设置袋
 // ===========================================================================
@@ -32,15 +33,6 @@ export type ModelVendor = string
 //     解释权在 agent-ai 的 adapter（见 packages/agent-ai/src/builtinProviders.ts），
 //     发请求前由 runtime/modelSettingsProjection.ts 把袋子摊平交给它。
 // 老会话把特化字段存在顶层，读回时由 state/persistence/settingsBagMigration.ts 收进袋子。
-export type ModelSettings = {
-  vendor: ModelVendor
-  model: string
-  thinking?: boolean
-  temperature?: ChatRequestBase['temperature']
-  max_tokens?: ChatRequestBase['max_tokens']
-  vendorSettings?: Readonly<Record<string, unknown>>
-}
-
 // ===========================================================================
 // 三、对话历史 —— 从 ModelItem 推导
 // ===========================================================================

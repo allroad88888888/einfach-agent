@@ -7,6 +7,7 @@ import {
 import { selectToolGate } from '../runtime/toolGates'
 import { isDelegatableDangerousTool } from '../runtime/dangerousTools'
 import { toolSchemaLoadedResult } from '../tools/schemaResult'
+import { serializeToolResultForModel } from '../tools/toolResultModelPayload'
 import { normalizeDelegateAgentInput } from './input'
 import { agentPathDepth } from './path'
 import { appendVisibleChildTool, loadVisibleChildTool } from './childToolVisibility'
@@ -271,19 +272,7 @@ export async function executeChildAgentToolCalls(
       })
       await pushToolResult(
         toolCall.id,
-        JSON.stringify(
-          toolResult.ok
-            ? toolResult.warnings?.length
-              ? { data: toolResult.data ?? { ok: true }, warnings: toolResult.warnings }
-              : (toolResult.data ?? { ok: true })
-            : {
-                error: toolResult.error,
-                ...(toolResult.code ? { code: toolResult.code } : {}),
-                ...(toolResult.hint ? { hint: toolResult.hint } : {}),
-                ...(toolResult.retryable !== undefined ? { retryable: toolResult.retryable } : {}),
-                ...(toolResult.details !== undefined ? { details: toolResult.details } : {}),
-              },
-        ),
+        serializeToolResultForModel(toolResult, 'child tools cannot pause'),
       )
       continue
     }

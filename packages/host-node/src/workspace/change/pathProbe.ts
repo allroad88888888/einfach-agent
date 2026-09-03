@@ -15,15 +15,8 @@
 
 import { lstat, stat } from 'node:fs/promises'
 
-/** 等价 `Path::exists()`：跟随符号链接，任何错误都算「不存在」。 */
-export async function pathExists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch {
-    return false
-  }
-}
+// 保留 change 域既有 import path；实现由 workspace/common 的宿主级 owner 提供。
+export { pathExists } from '../common/pathExists'
 
 /** 等价 `fs::symlink_metadata(path).is_ok()`：**不**跟随符号链接，悬空软链也算存在。 */
 export async function symlinkExists(path: string): Promise<boolean> {

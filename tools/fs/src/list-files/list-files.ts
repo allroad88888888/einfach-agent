@@ -1,12 +1,14 @@
 import type {
   Tool,
   ToolContext,
-  ToolResult,
   ListWorkspaceFilesInput,
   ListWorkspaceFilesResult,
-  WorkspaceRuntimeResult,
 } from '@einfach-agent/core/tools'
 import guide from './list-files.md?raw'
+import {
+  type CompatibleWorkspaceResult,
+  workspaceResultToToolResult,
+} from '../workspaceResultEnvelope'
 
 const DEFAULT_MAX_ENTRIES = 200
 const MAX_ENTRIES = 2_000
@@ -22,10 +24,8 @@ const inputSchema = {
   additionalProperties: false,
 }
 
-type MaybeWorkspaceResult<T> = WorkspaceRuntimeResult<T> | T
-
 type WorkspaceListContext = ToolContext & {
-  listWorkspaceFiles(input: ListWorkspaceFilesInput): Promise<MaybeWorkspaceResult<ListWorkspaceFilesResult>>
+  listWorkspaceFiles(input: ListWorkspaceFilesInput): Promise<CompatibleWorkspaceResult<ListWorkspaceFilesResult>>
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -52,29 +52,6 @@ function toErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message || error.name
   if (typeof error === 'string') return error
   return 'listWorkspaceFiles failed'
-}
-
-function toToolResult<T>(result: MaybeWorkspaceResult<T>): ToolResult {
-  if (isStructuredResult(result)) {
-    return result.ok
-      ? { ok: true, data: result.data }
-      : {
-          ok: false,
-          error: result.error,
-          code: 'WORKSPACE_LIST_FAILED',
-          retryable: false,
-        }
-  }
-  return { ok: true, data: result }
-}
-
-function isStructuredResult<T>(value: MaybeWorkspaceResult<T>): value is WorkspaceRuntimeResult<T> {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    !Array.isArray(value) &&
-    typeof (value as { ok?: unknown }).ok === 'boolean'
-  )
 }
 
 export const listFilesTool: Tool = {
@@ -116,7 +93,7 @@ export const listFilesTool: Tool = {
         maxEntries,
         includeHidden,
       })
-      return toToolResult(result)
+      return workspaceResultToToolResult(result, 'WORKSPACE_LIST_FAILED')
     } catch (error) {
       return {
         ok: false,

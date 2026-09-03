@@ -7,6 +7,7 @@ import {
   type RecoverySnapshotV1,
   type SubagentContinuationState,
 } from './recoverySnapshot.type'
+import { isModelSettings } from './modelSettingsSchema'
 
 const planStatuses = new Set(['draft', 'awaiting_approval', 'approved', 'active', 'completed', 'failed', 'cancelled'])
 const stageStatuses = new Set(['pending', 'in_progress', 'completed', 'failed', 'blocked', 'skipped'])
@@ -16,7 +17,6 @@ const nodeStatuses = new Set(['queued', 'ready', 'running', 'waiting-children', 
 const childStates = new Set<SubagentContinuationState>(['queued', 'interrupted', 'waiting_user', 'waiting_confirmation', 'waiting_plan_approval', 'outcome_unknown'])
 const sessionKeys = new Set(['id', 'title', 'settings', 'createdAt', 'updatedAt', 'workspaceId', 'workspaceRoot', 'toolApprovalMode', 'loadedTools'])
 const pendingArtifactKeys = new Set(['id', 'filename', 'content', 'mimeType'])
-const modelSettingsKeys = new Set(['vendor', 'model', 'thinking', 'temperature', 'max_tokens', 'vendorSettings'])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -75,15 +75,6 @@ function optional(value: Record<string, unknown>, key: string, check: (entry: un
 
 function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
   return Object.keys(value).every((key) => allowed.has(key))
-}
-
-function isModelSettings(value: unknown): boolean {
-  return isRecord(value) && hasOnlyKeys(value, modelSettingsKeys)
-    && isText(value.vendor) && isText(value.model)
-    && optional(value, 'thinking', (entry) => typeof entry === 'boolean')
-    && optional(value, 'temperature', isFiniteJsonNumber)
-    && optional(value, 'max_tokens', isFiniteJsonNumber)
-    && optional(value, 'vendorSettings', isRecord)
 }
 
 function isSession(value: unknown, sessionId: string): boolean {

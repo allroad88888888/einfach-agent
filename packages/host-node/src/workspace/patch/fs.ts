@@ -19,6 +19,7 @@
 import { chmod, mkdir, readFile, realpath, stat, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { atomicWrite, errorText, isWithinRoot } from '../common'
+import { pathExists } from '../common/pathExists'
 import { MAX_FILE_BYTES } from './limits'
 import { ensureParentInsideRoot } from './path'
 
@@ -151,15 +152,5 @@ export async function deleteFileIfPresent(path: string): Promise<void> {
     await unlink(path)
   } catch (error) {
     throw new Error(`failed to delete \`${path}\`: ${errorText(error)}`)
-  }
-}
-
-/** 等价 Rust 的 `Path::exists()`：跟随符号链接，出任何错都算「不存在」。 */
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await stat(path)
-    return true
-  } catch {
-    return false
   }
 }
