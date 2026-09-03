@@ -9,6 +9,13 @@ interface RecoveryRow {
   snapshot: string | null
 }
 
+interface RawRecoveryRow {
+  session_id: unknown
+  generation: unknown
+  deleted: unknown
+  snapshot: unknown
+}
+
 function createFakeDatabase() {
   const recoveryRows: RecoveryRow[] = []
   return {
@@ -87,7 +94,7 @@ let fakeDatabase = createFakeDatabase()
 let loadImplementation: () => Promise<unknown> = async () => fakeDatabase
 
 import { __resetSqliteForTest } from './sqliteDriver'
-import { createSqliteRecoveryDriver } from './sqliteRecoveryDriver'
+import { createSqliteRecoveryDriver, createSqliteRecoveryReader } from './sqliteRecoveryDriver'
 import { configureSqlExecutor } from './sqliteShared'
 
 // P1：fake DB 从 configureSqlExecutor 注入槽进来（本包不再 import 具体 SQL 上游包），
@@ -149,5 +156,37 @@ describe('createSqliteRecoveryDriver', () => {
     expect(await driver.listLatest()).toEqual([])
     await expect(driver.saveLatest('s1', snapshot(1))).resolves.toEqual({ status: 'tombstoned' })
     await expect(driver.saveLatest('s1', snapshot(99))).resolves.toEqual({ status: 'tombstoned' })
+  })
+
+  it('只读 facade 复用 active、tombstone 与损坏记录的解码判据', async () => {
+    const active = snapshot(7, 'active')
+    const rows: RawRecoveryRow[] = [
+      { session_id: 'active', generation: 7, deleted: 0, snapshot: JSON.stringify(active) },
+      { session_id: 'removed', generation: 8, deleted: 1, snapshot: null },
+    ]
+    const reader = createSqliteRecoveryReader({
+      execute: async () => ({ rowsAffected: 0 }),
+      select: async () => rows,
+    } as SqlExecutor)
+
+    await expect(reader.listLatest()).resolves.toEqual([active])
+    rows.splice(0, rows.length, { session_id: 'broken', generation: 1, deleted: 0, snapshot: '{' })
+    await expect(reader.listLatest()).rejects.toThrow('Corrupt SQLite recovery JSON')
+    rows.splice(0, rows.length, { session_id: 'active', generation: 8, deleted: 0, snapshot: JSON.stringify(active) })
+    await expect(reader.listLatest()).rejects.toThrow('generation mismatch')
+  })
+
+  it.each([
+    ['session id', { session_id: null, generation: 1, deleted: 1, snapshot: null }],
+    ['generation', { session_id: 'broken', generation: '1', deleted: 1, snapshot: null }],
+    ['deleted', { session_id: 'broken', generation: 1, deleted: '1', snapshot: null }],
+    ['snapshot', { session_id: 'broken', generation: 1, deleted: 0, snapshot: 1 }],
+  ] satisfies readonly [string, RawRecoveryRow][])('fails loudly for corrupt %s columns, including tombstones', async (_field, row) => {
+    const reader = createSqliteRecoveryReader({
+      execute: async () => ({ rowsAffected: 0 }),
+      select: async () => [row],
+    } as SqlExecutor)
+
+    await expect(reader.listLatest()).rejects.toThrow('Corrupt SQLite recovery record')
   })
 })

@@ -33,6 +33,7 @@
   "dependencies": {
     "@einfach-agent/ai": "workspace:*",
     "@einfach-agent/core": "workspace:*",
+    "@einfach-agent/persistence-sqlite": "workspace:*",
     "@types/node": "^24.10.1"
   },
   "devDependencies": {

@@ -229,6 +229,9 @@ importers:
       '@einfach-agent/core':
         specifier: workspace:*
         version: link:../agent-core
+      '@einfach-agent/persistence-sqlite':
+        specifier: workspace:*
+        version: link:../persistence-sqlite
       '@types/node':
         specifier: ^24.10.1
         version: 24.13.3

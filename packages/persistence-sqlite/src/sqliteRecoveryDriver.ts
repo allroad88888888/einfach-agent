@@ -12,14 +12,22 @@ import {
   type RecoveryDriver,
   type RecoverySaveResult,
   type RecoverySnapshotV1,
+  type SqlExecutor,
   validateRecoverySnapshot,
 } from '@einfach-agent/core/state/persistence'
 import { getDb } from './sqliteShared'
 
 interface RecoveryRow {
+  session_id: unknown
+  generation: unknown
+  deleted: unknown
+  snapshot: unknown
+}
+
+interface ValidRecoveryRow {
   session_id: string
   generation: number
-  deleted: number
+  deleted: 0 | 1
   snapshot: string | null
 }
 
@@ -31,8 +39,15 @@ function isGeneration(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 
-function decodeRow(row: RecoveryRow, sessionId: string): RecoverySnapshotV1 | undefined {
-  if (row.session_id !== sessionId || !isGeneration(row.generation)) {
+function isRecoveryRow(row: RecoveryRow): row is ValidRecoveryRow {
+  return typeof row.session_id === 'string'
+    && isGeneration(row.generation)
+    && (row.deleted === 0 || row.deleted === 1)
+    && (row.snapshot === null || typeof row.snapshot === 'string')
+}
+
+function decodeRow(row: RecoveryRow, expectedSessionId?: string): RecoverySnapshotV1 | undefined {
+  if (!isRecoveryRow(row) || (expectedSessionId !== undefined && row.session_id !== expectedSessionId)) {
     throw new Error('Corrupt SQLite recovery record')
   }
   if (row.deleted === 1 && row.snapshot === null) return undefined
@@ -43,7 +58,7 @@ function decodeRow(row: RecoveryRow, sessionId: string): RecoverySnapshotV1 | un
   } catch (error) {
     throw new Error('Corrupt SQLite recovery JSON', { cause: error })
   }
-  const snapshot = validateRecoverySnapshot(raw, sessionId)
+  const snapshot = validateRecoverySnapshot(raw, row.session_id)
   if (snapshot.generation !== row.generation) throw new Error('SQLite recovery generation mismatch')
   return snapshot
 }
@@ -57,17 +72,25 @@ async function loadRow(sessionId: string): Promise<RecoveryRow | undefined> {
   return rows[0]
 }
 
+async function listLatest(executor: SqlExecutor): Promise<RecoverySnapshotV1[]> {
+  const rows = await executor.select<RecoveryRow[]>(
+    'SELECT session_id, generation, deleted, snapshot FROM recovery_snapshots',
+  )
+  return rows.map((row) => decodeRow(row)).filter(
+    (snapshot): snapshot is RecoverySnapshotV1 => snapshot !== undefined,
+  )
+}
+
+/** 供 history 使用的只读 recovery 门面；row codec 仍由 SQLite persistence 独占。 */
+export function createSqliteRecoveryReader(executor: SqlExecutor): Pick<RecoveryDriver, 'listLatest'> {
+  return { listLatest: () => listLatest(executor) }
+}
+
 /** 每次工厂调用都返回独立 facade，但它们共用同一 SQLite 数据库。 */
 export function createSqliteRecoveryDriver(): RecoveryDriver {
   return {
     async listLatest() {
-      const db = await getDb()
-      const rows = await db.select<RecoveryRow[]>(
-        'SELECT session_id, generation, deleted, snapshot FROM recovery_snapshots',
-      )
-      return rows.map((row) => decodeRow(row, row.session_id)).filter(
-        (snapshot): snapshot is RecoverySnapshotV1 => snapshot !== undefined,
-      )
+      return listLatest(await getDb())
     },
 
     async loadLatest(sessionId) {

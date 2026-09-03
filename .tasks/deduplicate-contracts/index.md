@@ -36,7 +36,7 @@
 | 007 | 命令与模型工具共享同一计划持久化屏障 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
 | 008 | delegate_agent schema、解析与文档由同一能力集合驱动 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
 | 009 | workspace mutation 类型与 change context 只有一个 owner | gpt-5.6-sol | done | 2026-09-03 | 2026-09-03 |
-| 011 | history 通过 persistence facade 读取 recovery 数据 | gpt-5.6-terra | pending | 2026-09-03 | |
+| 011 | history 通过 persistence facade 读取 recovery 数据 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
 | 012 | 三个平台 shell 工具共享同一执行内核 | gpt-5.6-terra | done | 2026-09-03 | 2026-09-03 |
 | 013 | 剩余机械协议副本由各领域小模块接管 | gpt-5.6-sol | pending | 2026-09-03 | |
 
@@ -74,5 +74,9 @@
 - 2026-09-03：012 独立审查通过；编排者复跑 8 个文件、83 tests 通过，准予提交。
 - 2026-09-03：005 首审 REJECTED：legacy v1 cursor 的 filters JSON 比较对 target 属性顺序敏感；进入 R1。
 - 2026-09-03：005 R1 复审通过；编排者复跑 40 个文件、215 tests 通过，准予提交。
+- 2026-09-03：005 已提交为 `9316692`；依赖解锁，派发 011。
+- 裁决: 011 纳入 `pnpm-lock.yaml` — host-node 新增正式 workspace 依赖，冻结安装必须保持一致 — 若不纳入，CI/install 会在提交后失败。
+- 2026-09-03：011 首审 REJECTED：row codec 对 session_id 自比较且在校验 key 前过滤 tombstone，损坏行从 fail-loud 退化为静默隐藏；进入 R1。
+- 2026-09-03：011 R1 复审通过；编排者复跑 3 个文件、14 tests 通过，准予提交。
 - 2026-09-03：007 R1 复审通过；编排者复跑 3 个文件、19 tests 通过，准予提交。
 - 2026-09-03：007 已提交为 `558de25`；派发无文件重叠的 009。
