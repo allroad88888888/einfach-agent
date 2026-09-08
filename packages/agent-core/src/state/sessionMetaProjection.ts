@@ -18,5 +18,6 @@ export function projectStaticSessionMeta(session: SessionMeta): SessionMeta {
     ...(session.workspaceRoot === undefined ? {} : { workspaceRoot: session.workspaceRoot }),
     ...(session.toolApprovalMode === undefined ? {} : { toolApprovalMode: session.toolApprovalMode }),
     ...(session.loadedTools === undefined ? {} : { loadedTools: session.loadedTools }),
+    ...(session.capabilityPolicy === undefined ? {} : { capabilityPolicy: session.capabilityPolicy }),
   }
 }

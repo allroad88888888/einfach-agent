@@ -81,20 +81,20 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
     async request(turn, planStageId, controls, controlSources = []) {
       const streamWriter = createAssistantStreamWriter(base.id, base.runId, base.opts.signal, base.core, planStageId)
       // 工具集读面一律走本 run 的 epoch：registry 在 run 中途变了，也不改变已组装给模型的清单。
-      base.state.visible = refreshVisibleTools(base.id, base.state.visible, base.core, base.maxTurnTools - 1, base.state.planPinnedTools, base.toolEpoch)
+      base.state.visible = refreshVisibleTools(base.id, base.state.visible, base.core, base.maxTurnTools - 1, base.state.planPinnedTools, base.stablePrefix.toolCatalog)
       // P1(2026-08-04 交接):计划执行期已加载工具 pin 住不被 LRU 淘汰,减少 tools 段
       // 来回变化(每变一次 = provider 前缀整段失效);pin 超限淘汰必须落 trace 可审计。
       const planPins = nextPlanPinnedTools({
         planActive: planIsExecuting(base.id, base.core),
         pinned: base.state.planPinnedTools,
         visibleNames: base.state.visible.map((tool) => tool.name),
-        isRegistered: (name) => base.toolEpoch.loadSchema(name) !== undefined,
+        isRegistered: (name) => base.stablePrefix.toolCatalog.loadSchema(name) !== undefined,
       })
       if (planPins.evicted.length) {
         base.trace.event('tool.plan_pinned_evicted', { tools: planPins.evicted.join(','), max_turn_tools: base.maxTurnTools })
       }
       base.state.planPinnedTools = planPins.pinned
-      const tools = buildTurnTools(base.state.visible, base.hostHasLocalCapabilities, { registry: base.toolEpoch, vendor: base.settings.vendor, recentToolNames: base.state.recentToolNames })
+      const tools = buildTurnTools(base.state.visible, base.hostHasLocalCapabilities, { registry: base.stablePrefix.toolCatalog, vendor: base.settings.vendor, recentToolNames: base.state.recentToolNames })
       const names = toolNames(tools)
       const exposedRegistrationVersions = new Map<string, number>()
       for (const tool of base.state.visible) {
@@ -184,7 +184,7 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
         messages: projectedMessages,
         tools,
         llmTurn: turn + 1,
-        replayUnsafeToolNames: base.toolEpoch.replayUnsafeToolNames(),
+        replayUnsafeToolNames: base.stablePrefix.toolCatalog.replayUnsafeToolNames(),
         dynamicTailCount: controls.length,
       }
       await base.hooks.transformContext?.(base.pluginContext, draft)

@@ -13,6 +13,18 @@ import {
 } from './modelTurn'
 import type { CoreInstance } from './core/coreInstance'
 import type { ToolCatalog } from '../tools/toolCatalog'
+import {
+  capabilityToolCatalog,
+  captureRunCapabilitySnapshot,
+  type RunCapabilitySnapshot,
+} from './turnToolVisibility'
+import {
+  buildRunSkillManifestText,
+  captureRunSkillSnapshot,
+  type RunSkillSnapshot,
+} from './toolContext/skillsCapabilities'
+import type { ToolEpoch } from './toolEpoch'
+import { resolveRunCapabilitySnapshots } from './runCapabilitySnapshotCache'
 
 export interface StableModelPrefix {
   items: SystemItem[]
@@ -24,6 +36,12 @@ export interface StableModelPrefix {
   toolManifest: SystemItem
   customInstructions?: SystemItem
   workspaceRoot?: string
+  /** Immutable session policy captured before any run assembly or registry lookup. */
+  capabilities: RunCapabilitySnapshot
+  /** Immutable allowed Skill metadata/path projection for this run. */
+  skills: RunSkillSnapshot
+  /** Immutable tool epoch narrowed by the session policy. */
+  toolCatalog: ToolCatalog
   /**
    * 本轮宿主能不能执行 runtime='server' 的工具（文件 / shell / Git / rg）。
    *
@@ -52,6 +70,42 @@ export async function buildStableModelPrefix(
     sessionMeta,
     core.rootStore.getter(workspacesAtom),
   )
+  const proposedCapabilities = captureRunCapabilitySnapshot(sessionMeta.capabilityPolicy)
+  const toolEpoch = 'capturedCatalog' in toolCatalog ? toolCatalog as ToolEpoch : undefined
+  let legacySkillManifest: string | undefined
+  const snapshots = await resolveRunCapabilitySnapshots(
+    toolEpoch,
+    proposedCapabilities,
+    async () => {
+      const catalogSource = proposedCapabilities.state === 'legacy-unrestricted'
+        ? toolCatalog : toolEpoch?.capturedCatalog ?? toolCatalog
+      const restrictedBuiltins = proposedCapabilities.state === 'legacy-unrestricted'
+        ? undefined : core.skillRegistry.list()
+      const scannedSkills = workspaceRoot
+        ? await core.projectSkills.ensure(workspaceRoot) : undefined
+      const filteredProjectSkills = filterProjectSkillsSnapshot(
+        scannedSkills,
+        sessionDisabledProjectSkills(
+          sessionMeta,
+          core.rootStore.getter(disabledProjectSkillsByWorkspaceAtom),
+        ),
+      )
+      const skills = captureRunSkillSnapshot(
+        restrictedBuiltins ?? core.skillRegistry.list(),
+        filteredProjectSkills,
+        proposedCapabilities,
+      )
+      if (proposedCapabilities.state === 'legacy-unrestricted') {
+        legacySkillManifest = core.skillRegistry.buildManifestText(filteredProjectSkills)
+      }
+      return {
+        capabilities: proposedCapabilities,
+        toolCatalog: capabilityToolCatalog(catalogSource, proposedCapabilities),
+        skills,
+      }
+    },
+  )
+  const { capabilities, toolCatalog: runToolCatalog, skills } = snapshots
   // 【H4b】总闸的源头。曾经是一次宿主品牌探测（读一个全局量），等于把「宿主能不能执行
   // runtime='server' 的工具」判成「是不是跑在 Tauri webview 里」。现在问的是宿主装配层有没有登记
   // 命令桥（hostBridge.ts）：桥背后是 Tauri invoke、本地 Node 后端还是别的什么，core 不关心，
@@ -64,18 +118,16 @@ export async function buildStableModelPrefix(
   const system = buildSystemItem()
   const toolManifest: SystemItem = {
     role: 'system',
-    content: buildToolManifestText(hostHasLocalCapabilities, { registry: toolCatalog }),
+    content: buildToolManifestText(hostHasLocalCapabilities, { registry: runToolCatalog }),
   }
   const customInstructions = buildCustomInstructionsItem(core.config.customInstructions)
-  // 清单要能被模型看见就得先扫完：ensure 命中缓存时同步返回，同 workspace 的并发 run 共用一次扫描。
-  // 扫不出来（无 provider / 扫描器崩了）也不阻断 run——那时快照为空，清单只剩内置段。
-  const scannedSkills = workspaceRoot ? await core.projectSkills.ensure(workspaceRoot) : undefined
   const skillManifest: SystemItem = {
     role: 'system',
-    content: core.skillRegistry.buildManifestText(filterProjectSkillsSnapshot(
-      scannedSkills,
-      sessionDisabledProjectSkills(sessionMeta, core.rootStore.getter(disabledProjectSkillsByWorkspaceAtom)),
-    )),
+    content: buildRunSkillManifestText(
+      legacySkillManifest ?? '',
+      skills,
+      capabilities,
+    ),
   }
   const environment = buildEnvironmentItem({
     workspaceRoot,
@@ -112,5 +164,8 @@ export async function buildStableModelPrefix(
     customInstructions,
     workspaceRoot,
     hostHasLocalCapabilities,
+    capabilities,
+    skills,
+    toolCatalog: runToolCatalog,
   }
 }

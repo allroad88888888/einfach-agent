@@ -9,6 +9,7 @@
 
 import type { FinishReason, ModelItem, ModelToolCall } from '@einfach-agent/ai'
 import type { ModelSettings, ModelVendor } from './modelSettingsSchema'
+import type { SessionCapabilityPolicy } from './sessionCapabilityPolicy'
 
 export type { ModelSettings, ModelVendor } from './modelSettingsSchema'
 
@@ -195,4 +196,6 @@ export interface SessionMeta {
   // 会话级持久化的 lazy-tool LRU（仅保存工具名，不保存可能过期的 schema）。
   // 新 run / 应用重启后会从当前 registry 重新加载这些工具的最新 schema。
   loadedTools?: string[]
+  // 缺字段表示只读的旧版不受限会话；新会话必须显式写入 draft。
+  capabilityPolicy?: SessionCapabilityPolicy
 }

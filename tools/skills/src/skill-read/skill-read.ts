@@ -76,6 +76,16 @@ export const skillReadTool: Tool = {
         retryable: false,
       }
     }
+    const governedSkills = ctx.skills
+    if (governedSkills && !governedSkills.isAllowed(name)) {
+      return {
+        ok: false,
+        error: 'skill not found or not enabled for this conversation',
+        code: 'SKILL_NOT_FOUND',
+        retryable: false,
+        hint: 'Call skill_search to discover Skills enabled for this conversation.',
+      }
+    }
 
     // --- project/ 与 user/ 前缀：正文与资源都在文件系统里，按需读（L2/L3 不进 prompt）---
     if (skillScopeFromName(name)) {

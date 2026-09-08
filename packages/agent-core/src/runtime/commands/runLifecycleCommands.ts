@@ -29,11 +29,14 @@ import { markUndoBarrier } from '../../state/undoBarrier'
 import { canonicalContextCacheValue } from '../contextCacheFingerprint'
 import { markUnresolvedToolCallsOutcomeUnknown } from '../toolCallOutcomeFacts'
 import { recoverInterruptedToolCalls } from '../interruptedToolCallRecovery'
+import { sessionCapabilityPolicyVersion } from '../../state/sessionCapabilityPolicy'
+import { SessionCapabilityError } from './sessionCapabilityCommands'
 
 interface RunLifecycleDependencies {
   renameSession(id: string, title: string): void
   defaultSessionTitle: string
   deriveSessionTitle(input: UserMessageContent): string
+  lockSessionCapabilities(sessionId: string, expectedPolicyVersion: string): Promise<unknown>
 }
 
 function rejected(reason: Extract<SendMessageResult, { accepted: false }>['reason'], error?: string): SendMessageResult {
@@ -55,6 +58,7 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
     if (!meta) return Promise.resolve(rejected('session_missing'))
     const settings = { ...meta.settings } as ModelSettings
     const expectedSettingsVersion = settingsVersion(settings)
+    const expectedCapabilityVersion = sessionCapabilityPolicyVersion(meta.capabilityPolicy)
     const apiKey = resolveApiKey(meta, core)
     const fetchImpl = core.config.fetchImpl
     const prepare = core.config.prepareUserInput ?? defaultPrepareUserInput
@@ -84,6 +88,14 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
           return rejected('run_blocked')
         }
         if (await recoverInterruptedToolCalls(id, core) !== 'ready') return rejected('run_blocked')
+        try {
+          await dependencies.lockSessionCapabilities(id, expectedCapabilityVersion)
+        } catch (error) {
+          if (error instanceof SessionCapabilityError && error.code === 'policy_changed') {
+            return rejected('capabilities_changed')
+          }
+          throw error
+        }
         if (currentMeta.title === dependencies.defaultSessionTitle) {
           const title = dependencies.deriveSessionTitle(content)
           if (title) dependencies.renameSession(id, title)

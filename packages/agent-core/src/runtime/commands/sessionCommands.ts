@@ -10,6 +10,10 @@ import {
   captureUserContentReachability,
   disposeUserContentAfterMutation,
 } from '../userContentDisposal'
+import {
+  createDraftSessionCapabilityPolicy,
+  type SessionCapabilityPolicy,
+} from '../../state/sessionCapabilityPolicy'
 
 export const DEFAULT_SESSION_TITLE = '新对话'
 
@@ -41,6 +45,7 @@ export function createSessionCommands(core: CoreInstance) {
     title?: string
     settings?: ModelSettings
     workspaceId?: string
+    capabilityPolicy?: SessionCapabilityPolicy
   }): string {
     let workspaceId = opts?.workspaceId
     const workspaces = core.rootStore.getter(workspacesAtom)
@@ -67,6 +72,7 @@ export function createSessionCommands(core: CoreInstance) {
       createdAt: now,
       updatedAt: now,
       workspaceId,
+      capabilityPolicy: opts?.capabilityPolicy ?? createDraftSessionCapabilityPolicy(),
     }
     core.rootStore.setter(sessionsAtom, (prev) => ({ ...prev, [id]: meta }))
     core.rootStore.setter(workspacesAtom, (prev) => {

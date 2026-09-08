@@ -9,6 +9,7 @@ import { handleToolGate } from './toolCallGate'
 import { createToolEpoch } from './toolEpoch'
 import type { ToolLoopBase } from './toolLoopContracts'
 import type { ConversationItem } from '../state/core.type'
+import { capabilityToolCatalog, captureRunCapabilitySnapshot } from './turnToolVisibility'
 
 const SERVER_TOOL_NAMES = [
   'shell_macos',
@@ -52,12 +53,19 @@ function makeBase(options: BaseOptions = {}): ToolLoopBase {
       updatedAt: 0,
     },
   })
+  const toolEpoch = createToolEpoch(core.tools, { sessionId: 'session', runId: 'run' })
+  const capabilities = captureRunCapabilitySnapshot(undefined)
 
   return {
     id: 'session',
     runId: 'run',
     core,
-    toolEpoch: createToolEpoch(core.tools, { sessionId: 'session', runId: 'run' }),
+    toolEpoch,
+    stablePrefix: {
+      capabilities,
+      skills: { summaries: [], projectEntries: [] },
+      toolCatalog: capabilityToolCatalog(toolEpoch, capabilities),
+    },
     turnId: 'turn',
     maxTurnTools: 8,
     hostHasLocalCapabilities,

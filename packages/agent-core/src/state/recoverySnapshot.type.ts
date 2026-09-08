@@ -39,6 +39,7 @@ export type RecoverySessionMetaV1 = Pick<
   | 'workspaceRoot'
   | 'toolApprovalMode'
   | 'loadedTools'
+  | 'capabilityPolicy'
 >
 
 export type SubagentContinuationState =

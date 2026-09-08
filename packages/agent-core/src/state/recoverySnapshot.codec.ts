@@ -8,6 +8,7 @@ import {
   type SubagentContinuationState,
 } from './recoverySnapshot.type'
 import { isModelSettings } from './modelSettingsSchema'
+import { isSessionCapabilityPolicy } from './sessionCapabilityPolicy'
 
 const planStatuses = new Set(['draft', 'awaiting_approval', 'approved', 'active', 'completed', 'failed', 'cancelled'])
 const stageStatuses = new Set(['pending', 'in_progress', 'completed', 'failed', 'blocked', 'skipped'])
@@ -15,7 +16,7 @@ const runStatuses = new Set(['idle', 'running', 'awaiting_tool', 'waiting_user',
 const nodeTypes = new Set(['agent-batch', 'agent', 'model', 'tool', 'plan-stage', 'evaluator', 'join'])
 const nodeStatuses = new Set(['queued', 'ready', 'running', 'waiting-children', 'waiting-user', 'interrupted', 'succeeded', 'failed', 'cancelled'])
 const childStates = new Set<SubagentContinuationState>(['queued', 'interrupted', 'waiting_user', 'waiting_confirmation', 'waiting_plan_approval', 'outcome_unknown'])
-const sessionKeys = new Set(['id', 'title', 'settings', 'createdAt', 'updatedAt', 'workspaceId', 'workspaceRoot', 'toolApprovalMode', 'loadedTools'])
+const sessionKeys = new Set(['id', 'title', 'settings', 'createdAt', 'updatedAt', 'workspaceId', 'workspaceRoot', 'toolApprovalMode', 'loadedTools', 'capabilityPolicy'])
 const pendingArtifactKeys = new Set(['id', 'filename', 'content', 'mimeType'])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -84,6 +85,7 @@ function isSession(value: unknown, sessionId: string): boolean {
     && optional(value, 'workspaceId', isText) && optional(value, 'workspaceRoot', isText)
     && optional(value, 'toolApprovalMode', (entry) => entry === 'confirm' || entry === 'auto')
     && optional(value, 'loadedTools', isStringArray)
+    && optional(value, 'capabilityPolicy', isSessionCapabilityPolicy)
 }
 
 function isUserContent(value: unknown): boolean {

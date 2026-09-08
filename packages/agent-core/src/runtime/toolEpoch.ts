@@ -50,6 +50,8 @@ export interface ToolEpoch extends ToolCatalog {
   readonly sessionId: string
   readonly runId: string
   readonly capturedAt: number
+  /** Registry snapshot taken when this epoch was created; never follows live registrations. */
+  readonly capturedCatalog: ToolCatalog
   /** 本 run 固定的【清单】工具名（按捕获顺序）。run 中途准入的新工具不在其中，见文件头 ①/③。 */
   readonly toolNames: readonly string[]
   /** 成员/存活判定的唯一入口；E2 的结构化错误与 E3 的确认校验都从这里取判据。 */
@@ -81,6 +83,7 @@ export function createToolEpoch(registry: ToolRegistry, input: ToolEpochInput): 
     sessionId: input.sessionId,
     runId: input.runId,
     capturedAt,
+    capturedCatalog: frozen,
     toolNames,
     list() {
       return frozen.list()

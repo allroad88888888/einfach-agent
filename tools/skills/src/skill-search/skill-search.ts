@@ -43,8 +43,11 @@ export const skillSearchTool: Tool = {
     // 扫描来的 skills（工作区 `project/` 与主目录 `user/`）经 ctx 注入后与内置条目一起参与
     // 【同一次】评分排序（评分规则只在 registry 里存一份）。ctx 无 skills 能力（旧宿主/单测桩）
     // 时退化成纯内置，行为与本能力上线前一致。
-    const projectSkills = ctx.skills?.list().filter((skill) => skillScopeFromName(skill.name)) ?? []
+    const governedSkills = ctx.skills
+    const availableSkills = governedSkills?.list()
+    const projectSkills = availableSkills?.filter((skill) => skillScopeFromName(skill.name)) ?? []
     const matches = searchSkills(query, projectSkills)
+      .filter((skill) => !governedSkills || governedSkills.isAllowed(skill.name))
     return {
       ok: true,
       data: {

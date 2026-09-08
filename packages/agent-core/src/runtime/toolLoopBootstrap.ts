@@ -21,6 +21,7 @@ import { getExecutionRuntime } from '../execution/runtime'
 import type { TraceAttributes } from '../observability/port'
 import type { ToolLoopBase, ToolLoopControl, ToolLoopTrace } from './toolLoopContracts'
 import type { ToolLoopOptions } from './modelRunLifecycle'
+import { capabilityToolRegistry } from './turnToolVisibility'
 
 export interface BootstrappedToolLoop {
   base: ToolLoopBase
@@ -82,16 +83,17 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
     if (session !== initialSession) trace.event('agent.model_migrated_at_request', { from: initialSession.settings.model, to: session.settings.model })
     const modelUserId = core.config.modelUserId
     const rootTranscript = () => formatSubagentTranscript([...stablePrefix.items, ...currentTurnItems(id, core).map((item) => item.item)])
-    const delegateRuntime = await core.delegation?.createRuntime({
-      sessionId: id, runId, settings: session.settings, core, registry: core.tools, customInstructions: core.config.customInstructions, environment: stablePrefix.environment.content, hostHasLocalCapabilities: stablePrefix.hostHasLocalCapabilities, modelUserId, apiKey: opts.apiKey, signal: opts.signal, fetchImpl: opts.fetchImpl,
-      onNodeChange: (node) => getExecutionRuntime(core).syncAgentNode(node),
-      onTraceItem: ({ agentPath, timestamp, turn, item }) => getExecutionRuntime(core).appendAgentTrace({ sessionId: id, treeId: runId, agentPath, record: { timestamp, turn, item } }),
-    })
+    const delegateRuntime = stablePrefix.capabilities.allowsTool('delegate_agent')
+      ? await core.delegation?.createRuntime({
+        sessionId: id, runId, settings: session.settings, core, registry: capabilityToolRegistry(core.tools, stablePrefix.toolCatalog, stablePrefix.capabilities), customInstructions: core.config.customInstructions, environment: stablePrefix.environment.content, hostHasLocalCapabilities: stablePrefix.hostHasLocalCapabilities, modelUserId, apiKey: opts.apiKey, signal: opts.signal, fetchImpl: opts.fetchImpl,
+        onNodeChange: (node) => getExecutionRuntime(core).syncAgentNode(node),
+        onTraceItem: ({ agentPath, timestamp, turn, item }) => getExecutionRuntime(core).appendAgentTrace({ sessionId: id, treeId: runId, agentPath, record: { timestamp, turn, item } }),
+      }) : undefined
     const restored = new Set<string>()
     const stored = core.getSessionStore(id).store
     for (const name of [...(session.loadedTools ?? []), ...loadedToolNamesFromHistory(stored.getter(itemsAtom).map((item) => item.item)), ...(stored.getter(runAtom)?.loadedTools ?? [])]) if (name) { restored.delete(name); restored.add(name) }
     let visible = [] as ToolLoopBase['state']['visible']
-    for (const name of restored) visible = ensureToolLoaded(id, visible, name, core, maxTurnToolsForVendor(session.settings.vendor) - 1, undefined, toolEpoch)
+    for (const name of restored) visible = ensureToolLoaded(id, visible, name, core, maxTurnToolsForVendor(session.settings.vendor) - 1, undefined, stablePrefix.toolCatalog)
     const pluginContext = makeCoreCtx({ sessionId: id, runId, signal: opts.signal, store: stored, root: core.rootStore, history: core.getSessionStore(id).history, traceEvent: trace.event })
     const boot = {
       base: {

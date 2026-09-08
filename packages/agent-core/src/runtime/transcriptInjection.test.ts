@@ -5,6 +5,7 @@ import type { SkillsRegistry } from '../skills/contracts'
 import { createCoreInstance } from './core/coreInstance'
 import type { StableModelPrefix } from './modelTurnPrefix'
 import { injectStablePrefixTranscript } from './transcriptInjection'
+import { captureRunCapabilitySnapshot } from './turnToolVisibility'
 
 function prefix(): StableModelPrefix {
   const system = { role: 'system' as const, content: '固定 system' }
@@ -20,6 +21,15 @@ function prefix(): StableModelPrefix {
     skillManifest,
     environment,
     hostHasLocalCapabilities: false,
+    capabilities: captureRunCapabilitySnapshot(undefined),
+    skills: { summaries: [], projectEntries: [] },
+    toolCatalog: {
+      list: () => [],
+      loadSchema: () => undefined,
+      registrationVersion: () => undefined,
+      has: () => false,
+      replayUnsafeToolNames: () => new Set(),
+    },
   }
 }
 

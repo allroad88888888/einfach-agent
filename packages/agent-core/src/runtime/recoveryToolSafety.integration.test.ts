@@ -222,8 +222,9 @@ describe('recovery tool side-effect safety', () => {
       const modelCore = recoveringCore(modelRequests)
       const modelSession = modelCore.newSession({ settings: { vendor: 'deepseek', model: 'test-model' } })
       wirePersistence(modelCore, failingRecovery(failure))
-      modelCore.sendMessage('必须先持久化')
-      await waitUntil(() => modelCore.getSessionStore(modelSession).store.getter(runAtom)?.status === 'interrupted', 'model interruption')
+      const result = await modelCore.sendMessage('必须先持久化')
+      expect(result).toMatchObject({ accepted: false, reason: 'commit_failed' })
+      expect(modelCore.getSessionStore(modelSession).store.getter(runAtom)).toBeUndefined()
       expect(modelRequests.count).toBe(0)
 
       const toolRequests = { count: 0 }

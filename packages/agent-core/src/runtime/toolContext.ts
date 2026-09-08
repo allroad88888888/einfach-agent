@@ -26,6 +26,7 @@
 //   runChildTool 再通过 core.tools 原子校验 schema 快照版本并执行。
 
 import type { ToolContext, ToolResult } from '../tools/types'
+import type { ToolCatalog } from '../tools/toolCatalog'
 import type { SubagentSkillFile } from '../subagents/types'
 import { sessionsAtom } from '../state/rootStore'
 import { defaultCore, type CoreInstance } from './core/coreInstance'
@@ -34,7 +35,10 @@ import { attachDelegationCapabilities } from './toolContext/delegationCapabiliti
 import { createOutputCapabilities } from './toolContext/outputCapabilities'
 import { createPlanCapabilities } from './toolContext/planCapabilities'
 import { createProgressReporter } from './toolContext/progressReporting'
-import { createSkillsCapabilities } from './toolContext/skillsCapabilities'
+import {
+  createSkillsCapabilities,
+  type RunSkillSnapshot,
+} from './toolContext/skillsCapabilities'
 import { createStaleGuards } from './toolContext/staleGuards'
 import { createWorkspaceCapabilities } from './toolContext/workspaceCapabilities'
 import { createVisionCapabilities } from './toolContext/visionCapabilities'
@@ -43,6 +47,14 @@ import {
   createWorkspaceInputGuards,
   resolveWorkspaceRoot,
 } from './toolContext/workspaceInputGuards'
+import {
+  capabilityToolCatalog,
+  captureRunCapabilitySnapshot,
+  runToolUnavailableResult,
+  sessionToolCapabilityDeniedResult,
+  type RunCapabilitySnapshot,
+} from './turnToolVisibility'
+import { hasHostBridge } from './hostBridge'
 
 const MAX_TOOL_DEPTH = 4
 
@@ -64,6 +76,10 @@ export function buildToolContext(opts: {
   inheritedSkillIds?: string[]
   inheritedSkillContents?: SubagentSkillFile[]
   delegateRuntime?: DelegationRuntime
+  capabilitySnapshot?: RunCapabilitySnapshot
+  skillSnapshot?: RunSkillSnapshot
+  toolCatalog?: ToolCatalog
+  hostHasLocalCapabilities?: boolean
   // 【实例化第 2 期】core 决定这次工具调用读写哪套 store/registry/abort；默认 defaultCore（＝穿线前
   //   的模块全局单例），故不传 core 的调用点（含全部现有测试）行为逐字不变。callTool 递归时把本次
   //   core 原样传给子 ctx，保证整条同 agent 互调链落在同一实例。
@@ -72,6 +88,13 @@ export function buildToolContext(opts: {
   const { sessionId, runId, signal, callId } = opts
   const stack = opts.stack ?? []
   const core = opts.core ?? defaultCore
+  const session = core.rootStore.getter(sessionsAtom)[sessionId]
+  const capabilitySnapshot = opts.capabilitySnapshot
+    ?? captureRunCapabilitySnapshot(session?.capabilityPolicy)
+  const runToolCatalog = opts.toolCatalog
+    ?? capabilityToolCatalog(core.tools.snapshot(), capabilitySnapshot)
+  const enforceHostCapabilities = opts.hostHasLocalCapabilities !== undefined
+  const hostHasLocalCapabilities = opts.hostHasLocalCapabilities ?? hasHostBridge()
   const currentRunGuard = {
     root: core.rootStore,
     getStore: () => core.getSessionStore(sessionId).store,
@@ -84,7 +107,7 @@ export function buildToolContext(opts: {
   // Auto 的跨 workspace 只读权限只从宿主会话状态派生。它不会进入工具 schema，且
   // withWorkspaceReadAccess 会覆盖/移除调用方同名字段，避免模型伪造 runtime-only 权限。
   const allowExternalReadPaths =
-    core.rootStore.getter(sessionsAtom)[sessionId]?.toolApprovalMode === 'auto'
+    session?.toolApprovalMode === 'auto'
 
   const guards = createStaleGuards({ signal, currentRun: currentRunGuard })
   const progress = createProgressReporter({
@@ -103,7 +126,13 @@ export function buildToolContext(opts: {
     allowExternalReadPaths,
   })
   const planCapabilities = createPlanCapabilities({ sessionId, core, guards })
-  const skillsCapabilities = createSkillsCapabilities({ sessionId, core, workspaceRoot })
+  const skillsCapabilities = createSkillsCapabilities({
+    sessionId,
+    core,
+    workspaceRoot,
+    snapshot: opts.skillSnapshot,
+    capabilitySnapshot,
+  })
   const workspaceCapabilities = createWorkspaceCapabilities({
     toolName: opts.toolName,
     core,
@@ -130,6 +159,12 @@ export function buildToolContext(opts: {
     ...createOutputCapabilities({ sessionId, signal, currentRun: currentRunGuard, core }),
 
     async callTool(name, args): Promise<ToolResult> {
+      if (!capabilitySnapshot.allowsTool(name)) return sessionToolCapabilityDeniedResult()
+      const schema = runToolCatalog.loadSchema(name)
+      if (!schema || (enforceHostCapabilities
+        && schema.runtime === 'server' && !hostHasLocalCapabilities)) {
+        return runToolUnavailableResult()
+      }
       // 当前工具（opts.toolName）也在调用链上 —— A 调 A、或 A→B→A，都应在子工具 execute 启动**之前**
       // 就判出环/超深（否则递归的 execute 会先跑一遍、重复副作用，codex P2）。
       const chain = [...stack, opts.toolName]
@@ -149,16 +184,25 @@ export function buildToolContext(opts: {
         inheritedSkillIds: opts.inheritedSkillIds,
         inheritedSkillContents: opts.inheritedSkillContents,
         delegateRuntime: opts.delegateRuntime,
+        capabilitySnapshot,
+        skillSnapshot: opts.skillSnapshot,
+        toolCatalog: runToolCatalog,
+        hostHasLocalCapabilities,
         core, // 同 agent 互调链共用同一实例（子 ctx 也走本次 core）。
       })
-      const result = await core.tools.run(name, args, childCtx)
+      const result = await core.tools.run(
+        name,
+        args,
+        childCtx,
+        runToolCatalog.registrationVersion(name),
+      )
       // pause 只能是顶层 model 触发，不许经 callTool 冒泡（避免嵌套暂停语义混乱，§8）。
       if ('pause' in result) return { ok: false, error: 'cannot pause inside callTool' }
       return result
     },
   }
 
-  if (opts.delegateRuntime) {
+  if (opts.delegateRuntime && capabilitySnapshot.allowsTool('delegate_agent')) {
     attachDelegationCapabilities(ctx, {
       sessionId,
       runId,
@@ -171,6 +215,10 @@ export function buildToolContext(opts: {
       inheritedSkillIds: opts.inheritedSkillIds,
       inheritedSkillContents: opts.inheritedSkillContents,
       delegateRuntime: opts.delegateRuntime,
+      capabilitySnapshot,
+      toolCatalog: runToolCatalog,
+      hostHasLocalCapabilities,
+      enforceHostCapabilities,
       core,
       guards,
       progress,

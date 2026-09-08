@@ -11,6 +11,7 @@ import { createRecoveryCommands } from './commands/recoveryCommands'
 import { createRunCommands } from './commands/runCommands'
 import { createRunLifecycleCommands } from './commands/runLifecycleCommands'
 import { createSessionCommands, DEFAULT_SESSION_TITLE, deriveSessionTitle } from './commands/sessionCommands'
+import { createSessionCapabilityCommands } from './commands/sessionCapabilityCommands'
 import { createSessionScopeCommands } from './commands/sessionScopeCommands'
 import { createSubagentViewCommands } from './commands/subagentViewCommands'
 import { createWorkspaceCommands } from './commands/workspaceCommands'
@@ -36,6 +37,12 @@ export type {
 export type { ContinueRecoveredSessionResult, SessionRecoveryStatus } from './commands/recoveryCommands'
 export type { HistoryCommandRefusal, HistoryCommandResult } from './commands/historyCommands'
 export type { SetActiveSessionModelSettingsResult } from './commands/modelSettingsCommands'
+export type {
+  LockSessionCapabilitiesResult,
+  SessionCapabilityErrorCode,
+  ToggleSessionCapabilityResult,
+} from './commands/sessionCapabilityCommands'
+export { SessionCapabilityError } from './commands/sessionCapabilityCommands'
 
 /** Updates runtime configuration for the default command instance. */
 export function configureCommands(config: Partial<RuntimeConfig>): void {
@@ -45,12 +52,14 @@ export function configureCommands(config: Partial<RuntimeConfig>): void {
 /** Builds the complete command surface bound to a single runtime core. */
 export function createCommands(core: CoreInstance = defaultCore) {
   const session = createSessionCommands(core)
+  const sessionCapabilities = createSessionCapabilityCommands(core, session)
   const workspace = createWorkspaceCommands(core, { removeSession: session.removeSession })
   const sessionScope = createSessionScopeCommands(core)
   const runLifecycle = createRunLifecycleCommands(core, {
     renameSession: session.renameSession,
     defaultSessionTitle: DEFAULT_SESSION_TITLE,
     deriveSessionTitle,
+    lockSessionCapabilities: sessionCapabilities.lockSessionCapabilities,
   })
   const recovery = createRecoveryCommands(core)
   const pausedRun = createRunCommands(core)
@@ -63,6 +72,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
   return {
     ...workspace,
     ...session,
+    ...sessionCapabilities,
     ...sessionScope,
     ...runLifecycle,
     ...recovery,
@@ -96,6 +106,10 @@ export const {
   sessionUndoAvailabilityAtom,
   setWorkspaceRoot,
   setApprovalMode,
+  getSessionCapabilityCatalog,
+  toggleDraftSessionCapability,
+  lockSessionCapabilities,
+  cloneSessionCapabilities,
   sendMessage,
   continueInterruptedRun,
   getSessionRecoveryStatus,

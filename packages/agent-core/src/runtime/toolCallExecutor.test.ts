@@ -15,6 +15,11 @@ import type { Tool, ToolResult } from '../tools/types'
 import type { ToolLoopBase } from './toolLoopContracts'
 import { createToolEpoch } from './toolEpoch'
 import { executeToolCall } from './toolCallExecutor'
+import {
+  capabilityToolCatalog,
+  captureRunCapabilitySnapshot,
+  SESSION_TOOL_CAPABILITY_DENIED_CODE,
+} from './turnToolVisibility'
 
 const TOOL_NAME = 'mcp_backed_tool'
 
@@ -28,7 +33,7 @@ function testTool(execute: Tool['execute']): Tool {
   }
 }
 
-function createHarness(execute: Tool['execute']) {
+function createHarness(execute: Tool['execute'], sessionAllowsTool = true) {
   const tool = testTool(execute)
   const core = createCoreInstance({ registerTools: (registry) => registry.register(tool) })
   core.rootStore.setter(sessionsAtom, {
@@ -42,13 +47,28 @@ function createHarness(execute: Tool['execute']) {
   })
   setRun('session', { runId: 'run', status: 'running', turnId: 'turn', startedAt: 0 }, core)
 
+  const toolEpoch = createToolEpoch(core.tools, { sessionId: 'session', runId: 'run' })
+  const capabilities = captureRunCapabilitySnapshot({
+    version: 1,
+    state: 'locked',
+    revision: 1,
+    allowedTools: sessionAllowsTool ? [TOOL_NAME] : [],
+    allowedSkills: [],
+    lockedAt: 1,
+  })
   const base = {
     id: 'session',
     runId: 'run',
     turnId: 'turn',
     core,
     // epoch 在工具还活着时冻结：这正是「闸门放行时它还在」的现场。
-    toolEpoch: createToolEpoch(core.tools, { sessionId: 'session', runId: 'run' }),
+    toolEpoch,
+    stablePrefix: {
+      capabilities,
+      skills: { summaries: [], projectEntries: [] },
+      toolCatalog: capabilityToolCatalog(toolEpoch, capabilities),
+      hostHasLocalCapabilities: true,
+    },
     opts: { apiKey: 'test-key', signal: new AbortController().signal },
     maxTurnTools: 8,
     hostHasLocalCapabilities: true,
@@ -62,6 +82,19 @@ function createHarness(execute: Tool['execute']) {
 }
 
 describe('executeToolCall —— 执行期掉线', () => {
+  it('double-checks the session policy even after an earlier gate admitted the call', async () => {
+    const execute = vi.fn(() => ({ ok: true as const }))
+    const { base } = createHarness(execute, false)
+
+    const result = await executeToolCall(base, {
+      callId: 'denied-after-gate', name: TOOL_NAME, args: {}, registrationVersion: 1,
+    })
+
+    expect(result).toMatchObject({ ok: false, code: SESSION_TOOL_CAPABILITY_DENIED_CODE })
+    expect(JSON.stringify(result)).not.toContain(TOOL_NAME)
+    expect(execute).not.toHaveBeenCalled()
+  })
+
   it('闸门之后掉线：把 registry 的 unknown tool 翻成结构化回执，并留住原始错误', async () => {
     const execute = vi.fn(() => ({ ok: true as const }))
     const { base, core, tool, registrationVersion } = createHarness(execute)

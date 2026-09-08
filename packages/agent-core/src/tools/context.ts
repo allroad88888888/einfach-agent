@@ -103,6 +103,8 @@ export interface ToolContext {
     | { artifactId: string }
     | { error: string }
   skills?: {
+    /** Session/run capability check; false must not reveal content or suggestions for the name. */
+    isAllowed(name: string): boolean
     list(): SkillSummary[]
     resolveScannedSkill(name: string): {
       filePath: string

@@ -119,6 +119,7 @@ export {
   removeSession,
   renameSession,
   setActiveSessionModelSettings,
+  getSessionCapabilityCatalog, toggleDraftSessionCapability, lockSessionCapabilities, cloneSessionCapabilities,
   // 会话 atom 作用域：S7b（E7）为 <ActiveSessionProvider> 补的受限只读通路，不给 store 生命周期
   sessionAtomScope,
   sessionUndoAvailabilityAtom,
@@ -173,14 +174,16 @@ export type {
   HistoryCommandRefusal,
   HistoryCommandResult,
   SetActiveSessionModelSettingsResult,
+  LockSessionCapabilitiesResult, SessionCapabilityErrorCode, ToggleSessionCapabilityResult,
 } from './runtime/commands'
+export { SessionCapabilityError } from './runtime/commands'
+export type { SessionCapabilityCatalog, SessionCapabilityCatalogItem } from './runtime/sessionCapabilityCatalog'
+export { createDraftSessionCapabilityPolicy, cloneSessionCapabilityPolicyAsDraft, isSessionCapabilityAllowed, isSessionCapabilityPolicy, lockSessionCapabilityPolicy, normalizeSessionCapabilityPolicy, sessionCapabilityPolicyVersion, toggleSessionCapability } from './state/sessionCapabilityPolicy'
+export type { SessionCapabilityKind, SessionCapabilityPolicy } from './state/sessionCapabilityPolicy'
 
-// ---------------------------------------------------------------------------
 // 运行时事件订阅（./runtime/core/events）—— 无 UI 宿主的渲染入口
-// ---------------------------------------------------------------------------
 export { subscribeAgentEvents } from './runtime/core/events' // apps/cli: bootstrap、event-renderer
 export type { AgentEvent } from './runtime/core/events' // apps/cli: event-renderer
-
 // ---------------------------------------------------------------------------
 // 持久化装配（./runtime/persistenceBridge）—— driver 实现由 persistence-* 包提供
 // ---------------------------------------------------------------------------
@@ -189,8 +192,6 @@ export {
   hydratePersistence, // apps/web: main.tsx（E4 换掉 state/persistence/hydrate 后的正式通路）
 } from './runtime/persistenceBridge'
 export type { PersistenceDependencies } from './runtime/persistenceBridge' // configurePersistence 的参数类型
-
-// ---------------------------------------------------------------------------
 // 插件加载面（./plugins/*）—— P 线宿主装配 API，盘点成文时尚不存在，按 §4 第 1 行归 `.`
 // ---------------------------------------------------------------------------
 export { scanPlugins } from './plugins/pluginScanner' // apps/cli: plugins.ts；apps/web: plugins/workspacePluginProvider

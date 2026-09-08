@@ -220,6 +220,7 @@ export function Composer({
           modelSettings={modelSettings}
           sessionId={activeSession?.id}
           modelSettingsDisabled={modelSettingsLocked}
+          capabilityPolicy={activeSession?.capabilityPolicy}
           queuedMessageCount={queuedMessages.length}
           onToggleApprovalMode={toggleApprovalMode}
         />

@@ -1,4 +1,4 @@
-import { useId, useMemo } from 'react'
+import { useId, useMemo, useRef, useState } from 'react'
 import { useLingui } from '@lingui/react/macro'
 import { useAtomValue } from '@einfach/react'
 import {
@@ -6,7 +6,12 @@ import {
   getModelThinkingCapability,
   isSupportedThinkingEffort,
 } from '@einfach-agent/ai'
-import { setActiveSessionModelSettings, type ModelSettings } from '@einfach-agent/core'
+import {
+  setActiveSessionModelSettings,
+  sessionCapabilityPolicyVersion,
+  type ModelSettings,
+  type SessionCapabilityPolicy,
+} from '@einfach-agent/core'
 import { modelConnectionProfilesAtom } from '../../settings/modelConnectionProfileState'
 import {
   composerModelOptions,
@@ -21,6 +26,8 @@ import {
 } from './composerModelSettings'
 import { ComposerModelPicker } from './ComposerModelPicker'
 import { ComposerThinkingControl } from './ComposerThinkingControl'
+import { ConversationCapabilitiesButton } from './ConversationCapabilitiesButton'
+import { ConversationCapabilitiesPanel } from './ConversationCapabilitiesPanel'
 
 function connectionId(settings: Pick<ModelSettings, 'vendorSettings'>): string | undefined {
   const value = settings.vendorSettings?.connectionId
@@ -38,6 +45,7 @@ export function ComposerControlBar({
   modelSettings,
   sessionId,
   modelSettingsDisabled,
+  capabilityPolicy,
   queuedMessageCount,
   onToggleApprovalMode,
 }: {
@@ -45,11 +53,14 @@ export function ComposerControlBar({
   modelSettings: ModelSettings
   sessionId?: string
   modelSettingsDisabled: boolean
+  capabilityPolicy?: SessionCapabilityPolicy
   queuedMessageCount: number
   onToggleApprovalMode: () => void
 }) {
   const { t } = useLingui()
   const fallbackId = useId()
+  const capabilitiesButtonRef = useRef<HTMLButtonElement>(null)
+  const [capabilitiesOpen, setCapabilitiesOpen] = useState(false)
   const profiles = useAtomValue(modelConnectionProfilesAtom)
   const options = useMemo(
     () => composerModelOptions(modelSettings, profiles),
@@ -121,6 +132,25 @@ export function ComposerControlBar({
         <span className="agentnew-composer-queue-status" role="status">
           {t`已排队 ${queuedMessageCount} 条`}
         </span>
+      ) : null}
+      {sessionId ? (
+        <ConversationCapabilitiesButton
+          ref={capabilitiesButtonRef}
+          sessionId={sessionId}
+          policyVersion={sessionCapabilityPolicyVersion(capabilityPolicy)}
+          open={capabilitiesOpen}
+          onOpen={() => setCapabilitiesOpen(true)}
+        />
+      ) : null}
+      {sessionId ? (
+        <ConversationCapabilitiesPanel
+          open={capabilitiesOpen}
+          sessionId={sessionId}
+          policyVersion={sessionCapabilityPolicyVersion(capabilityPolicy)}
+          policyState={capabilityPolicy?.state ?? 'legacy-unrestricted'}
+          triggerRef={capabilitiesButtonRef}
+          onClose={() => setCapabilitiesOpen(false)}
+        />
       ) : null}
     </div>
   )

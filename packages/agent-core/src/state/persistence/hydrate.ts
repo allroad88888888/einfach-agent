@@ -31,6 +31,7 @@ import {
 } from '../sessionAtoms'
 import type { RecoveryDriver } from './recoveryDriver'
 import { migrateSessionMeta } from './modelMigration'
+import { sanitizeSessionCapabilityPolicy } from '../sessionCapabilityHydration'
 import {
   normalizeRecoverySnapshotForHydration,
   prepareRecoveryHydration,
@@ -173,7 +174,10 @@ export async function hydrateForCore(
     workspaces = []
   }
 
-  const recoveryPlan = await prepareRecoveryHydration(deps.recovery, sessions)
+  const recoveryPlan = await prepareRecoveryHydration(
+    deps.recovery,
+    sessions.map(sanitizeSessionCapabilityPolicy),
+  )
 
   // 工作区本身也是可持久化实体；v1 也能补回 sessionsAtom 丢失的根会话登记。
   if (recoveryPlan.sessionMetas.length === 0 && workspaces.length === 0) {
@@ -195,7 +199,9 @@ export async function hydrateForCore(
     //   · 顺带消掉一类竞态：回写只能是 fire-and-forget（hydrate 的容错契约是「失败不阻塞启动」），
     //     而 saveSessions 是覆盖式落盘，与 persistenceBridge.persistSessions() 之间无顺序保证。
     //     若回写晚于「用户新建会话」落地，就会用不含新会话的旧列表整体覆盖掉它。
-    const modelMigratedSessions = recoveryPlan.sessionMetas.map(migrateSessionMeta)
+    const modelMigratedSessions = recoveryPlan.sessionMetas
+      .map(sanitizeSessionCapabilityPolicy)
+      .map(migrateSessionMeta)
     const migrated = attachSessionsToWorkspaces(modelMigratedSessions, workspaces)
     const workspaceRecord = Object.fromEntries(
       migrated.workspaces.map((workspace) => [workspace.id, workspace]),

@@ -22,6 +22,14 @@ function session(id: string): SessionMeta {
     workspaceRoot: `/workspace/${id}`,
     toolApprovalMode: 'auto',
     loadedTools: ['read_file'],
+    capabilityPolicy: {
+      version: 1,
+      state: 'locked',
+      revision: 2,
+      allowedTools: ['read_file'],
+      allowedSkills: ['planning'],
+      lockedAt: 15,
+    },
   }
 }
 

@@ -11,6 +11,7 @@ import { tracePreview } from './shared/preview'
 import { ROOT_AGENT_PATH } from '../subagents/path'
 import type { ModelFunctionTool } from '@einfach-agent/ai'
 import type { ToolLoopBase } from './toolLoopContracts'
+import { sessionToolCapabilityDeniedResult } from './turnToolVisibility'
 
 export interface ToolGateInput {
   callId: string
@@ -79,6 +80,19 @@ export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolea
     if (input.name === 'submit_stage_result') base.state.lastStageSubmitRejection = error
     appendToolResult(base.id, input.callId, JSON.stringify(result), base.core, input.planStageId)
   }
+  const requestedToolName = input.name === REQUEST_TOOL_SCHEMA_NAME
+    && typeof input.args.toolName === 'string' ? input.args.toolName.trim() : ''
+  const deniedBySession = !base.stablePrefix.capabilities.allowsTool(input.name)
+    || Boolean(requestedToolName
+      && !base.stablePrefix.capabilities.allowsTool(requestedToolName))
+  if (deniedBySession) {
+    traceFailure(
+      'tool.session_capability_denied',
+      { session_capability_denied: true },
+      { ...sessionToolCapabilityDeniedResult() },
+    )
+    return true
+  }
   // 只增不减（E2）的「不减」侧，排在所有其它闸门【之前】：清单里还在、registry 里已经没有的
   // 工具，在这里就地回结构化错误。晚一步，autoload 就会先给它装一份注销前的 schema，把模型
   // 骗到下一轮才在 registry 那里撞上一句 `unknown tool: X`。
@@ -110,20 +124,20 @@ export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolea
     turnTools: input.tools,
     isSynthesisTurn: false,
     isAllowedTool: (name) => {
-      const schema = base.toolEpoch.loadSchema(name)
+      const schema = base.stablePrefix.toolCatalog.loadSchema(name)
       return schema?.runtime !== 'server' || base.hostHasLocalCapabilities
     },
     loadSchema: (name) => {
-      const schema = base.toolEpoch.loadSchema(name)
+      const schema = base.stablePrefix.toolCatalog.loadSchema(name)
       return schema && (schema.runtime !== 'server' || base.hostHasLocalCapabilities) ? schema : undefined
     },
     expectedRegistrationVersion: input.expectedRegistrationVersion,
-    registrationVersion: (name) => base.toolEpoch.registrationVersion(name),
+    registrationVersion: (name) => base.stablePrefix.toolCatalog.registrationVersion(name),
     canExecuteTool: (name) => input.tools.some((tool) => tool.function.name === name),
     delegate: { name: '__root_delegate__', path: ROOT_AGENT_PATH, depth: 0, maxDepth: 1 },
   })
   if (gate.kind === 'schema_autoloaded') {
-    base.state.visible = ensureToolLoaded(base.id, base.state.visible, input.name, base.core, base.maxTurnTools - 1, base.state.planPinnedTools, base.toolEpoch)
+    base.state.visible = ensureToolLoaded(base.id, base.state.visible, input.name, base.core, base.maxTurnTools - 1, base.state.planPinnedTools, base.stablePrefix.toolCatalog)
     base.state.recentToolNames = touchRecentToolName(base.state.recentToolNames, input.name, base.maxTurnTools - 1)
     const result = gate.result as Record<string, unknown> & { hint?: string }
     base.trace.event('tool.schema_autoloaded', { toolName: input.name, callId: input.callId, schema_autoloaded: true, argsPreview: tracePreview(input.args), resultPreview: tracePreview(result) })
@@ -142,7 +156,7 @@ export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolea
     return true
   }
   if (gate.kind === 'registration_changed') {
-    traceFailure('tool.registration_changed', { registration_changed: true, expectedRegistrationVersion: input.expectedRegistrationVersion, currentRegistrationVersion: base.toolEpoch.registrationVersion(input.name) }, gate.result)
+    traceFailure('tool.registration_changed', { registration_changed: true, expectedRegistrationVersion: input.expectedRegistrationVersion, currentRegistrationVersion: base.stablePrefix.toolCatalog.registrationVersion(input.name) }, gate.result)
     return true
   }
   if (gate.kind !== 'schema_request') return false
@@ -151,13 +165,13 @@ export function handleToolGate(base: ToolLoopBase, input: ToolGateInput): boolea
   let found: boolean
   let result: Record<string, unknown>
   if (toolName) {
-    base.state.visible = ensureToolLoaded(base.id, base.state.visible, toolName, base.core, base.maxTurnTools - 1, base.state.planPinnedTools, base.toolEpoch)
-    const schema = base.toolEpoch.loadSchema(toolName)
+    base.state.visible = ensureToolLoaded(base.id, base.state.visible, toolName, base.core, base.maxTurnTools - 1, base.state.planPinnedTools, base.stablePrefix.toolCatalog)
+    const schema = base.stablePrefix.toolCatalog.loadSchema(toolName)
     found = schema !== undefined
     if (schema) base.state.recentToolNames = touchRecentToolName(base.state.recentToolNames, toolName, base.maxTurnTools - 1)
     result = schema ? toolSchemaLoadedResult(schema) : { error: 'unknown' }
   } else {
-    const manifest = searchToolManifestPage({ query: typeof input.args.query === 'string' ? input.args.query : undefined, cursor: typeof input.args.cursor === 'string' ? input.args.cursor : undefined, limit: typeof input.args.limit === 'number' ? input.args.limit : undefined }, base.hostHasLocalCapabilities, { registry: base.toolEpoch })
+    const manifest = searchToolManifestPage({ query: typeof input.args.query === 'string' ? input.args.query : undefined, cursor: typeof input.args.cursor === 'string' ? input.args.cursor : undefined, limit: typeof input.args.limit === 'number' ? input.args.limit : undefined }, base.hostHasLocalCapabilities, { registry: base.stablePrefix.toolCatalog })
     found = manifest.kind === 'tool_manifest_page'
     result = manifest as unknown as Record<string, unknown>
   }

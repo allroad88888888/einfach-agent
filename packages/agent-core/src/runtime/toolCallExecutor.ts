@@ -6,6 +6,10 @@ import { abortStatus, safeErrorMessage, toolResultTrace } from './toolLoopSuppor
 import { toolProviderDisconnectedResult } from './toolLoading'
 import type { ToolResult } from '../tools/types'
 import type { ToolLoopBase } from './toolLoopContracts'
+import {
+  runToolUnavailableResult,
+  sessionToolCapabilityDeniedResult,
+} from './turnToolVisibility'
 
 export interface ExecutableToolCall {
   callId: string
@@ -32,9 +36,42 @@ function disconnectedDuringCall(base: ToolLoopBase, name: string, result: ToolRe
 
 /** Runs one already-gated tool call through the execution graph. */
 export async function executeToolCall(base: ToolLoopBase, call: ExecutableToolCall) {
-  const policy = base.core.tools.execution(call.name)
+  const allowedBySession = base.stablePrefix.capabilities.allowsTool(call.name)
+  const availableInRun = base.stablePrefix.toolCatalog.has(call.name)
+  const runRegistrationVersion = base.stablePrefix.toolCatalog.registrationVersion(call.name)
+  const policy = allowedBySession && availableInRun
+    ? base.core.tools.execution(call.name) : undefined
   const toolSpan = base.core.observability.startSpan('tool.call', { kind: 'tool', parent: base.trace.span, attrs: { sessionId: base.id, runId: base.runId, turnId: base.turnId, toolName: call.name, callId: call.callId, args: call.args, ...(call.resumed ? { resumed: true, registrationVersion: call.registrationVersion } : {}) } })
   try {
+    if (!allowedBySession) {
+      const denied = sessionToolCapabilityDeniedResult()
+      const traced = toolResultTrace(denied, call.args)
+      base.core.observability.endSpan(toolSpan, traced.status, {
+        ...traced.attrs,
+        session_capability_denied: true,
+      }, traced.err)
+      return denied
+    }
+    if (!availableInRun) {
+      const unavailable = runToolUnavailableResult()
+      const traced = toolResultTrace(unavailable, call.args)
+      base.core.observability.endSpan(toolSpan, traced.status, traced.attrs, traced.err)
+      return unavailable
+    }
+    let executionRegistrationVersion = runRegistrationVersion
+    if (call.registrationVersion !== undefined
+      && call.registrationVersion !== runRegistrationVersion) {
+      const currentVersion = base.core.tools.registrationVersion(call.name)
+      if (currentVersion === call.registrationVersion) {
+        const unavailable = runToolUnavailableResult()
+        const traced = toolResultTrace(unavailable, call.args)
+        base.core.observability.endSpan(toolSpan, traced.status, traced.attrs, traced.err)
+        return unavailable
+      }
+      // The pending call predates a lost/recreated epoch. Its old expected version is still the
+      // strongest available guard and lets ToolRegistry return the canonical expected/current error.
+      executionRegistrationVersion = call.registrationVersion
+    }
     const runTool = (signal: AbortSignal) => base.core.tools.run(call.name, call.args, buildToolContext({
       sessionId: base.id,
       runId: base.runId,
@@ -45,8 +82,12 @@ export async function executeToolCall(base: ToolLoopBase, call: ExecutableToolCa
       agentPath: ROOT_AGENT_PATH,
       getParentTranscript: base.rootTranscript,
       delegateRuntime: base.delegateRuntime,
+      capabilitySnapshot: base.stablePrefix.capabilities,
+      skillSnapshot: base.stablePrefix.skills,
+      toolCatalog: base.stablePrefix.toolCatalog,
+      hostHasLocalCapabilities: base.stablePrefix.hostHasLocalCapabilities,
       core: base.core,
-    }), call.registrationVersion)
+    }), executionRegistrationVersion)
     const result = call.resumed ? await runTool(base.opts.signal) : await getExecutionRuntime(base.core).run({
       id: call.callId,
       graphId: base.runId,

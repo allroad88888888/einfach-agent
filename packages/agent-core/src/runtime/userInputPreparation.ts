@@ -57,6 +57,7 @@ export type SendMessageResult =
         | 'session_missing'
         | 'run_blocked'
         | 'settings_changed'
+        | 'capabilities_changed'
         | 'prepare_failed'
         | 'prepare_aborted'
         | 'commit_failed'

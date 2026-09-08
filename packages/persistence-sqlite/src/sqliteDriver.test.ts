@@ -96,6 +96,25 @@ describe('sqliteDriver — sessions', () => {
     expect(fakeDb.sessions.map((r) => r.id)).toEqual(['__all__'])
   })
 
+  it('round-trips a canonical v1 capability policy without changing its allowlists', async () => {
+    const { sessions } = createSqlitePersistence()
+    const restricted: SessionMeta = {
+      ...meta('restricted'),
+      capabilityPolicy: {
+        version: 1,
+        state: 'locked',
+        revision: 2,
+        allowedTools: ['read_file'],
+        allowedSkills: ['planning'],
+        lockedAt: 3,
+      },
+    }
+
+    await sessions.saveSessions([restricted])
+
+    expect((await sessions.loadSessions())[0]).toEqual(restricted)
+  })
+
   it('回归钉死假事务：saveSessions 只发单条 INSERT OR REPLACE（__all__ 整包 JSON），绝不发 BEGIN/COMMIT/ROLLBACK', async () => {
     const { sessions } = createSqlitePersistence()
     await sessions.saveSessions([meta('a'), meta('b')])

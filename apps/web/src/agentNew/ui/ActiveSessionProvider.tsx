@@ -21,6 +21,7 @@ import {
   activeWorkspaceRootAtom,
   sessionAtomScope,
   type ModelSettings,
+  type SessionCapabilityPolicy,
 } from '@einfach-agent/core'
 import type { KimiRegion } from '@einfach-agent/ai'
 import { kimiRegionSetting } from '../../modelInput/kimiRegionSetting'
@@ -34,6 +35,7 @@ export interface ActiveSessionConfig {
   vendor: string
   model: string
   region?: KimiRegion
+  capabilityPolicy?: SessionCapabilityPolicy
 }
 
 const ActiveSessionContext = createContext<ActiveSessionConfig | undefined>(undefined)
@@ -73,6 +75,7 @@ export function ActiveSessionProvider({
     vendor: settings.vendor,
     model: settings.model,
     region: kimiRegionSetting(settings),
+    capabilityPolicy: meta?.capabilityPolicy,
   }
   // 只读通路：命令面只给「该会话的 atom 作用域」，不给 store 的生命周期（建/丢/清）——
   // 那些仍归 newSession / removeSession 命令（盘点 E7）。

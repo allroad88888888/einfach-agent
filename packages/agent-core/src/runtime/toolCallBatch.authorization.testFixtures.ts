@@ -16,6 +16,7 @@ import type { ToolLoopBase } from './toolLoopContracts'
 import { runToolCallBatch } from './toolCallBatch'
 import { createToolEpoch } from './toolEpoch'
 import type { ModelTurnResult } from './modelTurnRequester'
+import { capabilityToolCatalog, captureRunCapabilitySnapshot } from './turnToolVisibility'
 
 export type ApprovalMode = 'confirm' | 'auto'
 
@@ -57,12 +58,20 @@ export function createHarness(
     core.getSessionStore('session').store.setter(alwaysAllowedToolsAtom, [...alwaysAllowedTools])
   }
 
+  const toolEpoch = createToolEpoch(core.tools, { sessionId: 'session', runId: 'run' })
+  const capabilities = captureRunCapabilitySnapshot(undefined)
   const base = {
     id: 'session',
     runId: 'run',
     turnId: 'turn',
     core,
-    toolEpoch: createToolEpoch(core.tools, { sessionId: 'session', runId: 'run' }),
+    toolEpoch,
+    stablePrefix: {
+      capabilities,
+      skills: { summaries: [], projectEntries: [] },
+      toolCatalog: capabilityToolCatalog(toolEpoch, capabilities),
+      hostHasLocalCapabilities: true,
+    },
     opts: { apiKey: 'test-key', signal: new AbortController().signal },
     maxTurnTools: 8,
     hostHasLocalCapabilities: true,

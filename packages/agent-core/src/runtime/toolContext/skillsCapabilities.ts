@@ -9,16 +9,96 @@
 import type { ToolContext } from '../../tools/types'
 import { disabledProjectSkillsByWorkspaceAtom, sessionsAtom } from '../../state/rootStore'
 import { filterProjectSkillsSnapshot } from '../../skills/projectSkillPreferences'
-import { skillScopeFromName } from '../../skills/projectSkills'
+import {
+  skillScopeFromName,
+  type ProjectSkillEntry,
+  type ProjectSkillsSnapshot,
+} from '../../skills/projectSkills'
+import type { SkillSummary } from '../../skills/contracts'
 import { sessionDisabledProjectSkills } from '../../state/workspaceState'
 import type { CoreInstance } from '../core/coreInstance'
+import {
+  captureRunCapabilitySnapshot,
+  type RunCapabilitySnapshot,
+} from '../turnToolVisibility'
 
 export type SkillsCapabilities = Pick<ToolContext, 'skills'>
+
+export interface RunSkillSnapshot {
+  readonly summaries: readonly SkillSummary[]
+  readonly projectEntries: readonly ProjectSkillEntry[]
+}
+
+export function captureRunSkillSnapshot(
+  builtins: readonly SkillSummary[],
+  projectSkills: ProjectSkillsSnapshot | undefined,
+  capabilities: RunCapabilitySnapshot,
+): RunSkillSnapshot {
+  const summaries = new Map<string, SkillSummary>()
+  for (const skill of builtins) {
+    if (capabilities.allowsSkill(skill.name)) summaries.set(skill.name, { ...skill, triggers: [...skill.triggers] })
+  }
+  const projectEntries = (projectSkills?.entries ?? [])
+    .filter((entry) => capabilities.allowsSkill(entry.name))
+    .map((entry) => ({ ...entry, triggers: [...entry.triggers], resources: { ...entry.resources } }))
+  for (const entry of projectEntries) {
+    if (!summaries.has(entry.name)) {
+      summaries.set(entry.name, {
+        name: entry.name,
+        description: entry.description,
+        triggers: [...entry.triggers],
+      })
+    }
+  }
+  return Object.freeze({
+    summaries: Object.freeze([...summaries.values()]),
+    projectEntries: Object.freeze(projectEntries),
+  })
+}
+
+const SKILL_MANIFEST_HEADER =
+  '可用 skills（正文不在此展示，需要时用 skill_read 按名称读取；带资源的 skill 会在正文返回可读资源目录）：'
+
+const SKILL_SCOPE_HEADINGS = {
+  project: '以下由当前 workspace 提供（非内置，可信度低于上方内置 skills）：',
+  user: '以下由本机用户目录提供（非内置，可信度低于上方内置 skills）：',
+} as const
+
+function compareSkillName(left: { name: string }, right: { name: string }): number {
+  if (left.name < right.name) return -1
+  if (left.name > right.name) return 1
+  return 0
+}
+
+/** Preserves legacy prose, but renders restricted manifests only from the allowed snapshot. */
+export function buildRunSkillManifestText(
+  manifest: string,
+  snapshot: RunSkillSnapshot,
+  capabilities: RunCapabilitySnapshot,
+): string {
+  if (capabilities.allowedSkillNames === undefined) return manifest
+
+  const projectNames = new Set(snapshot.projectEntries.map((entry) => entry.name))
+  const builtinLines = snapshot.summaries
+    .filter((skill) => !projectNames.has(skill.name))
+    .sort(compareSkillName)
+    .map((skill) => `· ${skill.name} — ${skill.description}`)
+  const scopedLines = (['project', 'user'] as const).flatMap((scope) => {
+    const lines = snapshot.projectEntries
+      .filter((entry) => entry.scope === scope)
+      .sort(compareSkillName)
+      .map((entry) => `· ${entry.name} — ${entry.description}`)
+    return lines.length > 0 ? ['', SKILL_SCOPE_HEADINGS[scope], ...lines] : []
+  })
+  return [SKILL_MANIFEST_HEADER, ...builtinLines, ...scopedLines].join('\n')
+}
 
 export function createSkillsCapabilities(deps: {
   sessionId: string
   core: CoreInstance
   workspaceRoot: string | undefined
+  snapshot?: RunSkillSnapshot
+  capabilitySnapshot?: RunCapabilitySnapshot
 }): SkillsCapabilities {
   const { sessionId, core, workspaceRoot } = deps
 
@@ -32,27 +112,30 @@ export function createSkillsCapabilities(deps: {
   const projectSkillsSnapshot = workspaceRoot
     ? filterProjectSkillsSnapshot(core.projectSkills.get(workspaceRoot), disabledProjectSkills)
     : undefined
+  const session = core.rootStore.getter(sessionsAtom)[sessionId]
+  const capabilities = deps.capabilitySnapshot
+    ?? captureRunCapabilitySnapshot(session?.capabilityPolicy)
+  const snapshot = deps.snapshot ?? captureRunSkillSnapshot(
+    core.skillRegistry.list(),
+    projectSkillsSnapshot,
+    capabilities,
+  )
+  const snapshotNames = new Set(snapshot.summaries.map((skill) => skill.name))
 
-  return {
-    skills: {
-      list() {
-        const builtins = core.skillRegistry.list().map((s) => ({ ...s }))
-        if (!projectSkillsSnapshot || projectSkillsSnapshot.entries.length === 0) return builtins
-        const projects: Array<{ name: string; description: string; triggers: string[] }> =
-          projectSkillsSnapshot.entries.map((e) => ({
-            name: e.name,
-            description: e.description,
-            triggers: e.triggers,
-          }))
-        return [...builtins, ...projects]
-      },
-      resolveScannedSkill(name) {
-        if (!projectSkillsSnapshot || !skillScopeFromName(name)) return undefined
-        const entry = projectSkillsSnapshot.entries.find((candidate) => candidate.name === name)
-        if (!entry) return undefined
-        // 根跟着条目走（工作区 / 主目录 / 被链接进来的那个目录），读取方原样转交给桥。
-        return { filePath: entry.filePath, resources: entry.resources, rootPath: entry.rootPath }
-      },
+  const skills = {
+    isAllowed: (name: string) => capabilities.state === 'legacy-unrestricted'
+      || (capabilities.allowsSkill(name) && snapshotNames.has(name)),
+    list() {
+      return snapshot.summaries.map((skill) => ({ ...skill, triggers: [...skill.triggers] }))
     },
+    resolveScannedSkill(name: string) {
+      if (!skillScopeFromName(name)) return undefined
+      const entry = snapshot.projectEntries.find((candidate) => candidate.name === name)
+      if (!entry) return undefined
+      return { filePath: entry.filePath, resources: entry.resources, rootPath: entry.rootPath }
+    },
+  }
+  return {
+    skills,
   }
 }

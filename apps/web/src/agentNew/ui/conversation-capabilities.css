@@ -1,0 +1,74 @@
+.conversation-capabilities-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid #dfe3ec;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #536173;
+  cursor: pointer;
+}
+
+.conversation-capabilities-button:hover { border-color: #c8cddd; background: #fff; color: #3f4859; }
+.conversation-capabilities-button[aria-expanded='true'] { border-color: #cdcdf2; background: #f1f0ff; color: #4f4eb5; }
+.conversation-capabilities-button:focus-visible,
+.conversation-capabilities-panel button:focus-visible,
+.conversation-capabilities-panel input:focus-visible { outline: 2px solid #8b8bea; outline-offset: 2px; }
+.conversation-capabilities-button svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.2; }
+
+.conversation-capabilities-backdrop { position: fixed; z-index: 60; inset: 0; display: flex; justify-content: flex-end; background: rgba(22, 29, 45, 0.24); }
+.conversation-capabilities-panel { display: flex; flex-direction: column; width: min(440px, 100vw); height: 100%; overflow: hidden; border-left: 1px solid #dbe0ec; background: #fff; box-shadow: -12px 0 32px rgba(29, 39, 64, 0.16); }
+.conversation-capabilities-header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; padding: 20px 20px 14px; border-bottom: 1px solid #e8ebf1; }
+.conversation-capabilities-header p { margin: 0 0 2px; color: #7b8493; font-size: 11px; font-weight: 650; }
+.conversation-capabilities-header h2 { margin: 0; color: #253047; font-size: 18px; }
+.conversation-capabilities-close { width: 30px; height: 30px; border: 0; border-radius: 7px; background: transparent; color: #667085; font-size: 22px; line-height: 1; cursor: pointer; }
+.conversation-capabilities-close:hover { background: #f0f2f7; color: #283347; }
+.conversation-capabilities-state { margin: 14px 20px 0; color: #526077; font-size: 12px; line-height: 1.5; }
+.conversation-capabilities-state.is-locked { color: #705423; }
+.conversation-capabilities-state.is-legacy-unrestricted { color: #6b5a2a; }
+.conversation-capabilities-search { display: grid; gap: 5px; margin: 16px 20px 12px; color: #536173; font-size: 12px; font-weight: 600; }
+.conversation-capabilities-search input { height: 34px; box-sizing: border-box; padding: 0 10px; border: 1px solid #d4dbe8; border-radius: 8px; color: #253047; font: inherit; font-weight: 400; }
+.conversation-capabilities-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 20px 20px; overscroll-behavior: contain; }
+.conversation-capability-section { padding: 14px 0; border-top: 1px solid #edf0f5; }
+.conversation-capability-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.conversation-capability-section-heading h3, .conversation-capability-section-heading p { margin: 0; }
+.conversation-capability-section-heading h3 { color: #344056; font-size: 13px; }
+.conversation-capability-section-heading p { margin-top: 2px; color: #8290a6; font-size: 11px; }
+.conversation-capability-bulk-actions { display: inline-flex; gap: 6px; }
+.conversation-capability-bulk-actions button { border: 0; background: transparent; color: #5250b9; font: inherit; font-size: 12px; cursor: pointer; }
+.conversation-capability-bulk-actions button:disabled { color: #9ca6b7; cursor: not-allowed; }
+.conversation-capability-list { display: grid; gap: 2px; margin: 10px 0 0; padding: 0; list-style: none; }
+.conversation-capability-list li { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 8px 2px; border-radius: 6px; }
+.conversation-capability-list li:hover { background: #f7f8fc; }
+.conversation-capability-list label { display: flex; flex: 1; gap: 9px; min-width: 0; cursor: pointer; }
+.conversation-capability-list input { flex: 0 0 auto; width: 15px; height: 15px; margin: 2px 0 0; accent-color: #5b5bd6; }
+.conversation-capability-list input:disabled { cursor: not-allowed; }
+.conversation-capability-copy { display: grid; gap: 2px; min-width: 0; }
+.conversation-capability-copy strong { color: #344056; font-size: 12px; overflow-wrap: anywhere; }
+.conversation-capability-copy small { color: #718096; font-size: 11px; line-height: 1.4; overflow-wrap: anywhere; }
+.conversation-capability-list .is-unavailable { opacity: 0.68; }
+.conversation-capability-unavailable { flex: 0 0 auto; padding: 2px 5px; border-radius: 999px; background: #f3e9e9; color: #a04444; font-size: 10px; font-weight: 650; }
+.conversation-capability-empty { margin: 10px 0 0; padding: 13px; border: 1px dashed #d9dfeb; border-radius: 8px; color: #748198; font-size: 12px; line-height: 1.5; text-align: center; }
+.conversation-capabilities-loading { display: flex; gap: 8px; align-items: center; padding: 22px 20px; color: #6b7689; font-size: 12px; }
+.conversation-capabilities-loading span { width: 14px; height: 14px; border: 2px solid #d5d8f6; border-top-color: #5b5bd6; border-radius: 50%; animation: conversation-capabilities-spin 700ms linear infinite; }
+.conversation-capabilities-error { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 14px 20px 0; padding: 9px 10px; border: 1px solid #efb5b5; border-radius: 8px; background: #fff5f5; color: #982c2c; font-size: 12px; }
+.conversation-capabilities-error button { border: 0; background: transparent; color: inherit; font: inherit; font-weight: 650; text-decoration: underline; cursor: pointer; }
+.conversation-capabilities-footer { flex: 0 0 auto; padding: 12px 20px calc(12px + env(safe-area-inset-bottom)); border-top: 1px solid #e8ebf1; background: #fff; }
+.conversation-capabilities-clone { width: 100%; min-height: 38px; border: 0; border-radius: 8px; background: #5b5bd6; color: #fff; font: inherit; font-size: 13px; font-weight: 650; cursor: pointer; }
+.conversation-capabilities-clone:disabled { opacity: 0.55; cursor: not-allowed; }
+
+@keyframes conversation-capabilities-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 720px) {
+  .conversation-capabilities-backdrop { display: block; background: #fff; }
+  .conversation-capabilities-panel { width: 100%; height: 100dvh; border: 0; box-shadow: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-capabilities-loading span { animation: none; }
+}

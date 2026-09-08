@@ -166,6 +166,7 @@ function makeProjectCtx(opts?: {
     return { ok: true, data: { path, content, truncated: false, bytes: content.length } }
   })
   ctx.skills = {
+    isAllowed: () => true,
     list: () => [
       { name: 'project/deploy-flow', description: '何时用：发布相关', triggers: [] },
       { name: 'user/notes', description: '主目录笔记', triggers: [] },

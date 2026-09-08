@@ -2,8 +2,142 @@
 
 import { toolRegistry } from '../tools/registry'
 import type { ToolCatalog } from '../tools/toolCatalog'
-import type { ToolRuntime, ToolSummary } from '../tools/types'
+import type { ToolRegistry } from '../tools/toolRegistry'
+import type { ToolResult } from '../tools/types'
+import type { RegisteredToolSnapshot, ToolRuntime, ToolSummary } from '../tools/types'
+import {
+  isSessionCapabilityAllowed,
+  normalizeSessionCapabilityPolicy,
+  SESSION_CAPABILITY_CONTROL_TOOLS,
+} from '../state/sessionCapabilityPolicy'
 import { compareStableText } from './shared/stableTextOrder'
+
+export const SESSION_TOOL_CAPABILITY_DENIED_CODE = 'session_capability_denied'
+
+export interface RunCapabilitySnapshot {
+  readonly state: 'legacy-unrestricted' | 'locked' | 'draft-denied'
+  readonly allowedToolNames?: readonly string[]
+  readonly allowedSkillNames?: readonly string[]
+  allowsTool(name: string): boolean
+  allowsSkill(name: string): boolean
+}
+
+/** Captures the persisted policy once; an unexpected draft grants no business capability. */
+export function captureRunCapabilitySnapshot(
+  policy: unknown,
+): RunCapabilitySnapshot {
+  const frozen = policy === undefined
+    ? undefined
+    : Object.freeze(normalizeSessionCapabilityPolicy(policy))
+  const draft = frozen?.state === 'draft'
+  const allowedToolNames = frozen?.state === 'locked'
+    ? Object.freeze([...frozen.allowedTools])
+    : draft ? Object.freeze([] as string[]) : undefined
+  const allowedSkillNames = frozen?.state === 'locked'
+    ? Object.freeze([...frozen.allowedSkills])
+    : draft ? Object.freeze([] as string[]) : undefined
+  return Object.freeze({
+    state: frozen === undefined ? 'legacy-unrestricted' : draft ? 'draft-denied' : 'locked',
+    allowedToolNames,
+    allowedSkillNames,
+    allowsTool: (name: string) => draft
+      ? isSessionCapabilityAllowed(frozen, 'tool', name)
+        && SESSION_CAPABILITY_CONTROL_TOOLS.has(name)
+      : isSessionCapabilityAllowed(frozen, 'tool', name),
+    allowsSkill: (name: string) => !draft && isSessionCapabilityAllowed(frozen, 'skill', name),
+  })
+}
+
+export function sessionToolCapabilityDeniedResult(): Extract<ToolResult, { ok: false }> {
+  return {
+    ok: false,
+    error: 'Session capability configuration does not allow this tool.',
+    code: SESSION_TOOL_CAPABILITY_DENIED_CODE,
+    retryable: false,
+    hint: 'Use a tool enabled for this conversation, or start a new conversation with different capabilities.',
+  }
+}
+
+export function runToolUnavailableResult(): Extract<ToolResult, { ok: false }> {
+  return {
+    ok: false,
+    error: 'Tool is unavailable in the current run.',
+    code: 'tool_unavailable_in_run',
+    retryable: false,
+  }
+}
+
+function copySummary(tool: ToolSummary): ToolSummary {
+  return { ...tool, ...(tool.triggers ? { triggers: [...tool.triggers] } : {}) }
+}
+
+function copySchema(tool: RegisteredToolSnapshot): RegisteredToolSnapshot {
+  return { ...tool, ...(tool.triggers ? { triggers: [...tool.triggers] } : {}) }
+}
+
+/** Locked/draft views freeze the policy intersection; legacy keeps ToolEpoch's dynamic semantics. */
+export function capabilityToolCatalog(
+  catalog: ToolCatalog,
+  capabilities: RunCapabilitySnapshot,
+): ToolCatalog {
+  if (capabilities.state === 'legacy-unrestricted') return catalog
+
+  const summaries = catalog.list()
+    .filter((tool) => capabilities.allowsTool(tool.name))
+    .map(copySummary)
+  const names = new Set(summaries.map((tool) => tool.name))
+  const schemas = new Map<string, RegisteredToolSnapshot>()
+  const versions = new Map<string, number>()
+  for (const name of names) {
+    const schema = catalog.loadSchema(name)
+    const version = catalog.registrationVersion(name)
+    if (schema) schemas.set(name, copySchema(schema))
+    if (version !== undefined) versions.set(name, version)
+  }
+  const replayUnsafe = new Set(
+    [...catalog.replayUnsafeToolNames()].filter((name) => names.has(name)),
+  )
+  return {
+    list: () => summaries.map(copySummary),
+    loadSchema: (name) => {
+      const schema = schemas.get(name)
+      return schema ? copySchema(schema) : undefined
+    },
+    registrationVersion: (name) => versions.get(name),
+    has: (name) => names.has(name),
+    replayUnsafeToolNames: () => new Set(replayUnsafe),
+  }
+}
+
+/** Child runtimes need the registry shape, but receive only this immutable run read view. */
+export function capabilityToolRegistry(
+  registry: ToolRegistry,
+  catalog: ToolCatalog,
+  capabilities: RunCapabilitySnapshot,
+): ToolRegistry {
+  const visible = capabilityToolCatalog(catalog, capabilities)
+  const isCurrentRunRegistration = (name: string) => visible.has(name)
+    && registry.has(name)
+    && visible.registrationVersion(name) === registry.registrationVersion(name)
+  return {
+    ...visible,
+    register: () => { throw new Error('run capability registry is read-only') },
+    diagnostics: () => registry.diagnostics(),
+    unregister: () => false,
+    snapshot: () => visible,
+    execution: (name) => isCurrentRunRegistration(name) ? registry.execution(name) : undefined,
+    callTiming: (name) => isCurrentRunRegistration(name) ? registry.callTiming(name) : undefined,
+    run: (name, args, ctx) => {
+      if (!capabilities.allowsTool(name)) {
+        return Promise.resolve(sessionToolCapabilityDeniedResult())
+      }
+      if (!isCurrentRunRegistration(name)) {
+        return Promise.resolve(runToolUnavailableResult())
+      }
+      return registry.run(name, args, ctx, visible.registrationVersion(name))
+    },
+  }
+}
 
 // TP3 判据：server 工具依赖宿主的本机能力（shell / 文件系统 / Git / rg），宿主给不出这些能力时
 // 不暴露给 model。manifest 分页与 visible 展开共用此谓词，保证「能发现的」与「能看见的」判据一致。

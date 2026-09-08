@@ -54,6 +54,15 @@ vi.mock('@einfach-agent/core/runtime/commands', async () => {
     approvePlan: vi.fn(),
     continuePlan: vi.fn(),
     setApprovalMode: vi.fn(),
+    getSessionCapabilityCatalog: vi.fn(async (sessionId: string) => ({
+      sessionId,
+      state: 'legacy-unrestricted',
+      policyVersion: 'legacy-unrestricted',
+      tools: [],
+      skills: [],
+    })),
+    toggleDraftSessionCapability: vi.fn(),
+    cloneSessionCapabilities: vi.fn(),
   }
 })
 

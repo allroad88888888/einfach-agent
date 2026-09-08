@@ -53,6 +53,25 @@ describe('createIndexedDbSessionsPersistence', () => {
     expect(loaded).toContainEqual(b)
   })
 
+  it('round-trips a canonical v1 capability policy without changing its allowlists', async () => {
+    const p = createIndexedDbSessionsPersistence()
+    const restricted: SessionMeta = {
+      ...a,
+      capabilityPolicy: {
+        version: 1,
+        state: 'locked',
+        revision: 2,
+        allowedTools: ['read_file'],
+        allowedSkills: ['planning'],
+        lockedAt: 3,
+      },
+    }
+
+    await p.saveSessions([restricted])
+
+    expect((await p.loadSessions())[0]).toEqual(restricted)
+  })
+
   it('覆盖式：saveSessions([a]) 后 loadSessions() 只剩 1（clear 再 put）', async () => {
     const p = createIndexedDbSessionsPersistence()
     await p.saveSessions([a, b])

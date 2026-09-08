@@ -57,6 +57,14 @@ function snapshot(): RecoverySnapshotV1 {
       workspaceRoot: '/workspace',
       toolApprovalMode: 'auto',
       loadedTools: ['read_file'],
+      capabilityPolicy: {
+        version: 1,
+        state: 'locked',
+        revision: 3,
+        allowedTools: ['read_file'],
+        allowedSkills: ['planning'],
+        lockedAt: 4,
+      },
     },
     values: {
       conversation: {
@@ -140,6 +148,19 @@ describe('RecoverySnapshotV1', () => {
     expect(decoded?.session).toEqual(original.session)
     expect(decoded?.values.pendingQuestionAnswers).toEqual({ q1: ['继续', '保留子 agent'] })
     expect(decoded?.values.subagentContinuations[0]?.childId).toBe('child-1')
+  })
+
+  it('接受缺少策略字段的旧会话，同时严格拒绝损坏或混入未知 key 的策略', () => {
+    const legacy = snapshot()
+    delete legacy.session.capabilityPolicy
+    expect(decodeRecoverySnapshot(legacy)?.session.capabilityPolicy).toBeUndefined()
+
+    expect(decodeRecoverySnapshot(changed((raw) => {
+      ;((raw.session as LooseRecord).capabilityPolicy as LooseRecord).allowedTools = ['z', 'a']
+    }))).toBeUndefined()
+    expect(decodeRecoverySnapshot(changed((raw) => {
+      ;((raw.session as LooseRecord).capabilityPolicy as LooseRecord).future = true
+    }))).toBeUndefined()
   })
 
   it('只接受规范的每工具调用结果事实', () => {

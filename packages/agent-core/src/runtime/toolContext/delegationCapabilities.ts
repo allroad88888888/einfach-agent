@@ -29,6 +29,11 @@ import type { DelegationRuntime } from '../delegationContract'
 import { createSubagentArchiveWriters } from './subagentArchiveWriter'
 import type { ToolStaleGuards } from './staleGuards'
 import type { WorkspaceInputGuards } from './workspaceInputGuards'
+import type { ToolCatalog } from '../../tools/toolCatalog'
+import {
+  sessionToolCapabilityDeniedResult,
+  type RunCapabilitySnapshot,
+} from '../turnToolVisibility'
 
 export interface DelegationCapabilityDeps {
   sessionId: string
@@ -42,6 +47,10 @@ export interface DelegationCapabilityDeps {
   inheritedSkillIds?: string[]
   inheritedSkillContents?: SubagentSkillFile[]
   delegateRuntime: DelegationRuntime
+  capabilitySnapshot: RunCapabilitySnapshot
+  toolCatalog: ToolCatalog
+  hostHasLocalCapabilities: boolean
+  enforceHostCapabilities: boolean
   core: CoreInstance
   guards: ToolStaleGuards
   progress: ToolContext['progress']
@@ -70,6 +79,7 @@ export function attachDelegationCapabilities(
           ((deps.toolArgs as Record<string, unknown>).confirmedTools as unknown[])
             .filter((name): name is string =>
               typeof name === 'string' && isDelegatableDangerousTool(name))
+            .filter((name) => deps.capabilitySnapshot.allowsTool(name))
             .filter((name) => isToolAlwaysAllowed(sessionId, name, core)),
         ))
       : []
@@ -97,6 +107,9 @@ export function attachDelegationCapabilities(
         : writeSubagentTextFile,
       async runChildTool(name, args, expectedRegistrationVersion) {
         assertFresh()
+        if (!deps.capabilitySnapshot.allowsTool(name)) {
+          return sessionToolCapabilityDeniedResult()
+        }
         const allowedReadOnlyTool = isSubagentWorkspaceReadTool(name)
           && (!isSubagentHistoryTool(name) || subagentProfileAllowsHistory(input.toolProfile))
         const confirmedDangerousTool = dangerousToolCapability?.toolNames.includes(name) === true
@@ -104,11 +117,21 @@ export function attachDelegationCapabilities(
         if (!allowedReadOnlyTool && !confirmedDangerousTool && !allowedVerificationTool) {
           return { ok: false, error: `tool not allowed for child agent: ${name}` }
         }
+        const schema = deps.toolCatalog.loadSchema(name)
+        if (!schema || (deps.enforceHostCapabilities
+          && schema.runtime === 'server' && !deps.hostHasLocalCapabilities)) {
+          return { ok: false, error: `tool unavailable for child agent: ${name}` }
+        }
+        const runRegistrationVersion = deps.toolCatalog.registrationVersion(name)
+        if (expectedRegistrationVersion !== undefined
+          && expectedRegistrationVersion !== runRegistrationVersion) {
+          return { ok: false, error: `tool unavailable for child agent: ${name}` }
+        }
         const result = await core.tools.run(
           name,
           args,
           childToolCtx,
-          expectedRegistrationVersion,
+          runRegistrationVersion,
         )
         assertFresh()
         if ('pause' in result) return { ok: false, error: 'child tools cannot pause' }

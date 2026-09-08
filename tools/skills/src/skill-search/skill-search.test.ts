@@ -83,6 +83,7 @@ describe('tools/skill-search/skill-search · 项目 skills', () => {
   function ctxWithProjectSkills(): ToolContext {
     const ctx = makeCtx() as ToolContext & Record<string, unknown>
     ctx.skills = {
+      isAllowed: () => true,
       list: () => [
         { name: 'project/deploy-flow', description: '何时用：发布与上线排查', triggers: ['deploy', '发布'] },
       ],
