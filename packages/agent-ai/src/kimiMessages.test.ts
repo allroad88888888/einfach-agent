@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { encodeKimiMessages } from './kimiMessages'
-import type { UserImageContentBlock } from './modelProtocol'
+import type { ProviderFileImageSource, UserImageContentBlock } from './modelProtocol'
 
-function image(overrides: Partial<UserImageContentBlock['source']> = {}): UserImageContentBlock {
+function image(overrides: Partial<ProviderFileImageSource> = {}): UserImageContentBlock {
   return {
     type: 'image',
     source: {

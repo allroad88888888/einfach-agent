@@ -30,6 +30,19 @@ function storeWithImage() {
   return store
 }
 
+function storeWithInlineImage() {
+  const store = createStore()
+  store.setter(itemsAtom, [{
+    id: 'user-inline', createdAt: 1, item: {
+      role: 'user', content: [{
+        type: 'image', source: { kind: 'inline-base64', data: 'aGVsbG8=' },
+        name: 'inline.png', mimeType: 'image/png', byteSize: 5,
+      }],
+    },
+  }])
+  return store
+}
+
 describe('history image compatibility guard', () => {
   it('blocks the composer surface with an explicit warning for incompatible history', () => {
     const { container } = renderWithStore(
@@ -56,6 +69,24 @@ describe('history image compatibility guard', () => {
         </HistoryImageCompatibilityGuard>
       </HistoryImageCompatibilityProvider>,
       { agentStore: storeWithImage() },
+    )
+
+    expect(screen.getByRole('button', { name: '发送' })).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('keeps the composer enabled for an opted-in OpenAI-compatible inline image', () => {
+    renderWithStore(
+      <HistoryImageCompatibilityProvider
+        vendor="openai-compat"
+        model="vision-model"
+        imageInput="inline-base64"
+      >
+        <HistoryImageCompatibilityGuard>
+          <button type="button">发送</button>
+        </HistoryImageCompatibilityGuard>
+      </HistoryImageCompatibilityProvider>,
+      { agentStore: storeWithInlineImage() },
     )
 
     expect(screen.getByRole('button', { name: '发送' })).toBeInTheDocument()

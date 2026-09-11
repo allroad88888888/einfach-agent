@@ -1,7 +1,6 @@
 import {
   normalizeCacheUsage,
   userMessageTracePreview,
-  userMessageVersion,
   type ModelChatResponse,
   type ModelFunctionTool,
   type ModelItem,
@@ -11,7 +10,10 @@ import type {
   ContextStatsSnapshot,
   ContextUsageStats,
 } from '../state/transientAtoms'
-import { estimateTokensFromText } from './contextCompaction'
+import {
+  estimateTokensFromText,
+  modelItemTextEstimate,
+} from './contextCompactionEstimates'
 import type { ContextCacheProfile } from './contextCache'
 import { newId } from './newId'
 import { stringForStats } from './shared/preview'
@@ -130,13 +132,11 @@ export function buildContextStatsSnapshot(args: {
     system: emptyRoleStats(), user: emptyRoleStats(), assistant: emptyRoleStats(), tool: emptyRoleStats(),
   }
   for (const message of args.messages) {
-    const text = message.role === 'user'
-      ? userMessageVersion(message.content)
-      : stringForStats(message)
+    const estimate = modelItemTextEstimate(message)
     const roleStats = roles[message.role]
     roleStats.count += 1
-    roleStats.chars += text.length
-    roleStats.estimatedTokens += estimateTokensFromText(text)
+    roleStats.chars += estimate.text.length
+    roleStats.estimatedTokens += estimate.tokens
   }
   const toolsText = stringForStats(args.tools)
   const messagesChars = roles.system.chars + roles.user.chars + roles.assistant.chars + roles.tool.chars

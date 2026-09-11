@@ -40,6 +40,7 @@ function saveInput(): ModelConnectionProfileSaveInput | undefined {
     baseUrl: draft.baseUrl.trim(),
     models: draft.models.map((model) => ({
       id: model.id.trim(), label: model.label.trim(), source: model.source,
+      ...(model.imageInput === 'inline-base64' ? { imageInput: model.imageInput } : {}),
     })),
   }
   if (!input.id || !input.label || !input.baseUrl || !hasModelIds(input.models)) return undefined
@@ -121,6 +122,15 @@ export function removeModelConnectionProfileModel(id: string): void {
   const value = id.trim()
   const { draft } = uiStore.getter(modelConnectionProfileEntryAtom)
   replaceModelConnectionProfileModels(draft.models.filter((model) => model.id !== value))
+}
+
+export function setModelConnectionProfileModelImageInput(id: string, enabled: boolean): void {
+  const { draft } = uiStore.getter(modelConnectionProfileEntryAtom)
+  replaceModelConnectionProfileModels(draft.models.map((model) => {
+    if (model.id !== id) return model
+    const { imageInput: _imageInput, ...base } = model
+    return enabled ? { ...base, imageInput: 'inline-base64' as const } : base
+  }))
 }
 
 export function replaceModelConnectionProfileModels(

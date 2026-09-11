@@ -7,7 +7,7 @@ import {
 import { useAtomValue } from '@einfach/react'
 import { newSession } from '@einfach-agent/core'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { isKimiImageInputEnabled } from '../../modelInput/kimiImageFeature'
+import { isKimiImageInputEnabled } from '../../modelInput/modelImageInputCapability'
 import { closeSettingsCenter } from '../../settings/commands'
 import {
   modelCredentialAtoms,

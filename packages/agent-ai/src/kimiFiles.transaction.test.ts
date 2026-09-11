@@ -15,7 +15,7 @@ describe('Kimi prepared image transaction', () => {
       height: 8,
     }], { apiKey: 'secret', region: 'cn', fetchImpl })
 
-    expect(batch.blocks[0]?.source.reference).toBe('ms://uploaded-id')
+    expect(batch.blocks[0]?.source).toMatchObject({ reference: 'ms://uploaded-id' })
     await batch.rollback()
     await batch.rollback()
 

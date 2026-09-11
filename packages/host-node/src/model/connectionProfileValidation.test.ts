@@ -83,6 +83,22 @@ describe('connection profile input normalization', () => {
     })
   })
 
+  it('persists only the supported per-model image input capability', async () => {
+    const input = validInput({
+      models: [{
+        id: 'vision-model', label: 'Vision Model', source: 'manual',
+        imageInput: 'inline-base64',
+      }],
+    })
+    await route('model_connection_profile_save')({ input })
+    await expect(route('model_connection_profile_list')({})).resolves.toMatchObject([{
+      models: [{ id: 'vision-model', imageInput: 'inline-base64' }],
+    }])
+    await expect(route('model_connection_profile_save')({ input: validInput({
+      models: [{ id: 'bad', label: 'Bad', source: 'manual', imageInput: 'provider-upload' }],
+    }) })).rejects.toMatchObject({ reason: 'invalid-request' })
+  })
+
   it('requires a key for a new or credential-less profile and never writes metadata on failure', async () => {
     const { apiKey: _apiKey, ...input } = validInput()
 

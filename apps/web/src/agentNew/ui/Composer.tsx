@@ -34,7 +34,7 @@ import { ComposerAttachmentTray } from './ComposerAttachmentTray'
 import { ComposerControlBar } from './ComposerControlBar'
 import { useActiveSessionConfig } from './ActiveSessionProvider'
 import { composerSubmissionOutcome, isPromiseLike } from './composerSubmissionOutcome'
-import { imageInputCapabilityForApp } from '../../modelInput/kimiImageFeature'
+import { imageInputCapabilityForApp } from '../../modelInput/modelImageInputCapability'
 
 export function Composer({
   approvalMode = 'confirm',
@@ -74,7 +74,7 @@ export function Composer({
   const locked = paused || interrupted
   const modelSettingsLocked = run !== undefined
     && !['idle', 'done', 'stopped', 'error'].includes(run.status)
-  const imageCapability = imageInputCapabilityForApp(modelSettings.vendor, modelSettings.model)
+  const imageCapability = imageInputCapabilityForApp(modelSettings)
   const preparingImages = attachments.operation !== 'idle'
   const editorDisabled = locked || preparingImages
   const formatRunError = (error: string) => {
@@ -88,7 +88,7 @@ export function Composer({
     const text = draft.trim()
     const hasImages = attachments.images.length > 0
     if ((!text && !hasImages) || editorDisabled) return
-    if (hasImages && imageCapability.kind !== 'provider-upload') {
+    if (hasImages && imageCapability.kind === 'unsupported') {
       setImageError(imageCapability.reason)
       return
     }

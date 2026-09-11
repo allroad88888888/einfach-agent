@@ -69,14 +69,22 @@ function parseModels(value: unknown): readonly ConnectionProfileModel[] {
   const ids = new Set<string>()
   return value.map((candidate) => {
     if (!isRecord(candidate)) manifestError('连接清单格式不正确。')
-    requireExactFields(candidate, ['id', 'label'])
+    requireExactFields(candidate, ['id', 'label', 'imageInput'])
     const id = requireLimitedText(candidate.id, MAX_MODEL_ID_LENGTH)
     if (ids.has(id)) manifestError('连接清单模型 ID 不可重复。')
     ids.add(id)
     const label = candidate.label === undefined
       ? id
       : requireLimitedText(candidate.label, MAX_LABEL_LENGTH)
-    return { id, label, source: 'manual' }
+    if (candidate.imageInput !== undefined && candidate.imageInput !== 'inline-base64') {
+      manifestError('连接清单格式不正确。')
+    }
+    return {
+      id,
+      label,
+      source: 'manual',
+      ...(candidate.imageInput === 'inline-base64' ? { imageInput: candidate.imageInput } : {}),
+    }
   })
 }
 

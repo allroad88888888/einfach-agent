@@ -24,6 +24,7 @@ export * from './modelAdapter'
 export * from './modelCapacityEscalation'
 export * from './modelContent'
 export * from './modelThinkingCapability'
+export { isValidInlineBase64Data } from './openAiCompatMessages'
 export * from './providerRegistry'
 export {
   createProviderTransportFetch,

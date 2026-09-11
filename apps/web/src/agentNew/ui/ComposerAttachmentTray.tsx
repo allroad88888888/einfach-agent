@@ -26,7 +26,7 @@ export function ComposerAttachmentTray({
   const inputRef = useRef<HTMLInputElement>(null)
   const attachments = useAtomValue(composerImageAttachmentAtom)
   const remove = useSetAtom(removeComposerImageAttachmentAtom)
-  const supported = capability.kind === 'provider-upload'
+  const supported = capability.kind !== 'unsupported'
   const busy = attachments.operation !== 'idle'
 
   return (

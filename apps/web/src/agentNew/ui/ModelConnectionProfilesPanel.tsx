@@ -33,7 +33,7 @@ function ProfileCard({ profile, open, current, actions }: {
         ? <Trans>API Key：已配置（不会显示）</Trans>
         : <Trans>API Key：尚未配置</Trans>}</p>
       <ul className="agentnew-model-connection-models">{profile.models.map((model) => <li key={model.id}>
-        <span><code>{model.id}</code>{current?.id === profile.id && current.model === model.id ? <small><Trans>新对话默认</Trans></small> : null}</span>
+        <span><code>{model.id}</code>{model.imageInput === 'inline-base64' ? <small><Trans>图片</Trans></small> : null}{current?.id === profile.id && current.model === model.id ? <small><Trans>新对话默认</Trans></small> : null}</span>
         <span><button type="button" className="agentnew-settings-button is-small" onClick={() => actions.onUseModel?.(profile, model)}><Trans>用此模型新建对话</Trans></button>
           <button type="button" className="agentnew-settings-button is-small" onClick={() => actions.onSetDefaultModel?.(profile, model)}><Trans>设为新对话默认</Trans></button></span>
       </li>)}</ul>

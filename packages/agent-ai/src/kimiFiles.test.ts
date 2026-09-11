@@ -51,7 +51,9 @@ describe('Kimi image preparation', () => {
       'https://api.moonshot.cn/v1/files',
       'https://api.moonshot.cn/v1/files',
     ])
-    expect(blocks.map((block) => block.source.reference)).toEqual([
+    expect(blocks.map((block) => block.source.kind === 'provider-file'
+      ? block.source.reference
+      : undefined)).toEqual([
       'ms://id-first',
       'ms://id-second',
     ])

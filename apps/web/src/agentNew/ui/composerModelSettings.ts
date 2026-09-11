@@ -12,6 +12,7 @@ export type ComposerThinkingEffort = ModelThinkingEffort | 'auto'
 
 const REASONING_EFFORT = 'reasoning_effort'
 const CONNECTION_ID = 'connectionId'
+const IMAGE_INPUT = 'imageInput'
 
 function withoutEmptyVendorSettings(
   vendorSettings: Readonly<Record<string, unknown>> | undefined,
@@ -75,6 +76,7 @@ function targetVendorSettings(
   const currentSettings: Record<string, unknown> = { ...current.vendorSettings }
   const targetSettings: Record<string, unknown> = { ...target.vendorSettings }
   delete currentSettings[CONNECTION_ID]
+  delete currentSettings[IMAGE_INPUT]
   const targetConnectionId = targetSettings[CONNECTION_ID]
   delete targetSettings[CONNECTION_ID]
   return withoutEmptyVendorSettings({

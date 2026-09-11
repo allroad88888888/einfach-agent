@@ -22,6 +22,14 @@ function deepSeekImage(
   }
 }
 
+function inlineImage(): UserImageContentBlock {
+  return {
+    ...image(),
+    source: { kind: 'inline-base64', data: 'aGVsbG8=' },
+    byteSize: 5,
+  }
+}
+
 describe('persisted history image compatibility', () => {
   it.each(['glm', 'unknown'])('conservatively rejects %s targets', (vendor) => {
     expect(projectHistoryImage(image(), { vendor, model: 'anything' })).toMatchObject({
@@ -67,6 +75,21 @@ describe('persisted history image compatibility', () => {
     })).toMatchObject({ kind: 'placeholder', reason: 'source_region_mismatch' })
     expect(projectHistoryImage(deepSeekImage('deepseek:default', 'file-one'), {
       vendor: 'deepseek', model: 'deepseek-v4-flash-vision-exp',
+    })).toMatchObject({ kind: 'placeholder', reason: 'source_reference_invalid' })
+  })
+
+  it('accepts inline data only for an opted-in OpenAI-compatible target', () => {
+    expect(projectHistoryImage(inlineImage(), {
+      vendor: 'openai-compat', model: 'vision', imageInput: 'inline-base64',
+    })).toMatchObject({ kind: 'consumable' })
+    expect(projectHistoryImage(inlineImage(), {
+      vendor: 'openai-compat', model: 'vision',
+    })).toMatchObject({ kind: 'placeholder', reason: 'target_model_unsupported' })
+    expect(projectHistoryImage(image(), {
+      vendor: 'openai-compat', model: 'vision', imageInput: 'inline-base64',
+    })).toMatchObject({ kind: 'placeholder', reason: 'source_provider_mismatch' })
+    expect(projectHistoryImage({ ...inlineImage(), byteSize: 4 }, {
+      vendor: 'openai-compat', model: 'vision', imageInput: 'inline-base64',
     })).toMatchObject({ kind: 'placeholder', reason: 'source_reference_invalid' })
   })
 })

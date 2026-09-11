@@ -124,6 +124,56 @@ describe('provider user input preparation', () => {
     )
   })
 
+  it('encodes opted-in OpenAI-compatible images inline without provider upload', async () => {
+    const fetchImpl = vi.fn<typeof fetch>()
+    const file = new File(['hello'], 'one.png', { type: 'image/png' })
+    const prepared = await prepareProviderUserInput({
+      text: '看看这张图',
+      images: [{
+        id: 'draft-1', name: file.name, mimeType: file.type,
+        byteSize: file.size, width: 20, height: 10, data: file,
+      }],
+    }, {
+      sessionId: 'session-1',
+      settings: {
+        vendor: 'openai-compat', model: 'vision-model',
+        vendorSettings: { connectionId: 'gateway', imageInput: 'inline-base64' },
+      },
+      apiKey: 'managed', signal, fetchImpl,
+    })
+
+    expect(prepared.content).toEqual([
+      { type: 'text', text: '看看这张图' },
+      expect.objectContaining({
+        type: 'image',
+        source: { kind: 'inline-base64', data: 'aGVsbG8=' },
+        byteSize: 5,
+      }),
+    ])
+    expect(prepared.rollback).toBeUndefined()
+    expect(fetchImpl).not.toHaveBeenCalled()
+  })
+
+  it('revalidates an existing attachment against the active inline model limits', async () => {
+    const file = new File([
+      new Uint8Array(5 * 1024 * 1024 + 1),
+    ], 'previous-model.png', { type: 'image/png' })
+    await expect(prepareProviderUserInput({
+      text: '',
+      images: [{
+        id: 'draft-from-previous-model', name: file.name, mimeType: file.type,
+        byteSize: file.size, width: 20, height: 10, data: file,
+      }],
+    }, {
+      sessionId: 'session-1',
+      settings: {
+        vendor: 'openai-compat', model: 'vision-model',
+        vendorSettings: { connectionId: 'gateway', imageInput: 'inline-base64' },
+      },
+      apiKey: 'managed', signal, fetchImpl: vi.fn<typeof fetch>(),
+    })).rejects.toThrow('per-image byte limit')
+  })
+
   it('rejects images for an unverified model before transport', async () => {
     const fetchImpl = vi.fn<typeof fetch>()
     const file = new File(['png-data'], 'one.png', { type: 'image/png' })

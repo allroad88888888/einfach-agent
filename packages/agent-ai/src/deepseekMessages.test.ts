@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { callDeepSeek, DEEPSEEK_VISION_MODEL } from './deepseek'
 import { encodeDeepSeekMessages } from './deepseekMessages'
-import type { UserImageContentBlock } from './modelProtocol'
+import type { ProviderFileImageSource, UserImageContentBlock } from './modelProtocol'
 
-function image(overrides: Partial<UserImageContentBlock['source']> = {}): UserImageContentBlock {
+function image(overrides: Partial<ProviderFileImageSource> = {}): UserImageContentBlock {
   return {
     type: 'image',
     source: {

@@ -2,11 +2,13 @@ import { DEEPSEEK_VISION_MODEL } from './deepseek'
 import { DEEPSEEK_FILE_SCOPE, isDeepSeekFileReference } from './deepseekMessages'
 import { DEFAULT_KIMI_MODEL, kimiReferenceScope } from './kimiRegion'
 import type { UserImageContentBlock } from './modelProtocol'
+import { isValidInlineBase64ImageBlock } from './openAiCompatMessages'
 
 export interface HistoryImageTarget {
   vendor: string
   model: string
   region?: string
+  imageInput?: 'inline-base64'
 }
 
 export type HistoryImageUnavailableReason =
@@ -47,6 +49,7 @@ function projectKimiHistoryImage(
   target: HistoryImageTarget,
 ): HistoryImageProjection {
   if (target.model !== DEFAULT_KIMI_MODEL) return placeholder(image, 'target_model_unsupported')
+  if (image.source.kind !== 'provider-file') return placeholder(image, 'source_provider_mismatch')
   if (image.source.provider !== 'kimi') return placeholder(image, 'source_provider_mismatch')
   if (target.region && target.region !== 'cn' && target.region !== 'global') {
     return placeholder(image, 'source_region_mismatch')
@@ -68,6 +71,7 @@ function projectDeepSeekHistoryImage(
   if (target.model !== DEEPSEEK_VISION_MODEL) {
     return placeholder(image, 'target_model_unsupported')
   }
+  if (image.source.kind !== 'provider-file') return placeholder(image, 'source_provider_mismatch')
   if (image.source.provider !== 'deepseek') {
     return placeholder(image, 'source_provider_mismatch')
   }
@@ -85,9 +89,26 @@ type HistoryImageProjector = (
   target: HistoryImageTarget,
 ) => HistoryImageProjection
 
+function projectOpenAiCompatHistoryImage(
+  image: UserImageContentBlock,
+  target: HistoryImageTarget,
+): HistoryImageProjection {
+  if (target.imageInput !== 'inline-base64') {
+    return placeholder(image, 'target_model_unsupported')
+  }
+  if (image.source.kind !== 'inline-base64') {
+    return placeholder(image, 'source_provider_mismatch')
+  }
+  if (!isValidInlineBase64ImageBlock(image)) {
+    return placeholder(image, 'source_reference_invalid')
+  }
+  return { kind: 'consumable', image }
+}
+
 const HISTORY_IMAGE_PROJECTORS: Readonly<Record<string, HistoryImageProjector>> = {
   kimi: projectKimiHistoryImage,
   deepseek: projectDeepSeekHistoryImage,
+  'openai-compat': projectOpenAiCompatHistoryImage,
 }
 
 /** Projects persisted provider references against the exact active adapter contract. */

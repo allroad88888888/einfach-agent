@@ -150,6 +150,24 @@ describe('RecoverySnapshotV1', () => {
     expect(decoded?.values.subagentContinuations[0]?.childId).toBe('child-1')
   })
 
+  it('接受需要随历史恢复的 inline base64 图片块', () => {
+    const original = snapshot()
+    original.values.conversation.items[0] = {
+      id: 'user-image', createdAt: 1, item: { role: 'user', content: [{
+        type: 'image', source: { kind: 'inline-base64', data: 'aGVsbG8=' },
+        name: 'photo.png', mimeType: 'image/png', byteSize: 5,
+      }] },
+    }
+    expect(decodeRecoverySnapshot(structuredClone(original))?.values.conversation.items[0])
+      .toEqual(original.values.conversation.items[0])
+    const malformed = structuredClone(original)
+    const content = malformed.values.conversation.items[0]?.item.content
+    if (Array.isArray(content) && content[0]?.type === 'image') {
+      ;(content[0] as unknown as LooseRecord).byteSize = 4
+    }
+    expect(decodeRecoverySnapshot(malformed)).toBeUndefined()
+  })
+
   it('接受缺少策略字段的旧会话，同时严格拒绝损坏或混入未知 key 的策略', () => {
     const legacy = snapshot()
     delete legacy.session.capabilityPolicy

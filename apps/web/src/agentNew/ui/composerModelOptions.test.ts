@@ -7,7 +7,7 @@ import { composerModelOptions, findComposerModelOption } from './composerModelOp
 function profile(
   id: string,
   label: string,
-  models: readonly { id: string; label: string }[],
+  models: readonly { id: string; label: string; imageInput?: 'inline-base64' }[],
   credentialConfigured = true,
 ): ModelConnectionProfile {
   return {
@@ -52,6 +52,16 @@ describe('composerModelOptions', () => {
     ])
     expect(JSON.stringify(options)).not.toContain('https://gateway-a.example.test/v1')
     expect(JSON.stringify(options)).not.toContain('credentialConfigured')
+  })
+
+  it('snapshots a profile model image opt-in into its session identity', () => {
+    const options = composerModelOptions(undefined, [profile('gateway-a', 'Gateway A', [
+      { id: 'vision', label: 'Vision', imageInput: 'inline-base64' },
+    ])])
+    expect(options.find((option) => option.identity.model === 'vision')?.identity).toEqual({
+      vendor: 'openai-compat', model: 'vision',
+      vendorSettings: { connectionId: 'gateway-a', imageInput: 'inline-base64' },
+    })
   })
 
   it('keeps identically named profile models separate with special-character-safe keys', () => {

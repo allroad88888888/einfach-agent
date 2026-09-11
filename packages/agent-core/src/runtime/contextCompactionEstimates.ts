@@ -3,6 +3,45 @@
 import type { ModelItem } from '@einfach-agent/ai'
 import { stringForStats } from './shared/preview'
 
+// Inline image bytes are transport data, not prompt text. A fixed conservative allowance
+// keeps them in the context budget without treating base64 expansion as millions of tokens.
+const IMAGE_BLOCK_ESTIMATED_TOKENS = 4_096
+const INLINE_IMAGE_DATA_PLACEHOLDER = '[inline image bytes omitted from text estimate]'
+
+function imageCount(item: ModelItem): number {
+  return item.role === 'user' && Array.isArray(item.content)
+    ? item.content.filter((block) => block.type === 'image').length
+    : 0
+}
+
+function modelItemEstimateValue(item: ModelItem): ModelItem {
+  if (item.role !== 'user' || typeof item.content === 'string') return item
+  return {
+    ...item,
+    content: item.content.map((block) => block.type !== 'image'
+      || block.source.kind !== 'inline-base64'
+      ? block
+      : {
+          ...block,
+          source: { kind: 'inline-base64', data: INLINE_IMAGE_DATA_PLACEHOLDER },
+        }),
+  }
+}
+
+export interface ModelItemTextEstimate {
+  readonly text: string
+  readonly tokens: number
+}
+
+/** Serializes one budget projection while excluding inline transport bytes. */
+export function modelItemTextEstimate(item: ModelItem): ModelItemTextEstimate {
+  const text = stringForStats(modelItemEstimateValue(item))
+  return {
+    text,
+    tokens: estimateTokensFromText(text) + imageCount(item) * IMAGE_BLOCK_ESTIMATED_TOKENS,
+  }
+}
+
 export function estimateTokensFromText(text: string): number {
   if (!text) return 0
   const cjkChars = text.match(/[\u3400-\u9fff\uf900-\ufaff]/g)?.length ?? 0
@@ -11,7 +50,7 @@ export function estimateTokensFromText(text: string): number {
 }
 
 export function estimateItemTokens(item: ModelItem): number {
-  return estimateTokensFromText(stringForStats(item))
+  return modelItemTextEstimate(item).tokens
 }
 
 export function estimateItemsTokens(items: readonly ModelItem[]): number {
@@ -70,9 +109,12 @@ function rawCharsOf(value: unknown, depth: number, state: PrescanState): number 
 export function estimateItemsTokensUpperBound(items: readonly ModelItem[]): number {
   const state: PrescanState = { nodes: 0 }
   let rawChars = 0
+  let images = 0
   for (const item of items) {
-    rawChars += rawCharsOf(item, 0, state)
+    rawChars += rawCharsOf(modelItemEstimateValue(item), 0, state)
+    images += imageCount(item)
     if (!Number.isFinite(rawChars)) return Number.POSITIVE_INFINITY
   }
   return Math.ceil(rawChars * PRESCAN_TOKENS_PER_CHAR) + items.length
+    + images * IMAGE_BLOCK_ESTIMATED_TOKENS
 }

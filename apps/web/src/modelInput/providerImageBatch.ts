@@ -8,14 +8,7 @@ import {
 } from '@einfach-agent/ai'
 import type { ModelSettings } from '@einfach-agent/core'
 import { kimiRegionSetting } from './kimiRegionSetting'
-
-export interface ProviderLocalImage {
-  data: Blob
-  name: string
-  mimeType: string
-  width?: number
-  height?: number
-}
+import type { LocalImageInput } from './localImageInput'
 
 export interface ProviderImageBatchOptions {
   settings: Readonly<ModelSettings>
@@ -30,12 +23,12 @@ export interface PreparedProviderImageBatch {
 }
 
 type ProviderImagePreparer = (
-  images: readonly ProviderLocalImage[],
+  images: readonly LocalImageInput[],
   options: ProviderImageBatchOptions,
 ) => Promise<PreparedProviderImageBatch>
 
 function kimiImageBatch(
-  images: readonly ProviderLocalImage[],
+  images: readonly LocalImageInput[],
   options: ProviderImageBatchOptions,
 ): Promise<PreparedProviderImageBatch> {
   const region = resolveKimiRegion(kimiRegionSetting(options.settings))
@@ -49,7 +42,7 @@ function kimiImageBatch(
 }
 
 function deepSeekImageBatch(
-  images: readonly ProviderLocalImage[],
+  images: readonly LocalImageInput[],
   options: ProviderImageBatchOptions,
 ): Promise<PreparedProviderImageBatch> {
   return prepareDeepSeekImageBatch(images, {
@@ -66,7 +59,7 @@ const PROVIDER_IMAGE_PREPARERS: Readonly<Record<string, ProviderImagePreparer>> 
 
 /** Dispatches Composer image batches to the exact provider-model upload contract. */
 export function prepareProviderImageBatch(
-  images: readonly ProviderLocalImage[],
+  images: readonly LocalImageInput[],
   options: ProviderImageBatchOptions,
 ): Promise<PreparedProviderImageBatch> {
   const { vendor, model } = options.settings

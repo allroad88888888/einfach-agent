@@ -4,9 +4,9 @@ import { useLingui } from '@lingui/react/macro'
 import { clearDefaultModelConnectionIfMatching, closeSettingsCenter, setDefaultModelConnection } from '../../settings/commands'
 import {
   addManualModelConnectionProfileModel, deleteModelConnectionProfile, openCreateModelConnectionProfileEditor,
-  openEditModelConnectionProfileEditor, probeModelConnectionProfile, removeModelConnectionProfileModel,
-  replaceModelConnectionProfileModels, resetModelConnectionProfileEditor, saveModelConnectionProfile,
-  updateModelConnectionProfileDraft,
+    openEditModelConnectionProfileEditor, probeModelConnectionProfile, removeModelConnectionProfileModel,
+    replaceModelConnectionProfileModels, resetModelConnectionProfileEditor, saveModelConnectionProfile,
+    setModelConnectionProfileModelImageInput, updateModelConnectionProfileDraft,
 } from '../../settings/modelConnectionProfileCommands'
 import { parseModelConnectionProfileManifest } from '../../settings/modelConnectionProfileManifest'
 import { modelConnectionPresets, type ModelConnectionPreset } from '../../settings/modelConnectionPresetRegistry'
@@ -21,7 +21,10 @@ import { ModelConnectionSourcePicker } from './ModelConnectionSourcePicker'
 
 function startProfileSession(profile: ModelConnectionProfile, model: ConnectionProfileModel): void {
   newSession({ title: `${profile.label} · ${model.label}`, settings: {
-    vendor: 'openai-compat', model: model.id, vendorSettings: { connectionId: profile.id },
+    vendor: 'openai-compat', model: model.id, vendorSettings: {
+      connectionId: profile.id,
+      ...(model.imageInput === 'inline-base64' ? { imageInput: model.imageInput } : {}),
+    },
   } })
   closeSettingsCenter()
 }
@@ -75,7 +78,8 @@ export function ModelConnectionProfileSettings() {
           const found = discovered.find((model) => model.id === id)
           if (found) replaceModelConnectionProfileModels([...entry.draft.models.filter((model) => model.id !== id), found])
           else addManualModelConnectionProfileModel(id)
-        }} onRemove={removeModelConnectionProfileModel} />
+        }} onRemove={removeModelConnectionProfileModel}
+        onImageInputChange={setModelConnectionProfileModelImageInput} />
     </ModelConnectionProfileEditor> : null}
     {entry.editorMode === 'closed' && stateError ? <p className="agentnew-instructions-status is-error" role="alert">{stateError}</p> : null}
   </div>

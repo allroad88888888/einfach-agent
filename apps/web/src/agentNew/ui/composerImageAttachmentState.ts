@@ -75,7 +75,7 @@ export const addComposerImageAttachmentsAtom = atom(null, async (
 ) => {
   const current = get(composerImageAttachmentAtom)
   if (current.operation !== 'idle' || input.files.length === 0) return
-  if (input.capability.kind !== 'provider-upload') {
+  if (input.capability.kind === 'unsupported') {
     reject(set, current, input.capability.reason)
     return
   }

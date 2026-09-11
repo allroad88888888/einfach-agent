@@ -10,6 +10,7 @@ import {
 } from './commands'
 import { createMemoryAppSettingsStorage } from './persistence'
 import { appSettingsAtom, resetAppSettingsState } from './state'
+import type { ConnectionProfileModel } from './modelConnectionProfileHost'
 import {
   modelConnectionProfileHostAvailableAtom,
   resetModelConnectionProfileState,
@@ -37,7 +38,9 @@ describe('default model connection commands', () => {
     defaultCore.config.defaultModelSettings = undefined
   })
 
-  function verifyProfile(models = [{ id: 'deepseek-chat', label: 'DeepSeek Chat', source: 'manual' as const }]): void {
+  function verifyProfile(models: readonly ConnectionProfileModel[] = [{
+    id: 'deepseek-chat', label: 'DeepSeek Chat', source: 'manual' as const,
+  }]): void {
     uiStore.setter(modelConnectionProfileHostAvailableAtom, true)
     setModelConnectionProfiles(uiStore, [{
       id: 'gateway-a',
@@ -83,6 +86,21 @@ describe('default model connection commands', () => {
     setDefaultModelConnection({ id: 'gateway-a', model: 'deepseek-chat' })
     clearDefaultModelConnection()
     expect(defaultCore.config.defaultModelSettings).toBeUndefined()
+  })
+
+  it('snapshots a model image opt-in into future sessions', () => {
+    verifyProfile([{
+      id: 'deepseek-chat', label: 'Vision Gateway', source: 'manual',
+      imageInput: 'inline-base64',
+    }])
+    setDefaultModelConnection({ id: 'gateway-a', model: 'deepseek-chat' })
+    expect(defaultCore.config.defaultModelSettings).toEqual({
+      ...CONNECTION_SETTINGS,
+      vendorSettings: { connectionId: 'gateway-a', imageInput: 'inline-base64' },
+    })
+    const session = newSession()
+    expect(defaultCore.rootStore.getter(sessionsAtom)[session]?.settings.vendorSettings)
+      .toMatchObject({ imageInput: 'inline-base64' })
   })
 
   it('keeps missing and static preferences persisted while runtime falls back safely', async () => {

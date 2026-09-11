@@ -64,11 +64,15 @@ describe('provider user content disposal dispatch', () => {
     const dependencies = { apiKey: 'desktop-managed', fetchImpl }
     const nonKimiContent: UserMessageContent = [{
       ...kimiImage,
-      source: { ...kimiImage.source, provider: 'other' },
+      source: {
+        kind: 'provider-file', provider: 'other', scope: 'kimi:cn', reference: 'ms://file-one',
+      },
     }]
     const globalKimiContent: UserMessageContent = [{
       ...kimiImage,
-      source: { ...kimiImage.source, scope: 'kimi:global' },
+      source: {
+        kind: 'provider-file', provider: 'kimi', scope: 'kimi:global', reference: 'ms://file-one',
+      },
     }]
     await disposeProviderUserContent(
       [nonKimiContent],
@@ -125,7 +129,9 @@ describe('provider user content disposal dispatch', () => {
     await disposeProviderUserContent(
       [[{
         ...deepSeekImage,
-        source: { ...deepSeekImage.source, scope: 'deepseek:other' },
+        source: {
+          kind: 'provider-file', provider: 'deepseek', scope: 'deepseek:other', reference: 'file-api-one',
+        },
       }]],
       [],
       { settings: { vendor: 'deepseek' } },

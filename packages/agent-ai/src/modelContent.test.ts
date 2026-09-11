@@ -5,7 +5,7 @@ import {
   userMessageTracePreview,
   userMessageVersion,
 } from './modelContent'
-import type { UserMessageContent } from './modelProtocol'
+import type { UserImageContentBlock, UserMessageContent } from './modelProtocol'
 
 const CONTENT: UserMessageContent = [
   { type: 'text', text: 'look ' },
@@ -43,5 +43,19 @@ describe('provider-neutral user content projections', () => {
     expect(userMessageVersion(CONTENT)).toContain('ms://private-reference')
     const reversed = typeof CONTENT === 'string' ? CONTENT : [...CONTENT].reverse()
     expect(userMessageVersion(reversed)).not.toBe(userMessageVersion(CONTENT))
+  })
+
+  it('distinguishes inline image bytes without exposing them to trace previews', () => {
+    const block: UserImageContentBlock = {
+      type: 'image', source: { kind: 'inline-base64', data: 'aGVsbG8=' },
+      name: 'inline.png', mimeType: 'image/png', byteSize: 5,
+    }
+    const inline: UserMessageContent = [block]
+    const changed: UserMessageContent = [{
+      ...block,
+      source: { kind: 'inline-base64', data: 'd29ybGQ=' },
+    }]
+    expect(userMessageVersion(inline)).not.toBe(userMessageVersion(changed))
+    expect(JSON.stringify(userMessageTracePreview(inline))).not.toContain('aGVsbG8=')
   })
 })

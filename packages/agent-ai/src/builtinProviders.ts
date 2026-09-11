@@ -26,6 +26,7 @@ import type { KimiRegion } from './kimiRegion'
 import {
   callOpenAiCompat,
   streamOpenAiCompat,
+  type OpenAiCompatCallOptions,
   type OpenAiCompatChatRequest,
 } from './openaiCompat'
 import type { ChatCallOptions } from './modelApi'
@@ -78,7 +79,10 @@ type ThinkingProviderSettings = ProviderSettings & { reasoning_effort?: unknown 
 type DeepSeekProviderSettings = ThinkingProviderSettings
 type GlmProviderSettings = ThinkingProviderSettings
 type KimiProviderSettings = ThinkingProviderSettings & { region?: KimiRegion }
-type OpenAiCompatProviderSettings = ProviderSettings & { connectionId?: string }
+type OpenAiCompatProviderSettings = ProviderSettings & {
+  connectionId?: string
+  imageInput?: 'inline-base64'
+}
 
 type ThinkingProjectedRequest = Omit<ChatRequestBase, 'thinking'> & {
   thinking?: ThinkingConfig
@@ -217,16 +221,20 @@ function resolveOpenAiCompatOptions(
   request: ProviderRequest<OpenAiCompatProviderSettings>,
   options: ChatCallOptions,
   config: OpenAiCompatAdapterConfig,
-): ChatCallOptions {
+): OpenAiCompatCallOptions {
   const connectionId = request.settings.connectionId
+  const imageInput = request.settings.imageInput === 'inline-base64'
+    ? request.settings.imageInput
+    : undefined
   if (connectionId !== undefined) {
     return {
       ...options,
       baseUrl: config.connectionBaseUrl?.(connectionId),
       connectionId,
+      imageInput,
     }
   }
-  return markLegacyOpenAiCompat({ ...options, baseUrl: config.baseUrl })
+  return markLegacyOpenAiCompat({ ...options, baseUrl: config.baseUrl, imageInput })
 }
 
 // 简介：构造标准 OpenAI-compatible adapter。

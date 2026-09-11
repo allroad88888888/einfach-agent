@@ -217,5 +217,6 @@ function sameModels(
       && model.id === other.id.trim()
       && model.label === other.label.trim()
       && model.source === other.source
+      && model.imageInput === other.imageInput
   })
 }

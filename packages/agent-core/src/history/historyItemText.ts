@@ -1,4 +1,4 @@
-import type { ModelItem } from '@einfach-agent/ai'
+import { isValidInlineBase64Data, type ModelItem } from '@einfach-agent/ai'
 
 import {
   AGENT_HISTORY_ITEM_PREVIEW_MAX_CHARS,
@@ -7,6 +7,7 @@ import {
 } from './historyQuery'
 
 export const AGENT_HISTORY_ITEM_JSON_MAX_BYTES = 1024 * 1024
+const AGENT_HISTORY_INLINE_ITEM_JSON_MAX_BYTES = 16 * 1024 * 1024
 
 export interface BoundedUtf8ByteCount {
   readonly bytes: number
@@ -45,8 +46,11 @@ function validUserBlock(value: unknown): boolean {
   if (block.type !== 'image' || typeof block.name !== 'string' || typeof block.mimeType !== 'string'
     || !Number.isSafeInteger(block.byteSize)) return false
   const source = record(block.source)
-  return source?.kind === 'provider-file' && typeof source.provider === 'string'
-    && typeof source.scope === 'string' && typeof source.reference === 'string'
+  return source?.kind === 'provider-file'
+    ? typeof source.provider === 'string' && typeof source.scope === 'string'
+      && typeof source.reference === 'string'
+    : source?.kind === 'inline-base64' && typeof source.data === 'string'
+      && isValidInlineBase64Data(source.data, block.byteSize as number)
 }
 
 function validToolCall(value: unknown): boolean {
@@ -92,12 +96,20 @@ function assertModelItem(value: unknown): asserts value is ModelItem {
 }
 
 export function decodeAgentHistoryModelItem(json: string): ModelItem {
-  if (boundedUtf8ByteCount(json, AGENT_HISTORY_ITEM_JSON_MAX_BYTES).exceeded) {
-    throw new Error(`ModelItem JSON exceeds ${AGENT_HISTORY_ITEM_JSON_MAX_BYTES} bytes`)
-  }
+  const size = boundedUtf8ByteCount(json, AGENT_HISTORY_INLINE_ITEM_JSON_MAX_BYTES)
+  if (size.exceeded) throw new Error(`ModelItem JSON exceeds ${AGENT_HISTORY_INLINE_ITEM_JSON_MAX_BYTES} bytes`)
   let value: unknown
   try { value = JSON.parse(json) } catch { throw new Error('Invalid ModelItem JSON') }
   assertModelItem(value)
+  if (size.bytes > AGENT_HISTORY_ITEM_JSON_MAX_BYTES) {
+    const inlineChars = value.role === 'user' && Array.isArray(value.content)
+      ? value.content.reduce((total, block) => total + (block.type === 'image'
+        && block.source.kind === 'inline-base64' ? block.source.data.length : 0), 0)
+      : 0
+    if (inlineChars === 0 || size.bytes - inlineChars > AGENT_HISTORY_ITEM_JSON_MAX_BYTES) {
+      throw new Error(`ModelItem JSON exceeds ${AGENT_HISTORY_ITEM_JSON_MAX_BYTES} bytes`)
+    }
+  }
   return value
 }
 

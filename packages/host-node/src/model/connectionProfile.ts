@@ -12,12 +12,14 @@ const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f-\u009f]/
 
 const STORED_PROFILE_KEYS = ['id', 'label', 'kind', 'baseUrl', 'models'] as const
 const LEGACY_STORED_PROFILE_KEYS = ['id', 'label', 'kind', 'baseUrl', 'model'] as const
-const MODEL_KEYS = ['id', 'label', 'source'] as const
+const LEGACY_MODEL_KEYS = ['id', 'label', 'source'] as const
+const MODEL_KEYS = ['id', 'label', 'source', 'imageInput'] as const
 
 export interface ConnectionProfileModel {
   readonly id: string
   readonly label: string
   readonly source: 'manual' | 'discovered'
+  readonly imageInput?: 'inline-base64'
 }
 
 export interface StoredConnectionProfile {
@@ -77,12 +79,18 @@ export function normalizeConnectionProfile(
 }
 
 function normalizeConnectionProfileModel(value: unknown): ConnectionProfileModel {
-  if (!isJsonRecord(value) || !hasExactKeys(value, MODEL_KEYS)) invalidRequest()
+  if (
+    !isJsonRecord(value)
+    || (!hasExactKeys(value, LEGACY_MODEL_KEYS) && !hasExactKeys(value, MODEL_KEYS))
+  ) invalidRequest()
   if (value.source !== 'manual' && value.source !== 'discovered') invalidRequest()
+  const hasImageInput = hasExactKeys(value, MODEL_KEYS)
+  if (hasImageInput && value.imageInput !== 'inline-base64') invalidRequest()
   return {
     id: normalizeBoundedText(value.id, MAX_MODEL_BYTES),
     label: normalizeBoundedText(value.label, MAX_LABEL_BYTES),
     source: value.source,
+    ...(hasImageInput ? { imageInput: 'inline-base64' as const } : {}),
   }
 }
 

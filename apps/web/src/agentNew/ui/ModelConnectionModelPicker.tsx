@@ -1,5 +1,6 @@
 import type { ConnectionProfileModel } from '../../settings/modelConnectionProfileHost'
 import { Trans, useLingui } from '@lingui/react/macro'
+import './ModelConnectionModelPicker.css'
 
 export interface ModelConnectionModelPickerProps {
   selected: readonly ConnectionProfileModel[]
@@ -7,10 +8,11 @@ export interface ModelConnectionModelPickerProps {
   probeError?: string
   onAdd: (id: string) => void
   onRemove: (id: string) => void
+  onImageInputChange: (id: string, enabled: boolean) => void
 }
 
 /** Manages explicit model selection from probe results or manual IDs. */
-export function ModelConnectionModelPicker({ selected, discovered, probeError, onAdd, onRemove }: ModelConnectionModelPickerProps) {
+export function ModelConnectionModelPicker({ selected, discovered, probeError, onAdd, onRemove, onImageInputChange }: ModelConnectionModelPickerProps) {
   const { t } = useLingui()
   const selectedIds = new Set(selected.map((model) => model.id))
   return (
@@ -33,7 +35,13 @@ export function ModelConnectionModelPicker({ selected, discovered, probeError, o
         }} className="agentnew-settings-button"><Trans>添加模型</Trans></button>
       </div>
       <ul>{selected.map((model) => <li key={model.id}><span><code>{model.id}</code><small>{model.source === 'discovered' ? <Trans>已发现</Trans> : <Trans>手动添加</Trans>}</small></span>
-        <button type="button" className="agentnew-settings-button is-small" aria-label={t`移除模型 ${model.id}`} onClick={() => onRemove(model.id)}><Trans>移除</Trans></button>
+        <span className="agentnew-model-capability-actions"><label title={t`将图片转成 base64，按 OpenAI 兼容多模态格式发送`}>
+          <input className="agentnew-settings-checkbox" type="checkbox"
+            checked={model.imageInput === 'inline-base64'}
+            onChange={(event) => onImageInputChange(model.id, event.target.checked)} />
+          <Trans>图片输入</Trans>
+        </label>
+        <button type="button" className="agentnew-settings-button is-small" aria-label={t`移除模型 ${model.id}`} onClick={() => onRemove(model.id)}><Trans>移除</Trans></button></span>
       </li>)}</ul>
     </section>
   )

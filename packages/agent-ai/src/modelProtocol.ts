@@ -22,6 +22,13 @@ export interface ProviderFileImageSource {
   reference: string
 }
 
+export interface InlineBase64ImageSource {
+  kind: 'inline-base64'
+  data: string
+}
+
+export type UserImageSource = ProviderFileImageSource | InlineBase64ImageSource
+
 export interface UserTextContentBlock {
   type: 'text'
   text: string
@@ -29,7 +36,7 @@ export interface UserTextContentBlock {
 
 export interface UserImageContentBlock {
   type: 'image'
-  source: ProviderFileImageSource
+  source: UserImageSource
   name: string
   mimeType: string
   byteSize: number

@@ -31,6 +31,12 @@ export interface UserMessageTracePreview {
   imageCount: number
 }
 
+function imageSourceVersion(block: Extract<UserContentBlock, { type: 'image' }>): readonly string[] {
+  return block.source.kind === 'provider-file'
+    ? [block.source.kind, block.source.provider, block.source.scope, block.source.reference]
+    : [block.source.kind, block.source.data]
+}
+
 /** Returns trace-safe summary data without scope, reference, or provider identifiers. */
 export function userMessageTracePreview(content: UserMessageContent): UserMessageTracePreview {
   return {
@@ -48,10 +54,7 @@ export function userMessageVersion(content: UserMessageContent): string {
     ? ['text', block.text]
     : [
         'image',
-        block.source.kind,
-        block.source.provider,
-        block.source.scope,
-        block.source.reference,
+        ...imageSourceVersion(block),
         block.name,
         block.mimeType,
         block.byteSize,

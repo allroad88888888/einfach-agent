@@ -31,6 +31,16 @@ describe('parseModelConnectionProfileManifest', () => {
     ])
   })
 
+  it('accepts an explicit inline base64 image capability', () => {
+    const result = parseModelConnectionProfileManifest(manifest({
+      ...MINIMUM_CONNECTION,
+      models: [{ id: 'vision-model', imageInput: 'inline-base64' }],
+    }))
+    expect(result.models[0]).toMatchObject({
+      id: 'vision-model', imageInput: 'inline-base64', source: 'manual',
+    })
+  })
+
   it.each([
     JSON.stringify({ version: 1, connection: MINIMUM_CONNECTION, unexpected: true }),
     manifest({ ...MINIMUM_CONNECTION, id: 'must-stay-local' }),
@@ -42,6 +52,13 @@ describe('parseModelConnectionProfileManifest', () => {
     manifest({ ...MINIMUM_CONNECTION, models: [{ id: 'community-model', apiKey: 'not-allowed' }] }),
   ])('rejects every unknown field without retaining it', (input) => {
     expect(() => parseModelConnectionProfileManifest(input)).toThrow('连接清单包含不支持的字段。')
+  })
+
+  it('rejects an unsupported image input transport', () => {
+    expect(() => parseModelConnectionProfileManifest(manifest({
+      ...MINIMUM_CONNECTION,
+      models: [{ id: 'community-model', imageInput: 'provider-upload' }],
+    }))).toThrow('连接清单格式不正确。')
   })
 
   it('rejects duplicate model IDs', () => {

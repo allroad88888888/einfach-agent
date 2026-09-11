@@ -90,6 +90,18 @@ describe('selectComposerModelSettings', () => {
     })
   })
 
+  it('does not leak inline image support to another model in the same profile', () => {
+    const current: ModelSettings = {
+      vendor: 'openai-compat', model: 'vision',
+      vendorSettings: { connectionId: 'profile-a', imageInput: 'inline-base64' },
+    }
+    expect(selectComposerModelSettings(current, {
+      vendor: 'openai-compat', model: 'text', vendorSettings: { connectionId: 'profile-a' },
+    }, capability('openai-compat', 'text'))).toEqual({
+      vendor: 'openai-compat', model: 'text', vendorSettings: { connectionId: 'profile-a' },
+    })
+  })
+
   it('does not inherit a profile connection for a legacy openai-compatible target', () => {
     const current: ModelSettings = {
       vendor: 'openai-compat', model: 'profile-a/model', thinking: true,

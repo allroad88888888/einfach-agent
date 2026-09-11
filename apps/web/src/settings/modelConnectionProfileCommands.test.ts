@@ -6,8 +6,9 @@ import {
   addManualModelConnectionProfileModel, configureModelConnectionProfileHost,
   deleteModelConnectionProfile, hydrateModelConnectionProfiles, openCreateModelConnectionProfileEditor,
   openEditModelConnectionProfileEditor, probeModelConnectionProfile,
-  removeModelConnectionProfileModel, replaceModelConnectionProfileModels,
-  resetModelConnectionProfileEditor, saveModelConnectionProfile, updateModelConnectionProfileDraft,
+    removeModelConnectionProfileModel, replaceModelConnectionProfileModels,
+    resetModelConnectionProfileEditor, saveModelConnectionProfile,
+    setModelConnectionProfileModelImageInput, updateModelConnectionProfileDraft,
 } from './modelConnectionProfileCommands'
 import {
   createUnavailableModelConnectionProfileHost, type ConnectionProfileModel, type ModelConnectionProfile,
@@ -159,6 +160,15 @@ describe('model connection profile commands', () => {
     expect(entry().draft.models).toEqual([{ id: 'one', label: 'one', source: 'manual' }])
     replaceModelConnectionProfileModels(MODELS); removeModelConnectionProfileModel('deepseek-chat')
     expect(entry().draft.models).toEqual([MODELS[1]])
+  })
+
+  it('stores image input as an explicit per-model opt-in', () => {
+    replaceModelConnectionProfileModels(MODELS)
+    setModelConnectionProfileModelImageInput('deepseek-chat', true)
+    expect(entry().draft.models[0]).toMatchObject({ imageInput: 'inline-base64' })
+    expect(entry().draft.models[1]).not.toHaveProperty('imageInput')
+    setModelConnectionProfileModelImageInput('deepseek-chat', false)
+    expect(entry().draft.models[0]).not.toHaveProperty('imageInput')
   })
 
   it('requires a model, writes its password only to save, and clears it after success', async () => {

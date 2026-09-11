@@ -13,9 +13,9 @@
 //     匹配的 role:'tool' 条目是一个不可分割的原子单元。丢弃 assistant 却留下 tool 结果（或
 //     反之）会被 chat/completions 协议判为非法，整个 run 报错。故「丢弃」必须整组进行。
 //   · CC4 system 恒保留；最近若干轮尽量原样保留；最后一条 user 输入绝不被压缩或丢弃。
-//   · CC5 估算口径与 modelRun.buildContextStatsSnapshot 完全一致：逐条
-//     estimateTokensFromText(JSON.stringify(item)) 后求和 —— 否则 UI 显示的用量和压缩阈值
-//     对不上，调参时会互相打架。
+//   · CC5 估算口径与 modelRun.buildContextStatsSnapshot 完全一致：逐条走 estimateItemTokens
+//     后求和；图片按固定成本计入，但 inline transport bytes 不当作文本 token —— 否则 UI 显示
+//     的用量和压缩阈值对不上，base64 还会误触发摘要。
 //
 // 分级降级（从「最不疼」到「最疼」，逐级施加，每步都复查是否已达标）：
 //   L1 摘要历史 tool 结果正文  —— tool 结果通常占 80% 体积且最可再生（大不了让 model 重调）。
@@ -127,7 +127,8 @@ export interface ContextCompactionResult {
 //   结论：粗筛只有资格说「肯定没超」，永远无权说「肯定超了」。
 //
 // ★ 上界推导（每一步都必须严格成立，不能「差不多」）★
-//   记某条 item 的 S = JSON.stringify(item)，则 estimateTokensFromText(S) = ceil(cjk/1.8 + other/4)。
+//   记某条 item 的 S = 图片字节投影后的 JSON；图片另加固定 allowance，精确路径与上界路径相同，
+//   所以下面的证明只需覆盖 estimateTokensFromText(S) = ceil(cjk/1.8 + other/4)。
 //   第 1 步 —— 把「输出字符的代价」折回「输入字符」。逐类看输入串里的一个字符 c 最多贡献多少：
 //     · c 是 CJK（[㐀-鿿豈-﫿]）：JSON.stringify 不转义非 ASCII，原样输出 1 个
 //       CJK 字符 → 贡献 1/1.8 ≈ 0.556 token。

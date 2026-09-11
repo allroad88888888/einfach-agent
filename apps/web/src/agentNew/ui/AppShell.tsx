@@ -41,6 +41,9 @@ export function AppShell() {
             vendor={session.vendor}
             model={session.model}
             region={session.region}
+            imageInput={session.settings.vendorSettings?.imageInput === 'inline-base64'
+              ? 'inline-base64'
+              : undefined}
           >
           {/* SaveArtifact 属于「当前对话内容」的一部分，排在 MessageList 之后。 */}
           <MessageList />

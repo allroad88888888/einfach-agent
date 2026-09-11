@@ -7,7 +7,7 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`
 }
 
-/** Renders persisted, trace-safe metadata only; provider file references stay hidden. */
+/** Renders persisted, trace-safe metadata only; image references and base64 data stay hidden. */
 export function UserImageAttachmentCard({ image }: { readonly image: UserImageContentBlock }) {
   const { t } = useLingui()
   const projection = useHistoryImageProjection(image)

@@ -11,7 +11,10 @@ export type ComposerModelOptionGroup = 'builtin' | 'profile' | 'current'
 export interface ComposerModelIdentity {
   readonly vendor: string
   readonly model: string
-  readonly vendorSettings?: Readonly<{ readonly connectionId: string }>
+  readonly vendorSettings?: Readonly<{
+    readonly connectionId?: string
+    readonly imageInput?: 'inline-base64'
+  }>
 }
 
 /** A native-select option with a key that must be looked up rather than decoded. */
@@ -54,7 +57,10 @@ function profileOptions(profile: ModelConnectionProfile): readonly ComposerModel
     identity: {
       vendor: 'openai-compat',
       model: model.id,
-      vendorSettings: { connectionId: profile.id },
+      vendorSettings: {
+        connectionId: profile.id,
+        ...(model.imageInput === 'inline-base64' ? { imageInput: model.imageInput } : {}),
+      },
     },
   }))
 }
@@ -67,17 +73,27 @@ function matchesCurrent(option: ComposerModelOption, current: CurrentModel): boo
 function currentOption(current: CurrentModel): ComposerModelOption | undefined {
   if (!current.model) return undefined
   const currentConnectionId = connectionId(current)
+  const imageInput = current.vendorSettings?.imageInput === 'inline-base64'
+    ? current.vendorSettings.imageInput
+    : undefined
   return {
     key: optionKey(['current', current.vendor, current.model, currentConnectionId ?? null]),
     label: current.model,
     group: 'current',
     groupLabel: 'Current model',
     identity: currentConnectionId === undefined
-      ? { vendor: current.vendor, model: current.model }
+      ? {
+          vendor: current.vendor,
+          model: current.model,
+          ...(imageInput === undefined ? {} : { vendorSettings: { imageInput } }),
+        }
       : {
         vendor: current.vendor,
         model: current.model,
-        vendorSettings: { connectionId: currentConnectionId },
+        vendorSettings: {
+          connectionId: currentConnectionId,
+          ...(imageInput === undefined ? {} : { imageInput }),
+        },
       },
   }
 }

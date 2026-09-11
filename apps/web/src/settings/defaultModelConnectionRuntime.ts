@@ -22,7 +22,10 @@ export function synchronizeDefaultModelConnectionRuntime(): boolean {
     : {
         vendor: 'openai-compat',
         model: model.id,
-        vendorSettings: { connectionId: profile.id },
+        vendorSettings: {
+          connectionId: profile.id,
+          ...(model.imageInput === 'inline-base64' ? { imageInput: model.imageInput } : {}),
+        },
       }
   return profile !== undefined && model !== undefined
 }

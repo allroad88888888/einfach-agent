@@ -689,6 +689,7 @@ msgstr "Response"
 msgid "回答后会从当前位置继续生成同一份计划。"
 msgstr "After you answer, the same plan will continue generating from here."
 
+#: apps/web/src/agentNew/ui/ModelConnectionProfilesPanel.tsx
 #: apps/web/src/agentNew/ui/UserImageAttachmentCard.tsx
 msgid "图片"
 msgstr "Image"
@@ -716,6 +717,7 @@ msgstr "Image dimensions cannot exceed {0} × {1}."
 msgid "图片总大小不能超过 {0}。"
 msgstr "Total image size cannot exceed {0}."
 
+#: apps/web/src/agentNew/ui/ModelConnectionModelPicker.tsx
 #: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
 msgid "图片输入"
 msgstr "Image input"
@@ -797,6 +799,10 @@ msgstr "Imported files cannot contain an API key. Enter a connection ID and key 
 #: apps/web/src/agentNew/ui/McpAddServerForm.tsx
 msgid "导入配置"
 msgstr "Import configuration"
+
+#: apps/web/src/agentNew/ui/ModelConnectionModelPicker.tsx
+msgid "将图片转成 base64，按 OpenAI 兼容多模态格式发送"
+msgstr "Convert images to base64 and send them using the OpenAI-compatible multimodal format"
 
 #: apps/web/src/agentNew/ui/PlanStageExecutionTrace.tsx
 msgid "尚无模型思考或工具调用"
@@ -1816,7 +1822,6 @@ msgstr "Edit model connection"
 msgid "编辑连接"
 msgstr "Edit connection"
 
-#: apps/web/src/agentNew/ui/ConversationCapabilitiesButton.tsx
 #: apps/web/src/agentNew/ui/ConversationCapabilitiesPanel.tsx
 msgid "能力"
 msgstr "Capabilities"

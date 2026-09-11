@@ -45,7 +45,9 @@ describe('DeepSeek image batch upload', () => {
 
     expect(completionOrder).toEqual(['second.png', 'first.png'])
     expect(urls).toEqual(['https://api.deepseek.com/files', 'https://api.deepseek.com/files'])
-    expect(batch.blocks.map((block) => block.source.reference)).toEqual([
+    expect(batch.blocks.map((block) => block.source.kind === 'provider-file'
+      ? block.source.reference
+      : undefined)).toEqual([
       'file-api-first',
       'file-api-second',
     ])

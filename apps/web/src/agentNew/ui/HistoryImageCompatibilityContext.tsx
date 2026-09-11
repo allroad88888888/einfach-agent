@@ -14,8 +14,12 @@ export function HistoryImageCompatibilityProvider({
   vendor,
   model,
   region,
+  imageInput,
 }: HistoryImageTarget & { children: ReactNode }) {
-  const target = useMemo(() => ({ vendor, model, region }), [vendor, model, region])
+  const target = useMemo(
+    () => ({ vendor, model, region, imageInput }),
+    [vendor, model, region, imageInput],
+  )
   return (
     <HistoryImageTargetContext.Provider value={target}>
       {children}

@@ -3,6 +3,7 @@ import {
   imageInputCapability,
   vendorDescriptorFor,
 } from './vendorDescriptor'
+import { OPENAI_COMPAT_BASE64_IMAGE_INPUT } from './imageCapability'
 
 describe('model-level image capability', () => {
   it('only enables exact models with verified image protocols', () => {
@@ -25,4 +26,11 @@ describe('model-level image capability', () => {
     })
   })
 
+  it('defines conservative limits for opt-in OpenAI-compatible base64 images', () => {
+    expect(OPENAI_COMPAT_BASE64_IMAGE_INPUT).toMatchObject({
+      kind: 'inline-base64',
+      accept: ['image/jpeg', 'image/png', 'image/webp'],
+      limits: { maxImages: 4, maxBytesPerImage: 5 * 1024 * 1024 },
+    })
+  })
 })

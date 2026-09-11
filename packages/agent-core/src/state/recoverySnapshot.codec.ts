@@ -1,5 +1,6 @@
 // RecoverySnapshotV1 的 JSON codec 边界校验。
 
+import { isValidInlineBase64Data } from '@einfach-agent/ai'
 import {
   RECOVERY_SNAPSHOT_COMMIT_MARKER,
   RECOVERY_SNAPSHOT_SCHEMA_VERSION,
@@ -88,19 +89,23 @@ function isSession(value: unknown, sessionId: string): boolean {
     && optional(value, 'capabilityPolicy', isSessionCapabilityPolicy)
 }
 
+function isImageSource(value: unknown, byteSize: number): boolean {
+  if (!isRecord(value)) return false
+  return value.kind === 'provider-file'
+    ? isText(value.provider) && isText(value.scope) && isText(value.reference)
+    : value.kind === 'inline-base64' && isText(value.data)
+      && isValidInlineBase64Data(value.data, byteSize)
+}
+
 function isUserContent(value: unknown): boolean {
   return isText(value) || (Array.isArray(value) && value.every((block) => isRecord(block)
     && (block.type === 'text'
       ? isText(block.text)
       : block.type === 'image'
-        && isRecord(block.source)
-        && block.source.kind === 'provider-file'
-        && isText(block.source.provider)
-        && isText(block.source.scope)
-        && isText(block.source.reference)
         && isText(block.name)
         && isText(block.mimeType)
         && isNatural(block.byteSize)
+        && isImageSource(block.source, block.byteSize)
         && optional(block, 'width', isNatural)
         && optional(block, 'height', isNatural))))
 }

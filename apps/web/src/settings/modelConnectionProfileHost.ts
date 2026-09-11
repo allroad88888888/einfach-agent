@@ -12,6 +12,7 @@ export interface ConnectionProfileModel {
   id: string
   label: string
   source: 'manual' | 'discovered'
+  imageInput?: 'inline-base64'
 }
 
 /** `apiKey` is write-only: hosts must never include it in a response. */
