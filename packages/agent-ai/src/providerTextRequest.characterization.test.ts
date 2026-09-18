@@ -97,7 +97,7 @@ describe('provider 纯文本请求 characterization', () => {
 
     await streamDeepSeek(
       {
-        model: 'deepseek-v4-flash',
+        model: 'deepseek-flash',
         messages: TEXT_MESSAGES,
         stream_options: { vendor_flag: 'keep' },
       },
@@ -110,7 +110,7 @@ describe('provider 纯文本请求 characterization', () => {
     )
 
     expect(bodyOf(captured.request().init)).toEqual({
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       messages: TEXT_MESSAGES,
       stream_options: { vendor_flag: 'keep', include_usage: true },
       stream: true,

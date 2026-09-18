@@ -1,5 +1,5 @@
 import {
-  DEEPSEEK_VISION_MODEL,
+  DEEPSEEK_FLASH_MODEL,
   DEFAULT_KIMI_MODEL,
   prepareDeepSeekImageBatch,
   prepareKimiImageBatch,
@@ -54,7 +54,7 @@ function deepSeekImageBatch(
 
 const PROVIDER_IMAGE_PREPARERS: Readonly<Record<string, ProviderImagePreparer>> = {
   [`kimi:${DEFAULT_KIMI_MODEL}`]: kimiImageBatch,
-  [`deepseek:${DEEPSEEK_VISION_MODEL}`]: deepSeekImageBatch,
+  [`deepseek:${DEEPSEEK_FLASH_MODEL}`]: deepSeekImageBatch,
 }
 
 /** Dispatches Composer image batches to the exact provider-model upload contract. */

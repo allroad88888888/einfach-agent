@@ -28,7 +28,7 @@ describe('context distillation request', () => {
         { role: 'tool', tool_call_id: 'call_1', content: 'Project details.' },
       ],
       coveredItemIds: ['u1', 'a1', 't1'],
-      settings: { vendor: 'deepseek', model: 'deepseek-v4-flash' },
+      settings: { vendor: 'deepseek', model: 'deepseek-flash' },
       apiKey: 'test-key',
       signal: new AbortController().signal,
       fetchImpl: async (_url, init) => {

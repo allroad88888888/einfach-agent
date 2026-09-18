@@ -144,13 +144,13 @@ New sessions default to DeepSeek, and the session's `vendor` setting decides whi
 The Kimi entry point is additionally gated by the public build flag `VITE_KIMI_IMAGE_INPUT_ENABLED`, which stays
 `false` until Kimi has been accepted end-to-end against a real China-region key.
 
-`deepseek-v4-flash-vision-exp` supports image input. In Composer, JPEG, PNG and WebP attachments keep their
+`deepseek-flash` natively supports image input. In Composer, JPEG, PNG and WebP attachments keep their
 original bytes and are temporarily uploaded through DeepSeek's [Files API](https://api-docs.deepseek.com/zh-cn/guides/files_api).
 The model-facing `view_image` tool defaults to `detail: 'low'`, which resizes a static image into a 512×512
-bounding box before upload. Use `detail: 'high'` for OCR, small text in screenshots, dense charts, or close visual
-comparison; it retains the original pixels. Files created for image observation are best-effort deleted after either
-completion or failure. See DeepSeek's [Vision guide](https://api-docs.deepseek.com/zh-cn/guides/vision) for the upstream
-image interface.
+bounding box and returns it to the current model as inline Base64 tool content. Use `detail: 'high'` for OCR,
+small text in screenshots, dense charts, or close visual comparison; it retains the original pixels. The tool does
+not invoke a separate vision model. See DeepSeek's [Vision guide](https://api-docs.deepseek.com/zh-cn/guides/vision)
+for the upstream image interface.
 
 Server-host keys are injected by the local Node backend into a restricted provider transport; no response body
 ever carries one back to the browser. Static BYOK keys are deliberately different: they are plaintext in browser

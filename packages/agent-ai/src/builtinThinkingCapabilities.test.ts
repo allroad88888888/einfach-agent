@@ -4,8 +4,7 @@ import { getModelThinkingCapability, modelRequiresThinking } from './modelThinki
 
 const EXPECTED_MODELS = [
   ['deepseek', 'deepseek-v4-pro', 'DeepSeek V4 Pro'],
-  ['deepseek', 'deepseek-v4-flash', 'DeepSeek V4 Flash'],
-  ['deepseek', 'deepseek-v4-flash-vision-exp', 'DeepSeek V4 Flash Vision Experimental'],
+  ['deepseek', 'deepseek-flash', 'DeepSeek V4.1 Flash'],
   ['glm', 'glm-5.3', 'GLM-5.3'],
   ['glm', 'glm-5.3-flash', 'GLM-5.3-Flash'],
   ['kimi', 'kimi-k3', 'Kimi K3'],
@@ -13,8 +12,7 @@ const EXPECTED_MODELS = [
 
 const SUPPORTED_MODELS = [
   ['deepseek', 'deepseek-v4-pro'],
-  ['deepseek', 'deepseek-v4-flash'],
-  ['deepseek', 'deepseek-v4-flash-vision-exp'],
+  ['deepseek', 'deepseek-flash'],
   ['glm', 'glm-5.3'],
   ['glm', 'glm-5.3-flash'],
   ['kimi', 'kimi-k3'],
@@ -34,7 +32,7 @@ describe('built-in Thinking capability catalog', () => {
     expect(first.every(Object.isFrozen)).toBe(true)
   })
 
-  it.each(['deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4-flash-vision-exp'])(
+  it.each(['deepseek-v4-pro', 'deepseek-flash'])(
     '%s exposes only Low, High, and Max',
     (model) => {
     const capability = getModelThinkingCapability(defaultProviderRegistry, 'deepseek', model)

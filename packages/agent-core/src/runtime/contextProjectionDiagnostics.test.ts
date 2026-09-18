@@ -12,7 +12,7 @@ function input(messages: ModelItem[], dynamicControls: ModelItem[] = []) {
     lane: 'main',
     scope: 'diagnostic-run:root',
     vendor: 'deepseek',
-    model: 'deepseek-v4-flash',
+    model: 'deepseek-flash',
     messages,
     systemContent: 'fixed system',
     tools: [],

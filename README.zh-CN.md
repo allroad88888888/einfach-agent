@@ -136,10 +136,10 @@ CLI 宿主读同一份 `~/.webAgent/config.json`，也可用 `--config <文件>`
 新会话默认使用 DeepSeek；会话设置中的 `vendor` 决定实际调用的 provider。Kimi 入口还受公开构建
 变量 `VITE_KIMI_IMAGE_INPUT_ENABLED` 控制，真实中国区 Key 端到端验收前必须保持 `false`。
 
-`deepseek-v4-flash-vision-exp` 支持图片输入。Composer 中的 JPEG、PNG、WebP 附件保留原始字节，经
+`deepseek-flash` 原生支持图片输入。Composer 中的 JPEG、PNG、WebP 附件保留原始字节，经
 DeepSeek [Files API](https://api-docs.deepseek.com/zh-cn/guides/files_api) 临时上传。模型可调用的 `view_image`
-工具默认 `detail: 'low'`：上传前将静态图缩进 512×512 包围盒；OCR、截图小字、密集图表或精细视觉比较应
-使用 `detail: 'high'`，它保留原始像素。用于图片观察的文件会在完成或失败后尽力删除。上游图片接口见
+工具默认 `detail: 'low'`：将静态图缩进 512×512 包围盒并以内联 Base64 工具结果交回当前模型；OCR、截图
+小字、密集图表或精细视觉比较应使用 `detail: 'high'`，它保留原始像素。该工具不会再发起独立视觉模型调用。上游图片接口见
 DeepSeek [Vision 指南](https://api-docs.deepseek.com/zh-cn/guides/vision)。
 
 server 宿主的密钥只由本机 Node 后端读取并注入受限 provider 传输，响应不会把它回传给浏览器。静态

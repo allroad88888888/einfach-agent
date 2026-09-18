@@ -60,21 +60,21 @@ describe('persisted history image compatibility', () => {
     })).toMatchObject({ kind: 'placeholder', reason: 'source_reference_invalid' })
   })
 
-  it('accepts DeepSeek Files references only for the vision model and default scope', () => {
+  it('accepts DeepSeek Files references only for V4.1 Flash and default scope', () => {
     expect(projectHistoryImage(deepSeekImage(), {
-      vendor: 'deepseek', model: 'deepseek-v4-flash-vision-exp',
+      vendor: 'deepseek', model: 'deepseek-flash',
     })).toMatchObject({ kind: 'consumable' })
     expect(projectHistoryImage(deepSeekImage(), {
       vendor: 'deepseek', model: 'deepseek-v4-flash',
     })).toMatchObject({ kind: 'placeholder', reason: 'target_model_unsupported' })
     expect(projectHistoryImage(image(), {
-      vendor: 'deepseek', model: 'deepseek-v4-flash-vision-exp',
+      vendor: 'deepseek', model: 'deepseek-flash',
     })).toMatchObject({ kind: 'placeholder', reason: 'source_provider_mismatch' })
     expect(projectHistoryImage(deepSeekImage('deepseek:other'), {
-      vendor: 'deepseek', model: 'deepseek-v4-flash-vision-exp',
+      vendor: 'deepseek', model: 'deepseek-flash',
     })).toMatchObject({ kind: 'placeholder', reason: 'source_region_mismatch' })
     expect(projectHistoryImage(deepSeekImage('deepseek:default', 'file-one'), {
-      vendor: 'deepseek', model: 'deepseek-v4-flash-vision-exp',
+      vendor: 'deepseek', model: 'deepseek-flash',
     })).toMatchObject({ kind: 'placeholder', reason: 'source_reference_invalid' })
   })
 

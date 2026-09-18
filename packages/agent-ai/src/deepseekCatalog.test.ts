@@ -4,22 +4,21 @@ import {
   DEEPSEEK_FLASH_MODEL,
   DEEPSEEK_MODEL_LABELS,
   DEEPSEEK_PRO_MODEL,
-  DEEPSEEK_VISION_MODEL,
   DEFAULT_DEEPSEEK_MODEL,
 } from './deepseek'
-import { DEEPSEEK_VISION_IMAGE_INPUT } from './imageCapability'
+import { DEEPSEEK_FLASH_IMAGE_INPUT } from './imageCapability'
 
 describe('DeepSeek model catalog', () => {
-  it('declares the experimental vision model with 1M context and static image support', () => {
+  it('declares V4.1 Flash with 1M context and static image support', () => {
     const descriptor = defaultProviderRegistry.describeModel(
       DEEPSEEK_VENDOR_ID,
-      DEEPSEEK_VISION_MODEL,
+      DEEPSEEK_FLASH_MODEL,
     )
 
     expect(descriptor).toMatchObject({
-      displayName: 'DeepSeek V4 Flash Vision Experimental',
+      displayName: 'DeepSeek V4.1 Flash',
       contextWindowTokens: 1_000_000,
-      imageInput: DEEPSEEK_VISION_IMAGE_INPUT,
+      imageInput: DEEPSEEK_FLASH_IMAGE_INPUT,
       thinking: { kind: 'effort', efforts: ['low', 'high', 'max'] },
     })
     expect(descriptor?.imageInput).toMatchObject({
@@ -38,11 +37,9 @@ describe('DeepSeek model catalog', () => {
     }
   })
 
-  it('covers the default, sub-agent, and vision model display labels', () => {
+  it('covers the default and pro model display labels', () => {
     expect(DEEPSEEK_MODEL_LABELS[DEFAULT_DEEPSEEK_MODEL]).toBeTypeOf('string')
     expect(DEEPSEEK_MODEL_LABELS[DEEPSEEK_PRO_MODEL]).toBe('DeepSeek V4 Pro')
-    expect(DEEPSEEK_MODEL_LABELS[DEEPSEEK_FLASH_MODEL]).toBe('DeepSeek V4 Flash')
-    expect(DEEPSEEK_MODEL_LABELS[DEEPSEEK_VISION_MODEL])
-      .toBe('DeepSeek V4 Flash Vision Experimental')
+    expect(DEEPSEEK_MODEL_LABELS[DEEPSEEK_FLASH_MODEL]).toBe('DeepSeek V4.1 Flash')
   })
 })

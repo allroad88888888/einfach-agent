@@ -46,7 +46,7 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
     await hydrate({ sessions })
 
     const restored = rootStore.getter(sessionsAtom).old
-    expect(restored.settings.model).toBe('deepseek-v4-flash')
+    expect(restored.settings.model).toBe('deepseek-flash')
     expect(restored.settings.thinking).toBe(false)
   })
 
@@ -56,7 +56,7 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
     await hydrate({ sessions })
 
     const restored = rootStore.getter(sessionsAtom).old
-    expect(restored.settings.model).toBe('deepseek-v4-flash')
+    expect(restored.settings.model).toBe('deepseek-flash')
     expect(restored.settings.thinking).toBe(true)
   })
 
@@ -67,12 +67,12 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
     await hydrate({ sessions })
 
     const restored = rootStore.getter(sessionsAtom).old
-    expect(restored.settings.model).toBe('deepseek-v4-flash')
+    expect(restored.settings.model).toBe('deepseek-flash')
     expect(restored.settings.thinking).toBe(false)
   })
 
   it('已是 Flash、Pro 或未知模型名的会话原样保留', async () => {
-    const flash = legacySession('flash', 'deepseek-v4-flash')
+    const flash = legacySession('flash', 'deepseek-flash')
     const fresh = legacySession('fresh', 'deepseek-v4-pro')
     const custom = legacySession('custom', 'my-private-finetune')
     const sessions = { loadSessions: async () => [flash, fresh, custom] }
@@ -174,7 +174,7 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
     await Promise.resolve()
 
     // 内存里已兼容为 Flash，行为不受影响。
-    expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-v4-flash')
+    expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-flash')
     // R10: 无 v1 恢复快照的存量 checkpoint 仅作为撤销历史保留，绝不投影为可继续的动态态。
     const sessionStore = getSessionStore('old').store
     expect(sessionStore.getter(itemsAtom)).toEqual([])
@@ -184,7 +184,7 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
     const sessions = { loadSessions: async () => [legacySession('old', 'deepseek-chat')] }
 
     await expect(hydrate({ sessions })).resolves.toBe(true)
-    expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-v4-flash')
+    expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-flash')
   })
 
   it('重启幂等：盘上仍是旧名，第二次启动照样迁得对（这正是不回写的前提）', async () => {
@@ -192,10 +192,10 @@ describe('hydrate · 主 Agent 模型兼容迁移', () => {
     const sessions = { loadSessions: async () => [legacySession('old', 'deepseek-chat')] }
 
     await hydrate({ sessions })
-    expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-v4-flash')
+    expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-flash')
 
     await hydrate({ sessions })
-    expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-v4-flash')
+    expect(rootStore.getter(sessionsAtom).old.settings.model).toBe('deepseek-flash')
     expect(rootStore.getter(sessionsAtom).old.settings.thinking).toBe(false)
   })
 })

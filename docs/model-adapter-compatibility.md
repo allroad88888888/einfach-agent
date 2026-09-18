@@ -8,7 +8,7 @@
 
 | Vendor | 内置模型 | 状态 | 凭证与调用边界 |
 | --- | --- | --- | --- |
-| `deepseek` | `deepseek-v4-pro`（默认）、`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp` | 支持 | 仅本机 Node 后端持有 Key 并请求供应商；可传不透明 `user_id`；Vision 保留已验证的图片输入 |
+| `deepseek` | `deepseek-flash`（默认）、`deepseek-v4-pro` | 支持 | 仅本机 Node 后端持有 Key 并请求供应商；可传不透明 `user_id`；Flash 原生接收用户图片与 `view_image` 的 Base64 工具图片 |
 | `glm` | `glm-5.3`（默认）、`glm-5.3-flash` | 支持 | 仅本机 Node 后端持有 Key 并请求供应商；不发送 `user_id`；图片输入尚未审计，不开放 |
 | `kimi` | `kimi-k3`（默认） | 支持 | 仅本机 Node 后端持有 Key 并请求供应商；中国区图片上传与 `ms://` 历史引用受 region/凭证 scope 约束 |
 | `openai-compat` | 无（协议不含厂商模型，由调用方指定） | 支持 | 仅本机 Node 后端持有 Key 并请求；接入点由用户**显式登记**一条 base URL，端点白名单只放行那一条（见下） |

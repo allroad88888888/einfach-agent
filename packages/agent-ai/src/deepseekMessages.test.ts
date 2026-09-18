@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { callDeepSeek, DEEPSEEK_VISION_MODEL } from './deepseek'
+import { callDeepSeek, DEEPSEEK_FLASH_MODEL, DEEPSEEK_PRO_MODEL } from './deepseek'
 import { encodeDeepSeekMessages } from './deepseekMessages'
 import type { ProviderFileImageSource, UserImageContentBlock } from './modelProtocol'
 
@@ -28,7 +28,7 @@ describe('DeepSeek message projection', () => {
         image(),
         { type: 'text', text: 'after' },
       ],
-    }], DEEPSEEK_VISION_MODEL)).toEqual([{
+    }], DEEPSEEK_FLASH_MODEL)).toEqual([{
       role: 'user',
       content: [
         { type: 'text', text: 'before' },
@@ -42,7 +42,7 @@ describe('DeepSeek message projection', () => {
     let body: Record<string, unknown> | undefined
 
     await callDeepSeek(
-      { model: DEEPSEEK_VISION_MODEL, messages: [{ role: 'user', content: [image()] }] },
+      { model: DEEPSEEK_FLASH_MODEL, messages: [{ role: 'user', content: [image()] }] },
       {
         apiKey: 'key',
         fetchImpl: async (_input, init) => {
@@ -64,7 +64,7 @@ describe('DeepSeek message projection', () => {
     let body: Record<string, unknown> | undefined
 
     await callDeepSeek(
-      { model: 'deepseek-v4-flash', messages: [{ role: 'user', content: [image()] }] },
+      { model: DEEPSEEK_PRO_MODEL, messages: [{ role: 'user', content: [image()] }] },
       {
         apiKey: 'key',
         fetchImpl: async (_input, init) => {
@@ -90,7 +90,7 @@ describe('DeepSeek message projection', () => {
   ])('rejects %s references', (_label, block, error) => {
     expect(() => encodeDeepSeekMessages(
       [{ role: 'user', content: [block] }],
-      DEEPSEEK_VISION_MODEL,
+      DEEPSEEK_FLASH_MODEL,
     )).toThrow(error)
   })
 

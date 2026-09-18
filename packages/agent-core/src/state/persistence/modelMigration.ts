@@ -45,7 +45,7 @@ function normalizeDeepSeekSettings(settings: ModelSettings): ModelSettings {
 
 // 简介：一条「旧模型名 → 继任模型名」的迁移规则。
 // 详情：vendor 参与匹配 —— 模型名只在自家 vendor 命名空间内唯一，跨 vendor 撞名不该误迁。
-//   impliedThinking 表达「旧名本身编码了思考模式」这件事（见下方 deepseek 两行）：
+//   impliedThinking 表达「旧名本身编码了思考模式」这件事（见下方 chat/reasoner 两行）：
 //   旧名被拆成「新模型 + 模式开关」时，只改 model 会**静默改变行为**，故需要连带补上模式；
 //   为 undefined 表示该旧名不隐含任何模式，迁移不得触碰 settings.thinking。
 export interface DeprecatedModelMigration {
@@ -63,13 +63,20 @@ export interface DeprecatedModelMigration {
 }
 
 // 简介：全部已知的下线模型名迁移规则。
-// 详情：DeepSeek 官方定价页脚注 1 原文 ——
+// 详情：V4.1 Flash 发布后，普通 V4 Flash 旧名迁往新 Flash；另据官方定价页脚注 1 ——
 //   "The model names deepseek-chat and deepseek-reasoner will be deprecated on 2026/07/24 15:59 UTC.
 //    For compatibility, they correspond to the non-thinking mode and thinking mode of
 //    deepseek-v4-flash, respectively."
 //   即两个旧名指向**同一个新模型的两种模式**；本仓库里模式是 settings.thinking 这个独立字段，
 //   所以迁移要「改 model + 按旧名补 thinking」两步才等价。
 export const DEPRECATED_MODEL_MIGRATIONS: readonly DeprecatedModelMigration[] = [
+  {
+    vendor: 'deepseek',
+    from: 'deepseek-v4-flash',
+    to: DEEPSEEK_FLASH_MODEL,
+    deprecatedAt: '2026-09-10',
+    source: 'https://deepseek.com/news/deepseek-v4-1-flash/',
+  },
   {
     vendor: 'deepseek',
     from: 'deepseek-chat',

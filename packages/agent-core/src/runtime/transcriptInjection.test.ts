@@ -45,7 +45,7 @@ describe('injectStablePrefixTranscript', () => {
       [id]: {
         id,
         title: '转录测试',
-        settings: { vendor: 'deepseek', model: 'deepseek-v4-flash' },
+        settings: { vendor: 'deepseek', model: 'deepseek-flash' },
         createdAt: 0,
         updatedAt: 0,
       },

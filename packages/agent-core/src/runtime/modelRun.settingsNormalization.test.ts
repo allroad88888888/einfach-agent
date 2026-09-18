@@ -27,14 +27,14 @@ afterEach(() => {
 
     it('deepseek-chat → v4-flash 且 thinking 显式 disabled（保留旧非思考行为）', async () => {
       const body = await capturedRequestFor({ vendor: 'deepseek', model: 'deepseek-chat' })
-      expect(body.model).toBe('deepseek-v4-flash')
+      expect(body.model).toBe('deepseek-flash')
       // 旧 deepseek-chat = 非思考模式；迁移后仍保留旧名隐含的模式语义。
       expect(body.thinking).toEqual({ type: 'disabled' })
     })
 
     it('deepseek-reasoner → v4-flash 且 thinking 补成 enabled（旧名隐含思考模式）', async () => {
       const body = await capturedRequestFor({ vendor: 'deepseek', model: 'deepseek-reasoner' })
-      expect(body.model).toBe('deepseek-v4-flash')
+      expect(body.model).toBe('deepseek-flash')
       expect(body.thinking).toEqual({ type: 'enabled' })
     })
 
@@ -44,11 +44,11 @@ afterEach(() => {
         model: 'deepseek-reasoner',
         thinking: false,
       })
-      expect(body.model).toBe('deepseek-v4-flash')
+      expect(body.model).toBe('deepseek-flash')
       expect(body.thinking).toEqual({ type: 'disabled' })
     })
 
-    it.each(['deepseek-v4-flash', 'deepseek-v4-pro'])(
+    it.each(['deepseek-flash', 'deepseek-v4-pro'])(
       '未下线的模型名 %s 原样发出（不覆盖用户已保存的选择）',
       async (model) => {
         const body = await capturedRequestFor({ vendor: 'deepseek', model })

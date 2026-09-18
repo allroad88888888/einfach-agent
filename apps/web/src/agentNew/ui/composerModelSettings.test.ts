@@ -30,9 +30,9 @@ describe('selectComposerModelSettings', () => {
     }
 
     expect(selectComposerModelSettings(current, {
-      vendor: 'deepseek', model: 'deepseek-v4-flash',
-    }, capability('deepseek', 'deepseek-v4-flash'))).toEqual({
-      vendor: 'deepseek', model: 'deepseek-v4-flash', thinking: true,
+      vendor: 'deepseek', model: 'deepseek-flash',
+    }, capability('deepseek', 'deepseek-flash'))).toEqual({
+      vendor: 'deepseek', model: 'deepseek-flash', thinking: true,
       vendorSettings: { reasoning_effort: 'high' },
     })
   })
@@ -122,10 +122,10 @@ describe('selectComposerModelSettings', () => {
     }
 
     expect(selectComposerModelSettings(current, {
-      vendor: 'deepseek', model: 'deepseek-v4-flash',
+      vendor: 'deepseek', model: 'deepseek-flash',
       vendorSettings: { connectionId: 'new-identity', targetSetting: 'replace' },
-    }, capability('deepseek', 'deepseek-v4-flash'))).toEqual({
-      vendor: 'deepseek', model: 'deepseek-v4-flash', thinking: true,
+    }, capability('deepseek', 'deepseek-flash'))).toEqual({
+      vendor: 'deepseek', model: 'deepseek-flash', thinking: true,
       vendorSettings: {
         connectionId: 'new-identity', reasoning_effort: 'high', userPreference: 'keep', targetSetting: 'replace',
       },

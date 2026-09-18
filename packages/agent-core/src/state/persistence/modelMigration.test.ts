@@ -46,21 +46,21 @@ describe('normalizeDeepSeekReasoningEffort', () => {
 })
 
 describe('migrateModelSettings', () => {
-  it('deepseek-chat → deepseek-v4-flash 且补上非思考模式', () => {
+  it('deepseek-chat → deepseek-flash 且补上非思考模式', () => {
     const before: ModelSettings = { vendor: 'deepseek', model: 'deepseek-chat' }
 
     const after = migrateModelSettings(before)
 
-    expect(after.model).toBe('deepseek-v4-flash')
+    expect(after.model).toBe('deepseek-flash')
     expect(after.thinking).toBe(false)
     // 不原地改入参（sessions 数组是调用方的，checkpoint 快照依赖不可变更新）。
     expect(before.model).toBe('deepseek-chat')
   })
 
-  it('deepseek-reasoner → deepseek-v4-flash 且补上思考模式', () => {
+  it('deepseek-reasoner → deepseek-flash 且补上思考模式', () => {
     const after = migrateModelSettings({ vendor: 'deepseek', model: 'deepseek-reasoner' })
 
-    expect(after.model).toBe('deepseek-v4-flash')
+    expect(after.model).toBe('deepseek-flash')
     expect(after.thinking).toBe(true)
   })
 
@@ -74,7 +74,7 @@ describe('migrateModelSettings', () => {
 
     expect(after).toEqual({
       vendor: 'deepseek',
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       thinking: true,
       temperature: 0.3,
       vendorSettings: { reasoning_effort: 'high' },
@@ -88,7 +88,7 @@ describe('migrateModelSettings', () => {
       model: 'deepseek-reasoner',
       thinking: false,
     })
-    expect(offOnReasoner.model).toBe('deepseek-v4-flash')
+    expect(offOnReasoner.model).toBe('deepseek-flash')
     expect(offOnReasoner.thinking).toBe(false)
 
     // 反向同理：显式开思考的 deepseek-chat 会话。
@@ -97,7 +97,7 @@ describe('migrateModelSettings', () => {
       model: 'deepseek-chat',
       thinking: true,
     })
-    expect(onOnChat.model).toBe('deepseek-v4-flash')
+    expect(onOnChat.model).toBe('deepseek-flash')
     expect(onOnChat.thinking).toBe(true)
   })
 
@@ -109,9 +109,24 @@ describe('migrateModelSettings', () => {
   })
 
   it('已是新模型名的会话不受影响（原样返回同一引用）', () => {
-    const settings: ModelSettings = { vendor: 'deepseek', model: 'deepseek-v4-pro' }
+    const settings: ModelSettings = { vendor: 'deepseek', model: 'deepseek-flash' }
 
     expect(migrateModelSettings(settings)).toBe(settings)
+  })
+
+  it('retired V4 Flash sessions move to V4.1 Flash without inventing a mode', () => {
+    expect(migrateModelSettings({
+      vendor: 'deepseek', model: 'deepseek-v4-flash', thinking: false,
+    })).toEqual({
+      vendor: 'deepseek', model: 'deepseek-flash', thinking: false,
+    })
+  })
+
+  it('does not migrate the removed Vision Experimental model', () => {
+    const removed: ModelSettings = {
+      vendor: 'deepseek', model: 'deepseek-v4-flash-vision-exp',
+    }
+    expect(migrateModelSettings(removed)).toBe(removed)
   })
 
   it('未知模型名原样保留 —— 不武断改写用户显式设置的模型', () => {
@@ -134,17 +149,17 @@ describe('migrateModelSettings', () => {
     const low = migrateModelSettings(legacy('low'))
     expect(low).toEqual({
       vendor: 'deepseek',
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       thinking: false,
       vendorSettings: { reasoning_effort: 'low' },
     })
     expect(migrateModelSettings(low)).toBe(low)
     expect(migrateModelSettings(legacy('medium'))).toMatchObject({
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       vendorSettings: { reasoning_effort: 'high' },
     })
     expect(migrateModelSettings(legacy('xhigh'))).toMatchObject({
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       vendorSettings: { reasoning_effort: 'high' },
     })
   })
@@ -174,14 +189,10 @@ describe('migrateModelSettings', () => {
   })
 
   it('不给未声明 impliedThinking 的规则乱补 thinking', () => {
-    // 表里当前两行都声明了 impliedThinking；这里断言的是函数行为而非表内容：
-    // 用一条临时规则形状验证「impliedThinking 为 undefined 时不碰 thinking」。
+    // 普通 V4 Flash 迁移不隐含思考模式；不能因为它和 chat/reasoner 共用继任者就乱补 thinking。
     const ruleWithoutMode = DEPRECATED_MODEL_MIGRATIONS.find((r) => r.impliedThinking === undefined)
-    if (!ruleWithoutMode) {
-      // 表里暂时没有这类规则 —— 用例留着，等将来加了「不隐含模式」的下线模型自动生效。
-      expect(ruleWithoutMode).toBeUndefined()
-      return
-    }
+    expect(ruleWithoutMode).toBeDefined()
+    if (!ruleWithoutMode) throw new Error('expected a migration without an implied thinking mode')
     const after = migrateModelSettings({
       vendor: ruleWithoutMode.vendor,
       model: ruleWithoutMode.from,
@@ -194,12 +205,12 @@ describe('normalizePrimaryAgentSettings', () => {
   it('下线旧名兼容迁移到 Flash 并保留旧名的思考语义', () => {
     expect(normalizePrimaryAgentSettings({ vendor: 'deepseek', model: 'deepseek-chat' })).toEqual({
       vendor: 'deepseek',
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       thinking: false,
     })
     expect(normalizePrimaryAgentSettings({ vendor: 'deepseek', model: 'deepseek-reasoner' })).toEqual({
       vendor: 'deepseek',
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       thinking: true,
     })
   })
@@ -207,7 +218,7 @@ describe('normalizePrimaryAgentSettings', () => {
   it('用户已保存的 Flash 选择保持同一引用', () => {
     const flash: ModelSettings = {
       vendor: 'deepseek',
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       thinking: false,
       temperature: 0.2,
     }
@@ -253,7 +264,7 @@ describe('migrateSessionMeta', () => {
 
     const after = migrateSessionMeta(session)
 
-    expect(after.settings.model).toBe('deepseek-v4-flash')
+    expect(after.settings.model).toBe('deepseek-flash')
     expect(after.updatedAt).toBe(100)
     expect(after.createdAt).toBe(0)
     expect(after.id).toBe('s1')
@@ -261,7 +272,7 @@ describe('migrateSessionMeta', () => {
   })
 
   it('无需迁移时原样返回同一引用（包括用户已保存的 Flash）', () => {
-    const session = { ...base, settings: { vendor: 'deepseek', model: 'deepseek-v4-flash' } as ModelSettings }
+    const session = { ...base, settings: { vendor: 'deepseek', model: 'deepseek-flash' } as ModelSettings }
 
     expect(migrateSessionMeta(session)).toBe(session)
   })

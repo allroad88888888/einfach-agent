@@ -1,7 +1,7 @@
 // Audited built-in model catalog shared by provider adapters and product UI.
 
 import {
-  DEEPSEEK_VISION_IMAGE_INPUT,
+  DEEPSEEK_FLASH_IMAGE_INPUT,
   KIMI_K3_IMAGE_INPUT,
   UNSUPPORTED_IMAGE_INPUT,
   type ImageInputCapability,
@@ -31,7 +31,7 @@ function freezeImageCapability(capability: ImageInputCapability): ImageInputCapa
 }
 
 const TEXT_IMAGE_INPUT = freezeImageCapability(UNSUPPORTED_IMAGE_INPUT)
-const DEEPSEEK_IMAGE_INPUT = freezeImageCapability(DEEPSEEK_VISION_IMAGE_INPUT)
+const DEEPSEEK_IMAGE_INPUT = freezeImageCapability(DEEPSEEK_FLASH_IMAGE_INPUT)
 const KIMI_IMAGE_INPUT = freezeImageCapability(KIMI_K3_IMAGE_INPUT)
 
 function freezeEffortCapability(
@@ -96,9 +96,8 @@ function vendorDescriptor(
 export const BUILTIN_VENDOR_DESCRIPTORS: Readonly<Record<string, VendorDescriptor>> = Object.freeze({
   [DEEPSEEK_VENDOR_ID]: vendorDescriptor(64_000, {
     'deepseek-v4-pro': textModel('DeepSeek V4 Pro', 1_000_000, DEEPSEEK_THINKING),
-    'deepseek-v4-flash': textModel('DeepSeek V4 Flash', 1_000_000, DEEPSEEK_THINKING),
-    'deepseek-v4-flash-vision-exp': Object.freeze({
-      displayName: 'DeepSeek V4 Flash Vision Experimental',
+    'deepseek-flash': Object.freeze({
+      displayName: 'DeepSeek V4.1 Flash',
       contextWindowTokens: 1_000_000,
       imageInput: DEEPSEEK_IMAGE_INPUT,
       thinking: DEEPSEEK_THINKING,

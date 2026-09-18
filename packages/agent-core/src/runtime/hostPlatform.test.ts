@@ -93,7 +93,7 @@ function session(workspaceId?: string): SessionMeta {
   return {
     id: 'platform-session',
     title: '平台测试',
-    settings: { vendor: 'deepseek', model: 'deepseek-v4-flash' },
+    settings: { vendor: 'deepseek', model: 'deepseek-flash' },
     createdAt: 0,
     updatedAt: 0,
     ...(workspaceId ? { workspaceId } : {}),

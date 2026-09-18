@@ -28,9 +28,8 @@ import { DEEPSEEK_BASE_URL } from './providerOrigins'
 // 简介：DeepSeek 接入点与默认模型。
 export { DEEPSEEK_BASE_URL } from './providerOrigins'
 export const DEEPSEEK_PRO_MODEL = 'deepseek-v4-pro'
-export const DEEPSEEK_FLASH_MODEL = 'deepseek-v4-flash'
-export const DEEPSEEK_VISION_MODEL = 'deepseek-v4-flash-vision-exp'
-export const DEFAULT_DEEPSEEK_MODEL = DEEPSEEK_PRO_MODEL
+export const DEEPSEEK_FLASH_MODEL = 'deepseek-flash'
+export const DEFAULT_DEEPSEEK_MODEL = DEEPSEEK_FLASH_MODEL
 export {
   MAX_DEEPSEEK_USER_ID_LENGTH,
   normalizeDeepSeekUserId,
@@ -47,8 +46,7 @@ export {
  */
 export const DEEPSEEK_MODEL_LABELS: Readonly<Record<string, string>> = {
   [DEEPSEEK_PRO_MODEL]: 'DeepSeek V4 Pro',
-  [DEEPSEEK_FLASH_MODEL]: 'DeepSeek V4 Flash',
-  [DEEPSEEK_VISION_MODEL]: 'DeepSeek V4 Flash Vision Experimental',
+  [DEEPSEEK_FLASH_MODEL]: 'DeepSeek V4.1 Flash',
 }
 
 // 简介：DeepSeek V4 的推理投入档位。
@@ -131,7 +129,7 @@ function prepareDeepSeekRequest(body: DeepSeekChatRequest): DeepSeekWireChatRequ
   // 路由到 thinking 家族（实测请求 deepseek-chat 返回 model=deepseek-v4-flash），请求未声明
   // thinking 时缺 reasoning_content 一样会 400；非 thinking 路径带空串字段已实测可过校验。
   const normalizedMessages = prepareDeepSeekThinkingMessages(body.messages)
-  const messages: DeepSeekWireItem[] = body.model === DEEPSEEK_VISION_MODEL
+  const messages: DeepSeekWireItem[] = body.model === DEEPSEEK_FLASH_MODEL
     ? encodeDeepSeekMessages(normalizedMessages, body.model)
     // nonVisualMessages guarantees every structured user item becomes string content.
     : nonVisualMessages(normalizedMessages) as DeepSeekWireItem[]

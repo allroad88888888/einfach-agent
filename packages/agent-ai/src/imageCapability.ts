@@ -66,9 +66,6 @@ export const DEEPSEEK_FLASH_TOOL_IMAGE_INPUT: Extract<
   },
 }
 
-/** Temporary source-compatible alias removed when the V4.1 model catalog lands. */
-export const DEEPSEEK_VISION_IMAGE_INPUT = DEEPSEEK_FLASH_IMAGE_INPUT
-
 export const OPENAI_COMPAT_BASE64_IMAGE_INPUT: Extract<
   ImageInputCapability,
   { kind: 'inline-base64' }

@@ -16,10 +16,13 @@ describe('model-level image capability', () => {
     expect(imageInputCapability('deepseek', 'deepseek-v4-pro')).toMatchObject({
       kind: 'unsupported',
     })
-    expect(imageInputCapability('deepseek', 'deepseek-v4-flash-vision-exp')).toMatchObject({
+    expect(imageInputCapability('deepseek', 'deepseek-flash')).toMatchObject({
       kind: 'provider-upload',
       accept: ['image/jpeg', 'image/png', 'image/webp'],
       limits: { maxImages: 8, maxBytesPerImage: 20 * 1024 * 1024 },
+    })
+    expect(imageInputCapability('deepseek', 'deepseek-v4-flash-vision-exp')).toMatchObject({
+      kind: 'unsupported',
     })
     expect(vendorDescriptorFor('kimi').models['kimi-k3']).toMatchObject({
       contextWindowTokens: 1_000_000,

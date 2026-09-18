@@ -96,7 +96,7 @@ describe('composerModelOptions', () => {
   })
 
   it('keeps registry and profile ordering and keys stable across projections', () => {
-    const current: ModelSettings = { vendor: 'deepseek', model: 'deepseek-v4-flash' }
+    const current: ModelSettings = { vendor: 'deepseek', model: 'deepseek-flash' }
     const profiles = [
       profile('second', 'Second', [{ id: 'two', label: 'Two' }]),
       profile('first', 'First', [{ id: 'one', label: 'One' }]),

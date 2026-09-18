@@ -1,4 +1,4 @@
-import { DEEPSEEK_VISION_MODEL } from './deepseek'
+import { DEEPSEEK_FLASH_MODEL } from './deepseek'
 import { DEEPSEEK_FILE_SCOPE, isDeepSeekFileReference } from './deepseekMessages'
 import { DEFAULT_KIMI_MODEL, kimiReferenceScope } from './kimiRegion'
 import type { UserImageContentBlock } from './modelProtocol'
@@ -68,7 +68,7 @@ function projectDeepSeekHistoryImage(
   image: UserImageContentBlock,
   target: HistoryImageTarget,
 ): HistoryImageProjection {
-  if (target.model !== DEEPSEEK_VISION_MODEL) {
+  if (target.model !== DEEPSEEK_FLASH_MODEL) {
     return placeholder(image, 'target_model_unsupported')
   }
   if (image.source.kind !== 'provider-file') return placeholder(image, 'source_provider_mismatch')

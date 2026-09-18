@@ -47,7 +47,7 @@ describe('createDelegationRuntime · runLowCostExtraction', () => {
   it('子 agent 跑过之后仍然可用，并且可以连续调用', async () => {
     const fetchImpl: typeof fetch = async (_url, init) => {
       const body = requestBody(init)
-      return body.tool_choice === 'none' && body.model === 'deepseek-v4-flash'
+      return body.tool_choice === 'none' && body.model === 'deepseek-flash'
         ? response({ role: 'assistant', content: '{"commands":[],"warnings":[]}' })
         : response({ role: 'assistant', content: 'done' })
     }
@@ -60,8 +60,8 @@ describe('createDelegationRuntime · runLowCostExtraction', () => {
     const first = await delegateRuntime.runLowCostExtraction!({ systemPrompt: 'sys', userPrompt: 'user' })
     const second = await delegateRuntime.runLowCostExtraction!({ systemPrompt: 'sys', userPrompt: 'user' })
 
-    expect(first.model).toBe('deepseek-v4-flash')
-    expect(second.model).toBe('deepseek-v4-flash')
+    expect(first.model).toBe('deepseek-flash')
+    expect(second.model).toBe('deepseek-flash')
     delegateRuntime.dispose?.()
   })
 
@@ -79,7 +79,7 @@ describe('createDelegationRuntime · runLowCostExtraction', () => {
       maxOutputTokens: 1_200,
     })
 
-    expect(extractionBody.model).toBe('deepseek-v4-flash')
+    expect(extractionBody.model).toBe('deepseek-flash')
     expect(extractionBody.temperature).toBe(0)
     expect(extractionBody.thinking).toEqual({ type: 'disabled' })
     expect(extractionBody.tool_choice).toBe('none')

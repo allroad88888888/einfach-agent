@@ -20,7 +20,7 @@ describe('上下文 checkpoint 接入', () => {
   it('未超预算：请求体就是原始 messages，不产生摘要事件', async () => {
     const trace = captureTrace()
     configureObservability({ driver: trace.driver })
-    seedSession('cc0', { vendor: 'deepseek', model: 'deepseek-v4-flash' })
+    seedSession('cc0', { vendor: 'deepseek', model: 'deepseek-flash' })
     let captured: Record<string, unknown> = {}
     const fetchImpl: typeof fetch = (_url, init) => {
       captured = JSON.parse(init!.body as string)

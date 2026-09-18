@@ -1,5 +1,5 @@
 import { DEEPSEEK_BASE_URL } from './deepseek'
-import { DEEPSEEK_VISION_IMAGE_INPUT } from './imageCapability'
+import { DEEPSEEK_FLASH_IMAGE_INPUT } from './imageCapability'
 import type { ChatCallOptions } from './modelApi'
 import type { UserImageContentBlock } from './modelProtocol'
 import { isAbortError } from './modelRetry'
@@ -33,10 +33,10 @@ interface UploadedDeepSeekImage {
 }
 
 function validateImages(images: readonly DeepSeekLocalImage[]): void {
-  if (DEEPSEEK_VISION_IMAGE_INPUT.kind !== 'provider-upload') {
+  if (DEEPSEEK_FLASH_IMAGE_INPUT.kind !== 'provider-upload') {
     throw new Error('DeepSeek image upload capability is unavailable.')
   }
-  const { accept, limits } = DEEPSEEK_VISION_IMAGE_INPUT
+  const { accept, limits } = DEEPSEEK_FLASH_IMAGE_INPUT
   if (images.length > limits.maxImages) {
     throw new Error(`DeepSeek accepts at most ${limits.maxImages} images per message.`)
   }

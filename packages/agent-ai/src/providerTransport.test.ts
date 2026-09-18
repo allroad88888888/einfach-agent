@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEEPSEEK_BASE_URL, DEEPSEEK_VISION_MODEL } from './deepseek'
+import { DEEPSEEK_BASE_URL, DEEPSEEK_FLASH_MODEL } from './deepseek'
 import { prepareDeepSeekImageBatch } from './deepseekFiles'
 import { encodeDeepSeekMessages } from './deepseekMessages'
 import { GLM_BASE_URL } from './glm'
@@ -102,7 +102,7 @@ describe('provider transport predicates', () => {
         },
         name: 'one.png', mimeType: 'image/png', byteSize: 1,
       }],
-    }], DEEPSEEK_VISION_MODEL)
+    }], DEEPSEEK_FLASH_MODEL)
     if (valid) expect(message).not.toThrow()
     else expect(message).toThrow('file-api-* id')
 

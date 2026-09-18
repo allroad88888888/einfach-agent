@@ -94,7 +94,7 @@ describe('DeepSeek V4 请求协议', () => {
 
     await callDeepSeek(
       {
-        model: 'deepseek-v4-flash',
+        model: 'deepseek-flash',
         messages: [{ role: 'user', content: '简短回答' }],
         thinking: { type: 'disabled' },
         reasoning_effort: 'high',
@@ -169,7 +169,7 @@ describe('DeepSeek V4 请求协议', () => {
 
     const result = await streamDeepSeek(
       {
-        model: 'deepseek-v4-flash',
+        model: 'deepseek-flash',
         messages: [{ role: 'user', content: '流式响应' }],
       },
       {
@@ -258,7 +258,7 @@ describe('DeepSeek V4 请求协议', () => {
     // 故意不带 thinking 字段：服务端把全部 deepseek 别名路由到 thinking 家族，
     // 归一化必须在默认路径同样生效。
     await callDeepSeek(
-      { model: 'deepseek-v4-flash', messages },
+      { model: 'deepseek-flash', messages },
       {
         apiKey: 'test-key',
         baseUrl: BASE_URL,

@@ -71,7 +71,7 @@ describe('provider user input preparation', () => {
     expect(methods).toEqual(['POST', 'DELETE'])
   })
 
-  it('uploads original Composer images through the DeepSeek vision adapter', async () => {
+  it('uploads original Composer images for DeepSeek V4.1 Flash', async () => {
     const fetchImpl = vi.fn<typeof fetch>(async (_input, init) => init?.method === 'DELETE'
       ? new Response(null, { status: 204 })
       : new Response(JSON.stringify({ id: 'file-api-one' }), { status: 200 }))
@@ -91,7 +91,7 @@ describe('provider user input preparation', () => {
       },
       {
         sessionId: 'session-1',
-        settings: { vendor: 'deepseek', model: 'deepseek-v4-flash-vision-exp' },
+        settings: { vendor: 'deepseek', model: 'deepseek-flash' },
         apiKey: 'managed',
         signal,
         fetchImpl,

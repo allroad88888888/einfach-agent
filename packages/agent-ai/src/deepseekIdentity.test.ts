@@ -33,12 +33,12 @@ describe('DeepSeek user identity', () => {
     }
 
     await callDeepSeek(
-      { model: 'deepseek-v4-flash', messages: [{ role: 'user', content: '无 user id' }] },
+      { model: 'deepseek-flash', messages: [{ role: 'user', content: '无 user id' }] },
       { apiKey: 'test-key', baseUrl: BASE_URL, fetchImpl, retry: { maxRetries: 0 } },
     )
     await callDeepSeek(
       {
-        model: 'deepseek-v4-flash',
+        model: 'deepseek-flash',
         messages: [{ role: 'user', content: '非法 user id' }],
         user_id: 'person@example.com',
       },

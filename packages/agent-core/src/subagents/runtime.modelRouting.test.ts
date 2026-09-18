@@ -81,17 +81,17 @@ describe('createDelegateAgentRuntime · 模型分级路由与重放护栏', () =
       return models
     }, {})
     expect(modelsByPath['root-01']).toEqual([
-      'deepseek-v4-flash',
-      'deepseek-v4-flash',
+      'deepseek-flash',
+      'deepseek-flash',
     ])
     // 嵌套不再一律 Pro：Flash 只看任务特征。偏好而无特征 → Pro；特征齐全 → Flash。
     expect(modelsByPath['root-01-01']).toEqual(['deepseek-v4-pro'])
-    expect(modelsByPath['root-01-02']).toEqual(['deepseek-v4-flash'])
+    expect(modelsByPath['root-01-02']).toEqual(['deepseek-flash'])
 
     const started = eventsTyped(writes, 'child_started')
     expect(started.find((event) => event.agentPath === 'root-01')?.data).toMatchObject({
       modelTier: 'flash',
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       route_reason: 'low_risk_retrieval_uses_flash',
       fallback_count: 0,
     })
@@ -102,7 +102,7 @@ describe('createDelegateAgentRuntime · 模型分级路由与重放护栏', () =
     })
     expect(started.find((event) => event.agentPath === 'root-01-02')?.data).toMatchObject({
       modelTier: 'flash',
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       route_reason: 'low_risk_retrieval_uses_flash',
     })
 
@@ -177,7 +177,7 @@ describe('createDelegateAgentRuntime · 模型分级路由与重放护栏', () =
       }],
     }, context(writes))
 
-    expect(childModels).toEqual(['deepseek-v4-flash', 'deepseek-v4-pro'])
+    expect(childModels).toEqual(['deepseek-flash', 'deepseek-v4-pro'])
     expect(result.children[0]).toMatchObject({
       status: 'done',
       summary: 'recovered by pro',
@@ -224,7 +224,7 @@ describe('createDelegateAgentRuntime · 模型分级路由与重放护栏', () =
       }],
     }, context(writes))
 
-    expect(childModels).toEqual(['deepseek-v4-flash'])
+    expect(childModels).toEqual(['deepseek-flash'])
     expect(result.children[0]).toMatchObject({
       status: 'failed',
       modelTier: 'flash',
@@ -262,7 +262,7 @@ describe('createDelegateAgentRuntime · 模型分级路由与重放护栏', () =
       }],
     }, context(writes))
 
-    expect(childModels).toEqual(['deepseek-v4-flash'])
+    expect(childModels).toEqual(['deepseek-flash'])
     expect(result.children[0]).toMatchObject({
       status: 'failed',
       fallbackCount: 0,
@@ -293,7 +293,7 @@ describe('createDelegateAgentRuntime · 模型分级路由与重放护栏', () =
         }],
       }, context(writes))
 
-      expect(childModels).toEqual(['deepseek-v4-flash'])
+      expect(childModels).toEqual(['deepseek-flash'])
       expect(result.children[0]).toMatchObject({
         status: 'failed',
         modelTier: 'flash',
@@ -346,7 +346,7 @@ describe('createDelegateAgentRuntime · 模型分级路由与重放护栏', () =
       toolProfile: 'workspace_read',
     }, callContext)
 
-    expect(childModels).toEqual(['deepseek-v4-flash', 'deepseek-v4-flash'])
+    expect(childModels).toEqual(['deepseek-flash', 'deepseek-flash'])
     expect(result.children[0]).toMatchObject({
       status: 'failed',
       modelTier: 'flash',

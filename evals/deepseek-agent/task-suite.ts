@@ -1,5 +1,4 @@
 import {
-  DEEPSEEK_FLASH_MODEL,
   DEEPSEEK_PRO_MODEL,
   type DeepSeekReasoningEffort,
   type ModelFunctionTool,
@@ -15,15 +14,16 @@ export const DEEPSEEK_TASK_SUITE_VERSION = '2026-07-24.3'
 export const DEEPSEEK_TASK_RESULT_SCHEMA = 'deepseek-task-ab/v2'
 
 export type DeepSeekTaskArm = 'pro' | 'flash'
+const DEEPSEEK_V4_TASK_FLASH_MODEL = 'deepseek-v4-flash' as const
 
 export interface DeepSeekTaskLane {
   arm: DeepSeekTaskArm
-  model: typeof DEEPSEEK_PRO_MODEL | typeof DEEPSEEK_FLASH_MODEL
+  model: typeof DEEPSEEK_PRO_MODEL | typeof DEEPSEEK_V4_TASK_FLASH_MODEL
 }
 
 export const DEEPSEEK_TASK_LANES: readonly DeepSeekTaskLane[] = [
   { arm: 'pro', model: DEEPSEEK_PRO_MODEL },
-  { arm: 'flash', model: DEEPSEEK_FLASH_MODEL },
+  { arm: 'flash', model: DEEPSEEK_V4_TASK_FLASH_MODEL },
 ]
 
 export interface DeepSeekTaskProfile {

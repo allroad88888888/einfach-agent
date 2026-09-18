@@ -12,7 +12,7 @@ function session(workspaceId?: string): SessionMeta {
   return {
     id: 'prefix-session',
     title: '前缀测试',
-    settings: { vendor: 'deepseek', model: 'deepseek-v4-flash' },
+    settings: { vendor: 'deepseek', model: 'deepseek-flash' },
     createdAt: 0,
     updatedAt: 0,
     ...(workspaceId ? { workspaceId } : {}),
@@ -123,7 +123,7 @@ describe('buildStableModelPrefix', () => {
       lane: 'main',
       scope: 'prefix-session:run-1:root',
       vendor: 'deepseek',
-      model: 'deepseek-v4-flash',
+      model: 'deepseek-flash',
       messages: [...prefix.items, user],
       // 主循环传的就是整段前缀正文（modelTurnRequester 的 systemContent: stablePrefix.content）。
       systemContent: prefix.content,
