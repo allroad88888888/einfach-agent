@@ -36,17 +36,38 @@ export const KIMI_K3_IMAGE_INPUT: ImageInputCapability = {
   },
 }
 
-export const DEEPSEEK_VISION_IMAGE_INPUT: ImageInputCapability = {
+const DEEPSEEK_FLASH_IMAGE_LIMITS: ImageInputLimits = {
+  maxImages: 8,
+  maxBytesPerImage: 20 * 1024 * 1024,
+  maxBatchBytes: 40 * 1024 * 1024,
+  maxWidth: 4096,
+  maxHeight: 2160,
+}
+
+export const DEEPSEEK_FLASH_IMAGE_INPUT: ImageInputCapability = {
   kind: 'provider-upload',
   accept: ['image/jpeg', 'image/png', 'image/webp'],
+  limits: DEEPSEEK_FLASH_IMAGE_LIMITS,
+}
+
+/** Inline form used only when an image is returned from `view_image` via Responses. */
+export const DEEPSEEK_FLASH_TOOL_IMAGE_INPUT: Extract<
+  ImageInputCapability,
+  { kind: 'inline-base64' }
+> = {
+  kind: 'inline-base64',
+  accept: DEEPSEEK_FLASH_IMAGE_INPUT.accept,
   limits: {
-    maxImages: 8,
-    maxBytesPerImage: 20 * 1024 * 1024,
-    maxBatchBytes: 40 * 1024 * 1024,
-    maxWidth: 4096,
-    maxHeight: 2160,
+    ...DEEPSEEK_FLASH_IMAGE_LIMITS,
+    maxImages: 1,
+    // Keeps the Base64-expanded rollout record below the 16 MiB persistence ceiling.
+    maxBytesPerImage: 10 * 1024 * 1024,
+    maxBatchBytes: 10 * 1024 * 1024,
   },
 }
+
+/** Temporary source-compatible alias removed when the V4.1 model catalog lands. */
+export const DEEPSEEK_VISION_IMAGE_INPUT = DEEPSEEK_FLASH_IMAGE_INPUT
 
 export const OPENAI_COMPAT_BASE64_IMAGE_INPUT: Extract<
   ImageInputCapability,

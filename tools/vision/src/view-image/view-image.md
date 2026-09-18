@@ -1,7 +1,7 @@
 # view_image
 
-Inspect one JPEG, PNG, or WebP image at an explicit path and return a textual
-observation.
+Read one JPEG, PNG, or WebP image at an explicit path and return it to the
+current multimodal model as image tool content.
 
 ## Parameters
 

@@ -1,5 +1,5 @@
 import type { WorkspaceImageReadResult } from '@einfach-agent/core'
-import { DEEPSEEK_VISION_IMAGE_INPUT } from '@einfach-agent/ai'
+import { DEEPSEEK_FLASH_TOOL_IMAGE_INPUT } from '@einfach-agent/ai'
 import { inspectStaticImage } from '../imageInput/staticImagePolicy'
 
 const LOW_DETAIL_BOUND = 512
@@ -72,13 +72,10 @@ export async function resizeVisionImage(
 ): Promise<ResizedVisionImage> {
   signal?.throwIfAborted()
   const original = new Blob([decodeBase64(source.base64)], { type: source.mimeType })
-  if (DEEPSEEK_VISION_IMAGE_INPUT.kind !== 'provider-upload') {
-    throw new Error('vision image policy is unavailable')
-  }
   const metadata = await inspectStaticImage(
     original,
     source.mimeType,
-    DEEPSEEK_VISION_IMAGE_INPUT.limits,
+    DEEPSEEK_FLASH_TOOL_IMAGE_INPUT.limits,
   )
   signal?.throwIfAborted()
   if (detail === 'high') {

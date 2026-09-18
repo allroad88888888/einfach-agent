@@ -15,6 +15,18 @@ function imageResult() {
   return { base64: 'iVBORw0KGgo=', mimeType: 'image/png' as const, filename: 'screen.png', sizeBytes: 8 }
 }
 
+function viewedImage(name = 'screen.png') {
+  return {
+    image: {
+      type: 'image' as const,
+      source: { kind: 'inline-base64' as const, data: 'iVBORw0KGgo=' },
+      name,
+      mimeType: 'image/png',
+      byteSize: 8,
+    },
+  }
+}
+
 describe('ToolContext viewImage vision capability', () => {
   it('未装配 app port 时不暴露 viewImage', () => {
     const core = createCoreInstance()
@@ -37,7 +49,7 @@ describe('ToolContext viewImage vision capability', () => {
         path: '/outside/screen.png',
         allowExternalPaths: false,
       })
-      return { content: image.filename, model: 'vision-model' }
+      return viewedImage(image.filename)
     })
     const core = createCoreInstance({ config: { viewImage: port } })
     seedSession('vision-auto', '/workspace', 'auto', core)
@@ -47,7 +59,7 @@ describe('ToolContext viewImage vision capability', () => {
     })
 
     await expect(ctx.viewImage!({ path: '/outside/screen.png', detail: 'low' }))
-      .resolves.toEqual({ content: 'screen.png', model: 'vision-model' })
+      .resolves.toEqual(viewedImage())
     expect(port).toHaveBeenCalledWith(
       { path: '/outside/screen.png', detail: 'low' },
       expect.objectContaining({
@@ -63,8 +75,8 @@ describe('ToolContext viewImage vision capability', () => {
 
   it('stale run 在 app port 前拒绝，调用中取消会丢弃迟到结果', async () => {
     let finish!: () => void
-    const port = vi.fn(() => new Promise<{ content: string; model: string }>((resolve) => {
-      finish = () => resolve({ content: 'late', model: 'vision-model' })
+    const port = vi.fn(() => new Promise<ReturnType<typeof viewedImage>>((resolve) => {
+      finish = () => resolve(viewedImage('late.png'))
     }))
     const core = createCoreInstance({ config: { viewImage: port } })
     seedSession('vision-stale', '/workspace', 'confirm', core)
@@ -93,10 +105,9 @@ describe('ToolContext viewImage vision capability', () => {
     })
     const core = createCoreInstance({
       config: {
-        viewImage: async (input, context) => ({
-          content: (await context.readWorkspaceImage({ path: input.path })).filename,
-          model: 'never',
-        }),
+        viewImage: async (input, context) => viewedImage(
+          (await context.readWorkspaceImage({ path: input.path })).filename,
+        ),
       },
     })
     seedSession('vision-static', '/workspace', 'confirm', core)

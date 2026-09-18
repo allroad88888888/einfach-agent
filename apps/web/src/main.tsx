@@ -54,7 +54,7 @@ import {
 } from './settings/startupCredentialTarget'
 import { prepareProviderUserInput } from './modelInput/prepareProviderUserInput'
 import { disposeProviderUserContent } from './modelInput/disposeProviderUserContent'
-import { createDeepSeekImageViewer } from './vision/deepseekImageViewer'
+import { createInlineImageViewer } from './vision/inlineImageViewer'
 import {
   reportReactCommit,
   startUiPerformanceDiagnostics,
@@ -202,10 +202,7 @@ async function startApplication(): Promise<void> {
       fetchImpl: providerFetch,
     }),
     fetchImpl: providerFetch,
-    viewImage: createDeepSeekImageViewer({
-      apiKey: hostManagedCredentialMarker,
-      fetchImpl: providerFetch,
-    }),
+    viewImage: createInlineImageViewer(),
   })
   configureModelCredentialHost(credentialHost)
   configureModelConnectionProfileHost(connectionProfileHost)

@@ -4,6 +4,21 @@ import { viewImageTool } from './view-image'
 
 type ViewImageContext = ToolContext & { viewImage: NonNullable<ToolContext['viewImage']> }
 
+function viewedImage(name = 'cat.png') {
+  return {
+    image: {
+      type: 'image' as const,
+      source: { kind: 'inline-base64' as const, data: 'aGVsbG8=' },
+      name,
+      mimeType: 'image/png',
+      byteSize: 5,
+      width: 20,
+      height: 10,
+      detail: 'original' as const,
+    },
+  }
+}
+
 function makeCtx(overrides: Partial<ViewImageContext> = {}): ViewImageContext {
   return {
     sessionId: 'test-session',
@@ -13,18 +28,14 @@ function makeCtx(overrides: Partial<ViewImageContext> = {}): ViewImageContext {
     runShell: vi.fn(),
     renderCard: vi.fn(),
     saveArtifact: vi.fn(),
-    viewImage: vi.fn(async () => ({ content: 'A cat on a chair.', model: 'vision-test' })),
+    viewImage: vi.fn(async () => viewedImage()),
     ...overrides,
   }
 }
 
 describe('view_image tool', () => {
-  it('defaults omitted detail to low and returns only text content plus model', async () => {
-    const viewImage = vi.fn(async () => ({
-      content: 'A screenshot of a dashboard.',
-      model: 'vision-model',
-      internal: { fileId: 'file-api-secret' },
-    }))
+  it('defaults omitted detail to low and separates metadata from model image content', async () => {
+    const viewImage = vi.fn(async () => viewedImage('dashboard.png'))
     const registry = createToolRegistry()
     registry.register(viewImageTool)
     const result = await registry.run(
@@ -40,18 +51,27 @@ describe('view_image tool', () => {
     })
     expect(result).toEqual({
       ok: true,
-      data: { content: 'A screenshot of a dashboard.', model: 'vision-model' },
+      data: {
+        path: 'images/dashboard.png',
+        detail: 'low',
+        name: 'dashboard.png',
+        mimeType: 'image/png',
+        byteSize: 5,
+        width: 20,
+        height: 10,
+      },
+      modelContent: [viewedImage('dashboard.png').image],
     })
   })
 
   it('forwards high exactly for detailed inspection', async () => {
-    const viewImage = vi.fn(async () => ({ content: 'Small labels are readable.', model: 'vision-test' }))
+    const viewImage = vi.fn(async () => viewedImage('chart.png'))
     await viewImageTool.execute({ path: 'chart.png', detail: 'high' }, makeCtx({ viewImage }))
     expect(viewImage).toHaveBeenCalledWith({ path: 'chart.png', detail: 'high' })
   })
 
   it('rejects invalid paths and detail before calling the runtime', async () => {
-    const viewImage = vi.fn(async () => ({ content: 'ignored', model: 'vision-test' }))
+    const viewImage = vi.fn(async () => viewedImage())
     const ctx = makeCtx({ viewImage })
 
     await expect(viewImageTool.execute({ path: ' ' }, ctx)).resolves.toMatchObject({
@@ -87,6 +107,17 @@ describe('view_image tool', () => {
       code: 'VIEW_IMAGE_INVALID_RESPONSE',
       retryable: false,
     })
+  })
+
+  it('rejects invalid image dimensions and detail from the runtime', async () => {
+    const invalid = viewedImage().image
+    const result = await viewImageTool.execute(
+      { path: 'image.png' },
+      makeCtx({ viewImage: vi.fn(async () => ({
+        image: { ...invalid, width: -1, detail: 'private' },
+      } as never)) }),
+    )
+    expect(result).toMatchObject({ ok: false, code: 'VIEW_IMAGE_INVALID_RESPONSE' })
   })
 
   it('does not expose arbitrary runtime errors', async () => {

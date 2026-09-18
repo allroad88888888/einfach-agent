@@ -1,3 +1,5 @@
+import type { ToolOutputImageContentBlock } from '@einfach-agent/ai'
+
 /** Value objects shared by confined image reads and app-owned vision calls. */
 export type WorkspaceImageMimeType = 'image/jpeg' | 'image/png' | 'image/webp'
 
@@ -22,8 +24,7 @@ export interface ViewImageInput {
 }
 
 export interface ViewImageResult {
-  content: string
-  model: string
+  image: ToolOutputImageContentBlock
 }
 
 /** The deliberately narrow core surface exposed to the app-owned vision implementation. */

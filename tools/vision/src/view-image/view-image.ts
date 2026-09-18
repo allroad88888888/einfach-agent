@@ -1,4 +1,5 @@
 import type { Tool, ToolContext } from '@einfach-agent/core/tools'
+import { isValidInlineBase64Data } from '@einfach-agent/ai'
 import guide from './view-image.md?raw'
 
 const inputSchema = {
@@ -29,11 +30,36 @@ function getViewImage(ctx: ToolContext): ViewImage | undefined {
   return typeof candidate === 'function' ? candidate.bind(ctx) : undefined
 }
 
-function textObservation(value: unknown): { content: string; model: string } | undefined {
+function isOptionalPositiveInteger(value: unknown): boolean {
+  return value === undefined || (Number.isSafeInteger(value) && (value as number) > 0)
+}
+
+function imageObservation(value: unknown): Awaited<ReturnType<ViewImage>> | undefined {
   if (!value || typeof value !== 'object') return undefined
-  const result = value as { content?: unknown; model?: unknown }
-  return typeof result.content === 'string' && typeof result.model === 'string'
-    ? { content: result.content, model: result.model }
+  const image = (value as { image?: unknown }).image
+  if (!image || typeof image !== 'object') return undefined
+  const block = image as Record<string, unknown>
+  const source = block.source && typeof block.source === 'object'
+    ? block.source as Record<string, unknown>
+    : undefined
+  const byteSize = block.byteSize
+  const mimeType = block.mimeType
+  return block.type === 'image'
+    && source?.kind === 'inline-base64'
+    && typeof source.data === 'string'
+    && typeof block.name === 'string'
+    && (mimeType === 'image/jpeg' || mimeType === 'image/png' || mimeType === 'image/webp')
+    && Number.isSafeInteger(byteSize)
+    && (byteSize as number) > 0
+    && isOptionalPositiveInteger(block.width)
+    && isOptionalPositiveInteger(block.height)
+    && (block.detail === undefined
+      || block.detail === 'low'
+      || block.detail === 'high'
+      || block.detail === 'original'
+      || block.detail === 'auto')
+    && isValidInlineBase64Data(source.data, byteSize as number)
+    ? value as Awaited<ReturnType<ViewImage>>
     : undefined
 }
 
@@ -42,7 +68,7 @@ export const viewImageTool: Tool = {
   runtime: 'server',
   replayUnsafe: true,
   skill: {
-    description: '查看图片并返回文字观察；普通图片优先 low，OCR、小字截图、密集图表或精细比较使用 high。',
+    description: '读取图片并交回当前多模态模型；普通图片优先 low，OCR、小字截图、密集图表或精细比较使用 high。',
     triggers: ['view image', 'inspect image', '查看图片', '识别图片', 'OCR', '截图小字', '图表'],
     content: guide,
   },
@@ -80,7 +106,7 @@ export const viewImageTool: Tool = {
     }
 
     try {
-      const result = textObservation(await viewImage({ path, detail }))
+      const result = imageObservation(await viewImage({ path, detail }))
       if (!result) {
         return {
           ok: false,
@@ -89,7 +115,20 @@ export const viewImageTool: Tool = {
           retryable: false,
         }
       }
-      return { ok: true, data: result }
+      const { image } = result
+      return {
+        ok: true,
+        data: {
+          path,
+          detail,
+          name: image.name,
+          mimeType: image.mimeType,
+          byteSize: image.byteSize,
+          width: image.width,
+          height: image.height,
+        },
+        modelContent: [image],
+      }
     } catch {
       return {
         ok: false,
