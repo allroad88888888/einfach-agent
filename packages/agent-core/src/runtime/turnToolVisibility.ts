@@ -86,6 +86,10 @@ export function capabilityToolCatalog(
     .filter((tool) => capabilities.allowsTool(tool.name))
     .map(copySummary)
   const names = new Set(summaries.map((tool) => tool.name))
+  // Runtime control tools can be hidden from model discovery while still belonging to this run.
+  for (const name of SESSION_CAPABILITY_CONTROL_TOOLS) {
+    if (catalog.has(name) && capabilities.allowsTool(name)) names.add(name)
+  }
   const schemas = new Map<string, RegisteredToolSnapshot>()
   const versions = new Map<string, number>()
   for (const name of names) {

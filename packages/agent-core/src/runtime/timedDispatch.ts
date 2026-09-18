@@ -1,6 +1,7 @@
 import { isAbortError } from '@einfach-agent/ai'
 import type { ToolCallTiming } from '../tools/toolCallTiming'
 import type { Tool, ToolResult } from '../tools/types'
+import type { ContextCompactionCapability } from '../tools/contextCompaction'
 import type { ToolRegistry } from '../tools/toolRegistry'
 import type { CoreInstance } from './core/coreInstance'
 import type { ToolLoopBase } from './toolLoopContracts'
@@ -126,6 +127,7 @@ export async function classifyTimedToolRisk(input: {
 export async function dispatchTimedTools(input: {
   base: ToolLoopBase
   request: TimedToolDispatchRequest
+  contextCompaction?: ContextCompactionCapability
 }): Promise<TimedToolDispatchResult> {
   const { base, request } = input
   if (request.sessionId !== base.id || !isDispatchCurrent(base, request.timing)) {
@@ -162,7 +164,10 @@ export async function dispatchTimedTools(input: {
         })
         return { ok: false, error, details: { timing: request.timing, risk: risk.level } }
       }
-      return dependencies.executeToolCall(base, { callId, name, args: {}, registrationVersion })
+      return dependencies.executeToolCall(base, {
+        callId, name, args: {}, registrationVersion,
+        contextCompaction: request.timing === 'compact' ? input.contextCompaction : undefined,
+      })
     },
     record: (_registration, callId, result) => {
       dependencies.appendMappedToolResult(base.id, callId, result, base.core)

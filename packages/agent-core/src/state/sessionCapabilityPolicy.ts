@@ -1,3 +1,5 @@
+import { COMPACT_CONTEXT_TOOL_NAME } from '../tools/contextCompaction'
+
 export const SESSION_CAPABILITY_POLICY_VERSION = 1 as const
 
 export type SessionCapabilityKind = 'tool' | 'skill'
@@ -31,6 +33,7 @@ export interface SessionCapabilitySelection {
 }
 
 export const SESSION_CAPABILITY_CONTROL_TOOLS: ReadonlySet<string> = new Set([
+  COMPACT_CONTEXT_TOOL_NAME,
   'request_tool_schema',
   'skill_search',
   'skill_read',

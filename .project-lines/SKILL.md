@@ -5,6 +5,13 @@ description: "web-agent — 主线与分支线：东西放哪、数据怎么走�
 
 # web-agent · 线索引
 
+> 2026-09-18 压缩工具化更新（负责人在本次会话确认）：摘要策略与执行入口归
+> `tools/agents/src/compact-context/compact-context.ts`；主请求流程按预算分派
+> `preCompact → compact → postCompact`，通过 `runtime/compactMainContext.ts` 复用已有
+> `contextCheckpointAtom`、writer、undo 和恢复快照。子 Agent 通过
+> `subagents/compactChildContext.ts` 调用同一个工具，摘要仍归子循环独立上下文。
+> 下文关于旧压缩插件的描述是历史记录；当前实现以本条及代码为准。
+
 > 由 `learn-project` 于 commit `1ebe4a0`（2026-08-20）学得，同日负责人答复。下面的数字来自
 > `mechanical/`，可用 `check.sh` 重算。裁决在各线文件末尾的「裁决」节，逐条注明出处。
 

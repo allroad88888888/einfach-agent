@@ -4,6 +4,7 @@
 // 真正做 checkpoint 蒸馏的那一刻，前后各一次，且不经任何插件。
 
 import { describe, expect, it, vi } from 'vitest'
+import { compactContextTool } from '@einfach-agent/tools-agents'
 import { contextCheckpointAtom, itemsAtom, runAtom } from '../state/sessionAtoms'
 import { sessionsAtom } from '../state/rootStore'
 import { setRun } from '../state/sessionWriters'
@@ -30,6 +31,7 @@ function timedTool(name: string, callTiming: ToolCallTiming, execute: Tool['exec
 function compactionTimingCore(order: string[]): Core {
   return createCoreInstance({
     registerTools(registry) {
+      registry.register(compactContextTool)
       registry.register(timedTool('before_compact', 'preCompact', () => {
         order.push('preCompact')
         return { ok: true, data: '压缩前记录' }
@@ -112,6 +114,7 @@ describe('压缩时机到点工具（不经插件）', () => {
     expect(ids).toEqual([
       'c1',
       expect.stringMatching(/^timed:preCompact:CT1:\d+:before_compact$/),
+      expect.stringMatching(/^timed:compact:CT1:\d+:compact_context$/),
       expect.stringMatching(/^timed:postCompact:CT1:\d+:after_compact$/),
     ])
 
@@ -128,7 +131,7 @@ describe('压缩时机到点工具（不经插件）', () => {
     // preCompact 的那条则已被摘要顶替（它是覆盖前缀的一部分）。
     expect(finalText).toContain('压缩后记录')
     expect(finalText).not.toContain('压缩前记录')
-    const postCompactCallId = ids[2]
+    const postCompactCallId = ids[3]
     expect(finalMessages.some((message) => (
       message.role === 'assistant'
       && (message.tool_calls as Array<{ id: string }> | undefined)?.some((call) => call.id === postCompactCallId)

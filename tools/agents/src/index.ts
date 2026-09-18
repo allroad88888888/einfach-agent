@@ -9,8 +9,10 @@ import { listAgentHistoriesTool } from './list-agent-histories/list-agent-histor
 import { listAgentHistoryItemsTool } from './list-agent-history-items/list-agent-history-items'
 import { readAgentHistoryItemTool } from './read-agent-history-item/read-agent-history-item'
 import { searchAgentHistoriesTool } from './search-agent-histories/search-agent-histories'
+import { compactContextTool } from './compact-context/compact-context'
 
 export {
+  compactContextTool,
   cancelAgentTool,
   delegateAgentTool,
   joinAgentTool,
@@ -24,6 +26,7 @@ export {
 /** 把 agents 域全部工具注册进给定 registry（幂等：同名覆盖）。 */
 export function registerAgentsTools(registry: ToolRegistry): void {
   for (const tool of [
+    compactContextTool,
     delegateAgentTool,
     observeAgentTool,
     joinAgentTool,

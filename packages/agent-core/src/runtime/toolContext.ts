@@ -26,6 +26,7 @@
 //   runChildTool 再通过 core.tools 原子校验 schema 快照版本并执行。
 
 import type { ToolContext, ToolResult } from '../tools/types'
+import type { ContextCompactionCapability } from '../tools/contextCompaction'
 import type { ToolCatalog } from '../tools/toolCatalog'
 import type { SubagentSkillFile } from '../subagents/types'
 import { sessionsAtom } from '../state/rootStore'
@@ -69,6 +70,7 @@ export function buildToolContext(opts: {
   callId: string
   toolName: string
   toolArgs?: unknown
+  contextCompaction?: ContextCompactionCapability
   stack?: readonly string[]
   agentPath?: string
   getParentTranscript?: () => string
@@ -145,6 +147,7 @@ export function buildToolContext(opts: {
     sessionId,
     signal,
     progress,
+    ...(opts.contextCompaction ? { contextCompaction: opts.contextCompaction } : {}),
     ...planCapabilities,
     ...skillsCapabilities,
     ...workspaceCapabilities,

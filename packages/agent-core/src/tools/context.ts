@@ -3,6 +3,7 @@
 // 这里定义工具可获得的副作用白名单。运行时装配在 runtime/toolContext.ts，工具侧只依赖本合同。
 
 import type { AgentHistoryCapability } from '../history/historyQuery'
+import type { ContextCompactionCapability } from './contextCompaction'
 import type { DelegateAgentBatchResult, DelegateAgentInput } from '../runtime/delegationContract'
 import type {
   ExecutionHandle,
@@ -39,6 +40,8 @@ export interface ToolContext {
   readonly signal: AbortSignal
   progress(text: string): void
   callTool(name: string, args: unknown): Promise<ToolResult>
+  /** Present only while the runtime is dispatching compression for this agent. */
+  contextCompaction?: ContextCompactionCapability
   runLowCostExtraction?(input: {
     systemPrompt: string
     userPrompt: string

@@ -3,17 +3,20 @@ import type { CoreInstance } from './core/coreInstance'
 import { appendToolResult } from './toolLoopSupport'
 import { unresolvedToolCalls } from './toolCallOutcomeFacts'
 import { isPureTool } from './toolReversibility'
+import { resetInterruptedContextCompaction } from './contextCompactionRecovery'
 
 export type InterruptedToolCallRecovery = 'ready' | 'reconciliation_required'
 
 /**
  * Resolves the calls an interrupted run can safely settle before it continues.
  *
- * Two kinds qualify, and they get different receipts because the model must be
- * able to tell them apart:
+ * Two kinds of assistant-declared call qualify, with different receipts so the
+ * model can tell them apart:
  * - provably unstarted: nothing ran, so the call simply did not happen;
  * - outcome unknown but the tool is pure: repeating it cannot change the outside
  *   world, so the model is told the result is unknown and may be re-fetched.
+ * Interrupted context compaction is reset separately: its checkpoint is local
+ * durable state, and timed dispatch must remain free to retry without a receipt.
  *
  * Everything else stays fail-closed as `reconciliation_required`: a call whose
  * external effect may or may not have landed is the user's call, not ours.
@@ -23,7 +26,6 @@ export async function recoverInterruptedToolCalls(
   core: CoreInstance,
 ): Promise<InterruptedToolCallRecovery> {
   const calls = unresolvedToolCalls(sessionId, core)
-  if (!calls.length) return 'ready'
   const run = core.getSessionStore(sessionId).store.getter(runAtom)
   const settleable = (call: { callId: string; name: string }): boolean => {
     const state = run?.toolCallOutcomes?.[call.callId]?.state
@@ -41,6 +43,8 @@ export async function recoverInterruptedToolCalls(
     })
     return 'reconciliation_required'
   }
+  const resetCompaction = resetInterruptedContextCompaction(sessionId, core)
+  if (!calls.length && !resetCompaction) return 'ready'
   let settledPure = false
   for (const call of calls) {
     const unstarted = run?.toolCallOutcomes?.[call.callId]?.state === 'notStarted'
@@ -58,9 +62,8 @@ export async function recoverInterruptedToolCalls(
       }), core, call.planStageId)
   }
   try {
-    const reason = settledPure
-      ? 'interrupted_tool_calls_unknown_pure'
-      : 'interrupted_tool_calls_not_started'
+    const reason = !calls.length ? 'interrupted_context_compaction'
+      : settledPure ? 'interrupted_tool_calls_unknown_pure' : 'interrupted_tool_calls_not_started'
     const outcome = await core.persistence.persistRecovery(sessionId, reason)
     if (outcome === undefined || outcome.status === 'saved') return 'ready'
     core.observability.addEvent('agent.tool_reconciliation_required', {

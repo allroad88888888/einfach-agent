@@ -1,5 +1,16 @@
 # 线：一次 run 的执行链路
 
+> 2026-09-18 裁决更新：负责人要求将压缩工具化并复用 JSONL/state/undo。
+> 当前压缩路径：`runtime/modelTurnRequester.ts` 判预算 → `preCompact` →
+> `runtime/compactMainContext.ts:16` 分派 `compact` → `postCompact`。
+> `tools/agents/src/compact-context/compact-context.ts:11` 持有提示词及输出预算；
+> `runtime/contextCompactionCapability.ts:5` 绑定模型调用和提交生命周期，
+> 主会话提交复用 `state/sessionWriters.ts:75`。原始 items 不变，摘要仍走现有投影。
+> 子 Agent 调同一工具，状态适配在 `subagents/compactChildContext.ts:14`，并未新增子会话 undo。
+> 中断恢复：`runtime/contextCompactionRecovery.ts:28` 清理无回执的内置压缩调用记录，
+> 经既有恢复流程持久化后继续；有效 checkpoint 复用，否则重新按预算压缩。其他到点工具仍需核对结果。
+> 本文以下的内联蒸馏/旧插件说明保留为历史；本条覆盖其压缩归属描述。
+
 一句话：把一条用户消息变成「组请求 → 拿响应 → 跑工具 → 回填 → 再组请求」的有界循环，直到某个出口把 run 停在一个已落盘的状态上。
 类型：主线——挂在 `packages/agent-core/src/runtime/runToolLoop.ts:37`（运行时）与 `packages/agent-core/src/runtime/commands.ts:44`（命令面）
 

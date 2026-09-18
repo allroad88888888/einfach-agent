@@ -296,7 +296,7 @@ error；`slot` 与 `SESSION_SLOTS` 是**双向**比对（表说是槽位而槽�
 1. 写入用户消息与 running 状态。
 2. 组装 system prompt、上下文、工具摘要和 `request_tool_schema`。
 3. 模型按需请求完整工具 schema。
-4. `callTiming` 非空的工具由 `timedDispatch.ts` 在相应点位执行并投影为 timeline item；九个核心
+4. `callTiming` 非空的工具由 `timedDispatch.ts` 在相应点位执行并投影为 timeline item；十个核心
    时机为 session/run/turn、压缩和子 Agent 的开始/结束，`<domain>:<event>` 由宿主经受限 API 分派。
 5. 模型可见工具经 registry 校验后，通过受限 `ToolContext` 执行；普通结果回填并继续循环，ask-user、
    计划审批或危险工具确认会暂停。
@@ -308,10 +308,10 @@ error；`slot` 与 `SESSION_SLOTS` 是**双向**比对（表说是槽位而槽�
 
 finish reason、loop guard、迁移这些横切行为是 `runtime/core/plugins/` 里的**插件**（默认插件表
 `defaultPlugins.ts` 当前只有这三个：migration / loopGuard / finishReason）。**压缩不在其中**：
-`compactionPlugin` 已被整个删除（A1，`64d7df4`），真跑的是 `modelTurnRequester.ts` 内联的
-checkpoint 蒸馏（`dispatchCompactionTiming`），`preCompact`/`postCompact` 两个时机由请求组装层
-自己分派、不经插件（C1，`0cd3200`）。要改压缩行为去 `modelTurnRequester.ts`，改其余三项才看
-插件 hook。
+`compactionPlugin` 已删除，压缩由 `tools/agents/src/compact-context/` 的 `compact_context` 工具执行。
+主会话请求层按预算分派 `preCompact → compact → postCompact`；`compactMainContext.ts` 绑定现有摘要
+state writer/undo，`subagents/compactChildContext.ts` 绑定子循环的独立上下文。提示词与输出预算归工具，
+模型凭据、提交校验、投影与存储归 core。改摘要策略去工具目录，改其余三项才看插件 hook。
 
 工具不得直接 import store/atom 来获得额外能力。文件、shell、计划、渲染、委派等副作用必须使用
 `ToolContext` 暴露的能力，确保 workspace confinement、权限确认、stale guard 和审计仍然生效。

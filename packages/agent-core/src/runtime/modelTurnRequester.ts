@@ -4,7 +4,8 @@ import { contextStatsAtom, setContextStats } from '../state/transientAtoms'
 import { buildTurnTools, narrowToolCalls, toolSetSchemaFingerprint } from './modelTurn'
 import type { RequestDraft } from './core/loopHooks'
 import { contextInputBudgetTokens } from './contextBudget'
-import { createContextCheckpoint, contextNeedsDistillation } from './contextDistillation'
+import { contextNeedsDistillation } from './contextDistillation'
+import { compactMainContext } from './compactMainContext'
 import { projectContextCheckpoint } from './contextCheckpointProjection'
 import { createContextCacheTracker } from './contextCache'
 import { contextProjectionTraceAttrs } from './contextProjectionDiagnostics'
@@ -147,20 +148,15 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
         // （沿用旧插件的边界）。
         if (!await dispatchCompactionTiming('preCompact')) return { inactive: true, streamWriter }
         try {
-          const checkpoint = await createContextCheckpoint({
-            stablePrefix: base.stablePrefix.items,
-            transcript: projection.messages,
-            coveredItemIds: history.map((item) => item.id),
-            settings: base.settings,
-            apiKey: base.opts.apiKey,
-            signal: base.opts.signal,
-            fetchImpl: base.opts.fetchImpl,
-            userId: base.modelUserId,
-          })
+          if (!await compactMainContext(base, { history, projection, controls, tools, inputBudgetTokens })) {
+            return { inactive: true, streamWriter }
+          }
           if (!base.control.isCurrent() || !base.control.isRunning() || base.opts.signal.aborted) {
             return { inactive: true, streamWriter }
           }
-          setContextCheckpointOnSession(session, checkpoint)
+          const checkpoint = sessionStore.getter(contextCheckpointAtom)
+          if (!checkpoint) throw new Error('压缩摘要已失效，请重试本轮。')
+          history = sessionStore.getter(itemsAtom)
           projection = projectContextCheckpoint(history, checkpoint)
           projectedMessages = [...base.stablePrefix.items, ...projection.messages, ...controls]
           if (contextNeedsDistillation(projectedMessages, tools, inputBudgetTokens)) {
@@ -176,9 +172,11 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
           base.trace.event('llm.context_distillation_failed', { llm_turn: turn + 1, error: safeErrorMessage(error) })
           throw error
         }
-        // postCompact 在摘要写回之后跑，产物原样跟在摘要后面进本次请求。这几条不再回头重判预算：
-        // 为几条到点结果把整个 run 判死不划算（旧插件同样只在压缩判定那一次卡预算）。
+        // 工具回执与 postCompact 结果也计入最终预算，防止分派成功却仍发送超限请求。
         if (!await dispatchCompactionTiming('postCompact')) return { inactive: true, streamWriter }
+        if (contextNeedsDistillation(projectTimedToolResultOrphans(projectedMessages), tools, inputBudgetTokens)) {
+          throw new Error('压缩后的请求仍超过上下文预算；请缩小工具 schema 或重试。')
+        }
       }
       const draft: CompactionRequestDraft = {
         messages: projectedMessages,

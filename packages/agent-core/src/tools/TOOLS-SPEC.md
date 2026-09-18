@@ -83,8 +83,13 @@ interface Tool {
 ```
 
 `ToolCallTiming` 包含 `sessionStart`、`runStart`、`runEnd`、`turnStart`、`turnEnd`、
-`preCompact`、`postCompact`、`subagentStart`、`subagentEnd`，并允许 `<domain>:<event>` 形式的扩展值。
+`preCompact`、`compact`、`postCompact`、`subagentStart`、`subagentEnd`，并允许 `<domain>:<event>` 形式的扩展值。
 `origin` 缺省为 `local`；`callTiming` 非空表示此工具只由宿主按该值到点分派，绝不进入模型清单、目录搜索或 `request_tool_schema`。
+
+`compact_context` 是内置运行控制工具，超预算时经 `compact` 分派，不占模型工具清单或会话业务工具名额。
+仅此次分派的 `ToolContext.contextCompaction` 提供 `summarize(policy)` 与 `commit(summary)`；工具负责摘要策略，
+runtime 绑定原始上下文、模型凭据、取消守卫及预算校验。主会话提交复用现有 state writer、undo 和恢复快照；
+子 Agent 提交只更新本子循环。生成失败或校验失败不会写入新摘要，分派没有提交摘要时请求流程必须停止。
 外部声明工具（如 MCP 清单）携带 `callTiming` 时在注册期剥除并记录诊断，不会中断外部连接——自动执行面不得被外部来源占用。
 危险约束不在注册期表达：风险由运行时按调用上下文评估（dangerousTools 与确认门插件）；到点分派不经过确认门，因此分派器在执行前必须咨询既有风险评估，非 safe 的到点调用拒绝执行并记诊断。
 

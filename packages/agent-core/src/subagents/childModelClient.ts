@@ -9,11 +9,8 @@ import {
 import type { ContextCacheLane } from '../runtime/contextCache'
 import { CONTEXT_SAFETY_MARGIN_RATIO, DEFAULT_RESERVED_OUTPUT_TOKENS } from '../runtime/contextBudget'
 import { contextNeedsDistillation } from '../runtime/contextDistillation'
-import { buildContextDistillationMessages, CONTEXT_DISTILLATION_MAX_TOKENS } from '../runtime/contextDistillationPrompt'
-import { parseContextDistillationResponse } from '../runtime/contextDistillationResult'
 import { type ModelSettings } from '../state/core.type'
 import {
-  createChildContextCheckpoint,
   projectChildContextCheckpoint,
   type ChildContextCheckpoint,
 } from './childContextCheckpoint'
@@ -29,7 +26,7 @@ import {
   modelReasoningEffort,
   modelSamplingSettings,
 } from '../runtime/modelSettingsProjection'
-import { projectTimedToolResultOrphans } from '../runtime/timedToolResultProjection'
+import { compactChildContext } from './compactChildContext'
 
 const CHILD_CONTEXT_TARGET_TOKENS = 60_000
 
@@ -41,7 +38,7 @@ export interface CallModelObservation {
   phase: Exclude<ContextCacheLane, 'main'>
 }
 
-interface ChildModelRequest {
+export interface ChildModelRequest {
   messages: ModelItem[]
   tools?: ModelFunctionTool[]
   toolChoice?: 'auto' | 'none'
@@ -83,50 +80,11 @@ export function createChildModelCaller(runtime: DelegateAgentRuntimeState): Chil
     let projection = projectChildContextCheckpoint(args.messages, args.contextCheckpoint)
     if (projection.invalidCheckpoint) args.onContextCheckpoint?.(undefined)
     if (contextNeedsDistillation(projection.messages, args.tools ?? [], inputBudgetTokens)) {
-      await recordContextDistillationEvent(runtime, args.observe, 'child_context_distillation_started', {
-        sourceMessages: projection.messages.length,
-        inputBudgetTk: inputBudgetTokens,
+      projection = await compactChildContext({
+        runtime, state, args, projection, settings, inputBudgetTokens, modelCallLimit,
       })
-      try {
-        const checkpointResponse = await state.modelCallLimiter.run(() => {
-          runtime.reserveModelCall(state, modelCallLimit)
-          return callModel({
-            model: settings.model,
-            messages: projectTimedToolResultOrphans(
-              buildContextDistillationMessages([], projection.messages),
-            ),
-            // 固定采样参数的 provider 由自家 adapter 丢弃 temperature，core 不写厂商分支。
-            temperature: 0,
-            max_tokens: CONTEXT_DISTILLATION_MAX_TOKENS,
-            stream: false,
-            settings: modelAdapterSettings(settings),
-            userId: runtime.opts.modelUserId,
-          }, {
-            apiKey: runtime.opts.apiKey,
-            signal: runtime.opts.signal,
-            fetchImpl: runtime.opts.fetchImpl,
-          })
-        }, runtime.opts.signal)
-        const summary = parseContextDistillationResponse(checkpointResponse)
-        if (!summary) throw new Error('子 agent 上下文摘要未返回有效内容；已保留原始历史。')
-        const checkpoint = createChildContextCheckpoint(args.messages, summary)
-        args.onContextCheckpoint?.(checkpoint)
-        projection = projectChildContextCheckpoint(args.messages, checkpoint)
-        if (contextNeedsDistillation(projection.messages, args.tools ?? [], inputBudgetTokens)) {
-          throw new Error('子 agent 上下文摘要仍超过请求预算；请缩小工具 schema 或子任务范围。')
-        }
-        await recordContextDistillationEvent(runtime, args.observe, 'child_context_distillation_succeeded', {
-          sourceMessages: args.messages.length,
-          summaryChars: checkpoint.summary.length,
-          sourceEstimatedTk: checkpoint.sourceEstimatedTokens,
-        })
-      } catch (error) {
-        await recordContextDistillationEvent(runtime, args.observe, 'child_context_distillation_failed', {
-          error: toErrorMessage(error),
-        })
-        throw error
-      }
     }
+
     const messages = projection.messages
     const contextDistilled = projection.checkpoint !== undefined
 
@@ -262,20 +220,4 @@ function modelUsageFailureData(
     ...cacheProfileData(profile, contextDistilled),
     error: toErrorMessage(error),
   }
-}
-
-async function recordContextDistillationEvent(
-  runtime: DelegateAgentRuntimeState,
-  observe: CallModelObservation | undefined,
-  type: 'child_context_distillation_started' | 'child_context_distillation_succeeded' | 'child_context_distillation_failed',
-  data: Record<string, unknown>,
-): Promise<void> {
-  if (!observe) return
-  await runtime.archive.bestEffortRecordEvent(
-    observe.context,
-    observe.archiveBasePath,
-    type,
-    observe.agentPath,
-    { turn: observe.turn, phase: observe.phase, ...data },
-  )
 }

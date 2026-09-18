@@ -98,7 +98,7 @@ export interface PluginStateAccess {
    * 写入（或用 `undefined` 清空）上下文压缩摘要，整值记账，日志里留下 `(key, prev, next)`。
    *
    * 开这一条而不是别的有界槽位：压缩是**唯一**一条已经被裁决为「可以由外部替换」的横切行为
-   * （compactionPlugin 已删，真跑的是 modelTurnRequester.ts 内联的 checkpoint 蒸馏），第三方要
+   * （compactionPlugin 已删，运行时通过 compact_context 工具生成摘要），第三方要
    * 做自定义压缩，能写的就是这个槽位。`run` / `plan` 是 loop 与计划运行时的状态机，整值改写它们
    * 不是「同等权利」而是让循环踩空——要停 run 用 `commands.stopCurrentRun()`。
    *

@@ -7,6 +7,7 @@ import { resumeInterruptedSession, resumePlanSession } from '../modelRun'
 import { currentTurnStartIndex } from '../activeTurnItems'
 import { unresolvedToolCalls } from '../toolCallOutcomeFacts'
 import { isPureTool } from '../toolReversibility'
+import { isInterruptedContextCompaction } from '../contextCompactionRecovery'
 import type { CoreInstance } from '../core/coreInstance'
 import { resolveApiKey, withRun } from './runCommands'
 
@@ -129,6 +130,7 @@ function isAwaitingUser(status: RunStatus): status is AwaitingRunStatus {
  * Admits only an unpaired normal call whose durable fact says it never started.
  * All other outcome facts must agree with the current run's transcript before
  * a lifecycle resume may bootstrap plugins or dispatch timed hooks.
+ * Unfinished built-in compaction is reset by the recovery lifecycle before dispatch.
  */
 function requiresToolReconciliation(sessionId: string, core: CoreInstance): boolean {
   const store = core.findSessionStore(sessionId)?.store
@@ -160,6 +162,7 @@ function requiresToolReconciliation(sessionId: string, core: CoreInstance): bool
 
   for (const [callId, outcome] of Object.entries(run.toolCallOutcomes ?? {})) {
     if (callId.startsWith('timed:')) {
+      if (isInterruptedContextCompaction(callId, run.runId, outcome, timedReceipts.has(callId))) continue
       if (isTimedCallForRun(callId, run.runId) && (
         outcome.state !== 'outcomeKnown' || !timedReceipts.has(callId)
       )) return true

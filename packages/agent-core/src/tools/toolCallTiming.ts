@@ -1,11 +1,10 @@
 /**
  * 工具的到点执行时机。
  *
- * 九个核心时机由 loop 分派：session/run/turn 五个在 `runtime/toolLoopBootstrap.ts` 与
+ * 十个核心时机由 loop 分派：session/run/turn 五个在 `runtime/toolLoopBootstrap.ts` 与
  * `runtime/runToolLoop.ts`，`subagentStart`/`subagentEnd` 在 `subagents/childAgentLoop.ts`，
- * `preCompact`/`postCompact` 在 `runtime/modelTurnRequester.ts` 真的要做 checkpoint 蒸馏的
- * 那一刻（前后各一次；没超预算的空闲轮不触发）。后两个刻意不经插件——它们曾经的唯一触发方
- * 是从未被装配的上下文压缩插件（已随 A1 删除），那等于枚举里挂着两个永不触发的时机。
+ * 主会话在超预算时分派 preCompact → compact → postCompact；compact 调用注册的压缩工具，
+ * 子 Agent 也用 compact 工具，但绑定自己的上下文。未超预算的轮次不触发压缩。
  * `<domain>:<event>` 形式留给宿主或插件经公开分派 API 触发的
  * 扩展时机（例如未来的 `mcp:connected`）。callTiming 非空的工具不进模型可见清单，
  * 剔除判定一律按「非空」而非穷举枚举——增补时机不触碰发现面。
@@ -21,6 +20,7 @@ export type ToolCallTiming =
   | 'turnStart'
   | 'turnEnd'
   | 'preCompact'
+  | 'compact'
   | 'postCompact'
   | 'subagentStart'
   | 'subagentEnd'

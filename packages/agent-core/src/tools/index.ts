@@ -40,6 +40,8 @@ export type {
 } from './types'
 
 export type { SpawnAgentsOptions, ToolContext } from './context'
+export { COMPACT_CONTEXT_TOOL_NAME } from './contextCompaction'
+export type { ContextCompactionCapability, ContextCompactionReceipt, ContextSummaryRequest } from './contextCompaction'
 
 export type { ToolRegistry } from './toolRegistry'
 export { createToolRegistry } from './toolRegistry'

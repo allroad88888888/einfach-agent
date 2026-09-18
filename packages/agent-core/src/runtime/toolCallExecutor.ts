@@ -5,6 +5,7 @@ import { ROOT_AGENT_PATH } from '../subagents/path'
 import { abortStatus, safeErrorMessage, toolResultTrace } from './toolLoopSupport'
 import { toolProviderDisconnectedResult } from './toolLoading'
 import type { ToolResult } from '../tools/types'
+import type { ContextCompactionCapability } from '../tools/contextCompaction'
 import type { ToolLoopBase } from './toolLoopContracts'
 import {
   runToolUnavailableResult,
@@ -17,6 +18,7 @@ export interface ExecutableToolCall {
   args: unknown
   registrationVersion?: number
   resumed?: boolean
+  contextCompaction?: ContextCompactionCapability
 }
 
 /**
@@ -79,6 +81,7 @@ export async function executeToolCall(base: ToolLoopBase, call: ExecutableToolCa
       callId: call.callId,
       toolName: call.name,
       toolArgs: call.args,
+      contextCompaction: call.contextCompaction,
       agentPath: ROOT_AGENT_PATH,
       getParentTranscript: base.rootTranscript,
       delegateRuntime: base.delegateRuntime,

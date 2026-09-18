@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createContextCheckpoint } from './contextDistillation'
+import { requestContextSummary } from './contextDistillation'
 
 function checkpointResponse(content: string): Response {
   return new Response(JSON.stringify({
@@ -11,7 +11,7 @@ describe('context distillation request', () => {
   it('omits tool configuration and pairs timed tool history for the checkpoint', async () => {
     let body: Record<string, unknown> | undefined
 
-    const checkpoint = await createContextCheckpoint({
+    const checkpoint = await requestContextSummary({
       stablePrefix: [{ role: 'system', content: 'Stable instructions.' }],
       transcript: [
         { role: 'user', content: 'Inspect the project.' },
@@ -27,7 +27,6 @@ describe('context distillation request', () => {
         },
         { role: 'tool', tool_call_id: 'call_1', content: 'Project details.' },
       ],
-      coveredItemIds: ['u1', 'a1', 't1'],
       settings: { vendor: 'deepseek', model: 'deepseek-flash' },
       apiKey: 'test-key',
       signal: new AbortController().signal,
@@ -35,9 +34,9 @@ describe('context distillation request', () => {
         body = JSON.parse(String(init?.body)) as Record<string, unknown>
         return checkpointResponse('Checkpoint created.')
       },
-    })
+    }, { instructions: 'Summarize the transcript.', request: 'Create a summary.', maxOutputTokens: 8192 })
 
-    expect(checkpoint.summary).toBe('Checkpoint created.')
+    expect(checkpoint).toBe('Checkpoint created.')
     expect(body).toBeDefined()
     expect(body).not.toHaveProperty('tools')
     expect(body).not.toHaveProperty('tool_choice')
