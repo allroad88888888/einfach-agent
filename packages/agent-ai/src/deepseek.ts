@@ -16,6 +16,12 @@ import {
   type ModelStreamDelta,
 } from './modelApi'
 import { encodeDeepSeekMessages, type DeepSeekWireItem } from './deepseekMessages'
+import { normalizeDeepSeekUserId } from './deepseekIdentity'
+import { postDeepSeekResponse, postDeepSeekResponseStream } from './deepseekResponses'
+import {
+  deepSeekRequestNeedsResponses,
+  prepareDeepSeekResponsesRequest,
+} from './deepseekResponsesProtocol'
 import { nonVisualMessages } from './nonVisualMessages'
 import { DEEPSEEK_BASE_URL } from './providerOrigins'
 
@@ -25,7 +31,10 @@ export const DEEPSEEK_PRO_MODEL = 'deepseek-v4-pro'
 export const DEEPSEEK_FLASH_MODEL = 'deepseek-v4-flash'
 export const DEEPSEEK_VISION_MODEL = 'deepseek-v4-flash-vision-exp'
 export const DEFAULT_DEEPSEEK_MODEL = DEEPSEEK_PRO_MODEL
-export const MAX_DEEPSEEK_USER_ID_LENGTH = 512
+export {
+  MAX_DEEPSEEK_USER_ID_LENGTH,
+  normalizeDeepSeekUserId,
+} from './deepseekIdentity'
 
 /**
  * 模型名 → 面向用户的展示名。
@@ -40,15 +49,6 @@ export const DEEPSEEK_MODEL_LABELS: Readonly<Record<string, string>> = {
   [DEEPSEEK_PRO_MODEL]: 'DeepSeek V4 Pro',
   [DEEPSEEK_FLASH_MODEL]: 'DeepSeek V4 Flash',
   [DEEPSEEK_VISION_MODEL]: 'DeepSeek V4 Flash Vision Experimental',
-}
-
-// 简介：校验 DeepSeek 官方 user_id 线协议约束。
-// 详情：不 trim、不截断——任何超长或带其它字符的值都整体拒绝，避免把邮箱、文件路径等
-// 隐私数据“修剪”成另一个仍会被发送的标识。调用方应只传本地生成的不透明随机 ID。
-export function normalizeDeepSeekUserId(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined
-  if (value.length === 0 || value.length > MAX_DEEPSEEK_USER_ID_LENGTH) return undefined
-  return /^[A-Za-z0-9_-]+$/.test(value) ? value : undefined
 }
 
 // 简介：DeepSeek V4 的推理投入档位。
@@ -186,6 +186,13 @@ export function callDeepSeek(
   body: DeepSeekChatRequest,
   options: ChatCallOptions,
 ): Promise<ModelChatResponse> {
+  if (deepSeekRequestNeedsResponses(body.model, body.messages)) {
+    return postDeepSeekResponse(
+      options.baseUrl ?? DEEPSEEK_BASE_URL,
+      prepareDeepSeekResponsesRequest(body),
+      options,
+    )
+  }
   return postChatCompletion(
     options.baseUrl ?? DEEPSEEK_BASE_URL,
     prepareDeepSeekRequest(body),
@@ -201,6 +208,14 @@ export function streamDeepSeek(
   handlers?: ChatStreamHandlers,
   retryObserver?: ModelRetryObserver,
 ): Promise<ModelChatResponse> {
+  if (deepSeekRequestNeedsResponses(body.model, body.messages)) {
+    return postDeepSeekResponseStream(
+      options.baseUrl ?? DEEPSEEK_BASE_URL,
+      prepareDeepSeekResponsesRequest(body),
+      options,
+      handlers,
+    )
+  }
   return streamWithCapacityRetry(body, options, handlers, retryObserver)
 }
 
