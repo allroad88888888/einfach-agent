@@ -52,3 +52,19 @@ export function markUnresolvedToolCallsOutcomeUnknown(sessionId: string, core: C
   setToolCallOutcomeFacts(sessionId, calls.map((call) => call.callId), 'outcomeUnknown', core)
   return calls
 }
+
+/**
+ * Marks only calls that may already have crossed an execution fence as unknown.
+ * A durable `notStarted` fact is evidence that the call is safe to resume, so a
+ * host shutdown must not weaken it merely because the transcript has no receipt.
+ */
+export function markPossiblyStartedToolCallsOutcomeUnknown(
+  sessionId: string,
+  core: CoreInstance,
+): UnresolvedToolCall[] {
+  const calls = unresolvedToolCalls(sessionId, core)
+  const facts = core.getSessionStore(sessionId).store.getter(runAtom)?.toolCallOutcomes
+  const possiblyStarted = calls.filter((call) => facts?.[call.callId]?.state !== 'notStarted')
+  setToolCallOutcomeFacts(sessionId, possiblyStarted.map((call) => call.callId), 'outcomeUnknown', core)
+  return possiblyStarted
+}

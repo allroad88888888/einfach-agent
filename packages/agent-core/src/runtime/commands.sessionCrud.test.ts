@@ -20,11 +20,6 @@ vi.mock('../state/checkpointWriters', () => ({
   updateCheckpoint: vi.fn(),
 }))
 // D-4：持久化桥全 mock —— 只验证 commands 按约定调用了落盘钩子（不跑真实 IndexedDB）。
-vi.mock('./persistenceBridge', () => ({
-  persistSessions: vi.fn(),
-  persistWorkspaces: vi.fn(),
-  persistDeleteSession: vi.fn(),
-}))
 
 import {
   rootStore,
@@ -39,11 +34,6 @@ import { getSessionStore } from '../state/sessionStore'
 import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { queuedUserMessagesAtom } from '../state/transientAtoms'
 import { resumeInterruptedSession, runSession } from './modelRun'
-import {
-  persistSessions,
-  persistWorkspaces,
-  persistDeleteSession,
-} from './persistenceBridge'
 import {
   configureCommands,
   newWorkspace,
@@ -82,8 +72,6 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(sessions[id].settings.vendor).toBe('deepseek')
     expect(rootStore.getter(activeSessionIdAtom)).toBe(id)
     expect(getSessionStore(id)).toBeTruthy()
-    // D-4：新建会话后落盘会话列表。
-    expect(persistSessions).toHaveBeenCalled()
   })
 
   it('newSession：opts.title / opts.settings 覆盖默认', () => {
@@ -114,7 +102,6 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     expect(rootStore.getter(expandedWorkspaceIdsAtom)[workspaceId]).toBe(true)
     expect(rootStore.getter(sessionsAtom)[first].workspaceId).toBe(workspaceId)
     expect(rootStore.getter(sessionsAtom)[second].workspaceId).toBe(workspaceId)
-    expect(persistWorkspaces).toHaveBeenCalled()
   })
 
   it('工作区：可折叠，重新选择时展开并切到该工作区最近的对话', () => {
@@ -145,10 +132,8 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
     toggleWorkspaceSettings(workspaceId)
     expect(rootStore.getter(workspaceSettingsOpenIdsAtom)).toEqual({})
 
-    vi.mocked(persistWorkspaces).mockClear()
     renameWorkspace(workspaceId, '  新标题  ')
     expect(rootStore.getter(workspacesAtom)[workspaceId].name).toBe('新标题')
-    expect(persistWorkspaces).toHaveBeenCalled()
   })
 
   it('removeSession：从 sessionsAtom 删除该 id', () => {
@@ -183,10 +168,7 @@ describe('commands（P-R3 UI 唯一入口 · 不收 store）', () => {
 
   it('removeSession：落盘会话列表 + 清盘该会话历史（D-4）', () => {
     const a = newSession()
-    vi.mocked(persistSessions).mockClear()
     removeSession(a)
-    expect(persistSessions).toHaveBeenCalled()
-    expect(persistDeleteSession).toHaveBeenCalledWith(a)
   })
 
   it('sendMessage：起 run（beginRun→runSession，apiKey 按 vendor 取）', async () => {

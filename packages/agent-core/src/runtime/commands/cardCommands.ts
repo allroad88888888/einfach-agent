@@ -14,11 +14,12 @@ import {
 } from '../../state/transientAtoms'
 import type { AskUserAnswerValue, ContextCacheTotals } from '../../state/transientAtoms'
 import type { CoreInstance } from '../core/coreInstance'
+import { resolveSessionTarget } from './sessionTarget'
 
 /** Builds commands for UI surfaces that mutate transient conversation state. */
 export function createCardCommands(core: CoreInstance) {
-  function answerQuestion(questionId: string, value: AskUserAnswerValue): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
+  function answerQuestion(questionId: string, value: AskUserAnswerValue, sessionId?: string): void {
+    const id = resolveSessionTarget(core, sessionId)
     if (!id || !core.rootStore.getter(sessionsAtom)[id]) return
     setPendingQuestionAnswer(id, questionId, value, core)
     core.persistence.persistRecovery(id, 'ask_user_answer_recorded')

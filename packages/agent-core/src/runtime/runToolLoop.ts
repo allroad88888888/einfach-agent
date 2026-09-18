@@ -11,7 +11,10 @@ import { appendMappedToolResult, safeErrorMessage } from './toolLoopSupport'
 import { executePreparedToolCall, prepareToolCall } from './toolCallPluginHooks'
 import { persistToolCallExecutionFence } from './toolCallExecutionFence'
 import { requireRecoveryDurability } from './recoveryDurabilityBarrier'
-import { markUnresolvedToolCallsOutcomeUnknown } from './toolCallOutcomeFacts'
+import {
+  markPossiblyStartedToolCallsOutcomeUnknown,
+  markUnresolvedToolCallsOutcomeUnknown,
+} from './toolCallOutcomeFacts'
 import { dispatchTimedTools } from './timedDispatch'
 import { runAtom } from '../state/sessionAtoms'
 import { createAssistantStreamWriter } from './assistantStreamWriter'
@@ -39,7 +42,9 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
   if (!boot) return
   const { base, releaseTimedToolDispatcher } = boot
   const persistInterruptedToolCalls = () => {
-    markUnresolvedToolCallsOutcomeUnknown(id, base.core)
+    const status = base.core.getSessionStore(id).store.getter(runAtom)?.status
+    if (status === 'interrupted') markPossiblyStartedToolCallsOutcomeUnknown(id, base.core)
+    else markUnresolvedToolCallsOutcomeUnknown(id, base.core)
     void base.core.persistence.persistRecovery(id, 'tool_calls_interrupted')
   }
   const endInactive: ToolLoopTerminator = (streamWriter) => {
@@ -150,7 +155,7 @@ export async function runToolLoop(id: string, runId: string, opts: ToolLoopOptio
     base.trace.finish('error', 'agent.max_turns', { max_turns: budget.limit(), error })
   } catch (error) {
     if (isAbortError(error)) {
-      if (base.control.isCurrent()) {
+      if (base.control.isRunning()) {
         persistInterruptedToolCalls()
         patchRun(id, { status: 'stopped' }, base.core)
         void base.core.persistence.persistRecovery(id, 'tool_calls_interrupted')

@@ -32,6 +32,7 @@ import {
 import type { RecoveryDriver } from './recoveryDriver'
 import { migrateSessionMeta } from './modelMigration'
 import { sanitizeSessionCapabilityPolicy } from '../sessionCapabilityHydration'
+import { isAgentProfileSnapshot } from '../agentProfileSchema'
 import {
   normalizeRecoverySnapshotForHydration,
   prepareRecoveryHydration,
@@ -174,6 +175,7 @@ export async function hydrateForCore(
     workspaces = []
   }
 
+  sessions = sessions.filter((session) => session.agentProfile === undefined || isAgentProfileSnapshot(session.agentProfile))
   const recoveryPlan = await prepareRecoveryHydration(
     deps.recovery,
     sessions.map(sanitizeSessionCapabilityPolicy),

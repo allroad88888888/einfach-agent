@@ -219,7 +219,8 @@ describe('session capability commands', () => {
 
     expect(first).toMatchObject({ accepted: true, status: 'started' })
     expect(second).toMatchObject({ accepted: true, status: 'queued' })
-    expect(saveSessions).toHaveBeenCalledTimes(1)
+    // One write locks the capability policy; the other persists the first-message title.
+    expect(saveSessions).toHaveBeenCalledTimes(2)
     expect(core.rootStore.getter(sessionsAtom)[sessionId].capabilityPolicy).toMatchObject({
       state: 'locked',
       allowedTools: ['alpha'],

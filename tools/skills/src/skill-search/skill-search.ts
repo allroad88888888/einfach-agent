@@ -3,7 +3,6 @@
 import type { Tool } from '@einfach-agent/core/tools'
 import guide from './skill-search.md?raw' // skill 正文（同目录 .md）
 import { searchSkills } from '../registry'
-import { skillScopeFromName } from '@einfach-agent/core/skills'
 
 const DEFAULT_LIMIT = 10
 const MAX_LIMIT = 50
@@ -45,8 +44,7 @@ export const skillSearchTool: Tool = {
     // 时退化成纯内置，行为与本能力上线前一致。
     const governedSkills = ctx.skills
     const availableSkills = governedSkills?.list()
-    const projectSkills = availableSkills?.filter((skill) => skillScopeFromName(skill.name)) ?? []
-    const matches = searchSkills(query, projectSkills)
+    const matches = searchSkills(query, availableSkills ?? [])
       .filter((skill) => !governedSkills || governedSkills.isAllowed(skill.name))
     return {
       ok: true,

@@ -63,7 +63,7 @@ export function createCommands(core: CoreInstance = defaultCore) {
   })
   const recovery = createRecoveryCommands(core)
   const pausedRun = createRunCommands(core)
-  const plan = createPlanCommands(core, runLifecycle.stopRun)
+  const plan = createPlanCommands(core, () => runLifecycle.stopRun())
   const cards = createCardCommands(core)
   const history = createHistoryCommands(core, runLifecycle.stopRun)
   const modelSettings = createModelSettingsCommands(core)
@@ -111,12 +111,13 @@ export const {
   lockSessionCapabilities,
   cloneSessionCapabilities,
   sendMessage,
-  continueInterruptedRun,
+  continueInterruptedRun: defaultContinueInterruptedRun,
   getSessionRecoveryStatus,
   listSessionRecoveryStatuses,
   continueRecoveredSession,
   continuePlan,
-  stopRun,
+  stopRun: defaultStopRun,
+  interruptRunForRecovery: defaultInterruptRunForRecovery,
   resumeWithAnswers,
   confirmTool,
   approvePlan,
@@ -145,3 +146,22 @@ export const {
   closeSkillGovernanceDialog,
   confirmSkillGovernance,
 } = defaultCommands
+
+/** Default facade keeps the historical zero-argument callback shape while allowing explicit targeting. */
+export function stopRun(): void
+export function stopRun(options: { disposeUserContent?: boolean; sessionId?: string }): void
+export function stopRun(options?: { disposeUserContent?: boolean; sessionId?: string }): void {
+  defaultStopRun(options)
+}
+
+export function continueInterruptedRun(): void
+export function continueInterruptedRun(sessionId: string): void
+export function continueInterruptedRun(sessionId?: string): void {
+  defaultContinueInterruptedRun(sessionId)
+}
+
+export function interruptRunForRecovery(): Promise<void>
+export function interruptRunForRecovery(sessionId: string): Promise<void>
+export function interruptRunForRecovery(sessionId?: string): Promise<void> {
+  return defaultInterruptRunForRecovery(sessionId)
+}

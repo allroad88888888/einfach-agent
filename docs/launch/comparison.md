@@ -108,7 +108,7 @@ Cline 覆盖 7 个以上编辑器平台。没有第三方插件市场，没有�
 自研 adapter 有 4 家，默认构建下真正能用的是 DeepSeek 与 GLM 两家。Kimi 的 adapter、上传协议、
 区域路由代码都已写完，但整个入口挂在构建开关下：`VITE_KIMI_IMAGE_INPUT_ENABLED` 不为 `'true'` 时，
 [`apps/web/src/agentNew/ui/ModelCredentialPanel.tsx`](../../apps/web/src/agentNew/ui/ModelCredentialPanel.tsx)
-会把 Kimi 凭据卡与会话入口整体隐藏，[`apps/web/src/modelInput/kimiImageFeature.ts`](../../apps/web/src/modelInput/kimiImageFeature.ts)
+会把 Kimi 凭据卡与会话入口整体隐藏，[`apps/web/src/modelInput/modelImageInputCapability.ts`](../../apps/web/src/modelInput/modelImageInputCapability.ts)
 把能力降级为 `unsupported`；[`docs/README.md`](../README.md) 记录其状态为 NO-GO。第四家
 `openai-compat`（[`packages/agent-ai/src/openaiCompat.ts`](../../packages/agent-ai/src/openaiCompat.ts)）
 已交付标准协议基线——baseUrl 必填、不做任何厂商私有净化——并在 CLI 侧接线完成：

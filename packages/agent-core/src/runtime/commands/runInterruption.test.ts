@@ -39,6 +39,66 @@ describe('stopRun tool-call interruption', () => {
     })
   })
 
+  it('interrupts a live run for recovery without weakening not-started facts', async () => {
+    const core = createCore()
+    const id = core.newSession()
+    const store = core.getSessionStore(id).store
+    store.setter(itemsAtom, [
+      { id: 'u1', createdAt: 1, item: { role: 'user' as const, content: '执行检查' } },
+      {
+        id: 'a1',
+        createdAt: 2,
+        item: {
+          role: 'assistant' as const,
+          content: null,
+          tool_calls: [
+            { id: 'safe-to-start', type: 'function' as const, function: { name: 'read_file', arguments: '{}' } },
+            { id: 'possibly-started', type: 'function' as const, function: { name: 'shell_macos', arguments: '{"command":"pwd"}' } },
+          ],
+        },
+      },
+    ])
+    store.setter(runAtom, {
+      runId: 'run-recovery',
+      turnId: 'u1',
+      status: 'running',
+      toolCallOutcomes: {
+        'safe-to-start': { state: 'notStarted', updatedAt: 1 },
+        'possibly-started': { state: 'outcomeUnknown', updatedAt: 2 },
+      },
+    })
+    core.abort.beginRun(id)
+
+    await core.interruptRunForRecovery(id)
+
+    expect(core.abort.isRunning(id)).toBe(false)
+    expect(store.getter(runAtom)).toMatchObject({
+      status: 'interrupted',
+      toolCallOutcomes: {
+        'safe-to-start': { state: 'notStarted' },
+        'possibly-started': { state: 'outcomeUnknown' },
+      },
+    })
+    expect(core.getSessionRecoveryStatus(id)).toMatchObject({
+      status: 'reconciliation_required',
+      reason: 'tool_outcome',
+    })
+  })
+
+  it.each(['waiting_user', 'waiting_confirmation', 'waiting_plan_approval'] as const)(
+    'preserves the %s decision state during host shutdown',
+    async (status) => {
+      const core = createCore()
+      const id = core.newSession()
+      const store = core.getSessionStore(id).store
+      store.setter(runAtom, { runId: `run-${status}`, status })
+
+      await core.interruptRunForRecovery(id)
+
+      expect(store.getter(runAtom)?.status).toBe(status)
+    },
+  )
+
   it('requires reconciliation for an older stopped run with no durable call fact', async () => {
     let requestMessages: Array<Record<string, unknown>> = []
     const core = createCore({

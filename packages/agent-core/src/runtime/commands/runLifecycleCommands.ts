@@ -27,10 +27,15 @@ import {
 } from '../userContentDisposal'
 import { markUndoBarrier } from '../../state/undoBarrier'
 import { canonicalContextCacheValue } from '../contextCacheFingerprint'
-import { markUnresolvedToolCallsOutcomeUnknown } from '../toolCallOutcomeFacts'
+import {
+  markPossiblyStartedToolCallsOutcomeUnknown,
+  markUnresolvedToolCallsOutcomeUnknown,
+} from '../toolCallOutcomeFacts'
 import { recoverInterruptedToolCalls } from '../interruptedToolCallRecovery'
 import { sessionCapabilityPolicyVersion } from '../../state/sessionCapabilityPolicy'
 import { SessionCapabilityError } from './sessionCapabilityCommands'
+import { resolveSessionTarget } from './sessionTarget'
+import type { RecoveryWriteOutcome } from '../recoveryWriter'
 
 interface RunLifecycleDependencies {
   renameSession(id: string, title: string): void
@@ -49,8 +54,11 @@ function settingsVersion(settings: ModelSettings): string {
 
 /** Builds commands that start, resume, or stop model runs for one runtime core. */
 export function createRunLifecycleCommands(core: CoreInstance, dependencies: RunLifecycleDependencies) {
-  function sendMessage(input: SendMessageInput): Promise<SendMessageResult> {
-    const id = core.rootStore.getter(activeSessionIdAtom)
+  function sendMessage(input: SendMessageInput, options?: { sessionId?: string }): Promise<SendMessageResult> {
+    let id: string | undefined
+    try { id = resolveSessionTarget(core, options?.sessionId) } catch (error) {
+      return Promise.resolve(rejected('session_missing', error instanceof Error ? error.message : String(error)))
+    }
     const submission = normalizeUserInput(input)
     if (!hasUserInput(submission)) return Promise.resolve(rejected('empty'))
     if (!id) return Promise.resolve(rejected('session_missing'))
@@ -112,8 +120,8 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
     }).promise
   }
 
-  function continueInterruptedRun(): void {
-    const id = core.rootStore.getter(activeSessionIdAtom)
+  function continueInterruptedRun(sessionId?: string): void {
+    const id = resolveSessionTarget(core, sessionId)
     if (!id) return
     const run = core.getSessionStore(id).store.getter(runAtom)
     if (!assertRunStatus(run, 'interrupted')) return
@@ -157,9 +165,9 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
    *   撤销走的那条路传 false：状态马上要回滚，本来就没有东西真的变成不可达，而释放是跨进程
    *   边界的不可逆动作（真去删 provider 侧的上传），发出去就收不回来。详见 state/undoBarrier.ts。
    */
-  function stopRun(options?: { disposeUserContent?: boolean }): void {
+  function stopRun(options?: { disposeUserContent?: boolean; sessionId?: string }): void {
     const disposeContent = options?.disposeUserContent ?? true
-    const id = core.rootStore.getter(activeSessionIdAtom)
+    const id = resolveSessionTarget(core, options?.sessionId)
     if (!id) return
     cancelSessionSubmissions(core, id)
     const store = core.getSessionStore(id).store
@@ -204,7 +212,50 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
     }
   }
 
-  return { sendMessage, continueInterruptedRun, continuePlan, stopRun }
+  /** Stops process-local work while retaining the durable state needed to resume after host restart. */
+  function interruptRunForRecovery(sessionId?: string): Promise<void> {
+    const id = resolveSessionTarget(core, sessionId)
+    if (!id) return Promise.resolve()
+    cancelSessionSubmissions(core, id)
+    const store = core.getSessionStore(id).store
+    const run = store.getter(runAtom)
+    if (!run) return persistHostShutdownRecovery(id, core)
+
+    if (assertRunStatus(run, 'running', 'awaiting_tool')) {
+      // Revoke the old loop's write eligibility before abort listeners and rejected
+      // fetch promises can resume. Paused decision states remain unchanged.
+      setRunWithoutPendingExecution(id, run, { status: 'interrupted' }, core)
+      markPossiblyStartedToolCallsOutcomeUnknown(id, core)
+    }
+    core.abort.abortRun(id)
+
+    const executionIds = new Set(run.pendingExecutionId ? [run.pendingExecutionId] : [])
+    const graph = store.getter(executionGraphAtom)
+    for (const executionId of store.getter(activeExecutionNodeIdsAtom)) {
+      const node = graph.nodes[executionId]
+      if (node?.runId === run.runId) executionIds.add(executionId)
+    }
+    const executionRuntime = getExecutionRuntime(core)
+    for (const executionId of executionIds) executionRuntime.cancel(id, executionId)
+    return persistHostShutdownRecovery(id, core)
+  }
+
+  return { sendMessage, continueInterruptedRun, continuePlan, stopRun, interruptRunForRecovery }
+}
+
+async function persistHostShutdownRecovery(id: string, core: CoreInstance): Promise<void> {
+  const outcome = await core.persistence.persistRecovery(id, 'host_shutdown')
+  // A core without a recovery driver keeps its historical no-op semantics. Once a
+  // driver is configured, only an acknowledged snapshot is safe for owner handoff.
+  if (outcome === undefined || outcome.status === 'saved') return
+  throw recoveryShutdownError(outcome)
+}
+
+function recoveryShutdownError(outcome: Exclude<RecoveryWriteOutcome, { status: 'saved' }>): Error {
+  const message = `Host shutdown recovery was not durably saved for session ${outcome.sessionId}: ${outcome.status}`
+  return outcome.status === 'error'
+    ? new Error(message, { cause: outcome.error })
+    : new Error(message)
 }
 
 function setRunWithoutPendingExecution(

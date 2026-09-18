@@ -17,6 +17,7 @@ function context(allowed: readonly string[]): ToolContext {
         { name: 'planning', description: 'planning', triggers: [] },
         { name: 'project/release', description: 'release', triggers: [] },
         { name: 'user/notes', description: 'notes', triggers: [] },
+        { name: 'form-help', description: 'fills customer forms', triggers: ['intake'] },
       ].filter((skill) => allowedNames.has(skill.name)),
       resolveScannedSkill: () => undefined,
       isAllowed: (name: string) => allowedNames.has(name),
@@ -49,5 +50,15 @@ describe('skill_search session capability filtering', () => {
 
     expect(data.results).toEqual([])
     expect(data.total).toBe(0)
+  })
+
+  it.each(['form-help', 'customer forms', 'intake'])('searches configured skills by %s', async (query) => {
+    const result = await skillSearchTool.execute({ query }, context(['form-help']))
+    expect((result as { data: { results: Array<{ name: string }> } }).data.results[0]?.name).toBe('form-help')
+  })
+
+  it('does not reveal a configured skill excluded by the session allowlist', async () => {
+    const result = await skillSearchTool.execute({ query: 'intake' }, context([]))
+    expect((result as { data: { results: unknown[] } }).data.results).toEqual([])
   })
 })

@@ -87,6 +87,25 @@ export const skillReadTool: Tool = {
       }
     }
 
+    const configured = governedSkills?.resolveConfiguredSkill?.(name)
+    if (configured) {
+      if (resource !== undefined) {
+        const content = configured.resources[resource]
+        if (content === undefined) return {
+          ok: false, error: `resource not found: ${resource} (skill: ${name})`,
+          code: 'SKILL_RESOURCE_NOT_FOUND', retryable: false,
+          details: { availableResources: Object.keys(configured.resources) },
+        }
+        return { ok: true, data: { name, resource, content, truncated: false } }
+      }
+      return { ok: true, data: {
+        name,
+        skill: { name, description: '', triggers: [], content: configured.content,
+          resources: Object.keys(configured.resources) },
+        resources: Object.keys(configured.resources), truncated: false,
+      } }
+    }
+
     // --- project/ 与 user/ 前缀：正文与资源都在文件系统里，按需读（L2/L3 不进 prompt）---
     if (skillScopeFromName(name)) {
       const entry = ctx.skills?.resolveScannedSkill(name)

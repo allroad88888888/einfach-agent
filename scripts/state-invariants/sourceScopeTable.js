@@ -20,7 +20,7 @@
 
 // 工作区分组，与 pnpm-workspace.yaml 的 `apps/*` / `packages/*` / `tools/*` 一一对应。
 // 新增分组必须同步加到这里，否则整组不进扫描面。
-export const WORKSPACE_GROUPS = ['apps', 'packages', 'tools']
+export const WORKSPACE_GROUPS = ['apps', 'packages', 'tools', 'browser-agent', 'browser-agent/tools', 'browser-agent/examples']
 
 // 每个分组成员唯一被扫的子目录。与 check-boundaries.js 的 `<pkg>/src` 同口径。
 // 「成员」= 分组下**有 src/ 的目录**，不是「有 package.json 的目录」：`apps/web` 没有
@@ -35,7 +35,8 @@ export const SOURCE_ROOTS_WITHOUT_TYPESCRIPT = {
 
 // 例外表：确实没有 `src/` 的 pnpm 工作区成员（纯原生 / 纯配置的包）。**当前为空**。
 // 登记一条就等于承认「这个包不参与状态门禁」，要写清凭什么它不可能有会话状态。
-export const MEMBERS_WITHOUT_SOURCE_DIRECTORY = []
+export const MEMBERS_WITHOUT_SOURCE_DIRECTORY = [
+]
 
 // 例外表：允许住在白名单根之外的源文件名。除这些之外，分组树里任何非测试 TS/TSX 文件
 // 落在 `<成员>/src` 外面都会让门禁直接失败 —— 那说明白名单漏了一个根。

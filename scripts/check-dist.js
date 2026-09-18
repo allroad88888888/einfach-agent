@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 
 const execFile = promisify(execFileCallback)
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const packageRoots = ['packages', 'tools']
+const packageRoots = ['packages', 'tools', 'browser-agent', 'browser-agent/tools']
 const dependencyFields = ['dependencies', 'optionalDependencies', 'peerDependencies']
 
 function packageDirectory(name) {
@@ -103,10 +103,14 @@ async function repackPackages(packages, temporaryRoot) {
   return repackedPackages
 }
 
-function exportedSpecifiers(packages) {
+function exportedEntries(packages) {
   return packages.flatMap(({ manifest }) => Object.keys(manifest.exports ?? {})
     .filter((entry) => entry !== './package.json' && !entry.includes('*'))
-    .map((entry) => entry === '.' ? manifest.name : `${manifest.name}/${entry.slice(2)}`))
+    .map((entry) => {
+      const target = manifest.exports[entry]
+      const path = typeof target === 'string' ? target : target?.import ?? target?.default
+      return { packageName: manifest.name, specifier: entry === '.' ? manifest.name : `${manifest.name}/${entry.slice(2)}`, path }
+    }))
 }
 
 async function installConsumer(packages, temporaryRoot) {
@@ -128,6 +132,13 @@ async function installConsumer(packages, temporaryRoot) {
 async function verifyRuntimeImports(consumerDirectory, specifiers) {
   const script = `for (const specifier of JSON.parse(process.argv[1])) await import(specifier)`
   await command(process.execPath, ['--input-type=module', '--eval', script, JSON.stringify(specifiers)], consumerDirectory)
+}
+
+async function verifyStyleAssets(consumerDirectory, entries) {
+  for (const entry of entries.filter((item) => item.path?.endsWith('.css'))) {
+    const content = await readFile(join(consumerDirectory, packageDirectory(entry.packageName), entry.path), 'utf8')
+    if (!content.trim() || !content.includes('{')) throw new Error(`${entry.specifier} is not a valid non-empty CSS asset`)
+  }
 }
 
 async function verifyNodeNextDeclarations(consumerDirectory, specifiers) {
@@ -177,12 +188,14 @@ async function main() {
     await rewriteWorkspaceDependencies(stagedPackages)
     const repackedPackages = await repackPackages(stagedPackages, temporaryRoot)
     const consumerDirectory = await installConsumer(repackedPackages, temporaryRoot)
-    const specifiers = exportedSpecifiers(repackedPackages)
-    await verifyRuntimeImports(consumerDirectory, specifiers)
-    await verifyNodeNextDeclarations(consumerDirectory, specifiers)
+    const entries = exportedEntries(repackedPackages)
+    const runtimeSpecifiers = entries.filter((item) => !item.path?.endsWith('.css')).map((item) => item.specifier)
+    await verifyRuntimeImports(consumerDirectory, runtimeSpecifiers)
+    await verifyNodeNextDeclarations(consumerDirectory, runtimeSpecifiers)
+    await verifyStyleAssets(consumerDirectory, entries)
     await verifyBrokenExportIsRejected(consumerDirectory, repackedPackages[0].manifest.name)
     await verifyUnlistedCoreSubpathIsRejected(consumerDirectory, repackedPackages)
-    console.log(`check-dist passed: ${repackedPackages.length} packed packages, ${specifiers.length} public ESM entry points, NodeNext declarations, and negative exports checks`)
+    console.log(`check-dist passed: ${repackedPackages.length} packed packages, ${runtimeSpecifiers.length} public ESM entry points, CSS assets, NodeNext declarations, and negative exports checks`)
   } finally {
     if (process.env.KEEP_DIST_CHECK !== '1') await rm(temporaryRoot, { recursive: true, force: true })
     else console.log(`check-dist temporary files kept at ${temporaryRoot}`)

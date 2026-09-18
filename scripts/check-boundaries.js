@@ -41,7 +41,22 @@ const capabilityRule = {
 }
 const dialogObservation = { name: '观察项：core 使用 Tauri dialog 插件', packages: ['@tauri-apps/plugin-dialog'] }
 const capabilityPackages = ['subagents', 'persistence-idb', 'persistence-sqlite', 'observability-idb', 'observability-sqlite', 'host-node']
-const workspaceGroups = ['apps', 'packages', 'tools']
+const workspaceGroups = ['apps', 'packages', 'tools', 'browser-agent', 'browser-agent/tools', 'browser-agent/examples']
+const browserAgentRules = [
+  { name: 'browser-agent 运行包禁入 React/界面/扩展私有实现', matches: (value) =>
+    value === 'react' || value.startsWith('@einfach/react') || value.startsWith('@einfach-agent/react')
+    || value.startsWith('chrome') || value.includes('/ui/') || value.includes('/extension/')
+    || value.startsWith('../../../apps/') },
+  { name: 'browser-agent 运行包禁入 Node 运行时', matches: (value) => value.startsWith('node:') },
+]
+const headlessBrowserPackageRules = [
+  { name: '浏览器运行与工具包禁入 React/UI/Chrome', matches: (value) =>
+    value === 'react' || value === 'react-dom' || value.startsWith('react/') || value.startsWith('react-dom/')
+    || value.startsWith('@einfach/react') || value.startsWith('@einfach-agent/react')
+    || value === '@einfach-agent/browser-agent-ui' || value.startsWith('chrome')
+    || value.includes('/ui/') || value.includes('/extension/') || value.startsWith('../../../apps/') },
+  { name: '浏览器运行与工具包禁入 Node 运行时', matches: (value) => value.startsWith('node:') },
+]
 
 // M4：core 厂商名红线，对齐 einfach-agent-rust 红线 12（core 零厂商判断）。与上面的 import 扫描不同，
 // 这条规则扫的是整行文本字面量（含注释），因为「注释里顺嘴提厂商名」同样是本卡要收敛的对象。
@@ -204,12 +219,21 @@ async function main() {
     typescriptFiles(resolve(repositoryRoot, `packages/${name}/src`))
   )))).flat()
   const consumerFiles = await outsideCoreFiles()
+  const browserAgentFiles = await typescriptFiles(resolve(repositoryRoot, 'browser-agent/agent/src'))
+  const headlessBrowserPackageFiles = (await Promise.all([
+    'browser-agent/agent/src',
+    'browser-agent/tools/page/src',
+    'browser-agent/tools/api/src',
+    'browser-agent/examples/embedded/src',
+  ].map((directory) => typescriptFiles(resolve(repositoryRoot, directory))))).flat()
   const errors = []
   const observations = []
   await checkFiles(coreFiles, coreRules, errors, observations)
   await checkFiles(capabilityFiles, [capabilityRule], errors, observations)
   await checkVendorNames(coreFiles, errors, observations)
   await checkCoreSubpaths(consumerFiles, errors, observations)
+  await checkFiles(browserAgentFiles, browserAgentRules, errors, observations)
+  await checkFiles(headlessBrowserPackageFiles, headlessBrowserPackageRules, errors, observations)
   const scanned = new Set([...coreFiles, ...capabilityFiles, ...consumerFiles]).size
   if (observations.length > 0) {
     console.log('边界观察项：')
@@ -221,7 +245,7 @@ async function main() {
     process.exitCode = 1
     return
   }
-  console.log(`边界检查通过（扫描 ${scanned} 个非测试 TS/TSX 文件，生效 ${coreRules.length + 3} 条规则）。`)
+  console.log(`边界检查通过（扫描 ${scanned} 个非测试 TS/TSX 文件，生效 ${coreRules.length + 3 + browserAgentRules.length + headlessBrowserPackageRules.length} 条规则）。`)
   console.log('说明：import 类规则仅跳过以 // 或 * 开头的整行注释，不解析行内注释；跨行语句只认 `} from \'…\'` 收尾行；')
   console.log('厂商名红线逐行做字面量扫描，含注释在内，因为注释里的厂商名同样是本规则要收敛的对象；')
   console.log('公开面白名单对 @einfach-agent/core 的 subpath 做精确匹配，白名单外只有豁免表里的既有命中会降级为观察项。')

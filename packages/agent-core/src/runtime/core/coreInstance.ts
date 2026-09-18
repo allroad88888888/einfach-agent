@@ -91,6 +91,8 @@ export interface CoreInstance {
   dropSessionStore(id: string): void
   // 仅测试用：清空全部缓存的 store。
   resetSessionStores(): void
+  /** Existing hydrated or newly-created session ids owned by this instance. */
+  sessionIds(): readonly string[]
   // 该实例私有的工具注册表（登记反转后默认为空；由 opts.registerTools 或事后 register 填充）。
   readonly tools: ToolRegistry
   // 按每个时机保留的注册顺序快照；到点分派不扫描完整工具目录。
@@ -254,6 +256,7 @@ export function createCoreInstance(opts?: {
     createSessionStore,
     dropSessionStore,
     resetSessionStores,
+    sessionIds: () => [...sessionStores.keys()],
     tools,
     timedToolRegistrations: timedRegistry.registrations,
     dispatchTimedTools,

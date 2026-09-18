@@ -237,7 +237,7 @@ export function createModelTurnRequester(base: ToolLoopBase): ModelTurnRequester
         const status = abortStatus(base.opts.signal, error)
         base.core.observability.endSpan(llmSpan, status, { error: safeErrorMessage(error), cache_metrics_status: status === 'cancelled' ? 'cancelled' : 'request_failed' }, error)
         if (retries > 0) base.trace.event('llm.model_retry_failed', { retry_attempt: retries, reason: status === 'cancelled' ? 'retry_request_cancelled' : 'retry_request_failed', error: safeErrorMessage(error) })
-        if (base.control.isCurrent()) setContextStats(base.id, { ...contextStats, cache: { ...contextStats.cache!, metricsStatus: status === 'cancelled' ? 'cancelled' : 'request_failed' } }, base.core)
+        if (base.control.isRunning()) setContextStats(base.id, { ...contextStats, cache: { ...contextStats.cache!, metricsStatus: status === 'cancelled' ? 'cancelled' : 'request_failed' } }, base.core)
         throw error
       }
       const choice = response.choices?.[0]

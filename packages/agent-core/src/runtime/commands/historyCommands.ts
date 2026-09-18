@@ -33,12 +33,13 @@ import { IN_FLIGHT_RUN_STATUSES } from '../../state/sessionHistory'
 import { pruneBrowserCardsAfter, pruneRuntimeTranscriptEventsAfter } from '../../state/transientAtoms'
 import { readUndoBarrier, undoBlockedByBarrier } from '../../state/undoBarrier'
 import type { CoreInstance, SessionStore } from '../core/coreInstance'
+import { resolveSessionTarget } from './sessionTarget'
 
 /**
  * 停 run 的最小依赖面。收窄成一个函数而不是整个 runLifecycle：本命令唯一需要的就是
  * 「把在飞的 run 停掉，且不要释放用户内容」。
  */
-export type StopRunForUndo = (options: { disposeUserContent: false }) => void
+export type StopRunForUndo = (options: { disposeUserContent: false; sessionId?: string }) => void
 
 export type HistoryCommandRefusal =
   | 'no_session'
@@ -70,8 +71,9 @@ function refuse(refusal: HistoryCommandRefusal): HistoryCommandResult {
 function prepareSession(
   core: CoreInstance,
   stopRun: StopRunForUndo,
+  sessionId?: string,
 ): { session: SessionStore; stoppedRun: boolean } | HistoryCommandRefusal {
-  const id = core.rootStore.getter(activeSessionIdAtom)
+  const id = resolveSessionTarget(core, sessionId)
   if (!id) return 'no_session'
   const session = core.findSessionStore(id)
   if (!session) return 'no_session'
@@ -79,7 +81,7 @@ function prepareSession(
   if (status === undefined || !IN_FLIGHT_RUN_STATUSES.has(status)) {
     return { session, stoppedRun: false }
   }
-  stopRun({ disposeUserContent: false })
+  stopRun({ disposeUserContent: false, sessionId: id })
   return { session, stoppedRun: true }
 }
 
@@ -142,8 +144,9 @@ export function createHistoryCommands(core: CoreInstance, stopRun: StopRunForUnd
     pick: (history: History) => () => boolean,
     grouped: boolean,
     direction: 'undo' | 'redo',
+    sessionId?: string,
   ): HistoryCommandResult {
-    const prepared = prepareSession(core, stopRun)
+    const prepared = prepareSession(core, stopRun, sessionId)
     if (typeof prepared === 'string') return refuse(prepared)
     const { session, stoppedRun } = prepared
     // 屏障只挡撤销：重做是往新的方向走，不会越过它。
@@ -159,11 +162,11 @@ export function createHistoryCommands(core: CoreInstance, stopRun: StopRunForUnd
 
   return {
     /** 撤销一整轮（弹到轮标签变化为止）。UI 默认粒度。 */
-    undoTurn: (): HistoryCommandResult =>
-      run(labelBeforeCursor, (history) => () => history.undo(), true, 'undo'),
+    undoTurn: (sessionId?: string): HistoryCommandResult =>
+      run(labelBeforeCursor, (history) => () => history.undo(), true, 'undo', sessionId),
     /** 重做一整轮。 */
-    redoTurn: (): HistoryCommandResult =>
-      run(labelAtCursor, (history) => () => history.redo(), true, 'redo'),
+    redoTurn: (sessionId?: string): HistoryCommandResult =>
+      run(labelAtCursor, (history) => () => history.redo(), true, 'redo', sessionId),
     /** 撤回某条用户消息，连同它之后的整段对话分支一起回滚。 */
     retractTurn: (userItemId: string): HistoryCommandResult => {
       const id = core.rootStore.getter(activeSessionIdAtom)

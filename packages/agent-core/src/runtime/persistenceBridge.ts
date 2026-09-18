@@ -63,6 +63,8 @@ export interface PersistenceBridge {
   persistRecovery(id: string, reason?: string): Promise<RecoveryWriteOutcome | undefined>
   /** Waits for recovery writes queued before this call, for orderly shutdown or dispose. */
   flushRecovery(): Promise<void>
+  /** Waits for all session, workspace, and recovery writes queued before this call. */
+  flush(): Promise<void>
   /** Hydrates this Core instance's stores from its configured persistence drivers. */
   hydrate(): Promise<boolean>
 }
@@ -172,6 +174,10 @@ export function createPersistenceBridge(
     return recoveryWriter?.flush() ?? Promise.resolve()
   }
 
+  async function flush(): Promise<void> {
+    await Promise.all([sessionsWriteQueue.flush(), workspacesWriteQueue.flush(), flushRecovery()])
+  }
+
   async function hydrate(): Promise<boolean> {
     const { sessions, recovery, historyLog } = dependencies()
     if (!sessions || !hydrateSession) return false
@@ -196,6 +202,7 @@ export function createPersistenceBridge(
     persistDeleteSession,
     persistRecovery,
     flushRecovery,
+    flush,
     hydrate,
   }
 }

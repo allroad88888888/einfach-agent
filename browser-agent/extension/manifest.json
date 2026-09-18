@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "Einfach Browser Agent",
+  "version": "0.1.0",
+  "description": "Run isolated browser agents against an explicitly bound page.",
+  "permissions": ["activeTab", "scripting", "sidePanel", "storage"],
+  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "background": { "service_worker": "service-worker.js", "type": "module" },
+  "action": { "default_title": "Open Browser Agent" },
+  "side_panel": { "default_path": "sidepanel.html" },
+  "content_security_policy": { "extension_pages": "script-src 'self'; object-src 'self'" }
+}

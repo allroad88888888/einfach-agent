@@ -114,6 +114,10 @@ export interface ToolContext {
       resources: Record<string, string>
       rootPath: string
     } | undefined
+    resolveConfiguredSkill?(name: string): {
+      content: string
+      resources: Readonly<Record<string, string>>
+    } | undefined
   }
   /** Optional read-only access to all locally catalogued agent histories. */
   agentHistory?: AgentHistoryCapability

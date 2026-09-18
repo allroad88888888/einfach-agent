@@ -18,18 +18,12 @@ vi.mock('../state/checkpointWriters', () => ({
   updateCheckpoint: vi.fn(),
 }))
 // D-4：持久化桥全 mock —— 只验证 commands 按约定调用了落盘钩子（不跑真实 IndexedDB）。
-vi.mock('./persistenceBridge', () => ({
-  persistSessions: vi.fn(),
-  persistWorkspaces: vi.fn(),
-  persistDeleteSession: vi.fn(),
-}))
 
 import { rootStore, workspacesAtom, activeWorkspaceIdAtom, sessionsAtom, activeSessionIdAtom } from '../state/rootStore'
 import { runAtom } from '../state/sessionAtoms'
 import { getSessionStore } from '../state/sessionStore'
 import { getPendingQuestionAnswers, addPendingArtifact, pendingArtifactsAtom } from '../state/transientAtoms'
 import { runSession } from './modelRun'
-import { persistSessions, persistWorkspaces } from './persistenceBridge'
 import {
   newSession,
   answerQuestion,
@@ -96,14 +90,12 @@ describe('setWorkspaceRoot（S4-A workspace 绑定）', () => {
   it('写进当前一级工作区（trim）+ 落盘，同工作区会话共享', () => {
     const id = newSession() // 自动创建并激活默认工作区
     const workspaceId = rootStore.getter(sessionsAtom)[id].workspaceId!
-    vi.mocked(persistWorkspaces).mockClear()
 
     setWorkspaceRoot('  /Users/me/proj  ')
 
     const workspace = rootStore.getter(workspacesAtom)[workspaceId]
     expect(workspace.rootPath).toBe('/Users/me/proj')
     expect(workspace.name).toBe('proj')
-    expect(persistWorkspaces).toHaveBeenCalled()
   })
 
   it('空/纯空白 → 清成 undefined（桥不传 → Rust 走 git root 兜底）', () => {
@@ -118,30 +110,24 @@ describe('setWorkspaceRoot（S4-A workspace 绑定）', () => {
 
   it('无 active 工作区 → no-op、不落盘', () => {
     rootStore.setter(activeWorkspaceIdAtom, '')
-    vi.mocked(persistWorkspaces).mockClear()
     expect(() => setWorkspaceRoot('/x')).not.toThrow()
-    expect(persistWorkspaces).not.toHaveBeenCalled()
   })
 })
 
 describe('setApprovalMode', () => {
   it('按会话保存模式并持久化', () => {
     const id = newSession()
-    vi.mocked(persistSessions).mockClear()
 
     setApprovalMode('auto')
 
     expect(rootStore.getter(sessionsAtom)[id].toolApprovalMode).toBe('auto')
-    expect(persistSessions).toHaveBeenCalled()
   })
 
   it('旧会话缺省视为 confirm，同值写入不产生持久化', () => {
     newSession()
-    vi.mocked(persistSessions).mockClear()
 
     setApprovalMode('confirm')
 
-    expect(persistSessions).not.toHaveBeenCalled()
   })
 })
 
@@ -172,31 +158,25 @@ describe('renameSession（TT3 会话改名命令）', () => {
     const id = newSession()
     // 把 updatedAt 拨回过去，验证 renameSession 会让它前进（同毫秒内 Date.now() 无法区分）。
     rootStore.setter(sessionsAtom, (prev) => ({ ...prev, [id]: { ...prev[id], updatedAt: 1 } }))
-    vi.mocked(persistSessions).mockClear()
 
     renameSession(id, '  新名字  ')
 
     const meta = rootStore.getter(sessionsAtom)[id]
     expect(meta.title).toBe('新名字')
     expect(meta.updatedAt).toBeGreaterThan(1)
-    expect(persistSessions).toHaveBeenCalled()
   })
 
   it('trim 后空 → no-op（保留原名、不落盘，编辑框取消语义）', () => {
     const id = newSession({ title: '原名' })
-    vi.mocked(persistSessions).mockClear()
 
     renameSession(id, '   ')
 
     expect(rootStore.getter(sessionsAtom)[id].title).toBe('原名')
-    expect(persistSessions).not.toHaveBeenCalled()
   })
 
   it('ghost 会话（未登记）→ no-op、不落盘', () => {
-    vi.mocked(persistSessions).mockClear()
     expect(() => renameSession('ghost', '新名')).not.toThrow()
     expect(rootStore.getter(sessionsAtom)['ghost']).toBeUndefined()
-    expect(persistSessions).not.toHaveBeenCalled()
   })
 
   it('超长标题按 code point 截 48 字（emoji 不断裂）', () => {

@@ -9,6 +9,7 @@ export type WriteQueueTask = (metadata: WriteQueueMetadata) => Promise<void>
 
 export interface WriteQueue {
   enqueue(key: string, task: WriteQueueTask): void
+  flush(): Promise<void>
   reset(): void
 }
 
@@ -28,6 +29,13 @@ interface QueueState {
 export function createWriteQueue(mode: WriteQueueMode): WriteQueue {
   const states = new Map<string, QueueState>()
   let generation = 0
+  const idleWaiters = new Set<() => void>()
+
+  function resolveIdle(): void {
+    if (states.size !== 0) return
+    for (const resolve of idleWaiters) resolve()
+    idleWaiters.clear()
+  }
 
   function invoke(task: WriteQueueTask, metadata: WriteQueueMetadata): Promise<void> {
     try {
@@ -54,6 +62,7 @@ export function createWriteQueue(mode: WriteQueueMode): WriteQueue {
       return
     }
     states.delete(key)
+    resolveIdle()
   }
 
   function runLatest(
@@ -102,6 +111,7 @@ export function createWriteQueue(mode: WriteQueueMode): WriteQueue {
         && state.tail === settled
       ) {
         states.delete(key)
+        resolveIdle()
       }
     })
   }
@@ -111,9 +121,14 @@ export function createWriteQueue(mode: WriteQueueMode): WriteQueue {
       if (mode === 'latest') enqueueLatest(key, task)
       else enqueueSerial(key, task)
     },
+    flush() {
+      if (states.size === 0) return Promise.resolve()
+      return new Promise((resolve) => idleWaiters.add(resolve))
+    },
     reset() {
       generation += 1
       states.clear()
+      resolveIdle()
     },
   }
 }

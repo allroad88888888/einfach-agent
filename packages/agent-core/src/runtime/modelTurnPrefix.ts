@@ -79,8 +79,12 @@ export async function buildStableModelPrefix(
     async () => {
       const catalogSource = proposedCapabilities.state === 'legacy-unrestricted'
         ? toolCatalog : toolEpoch?.capturedCatalog ?? toolCatalog
+      const frozenSkills = sessionMeta.agentProfile?.skillContents.map((skill) => ({
+        name: skill.name, description: skill.description, triggers: [...skill.triggers],
+      }))
+      const builtinSkills = frozenSkills ?? core.skillRegistry.list()
       const restrictedBuiltins = proposedCapabilities.state === 'legacy-unrestricted'
-        ? undefined : core.skillRegistry.list()
+        ? undefined : builtinSkills
       const scannedSkills = workspaceRoot
         ? await core.projectSkills.ensure(workspaceRoot) : undefined
       const filteredProjectSkills = filterProjectSkillsSnapshot(
@@ -91,12 +95,15 @@ export async function buildStableModelPrefix(
         ),
       )
       const skills = captureRunSkillSnapshot(
-        restrictedBuiltins ?? core.skillRegistry.list(),
+        restrictedBuiltins ?? builtinSkills,
         filteredProjectSkills,
         proposedCapabilities,
       )
       if (proposedCapabilities.state === 'legacy-unrestricted') {
-        legacySkillManifest = core.skillRegistry.buildManifestText(filteredProjectSkills)
+        legacySkillManifest = frozenSkills
+          ? ['可用 skills（正文不在此展示，需要时用 skill_read 按名称读取）：',
+              ...frozenSkills.map((skill) => `· ${skill.name} — ${skill.description}`)].join('\n')
+          : core.skillRegistry.buildManifestText(filteredProjectSkills)
       }
       return {
         capabilities: proposedCapabilities,
@@ -120,14 +127,17 @@ export async function buildStableModelPrefix(
     role: 'system',
     content: buildToolManifestText(hostHasLocalCapabilities, { registry: runToolCatalog }),
   }
-  const customInstructions = buildCustomInstructionsItem(core.config.customInstructions)
+  const customInstructions = buildCustomInstructionsItem(
+    sessionMeta.agentProfile?.instructions ?? core.config.customInstructions,
+  )
+  const frozenManifest = sessionMeta.agentProfile?.skillContents
+    .filter((skill) => capabilities.allowsSkill(skill.name))
+    .map((skill) => `· ${skill.name} — ${skill.description}`)
   const skillManifest: SystemItem = {
     role: 'system',
-    content: buildRunSkillManifestText(
-      legacySkillManifest ?? '',
-      skills,
-      capabilities,
-    ),
+    content: frozenManifest
+      ? ['可用 skills（正文不在此展示，需要时用 skill_read 按名称读取）：', ...frozenManifest].join('\n')
+      : buildRunSkillManifestText(legacySkillManifest ?? '', skills, capabilities),
   }
   const environment = buildEnvironmentItem({
     workspaceRoot,

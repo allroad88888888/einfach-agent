@@ -198,4 +198,19 @@ export interface SessionMeta {
   loadedTools?: string[]
   // 缺字段表示只读的旧版不受限会话；新会话必须显式写入 draft。
   capabilityPolicy?: SessionCapabilityPolicy
+  /** Immutable product profile captured when an embedding creates the session. */
+  agentProfile?: {
+    agentId: string
+    revision: number
+    instructions: string
+    connectionId: string
+    skillContents: readonly {
+      name: string
+      revision: number
+      description: string
+      triggers: readonly string[]
+      content: string
+      resources: Readonly<Record<string, string>>
+    }[]
+  }
 }

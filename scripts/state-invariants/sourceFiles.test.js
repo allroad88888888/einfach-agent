@@ -73,7 +73,7 @@ test('每个带 src/ 的分组成员都进了白名单，且各自至少扫到�
 // —— 不再扫：编译产物与非源码 ——————————————————————————————————————————
 
 test('编译产物与非源码不进扫描面', async () => {
-  const { paths } = await scan()
+  const { paths, roots } = await scan()
   // dist/：跑过 pnpm build 才存在，扫它等于让门禁结论取决于本地有没有 build 过。
   expect(paths.filter((path) => path.includes('/dist/'))).toEqual([])
   expect(paths.filter((path) => path.includes('/node_modules/'))).toEqual([])
@@ -82,7 +82,7 @@ test('编译产物与非源码不进扫描面', async () => {
   // 测试脚手架仍按老口径排除。
   expect(paths.filter((path) => /\.(?:test|testHarness|testFixtures|fixtures)\.tsx?$/.test(path))).toEqual([])
   // 白名单是 `<成员>/src`，别的位置（tsup.config.ts 之类）不该混进来。
-  expect(paths.every((path) => /^[^/]+\/[^/]+\/src\//.test(path))).toBe(true)
+  expect(paths.every((path) => roots.some((root) => path.startsWith(`${root}/`)))).toBe(true)
 })
 
 // —— 两道闸：白名单写漏了要响亮地失败 ————————————————————————————————

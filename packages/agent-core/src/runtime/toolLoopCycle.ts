@@ -1,5 +1,6 @@
 import type { ModelItem } from '@einfach-agent/ai'
 import { appendItem, patchRun } from '../state/sessionWriters'
+import { runAtom } from '../state/sessionAtoms'
 import { FINISH_REASON_ITEM_NOTICES } from './finishReason'
 import { getAbnormalFinishReason, type TurnEndEvent } from './core/loopHooks'
 import type { LoopBudget } from './loopBudget'
@@ -16,6 +17,7 @@ import { handleTextTurn } from './toolLoopTextTurn'
 import { safeErrorMessage } from './toolLoopSupport'
 import { requireRecoveryDurability } from './recoveryDurabilityBarrier'
 import {
+  markPossiblyStartedToolCallsOutcomeUnknown,
   markUnresolvedToolCallsOutcomeUnknown,
   setToolCallOutcomeFacts,
 } from './toolCallOutcomeFacts'
@@ -181,7 +183,9 @@ export async function runToolLoopCycle(input: {
     return 'finished'
   }
   if (batch === 'stopped') {
-    markUnresolvedToolCallsOutcomeUnknown(base.id, base.core)
+    const status = base.core.getSessionStore(base.id).store.getter(runAtom)?.status
+    if (status === 'interrupted') markPossiblyStartedToolCallsOutcomeUnknown(base.id, base.core)
+    else markUnresolvedToolCallsOutcomeUnknown(base.id, base.core)
     void base.core.persistence.persistRecovery(base.id, 'tool_calls_interrupted')
     base.trace.finish('cancelled', 'agent.stopped', { reason: 'run_not_running' })
     return 'finished'

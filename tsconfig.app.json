@@ -39,8 +39,12 @@
       "@einfach-agent/tools-planning": ["tools/planning/src/index.ts"],
       "@einfach-agent/tools-skills": ["tools/skills/src/index.ts"],
       "@einfach-agent/tools-agents": ["tools/agents/src/index.ts"],
-      "@einfach-agent/tools-mcp": ["tools/mcp/src/index.ts"]
+      "@einfach-agent/tools-mcp": ["tools/mcp/src/index.ts"],
+      "@einfach-agent/browser-agent": ["browser-agent/agent/src/index.ts"],
+      "@einfach-agent/browser-agent-ui": ["browser-agent/ui/src/index.ts"],
+      "@einfach-agent/tools-browser-page": ["browser-agent/tools/page/src/index.ts"],
+      "@einfach-agent/tools-browser-api": ["browser-agent/tools/api/src/index.ts"]
     }
   },
-  "include": ["apps/web/src", "apps/cli/src", "apps/server/src", "packages/*/src", "tools/*/src"]
+  "include": ["apps/web/src", "apps/cli/src", "apps/server/src", "packages/*/src", "tools/*/src", "browser-agent/*/src", "browser-agent/tools/*/src", "browser-agent/examples/*/src"]
 }

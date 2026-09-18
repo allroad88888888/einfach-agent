@@ -134,6 +134,11 @@ export function createSkillsCapabilities(deps: {
       if (!entry) return undefined
       return { filePath: entry.filePath, resources: entry.resources, rootPath: entry.rootPath }
     },
+    resolveConfiguredSkill(name: string) {
+      const skill = session?.agentProfile?.skillContents.find((candidate) => candidate.name === name)
+      if (!skill || !capabilities.allowsSkill(name)) return undefined
+      return { content: skill.content, resources: skill.resources }
+    },
   }
   return {
     skills,

@@ -179,7 +179,10 @@ export function searchSkills(query: string, extra: readonly SkillSummary[] = [])
   const normalizedQuery = normalizedSearchText(query)
   const tokens = queryTokens(normalizedQuery)
 
-  return [...listSkillSummaries(), ...extra]
+  const skills = [...new Map(
+    [...listSkillSummaries(), ...extra].map((skill) => [skill.name, skill]),
+  ).values()]
+  return skills
     .map((skill): SkillSearchMatch | undefined => {
       const name = normalizedSearchText(skill.name)
       const description = normalizedSearchText(skill.description)

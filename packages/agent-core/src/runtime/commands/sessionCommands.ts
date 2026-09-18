@@ -3,7 +3,6 @@ import { activeSessionIdAtom, activeWorkspaceIdAtom, expandedWorkspaceIdsAtom, s
 import type { ModelSettings, SessionMeta } from '../../state/core.type'
 import type { CoreInstance } from '../core/coreInstance'
 import { newId } from '../newId'
-import { persistDeleteSession, persistSessions, persistWorkspaces } from '../persistenceBridge'
 import { createWorkspaceMeta } from './workspaceCommands'
 import { cancelSessionSubmissions } from '../sessionSubmissionGate'
 import {
@@ -27,6 +26,9 @@ export function deriveSessionTitle(input: UserMessageContent): string {
 
 /** Builds session CRUD commands bound to one runtime core. */
 export function createSessionCommands(core: CoreInstance) {
+  const saveSessions = () => core.persistence.persistSessions()
+  const saveWorkspaces = () => core.persistence.persistWorkspaces()
+  const deletePersistedSession = (id: string) => core.persistence.persistDeleteSession(id)
   function renameSession(id: string, title: string): void {
     const trimmed = title.trim()
     if (!trimmed) return
@@ -38,7 +40,7 @@ export function createSessionCommands(core: CoreInstance) {
       changed = true
       return { ...prev, [id]: { ...meta, title: next, updatedAt: Date.now() } }
     })
-    if (changed) persistSessions()
+    if (changed) saveSessions()
   }
 
   function newSession(opts?: {
@@ -46,6 +48,7 @@ export function createSessionCommands(core: CoreInstance) {
     settings?: ModelSettings
     workspaceId?: string
     capabilityPolicy?: SessionCapabilityPolicy
+    agentProfile?: SessionMeta['agentProfile']
   }): string {
     let workspaceId = opts?.workspaceId
     const workspaces = core.rootStore.getter(workspacesAtom)
@@ -73,6 +76,7 @@ export function createSessionCommands(core: CoreInstance) {
       updatedAt: now,
       workspaceId,
       capabilityPolicy: opts?.capabilityPolicy ?? createDraftSessionCapabilityPolicy(),
+      ...(opts?.agentProfile ? { agentProfile: opts.agentProfile } : {}),
     }
     core.rootStore.setter(sessionsAtom, (prev) => ({ ...prev, [id]: meta }))
     core.rootStore.setter(workspacesAtom, (prev) => {
@@ -84,8 +88,8 @@ export function createSessionCommands(core: CoreInstance) {
     core.rootStore.setter(activeWorkspaceIdAtom, workspaceId)
     core.rootStore.setter(expandedWorkspaceIdsAtom, (prev) => ({ ...prev, [workspaceId]: true }))
     core.rootStore.setter(activeSessionIdAtom, id)
-    persistWorkspaces()
-    persistSessions()
+    saveWorkspaces()
+    saveSessions()
     return id
   }
 
@@ -119,8 +123,8 @@ export function createSessionCommands(core: CoreInstance) {
         .sort((a, b) => b.updatedAt - a.updatedAt)
       core.rootStore.setter(activeSessionIdAtom, remaining[0]?.id ?? '')
     }
-    persistSessions()
-    persistDeleteSession(id)
+    saveSessions()
+    deletePersistedSession(id)
     if (meta && before) {
       disposeUserContentAfterMutation(core, before, {
         sessionId: id,
@@ -140,7 +144,7 @@ export function createSessionCommands(core: CoreInstance) {
       changed = true
       return { ...prev, [id]: { ...meta, toolApprovalMode: mode, updatedAt: Date.now() } }
     })
-    if (changed) persistSessions()
+    if (changed) saveSessions()
   }
 
   return {

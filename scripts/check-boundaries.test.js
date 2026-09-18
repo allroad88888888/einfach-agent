@@ -58,8 +58,33 @@ test('合法 import 与完整注释行会通过', async () => {
     'packages/persistence-idb/src/store.ts': "export { record } from '@einfach-agent/core'\n",
   })
   const result = await run(root)
-  assert.match(result.stdout, /边界检查通过（扫描 2 个非测试 TS\/TSX 文件，生效 7 条规则）。/)
+  assert.match(result.stdout, /边界检查通过（扫描 2 个非测试 TS\/TSX 文件，生效 11 条规则）。/)
   assert.doesNotMatch(result.stdout, /core 厂商名红线/)
+})
+
+test('browser-agent 运行包导入 React 或 Node 会失败', async () => {
+  const root = await fixture({
+    'browser-agent/agent/src/client.ts': "import React from 'react'\nimport fs from 'node:fs'\n",
+  })
+  await assert.rejects(run(root), (error) => {
+    assert.match(error.stderr, /browser-agent\/agent\/src\/client\.ts:1 browser-agent 运行包禁入/)
+    assert.match(error.stderr, /browser-agent\/agent\/src\/client\.ts:2 browser-agent 运行包禁入 Node/)
+    return true
+  })
+})
+
+test('页面/API 工具与自有界面示例不能偷带 React、UI、Chrome 或 Node', async () => {
+  const root = await fixture({
+    'browser-agent/tools/page/src/bad.ts': "import React from 'react'\n",
+    'browser-agent/tools/api/src/bad.ts': "import '@einfach-agent/browser-agent-ui'\n",
+    'browser-agent/examples/embedded/src/bad.ts': "import fs from 'node:fs'\n",
+  })
+  await assert.rejects(run(root), (error) => {
+    assert.match(error.stderr, /browser-agent\/tools\/page\/src\/bad\.ts:1 浏览器运行与工具包禁入 React\/UI\/Chrome/)
+    assert.match(error.stderr, /browser-agent\/tools\/api\/src\/bad\.ts:1 浏览器运行与工具包禁入 React\/UI\/Chrome/)
+    assert.match(error.stderr, /browser-agent\/examples\/embedded\/src\/bad\.ts:1 浏览器运行与工具包禁入 Node/)
+    return true
+  })
 })
 
 test('白名单十条入口（根 barrel + 九条 subpath）放行，不产生观察项', async () => {

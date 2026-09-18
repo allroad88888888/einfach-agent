@@ -42,7 +42,7 @@ import {
   type ModelThinkingCapabilityRegistry,
   type ModelThinkingEffort,
 } from './modelThinkingCapability'
-import { markLegacyOpenAiCompat } from './providerLocalTransport'
+import { markLegacyOpenAiCompat, resolveProviderLocalConnectionBaseUrl } from './providerLocalTransport'
 import {
   DEEPSEEK_VENDOR_ID,
   GLM_VENDOR_ID,
@@ -229,7 +229,8 @@ function resolveOpenAiCompatOptions(
   if (connectionId !== undefined) {
     return {
       ...options,
-      baseUrl: config.connectionBaseUrl?.(connectionId),
+      baseUrl: config.connectionBaseUrl?.(connectionId)
+        ?? resolveProviderLocalConnectionBaseUrl(options.fetchImpl, connectionId),
       connectionId,
       imageInput,
     }
