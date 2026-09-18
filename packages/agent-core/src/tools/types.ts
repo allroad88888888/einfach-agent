@@ -1,6 +1,7 @@
 // tools/types.ts —— 工具统一抽象的类型（见 TOOLS-SPEC.md §2）。
-// 零依赖：不 import runtime/state/UI，工具与工厂都只依赖本文件。
+// 不 import runtime/state/UI；唯一的外部类型依赖是模型可消费的工具内容协议。
 
+import type { ToolOutputContentBlock } from '@einfach-agent/ai'
 import type { ShellCommandInput, ShellCommandResult } from './shellCommandTypes'
 import type { ToolCallTiming } from './toolCallTiming'
 import type { ToolContext } from './context'
@@ -78,7 +79,13 @@ export interface ToolSkill {
  * 工具自身通常不需要设置它，由 registry 在校验后附加。
  */
 export type ToolResult =
-  | { ok: true; data?: unknown; warnings?: string[] }
+  | {
+      ok: true
+      data?: unknown
+      warnings?: string[]
+      /** Optional provider-neutral content sent beside the serialized, UI-safe `data`. */
+      modelContent?: readonly ToolOutputContentBlock[]
+    }
   | {
       ok: false
       /** Human-readable summary suitable for the model and UI. */

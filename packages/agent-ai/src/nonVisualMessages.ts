@@ -1,5 +1,6 @@
 import type {
   ModelItem,
+  ToolOutputContentBlock,
   UserContentBlock,
   UserImageContentBlock,
 } from './modelProtocol'
@@ -24,10 +25,36 @@ function structuredContentText(blocks: readonly UserContentBlock[]): string {
   return text
 }
 
-/** Projects provider-neutral user blocks into the text-only wire shape. */
-export function nonVisualMessages(messages: ModelItem[]): ModelItem[] {
+function toolBlockText(block: ToolOutputContentBlock): string {
+  return block.type === 'text'
+    ? block.text
+    : `[工具返回了图片 ${block.name}（${block.mimeType}），当前模型看不到图片内容]`
+}
+
+/** Projects image-bearing tool outputs for chat providers that only accept tool-result text. */
+export function nonVisualToolMessages(messages: readonly ModelItem[]): ModelItem[] {
   let changed = false
   const projected = messages.map((message) => {
+    if (message.role !== 'tool' || message.model_content === undefined) return message
+    changed = true
+    const imageNote = message.model_content
+      .filter((block) => block.type === 'image')
+      .map(toolBlockText)
+      .join('\n')
+    const { model_content: _modelContent, ...textMessage } = message
+    return {
+      ...textMessage,
+      content: [message.content, imageNote].filter(Boolean).join('\n'),
+    }
+  })
+  return changed ? projected : messages as ModelItem[]
+}
+
+/** Projects provider-neutral user blocks into the text-only wire shape. */
+export function nonVisualMessages(messages: ModelItem[]): ModelItem[] {
+  const toolProjected = nonVisualToolMessages(messages)
+  let changed = toolProjected !== messages
+  const projected = toolProjected.map((message) => {
     if (message.role !== 'user' || typeof message.content === 'string') return message
     changed = true
     return {

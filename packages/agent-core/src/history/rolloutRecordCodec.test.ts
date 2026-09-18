@@ -52,6 +52,22 @@ describe('rollout record codec', () => {
     expect(decodeAgentRolloutRecord(encodeAgentRolloutRecord(value)).target).toEqual(longTarget)
   })
 
+  it('round-trips a model-only inline image tool result', () => {
+    const toolItem: ModelItem = {
+      role: 'tool', tool_call_id: 'call-view', content: '{"path":"photo.png"}',
+      model_content: [{
+        type: 'image', source: { kind: 'inline-base64', data: 'aGVsbG8=' },
+        name: 'photo.png', mimeType: 'image/png', byteSize: 5, detail: 'original',
+      }],
+    }
+    const value = record({
+      mutationType: 'item_upsert', target, itemId: 'tool-image', itemOrdinal: 1,
+      createdAt: 4, item: toolItem, pending: false, planStageId: null,
+    })
+
+    expect(decodeAgentRolloutRecord(encodeAgentRolloutRecord(value))).toEqual(value)
+  })
+
   it.each([
     ['unknown schema', { ...record(mutations[0]!), schemaVersion: 2 }, /schemaVersion/],
     ['negative ordinal', { ...record(mutations[0]!), rolloutOrdinal: -1 }, /rolloutOrdinal/],

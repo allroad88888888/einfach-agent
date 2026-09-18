@@ -69,7 +69,7 @@ describe('agent-rollout-rebuild', () => {
     await writeFile(value.source.filePath, corrupt(value))
     const checksum = await readFile(value.source.filePath)
     await expect(rebuild({ ...options(value), write: true })).rejects.toThrow(new RegExp(`${value.source.filePath}:`))
-    await expect(readFile(value.source.filePath)).resolves.toEqual(checksum)
+    expect((await readFile(value.source.filePath)).equals(checksum)).toBe(true)
     await expect(readFile(value.databasePath)).resolves.toEqual(original.database)
     await expect(projection(value.databasePath)).resolves.toEqual(original.projection)
   })

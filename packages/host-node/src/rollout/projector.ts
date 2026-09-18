@@ -12,6 +12,7 @@ import type { SqlExecutor } from '@einfach-agent/core/state/persistence'
 
 import { ensureRolloutProjectionSchema } from './projectionSchema'
 import { decodeAgentHistoryTargetSqlRow, type AgentHistoryTargetSqlRow } from './historyTargetSql'
+import { BoundedJsonlBuffer, JsonlLineTooLargeError } from './boundedJsonlBuffer'
 
 export interface RolloutProjectorOptions {
   /** Test/fault-injection seam at the exact crash boundary. */
@@ -220,7 +221,7 @@ export function createRolloutProjector(executor: SqlExecutor, options: RolloutPr
       let offset = start
       let applied = 0
       let identity = await projectionOperation(() => identityFor(executor, state))
-      let pending = Buffer.alloc(0)
+      const lines = new BoundedJsonlBuffer(AGENT_ROLLOUT_MAX_LINE_BYTES)
       let position = start
       try {
         while (position < size) {
@@ -228,13 +229,16 @@ export function createRolloutProjector(executor: SqlExecutor, options: RolloutPr
           const { bytesRead } = await sourceOperation(() => handle.read(chunk, 0, chunk.length, position))
           if (bytesRead === 0) break
           position += bytesRead
-          pending = Buffer.concat([pending, chunk.subarray(0, bytesRead)])
-          let newline = pending.indexOf(0x0a)
-          while (newline >= 0) {
-            if (newline > AGENT_ROLLOUT_MAX_LINE_BYTES) {
+          let completeLines: Buffer[]
+          try {
+            completeLines = lines.append(chunk.subarray(0, bytesRead))
+          } catch (error) {
+            if (error instanceof JsonlLineTooLargeError) {
               throw new RolloutSourceError(`rollout line exceeds maximum size at ${sourcePath}:${offset}`)
             }
-            const line = pending.subarray(0, newline)
+            throw error
+          }
+          for (const line of completeLines) {
             let record!: AgentRolloutRecordV1
             sourceInvariant(() => { record = decodeAgentRolloutRecord(line.toString('utf8')) })
             identity ??= recordIdentity(record)
@@ -245,7 +249,7 @@ export function createRolloutProjector(executor: SqlExecutor, options: RolloutPr
             }
             await projectionOperation(() => projectRecord(executor, record))
             await projectionOperation(async () => { await options.afterRecordUpsert?.(record) })
-            const nextOffset = offset + newline + 1
+            const nextOffset = offset + line.length + 1
             await projectionOperation(() => executor.execute(
               `INSERT INTO agent_rollout_projection_state
                (source_path,history_id,next_byte_offset,next_rollout_ordinal) VALUES ($1,$2,$3,$4)
@@ -255,17 +259,12 @@ export function createRolloutProjector(executor: SqlExecutor, options: RolloutPr
             ))
             offset = nextOffset
             applied += 1
-            pending = pending.subarray(newline + 1)
-            newline = pending.indexOf(0x0a)
-          }
-          if (pending.length > AGENT_ROLLOUT_MAX_LINE_BYTES) {
-            throw new RolloutSourceError(`rollout line exceeds maximum size at ${sourcePath}:${offset}`)
           }
         }
       } finally {
         await sourceOperation(() => handle.close())
       }
-      if (pending.length > 0) {
+      if (lines.pendingBytes > 0) {
         return { historyId: identity?.historyId ?? '', recordsApplied: applied,
           nextByteOffset: offset, warning: partialLineWarning(sourcePath, offset) }
       }

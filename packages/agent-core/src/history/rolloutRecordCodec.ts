@@ -1,13 +1,13 @@
-import type { ModelItem } from '@einfach-agent/ai'
+import { isValidInlineBase64Data, type ModelItem } from '@einfach-agent/ai'
 
 import { decodeAgentHistoryTarget, type AgentHistoryTarget } from './agentHistoryTarget'
 import { AGENT_RUN_STATUSES, type AgentRunStatus } from './historyQuery'
 import type { AgentRolloutMutationV1, AgentRolloutRecordV1 } from './rolloutMutation'
 
 export const AGENT_ROLLOUT_SCHEMA_VERSION = 1 as const
-export const AGENT_ROLLOUT_MAX_LINE_BYTES = 1024 * 1024
+export const AGENT_ROLLOUT_MAX_LINE_BYTES = 16 * 1024 * 1024
 
-const MAX_STRING_LENGTH = 512 * 1024
+const MAX_STRING_LENGTH = 15 * 1024 * 1024
 const MAX_ARRAY_LENGTH = 10_000
 const MAX_OBJECT_KEYS = 256
 const MAX_DEPTH = 32
@@ -118,16 +118,55 @@ function userContent(value: unknown, path: string): void {
       return
     }
     if (block.type !== 'image') fail(`${blockPath}.type`, 'expected text or image')
-    exactKeys(block, blockPath, ['type', 'source', 'name', 'mimeType', 'byteSize'], ['width', 'height'])
-    const source = object(block.source, `${blockPath}.source`)
+    imageContent(block, blockPath)
+  })
+}
+
+function imageContent(block: JsonObject, blockPath: string, allowDetail = false): void {
+  exactKeys(
+    block,
+    blockPath,
+    ['type', 'source', 'name', 'mimeType', 'byteSize'],
+    allowDetail ? ['width', 'height', 'detail'] : ['width', 'height'],
+  )
+  const byteSize = ordinal(block.byteSize, `${blockPath}.byteSize`)
+  const source = object(block.source, `${blockPath}.source`)
+  if (source.kind === 'provider-file') {
     exactKeys(source, `${blockPath}.source`, ['kind', 'provider', 'scope', 'reference'])
-    if (source.kind !== 'provider-file') fail(`${blockPath}.source.kind`, 'expected provider-file')
-    for (const key of ['provider', 'scope', 'reference'] as const) string(source[key], `${blockPath}.source.${key}`)
-    string(block.name, `${blockPath}.name`)
-    string(block.mimeType, `${blockPath}.mimeType`)
-    ordinal(block.byteSize, `${blockPath}.byteSize`)
-    if (block.width !== undefined) ordinal(block.width, `${blockPath}.width`)
-    if (block.height !== undefined) ordinal(block.height, `${blockPath}.height`)
+    for (const key of ['provider', 'scope', 'reference'] as const) {
+      string(source[key], `${blockPath}.source.${key}`)
+    }
+  } else if (source.kind === 'inline-base64') {
+    exactKeys(source, `${blockPath}.source`, ['kind', 'data'])
+    const data = string(source.data, `${blockPath}.source.data`)
+    if (!isValidInlineBase64Data(data, byteSize)) {
+      fail(`${blockPath}.source.data`, 'expected valid base64 matching byteSize')
+    }
+  } else {
+    fail(`${blockPath}.source.kind`, 'expected provider-file or inline-base64')
+  }
+  string(block.name, `${blockPath}.name`)
+  string(block.mimeType, `${blockPath}.mimeType`)
+  if (block.width !== undefined) ordinal(block.width, `${blockPath}.width`)
+  if (block.height !== undefined) ordinal(block.height, `${blockPath}.height`)
+  if (allowDetail && block.detail !== undefined
+    && !['low', 'high', 'original', 'auto'].includes(block.detail as string)) {
+    fail(`${blockPath}.detail`, 'expected low, high, original, or auto')
+  }
+}
+
+function toolModelContent(value: unknown, path: string): void {
+  if (!Array.isArray(value) || value.length > MAX_ARRAY_LENGTH) fail(path, 'expected a bounded content array')
+  value.forEach((entry, index) => {
+    const blockPath = `${path}[${index}]`
+    const block = object(entry, blockPath)
+    if (block.type === 'text') {
+      exactKeys(block, blockPath, ['type', 'text'])
+      string(block.text, `${blockPath}.text`, true)
+      return
+    }
+    if (block.type !== 'image') fail(`${blockPath}.type`, 'expected text or image')
+    imageContent(block, blockPath, true)
   })
 }
 
@@ -153,9 +192,12 @@ function modelItem(value: unknown, path: string): ModelItem {
       }
       break
     case 'tool':
-      exactKeys(candidate, path, ['role', 'tool_call_id', 'content'])
+      exactKeys(candidate, path, ['role', 'tool_call_id', 'content'], ['model_content'])
       string(candidate.tool_call_id, `${path}.tool_call_id`)
       string(candidate.content, `${path}.content`, true)
+      if (candidate.model_content !== undefined) {
+        toolModelContent(candidate.model_content, `${path}.model_content`)
+      }
       break
     default: fail(`${path}.role`, 'unknown model role')
   }

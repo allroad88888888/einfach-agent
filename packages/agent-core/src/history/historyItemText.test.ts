@@ -40,6 +40,21 @@ describe('history item text', () => {
     expect(agentHistoryItemSearchText(item)).not.toContain('aGVsbG8=')
   })
 
+  it('round-trips model-only tool images without adding base64 to search text', () => {
+    const item: ModelItem = {
+      role: 'tool',
+      tool_call_id: 'call-view',
+      content: '{"path":"photo.png"}',
+      model_content: [{
+        type: 'image', source: { kind: 'inline-base64', data: 'aGVsbG8=' },
+        name: 'photo.png', mimeType: 'image/png', byteSize: 5, detail: 'original',
+      }],
+    }
+    expect(decodeAgentHistoryModelItem(agentHistoryItemJson(item))).toEqual(item)
+    expect(agentHistoryItemSearchText(item)).toContain('photo.png')
+    expect(agentHistoryItemSearchText(item)).not.toContain('aGVsbG8=')
+  })
+
   it('allows a bounded large item only when its excess is valid inline image data', () => {
     const data = 'AAAA'.repeat(300_000)
     const item: ModelItem = { role: 'user', content: [{

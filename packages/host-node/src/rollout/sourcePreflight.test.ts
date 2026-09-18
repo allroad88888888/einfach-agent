@@ -60,7 +60,10 @@ describe('rollout source preflight', () => {
     await writeFile(value.source.filePath, encodeAgentRolloutRecord(value.record(0)))
     await expect(preflight(value.appData)).rejects.toThrow(`${value.source.filePath}:0: unterminated`)
     await writeFile(value.source.filePath, `${'x'.repeat(AGENT_ROLLOUT_MAX_LINE_BYTES + 1)}\n`)
-    await expect(preflight(value.appData, 31)).rejects.toThrow(`${value.source.filePath}:0: rollout line exceeds`)
+    // Fragmentation edge cases are covered by BoundedJsonlBuffer; keep this 16 MiB I/O guard fast.
+    await expect(preflight(value.appData, 64 * 1024)).rejects.toThrow(
+      `${value.source.filePath}:0: rollout line exceeds`,
+    )
   })
 
   it('validates only a cached tail and detects truncation, replacement, and corrupt tails', async () => {

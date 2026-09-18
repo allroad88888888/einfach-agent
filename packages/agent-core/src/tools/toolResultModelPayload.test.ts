@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { serializeToolResultForModel } from './toolResultModelPayload'
+import {
+  serializeToolResultForModel,
+  toolResultMessageForModel,
+} from './toolResultModelPayload'
 
 describe('serializeToolResultForModel', () => {
   it.each([
@@ -36,6 +39,30 @@ describe('serializeToolResultForModel', () => {
     })
     expect(JSON.parse(serializeToolResultForModel(pause, 'child tools cannot pause'))).toEqual({
       error: 'child tools cannot pause',
+    })
+  })
+
+  it('keeps trace-safe metadata separate from model-only image bytes', () => {
+    const image = {
+      type: 'image' as const,
+      source: { kind: 'inline-base64' as const, data: 'aGVsbG8=' },
+      name: 'photo.png', mimeType: 'image/png', byteSize: 5,
+    }
+
+    expect(toolResultMessageForModel({
+      ok: true,
+      data: { path: 'photo.png' },
+      warnings: ['detail clamped'],
+      modelContent: [image],
+    }, 'pause')).toEqual({
+      content: '{"data":{"path":"photo.png"},"warnings":["detail clamped"]}',
+      modelContent: [
+        {
+          type: 'text',
+          text: '{"data":{"path":"photo.png"},"warnings":["detail clamped"]}',
+        },
+        image,
+      ],
     })
   })
 })

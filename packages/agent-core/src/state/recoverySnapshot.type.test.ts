@@ -168,6 +168,22 @@ describe('RecoverySnapshotV1', () => {
     expect(decodeRecoverySnapshot(malformed)).toBeUndefined()
   })
 
+  it('接受工具结果中的模型专用 inline base64 图片块', () => {
+    const original = snapshot()
+    original.values.conversation.items[0] = {
+      id: 'tool-image', createdAt: 1, item: {
+        role: 'tool', tool_call_id: 'call-view', content: '{"path":"photo.png"}',
+        model_content: [{
+          type: 'image', source: { kind: 'inline-base64', data: 'aGVsbG8=' },
+          name: 'photo.png', mimeType: 'image/png', byteSize: 5, detail: 'original',
+        }],
+      },
+    }
+
+    expect(decodeRecoverySnapshot(structuredClone(original))?.values.conversation.items[0])
+      .toEqual(original.values.conversation.items[0])
+  })
+
   it('接受缺少策略字段的旧会话，同时严格拒绝损坏或混入未知 key 的策略', () => {
     const legacy = snapshot()
     delete legacy.session.capabilityPolicy

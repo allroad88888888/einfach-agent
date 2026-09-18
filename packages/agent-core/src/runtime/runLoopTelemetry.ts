@@ -1,5 +1,6 @@
 import {
   normalizeCacheUsage,
+  toolMessageTracePreview,
   userMessageTracePreview,
   type ModelChatResponse,
   type ModelFunctionTool,
@@ -67,9 +68,16 @@ export function llmRequestTracePreview(request: {
 }): string {
   return llmTracePreview({
     ...request,
-    messages: request.messages.map((message) => message.role === 'user'
-      ? { ...message, content: userMessageTracePreview(message.content) }
-      : message),
+    messages: request.messages.map((message) => {
+      if (message.role === 'user') {
+        return { ...message, content: userMessageTracePreview(message.content) }
+      }
+      if (message.role === 'tool') {
+        const { model_content: _modelContent, ...safeMessage } = message
+        return { ...safeMessage, content: toolMessageTracePreview(message) }
+      }
+      return message
+    }),
   })
 }
 

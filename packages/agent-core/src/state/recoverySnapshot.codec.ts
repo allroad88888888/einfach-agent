@@ -98,7 +98,11 @@ function isImageSource(value: unknown, byteSize: number): boolean {
 }
 
 function isUserContent(value: unknown): boolean {
-  return isText(value) || (Array.isArray(value) && value.every((block) => isRecord(block)
+  return isText(value) || isContentBlocks(value)
+}
+
+function isContentBlocks(value: unknown): boolean {
+  return Array.isArray(value) && value.every((block) => isRecord(block)
     && (block.type === 'text'
       ? isText(block.text)
       : block.type === 'image'
@@ -107,7 +111,8 @@ function isUserContent(value: unknown): boolean {
         && isNatural(block.byteSize)
         && isImageSource(block.source, block.byteSize)
         && optional(block, 'width', isNatural)
-        && optional(block, 'height', isNatural))))
+        && optional(block, 'height', isNatural)
+        && optional(block, 'detail', (entry) => ['low', 'high', 'original', 'auto'].includes(entry as string))))
 }
 
 function isToolCall(value: unknown): boolean {
@@ -119,7 +124,10 @@ function isModelItem(value: unknown): boolean {
   if (!isRecord(value) || !isText(value.role)) return false
   if (value.role === 'system') return isText(value.content)
   if (value.role === 'user') return isUserContent(value.content)
-  if (value.role === 'tool') return isText(value.tool_call_id) && isText(value.content)
+  if (value.role === 'tool') {
+    return isText(value.tool_call_id) && isText(value.content)
+      && optional(value, 'model_content', isContentBlocks)
+  }
   return value.role === 'assistant'
     && (isText(value.content) || value.content === null)
     && optional(value, 'reasoning_content', (entry) => isText(entry) || entry === null)

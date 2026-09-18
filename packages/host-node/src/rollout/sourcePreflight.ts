@@ -8,6 +8,7 @@ import {
 
 import { resolveRolloutHistoryPath } from './rolloutPath'
 import type { CanonicalRolloutSource } from './sourceCatalog'
+import { BoundedJsonlBuffer } from './boundedJsonlBuffer'
 
 const PREFIX_SENTINEL_BYTES = 128
 
@@ -107,30 +108,24 @@ export async function validateRolloutSource(
     }
     let position = offset
     let ordinal = previous?.nextOrdinal ?? 0
-    let pending = Buffer.alloc(0)
+    const lines = new BoundedJsonlBuffer(AGENT_ROLLOUT_MAX_LINE_BYTES)
     while (position < size) {
       const chunk = Buffer.allocUnsafe(Math.min(readChunkBytes, size - position))
       const { bytesRead } = await handle.read(chunk, 0, chunk.length, position)
       if (bytesRead === 0) break
       options.onChunkRead?.(bytesRead, position)
       position += bytesRead
-      pending = Buffer.concat([pending, chunk.subarray(0, bytesRead)])
-      let newline = pending.indexOf(0x0a)
-      while (newline >= 0) {
-        if (newline > AGENT_ROLLOUT_MAX_LINE_BYTES) throw failure(source, offset, 'rollout line exceeds maximum size')
+      for (const line of lines.append(chunk.subarray(0, bytesRead))) {
         let record: AgentRolloutRecordV1
-        try { record = decodeAgentRolloutRecord(pending.subarray(0, newline).toString('utf8')) } catch (error) {
+        try { record = decodeAgentRolloutRecord(line.toString('utf8')) } catch (error) {
           throw failure(source, offset, error instanceof Error ? error.message : String(error))
         }
         validateRecord(source, appDataDirectory, record, offset, ordinal)
         ordinal += 1
-        offset += newline + 1
-        pending = pending.subarray(newline + 1)
-        newline = pending.indexOf(0x0a)
+        offset += line.length + 1
       }
-      if (pending.byteLength > AGENT_ROLLOUT_MAX_LINE_BYTES) throw failure(source, offset, 'rollout line exceeds maximum size')
     }
-    if (pending.byteLength > 0) throw failure(source, offset, 'unterminated JSONL record')
+    if (lines.pendingBytes > 0) throw failure(source, offset, 'unterminated JSONL record')
     if (ordinal === 0) throw failure(source, 0, 'source has no complete JSONL record')
     const sentinelLength = Math.min(PREFIX_SENTINEL_BYTES, offset)
     const sentinel = await readExactly(handle, offset - sentinelLength, sentinelLength)

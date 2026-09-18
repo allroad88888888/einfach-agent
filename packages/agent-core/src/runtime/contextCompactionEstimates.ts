@@ -9,12 +9,28 @@ const IMAGE_BLOCK_ESTIMATED_TOKENS = 4_096
 const INLINE_IMAGE_DATA_PLACEHOLDER = '[inline image bytes omitted from text estimate]'
 
 function imageCount(item: ModelItem): number {
-  return item.role === 'user' && Array.isArray(item.content)
-    ? item.content.filter((block) => block.type === 'image').length
+  if (item.role === 'user' && Array.isArray(item.content)) {
+    return item.content.filter((block) => block.type === 'image').length
+  }
+  return item.role === 'tool'
+    ? item.model_content?.filter((block) => block.type === 'image').length ?? 0
     : 0
 }
 
 function modelItemEstimateValue(item: ModelItem): ModelItem {
+  if (item.role === 'tool') {
+    if (!item.model_content) return item
+    return {
+      ...item,
+      model_content: item.model_content.map((block) => block.type !== 'image'
+        || block.source.kind !== 'inline-base64'
+        ? block
+        : {
+            ...block,
+            source: { kind: 'inline-base64', data: INLINE_IMAGE_DATA_PLACEHOLDER },
+          }),
+    }
+  }
   if (item.role !== 'user' || typeof item.content === 'string') return item
   return {
     ...item,

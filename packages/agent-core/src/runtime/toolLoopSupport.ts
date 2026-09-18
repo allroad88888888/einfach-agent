@@ -1,6 +1,7 @@
 import { isAbortError } from '@einfach-agent/ai'
+import type { ToolOutputContentBlock } from '@einfach-agent/ai'
 import type { ToolResult } from '../tools/types'
-import { serializeToolResultForModel } from '../tools/toolResultModelPayload'
+import { toolResultMessageForModel } from '../tools/toolResultModelPayload'
 import type { TraceAttributes, TraceStatus } from '../observability/port'
 import { appendItem } from '../state/sessionWriters'
 import { newId } from './newId'
@@ -67,12 +68,24 @@ export function toolResultTrace(result: ToolResult, args?: unknown): {
 }
 
 /** Appends one protocol-required tool result to the conversation transcript. */
-export function appendToolResult(id: string, toolCallId: string, content: string, core: CoreInstance, planStageId?: string): void {
+export function appendToolResult(
+  id: string,
+  toolCallId: string,
+  content: string,
+  core: CoreInstance,
+  planStageId?: string,
+  modelContent?: readonly ToolOutputContentBlock[],
+): void {
   appendItem(id, {
     id: newId(),
     createdAt: Date.now(),
     ...(planStageId !== undefined ? { planStageId } : {}),
-    item: { role: 'tool', tool_call_id: toolCallId, content },
+    item: {
+      role: 'tool',
+      tool_call_id: toolCallId,
+      content,
+      ...(modelContent ? { model_content: modelContent } : {}),
+    },
   }, core)
   setToolCallOutcomeFacts(id, [toolCallId], 'outcomeKnown', core)
   void core.persistence.persistRecovery(id, 'tool_call_result_saved')
@@ -80,11 +93,13 @@ export function appendToolResult(id: string, toolCallId: string, content: string
 
 /** Serializes a runtime tool result in the same shape that the model API receives. */
 export function appendMappedToolResult(id: string, toolCallId: string, result: ToolResult, core: CoreInstance, planStageId?: string): void {
+  const payload = toolResultMessageForModel(result, 'unexpected pause')
   appendToolResult(
     id,
     toolCallId,
-    serializeToolResultForModel(result, 'unexpected pause'),
+    payload.content,
     core,
     planStageId,
+    payload.modelContent,
   )
 }

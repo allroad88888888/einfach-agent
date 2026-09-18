@@ -1,4 +1,9 @@
-import type { ModelFunctionTool, ModelItem, ModelToolCall } from '@einfach-agent/ai'
+import type {
+  ModelFunctionTool,
+  ModelItem,
+  ModelToolCall,
+  ToolOutputContentBlock,
+} from '@einfach-agent/ai'
 import {
   parseToolCallArgs,
   searchToolManifestPage,
@@ -7,7 +12,7 @@ import {
 import { selectToolGate } from '../runtime/toolGates'
 import { isDelegatableDangerousTool } from '../runtime/dangerousTools'
 import { toolSchemaLoadedResult } from '../tools/schemaResult'
-import { serializeToolResultForModel } from '../tools/toolResultModelPayload'
+import { toolResultMessageForModel } from '../tools/toolResultModelPayload'
 import { normalizeDelegateAgentInput } from './input'
 import { agentPathDepth } from './path'
 import { appendVisibleChildTool, loadVisibleChildTool } from './childToolVisibility'
@@ -98,8 +103,17 @@ export async function executeChildAgentToolCalls(
     requestedRegistrationVersions,
     rolloutRecorder,
   } = input
-  const pushToolResult = async (toolCallId: string, content: string): Promise<void> => {
-    const item: ModelItem = { role: 'tool', tool_call_id: toolCallId, content }
+  const pushToolResult = async (
+    toolCallId: string,
+    content: string,
+    modelContent?: readonly ToolOutputContentBlock[],
+  ): Promise<void> => {
+    const item: ModelItem = {
+      role: 'tool',
+      tool_call_id: toolCallId,
+      content,
+      ...(modelContent ? { model_content: modelContent } : {}),
+    }
     loop.messages.push(item)
     await rolloutRecorder.recordItem(item)
     await runtime.archive.bestEffortRecordTraceItem(
@@ -270,10 +284,8 @@ export async function executeChildAgentToolCalls(
         ok: toolResult.ok,
         durationMs: Date.now() - startedAt,
       })
-      await pushToolResult(
-        toolCall.id,
-        serializeToolResultForModel(toolResult, 'child tools cannot pause'),
-      )
+      const payload = toolResultMessageForModel(toolResult, 'child tools cannot pause')
+      await pushToolResult(toolCall.id, payload.content, payload.modelContent)
       continue
     }
     await pushToolResult(toolCall.id, JSON.stringify(gate.result))

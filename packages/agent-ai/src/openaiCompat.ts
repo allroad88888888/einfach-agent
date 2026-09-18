@@ -16,7 +16,7 @@ import {
   type ChatStreamHandlers,
   type ModelChatResponse,
 } from './modelApi'
-import { nonVisualMessages } from './nonVisualMessages'
+import { nonVisualMessages, nonVisualToolMessages } from './nonVisualMessages'
 import {
   encodeOpenAiCompatMessages,
   type OpenAiCompatWireItem,
@@ -80,7 +80,7 @@ function prepareOpenAiCompatRequest(
   options: OpenAiCompatCallOptions,
 ): OpenAiCompatWireRequest {
   const messages: OpenAiCompatWireItem[] = options.imageInput === 'inline-base64'
-    ? encodeOpenAiCompatMessages(body.messages)
+    ? encodeOpenAiCompatMessages(nonVisualToolMessages(body.messages))
     : nonVisualMessages(body.messages) as OpenAiCompatWireItem[]
   return messages === body.messages ? body as OpenAiCompatWireRequest : { ...body, messages }
 }

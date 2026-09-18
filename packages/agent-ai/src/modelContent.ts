@@ -1,11 +1,28 @@
 import type {
   ModelChatResponse,
+  ToolItem,
   UserContentBlock,
   UserMessageContent,
 } from './modelProtocol'
 
 function containsImage(blocks: readonly UserContentBlock[]): boolean {
   return blocks.some((block) => block.type === 'image')
+}
+
+/** Extracts tool-authored text while keeping inline image bytes opaque. */
+export function toolMessageText(item: ToolItem): string {
+  const images = item.model_content?.filter((block) => block.type === 'image') ?? []
+  return [item.content, ...images.map((block) => `[图片：${block.name}（${block.mimeType}）]`)]
+    .filter(Boolean)
+    .join('\n')
+}
+
+/** Returns trace-safe tool output summary without provider references or inline bytes. */
+export function toolMessageTracePreview(item: ToolItem): UserMessageTracePreview {
+  return {
+    text: item.content,
+    imageCount: item.model_content?.filter((block) => block.type === 'image').length ?? 0,
+  }
 }
 
 /** Extracts only user-authored text without exposing provider image references. */

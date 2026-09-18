@@ -7,6 +7,7 @@ import {
   type ModelChatResponse,
 } from './modelApi'
 import { encodeKimiMessages, type KimiWireItem } from './kimiMessages'
+import { nonVisualToolMessages } from './nonVisualMessages'
 import {
   kimiBaseUrl,
   resolveKimiRegion,
@@ -46,7 +47,11 @@ function prepareKimiRequest(body: KimiChatRequest): KimiWireChatRequest {
       || rawReasoningEffort === 'max'
       ? { reasoning_effort: rawReasoningEffort }
       : {}),
-    messages: encodeKimiMessages(messages, resolveKimiRegion(region), body.model),
+    messages: encodeKimiMessages(
+      nonVisualToolMessages(messages),
+      resolveKimiRegion(region),
+      body.model,
+    ),
   }
 }
 

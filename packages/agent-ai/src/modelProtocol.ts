@@ -47,6 +47,13 @@ export interface UserImageContentBlock {
 export type UserContentBlock = UserTextContentBlock | UserImageContentBlock
 export type UserMessageContent = string | readonly UserContentBlock[]
 
+export interface ToolOutputImageContentBlock extends UserImageContentBlock {
+  /** Provider-side image processing after the host has applied its own detail policy. */
+  detail?: 'low' | 'high' | 'original' | 'auto'
+}
+
+export type ToolOutputContentBlock = UserTextContentBlock | ToolOutputImageContentBlock
+
 export interface UserItem {
   role: 'user'
   content: UserMessageContent
@@ -63,6 +70,8 @@ export interface ToolItem {
   role: 'tool'
   tool_call_id: string
   content: string
+  /** Structured provider input kept separate from the trace/UI-safe textual result. */
+  model_content?: readonly ToolOutputContentBlock[]
 }
 
 export type ModelItem = SystemItem | UserItem | AssistantItem | ToolItem

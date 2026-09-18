@@ -6,7 +6,7 @@ import {
   type TimedToolRegistration,
 } from '../runtime/timedDispatch'
 import type { ToolResult } from '../tools/types'
-import { serializeToolResultForModel } from '../tools/toolResultModelPayload'
+import { toolResultMessageForModel } from '../tools/toolResultModelPayload'
 import { createChildFinishedArchivePayload } from './archiveEventPayload'
 import { loadVisibleChildTool } from './childToolVisibility'
 import { persistTerminalChildResults } from './continuationLifecycle'
@@ -108,10 +108,12 @@ export async function dispatchChildTimedTools(input: {
 
 /** Formats a timed child result for the child trace without creating an orphan model tool message. */
 export function childTimedToolTraceItem(callId: string, result: ToolResult): ModelItem {
+  const payload = toolResultMessageForModel(result, 'child tools cannot pause')
   return {
     role: 'tool',
     tool_call_id: callId,
-    content: serializeToolResultForModel(result, 'child tools cannot pause'),
+    content: payload.content,
+    ...(payload.modelContent ? { model_content: payload.modelContent } : {}),
   }
 }
 

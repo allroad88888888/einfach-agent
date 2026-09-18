@@ -55,7 +55,12 @@ interface LoadedTool extends ToolSummary {
 }
 
 type ToolResult =
-  | { ok: true; data?: unknown; warnings?: string[] }
+  | {
+      ok: true;
+      data?: unknown;
+      warnings?: string[];
+      modelContent?: readonly ToolOutputContentBlock[];
+    }
   | { ok: false; error: string }
   | { pause: unknown };
 
@@ -85,6 +90,12 @@ interface Tool {
 
 `ToolSkill` contains the manifest description, optional triggers, and the
 lazy-loaded guide content.
+
+`modelContent` is reserved for validated, provider-neutral content that the
+model must receive beside the serialized tool result. Generic UI, search, and
+trace surfaces continue to consume `data`; they must not render inline image
+bytes. The built-in `view_image` tool uses this channel for one bounded Base64
+image block.
 
 `ToolContext` is the exclusive capability boundary for side effects. It exposes
 progress reporting, nested tool calls, subagent operations, plan operations,

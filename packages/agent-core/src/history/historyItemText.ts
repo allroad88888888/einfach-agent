@@ -1,4 +1,4 @@
-import { isValidInlineBase64Data, type ModelItem } from '@einfach-agent/ai'
+import { isValidInlineBase64Data, toolMessageText, type ModelItem } from '@einfach-agent/ai'
 
 import {
   AGENT_HISTORY_ITEM_PREVIEW_MAX_CHARS,
@@ -91,8 +91,16 @@ function assertModelItem(value: unknown): asserts value is ModelItem {
     if (!item.content.every(validUserBlock)) throw new Error('Invalid user content')
     return
   }
+  if (item.role === 'tool') {
+    if (typeof item.content !== 'string') throw new Error('Invalid tool content')
+    if (typeof item.tool_call_id !== 'string') throw new Error('Invalid tool_call_id')
+    if (item.model_content !== undefined
+      && (!Array.isArray(item.model_content) || !item.model_content.every(validUserBlock))) {
+      throw new Error('Invalid tool model_content')
+    }
+    return
+  }
   if (typeof item.content !== 'string') throw new Error('Invalid ModelItem content')
-  if (item.role === 'tool' && typeof item.tool_call_id !== 'string') throw new Error('Invalid tool_call_id')
 }
 
 export function decodeAgentHistoryModelItem(json: string): ModelItem {
@@ -102,10 +110,11 @@ export function decodeAgentHistoryModelItem(json: string): ModelItem {
   try { value = JSON.parse(json) } catch { throw new Error('Invalid ModelItem JSON') }
   assertModelItem(value)
   if (size.bytes > AGENT_HISTORY_ITEM_JSON_MAX_BYTES) {
-    const inlineChars = value.role === 'user' && Array.isArray(value.content)
-      ? value.content.reduce((total, block) => total + (block.type === 'image'
-        && block.source.kind === 'inline-base64' ? block.source.data.length : 0), 0)
-      : 0
+    const blocks = value.role === 'user' && Array.isArray(value.content)
+      ? value.content
+      : value.role === 'tool' ? value.model_content ?? [] : []
+    const inlineChars = blocks.reduce((total, block) => total + (block.type === 'image'
+      && block.source.kind === 'inline-base64' ? block.source.data.length : 0), 0)
     if (inlineChars === 0 || size.bytes - inlineChars > AGENT_HISTORY_ITEM_JSON_MAX_BYTES) {
       throw new Error(`ModelItem JSON exceeds ${AGENT_HISTORY_ITEM_JSON_MAX_BYTES} bytes`)
     }
@@ -127,7 +136,7 @@ export function agentHistoryItemSearchText(item: ModelItem): string {
     const calls = item.tool_calls?.flatMap(call => [call.function.name, call.function.arguments]) ?? []
     return [item.content, item.reasoning_content, ...calls].filter((part): part is string => typeof part === 'string').join('\n')
   }
-  return item.content
+  return item.role === 'tool' ? toolMessageText(item) : item.content
 }
 
 export function agentHistoryItemPreview(item: ModelItem): string {

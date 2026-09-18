@@ -1,4 +1,4 @@
-import { userMessageTracePreview, type ModelItem } from '@einfach-agent/ai'
+import { toolMessageText, userMessageTracePreview, type ModelItem } from '@einfach-agent/ai'
 
 export function compactSubagentTranscript(value: string, limit: number): string {
   const trimmed = value.replace(/\s+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
@@ -19,7 +19,7 @@ function formatModelItem(item: ModelItem): string {
     const imageSummary = preview.imageCount ? `\n[${preview.imageCount} image(s)]` : ''
     return `user:\n${compactSubagentTranscript(`${preview.text}${imageSummary}`, 2_000)}`
   }
-  if (item.role === 'tool') return `tool ${item.tool_call_id}:\n${compactSubagentTranscript(item.content, 2_000)}`
+  if (item.role === 'tool') return `tool ${item.tool_call_id}:\n${compactSubagentTranscript(toolMessageText(item), 2_000)}`
   if (item.role === 'system') return `system:\n${compactSubagentTranscript(item.content, 2_000)}`
 
   const content = typeof item.content === 'string' ? item.content : ''
