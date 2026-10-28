@@ -42,6 +42,7 @@
 | [core 公开面收敛盘点](core-public-surface-audit.md) | 盘点阶段，无实现：`@einfach-agent/core` 是唯一带 `exports` 通配的包，实测 68 条深导入子路径（非测试 63 / 测试 37）全部构成公开承诺；含五类归类、8 条疑似内部泄漏点名、68→9 的白名单方案、barrel 与 exports 两步走迁移，以及 17 张卡的拆分建议；发包蓝图 G4 的前置 |
 | [core 公开面收敛 Issue 树](core-surface-issues.md) | 步骤 1 + S11 委派接缝整形完成：九条 barrel、白名单门禁、批次执行段下沉 core、packages/subagents 深导入归零、T 线八项超限拆分；仅余 S10（删通配，GATED 至首次发包批次） |
 | [npm 发包准备 Issue 树](publish-prep-issues.md) | 执行中：E2 蓝图 G1–G13 的准备段（构建产物 / ?raw 内联 / 元数据 / 依赖修正 / 产物冒烟）；不含任何 publish 动作，发布键与 S10 由用户触发 |
+| [项目知识同步 Issue 树](knowledge-sync-issues.md) | 执行中：把 `.project-lines/` 与根 `README.md`、`CLAUDE.md` 对齐到当前代码——订正 4 处已被证伪的断言、补 `browser-agent` 分支线、把 `browser-agent/`、`apps/desktop/`、`tools/vision/` 写进根文档目录清单；不动任何源码 |
 | [Node 宿主与 Web 自托管 Issue 树](node-host-issues.md) | 执行中（82 卡：71 DONE / 7 DROPPED / 4 DOING）：把浏览器版做成能力完整的本地自托管应用——core 的宿主 invoke 抽成可注入 host bridge，能力实现收敛为一份 `packages/host-node`，经 `apps/server` 服务浏览器与 CLI。**桌面端已整条删除**（T1，`e52c31d`），宿主从三态减到两态（`server` / `static`）；分发口径是用户裁决的「不发布，仅本地跑」，因而不需要任何签名证书。三项未决待拍板 |
 | [插件生态蓝图](plugin-ecosystem-blueprint.md) | 设计阶段，无实现：把 assembly-time 插件产品化为 `.webAgent/plugins/` 动态加载的用户插件——加载协议与错误隔离、借鉴 MCP 起进程确认的信任模型、启停与 plugin id 归因、npm 分发前置；`timeline.persist` 阻塞于 R5；默认信任姿态已拍板（装插件 = 完全信任，外部插件与仓内插件同拿 7 个 loop hook 槽），首期宿主与模型可见工具仍待用户拍板 |
 
