@@ -12,6 +12,11 @@ description: "web-agent — 主线与分支线：东西放哪、数据怎么走�
 > `subagents/compactChildContext.ts` 调用同一个工具，摘要仍归子循环独立上下文。
 > 下文关于旧压缩插件的描述是历史记录；当前实现以本条及代码为准。
 
+> **2026-10-28 对账（@ `fc2cce0`，未重学，只核对已证伪的断言）**：本轮把索引与代码重新对了一遍，
+> 订正 4 处过期断言（桌面壳“已删除”、`UndoBar` 待修 bug、工具计数、跟踪文件数），并补了
+> `18-分支-browser-agent.md`。**没有重学任何一条旧线**——除下列订正与新增外，00–17 的结论仍按
+> `1ebe4a0` 时的证据有效；但请注意它们现在落后 128 个提交，引用具体 `file:line` 前先核一遍。
+
 > 由 `learn-project` 于 commit `1ebe4a0`（2026-08-20）学得，同日负责人答复。下面的数字来自
 > `mechanical/`，可用 `check.sh` 重算。裁决在各线文件末尾的「裁决」节，逐条注明出处。
 
@@ -21,7 +26,8 @@ description: "web-agent — 主线与分支线：东西放哪、数据怎么走�
 前端纯展示，tools 与 mcp 的逻辑都在后端。**
 
 当前形态与它相反——core 装在 `apps/web/src/main.tsx`，主循环在**浏览器**里转；`apps/server`
-对 core 的依赖只有一个 `import type { HostInvoke }`（`invokeRoute.ts:26`），它只提供能力面与
+对 core 的依赖只有两处 type-only 导入（`invokeRoute.ts:26` 的 `HostInvoke`、
+`invokeRouteError.ts:57` 的错误码类型），它只提供能力面与
 模型转发；CLI 则在自己进程里装同一份 core，是唯一前后端同进程的形态。
 
 按受影响程度排（迁移时按这个顺序读线文件）：
@@ -48,7 +54,7 @@ description: "web-agent — 主线与分支线：东西放哪、数据怎么走�
 | `lines/00-主线-run执行链路.md` | 发消息 → 请求组装 → 工具执行 → 落盘 | 主线 | `runToolLoop.ts` 循环编排；`modelTurnPrefix.ts:79-84` 前缀四段 | ✅ 2 条 · 2 条未提交 |
 | `lines/01-主线-会话状态与恢复.md` | atom → writer → 事务日志 → 快照 → 恢复 | 主线 | `sessionSlots.ts` 的 `SESSION_SLOTS`（10 槽）；`persistenceBridge.ts` | ✅ 3 条 |
 | `lines/02-主线-宿主分流与装配.md` | resolveHost → 桥/传输/凭据/driver | 主线 | `main.tsx:141` 唯一探测点；9 个分流点全收 `host` 形参 | ✅ 3 条 · **方向影响大** |
-| `lines/10-分支-工具家族.md` | 33 个工具目录（32 注册 / 31 模型可见） | 分支线 | 各域 `tools/<域>/src/index.ts` registrar；`tools/standard` 一把装齐 | ✅ 4 条 |
+| `lines/10-分支-工具家族.md` | **37 个工具目录 / 7 域 37 个标准工具**（2026-10-28 复核；原账「33 目录 / 32 注册 / 31 可见」是 `1ebe4a0` 时不含 `tools/vision` 的数） | 分支线 | 各域 `tools/<域>/src/index.ts` registrar；`tools/standard` 一把装齐 | ✅ 4 条 · 计数已更新 |
 | `lines/11-分支-运行时插件.md` | 3 个内建插件 × 7 个 hook 槽 | 分支线 | `defaultPlugins.ts:7-11`（运行时）+ `pluginHost.ts`（安装） | ✅ 2 条 · 1 待确认 |
 | `lines/12-分支-持久化与观测driver.md` | idb/sqlite × persistence/observability | 分支线 | `main.tsx:117-125` 两处装配；5 份 core contract | **待方向落地** |
 | `lines/13-分支-子agent委派.md` | 委派 → 批次 → 子 run → 归档 | 分支线 | `delegationCapabilities.ts:122` `spawnAgents`；执行图 `agent-batch` 节点 | ✅ 3 条 · 1 待确认 |
@@ -56,6 +62,7 @@ description: "web-agent — 主线与分支线：东西放哪、数据怎么走�
 | `lines/15-分支-UI渲染与timeline.md` | item → registry 查表 → 薄适配组件 | 分支线 | `webTimelineRendererRegistry.ts`（6 kind 全锁）；`TimelineItemView.tsx:16` | ✅ 5 条 |
 | `lines/16-分支-MCP第七域.md` | 连接 → 清单缓存 → 占位工具 → 远端调用 | 分支线 | `main.tsx:152` + `toolProbeWiring.ts:117`（唯一注册点） | ✅ 3 条 · **方向影响大** |
 | `lines/17-分支-模型adapter与skills.md` | provider 私有变换 / skill 三层披露 | 分支线×2 | `builtinProviders.ts:216-219`；`skill-manifest.ts:17` 到点工具 | ✅ 5 条，**建议拆分** |
+| `lines/18-分支-browser-agent.md` | 浏览器扩展内嵌 agent（9 包 / 23 工具目录 / README 称 25 模型可见） | 分支线 | `browser-agent/agent/src/client.ts:71` 的 `createCore`；`extension/src/sidepanel.tsx:23` 一行装齐 4 族 | ✅ 1 条 · 2026-10-28 补 |
 
 **17 该拆成两条**（该线自评，给了三条可核对的理由：无 import 边、薄接口形状不同、变更半径零交集）。
 未拆是因为拆分要重组内容而非机械切分——等负责人确认后由一次针对性重学完成。
@@ -76,8 +83,12 @@ description: "web-agent — 主线与分支线：东西放哪、数据怎么走�
 3. **skill 的 L1 清单已离开稳定前缀**（00 + 17 独立得出）。改由 `callTiming:'sessionStart'` 的
    `skill_manifest` 工具产出成 timeline item（`a88ba16`），`modelTurnPrefix.test.ts:38` 直接断言前缀
    不再调 `buildManifestText`。两份蓝图与 `modelTurnSystemItems.ts:9-13` 的注释都还是旧说法。→ B3。
-4. **Tauri 残留注释是全仓性的**（02 + 10 + 12 + 16 各自撞到）。桌面壳已于 `e52c31d` 整体删除，但
-   sqlite 两包、MCP 侧 12 个文件、`health.ts:30/34`、多个工具域的注释仍以它为对照系或判据。
+4. **Tauri 残留注释是全仓性的**（02 + 10 + 12 + 16 各自撞到）。桌面壳曾于 `e52c31d` 整体删除，
+   **又由 `bb40e2c` 以 Tauri 薄壳加回**（`apps/desktop/`，14 个跟踪文件：`Cargo.toml`、
+   `src/server_sidecar.rs`、3 个测试）。薄壳与浏览器一样落在 `server` 态，所以**「宿主两态」的结论不变**
+   （`resolveHost.ts:29` 仍是 `HostKind = 'server' | 'static'`；`apps/desktop/tests/threeModeSmoke.test.mjs`
+   的「三模式」指三种**运行形态**——纯 Web / 浏览器 server / Tauri sidecar，不是三个宿主态）。
+   sqlite 两包、MCP 侧 12 个文件、`health.ts:30/34`、多个工具域的注释仍以旧桌面为对照系或判据。
    真实判据一律是 `hasHostBridge()` / 两态 `resolveHost()`。→ E 组。
 5. **撤销条在生产里从不显示**（01 + 15 独立得出，同一诊断）。`UndoBar.tsx:24` 裸 `useAtomValue` 读
    会话 atom 工厂 → 依赖全取默认值 → 恒 `return null`。三道防线全漏：规则 5 只认「core 直接导入的
@@ -109,7 +120,9 @@ description: "web-agent — 主线与分支线：东西放哪、数据怎么走�
 `preCompact`/`postCompact` 补触发路径再删**）、`delegate_agent` 同步返回分支、`SubagentTreePanel`
 5 文件、`hostRecoveryFlush.ts`、`pnpm subagent:capacity` 命令、`apps/cli/src/runtime.ts:9` 悬空 import。
 
-已确认要修的 bug：`UndoBar.tsx:24`（撤销条永不显示，测试也要改传 `agentStore`）。
+已确认要修的 bug：~~`UndoBar.tsx:24`~~（撤销条永不显示）——**2026-10-28 复核：该文件已不存在**。
+撤销条 UI 已随组件删除，bug 随之消失；core 的 `state/undoBarrier.ts` 仍在，但那是另一件事
+（跨进程不可逆动作的屏障，不是 UI 撤销条）。
 
 已确认的方向变更：skill 的 L1 清单**最终要迁回请求固定前缀**（现在的 sessionStart 消息是过渡态）；
 换模型 escalation 要从 `subagents/` 提到共用层；`PlanStageExecutionTrace` 合并进 `TimelineItemView`；
@@ -144,8 +157,11 @@ description: "web-agent — 主线与分支线：东西放哪、数据怎么走�
 ## 机械证据（来自 `mechanical/`，模型没参与）
 
 ### 规模
-1787 个跟踪文件、647 次提交。顶层：packages 1010 / apps 405 / tools 225 / docs 55 / scripts 45 / evals 22。
-`agent-core/src` 分区：runtime 272 / state 69 / subagents 53 / plugins 17 / tools 14 / observability 13 /
+**2026-10-28 @ `fc2cce0` 复核：2543 个跟踪文件、775 次提交**。顶层：packages 1253 / apps 536 /
+browser-agent 301 / tools 259 / docs 61 / scripts 59 / evals 22。
+（原记录写「1787 个跟踪文件、647 次提交」，它与同时期的 `mechanical/commit.txt`（1783）就已差 4，
+两个数都是 `1ebe4a0` 时的快照，现均已过时；`browser-agent` 在原记录里完全缺席。）
+`agent-core/src` 分区（`1ebe4a0` 时，未重算）：runtime 272 / state 69 / subagents 53 / plugins 17 / tools 14 / observability 13 /
 skills 10 / execution 6 / planning 5 / timeline 2。
 
 ### import 方向
