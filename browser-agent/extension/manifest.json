@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "Run isolated browser agents against an explicitly bound page.",
   "permissions": ["activeTab", "scripting", "sidePanel", "storage"],
+  "host_permissions": ["https://paddleocr.aistudio-app.com/*", "https://paddleocr-store-1.bj.bcebos.com/*"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "background": { "service_worker": "service-worker.js", "type": "module" },
   "action": { "default_title": "Open Browser Agent" },

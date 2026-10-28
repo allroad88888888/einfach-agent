@@ -1,7 +1,9 @@
 import { createBrowserAgent, type BrowserAgentClient } from '@einfach-agent/browser-agent'
 import { runAtom } from '@einfach-agent/core'
 import { createApiToolsHost, registerApiTools } from '@einfach-agent/tools-browser-api'
+import { createDomToolsHost, registerDomTools, type DomNode } from '@einfach-agent/tools-browser-dom'
 import { createDomPageHost, registerPageTools, type ControlledFieldAdapter, type FieldValue } from '@einfach-agent/tools-browser-page'
+import { createWindowNetworkHost, installWindowNetworkRecorder, registerNetworkTools } from '@einfach-agent/tools-browser-network'
 
 const root = document.querySelector<HTMLElement>('#agents')!
 await Promise.all([
@@ -16,11 +18,16 @@ async function mountAgent(namespace: string, name: string, model: string, label:
   card.innerHTML = `<h2>${name}</h2><p>Namespace: <code>${namespace}</code></p><button disabled>Configure and run</button><p class="status">Ready</p><iframe title="${name} form"></iframe>`
   root.append(card)
   const frame = card.querySelector('iframe')!
-  frame.srcdoc = `<form><label>${label}<input name="person" required></label><label>Country<select name="country"><option value="${country}">${country}</option></select></label><label>City<select name="city"><option value="">Choose</option><option value="${cityValue}">${country} city</option></select></label><label>Controlled note<div data-controlled role="textbox"></div></label></form>`
+  frame.srcdoc = `<form><label>${label}<input name="person" required></label><label>Country<select name="country"><option value="${country}">${country}</option></select></label><label>City<select name="city"><option value="">Choose</option><option value="${cityValue}">${country} city</option></select></label><label>Controlled note<div data-controlled role="textbox"></div></label><div data-ticket-select><div data-ticket-trigger tabindex="0">Ticket type</div><span data-ticket-value>Unselected</span><div data-ticket-options hidden><span data-ticket-option>General question</span><span data-ticket-option>Security vulnerability</span></div></div></form>`
   while (!frame.contentDocument?.querySelector('form')) await new Promise((resolve) => setTimeout(resolve, 10))
+  const recorder = installWindowNetworkRecorder({ window: frame.contentWindow! })
+  const networkHost = createWindowNetworkHost({ window: frame.contentWindow!, targetId: namespace, documentId: `${namespace}-document` })
   const pageHost = createDomPageHost({ document: frame.contentDocument!, targetId: namespace, documentId: `${namespace}-document`, controlledAdapters: [controlledAdapter()] })
+  const domHost = createDomToolsHost({ document: frame.contentDocument!, targetId: namespace, documentId: `${namespace}-document` })
+  wireTicketSelect(frame.contentDocument!)
   const apiHost = createApiToolsHost([{ id: 'cities', async query() { return { options: [{ label: `${country} city`, value: cityValue }] } } }], { isSourceAllowed: (_source, sessionId) => Boolean(sessionId) })
-  const client = await createBrowserAgent({ namespace, fetch: createMockModelFetch(), registerTools(registry) { registerPageTools(registry, pageHost); registerApiTools(registry, apiHost) } })
+  const client = await createBrowserAgent({ namespace, fetch: createMockModelFetch(), registerTools(registry) { registerPageTools(registry, pageHost); registerDomTools(registry, domHost); registerApiTools(registry, apiHost); registerNetworkTools(registry, networkHost) } })
+  window.addEventListener('pagehide', () => { networkHost.dispose(); recorder.dispose(); void client.dispose() }, { once: true })
   const status = card.querySelector<HTMLElement>('.status')!
   const button = card.querySelector('button')!
   button.addEventListener('click', () => void run(client, name, model, status))
@@ -47,7 +54,7 @@ async function run(client: BrowserAgentClient, name: string, model: string, stat
     const oldConnection = snapshot.connections.find((item) => item.label === `${name} local`)
     const connection = await client.saveConnection({ id: oldConnection?.id, label: `${name} local`, baseUrl: 'https://fixture.invalid/v1', models: [model], apiKey: 'fixture-only' })
     const oldAgent = client.getSnapshot().agents.find((item) => item.name === name)
-    const agent = await client.saveAgent({ id: oldAgent?.id, name, instructions: 'Query cities, read the form, fill it, validate it, then report completion.', connectionId: connection.id, model, toolNames: ['query_options', 'read_form', 'fill_fields', 'validate_form'], skillNames: [] })
+    const agent = await client.saveAgent({ id: oldAgent?.id, name, instructions: 'Use DOM tools to select Security vulnerability in the custom ticket type, then report completion.', connectionId: connection.id, model, toolNames: ['read_dom', 'click_dom', 'wait_for_dom'], skillNames: [] })
     const sessionId = await client.createSession(agent.id)
     status.textContent = 'Running real core and tool dispatch…'
     await client.core.sendMessage('Complete this form.', { sessionId })
@@ -69,27 +76,36 @@ async function waitForRun(client: BrowserAgentClient, sessionId: string): Promis
 function createMockModelFetch(): typeof fetch {
   return async (_input, init) => {
     const body = JSON.parse(String(init?.body)) as { messages?: Array<{ role: string; content?: string }> }
-    const turn = (body.messages ?? []).filter((message) => message.role === 'tool').length
-    const names = ['query_options', 'query_options', 'read_form', 'read_form', 'fill_fields', 'fill_fields', 'validate_form', 'validate_form']
+    const messages = body.messages ?? []
+    const turn = messages.filter((message) => message.role === 'tool').length
+    const names = ['request_tool_schema', 'request_tool_schema', 'request_tool_schema', 'read_dom', 'click_dom', 'wait_for_dom', 'click_dom', 'read_dom']
     const name = names[turn]
-    const args = name === 'query_options' ? { sourceId: 'cities' } : name === 'fill_fields' ? pageArguments(body.messages ?? []) : name === 'validate_form' ? pageArguments(body.messages ?? [], true) : {}
+    const args = name === 'request_tool_schema' ? { toolName: ['read_dom', 'click_dom', 'wait_for_dom'][turn] } : domArguments(messages, name, turn)
     const message = name ? { role: 'assistant', content: null, tool_calls: [{ id: `call-${turn}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] } : { role: 'assistant', content: 'Form completed and validated.' }
     return new Response(JSON.stringify({ choices: [{ message, finish_reason: name ? 'tool_calls' : 'stop' }] }), { headers: { 'content-type': 'application/json' } })
   }
 }
 
-function pageArguments(messages: Array<{ role: string; content?: string }>, validate = false): object {
-  const snapshot = messages.flatMap((message) => {
+function domArguments(messages: Array<{ role: string; content?: string }>, name: string | undefined, turn: number): object {
+  const snapshots = messages.flatMap((message) => {
     if (message.role !== 'tool') return []
-    try { const value = JSON.parse(message.content ?? '{}') as { page?: unknown; fields?: Array<{ id: string; label: string }> }; return value.page && value.fields ? [value] : [] } catch { return [] }
-  }).at(-1) ?? {}
-  if (validate) return { page: snapshot.page }
-  const options = messages.flatMap((message) => {
-    if (message.role !== 'tool') return []
-    try { const value = JSON.parse(message.content ?? '{}') as { options?: Array<{ value: string }> }; return value.options ?? [] } catch { return [] }
+    try { const value = JSON.parse(message.content ?? '{}') as { page?: unknown; nodes?: DomNode[] }; return value.page && value.nodes ? [value] : [] } catch { return [] }
   })
-  const person = snapshot.fields?.find((field) => field.label === 'Customer' || field.label === 'Traveller')
-  const city = snapshot.fields?.find((field) => field.label.startsWith('City'))
-  const controlled = snapshot.fields?.find((field) => field.label === 'Controlled note')
-  return { page: snapshot.page, values: [{ id: person?.id, value: 'Ada' }, { id: city?.id, value: options.at(-1)?.value }, { id: controlled?.id, value: 'adapter-value' }] }
+  const latest = snapshots.at(-1)
+  if (name === 'read_dom') return latest ? { page: latest.page, text: 'Security vulnerability' } : { text: 'Ticket type' }
+  if (name === 'wait_for_dom') return { page: latest?.page, scopeRef: latest?.nodes?.find((node) => node.name.includes('Ticket type'))?.parentRef, text: 'Security vulnerability', condition: 'present', timeoutMs: 1000 }
+  const wanted = turn < 6 ? 'Ticket type' : 'Security vulnerability'
+  return { page: latest?.page, ref: [...(latest?.nodes ?? [])].reverse().find((node) => node.name === wanted)?.ref }
+}
+
+function wireTicketSelect(document: Document): void {
+  const trigger = document.querySelector<HTMLElement>('[data-ticket-trigger]')!
+  const list = document.querySelector<HTMLElement>('[data-ticket-options]')!
+  trigger.addEventListener('click', () => { setTimeout(() => { list.hidden = false; trigger.setAttribute('aria-expanded', 'true') }, 20) })
+  list.addEventListener('click', (event) => {
+    const option = (event.target as Element).closest('[data-ticket-option]')
+    if (!option) return
+    document.querySelector<HTMLElement>('[data-ticket-value]')!.textContent = option.textContent
+    list.hidden = true; trigger.setAttribute('aria-expanded', 'false')
+  })
 }

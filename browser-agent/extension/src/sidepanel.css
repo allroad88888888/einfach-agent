@@ -1,9 +1,6 @@
-:root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-* { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; background: #f5f3ee; color: #1d2420; }
-.extension-shell { min-height: 100vh; }
-.target-bar { position: sticky; top: 0; z-index: 2; padding: 12px 16px; border-bottom: 1px solid #d6d1c5; background: rgba(250,248,243,.95); }
-.target-bar div { display: grid; gap: 3px; }
-.target-bar button { margin-top: 8px; border: 1px solid #92a098; border-radius: 999px; padding: 6px 10px; background: transparent; color: inherit; }
-.target-bar span { overflow: hidden; color: #626a65; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.target-bar p { margin: 8px 0 0; color: #a72c22; font-size: 12px; }
+:root { color-scheme:light dark; font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",system-ui,sans-serif; }
+* { box-sizing:border-box; }
+html,body,#root { height:100%; }
+body { margin:0; min-width:320px; background:#f6f7fb; color:#202532; }
+.extension-agent-view { height:100%; min-height:0; }
+@media (prefers-color-scheme:dark) { body { background:#11131a; color:#f4f5f8; } }
