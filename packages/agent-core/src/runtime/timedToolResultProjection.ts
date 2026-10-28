@@ -10,9 +10,9 @@ const SYNTHETIC_TIMED_TOOL_NAME = 'timed_tool_result'
  * assistant 写回会话历史。chat/completions 的请求序列则要求 tool result 紧跟声明同 id 的
  * assistant tool_calls；所以只在这份即将送入模型的数组中、紧贴孤儿 timed result 前合成配对项。
  *
- * 合成项固定为同 call id、空 content、`timed_tool_result` / `{}`，保证重放稳定且不把 provider
- * 差异带进 core。上游 provider 的 SDK 同样将有 tool_calls 的 assistant null content 规范为空串，
- * 并在其测试中以 assistant tool_calls 后紧随同 id tool result 覆盖该协议顺序。
+ * 合成项固定为同 call id、空 content / reasoning_content、`timed_tool_result` / `{}`。
+ * 它没有经历模型推理，因此思考内容明确为空；不能依赖厂商 adapter 为它补字段，通用兼容
+ * adapter 会原样透传。只补全运行时自己生成的项，真实 assistant 的推理内容原样保留。
  *
  * 作用域只限 `timed:`：非 timed 的未知孤儿是原始历史或上游协议问题，本投影不应掩盖它们。
  */
@@ -50,5 +50,5 @@ function syntheticAssistantToolCall(callId: string): ModelItem {
     type: 'function',
     function: { name: SYNTHETIC_TIMED_TOOL_NAME, arguments: '{}' },
   }
-  return { role: 'assistant', content: '', tool_calls: [toolCall] }
+  return { role: 'assistant', content: '', reasoning_content: '', tool_calls: [toolCall] }
 }

@@ -17,6 +17,7 @@
 
 import type { Atom, Store } from '@einfach/core'
 import type { UndoAvailability } from '../../state/sessionHistory'
+import type { SessionTurnHistoryProjection } from '../../state/sessionTurnHistory'
 import type { CoreInstance } from '../core/coreInstance'
 
 /** Builds the read-only session scope accessor consumed by UI providers. */
@@ -37,5 +38,10 @@ export function createSessionScopeCommands(core: CoreInstance) {
     return core.getSessionStore(sessionId).history.undoAvailabilityAtom
   }
 
-  return { sessionAtomScope, sessionUndoAvailabilityAtom }
+  /** Per-message undo/redo projection derived from the same durable history log. */
+  function sessionTurnHistoryAtom(sessionId: string): Atom<SessionTurnHistoryProjection> {
+    return core.getSessionStore(sessionId).history.turnHistoryAtom
+  }
+
+  return { sessionAtomScope, sessionUndoAvailabilityAtom, sessionTurnHistoryAtom }
 }

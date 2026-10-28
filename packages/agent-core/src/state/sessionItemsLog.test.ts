@@ -66,6 +66,24 @@ describe('日志条目的大小', () => {
 })
 
 describe('追加的逆操作', () => {
+  it('保留超过一千笔事务，并允许撤回最早消息', () => {
+    const { core, id, session } = seeded()
+    for (let index = 0; index < 1_205; index += 1) {
+      appendItem(id, item(`u${index}`, `第${index}问`), core)
+    }
+
+    expect(session.history.getState()).toMatchObject({ cursor: 1_205 })
+    expect(session.history.getState().entries).toHaveLength(1_205)
+    const turns = session.store.getter(core.sessionTurnHistoryAtom(id)).turns
+    expect([turns[0]?.blocked, turns[602]?.blocked, turns[1_204]?.blocked]).toEqual([
+      undefined,
+      undefined,
+      undefined,
+    ])
+    expect(core.retractTurn('u0', id)).toMatchObject({ ok: true, entries: 1_205 })
+    expect(ids(core, id)).toEqual([])
+  })
+
   it('撤销弹掉的正是刚追加的那条', () => {
     const { core, id } = seeded()
     appendItem(id, item('a'), core)

@@ -31,10 +31,12 @@ function decodeStoredLog(value: unknown, sessionId: string): PersistedHistoryLog
   if (typeof record.generation !== 'number' || !Number.isSafeInteger(record.generation)) return undefined
   if (!Array.isArray(record.entries)) return undefined
   if (typeof record.cursor !== 'number' || !Number.isSafeInteger(record.cursor)) return undefined
+  if (record.barrierTxId !== undefined && typeof record.barrierTxId !== 'string') return undefined
   return {
     generation: record.generation,
     entries: record.entries as PersistedHistoryLog['entries'],
     cursor: record.cursor,
+    ...(record.barrierTxId === undefined ? {} : { barrierTxId: record.barrierTxId }),
   }
 }
 

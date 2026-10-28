@@ -16,7 +16,7 @@
 
 import type { History, Store } from '@einfach/core'
 import type { SessionMeta, WorkspaceMeta } from '../core.type'
-import type { HistoryLogDriver } from './historyLogDriver'
+import { isPersistedHistoryPayload, type HistoryLogDriver } from './historyLogDriver'
 import { restoreUndoBarrier } from '../undoBarrier'
 import {
   rootStore as defaultRootStore,
@@ -140,7 +140,7 @@ async function hydrateSessionHistoryLog(input: {
 }): Promise<void> {
   try {
     const log = await input.driver.load(input.sessionId)
-    if (!log || log.generation !== input.snapshotGeneration) return
+    if (!log || log.generation !== input.snapshotGeneration || !isPersistedHistoryPayload(log)) return
     if (!input.history.hydrate({ entries: log.entries, cursor: log.cursor })) return
     // 屏障必须跟着这本账一起铺回来，否则刷新之后撤销就能越过一个已发生的不可逆删除。
     // 放在 hydrate 成功之后：账没铺上就没有需要保护的东西。
@@ -240,7 +240,11 @@ export async function hydrateForCore(
         // 状态铺好之后才铺日志：`hydrate()` 只在空栈上合法，而 applyRecoverySnapshot 不记账，
         // 所以此刻栈仍是空的。没有快照的会话不铺日志 —— 没有可配对的 generation。
         const history = target.getSessionHistory?.(session.id)
-        if (deps.historyLog && history) {
+        if (snapshot.history && history) {
+          if (history.hydrate(snapshot.history)) {
+            restoreUndoBarrier({ store, history }, snapshot.history.barrierTxId)
+          }
+        } else if (!snapshot.history && deps.historyLog && history) {
           historyRestores.push(hydrateSessionHistoryLog({
             driver: deps.historyLog,
             history,

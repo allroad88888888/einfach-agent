@@ -1,3 +1,4 @@
+import { textBlockModelText } from './modelContent'
 import type { DeepSeekChatRequest, DeepSeekReasoningEffort } from './deepseek'
 import { normalizeDeepSeekUserId } from './deepseekIdentity'
 import { isValidInlineBase64ImageBlock } from './openAiCompatMessages'
@@ -66,7 +67,7 @@ function userImage(block: Extract<UserContentBlock, { type: 'image' }>): Respons
 
 function userContent(blocks: readonly UserContentBlock[]): ResponsesContentPart[] {
   return blocks.map((block) => block.type === 'text'
-    ? { type: 'input_text', text: block.text }
+    ? { type: 'input_text', text: textBlockModelText(block) }
     : userImage(block))
 }
 
@@ -83,7 +84,7 @@ function toolImage(block: Extract<ToolOutputContentBlock, { type: 'image' }>): R
 
 function toolContent(content: readonly ToolOutputContentBlock[]): ResponsesContentPart[] {
   return content.map((block) => block.type === 'text'
-    ? { type: 'input_text', text: block.text }
+    ? { type: 'input_text', text: textBlockModelText(block) }
     : toolImage(block))
 }
 

@@ -25,12 +25,13 @@ beforeEach(() => {
 describe('IndexedDB 事务日志 driver', () => {
   it('往返保住条目与游标', async () => {
     const driver = createIndexedDbHistoryLogDriver()
-    await driver.save('s1', log(7, 3))
+    await driver.save('s1', { ...log(7, 3), barrierTxId: 'tx-2' })
 
     const loaded = await driver.load('s1')
     expect(loaded?.generation).toBe(7)
     expect(loaded?.cursor).toBe(3)
     expect(loaded?.entries).toHaveLength(3)
+    expect(loaded?.barrierTxId).toBe('tx-2')
     expect(loaded?.entries[0]?.ops[0]).toMatchObject({ key: 'fixtureSlot', after: '值0' })
   })
 

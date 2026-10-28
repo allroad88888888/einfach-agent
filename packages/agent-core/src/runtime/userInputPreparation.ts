@@ -15,6 +15,16 @@ export interface UserInputImage {
 export interface UserInputSubmission {
   text: string
   images?: readonly UserInputImage[]
+  /** Host-owned file payloads; preparation converts these to persisted model content. */
+  files?: readonly UserInputFile[]
+}
+
+export interface UserInputFile {
+  id: string
+  name: string
+  mimeType: string
+  byteSize: number
+  data: unknown
 }
 
 export type SendMessageInput = string | UserInputSubmission
@@ -69,11 +79,12 @@ export function normalizeUserInput(input: SendMessageInput): UserInputSubmission
   return {
     text: input.text.trim(),
     ...(input.images?.length ? { images: input.images.map((image) => ({ ...image })) } : {}),
+    ...(input.files?.length ? { files: input.files.map((file) => ({ ...file })) } : {}),
   }
 }
 
 export function hasUserInput(input: UserInputSubmission): boolean {
-  return Boolean(input.text || input.images?.length)
+  return Boolean(input.text || input.images?.length || input.files?.length)
 }
 
 export function hasPreparedUserContent(content: UserMessageContent): boolean {
@@ -82,6 +93,7 @@ export function hasPreparedUserContent(content: UserMessageContent): boolean {
 }
 
 export function defaultPrepareUserInput(input: UserInputSubmission): PreparedUserInput {
+  if (input.files?.length) throw new Error('No user input preparer is configured for file input.')
   if (input.images?.length) {
     throw new Error('No user input preparer is configured for image input.')
   }

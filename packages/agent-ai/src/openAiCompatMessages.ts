@@ -1,3 +1,4 @@
+import { textBlockModelText } from './modelContent'
 import type {
   ModelItem,
   UserContentBlock,
@@ -48,7 +49,7 @@ export function isValidInlineBase64ImageBlock(
 }
 
 function encodeBlock(block: UserContentBlock): OpenAiCompatContentBlock {
-  if (block.type === 'text') return { type: 'text', text: block.text }
+  if (block.type === 'text') return { type: 'text', text: textBlockModelText(block) }
   if (block.source.kind !== 'inline-base64') {
     throw new Error('OpenAI-compatible inline image input requires base64 image data.')
   }

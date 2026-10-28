@@ -12,6 +12,8 @@ import {
 } from '../state/persistence/recoveryDriver'
 import { sessionsAtom } from '../state/rootAtoms'
 import { itemsAtom } from '../state/sessionAtoms'
+import { createSessionHistory } from '../state/sessionHistory'
+import { appendItemToSession } from '../state/sessionWriters'
 import {
   configurePersistence,
   createPersistenceBridge,
@@ -183,6 +185,60 @@ describe('persistenceBridge recovery facade', () => {
     releaseLoad?.()
     await flush
     await expect(base.loadLatest('s1')).resolves.toMatchObject({ generation: 1 })
+  })
+
+  it('atomically saves the history captured with a delayed recovery snapshot', async () => {
+    let releaseSave: (() => void) | undefined
+    const saveGate = new Promise<void>((resolve) => { releaseSave = resolve })
+    const rootStore = rootStoreFor()
+    const sessionStore = createStore()
+    const history = createSessionHistory(sessionStore)
+    const base = createMemoryRecoveryDriver()
+    const recovery: RecoveryDriver = {
+      ...base,
+      saveLatest: async (id, snapshot) => {
+        await saveGate
+        return base.saveLatest(id, snapshot)
+      },
+    }
+    const bridge = createPersistenceBridge(rootStore, createObservabilityPort())
+    bridge.configure({
+      recovery,
+      recoveryStore: () => sessionStore,
+      historyFor: () => history,
+    })
+    appendItemToSession({ store: sessionStore, history }, {
+      id: 'u1', createdAt: 1, item: { role: 'user', content: 'first' },
+    })
+
+    const firstSave = bridge.persistRecovery('s1')
+    appendItemToSession({ store: sessionStore, history }, {
+      id: 'u2', createdAt: 2, item: { role: 'user', content: 'second' },
+    })
+    releaseSave?.()
+    await expect(firstSave).resolves.toMatchObject({ status: 'saved', generation: 1 })
+
+    await expect(base.loadLatest('s1')).resolves.toMatchObject({
+      values: { conversation: { items: [{ id: 'u1' }] } },
+      history: { cursor: 1, entries: [{ ops: [{ after: { id: 'u1' } }] }] },
+    })
+    await expect(bridge.persistRecovery('s1')).resolves.toMatchObject({ status: 'saved', generation: 2 })
+    await expect(base.loadLatest('s1')).resolves.toMatchObject({ history: { cursor: 2 } })
+  })
+
+  it('does not advance recovery when an extant history cannot be serialized', async () => {
+    const rootStore = rootStoreFor()
+    const sessionStore = sessionStoreFor()
+    const history = createSessionHistory(sessionStore)
+    const circular: { self?: unknown } = {}
+    circular.self = circular
+    history.transaction(() => history.record({ key: 'items', before: circular, after: [] }))
+    const recovery = createMemoryRecoveryDriver()
+    const bridge = createPersistenceBridge(rootStore, createObservabilityPort())
+    bridge.configure({ recovery, recoveryStore: () => sessionStore, historyFor: () => history })
+
+    await expect(bridge.persistRecovery('s1')).resolves.toMatchObject({ status: 'error' })
+    await expect(recovery.loadLatest('s1')).resolves.toBeUndefined()
   })
 
   it('passes the configured recovery driver into startup hydrate', async () => {

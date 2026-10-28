@@ -123,6 +123,7 @@ export {
   // 会话 atom 作用域：S7b（E7）为 <ActiveSessionProvider> 补的受限只读通路，不给 store 生命周期
   sessionAtomScope,
   sessionUndoAvailabilityAtom,
+  sessionTurnHistoryAtom,
   // run 生命周期
   sendMessage,
   continueInterruptedRun,
@@ -140,6 +141,7 @@ export {
   rollbackPlanStage,
   // 对话撤回 / 撤销 / 重做（会话事务日志）：retractTurn 是用户消息入口，*Entry 是开发者粒度
   retractTurn,
+  restoreRetractedTurn,
   undoTurn,
   redoTurn,
   undoEntry,
@@ -173,6 +175,8 @@ export type {
   SessionRecoveryStatus,
   HistoryCommandRefusal,
   HistoryCommandResult,
+  SessionTurnHistoryItem,
+  SessionTurnHistoryProjection,
   SetActiveSessionModelSettingsResult,
   LockSessionCapabilitiesResult, SessionCapabilityErrorCode, ToggleSessionCapabilityResult,
 } from './runtime/commands'

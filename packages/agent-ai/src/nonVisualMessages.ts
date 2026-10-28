@@ -4,13 +4,14 @@ import type {
   UserContentBlock,
   UserImageContentBlock,
 } from './modelProtocol'
+import { textBlockModelText } from './modelContent'
 
 function imagePlaceholder(block: UserImageContentBlock): string {
   return `[用户上传了图片 ${block.name}（${block.mimeType}），当前模型看不到图片内容]`
 }
 
 function blockText(block: UserContentBlock): string {
-  return block.type === 'text' ? block.text : imagePlaceholder(block)
+  return block.type === 'text' ? textBlockModelText(block) : imagePlaceholder(block)
 }
 
 function structuredContentText(blocks: readonly UserContentBlock[]): string {

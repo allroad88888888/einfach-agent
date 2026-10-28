@@ -40,7 +40,11 @@ export function createSessionCommands(core: CoreInstance) {
       changed = true
       return { ...prev, [id]: { ...meta, title: next, updatedAt: Date.now() } }
     })
-    if (changed) saveSessions()
+    if (changed) {
+      saveSessions()
+      // Recovery owns restored metadata; keep its title in sync with the index.
+      void core.persistence.persistRecovery(id, 'session_renamed')
+    }
   }
 
   function newSession(opts?: {

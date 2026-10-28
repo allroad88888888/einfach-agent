@@ -9,6 +9,7 @@ import type { PlanStageCheckpoint } from './planStageCheckpoint.type'
 import type { ContextCheckpoint } from './contextCheckpoint.type'
 import type { ConversationItem, RunState, SessionMeta } from './core.type'
 import type { AskUserAnswerValue, PendingArtifact, QueuedUserMessage } from './sessionTransientPayloads'
+import type { HistoryEntry } from '@einfach/core'
 
 /** 首个恢复快照 codec 的版本；未知版本必须 fail-closed。 */
 export const RECOVERY_SNAPSHOT_SCHEMA_VERSION = 1 as const
@@ -108,4 +109,10 @@ export interface RecoverySnapshotV1 {
   /** root sessionsAtom 的静态登记项；必须与 sessionId 同属一个会话。 */
   session: RecoverySessionMetaV1
   values: RecoveryAtomProjectionV1
+  /** Undo ledger captured in the same tick and committed atomically with this projection. */
+  history?: {
+    entries: HistoryEntry[]
+    cursor: number
+    barrierTxId?: string
+  }
 }

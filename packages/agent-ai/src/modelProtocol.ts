@@ -32,6 +32,8 @@ export type UserImageSource = ProviderFileImageSource | InlineBase64ImageSource
 export interface UserTextContentBlock {
   type: 'text'
   text: string
+  /** Optional source metadata for locally extracted text attachments. */
+  attachment?: { name: string; mimeType: string; byteSize: number; fileId?: string }
 }
 
 export interface UserImageContentBlock {

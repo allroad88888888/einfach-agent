@@ -11,6 +11,7 @@ import {
 import { isModelSettings } from './modelSettingsSchema'
 import { isSessionCapabilityPolicy } from './sessionCapabilityPolicy'
 import { isAgentProfileSnapshot } from './agentProfileSchema'
+import { isPersistedHistoryPayload } from './persistence/historyLogDriver'
 
 const planStatuses = new Set(['draft', 'awaiting_approval', 'approved', 'active', 'completed', 'failed', 'cancelled'])
 const stageStatuses = new Set(['pending', 'in_progress', 'completed', 'failed', 'blocked', 'skipped'])
@@ -24,7 +25,6 @@ const pendingArtifactKeys = new Set(['id', 'filename', 'content', 'mimeType'])
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
-
 function isJsonValue(value: unknown, ancestors = new Set<object>()): value is JsonValue {
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return true
   if (typeof value === 'number') return isFiniteJsonNumber(value)
@@ -59,7 +59,6 @@ function isJsonObject(value: object, ancestors: Set<object>): boolean {
 function isText(value: unknown): value is string {
   return typeof value === 'string'
 }
-
 function isFiniteJsonNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && !Object.is(value, -0)
 }
@@ -106,7 +105,8 @@ function isUserContent(value: unknown): boolean {
 function isContentBlocks(value: unknown): boolean {
   return Array.isArray(value) && value.every((block) => isRecord(block)
     && (block.type === 'text'
-      ? isText(block.text)
+      ? isText(block.text) && optional(block, 'attachment', (entry) => isRecord(entry)
+        && isText(entry.name) && isText(entry.mimeType) && isNatural(entry.byteSize) && optional(entry, 'fileId', isText))
       : block.type === 'image'
         && isText(block.name)
         && isText(block.mimeType)
@@ -284,13 +284,13 @@ function hasProjection(value: unknown, sessionId: string): boolean {
     && value.queuedUserMessages.every(isQueuedMessage)
     && isSubagentContinuations(value.subagentContinuations)
 }
-
 /** 接受完整的 JSON-safe v1 快照；未知/半写入/损坏 envelope 一律 fail-closed。 */
 export function decodeRecoverySnapshot(value: unknown): RecoverySnapshotV1 | undefined {
   const sessionId = isRecord(value) ? value.sessionId : undefined
   if (!isJsonValue(value) || !isRecord(value) || 'continuation' in value
     || value.schemaVersion !== RECOVERY_SNAPSHOT_SCHEMA_VERSION || !isText(sessionId) || sessionId.length === 0
     || !isNatural(value.capturedAt) || !isNatural(value.generation) || value.commitMarker !== RECOVERY_SNAPSHOT_COMMIT_MARKER
-    || !isSession(value.session, sessionId) || !hasProjection(value.values, sessionId)) return undefined
+    || !isSession(value.session, sessionId) || !hasProjection(value.values, sessionId)
+    || !optional(value, 'history', isPersistedHistoryPayload)) return undefined
   return value as unknown as RecoverySnapshotV1
 }

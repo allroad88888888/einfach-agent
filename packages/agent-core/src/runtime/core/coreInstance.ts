@@ -41,6 +41,12 @@ import type { PlanRuntimeFactory } from '../../planning/runtime'
 import { getDefaultObservabilityPort, type ObservabilityPort } from '../../observability/port'
 import { createAbortRegistry, type AbortRegistryLike } from './abortRegistryStore'
 import { createSessionHistory, type SessionHistory } from '../../state/sessionHistory'
+import { sessionsAtom } from '../../state/rootAtoms'
+import {
+  captureAllUserContentReachability,
+  captureUserContentFromHistoryEntries,
+  disposeUnreachableUserContent,
+} from '../userContentDisposal'
 
 export type { RuntimeConfig } from './runtimeConfig'
 
@@ -155,11 +161,22 @@ export function createCoreInstance(opts?: {
 
   // 2) per-session store 缓存：本实例私有 Map（逻辑照搬原 sessionStore.ts，Map 从模块级变实例字段）。
   const sessionStores = new Map<string, SessionStore>()
+  let coreInstance: CoreInstance
 
   function createSessionStore(id: string): SessionStore {
     // 每次调用都建新 store——已存在同 id 会被覆盖（drop 后重建即走这条路）。
     const store = createStore()
     const history = createSessionHistory(store)
+    history.setTruncationListener((discarded) => {
+      const meta = rootStore.getter(sessionsAtom)[id]
+      if (!meta) return
+      disposeUnreachableUserContent(
+        coreInstance,
+        captureUserContentFromHistoryEntries(discarded),
+        captureAllUserContentReachability(coreInstance),
+        { sessionId: id, reason: 'history_truncated', settings: meta.settings },
+      )
+    })
     const sessionStore: SessionStore = { id, store, history }
     sessionStores.set(id, sessionStore)
     return sessionStore
@@ -248,7 +265,7 @@ export function createCoreInstance(opts?: {
     }
   }
 
-  return {
+  coreInstance = {
     observability,
     rootStore,
     findSessionStore,
@@ -274,6 +291,7 @@ export function createCoreInstance(opts?: {
     planRuntime,
     persistence,
   }
+  return coreInstance
 }
 
 // 全局默认实例：五个视图模块（rootStore/sessionStore/registry/abortRegistry/scheduler）都取自它。

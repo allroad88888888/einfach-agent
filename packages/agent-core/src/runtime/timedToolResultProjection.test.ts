@@ -90,7 +90,7 @@ describe('sessionStart timed tool 的请求组装', () => {
       {
         role: 'assistant',
         content: '',
-        // deepseek adapter 对工具调用轮统一补空 reasoning_content（thinking 家族校验要求）。
+        // 运行时生成的协议配对项明确没有思考正文，不依赖 provider 补字段。
         reasoning_content: '',
         tool_calls: [{
           id: 'timed:sessionStart:timed_manifest_fixture',
@@ -136,6 +136,7 @@ describe('sessionStart timed tool 的请求组装', () => {
       {
         role: 'assistant',
         content: '',
+        reasoning_content: '',
         tool_calls: [{
           id: 'timed:sessionStart:first',
           type: 'function',
@@ -146,6 +147,7 @@ describe('sessionStart timed tool 的请求组装', () => {
       {
         role: 'assistant',
         content: '',
+        reasoning_content: '',
         tool_calls: [{
           id: 'timed:sessionStart:second',
           type: 'function',
@@ -177,6 +179,7 @@ describe('sessionStart timed tool 的请求组装', () => {
       {
         role: 'assistant',
         content: '',
+        reasoning_content: '',
         tool_calls: [{
           id: 'timed:sessionStart:manifest',
           type: 'function',

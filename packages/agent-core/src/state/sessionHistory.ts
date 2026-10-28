@@ -10,10 +10,12 @@
 // 拼，是因为「什么情况下不能撤销」是一条**策略**：UI 若自己判 run 状态，那份状态列表就有了第二份
 // 副本，两边一漂移，按钮显示可点而命令实际拒绝。派生自同一份真相，UI 就只是显示。
 
-import { atom, createHistory, type Atom, type History, type Store } from '@einfach/core'
+import { atom, createHistory, type Atom, type History, type HistoryEntry, type Store } from '@einfach/core'
 import { runAtom } from './sessionAtoms'
+import { itemsAtom } from './sessionAtoms'
 import { undoBarrierTxIdAtom } from './sessionTransientAtoms'
 import { SESSION_SLOTS, SESSION_SLOT_KEYS } from './sessionSlots'
+import { projectSessionTurnHistory, type SessionTurnHistoryProjection } from './sessionTurnHistory'
 import { undoCrossesBarrier } from './undoBarrier'
 
 /**
@@ -45,6 +47,8 @@ export interface UndoAvailability {
 /** 一本会话日志，外加 UI 绑定用的可用态。 */
 export interface SessionHistory extends History {
   readonly undoAvailabilityAtom: Atom<UndoAvailability>
+  readonly turnHistoryAtom: Atom<SessionTurnHistoryProjection>
+  setTruncationListener(listener?: (discarded: readonly HistoryEntry[]) => void): void
 }
 
 /**
@@ -54,7 +58,11 @@ export interface SessionHistory extends History {
  * 这正是想要的方向 —— 记一笔无法回放的账比抛错糟得多。
  */
 export function createSessionHistory(store: Store): SessionHistory {
-  const history = createHistory(store)
+  // A session has no product-level history window: every retained transaction must remain
+  // addressable for turn-level undo. This finite value satisfies einfach's public API while
+  // exceeding every realizable JavaScript array length, so it cannot evict an entry in practice.
+  const history = createHistory(store, { cap: Number.MAX_SAFE_INTEGER })
+  let truncationListener: ((discarded: readonly HistoryEntry[]) => void) | undefined
   for (const key of SESSION_SLOT_KEYS) SESSION_SLOTS[key].registerApplier(history)
 
   // 纯派生：只从 get 取值，不读时钟/随机数（CLAUDE.md 规则 1 —— 否则重放算不出同样结果）。
@@ -74,5 +82,35 @@ export function createSessionHistory(store: Store): SessionHistory {
   })
   undoAvailabilityAtom.debugLabel = 'session.undoAvailability'
 
-  return { ...history, undoAvailabilityAtom }
+  const turnHistoryAtom = atom<SessionTurnHistoryProjection>((get) => {
+    const status = get(runAtom)?.status
+    return projectSessionTurnHistory(
+      get(history.stackAtom),
+      get(itemsAtom),
+      get(undoBarrierTxIdAtom),
+      status !== undefined && IN_FLIGHT_RUN_STATUSES.has(status),
+    )
+  })
+  turnHistoryAtom.debugLabel = 'session.turnHistory'
+
+  function transaction<T>(fn: () => T): T
+  function transaction<T>(label: string, fn: () => T): T
+  function transaction<T>(labelOrFn: string | (() => T), maybeFn?: () => T): T {
+    const before = history.getState()
+    const result = typeof labelOrFn === 'string'
+      ? history.transaction(labelOrFn, maybeFn!)
+      : history.transaction(labelOrFn)
+    if (before.cursor < before.entries.length) {
+      truncationListener?.(before.entries.slice(before.cursor))
+    }
+    return result
+  }
+
+  return {
+    ...history,
+    transaction,
+    undoAvailabilityAtom,
+    turnHistoryAtom,
+    setTruncationListener(listener) { truncationListener = listener },
+  }
 }

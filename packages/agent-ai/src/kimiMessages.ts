@@ -1,3 +1,4 @@
+import { textBlockModelText } from './modelContent'
 import type {
   ModelItem,
   UserContentBlock,
@@ -31,7 +32,7 @@ function encodeKimiBlock(
   region: KimiRegion,
   model: string,
 ): KimiContentBlock {
-  if (block.type === 'text') return { type: 'text', text: block.text }
+  if (block.type === 'text') return { type: 'text', text: textBlockModelText(block) }
   if (imageInputCapability('kimi', model).kind !== 'provider-upload') {
     throw new Error(`Kimi model ${model} has no verified image input protocol.`)
   }

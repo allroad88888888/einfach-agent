@@ -36,6 +36,7 @@ export type {
 } from './userContentDisposal'
 export type { ContinueRecoveredSessionResult, SessionRecoveryStatus } from './commands/recoveryCommands'
 export type { HistoryCommandRefusal, HistoryCommandResult } from './commands/historyCommands'
+export type { SessionTurnHistoryItem, SessionTurnHistoryProjection } from '../state/sessionTurnHistory'
 export type { SetActiveSessionModelSettingsResult } from './commands/modelSettingsCommands'
 export type {
   LockSessionCapabilitiesResult,
@@ -104,6 +105,7 @@ export const {
   removeSession,
   sessionAtomScope,
   sessionUndoAvailabilityAtom,
+  sessionTurnHistoryAtom,
   setWorkspaceRoot,
   setApprovalMode,
   getSessionCapabilityCatalog,
@@ -127,6 +129,7 @@ export const {
   discardArtifact,
   dismissWithdrawnTurnNotice,
   retractTurn,
+  restoreRetractedTurn,
   setActiveSessionModelSettings,
   undoTurn,
   redoTurn,

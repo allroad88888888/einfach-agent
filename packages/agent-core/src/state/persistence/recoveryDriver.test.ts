@@ -59,6 +59,31 @@ describe('RecoveryDriver contract', () => {
     await expect(driver.saveLatest('s2', snapshot(1, 's1'))).rejects.toThrow('sessionId')
   })
 
+  it('拒绝损坏的内嵌撤销账本', () => {
+    const invalidCursor = { ...snapshot(1), history: { entries: [], cursor: 1 } }
+    const invalidEntry = {
+      ...snapshot(1),
+      history: { entries: [{ txId: 'tx-1', ops: [{ key: 42, after: null }] }], cursor: 1 },
+    }
+    const emptyEntry = { ...snapshot(1), history: { entries: [{ txId: '', ops: [] }], cursor: 1 } }
+    const emptyKey = {
+      ...snapshot(1), history: { entries: [{ txId: 'tx-1', ops: [{ key: '', after: null }] }], cursor: 1 },
+    }
+    const emptyBarrier = {
+      ...snapshot(1), history: { entries: [{ txId: 'tx-1', ops: [{ key: 'items', after: [] }] }], cursor: 1, barrierTxId: '' },
+    }
+    const missingBarrier = {
+      ...snapshot(1), history: { entries: [{ txId: 'tx-1', ops: [{ key: 'items', after: [] }] }], cursor: 1, barrierTxId: 'tx-missing' },
+    }
+
+    expect(() => validateRecoverySnapshot(invalidCursor)).toThrow('validation')
+    expect(() => validateRecoverySnapshot(invalidEntry)).toThrow('validation')
+    expect(() => validateRecoverySnapshot(emptyEntry)).toThrow('validation')
+    expect(() => validateRecoverySnapshot(emptyKey)).toThrow('validation')
+    expect(() => validateRecoverySnapshot(emptyBarrier)).toThrow('validation')
+    expect(() => validateRecoverySnapshot(missingBarrier)).toThrow('validation')
+  })
+
   it('较旧 generation 不能覆盖较新 generation', async () => {
     const driver = createMemoryRecoveryDriver()
     await driver.saveLatest('s1', snapshot(5))

@@ -51,6 +51,24 @@ export interface HistoryLogDriver {
   deleteSession(sessionId: string): Promise<void>
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Minimum structure accepted by einfach History.hydrate; malformed ledgers fail with the snapshot. */
+export function isPersistedHistoryPayload(value: unknown): value is Omit<PersistedHistoryLog, 'generation'> {
+  if (!isRecord(value) || !Array.isArray(value.entries) || !Number.isSafeInteger(value.cursor)
+    || (value.cursor as number) < 0 || (value.cursor as number) > value.entries.length
+    || (value.barrierTxId !== undefined && typeof value.barrierTxId !== 'string')) return false
+  const entriesValid = value.entries.every((entry) => isRecord(entry) && typeof entry.txId === 'string' && entry.txId.length > 0
+    && (entry.label === undefined || typeof entry.label === 'string') && Array.isArray(entry.ops) && entry.ops.length > 0
+    && entry.ops.every((op) => isRecord(op) && typeof op.key === 'string' && op.key.length > 0
+      && (op.scope === undefined || typeof op.scope === 'string') && ('before' in op || 'after' in op)))
+  if (!entriesValid) return false
+  return value.barrierTxId === undefined
+    || (value.barrierTxId.length > 0 && value.entries.some((entry) => entry.txId === value.barrierTxId))
+}
+
 /**
  * 把内存日志转成可落盘的形状；不可 JSON 序列化则返回 undefined。
  *

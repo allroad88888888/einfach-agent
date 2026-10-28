@@ -50,26 +50,21 @@ describe('显式停止 run 之后的撤销', () => {
     return { core, id, disposed }
   }
 
-  it('真的释放过内容时立屏障，越过它的撤销被拒绝', () => {
+  it('可撤回的排队内容不会被释放或制造新屏障', () => {
     const { core, id, disposed } = coreWithDisposer()
     setRun(id, { runId: 'run-1', status: 'running', turnId: 't1' }, core)
     appendItem(id, { id: 'u1', createdAt: 1, item: { role: 'user', content: '第一问' } }, core)
-    // 排队消息带着自己的内容；停止会清空排队，于是这份内容变成不可达 → 被释放。
+    // 停止会清空排队，但事务日志仍持有可恢复内容。
     enqueueUserMessage(id, {
       id: 'q1', createdAt: 2, content: '排队里的话', targetRunId: 'run-1', submissionSequence: 1,
     }, core)
 
     core.stopRun()
-    expect(disposed).toHaveLength(1)
-
-    // 释放已经发出去、收不回来；撤销回去只会得到指向已删除上传的坏引用。
-    expect(core.undoTurn()).toMatchObject({ ok: false, refusal: 'irreversible_barrier' })
-    expect(core.getSessionStore(id).store.getter(itemsAtom)).toHaveLength(1)
-    // UI 的可用态必须与命令的拒绝同源，否则按钮亮着而命令拒绝。
+    expect(disposed).toEqual([])
+    expect(core.undoTurn()).toMatchObject({ ok: true })
     const session = core.getSessionStore(id)
     expect(session.store.getter(session.history.undoAvailabilityAtom)).toMatchObject({
-      canUndo: false,
-      blocked: 'irreversible_barrier',
+      canRedo: true,
     })
   })
 
@@ -85,22 +80,22 @@ describe('显式停止 run 之后的撤销', () => {
     expect(core.undoTurn().ok).toBe(true)
   })
 
-  it('屏障之后新产生的那一轮仍然可以撤销', () => {
-    const { core, id } = coreWithDisposer()
+  it('停止之后的新一轮与更早一轮都保持可撤销', () => {
+    const { core, id, disposed } = coreWithDisposer()
     setRun(id, { runId: 'run-1', status: 'running', turnId: 't1' }, core)
     enqueueUserMessage(id, {
       id: 'q1', createdAt: 2, content: '排队里的话', targetRunId: 'run-1', submissionSequence: 1,
     }, core)
     core.stopRun()
 
-    // 屏障之后的新一轮不受它约束 —— 屏障只封住「更早」，不是把撤销永久关掉。
+    // 新一轮照常记账，停止产生的更早一轮也没有被资源清理封死。
     setRun(id, { runId: 'run-2', status: 'running', turnId: 't2' }, core)
     appendItem(id, { id: 'u2', createdAt: 3, item: { role: 'user', content: '第二问' } }, core)
     setRun(id, { runId: 'run-2', status: 'done', turnId: 't2' }, core)
 
     expect(core.undoTurn().ok).toBe(true)
     expect(core.getSessionStore(id).store.getter(itemsAtom)).toHaveLength(0)
-    // 再退一次就要越过屏障了。
-    expect(core.undoTurn()).toMatchObject({ ok: false, refusal: 'irreversible_barrier' })
+    expect(core.undoTurn()).toMatchObject({ ok: true })
+    expect(disposed).toEqual([])
   })
 })

@@ -3,7 +3,15 @@ import type {
   ToolItem,
   UserContentBlock,
   UserMessageContent,
+  UserTextContentBlock,
 } from './modelProtocol'
+
+/** Labels file contents at the wire boundary while preserving the original text in history. */
+export function textBlockModelText(block: UserTextContentBlock): string {
+  return block.attachment
+    ? `[附件 ${JSON.stringify(block.attachment.name)}]\n${block.text}\n[附件结束]`
+    : block.text
+}
 
 function containsImage(blocks: readonly UserContentBlock[]): boolean {
   return blocks.some((block) => block.type === 'image')
@@ -29,7 +37,7 @@ export function toolMessageTracePreview(item: ToolItem): UserMessageTracePreview
 export function userMessageText(content: UserMessageContent): string {
   if (typeof content === 'string') return content
   return content
-    .flatMap((block) => block.type === 'text' ? [block.text] : [])
+    .flatMap((block) => block.type === 'text' ? [block.attachment ? `[附件：${block.attachment.name}]` : block.text] : [])
     .join('')
 }
 
@@ -68,7 +76,7 @@ export function userMessageTracePreview(content: UserMessageContent): UserMessag
 export function userMessageVersion(content: UserMessageContent): string {
   if (typeof content === 'string') return JSON.stringify(['text', content])
   return JSON.stringify(content.map((block) => block.type === 'text'
-    ? ['text', block.text]
+    ? block.attachment ? ['text', block.text, block.attachment.name, block.attachment.mimeType, block.attachment.byteSize, ...(block.attachment.fileId ? [block.attachment.fileId] : [])] : ['text', block.text]
     : [
         'image',
         ...imageSourceVersion(block),

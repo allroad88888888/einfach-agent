@@ -27,7 +27,12 @@ export type RecoveryDeleteOutcome =
 
 export interface RecoveryWriter {
   /** Captures atom state synchronously, then persists that immutable capture behind this session's queue. */
-  persist(store: Store, sessionId: string, reason?: string): Promise<RecoveryWriteOutcome>
+  persist(
+    store: Store,
+    sessionId: string,
+    reason?: string,
+    history?: RecoverySnapshotV1['history'],
+  ): Promise<RecoveryWriteOutcome>
   /** Closes the local write gate before durably writing the driver's terminal tombstone. */
   deleteSession(sessionId: string): Promise<RecoveryDeleteOutcome>
   /** Waits for writes already queued when called; callers can use it before orderly shutdown. */
@@ -183,7 +188,12 @@ export function createRecoveryWriter(options: RecoveryWriterOptions): RecoveryWr
     }
   }
 
-  function persist(store: Store, sessionId: string, reason?: string): Promise<RecoveryWriteOutcome> {
+  function persist(
+    store: Store,
+    sessionId: string,
+    reason?: string,
+    history?: RecoverySnapshotV1['history'],
+  ): Promise<RecoveryWriteOutcome> {
     const state = stateFor(sessionId)
     const operation = options.observability.beginPerformanceDiagnostic(
       'persistence.recovery.write',
@@ -204,6 +214,7 @@ export function createRecoveryWriter(options: RecoveryWriterOptions): RecoveryWr
         sessionId,
         generation,
       })
+      if (history) captured = { ...captured, history }
       state.nextGeneration += 1
     } catch (error) {
       const outcome: RecoveryWriteOutcome = { status: 'error', sessionId, error }

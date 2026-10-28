@@ -28,7 +28,8 @@ import {
   writeWorkspaces,
   type PersistenceDiagnosticContext,
 } from './persistenceWriteOperations'
-import { flushPersistedHistoryLog } from './persistedHistoryLogFlush'
+import { readUndoBarrier } from '../state/undoBarrier'
+import { toPersistableHistoryLog } from '../state/persistence/historyLogDriver'
 
 export type { PersistenceDiagnosticContext } from './persistenceWriteOperations'
 
@@ -91,6 +92,7 @@ export function createPersistenceBridge(
   let recoveryWriter: RecoveryWriter | undefined
   const sessionsWriteQueue = createWriteQueue('latest')
   const workspacesWriteQueue = createWriteQueue('serial')
+  const pendingHistoryDeletes = new Set<Promise<void>>()
 
   function configure(deps: PersistenceDependencies): void {
     if (deps.sessions !== undefined) sessions = deps.sessions
@@ -156,7 +158,11 @@ export function createPersistenceBridge(
   function persistDeleteSession(id: string): void {
     if (recoveryWriter) void recoveryWriter.deleteSession(id)
     // 日志跟着会话一起走。不留 tombstone：它不是真相，快照那侧已经永久 fence 住这个 id。
-    if (historyLog) void historyLog.deleteSession(id).catch(() => undefined)
+    if (historyLog) {
+      const deletion = historyLog.deleteSession(id).catch(() => undefined)
+      pendingHistoryDeletes.add(deletion)
+      void deletion.finally(() => pendingHistoryDeletes.delete(deletion))
+    }
   }
 
   function persistRecovery(id: string, reason?: string): Promise<RecoveryWriteOutcome | undefined> {
@@ -164,14 +170,33 @@ export function createPersistenceBridge(
     if (!writer) return Promise.resolve(undefined)
     const store = recoveryStore?.(id)
     if (!store) return Promise.resolve(undefined)
-    return writer.persist(store, id, reason).then((outcome) => {
-      flushPersistedHistoryLog({ historyLog, historyFor, recoveryStore }, outcome, id)
-      return outcome
-    })
+    const history = historyFor?.(id)
+    const historyState = history?.getState()
+    const persistedHistory = history && historyState
+      ? toPersistableHistoryLog(0, historyState, readUndoBarrier({ store, history }))
+      : undefined
+    if (history && !persistedHistory) {
+      return Promise.resolve({
+        status: 'error',
+        sessionId: id,
+        error: new Error('Session history is not JSON serializable'),
+      })
+    }
+    const embeddedHistory = persistedHistory
+      ? {
+          entries: persistedHistory.entries,
+          cursor: persistedHistory.cursor,
+          ...(persistedHistory.barrierTxId === undefined
+            ? {}
+            : { barrierTxId: persistedHistory.barrierTxId }),
+        }
+      : undefined
+    return writer.persist(store, id, reason, embeddedHistory)
   }
 
-  function flushRecovery(): Promise<void> {
-    return recoveryWriter?.flush() ?? Promise.resolve()
+  async function flushRecovery(): Promise<void> {
+    await recoveryWriter?.flush()
+    await Promise.all([...pendingHistoryDeletes])
   }
 
   async function flush(): Promise<void> {

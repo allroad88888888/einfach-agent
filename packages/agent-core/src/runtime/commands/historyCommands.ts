@@ -26,10 +26,10 @@
 // 越过它的撤销一律拒绝而不是「看起来成功了」。判据与理由见 state/undoBarrier.ts。
 
 import type { History } from '@einfach/core'
-import { activeSessionIdAtom } from '../../state/rootStore'
 import { itemsAtom, runAtom } from '../../state/sessionAtoms'
 // 「在飞」的判定与 UI 可用态派生共用同一份状态集，避免按钮能点而命令拒绝。
 import { IN_FLIGHT_RUN_STATUSES } from '../../state/sessionHistory'
+import { restoreCursorForUserItem, userItemEntryIndex } from '../../state/sessionTurnHistory'
 import { pruneBrowserCardsAfter, pruneRuntimeTranscriptEventsAfter } from '../../state/transientAtoms'
 import { readUndoBarrier, undoBlockedByBarrier } from '../../state/undoBarrier'
 import type { CoreInstance, SessionStore } from '../core/coreInstance'
@@ -46,6 +46,7 @@ export type HistoryCommandRefusal =
   | 'nothing_to_apply'
   | 'irreversible_barrier'
   | 'turn_not_retractable'
+  | 'turn_not_restorable'
 
 export interface HistoryCommandResult {
   ok: boolean
@@ -120,21 +121,16 @@ function applyWhileSameLabel(
   return { ok: true, entries }
 }
 
-/** 用户消息追加入账的位置；撤回到这里会连同该条之后的整个分支一起退回。 */
-function userItemEntryIndex(history: History, itemId: string): number | undefined {
-  const { entries, cursor } = history.getState()
-  for (let index = cursor - 1; index >= 0; index -= 1) {
-    if (entries[index]?.ops.some((op) => op.key === 'items:append' && op.scope === itemId)) return index
-  }
-  return undefined
-}
-
 /** 预检整段回退是否会跨过不可逆屏障，避免先撤几轮、最后才拒绝。 */
 function retractCrossesBarrier(session: SessionStore, targetIndex: number): boolean {
   const { entries, cursor } = session.history.getState()
   const barrierId = readUndoBarrier(session)
   const barrierIndex = entries.findIndex((entry) => entry.txId === barrierId)
   return barrierIndex >= targetIndex && barrierIndex >= 0 && barrierIndex < cursor
+}
+
+function persistTargetedHistory(core: CoreInstance, sessionId: string, reason: string): void {
+  void core.persistence.persistRecovery(sessionId, reason)
 }
 
 /** Builds undo/redo commands bound to one runtime core. */
@@ -168,17 +164,17 @@ export function createHistoryCommands(core: CoreInstance, stopRun: StopRunForUnd
     redoTurn: (sessionId?: string): HistoryCommandResult =>
       run(labelAtCursor, (history) => () => history.redo(), true, 'redo', sessionId),
     /** 撤回某条用户消息，连同它之后的整段对话分支一起回滚。 */
-    retractTurn: (userItemId: string): HistoryCommandResult => {
-      const id = core.rootStore.getter(activeSessionIdAtom)
+    retractTurn: (userItemId: string, sessionId?: string): HistoryCommandResult => {
+      const id = resolveSessionTarget(core, sessionId)
       const session = id ? core.findSessionStore(id) : undefined
       const user = session?.store.getter(itemsAtom).find((item) => item.id === userItemId)
       if (!id || !session) return refuse('no_session')
       if (user?.item.role !== 'user') return refuse('turn_not_retractable')
-      const targetIndex = userItemEntryIndex(session.history, userItemId)
+      const targetIndex = userItemEntryIndex(session.history.getState(), userItemId)
       if (targetIndex === undefined) return refuse('turn_not_retractable')
       if (retractCrossesBarrier(session, targetIndex)) return refuse('irreversible_barrier')
 
-      const prepared = prepareSession(core, stopRun)
+      const prepared = prepareSession(core, stopRun, id)
       if (typeof prepared === 'string') return refuse(prepared)
       let entries = 0
       while (prepared.session.history.getState().cursor > targetIndex) {
@@ -188,7 +184,32 @@ export function createHistoryCommands(core: CoreInstance, stopRun: StopRunForUnd
       // 卡片与运行时注入事件是可重算瞬态，不进 undo 日志；随被撤回分支一起剪掉。
       pruneBrowserCardsAfter(id, user.createdAt - 1, core)
       pruneRuntimeTranscriptEventsAfter(id, user.createdAt - 1, core)
+      persistTargetedHistory(core, id, 'conversation_turn_retracted')
       return { ok: true, entries, ...(prepared.stoppedRun ? { stoppedRun: true } : {}) }
+    },
+    /** 将既有日志重放到所选用户轮次末尾；不会重新请求模型或执行工具。 */
+    restoreRetractedTurn: (userItemId: string, sessionId?: string): HistoryCommandResult => {
+      const id = resolveSessionTarget(core, sessionId)
+      const session = id ? core.findSessionStore(id) : undefined
+      if (!id || !session) return refuse('no_session')
+      const initialCursor = session.history.getState().cursor
+      const targetIndex = userItemEntryIndex(session.history.getState(), userItemId)
+      const targetCursor = restoreCursorForUserItem(session.history.getState(), userItemId)
+      if (targetIndex === undefined || targetIndex < initialCursor || targetCursor === undefined || targetCursor <= initialCursor) {
+        return refuse('turn_not_restorable')
+      }
+
+      let entries = 0
+      while (session.history.getState().cursor < targetCursor) {
+        if (session.history.redo()) {
+          entries += 1
+          continue
+        }
+        while (session.history.getState().cursor > initialCursor) session.history.undo()
+        return refuse('turn_not_restorable')
+      }
+      persistTargetedHistory(core, id, 'conversation_turn_restored')
+      return { ok: true, entries }
     },
     /** 撤销一条条目。开发者粒度，UI 暂未暴露。 */
     undoEntry: (): HistoryCommandResult =>

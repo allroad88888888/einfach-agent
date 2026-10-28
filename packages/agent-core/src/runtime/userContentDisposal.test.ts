@@ -6,6 +6,7 @@ import { sessionsAtom } from '../state/rootAtoms'
 import type { ConversationItem } from '../state/core.type'
 import type { QueuedUserMessage } from '../state/sessionTransientPayloads'
 import { createCore } from './core/createCore'
+import { appendItem } from '../state/sessionWriters'
 
 function imageContent(reference: string, text: string): UserMessageContent {
   return [
@@ -47,6 +48,21 @@ function setup(disposeUserContent = vi.fn()) {
 }
 
 describe('provider-neutral user content disposal', () => {
+  it('releases content when a new branch permanently drops its redo tail', () => {
+    const { core, id, disposeUserContent } = setup()
+    const abandoned = imageContent('ref-abandoned', 'abandoned')
+    appendItem(id, user('u1', abandoned, 1), core)
+    expect(core.undoEntry()).toMatchObject({ ok: true })
+
+    appendItem(id, user('u2', 'replacement', 2), core)
+
+    expect(disposeUserContent).toHaveBeenCalledWith(
+      [abandoned],
+      ['replacement'],
+      expect.objectContaining({ sessionId: id, reason: 'history_truncated' }),
+    )
+  })
+
   it('removes a session locally even when unique content cleanup throws or rejects', async () => {
     const failures = [
       () => { throw new Error('sync cleanup failed') },
@@ -93,7 +109,7 @@ describe('provider-neutral user content disposal', () => {
     )
   })
 
-  it('stopRun drops every now-ownerless queue and prevents working recovery resurrection', () => {
+  it('stopRun keeps queue content while undo history can restore it', () => {
     const { core, id, store, disposeUserContent } = setup()
     const retained = imageContent('ref-live', 'live')
     const stoppedQueue = queued('q-stop', imageContent('ref-stop', 'stop'), 'run-1')
@@ -107,12 +123,9 @@ describe('provider-neutral user content disposal', () => {
 
     expect(store.getter(runAtom)).toMatchObject({ runId: 'run-1', status: 'stopped' })
     expect(store.getter(queuedUserMessagesAtom)).toEqual([])
-    expect(disposeUserContent).toHaveBeenCalledOnce()
-    expect(disposeUserContent).toHaveBeenCalledWith(
-      [stoppedQueue.content, otherQueue.content],
-      [retained],
-      expect.objectContaining({ sessionId: id, reason: 'run_stopped' }),
-    )
+    expect(disposeUserContent).not.toHaveBeenCalled()
+    expect(core.undoTurn()).toMatchObject({ ok: true })
+    expect(store.getter(queuedUserMessagesAtom)).toEqual([stoppedQueue, otherQueue])
   })
 
   it('stopRun also finalizes a paused run with recoverable queued content', () => {
@@ -125,10 +138,6 @@ describe('provider-neutral user content disposal', () => {
 
     expect(store.getter(runAtom)).toMatchObject({ runId: 'run-paused', status: 'stopped' })
     expect(store.getter(queuedUserMessagesAtom)).toEqual([])
-    expect(disposeUserContent).toHaveBeenCalledWith(
-      [pausedQueue.content],
-      [],
-      expect.objectContaining({ sessionId: id, reason: 'run_stopped' }),
-    )
+    expect(disposeUserContent).not.toHaveBeenCalled()
   })
 })

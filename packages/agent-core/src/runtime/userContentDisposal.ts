@@ -7,6 +7,8 @@ import { itemsAtom } from '../state/sessionAtoms'
 import { queuedUserMessagesAtom } from '../state/sessionTransientAtoms'
 import type { ConversationItem, ModelSettings } from '../state/core.type'
 import type { CoreInstance } from './core/coreInstance'
+import type { HistoryEntry, HistoryOp } from '@einfach/core'
+import type { QueuedUserMessage } from '../state/sessionTransientPayloads'
 
 export type UserContentDisposalReason =
   | 'session_removed'
@@ -35,13 +37,59 @@ function addContent(
   if (!reachable.has(version)) reachable.set(version, content)
 }
 
+function visitHistoryValue(
+  key: string,
+  value: unknown,
+  visitItems: (items: readonly ConversationItem[]) => void,
+  reachable: Map<string, UserMessageContent>,
+): void {
+  if (key === 'queuedUserMessages' && Array.isArray(value)) {
+    for (const queued of value as QueuedUserMessage[]) addContent(reachable, queued.content)
+    return
+  }
+  if (key === 'items' && Array.isArray(value)) visitItems(value as ConversationItem[])
+  if (key === 'items:append' || key === 'items:patch') {
+    if (value && typeof value === 'object' && 'item' in value) visitItems([value as ConversationItem])
+  }
+  if (key === 'items:remove' && value && typeof value === 'object' && 'item' in value) {
+    const removed = (value as { item: ConversationItem }).item
+    if (removed && typeof removed === 'object' && 'item' in removed) visitItems([removed])
+  }
+}
+
+function visitHistoryOp(op: HistoryOp, visitItems: (items: readonly ConversationItem[]) => void, reachable: Map<string, UserMessageContent>): void {
+  if (op.key === 'items' || op.key === 'queuedUserMessages') {
+    visitHistoryValue(op.key, op.before, visitItems, reachable)
+    visitHistoryValue(op.key, op.after, visitItems, reachable)
+  } else if (op.key === 'items:append' || op.key === 'items:patch' || op.key === 'items:remove') {
+    visitHistoryValue(op.key, op.before, visitItems, reachable)
+    visitHistoryValue(op.key, op.after, visitItems, reachable)
+  }
+}
+
+export function captureUserContentFromHistoryEntries(
+  entries: readonly HistoryEntry[],
+): UserContentReachability {
+  const reachable = new Map<string, UserMessageContent>()
+  const visitItems = (items: readonly ConversationItem[]) => {
+    for (const entry of items) {
+      if (entry.item.role === 'user') addContent(reachable, entry.item.content)
+    }
+  }
+  for (const entry of entries) {
+    for (const op of entry.ops) visitHistoryOp(op, visitItems, reachable)
+  }
+  return reachable
+}
+
 /** Captures every user content still reachable from live or queued state. */
 export function captureUserContentReachability(
   core: CoreInstance,
   sessionId: string,
 ): UserContentReachability {
   if (!core.rootStore.getter(sessionsAtom)[sessionId]) return new Map()
-  const store = core.getSessionStore(sessionId).store
+  const session = core.getSessionStore(sessionId)
+  const store = session.store
   const reachable = new Map<string, UserMessageContent>()
   const visitItems = (items: readonly ConversationItem[]) => {
     for (const entry of items) {
@@ -51,6 +99,9 @@ export function captureUserContentReachability(
   visitItems(store.getter(itemsAtom))
   for (const queued of store.getter(queuedUserMessagesAtom)) {
     addContent(reachable, queued.content)
+  }
+  for (const [version, content] of captureUserContentFromHistoryEntries(session.history.getState().entries)) {
+    if (!reachable.has(version)) reachable.set(version, content)
   }
   return reachable
 }
