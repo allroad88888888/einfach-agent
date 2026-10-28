@@ -56,6 +56,15 @@ interface PluginRunActivation {
   readonly isActiveSession?: () => boolean
 }
 
+// Share the first lazy import across concurrent activations, including different Core instances.
+let defaultPluginsPromise: Promise<typeof import('./plugins/defaultPlugins')> | undefined
+function loadDefaultPlugins() {
+  return (defaultPluginsPromise ??= import('./plugins/defaultPlugins').catch((error) => {
+    defaultPluginsPromise = undefined
+    throw error
+  }))
+}
+
 const unavailableCommands: PluginCommandFacade = Object.freeze({ stopCurrentRun: () => false })
 
 function adaptPlugin(plugin: PluginInput): CorePlugin {
@@ -165,7 +174,7 @@ export function createPluginHost(registry: ToolRegistry, inputs: readonly Plugin
     async activateRun(store, activation = {}) {
       if (disposed) throw new Error('plugin host is disposed')
       // 内置插件延迟导入：compaction 仍兼容 rootStore/defaultCore，不能在 defaultCore 的构造期反向求值。
-      const { defaultCorePlugins } = await import('./plugins/defaultPlugins')
+      const { defaultCorePlugins } = await loadDefaultPlugins()
       if (disposed) throw new Error('plugin host is disposed')
       const activePlugins = [...defaultCorePlugins, ...plugins]
       const scopedCommands: PluginCommandFacade = Object.freeze({

@@ -41,7 +41,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）计划轮次预算', () =
     // ★ 回归：跑满 666 轮时 itemsAtom 里已堆了大量 assistant/tool 条目，整轮不落盘代价最大 ——
     //   刷新后连用户那条 user 消息都没了。
     // 666 轮在全量并发下会明显放大 worker 竞争，保留足够余量避免误判超时。
-  }, 30_000)
+  }, 90_000)
 
   it('计划运行：按阶段数放大主 Agent 轮次预算，且不计入子 Agent 轮次', async () => {
     seedSession('plan-turn-limit', { vendor: 'deepseek', model: 'x' })
@@ -94,7 +94,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）计划轮次预算', () =
       error: '主 Agent 超过最大模型轮次（501）',
     })
     // 501 轮循环单跑约 6 秒，全量并发时会超过默认 5 秒——与上面 666 轮用例同一理由给显式预算。
-  }, 15_000)
+  }, 60_000)
 
   it('计划恢复：沿原用户轮次直接续跑，不追加新的 user item', async () => {
     seedSession('plan-resume', { vendor: 'deepseek', model: 'x' })
