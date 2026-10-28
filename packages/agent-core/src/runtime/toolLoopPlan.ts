@@ -77,9 +77,10 @@ export function planApprovalPayload(payload: unknown): { planId: string; revisio
 
 export function pendingDecisionOrigin(id: string, payload: unknown, planStageId: string | undefined, core: CoreInstance): PendingUserDecisionOrigin {
   const plan = core.getSessionStore(id).store.getter(planAtom)
-  if (plan) {
+  // Historical terminal plans no longer own new questions. Absent stages must stay absent in the JSON recovery payload.
+  if (plan && ['draft', 'awaiting_approval', 'approved', 'active'].includes(plan.status)) {
     const phase = plan.status === 'draft' ? 'drafting' : plan.status === 'awaiting_approval' ? 'approval' : 'executing'
-    return { surface: 'plan', phase, planId: plan.id, planRevision: plan.revision, stageId: planStageId }
+    return { surface: 'plan', phase, planId: plan.id, planRevision: plan.revision, ...(planStageId !== undefined ? { stageId: planStageId } : {}) }
   }
   const declaredContext = normalizeAskUserQuestionPayload(payload).context
   return declaredContext?.surface === 'plan' ? { surface: 'plan', phase: declaredContext.phase ?? 'drafting' } : { surface: 'conversation' }
