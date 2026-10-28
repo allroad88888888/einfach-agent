@@ -94,6 +94,8 @@ description: "web-agent — 主线与分支线：东西放哪、数据怎么走�
    会话 atom 工厂 → 依赖全取默认值 → 恒 `return null`。三道防线全漏：规则 5 只认「core 直接导入的
    标识符」（这是工厂函数）、`UndoBar.test.tsx:20` 把会话 store 当界面 store 传（正是
    `renderWithStore.tsx:19-20` 写明要防的掩盖）、TypeScript 无从发现。→ A3、A4。
+   （**2026-10-28 复核**：`UndoBar.tsx` 与其测试均已不在工作树，本条作为历史诊断保留——
+   它解释的规则 5 形状变化仍然有效，但不要再按本条去找那个组件。）
 6. **选 driver 的判据是「这一态有没有 SQL 通路」**（02 + 12 独立核到两处逐字相同的判断）。它与
    「有没有本机能力桥」是两回事；写岔会得到「写进 SQLite、从 IndexedDB 读」，不报错，只让
    TraceViewer 恒空。
