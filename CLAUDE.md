@@ -129,6 +129,9 @@ Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter；
   拿到它等于在用户机器上任意代码执行。
 - `apps/cli/`：headless CLI 宿主，进程内直接登记同一份桥；主目录由它自己用 `node:os` 解析一次
   并注入。
+- `apps/desktop/`：Tauri **薄壳**——把一个 node sidecar 与 `apps/server` 的产物打成一个 `.app`。
+  它**不新增宿主态**：里面跑的还是 `server`（`threeModeSmoke.test.mjs` 的「三模式」指三种运行形态：
+  纯 Web / 浏览器 server / Tauri sidecar，不是三个宿主态）。构建与签名见 `docs/desktop-release.md`。
 - `packages/host-node/`：**唯一一份宿主能力实现**——workspace 读写/patch/change journal、shell、
   Git、SQLite、MCP stdio、模型转发、`~/.webAgent/config.json`。浏览器经 HTTP、CLI 进程内，
   两条路跑的是同一份代码。
@@ -148,10 +151,15 @@ Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter；
 - `packages/persistence-{idb,sqlite}/`：IndexedDB / SQLite 会话与恢复快照持久化 driver。
 - `packages/observability-{idb,sqlite}/`：IndexedDB / SQLite trace driver 与 reader。
 - `apps/web/src/traceViewer/`：React TraceViewer 与其 view state。
-- `tools/{shell,fs,interaction,planning,skills,agents}/`：六个标准工具域；skills 的 loader、registry
+- `tools/{shell,fs,interaction,vision,planning,skills,agents}/`：七个标准工具域；skills 的 loader、registry
   和内置内容在 `tools/skills`，默认 plan runtime 在 `tools/planning`。
-- `tools/standard/`（`@einfach-agent/tools`）：meta 聚合包，`registerStandardTools` 一次装齐六域。
-- `tools/mcp/`：第七个域，**不在**标准包里，由应用层按需装配。
+- `tools/standard/`（`@einfach-agent/tools`）：meta 聚合包，`registerStandardTools` 一次装齐七域。
+- `tools/mcp/`：MCP 工具域，**不在**标准包里，由应用层按需装配。
+  （注：文档里「第七域」是标准包只有六域时的叫法，现在标准包已有七域，引用时按名字不用序号。）
+- `browser-agent/`：**第二条产品线**——把同一个 core 装进浏览器扩展的侧边栏，直接操作当前绑定的
+  网页。9 个 workspace 包（`agent` 运行时、`extension` MV3、可选 `ui`、`tools/{page,dom,network,api,ocr}`、
+  `examples/embedded`）。它**不用宿主两态、没有本机能力桥、只落 IndexedDB、工具集在会话创建时冻结**，
+  与 `apps/web` 是两套装配；细则见 `browser-agent/README.md`。
 - `docs/`：当前说明与演进蓝图，入口是 `docs/README.md`。
 
 依赖必须维持：
