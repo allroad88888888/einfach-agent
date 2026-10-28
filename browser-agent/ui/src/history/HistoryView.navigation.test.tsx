@@ -1,0 +1,127 @@
+import 'fake-indexeddb/auto'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { afterEach, expect, it } from 'vitest'
+import { activeSessionIdAtom, runAtom, sessionsAtom } from '@einfach-agent/core'
+import { createBrowserAgent, type BrowserAgentClient } from '@einfach-agent/browser-agent'
+import { BrowserAgentView } from '../index'
+
+const clients = new Set<BrowserAgentClient>()
+afterEach(async () => { cleanup(); await Promise.all([...clients].map((client) => client.dispose())); clients.clear() })
+async function configured() {
+  const namespace = `history-navigation-${crypto.randomUUID()}`
+  const client = await createBrowserAgent({ namespace, fetch: async () => new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: '已完成测试' }, finish_reason: 'stop' }] }), { headers: { 'content-type': 'application/json' } }) })
+  clients.add(client)
+  const connection = await client.saveConnection({ label: '测试连接', baseUrl: 'https://example.test/v1', models: ['test'], apiKey: 'test-only' })
+  const agent = await client.saveAgent({ name: '表单助手', instructions: '测试', connectionId: connection.id, model: 'test', toolNames: [], skillNames: [] })
+  return { client, agent, namespace }
+}
+function history() { fireEvent.click(screen.getByRole('button', { name: '打开历史记录' })) }
+function open(title: string) { history(); fireEvent.click(screen.getByRole('button', { name: `打开会话：${title}` })) }
+function draft(text: string) { fireEvent.change(screen.getByLabelText('消息'), { target: { value: text } }) }
+function operation(title: string, name: '重命名' | '删除') {
+  fireEvent.click(screen.getByLabelText(`会话操作：${title}`))
+  fireEvent.click(screen.getByRole('button', { name: `${name}会话：${title}` }))
+}
+
+it('uses core selection, preserves separate drafts, and returns focus on Escape', async () => {
+  const { client, agent } = await configured()
+  const first = await client.createSession(agent.id)
+  const second = await client.createSession(agent.id)
+  client.core.renameSession(first, '核对字段'); client.core.renameSession(second, '填写申请')
+  render(<BrowserAgentView client={client} />)
+  expect(client.core.rootStore.getter(activeSessionIdAtom)).toBe(second)
+  draft('申请的草稿')
+  history()
+  expect(screen.getByLabelText('搜索会话')).toHaveFocus()
+  expect(screen.queryByRole('textbox', { name: '消息' })).toBeNull()
+  expect(screen.getByRole('button', { name: '打开会话：填写申请' })).toHaveAttribute('aria-current', 'page')
+  expect(screen.getByText('草稿')).toBeInTheDocument()
+  fireEvent.keyDown(screen.getByLabelText('搜索会话'), { key: 'Escape' })
+  await waitFor(() => expect(screen.getByRole('button', { name: '打开历史记录' })).toHaveFocus())
+  expect(screen.getByLabelText('消息')).toHaveValue('申请的草稿')
+  open('核对字段'); draft('字段的草稿')
+  expect(client.core.rootStore.getter(activeSessionIdAtom)).toBe(first)
+  open('填写申请')
+  expect(screen.getByLabelText('消息')).toHaveValue('申请的草稿')
+  open('核对字段')
+  expect(screen.getByLabelText('消息')).toHaveValue('字段的草稿')
+  history()
+  fireEvent.click(screen.getByRole('button', { name: '新建会话' }))
+  fireEvent.click(screen.getByRole('button', { name: '创建会话' }))
+  await waitFor(() => expect(client.core.rootStore.getter(activeSessionIdAtom)).not.toBe(first))
+  expect(screen.queryByRole('region', { name: '会话历史' })).toBeNull()
+  expect(screen.getByLabelText('消息')).toHaveValue('')
+  open('核对字段')
+  expect(screen.getByLabelText('消息')).toHaveValue('字段的草稿')
+})
+
+it('groups recent activity, searches titles and Agent names, and keeps history out of settings', async () => {
+  const { client, agent } = await configured()
+  const secondAgent = await client.saveAgent({ ...agent, id: undefined, name: '检查助手' })
+  const older = await client.createSession(agent.id)
+  const newer = await client.createSession(secondAgent.id)
+  client.core.renameSession(older, '旧申请'); client.core.renameSession(newer, '新申请')
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1)
+  client.core.rootStore.setter(sessionsAtom, (sessions) => ({ ...sessions, [older]: { ...sessions[older]!, updatedAt: yesterday.getTime() } }))
+  render(<BrowserAgentView client={client} />)
+  history()
+  expect(screen.getAllByRole('button', { name: /打开会话：/ }).map((button) => button.getAttribute('aria-label'))).toEqual(['打开会话：新申请', '打开会话：旧申请'])
+  expect(within(screen.getByRole('region', { name: '昨天' })).getByText('旧申请')).toBeInTheDocument()
+  fireEvent.change(screen.getByLabelText('搜索会话'), { target: { value: '检查助手' } })
+  expect(screen.getAllByRole('button', { name: /打开会话：/ })).toHaveLength(1)
+  fireEvent.change(screen.getByLabelText('搜索会话'), { target: { value: '不存在' } })
+  expect(screen.getByText('没有匹配的会话')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: '清除搜索' }))
+  expect(screen.getAllByRole('button', { name: /打开会话：/ })).toHaveLength(2)
+  fireEvent.click(screen.getByRole('button', { name: '打开设置' }))
+  expect(within(screen.getByRole('navigation', { name: '设置类型' })).queryByText('历史记录')).toBeNull()
+  fireEvent.click(screen.getByRole('button', { name: /返回对话/ }))
+  expect(screen.getByRole('region', { name: '当前会话' })).toBeInTheDocument()
+})
+
+it('derives a new title from the first message and persists a manual rename', async () => {
+  const { client, agent, namespace } = await configured()
+  const id = await client.createSession(agent.id)
+  const view = render(<BrowserAgentView client={client} />)
+  draft('核对项目日期')
+  fireEvent.click(screen.getByRole('button', { name: '发送' }))
+  await screen.findByText('已完成测试')
+  history()
+  expect(screen.getByRole('button', { name: '打开会话：核对项目日期' })).toBeInTheDocument()
+  operation('核对项目日期', '重命名')
+  expect(screen.getByLabelText('会话名称')).toHaveFocus()
+  fireEvent.change(screen.getByLabelText('会话名称'), { target: { value: '日期核对结果' } })
+  fireEvent.click(screen.getByRole('button', { name: '保存名称' }))
+  await screen.findByRole('button', { name: '打开会话：日期核对结果' })
+  view.unmount(); await client.dispose(); clients.delete(client)
+  const restored = await createBrowserAgent({ namespace }); clients.add(restored)
+  expect(restored.core.rootStore.getter(sessionsAtom)[id]?.title).toBe('日期核对结果')
+})
+
+it('browses history without stopping a run and falls back after deleting the active session', async () => {
+  const { client, agent } = await configured()
+  const first = await client.createSession(agent.id)
+  const second = await client.createSession(agent.id)
+  client.core.renameSession(first, '后台任务'); client.core.renameSession(second, '当前任务')
+  client.core.sessionAtomScope(first).setter(runAtom, { runId: 'fixture-run', status: 'running' })
+  render(<BrowserAgentView client={client} />)
+  draft('保留直到删除')
+  open('后台任务')
+  history()
+  expect(client.core.sessionAtomScope(first).getter(runAtom)?.status).toBe('running')
+  operation('当前任务', '删除')
+  expect(screen.getByRole('button', { name: '取消' })).toHaveFocus()
+  fireEvent.keyDown(screen.getByRole('alertdialog'), { key: 'Escape' })
+  expect(screen.getByRole('region', { name: '会话历史' })).toBeInTheDocument()
+  expect(client.core.rootStore.getter(sessionsAtom)[second]).toBeTruthy()
+  fireEvent.click(screen.getByRole('button', { name: '打开会话：当前任务' }))
+  expect(screen.getByLabelText('消息')).toHaveValue('保留直到删除')
+  history(); operation('当前任务', '删除')
+  fireEvent.click(screen.getByRole('button', { name: '确认删除' }))
+  await screen.findByText('已删除 1 个会话。')
+  expect(client.core.rootStore.getter(activeSessionIdAtom)).toBe(first)
+  expect(client.core.sessionIds()).not.toContain(second)
+  fireEvent.click(screen.getByRole('button', { name: '返回对话' }))
+  expect(screen.getByRole('button', { name: '停止' })).toBeInTheDocument()
+  await act(async () => { client.core.stopRun({ sessionId: first }) })
+})

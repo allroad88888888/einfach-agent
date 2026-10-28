@@ -1,0 +1,27 @@
+.bav-session-setup { flex:1; min-height:0; overflow:auto; padding:8px 4px; }
+.bav-session-setup h1 { margin:0; font-size:20px; letter-spacing:-.02em; }
+.bav-session-form { display:grid; gap:22px; margin-top:24px; padding:0 4px; }
+.bav-session-form label,.bav-page-picker label { display:block; font-size:13px; font-weight:600; }
+.bav-session-form label small { margin-left:4px; color:var(--b-muted); font-size:12px; font-weight:400; }
+.bav-session-form input,.bav-session-form select { min-height:40px; }
+.bav-create-submit { margin-top:8px; min-height:42px!important; }
+.bav-page-picker { display:grid; gap:8px; }
+.bav-page-picker > button { justify-self:start; font-size:12px; padding:4px 8px; }
+.bav-page-picker p { margin:0; font-size:12px; }
+.bav-page-preview { display:grid; gap:4px; padding:12px; border:1px solid var(--b-border); border-radius:9px; background:var(--b-surface); }
+.bav-page-preview strong { font-size:13px; overflow-wrap:anywhere; }
+.bav-page-preview span { color:var(--b-muted); overflow-wrap:anywhere; font-size:12px; max-height:80px; overflow:auto; }
+.bav-page-preview small { color:var(--b-muted); font-size:11px; }
+.bav-session-page { flex-shrink:0; max-height:50%; overflow:auto; border:1px solid var(--b-border); border-radius:9px; background:var(--b-surface); }
+.bav-session-page summary { display:flex; align-items:center; gap:7px; min-height:34px; padding:6px 10px; cursor:pointer; list-style:none; font-size:12px; }
+.bav-session-page summary::-webkit-details-marker { display:none; }
+.bav-session-page summary > span:nth-child(2) { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bav-session-page summary small { max-width:42%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--b-muted); font-size:11px; }
+.bav-session-page summary::after { content:'⌄'; color:var(--b-muted); }
+.bav-page-indicator { width:6px; height:6px; flex-shrink:0; border-radius:50%; background:var(--b-danger); }
+.bav-session-page.ready .bav-page-indicator { background:var(--b-success); }
+.bav-session-page.connecting .bav-page-indicator { background:var(--b-muted); }
+.bav-page-details { display:grid; gap:10px; padding:4px 10px 12px; }
+.bav-page-details p { margin:0; font-size:12px; }
+.bav-page-url { overflow-wrap:anywhere; color:var(--b-muted); }
+.bav-history-page { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--b-muted); font-size:12px; }

@@ -1,72 +1,60 @@
-import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
-import { AgentStoreProvider, useAgentAtomValue, useRootAtomValue } from '@einfach-agent/react-plugin'
-import { browserCardsAtom, itemsAtom, pendingQuestionAnswersAtom, runAtom, runtimeTranscriptEventsAtom, sessionsAtom } from '@einfach-agent/core'
-import type { AgentProfile, BrowserAgentClient } from '@einfach-agent/browser-agent'
-import { ConversationTimeline } from './ConversationTimeline'
-import { DecisionCards } from './DecisionCards'
+import { useEffect, useRef, useState, type RefObject } from 'react'
+import { AgentStoreProvider, useRootAtomValue } from '@einfach-agent/react-plugin'
+import { activeSessionIdAtom, sessionsAtom } from '@einfach-agent/core'
+import type { AgentProfile, BrowserAgentClient, SessionPageHost, TextAttachment } from '@einfach-agent/browser-agent'
+import { Conversation } from './Conversation'
+import { NewSessionView } from '../sessions/NewSessionView'
+import { SessionPageView } from '../sessions/SessionPageView'
+import { HistoryView } from '../history/HistoryView'
 
-export function ChatView({ client, agents }: { client: BrowserAgentClient; agents: readonly AgentProfile[] }) {
-  const sessions = Object.values(useRootAtomValue(sessionsAtom))
+export function ChatView({ client, agents, onConfigure, onOpenSettings, settingsButtonRef, pages }: { client: BrowserAgentClient; agents: readonly AgentProfile[]; onConfigure(): void; onOpenSettings(): void; settingsButtonRef: RefObject<HTMLButtonElement>; pages?: SessionPageHost }) {
+  const sessions = useRootAtomValue(sessionsAtom)
+  const sessionId = useRootAtomValue(activeSessionIdAtom)
+  const session = sessions[sessionId]
   const [agentId, setAgentId] = useState('')
-  const [sessionId, setSessionId] = useState('')
-  const [notice, setNotice] = useState('')
-  useEffect(() => { if (sessionId && !sessions.some((session) => session.id === sessionId)) setSessionId('') }, [sessionId, sessions])
-  async function create() {
-    try { const id = await client.createSession(agentId); client.core.selectSession(id); setSessionId(id); setNotice('') }
-    catch (error) { setNotice(errorText(error)) }
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [preparing, setPreparing] = useState<Record<string, boolean>>({})
+  const [attachments, setAttachments] = useState<Record<string, TextAttachment[]>>({})
+  const [creating, setCreating] = useState(false)
+  const [, updatePages] = useState(0)
+  const newButtonRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => pages?.subscribe(() => updatePages((value) => value + 1)), [pages])
+  const pageContext = pages?.getSessionPage(sessionId)
+  const blocked = pages && pageContext?.status !== 'ready' ? pageContext?.message ?? '请先绑定目标页面，再发送消息。' : undefined
+  const historyButtonRef = useRef<HTMLButtonElement>(null)
+  const selectedAgentId = agents.some((agent) => agent.id === agentId) ? agentId : agents[0]?.id ?? ''
+  useEffect(() => {
+    if (session?.agentProfile?.agentId) setAgentId(session.agentProfile.agentId)
+  }, [session?.agentProfile?.agentId, sessionId])
+  useEffect(() => {
+    setAttachments((previous) => Object.keys(previous).some((id) => !sessions[id])
+      ? Object.fromEntries(Object.entries(previous).filter(([id]) => sessions[id])) : previous)
+    setPreparing((previous) => Object.keys(previous).some((id) => !sessions[id])
+      ? Object.fromEntries(Object.entries(previous).filter(([id]) => sessions[id])) : previous)
+    setDrafts((previous) => Object.keys(previous).some((id) => !sessions[id])
+      ? Object.fromEntries(Object.entries(previous).filter(([id]) => sessions[id])) : previous)
+  }, [sessions])
+  function closeHistory() {
+    setHistoryOpen(false)
+    requestAnimationFrame(() => historyButtonRef.current?.focus())
   }
-  return <section className="bav-panel bav-chat-panel">
-    <div className="bav-session-bar">
-      <label>使用 Agent<select aria-label="使用 Agent" value={agentId} onChange={(event) => setAgentId(event.target.value)}><option value="">选择 Agent</option>{agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name} · r{agent.revision}</option>)}</select></label>
-      <button type="button" disabled={!agentId} onClick={create}>新建会话</button>
-      <label>会话<select aria-label="会话" value={sessionId} onChange={(event) => { setSessionId(event.target.value); if (event.target.value) client.core.selectSession(event.target.value) }}><option value="">选择会话</option>{sessions.map((session) => <option key={session.id} value={session.id}>{session.title}</option>)}</select></label>
+  function closeCreate() { setCreating(false); requestAnimationFrame(() => newButtonRef.current?.focus()) }
+  return <section className={`bav-panel bav-chat-panel${creating ? ' is-creating' : ''}`}>
+    <div className="bav-session-bar" hidden={creating} aria-label="会话工具栏">
+      <button ref={historyButtonRef} type="button" className="bav-history-toggle" aria-label="打开历史记录" aria-expanded={historyOpen} title="历史记录" onClick={() => historyOpen ? closeHistory() : setHistoryOpen(true)}><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M3 11a9 9 0 1 1 2.6 7M3 5v6h6M12 7v5l3 2" /></svg><span>历史</span></button>
+      <div className="bav-session-heading"><strong title={session?.title}>{creating ? '新建会话' : session?.title ?? '浏览器 Agent'}</strong><small>{agents.find((agent) => agent.id === session?.agentProfile?.agentId)?.name ?? ''}</small></div>
+      <button ref={newButtonRef} type="button" className="bav-new-session" aria-label="新建会话" disabled={!selectedAgentId || creating} onClick={() => setCreating(true)}>新建</button>
+      <button ref={settingsButtonRef} type="button" className="bav-icon-button" aria-label="打开设置" title="设置" onClick={() => { setHistoryOpen(false); onOpenSettings() }}><svg aria-hidden="true" viewBox="0 0 24 24"><path d="M12 8.25A3.75 3.75 0 1 0 12 15.75 3.75 3.75 0 0 0 12 8.25Z"/><path d="M19.1 13.2c.06-.39.06-2.01 0-2.4l1.68-1.31-1.7-2.94-1.98.8a7.6 7.6 0 0 0-2.08-1.2L14.72 4h-3.4l-.31 2.15c-.75.29-1.45.69-2.08 1.2l-1.98-.8-1.7 2.94 1.68 1.31a7.96 7.96 0 0 0 0 2.4l-1.68 1.31 1.7 2.94 1.98-.8c.63.51 1.33.91 2.08 1.2l.31 2.15h3.4l.31-2.15a7.6 7.6 0 0 0 2.08-1.2l1.98.8 1.7-2.94-1.68-1.31Z"/></svg></button>
     </div>
-    {notice && <p role="alert" className="bav-error">{notice}</p>}
-    {!agents.length && <div className="bav-empty-state"><strong>还没有 Agent</strong><span>前往配置页创建模型连接和 Agent 后，即可开始对话。</span></div>}
-    {sessionId ? <AgentStoreProvider store={client.core.sessionAtomScope(sessionId)} key={sessionId}><Conversation client={client} sessionId={sessionId} /></AgentStoreProvider> : agents.length > 0 && <div className="bav-empty-state"><strong>选择一个会话</strong><span>也可以从上方选择 Agent 并新建会话。</span></div>}
+    <div className="bav-chat-body">
+      <div className="bav-chat-content" hidden={historyOpen || creating}>
+        {session && pages && <SessionPageView key={`page:${sessionId}`} host={pages} sessionId={sessionId} context={pageContext} />}
+        {!agents.length && !session && <div className="bav-empty-state"><strong>还没有 Agent</strong><span>先填写你的接口地址、模型 ID 与 API Key，再创建 Agent。</span><button type="button" onClick={onConfigure}>配置模型与 API Key</button></div>}
+        {session ? <AgentStoreProvider store={client.core.sessionAtomScope(sessionId)} key={sessionId}><Conversation client={client} sessionId={sessionId} blocked={blocked} submitting={preparing[sessionId] ?? false} setSubmitting={(value) => setPreparing((previous) => ({ ...previous, [sessionId]: value }))} files={attachments[sessionId] ?? []} setFiles={(files) => setAttachments((previous) => ({ ...previous, [sessionId]: files }))} draft={drafts[sessionId] ?? ''} setDraft={(value) => setDrafts((previous) => ({ ...previous, [sessionId]: value }))} /></AgentStoreProvider> : agents.length > 0 && <div className="bav-empty-state"><strong>开始一段对话</strong><span>点击上方“新建”，或从历史记录继续。</span><button type="button" className="bav-secondary" onClick={() => setHistoryOpen(true)}>浏览历史记录</button></div>}
+      </div>
+      {historyOpen && !creating && <HistoryView client={client} agents={agents} sessions={Object.values(sessions)} currentId={sessionId} drafts={{ ...Object.fromEntries(Object.entries(attachments).filter(([, files]) => files.length).map(([id]) => [id, '附件草稿'])), ...Object.fromEntries(Object.entries(drafts).filter(([, text]) => text)) }} pages={pages} onClose={closeHistory} onSelect={(id) => { client.core.selectSession(id); closeHistory() }} />}
+      {creating && <NewSessionView client={client} agents={agents} initialAgentId={selectedAgentId} pages={pages} onCancel={closeCreate} onCreated={(id) => { setAgentId(id); setHistoryOpen(false); closeCreate() }} />}
+    </div>
   </section>
 }
-
-function Conversation({ client, sessionId }: { client: BrowserAgentClient; sessionId: string }) {
-  const items = useAgentAtomValue(itemsAtom)
-  const run = useAgentAtomValue(runAtom)
-  const events = useAgentAtomValue(runtimeTranscriptEventsAtom)
-  const cards = useAgentAtomValue(browserCardsAtom)
-  const answers = useAgentAtomValue(pendingQuestionAnswersAtom)
-  const undo = useAgentAtomValue(client.core.sessionUndoAvailabilityAtom(sessionId))
-  const [draft, setDraft] = useState('')
-  const [feedback, setFeedback] = useState('')
-  const recovery = client.core.getSessionRecoveryStatus(sessionId)
-  const busy = Boolean(run && ['running', 'awaiting_tool', 'waiting_confirmation', 'waiting_user', 'waiting_plan_approval'].includes(run.status))
-  async function send(event: FormEvent) {
-    event.preventDefault(); const text = draft.trim(); if (!text) return
-    setFeedback('')
-    try { await client.core.sendMessage({ text }, { sessionId }); setDraft('') }
-    catch (error) { setFeedback(errorText(error)) }
-  }
-  function history(direction: 'undo' | 'redo') {
-    const result = direction === 'undo' ? client.core.undoTurn(sessionId) : client.core.redoTurn(sessionId)
-    setFeedback(result.ok ? `${direction === 'undo' ? '撤销' : '重做'}完成。` : refusalText(result.refusal))
-  }
-  function recover() {
-    const result = client.core.continueRecoveredSession(sessionId)
-    setFeedback(result.status === 'continued' ? '已继续恢复的运行。' : recoveryText(result.status))
-  }
-  function keyDown(event: KeyboardEvent<HTMLTextAreaElement>) { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); event.currentTarget.form?.requestSubmit() } }
-  return <section className="bav-chat" aria-label="当前会话">
-    <ConversationTimeline items={items} runtimeEvents={events} browserCards={cards} />
-    <div className="bav-run-strip"><span className={`bav-run-dot ${run?.status ?? 'idle'}`} /><span>{statusText(run?.status)}</span>{run?.error && <span className="bav-error">{run.error}</span>}</div>
-    <DecisionCards client={client} sessionId={sessionId} run={run} answers={answers} />
-    {recovery.status === 'recoverable' && <div className="bav-recovery"><div><strong>可恢复上次运行</strong><span>将从持久化的安全断点继续。</span></div><button type="button" onClick={recover}>恢复运行</button></div>}
-    {recovery.status === 'reconciliation_required' && <div className="bav-recovery is-blocked"><strong>恢复需要人工核对</strong><span>工具结果尚不明确，系统不会自动重放可能影响网页或业务系统的操作。</span></div>}
-    {feedback && <p role="status" className="bav-feedback">{feedback}</p>}
-    <div className="bav-history-actions"><button type="button" className="bav-secondary" disabled={!undo.canUndo} onClick={() => history('undo')}>撤销</button><button type="button" className="bav-secondary" disabled={!undo.canRedo} onClick={() => history('redo')}>重做</button>{busy && <button type="button" className="bav-danger" onClick={() => client.core.stopRun({ sessionId })}>停止</button>}<span>{undo.blocked === 'irreversible_barrier' ? '撤销已被不可逆操作边界阻止。' : undo.willStopRun ? '撤销会先停止当前运行。' : ''}</span></div>
-    <p className="bav-boundary">撤销只影响对话状态，不能撤销已在网页或业务系统执行的操作。</p>
-    <form className="bav-composer" onSubmit={send}><textarea aria-label="消息" placeholder="输入消息；Enter 发送，Shift+Enter 换行" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={keyDown} disabled={busy} /><button disabled={busy || !draft.trim()}>发送</button></form>
-  </section>
-}
-
-function statusText(status?: string): string { return ({ idle: '空闲', running: '正在思考', awaiting_tool: '工具执行中', waiting_confirmation: '等待确认', waiting_user: '等待你的答复', waiting_plan_approval: '等待计划批准', interrupted: '运行已中断', done: '已完成', stopped: '已取消', error: '运行出错' } as Record<string, string>)[status ?? 'idle'] ?? status ?? '空闲' }
-function refusalText(value?: string): string { return ({ nothing_to_apply: '没有可撤销或重做的内容。', irreversible_barrier: '无法越过外部操作的不可逆边界。', no_session: '会话已不可用。', turn_not_retractable: '这轮对话不能撤回。' } as Record<string, string>)[value ?? ''] ?? '操作未生效。' }
-function recoveryText(status: string): string { return status === 'reconciliation_required' ? '恢复前需要核对工具结果。' : status === 'awaiting_user' ? '请先完成当前决策。' : '当前状态无法恢复。' }
-function errorText(value: unknown): string { return value instanceof Error ? value.message : '发送失败，请重试' }

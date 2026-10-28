@@ -1,0 +1,41 @@
+.browser-agent-view button.bav-history-toggle { display:flex; align-items:center; gap:6px; padding:6px 8px; border-color:transparent; background:transparent; color:var(--b-text); }
+.browser-agent-view button.bav-history-toggle:hover { background:var(--b-surface-muted); }
+.browser-agent-view button.bav-history-toggle[aria-expanded=true] { color:var(--b-accent-text); background:var(--b-accent-soft); }
+.bav-session-history { display:flex; flex:1; flex-direction:column; min-height:0; gap:14px; padding:12px 4px 0; }
+.bav-history-header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.bav-history-header > div { display:flex; align-items:baseline; gap:10px; }
+.bav-history-header h1 { margin:0; font-size:20px; letter-spacing:-.02em; }
+.bav-history-header span { color:var(--b-muted); font-size:12px; white-space:nowrap; }
+.bav-history-search { display:flex; align-items:center; gap:8px; }
+.bav-history-search input { margin:0; flex:1; border-color:var(--b-border); background:var(--b-surface); }
+.bav-history-list { flex:1; min-height:0; overflow:auto; overscroll-behavior:contain; padding:0 2px 16px; }
+.bav-history-group + .bav-history-group { margin-top:20px; }
+.bav-history-group h2 { margin:0 10px 7px; font-size:12px; color:var(--b-muted); font-weight:500; }
+.bav-history-group ul { list-style:none; padding:0; margin:0; display:grid; gap:4px; }
+.bav-history-group li { position:relative; min-width:0; border:1px solid transparent; border-radius:10px; }
+.bav-history-group li:hover { background:var(--b-surface); }
+.bav-history-group li.is-current { background:var(--b-accent-soft); border-color:var(--b-border); }
+.browser-agent-view button.bav-session-link { display:grid; gap:5px; min-height:68px; width:100%; padding:12px 44px 12px 12px; border:0; background:transparent; color:var(--b-text); text-align:left; }
+.browser-agent-view button.bav-session-link:hover { background:transparent; }
+.bav-session-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600; }
+.bav-session-meta { display:flex; align-items:center; gap:8px; min-width:0; color:var(--b-muted); font-size:12px; }
+.bav-session-meta > span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bav-session-meta time,.bav-draft-label,.bav-current-label { flex-shrink:0; }
+.bav-draft-label,.bav-current-label { color:var(--b-accent-text); }
+.bav-current-label { margin-left:auto; }
+.bav-session-menu summary { display:grid; place-items:center; min-width:32px; min-height:32px; border-radius:7px; list-style:none; cursor:pointer; color:var(--b-muted); letter-spacing:1px; }
+.bav-session-menu summary::-webkit-details-marker { display:none; }
+.bav-session-menu summary:hover,.bav-session-menu[open] summary { background:var(--b-surface-muted); color:var(--b-text); }
+.bav-history-group .bav-session-menu summary { position:absolute; right:8px; top:16px; }
+.bav-session-menu > div { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:4px; padding:0 8px 8px; }
+.browser-agent-view .bav-session-menu button { border:0; background:var(--b-surface); color:var(--b-text); font-size:12px; }
+.browser-agent-view .bav-session-menu button:hover { background:var(--b-surface-muted); }
+.bav-history-search .bav-session-menu { position:relative; }
+.bav-history-search .bav-session-menu > div { position:absolute; z-index:2; top:36px; right:0; padding:6px; min-width:140px; border:1px solid var(--b-border); border-radius:10px; background:var(--b-surface); box-shadow:0 6px 20px #0001; }
+.bav-history-search .bav-session-menu button { width:100%; white-space:nowrap; }
+.bav-history-action { display:grid; align-content:start; gap:12px; padding:18px; overflow:auto; border:1px solid var(--b-border); border-radius:12px; background:var(--b-surface); }
+.bav-history-action h2 { margin:0; font-size:17px; }
+.bav-history-action p { margin:0; color:var(--b-muted); font-size:13px; }
+.bav-history-action .bav-history-delete-titles { color:var(--b-text); overflow-wrap:anywhere; }
+.bav-history-action .bav-form-actions { justify-content:flex-end; }
+@container (max-width:340px) { .bav-history-header > div { align-items:start; flex-direction:column; gap:0; } .bav-session-bar { gap:3px; } }
