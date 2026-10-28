@@ -9,6 +9,9 @@ permissions:
 jobs:
   web:
     runs-on: ubuntu-latest
+    env:
+      # Node 22 requires this flag for prefix-only node:sqlite imports.
+      NODE_OPTIONS: --experimental-sqlite
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -25,7 +28,10 @@ jobs:
         run: node scripts/check-boundaries.js
       - name: Check state invariants
         run: node scripts/check-state-invariants.js
-      - run: pnpm test
+      # Limit contention on the runner; child-process tests resolve workspace sources before dist exists.
+      - run: pnpm test --maxWorkers=2
+        env:
+          TSX_TSCONFIG_PATH: tsconfig.app.json
       - run: pnpm build
       # `pnpm build` 只出 apps/web 与 apps/server 的产物，**不构建 packages/* 与 tools/* 的 dist**，
       # 而 npm tarball 里装的就是那些 dist。少了这两步，dist 陈旧化在 CI 里完全没有症状：

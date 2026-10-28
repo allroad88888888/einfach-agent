@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ToolRegistry } from '@einfach-agent/core/tools'
 import { itemsAtom, pendingArtifactsAtom, pendingQuestionAnswersAtom, runAtom } from '@einfach-agent/core'
 import { createBrowserAgent } from './client'
@@ -36,10 +36,13 @@ async function waitForRunsDone(runs: ReadonlyArray<{ label: string; store: Retur
       const unsubscribe = store.sub(runAtom, check)
       settled ? unsubscribe() : unsubscribes.push(unsubscribe)
     })
-    timeout = setTimeout(() => finish(new Error(`runs did not finish: ${pending().map(({ label, store }) => `${label}=${store.getter(runAtom)?.status ?? 'missing'}`).join(', ')}`)), 4_000)
+    timeout = setTimeout(() => finish(new Error(`runs did not finish: ${pending().map(({ label, store }) => `${label}=${store.getter(runAtom)?.status ?? 'missing'}`).join(', ')}`)), 20_000)
     check()
   })
 }
+
+// These integration tests perform asynchronous persistence and model runs on shared CI workers.
+vi.setConfig({ testTimeout: 30_000 })
 
 describe('multi-client Agent isolation', () => {
   it('runs three Agents across two clients without crossing endpoint, model, prompt, tools, or key', async () => {

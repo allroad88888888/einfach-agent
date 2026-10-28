@@ -1,5 +1,5 @@
 import 'fake-indexeddb/auto'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createBrowserAgent } from './client'
 import { itemsAtom, runAtom, sessionsAtom } from '@einfach-agent/core'
 
@@ -28,7 +28,7 @@ async function waitForRunsDone(client: Awaited<ReturnType<typeof createBrowserAg
       const unsubscribe = store.sub(runAtom, check)
       settled ? unsubscribe() : unsubscribes.push(unsubscribe)
     })
-    timeout = setTimeout(() => finish(new Error(`runs did not finish: ${statuses().join(', ')}`)), 4_000)
+    timeout = setTimeout(() => finish(new Error(`runs did not finish: ${statuses().join(', ')}`)), 20_000)
     check()
   })
 }
@@ -41,6 +41,9 @@ async function configuredClient(name: string, fetchImpl?: typeof fetch) {
   const agent = await client.saveAgent({ name: 'Agent A', instructions: 'ALWAYS ALPHA', connectionId: connection.id, model: 'm1', toolNames: ['skill_search', 'skill_read'], skillNames: [skill.name] })
   return { client, connection, skill, agent }
 }
+
+// These integration tests perform asynchronous persistence and model runs on shared CI workers.
+vi.setConfig({ testTimeout: 30_000 })
 
 describe('browser agent configuration and persistence', () => {
   it('serializes concurrent writes, hides credentials, freezes nested snapshots, and restores data', async () => {
@@ -84,6 +87,14 @@ describe('browser agent configuration and persistence', () => {
     expect(requests[0].body).toContain('form-help')
     expect(requests[0].body).not.toContain('FROZEN BODY V1')
     expect(requests[0].body).not.toContain('FROZEN BODY V2')
+  })
+
+  it('disposes even if a late reader recreated the store of a deleted session', async () => {
+    const { client, agent } = await configuredClient(namespace('deleted-session-store'))
+    const sessionId = await client.createSession(agent.id)
+    await client.deleteSessions([sessionId])
+    client.core.sessionAtomScope(sessionId)
+    await expect(client.dispose()).resolves.toBeUndefined()
   })
 
   it('durably restores a session after immediate dispose and recreate', async () => {
