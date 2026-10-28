@@ -1,2 +1,5 @@
 export { createBrowserAgent } from './client'
+export { addTextAttachments, restoreTextAttachmentDraft, TEXT_ATTACHMENT_ACCEPT } from './textAttachments'
+export type { TextAttachment } from './textAttachments'
 export type { AgentProfileInput, AgentProfile, ConfiguredSkillInput, ConfiguredSkill, ModelConnectionInput, ModelConnection, BrowserAgentSnapshot, BrowserAgentClient, BrowserAgentOptions, BrowserCore } from './types'
+export type { SessionPage, SessionPageContext, SessionPageHost } from './session-pages'

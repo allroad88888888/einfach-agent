@@ -1,16 +1,21 @@
 import { createCore } from '@einfach-agent/core/plugin'
-import { createDraftSessionCapabilityPolicy, lockSessionCapabilityPolicy } from '@einfach-agent/core'
+import { createDraftSessionCapabilityPolicy, lockSessionCapabilityPolicy, isSessionCapabilityAllowed, sessionsAtom } from '@einfach-agent/core'
 import { createProviderTransportFetch } from '@einfach-agent/ai'
 import { createIndexedDbHistoryLogDriver, createIndexedDbRecoveryDriver, createIndexedDbSessionsPersistence } from '@einfach-agent/persistence-idb'
 import { builtInSkillsRegistry, registerSkillsTools } from '@einfach-agent/tools-skills'
 import { compactContextTool } from '@einfach-agent/tools-agents'
+import { askUserQuestionTool } from '@einfach-agent/tools-interaction'
 import { loadConfig, saveConfig, type StoredConfig } from './configStore'
 import { acquireNamespaceOwner } from './namespaceOwner'
+import { createAttachmentPreparer } from './prepareAttachments'
+import { createAttachmentStore } from './attachmentStore'
+import { registerOcrTools } from '@einfach-agent/tools-browser-ocr'
 import { endpoint, id, required, unique } from './validation'
 import type { AgentProfile, AgentProfileInput, BrowserAgentClient, BrowserAgentOptions, BrowserAgentSnapshot, ConfiguredSkill, ConfiguredSkillInput, ModelConnection, ModelConnectionInput } from './types'
 
 function publicSnapshot(config: StoredConfig): BrowserAgentSnapshot {
   return Object.freeze({
+    ocr: Object.freeze({ credentialConfigured: Boolean(config.ocr?.token) }),
     agents: Object.freeze(config.agents.map((item) => Object.freeze({ ...item, toolNames: Object.freeze([...item.toolNames]), skillNames: Object.freeze([...item.skillNames]) }))),
     skills: Object.freeze(config.skills.map((item) => Object.freeze({ ...item, triggers: Object.freeze([...item.triggers]), resources: Object.freeze({ ...item.resources }) }))),
     connections: Object.freeze(config.connections.map(({ apiKey: _key, ...item }) => Object.freeze({ ...item, models: Object.freeze([...item.models]) }))),
@@ -34,6 +39,7 @@ export async function createBrowserAgentWithDependencies(
 ): Promise<BrowserAgentClient> {
   const namespace = validateNamespace(options.namespace)
   const configDb = `einfach-browser-agent-config:${namespace}`
+  const attachments = createAttachmentStore(namespace)
   const owner = await acquireNamespaceOwner(namespace)
   let config: StoredConfig
   try { config = await dependencies.loadConfig(configDb) } catch (error) {
@@ -63,12 +69,23 @@ export async function createBrowserAgentWithDependencies(
   let candidate: ReturnType<typeof createCore> | undefined
   try {
     candidate = createCore({
-      config: { fetchImpl: transport },
+      config: {
+        fetchImpl: transport,
+        prepareUserInput: createAttachmentPreparer(attachments, (sessionId) => {
+          if (!config.ocr?.token) throw new Error('请先在设置 → 工具服务中配置 PaddleOCR Token，再发送 PDF/图片。')
+          const session = candidate?.rootStore.getter(sessionsAtom)[sessionId]
+          if (!session || !isSessionCapabilityAllowed(session.capabilityPolicy, 'tool', 'paddle_ocr')) throw new Error('当前会话未启用 paddle_ocr。请在 Agent 工具能力中选择它，再新建会话。')
+        }),
+      },
       skillRegistry: {
         list: () => [...builtInSkillsRegistry.list(), ...config.skills.map(({ name, description, triggers }) => ({ name, description, triggers: [...triggers] }))],
         buildManifestText: (project) => builtInSkillsRegistry.buildManifestText(project),
       },
-      registerTools(registry) { registerSkillsTools(registry); registry.register(compactContextTool); options.registerTools?.(registry) },
+      registerTools(registry) {
+        registerSkillsTools(registry); registry.register(compactContextTool); registry.register(askUserQuestionTool)
+        registerOcrTools(registry, { getToken: () => config.ocr?.token, fetch: options.ocrFetch, resolveAttachment: (id, ctx) => attachments.get(ctx.sessionId, id) })
+        options.registerTools?.(registry)
+      },
     })
     const historyDb = `einfach-browser-agent-history:${namespace}`
     candidate.persistence.configure({
@@ -131,7 +148,7 @@ export async function createBrowserAgentWithDependencies(
     return structuredClone((({ apiKey: _key, ...item }) => item)(connection))
   }) }
 
-  async function createSession(agentId: string): Promise<string> {
+  async function createSession(agentId: string, options?: { title?: string }): Promise<string> {
     if (closing || disposed) throw new Error('Browser agent client is disposed')
     const agent = config.agents.find((item) => item.id === agentId)
     if (!agent) throw new Error(`Unknown agent: ${agentId}`)
@@ -143,7 +160,7 @@ export async function createBrowserAgentWithDependencies(
       ...agent.skillNames.map((name) => ({ kind: 'skill' as const, name, available: true, selected: true })),
     ], Date.now())
     const endpointBinding = `${connection.id}::${encodeURIComponent(connection.baseUrl)}`
-    const sessionId = core.newSession({ title: agent.name, settings: { vendor: 'openai-compat', model: agent.model, vendorSettings: { connectionId: endpointBinding } }, capabilityPolicy: policy, agentProfile: { agentId: agent.id, revision: agent.revision, instructions: agent.instructions, connectionId: connection.id, skillContents: skills.map((skill) => ({ ...skill })) } })
+    const sessionId = core.newSession({ ...(options?.title?.trim() ? { title: Array.from(options.title.trim()).slice(0, 48).join('') } : {}), settings: { vendor: 'openai-compat', model: agent.model, vendorSettings: { connectionId: endpointBinding } }, capabilityPolicy: policy, agentProfile: { agentId: agent.id, revision: agent.revision, instructions: agent.instructions, connectionId: connection.id, skillContents: skills.map((skill) => ({ ...skill })) } })
     return sessionId
   }
 
@@ -156,8 +173,19 @@ export async function createBrowserAgentWithDependencies(
     saveSkill,
     deleteSkill: (name) => serialize(async () => { if (config.agents.some((item) => item.skillNames.includes(name))) throw new Error(`Skill is referenced by an agent: ${name}`); await commit({ ...config, skills: config.skills.filter((item) => item.name !== name) }) }),
     saveConnection,
+    saveOcrToken: (value) => serialize(async () => {
+      const token = value.trim()
+      if (token && (!/^[\x21-\x7e]+$/.test(token) || token.length > 2048)) throw new Error('OCR Token 格式无效。')
+      const { ocr: _old, ...rest } = config
+      await commit({ ...rest, ...(token ? { ocr: { token } } : {}) })
+    }),
     deleteConnection: (connectionId) => serialize(async () => { if (config.agents.some((item) => item.connectionId === connectionId)) throw new Error(`Connection is referenced by an agent: ${connectionId}`); await commit({ ...config, connections: config.connections.filter((item) => item.id !== connectionId) }) }),
     createSession,
+    deleteSessions: (ids) => serialize(async () => {
+      for (const sessionId of new Set(ids)) core.removeSession(sessionId)
+      await core.persistence.flush()
+      await Promise.all([...new Set(ids)].map((sessionId) => attachments.removeSession(sessionId)))
+    }),
     dispose(disposeOptions) {
       if (disposePromise) return disposePromise
       closing = true

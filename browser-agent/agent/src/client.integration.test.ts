@@ -8,6 +8,31 @@ afterEach(async () => { await Promise.all(clients.splice(0).map((client) => clie
 
 function namespace(label: string): string { return `${label}-${crypto.randomUUID()}` }
 
+async function waitForRunsDone(client: Awaited<ReturnType<typeof createBrowserAgent>>, sessionIds: readonly string[]): Promise<void> {
+  const stores = sessionIds.map((sessionId) => client.core.getSessionStore(sessionId).store)
+  const statuses = () => stores.map((store) => store.getter(runAtom)?.status)
+  if (statuses().every((status) => status === 'done')) return
+  await new Promise<void>((resolve, reject) => {
+    let settled = false
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const unsubscribes: Array<() => void> = []
+    const finish = (error?: Error) => {
+      if (settled) return
+      settled = true
+      if (timeout) clearTimeout(timeout)
+      unsubscribes.forEach((unsubscribe) => unsubscribe())
+      error ? reject(error) : resolve()
+    }
+    const check = () => { if (statuses().every((status) => status === 'done')) finish() }
+    stores.forEach((store) => {
+      const unsubscribe = store.sub(runAtom, check)
+      settled ? unsubscribe() : unsubscribes.push(unsubscribe)
+    })
+    timeout = setTimeout(() => finish(new Error(`runs did not finish: ${statuses().join(', ')}`)), 4_000)
+    check()
+  })
+}
+
 async function configuredClient(name: string, fetchImpl?: typeof fetch) {
   const client = await createBrowserAgent({ namespace: name, fetch: fetchImpl })
   clients.push(client)
@@ -52,7 +77,7 @@ describe('browser agent configuration and persistence', () => {
     const newSession = await client.createSession(agent.id)
     await client.core.sendMessage('old', { sessionId: oldSession })
     await client.core.sendMessage('new', { sessionId: newSession })
-    await new Promise((resolve) => setTimeout(resolve, 30))
+    await waitForRunsDone(client, [oldSession, newSession])
     expect(requests.map((item) => item.url)).toEqual(['https://one.example/v1/chat/completions', 'https://two.example/v1/chat/completions'])
     expect(requests.map((item) => item.authorization)).toEqual(['Bearer secret-2', 'Bearer secret-2'])
     expect(requests[0].body).toContain('ALWAYS ALPHA')

@@ -7,7 +7,7 @@ export interface ConfiguredSkillInput { name: string; description: string; trigg
 export interface ConfiguredSkill extends ConfiguredSkillInput { revision: number }
 export interface ModelConnectionInput { id?: string; label: string; baseUrl: string; models: readonly string[]; apiKey?: string }
 export interface ModelConnection { id: string; label: string; baseUrl: string; models: readonly string[]; credentialConfigured: boolean }
-export interface BrowserAgentSnapshot { agents: readonly AgentProfile[]; skills: readonly ConfiguredSkill[]; connections: readonly ModelConnection[] }
+export interface BrowserAgentSnapshot { agents: readonly AgentProfile[]; skills: readonly ConfiguredSkill[]; connections: readonly ModelConnection[]; ocr?: { readonly credentialConfigured: boolean } }
 export type BrowserCore = ReturnType<typeof createCore>
 export interface BrowserAgentClient {
   readonly core: BrowserCore
@@ -19,7 +19,9 @@ export interface BrowserAgentClient {
   deleteSkill(name: string): Promise<void>
   saveConnection(input: ModelConnectionInput): Promise<ModelConnection>
   deleteConnection(id: string): Promise<void>
-  createSession(agentId: string): Promise<string>
+  saveOcrToken(token: string): Promise<void>
+  createSession(agentId: string, options?: { title?: string }): Promise<string>
+  deleteSessions(ids: readonly string[]): Promise<void>
   dispose(options?: { preserveRecovery?: boolean }): Promise<void>
 }
-export interface BrowserAgentOptions { namespace: string; registerTools?: (registry: ToolRegistry) => void; fetch?: typeof globalThis.fetch }
+export interface BrowserAgentOptions { namespace: string; registerTools?: (registry: ToolRegistry) => void; fetch?: typeof globalThis.fetch; ocrFetch?: typeof globalThis.fetch }

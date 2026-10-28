@@ -17,6 +17,30 @@ function registerNamedTools(registry: ToolRegistry): void {
   })
 }
 
+async function waitForRunsDone(runs: ReadonlyArray<{ label: string; store: ReturnType<Awaited<ReturnType<typeof createBrowserAgent>>['core']['getSessionStore']>['store'] }>): Promise<void> {
+  const pending = () => runs.filter(({ store }) => store.getter(runAtom)?.status !== 'done')
+  if (pending().length === 0) return
+  await new Promise<void>((resolve, reject) => {
+    let settled = false
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const unsubscribes: Array<() => void> = []
+    const finish = (error?: Error) => {
+      if (settled) return
+      settled = true
+      if (timeout) clearTimeout(timeout)
+      unsubscribes.forEach((unsubscribe) => unsubscribe())
+      error ? reject(error) : resolve()
+    }
+    const check = () => { if (pending().length === 0) finish() }
+    runs.forEach(({ store }) => {
+      const unsubscribe = store.sub(runAtom, check)
+      settled ? unsubscribe() : unsubscribes.push(unsubscribe)
+    })
+    timeout = setTimeout(() => finish(new Error(`runs did not finish: ${pending().map(({ label, store }) => `${label}=${store.getter(runAtom)?.status ?? 'missing'}`).join(', ')}`)), 4_000)
+    check()
+  })
+}
+
 describe('multi-client Agent isolation', () => {
   it('runs three Agents across two clients without crossing endpoint, model, prompt, tools, or key', async () => {
     const requests: Array<{ url: string; auth: string; body: string }> = []
@@ -43,7 +67,11 @@ describe('multi-client Agent isolation', () => {
       first.core.sendMessage('to B', { sessionId: sessionB }),
       second.core.sendMessage('to C', { sessionId: sessionC }),
     ])
-    for (let attempt = 0; attempt < 100 && requests.length < 3; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 10))
+    await waitForRunsDone([
+      { label: 'A', store: first.core.getSessionStore(sessionA).store },
+      { label: 'B', store: first.core.getSessionStore(sessionB).store },
+      { label: 'C', store: second.core.getSessionStore(sessionC).store },
+    ])
     expect(requests).toHaveLength(3)
     const byUrl = Object.fromEntries(requests.map((request) => [request.url, request]))
     for (const [host, model, instruction, tool, key] of [

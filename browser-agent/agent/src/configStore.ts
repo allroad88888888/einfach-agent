@@ -6,6 +6,7 @@ export interface StoredConfig {
   agents: AgentProfile[]
   skills: ConfiguredSkill[]
   connections: Array<ModelConnection & { apiKey?: string }>
+  ocr?: { token: string }
 }
 
 const STORE = 'config'
@@ -32,8 +33,9 @@ function revision(value: unknown): value is number { return Number.isSafeInteger
 function resources(value: unknown): value is Record<string, string> { return record(value) && Object.values(value).every((item) => typeof item === 'string') }
 
 function decode(value: unknown): StoredConfig | undefined {
-  if (!record(value) || !keys(value, ['version', 'agents', 'skills', 'connections']) || value.version !== 1
+  if (!record(value) || !keys(value, ['version', 'agents', 'skills', 'connections', ...('ocr' in value ? ['ocr'] : [])]) || value.version !== 1
     || !Array.isArray(value.agents) || !Array.isArray(value.skills) || !Array.isArray(value.connections)) return undefined
+  if ('ocr' in value && (!record(value.ocr) || !keys(value.ocr, ['token']) || typeof value.ocr.token !== 'string' || !value.ocr.token.trim())) return undefined
   const skills = value.skills.every((item) => record(item) && keys(item, ['name', 'description', 'triggers', 'content', 'resources', 'revision'])
     && typeof item.name === 'string' && item.name.length > 0 && typeof item.description === 'string' && item.description.length > 0
     && Array.isArray(item.triggers) && item.triggers.every((entry) => typeof entry === 'string') && typeof item.content === 'string' && item.content.length > 0
