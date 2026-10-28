@@ -43,6 +43,14 @@ export function captureOutput(
   source: Readable,
   stream: 'stdout' | 'stderr',
   maxChars: number,
+  /**
+   * 每读到一块数据时同步调用一次。用于把「这条命令还在吐输出」告诉等待方
+   * （见 activity.ts 与 wait.ts 的静默超时）。不传 = 只关心最终文本。
+   *
+   * **在一块的边界上调用**，不是每个字节：`readCappedDrain` 拿到的就是块，
+   * 逐字节通知既无意义也会把读取流程拖慢。
+   */
+  onActivity?: () => void,
 ): OutputCapture {
   let signalAbandon = (): void => {}
   const abandoned = new Promise<typeof ABANDONED>((resolve) => {
@@ -53,7 +61,7 @@ export function captureOutput(
   let captured: CappedRead = { text: '', truncated: false }
   let failure: Error | undefined
 
-  const done = readCappedDrain(abandonableChunks(source, abandoned), maxChars)
+  const done = readCappedDrain(abandonableChunks(source, abandoned, onActivity), maxChars)
     .then(
       (result) => {
         captured = result
@@ -95,6 +103,7 @@ export function captureOutput(
 async function* abandonableChunks(
   source: ByteSource,
   abandoned: Promise<typeof ABANDONED>,
+  onActivity: (() => void) | undefined,
 ): AsyncGenerator<Uint8Array> {
   const iterator = source[Symbol.asyncIterator]()
   for (;;) {
@@ -104,6 +113,9 @@ async function* abandonableChunks(
     step.catch(() => {})
     const next = await Promise.race<IteratorResult<Uint8Array> | typeof ABANDONED>([step, abandoned])
     if (next === ABANDONED || next.done === true) return
+    // 通知必须在 yield **之前**：yield 会把控制权交回消费方，一块已经被读出来的数据
+    // 却还没被记成「命令活着」，在静默阈值贴边的场景里可能就是差这一下。
+    onActivity?.()
     yield next.value
   }
 }

@@ -11,9 +11,27 @@
 export const DEFAULT_MAX_OUTPUT_CHARS = 20_000
 export const MAX_OUTPUT_CHARS = 100_000
 
-/** 超时的默认值与硬顶。 */
+/**
+ * 静默超时的默认值与硬顶。
+ *
+ * 语义是「**连续多久没有输出**」，不是「总共跑多久」——每收到一块输出就重新计时（见 wait.ts）。
+ * 所以 30s 默认意味着「沉默半分钟算卡住」，而一条持续吐进度的命令可以跑过这个数。
+ * 120s 的硬顶同理：它是模型能申请的最长**沉默**容忍，不是最长运行时长。
+ *
+ * 改动前这两个数被当作墙钟上限用，于是本仓全量测试（本机 108–120s、一直在输出）会贴着
+ * 120s 被杀成 `SHELL_TIMEOUT`。
+ */
 export const DEFAULT_TIMEOUT_MS = 30_000
 export const MAX_TIMEOUT_MS = 120_000
+
+/**
+ * 总时长兜底的硬顶。不暴露给模型（schema 里没有这个参数），是宿主自己的保险丝。
+ *
+ * 要有它是因为「一直在输出」不等于「在正常推进」：`yes`、滚动的日志、死循环里的进度打印
+ * 都能让静默超时永远不触发。取值对齐 `run_task` 的 600s，让两条执行路径有一个可比的
+ * 「最长运行时长」。
+ */
+export const MAX_TOTAL_MS = 600_000
 
 // 直接子进程退出后，残留在管道里的输出只有一个管道缓冲区那么多，读完是微秒级的；
 // 留 500ms 是给调度的余量，正常命令不会等满（读完即返回）。
@@ -44,6 +62,12 @@ export interface ShellCommandResultPayload {
   stderr: string
   duration_ms: number
   timed_out: boolean
+  /**
+   * 超时原因，未超时时不出现。上面两个上限对调用方的处置完全不同，所以分别上报：
+   *   · `idle`  —— 连续无输出。命令大概率卡住，改大上限没用，该改命令。
+   *   · `total` —— 撞总时长兜底。命令还在跑，只是太久，值得拆小或换跑法。
+   */
+  timeout_reason?: 'idle' | 'total'
   truncated: boolean
   /**
    * 命令留下了仍持有 stdout/stderr 的后台进程，它们已被强制清理。

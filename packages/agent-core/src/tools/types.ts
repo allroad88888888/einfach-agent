@@ -16,7 +16,12 @@ import type { ToolContext } from './context'
 export type ToolRuntime = 'internal' | 'browser' | 'server'
 
 export type { ToolCallTiming } from './toolCallTiming'
-export type { ShellCommandInput, ShellCommandResult, ShellPlatform } from './shellCommandTypes'
+export type {
+  ShellCommandInput,
+  ShellCommandResult,
+  ShellPlatform,
+  ShellTimeoutReason,
+} from './shellCommandTypes'
 export type {
   ViewImageCapability,
   ViewImageCapabilityContext,
