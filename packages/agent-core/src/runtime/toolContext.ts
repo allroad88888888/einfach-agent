@@ -56,6 +56,7 @@ import {
   type RunCapabilitySnapshot,
 } from './turnToolVisibility'
 import { hasHostBridge } from './hostBridge'
+import { createServiceCapability } from './toolContext/serviceCapability'
 
 const MAX_TOOL_DEPTH = 4
 
@@ -153,6 +154,7 @@ export function buildToolContext(opts: {
     ...planCapabilities,
     ...skillsCapabilities,
     ...workspaceCapabilities,
+    ...createServiceCapability({ sessionId, core, guards, signal, workspaceRoot }),
     ...createHistoryCapabilities(core.persistence.dependencies().agentHistory, workspaceRoot),
     ...createVisionCapabilities({
       capability: core.config.viewImage,

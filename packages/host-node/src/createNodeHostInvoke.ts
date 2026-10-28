@@ -59,6 +59,7 @@ import { dirname } from 'node:path'
 import { isNodeHostCommandName } from './commandNames'
 import { createConfigRoutes } from './config'
 import { createShellRoutes } from './shell'
+import { createServiceRoutes } from './service'
 import { createChangeRoutes } from './workspace/change'
 import { createDeleteRoutes } from './workspace/delete'
 import { createWorkspaceDialogRoutes } from './workspace/dialog'
@@ -164,6 +165,7 @@ function createRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
     ...createTaskRoutes(options),
     ...createWorkspaceDialogRoutes(options),
     ...createShellRoutes(options),
+    ...createServiceRoutes(options),
     ...createMcpRoutes(options),
     ...createModelRoutes(options),
     ...createSqliteRoutes(options),

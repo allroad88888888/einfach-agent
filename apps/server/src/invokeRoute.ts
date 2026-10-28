@@ -99,13 +99,14 @@ export function createInvokeRouteHandler(options: InvokeRouteOptions): InvokeRou
     // 该继续落进 `requestRouter.ts` 的外层 500。两件事挤在同一个 try 里就分不开了。
     const controller = new AbortController()
     const onClose = () => { if (!response.writableEnded) controller.abort() }
-    if (command === 'run_shell_command') response.once('close', onClose)
+    const cancellable = command === 'run_shell_command' || command === 'start_session_service'
+    if (cancellable) response.once('close', onClose)
     if (response.destroyed) onClose()
     const stream = command === 'run_shell_command' && request.headers.accept === 'text/event-stream'
       ? openShellInvokeStream(response, () => controller.abort()) : undefined
     let result: unknown
     try {
-      result = await options.invoke(command, args, command === 'run_shell_command' ? { signal: controller.signal, onShellOutput: stream?.output } : undefined)
+      result = await options.invoke(command, args, cancellable ? { signal: controller.signal, onShellOutput: stream?.output } : undefined)
     } catch (error) {
       if (response.destroyed) return
       const mapped = mapInvokeRouteError(error)
