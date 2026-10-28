@@ -24,7 +24,7 @@ import type { NodeHostCommandName } from './commandNames'
  * `args` 恒为对象：调用方不传第二个实参时（`invoke('get_user_home_dir')`），分发层补 `{}`，
  * 免得每个 handler 各写一遍空值判断。
  */
-export type NodeHostCommandHandler = (args: Record<string, unknown>) => Promise<unknown>
+export type NodeHostCommandHandler = (args: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<unknown>
 
 /**
  * 命令名 → 实现。**故意是 `Partial`**：N 线是 25 张卡逐域落地的，任何时刻都有一批命令还没有

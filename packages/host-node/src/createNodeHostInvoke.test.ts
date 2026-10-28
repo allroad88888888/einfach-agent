@@ -7,6 +7,16 @@ import { createNodeHostInvoke, NodeHostCommandError } from './createNodeHostInvo
 import { NODE_HOST_COMMAND_NAMES } from './commandNames'
 
 describe('createNodeHostInvoke', () => {
+  it('进程内调用把取消信号传给 shell，取消前不启动命令', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const invoke = createNodeHostInvoke()
+    await expect(invoke('run_shell_command', {
+      platform: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux',
+      command: 'echo unexpected',
+    }, { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   it('把 get_user_home_dir 路由到 os.homedir()', async () => {
     const invoke = createNodeHostInvoke()
     // 调用形态刻意与 core 的 runtime/userSkillsRoot.ts 一致：不传第二个实参。

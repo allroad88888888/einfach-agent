@@ -96,10 +96,15 @@ export function createInvokeRouteHandler(options: InvokeRouteOptions): InvokeRou
     // try 里**只放 invoke 那一次调用**，回执的序列化留在外面：命令自身失败在这条路由上是一种
     // 正常答复（见 invokeRouteError.ts 的文件头），而「回执序列化不出去」是外壳自己坏了，
     // 该继续落进 `requestRouter.ts` 的外层 500。两件事挤在同一个 try 里就分不开了。
+    const controller = new AbortController()
+    const onClose = () => { if (!response.writableEnded) controller.abort() }
+    if (command === 'run_shell_command') response.once('close', onClose)
+    if (response.destroyed) onClose()
     let result: unknown
     try {
-      result = await options.invoke(command, args)
+      result = await options.invoke(command, args, command === 'run_shell_command' ? { signal: controller.signal } : undefined)
     } catch (error) {
+      if (response.destroyed) return
       const mapped = mapInvokeRouteError(error)
       // 不走 `replyApiError`：这一档还可能多带一个 `verdict`（域给出的重试裁决，见
       // invokeRouteError.ts 文件头）。没有裁决的域**键不出现**，而不是 `verdict: null`——
@@ -111,6 +116,10 @@ export function createInvokeRouteHandler(options: InvokeRouteOptions): InvokeRou
       })
       return
     }
+    finally {
+      response.removeListener('close', onClose)
+    }
+    if (response.destroyed) return
     // `undefined` 不是合法 JSON，而部分命令确实无返回值；`null` 是它在 JSON 里最贴切的对应。
     // 除此之外原样发出——host-node 的回执有的是 snake_case 有的是 camelCase（施工须知 #12），
     // 这一层不做任何大小写转换。

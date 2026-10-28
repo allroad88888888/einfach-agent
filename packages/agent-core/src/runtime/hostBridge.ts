@@ -21,15 +21,15 @@ import { declareHostPlatform, type HostPlatform } from './hostPlatform'
 
 /**
  * 宿主命令通道的调用签名。形状对齐现有全部调用点：它们一律写成
- * `invoke<unknown>('<command_name>', argsRecord)`，带类型实参、只传两个参数，从不传第三个
- * options ——**泛型形态必须保留**，非泛型的类型会让那些带类型实参的调用点全体报错。
+ * `invoke<unknown>('<command_name>', argsRecord)`，带类型实参；可选的第三个参数携带取消信号。
+ * **泛型形态必须保留**，非泛型的类型会让那些带类型实参的调用点全体报错。
  *
  * 参数按逆变检查，所以一个更宽的真实实现（比如某个宿主上游包的
  * `invoke<T>(cmd, args?: InvokeArgs, options?)`，其 args 是含 `Record<string, unknown>` 的联合）
  * 结构上兼容这个更窄的契约，装配层无需断言即可直接注入；反过来，Node/HTTP 侧新写的实现按这个
  * 签名实现就够，不必去兑现那种更宽的联合参数。
  */
-export type HostInvoke = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>
+export type HostInvoke = <T>(cmd: string, args?: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<T>
 
 /**
  * 注入的是 **loader（`() => Promise<HostInvoke>`）而不是已解析的 invoke**。

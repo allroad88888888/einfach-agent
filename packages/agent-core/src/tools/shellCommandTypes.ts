@@ -4,10 +4,8 @@ export type ShellPlatform = 'macos' | 'linux' | 'windows'
 /**
  * Why a command was killed.
  *
- * `idle`  —— it produced no output for the whole idle window. The command is stuck; raising the
- *            limit usually does not help, changing the command does.
- * `total` —— it hit the overall ceiling while still producing output. It was running, just for
- *            too long; split the work up.
+ * `idle`  —— it produced no output for the whole idle window. It may be waiting or working silently.
+ * `total` —— it hit the overall ceiling, regardless of recent output.
  *
  * The two call for different follow-up, which is why they are not collapsed into `timedOut`.
  * Absent on backends that only report a wall-clock deadline.

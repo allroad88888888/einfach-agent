@@ -22,6 +22,17 @@ function jsonFetch(status: number, body: unknown, ok = status >= 200 && status <
   return vi.fn(async () => ({ ok, status, json: async () => body }))
 }
 
+describe('取消调用', () => {
+  it('把 HostInvoke 的取消信号传给 fetch', async () => {
+    const fetch = jsonFetch(200, null)
+    const invoke = createHttpInvoke({ fetch, tokenEnvironment: tokenEnv('t') })
+    const controller = new AbortController()
+    await invoke('run_shell_command', {}, { signal: controller.signal })
+    const [, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [string, Parameters<ServerInvokeFetch>[1]]
+    expect(init.signal).toBe(controller.signal)
+  })
+})
+
 describe('invokeServerCommand', () => {
   it('成功时把请求方法/头/body 发对，并原样返回响应体', async () => {
     const fetch = jsonFetch(200, { home: '/Users/dol' })

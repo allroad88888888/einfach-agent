@@ -53,11 +53,10 @@ function withBackgroundNotice(result: ShellCommandResult, toolResult: ToolResult
   }
 }
 
-// 超时的两种原因分开报：`idle` 是「命令卡住了」，`total` 是「命令还在跑但太久」。
-// 两者对模型的下一步完全不同，塌成同一句「timed out」会让它把卡死的命令原样重试。
+// 区分静默窗口与总时长上限；是否卡住不能仅凭输出判断。
 function timeoutMessage(result: ShellCommandResult): string {
   if (result.timeoutReason === 'idle') {
-    return `shell command produced no output and was killed after ${result.durationMs}ms`
+    return `shell command exceeded the idle window and was killed after ${result.durationMs}ms`
   }
   if (result.timeoutReason === 'total') {
     return `shell command hit the overall time ceiling after ${result.durationMs}ms`
@@ -69,12 +68,11 @@ function timeoutMessage(result: ShellCommandResult): string {
 function timeoutHint(result: ShellCommandResult): string | undefined {
   if (result.timeoutReason === 'idle') {
     return (
-      '这段时长里命令没有任何输出，通常是卡在等输入、等锁或死循环上。' +
-      '同样的命令重试大概率还是卡住——先确认它应该输出什么，或给它接 `/dev/null`、包一层超时。'
+      '命令在静默窗口内没有输出。检查是否在等待输入或锁；如果它正常运行但输出较少，可以增加 timeoutMs 后重试。'
     )
   }
   if (result.timeoutReason === 'total') {
-    return '命令一直在输出，只是超过了总时长兜底。把它拆成更小的范围重跑。'
+    return '命令超过了总时长兜底。可以检查进度或把任务拆成更小的范围。'
   }
   return undefined
 }
@@ -86,9 +84,7 @@ export function shellCommandToolResult(result: ShellCommandResult): ToolResult {
       error: timeoutMessage(result),
       code: 'SHELL_TIMEOUT',
       hint: timeoutHint(result),
-      // idle 超时是「命令卡住了」，原样重试大概率还是卡住；total 是「还在跑但太久」，
-      // 值得换更小的范围再试一次。
-      retryable: result.timeoutReason !== 'idle',
+      retryable: true,
       details: result,
     })
   }
