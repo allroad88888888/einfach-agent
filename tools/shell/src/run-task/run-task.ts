@@ -27,6 +27,7 @@ const inputSchema = {
       enum: RUN_TASK_KINDS,
     },
     timeoutMs: {
+      description: 'Maximum output silence in ms (default 120000, maximum 600000); total duration is capped at 1800000ms.',
       type: 'integer',
       minimum: 1,
       maximum: MAX_TIMEOUT_MS,
@@ -129,7 +130,7 @@ export const runTaskTool: Tool = {
         return {
           ok: false,
           error: result.timedOut
-            ? `run_task timed out after ${result.durationMs}ms`
+            ? `run_task timed out${result.timeoutReason ? ` (${result.timeoutReason})` : ''} after ${result.durationMs}ms`
             : `run_task ${kind} exited with code ${result.exitCode}`,
           code: result.timedOut ? 'TASK_TIMEOUT' : 'TASK_FAILED',
           retryable: result.timedOut,
