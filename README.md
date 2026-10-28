@@ -73,7 +73,7 @@ registry, abort registry, plugin host and observability port, so two can run sid
 
 | Slot | What you inject |
 | --- | --- |
-| `registerTools` | The tool set. Leave it out and the instance has **no tools at all**; apps call `registerStandardTools` for the six standard domains |
+| `registerTools` | The tool set. Leave it out and the instance has **no tools at all**; apps call `registerStandardTools` for the seven standard domains |
 | `plugins` | Loop plugins. Compaction, finish-reason handling, the loop guard and migrations are plugins, not branches in the main loop |
 | `observability` | Trace sink: IndexedDB, SQLite, stderr, or none |
 | `projectSkillsProvider`, `skillRegistry` | Project skill discovery and the built-in skill catalog |
@@ -220,6 +220,7 @@ unrelated, non-existent package — install the tarballs instead.
 ├── apps/
 │   ├── web/                     # Vite entry, React assembly, UI, component tests
 │   ├── server/                  # the local HTTP host: static frontend + /api/invoke + model proxy
+│   ├── desktop/                 # Tauri thin shell wrapping that same server as a sidecar (adds no host state)
 │   └── cli/                     # headless CLI host, for dogfooding and automation
 ├── packages/
 │   ├── agent-ai/                # DeepSeek / GLM / Kimi API adapters
@@ -230,10 +231,13 @@ unrelated, non-existent package — install the tarballs instead.
 │   ├── subagents/               # delegation scheduling, batching, archive governance, view state
 │   ├── persistence-{idb,sqlite}/    # session and history drivers
 │   └── observability-{idb,sqlite}/  # trace drivers and readers
+├── browser-agent/               # second product line: the same kernel inside a browser extension
+│                                #   (agent runtime, MV3 extension, optional React UI, page/DOM/network/API/OCR tools)
+│                                #   see browser-agent/README.md — it is not registered in this file's host states
 ├── tools/
-│   ├── standard/                # meta package aggregating the six standard domains
-│   ├── shell/ fs/ interaction/ planning/ skills/ agents/   # those six domains
-│   └── mcp/                     # a seventh domain, outside the standard package, assembled by the app
+│   ├── standard/                # meta package aggregating the seven standard domains
+│   ├── shell/ fs/ interaction/ vision/ planning/ skills/ agents/   # those seven domains
+│   └── mcp/                     # MCP tools, deliberately outside the standard package, assembled by the app
 ├── docs/                        # current behaviour notes plus in-progress blueprints
 └── scripts/                     # gate scripts and sub-agent archive/skill governance
 ```
@@ -245,7 +249,8 @@ they need; other consumers can register only the domains they want.
 ## Design deep dives
 
 Why the kernel looks the way it does, and which walls we walked into. These articles are in Chinese, and the
-oldest of them still describe the Tauri desktop host that has since been removed:
+oldest of them still describe the Tauri desktop host, which was removed in `e52c31d` and has since returned as
+a thin shell wrapping the same local server:
 
 - [One kernel, three hosts: designing an assembled agent runtime](docs/launch/articles/assembly-kernel.md) (Chinese)
 - [Giving tools a lifecycle: the CallTiming mechanism](docs/launch/articles/call-timing.md) (Chinese)
