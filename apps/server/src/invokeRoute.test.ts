@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises'
+import { access, mkdtemp, rm } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { HostInvoke } from '@einfach-agent/core'
@@ -16,6 +16,31 @@ describe('createInvokeRouteHandler（桩 invoke，测 handler 自身逻辑）', 
     await server?.close()
     server = undefined
   })
+
+  it.skipIf(process.platform === 'win32')('HTTP 断连会终止实际 shell 进程组', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'shell-abort-'))
+    const started = join(dir, 'started')
+    const finished = join(dir, 'finished')
+    const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`
+    server = await startInvokeRouteTestServer({ invoke: createNodeHostInvoke() })
+    const controller = new AbortController()
+    try {
+      const request = fetch(`http://127.0.0.1:${server.port}/api/invoke/run_shell_command`, {
+        method: 'POST', headers: JSON_HEADERS, signal: controller.signal,
+        body: JSON.stringify({ platform: process.platform === 'darwin' ? 'macos' : 'linux',
+          command: `touch ${quote(started)}; sleep 2; touch ${quote(finished)}`, timeout_ms: 10_000 }),
+      })
+      const rejected = expect(request).rejects.toMatchObject({ name: 'AbortError' })
+      await expect.poll(async () => access(started).then(() => true, () => false), { timeout: 5_000 }).toBe(true)
+      controller.abort()
+      await rejected
+      await new Promise((resolve) => setTimeout(resolve, 2_300))
+      await expect(access(finished)).rejects.toMatchObject({ code: 'ENOENT' })
+    } finally {
+      controller.abort()
+      await rm(dir, { recursive: true, force: true })
+    }
+  }, 10_000)
 
   it('非 POST 回 405，带 allow 头', async () => {
     const stub: HostInvoke = async () => {

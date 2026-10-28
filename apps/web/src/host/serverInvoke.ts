@@ -127,6 +127,7 @@ export type ServerInvokeFetch = (
     readonly method: string
     readonly headers: Record<string, string>
     readonly body: string
+    readonly signal?: AbortSignal
   },
 ) => Promise<{
   readonly ok: boolean
@@ -137,6 +138,7 @@ export type ServerInvokeFetch = (
 const defaultServerInvokeFetch: ServerInvokeFetch = (input, init) => globalThis.fetch(input, init)
 
 export interface ServerInvokeOptions {
+  readonly signal?: AbortSignal
   readonly fetch?: ServerInvokeFetch
   readonly tokenEnvironment?: ServerInvokeTokenEnvironment
 }
@@ -191,6 +193,7 @@ export async function invokeServerCommand<T>(
       method: 'POST',
       headers: buildHeaders(token),
       body: JSON.stringify(args ?? {}),
+      ...(options.signal ? { signal: options.signal } : {}),
     })
   } catch (error) {
     throw new ServerInvokeError({
@@ -222,9 +225,9 @@ export async function invokeServerCommand<T>(
  * 这个工厂只为测试注入假 `fetch`/token 环境而存在。
  */
 export function createHttpInvoke(options: ServerInvokeOptions = {}): HostInvoke {
-  return async function invokeOverHttp<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  return async function invokeOverHttp<T>(cmd: string, args?: Record<string, unknown>, invokeOptions?: { signal?: AbortSignal }): Promise<T> {
     try {
-      return await invokeServerCommand<T>(cmd, args, options)
+      return await invokeServerCommand<T>(cmd, args, { ...options, signal: invokeOptions?.signal })
     } catch (error) {
       // 见文件头「reject 的形状」：折叠成裸字符串，匹配 Tauri invoke 的 reject 形状。
       throw error instanceof ServerInvokeError ? error.message : messageFromError(error)

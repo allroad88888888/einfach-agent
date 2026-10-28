@@ -42,7 +42,9 @@ export interface ShellCommandRequest {
 
 export async function executeShellCommand(
   request: ShellCommandRequest,
+  signal?: AbortSignal,
 ): Promise<ShellCommandResultPayload> {
+  signal?.throwIfAborted()
   const startedAt = performance.now()
   const cwdInput = request.cwd ?? ''
   // 三个「失败时回显什么」的游标，随准备阶段推进逐个落定。
@@ -63,7 +65,7 @@ export async function executeShellCommand(
     shellDisplay = shell.display
     const cwdPath = await resolveCwd(cwdInput === '' ? undefined : cwdInput)
     cwdDisplay = cwdPath
-    return await runResolved(request, requested, shell, cwdPath, startedAt)
+    return await runResolved(request, requested, shell, cwdPath, startedAt, signal)
   } catch (error) {
     if (!(error instanceof ShellSetupError)) throw error
     return failedResult({
@@ -84,7 +86,9 @@ async function runResolved(
   shell: ShellSpec,
   cwd: string,
   startedAt: number,
+  signal?: AbortSignal,
 ): Promise<ShellCommandResultPayload> {
+  signal?.throwIfAborted()
   const timeoutMs = normalizeTimeoutMs(request.timeoutMs)
   const maxOutputChars = normalizeMaxOutputChars(request.maxOutputChars)
   const spawned = await spawnShellCommand(shell, request.command, cwd, request.env)
@@ -104,6 +108,7 @@ async function runResolved(
       idleMs: timeoutMs,
       totalMs: MAX_TOTAL_MS,
       pulse,
+      signal,
     })
     const backgroundProcessesKilled = await drainOutputReaders(spawned.child, [stdout, stderr])
     const capturedOut = stdout.take()

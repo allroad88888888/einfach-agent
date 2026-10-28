@@ -22,14 +22,6 @@
 export interface ActivityPulse {
   /** 收到一块输出。同步通知全部订阅方。 */
   touch(): void
-  /** 订阅。返回取消函数；重复调用取消函数是 no-op。 */
-  listen(listener: () => void): () => void
-}
-
-/** 输出的活性脉冲。stdout / stderr 两路都往同一个脉冲里发。 */
-export interface ActivityPulse {
-  /** 收到一块输出。同步通知全部订阅方。 */
-  touch(): void
   /**
    * 订阅。返回取消函数；重复调用取消函数是 no-op。
    *

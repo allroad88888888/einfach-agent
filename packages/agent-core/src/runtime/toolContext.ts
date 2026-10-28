@@ -141,6 +141,7 @@ export function buildToolContext(opts: {
     guards,
     progress,
     inputGuards,
+    signal,
   })
 
   const ctx: ToolContext = {

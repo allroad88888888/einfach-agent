@@ -33,6 +33,15 @@ describe('waitForChild', () => {
     expect('timeoutReason' in exit).toBe(false)
   })
 
+  it('取消时杀死子进程并等待退出', async () => {
+    const child = hangingChild()
+    const controller = new AbortController()
+    const waiting = waitForChild(child, { idleMs: 5_000, totalMs: 10_000, pulse: createActivityPulse(), signal: controller.signal })
+    controller.abort()
+    await expect(waiting).rejects.toMatchObject({ name: 'AbortError' })
+    expect(child.signalCode).toBe('SIGKILL')
+  })
+
   it('没有任何输出时由 idle 触发，即使 total 还有充足余量', async () => {
     const child = hangingChild()
 

@@ -123,7 +123,7 @@ function normalizeResult(raw: unknown, input: ShellCommandInput, startedAt: numb
   }
 }
 
-export async function runShellCommand(input: ShellCommandInput): Promise<ShellCommandResult> {
+export async function runShellCommand(input: ShellCommandInput, signal?: AbortSignal): Promise<ShellCommandResult> {
   const startedAt = now()
 
   if (!hasHostBridge()) {
@@ -132,9 +132,11 @@ export async function runShellCommand(input: ShellCommandInput): Promise<ShellCo
 
   try {
     const invoke = await loadHostInvoke()
-    const raw = await invoke<unknown>('run_shell_command', toTauriInput(input))
+    signal?.throwIfAborted()
+    const raw = await invoke<unknown>('run_shell_command', toTauriInput(input), { signal })
     return normalizeResult(raw, input, startedAt)
   } catch (error) {
+    if (signal?.aborted) throw error
     return failedResult(input, startedAt, `run_shell_command failed: ${messageFromError(error)}`)
   }
 }
