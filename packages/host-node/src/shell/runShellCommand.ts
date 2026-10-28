@@ -20,7 +20,7 @@ import { executeShellCommand, type ShellCommandRequest } from './pipeline'
 import type { NodeHostCommandHandler } from '../routeTable'
 
 export function createRunShellCommandHandler(): NodeHostCommandHandler {
-  return async (args, options) => executeShellCommand(narrowShellCommandArgs(args), options?.signal)
+  return async (args, options) => executeShellCommand(narrowShellCommandArgs(args), options?.signal, options?.onShellOutput)
 }
 
 /** 把一袋 unknown 收窄成一次请求。任何一项类型不对都就地失败。 */

@@ -123,7 +123,7 @@ function normalizeResult(raw: unknown, input: ShellCommandInput, startedAt: numb
   }
 }
 
-export async function runShellCommand(input: ShellCommandInput, signal?: AbortSignal): Promise<ShellCommandResult> {
+export async function runShellCommand(input: ShellCommandInput, signal?: AbortSignal, onShellOutput?: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void): Promise<ShellCommandResult> {
   const startedAt = now()
 
   if (!hasHostBridge()) {
@@ -133,7 +133,7 @@ export async function runShellCommand(input: ShellCommandInput, signal?: AbortSi
   try {
     const invoke = await loadHostInvoke()
     signal?.throwIfAborted()
-    const raw = await invoke<unknown>('run_shell_command', toTauriInput(input), { signal })
+    const raw = await invoke<unknown>('run_shell_command', toTauriInput(input), { signal, onShellOutput })
     return normalizeResult(raw, input, startedAt)
   } catch (error) {
     if (signal?.aborted) throw error

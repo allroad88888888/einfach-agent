@@ -29,7 +29,7 @@ import { declareHostPlatform, type HostPlatform } from './hostPlatform'
  * 结构上兼容这个更窄的契约，装配层无需断言即可直接注入；反过来，Node/HTTP 侧新写的实现按这个
  * 签名实现就够，不必去兑现那种更宽的联合参数。
  */
-export type HostInvoke = <T>(cmd: string, args?: Record<string, unknown>, options?: { signal?: AbortSignal }) => Promise<T>
+export type HostInvoke = <T>(cmd: string, args?: Record<string, unknown>, options?: { signal?: AbortSignal; onShellOutput?: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void }) => Promise<T>
 
 /**
  * 注入的是 **loader（`() => Promise<HostInvoke>`）而不是已解析的 invoke**。

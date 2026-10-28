@@ -30,6 +30,7 @@
 // 中文文案的前提下判断"这是一次 401"，绕开 `httpInvoke` 直接调 `invokeServerCommand`
 // （或用 `isServerInvokeUnauthorized()`）就行；`httpInvoke` 自己这条路径上没有这个能力，
 // 也不该有——它的契约就是"跟 Tauri 一样吐一个字符串"。
+import { readShellInvokeStream } from './readShellInvokeStream'
 import type { HostInvoke } from '@einfach-agent/core'
 import { getServerInvokeToken, type ServerInvokeTokenEnvironment } from './serverInvokeToken'
 
@@ -133,12 +134,15 @@ export type ServerInvokeFetch = (
   readonly ok: boolean
   readonly status: number
   json(): Promise<unknown>
+  readonly body?: ReadableStream<Uint8Array> | null
+  readonly headers?: { get(name: string): string | null }
 }>
 
 const defaultServerInvokeFetch: ServerInvokeFetch = (input, init) => globalThis.fetch(input, init)
 
 export interface ServerInvokeOptions {
   readonly signal?: AbortSignal
+  readonly onShellOutput?: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void
   readonly fetch?: ServerInvokeFetch
   readonly tokenEnvironment?: ServerInvokeTokenEnvironment
 }
@@ -187,12 +191,14 @@ export async function invokeServerCommand<T>(
   const token = getServerInvokeToken(options.tokenEnvironment)
   const url = `${INVOKE_ROUTE_PREFIX}${encodeURIComponent(cmd)}`
 
+  let requestBody = ''
   let response: Awaited<ReturnType<ServerInvokeFetch>>
   try {
+    requestBody = JSON.stringify(args ?? {})
     response = await fetchImpl(url, {
       method: 'POST',
-      headers: buildHeaders(token),
-      body: JSON.stringify(args ?? {}),
+      headers: { ...buildHeaders(token), ...(cmd === 'run_shell_command' && options.onShellOutput ? { accept: 'text/event-stream' } : {}) },
+      body: requestBody,
       ...(options.signal ? { signal: options.signal } : {}),
     })
   } catch (error) {
@@ -210,6 +216,10 @@ export async function invokeServerCommand<T>(
   try {
     // `undefined` 不是合法 JSON；S3 那头 `result ?? null` 已经把它变成了 `null`，这里原样
     // 透传给调用方，不做任何形状加工——与 S3 文件头「不做任何大小写转换」是同一条纪律的延续。
+    if (options.onShellOutput && response.headers?.get('content-type')?.startsWith('text/event-stream')) {
+      if (!response.body) throw new Error('Missing shell stream body')
+      return await readShellInvokeStream<T>(response.body, options.onShellOutput, requestBody.length)
+    }
     return (await response.json()) as T
   } catch (error) {
     throw new ServerInvokeError({
@@ -225,9 +235,9 @@ export async function invokeServerCommand<T>(
  * 这个工厂只为测试注入假 `fetch`/token 环境而存在。
  */
 export function createHttpInvoke(options: ServerInvokeOptions = {}): HostInvoke {
-  return async function invokeOverHttp<T>(cmd: string, args?: Record<string, unknown>, invokeOptions?: { signal?: AbortSignal }): Promise<T> {
+  return async function invokeOverHttp<T>(cmd: string, args?: Record<string, unknown>, invokeOptions?: Parameters<HostInvoke>[2]): Promise<T> {
     try {
-      return await invokeServerCommand<T>(cmd, args, { ...options, signal: invokeOptions?.signal })
+      return await invokeServerCommand<T>(cmd, args, { ...options, signal: invokeOptions?.signal, onShellOutput: invokeOptions?.onShellOutput })
     } catch (error) {
       // 见文件头「reject 的形状」：折叠成裸字符串，匹配 Tauri invoke 的 reject 形状。
       throw error instanceof ServerInvokeError ? error.message : messageFromError(error)

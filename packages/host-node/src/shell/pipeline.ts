@@ -43,6 +43,7 @@ export interface ShellCommandRequest {
 export async function executeShellCommand(
   request: ShellCommandRequest,
   signal?: AbortSignal,
+  onOutput?: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void,
 ): Promise<ShellCommandResultPayload> {
   signal?.throwIfAborted()
   const startedAt = performance.now()
@@ -65,7 +66,7 @@ export async function executeShellCommand(
     shellDisplay = shell.display
     const cwdPath = await resolveCwd(cwdInput === '' ? undefined : cwdInput)
     cwdDisplay = cwdPath
-    return await runResolved(request, requested, shell, cwdPath, startedAt, signal)
+    return await runResolved(request, requested, shell, cwdPath, startedAt, signal, onOutput)
   } catch (error) {
     if (!(error instanceof ShellSetupError)) throw error
     return failedResult({
@@ -87,6 +88,7 @@ async function runResolved(
   cwd: string,
   startedAt: number,
   signal?: AbortSignal,
+  onOutput?: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void,
 ): Promise<ShellCommandResultPayload> {
   signal?.throwIfAborted()
   const timeoutMs = normalizeTimeoutMs(request.timeoutMs)
@@ -100,8 +102,12 @@ async function runResolved(
   // stdout 与 stderr 分开计时没有意义，`2>&1` 与分开重定向都该一视同仁。
   const pulse = createActivityPulse()
   const markActivity = () => pulse.touch()
-  const stdout = captureOutput(spawned.stdout, 'stdout', maxOutputChars, markActivity)
-  const stderr = captureOutput(spawned.stderr, 'stderr', maxOutputChars, markActivity)
+  let observing = true
+  const emitOutput = (chunk: { stream: 'stdout' | 'stderr'; text: string }) => {
+    if (observing && !signal?.aborted) onOutput?.(chunk)
+  }
+  const stdout = captureOutput(spawned.stdout, 'stdout', maxOutputChars, markActivity, emitOutput)
+  const stderr = captureOutput(spawned.stderr, 'stderr', maxOutputChars, markActivity, emitOutput)
 
   try {
     const exit = await waitForChild(spawned.child, {
@@ -136,6 +142,8 @@ async function runResolved(
     // 拿着 fd 和一个 event loop handle——CLI 宿主会因此在命令失败后拒绝退出。
     releaseCaptures([stdout, stderr])
     throw error
+  } finally {
+    observing = false
   }
 }
 

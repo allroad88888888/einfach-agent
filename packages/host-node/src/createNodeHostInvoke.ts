@@ -193,7 +193,7 @@ export function createNodeHostInvoke(options: NodeHostInvokeOptions = {}): HostI
   const invoke: HostInvoke = async <T>(
     command: string,
     args?: Record<string, unknown>,
-    invokeOptions?: { signal?: AbortSignal },
+    invokeOptions?: { signal?: AbortSignal; onShellOutput?: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void },
   ): Promise<T> => {
     // 先判名字再查表：直接查表时「没实现」和「名字不存在」会塌成同一个 `undefined`。
     if (!isNodeHostCommandName(command)) {

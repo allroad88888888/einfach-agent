@@ -35,7 +35,7 @@ import type { DelegationRuntime } from './delegationContract'
 import { attachDelegationCapabilities } from './toolContext/delegationCapabilities'
 import { createOutputCapabilities } from './toolContext/outputCapabilities'
 import { createPlanCapabilities } from './toolContext/planCapabilities'
-import { createProgressReporter } from './toolContext/progressReporting'
+import { createProgressReporter, createShellOutputReporter } from './toolContext/progressReporting'
 import {
   createSkillsCapabilities,
   type RunSkillSnapshot,
@@ -142,6 +142,7 @@ export function buildToolContext(opts: {
     progress,
     inputGuards,
     signal,
+    shellOutput: createShellOutputReporter({ sessionId, callId, core, signal, currentRun: currentRunGuard }),
   })
 
   const ctx: ToolContext = {

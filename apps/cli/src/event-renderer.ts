@@ -2,6 +2,7 @@ import {
   assistantStreamAtom,
   defaultCore,
   itemsAtom,
+  toolActivityAtom,
   subscribeAgentEvents,
   type AgentEvent,
 } from '@einfach-agent/core'
@@ -91,7 +92,26 @@ export function subscribeCliRenderer(sessionId: string, output: TextOutput): () 
   const unsubscribeEvents = subscribeAgentEvents(sessionId, (event) => renderToolEvent(sessionId, output, event))
   const unsubscribeItems = store.sub(itemsAtom, () => renderCompletedAssistants(sessionId, output, streamed, rendered))
   const unsubscribeStream = store.sub(assistantStreamAtom, () => renderAssistantStream(sessionId, output, streamed))
+  const outputPositions = new Map<string, number>()
+  const unsubscribeOutput = store.sub(toolActivityAtom, () => {
+    const activities = store.getter(toolActivityAtom)
+    for (const activity of activities) {
+      const position = activity.outputChars ?? 0
+      const delta = position - (outputPositions.get(activity.callId) ?? 0)
+      if (delta > 0 && activity.output) {
+        // Label concurrent calls and remove terminal control characters from child content.
+        const text = activity.output.slice(-delta).replace(/[\x00-\x08\x0b-\x1f\x7f]/g, '')
+        output.write(`[shell ${activity.callId}] ${text}`)
+      }
+      outputPositions.set(activity.callId, position)
+    }
+    for (const callId of outputPositions.keys()) {
+      if (!activities.some((activity) => activity.callId === callId)) outputPositions.delete(callId)
+    }
+  })
   return () => {
+    unsubscribeOutput()
+    outputPositions.clear()
     unsubscribeEvents()
     unsubscribeItems()
     unsubscribeStream()
