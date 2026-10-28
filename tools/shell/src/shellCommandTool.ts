@@ -2,6 +2,9 @@ import type { ShellPlatform, Tool } from '@einfach-agent/core/tools'
 import { shellCommandToolResult } from './command-result'
 import { detectShellFileWrite, shellFileWriteRejected } from './file-write-guard'
 
+// 上限的语义：`timeoutMs` 是**静默**时长（持续有输出就一直等），不是总运行时长。
+// 这两个数必须与 host-node 的 `shell/types.ts` 保持同值：schema 的 `maximum` 是模型能看到的上限，
+// 而那头的 `normalizeTimeoutMs` 是真正生效的钳位，两边不一致时模型会以为它申请到了更长的容忍。
 const DEFAULT_TIMEOUT_MS = 30_000
 const MAX_TIMEOUT_MS = 120_000
 const DEFAULT_MAX_OUTPUT_CHARS = 20_000
@@ -12,7 +15,14 @@ const inputSchema = {
   properties: {
     command: { type: 'string' },
     cwd: { type: 'string' },
-    timeoutMs: { type: 'integer', minimum: 1, maximum: MAX_TIMEOUT_MS, default: DEFAULT_TIMEOUT_MS },
+    timeoutMs: {
+      type: 'integer',
+      minimum: 1,
+      maximum: MAX_TIMEOUT_MS,
+      default: DEFAULT_TIMEOUT_MS,
+      description:
+        '允许的最长静默时长（毫秒）：命令持续有输出时会一直等，只有连续这么久没有任何输出才判超时。不是总运行时长上限。',
+    },
     maxOutputChars: {
       type: 'integer',
       minimum: 1,
