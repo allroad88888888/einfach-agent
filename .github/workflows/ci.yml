@@ -10,7 +10,7 @@ jobs:
   web:
     runs-on: ubuntu-latest
     env:
-      # Node 22 requires this flag for prefix-only node:sqlite imports.
+      # Explicitly enable experimental SQLite for Node 22 test and build processes.
       NODE_OPTIONS: --experimental-sqlite
     steps:
       - uses: actions/checkout@v4
