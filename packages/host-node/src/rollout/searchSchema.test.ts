@@ -42,7 +42,8 @@ describe('history search schema', () => {
   it('detects a damaged FTS shadow table without touching unrelated tables', async () => {
     database = new DatabaseSync(':memory:'); const executor = createSqliteExecutor(database, 'search-shadow')
     database.exec('CREATE TABLE preserved(value TEXT)'); expect(await ensureAgentHistorySearchSchema(executor)).toBe(true)
-    database.enableDefensive(false)
+    // Node 24 enables defensive mode; Node 22 does not expose this method.
+    database.enableDefensive?.(false)
     database.exec("PRAGMA writable_schema=ON; DELETE FROM sqlite_master WHERE name='agent_history_search_fts_idx'; PRAGMA writable_schema=OFF; PRAGMA schema_version=999")
     expect(await ensureAgentHistorySearchSchema(executor)).toBe(true)
     expect(await executor.select("SELECT name FROM sqlite_master WHERE name='agent_history_search_fts_idx'"))
