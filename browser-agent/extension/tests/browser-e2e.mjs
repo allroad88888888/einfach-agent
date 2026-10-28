@@ -8,7 +8,7 @@ import { rawTextPlugin } from '../../../tsup.rawPlugin.ts'
 
 const root = resolve(import.meta.dirname, '..')
 const dist = join(root, 'dist')
-const evidence = resolve(root, '../../.tasks/browser-agent/reports/050-evidence')
+const evidence = resolve(root, '../reports/extension-e2e')
 const chromePath = process.env.CHROME_PATH || '/Users/dol/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
 await mkdir(evidence, { recursive: true })
 

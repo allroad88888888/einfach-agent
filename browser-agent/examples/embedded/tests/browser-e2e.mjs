@@ -8,7 +8,7 @@ import { rawTextPlugin } from '../../../../tsup.rawPlugin.ts'
 
 const packageRoot = resolve(import.meta.dirname, '..')
 const dist = join(packageRoot, 'dist')
-const evidence = resolve(packageRoot, '../../../.tasks/browser-agent/reports/050-evidence')
+const evidence = resolve(packageRoot, '../../reports/embedded-e2e')
 const chromePath = process.env.CHROME_PATH || '/Users/dol/Library/Caches/ms-playwright/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing'
 let chrome
 let temporaryRoot
