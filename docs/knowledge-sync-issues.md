@@ -1,6 +1,6 @@
 # 项目知识同步：把 .project-lines 与根文档对齐到当前代码
 
-状态：执行中
+状态：已完成
 创建日期：2026-10-28
 协调者：主会话（opus）
 范围：订正仓库内"项目知识"文档（`.project-lines/` 与根 `README.md`、`CLAUDE.md`）中与代码不符的断言，并补齐 `browser-agent` 这条缺失的结构。
@@ -58,12 +58,12 @@ KB-SYNC  项目知识同步
 
 | ID | 责任 | Owner model | Primary files | Depends on | Done when | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| KB-SYNC-00 | 落本树 + docs 索引行 | sonnet | `docs/knowledge-sync-issues.md`、`docs/README.md` | — | `check-docs` 通过 | DONE（随本卡提交） |
-| KB-SYNC-10 | 订正索引 4 处过期断言 | sonnet | `.project-lines/SKILL.md` | 00 | 四处断言改为与「现状事实」一致，且注明核实日期 | TODO |
-| KB-SYNC-20 | 新写 browser-agent 线文件 | opus | `.project-lines/lines/18-分支-browser-agent.md` | 00 | 每条机制结论带 `file:line`；≤300 行 | TODO |
-| KB-SYNC-30 | README 补 layout | sonnet | `README.md` | 00 | layout 含 `browser-agent/`、`apps/desktop/`、`tools/vision/` | TODO |
-| KB-SYNC-40 | CLAUDE.md 补当前结构 | sonnet | `CLAUDE.md` | 00 | 「当前结构」含上述三项；六域表述改为七域 | TODO |
-| KB-SYNC-90 | 复核与验收 | opus（与实现者分离） | — | 10/20/30/40 | 逐条抽查未自证事实 + `check-docs` 绿 + 报告偏差 | TODO |
+| KB-SYNC-00 | 落本树 + docs 索引行 | sonnet | `docs/knowledge-sync-issues.md`、`docs/README.md` | — | `check-docs` 通过 | DONE `baf7c75` |
+| KB-SYNC-10 | 订正索引 4 处过期断言 | sonnet | `.project-lines/SKILL.md` | 00 | 四处断言改为与「现状事实」一致，且注明核实日期 | DONE `16b0411` |
+| KB-SYNC-20 | 新写 browser-agent 线文件 | opus | `.project-lines/lines/18-分支-browser-agent.md` | 00 | 每条机制结论带 `file:line`；≤300 行 | DONE `b571163` |
+| KB-SYNC-30 | README 补 layout | sonnet | `README.md`、`docs/README.md` | 00 | layout 含 `browser-agent/`、`apps/desktop/`、`tools/vision/` | DONE `62272be` |
+| KB-SYNC-40 | CLAUDE.md 补当前结构 | sonnet | `CLAUDE.md` | 00 | 「当前结构」含上述三项；六域表述改为七域 | DONE `5cb08ab` |
+| KB-SYNC-90 | 复核与验收 | opus（与实现者分离） | — | 10/20/30/40 | 逐条抽查未自证事实 + `check-docs` 绿 + 报告偏差 | DONE（见下） |
 
 ## 并发批次
 
@@ -86,3 +86,22 @@ KB-SYNC  项目知识同步
 - 改 `.md` 的卡一律跑 `node scripts/check-docs.js`。
 - KB-SYNC-90 复核时要**独立抽查**：不采信前序卡的陈述，重新 `git ls-files` /
   `rg` 抽 2–3 条事实，并确认真实执行过 `check-docs`。
+
+### 验收记录（KB-SYNC-90）
+
+- `node scripts/check-docs.js` → 通过，172 个 Markdown 文件（起始 170，新增本树 + 18 线）。
+- `node scripts/check-boundaries.js` → 通过，扫描 1137 个非测试 TS/TSX，11 条规则（本任务未动源码，作基线）。
+- **独立抽验 13 个行号**（用 `node` 直接读行，不采信写作时的记忆）：
+  `client.ts` 的 `:21`（剥 apiKey）`:43`（取锁）`:46`（失败释放）`:71`（`createCore`）`:84`（`registerTools`）
+  `:86`（OCR）`:91`（`persistence.configure`）`:98`（`hydrate`）`:158`（能力策略冻结）`:163`（`newSession`），
+  `sidepanel.tsx` 的 `:21`（`createBrowserAgent`）`:23`（四族一行装配），`resolveHost.ts:29`（两态）。
+  **13/13 对得上**。其中 5 个曾在 KB-SYNC-20 初稿里写偏一行，提交前已修正（见 `b571163` 的内容）。
+- 抽验根文档可见性：`rg browser-agent -g README.md -g CLAUDE.md` → `README.md:234`、`CLAUDE.md:159` 均命中；
+  改动前为零命中。
+
+### 已知未覆盖面（诚实记录）
+
+- 本树**没有重学**任何一条旧线。00–17 现在落后 128 个提交，除本树订正的四处外，其余结论未重新验证。
+- `browser-agent` 的工具总数仍只有 README 的声明（25）可引，机械数目录是 23；差额无机械证据，已在 18 线里标明。
+- 未跑 `pnpm test`（891 个测试文件），也未跑 `apps/desktop` 的 Tauri 冒烟（需先 `tauri build`）；
+  本次改动不含源码与测试，故不构成风险，但它在 CI 里是会被跑到的。
