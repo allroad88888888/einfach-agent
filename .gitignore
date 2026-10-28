@@ -17,3 +17,10 @@ agentnew-*.png
 .claude/
 apps/desktop/gen/
 apps/desktop/target/
+# Browser-agent 本地验证与交付产物；保留任务说明及 Markdown 审查记录
+browser-agent/ui/reports/
+.tasks/browser-agent/artifacts/
+.tasks/browser-agent/reports/*
+!.tasks/browser-agent/reports/*.md
+.tasks/browser-agent/dom-task-diff.py
+.tasks/browser-agent/package-network-artifacts.py
