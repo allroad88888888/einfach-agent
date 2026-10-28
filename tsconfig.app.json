@@ -43,7 +43,10 @@
       "@einfach-agent/browser-agent": ["browser-agent/agent/src/index.ts"],
       "@einfach-agent/browser-agent-ui": ["browser-agent/ui/src/index.ts"],
       "@einfach-agent/tools-browser-page": ["browser-agent/tools/page/src/index.ts"],
-      "@einfach-agent/tools-browser-api": ["browser-agent/tools/api/src/index.ts"]
+      "@einfach-agent/tools-browser-api": ["browser-agent/tools/api/src/index.ts"],
+      "@einfach-agent/tools-browser-dom": ["browser-agent/tools/dom/src/index.ts"],
+      "@einfach-agent/tools-browser-ocr": ["browser-agent/tools/ocr/src/index.ts"],
+      "@einfach-agent/tools-browser-network": ["browser-agent/tools/network/src/index.ts"]
     }
   },
   "include": ["apps/web/src", "apps/cli/src", "apps/server/src", "packages/*/src", "tools/*/src", "browser-agent/*/src", "browser-agent/tools/*/src", "browser-agent/examples/*/src"]

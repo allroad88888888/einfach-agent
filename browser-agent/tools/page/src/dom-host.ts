@@ -1,6 +1,7 @@
 import { candidateElements, isNativeField, nativeSupported, nativeValue, readResolved, type NativeField, type ResolvedField } from './dom-fields'
 import { assertWritable, writeResolved } from './dom-write'
 import { enqueueDocumentWrite } from './document-write-queue'
+import { createDomPageReader } from './dom-page-read'
 import type { DomPageHostOptions, FieldOutcome, FieldValue, PageCallContext, PageRef, PageToolsHost } from './types'
 const aborted = (ctx: PageCallContext): void => { if (ctx.signal.aborted) throw new DOMException('The operation was aborted', 'AbortError') }
 const message = (error: unknown): string => error instanceof Error ? error.message : String(error)
@@ -21,8 +22,10 @@ export function createDomPageHost(options: DomPageHostOptions): PageToolsHost {
     if (ref.targetId !== page.targetId || ref.documentId !== page.documentId || ref.revision !== page.revision) return 'page reference is stale or belongs to another target'
     if (!currentDocument()) return 'document binding is no longer current'
   }
-  const actualValue = (field: ResolvedField): FieldValue => field.adapter ? field.adapter.read(field.element).value : isNativeField(field.element) ? nativeValue(field.element) : ''
+  const actualValue = (field: ResolvedField): FieldValue => field.adapter ? field.adapter.read(field.element).value : isNativeField(field.element) ? nativeValue(field.element) : readResolved(field, idFor(field.element)).value
+  const pageReader = createDomPageReader(document, page)
   return {
+    ...pageReader,
     async readForm(ctx) { aborted(ctx); if (!currentDocument()) throw new Error('document binding is no longer current'); return { page: { ...page }, fields: fields().map((field) => readResolved(field, idFor(field.element))) } },
     fillFields(input, ctx) {
       return enqueueDocumentWrite(document, async () => {

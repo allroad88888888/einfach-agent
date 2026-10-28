@@ -1,0 +1,6 @@
+import { describe, expect, it } from 'vitest'
+import type { ToolContext } from '@einfach-agent/core/tools'
+import { createDomPageHost } from '../dom-host'
+import { createSelectOptionTool } from './select-option'
+const ctx = { sessionId: 's', signal: new AbortController().signal } as ToolContext
+describe('select_option', () => { it('selects single and multiple values and rejects unknown values', async () => { document.body.innerHTML = `<select><option value="a">A</option><option value="b">B</option></select><select multiple><option value="a">A</option><option value="b">B</option></select>`; const host = createDomPageHost({ document, targetId: 't' }); const form = await host.readForm(ctx); expect(await createSelectOptionTool(host).execute({ page: form.page, fieldId: form.fields[0].id, value: 'b' }, ctx)).toMatchObject({ ok: true, data: { fields: [{ ok: true, value: 'b' }] } }); expect(await createSelectOptionTool(host).execute({ page: form.page, fieldId: form.fields[1].id, value: ['a', 'b'] }, ctx)).toMatchObject({ ok: true, data: { fields: [{ ok: true }] } }); expect(await createSelectOptionTool(host).execute({ page: form.page, fieldId: form.fields[0].id, value: 'missing' }, ctx)).toMatchObject({ ok: false }) }) })

@@ -33,6 +33,9 @@ export type ApiCallContext = Pick<ToolContext, 'sessionId' | 'signal'>
 
 export interface OptionsSource {
   id: string
+  /** Display-only metadata. Request details remain private to the host adapter. */
+  label?: string
+  description?: string
   query(
     input: Omit<QueryOptionsInput, 'sourceId'>,
     ctx: ApiCallContext,
@@ -41,6 +44,23 @@ export interface OptionsSource {
 
 export interface ApiToolsHost {
   queryOptions(input: QueryOptionsInput, ctx: ApiCallContext): Promise<QueryOptionsResult>
+  listSources?(input: ListOptionsSourcesInput, ctx: ApiCallContext): Promise<ListOptionsSourcesResult>
+}
+
+export interface OptionsSourceInfo {
+  id: string
+  label?: string
+  description?: string
+}
+
+export interface ListOptionsSourcesInput {
+  offset?: number
+  limit?: number
+}
+
+export interface ListOptionsSourcesResult {
+  sources: readonly OptionsSourceInfo[]
+  nextOffset?: number
 }
 
 export interface ApiToolsHostOptions {
@@ -77,6 +97,30 @@ export function createApiToolsHost(
       )
       return normalizeResult(result)
     },
+    async listSources(input, ctx) {
+      validateListInput(input)
+      if (ctx.signal.aborted) {
+        throw new ApiToolsError('API_OPTIONS_CANCELLED', 'options query was cancelled')
+      }
+      const authorized: OptionsSourceInfo[] = []
+      for (const source of registered.values()) {
+        let allowed: boolean
+        try {
+          allowed = options.isSourceAllowed(source.id, ctx.sessionId)
+        } catch {
+          throw new ApiToolsError('API_OPTIONS_FORBIDDEN', 'options source is not allowed for this session')
+        }
+        if (allowed) authorized.push(sourceInfo(source))
+      }
+      const offset = input.offset ?? 0
+      const limit = input.limit ?? 20
+      const page = authorized.slice(offset, offset + limit)
+      const nextOffset = offset + page.length
+      return {
+        sources: page,
+        ...(nextOffset < authorized.length ? { nextOffset } : {}),
+      }
+    },
   }
 }
 
@@ -103,6 +147,34 @@ function validateInput(input: QueryOptionsInput): void {
       invalidInput()
     }
   }
+}
+
+function validateListInput(input: ListOptionsSourcesInput): void {
+  if (!isListInput(input) || !isPageInteger(input.offset) || !isPageInteger(input.limit) || (input.limit !== undefined && (input.limit < 1 || input.limit > MAX_OPTIONS))) {
+    throw new ApiToolsError('API_OPTIONS_INVALID_INPUT', 'invalid list_options_sources input')
+  }
+}
+
+function isListInput(input: unknown): input is ListOptionsSourcesInput {
+  return typeof input === 'object' && input !== null && !Array.isArray(input)
+}
+
+function isPageInteger(value: unknown): value is number | undefined {
+  return value === undefined || (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0)
+}
+
+function sourceInfo(source: OptionsSource): OptionsSourceInfo {
+  const label = metadataText(source.label)
+  const description = metadataText(source.description)
+  return {
+    id: source.id,
+    ...(label === undefined ? {} : { label }),
+    ...(description === undefined ? {} : { description }),
+  }
+}
+
+function metadataText(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length <= MAX_TEXT_LENGTH ? value : undefined
 }
 
 function isShortText(value: unknown): value is string {

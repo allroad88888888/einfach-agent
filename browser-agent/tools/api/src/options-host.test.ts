@@ -29,6 +29,12 @@ describe('createApiToolsHost', () => {
     await expect(host.queryOptions({ sourceId: 'bad' }, context())).rejects.toMatchObject({ code: 'API_OPTIONS_INVALID_RESPONSE' })
   })
 
+  it('preserves legacy registration of a long source ID while query input rejects it', async () => {
+    const sourceId = 's'.repeat(501)
+    const host = createApiToolsHost([{ id: sourceId, query: async () => ({ options: [] }) }], { isSourceAllowed: () => true })
+    await expect(host.queryOptions({ sourceId }, context())).rejects.toMatchObject({ code: 'API_OPTIONS_INVALID_INPUT' })
+  })
+
   it('accepts only a finite positive host timeout configuration', () => {
     const source: OptionsSource = { id: 'a', query: async () => ({ options: [] }) }
     expect(() => createApiToolsHost([source], { isSourceAllowed: () => true, timeoutMs: 0 })).toThrow(ApiToolsError)

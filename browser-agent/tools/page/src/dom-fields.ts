@@ -1,7 +1,9 @@
 import type { ControlledFieldAdapter, FieldValue, FormField } from './types'
+import { fieldLabel, fieldRequired } from './dom-field-labels'
+import { isLogicalControl, logicalControlSelector } from './dom-control-roots'
+import { describeExposedOptions, describeLogicalControl } from './dom-logical-controls'
 export type NativeField = HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
 export interface ResolvedField { element: Element; adapter?: ControlledFieldAdapter }
-const text = (value: string | null | undefined): string => value?.trim() ?? ''
 const STRING_INPUT_TYPES = new Set(['text', 'email', 'url', 'tel', 'search', 'number', 'date', 'time', 'datetime-local', 'month', 'week'])
 const HTML_NAMESPACE = 'http://www.w3.org/1999/xhtml'
 const htmlTag = (element: Element, tag: string): boolean => element.namespaceURI === HTML_NAMESPACE && element.localName === tag
@@ -15,15 +17,6 @@ export const nativeReadOnly = (element: Element): boolean => {
   return element.disabled || ('readOnly' in element && element.readOnly)
 }
 const isSensitive = (element: Element): boolean => isInput(element) && (element.type === 'hidden' || element.type === 'password')
-export function fieldLabel(element: Element): string {
-  const doc = element.ownerDocument
-  const aria = text(element.getAttribute('aria-label')); if (aria) return aria
-  const labelledBy = text(element.getAttribute('aria-labelledby'))
-  if (labelledBy) { const label = labelledBy.split(/\s+/).map((id) => text(doc.getElementById(id)?.textContent)).filter(Boolean).join(' '); if (label) return label }
-  const explicit = element.id ? Array.from(doc.querySelectorAll('label')).find((label) => label.htmlFor === element.id) ?? null : null
-  const label = text((explicit ?? element.closest('label'))?.textContent); if (label) return label
-  return text(element.getAttribute('name')) || text(element.getAttribute('placeholder'))
-}
 export function nativeKind(element: NativeField): string {
   if (isTextArea(element)) return 'textarea'
   if (isSelect(element)) return element.multiple ? 'select-multiple' : 'select'
@@ -36,22 +29,36 @@ export function nativeValue(element: NativeField): FieldValue {
 }
 export function describeNative(element: NativeField): Omit<FormField, 'id'> {
   const supported = nativeSupported(element)
-  const result: Omit<FormField, 'id'> = { label: fieldLabel(element), kind: supported ? nativeKind(element) : `input-${isInput(element) ? element.type : 'unknown'}`, value: nativeValue(element), required: element.required, readOnly: element.disabled || ('readOnly' in element && element.readOnly), supported }
-  if (isSelect(element)) result.options = Array.from(element.options, ({ text, value }) => ({ label: text.trim(), value }))
+  const result: Omit<FormField, 'id'> = { label: fieldLabel(element), kind: supported ? nativeKind(element) : `input-${isInput(element) ? element.type : 'unknown'}`, value: nativeValue(element), required: element.required || fieldRequired(element), readOnly: element.disabled || ('readOnly' in element && element.readOnly), supported }
+  if (isSelect(element)) { result.options = Array.from(element.options, ({ text, value, disabled }) => ({ label: text.trim(), value, ...(disabled ? { disabled: true } : {}) })); result.optionsStatus = 'exposed' }
+  if (isInput(element) && element.list) { result.options = Array.from(element.list.options, ({ label, value }) => ({ label: label.trim() || value, value })); result.optionsStatus = 'exposed' }
+  if (element.getAttribute('role') === 'combobox' || ['listbox', 'tree'].includes(element.getAttribute('aria-haspopup') ?? '')) {
+    const semantic = describeExposedOptions(element)
+    if (semantic.optionsStatus === 'exposed' || result.optionsStatus === undefined) Object.assign(result, semantic)
+  }
   return result
 }
 export function candidateElements(doc: Document, adapters: readonly ControlledFieldAdapter[]): ResolvedField[] {
   const all = Array.from(doc.querySelectorAll('*')).filter((element) => !isSensitive(element))
-  const controlled = adapters.flatMap((adapter) => all.filter((element) => adapter.matches(element)).map((element) => ({ element, adapter })))
-  const adapted = new Set(controlled.map(({ element }) => element))
-  const native = all.filter((element): element is NativeField => !adapted.has(element) && isNativeField(element)).map((element) => ({ element }))
-  const complex = Array.from(doc.querySelectorAll('[contenteditable="true"], [role="combobox"]')).map((element) => ({ element }))
-  const seen = new Set<Element>()
-  const candidates = [...controlled, ...native, ...complex].filter(({ element }) => !isSensitive(element))
-  return candidates.filter(({ element }) => !seen.has(element) && Boolean(seen.add(element)))
+  const controlled = new Map<Element, ControlledFieldAdapter>()
+  for (const adapter of adapters) for (const element of all) if (!controlled.has(element) && adapter.matches(element)) controlled.set(element, adapter)
+  const adapted = Array.from(controlled.keys()).filter((element, _index, matches) => !matches.some((other) => other !== element && other.contains(element)))
+  const overlapsAdapter = (element: Element): boolean => adapted.some((item) => item === element || item.contains(element) || element.contains(item))
+  const complexRoots = Array.from(doc.querySelectorAll(logicalControlSelector)).filter((element) => !overlapsAdapter(element) && isLogicalControl(element))
+  const owned = new Set(complexRoots.flatMap((element) => `${element.getAttribute('aria-controls') ?? ''} ${element.getAttribute('aria-owns') ?? ''}`.split(/\s+/).filter(Boolean)))
+  const logicalRoots = complexRoots.filter((element) => !complexRoots.some((other) => other !== element && other.contains(element)))
+    .filter((element) => !element.id || !owned.has(element.id))
+  return all.flatMap((element): ResolvedField[] => {
+    const adapter = adapted.includes(element) ? controlled.get(element) : undefined
+    if (adapter) return [{ element, adapter }]
+    if (overlapsAdapter(element)) return []
+    if (logicalRoots.includes(element)) return [{ element }]
+    if (isNativeField(element) && !logicalRoots.some((root) => root.contains(element))) return [{ element }]
+    return []
+  })
 }
 export function readResolved(field: ResolvedField, id: string): FormField {
   if (field.adapter) { const value = field.adapter.read(field.element); return { id, kind: field.adapter.kind, ...value, readOnly: value.readOnly || nativeReadOnly(field.element) } }
   if (isNativeField(field.element)) return { id, ...describeNative(field.element) }
-  return { id, label: fieldLabel(field.element), kind: field.element.getAttribute('role') ?? 'contenteditable', value: '', required: false, readOnly: true, supported: false }
+  return { id, ...describeLogicalControl(field.element) }
 }

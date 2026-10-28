@@ -224,6 +224,9 @@ async function main() {
     'browser-agent/agent/src',
     'browser-agent/tools/page/src',
     'browser-agent/tools/api/src',
+    'browser-agent/tools/dom/src',
+    'browser-agent/tools/network/src',
+    'browser-agent/tools/ocr/src',
     'browser-agent/examples/embedded/src',
   ].map((directory) => typescriptFiles(resolve(repositoryRoot, directory))))).flat()
   const errors = []

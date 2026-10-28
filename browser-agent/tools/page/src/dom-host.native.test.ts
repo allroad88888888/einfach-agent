@@ -14,7 +14,7 @@ describe('DOM page host native fields', () => {
     expect(snapshot.fields[0]).toMatchObject({ kind: 'text', value: 'Ada', required: true, supported: true })
     expect(snapshot.fields[2]).toMatchObject({ kind: 'select', value: 'us', options: [{ label: 'China', value: 'cn' }, { label: 'USA', value: 'us' }] })
     expect(snapshot.fields[3]).toMatchObject({ kind: 'input-file', supported: false })
-    expect(snapshot.fields[4]).toMatchObject({ supported: false, readOnly: true })
+    expect(snapshot.fields[4]).toMatchObject({ supported: false, readOnly: false })
   })
 
   it('fills native kinds, dispatches input/change, and reads actual values back', async () => {

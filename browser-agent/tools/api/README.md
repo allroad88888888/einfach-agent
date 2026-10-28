@@ -1,6 +1,6 @@
 # @einfach-agent/tools-browser-api
 
-This browser-safe package exposes one read-only `query_options` tool. A host registers
+This browser-safe package exposes read-only `list_options_sources` and `query_options` tools. A host registers
 named `OptionsSource` adapters and decides authorization per trusted `ToolContext.sessionId`.
 Models can select only a source ID and bounded search, filter, and cursor values; they never
 provide a URL, headers, credentials, or request method.
@@ -20,6 +20,13 @@ const host = createApiToolsHost([
 
 registerApiTools(core.tools, host)
 ```
+
+Call `list_options_sources` before `query_options` to discover source IDs authorized for the
+current session. It returns only `{ id, label?, description? }`, filters before applying the
+optional zero-based `offset` and `limit` (default 20, from 1 to 100), and does not execute an
+adapter or make a network request. The permission callback is evaluated for every call, so a
+host permission change is effective immediately. Labels and descriptions are limited to 500
+characters; URLs, headers, credentials, and adapter fields are never exposed.
 
 `createApiToolsHost` accepts an optional host-only `timeoutMs` (10,000 ms by default, up to
 120,000 ms). It covers the source call, HTTP request, and response-body read. On cancellation

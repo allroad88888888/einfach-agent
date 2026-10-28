@@ -12,7 +12,7 @@ describe('page package registration', () => {
     document.body.innerHTML = `<input aria-label="Name" required>`
     const host = createDomPageHost({ document, targetId: 'target', documentId: 'document' })
     const core = createCore({ registerTools: (registry) => registerPageTools(registry, host) })
-    expect(core.tools.list().map(({ name }) => name)).toEqual(['read_form', 'fill_fields', 'validate_form'])
+    expect(core.tools.list().map(({ name }) => name)).toEqual(['read_page', 'read_table', 'read_form', 'fill_fields', 'validate_form', 'read_field_options', 'wait_for_field', 'select_option', 'clear_fields'])
     const read = await core.tools.run('read_form', {}, context())
     if (!('ok' in read)) throw new Error('read paused')
     expect(read.ok).toBe(true)
@@ -30,5 +30,14 @@ describe('page package registration', () => {
     const snapshot = await host.readForm(context())
     const result = await core.tools.run('fill_fields', { page: snapshot.page, values: [{ id: snapshot.fields[0].id, value: 42 }] }, context())
     expect(result).toMatchObject({ ok: false }); expect(document.querySelector('input')!.value).toBe('safe')
+  })
+
+  it('keeps custom hosts compatible and rejects new invalid schemas before host calls', async () => {
+    const base = createDomPageHost({ document, targetId: 'target' }); const host = { readForm: base.readForm, fillFields: base.fillFields, validateForm: base.validateForm }
+    const core = createCore({ registerTools: (registry) => registerPageTools(registry, host) })
+    expect(core.tools.list()).toHaveLength(7)
+    expect(await core.tools.run('wait_for_field', { page: {}, fieldId: '', condition: 'bad', timeoutMs: 30_001 }, context())).toMatchObject({ ok: false })
+    const page = (await host.readForm(context())).page
+    expect(await core.tools.run('wait_for_field', { page, fieldId: 'field-1', condition: 'value' }, context())).toMatchObject({ ok: false, error: expect.stringContaining('value is required') })
   })
 })

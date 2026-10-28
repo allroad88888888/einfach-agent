@@ -5,7 +5,10 @@ export {
   type ApiCallContext,
   type ApiToolsHost,
   type ApiToolsHostOptions,
+  type ListOptionsSourcesInput,
+  type ListOptionsSourcesResult,
   type OptionsSource,
+  type OptionsSourceInfo,
   type QueryOption,
   type QueryOptionsInput,
   type QueryOptionsResult,
@@ -18,3 +21,4 @@ export {
   type HttpQueryRequest,
 } from './fetch-options-source'
 export { createQueryOptionsTool, registerApiTools } from './query-options/query-options'
+export { createListOptionsSourcesTool } from './list-options-sources/list-options-sources'

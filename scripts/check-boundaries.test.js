@@ -73,15 +73,19 @@ test('browser-agent 运行包导入 React 或 Node 会失败', async () => {
   })
 })
 
-test('页面/API 工具与自有界面示例不能偷带 React、UI、Chrome 或 Node', async () => {
+test('页面/API/DOM/网络工具与自有界面示例不能偷带 React、UI、Chrome 或 Node', async () => {
   const root = await fixture({
     'browser-agent/tools/page/src/bad.ts': "import React from 'react'\n",
     'browser-agent/tools/api/src/bad.ts': "import '@einfach-agent/browser-agent-ui'\n",
+    'browser-agent/tools/dom/src/bad.ts': "import 'chrome'\n",
+    'browser-agent/tools/network/src/bad.ts': "import 'chrome'\n",
     'browser-agent/examples/embedded/src/bad.ts': "import fs from 'node:fs'\n",
   })
   await assert.rejects(run(root), (error) => {
     assert.match(error.stderr, /browser-agent\/tools\/page\/src\/bad\.ts:1 浏览器运行与工具包禁入 React\/UI\/Chrome/)
     assert.match(error.stderr, /browser-agent\/tools\/api\/src\/bad\.ts:1 浏览器运行与工具包禁入 React\/UI\/Chrome/)
+    assert.match(error.stderr, /browser-agent\/tools\/dom\/src\/bad\.ts:1 浏览器运行与工具包禁入 React\/UI\/Chrome/)
+    assert.match(error.stderr, /browser-agent\/tools\/network\/src\/bad\.ts:1 浏览器运行与工具包禁入 React\/UI\/Chrome/)
     assert.match(error.stderr, /browser-agent\/examples\/embedded\/src\/bad\.ts:1 浏览器运行与工具包禁入 Node/)
     return true
   })

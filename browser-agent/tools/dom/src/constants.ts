@@ -1,0 +1,10 @@
+export const DEFAULT_LIMIT = 50
+export const MAX_LIMIT = 100
+export const MAX_OFFSET = 100_000
+export const MAX_SCAN = 100_000
+export const MAX_TEXT = 500
+export const MAX_QUERY = 500
+export const MAX_TYPE_TEXT = 10_000
+export const DEFAULT_TIMEOUT_MS = 5_000
+export const MAX_TIMEOUT_MS = 30_000
+export const WAIT_INTERVAL_MS = 40
