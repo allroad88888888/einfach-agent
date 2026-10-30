@@ -79,11 +79,12 @@ function timeoutHint(result: ShellCommandResult): string | undefined {
 
 export function shellCommandToolResult(result: ShellCommandResult): ToolResult {
   if (result.timedOut) {
+    const hint = timeoutHint(result)
     return withBackgroundNotice(result, {
       ok: false,
       error: timeoutMessage(result),
       code: 'SHELL_TIMEOUT',
-      hint: timeoutHint(result),
+      ...(hint !== undefined ? { hint } : {}),
       retryable: true,
       details: result,
     })

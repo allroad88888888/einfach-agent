@@ -96,6 +96,7 @@ function normalizeResult(raw: unknown, input: ShellCommandInput, startedAt: numb
   const rawExitCode = raw.exitCode ?? raw.exit_code
   const validExitCode = typeof rawExitCode === 'number' && Number.isFinite(rawExitCode)
   const stderr = stringValue(raw.stderr, '')
+  const timeoutReason = timedOut ? timeoutReasonValue(raw.timeout_reason ?? raw.timeoutReason) : undefined
 
   return {
     platform: isShellPlatform(raw.platform) ? raw.platform : input.platform,
@@ -114,7 +115,7 @@ function normalizeResult(raw: unknown, input: ShellCommandInput, startedAt: numb
     timedOut,
     // 未超时时不给原因：宿主那边可能因为序列化差异留下一个残值，而「没超时但有原因」
     // 对下游是没有意义的状态。
-    timeoutReason: timedOut ? timeoutReasonValue(raw.timeout_reason ?? raw.timeoutReason) : undefined,
+    ...(timeoutReason !== undefined ? { timeoutReason } : {}),
     truncated: booleanValue(raw.truncated, false),
     backgroundProcessesKilled: booleanValue(
       raw.backgroundProcessesKilled ?? raw.background_processes_killed,
