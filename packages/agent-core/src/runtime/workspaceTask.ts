@@ -89,6 +89,8 @@ function normalizeResult(raw: unknown, input: WorkspaceTaskInput, startedAt: num
   }
 
   const timedOut = booleanValue(raw.timedOut ?? raw.timed_out, false)
+  const reason = raw.timeoutReason ?? raw.timeout_reason
+  const timeoutReason = timedOut && (reason === 'idle' || reason === 'total') ? reason : undefined
 
   return {
     ok: booleanValue(raw.ok, false),
@@ -97,6 +99,7 @@ function normalizeResult(raw: unknown, input: WorkspaceTaskInput, startedAt: num
     stderr: stringValue(raw.stderr, ''),
     durationMs: numberValue(raw.durationMs ?? raw.duration_ms, durationSince(startedAt)),
     timedOut,
+    ...(timeoutReason ? { timeoutReason } : {}),
     truncated: booleanValue(raw.truncated, false),
     command: normalizeCommand(raw.command),
     cwd: stringValue(raw.cwd, input.workspaceRoot ?? ''),

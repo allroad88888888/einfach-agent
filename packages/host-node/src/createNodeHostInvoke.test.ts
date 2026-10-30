@@ -99,6 +99,7 @@ describe('createNodeHostInvoke', () => {
         'run_workspace_task',
         'pick_workspace_directory',
         'run_shell_command',
+        'start_session_service', 'get_session_service', 'read_session_service_logs', 'stop_session_service', 'end_service_session',
         'mcp_connect',
         'mcp_list_tools',
         'mcp_call_tool',
@@ -152,8 +153,8 @@ describe('createNodeHostInvoke', () => {
   it('registers one rollout flush disposer alongside the MCP disposer', async () => {
     const disposers: Array<() => Promise<void>> = []
     createNodeHostInvoke({ registerHostDisposer(dispose) { disposers.push(dispose) } })
-    expect(disposers).toHaveLength(2)
-    await expect(Promise.all(disposers.map((dispose) => dispose()))).resolves.toHaveLength(2)
+    expect(disposers).toHaveLength(3)
+    await expect(Promise.all(disposers.map((dispose) => dispose()))).resolves.toHaveLength(3)
   })
 
   it('uses one injected rollout driver for routes and its single flush disposer', async () => {
@@ -167,7 +168,7 @@ describe('createNodeHostInvoke', () => {
       registerHostDisposer(dispose) { disposers.push(dispose) } })
     await expect(invoke('agent_rollout_reconcile', {})).resolves.toEqual({ histories: [] })
     expect(driver.reconcile).toHaveBeenCalledOnce()
-    expect(disposers).toHaveLength(2)
+    expect(disposers).toHaveLength(3)
     await Promise.all(disposers.map((dispose) => dispose()))
     expect(driver.flush).toHaveBeenCalledOnce()
   })

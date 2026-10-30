@@ -18,6 +18,7 @@
 // resolve**、返回的正是已读到的部分，然后销毁流释放 fd。Rust 泄漏一个线程加一个 fd，
 // Node 一个都不留——这是宿主能力的差异，不是语义的改动（两边交出的文本相同）。
 
+import { countCodePoints, takeCodePoints } from '../workspace/common/codePoints'
 import type { Readable } from 'node:stream'
 import { errorText, readCappedDrain, type ByteSource, type CappedRead } from '../workspace/common'
 
@@ -51,6 +52,7 @@ export function captureOutput(
    * 逐字节通知既无意义也会把读取流程拖慢。
    */
   onActivity?: () => void,
+  onOutput?: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void,
 ): OutputCapture {
   let signalAbandon = (): void => {}
   const abandoned = new Promise<typeof ABANDONED>((resolve) => {
@@ -61,7 +63,22 @@ export function captureOutput(
   let captured: CappedRead = { text: '', truncated: false }
   let failure: Error | undefined
 
-  const done = readCappedDrain(abandonableChunks(source, abandoned, onActivity), maxChars)
+  // Decode incrementally so UTF-8 code points split across pipe reads stay intact.
+  const decoder = new TextDecoder('utf-8', { ignoreBOM: true })
+  let remaining = maxChars
+  const emit = (text: string) => {
+    const clipped = takeCodePoints(text, remaining)
+    remaining -= countCodePoints(clipped)
+    if (clipped && onOutput) {
+      // A display observer must never break pipe draining or strand a child.
+      try { onOutput({ stream, text: clipped }) } catch { /* observer only */ }
+    }
+  }
+  const activity = (bytes: Uint8Array) => {
+    onActivity?.()
+    if (onOutput) emit(decoder.decode(bytes, { stream: true }))
+  }
+  const done = readCappedDrain(abandonableChunks(source, abandoned, activity), maxChars)
     .then(
       (result) => {
         captured = result
@@ -71,6 +88,7 @@ export function captureOutput(
       },
     )
     .then(() => {
+      if (onOutput) emit(decoder.decode())
       settled = true
     })
 
@@ -103,7 +121,7 @@ export function captureOutput(
 async function* abandonableChunks(
   source: ByteSource,
   abandoned: Promise<typeof ABANDONED>,
-  onActivity: (() => void) | undefined,
+  onActivity: ((bytes: Uint8Array) => void) | undefined,
 ): AsyncGenerator<Uint8Array> {
   const iterator = source[Symbol.asyncIterator]()
   for (;;) {
@@ -115,7 +133,7 @@ async function* abandonableChunks(
     if (next === ABANDONED || next.done === true) return
     // 通知必须在 yield **之前**：yield 会把控制权交回消费方，一块已经被读出来的数据
     // 却还没被记成「命令活着」，在静默阈值贴边的场景里可能就是差这一下。
-    onActivity?.()
+    onActivity?.(next.value)
     yield next.value
   }
 }

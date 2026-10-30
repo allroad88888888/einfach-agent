@@ -5,6 +5,7 @@
 
 import { useAgentAtomValue } from '@einfach-agent/react-plugin'
 import { toolActivityAtom } from '@einfach-agent/core'
+import { ShellOutput } from './ShellOutput'
 import { useLingui } from '@lingui/react/macro'
 
 export function ToolActivity() {
@@ -13,14 +14,19 @@ export function ToolActivity() {
   if (activities.length === 0) return null
 
   return (
-    <div className="agentnew-tool-activity" aria-label={t`工具进度`} role="status">
+    <div className="agentnew-tool-activity" aria-label={t`工具进度`}>
       {activities.map((activity) => (
-        <div key={activity.callId} className="agentnew-tool-activity-row">
-          <span className="agentnew-tool-activity-spinner" aria-hidden="true">
-            ⚙
-          </span>
-          <span className="agentnew-tool-activity-name">{activity.toolName}</span>
-          <span className="agentnew-tool-activity-text">{activity.text}</span>
+        <div key={activity.callId}>
+          <div className="agentnew-tool-activity-row" role="status">
+            <span className="agentnew-tool-activity-spinner" aria-hidden="true">
+              ⚙
+            </span>
+            <span className="agentnew-tool-activity-name">{activity.toolName}</span>
+            <span className="agentnew-tool-activity-text">{activity.text}</span>
+          </div>
+          {activity.output && (
+            <ShellOutput text={activity.output} truncated={(activity.outputChars ?? 0) > activity.output.length} />
+          )}
         </div>
       ))}
     </div>

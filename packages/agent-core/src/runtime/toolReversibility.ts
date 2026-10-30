@@ -52,6 +52,8 @@ const PURE_TOOLS: ReadonlySet<string> = new Set([
   'skill_read',
   // 读一个后台执行节点，不等待、不改状态
   'observe_agent',
+  'get_service_status',
+  'read_service_logs',
 ])
 
 /**

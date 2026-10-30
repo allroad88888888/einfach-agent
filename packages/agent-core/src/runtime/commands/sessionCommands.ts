@@ -3,6 +3,7 @@ import { activeSessionIdAtom, activeWorkspaceIdAtom, expandedWorkspaceIdsAtom, s
 import type { ModelSettings, SessionMeta } from '../../state/core.type'
 import type { CoreInstance } from '../core/coreInstance'
 import { newId } from '../newId'
+import { endSessionServices } from '../sessionService'
 import { createWorkspaceMeta } from './workspaceCommands'
 import { cancelSessionSubmissions } from '../sessionSubmissionGate'
 import {
@@ -110,6 +111,7 @@ export function createSessionCommands(core: CoreInstance) {
   }
 
   function removeSession(id: string): void {
+    void endSessionServices(id).catch(error => console.error('Session service cleanup failed; host shutdown will retry', error))
     const meta = core.rootStore.getter(sessionsAtom)[id]
     const before = meta ? captureUserContentReachability(core, id) : undefined
     cancelSessionSubmissions(core, id)

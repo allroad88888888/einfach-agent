@@ -35,7 +35,7 @@ import type { DelegationRuntime } from './delegationContract'
 import { attachDelegationCapabilities } from './toolContext/delegationCapabilities'
 import { createOutputCapabilities } from './toolContext/outputCapabilities'
 import { createPlanCapabilities } from './toolContext/planCapabilities'
-import { createProgressReporter } from './toolContext/progressReporting'
+import { createProgressReporter, createShellOutputReporter } from './toolContext/progressReporting'
 import {
   createSkillsCapabilities,
   type RunSkillSnapshot,
@@ -56,6 +56,7 @@ import {
   type RunCapabilitySnapshot,
 } from './turnToolVisibility'
 import { hasHostBridge } from './hostBridge'
+import { createServiceCapability } from './toolContext/serviceCapability'
 
 const MAX_TOOL_DEPTH = 4
 
@@ -142,6 +143,7 @@ export function buildToolContext(opts: {
     progress,
     inputGuards,
     signal,
+    shellOutput: createShellOutputReporter({ sessionId, callId, core, signal, currentRun: currentRunGuard }),
   })
 
   const ctx: ToolContext = {
@@ -152,6 +154,7 @@ export function buildToolContext(opts: {
     ...planCapabilities,
     ...skillsCapabilities,
     ...workspaceCapabilities,
+    ...createServiceCapability({ sessionId, core, guards, signal, workspaceRoot }),
     ...createHistoryCapabilities(core.persistence.dependencies().agentHistory, workspaceRoot),
     ...createVisionCapabilities({
       capability: core.config.viewImage,

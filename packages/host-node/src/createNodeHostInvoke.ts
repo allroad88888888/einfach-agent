@@ -59,6 +59,7 @@ import { dirname } from 'node:path'
 import { isNodeHostCommandName } from './commandNames'
 import { createConfigRoutes } from './config'
 import { createShellRoutes } from './shell'
+import { createServiceRoutes } from './service'
 import { createChangeRoutes } from './workspace/change'
 import { createDeleteRoutes } from './workspace/delete'
 import { createWorkspaceDialogRoutes } from './workspace/dialog'
@@ -164,6 +165,7 @@ function createRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
     ...createTaskRoutes(options),
     ...createWorkspaceDialogRoutes(options),
     ...createShellRoutes(options),
+    ...createServiceRoutes(options),
     ...createMcpRoutes(options),
     ...createModelRoutes(options),
     ...createSqliteRoutes(options),
@@ -193,7 +195,7 @@ export function createNodeHostInvoke(options: NodeHostInvokeOptions = {}): HostI
   const invoke: HostInvoke = async <T>(
     command: string,
     args?: Record<string, unknown>,
-    invokeOptions?: { signal?: AbortSignal },
+    invokeOptions?: { signal?: AbortSignal; onShellOutput?: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void },
   ): Promise<T> => {
     // 先判名字再查表：直接查表时「没实现」和「名字不存在」会塌成同一个 `undefined`。
     if (!isNodeHostCommandName(command)) {

@@ -205,6 +205,12 @@ export interface NodeHostCommandArgs extends ModelCommandArgs, ConnectionProfile
     env?: Record<string, string>
   }
 
+  start_session_service: { sessionId: string; command: string; cwd?: string; env?: Record<string, string> }
+  get_session_service: { sessionId: string; serviceId: string }
+  read_session_service_logs: { sessionId: string; serviceId: string; cursor?: number; maxChars?: number }
+  stop_session_service: { sessionId: string; serviceId: string }
+  end_service_session: { sessionId: string }
+
   // ── mcp ── Rust: mcp.rs + mcp_types.rs；TS: apps/web/src/mcp/tauriStdioConnector.ts
   //    四条都是**无 rename_all** 的命令，顶层只有一个 `input`，其内部字段全 camelCase。
   //    `session_token` 是宿主侧的会话身份：连上之后每次调用都要带，用来挡住陈旧连接的复用。

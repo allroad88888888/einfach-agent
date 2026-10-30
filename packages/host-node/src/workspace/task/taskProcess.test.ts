@@ -37,7 +37,7 @@ describe('waitForChild', () => {
 
     const result = await waitForChild(child, 150)
 
-    expect(result).toEqual({ exitCode: -1, timedOut: true })
+    expect(result).toEqual({ exitCode: -1, timedOut: true, timeoutReason: 'idle' })
     // 真正被杀掉了，不是傻等 10s 的 setTimeout 自然到期——上限给够余量防抖但仍远小于 10s。
     expect(Date.now() - started).toBeLessThan(5_000)
   })
