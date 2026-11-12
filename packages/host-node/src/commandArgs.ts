@@ -38,11 +38,10 @@
 // 不要照着去找那个文件）与 **TS 调用点**（还在，改之前必须核对）。今天权威是本文件加调用点。
 // 多条命令共用的嵌套载荷（变更上下文、补丁操作、MCP 实现信息）在 commandPayloads.ts。
 
+import type { WorkspaceMutationCommandArgs } from './workspace/mutationCommandArgs'
 import type { NodeHostCommandName } from './commandNames'
 import type {
   McpImplementationInfoArgs,
-  WorkspaceChangeContextArgs,
-  WorkspacePatchOperationArgs,
 } from './commandPayloads'
 import type { ModelCommandArgs } from './model/commandArgs'
 import type { ConnectionProfileCommandArgs } from './model/connectionProfileCommandArgs'
@@ -53,7 +52,7 @@ import type {} from './history/historyCommandArgs'
  * 命令名 → 入参形状。`get_user_home_dir` / `mcp_config_read` / `pick_workspace_directory` 无参，写成 `undefined`：
  * 它们的调用点是 `invoke('get_user_home_dir')`，第二个实参根本不传。
  */
-export interface NodeHostCommandArgs extends ModelCommandArgs, ConnectionProfileCommandArgs {
+export interface NodeHostCommandArgs extends ModelCommandArgs, ConnectionProfileCommandArgs, WorkspaceMutationCommandArgs {
   /** User-triggered host folder chooser. The response is `{ path: string | null }`. */
   pick_workspace_directory: undefined
   /** Discover public model IDs without reading or writing a stored connection credential. */
@@ -99,62 +98,6 @@ export interface NodeHostCommandArgs extends ModelCommandArgs, ConnectionProfile
     workspace_root?: string
     allow_external_paths?: boolean
   }
-
-  // ── workspace/write ── Rust: workspace_write.rs；TS: runtime/workspaceWrite.ts 的 toTauriInput
-  write_workspace_file: {
-    path: string
-    content: string
-    /** 'overwrite' | 'append' | 'create'；Rust 侧收 String 后自校验，不是闭合 enum。 */
-    mode?: string
-    expected_old_content?: string
-    expected_content_hash?: string
-    create_dirs?: boolean
-    max_bytes?: number
-    exclusive_path_lock?: boolean
-    workspace_root?: string
-    encoding?: string
-    executable?: boolean
-    dry_run?: boolean
-    change_context?: WorkspaceChangeContextArgs
-    /** 只用于日志关联，不影响写入语义；core 侧恒会传（缺省时自己造一个）。 */
-    diagnostic_operation_id?: string
-  }
-
-  // ── workspace/patch ── Rust: workspace_patch.rs；TS: runtime/workspacePatch.ts
-  apply_workspace_patch: {
-    operations: readonly WorkspacePatchOperationArgs[]
-    dry_run?: boolean
-    workspace_root?: string
-    change_context?: WorkspaceChangeContextArgs
-    diagnostic_operation_id?: string
-  }
-
-  // ── workspace/change ── Rust: workspace_change_journal.rs；TS: runtime/workspaceChange.ts
-  /** `change_set_id` 与 `change_set_ids` 二选一：单笔回滚 vs 批量回滚。 */
-  revert_workspace_change: {
-    change_set_id?: string
-    change_set_ids?: readonly string[]
-    dry_run?: boolean
-    workspace_root?: string
-  }
-
-  // ── workspace/delete ── Rust: workspace_delete.rs；TS: runtime/workspaceDelete.ts
-  delete_workspace_path: {
-    path: string
-    recursive?: boolean
-    workspace_root?: string
-    change_context?: WorkspaceChangeContextArgs
-  }
-
-  // ── workspace/pathOps ── Rust: workspace_path_ops.rs；TS: runtime/workspacePathOperation.ts
-  //    两条命令入参完全一致：core 侧是同一个 operate() 用 `${operation}_workspace_path` 拼名字。
-  copy_workspace_path: {
-    source: string
-    destination: string
-    workspace_root?: string
-    change_context?: WorkspaceChangeContextArgs
-  }
-  move_workspace_path: NodeHostCommandArgs['copy_workspace_path']
 
   // ── workspace/git ── Rust: workspace_git.rs；TS: runtime/workspaceGit.ts
   get_workspace_diff: {
@@ -204,6 +147,12 @@ export interface NodeHostCommandArgs extends ModelCommandArgs, ConnectionProfile
     max_output_chars?: number
     env?: Record<string, string>
   }
+
+  start_session_service: { sessionId: string; command: string; cwd?: string; env?: Record<string, string> }
+  get_session_service: { sessionId: string; serviceId: string }
+  read_session_service_logs: { sessionId: string; serviceId: string; cursor?: number; maxChars?: number }
+  stop_session_service: { sessionId: string; serviceId: string }
+  end_service_session: { sessionId: string }
 
   // ── mcp ── Rust: mcp.rs + mcp_types.rs；TS: apps/web/src/mcp/tauriStdioConnector.ts
   //    四条都是**无 rename_all** 的命令，顶层只有一个 `input`，其内部字段全 camelCase。

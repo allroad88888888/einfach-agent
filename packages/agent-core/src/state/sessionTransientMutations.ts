@@ -266,3 +266,18 @@ export function addAlwaysAllowedTool(
     prev.includes(toolName) ? prev : [...prev, toolName],
   )
 }
+
+/** Output is a bounded temporary display tail, never a durable slot mutation. */
+export function appendToolOutput(id: string, callId: string, text: string, core: CoreInstance): void {
+  if (sessionMissing(id, core)) return
+  core.getSessionStore(id).store.setter(toolActivityAtom, (activities) =>
+    activities.map((activity) => {
+      if (activity.callId !== callId) return activity
+      let output = ((activity.output ?? '') + text).slice(-20_000)
+      // A UTF-16 tail must not begin with the detached half of an emoji.
+      const first = output.charCodeAt(0)
+      if (first >= 0xdc00 && first <= 0xdfff) output = output.slice(1)
+      return { ...activity, output, outputChars: (activity.outputChars ?? 0) + text.length }
+    }),
+  )
+}

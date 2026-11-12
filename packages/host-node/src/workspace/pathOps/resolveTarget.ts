@@ -16,10 +16,13 @@
 // 两套规则混用会导致 pathOps 悄悄接受 `../foo` / 绝对路径，或悄悄覆盖已存在的目标——都不是
 // Rust 侧的行为。
 
+import { canAccessWorkspacePath, hasFullLocalAccess } from '../common/localAccessScope'
+import { joinRequestedPath } from '../common/pathContainment'
 import { realpath } from 'node:fs/promises'
-import { dirname, isAbsolute, join, parse } from 'node:path'
+import { dirname, isAbsolute, parse } from 'node:path'
 import { errorText } from '../common/errorText'
 import { hasParentSegment, isWithinRoot } from '../common/pathContainment'
+import { resolveWorkspaceTargetPath } from '../common/resolveWorkspacePath'
 import { pathExists, symlinkExists } from '../change/pathProbe'
 
 const NOT_RELATIVE = 'path must be a non-empty workspace-relative path without `..`'
@@ -33,6 +36,7 @@ const NOT_RELATIVE = 'path must be a non-empty workspace-relative path without `
  */
 function cleanRelative(raw: string): string {
   const trimmed = raw.trim()
+  if (hasFullLocalAccess() && trimmed && !trimmed.includes('\0')) return trimmed
   if (
     trimmed === '' ||
     isAbsolute(trimmed) ||
@@ -46,14 +50,14 @@ function cleanRelative(raw: string): string {
 
 /** 等价 `resolve_source`：目标必须已存在，canonicalize 后必须落在 root 内。 */
 export async function resolveSource(root: string, raw: string): Promise<string> {
-  const joined = join(root, cleanRelative(raw))
+  const joined = joinRequestedPath(root, cleanRelative(raw))
   let canonical: string
   try {
     canonical = await realpath(joined)
   } catch (error) {
     throw new Error(`failed to resolve source \`${joined}\`: ${errorText(error)}`)
   }
-  if (!isWithinRoot(root, canonical)) {
+  if (!canAccessWorkspacePath(root, canonical)) {
     throw new Error('source escaped workspace root')
   }
   return canonical
@@ -65,10 +69,11 @@ export async function resolveSource(root: string, raw: string): Promise<string> 
  * 存在，没有真实路径可言。
  */
 export async function resolveDestination(root: string, raw: string): Promise<string> {
-  const joined = join(root, cleanRelative(raw))
+  const joined = joinRequestedPath(root, cleanRelative(raw))
   if (await symlinkExists(joined)) {
     throw new Error('destination already exists')
   }
+  if (hasFullLocalAccess()) return resolveWorkspaceTargetPath(root, cleanRelative(raw))
   await confineNearestExistingAncestor(root, joined)
   return joined
 }
@@ -83,7 +88,7 @@ async function confineNearestExistingAncestor(root: string, target: string): Pro
       } catch (error) {
         throw new Error(`failed to resolve destination parent: ${errorText(error)}`)
       }
-      if (!isWithinRoot(root, canonical)) {
+      if (!canAccessWorkspacePath(root, canonical)) {
         throw new Error('destination escaped workspace root')
       }
       return

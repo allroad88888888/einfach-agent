@@ -4,7 +4,7 @@ import type { ShellCommandResult, ToolResult } from '@einfach-agent/core/tools'
 // 必须显式告诉模型：它用 `cmd &` 起的服务并没有活下来，后续步骤不能假设端口已就绪。
 const BACKGROUND_KILLED_WARNING =
   '该命令留下的后台进程仍占用 stdout/stderr，已被强制终止。用 `cmd &` 启动的服务没有存活；' +
-  '需要长期运行的服务请改用独立的任务/服务机制，或让命令自身以脱离终端的方式守护化。'
+  '需要长期运行的服务请改用 start_service；服务由当前会话持有，会话删除或宿主关闭时停止。'
 
 const FAILURE_OUTPUT_PREVIEW_LENGTH = 600
 
@@ -79,11 +79,12 @@ function timeoutHint(result: ShellCommandResult): string | undefined {
 
 export function shellCommandToolResult(result: ShellCommandResult): ToolResult {
   if (result.timedOut) {
+    const hint = timeoutHint(result)
     return withBackgroundNotice(result, {
       ok: false,
       error: timeoutMessage(result),
       code: 'SHELL_TIMEOUT',
-      hint: timeoutHint(result),
+      ...(hint !== undefined ? { hint } : {}),
       retryable: true,
       details: result,
     })

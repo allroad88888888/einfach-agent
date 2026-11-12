@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest'
-import { screen } from '@testing-library/react'
+import { screen, act } from '@testing-library/react'
 import { createStore } from '@einfach/core'
 import { renderWithStore } from '../../test/renderWithStore'
 import { toolActivityAtom } from '@einfach-agent/core'
@@ -26,4 +26,15 @@ describe('ToolActivity', () => {
     expect(screen.getByText('save_file')).toBeInTheDocument()
     expect(screen.getByText('写入中')).toBeInTheDocument()
   })
+  it('renders live text safely and removes it when its call ends', () => {
+    const store = createStore()
+    store.setter(toolActivityAtom, [{ callId: 'a', toolName: 'shell', text: 'running' }])
+    renderWithStore(<ToolActivity />, { agentStore: store })
+    act(() => store.setter(toolActivityAtom, [{ callId: 'a', toolName: 'shell', text: 'running', output: '<script>secret</script>\nstdout\nstderr' }]))
+    expect(screen.getByLabelText('Shell 实时输出').textContent).toBe('<script>secret</script>\nstdout\nstderr')
+    expect(document.querySelector('script')).toBeNull()
+    act(() => store.setter(toolActivityAtom, []))
+    expect(screen.queryByLabelText('Shell 实时输出')).toBeNull()
+  })
+
 })

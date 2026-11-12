@@ -33,12 +33,14 @@
 // `failed to resolve target path: …` 失败了，pipeline 里那句 `path does not exist` 实际上只在
 // TOCTOU 窗口里才可能出现。Rust 侧同样如此，两句都照搬。
 
+import { hasFullLocalAccess } from '../common/localAccessScope'
 import { lstat, realpath } from 'node:fs/promises'
 import { sep } from 'node:path'
 import {
   errorText,
   hasNulByte,
   hasParentSegment,
+  isFilesystemRoot,
   isWithinRoot,
   joinRequestedPath,
   relativeToRoot,
@@ -57,6 +59,16 @@ export async function resolveDeleteTarget(root: string, requested: string): Prom
   if (hasNulByte(trimmed)) throw new Error('path cannot contain NUL bytes')
 
   const joined = joinRequestedPath(root, trimmed)
+  if (hasFullLocalAccess()) {
+    if ((await lstat(joined)).isSymbolicLink()) {
+      throw new Error('symbolic links are not supported by recoverable delete')
+    }
+    const canonical = await realpath(joined)
+    if (isFilesystemRoot(canonical) || isWithinRoot(canonical, root)) {
+      throw new Error('refusing to delete the workspace root or its ancestors')
+    }
+    return canonical
+  }
   if (hasParentSegment(joined)) throw new Error('path must not contain `..` components')
   if (!isWithinRoot(root, joined)) throw new Error(OUTSIDE_WORKSPACE)
 

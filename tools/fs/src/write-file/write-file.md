@@ -1,9 +1,9 @@
 # write_file
 
-Write a file inside the current workspace.
+Write a file. Workspace-only mode confines paths to the workspace; full local access also permits external paths.
 
 ## Parameters
-- `path` (required): workspace-relative path, or an absolute path that still resolves inside the workspace root.
+- `path` (required): workspace-relative path, or an absolute path. External paths require full local access.
 - `content` (required): the content to write. Empty string is valid.
 - `mode` (optional): `create` (default), `upsert`, `overwrite`, or `append`.
 - `encoding` (optional): `utf8` (default) or `base64`. Use `base64` for binary files.

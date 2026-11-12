@@ -108,6 +108,7 @@ export const {
   sessionTurnHistoryAtom,
   setWorkspaceRoot,
   setApprovalMode,
+  setLocalAccessMode,
   getSessionCapabilityCatalog,
   toggleDraftSessionCapability,
   lockSessionCapabilities,

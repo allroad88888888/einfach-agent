@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { newSession, removeSession } from '@einfach-agent/core/runtime/commands'
 import { defaultCore } from '@einfach-agent/core/runtime/core/coreInstance'
 import { itemsAtom } from '@einfach-agent/core/state/sessionAtoms'
-import { setAssistantStream } from '@einfach-agent/core/state/transientAtoms'
+import { setAssistantStream, toolActivityAtom } from '@einfach-agent/core/state/transientAtoms'
 import type { ConversationItem } from '@einfach-agent/core/state/core.type'
 import { subscribeCliRenderer } from './event-renderer'
 
@@ -91,4 +91,15 @@ describe('subscribeCliRenderer', () => {
 
     expect(lines).toEqual(['[tool] session_brief → ok\n', '[tool] session_brief → ok\n'])
   })
+  it('renders bounded live shell deltas only for its session and unsubscribes', () => {
+    const renderer = createRenderer()
+    const store = defaultCore.getSessionStore(renderer.sessionId).store
+    store.setter(toolActivityAtom, [{ callId: 'a', toolName: 'shell', text: 'running', output: 'first', outputChars: 5 }])
+    store.setter(toolActivityAtom, [{ callId: 'a', toolName: 'shell', text: 'running', output: 'firstsecond', outputChars: 11 }])
+    expect(renderer.lines).toEqual(['[shell a] first', '[shell a] second'])
+    renderer.dispose()
+    store.setter(toolActivityAtom, [{ callId: 'a', toolName: 'shell', text: 'running', output: 'late', outputChars: 15 }])
+    expect(renderer.lines).toHaveLength(2)
+  })
+
 })

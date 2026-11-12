@@ -229,7 +229,7 @@ export const applyPatchTool: Tool = {
   runtime: 'server', // 依赖宿主本机文件系统（ctx.applyWorkspacePatch），没有本机能力桥（hasHostBridge()）时不进 manifest（TP3）。
   replayUnsafe: true,
   skill: {
-    description: 'Apply a structured, workspace-confined file patch.',
+    description: 'Apply a structured file patch; external paths require full local access.',
     triggers: ['apply_patch', 'patch', 'edit file', '修改文件'],
     content: guide,
   },

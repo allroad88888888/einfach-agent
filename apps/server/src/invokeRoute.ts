@@ -28,6 +28,7 @@ import { replyJson } from './httpReply'
 import { hasJsonContentType } from './jsonContentType'
 import { readInvokeRouteBody } from './invokeRouteBody'
 import { resolveInvokeCommandName } from './invokeRouteCommandName'
+import { openShellInvokeStream } from './shellInvokeStream'
 import { mapInvokeRouteError } from './invokeRouteError'
 
 export { isInvokeRoutePath } from './invokeRouteCommandName'
@@ -98,22 +99,27 @@ export function createInvokeRouteHandler(options: InvokeRouteOptions): InvokeRou
     // 该继续落进 `requestRouter.ts` 的外层 500。两件事挤在同一个 try 里就分不开了。
     const controller = new AbortController()
     const onClose = () => { if (!response.writableEnded) controller.abort() }
-    if (command === 'run_shell_command') response.once('close', onClose)
+    const cancellable = command === 'run_shell_command' || command === 'start_session_service'
+    if (cancellable) response.once('close', onClose)
     if (response.destroyed) onClose()
+    const stream = command === 'run_shell_command' && request.headers.accept === 'text/event-stream'
+      ? openShellInvokeStream(response, () => controller.abort()) : undefined
     let result: unknown
     try {
-      result = await options.invoke(command, args, command === 'run_shell_command' ? { signal: controller.signal } : undefined)
+      result = await options.invoke(command, args, cancellable ? { signal: controller.signal, onShellOutput: stream?.output } : undefined)
     } catch (error) {
       if (response.destroyed) return
       const mapped = mapInvokeRouteError(error)
       // 不走 `replyApiError`：这一档还可能多带一个 `verdict`（域给出的重试裁决，见
       // invokeRouteError.ts 文件头）。没有裁决的域**键不出现**，而不是 `verdict: null`——
       // 客户端按「有没有这个键」判断要不要采信，null 会逼它多认一种形状。
-      replyJson(response, mapped.statusCode, {
+      const failure = {
         error: mapped.error,
         message: mapped.message,
         ...(mapped.verdict === undefined ? {} : { verdict: mapped.verdict }),
-      })
+      }
+      if (stream) stream.finish('error', failure)
+      else replyJson(response, mapped.statusCode, failure)
       return
     }
     finally {
@@ -123,6 +129,7 @@ export function createInvokeRouteHandler(options: InvokeRouteOptions): InvokeRou
     // `undefined` 不是合法 JSON，而部分命令确实无返回值；`null` 是它在 JSON 里最贴切的对应。
     // 除此之外原样发出——host-node 的回执有的是 snake_case 有的是 camelCase（施工须知 #12），
     // 这一层不做任何大小写转换。
-    replyJson(response, 200, result ?? null)
+    if (stream) stream.finish('result', result ?? null)
+    else replyJson(response, 200, result ?? null)
   }
 }

@@ -15,9 +15,7 @@
 //      再把缺失的那几段按字面接回去，接完**再比一次**。→ resolveExistingAncestor。
 //      这一步是 symlink 逃逸的唯一防线：`<root>/link/new.txt` 里的 `link` 指向根外时，词法上它
 //      稳稳在 root 下，只有把已存在的那段解成真实路径才看得出来。
-//   4. **没有 allowExternalPaths** —— 读取侧有这个开关（Auto 会话读根外文件靠它），写入侧一个
-//      入参都没有：读到根外只是看见，写到根外是改别人的磁盘。resolveWorkspaceTargetPath 的签名
-//      里根本没有这个参数，不是默认关掉——没有开关就没有「哪天默认打开」。
+//   4. 目录内模式保持禁闭；完整本地权限由宿主单次调用的 localAccessScope 提供。
 //
 // 【另外那半份：relative_path】
 // Rust 把「绝对路径 → 根相对斜杠路径」也放在这个文件里（P2：返回给模型和聊天记录的 `path`

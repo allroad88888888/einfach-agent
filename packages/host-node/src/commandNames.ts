@@ -70,6 +70,7 @@ export const NODE_HOST_COMMANDS_BY_DOMAIN = {
   // 用户主动触发的系统文件夹选择器；不读目录内容、不改变当前工作区，返回选择结果给前端决定是否写入。
   'workspace/dialog': ['pick_workspace_directory'],
   'shell': ['run_shell_command'],
+  'service': ['start_session_service', 'get_session_service', 'read_session_service_logs', 'stop_session_service', 'end_service_session'],
   // MCP stdio 子进程的生命周期与 JSON-RPC 转发。连上之后还有一路 emit/listen 事件，见上面
   // `events` 域的说明。
   'mcp': ['mcp_connect', 'mcp_list_tools', 'mcp_call_tool', 'mcp_disconnect'],

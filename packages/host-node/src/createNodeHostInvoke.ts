@@ -55,10 +55,12 @@
 // 目录本卡没有预先建空壳——git 不跟踪空目录，占位文件只是噪音。上面这棵树就是规格。
 
 import type { HostInvoke } from '@einfach-agent/core'
+import { withLocalAccessScope } from './workspace/common/localAccessScope'
 import { dirname } from 'node:path'
 import { isNodeHostCommandName } from './commandNames'
 import { createConfigRoutes } from './config'
 import { createShellRoutes } from './shell'
+import { createServiceRoutes } from './service'
 import { createChangeRoutes } from './workspace/change'
 import { createDeleteRoutes } from './workspace/delete'
 import { createWorkspaceDialogRoutes } from './workspace/dialog'
@@ -164,6 +166,7 @@ function createRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
     ...createTaskRoutes(options),
     ...createWorkspaceDialogRoutes(options),
     ...createShellRoutes(options),
+    ...createServiceRoutes(options),
     ...createMcpRoutes(options),
     ...createModelRoutes(options),
     ...createSqliteRoutes(options),
@@ -193,7 +196,7 @@ export function createNodeHostInvoke(options: NodeHostInvokeOptions = {}): HostI
   const invoke: HostInvoke = async <T>(
     command: string,
     args?: Record<string, unknown>,
-    invokeOptions?: { signal?: AbortSignal },
+    invokeOptions?: { signal?: AbortSignal; onShellOutput?: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void },
   ): Promise<T> => {
     // 先判名字再查表：直接查表时「没实现」和「名字不存在」会塌成同一个 `undefined`。
     if (!isNodeHostCommandName(command)) {
@@ -205,7 +208,7 @@ export function createNodeHostInvoke(options: NodeHostInvokeOptions = {}): HostI
     // 让每个 handler 各写一遍空值判断只会漏。
     // 断言到 T 是这个签名固有的：类型实参只是调用点的编译期承诺，运行时形状由 core 侧紧跟着
     // 的 normalizeResult 认——本层不假装校验过。
-    return (await handler(args ?? {}, invokeOptions)) as T
+    return (await withLocalAccessScope(command, args ?? {}, () => handler(args ?? {}, invokeOptions))) as T
   }
 
   return invoke

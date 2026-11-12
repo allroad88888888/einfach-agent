@@ -8,6 +8,7 @@ import {
 export interface WorkspaceDeleteInput {
   path: string
   recursive?: boolean
+  fullLocalAccess?: boolean
   workspaceRoot?: string
   /** Runtime-only audit metadata; tool arguments cannot provide this. */
   changeContext?: WorkspaceChangeContext
@@ -47,6 +48,7 @@ export async function deleteWorkspacePath(input: WorkspaceDeleteInput): Promise<
       path: input.path,
       recursive: input.recursive,
       workspace_root: input.workspaceRoot,
+    ...(input.fullLocalAccess ? { full_local_access: true } : {}),
       change_context: input.changeContext,
     })
     if (!isRecord(raw)) return failed(input, 'delete_workspace_path returned an invalid response')

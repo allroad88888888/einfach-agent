@@ -1,0 +1,28 @@
+/* Use the progress surface palette; the output remains a compact readable pane. */
+.agentnew-shell-output {
+  box-sizing: border-box;
+  max-height: 180px;
+  min-width: 0;
+  max-width: 100%;
+  margin: 4px 0 0;
+  padding: 10px;
+  overflow: auto;
+  border: 1px solid #cdd2f5;
+  border-radius: 8px;
+  background: #f7f8ff;
+  color: #3a4458;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.agentnew-shell-output:focus-visible {
+  outline: 2px solid #5b5bd6;
+  outline-offset: 2px;
+}
+
+.agentnew-shell-output-notice {
+  display: block;
+  margin: 4px 0;
+  color: #3a4458;
+  font-size: 12px;
+}

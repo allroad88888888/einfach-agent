@@ -4,11 +4,8 @@
 // / `kill_process_group`。stdout/stderr 的**读**不在本文件——那是 readWorkspaceTaskOutput.ts
 // 的事，本文件只管进程生命周期。
 //
-// 【与 Rust 的一处刻意不同：等待机制】
-// Rust 用一个 10ms 轮询循环（`try_wait` + `thread::sleep`）自己实现「等到超时或退出」。
-// Node 没有同步、非阻塞的 waitpid 可用，但有对应的事件——子进程的 `exit` 事件——所以这里改用
-// `setTimeout` 竞速 `child.once('exit', ...)`，语义等价（谁先到算谁），且不占一个轮询线程。
-// 这不是抄近道，是 Node 侧更自然的表达同一件事的方式。
+// 等待采用 Node exit 事件。timeoutMs 现在表示输出静默窗口，两路输出都会刷新它；
+// 总执行时长由独立的 1800 秒定时器限制。此处仅观察输出，文本捕获仍由输出读取器负责。
 //
 // 【与 Rust 的另一处刻意简化】
 // Rust 的超时分支区分「kill 失败但发现进程其实已经自己退出（判定为**未超时**，取当时的退出码）」
@@ -54,50 +51,81 @@ export function spawnTask(task: TaskSpec, cwd: string): Promise<ChildProcess> {
 export interface WaitForChildResult {
   exitCode: number
   timedOut: boolean
+  timeoutReason?: 'idle' | 'total'
 }
 
-/**
- * 等子进程退出，超过 `timeoutMs` 就杀掉它（连同它的进程组）并把结果标成 `timedOut: true`。
- *
- * 退出码规则对齐 Rust 的 `status.code().unwrap_or(...)`：正常退出但拿不到 code（被信号杀死）时，
- * 未超时用 `1`，超时（我们主动 SIGKILL 的）用 `-1`——同一个「拿不到 code」，含义按是谁杀的来分。
- */
-export function waitForChild(child: ChildProcess, timeoutMs: number): Promise<WaitForChildResult> {
+/** 静默窗口由两路原始输出刷新；总时长固定兜底。保留 task 自己的进程组终止契约。 */
+export function waitForChild(
+  child: ChildProcess,
+  timeoutMs: number,
+  totalMs = 1_800_000,
+): Promise<WaitForChildResult> {
+  if ((child.exitCode !== null || child.signalCode !== null)
+    && (!child.stdout || child.stdout.closed) && (!child.stderr || child.stderr.closed)) {
+    return Promise.resolve({ exitCode: child.exitCode ?? 1, timedOut: false })
+  }
   return new Promise((resolve, reject) => {
     let settled = false
-    let timedOut = false
+    let timeoutReason: 'idle' | 'total' | undefined
 
-    function settle(result: WaitForChildResult): void {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      resolve(result)
+    function cleanup(): void {
+      clearTimeout(idleTimer)
+      clearTimeout(totalTimer)
+      child.stdout?.off('data', touch)
+      child.stderr?.off('data', touch)
+      child.off('close', onClose)
+      child.off('error', onError)
     }
 
-    function fail(message: string): void {
+    function onClose(code: number | null): void {
       if (settled) return
       settled = true
-      clearTimeout(timer)
-      reject(new Error(message))
+      cleanup()
+      resolve({
+        exitCode: code ?? (timeoutReason ? -1 : 1),
+        timedOut: timeoutReason !== undefined,
+        ...(timeoutReason ? { timeoutReason } : {}),
+      })
     }
 
-    const timer = setTimeout(() => {
-      timedOut = true
-      const killed = killProcessGroup(child) || child.kill('SIGKILL')
-      if (!killed && child.exitCode === null && child.signalCode === null) {
-        fail('failed to kill timed out task process: process refused SIGKILL')
+    function onError(error: Error): void {
+      if (settled) return
+      settled = true
+      cleanup()
+      child.stdout?.destroy()
+      child.stderr?.destroy()
+      reject(new Error(`failed to poll task process: ${errorText(error)}`))
+    }
+
+    function expire(reason: 'idle' | 'total'): void {
+      if (settled || timeoutReason) return
+      timeoutReason = reason
+      clearTimeout(idleTimer)
+      clearTimeout(totalTimer)
+      try {
+        const killed = killProcessGroup(child) || child.kill('SIGKILL')
+        if (!killed) {
+          onError(new Error('failed to kill timed out task process: process refused SIGKILL'))
+        }
+      } catch (error) {
+        onError(error instanceof Error ? error : new Error(errorText(error)))
       }
-      // 杀成功（或已经在退出路上）时不在这里 resolve——交给下面的 'exit' 监听器收尾，
-      // 等价 Rust 杀成功后阻塞 `child.wait()` 拿真实退出状态。
-    }, timeoutMs)
+      // 等 close 收齐进程状态与管道 EOF，不在发送信号后提前 resolve。
+    }
 
-    child.once('exit', (code) => {
-      settle({ exitCode: code ?? (timedOut ? -1 : 1), timedOut })
-    })
+    function touch(chunk: Buffer | string): void {
+      if (!settled && !timeoutReason && chunk.length > 0) idleTimer.refresh()
+    }
 
-    child.once('error', (error) => {
-      fail(`failed to poll task process: ${errorText(error)}`)
-    })
+    const idleTimer = setTimeout(() => expire('idle'), timeoutMs)
+    const totalTimer = setTimeout(() => expire('total'), totalMs)
+    // exit 仅表示直接子进程退出；close 才表示继承管道的后代也已释放输出。
+    // 直到 close 都保留双超时，否则父进程先退出会让输出 drain 永久悬挂。
+    child.once('close', onClose)
+    child.once('error', onError)
+    // 监听的是截断之前的数据：即使保留文本已满，活性仍持续刷新。
+    child.stdout?.on('data', touch)
+    child.stderr?.on('data', touch)
   })
 }
 

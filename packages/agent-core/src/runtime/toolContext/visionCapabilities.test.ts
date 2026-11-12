@@ -39,7 +39,12 @@ describe('ToolContext viewImage vision capability', () => {
     expect(ctx.viewImage).toBeUndefined()
   })
 
-  it('只向 app port 提供 signal 与受管图片读取，并注入 workspace 权限', async () => {
+  it.each([
+    ['auto', 'workspace'],
+    ['confirm', 'workspace'],
+    ['auto', 'full'],
+    ['confirm', 'full'],
+  ] as const)('只向 app port 提供受管图片读取，权限独立于确认策略（%s / %s）', async (approvalMode, accessMode) => {
     imageBridge.readWorkspaceImage.mockResolvedValue({ ok: true, data: imageResult() })
     const port = vi.fn(async (_input, capabilityContext) => {
       expect(Object.keys(capabilityContext).sort()).toEqual([
@@ -47,15 +52,15 @@ describe('ToolContext viewImage vision capability', () => {
       ])
       const image = await capabilityContext.readWorkspaceImage({
         path: '/outside/screen.png',
-        allowExternalPaths: false,
+        allowExternalPaths: accessMode !== 'full',
       })
       return viewedImage(image.filename)
     })
     const core = createCoreInstance({ config: { viewImage: port } })
-    seedSession('vision-auto', '/workspace', 'auto', core)
+    seedSession('vision-access', '/workspace', approvalMode, core, accessMode)
     const signal = new AbortController().signal
     const ctx = buildToolContext({
-      sessionId: 'vision-auto', runId: 'r', signal, callId: 'call', toolName: 'view_image', core,
+      sessionId: 'vision-access', runId: 'r', signal, callId: 'call', toolName: 'view_image', core,
     })
 
     await expect(ctx.viewImage!({ path: '/outside/screen.png', detail: 'low' }))
@@ -69,7 +74,8 @@ describe('ToolContext viewImage vision capability', () => {
       }),
     )
     expect(imageBridge.readWorkspaceImage).toHaveBeenCalledWith({
-      path: '/outside/screen.png', workspaceRoot: '/workspace', allowExternalPaths: true,
+      path: '/outside/screen.png', workspaceRoot: '/workspace',
+      ...(accessMode === 'full' ? { allowExternalPaths: true, fullLocalAccess: true } : {}),
     })
   })
 

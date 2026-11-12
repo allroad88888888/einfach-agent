@@ -8,6 +8,7 @@ import {
 export interface WorkspacePathOperationInput {
   source: string
   destination: string
+  fullLocalAccess?: boolean
   workspaceRoot?: string
   changeContext?: WorkspaceChangeContext
 }
@@ -45,6 +46,7 @@ async function operate(
       source: input.source,
       destination: input.destination,
       workspace_root: input.workspaceRoot,
+    ...(input.fullLocalAccess ? { full_local_access: true } : {}),
       change_context: input.changeContext,
     })
     if (!isRecord(raw)) return failed(`${operation}_workspace_path returned an invalid response`)

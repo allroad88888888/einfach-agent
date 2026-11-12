@@ -129,9 +129,9 @@ describe('assembleCliRuntime 的命令桥', () => {
 
     // MCP 域的管理器随命令路由表一起创建，关停钩子在那一刻登记——所以"装配完还没登记"
     // 就等于这条链断了（`bootstrap.ts` 拿到的钩子将永远不会关掉任何 MCP 子进程）。
-    expect(registered).toHaveLength(2)
+    expect(registered).toHaveLength(3)
     // 没有会话时它是个平凡的 resolve，但必须真的能调：本进程的信号处理就直接调它。
-    await expect(Promise.all(registered.map(async (dispose) => dispose()))).resolves.toEqual([undefined, undefined])
+    await expect(Promise.all(registered.map(async (dispose) => dispose()))).resolves.toEqual([undefined, undefined, undefined])
   })
 
   it('reconciles before root persistence, a real model loop, and ordered persistence flush', async () => {
@@ -151,7 +151,7 @@ describe('assembleCliRuntime 的命令桥', () => {
     await startModelRun(sessionId, 'runtime test', {
       core: defaultCore, apiKey: 'test-key', signal: new AbortController().signal,
     }, async () => { order.push('model-loop') })
-    expect(registered).toHaveLength(2)
+    expect(registered).toHaveLength(3)
     await registered[0]!()
     flushRecovery.mockRestore()
 

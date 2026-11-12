@@ -18,6 +18,7 @@ export function seedSession(
   workspaceRoot?: string,
   toolApprovalMode?: 'confirm' | 'auto',
   core?: CoreInstance,
+  localAccessMode?: 'workspace' | 'full',
 ): void {
   const store = core?.rootStore ?? rootStore
   store.setter(sessionsAtom, (prev) => ({
@@ -30,6 +31,7 @@ export function seedSession(
       updatedAt: 0,
       workspaceRoot,
       toolApprovalMode,
+      localAccessMode,
     },
   }))
   setRun(id, { runId: 'r', status: 'running' }, core)

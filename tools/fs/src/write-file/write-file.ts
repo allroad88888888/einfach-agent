@@ -127,7 +127,7 @@ export const writeFileTool: Tool = {
   runtime: 'server', // 依赖宿主本机文件系统（ctx.writeWorkspaceFile），没有本机能力桥（hasHostBridge()）时不进 manifest（TP3）。
   replayUnsafe: true,
   skill: {
-    description: '在当前 workspace 内写入文件（文本或 base64 二进制）。',
+    description: '写入文件（文本或 base64 二进制）；目录外路径需开启本地完整权限。',
     triggers: ['write', 'file', 'workspace', '写文件', '生成文件', '二进制'],
     content: guide,
   },

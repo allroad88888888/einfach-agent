@@ -10,7 +10,7 @@ function createPathOperationTool(operation: Operation): Tool {
     runtime: 'server',
     replayUnsafe: true,
     skill: {
-      description: `${operation === 'copy' ? '复制' : '移动'} workspace 内文件或目录，并返回可撤回的 changeSet。`,
+      description: `${operation === 'copy' ? '复制' : '移动'} 文件或目录（目录外路径需开启本地完整权限），并返回可撤回的 changeSet。`,
       triggers: [operation, name, operation === 'copy' ? '复制路径' : '移动路径'],
       content: guide,
     },

@@ -88,4 +88,11 @@ describe('recoveryProjection boundaries', () => {
     expect(snapshot).not.toHaveProperty('continuation')
     expect(snapshot.values.subagentContinuations).toEqual(first.getter(subagentContinuationsAtom))
   })
+  it('never captures live shell content into the recovery snapshot', () => {
+    const source = createStore()
+    seedDurableState(source)
+    source.setter(toolActivityAtom, [{ callId: 'private', toolName: 'shell', text: 'running', output: 'private-output-never-save', outputChars: 25 }])
+    expect(JSON.stringify(capture(source))).not.toContain('private-output-never-save')
+  })
+
 })

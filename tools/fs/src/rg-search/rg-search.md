@@ -1,11 +1,11 @@
 # rg_search
 
-Use ripgrep (`rg`) to search source code and text files. Confirm mode is confined to the current workspace; Auto mode may also search external paths.
+Use ripgrep (`rg`) to search source code and text files. Workspace-only mode is confined to the current workspace; Full local access mode may also search external paths.
 
 ## Parameters
 
 - `query` (required): search text or regex pattern.
-- `path` (optional): file or directory. Defaults to the workspace root. Auto mode accepts absolute paths and paths containing `..`.
+- `path` (optional): file or directory. Defaults to the workspace root. Full local access mode accepts absolute paths and paths containing `..`.
 - `regex` (optional): `false` by default. When false, `query` is treated as a literal string.
 - `caseSensitive` (optional): `true` by default, matching ripgrep's normal code-search behavior.
 - `globs` (optional): include/exclude glob patterns, such as `*.ts`, `src/**`, or `!dist/**`.
@@ -22,6 +22,6 @@ Use ripgrep (`rg`) to search source code and text files. Confirm mode is confine
 ## Constraints
 
 - This tool is read-only.
-- Confirm mode rejects paths outside the workspace root. Auto mode allows external paths and returns external matches with absolute paths.
+- Workspace-only mode rejects paths outside the workspace root. Full local access mode allows external paths and returns external matches with absolute paths.
 - It respects ripgrep defaults, including `.gitignore`, unless a glob explicitly narrows or excludes files.
 - If ripgrep is not installed, the result is a structured error; do not try to emulate this with shell redirection.

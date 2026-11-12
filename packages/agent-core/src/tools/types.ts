@@ -110,6 +110,7 @@ export type WorkspaceTaskKind = 'test' | 'build' | 'lint' | 'typecheck' | 'cargo
 
 export interface WorkspaceTaskInput {
   kind: WorkspaceTaskKind
+  /** Longest output silence; default 120s, capped at 600s. Total duration is capped at 1800s. */
   timeoutMs?: number
   maxOutputChars?: number
   workspaceRoot?: string
@@ -122,6 +123,7 @@ export interface WorkspaceTaskResult {
   stderr: string
   durationMs: number
   timedOut: boolean
+  timeoutReason?: 'idle' | 'total'
   truncated: boolean
   command: string[]
   cwd: string

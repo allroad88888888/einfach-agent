@@ -126,4 +126,16 @@ describe('run_task tool', () => {
       details: taskResult,
     })
   })
+  it.each(['idle', 'total', undefined] as const)('preserves timeout reason %s and legacy errors', async (timeoutReason) => {
+    const taskResult: WorkspaceTaskResult = {
+      ok: false, kind: 'test', exitCode: -1, stdout: '', stderr: '',
+      durationMs: 550, timedOut: true, truncated: false, command: [], cwd: '/workspace',
+      ...(timeoutReason ? { timeoutReason } : {}),
+    }
+    expect(await runTaskTool.execute({ kind: 'test' }, makeCtx(async () => taskResult))).toMatchObject({
+      ok: false, code: 'TASK_TIMEOUT', retryable: true, details: taskResult,
+      error: `run_task timed out${timeoutReason ? ` (${timeoutReason})` : ''} after 550ms`,
+    })
+  })
+
 })

@@ -41,6 +41,7 @@ export interface WorkspaceWriteInput {
   /** Serialize this target across app processes. Used by the subagent archive. */
   exclusivePathLock?: boolean
   /** 可选显式 workspace root（P1）；不传则 Rust 侧走 git root 兜底。 */
+  fullLocalAccess?: boolean
   workspaceRoot?: string
   /** Runtime-only audit metadata; tool arguments cannot provide this. */
   changeContext?: WorkspaceChangeContext
@@ -82,6 +83,7 @@ type TauriWorkspaceWriteInput = {
   create_dirs?: boolean
   max_bytes?: number
   exclusive_path_lock?: boolean
+  full_local_access?: boolean
   workspace_root?: string
   change_context?: WorkspaceChangeContext
   diagnostic_operation_id?: string
@@ -104,6 +106,7 @@ function toTauriInput(
     max_bytes: input.maxBytes,
     exclusive_path_lock: input.exclusivePathLock,
     workspace_root: input.workspaceRoot,
+    ...(input.fullLocalAccess ? { full_local_access: true } : {}),
     change_context: input.changeContext,
     diagnostic_operation_id: diagnosticOperationId,
   }

@@ -34,6 +34,7 @@ export interface WorkspacePatchInput {
   operations: WorkspacePatchOperation[]
   dryRun?: boolean
   /** 可选显式 workspace root（P1）；不传则 Rust 侧走 git root 兜底。 */
+  fullLocalAccess?: boolean
   workspaceRoot?: string
   /** Runtime-only audit metadata; tool arguments cannot provide this. */
   changeContext?: WorkspaceChangeContext
@@ -68,6 +69,7 @@ export interface WorkspacePatchResult {
 type TauriWorkspacePatchInput = {
   operations: WorkspacePatchOperation[]
   dry_run?: boolean
+  full_local_access?: boolean
   workspace_root?: string
   change_context?: WorkspaceChangeContext
   diagnostic_operation_id?: string
@@ -81,6 +83,7 @@ function toTauriInput(
     operations: input.operations,
     dry_run: input.dryRun,
     workspace_root: input.workspaceRoot,
+    ...(input.fullLocalAccess ? { full_local_access: true } : {}),
     change_context: input.changeContext,
     diagnostic_operation_id: diagnosticOperationId,
   }

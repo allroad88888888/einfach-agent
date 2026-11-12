@@ -2,7 +2,9 @@ import { DEFAULT_MODEL_SETTINGS, userMessageLabel, type UserMessageContent } fro
 import { activeSessionIdAtom, activeWorkspaceIdAtom, expandedWorkspaceIdsAtom, sessionsAtom, workspacesAtom } from '../../state/rootStore'
 import type { ModelSettings, SessionMeta } from '../../state/core.type'
 import type { CoreInstance } from '../core/coreInstance'
+import { runAtom } from '../../state/sessionAtoms'
 import { newId } from '../newId'
+import { endSessionServices } from '../sessionService'
 import { createWorkspaceMeta } from './workspaceCommands'
 import { cancelSessionSubmissions } from '../sessionSubmissionGate'
 import {
@@ -110,6 +112,7 @@ export function createSessionCommands(core: CoreInstance) {
   }
 
   function removeSession(id: string): void {
+    void endSessionServices(id).catch(error => console.error('Session service cleanup failed; host shutdown will retry', error))
     const meta = core.rootStore.getter(sessionsAtom)[id]
     const before = meta ? captureUserContentReachability(core, id) : undefined
     cancelSessionSubmissions(core, id)
@@ -151,7 +154,27 @@ export function createSessionCommands(core: CoreInstance) {
     if (changed) saveSessions()
   }
 
+  function setLocalAccessMode(mode: 'workspace' | 'full'): void {
+    if (mode !== 'workspace' && mode !== 'full') return
+    const id = core.rootStore.getter(activeSessionIdAtom)
+    if (!id) return
+    const run = core.getSessionStore(id).store.getter(runAtom)
+    if (run && !['idle', 'done', 'stopped', 'error'].includes(run.status)) return
+    let changed = false
+    core.rootStore.setter(sessionsAtom, (prev) => {
+      const meta = prev[id]
+      if (!meta || (meta.localAccessMode ?? 'workspace') === mode) return prev
+      changed = true
+      return { ...prev, [id]: { ...meta, localAccessMode: mode, updatedAt: Date.now() } }
+    })
+    if (changed) {
+      saveSessions()
+      void core.persistence.persistRecovery(id, 'local_access_changed')
+    }
+  }
+
   return {
+    setLocalAccessMode,
     renameSession,
     newSession,
     selectSession,
