@@ -16,9 +16,10 @@
 // Rust 侧那行注释说得很清楚：commit 中途失败/断电不能留下截断文件，否则**回滚面对的已经是一个
 // 坏文件了**——`initial` 还原得回去的前提是那个文件要么是旧的、要么是新的，没有第三种。
 
+import { canAccessWorkspacePath } from '../common/localAccessScope'
 import { chmod, mkdir, readFile, realpath, stat, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
-import { atomicWrite, errorText, isWithinRoot } from '../common'
+import { atomicWrite, errorText } from '../common'
 import { pathExists } from '../common/pathExists'
 import { MAX_FILE_BYTES } from './limits'
 import { ensureParentInsideRoot } from './path'
@@ -102,7 +103,7 @@ export async function writeTextFile(root: string, path: string, content: string)
   } catch (error) {
     throw new Error(`failed to resolve parent directory \`${parent}\`: ${errorText(error)}`)
   }
-  if (!isWithinRoot(root, canonicalParent)) {
+  if (!canAccessWorkspacePath(root, canonicalParent)) {
     throw new Error('parent directory is outside the workspace root')
   }
 

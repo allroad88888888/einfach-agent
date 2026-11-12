@@ -17,6 +17,7 @@ export function projectStaticSessionMeta(session: SessionMeta): SessionMeta {
     ...(session.workspaceId === undefined ? {} : { workspaceId: session.workspaceId }),
     ...(session.workspaceRoot === undefined ? {} : { workspaceRoot: session.workspaceRoot }),
     ...(session.toolApprovalMode === undefined ? {} : { toolApprovalMode: session.toolApprovalMode }),
+    ...(session.localAccessMode === undefined ? {} : { localAccessMode: session.localAccessMode }),
     ...(session.loadedTools === undefined ? {} : { loadedTools: session.loadedTools }),
     ...(session.capabilityPolicy === undefined ? {} : { capabilityPolicy: session.capabilityPolicy }),
     ...(session.agentProfile === undefined ? {} : { agentProfile: session.agentProfile }),

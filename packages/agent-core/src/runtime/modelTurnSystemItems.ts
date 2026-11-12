@@ -32,6 +32,7 @@ export function buildSystemItem(): SystemItem {
 export interface EnvironmentItemInput {
   /** 该会话绑定的 workspace 根目录（已归一化）；未绑定时为 undefined。 */
   workspaceRoot?: string
+  localAccessMode?: 'workspace' | 'full'
   /**
    * 宿主有没有本机能力——文件 / shell / Git 工具能不能真的执行。
    *
@@ -70,6 +71,9 @@ export function buildEnvironmentItem(input: EnvironmentItemInput): SystemItem {
     // 「宿主机器」这个说法同时交代了一件 server 宿主下必须交代的事——执行工具的那台机器不一定
     // 是用户面前这台，下面的工作区路径与平台说的都是前者。
     lines.push(`- 本机能力：可用（文件、shell 与 Git 工具在宿主机器上执行）；宿主机器平台 ${input.platform}。`)
+    lines.push(input.localAccessMode === 'full'
+      ? '- 本地权限：本地完整权限。文件工具可读写工作区外路径；相对路径仍以工作区为基准，操作仍受宿主系统权限限制。'
+      : '- 本地权限：目录内。文件工具仅可访问当前工作区；需要外部文件时，请用户切换到“本地完整权限”，不要借助 shell 绕过此范围。')
     // 宿主可以是三种 shell 都不支持的系统（FreeBSD / AIX…）：文件能力照常，shell 一定跑不了。
     // 不说这一句的话，模型只会看到一个陌生的平台名，然后在三个 shell 工具里随便挑一个反复撞
     // platform mismatch——那句错误里没有任何「本宿主根本没有 shell」的信息。

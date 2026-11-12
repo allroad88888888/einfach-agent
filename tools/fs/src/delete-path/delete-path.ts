@@ -25,7 +25,7 @@ export const deletePathTool: Tool = {
   runtime: 'server',
   replayUnsafe: true,
   skill: {
-    description: '可撤回地删除当前 workspace 内的文件或目录；删除时应优先使用本工具而不是 shell rm。',
+    description: '可撤回地删除文件或目录（目录外路径需开启本地完整权限）；删除时应优先使用本工具而不是 shell rm。',
     triggers: ['delete', 'remove', 'rm', '删除文件', '删除目录', '撤回删除'],
     content: guide,
   },

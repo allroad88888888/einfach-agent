@@ -107,11 +107,6 @@ export function buildToolContext(opts: {
 
   // S4-A：本会话 workspace root（ctx 构造期解析一次；一次 run 内稳定）。
   const workspaceRoot = resolveWorkspaceRoot(sessionId, core)
-  // Auto 的跨 workspace 只读权限只从宿主会话状态派生。它不会进入工具 schema，且
-  // withWorkspaceReadAccess 会覆盖/移除调用方同名字段，避免模型伪造 runtime-only 权限。
-  const allowExternalReadPaths =
-    session?.toolApprovalMode === 'auto'
-
   const guards = createStaleGuards({ signal, currentRun: currentRunGuard })
   const progress = createProgressReporter({
     sessionId,
@@ -126,7 +121,7 @@ export function buildToolContext(opts: {
     runId,
     callId,
     workspaceRoot,
-    allowExternalReadPaths,
+    fullLocalAccess: session?.localAccessMode === 'full',
   })
   const planCapabilities = createPlanCapabilities({ sessionId, core, guards })
   const skillsCapabilities = createSkillsCapabilities({

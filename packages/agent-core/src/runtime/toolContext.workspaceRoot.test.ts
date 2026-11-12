@@ -245,14 +245,14 @@ describe('toolContext workspaceRoot 透传（S4-A）', () => {
     expect(vi.mocked(runShellCommand).mock.calls[0][0].cwd).toBeUndefined()
   })
 
-  it('调用方已显式带 workspaceRoot：尊重调用方、不被会话 root 覆盖', async () => {
+  it('调用方已显式带 workspaceRoot：使用会话 root，拒绝调用方替换访问边界', async () => {
     seedSession('s4', '/session/root')
     await ctxFor('s4').readWorkspaceFile!({ path: 'a.txt', workspaceRoot: '/caller/root' })
-    expect(vi.mocked(readWorkspaceFile).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/caller/root' })
+    expect(vi.mocked(readWorkspaceFile).mock.calls[0][0]).toMatchObject({ workspaceRoot: '/session/root' })
   })
 
-  it('Auto 从会话状态为四个只读桥注入外部路径权限', async () => {
-    seedSession('s-auto', '/session/root', 'auto')
+  it('完整本地权限从会话状态为四个只读桥注入外部路径权限', async () => {
+    seedSession('s-auto', '/session/root', 'confirm', undefined, 'full')
     const ctx = ctxFor('s-auto')
 
     await ctx.readWorkspaceFile!({ path: '/other/a.txt' })

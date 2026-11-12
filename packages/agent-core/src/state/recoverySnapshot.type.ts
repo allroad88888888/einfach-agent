@@ -39,6 +39,7 @@ export type RecoverySessionMetaV1 = Pick<
   | 'workspaceId'
   | 'workspaceRoot'
   | 'toolApprovalMode'
+  | 'localAccessMode'
   | 'loadedTools'
   | 'capabilityPolicy'
 >

@@ -56,7 +56,7 @@ export const searchFilesTool: Tool = {
   execution: { mode: 'parallel', effectKeys: ['workspace:read'] },
   runtime: 'server', // 依赖宿主本机文件系统（ctx.searchWorkspaceFiles），没有本机能力桥（hasHostBridge()）时不进 manifest（TP3）。
   skill: {
-    description: '按普通字符串搜索文本文件；Auto 模式也可搜索 workspace 外路径。',
+    description: '按普通字符串搜索文本文件；本地完整权限模式也可搜索 workspace 外路径。',
     triggers: ['search files', '搜索文件', '查找文本', 'grep'],
     content: guide,
   },

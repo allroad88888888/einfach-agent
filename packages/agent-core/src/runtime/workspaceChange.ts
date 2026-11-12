@@ -17,6 +17,7 @@ export interface WorkspaceRevertInput {
   /** Change sets in execution order; rollback applies them in reverse order atomically. */
   changeSetIds?: string[]
   dryRun?: boolean
+  fullLocalAccess?: boolean
   workspaceRoot?: string
 }
 
@@ -62,6 +63,7 @@ export async function revertWorkspaceChange(
       change_set_ids: input.changeSetIds,
       dry_run: input.dryRun,
       workspace_root: input.workspaceRoot,
+    ...(input.fullLocalAccess ? { full_local_access: true } : {}),
     })
     if (!isRecord(raw)) return failed('revert_workspace_change returned an invalid response')
     const conflicts = Array.isArray(raw.conflicts)

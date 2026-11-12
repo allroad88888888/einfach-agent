@@ -19,7 +19,7 @@ const runStatuses = new Set(['idle', 'running', 'awaiting_tool', 'waiting_user',
 const nodeTypes = new Set(['agent-batch', 'agent', 'model', 'tool', 'plan-stage', 'evaluator', 'join'])
 const nodeStatuses = new Set(['queued', 'ready', 'running', 'waiting-children', 'waiting-user', 'interrupted', 'succeeded', 'failed', 'cancelled'])
 const childStates = new Set<SubagentContinuationState>(['queued', 'interrupted', 'waiting_user', 'waiting_confirmation', 'waiting_plan_approval', 'outcome_unknown'])
-const sessionKeys = new Set(['id', 'title', 'settings', 'createdAt', 'updatedAt', 'workspaceId', 'workspaceRoot', 'toolApprovalMode', 'loadedTools', 'capabilityPolicy', 'agentProfile'])
+const sessionKeys = new Set(['id', 'title', 'settings', 'createdAt', 'updatedAt', 'workspaceId', 'workspaceRoot', 'toolApprovalMode', 'localAccessMode', 'loadedTools', 'capabilityPolicy', 'agentProfile'])
 const pendingArtifactKeys = new Set(['id', 'filename', 'content', 'mimeType'])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -85,6 +85,7 @@ function isSession(value: unknown, sessionId: string): boolean {
     && isNatural(value.createdAt) && isNatural(value.updatedAt)
     && optional(value, 'workspaceId', isText) && optional(value, 'workspaceRoot', isText)
     && optional(value, 'toolApprovalMode', (entry) => entry === 'confirm' || entry === 'auto')
+    && optional(value, 'localAccessMode', (entry) => entry === 'workspace' || entry === 'full')
     && optional(value, 'loadedTools', isStringArray)
     && optional(value, 'capabilityPolicy', isSessionCapabilityPolicy)
     && optional(value, 'agentProfile', isAgentProfileSnapshot)

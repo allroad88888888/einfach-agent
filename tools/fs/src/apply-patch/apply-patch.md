@@ -1,6 +1,6 @@
 # apply_patch
 
-Apply structured text edits inside the current workspace, as one transaction.
+Apply structured text edits as one transaction. External paths require full local access.
 
 ## When to use this instead of write_file
 - **Editing part of a file** — `replace` changes a region without resending the whole file.
@@ -25,7 +25,7 @@ Input:
 Rules:
 
 - `operations` is required and must be an array.
-- Paths must stay inside the workspace root.
+- Paths must stay inside the workspace root unless full local access is enabled.
 - Files are UTF-8 text only and are limited to 1 MB. For binary content, use `write_file` with `encoding: "base64"`.
 - `replace.oldText` must match, and `expectedReplacements` defaults to exactly one replacement.
 - The patch is atomic at validation time: if any operation is rejected, no operation is written.

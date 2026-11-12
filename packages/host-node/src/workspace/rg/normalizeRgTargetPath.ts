@@ -15,7 +15,7 @@
 //      结果，不是独立行为）。
 //
 // 传给 rg 的最终字符串会作为它的 cwd 内子路径参数（cwd = root）：根内是相对路径，根外
-// （仅 Auto 会话 allowExternalPaths=true 时才可能）是绝对路径——rg 对两种都能正确处理。
+// （仅 完整本地权限会话 allowExternalPaths=true 时才可能）是绝对路径——rg 对两种都能正确处理。
 //
 // 未传或 trim 后为空 → `"."`，且**不碰文件系统**（Rust：`let Some(path) = path else { return
 // Ok(".") }`，`trimmed.is_empty()` 同样直接返回，不会等到 canonicalize 才发现「其实就是根」）。

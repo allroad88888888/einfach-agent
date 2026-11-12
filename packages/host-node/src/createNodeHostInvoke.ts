@@ -55,6 +55,7 @@
 // 目录本卡没有预先建空壳——git 不跟踪空目录，占位文件只是噪音。上面这棵树就是规格。
 
 import type { HostInvoke } from '@einfach-agent/core'
+import { withLocalAccessScope } from './workspace/common/localAccessScope'
 import { dirname } from 'node:path'
 import { isNodeHostCommandName } from './commandNames'
 import { createConfigRoutes } from './config'
@@ -207,7 +208,7 @@ export function createNodeHostInvoke(options: NodeHostInvokeOptions = {}): HostI
     // 让每个 handler 各写一遍空值判断只会漏。
     // 断言到 T 是这个签名固有的：类型实参只是调用点的编译期承诺，运行时形状由 core 侧紧跟着
     // 的 normalizeResult 认——本层不假装校验过。
-    return (await handler(args ?? {}, invokeOptions)) as T
+    return (await withLocalAccessScope(command, args ?? {}, () => handler(args ?? {}, invokeOptions))) as T
   }
 
   return invoke

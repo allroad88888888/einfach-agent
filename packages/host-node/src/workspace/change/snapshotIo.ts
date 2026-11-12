@@ -31,7 +31,7 @@
 import { mkdir, readFile, realpath, unlink, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { errorText } from '../common/errorText'
-import { isWithinRoot } from '../common/pathContainment'
+import { canAccessWorkspacePath } from '../common/localAccessScope'
 import { fileSnapshotFromContent } from './fileSnapshot'
 import { pathExists } from './pathProbe'
 import type { FileSnapshot } from './types'
@@ -65,7 +65,7 @@ export async function writeSnapshot(
   path: string,
   snapshot: FileSnapshot,
 ): Promise<void> {
-  if (!isWithinRoot(root, path)) {
+  if (!canAccessWorkspacePath(root, path)) {
     throw new Error('recorded path escaped workspace root')
   }
   if (snapshot.content === null) {
@@ -92,7 +92,7 @@ export async function writeSnapshot(
   } catch (error) {
     throw new Error(`failed to resolve \`${parent}\`: ${errorText(error)}`)
   }
-  if (!isWithinRoot(root, canonicalParent)) {
+  if (!canAccessWorkspacePath(root, canonicalParent)) {
     throw new Error('recorded path escaped workspace root')
   }
   try {

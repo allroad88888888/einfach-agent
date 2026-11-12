@@ -62,7 +62,7 @@ export function joinRequestedPath(root: string, requested: string): string {
  * 写入侧（Rust 的 `normalize_no_parent` / `normalize_path`）是**直接拒**，不是先消再判：
  * 目标文件可能还不存在，realpath 无从下手，此时唯一能守住的就是词法层面不许出现 `..`。
  * 读取侧不用它——那边路径必须已存在，可以让 realpath 解完再比边界，因此 `../` 是允许写法
- * （Auto 会话正靠它读 workspace 外的文件）。
+ * （完整本地权限会话正靠它读 workspace 外的文件）。
  */
 export function hasParentSegment(value: string): boolean {
   return value.split(SEGMENT_SEPARATOR).includes('..')
