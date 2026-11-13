@@ -348,12 +348,11 @@ registrar 为准**（`tools/<domain>/src/index.ts`），文档里的数量容易
   `markUndoBarrier` 在当前最新账目上立屏障，越过它的撤销一律拒绝而不是「看起来成功了」。
   撤销自身**永不释放**（withhold）：状态马上要回滚，本来就没有东西真的变成不可达。判据见
   `state/undoBarrier.ts`。
-- 每个会话落两份记录：`RecoverySnapshotV1`（运行态的唯一真相）与撤销日志（`HistoryLogDriver`），
-  屏障跟着日志走（`PersistedHistoryLog.barrierTxId`）—— 分开存会出现「账在、屏障没了」。
-  **两者必须成对**：日志在快照落盘成功的同一时刻整份刷出，并存下那次快照的 `generation`；
-  读回时 `generation` 不一致就整份丢弃日志（撤销不可用，状态仍对）。刻意不用 einfach 的
-  `HistoryPersistPort` 增量镜像——它逐笔跟随内存，而快照只在耐久性栅栏落盘，两者时点不一致时
-  undo 会把更早状态的 `before` 写进当前世界。理由详见 `state/persistence/historyLogDriver.ts`。
+- 会话状态写入 `RecoverySnapshotV2`，撤销账本通过 einfach 的 `HistoryPersistPort` 增量采集。
+  本机 Node 将新批次追加到 `history-journals/*.jsonl`；纯网页按批写入 IndexedDB。
+  **两者必须成对**：先确认日志批次持久化，再提交包含 `historyRef.head` 与 `barrierTxId` 的快照。
+  恢复只回放这个 head 的父链，不使用文件末尾；崩溃后的未提交尾部或分支不能污染旧快照。
+  禁止把整本 `history.getState().entries` 嵌回快照或每次整份上传。旧快照／旧日志不做迁移兼容。
 - **`runtime: 'server'` 的工具只在登记过宿主命令桥的宿主下进模型清单**——今天等价于「`static`
   态看不见它们」。判据是 `hasHostBridge()`（`modelTurnPrefix.ts` 取值，`turnToolVisibility.ts`
   过滤；同一判据另见 `toolCallGate.ts` 与 `subagents/childToolVisibility.ts`）。**不许退回按宿主

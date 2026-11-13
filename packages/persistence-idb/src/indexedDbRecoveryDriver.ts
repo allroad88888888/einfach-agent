@@ -6,7 +6,7 @@
 import {
   type RecoveryDriver,
   type RecoverySaveResult,
-  type RecoverySnapshotV1,
+  type RecoverySnapshotV2,
   validateRecoverySnapshot,
 } from '@einfach-agent/core/state/persistence'
 import {
@@ -19,7 +19,7 @@ import { runIndexedDbTransaction } from './indexedDbTransaction'
 interface RecoveryRecord {
   sessionId: string
   deleted: boolean
-  snapshot?: RecoverySnapshotV1
+  snapshot?: RecoverySnapshotV2
 }
 
 function assertSessionId(sessionId: string): void {
@@ -77,7 +77,7 @@ export function createIndexedDbRecoveryDriver(
                 }
                 return decodeStoredRecord(record, record.sessionId)
               })
-              const snapshots: RecoverySnapshotV1[] = []
+              const snapshots: RecoverySnapshotV2[] = []
               for (const record of records) {
                 if (record && !record.deleted && record.snapshot) snapshots.push(record.snapshot)
               }

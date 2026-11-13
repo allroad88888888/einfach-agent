@@ -97,7 +97,7 @@ function persistedRecords(
   })
 }
 
-async function durableAppend(filePath: string, contents: string): Promise<void> {
+export async function durableAppend(filePath: string, contents: string): Promise<void> {
   const handle = await open(filePath, 'a')
   try {
     await handle.writeFile(contents, 'utf8')

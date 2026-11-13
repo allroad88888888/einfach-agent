@@ -1,10 +1,10 @@
 // 中断恢复快照的持久化契约与零依赖内存实现。
 // ---------------------------------------------------------------------------
-// 此处只管理「每个 session 最新的一条 RecoverySnapshotV1」；它不是 HistoryDriver，不能追加
+// 此处只管理「每个 session 最新的一条 RecoverySnapshotV2」；它不是 HistoryDriver，不能追加
 // checkpoint、更不能提供 redo。deleteSession 写入终态 tombstone，使迟到的 writer 无法复活会话。
 
 import { decodeRecoverySnapshot } from '../recoverySnapshot.codec'
-import type { RecoverySnapshotV1 } from '../recoverySnapshot.type'
+import type { RecoverySnapshotV2 } from '../recoverySnapshot.type'
 
 export type RecoverySaveResult =
   | { status: 'saved'; generation: number }
@@ -13,20 +13,20 @@ export type RecoverySaveResult =
 
 /** 每个 session 一条、可覆盖的中断恢复真相；与 checkpoint 历史完全独立。 */
 export interface RecoveryDriver {
-  listLatest(): Promise<RecoverySnapshotV1[]>
-  loadLatest(sessionId: string): Promise<RecoverySnapshotV1 | undefined>
-  saveLatest(sessionId: string, snapshot: RecoverySnapshotV1): Promise<RecoverySaveResult>
+  listLatest(): Promise<RecoverySnapshotV2[]>
+  loadLatest(sessionId: string): Promise<RecoverySnapshotV2 | undefined>
+  saveLatest(sessionId: string, snapshot: RecoverySnapshotV2): Promise<RecoverySaveResult>
   /** 永久 fence 此 session；同 UUID 的任何后续 save 都必须被拒绝。 */
   deleteSession(sessionId: string): Promise<void>
 }
 
-/** 快照不是可信边界：持久化前后均强制走 JSON 往返与 v1 codec。 */
+/** 快照不是可信边界：持久化前后均强制走 JSON 往返与 v2 codec。 */
 export function validateRecoverySnapshot(
   value: unknown,
   expectedSessionId?: string,
-): RecoverySnapshotV1 {
+): RecoverySnapshotV2 {
   const original = decodeRecoverySnapshot(value)
-  if (!original) throw new Error('Recovery snapshot failed v1 validation')
+  if (!original) throw new Error('Recovery snapshot failed v2 validation')
   if (expectedSessionId !== undefined && original.sessionId !== expectedSessionId) {
     throw new Error('Recovery snapshot sessionId does not match its storage key')
   }
@@ -40,7 +40,7 @@ export function validateRecoverySnapshot(
     throw new Error('Recovery snapshot JSON serialization failed', { cause: error })
   }
   const snapshot = decodeRecoverySnapshot(parsed)
-  if (!snapshot) throw new Error('Recovery snapshot failed v1 validation')
+  if (!snapshot) throw new Error('Recovery snapshot failed v2 validation')
   if (expectedSessionId !== undefined && snapshot.sessionId !== expectedSessionId) {
     throw new Error('Recovery snapshot sessionId does not match its storage key')
   }
@@ -53,7 +53,7 @@ function requireSessionId(sessionId: string): void {
 
 /** 无盘宿主与契约测试使用的恢复 driver；每个工厂实例彼此隔离。 */
 export function createMemoryRecoveryDriver(): RecoveryDriver {
-  const snapshots = new Map<string, RecoverySnapshotV1>()
+  const snapshots = new Map<string, RecoverySnapshotV2>()
   const tombstones = new Set<string>()
 
   return {

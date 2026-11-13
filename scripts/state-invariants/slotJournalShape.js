@@ -16,6 +16,7 @@ import { SLOTS_FILE, slotDeclarations } from './slotSource.js'
 // **登记在这张表里不算数** —— 脚本会回到 sessionSlots.ts 源码确认那次 `slot(...)` 真的传了第 4 个
 // 参数（增量 applier registrar）。表说走增量、源码没走，正是最容易发生且最没人发现的漂移。
 const deltaJournaledSlots = [
+  'run',
   'items',
   'pendingArtifacts',
   'executionGraph',
@@ -25,11 +26,6 @@ const deltaJournaledSlots = [
 // 整值记账的槽位。每一项必须写明**凭什么不会随累积状态长大** —— 说不出理由就是没想过，
 // 而没想过的那个终将是下一个 33 MB。
 const boundedWholeValueSlots = [
-  {
-    key: 'run',
-    reason: '单个 RunState，字段集固定；pendingToolCalls / loadedTools / toolCallOutcomes 只在一次 run '
-      + '内部长，run 结束或新 run 开始即整体替换，不跨轮累积',
-  },
   {
     key: 'plan',
     reason: 'stages 数在建计划时定死，改计划是整体替换（revision+1）而非追加，不随对话增长',

@@ -1,4 +1,4 @@
-// RecoverySnapshotV1 与 session store allowlist 的单向投影。
+// RecoverySnapshotV2 与 session store allowlist 的单向投影。
 
 import { atom, type Store } from '@einfach/core'
 import { EMPTY_EXECUTION_GRAPH, executionGraphAtom } from '../execution/graph'
@@ -10,7 +10,7 @@ import {
   type RecoverableRunState,
   type RecoveryAtomProjectionV1,
   type RecoverySessionMetaV1,
-  type RecoverySnapshotV1,
+  type RecoverySnapshotV2,
 } from './recoverySnapshot.type'
 import {
   contextCheckpointAtom,
@@ -43,7 +43,7 @@ function jsonClone<Value>(value: Value): Value {
   return JSON.parse(serialized) as Value
 }
 
-function cloneValidatedSnapshot(value: unknown, errorMessage: string): RecoverySnapshotV1 {
+function cloneValidatedSnapshot(value: unknown, errorMessage: string): RecoverySnapshotV2 {
   const validated = decodeRecoverySnapshot(value)
   if (!validated) throw new Error(errorMessage)
   const cloned = decodeRecoverySnapshot(jsonClone(validated))
@@ -68,7 +68,7 @@ function projectStaticSessionMeta(session: SessionMeta): RecoverySessionMetaV1 {
 export function captureRecoverySnapshot(
   store: Store,
   options: RecoverySnapshotCaptureOptions,
-): RecoverySnapshotV1 {
+): RecoverySnapshotV2 {
   const run = store.getter(runAtom)
   const session = options.rootStore.getter(sessionsAtom)[options.sessionId]
   if (!session) throw new Error(`Cannot capture recovery for an unregistered session: ${options.sessionId}`)
@@ -96,7 +96,7 @@ export function captureRecoverySnapshot(
       subagentContinuations: store.getter(subagentContinuationsAtom),
     },
   }
-  return cloneValidatedSnapshot(candidate, 'Recovery projection does not satisfy RecoverySnapshotV1')
+  return cloneValidatedSnapshot(candidate, 'Recovery projection does not satisfy RecoverySnapshotV2')
 }
 
 // A writable atom scopes all inner writes to one Einfach flush. It has no business value of
@@ -133,8 +133,8 @@ const clearRecoveryProjectionAtom = atom<null, [], void>(
  * Atomically applies only durable recovery values. Derived and UI/process-local atoms are left
  * intact; their owners rebuild or clear them at their own lifecycle boundary.
  */
-export function applyRecoverySnapshot(store: Store, value: RecoverySnapshotV1): void {
-  const snapshot = cloneValidatedSnapshot(value, 'Cannot apply an invalid RecoverySnapshotV1')
+export function applyRecoverySnapshot(store: Store, value: RecoverySnapshotV2): void {
+  const snapshot = cloneValidatedSnapshot(value, 'Cannot apply an invalid RecoverySnapshotV2')
   store.setter(applyRecoveryProjectionAtom, snapshot.values)
 }
 

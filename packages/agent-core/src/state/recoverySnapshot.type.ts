@@ -9,10 +9,10 @@ import type { PlanStageCheckpoint } from './planStageCheckpoint.type'
 import type { ContextCheckpoint } from './contextCheckpoint.type'
 import type { ConversationItem, RunState, SessionMeta } from './core.type'
 import type { AskUserAnswerValue, PendingArtifact, QueuedUserMessage } from './sessionTransientPayloads'
-import type { HistoryEntry } from '@einfach/core'
+import type { RecoveryHistoryRef } from './persistence/historyLogDriver'
 
-/** 首个恢复快照 codec 的版本；未知版本必须 fail-closed。 */
-export const RECOVERY_SNAPSHOT_SCHEMA_VERSION = 1 as const
+/** 恢复快照 codec 的版本；未知版本必须 fail-closed。 */
+export const RECOVERY_SNAPSHOT_SCHEMA_VERSION = 2 as const
 
 /** 仅当一整代数据已经完整写入时，driver 才能写入此标记。 */
 export const RECOVERY_SNAPSHOT_COMMIT_MARKER = 'complete' as const
@@ -97,9 +97,9 @@ export interface RecoveryAtomProjectionV1 {
  * 一个已完整提交的 session 恢复 generation。
  *
  * `generation` 由每个 session 的 writer 单调递增；本类型不实现写入策略。恢复读取方只接受
- * `commitMarker === 'complete'` 的版本 1 记录，故半写入记录和未来 codec 都不会被误 hydrate。
+ * `commitMarker === 'complete'` 的版本 2 记录，故半写入记录和未来 codec 都不会被误 hydrate。
  */
-export interface RecoverySnapshotV1 {
+export interface RecoverySnapshotV2 {
   schemaVersion: typeof RECOVERY_SNAPSHOT_SCHEMA_VERSION
   /** 此记录归属的 session，driver 不得跨 session 套用它。 */
   sessionId: string
@@ -110,10 +110,6 @@ export interface RecoverySnapshotV1 {
   /** root sessionsAtom 的静态登记项；必须与 sessionId 同属一个会话。 */
   session: RecoverySessionMetaV1
   values: RecoveryAtomProjectionV1
-  /** Undo ledger captured in the same tick and committed atomically with this projection. */
-  history?: {
-    entries: HistoryEntry[]
-    cursor: number
-    barrierTxId?: string
-  }
+  /** Exact durable journal head captured with these atom values. No history entries travel here. */
+  historyRef?: RecoveryHistoryRef
 }

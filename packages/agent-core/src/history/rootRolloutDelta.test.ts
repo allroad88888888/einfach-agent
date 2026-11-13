@@ -1,10 +1,10 @@
 import type { ModelItem } from '@einfach-agent/ai'
 import { describe, expect, it } from 'vitest'
 
-import { RECOVERY_SNAPSHOT_COMMIT_MARKER, RECOVERY_SNAPSHOT_SCHEMA_VERSION, type RecoverySnapshotV1 } from '../state/recoverySnapshot.type'
+import { RECOVERY_SNAPSHOT_COMMIT_MARKER, RECOVERY_SNAPSHOT_SCHEMA_VERSION, type RecoverySnapshotV2 } from '../state/recoverySnapshot.type'
 import { buildRootRolloutDelta } from './rootRolloutDelta'
 
-function snapshot(items: RecoverySnapshotV1['values']['conversation']['items'] = []): RecoverySnapshotV1 {
+function snapshot(items: RecoverySnapshotV2['values']['conversation']['items'] = []): RecoverySnapshotV2 {
   return {
     schemaVersion: RECOVERY_SNAPSHOT_SCHEMA_VERSION,
     sessionId: '会话-1',

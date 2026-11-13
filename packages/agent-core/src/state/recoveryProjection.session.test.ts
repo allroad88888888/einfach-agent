@@ -77,10 +77,10 @@ describe('recoveryProjection static session capture', () => {
     cyclicSession.settings.vendorSettings = vendorSettings
 
     expect(() => capture(rootStoreWith(functionSession), functionSession.id)).toThrow(
-      'Recovery projection does not satisfy RecoverySnapshotV1',
+      'Recovery projection does not satisfy RecoverySnapshotV2',
     )
     expect(() => capture(rootStoreWith(cyclicSession), cyclicSession.id)).toThrow(
-      'Recovery projection does not satisfy RecoverySnapshotV1',
+      'Recovery projection does not satisfy RecoverySnapshotV2',
     )
   })
 })

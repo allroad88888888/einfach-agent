@@ -124,6 +124,8 @@ describe('createNodeHostInvoke', () => {
         'sqlite_select',
         'agent_rollout_append',
         'agent_rollout_reconcile',
+        'session_history_append',
+        'session_history_load',
         'agent_history_list',
         'agent_history_list_items',
         'agent_history_read_item',

@@ -1,11 +1,11 @@
 import { dirname } from 'node:path'
 import {
   createNodeAgentRolloutDriver,
+  createNodeHistoryLogDriver,
   createNodeSqlExecutorLoader,
 } from '@einfach-agent/host-node'
 import {
   configureSqlExecutor,
-  createSqliteHistoryLogDriver,
   createSqliteRecoveryDriver,
 } from '@einfach-agent/persistence-sqlite'
 import type { AgentRolloutDriver, AgentRolloutReconcileResult } from '@einfach-agent/core/history'
@@ -49,7 +49,7 @@ export async function assembleCliPersistence(
   const agentHistory = createCliAgentHistoryProvider({ executor, agentRollout, recovery })
   core.persistence.configure({
     recovery,
-    historyLog: createSqliteHistoryLogDriver(),
+    historyLog: createNodeHistoryLogDriver(dirname(options.databasePath)),
     recoveryStore: (sessionId) => core.findSessionStore(sessionId)?.store,
     historyFor: (sessionId) => core.findSessionStore(sessionId)?.history,
     agentRollout,

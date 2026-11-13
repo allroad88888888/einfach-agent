@@ -1,6 +1,6 @@
 // Ta-2 · SQLite 持久化共享底座（拆分自 sqliteDriver.ts，T5）—— 本包那条 SQL 执行面：装配层从
 // 哪注入它（configureSqlExecutor）、以及惰性把它带起来（PRAGMA 调优 + 建表）。
-// sqliteHistoryLogDriver.ts、sqliteRecoveryDriver.ts 与 sqliteSessionsPersistence.ts 共用这同一
+// sqliteRecoveryDriver.ts 与 sqliteSessionsPersistence.ts 共用这同一
 // 个执行面（getDb() 惰性解析一次 + 建表，memoized）。
 //
 // P1 之后本文件不再认识任何具体 SQL 上游包：执行面由宿主装配层经 configureSqlExecutor 注入
@@ -90,17 +90,6 @@ export async function getDb(): Promise<SqlExecutor> {
              snapshot TEXT
            )`,
         )
-        // 事务日志：每个 session 一行、整份覆盖。generation 单独成列而不是只埋在 payload 里，
-        // 因为读回时的第一件事就是拿它和恢复快照比对；不匹配就不必反序列化 payload。
-        await db.execute(
-          `CREATE TABLE IF NOT EXISTS history_log (
-             session_id TEXT PRIMARY KEY,
-             generation INTEGER NOT NULL,
-             payload TEXT NOT NULL
-           )`,
-        )
-        // 轮级 undo 迁往 einfach 事务日志后，checkpoints 表已无人读写：直接丢弃。
-        await db.execute('DROP TABLE IF EXISTS checkpoints')
         schemaMs = performanceNow() - phaseStartedAt
         operation.finish('ok', {
           loadMs,

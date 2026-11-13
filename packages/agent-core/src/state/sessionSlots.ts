@@ -27,6 +27,7 @@ import { registerExecutionGraphAppliers } from './executionGraphSlotLog'
 import { registerPendingArtifactsAppliers } from './pendingArtifactsLog'
 import { registerPlanStageCheckpointsAppliers } from './planStageCheckpointsLog'
 import { registerItemsLogAppliers } from './sessionItemsLog'
+import { registerRunAppliers } from './runStateLog'
 import {
   contextCheckpointAtom,
   itemsAtom,
@@ -105,7 +106,7 @@ function slot<State>(
 export const SESSION_SLOTS = {
   items: slot('items', itemsAtom, [], registerItemsLogAppliers),
   contextCheckpoint: slot('contextCheckpoint', contextCheckpointAtom, undefined),
-  run: slot('run', runAtom, undefined),
+  run: slot('run', runAtom, undefined, registerRunAppliers),
   plan: slot('plan', planAtom, undefined),
   // planStageCheckpoints 同理：每条装一整份 PlanSnapshot，热路径的追加走增量 op
   // （见 planStageCheckpointsLog.ts）；整体清空/整体截断（计划切换、阶段回退）仍走整值 applier。

@@ -2,7 +2,7 @@
 // ---------------------------------------------------------------------------
 // 本文件从原 checkpoint.type.ts 拆出：那里曾同时装着「用户 undo 的轮级快照」与本类型，
 // 而两者的存亡不同 —— 轮级 checkpoint 已随 undo 迁移到 einfach 的事务日志（createHistory）
-// 整体删除，阶段回退点则留下，因为它在 RecoverySnapshotV1 的 plan.stageCheckpoints 里。
+// 整体删除，阶段回退点则留下，因为它在 RecoverySnapshotV2 的 plan.stageCheckpoints 里。
 
 import type { PlanSnapshot } from '../planning/types'
 

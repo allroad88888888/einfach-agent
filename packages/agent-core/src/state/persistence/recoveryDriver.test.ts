@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
-import type { RecoverySnapshotV1 } from '../recoverySnapshot.type'
+import type { RecoverySnapshotV2 } from '../recoverySnapshot.type'
 import {
   createMemoryRecoveryDriver,
   validateRecoverySnapshot,
 } from './recoveryDriver'
 
-function snapshot(generation: number, sessionId = 's1'): RecoverySnapshotV1 {
+function snapshot(generation: number, sessionId = 's1'): RecoverySnapshotV2 {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sessionId,
     capturedAt: generation,
     generation,
@@ -45,9 +45,9 @@ describe('RecoveryDriver contract', () => {
 
   it('拒绝损坏 JSON 与不匹配的 sessionId', async () => {
     const driver = createMemoryRecoveryDriver()
-    const invalid = { ...snapshot(1), generation: -1 } as unknown as RecoverySnapshotV1
-    const withFunction = snapshot(1) as RecoverySnapshotV1 & { extension?: unknown }
-    const circular = snapshot(1) as RecoverySnapshotV1 & { loop?: unknown }
+    const invalid = { ...snapshot(1), generation: -1 } as unknown as RecoverySnapshotV2
+    const withFunction = snapshot(1) as RecoverySnapshotV2 & { extension?: unknown }
+    const circular = snapshot(1) as RecoverySnapshotV2 & { loop?: unknown }
     withFunction.extension = () => undefined
     circular.loop = circular
 
@@ -59,29 +59,16 @@ describe('RecoveryDriver contract', () => {
     await expect(driver.saveLatest('s2', snapshot(1, 's1'))).rejects.toThrow('sessionId')
   })
 
-  it('拒绝损坏的内嵌撤销账本', () => {
-    const invalidCursor = { ...snapshot(1), history: { entries: [], cursor: 1 } }
-    const invalidEntry = {
-      ...snapshot(1),
-      history: { entries: [{ txId: 'tx-1', ops: [{ key: 42, after: null }] }], cursor: 1 },
-    }
-    const emptyEntry = { ...snapshot(1), history: { entries: [{ txId: '', ops: [] }], cursor: 1 } }
-    const emptyKey = {
-      ...snapshot(1), history: { entries: [{ txId: 'tx-1', ops: [{ key: '', after: null }] }], cursor: 1 },
-    }
-    const emptyBarrier = {
-      ...snapshot(1), history: { entries: [{ txId: 'tx-1', ops: [{ key: 'items', after: [] }] }], cursor: 1, barrierTxId: '' },
-    }
-    const missingBarrier = {
-      ...snapshot(1), history: { entries: [{ txId: 'tx-1', ops: [{ key: 'items', after: [] }] }], cursor: 1, barrierTxId: 'tx-missing' },
-    }
-
-    expect(() => validateRecoverySnapshot(invalidCursor)).toThrow('validation')
-    expect(() => validateRecoverySnapshot(invalidEntry)).toThrow('validation')
-    expect(() => validateRecoverySnapshot(emptyEntry)).toThrow('validation')
-    expect(() => validateRecoverySnapshot(emptyKey)).toThrow('validation')
-    expect(() => validateRecoverySnapshot(emptyBarrier)).toThrow('validation')
-    expect(() => validateRecoverySnapshot(missingBarrier)).toThrow('validation')
+  it('拒绝旧格式与损坏的日志引用', () => {
+    for (const invalid of [
+      { ...snapshot(1), schemaVersion: 1 },
+      { ...snapshot(1), history: { entries: [], cursor: 0 } },
+      { ...snapshot(1), historyRef: { head: '' } },
+      { ...snapshot(1), historyRef: { head: null, barrierTxId: '' } },
+      { ...snapshot(1), historyRef: { head: null, entries: [] } },
+    ]) expect(() => validateRecoverySnapshot(invalid)).toThrow('validation')
+    expect(validateRecoverySnapshot({ ...snapshot(1), historyRef: { head: 'batch-1', barrierTxId: 'tx-1' } })
+      .historyRef).toEqual({ head: 'batch-1', barrierTxId: 'tx-1' })
   })
 
   it('较旧 generation 不能覆盖较新 generation', async () => {

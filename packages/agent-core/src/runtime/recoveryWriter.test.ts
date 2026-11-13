@@ -8,7 +8,7 @@ import {
   type RecoveryDriver,
   type RecoverySaveResult,
 } from '../state/persistence/recoveryDriver'
-import type { RecoverySnapshotV1 } from '../state/recoverySnapshot.type'
+import type { RecoverySnapshotV2 } from '../state/recoverySnapshot.type'
 import { sessionsAtom } from '../state/rootAtoms'
 import { itemsAtom, runAtom } from '../state/sessionAtoms'
 import { createRecoveryWriter } from './recoveryWriter'
@@ -43,7 +43,7 @@ function snapshot(
   rootStore: Store,
   sessionId: string,
   generation: number,
-): RecoverySnapshotV1 {
+): RecoverySnapshotV2 {
   return captureRecoverySnapshot(store, { rootStore, sessionId, generation, capturedAt: 1 })
 }
 
@@ -114,7 +114,7 @@ describe('recoveryWriter', () => {
     let staleOnce = true
     const saveLatest = vi.fn(async (
       id: string,
-      candidate: RecoverySnapshotV1,
+      candidate: RecoverySnapshotV2,
     ): Promise<RecoverySaveResult> => {
       if (staleOnce) {
         staleOnce = false

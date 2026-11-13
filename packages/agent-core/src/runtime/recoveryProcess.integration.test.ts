@@ -5,7 +5,7 @@ import type { SessionMeta } from '../state/core.type'
 import { setPlan } from '../state/planWriters'
 import type { SessionsPersistence } from '../state/persistence/contract'
 import { createMemoryRecoveryDriver, type RecoveryDriver } from '../state/persistence/recoveryDriver'
-import type { RecoverySnapshotV1 } from '../state/recoverySnapshot.type'
+import type { RecoverySnapshotV2 } from '../state/recoverySnapshot.type'
 import { activeSessionIdAtom, sessionsAtom } from '../state/rootAtoms'
 import { itemsAtom, planAtom, runAtom } from '../state/sessionAtoms'
 import { createCore } from './core/createCore'
@@ -167,8 +167,8 @@ describe('recovery process reconstruction', () => {
       id, title: 'Corrupt v1', settings: { vendor: 'deepseek', model: 'deepseek-v4-pro' }, createdAt: 1, updatedAt: 2,
     }])
     const corrupt: RecoveryDriver = {
-      async listLatest() { return [{ sessionId: id, schemaVersion: 1 }] as RecoverySnapshotV1[] },
-      async loadLatest() { return { sessionId: id, schemaVersion: 1 } as RecoverySnapshotV1 },
+      async listLatest() { return [{ sessionId: id, schemaVersion: 2 }] as RecoverySnapshotV2[] },
+      async loadLatest() { return { sessionId: id, schemaVersion: 2 } as RecoverySnapshotV2 },
       async saveLatest(_id, snapshot) { return { status: 'saved', generation: snapshot.generation } },
       async deleteSession() {},
     }

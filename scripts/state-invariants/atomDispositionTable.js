@@ -73,7 +73,7 @@ export const compensatedAtoms = [
   {
     atom: 'undoBarrierTxIdAtom',
     reason: '它其实持久化了，只是刻意不走恢复快照：随撤销日志整份落盘'
-      + '（state/persistence/historyLogDriver.ts 的 PersistedHistoryLog.barrierTxId），'
+      + '（state/persistence/historyLogDriver.ts 的 RecoveryHistoryRef.barrierTxId），'
       + 'hydrate 由 state/persistence/hydrate.ts 的 restoreUndoBarrier 写回。屏障与它保护的那本账'
       + '必须同生同死，分开存会出现「账在、屏障没了」',
   },

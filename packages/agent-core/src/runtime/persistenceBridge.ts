@@ -2,14 +2,15 @@
 // ---------------------------------------------------------------------------
 // 背景：持久化件（sessions 存储 / recovery driver / hydrate）已齐，但 runtime 里
 //   没有落盘调用。本文只做「接线」：把 commands / modelRun 的写事件转成 driver 调用。
-//   · history / sessions 遵循 DK2 fire-and-forget：写盘绝不卡 UI，队列内部自行处理其 best-effort 失败。
+//   · sessions 遵循 DK2 fire-and-forget；撤销增量日志由 recovery 的耐久性边界确认。
 //   · recovery 例外：仍由显式 facade 异步触发，但 RecoveryWriter 以 outcome 与 observability diagnostic
 //     公开 driver 失败，不能把它表述成统一吞掉。
 //   · driver 注入（兼顾可测）：main.tsx 启动时 configurePersistence 注入真 driver 实例；
 //     未配置（undefined）时全部 no-op、不抛 —— 因此 commands/modelRun 的既有单测无需配置即保持绿。
 //   本文不 import UI；每个 CoreInstance 把自己的 rootStore 注入一个 bridge 实例。
 
-import type { History, Store } from '@einfach/core'
+import type { Store } from '@einfach/core'
+import type { SessionHistory } from '../state/sessionHistory'
 import type { AgentHistoryCapabilityProvider, AgentRolloutDriver } from '../history'
 import { sessionsAtom, workspacesAtom } from '../state/rootAtoms'
 import type { SessionsPersistence } from '../state/persistence/contract'
@@ -29,7 +30,6 @@ import {
   type PersistenceDiagnosticContext,
 } from './persistenceWriteOperations'
 import { readUndoBarrier } from '../state/undoBarrier'
-import { toPersistableHistoryLog } from '../state/persistence/historyLogDriver'
 
 export type { PersistenceDiagnosticContext } from './persistenceWriteOperations'
 
@@ -42,10 +42,10 @@ export interface PersistenceDependencies {
   recovery?: RecoveryDriver
   /** Must only return an extant session store; recovery persistence never creates a session. */
   recoveryStore?: (sessionId: string) => Store | undefined
-  /** 撤销日志的落盘 driver；与 recovery 成对刷盘（见 state/persistence/historyLogDriver.ts）。 */
+  /** 增量撤销日志；快照提交前必须确认其引用的批次已落盘。 */
   historyLog?: HistoryLogDriver
   /** 同 recoveryStore 的纪律：只允许返回已存在的会话日志，绝不因落盘而创建会话。 */
-  historyFor?: (sessionId: string) => History | undefined
+  historyFor?: (sessionId: string) => SessionHistory | undefined
   /** Optional append-only root history durability boundary. */
   agentRollout?: AgentRolloutDriver
   /** Optional host-owned read capability for local agent histories. */
@@ -80,19 +80,18 @@ export interface PersistenceBridge {
 export function createPersistenceBridge(
   rootStore: Store,
   observability: ObservabilityPort,
-  hydrateSession?: (sessionId: string) => { store: Store; history: History },
+  hydrateSession?: (sessionId: string) => { store: Store; history: SessionHistory },
 ): PersistenceBridge {
   let sessions: SessionsPersistence | undefined
   let recovery: RecoveryDriver | undefined
   let recoveryStore: ((sessionId: string) => Store | undefined) | undefined
   let historyLog: HistoryLogDriver | undefined
-  let historyFor: ((sessionId: string) => History | undefined) | undefined
+  let historyFor: ((sessionId: string) => SessionHistory | undefined) | undefined
   let agentRollout: AgentRolloutDriver | undefined
   let agentHistory: AgentHistoryCapabilityProvider | undefined
   let recoveryWriter: RecoveryWriter | undefined
   const sessionsWriteQueue = createWriteQueue('latest')
   const workspacesWriteQueue = createWriteQueue('serial')
-  const pendingHistoryDeletes = new Set<Promise<void>>()
 
   function configure(deps: PersistenceDependencies): void {
     if (deps.sessions !== undefined) sessions = deps.sessions
@@ -102,10 +101,10 @@ export function createPersistenceBridge(
     if (deps.historyFor !== undefined) historyFor = deps.historyFor
     if (deps.agentRollout !== undefined) agentRollout = deps.agentRollout
     if (deps.agentHistory !== undefined) agentHistory = deps.agentHistory
-    if (deps.recovery !== undefined || deps.recoveryStore !== undefined || deps.agentRollout !== undefined) {
+    if (deps.recovery !== undefined || deps.recoveryStore !== undefined || deps.agentRollout !== undefined || deps.historyLog !== undefined) {
       recoveryWriter?.reset()
       recoveryWriter = recovery && recoveryStore
-        ? createRecoveryWriter({ rootStore, recovery, observability, agentRollout })
+        ? createRecoveryWriter({ rootStore, recovery, observability, agentRollout, historyLog })
         : undefined
     }
   }
@@ -157,12 +156,6 @@ export function createPersistenceBridge(
   // 简介：清空某会话的全部持久化恢复记录（removeSession 之后调用）。
   function persistDeleteSession(id: string): void {
     if (recoveryWriter) void recoveryWriter.deleteSession(id)
-    // 日志跟着会话一起走。不留 tombstone：它不是真相，快照那侧已经永久 fence 住这个 id。
-    if (historyLog) {
-      const deletion = historyLog.deleteSession(id).catch(() => undefined)
-      pendingHistoryDeletes.add(deletion)
-      void deletion.finally(() => pendingHistoryDeletes.delete(deletion))
-    }
   }
 
   function persistRecovery(id: string, reason?: string): Promise<RecoveryWriteOutcome | undefined> {
@@ -171,32 +164,17 @@ export function createPersistenceBridge(
     const store = recoveryStore?.(id)
     if (!store) return Promise.resolve(undefined)
     const history = historyFor?.(id)
-    const historyState = history?.getState()
-    const persistedHistory = history && historyState
-      ? toPersistableHistoryLog(0, historyState, readUndoBarrier({ store, history }))
-      : undefined
-    if (history && !persistedHistory) {
-      return Promise.resolve({
-        status: 'error',
-        sessionId: id,
-        error: new Error('Session history is not JSON serializable'),
-      })
+    try {
+      const capture = history?.persistence.capture()
+      const barrierTxId = history ? readUndoBarrier({ store, history }) : undefined
+      return writer.persist(store, id, reason, capture, barrierTxId)
+    } catch (error) {
+      return Promise.resolve({ status: 'error', sessionId: id, error })
     }
-    const embeddedHistory = persistedHistory
-      ? {
-          entries: persistedHistory.entries,
-          cursor: persistedHistory.cursor,
-          ...(persistedHistory.barrierTxId === undefined
-            ? {}
-            : { barrierTxId: persistedHistory.barrierTxId }),
-        }
-      : undefined
-    return writer.persist(store, id, reason, embeddedHistory)
   }
 
   async function flushRecovery(): Promise<void> {
     await recoveryWriter?.flush()
-    await Promise.all([...pendingHistoryDeletes])
   }
 
   async function flush(): Promise<void> {

@@ -1,22 +1,23 @@
 // D-3 · 启动 hydrate —— 从持久化恢复「会话列表 + 每会话运行态」（§4 D-3 / DK1 / DK2）。
 // ---------------------------------------------------------------------------
-// 背景：持久化范围 = 会话列表（SessionMeta，走 sessions 存储）+ 每会话 RecoverySnapshotV1。
+// 背景：持久化范围 = 会话列表（SessionMeta，走 sessions 存储）+ 每会话 RecoverySnapshotV2。
 //   启动时把两者读回内存 store：
 //     · rootStore.sessionsAtom      ← 全部 SessionMeta（会话是否存在的权威登记表）
 //     · rootStore.activeSessionId   ← updatedAt 最新的那个会话（默认落在最近用过的会话）
-//     · v1 RecoverySnapshot         ← 唯一完整运行态来源
-//     · v1 缺失、损坏或不可读时不恢复运行态
+//     · v2 RecoverySnapshot         ← 唯一完整运行态来源
+//     · v2 缺失、损坏或不可读时不恢复运行态
 //   轮级 undo 历史已随 checkpoint 一并删除（迁往 einfach 事务日志），此处不再读第二种记录。
-//   损坏/不可读 v1 一律 fail-closed。
+//   损坏/不可读 v2 一律 fail-closed。
 //   写进登记表之前先过一道**下线模型名迁移**（./modelMigration）：settings.model 是持久化字段，
 //   provider 下线旧模型名后，存量会话恢复出来一发请求就是 400；这里是唯一能一次覆盖全部存量会话的位置。
 //   容错（DK2）：driver 全 async、启动异步回填、失败不阻塞 app —— loadSessions 抛错整体放弃恢复
-//   （无 v1 恢复记录时返回 false 让 main.tsx 去种子）；恢复过程中任何异常都吞掉、绝不上抛（沿用旧 hydrateFromStorage 语义）。
+//   （无 v2 恢复记录时返回 false 让 main.tsx 去种子）；恢复过程中任何异常都吞掉、绝不上抛（沿用旧 hydrateFromStorage 语义）。
 //   返回值 = 「是否恢复了会话」，供 main.tsx 决定要不要种子一个空会话（RF3：有数据就别再种子）。
 
-import type { History, Store } from '@einfach/core'
+import type { HistoryStackState, Store } from '@einfach/core'
+import type { SessionHistory } from '../sessionHistory'
 import type { SessionMeta, WorkspaceMeta } from '../core.type'
-import { isPersistedHistoryPayload, type HistoryLogDriver } from './historyLogDriver'
+import type { HistoryLogDriver } from './historyLogDriver'
 import { restoreUndoBarrier } from '../undoBarrier'
 import {
   rootStore as defaultRootStore,
@@ -109,9 +110,9 @@ export type HydrationDependencies = {
     loadSessions(): Promise<SessionMeta[]>
     loadWorkspaces?(): Promise<WorkspaceMeta[]>
   }
-  /** 可选 v1 单代恢复记录；它是唯一可恢复的运行态来源。 */
+  /** 可选 v2 单代恢复记录；它是唯一可恢复的运行态来源。 */
   recovery?: RecoveryDriver
-  /** 可选撤销日志；它不是运行态来源，只在与快照 generation 配对成功时才铺回去。 */
+  /** 可选撤销日志；只按恢复快照选择的 head 回放，不读取未提交的尾部。 */
   historyLog?: HistoryLogDriver
 }
 
@@ -119,35 +120,7 @@ export type PersistenceHydrationTarget = {
   rootStore: Store
   getSessionStore(sessionId: string): Store
   /** 同一个会话槽的撤销日志；未提供则跳过日志读回（状态照常恢复）。 */
-  getSessionHistory?(sessionId: string): History
-}
-
-/**
- * 把盘上的撤销日志铺回该会话，仅当它与刚铺好的快照是同一个世界。
- *
- * generation 不等 = 日志描述的不是这份快照的世界（快照写成功但日志刷盘失败、或日志刷成功
- * 而更新的快照又落了一次）。此时整份丢弃：撤销不可用，但状态是对的。反过来若硬铺回去，
- * 第一次 undo 就会把「日志里那条的 before」写进一个并不处于「它的 after」的世界，静默损坏。
- *
- * 失败一律吞掉：读回日志属于锦上添花，绝不能拖垮启动（DK2）。
- */
-async function hydrateSessionHistoryLog(input: {
-  driver: HistoryLogDriver
-  history: History
-  store: Store
-  sessionId: string
-  snapshotGeneration: number
-}): Promise<void> {
-  try {
-    const log = await input.driver.load(input.sessionId)
-    if (!log || log.generation !== input.snapshotGeneration || !isPersistedHistoryPayload(log)) return
-    if (!input.history.hydrate({ entries: log.entries, cursor: log.cursor })) return
-    // 屏障必须跟着这本账一起铺回来，否则刷新之后撤销就能越过一个已发生的不可逆删除。
-    // 放在 hydrate 成功之后：账没铺上就没有需要保护的东西。
-    restoreUndoBarrier({ store: input.store, history: input.history }, log.barrierTxId)
-  } catch {
-    // 读不出来 / 形状不对：不恢复撤销历史即可，状态那边已经铺好了。
-  }
+  getSessionHistory?(sessionId: string): SessionHistory
 }
 
 // 简介：从持久化恢复会话列表与每会话运行态，回填内存 store；返回是否恢复了任何会话。
@@ -158,13 +131,13 @@ export async function hydrateForCore(
   deps: HydrationDependencies,
 ): Promise<boolean> {
   const rootStore = target.rootStore
-  // 第一步：取会话列表。加载失败时可由 v1 的静态投影重建 root 登记（容错，DK2）。
+  // 第一步：取会话列表。加载失败时可由 v2 的静态投影重建 root 登记（容错，DK2）。
   let sessions: SessionMeta[]
   let workspaces: WorkspaceMeta[] = []
   try {
     sessions = await deps.sessions.loadSessions()
   } catch {
-    // v1 的静态 session 投影能独立重建 root 登记；仅在未配置恢复 driver 时保留旧的失败语义。
+    // v2 的静态 session 投影能独立重建 root 登记；仅在未配置恢复 driver 时保留旧的失败语义。
     if (!deps.recovery) return false
     sessions = []
   }
@@ -181,7 +154,7 @@ export async function hydrateForCore(
     sessions.map(sanitizeSessionCapabilityPolicy),
   )
 
-  // 工作区本身也是可持久化实体；v1 也能补回 sessionsAtom 丢失的根会话登记。
+  // 工作区本身也是可持久化实体；v2 也能补回 sessionsAtom 丢失的根会话登记。
   if (recoveryPlan.sessionMetas.length === 0 && workspaces.length === 0) {
     return false
   }
@@ -226,43 +199,36 @@ export async function hydrateForCore(
     // active = updatedAt 最新（降序取头个）；不原地改入参，故先 [...] 拷贝再排序。
     rootStore.setter(activeSessionIdAtom, latestSession?.id ?? '')
 
-    // V1 is the only live projection. Without a valid v1, clear every recovery atom.
-    const historyRestores: Promise<void>[] = []
+    // V2 is the only live projection. Without a valid v2, clear every recovery atom.
     for (const session of migrated.sessions) {
       const store = target.getSessionStore(session.id)
       const snapshot = recoveryPlan.snapshotsBySessionId.get(session.id)
       if (snapshot) {
-        // 先归类进程遗留状态，再由 R2 在同一 Einfach flush 写入完整 allowlist 投影。
-        applyRecoverySnapshot(
-          store,
-          normalizeRecoverySnapshotForHydration(snapshot),
-        )
-        // 状态铺好之后才铺日志：`hydrate()` 只在空栈上合法，而 applyRecoverySnapshot 不记账，
-        // 所以此刻栈仍是空的。没有快照的会话不铺日志 —— 没有可配对的 generation。
         const history = target.getSessionHistory?.(session.id)
-        if (snapshot.history && history) {
-          if (history.hydrate(snapshot.history)) {
-            restoreUndoBarrier({ store, history }, snapshot.history.barrierTxId)
+        let ledger: HistoryStackState | undefined
+        if (snapshot.historyRef && history) {
+          if (!deps.historyLog) throw new Error('History journal driver is not configured')
+          ledger = await deps.historyLog.load(session.id, snapshot.historyRef.head)
+          const barrier = snapshot.historyRef.barrierTxId
+          if (barrier && !ledger.entries.some((entry) => entry.txId === barrier)) {
+            throw new Error('History journal is missing its undo barrier')
           }
-        } else if (!snapshot.history && deps.historyLog && history) {
-          historyRestores.push(hydrateSessionHistoryLog({
-            driver: deps.historyLog,
-            history,
-            store,
-            sessionId: session.id,
-            snapshotGeneration: snapshot.generation,
-          }))
+          history.persistence.restore(snapshot.historyRef.head)
+          if (!history.hydrate(ledger)) throw new Error('History journal hydration failed')
+        }
+        applyRecoverySnapshot(store, normalizeRecoverySnapshotForHydration(snapshot))
+        if (snapshot.historyRef && history) {
+          restoreUndoBarrier({ store, history }, snapshot.historyRef.barrierTxId)
         }
       } else {
         // hydrateForCore can target a reused Core, so a stale projection must not
-        // survive: no-v1 and invalid-v1 sessions are fail-closed.
+        // survive: no-v2 and invalid-v2 sessions are fail-closed.
         clearRecoveryProjection(store)
       }
     }
 
     // 日志读回是 await 的一步：`hydrate()` 只在空栈上合法，放行编辑之后才铺就会被自己的
     // 「栈非空则拒绝」挡掉（einfach 那条限制正是为了不静默吃掉用户已经产生的编辑）。
-    await Promise.all(historyRestores)
 
     return true
   } catch {

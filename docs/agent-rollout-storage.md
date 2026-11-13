@@ -4,7 +4,7 @@ Agent rollout storage preserves model-history evidence independently from normal
 
 ## Responsibilities
 
-JSONL files are append-only source evidence. SQLite rollout tables are a disposable query projection rebuilt from those files. The existing SQLite recovery snapshot remains the runtime recovery state, and the undo log remains undo history; neither is replaced by rollout storage.
+JSONL files are append-only source evidence. SQLite rollout tables are a disposable query projection rebuilt from those files. SQLite recovery format 2 remains the runtime recovery state. Atom undo operations use a separate append-only `history-journals/<session-hash>.jsonl` file, reusing the local durable-append primitive. These journals contain immutable batches linked by parent IDs; the snapshot commits the selected batch ID and undo barrier only after its append is durable. A failed snapshot write leaves an unselected branch, not a mismatched undo ledger. Neither journal is replaced by the model-history projection.
 
 Server and CLI use the same application-data directory. Static Web has no local file driver and continues to use its existing IndexedDB/recovery behavior.
 
@@ -42,7 +42,7 @@ For a stale lock, first confirm no process still owns the history. Live parseabl
 
 Deleting a session never deletes rollout JSONL or its projection. There is currently no rollout prune, delete, compact, or repair-source operation, so source disk use grows over time.
 
-On its first recovery capture, an old root SQLite session is backfilled idempotently. Old child workspace traces and browser IndexedDB data are not automatically migrated; old child traces remain an incomplete compatibility source for a later query layer.
+Recovery format 1 and embedded undo ledgers are no longer accepted; there is no migration or old undo-store fallback. Existing evidence files are not automatically deleted.
 
 Search and history queries are a separate read layer; see [Agent history tools](./agent-history-tools.md).
 Do not treat rollout projection tables as a stable public API.

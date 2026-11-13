@@ -1,94 +1,72 @@
-// IndexedDB 的会话事务日志 driver。
-// ---------------------------------------------------------------------------
-// 每个 session 一条、整份覆盖。比恢复 driver 简单得多，因为日志**不是真相**：
-// 它靠 `generation` 与恢复快照配对，配不上就被读回侧整份丢弃（见 core 的 historyLogDriver.ts）。
-// 所以这里没有 generation 比较、没有 tombstone，也不需要「先读后条件写」的事务。
-//
-// 读回时不校验条目形状：einfach 的 `hydrate()` 自己会逐条浅校验、非法整条丢弃。
-// 这里只负责「取出来的东西长得像一份日志」，剩下的交给它。
-
-import type { HistoryLogDriver, PersistedHistoryLog } from '@einfach-agent/core/state/persistence'
 import {
-  DEFAULT_HISTORY_DB_NAME,
-  HISTORY_LOG_STORE_NAME,
-  openIndexedDbHistoryDatabase,
-} from './indexedDbDatabase'
+  checkHistoryLogAppend, replayHistoryLog, validateHistoryLogBatch,
+  type HistoryLogBatch, type HistoryLogDriver,
+} from '@einfach-agent/core/state/persistence'
+import { DEFAULT_HISTORY_DB_NAME, HISTORY_LOG_STORE_NAME, openIndexedDbHistoryDatabase } from './indexedDbDatabase'
 import { runIndexedDbTransaction } from './indexedDbTransaction'
 
-interface HistoryLogRecord extends PersistedHistoryLog {
-  sessionId: string
-}
+const errors = { failed: 'History journal transaction failed', aborted: 'History journal transaction aborted' }
 
-function assertSessionId(sessionId: string): void {
-  if (sessionId.length === 0) throw new Error('History log sessionId must not be empty')
-}
-
-/** 取出来的记录长得像一份日志吗。不像就当没有 —— 撤销不可用好过拿坏数据改状态。 */
-function decodeStoredLog(value: unknown, sessionId: string): PersistedHistoryLog | undefined {
-  if (typeof value !== 'object' || value === null) return undefined
-  const record = value as Record<string, unknown>
-  if (record.sessionId !== sessionId) return undefined
-  if (typeof record.generation !== 'number' || !Number.isSafeInteger(record.generation)) return undefined
-  if (!Array.isArray(record.entries)) return undefined
-  if (typeof record.cursor !== 'number' || !Number.isSafeInteger(record.cursor)) return undefined
-  if (record.barrierTxId !== undefined && typeof record.barrierTxId !== 'string') return undefined
+/** Browser-only provider: one immutable batch per record, never a whole-ledger overwrite. */
+export function createIndexedDbHistoryLogDriver(dbName = DEFAULT_HISTORY_DB_NAME): HistoryLogDriver {
   return {
-    generation: record.generation,
-    entries: record.entries as PersistedHistoryLog['entries'],
-    cursor: record.cursor,
-    ...(record.barrierTxId === undefined ? {} : { barrierTxId: record.barrierTxId }),
-  }
-}
-
-const transactionErrors = {
-  failed: 'IndexedDB history log transaction failed',
-  aborted: 'IndexedDB history log transaction aborted',
-}
-
-export function createIndexedDbHistoryLogDriver(
-  dbName: string = DEFAULT_HISTORY_DB_NAME,
-): HistoryLogDriver {
-  return {
-    async load(sessionId) {
-      assertSessionId(sessionId)
+    async append(sessionId, candidate) {
+      if (!sessionId) throw new Error('History journal sessionId must not be empty')
+      const batch = validateHistoryLogBatch(candidate)
       const db = await openIndexedDbHistoryDatabase(dbName)
       try {
-        return await runIndexedDbTransaction<PersistedHistoryLog | undefined>(db, HISTORY_LOG_STORE_NAME, 'readonly', transactionErrors, (store, setResult, fail) => {
-          const request = store.get(sessionId)
-          request.onsuccess = () => setResult(decodeStoredLog(request.result, sessionId))
-          request.onerror = () => fail(request.error ?? new Error('IndexedDB history log read failed'))
+        await runIndexedDbTransaction<void>(db, HISTORY_LOG_STORE_NAME, 'readwrite', errors, (store, done, fail) => {
+          const existing = store.get([sessionId, batch.id])
+          existing.onsuccess = () => {
+            const records = new Map<string, HistoryLogBatch>()
+            if (existing.result) records.set(batch.id, existing.result.batch)
+            const save = () => {
+              try {
+                if (checkHistoryLogAppend(records, batch) === 'duplicate') { done(undefined); return }
+                const request = store.add({ sessionId, id: batch.id, batch })
+                request.onsuccess = () => done(undefined)
+                request.onerror = () => fail(request.error)
+              } catch (error) { fail(error) }
+            }
+            if (batch.parent === null || existing.result) { save(); return }
+            const parent = store.get([sessionId, batch.parent])
+            parent.onsuccess = () => {
+              if (parent.result) records.set(batch.parent!, parent.result.batch)
+              save()
+            }
+            parent.onerror = () => fail(parent.error)
+          }
+          existing.onerror = () => fail(existing.error)
         })
-      } finally {
-        db.close()
-      }
+      } finally { db.close() }
     },
-
-    async save(sessionId, log) {
-      assertSessionId(sessionId)
+    async load(sessionId, head) {
+      if (!sessionId) throw new Error('History journal sessionId must not be empty')
+      if (head === null) return { entries: [], cursor: 0 }
       const db = await openIndexedDbHistoryDatabase(dbName)
       try {
-        await runIndexedDbTransaction<void>(db, HISTORY_LOG_STORE_NAME, 'readwrite', transactionErrors, (store, setResult, fail) => {
-          const write = store.put({ sessionId, ...log } satisfies HistoryLogRecord)
-          write.onsuccess = () => setResult(undefined)
-          write.onerror = () => fail(write.error ?? new Error('IndexedDB history log write failed'))
-        })
-      } finally {
-        db.close()
-      }
-    },
-
-    async deleteSession(sessionId) {
-      assertSessionId(sessionId)
-      const db = await openIndexedDbHistoryDatabase(dbName)
-      try {
-        await runIndexedDbTransaction<void>(db, HISTORY_LOG_STORE_NAME, 'readwrite', transactionErrors, (store, setResult, fail) => {
-          const write = store.delete(sessionId)
-          write.onsuccess = () => setResult(undefined)
-          write.onerror = () => fail(write.error ?? new Error('IndexedDB history log delete failed'))
-        })
-      } finally {
-        db.close()
-      }
+        const records = await runIndexedDbTransaction<Map<string, HistoryLogBatch>>(
+          db, HISTORY_LOG_STORE_NAME, 'readonly', errors, (store, done, fail) => {
+            const chain = new Map<string, HistoryLogBatch>()
+            const read = (id: string) => {
+              const request = store.get([sessionId, id])
+              request.onerror = () => fail(request.error)
+              request.onsuccess = () => {
+                try {
+                  if (!request.result || chain.has(id)) throw new Error('Broken history journal chain')
+                  const batch = validateHistoryLogBatch(request.result.batch)
+                  if (batch.id !== id) throw new Error('History journal identity mismatch')
+                  chain.set(id, batch)
+                  if (batch.parent === null) done(chain)
+                  else read(batch.parent)
+                } catch (error) { fail(error) }
+              }
+            }
+            read(head)
+          },
+        )
+        return replayHistoryLog(records, head)
+      } finally { db.close() }
     },
   }
 }

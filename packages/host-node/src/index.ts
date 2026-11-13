@@ -124,6 +124,7 @@ export {
 } from './rollout'
 export type { NodeAgentRolloutDriverOptions } from './rollout'
 export { createNodeAgentHistoryProvider } from './history'
+export { createNodeHistoryLogDriver } from './historyJournal/nodeHistoryLogDriver'
 export type { NodeAgentHistoryProviderOptions } from './history'
 
 // model 域失败的**判别面**（M6）。M2 要把「响应头之前的失败」分成 400/403/409/500/502/503，

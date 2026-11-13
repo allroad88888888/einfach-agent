@@ -8,7 +8,7 @@ import {
   createMemoryRecoveryDriver,
   type RecoveryDriver,
 } from '../state/persistence/recoveryDriver'
-import type { RecoverySnapshotV1 } from '../state/recoverySnapshot.type'
+import type { RecoverySnapshotV2 } from '../state/recoverySnapshot.type'
 import { sessionsAtom } from '../state/rootAtoms'
 import { itemsAtom } from '../state/sessionAtoms'
 import { createRecoveryWriter } from './recoveryWriter'
@@ -47,7 +47,7 @@ describe('recoveryWriter queue lifecycle', () => {
     const base = createMemoryRecoveryDriver()
     let activeSaves = 0
     let maximumActiveSaves = 0
-    const saveLatest = vi.fn(async (id: string, candidate: RecoverySnapshotV1) => {
+    const saveLatest = vi.fn(async (id: string, candidate: RecoverySnapshotV2) => {
       activeSaves += 1
       maximumActiveSaves = Math.max(maximumActiveSaves, activeSaves)
       await Promise.resolve()

@@ -11,7 +11,7 @@
 import {
   type RecoveryDriver,
   type RecoverySaveResult,
-  type RecoverySnapshotV1,
+  type RecoverySnapshotV2,
   type SqlExecutor,
   validateRecoverySnapshot,
 } from '@einfach-agent/core/state/persistence'
@@ -46,7 +46,7 @@ function isRecoveryRow(row: RecoveryRow): row is ValidRecoveryRow {
     && (row.snapshot === null || typeof row.snapshot === 'string')
 }
 
-function decodeRow(row: RecoveryRow, expectedSessionId?: string): RecoverySnapshotV1 | undefined {
+function decodeRow(row: RecoveryRow, expectedSessionId?: string): RecoverySnapshotV2 | undefined {
   if (!isRecoveryRow(row) || (expectedSessionId !== undefined && row.session_id !== expectedSessionId)) {
     throw new Error('Corrupt SQLite recovery record')
   }
@@ -72,12 +72,12 @@ async function loadRow(sessionId: string): Promise<RecoveryRow | undefined> {
   return rows[0]
 }
 
-async function listLatest(executor: SqlExecutor): Promise<RecoverySnapshotV1[]> {
+async function listLatest(executor: SqlExecutor): Promise<RecoverySnapshotV2[]> {
   const rows = await executor.select<RecoveryRow[]>(
     'SELECT session_id, generation, deleted, snapshot FROM recovery_snapshots',
   )
   return rows.map((row) => decodeRow(row)).filter(
-    (snapshot): snapshot is RecoverySnapshotV1 => snapshot !== undefined,
+    (snapshot): snapshot is RecoverySnapshotV2 => snapshot !== undefined,
   )
 }
 

@@ -3,7 +3,7 @@
 // 本文件从原 checkpointWriters.ts 拆出。那里原有四个轮级 undo 写入器
 // （commitCheckpoint / updateCheckpoint / jumpToCheckpoint / rewindBeforeCheckpoint），
 // 已随用户 undo 迁移到 einfach 的事务日志（createHistory）整体删除；留下的只有阶段级回退，
-// 因为它的输入 planStageCheckpointsAtom 在 RecoverySnapshotV1 里，与轮级快照无关。
+// 因为它的输入 planStageCheckpointsAtom 在 RecoverySnapshotV2 里，与轮级快照无关。
 //
 // core 参数默认 defaultCore：不传时读写默认实例的 store；传入独立 core 则只落在那个实例。
 

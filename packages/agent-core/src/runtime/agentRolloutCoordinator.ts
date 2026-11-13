@@ -1,16 +1,16 @@
 import type { AgentRolloutDriver } from '../history'
 import { buildRootRolloutDelta } from '../history/rootRolloutDelta'
-import type { RecoverySnapshotV1 } from '../state/recoverySnapshot.type'
+import type { RecoverySnapshotV2 } from '../state/recoverySnapshot.type'
 
 export interface AgentRolloutCoordinator {
-  capture(snapshot: RecoverySnapshotV1): Promise<void>
+  capture(snapshot: RecoverySnapshotV2): Promise<void>
   resetSession(sessionId: string): void
   reset(): void
 }
 
 /** Serial callers bind a successfully appended root delta to the next recovery save. */
 export function createAgentRolloutCoordinator(driver: AgentRolloutDriver): AgentRolloutCoordinator {
-  const previousBySession = new Map<string, RecoverySnapshotV1>()
+  const previousBySession = new Map<string, RecoverySnapshotV2>()
 
   return {
     async capture(snapshot) {

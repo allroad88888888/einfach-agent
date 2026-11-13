@@ -1,7 +1,7 @@
 import type { AgentHistoryTarget } from './agentHistoryTarget'
 import type { AgentRolloutMutationV1, AgentRunStateMutationV1 } from './rolloutMutation'
 import type { ConversationItem } from '../state/core.type'
-import type { RecoverySnapshotV1 } from '../state/recoverySnapshot.type'
+import type { RecoverySnapshotV2 } from '../state/recoverySnapshot.type'
 
 function stableJson(value: unknown): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value) ?? 'null'
@@ -12,16 +12,16 @@ function stableJson(value: unknown): string {
   return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableJson(entry)}`).join(',')}}`
 }
 
-function target(snapshot: RecoverySnapshotV1): AgentHistoryTarget {
+function target(snapshot: RecoverySnapshotV2): AgentHistoryTarget {
   return { kind: 'root', conversationId: snapshot.sessionId }
 }
 
-function sessionMeta(snapshot: RecoverySnapshotV1, historyTarget: AgentHistoryTarget): AgentRolloutMutationV1 {
+function sessionMeta(snapshot: RecoverySnapshotV2, historyTarget: AgentHistoryTarget): AgentRolloutMutationV1 {
   const { title, createdAt, updatedAt } = snapshot.session
   return { mutationType: 'session_meta', target: historyTarget, title, createdAt, updatedAt }
 }
 
-function turnContext(snapshot: RecoverySnapshotV1, historyTarget: AgentHistoryTarget): AgentRolloutMutationV1 {
+function turnContext(snapshot: RecoverySnapshotV2, historyTarget: AgentHistoryTarget): AgentRolloutMutationV1 {
   return {
     mutationType: 'turn_context',
     target: historyTarget,
@@ -30,7 +30,7 @@ function turnContext(snapshot: RecoverySnapshotV1, historyTarget: AgentHistoryTa
   }
 }
 
-function runState(snapshot: RecoverySnapshotV1, historyTarget: AgentHistoryTarget): AgentRunStateMutationV1 {
+function runState(snapshot: RecoverySnapshotV2, historyTarget: AgentHistoryTarget): AgentRunStateMutationV1 {
   const run = snapshot.values.run
   return {
     mutationType: 'run_state',
@@ -68,8 +68,8 @@ function changed(left: unknown, right: unknown): boolean {
  * The recovery snapshots remain untouched; all output ordering is deterministic.
  */
 export function buildRootRolloutDelta(
-  previous: RecoverySnapshotV1 | undefined,
-  current: RecoverySnapshotV1,
+  previous: RecoverySnapshotV2 | undefined,
+  current: RecoverySnapshotV2,
 ): readonly AgentRolloutMutationV1[] {
   if (previous !== undefined && previous.sessionId !== current.sessionId) {
     throw new Error('Cannot build a root rollout delta across sessions')

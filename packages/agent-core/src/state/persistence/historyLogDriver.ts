@@ -1,116 +1,97 @@
-// 会话事务日志的持久化契约与零依赖内存实现。
-// ---------------------------------------------------------------------------
-// ## 为什么不是 einfach 的 `HistoryPersistPort`
-//
-// einfach 提供的端口是**增量镜像**：`append` / `dropOldest` / `dropAfter` / `setCursor` 逐笔跟随
-// 内存变化。对纯粹的「让日志活过刷新」它是够的，但对本仓不够，因为这里还有第二份持久化真相 ——
-// `RecoverySnapshotV1`。两者时点不一致就会静默损坏：
-//
-//   · 日志每次写入都记账；快照在耐久性栅栏才落盘（`persistRecovery`，含轮内的
-//     `tool_call_execution_started`）。
-//   · 崩溃后盘上是「快照停在某个栅栏 + 日志多出栅栏之后的条目」。
-//   · 此时 undo 会把**更早状态的 `before`** 写进当前世界。反向偏移（快照比日志新）同样错：
-//     日志最新那条的 `after` 不再等于当前值，undo 会把那之后的写入一起吃掉。
-//
-// 结论：日志与快照必须**成对**。所以这里不做增量镜像，而是在快照落盘成功的同一时刻，
-// 用 einfach 的 `getState()` 整份刷盘，并把**那次快照的 `generation`** 一起存下；
-// 读回时只在 `generation` 与快照一致时才 `hydrate()`，不一致就整份丢弃 —— 撤销不可用，
-// 但状态是对的。fail-closed。
-//
-// 顺带两个好处：IO 从「每次状态写入」降到「每个栅栏一次」；不必和端口的下标语义纠缠
-// （`dropOldest` / `dropAfter` 都是下标，端口若自行丢条目，坐标系会与内存永久错开）。
-//
-// 每个 session 一条、可覆盖，与 `RecoveryDriver` 同构。
-
 import type { HistoryEntry, HistoryStackState } from '@einfach/core'
+import { replayHistoryLog } from './historyLogReplay'
 
-/** 一份可落盘的日志：条目、游标，以及与它配对的那份恢复快照的 generation。 */
-export interface PersistedHistoryLog {
-  /**
-   * 与本日志配对的 `RecoverySnapshotV1.generation`。
-   *
-   * 读回时的唯一判据：与快照的 generation 不等 → 这份日志描述的不是快照那个世界，整份丢弃。
-   */
-  generation: number
-  entries: HistoryEntry[]
-  cursor: number
-  /**
-   * 撤销屏障（见 state/undoBarrier.ts）：这条账目及更早的都不许再撤销。
-   *
-   * 跟着日志一起落盘、而不是进恢复快照：屏障与它保护的那本账必须同生同死。分开存就会出现
-   * 「账在、屏障没了」—— 刷新之后撤销就能越过一个已经发生的不可逆删除。
-   */
+/** Immutable batches form a chain. A recovery snapshot selects one exact head, not the file tail. */
+export type HistoryLogOperation =
+  | { type: 'append'; entry: HistoryEntry }
+  | { type: 'dropOldest'; count: number }
+  | { type: 'dropAfter'; cursor: number }
+  | { type: 'setCursor'; cursor: number }
+
+export interface HistoryLogBatch {
+  version: 1
+  id: string
+  parent: string | null
+  operations: HistoryLogOperation[]
+}
+
+export interface RecoveryHistoryRef {
+  head: string | null
   barrierTxId?: string
 }
 
-/** 每个 session 一条、可覆盖的事务日志；与恢复快照配对，不独立成为真相。 */
 export interface HistoryLogDriver {
-  load(sessionId: string): Promise<PersistedHistoryLog | undefined>
-  save(sessionId: string, log: PersistedHistoryLog): Promise<void>
-  /** 会话删除后清掉它的日志；不留 tombstone —— 日志本身不是真相，快照那侧已经 fence 住了。 */
-  deleteSession(sessionId: string): Promise<void>
+  /** Resolves only after durable append. Repeating an identical batch is idempotent. */
+  append(sessionId: string, batch: HistoryLogBatch): Promise<void>
+  /** Replays only the selected chain, including its cursor and redo branch. */
+  load(sessionId: string, head: string | null): Promise<HistoryStackState>
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
-/** Minimum structure accepted by einfach History.hydrate; malformed ledgers fail with the snapshot. */
-export function isPersistedHistoryPayload(value: unknown): value is Omit<PersistedHistoryLog, 'generation'> {
-  if (!isRecord(value) || !Array.isArray(value.entries) || !Number.isSafeInteger(value.cursor)
-    || (value.cursor as number) < 0 || (value.cursor as number) > value.entries.length
-    || (value.barrierTxId !== undefined && typeof value.barrierTxId !== 'string')) return false
-  const entriesValid = value.entries.every((entry) => isRecord(entry) && typeof entry.txId === 'string' && entry.txId.length > 0
-    && (entry.label === undefined || typeof entry.label === 'string') && Array.isArray(entry.ops) && entry.ops.length > 0
-    && entry.ops.every((op) => isRecord(op) && typeof op.key === 'string' && op.key.length > 0
-      && (op.scope === undefined || typeof op.scope === 'string') && ('before' in op || 'after' in op)))
-  if (!entriesValid) return false
-  return value.barrierTxId === undefined
-    || (value.barrierTxId.length > 0 && value.entries.some((entry) => entry.txId === value.barrierTxId))
+function identifier(value: unknown): value is string {
+  return typeof value === 'string' && value.length > 0 && value.length <= 128
 }
 
-/**
- * 把内存日志转成可落盘的形状；不可 JSON 序列化则返回 undefined。
- *
- * 强制走一遍 JSON 往返，理由与 `validateRecoverySnapshot` 相同：日志不是可信边界。
- * 记账载荷来自各槽位的写入器，某个槽位哪天塞进一个类实例或闭包，这里当场拦住，
- * 而不是等到读回时 `hydrate()` 丢掉半条日志。
- *
- * 往返也顺手把 `before: undefined` 这类键抹掉 —— 那是 append op 的正常形状
- * （逆操作靠 `op.scope` 定位，不读 `before`），抹掉不影响还原。
- */
-export function toPersistableHistoryLog(
-  generation: number,
-  state: HistoryStackState,
-  barrierTxId?: string,
-): PersistedHistoryLog | undefined {
-  const candidate: PersistedHistoryLog = {
-    generation,
-    entries: [...state.entries],
-    cursor: state.cursor,
-    ...(barrierTxId === undefined ? {} : { barrierTxId }),
+function index(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0
+}
+
+export function isRecoveryHistoryRef(value: unknown): value is RecoveryHistoryRef {
+  return record(value) && (value.head === null || identifier(value.head))
+    && (value.barrierTxId === undefined || identifier(value.barrierTxId))
+    && Object.keys(value).every((key) => key === 'head' || key === 'barrierTxId')
+}
+
+function validOperation(value: unknown): value is HistoryLogOperation {
+  if (!record(value)) return false
+  if (value.type === 'dropOldest') return index(value.count)
+  if (value.type === 'dropAfter' || value.type === 'setCursor') return index(value.cursor)
+  if (value.type !== 'append' || !record(value.entry)) return false
+  const entry = value.entry
+  return identifier(entry.txId) && (entry.label === undefined || typeof entry.label === 'string')
+    && Array.isArray(entry.ops) && entry.ops.length > 0
+    && entry.ops.every((op) => record(op) && identifier(op.key)
+      && (op.scope === undefined || typeof op.scope === 'string') && ('before' in op || 'after' in op))
+}
+
+export function validateHistoryLogBatch(value: unknown): HistoryLogBatch {
+  const candidate: unknown = JSON.parse(JSON.stringify(value))
+  if (!record(candidate) || candidate.version !== 1 || !identifier(candidate.id)
+    || !(candidate.parent === null || identifier(candidate.parent)) || candidate.parent === candidate.id
+    || !Array.isArray(candidate.operations) || candidate.operations.length === 0
+    || !candidate.operations.every(validOperation)) throw new Error('Invalid history journal batch')
+  return candidate as unknown as HistoryLogBatch
+}
+
+/** Shared idempotency and parent validation for durable providers. */
+export function checkHistoryLogAppend(
+  records: ReadonlyMap<string, HistoryLogBatch>, batch: HistoryLogBatch,
+): 'duplicate' | 'new' {
+  const previous = records.get(batch.id)
+  if (previous) {
+    if (JSON.stringify(previous) !== JSON.stringify(batch)) throw new Error('History journal batch id conflict')
+    return 'duplicate'
   }
-  try {
-    const json = JSON.stringify(candidate)
-    if (json === undefined) return undefined
-    return JSON.parse(json) as PersistedHistoryLog
-  } catch {
-    return undefined
-  }
+  if (batch.parent !== null && !records.has(batch.parent)) throw new Error('Missing history journal parent')
+  return 'new'
 }
 
-/** 无盘宿主与契约测试使用的日志 driver；每个工厂实例彼此隔离。 */
 export function createMemoryHistoryLogDriver(): HistoryLogDriver {
-  const logs = new Map<string, PersistedHistoryLog>()
+  const sessions = new Map<string, Map<string, HistoryLogBatch>>()
   return {
-    async load(sessionId) {
-      return logs.get(sessionId)
+    async append(sessionId, candidate) {
+      if (!sessionId) throw new Error('History journal sessionId must not be empty')
+      const batch = validateHistoryLogBatch(candidate)
+      const records = sessions.get(sessionId) ?? new Map<string, HistoryLogBatch>()
+      checkHistoryLogAppend(records, batch)
+      records.set(batch.id, batch)
+      sessions.set(sessionId, records)
     },
-    async save(sessionId, log) {
-      logs.set(sessionId, log)
-    },
-    async deleteSession(sessionId) {
-      logs.delete(sessionId)
+    async load(sessionId, head) {
+      return replayHistoryLog(sessions.get(sessionId) ?? new Map(), head)
     },
   }
 }
