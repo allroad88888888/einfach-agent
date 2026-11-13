@@ -141,6 +141,7 @@ export async function buildStableModelPrefix(
   }
   const environment = buildEnvironmentItem({
     workspaceRoot,
+    localAccessMode: sessionMeta.localAccessMode,
     // 【B3】入参名与文案已随本机 Node 后端落地改成按能力措辞（曾经按宿主品牌命名、文案写死
     // 「宿主：Tauri 桌面端」）：同一个 true 现在可能来自桌面原生层，也可能来自浏览器接上的
     // 本地 Node 后端，报品牌就等于对其中一种宿主撒谎。详见 modelTurnSystemItems.ts。

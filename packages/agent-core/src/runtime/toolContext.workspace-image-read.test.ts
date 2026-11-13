@@ -21,12 +21,12 @@ function context(sessionId: string, signal = new AbortController().signal) {
 }
 
 describe('ToolContext.readWorkspaceImage', () => {
-  it('注入会话 workspace root，并只为 Auto 注入外部只读权限', async () => {
+  it('注入会话 workspace root，并只为完整本地权限注入外部只读权限', async () => {
     imageBridge.readWorkspaceImage.mockResolvedValue({
       ok: true,
       data: { base64: 'AA==', mimeType: 'image/png', filename: 'a.png', sizeBytes: 1 },
     })
-    seedSession('image-auto', '/session/root', 'auto')
+    seedSession('image-auto', '/session/root', 'confirm', undefined, 'full')
 
     await expect(context('image-auto').readWorkspaceImage!({
       path: '/other/a.png',
@@ -36,10 +36,11 @@ describe('ToolContext.readWorkspaceImage', () => {
       path: '/other/a.png',
       workspaceRoot: '/session/root',
       allowExternalPaths: true,
+      fullLocalAccess: true,
     })
   })
 
-  it('非 Auto 会话移除调用方伪造的外部路径权限', async () => {
+  it('目录内会话移除调用方伪造的外部路径权限', async () => {
     imageBridge.readWorkspaceImage.mockResolvedValue({
       ok: true,
       data: { base64: 'AA==', mimeType: 'image/png', filename: 'a.png', sizeBytes: 1 },

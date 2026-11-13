@@ -31,6 +31,7 @@ export interface ActiveSessionConfig {
   id: string
   workspaceRoot?: string
   approvalMode: 'confirm' | 'auto'
+  localAccessMode?: 'workspace' | 'full'
   settings: ModelSettings
   vendor: string
   model: string
@@ -71,6 +72,7 @@ export function ActiveSessionProvider({
     id,
     workspaceRoot,
     approvalMode: meta?.toolApprovalMode ?? 'confirm',
+    localAccessMode: meta?.localAccessMode ?? 'workspace',
     settings,
     vendor: settings.vendor,
     model: settings.model,

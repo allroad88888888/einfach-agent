@@ -84,9 +84,8 @@ export type { ModelEscalationPolicy, ModelEscalationRequest } from './runtime/mo
 // （apps/web/src/host/hostCommandBridge.ts、apps/cli/src/runtime.ts）——core 侧不提供任何具体
 // 宿主的 loader，否则装配层就得深导入一个 `runtime/host*` 子路径，撞下面这条白名单本身。
 //
-// 只收两个：`hasHostBridge` / `loadHostInvoke` 的消费方全在 core 内部（H2–H4 要改的那 13 个
-// runtime 模块），宿主不该也不需要自己去解析桥，按同一条「按真实用量划线」的规矩留在包内。
-export { configureHostInvoke } from './runtime/hostBridge'
+// UI 用 hasHostBridge 决定是否展示本地权限；解析具体桥的 loadHostInvoke 仍留在包内。
+export { configureHostInvoke, hasHostBridge } from './runtime/hostBridge'
 // 宿主实现自己的桥时要照它写签名（packages/host-node 的路由表、浏览器侧的 HTTP invoke）
 export type { HostInvoke, HostBridgeRegistration } from './runtime/hostBridge'
 export { readWorkspaceImage } from './runtime/workspaceImageRead'
@@ -132,6 +131,7 @@ export {
   continueRecoveredSession,
   stopRun,
   setApprovalMode,
+  setLocalAccessMode,
   resumeWithAnswers,
   confirmTool,
   answerQuestion,

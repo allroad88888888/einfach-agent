@@ -192,10 +192,12 @@ export async function createBrowserAgentWithDependencies(
       const preserveRecovery = disposeOptions?.preserveRecovery === true
       disposePromise = (async () => {
         await mutation
+        // A late reader can recreate a store after its session was removed.
+        const sessionIds = core.sessionIds().filter((sessionId) => Boolean(core.rootStore.getter(sessionsAtom)[sessionId]))
         if (preserveRecovery) {
-          await Promise.all(core.sessionIds().map((sessionId) => core.interruptRunForRecovery(sessionId)))
+          await Promise.all(sessionIds.map((sessionId) => core.interruptRunForRecovery(sessionId)))
         } else {
-          for (const sessionId of core.sessionIds()) core.stopRun({ sessionId })
+          for (const sessionId of sessionIds) core.stopRun({ sessionId })
         }
         await core.persistence.flush()
         core.persistence.reset()

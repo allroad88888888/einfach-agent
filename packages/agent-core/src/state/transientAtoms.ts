@@ -15,6 +15,7 @@ export {
   withdrawnTurnNoticeAtom,
 } from './sessionTransientAtoms'
 export {
+  appendToolOutput,
   addAlwaysAllowedTool,
   addBrowserCard,
   addPendingArtifact,

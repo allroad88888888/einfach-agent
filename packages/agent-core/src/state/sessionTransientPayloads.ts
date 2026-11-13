@@ -29,6 +29,9 @@ export interface BrowserCard {
 export type AskUserAnswerValue = string | string[] | boolean
 
 export interface ToolActivity {
+  /** Ephemeral display only; never copied into model messages or recovery. */
+  output?: string
+  outputChars?: number
   callId: string
   toolName: string
   text: string

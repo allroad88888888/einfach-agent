@@ -36,6 +36,16 @@ beforeEach(() => {
 })
 
 describe('runShellCommand backgroundProcessesKilled', () => {
+  it('向宿主传递取消信号，取消错误不转换为普通失败结果', async () => {
+    const controller = new AbortController()
+    host.invoke.mockImplementation(async (_command, _args, options) => {
+      expect(options.signal).toBe(controller.signal)
+      controller.abort()
+      throw controller.signal.reason
+    })
+    await expect(runShellCommand({ ...input }, controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   it('把后端 snake_case background_processes_killed 归一化为 camelCase', async () => {
     host.invoke.mockResolvedValue(backendResult({ background_processes_killed: true }))
 

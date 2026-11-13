@@ -10,7 +10,8 @@ import { registerStandardTools } from './index'
 
 // 7 域 37 个标准工具的权威清单（顺序 = 注册顺序：shell → interaction → vision → fs → planning → skills → agents）。
 const STANDARD_TOOLS = [
-  // shell（6）
+  // shell（10）
+  'start_service', 'get_service_status', 'read_service_logs', 'stop_service',
   'shell_macos', 'shell_linux', 'shell_powershell', 'run_task', 'run_verification_command',
   'git_diff_review',
   // interaction（3）
@@ -31,17 +32,18 @@ const STANDARD_TOOLS = [
 ] as const
 
 const REPLAY_UNSAFE_STANDARD_TOOLS = [
+  'start_service', 'stop_service',
   'shell_macos', 'shell_linux', 'shell_powershell', 'run_task', 'run_verification_command',
   'save_file', 'apply_patch', 'write_file', 'delete_path', 'copy_path', 'move_path',
   'revert_workspace_change', 'delegate_agent', 'view_image', 'compact_context',
 ] as const
 
 describe('@einfach-agent/tools —— 标准工具集聚合（TSPLIT TS2）', () => {
-  it('registerStandardTools 装齐 37 个工具，其中 36 个模型可见', () => {
+  it('registerStandardTools 装齐 41 个工具，其中 40 个模型可见', () => {
     const reg = createToolRegistry()
     registerStandardTools(reg)
-    expect(reg.list().length).toBe(36)
-    expect(STANDARD_TOOLS.length).toBe(37)
+    expect(reg.list().length).toBe(40)
+    expect(STANDARD_TOOLS.length).toBe(41)
   })
 
   it('七域每个工具都按 name 就位', () => {
@@ -56,7 +58,7 @@ describe('@einfach-agent/tools —— 标准工具集聚合（TSPLIT TS2）', ()
     const reg = createToolRegistry()
     registerStandardTools(reg)
     registerStandardTools(reg)
-    expect(reg.list().length).toBe(36)
+    expect(reg.list().length).toBe(40)
   })
 
   it('副作用或高代价工具通过 replayUnsafe 元数据登记', () => {

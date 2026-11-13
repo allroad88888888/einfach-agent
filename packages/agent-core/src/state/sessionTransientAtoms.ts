@@ -40,15 +40,8 @@ export const pendingQuestionAnswersAtom = atom<Record<string, AskUserAnswerValue
 /**
  * 当前会话正在跑的工具进度（按 callId）。
  *
- * **归宿：recomputable（能从别处算回来）。** 它装的不是任何人产出的内容，而是入参的格式化结果：
- * 全部 24 处 `ctx.progress(...)` 调用要么传常量（`'应用文件 patch'`），要么传
- * `runtime/toolContext/progressReporting.ts` 的 `shellProgressText` / `pathProgressText` /
- * `taskProgressText` 对该次调用入参的格式化 —— 而入参本身在 `items` 的 tool_call 里，
- * 工具结果另走 tool result 进 `items`。
- *
- * 它还活不过一次调用：`runtime/toolCallExecutor.ts` 的 `finally` 无条件 `removeToolActivity`。
- * 所以崩溃时留在这里的至多是最后一批在飞调用的提示行，而那次 run 恢复后一律转 interrupted ——
- * 把「正在读取文件…」原样恢复出来是**假的进行中**，比空着更坏。
+ * 临时进度含有界 shell 输出，只供当前调用的界面展示，不进入恢复槽位、模型消息或追踪。
+ * runtime/toolCallExecutor.ts 的 finally 无条件 removeToolActivity；刷新后不会恢复输出。
  */
 export const toolActivityAtom = atom<ToolActivity[]>([])
 

@@ -1,6 +1,6 @@
 # delete_path
 
-Recoverably delete one file or directory inside the current workspace.
+Recoverably delete one file or directory. External paths require full local access.
 
 ## Parameters
 - `path` (required): one explicit workspace path. Globs are not expanded.

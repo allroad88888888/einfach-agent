@@ -4,7 +4,7 @@ import type { ShellCommandResult, ToolResult } from '@einfach-agent/core/tools'
 // 必须显式告诉模型：它用 `cmd &` 起的服务并没有活下来，后续步骤不能假设端口已就绪。
 const BACKGROUND_KILLED_WARNING =
   '该命令留下的后台进程仍占用 stdout/stderr，已被强制终止。用 `cmd &` 启动的服务没有存活；' +
-  '需要长期运行的服务请改用独立的任务/服务机制，或让命令自身以脱离终端的方式守护化。'
+  '需要长期运行的服务请改用 start_service；服务由当前会话持有，会话删除或宿主关闭时停止。'
 
 const FAILURE_OUTPUT_PREVIEW_LENGTH = 600
 
@@ -53,12 +53,38 @@ function withBackgroundNotice(result: ShellCommandResult, toolResult: ToolResult
   }
 }
 
+// 区分静默窗口与总时长上限；是否卡住不能仅凭输出判断。
+function timeoutMessage(result: ShellCommandResult): string {
+  if (result.timeoutReason === 'idle') {
+    return `shell command exceeded the idle window and was killed after ${result.durationMs}ms`
+  }
+  if (result.timeoutReason === 'total') {
+    return `shell command hit the overall time ceiling after ${result.durationMs}ms`
+  }
+  // 没有 reason 的旧宿主：保持原文案。一次后端升级不该改变已经存在的错误文本。
+  return `shell command timed out after ${result.durationMs}ms`
+}
+
+function timeoutHint(result: ShellCommandResult): string | undefined {
+  if (result.timeoutReason === 'idle') {
+    return (
+      '命令在静默窗口内没有输出。检查是否在等待输入或锁；如果它正常运行但输出较少，可以增加 timeoutMs 后重试。'
+    )
+  }
+  if (result.timeoutReason === 'total') {
+    return '命令超过了总时长兜底。可以检查进度或把任务拆成更小的范围。'
+  }
+  return undefined
+}
+
 export function shellCommandToolResult(result: ShellCommandResult): ToolResult {
   if (result.timedOut) {
+    const hint = timeoutHint(result)
     return withBackgroundNotice(result, {
       ok: false,
-      error: `shell command timed out after ${result.durationMs}ms`,
+      error: timeoutMessage(result),
       code: 'SHELL_TIMEOUT',
+      ...(hint !== undefined ? { hint } : {}),
       retryable: true,
       details: result,
     })

@@ -44,9 +44,11 @@ export type WorkspaceCapabilities = Pick<
 
 export function createWorkspaceCapabilities(deps: {
   toolName: string
+  signal: AbortSignal
   core: CoreInstance
   guards: ToolStaleGuards
   progress: ToolContext['progress']
+  shellOutput: (chunk: { stream: 'stdout' | 'stderr'; text: string }) => void
   inputGuards: WorkspaceInputGuards
 }): WorkspaceCapabilities {
   const { toolName, core, progress } = deps
@@ -62,7 +64,7 @@ export function createWorkspaceCapabilities(deps: {
     async runShell(input) {
       assertFresh()
       progress(shellProgressText(input.command))
-      const result = await runShellCommand(withShellCwd(input))
+      const result = await runShellCommand(withShellCwd(input), deps.signal, deps.shellOutput)
       assertFresh()
       return commandUsesPermanentDelete(toolName, { command: input.command })
         ? { ...result, reversible: false }

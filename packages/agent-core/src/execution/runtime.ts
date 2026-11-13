@@ -76,7 +76,8 @@ function eventForStatus(
 
 function executionAbortError(signal: AbortSignal): Error {
   const reason = signal.reason
-  const error = reason instanceof Error ? reason : new Error('execution cancelled')
+  // AbortSignal's default reason is a DOMException with a read-only name.
+  const error = new Error(reason instanceof Error ? reason.message : 'execution cancelled', { cause: reason })
   error.name = 'AbortError'
   return error
 }

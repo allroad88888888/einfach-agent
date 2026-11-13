@@ -4,6 +4,32 @@ import { executionGraphAtom } from './graph'
 import { getExecutionRuntime } from './runtime'
 
 describe('execution runtime lifecycle', () => {
+  it.each([
+    ['default DOMException', () => undefined],
+    ['frozen Error', () => Object.freeze(new Error('frozen cancellation'))],
+  ])('handles %s cancellation without mutating the reason', async (_label, reason) => {
+    const core = createCoreInstance()
+    const controller = new AbortController()
+    let originalReason: unknown
+    const pending = getExecutionRuntime(core).run({
+      id: 'readonly-reason', graphId: 'run', sessionId: 'session', runId: 'run',
+      type: 'tool', label: 'cancelled tool', signal: controller.signal,
+      task: async () => {
+        controller.abort(reason())
+        originalReason = controller.signal.reason
+        return 'late result'
+      },
+    })
+    await expect(pending).rejects.toMatchObject({
+      name: 'AbortError', message: (originalReason as Error).message,
+    })
+    expect(controller.signal.reason).toBe(originalReason)
+    expect(core.getSessionStore('session').store.getter(executionGraphAtom)
+      .nodes['readonly-reason']).toMatchObject({
+      status: 'cancelled', error: (originalReason as Error).message,
+    })
+  })
+
   it('join supports a bounded wait without cancelling the execution', async () => {
     const core = createCoreInstance()
     const runtime = getExecutionRuntime(core)

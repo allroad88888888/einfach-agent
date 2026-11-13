@@ -2,7 +2,7 @@
 // progress 写会话 store 的 toolActivityAtom，守卫（ghost + 已取消）逐字沿用拆分前的内联判断。
 
 import type { ToolContext } from '../../tools/types'
-import { upsertToolActivity } from '../../state/transientAtoms'
+import { upsertToolActivity, appendToolOutput } from '../../state/transientAtoms'
 import type { CoreInstance } from '../core/coreInstance'
 import { isCurrentRun, type CurrentRunDeps } from '../shared/runGuards'
 
@@ -34,5 +34,19 @@ export function createProgressReporter(deps: {
     // 迟到/被顶掉的 run 不写进度；esc 已断也不写。
     if (signal.aborted || !isCurrentRun(currentRun)) return
     upsertToolActivity(sessionId, { callId, toolName, text }, core)
+  }
+}
+
+/** One closure belongs to one tool invocation in one session store. */
+export function createShellOutputReporter(deps: {
+  sessionId: string
+  callId: string
+  signal: AbortSignal
+  currentRun: CurrentRunDeps
+  core: CoreInstance
+}) {
+  return (chunk: { stream: 'stdout' | 'stderr'; text: string }) => {
+    if (deps.signal.aborted || !isCurrentRun(deps.currentRun)) return
+    appendToolOutput(deps.sessionId, deps.callId, chunk.text, deps.core)
   }
 }

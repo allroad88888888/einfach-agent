@@ -1,5 +1,5 @@
 // runtime/toolContext/workspaceInputGuards.ts —— 把 workspace 边界注入工具入参（S4-A）。
-// 这是 workspace confinement 的入参侧：会话根目录注入、跨 workspace 只读权限的**唯一**来源、
+// 这是 workspace confinement 的入参侧：会话根目录注入、本地文件访问权限的**唯一**来源、
 // 变更审计上下文、shell cwd 兜底。四个装饰器逐字沿用拆分前 buildToolContext 里的内联实现——
 // 尤其是 `allowExternalPaths` 必须先被剥掉再由 runtime 决定，避免模型伪造 runtime-only 权限。
 
@@ -31,28 +31,24 @@ export function createWorkspaceInputGuards(deps: {
   callId: string
   workspaceRoot: string | undefined
   /**
-   * Auto 的跨 workspace 只读权限只从宿主会话状态派生。它不会进入工具 schema，且
+   * 本地完整权限只从宿主会话状态派生。它不会进入工具 schema，且
    * withWorkspaceReadAccess 会覆盖/移除调用方同名字段，避免模型伪造 runtime-only 权限。
    */
-  allowExternalReadPaths: boolean
+  fullLocalAccess?: boolean
 }): WorkspaceInputGuards {
-  const { sessionId, runId, callId, workspaceRoot, allowExternalReadPaths } = deps
+  const { sessionId, runId, callId, workspaceRoot, fullLocalAccess } = deps
 
   // S4-A：把会话 workspaceRoot 注入桥入参 —— session 未绑定则原样（Rust 走 git root 兜底，保持现状）；
-  //   调用方（工具）已显式带 workspaceRoot 则尊重调用方、不覆盖；桥不带 input（getWorkspaceDiff）时合成一个。
+  //   会话已绑定时始终使用会话根目录；桥不带 input 时合成一个。
   function withWorkspaceRoot<T>(input: T): T {
     const record = input !== null && typeof input === 'object' && !Array.isArray(input)
       ? input as Record<string, unknown>
       : {}
-    const { allowExternalPaths: _untrusted, ...trustedInput } = record
+    const { allowExternalPaths: _untrusted, fullLocalAccess: _untrustedFull,
+      full_local_access: _untrustedWire, allow_external_paths: _untrustedReadWire, ...rest } = record
+    const trustedInput = fullLocalAccess ? { ...rest, fullLocalAccess: true } : rest
 
     if (!workspaceRoot) return trustedInput as T
-    if (
-      typeof trustedInput.workspaceRoot === 'string'
-      && trustedInput.workspaceRoot.trim().length > 0
-    ) {
-      return trustedInput as T
-    }
     return { ...trustedInput, workspaceRoot } as T
   }
 
@@ -63,7 +59,7 @@ export function createWorkspaceInputGuards(deps: {
       : {}
     const { allowExternalPaths: _untrusted, ...trustedInput } = record
     return (
-      allowExternalReadPaths
+      fullLocalAccess
         ? { ...trustedInput, allowExternalPaths: true }
         : trustedInput
     ) as T

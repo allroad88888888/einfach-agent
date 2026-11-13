@@ -46,6 +46,7 @@ interface WorkspaceTaskResult {
   stderr: string
   durationMs: number
   timedOut: boolean
+  timeoutReason?: 'idle' | 'total'
   truncated: boolean
   command: string[]
   cwd: string
@@ -172,9 +173,12 @@ export function createRunWorkspaceTaskHandler(_options: NodeHostInvokeOptions): 
     // 必须先发起输出读取、再 await 等子进程退出：两路读取要与「等子进程」并发进行，否则
     // 管道缓冲区写满会把子进程卡死在写系统调用里，见 readWorkspaceTaskOutput.ts 的说明。
     const outputPromise = readWorkspaceTaskOutput(child.stdout, child.stderr, maxOutputChars)
-    const { exitCode, timedOut } = await waitForChild(child, timeoutMs)
+    // 同时观察两条 rejection，生命周期失败关闭管道时也不会留下未处理的 drain rejection。
+    const [{ exitCode, timedOut, timeoutReason }, { stdout, stderr }] = await Promise.all([
+      waitForChild(child, timeoutMs),
+      outputPromise,
+    ])
     const durationMs = Date.now() - startedAt
-    const { stdout, stderr } = await outputPromise
 
     return {
       ok: !timedOut && exitCode === 0,
@@ -183,6 +187,7 @@ export function createRunWorkspaceTaskHandler(_options: NodeHostInvokeOptions): 
       stderr: stderr.text,
       durationMs,
       timedOut,
+      ...(timeoutReason ? { timeoutReason } : {}),
       truncated: stdout.truncated || stderr.truncated,
       command,
       cwd,

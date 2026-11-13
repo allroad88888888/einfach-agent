@@ -59,6 +59,12 @@ describe('shellCommandToolResult', () => {
     expect('ok' in result && !result.ok ? result.hint : '').toContain('后台进程')
   })
 
+  it('静默超时允许调整等待时间，不把无输出等同于卡死', () => {
+    const result = shellCommandToolResult(makeResult({ timedOut: true, timeoutReason: 'idle' }))
+    expect(result).toMatchObject({ ok: false, code: 'SHELL_TIMEOUT', retryable: true })
+    expect('ok' in result && !result.ok ? result.hint : '').toContain('增加 timeoutMs')
+  })
+
   it('非零退出把 stderr 摘要放进 hint，避免模型只看到退出码', () => {
     const result = shellCommandToolResult(
       makeResult({ exitCode: 101, stderr: 'error[E0559]: Event::UserInput has no field named images' }),

@@ -76,7 +76,7 @@ export function criticalPowerShellDelete(command: string): boolean {
 }
 
 export function commandUsesPermanentDelete(name: string, args: unknown): boolean {
-  if (!name.startsWith('shell_')) return false
+  if (!name.startsWith('shell_') && name !== 'start_service') return false
   const command = commandFromArgs(args)
   if (name === 'shell_powershell') {
     return /(?:^|[\s;&|('"`])(?:remove-item|rm|del)(?=\s|$)/i.test(command)

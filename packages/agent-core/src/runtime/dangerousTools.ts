@@ -16,6 +16,8 @@ import {
 
 // 根 agent 的内建危险工具全集。MCP 另由动态前缀判定，不能进入子 agent 能力集合。
 const DANGEROUS_TOOL_NAMES = [
+  'start_service',
+  'stop_service',
   'shell_macos',
   'shell_linux',
   'shell_powershell',
@@ -266,7 +268,7 @@ export function classifyToolRisk(
   if (isMcpTool(name)) {
     return classifyMcpToolCallRisk(name, context?.mcpToolLaunchTarget)
   }
-  if (!name.startsWith('shell_')) return { level: 'dangerous' }
+  if (!name.startsWith('shell_') && name !== 'start_service') return { level: 'dangerous' }
 
   const command = commandFromArgs(args)
   if (

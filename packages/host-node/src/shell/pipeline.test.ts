@@ -85,10 +85,34 @@ describe('executeShellCommand（真子进程）', () => {
       const result = await executeShellCommand({ platform: host, command, timeoutMs: 200 })
 
       expect(result.timed_out).toBe(true)
+      // `sleep` 一个字节都不输出，所以走的是静默那一侧，不是总时长兜底。
+      expect(result.timeout_reason).toBe('idle')
       expect(Date.now() - startedAt).toBeLessThan(3_000)
       // 被信号杀死的进程没有退出码。core 侧会把 null 整形成 exitCode: -1 并在 stderr 补一句，
       // 那是桌面端今天就有的语义，不是本移植的选择。
       if (!isWindows) expect(result.exit_code).toBeNull()
+    },
+    SPAWN_BUDGET_MS,
+  )
+
+  it(
+    '持续有输出的命令跑得比上限久也不会被杀（判据是静默，不是总时长）',
+    async () => {
+      // 本改动的验收用例。修复前：`timeoutMs` 是墙钟上限，一条约 1s 的命令配 300ms
+      // 必然被杀；修复后：每 200ms 都有输出，idle 一直被重置，命令能跑完。
+      const command = isWindows
+        ? '1..5 | ForEach-Object { Write-Output "tick $_"; Start-Sleep -Milliseconds 200 }'
+        : 'for i in 1 2 3 4 5; do echo "tick $i"; sleep 0.2; done'
+      const startedAt = Date.now()
+
+      const result = await executeShellCommand({ platform: host, command, timeoutMs: 300 })
+
+      expect(result.timed_out).toBe(false)
+      expect(result.timeout_reason).toBeUndefined()
+      expect(result.exit_code).toBe(0)
+      expect(result.stdout).toContain('tick 5')
+      // 真的跑过了 300ms 这个上限：否则这条用例无法区分「没超时」和「没测到」。
+      expect(Date.now() - startedAt).toBeGreaterThanOrEqual(800)
     },
     SPAWN_BUDGET_MS,
   )

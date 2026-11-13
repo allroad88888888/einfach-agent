@@ -38,16 +38,17 @@
 // 问题 #5。当年记的是「留给对拍拿决定」，Rust 侧已随 T1 删除，**没有对拍会来拿这个决定了**：
 // 它现在是一条无主的既有缺陷，要改就得单开一卡，别指望它自己被顺带解决。）
 
+import { canAccessWorkspacePath, hasFullLocalAccess } from '../common/localAccessScope'
 import { lstat, realpath } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import {
   errorText,
   hasParentSegment,
   isFilesystemRoot,
-  isWithinRoot,
   joinRequestedPath,
   normalizeLexically,
   relativeToRoot,
+  resolveWorkspaceTargetPath,
 } from '../common'
 import { pathExists } from '../common/pathExists'
 
@@ -67,10 +68,11 @@ export async function resolvePatchPath(root: string, rawPath: string): Promise<s
   if (!trimmed) throw new Error('path must be a non-empty string')
   // Rust 是 join 之后在 `normalize_no_parent` 里遇到 ParentDir 才拒；先在原文上判等价——
   // root 自身是 canonicalize 过的绝对路径，不含 `..`，拼接不会凭空造出一个 ParentDir 分量。
-  if (hasParentSegment(trimmed)) throw new Error('path must not contain `..` components')
+  if (!hasFullLocalAccess() && hasParentSegment(trimmed)) throw new Error('path must not contain `..` components')
 
-  const normalized = normalizeLexically(joinRequestedPath(root, trimmed))
-  if (!isWithinRoot(root, normalized)) throw new Error(OUTSIDE_ROOT)
+  const joined = joinRequestedPath(root, trimmed)
+  const normalized = hasFullLocalAccess() ? joined : normalizeLexically(joined)
+  if (!canAccessWorkspacePath(root, normalized)) throw new Error(OUTSIDE_ROOT)
 
   const link = await symlinkMetadata(normalized)
   if (link !== null) {
@@ -81,12 +83,12 @@ export async function resolvePatchPath(root: string, rawPath: string): Promise<s
     } catch (error) {
       throw new Error(`failed to resolve path \`${normalized}\`: ${errorText(error)}`)
     }
-    if (!isWithinRoot(root, canonical)) throw new Error(OUTSIDE_ROOT)
+    if (!canAccessWorkspacePath(root, canonical)) throw new Error(OUTSIDE_ROOT)
     return canonical
   }
 
   await ensureParentInsideRoot(root, normalized)
-  return normalized
+  return hasFullLocalAccess() ? resolveWorkspaceTargetPath(root, trimmed) : normalized
 }
 
 /**
@@ -100,7 +102,7 @@ export async function ensureParentInsideRoot(root: string, path: string): Promis
   // Rust 的 `Path::parent()` 只有在路径是文件系统根时才给 None。
   if (isFilesystemRoot(path)) throw new Error('path must have a parent directory')
   const parent = dirname(path)
-  if (!isWithinRoot(root, parent)) throw new Error(PARENT_OUTSIDE_ROOT)
+  if (!canAccessWorkspacePath(root, parent)) throw new Error(PARENT_OUTSIDE_ROOT)
 
   const existing = await nearestExistingAncestor(parent)
   let canonical: string
@@ -109,7 +111,7 @@ export async function ensureParentInsideRoot(root: string, path: string): Promis
   } catch (error) {
     throw new Error(`failed to resolve parent directory \`${existing}\`: ${errorText(error)}`)
   }
-  if (!isWithinRoot(root, canonical)) throw new Error(PARENT_OUTSIDE_ROOT)
+  if (!canAccessWorkspacePath(root, canonical)) throw new Error(PARENT_OUTSIDE_ROOT)
 }
 
 /**

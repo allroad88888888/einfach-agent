@@ -26,6 +26,7 @@ import {
 } from './composerModelSettings'
 import { ComposerModelPicker } from './ComposerModelPicker'
 import { ComposerThinkingControl } from './ComposerThinkingControl'
+import { ComposerLocalAccessControl } from './ComposerLocalAccessControl'
 import { ConversationCapabilitiesButton } from './ConversationCapabilitiesButton'
 import { ConversationCapabilitiesPanel } from './ConversationCapabilitiesPanel'
 
@@ -128,6 +129,7 @@ export function ComposerControlBar({
         {t`授权：${approvalModeLabel}`}
         <span aria-hidden="true">{t` · ⇧Tab 切换`}</span>
       </button>
+      <ComposerLocalAccessControl disabled={modelSettingsDisabled} />
       {queuedMessageCount > 0 ? (
         <span className="agentnew-composer-queue-status" role="status">
           {t`已排队 ${queuedMessageCount} 条`}

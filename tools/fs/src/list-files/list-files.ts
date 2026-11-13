@@ -59,7 +59,7 @@ export const listFilesTool: Tool = {
   execution: { mode: 'parallel', effectKeys: ['workspace:read'] },
   runtime: 'server', // 依赖宿主本机文件系统（ctx.listWorkspaceFiles），没有本机能力桥（hasHostBridge()）时不进 manifest（TP3）。
   skill: {
-    description: '列出目录文件项；Auto 模式也可列出 workspace 外的绝对路径或上级路径。',
+    description: '列出目录文件项；本地完整权限模式也可列出 workspace 外的绝对路径或上级路径。',
     triggers: ['list files', '列目录', '目录', '文件列表'],
     content: guide,
   },

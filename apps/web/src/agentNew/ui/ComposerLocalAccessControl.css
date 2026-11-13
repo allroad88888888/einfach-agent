@@ -1,0 +1,69 @@
+.agentnew-local-access {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  box-sizing: border-box;
+  height: 26px;
+  padding: 0 7px;
+  border: 1px solid #dfe3ec;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #68758a;
+}
+
+.agentnew-local-access.is-full {
+  border-color: #d5c2a0;
+  background: #fff9ed;
+  color: #90621d;
+}
+
+.agentnew-local-access:focus-within {
+  outline: 2px solid #a8aaee;
+  outline-offset: 2px;
+}
+
+.agentnew-local-access svg {
+  display: block;
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linejoin: round;
+}
+
+.agentnew-local-access select {
+  appearance: none;
+  height: 24px;
+  margin: 0;
+  padding: 0 19px 0 6px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 24px;
+  text-align: center;
+  text-align-last: center;
+  cursor: pointer;
+}
+
+.agentnew-local-access select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.agentnew-local-access .agentnew-local-access-chevron {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  width: 12px;
+  height: 12px;
+  transform: translateY(-50%);
+  stroke-linecap: round;
+  pointer-events: none;
+}

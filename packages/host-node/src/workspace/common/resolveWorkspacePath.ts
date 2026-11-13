@@ -2,11 +2,11 @@
 // ---------------------------------------------------------------------------
 // 等价移植 Rust 侧那两套 `resolve_workspace_path`：
 //   · 读取形态（workspace_read_paths.rs）——目标**必须已存在**，canonicalize 之后比边界。
-//     `../` 与绝对路径都允许写，是否越界由 realpath 的结果说了算；Auto 会话可带
+//     `../` 与绝对路径都允许写，是否越界由 realpath 的结果说了算；完整本地权限会话可带
 //     `allowExternalPaths` 读到根外。
 //   · 写入形态（workspace_write_target_path.rs）——目标**可能还不存在**，realpath 无从下手，
 //     所以词法上直接拒 `..`，再拿「最近的已存在祖先」去 canonicalize 比边界，最后把缺失的
-//     段接回去。写入没有 allowExternalPaths：读到根外只是看见，写到根外是改别人的磁盘。
+//     段接回去。只有本次宿主调用显式开启完整本地权限时才允许写入根外。
 //
 // 三类逃逸各自被哪一步挡住：
 //   · 词法逃逸 `../../etc/passwd` —— 读取形态：realpath 解出根外真实路径 → 边界判定拒；
@@ -16,6 +16,7 @@
 //   · symlink 逃逸（根内一个软链指向根外）—— 词法检查一个字都看不出来，只有 realpath 解开
 //     链接后比边界才拦得住。这就是「判定必须基于解析后的真实路径」的全部理由。
 
+import { canAccessWorkspacePath, hasFullLocalAccess } from './localAccessScope'
 import { realpath } from 'node:fs/promises'
 import { basename, dirname, sep } from 'node:path'
 import { errorText } from './errorText'
@@ -34,7 +35,7 @@ const OUTSIDE_WORKSPACE = 'path must stay within the workspace root'
 
 export interface ResolveExistingPathOptions {
   /**
-   * Auto 会话的特权：允许目标落在 workspace 之外。默认 false。
+   * 完整本地权限会话的特权：允许目标落在 workspace 之外。默认 false。
    *
    * 只影响**读取**类操作，且必须由宿主按会话档位显式传入——不要给它一个「看起来方便」的
    * 默认真值：这个开关一旦默认打开，confinement 就只剩注释。
@@ -94,10 +95,11 @@ export async function resolveWorkspaceTargetPath(root: string, requested: string
   if (hasNulByte(trimmed)) throw new Error('path cannot contain NUL bytes')
   // 写入侧对 `..` 是**直接拒**，不是先消再判：目标不存在时没有 realpath 可查，词法层面就是
   // 唯一防线；而按词法消掉 `..` 会与 realpath 的语义分叉（见 pathContainment.ts）。
-  if (hasParentSegment(trimmed)) throw new Error('path must not contain `..` components')
+  if (!hasFullLocalAccess() && hasParentSegment(trimmed)) throw new Error('path must not contain `..` components')
 
-  const normalized = normalizeLexically(joinRequestedPath(root, trimmed))
-  if (!isWithinRoot(root, normalized)) throw new Error(OUTSIDE_WORKSPACE)
+  const joined = joinRequestedPath(root, trimmed)
+  const normalized = hasFullLocalAccess() ? joined : normalizeLexically(joined)
+  if (!canAccessWorkspacePath(root, normalized)) throw new Error(OUTSIDE_WORKSPACE)
   return resolveExistingAncestor(root, normalized)
 }
 
@@ -110,7 +112,7 @@ export async function resolveWorkspaceTargetPath(root: string, requested: string
 async function resolveExistingAncestor(root: string, target: string): Promise<string> {
   if (await pathExists(target)) {
     const canonical = await canonicalize(target, `failed to resolve target path \`${toSlashPath(target)}\``)
-    if (!isWithinRoot(root, canonical)) throw new Error(OUTSIDE_WORKSPACE)
+    if (!canAccessWorkspacePath(root, canonical)) throw new Error(OUTSIDE_WORKSPACE)
     return canonical
   }
 
@@ -127,13 +129,13 @@ async function resolveExistingAncestor(root: string, target: string): Promise<st
   }
 
   let resolved = await canonicalize(cursor, `failed to resolve ancestor \`${toSlashPath(cursor)}\``)
-  if (!isWithinRoot(root, resolved)) throw new Error(OUTSIDE_WORKSPACE)
+  if (!canAccessWorkspacePath(root, resolved)) throw new Error(OUTSIDE_WORKSPACE)
   for (let index = missing.length - 1; index >= 0; index -= 1) {
     resolved = `${resolved}${sep}${missing[index]}`
   }
   // 再比一次：祖先在根内不代表接回缺失段后仍在根内（root 本身就是那个祖先、而缺失段被
   // 拼成了别的分支时才有意义，但这一步 Rust 也保留着，照做不额外花钱）。
-  if (!isWithinRoot(root, resolved)) throw new Error(OUTSIDE_WORKSPACE)
+  if (!canAccessWorkspacePath(root, resolved)) throw new Error(OUTSIDE_WORKSPACE)
   return resolved
 }
 

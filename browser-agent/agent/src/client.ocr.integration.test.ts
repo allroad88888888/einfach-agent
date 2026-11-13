@@ -20,6 +20,9 @@ async function profile(client: Awaited<ReturnType<typeof createBrowserAgent>>, t
   return client.saveAgent({ name: '识别助手', instructions: '读附件', connectionId: connection.id, model: 'test', toolNames: tools, skillNames: [] })
 }
 
+// These integration tests perform asynchronous persistence and model runs on shared CI workers.
+vi.setConfig({ testTimeout: 30_000 })
+
 describe('OCR attachments through the browser runtime', () => {
   it('keeps PDF bytes session-scoped through reload and undo, and sends them only to OCR', async () => {
     const namespace = `ocr-files-${crypto.randomUUID()}`

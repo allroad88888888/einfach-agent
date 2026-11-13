@@ -4,7 +4,7 @@ The desktop CI matrix currently supports only Apple Silicon macOS:
 
 | Runner | Tauri target | Bundled Node runtime |
 | --- | --- | --- |
-| `macos-14` | `aarch64-apple-darwin` | Node 22.13.0 for `aarch64-apple-darwin` |
+| `macos-15` | `aarch64-apple-darwin` | Node 22.13.0 for `aarch64-apple-darwin` |
 
 The workflow runs on pull requests, branch pushes, tags matching `app-v*`, and manual dispatch. Every matrix job installs the same `${{ matrix.target }}` Rust target with `rustup target add`, builds the shared Web/server output and Node host runtime, stages the matching Node sidecar, runs `node scripts/check-desktop-wrapper.mjs`, then explicitly packages with `pnpm exec tauri build --config apps/desktop/tauri.conf.json --target ${{ matrix.target }}`. Thus Rust compilation, staging, and packaging consume the same matrix target.
 

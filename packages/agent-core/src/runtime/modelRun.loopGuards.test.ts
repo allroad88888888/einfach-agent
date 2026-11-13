@@ -68,7 +68,7 @@ describe('runSession（多轮 lazy-tool 循环，T-6）循环安全网', () => {
     expect(run?.error).toContain('已连续占用超过 500 轮')
     expect(trace.events.some((event) => event.name === 'agent.plan_stage_over_budget')).toBe(true)
     // 500 轮循环单跑约 6 秒，全量并发时会超过默认 5 秒——与 666 轮用例同一理由给显式预算。
-  }, 15_000)
+  }, 60_000)
 
   it('阶段进度 guard 跨恢复沿用持久化模型轮数，不因新 run 清零', async () => {
     seedSession('plan-stage-persisted-guard', { vendor: 'deepseek', model: 'x' })

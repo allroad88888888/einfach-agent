@@ -333,6 +333,10 @@ msgstr "仅桌面端"
 msgid "从预设开始"
 msgstr "从预设开始"
 
+#: apps/web/src/agentNew/ui/ComposerLocalAccessControl.tsx
+msgid "任务结束或停止后可切换本地权限"
+msgstr "任务结束或停止后可切换本地权限"
+
 #: apps/web/src/agentNew/ui/McpAddServerForm.tsx
 msgid "会在本机启动进程"
 msgstr "会在本机启动进程"
@@ -1285,6 +1289,14 @@ msgstr "收起计划详情"
 msgid "文件"
 msgstr "文件"
 
+#: apps/web/src/agentNew/ui/ComposerLocalAccessControl.tsx
+msgid "文件工具仅可访问当前工作区目录"
+msgstr "文件工具仅可访问当前工作区目录"
+
+#: apps/web/src/agentNew/ui/ComposerLocalAccessControl.tsx
+msgid "文件工具可访问本机目录外的文件，仍受系统权限限制"
+msgstr "文件工具可访问本机目录外的文件，仍受系统权限限制"
+
 #: apps/web/src/agentNew/ui/ModelCredentialPanel.tsx
 msgid "文本任务默认使用 <0>DeepSeek</0>；带图片的任务由支持图片的模型处理。"
 msgstr "文本任务默认使用 <0>DeepSeek</0>；带图片的任务由支持图片的模型处理。"
@@ -1444,9 +1456,17 @@ msgstr "本 session 一律允许该工具"
 msgid "本地"
 msgstr "本地"
 
+#: apps/web/src/agentNew/ui/ComposerLocalAccessControl.tsx
+msgid "本地完整权限"
+msgstr "本地完整权限"
+
 #: apps/web/src/agentNew/ui/McpAddServerForm.tsx
 msgid "本地服务需先确认命令"
 msgstr "本地服务需先确认命令"
+
+#: apps/web/src/agentNew/ui/ComposerLocalAccessControl.tsx
+msgid "本地权限"
+msgstr "本地权限"
 
 #: apps/web/src/agentNew/ui/StartupCredentialGate.tsx
 msgid "本机后端会保存到应用配置文件；静态部署会保存到当前浏览器的 localStorage 并直连模型服务。"
@@ -1712,6 +1732,10 @@ msgstr "用此模型新建对话"
 #: apps/web/src/agentNew/ui/LanguageSwitcher.tsx
 msgid "界面语言"
 msgstr "界面语言"
+
+#: apps/web/src/agentNew/ui/ComposerLocalAccessControl.tsx
+msgid "目录内"
+msgstr "目录内"
 
 #: apps/web/src/agentNew/ui/ComposerControlBar.tsx
 msgid "确认"

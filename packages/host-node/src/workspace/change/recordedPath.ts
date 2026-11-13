@@ -18,16 +18,17 @@
 // 边界判定用 `isWithinRoot`（按分量比），不是 `String.startsWith`——`/ws-evil` 不算在 `/ws` 里，
 // 理由见 common/pathContainment.ts。
 
+import { canAccessWorkspacePath, hasFullLocalAccess } from '../common/localAccessScope'
 import { realpath } from 'node:fs/promises'
 import { dirname, isAbsolute, parse } from 'node:path'
 import { errorText } from '../common/errorText'
-import { hasParentSegment, isWithinRoot, joinRequestedPath } from '../common/pathContainment'
+import { hasParentSegment, joinRequestedPath } from '../common/pathContainment'
 import { pathExists } from './pathProbe'
 
 export async function resolveRecordedPath(root: string, relative: string): Promise<string> {
   // `parse(x).root` 挡的是 Rust `Component::Prefix` / `RootDir` 那一档：POSIX 上 `isAbsolute`
   // 已经覆盖，Windows 上 `C:foo`（有盘符、无根）不是绝对路径却同样不该放行。
-  if (isAbsolute(relative) || parse(relative).root !== '' || hasParentSegment(relative)) {
+  if (!hasFullLocalAccess() && (isAbsolute(relative) || parse(relative).root !== '' || hasParentSegment(relative))) {
     throw new Error('invalid path in workspace change journal')
   }
   // 刻意不用 `path.join`：它会按词法消 `..`，而那与 realpath 的语义不同（见 pathContainment.ts）。
@@ -42,7 +43,7 @@ export async function resolveRecordedPath(root: string, relative: string): Promi
 
 async function confineExisting(root: string, path: string): Promise<string> {
   const canonical = await canonicalize(path)
-  if (!isWithinRoot(root, canonical)) {
+  if (!canAccessWorkspacePath(root, canonical)) {
     throw new Error('recorded path escaped workspace root')
   }
   return canonical

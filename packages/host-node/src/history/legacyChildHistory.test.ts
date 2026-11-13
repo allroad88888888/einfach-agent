@@ -68,9 +68,9 @@ describe('legacy child history', () => {
     await writeFile(join(seeded.traceDir, 'root-02.trace.jsonl'), `${trace({ role: 'assistant', content: 'later' })}\n`)
     const adapter = createLegacyChildHistoryAdapter(seeded.root)
     const first = await adapter.listHistories()
-    expect(first).toMatchObject({ records: [], truncated: true })
+    expect(first).toMatchObject({ truncated: true, warnings: expect.arrayContaining([expect.objectContaining({ code: 'OUTPUT_TRUNCATED' })]) })
     const second = await adapter.listHistories(first.continuation)
-    expect(second.records.map((record) => record.history.target)).toEqual([
+    expect([...first.records, ...second.records].map((record) => record.history.target)).toEqual([
       { kind: 'child', conversationId: 'conversation', runId: 'run', agentPath: 'root-02' },
     ])
     expect(second.truncated).toBe(false)
@@ -106,10 +106,10 @@ describe('legacy child history', () => {
     await writeFile(join(seeded.traceDir, 'root-02.trace.jsonl'), `${trace({ role: 'assistant', content: 'needle' })}\n`)
     const adapter = createLegacyChildHistoryAdapter(seeded.root)
     const result = await adapter.search('needle')
-    expect(result).toMatchObject({ hits: [], truncated: true,
-      warnings: [expect.objectContaining({ code: 'OUTPUT_TRUNCATED' })], continuation: expect.any(Object) })
+    expect(result).toMatchObject({ truncated: true,
+      warnings: expect.arrayContaining([expect.objectContaining({ code: 'OUTPUT_TRUNCATED' })]), continuation: expect.any(Object) })
     const resumed = await adapter.search('needle', undefined, result.continuation)
-    expect(resumed.hits).toHaveLength(1)
+    expect([...result.hits, ...resumed.hits]).toHaveLength(1)
     expect(resumed.truncated).toBe(false)
   })
 

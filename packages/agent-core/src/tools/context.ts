@@ -56,6 +56,7 @@ export interface ToolContext {
   executePlan?(planId: string, revision: number): Promise<PlanMutationResult>
   updatePlan?(input: UpdatePlanInput): Promise<PlanMutationResult>
   submitStageResult?(input: SubmitStageResultInput): Promise<PlanMutationResult>
+  sessionService?(action: 'start' | 'status' | 'logs' | 'stop', input: Record<string, unknown>): Promise<unknown>
   runShell(input: ShellCommandInput): Promise<ShellCommandResult>
   readWorkspaceFile?(input: {
     path: string

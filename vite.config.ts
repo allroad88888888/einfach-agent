@@ -225,6 +225,13 @@ export default defineConfig(({ command, mode }) => {
     // Web 源码已迁到 apps/web；环境变量仍统一放在仓库根目录，避免 Web/Tauri 各存一份密钥。
     envDir: fromRoot('./'),
     plugins: [
+      // Node 22 exposes this prefix-only builtin through isBuiltin(), but not builtinModules;
+      // Vitest's jsdom transform otherwise tries to bundle it as browser code.
+      ...(process.env.VITEST ? [{
+        name: 'vitest-node-sqlite-external',
+        enforce: 'pre' as const,
+        resolveId(id: string) { return id === 'node:sqlite' ? { id, external: true } : null },
+      }] : []),
       react({
         babel: {
           plugins: ['@lingui/babel-plugin-lingui-macro'],

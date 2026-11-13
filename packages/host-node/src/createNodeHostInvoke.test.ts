@@ -7,6 +7,16 @@ import { createNodeHostInvoke, NodeHostCommandError } from './createNodeHostInvo
 import { NODE_HOST_COMMAND_NAMES } from './commandNames'
 
 describe('createNodeHostInvoke', () => {
+  it('进程内调用把取消信号传给 shell，取消前不启动命令', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const invoke = createNodeHostInvoke()
+    await expect(invoke('run_shell_command', {
+      platform: process.platform === 'win32' ? 'windows' : process.platform === 'darwin' ? 'macos' : 'linux',
+      command: 'echo unexpected',
+    }, { signal: controller.signal })).rejects.toMatchObject({ name: 'AbortError' })
+  })
+
   it('把 get_user_home_dir 路由到 os.homedir()', async () => {
     const invoke = createNodeHostInvoke()
     // 调用形态刻意与 core 的 runtime/userSkillsRoot.ts 一致：不传第二个实参。
@@ -89,6 +99,7 @@ describe('createNodeHostInvoke', () => {
         'run_workspace_task',
         'pick_workspace_directory',
         'run_shell_command',
+        'start_session_service', 'get_session_service', 'read_session_service_logs', 'stop_session_service', 'end_service_session',
         'mcp_connect',
         'mcp_list_tools',
         'mcp_call_tool',
@@ -142,8 +153,8 @@ describe('createNodeHostInvoke', () => {
   it('registers one rollout flush disposer alongside the MCP disposer', async () => {
     const disposers: Array<() => Promise<void>> = []
     createNodeHostInvoke({ registerHostDisposer(dispose) { disposers.push(dispose) } })
-    expect(disposers).toHaveLength(2)
-    await expect(Promise.all(disposers.map((dispose) => dispose()))).resolves.toHaveLength(2)
+    expect(disposers).toHaveLength(3)
+    await expect(Promise.all(disposers.map((dispose) => dispose()))).resolves.toHaveLength(3)
   })
 
   it('uses one injected rollout driver for routes and its single flush disposer', async () => {
@@ -157,7 +168,7 @@ describe('createNodeHostInvoke', () => {
       registerHostDisposer(dispose) { disposers.push(dispose) } })
     await expect(invoke('agent_rollout_reconcile', {})).resolves.toEqual({ histories: [] })
     expect(driver.reconcile).toHaveBeenCalledOnce()
-    expect(disposers).toHaveLength(2)
+    expect(disposers).toHaveLength(3)
     await Promise.all(disposers.map((dispose) => dispose()))
     expect(driver.flush).toHaveBeenCalledOnce()
   })

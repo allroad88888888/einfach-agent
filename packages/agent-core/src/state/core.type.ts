@@ -189,10 +189,11 @@ export interface SessionMeta {
   // 旧版把目录直接挂在会话上；新写入不再使用，仅供 hydrate/runtime 兼容读取。
   /** @deprecated 使用 WorkspaceMeta.rootPath。 */
   workspaceRoot?: string
-  // 工具授权模式：confirm 保持逐次确认并把只读文件工具限制在 workspace；
-  // auto 允许只读文件工具访问外部路径，且仅为极高风险调用暂停。
+  // 工具授权模式只控制确认策略；文件访问范围由 localAccessMode 独立控制。
   // 可选以兼容旧持久化数据，读取时缺省按 confirm 处理。
   toolApprovalMode?: 'confirm' | 'auto'
+  /** 本机文件访问范围；旧会话缺字段时按 workspace 处理。 */
+  localAccessMode?: 'workspace' | 'full'
   // 会话级持久化的 lazy-tool LRU（仅保存工具名，不保存可能过期的 schema）。
   // 新 run / 应用重启后会从当前 registry 重新加载这些工具的最新 schema。
   loadedTools?: string[]
