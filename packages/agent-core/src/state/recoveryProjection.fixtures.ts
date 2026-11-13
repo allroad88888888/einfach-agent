@@ -6,7 +6,7 @@ import { executionGraphAtom } from '../execution/graph'
 import type { ExecutionGraphSnapshot } from '../execution/types'
 import { sessionsAtom } from './rootAtoms'
 import { captureRecoverySnapshot } from './recoveryProjection'
-import type { RecoverySnapshotV1 } from './recoverySnapshot.type'
+import type { RecoverySnapshotV2 } from './recoverySnapshot.type'
 import {
   contextCheckpointAtom,
   itemsAtom,
@@ -138,7 +138,7 @@ export function seedDurableState(store: Store): void {
   }])
 }
 
-export function capture(store: Store): RecoverySnapshotV1 {
+export function capture(store: Store): RecoverySnapshotV2 {
   const rootStore = createStore()
   rootStore.setter(sessionsAtom, { [sessionId]: recoverySession })
   return captureRecoverySnapshot(store, { rootStore, sessionId, generation: 7, capturedAt: 99 })

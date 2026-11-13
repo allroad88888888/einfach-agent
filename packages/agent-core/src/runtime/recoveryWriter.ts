@@ -1,11 +1,13 @@
 // 每个 session 的恢复快照写入器：同步捕获、串行 CAS、删除 fence。
 
+import type { HistoryPersistenceCapture } from '../state/historyPersistence'
+import type { HistoryLogDriver } from '../state/persistence/historyLogDriver'
 import type { Store } from '@einfach/core'
 import type { AgentRolloutDriver } from '../history'
 import type { ObservabilityPort } from '../observability/port'
 import { captureRecoverySnapshot } from '../state/recoveryProjection'
 import type { RecoveryDriver } from '../state/persistence/recoveryDriver'
-import type { RecoverySnapshotV1 } from '../state/recoverySnapshot.type'
+import type { RecoverySnapshotV2 } from '../state/recoverySnapshot.type'
 import {
   createAgentRolloutCoordinator,
   type AgentRolloutCoordinator,
@@ -31,7 +33,8 @@ export interface RecoveryWriter {
     store: Store,
     sessionId: string,
     reason?: string,
-    history?: RecoverySnapshotV1['history'],
+    history?: HistoryPersistenceCapture,
+    barrierTxId?: string,
   ): Promise<RecoveryWriteOutcome>
   /** Closes the local write gate before durably writing the driver's terminal tombstone. */
   deleteSession(sessionId: string): Promise<RecoveryDeleteOutcome>
@@ -46,6 +49,7 @@ export interface RecoveryWriterOptions {
   rootStore: Store
   recovery: RecoveryDriver
   observability: RecoveryWriterObservability
+  historyLog?: HistoryLogDriver
   agentRollout?: AgentRolloutDriver
 }
 
@@ -65,7 +69,7 @@ function isCurrent(
   return state.epoch === captureEpoch && captureEpoch === currentEpoch && !state.tombstoned
 }
 
-function withGeneration(snapshot: RecoverySnapshotV1, generation: number): RecoverySnapshotV1 {
+function withGeneration(snapshot: RecoverySnapshotV2, generation: number): RecoverySnapshotV2 {
   return { ...snapshot, generation }
 }
 
@@ -123,18 +127,23 @@ export function createRecoveryWriter(options: RecoveryWriterOptions): RecoveryWr
 
   async function saveCaptured(
     state: SessionWriteState,
-    captured: RecoverySnapshotV1,
+    captured: RecoverySnapshotV2,
     sessionId: string,
     captureEpoch: number,
     captureCoordinator: AgentRolloutCoordinator | undefined,
+    history?: HistoryPersistenceCapture,
   ): Promise<RecoveryWriteOutcome> {
     if (!isCurrent(state, captureEpoch, epoch)) {
       return state.tombstoned
         ? { status: 'tombstoned', sessionId }
         : { status: 'skipped', sessionId, reason: 'reset' }
     }
-    // Rollout is the strong boundary: failures become an observable outcome and leave recovery untouched.
+    // Both append logs must be durable before a snapshot can publish their corresponding state.
     try {
+      if (history) {
+        if (!options.historyLog) throw new Error('History journal driver is not configured')
+        await history.flush(options.historyLog, sessionId)
+      }
       await captureCoordinator?.capture(captured)
     } catch (error) {
       return { status: 'error', sessionId, error }
@@ -192,7 +201,8 @@ export function createRecoveryWriter(options: RecoveryWriterOptions): RecoveryWr
     store: Store,
     sessionId: string,
     reason?: string,
-    history?: RecoverySnapshotV1['history'],
+    history?: HistoryPersistenceCapture,
+    barrierTxId?: string,
   ): Promise<RecoveryWriteOutcome> {
     const state = stateFor(sessionId)
     const operation = options.observability.beginPerformanceDiagnostic(
@@ -206,7 +216,7 @@ export function createRecoveryWriter(options: RecoveryWriterOptions): RecoveryWr
       return Promise.resolve(outcome)
     }
 
-    let captured: RecoverySnapshotV1
+    let captured: RecoverySnapshotV2
     try {
       const generation = state.nextGeneration
       captured = captureRecoverySnapshot(store, {
@@ -214,7 +224,8 @@ export function createRecoveryWriter(options: RecoveryWriterOptions): RecoveryWr
         sessionId,
         generation,
       })
-      if (history) captured = { ...captured, history }
+      if (history) captured = { ...captured, historyRef: { head: history.head,
+        ...(barrierTxId === undefined ? {} : { barrierTxId }) } }
       state.nextGeneration += 1
     } catch (error) {
       const outcome: RecoveryWriteOutcome = { status: 'error', sessionId, error }
@@ -226,7 +237,7 @@ export function createRecoveryWriter(options: RecoveryWriterOptions): RecoveryWr
     const captureCoordinator = rolloutCoordinator
     return enqueue(
       state,
-      () => saveCaptured(state, captured, sessionId, captureEpoch, captureCoordinator),
+      () => saveCaptured(state, captured, sessionId, captureEpoch, captureCoordinator, history),
     ).then((outcome) => {
       finish(operation, outcome)
       return outcome

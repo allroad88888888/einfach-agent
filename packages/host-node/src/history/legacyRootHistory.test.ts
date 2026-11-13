@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { RecoverySnapshotV1 } from '@einfach-agent/core/state/persistence'
+import type { RecoverySnapshotV2 } from '@einfach-agent/core/state/persistence'
 
 import { createLegacyRootHistoryAdapter } from './legacyRootHistory'
 
-function snapshot(sessionId = 'session'): RecoverySnapshotV1 {
+function snapshot(sessionId = 'session'): RecoverySnapshotV2 {
   return {
-    schemaVersion: 1, sessionId, capturedAt: 3, generation: 2, commitMarker: 'complete',
+    schemaVersion: 2, sessionId, capturedAt: 3, generation: 2, commitMarker: 'complete',
     session: { id: sessionId, title: 'Recovered', settings: { vendor: 'test', model: 'test' }, createdAt: 1, updatedAt: 3 },
     values: {
       conversation: { contextCheckpoint: null, items: [

@@ -3,7 +3,7 @@
 // 退出后，判据换成「这一态有没有 SQL 通路」：今天是 server 宿主经 host-node 打 SQL（见
 // apps/web/src/persistence/persistenceDrivers.ts），static 没有通路、仍留在 IndexedDB。
 // ---------------------------------------------------------------------------
-// 背景：持久化范围 = 会话列表（SessionMeta）+ 每会话 RecoverySnapshotV1。用 SQLite 落盘：
+// 背景：持久化范围 = 会话列表（SessionMeta）+ 每会话 RecoverySnapshotV2。用 SQLite 落盘：
 //   SQL 经装配层注入的 `SqlExecutor`（P1 的 port）执行，上层逻辑（persistenceBridge / hydrate）不变。
 //   · 与 IndexedDB 版契约对齐：全 async、best-effort —— 底层报错时读退化为 []、写静默返回，绝不抛
 //     （对齐 indexedDbDriver / sessionsPersistence 的降级语义，DK2）。

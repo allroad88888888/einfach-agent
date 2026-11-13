@@ -1,4 +1,4 @@
-// v1 恢复编排：RecoverySnapshotV1 是唯一运行态来源，损坏或缺失一律 fail-closed。
+// v1 恢复编排：RecoverySnapshotV2 是唯一运行态来源，损坏或缺失一律 fail-closed。
 
 import { beforeEach, describe, expect, it } from 'vitest'
 
@@ -15,13 +15,13 @@ import {
 } from '../sessionAtoms'
 import { subagentContinuationsAtom } from '../subagentContinuationAtoms'
 import { pendingQuestionAnswersAtom, queuedUserMessagesAtom } from '../transientAtoms'
-import type { RecoverySnapshotV1 } from '../recoverySnapshot.type'
+import type { RecoverySnapshotV2 } from '../recoverySnapshot.type'
 import { applyRecoverySnapshot } from '../recoveryProjection'
 import type { RecoveryDriver } from './recoveryDriver'
 import { hydrate } from './hydrate'
 import { normalizeRecoverySnapshotForHydration } from './recoveryHydration'
 
-type RecoveryRunStatus = NonNullable<RecoverySnapshotV1['values']['run']>['status']
+type RecoveryRunStatus = NonNullable<RecoverySnapshotV2['values']['run']>['status']
 
 function session(id = 's1', title = 'Session'): SessionMeta {
   return {
@@ -64,9 +64,9 @@ function graph(sessionId: string, id: string, status: 'interrupted' | 'running' 
   }
 }
 
-function snapshot(id = 's1', status: RecoveryRunStatus = 'running'): RecoverySnapshotV1 {
+function snapshot(id = 's1', status: RecoveryRunStatus = 'running'): RecoverySnapshotV2 {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sessionId: id,
     capturedAt: 9,
     generation: 2,
@@ -99,11 +99,11 @@ function snapshot(id = 's1', status: RecoveryRunStatus = 'running'): RecoverySna
 
 function recoveryDriver(rows: Record<string, unknown> = {}, listed: unknown[] = []): RecoveryDriver {
   return {
-    async listLatest() { return listed as RecoverySnapshotV1[] },
+    async listLatest() { return listed as RecoverySnapshotV2[] },
     async loadLatest(id) {
       const value = rows[id]
       if (value instanceof Error) throw value
-      return value as RecoverySnapshotV1 | undefined
+      return value as RecoverySnapshotV2 | undefined
     },
     async saveLatest(_id, value) { return { status: 'saved' as const, generation: value.generation } },
     async deleteSession() {},
@@ -142,7 +142,7 @@ describe('hydrate · v1 recovery priority', () => {
 
     await expect(hydrate({
       sessions: { loadSessions: async () => [session()] },
-      recovery: recoveryDriver({ s1: { schemaVersion: 1, sessionId: 's1' } }),
+      recovery: recoveryDriver({ s1: { schemaVersion: 2, sessionId: 's1' } }),
     })).resolves.toBe(true)
 
     const store = getSessionStore('s1').store

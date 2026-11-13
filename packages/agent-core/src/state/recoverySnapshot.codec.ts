@@ -1,17 +1,17 @@
-// RecoverySnapshotV1 的 JSON codec 边界校验。
+// RecoverySnapshotV2 的 JSON codec 边界校验。
 
 import { isValidInlineBase64Data } from '@einfach-agent/ai'
 import {
   RECOVERY_SNAPSHOT_COMMIT_MARKER,
   RECOVERY_SNAPSHOT_SCHEMA_VERSION,
   type JsonValue,
-  type RecoverySnapshotV1,
+  type RecoverySnapshotV2,
   type SubagentContinuationState,
 } from './recoverySnapshot.type'
 import { isModelSettings } from './modelSettingsSchema'
 import { isSessionCapabilityPolicy } from './sessionCapabilityPolicy'
 import { isAgentProfileSnapshot } from './agentProfileSchema'
-import { isPersistedHistoryPayload } from './persistence/historyLogDriver'
+import { isRecoveryHistoryRef } from './persistence/historyLogDriver'
 
 const planStatuses = new Set(['draft', 'awaiting_approval', 'approved', 'active', 'completed', 'failed', 'cancelled'])
 const stageStatuses = new Set(['pending', 'in_progress', 'completed', 'failed', 'blocked', 'skipped'])
@@ -285,13 +285,13 @@ function hasProjection(value: unknown, sessionId: string): boolean {
     && value.queuedUserMessages.every(isQueuedMessage)
     && isSubagentContinuations(value.subagentContinuations)
 }
-/** 接受完整的 JSON-safe v1 快照；未知/半写入/损坏 envelope 一律 fail-closed。 */
-export function decodeRecoverySnapshot(value: unknown): RecoverySnapshotV1 | undefined {
+/** 接受完整的 JSON-safe v2 快照；未知/半写入/损坏 envelope 一律 fail-closed。 */
+export function decodeRecoverySnapshot(value: unknown): RecoverySnapshotV2 | undefined {
   const sessionId = isRecord(value) ? value.sessionId : undefined
   if (!isJsonValue(value) || !isRecord(value) || 'continuation' in value
     || value.schemaVersion !== RECOVERY_SNAPSHOT_SCHEMA_VERSION || !isText(sessionId) || sessionId.length === 0
     || !isNatural(value.capturedAt) || !isNatural(value.generation) || value.commitMarker !== RECOVERY_SNAPSHOT_COMMIT_MARKER
     || !isSession(value.session, sessionId) || !hasProjection(value.values, sessionId)
-    || !optional(value, 'history', isPersistedHistoryPayload)) return undefined
-  return value as unknown as RecoverySnapshotV1
+    || 'history' in value || !optional(value, 'historyRef', isRecoveryHistoryRef)) return undefined
+  return value as unknown as RecoverySnapshotV2
 }

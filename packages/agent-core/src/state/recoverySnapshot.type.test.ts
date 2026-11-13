@@ -4,7 +4,7 @@ import { decodeRecoverySnapshot } from './recoverySnapshot.codec'
 import {
   RECOVERY_SNAPSHOT_COMMIT_MARKER,
   RECOVERY_SNAPSHOT_SCHEMA_VERSION,
-  type RecoverySnapshotV1,
+  type RecoverySnapshotV2,
 } from './recoverySnapshot.type'
 
 type LooseRecord = Record<string, unknown>
@@ -32,7 +32,7 @@ function samplePlan() {
   }
 }
 
-function snapshot(): RecoverySnapshotV1 {
+function snapshot(): RecoverySnapshotV2 {
   const plan = samplePlan()
   return {
     schemaVersion: RECOVERY_SNAPSHOT_SCHEMA_VERSION,
@@ -138,7 +138,7 @@ function values(raw: LooseRecord): LooseRecord {
   return raw.values as LooseRecord
 }
 
-describe('RecoverySnapshotV1', () => {
+describe('RecoverySnapshotV2', () => {
   it('接受包含全部 durable atom 投影的 JSON 往返快照', () => {
     const original = snapshot()
     const text = JSON.stringify(original)
@@ -224,7 +224,7 @@ describe('RecoverySnapshotV1', () => {
   })
 
   it.each([
-    ['未知未来 schema', { ...snapshot(), schemaVersion: 2 }],
+    ['未知未来 schema', { ...snapshot(), schemaVersion: 3 }],
     ['旧空记录', {}],
     ['generation 不是非负安全整数', { ...snapshot(), generation: -1 }],
     ['缺失完整提交 marker', { ...snapshot(), commitMarker: 'writing' }],

@@ -145,62 +145,21 @@ describe('撤销日志的落盘往返', () => {
     ])
   })
 
-  it('新快照优先使用原子内嵌账本，不读取错代 legacy 日志', async () => {
+  it('快照只绑定已确认的日志，忽略其后的未提交分支', async () => {
     const sessions = memorySessions()
     const recovery = createMemoryRecoveryDriver()
     const historyLog = createMemoryHistoryLogDriver()
     const { id } = await seedAndPersist(sessions, recovery, historyLog)
-
-    // 模拟「日志刷成功后又落了一次更新的快照」：把盘上日志的 generation 改成对不上的值。
-    await historyLog.save(id, { generation: 99, entries: [], cursor: 0 })
-
+    const snapshot = (await recovery.loadLatest(id))!
+    await historyLog.append(id, {
+      version: 1, id: 'uncommitted', parent: snapshot.historyRef!.head,
+      operations: [{ type: 'dropAfter', cursor: 0 }, { type: 'setCursor', cursor: 0 }],
+    })
     const revived = hostedCore(sessions, recovery, historyLog)
     expect(await revived.persistence.hydrate()).toBe(true)
-
-    const session = revived.getSessionStore(id)
-    // 状态必须完好 —— 日志是锦上添花，配不上就不要，绝不影响运行态恢复。
-    expect(session.store.getter(itemsAtom).map((entry) => entry.id)).toEqual(['u1', 'a1'])
-    expect(session.history.getState().entries).toHaveLength(3)
-    expect(revived.undoTurn()).toMatchObject({ ok: true, entries: 3 })
-  })
-
-  it('未配置 legacy 日志 driver 时状态与内嵌账本一同恢复', async () => {
-    const sessions = memorySessions()
-    const recovery = createMemoryRecoveryDriver()
-    const historyLog = createMemoryHistoryLogDriver()
-    const { id } = await seedAndPersist(sessions, recovery, historyLog)
-
-    const revived = createCore()
-    revived.persistence.configure({
-      sessions,
-      recovery,
-      recoveryStore: (sessionId) => revived.findSessionStore(sessionId)?.store,
-    })
-    expect(await revived.persistence.hydrate()).toBe(true)
-    expect(revived.getSessionStore(id).store.getter(itemsAtom)).toHaveLength(2)
     expect(revived.getSessionStore(id).history.getState().entries).toHaveLength(3)
-  })
-
-  it('legacy 日志的 barrier 未命中 entry 时拒绝整本账', async () => {
-    const sessions = memorySessions()
-    const currentRecovery = createMemoryRecoveryDriver()
-    const historyLog = createMemoryHistoryLogDriver()
-    const { id } = await seedAndPersist(sessions, currentRecovery, historyLog)
-    const current = (await currentRecovery.loadLatest(id))!
-    const legacyRecovery = createMemoryRecoveryDriver()
-    const { history: _embedded, ...legacySnapshot } = current
-    await legacyRecovery.saveLatest(id, legacySnapshot)
-    await historyLog.save(id, {
-      generation: current.generation,
-      entries: current.history!.entries,
-      cursor: current.history!.cursor,
-      barrierTxId: 'tx-missing',
-    })
-
-    const revived = hostedCore(sessions, legacyRecovery, historyLog)
-    expect(await revived.persistence.hydrate()).toBe(true)
-    expect(revived.getSessionStore(id).store.getter(itemsAtom)).toHaveLength(2)
-    expect(revived.getSessionStore(id).history.getState().entries).toHaveLength(0)
+    expect(revived.undoTurn()).toMatchObject({ ok: true, entries: 3 })
+    expect((await recovery.loadLatest(id))!).not.toHaveProperty('history')
   })
 
   it('撤销屏障跟着日志一起活过刷新', async () => {
@@ -225,7 +184,7 @@ describe('撤销日志的落盘往返', () => {
     core.persistence.persistSessions()
     expect((await core.persistence.persistRecovery(id, 'test'))?.status).toBe('saved')
     await core.persistence.flushRecovery()
-    expect((await recovery.loadLatest(id))?.history?.barrierTxId).toBeDefined()
+    expect((await recovery.loadLatest(id))?.historyRef?.barrierTxId).toBeDefined()
 
     const revived = hostedCore(sessions, recovery, historyLog)
     expect(await revived.persistence.hydrate()).toBe(true)
@@ -234,17 +193,17 @@ describe('撤销日志的落盘往返', () => {
     expect(revived.undoTurn()).toMatchObject({ ok: false, refusal: 'irreversible_barrier' })
   })
 
-  it('删除会话会把它的日志一起清掉', async () => {
+  it('删除会话后旧日志不会复活恢复状态', async () => {
     const sessions = memorySessions()
     const recovery = createMemoryRecoveryDriver()
     const historyLog = createMemoryHistoryLogDriver()
     const { core, id } = await seedAndPersist(sessions, recovery, historyLog)
-    await historyLog.save(id, { generation: 1, entries: [], cursor: 0 })
-    expect(await historyLog.load(id)).toBeDefined()
-
+    const snapshot = (await recovery.loadLatest(id))!
     core.persistence.persistDeleteSession(id)
-    await Promise.resolve()
-
-    expect(await historyLog.load(id)).toBeUndefined()
+    await core.persistence.flushRecovery()
+    expect(await recovery.loadLatest(id)).toBeUndefined()
+    expect(await recovery.saveLatest(id, snapshot)).toEqual({ status: 'tombstoned' })
+    // Journal evidence is retained, but only a live recovery record can select it.
+    expect((await historyLog.load(id, snapshot.historyRef!.head)).entries).toHaveLength(3)
   })
 })

@@ -2,13 +2,13 @@ import 'fake-indexeddb/auto'
 import { IDBFactory } from 'fake-indexeddb'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import type { RecoverySnapshotV1 } from '@einfach-agent/core/state/persistence'
+import type { RecoverySnapshotV2 } from '@einfach-agent/core/state/persistence'
 import { createIndexedDbRecoveryDriver } from './indexedDbRecoveryDriver'
 import { HISTORY_DB_VERSION } from './indexedDbDatabase'
 
-function snapshot(generation: number, sessionId = 's1'): RecoverySnapshotV1 {
+function snapshot(generation: number, sessionId = 's1'): RecoverySnapshotV2 {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sessionId,
     capturedAt: generation,
     generation,
@@ -56,44 +56,20 @@ async function putRaw(dbName: string, record: unknown): Promise<void> {
   }
 }
 
-async function createV1Database(dbName: string): Promise<void> {
-  const db = await new Promise<IDBDatabase>((resolve, reject) => {
-    const request = indexedDB.open(dbName, 1)
-    request.onupgradeneeded = () => {
-      request.result.createObjectStore('checkpoints', { keyPath: ['sessionId', 'turnIndex'] })
-    }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error)
-  })
-  try {
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction('checkpoints', 'readwrite')
-      tx.objectStore('checkpoints').put({ sessionId: 'old', turnIndex: 0, checkpoint: { turnIndex: 0 } })
-      tx.oncomplete = () => resolve()
-      tx.onerror = () => reject(tx.error)
-    })
-  } finally {
-    db.close()
-  }
-}
-
 describe('createIndexedDbRecoveryDriver', () => {
   beforeEach(() => {
     globalThis.indexedDB = new IDBFactory()
   })
 
-  it('v1 升级到当前版本时丢弃遗留 checkpoints store，并在 transaction complete 后让新实例看见快照', async () => {
-    const dbName = 'v1-upgrade'
-    await createV1Database(dbName)
+  it('创建当前存储，并在 transaction complete 后让新实例看见快照', async () => {
+    const dbName = 'current-format'
     const first = createIndexedDbRecoveryDriver(dbName)
     const saved = snapshot(2)
 
     await expect(first.saveLatest('s1', saved)).resolves.toEqual({ status: 'saved', generation: 2 })
     const db = await open(dbName)
     expect(db.version).toBe(HISTORY_DB_VERSION)
-    // 轮级 undo 迁往 einfach 事务日志后，checkpoints store 无人读写，升级即删除；
-    // 同时 v4 建出事务日志 store（撤销要活过刷新）。
-    expect([...db.objectStoreNames].sort()).toEqual(['historyLog', 'recoverySnapshots'])
+    expect([...db.objectStoreNames].sort()).toEqual(['historyJournal', 'recoverySnapshots'])
     db.close()
 
     const second = createIndexedDbRecoveryDriver(dbName)
@@ -103,7 +79,7 @@ describe('createIndexedDbRecoveryDriver', () => {
   it('拒绝不匹配 sessionId 与已损坏的持久化 payload', async () => {
     const dbName = 'validation'
     const driver = createIndexedDbRecoveryDriver(dbName)
-    const withFunction = snapshot(1, 'function') as RecoverySnapshotV1 & { extension?: unknown }
+    const withFunction = snapshot(1, 'function') as RecoverySnapshotV2 & { extension?: unknown }
     withFunction.extension = () => undefined
 
     await expect(driver.saveLatest('s2', snapshot(1, 's1'))).rejects.toThrow('sessionId')

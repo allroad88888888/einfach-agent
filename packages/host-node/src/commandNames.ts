@@ -111,6 +111,7 @@ export const NODE_HOST_COMMANDS_BY_DOMAIN = {
   // 一次调用 = 一条自包含语句，判据见 core 的 state/persistence/sqlTransport.ts 文件头。
   'sqlite': ['sqlite_execute', 'sqlite_select'],
   'rollout': ['agent_rollout_append', 'agent_rollout_reconcile'],
+  'historyJournal': ['session_history_append', 'session_history_load'],
   'history': ['agent_history_list', 'agent_history_list_items', 'agent_history_read_item', 'agent_history_search'],
 } as const
 

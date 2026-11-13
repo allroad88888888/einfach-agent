@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createNodeAgentHistoryProvider } from './historyQueryService'
 import type { SqlExecutor } from '@einfach-agent/core/state/persistence'
-import type { RecoverySnapshotV1 } from '@einfach-agent/core/state/persistence'
+import type { RecoverySnapshotV2 } from '@einfach-agent/core/state/persistence'
 import type { AgentHistoryCapability } from '@einfach-agent/core/history'
 
 const executor = { execute: vi.fn(), select: vi.fn() }
 const recovery = { listLatest: vi.fn(async () => []) }
-function snapshot(): RecoverySnapshotV1 {
-  return { schemaVersion: 1, sessionId: 'legacy', capturedAt: 3, generation: 1, commitMarker: 'complete',
+function snapshot(): RecoverySnapshotV2 {
+  return { schemaVersion: 2, sessionId: 'legacy', capturedAt: 3, generation: 1, commitMarker: 'complete',
     session: { id: 'legacy', title: 'Recovered', settings: { vendor: 'test', model: 'test' }, createdAt: 1, updatedAt: 3 },
     values: { conversation: { contextCheckpoint: null, items: [
       { id: 'one', createdAt: 1, item: { role: 'user', content: 'needle one' } },

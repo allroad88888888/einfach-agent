@@ -12,7 +12,7 @@ import {
 } from '@einfach-agent/core/history'
 import {
   type RecoveryDriver,
-  type RecoverySnapshotV1,
+  type RecoverySnapshotV2,
 } from '@einfach-agent/core/state/persistence'
 import type { LegacyHistorySearchResult } from './legacyHistoryQuery'
 
@@ -38,7 +38,7 @@ export interface LegacyRootHistoryAdapter {
   search(query: string, target?: AgentHistoryTarget): Promise<LegacyHistorySearchResult>
 }
 
-function project(snapshot: RecoverySnapshotV1): LegacyRootRecord {
+function project(snapshot: RecoverySnapshotV2): LegacyRootRecord {
   const target = { kind: 'root', conversationId: snapshot.sessionId } as const
   const historyId = `legacy-root:${snapshot.sessionId}`
   const items = snapshot.values.conversation.items.map((entry, itemOrdinal): LegacyRootItem => ({

@@ -20,7 +20,7 @@ export function runIndexedDbTransaction<T>(
   operation: IndexedDbTransactionOperation<T>,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(storeName, mode)
+    const transaction = db.transaction(storeName, mode, { durability: mode === 'readwrite' ? 'strict' : 'default' })
     let result: T | undefined
     let failure: unknown
     const fail = (error: unknown) => {

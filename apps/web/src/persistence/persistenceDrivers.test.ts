@@ -10,14 +10,14 @@ const drivers = vi.hoisted(() => ({
   sqlite: {
     sessions: { kind: 'sqlite-sessions' },
     recovery: { kind: 'sqlite-recovery' },
-    historyLog: { kind: 'sqlite-history-log' },
+    historyLog: { kind: 'jsonl-history-log' },
   },
   createIndexedDbSessionsPersistence: vi.fn(),
   createIndexedDbRecoveryDriver: vi.fn(),
   createIndexedDbHistoryLogDriver: vi.fn(),
   createSqlitePersistence: vi.fn(),
   createSqliteRecoveryDriver: vi.fn(),
-  createSqliteHistoryLogDriver: vi.fn(),
+  createServerHistoryLogDriver: vi.fn(),
   // P1 的执行面注入槽。这里是**整份模块替换**，新导出不列进来就是 undefined，被调用时 TypeError
   // ——所以它必须在册；断言在下面「两态各注入各的执行面」那几条。
   configureSqlExecutor: vi.fn(),
@@ -38,9 +38,9 @@ vi.mock('@einfach-agent/persistence-idb', () => ({
 vi.mock('@einfach-agent/persistence-sqlite', () => ({
   createSqlitePersistence: drivers.createSqlitePersistence,
   createSqliteRecoveryDriver: drivers.createSqliteRecoveryDriver,
-  createSqliteHistoryLogDriver: drivers.createSqliteHistoryLogDriver,
   configureSqlExecutor: drivers.configureSqlExecutor,
 }))
+vi.mock('./serverHistoryLogDriver', () => ({ createServerHistoryLogDriver: drivers.createServerHistoryLogDriver }))
 vi.mock('./serverSqlExecutor', () => ({ loadServerSqlExecutor: drivers.loadServerSqlExecutor }))
 vi.mock('./serverAgentRolloutDriver', () => ({ createServerAgentRolloutDriver: drivers.createServerAgentRolloutDriver }))
 vi.mock('./serverAgentHistoryCapability', () => ({
@@ -64,7 +64,7 @@ describe('host persistence drivers', () => {
     })
     drivers.createSqliteRecoveryDriver.mockReturnValue(drivers.sqlite.recovery)
     drivers.createIndexedDbHistoryLogDriver.mockReturnValue(drivers.browser.historyLog)
-    drivers.createSqliteHistoryLogDriver.mockReturnValue(drivers.sqlite.historyLog)
+    drivers.createServerHistoryLogDriver.mockReturnValue(drivers.sqlite.historyLog)
     drivers.loadServerSqlExecutor.mockResolvedValue(drivers.serverExecutor)
     drivers.createServerAgentRolloutDriver.mockReturnValue(drivers.rollout)
     drivers.createServerAgentHistoryCapability.mockReturnValue(drivers.history)
@@ -75,7 +75,7 @@ describe('host persistence drivers', () => {
       .resolves.toEqual(drivers.browser)
     expect(drivers.createSqlitePersistence).not.toHaveBeenCalled()
     expect(drivers.createSqliteRecoveryDriver).not.toHaveBeenCalled()
-    expect(drivers.createSqliteHistoryLogDriver).not.toHaveBeenCalled()
+    expect(drivers.createServerHistoryLogDriver).not.toHaveBeenCalled()
     expect(drivers.createServerAgentRolloutDriver).not.toHaveBeenCalled()
     expect(drivers.createServerAgentHistoryCapability).not.toHaveBeenCalled()
   })

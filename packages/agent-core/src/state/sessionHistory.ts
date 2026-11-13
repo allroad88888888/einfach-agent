@@ -17,6 +17,7 @@ import { undoBarrierTxIdAtom } from './sessionTransientAtoms'
 import { SESSION_SLOTS, SESSION_SLOT_KEYS } from './sessionSlots'
 import { projectSessionTurnHistory, type SessionTurnHistoryProjection } from './sessionTurnHistory'
 import { undoCrossesBarrier } from './undoBarrier'
+import { createHistoryPersistence, type HistoryPersistence } from './historyPersistence'
 
 /**
  * run 正在推进、随时会在 await 之后回写状态的状态集。
@@ -46,6 +47,7 @@ export interface UndoAvailability {
 
 /** 一本会话日志，外加 UI 绑定用的可用态。 */
 export interface SessionHistory extends History {
+  readonly persistence: HistoryPersistence
   readonly undoAvailabilityAtom: Atom<UndoAvailability>
   readonly turnHistoryAtom: Atom<SessionTurnHistoryProjection>
   setTruncationListener(listener?: (discarded: readonly HistoryEntry[]) => void): void
@@ -61,7 +63,8 @@ export function createSessionHistory(store: Store): SessionHistory {
   // A session has no product-level history window: every retained transaction must remain
   // addressable for turn-level undo. This finite value satisfies einfach's public API while
   // exceeding every realizable JavaScript array length, so it cannot evict an entry in practice.
-  const history = createHistory(store, { cap: Number.MAX_SAFE_INTEGER })
+  const persistence = createHistoryPersistence()
+  const history = createHistory(store, { cap: Number.MAX_SAFE_INTEGER, persist: persistence.port })
   let truncationListener: ((discarded: readonly HistoryEntry[]) => void) | undefined
   for (const key of SESSION_SLOT_KEYS) SESSION_SLOTS[key].registerApplier(history)
 
@@ -108,6 +111,7 @@ export function createSessionHistory(store: Store): SessionHistory {
 
   return {
     ...history,
+    persistence,
     transaction,
     undoAvailabilityAtom,
     turnHistoryAtom,

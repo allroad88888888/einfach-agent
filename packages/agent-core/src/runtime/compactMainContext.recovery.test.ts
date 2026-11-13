@@ -1,7 +1,7 @@
 import { compactContextTool } from '@einfach-agent/tools-agents'
 import { describe, expect, it, vi } from 'vitest'
 import { createMemoryRecoveryDriver, type RecoveryDriver } from '../state/persistence/recoveryDriver'
-import type { RecoverySnapshotV1 } from '../state/recoverySnapshot.type'
+import type { RecoverySnapshotV2 } from '../state/recoverySnapshot.type'
 import { contextCheckpointAtom, itemsAtom, runAtom } from '../state/sessionAtoms'
 import { createCore } from './core/createCore'
 import { jsonResponse } from './modelRun.testHarness'
@@ -22,10 +22,10 @@ function wirePersistence(core: TestCore, recovery: RecoveryDriver): void {
 }
 
 /** Fork the actual durable state at the crash boundary, before abort cleanup can change it. */
-async function interruptedSnapshot(phase: CrashPhase): Promise<RecoverySnapshotV1> {
+async function interruptedSnapshot(phase: CrashPhase): Promise<RecoverySnapshotV2> {
   const recovery = createMemoryRecoveryDriver()
   const controller = new AbortController()
-  let snapshot: RecoverySnapshotV1 | undefined
+  let snapshot: RecoverySnapshotV2 | undefined
   const capture = async () => {
     snapshot = await recovery.loadLatest(id)
     controller.abort()
@@ -56,7 +56,7 @@ async function interruptedSnapshot(phase: CrashPhase): Promise<RecoverySnapshotV
   return snapshot!
 }
 
-async function restore(snapshot: RecoverySnapshotV1) {
+async function restore(snapshot: RecoverySnapshotV2) {
   const recovery = createMemoryRecoveryDriver()
   await recovery.saveLatest(snapshot.sessionId, snapshot)
   const fetchImpl = vi.fn(async () => jsonResponse('Resumed task and next action.'))

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { RecoverySnapshotV1, SqlExecutor } from '@einfach-agent/core/state/persistence'
+import type { RecoverySnapshotV2, SqlExecutor } from '@einfach-agent/core/state/persistence'
 
 interface RecoveryRow {
   session_id: string
@@ -63,9 +63,9 @@ function createFakeDatabase() {
   }
 }
 
-function snapshot(generation: number, sessionId = 's1'): RecoverySnapshotV1 {
+function snapshot(generation: number, sessionId = 's1'): RecoverySnapshotV2 {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sessionId,
     capturedAt: generation,
     generation,
@@ -123,7 +123,7 @@ describe('createSqliteRecoveryDriver', () => {
 
   it('拒绝 sessionId 不匹配与存储中损坏的 payload', async () => {
     const driver = createSqliteRecoveryDriver()
-    const withFunction = snapshot(1, 'function') as RecoverySnapshotV1 & { extension?: unknown }
+    const withFunction = snapshot(1, 'function') as RecoverySnapshotV2 & { extension?: unknown }
     withFunction.extension = () => undefined
     await expect(driver.saveLatest('s2', snapshot(1, 's1'))).rejects.toThrow('sessionId')
     await expect(driver.saveLatest('function', withFunction)).rejects.toThrow('validation')

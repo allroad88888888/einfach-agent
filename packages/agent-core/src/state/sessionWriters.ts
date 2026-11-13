@@ -23,6 +23,7 @@
 
 import { SESSION_SLOTS } from './sessionSlots'
 import { appendItemLogged, patchItemLogged } from './sessionItemsLog'
+import { writeRunLogged } from './runStateLog'
 import { writeSlot, type SlotWriteTarget } from './sessionSlotWrite'
 import { sessionsAtom } from './rootStore'
 import { contextCheckpointAtom, itemsAtom, runAtom } from './sessionAtoms'
@@ -127,7 +128,7 @@ export function setRun(id: string, run: RunState | undefined, core: CoreInstance
   if (sessionMissing(id, core)) {
     return
   }
-  writeSlot(core.getSessionStore(id), SESSION_SLOTS.run.key, runAtom, run, run?.turnId)
+  writeRunLogged(core.getSessionStore(id), run, run?.turnId)
 }
 
 /**
@@ -144,7 +145,7 @@ export function patchRun(id: string, patch: Partial<RunState>, core: CoreInstanc
   if (!cur) {
     return
   }
-  writeSlot(session, SESSION_SLOTS.run.key, runAtom, { ...cur, ...patch })
+  writeRunLogged(session, { ...cur, ...patch })
 }
 
 /**

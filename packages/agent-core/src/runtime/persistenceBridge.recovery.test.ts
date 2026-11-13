@@ -1,3 +1,4 @@
+import { createMemoryHistoryLogDriver } from '../state/persistence/historyLogDriver'
 // RecoveryWriter 与持久化桥的显式调用边界。
 
 import { createStore, type Store } from '@einfach/core'
@@ -187,7 +188,7 @@ describe('persistenceBridge recovery facade', () => {
     await expect(base.loadLatest('s1')).resolves.toMatchObject({ generation: 1 })
   })
 
-  it('atomically saves the history captured with a delayed recovery snapshot', async () => {
+  it('binds the journal head captured with a delayed recovery snapshot', async () => {
     let releaseSave: (() => void) | undefined
     const saveGate = new Promise<void>((resolve) => { releaseSave = resolve })
     const rootStore = rootStoreFor()
@@ -201,9 +202,11 @@ describe('persistenceBridge recovery facade', () => {
         return base.saveLatest(id, snapshot)
       },
     }
+    const historyLog = createMemoryHistoryLogDriver()
     const bridge = createPersistenceBridge(rootStore, createObservabilityPort())
     bridge.configure({
       recovery,
+      historyLog,
       recoveryStore: () => sessionStore,
       historyFor: () => history,
     })
@@ -220,10 +223,12 @@ describe('persistenceBridge recovery facade', () => {
 
     await expect(base.loadLatest('s1')).resolves.toMatchObject({
       values: { conversation: { items: [{ id: 'u1' }] } },
-      history: { cursor: 1, entries: [{ ops: [{ after: { id: 'u1' } }] }] },
     })
+    const first = (await base.loadLatest('s1'))!
+    expect(await historyLog.load('s1', first.historyRef!.head)).toMatchObject({ cursor: 1, entries: [{ ops: [{ after: { id: 'u1' } }] }] })
     await expect(bridge.persistRecovery('s1')).resolves.toMatchObject({ status: 'saved', generation: 2 })
-    await expect(base.loadLatest('s1')).resolves.toMatchObject({ history: { cursor: 2 } })
+    const second = (await base.loadLatest('s1'))!
+    expect(await historyLog.load('s1', second.historyRef!.head)).toMatchObject({ cursor: 2 })
   })
 
   it('does not advance recovery when an extant history cannot be serialized', async () => {

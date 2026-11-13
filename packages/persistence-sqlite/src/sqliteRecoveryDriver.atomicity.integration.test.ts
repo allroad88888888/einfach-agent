@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import type { RecoverySnapshotV1, SqlExecutor } from '@einfach-agent/core/state/persistence'
+import type { RecoverySnapshotV2, SqlExecutor } from '@einfach-agent/core/state/persistence'
 
 interface RecoveryRow {
   session_id: string
@@ -62,9 +62,9 @@ function createAtomicSqlite() {
   }
 }
 
-function snapshot(generation: number, sessionId = 'atomic-session'): RecoverySnapshotV1 {
+function snapshot(generation: number, sessionId = 'atomic-session'): RecoverySnapshotV2 {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     sessionId,
     capturedAt: generation,
     generation,
@@ -147,7 +147,7 @@ describe('SQLite recovery snapshot atomicity', () => {
     })
     await expect(driver.loadLatest('atomic-session')).rejects.toThrow('Corrupt SQLite recovery JSON')
 
-    sqlite.rows[0].snapshot = JSON.stringify({ ...snapshot(2), schemaVersion: 2 })
+    sqlite.rows[0].snapshot = JSON.stringify({ ...snapshot(2), schemaVersion: 3 })
     await expect(driver.loadLatest('atomic-session')).rejects.toThrow('validation')
   })
 

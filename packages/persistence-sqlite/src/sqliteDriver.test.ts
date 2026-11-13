@@ -202,14 +202,14 @@ describe('sqliteDriver — PRAGMA 连接调优', () => {
 })
 
 describe('sqliteDriver — 轮级 undo 退场后的架构', () => {
-  it('不再建 checkpoints 表，只建 recovery_snapshots，并丢弃遗留表', async () => {
+  it('只建当前恢复表，不建立或迁移旧撤销存储', async () => {
     const { sessions } = createSqlitePersistence()
     await sessions.loadSessions()
 
     const statements = fakeDb.execute.mock.calls.map(([sql]) => String(sql))
     expect(statements.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS checkpoints'))).toBe(false)
     expect(statements.some((sql) => sql.startsWith('ALTER TABLE checkpoints'))).toBe(false)
-    expect(statements).toContain('DROP TABLE IF EXISTS checkpoints')
+    expect(statements.some((sql) => sql.includes('history_log') || sql.startsWith('DROP TABLE'))).toBe(false)
     expect(statements.some((sql) => sql.includes('CREATE TABLE IF NOT EXISTS recovery_snapshots'))).toBe(true)
   })
 })

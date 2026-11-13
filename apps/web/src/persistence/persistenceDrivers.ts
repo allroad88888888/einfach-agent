@@ -1,3 +1,4 @@
+import { createServerHistoryLogDriver } from './serverHistoryLogDriver'
 import {
   createIndexedDbHistoryLogDriver,
   createIndexedDbRecoveryDriver,
@@ -12,7 +13,7 @@ import { createServerAgentHistoryCapability } from './serverAgentHistoryCapabili
 export type HostPersistenceDrivers = {
   sessions: ReturnType<typeof createIndexedDbSessionsPersistence>
   recovery: ReturnType<typeof createIndexedDbRecoveryDriver>
-  /** 撤销日志；与 recovery 成对刷盘，缺它则撤销不跨刷新（状态不受影响）。 */
+  /** 增量撤销日志；recovery 只引用已确认落盘的批次。 */
   historyLog: HistoryLogDriver
   /** Server-only append-only agent history; static browser persistence deliberately has no file driver. */
   agentRollout?: AgentRolloutDriver
@@ -32,13 +33,12 @@ async function createSqliteDrivers(loadExecutor: SqlExecutorLoader): Promise<Hos
     configureSqlExecutor,
     createSqlitePersistence,
     createSqliteRecoveryDriver,
-    createSqliteHistoryLogDriver,
   } = await import('@einfach-agent/persistence-sqlite')
   configureSqlExecutor(loadExecutor)
   return {
     ...createSqlitePersistence(),
     recovery: createSqliteRecoveryDriver(),
-    historyLog: createSqliteHistoryLogDriver(),
+    historyLog: createServerHistoryLogDriver(),
     agentRollout: createServerAgentRolloutDriver(),
     agentHistory: createServerAgentHistoryCapability(),
   }

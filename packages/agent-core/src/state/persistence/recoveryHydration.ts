@@ -1,8 +1,8 @@
-// 恢复快照的启动期判定：只接受完整的 v1 投影。
+// 恢复快照的启动期判定：只接受完整的 v2 投影。
 
 import { decodeRecoverySnapshot } from '../recoverySnapshot.codec'
 import type { SessionMeta } from '../core.type'
-import type { RecoverySnapshotV1 } from '../recoverySnapshot.type'
+import type { RecoverySnapshotV2 } from '../recoverySnapshot.type'
 import { reduceExecutionGraph } from '../../execution/graph'
 import { projectStaticSessionMeta } from '../sessionMetaProjection'
 import type { RecoveryDriver } from './recoveryDriver'
@@ -11,10 +11,10 @@ export interface RecoveryHydrationPlan {
   /** 已用恢复记录中静态 session meta 替换、并补齐遗失 root session 的登记表。 */
   sessionMetas: SessionMeta[]
   /** 每项均已通过 codec；调用方必须用 R2 的单批投影写入。 */
-  snapshotsBySessionId: ReadonlyMap<string, RecoverySnapshotV1>
+  snapshotsBySessionId: ReadonlyMap<string, RecoverySnapshotV2>
 }
 
-function decodeForSession(value: unknown, sessionId?: string): RecoverySnapshotV1 | undefined {
+function decodeForSession(value: unknown, sessionId?: string): RecoverySnapshotV2 | undefined {
   try {
     const snapshot = decodeRecoverySnapshot(value)
     return snapshot && (sessionId === undefined || snapshot.sessionId === sessionId)
@@ -28,7 +28,7 @@ function decodeForSession(value: unknown, sessionId?: string): RecoverySnapshotV
 async function readRecovery(
   recovery: RecoveryDriver,
   sessionId: string,
-): Promise<RecoverySnapshotV1 | undefined> {
+): Promise<RecoverySnapshotV2 | undefined> {
   try {
     const candidate = await recovery.loadLatest(sessionId)
     return candidate === undefined ? undefined : decodeForSession(candidate, sessionId)
@@ -39,8 +39,8 @@ async function readRecovery(
 
 async function listRecovery(
   recovery: RecoveryDriver,
-): Promise<Map<string, RecoverySnapshotV1>> {
-  const snapshots = new Map<string, RecoverySnapshotV1>()
+): Promise<Map<string, RecoverySnapshotV2>> {
+  const snapshots = new Map<string, RecoverySnapshotV2>()
   try {
     const candidates: unknown[] = await recovery.listLatest()
     for (const candidate of candidates) {
@@ -54,14 +54,14 @@ async function listRecovery(
   return snapshots
 }
 
-function staticSessionMeta(snapshot: RecoverySnapshotV1): SessionMeta {
+function staticSessionMeta(snapshot: RecoverySnapshotV2): SessionMeta {
   return projectStaticSessionMeta(snapshot.session)
 }
 
 /** 将会被终止进程遗留的运行态归类为可显式继续的 interrupted。 */
 export function normalizeRecoverySnapshotForHydration(
-  snapshot: RecoverySnapshotV1,
-): RecoverySnapshotV1 {
+  snapshot: RecoverySnapshotV2,
+): RecoverySnapshotV2 {
   const run = snapshot.values.run
   const normalizedRun = run && (run.status === 'running' || run.status === 'awaiting_tool' || run.status === 'interrupted')
     ? { ...run, status: 'interrupted' as const }
@@ -86,8 +86,8 @@ export function normalizeRecoverySnapshotForHydration(
 }
 
 /**
- * 读取每个会话的 v1 恢复代，并从 listLatest 补回 root 登记表丢失的 session。
- * 无法读取或解码的 v1 记录不产生运行态投影。
+ * 读取每个会话的 v2 恢复代，并从 listLatest 补回 root 登记表丢失的 session。
+ * 无法读取或解码的 v2 记录不产生运行态投影。
  */
 export async function prepareRecoveryHydration(
   recovery: RecoveryDriver | undefined,
@@ -105,7 +105,7 @@ export async function prepareRecoveryHydration(
     Promise.all(persistedSessions.map(async (session) => [session.id, await readRecovery(recovery, session.id)] as const)),
   ])
   // listLatest may recover sessions missing from the root registry.  For a
-  // registered session, its direct V1 read is authoritative: absent, corrupt,
+  // registered session, its direct V2 read is authoritative: absent, corrupt,
   // or unreadable means no live recovery projection.
   const snapshots = new Map(listed)
   for (const [sessionId, snapshot] of reads) {

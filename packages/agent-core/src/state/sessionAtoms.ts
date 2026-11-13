@@ -27,5 +27,5 @@ export const planAtom = atom<PlanSnapshot | undefined>(undefined)
 
 // 简介：当前会话的计划阶段回退点序列（按打点先后排列）。
 // 详情：值随 store 隔离，非分桶。由 setPlan 在阶段首次转 in_progress 时追加，
-// 随 RecoverySnapshotV1 一起快照与恢复；阶段回退会截断该点及其之后的全部回退点。
+// 随 RecoverySnapshotV2 一起快照与恢复；阶段回退会截断该点及其之后的全部回退点。
 export const planStageCheckpointsAtom = atom<PlanStageCheckpoint[]>([])

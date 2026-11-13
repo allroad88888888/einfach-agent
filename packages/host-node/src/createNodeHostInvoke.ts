@@ -1,3 +1,5 @@
+import { createNodeHistoryLogDriver } from './historyJournal/nodeHistoryLogDriver'
+import { createHistoryLogRoutes } from './historyJournal/historyLogRoutes'
 // Node 宿主的命令路由表：一份能力实现，三种传输
 // ---------------------------------------------------------------------------
 // 这里返回的 `HostInvoke` 就是 core 的 `configureHostInvoke(loader)` 要收的那个东西
@@ -171,6 +173,7 @@ function createRoutes(options: NodeHostInvokeOptions): NodeHostRouteTable {
     ...createModelRoutes(options),
     ...createSqliteRoutes(options),
     ...createRolloutRoutes(rolloutDriver),
+    ...createHistoryLogRoutes(createNodeHistoryLogDriver(dirname(databasePath))),
     ...createHistoryRoutes(historyProvider),
     ...createConfigRoutes(options),
   }
