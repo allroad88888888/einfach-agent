@@ -43,6 +43,7 @@ import {
 import { createStaleGuards } from './toolContext/staleGuards'
 import { createWorkspaceCapabilities } from './toolContext/workspaceCapabilities'
 import { createVisionCapabilities } from './toolContext/visionCapabilities'
+import { createWebSearchCapabilities } from './toolContext/webSearchCapabilities'
 import { createHistoryCapabilities } from './toolContext/historyCapabilities'
 import {
   createWorkspaceInputGuards,
@@ -151,6 +152,7 @@ export function buildToolContext(opts: {
     ...workspaceCapabilities,
     ...createServiceCapability({ sessionId, core, guards, signal, workspaceRoot }),
     ...createHistoryCapabilities(core.persistence.dependencies().agentHistory, workspaceRoot),
+    ...createWebSearchCapabilities({ capability: core.config.webSearch, signal, guards }),
     ...createVisionCapabilities({
       capability: core.config.viewImage,
       signal,

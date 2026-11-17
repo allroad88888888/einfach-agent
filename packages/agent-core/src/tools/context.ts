@@ -4,6 +4,7 @@
 
 import type { AgentHistoryCapability } from '../history/historyQuery'
 import type { ContextCompactionCapability } from './contextCompaction'
+import type { WebSearchInput } from './webSearch'
 import type { DelegateAgentBatchResult, DelegateAgentInput } from '../runtime/delegationContract'
 import type {
   ExecutionHandle,
@@ -40,6 +41,7 @@ export interface ToolContext {
   readonly signal: AbortSignal
   progress(text: string): void
   callTool(name: string, args: unknown): Promise<ToolResult>
+  webSearch?(input: WebSearchInput): Promise<ToolResult>
   /** Present only while the runtime is dispatching compression for this agent. */
   contextCompaction?: ContextCompactionCapability
   runLowCostExtraction?(input: {

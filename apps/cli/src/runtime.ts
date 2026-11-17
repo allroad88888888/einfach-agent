@@ -10,7 +10,7 @@ import {
 } from '@einfach-agent/core'
 import { createNodeHostInvoke, nodeHostPlatform, resolveSqliteDatabasePath } from '@einfach-agent/host-node'
 import { createDelegationAssembly } from '@einfach-agent/subagents'
-import { registerStandardTools } from '@einfach-agent/tools'
+import { createDeepSeekSearch, registerStandardTools } from '@einfach-agent/tools'
 import { createDefaultPlanRuntime } from '@einfach-agent/tools-planning'
 import { builtInSkillsRegistry } from '@einfach-agent/tools-skills'
 import {
@@ -162,6 +162,7 @@ export async function assembleCliRuntime(options: AssembleCliRuntimeOptions): Pr
   configureCommands({
     modelCredentials: options.credentials.modelCredentials,
     fetchImpl: globalThis.fetch,
+    webSearch: createDeepSeekSearch({ apiKey: options.credentials.modelCredentials.deepseek }),
   })
   // 标准工具与命令先装好，插件的 install 才有一个稳定的 registry 可注册；扫描/加载失败
   // 不阻塞启动（assembleCliPlugins 自身兜底），因此放在装配的最后一步即可。

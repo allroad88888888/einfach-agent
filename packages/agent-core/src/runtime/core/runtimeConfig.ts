@@ -5,6 +5,7 @@ import type { McpConnectTargetProbe, McpToolLaunchTargetProbe } from '../dangero
 import type { ModelEscalationPolicy } from '../modelEscalation'
 import type { UnconnectedToolProviderProbe } from '../../tools/schemaResult'
 import type { ViewImageCapability } from '../../tools/types'
+import type { WebSearchCapability } from '../../tools/webSearch'
 
 /** Runtime dependencies supplied by the host application. */
 export interface RuntimeConfig {
@@ -63,6 +64,8 @@ export interface RuntimeConfig {
   modelEscalation?: ModelEscalationPolicy
   /** Optional app-owned image inspection port; core only supplies guarded workspace access. */
   viewImage?: ViewImageCapability
+  /** Optional app-owned search port using credentials managed by the host. */
+  webSearch?: WebSearchCapability
 }
 
 export function createRuntimeConfig(overrides?: Partial<RuntimeConfig>): RuntimeConfig {

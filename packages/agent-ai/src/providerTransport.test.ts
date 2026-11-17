@@ -28,7 +28,7 @@ describe('provider transport policy', () => {
         provider: 'kimi', scope: 'cn', origin: KIMI_CN_BASE_URL,
       },
     })
-    expect(PROVIDER_ROUTE_POLICIES).toHaveLength(8)
+    expect(PROVIDER_ROUTE_POLICIES).toHaveLength(9)
   })
 
   it('uses the adapter base URL bindings as policy origins', () => {

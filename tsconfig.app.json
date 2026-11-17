@@ -35,6 +35,7 @@
       "@einfach-agent/tools-shell": ["tools/shell/src/index.ts"],
       "@einfach-agent/tools-interaction": ["tools/interaction/src/index.ts"],
       "@einfach-agent/tools-vision": ["tools/vision/src/index.ts"],
+      "@einfach-agent/tools-search": ["tools/search/src/index.ts"],
       "@einfach-agent/tools-fs": ["tools/fs/src/index.ts"],
       "@einfach-agent/tools-planning": ["tools/planning/src/index.ts"],
       "@einfach-agent/tools-skills": ["tools/skills/src/index.ts"],

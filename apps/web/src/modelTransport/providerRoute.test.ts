@@ -24,6 +24,14 @@ const profiles = [
 afterEach(() => replaceOpenAiCompatConnections([]))
 
 describe('provider identity routing', () => {
+  it('routes search through the official DeepSeek credential identity', () => {
+    expect(providerTargetForRequest(`${DEEPSEEK_BASE_URL}/v1/tools/search`)).toEqual({
+      provider: 'deepseek', scope: 'default', method: 'POST', path: '/v1/tools/search',
+    })
+    expect(() => providerTargetForRequest(`${DEEPSEEK_BASE_URL}/v1/tools/search`, 'DELETE'))
+      .toThrow('模型请求目标未获允许')
+  })
+
   it.each(profiles)('profile label/model cannot promote $id to an official target', (profile) => {
     replaceOpenAiCompatConnections(profiles)
 

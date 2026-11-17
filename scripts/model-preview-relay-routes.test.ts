@@ -93,7 +93,7 @@ describe('official provider policy parity', () => {
     const policies = PROVIDER_ROUTE_POLICIES.filter(
       (policy) => policy.officialOrigin !== undefined,
     )
-    expect(policies).toHaveLength(7)
+    expect(policies).toHaveLength(8)
     for (const policy of policies) {
       const target = representativeTarget(policy)
       const shared = findProviderRoutePolicy(target)

@@ -34,7 +34,8 @@
     "@einfach-agent/tools-fs": "workspace:*",
     "@einfach-agent/tools-planning": "workspace:*",
     "@einfach-agent/tools-skills": "workspace:*",
-    "@einfach-agent/tools-agents": "workspace:*"
+    "@einfach-agent/tools-agents": "workspace:*",
+    "@einfach-agent/tools-search": "workspace:*"
   },
   "devDependencies": {
     "vitest": "^4.0.15"

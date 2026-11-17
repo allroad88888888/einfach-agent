@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "declarationMap": false,
+    "incremental": false,
+    "composite": false,
+    "paths": {
+      "@einfach-agent/core": ["packages/agent-core/dist/index.d.ts"],
+      "@einfach-agent/core/*": ["packages/agent-core/dist/*"]
+    },
+    "preserveSymlinks": true,
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts", "src/**/*.testFixtures.ts", "src/**/*.testHarness.ts"]
+}

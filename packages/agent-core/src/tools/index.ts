@@ -40,6 +40,7 @@ export type {
 } from './types'
 
 export type { SpawnAgentsOptions, ToolContext } from './context'
+export type { WebSearchCapability, WebSearchInput } from './webSearch'
 export { COMPACT_CONTEXT_TOOL_NAME } from './contextCompaction'
 export type { ContextCompactionCapability, ContextCompactionReceipt, ContextSummaryRequest } from './contextCompaction'
 

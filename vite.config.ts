@@ -282,6 +282,7 @@ export default defineConfig(({ command, mode }) => {
         '@einfach-agent/tools-shell': fromRoot('./tools/shell/src/index.ts'),
         '@einfach-agent/tools-interaction': fromRoot('./tools/interaction/src/index.ts'),
         '@einfach-agent/tools-vision': fromRoot('./tools/vision/src/index.ts'),
+        '@einfach-agent/tools-search': fromRoot('./tools/search/src/index.ts'),
         '@einfach-agent/tools-fs': fromRoot('./tools/fs/src/index.ts'),
         '@einfach-agent/tools-planning': fromRoot('./tools/planning/src/index.ts'),
         '@einfach-agent/tools-skills': fromRoot('./tools/skills/src/index.ts'),

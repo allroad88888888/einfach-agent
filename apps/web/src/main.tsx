@@ -14,7 +14,7 @@ import {
   configureDefaultProjectSkillsProvider,
   configureDefaultSkillsRegistry,
 } from '@einfach-agent/core'
-import { registerStandardTools } from '@einfach-agent/tools'
+import { createDeepSeekSearch, registerStandardTools } from '@einfach-agent/tools'
 import { buildProjectSkillsProvider, builtInSkillsRegistry } from '@einfach-agent/tools-skills'
 import { hydrateMcpSettings } from './mcp/commands'
 import { initializeMcpSettings } from './mcp/initialize'
@@ -203,6 +203,7 @@ async function startApplication(): Promise<void> {
     }),
     fetchImpl: providerFetch,
     viewImage: createInlineImageViewer(),
+    webSearch: createDeepSeekSearch({ apiKey: hostManagedCredentialMarker, fetchImpl: providerFetch }),
   })
   configureModelCredentialHost(credentialHost)
   configureModelConnectionProfileHost(connectionProfileHost)

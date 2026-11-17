@@ -531,6 +531,19 @@ importers:
         specifier: ^4.0.15
         version: 4.1.10(@types/node@24.13.3)(jsdom@27.4.0)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)(tsx@4.23.7))
 
+  tools/search:
+    dependencies:
+      '@einfach-agent/ai':
+        specifier: workspace:*
+        version: link:../../packages/agent-ai
+      '@einfach-agent/core':
+        specifier: workspace:*
+        version: link:../../packages/agent-core
+    devDependencies:
+      vitest:
+        specifier: ^4.0.15
+        version: 4.1.10(@types/node@24.13.3)(jsdom@27.4.0)(vite@7.3.6(@types/node@24.13.3)(jiti@2.7.0)(less@4.8.0)(tsx@4.23.7))
+
   tools/shell:
     dependencies:
       '@einfach-agent/core':
@@ -568,6 +581,9 @@ importers:
       '@einfach-agent/tools-planning':
         specifier: workspace:*
         version: link:../planning
+      '@einfach-agent/tools-search':
+        specifier: workspace:*
+        version: link:../search
       '@einfach-agent/tools-shell':
         specifier: workspace:*
         version: link:../shell
