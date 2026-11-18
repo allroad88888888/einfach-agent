@@ -39,6 +39,37 @@ describe('stopRun tool-call interruption', () => {
     })
   })
 
+  it('accepts a new message after stopping an interrupted run with an unstarted tool', async () => {
+    const core = createCore()
+    const id = core.newSession()
+    const store = core.getSessionStore(id).store
+    store.setter(itemsAtom, [
+      { id: 'u1', createdAt: 1, item: { role: 'user', content: '执行检查' } },
+      {
+        id: 'a1',
+        createdAt: 2,
+        item: {
+          role: 'assistant',
+          content: null,
+          tool_calls: [{ id: 'pending', type: 'function', function: { name: 'write_file', arguments: '{}' } }],
+        },
+      },
+    ])
+    store.setter(runAtom, {
+      runId: 'run-1', turnId: 'u1', status: 'interrupted',
+      toolCallOutcomes: { pending: { state: 'notStarted', updatedAt: 1 } },
+    })
+
+    core.stopRun()
+
+    await expect(core.sendMessage('你好')).resolves.toMatchObject({ accepted: true, status: 'started' })
+    expect(store.getter(itemsAtom)).toContainEqual(expect.objectContaining({
+      item: expect.objectContaining({
+        role: 'tool', tool_call_id: 'pending', content: expect.stringContaining('not_started'),
+      }),
+    }))
+  })
+
   it('interrupts a live run for recovery without weakening not-started facts', async () => {
     const core = createCore()
     const id = core.newSession()

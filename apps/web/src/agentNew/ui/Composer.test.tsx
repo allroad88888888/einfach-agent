@@ -257,8 +257,23 @@ describe('Composer', () => {
     expect(screen.getByText('应用重启中断了任务')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '继续执行' }))
 
-    expect(continueInterruptedRun).toHaveBeenCalledTimes(1)
+    expect(continueInterruptedRun).toHaveBeenCalledExactlyOnceWith()
     expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('停止中断任务后可发送新的文本', () => {
+    const store = createStore()
+    store.setter(runAtom, { runId: 'r', status: 'interrupted' })
+    vi.mocked(stopRun).mockImplementationOnce(() => {
+      store.setter(runAtom, { runId: 'r', status: 'stopped' })
+    })
+    renderComposer(<Composer />, { store })
+
+    fireEvent.click(screen.getByRole('button', { name: '停止' }))
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: '你好' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    expect(sendMessage).toHaveBeenCalledWith('你好')
   })
 
   it('撤回提示显示；再次输入后清除提示', () => {

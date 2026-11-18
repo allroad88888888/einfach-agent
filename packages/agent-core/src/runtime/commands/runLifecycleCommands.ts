@@ -27,10 +27,7 @@ import {
 } from '../userContentDisposal'
 import { markUndoBarrier } from '../../state/undoBarrier'
 import { canonicalContextCacheValue } from '../contextCacheFingerprint'
-import {
-  markPossiblyStartedToolCallsOutcomeUnknown,
-  markUnresolvedToolCallsOutcomeUnknown,
-} from '../toolCallOutcomeFacts'
+import { markPossiblyStartedToolCallsOutcomeUnknown } from '../toolCallOutcomeFacts'
 import { recoverInterruptedToolCalls } from '../interruptedToolCallRecovery'
 import { sessionCapabilityPolicyVersion } from '../../state/sessionCapabilityPolicy'
 import { SessionCapabilityError } from './sessionCapabilityCommands'
@@ -184,7 +181,7 @@ export function createRunLifecycleCommands(core: CoreInstance, dependencies: Run
     )) return
     const meta = core.rootStore.getter(sessionsAtom)[id]
     const before = meta && disposeContent ? captureUserContentReachability(core, id) : undefined
-    markUnresolvedToolCallsOutcomeUnknown(id, core)
+    markPossiblyStartedToolCallsOutcomeUnknown(id, core)
     // No queued input can have a live owner once this session's only run stops.
     clearQueuedUserMessages(id, core)
     const currentRun = store.getter(runAtom)

@@ -209,7 +209,7 @@ export function Composer({
       {interrupted ? (
         <div className="agentnew-withdraw-bar">
           <span>{t`应用重启中断了任务`}</span>
-          <button type="button" className="agentnew-withdraw-button" onClick={continueInterruptedRun}>
+          <button type="button" className="agentnew-withdraw-button" onClick={() => continueInterruptedRun()}>
             {t`继续执行`}
           </button>
         </div>
@@ -277,7 +277,7 @@ export function Composer({
         >
           {preparingImages ? t`准备图片…` : running ? t`加入队列` : t`发送`}
         </button>
-        {running ? (
+        {running || interrupted ? (
           <button
             type="button"
             className="agentnew-composer-send agentnew-composer-stop"
