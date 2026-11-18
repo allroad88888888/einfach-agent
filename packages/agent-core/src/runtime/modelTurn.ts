@@ -1,7 +1,7 @@
 // 多轮 tool 循环的纯函数 helper（组 system / 组 tools / 解析响应）—— 无副作用、无 store。
 // ---------------------------------------------------------------------------
 // 本文件是这组 helper 的【稳定出口】：实现按职责分居下列模块，消费方仍从 './modelTurn' 取。
-//   · modelTurnSystemItems —— buildSystemItem / buildEnvironmentItem / buildCustomInstructionsItem，
+//   · modelTurnSystemItems —— buildEnvironmentItem / buildCustomInstructionsItem，
 //     请求稳定前缀里的各条 system 消息。
 //   · toolManifest —— buildToolManifestText（进稳定前缀的全量工具摘要，仅 name/description/runtime）
 //     与 searchToolManifestPage（request_tool_schema 用的有界分页发现）。
@@ -17,7 +17,6 @@
 export {
   buildCustomInstructionsItem,
   buildEnvironmentItem,
-  buildSystemItem,
 } from './modelTurnSystemItems'
 export type { EnvironmentItemInput } from './modelTurnSystemItems'
 

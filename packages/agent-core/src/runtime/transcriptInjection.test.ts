@@ -8,15 +8,13 @@ import { injectStablePrefixTranscript } from './transcriptInjection'
 import { captureRunCapabilitySnapshot } from './turnToolVisibility'
 
 function prefix(): StableModelPrefix {
-  const system = { role: 'system' as const, content: '固定 system' }
   const toolManifest = { role: 'system' as const, content: '可用工具摘要' }
   const skillManifest = { role: 'system' as const, content: '可用 skills：· planning — …' }
   const environment = { role: 'system' as const, content: '运行环境' }
-  const items = [system, toolManifest, skillManifest, environment]
+  const items = [toolManifest, skillManifest, environment]
   return {
     items,
     content: items.map((item) => item.content).join('\n'),
-    system,
     toolManifest,
     skillManifest,
     environment,
@@ -34,7 +32,7 @@ function prefix(): StableModelPrefix {
 }
 
 describe('injectStablePrefixTranscript', () => {
-  it('镜像稳定前缀四段：system、运行环境、skill 清单与工具摘要各一条', () => {
+  it('镜像稳定前缀三段：运行环境、skill 清单与工具摘要各一条', () => {
     const skillsRegistry: SkillsRegistry = {
       buildManifestText: () => '不该由转录再组一次',
       list: () => [{ name: 'planning', description: '规划', triggers: [] }],
@@ -55,7 +53,6 @@ describe('injectStablePrefixTranscript', () => {
 
     const events = core.getSessionStore(id).store.getter(runtimeTranscriptEventsAtom)
     expect(events.map((event) => event.title)).toEqual([
-      '注入 system',
       '注入运行环境',
       '注入 skill 清单',
       '注入工具摘要清单',

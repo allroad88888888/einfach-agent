@@ -361,7 +361,7 @@ export function formatDeepSeekBehaviorSummary(summary: DeepSeekBehaviorSummary):
     'DeepSeek prompt 行为 A/B',
     `总运行 ${summary.runs} 次；传输故障 ${summary.transport_errors} 次；`
       + `工具协议错误 ${summary.tool_protocol_errors} 次。`,
-    'arm baseline = 无自查条款 + 无连败提醒；arm self_check = 两条机制全开；',
+    'arm baseline = 无连败提醒；arm self_check = 开启连败提醒（沿用历史名称，静态条款以结果版本为准）；',
     'arm prefilter = 只给关键词命中的 skill 名单（现状）；arm manifest = 全量 skill 清单进 system 首部。',
     '差值一律 = 第二个 arm − 第一个 arm（treatment − reference）。',
   ]

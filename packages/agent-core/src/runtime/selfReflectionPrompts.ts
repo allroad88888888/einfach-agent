@@ -1,28 +1,5 @@
-// 自我反思机制的提示文案单一来源 —— 叶子模块，零 import、零副作用。
-// ---------------------------------------------------------------------------
-// 这两条机制的文案原本各自内联在使用点，改动时没有任何东西能证明「eval 里测的那句」和
-// 「线上真正发出去的那句」是同一串字节。集中到本文件后：
-//   · SELF_CHECK_CLAUSES —— buildSystemItem（modelTurnSystemItems.ts）固定 system 的静态条款；
-//     协议条款整段移除后，这两条就是那条 system 的全部内容；
-//   · toolFailureStreakNotice —— modelRun.ts 工具失败软提醒的一次性注入文案；
-//   · TOOL_FAILURE_STREAK_THRESHOLD / TOOL_FAILURE_ERROR_PREVIEW_LIMIT —— 触发阈值与错误摘要长度。
-// evals 目录下的 prompt 行为 A/B 套件直接 import 这里，保证测的就是线上文案。
-//
-// ★ 为什么单开一个叶子文件，而不是从 modelTurn / modelRun 导出 ★
-//   · modelTurn.ts 会经装配的 skill registry 拉进 .md?raw 模块声明 —— evals 的独立 tsconfig
-//     （types 只有 node + vitest/globals，没有 vite/client）解析不了，直接 TS2307；它还会经
-//     tools/registry.ts 触发 defaultCore 实例化，只为读一句提示文案不该有这种副作用。
-//   · modelRun.ts 更重：宿主命令桥、持久化桥和全部 state atoms 都在它的模块图里。
-//   本文件不 import 任何东西，所以谁 import 它都不成环，也不会拖进上述任何一样。
-
-/**
- * 固定运行时 system 的收尾自查 / 如实报告条款（协议条款移除后，即 buildSystemItem 的全部内容）。
- * 顺序与字节都是契约：改这里等于改线上 prompt。
- */
-export const SELF_CHECK_CLAUSES: readonly string[] = [
-  '收尾自查：结束回合前检查你最后一段话；若它是计划、待办清单或"接下来我会…"式的承诺，说明任务尚未完成——继续调用工具把它做完，或如实说明停下的原因；不得在未执行的情况下描述将要做的事然后结束回合。',
-  '如实报告：命令失败、测试未通过或步骤被跳过时，必须原样说明并附关键错误信息；不得声称已完成，不得淡化问题。',
-]
+// 工具失败软提醒的提示文案单一来源：运行时与行为评测共用。
+// 保持零依赖，供 eval 独立导入，避免加载完整运行时及其宿主装配。
 
 // 工具失败软提醒：同一工具在本次 run 内失败次数达到该阈值后，下一轮临时注入一条 system 提醒。
 // 阈值 1 = 每次失败落地即提醒一次（一次性消费）；streak 计数仍按连续失败累计，供文案区分单次/多次。

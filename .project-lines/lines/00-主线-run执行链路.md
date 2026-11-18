@@ -36,7 +36,7 @@
 
 ### 一次请求的 message 数组是怎么拼出来的
 
-- **稳定前缀 4 段，顺序写死在一处**：`modelTurnPrefix.ts:79-84` = ①固定 system（只剩收尾自查/如实报告两条，`modelTurnSystemItems.ts:26`）②工具摘要清单（`toolManifest.ts:57`，只有 name/description/runtime）③自定义指令（可选，`modelTurnSystemItems.ts:107`）④运行环境（`modelTurnSystemItems.ts:63`）。整个 run 内逐字不变——它在 bootstrap 建一次，之后每轮从 `base.stablePrefix` 取。
+- **稳定前缀最多 4 段，顺序写死在一处**：`modelTurnPrefix.ts` = ①工具摘要清单（只有 name/description/runtime）②自定义指令（可选）③skill 清单④运行环境。整个 run 内逐字不变——它在 bootstrap 建一次，之后每轮从 `base.stablePrefix` 取。
 - **顺序理由是 provider 前缀缓存**：按会话变化的那段必须最靠后，否则一变就从 token 0 打断缓存（`modelTurnSystemItems.ts:15`、:100-106 写明自定义指令曾放在历史之后、实测每轮全额 miss）。
 - **中段 = 会话 items 的投影**：`modelTurnRequester.ts:85` `projectContextCheckpoint(history, checkpointAtom)`——有 checkpoint 且它覆盖的 id 前缀逐个对得上时，把被覆盖的那一段换成一条摘要 item（`contextCheckpointProjection.ts:29`）；对不上就整份丢弃并清 checkpoint（:24、requester :86-89）。
 - **尾巴 controls 最多 4 条 `role:'system'`**，每轮重算：`plan_definition` / `plan_state` / `plan_continuation` / `tool_failure_notice`（`toolLoopCycle.ts:56-71`）。`planContinuation` 是一次性的，用完即清（:72）。

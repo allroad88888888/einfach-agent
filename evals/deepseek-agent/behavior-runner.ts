@@ -55,6 +55,7 @@ export interface DeepSeekBehaviorAbResult {
   task_id: string
   arm: DeepSeekBehaviorArmId
   arm_flags: {
+    /** 保留历史结果字段；当前版本不再注入静态自查条款。 */
     self_check_clauses: boolean
     failure_streak_notice: boolean
   }
@@ -501,7 +502,7 @@ export async function runDeepSeekBehaviorCase(
     task_id: task.id,
     arm: arm.id,
     arm_flags: {
-      self_check_clauses: arm.selfCheckClauses,
+      self_check_clauses: false,
       failure_streak_notice: arm.failureStreakNotice,
     },
     model,

@@ -5,7 +5,7 @@
 1. 离线协议矩阵：不读取 API Key、不访问网络；
 2. 真实 API 协议 smoke：验证请求形状和工具续轮；
 3. 真实任务级 A/B：比较全 Pro、全 Flash 和结构化影子路由；
-4. 真实行为 A/B：同一个模型下比较 prompt 变体（自我反思机制开/关、skill 清单形态）。
+4. 真实行为 A/B：同一个模型下比较 prompt 变体（工具失败提醒开/关、skill 清单形态）。
 
 真实结果默认写入 `evals/deepseek-agent/results/`，该目录被 Git 忽略。记录不包含 API Key、
 Authorization header、prompt、工具参数或模型输出正文。
@@ -33,8 +33,8 @@ pnpm exec tsc -p evals/deepseek-agent/tsconfig.json --noEmit
 任务 runner 使用 10 个确定性任务和只读 synthetic tools，覆盖检索、版本解析、时间归一化、
 安全分级、变更计划、JSON 结构化输出、分阶段 canary、实现、验收及值提取。
 
-行为 runner 的离线用例覆盖两个诱发性任务的全部模型剧本、arm 之间的请求体差异（条款拼接、
-连败提醒的注入位置与一次性消费）、repeat 展开顺序和报告聚合数字；skill 清单实验另覆盖
+行为 runner 的离线用例覆盖两个诱发性任务的全部模型剧本、arm 之间的请求体差异（连败提醒
+的注入位置与一次性消费）、repeat 展开顺序和报告聚合数字；skill 清单实验另覆盖
 B04 两个 arm 的 system 拼装（prefilter 只含命中名单、manifest 含全量清单）、四类 case 的判据
 （含「读了不该读」「没读该读」剧本）、B05 三层导航的成功／中途放弃／读错资源键三种剧本，
 以及组级聚合数字。
@@ -142,14 +142,13 @@ runner 先为每个任务执行 Pro 和 Flash；report 再按
 上面三层比的都是**模型**（Pro / Flash / 影子路由）。这一层固定模型，只改 prompt 侧的机制，
 实测它们对 DeepSeek 真实行为的影响。目前有两族实验：
 
-**一、自我反思机制（B01 / B02）**
+**一、工具失败提醒（B01 / B02）**
 
-- **收尾自查 / 如实报告条款**：`buildSystemItem` 固定 system 的最后两条静态条款；
 - **工具失败软提醒**：同一工具失败达 `TOOL_FAILURE_STREAK_THRESHOLD`（现为 1，即每次失败）后，
   下一轮请求临时注入一条 system 提醒；连续失败次数只用来切换列表行文案（单次 / 已连续 N 次）。
 
-两段文案都从 `@einfach-agent/core/runtime/selfReflectionPrompts` import —— 那是运行时与 eval
-共用的单一来源，所以这里测的就是线上真正发出去的那串字节，不是它的副本。
+提醒文案从 `@einfach-agent/core/runtime/selfReflectionPrompts` import，与运行时共用单一来源。
+静态自查条款已移除；从 `2026-11-18.1` 起，B01/B02 仅比较工具失败提醒，结果不可与旧版直接混比。
 
 **二、skill 清单形态（B04 / B05）**
 
@@ -170,8 +169,8 @@ runner 按 arm × task × repeat 笛卡尔展开，并按 (任务序号 + repeat
 
 | 实验族 | arm | 含义 |
 | --- | --- | --- |
-| 自我反思 | `baseline` | 不拼 `SELF_CHECK_CLAUSES`，不注入连败提醒 |
-| 自我反思 | `self_check` | 两条机制全开 |
+| 工具失败提醒 | `baseline` | 不注入连败提醒 |
+| 工具失败提醒 | `self_check` | 开启连败提醒；沿用历史 arm ID，`self_check_clauses` 恒为 `false` |
 | skill 清单 | `prefilter` | 模拟现状：system **尾部**只有一行「已匹配 skills：<按关键词命中的名单>」，没有 description；一个都没命中就写「（无）」 |
 | skill 清单 | `manifest` | 模拟蓝图阶段 3：system **首部**是全量清单，每行 `· name — description`（description 写「何时用 / 何时不用」） |
 

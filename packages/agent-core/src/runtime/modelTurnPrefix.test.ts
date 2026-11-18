@@ -71,9 +71,8 @@ describe('buildStableModelPrefix', () => {
     // 清单文本由 tools-skills 的 registry 产出，core 只经注入槽拿它——core 不 import tools-*。
     expect(buildManifestText).toHaveBeenCalledExactlyOnceWith(snapshot)
     expect(prefix.skillManifest.content).toBe('可用 skills：\n· project/release-check — 发布前检查')
-    // 顺序即 provider 前缀缓存契约：与 workspace 无关的三段在前，按 workspace 变的两段垫底。
+    // 顺序即 provider 前缀缓存契约：工具摘要在前，按 workspace 变的两段垫底。
     expect(prefix.items).toEqual([
-      prefix.system,
       prefix.toolManifest,
       prefix.skillManifest,
       prefix.environment,

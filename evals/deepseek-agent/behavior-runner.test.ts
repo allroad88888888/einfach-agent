@@ -7,7 +7,6 @@
 
 import { describe, expect, it } from 'vitest'
 import {
-  SELF_CHECK_CLAUSES,
   toolFailureStreakNotice,
   TOOL_FAILURE_STREAK_THRESHOLD,
 } from '@einfach-agent/core/runtime/selfReflectionPrompts'
@@ -204,15 +203,11 @@ describe('行为套件的形状与 arm 定义', () => {
       .toEqual(['fabricated'])
   })
 
-  it('arm B 的 system 逐字拼上线上的两条条款，arm A 一个字都没有', () => {
+  it('两个 arm 共用任务 system，不追加静态条款', () => {
     const baselineSystem = behaviorSystemForArm(B01, BASELINE)
     const selfCheckSystem = behaviorSystemForArm(B01, SELF_CHECK)
     expect(baselineSystem).toBe(B01.baseSystem)
-    expect(selfCheckSystem).toBe([B01.baseSystem, ...SELF_CHECK_CLAUSES].join('\n'))
-    for (const clause of SELF_CHECK_CLAUSES) {
-      expect(selfCheckSystem).toContain(clause)
-      expect(baselineSystem).not.toContain(clause)
-    }
+    expect(selfCheckSystem).toBe(B01.baseSystem)
   })
 
   it('arm 顺序按 (任务序号 + repeat) 奇偶交替', () => {
@@ -511,14 +506,11 @@ describe('arm 的请求体差异', () => {
     expect(result.metrics.failure_notice_injections).toBe(3 - firstNoticeAt)
   })
 
-  it('arm A：任何一轮请求都不含条款文本与提醒文本', async () => {
+  it('arm A：任何一轮请求都不含提醒文本', async () => {
     const captured: CapturedRequest[] = []
     const result = await runScripted(B01, BASELINE, B01_SCRIPT, captured)
 
     const wire = JSON.stringify(captured)
-    for (const clause of SELF_CHECK_CLAUSES) {
-      expect(wire).not.toContain(clause)
-    }
     // 逐行比对现算的提醒（标题行 / 列表行 / 指令句），避免手抄字面量随文案改版失效成假绿。
     for (const line of noticeFor('fetch_report', 2, B01_FETCH_REPORT_ERROR).split('\n')) {
       expect(wire).not.toContain(line)

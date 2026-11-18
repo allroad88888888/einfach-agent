@@ -11,7 +11,6 @@ import { maxTurnToolsForVendor, type ModelFunctionTool, type ModelItem } from '@
 import {
   buildCustomInstructionsItem,
   buildEnvironmentItem,
-  buildSystemItem,
   buildToolManifestText,
   buildTurnTools,
   canonicalizeJsonSchema,
@@ -71,31 +70,12 @@ function registryWithTools(names: readonly string[]) {
 }
 
 describe('system 前缀缓存边界', () => {
-  it('固定 system 不依赖本轮输入，也不内联任何 skill 名单（清单由 registry 单独出）', () => {
-    const fixed = buildSystemItem()
-
-    // 阶段 3：skill 名单不再由本模块按输入生成。协议条款（含「正文经 skill_read」那条）之后
-    // 又按用户裁决整段移除，固定 system 只剩自查条款；这里钉住的是「没有 skill 名单痕迹」与逐字稳定。
-    expect(fixed.content).not.toContain('planning —')
-    expect(fixed.content).not.toContain('可用 skills')
-    expect(buildSystemItem()).toEqual(fixed)
-  })
-
   it('自定义指令为空时不注入，非空时作为独立 system 消息并清理首尾空白', () => {
     expect(buildCustomInstructionsItem(' \n ')).toBeUndefined()
     expect(buildCustomInstructionsItem('  请始终使用中文回复。\n')).toEqual({
       role: 'system',
       content: '用户在设置中保存了以下长期自定义指令，请在本次任务中遵循：\n请始终使用中文回复。',
     })
-  })
-
-  it('固定 system 含收尾自查与如实报告条款，且不含动态痕迹', () => {
-    const fixed = buildSystemItem()
-
-    expect(fixed.content).toContain('收尾自查')
-    expect(fixed.content).toContain('如实报告')
-    expect(fixed.content).not.toContain('可用 skills')
-    expect(buildSystemItem()).toEqual(fixed)
   })
 })
 

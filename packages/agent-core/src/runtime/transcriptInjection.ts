@@ -57,7 +57,6 @@ export function injectStablePrefixTranscript(
 ): void {
   const fingerprints = getTranscriptInjectionFingerprints(sessionId, core)
   const earlyEntries = [
-    ['system', '注入 system', compactText(prefix.system.content), prefix.system.content],
     ['environment', '注入运行环境', compactText(prefix.environment.content), prefix.environment.content],
   ] as const
 

@@ -6,7 +6,7 @@
 //     自救），模型是原样重试，还是读错误提示改参数；行为门控，不看调用次数——第几次调用带
 //     上 cache: true 都立即成功，不会出现「第二次就自救却被计次门槛打回」的误判；
 //   · B02 如实报告：一个文档读不到，模型是如实标 missing，还是谎报 completed。
-// 条款与提醒文案都从 @einfach-agent/core/runtime/selfReflectionPrompts import —— 测的就是线上那串字节。
+// 工具失败提醒由 runner 从 @einfach-agent/core/runtime/selfReflectionPrompts 导入线上文案。
 //
 // B04/B05 是 docs/skills-tree-blueprint.md 阶段 2 的数据门禁，形状不同：不诱发失败，而是比
 // 【skill 清单怎么进 system】。arm 在本文件内手拼 system 模拟，不依赖蓝图阶段 1/3 的实现，
@@ -19,12 +19,12 @@
 //   就是正确答案。
 
 import type { ModelFunctionTool } from '@einfach-agent/ai'
-import { SELF_CHECK_CLAUSES } from '@einfach-agent/core/runtime/selfReflectionPrompts'
 
 // .3：新增 B04/B05（skill 清单形态）；B01/B02 的 fixture 与判据口径【不变】，结果与 .2 可比。
 // .2：B01 fixture 次数门控 → 行为门控、判据泛化（相邻比较）+ persisted_after_failure；
 // 与 .1 的结果口径不可直接混比（retry_identical/adapted 语义已变）。
-export const DEEPSEEK_BEHAVIOR_SUITE_VERSION = '2026-07-27.3'
+// 静态自查条款已移除；B01/B02 现在仅比较工具失败提醒，结果不能与旧版本直接混比。
+export const DEEPSEEK_BEHAVIOR_SUITE_VERSION = '2026-11-18.1'
 export const DEEPSEEK_BEHAVIOR_RESULT_SCHEMA = 'deepseek-behavior-ab/v1'
 
 /** 每个 (arm, task) 的默认重复次数；`DEEPSEEK_BEHAVIOR_REPEAT` 可覆盖。 */
@@ -36,8 +36,6 @@ export type DeepSeekBehaviorArmId = 'baseline' | 'self_check' | 'prefilter' | 'm
 
 export interface DeepSeekBehaviorArm {
   id: DeepSeekBehaviorArmId
-  /** 任务 system 末尾是否拼接 SELF_CHECK_CLAUSES。 */
-  selfCheckClauses: boolean
   /** 工具连败达阈值后，下一轮请求是否注入 toolFailureStreakNotice。 */
   failureStreakNotice: boolean
 }
@@ -46,20 +44,19 @@ export interface DeepSeekBehaviorArm {
 // 只需要往这个数组里加一项，runner 与 report 都不用改。
 // 这一组是 B01/B02 的默认 arm；任务可以用 `arms` 字段声明自己的一组（见 B04/B05）。
 export const DEEPSEEK_BEHAVIOR_ARMS: readonly DeepSeekBehaviorArm[] = [
-  { id: 'baseline', selfCheckClauses: false, failureStreakNotice: false },
-  { id: 'self_check', selfCheckClauses: true, failureStreakNotice: true },
+  { id: 'baseline', failureStreakNotice: false },
+  // 保留历史 arm ID，当前只开启工具失败提醒。
+  { id: 'self_check', failureStreakNotice: true },
 ]
 
 /** arm prefilter：模拟现状 —— system 尾部只有「按输入关键词命中的 skill 名单」。 */
 const PREFILTER_ARM: DeepSeekBehaviorArm = {
   id: 'prefilter',
-  selfCheckClauses: false,
   failureStreakNotice: false,
 }
 /** arm manifest：模拟蓝图阶段 3 —— system 首部是全量清单（name + 触发条件式 description）。 */
 const MANIFEST_ARM: DeepSeekBehaviorArm = {
   id: 'manifest',
-  selfCheckClauses: false,
   failureStreakNotice: false,
 }
 
@@ -122,7 +119,7 @@ export interface DeepSeekBehaviorCriterion {
 export interface DeepSeekBehaviorTaskSpec {
   id: string
   title: string
-  /** arm A 直接用它当 system；arm B 在末尾拼 SELF_CHECK_CLAUSES。 */
+  /** 各 arm 共用的任务 system，允许 systemForArm 按需覆盖。 */
   baseSystem: string
   prompt: string
   profile: DeepSeekBehaviorProfile
@@ -137,7 +134,6 @@ export interface DeepSeekBehaviorTaskSpec {
   group?: string
   /**
    * arm 专属的 system 拼装（B04/B05 的 skill 清单形态在这里手拼）。缺省直接用 baseSystem；
-   * 返回值仍会按 arm.selfCheckClauses 决定是否拼自查条款，两条机制彼此正交。
    */
   systemForArm?(arm: DeepSeekBehaviorArm): string
 }
@@ -754,16 +750,12 @@ export function behaviorArmsForTask(
   return task.arms ?? DEEPSEEK_BEHAVIOR_ARMS
 }
 
-/**
- * arm A 用任务原始 system；arm B 在末尾逐字拼上线上的两条自查条款。
- * 任务可以用 `systemForArm` 换掉基底（B04/B05 的 skill 清单形态），自查条款仍按 arm 标志叠加。
- */
+/** 任务可以用 systemForArm 指定各 arm 的 system（B04/B05 的 skill 清单形态）。 */
 export function behaviorSystemForArm(
   task: DeepSeekBehaviorTaskSpec,
   arm: DeepSeekBehaviorArm,
 ): string {
-  const base = task.systemForArm?.(arm) ?? task.baseSystem
-  return arm.selfCheckClauses ? [base, ...SELF_CHECK_CLAUSES].join('\n') : base
+  return task.systemForArm?.(arm) ?? task.baseSystem
 }
 
 export function evaluateDeepSeekBehaviorCriteria(

@@ -30,7 +30,7 @@ describe('runSession（P-R2）注入卡片判重与 context 统计', () => {
 
     const events = core.getSessionStore(id).store.getter(runtimeTranscriptEventsAtom)
     // 五类稳定注入卡片各自只有一条——第二次 run 内容与第一次逐字相同，不应再记。
-    expect(events.filter((e) => e.title === '注入 system')).toHaveLength(1)
+    expect(events.filter((e) => e.title === '注入 system')).toHaveLength(0)
     expect(events.filter((e) => e.title === '注入运行环境')).toHaveLength(1)
     expect(events.filter((e) => e.title === '注入自定义指令')).toHaveLength(1)
     expect(events.filter((e) => e.title === '注入 skill 清单')).toHaveLength(1)
@@ -161,8 +161,8 @@ describe('runSession（P-R2）注入卡片判重与 context 统计', () => {
       },
       finishReason: null,
     })
-    // 稳定前缀四段：固定 system + 工具摘要 + skill 清单 + 运行环境（本会话无自定义指令）。
-    expect(stats?.roles.system.count).toBe(4)
+    // 稳定前缀三段：工具摘要 + skill 清单 + 运行环境（本会话无自定义指令）。
+    expect(stats?.roles.system.count).toBe(3)
     expect(stats?.roles.user.count).toBe(1)
     // 统计的是**发出去的那一份请求**：首轮里除前缀只有一条 user，模型还没回话。
     expect(stats?.roles.assistant.count).toBe(0)

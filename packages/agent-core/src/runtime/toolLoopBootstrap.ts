@@ -79,7 +79,7 @@ export async function bootstrapToolLoop(id: string, runId: string, opts: ToolLoo
     if (!control.isRunning()) { trace.finish('cancelled', 'agent.stopped', { reason: 'run_not_running' }); return undefined }
     if (opts.signal.aborted) { patchRun(id, { status: 'stopped' }, core); trace.finish('cancelled', 'agent.stopped', { reason: 'aborted' }); return undefined }
     injectStablePrefixTranscript(id, stablePrefix, core)
-    trace.event('llm.system_injected', { system_chars: stablePrefix.system.content.length, environment_chars: stablePrefix.environment.content.length, workspace_bound: stablePrefix.workspaceRoot !== undefined })
+    trace.event('llm.system_injected', { environment_chars: stablePrefix.environment.content.length, workspace_bound: stablePrefix.workspaceRoot !== undefined })
     if (session !== initialSession) trace.event('agent.model_migrated_at_request', { from: initialSession.settings.model, to: session.settings.model })
     const modelUserId = core.config.modelUserId
     const rootTranscript = () => formatSubagentTranscript([...stablePrefix.items, ...currentTurnItems(id, core).map((item) => item.item)])

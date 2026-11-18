@@ -116,18 +116,17 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
     expect(items.every(({ item }) => item.role !== 'system' && item.role !== 'tool')).toBe(true)
 
     const messages = captured.messages as Array<{ role: string; content?: string | null }>
-    expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'system', 'user'])
-    expect(messages[0].content).toContain('收尾自查')
+    expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'user'])
     expect(messages[0].content).not.toContain('可用 skills')
-    expect(messages[1].content).toBe(buildToolManifestText(false, { registry: core.tools }))
-    expect(messages[1].content).toContain('· skill_search [internal]')
-    expect(messages[1].content).not.toContain('· shell_macos [server]')
-    const manifestText = String(messages[2].content)
+    expect(messages[0].content).toBe(buildToolManifestText(false, { registry: core.tools }))
+    expect(messages[0].content).toContain('· skill_search [internal]')
+    expect(messages[0].content).not.toContain('· shell_macos [server]')
+    const manifestText = String(messages[1].content)
     expect(manifestText).toBe(buildSkillManifestText(projectSkills))
     expect(manifestText).toContain('· planning — 何时用：任务跨多个阶段/模块')
     expect(manifestText).toContain('· project/release-check — 何时用：发布前检查部署流程。')
-    expect(messages[3].content).toContain('运行环境：')
-    expect(messages[4]).toMatchObject({ role: 'user', content: 'hi' })
+    expect(messages[2].content).toContain('运行环境：')
+    expect(messages[3]).toMatchObject({ role: 'user', content: 'hi' })
     expect(projectSkillsProvider).toHaveBeenCalledExactlyOnceWith(workspaceRoot)
 
     const events = store.getter(runtimeTranscriptEventsAtom)
@@ -163,16 +162,16 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
     })
 
     const messages = captured.messages as Array<{ role: string; content?: string }>
-    expect(messages[1].content).toBe(buildToolManifestText(true, { registry: toolRegistry }))
-    expect(messages[1].content).toContain('· shell_macos [server]')
+    expect(messages[0].content).toBe(buildToolManifestText(true, { registry: toolRegistry }))
+    expect(messages[0].content).toContain('· shell_macos [server]')
 
     const exposedToolNames = (captured.tools as ModelFunctionTool[])
       .map((tool) => tool.function.name)
     expect(exposedToolNames).toEqual(['request_tool_schema'])
   })
 
-  it('稳定前缀五段有序：固定 system → 工具摘要 → 自定义指令 → skill 清单 → 运行环境', async () => {
-    // 按变更频率排：前三段与 workspace 无关、所有会话逐字相同；skill 清单与运行环境都按
+  it('稳定前缀四段有序：工具摘要 → 自定义指令 → skill 清单 → 运行环境', async () => {
+    // 按变更频率排：前两段不依赖 workspace；skill 清单与运行环境都按
     // workspace 变，一起垫底，好让不同 workspace 尽量共享前面那段前缀。
     const core = createCoreInstance({
       config: { customInstructions: '  请始终使用中文回复\n' },
@@ -203,16 +202,15 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
 
     const marker = '用户在设置中保存了以下长期自定义指令'
     const messages = captured.messages as Array<{ role: string; content?: string }>
-    // [固定 system, 工具摘要, 自定义指令, skill 清单, 运行环境, user]。
-    expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'system', 'system', 'user'])
-    expect(messages[0].content).toContain('收尾自查')
+    // [工具摘要, 自定义指令, skill 清单, 运行环境, user]。
+    expect(messages.map((item) => item.role)).toEqual(['system', 'system', 'system', 'system', 'user'])
     expect(messages[0].content).not.toContain(marker)
-    expect(messages[1].content).toBe(buildToolManifestText(false, { registry: core.tools }))
-    expect(messages[2].content).toContain(marker)
-    expect(messages[2].content).toContain('请始终使用中文回复')
-    expect(messages[3].content).toContain('可用 skills')
-    expect(messages[4].content).toContain('运行环境：')
-    expect(messages[5]).toMatchObject({ role: 'user', content: 'hi' })
+    expect(messages[0].content).toBe(buildToolManifestText(false, { registry: core.tools }))
+    expect(messages[1].content).toContain(marker)
+    expect(messages[1].content).toContain('请始终使用中文回复')
+    expect(messages[2].content).toContain('可用 skills')
+    expect(messages[3].content).toContain('运行环境：')
+    expect(messages[4]).toMatchObject({ role: 'user', content: 'hi' })
     // 自定义指令只此一份，且不在历史之后。
     expect(messages.filter((item) => item.content?.includes(marker))).toHaveLength(1)
 
@@ -251,12 +249,12 @@ describe('runSession（P-R2）请求投影：设置转发与稳定前缀构造',
     await runSession(id, '了解下这个项目', { signal: new AbortController().signal, apiKey: 'k', fetchImpl, core })
 
     const messages = captured.messages as Array<{ role: string; content?: string }>
-    const environment = messages[3]
-    // 运行环境是稳定前缀最后一段（前面依次是固定 system、工具摘要、skill 清单）。
+    const environment = messages[2]
+    // 运行环境是稳定前缀最后一段（前面依次是工具摘要、skill 清单）。
     expect(environment?.role).toBe('system')
     expect(environment?.content).toContain('当前工作区根目录：/Volumes/work/ai/web-agent')
     expect(environment?.content).not.toContain('/Volumes/work/ai/web-agent/\n')
-    expect(messages[4]).toMatchObject({ role: 'user', content: '了解下这个项目' })
+    expect(messages[3]).toMatchObject({ role: 'user', content: '了解下这个项目' })
 
     const events = core.getSessionStore(id).store.getter(runtimeTranscriptEventsAtom)
     expect(

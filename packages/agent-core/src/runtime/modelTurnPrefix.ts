@@ -8,7 +8,6 @@ import { hasHostBridge } from './hostBridge'
 import {
   buildCustomInstructionsItem,
   buildEnvironmentItem,
-  buildSystemItem,
   buildToolManifestText,
 } from './modelTurn'
 import type { CoreInstance } from './core/coreInstance'
@@ -29,7 +28,6 @@ import { resolveRunCapabilitySnapshots } from './runCapabilitySnapshotCache'
 export interface StableModelPrefix {
   items: SystemItem[]
   content: string
-  system: SystemItem
   environment: SystemItem
   /** L1 skills 清单（只有元数据；正文与资源仍必须经 skill_read）。 */
   skillManifest: SystemItem
@@ -122,7 +120,6 @@ export async function buildStableModelPrefix(
   //   · buildEnvironmentItem —— 运行环境那段是否对模型宣告「本机文件、shell 与 Git 工具不可用」。
   // 分开判会让模型同时收到「清单里有 shell」和「shell 在本环境不可用」两句互相打架的话。
   const hostHasLocalCapabilities = hasHostBridge()
-  const system = buildSystemItem()
   const toolManifest: SystemItem = {
     role: 'system',
     content: buildToolManifestText(hostHasLocalCapabilities, { registry: runToolCatalog }),
@@ -152,13 +149,12 @@ export async function buildStableModelPrefix(
     // hostPlatform()，而那个声明值除它之外没有第二条读出通路。
     platform: hostPlatform(),
   })
-  // 【C7】各段按「变更频率」排：固定 system → 工具摘要 → 自定义指令这三段与 workspace 无关、
-  // 所有会话逐字相同；skill 清单与运行环境都按 workspace 变，故一起垫底。清单排在环境之前：
+  // 【C7】工具摘要 → 自定义指令这两段不依赖 workspace；skill 清单与运行环境都按 workspace
+  // 变，故一起垫底。清单排在环境之前：
   // 没有项目 skills 的两个 workspace 连清单也逐字相同，divergence 推迟到最后一段。
   // 清单必须待在这里而不是历史尾部：稳定前缀的字节变化被 contextCache 归因为 profile_changed
   // （换 epoch、一次性全量 miss），落在 append-only 历史尾巴上的东西则每轮被新历史顶位、持续 miss。
   const items: SystemItem[] = [
-    system,
     toolManifest,
     ...(customInstructions ? [customInstructions] : []),
     skillManifest,
@@ -168,7 +164,6 @@ export async function buildStableModelPrefix(
   return {
     items,
     content: items.map((item) => item.content).join('\n'),
-    system,
     environment,
     skillManifest,
     toolManifest,

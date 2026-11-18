@@ -1,11 +1,7 @@
-// 组请求稳定前缀里的各条 system 消息（固定 system / 长期自定义指令 / 运行环境）—— 无副作用、无 store。
+// 组请求稳定前缀里的各条 system 消息（长期自定义指令 / 运行环境）—— 无副作用、无 store。
 // ---------------------------------------------------------------------------
-//   · buildSystemItem / buildCustomInstructionsItem —— 固定 system 与长期自定义指令，都放在
-//     append-only 历史【之前】的稳定前缀里，不含本轮输入。
-//     ★ 固定 system 现在只有收尾自查 / 如实报告两条 ★ —— 曾经写在这里的六条协议条款
-//     （lazy tools、禁止模拟工具调用、skill 正文经 skill_read、planning 三段式、计划审批）
-//     已按用户裁决整段移除。lazy tools 那一半仍有信息源：工具摘要段（toolManifest.ts）自己就写
-//     「仅用于发现，不代表参数 schema 已加载」并指向 request_tool_schema；其余几条不再进 prompt。
+//   · buildCustomInstructionsItem —— 长期自定义指令放在 append-only 历史【之前】的
+//     稳定前缀里，不含本轮输入。
 //     ★ skill 名单不由本文件产出 ★（阶段 3，docs/skills-tree-blueprint.md）：曾经的
 //     buildSkillContextItem 按本轮输入匹配 skill、把名单挂在历史尾部，导致每轮都被新历史顶位、
 //     全额 cache miss。名单改由 registry 的 buildSkillManifestText() 产出【全量】清单，
@@ -18,16 +14,6 @@
 
 import type { HostPlatform } from './hostPlatform'
 import type { SystemItem } from '@einfach-agent/ai'
-// 收尾自查 / 如实报告两条条款住在零依赖叶子模块：evals 的 prompt 行为 A/B 要 import 同一份
-// 字节做对照实验，而本文件（经装配的 skill registry + tools/registry 的 defaultCore）
-// 在那个 tsconfig 下既无法解析也不该被实例化。详见 selfReflectionPrompts.ts 顶部说明。
-import { SELF_CHECK_CLAUSES } from './selfReflectionPrompts'
-
-// 简介：组固定的 system 指令（不 appendItem，只用于请求）——当前就是收尾自查 / 如实报告两条。
-// 详情：这里不能混入本轮输入、时间或计划状态，否则每轮都会从 token 0 打断 Provider 的前缀缓存。
-export function buildSystemItem(): SystemItem {
-  return { role: 'system', content: SELF_CHECK_CLAUSES.join('\n') }
-}
 
 export interface EnvironmentItemInput {
   /** 该会话绑定的 workspace 根目录（已归一化）；未绑定时为 undefined。 */
@@ -101,8 +87,7 @@ export function buildEnvironmentItem(input: EnvironmentItemInput): SystemItem {
 }
 
 // 简介：把宿主保存的长期自定义指令组成一条独立 system 消息。
-// 详情：它与固定运行时协议分开成条（便于观测与替换），但由调用方放在【固定 system 之后、
-//   append-only 历史之前】，与固定 system 一起构成本 lane 的稳定前缀。
+// 详情：由调用方放在【工具摘要之后、append-only 历史之前】，作为本 lane 稳定前缀的一段。
 // ★ 缓存权衡（曾经放在历史之后，实测每轮全额 miss）★ ——
 //   自定义指令是低频变更的长期设置，却随着历史每轮增长被顶到新位置，于是每一轮都要为这段
 //   token 付一次 cache miss。挪进稳定前缀后：不变的轮次（绝大多数）整段命中；用户真去设置里

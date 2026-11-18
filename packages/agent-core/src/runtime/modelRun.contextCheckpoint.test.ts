@@ -30,8 +30,8 @@ describe('上下文 checkpoint 接入', () => {
     await runSession('cc0', 'hi', { signal: new AbortController().signal, apiKey: 'k', fetchImpl })
     await flushObservability()
 
-    // 稳定前缀四段（固定 system + 工具摘要 + skill 清单 + 运行环境）+ user，共五条。
-    expect((captured.messages as unknown[]).length).toBe(5)
+    // 稳定前缀三段（工具摘要 + skill 清单 + 运行环境）+ user，共四条。
+    expect((captured.messages as unknown[]).length).toBe(4)
     expect(trace.events.some((event) => event.name === 'llm.context_distillation_started')).toBe(false)
     expect(trace.events.some((event) => event.name === 'llm.context_distillation_succeeded')).toBe(false)
   })
