@@ -96,6 +96,11 @@ export { ModelProxyStreamError, ModelRequestCancelledError } from './model'
 export type { ForwardedModelResponse } from './model'
 // CLI 的只读模型配置契约：键绑定与段 codec 在 host-node 只有一个 owner；URL 判据同样复用。
 export {
+  CONFIG_DIRECTORY_ENV,
+  resolveConfigPaths,
+} from './config/configPaths'
+export type { ConfigPaths } from './config/configPaths'
+export {
   credentialConfigKey,
   normalizeApiKey,
   normalizeOpenAiCompatBaseUrl,

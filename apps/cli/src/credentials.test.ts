@@ -1,3 +1,6 @@
+import { chmod, mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { normalizeApiKey } from '@einfach-agent/host-node'
 import { requireDeepSeekCredential, resolveModelCredentials } from './credentials'
@@ -160,5 +163,100 @@ describe('resolveModelCredentials', () => {
     })
 
     expect(credentials.modelBaseUrls['openai-compat']).toBe('https://environment.example/v1')
+  })
+
+  it('支持 WEB_AGENT_CONFIG_DIR 选择独立配置目录，且不回退读取旧路径', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'cli-config-dir-'))
+    const isolatedDir = join(root, 'isolated')
+    try {
+      await mkdir(isolatedDir, { mode: 0o700 })
+      await chmod(isolatedDir, 0o700)
+      const readPaths: string[] = []
+      const credentials = await resolveModelCredentials({
+        env: { WEB_AGENT_CONFIG_DIR: isolatedDir },
+        homeDirectory: root,
+        readConfigFile: async (path) => {
+          readPaths.push(path)
+          if (path === join(isolatedDir, 'config.json')) {
+            return JSON.stringify({ modelCredentials: { 'deepseek:default': 'isolated-key' } })
+          }
+          throw new Error(`不应读取其他路径: ${path}`)
+        },
+      })
+
+      expect(credentials.configPath).toBe(join(isolatedDir, 'config.json'))
+      expect(credentials.modelCredentials.deepseek).toBe('isolated-key')
+      expect(readPaths).toEqual([join(isolatedDir, 'config.json')])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('WEB_AGENT_CONFIG_DIR 指向不存在目录时不读取 legacy ~/.web-agent/config.json', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'cli-config-missing-'))
+    const missingDir = join(root, 'fresh-isolated')
+    try {
+      const readPaths: string[] = []
+      const credentials = await resolveModelCredentials({
+        env: { WEB_AGENT_CONFIG_DIR: missingDir },
+        homeDirectory: root,
+        readConfigFile: async (path) => {
+          readPaths.push(path)
+          const err = Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+          throw err
+        },
+      })
+
+      expect(credentials.configPath).toBe(join(missingDir, 'config.json'))
+      expect(credentials.modelCredentials).toEqual({})
+      expect(readPaths).toEqual([join(missingDir, 'config.json')])
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
+  })
+
+  it('默认路径不存在时回退只读旧 ~/.web-agent/config.json', async () => {
+    const root = '/tmp/cli-home'
+    const credentials = await resolveModelCredentials({
+      env: {},
+      homeDirectory: root,
+      readConfigFile: async (path) => {
+        if (path === join(root, '.webAgent', 'config.json')) {
+          throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' })
+        }
+        if (path === join(root, '.web-agent', 'config.json')) {
+          return JSON.stringify({ modelCredentials: { 'deepseek:default': 'legacy-key' } })
+        }
+        throw new Error(`unexpected path: ${path}`)
+      },
+    })
+
+    expect(credentials.configPath).toBe(join(root, '.webAgent', 'config.json'))
+    expect(credentials.modelCredentials.deepseek).toBe('legacy-key')
+  })
+
+  it('拒绝空的、相对的或非 0700 的 WEB_AGENT_CONFIG_DIR', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'cli-config-bad-'))
+    const insecureDir = join(root, 'insecure')
+    try {
+      await mkdir(insecureDir, { mode: 0o755 })
+      await chmod(insecureDir, 0o755)
+      await expect(resolveModelCredentials({
+        env: { WEB_AGENT_CONFIG_DIR: '' },
+        homeDirectory: root,
+      })).rejects.toThrow('WEB_AGENT_CONFIG_DIR 不能为空')
+      await expect(resolveModelCredentials({
+        env: { WEB_AGENT_CONFIG_DIR: 'relative/config' },
+        homeDirectory: root,
+      })).rejects.toThrow('WEB_AGENT_CONFIG_DIR 必须是绝对路径')
+      if (process.platform !== 'win32') {
+        await expect(resolveModelCredentials({
+          env: { WEB_AGENT_CONFIG_DIR: insecureDir },
+          homeDirectory: root,
+        })).rejects.toThrow('WEB_AGENT_CONFIG_DIR 目录权限必须为 0700')
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })

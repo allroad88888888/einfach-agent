@@ -8,6 +8,7 @@ import { buildSkillManifestText, listSkillSummaries } from './registry'
 
 export { skillSearchTool, skillReadTool }
 export { buildProjectSkillsProvider } from './projectSkillsProvider'
+export { scanProjectSkills, type ScanProjectSkillsOptions } from './projectSkillsLoader'
 export {
   buildSkillManifestText,
   listSkillSummaries,

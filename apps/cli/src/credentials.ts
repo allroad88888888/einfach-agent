@@ -1,14 +1,16 @@
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { resolve } from 'node:path'
 import {
+  CONFIG_DIRECTORY_ENV,
   credentialConfigKey,
   normalizeApiKey,
   normalizeOpenAiCompatBaseUrl,
   OPENAI_COMPAT_BASE_URL_CONFIG_KEY,
   readModelCredentialSnapshotKey,
+  resolveConfigPaths,
 } from '@einfach-agent/host-node'
-import type { ModelProviderName, ProviderScope } from '@einfach-agent/host-node'
+import type { ConfigPaths, ModelProviderName, ProviderScope } from '@einfach-agent/host-node'
 
 /**
  * CLI 装配层显式登记的凭据来源：vendor id ← 环境变量；配置键由 host-node 的绑定表得出。
@@ -85,24 +87,47 @@ function baseUrlsFromEnvironment(env: NodeJS.ProcessEnv): Record<string, string>
   return baseUrls
 }
 
-function configFilePath(options: ResolveCredentialOptions): string {
-  return resolve(options.configPath ?? join(options.homeDirectory ?? homedir(), '.webAgent', 'config.json'))
+async function resolveCliConfigPaths(
+  options: ResolveCredentialOptions,
+  env: NodeJS.ProcessEnv,
+): Promise<ConfigPaths> {
+  if (options.configPath !== undefined) {
+    return { path: resolve(options.configPath), legacyPath: undefined }
+  }
+  return resolveConfigPaths(options.homeDirectory ?? homedir(), env[CONFIG_DIRECTORY_ENV])
 }
 
-async function readConfig(path: string, reader: ReadConfigFile): Promise<CredentialConfig> {
+function parseCredentialConfig(raw: string, path: string): CredentialConfig {
   try {
-    const raw = await reader(path, 'utf8')
     const parsed: unknown = JSON.parse(raw)
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('顶层必须是对象')
     }
     return parsed as CredentialConfig
   } catch (error) {
-    const code = error instanceof Error && 'code' in error ? error.code : undefined
-    if (code === 'ENOENT') return {}
     const detail = error instanceof Error ? error.message : String(error)
     throw new Error(`无法读取凭证配置文件：${path}（${detail}）`)
   }
+}
+
+async function readSingleConfig(path: string, reader: ReadConfigFile): Promise<CredentialConfig | undefined> {
+  let raw: string
+  try {
+    raw = await reader(path, 'utf8')
+  } catch (error) {
+    const code = error instanceof Error && 'code' in error ? error.code : undefined
+    if (code === 'ENOENT') return undefined
+    const detail = error instanceof Error ? error.message : String(error)
+    throw new Error(`无法读取凭证配置文件：${path}（${detail}）`)
+  }
+  return parseCredentialConfig(raw, path)
+}
+
+async function readConfig(paths: ConfigPaths, reader: ReadConfigFile): Promise<CredentialConfig> {
+  const current = await readSingleConfig(paths.path, reader)
+  if (current !== undefined) return current
+  if (paths.legacyPath === undefined) return {}
+  return (await readSingleConfig(paths.legacyPath, reader)) ?? {}
 }
 
 /** Resolves environment credentials first, then the read-only local config file. */
@@ -110,7 +135,8 @@ export async function resolveModelCredentials(
   options: ResolveCredentialOptions = {},
 ): Promise<ResolvedCredentials> {
   const env = options.env ?? process.env
-  const configPath = configFilePath(options)
+  const paths = await resolveCliConfigPaths(options, env)
+  const configPath = paths.path
   const fromEnvironment = credentialsFromEnvironment(env)
   const baseUrlsFromEnv = baseUrlsFromEnvironment(env)
 
@@ -120,7 +146,7 @@ export async function resolveModelCredentials(
     return { modelCredentials: fromEnvironment, modelBaseUrls: baseUrlsFromEnv, configPath }
   }
 
-  const config = await readConfig(configPath, options.readConfigFile ?? readFile)
+  const config = await readConfig(paths, options.readConfigFile ?? readFile)
   const modelCredentials: Record<string, string> = {}
   const modelBaseUrls: Record<string, string> = { ...baseUrlsFromEnv }
   for (const source of CREDENTIAL_SOURCES) {

@@ -12,13 +12,12 @@ import { createNodeHostInvoke, nodeHostPlatform, resolveSqliteDatabasePath } fro
 import { createDelegationAssembly } from '@einfach-agent/subagents'
 import { createDeepSeekSearch, registerStandardTools } from '@einfach-agent/tools'
 import { createDefaultPlanRuntime } from '@einfach-agent/tools-planning'
-import { builtInSkillsRegistry } from '@einfach-agent/tools-skills'
+import { builtInSkillsRegistry, scanProjectSkills } from '@einfach-agent/tools-skills'
 import {
   OPENAI_COMPAT_VENDOR_ID,
   createOpenAiCompatAdapter,
   defaultProviderRegistry,
 } from '@einfach-agent/ai'
-import { scanProjectSkills } from '../../../tools/skills/src/projectSkillsLoader'
 import type { ResolvedCredentials } from './credentials'
 import { createCliPerformanceDiagnosticSink } from './performance-output'
 import { assembleCliPlugins } from './plugins'
