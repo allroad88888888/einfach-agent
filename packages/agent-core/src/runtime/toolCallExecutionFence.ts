@@ -14,7 +14,9 @@ export async function persistToolCallExecutionFence(
   try {
     const outcome = await base.core.persistence.persistRecovery(base.id, 'tool_call_execution_started')
     if (outcome === undefined || outcome.status === 'saved') return true
-    return failFence(base, callIds, `Recovery persistence returned ${outcome.status}.`)
+    return failFence(base, callIds, outcome.status === 'error'
+      ? safeErrorMessage(outcome.error)
+      : `Recovery persistence returned ${outcome.status}.`)
   } catch (error) {
     return failFence(base, callIds, safeErrorMessage(error))
   }

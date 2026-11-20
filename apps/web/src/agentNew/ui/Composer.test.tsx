@@ -248,18 +248,22 @@ describe('Composer', () => {
     expect(stopRun).toHaveBeenCalledTimes(1)
   })
 
-  it('interrupted 态：锁定普通输入并提供继续执行入口', () => {
-    const store = createStore()
-    store.setter(runAtom, { runId: 'r', status: 'interrupted', turnId: 'u1' })
-    renderComposer(<Composer />, { store })
+  it.each([undefined, '工具执行前的恢复快照未确认：Recovery projection does not satisfy RecoverySnapshotV1'])(
+    'interrupted 态：显示实际原因、锁定输入并提供继续执行入口（%s）', (error) => {
+      const store = createStore()
+      store.setter(runAtom, { runId: 'r', status: 'interrupted', turnId: 'u1', error })
+      renderComposer(<Composer />, { store })
 
-    expect(screen.getByRole('textbox')).toBeDisabled()
-    expect(screen.getByText('应用重启中断了任务')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '继续执行' }))
+      expect(screen.getByRole('textbox')).toBeDisabled()
+      expect(screen.getByText('任务已中断')).toBeInTheDocument()
+      expect(screen.queryByText('应用重启中断了任务')).toBeNull()
+      if (error) expect(screen.getByRole('alert')).toHaveTextContent(error)
+      fireEvent.click(screen.getByRole('button', { name: '继续执行' }))
 
-    expect(continueInterruptedRun).toHaveBeenCalledExactlyOnceWith()
-    expect(sendMessage).not.toHaveBeenCalled()
-  })
+      expect(continueInterruptedRun).toHaveBeenCalledExactlyOnceWith()
+      expect(sendMessage).not.toHaveBeenCalled()
+    },
+  )
 
   it('停止中断任务后可发送新的文本', () => {
     const store = createStore()

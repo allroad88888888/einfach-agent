@@ -236,6 +236,9 @@ describe('recovery tool side-effect safety', () => {
       seedConfirmation(toolCore, toolSession)
       toolCore.confirmTool(true)
       await waitUntil(() => toolCore.getSessionStore(toolSession).store.getter(runAtom)?.status === 'interrupted', 'tool interruption')
+      if (failure === 'error') {
+        expect(toolCore.getSessionStore(toolSession).store.getter(runAtom)?.error).toContain('persistence offline')
+      }
       expect(execute).not.toHaveBeenCalled()
       expect(toolRequests.count).toBe(0)
     },

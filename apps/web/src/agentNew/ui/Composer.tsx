@@ -64,7 +64,7 @@ export function Composer({
   const running = run?.status === 'running' || run?.status === 'awaiting_tool'
   const stopped = run?.status === 'stopped'
   const interrupted = run?.status === 'interrupted'
-  const runError = run?.status === 'error' ? run.error : undefined
+  const runError = run?.status === 'error' || interrupted ? run?.error : undefined
   // waiting_user（等 ask_user 回答）/ waiting_confirmation（等危险工具确认，S4-B）也锁输入：此时应走
   //   卡片的「继续/允许/拒绝」，不能发新消息顶掉暂停中的 run —— 否则暂停中的 tool_call 无 tool result，
   //   重发构成非法 tool-call 序列（codex P2）。
@@ -208,7 +208,7 @@ export function Composer({
       ) : null}
       {interrupted ? (
         <div className="agentnew-withdraw-bar">
-          <span>{t`应用重启中断了任务`}</span>
+          <span>{t`任务已中断`}</span>
           <button type="button" className="agentnew-withdraw-button" onClick={() => continueInterruptedRun()}>
             {t`继续执行`}
           </button>

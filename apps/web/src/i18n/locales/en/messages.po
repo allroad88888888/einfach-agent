@@ -333,6 +333,10 @@ msgstr "Desktop only"
 msgid "从预设开始"
 msgstr "Start from a preset"
 
+#: apps/web/src/agentNew/ui/Composer.tsx
+msgid "任务已中断"
+msgstr "The task was interrupted"
+
 #: apps/web/src/agentNew/ui/ComposerLocalAccessControl.tsx
 msgid "任务结束或停止后可切换本地权限"
 msgstr "Change local access after the task finishes or stops"
@@ -1016,10 +1020,6 @@ msgstr "Application toolbar"
 #: apps/web/src/agentNew/ui/ModelCredentialCard.tsx
 msgid "应用配置文件已配置"
 msgstr "Configured in the app configuration file"
-
-#: apps/web/src/agentNew/ui/Composer.tsx
-msgid "应用重启中断了任务"
-msgstr "The task was interrupted by an app restart"
 
 #: apps/web/src/agentNew/ui/McpAddServerForm.tsx
 msgid "开启后会立即连接；配置和偏好仅在本次会话有效。"
