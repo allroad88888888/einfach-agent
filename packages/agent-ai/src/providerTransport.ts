@@ -154,6 +154,12 @@ export const PROVIDER_ROUTE_POLICIES: readonly ProviderRoutePolicy[] = Object.fr
     bodyKind: 'json', maxResponseBytes: CHAT_RESPONSE_LIMIT,
   },
   {
+    provider: 'deepseek', scope: 'default', method: 'POST',
+    path: exactPath('/responses'),
+    officialOrigin: PROVIDER_OFFICIAL_ORIGINS.deepseek.origin,
+    bodyKind: 'json', maxResponseBytes: CHAT_RESPONSE_LIMIT,
+  },
+  {
     provider: 'deepseek', scope: 'default', method: 'POST', path: exactPath('/files'),
     officialOrigin: PROVIDER_OFFICIAL_ORIGINS.deepseek.origin,
     bodyKind: 'multipart', maxResponseBytes: FILE_RESPONSE_LIMIT,

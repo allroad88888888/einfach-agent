@@ -24,6 +24,22 @@ const profiles = [
 afterEach(() => replaceOpenAiCompatConnections([]))
 
 describe('provider identity routing', () => {
+  it('routes DeepSeek multimodal Responses through the official DeepSeek identity only', () => {
+    const target = providerTargetForRequest(`${DEEPSEEK_BASE_URL}/responses`)
+    expect(target).toEqual({
+      provider: 'deepseek', scope: 'default', method: 'POST', path: '/responses',
+    })
+    expect(providerRouteSpec(target)).toEqual({
+      bodyKind: 'json',
+      url: `${DEEPSEEK_BASE_URL}/responses`,
+      maxResponseBytes: 32 * 1024 * 1024,
+    })
+    expect(() => providerTargetForRequest(`${GLM_BASE_URL}/responses`))
+      .toThrow('模型请求目标未获允许')
+    expect(() => providerTargetForRequest(`${KIMI_CN_BASE_URL}/responses`))
+      .toThrow('模型请求目标未获允许')
+  })
+
   it('routes search through the official DeepSeek credential identity', () => {
     expect(providerTargetForRequest(`${DEEPSEEK_BASE_URL}/v1/tools/search`)).toEqual({
       provider: 'deepseek', scope: 'default', method: 'POST', path: '/v1/tools/search',

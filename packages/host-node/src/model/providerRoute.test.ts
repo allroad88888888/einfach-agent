@@ -22,6 +22,8 @@ describe('端点白名单', () => {
   // 少一条是功能缺失，多一条是把 Key 的使用面扩大了。
   it.each([
     ['deepseek', 'default', 'POST', '/chat/completions', 'https://api.deepseek.com/chat/completions', 'json', 32 * 1024 * 1024],
+    ['deepseek', 'default', 'POST', '/responses', 'https://api.deepseek.com/responses', 'json', 32 * 1024 * 1024],
+    ['deepseek', 'default', 'POST', '/v1/tools/search', 'https://api.deepseek.com/v1/tools/search', 'json', 32 * 1024 * 1024],
     ['deepseek', 'default', 'POST', '/files', 'https://api.deepseek.com/files', 'multipart', 4 * 1024 * 1024],
     ['deepseek', 'default', 'DELETE', '/files/file-api-image_123-A-b', 'https://api.deepseek.com/files/file-api-image_123-A-b', 'none', 1024 * 1024],
     ['glm', 'default', 'POST', '/chat/completions', 'https://open.bigmodel.cn/api/paas/v4/chat/completions', 'json', 32 * 1024 * 1024],
@@ -101,6 +103,8 @@ describe('端点白名单', () => {
   it('文件端点不扩展到其他 provider 或方法', () => {
     for (const value of [
       { provider: 'glm', scope: 'default', method: 'POST', path: '/files' },
+      { provider: 'glm', scope: 'default', method: 'POST', path: '/responses' },
+      { provider: 'kimi', scope: 'cn', method: 'POST', path: '/responses' },
       { provider: 'glm', scope: 'default', method: 'DELETE', path: '/files/file-api-x' },
       { provider: 'deepseek', scope: 'default', method: 'POST', path: '/files/file-api-x' },
     ]) {

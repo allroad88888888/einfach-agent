@@ -11,6 +11,7 @@ import { providerTargetForRequest } from './providerRoute'
 describe('model endpoint allowlist', () => {
   it.each([
     [`${DEEPSEEK_BASE_URL}/chat/completions`, 'deepseek'],
+    [`${DEEPSEEK_BASE_URL}/responses`, 'deepseek'],
     [`${GLM_BASE_URL}/chat/completions`, 'glm'],
     [`${KIMI_CN_BASE_URL}/chat/completions`, 'kimi'],
   ] as const)('maps the fixed %s endpoint to %s', (url, provider) => {
@@ -31,7 +32,10 @@ describe('model endpoint allowlist', () => {
 
   it.each([
     `${DEEPSEEK_BASE_URL}/chat/completions/`,
+    `${DEEPSEEK_BASE_URL}/responses/`,
     `${DEEPSEEK_BASE_URL}/v1/chat/completions`,
+    `${GLM_BASE_URL}/responses`,
+    `${KIMI_CN_BASE_URL}/responses`,
     `${KIMI_GLOBAL_BASE_URL}/chat/completions`,
     `${KIMI_CN_BASE_URL}/files/../secret`,
     `${KIMI_CN_BASE_URL}/files/key?query=1`,

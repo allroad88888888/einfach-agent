@@ -28,7 +28,7 @@ describe('provider transport policy', () => {
         provider: 'kimi', scope: 'cn', origin: KIMI_CN_BASE_URL,
       },
     })
-    expect(PROVIDER_ROUTE_POLICIES).toHaveLength(9)
+    expect(PROVIDER_ROUTE_POLICIES).toHaveLength(10)
   })
 
   it('uses the adapter base URL bindings as policy origins', () => {
@@ -38,6 +38,12 @@ describe('provider transport policy', () => {
   })
 
   it('matches exact and provider-owned file routes without accepting suffixes', () => {
+    expect(findProviderRoutePolicy({
+      provider: 'deepseek', scope: 'default', method: 'POST', path: '/responses',
+    })?.bodyKind).toBe('json')
+    expect(findProviderRoutePolicy({
+      provider: 'glm', scope: 'default', method: 'POST', path: '/responses',
+    })).toBeUndefined()
     expect(findProviderRoutePolicy({
       provider: 'deepseek', scope: 'default', method: 'POST', path: '/files',
     })?.bodyKind).toBe('multipart')
