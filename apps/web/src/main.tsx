@@ -198,7 +198,7 @@ async function startApplication(): Promise<void> {
     modelCredentials: managedModelCredentials,
     prepareUserInput: prepareProviderUserInput,
     disposeUserContent: (discarded, retained, context) => disposeProviderUserContent(discarded, retained, context, {
-      apiKey: hostManagedCredentialMarker,
+      modelCredentials: core.config.modelCredentials,
       fetchImpl: providerFetch,
     }),
     fetchImpl: providerFetch,

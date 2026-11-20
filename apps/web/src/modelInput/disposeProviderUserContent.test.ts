@@ -140,4 +140,50 @@ describe('provider user content disposal dispatch', () => {
 
     expect(fetchImpl).not.toHaveBeenCalled()
   })
+
+  it('uses per-provider BYOK credentials without cross-sending another provider key', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }))
+    await disposeProviderUserContent(
+      [kimiContent, deepSeekContent],
+      [],
+      { settings: { vendor: 'deepseek' } },
+      {
+        modelCredentials: { deepseek: 'byok-deepseek-key', kimi: 'byok-kimi-key' },
+        fetchImpl,
+      },
+    )
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.moonshot.cn/v1/files/file-one',
+      expect.objectContaining({
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer byok-kimi-key' },
+      }),
+    )
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.deepseek.com/files/file-api-one',
+      expect.objectContaining({
+        method: 'DELETE',
+        headers: { Authorization: 'Bearer byok-deepseek-key' },
+      }),
+    )
+
+    fetchImpl.mockClear()
+    await disposeProviderUserContent(
+      [kimiContent, deepSeekContent],
+      [],
+      { settings: { vendor: 'deepseek' } },
+      {
+        modelCredentials: { deepseek: 'byok-deepseek-only', kimi: '' },
+        fetchImpl,
+      },
+    )
+    expect(fetchImpl).toHaveBeenCalledOnce()
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.deepseek.com/files/file-api-one',
+      expect.objectContaining({
+        headers: { Authorization: 'Bearer byok-deepseek-only' },
+      }),
+    )
+  })
 })

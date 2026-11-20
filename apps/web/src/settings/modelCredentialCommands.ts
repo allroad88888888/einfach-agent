@@ -1,5 +1,7 @@
 import { uiStore } from '../uiStore'
-import { configureCommands } from '@einfach-agent/core'
+import { configureCommands, defaultCore } from '@einfach-agent/core'
+import { createDeepSeekSearch } from '@einfach-agent/tools'
+import { disposeProviderUserContent } from '../modelInput/disposeProviderUserContent'
 import {
   createUnavailableModelCredentialHost,
   MODEL_CREDENTIALS,
@@ -17,7 +19,20 @@ let activeHost = createUnavailableModelCredentialHost()
 
 function synchronizeBrowserCredentials(): void {
   const credentials = activeHost.modelCredentials?.()
-  if (credentials) configureCommands({ modelCredentials: credentials })
+  if (!credentials) return
+  const fetchImpl = defaultCore.config.fetchImpl ?? globalThis.fetch
+  configureCommands({
+    modelCredentials: credentials,
+    webSearch: createDeepSeekSearch({
+      apiKey: credentials.deepseek,
+      fetchImpl,
+    }),
+    disposeUserContent: (discarded, retained, context) =>
+      disposeProviderUserContent(discarded, retained, context, {
+        modelCredentials: credentials,
+        fetchImpl,
+      }),
+  })
 }
 
 function errorMessage(error: unknown): string {

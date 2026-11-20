@@ -1,6 +1,6 @@
 import { uiStore } from '../uiStore'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { configureCommands, defaultCore, rootStore } from '@einfach-agent/core'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { configureCommands, defaultCore } from '@einfach-agent/core'
 import {
   configureAppSettingsStorage,
   configureModelCredentialHost,
@@ -129,6 +129,14 @@ describe('app settings commands', () => {
   })
 
   it('copies a static browser BYOK key into only the in-memory model runtime config', async () => {
+    const fetchImpl = vi.fn<typeof fetch>(async (input) => {
+      const url = String(input)
+      if (url.endsWith('/v1/tools/search')) {
+        return new Response(JSON.stringify({ results: [] }), { status: 200 })
+      }
+      return new Response(null, { status: 204 })
+    })
+    configureCommands({ fetchImpl })
     const values = {
       deepseek: '', glm: '', kimi: '', 'openai-compat': '',
     }
@@ -150,12 +158,63 @@ describe('app settings commands', () => {
     })
 
     updateDeepSeekApiKeyDraft('static-browser-key')
+    updateKimiApiKeyDraft('static-kimi-key')
     await expect(saveDeepSeekApiKey()).resolves.toBe(true)
+    await expect(saveKimiApiKey()).resolves.toBe(true)
     expect(defaultCore.config.modelCredentials.deepseek).toBe('static-browser-key')
+    expect(defaultCore.config.modelCredentials.kimi).toBe('static-kimi-key')
     expect(JSON.stringify(uiStore.getter(appSettingsAtom))).not.toContain('static-browser-key')
 
+    const signal = new AbortController().signal
+    await expect(defaultCore.config.webSearch?.({ query: 'test' }, { signal })).resolves.toEqual({
+      ok: true,
+      data: { results: [] },
+    })
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.deepseek.com/v1/tools/search',
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer static-browser-key' }),
+      }),
+    )
+
+    fetchImpl.mockClear()
+    await defaultCore.config.disposeUserContent?.(
+      [[
+        {
+          type: 'image',
+          source: {
+            kind: 'provider-file', provider: 'deepseek', scope: 'deepseek:default', reference: 'file-api-one',
+          },
+          name: 'one.png', mimeType: 'image/png', byteSize: 1,
+        },
+        {
+          type: 'image',
+          source: {
+            kind: 'provider-file', provider: 'kimi', scope: 'kimi:cn', reference: 'ms://file-two',
+          },
+          name: 'two.png', mimeType: 'image/png', byteSize: 1,
+        },
+      ]],
+      [],
+      { sessionId: 's1', reason: 'session_removed', settings: { vendor: 'deepseek', model: 'deepseek-flash' } },
+    )
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.deepseek.com/files/file-api-one',
+      expect.objectContaining({ headers: { Authorization: 'Bearer static-browser-key' } }),
+    )
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://api.moonshot.cn/v1/files/file-two',
+      expect.objectContaining({ headers: { Authorization: 'Bearer static-kimi-key' } }),
+    )
+
+    fetchImpl.mockClear()
     await expect(deleteDeepSeekApiKey()).resolves.toBe(true)
     expect(defaultCore.config.modelCredentials.deepseek).toBe('')
+    await expect(defaultCore.config.webSearch?.({ query: 'test' }, { signal })).resolves.toMatchObject({
+      ok: false,
+      code: 'DEEPSEEK_SEARCH_MISSING_KEY',
+    })
+    expect(fetchImpl).not.toHaveBeenCalled()
   })
 
   it('preserves the draft when the saved credential cannot be verified', async () => {
