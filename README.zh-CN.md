@@ -22,9 +22,8 @@ git clone https://github.com/allroad88888888/einfach-agent.git && cd einfach-age
 # 2. 安装并链接全部 workspace 包
 pnpm install
 
-# 3. 完整形态：先构建一次前端，再起本机服务。
+# 3. 完整形态：自动构建最新代码，再起本机服务。
 #    它会打印一条带一次性 token 的 URL，并自动打开浏览器。
-pnpm build
 pnpm serve
 
 # 4. 首次打开后在设置页填模型 Key：本机 Node 后端把它写进 ~/.webAgent/config.json，
@@ -37,7 +36,7 @@ pnpm cli -p "搜索并读取 planning skill，用三句话总结这个项目的�
 
 脚本名是 `pnpm serve` 而不是 `pnpm server`——`server` 是 **pnpm 的保留子命令**。它默认绑
 `127.0.0.1:4765`（端口被占用时自动往后试），`--no-open` 可以不自动开浏览器。它托管的前端就是
-`pnpm build` 的产物；没构建过时每个页面都回一个 503，页面上写着该去跑哪条命令。
+`pnpm build` 的产物；每次 `pnpm serve` 都会先构建，构建失败则不启动，避免修复后仍加载旧前端。
 
 `pnpm dev` 起的是 Vite 预览：同一套界面，没有后端，也就没有任何本机能力。
 
@@ -53,10 +52,8 @@ pnpm cli -p "搜索并读取 planning skill，用三句话总结这个项目的�
   部署使用明确的浏览器 BYOK：Key 保存在该浏览器 localStorage，直接请求 provider，provider 必须为
   部署域名放行 CORS。
 - **headless CLI**：无 UI 驱动真实 run，用于 dogfood、自动化和编码 Agent 自测。它在进程内加载
-  同一份 `packages/host-node` 能力实现，所以工具面对的就是本机；它不配置持久化，会话只活到进程
-  退出为止。`-v` 把 trace 与性能诊断打到 stderr。
-- **模型接入**：当前支持 DeepSeek 与 GLM；Kimi `kimi-k3` 与图片输入已实现，但真实 Key 验收前
-  保持开放门禁关闭。
+  同一份 `packages/host-node` 能力实现，向本地 SQLite 与日志目录写入恢复快照、撤销账本和 rollout 历史（供历史工具检索），每次调用新建独立会话。`-v` 把 trace 与性能诊断打到 stderr。
+- **模型接入**：原生支持 DeepSeek 与 GLM，并支持用户显式登记的 OpenAI 兼容端点与连接配置（`openai-compat`）；Kimi `kimi-k3` 与图片输入已实现，真实中国区 Key 验收前保持开放门禁关闭。
 - **运行时能力**：多会话、checkpoint/revert、lazy tool schema、危险工具确认、结构化计划与评估、
   树形子 Agent、后台执行图、上下文压缩与 provider context cache 统计、持久化和 trace viewer。
 
@@ -67,8 +64,8 @@ store、工具 registry、abort registry、插件宿主和观测出口，能在�
 
 | 槽位 | 注入什么 |
 | --- | --- |
-| `registerTools` | 工具集。不传则该实例**没有任何工具**；应用侧调 `registerStandardTools` 装齐六域 |
-| `plugins` | 循环插件。压缩、finish reason、loop guard、迁移都是插件，不是主循环里的 if |
+| `registerTools` | 工具集。不传则该实例**没有任何工具**；应用侧调 `registerStandardTools` 装齐八个标准域 |
+| `plugins` | 循环插件。finish reason、loop guard、迁移都是插件；上下文压缩由到点工具 `compact_context` 执行 |
 | `observability` | trace 出口（IndexedDB / SQLite / stderr / 静默） |
 | `projectSkillsProvider`、`skillRegistry` | 项目 Skills 扫描与内置 skill 清单 |
 | `planRuntime` | 结构化计划运行时 |
@@ -107,8 +104,8 @@ agent-core ──▶│                        ├──▶ packages/host-node �
   好让「没带 token 打开的页面」响亮地降级而不是静默失能。
 - **headless CLI** —— `apps/cli/src/runtime.ts`：同一套标准工具，进程内挂同一个 host-node 桥，
   stderr trace，无 React。
-- **能力实现** —— `packages/host-node`：全部 30 条宿主命令（workspace 读/写/补丁、shell、Git、
-  ripgrep、MCP stdio、SQLite、模型代理与凭据存储），上面两个宿主共用这一份。
+- **能力实现** —— `packages/host-node`：19 个子域共 53 条宿主命令（workspace 读/写/补丁、shell、会话常驻服务、Git、
+  ripgrep、MCP stdio、SQLite、rollout/撤销账本、模型代理与凭据/连接存储），上面两个宿主共用这一份。
 
 ![计划审批：等待用户裁决](docs/launch/assets/plan-approval.png)
 
@@ -160,7 +157,7 @@ pnpm dev
 # 类型检查 + 生产构建（先前端，再 server 包）
 pnpm build
 
-# 自托管本机服务；需要先跑过一次 pnpm build
+# 自托管本机服务；启动前自动构建最新代码
 pnpm serve
 
 # headless CLI 宿主：-p 跑一轮后退出，无 -p 进入 REPL；-h 看全部选项
@@ -175,8 +172,8 @@ node scripts/check-docs.js               # 文档相对链接
 node scripts/check-boundaries.js         # 装配边界
 node scripts/check-state-invariants.js   # 状态机制不变量
 
-# CI 随后重建全部可分发包的 dist 并校验。顺序不能倒：server 包要嵌入 pnpm build 产出的那份前端
-pnpm -r build && node scripts/check-dist.js
+# CI 随后重建全部可分发包的 dist 并校验，最后验证打包后的 server 可独立运行。顺序不能倒：server 包要嵌入 pnpm build 产出的那份前端
+pnpm -r build && node scripts/check-dist.js && pnpm check:packed
 ```
 
 `pnpm build` 过程中打印的 chunk 体积、chunk 拆分和动态导入相关警告是预期噪音，
@@ -223,27 +220,31 @@ bin 名是 `einfach-agent`、包名是 `@einfach-agent/server`，**两者不是�
 │   │   ├── index.html           # Vite HTML 入口
 │   │   └── src/                 # React 装配、UI、样式与组件测试
 │   ├── server/                  # 本机 HTTP 宿主：托管前端 + /api/invoke + 模型代理
+│   ├── desktop/                 # Tauri 薄壳：封装同一份 server sidecar（不新增宿主态）
 │   └── cli/                     # headless CLI 宿主（dogfood 与自动化驱动真实 run）
 ├── packages/
-│   ├── agent-ai/                # DeepSeek / GLM / Kimi API 适配
+│   ├── agent-ai/                # DeepSeek / GLM / Kimi / OpenAI 兼容 API 适配
 │   ├── agent-core/              # 装配式内核：状态、运行时、工具契约、plugin/观测/持久化 contract
-│   ├── agent-react/             # React 插件安装面与 timeline renderer registry
+│   ├── agent-react/             # Core store React 绑定、插件安装面与 timeline renderer registry
 │   ├── agent-plugin-example/    # 插件契约的可运行样例
 │   ├── host-node/               # 本机能力实现：所有宿主命令背后的那一份 Node 代码
-│   ├── subagents/               # 委派调度、批次、归档治理与视图 state
+│   ├── subagents/               # 委派调度、归档治理与视图 state
 │   ├── persistence-idb/         # IndexedDB 会话/历史持久化 driver
-│   ├── persistence-sqlite/      # SQLite 会话/历史持久化 driver
+│   ├── persistence-sqlite/      # SQLite 会话/恢复快照持久化 driver
 │   ├── observability-idb/       # IndexedDB trace driver 与 reader
 │   └── observability-sqlite/    # SQLite trace driver 与 reader
+├── browser-agent/               # 第二产品线：浏览器扩展与嵌入式页面 Agent（见 browser-agent/README.md）
 ├── tools/
-│   ├── standard/                # 六个工具域的 meta 聚合包
-│   ├── shell/                   # shell / task / Git
+│   ├── standard/                # 八个标准工具域的 meta 聚合包
+│   ├── shell/                   # shell / 常驻服务 / task / Git
 │   ├── fs/                      # workspace 文件、搜索和补丁
 │   ├── interaction/             # ask_user / browser card / artifact
+│   ├── vision/                  # 工作区图片检视（view_image）
 │   ├── planning/                # 结构化计划工具
 │   ├── skills/                  # skill 搜索与读取
-│   ├── agents/                  # delegate / observe / join Agent
-│   └── mcp/                     # 第七域，不在标准包里，由应用层按需装配
+│   ├── agents/                  # delegate / observe / join / compact / history Agent
+│   ├── search/                  # DeepSeek 联网搜索（deepseek_search）
+│   └── mcp/                     # MCP 工具域，不在标准包里，由应用层按需装配
 ├── docs/                        # 当前实现说明与仍在推进的演进蓝图
 └── scripts/                     # 门禁脚本与子 Agent archive/skill 治理
 ```

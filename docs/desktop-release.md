@@ -12,6 +12,8 @@ The workflow runs on pull requests, branch pushes, tags matching `app-v*`, and m
 
 Pull requests, branch pushes, and manual dispatches use the verification path. It builds only; it neither receives release secrets nor uploads or publishes a bundle.
 
+For local Intel macOS builds outside CI, `pnpm desktop:build:intel` overlays `apps/desktop/tauri.intel.conf.json` to stage the `x86_64-apple-darwin` Node runtime and bundle `.app`/`.dmg` artifacts.
+
 ## Signed tag path
 
 A release tag must exactly equal `app-v<version>`, where `<version>` is read from `apps/desktop/tauri.conf.json`. Before the signed build starts, the workflow checks that these GitHub Actions secrets are non-empty without printing their values:

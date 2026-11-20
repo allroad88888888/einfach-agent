@@ -23,9 +23,8 @@ pnpm install
 ## 开发流程
 
 ```bash
-# 完整形态：先构建一次前端，再起本机 Node 服务（它托管的就是 pnpm build 的产物）。
+# 完整形态：自动构建最新前端与 server 产物，构建通过后再启动本机 Node 服务。
 # 脚本名是 serve 不是 server：`server` 是 pnpm 的保留子命令。
-pnpm build
 pnpm serve
 
 # Web 开发预览：同一套 React UI + Agent Runtime，但没有后端，

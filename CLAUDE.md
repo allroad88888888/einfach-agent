@@ -16,9 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `pnpm install`：安装并链接全部 workspace 包。
 - `pnpm dev`：Vite 前端预览。**它没有本机后端**——`/api/health` 404，宿主解析成 `static`，
   文件/shell/Git 那一类工具整类不进模型清单。要真跑本机能力用 `pnpm serve`。
-- `pnpm serve`：起本机 Node 后端（`apps/server`，默认 `127.0.0.1:4765`，端口被占用时自动往后试；
-  `-- --help` 看全部选项），托管前端产物并在 `/api/*` 提供本机能力。**它服务的是构建产物**：
-  没先跑过 `pnpm build` 会得到一页 503 提示页，而不是旧界面。
+- `pnpm serve`：先跑 `pnpm build` 构建最新前端与 server 包，构建成功后起本机 Node 后端（`apps/server`，默认 `127.0.0.1:4765`，端口被占用时自动往后试；`-- --help` 看全部选项），托管前端产物并在 `/api/*` 提供本机能力（若直接起未构建的 server 进程则会返回 503 提示页）。
 - `pnpm build`：`tsc -b` → `vite build` → `pnpm --filter @einfach-agent/server build`。
   仓库没有 lint 脚本，`tsc -b` 是唯一的静态门禁。**这三步顺序不能倒**：server 的 build 收尾要把
   `apps/web/dist` 复制进自己的 `dist/public`，那份前端产物由上一步产出，全新 checkout 上反过来直接失败。
@@ -43,11 +41,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   进程重开那个库文件复读同一行**；只验前者的话，同进程内存也能给出一样的答案。
 - `pnpm cli -p "<prompt>"`：headless CLI 宿主跑一轮真实 run（读 `~/.webAgent/config.json`
   或环境变量取模型 Key；`--help` 看全部选项）；无 `-p` 进入 REPL。
-- 子 Agent 治理：`pnpm subagent:replay` / `subagent:archive:retention` / `subagent:index:compact` /
+- `pnpm desktop:dev` / `pnpm desktop:build` / `pnpm desktop:build:intel`：Tauri 桌面薄壳开发与 Apple Silicon / Intel macOS 打包（对应 `.github/workflows/release-desktop.yml` 与 `scripts/check-desktop-wrapper.mjs`）。
+- 子 Agent 治理与 Rollout 对账：`pnpm agent-rollout:rebuild` / `pnpm subagent:replay` / `subagent:archive:retention` / `subagent:index:compact` /
   `subagent:skills`。
 
-CI（`.github/workflows/ci.yml`）只有一条 job，顺序是 `check-docs → check-boundaries → check-state →
-pnpm test → pnpm build → pnpm -r build → check-dist → check:packed`。后三步排在 `pnpm build` **之后**且不能省：
+CI 主门禁（`.github/workflows/ci.yml`）顺序是 `check-docs → check-boundaries → check-state →
+pnpm test → pnpm build → pnpm -r build → check-dist → check:packed`；桌面端另有 `.github/workflows/release-desktop.yml` 在 `macos-15` 上执行 Node sidecar 准备、`tauri build` 与 `check-desktop-wrapper.mjs`。`ci.yml` 后三步排在 `pnpm build` **之后**且不能省：
 `pnpm build` 不构建 `packages/*` 与 `tools/*` 的 dist，而 npm tarball 里装的就是那些 dist——少了它们，
 dist 陈旧化在 CI 里完全没有症状（包 scope 改名那次，17 个包的 dist 一直留着旧名直到发布路径上才暴露）。
 
@@ -151,11 +150,11 @@ Kimi 的上传、`ms://` 引用编码和清理语义属于 `agent-ai` adapter；
 - `packages/persistence-{idb,sqlite}/`：IndexedDB / SQLite 会话与恢复快照持久化 driver。
 - `packages/observability-{idb,sqlite}/`：IndexedDB / SQLite trace driver 与 reader。
 - `apps/web/src/traceViewer/`：React TraceViewer 与其 view state。
-- `tools/{shell,fs,interaction,vision,planning,skills,agents}/`：七个标准工具域；skills 的 loader、registry
-  和内置内容在 `tools/skills`，默认 plan runtime 在 `tools/planning`。
-- `tools/standard/`（`@einfach-agent/tools`）：meta 聚合包，`registerStandardTools` 一次装齐七域。
+- `tools/{shell,fs,interaction,vision,planning,skills,agents,search}/`：八个标准工具域；skills 的 loader、registry
+  和内置内容在 `tools/skills`，默认 plan runtime 在 `tools/planning`，DeepSeek 联网搜索在 `tools/search`。
+- `tools/standard/`（`@einfach-agent/tools`）：meta 聚合包，`registerStandardTools` 一次装齐八域（42 个注册工具 / 41 个模型可见）。
 - `tools/mcp/`：MCP 工具域，**不在**标准包里，由应用层按需装配。
-  （注：文档里「第七域」是标准包只有六域时的叫法，现在标准包已有七域，引用时按名字不用序号。）
+  （注：历史文档里的「第七域」是标准包只有六域时的叫法，现在标准包已有八域，引用时按名字不用序号。）
 - `browser-agent/`：**第二条产品线**——把同一个 core 装进浏览器扩展的侧边栏，直接操作当前绑定的
   网页。9 个 workspace 包（`agent` 运行时、`extension` MV3、可选 `ui`、`tools/{page,dom,network,api,ocr}`、
   `examples/embedded`）。它**不用宿主两态、没有本机能力桥、只落 IndexedDB、工具集在会话创建时冻结**，
@@ -173,7 +172,7 @@ host-node 是命令桥的一种实现，core 反过来引它等于把「宿主�
 这三条由 `pnpm check:boundaries` 判。
 
 `agent-core/src` 的分区：`runtime/`（主循环、命令与到点分派）、`runtime/core/`（`CoreInstance`、
-plugin host、loop hooks、默认插件）、`state/`（atom、writer、persistence contract）、`execution/`
+plugin host、loop hooks、默认插件）、`plugins/`（工作区外部插件扫描与加载）、`state/`（atom、writer、persistence contract）、`history/`（跨会话/子 Agent 历史与 rollout 契约）、`execution/`
 （执行图）、`planning/` 与 `skills/`（契约）、`subagents/`（子 run 机制与委派协议）、`timeline/`、
 `observability/`（port 与纯逻辑）、`tools/`（抽象与 registry，不含具体工具）。
 
@@ -308,7 +307,7 @@ error；`slot` 与 `SESSION_SLOTS` 是**双向**比对（表说是槽位而槽�
    时机为 session/run/turn、压缩和子 Agent 的开始/结束，`<domain>:<event>` 由宿主经受限 API 分派。
 5. 模型可见工具经 registry 校验后，通过受限 `ToolContext` 执行；普通结果回填并继续循环，ask-user、
    计划审批或危险工具确认会暂停。
-6. 完成后经 persistence bridge 落盘 `RecoverySnapshotV1` 与会话元数据。
+6. 完成后经 persistence bridge 落盘 `RecoverySnapshotV2`、增量撤销账本与会话元数据。
 
 供应商私有请求和重试留在 `packages/agent-ai/`；子 Agent 已按单体循环、批次编排和辅助职责拆分。
 主循环已按 lifecycle、bootstrap、循环周期、模型请求和工具执行拆分；`modelRun.ts`
@@ -331,11 +330,10 @@ registrar 为准**（`tools/<domain>/src/index.ts`），文档里的数量容易
 **宿主只有两态**（`apps/web/src/host/resolveHost.ts`，判定靠 `GET /api/health` 握手，
 探测失败或超时一律落 `static`）：
 
-- `server` —— 浏览器 + 本机 Node 后端。会话/历史与 trace 都走 SQLite，执行面是
-  `POST /api/invoke/sqlite_*`，库文件由 host-node 的 `sqlite/databasePath.ts` 决定；文件/shell/Git
-  经 `POST /api/invoke/:command` 打到 host-node。**CLI 不持久化**——`apps/cli/src/runtime.ts` 只在
-  第 9 行 import 了 `configurePersistence`，从未调用，`apps/cli/package.json` 也没有任何
-  `persistence-*` 依赖；别以为它在悄悄共用这份库文件。
+- `server` —— 浏览器 + 本机 Node 后端。会话/历史与 trace 都走 SQLite（撤销账本走 `history-journals/*.jsonl`），执行面是
+  `POST /api/invoke/sqlite_*`，库文件由 host-node 的 `sqlite/databasePath.ts` 决定；文件/shell/常驻服务/Git
+  经 `POST /api/invoke/:command` 打到 host-node。**CLI 共用恢复与历史账本，但不恢复会话列表**——
+  `apps/cli/src/persistence.ts`（`assembleCliPersistence`）向同一份 `web-agent.db` 及同级目录写入 `recovery`、`history-journals` 与 `agentRollout`（供 `*_agent_histories` 检索与对账），但不装配 `sessions` 元数据表 driver、每次启动固定 `newSession()`。
 - `static` —— 纯静态产物，没有后端。不登记命令桥，本机能力工具整类不可见；持久化只剩 IndexedDB。
 - 选 driver 的判据是「**这一态有没有 SQL 通路**」，不是「有没有本机能力桥」——持久化与观测两处
   逐字相同的判断，写岔了会得到「写进 SQLite、从 IndexedDB 读」这种两头对不上的装配，它不报错，

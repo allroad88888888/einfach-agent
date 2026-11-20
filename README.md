@@ -24,9 +24,8 @@ resolves the wrong dependency tree. See [Requirements](#requirements).
 git clone https://github.com/allroad88888888/einfach-agent.git && cd einfach-agent
 pnpm install
 
-# The complete product: build the frontend once, then start the local server.
+# The complete product: build the latest code and start the local server.
 # It prints a URL carrying a one-time token and opens your browser on it.
-pnpm build
 pnpm serve
 
 # Enter a model key on the settings page the first time the app opens. The local
@@ -39,8 +38,8 @@ pnpm cli -p "Read the planning skill and summarize this project's plan mechanism
 
 The script is `pnpm serve`, not `pnpm server` — `server` is a reserved pnpm subcommand. It binds `127.0.0.1`
 on port 4765 (it walks forward if that one is taken), and `--no-open` skips launching the browser. The
-frontend it serves is the output of `pnpm build`; without that build it answers every page with a 503 that
-tells you to run it.
+frontend it serves is the output of `pnpm build`. Each `pnpm serve` builds first and starts only if the
+build succeeds, so source fixes cannot be hidden by an older frontend build.
 
 `pnpm dev` starts the Vite preview instead — same UI, no backend, no local capabilities.
 
@@ -57,12 +56,12 @@ tells you to run it.
   stored in that browser's localStorage and requests go directly to the provider, so the provider must allow the
   deployment origin with CORS.
 - **Headless CLI** — real runs without a UI, for dogfooding, automation, and letting a coding agent test
-  itself. It loads the same `packages/host-node` capability implementation in-process, so its tools are the
-  local machine's; it configures no persistence, so a session lives only as long as the process. `-v` prints
-  traces and timing diagnostics to stderr.
-- **Models** — DeepSeek and GLM today, integrated directly rather than through an OpenAI-compatible shim. Kimi
-  (`kimi-k3`, image input included) is implemented but gated off until it has been verified against a real
-  key. OpenAI and Anthropic are not supported yet.
+  itself. It loads the same `packages/host-node` capability implementation in-process, records recovery snapshots,
+  undo journals and agent rollouts to the local SQLite/app-data store (for history inspection), and starts a fresh
+  session per invocation. `-v` prints traces and timing diagnostics to stderr.
+- **Models** — DeepSeek and GLM integrated directly as first-class providers, plus user-registered OpenAI-compatible
+  endpoints and connection profiles (`openai-compat`). Kimi (`kimi-k3`, image input included) is implemented behind
+  `VITE_KIMI_IMAGE_INPUT_ENABLED` until verified end-to-end against a real China-region key.
 - **Runtime** — multi-session, checkpoint/revert, lazy tool schemas, confirmation for dangerous tools, structured
   plans, a tree of sub-agents, a background execution graph, context compaction with provider cache stats, traces.
 
@@ -73,8 +72,8 @@ registry, abort registry, plugin host and observability port, so two can run sid
 
 | Slot | What you inject |
 | --- | --- |
-| `registerTools` | The tool set. Leave it out and the instance has **no tools at all**; apps call `registerStandardTools` for the seven standard domains |
-| `plugins` | Loop plugins. Compaction, finish-reason handling, the loop guard and migrations are plugins, not branches in the main loop |
+| `registerTools` | The tool set. Leave it out and the instance has **no tools at all**; apps call `registerStandardTools` for the eight standard domains |
+| `plugins` | Loop plugins. Finish-reason handling, the loop guard and migrations are plugins, while context compaction runs as the timed `compact_context` tool |
 | `observability` | Trace sink: IndexedDB, SQLite, stderr, or none |
 | `projectSkillsProvider`, `skillRegistry` | Project skill discovery and the built-in skill catalog |
 | `planRuntime` | The structured planning runtime |
@@ -112,8 +111,9 @@ The assembly entry points, each choosing its own implementations:
   the health probe is the single token exemption, so that a page opened without one degrades loudly.
 - **Headless CLI** — `apps/cli/src/runtime.ts`: same standard tools, the same host-node bridge in-process,
   stderr traces, no React.
-- **Capability implementation** — `packages/host-node`: all 30 host commands (workspace read/write/patch,
-  shell, Git, ripgrep, MCP stdio, SQLite, the model proxy and credential storage), shared by both hosts above.
+- **Capability implementation** — `packages/host-node`: all 53 host commands across 19 domains (workspace
+  read/write/patch, shell, session-owned services, Git, ripgrep, MCP stdio, SQLite, history/rollout journals, the
+  model proxy and credential/profile storage), shared by both hosts above.
 
 ![Plan approval, waiting for the user's decision](docs/launch/assets/plan-approval.png)
 
@@ -167,7 +167,7 @@ pnpm install
 
 pnpm dev            # browser preview, no local capabilities
 pnpm build          # type check + production build (frontend, then the server package)
-pnpm serve          # the self-hosted local server; needs a prior `pnpm build`
+pnpm serve          # build the latest code, then start the self-hosted local server
 pnpm test           # tests
 
 # Headless CLI host: -p runs once and exits, no -p opens a REPL, -h lists every option
@@ -223,20 +223,20 @@ unrelated, non-existent package — install the tarballs instead.
 │   ├── desktop/                 # Tauri thin shell wrapping that same server as a sidecar (adds no host state)
 │   └── cli/                     # headless CLI host, for dogfooding and automation
 ├── packages/
-│   ├── agent-ai/                # DeepSeek / GLM / Kimi API adapters
+│   ├── agent-ai/                # DeepSeek / GLM / Kimi / OpenAI-compatible API adapters
 │   ├── agent-core/              # the kernel: state, runtime, tool contract, plugin/observability/persistence contracts
-│   ├── agent-react/             # React plugin surface and timeline renderer registry
+│   ├── agent-react/             # core store React bindings, plugin surface and timeline renderer registry
 │   ├── agent-plugin-example/    # a runnable sample of the plugin contract
 │   ├── host-node/               # the Node capability implementation behind every host command
-│   ├── subagents/               # delegation scheduling, batching, archive governance, view state
+│   ├── subagents/               # delegation scheduling, archive governance, view state
 │   ├── persistence-{idb,sqlite}/    # session and history drivers
 │   └── observability-{idb,sqlite}/  # trace drivers and readers
 ├── browser-agent/               # second product line: the same kernel inside a browser extension
 │                                #   (agent runtime, MV3 extension, optional React UI, page/DOM/network/API/OCR tools)
 │                                #   see browser-agent/README.md — it is not registered in this file's host states
 ├── tools/
-│   ├── standard/                # meta package aggregating the seven standard domains
-│   ├── shell/ fs/ interaction/ vision/ planning/ skills/ agents/   # those seven domains
+│   ├── standard/                # meta package aggregating the eight standard domains
+│   ├── shell/ fs/ interaction/ vision/ planning/ skills/ agents/ search/   # those eight domains
 │   └── mcp/                     # MCP tools, deliberately outside the standard package, assembled by the app
 ├── docs/                        # current behaviour notes plus in-progress blueprints
 └── scripts/                     # gate scripts and sub-agent archive/skill governance

@@ -16,6 +16,11 @@
 | [插件上手：20 分钟写一个外部插件](plugin-quickstart.md) | 从零写 `plugin.json` + 单文件 ESM 入口、放进 `.webAgent/plugins/`、用 CLI 验证生效；当前边界（模型可见工具默认不可见、`entry.react` 未接线、纯静态产物不支持） |
 | [用户配置目录](config-directory-override.md) | 默认 `~/.webAgent/config.json`、旧配置安全复制、`WEB_AGENT_CONFIG_DIR` 多实例隔离与密钥边界 |
 | [卡顿诊断日志](performance-diagnostics.md) | 长对话、plan 更新、大文件写入的分段耗时；只有前端一半，宿主内部目前没有分段日志 |
+| [会话级常驻服务](session-services.md) | 会话隔离的后台进程生命周期、环形游标日志、配额与退出清理 |
+| [Agent 历史检索工具](agent-history-tools.md) | 跨会话与子 Agent 历史列举、单条读取与搜索契约 |
+| [Agent Rollout 存储与对账](agent-rollout-storage.md) | 追加式 JSONL 事件源、SQLite 投影与启动/离线对账重建 |
+| [桌面端 Node Sidecar 运行时](desktop-node-runtime.md) | Tauri 薄壳准备、校验与托管内置 Node sidecar 的契约 |
+| [桌面端构建与签名矩阵](desktop-release.md) | macOS Apple Silicon CI 验证、Intel 本地打包与签名公证约束 |
 | [工具规范](../packages/agent-core/src/tools/TOOLS-SPEC.md) | Tool、Registry、ToolContext、安全边界与新增工具约定 |
 
 这些文档必须与当前 pnpm workspace、代码接口和测试同步更新。
