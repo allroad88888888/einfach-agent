@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "cli": "tsx --tsconfig apps/cli/tsconfig.json apps/cli/src/main.ts",
-    "serve": "tsx --tsconfig apps/server/tsconfig.json apps/server/src/main.ts",
+    "serve": "pnpm build && tsx --tsconfig apps/server/tsconfig.json apps/server/src/main.ts",
     "dev": "vite --config vite.config.ts",
     "build": "tsc -b && vite build --config vite.config.ts && pnpm --filter @einfach-agent/server build",
     "test": "vitest run",
@@ -24,6 +24,7 @@
     "lingui:compile": "lingui compile",
     "desktop:dev": "tauri dev --no-watch --config apps/desktop/tauri.conf.json",
     "desktop:build": "tauri build --config apps/desktop/tauri.conf.json --target aarch64-apple-darwin",
+    "desktop:build:intel": "tauri build --config apps/desktop/tauri.conf.json --config apps/desktop/tauri.intel.conf.json --target x86_64-apple-darwin --bundles app,dmg",
     "preview": "vite preview --config vite.config.ts --host 0.0.0.0"
   },
   "dependencies": {

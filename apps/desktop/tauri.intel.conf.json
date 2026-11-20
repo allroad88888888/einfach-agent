@@ -1,0 +1,8 @@
+{
+  "build": {
+    "beforeBuildCommand": {
+      "script": "pnpm build && pnpm --filter @einfach-agent/host-node... build && node scripts/stage-desktop-node-runtime.mjs --target x86_64-apple-darwin",
+      "cwd": "../.."
+    }
+  }
+}
